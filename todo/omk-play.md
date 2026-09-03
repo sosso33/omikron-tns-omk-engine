@@ -283,6 +283,71 @@ function in the game.
 **The class** — every scripted object motion in every scene: doors, lifts,
 crates, vehicles.
 
+## Fixed (batch 8, 2026-09-03)
+
+### 54. Every generic effect drew as SMOKE: a binding names its effect by ID, not by position — A
+
+> **Fixed 2026-09-03, CONFIRMED IN PLAY.** `bindSetEmitters` now finds the
+> effect whose `id` matches the binding instead of indexing the array.
+> ANEKBAH goes 160 -> **153** emitters, which is exactly what
+> `tools/ambientfx.py` has always printed. `verify.py: engine set emitters`
+> re-baselined 319 -> 325.
+
+Filed 2026-09-03 from a play report — *all generic effect (street lights,
+fire, smoke) are rendered as smoke (smoke itself and effects specific to the
+impasse cutscene are correct)*.
+
+**Section C's `+0` id is 1-based and does not track the array index.** In
+`anekbah.sfx`::
+
+    idx  id   name    sprite
+    3    5    neon    49590   EFFECTS2_GLOW      <- the street lights
+    5    7    agri    49589   EFFECTS2_SMOKE1    <- a grey smoke
+
+The binding says `'neon' -> effect 5`, meaning the effect whose **id** is 5,
+which is `neon`. `bindSetEmitters` did `sfx_.effects[5]` and got `agri`. The
+smoke effects outnumber the rest, so nearly every binding in the game landed
+on one - a street light, a fire and a smoke all coming out as smoke, and
+smoke itself right because it was what everything else was aliasing onto.
+
+`tools/ambientfx.py` keys its rows `rows[e["id"]]` and was right all along,
+which is why the `/cutscene` viewer showed these correctly and the port did
+not. `docs/ASSETS.md` 3b records the same 1-based rule for the SET-PIECE path
+(a row's `+52`), where it was applied; nobody carried it across.
+
+**Two wrong diagnoses came first, and both were reasoning where a measurement
+was available.** The 64-slot texture pool was blamed (`slot & 0x3F`, and
+`EFFECTS2_GLOW` and `EFFECTS2_SMOKE1` do share an atlas, so aliasing would
+look exactly like this) - but a driven run shows the pool at **24 slots** and
+no warning. Before that the sprite table was blamed. The pool now warns when
+it passes 64 so that suspicion can be settled by looking rather than arguing.
+
+**Severity A** - every set in the game with ambient effects.
+
+### 55. The sprite table did not follow the scene — A
+
+> **Fixed 2026-09-03.** `refreshSprites()` reloads the global library and the
+> resident scene's sprites whenever the scene changes, and bumps the pool's
+> composition. Confirmed live: `sprites: reloaded for Impasse.SCX - 20 global
+> + 12 local, 32 decoded` on the transition.
+
+An effect names its sprite by ID and `Sfx_TickAmbient` resolves that id
+**through the resident scene**; the ids are scene-local. `Grid.sfx` wants
+9..12 and `Grid.SCX` registers exactly those; `anekbah.sfx` wants
+49589..49591 and `anekbah.SCX` registers exactly those. `aventure.SCX`, the
+global library, registers 2..137 and none of Anekbah's.
+
+`omk-play` called `loadSprites` ONCE at startup, so walking out of the intro
+left every later effect resolving against GRID's table. **All 66 scenes with
+ambient effects want at least one id the global library lacks**, so the
+one-shot load could never have worked beyond the boot scene; twelve wanted
+ids exist in both and resolve to the WRONG picture, which is issue 48's
+"some Impasse particles draw incorrectly". `verify.py: sprite ids
+scene-local`.
+
+Also here: the pool now takes only the sprites the resident scene can name
+(Anekbah names three, not the twenty-four that decoded).
+
 ## Fixed (batch 7, 2026-09-03)
 
 ### 53. `MoveObjectOnPath` dropped the ORIENTATION, so anything that turns in place stood still — A

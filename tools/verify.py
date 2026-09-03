@@ -5754,6 +5754,116 @@ def c_engine_programs():
            "- all matching tools/sim/scene.py"
 
 
+def c_sprite_ids_are_scene_local():
+    r"""ASSETS 3b: an effect's sprite id is SCENE-LOCAL, so the table must follow
+    the scene.
+
+    `Sfx_TickAmbient` resolves an effect's `+8` sprite through the SCENE -
+    `sub_4A5800(scene+8, sprite)` walks the resident scene's own registrations -
+    and the ids are local to the file that registers them::
+
+        Grid.sfx     wants 9 10 11 12          Grid.SCX     registers 9 10 11 12
+        anekbah.sfx  wants 49589 49590 49591   anekbah.SCX  registers those three
+        Impasse.sfx  wants 13 14 114 116 117 139 140 200
+
+    `aventure.SCX`, the global library, registers 2..137 and none of Anekbah's.
+
+    **This is why a viewer must reload its sprite table on a scene change**, and
+    the numbers below say a boot-time load can never be enough for anything but
+    the boot scene: **every one of the 66** scenes carrying ambient effects
+    wants at least one id the global library does not define. Twelve wanted ids
+    exist in BOTH, and those are worse than the missing ones - they resolve, to
+    the wrong picture, which is the shape reported as "some Impasse particles
+    draw incorrectly" (`todo/omk-play.md` 48). `omk-play` loaded sprites once at
+    startup, so walking out of the intro left every later effect resolving
+    against GRID's table: Anekbah's three ids fall outside it and drew nothing,
+    which is fire and smoke not working.
+
+    Seven of the 66 do NOT supply every id they want from their own stream; they
+    are the ones whose remainder the global library covers, and they are why the
+    global is loaded FIRST and the scene's over it rather than instead of it.
+    """
+    import subprocess, tempfile, shutil
+    fr = omkpaths.data_root()
+    if not os.path.isdir(fr):
+        return ("no data",), ("data",), "needs the shipped tree"
+    eng = os.path.join(ROOT, "engine")
+    b = subprocess.run(["make", "-s", "build/sprite_ids"], cwd=eng,
+                       capture_output=True, text=True)
+    binp = os.path.join(eng, "build", "sprite_ids")
+    if b.returncode != 0 or not os.path.exists(binp):
+        return ("build failed",), ("built",), "engine/ must build"
+    tmp = tempfile.mkdtemp()
+    try:
+        out = os.path.join(tmp, "s.bin")
+        subprocess.run([binp, fr, out], capture_output=True, text=True)
+        raw = open(out, "rb").read()
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+    if len(raw) < 20:
+        return ("no output",), ("20 bytes",), "the probe must write its record"
+    scenes, selfSupplied, needLocal, collide, wantTotal = struct.unpack_from("<5i", raw, 0)
+    return (scenes, selfSupplied, needLocal, needLocal == scenes, collide, wantTotal), \
+           (66, 59, 66, True, 12, 167), \
+           ("scenes with ambient effects; those supplying every wanted sprite id from "
+            "their OWN stream; those wanting an id the global library lacks - ALL of "
+            "them, which is why the table must follow the scene; ids defined in both "
+            "(the global would win and draw the wrong picture); wanted ids in all")
+
+def c_engine_impasse_fx():
+    r"""`engine/`: the Impasse cutscene actually PRODUCES effects.
+
+    A live Session, AREA 222 with SCENE 55 over it, run for 900 frames. The
+    sixteen beats fire **15 set-piece rows** through the object-start path
+    (`sub_451470(0, id)` at the tail of `ScriptObject_Start`, which shows every
+    section E row whose `+8`/`+12` match the id) and the particle field peaks
+    at **108** live particles, alive on 262 of the 900 frames.
+
+    **This check exists because a regression got past the whole suite.**
+    Issue 52 stopped `reloadScene` rebuilding the runner when the area is
+    unchanged - correct - but `Session::loadScene` set the area tracker
+    WITHOUT binding the `.sfx`, so the later `reloadScene` early-returned and
+    the bind never happened. Every one of these numbers went to 0 and all 254
+    checks still passed, because nothing asserted a scene's effects from a
+    live Session: `engine: particles` drives the field directly and
+    `dump_fx`'s corpus walk never runs a Session at all. `Area_LoadScx`
+    (0x0041B4E0) loads the `.SCX` and binds the `.sfx` in ONE function, so
+    every path that makes an `.SCX` resident owes the bind; `attachSceneSfx`
+    is that, called from both.
+
+    Emitters peak at 0 and that is not a fault: the Impasse's rows are
+    object-fired one-shots, and `sub_451600` registers one emitter per shown
+    row per frame, which is consumed within the tick. The standing family -
+    rows keyed `(1, -1)` - is what `Sfx_BindAmbientEffects` shows itself, and
+    the Impasse carries none.
+    """
+    import subprocess, tempfile, shutil
+    fr = omkpaths.data_root()
+    if not os.path.isdir(fr):
+        return ("no data",), ("data",), "needs the shipped tree"
+    eng = os.path.join(ROOT, "engine")
+    b = subprocess.run(["make", "-s", "build/impasse_fx"], cwd=eng,
+                       capture_output=True, text=True)
+    binp = os.path.join(eng, "build", "impasse_fx")
+    if b.returncode != 0 or not os.path.exists(binp):
+        return ("build failed",), ("built",), "engine/ must build"
+    tmp = tempfile.mkdtemp()
+    try:
+        out = os.path.join(tmp, "i.bin")
+        subprocess.run([binp, fr, os.path.join(ROOT, "tables", "vm_opcodes.json"),
+                        os.path.join(fr, "IAM", "START"),
+                        os.path.join(fr, "SCPTDATA"), out],
+                       capture_output=True, text=True)
+        raw = open(out, "rb").read()
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+    if len(raw) < 16:
+        return ("no output",), ("16 bytes",), "the probe must write its record"
+    fired, peak, frames, emitters = struct.unpack_from("<4i", raw, 0)
+    return (fired, peak, frames, emitters), (15, 108, 262, 0), \
+           ("the Impasse's beats fire 15 set-piece rows and peak at 108 live "
+            "particles, alive on 262 of 900 frames")
+
 def c_engine_env_anim():
     r"""`engine/`: the ENVIRONMENT's own animations, and the fan that turns.
 
@@ -6291,7 +6401,20 @@ def c_engine_set_emitters():
     report's "not only the ones triggered by the scene" had two answers and
     this is the one that was missing.
 
-    **319 emitters over 12 sets** by that walk - but note what the walk cannot
+    **A BINDING NAMES ITS EFFECT BY ID, NOT BY POSITION**, and getting that
+    wrong is what a play report saw as *all generic effects (street lights,
+    fire, smoke) are rendered as smoke*. Section C's `+0` id is 1-based and
+    does not track the array index: in `anekbah.sfx` index 3 carries id **5**
+    and is `neon`, so `'neon' -> effect 5` means the effect whose id is 5.
+    Indexing the array instead handed it `effects[5]`, `agri`, a grey smoke -
+    and since the smoke effects outnumber the rest, nearly every binding in
+    the game landed on one. `tools/ambientfx.py` keys its rows `rows[e["id"]]`
+    and was right all along; the port was corrected to match, which moved
+    ANEKBAH from 160 to **153, the number the reference has always printed**.
+    `docs/ASSETS.md` 3b records the same 1-based rule for the set-piece path,
+    where it was applied, and it was never carried across to this one.
+
+    **325 emitters over 12 sets** by that walk - but note what the walk cannot
     see: it pairs a `.SFX` with the `.3DO` of the SAME STEM, and the game does
     not. `attachSfx` takes the resident SCENE's file with its extension swapped
     and `bindSetEmitters` is handed the AREA's `+97` set, so the Impasse is
@@ -6300,13 +6423,16 @@ def c_engine_set_emitters():
     session log of the running game said otherwise. The corpus number is
     therefore a FLOOR, not a total.
 
-    The 319 is also not quite the 321
+    The 325 is not quite the 321
     `docs/ASSETS.md` 3b quotes from `tools/ambientfx.py`. The two differ by
-    two, in the direction that says this walk misses a pair the Python one
-    finds even though the Python one filters HARDER (it also requires the
-    effect's sprite to resolve in the scene's chunk 4). Recorded as a
-    difference rather than reconciled by moving one of the numbers; it is
-    bounded, it is two, and both sides agree on the 12 sets.
+    four, and the direction REVERSED when the id fix landed: this walk now
+    finds four the Python does not. The Python keys `tags[tag] = e`, one
+    binding per TAG, so a set that binds the same tag twice collapses there
+    and does not here; it also filters harder, requiring the effect's sprite
+    to resolve in the scene's chunk 4. Recorded as a difference rather than
+    reconciled by moving a number; it is bounded, it is four, both sides agree
+    on the 12 sets, and they now agree EXACTLY on ANEKBAH's 153, which is the
+    set the discrepancy used to live in.
     """
     import subprocess, tempfile, shutil
     eng = os.path.join(ROOT, "engine")
@@ -6326,7 +6452,7 @@ def c_engine_set_emitters():
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
     v = struct.unpack_from("<5i", raw, 0)
-    return v, (42, 400, 319, 12, 3), \
+    return v, (42, 400, 325, 12, 3), \
            "sets carrying both a `.SFX` and a `.3DO` of the same stem; the " \
            "meshes flagged 0x40000000 across them; how many BIND to a " \
            "section-D tag and so register an emitter; over how many sets " \
@@ -16503,7 +16629,7 @@ def c_licence_headers():
                    if TAG in open(p, encoding="utf-8",
                                   errors="replace").read(600)]
     return (authored, sorted(missing), len(vendored), mislabelled), \
-           (288, [], 1, []), \
+           (294, [], 1, []), \
            "authored source files under tools/, engine/src, engine/tools, " \
            "engine/backends and scripts/; those MISSING the SPDX tag; " \
            "vendored files in engine/third_party; and vendored files wrongly " \
@@ -17910,6 +18036,8 @@ SLOW = [
     ("engine: scene steps", c_engine_scene_steps, "engine/README"),
     ("engine: scene survive", c_engine_scene_survive, "todo/omk-play"),
     ("engine: env anim", c_engine_env_anim, "todo/omk-play"),
+    ("engine: impasse fx", c_engine_impasse_fx, "todo/omk-play"),
+    ("sprite ids scene-local", c_sprite_ids_are_scene_local, "docs/ASSETS"),
     ("engine: scene sounds", c_engine_scene_sounds, "engine/README"),
     ("engine: actor sounds", c_engine_actor_sounds, "engine/README"),
     ("engine: camera roll", c_engine_camera_roll, "engine/README"),

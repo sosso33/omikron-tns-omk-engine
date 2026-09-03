@@ -177,8 +177,22 @@ int SceneRunner::bindSetEmitters(std::span<const std::byte> modelData) {
             for (int k = 0; k < 4; ++k)
                 tag |= static_cast<std::uint32_t>(static_cast<unsigned char>(b.tag[k])) << (8 * k);
             if (tag != want) continue;
-            if (b.effect < 0 || b.effect >= static_cast<int>(sfx_.effects.size())) continue;
-            fx_.add(sfx_.effects[static_cast<std::size_t>(b.effect)], m.pos);
+            // A BINDING NAMES ITS EFFECT BY ID, NOT BY POSITION. Section C's
+            // `+0` id is 1-based and does not track the array index: in
+            // `anekbah.sfx` index 3 carries id **5** and is `neon`, so the
+            // binding `'neon' -> effect 5` means "the effect whose id is 5".
+            // Indexing the array instead handed it `effects[5]`, `agri` - a
+            // grey smoke - and because the smoke effects outnumber the rest,
+            // nearly every binding in the game resolved to one. That is a
+            // street light, a fire and a smoke all coming out as smoke.
+            //
+            // ASSETS 3b records the same rule for the set-piece path (a row's
+            // `+52`); it was never applied here.
+            const FxEffect* fx = nullptr;
+            for (const auto& e : sfx_.effects)
+                if (e.id == b.effect) { fx = &e; break; }
+            if (!fx) continue;
+            fx_.add(*fx, m.pos);
             ++n;
             break;                       // one emitter a mesh
         }

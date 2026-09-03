@@ -72,6 +72,7 @@
 #include <map>
 #include <memory>
 #include <mutex>
+#include <set>
 #include <string>
 
 // The live renderer's factory. DECLARED rather than included: A8 rule 2 keeps
@@ -1580,6 +1581,9 @@ int main(int argc, char** argv) {
     std::size_t playerTexBase = 0, spriteTexBase = 0;
     // sprite id -> its slot within the pool's sprite section, or -1
     std::vector<int> spriteSlot;
+    // The sprite ids the resident scene can actually name - what goes in the
+    // pool, as opposed to everything that decoded.
+    std::set<int> spriteWanted, spritePooled;
     bool poolOverflowTold = false;
     const bool stagedProbe = std::getenv("OMK_STAGE_PROBE") != nullptr;
     // One `.3DO`/`.3DT` per MODEL NAME, loaded once and shared by every actor
@@ -1731,6 +1735,17 @@ int main(int argc, char** argv) {
         }
         return n;
     };
+    // WHICH scene's sprites `spriteTex` currently holds. An effect names its
+    // sprite by ID and `Sfx_TickAmbient` resolves that id through the SCENE
+    // (`sub_4A5800`), and the ids are scene-local: `Grid.sfx` wants 9..12 and
+    // `Grid.SCX` registers exactly those, `anekbah.sfx` wants 49589..49591 and
+    // `anekbah.SCX` registers exactly those. Loading one scene's sprites ONCE
+    // at boot and then changing scene leaves every later effect resolving
+    // against the wrong table - Anekbah's three ids fall outside it entirely
+    // and draw nothing, which is fire and smoke not working, while the
+    // Impasse's 13/14/114... collide with the GLOBAL library's and draw the
+    // wrong picture, which is `todo/omk-play.md` 48.
+    std::string spriteScx;
     {
         const int glob = loadSprites("aventure.SCX");
         // ...then the SCENE's own, which is what `Sfx_TickAmbient` resolves
@@ -1744,7 +1759,24 @@ int main(int argc, char** argv) {
                     "0..%zu, %zu frames in all\n", glob, local,
                     session.scene().file().c_str(), okTex,
                     spriteTex.empty() ? 0 : spriteTex.size() - 1, frames);
+        spriteScx = session.scene().file();
     }
+    // Re-run that whenever the resident scene changes. The global library is
+    // reloaded first because the scene's ids WIN where the two collide, which
+    // is the order `Sfx_TickAmbient` resolves in.
+    const auto refreshSprites = [&]() {
+        if (session.scene().file() == spriteScx) return;
+        spriteScx = session.scene().file();
+        spriteTex.clear();
+        spriteFr.clear();
+        const int glob = loadSprites("aventure.SCX");
+        const int local = spriteScx.empty() ? 0 : loadSprites(spriteScx);
+        int okTex = 0;
+        for (const auto& t : spriteTex) if (t.width) ++okTex;
+        std::printf("sprites: reloaded for %s - %d global + %d local, %d decoded\n",
+                    spriteScx.empty() ? "<none>" : spriteScx.c_str(), glob, local, okTex);
+        ++poolComposition;          // the sprite section of the pool changed
+    };
 
     omk::SoftwareRenderer worldSw;
     omk::Renderer& world = vkRen ? *vkRen : static_cast<omk::Renderer&>(worldSw);
@@ -3070,9 +3102,19 @@ int main(int argc, char** argv) {
             // models with the same texture count swapping is exactly what a
             // size test cannot see.
             const bool drawPlayer = adventure && playerReady;
+            refreshSprites();
             const bool wantSprites = session.scene().effects().count() && !spriteTex.empty();
+            // Which sprite ids the resident scene can name. Computed BEFORE the
+            // rebuild test and compared, because a scene that starts asking for
+            // an id it was not asking for before needs a slot for it - a
+            // composition counter cannot see that.
+            spriteWanted.clear();
+            for (const auto& e : session.scene().sfx().effects)
+                spriteWanted.insert(static_cast<int>(e.sprite));
+            for (const auto& pa : session.scene().effects().particles())
+                spriteWanted.insert(pa.sprite);
             if (poolBuiltFor != poolComposition || poolHasSprites != wantSprites ||
-                poolHasPlayer != drawPlayer) {
+                poolHasPlayer != drawPlayer || spritePooled != spriteWanted) {
                 pool = worldTex;
                 for (auto& cm : charModels) {
                     cm.second.texBase = pool.size();
@@ -3097,17 +3139,40 @@ int main(int argc, char** argv) {
                 // `spriteSlot` maps an id to its place. The id-keyed arrays
                 // stay as they are - `particleGeometry` needs them for the
                 // frame walk and the quad extent.
+                //
+                // ...and only the ones this SCENE can ask for. Every decoded
+                // sprite used to go in - 24 of them, the global library's 20
+                // plus the scene's - and with ANEKBAH's 20 set textures, a
+                // second resident set, the staged characters and the player
+                // ahead of them the pool ran past **64**, which is all a
+                // bucket key's low six bits can address (`slot & 0x3F`). Past
+                // that a sprite aliases onto another slot and draws someone
+                // else's picture, which is a street light and a fire both
+                // coming out as smoke: `EFFECTS2_GLOW` and `EFFECTS2_SMOKE1`
+                // are different sprites sharing one atlas, so an aliased slot
+                // lands on the neighbour and looks exactly like it.
+                //
+                // A scene asks for very few: Anekbah's twenty effects name
+                // THREE sprites (49589 smoke, 49590 glow, 49591 explo). So
+                // take the ids its own `.sfx` names, plus any a live particle
+                // is already carrying, and pool those alone.
                 spriteSlot.assign(spriteTex.size(), -1);
                 if (wantSprites)
-                    for (std::size_t i = 0; i < spriteTex.size(); ++i) {
+                    for (int id : spriteWanted) {
+                        if (id < 0 || static_cast<std::size_t>(id) >= spriteTex.size()) continue;
+                        const auto i = static_cast<std::size_t>(id);
                         if (spriteTex[i].rgb.empty()) continue;   // an id nothing decoded
                         spriteSlot[i] = static_cast<int>(pool.size() - spriteTexBase);
                         pool.push_back(spriteTex[i]);
                     }
+                if (pool.size() > 64)
+                    std::printf("WARNING: texture pool is %zu, past the 64 a bucket key "
+                                "can address - slots will alias\n", pool.size());
                 poolSize = pool.size();
                 poolBuiltFor = poolComposition;
                 poolHasSprites = wantSprites;
                 poolHasPlayer = drawPlayer;
+                spritePooled = spriteWanted;
                 world.setTextures(pool);
                 // The sprite section comes and goes with the effects, several
                 // times a second; only a change of CAST is worth a line.

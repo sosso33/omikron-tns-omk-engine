@@ -835,7 +835,11 @@ public:
         // area change (rebuild). Asked for by SCENE the area is not known
         // here, and -1 makes the next call rebuild once rather than assume.
         sceneArea_ = kind == ChunkKind::Area ? chunk : -1;
-        return scene_.load(scptDataDir, iam_, table_, kind, chunk);
+        if (!scene_.load(scptDataDir, iam_, table_, kind, chunk)) return false;
+        // `Area_LoadScx` binds the `.sfx` in the same breath as loading the
+        // `.SCX`; so must every path that makes one resident.
+        attachSceneSfx();
+        return true;
     }
     const SceneRunner& scene() const { return scene_; }
     // For a caller that must attach the scene's `.SFX` - the effects belong to
@@ -1023,6 +1027,8 @@ private:
     int  areaTransition(int mode, int ctxIdx, int slot, int area, int f1, int f2);
     // `Area_LoadIntoSlot` / `Area_Load` / `Area_TickLoad` / the pump's tail.
     void loadIntoSlot(int slot, int area);
+    // The `.sfx` beside the resident `.SCX` - `Area_LoadScx`'s second half.
+    void attachSceneSfx();
     void areaLoad(int area, int slot);
     bool tickLoad(int slot);
     void completeLoad(int slot);

@@ -1178,20 +1178,28 @@ void Session::reloadScene(int area, int scene) {
     if (fresh.load(scptData_, iam_, table_, ChunkKind::Area, area)) {
         scene_ = std::move(fresh);
         sceneArea_ = area;
-        // ...and its ambient EFFECTS, the same `AREA +97` stem with a
-        // `.sfx` extension. Binding them is also what SHOWS the standing
-        // set pieces (`Sfx_BindAmbientEffects` walks section E for the
-        // rows keyed `(1, -1)`), so a scene that arrives through a
-        // transition rather than at boot had none of them - the Impasse
-        // reported 0 set pieces where it has eleven.
-        std::string sfx = scene_.file();
-        const auto dot = sfx.rfind('.');
-        if (dot != std::string::npos) {
-            sfx = sfx.substr(0, dot) + ".sfx";
-            scene_.attachSfx(scptData_, sfx);
-        }
+        attachSceneSfx();
     }
 }
+
+// `Area_LoadScx` loads the `.SCX` and binds the matching `.sfx` in ONE
+// function - it rewrites the buffer's extension in place
+// (`Buffer[strlen(Buffer) - 2] = 102`, 'f') and calls `Sfx_LoadFile` then
+// `Sfx_BindAmbientEffects`. So the two belong together, and every path that
+// makes an `.SCX` resident owes the bind: `loadScene` did not, and once
+// `reloadScene` stopped rebuilding unconditionally (issue 52) that omission
+// became visible as the Impasse losing all 15 of its fired set pieces and
+// every particle. Binding is also what SHOWS the standing rows, the ones
+// keyed `(1, -1)` that no object start can reach.
+void Session::attachSceneSfx() {
+    if (scptData_.empty() || !scene_.loaded()) return;
+    std::string sfx = scene_.file();
+    const auto dot = sfx.rfind('.');
+    if (dot == std::string::npos) return;
+    sfx = sfx.substr(0, dot) + ".sfx";
+    scene_.attachSfx(scptData_, sfx);
+}
+
 
 // Opcode 71 `scene.load(area, scene)`, handler 0x403950. After the two
 // fetches and the `SCENES` announcement:
