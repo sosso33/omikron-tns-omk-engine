@@ -363,6 +363,15 @@ with an extra whose head seemed detached was most likely the gym pair with
 their arms raised; `OMK_LOOK_ALL=1` makes every extra look at Kay'l so the
 head aim can be watched on demand.
 
+**Second play, same day (`todo/omk-play.md` 63, 64).** A kissing couple
+intersecting with the woman turned away: the program's Euler (params 4-6,
+`Actor_SetEuler` every tick) was never applied to a program-driven body —
+now a yaw about the pelvis, and the couple embraces. A man seated with his
+shins in the street: the viewer seated the first frame's feet, which for the
+seated clip are the folded legs — now the rest feet plus the root's summed
+y, the engine's `body.y + footY − radius` up to a constant, and he sits on
+the bench.
+
 ### Still to be watched by a person
 
 The walkers' pace and facing over a turn, the following distance, the push
