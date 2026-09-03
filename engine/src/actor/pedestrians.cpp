@@ -13,18 +13,21 @@ namespace {
 
 constexpr float kPi = 3.14159265358979f;
 
-float len3(const float v[3]) { return std::sqrt(v[0] * v[0] + v[1] * v[1] + v[2] * v[2]); }
 float len2(float x, float z) { return std::sqrt(x * x + z * z); }
 
+}  // namespace
+
+float len3(const float v[3]) { return std::sqrt(v[0] * v[0] + v[1] * v[1] + v[2] * v[2]); }
+
 // `sub_453330`: the orientation from a direction. Stored as the unit forward.
-void setHeading(omk::Pedestrian& m, float x, float y, float z) {
+// Not file-local: the vehicles' drive (`sub_456C70`, actor/vehicles.cpp) aims
+// its body the same way, through the same gait function.
+void setHeading(Pedestrian& m, float x, float y, float z) {
     const float n = std::sqrt(x * x + y * y + z * z);
     if (n <= 0.0f) return;
     m.heading[0] = x / n; m.heading[1] = y / n; m.heading[2] = z / n;
-    m.facing = omk::pedFacingOf(m.heading);
+    m.facing = pedFacingOf(m.heading);
 }
-
-}  // namespace
 
 // ------------------------------------------------------------ the clips
 
@@ -164,13 +167,17 @@ void Pedestrians::clear() {
     track_ = OptTrack{}; clips_ = PedClips{};
     models_.clear(); walkers_.clear(); states_.clear(); actionClip_.clear();
     laneHead_.clear(); keyList_.clear(); routeHead_.clear(); groupBusy_.clear();
+    groupBusyVeh_.clear(); crossWaitVeh_ = crossWaitPed_ = 0;
+    vehicles_.clear(); bumped_.clear();
+    playerKnown_ = playerOnRoad_ = false; bumpHold_ = 0.0f; bumpLatch_ = -1;
+    nSliderModels_ = nMotoModels_ = 0;
     talkTarget_ = -1; counter_ = 0; nameNext_[1] = nameNext_[2] = 0;
     loaded_ = false;
 }
 
 void Pedestrians::setModelRadius(const std::string& model, float radius) {
     for (auto& w : walkers_) {
-        if (w.model != model) continue;
+        if (w.vehicle >= 0 || w.model != model) continue;
         w.bodyRadius = radius;
         w.radius = radius * 0.5f;
     }
@@ -178,12 +185,19 @@ void Pedestrians::setModelRadius(const std::string& model, float radius) {
 
 int Pedestrians::liveCount() const {
     int n = 0;
-    for (const auto& w : walkers_) if (w.live) ++n;
+    for (const auto& w : walkers_) if (w.live && w.vehicle < 0) ++n;
+    return n;
+}
+
+int Pedestrians::liveVehicles() const {
+    int n = 0;
+    for (const auto& v : vehicles_) if (v.live) ++n;
     return n;
 }
 
 void Pedestrians::load(const OptTrack& track, const PedClips& clips, std::uint32_t menMask,
-                       std::uint32_t womenMask, int streetActivity, std::uint32_t seed) {
+                       std::uint32_t womenMask, int streetActivity, std::uint32_t seed,
+                       std::uint32_t sliMask, std::uint32_t motoMask) {
     clear();
     if (!track.valid) return;
     track_ = track; clips_ = clips;
@@ -212,7 +226,6 @@ void Pedestrians::load(const OptTrack& track, const PedClips& clips, std::uint32
     if (!menOk) models_.erase(std::remove_if(models_.begin(), models_.end(), [](const ModelQuota& m) { return m.sex == 1; }), models_.end());
     if (!womenOk) models_.erase(std::remove_if(models_.begin(), models_.end(), [](const ModelQuota& m) { return m.sex == 2; }), models_.end());
     loaded_ = true;
-    if (track_.pedFirst >= track_.pedEnd || models_.empty()) return;
     states_.assign(track_.actions.size(), ActionState{});
     actionClip_.resize(track_.actions.size());
     for (std::size_t i = 0; i < track_.actions.size(); ++i) actionClip_[i] = track_.actions[i].clip;
@@ -220,17 +233,26 @@ void Pedestrians::load(const OptTrack& track, const PedClips& clips, std::uint32
     keyList_.assign(track_.keys.size(), {});
     routeHead_.assign(track_.routes.size(), {});
     groupBusy_.assign(track_.groups.size(), 0);
-    walkers_.reserve(kMaxWalkers);
-    // THE DENSITY: `(5 - SBYTE2(dword_90E724)) * u32i(dword_8F5E48, 3)`
-    spawnAlongLanes(static_cast<float>((5 - level_) * static_cast<int>(track_.pedSpacing)));
+    groupBusyVeh_.assign(track_.groups.size(), 0);
+    walkers_.reserve(static_cast<std::size_t>(kMaxWalkers + kMaxVehicles));
+    // `Slider_Init` runs its two halves in order and each has its own gate:
+    // the crowd needs a pedestrian lane range and a model, the traffic needs
+    // vehicle lanes. Neither is a precondition of the other, and Lahoreh
+    // (0 vehicle lanes) and a maskless area each exercise one of them.
+    if (track_.pedFirst < track_.pedEnd && !models_.empty()) {
+        // THE DENSITY: `(5 - SBYTE2(dword_90E724)) * u32i(dword_8F5E48, 3)`
+        spawnAlongLanes(track_.pedFirst, track_.pedEnd,
+                        static_cast<float>((5 - level_) * static_cast<int>(track_.pedSpacing)), false);
+    }
     // `Slider_Init`'s last loop: every pedestrian's speed factor and base speed
     for (auto& w : walkers_) {
-        if (!w.live) continue;
+        if (!w.live || w.vehicle >= 0) continue;
         const float f = static_cast<float>(5 - static_cast<int>(rnd() % 10)) * 0.05f + 1.0f;
         w.speedFactor = f;
         const float stride = w.clip ? w.clip->strideX256 : 0.0f;
         w.baseSpeed = w.speed = f * stride;
     }
+    loadVehicles(sliMask, motoMask);
 }
 
 int Pedestrians::spawnCount(const OptTrack& t, int level) {
@@ -254,10 +276,11 @@ int Pedestrians::spawnCount(const OptTrack& t, int level) {
     return n;
 }
 
-void Pedestrians::spawnAlongLanes(float spacing) {
+void Pedestrians::spawnAlongLanes(std::uint32_t firstLane, std::uint32_t endLane,
+                                  float spacing, bool vehicles) {
     const float threshold = kSpawnSpacingFactor * spacing;
     float acc = 0.0f;
-    for (std::uint32_t li = track_.pedFirst; li < track_.pedEnd; ++li) {
+    for (std::uint32_t li = firstLane; li < endLane; ++li) {
         const auto& L = track_.lanes[li];
         float p[3] = {L.origin[0], L.origin[1], L.origin[2]};
         for (int k = 0; k < L.keyCount; ++k) {
@@ -265,7 +288,10 @@ void Pedestrians::spawnAlongLanes(float spacing) {
             const float len = len3(K.delta);
             if (acc > threshold) {
                 float dir[3] = {K.delta[0] / len, K.delta[1] / len, K.delta[2] / len};
-                if (!spawnOne(static_cast<int>(li), p, dir, len, k)) return;   // the 200 cap ends the walk
+                // the callback returning 0 - the pool full - ends the walk
+                const bool ok = vehicles ? spawnVehicle(static_cast<int>(li), p, dir, len, k)
+                                         : spawnOne(static_cast<int>(li), p, dir, len, k);
+                if (!ok) return;
                 acc = 0.0f;
             }
             acc += len;
@@ -415,7 +441,7 @@ bool Pedestrians::checkAheadOnLane(Pedestrian& m, const float p[3], int lane, in
     return false;
 }
 
-bool Pedestrians::reserve(const OptRoute& r, int leaving, int entering) {
+bool Pedestrians::reserve(const OptRoute& r, int leaving, int entering, bool vehicle) {
     // `sub_453230`: `entering` 0 is the route's own group, k > 0 its step k;
     // busy means wait; else every group in its list is marked. `leaving` the
     // same way, unmarking. -1 for neither.
@@ -426,18 +452,32 @@ bool Pedestrians::reserve(const OptRoute& r, int leaving, int entering) {
     if (entering > -1) {
         const int g = groupOf(entering);
         if (g != -1) {
-            if (groupBusy_[static_cast<std::size_t>(g)] > 0) return true;
+            if (groupBusy_[static_cast<std::size_t>(g)] > 0) {
+                // whose marks are they? the OTHER class's is the interesting
+                // case, and the one a per-class counter could never produce
+                const int veh = groupBusyVeh_[static_cast<std::size_t>(g)];
+                const int ped = groupBusy_[static_cast<std::size_t>(g)] - veh;
+                if (vehicle && ped > 0) ++crossWaitVeh_;
+                if (!vehicle && veh > 0) ++crossWaitPed_;
+                return true;
+            }
             const auto& G = track_.groups[static_cast<std::size_t>(g)];
-            for (int i = 0; i < G.count; ++i)
-                ++groupBusy_[static_cast<std::size_t>(track_.lists[static_cast<std::size_t>(G.first + i)])];
+            for (int i = 0; i < G.count; ++i) {
+                const std::size_t e = static_cast<std::size_t>(track_.lists[static_cast<std::size_t>(G.first + i)]);
+                ++groupBusy_[e];
+                if (vehicle) ++groupBusyVeh_[e];
+            }
         }
     }
     if (leaving != -1) {
         const int g = groupOf(leaving);
         if (g != -1) {
             const auto& G = track_.groups[static_cast<std::size_t>(g)];
-            for (int i = 0; i < G.count; ++i)
-                --groupBusy_[static_cast<std::size_t>(track_.lists[static_cast<std::size_t>(G.first + i)])];
+            for (int i = 0; i < G.count; ++i) {
+                const std::size_t e = static_cast<std::size_t>(track_.lists[static_cast<std::size_t>(G.first + i)]);
+                --groupBusy_[e];
+                if (vehicle) --groupBusyVeh_[e];
+            }
         }
     }
     return false;
@@ -455,7 +495,7 @@ int Pedestrians::changeSegment(int wi, int oldLane, std::uint32_t newFlags, int 
     if ((m.flags ^ newFlags) & 0x10u) {
         if (!(newFlags & 0x10u)) {
             // leaving the route onto its destination lane
-            reserve(R, oldSeg, -1);
+            reserve(R, oldSeg, -1, m.vehicle >= 0);
             m.lane = R.dest;
             ++m.laneChanges;
             const auto& L = track_.lanes[static_cast<std::size_t>(m.lane)];
@@ -467,7 +507,7 @@ int Pedestrians::changeSegment(int wi, int oldLane, std::uint32_t newFlags, int 
             result = 1;
         } else {
             // entering the route from the lane's last key
-            if (reserve(R, -1, 0)) { m.flags |= 1u; return -1; }
+            if (reserve(R, -1, 0, m.vehicle >= 0)) { m.flags |= 1u; return -1; }
             const auto& L = track_.lanes[static_cast<std::size_t>(oldLane)];
             from = L.keyCount - 2 >= 0 ? &keyList_[static_cast<std::size_t>(L.firstKey + L.keyCount - 2)]
                                        : &laneHead_[static_cast<std::size_t>(oldLane)];
@@ -475,7 +515,7 @@ int Pedestrians::changeSegment(int wi, int oldLane, std::uint32_t newFlags, int 
             result = 0;
         }
     } else if (newFlags & 0x10u) {
-        if (reserve(R, oldSeg, oldSeg + 1)) { m.flags |= 1u; return -1; }
+        if (reserve(R, oldSeg, oldSeg + 1, m.vehicle >= 0)) { m.flags |= 1u; return -1; }
         return oldSeg + 1;
     } else {
         const auto& L = track_.lanes[static_cast<std::size_t>(oldLane)];
@@ -588,7 +628,7 @@ void Pedestrians::setClip(Pedestrian& m, const PedClip* c) {
     m.footY = 0.0f;
 }
 
-int Pedestrians::gait(Pedestrian& m, const float toMover[3], float dist) {
+int Pedestrians::gait(Pedestrian& m, const float toMover[3], float dist, float near, float far) {
     // `sub_455D10`: how the mover paces the body
     const float d256 = dist * 256.0f;
     if (d256 < 512.0f) {
@@ -597,8 +637,8 @@ int Pedestrians::gait(Pedestrian& m, const float toMover[3], float dist) {
     }
     setHeading(m, toMover[0], toMover[1], toMover[2]);       // `sub_453330`
     const int walking = (m.flags & 1u) ? 2 : 1;
-    if (d256 >= kGaitNear * 256.0f) {
-        m.speed = (kGaitFar * 256.0f >= d256) ? m.baseSpeed : 0.0f;
+    if (d256 >= near * 256.0f) {
+        m.speed = (far * 256.0f >= d256) ? m.baseSpeed : 0.0f;
         return walking;
     }
     if (m.flags & 1u) return 0;
@@ -687,7 +727,10 @@ void Pedestrians::bodyStep(int wi, float dt) {
     m.body[0] += d[0]; m.footY += d[1]; m.body[2] += d[2];
     const float to[3] = {m.pos[0] - m.body[0], m.pos[1] - m.body[1], m.pos[2] - m.body[2]};
     float dist = len3(to);
-    const float moved = len2(to[0] - offBefore[0], to[2] - offBefore[2]);
+    // offBefore is the (x, z) pair: its z is [1]. Reading [2] walked one
+    // float off the end of the array, so the side-step countdown below was
+    // fed a distance with a garbage z. `-Warray-bounds` had been flagging it.
+    const float moved = len2(to[0] - offBefore[0], to[2] - offBefore[1]);
     std::uint32_t wanted;
     if (m.flags & 0x20u) {
         m.sideLen -= moved;
@@ -695,7 +738,7 @@ void Pedestrians::bodyStep(int wi, float dt) {
         setHeading(m, m.side[0], 0.0f, m.side[1]);
         wanted = oldFlags & ~0x100u;
     } else {
-        wanted = gait(m, to, dist) == 0 ? (oldFlags | 0x100u) : (oldFlags & ~0x100u);
+        wanted = gait(m, to, dist, kGaitNear, kGaitFar) == 0 ? (oldFlags | 0x100u) : (oldFlags & ~0x100u);
     }
     if ((m.flags ^ wanted) & 0x100u) {
         if (wanted & 0x100u) { setClip(m, clips_.randomOfType(m.sex, 11, rng_)); m.flags |= 0x100u; }
@@ -830,7 +873,7 @@ void Pedestrians::tick(float dt) {
     if (!loaded_) return;
     for (int wi = 0; wi < static_cast<int>(walkers_.size()); ++wi) {
         Pedestrian& m = walkers_[static_cast<std::size_t>(wi)];
-        if (!m.live) continue;
+        if (!m.live || m.vehicle >= 0) continue;   // a vehicle's mover: the road loop below
         if (!(m.flags & 0x80u)) {
             bodyStep(wi, dt);
         } else {
@@ -838,6 +881,7 @@ void Pedestrians::tick(float dt) {
             actionStep(wi, dt);
         }
     }
+    tickVehicles(dt);
 }
 
 int Pedestrians::actionPhase(int w) const {

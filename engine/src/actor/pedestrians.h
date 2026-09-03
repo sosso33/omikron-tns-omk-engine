@@ -61,6 +61,66 @@ inline constexpr float kGaitNear = 19.5f, kGaitFar = 58.5f;
 // 10/20/30/40 m in inches) - for a frontend; the pool does not draw
 inline constexpr float kLodDistances[4] = {393.7007751f, 787.4015503f, 1181.1024170f, 1574.8031006f};
 
+// ------------------------------------------------------------ the vehicles
+//
+// The ROAD TRAFFIC - the hover-taxis and the motos that share the circuit
+// with the walkers (todo/road-traffic.md, docs/STREET_LIFE.md 2b). Read from
+// `Slider_Init`'s vehicle half, `sub_4543F0` (the spawner over lanes
+// `header[2]..header[5]`), `sub_4544B0` (the spawn callback and the 40-slot
+// ride pool), and the tick `Sliders_Tick` -> `sub_456530` -> `sub_456C70`
+// (the drive) + `sub_456B40` (the sound).
+//
+// A vehicle is a MOVER like a walker - the engine's 240-slot pool is shared
+// and so is this one - but its body is not posed by a clip: it is a point
+// chasing the mover at a speed of its own, accelerating to a cap and braking
+// when the mover is blocked. So `Vehicle` holds the ride record and the mover
+// stays in the shared pool, which is what keeps the occupancy lists and the
+// reservation groups common to both classes. That sharing is not a
+// convenience: 70 of Anekbah's groups are reachable from both a pedestrian
+// and a vehicle route, and they are what stops the two crossing into each
+// other.
+inline constexpr int   kMaxVehicles = 40;          // `Mem_Calloc(0x28, 0x18)`
+inline constexpr float kVehGaitNear = 195.0f;      // `unk_4C8888`
+inline constexpr float kVehGaitFar  = 390.0f;
+inline constexpr float kVehSpawnSpeed = 256.0f;    // mover +52/+56 at spawn, and the brake floor
+inline constexpr float kVehSpeedCap = 5000.0f;     // the ride record's +12
+inline constexpr float kVehAccel = 256.0f;         // per frame, while running
+inline constexpr float kVehBrake = 768.0f;         // per frame, while blocked or braking for the player
+inline constexpr float kVehRunOver = 1706.6666f;   // above this a touch raises message 17
+inline constexpr float kVehBrakeRange = 195.0f;    // it brakes for a player this near
+inline constexpr float kVehSoundRange = 585.0f;    // sliderm01 starts inside, stops outside
+inline constexpr float kVehNodeLift = 30.75f;      // `sub_437F80(node, x, y - 30.75, z)`
+// `dword_4C8860`: the four LOD distances a vehicle is drawn at, 20/30/40/50 m
+// in inches - the crowd's (`kLodDistances`) start at 10
+inline constexpr float kVehLodDistances[4] = {787.4015503f, 1181.1024170f, 1574.8031006f, 1968.5039062f};
+
+// The two model tables compiled into the executable, 12 bytes a row like the
+// crowd's: `aSliFn` is TWO rows, both "sli_fn", and `aMoto` is one. Row 0 of
+// the sliders is the slot `sub_4544B0` reserves for the player's own vehicle,
+// so an ambient slider is only ever drawn from row 1 up - which is why an
+// area whose slider mask is 1 (Qalisar) puts nothing but motos on its roads.
+// `kind` is 1 for the sliders and 0 for the motos, the sense of
+// `sub_4544B0`'s coin.
+const std::vector<std::string>& vehModelTable(int kind);
+
+struct Vehicle {
+    bool  live = false;
+    int   kind = 1;                 // 1 a slider, 0 a moto
+    std::string model;              // the .3do stem, as the table spells it
+    int   mover = -1;               // into the shared pool - the record's +0
+    int   state = 0;                // +8: 0 ambient traffic, 1..7 the player's ride
+    float speedCap = kVehSpeedCap;  // +12
+    int   sound = -1;               // +20, the sliderm01 voice; -1 = not playing
+    bool  reserved = false;         // +22 == 1: slot 0, the player's own slider
+    // Which sub-object of the model is the body. `sub_4544B0` hands ambient
+    // traffic `v16[1]` (sub-object 0, the heaviest) and the reserved slider
+    // `v16[2]` (sub-object 1); the LOD chain is built over 1..3 either way.
+    // READ FROM THE CALL SITES AND NOT YET JUDGED BY EYE.
+    int   lodBase = 0;
+    // counters for the checks
+    int   stops = 0, brakes = 0, bumps = 0, soundOn = 0;
+};
+
 // One clip of the pedestrian library (ANIMS\PASSANTH.ANI) as the pool needs
 // it. `slot` is the id the action points name (`sub_434630` matches +4);
 // `type` is what `List_PickRandomByType` picks by: 9 the walk, 11 the idle,
@@ -115,6 +175,9 @@ void  pedHeadingOf(float facingDeg, float heading[3]);
 
 struct Pedestrian {
     bool         live = false;
+    // -1 for a walker; otherwise the `Vehicle` this mover belongs to. The
+    // engine has one 240-slot mover pool for both classes and so has this.
+    int          vehicle = -1;
     int          sex = 1;                     // 1 man, 2 woman (record +20)
     std::string  model, name;
     // ---- the mover (the 192-byte slot)
@@ -152,6 +215,11 @@ struct Pedestrian {
     int          laneChanges = 0, blockedFrames = 0, actionsVisited = 0, overtakes = 0;
 };
 
+// `sub_453330`: the orientation from a direction, stored as the unit forward
+// (and the facing kept beside it). Shared with the vehicles' drive.
+void setHeading(Pedestrian& m, float x, float y, float z);
+float len3(const float v[3]);
+
 class Pedestrians {
 public:
     // The whole of `Slider_Init`'s pedestrian half: the models the masks
@@ -159,16 +227,27 @@ public:
     // pedestrian lanes with `spacing = (5 - level) * track.pedSpacing`. The
     // track is copied; `seed` feeds the pool's own xorshift where the engine
     // calls `rand()`.
+    // `sliMask` / `motoMask` are the AREA header's `+172` / `+174` (int16,
+    // `sub_40EA10` / `sub_40E9D0`): passing them adds the ROAD TRAFFIC of
+    // `Slider_Init`'s vehicle half, which the same call places and the same
+    // `tick` drives. Zero leaves the roads empty, so a caller that has not
+    // read them yet keeps exactly the crowd it had.
     void load(const OptTrack& track, const PedClips& clips, std::uint32_t menMask,
-              std::uint32_t womenMask, int streetActivity, std::uint32_t seed = 1u);
+              std::uint32_t womenMask, int streetActivity, std::uint32_t seed = 1u,
+              std::uint32_t sliMask = 0, std::uint32_t motoMask = 0);
     void clear();
     bool loaded() const { return loaded_; }
 
     // `Sliders_Tick`'s pedestrian loop, `dt` in frames (1.0 at 30 fps).
     void tick(float dt);
 
+    // The shared mover pool - walkers and vehicle movers both. A vehicle's
+    // entry carries `vehicle >= 0`; `liveCount` counts the walkers alone, so
+    // every pedestrian number a check quotes is unmoved by the traffic.
     const std::vector<Pedestrian>& walkers() const { return walkers_; }
     int  liveCount() const;
+    const std::vector<Vehicle>& vehicles() const { return vehicles_; }
+    int  liveVehicles() const;
     const OptTrack& track() const { return track_; }
     int  streetActivity() const { return level_; }
     // the models the masks selected, with their remaining quotas
@@ -194,6 +273,32 @@ public:
     // How many the spawner would place at `level` on this track - the rule
     // alone, for the check against tools/opt_track.py.
     static int spawnCount(const OptTrack& t, int level);
+    // ...and along the VEHICLE lanes, where the density plays no part:
+    // `sub_4543F0` passes `header[4]` to the same walk, undivided.
+    // `cap` false gives what the walk WOULD place with no pool limit, which
+    // is the number that separates the three circuits (126 / 46 / 85 against
+    // three identical 40s).
+    static int vehicleSpawnCount(const OptTrack& t, bool cap = true);
+
+    // `sub_438040` for a vehicle: the body radius of one of the two shipped
+    // models, which the pool cannot read itself.
+    void setVehicleModelRadius(const std::string& model, float radius);
+    // The player's position, for `sub_456C70`'s two tests - the brake and the
+    // run-over. `onRoad` is `dword_8F5E38`, which `Sliders_Tick` sets when the
+    // player's ground probe lands on a mesh named `X...` or `OP...`. Cleared
+    // by `clear()`; a caller that never sets it gets traffic that neither
+    // brakes nor bumps, and `bumped()` stays empty.
+    void setPlayer(const float pos[3], bool onRoad);
+    // The vehicles that raised message 17 this tick (`Game_RaiseEvent(43,
+    // {17, player, 0})`), for the Session to post. The 90-frame latch
+    // (`dword_538E20` / `flt_536C28`) is inside.
+    const std::vector<int>& bumped() const { return bumped_; }
+    // How often a vehicle was held at a reservation group a WALKER had
+    // marked, and the reverse. Nonzero only because the two classes share
+    // `groupBusy_`, the way the engine's one 240-slot mover pool does.
+    int  crossClassWaits(bool vehicleWaiting) const {
+        return vehicleWaiting ? crossWaitVeh_ : crossWaitPed_;
+    }
 
 private:
     struct ActionState {                      // one of `dword_539928`'s 48-byte records
@@ -209,9 +314,19 @@ private:
         int   count = 0;                      // +44
     };
 
-    // sub_453B40 + sub_453ED0
-    void spawnAlongLanes(float spacing);
+    // sub_453B40, over one class's lanes, with its own callback: the walkers'
+    // `sub_453ED0` and the vehicles' `sub_4544B0`. The engine has one walk and
+    // two callers (`Slider_Init` and `sub_4543F0`), and so has this.
+    void spawnAlongLanes(std::uint32_t firstLane, std::uint32_t endLane, float spacing, bool vehicles);
     bool spawnOne(int lane, const float at[3], const float dir[3], float segLen, int keyIndex);
+    // sub_4544B0: the vehicle spawn callback, and `Slider_Init`'s vehicle half
+    bool spawnVehicle(int lane, const float at[3], const float dir[3], float segLen, int keyIndex);
+    void loadVehicles(std::uint32_t sliMask, std::uint32_t motoMask);
+    // Sliders_Tick's vehicle loop -> sub_456530 -> sub_456C70 / sub_456B40
+    void tickVehicles(float dt);
+    void vehicleDrive(int vi, float dt);          // sub_456C70
+    void vehicleSound(int vi);                    // sub_456B40
+    int  newMover();                              // the free-slot scan both callbacks open with
     // sub_454F40 and its helpers
     void moverStep(int w, float dt);
     bool stepLaneKey(const Pedestrian& m, float p[3]) const;                          // sub_455570
@@ -220,10 +335,18 @@ private:
     bool checkAhead(Pedestrian& m, const float p[3], int candidate);                  // sub_455230/2B0/340's test
     bool checkAheadOnLane(Pedestrian& m, const float p[3], int lane, int fromKey);    // sub_455340
     int  changeSegment(int w, int lane, std::uint32_t newFlags, int seg);       // sub_455680
-    bool reserve(const OptRoute& r, int leaving, int entering);                 // sub_453230 (true = wait)
+    // sub_453230 (true = wait). `vehicle` is the ENTERING mover's class,
+    // which the engine has no need of - it keeps one busy count per group -
+    // and which is here only to count the CROSS-CLASS waits: a slider held
+    // at a crossing by a walker, and the reverse. That number is what says
+    // the two populations really share the groups; give them a counter each
+    // and it is 0 by construction.
+    bool reserve(const OptRoute& r, int leaving, int entering, bool vehicle);
     // sub_455830 and its helpers
     void bodyStep(int w, float dt);
-    int  gait(Pedestrian& m, const float toMover[3], float dist);       // sub_455D10
+    // sub_455D10. The two thresholds are the caller's: `unk_4C8880` (19.5 /
+    // 58.5) for a walker, `unk_4C8888` (195 / 390) for a vehicle.
+    int  gait(Pedestrian& m, const float toMover[3], float dist, float near, float far);
     void setClip(Pedestrian& m, const PedClip* c);                      // sub_455E20
     bool beginAction(Pedestrian& m, int actionIndex);                   // sub_455830's 0x80 branch
     // sub_455E90 / sub_4561B0 / sub_456250
@@ -245,6 +368,15 @@ private:
     std::vector<std::int16_t> actionClip_;   // the points' clip ids, cleared while a state uses one
     std::vector<std::vector<int>> laneHead_, keyList_, routeHead_;  // newest first
     std::vector<int> groupBusy_;
+    std::vector<int> groupBusyVeh_;      // of those marks, the vehicles' share
+    std::vector<Vehicle> vehicles_;
+    int   crossWaitVeh_ = 0, crossWaitPed_ = 0;
+    std::vector<int> bumped_;
+    float playerPos_[3] = {0, 0, 0};
+    bool  playerKnown_ = false, playerOnRoad_ = false;
+    float bumpHold_ = 0.0f;                  // `flt_536C28`, 90 frames
+    int   bumpLatch_ = -1;                   // `dword_538E20`
+    int   nSliderModels_ = 0, nMotoModels_ = 0;   // dword_539934 / dword_539930
     int   level_ = kDefaultStreetActivity;
     int   talkTarget_ = -1;
     std::uint32_t rng_ = 1u;
