@@ -90,6 +90,10 @@ UiWidgets UiWidgets::loadJson(const std::string& path) {
     const auto doc = Json::parseFile(path);
     const auto& rows = doc["rows"];
     w.gridHook_ = static_cast<std::uint32_t>(rows["gridHook"].i64());
+    // 0 when the table predates the lift; `press` then never matches it
+    // and the sneak's pages fall through to "unmodelled panel hook",
+    // which is the honest behaviour for an older table.
+    w.moveHook_ = static_cast<std::uint32_t>(rows["moveListsHook"].i64(0));
     w.nameHook_ = static_cast<std::uint32_t>(rows["nameHook"].i64());
     w.startHook_    = static_cast<std::uint32_t>(rows["startConfirmHook"].i64());
     w.startName_    = static_cast<std::uint32_t>(rows["startNameList"].i64());
@@ -126,6 +130,11 @@ UiWidgets UiWidgets::loadJson(const std::string& path) {
         const auto& tl = p["tiles"];
         for (std::size_t t = 0; t < tl.size(); ++t)
             panel.tiles.push_back(static_cast<int>(tl[t].i64(0)));
+        // -1 is the default and means "the open callback did not write it",
+        // which is not the same as list -1: `settle` falls back on the move
+        // rule for those and takes this value for the rest.
+        panel.current = static_cast<int>(p["current"].i64(-1));
+        panel.flags = static_cast<std::uint32_t>(p["flags"].i64(0));
         const auto& ls = p["lists"];
         for (std::size_t j = 0; j < ls.size(); ++j) {
             const auto& l = ls[j];
@@ -133,6 +142,7 @@ UiWidgets UiWidgets::loadJson(const std::string& path) {
             list.addr  = static_cast<std::uint32_t>(l["addr"].i64());
             list.hook  = static_cast<std::uint32_t>(l["hook"].i64());
             list.flags = static_cast<std::uint32_t>(l["flags"].i64());
+            list.select = static_cast<int>(l["select"].i64(-1));
             list.broadcast = flagOps(l["broadcast"]);
             const auto& its = l["items"];
             for (std::size_t k = 0; k < its.size(); ++k) {
@@ -248,6 +258,29 @@ const UiPanel* UiWidgets::at(std::uint32_t addr) const {
 
 // ------------------------------------------------------------------- the walk
 
+bool UiWalk::moveLists(int step) {
+    // `sub_42A5C0` (0x0042A5C0), the mover behind every panel hook that
+    // steps between lists. It walks `panel+24` over the `panel+28` count,
+    // skipping a list that is hidden or has nothing selectable in it, and
+    // wraps unless `panel+72` carries 0x80000 - the same NOWRAP bit a list
+    // uses for its own rows.
+    //
+    if (!panel_) return false;
+    const int n = static_cast<int>(panel_->lists.size());
+    if (n <= 0) return false;
+    const int before = cur_;
+    int k = cur_;
+    for (int i = 0; i < n; ++i) {
+        k += step;
+        if (k < 0)       k = panel_->noWrap() ? 0 : n - 1;
+        else if (k >= n) k = panel_->noWrap() ? n - 1 : 0;
+        if (usable(panel_->lists[static_cast<std::size_t>(k)])) break;
+    }
+    cur_ = k;
+    log_.push_back("focus list");
+    return cur_ != before;
+}
+
 bool UiWalk::usable(const UiList& l) const {
     // `Ui_MoveBetweenLists`'s own predicate: not hidden, and something in it
     // can be selected.
@@ -257,19 +290,39 @@ bool UiWalk::usable(const UiList& l) const {
 }
 
 void UiWalk::settle() {
-    // `panel+24` on disk is not the answer - it is runtime state the panel's
-    // builder writes, and every builder is native code. What IS in the data is
-    // the rule the engine uses to move between lists, so apply that: the first
-    // list that is not hidden and has something selectable in it.
+    // `panel+24` on disk is not the answer - it is runtime state, and for
+    // twenty-two of the screens the builder that writes it is native code
+    // this port does not run. What IS in the data is the rule the engine uses
+    // to move between lists, so that is the fallback: the first list that is
+    // not hidden and has something selectable in it.
+    //
+    // **But for fifteen panels the OPEN CALLBACK writes it, and that is
+    // readable.** `tables/ui_widgets.json` carries the write as `current`
+    // (and the matching `list+2` as `select`) when there is one, -1 when
+    // there is not - so this prefers the engine's own value and falls back
+    // only where the engine really does leave it to the move rule. It is
+    // what decides which page of the sneak comes up: without it screen 9
+    // opens on the tab COLUMN with "Identite" lit, and the player is looking
+    // at the inventory page with the highlight somewhere else.
     cur_ = 0;
     sel_.clear();
     if (!panel_) return;
-    for (std::size_t k = 0; k < panel_->lists.size(); ++k)
-        if (usable(panel_->lists[k])) { cur_ = static_cast<int>(k); break; }
+    if (panel_->current >= 0 &&
+        static_cast<std::size_t>(panel_->current) < panel_->lists.size()) {
+        cur_ = panel_->current;
+    } else {
+        for (std::size_t k = 0; k < panel_->lists.size(); ++k)
+            if (usable(panel_->lists[k])) { cur_ = static_cast<int>(k); break; }
+    }
     for (const auto& l : panel_->lists) {
-        int j = 0;
-        for (std::size_t i = 0; i < l.items.size(); ++i)
-            if (l.items[i].selectable(l.broadcast)) { j = static_cast<int>(i); break; }
+        int j = -1;
+        if (l.select >= 0 && static_cast<std::size_t>(l.select) < l.items.size())
+            j = l.select;
+        if (j < 0) {
+            j = 0;
+            for (std::size_t i = 0; i < l.items.size(); ++i)
+                if (l.items[i].selectable(l.broadcast)) { j = static_cast<int>(i); break; }
+        }
         sel_[l.addr] = j;
     }
 }
@@ -306,10 +359,17 @@ const UiItem* UiWalk::selected() const {
     return &l->items[static_cast<std::size_t>(j)];
 }
 
-bool UiWalk::move(const UiList& l, std::uint32_t bits) {
+bool UiWalk::move(const UiList& l, std::uint32_t bits,
+                  std::uint32_t back, std::uint32_t on) {
+    // `sub_42A7E0(screen, list, a3, a4)` - `Ui_MoveSelection`, and the two
+    // bits are PARAMETERS. The default dispatch passes `(4, 8)`, UP and DOWN;
+    // `sub_42A930`, the hook the sneak's verb bar names, passes `(1, 2)` -
+    // LEFT and RIGHT, because that row of buttons runs across the screen. One
+    // function, two bindings, which is why this takes them rather than
+    // hard-coding UP/DOWN as it did.
     if (l.items.empty()) return false;
     const int n = static_cast<int>(l.items.size());
-    const int step = (bits & kUiUp) ? -1 : (bits & kUiDown) ? 1 : 0;
+    const int step = (bits & back) ? -1 : (bits & on) ? 1 : 0;
     if (step) {
         int j = sel_[l.addr];
         for (int t = 0; t < n; ++t) {              // skip unselectable items
@@ -431,6 +491,13 @@ bool UiWalk::press(std::uint32_t bits) {
     if (panel_->hook) {
         if (panel_->hook == w_->startConfirmHook()) {
             if (startConfirm(bits)) return true;
+        } else if (panel_->hook == w_->moveListsHook()) {
+            // `sub_42A710(screen, panel) = sub_42A5C0(screen, panel, 1, 2)` -
+            // `Ui_MoveBetweenLists` with LEFT stepping back and RIGHT
+            // stepping on. The sneak device's pages name it, and it is what
+            // makes the tab column down their left reachable at all.
+            if (bits & kUiLeft)  { if (moveLists(-1)) return true; }
+            if (bits & kUiRight) { if (moveLists(1))  return true; }
         } else {
             // The engine falls through only when the hook returns 0, and this
             // cannot know which. Fall through, but say the run is no longer
@@ -450,12 +517,15 @@ bool UiWalk::press(std::uint32_t bits) {
         log_.push_back("name field: no bit response");
         return false;
     }
+    if (l->hook == kMoveSelectionLR) {
+        // `sub_42A930(screen, list) = sub_42A7E0(screen, list, 1, 2)` - the
+        // same selection mover the default path uses, bound to LEFT and RIGHT
+        // instead of UP and DOWN. The sneak's verb bar ("Utiliser", "Utiliser
+        // sur", "Examiner") and the slider page's row of buttons are what
+        // name it, and both run across rather than down.
+        return move(*l, bits, kUiLeft, kUiRight);
+    }
     if (l->hook) {
-        // LEFT/RIGHT are deliberately not wired: `Ui_MoveBetweenLists` exists
-        // in the engine, and `tools/sim/ui.py` transcribes it as `_move_lists`
-        // and then NEVER CALLS IT - nothing in the modelled dispatch reaches
-        // it. Matching that is what makes the two comparable; wiring it here
-        // would manufacture a disagreement.
         approx_ = true;
         log_.push_back("unmodelled list hook");
         return false;

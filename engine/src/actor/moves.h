@@ -69,4 +69,53 @@ private:
     std::map<std::string, std::size_t> byName_;
 };
 
+// ---------------------------------------------------------------- the sneak
+//
+// Row 0. `sub_0046ADF0` is short enough to quote whole, and the binary names
+// it itself through its own failure string:
+//
+//     v1 = Actor_Index(a1);
+//     if (sub_41A350(v1) != -1)            // something pending at actor+164
+//         return sub_41C720(g_Player);     // ...use THAT instead, event 10
+//     Game_RaiseEvent(25, 0);              // open object list 0 - the carried
+//     sub_41E040(byte_53B084);
+//     if (!UI_OpenScreen(9, -1, -1, -1)) { // SNEAK
+//         Game_RaiseEvent(26, 0);
+//         return Dbg_Printf("cant start sneak");
+//     }
+//
+// The chain that gets here is entirely in the shipped data, and every link of
+// it was read rather than assumed:
+//
+//   TAB                       scan code 15 = `tables/key_bindings.json`
+//                             group 0 ("Aventure") action 13, "Ouvrir sneak",
+//                             bit 0x2000
+//   -> H1Avnt/F1Avnt.CTL      group 0 entry id 16862575, `+4` input 0x00002000,
+//                             flags 0x05000003 - bit 2 redirects through GoTo
+//   -> its GoTo               group 6's default entry `H_SNKON`
+//   -> that entry's child     flags 0x25000013, bit 0x10 -> move `MDSNEAK0`
+//   -> tab_special_move[0]    sub_0046ADF0, above
+//
+// Both adventure banks carry it and no other `.CTL` does, so the sneak opens
+// in adventure mode and nowhere else - which is the game's behaviour, arrived
+// at from the data rather than from playing.
+//
+// **It has no waiting script.** The `-1` is `UI_OpenScreen`'s waiting-context
+// argument, so `dword_930744` is never written and nothing is parked at
+// status 6 - closing the sneak answers nobody, where leaving a `ui.open`
+// screen IS an answer of -1.
+inline constexpr const char* kMoveOpenSneak = "MDSNEAK0";
+inline constexpr int kScreenSneak = 9;      // the screen table's row 9
+// `Game_HandleEvent` 25 and 26, the two ends of the inventory data channel's
+// session (docs/UI.md "the inventory data channel").
+inline constexpr int kEventSneakOpen = 25, kEventSneakClose = 26;
+// The device's INVENTORY page and its nine row widgets. Both are addresses in
+// the widget tree rather than fields, the way `gridHook` and `nameHook` are -
+// the page because `Ui_OpenSneakFamily` installs it for parameter 0, the list
+// because it is the one whose rows come from the object list rather than from
+// `IAM\Sneak`. Several of the device's pages carry the SAME list, which is why
+// a drawer has to key on the page as well.
+inline constexpr std::uint32_t kPanelSneakInventory = 0x004DEE50u;
+inline constexpr std::uint32_t kListSneakRows       = 0x004DE6F0u;
+
 }  // namespace omk

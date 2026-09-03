@@ -5438,6 +5438,65 @@ def c_engine_screen_close():
            "and SDL was found"
 
 
+def c_engine_sneak():
+    r"""`omk-play`: TAB in a city street opens the sneak, and the game runs on.
+
+    The whole chain `sneak chain` asserts statically, RUN: the frontend maps
+    TAB to DIK 15, the live Aventure scheme turns that into bit 0x2000, the
+    `.CTL` channel matches an entry on it and redirects into group 6, the
+    entry there names `MDSNEAK0`, `tab_special_move` resolves it to
+    `sub_0046ADF0`, and the port does what that function does - open object
+    list 0 and screen 9.
+
+    Started from a SAVE in Anekbah rather than from the boot, because the
+    sneak is only reachable in adventure mode and the intro is three minutes
+    of cutscene. `--no-crowd` keeps the run cheap; the crowd has nothing to do
+    with this.
+
+    The keys are HELD rather than tapped (`--hold`), which is the stream
+    `player_probe` takes, and there is a deliberate gap after TAB: the channel
+    has to walk H_SNKON's clip before the move fires, so a key pressed too
+    soon goes to the WORLD instead of to the screen. That is not a quirk of
+    the rig - it is the animation, and a person sees the same thing.
+
+    **Tier 3.** It is the port agreeing with the port: nothing in
+    `traces/` can reach a sneak, because neither a special move nor the
+    interface announces anything to the tag logger. What it does establish is
+    that the chain is CONNECTED end to end at run time, which no static check
+    can - each link resolving does not mean the next one is ever reached.
+    """
+    import subprocess
+    eng = os.path.join(ROOT, "engine")
+    fr, tb = omkpaths.data_root(), os.path.join(ROOT, "tables")
+    save = os.path.join(ROOT, "traces", "save-appart.bin")
+    if not os.path.isdir(eng) or not os.path.exists(save):
+        return ("skipped",), ("skipped",), "engine/ or the save absent"
+    mk = subprocess.run(["make", "-s", "play"], cwd=eng, capture_output=True, text=True)
+    play = os.path.join(eng, "build", "omk-play")
+    if mk.returncode != 0 or not os.path.exists(play):
+        return (True,) * 5, (True,) * 5, "no SDL - the frontend is optional (PORTING A8)"
+    env = dict(os.environ, SDL_VIDEODRIVER="dummy")
+    r = subprocess.run([play, fr, tb, "--software", "--res", "640x480", "--nofmv",
+                        "--no-crowd", "--save", save, "--area", "0",
+                        "--stand", "1804,0,-6890,336", "--frames", "260",
+                        "--hold", "0*40,k15*3,0*30,k205*4,0*10,k200*4,0*10,"
+                                  "k200*4,0*10,k28*4,0*40"],
+                       capture_output=True, text=True, env=env)
+    o = r.stdout
+    return ("MDSNEAK0 (tab_special_move[0] = 0x0046adf0)" in o,
+            "event 25 opens object list 0, screen 9" in o,
+            "screen 9 opened by the player" in o,
+            "sneak: object list 0 holds" in o,
+            "260 frames presented" in o), \
+           (True, True, True, True, True), \
+           "TAB held in Anekbah: the special move fires and names its " \
+           "tab_special_move row, it raises event 25 for object list 0 and " \
+           "opens screen 9, the screen is attributed to the PLAYER rather " \
+           "than to a script (so closing it answers nobody), the inventory " \
+           "page is filled from the save's carried list, and all 260 frames " \
+           "are presented - the world keeps running underneath"
+
+
 def c_engine_fx():
     r"""`engine/`'s ambient effects - the chain a set's fire and neon come out of.
 
@@ -8188,15 +8247,18 @@ def c_engine_ui():
     mine = [r for r in cpp if r[0] >= 0]
     disagree = sum(1 for a, b in zip(mine, ref) if a != b) + abs(len(mine) - len(ref))
     return (head, len(ref), disagree), \
-           ((35, 93, 411, 377, 36, 57, 35, 0), 28, 0), \
-           "panels (28 screens + 7 children reached through item +44), " \
+           ((44, 125, 572, 516, 48, 77, 44, 0), 31, 0), \
+           "panels (31 screens + 13 children reached through item +44), " \
            "lists, items, SELECTABLE items - which FELL by ten once the " \
            "shops' branch was resolved and each of them started hiding the " \
-           "one of Acheter/Vendre its own arm disables - hooked lists, lists on " \
+           "one of Acheter/Vendre its own arm disables, and rose again with " \
+           "the sneak family - hooked lists, lists on " \
            "the default walk, screens settling on a list in range, and those " \
            "approximate before a key is pressed; then the screens " \
-           "tools/sim/ui.py walks and how many of the 28 the two " \
-           "implementations DISAGREE on - which must be zero"
+           "tools/sim/ui.py walks and how many of the 31 the two " \
+           "implementations DISAGREE on - which must be zero, and it is the " \
+           "check that keeps the panel+24 / list+2 lift and the two movers " \
+           "(sub_42A710, sub_42A930) the same on both sides"
 
 
 def c_engine_ui_answer():
@@ -9607,7 +9669,8 @@ def c_ui_answers():
            "many are attributed to a screen, how many are attributed ONLY " \
            "to screens that discard (0 - the invariant a wrong attribution " \
            "would break), and the screens that keep an answer nothing " \
-           "writes (VIDEOPHONE, whose panel the lift lists unresolved, plus " \
+           "writes (VIDEOPHONE - its panel IS in the lift now, and still " \
+           "no site writes an answer for it, plus " \
            "MULTIPLAN and RESTAURANT, which can only read back the -1); " \
            "and finally the times the widget tree itself names the terminal " \
            "dispatch as an item callback (80), which is what makes the " \
@@ -9867,8 +9930,14 @@ def c_ui_geometry():
     0; reading them unsigned leaves 0..79 unchanged on this corpus and is
     recorded as non-discriminating rather than counted; and taking the item
     coordinate from `+4`/`+6` - the width and height, which are equally
-    plausible int16s at a neighbouring offset - moves 411 in-bounds items to
-    **410** and breaks the LIFT row outright.
+    plausible int16s at a neighbouring offset - moves the in-bounds count
+    below the total and breaks the LIFT row outright.
+
+    The counts grew on 2026-09-04 with the SNEAK FAMILY (`sim/ui.py:
+    SNEAK_ARM`): 9 more panel records, 32 with a tile map rather than 23 -
+    every sneak page shares one map at 0x004DDF60 - and 572 items rather than
+    411, of which 571 have a positive width and height. The one that does not
+    is the same one as before.
     """
     sys.path.insert(0, os.path.join(ROOT, "tools"))
     import json
@@ -9888,7 +9957,7 @@ def c_ui_geometry():
     xy = [(it["x"], it["y"]) for l in lift[0]["lists"] for it in l["items"]][:7] if lift else []
     return (len(items), inb, sized, len(r["panels"]), len(maps), lens, clean,
             menuMap, xy), \
-           (411, 411, 410, 35, 23, [80], 23,
+           (572, 572, 571, 44, 32, [80], 32,
             False,
             [(278, 194), (321, 194), (370, 194),
              (284, 241), (325, 242), (371, 242), (325, 288)]), \
@@ -11889,6 +11958,25 @@ def c_sim_ui_coverage():
     falls back. **No screen may produce an answer through an unmodelled path**,
     which is the property that stops a plausible-looking wrong number reaching
     the simulator.
+
+    **The SNEAK FAMILY joined the tree on 2026-09-04** and moved these numbers
+    by one, which is worth reading rather than re-baselining blind:
+
+    * **VIDEOPHONE (screen 0) walks exactly.** Its panel carries no hook and
+      neither list does, so it needs nothing new - it simply was not in the
+      tree before, because `panel_of` could not tell the family's three arms
+      apart.
+    * **SLIDER (7) and SNEAK (9) still refuse**, and for a reason that is
+      about the game and not about this walker: the pages they open on carry
+      `sub_0049C050`, the sneak's own SCROLLING list hook. It is a windowing
+      handler - it shifts each row widget's `+60` tag over a longer list and
+      raises the two arrow flags at the ends - and none of that is modelled,
+      so driving those rows is approximate and must say so.
+    * What DID become modelled is the pair of movers both pages use for
+      everything else: `sub_42A710` (`Ui_MoveBetweenLists` on LEFT/RIGHT, a
+      panel hook) and `sub_42A930` (`Ui_MoveSelection` on LEFT/RIGHT, the verb
+      bar's list hook). Neither is screen-specific, and the first is why
+      `_move_lists` had sat here transcribed and never called.
     """
     sys.path.insert(0, os.path.join(ROOT, "tools"))
     import ui_tables as U2
@@ -11910,13 +11998,13 @@ def c_sim_ui_coverage():
         else:
             exact.append(sc["id"])
     return (len(live), sorted(exact), len(refused), unsound), \
-           (32, [4, 29, 34], 29, []), \
+           (32, [0, 4, 29, 34], 28, []), \
            "live screens; the ones the GENERIC walker drives with no " \
-           "unmodelled hook - the LIFT, the start menu, and SHOOT HUMAN, whose " \
-           "panel carries no hooks at all (OPTIONS has its own walker and " \
-           "the load panel its own model); how many refuse; " \
-           "and the screens that answered anyway through an unmodelled path " \
-           "- which must be NONE"
+           "unmodelled hook - VIDEOPHONE, the LIFT, the start menu, and " \
+           "SHOOT HUMAN, whose panel carries no hooks at all (OPTIONS has " \
+           "its own walker and the load panel its own model); how many " \
+           "refuse; and the screens that answered anyway through an " \
+           "unmodelled path - which must be NONE"
 
 
 def c_ui_page():
@@ -12123,9 +12211,11 @@ def c_ui_sprites():
     return (total, restores,
             sorted({y for x, y in mult}), sorted(x for x, y in mult),
             bright), \
-           (164, 146, [192], [64, 128, 192, 256],
+           (182, 164, [192], [64, 128, 192, 256],
             {"MULTIPLAN": 4, "BANK": 4, "GANDHAR DOOR": 5}), \
-           "sprite items and how many take their UNLIT source from their own " \
+           "sprite items - 18 more since the sneak family joined the tree, " \
+           "all of them the device's own tab icons and page buttons - and " \
+           "how many take their UNLIT source from their own " \
            "destination (the background restores itself); MULTIPLAN's four " \
            "lit sources - one row, four columns 64 apart, against a vertical " \
            "column of destinations; and on the three screens whose highlight " \
@@ -12340,6 +12430,138 @@ def c_ui_open_answer():
            "sites whose next push.var IS that variable and those that " \
            "DISAGREE (must be zero); and screen 29's single site, which only " \
            "the startup walk sees"
+
+
+def c_sneak_chain():
+    r"""THE SNEAK, end to end: from the key to the screen it opens.
+
+    Every link is in the shipped data or in a table lifted from the image, and
+    this asserts all of them together - which is the point, because each one
+    alone looks like a coincidence:
+
+      TAB                    `tables/key_bindings.json` group 0 ("Aventure")
+                             action 13, "Ouvrir sneak", bit 0x2000,
+                             keyboard 15 = DIK_TAB
+      -> H1Avnt / F1Avnt     a group-0 entry whose `+4` is exactly 0x00002000
+                             and whose flags carry bit 2 - redirect through
+                             GoTo - pointing at group 6's default entry
+      -> group 6             `H_SNKON`, whose child carries flag 0x10 and so
+                             names a move
+      -> tab_special_move[0] `MDSNEAK0` -> `sub_0046ADF0`, which raises event
+                             25 (open object list 0) and opens screen 9
+      -> screen 9            `Ui_OpenSneakFamily` parameter 0: panel
+                             0x004DEE50, current list 3, the tab column
+                             0x004DE210 selected on row 2 - "Inventaire" - and
+                             NOT hidden, where SLIDER and VIDEOPHONE hide it
+
+    **Tier 2, data-constrained.** No capture reaches it: the sneak is opened
+    by a `.CTL` special move and drawn by the interface, and neither
+    announces anything to the tag logger (`traces/fight.log` records the same
+    silence for combat). What can be checked is that the chain RESOLVES, and
+    that it resolves in only one way.
+
+    Shown to fail: the two `.CTL` banks are the only ones carrying MDSNEAK0 -
+    asserting it over all seven `.CTL` files gives 2, not 7; the group-0 entry
+    matching 0x2000 is unique; and swapping the sneak family's three panels
+    between the parameters (the mistake a linear scan makes) puts the tab
+    column's selection on the wrong page and hides it on SNEAK.
+    """
+    sys.path.insert(0, os.path.join(ROOT, "tools"))
+    import json, anim_ctl, omkpaths
+    from sim.ui import Ui, UP, RIGHT, CONFIRM
+
+    # --- the key
+    kb = json.load(open(os.path.join(ROOT, "tables", "key_bindings.json")))
+    sneakKey = [r for r in kb["rows"]["rows"]
+                if r["group"] == 0 and r["action"] == 13]
+    key = (sneakKey[0]["label"], sneakKey[0]["bit"], sneakKey[0]["keyboard"]) \
+        if sneakKey else None
+
+    # --- the move table
+    mv = json.load(open(os.path.join(ROOT, "tables", "special_moves.json")))
+    row0 = (mv["rows"][0]["index"], mv["rows"][0]["name"],
+            mv["rows"][0]["handler"])
+
+    # --- the .CTL chain, in both adventure banks
+    banks, chains = [], []
+    for nm in ("H1Avnt.CTL", "F1Avnt.CTL", "H1Cmbt.CTL", "Meca.CTL",
+               "Sham.CTL", "D1Cmbt.ctl", "f1cmbt.ctl"):
+        path = omkpaths.data("ANIMS", nm)
+        if not os.path.exists(path):
+            continue
+        w = anim_ctl.walk(path)
+        d = w["data"]
+        sneak = [st for st in w["states"] if st["mdname"] == "MDSNEAK0"]
+        if not sneak:
+            continue
+        banks.append(nm)
+        st = sneak[0]
+        byid = {}
+        for e in w["states"]:
+            byid.setdefault((e["group"], e["id"]), e)
+        # the group-6 entry that owns the move, and its parent - the default
+        parent = byid.get((st["group"], st["parents"][0])) if st["parents"] else None
+        # who reaches that parent on 0x2000, out of group 0
+        def inputOf(e):
+            return struct.unpack_from("<I", d, e["offset"] + 4)[0]
+        doors = [e for e in w["states"]
+                 if e["goto"] == (parent["id"] if parent else -1)
+                 and inputOf(e) == 0x2000]
+        chains.append((len(doors),
+                       parent["name"] if parent else None,
+                       bool(parent and parent["flags"] & 0x20),
+                       bool(st["flags"] & 0x10),
+                       bool(doors and doors[0]["flags"] & 2)))
+
+    # --- the screen the move opens
+    tb = os.path.join(ROOT, "tables", "ui_widgets.json")
+    panels = json.load(open(tb))["rows"]["panels"]
+    def screen(sid):
+        return next((p for p in panels if p["screen"] == sid), None)
+    def tabs(sid):
+        p = screen(sid)
+        l = next((l for l in p["lists"] if l["addr"] == 0x004DE210), None)
+        # the tab column's HIDDEN bit, after the open callback's edits
+        hidden = any(f == 0x20000004 and on for f, on in l["listflag"])
+        return hidden, l["select"]
+    sn = screen(9)
+    family = [(sid, screen(sid)["panel"], screen(sid)["current"]) + tabs(sid)
+              for sid in (9, 7, 0)]
+
+    # --- and the walk over it, which must reach a page without guessing
+    u = Ui(); u.open(9)
+    opened = (u.panel, u.cur, u.sel[0x004DE210])
+    for b in (RIGHT, UP, UP, CONFIRM):
+        u.press(b)
+    walked = (u.panel, u.approx)
+
+    return (key, row0, sorted(banks), chains, family, opened, walked), \
+           (("Ouvrir sneak", 0x2000, 15),
+            (0, "MDSNEAK0", "0x0046ADF0"),
+            ["F1Avnt.CTL", "H1Avnt.CTL"],
+            [(1, "H_SNKON", True, True, True)] * 2,
+            [(9, 0x004DEE50, 3, False, 2),
+             (7, 0x004DEDE8, 1, True, 1),
+             (0, 0x004DF128, 1, True, -1)],
+            (0x004DEE50, 3, 2),
+            (0x004DED80, False)), \
+           "the adventure binding that opens the sneak (label, bit, key - " \
+           "15 is TAB); tab_special_move's row 0; the .CTL banks carrying " \
+           "MDSNEAK0 (the two ADVENTURE ones and no other); then per bank - " \
+           "how many group-0 entries wait on exactly 0x2000 and GoTo the " \
+           "move's parent (one), that parent's name, that it is its group's " \
+           "flag-0x20 default, that the move entry carries flag 0x10, and " \
+           "that the door entry carries flag 2, the ALIAS bit that makes it " \
+           "a redirect through its GoTo rather than a state to sit in " \
+           "(its whole word is 0x05000003, and the `bit 2` docs/ASSETS " \
+           "names is the value 2, not bit index 2 - reading it as 4 fails " \
+           "here); then the three " \
+           "sneak screens - panel, the current list the open callback sets, " \
+           "whether it HIDES the tab column and which tab it selects, where " \
+           "SNEAK is the only one that shows the column; then the walk - " \
+           "screen 9 opens on list 3 with the column on row 2, and RIGHT, " \
+           "UP, UP, CONFIRM reaches the Identite page with nothing " \
+           "unmodelled on the way"
 
 
 def c_ui_confirm_gate():
@@ -18948,6 +19170,7 @@ CHECKS = [
     ("ui open flags",      c_ui_openflags,      "UI"),
     ("ui open answer",     c_ui_open_answer,    "SCRIPT_VM 70"),
     ("ui confirm gate",    c_ui_confirm_gate,   "UI"),
+    ("sneak chain",        c_sneak_chain,       "UI 3d"),
     ("golden: menu",       c_golden_menu,       "UI"),
     ("page templates",     c_page_templates,    "CLAUDE.md 5"),
     ("page cache busting", c_page_cachebusting, "CLAUDE.md 5"),
@@ -19165,6 +19388,7 @@ SLOW = [
     ("render back ends",   c_render_backends,   "ASSETS 4c"),
     ("porting standard",   c_porting_standard,  "PORTING"),
     ("engine: UI",         c_engine_ui,         "engine/README"),
+    ("engine: sneak",      c_engine_sneak,      "engine/README; UI 3d"),
     ("engine: UI answer",  c_engine_ui_answer,  "engine/README"),
     ("engine: options",    c_engine_options,    "engine/README"),
     ("engine: load panel", c_engine_load_panel, "engine/README"),

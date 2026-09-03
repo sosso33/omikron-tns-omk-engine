@@ -126,9 +126,18 @@ ScreenFrame ScreenComposer::draw(Surface& fb, int screenId,
             ++out.itemsDrawn;
         }
         for (const auto& it : l.items) {
+            // A row the RUNTIME filled beats the record's string id. The
+            // sneak's nine inventory rows are the case: their `+28` is -1 and
+            // stays -1, and what they show is the carried object list.
+            const std::string* run_ = nullptr;
+            if (rows_) {
+                const auto r = rows_->find(it.addr);
+                if (r != rows_->end() && !r->second.empty()) run_ = &r->second;
+            }
             const int id = it.label();
-            if (id < 0 || id >= static_cast<int>(text.size())) continue;
-            const std::string& s = text[static_cast<std::size_t>(id)];
+            if (!run_ && (id < 0 || id >= static_cast<int>(text.size()))) continue;
+            const std::string& s =
+                run_ ? *run_ : text[static_cast<std::size_t>(id)];
             if (s.empty()) continue;
             const bool lit = focused && focused->addr == it.addr;
             const std::uint8_t v = lit ? kLit : kDim;

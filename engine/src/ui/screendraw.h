@@ -26,6 +26,8 @@
 #include "ui/text.h"
 #include "ui/widgets.h"
 
+#include <cstdint>
+#include <map>
 #include <string>
 #include <vector>
 
@@ -61,6 +63,24 @@ public:
     void attachCloud(const MenuCloud* c) { cloud_ = c; }
     void setFrame(long f) { frame_ = f; }
 
+    // WHAT A ROW SHOWS WHEN IT IS NOT A STRING ID.
+    //
+    // An item's `+28` indexes the screen's own `IAM\<name>`, and for most
+    // rows that is the whole story. The sneak's inventory page is the case
+    // where it is not: its nine rows (list 0x004DE6F0) ship `-1` and are
+    // never bound, because what they show is the CARRIED OBJECT LIST, which
+    // the interface asks for through `Game_HandleEvent` 29 and 33 rather than
+    // storing anywhere. An inventory slot is 56 bytes of which the first 32
+    // are the display name `case 33` wrote.
+    //
+    // So this is the same shape as the start menu's name field, which the
+    // composer already draws from `UiWalk::name()` for the same reason: the
+    // row's text is runtime state and the drawer has to be given it. Keyed by
+    // ITEM ADDRESS, so it cannot land on the wrong row. Rows with no entry
+    // fall back on the string id, and a screen with no map set behaves
+    // exactly as before.
+    void setRowText(const std::map<std::uint32_t, std::string>* t) { rows_ = t; }
+
     // THE DISPLAY SIZE, and the interface is not redesigned for it.
     //
     // `I2D_ScaleX` (0x00429700) and `I2D_ScaleY` (0x00429730) are
@@ -94,6 +114,7 @@ private:
     int background(Surface& fb, const UiPanel& p, const Surface& sheet) const;
 
     const MenuCloud* cloud_ = nullptr;
+    const std::map<std::uint32_t, std::string>* rows_ = nullptr;
     long             frame_ = 0;
     int              dw_ = 640, dh_ = 480;
 

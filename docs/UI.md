@@ -781,16 +781,90 @@ are **distinct** (a linear scan gives one id ten times), and the eight that
 name their own screen. Shifted one place, that last count goes 8 → **0**: every
 shop takes its neighbour's title and not one of them lands.
 
+### What OPENS the sneak — a key, an animation and a table
+
+Screen 9 is not opened by `ui.open`. **No script opens it**: the chain runs
+through the player's own animation channel, and every link is in the shipped
+data or in a table lifted from the image.
+
+```
+TAB                      tables/key_bindings.json group 0 "Aventure",
+                         action 13 "Ouvrir sneak", bit 0x2000, keyboard 15
+-> H1Avnt / F1Avnt.CTL   a group-0 entry whose +4 is exactly 0x00002000 and
+                         whose flags carry 2, the ALIAS bit: not a state to
+                         sit in, a redirect through its GoTo
+-> group 6               H_SNKON, that group's flag-0x20 default entry
+-> its child             flags 0x25000013 - bit 0x10 names a move
+-> tab_special_move[0]   "MDSNEAK0" -> sub_0046ADF0
+```
+
+and `sub_0046ADF0` is short enough to quote whole — the binary names it
+itself, through its own failure string:
+
+```c
+v1 = Actor_Index(a1);
+if (sub_41A350(v1) != -1)            // something pending at actor+164
+    return sub_41C720(g_Player);     // ...use THAT instead, event 10
+Game_RaiseEvent(25, 0);              // open object list 0 - the carried items
+sub_41E040(byte_53B084);
+if (!UI_OpenScreen(9, -1, -1, -1)) { // SNEAK
+    Game_RaiseEvent(26, 0);
+    return Dbg_Printf("cant start sneak");
+}
+```
+
+Three things follow, and they are why the sneak behaves unlike every other
+screen:
+
+* **it has no waiting script.** The `-1` is `UI_OpenScreen`'s waiting-context
+  argument, so `dword_930744` is never written and nothing is parked at status
+  6. Closing it answers nobody — where leaving a `ui.open` screen IS an answer
+  of −1 (§3d-bis).
+* **event 25 comes first**, opening object list 0, because the inventory page
+  reads its nine rows back out of the channel (§3e) rather than out of
+  `IAM\Sneak`. The matching 26 is raised by the close, and also by this
+  function's own failure arm.
+* **only the two ADVENTURE banks carry `MDSNEAK0`.** `H1Avnt` and `F1Avnt` do
+  and the five combat/creature ones do not, so the sneak opens in adventure
+  mode and nowhere else — which is the game's behaviour, arrived at from the
+  data rather than from playing.
+
+`verify.py: sneak chain` asserts all of it; `engine: sneak` runs it in
+`omk-play`, where TAB in Anekbah opens the device.
+
 ### The one close that can refuse
 
 `Ui_CloseSneakFamily` serves `VIDEOPHONE`, `SLIDER` and `SNEAK` by the `+4`
-parameter. `VIDEOPHONE` frees three o3de scenes and closes screen 35, which
-its own open had loaded hidden underneath; both closing paths raise **event
-26** and fall into the generic close. But `SNEAK`, with no `SHOOT HUMAN` up,
-calls `Ui_StartOscillator(5, 100)` **instead** of closing — oscillator 5 ships
-with period 0 and gets 100 ms here, and while its flag bit 0 is set the close
-is refused. The sneak interface has a closing animation; every other screen
-closes on the frame it is told to.
+parameter. **`SNEAK`** frees three o3de scenes and closes screen 35, which its
+own open had loaded hidden underneath; both closing paths raise **event 26**
+and fall into the generic close. But **`VIDEOPHONE`**, with no `SHOOT HUMAN`
+up, calls `Ui_StartOscillator(5, 100)` **instead** of closing — oscillator 5
+ships with period 0 and gets 100 ms here, and while its flag bit 0 is set the
+close is refused. That interface has a closing animation; every other screen
+closes on the frame it is told to. `SLIDER` takes neither arm and goes
+straight to the generic close.
+
+**This paragraph had `SNEAK` and `VIDEOPHONE` the wrong way round until
+2026-09-04**, and the branch is what decides it — the parameters are 0 SNEAK,
+1 SLIDER, 2 VIDEOPHONE (§2's table), and `sub_49B610` opens:
+
+```
+mov  eax, [esi+4]
+sub  eax, 0
+jz   loc_49B6A5      ; 0 SNEAK      -> close screen 35, free the three scenes
+sub  eax, 2
+jnz  loc_49B6EA      ; 1 SLIDER     -> the generic close
+                     ; 2 VIDEOPHONE -> falls through: the SHOOT HUMAN test
+                     ;                 and the oscillator refusal
+```
+
+The OPEN says the same thing from the other side and is the corroboration:
+its parameter-0 arm is the one that `Read3DO`s `setek`, `anneau` and `imager`
+and calls `UI_LoadScreen(35, …)`, and 35 is `OPTIONS` — which the sneak
+device needs because **`Options` is one of its own five tabs**. So the screen
+loaded hidden underneath is the options screen, the three models are the
+inventory page's object previews, and the arm that frees them is the arm that
+loaded them. Asserted in `verify.py: sneak chain`.
 
 ### And what the generic close does for the script layer
 
@@ -1002,10 +1076,53 @@ does it:
 
 * the **navigation is data** — the screen record names an open callback, the
   callback installs a panel with one `mov [reg+0x1C], imm32` (28 of the 32
-  live screens give exactly one; the sneak family branches on its `+4` and
-  offers three), and the panel's lists and items are static records;
+  live screens give exactly one), and the panel's lists and items are static
+  records;
 * the **callbacks are native code and are not run**. An unmodelled hook is
   logged and the answer falls back, rather than being invented.
+
+**The sneak family gives three, and following its branch is what put screens
+0, 7 and 9 into the tree** (2026-09-04). `Ui_OpenSneakFamily` writes a
+different panel on each arm of a `+4` branch, so a linear scan finds all three
+and cannot say which is whose — the same shape as `Ui_OpenShop`'s titles, and
+the same fix. `sim/ui.py: SNEAK_ARM` records the three byte ranges read out of
+the image and `panel_of` CHECKS the scan against them rather than trusting
+either alone:
+
+| param | screen | panel | the tab column `0x004DE210` |
+|---|---|---|---|
+| 0 | `SNEAK` | `0x004DEE50` | shown, selected on row 2 "Inventaire" |
+| 1 | `SLIDER` | `0x004DEDE8` | hidden |
+| 2 | `VIDEOPHONE` | `0x004DF128` | hidden |
+
+Three more things came out of doing it, and each is general rather than about
+the sneak:
+
+* **`panel+24` and `list+2` are recoverable after all.** They are the panel's
+  CURRENT LIST and that list's SELECTED ROW — runtime state, which is why this
+  document and both walkers said the disk image cannot supply them and fell
+  back on `Ui_MoveBetweenLists`'s rule. But an OPEN CALLBACK can write them,
+  and going looking found **15 panels** and **8 lists** that do:
+  `Ui_OpenSneakFamily` sets all three of its pages, `Ui_OpenShop`'s first
+  instruction is `mov dword_4E3988, 0` (its shared panel's `+24`), and
+  `FIGHT SIM`, `SAVE GAME`, `PAUSE GAME` and `SHOOT HUMAN` each set one.
+  Lifted into `tables/ui_widgets.json` as `current` and `select`, `-1` where
+  nothing wrote them.
+* **Two of the "unmodelled hooks" were not screen-specific at all.**
+  `sub_42A710` is `Ui_MoveBetweenLists` bound to LEFT/RIGHT (a PANEL hook) and
+  `sub_42A930` is `Ui_MoveSelection` bound to LEFT/RIGHT (a LIST hook) —
+  `sub_42A5C0` and `sub_42A7E0` both take their two direction bits as
+  PARAMETERS, and the default dispatch is just `sub_42A7E0(…, 4, 8)`. The
+  simulator had transcribed the first as `_move_lists` and **never called it**,
+  because until the sneak entered the tree no panel in it named the hook.
+* **What still refuses is the sneak's own scrolling.** `sub_0049C050` windows
+  a list longer than its nine row widgets — it shifts each row's `+60` tag and
+  raises the two arrow flags at the ends — and it is not modelled, so
+  `SLIDER` and `SNEAK` still count as approximate the moment those rows are
+  driven. `VIDEOPHONE` needs nothing and walks exactly.
+
+`verify.py: sneak chain` asserts the family end to end and `engine: sneak`
+runs it.
 
 The path for the game's own opening, every step an input word:
 

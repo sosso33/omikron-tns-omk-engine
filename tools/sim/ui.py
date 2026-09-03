@@ -104,9 +104,46 @@ def _hook_start_confirm(ui, bits):
     return False
 
 
+#: `Ui_MoveBetweenLists` BOUND TO LEFT AND RIGHT, and the reason `_move_lists`
+#: below stopped being dead code.
+#:
+#:     sub_42A710(screen, panel) { return sub_42A5C0(screen, panel, 1, 2); }
+#:
+#: `sub_42A5C0` is the mover itself and it takes the two bits as parameters -
+#: `a3` steps back, `a4` steps on - so 1 and 2 are LEFT and RIGHT. It walks
+#: `panel+24` (the current list) over the `panel+28` count and the `panel+32`
+#: pointers, skipping a list whose `+16 & 4` is set and one with nothing
+#: selectable in it, wrapping unless `panel+72 & 0x80000`. That is
+#: `_move_lists` line for line - which was transcribed and then never called,
+#: because until the sneak family entered the tree no panel in it named this
+#: hook. The sneak device's inventory page does, and without it the tab column
+#: down the left is unreachable: the player opens on the inventory rows and
+#: can never leave them.
+MOVE_LISTS_HOOK = 0x0042A710
+
+#: ...and its LIST-level counterpart. `sub_42A930(screen, list)` is
+#: `sub_42A7E0(screen, list, 1, 2)` - the same `Ui_MoveSelection` the default
+#: dispatch reaches with `(4, 8)`, bound to LEFT and RIGHT instead of UP and
+#: DOWN. The sneak's verb bar ("Utiliser" / "Utiliser sur" / "Examiner") and
+#: the slider page's buttons name it, and both are rows that run across the
+#: screen. Not a screen-specific hook at all, which is why it belongs beside
+#: the other two rather than in a per-screen table.
+MOVE_SELECTION_LR = 0x0042A930
+
+
+def _hook_move_lists(ui, bits):
+    """`sub_42A710` - LEFT and RIGHT move the panel's focus between lists."""
+    if bits & LEFT:
+        return ui._move_lists(-1)
+    if bits & RIGHT:
+        return ui._move_lists(1)
+    return False
+
+
 #: Panel-level input hooks (`panel+16`) that have been read. Anything else is
 #: logged and the walk is marked approximate.
-PANEL_HOOKS = {0x0047A230: _hook_start_confirm}
+PANEL_HOOKS = {0x0047A230: _hook_start_confirm,
+               MOVE_LISTS_HOOK: _hook_move_lists}
 
 
 
@@ -143,14 +180,44 @@ class Ui:
         v = self.e.read(va, 1)[0]
         return v - 256 if v > 127 else v
 
+    #: `Ui_OpenSneakFamily` (0x0049B400) is the second open callback whose
+    #: body BRANCHES on the screen's `+4` parameter, and the only one whose
+    #: PANEL does. Decoded from the image's own bytes at 0x0049B400:
+    #:
+    #:      49B409  8B 46 04           mov  eax, [esi+4]   ; the parameter
+    #:      49B40C  2B C3              sub  eax, ebx       ; ebx = 0
+    #:      49B40E  0F 84 B0 00 00 00  jz   0x0049B4C4     ; 0 SNEAK
+    #:      49B414  48                 dec  eax
+    #:      49B415  74 62              jz   0x0049B479     ; 1 SLIDER
+    #:      49B417  48                 dec  eax
+    #:      49B418  0F 85 B8 01 00 00  jnz  0x0049B5D6     ; the shared tail
+    #:      49B41E                                         ; 2 VIDEOPHONE
+    #:
+    #: so the three arms are [0x49B41E, 0x49B479) = VIDEOPHONE,
+    #: [0x49B479, 0x49B4C4) = SLIDER and [0x49B4C4, 0x49B5D6) = SNEAK, and
+    #: everything from 0x0049B5D6 is shared. Each arm writes its own
+    #: `mov [esi+0x1C], imm32`, so a linear scan finds all three and cannot
+    #: say which arm each belongs to - which is why this raised on the family
+    #: and why screens 0, 7 and 9 were absent from the tree. Same shape as
+    #: `SHOP_TITLE`, and the same fix: record the branch, then CHECK the scan
+    #: against it rather than trusting either alone.
+    SNEAK_OPEN = 0x0049B400
+    SNEAK_ARM = {0: (0x0049B4C4, 0x0049B5D6),    # SNEAK      - the inventory
+                 1: (0x0049B479, 0x0049B4C4),    # SLIDER     - call a slider
+                 2: (0x0049B41E, 0x0049B479)}    # VIDEOPHONE
+    SNEAK_BODY = 0x0049B41E          # where the branch ends and arm 2 begins
+    SNEAK_TAIL, SNEAK_END = 0x0049B5D6, 0x0049B607
+    SNEAK_PANEL = {0: 0x004DEE50, 1: 0x004DEDE8, 2: 0x004DF128}
+
     def panel_of(self, screen_id):
         """The panel a screen's open callback installs.
 
         Every open callback writes it with one `mov [reg+0x1C], imm32` -
         screen+0x1C is UISCR_PANEL - so the address is recoverable without
         running anything. 28 of the 32 live screens give exactly one; the
-        sneak family branches on its +4 parameter and offers three, and
-        SHOOT MECA names both shoot panels, so those are not modelled here.
+        sneak family gives three, one per arm of its `+4` branch, and those
+        are resolved through `SNEAK_PANEL` above. SHOOT MECA names both shoot
+        panels and is still not modelled here.
         """
         s = self.screens[screen_id]
         d = self.e.read(s["cb"][0], 320)
@@ -160,6 +227,16 @@ class Ui:
                 v = struct.unpack_from("<I", d, i + 3)[0]
                 if 0x4C0000 <= v < 0x700000 and v not in hits:
                     hits.append(v)
+        if s["cb"][0] == self.SNEAK_OPEN and s["param"] in self.SNEAK_PANEL:
+            # The scan is the check on the transcription, not the source of
+            # it: if the image ever held a different set of three, the branch
+            # map is wrong and this must say so rather than pick from it.
+            if set(hits) != set(self.SNEAK_PANEL.values()):
+                raise ValueError(
+                    "the sneak family installs %s, not the three recorded %s"
+                    % ([hex(h) for h in hits],
+                       [hex(h) for h in sorted(self.SNEAK_PANEL.values())]))
+            return self.SNEAK_PANEL[s["param"]]
         if len(hits) != 1:
             raise ValueError("screen %d installs %d candidate panels: %s"
                              % (screen_id, len(hits), [hex(h) for h in hits]))
@@ -213,57 +290,110 @@ class Ui:
 
         Each maps a target address to `[(flag, on), ...]`.
 
-        `Ui_OpenShop` is handled by following its parameter branch rather than
-        walking through both arms - see `SHOP_TEST`. Every other open callback
-        is a straight line to its first `ret`, which is why the twenty
-        contradictions this resolves were all on that one function.
+        `Ui_OpenShop` and `Ui_OpenSneakFamily` are handled by following their
+        parameter branch rather than walking through every arm - see
+        `SHOP_TEST` and `SNEAK_ARM`. Every other open callback is a straight
+        line to its first `ret`, which is why the twenty contradictions the
+        shops resolve were all on that one function.
+
+        The sneak family contradicts itself the same way and on the SAME
+        list: all three arms call `I2D_SetListFlag(0x004DE210, 0x20000004, x)`
+        on the tab column, with `x` = 0 for SNEAK and 1 for the other two -
+        so a linear scan records the column both hidden and shown, and a
+        reader taking either would draw SNEAK without its tabs or SLIDER with
+        them.
         """
         s = self.screens[screen_id]
         fn = s["cb"][0]
         if not fn:
             return {}, {}, {}, {}
-        d = self.e.read(fn, 1400)
+        # The BYTE WINDOWS to walk, and the arms not taken inside them.
+        #
+        # Two mechanisms because the two branching callbacks need different
+        # ones. The shops are one straight run with a hole in the middle, so
+        # a skip range over the whole body is enough. The sneak family is
+        # not: `sub eax, ebx` at 0x0049B40C assembles as `2B C3`, and the
+        # `ret`-stop below sees that 0xC3 as the end of the function and
+        # returns an EMPTY table - which is what it did, silently, for all
+        # three screens. Walking the taken arm and the shared tail as
+        # explicit windows removes both the stray `ret` and the need to skip.
+        # (base, size, stop at the first `ret`, follow register constants)
+        windows, skips = [(fn, 1400, True, False)], []
         # BANK is parameter 0; the other nine take the fall-through arm.
-        shop = fn == self.SHOP_OPEN
-        skip_lo, skip_hi = (0, 0)
-        if shop:
+        if fn == self.SHOP_OPEN:
             if s["param"] == 0:
-                skip_lo, skip_hi = self.SHOP_TEST, self.SHOP_BANK   # the nine
+                skips.append((self.SHOP_TEST, self.SHOP_BANK))    # the nine
             else:
-                skip_lo, skip_hi = self.SHOP_BANK, self.SHOP_JOIN   # BANK's
-        per_list, per_item, per_page, pushes, i = {}, {}, {}, [], 0
+                skips.append((self.SHOP_BANK, self.SHOP_JOIN))    # BANK's
+        if fn == self.SNEAK_OPEN and s["param"] in self.SNEAK_ARM:
+            lo, hi = self.SNEAK_ARM[s["param"]]
+            # The PROLOGUE comes first and carries no call: it is walked only
+            # so `xor ebx, ebx` is seen before the arm pushes ebx. It has to
+            # stop at `SNEAK_BODY`, not at the arm - taking it up to arm 0's
+            # 0x0049B4C4 swallows the two arms in between and hides the tab
+            # column on every screen of the family.
+            windows = [(fn, self.SNEAK_BODY - fn, False, True),
+                       (lo, hi - lo, False, True),
+                       (self.SNEAK_TAIL, self.SNEAK_END - self.SNEAK_TAIL,
+                        False, True)]
+
+        def blocked(addr):
+            return any(lo <= addr < hi for lo, hi in skips)
+
+        per_list, per_item, per_page = {}, {}, {}
         layout = {}
-        while i < len(d) - 4:
-            op = d[i]
-            if op == 0x68:
-                pushes.append(struct.unpack_from("<I", d, i + 1)[0]); i += 5; continue
-            if op == 0x6A:
-                pushes.append(struct.unpack_from("<b", d, i + 1)[0] & 0xFFFFFFFF)
-                i += 2; continue
-            if op == 0xE8:
-                t = fn + i + 5 + struct.unpack_from("<i", d, i + 1)[0]
-                here = fn + i
-                if (t in (self.BROADCAST, self.SETFLAG, self.LISTFLAG)
-                        and len(pushes) >= 3
-                        and not (skip_lo <= here < skip_hi)):
-                    target, flag, on = pushes[-1], pushes[-2], pushes[-3]
-                    bucket = (per_list if t == self.BROADCAST else
-                              per_item if t == self.SETFLAG else per_page)
-                    bucket.setdefault(target, []).append((flag, bool(on)))
-                elif (t in (self.SETX, self.SETH) and len(pushes) >= 2
-                        and not (skip_lo <= here < skip_hi)):
-                    lst, v = pushes[-1], pushes[-2]
-                    layout.setdefault(lst, {})[
-                        "x" if t == self.SETX else "h"] = _s16(v)
-                elif (t == self.LAYOUTY and len(pushes) >= 3
-                        and not (skip_lo <= here < skip_hi)):
-                    lst, first, step = pushes[-1], pushes[-2], pushes[-3]
-                    layout.setdefault(lst, {})["firstY"] = _s16(first)
-                    layout.setdefault(lst, {})["stepY"] = _s16(step)
-                pushes = []; i += 5; continue
-            if op == 0xC3:
-                break
-            i += 1
+        regs = {}                       # eax..edi, when a constant is known
+        for base, size, stop_at_ret, track in windows:
+            d = self.e.read(base, size)
+            pushes, i = [], 0
+            while i < len(d) - 4:
+                op = d[i]
+                if op == 0x68:
+                    pushes.append(struct.unpack_from("<I", d, i + 1)[0])
+                    i += 5; continue
+                if op == 0x6A:
+                    pushes.append(
+                        struct.unpack_from("<b", d, i + 1)[0] & 0xFFFFFFFF)
+                    i += 2; continue
+                # `push ebx` / `push edi` - and the sneak family passes EVERY
+                # `on` flag that way, which is why its table came back empty
+                # of flags even once the windows were right. Only the two
+                # forms that actually appear are decoded (`xor r, r` and
+                # `mov r32, imm32`); a register with no known constant pushes
+                # None, and a call taking one is dropped rather than guessed.
+                if track and 0x50 <= op <= 0x57:
+                    pushes.append(regs.get(op - 0x50)); i += 1; continue
+                if track and op == 0x33 and (d[i + 1] & 0xC0) == 0xC0 \
+                        and ((d[i + 1] >> 3) & 7) == (d[i + 1] & 7):
+                    regs[d[i + 1] & 7] = 0; i += 2; continue
+                if track and 0xB8 <= op <= 0xBF:
+                    regs[op - 0xB8] = struct.unpack_from("<I", d, i + 1)[0]
+                    i += 5; continue
+                if op == 0xE8:
+                    t = base + i + 5 + struct.unpack_from("<i", d, i + 1)[0]
+                    here = base + i
+                    known = None not in pushes[-3:]
+                    if (t in (self.BROADCAST, self.SETFLAG, self.LISTFLAG)
+                            and len(pushes) >= 3 and known
+                            and not blocked(here)):
+                        target, flag, on = pushes[-1], pushes[-2], pushes[-3]
+                        bucket = (per_list if t == self.BROADCAST else
+                                  per_item if t == self.SETFLAG else per_page)
+                        bucket.setdefault(target, []).append((flag, bool(on)))
+                    elif (t in (self.SETX, self.SETH) and len(pushes) >= 2
+                            and None not in pushes[-2:] and not blocked(here)):
+                        lst, v = pushes[-1], pushes[-2]
+                        layout.setdefault(lst, {})[
+                            "x" if t == self.SETX else "h"] = _s16(v)
+                    elif (t == self.LAYOUTY and len(pushes) >= 3 and known
+                            and not blocked(here)):
+                        lst, first, step = pushes[-1], pushes[-2], pushes[-3]
+                        layout.setdefault(lst, {})["firstY"] = _s16(first)
+                        layout.setdefault(lst, {})["stepY"] = _s16(step)
+                    pushes = []; i += 5; continue
+                if op == 0xC3 and stop_at_ret:
+                    break
+                i += 1
         return per_list, per_item, per_page, layout
 
     def open_binds(self, screen_id, items):
@@ -323,6 +453,104 @@ class Ui:
                 break
             i += 1
         return out
+
+    def open_state(self, screen_id, panels, lists):
+        """-> ({panel: current list}, {list: selected row}) the callback SETS.
+
+        Two fields this lift recorded as unknowable, because until the sneak
+        family every open callback left them alone:
+
+        * **`panel+24`** is the panel's CURRENT LIST. `_settle` says of it -
+          correctly, for the twenty-eight screens it was written for - that it
+          is "runtime state the panel's builder sets, and every builder is
+          native code the simulator does not run", so the walk falls back on
+          `Ui_MoveBetweenLists`'s own rule: the first list that is not hidden
+          and has something selectable in it.
+        * **`list+2`** is that list's SELECTED ROW, the int16 after the item
+          count at `+0`.
+
+        `Ui_OpenSneakFamily` writes both, in the open callback itself, and
+        they are what decides which page of the device comes up:
+
+            SNEAK       panel 0x004DEE50 +24 = 3   the nine inventory rows
+                        list  0x004DE6F0 +2  = 0   its first row
+                        list  0x004DE210 +2  = 2   the tab column on
+                                                   "Inventaire"
+            SLIDER      panel 0x004DEDE8 +24 = 1
+                        list  0x004DEA08 +2  = 1
+                        list  0x004DE210 +2  = 1   ..."Appel du slider"
+            VIDEOPHONE  panel 0x004DF128 +24 = 1
+
+        Without them the walk opens the sneak on the TAB COLUMN rather than on
+        the page, and the column's own highlight sits on "Identite" - the
+        first selectable row - instead of on the page the player asked for.
+
+        The same four encodings as `open_binds`, plus the two REGISTER-source
+        forms, because this callback writes 0 and 1 out of `ebx` and `edi`:
+
+            C7 05 <abs32> <imm32>       mov [abs], imm32
+            66 C7 05 <abs32> <imm16>    mov [abs], imm16
+            89 <reg|05> <abs32>         mov [abs], r32
+            66 89 <reg|05> <abs32>      mov [abs], r16
+
+        Resolved against the KNOWN panel and list addresses, the way
+        `open_binds` resolves against the known items: a linear walk over a
+        callback finds stores to plenty of globals, and only the ones landing
+        on a real record at the right offset are these.
+        """
+        s = self.screens[screen_id]
+        fn = s["cb"][0]
+        if not fn:
+            return {}, {}
+        panels, lists = set(panels), set(lists)
+        windows = [(fn, 1400, True, False)]
+        if fn == self.SNEAK_OPEN and s["param"] in self.SNEAK_ARM:
+            lo, hi = self.SNEAK_ARM[s["param"]]
+            windows = [(fn, self.SNEAK_BODY - fn, False, True),
+                       (lo, hi - lo, False, True),
+                       (self.SNEAK_TAIL, self.SNEAK_END - self.SNEAK_TAIL,
+                        False, True)]
+        cur, sel, regs = {}, {}, {}
+
+        def store(tgt, val):
+            if tgt - 24 in panels:
+                cur[tgt - 24] = val
+            elif tgt - 2 in lists:
+                sel[tgt - 2] = val
+
+        for base, size, stop_at_ret, track in windows:
+            d = self.e.read(base, size)
+            i = 0
+            while i < len(d) - 10:
+                if d[i] == 0x66 and d[i + 1] == 0xC7 and d[i + 2] == 0x05:
+                    store(struct.unpack_from("<I", d, i + 3)[0],
+                          struct.unpack_from("<H", d, i + 7)[0])
+                    i += 9; continue
+                if d[i] == 0xC7 and d[i + 1] == 0x05:
+                    tgt, val = struct.unpack_from("<II", d, i + 2)
+                    store(tgt, val)
+                    i += 10; continue
+                if track and d[i] == 0x66 and d[i + 1] == 0x89 \
+                        and (d[i + 2] & 0xC7) == 0x05:
+                    r = regs.get((d[i + 2] >> 3) & 7)
+                    if r is not None:
+                        store(struct.unpack_from("<I", d, i + 3)[0], r & 0xFFFF)
+                    i += 7; continue
+                if track and d[i] == 0x89 and (d[i + 1] & 0xC7) == 0x05:
+                    r = regs.get((d[i + 1] >> 3) & 7)
+                    if r is not None:
+                        store(struct.unpack_from("<I", d, i + 2)[0], r)
+                    i += 6; continue
+                if track and d[i] == 0x33 and (d[i + 1] & 0xC0) == 0xC0 \
+                        and ((d[i + 1] >> 3) & 7) == (d[i + 1] & 7):
+                    regs[d[i + 1] & 7] = 0; i += 2; continue
+                if track and 0xB8 <= d[i] <= 0xBF:
+                    regs[d[i] - 0xB8] = struct.unpack_from("<I", d, i + 1)[0]
+                    i += 5; continue
+                if d[i] == 0xC3 and stop_at_ret:
+                    break
+                i += 1
+        return cur, sel
 
     # `Ui_OpenShop` serves ten screens and switches on the screen's fixed
     # `+8` parameter through this jump table; each of the ten targets is one
@@ -398,6 +626,8 @@ class Ui:
         self.cur = 0
         self.approx = False
         self._oflags = ({}, {}, {})
+        # what the open callback wrote into `panel+24` and `list+2`
+        self._ocur, self._osel = {}, {}
         self.answer = None
         #: The name field's contents, as `byte_69BDA0` would hold them. The
         #: engine's builder for the "Nouvelle partie" panel (0x0047A050)
@@ -418,6 +648,20 @@ class Ui:
         self.reset()
         self._oflags = self.open_flags(screen_id)
         self.panel = self.panel_of(screen_id)
+        # ...and what the open callback WRITES into `panel+24` and `list+2`.
+        # Collected over the panels reachable from this one, because a `+44`
+        # descent can land on a page the callback also set up - the sneak's
+        # open sets three panels' state, not just the one it installs.
+        reach, stack = {self.panel}, [self.panel]
+        while stack:
+            pn = stack.pop(0)
+            for l in self.lists(pn):
+                for it in self.items(l):
+                    kid = self._u32(it + 44)
+                    if kid and kid not in reach:
+                        reach.add(kid); stack.append(kid)
+        self._ocur, self._osel = self.open_state(
+            screen_id, reach, {l for pn in reach for l in self.lists(pn)})
         self.log.append(("open", screen_id, self.panel))
         self._settle()
         return self.panel
@@ -436,21 +680,31 @@ class Ui:
     def _settle(self):
         """Entering a panel: pick the current list and each list's selection.
 
-        `panel+24` on disk is not the answer - it is runtime state the panel's
-        builder sets, and every builder is native code the simulator does not
-        run. What IS in the data is the rule the engine itself uses to move
-        between lists, so this applies that: the first list that is not hidden
-        and has something selectable in it. For the start menu's confirm
-        dialog that is list 1 ("Confirmer" / "Annuler"), not the list 0 the
-        disk image names.
+        `panel+24` on disk is not the answer - it is runtime state, and for
+        most screens the builder that writes it is native code the simulator
+        does not run. What IS in the data is the rule the engine itself uses
+        to move between lists, so that is the FALLBACK: the first list that is
+        not hidden and has something selectable in it. For the start menu's
+        confirm dialog that is list 1 ("Confirmer" / "Annuler"), not the list
+        0 the disk image names.
+
+        **Where the OPEN CALLBACK writes them, they are read instead** -
+        `open_state` above. Fifteen panels set `+24` and eight lists set
+        `+2`, and for the sneak it is the difference between opening on the
+        inventory page with "Inventaire" lit and opening on the tab column
+        with "Identite" lit.
         """
         ls = self.lists(self.panel)
-        self.cur = next((k for k, l in enumerate(ls) if self._usable(l)), 0)
+        cur = self._ocur.get(self.panel, -1)
+        self.cur = (cur if 0 <= cur < len(ls) else
+                    next((k for k, l in enumerate(ls) if self._usable(l)), 0))
         self.sel = {}
         for lst in ls:
             its = self.items(lst)
-            self.sel[lst] = next((j for j, it in enumerate(its)
-                                  if self.selectable(it, lst)), 0)
+            j = self._osel.get(lst, -1)
+            self.sel[lst] = (j if 0 <= j < len(its) else
+                             next((k for k, it in enumerate(its)
+                                   if self.selectable(it, lst)), 0))
 
     def selected(self):
         lst = self._cur_list()
@@ -507,6 +761,8 @@ class Ui:
             # with `NameField`; DOWN off it is the panel hook's job.
             self.log.append(("name field: no bit response",))
             return False
+        if hook == MOVE_SELECTION_LR:
+            return self._move(lst, bits, LEFT, RIGHT)
         if hook:
             self.approx = True
             self.log.append(("unmodelled list hook", hex(hook)))
@@ -568,12 +824,20 @@ class Ui:
         self.log.append(("focus list", k))
         return moved
 
-    def _move(self, lst, bits):
+    def _move(self, lst, bits, back=UP, on=DOWN):
+        """`sub_42A7E0(screen, list, a3, a4)` - `Ui_MoveSelection`, whose two
+        direction bits are PARAMETERS.
+
+        The default dispatch passes `(4, 8)` - UP and DOWN - and `sub_42A930`,
+        the hook the sneak's verb bar and the slider page name, passes
+        `(1, 2)`: LEFT and RIGHT, because those rows of buttons run across the
+        screen rather than down it. One function, two bindings.
+        """
         its = self.items(lst)
         if not its:
             return False
         n = len(its)
-        step = -1 if bits & UP else (1 if bits & DOWN else 0)
+        step = -1 if bits & back else (1 if bits & on else 0)
         if step:
             nowrap = self._u32(lst + 16) & NOWRAP
             j = self.sel[lst]
