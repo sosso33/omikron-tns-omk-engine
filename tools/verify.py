@@ -17594,6 +17594,28 @@ def c_licence_headers():
     (LICENSING.md, "Kept locally, not published"), so they are not walked -
     a check that fails on a directory the repository does not ship would fail
     for every clone.
+
+    **AND THIS ONE WALKS THE DISK, NOT THE REPOSITORY**, which is a thing to
+    know before quoting its number. `os.walk` counts UNTRACKED files, so a
+    working tree carrying a scratch probe in `engine/tools/` reports a
+    different count from a clone of the same commit - green for one person and
+    red for the next, from the same source. That is how the count sat wrong
+    for two commits on 2026-09-04: four sessions shared one working tree with
+    untracked probes in it, and every one of them saw a number no clone could
+    reproduce.
+
+    It is the same fault as the three `readable/` checks corrected in the same
+    commit as this note, one level out: **a check that reads local state as if
+    it were the repository**. `ui input` globbed a directory that is not
+    committed, found nothing, and reported "0 of 30 callbacks decompiled" as a
+    finding about the binary. Both shapes go green while saying something
+    untrue, which is worse than either failing, and neither can be caught by
+    running the suite - only by running it somewhere else.
+
+    Walking the disk is still the right thing HERE: the point is that every
+    file a contributor has actually written carries the header, and a file
+    they have not yet committed is exactly the one to catch. The count is what
+    cannot be shared, not the walk.
     """
     import glob as _g
     TAG = "SPDX-License-Identifier: GPL-3.0-or-later"
