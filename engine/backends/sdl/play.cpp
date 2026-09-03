@@ -1222,15 +1222,57 @@ int sceneViewer(const std::string& fr, const std::string& setName,
 }  // namespace
 
 int main(int argc, char** argv) {
+    // `--help` anywhere on the line, and the same text the argument check
+    // prints. Kept in one place so a flag cannot be added without a line here.
+    const auto usage = [](std::FILE* to) {
+        std::fprintf(to,
+"omk-play - the OMK engine's viewer\n"
+"\n"
+"  omk-play <gamedata> <tables dir> [screen] [options]      play\n"
+"  omk-play <gamedata> <tables dir> --scene <set> [options] look at one set\n"
+"\n"
+"<gamedata> is the shipped tree, <tables dir> the lifted tables (tables/).\n"
+"[screen] is the interface screen to open, default 29, the start menu.\n"
+"\n"
+"RUNNING\n"
+"  --speed X        scale the frame delta - the engine's own trick. Its\n"
+"                   `dword_4E972C` has 1.0, 0.5, 0.1 and 2.0, so 2 is the\n"
+"                   game's double speed and 0.5 its slow motion. Capped at 3.\n"
+"  --nofmv          skip the three FLIS movies (~143 s of them)\n"
+"  --frames N       run N frames and exit - headless, no pacing\n"
+"  --dump out.bin   write the last framebuffer as RGB565\n"
+"  --snaps <dir>    write a framebuffer every 30 frames after the hand-over\n"
+"  --fps            report the rate and the worst frame once a second\n"
+"\n"
+"DISPLAY\n"
+"  --res WxH        default 800x600; the interface is authored at 640x480\n"
+"                   and scaled, so a bigger display spreads the same layout\n"
+"  --vulkan         force the Vulkan backend (V toggles it live)\n"
+"  --software       force the software rasteriser\n"
+"  --letterbox      the 1.818:1 camera-mode bars, for laying a shot beside\n"
+"                   a capture; --full is the old spelling of the opposite\n"
+"\n"
+"INPUT, scripted\n"
+"  --keys D,D,...   DIK scancodes fed in order; `T` types --type there\n"
+"  --type <text>    what `T` types - the start menu refuses an empty name\n"
+"  --keydelay N     frames between scripted keys, default 2\n"
+"  --hold <stream>  after the hand-over, DIK codes HELD: `k200*120,k203*30`,\n"
+"                   `+` joins several, `0*n` holds nothing - player_probe's\n"
+"                   own syntax, so a walk can be replayed\n"
+"\n"
+"THE SET VIEWER (--scene)\n"
+"  --cam N          step the set's own cameras\n"
+"  --eye x,y,z      place the eye        --at x,y,z   aim it\n"
+"  --fov F          horizontal field of view, degrees\n"
+"  --nodelay        drop the 16 ms sleep. THE SET VIEWER ONLY - it does\n"
+"                   nothing to a game run; use --frames for that\n"
+"\n"
+"  --help           this\n");
+    };
+    for (int i = 1; i < argc; ++i)
+        if (std::string(argv[i]) == "--help") { usage(stdout); return 0; }
     if (argc < 3) {
-        std::fprintf(stderr,
-            "usage: omk-play <gamedata> <tables dir> [screen] [--frames N] "
-            "[--dump out.bin] [--keys DIK,DIK,...] [--nofmv] [--speed X]\n"
-            "       --speed scales the frame delta the way the engine's own "
-            "dword_4E972C does: 2 is its double speed, 0.5 and 0.1 its two "
-            "slow motions, capped at 3\n"
-            "       omk-play <gamedata> <tables dir> --scene <set> [--cam N] "
-            "[--eye x,y,z] [--at x,y,z] [--fov F] [--full]\n");
+        usage(stderr);
         return 2;
     }
     const std::string fr = argv[1], tb = argv[2];
