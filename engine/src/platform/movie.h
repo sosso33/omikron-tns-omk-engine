@@ -53,10 +53,14 @@ public:
     // Decode one frame into `dst`, which must be the framebuffer's size.
     // -> false at the end of the stream.
     //
-    // The movies are 320x240 and the framebuffer is 640x480, so this doubles
-    // each pixel - an exact 2x with no filtering, which is the same
-    // relationship `tools/frame.py` recovers a Retina capture through, one
-    // direction reversed. Anything else would be a resampler nobody can check.
+    // The films are 320x240 and are scaled to FIT `dst`, keeping their ratio:
+    // the factor is the largest that fits in both axes, so a 4:3 display fills
+    // completely and anything else gets even bars instead of a stretched
+    // picture. At the 640x480 framebuffer that factor is exactly 2 and every
+    // destination pixel lands on its own source pixel - the same relationship
+    // `tools/frame.py` recovers a Retina capture through, one direction
+    // reversed. Nearest-neighbour, because a filter is a resampler nobody here
+    // can check.
     bool nextFrame(Surface& dst);
     long framesDecoded() const { return frames_; }
 

@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "platform/movie.h"
 
+#include <algorithm>
+
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -55,18 +57,35 @@ bool Movie::nextFrame(Surface& dst) {
     // rule. `quantise888` rounds, which A3 keeps because it is the correct
     // inverse in general - not because a test prefers it, since none here can
     // tell rounding from truncation.
+    // FIT THE SURFACE, KEEPING THE RATIO. This was a fixed 2x, which is
+    // exact for the 320x240 films in a 640x480 framebuffer and leaves a
+    // border at any larger display - at 800x600 the film sat 640x480 in the
+    // middle of it. The scale is now the largest that fits in BOTH axes, so a
+    // 4:3 display fills completely and anything else gets even bars rather
+    // than a stretched picture.
+    //
+    // Iterating the DESTINATION and sampling the source is what makes a
+    // non-integer scale work at all; at 640x480 the factor is exactly 2 and
+    // every destination pixel still lands on its own source pixel, so the
+    // reference walk in `run_movies` is unchanged.
     const int sw = info_.width, sh = info_.height;
-    const int ox = (dst.w - sw * 2) / 2, oy = (dst.h - sh * 2) / 2;
-    for (int y = 0; y < sh; ++y) {
-        for (int x = 0; x < sw; ++x) {
-            const std::uint8_t* s = &p_->rgb[(static_cast<std::size_t>(y) * sw + x) * 3];
-            const std::uint16_t v = quantise888(s[0], s[1], s[2]);
-            const int dx = ox + x * 2, dy = oy + y * 2;
-            if (dx < 0 || dy < 0 || dx + 1 >= dst.w || dy + 1 >= dst.h) continue;
-            dst.set(dx,     dy,     v);
-            dst.set(dx + 1, dy,     v);
-            dst.set(dx,     dy + 1, v);
-            dst.set(dx + 1, dy + 1, v);
+    if (sw <= 0 || sh <= 0) { ++frames_; return true; }
+    const double fit = std::min(static_cast<double>(dst.w) / sw,
+                                static_cast<double>(dst.h) / sh);
+    const int outW = static_cast<int>(sw * fit), outH = static_cast<int>(sh * fit);
+    const int ox = (dst.w - outW) / 2, oy = (dst.h - outH) / 2;
+    for (int dy = 0; dy < outH; ++dy) {
+        const int sy = static_cast<int>(dy / fit);
+        if (sy < 0 || sy >= sh) continue;
+        const int ty = oy + dy;
+        if (ty < 0 || ty >= dst.h) continue;
+        for (int dx = 0; dx < outW; ++dx) {
+            const int sx = static_cast<int>(dx / fit);
+            if (sx < 0 || sx >= sw) continue;
+            const int tx = ox + dx;
+            if (tx < 0 || tx >= dst.w) continue;
+            const std::uint8_t* s = &p_->rgb[(static_cast<std::size_t>(sy) * sw + sx) * 3];
+            dst.set(tx, ty, quantise888(s[0], s[1], s[2]));
         }
     }
     ++frames_;
