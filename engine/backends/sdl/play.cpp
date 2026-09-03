@@ -1610,6 +1610,7 @@ int main(int argc, char** argv) {
     std::unique_ptr<omk::UiWalk> walk;
     int openScreen = -1, conversations = 0, lastArea = -1;
     int replySel = 0;            // which reply the player is on
+    int actionTold = 0;          // one line for a press that reaches nothing
     // The spoken line's SCROLL, in pixels, and the overflow it is clamped to -
     // `dword_6A52C0` and `dword_53AE24`. One pixel a tick while held, which is
     // what `Dialog_TickUI` does with input bits 4 (up) and 8 (down).
@@ -3175,6 +3176,38 @@ int main(int argc, char** argv) {
                 // at the position it left - the Session's scan reads this on
                 // its next frame (wave B, T15). Facing in the +420 degrees.
                 session.setPlayerPosition(player->pos(), player->facing());
+                // ---- THE ACTION BUTTON -------------------------------
+                //
+                // `Game_RaiseEvent(6, 4)` from the input handler, which is
+                // `Game_HandleEvent` case 6:
+                //
+                //     if (g_DialogState == 3 || a2 != 4 || !dword_4E6B24)
+                //         return 0;
+                //     dword_4E6C90 = 1;
+                //
+                // so a press with no prompt slot taken never reaches the pump,
+                // and since the pump clears the flag at the end of its slot
+                // loop a HELD button is one press per FRAME - which is why
+                // this is not edge-filtered. `Session::pressAction` models all
+                // of that, including handing the tracked position to
+                // `talkToPedestrian` for the crowd.
+                //
+                // Bit 0x10 is "Action / Utiliser" - group 0 action 4 of
+                // `tables/key_bindings.json`, keyboard 28, DIK_RETURN. The
+                // Session was modelling the press and the zone registry was
+                // arming its slots, and nothing in the viewer ever pressed it,
+                // so no object could be taken and no pedestrian talked to
+                // (`todo/omk-play.md` 65).
+                if ((bits & 0x10u) && !session.dialogOpen()) {
+                    const int armed = session.zones().armedCount();
+                    const std::int16_t z = session.zones().armedZone();
+                    if (session.pressAction())
+                        std::printf("action: zone %d activated (%d slot%s armed)\n",
+                                    z, armed, armed == 1 ? "" : "s");
+                    else if (!actionTold++)
+                        std::printf("action: pressed with %d slots armed - nothing "
+                                    "in reach is interactable from here\n", armed);
+                }
                 // `Walk_ProbeGround` -> `Game_HandleEvent` case 9: the decor
                 // under his feet, over every shown slot. The active row - the
                 // zone tables, the area's music - follows the FEET, not the
