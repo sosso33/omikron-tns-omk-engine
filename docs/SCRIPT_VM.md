@@ -752,12 +752,29 @@ bank.
 ### 104 / 105 — `player.anim.hold` and `player.anim.release`
 
 Both call `Actor_HoldAnimation` on `Actor_Player()`, 104 with 1 and 105 with 0.
-It sets or clears bits **0x80** and **0x01** of the animation instance's flag
-word, and the animation update tests `flags & 0x81` and pins the transform back
-to rest every frame while either is set — so it is a freeze, not a hide.
-Releasing also clears the accumulator, which is why it starts from the rest
-pose. In the scripts they bracket a staged sequence: 104 before `fade.to_black`,
-105 after the last camera and before `fade.from_black`.
+It sets or clears bits **0x80** and **0x01** of the channel's flag word — 0x80
+in `Perso_SetInputEnabled`, 0x01 in `sub_45A870` — and **neither call touches a
+transform**. `sub_45A870` additionally sets the channel's blend count to 1 and
+weight[0] to `0x40000000`, and `Cef_TickChannel` (0x004A8160) re-asserts exactly
+those two every tick while `flags & 0x81`, then carries on. A blend collapsed to
+one entry at full weight is the pose the body already had, so it is a **freeze on
+the current pose**. `Actor_EnterDialogueMode` states the consequence from the
+other side: "a held channel never plays the group-400 stance, so an scx scene
+clip keeps the body". In the scripts they bracket a staged sequence: 104 before
+`fade.to_black`, 105 after the last camera and before `fade.from_black`.
+
+The other consumer of `flags & 0x81` is the CAMERA: `sub_415D10` opens
+`if ((u32(a1,356) & 0x81) != 0) { v2 = 0; v13 = 0; }`, so a held channel forces
+the follow camera's mode to 0 — which is how the engine knows a script owns the
+camera for the bracketed run.
+
+> **Corrected 2026-09-03.** This said the update "pins the transform back to rest
+> every frame" and that releasing "starts from the rest pose". Neither is in the
+> code: none of the three `& 0x81` sites (`sub_415D10`, `sub_415E60`,
+> `Cef_TickChannel`) pins a transform. The port had implemented the wrong reading
+> literally and drew the player's BIND pose — a T-pose — for the whole of AREA
+> 222's tutorial (`todo/omk-play.md` 43). The entry's own warning below is where
+> the next reader should have started.
 
 > Named from effect plus position, not from a self-description, so it is the
 > weakest name in this batch. What is certain is the pair and the bits.

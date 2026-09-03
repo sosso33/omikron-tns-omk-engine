@@ -1209,6 +1209,13 @@ int main(int argc, char** argv) {
     float playerFeet = 0.0f;
     bool  playerFeetKnown = false;
     int   playerCamId = -2;
+    // THE HELD POSE. `player.anim.hold` collapses the channel's blend stack
+    // to one entry at full weight (`sub_45A870` writes count 1 and weight
+    // 0x40000000, and `Cef_TickChannel` re-asserts both every tick while
+    // `flags & 0x81`), so the body KEEPS the pose it had - it is a freeze.
+    // Latched on the frame the hold begins and reused until it releases.
+    std::vector<omk::MeshPose> heldPose;
+    bool  heldPoseValid = false;
     // The facing at the hand-over. `Actor_TickScxDriven` sets +1308 when
     // the player's program ends and `Actor_TickNpc` then derives the facing
     // from the node's matrix - which after a scene clip is the clip's root
@@ -2085,7 +2092,27 @@ int main(int argc, char** argv) {
             }
             if (playerDriven) playerDrivenSeen = true;
             const omk::WorldCamera* hc = session.cameraTarget();
-            followCam = hc && !hc->absolute() && hc->eyeSubject == 0 && hc->atSubject == 0;
+            // A HELD PLAYER MEANS THE SCRIPT OWNS THE CAMERA.
+            //
+            // `followCam` used to be a test on the camera's SHAPE alone, and
+            // that cannot tell the area's follow camera from a scripted shot:
+            // AREA 222's tutorial names 4290/4291/4292, and all three are
+            // eyeSubject 0 / atSubject 0 exactly like camera 0. So each shot
+            // was fed to `setCameraOffsets` and RE-AIMED THE FOLLOW CAMERA -
+            // it kept trailing the player with the follow lag instead of
+            // standing as a staged shot, which reads as "the camera never
+            // left adventure mode".
+            //
+            // The engine's own discriminator is the hold: `sub_415D10` (the
+            // follow camera) opens `if ((u32(a1,356) & 0x81) != 0) { v2 = 0;
+            // v13 = 0; }` - while the player's channel is held its camera mode
+            // is forced to 0. And the scripts bracket every staged sequence
+            // with 104/105 (SCRIPT_VM 104/105; AREA 222 holds at pc 2360 and
+            // releases at 2414, after its last `camera.set`). So: held means
+            // the follow controller stands down and the requested camera is
+            // resolved as a fixed shot.
+            followCam = hc && !hc->absolute() && hc->eyeSubject == 0 &&
+                        hc->atSubject == 0 && !session.playerAnimHeld();
             const bool beatsOver = playerDrivenSeen || !sc.loaded() || sc.programCount() == 0;
             const bool feetSetLoaded =
                 !worldSlots[static_cast<std::size_t>(session.activeSlot() & 1)].geo.corners.empty();
@@ -3274,13 +3301,41 @@ int main(int argc, char** argv) {
                 // on `pos()`, which the walker keeps on the floor. The feet
                 // offset is the rest pose's, taken once, so a clip's bob does
                 // not move the ground under him.
-                // Under `player.anim.hold` the update pins the transform to
-                // rest every frame (SCRIPT_VM 104/105): no tracks, frame 0.
-                const omk::NodeTracks* pt = session.playerAnimHeld() ? nullptr
-                                                                     : player->poseTracks();
-                std::vector<omk::MeshPose> pose = pt
-                    ? omk::composePose(playerMeshes, *pt, player->poseFrame(), false)
-                    : omk::composePose(playerMeshes, omk::NodeTracks{}, 0, false);
+                // `player.anim.hold` is a FREEZE, not a reset to rest. This
+                // read `composePose(meshes, {}, 0)` - empty tracks at frame 0,
+                // which is the REST SENTINEL (CLAUDE.md 5: "animation key 0 is
+                // a rest sentinel, not frame 0") - and drew him in a T-pose for
+                // the whole of AREA 222's tutorial.
+                //
+                // What 104 actually does: `Actor_HoldAnimation` (0x00468DA0) is
+                // two calls, `Perso_SetInputEnabled` (bit 0x80) and `sub_45A870`
+                // (bit 0x01) - and NEITHER touches a transform. `sub_45A870`
+                // sets the channel's blend count to 1 and weight[0] to
+                // 0x40000000, and `Cef_TickChannel` re-asserts exactly those two
+                // every tick while `flags & 0x81`. A blend collapsed to one
+                // entry at full weight is the pose he already had.
+                // `Actor_EnterDialogueMode`'s own comment says the same thing
+                // from the other side: "a held channel never plays the group-400
+                // stance, so an scx scene clip keeps the body".
+                //
+                // So: latch the pose when the hold begins and hold it.
+                std::vector<omk::MeshPose> pose;
+                if (session.playerAnimHeld()) {
+                    if (!heldPoseValid) {
+                        const omk::NodeTracks* ht = player->poseTracks();
+                        heldPose = ht
+                            ? omk::composePose(playerMeshes, *ht, player->poseFrame(), false)
+                            : omk::composePose(playerMeshes, omk::NodeTracks{}, 0, false);
+                        heldPoseValid = true;
+                    }
+                    pose = heldPose;
+                } else {
+                    heldPoseValid = false;
+                    const omk::NodeTracks* pt = player->poseTracks();
+                    pose = pt
+                        ? omk::composePose(playerMeshes, *pt, player->poseFrame(), false)
+                        : omk::composePose(playerMeshes, omk::NodeTracks{}, 0, false);
+                }
                 omk::applyPose(playerPosed, playerRest, playerMeshes, pose);
                 if (!playerFeetKnown) {
                     playerFeet = -1e9f;

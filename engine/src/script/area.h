@@ -695,14 +695,20 @@ public:
     // position straight back over the address the script chose.
     int  placementSeq() const { return placementSeq_; }
     // `player.anim.hold` (104) / `player.anim.release` (105):
-    // `Actor_HoldAnimation(Actor_Player(), 1 / 0)` sets or clears bits 0x81 of
-    // the animation instance's flag word (SCRIPT_VM "104 / 105"). While set,
-    // `Cef_TickChannel` skips its whole input pass - `(u8(v1,4) & 0x81) == 0`
-    // gates it, so the device is IGNORED (todo/actor-runtime.md, notes) - and
-    // the animation update pins the transform to rest every frame. The player
+    // `Actor_HoldAnimation(Actor_Player(), 1 / 0)` sets or clears bits 0x80 and
+    // 0x01 of the CHANNEL's flag word (SCRIPT_VM "104 / 105"). Neither of its
+    // two calls touches a transform: `sub_45A870` collapses the blend stack to
+    // one entry at full weight and `Cef_TickChannel` re-asserts that every tick
+    // while `flags & 0x81`, so the body KEEPS the pose it had. The player
     // neither moves nor animates. The scripts bracket a staged camera sequence
     // with them: AREA 222's airlock beat holds at pc 2360 and releases at
     // 2414, after its last `camera.set`.
+    //
+    // Corrected 2026-09-03: this said the tick "skips its whole input pass" and
+    // that the update "pins the transform to rest". It does neither - it re-pins
+    // the blend and carries on, and the port's literal reading of "rest" drew a
+    // T-pose (todo/omk-play.md 43). A held channel is also what tells the
+    // FOLLOW CAMERA to stand down (`sub_415D10`), which is omk-play 42.
     bool playerAnimHeld() const { return playerAnimHeld_; }
     const float* playerPos() const { return playerPos_; }
     float playerYaw() const { return playerYaw_; }

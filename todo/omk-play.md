@@ -5,6 +5,80 @@ of the port (CLAUDE.md 5), but what it fails to draw is what a person reports,
 so its gaps are filed here in the same four-part shape as the script engine's.
 Numbering continues from `iam-script-engine.md` so a number names one thing.
 
+## Fixed (batch 4, 2026-09-03)
+
+### 42. A scripted camera shaped like the follow camera re-aims the follow camera — A
+
+> **Fixed 2026-09-03.** `followCam` now also requires `!session.playerAnimHeld()`, so a
+> held player hands the camera to the script and the requested shot resolves as a fixed
+> camera. `verify.py: held camera bracket`.
+
+Filed 2026-09-03 from a play report — *after the Impasse cutscene, going into
+the small way, the text appears but the camera stays in adventure mode.*
+
+**What the engine does** — `camera.set` (95) and `camera.set.wait` (96) issue
+`Camera_Request` mode 12 and the request owns the camera. The follow camera
+is `sub_415D10`/`sub_415E60`, and `sub_415D10` opens
+`if ((u32(a1,356) & 0x81) != 0) { v2 = 0; v13 = 0; }` — while the player's
+channel is HELD its camera mode is forced to 0. The scripts bracket every
+staged sequence with `player.anim.hold`/`release` (SCRIPT_VM 104/105), so
+"held" is the engine's own signal that a script is driving the camera.
+
+**What the port does** — `play.cpp` decided *this is the follow camera* from
+the camera's SHAPE alone:
+
+    followCam = hc && !hc->absolute() && hc->eyeSubject == 0 && hc->atSubject == 0;
+
+AREA 222's tutorial (zone 3795, script at 2354) names cameras 4290, 4291 and
+4292, and **all three are `eyeSubject 0, atSubject 0` — identical in shape to
+camera 0**. So each shot passed that test, was handed to
+`player->setCameraOffsets(...)`, and re-aimed the follow camera: it kept
+trailing the player with the follow lag instead of standing as a staged shot.
+Nothing was ignored, which is why it looked like the camera "never left
+adventure mode" rather than like an error.
+
+**How established** — the script disassembles to 16 instructions holding at
+pc 2360 and releasing at 2414 with all three `camera.set`s between them; the
+chunk's camera table (base +64, count +84, stride 44, subjects at +32/+34)
+gives `(0,0)` for 4290/4291/4292 **and** for camera 0. Both halves are
+asserted by `verify.py: held camera bracket`, which fails readably when the
+decode desyncs.
+
+**Severity A** for the viewer: a whole authored sequence is invisible.
+
+### 43. `player.anim.hold` drew the REST pose, so the player T-posed — A
+
+> **Fixed 2026-09-03.** The pose is latched when the hold begins and reused until
+> release, instead of composing empty tracks at frame 0.
+
+Filed 2026-09-03 from the same report — *the character is in t pose*.
+
+**What the engine does** — `Actor_HoldAnimation` (0x00468DA0) is two calls and
+**neither touches a transform**: `Perso_SetInputEnabled` (bit 0x80) and
+`sub_45A870` (bit 0x01). `sub_45A870` sets the channel's blend count to 1 and
+weight[0] to `0x40000000`, and `Cef_TickChannel` (0x004A8160) re-asserts
+exactly those two every tick while `flags & 0x81`. A blend collapsed to a
+single entry at full weight is the pose the body already had — a freeze.
+`Actor_EnterDialogueMode`'s own comment says it from the other side: *"a held
+channel never plays the group-400 stance, so an scx scene clip keeps the
+body"*.
+
+**What the port does** — it composed `composePose(meshes, NodeTracks{}, 0)`,
+i.e. empty tracks at frame 0. Frame 0 is the **rest sentinel** (CLAUDE.md 5:
+*"animation key 0 is a rest sentinel, not frame 0"*), so the player was drawn
+in his bind pose for the whole of the held sequence.
+
+**How established** — the two functions above, read end to end, plus the
+0x81 test sites: `sub_415D10` and `sub_415E60` (the follow camera) and
+`Cef_TickChannel`. None of the three pins a transform to rest.
+
+**Severity A** for the viewer, and it also **corrects the docs**:
+`docs/SCRIPT_VM.md` 104/105 said the update "pins the transform back to rest
+every frame", and `engine/src/script/area.h` said `Cef_TickChannel` "skips its
+whole input pass". Neither is what the code does — the tick re-pins the blend
+and carries on. The SCRIPT_VM entry already labelled itself *"the weakest name
+in this batch"*, which is where the next reader should have started.
+
 ## Fixed (batch 3, 2026-09-03)
 
 ### 41. One body is staged: every character but the first shown collapses into it — B

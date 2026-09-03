@@ -15755,6 +15755,86 @@ def c_transcript_index():
            "anywhere - it would go stale on the next session)"
 
 
+def c_held_camera_bracket():
+    r"""A staged camera sequence is bracketed by the HOLD, and its shots are
+    shaped exactly like the follow camera.
+
+    This pins the two facts behind `todo/omk-play.md` 42 and 43. It is the
+    check that would have caught both without anyone playing, and neither was
+    found any other way.
+
+    AREA 222's zone 3795 is the alley tutorial. Its script holds the player
+    (104), runs three camera shots, releases (105), and then disables its own
+    trigger zone. So the hold BRACKETS the sequence - the rule
+    `docs/SCRIPT_VM.md` 104/105 states, and the discriminator the engine
+    itself uses: `sub_415D10`, the follow camera, opens
+    `if ((u32(a1,356) & 0x81) != 0) { v2 = 0; v13 = 0; }`, so a held channel
+    forces the follow camera's mode to 0.
+
+    THE SECOND HALF IS THE ONE THAT BIT. Every camera that script names is
+    `eyeSubject 0, atSubject 0` - the same SHAPE as camera 0, the follow
+    camera. `play.cpp` decided "this is the follow camera" from that shape
+    alone, so each scripted shot was handed to `setCameraOffsets` and RE-AIMED
+    the follow camera rather than standing as a fixed shot: it kept trailing
+    the player, and the tutorial read as never having happened. A shape test
+    cannot separate the two, and this asserts that it cannot, so nobody
+    reintroduces one.
+
+    The last row is the one-shot: the script's final act is `zone.disable` on
+    its OWN id, which is what stops the tutorial firing on every entry - not a
+    saved variable, which is what it looks like from the outside.
+    """
+    import sys as _sys, struct as _st
+    _sys.path.insert(0, os.path.join(ROOT, "tools"))
+    import dialog_triggers as _T, dialog_disasm as _D
+
+    b = _T.archive(omkpaths.data("IAM", "AREA"))[222]
+    base = _T.LAYOUT["AREA"](b)[0]
+    rec = b[base + 5 * 68: base + 6 * 68]
+    zoneId = _st.unpack_from("<H", rec, 64)[0]
+    ops, _st_ok = _D.disasm(b, _st.unpack_from("<i", rec, 0)[0], len(b))
+
+    first = {}
+    for pc, op, raw in ops:
+        first.setdefault(op, pc)
+    holdPc, relPc = first.get(104, -1), first.get(105, -1)
+    shots = [_st.unpack_from("<h", raw, 0)[0] for _, op, raw in ops
+             if op in (95, 96) and len(raw) >= 2]
+    disabled = [_st.unpack_from("<h", raw, 0)[0] for _, op, raw in ops
+                if op == 65 and len(raw) >= 2]
+
+    # the chunk's own camera table: base +64, count +84, stride 44,
+    # atSubject at +32 and eyeSubject at +34 (engine/src/o3de/worldcam.cpp).
+    p = _st.unpack_from("<I", b, 64)[0]
+    n = _st.unpack_from("<h", b, 84)[0]
+    subj = {}
+    for i in range(n):
+        o = p + 44 * i
+        cid = _st.unpack_from("<h", b, o + 24)[0]
+        subj.setdefault(cid, (_st.unpack_from("<h", b, o + 34)[0],
+                              _st.unpack_from("<h", b, o + 32)[0]))
+
+    named = sorted(set(shots))
+    # every shot the script names, and camera 0, relative to actor 0 in BOTH
+    likeFollow = sum(1 for c in named if subj.get(c) == (0, 0))
+    # A desynchronised decode leaves no camera ops at all. Report that as a
+    # readable FAIL rather than raising out of min() - a check that throws
+    # says nothing about which of its rows moved.
+    camPcs = [p for p, o, _ in ops if o in (95, 96)]
+    opensRun = bool(camPcs) and holdPc >= 0 and holdPc < min(camPcs)
+    closesRun = bool(camPcs) and relPc > max(camPcs)
+    return (zoneId, holdPc, relPc, opensRun, closesRun,
+            named, likeFollow, subj.get(0), disabled), \
+           (3795, 2360, 2414, True, True, [0, 4290, 4291, 4292], 4, (0, 0), [3795]), \
+           "AREA 222 zone 3795, the alley tutorial: its id, the pc of " \
+           "`player.anim.hold` and `player.anim.release`, that the hold opens " \
+           "and the release closes the camera run, the cameras it names, how " \
+           "many of those are eyeSubject/atSubject 0 like the follow camera " \
+           "(ALL of them - a shape test cannot tell a staged shot from the " \
+           "follow camera, which is omk-play 42), camera 0's own subjects, " \
+           "and the zone the script disables - itself, which is the one-shot"
+
+
 def c_no_define_renames():
     """CLAUDE.md 3: renames go through tools/renames.json, never a #define."""
     s = open(os.path.join(ROOT, "readable/types.h"), encoding="utf-8").read()
@@ -16923,6 +17003,7 @@ CHECKS = [
     ("input paths",        c_input_paths,       "CLAUDE.md 2"),
     ("licence headers",    c_licence_headers,   "LICENSING.md"),
     ("transcript index",   c_transcript_index,  "transcript/README"),
+    ("held camera bracket",c_held_camera_bracket,"todo/omk-play 42"),
     ("no #define renames", c_no_define_renames, "CLAUDE.md 3"),
 ]
 
