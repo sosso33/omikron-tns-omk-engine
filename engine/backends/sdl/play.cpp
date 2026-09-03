@@ -1225,7 +1225,10 @@ int main(int argc, char** argv) {
     if (argc < 3) {
         std::fprintf(stderr,
             "usage: omk-play <gamedata> <tables dir> [screen] [--frames N] "
-            "[--dump out.bin] [--keys DIK,DIK,...]\n"
+            "[--dump out.bin] [--keys DIK,DIK,...] [--nofmv] [--speed X]\n"
+            "       --speed scales the frame delta the way the engine's own "
+            "dword_4E972C does: 2 is its double speed, 0.5 and 0.1 its two "
+            "slow motions, capped at 3\n"
             "       omk-play <gamedata> <tables dir> --scene <set> [--cam N] "
             "[--eye x,y,z] [--at x,y,z] [--fov F] [--full]\n");
         return 2;
@@ -1262,6 +1265,7 @@ int main(int argc, char** argv) {
     // brings it back for comparing against those captures, which is the one
     // job it is evidence for.
     bool haveEye = false, haveAt = false, letterbox = false, startVulkan = false, noDelay = false;
+    double speed = 1.0;                 // --speed: the frame delta's multiplier
     bool forceSoftware = false, showFps = false;
     for (int i = 3; i < argc; ++i) {
         const std::string a = argv[i];
@@ -1279,6 +1283,24 @@ int main(int argc, char** argv) {
         // asked is a game with a line of noise under it.
         else if (a == "--fps") showFps = true;
         else if (a == "--nodelay") noDelay = true;
+        // THE SPEED MULTIPLIER, and the engine has one of its own.
+        // `Game_Frame` switches on `dword_4E972C` to set the frame delta:
+        //
+        //     case 0   flt_4C30D8 = 30.0 / fps, capped at 3.0   the normal rate
+        //     case 1   1.0        case 2   0.5
+        //     case 3   0.1        case 4   2.0
+        //
+        // so the game ships with a double-speed and two slow-motions, driven
+        // by scaling the DELTA rather than by running the loop faster. This
+        // does the same to `frameSec`, so 2 is the engine's case 4 and 0.5 its
+        // case 2. Clamped at the engine's own ceiling of 3.0 - case 0 caps
+        // there, and past it a single frame steps further than any of the
+        // runtime's own clamps expect.
+        else if (a == "--speed" && i + 1 < argc) {
+            speed = std::atof(argv[++i]);
+            if (!(speed > 0.0)) speed = 1.0;
+            if (speed > 3.0) speed = 3.0;
+        }
         // How many frames apart the scripted keys are fed. The default 2 is
         // one press and one release, which is the minimum that produces an
         // EDGE; a walk that has to wait for a line to play needs more.
@@ -2459,8 +2481,15 @@ int main(int argc, char** argv) {
             double dt = (nowMs - lastMs) / 1000.0;
             lastMs = nowMs;
             if (dt < 0.0 || dt > 0.25) dt = 1.0 / 30.0;
+            dt *= speed;                     // --speed, the engine's own trick
             session.setFrameSeconds(dt);
             frameSec = dt;
+        } else if (speed != 1.0) {
+            // A frame-bounded run keeps the fixed 1/30 so the headless checks
+            // stay deterministic; asking for a speed scales that too, and at
+            // the default 1.0 nothing moves.
+            frameSec = speed / 30.0;
+            session.setFrameSeconds(frameSec);
         }
 
         // ---- one frame of the GAME -------------------------------------
