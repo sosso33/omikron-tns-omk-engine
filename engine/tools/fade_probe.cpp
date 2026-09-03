@@ -85,6 +85,26 @@ int main(int argc, char** argv) {
                   backWithoutIn, fadeInMode, fadeInDur, inStartsBlack, inEndsClear,
                   fadeOutMode, outStartsClear, outHalf, outClears})
         put32(v);
+
+    // THE BAND GREYS - the black fade is two letterbox bands, not a
+    // full-screen quad, and these are the ticker's own two outputs
+    // (0x00451E60): `v8` on the inner corners, `v7` at the screen edge.
+    // Sampled at the start, a quarter in, halfway and past the end.
+    {
+        omk::Session bs(argv[1], state, table);
+        bs.startBlackFade(true);                       // mode 3, the fade IN
+        const auto& f3 = bs.blackFade();
+        put32(f3.bandGrey(false)); put32(f3.bandGrey(true));          // t=0
+        for (int i = 0; i < 30; ++i) bs.tickFades();
+        put32(f3.bandGrey(false)); put32(f3.bandGrey(true));          // halfway
+        bs.startBlackFade(false);                      // mode 4, the fade OUT
+        const auto& f4 = bs.blackFade();
+        put32(f4.bandGrey(false)); put32(f4.bandGrey(true));          // t=0
+        for (int i = 0; i < 30; ++i) bs.tickFades();
+        put32(f4.bandGrey(false)); put32(f4.bandGrey(true));          // halfway
+        put32((480 * 64) / 480);                       // the band height at 480
+        put32((352 * 64) / 480);                       // ...and letterboxed
+    }
     if (!omk::safeOutputPath(argv[4])) return 2;
     std::ofstream f(argv[4], std::ios::binary);
     f.write(reinterpret_cast<const char*>(o.data()),

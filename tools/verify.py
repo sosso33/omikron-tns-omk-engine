@@ -6351,6 +6351,16 @@ def c_engine_fades():
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
     v = struct.unpack_from("<16i", raw, 0)
+    # THE BAND GREYS, and the band's height. The black fade is TWO LETTERBOX
+    # BANDS, not a full-screen quad - the ticker (0x00451E60) submits quads at
+    # (0,h-v3)(w,h-v3)(w,h)(0,h) and (0,v3)(w,v3)(w,0)(0,0) with `v3 =
+    # (height << 6) / 480`, shading from `v8`'s grey on the inner corners to
+    # `v7`'s at the screen edge. The colour half, by contrast, really is one
+    # quad at (0,0)(w,0)(w,h)(0,h). `omk-play` applied BOTH to every pixel, on
+    # the stated premise that both are full-screen, so the end of every
+    # cutscene blacked the whole frame and then snapped back when state 4
+    # cleared (`todo/omk-play.md` 56).
+    bands = struct.unpack_from("<10i", raw, 16 * 4)
     # ...and the operand decode the report turned on, from the shipped bytes
     import dialog_triggers
     blk = dialog_triggers.archive(omkpaths.data("IAM", "SCENE"))[55]
@@ -6358,9 +6368,10 @@ def c_engine_fades():
     raw8 = blk[1230:1238]
     colour = raw8[0] | raw8[1] << 8 | raw8[2] << 16 | raw8[3] << 24
     dur = struct.unpack_from("<h", raw8, 4)[0]
-    return v + (op, colour, dur), \
+    return v + bands + (op, colour, dur), \
            (1, 1, 1, 1, 1, 50, 1,
             0, 3, 60, 1, 1, 4, 1, 50, 1,
+            0, 0, 127, 254, 127, 255, 64, 128, 64, 46,
             119, 0x00FFFFFF, 25), \
            "the colour fade's mode after a `to`, then its three refusal " \
            "outcomes - to over to refused, from over to allowed, from over " \
@@ -6369,7 +6380,12 @@ def c_engine_fades():
            "before any fade in is refused (0); opcode 132 gives mode 3 over " \
            "60 frames and it starts FULLY BLACK and ends CLEAR, which is a " \
            "fade IN whatever the table calls it; 133 gives mode 4, starts " \
-           "clear, is 50% black halfway and CLEARS at the end; and finally " \
+           "clear, is 50% black halfway and CLEARS at the end; then the two " \
+           "BAND greys (inner, outer) at the start and halfway of each - " \
+           "state 3 from (0,0) toward (127,254), the outer edge twice as " \
+           "fast and saturating; state 4 from (127,255) down through " \
+           "(64,128) - and the band height, 64 rows at 480 and 46 " \
+           "letterboxed; and finally " \
            "the Impasse's " \
            "own opening fade decoded from the shipped bytes: opcode 119, " \
            "colour 0x00FFFFFF (WHITE, not the red the report went looking " \

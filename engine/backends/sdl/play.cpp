@@ -3793,18 +3793,59 @@ int main(int argc, char** argv) {
         // one of three I2D quad flags by colour and none of the three is
         // traced; mixing toward the colour matches the ramp's direction for
         // every mode and colour, which is what a viewer sees.
-        for (const auto* fd : {&session.colourFade(), &session.blackFade()}) {
-            const float k = fd->weight();
-            if (!fd->running() || k <= 0.0f) continue;
-            const int cr = static_cast<int>((fd->colour >> 16) & 0xFF);
-            const int cg = static_cast<int>((fd->colour >> 8) & 0xFF);
-            const int cb = static_cast<int>(fd->colour & 0xFF);
-            for (auto& px : fb.px) {
-                int r = ((px >> 11) & 31) << 3, g = ((px >> 5) & 63) << 2, b = (px & 31) << 3;
-                r += static_cast<int>((cr - r) * k);
-                g += static_cast<int>((cg - g) * k);
-                b += static_cast<int>((cb - b) * k);
-                px = static_cast<std::uint16_t>(((r >> 3) << 11) | ((g >> 2) << 5) | (b >> 3));
+        {
+            const omk::Session::ScreenFade& cf = session.colourFade();
+            const float k = cf.weight();
+            if (cf.running() && k > 0.0f) {
+                const int cr = static_cast<int>((cf.colour >> 16) & 0xFF);
+                const int cg = static_cast<int>((cf.colour >> 8) & 0xFF);
+                const int cb = static_cast<int>(cf.colour & 0xFF);
+                for (auto& px : fb.px) {
+                    int r = ((px >> 11) & 31) << 3, g = ((px >> 5) & 63) << 2, b = (px & 31) << 3;
+                    r += static_cast<int>((cr - r) * k);
+                    g += static_cast<int>((cg - g) * k);
+                    b += static_cast<int>((cb - b) * k);
+                    px = static_cast<std::uint16_t>(((r >> 3) << 11) | ((g >> 2) << 5) | (b >> 3));
+                }
+            }
+        }
+        // ...and the BLACK fade only over the two LETTERBOX BANDS. Both were
+        // applied to every pixel here, on the stated premise that "both end in
+        // a full-screen quad" - true of the colour half, false of this one.
+        // The ticker submits two quads of `v3 = (height << 6) / 480` rows, at
+        // the top and the bottom, shading from `v8`'s grey on the inner edge
+        // to `v7`'s at the screen edge; the middle of the picture is never
+        // touched. Applied full-screen it blacked out the whole frame at the
+        // end of every cutscene and then snapped back when state 4 cleared,
+        // which is `todo/omk-play.md` 56.
+        {
+            const omk::Session::ScreenFade& bf = session.blackFade();
+            if (bf.running() && fb.h > 0) {
+                const int band = (fb.h * 64) / 480;
+                const int inner = bf.bandGrey(false), outer = bf.bandGrey(true);
+                if (band > 0 && (inner < 255 || outer < 255)) {
+                    for (int y = 0; y < fb.h; ++y) {
+                        // distance from the screen edge, 0 at the edge and
+                        // `band` at the inner lip; outside the bands, nothing.
+                        int d;
+                        if (y < band) d = y;
+                        else if (y >= fb.h - band) d = fb.h - 1 - y;
+                        else continue;
+                        const float t = band > 1 ? static_cast<float>(d) / static_cast<float>(band - 1)
+                                                 : 1.0f;
+                        const int grey = outer + static_cast<int>((inner - outer) * t);
+                        for (int x = 0; x < fb.w; ++x) {
+                            std::uint16_t& px = fb.px[static_cast<std::size_t>(y) *
+                                                      static_cast<std::size_t>(fb.w) +
+                                                      static_cast<std::size_t>(x)];
+                            int r = ((px >> 11) & 31) << 3, g = ((px >> 5) & 63) << 2,
+                                b = (px & 31) << 3;
+                            r = r * grey / 255; g = g * grey / 255; b = b * grey / 255;
+                            px = static_cast<std::uint16_t>(((r >> 3) << 11) |
+                                                            ((g >> 2) << 5) | (b >> 3));
+                        }
+                    }
+                }
             }
         }
 

@@ -507,6 +507,38 @@ public:
             // falling for the two that end on the scene
             return (mode == 1 || mode == 4) ? k : 1.0f - k;
         }
+        // THE BLACK FADE IS NOT A FULL-SCREEN QUAD, and the colour one is.
+        // Transcribed from the ticker (0x00451E60): the colour half submits
+        // ONE quad at (0,0) (w,0) (w,h) (0,h); the black half submits TWO, at
+        //
+        //   (0, h-v3) (w, h-v3) (w, h) (0, h)      the bottom band
+        //   (0,   v3) (w,   v3) (w, 0) (0, 0)      the top band
+        //
+        // with `v3 = (height << 6) / 480` - 64 rows at 480 - and a colour per
+        // vertex: `v8`'s grey on the two INNER corners, `v7`'s on the two at
+        // the screen edge. So it is a letterbox vignette that darkens from the
+        // edges, never the middle of the picture.
+        //
+        // The two greys, exactly as the ticker computes them from
+        // `v4 = clock * 255 / duration`:
+        //
+        //   state 3   v8 = v4                      0 -> 255
+        //             v7 = v4 < 0x80 ? 2*v4 : 255  0 -> 255, saturating early
+        //   state 4   v7 = ~v4                     255 -> 0
+        //             v8 = (~v4) >> 1              127 -> 0
+        //
+        // past the end, state 4 clears (`mode = 0`) and state 3 holds both at
+        // 255, which under the multiply is the frame untouched.
+        int bandGrey(bool outer) const {
+            if (mode != 3 && mode != 4) return 255;
+            if (duration <= 0.0f) return 255;
+            if (clock > duration) return 255;         // state 3's hold
+            const int v4 = static_cast<int>(clock * 255.0f / duration) & 0xFF;
+            if (mode == 3)
+                return outer ? (v4 < 0x80 ? 2 * v4 : 255) : v4;
+            const int n = (~v4) & 0xFF;
+            return outer ? n : (n >> 1);
+        }
     };
     const ScreenFade& colourFade() const { return colourFade_; }
     const ScreenFade& blackFade() const  { return blackFade_; }

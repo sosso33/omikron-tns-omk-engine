@@ -283,6 +283,70 @@ function in the game.
 **The class** — every scripted object motion in every scene: doors, lifts,
 crates, vehicles.
 
+## Fixed (batch 9, 2026-09-03)
+
+### 56. The black fade blacked the WHOLE screen: it is two letterbox bands — A
+
+> **Fixed 2026-09-03.** The black fade now shades only the top and bottom
+> `(height << 6) / 480` rows, from `v8`'s grey on the inner edge to `v7`'s at
+> the screen edge; the colour fade stays full-screen. `verify.py: engine
+> fades` asserts both greys at two points of each state and the band height.
+> Awaiting the play test.
+
+Filed 2026-09-03 from a play report — *at the end of any cutscene (included
+tutos), when returning to adventure mode, there is a fade to a black screen
+then it become normal again suddenly*.
+
+**The ticker, transcribed.** `sub_451E60` (0x00451E60) has two halves. The
+COLOUR half submits ONE quad::
+
+    (0, 0) (w, 0) (w, h) (0, h)        one colour, full screen
+
+The BLACK half submits TWO, with `v3 = (HIWORD(g_ScreenSize) << 6) / 480` -
+64 rows at 480 - and a colour per vertex::
+
+    (0, h-v3, v8) (w, h-v3, v8) (w, h, v7) (0, h, v7)     the bottom band
+    (0,   v3, v8) (w,   v3, v8) (w, 0, v7) (0, 0, v7)     the top band
+
+`v9..v20` is four vertices of `(x, y, colour)`, and the greys are
+
+    state 3   v8 = v4                       0 -> 255
+              v7 = v4 < 0x80 ? 2*v4 : 255   0 -> 255, saturating at halfway
+    state 4   v7 = ~v4                      255 -> 0
+              v8 = (~v4) >> 1               127 -> 0
+
+So it is a letterbox VIGNETTE that darkens from the edges inward, and the
+middle of the picture is never touched.
+
+**What the port did.** `play.cpp` applied both fades to every pixel of the
+framebuffer, under a comment that stated the premise outright - *"both end in
+a full-screen quad"* - which is true of the colour half and false of this
+one. So `fade.from_black` (133, mode 4) at the end of a cutscene blacked the
+entire frame over 60 frames and then, when state 4 hit its end and cleared
+(`dword_536C18 = 0`, stop drawing), snapped back. In the engine that same
+clear is invisible, because all it stops drawing is two dim bands.
+
+**Three wrong leads first, all recorded because each was checked and dropped:**
+
+* the opcode mapping - verified correct from the handler bytes,
+  `132: push 1; call Screen_Fade` (state 3, IN) and `133: push 0` (state 4,
+  OUT), so the table's names really are backwards and the port matches;
+* a missing native fade-in - the only two `Screen_FadeFromColor` calls are
+  restart and load-save, and SCENE 57, which the Impasse hands to, has no
+  fade in its startup script at all;
+* `sub_4452A0` - which does call `Screen_Fade(1)`, but is the COMBAT pairing
+  pass: run per frame per combatant from `Actor_TickPlayerAndOpponent`, it
+  tracks each fighter's `.CTL` state, keeps `+68` as that state's `+12` role
+  code, writes the opponent's index to `actor+400` for roles 1/2/13/8, and
+  counts down to `Screen_Fade(0)` + `Fight_Engage(-1, 1)`. Roles 6/7 are a
+  finishing move. Nothing to do with a cutscene.
+
+The lesson is the one CLAUDE.md 1 keeps making: the answer was in the
+function nobody had transcribed, and every inference made around it was
+consistent with the wrong picture.
+
+**Severity A** - every cutscene and every tutorial in the game.
+
 ## Fixed (batch 8, 2026-09-03)
 
 ### 54. Every generic effect drew as SMOKE: a binding names its effect by ID, not by position — A
