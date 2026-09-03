@@ -5864,6 +5864,141 @@ def c_engine_impasse_fx():
            ("the Impasse's beats fire 15 set-piece rows and peak at 108 live "
             "particles, alive on 262 of 900 frames")
 
+def c_subtitle_box():
+    r"""UI: the subtitle BOX and its two blends, read out of the renderer.
+
+    `Dialog_TickUI` (0x0046A200) draws no box - it makes no call but
+    `Text_DrawBlock`, four times. The box belongs to the TEXT RENDERER:
+    `sub_4400D0` (0x004400D0), which `Game_Tick` calls as
+    `sub_4400D0(0, dword_6A52C4, dword_6A52C0, height - 1, ...)`, submits one
+    quad before the glyphs and switches on `off_4C71A8`, the second colour
+    `Dialog_TickUI` sets::
+
+        off_4C71A8 == 0x80002040  ->  flags 4, top = a2 - 32     the REPLIES
+        off_4C71A8 == 0x00808080  ->  flags 2, top = a2 - 4      the LINE
+        x 18 .. width-18,   y (top - 8) .. height - 18
+
+    `I2D_SubmitQuad` copies 0x30 bytes - four vertices of (x, y, colour) plus
+    a flag word - and `sub_480BD0` fills all four corners from the first
+    unless flag 8 is set, which neither does: both are a FLAT fill.
+
+    **The flags are the blend**, through `sub_480AC0`, which sets D3D render
+    states 19 (SRCBLEND) and 20 (DESTBLEND)::
+
+        & 1   src 2 ONE          dst 2 ONE           additive
+        & 2   src 1 ZERO         dst 4 INVSRCCOLOR   dst *= (1 - src)
+        & 4   src 6 INVSRCALPHA  dst 5 SRCALPHA      src*(1-a) + dst*a
+
+    So the LINE's box is a 50% DARKENING (`0x808080` through INVSRCCOLOR) and
+    the REPLIES' is 50% of the navy `0x002040` - the "black transparent" and
+    "blue transparent" boxes a reader described. The line's box is invisible
+    over the black letterbox band, which is why the same reader could not say
+    whether a plain subtitle had one.
+
+    Asserted against the decompilation so the reading cannot drift; skipped
+    when `readable/` is absent, since it is a derivative work and is not
+    distributed.
+    """
+    import re
+    src = os.path.join(ROOT, "readable", "src")
+    if not os.path.isdir(src):
+        return ("skipped",), ("skipped",), "readable/ is not distributed"
+    dinput = open(os.path.join(src, "15_dinput.c"), encoding="utf-8", errors="replace").read()
+    i = dinput.index("@func 0x004400D0"); j = dinput.index("@func 0x00440", i + 20)
+    box = dinput[i:j]
+    d3d = open(os.path.join(src, "21_d3d.c"), encoding="utf-8", errors="replace").read()
+    k = d3d.index("@func 0x0046A200"); m = d3d.index("@func 0x0046A", k + 20)
+    dlg = d3d[k:m]
+    # the box's own constants, and that it submits exactly one quad on layer 10
+    got = (
+        "off_4C71A8 == (void *)-2147475392" in box,   # the reply colour
+        "off_4C71A8 == &unk_808080" in box,           # the line colour
+        box.count("I2D_SubmitQuad"),
+        "v5 = 4" in box, "v5 = 2" in box,             # the two blends
+        "a2 - 32" in box,                             # the reply top
+        len(re.findall(r"v2\d+ = 18", box)) >= 1,     # the 18px inset
+        # Dialog_TickUI: no draw but Text_DrawBlock, and the three inks
+        dlg.count("Text_DrawBlock"), "I2D_" in dlg,
+        "unk_8080C0" in dlg, dlg.count("0xFFFFFF"),
+        "dword_907969 = 32" in dlg,                   # the block's LEFT x
+    )
+    # ...and the LAYOUT defaults every subtitle inherits, from Text_DrawBlock
+    # (0x0043F180): the FONT is 74 - `docs/UI.md`'s "the default and every
+    # option row", with 76 the sub-640x480 override - and the style is 2.
+    # The dialogue's params carry only TEXTP_FLAG_A, so no TEXTP_ALIGN_* bit
+    # is ever set and 2 stands; `Text_LayOutBlock` switches on
+    # `dword_907A00 & 0x1E` with case 4 right, case 8 centred and DEFAULT
+    # left, so a subtitle is LEFT-aligned. The port centred every row.
+    lay = open(os.path.join(src, "15_dinput.c"), encoding="utf-8", errors="replace").read()
+    t = lay[lay.index("@func 0x0043F180"):lay.index("@func 0x0043F3E0")]
+    o = lay.index("@func 0x0043F3E0")
+    body = lay[o:o + 40000]
+    # ...and the OTHER face. `Subtitle_Show` (0x0041E040), the adventure-mode
+    # line that always comes with a sound, passes `params[0] = 0x20 | 0x40`
+    # and `params[2] = 86`; TEXTP_SLOT2 writes `dword_907A10 = params[2]`, the
+    # same global whose default is 74. The font table names both, and the
+    # names settle it: 74 is JOURNAL and 86 is VOIXOFF - voice-over.
+    sysc = open(os.path.join(src, "05_sys.c"), encoding="utf-8", errors="replace").read()
+    sub = sysc[sysc.index("@func 0x0041E040"):sysc.index("@func 0x0041E0E0")]
+    import json as _json
+    def _fonts(o):
+        if isinstance(o, dict):
+            if "fonts" in o: return o["fonts"]
+            for v in o.values():
+                r = _fonts(v)
+                if r: return r
+        elif isinstance(o, list):
+            for v in o:
+                r = _fonts(v)
+                if r: return r
+        return None
+    ft = {e["id"]: e["name"] for e in _fonts(_json.load(open(os.path.join(ROOT, "tables", "ui.json"))))}
+    # ...and the SCROLL. The block has a max size and a long line overflows it:
+    # `dword_53AE24` is the laid-out height LESS the block's, the offset
+    # `dword_6A52C0` moves one pixel a tick under input bits 8 (down) and 4
+    # (up) clamped to it, and `dword_6A50E8` is the arrow state - 2 more
+    # below, 1 more above, 3 both - which `sub_4400D0` draws as a quad under
+    # `a5 & 1` and another under `a5 & 2`.
+    got = got + (
+        "- v3 / 480" in dlg,                                   # the overflow
+        "dword_6A52C0 < dword_53AE24" in dlg,                  # the down clamp
+        "if ((a2 & 4) != 0 && v14 > 0)" in dlg,                # the up step
+        "dword_53AE24 != v14 ? 3 : 1" in dlg,                  # the arrow state
+        "if ((a5 & 1) != 0)" in box, "if ((a5 & 2) != 0)" in box,
+        # the arrows are RED and their alpha comes off a counter, so they pulse
+        "+ 16711680" in box, "0x3E7) << 24" in box,
+        # and the box insets are LITERAL pixels, not scaled by the display
+        "v21 = 18" in box, "g_ScreenSize - 18" in box, "v6 - 8" in box,
+        "params[0] = 0x20 | 0x40" in sub, "params[2] = 86" in sub,
+        "Text_DrawBlock(16, 0" in sub,
+        ft.get(74), ft.get(86), ft.get(76),
+        "dword_907A10 = params[2]" in t,
+        "dword_907A10 = 74" in t, "dword_907A10 = 76" in t,
+        "style = 2" in t,
+        "switch (dword_907A00 & 0x1E)" in body,
+        "v42 = dword_907A08 - v43" in body,                       # case 4, right
+        "(dword_907A08 - v43 - dword_907A14) / 2" in body,        # case 8, centred
+    )
+    return got, (True, True, 1, True, True, True, True, 4, False, True, 7, True,
+                 True, True, True, True, True, True,
+                 True, True, True, True, True,
+                 True, True, True, "JOURNAL", "VOIXOFF", "SMALL", True,
+                 True, True, True, True, True, True), \
+           ("the renderer's box: the two `off_4C71A8` colours it switches on, one "
+            "I2D_SubmitQuad, both blend flags, the reply's -32 top and the 18px "
+            "inset; then Dialog_TickUI's four Text_DrawBlock calls, that it makes "
+            "NO I2D call at all, the bluish 0x8080C0 reply ink, the seven 0xFFFFFF "
+            "sites and the left-x 32; then the LAYOUT defaults - font 74 with the "
+            "76 override, style 2, and the alignment switch whose case 4 is right, "
+            "case 8 centred and DEFAULT left, which is what a subtitle gets; and "
+            "Subtitle_Show's own params - TEXTP_SLOT2|FLAG_A with font 86 and the "
+            "inset-16 block - with the table naming 74 JOURNAL, 86 VOIXOFF (the "
+            "voice-over face the interaction line uses) and 76 SMALL; and the "
+            "SCROLL - the overflow, its two clamped steps, the arrow state and the "
+            "two arrow quads the renderer draws from it - RED (0xFF0000) with an "
+            "alpha off a counter, so they flash - and the LITERAL 18/8 insets, "
+            "which are not scaled by the display the way the block height is")
+
 def c_engine_tuto_camera():
     r"""`engine/`: a scripted camera resolves against the PELVIS, like the follow one.
 
@@ -18100,6 +18235,7 @@ SLOW = [
     ("engine: scene survive", c_engine_scene_survive, "todo/omk-play"),
     ("engine: env anim", c_engine_env_anim, "todo/omk-play"),
     ("engine: tuto camera", c_engine_tuto_camera, "todo/omk-play"),
+    ("subtitle box", c_subtitle_box, "docs/UI"),
     ("engine: impasse fx", c_engine_impasse_fx, "todo/omk-play"),
     ("sprite ids scene-local", c_sprite_ids_are_scene_local, "docs/ASSETS"),
     ("engine: scene sounds", c_engine_scene_sounds, "engine/README"),

@@ -283,6 +283,95 @@ function in the game.
 **The class** — every scripted object motion in every scene: doors, lifts,
 crates, vehicles.
 
+## Fixed (batch 11, 2026-09-03)
+
+### 58. The subtitle UI: boxes, blends, fonts, alignment, anchor, wrapping, scroll — A
+
+> **Fixed 2026-09-03, CONFIRMED IN PLAY** over four rounds of review.
+> `verify.py: subtitle box` asserts every number below against the
+> decompilation.
+
+Filed 2026-09-03 from a play report describing four cases: dialogue and
+cutscene share a font; the adventure-mode interaction line (the one that
+always comes with a sound) uses another; the dialogue box is black and
+transparent with a max size and scrolling; the reply menu is a blue box.
+
+**THE BOX IS THE TEXT RENDERER'S, NOT THE DIALOGUE'S.** `Dialog_TickUI`
+(0x0046A200) makes no draw call but `Text_DrawBlock`, four times - the port
+had looked for a box there and found none. `sub_4400D0` (0x004400D0), which
+`Game_Tick` calls as `sub_4400D0(0, dword_6A52C4, dword_6A52C0, height - 1,
+dword_6A50E8)`, submits one quad before the glyphs and switches on
+`off_4C71A8`::
+
+    off_4C71A8 == 0x80002040  ->  flags 4, v6 = a2 - 32     the REPLIES
+    off_4C71A8 == 0x00808080  ->  flags 2, v6 = a2 - 4      the LINE
+    x 18 .. width-18,   y (v6 - 8) .. height - 18
+
+`I2D_SubmitQuad` copies 48 bytes - four vertices of (x, y, colour) plus a flag
+word - and `sub_480BD0` fills all four corners from the first unless flag 8 is
+set, which neither does. **The flags are the BLEND**, through `sub_480AC0`,
+which sets D3D render states 19 (SRCBLEND) and 20 (DESTBLEND)::
+
+    & 1   src 2 ONE          dst 2 ONE           additive
+    & 2   src 1 ZERO         dst 4 INVSRCCOLOR   dst *= (1 - src)
+    & 4   src 6 INVSRCALPHA  dst 5 SRCALPHA      src*(1-a) + dst*a
+
+So the line's box is a 50% DARKENING and the replies' 50% of navy 0x002040 -
+"black transparent" and "blue transparent" exactly. The line's box is
+invisible over the black letterbox band, which is why a reader watching the
+original could not say whether a plain subtitle had one.
+
+**THE FONTS, and the second one names itself.** `Text_DrawBlock` defaults
+`dword_907A10 = dword_907A0C = 74` and the dialogue's params are
+`TEXTP_FLAG_A` alone (`v56[0] = 64`), so dialogue and cutscene both get **74 =
+JOURNAL**. `Subtitle_Show` (0x0041E040) passes `params[0] = 0x20 | 0x40` and
+`params[2] = 86`, and TEXTP_SLOT2 writes `dword_907A10 = params[2]` - **86 =
+VOIXOFF**, voice-over, which is precisely the line that always comes with a
+sound. **76 = SMALL** is the sub-640x480 override.
+
+**LEFT, not centred.** `style = 2` is the default, no TEXTP_ALIGN_* bit is
+ever set, and `Text_LayOutBlock` switches on `dword_907A00 & 0x1E` with case 4
+right, case 8 centred and DEFAULT left. The port applied case 8's arithmetic
+unconditionally.
+
+**THE ANCHOR.** `dword_6A52C4 = height - height*64/480` places the block's top
+and the text fills DOWNWARD; the port anchored the text's bottom by row count,
+putting a line ~46px low with the box empty above it. The REPLY stack is
+anchored differently - `dword_6A52C4 = v18 - dword_907975`, the box's bottom
+edge less the stack's own height - so it grows with the number and length of
+the answers, where the port had floored it at the 64-scaled block and made
+every menu full height.
+
+**MARKUP IS PARSED ONCE, THEN THE RUN IS WRAPPED.** The shipped strings carry
+`{f...}`: `media.play 142` is literally `{fD}Te voil...`. Wrapping the STRING
+and parsing each row separately lost the run's state at every break, so a
+`{fD}` at the head applied to row 0 and every row after fell back - two faces
+in one paragraph, photographed in the Impasse.
+
+**THE SCROLL.** `dword_53AE24` is the laid-out height less the block's; the
+offset `dword_6A52C0` moves one pixel a tick under input bits 8 (down) and 4
+(up), clamped to it; `dword_6A50E8` is the arrow state, 2 more below, 1 more
+above, 3 both. The arrows are RED and FLASHING - `v23 = ((v15 / 0x3E7) << 24)
++ 16711680` - 7px triangles at `width-32..-25`, the up one at the text's top
+and the down one at `a4 = height - 1`. A row is drawn only if it fits WHOLE,
+which is what `Text_LayOutBlock` does; drawing a straddling row sliced the
+last line against the screen edge.
+
+**Two of the port's own comments were wrong** and are corrected: there is no
+box in `Dialog_TickUI`, and `dword_907969` is the block's LEFT X (32), not a
+font selector. **And two mistakes of mine**, both caught by review: the box's
+`-4`/`-32` are how `v6` is derived from `a2`, not a second offset on the box
+(applying both put the reply box 32 rows above its own text), and the 18/8/4
+insets are LITERAL pixels where the block height alone scales.
+
+**Left as the engine has it**: the down arrow sits at `height - 1` and the
+block can reach the screen's bottom edge. A reader felt it too low; the
+numbers say the literal insets are proportionally tighter at 800x600 than at
+the 640x480 the game shipped at (3.00% of the height below the box against
+3.75%), and faithfulness won.
+
+**Severity A** - every line of text the game speaks.
+
 ## Fixed (batch 10, 2026-09-03)
 
 ### 57. Scripted cameras sat a whole pelvis-lift too low — A
