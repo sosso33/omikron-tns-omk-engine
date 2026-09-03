@@ -830,6 +830,11 @@ public:
 
     bool loadScene(const std::string& scptDataDir, ChunkKind kind, int chunk) {
         scptData_ = scptDataDir;
+        // Record which AREA's `.SCX` this is, so `reloadScene` can tell a
+        // scene load over the same area (keep every running program) from an
+        // area change (rebuild). Asked for by SCENE the area is not known
+        // here, and -1 makes the next call rebuild once rather than assume.
+        sceneArea_ = kind == ChunkKind::Area ? chunk : -1;
         return scene_.load(scptDataDir, iam_, table_, kind, chunk);
     }
     const SceneRunner& scene() const { return scene_; }
@@ -909,6 +914,11 @@ private:
     struct Ann { std::string domain; int field; };
     std::map<std::uint8_t, Ann> announce_;   // empty = announce nothing
     SceneRunner scene_;                      // empty unless loadScene ran
+    // The AREA whose `.SCX` `scene_` holds. The file is the area's (`+97`),
+    // so a scene loaded over the same area keeps the runner - and every
+    // program running - exactly as the engine does; only an area change
+    // rebuilds. -1 = nothing loaded yet.
+    int sceneArea_ = -1;
     const UiWidgets* ui_ = nullptr;          // null = no screens attached
     std::string uiName_ = "Kay'l";
     std::vector<UiAnswer> uiAnswers_;

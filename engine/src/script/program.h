@@ -169,6 +169,14 @@ public:
     struct NodeMotion {
         std::string name;        // the set mesh to place
         float pos[3] = {0, 0, 0};
+        // ...and its ORIENTATION, which the handler sets in the same breath:
+        // `sub_437160(node, m)` writes the path sample's 3x3 to node `+56`
+        // beside the `o3de_SetNodePos`. Carried as the keys' own (w,x,y,z);
+        // identity when the path holds no rotation. An object that spins in
+        // place is animated ENTIRELY by this and does not move at all - the
+        // Impasse's fan, `Ventilo`, turning the blade `Epale20`.
+        float quat[4] = {1, 0, 0, 0};
+        bool  rotated = false;   // the sample's quaternion is not identity
         float t = 0.0f;          // where along the path, in the path's frames
         bool  placed = false;    // false when the sample fell outside every span
     };

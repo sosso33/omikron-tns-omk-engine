@@ -5754,6 +5754,151 @@ def c_engine_programs():
            "- all matching tools/sim/scene.py"
 
 
+def c_engine_env_anim():
+    r"""`engine/`: the ENVIRONMENT's own animations, and the fan that turns.
+
+    A cutscene's beats are fired by the SCENE chunk's startup script. The
+    environment's are fired by the **AREA's**, and AREA 222's `+4` script
+    opens with `scx.play 20, 0, 0` before it even chooses the music::
+
+        2276  scx.play  20, 0, 0
+        2283  push.i8   1
+        2285  push.var  626           ; 'premiere impasse'
+
+    Object 20 is `Ventilo` - the Impasse's fan - and it is the **only** object
+    in `Impasse.SCX` with loopCount -1, run for ever. SCENE 55's sixteen beats
+    never name it, which is what "managed by the environment and not the
+    cutscene" means, and it is why it must survive a `scene.load`
+    (`engine: scene survive`).
+
+    **It turns without moving, and that is the whole of the bug it caught.**
+    `Script_MoveObjectOnPath` sets a node's POSITION and its ORIENTATION in
+    the same breath: `Path_Sample`'s sixth parameter is an out 3x3, and the
+    handler feeds it to `sub_437160(node, m)`, which raises the node's dirty
+    flag 0x80000 and `qmemcpy`s 36 bytes to node `+56`, right beside the
+    `o3de_SetNodePos`. The port sampled only the position - so the fan, whose
+    path holds the SAME POINT at every key and carries the spin entirely in
+    the quaternion, sat still while its clock ran. `todo/omk-play.md` 53.
+
+    What is asserted: the port starts object 20 off the area's script with
+    nothing missed, the node it drives is `Epale20` (a blade of `AImpasse`),
+    and over twelve frames its position moves by **0** while its quaternion
+    sweeps. A position-only sample makes the spread 0 and fails here.
+    """
+    import subprocess, tempfile, shutil
+    fr = omkpaths.data_root()
+    if not os.path.isdir(fr):
+        return ("no data",), ("data",), "needs the shipped tree"
+    eng = os.path.join(ROOT, "engine")
+    b = subprocess.run(["make", "-s", "build/env_anim"], cwd=eng,
+                       capture_output=True, text=True)
+    binp = os.path.join(eng, "build", "env_anim")
+    if b.returncode != 0 or not os.path.exists(binp):
+        return ("build failed",), ("built",), "engine/ must build"
+    tmp = tempfile.mkdtemp()
+    try:
+        out = os.path.join(tmp, "e.bin")
+        subprocess.run([binp, fr, os.path.join(ROOT, "tables", "vm_opcodes.json"),
+                        os.path.join(fr, "IAM", "START"),
+                        os.path.join(fr, "SCPTDATA"), out],
+                       capture_output=True, text=True)
+        raw = open(out, "rb").read()
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+    if len(raw) < 32:
+        return ("no output",), ("32 bytes",), "the probe must write its record"
+    (started, running, isEpale, samples, rotated,
+     posSpread, quatSpread, missed) = struct.unpack_from("<8i", raw, 0)
+    got = (started, running, isEpale, samples >= 12, rotated,
+           posSpread, quatSpread > 500, missed)
+    want = (1, 1, 1, True, 1, 0, True, 0)
+    return got, want, ("AREA 222's startup script starts Ventilo (object 20); its node "
+                       "Epale20 TURNS (quat sweeps) and does NOT move (spread 0)")
+
+def c_engine_scene_survive():
+    r"""`engine/`: a running scene program SURVIVES a `scene.load`.
+
+    The `.SCX` **belongs to the AREA**, named by its `+97` stem, and it is
+    loaded exactly once - when the area loads. `Area_LoadScx` (0x0041B4E0)
+    clears the slot's object container, calls `Scene_LoadSCX` into it and
+    binds the matching `.sfx`, and it has **two callers, `Area_TickLoad` and
+    `Game_Init`**.
+
+    `Scene_LoadSCX` (0x00449750) has **four call sites in the whole binary**::
+
+        Area_LoadScx   -> slot + 8          the AREA's SCX  (the environment)
+        Game_Start     -> &stru_930780      the GLOBAL aventure.scx library
+        sub_419060     -> &stru_930780
+        sub_4193E0     -> &stru_930780
+
+    The `scene.load` opcode (71, handler 0x403950) is **none of them**: it
+    calls `Scene_Load` (sub_40C120), which brings in the SCENE CHUNK - startup
+    script, zones, props - and never touches the object pool. So every running
+    program survives a scene load, and a cutscene does not own the objects it
+    animates: it calls `scx.play` on objects of the area's own `.SCX`, and the
+    ones it never names go on running. That is a play report about the
+    original - *the animations launched by the environment are not stopped
+    during a cutscene* - and `todo/omk-play.md` 52.
+
+    `Session::reloadScene` used to rebuild the runner unconditionally, on the
+    reasoning that "`Scene_LoadSCX` rebuilds the object pool, so no program
+    survives the transition". True of the function, false of the transition,
+    which does not call it; and since `resolveScx` reads the stem from the
+    AREA chunk either way, the rebuild was re-loading THE SAME FILE and
+    resetting every program's counter, clock and run count for nothing.
+
+    What is asserted: a program 30 frames into the demon's beat is still
+    running after `scene.load(222, 57)`, with the SAME clock and the same
+    file, and goes on advancing afterwards (30 -> 30 -> 40). The control is
+    that the runner is keyed on the AREA at all - AREA 0 is `anekbah.SCX`, a
+    different file with nothing running - since keeping the runner across an
+    area change would be as wrong in the other direction.
+
+    Note what is NOT the control: `sceneLoad(0, -1)` does nothing, correctly.
+    Area 0 is not resident, and the engine's slot walk changes only the DB
+    field for an area in neither slot. The rebuild-on-area-change branch is
+    walked by the real transitions in `engine: area load` and `sim: area
+    load`.
+    """
+    import subprocess, tempfile, shutil
+    fr = omkpaths.data_root()
+    if not os.path.isdir(fr):
+        return ("no data",), ("data",), "needs the shipped tree"
+    eng = os.path.join(ROOT, "engine")
+    b = subprocess.run(["make", "-s", "build/scene_survive"], cwd=eng,
+                       capture_output=True, text=True)
+    binp = os.path.join(eng, "build", "scene_survive")
+    if b.returncode != 0 or not os.path.exists(binp):
+        return ("build failed",), ("built",), "engine/ must build"
+    tmp = tempfile.mkdtemp()
+    try:
+        out = os.path.join(tmp, "s.bin")
+        subprocess.run([binp, fr, os.path.join(ROOT, "tables", "vm_opcodes.json"),
+                        os.path.join(fr, "IAM", "START"),
+                        os.path.join(fr, "SCPTDATA"), out],
+                       capture_output=True, text=True)
+        raw = open(out, "rb").read()
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+    if len(raw) < 44:
+        return ("no output",), ("44 bytes",), "the probe must write its record"
+    (resident, had, runBefore, runAfter, clockBefore, clockAfter, clockLater,
+     sameFile, pcBefore, otherFile, otherRun) = struct.unpack_from("<11i", raw, 0)
+    # `resident` first, and it is not a formality: `sceneLoad` walks the two
+    # slots and does nothing for an area in neither, so a probe that never
+    # made 222 resident asserted nothing. The first version of this check did
+    # exactly that and passed under a mutation that removed the fix.
+    got = (resident, had, runBefore, runAfter,
+           clockBefore, clockAfter, clockBefore == clockAfter,
+           clockLater, clockLater > clockAfter,
+           sameFile, otherFile, otherRun)
+    want = (1, 1, 1, 1,
+            3000, 3000, True,
+            4000, True,
+            1, 1, 0)
+    return got, want, ("a program 30 frames in survives scene.load(222, 57) with its "
+                       "clock intact and goes on advancing; AREA 0 is a different .SCX")
+
 def c_engine_scene_steps():
     r"""`engine/`: a scene object's program is a SEQUENCE, and the pose follows it.
 
@@ -16358,7 +16503,7 @@ def c_licence_headers():
                    if TAG in open(p, encoding="utf-8",
                                   errors="replace").read(600)]
     return (authored, sorted(missing), len(vendored), mislabelled), \
-           (284, [], 1, []), \
+           (288, [], 1, []), \
            "authored source files under tools/, engine/src, engine/tools, " \
            "engine/backends and scripts/; those MISSING the SPDX tag; " \
            "vendored files in engine/third_party; and vendored files wrongly " \
@@ -17763,6 +17908,8 @@ SLOW = [
     ("engine: fight AI",   c_engine_fight_ai,   "engine/README"),
     ("engine: programs",   c_engine_programs,   "engine/README"),
     ("engine: scene steps", c_engine_scene_steps, "engine/README"),
+    ("engine: scene survive", c_engine_scene_survive, "todo/omk-play"),
+    ("engine: env anim", c_engine_env_anim, "todo/omk-play"),
     ("engine: scene sounds", c_engine_scene_sounds, "engine/README"),
     ("engine: actor sounds", c_engine_actor_sounds, "engine/README"),
     ("engine: camera roll", c_engine_camera_roll, "engine/README"),

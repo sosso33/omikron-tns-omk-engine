@@ -2120,13 +2120,31 @@ int main(int argc, char** argv) {
                     if (mi < 0) continue;
                     if (w.baseCorners.empty()) w.baseCorners = w.geo.corners;
                     const float* mp = w.meshes[static_cast<std::size_t>(mi)].pos;
-                    const float off[3] = {mo.pos[0] - mp[0], mo.pos[1] - mp[1],
-                                          mo.pos[2] - mp[2]};
+                    // ...AND ITS ORIENTATION. The handler sets both - the path
+                    // sample's 3x3 goes to node `+56` through `sub_437160`
+                    // beside the `o3de_SetNodePos` - and an object that turns
+                    // in place has ONLY the rotation: the Impasse's fan,
+                    // `Ventilo`, samples the same point every frame and is
+                    // animated entirely by the quaternion. Position-only, it
+                    // stood still (`todo/omk-play.md` 53).
+                    //
+                    // A `Mesh` record carries no orientation of its own, only
+                    // `pos`, so the node's matrix starts as identity and the
+                    // sample's applies directly: a corner is rotated about the
+                    // mesh's authored origin and then placed at the sample.
+                    // With an identity quaternion this is exactly the offset
+                    // the position-only version applied.
+                    const omk::Quatf q{mo.quat[0], mo.quat[1], mo.quat[2], mo.quat[3]};
                     for (std::size_t c = 0; c < w.geo.corners.size(); ++c) {
                         if (c >= w.geo.cornerMesh.size() || w.geo.cornerMesh[c] != mi) continue;
-                        w.geo.corners[c].x = w.baseCorners[c].x + off[0];
-                        w.geo.corners[c].y = w.baseCorners[c].y + off[1];
-                        w.geo.corners[c].z = w.baseCorners[c].z + off[2];
+                        const float local[3] = {w.baseCorners[c].x - mp[0],
+                                                w.baseCorners[c].y - mp[1],
+                                                w.baseCorners[c].z - mp[2]};
+                        float r[3] = {local[0], local[1], local[2]};
+                        if (mo.rotated) omk::qrot(q, local, r);
+                        w.geo.corners[c].x = r[0] + mo.pos[0];
+                        w.geo.corners[c].y = r[1] + mo.pos[1];
+                        w.geo.corners[c].z = r[2] + mo.pos[2];
                     }
                     moved = true;
                 }

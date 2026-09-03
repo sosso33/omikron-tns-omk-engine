@@ -283,6 +283,152 @@ function in the game.
 **The class** — every scripted object motion in every scene: doors, lifts,
 crates, vehicles.
 
+## Fixed (batch 7, 2026-09-03)
+
+### 53. `MoveObjectOnPath` dropped the ORIENTATION, so anything that turns in place stood still — A
+
+> **Fixed 2026-09-03.** The path sample now carries the key quaternion
+> (`pathSampleQuat`), `NodeMotion` carries it, and the viewer rotates a mesh's
+> corners about its authored origin before placing them.
+> `verify.py: engine env anim` asserts the fan turns and does not move.
+> **CONFIRMED IN PLAY** - the Impasse's fan turns.
+
+Filed 2026-09-03 from a play report — *the environnement animations (like the
+impasse "fan") are still not working*, after issue 52 kept such programs alive
+across a cutscene and the fan still did not turn.
+
+**Where the fan comes from.** `Impasse.SCX` has 36 objects and exactly ONE
+with loopCount -1 — object 4, handle **20, `Ventilo`**, whose functions are
+`MoveObjectOnPath` plus sounds. SCENE 55's sixteen beats never name it. It is
+started by the **AREA's** startup script, whose first instruction is
+
+    2276  scx.play  20, 0, 0
+
+before it even picks the music. That is what "managed by the environment and
+not the cutscene" is, mechanically: the AREA `+4` script starts it, and it
+loops for ever.
+
+**The port already started it** — object 20 running, 0 missed — so issue 52
+was necessary and not sufficient. The node it drives is `Epale20`, a fan
+BLADE, and the probe showed the path being sampled correctly (`t` advancing
+6.31 → 29.43) with the position **identical every frame**:
+
+    f0   node 'Epale20'  t=  6.31  pos 6678.04 -316.59 3426.18
+    f11  node 'Epale20'  t= 29.43  pos 6678.04 -316.59 3426.18
+
+A fan spins in place. Its animation is entirely in the ORIENTATION, and the
+port was throwing that away.
+
+**What the engine does.** `Script_MoveObjectOnPath` (0x0046F400) sets position
+AND orientation in the same breath. `Path_Sample`'s **sixth parameter is an
+out 3x3**, and the handler hands it to `sub_437160(node, m)`:
+
+    result = *a1;  *(uint32_t *)*a1 |= 0x80000u;   /* the node's dirty flag */
+    qmemcpy(a1 + 14, a2, 0x24u);                   /* 36 bytes = a 3x3, node +56 */
+
+right beside the `o3de_SetNodePos`. It even composes a further Euler rotation
+into it (`Matrix3x3_FromEulerAngles` and two matrix multiplies) on the branch
+that asks for one. The port's `pathSample` returned position only.
+
+**The fix.** `pathSampleQuat` interpolates the key quaternions over the same
+span the position uses, with the short-arc sign fix and normalisation. A
+`Mesh` record carries no orientation of its own — only `pos` — so the node's
+matrix starts as identity and the sample's applies directly: a corner is
+rotated about the mesh's authored origin and then placed at the sample, which
+with an identity quaternion is exactly the offset the old code applied. The
+existing crate motion is unchanged, and `engine: scene steps` still passes.
+
+Measured: over twelve frames the fan's position spread is **0.0000** and its
+quaternion spread **1.746**, turning steadily about Z. Shown to fail by
+sampling position only — `rotated` goes to 0 and the spread to 0.
+
+**Severity A** — every set piece that rotates rather than translates, in every
+area.
+
+## Fixed (batch 6, 2026-09-03)
+
+### 52. A cutscene RESTARTS the environment: the `.SCX` belongs to the AREA and must survive `scene.load` — A
+
+> **Fixed 2026-09-03.** `Session::reloadScene` now rebuilds only when the
+> AREA changes, and loads by `ChunkKind::Area` so it no longer depends on the
+> scene->area map. `verify.py: engine scene survive` runs a program 30 frames
+> into the crates' beat, does `scene.load(222, 57)`, and asserts it is still
+> running with the same clock and goes on advancing (30 -> 30 -> 40).
+> **CONFIRMED IN PLAY** together with 53.
+>
+> **The first version of that check was worthless and said so only under
+> mutation.** It built the Session with `loadScene` alone, which does not make
+> an area RESIDENT - and `sceneLoad` walks the two slots and does nothing for
+> an area in neither, so the scene load never happened and "the program
+> survived" was vacuous. Removing the fix changed nothing and the check still
+> passed. It now calls `loadArea(222)` and asserts residency as its first
+> field. A second trap on the way: after restoring the source the build linked
+> a STALE `area.o`, so one run reported the mutated behaviour from correct
+> source - both directions were re-run with a forced rebuild.
+
+Filed 2026-09-03 from a play report — *the animations launched by the
+"environnement" (and not by a cutscene) are not stopped during a cutscene*.
+
+**What the engine does.** The `.SCX` is the AREA's, named by its `+97` stem,
+and it is loaded exactly once — when the area loads. `Area_LoadScx`
+(0x0041B4E0) finds the area's slot, clears the container at `slot+8`, calls
+`Scene_LoadSCX` into it, then loads the matching `.sfx` and calls
+`Sfx_BindAmbientEffects(slot)`. It has **two callers, `Area_TickLoad` and
+`Game_Init`** — and neither is a scene load.
+
+`Scene_LoadSCX` (0x00449750) has **four call sites in the whole binary**:
+
+    Area_LoadScx   -> slot + 8          the AREA's SCX  (the environment)
+    Game_Start     -> &stru_930780      the GLOBAL aventure.scx library
+    sub_419060     -> &stru_930780
+    sub_4193E0     -> &stru_930780
+
+The `scene.load` opcode (71, handler 0x403950) is **not among them**. It calls
+`sub_40C120(scene, slot)` — `Scene_Load` — which brings in the SCENE *chunk*:
+its startup script, zones and props. The object pool is untouched, so **every
+running program survives**, which is exactly the reported behaviour. A
+cutscene does not own the objects it animates; it calls `scx.play` on objects
+of the area's own `.SCX`, and the ones it never names go on running.
+
+`Script_PlayAllScripts` then ticks that pool every frame, once per resident
+slot (`v4 += 33; while (v4 < dword_9104EC)`), so both resident areas animate.
+
+**What the port does.** `Session::reloadScene` builds a whole new
+`SceneRunner` and moves it over `scene_` on every scene load. And
+`resolveScx` maps a SCENE chunk to its AREA and reads the stem from the **area
+chunk** — so area 222 and scene 55 name the *same file*. The port therefore
+tears down and rebuilds the identical `.SCX`, resetting every program's
+counter, clock and run counts, and re-binding the `.sfx` set pieces. Every
+environment animation stops dead at the cutscene and only comes back if some
+script happens to start it again.
+
+The comment in `reloadScene` asserts the opposite and is **wrong**:
+
+    // The programs of the outgoing scene go with it. That is the engine's
+    // behaviour and not a simplification: `Scene_LoadSCX` rebuilds the object
+    // pool, so no program survives the transition.
+
+`Scene_LoadSCX` does rebuild the pool — but only the area load and the global
+library ever reach it. The reasoning was sound and the premise was never
+checked against the call sites.
+
+**The fix.** Keep the `SceneRunner` while the AREA is unchanged: rebuild it
+only when the area changes, and let `scene.load` swap the SCENE chunk's
+scripts/zones/props alone. The `.sfx` bind belongs with the area load for the
+same reason.
+
+**Ruled out on the way, and worth not repeating.**
+`Script_AnimationFromExternalScene` (0x00470060) looked like the mechanism —
+its own error string is *"Can't find object \"%s\" in external scenes"* and it
+resolves through `sub_4A5040` rather than the running scene. Its function id
+is **0x0300001A**, and a census of all 220 shipped `.SCX` (4511 objects) finds
+**0 uses**: it is dead code in this game. `engine/tools/extanim_census.cpp`
+prints the full per-id table; the workhorses are `MoveObjectOnPath` (4841 uses
+in 212 files), `PlaySound` (3797) and `SelectRelativeBodyAnimation` (2398).
+
+**Severity A** — it affects every cutscene in the game, and the environment is
+most of what is on screen.
+
 ## Fixed (batch 5, 2026-09-03)
 
 ### 51. No diagonal movement: holding two directions walked straight — A

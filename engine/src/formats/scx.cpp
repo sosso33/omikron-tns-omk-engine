@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "formats/scx.h"
 
+#include <cmath>
+
 #include <algorithm>
 #include <cstring>
 
@@ -305,6 +307,56 @@ bool pathSample(const ScxPath& p, float t, float out[3]) {
     // rather than silently done.
     for (int k = 0; k < 3; ++k) out[k] = p.keys.back().pos[k];
     return false;
+}
+
+// The ORIENTATION half of the same sample. `Path_Sample`'s SIXTH parameter is
+// an out 3x3, and `Script_MoveObjectOnPath` feeds it to `sub_437160(node, m)`,
+// which sets the node's dirty flag 0x80000 and `qmemcpy`s 36 bytes - a 3x3 -
+// to node `+56`, right beside the `o3de_SetNodePos` that places it. So a
+// scripted object carries a ROTATION as well as a position, and an object
+// whose position never changes is animated ENTIRELY by this: `Impasse.SCX`'s
+// `Ventilo` turns the mesh `Epale20`, a fan blade, on a path whose every key
+// sits at the same point (`todo/omk-play.md` 53).
+//
+// Interpolated the same way the position is - the span holding `t`, linearly -
+// with the short-arc sign fix, because two keys a little over half a turn
+// apart otherwise interpolate the long way round and the fan stutters
+// backwards once a revolution. Normalised rather than slerped: over a span
+// this short the two agree to well under a degree, and nlerp cannot produce
+// the non-unit result a naive lerp can.
+bool pathSampleQuat(const ScxPath& p, float t, float out[3], float quat[4]) {
+    quat[0] = 1.0f; quat[1] = quat[2] = quat[3] = 0.0f;
+    if (p.keys.empty()) return false;
+    const bool inSpan = pathSample(p, t, out);
+    const ScxPathKey* ka = &p.keys.back();
+    const ScxPathKey* kb = ka;
+    float u = 0.0f;
+    if (inSpan) {
+        for (std::size_t i = 0; i + 1 < p.keys.size(); ++i) {
+            const float a = static_cast<float>(p.keys[i].frame);
+            const float b = static_cast<float>(p.keys[i + 1].frame);
+            if (t < a || t > b) continue;
+            ka = &p.keys[i];
+            kb = &p.keys[i + 1];
+            u = b > a ? (t - a) / (b - a) : 0.0f;
+            break;
+        }
+    }
+    float dot = 0.0f;
+    for (int k = 0; k < 4; ++k) dot += ka->quat[k] * kb->quat[k];
+    const float sign = dot < 0.0f ? -1.0f : 1.0f;   // the short arc
+    float n = 0.0f;
+    for (int k = 0; k < 4; ++k) {
+        quat[k] = ka->quat[k] + (kb->quat[k] * sign - ka->quat[k]) * u;
+        n += quat[k] * quat[k];
+    }
+    if (n > 1e-12f) {
+        const float inv = 1.0f / std::sqrt(n);
+        for (int k = 0; k < 4; ++k) quat[k] *= inv;
+    } else {
+        quat[0] = 1.0f; quat[1] = quat[2] = quat[3] = 0.0f;
+    }
+    return inSpan;
 }
 
 }  // namespace omk

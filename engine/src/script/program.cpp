@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "script/program.h"
 
+#include <cmath>
+
 #include "formats/anim.h"
 
 #include <algorithm>
@@ -275,14 +277,18 @@ bool Program::tick(float dt) {
                     m.name = f.params.empty() ? std::string()
                                               : rt_->objectName(*obj_, f.params[0]);
                     m.t = t;
-                    m.placed = pathSample(*pa, t, m.pos);
+                    // Position AND orientation: the handler sets both, and an
+                    // object that turns in place has only the second.
+                    m.placed = pathSampleQuat(*pa, t, m.pos, m.quat);
                     if (!m.placed && !pa->keys.empty()) {
                         // past the last span: hold the final key, which is
                         // where the engine's own last sample leaves it
                         const auto& kk = back ? pa->keys.front() : pa->keys.back();
                         for (int c = 0; c < 3; ++c) m.pos[c] = kk.pos[c];
+                        for (int c = 0; c < 4; ++c) m.quat[c] = kk.quat[c];
                         m.placed = true;
                     }
+                    m.rotated = std::fabs(m.quat[0]) < 0.999999f;
                     if (!m.name.empty()) motions_.push_back(std::move(m));
                 }
             }

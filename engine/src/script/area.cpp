@@ -1145,12 +1145,39 @@ void Session::reloadScene(int area, int scene) {
     // pool, so no program survives the transition.
     if (scptData_.empty()) return;
     if (area < 0) return;
+    // The `.SCX` BELONGS TO THE AREA, and a scene loaded over it must not
+    // disturb it. `Area_LoadScx` (0x0041B4E0) is the only thing that ever
+    // fills the slot's object container - it clears `slot+8`, calls
+    // `Scene_LoadSCX` into it and binds the matching `.sfx` - and it has two
+    // callers, `Area_TickLoad` and `Game_Init`. `Scene_LoadSCX` itself has
+    // four call sites in the whole binary and the `scene.load` opcode is none
+    // of them: handler 0x403950 calls `Scene_Load` (sub_40C120), which brings
+    // in the SCENE CHUNK - startup script, zones, props - and never touches
+    // the object pool.
+    //
+    // So EVERY RUNNING PROGRAM SURVIVES A SCENE LOAD. A cutscene does not own
+    // the objects it animates; it calls `scx.play` on objects of the area's
+    // own `.SCX`, and the ones it never names go on running - which is why
+    // the environment keeps animating through a cutscene in the original.
+    //
+    // This function used to rebuild unconditionally, on the reasoning that
+    // "`Scene_LoadSCX` rebuilds the object pool, so no program survives the
+    // transition". That is true of the function and false of the transition,
+    // because the transition does not call it - the premise was never checked
+    // against the call sites. And since `resolveScx` reads the stem from the
+    // AREA chunk either way, the rebuild was re-loading THE SAME FILE and
+    // resetting every program counter, clock and run count for nothing
+    // (`todo/omk-play.md` 52).
+    if (area == sceneArea_ && scene_.loaded()) return;
     SceneRunner fresh;
-    const bool over = scene != -1;
-    if (fresh.load(scptData_, iam_, table_,
-                   over ? ChunkKind::Scene : ChunkKind::Area,
-                   over ? scene : area)) {
+    // Always by AREA: the stem is the area chunk's `+97` whichever kind is
+    // asked for, so this is the same file the scene path resolved to - and it
+    // does not depend on the scene->area map, which is built from the script
+    // slots and is known to miss a scene whose only `scene.load` is in a
+    // startup script (scene 55, the Impasse).
+    if (fresh.load(scptData_, iam_, table_, ChunkKind::Area, area)) {
         scene_ = std::move(fresh);
+        sceneArea_ = area;
         // ...and its ambient EFFECTS, the same `AREA +97` stem with a
         // `.sfx` extension. Binding them is also what SHOWS the standing
         // set pieces (`Sfx_BindAmbientEffects` walks section E for the

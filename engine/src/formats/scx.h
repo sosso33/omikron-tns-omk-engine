@@ -161,6 +161,12 @@ struct ScxPath {
 // `t` and interpolate. NOT `keys.front()`, which is only the same when the
 // path's first key sits at `t`. -> false when no span contains it.
 bool pathSample(const ScxPath& p, float t, float out[3]);
+// The same sample's ORIENTATION - `Path_Sample`'s sixth out-parameter, the 3x3
+// `Script_MoveObjectOnPath` hands to `sub_437160`. Returned as the (w,x,y,z)
+// quaternion the keys store; `actor/pose.h`'s `qrot` applies it. An object
+// that spins in place - a fan - has NO position change at all and is animated
+// entirely by this.
+bool pathSampleQuat(const ScxPath& p, float t, float out[3], float quat[4]);
 
 struct ScxStream {
     bool valid = false;
