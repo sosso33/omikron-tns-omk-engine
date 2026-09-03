@@ -120,6 +120,19 @@ struct RunResult {
     // through the shared fetch) and the fight camera's travel, which is
     // `max(field 1, 0)` exactly as the handler's `jge` writes it.
     int fightOpponent = -1, fightCamTravel = 0;
+    // `zone.enable`/`zone.disable` (64/65) RE-REGISTER, and that is not a
+    // detail: the handler at 0x004037F0 ends
+    //
+    //     push 0 / push esi / call sub_40D540      <- clear the DB bit
+    //     mov ecx, dword_69BC60 / push ecx
+    //     call sub_406560                          <- Zones_RegisterAll()
+    //
+    // so the live list is rebuilt on the spot. Setting the bit alone leaves a
+    // disabled zone in the scan until the next area load, and it keeps firing:
+    // AREA 222's tutorial disables ITSELF as its last act, so without this it
+    // re-triggers every time the player stands in the alley.
+    // -> the caller must call `ZoneRegistry::registerAll` again this frame.
+    bool zonesDirty = false;
     std::size_t steps = 0;
     std::vector<Call> calls;
 };

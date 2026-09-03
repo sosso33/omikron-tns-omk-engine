@@ -338,6 +338,11 @@ RunResult Interpreter::resume(std::span<const std::byte> code, std::size_t at) {
             std::size_t q = start + 1;
             const auto v = fetch16(code, q);
             state_.setBit(StateArray::ZoneState, v & 0x7FFF, op == 64 ? 1 : 0);
+            // ...and the handler's own tail: `call sub_406560`, which is
+            // `Zones_RegisterAll`. The bit alone changes nothing until the
+            // next area load, because the live list is a SNAPSHOT filtered at
+            // registration (`zones.cpp`, `if (state.bit(ZoneState, ...))`).
+            r.zonesDirty = true;
             if (record_ && !recordAll_) r.calls.push_back({op, {static_cast<std::int16_t>(v)}});
             continue;
         }

@@ -40,6 +40,51 @@ pass": camera mode 14, the viewer's move and fight hooks, the held-object
 paths, `Inventory_Insert`'s kind gate, op 96's `+0x1A` travel halving, list 3.
 The viewer's one-body staging is todo/omk-play.md 41; issue 40 is fixed (batch 3).
 
+## Fixed (batch 4, 2026-09-03)
+
+### 44. `zone.enable`/`zone.disable` (64/65) never re-register, so both are inert — A
+
+> **Fixed 2026-09-03, CONFIRMED IN PLAY.** Op 64/65 raise `RunResult::zonesDirty`
+> and the Session calls `zonesRegisterAll()` on it, in the same frame.
+> `verify.py: tutorial one-shot`.
+
+Filed 2026-09-03 from a play report — *the alley tutorial fires every time I
+walk in* — after I had recorded it as not a bug. It is one.
+
+**What the engine does** — op 65's handler (0x004037F0) does two things, and
+the second is the one that matters:
+
+    push 0 / push esi / call sub_40D540      <- Zone_SetStateBit(id, 0)
+    mov ecx, dword_69BC60 / push ecx
+    call sub_406560                          <- Zones_RegisterAll()
+
+`Zones_RegisterAll` (0x00406560) rebuilds the registered list from the save
+bits, so the change is live on the instruction. Op 64 is the same handler with
+the other value.
+
+**What the port did** — `interp.cpp` did `state.setBit(ZoneState, v & 0x7FFF,
+...)` and continued. The live list is a snapshot filtered at registration
+(`zones.cpp`: `if (state.bit(ZoneState, z.stateBit())) live_.push_back(lz);`),
+and the only other callers of `registerAll` are area loads. So a zone disabled
+mid-residency kept firing and a zone enabled mid-residency never armed, until
+the player left the area and came back.
+
+**Why it is worse than one repeating tutorial** — AREA 222 carries a CHAIN:
+rec 0 `zone.disable 3795`, rec 1 `zone.enable 3796`, rec 5 (the tutorial)
+`zone.disable 3795`. None of it advanced. Corpus-wide this is every 64/65 site
+in the game.
+
+**How established** — the handler assembly above; the snapshot in `zones.cpp`;
+and a live `Session` in AREA 222 standing in 3795: with the fix the live list
+goes `3790,3791,3795,3799,3801,3803` -> `3790,3791,3796,3799,3801,3803`,
+without it it does not move. Note the SIZE is unchanged either way — 3795
+leaves as 3796 arrives — so the check asserts the list, not a count.
+
+**How it was missed** — `walk_zone` re-registers explicitly, and `zone_probe`
+drives `World` rather than the Session's `ZoneRegistry`. Both reported the
+one-shot working, and I believed them over the player. A harness that cannot
+exhibit a fault is not evidence against it.
+
 ## Fixed (batch 3, 2026-09-03)
 
 ### 40. `Actors_SpawnFromTables` is not ported: the world's characters never exist — A

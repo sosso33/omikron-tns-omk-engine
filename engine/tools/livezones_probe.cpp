@@ -259,6 +259,43 @@ int main(int argc, char** argv) {
                     s.announced().size() > annAt ? s.announced()[annAt].value : -1,
                     s.contextFlags(ctx));
 
+        // ---- one-shot: 3795, the alley tutorial, disables ITSELF
+        //
+        // Its script's last act before `end` is `zone.disable 3795`, and the
+        // handler's tail is `call sub_406560` - `Zones_RegisterAll`. Setting the
+        // save bit alone is inert, because the live list is a snapshot filtered
+        // at registration, so without the re-register the zone keeps firing.
+        // This is the row that shows it leaves the live set while the area stays
+        // resident.
+        {
+            const auto isLive = [&](int id) {
+                for (const auto& z : s.zones().registered())
+                    if (z.zone.id == id) return true;
+                return false;
+            };
+            const auto* z3795 = s.zones().resolve(3795);
+            const int liveBefore = isLive(3795) ? 1 : 0;
+            int ran = 0, liveAfter = liveBefore;
+            if (z3795) {
+                stand(s, z3795, true);
+                // the script parks twice on `camera.set.wait` (150 and 120
+                // frames), so give it more than 270 to reach `zone.disable`
+                for (int f = 0; f < 400; ++f) {
+                    s.frame();
+                    if (!isLive(3795)) { liveAfter = 0; ran = f; break; }
+                }
+            }
+            std::string after;
+            for (const auto& z : s.zones().registered()) {
+                if (!after.empty()) after += ",";
+                after += std::to_string(z.zone.id);
+            }
+            std::printf("oneshot zone 3795 resident %d live_before %d live_after %d "
+                        "frames %d live_now %zu list %s\n",
+                        z3795 ? 1 : 0, liveBefore, liveAfter, ran,
+                        s.zones().registered().size(), after.c_str());
+        }
+
         // ---- press: 3791 has no activate script -> message 26
         const auto msgAt = s.messagesRun().size();
         const auto nhAt = s.nothingHere().size();

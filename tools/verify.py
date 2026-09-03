@@ -15836,77 +15836,69 @@ def c_held_camera_bracket():
 
 
 def c_tutorial_one_shot():
-    r"""The alley tutorial runs ONCE: it disables its own trigger zone.
+    r"""`zone.enable`/`zone.disable` take effect AT ONCE, not at the next load.
 
-    Filed as symptom 3 of the 2026-09-03 play report - *this tuto scene could
-    save something so it is not triggered each time*. It already worked; this
-    is the check that says so, because nothing asserted it and "it already
-    works" is worth exactly as much as the test behind it.
+    Filed as symptom 3 of the 2026-09-03 play report - *this tuto scene is
+    triggered each time*. I first reported it as NOT a bug on the strength of
+    `walk_zone`, which re-registers explicitly and so could never see the
+    fault; the player could, and did. This is the check that drives the path
+    that actually broke.
 
-    THE MECHANISM IS NOT A VARIABLE, which is what it looks like from the
-    outside. AREA 222 record 5 IS zone 3795, and the last thing its script
-    does before `end` is `zone.disable 3795` - it switches off the very zone
-    that triggered it. What makes that stick is one bit in the persistent game
-    DB, and this pins the two halves that have to agree about WHICH bit:
+    **What the engine does** - op 65's handler (0x004037F0) does not merely
+    clear the save bit. Its tail is
 
-      * the writer - `interp.cpp` op 64/65 does
-        `state.setBit(ZoneState, operand & 0x7FFF, ...)`;
-      * the reader - `zones.cpp` registers a zone only
-        `if (state.bit(ZoneState, z.stateBit()))`, and `world.h` defines
-        `stateBit() { return id & 0x7FFF; }`.
+        push 0 / push esi / call sub_40D540      <- Zone_SetStateBit(id, 0)
+        mov ecx, dword_69BC60 / push ecx
+        call sub_406560                          <- Zones_RegisterAll()
 
-    Both mask 0x7FFF because bit 15 is the record's ONE-SHOT flag, which
-    `Zone_StateBit` (0x0040D500) masks away - zone 3795 does not carry it, so
-    the tutorial is not a one-shot zone by flag, it is one by script. If those
-    two masks ever drift apart the disable would write a bit nobody reads and
-    the tutorial would fire on every entry, which is precisely the symptom
-    that was reported.
+    so the live list is rebuilt on the spot.
 
-    The run is through `walk_zone`, the tool that arms one zone and pumps it:
-    the zone registers, its script runs, the save bit goes 1 -> 0, and it does
-    NOT re-register.
+    **What the port did** - `interp.cpp` set the bit and stopped. The live list
+    is a SNAPSHOT filtered at registration (`zones.cpp`,
+    `if (state.bit(ZoneState, z.stateBit()))`), and the only other callers of
+    `registerAll` are area loads - so every enable and every disable was inert
+    until the player left the area and came back.
+
+    That is worse than one tutorial repeating. AREA 222 carries a CHAIN: rec 0
+    disables 3795, rec 1 enables 3796, rec 5 - the tutorial - disables 3795
+    again. None of it advanced.
+
+    The row drives a real `Session`: stand in 3795, let its script run, and
+    watch the live set. `live_before 1, live_after 0` is the fix; without it
+    the zone stays live and 3796 never arrives. The list is asserted whole
+    rather than by count, because the count does NOT move - 3795 leaves as
+    3796 joins, and a check on the size alone would have passed throughout.
     """
-    import subprocess, tempfile, shutil, re as _re
+    import subprocess, re as _re
     eng = os.path.join(ROOT, "engine")
     if not os.path.isdir(eng):
         return ("skipped",), ("skipped",), "engine/ absent"
     b = subprocess.run(["make", "-s"], cwd=eng, capture_output=True, text=True)
-    binp = os.path.join(eng, "build", "walk_zone")
+    binp = os.path.join(eng, "build", "livezones_probe")
     if b.returncode != 0 or not os.path.exists(binp):
         return ("build failed",), ("built",), "engine/ must build"
-
-    # the two masks, read out of the source rather than assumed
-    interp = open(os.path.join(eng, "src/script/interp.cpp"),
-                  encoding="utf-8", errors="replace").read()
-    worldh = open(os.path.join(eng, "src/script/world.h"),
-                  encoding="utf-8", errors="replace").read()
-    writerMask = "setBit(StateArray::ZoneState, v & 0x7FFF" in interp
-    readerMask = "return static_cast<std::int16_t>(id & 0x7FFF);" in worldh
-    gated = "if (state.bit(StateArray::ZoneState, z.stateBit()))" in \
-        open(os.path.join(eng, "src/script/zones.cpp"),
+    r = subprocess.run([binp, omkpaths.data_root(), omkpaths.tables_dir()],
+                       capture_output=True, text=True)
+    m = _re.search(r"oneshot zone 3795 resident (\d+) live_before (\d+) "
+                   r"live_after (\d+) frames (\d+) live_now (\d+) list (\S+)",
+                   r.stdout)
+    if not m:
+        return ("no oneshot row",), ("row",), "livezones_probe must print it"
+    resident, before, after = int(m.group(1)), int(m.group(2)), int(m.group(3))
+    lst = m.group(6)
+    # and the source rule that makes it happen at all
+    dirty = "r.zonesDirty = true;" in open(os.path.join(eng, "src/script/interp.cpp"),
+                                           encoding="utf-8", errors="replace").read()
+    rearm = "if (r.zonesDirty) zonesRegisterAll();" in \
+        open(os.path.join(eng, "src/script/area.cpp"),
              encoding="utf-8", errors="replace").read()
-
-    iam = omkpaths.data("IAM")
-    tmp = tempfile.mkdtemp()
-    try:
-        out = os.path.join(tmp, "z.bin")
-        r = subprocess.run([binp, iam, omkpaths.tables("vm_opcodes.json"),
-                            os.path.join(iam, "START"), "3795", out],
-                           capture_output=True, text=True)
-        line = r.stdout.strip()
-    finally:
-        shutil.rmtree(tmp, ignore_errors=True)
-    m = _re.search(r"registered=(\d+), (\d+) scripts ran, save bit (\d+) -> (\d+), "
-                   r"re-registers=(\d+)", line)
-    got = tuple(int(x) for x in m.groups()) if m else (line,)
-    return (got, writerMask, readerMask, gated), \
-           ((1, 1, 1, 0, 0), True, True, True), \
-           "walk_zone on 3795: registered, scripts run, the save bit before " \
-           "and after, and re-registrations (0 - the disable sticks); then " \
-           "that the WRITER (op 64/65, operand & 0x7FFF), the READER " \
-           "(stateBit() = id & 0x7FFF) and the registration gate still agree " \
-           "on which bit - drift there would fire the tutorial every entry"
-
+    return (resident, before, after, lst, dirty, rearm), \
+           (1, 1, 0, "3790,3791,3796,3799,3801,3803", True, True), \
+           "a live Session in AREA 222: zone 3795 resident, live BEFORE its " \
+           "script runs and not after, and the whole live list once it has - " \
+           "3795 gone and 3796 arrived, which is why the SIZE is not the test; " \
+           "then the two halves that make it immediate, op 64/65 raising " \
+           "zonesDirty and the Session re-registering on it"
 
 def c_no_define_renames():
     """CLAUDE.md 3: renames go through tools/renames.json, never a #define."""

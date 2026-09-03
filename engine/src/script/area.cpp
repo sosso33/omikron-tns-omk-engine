@@ -2082,6 +2082,15 @@ void Session::execute(int i) {
         const auto r = c->started ? vm.resume(one, c->pc) : vm.run(one, c->pc);
         c->started = true;
         c->pc = r.pc;
+        // `zone.enable`/`zone.disable` re-register IN THE HANDLER - its tail is
+        // `call sub_406560`, `Zones_RegisterAll` (interp.h `zonesDirty`). The
+        // live list is a snapshot filtered by the save bit at registration, so
+        // the bit alone is inert until the next area load: AREA 222's tutorial
+        // disables ITSELF as its last act and re-fired on every entry without
+        // this. Done here, before the calls are dispatched, because the rebuild
+        // also prunes contexts whose zone has gone.
+        if (r.zonesDirty) zonesRegisterAll();
+        if (!ctxs_[static_cast<std::size_t>(i)]) return;   // pruned by that
         record(r.calls);
         // `or byte ptr [ctx+28h], 10h` - the 24 visible handlers set it on
         // entry, before their dry-run test, and nothing ever clears it
