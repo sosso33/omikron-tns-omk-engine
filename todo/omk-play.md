@@ -48,8 +48,27 @@ decode desyncs.
 
 ### 43. `player.anim.hold` drew the REST pose, so the player T-posed — A
 
-> **Fixed 2026-09-03.** The pose is latched when the hold begins and reused until
-> release, instead of composing empty tracks at frame 0.
+> **Fixed 2026-09-03, on the third reading.** The controller is now TICKED while
+> held, with no input, and the pose comes from the channel exactly as it does
+> unheld. Two earlier attempts were wrong in opposite directions and both
+> shipped: `composePose(meshes, {}, 0)` (the rest sentinel) drew a T-pose, and a
+> latched pose froze him mid-stride with one leg forward - reported from play
+> both times.
+>
+> What settled it: `sub_45A870`'s two writes are `queue[0] = 0x40000000` and
+> `n = 1`, and those arrays are the channel's INPUT QUEUE and LENGTH -
+> `Perso_InjectInput` (0x0045A9F0), already NAMED, fills exactly them from its
+> own arguments. `Cef_TickChannel` re-asserts both every tick while
+> `flags & 0x81`, and the queue rule DROPS a lone idle word (ASSETS). So a held
+> channel runs on with nothing pressed and the device cut off, which is what
+> carries a gait to its stand state: he walks to a halt and stands in the bank's
+> idle. `play.cpp` was not ticking the controller at all while held, which is
+> why he kept the frame he had.
+>
+> **The lesson** is CLAUDE.md 1's, one level in: both wrong readings were
+> consistent with the two writes in front of me. Only a THIRD user of the same
+> fields could separate them, and it was five lines further down the same file.
+> Read the other users of a field before naming it.
 
 Filed 2026-09-03 from the same report — *the character is in t pose*.
 

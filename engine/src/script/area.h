@@ -697,10 +697,12 @@ public:
     // `player.anim.hold` (104) / `player.anim.release` (105):
     // `Actor_HoldAnimation(Actor_Player(), 1 / 0)` sets or clears bits 0x80 and
     // 0x01 of the CHANNEL's flag word (SCRIPT_VM "104 / 105"). Neither of its
-    // two calls touches a transform: `sub_45A870` collapses the blend stack to
-    // one entry at full weight and `Cef_TickChannel` re-asserts that every tick
-    // while `flags & 0x81`, so the body KEEPS the pose it had. The player
-    // neither moves nor animates. The scripts bracket a staged camera sequence
+    // two calls touches a transform: `sub_45A870` writes a lone IDLE word into
+    // the channel's input queue, `Cef_TickChannel` re-asserts it every tick
+    // while `flags & 0x81`, and the queue rule drops it - so the channel keeps
+    // TICKING with nothing pressed, which walks a gait to its stand state. The
+    // player stops and stands; he does not freeze and does not reset to rest.
+    // The scripts bracket a staged camera sequence
     // with them: AREA 222's airlock beat holds at pc 2360 and releases at
     // 2414, after its last `camera.set`.
     //

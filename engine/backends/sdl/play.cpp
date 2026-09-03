@@ -1209,13 +1209,6 @@ int main(int argc, char** argv) {
     float playerFeet = 0.0f;
     bool  playerFeetKnown = false;
     int   playerCamId = -2;
-    // THE HELD POSE. `player.anim.hold` collapses the channel's blend stack
-    // to one entry at full weight (`sub_45A870` writes count 1 and weight
-    // 0x40000000, and `Cef_TickChannel` re-asserts both every tick while
-    // `flags & 0x81`), so the body KEEPS the pose it had - it is a freeze.
-    // Latched on the frame the hold begins and reused until it releases.
-    std::vector<omk::MeshPose> heldPose;
-    bool  heldPoseValid = false;
     // The facing at the hand-over. `Actor_TickScxDriven` sets +1308 when
     // the player's program ends and `Actor_TickNpc` then derives the facing
     // from the node's matrix - which after a scene clip is the clip's root
@@ -2245,10 +2238,26 @@ int main(int argc, char** argv) {
                                 player->facing());
                 }
                 if (session.playerAnimHeld()) {
-                    // `Actor_HoldAnimation(player, 1)`: the channel skips its
-                    // input pass and the transform is pinned to rest, so the
-                    // held keys move nothing (area.h `playerAnimHeld`).
+                    // `Actor_HoldAnimation(player, 1)` does NOT stop the
+                    // channel - it feeds it a lone IDLE word every tick and
+                    // cuts the device off, and the channel then keeps running
+                    // with no input at all.
+                    //
+                    // `sub_45A870` writes `queue[0] = 0x40000000; n = 1`, and
+                    // those two arrays are the input QUEUE and its LENGTH -
+                    // `Perso_InjectInput` (0x0045A9F0) is the proof, it fills
+                    // exactly them from its `a3`/`a2`. `Cef_TickChannel`
+                    // re-asserts both every tick while `flags & 0x81`, and the
+                    // channel's own rule then DROPS it: `if (n == 1 &&
+                    // (queue[0] & 0x40000000)) { queue[0] = 0; n = 0; }`
+                    // (ASSETS "a lone idle word is DROPPED").
+                    //
+                    // So the state machine ticks on with nothing pressed, which
+                    // is what carries a GAIT to its stand state. Not ticking at
+                    // all - what this did - leaves him mid-stride with one leg
+                    // forward for the whole held sequence (omk-play 43).
                     ++heldFrames;
+                    player->tick(static_cast<float>(frameSec * 30.0), 0);
                 } else {
                     player->tick(static_cast<float>(frameSec * 30.0), bits);
                 }
@@ -3301,41 +3310,16 @@ int main(int argc, char** argv) {
                 // on `pos()`, which the walker keeps on the floor. The feet
                 // offset is the rest pose's, taken once, so a clip's bob does
                 // not move the ground under him.
-                // `player.anim.hold` is a FREEZE, not a reset to rest. This
-                // read `composePose(meshes, {}, 0)` - empty tracks at frame 0,
-                // which is the REST SENTINEL (CLAUDE.md 5: "animation key 0 is
-                // a rest sentinel, not frame 0") - and drew him in a T-pose for
-                // the whole of AREA 222's tutorial.
-                //
-                // What 104 actually does: `Actor_HoldAnimation` (0x00468DA0) is
-                // two calls, `Perso_SetInputEnabled` (bit 0x80) and `sub_45A870`
-                // (bit 0x01) - and NEITHER touches a transform. `sub_45A870`
-                // sets the channel's blend count to 1 and weight[0] to
-                // 0x40000000, and `Cef_TickChannel` re-asserts exactly those two
-                // every tick while `flags & 0x81`. A blend collapsed to one
-                // entry at full weight is the pose he already had.
-                // `Actor_EnterDialogueMode`'s own comment says the same thing
-                // from the other side: "a held channel never plays the group-400
-                // stance, so an scx scene clip keeps the body".
-                //
-                // So: latch the pose when the hold begins and hold it.
-                std::vector<omk::MeshPose> pose;
-                if (session.playerAnimHeld()) {
-                    if (!heldPoseValid) {
-                        const omk::NodeTracks* ht = player->poseTracks();
-                        heldPose = ht
-                            ? omk::composePose(playerMeshes, *ht, player->poseFrame(), false)
-                            : omk::composePose(playerMeshes, omk::NodeTracks{}, 0, false);
-                        heldPoseValid = true;
-                    }
-                    pose = heldPose;
-                } else {
-                    heldPoseValid = false;
-                    const omk::NodeTracks* pt = player->poseTracks();
-                    pose = pt
-                        ? omk::composePose(playerMeshes, *pt, player->poseFrame(), false)
-                        : omk::composePose(playerMeshes, omk::NodeTracks{}, 0, false);
-                }
+                // `player.anim.hold` neither resets to rest nor freezes: the
+                // channel keeps ticking with no input (see the tick above), so
+                // the pose comes from it exactly as it does unheld. This code
+                // has now been wrong twice in the other two directions - first
+                // `composePose(meshes, {}, 0)`, the REST SENTINEL, which drew a
+                // T-pose; then a latched pose, which froze him mid-stride.
+                const omk::NodeTracks* pt = player->poseTracks();
+                std::vector<omk::MeshPose> pose = pt
+                    ? omk::composePose(playerMeshes, *pt, player->poseFrame(), false)
+                    : omk::composePose(playerMeshes, omk::NodeTracks{}, 0, false);
                 omk::applyPose(playerPosed, playerRest, playerMeshes, pose);
                 if (!playerFeetKnown) {
                     playerFeet = -1e9f;

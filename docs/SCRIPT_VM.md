@@ -754,13 +754,20 @@ bank.
 Both call `Actor_HoldAnimation` on `Actor_Player()`, 104 with 1 and 105 with 0.
 It sets or clears bits **0x80** and **0x01** of the channel's flag word — 0x80
 in `Perso_SetInputEnabled`, 0x01 in `sub_45A870` — and **neither call touches a
-transform**. `sub_45A870` additionally sets the channel's blend count to 1 and
-weight[0] to `0x40000000`, and `Cef_TickChannel` (0x004A8160) re-asserts exactly
-those two every tick while `flags & 0x81`, then carries on. A blend collapsed to
-one entry at full weight is the pose the body already had, so it is a **freeze on
-the current pose**. `Actor_EnterDialogueMode` states the consequence from the
-other side: "a held channel never plays the group-400 stance, so an scx scene
-clip keeps the body". In the scripts they bracket a staged sequence: 104 before
+transform**. What `sub_45A870` also does is write `queue[0] = 0x40000000` and
+`n = 1`: those two arrays are the channel's INPUT QUEUE and its LENGTH, which
+`Perso_InjectInput` (0x0045A9F0) settles by filling exactly them from its own
+`a3`/`a2`. `Cef_TickChannel` (0x004A8160) re-asserts both every tick while
+`flags & 0x81`, and the channel's own queue rule then throws it away — **a lone
+idle word is dropped** (`if (n == 1 && (queue[0] & 0x40000000)) { queue[0] = 0;
+n = 0; }`, ASSETS §"how a press gets INTO the queue").
+
+So a held channel is not stopped and not pinned: it **keeps ticking with nothing
+pressed**, and the device is cut off besides. For a gait that is what carries the
+state machine to its stand state — the player walks to a halt and stands in the
+bank's idle, animated. `Actor_EnterDialogueMode` states the other consequence:
+"a held channel never plays the group-400 stance, so an scx scene clip keeps the
+body". In the scripts they bracket a staged sequence: 104 before
 `fade.to_black`, 105 after the last camera and before `fade.from_black`.
 
 The other consumer of `flags & 0x81` is the CAMERA: `sub_415D10` opens
@@ -768,13 +775,18 @@ The other consumer of `flags & 0x81` is the CAMERA: `sub_415D10` opens
 the follow camera's mode to 0 — which is how the engine knows a script owns the
 camera for the bracketed run.
 
-> **Corrected 2026-09-03.** This said the update "pins the transform back to rest
-> every frame" and that releasing "starts from the rest pose". Neither is in the
-> code: none of the three `& 0x81` sites (`sub_415D10`, `sub_415E60`,
-> `Cef_TickChannel`) pins a transform. The port had implemented the wrong reading
-> literally and drew the player's BIND pose — a T-pose — for the whole of AREA
-> 222's tutorial (`todo/omk-play.md` 43). The entry's own warning below is where
-> the next reader should have started.
+> **Corrected twice on 2026-09-03, and the second time is the instructive one.**
+> This first said the update "pins the transform back to rest every frame", and
+> the port implemented that literally: a T-pose for the whole of AREA 222's
+> tutorial. The correction read `sub_45A870`'s two writes as a BLEND STACK
+> collapsed to one entry at full weight and called it a freeze — so the port
+> latched the pose, and the player stood frozen mid-stride with one leg forward.
+> Also wrong. `Perso_InjectInput`, five lines further down the same file, uses
+> those exact two arrays as a queue and a count, which settles what they are.
+> The lesson is the one CLAUDE.md §1 keeps making: both wrong readings were
+> *consistent with the two writes in front of me*, and only the third call site
+> — a function that was already NAMED — could tell them apart. Read the other
+> users of a field before naming it. (`todo/omk-play.md` 43.)
 
 > Named from effect plus position, not from a self-description, so it is the
 > weakest name in this batch. What is certain is the pair and the bits.
