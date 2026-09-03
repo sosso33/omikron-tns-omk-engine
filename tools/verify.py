@@ -15835,6 +15835,79 @@ def c_held_camera_bracket():
            "and the zone the script disables - itself, which is the one-shot"
 
 
+def c_tutorial_one_shot():
+    r"""The alley tutorial runs ONCE: it disables its own trigger zone.
+
+    Filed as symptom 3 of the 2026-09-03 play report - *this tuto scene could
+    save something so it is not triggered each time*. It already worked; this
+    is the check that says so, because nothing asserted it and "it already
+    works" is worth exactly as much as the test behind it.
+
+    THE MECHANISM IS NOT A VARIABLE, which is what it looks like from the
+    outside. AREA 222 record 5 IS zone 3795, and the last thing its script
+    does before `end` is `zone.disable 3795` - it switches off the very zone
+    that triggered it. What makes that stick is one bit in the persistent game
+    DB, and this pins the two halves that have to agree about WHICH bit:
+
+      * the writer - `interp.cpp` op 64/65 does
+        `state.setBit(ZoneState, operand & 0x7FFF, ...)`;
+      * the reader - `zones.cpp` registers a zone only
+        `if (state.bit(ZoneState, z.stateBit()))`, and `world.h` defines
+        `stateBit() { return id & 0x7FFF; }`.
+
+    Both mask 0x7FFF because bit 15 is the record's ONE-SHOT flag, which
+    `Zone_StateBit` (0x0040D500) masks away - zone 3795 does not carry it, so
+    the tutorial is not a one-shot zone by flag, it is one by script. If those
+    two masks ever drift apart the disable would write a bit nobody reads and
+    the tutorial would fire on every entry, which is precisely the symptom
+    that was reported.
+
+    The run is through `walk_zone`, the tool that arms one zone and pumps it:
+    the zone registers, its script runs, the save bit goes 1 -> 0, and it does
+    NOT re-register.
+    """
+    import subprocess, tempfile, shutil, re as _re
+    eng = os.path.join(ROOT, "engine")
+    if not os.path.isdir(eng):
+        return ("skipped",), ("skipped",), "engine/ absent"
+    b = subprocess.run(["make", "-s"], cwd=eng, capture_output=True, text=True)
+    binp = os.path.join(eng, "build", "walk_zone")
+    if b.returncode != 0 or not os.path.exists(binp):
+        return ("build failed",), ("built",), "engine/ must build"
+
+    # the two masks, read out of the source rather than assumed
+    interp = open(os.path.join(eng, "src/script/interp.cpp"),
+                  encoding="utf-8", errors="replace").read()
+    worldh = open(os.path.join(eng, "src/script/world.h"),
+                  encoding="utf-8", errors="replace").read()
+    writerMask = "setBit(StateArray::ZoneState, v & 0x7FFF" in interp
+    readerMask = "return static_cast<std::int16_t>(id & 0x7FFF);" in worldh
+    gated = "if (state.bit(StateArray::ZoneState, z.stateBit()))" in \
+        open(os.path.join(eng, "src/script/zones.cpp"),
+             encoding="utf-8", errors="replace").read()
+
+    iam = omkpaths.data("IAM")
+    tmp = tempfile.mkdtemp()
+    try:
+        out = os.path.join(tmp, "z.bin")
+        r = subprocess.run([binp, iam, omkpaths.tables("vm_opcodes.json"),
+                            os.path.join(iam, "START"), "3795", out],
+                           capture_output=True, text=True)
+        line = r.stdout.strip()
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+    m = _re.search(r"registered=(\d+), (\d+) scripts ran, save bit (\d+) -> (\d+), "
+                   r"re-registers=(\d+)", line)
+    got = tuple(int(x) for x in m.groups()) if m else (line,)
+    return (got, writerMask, readerMask, gated), \
+           ((1, 1, 1, 0, 0), True, True, True), \
+           "walk_zone on 3795: registered, scripts run, the save bit before " \
+           "and after, and re-registrations (0 - the disable sticks); then " \
+           "that the WRITER (op 64/65, operand & 0x7FFF), the READER " \
+           "(stateBit() = id & 0x7FFF) and the registration gate still agree " \
+           "on which bit - drift there would fire the tutorial every entry"
+
+
 def c_no_define_renames():
     """CLAUDE.md 3: renames go through tools/renames.json, never a #define."""
     s = open(os.path.join(ROOT, "readable/types.h"), encoding="utf-8").read()
@@ -17004,6 +17077,7 @@ CHECKS = [
     ("licence headers",    c_licence_headers,   "LICENSING.md"),
     ("transcript index",   c_transcript_index,  "transcript/README"),
     ("held camera bracket",c_held_camera_bracket,"todo/omk-play 42"),
+    ("tutorial one-shot",  c_tutorial_one_shot, "todo/omk-play 42"),
     ("no #define renames", c_no_define_renames, "CLAUDE.md 3"),
 ]
 

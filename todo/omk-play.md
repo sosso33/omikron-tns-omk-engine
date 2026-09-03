@@ -79,6 +79,35 @@ whole input pass". Neither is what the code does — the tick re-pins the blend
 and carries on. The SCRIPT_VM entry already labelled itself *"the weakest name
 in this batch"*, which is where the next reader should have started.
 
+### Not a bug: the tutorial's one-shot — investigated 2026-09-03
+
+The third symptom of the same report — *this tuto scene could save something,
+so it is not triggered each time* — is **already correct**, and is recorded
+here so nobody re-opens it.
+
+The mechanism is not a variable, which is what it looks like from outside.
+AREA 222 record 5 **is** zone 3795, and its script's last act before `end` is
+`zone.disable 3795`: it switches off the zone that triggered it. That sticks
+because op 64/65 writes one bit of the persistent game DB
+(`state.setBit(ZoneState, operand & 0x7FFF)`) and registration reads the same
+bit (`zones.cpp` gates on `state.bit(ZoneState, z.stateBit())`, and `world.h`
+defines `stateBit() { return id & 0x7FFF; }`). Both mask 0x7FFF because bit 15
+is the record's one-shot flag, which `Zone_StateBit` (0x0040D500) masks away —
+3795 does not carry it, so this zone is one-shot by *script*, not by flag.
+
+**How established** — `zone_probe` with camera waits ON shows the script park
+twice and reach `end` (`[camera.wait] [camera.wait] [end]`), and its touches
+saturate at 273 and never resume at 400, 700 or 1200 settle frames: the
+disable takes effect the moment it runs. `walk_zone 3795` reports
+`registered=1, 1 scripts ran, save bit 1 -> 0, re-registers=0`.
+
+Pinned by `verify.py: tutorial one-shot`, which asserts the run AND that the
+writer's mask, the reader's mask and the registration gate still agree. The
+mask half is not redundant: for id 3795 a wrong mask still lands on the same
+bit (`3795 & 0x3FFF == 3795`), so a drift would pass the runtime rows and
+only bite zones with an id at or above 0x4000. Shown to fail by narrowing the
+writer's mask.
+
 ## Fixed (batch 3, 2026-09-03)
 
 ### 41. One body is staged: every character but the first shown collapses into it — B
