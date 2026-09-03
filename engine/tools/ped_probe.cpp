@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // ped_probe - the procedural pedestrians of a city street, spawned and run
-// headlessly (docs/STREET_LIFE.md 2, actor/pedestrians.h).
+// headlessly (docs/STREET_LIFE.md 2, actor/sliders.h).
 //
 //     ped_probe <gamedata> <tables dir> <area> [frames] [level] [--walkers]
 //
@@ -14,7 +14,7 @@
 // independent count and against the invariants the walk owes. The road
 // traffic shares the pool and is skipped throughout; `veh_probe` is its
 // probe.
-#include "actor/pedestrians.h"
+#include "actor/sliders.h"
 #include "formats/opt.h"
 #include "platform/datafs.h"
 #include "script/area.h"
@@ -97,13 +97,13 @@ int main(int argc, char** argv) {
     s.setStreetActivity(level);
     s.loadTraffic(fr);
     s.loadArea(area);
-    const auto& peds = s.pedestrians();
+    const auto& peds = s.sliders();
     const auto& slot = s.residentSlot(s.activeSlot());
     // the rule alone, per level, on the circuit the area names
     const omk::DataFs fs(fr);
     const auto track = omk::loadOpt(fs.read("TRAJECTOIRES/" + slot.opt + ".OPT"));
     std::printf("counts area %d opt %s valid %d", area, slot.opt.empty() ? "-" : slot.opt.c_str(), track.valid ? 1 : 0);
-    for (int l = 0; l <= 4; ++l) std::printf(" level%d %d", l, track.valid ? omk::Pedestrians::spawnCount(track, l) : 0);
+    for (int l = 0; l <= 4; ++l) std::printf(" level%d %d", l, track.valid ? omk::Sliders::spawnCount(track, l) : 0);
     std::printf("\n");
     const int spawned = peds.liveCount();
     std::string models;

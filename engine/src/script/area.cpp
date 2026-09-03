@@ -302,7 +302,7 @@ void Session::evictSlot(int slot) {
     if (trafficSlot_ == (slot & 1)) {
         for (const int s : pedSlots_) spatial_.remove(s);
         pedSlots_.clear();
-        peds_.clear(); trafficSlot_ = -1;
+        sliders_.clear(); trafficSlot_ = -1;
     }
     if (s.sceneCtx >= 0) freeContext(s.sceneCtx);
     if (s.areaCtx >= 0) freeContext(s.areaCtx);
@@ -1837,7 +1837,7 @@ void Session::frame() {
         // ticked and the intro's portal FROZE the moment the conversation
         // opened; a reader watching it said so. The same delta as below.
         scene_.tick(static_cast<float>(frameSeconds_ * 30.0));
-        peds_.tick(static_cast<float>(frameSeconds_ * 30.0));   // `Sliders_Tick`, no dialogue gate either
+        sliders_.tick(static_cast<float>(frameSeconds_ * 30.0));   // `Sliders_Tick`, no dialogue gate either
         refreshCrowdIndex();
         if (bumpCooldown_ > 0) --bumpCooldown_;
         trackPlayer();
@@ -1902,7 +1902,7 @@ void Session::frame() {
     // exactly 1.0 there and the headless checks stay deterministic.
     scene_.tick(static_cast<float>(frameSeconds_ * 30.0));
     // `Sliders_Tick`: the traffic and the pedestrians, every frame
-    peds_.tick(static_cast<float>(frameSeconds_ * 30.0));
+    sliders_.tick(static_cast<float>(frameSeconds_ * 30.0));
     refreshCrowdIndex();
     if (bumpCooldown_ > 0) --bumpCooldown_;
 
@@ -2463,7 +2463,7 @@ bool Session::pressAction() {
     // the `.CTL` action state's callback runs `sub_452280` on the press: a
     // walker standing at an action point in front of the player is talked
     // to whether or not a zone is armed
-    const bool talked = peds_.loaded() && talkToPedestrian(playerPos_, playerYaw_);
+    const bool talked = sliders_.loaded() && talkToPedestrian(playerPos_, playerYaw_);
     if (zones_.armedCount() == 0) return talked;
     actionPressed_ = true;
     return true;
@@ -2940,20 +2940,20 @@ void Session::loadTrafficFor(int slot) {
     const auto track = loadOpt(fs.read("TRAJECTOIRES/" + s.opt + ".OPT"));
     if (!track.valid) return;
     const PedClips clips = pedClipsFrom(fs.read("ANIMS/" + s.ani + ".ANI"));
-    peds_.load(track, clips, s.menMask, s.womenMask, streetActivity_, 1u,
+    sliders_.load(track, clips, s.menMask, s.womenMask, streetActivity_, 1u,
                 static_cast<std::uint32_t>(s.sliderMask), static_cast<std::uint32_t>(s.motoMask));
     // `sub_438040`: a body's radius is its model's root mesh `+88`
-    for (const auto& m : peds_.models()) peds_.setModelRadius(m.name, modelReach(m.name));
+    for (const auto& m : sliders_.models()) sliders_.setModelRadius(m.name, modelReach(m.name));
     // ...and the two vehicle models', which are not in `models()` because the
     // engine keeps them in pools of their own (`dword_538E28`, `dword_536C30`)
     for (const std::string& v : {std::string("sli_fn"), std::string("moto")})
-        peds_.setVehicleModelRadius(v, modelReach(v));
+        sliders_.setVehicleModelRadius(v, modelReach(v));
     trafficSlot_ = slot & 1;
     // `sub_45E040` at every spawn: each walker an instance entry of the index
     for (const int s : pedSlots_) spatial_.remove(s);
-    pedSlots_.assign(peds_.walkers().size(), -1);
-    for (std::size_t i = 0; i < peds_.walkers().size(); ++i) {
-        const auto& w = peds_.walkers()[i];
+    pedSlots_.assign(sliders_.walkers().size(), -1);
+    for (std::size_t i = 0; i < sliders_.walkers().size(); ++i) {
+        const auto& w = sliders_.walkers()[i];
         if (!w.live) continue;
         pedSlots_[i] = spatial_.add(static_cast<int>(i), 1, modelReach(w.model), modelSpheres(w.model));
     }
@@ -2964,9 +2964,9 @@ void Session::refreshCrowdIndex() {
     // `sub_454EF0` after each walker's step: `SpatialIndex_Update` from the
     // instance's position
     static int nanTold = 0;
-    for (std::size_t i = 0; i < pedSlots_.size() && i < peds_.walkers().size(); ++i) {
+    for (std::size_t i = 0; i < pedSlots_.size() && i < sliders_.walkers().size(); ++i) {
         if (pedSlots_[i] < 0) continue;
-        const auto& w = peds_.walkers()[i];
+        const auto& w = sliders_.walkers()[i];
         // A non-finite walker is never rejected by the reach test (every
         // comparison against NaN is false), so it reaches the push and takes
         // the player with it. Report the first one.
@@ -3026,7 +3026,7 @@ bool Session::crowdPush(const std::vector<CollisionSphere>& mine, float myReach,
             int w = -1;
             for (std::size_t i = 0; i < pedSlots_.size(); ++i) if (pedSlots_[i] == s) { w = static_cast<int>(i); break; }
             if (w < 0) continue;
-            const auto& walker = peds_.walkers()[static_cast<std::size_t>(w)];
+            const auto& walker = sliders_.walkers()[static_cast<std::size_t>(w)];
             postMessage(walker.sex == 1 ? 15 : 16, playerActor());
             bumpCooldown_ = 100;                     // `dword_538318 = 100.0f`
             break;
@@ -3036,10 +3036,10 @@ bool Session::crowdPush(const std::vector<CollisionSphere>& mine, float myReach,
 }
 
 bool Session::talkToPedestrian(const float pos[3], float facing) {
-    const int w = peds_.nearestInFront(pos, facing);
+    const int w = sliders_.nearestInFront(pos, facing);
     if (w < 0) return false;
-    peds_.setTalkTarget(w);
-    postMessage(peds_.walkers()[static_cast<std::size_t>(w)].sex == 1 ? 13 : 14, playerActor());
+    sliders_.setTalkTarget(w);
+    postMessage(sliders_.walkers()[static_cast<std::size_t>(w)].sex == 1 ? 13 : 14, playerActor());
     return true;
 }
 

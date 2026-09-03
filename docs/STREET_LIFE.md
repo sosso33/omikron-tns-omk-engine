@@ -293,7 +293,7 @@ clock. The mover's base speed is the same clip's xz travel over frames
 ### The port (2026-09-03, step 3)
 
 `engine/src/formats/opt.*` reads the file with the Python reader's checks;
-`engine/src/actor/pedestrians.*` is the pool — `Pedestrians::load` is
+`engine/src/actor/pedestrians.*` is the pool — `Sliders::load` is
 `Slider_Init`'s pedestrian half (models from the masks, quotas, the spawner
 with `spacing = (5 − level) × h[3]`, each walker's factor), `tick` is
 `Sliders_Tick`'s loop over `moverStep` (`sub_454F40`: keys, routes, the

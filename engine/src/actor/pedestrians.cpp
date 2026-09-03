@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-#include "actor/pedestrians.h"
+#include "actor/sliders.h"
 
 #include "formats/anim.h"
 
@@ -158,12 +158,12 @@ const std::vector<std::string>& pedNameTable(int sex) {
 
 // ------------------------------------------------------------ the pool
 
-std::uint32_t Pedestrians::rnd() {
+std::uint32_t Sliders::rnd() {
     rng_ ^= rng_ << 13; rng_ ^= rng_ >> 17; rng_ ^= rng_ << 5;
     return rng_;
 }
 
-void Pedestrians::clear() {
+void Sliders::clear() {
     track_ = OptTrack{}; clips_ = PedClips{};
     models_.clear(); walkers_.clear(); states_.clear(); actionClip_.clear();
     laneHead_.clear(); keyList_.clear(); routeHead_.clear(); groupBusy_.clear();
@@ -175,7 +175,7 @@ void Pedestrians::clear() {
     loaded_ = false;
 }
 
-void Pedestrians::setModelRadius(const std::string& model, float radius) {
+void Sliders::setModelRadius(const std::string& model, float radius) {
     for (auto& w : walkers_) {
         if (w.vehicle >= 0 || w.model != model) continue;
         w.bodyRadius = radius;
@@ -183,19 +183,19 @@ void Pedestrians::setModelRadius(const std::string& model, float radius) {
     }
 }
 
-int Pedestrians::liveCount() const {
+int Sliders::liveCount() const {
     int n = 0;
     for (const auto& w : walkers_) if (w.live && w.vehicle < 0) ++n;
     return n;
 }
 
-int Pedestrians::liveVehicles() const {
+int Sliders::liveVehicles() const {
     int n = 0;
     for (const auto& v : vehicles_) if (v.live) ++n;
     return n;
 }
 
-void Pedestrians::load(const OptTrack& track, const PedClips& clips, std::uint32_t menMask,
+void Sliders::load(const OptTrack& track, const PedClips& clips, std::uint32_t menMask,
                        std::uint32_t womenMask, int streetActivity, std::uint32_t seed,
                        std::uint32_t sliMask, std::uint32_t motoMask) {
     clear();
@@ -255,7 +255,7 @@ void Pedestrians::load(const OptTrack& track, const PedClips& clips, std::uint32
     loadVehicles(sliMask, motoMask);
 }
 
-int Pedestrians::spawnCount(const OptTrack& t, int level) {
+int Sliders::spawnCount(const OptTrack& t, int level) {
     // `sub_453B40`'s rule alone: the accumulated key lengths across ALL the
     // pedestrian lanes (the accumulator is not reset per lane), a spawn
     // whenever it exceeds 39 * spacing, the pool's 200 cap ending the walk
@@ -276,7 +276,7 @@ int Pedestrians::spawnCount(const OptTrack& t, int level) {
     return n;
 }
 
-void Pedestrians::spawnAlongLanes(std::uint32_t firstLane, std::uint32_t endLane,
+void Sliders::spawnAlongLanes(std::uint32_t firstLane, std::uint32_t endLane,
                                   float spacing, bool vehicles) {
     const float threshold = kSpawnSpacingFactor * spacing;
     float acc = 0.0f;
@@ -300,7 +300,7 @@ void Pedestrians::spawnAlongLanes(std::uint32_t firstLane, std::uint32_t endLane
     }
 }
 
-bool Pedestrians::spawnOne(int lane, const float at[3], const float dir[3], float segLen, int keyIndex) {
+bool Sliders::spawnOne(int lane, const float at[3], const float dir[3], float segLen, int keyIndex) {
     // `sub_453ED0`: the callback - a record and a mover, a sex, a model from
     // its quota, a name, the walk clip; then `sub_453B40` fills the mover
     if (static_cast<int>(walkers_.size()) >= kMaxWalkers) return false;
@@ -353,7 +353,7 @@ bool Pedestrians::spawnOne(int lane, const float at[3], const float dir[3], floa
 
 // ------------------------------------------------------------ the lists
 
-std::vector<int>& Pedestrians::listFor(int lane, int seg) {
+std::vector<int>& Sliders::listFor(int lane, int seg) {
     // a segment index k on a lane lives in the lane's own head list for k == 1
     // (`a3 + 12`) and in key (k - 2)'s list after that - the spawner inserts
     // key k's mover into the list of the key BEFORE it
@@ -362,7 +362,7 @@ std::vector<int>& Pedestrians::listFor(int lane, int seg) {
     return keyList_[static_cast<std::size_t>(L.firstKey + seg - 2)];
 }
 
-void Pedestrians::removeFromLists(int w) {
+void Sliders::removeFromLists(int w) {
     auto strip = [&](std::vector<int>& l) { l.erase(std::remove(l.begin(), l.end(), w), l.end()); };
     for (auto& l : laneHead_) strip(l);
     for (auto& l : keyList_) strip(l);
@@ -371,7 +371,7 @@ void Pedestrians::removeFromLists(int w) {
 
 // ------------------------------------------------------------ the mover
 
-bool Pedestrians::stepLaneKey(const Pedestrian& m, float p[3]) const {
+bool Sliders::stepLaneKey(const Pedestrian& m, float p[3]) const {
     // `sub_455570`: add the key being walked; false at the lane's last key
     const auto& L = track_.lanes[static_cast<std::size_t>(m.lane)];
     const auto& K = track_.keys[static_cast<std::size_t>(L.firstKey + m.seg - 1)];
@@ -379,7 +379,7 @@ bool Pedestrians::stepLaneKey(const Pedestrian& m, float p[3]) const {
     return m.seg != L.keyCount;
 }
 
-void Pedestrians::aimAtRouteStep(const Pedestrian& m, const float p[3], int step, float dir[3], float& rem) const {
+void Sliders::aimAtRouteStep(const Pedestrian& m, const float p[3], int step, float dir[3], float& rem) const {
     // `sub_4554B0`: the next step's delta, or after the last step the
     // straight line to the destination lane's origin
     const auto& R = track_.routes[static_cast<std::size_t>(m.route)];
@@ -396,7 +396,7 @@ void Pedestrians::aimAtRouteStep(const Pedestrian& m, const float p[3], int step
     rem = n * 256.0f;
 }
 
-int Pedestrians::aimAtLaneKey(int lane, int key, float dir[3], float& rem) {
+int Sliders::aimAtLaneKey(int lane, int key, float dir[3], float& rem) {
     // `sub_4555C0`: aim along key `key` (1-based) of `lane`; every second
     // mover reaching a key with a live action point is sent to it
     const auto& L = track_.lanes[static_cast<std::size_t>(lane)];
@@ -411,7 +411,7 @@ int Pedestrians::aimAtLaneKey(int lane, int key, float dir[3], float& rem) {
     return K.action;
 }
 
-bool Pedestrians::checkAhead(Pedestrian& m, const float p[3], int candidate) {
+bool Sliders::checkAhead(Pedestrian& m, const float p[3], int candidate) {
     // `sub_455230` / `sub_4552B0` / `sub_455340`'s test on ONE candidate: not
     // in an action, it is the one ahead; within the two radii the follower is
     // blocked. True when the candidate counted.
@@ -424,7 +424,7 @@ bool Pedestrians::checkAhead(Pedestrian& m, const float p[3], int candidate) {
     return true;
 }
 
-bool Pedestrians::checkAheadOnLane(Pedestrian& m, const float p[3], int lane, int fromKey) {
+bool Sliders::checkAheadOnLane(Pedestrian& m, const float p[3], int lane, int fromKey) {
     // `sub_455340`: `fromKey` 1 is the lane's own head list; otherwise the
     // key lists from segment `fromKey` onward, the first with a head that is
     // not in an action
@@ -441,7 +441,7 @@ bool Pedestrians::checkAheadOnLane(Pedestrian& m, const float p[3], int lane, in
     return false;
 }
 
-bool Pedestrians::reserve(const OptRoute& r, int leaving, int entering, bool vehicle) {
+bool Sliders::reserve(const OptRoute& r, int leaving, int entering, bool vehicle) {
     // `sub_453230`: `entering` 0 is the route's own group, k > 0 its step k;
     // busy means wait; else every group in its list is marked. `leaving` the
     // same way, unmarking. -1 for neither.
@@ -483,7 +483,7 @@ bool Pedestrians::reserve(const OptRoute& r, int leaving, int entering, bool veh
     return false;
 }
 
-int Pedestrians::changeSegment(int wi, int oldLane, std::uint32_t newFlags, int oldSeg) {
+int Sliders::changeSegment(int wi, int oldLane, std::uint32_t newFlags, int oldSeg) {
     // `sub_455680`: the segment index after this one, the list the mover moves
     // to, the reservation groups crossed - and -1 with the mover BLOCKED when
     // a group it needs is busy
@@ -529,7 +529,7 @@ int Pedestrians::changeSegment(int wi, int oldLane, std::uint32_t newFlags, int 
     return result;
 }
 
-void Pedestrians::moverStep(int wi, float dt) {
+void Sliders::moverStep(int wi, float dt) {
     // `sub_454F40`. Everything is computed into locals and stored only if the
     // mover is not blocked - a blocked mover stands, and recomputes the same
     // segment end from its segment start next frame.
@@ -620,7 +620,7 @@ void Pedestrians::moverStep(int wi, float dt) {
 
 // ------------------------------------------------------------ the body
 
-void Pedestrians::setClip(Pedestrian& m, const PedClip* c) {
+void Sliders::setClip(Pedestrian& m, const PedClip* c) {
     // `sub_455E20`
     m.clip = c;
     m.clock = 1.0f;
@@ -628,7 +628,7 @@ void Pedestrians::setClip(Pedestrian& m, const PedClip* c) {
     m.footY = 0.0f;
 }
 
-int Pedestrians::gait(Pedestrian& m, const float toMover[3], float dist, float near, float far) {
+int Sliders::gait(Pedestrian& m, const float toMover[3], float dist, float near, float far) {
     // `sub_455D10`: how the mover paces the body
     const float d256 = dist * 256.0f;
     if (d256 < 512.0f) {
@@ -646,7 +646,7 @@ int Pedestrians::gait(Pedestrian& m, const float toMover[3], float dist, float n
     return 1;
 }
 
-bool Pedestrians::beginAction(Pedestrian& m, int actionIndex) {
+bool Sliders::beginAction(Pedestrian& m, int actionIndex) {
     // `sub_455830`'s 0x80 branch: a state for the point, its clips by the
     // point's id and by name, the point placed relative to the segment start
     ActionState* s = nullptr;
@@ -672,7 +672,7 @@ bool Pedestrians::beginAction(Pedestrian& m, int actionIndex) {
     return true;
 }
 
-void Pedestrians::bodyStep(int wi, float dt) {
+void Sliders::bodyStep(int wi, float dt) {
     // `sub_455830`
     Pedestrian& m = walkers_[static_cast<std::size_t>(wi)];
     const std::uint32_t oldFlags = m.flags;
@@ -769,7 +769,7 @@ void Pedestrians::bodyStep(int wi, float dt) {
 
 // ------------------------------------------------------------ the action
 
-bool Pedestrians::advanceActionClip(Pedestrian& m, float dt, float delta[3]) {
+bool Sliders::advanceActionClip(Pedestrian& m, float dt, float delta[3]) {
     // `sub_4561B0`: the clip clock, false on the wrap
     bool playing = true;
     float t0 = m.clock;
@@ -786,7 +786,7 @@ bool Pedestrians::advanceActionClip(Pedestrian& m, float dt, float delta[3]) {
     return playing;
 }
 
-void Pedestrians::finishAction(Pedestrian& m, ActionState& s) {
+void Sliders::finishAction(Pedestrian& m, ActionState& s) {
     setClip(m, clips_.randomOfType(m.sex, 9, rng_));
     m.flags &= ~0x80u;
     actionClip_[static_cast<std::size_t>(s.actionIndex)] = static_cast<std::int16_t>(s.savedClip);
@@ -794,7 +794,7 @@ void Pedestrians::finishAction(Pedestrian& m, ActionState& s) {
     m.action = -1;
 }
 
-void Pedestrians::actionTransition(Pedestrian& m, ActionState& s) {
+void Sliders::actionTransition(Pedestrian& m, ActionState& s) {
     // `sub_456250`: enter -> main, main looped `count` times unless the
     // player is talking to this walker, exit if the library has one, then the
     // walk again and the point's id restored
@@ -810,7 +810,7 @@ void Pedestrians::actionTransition(Pedestrian& m, ActionState& s) {
     finishAction(m, s);
 }
 
-void Pedestrians::actionStep(int wi, float dt) {
+void Sliders::actionStep(int wi, float dt) {
     // `sub_455E90`
     Pedestrian& m = walkers_[static_cast<std::size_t>(wi)];
     if (m.action < 0) { m.flags &= ~0x80u; return; }
@@ -868,7 +868,7 @@ void Pedestrians::actionStep(int wi, float dt) {
 
 // ------------------------------------------------------------ the frame
 
-void Pedestrians::tick(float dt) {
+void Sliders::tick(float dt) {
     // `Sliders_Tick`'s pedestrian loop
     if (!loaded_) return;
     for (int wi = 0; wi < static_cast<int>(walkers_.size()); ++wi) {
@@ -884,7 +884,7 @@ void Pedestrians::tick(float dt) {
     tickVehicles(dt);
 }
 
-int Pedestrians::actionPhase(int w) const {
+int Sliders::actionPhase(int w) const {
     if (w < 0 || static_cast<std::size_t>(w) >= walkers_.size()) return -1;
     const auto& m = walkers_[static_cast<std::size_t>(w)];
     if (!(m.flags & 0x80u) || m.action < 0) return -1;
@@ -892,7 +892,7 @@ int Pedestrians::actionPhase(int w) const {
     return -1;
 }
 
-int Pedestrians::nearestInFront(const float pos[3], float facingDeg) const {
+int Sliders::nearestInFront(const float pos[3], float facingDeg) const {
     // `sub_452280`: the nearest walker within 117 units that is STANDING AT AN
     // ACTION POINT (`flags & 0x80`, state phase 2), in front of the player
     // (dot > 0.2 with his facing) and turned toward him (< -0.2)

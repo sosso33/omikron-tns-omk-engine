@@ -220,7 +220,7 @@ struct Pedestrian {
 void setHeading(Pedestrian& m, float x, float y, float z);
 float len3(const float v[3]);
 
-class Pedestrians {
+class Sliders {
 public:
     // The whole of `Slider_Init`'s pedestrian half: the models the masks
     // select (quotas of 100 over them), the clips, then `sub_453B40` over the

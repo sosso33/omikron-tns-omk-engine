@@ -2,7 +2,7 @@
 // THE ROAD TRAFFIC - the vehicle half of the `.OPT` traffic circuit
 // (docs/STREET_LIFE.md 2b, todo/road-traffic.md). The hover-taxis (`sli_fn`)
 // and the motos share a city's lane network with the procedural pedestrians,
-// so this file is the other half of `Pedestrians`, not a second pool: the
+// so this file is the other half of `Sliders`, not a second pool: the
 // movers, the occupancy lists and - the part that matters - the reservation
 // groups are the same, which is what stops a slider driving through a
 // crossing walker.
@@ -26,7 +26,7 @@
 //
 // UNITS are the engine's throughout: a speed is units*256 a frame, so a body
 // advances `speed * dt / 256`.
-#include "actor/pedestrians.h"
+#include "actor/sliders.h"
 
 #include <algorithm>
 #include <cmath>
@@ -48,7 +48,7 @@ const std::vector<std::string>& vehModelTable(int kind) {
 
 // ------------------------------------------------------------ the load
 
-void Pedestrians::loadVehicles(std::uint32_t sliMask, std::uint32_t motoMask) {
+void Sliders::loadVehicles(std::uint32_t sliMask, std::uint32_t motoMask) {
     // `Slider_Init`: `if (v12[2] < v12[5])` - the circuit has vehicle lanes.
     // Lahoreh and the Puits have none, and their masks are 0 as well, so
     // either gate alone would empty their roads.
@@ -79,7 +79,7 @@ void Pedestrians::loadVehicles(std::uint32_t sliMask, std::uint32_t motoMask) {
                     static_cast<float>(track_.vehSpacing), true);
 }
 
-int Pedestrians::vehicleSpawnCount(const OptTrack& t, bool cap) {
+int Sliders::vehicleSpawnCount(const OptTrack& t, bool cap) {
     if (!t.valid || t.pedEnd >= t.laneCount) return 0;
     const float threshold = kSpawnSpacingFactor * static_cast<float>(t.vehSpacing);
     float acc = 0.0f;
@@ -103,12 +103,12 @@ int Pedestrians::vehicleSpawnCount(const OptTrack& t, bool cap) {
 // `sub_4544B0`'s and `sub_453ED0`'s common opening: the first mover slot with
 // flag 2 clear, marked in use. The engine's pool is 240 fixed slots; here it
 // grows, and the two callbacks' own caps (200 and 40) are what bound it.
-int Pedestrians::newMover() {
+int Sliders::newMover() {
     walkers_.push_back(Pedestrian{});
     return static_cast<int>(walkers_.size()) - 1;
 }
 
-bool Pedestrians::spawnVehicle(int lane, const float at[3], const float dir[3],
+bool Sliders::spawnVehicle(int lane, const float at[3], const float dir[3],
                                float segLen, int keyIndex) {
     // `sub_4544B0(a1)`: `if (a1 >= 40) return 0` - and a 0 return ends the
     // spawner's whole walk.
@@ -185,7 +185,7 @@ bool Pedestrians::spawnVehicle(int lane, const float at[3], const float dir[3],
     return true;
 }
 
-void Pedestrians::setVehicleModelRadius(const std::string& model, float radius) {
+void Sliders::setVehicleModelRadius(const std::string& model, float radius) {
     for (auto& v : vehicles_) {
         if (!v.live || v.model != model || v.mover < 0) continue;
         Pedestrian& m = walkers_[static_cast<std::size_t>(v.mover)];
@@ -194,7 +194,7 @@ void Pedestrians::setVehicleModelRadius(const std::string& model, float radius) 
     }
 }
 
-void Pedestrians::setPlayer(const float pos[3], bool onRoad) {
+void Sliders::setPlayer(const float pos[3], bool onRoad) {
     playerPos_[0] = pos[0]; playerPos_[1] = pos[1]; playerPos_[2] = pos[2];
     playerKnown_ = true;
     playerOnRoad_ = onRoad;                 // `dword_8F5E38`
@@ -202,7 +202,7 @@ void Pedestrians::setPlayer(const float pos[3], bool onRoad) {
 
 // ------------------------------------------------------------ the tick
 
-void Pedestrians::tickVehicles(float dt) {
+void Sliders::tickVehicles(float dt) {
     bumped_.clear();
     if (vehicles_.empty()) return;
     // `Sliders_Tick`: the 90-frame latch that lets one bump be reported at a
@@ -228,7 +228,7 @@ void Pedestrians::tickVehicles(float dt) {
     }
 }
 
-void Pedestrians::vehicleDrive(int vi, float dt) {
+void Sliders::vehicleDrive(int vi, float dt) {
     // `sub_456C70`
     Vehicle& v = vehicles_[static_cast<std::size_t>(vi)];
     const int mi = v.mover;
@@ -312,7 +312,7 @@ void Pedestrians::vehicleDrive(int vi, float dt) {
     // the frontend's business; the lift is recorded so it draws the same.
 }
 
-void Pedestrians::vehicleSound(int vi) {
+void Sliders::vehicleSound(int vi) {
     // `sub_456B40`: SOUNDS\sliderm01.wav, 3D at the body with the mover's
     // velocity, started inside 585 units of the listener and stopped outside.
     // The mixer is the Session's; this keeps the record's `+20` so a frontend

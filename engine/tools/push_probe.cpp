@@ -12,7 +12,7 @@
 // held. `talk`: a walker standing at an action point, the player put in
 // front of it, the action press - message 13/14.
 #include "actor/player.h"
-#include "actor/pedestrians.h"
+#include "actor/sliders.h"
 #include "actor/spatial.h"
 #include "formats/ctl.h"
 #include "formats/mesh3do.h"
@@ -68,7 +68,7 @@ int main(int argc, char** argv) {
     s.loadTraffic(fr);
     s.loadScene(fr + "/SCPTDATA", omk::ChunkKind::Area, area);
     s.loadArea(area);
-    const auto& peds = s.pedestrians();
+    const auto& peds = s.sliders();
     if (!peds.loaded() || peds.liveCount() == 0) { std::printf("walk no crowd in area %d\n", area); return 0; }
     // the player on the area's set, as player_probe builds him
     const omk::DataFs fs(fr);

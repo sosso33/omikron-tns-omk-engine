@@ -40,7 +40,7 @@
 #include "script/dialogue.h"
 #include "script/gamestate.h"
 #include "script/scenerunner.h"
-#include "actor/pedestrians.h"
+#include "actor/sliders.h"
 #include "actor/spatial.h"
 #include "ui/widgets.h"
 #include "script/hooks.h"
@@ -203,14 +203,14 @@ public:
     void setFrameSeconds(double s) { frameSeconds_ = s; }
 
     // STREET LIFE - the procedural pedestrians (docs/STREET_LIFE.md 2,
-    // `actor/pedestrians.h`). `Area_TickLoad` case 8 hands an area's `.OPT`
+    // `actor/sliders.h`). `Area_TickLoad` case 8 hands an area's `.OPT`
     // to `Slider_Init` at its load, and `Sliders_Tick` walks the pool every
     // frame. Both need the gamedata tree, which the Session otherwise never
     // opens (the `.SCX` comes the same way, through `loadScene`): without
     // this call no pedestrians exist, with it every later area load spawns
     // its circuit's - and a slot already loaded when it is called spawns now.
     void loadTraffic(const std::string& gamedataRoot);
-    const Pedestrians& pedestrians() const { return peds_; }
+    const Sliders& sliders() const { return sliders_; }
     // Options row 6, "Niveau d'activite dans les rues", 0..4 - the density
     // `Slider_Init` reads from `dword_90E724+2`. Spawning happens once, at
     // the load, so a change applies to the next circuit loaded. Default:
@@ -1072,7 +1072,7 @@ private:
     struct Ann { std::string domain; int field; };
     std::map<std::uint8_t, Ann> announce_;   // empty = announce nothing
     SceneRunner scene_;                      // empty unless loadScene ran
-    Pedestrians peds_;                       // empty unless loadTraffic ran
+    Sliders sliders_;                       // empty unless loadTraffic ran
     SpatialIndex spatial_;
     std::map<std::string, std::vector<CollisionSphere>> modelSpheres_;
     std::map<std::string, float> modelReach_;
@@ -1081,7 +1081,7 @@ private:
     int   bumpCooldown_ = 0;                 // dword_538318, in frames
     void  refreshCrowdIndex();
     std::string dataRoot_;                   // the gamedata tree, from loadTraffic
-    int         trafficSlot_ = -1;           // the slot whose circuit `peds_` holds
+    int         trafficSlot_ = -1;           // the slot whose circuit `sliders_` holds
     int         streetActivity_ = kDefaultStreetActivity;
     void loadTrafficFor(int slot);
     // The AREA whose `.SCX` `scene_` holds. The file is the area's (`+97`),

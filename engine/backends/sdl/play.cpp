@@ -1572,7 +1572,7 @@ int main(int argc, char** argv) {
         // ...and the camera a hand-over ends on: `Camera Player` (0), the
         // follow preset, which the intro's scripts request and this has to.
         session.requestCamera(0, 0);
-        const auto& pd = session.pedestrians();
+        const auto& pd = session.sliders();
         std::string models;
         for (const auto& m : pd.models()) { if (!models.empty()) models += ","; models += m.name; }
         std::printf("street life: circuit %s, %d walkers at density %d (%s)\n",
@@ -2067,7 +2067,7 @@ int main(int argc, char** argv) {
     // revision the backend has already seen.
     std::vector<std::unique_ptr<Staged>> staged;
     // THE PROCEDURAL PEDESTRIANS (docs/STREET_LIFE.md 2): one body per
-    // walker of `session.pedestrians()`, its model shared through
+    // walker of `session.sliders()`, its model shared through
     // `charModels`, posed from the crowd library's clip at the walker's own
     // clock, stood with its feet on the walker's body point and turned to its
     // heading. The engine draws a pedestrian through four LOD objects out to
@@ -3820,7 +3820,7 @@ int main(int argc, char** argv) {
                 // itself once and then vanished - which is how this was
                 // found (2026-09-04).
                 if (!used) {
-                    const auto& circuit = session.pedestrians();
+                    const auto& circuit = session.sliders();
                     for (const auto& w : circuit.walkers())
                         if (w.live && w.model == it->first) { used = true; break; }
                     if (!used)
@@ -4690,7 +4690,7 @@ int main(int argc, char** argv) {
             pedDrawn = pedLive = pedInAction = pedIdle = 0;
             vehDrawn = vehLive = vehStopped = 0;
             {
-                const auto& pd = session.pedestrians();
+                const auto& pd = session.sliders();
                 const auto& rs = session.residentSlot(session.activeSlot());
                 if (pd.loaded() && !rs.ani.empty() && rs.ani != pedAniName) {
                     pedAniName = rs.ani;

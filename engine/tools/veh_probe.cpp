@@ -22,7 +22,7 @@
 //              vehicle waited on one
 // `--player x,y,z` stands the player there ON THE ROAD, which is what turns
 // the brake and the run-over on.
-#include "actor/pedestrians.h"
+#include "actor/sliders.h"
 #include "formats/iam.h"
 #include "formats/opt.h"
 #include "formats/mesh3do.h"
@@ -181,7 +181,7 @@ int main(int argc, char** argv) {
     if (!track.valid) { std::fprintf(stderr, "%s: %s\n", opt.c_str(), track.error.c_str()); return 1; }
 
     const omk::PedClips clips = omk::pedClipsFrom(fs.read("ANIMS/" + ani + ".ANI"));
-    omk::Pedestrians pool;
+    omk::Sliders pool;
     pool.load(track, clips, menMask, womenMask, omk::kDefaultStreetActivity, 1u,
               static_cast<std::uint32_t>(sliMask), static_cast<std::uint32_t>(motoMask));
     // `sub_438040`: the body radius each model carries, which the pool cannot
@@ -280,7 +280,7 @@ int main(int argc, char** argv) {
         if (std::find(seen.begin(), seen.end(), ln) == seen.end()) { seen.push_back(ln); ++lanesUsed; }
     }
     std::printf("spawn rule %d uncapped %d placed %d sliders %d motos %d lanes_used %d walkers %d\n",
-                omk::Pedestrians::vehicleSpawnCount(track), omk::Pedestrians::vehicleSpawnCount(track, false),
+                omk::Sliders::vehicleSpawnCount(track), omk::Sliders::vehicleSpawnCount(track, false),
                 pool.liveVehicles(), sliders, motos, lanesUsed, pool.liveCount());
 
     std::vector<std::array<float, 3>> start;
