@@ -3184,6 +3184,50 @@ int main(int argc, char** argv) {
                 } else {
                     player->tick(static_cast<float>(frameSec * 30.0), bits);
                 }
+                // omk-play 69: WATCH the take. Group 41 is H_TAKL12 (bend and
+                // grab) -> MDGETOBJ -> H_TAKL22 (stand up), and entry 24 has no
+                // clip at all, so the handler switching the group is right.
+                // If the animation "makes no sense" the question is whether the
+                // channel walks that sequence or stalls in it - so print every
+                // clip change for a window after the press.
+                {
+                    static int watch = 0;
+                    static std::string lastClip;
+                    for (const auto& mv : player->specialMoves())
+                        if (mv == "MDACTION") watch = 120;
+                    if (watch > 0) {
+                        --watch;
+                        const std::string c = player->clipName();
+                        if (c != lastClip) {
+                            lastClip = c;
+                            std::printf("  anim: frame %ld  .CTL state %d '%s'  clip '%s' "
+                                        "f %.1f\n", n, player->ctlState(),
+                                        player->ctlStateName().c_str(), c.c_str(),
+                                        player->clipFrame());
+                        }
+                    }
+                }
+                // omk-play 67: does the new fall/slide path actually engage
+                // while someone plays? Before the fix every drop past the step
+                // limit came back Refused and the actor stood on it, so a
+                // count of Fell/Slid against Refused is the whole question.
+                {
+                    static long nFell = 0, nSlid = 0, nRefused = 0, nBlocked = 0;
+                    static long toldAt = -1;
+                    const auto r = player->last().step;
+                    if (r == omk::StepResult::Fell)         ++nFell;
+                    else if (r == omk::StepResult::Slid)    ++nSlid;
+                    else if (r == omk::StepResult::Refused) ++nRefused;
+                    else if (r == omk::StepResult::Blocked) ++nBlocked;
+                    const long tot = nFell + nSlid + nRefused;
+                    if (tot > 0 && tot != toldAt && (tot % 25) == 0) {
+                        toldAt = tot;
+                        std::printf("walk: %ld fell, %ld slid, %ld refused (a drop past "
+                                    "the no-damage tier), %ld blocked - at %.0f %.0f %.0f\n",
+                                    nFell, nSlid, nRefused, nBlocked,
+                                    player->pos()[0], player->pos()[1], player->pos()[2]);
+                    }
+                }
                 // ---- THE WORLD TAKE: tab_special_move[] 3..7 -------------
                 //
                 // omk-play 66. Pressing action fires MDACTION (H1AVNT entry

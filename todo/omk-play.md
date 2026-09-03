@@ -15,13 +15,178 @@ waiting on its evidence.
 
 ## Open (batch 6, filed 2026-09-04)
 
+### 70. Every texture and model vanishes late in a session — black, with the NPCs still walking — A
+
+Filed 2026-09-04 from a play report — *"at the very end, for some reasons,
+every textures and/or models disappears (just black with npc walking)."*
+
+**Not yet diagnosed.** Recorded now with what the report itself constrains,
+because the shape is unusually informative:
+
+* the **crowd still draws**, so the frame, the camera, the present and the
+  pedestrian path are all alive. Whatever is lost is the WORLD's geometry and
+  textures, not the renderer.
+* it happens **late in a session**, not at a transition the reader named -
+  which points at something that accumulates or is exhausted rather than a
+  bad area load.
+
+**First places to look, in this order.** The 58-slot texture cache
+(`Tex3DT_BindMaterials`, `SetMaterialsMemory(58, 0)`) is a global pool and the
+port RUNS it - `docs/ASSETS.md` 4b - and the port's own pool already warns
+when it passes 64 slots (added for omk-play 54/55). A run that has crossed
+many areas is exactly the case that exhausts it. Second: `rebuildWorld` and
+the two resident decor slots - a slot left in state 1 (loaded, unlinked)
+rather than 2 draws nothing while everything else still ticks. Third, and
+only if those are clean: the visible-set walk's own bucket key.
+
+**A caution from today.** A play log is BINARY (it carries NUL bytes), so
+`grep` reports nothing and looks like "no diagnostic fired"; use `grep -a`.
+That cost five reproductions on issue 65 before it was noticed, and this bug
+will be diagnosed from a play log.
+
+### 69. The take's ANIMATION is broken, and its camera and sound never fire — B
+
+Filed 2026-09-04 from the play test of 66 — *"the animation when grabbing the
+anneau is completely broken and nor the camera movement or sound effect is
+triggered (but I can still keep the anneau pressing a second time enter and the
+name of objects is displayed)."* So the FUNCTIONAL half of 66 is confirmed in
+play - the take, the second press that banks it, the name on screen - and the
+presentation half is wrong in three ways.
+
+**The reader separates the two failures, and they are NOT the same fault**:
+*"both character and camera animations are broken (character movements make no
+sense, the camera doesn't move at all)."* The camera does not move AT ALL,
+which is what an unwired feature looks like - `Camera_Request` is simply never
+called (point 2). The character DOES move and moves wrongly, which is what a
+mis-driven state machine looks like (point 1). Two causes, not one.
+
+**1. The animation.** 66's own labelled reconstruction is the first suspect and
+should be treated as the cause until it is ruled out. The native `MDACTION`
+handler sets `dword_53AF6C` and `dword_53AE5C` and RETURNS; the group switch
+is made by the dispatcher that reads that code (`MDNOTAKE`, 0x0046B530, a
+four-case jump), which is not transcribed. The port instead installs group 41
+from inside the MDACTION handler itself - i.e. it switches the bank group in
+the same frame the action state was entered, cutting whatever entry 24's own
+clip was doing. `setBankGroup` also clears the input queue and re-seeds it,
+so anything mid-animation is discarded. Reading `MDNOTAKE`'s four cases is the
+work, and it is what 66 deferred.
+
+**2. The camera.** Not wired at all, and already located rather than guessed:
+`sub_414BF0` is `Camera_Request`. `MDGETOBJ` calls it as mode **1** with
+`dword_930808`/`93080C` = `Actor_Index(player)`, `dword_930818` = 30.0f (a
+30-frame move) and `dword_93081C` = 1; `MDPUTSNK`/`MDLETOBJ` call it as mode
+**16**, the one mode that loads no parameters at all and only swaps the
+double-buffered camera pair - which is exactly "the camera returns to its
+normal position". Mode 1's framing comes from the 48-byte preset table at
+0x004C20C8, which `tables/camera_presets.json` already carries.
+
+**3. The sound, and a particle on the arm.** The reader adds that validating
+has a sound and *"a particle effect on the arm"*. Neither is in the handlers'
+transcribed code, so the likely source is the `.CTL` entry's own effect
+records - ASSETS has them decoded: the `+28` sub-records are bone-attached
+sprites and frame-triggered sounds, all 590 of which parse. The port READS
+them and plays none. That makes this the same shape as 66 and 68: the data is
+in, the consumer is missing.
+
+### 68. No FALL and no JUMP state: `StepResult::Fell` has no consumer, and neither do the five MDJUMP moves — A
+
+Filed 2026-09-04 from the play test of 67 — *"a barrier collision was not set
+so I started to 'fall' but instead of a real fall, I slowly went down until
+touching the floor, while continuing walking in the air."* Three separate
+things, and only the second is a defect in what 67 added.
+
+**1. The barrier let him through, and that is the KNOWN unported gap.** The
+engine stops a player at a balcony edge or a railing with `Actor_Move`'s swept
+sphere - `Sweep_ActorMove` (0x004AD360) into `Sweep_PolygonKernel`
+(0x004A9D30), 930 lines of x87 - and none of it is ported. `walk.h` already
+says so at `kMaxUnsweptDrop`, whose whole existence is a stand-in for it. So
+walking THROUGH a barrier is expected until the sweep lands, and everything
+downstream of that report is a consequence of standing somewhere the player
+should never have reached. Not a regression from 67.
+
+**2. The descent rate is CORRECT, and the log proves which path ran.** The
+session's samples move the player 10 units down per 25 frames = **0.394 a
+frame**, and `kSlideSpeed / 30 = 11.811 / 30 = 0.3937`. That is the SLIDE
+path, not the fall path: `Walk_GroundResponse` WRITES `dword_910340` (11.811)
+into the vertical velocity while the actor is on a steep face rather than
+accelerating him, so a constant rate is what the engine does. `vy_` only
+accumulates `kGravity` in the airborne branch (`walk.cpp` line 102), and he
+was never in it.
+
+**AND THE JUMP IS THE SAME DEFECT**, which is why the original report paired
+them: *"jumping doesn't work either."* `H1AVNT` carries **`MDJUMP01` x4,
+`MDJUMP02` x4, `MDJUMP03` x4, `MDJUMP0A` x3 and `MDJUMP0B` x2** - counted out
+of the file, and note there is no `MDFALL` at all, which refuted the first
+guess made here. Those five are `tab_special_move[]` rows like `MDGETOBJ`, the
+channel emits them as `ChannelEvent::Kind::Move`, and until 2026-09-04 nothing
+in the port consumed a single special-move name. Issue 66 wired four of the
+sixty-six handlers; the fall and the jump are the next ones, and they share
+one consumer: an airborne state that owns the pose while the walker owns the
+motion.
+
+So this entry is ONE fix with two faces - the involuntary fall and the
+voluntary jump - and both are blocked on the same two unknowns: which `.CTL`
+group of `H1AVNT` is the airborne one, and which is the landing.
+`engine/tools/take_states.cpp` (issue 66) already prints a bank's moves with
+their groups, inputs and parents; pointing it at the MDJUMP rows is the first
+step and needs no new tooling.
+
+**3. THE REAL DEFECT: nothing consumes `StepResult::Fell`.** Grepping the
+whole port, the only reader of that value is a diagnostic counter added the
+same day. The walker computes the fall, tiers it, and reports it - and no
+caller enters an airborne ACTOR_STATE, switches the `.CTL` bank group or
+changes the clip. So the actor descends with `H_WALK` still playing, which is
+exactly "continuing walking in the air". The engine sets the fall byte at
+actor+1304 and enters the fall state, tiered at 59.055 / 118.11 / 196.85; the
+port does neither.
+
+**What a fall LOOKS like, from the reader who has played the original**:
+*"a continuous fall at a constant speed, with the character in a falling
+position (but without moving/having animation until touching the floor), and
+falling mainly on a single axe (just Y)."* Three specifics, and each one
+contradicts a plausible guess:
+
+* **constant speed, not accelerating.** So `vy_`'s `kGravity` accumulation is
+  the wrong shape for the visible fall - the clamp is reached at once, or the
+  fall runs at a fixed rate the way the SLIDE does. Whatever `kGravity` is
+  for, it is not what the player sees.
+* **a POSE, not an animation.** The falling clip is held on one frame until
+  the landing - so this is `Actor_PlayClip` parked, not a loop, and the
+  landing is what advances it.
+* **almost pure Y.** Horizontal velocity is not carried through the fall, so
+  whatever `Actor_Move` was handed on the last grounded frame does not keep
+  pushing him sideways.
+
+**Fix shape**: `PlayerController::tick` already has the result in
+`last_.step`. On `Fell` it owes the channel a group switch the way MDACTION
+owes one for the take (issue 66 established that a handler, not a transition,
+is what moves the machine) - and on landing, the tier decides whether it is a
+step, a fall or a hard one. The tiers are already constants in `walk.h`. What
+is NOT yet read is which `.CTL` group of `H1AVNT` is the fall and which the
+landing, and that should be read before anything is written.
+
+There is **no `MDFALL`** in the bank - that was a guess and the data refuted
+it. What `H1AVNT` actually carries, counted out of the file, is
+**`MDJUMP01` x4, `MDJUMP02` x4, `MDJUMP03` x4, `MDJUMP0A` x3, `MDJUMP0B` x2**,
+and those are the five to read first. Their presence also answers the other
+half of the original report - *"jumping doesn't work either"* - the same way
+issue 66 was answered: the moves are there, the channel emits them, and until
+2026-09-04 nothing consumed a single `tab_special_move[]` name. Issue 66 wired
+four of the sixty-six; these are the next five, and `take_states` prints their
+groups and inputs.
+
 ### 67. Stuck on a bench and on a steep slope: the walker had no way DOWN — A
 
-> **Fixed 2026-09-04. NOT yet confirmed in play.** Both halves are live: the
-> bench through `Walker::step`'s own frame delta, and the slope through the
-> `Setup::steep` wiring in `player.*` and `play.cpp`, which is applied. The
-> reader has not played this yet - `verify.py: engine walker falls` is the
-> whole of the evidence, and a census is not a play test.
+> **Fixed 2026-09-04. CONFIRMED IN PLAY**: *"I walked on a few bench and I was
+> not being stuck."* Both halves are live - the bench through `Walker::step`'s
+> own frame delta, the slope through the `Setup::steep` wiring in `player.*`
+> and `play.cpp`. A play session counted **48 falls and 402 slides with 0
+> refusals**, where before the fix every one of those was a refusal with the
+> actor left standing.
+>
+> The same session found the two faults now filed as **68**: the descent is
+> real but the actor keeps WALKING through it, and the barrier he went over
+> had no collision at all.
 
 Filed 2026-09-04 from a play report — *if the character go on a bench or on a
 steep slope, the character is stuck can not move (jumping doesn't work

@@ -115,6 +115,37 @@ int main(int argc, char** argv) {
         break;
     }
 
+    // MDNOTAKE (0x0046B530) is the dispatcher: it switches on the scan's
+    // result code and installs a group BY ID - case 0 -> 140, 1 -> 6, 2 -> 7,
+    // 3 -> 9. Which of those actually carries the take?
+    for (int want : {140, 6, 7, 9, 41, 45}) {
+        for (std::size_t gi = 0; gi < ctl.groupList.size(); ++gi) {
+            if (ctl.groupList[gi].id != want) continue;
+            const int de = ctl.groupList[gi].defaultEntry;
+            std::printf("\ngroup id %3d = index %2zu, defaultEntry %d\n", want, gi, de);
+            for (std::size_t j = 0; j < ctl.states.size(); ++j) {
+                if (ctl.states[j].group != static_cast<int>(gi)) continue;
+                std::printf("    entry %3zu move %-9s flags %08x input %08x clip %d%s\n",
+                            j, ctl.states[j].moveName.empty() ? "-" : ctl.states[j].moveName.c_str(),
+                            ctl.states[j].flags, ctl.states[j].inputCode, ctl.states[j].clip,
+                            static_cast<int>(j) == de ? "   <- default" : "");
+            }
+        }
+    }
+
+    // the CLIPS by name, for the entries the take walks through
+    std::printf("\nclips of the take path:\n");
+    for (int e : {24, 51, 52, 53, 76, 77}) {
+        if (e < 0 || static_cast<std::size_t>(e) >= ctl.states.size()) continue;
+        const auto& st = ctl.states[static_cast<std::size_t>(e)];
+        const char* cn = "(none)";
+        if (st.clip >= 0 && static_cast<std::size_t>(st.clip) < ctl.clips.size())
+            cn = ctl.clips[static_cast<std::size_t>(st.clip)].name.c_str();
+        std::printf("   entry %3d  group %2d  move %-9s clip %3d '%s'\n",
+                    e, st.group, st.moveName.empty() ? "-" : st.moveName.c_str(),
+                    st.clip, cn);
+    }
+
     // and what state 24 is, since that is where the press lands
     if (ctl.states.size() > 24) {
         const auto& s = ctl.states[24];
