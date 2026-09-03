@@ -1,0 +1,41 @@
+# Street life — the plan and the progress
+
+The findings are in `docs/STREET_LIFE.md`; this file is the work. Opened
+2026-09-03 from the request *"add the npc management on the streets of the
+cities (model loading, behaviour, ...)"*, with one standing instruction:
+**the crowd density is an option in the original** ("Niveau d'activité dans
+les rues", options row 6, 0..4, default 3) — implement the setting in the
+crowd code now, behind a default, and mark the default so the options menu
+can take it over later. The menu itself is NOT part of this.
+
+Each step ends with a commit and a report; the next starts on confirmation.
+
+## Steps
+
+| # | step | status |
+|---|---|---|
+| 0 | pull, survey, write `docs/STREET_LIFE.md`, this file | **done 2026-09-03** |
+| 1 | the `scx.play` family's object word is RAW: fix `Interpreter::fetch16`'s callers for ops 46/57/58/59/60/90 after reading each handler, `dialog_disasm.py`, `tools/sim/vm.py`; correct SCRIPT_VM "Operand encoding"; a probe `engine/tools/city_crowd.cpp` and `verify.py: engine: city crowd` asserting per city how many extras start with actor, clip and path resolved (shown to fail first: Anekbah 0/26) | pending |
+| 2 | the `.OPT` format and the pedestrian spawner: read `Slider_Init`'s header use, `sub_453ED0`, and the tick (`Sliders_Tick` + the 200-slot walkers); a Python reader `tools/opt_track.py` with a self-checking walk (relocated offsets land inside the file, key counts land on the next lane, 6/6 files); `docs/STREET_LIFE.md` §2 rewritten from "read so far" to read | pending |
+| 3 | port it: `engine/src/formats/opt.*` (the reader), `engine/src/actor/pedestrians.*` (the pool, the spawner with `streetActivity`, the per-frame walk), fed from the Session's area load; the density parameter lives in ONE place with the "replace with the options value" comment; checks: spawn count per level against the formula, a walker's path over a transition | pending |
+| 4 | draw them: `omk-play` stages the pedestrian pool like the extras (shared `CharModel` per model name, the walk clip at each walker's own phase and speed); add `--area N --address A` so a person can stand in a street; **watch Anekbah and Jaunpur**, file what is seen in `todo/omk-play.md` | pending |
+| 5 | the crowd push: read `sub_45E390`/`sub_45E690`/`sub_45DFF0`/`sub_438040`, port `SpatialIndex` into the player's tick; invariant over a walk into a body, not a still frame | pending |
+| 6 | confirm the interaction path in play (zone lines, head look-at); docs: RECONSTRUCTION log row, CLAUDE.md §4 row, `engine/README.md` coverage row | pending |
+
+## Decisions and notes
+
+* The density lives in the port as one integer `streetActivity` (0..4) with
+  default **3**, the engine's own default (`sub_41F4C0` writes `0x01030000`
+  into `dword_90E724`: byte 2 = 3). The comment at the definition says the
+  options menu (row 6, hooks 0x48FC40/0x48FC70) is to replace it.
+* Mechanism B needs no density: the engine starts every authored extra at
+  any level. Only the `.OPT` walkers are thinned.
+* Only four city streets have an `.OPT` (Anekbah, Jaunpur/souk, Lahoreh,
+  Qalisar/qchaud) plus the Puits and the unnamed `biblio`; elsewhere the
+  street is the authored extras alone.
+
+## Log
+
+| date | what |
+|---|---|
+| 2026-09-03 | Survey. The first reading ("no crowd AI, it is scene programs") was right and incomplete: the density option led to `Slider_Init`, which spawns a second, procedural population from the `.OPT` lanes. The enumeration trap again — a search for what drives an NPC found the actors and missed the pool that is not an actor at all. |

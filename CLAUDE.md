@@ -65,6 +65,7 @@ that only for a file you are about to actually open.
 | docs/CUTSCENES.md | ~10k | camera editings, scene programs, what starts a scene's beats |
 | docs/UI.md | ~21k | the I2D layer, the 37 screens, the 45 sounds, the options tree, fonts and text markup |
 | docs/BOOT.md | ~2k | launch → FLIS movies → aventure.scx → the frame loop, the 30 fps clock |
+| docs/STREET_LIFE.md | ~4k | the people on a city street: the `.OPT` pedestrians and the density option, the authored extras (scene programs), the crowd push; `todo/street-life.md` is the plan |
 | engine/README.md | ~31k | NEVER whole; §"Coverage" for what is/isn't ported, §"Building and proving it" for the check recipes; grep otherwise |
 | tables/README.md | small | what each tables/*.json is and how it is regenerated |
 | readable/README.md, readable/INDEX.md | small / index | finding a decompiled function by name or address |
@@ -72,6 +73,7 @@ that only for a file you are about to actually open.
 | todo/iam-script-engine.md | ~11k | the script-engine issue list; all 39 filed issues are fixed, the labelled remainders are in its Fixed notes |
 | todo/iam-script-engine-plan.md | ~2k | who owned which files in batches 1 and 2; the T18 proposal |
 | todo/actor-runtime.md | ~1k | the .CTL channel's closed issues and notes |
+| todo/street-life.md | ~2k | the street-life work: six steps, each ending in a commit and a report |
 | todo/pending/*.md (E1, E2, T1..T17) | ~2–8k each | a specific past task's deliverable; each starts with an "Integrated" line — read only the one you need |
 | transcript/*.md | large | how a finding was reached, wrong turns included; never for facts (the docs have them) |
 
