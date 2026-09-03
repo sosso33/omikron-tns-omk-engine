@@ -1647,6 +1647,23 @@ Five things it shows that no slice could:
 
 ## Coverage — what is ported, and what is not
 
+**Added 2026-09-03, outside the 41-row audit below: the street life**
+(`docs/STREET_LIFE.md`, `todo/street-life.md`) — the `.OPT` traffic circuit
+(`formats/opt.*`), the procedural pedestrians (`actor/pedestrians.*`: the
+spawner at `39 * (5 - density) * h[3]`, the mover over lanes and routes, the
+body on the walk clip's root motion, following, overtaking, reservation
+groups, action points), the spatial index and the crowd push
+(`actor/spatial.*`, `Session::crowdPush`, the bump and talk messages), the
+head look (`aimHead`, `actor/pose.*`), all fed from the Session at an area's
+load and ticked every frame, and drawn by `omk-play` with a street start
+(`--save --area --address/--stand --density --no-crowd`). Fully ported,
+with the density held at the engine's default 3 until the options menu
+hands its value in. Checks: `engine: pedestrians`, `engine: city crowd`,
+`engine: street frame`, `engine: crowd push`, `engine: head look`, `opt
+tracks`. Not ported: the vehicles (`sli_fn`/`moto`, lanes `[2]..[5]`), the
+engine's LOD selection for an actor's four skeletons (the viewer draws the
+first), the bump's `camera.shake`.
+
 Re-audited row by row against `CLAUDE.md` §4 on 2026-08-31, **41 content
 rows**. This table has now been wrong twice — once with a count that had
 quietly dropped the rows it judged unportable, once with a figure left stale by

@@ -2076,6 +2076,15 @@ void Session::onCall(int i, const Call& call) {
     case 72:
         if (!call.fields.empty()) sceneUnload(call.fields[0], i);
         break;
+    case 138: case 139: {
+        // `character.look_at_player` / `character.look_away`: the actor's
+        // look-at slot (+400) written with the player's index / -1. The head
+        // aim itself is `Actors_TickAll`'s, per frame, in the frontend.
+        if (call.fields.empty()) break;
+        if (call.op == 138) lookAtPlayer_.insert(call.fields[0]);
+        else lookAtPlayer_.erase(call.fields[0]);
+        break;
+    }
     case 78: {
         // `character.show` / `character.hide`: a character is on screen
         // between them, which is well before `dialog.start`. Both handlers

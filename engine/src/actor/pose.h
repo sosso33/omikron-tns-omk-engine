@@ -211,6 +211,32 @@ std::vector<MeshPose> composePose(const std::vector<Mesh>& meshes,
 // than smoothing it. `tools/verify.py: engine pose blend` asserts the
 // arithmetic and the two lengths through `tools/blend_probe.cpp`.
 Quatf qslerp(const Quatf& a, const Quatf& b, float t);
+
+// ------------------------------------------------- THE HEAD LOOK
+//
+// `Actors_TickAll` aims an actor's head at his look-at target (slot 100,
+// written by `character.look_at_player` 138, cleared by 139) every frame:
+// the head node's forward (-Z through its matrix) against the vector to the
+// target's head, a pitch and a yaw in degrees, then `Actor_SetHeadLook`
+// (0x00468B50): pitch clamped to +-40, yaw to +-70, each eased an EIGHTH of
+// the way per frame (`(target - current) * 0.125 * dt`), and the euler baked
+// into the head node's matrix at +324. The engine's pitch sign was not
+// settled (the decompiled snap conditions are undefined); positive here
+// means the head tilts UP (Y points down).
+struct HeadLook {
+    float pitch = 0.0f, yaw = 0.0f;   // the eased angles, +432 / +436
+};
+// The head mesh of a model: the first mesh whose name ends in "tete" under
+// the first root; -1 when none.
+int headMeshOf(const std::vector<Mesh>& meshes);
+// Aim `pose[head]` (and every mesh under it) at `target`, both in the pose's
+// own space: the wanted pitch/yaw from the current forward, the clamp, the
+// ease into `look`, then the rotation applied about the head's origin.
+// `snap` skips the ease (the first frame). -> the wanted angles before the
+// clamp, for the probe.
+void aimHead(std::vector<MeshPose>& pose, const std::vector<Mesh>& meshes, int head,
+             const float target[3], HeadLook& look, float dt, bool snap,
+             float* wantedPitch = nullptr, float* wantedYaw = nullptr);
 NodeTracks blendTracks(const NodeTracks& a, int frameA, bool cancelRootA,
                        const NodeTracks& b, int frameB, bool cancelRootB,
                        float t);

@@ -14,9 +14,15 @@ found. In order of what a player sees:
 | **B. the authored extras** — scene programs on placed characters | couples kissing, beggars, sport, patrolling Mecaguards, walking pairs; one looping `.SCX` program each | ported and running in every city **except Anekbah** (one operand misread) |
 | **C. the crowd push** — the spatial index | the player is shoved by nearby bodies | **ported** (`engine: crowd push`), with the bump and talk messages |
 
-Talking to a passer-by is neither: it is an ordinary zone-activate script
-(`var.set.random` on "n° VO passant", then one of four `media.play` voice
-lines), already ported through the zone registry and the voice-over path.
+Talking to a passer-by is neither: for the authored extras it is an
+ordinary zone-activate script (`var.set.random` on "n° VO passant", then one
+of four `media.play` voice lines), for the walkers the messages of §3 — both
+run through the zone registry, the message path and the voice-over path the
+port has. **The voices themselves do not ship**: the `ZVO P*`/`V*`/`VH*`
+lines those scripts play are among the 551 of 561 `VOICEOFF` entries absent
+from this data set (17 files ship), so the talk and the bump run their
+scripts and stay silent here. The camera shake the bump handlers ask for
+(`camera.shake 5, 5`) is the visible half.
 
 ---
 
@@ -330,6 +336,28 @@ frame` keeps a crowd-on/crowd-off pair differing by thousands of pixels).
 the facing convention over a turn (the actors' recipe is assumed), the
 following distance, and whether the action points read as a street.
 
+### The head look (step 6)
+
+`character.look_at_player` (138) writes the actor's look-at slot (+400) and
+`Actors_TickAll` aims his head at the target every frame: the head node's
+forward against the vector to the target's head node, a pitch and a yaw,
+then `Actor_SetHeadLook` (0x00468B50) clamps pitch to ±40 and yaw to ±70 and
+eases each an eighth of the way per frame into the head node's matrix at
++324. Ported as `aimHead` (`actor/pose.h`) over the composed pose, applied
+in the viewer to every staged actor the Session lists as looking at the
+player, with the player's head taken 60 units above his feet (the engine
+reads his head node; labelled). `verify.py: engine: head look` measures the
+Demon's forward after the aim: 45 turns 45, 120 and behind turn 70, up 60
+lifts 40, one frame of ease is 45/8. Six shipped startup scripts ask for it
+(AREA 148 once, AREA 155 five times); the intro's beats do too.
+
+### Still to be watched by a person
+
+The walkers' pace and facing over a turn, the following distance, the push
+against the original, the bump's camera shake, a head turning toward Kay'l.
+Everything above that a check can hold is held; these are the class §1's
+"verified standing still is not verified moving" names.
+
 ### Not yet read
 
 `sub_4563A0` (per tick when the player exists), `sub_452490`'s caller (the
@@ -392,7 +420,7 @@ frames.
 | scene programs on actors, path + clip, loops, sync | `SceneRunner`, `Program` | done, Anekbah included since 2026-09-03 (`engine: city crowd`) |
 | drawing every shown actor by its program | `omk-play` (T20) | done for the Impasse's three bodies; a 30-body street never watched |
 | zone lines to passers-by | zones + `voiceover` | done, never watched on a street |
-| `character.look_at_player` head aim | Session records it | drawn? unverified |
+| `character.look_at_player` head aim | `Session::looksAtPlayer`, `aimHead` (pose.h), the viewer | ported (`engine: head look`); to be watched |
 | the `.OPT` pedestrians and the density option | `formats/opt.*`, `actor/pedestrians.*`, `Session::loadTraffic` | ported and run headless; drawing is step 4 |
 | the crowd push | `actor/spatial.*`, `Session::crowdPush` | ported; the bump and talk messages post |
 | a way to stand in a street without replaying the intro | `omk-play` | nothing |

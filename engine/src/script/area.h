@@ -239,6 +239,11 @@ public:
     // it with the tracked player position.
     bool talkToPedestrian(const float pos[3], float facing);
     const SpatialIndex& spatial() const { return spatial_; }
+    // `character.look_at_player` (138) / `character.look_away` (139): the
+    // actor's look-at slot (+400, slot 100) set to the player / cleared.
+    // `Actors_TickAll` aims his head at it every frame (`aimHead`, pose.h);
+    // the Session only keeps who is looking.
+    bool looksAtPlayer(int actor) const { return lookAtPlayer_.count(actor) != 0; }
     // A model's collision spheres (its first skeleton's mesh volumes) and
     // its reach (`+88`), read once from MESHES\PERSOS through the traffic
     // root; empty when the model or the root is missing.
@@ -1010,6 +1015,7 @@ private:
     std::map<std::string, std::vector<CollisionSphere>> modelSpheres_;
     std::map<std::string, float> modelReach_;
     std::vector<int> pedSlots_;              // walker -> its index slot, -1 none
+    std::set<int> lookAtPlayer_;             // actors whose slot 100 is the player
     int   bumpCooldown_ = 0;                 // dword_538318, in frames
     void  refreshCrowdIndex();
     std::string dataRoot_;                   // the gamedata tree, from loadTraffic

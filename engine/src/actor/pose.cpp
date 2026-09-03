@@ -494,4 +494,95 @@ void applyPose(Geometry& g, const Geometry& rest,
     }
 }
 
+
+int headMeshOf(const std::vector<Mesh>& meshes) {
+    int root = -1;
+    for (std::size_t i = 0; i < meshes.size() && root < 0; ++i) {
+        bool hasParent = false;
+        for (const auto& p : meshes) if (p.id == meshes[i].parent) { hasParent = true; break; }
+        if (!hasParent) root = static_cast<int>(i);
+    }
+    for (std::size_t i = 0; i < meshes.size(); ++i) {
+        std::string n = meshes[i].name;
+        for (auto& c : n) if (c >= 'A' && c <= 'Z') c = static_cast<char>(c - 'A' + 'a');
+        if (n.size() < 4 || n.compare(n.size() - 4, 4, "tete") != 0) continue;
+        int m = static_cast<int>(i);
+        for (int guard = 0; guard < 64 && m >= 0; ++guard) {
+            if (m == root) return static_cast<int>(i);
+            const std::int32_t pid = meshes[static_cast<std::size_t>(m)].parent;
+            int next = -1;
+            for (std::size_t j = 0; j < meshes.size(); ++j) if (meshes[j].id == pid) { next = static_cast<int>(j); break; }
+            m = next;
+        }
+    }
+    return -1;
+}
+
+void aimHead(std::vector<MeshPose>& pose, const std::vector<Mesh>& meshes, int head,
+             const float target[3], HeadLook& look, float dt, bool snap,
+             float* wantedPitch, float* wantedYaw) {
+    if (head < 0 || static_cast<std::size_t>(head) >= pose.size()) return;
+    const float kDeg = 57.29577951308232f;
+    const MeshPose& h = pose[static_cast<std::size_t>(head)];
+    const float local[3] = {0.0f, 0.0f, -1.0f};
+    float f[3];
+    qrot(h.q, local, f);
+    const float to[3] = {target[0] - h.pos[0], target[1] - h.pos[1], target[2] - h.pos[2]};
+    const float fh = std::sqrt(f[0] * f[0] + f[2] * f[2]);
+    const float th = std::sqrt(to[0] * to[0] + to[2] * to[2]);
+    // yaw: the signed angle in the ground plane from the forward to the
+    // target, positive turning -Z toward +X (rotateYaw's sense)
+    float yaw = 0.0f;
+    if (fh > 1e-6f && th > 1e-6f)
+        yaw = std::atan2(f[0] * to[2] - f[2] * to[0], f[0] * to[0] + f[2] * to[2]) * kDeg;
+    // pitch: the target's elevation less the forward's (Y down: up is -y)
+    const float pitch = (std::atan2(-to[1], th) - std::atan2(-f[1], fh)) * kDeg;
+    if (wantedPitch) *wantedPitch = pitch;
+    if (wantedYaw) *wantedYaw = yaw;
+    float p = pitch, y = yaw;
+    if (p < -40.0f) p = -40.0f;
+    if (p > 40.0f) p = 40.0f;
+    if (y > 70.0f) y = 70.0f;
+    if (y < -70.0f) y = -70.0f;
+    if (snap) { look.pitch = p; look.yaw = y; }
+    else {
+        look.pitch += (p - look.pitch) * 0.125f * dt;
+        look.yaw   += (y - look.yaw) * 0.125f * dt;
+    }
+    // the rotation: yaw about the world's Y, then pitch about the head's
+    // right axis, applied to the head and everything under it about the
+    // head's origin
+    const float hy = look.yaw / kDeg * 0.5f, hp = look.pitch / kDeg * 0.5f;
+    // yaw about -Y turns -Z toward +X in this handedness (Y points down)
+    const Quatf qy{std::cos(hy), 0.0f, -std::sin(hy), 0.0f};
+    float right[3];
+    const float lx[3] = {1.0f, 0.0f, 0.0f};
+    qrot(h.q, lx, right);
+    float rr[3];
+    qrot(qy, right, rr);
+    // a nose-up pitch is a rotation about the right axis that lifts -Z,
+    // which with Y down is the negative sense
+    const Quatf qp{std::cos(hp), -rr[0] * std::sin(hp), -rr[1] * std::sin(hp), -rr[2] * std::sin(hp)};
+    const Quatf d = qmul(qp, qy);
+    const float origin[3] = {h.pos[0], h.pos[1], h.pos[2]};
+    for (std::size_t i = 0; i < pose.size() && i < meshes.size(); ++i) {
+        int m = static_cast<int>(i);
+        bool under = false;
+        for (int guard = 0; guard < 64 && m >= 0; ++guard) {
+            if (m == head) { under = true; break; }
+            const std::int32_t pid = meshes[static_cast<std::size_t>(m)].parent;
+            int next = -1;
+            for (std::size_t j = 0; j < meshes.size(); ++j) if (meshes[j].id == pid) { next = static_cast<int>(j); break; }
+            m = next;
+        }
+        if (!under) continue;
+        MeshPose& mp = pose[i];
+        mp.q = qmul(d, mp.q);
+        const float rel[3] = {mp.pos[0] - origin[0], mp.pos[1] - origin[1], mp.pos[2] - origin[2]};
+        float rot[3];
+        qrot(d, rel, rot);
+        for (int k = 0; k < 3; ++k) mp.pos[k] = origin[k] + rot[k];
+    }
+}
+
 }  // namespace omk

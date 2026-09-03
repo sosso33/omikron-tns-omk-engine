@@ -4135,6 +4135,45 @@ def c_engine_crowd_push():
     return got, want, "shape across x30/x20/x10 grows; along z40 clipped, z30 = -5, z10 stronger; walk touched, moved, one bump; talk found, one message, phase held"
 
 
+def c_engine_head_look():
+    r"""`Actor_SetHeadLook` over a real model (docs/STREET_LIFE.md step 6;
+    actor/pose.h `aimHead`; engine/tools/head_probe).
+
+    `character.look_at_player` (138) writes an actor's look-at slot and
+    `Actors_TickAll` aims his head at the player's every frame: the pitch and
+    yaw from the head's forward to the target, pitch clamped to +-40 and yaw
+    to +-70 (0x00468B50), each eased an eighth of the way per frame. Over the
+    Demon's head (`D3Tete`): a target 45 degrees to either side turns the
+    forward by exactly 45; one at 120 and one behind by 70, the clamp; one 60
+    degrees up lifts it 40, one down -40; and from rest the ease covers 45/8
+    in one frame and lands within a degree in forty. The transition is the
+    thing tested: the forward MEASURED after the aim, not the angle asked.
+    """
+    eng = os.path.join(ROOT, "engine")
+    if not os.path.isdir(eng):
+        return ("skipped",), ("skipped",), "engine/ absent"
+    b = subprocess.run(["make", "-s"], cwd=eng, capture_output=True, text=True)
+    binp = os.path.join(eng, "build", "head_probe")
+    if b.returncode != 0 or not os.path.exists(binp):
+        return ("build failed",), ("built",), "engine/ must build"
+    r = subprocess.run([binp, omkpaths.data_root(), "DE3_FN"], capture_output=True, text=True)
+    if r.returncode != 0:
+        return ("no run",), ("ran",), "head_probe must run"
+    C = {}
+    head = ""
+    for ln in r.stdout.splitlines():
+        f = ln.split()
+        if f and f[0] == "model": head = f[6] if len(f) > 6 else ""
+        if f and f[0] == "case": C[f[1]] = {k: float(v) for k, v in zip(f[2::2], f[3::2])}
+    def turned(n): return round(C.get(n, {}).get("turned", 999), 1)
+    def lifted(n): return round(C.get(n, {}).get("lifted", 999), 1)
+    got = (head, turned("front"), abs(turned("left45")), abs(turned("right45")), abs(turned("right120")),
+           abs(turned("behind")), lifted("up60"), lifted("down60"),
+           round(abs(C.get("left45", {}).get("eased_one", 0)), 2), abs(C.get("left45", {}).get("eased_forty", 0)) > 44.0)
+    want = ("D3Tete", 0.0, 45.0, 45.0, 70.0, 70.0, 40.0, -40.0, 5.62, True)
+    return got, want, "the Demon's head; turned front/left45/right45/right120/behind; lifted up60/down60; one frame of ease (45/8); forty frames land"
+
+
 def c_engine_city_crowd():
     r"""The AUTHORED EXTRAS of a city street start in the Session
     (docs/STREET_LIFE.md 1) - and the object word of every `scx.play*` is a
@@ -18347,6 +18386,7 @@ SLOW = [
     ("engine: pedestrians", c_engine_pedestrians, "STREET_LIFE 2; actor/pedestrians.h"),
     ("engine: street frame", c_engine_street_frame, "STREET_LIFE; todo/street-life 4"),
     ("engine: crowd push", c_engine_crowd_push, "STREET_LIFE 3; actor/spatial.h"),
+    ("engine: head look", c_engine_head_look, "STREET_LIFE; actor/pose.h"),
     ("engine: zone pump",  c_engine_zone_pump,  "engine/README"),
     ("engine: zone registry", c_engine_zone_registry, "engine/README"),
     ("engine: voice over", c_engine_voice_over, "CUTSCENES 5; engine/README"),

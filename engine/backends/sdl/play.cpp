@@ -1615,6 +1615,8 @@ int main(int argc, char** argv) {
         float progBase[3] = {0, 0, 0};
         bool  progPelvis = false;
         const char* src = "none";
+        omk::HeadLook look;            // `character.look_at_player`'s head aim, eased
+        bool  lookSnap = true;
         // SEATED ONCE, the way the engine seats an actor once and then
         // `Actor_MoveBy`s him: the feet go on the floor when the pose SOURCE
         // or the clip changes, and the clip's root motion moves him from
@@ -3681,6 +3683,32 @@ int main(int argc, char** argv) {
                     src = "the bank's default entry, frame 0";
                 } else {
                     pose = omk::composePose(s.mo->meshes, omk::NodeTracks{}, 0, false);
+                }
+                // THE HEAD LOOK: an actor a script pointed at the player turns
+                // his head toward him every frame (`Actors_TickAll` -> `Actor_
+                // SetHeadLook`), the target being the player's head. His
+                // world position is the frontend's; back into the pose's own
+                // space through the placement below (facing, pelvis, at).
+                if (session.looksAtPlayer(s.actor) && s.placed && s.mo->root >= 0) {
+                    const int head = omk::headMeshOf(s.mo->meshes);
+                    if (head >= 0) {
+                        const float* pp = (adventure && player) ? player->pos() : session.playerPos();
+                        // the target's head: his feet less a standing head height
+                        // (`th[11..13]` is the target's head node in the engine)
+                        const float world[3] = {pp[0], pp[1] - 60.0f, pp[2]};
+                        float pelvis[3] = {0, 0, 0};
+                        if (static_cast<std::size_t>(s.mo->root) < pose.size())
+                            for (int k = 0; k < 3; ++k) pelvis[k] = pose[static_cast<std::size_t>(s.mo->root)].pos[k];
+                        const float rel[3] = {world[0] - s.at[0], world[1] - s.at[1], world[2] - s.at[2]};
+                        float local[3];
+                        omk::rotateYaw(-s.facing, rel, local);
+                        const float target[3] = {local[0] + pelvis[0], local[1] + pelvis[1], local[2] + pelvis[2]};
+                        omk::aimHead(pose, s.mo->meshes, head, target, s.look,
+                                     static_cast<float>(frameSec * 30.0), s.lookSnap);
+                        s.lookSnap = false;
+                    }
+                } else {
+                    s.lookSnap = true;
                 }
                 if (!s.placed) {
                     if (!s.placeTold) {
