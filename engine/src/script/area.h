@@ -41,6 +41,7 @@
 #include "script/gamestate.h"
 #include "script/scenerunner.h"
 #include "actor/pedestrians.h"
+#include "actor/spatial.h"
 #include "ui/widgets.h"
 #include "script/hooks.h"
 #include "script/interp.h"
@@ -217,6 +218,32 @@ public:
     // is ported and hands its value here.
     void setStreetActivity(int level) { streetActivity_ = level < 0 ? 0 : level > 4 ? 4 : level; }
     int  streetActivity() const { return streetActivity_; }
+
+    // THE CROWD PUSH (docs/STREET_LIFE.md 3, `actor/spatial.h`). Every
+    // walker is an instance entry of the spatial index, refreshed each frame
+    // from its body; `Actor_TickNpc` queries it for the player and adds the
+    // result to his position before `Actor_ApplyMotion`. The player's body is
+    // the frontend's (E2's walker), so the frontend asks here with his
+    // spheres and applies what comes back (`PlayerController::nudge`). Also
+    // the BUMP: a walker the query touched posts message 15 (a man) or 16 (a
+    // woman) through `Game_RaiseEvent(43)`, one at a time, held 100 frames
+    // (`Sliders_Tick`, `dword_538308`/`dword_538318`). Not while a
+    // conversation is up (state 16 skips the push).
+    bool crowdPush(const std::vector<CollisionSphere>& mine, float myReach,
+                   const float pos[3], float facing, float out[3]);
+    // `sub_452280`, what the `.CTL` action state's move callback runs
+    // (cases 4/11 of the dispatcher at 0x46AEE2): the nearest walker within
+    // 117 units in front of the player, standing at an action point, posts
+    // message 13 (a man) or 14 (a woman) and becomes the talk target whose
+    // action countdown holds. -> whether one was found. `pressAction` calls
+    // it with the tracked player position.
+    bool talkToPedestrian(const float pos[3], float facing);
+    const SpatialIndex& spatial() const { return spatial_; }
+    // A model's collision spheres (its first skeleton's mesh volumes) and
+    // its reach (`+88`), read once from MESHES\PERSOS through the traffic
+    // root; empty when the model or the root is missing.
+    const std::vector<CollisionSphere>* modelSpheres(const std::string& model);
+    float modelReach(const std::string& model);
 
     // How many areas have been entered THROUGH A TRANSITION - `sub_419AF0`
     // making a destination's decor the drawn scene at `Area_Transition` mode
@@ -979,6 +1006,12 @@ private:
     std::map<std::uint8_t, Ann> announce_;   // empty = announce nothing
     SceneRunner scene_;                      // empty unless loadScene ran
     Pedestrians peds_;                       // empty unless loadTraffic ran
+    SpatialIndex spatial_;
+    std::map<std::string, std::vector<CollisionSphere>> modelSpheres_;
+    std::map<std::string, float> modelReach_;
+    std::vector<int> pedSlots_;              // walker -> its index slot, -1 none
+    int   bumpCooldown_ = 0;                 // dword_538318, in frames
+    void  refreshCrowdIndex();
     std::string dataRoot_;                   // the gamedata tree, from loadTraffic
     int         trafficSlot_ = -1;           // the slot whose circuit `peds_` holds
     int         streetActivity_ = kDefaultStreetActivity;

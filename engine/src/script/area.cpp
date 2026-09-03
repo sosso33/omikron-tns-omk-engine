@@ -295,7 +295,11 @@ void Session::evictSlot(int slot) {
     ResidentSlot& s = slots_[slot & 1];
     // the circuit goes with the slot that loaded it (`Area_LoadSliderTrack`'s
     // walk over the decor slots' "has a track" flags, `sub_4548C0`)
-    if (trafficSlot_ == (slot & 1)) { peds_.clear(); trafficSlot_ = -1; }
+    if (trafficSlot_ == (slot & 1)) {
+        for (const int s : pedSlots_) spatial_.remove(s);
+        pedSlots_.clear();
+        peds_.clear(); trafficSlot_ = -1;
+    }
     if (s.sceneCtx >= 0) freeContext(s.sceneCtx);
     if (s.areaCtx >= 0) freeContext(s.areaCtx);
     for (int i = 0; i < kContextSlots; ++i)
@@ -1830,6 +1834,8 @@ void Session::frame() {
         // opened; a reader watching it said so. The same delta as below.
         scene_.tick(static_cast<float>(frameSeconds_ * 30.0));
         peds_.tick(static_cast<float>(frameSeconds_ * 30.0));   // `Sliders_Tick`, no dialogue gate either
+        refreshCrowdIndex();
+        if (bumpCooldown_ > 0) --bumpCooldown_;
         trackPlayer();
         // ...and the ZONE SCAN, which is not the pump's: `Actors_TickAll`
         // dispatches the player's state 16/17 to `Actor_TickDialogue`, which
@@ -1893,6 +1899,8 @@ void Session::frame() {
     scene_.tick(static_cast<float>(frameSeconds_ * 30.0));
     // `Sliders_Tick`: the traffic and the pedestrians, every frame
     peds_.tick(static_cast<float>(frameSeconds_ * 30.0));
+    refreshCrowdIndex();
+    if (bumpCooldown_ > 0) --bumpCooldown_;
 
     // ...and where that leaves the player. Camera 0 - the one SCENE 55's
     // cutscene asks for - is relative to him, so without this the camera sits
@@ -2438,7 +2446,12 @@ bool Session::visibleOp(std::uint8_t op) {
 // ------------------------------------------------------------ THE ZONES
 
 bool Session::pressAction() {
-    if (dialogState_ == 3 || zones_.armedCount() == 0) return false;
+    if (dialogState_ == 3) return false;
+    // the `.CTL` action state's callback runs `sub_452280` on the press: a
+    // walker standing at an action point in front of the player is talked
+    // to whether or not a zone is armed
+    const bool talked = peds_.loaded() && talkToPedestrian(playerPos_, playerYaw_);
+    if (zones_.armedCount() == 0) return talked;
     actionPressed_ = true;
     return true;
 }
@@ -2791,14 +2804,79 @@ void Session::loadTrafficFor(int slot) {
     const PedClips clips = pedClipsFrom(fs.read("ANIMS/" + s.ani + ".ANI"));
     peds_.load(track, clips, s.menMask, s.womenMask, streetActivity_, 1u);
     // `sub_438040`: a body's radius is its model's root mesh `+88`
-    for (const auto& m : peds_.models()) {
-        const auto d = fs.read("MESHES/PERSOS/" + m.name + ".3DO");
-        const auto h = readHeader(d);
-        if (!h) continue;
-        const auto meshes = readMeshes(d, *h);
-        if (!meshes.empty()) peds_.setModelRadius(m.name, meshes.front().radius);
-    }
+    for (const auto& m : peds_.models()) peds_.setModelRadius(m.name, modelReach(m.name));
     trafficSlot_ = slot & 1;
+    // `sub_45E040` at every spawn: each walker an instance entry of the index
+    for (const int s : pedSlots_) spatial_.remove(s);
+    pedSlots_.assign(peds_.walkers().size(), -1);
+    for (std::size_t i = 0; i < peds_.walkers().size(); ++i) {
+        const auto& w = peds_.walkers()[i];
+        if (!w.live) continue;
+        pedSlots_[i] = spatial_.add(static_cast<int>(i), 1, modelReach(w.model), modelSpheres(w.model));
+    }
+    refreshCrowdIndex();
+}
+
+void Session::refreshCrowdIndex() {
+    // `sub_454EF0` after each walker's step: `SpatialIndex_Update` from the
+    // instance's position
+    for (std::size_t i = 0; i < pedSlots_.size() && i < peds_.walkers().size(); ++i) {
+        if (pedSlots_[i] < 0) continue;
+        const auto& w = peds_.walkers()[i];
+        spatial_.update(pedSlots_[i], w.body, w.facing);
+    }
+}
+
+const std::vector<CollisionSphere>* Session::modelSpheres(const std::string& model) {
+    auto it = modelSpheres_.find(model);
+    if (it != modelSpheres_.end()) return &it->second;
+    std::vector<CollisionSphere> out;
+    float reach = 0.0f;
+    if (!dataRoot_.empty()) {
+        const DataFs fs(dataRoot_);
+        const auto d = fs.read("MESHES/PERSOS/" + model + ".3DO");
+        if (const auto h = readHeader(d)) {
+            const auto meshes = readMeshes(d, *h);
+            out = collisionSpheresOf(meshes);
+            if (!meshes.empty()) reach = meshes.front().radius;
+        }
+    }
+    modelReach_[model] = reach;
+    return &modelSpheres_.emplace(model, std::move(out)).first->second;
+}
+
+float Session::modelReach(const std::string& model) {
+    modelSpheres(model);
+    return modelReach_[model];
+}
+
+bool Session::crowdPush(const std::vector<CollisionSphere>& mine, float myReach,
+                        const float pos[3], float facing, float out[3]) {
+    out[0] = out[1] = out[2] = 0.0f;
+    if (dialogState_ == 3) return false;             // state 16: no push
+    const bool any = spatial_.query(mine, myReach, pos, facing, out, -1);
+    // the bump: `Sliders_Tick` - a touched walker, no bump pending, message
+    // 15/16 with the player as sender, then 100 frames of silence
+    if (bumpCooldown_ <= 0) {
+        for (const int s : spatial_.lastTouched()) {
+            int w = -1;
+            for (std::size_t i = 0; i < pedSlots_.size(); ++i) if (pedSlots_[i] == s) { w = static_cast<int>(i); break; }
+            if (w < 0) continue;
+            const auto& walker = peds_.walkers()[static_cast<std::size_t>(w)];
+            postMessage(walker.sex == 1 ? 15 : 16, playerActor());
+            bumpCooldown_ = 100;                     // `dword_538318 = 100.0f`
+            break;
+        }
+    }
+    return any;
+}
+
+bool Session::talkToPedestrian(const float pos[3], float facing) {
+    const int w = peds_.nearestInFront(pos, facing);
+    if (w < 0) return false;
+    peds_.setTalkTarget(w);
+    postMessage(peds_.walkers()[static_cast<std::size_t>(w)].sex == 1 ? 13 : 14, playerActor());
+    return true;
 }
 
 }  // namespace omk

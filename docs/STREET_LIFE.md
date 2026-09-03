@@ -12,7 +12,7 @@ found. In order of what a player sees:
 |---|---|---|
 | **A. the procedural pedestrians** — the `.OPT` "trajectoires" | anonymous walkers spawned along authored lanes, density from the options menu | **ported and drawn** (`engine: pedestrians`, `engine: street frame`); to be watched in play |
 | **B. the authored extras** — scene programs on placed characters | couples kissing, beggars, sport, patrolling Mecaguards, walking pairs; one looping `.SCX` program each | ported and running in every city **except Anekbah** (one operand misread) |
-| **C. the crowd push** — the spatial index | the player is shoved by nearby bodies | not ported |
+| **C. the crowd push** — the spatial index | the player is shoved by nearby bodies | **ported** (`engine: crowd push`), with the bump and talk messages |
 
 Talking to a passer-by is neither: it is an ordinary zone-activate script
 (`var.set.random` on "n° VO passant", then one of four `media.play` voice
@@ -340,7 +340,9 @@ never read `[16]`/`[18]` except through the groups.
 
 ## 3. Mechanism C — the crowd push (the spatial index)
 
-**Read; not ported.** `Actor_Attach` (0x0041CCA0) registers the actor in a
+**Read and ported (2026-09-03, step 5: `engine/src/actor/spatial.*`,
+`Session::crowdPush`/`talkToPedestrian`, `PlayerController::nudge`,
+`engine/tools/push_probe`, `verify.py: engine: crowd push`).** `Actor_Attach` (0x0041CCA0) registers the actor in a
 spatial index (`sub_45DFF0(model, x, y, z)` → slot at record `+649`), nine
 callers refresh a slot's position with `SpatialIndex_Update` (0x0045E110,
 20-byte entries: owner, flags, x, y, z), and `Actor_TickNpc` — the **player's**
@@ -353,6 +355,35 @@ otherwise), a per-entry push from `sub_45E690` (flag 1) or `sub_45E390`
 player is in dialogue (state 16), so a crowd cannot shove a speaker. The two
 per-entry tests are unread.
 
+**The two tests, read in step 5.** `sub_45E390` (an actor entry) is sphere
+against sphere: each side's node carries a list of spheres (the model's
+`+244`/`+248`, taken as the meshes' bounding volumes of its first skeleton —
+the list's writer was not traced), turned by the node's yaw and carried to
+its position; an overlap pushes the player's centre along the line between
+the two centres, horizontally, and every later pair tests the already-pushed
+body. `sub_45E690` (an instance entry — every walker) is an **ellipse** in
+the ground plane centred on the walker: two radii long along its heading
+and one across, for each radius in its list; a hit pushes the player's
+sphere by the whole penetration and the RESULT by a quarter of it, so a
+walker shoves softly. Both write y = 0. And the reach box before either —
+`max(|dx|,|dy|,|dz|) <= theirs + mine`, the two models' `+88` — clips the
+ellipse's long axis at one radius plus the player's, so along a walker's
+heading the push starts exactly where it starts across (`push_probe`'s
+`shape` line: nothing at 30, 2.5 at x 20, −5 at z 30).
+
+**Bump and talk.** `Sliders_Tick` reads each walker's entry flag 2 (touched
+by the last query) and, with no bump pending, posts message 15 (a man) or
+16 (a woman) with the player as sender, then holds 100 frames. The action
+press runs `sub_452280` from the `.CTL` action state's move callback (cases
+4/11 of the dispatcher at 0x46AEE2): the nearest walker within 117 units in
+front, **standing at an action point in its main phase**, posts 13/14 and
+becomes the talk target whose countdown is suspended. `IAM\GLOBAL`
+subscribes all four (§2). The port posts through `Session::postMessage`,
+so the "n° VO passant" lines run. Measured: a walker reaching the player on
+its lane touches him at frame 58, moves him 106 units and bumps once in 150
+frames; a walker at a point takes the talk and holds phase 2 for 200
+frames.
+
 ## 4. What the port has today, and what "street life" needs
 
 | piece | where | state |
@@ -363,5 +394,5 @@ per-entry tests are unread.
 | zone lines to passers-by | zones + `voiceover` | done, never watched on a street |
 | `character.look_at_player` head aim | Session records it | drawn? unverified |
 | the `.OPT` pedestrians and the density option | `formats/opt.*`, `actor/pedestrians.*`, `Session::loadTraffic` | ported and run headless; drawing is step 4 |
-| the crowd push | — | nothing |
+| the crowd push | `actor/spatial.*`, `Session::crowdPush` | ported; the bump and talk messages post |
 | a way to stand in a street without replaying the intro | `omk-play` | nothing |

@@ -4089,6 +4089,52 @@ def c_engine_street_frame():
     return got, want, "adventure reached with and without the crowd; 200 live, some drawn; no pool line without it; the two frames differ (%d pixels)" % differ
 
 
+def c_engine_crowd_push():
+    r"""The CROWD PUSH runs (docs/STREET_LIFE.md 3; engine/src/actor/spatial.*;
+    engine/tools/push_probe).
+
+    `shape`: one instance entry (a walker) at the origin facing -Z, its
+    sphere radius 20, a probe sphere of radius 10 walked in. ACROSS the
+    heading the push begins one radius plus the probe's out (x 30 nothing,
+    x 20 a push) and grows inward; ALONG the heading `sub_45E690`'s ellipse is
+    two radii long but `SpatialIndex_Query`'s reach box - the two models'
+    `+88` - clips it at 30, so z 40 is nothing and z 30 pushes twice what x 20
+    does. The quarter factor: x 20 is 10 units of penetration and a push of
+    2.5. `walk`: Anekbah, the player built on its set and stood 120 units
+    ahead of a walker on its lane facing it; the walker reaches him, the push
+    moves him tens of units, and the bump message 15/16 posts ONCE in 150
+    frames (100 frames of hold after it). `talk`: a walker in its action's
+    main phase, the player 80 units in front, `talkToPedestrian` finds it,
+    posts 13/14 once, and the walker's phase holds at 2 for 200 more frames
+    (the countdown is suspended for the talk target).
+    """
+    eng = os.path.join(ROOT, "engine")
+    if not os.path.isdir(eng):
+        return ("skipped",), ("skipped",), "engine/ absent"
+    b = subprocess.run(["make", "-s"], cwd=eng, capture_output=True, text=True)
+    binp = os.path.join(eng, "build", "push_probe")
+    if b.returncode != 0 or not os.path.exists(binp):
+        return ("build failed",), ("built",), "engine/ must build"
+    r = subprocess.run([binp, omkpaths.data_root(), os.path.join(ROOT, "tables"), "0", "150"],
+                       capture_output=True, text=True)
+    if r.returncode != 0:
+        return ("no run",), ("ran",), "push_probe must run"
+    L = {}
+    for ln in r.stdout.splitlines():
+        f = ln.split()
+        if f and f[0] == "shape":
+            L[f[1]] = {k: float(v) for k, v in (x.split(":") for x in f[2:])}
+        elif f and f[0] in ("walk", "talk"):
+            L[f[0]] = dict(zip(f[1::2], f[2::2]))
+    ac, al, w, t = L.get("across", {}), L.get("along", {}), L.get("walk", {}), L.get("talk", {})
+    got = (ac.get("x30"), ac.get("x20"), ac.get("x10") > ac.get("x20", 0) if "x10" in ac else None,
+           al.get("z40"), al.get("z30"), al.get("z10", 0) < al.get("z30", 0),
+           int(w.get("touched_frames", 0)) >= 1, float(w.get("moved", 0)) > 10.0, int(w.get("bumps", -1)),
+           int(t.get("found", 0)), int(t.get("talks", 0)), t.get("phase_before"), t.get("phase_after"))
+    want = (0.0, 2.5, True, 0.0, -5.0, True, True, True, 1, 1, 1, "2", "2")
+    return got, want, "shape across x30/x20/x10 grows; along z40 clipped, z30 = -5, z10 stronger; walk touched, moved, one bump; talk found, one message, phase held"
+
+
 def c_engine_city_crowd():
     r"""The AUTHORED EXTRAS of a city street start in the Session
     (docs/STREET_LIFE.md 1) - and the object word of every `scx.play*` is a
@@ -18300,6 +18346,7 @@ SLOW = [
     ("engine: city crowd", c_engine_city_crowd, "STREET_LIFE 1; SCRIPT_VM"),
     ("engine: pedestrians", c_engine_pedestrians, "STREET_LIFE 2; actor/pedestrians.h"),
     ("engine: street frame", c_engine_street_frame, "STREET_LIFE; todo/street-life 4"),
+    ("engine: crowd push", c_engine_crowd_push, "STREET_LIFE 3; actor/spatial.h"),
     ("engine: zone pump",  c_engine_zone_pump,  "engine/README"),
     ("engine: zone registry", c_engine_zone_registry, "engine/README"),
     ("engine: voice over", c_engine_voice_over, "CUTSCENES 5; engine/README"),

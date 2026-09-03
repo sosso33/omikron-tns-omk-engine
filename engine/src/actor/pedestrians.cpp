@@ -811,6 +811,14 @@ void Pedestrians::tick(float dt) {
     }
 }
 
+int Pedestrians::actionPhase(int w) const {
+    if (w < 0 || static_cast<std::size_t>(w) >= walkers_.size()) return -1;
+    const auto& m = walkers_[static_cast<std::size_t>(w)];
+    if (!(m.flags & 0x80u) || m.action < 0) return -1;
+    for (const auto& st : states_) if (st.used && st.actionIndex == m.action) return st.phase;
+    return -1;
+}
+
 int Pedestrians::nearestInFront(const float pos[3], float facingDeg) const {
     // `sub_452280`: the nearest walker within 117 units that is STANDING AT AN
     // ACTION POINT (`flags & 0x80`, state phase 2), in front of the player

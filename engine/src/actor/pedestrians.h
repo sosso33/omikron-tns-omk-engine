@@ -186,6 +186,9 @@ public:
     // The walker the player is talking to (`dword_53992C`): its action
     // countdown is held while set.
     void setTalkTarget(int w) { talkTarget_ = w; }
+    // the action phase of walker `w`: 0 walking to the point, 1 enter, 2 main
+    // (the talkable one), 3 exit; -1 when not in an action
+    int  actionPhase(int w) const;
     int  talkTarget() const { return talkTarget_; }
 
     // How many the spawner would place at `level` on this track - the rule

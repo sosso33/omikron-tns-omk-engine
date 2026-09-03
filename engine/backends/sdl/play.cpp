@@ -1283,6 +1283,8 @@ int main(int argc, char** argv) {
     std::vector<omk::Mesh> playerMeshes;
     std::vector<omk::Texture> playerTex;
     omk::Geometry playerRest, playerPosed;
+    std::vector<omk::CollisionSphere> playerSpheres;   // the crowd push tests these
+    float playerReach = 0.0f;                           // his model's +88
     omk::TriangleSoup playerSoup;
     std::string playerModel, playerCtlName;
     bool  playerReady = false, adventure = false, followCam = false;
@@ -2549,6 +2551,8 @@ int main(int argc, char** argv) {
                     playerRest.revision = ++worldGeoRev;
                     playerMeshes.clear();
                     if (const auto mh = omk::readHeader(md)) playerMeshes = omk::readMeshes(md, *mh);
+                    playerSpheres = omk::collisionSpheresOf(playerMeshes);
+                    playerReach = playerMeshes.empty() ? 0.0f : playerMeshes.front().radius;
                     playerTex = mt ? omk::textures(md, omk::DataFs::readPath(*mt))
                                    : std::vector<omk::Texture>{};
                     playerCtlData = omk::DataFs::readPath(*cp);
@@ -2633,6 +2637,16 @@ int main(int argc, char** argv) {
                                 "%.0f %.0f %.0f facing %.0f\n", n, session.playerAddress(),
                                 player->pos()[0], player->pos()[1], player->pos()[2],
                                 player->facing());
+                }
+                // THE CROWD PUSH - `Actor_TickNpc`, before `Actor_ApplyMotion`:
+                // the spatial index's answer for his spheres, added to his
+                // position outright (docs/STREET_LIFE.md 3). The Session
+                // posts the bump message when a walker was touched.
+                {
+                    float push[3];
+                    if (!playerSpheres.empty() &&
+                        session.crowdPush(playerSpheres, playerReach, player->pos(), player->facing(), push))
+                        player->nudge(push);
                 }
                 if (session.playerAnimHeld()) {
                     // `Actor_HoldAnimation(player, 1)` does NOT stop the
