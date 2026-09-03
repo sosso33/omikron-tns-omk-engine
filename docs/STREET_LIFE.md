@@ -10,7 +10,7 @@ found. In order of what a player sees:
 
 | mechanism | what it is | port status (2026-09-03) |
 |---|---|---|
-| **A. the procedural pedestrians** — the `.OPT` "trajectoires" | anonymous walkers spawned along authored lanes, density from the options menu | **ported headless** (`engine: pedestrians`); not yet drawn |
+| **A. the procedural pedestrians** — the `.OPT` "trajectoires" | anonymous walkers spawned along authored lanes, density from the options menu | **ported and drawn** (`engine: pedestrians`, `engine: street frame`); to be watched in play |
 | **B. the authored extras** — scene programs on placed characters | couples kissing, beggars, sport, patrolling Mecaguards, walking pairs; one looping `.SCX` program each | ported and running in every city **except Anekbah** (one operand misread) |
 | **C. the crowd push** — the spatial index | the player is shoved by nearby bodies | not ported |
 
@@ -298,6 +298,37 @@ visits happening, no NaN. Not modelled: the body's radius is the model's root
 mesh `+88` (read by the Session), the spatial-index registration and the
 bump/talk messages wait for step 5, and the facing convention is the actors'
 recipe until step 4 watches it.
+
+### The viewer (step 4)
+
+`omk-play` stages every walker of the pool beside the extras: the model
+shared by name, the pose from `PASSANTH`'s clip at the walker's own clock,
+the feet on the walker's body point, the body turned to its heading, and
+nothing beyond the engine's last LOD distance (40 m) — so Anekbah's 200
+walkers are a few dozen on screen. A **street start** stands in a city
+without the intro: `--save traces/save-appart.bin --area 0` (the DB player
+record comes from the save, since Kay'l's actor record is in no city chunk),
+`--address A` or `--stand x,y,z,yaw`, `--density 0..4`, `--no-crowd`; it
+requests `Camera Player` (0), the follow preset every hand-over ends on.
+
+**Found by looking (2026-09-03).** The first street frame had a figure in a
+T-pose floating over the walkers. A crowd model is **four skeletons in one
+file** — `PhBassin`, `PiBassin`, `PjBassin`, `PkBassin`, the LOD sub-objects
+`sub_453A70` splits it into, 76 meshes for 19 a skeleton — and the library's
+tracks name the first, so posing the model left the other three at rest.
+The viewer now cuts the rest geometry to the skeleton the tracks name, for
+the walkers and for the authored extras, which wear the same models (all
+twenty of Anekbah's couples and beggars had three T-posed skeletons inside
+them). How the engine picks an actor's LOD is not read; the crowd's four
+distances are `dword_4C8870`.
+
+**What the frames settled**: the walkers are posed mid-stride in the city's
+own models, turned along their lanes, feet on the street, two of them a
+few metres from Kay'l on Anekbah's main street (`verify.py: engine: street
+frame` keeps a crowd-on/crowd-off pair differing by thousands of pixels).
+**What only a person can settle**: the walk's pace against the original,
+the facing convention over a turn (the actors' recipe is assumed), the
+following distance, and whether the action points read as a street.
 
 ### Not yet read
 

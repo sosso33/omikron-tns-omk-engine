@@ -859,6 +859,10 @@ public:
     // and the actor runtime is not driven from here, so a caller has to check.
     const WorldCamera* camera() const { return haveCam_ ? &camNow_ : nullptr; }
     int  cameraId() const { return haveCam_ ? camTo_.id : -1; }
+    // What `camera.set` does, for a frontend starting in a street with no
+    // script to ask for one: `Camera_Request` on a world camera by id - 0 is
+    // `Camera Player`, the follow preset every hand-over ends on.
+    void requestCamera(int id, int travel = 0) { applyCamera(id, travel); }
     // Where the move is going, as opposed to where it currently IS. A caller
     // reporting a cut wants this one; a caller pointing a camera wants
     // `camera()`.

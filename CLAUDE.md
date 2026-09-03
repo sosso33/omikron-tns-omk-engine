@@ -843,6 +843,20 @@ flag form so a framing you found by eye can be pasted straight into a check,
 `ESC` quits.
 `--frames N --dump out.bin` writes the framebuffer without a window, which is
 how it is smoke-tested and how a shot is made to lay beside a capture.
+
+**A STREET START** (STREET_LIFE, 2026-09-03) stands in a city in adventure
+mode with its crowd, no intro to replay:
+
+```bash
+build/omk-play ../gamedata ../tables --save ../traces/save-appart.bin --area 0 \
+    --stand 1804,0,-6890,336            # Anekbah's main street, walkers passing
+build/omk-play ../gamedata ../tables --save ../traces/save-appart.bin --area 1 \
+    --address 4 --density 4             # Jaunpur, at one of its ADDRESSES (listed at start)
+```
+
+The save supplies the DB player record (Kay'l's actor record is in no city
+chunk); `--density 0..4` is options row 6, `--no-crowd` leaves the
+pedestrians out.
 `--vulkan` opens a Vulkan window and PRESENTS DIRECTLY - no readback, no
 texture upload - and does the mirror with a GPU stencil.
 

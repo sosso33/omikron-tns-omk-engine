@@ -70,6 +70,7 @@ struct PedClip {
     int          type = 0;
     std::string  name;
     int          frames = 0;
+    std::size_t  descriptor = 0;          // the descriptor's offset in the library, for a frontend's poses
     // the root bone's keys, 3 floats a key: key 0 is the rest pose, and key
     // k >= 1 is the root's MOTION over frame (k-1, k] in the clip's own frame
     // (a walk is along -Z) - what `Anim_RootDelta` sums, fractionally at

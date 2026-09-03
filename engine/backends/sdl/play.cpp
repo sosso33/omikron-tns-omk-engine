@@ -49,6 +49,7 @@
 #include "audio/voiceover.h"
 #include "formats/adpcm.h"
 #include "script/area.h"
+#include "script/savefile.h"
 #include "script/gamestate.h"
 #include "o3de/raster.h"
 #include "o3de/renderer.h"
@@ -960,6 +961,8 @@ int main(int argc, char** argv) {
         std::fprintf(stderr,
             "usage: omk-play <gamedata> <tables dir> [screen] [--frames N] "
             "[--dump out.bin] [--keys DIK,DIK,...]\n"
+            "       omk-play <gamedata> <tables dir> --save FILE --area N [--address A] "
+            "[--density 0..4] [--no-crowd]   (start in a street, in adventure mode)\n"
             "       omk-play <gamedata> <tables dir> --scene <set> [--cam N] "
             "[--eye x,y,z] [--at x,y,z] [--fov F] [--full]\n");
         return 2;
@@ -983,6 +986,18 @@ int main(int argc, char** argv) {
     // RGB565 every 30 frames from the hand-over on (`snap-<frame>.bin`,
     // 640x480 after the display size), which is how the walk was LOOKED at.
     std::string holdStream, snapsDir;
+    // A STREET START (docs/STREET_LIFE.md, step 4): `--save FILE` takes the
+    // game DB from a save's slot 0 - the player record lives there, and
+    // Kay'l's actor record is in no city chunk - `--area N` loads that area
+    // instead of the save's own, `--address A` puts him down on one of its
+    // ADDRESSES (listed at start), and adventure mode begins at once, with
+    // no intro to replay. `--density` is options row 6 for the crowd
+    // (default the engine's 3), `--no-crowd` leaves the pedestrians out.
+    std::string saveFile;
+    int areaArg = -1, addressArg = -1, density = omk::kDefaultStreetActivity;
+    bool noCrowd = false;
+    float standAt[4] = {0, 0, 0, 0};
+    bool haveStand = false;      // `--stand x,y,z,yaw`: put the player down there after the hand-over
     // the scene viewer's
     std::string scene;
     int camIndex = -1;
@@ -1028,6 +1043,13 @@ int main(int argc, char** argv) {
         else if (a == "--frames" && i + 1 < argc) frames = std::atoi(argv[++i]);
         else if (a == "--dump" && i + 1 < argc) dump = argv[++i];
         else if (a == "--nofmv") playMovies = false;   // the engine's own switch
+        else if (a == "--save" && i + 1 < argc) saveFile = argv[++i];
+        else if (a == "--area" && i + 1 < argc) areaArg = std::atoi(argv[++i]);
+        else if (a == "--address" && i + 1 < argc) addressArg = std::atoi(argv[++i]);
+        else if (a == "--density" && i + 1 < argc) density = std::atoi(argv[++i]);
+        else if (a == "--no-crowd") noCrowd = true;
+        else if (a == "--stand" && i + 1 < argc)
+            haveStand = std::sscanf(argv[++i], "%f,%f,%f,%f", &standAt[0], &standAt[1], &standAt[2], &standAt[3]) >= 3;
         else if (a == "--type" && i + 1 < argc) typeText = argv[++i];
         else if (a == "--keys" && i + 1 < argc) {
             // A `T` in the list means "type `--type` here" - the start menu's
@@ -1117,6 +1139,15 @@ int main(int argc, char** argv) {
     const auto opcodes = omk::OpcodeTable::loadJson(tb + "/vm_opcodes.json");
     if (!opcodes.valid()) { std::fprintf(stderr, "no VM opcode table\n"); return 1; }
     omk::GameState state = omk::GameState::fromFile(fr + "/IAM/START");
+    if (!saveFile.empty()) {
+        const auto slot = omk::readSaveSlot(omk::DataFs::readPath(saveFile), 0);
+        if (!slot) { std::fprintf(stderr, "%s: not a save file\n", saveFile.c_str()); return 1; }
+        state = slot->state;
+        std::printf("save: slot 0 '%s', %s %s, area %d\n", slot->name.c_str(),
+                    omk::formatDate(slot->day).c_str(), omk::formatTime(slot->time).c_str(),
+                    state.currentArea());
+    }
+    const bool forceAdventure = areaArg >= 0;
     omk::Session session(fr + "/IAM", state, opcodes);
     session.loadAnnounceMap(tb + "/vm_announce.json");
     session.answerUiFromPerson(true);
@@ -1136,10 +1167,39 @@ int main(int argc, char** argv) {
     // of three minutes. `src/script/dialogue.h` carries the reasoning; the
     // decision is on the ported side and this file only plays the audio.
     session.attachDialogue(fr + "/MORPH");
-    const int startArea = state.currentArea();
+    // STREET LIFE: the pedestrians of an area naming a circuit spawn at its
+    // load, at the density the options menu will one day hand in.
+    session.setStreetActivity(density);
+    if (!noCrowd) session.loadTraffic(fr);
+    // A movie chain is the intro's; a street start skips it.
+    if (forceAdventure) playMovies = false;
+    const int startArea = areaArg >= 0 ? areaArg : state.currentArea();
     if (startArea < 0) { std::fprintf(stderr, "IAM/START names no area\n"); return 1; }
     session.loadArea(startArea);
     std::printf("session: area %d loaded, waiting for its script\n", startArea);
+    if (forceAdventure) {
+        const auto& rs = session.residentSlot(session.activeSlot());
+        for (const auto& ad : rs.addresses)
+            std::printf("address %d at %.0f %.0f %.0f yaw %.0f\n", ad.id, ad.pos[0], ad.pos[1], ad.pos[2], ad.yaw);
+        if (addressArg < 0 && !rs.addresses.empty()) addressArg = rs.addresses.front().id;
+        if (addressArg >= 0) {
+            if (session.placeActorAt(addressArg))
+                std::printf("street start: the player at address %d, %.0f %.0f %.0f facing %.0f\n",
+                            addressArg, session.playerPos()[0], session.playerPos()[1],
+                            session.playerPos()[2], session.playerYaw());
+            else
+                std::printf("street start: address %d is not in area %d\n", addressArg, startArea);
+        }
+        // ...and the camera a hand-over ends on: `Camera Player` (0), the
+        // follow preset, which the intro's scripts request and this has to.
+        session.requestCamera(0, 0);
+        const auto& pd = session.pedestrians();
+        std::string models;
+        for (const auto& m : pd.models()) { if (!models.empty()) models += ","; models += m.name; }
+        std::printf("street life: circuit %s, %d walkers at density %d (%s)\n",
+                    rs.opt.empty() ? "none" : rs.opt.c_str(), pd.liveCount(), pd.streetActivity(),
+                    models.empty() ? "no models" : models.c_str());
+    }
     // The area's own `.SCX`, so `scx.play*` has objects to start - and so the
     // WAITING variants (46, 58, 60) have something to wait ON. Without it
     // AREA 118's `character.show 310` + `scx.play.actor.wait 310, 1` starts
@@ -1571,6 +1631,146 @@ int main(int argc, char** argv) {
     // every frame it is drawn, so a reused address can never carry a
     // revision the backend has already seen.
     std::vector<std::unique_ptr<Staged>> staged;
+    // THE PROCEDURAL PEDESTRIANS (docs/STREET_LIFE.md 2): one body per
+    // walker of `session.pedestrians()`, its model shared through
+    // `charModels`, posed from the crowd library's clip at the walker's own
+    // clock, stood with its feet on the walker's body point and turned to its
+    // heading. The engine draws a pedestrian through four LOD objects out to
+    // `kLodDistances[3]` (40 m) and nothing beyond; this draws the full model
+    // inside that distance and nothing beyond, so a street at density 3 in
+    // Anekbah is 200 walkers of which a camera sees a few dozen.
+    struct PedStaged {
+        CharModel* mo = nullptr;
+        // A crowd model carries FOUR skeletons - `PhBassin`, `PiBassin`, ...,
+        // the LOD sub-objects `sub_453A70` splits it into (76 meshes in
+        // PSH_FN, 19 a skeleton) - and the library's tracks name the first.
+        // Drawing the whole model posed the first and left the other three at
+        // rest, a T-pose inside every walker; so the rest geometry is cut to
+        // the meshes under the root the tracks name, once per model.
+        std::map<int, omk::Geometry>* lodRest = nullptr;
+        omk::Geometry posed;
+        const omk::NodeTracks* tracks = nullptr;
+        const omk::PedClip* clipWas = nullptr;
+        float feet = 0.0f;
+        bool  feetKnown = false;
+        bool  drawn = false;
+    };
+    std::vector<std::unique_ptr<PedStaged>> pedStaged;
+    std::map<std::string, std::map<int, omk::Geometry>> pedLodRest;   // model -> root mesh -> its subtree's rest
+    // The skeleton a set of tracks poses: the first track's mesh followed up
+    // to its root. A model with one skeleton answers its only root.
+    const auto skeletonRootOf = [](const CharModel& mo, const omk::NodeTracks& t) -> int {
+        int m = -1;
+        if (!t.ids.empty() && t.ids[0] >= 0)
+            for (std::size_t j = 0; j < mo.meshes.size(); ++j)
+                if (mo.meshes[j].index == t.ids[0]) { m = static_cast<int>(j); break; }
+        if (m < 0) return mo.root;
+        for (int guard = 0; guard < 64; ++guard) {
+            const std::int32_t pid = mo.meshes[static_cast<std::size_t>(m)].parent;
+            int next = -1;
+            for (std::size_t j = 0; j < mo.meshes.size(); ++j)
+                if (mo.meshes[j].id == pid) { next = static_cast<int>(j); break; }
+            if (next < 0) return m;
+            m = next;
+        }
+        return m;
+    };
+    const auto hasSeveralSkeletons = [](const CharModel& mo) {
+        int roots = 0;
+        for (const auto& m : mo.meshes) {
+            bool hasParent = false;
+            for (const auto& p : mo.meshes) if (p.id == m.parent) { hasParent = true; break; }
+            if (!hasParent) ++roots;
+        }
+        return roots > 1;
+    };
+    const auto lodRestFor = [&](const std::string& model, const CharModel& mo, int rootMesh) -> const omk::Geometry& {
+        auto& per = pedLodRest[model];
+        auto it = per.find(rootMesh);
+        if (it != per.end()) return it->second;
+        // the meshes whose ancestor chain ends at `rootMesh`
+        std::vector<bool> keep(mo.meshes.size(), false);
+        for (std::size_t i = 0; i < mo.meshes.size(); ++i) {
+            int m = static_cast<int>(i);
+            for (int guard = 0; guard < 64 && m >= 0; ++guard) {
+                if (m == rootMesh) { keep[i] = true; break; }
+                const std::int32_t pid = mo.meshes[static_cast<std::size_t>(m)].parent;
+                int next = -1;
+                for (std::size_t j = 0; j < mo.meshes.size(); ++j)
+                    if (mo.meshes[j].id == pid) { next = static_cast<int>(j); break; }
+                m = next;
+            }
+        }
+        omk::Geometry g;
+        g.batches.clear();
+        for (const auto& b : mo.rest.batches) {
+            omk::Batch nb = b;
+            nb.start = g.corners.size(); nb.count = 0;
+            for (std::size_t c = b.start; c + 3 <= b.start + b.count; c += 3) {
+                const auto mi = mo.rest.cornerMesh[c];
+                if (mi < 0 || static_cast<std::size_t>(mi) >= keep.size() || !keep[static_cast<std::size_t>(mi)]) continue;
+                for (int k = 0; k < 3; ++k) {
+                    g.corners.push_back(mo.rest.corners[c + static_cast<std::size_t>(k)]);
+                    g.cornerMesh.push_back(mo.rest.cornerMesh[c + static_cast<std::size_t>(k)]);
+                    if (!mo.rest.cornerVertex.empty()) g.cornerVertex.push_back(mo.rest.cornerVertex[c + static_cast<std::size_t>(k)]);
+                    if (!mo.rest.cornerDeclared.empty()) g.cornerDeclared.push_back(mo.rest.cornerDeclared[c + static_cast<std::size_t>(k)]);
+                }
+                nb.count += 3;
+            }
+            if (nb.count) g.batches.push_back(nb);
+        }
+        return per.emplace(rootMesh, std::move(g)).first->second;
+    };
+    std::map<std::pair<int, int>, omk::NodeTracks> pedTracks;   // (sex, clip slot) -> its tracks
+    std::vector<std::byte> pedAni;
+    std::string pedAniName;
+    int pedDrawn = 0, pedLive = 0, pedInAction = 0, pedIdle = 0;
+    long pedTold = -1;
+    const auto pedTracksFor = [&](int sex, const omk::PedClip& c, const std::vector<omk::Mesh>& meshes)
+        -> const omk::NodeTracks* {
+        // `PlayerController::poseTracks`'s recipe over the crowd library: the
+        // descriptor's tracks resolve to meshes by name, key 0 is the rest
+        // sentinel so frame f reads key f + 1
+        const auto key = std::make_pair(sex, c.slot);
+        auto it = pedTracks.find(key);
+        if (it != pedTracks.end()) return it->second.valid() ? &it->second : nullptr;
+        omk::NodeTracks t;
+        const auto d = omk::animDescriptor(pedAni, c.descriptor);
+        if (d && d->frames > 0 && !meshes.empty()) {
+            const auto lower = [](std::string v) {
+                for (auto& ch : v) if (ch >= 'A' && ch <= 'Z') ch = static_cast<char>(ch - 'A' + 'a');
+                return v;
+            };
+            t.count = static_cast<int>(d->tracks.size());
+            t.frames = d->frames;
+            t.rootTrack = -1;
+            for (const auto& tr : d->tracks) {
+                std::int32_t mi = -1;
+                const std::string want = lower(tr.name);
+                for (const auto& m : meshes) if (lower(m.name) == want) { mi = m.index; break; }
+                t.ids.push_back(mi);
+            }
+            t.quats.assign(static_cast<std::size_t>(d->frames), {});
+            t.trans.assign(static_cast<std::size_t>(d->frames), {0.0f, 0.0f, 0.0f});
+            for (int f = 0; f < d->frames; ++f) {
+                auto& row = t.quats[static_cast<std::size_t>(f)];
+                row.resize(d->tracks.size());
+                for (std::size_t i = 0; i < d->tracks.size(); ++i) {
+                    const omk::AnimTrack& tr = d->tracks[i];
+                    if (!tr.rotOffset || tr.rotKeys <= 0) continue;
+                    int k = f + 1;
+                    if (k >= tr.rotKeys) k = tr.rotKeys - 1;
+                    const std::size_t o = tr.rotOffset + 16u * static_cast<std::size_t>(k);
+                    if (o + 16 > pedAni.size()) continue;
+                    float q[4];
+                    std::memcpy(q, pedAni.data() + o, 16);
+                    row[i] = {q[0], q[1], q[2], q[3]};
+                }
+            }
+        }
+        it = pedTracks.emplace(key, std::move(t)).first;
+        return it->second.valid() ? &it->second : nullptr;
+    };
     long stagedEver = 0;                 // for the summary line
     std::vector<int> stagedIds;
     // The pool is rebuilt on a COMPOSITION change, not on a size change: two
@@ -2298,9 +2498,12 @@ int main(int argc, char** argv) {
             const bool beatsOver = playerDrivenSeen || !sc.loaded() || sc.programCount() == 0;
             const bool feetSetLoaded =
                 !worldSlots[static_cast<std::size_t>(session.activeSlot() & 1)].geo.corners.empty();
-            const bool wantAdventure = followCam && !playerDriven && beatsOver &&
-                session.playerPlaced() && !session.dialogOpen() && !walk &&
-                !sc.activeEditing() && feetSetLoaded;
+            if (forceAdventure && !hc) followCam = true;   // a street start: no camera asked, the follow one
+            const bool wantAdventure = forceAdventure
+                ? (session.playerPlaced() && !session.dialogOpen() && !walk && feetSetLoaded)
+                : (followCam && !playerDriven && beatsOver &&
+                   session.playerPlaced() && !session.dialogOpen() && !walk &&
+                   !sc.activeEditing() && feetSetLoaded);
             if (wantAdventure && !player && !worldSet.empty()) {
                 // WHO he is: the DB's player record (+60; `player.become`
                 // copies the actor record into it and a save carries it),
@@ -2370,6 +2573,11 @@ int main(int argc, char** argv) {
                             const float* pp = player->pos();
                             const int under = omk::decorUnder(worldDecors, pp[0], pp[1], pp[2]);
                             if (under >= 0) session.playerOnArea(under);
+                        }
+                        if (haveStand) {
+                            player->placeAt(standAt, standAt[3]);
+                            std::printf("street start: --stand puts the player at %.0f %.0f %.0f facing %.0f\n",
+                                        standAt[0], standAt[1], standAt[2], standAt[3]);
                         }
                         placementSeen = session.placementSeq();
                         playerReady = !playerRest.corners.empty();
@@ -3474,7 +3682,17 @@ int main(int argc, char** argv) {
                     std::printf("frame %ld: actor %d %s - pose source: %s\n",
                                 n, s.actor, s.model.c_str(), src);
                 }
-                omk::applyPose(s.posed, s.mo->rest, s.mo->meshes, pose, &s.mo->face, &fv);
+                // A crowd model (the PSH/FSH family the city extras wear) is
+                // four LOD skeletons in one file; posing one left the other
+                // three at rest - a T-pose inside every couple and beggar.
+                // The rest geometry is cut to the skeleton the tracks name.
+                const omk::NodeTracks& posingTracks = useLine ? speakerTracks
+                                                     : s.sceneTracks.valid() ? s.sceneTracks : s.idle;
+                const int skel = skeletonRootOf(*s.mo, posingTracks);
+                const omk::Geometry& restUsed = skel == s.mo->root && s.mo->root >= 0 &&
+                                                 !hasSeveralSkeletons(*s.mo)
+                                                 ? s.mo->rest : lodRestFor(s.model, *s.mo, skel);
+                omk::applyPose(s.posed, restUsed, s.mo->meshes, pose, &s.mo->face, &fv);
                 // THE ROOT MOTION: `Anim_RootDelta`'s running sum, weighted by
                 // how much of the pose is the scene's, so a line stands where
                 // it was staged and a fade lerps the position too.
@@ -3583,6 +3801,85 @@ int main(int argc, char** argv) {
                     firstBody = false;
                     for (int k = 0; k < 3; ++k) actorAt[k] = off[k];
                     actorKnown = true;
+                }
+            }
+            // ---- THE PEDESTRIANS ---------------------------------------
+            pedDrawn = pedLive = pedInAction = pedIdle = 0;
+            {
+                const auto& pd = session.pedestrians();
+                const auto& rs = session.residentSlot(session.activeSlot());
+                if (pd.loaded() && !rs.ani.empty() && rs.ani != pedAniName) {
+                    pedAniName = rs.ani;
+                    pedAni = fs.read("ANIMS/" + rs.ani + ".ANI");
+                    pedTracks.clear();
+                }
+                const auto& ws = pd.walkers();
+                if (pedStaged.size() != ws.size()) {
+                    pedStaged.clear();
+                    for (std::size_t i = 0; i < ws.size(); ++i) pedStaged.push_back(std::make_unique<PedStaged>());
+                    pedTracks.clear();
+                }
+                const float reach = omk::kLodDistances[3];
+                for (std::size_t i = 0; i < ws.size(); ++i) {
+                    const auto& w = ws[i];
+                    PedStaged& p = *pedStaged[i];
+                    p.drawn = false;
+                    if (!w.live || !w.clip || pedAni.empty()) continue;
+                    ++pedLive;
+                    if (w.flags & 0x80u) ++pedInAction;
+                    if (w.flags & 0x100u) ++pedIdle;
+                    const float dx = w.body[0] - view.cam.eye[0], dy = w.body[1] - view.cam.eye[1],
+                                dz = w.body[2] - view.cam.eye[2];
+                    if (dx * dx + dy * dy + dz * dz > reach * reach) continue;
+                    if (!p.mo) p.mo = charModelFor(w.model);
+                    if (!p.mo || !p.mo->ready) continue;
+                    if (w.clip != p.clipWas) {
+                        p.clipWas = w.clip;
+                        p.tracks = pedTracksFor(w.sex, *w.clip, p.mo->meshes);
+                        p.feetKnown = false;
+                    }
+                    const int lodRoot = p.tracks ? skeletonRootOf(*p.mo, *p.tracks) : p.mo->root;
+                    const omk::Geometry& rest = lodRestFor(w.model, *p.mo, lodRoot);
+                    int frame = static_cast<int>(std::floor(w.clock)) - 1;
+                    if (frame < 0) frame = 0;
+                    if (p.tracks && frame >= p.tracks->frames) frame = p.tracks->frames - 1;
+                    const auto pose = p.tracks
+                        ? omk::composePose(p.mo->meshes, *p.tracks, frame, false)
+                        : omk::composePose(p.mo->meshes, omk::NodeTracks{}, 0, false);
+                    omk::applyPose(p.posed, rest, p.mo->meshes, pose);
+                    // seated once per clip, like the extras: the feet (Y down,
+                    // so the largest y) go on the body point - the lane is the
+                    // ground. The engine puts the instance origin at the body
+                    // plus the root's y minus the model radius (`sub_437F80`),
+                    // which is this for a model whose radius is its height
+                    // above the feet; the difference, if any, is for the eye.
+                    if (!p.feetKnown) {
+                        p.feet = -1e9f;
+                        for (const auto& c : p.posed.corners) if (c.y > p.feet) p.feet = c.y;
+                        p.feetKnown = true;
+                    }
+                    float rootXZ[2] = {0.0f, 0.0f};
+                    if (p.mo->root >= 0 && static_cast<std::size_t>(p.mo->root) < p.mo->meshes.size()) {
+                        rootXZ[0] = p.mo->meshes[static_cast<std::size_t>(p.mo->root)].pos[0];
+                        rootXZ[1] = p.mo->meshes[static_cast<std::size_t>(p.mo->root)].pos[2];
+                    }
+                    for (auto& c : p.posed.corners) {
+                        const float in[3] = {c.x - rootXZ[0], c.y, c.z - rootXZ[1]};
+                        float r[3];
+                        omk::rotateYaw(w.facing, in, r);
+                        c.x = r[0] + w.body[0];
+                        c.y = r[1] + w.body[1] - p.feet;
+                        c.z = r[2] + w.body[2];
+                    }
+                    p.posed.revision = ++worldGeoRev;
+                    p.drawn = true;
+                    ++pedDrawn;
+                }
+                if (pedLive && (pedTold < 0 || n - pedTold >= 300)) {
+                    pedTold = n;
+                    std::printf("frame %ld: pedestrians - %d live, %d drawn within %.0f of the eye, "
+                                "%d at an action point, %d idling\n", n, pedLive, pedDrawn, reach,
+                                pedInAction, pedIdle);
                 }
             }
             if (drawPlayer) {
@@ -3694,6 +3991,14 @@ int main(int argc, char** argv) {
             // issue 41 asks for. One geometry per actor, so two bodies wearing
             // the same model still draw at their own two places.
             for (const auto& up : staged) {
+                if (!up->drawn || !up->mo) continue;
+                const int base = static_cast<int>(up->mo->texBase);
+                for (const auto& b : up->posed.batches)
+                    draws.push_back({keyOf(b.blend, b.cutout,
+                                           static_cast<std::uint32_t>(b.material + base)),
+                                     &up->posed, b.start, b.count, b.blend, b.cutout});
+            }
+            for (const auto& up : pedStaged) {
                 if (!up->drawn || !up->mo) continue;
                 const int base = static_cast<int>(up->mo->texBase);
                 for (const auto& b : up->posed.batches)
@@ -3947,12 +4252,14 @@ int main(int argc, char** argv) {
     }
     if (player)
         std::printf("player: %s/%s at %.1f %.1f %.1f facing %.1f, ACTOR_STATE %d, "
-                    ".CTL state %d '%s' clip %s frame %.1f, walked %.1f over %ld ticks\n",
+                    ".CTL state %d '%s' clip %s frame %.1f, walked %.1f over %ld ticks, "
+                    "pose tracks %s\n",
                     playerModel.c_str(), playerCtlName.c_str(), player->pos()[0],
                     player->pos()[1], player->pos()[2], player->facing(),
                     static_cast<int>(player->state()), player->ctlState(),
                     player->ctlStateName().c_str(), player->clipName().c_str(),
-                    player->clipFrame(), player->distanceWalked(), player->ticks());
+                    player->clipFrame(), player->distanceWalked(), player->ticks(),
+                    player->poseTracks() ? "valid" : "NONE (drawn at rest - a T-pose)");
     std::printf("session: %d areas entered, %d ui answers\n",
                 session.areasEntered(),
                 static_cast<int>(session.uiAnswers().size()));

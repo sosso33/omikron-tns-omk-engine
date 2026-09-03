@@ -4041,6 +4041,54 @@ def c_engine_pedestrians():
     return tuple(got), tuple(want), "stem, area, counts at level 0..4 (port) vs (rule), spawned, live, moved, on-network, lag<500, lane changes, actions, nan"
 
 
+def c_engine_street_frame():
+    r"""`omk-play` DRAWS the city crowd (docs/STREET_LIFE.md, step 4).
+
+    A street start - `--save traces/save-appart.bin --area 0` for the DB
+    player record and Anekbah, `--stand` on a lane where the pool's walkers
+    pass at frame 120 - rendered headless twice, with the crowd and with
+    `--no-crowd`. Adventure mode is reached in both, the crowd run reports the
+    pool live and walkers drawn within the engine's last LOD distance, and the
+    two frames DIFFER by more than a few hundred pixels: the walkers are on
+    the picture. Needs SDL; reports skipped without it.
+
+    What the eye settled and this cannot: the walkers are posed mid-stride in
+    the city's own models, turned along their lanes, feet on the street (the
+    frames of 2026-09-03); what only a person can settle is the walk's pace
+    against the original and the facing convention over a turn.
+    """
+    eng = os.path.join(ROOT, "engine")
+    if not os.path.isdir(eng):
+        return ("skipped",), ("skipped",), "engine/ absent"
+    mk = subprocess.run(["make", "-s", "play"], cwd=eng, capture_output=True, text=True)
+    play = os.path.join(eng, "build", "omk-play")
+    if mk.returncode != 0 or not os.path.exists(play):
+        return ("skipped",), ("skipped",), "no SDL - the frontend is optional (PORTING A8)"
+    save = os.path.join(ROOT, "traces", "save-appart.bin")
+    env = dict(os.environ, SDL_VIDEODRIVER="dummy")
+    outs, dumps = [], []
+    for k, extra in enumerate(([], ["--no-crowd"])):
+        dump = os.path.join(eng, "build", "street-%d.bin" % k)
+        r = subprocess.run([play, omkpaths.data_root(), os.path.join(ROOT, "tables"), "--save", save,
+                            "--area", "0", "--address", "20", "--stand", "1804,0,-6890,336",
+                            "--frames", "120", "--software", "--res", "640x480", "--nofmv",
+                            "--dump", dump] + extra, capture_output=True, text=True, env=env)
+        outs.append(r.stdout)
+        dumps.append(open(dump, "rb").read() if os.path.exists(dump) else b"")
+    live = drawn = -1
+    for ln in outs[0].splitlines():
+        if "pedestrians -" in ln:
+            f = ln.split()
+            live = int(f[f.index("live,") - 1]); drawn = int(f[f.index("drawn") - 1])
+    differ = 0
+    if len(dumps[0]) == len(dumps[1]) and dumps[0]:
+        differ = sum(1 for i in range(0, len(dumps[0]), 2) if dumps[0][i:i+2] != dumps[1][i:i+2])
+    got = ("ADVENTURE MODE" in outs[0], "ADVENTURE MODE" in outs[1], live, drawn >= 1,
+           "pedestrians -" in outs[1], differ > 500, "120 frames presented" in outs[0])
+    want = (True, True, 200, True, False, True, True)
+    return got, want, "adventure reached with and without the crowd; 200 live, some drawn; no pool line without it; the two frames differ (%d pixels)" % differ
+
+
 def c_engine_city_crowd():
     r"""The AUTHORED EXTRAS of a city street start in the Session
     (docs/STREET_LIFE.md 1) - and the object word of every `scx.play*` is a
@@ -18251,6 +18299,7 @@ SLOW = [
     ("engine: spawn from tables", c_engine_spawn_from_tables, "SCRIPT_VM; FILE_FORMATS; engine/README"),
     ("engine: city crowd", c_engine_city_crowd, "STREET_LIFE 1; SCRIPT_VM"),
     ("engine: pedestrians", c_engine_pedestrians, "STREET_LIFE 2; actor/pedestrians.h"),
+    ("engine: street frame", c_engine_street_frame, "STREET_LIFE; todo/street-life 4"),
     ("engine: zone pump",  c_engine_zone_pump,  "engine/README"),
     ("engine: zone registry", c_engine_zone_registry, "engine/README"),
     ("engine: voice over", c_engine_voice_over, "CUTSCENES 5; engine/README"),

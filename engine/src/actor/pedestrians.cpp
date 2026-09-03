@@ -60,6 +60,7 @@ PedClips pedClipsFrom(std::span<const std::byte> ani) {
         if (!desc) continue;
         PedClip c;
         c.slot = clip.slot; c.type = clip.type; c.name = clip.name; c.frames = desc->frames;
+        c.descriptor = clip.descriptor;
         // `sub_437FE0`: the root is the first track with rotation keys
         for (const auto& t : desc->tracks) {
             if (!t.rotKeys) continue;

@@ -285,6 +285,22 @@ crates, vehicles.
 
 ## Fixed (batch 10, 2026-09-03)
 
+### 58. A crowd model is FOUR skeletons, and three of them drew at rest — A
+
+> **Fixed 2026-09-03, confirmed by FRAME (not yet by a person walking).**
+> `PSH_FN`/`FSH_FN` and the other crowd models (docs/STREET_LIFE.md 2) hold
+> four LOD skeletons - `PhBassin`, `PiBassin`, `PjBassin`, `PkBassin`, 76
+> meshes for 19 a skeleton - and an animation's tracks name the first, so
+> `composePose` posed one and left three at rest: a T-pose inside every
+> walker and every one of Anekbah's twenty authored extras. `omk-play` cuts
+> the rest geometry to the skeleton the tracks name (`skeletonRootOf` /
+> `lodRestFor`) for the pedestrians and the staged extras alike. The engine's
+> own LOD selection for an ACTOR is not read; the crowd's four distances are
+> `dword_4C8870`. `verify.py: engine: street frame`.
+
+Filed 2026-09-03 from the first street frame of the pedestrians (STREET_LIFE
+step 4): a figure with its arms straight out floating over the walkers.
+
 ### 57. Scripted cameras sat a whole pelvis-lift too low — A
 
 > **Fixed 2026-09-03.** The scripted-camera branch now resolves against the
