@@ -3939,6 +3939,38 @@ def c_engine_airlock_walk():
         "to 653 and playing 405/406; and the six markers in the trace's order"
 
 
+def c_opt_tracks():
+    r"""`TRAJECTOIRES\*.OPT` - the traffic circuits the procedural pedestrians
+    and the hover-taxis move on (docs/STREET_LIFE.md 2; tools/opt_track.py).
+
+    The layout is `Slider_Init`'s: a 76-byte header of (offset, count) pairs
+    for seven blocks - lanes 24, keys 20, actions 20, routes 12, steps 16,
+    reservation groups 4, group lists 2 - each starting where the previous
+    ends and the last ending on the file size, 6/6. Every reference resolves
+    (a lane's keys and routes, a route's destination and steps, a key's
+    action, a route's or step's group, a group's list), every runtime field
+    the movers write (the list heads at lane +12, key +0, route +0, the busy
+    byte at group +3) is ZERO on disk, and no route leads from a pedestrian
+    lane to a vehicle lane or back. The two spacings are the units the
+    density option multiplies: `39 * (5 - level) * pedSpacing` between
+    walkers along a lane.
+    """
+    import opt_track as OT
+    got, want = [], []
+    for p in OT.shipped():
+        t = OT.load(p); c = OT.check(t)
+        got.append((os.path.basename(p).lower(), c["ok"], t["laneCount"], c["ped_lanes"], c["veh_lanes"],
+                    len(t["keys"]), len(t["actions"]), len(t["routes"]), len(t["steps"]),
+                    len(t["groups"]), len(t["lists"]), t["pedSpacing"], t["vehSpacing"], c["cross_class"]))
+    want = [("anekbah.opt", 1, 242, 216, 26, 2781, 84, 344, 916, 482, 648, 15, 15, 0),
+            ("biblio.opt",  1,  27,  27,  0,  269,  7,  37,  27,  25,  26, 50, 15, 0),
+            ("lahorey.opt", 1, 162, 162,  0,  719, 33, 196,  81, 128, 142, 15, 15, 0),
+            ("puit.opt",    1,   6,   6,  0,   84, 10,   6,   2,   0,   0, 30, 15, 0),
+            ("qchaud.opt",  1, 259, 226, 33, 1744, 37, 341, 500, 367, 524, 30, 30, 0),
+            ("souk.opt",    1, 201, 179, 22,  999, 68, 246, 161, 191, 222, 30, 15, 0)]
+    return tuple(got), tuple(want), "file, layout+refs+runtime-zero ok, lanes, ped, veh, keys, actions, routes, steps, groups, lists, spacings, cross-class routes"
+
+
 def c_engine_city_crowd():
     r"""The AUTHORED EXTRAS of a city street start in the Session
     (docs/STREET_LIFE.md 1) - and the object word of every `scx.play*` is a
@@ -17965,6 +17997,7 @@ CHECKS = [
     ("dialog.start sites", c_trigger_sites,     "SCRIPT_VM"),
     (".CTL walk",          c_ctl,               "ASSETS"),
     (".SCX scenes",        c_scx,               "FILE_FORMATS 5c"),
+    ("opt tracks",         c_opt_tracks,        "STREET_LIFE 2"),
     ("ADDRESSES table",    c_addresses,         "FILE_FORMATS 5c"),
     ("object table",       c_objects,           "FILE_FORMATS 5c"),
     ("actor -> model",     c_actor_models,      "FILE_FORMATS 5e"),
