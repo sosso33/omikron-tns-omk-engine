@@ -40,6 +40,7 @@
 #include "actor/pose.h"
 #include "actor/speaker.h"
 #include "actor/player.h"
+#include "actor/moves.h"
 #include "actor/walk.h"
 #include "o3de/collision.h"
 #include "o3de/geom3do.h"
@@ -1611,6 +1612,16 @@ int main(int argc, char** argv) {
     int openScreen = -1, conversations = 0, lastArea = -1;
     int replySel = 0;            // which reply the player is on
     int actionTold = 0;          // one line for a press that reaches nothing
+    // `tab_special_move[]` as a TABLE rather than a string compare: a fired
+    // move resolves to its ROW - the index the engine dispatches on and the
+    // handler address it calls - so an unknown name comes back nullptr
+    // instead of falling off the end of an if-chain. The shipped `.CTL` files
+    // use 54 distinct names against the table's 66 rows.
+    omk::SpecialMoves specialMoves =
+        omk::SpecialMoves::loadJson(tb.empty() ? std::string() : tb + "/special_moves.json");
+    if (!specialMoves.valid())
+        std::printf("special moves: tables/special_moves.json not read - the take will "
+                    "still work, but a fired move cannot name its row\n");
     int         takeCandidate = -1;      // `dword_53AF6C`, MDACTION's pick
     // The spoken line's SCROLL, in pixels, and the overflow it is clamped to -
     // `dword_6A52C0` and `dword_53AE24`. One pixel a tick while held, which is
@@ -3305,6 +3316,10 @@ int main(int argc, char** argv) {
                 // name, press again to bank it, another button to put it back
                 // - is these four rows and nothing else.
                 for (const auto& mv : player->specialMoves()) {
+                    const omk::SpecialMoves::Row* row = specialMoves.find(mv);
+                    if (row)
+                        std::printf("special move: %s (tab_special_move[%d] = 0x%08x)\n",
+                                    row->name.c_str(), row->index, row->handler);
                     if (mv == "MDACTION") {
                         // The handler's success path sets `dword_53AF6C` (the
                         // object) and `dword_53AE5C` (a result code) and

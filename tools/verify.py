@@ -6517,6 +6517,54 @@ def c_engine_walker_falls():
         "spots from which the walker actually goes down, and spots on a " \
         "ledge from which nothing moves at all - the last must be 0"
 
+def c_engine_special_moves():
+    r"""`engine/`: every move name the shipped banks carry resolves to a
+    `tab_special_move[]` row - the table READ against the data that uses it.
+
+    `engine/src/actor/moves.h` turns the binary's own 66-row table into rows a
+    dispatch can look a fired move up in, so a handler can be attributed by
+    index and address instead of compared as a bare string. A reader with
+    nothing running it asserts only that JSON parses; this runs it against the
+    seven shipped `.CTL` banks, which is the only thing that can fail.
+
+    **This exists because the whole family was inert.** `channel.cpp` has
+    always emitted `ChannelEvent::Kind::Move` carrying the move's name and
+    NOTHING consumed it, so all 66 engine callbacks did nothing - which is why
+    no object in the game could be picked up (`todo/omk-play.md` 66) and why
+    the sneak had no way in. Five rows now have consumers: 0 `MDSNEAK0`, and
+    3..6 `MDACTION` (the 150 cm scan), `MDGETOBJ` (the object to the hand and
+    its name on screen), `MDLETOBJ` (put it back) and `MDPUTSNK` (bank it).
+
+    The corroboration is exact and comes from the other side: **209** entries
+    across the seven banks name a move, which is the count `docs/ASSETS.md`
+    records for `Cef_QueueSpecialMove`'s shipped sites ("209/209 resolve"),
+    reached here by walking the banks rather than the assembly. 54 distinct
+    names against 66 rows - the table carries moves no shipped bank uses.
+
+    SHOWN TO FAIL by deleting one row the banks do use from a copy of the
+    table: that name then resolves to nothing and `unresolved` goes 0 -> 1.
+    """
+    import subprocess, tempfile, shutil, json as _json
+    eng = os.path.join(ROOT, "engine")
+    fr = omkpaths.data_root()
+    if not os.path.isdir(fr):
+        return ("no data",), ("data",), "needs the shipped tree"
+    b = subprocess.run(["make", "-s", "build/moves_used"], cwd=eng,
+                       capture_output=True, text=True)
+    binp = os.path.join(eng, "build", "moves_used")
+    if b.returncode != 0 or not os.path.exists(binp):
+        return ("build failed",), ("built",), "engine/ must build"
+    tbl = os.path.join(ROOT, "tables", "special_moves.json")
+    r = subprocess.run([binp, fr, tbl], capture_output=True, text=True)
+    tail = [l for l in r.stdout.strip().splitlines() if l]
+    if not tail:
+        return ("no output",), ("a summary",), "the probe must report"
+    got = tuple(int(x) for x in tail[-1].split())
+    return got, (66, 7, 54, 0), \
+        ("rows in tab_special_move[], shipped banks read, distinct move names "
+         "those banks carry, and names that resolve to NO row - the last must "
+         "be 0, or the engine can fire a move the port cannot attribute")
+
 def c_engine_crowd_nan():
     r"""`engine/`: the crowd index REJECTS a non-finite entry.
 
@@ -17645,7 +17693,7 @@ def c_licence_headers():
                    if TAG in open(p, encoding="utf-8",
                                   errors="replace").read(600)]
     return (authored, sorted(missing), len(vendored), mislabelled), \
-           (320, [], 1, []), \
+           (321, [], 1, []), \
            "authored source files under tools/, engine/src, engine/tools, " \
            "engine/backends and scripts/; those MISSING the SPDX tag; " \
            "vendored files in engine/third_party; and vendored files wrongly " \
@@ -19074,6 +19122,7 @@ SLOW = [
     ("subtitle box", c_subtitle_box, "docs/UI"),
     ("credit layout", c_credit_layout, "docs/UI"),
     ("engine: impasse fx", c_engine_impasse_fx, "todo/omk-play"),
+    ("engine: special moves", c_engine_special_moves, "docs/ASSETS"),
     ("engine: crowd nan", c_engine_crowd_nan, "todo/omk-play"),
     ("engine: walker falls", c_engine_walker_falls, "todo/omk-play"),
     ("engine: props", c_engine_props, "todo/omk-play"),
