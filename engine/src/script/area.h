@@ -507,6 +507,9 @@ public:
     // the unconsumed press to `sub_41C770`. Neither is modelled (labelled in
     // `pumpZoneSlots`); the registry refuses the activate rather than guess.
     void setHeldObject(bool on) { heldObject_ = on; zones_.setHeldObject(on); }
+    // Derive it from the hand instead - see area.cpp. The setter above stays
+    // for a harness that wants to force the state without a script.
+    void refreshHeldObject();
     // `dword_4E6B20`: activates queued and not yet ENDED - `++` when the pump
     // queues one, `--` at that action's `end` (or at `Script_Execute`'s
     // LABEL_8). The held-object tail of `end` gates on it reaching 0.

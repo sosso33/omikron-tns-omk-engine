@@ -2620,6 +2620,25 @@ int Session::heldSlotOf(int actor) const {
     return it == heldSlot_.end() ? -1 : it->second;
 }
 
+// `Actor_HeldObjectSlot(Actor_Player()) != -1` - the one test `Script_Pump`'s
+// step 2 makes, and the one the registry's `Script_RunToOpcode75` gate makes.
+// It is DERIVED, never set by hand: the only two callers of
+// `Actor_HoldObject` in the whole binary are VM opcodes 66 and 67, and
+// `Actor_ReleaseObject` is 68/69, so the hand's contents are exactly what
+// those four opcodes leave in `heldSlot_`. Before this the flag had a setter
+// and no caller, so a script could take an object and the Session would still
+// run the empty-handed path.
+//
+// The player answers to -1 (the interpreter's own convention, hooks.h) and to
+// his DB id, because 67 passes the actor operand through raw.
+void Session::refreshHeldObject() {
+    const int me = playerActor();
+    const bool held = heldSlotOf(-1) != -1 || (me != -1 && heldSlotOf(me) != -1);
+    if (held == heldObject_) return;
+    heldObject_ = held;
+    zones_.setHeldObject(held);
+}
+
 // `Scene_LoadProps(area, scene, 1)` (0x00409FC0): for every prop record
 // whose state has bit 0, the FIRST free entry of word_4E6CA0 (-1 when all 50
 // are taken) takes the id and the record's +0 takes the slot; `Object_Load`,
@@ -2748,11 +2767,13 @@ void Session::Hooks::releaseObject(int actor, bool remove) {
     if (it != s_->heldSlot_.end()) s_->heldSlot_.erase(it);
     if (remove && slot >= 0) s_->shownSlots_.erase(slot);
     s_->propEvents_.push_back({remove ? "remove" : "drop", actor, slot, -1, s_->frameNo_});
+    s_->refreshHeldObject();
 }
 
 void Session::Hooks::holdObject(int actor, int slot) {
     s_->heldSlot_[actor] = slot;
     s_->propEvents_.push_back({"hold", actor, slot, -1, s_->frameNo_});
+    s_->refreshHeldObject();
 }
 
 void Session::Hooks::showObject(int slot) {

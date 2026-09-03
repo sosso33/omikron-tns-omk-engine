@@ -13,6 +13,58 @@ caught only by a person walking into the alley and looking. So an entry here say
 either CONFIRMED IN PLAY or it does not, and one that does not is a claim still
 waiting on its evidence.
 
+## Open (batch 6, filed 2026-09-04)
+
+### 66. The world TAKE is not the trigger-zone system — where does it start? — B
+
+Not a regression; an unported mechanic, opened while wiring object and NPC
+interaction. The reader: *"yes, i can take them after the tuto cutscene"* —
+the Impasse's anneaux.
+
+**What is settled.** The rings are OBJECTS 162 (`3 Anneaux magiques`) at
+`(7288, -80, 3015)`. Exactly ONE zone covers that point — **3795**, AREA 222 —
+and its three script slots are `enter=2354, activate=0, leave=0`. Script 2354
+IS the tutorial cutscene, and its last instruction is `zone.disable 3795`. No
+SCENE 55 or 57 zone covers the point either. So after the tutorial there is no
+armed zone there and no activate script anywhere near the rings, and
+`Script_Pump`'s step 2 would post message 26, "nothing here" — yet the object
+can be taken.
+
+**Therefore the take is a SECOND path.** `Actor_ScanZones` (0x00467770) scans
+only TRIGGER zones, so an object-proximity offer is a different scan. The
+supporting evidence: `sub_42B470` (take -> `Game_RaiseEvent(35)` -> the hand)
+has no direct caller in the decompilation, and its only two listing call sites
+sit inside one unlabelled function at ~0x0049BA30 that nothing appears to
+reference as data; while `Game_Tick` drives a hold sequence through
+`dword_91068C` / `sub_41C770` (bank group 150 + event 47, the object's name at
+the bottom of the screen) that can be seen RUNNING but never STARTED.
+
+**Ruled out on the way**, so nobody re-walks it: `Actor_HoldObject`
+(`sub_41A0A0`) has exactly two callers in the whole binary and both are VM
+opcodes 66 and 67, so wherever THAT function is the route the hand is filled
+by a script; `object.hold`'s 11 shipped sites are two guns and a key;
+`Player_GoToMove` (0x0041B6F0) is the generic "play a player bank group and
+raise event 3 when it ends" behind `player.move`, not a take.
+
+**A method warning that cost a wrong statement to the reader.**
+`tools/script_dump.py` enumerates a chunk's 68-byte zone records and its
+second table — it does NOT enumerate the chunk's `+4` STARTUP script. A corpus
+sweep built on it misses every startup script, which is how "the Impasse
+contains no object opcodes" was reported when SCENE 55's startup script is
+precisely where `object.show 162` lives. CLAUDE.md 6's lesson about the 5785
+slots, one tool further down: a negative result over a corpus is only as
+strong as the enumeration behind it.
+
+**Next step**: a play session with the port's existing zone/action logging —
+walk to the rings after the tutorial, press action, and see whether anything
+arms at all. If nothing does, the second scan is confirmed and the search
+moves to what fills the 16 prompt slots besides `Game_HandleEvent` case 7.
+
+**Housekeeping**: issue numbers **60 and 61 are each used twice** in this
+file. 61 was mine and is renumbered 65 here; the two 60s came in with the
+street-life merge and are left alone rather than renumbered under someone
+else's entry.
+
 ## Open (batch 5, filed 2026-09-03)
 
 Six filed together from one play report of the Impasse cutscene and the
@@ -875,9 +927,9 @@ in 212 files), `PlaySound` (3797) and `SelectRelativeBodyAnimation` (2398).
 **Severity A** — it affects every cutscene in the game, and the environment is
 most of what is on screen.
 
-## Fixed (batch 6, 2026-09-03)
+## Fixed (batch 14, 2026-09-04)
 
-### 61. Leaving the Impasse for the city: a black screen with the bump message — A
+### 65. Leaving the Impasse for the city: a black screen with the bump message — A
 
 > **Fixed 2026-09-03. CONFIRMED IN PLAY** (the reader reproduced it four times
 > and reached the city clean on the fixed build).

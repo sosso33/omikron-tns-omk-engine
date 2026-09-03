@@ -770,6 +770,37 @@ RunResult Interpreter::resume(std::span<const std::byte> code, std::size_t at) {
                 recordCall(op, {var});
                 continue;
             }
+            // 66 `object.hold` (0x0040A910): OBJECT, and the holder is the
+            // PLAYER (`sub_419E00`). The same prop walk as 67 - the AREA
+            // block's table at +44 (count +74), then the SCENE's at +12
+            // (count +42), 24 bytes a record, matching the id at `+2` - and
+            // `Actor_HoldObject(player, slot)` when the record's `+0` slot is
+            // not -1. This is the opcode a zone's activate script reaches
+            // when the player presses action on a takeable prop.
+            //
+            // TWO DIFFERENCES FROM 67, both read rather than assumed, because
+            // CLAUDE.md 1's "two functions in a family need not share a
+            // layout" is exactly this case:
+            //   * it writes NO `+270` held field. 67 compares and writes it;
+            //     66 never touches it, so what `var.set.used_object` (75)
+            //     reads back after a take is the live `Actor_HeldObjectSlot`
+            //     (+164, written by `Actor_HoldObject`), not `+270`.
+            //   * its not-found arm is a NULL READ. Where 77 guards with
+            //     `test esi,esi ; jz`, 66 does `loc_40A9B2: xor edx,edx` and
+            //     falls into `loc_40A9B4: movsx eax, word ptr [edx]` - so an
+            //     id no resident chunk carries dereferences address 0. The
+            //     port does nothing instead; that is a DIVERGENCE, and the
+            //     only one, on a path the shipped scripts evidently never
+            //     take.
+            if (op == 66 && hooks_) {
+                std::size_t q = start + 1;
+                const auto obj = fetch16(code, q);
+                PropRef p;
+                if (hooks_->propById(obj, p) && p.slot != -1)
+                    hooks_->holdObject(-1, p.slot);       // -1 = the player
+                recordCall(op, {obj});
+                continue;
+            }
             // 67 `object.hold.actor` (0x40A9D0): actor, object. The prop
             // record by id (+2) in the AREA then the SCENE; then `Actor_Find
             // ById(actor)->+270 == object` means nothing to do; else, when a
@@ -847,6 +878,23 @@ RunResult Interpreter::resume(std::span<const std::byte> code, std::size_t at) {
                 if (hooks_->propById(obj, p) && (state_.propState(p.stateIndex) & 1)) {
                     state_.setPropState(p.stateIndex, state_.propState(p.stateIndex) | 2);
                     hooks_->showObject(p.slot);
+                }
+                recordCall(op, {obj});
+                continue;
+            }
+            // 77 `object.hide` (0x0040ADD0): OBJECT. The exact mirror of 76 -
+            // the same prop walk, then `ObjectState_Get(+22) & 1` gating
+            // `ObjectState_Set(idx, state & ~2)` and `Object_HideFromScene`
+            // (`sub_41CC20`) on the record's `+0` slot. Bit 1 is EXISTS and
+            // bit 2 is SHOWN, so hiding clears the shown bit and leaves the
+            // prop in the world.
+            if (op == 77 && hooks_) {
+                std::size_t q = start + 1;
+                const auto obj = fetch16(code, q);
+                PropRef p;
+                if (hooks_->propById(obj, p) && (state_.propState(p.stateIndex) & 1)) {
+                    state_.setPropState(p.stateIndex, state_.propState(p.stateIndex) & ~2);
+                    hooks_->hideObject(p.slot);
                 }
                 recordCall(op, {obj});
                 continue;
