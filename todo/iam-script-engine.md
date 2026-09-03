@@ -33,7 +33,26 @@ Checks added: `engine: vm probe`, `engine: session rules`, `engine zone pump`,
 
 ## Open
 
+### The labelled remainders
+All 39 as originally filed landed in batch 1 or 2 (2026-09-02). Still
+labelled inside the Fixed sections' notes and under "Queued for the next
+pass": camera mode 14, the viewer's move and fight hooks, the held-object
+paths, `Inventory_Insert`'s kind gate, op 96's `+0x1A` travel halving, list 3.
+The viewer's one-body staging is todo/omk-play.md 41; issue 40 is fixed (batch 3).
+
+## Fixed (batch 3, 2026-09-03)
+
 ### 40. `Actors_SpawnFromTables` is not ported: the world's characters never exist — A
+
+> **Fixed in batch 3, 2026-09-03 (T19).** Pinned by `verify.py: engine: spawn from tables`;
+> `docs/RECONSTRUCTION.md` 2026-09-03 — *THE WORLD'S CHARACTERS EXIST AT AN AREA LOAD — `Actors_SpawnFromTables` ported.*
+> **Three corrections to the text below** (todo/pending/T19.md 7): the placements are TRUNCATED by
+> `Area_Load`'s in-place conversion, so the Demon stands at **7604 -79 2980 facing 357**, not the
+> rounded 7605 -80 2980 / 358; there are TWO call sites, not one — opcode 71 `scene.load`'s handler
+> (0x403950) calls it with `a3 = 0` and `readable/`'s `@callers 1` is short because that handler has no
+> `proc` label; and reached by PLAYING, the four attached at the hand-over are 212, 218, 219, **49** —
+> the intro's scripts have hidden the Demon and shown Kay'l by then. 7 spawned / 4 attached holds.
+
 Filed 2026-09-03 from a play report - *the characters are not showing in the
 Impasse cutscene*. Issue 28 (fixed) made `character.show`/`hide` write the
 `ObjectShown` bit; the CONSUMER of that bit was deferred to T11 by T2
@@ -93,13 +112,6 @@ can stage them; evicted with the slot. Check `engine: spawn from tables`:
 7 spawned / 4 attached for 222 + 55, the Demon's placement, `character.hide 57`
 detaching and clearing bit 804, a save with 806 set attaching Kay'l at load,
 628 of 1032 - SHOWN to fail with the spawn skipped (`shown()` empty at load).
-
-### The labelled remainders
-All 39 as originally filed landed in batch 1 or 2 (2026-09-02). Still
-labelled inside the Fixed sections' notes and under "Queued for the next
-pass": camera mode 14, the viewer's move and fight hooks, the held-object
-paths, `Inventory_Insert`'s kind gate, op 96's `+0x1A` travel halving, list 3.
-The viewer's one-body staging is todo/omk-play.md 41.
 
 ## Fixed (batch 2 wave B, 2026-09-02)
 Pinned by `verify.py: engine: world ops`, `live zones`, `parking ops`, `zone registry`; RECONSTRUCTION rows of 2026-09-02 (T12, T13, T15, T16). Text intact, with the labelled remainders.

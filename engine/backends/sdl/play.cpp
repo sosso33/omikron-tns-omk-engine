@@ -31,6 +31,8 @@
 #  endif
 #endif
 
+#include "formats/anim.h"
+#include "formats/ctl.h"
 #include "formats/mesh3do.h"
 #include "formats/scx.h"
 #include "formats/tex3dt.h"
@@ -63,6 +65,8 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
+#include <deque>
 #include <fstream>
 #include <vector>
 #include <map>
@@ -1163,10 +1167,7 @@ int main(int argc, char** argv) {
     float lastEye[3] = {0, 0, 0}, lastAt[3] = {0, 0, 0}, lastFov = 75.0f;
     bool  editFromKnown = false;              // ...and it was captured for the travel
     float editFromEye[3] = {0, 0, 0}, editFromAt[3] = {0, 0, 0}, editFromFov = 75.0f;
-    omk::NodeTracks sceneTracks;
-    int sceneClipWas = -2;
     int fxSpriteWas = -2;
-    bool speakerPelvis = false;
 
     // ---- ADVENTURE MODE ------------------------------------------------
     //
@@ -1420,8 +1421,10 @@ int main(int argc, char** argv) {
     //
     // The pose advances with the VOICE - frame = elapsed * 30 - because that
     // is the clock the line runs on.
-    omk::Geometry speakerRest, speakerPosed;
-    std::vector<omk::Texture> speakerTex;
+    // What is left here belongs to the LINE, not to a body: the model name,
+    // the `.3DM` and its face vertices, the voice, and the camera solve that
+    // says where a speaker no scene object drives is standing. The GEOMETRY
+    // moved into `Staged`/`CharModel` above, one per actor (issue 41).
     std::vector<omk::Mesh> speakerMeshes;
     omk::NodeTracks speakerTracks;
     // The scene clip's frame the last time it was drawn, and the frame it was
@@ -1429,13 +1432,217 @@ int main(int argc, char** argv) {
     // the actor's clip AND its frame (rec[47]), and the blend-in eases from
     // that frame into the line (pose.h, BLENDING TWO POSES).
     float sceneFrameLast = 0.0f, lineIdleFrame = 0.0f;
-    omk::FaceMesh speakerFace;
     std::vector<std::byte> speakerMorph;   // the line's .3DM, for the FACE
     std::string speakerModel, speakerVoice;
     int voiceShot = -1;   // the line's voice in the mixer, for the press that cuts it
-    float speakerAt[3] = {0, 0, 0};
+    float speakerAt[3] = {0, 0, 0};      // the camera solve, a GROUND point
+    bool  speakerSolved = false;
     bool  speakerReady = false;
     int   speakerConv = -1;
+
+    // ---- EVERY BODY THE SESSION SAYS IS ON SCREEN (issue 41) -----------
+    //
+    // `Actor_Attach` (0x0041CCA0) puts an actor in the o3de tree and
+    // `Render_Scene` draws them ALL. This file used to keep exactly one
+    // `speaker*` set - the model of `session.shown().front()`, posed by the
+    // LAST running `"actor"` program whichever actor that program drives - so
+    // the Impasse drew one passer-by performing Kay'l's arrival. What follows
+    // is one `Staged` per shown actor, its pose resolved per actor, in the
+    // engine's own precedence:
+    //
+    //   (a) a RUNNING scene program whose `Started.actor` is this actor -
+    //       `ScriptObject_StartOnActor` (0x0041BA80) drives ITS actor - and
+    //       then its clip on its authored `.3DP` path (`Path_Sample`);
+    //   (b) else, this actor being the conversation's speaker, the line's own
+    //       `.3DM` and its face, exactly as before;
+    //   (c) else the IDLE. `Actor_LoadModel` -> `Actor_LoadBankList` leaves
+    //       the channel on the default group's default entry
+    //       (`Cef_DefaultGroup` = the group whose flags bit 0 is set,
+    //       `Cef_DefaultEntry` = its 0x20 entry), and that entry's clip is
+    //       what he stands in. This takes FRAME 0 of it and does not tick a
+    //       channel per actor - a still idle, labelled, not a claim.
+    //
+    // The model and the bank are shared by NAME - three passers-by are one
+    // `PA1_FN` - because the pool is only 64 slots wide (a bucket key's low
+    // six bits, ASSETS 4b) and because the engine's own texture cache matches
+    // on the name alone.
+    struct CharModel {
+        omk::Geometry rest;
+        std::vector<omk::Mesh> meshes;
+        std::vector<omk::Texture> tex;
+        omk::FaceMesh face;
+        // The HIERARCHY ROOT - the pelvis in all 181 character models, the
+        // mesh whose parent id resolves to nothing. `composePose` leaves a
+        // root at its AUTHORED position, and the models are not authored
+        // about the origin: `UBassin` is at (2.9, -2.4, 17.9) but `D1Bassin`
+        // is at (507.1, -168.1, 39.2), so a body placed by its model origin
+        // is 507 units up the alley. The placement names the PELVIS, so the
+        // pelvis is what is moved onto it.
+        int root = -1;
+        std::size_t texBase = 0;      // its first slot in the pool
+        bool ready = false;
+    };
+    struct CharBank {
+        omk::CtlFile ctl;
+        std::vector<std::byte> data;
+        int  idleClip = -1;           // the default group's default entry's
+        bool ready = false;
+    };
+    // `std::map` is node-based, so a `Staged`'s pointer into these survives
+    // every later insert.
+    std::map<std::string, CharModel> charModels;
+    std::map<std::string, CharBank>  charBanks;
+    struct Staged {
+        int actor = -1;
+        std::string model, bank;
+        CharModel* mo = nullptr;
+        CharBank*  bk = nullptr;
+        omk::Geometry posed;
+        float at[3] = {0, 0, 0};
+        float facing = 0.0f;
+        bool  placed = false;   // something authored says where he stands
+        bool  pelvis = false;   // ...and it names his PELVIS, not his feet
+        bool  seen = false;
+        bool  drawn = false;
+        int   sceneClipWas = -2;      // the program's clip, cached
+        omk::NodeTracks sceneTracks;
+        omk::NodeTracks idle;         // the bank's default clip, frame 0
+        bool  idleBuilt = false;
+        float drawAt[3] = {0, 0, 0};   // where he was actually put, for a set piece
+        // The placement a running scene PROGRAM gives him (a path sample or
+        // the clip's root key 0), cached so it can be re-asserted every
+        // frame - a `fromTable` body's per-frame reset to its 20-byte record
+        // would otherwise win on every frame but the clip-change one, and he
+        // would stand at the placement plus the whole root motion.
+        bool  progPlaced = false;      // a program placed him this clip
+        float progBase[3] = {0, 0, 0};
+        bool  progPelvis = false;
+        const char* src = "none";
+        // SEATED ONCE, the way the engine seats an actor once and then
+        // `Actor_MoveBy`s him: the feet go on the floor when the pose SOURCE
+        // or the clip changes, and the clip's root motion moves him from
+        // there. Re-seating every frame would cancel every vertical the clip
+        // has - a jump would slide along the ground instead of leaving it.
+        float seatFeet = 0.0f;
+        int   seatClip = -3;
+        const char* seatSrc = "";
+        bool  seatKnown = false;
+        bool  placeTold = false, groundTold = false;
+    };
+    // OWNING POINTERS, not a vector of values: the Vulkan backend caches a
+    // vertex buffer by (pointer, revision), so a `Staged` may never be moved
+    // by a reallocation. Dropping one frees its address, which a later one
+    // could reuse - `posed.revision` is taken from the global `worldGeoRev`
+    // every frame it is drawn, so a reused address can never carry a
+    // revision the backend has already seen.
+    std::vector<std::unique_ptr<Staged>> staged;
+    long stagedEver = 0;                 // for the summary line
+    std::vector<int> stagedIds;
+    // The pool is rebuilt on a COMPOSITION change, not on a size change: two
+    // models with the same texture count swapping is exactly what a size test
+    // cannot see.
+    std::uint64_t poolComposition = 1, poolBuiltFor = 0, poolTold = 0;
+    bool poolHasSprites = false, poolHasPlayer = false;
+    std::size_t playerTexBase = 0, spriteTexBase = 0;
+    bool poolOverflowTold = false;
+    const bool stagedProbe = std::getenv("OMK_STAGE_PROBE") != nullptr;
+    // One `.3DO`/`.3DT` per MODEL NAME, loaded once and shared by every actor
+    // wearing it.
+    const auto charModelFor = [&](const std::string& name) -> CharModel* {
+        if (name.empty()) return nullptr;
+        auto it = charModels.find(name);
+        if (it != charModels.end()) return &it->second;
+        CharModel m;
+        if (const auto mo = fs.resolve("MESHES/PERSOS/" + name + ".3DO")) {
+            const auto md = omk::DataFs::readPath(*mo);
+            m.rest = omk::buildGeometry(md, omk::DrawFilter::Engine);
+            if (const auto mh = omk::readHeader(md)) m.meshes = omk::readMeshes(md, *mh);
+            if (const auto mt = fs.resolve("MESHES/PERSOS/" + name + ".3DT"))
+                m.tex = omk::textures(md, omk::DataFs::readPath(*mt));
+            m.face = omk::faceMeshOf(m.meshes);
+            for (std::size_t i = 0; i < m.meshes.size() && m.root < 0; ++i) {
+                bool hasParent = false;
+                for (const auto& p : m.meshes)
+                    if (p.id == m.meshes[i].parent) { hasParent = true; break; }
+                if (!hasParent) m.root = static_cast<int>(i);
+            }
+            m.ready = !m.rest.corners.empty() && !m.meshes.empty();
+        }
+        ++poolComposition;      // the pool gains this model's textures
+        return &charModels.emplace(name, std::move(m)).first->second;
+    };
+    // One `.CTL` per BANK NAME, and the entry `Actor_LoadBankList` leaves the
+    // channel on. `PlayerController`'s constructor is the rule quoted:
+    // `rt_.loadModel()` then `SetPersoBankGroup(channel, Cef_DefaultGroup)`,
+    // and `clipOwner()`'s chain - an entry whose flags carry 0x8002 is an
+    // alias and hands the clip on through its GoTo.
+    const auto charBankFor = [&](const std::string& name) -> CharBank* {
+        if (name.empty()) return nullptr;
+        auto it = charBanks.find(name);
+        if (it != charBanks.end()) return &it->second;
+        CharBank b;
+        if (const auto cp = fs.resolve("ANIMS/" + name + ".CTL")) {
+            b.data = omk::DataFs::readPath(*cp);
+            b.ctl = omk::readCtl(b.data);
+            b.ready = b.ctl.valid;
+            int g = -1;
+            for (std::size_t k = 0; k < b.ctl.groupList.size(); ++k)
+                if (b.ctl.groupList[k].flags & 1u) { g = static_cast<int>(k); break; }
+            int s = g >= 0 ? b.ctl.groupList[static_cast<std::size_t>(g)].defaultEntry : -1;
+            for (int guard = 0; guard < 64; ++guard) {
+                if (s < 0 || s >= static_cast<int>(b.ctl.states.size())) { s = -1; break; }
+                if (!(b.ctl.states[static_cast<std::size_t>(s)].flags & 0x8002u)) break;
+                s = b.ctl.states[static_cast<std::size_t>(s)].gotoIdx;
+            }
+            if (s >= 0 && s < static_cast<int>(b.ctl.states.size())) {
+                const int c = b.ctl.states[static_cast<std::size_t>(s)].clip;
+                if (c >= 0 && c < static_cast<int>(b.ctl.clips.size())) b.idleClip = c;
+            }
+        }
+        return &charBanks.emplace(name, std::move(b)).first->second;
+    };
+    // ...and that clip as a pose, at FRAME 0. The recipe is
+    // `PlayerController::poseTracks`'s, transcribed rather than reinvented: a
+    // `.CTL` clip is an `.ani` DESCRIPTOR with no "3.0V" wrapper, its tracks
+    // resolve to meshes by name, and KEY 0 IS THE REST SENTINEL so frame `f`
+    // reads key `f + 1`. Only frame 0 is built, because nothing here ticks a
+    // channel per actor.
+    const auto idleTracksFor = [&](const CharBank& b,
+                                   const std::vector<omk::Mesh>& meshes) {
+        omk::NodeTracks t;
+        if (b.idleClip < 0 || meshes.empty()) return t;
+        const auto d = omk::animDescriptor(
+            b.data, b.ctl.clips[static_cast<std::size_t>(b.idleClip)].offset);
+        if (!d || d->frames <= 0 || d->tracks.empty()) return t;
+        const auto lower = [](std::string v) {
+            for (auto& c : v) if (c >= 'A' && c <= 'Z') c = static_cast<char>(c - 'A' + 'a');
+            return v;
+        };
+        t.count = static_cast<int>(d->tracks.size());
+        t.frames = 1;
+        t.rootTrack = -1;
+        for (const auto& tr : d->tracks) {
+            std::int32_t mi = -1;
+            const std::string want = lower(tr.name);
+            for (const auto& m : meshes)
+                if (lower(m.name) == want) { mi = m.index; break; }
+            t.ids.push_back(mi);
+        }
+        t.quats.assign(1, {});
+        t.trans.assign(1, {0.0f, 0.0f, 0.0f});
+        t.quats[0].resize(d->tracks.size());
+        for (std::size_t i = 0; i < d->tracks.size(); ++i) {
+            const omk::AnimTrack& tr = d->tracks[i];
+            if (!tr.rotOffset || tr.rotKeys <= 0) continue;
+            const int key = tr.rotKeys > 1 ? 1 : 0;      // frame 0 reads key 1
+            const std::size_t o = tr.rotOffset + 16u * static_cast<std::size_t>(key);
+            if (o + 16 > b.data.size()) continue;
+            float q[4];
+            std::memcpy(q, b.data.data() + o, 16);
+            t.quats[0][i] = {q[0], q[1], q[2], q[3]};
+        }
+        return t;
+    };
     std::vector<omk::Texture> pool;
     std::size_t poolSize = 0;
 
@@ -1560,15 +1767,29 @@ int main(int argc, char** argv) {
     bool  actorKnown = false;
     session.sceneMutable().setPieceLinks(
         [&](int type, std::uint32_t id, omk::PieceLink& L) -> bool {
-            if (type != 2 || !actorKnown || speakerModel.size() < 3) return false;
+            if (type != 2) return false;
             const char tag[4] = {static_cast<char>((id >> 16) & 0xFF),
                                  static_cast<char>((id >> 8) & 0xFF),
                                  static_cast<char>(id & 0xFF), 0};
-            for (int k = 0; k < 3; ++k) {
-                char c = speakerModel[static_cast<std::size_t>(k)];
-                if (c >= 'a' && c <= 'z') c = static_cast<char>(c - 'a' + 'A');
-                if (c != tag[k]) return false;
-            }
+            const auto tagged = [&](const std::string& m) {
+                if (m.size() < 3) return false;
+                for (int k = 0; k < 3; ++k) {
+                    char c = m[static_cast<std::size_t>(k)];
+                    if (c >= 'a' && c <= 'z') c = static_cast<char>(c - 'a' + 'A');
+                    if (c != tag[k]) return false;
+                }
+                return true;
+            };
+            // EVERY body on screen is a candidate now, not just the one this
+            // file used to draw - the piece is linked to the actor whose model
+            // carries the tag.
+            for (const auto& up : staged)
+                if (up->drawn && tagged(up->model)) {
+                    for (int k = 0; k < 3; ++k) L.pos[k] = up->drawAt[k];
+                    L.hasMatrix = true;   // identity: the facing is unported
+                    return true;
+                }
+            if (!actorKnown || !tagged(playerModel)) return false;
             for (int k = 0; k < 3; ++k) L.pos[k] = actorAt[k];
             L.hasMatrix = true;   // identity: the facing is unported
             return true;
@@ -1624,7 +1845,8 @@ int main(int argc, char** argv) {
             playerSoup.insert(playerSoup.end(), w.soup.begin(), w.soup.end());
         }
         world.setTextures(worldTex);
-        poolSize = worldTex.size();   // the character/sprite pool re-appends on its next pass
+        poolSize = worldTex.size();
+        ++poolComposition;   // the character and sprite sections re-append over this
     };
 
     // ---- and now they PLAY -------------------------------------------
@@ -2106,23 +2328,15 @@ int main(int argc, char** argv) {
             if (session.dialogue().conversation().id != speakerConv) {
                 speakerConv = session.dialogue().conversation().id;
                 speakerReady = false;
+                speakerSolved = false;
                 speakerModel = session.speakerModel();
-                speakerTex.clear();
                 speakerMeshes.clear();
-                speakerRest = omk::Geometry{};
-                const auto mo = speakerModel.empty()
-                    ? std::optional<std::string>{}
-                    : fs.resolve("MESHES/PERSOS/" + speakerModel + ".3DO");
-                if (mo) {
-                    const auto md = omk::DataFs::readPath(*mo);
-                    speakerRest = omk::buildGeometry(md, omk::DrawFilter::Engine);
-                    if (const auto mh = omk::readHeader(md))
-                        speakerMeshes = omk::readMeshes(md, *mh);
-                    if (const auto mt = fs.resolve("MESHES/PERSOS/" + speakerModel + ".3DT"))
-                        speakerTex = omk::textures(md, omk::DataFs::readPath(*mt));
-                    // The mesh named *visage* - the one with no bone track,
-                    // animated by replacing its vertices.
-                    speakerFace = omk::faceMeshOf(speakerMeshes);
+                // The BODY is a `Staged` like any other - one `CharModel` per
+                // model name, shared with whoever else wears it. The meshes
+                // are copied here only for `rootTrackOf` and the report.
+                CharModel* cm = charModelFor(speakerModel);
+                if (cm && cm->ready) {
+                    speakerMeshes = cm->meshes;
                     // Where he stands: the line cameras' rays, dropped onto
                     // the set's own walkable floor.
                     omk::TriangleSoup soup;
@@ -2136,15 +2350,15 @@ int main(int argc, char** argv) {
                     // The authored PATH wins when the scene gives one: it is
                     // where the object actually puts him, and a camera solve
                     // is the fallback for a conversation whose speaker no
-                    // scene object drives.
-                    if (!speakerPelvis)
-                        for (int k = 0; k < 3; ++k) speakerAt[k] = st.pos[k];
-                    speakerReady = !speakerRest.corners.empty() &&
-                                   !speakerMeshes.empty() && st.valid;
+                    // scene object drives. The staging below applies it only
+                    // to a body nothing else has placed.
+                    for (int k = 0; k < 3; ++k) speakerAt[k] = st.pos[k];
+                    speakerSolved = st.valid;
+                    speakerReady = st.valid;
                     std::printf("speaker: %s (%zu meshes, %zu corners), %d rays "
                                 "converge scatter %.1f, stands at %.0f %.0f %.0f%s\n",
                                 speakerModel.c_str(), speakerMeshes.size(),
-                                speakerRest.corners.size(), st.rays, st.scatter,
+                                cm->rest.corners.size(), st.rays, st.scatter,
                                 st.pos[0], st.pos[1], st.pos[2],
                                 st.onFloor ? " on the walkable floor" : "");
                 } else {
@@ -2164,9 +2378,11 @@ int main(int argc, char** argv) {
                         speakerMorph = omk::DataFs::readPath(*ma);
                         speakerTracks = omk::nodeTracks(
                             speakerMorph, omk::rootTrackOf(speakerMeshes));
+                        const CharModel* fm = charModels.count(speakerModel)
+                            ? &charModels.at(speakerModel) : nullptr;
                         std::printf("  face: mesh %d, %d verts; the line supplies %s\n",
-                                    speakerFace.mesh, speakerFace.count,
-                                    speakerFace.valid() ? "them" : "none");
+                                    fm ? fm->face.mesh : -1, fm ? fm->face.count : 0,
+                                    fm && fm->face.valid() ? "them" : "none");
                     }
                 if (!conversations++)
                     std::printf("--- conversation: ENTER for next, "
@@ -2323,35 +2539,97 @@ int main(int argc, char** argv) {
         // `character.show` is what puts a character in the world, and AREA 118
         // does it about six seconds before `dialog.start` - so loading the
         // model when a conversation opens drew the arrival as a black screen.
-        // The model comes from the actor record; the POSE comes from whatever
-        // scene object is animating him, which for the arrival is
-        // `1KaylArrives` playing `INTRO1.3DA` out of the scene's own stream.
-        if (!session.shown().empty() && speakerModel.empty()) {
-            const auto& sh = session.shown().front();
-            speakerModel = sh.model;
-            speakerReady = false;
-            speakerTex.clear(); speakerMeshes.clear();
-            speakerRest = omk::Geometry{};
-            const auto mo = speakerModel.empty()
-                ? std::optional<std::string>{}
-                : fs.resolve("MESHES/PERSOS/" + speakerModel + ".3DO");
-            if (mo) {
-                const auto md = omk::DataFs::readPath(*mo);
-                speakerRest = omk::buildGeometry(md, omk::DrawFilter::Engine);
-                if (const auto mh = omk::readHeader(md))
-                    speakerMeshes = omk::readMeshes(md, *mh);
-                if (const auto mt = fs.resolve("MESHES/PERSOS/" + speakerModel + ".3DT"))
-                    speakerTex = omk::textures(md, omk::DataFs::readPath(*mt));
-                speakerFace = omk::faceMeshOf(speakerMeshes);
-                speakerReady = !speakerRest.corners.empty() && !speakerMeshes.empty();
-                std::printf("character %d shown: %s (%zu meshes)\n",
-                            sh.actor, speakerModel.c_str(), speakerMeshes.size());
-            } else {
-                std::printf("character %d shown: no model\n", sh.actor);
+        // `Session::shown()` is now EVERY attached actor of both resident
+        // slots (the alley's passers-by among them) followed by whatever a
+        // script showed, so this stages them all rather than `front()`.
+        {
+            for (auto& up : staged) up->seen = false;
+            const int playerId = session.playerActor();
+            for (const auto& sh : session.shown()) {
+                // In adventure mode the CONTROLLER owns the player's body; a
+                // second one here would draw him twice.
+                if (adventure && player && sh.actor == playerId) continue;
+                Staged* s = nullptr;
+                for (auto& up : staged) if (up->actor == sh.actor) { s = up.get(); break; }
+                if (!s) {
+                    staged.push_back(std::make_unique<Staged>());
+                    s = staged.back().get();
+                    s->actor = sh.actor;
+                    s->model = sh.model;
+                    s->bank  = sh.bank;
+                    s->mo = charModelFor(sh.model);
+                    s->bk = charBankFor(sh.bank);
+                    ++stagedEver;
+                    stagedIds.push_back(sh.actor);
+                    std::printf("frame %ld: staged actor %d %s (bank %s, %zu meshes, "
+                                "%zu textures) at %.0f %.0f %.0f facing %.0f - %s\n",
+                                n, sh.actor,
+                                sh.model.empty() ? "(no model)" : sh.model.c_str(),
+                                sh.bank.empty() ? "none" : sh.bank.c_str(),
+                                s->mo ? s->mo->meshes.size() : 0u,
+                                s->mo ? s->mo->tex.size() : 0u,
+                                sh.pos[0], sh.pos[1], sh.pos[2], sh.facing,
+                                sh.fromTable ? "a placement record puts him here"
+                                             : "shown by a script, no placement of his own");
+                }
+                s->seen = true;
+                // A placement record names a spot on the GROUND; a script
+                // show carries none (`Session::showCharacter` pushes a bare
+                // record), so such a body waits for a program or a camera
+                // solve to say where he is.
+                if (sh.fromTable) {
+                    for (int k = 0; k < 3; ++k) s->at[k] = sh.pos[k];
+                    s->facing = sh.facing;
+                    if (!s->placed) { s->placed = true; s->pelvis = false; }
+                }
             }
-        }
-        if (session.shown().empty() && !session.dialogOpen() && !speakerModel.empty()) {
-            speakerModel.clear(); speakerReady = false;
+            // A conversation's speaker need not be in `shown()` at all -
+            // AREA 118's is, but the camera solve is the only thing that says
+            // where a speaker no table places and no script shows is standing.
+            if (session.dialogOpen() && speakerReady && !speakerModel.empty()) {
+                const int sp = session.dialogue().conversation().speaker;
+                Staged* s = nullptr;
+                for (auto& up : staged) if (up->actor == sp) { s = up.get(); break; }
+                if (!s)
+                    for (auto& up : staged)
+                        if (up->model == speakerModel) { s = up.get(); break; }
+                if (!s) {
+                    staged.push_back(std::make_unique<Staged>());
+                    s = staged.back().get();
+                    s->actor = sp;
+                    s->model = speakerModel;
+                    s->mo = charModelFor(speakerModel);
+                    ++stagedEver;
+                    stagedIds.push_back(sp);
+                    std::printf("frame %ld: staged actor %d %s for conversation %d - "
+                                "no table places him and no script shows him\n",
+                                n, sp, speakerModel.c_str(), speakerConv);
+                }
+                s->seen = true;
+                if (!s->placed && speakerSolved) {
+                    for (int k = 0; k < 3; ++k) s->at[k] = speakerAt[k];
+                    s->placed = true;
+                    s->pelvis = false;   // the solve names a spot on the GROUND
+                }
+            }
+            for (std::size_t k = 0; k < staged.size(); ) {
+                if (staged[k]->seen) { ++k; continue; }
+                std::printf("frame %ld: dropped actor %d %s\n", n,
+                            staged[k]->actor, staged[k]->model.c_str());
+                staged.erase(staged.begin() + static_cast<long>(k));
+                ++poolComposition;
+            }
+            // A model no staged body wears any more leaves the pool, so the
+            // 64 slots a bucket key can address are not spent on the last
+            // area's cast.
+            for (auto it = charModels.begin(); it != charModels.end(); ) {
+                bool used = (it->first == playerModel && playerReady) ||
+                            it->first == speakerModel;
+                for (const auto& up : staged) if (up->model == it->first) used = true;
+                if (used) { ++it; continue; }
+                it = charModels.erase(it);
+                ++poolComposition;
+            }
         }
 
         // ---- the world, when no screen is over it -----------------------
@@ -2549,71 +2827,168 @@ int main(int argc, char** argv) {
                 view.cam.hfovDeg = wc->fov > 1.0f ? wc->fov : 75.0f;
                 view.cam.w = dispW; view.cam.h = dispH;
             }
+            // AN INSTRUMENT OVERRIDE, and nothing the engine does: `--eye`
+            // and `--at` (and `--fov`) replace whatever camera the frame
+            // chose, so a shot can be framed on a body the game's own camera
+            // is not looking at. `--scene` has taken the same three since it
+            // was written; this makes them work with the Session running.
+            if (haveEye && haveAt) {
+                for (int k = 0; k < 3; ++k) {
+                    view.cam.eye[k] = eyeA[k];
+                    view.cam.at[k]  = atA[k];
+                }
+                if (fovA > 1.0f) view.cam.hfovDeg = fovA;
+                view.cam.w = dispW; view.cam.h = dispH;
+            }
             // What is on screen this frame, for the next editing to travel
             // from.
             for (int k = 0; k < 3; ++k) { lastEye[k] = view.cam.eye[k]; lastAt[k] = view.cam.at[k]; }
             lastFov = view.cam.hfovDeg;
             haveLastDrawn = true;
-            // THE SPEAKER, posed. His textures sit AFTER the set's in one
-            // pool, and his batches carry the offset in the bucket key's low
-            // six bits - which is where the engine keeps the texture slot
-            // (ASSETS 4b), so this is the same indexing and not a second
-            // mechanism.
-            // A character is drawn from `character.show` to `character.hide`,
-            // not only while a conversation is up - that was the whole point
-            // of moving the attach, and gating the DRAW on the conversation
-            // would have kept the arrival black anyway.
-            // In adventure mode the CONTROLLER poses and places him; the
-            // scene-clip path below is the cutscene's and stands down.
-            const bool drawSpeaker = !adventure && speakerReady &&
-                (session.dialogOpen() || !session.shown().empty());
+            // ---- THE TEXTURE POOL ------------------------------------
+            //
+            // The set's textures, then one section per staged MODEL, then the
+            // player's, then the sprites'; a batch's slot is its material plus
+            // its owner's base, which is the engine's own indexing (the bucket
+            // key's low six bits, ASSETS 4b) and not a second mechanism.
+            // Rebuilt on a COMPOSITION change rather than a size change: two
+            // models with the same texture count swapping is exactly what a
+            // size test cannot see.
             const bool drawPlayer = adventure && playerReady;
-            const std::vector<omk::Texture>& charTex = drawPlayer ? playerTex : speakerTex;
-            const bool drawChar = drawSpeaker || drawPlayer;
-            if (drawChar && charTex.size() + worldTex.size() != poolSize) {
+            const bool wantSprites = session.scene().effects().count() && !spriteTex.empty();
+            if (poolBuiltFor != poolComposition || poolHasSprites != wantSprites ||
+                poolHasPlayer != drawPlayer) {
                 pool = worldTex;
-                pool.insert(pool.end(), charTex.begin(), charTex.end());
-                poolSize = pool.size();
-                world.setTextures(pool);
-            } else if (!drawChar && poolSize != worldTex.size()) {
-                poolSize = worldTex.size();
-                world.setTextures(worldTex);
-            }
-            if (drawSpeaker) {
-                // WHICH POSE. Two sources, and the scene's is the one that
-                // covers everything outside a spoken line: a `scx.play.actor`
-                // object names a clip in the scene's animation array (param 1)
-                // and an authored `.3DP` path (param 8), which is where it
-                // puts the character - `Path_Sample`, at his PELVIS. A
-                // conversation's line overrides it with its own `.3DM`, which
-                // is the only thing that moves his face.
-                int sceneClip = -1, scenePath = -1;
-                float sceneFrame = 0;
-                const omk::SceneRunner::Started* sceneStarted = nullptr;
-                const auto& sc = session.scene();
-                for (std::size_t k = 0; k < sc.started().size(); ++k) {
-                    const auto& stt = sc.started()[k];
-                    if (stt.how != "actor" || stt.clip < 0) continue;
-                    if (!sc.programRunning(static_cast<int>(k))) continue;
-                    sceneClip = stt.clip; scenePath = stt.path;
-                    sceneFrame = sc.programClock(static_cast<int>(k));
-                    sceneStarted = &stt;
+                for (auto& cm : charModels) {
+                    cm.second.texBase = pool.size();
+                    pool.insert(pool.end(), cm.second.tex.begin(), cm.second.tex.end());
                 }
-                if (sceneClip != sceneClipWas) {
-                    sceneClipWas = sceneClip;
-                    sceneTracks = omk::NodeTracks{};
+                playerTexBase = pool.size();
+                if (drawPlayer) pool.insert(pool.end(), playerTex.begin(), playerTex.end());
+                spriteTexBase = pool.size();
+                if (wantSprites) pool.insert(pool.end(), spriteTex.begin(), spriteTex.end());
+                poolSize = pool.size();
+                poolBuiltFor = poolComposition;
+                poolHasSprites = wantSprites;
+                poolHasPlayer = drawPlayer;
+                world.setTextures(pool);
+                // The sprite section comes and goes with the effects, several
+                // times a second; only a change of CAST is worth a line.
+                if (poolBuiltFor != poolTold) {
+                    poolTold = poolBuiltFor;
+                    std::printf("frame %ld: texture pool - %zu set + %zu character (%zu "
+                                "models) + %zu player + %zu sprite = %zu slots\n", n,
+                                worldTex.size(), playerTexBase - worldTex.size(),
+                                charModels.size(), spriteTexBase - playerTexBase,
+                                pool.size() - spriteTexBase, pool.size());
+                }
+                if (pool.size() > 64 && !poolOverflowTold) {
+                    poolOverflowTold = true;
+                    std::printf("  ...which is over the 64 a bucket key's low six bits can "
+                                "address (ASSETS 4b): every slot above 63 WRAPS\n");
+                }
+            }
+
+            // ---- EVERY STAGED BODY, POSED BY WHATEVER DRIVES IT --------
+            //
+            // Three sources in the engine's own precedence - the program that
+            // names HIM, then the conversation line, then the bank's idle -
+            // and the whole point of issue 41 is that the first is resolved
+            // PER ACTOR. The file used to take the last running actor program
+            // for its one body, so while `A_2_DemonLook` ran that body wore
+            // the Demon's clip whoever it was.
+            const omk::SceneRunner& sc = session.scene();
+            const int convSpeaker = session.dialogOpen()
+                ? session.dialogue().conversation().speaker : -1;
+            bool convOwned = false;
+            for (const auto& up : staged) if (up->actor == convSpeaker) convOwned = true;
+            // A running program whose actor is nobody on screen. AREA 118's
+            // arrival is one: the shown list carries Kay'l as 310 and the
+            // program names another id, so with no fallback the intro would
+            // lose its pose. It drives the frame's ONLY body, and can never
+            // mis-assign once there is more than one - which is the case the
+            // issue is about. LABELLED: a reconstruction, not a rule read out
+            // of the engine.
+            // WHICH BODY A PROGRAM DRIVES. `scx.play.actor` names a
+            // CHARACTERS id in its first field (`ScriptObject_StartOnActor`);
+            // `scx.play.player` names none and drives the PLAYER - and the
+            // Impasse's `A_1_KaylArrives` is one of those, so keying on
+            // `how == "actor"` alone left Kay'l standing in his idle through
+            // his own arrival.
+            const int playerId = session.playerActor();
+            const auto drivenBy = [&](const omk::SceneRunner::Started& t, int actorId) {
+                if (t.clip < 0) return false;
+                if (t.how == "actor")  return t.actor == actorId;
+                if (t.how == "player") return actorId == playerId;
+                return false;
+            };
+            int loneProg = -1, loneProgs = 0;
+            for (std::size_t k = 0; k < sc.started().size(); ++k) {
+                const auto& t = sc.started()[k];
+                if (t.clip < 0 || (t.how != "actor" && t.how != "player")) continue;
+                if (!sc.programRunning(static_cast<int>(k))) continue;
+                bool owned = false;
+                for (const auto& up : staged) if (drivenBy(t, up->actor)) owned = true;
+                if (owned) continue;
+                loneProg = static_cast<int>(k);
+                ++loneProgs;
+            }
+            bool firstBody = true;
+            for (auto& up : staged) {
+                Staged& s = *up;
+                s.drawn = false;
+                if (!s.mo || !s.mo->ready) {
+                    // A model with nothing to draw. `PA1_FN.3DO` is 1236
+                    // bytes: ONE mesh, `PBassin`, 8 vertices and 12 triangles,
+                    // flags 0x1 - which the engine's own drawable test
+                    // (`flags & 0x800043`, ASSETS 4) rejects. The alley's
+                    // three passers-by are that model, so they have no body in
+                    // the shipped data either; this is not a gap in the
+                    // viewer.
+                    if (!s.placeTold) {
+                        s.placeTold = true;
+                        std::printf("frame %ld: actor %d %s has no drawable geometry "
+                                    "(%zu meshes, %zu corners after the drawable mask) - "
+                                    "nothing to stage\n", n, s.actor, s.model.c_str(),
+                                    s.mo ? s.mo->meshes.size() : 0u,
+                                    s.mo ? s.mo->rest.corners.size() : 0u);
+                    }
+                    continue;
+                }
+                // (a) THE PROGRAM THAT NAMES HIM.
+                int prog = -1;
+                for (std::size_t k = 0; k < sc.started().size(); ++k) {
+                    const auto& t = sc.started()[k];
+                    if (!drivenBy(t, s.actor)) continue;
+                    if (!sc.programRunning(static_cast<int>(k))) continue;
+                    prog = static_cast<int>(k);
+                }
+                bool byLone = false;
+                if (prog < 0 && loneProgs == 1 && staged.size() == 1) {
+                    prog = loneProg;
+                    byLone = true;
+                }
+                int sceneClip = -1, scenePath = -1;
+                float sceneFrame = 0.0f;
+                const omk::SceneRunner::Started* stt = nullptr;
+                if (prog >= 0) {
+                    stt = &sc.started()[static_cast<std::size_t>(prog)];
+                    sceneClip = stt->clip;
+                    scenePath = stt->path;
+                    sceneFrame = sc.programClock(prog);
+                }
+                if (sceneClip != s.sceneClipWas) {
+                    s.sceneClipWas = sceneClip;
+                    s.sceneTracks = omk::NodeTracks{};
                     if (sceneClip >= 0 && sc.loaded())
-                        sceneTracks = omk::clipTracks(sc.scene().clipData(sceneClip));
+                        s.sceneTracks = omk::clipTracks(sc.scene().clipData(sceneClip));
                     if (scenePath >= 0 && sc.loaded() &&
                         scenePath < static_cast<int>(sc.scene().paths().size())) {
                         const auto& pa = sc.scene().paths()[static_cast<std::size_t>(scenePath)];
                         if (!pa.keys.empty()) {
                             // `Path_Sample(path, 1.0, ..., 1)` - the engine's
-                            // own call, and mode 1 is LINEAR: find the key span
-                            // containing t and lerp. Not the first key: a path
-                            // whose first key is frame 0 is sampled a fraction
-                            // of the way along, and taking `keys.front()`
-                            // instead is only right when the two coincide.
+                            // own call, mode 1 being LINEAR: find the key span
+                            // containing t and lerp. Not the first key.
                             const float t = 1.0f;
                             float p[3] = {pa.keys.front().pos[0],
                                           pa.keys.front().pos[1],
@@ -2631,154 +3006,264 @@ int main(int argc, char** argv) {
                             // ...plus the call's own offset, params 9/10/11 in
                             // INCHES, which `placementOf` has already divided.
                             for (int k = 0; k < 3; ++k)
-                                speakerAt[k] = p[k] + (sceneStarted ? sceneStarted->offset[k] : 0.0f);
-                            speakerPelvis = true;
+                                s.at[k] = p[k] + (stt ? stt->offset[k] : 0.0f);
+                            s.placed = true;
+                            s.pelvis = true;    // an authored path names the PELVIS
+                            s.progPlaced = true; s.progPelvis = true;
+                            for (int k = 0; k < 3; ++k) s.progBase[k] = s.at[k];
                         }
-                        std::printf("  pose: clip %d '%s' (%d frames) on path %d "
-                                    "'%s' at %.0f %.0f %.0f\n", sceneClip,
-                                    sc.scene().clipName(sceneClip).c_str(),
-                                    sceneTracks.frames, scenePath, pa.name.c_str(),
-                                    speakerAt[0], speakerAt[1], speakerAt[2]);
+                        std::printf("  pose: actor %d %s - clip %d '%s' (%d frames) on path "
+                                    "%d '%s' at %.0f %.0f %.0f%s\n", s.actor, s.model.c_str(),
+                                    sceneClip, sc.scene().clipName(sceneClip).c_str(),
+                                    s.sceneTracks.frames, scenePath, pa.name.c_str(),
+                                    s.at[0], s.at[1], s.at[2],
+                                    byLone ? "  [the program names another actor; this is "
+                                             "the frame's only body - LABELLED]" : "");
+                    } else if (sceneClip >= 0 && sc.loaded()) {
+                        // No path: the plain `Script_SelectBodyAnimation`
+                        // (0x02000004) SNAPS the node to the clip's root key 0
+                        // - the authored placement, a PELVIS point whose
+                        // height is kept - and `Anim_RootDelta` sums the keys
+                        // after it (CLAUDE.md 6; `Session::trackPlayer` is the
+                        // same rule for the player). Until 2026-09-03 the body
+                        // stayed on its 20-byte placement record instead, and
+                        // the Impasse's beat cameras, which frame the clip
+                        // roots, framed nobody: Kay'l's arrival clip starts at
+                        // 6462 -121 3215 while his record puts him at 7217.
+                        float base[3] = {0, 0, 0};
+                        if (omk::clipRootStart(sc.scene().clipData(sceneClip), base)) {
+                            for (int k = 0; k < 3; ++k) s.at[k] = base[k];
+                            s.placed = true;
+                            s.pelvis = true;
+                            s.progPlaced = true; s.progPelvis = true;
+                            for (int k = 0; k < 3; ++k) s.progBase[k] = base[k];
+                            std::printf("  pose: actor %d %s - clip %d '%s' (%d frames), no "
+                                        "path: snapped to its root key 0 at %.0f %.0f %.0f%s\n",
+                                        s.actor, s.model.c_str(), sceneClip,
+                                        sc.scene().clipName(sceneClip).c_str(),
+                                        s.sceneTracks.frames, s.at[0], s.at[1], s.at[2],
+                                        byLone ? "  [the program names another actor; this "
+                                                 "is the frame's only body - LABELLED]" : "");
+                        }
+                    } else if (sceneClip < 0) {
+                        // The program ended. `Script_SelectBodyAnimation` never
+                        // resets the node, so the accumulated offset STANDS
+                        // (CLAUDE.md 6): he stays where the clip left him and
+                        // falls back to the bank's idle there.
+                        s.progPlaced = false;
+                        if (s.placed)   // drawAt is last frame's; `drawn` was just cleared
+                            for (int k = 0; k < 3; ++k) s.at[k] = s.drawAt[k];
+                        std::printf("  pose: actor %d %s - its program ended; he stays where "
+                                    "it left him (%.0f %.0f %.0f) and falls back to the "
+                                    "bank's idle\n", s.actor, s.model.c_str(),
+                                    s.at[0], s.at[1], s.at[2]);
                     }
                 }
-                // A spoken line's own `.3DM` wins while it is playing.
-                sceneFrameLast = sceneFrame;
-                // A spoken line's own `.3DM` drives the pose WHILE IT PLAYS -
-                // for its own frame count, not until the next line. Past its
-                // last frame the morph has stopped (`Dialog_TickUI` case 8:
-                // `Morph_IsDone` -> `Morph_Stop`) and the scene clip is the
-                // pose again. Holding the last frame instead is what a reader
-                // saw as the animation "stopping".
-                const float lineT = (session.dialogOpen() && speakerTracks.valid())
+                // (b) THE CONVERSATION'S LINE, for its speaker only. The
+                // DIALOG chunk's word 0 is the speaker's actor id; when no
+                // staged body carries it the model name is the fallback,
+                // which is what the file matched on before there were ids.
+                const bool isSpeaker = session.dialogOpen() && speakerReady &&
+                    (s.actor == convSpeaker ||
+                     (!convOwned && !speakerModel.empty() && s.model == speakerModel));
+                const float lineT = (isSpeaker && speakerTracks.valid())
                     ? static_cast<float>(session.dialogue().elapsed() * 30.0) : -1.0f;
-                const bool useLine = lineT >= 0.0f && lineT < static_cast<float>(speakerTracks.frames);
-                const int frame = useLine ? static_cast<int>(lineT)
-                                          : static_cast<int>(sceneFrame);
-                // THE FADE at both ends of the line - `sub_42D120`'s, pose.h
-                // has the read. `w` is the LINE's weight: it rises from the
-                // idle over the first quarter (at most 30 frames) and falls
-                // back to the idle's first frame over the last quarter,
-                // except for the one line named "02E19A", which the engine
-                // cuts without a blend-out. No scene clip -> no blend, as when
-                // `Morph_Play` finds no clip bound (`sub_42BE10(0, 0)`).
-                float w = useLine ? 1.0f : 0.0f;
-                int idleFrame = static_cast<int>(sceneFrame);
-                if (useLine && sceneTracks.valid()) {
-                    const float total = static_cast<float>(speakerTracks.frames);
-                    const float bl = omk::morphBlendFrames(speakerTracks.frames);
-                    const bool blendOut = speakerVoice.find("02E19A") == std::string::npos;
-                    if (bl > 0.0f && lineT < bl) {
-                        w = lineT / bl;                          // from rec[47]
-                        idleFrame = static_cast<int>(lineIdleFrame);
-                    } else if (bl > 0.0f && blendOut && lineT > total - bl) {
-                        w = 1.0f - (lineT - (total - bl)) / bl;  // to KEY 1
-                        idleFrame = 0;
+                const bool useLine = lineT >= 0.0f &&
+                                     lineT < static_cast<float>(speakerTracks.frames);
+                if (isSpeaker) sceneFrameLast = sceneFrame;
+                // (c) THE IDLE, built once: the default group's default entry's
+                // clip at FRAME 0.
+                if (!s.idleBuilt) {
+                    s.idleBuilt = true;
+                    if (s.bk && s.bk->ready) s.idle = idleTracksFor(*s.bk, s.mo->meshes);
+                }
+                // The program's placement wins over a `fromTable` reset every
+                // frame it is driving, not only on the clip-change frame.
+                if (s.progPlaced && sceneClip >= 0) {
+                    for (int k = 0; k < 3; ++k) s.at[k] = s.progBase[k];
+                    s.pelvis = s.progPelvis;
+                }
+                std::vector<omk::MeshPose> pose;
+                std::vector<float> fv;
+                float rootW = 0.0f;      // how much of the position the scene owns
+                int rootFrame = 0;
+                const char* src = "the rest pose (no bank clip)";
+                if (useLine) {
+                    const int frame = static_cast<int>(lineT);
+                    // THE FADE at both ends of the line - `sub_42D120`'s,
+                    // pose.h has the read - and the root is NOT cancelled when
+                    // a scene clip stages him, because the engine's
+                    // cancellation never fires (`g_MorphRootTrack` is only
+                    // ever -2). See the note this replaces.
+                    float w = 1.0f;
+                    int idleFrame = static_cast<int>(sceneFrame);
+                    if (s.sceneTracks.valid()) {
+                        const float total = static_cast<float>(speakerTracks.frames);
+                        const float bl = omk::morphBlendFrames(speakerTracks.frames);
+                        const bool blendOut = speakerVoice.find("02E19A") == std::string::npos;
+                        if (bl > 0.0f && lineT < bl) {
+                            w = lineT / bl;                          // from rec[47]
+                            idleFrame = static_cast<int>(lineIdleFrame);
+                        } else if (bl > 0.0f && blendOut && lineT > total - bl) {
+                            w = 1.0f - (lineT - (total - bl)) / bl;  // to KEY 1
+                            idleFrame = 0;
+                        }
+                    }
+                    const bool cancelLineRoot = !s.sceneTracks.valid();
+                    if (w < 1.0f) {
+                        const auto mixed = omk::blendTracks(s.sceneTracks, idleFrame, false,
+                                                            speakerTracks, frame,
+                                                            cancelLineRoot, w);
+                        pose = omk::composePose(s.mo->meshes, mixed, 0, false);
+                    } else {
+                        pose = omk::composePose(s.mo->meshes, speakerTracks, frame,
+                                                cancelLineRoot);
+                    }
+                    rootW = 1.0f - w;
+                    rootFrame = w > 0.0f ? idleFrame : static_cast<int>(sceneFrame);
+                    // The FACE has no bone track: its vertices come straight
+                    // out of the line's own frame, which is what moves the lips.
+                    if (!speakerMorph.empty()) fv = omk::faceFrame(speakerMorph, frame);
+                    src = "the line's .3DM";
+                } else if (s.sceneTracks.valid()) {
+                    rootFrame = static_cast<int>(sceneFrame);
+                    // A SCENE CLIP keeps its root rotation - it is the
+                    // character's real orientation, lying on the floor and
+                    // getting up (`Anim_ApplyNodeFrame` applies every node's
+                    // quaternion, the root's included).
+                    pose = omk::composePose(s.mo->meshes, s.sceneTracks, rootFrame, false);
+                    rootW = 1.0f;
+                    src = "a scene program's clip";
+                } else if (s.idle.valid()) {
+                    pose = omk::composePose(s.mo->meshes, s.idle, 0, false);
+                    src = "the bank's default entry, frame 0";
+                } else {
+                    pose = omk::composePose(s.mo->meshes, omk::NodeTracks{}, 0, false);
+                }
+                if (!s.placed) {
+                    if (!s.placeTold) {
+                        s.placeTold = true;
+                        std::printf("frame %ld: actor %d %s is shown but nothing says WHERE - "
+                                    "no placement record, no program path, no camera solve; "
+                                    "not drawn\n", n, s.actor, s.model.c_str());
+                    }
+                    continue;
+                }
+                if (s.src != src) {
+                    s.src = src;
+                    std::printf("frame %ld: actor %d %s - pose source: %s\n",
+                                n, s.actor, s.model.c_str(), src);
+                }
+                omk::applyPose(s.posed, s.mo->rest, s.mo->meshes, pose, &s.mo->face, &fv);
+                // THE ROOT MOTION: `Anim_RootDelta`'s running sum, weighted by
+                // how much of the pose is the scene's, so a line stands where
+                // it was staged and a fade lerps the position too.
+                float rootMove[3] = {0, 0, 0};
+                if (rootW > 0.0f && !s.sceneTracks.trans.empty()) {
+                    int fi = rootFrame;
+                    if (fi < 0) fi = 0;
+                    if (fi >= static_cast<int>(s.sceneTracks.trans.size()))
+                        fi = static_cast<int>(s.sceneTracks.trans.size()) - 1;
+                    for (int k = 0; k < 3; ++k)
+                        rootMove[k] = rootW *
+                            s.sceneTracks.trans[static_cast<std::size_t>(fi)]
+                                               [static_cast<std::size_t>(k)];
+                }
+                // THE ANCHOR. An authored PATH names the pelvis - the
+                // hierarchy root, whose height is authored - so the model
+                // goes there as it is. A placement record and a camera solve
+                // name a spot on the GROUND, so the FEET go there, and the
+                // game's Y points DOWN so the feet are the largest y.
+                float feet = -1e9f;
+                for (const auto& c : s.posed.corners) if (c.y > feet) feet = c.y;
+                if (!s.seatKnown || s.seatClip != s.sceneClipWas || s.seatSrc != src) {
+                    s.seatKnown = true;
+                    s.seatClip = s.sceneClipWas;
+                    s.seatSrc = src;
+                    s.seatFeet = feet;
+                }
+                feet = s.seatFeet;
+                float ground = s.at[1];
+                if (!s.pelvis && !playerSoup.empty()) {
+                    // `Walk_ProbeGround`'s own direction: down from just above
+                    // the authored point (walk_set.cpp's `seatOnFloor`).
+                    if (const auto g = omk::floorUnder(playerSoup, s.at[0],
+                                                       s.at[1] - 1.0, s.at[2])) {
+                        const float drop = static_cast<float>(*g) - s.at[1];
+                        // A body height. Further than that and the authored
+                        // point is not standing on this floor at all - a
+                        // balcony or a window the walk mesh does not carry -
+                        // so the authored y is kept. LABELLED: the cut-off is
+                        // this file's, not the engine's.
+                        if (drop < 100.0f) ground = static_cast<float>(*g);
+                        else if (!s.groundTold) {
+                            s.groundTold = true;
+                            std::printf("frame %ld: actor %d %s stands at y %.0f with the "
+                                        "walkable floor %.0f BELOW him - kept where he is "
+                                        "authored (a ledge the walk mesh does not carry)\n",
+                                        n, s.actor, s.model.c_str(), s.at[1], drop);
+                        }
                     }
                 }
-                // `upright` CANCELS the root's own rotation, and that is a
-                // staging convenience, not the engine. `Anim_ApplyNodeFrame`
-                // traverses and applies every node's quaternion, the root's
-                // included; the only thing layered on top is
-                // `Actor_SetEuler(param 4/5/6)`, the authored facing. So a
-                // SCENE CLIP keeps its root rotation - it is the character's
-                // real orientation, lying on the floor and getting up - while
-                // a dialogue line keeps the cancellation `tools/omkdata.pose`
-                // has staged conversations with since 2026-08-27. Inside a
-                // fade the two are blended track by track with the line's
-                // root already cancelled, which composes to the same thing.
-                //
-                // **CORRECTED 2026-09-02, from a screenshot pair.** The engine
-                // does NOT cancel a line's root either. `sub_42D120` means to
-                // replace the root track's key with identity - but the index
-                // it uses, `g_MorphRootTrack` (dword_4EB12C), is written once,
-                // to -2 in `Morph_ResetTracks`, and never again in the shipped
-                // build: the identity lands 80 bytes before the track table
-                // and all 19 recorded rotations reach the skeleton, the
-                // pelvis's included. That is why the original bows Kay'l's
-                // whole body toward the camera on "Je savais que je pouvais
-                // compter sur toi" (125339: pelvis->head pitch 47 degrees at
-                // frame 420 with the root kept, 3 with it cancelled). And
-                // since the PELVIS is the anchor, cancelling its pitch on
-                // every line and restoring it on every idle swung his feet -
-                // the "flying and landing" a reader saw at each fade.
-                //
-                // The recorded root is RELATIVE to the actor's own frame
-                // (node +92, the facing `Actor_SetEuler` authors - 0 for
-                // GRID's three, and unported; see Started::euler), so a line
-                // staged by a scene object keeps its root exactly as the
-                // scene clip does. A conversation with NO scene object under
-                // its speaker keeps the cancellation as the staging fallback
-                // it always was: the camera solve gives a spot, not a frame.
-                const bool cancelLineRoot = !sceneTracks.valid();
-                std::vector<omk::MeshPose> pose;
-                if (useLine && w < 1.0f) {
-                    const auto mixed = omk::blendTracks(sceneTracks, idleFrame, false,
-                                                        speakerTracks, frame, cancelLineRoot, w);
-                    pose = omk::composePose(speakerMeshes, mixed, 0, false);
-                } else {
-                    pose = omk::composePose(speakerMeshes,
-                                            useLine ? speakerTracks : sceneTracks,
-                                            frame, useLine && cancelLineRoot);
-                }
-                // And the FACE, which has no bone track: its vertices come
-                // straight out of the line's own frame, which is what makes
-                // the lips move - for as long as the morph plays, fade
-                // included.
-                const auto fv = (!useLine || speakerMorph.empty())
-                    ? std::vector<float>{}
-                    : omk::faceFrame(speakerMorph, frame);
-                omk::applyPose(speakerPosed, speakerRest, speakerMeshes, pose,
-                               &speakerFace, &fv);
-                // The staging names a spot on the GROUND, so his FEET go
-                // there - the anchor CLAUDE.md 6 spent a session settling.
-                // The game's Y points down, so the feet are his LARGEST y.
-                // THE ANCHOR, and it is not the same for both sources. An
-                // authored path names the PELVIS - the hierarchy root, whose
-                // height is authored - so the model goes there as it is. A
-                // camera solve names a spot on the GROUND, so the FEET go
-                // there. CLAUDE.md 6 spent a session settling that a pelvis
-                // anchor must not be re-derived from the geometry.
-                float feet = -1e9f;
-                for (const auto& c : speakerPosed.corners)
-                    if (c.y > feet) feet = c.y;
-                // THE ROOT MOTION. `Script_SelectRelativeBodyAnimation` places
-                // the node ONCE - on the tick where the clip frame is still 0 -
-                // and thereafter every tick does
-                //
-                //     Anim_SetFrame(node, clip, prevFrame, frame, delta);
-                //     Actor_MoveBy(node, delta[0], delta[1], delta[2]);
-                //
-                // where `delta` is `Anim_RootDelta`'s sum of the root track's
-                // position keys between the two frames. Accumulated from the
-                // placement that is `speakerAt + trans[frame]`, which is what
-                // `clipTracks` now computes.
-                //
-                // Without it the character is pinned at the placement for the
-                // whole clip and every limb rotates about a fixed pelvis: he
-                // rises off the floor instead of standing up, and INTRO3's
-                // 159-unit +Z jump does not happen.
-                // The scene clip's root motion, weighted by how much of the
-                // pose is the scene's - a line stands where it was staged, and
-                // inside a fade the position lerps as the engine's does.
-                float rootMove[3] = {0, 0, 0};
-                if (w < 1.0f && !sceneTracks.trans.empty()) {
-                    const int sf = static_cast<int>(w > 0.0f ? idleFrame : sceneFrame);
-                    const int fi = sf < 0 ? 0
-                                 : (sf >= static_cast<int>(sceneTracks.trans.size())
-                                    ? static_cast<int>(sceneTracks.trans.size()) - 1 : sf);
+                // ...and the PELVIS is what the placement names, so the
+                // model's authored root offset comes out first. The height
+                // still follows the anchor: an authored path names the pelvis
+                // and its height is kept, a placement record and a camera
+                // solve name the ground and the FEET go there.
+                float pelvis[3] = {0, 0, 0};
+                if (s.mo->root >= 0 && static_cast<std::size_t>(s.mo->root) < pose.size())
                     for (int k = 0; k < 3; ++k)
-                        rootMove[k] = (1.0f - w) *
-                            sceneTracks.trans[static_cast<std::size_t>(fi)][static_cast<std::size_t>(k)];
-                }
-                const float off[3] = {speakerAt[0] + rootMove[0],
-                                      (speakerPelvis ? speakerAt[1] : speakerAt[1] - feet)
+                        pelvis[k] = pose[static_cast<std::size_t>(s.mo->root)].pos[k];
+                const float off[3] = {s.at[0] - pelvis[0] + rootMove[0],
+                                      (s.pelvis ? s.at[1] - pelvis[1] : ground - feet)
                                           + rootMove[1],
-                                      speakerAt[2] + rootMove[2]};
-                for (auto& c : speakerPosed.corners) {
+                                      s.at[2] - pelvis[2] + rootMove[2]};
+                // THE FACING, and only for a body no clip is turning:
+                // `Actor_SetEuler` is what a placement authors, while a scene
+                // clip carries its own root orientation and a line's root is
+                // relative to the actor's own frame.
+                const bool spin = !s.sceneTracks.valid() && !useLine &&
+                                  std::fabs(s.facing) > 0.01f;
+                for (auto& c : s.posed.corners) {
+                    if (spin) {
+                        const float in[3] = {c.x, c.y, c.z};
+                        float r[3];
+                        omk::rotateYaw(s.facing, in, r);
+                        c.x = r[0]; c.y = r[1]; c.z = r[2];
+                    }
                     c.x += off[0]; c.y += off[1]; c.z += off[2];
                 }
-                for (int k = 0; k < 3; ++k) actorAt[k] = off[k];
-                actorKnown = true;
+                // Where he ENDED UP, which is the placement plus the clip's
+                // root motion - not the offset, which carries the model's own
+                // authoring origin.
+                s.drawAt[0] = s.at[0] + rootMove[0];
+                s.drawAt[1] = (s.pelvis ? s.at[1] : ground) + rootMove[1];
+                s.drawAt[2] = s.at[2] + rootMove[2];
+                s.posed.revision = ++worldGeoRev;
+                s.drawn = true;
+                if (stagedProbe && (n % 100) == 0) {
+                    float lo[3] = {1e9f, 1e9f, 1e9f}, hi[3] = {-1e9f, -1e9f, -1e9f};
+                    for (const auto& c : s.posed.corners) {
+                        const float p[3] = {c.x, c.y, c.z};
+                        for (int k = 0; k < 3; ++k) {
+                            if (p[k] < lo[k]) lo[k] = p[k];
+                            if (p[k] > hi[k]) hi[k] = p[k];
+                        }
+                    }
+                    std::printf("    probe %ld actor %d %s box %.0f %.0f %.0f .. %.0f %.0f "
+                                "%.0f (%zu corners, %zu batches) cam eye %.0f %.0f %.0f at "
+                                "%.0f %.0f %.0f fov %.0f\n", n, s.actor, s.model.c_str(),
+                                lo[0], lo[1], lo[2], hi[0], hi[1], hi[2],
+                                s.posed.corners.size(), s.posed.batches.size(),
+                                view.cam.eye[0], view.cam.eye[1], view.cam.eye[2],
+                                view.cam.at[0], view.cam.at[1], view.cam.at[2],
+                                view.cam.hfovDeg);
+                }
+                if (firstBody) {
+                    firstBody = false;
+                    for (int k = 0; k < 3; ++k) actorAt[k] = off[k];
+                    actorKnown = true;
+                }
             }
             if (drawPlayer) {
                 // THE PLAYER, posed by his channel's clip - the quaternions
@@ -2832,16 +3317,9 @@ int main(int argc, char** argv) {
             if (session.scene().effects().count() && !spriteTex.empty()) {
                 omk::particleGeometry(fxGeo, session.scene().effects(),
                                       view.cam.eye, view.cam.at, spriteFr);
-                const std::size_t want =
-                    worldTex.size() + charTex.size() + spriteTex.size();
-                if (poolSize != want) {
-                    pool = worldTex;
-                    pool.insert(pool.end(), charTex.begin(), charTex.end());
-                    pool.insert(pool.end(), spriteTex.begin(), spriteTex.end());
-                    poolSize = pool.size();
-                    world.setTextures(pool);
-                }
-                spriteBase = static_cast<int>(worldTex.size() + charTex.size());
+                // The pool already carries them: it is built above, in one
+                // place, with a section per model.
+                spriteBase = static_cast<int>(spriteTexBase);
             }
             // ONE bucket order for the set, the speaker and the particles.
             // `Render_FlushBuckets` walks a single 14-bit key ascending and
@@ -2869,15 +3347,21 @@ int main(int argc, char** argv) {
                                                b.material + static_cast<int>(worldTexBase[slot]))),
                                      &w.geo, b.start, b.count, b.blend, b.cutout});
             }
-            if (drawSpeaker)
-                for (const auto& b : speakerPosed.batches)
-                    draws.push_back({keyOf(b.blend, b.cutout, static_cast<std::uint32_t>(
-                                               b.material + static_cast<int>(worldTex.size()))),
-                                     &speakerPosed, b.start, b.count, b.blend, b.cutout});
+            // EVERY staged body, each with its own model's base - the change
+            // issue 41 asks for. One geometry per actor, so two bodies wearing
+            // the same model still draw at their own two places.
+            for (const auto& up : staged) {
+                if (!up->drawn || !up->mo) continue;
+                const int base = static_cast<int>(up->mo->texBase);
+                for (const auto& b : up->posed.batches)
+                    draws.push_back({keyOf(b.blend, b.cutout,
+                                           static_cast<std::uint32_t>(b.material + base)),
+                                     &up->posed, b.start, b.count, b.blend, b.cutout});
+            }
             if (drawPlayer)
                 for (const auto& b : playerPosed.batches)
                     draws.push_back({keyOf(b.blend, b.cutout, static_cast<std::uint32_t>(
-                                               b.material + static_cast<int>(worldTex.size()))),
+                                               b.material + static_cast<int>(playerTexBase))),
                                      &playerPosed, b.start, b.count, b.blend, b.cutout});
             if (spriteBase >= 0)
                 for (const auto& b : fxGeo.batches)
@@ -3029,6 +3513,21 @@ int main(int argc, char** argv) {
                 "%ld frames under player.anim.hold\n",
                 worldFrames, worldSet.empty() ? "(none)" : worldSet.c_str(),
                 session.shownCount(), session.cameraId(), heldFrames);
+    {
+        std::string ids;
+        for (std::size_t k = 0; k < stagedIds.size(); ++k)
+            ids += (k ? ", " : "") + std::to_string(stagedIds[k]);
+        std::printf("staged %ld characters (ids %s), %zu on screen at the end, "
+                    "%zu models and %zu banks resident\n",
+                    stagedEver, ids.empty() ? "none" : ids.c_str(),
+                    staged.size(), charModels.size(), charBanks.size());
+        for (const auto& up : staged)
+            std::printf("  actor %d %s (bank %s) at %.0f %.0f %.0f facing %.0f - %s%s\n",
+                        up->actor, up->model.c_str(),
+                        up->bank.empty() ? "none" : up->bank.c_str(),
+                        up->drawAt[0], up->drawAt[1], up->drawAt[2], up->facing,
+                        up->src, up->drawn ? "" : "  [not drawn]");
+    }
     if (player)
         std::printf("player: %s/%s at %.1f %.1f %.1f facing %.1f, ACTOR_STATE %d, "
                     ".CTL state %d '%s' clip %s frame %.1f, walked %.1f over %ld ticks\n",

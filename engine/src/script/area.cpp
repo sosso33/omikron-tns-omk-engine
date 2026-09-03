@@ -294,8 +294,10 @@ void Session::evictSlot(int slot) {
             freeContext(i);
     // `sub_40D4A0(slot)`: its actors - and the props with them, the object
     // slots handed back (`Scene_UnloadProps`).
+    freeActorSlots(slot & 1, true, true);
     unloadProps(slot & 1, true, true);
     s = ResidentSlot{};
+    rebuildShown();
 }
 
 // `Area_TickLoad` (0x0040C7E0). -> 1 when nothing is loading in the slot (a
@@ -323,8 +325,11 @@ void Session::completeLoad(int slot) {
     // `Script_QueueAction(ctx, 1)` for the AREA, then the SCENE the DB names.
     // The active slot and area are set to this slot for the duration and
     // RESTORED after - the switch is event 9's, not the loader's.
-    // case 5/6 before it: `Scene_LoadProps(area, scene, 1)` - the object
-    // slots handed out and the prop records' +0 written.
+    // case 5 before it: `Actors_SpawnFromTables(area, scene, 1)` - the
+    // world's characters placed and the set ones attached; then case 5/6,
+    // `Scene_LoadProps(area, scene, 1)` - the object slots handed out and
+    // the prop records' +0 written. The order is the engine's.
+    spawnFromTables(slot & 1, true, true);
     loadProps(slot & 1, true, true);
     s.areaCtx = queueStartup(slot & 1, false);
     if (s.scene != -1 && !s.sceneChunk.empty())
@@ -485,6 +490,9 @@ void Session::resetWorld() {
     activatesPending_ = 0;
     actionPressed_ = false;
     objectSlotIds_.fill(-1);
+    // `word_69BC80` alongside it: 100 int16 of -1, the actor runtime slots
+    // `Actors_SpawnFromTables` hands out.
+    actorSlots_.fill(-1);
     heldSlot_.clear();
     shownSlots_.clear();
     message0Ctx_ = -1;
@@ -940,6 +948,7 @@ void Session::restart() {
     pendingUiCtx_ = -1;
     pendingUiScreen_ = pendingUiParam_ = pendingUiVar_ = -1;
     shown_.clear();
+    scriptShown_.clear();
     playerPlaced_ = false;
     playerAddress_ = -1;
     pendingAddress_ = -1;
@@ -1191,7 +1200,9 @@ void Session::sceneLoad(int area, int scene) {
         if (slots_[s].area != area) continue;
         ResidentSlot& sl = slots_[s];
         if (sl.scene != -1 && sl.sceneCtx >= 0) freeContext(sl.sceneCtx);
-        // `sub_40BEC0 / sub_40A200`: the old scene's props hand their slots back
+        // `sub_40BEC0(area, oldScene, 0)`: the old scene's ACTORS hand their
+        // runtime slots back; `sub_40A200` its props.
+        if (sl.scene != -1) freeActorSlots(s, false, true);
         if (sl.scene != -1) unloadProps(s, false, true);
         sl.sceneCtx = -1;
         sl.scene = scene;
@@ -1199,7 +1210,10 @@ void Session::sceneLoad(int area, int scene) {
                                     : std::vector<std::byte>{};
         if (sl.sceneChunk.empty()) sl.scene = -1;
         fillSlotTables(sl);
-        // `sub_40BB90 / sub_409FC0`: the new scene's props and actors
+        // `sub_40BB90(area, newScene, 0) / sub_409FC0`: the new scene's
+        // actors, then its props - the same order as case 5 then case 6, and
+        // `a3 = 0` so the AREA's table is not walked again.
+        spawnFromTables(s, false, true);
         if (sl.scene != -1) loadProps(s, false, true);
         if (sl.scene != -1) sl.sceneCtx = queueStartup(s, true);
         if (s == curSlot_) reloadScene(area, sl.scene);
@@ -1240,6 +1254,12 @@ void Session::sceneUnload(int area, int caller) {
         ResidentSlot& sl = slots_[s];
         if (sl.scene == -1) continue;
         if (sl.sceneCtx >= 0) freeContext(sl.sceneCtx);
+        // `sub_40BEC0(area, scene, 0)` here too, before the props
+        freeActorSlots(s, false, true);
+        for (std::size_t k = sl.characters.size(); k-- > 0;)
+            if (sl.characters[k].fromScene)
+                sl.characters.erase(sl.characters.begin() + static_cast<long>(k));
+        rebuildShown();
         unloadProps(s, false, true);
         sl.sceneCtx = -1;
         sl.scene = -1;
@@ -1364,10 +1384,11 @@ void Session::becomePlayer(int actor) {
     if (!actorRecord(actor, chunk, off)) return;   // Actor_FindById -> 0: the
                                                    // engine would fault here
     // `sub_41CCA0(esi)`: shown, like character.show - and no State_SetBit,
-    // which this handler does not call.
-    bool have = false;
-    for (const auto& sh : shown_) if (sh.actor == actor) have = true;
-    if (!have) shown_.push_back({actor, modelOfActor(actor)});
+    // which this handler does not call. When a placement record spawned the
+    // body it is that record's `attached` that turns on; otherwise the body
+    // joins the script-shown list, which is what this did for everyone
+    // before the spawn landed.
+    showCharacter(actor);
 
     // the two bios: strcpy, so the NUL is copied and the slot's tail is left
     for (int k = 0; k < 2; ++k) {
@@ -1402,26 +1423,221 @@ int Session::shownBitOf(int actor) const {
     // `Actors_SpawnFromTables` reads the same +18 back on every area load,
     // which is what makes it a save bit. The shown slot is searched first,
     // then the other resident one.
+    // The ad-hoc scan this used to do IS `readPlacements`, which the spawn
+    // needs anyway - so it is one reader now (`formats/placements.h`), and
+    // the same records answer both questions.
     if (actor == -1) return -1;
     int out = -1;
-    const auto scan = [&](std::span<const std::byte> b, std::size_t po,
-                          std::size_t co) {
-        if (out >= 0 || b.size() < co + 2) return;
-        const std::size_t p = u32at(b, po);
-        const int n = i16at(b, co);
-        if (n <= 0 || p + 20u * static_cast<std::size_t>(n) > b.size()) return;
-        for (int i = 0; i < n; ++i) {
-            const std::size_t o = p + 20u * static_cast<std::size_t>(i);
-            if (i16at(b, o + 2) == actor) { out = i16at(b, o + 18); return; }
-        }
+    const auto scan = [&](std::span<const std::byte> b, ChunkKind kind) {
+        if (out >= 0) return;
+        for (const auto& r : readPlacements(b, kind))
+            if (r.actor == actor) { out = r.bit; return; }
     };
     for (int k = 0; k < 2 && out < 0; ++k) {
         const ResidentSlot& s = slots_[(curSlot_ + k) & 1];
         if (s.area < 0) continue;
-        scan(s.areaChunk, 40, 72);
-        if (out < 0 && s.scene != -1 && !s.sceneChunk.empty()) scan(s.sceneChunk, 8, 40);
+        scan(s.areaChunk, ChunkKind::Area);
+        if (out < 0 && s.scene != -1 && !s.sceneChunk.empty())
+            scan(s.sceneChunk, ChunkKind::Scene);
     }
     return out;
+}
+
+// The actor record's `+72`, the `.CTL` bank list `Actor_LoadModel` opens
+// (`Actor_LoadBankList`). The sibling of `modelOfActor`'s `+144`.
+std::string Session::bankOfActor(int actor) const {
+    std::string out;
+    std::vector<std::byte> chunk;
+    std::size_t o = 0;
+    if (!actorRecord(actor, chunk, o)) return out;
+    for (int k = 0; k < 20; ++k) {
+        const char ch = static_cast<char>(chunk[o + 72u + static_cast<std::size_t>(k)]);
+        if (!ch) break;
+        out.push_back(ch);
+    }
+    return out;
+}
+
+const Session::Character* Session::characterOf(int actor) const {
+    for (int k = 0; k < 2; ++k) {
+        const ResidentSlot& s = slots_[(curSlot_ + k) & 1];
+        for (const auto& c : s.characters) if (c.actor == actor) return &c;
+    }
+    return nullptr;
+}
+
+// `Actors_SpawnFromTables(area, scene, 1)` (0x0040BB90), `Area_TickLoad`
+// case 5 - after the set and the misc model, BEFORE `Scene_LoadProps` at case
+// 6 and the startup scripts at case 9. The AREA's table then the SCENE's,
+// each record in order:
+//
+//   * the first free entry of `word_69BC80` takes the ACTOR ID (not a busy
+//     marker - the engine writes `word_69BC80[v5] = v4`), and its index goes
+//     back to the record's +0; -1 when all 100 are taken;
+//   * `Actor_FindById(+2)` -> the 276-byte record; `+144` + ".3DO" ->
+//     `Actor_LoadModel(slot, name, area)`. NO MODEL IS LOADED HERE: the
+//     Session holds no geometry, so the name is recorded and a frontend
+//     opens it (todo/omk-play.md 41). The bank at +72 is recorded with it
+//     because `Actor_LoadModel` opens that too.
+//   * `Actor_SetPlacement(slot, {x, y, z, facing})`, the coordinates through
+//     `rawToWorld` and the facing `* 360/4096` (`formats/placements.h`);
+//   * `Actor_Attach(slot)` ONLY IF the DB +20 bit at +18 is set. A clear bit
+//     is loaded and placed and not attached.
+//   * `Actor_FindById(id) + 270 = -1` - the held-object field cleared, which
+//     `var.set.used_object` (75) reads back through `heldObjectOf`.
+//
+// A record whose id resolves to no actor record faults in the engine
+// (`Actor_FindById` returns 0 and it reads +144 off it); here it is skipped
+// with the slot still handed out, because the slot is taken before the lookup.
+// The two halves are separately callable because the engine calls them
+// separately: `Area_TickLoad` case 5 is `Actors_SpawnFromTables(area, scene,
+// 1)` - both - while opcode 71 `scene.load`'s handler (0x403950) is
+// `push 0 ; push esi ; push edi ; call sub_40BB90` - `a3 = 0`, which is the
+// `if (!a3) goto LABEL_16` that skips the AREA table, so a scene swapped over
+// a resident area spawns ONLY its own. (`readable/src/01_file.c:4815`'s
+// banner says `@callers 1`; that handler is a second caller and is not in the
+// decompilation at all, so the count under-reports - CLAUDE.md 1's "a direct
+// call site is what makes a proc label" trap, seen from the other side.)
+void Session::spawnFromTables(int slot, bool area, bool scene) {
+    ResidentSlot& s = slots_[slot & 1];
+    for (std::size_t i = s.characters.size(); i-- > 0;)
+        if (s.characters[i].fromScene ? scene : area)
+            s.characters.erase(s.characters.begin() + static_cast<long>(i));
+    const auto walk = [&](std::vector<std::byte>& chunk, ChunkKind kind) {
+        if (chunk.empty()) return;
+        const auto recs = readPlacements(chunk, kind);
+        const std::size_t po = kind == ChunkKind::Area ? 40u : 8u;
+        const std::size_t base = recs.empty() ? 0u : u32at(chunk, po);
+        for (std::size_t i = 0; i < recs.size(); ++i) {
+            const Placement& r = recs[i];
+            int k = -1;
+            for (int q = 0; q < 100; ++q)
+                if (actorSlots_[static_cast<std::size_t>(q)] == -1) { k = q; break; }
+            if (k >= 0)
+                actorSlots_[static_cast<std::size_t>(k)] =
+                    static_cast<std::int16_t>(r.actor);
+            // `u16(record, 0) = v5` - the runtime slot written back into the
+            // chunk, which is what `Scene_FindObjectRecord`'s callers read.
+            const std::size_t o = base + 20u * i;
+            chunk[o]     = static_cast<std::byte>(k & 0xFF);
+            chunk[o + 1] = static_cast<std::byte>((k >> 8) & 0xFF);
+
+            Session::Character c;
+            c.actor = r.actor;
+            c.slot  = k;
+            c.model = modelOfActor(r.actor);
+            c.bank  = bankOfActor(r.actor);
+            for (int q = 0; q < 3; ++q) c.pos[q] = r.pos[q];
+            c.facing = r.facing;
+            c.bit = r.bit;
+            c.attached = r.bit >= 0 && state_.bit(StateArray::ObjectShown, r.bit) != 0;
+            c.fromScene = kind == ChunkKind::Scene;
+            s.characters.push_back(c);
+
+            // `u16(Actor_FindById(v18), 270) = -1`
+            for (auto& sl : slots_) {
+                if (sl.area < 0) continue;
+                if (auto ao = findActorRecord(sl.areaChunk, ChunkKind::Area, r.actor)) {
+                    setHeldObjectOf(std::span<std::byte>(sl.areaChunk)
+                                        .subspan(*ao, kActorRecordSize), -1);
+                    break;
+                }
+                if (sl.scene != -1)
+                    if (auto so = findActorRecord(sl.sceneChunk, ChunkKind::Scene, r.actor)) {
+                        setHeldObjectOf(std::span<std::byte>(sl.sceneChunk)
+                                            .subspan(*so, kActorRecordSize), -1);
+                        break;
+                    }
+            }
+        }
+    };
+    if (area && s.area != -1) walk(s.areaChunk, ChunkKind::Area);
+    if (scene && s.scene != -1) walk(s.sceneChunk, ChunkKind::Scene);
+    rebuildShown();
+}
+
+// `sub_40BEC0` (0x0040BEC0, the sibling right after the spawn): the same two
+// tables walked, and for every record whose `+0` is neither -1 nor the
+// PLAYER's slot, `sub_41AD60(slot)` frees the object and
+// `word_69BC80[slot] = -1`. `sub_40D4A0(slot)` (the eviction) and opcode 71's
+// `sub_40BEC0(area, oldScene, 0)` both reach it.
+//
+// The player exception is not modelled: the Session holds no actor objects
+// and no runtime slot for the player, so there is nothing here that his slot
+// would name (labelled in todo/pending/T19.md).
+void Session::freeActorSlots(int slot, bool area, bool scene) {
+    ResidentSlot& s = slots_[slot & 1];
+    for (const auto& c : s.characters) {
+        if (c.fromScene ? !scene : !area) continue;
+        if (c.slot >= 0 && c.slot < 100 &&
+            actorSlots_[static_cast<std::size_t>(c.slot)] == c.actor)
+            actorSlots_[static_cast<std::size_t>(c.slot)] = -1;
+    }
+}
+
+// `shown()` is derived, not appended to: slot 0's attached characters, then
+// slot 1's, then whatever a script showed that no table places. Called
+// wherever attachment changes - the spawn, 78, 79, `player.become`, an
+// eviction.
+void Session::rebuildShown() {
+    shown_.clear();
+    for (int k = 0; k < 2; ++k)
+        for (const auto& c : slots_[k].characters) {
+            if (!c.attached) continue;
+            Shown sh;
+            sh.actor = c.actor;
+            sh.model = c.model;
+            sh.bank  = c.bank;
+            for (int q = 0; q < 3; ++q) sh.pos[q] = c.pos[q];
+            sh.facing = c.facing;
+            sh.slot = c.slot;
+            sh.fromTable = true;
+            shown_.push_back(sh);
+        }
+    for (const auto& sh : scriptShown_) {
+        bool have = false;
+        for (const auto& t : shown_) if (t.actor == sh.actor) have = true;
+        if (!have) shown_.push_back(sh);
+    }
+}
+
+// `character.show` (78, 0x403CB0) and `player.become`'s attach: the handler
+// resolves the 20-byte record (`sub_40D6A0`) and calls `Actor_Attach` on the
+// slot the spawn wrote into its +0. So an id a table places turns that
+// record's `attached` on; an id no table places has no record and no slot,
+// and could not be attached in the engine at all - the port keeps it in a
+// side list so a frontend still sees the body, and marks it `fromTable`
+// false. The bit is written by the caller, because 78 writes one and
+// `player.become` does not.
+void Session::showCharacter(int actor) {
+    if (actor == -1) return;
+    for (auto& sl : slots_)
+        for (auto& c : sl.characters)
+            if (c.actor == actor) { c.attached = true; rebuildShown(); return; }
+    bool have = false;
+    for (const auto& sh : scriptShown_) if (sh.actor == actor) have = true;
+    if (!have) {
+        Shown sh;
+        sh.actor = actor;
+        sh.model = modelOfActor(actor);
+        sh.bank  = bankOfActor(actor);
+        scriptShown_.push_back(sh);
+    }
+    rebuildShown();
+}
+
+// `character.hide` (79, 0x403DD0): `sub_41CDD0` on the record's slot.
+void Session::hideCharacter(int actor) {
+    if (actor == -1) return;
+    for (auto& sl : slots_)
+        for (auto& c : sl.characters)
+            if (c.actor == actor) c.attached = false;
+    for (std::size_t k = 0; k < scriptShown_.size(); ++k)
+        if (scriptShown_[k].actor == actor) {
+            scriptShown_.erase(scriptShown_.begin() + static_cast<long>(k));
+            break;
+        }
+    rebuildShown();
 }
 
 int Session::answerScreen(int screen, int param) {
@@ -1733,9 +1949,7 @@ void Session::onCall(int i, const Call& call) {
         // back on every area load and which travels in the save (issue 28).
         if (call.fields.empty()) break;
         const int id = call.fields[0];
-        bool have = false;
-        for (const auto& sh : shown_) if (sh.actor == id) have = true;
-        if (!have) shown_.push_back({id, modelOfActor(id)});
+        showCharacter(id);
         const int bit = shownBitOf(id);
         if (bit >= 0) state_.setBit(StateArray::ObjectShown, bit, 1);
         break;
@@ -1747,8 +1961,7 @@ void Session::onCall(int i, const Call& call) {
         // player just took leaves the screen. No bit is written for him.
         if (call.fields.empty()) break;
         const int id = call.fields[0] == -1 ? playerActor() : call.fields[0];
-        for (std::size_t k = 0; k < shown_.size(); ++k)
-            if (shown_[k].actor == id) { shown_.erase(shown_.begin() + static_cast<long>(k)); break; }
+        hideCharacter(id);
         const int bit = call.fields[0] == -1 ? -1 : shownBitOf(id);
         if (bit >= 0) state_.setBit(StateArray::ObjectShown, bit, 0);
         break;

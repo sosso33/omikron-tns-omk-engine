@@ -35,6 +35,7 @@
 
 #include "formats/iam.h"
 #include "formats/addresses.h"
+#include "formats/placements.h"
 #include "o3de/worldcam.h"
 #include "script/dialogue.h"
 #include "script/gamestate.h"
@@ -102,7 +103,7 @@ struct Announced {
 class Session {
 public:
     Session(const std::string& iamDir, GameState& state, const OpcodeTable& table)
-        : iam_(iamDir), state_(state), table_(table) {}
+        : iam_(iamDir), state_(state), table_(table) { actorSlots_.fill(-1); }
 
     // Load the announce map - which .TAG domain each handler narrates its
     // operand to, and WHICH operand. From tables/vm_announce.json, derived
@@ -164,10 +165,26 @@ public:
     // 1184 and starts the conversation at 1212, twenty-eight bytes and about
     // six seconds later. A frontend that waited for the conversation drew the
     // arrival as a black screen, which is what this exists to fix.
+    //
+    // A character reaches this list two ways, and the first is the one the
+    // world runs on: `Actors_SpawnFromTables` (0x0040BB90) places everybody
+    // the AREA's and the SCENE's 20-byte tables name at the load and attaches
+    // those whose `ObjectShown` bit is set, so the alley has its four
+    // passers-by and its Demon before any script runs. `fromTable` marks
+    // those; a character shown by a script that no table places (or the body
+    // `player.become` takes) is pushed with `fromTable` false, which is what
+    // this list held on its own until 2026-09-03.
     struct Shown {
         int         actor = -1;
         std::string model;      // the actor record's +144
+        std::string bank;       // the actor record's +72, the `.CTL`
+        float       pos[3] = {0, 0, 0};   // the placement, world units
+        float       facing = 0.0f;        // degrees, 4096 per turn unwrapped
+        int         slot = -1;            // the runtime slot record +0 took
+        bool        fromTable = false;    // a placement record put it here
     };
+    // Slot 0's attached characters, then slot 1's, then anything a script
+    // showed that no table places. Rebuilt whenever attachment changes.
     const std::vector<Shown>& shown() const { return shown_; }
     // The model a CHARACTERS id resolves to, through the resident chunks'
     // 276-byte actor records (`sub_40B190`). Empty when it names none.
@@ -213,8 +230,33 @@ public:
     // event; the walker (E2) raises it, and until it does `placeActorAt` raises
     // it for a teleport that lands on the other slot's set - labelled where it
     // happens.
+    // One character `Actors_SpawnFromTables` spawned into a slot: the
+    // placement record's fields, plus what `Actor_FindById(+2)` resolves
+    // (`+144` the `.3DO` stem, `+72` the `.CTL` bank list) and whether
+    // `Actor_Attach(slot)` was called - which is the record's `+18` bit at
+    // the load, and afterwards whatever 78/79 last said.
+    //
+    // A clear bit is LOADED AND PLACED but not attached: the engine calls
+    // `Actor_LoadModel`/`Actor_SetPlacement` unconditionally and only guards
+    // the attach, the same "hidden is not unloaded" shape the decors have
+    // (`ResidentSlot::shown`).
+    struct Character {
+        int         actor = -1;
+        int         slot  = -1;           // word_69BC80's index, record +0
+        std::string model;                // actor record +144
+        std::string bank;                 // actor record +72, the `.CTL`
+        float       pos[3] = {0, 0, 0};
+        float       facing = 0.0f;
+        int         bit = -1;             // the ObjectShown index
+        bool        attached = false;     // Actor_Attach was called
+        bool        fromScene = false;    // the SCENE's table, not the AREA's
+    };
+
     struct ResidentSlot {
         int  area = -1, scene = -1;             // dword_69BC48 / dword_69BC4C
+        // `Actors_SpawnFromTables`, case 5, in table order: the AREA's
+        // records then the SCENE's. Emptied with the slot (`sub_40D4A0`).
+        std::vector<Character> characters;
         std::vector<std::byte> areaChunk;       // the AREA block, dword_69BC40
         std::vector<std::byte> sceneChunk;      // the SCENE block, dword_69BC44
         bool loaded = false;                    // Area_TickLoad reached case 9
@@ -572,6 +614,12 @@ public:
     // +40, id at +2) carries the `ObjectShown` bit index at +18. -1 when no
     // record names the id.
     int  shownBitOf(int actor) const;
+    // The bank a CHARACTERS id resolves to (the actor record's +72, the
+    // `.CTL` name `Actor_LoadBankList` opens). Empty when nothing names it.
+    std::string bankOfActor(int actor) const;
+    // The spawned character with this id, or nullptr - the shown slot's
+    // tables first, the same order `Scene_FindObjectRecord` searches.
+    const Character* characterOf(int actor) const;
 
     // ---------------------------------------------------- the scene objects
     //
@@ -957,6 +1005,23 @@ private:
     std::string  morphDir_;              // "" = conversations end at once
     std::string  speakerModel_;
     std::vector<Shown> shown_;
+    // The characters 78/79/`player.become` showed that NO placement record
+    // names - what `shown_` was made of before the spawn landed. `shown_`
+    // itself is derived: `rebuildShown` puts the slots' attached characters
+    // in front of these.
+    std::vector<Shown> scriptShown_;
+    // `word_69BC80`: 100 int16, -1 free, holding the ACTOR ID of whoever took
+    // the entry. `Actors_SpawnFromTables` takes the first free one per record
+    // and writes its index back to record +0; -1 when the table is full.
+    // Reset by `resetWorld` (so by `loadArea` and `restart`), and a slot's
+    // entries handed back by `evictSlot`.
+    std::array<std::int16_t, 100> actorSlots_{};
+    // `Actors_SpawnFromTables(area, scene, 1)` - `Area_TickLoad` case 5.
+    void spawnFromTables(int slot, bool area, bool scene);
+    void freeActorSlots(int slot, bool area, bool scene);
+    void rebuildShown();
+    void showCharacter(int actor);
+    void hideCharacter(int actor);
     double       frameSeconds_ = 1.0 / 30.0;
     void openDialog(int id);
     // `camera.set` / `camera.set.wait`: cut when the move is 0 frames long,

@@ -5,9 +5,18 @@ of the port (CLAUDE.md 5), but what it fails to draw is what a person reports,
 so its gaps are filed here in the same four-part shape as the script engine's.
 Numbering continues from `iam-script-engine.md` so a number names one thing.
 
-## Open
+## Fixed (batch 3, 2026-09-03)
 
 ### 41. One body is staged: every character but the first shown collapses into it — B
+
+> **Fixed in batch 3, 2026-09-03 (T20 + two follow-up fixes).** RENDERED (the Impasse
+> arrival, frames 700/900); `docs/RECONSTRUCTION.md` 2026-09-03. Every shown character is
+> a `Staged` body posed by its own driver. Two faults T20 delivered open were closed: a
+> path-less program snaps the body to its clip ROOT key 0 (not its far placement record),
+> and the program's placement is re-asserted each frame so a `fromTable` reset cannot walk
+> it 800 units past the camera. Still labelled: the idle is a still frame 0, no per-actor
+> `.CTL` tick, no look-at, the lone-program fallback, the 100-unit floor cut-off, and
+> `PA1_FN` has no drawable body in the shipped data.
 Filed 2026-09-03 from the same report as `iam-script-engine.md` 40. Recorded
 on 2026-09-02 (RECONSTRUCTION, "the ~5 second beat") as *no second speaker is
 staged* and never filed.

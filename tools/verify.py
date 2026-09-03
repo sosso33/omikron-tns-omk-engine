@@ -3915,6 +3915,116 @@ def c_engine_airlock_walk():
         "to 653 and playing 405/406; and the six markers in the trace's order"
 
 
+def c_engine_spawn_from_tables():
+    r"""`Actors_SpawnFromTables` LIVE in the Session - the world's characters
+    at an area load (`spawn_probe`), T19 for issue 40 of
+    todo/iam-script-engine.md.
+
+    `Actors_SpawnFromTables` (0x0040BB90) runs once per load from
+    `Area_TickLoad` case 5 - after the set, before the props at 6 and the
+    startup scripts at 9 - and again with `a3 = 0` from opcode 71's handler
+    (0x403950) when a scene is swapped over a resident area. Each line is a
+    rule its code settles, on the shipped data:
+
+    * `start` - the shipped `ObjectShown` bitmap, `State_SetBit`'s array at DB
+      +20: 628 of its 1032 bits are set in `IAM\START`, and bits 800..806 are
+      the Impasse's cast - 212/218/219 present, 216 not, the Demon 57 present,
+      58 and Kay'l 49 not.
+    * `boot` - `loadArea(118)`: AREA 118's table places two (310 and 136,
+      runtime slots 0 and 1), neither bit set, so `shown()` is EMPTY at the
+      load and 310 joins it only when the startup script's `character.show`
+      runs two frames later. Spawn skipped: spawned 0, ids -.
+    * `load` - AREA 222 with SCENE 55 over it, straight from START: the AREA's
+      four then the SCENE's three, runtime slots 0..6 in table order, and the
+      FOUR whose bit is set attached. Spawn skipped: 0 and 0.
+    * `demon` - actor 57's record. `Area_Load` converts the table in place and
+      TRUNCATES (`(int64_t)((double)(100 * v) * 1/256 * 1/2.54 - 1)`, the
+      facing `(int64_t)((double)v * 0.087890625)`), and the spawn reads the
+      results back, so 49457/-511/19386/4073 is (7604, -79, 2980) facing 357 -
+      not the (7605, -80, 2980) 358 the same arithmetic rounded gives. Model
+      from the actor record's +144, bank from its +72.
+    * `held` - `u16(Actor_FindById(id), 270) = -1`, the held-object field the
+      spawn clears for every record it walks; `var.set.used_object` (75) reads
+      it back.
+    * `hide` - `character.hide 57` through a Session context detaches the
+      record the spawn made and clears bit 804 (4 attached -> 3);
+      `character.show 57` attaches it again and sets the bit. The chunks' own
+      startup scripts are freed first, so only the opcodes move the list.
+      Attach gate dropped: attached 6 and 7.
+    * `save` - bit 806 set BEFORE the load and nothing else: Kay'l is attached
+      at the load, which is the whole point of the bit travelling in the save.
+    * `impasse` - the same place reached by PLAYING (the intro run to SCENE
+      55's hand-over, `scene.load 237, 57`, frame 6): the same seven spawned
+      in 222's slot, AREA 118's two still resident in the other one (total 9),
+      and FOUR attached - but `212,218,219,49`, because the intro's scripts
+      have hidden the Demon (b804 0) and shown Kay'l (b806 1) by then. Spawn
+      skipped: slot222_spawned 0 and shown 1.
+
+    Both mutations were built, run and restored (md5-checked); the binary and
+    the object were deleted before each rebuild (B4's trap).
+    """
+    eng = os.path.join(ROOT, "engine")
+    if not os.path.isdir(eng):
+        return ("skipped",), ("skipped",), "engine/ absent"
+    b = subprocess.run(["make", "-s"], cwd=eng, capture_output=True, text=True)
+    binp = os.path.join(eng, "build", "spawn_probe")
+    if b.returncode != 0 or not os.path.exists(binp):
+        return ("build failed",), ("built",), "engine/ must build"
+    r = subprocess.run([binp, omkpaths.data_root(), os.path.join(ROOT, "tables")],
+                       capture_output=True, text=True)
+    if r.returncode != 0:
+        return ("no run",), ("ran",), "spawn_probe must run"
+    L = {}
+    for ln in r.stdout.splitlines():
+        f = ln.split()
+        if not f: continue
+        L[f[0]] = dict(zip(f[1::2], f[2::2]))
+    def g(key, *names):
+        d = L.get(key, {})
+        return tuple(d.get(n) for n in names)
+    got = (
+        g("start", "bits_set", "of", "b800", "b801", "b802", "b803", "b804",
+          "b805", "b806"),
+        g("boot", "spawned", "attached", "ids", "slots", "shown",
+          "after_frames_attached", "after_frames_ids", "after_frames_shown"),
+        g("load", "area", "scene", "spawned", "attached", "attached_ids",
+          "all_ids", "slots", "shown", "models"),
+        g("demon", "id", "x", "y", "z", "facing", "bit", "attached", "slot",
+          "model", "bank"),
+        g("held", "f57", "f49", "f212"),
+        g("hide", "attached", "bit804", "shown", "models", "show_attached",
+          "show_bit804", "show_shown", "show_models"),
+        g("save", "bit806", "spawned", "attached", "kayl_attached",
+          "kayl_model", "kayl_bank", "attached_ids"),
+        g("impasse", "handover", "area", "scene", "other", "slot222_spawned",
+          "slot222_attached", "attached_ids", "total_spawned", "b804", "b806",
+          "shown", "models"),
+    )
+    want = (
+        ("628", "1032", "1", "1", "1", "0", "1", "0", "0"),
+        ("2", "0", "310,136", "0,1", "0", "1", "310", "1"),
+        ("222", "55", "7", "4", "212,218,219,57", "212,218,219,216,57,58,49",
+         "0,1,2,3,4,5,6", "4", "PA1_FN,PA1_FN,PA1_FN,DE1_FN"),
+        ("57", "7604", "-79", "2980", "357", "804", "1", "4", "DE1_FN", "H1AVNT"),
+        ("-1", "-1", "-1"),
+        ("3", "0", "3", "PA1_FN,PA1_FN,PA1_FN", "4", "1", "4",
+         "PA1_FN,PA1_FN,PA1_FN,DE1_FN"),
+        ("1", "7", "5", "1", "HO1_FN", "H1AVNT", "212,218,219,57,49"),
+        ("6", "222", "55", "118", "7", "4", "212,218,219,49", "9", "0", "1",
+         "4", "PA1_FN,PA1_FN,PA1_FN,HO1_FN"),
+    )
+    return got, want, \
+        "the shipped ObjectShown bitmap's 628 of 1032 bits; AREA 118's two " \
+        "placements spawned with nobody attached at the boot load; AREA 222 " \
+        "+ SCENE 55's seven spawned in table order with the four whose bit " \
+        "is set attached; the Demon's placement TRUNCATED to 7604 -79 2980 " \
+        "facing 357 with his model and .CTL bank; the held-object field " \
+        "cleared; character.hide/show detaching and reattaching the spawned " \
+        "record and moving bit 804; a save with bit 806 set attaching Kay'l " \
+        "at the load; and the same seven reached by playing the intro, where " \
+        "the scripts have swapped which four are on screen"
+
+
 def c_engine_zone_pump():
     r"""`engine/`'s zone pump under a HELD button, and a script that parks.
 
@@ -15602,7 +15712,7 @@ def c_licence_headers():
                    if TAG in open(p, encoding="utf-8",
                                   errors="replace").read(600)]
     return (authored, sorted(missing), len(vendored), mislabelled), \
-           (275, [], 1, []), \
+           (278, [], 1, []), \
            "authored source files under tools/, engine/src, engine/tools, " \
            "engine/backends and scripts/; those MISSING the SPDX tag; " \
            "vendored files in engine/third_party; and vendored files wrongly " \
@@ -16840,6 +16950,7 @@ SLOW = [
     ("engine: area transition", c_engine_area_transition, "SCRIPT_VM; engine/README"),
     ("engine: live zones", c_engine_live_zones, "SCRIPT_VM; engine/README"),
     ("engine: airlock walk", c_engine_airlock_walk, "SCRIPT_VM; engine/README"),
+    ("engine: spawn from tables", c_engine_spawn_from_tables, "SCRIPT_VM; FILE_FORMATS; engine/README"),
     ("engine: zone pump",  c_engine_zone_pump,  "engine/README"),
     ("engine: zone registry", c_engine_zone_registry, "engine/README"),
     ("engine: voice over", c_engine_voice_over, "CUTSCENES 5; engine/README"),
