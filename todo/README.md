@@ -13,6 +13,7 @@ and the `verify.py` check that pins each result.
 | [`iam-script-engine.md`](iam-script-engine.md) | **the issues file** for the IAM world-script VM and its scheduler (`engine/src/script/interp.*`, `area.*`, `world.*`, `dialogue.*`, `gamestate.*`) |
 | [`iam-script-engine-plan.md`](iam-script-engine-plan.md) | **the plan**: the same issues grouped into work packages, with the rules every agent in a batch follows |
 | [`actor-runtime.md`](actor-runtime.md) | the `.CTL` channel and the actor runtime (`engine/src/actor/*`) - all closed |
+| [`road-traffic.md`](road-traffic.md) | the ROAD TRAFFIC (`engine/src/actor/vehicles.cpp`): the `.OPT` circuit's vehicle half, its reading and its steps |
 | [`omk-play.md`](omk-play.md) | **the viewer** (`engine/backends/sdl/play.cpp`): what it fails to draw, filed the same way |
 | `pending/T*.md` | **a batch's deliverables**, one file per task, waiting to be integrated |
 

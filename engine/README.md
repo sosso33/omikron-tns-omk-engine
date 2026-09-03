@@ -1660,9 +1660,25 @@ load and ticked every frame, and drawn by `omk-play` with a street start
 with the density held at the engine's default 3 until the options menu
 hands its value in. Checks: `engine: pedestrians`, `engine: city crowd`,
 `engine: street frame`, `engine: crowd push`, `engine: head look`, `opt
-tracks`. Not ported: the vehicles (`sli_fn`/`moto`, lanes `[2]..[5]`), the
-engine's LOD selection for an actor's four skeletons (the viewer draws the
-first), the bump's `camera.shake`.
+tracks`.
+
+**And 2026-09-04, the ROAD TRAFFIC** (`docs/STREET_LIFE.md` §2b,
+`todo/road-traffic.md`) — the vehicle half of the same circuit:
+`actor/vehicles.cpp` is `Slider_Init`'s vehicle branch (the two model tables
+`sli_fn`/`moto` behind the AREA masks at `+172`/`+174`, the 40-slot ride
+pool), `sub_4543F0`'s spawn over lanes `[2]..[5]` at `39 * h[4]` with NO
+density factor, and `sub_456530` state 0 — `sub_456C70`'s drive (the
+walkers' own mover step, their gait with the vehicle thresholds 195/390,
+`+256`/`-768` a frame to a cap of 5000, the body 30.75 under its node, the
+brake for a player in the road, message 17 above 1706.6666) and
+`sub_456B40`'s 585-unit sound. It shares the walkers' 240-slot pool, which
+is not tidiness: 70 of Anekbah's reservation groups are reachable from both
+classes and a vehicle waits on a walker 2197 times in 1800 frames.
+`engine: road traffic`, `engine/tools/veh_probe`. **NOT DRAWN yet** —
+`omk-play` stages the walkers and not the vehicles — and so not watched.
+Not ported: the player's RIDE (`Slider_TickRide`, `ACTOR_STATE` 7/8,
+`sub_456530` states 1..7), the engine's LOD selection for an actor's four
+skeletons (the viewer draws the first), the bump's `camera.shake`.
 
 Re-audited row by row against `CLAUDE.md` §4 on 2026-08-31, **41 content
 rows**. This table has now been wrong twice — once with a count that had

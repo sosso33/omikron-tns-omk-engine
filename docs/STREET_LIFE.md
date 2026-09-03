@@ -13,6 +13,7 @@ found. In order of what a player sees:
 | **A. the procedural pedestrians** — the `.OPT` "trajectoires" | anonymous walkers spawned along authored lanes, density from the options menu | **ported and drawn** (`engine: pedestrians`, `engine: street frame`); to be watched in play |
 | **B. the authored extras** — scene programs on placed characters | couples kissing, beggars, sport, patrolling Mecaguards, walking pairs; one looping `.SCX` program each | ported and running in every city **except Anekbah** (one operand misread) |
 | **C. the crowd push** — the spatial index | the player is shoved by nearby bodies | **ported** (`engine: crowd push`), with the bump and talk messages |
+| **A2. the road traffic** — the `.OPT` vehicle lanes | the hover-taxis (`sli_fn`) and the motos, spawned on the same circuit and driven by the same mover step | **ported** 2026-09-04 (`engine: road traffic`); to be watched in play |
 
 Talking to a passer-by is neither: for the authored extras it is an
 ordinary zone-activate script (`var.set.random` on "n° VO passant", then one
@@ -105,8 +106,8 @@ the mask dropped: Anekbah 0/26.
 
 **The file format is READ and self-checking (`tools/opt_track.py`,
 `verify.py: opt tracks`, 6/6); the spawner and the walk are read; three
-helpers of the action phase and the whole vehicle side are not** (listed at
-the end). This is what the options menu's density row drives, and it is what
+helpers of the action phase are not** (listed at the end). The vehicle half
+of the same circuit is §2b. This is what the options menu's density row drives, and it is what
 fills a street between the authored extras.
 
 ### The option
@@ -203,8 +204,14 @@ median of that last leg (66–115 units) is reported, not asserted.
    `Piedg`/`Piedd`, and the model's bounding radius. The spawner sets the
    mover's position at the key, its direction along it, a "previous" point
    117 units back, the lane at `+72`, a route from the lane's routes
-   round-robin at `+76`, flag `0x8` (= pedestrian) and the key index at
-   `+186`. Each then gets a **speed factor** `1 + (5 - rand()%10)/20`
+   round-robin at `+76`, flag `0x8` and the key index at `+186`.
+   **Flag `0x8` is not "pedestrian"**, which is what this file said until
+   2026-09-04: the spawner itself sets it (listing line 135134, `or edx, 8`
+   beside the route assignment it does in the same block), so it marks every
+   mover `sub_453B40` places, VEHICLES INCLUDED. That matters twice — it is
+   what gates `Sliders_Tick`'s vehicle loop (`flags & 9`) and
+   `Slider_Init`'s own speed-factor pass, both of which would be dead code
+   under the old reading. Each then gets a **speed factor** `1 + (5 - rand()%10)/20`
    (0.75 … 1.20) times the clip's stride (`sub_453D80`), so the crowd does
    not walk in step. Level 4 packs walkers `39·h3` apart; level 0 five times
    sparser.
@@ -381,11 +388,162 @@ Everything above that a check can hold is held; these are the class §1's
 
 ### Not yet read
 
-`sub_4563A0` (per tick when the player exists), `sub_452490`'s caller (the
-per-model unload), and the whole vehicle side — `sub_4543F0` spawns the sliders along lanes `[2]..[5]` with
-`sub_4544B0`, `sub_452CC0` / `sub_452570` drive them, `dword_8F5E3C` is a
-40-slot ride pool, `Slider_TickRide` is the player's state 7. The pedestrians
-never read `[16]`/`[18]` except through the groups.
+`sub_4563A0` (per tick when the player exists) and `sub_452490`'s caller (the
+per-model unload). The pedestrians never read `[16]`/`[18]` except through
+the groups. The vehicle side is §2b below, read 2026-09-04; what is left of
+it there is the player's RIDE.
+
+## 2b. The road traffic — the sliders and the motos
+
+**Read 2026-09-04 and ported the same day** (`engine/src/actor/vehicles.cpp`,
+`engine/tools/veh_probe`, `verify.py: engine: road traffic`;
+`todo/road-traffic.md` carries the plan). This is the other population on the
+`.OPT` circuit: the hover-taxis the game calls **sliders** and the motos,
+moving on lanes `header[2]..header[5]` while the walkers of §2 have
+`header[1]..header[2]`. **Not** ported and labelled everywhere it matters:
+the player's own RIDE.
+
+### The models — two files, and two masks nothing had read
+
+`Slider_Init`'s vehicle half runs when `header[2] < header[5]`, and loads two
+tables with `sub_4539B0` — the crowd's own 12-byte walk (an 8-char name, a
+weight of 1) over `MESHES\PERSOS\<name>.3do`:
+
+| table | rows | in the tree |
+|---|---|---|
+| `aSliFn` (0xC1638) | **2**, both `sli_fn` | `SLI_FN.3DO`, 4 root sub-objects: `SlBassin` 223v/413t with four doors parented to it, `slider_fl` 127/250, `SlBasA` 63/122, `SlBasB` 26/48 |
+| `aMoto` (0xC14B8) | **1**, `moto` | `MOTO.3DO`, one root, `GEM0` 265v/511t |
+
+`sub_453A70` splits each model into up to four root sub-objects sorted by
+vertex+face count — the LOD ladder — and, only for `sli_fn`, sets `0x400` on
+each with `sub_437220(obj, 0x400, 8)` (what that flag does is **unread**).
+`sub_453910` then chains them with `dword_4C8860`, the vehicle LOD distances
+**20/30/40/50 m** in inches, against the crowd's 10/20/30/40 — and for the
+sliders it starts the chain at sub-object **1**, not 0.
+
+The masks are AREA header fields the port had never read: **`+172`** the
+sliders (`sub_40EA10`) and **`+174`** the motos (`sub_40E9D0`), both **int16
+and sign-extended** where the crowd's `+164`/`+168` are dwords.
+
+| area | circuit | ped / veh lanes | `+172` | `+174` |
+|---|---|---|---|---|
+| 0 Anekbah | anekbah | 216 / 26 | 3 | 1 |
+| 1 Jaunpur | souk | 179 / 22 | 3 | 1 |
+| 101 Qalisar | qchaud | 226 / 33 | **1** | 1 |
+| 64 Lahoreh | lahorey | 162 / 0 | 0 | 0 |
+| 157 Puits | puit | 6 / 0 | 0 | 0 |
+
+Exactly the three areas with vehicle lanes carry a nonzero mask and the two
+without carry zero — two independent gates agreeing over the shipped data,
+which they need not have.
+
+**Slider row 0 is reserved for the player**, and this is what makes Qalisar's
+roads different. `sub_4544B0` treats ride slot 0 specially (`v2 == v3`): it
+takes model entry 0, marks the record `+22 = 1`, and `dword_8F5E44` keeps it
+across area loads. Ambient sliders are drawn from entries **1..n-1**, so
+Qalisar's mask of 1 leaves `dword_539934 - 1 == 0` and `sub_4544B0`'s coin
+cannot land on a slider: **all 40 of its vehicles are motos**. The mask is
+`| 1` at the call, so row 0 always loads even where the area asks for none.
+
+### The spawn — the same walk, and the density plays no part
+
+`sub_4543F0` hands the walkers' own `sub_453B40` the vehicle lanes, the
+callback `sub_4544B0` and `header[4]` **undivided**. So where the crowd is
+paced `39 * (5 - level) * header[3]`, the traffic is paced `39 * header[4]`
+and the options row thins the walkers only. The callback stops the whole walk
+at the ride pool's **40** (`if (a1 >= 40) return 0`, and a 0 return ends
+`sub_453B40`).
+
+| circuit | veh spacing | uncapped | placed | of which |
+|---|---|---|---|---|
+| anekbah | 15 (585 units apart) | 126 | 40 | 19 sliders, 21 motos, on 8 of the 26 lanes |
+| souk | 15 | 46 | 40 | 20 / 20, on 15 of 22 |
+| qchaud | 30 | 85 | 40 | **0 / 40**, on 9 of 33 |
+
+The walk stops the moment the fortieth is placed, so the tail of the lane
+list starts empty and fills only as routes carry vehicles onto it (Anekbah:
+8 lanes at frame 0, 294 lane changes in 1800 frames).
+
+The kind is a coin, `rand() & 1` (1 a slider), forced to the other when a
+pool is empty. `sub_453E80` — the quota rescaling the crowd gets — is never
+called for the vehicle pools, so each entry keeps the table's weight of **1**
+as its quota: the first spawn of a kind spends it and every later one falls
+through to the first entry (LABEL_29 / LABEL_35). With one ambient row of
+each kind that is simply that row.
+
+The ride record is 24 bytes, 40 of them (`Mem_Calloc(0x28, 0x18)`): `+0` the
+mover, `+8` the state, `+12` the speed cap **5000**, `+20` the sound handle
+(initialised to -1), `+22` = 1 on the reserved slot. The mover is a slot of
+the same 240-slot pool the walkers use, spawned with `+52` and `+56` both
+**256.0**.
+
+### The drive — `Sliders_Tick` → `sub_456530` → `sub_456C70`
+
+`Sliders_Tick` walks the 40 records and calls `sub_456530(ride)` for each
+whose mover has `flags & 9` — flag 8 being the spawner's own mark (§2) and 1
+"blocked". `sub_456530` switches on the record's `+8`: **0 is ambient
+traffic** and falls to the default; **1..7 are the player mounting and
+riding**, and are the part not ported.
+
+Ambient is three calls — `sub_456C70`, the spatial-index update, `sub_456B40`:
+
+* **The mover** is stepped by `sub_454F40`, the walkers' own: the same lanes,
+  keys, routes, occupancy lists and reservation groups.
+* **The body** chases it. `sub_455D10` — the walkers' gait — is called with
+  `unk_4C8888`, the **vehicle thresholds 195 / 390** where theirs are
+  19.5 / 58.5. Gait 0 stops the vehicle (flag `0x100`) and resuming resets
+  `+52` to 256; otherwise the speed accelerates `+256 * dt` to the record's
+  cap of 5000 (19.5 units a frame ≈ 53 km/h) or brakes `-768 * dt` to 0 while
+  blocked, and the body advances along the unit vector to the mover by
+  `speed * dt / 256`. So a vehicle's `+52` is its live speed, which the gait
+  then feeds the carrot's `+56` — for a walker `+52` is the clip's stride and
+  never moves.
+* **The 3D node** is placed at `(x, y - 30.75, z)` — 30.75 units above the
+  body point, y being down.
+* **It brakes for the player, and it runs him over.** While `dword_8F5E38` —
+  which `Sliders_Tick` sets when the player's ground probe lands on a mesh
+  named `X…` or `OP…`, the road — a vehicle within 195 units whose step would
+  close the distance takes `768 * dt` off, floored at 256. And above
+  **1706.6666** (6.67 units a frame), one whose spatial entry touches him
+  raises event 43 with game message **17**, latched by `dword_538E20` for 90
+  frames.
+* **The sound** is `SOUNDS\sliderm01.wav`, loaded by `Slider_Init` and played
+  3D at the body with its velocity, started inside **585** units and stopped
+  outside; the handle is the record's `+20`.
+
+### What the data says, and why the port shares one pool
+
+* Keys, routes and steps are **partitioned by class** in all six shipped
+  files — 0 overlap between the two lane ranges' — and **no vehicle key names
+  an action point**, so a vehicle never enters the action phase the walkers
+  have.
+* The **reservation groups are shared**. Expanded through the group lists,
+  **70** of Anekbah's groups are reachable from both a pedestrian and a
+  vehicle route (60 Qalisar, 24 Jaunpur). That is how the two classes cross
+  each other's lanes without meeting, and it is the one piece of network
+  state a separate vehicle pool could not have. Measured over 1800 frames, a
+  vehicle is held at a group a **walker** marked 2197 times in Anekbah, 1228
+  in Qalisar and 440 in Jaunpur; give the two classes a busy counter each and
+  all three fall to 0 while the frames in which they hold overlapping groups
+  rise from 50 to 469 — a slider driving through a crossing.
+
+### Still open
+
+* **Which sub-object an ambient vehicle draws.** `sub_4544B0` hands traffic
+  `v16[1]` — sub-object **0**, the heaviest — and the reserved slider
+  `v16[2]`, sub-object 1, with the LOD chain over 1..3 either way. Read from
+  the two call sites and **not yet judged by eye**; the port draws 0 and says
+  so at the field.
+* `sub_437220(obj, 0x400, 8)` on the sliders' objects.
+* **The player's ride**: `sub_452570` / `sub_452CC0` (the mount),
+  `Slider_TickRide` (0x00458150), `ACTOR_STATE` 7 and 8, and the
+  `dword_8F5E44` hand-over that preserves his slider across an area load.
+  A ride record in state 1..7 is left alone by the port rather than driven
+  wrongly.
+* **Nothing here has been watched.** The traffic is not drawn yet — that is
+  the viewer's step, and until then the pace, the spacing, the turns and
+  whether a street reads as a street are exactly the class §1 of CLAUDE.md
+  calls "verified standing still is not verified moving".
 
 ## 3. Mechanism C — the crowd push (the spatial index)
 
@@ -429,9 +587,13 @@ front, **standing at an action point in its main phase**, posts 13/14 and
 becomes the talk target whose countdown is suspended. `IAM\GLOBAL`
 subscribes all four (§2). The port posts through `Session::postMessage`,
 so the "n° VO passant" lines run. Measured: a walker reaching the player on
-its lane touches him at frame 58, moves him 106 units and bumps once in 150
+its lane touches him at frame 57, moves him 103 units and bumps once in 150
 frames; a walker at a point takes the talk and holds phase 2 for 200
-frames.
+frames. (Frame 58 and 106 units until 2026-09-04, over 200 index entries
+rather than today's 240: the ROAD TRAFFIC registers in the same index, as
+`sub_454860`'s `sub_45E040` does, and two corrections to the walk moved the
+walker slightly — the `offBefore[2]` overrun in the port's `bodyStep`, and
+the reservation groups the vehicles now share with it.)
 
 ## 4. What the port has today, and what "street life" needs
 
@@ -444,4 +606,6 @@ frames.
 | `character.look_at_player` head aim | `Session::looksAtPlayer`, `aimHead` (pose.h), the viewer | ported (`engine: head look`); to be watched |
 | the `.OPT` pedestrians and the density option | `formats/opt.*`, `actor/pedestrians.*`, `Session::loadTraffic` | ported and run headless; drawing is step 4 |
 | the crowd push | `actor/spatial.*`, `Session::crowdPush` | ported; the bump and talk messages post |
+| the road traffic (§2b) | `actor/vehicles.cpp`, the vehicle masks in `Session::loadTrafficFor` | ported and run headless (`engine: road traffic`); NOT drawn, and not watched |
+| the player riding a slider | - | not ported: `Slider_TickRide`, `ACTOR_STATE` 7/8, `sub_456530` states 1..7 |
 | a way to stand in a street without replaying the intro | `omk-play` | nothing |

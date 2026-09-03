@@ -320,9 +320,14 @@ public:
         // STREET LIFE (docs/STREET_LIFE.md 2): the traffic circuit at +115
         // (`TRAJECTOIRES\<opt>.OPT`), the animation library at +124
         // (`ANIMS\<ani>.ANI` - `PASSANTH` for every city), and the two masks
-        // at +164/+168 selecting which men and women models the crowd wears
+        // at +164/+168 selecting which men and women models the crowd wears.
+        // ROAD TRAFFIC (2b): the vehicle masks at +172/+174, which
+        // `sub_40EA10` / `sub_40E9D0` read as int16 and SIGN-EXTEND - the
+        // crowd's two are dwords. Nonzero in exactly the three areas whose
+        // circuit has vehicle lanes.
         std::string opt, ani;
         std::uint32_t menMask = 0, womenMask = 0;
+        int sliderMask = 0, motoMask = 0;
         WorldCameras cams;                      // AREA +64/+84, SCENE +32/+52 (and GLOBAL)
         std::vector<Address> addresses;         // AREA +60
         std::int16_t music = 0;                 // AREA +142, the area's own track

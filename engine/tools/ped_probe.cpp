@@ -11,7 +11,9 @@
 // idle, the largest body-to-mover lag, the largest distance from any mover
 // to the lane network, and any NaN. `--walkers` lists every walker.
 // `verify.py: engine: pedestrians` holds these against tools/opt_track.py's
-// independent count and against the invariants the walk owes.
+// independent count and against the invariants the walk owes. The road
+// traffic shares the pool and is skipped throughout; `veh_probe` is its
+// probe.
 #include "actor/pedestrians.h"
 #include "formats/opt.h"
 #include "platform/datafs.h"
@@ -118,7 +120,11 @@ int main(int argc, char** argv) {
     std::size_t i = 0;
     for (const auto& w : peds.walkers()) {
         const auto& st = start[i++];
-        if (!w.live) continue;
+        // The pool is the engine's ONE 240-slot mover pool: the road traffic
+        // shares it (actor/vehicles.cpp), and a vehicle's mover carries
+        // `vehicle >= 0`. Every number below is the crowd's alone - and its
+        // network is the pedestrian lanes', which a vehicle is nowhere near.
+        if (!w.live || w.vehicle >= 0) continue;
         ++live;
         const float dx = w.body[0] - st[0], dz = w.body[2] - st[2];
         if (std::sqrt(dx * dx + dz * dz) > 1.0f) ++moved;

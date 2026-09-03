@@ -191,6 +191,9 @@ void Session::fillSlotTables(ResidentSlot& s) {
     s.ani = headerName(s.areaChunk, 124, 9);
     s.menMask = s.areaChunk.size() >= 172 ? u32at(s.areaChunk, 164) : 0u;
     s.womenMask = s.areaChunk.size() >= 172 ? u32at(s.areaChunk, 168) : 0u;
+    // ...and the road traffic's, `sub_40EA10` / `sub_40E9D0` (STREET_LIFE 2b)
+    s.sliderMask = s.areaChunk.size() >= 176 ? i16at(s.areaChunk, 172) : 0;
+    s.motoMask = s.areaChunk.size() >= 176 ? i16at(s.areaChunk, 174) : 0;
     s.cams.clearChunk();
     if (!s.areaChunk.empty()) {
         s.cams.setArea(s.areaChunk);
@@ -2937,9 +2940,14 @@ void Session::loadTrafficFor(int slot) {
     const auto track = loadOpt(fs.read("TRAJECTOIRES/" + s.opt + ".OPT"));
     if (!track.valid) return;
     const PedClips clips = pedClipsFrom(fs.read("ANIMS/" + s.ani + ".ANI"));
-    peds_.load(track, clips, s.menMask, s.womenMask, streetActivity_, 1u);
+    peds_.load(track, clips, s.menMask, s.womenMask, streetActivity_, 1u,
+                static_cast<std::uint32_t>(s.sliderMask), static_cast<std::uint32_t>(s.motoMask));
     // `sub_438040`: a body's radius is its model's root mesh `+88`
     for (const auto& m : peds_.models()) peds_.setModelRadius(m.name, modelReach(m.name));
+    // ...and the two vehicle models', which are not in `models()` because the
+    // engine keeps them in pools of their own (`dword_538E28`, `dword_536C30`)
+    for (const std::string& v : {std::string("sli_fn"), std::string("moto")})
+        peds_.setVehicleModelRadius(v, modelReach(v));
     trafficSlot_ = slot & 1;
     // `sub_45E040` at every spawn: each walker an instance entry of the index
     for (const int s : pedSlots_) spatial_.remove(s);

@@ -4041,6 +4041,119 @@ def c_engine_pedestrians():
     return tuple(got), tuple(want), "stem, area, counts at level 0..4 (port) vs (rule), spawned, live, moved, on-network, lag<500, lane changes, actions, nan"
 
 
+
+def c_engine_road_traffic():
+    r"""The ROAD TRAFFIC - the sliders and the motos (docs/STREET_LIFE.md 2b;
+    engine/src/actor/vehicles.cpp; engine/tools/veh_probe).
+
+    Four chains.
+
+    THE MASKS. `sub_40EA10` / `sub_40E9D0` read the AREA header's `+172` and
+    `+174` as int16 and sign-extend them, and `Slider_Init` gates its vehicle
+    half on `header[2] < header[5]`. Asserted here: the five areas naming a
+    circuit carry exactly the masks and lane splits they do - Anekbah 3/1 with
+    26 vehicle lanes, Jaunpur 3/1 with 22, Qalisar 1/1 with 33, and Lahoreh
+    and the Puits 0/0 with none - so the two gates agree over the shipped
+    data, which they need not have.
+
+    THE SPAWN. `sub_4543F0` hands the walkers' own `sub_453B40` the vehicle
+    lanes and `header[4]` UNDIVIDED - the street-activity option thins the
+    crowd and never the traffic - and the callback stops the walk at the ride
+    pool's 40. The uncapped rule is written here over tools/opt_track.py and
+    matched against the port's: 126 / 46 / 85, all three capped to 40. And
+    Qalisar's slider mask of 1 leaves `dword_539934 - 1 == 0`, so
+    `sub_4544B0`'s coin cannot land on a slider and all 40 of its vehicles
+    are motos - a consequence of the data, not a rule anyone wrote.
+
+    THE DRIVE, 1800 frames: every vehicle live and moved, none more than 8
+    units off the VEHICLE network (one frame's advance at the 5000 cap is
+    19.5, so this is the same tolerance the crowd's walk gets), every body
+    within 500 of its mover, lane changes happening, no NaN.
+
+    THE SHARED RESERVATION GROUPS, and this is why the port shares one mover
+    pool rather than giving the traffic its own. Expanded through the group
+    lists, 70 of Anekbah's groups are reachable from both a pedestrian and a
+    vehicle route (60 Qalisar, 24 Jaunpur), and over 1800 frames a vehicle is
+    held at a group a WALKER marked 2197 / 1228 / 440 times. Shown to fail
+    with a busy counter per class - which is exactly what a separate
+    `Vehicles` pool would have had: all three counts drop to 0 and the two
+    populations hold overlapping groups nine times as often (Anekbah 50 ->
+    469 frames), which in play is a slider driving through a crossing.
+
+    NOT ported, and so not checked: the player's ride - `Slider_TickRide`
+    (0x00458150) and states 1..7 of `sub_456530`. Nor is what a vehicle
+    DRAWS: `sub_4544B0` hands ambient traffic sub-object 0 of the model and
+    the player's reserved slider sub-object 1, read from the two call sites
+    and not yet judged by eye.
+    """
+    eng = os.path.join(ROOT, "engine")
+    if not os.path.isdir(eng):
+        return ("skipped",), ("skipped",), "engine/ absent"
+    b = subprocess.run(["make", "-s"], cwd=eng, capture_output=True, text=True)
+    binp = os.path.join(eng, "build", "veh_probe")
+    if b.returncode != 0 or not os.path.exists(binp):
+        return ("build failed",), ("built",), "engine/ must build"
+    import opt_track as OT
+    # `sub_4543F0` -> `sub_453B40(lanes header[2]..header[5], sub_4544B0,
+    # header[4])`, paced `39 * spacing`, the callback ending the walk at 40
+    def count(t, cap):
+        thr, acc, n = 39.0 * t["vehSpacing"], 0.0, 0
+        for li in range(t["pedEnd"], t["laneCount"]):
+            L = t["lanes"][li]
+            for k in range(L["keyCount"]):
+                dx, dy, dz = t["keys"][L["firstKey"] + k]["delta"]
+                if acc > thr:
+                    n += 1
+                    if cap and n >= 40: return n
+                    acc = 0.0
+                acc += (dx * dx + dy * dy + dz * dz) ** 0.5
+        return n
+    areas = {}
+    for k, ch in T.archive(os.path.join(O.TAGDIR, "AREA")).items():
+        if len(ch) > 124:
+            nm = ch[115:124].split(b"\0")[0].decode("ascii", "replace")
+            if nm and nm.lower() not in areas: areas[nm.lower()] = k
+    got, want = [], []
+    # stem -> the masks and the vehicle-lane count the shipped chunks carry
+    shipped = {"anekbah": (3, 1, 26), "souk": (3, 1, 22), "qchaud": (1, 1, 33),
+               "lahorey": (0, 0, 0), "puit": (0, 0, 0)}
+    for stem in ("anekbah", "souk", "qchaud", "lahorey", "puit"):
+        area = areas.get(stem)
+        t = OT.load(omkpaths.data("TRAJECTOIRES", stem + ".opt"))
+        r = subprocess.run([binp, omkpaths.data_root(), str(area), "1800"],
+                           capture_output=True, text=True)
+        if r.returncode != 0:
+            return ("no run",), ("ran",), "veh_probe must run"
+        L = {}
+        for ln in r.stdout.splitlines():
+            f = ln.split()
+            if f and f[0] in ("masks", "spawn", "run", "groups", "crowd"):
+                L[f[0]] = dict(zip(f[1::2], f[2::2]))
+        m, sp, run, gr = L.get("masks", {}), L.get("spawn", {}), L.get("run", {}), L.get("groups", {})
+        capped, uncapped = count(t, True), count(t, False)
+        veh = int(sp.get("placed", -1))
+        got.append((stem,
+                    int(m.get("sli", -99)), int(m.get("moto", -99)), int(m.get("veh_lanes", -1)),
+                    uncapped, int(sp.get("uncapped", -1)), capped, veh,
+                    # Qalisar: no ambient slider row, so every vehicle is a moto
+                    int(sp.get("motos", -1)) == veh if stem == "qchaud" else True,
+                    int(run.get("live", -1)) == veh and int(run.get("moved", -1)) == veh,
+                    float(run.get("max_offlane", 99)) < 8.0,
+                    float(run.get("max_lag", 1e9)) < 500.0,
+                    int(run.get("lane_changes", 0)) > 0 if veh else True,
+                    int(run.get("nan", 1)),
+                    # the walkers must be exactly where they were, and the
+                    # cross-class wait must be positive wherever groups are shared
+                    int(gr.get("veh_waited_on_ped", -1)) > 0 if int(gr.get("shared", 0)) else
+                    int(gr.get("veh_waited_on_ped", -1)) == 0))
+        want.append((stem, shipped[stem][0], shipped[stem][1], shipped[stem][2],
+                     uncapped, uncapped, capped, capped,
+                     True, True, True, True, True, 0, True))
+    return tuple(got), tuple(want), ("stem, sli/moto mask, vehicle lanes, uncapped rule (py/port), "
+                                     "capped (rule/placed), qalisar all motos, live=moved, on-network, "
+                                     "lag<500, lane changes, nan, a vehicle waited on a walker")
+
+
 def c_engine_street_frame():
     r"""`omk-play` DRAWS the city crowd (docs/STREET_LIFE.md, step 4).
 
@@ -18788,6 +18901,7 @@ SLOW = [
     ("engine: spawn from tables", c_engine_spawn_from_tables, "SCRIPT_VM; FILE_FORMATS; engine/README"),
     ("engine: city crowd", c_engine_city_crowd, "STREET_LIFE 1; SCRIPT_VM"),
     ("engine: pedestrians", c_engine_pedestrians, "STREET_LIFE 2; actor/pedestrians.h"),
+    ("engine: road traffic", c_engine_road_traffic, "STREET_LIFE 2b; actor/vehicles.cpp"),
     ("engine: street frame", c_engine_street_frame, "STREET_LIFE; todo/street-life 4"),
     ("engine: crowd push", c_engine_crowd_push, "STREET_LIFE 3; actor/spatial.h"),
     ("engine: head look", c_engine_head_look, "STREET_LIFE; actor/pose.h"),

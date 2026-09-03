@@ -24,10 +24,10 @@ edits them. The Session hook and the viewer's draw are written as patches in
 | # | step | status |
 |---|---|---|
 | 0 | survey; the vehicle functions read out of the engine; this file | **done 2026-09-04** |
-| 1 | port: the vehicle pool, the spawner and the drive, sharing the movers' network with the walkers; `engine/tools/veh_probe`; a check shown to fail | |
-| 2 | the Session hook (`area.cpp`: AREA `+172`/`+174` into `load`), delivered as a patch | |
-| 3 | draw them in `omk-play` (patch), then WATCH a city street | |
-| 4 | docs: `STREET_LIFE` §2b, the RECONSTRUCTION row, `engine/README.md`, CLAUDE.md §4 | |
+| 1 | port: the vehicle pool, the spawner and the drive, sharing the movers' network with the walkers; `engine/tools/veh_probe`; a check shown to fail | **done 2026-09-04** — `actor/vehicles.cpp` beside `pedestrians.*` (one pool, as the engine has one), `veh_probe`, `engine: road traffic`; shown to fail two ways (a busy counter per class: the 2197/440/1228 cross-class waits all go to 0; the spawn factor 39 -> 40: 126/46/85 -> 125/45/83) |
+| 2 | the Session hook (`area.cpp`: AREA `+172`/`+174` into `load`) | **done 2026-09-04** — `sliderMask`/`motoMask` on `ResidentSlot`, read at +172/+174 as int16 and handed to `peds_.load`; the two vehicle models get their radius from `modelReach` beside the crowd's. `ped_probe` now skips the vehicle movers in the shared pool |
+| 3 | draw them in `omk-play`, then WATCH a city street | **blocked**: `play.cpp` is held by another session |
+| 4 | docs: `STREET_LIFE` §2b, the RECONSTRUCTION row, `engine/README.md`, CLAUDE.md §4 | **done 2026-09-04** |
 
 ## What the engine does — read 2026-09-04
 
@@ -128,3 +128,9 @@ Every address below is from `Runtime 2.exe`; the decompiled bodies are in
 * The player's ride: `sub_452570` / `sub_452CC0` (the mount), the
   `dword_8F5E44` hand-over, `Slider_TickRide` (0x00458150) and the states
   1..7 of `sub_456530`.
+
+## Log
+
+| date | what |
+|---|---|
+| 2026-09-04 | Steps 0-2 and 4. The design question was whether the traffic gets its own pool, and the DATA decided it: keys, routes and steps are partitioned by class in all six files and no vehicle key names an action point, so everything would have been safe except the reservation groups - which reach both classes 70 times in Anekbah. One pool, and the cross-class wait (2197 in 1800 frames) is the number that proves it. Two corrections on the way, both of things that had been sitting in plain sight: flag `0x8` is the SPAWNER's mark and not "pedestrian" (so two engine loops that looked dead are live), and the port's own `bodyStep` read one float past `offBefore` - a `-Warray-bounds` warning printed on every build that nobody had read. A third, smaller: a `make` that missed a same-second timestamp made a mutation test print identical numbers for the fixed and broken builds, which nearly recorded "the check does not fail". `touch` before the rebuild. |
