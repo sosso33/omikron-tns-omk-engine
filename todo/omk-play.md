@@ -285,6 +285,37 @@ crates, vehicles.
 
 ## Fixed (batch 10, 2026-09-03)
 
+### 60. The extras of a city piled onto its doors: a relative body animation's path is a PAIR — A
+
+> **Fixed 2026-09-03, confirmed by the placements (not yet by a person).**
+> `Script_SelectRelativeBodyAnimation` addresses its path like
+> `Script_MoveObjectOnPath` does: param 7 is the chunk-0 record (`sub_4A6500`
+> returns that record's loaded path array) and param 8 the path inside it.
+> `SceneRunner` read param 8 as a flat index into every path of the scene -
+> which the `ScxPath` comment even said was "a different question" - so in
+> Anekbah, whose couples, beggars and gym walkers name records 7 and 8,
+> every one landed on a door or watchtower path of record 0: a row of
+> identical crouching men at `Porte25*`, the reader's frame. GRID has one
+> file, which is why the Impasse never showed it. `flatPath(file, index)`
+> resolves the pair; the 25 extras now stand in couples across the city.
+
+Filed 2026-09-03 from a play report: *some npc in T pose, issue with
+sitting npc* - the row of clones was the second.
+
+### 59. Women and Jaunpur's men walked in a T-pose: the crowd library's bone prefix — A
+
+> **Fixed 2026-09-03, confirmed by FRAME.** The `.ani` names a bone with a
+> two-letter skeleton prefix - `PhBassin` in the men's clips, `ShBassin` in
+> the women's idle, and the models do not all share it: `FSH_FN` is `Fh*`,
+> `KSH_FN` (Jaunpur) `Kh*`. Matched by the whole name a woman idled and
+> every Jaunpur man walked at rest. `pedTracksFor` now matches the exact
+> name first and the bone after the prefix inside the first skeleton.
+> Whether the engine matches by name or by bone order was not read; either
+> reading gives this mapping on every shipped crowd model.
+
+Filed 2026-09-03 from the same report: *some npc in T pose* - the woman in
+red on Anekbah's street.
+
 ### 58. A crowd model is FOUR skeletons, and three of them drew at rest — A
 
 > **Fixed 2026-09-03, confirmed by FRAME (not yet by a person walking).**

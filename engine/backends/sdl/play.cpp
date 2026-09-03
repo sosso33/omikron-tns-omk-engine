@@ -1748,10 +1748,41 @@ int main(int argc, char** argv) {
             t.count = static_cast<int>(d->tracks.size());
             t.frames = d->frames;
             t.rootTrack = -1;
+            // THE BONE NAMES CARRY A TWO-LETTER SKELETON PREFIX and the library
+            // does not share it with every model: the men's clips say
+            // `PhBassin`, the women's idle `ShBassin`, Jaunpur's men are
+            // `KhBassin` and their women `FhBassin`. Matched by the whole
+            // name, a woman idled and every Jaunpur man walked in a T-pose
+            // (a reader's frame, 2026-09-03). The bone is the name after the
+            // prefix, resolved inside the FIRST skeleton - the exact name is
+            // tried first, for the one model whose prefix does agree.
+            const auto suffix = [&](const std::string& n) { return n.size() > 2 ? lower(n.substr(2)) : lower(n); };
+            int firstRoot = -1;
+            for (std::size_t j = 0; j < meshes.size() && firstRoot < 0; ++j) {
+                bool hasParent = false;
+                for (const auto& p : meshes) if (p.id == meshes[j].parent) { hasParent = true; break; }
+                if (!hasParent) firstRoot = static_cast<int>(j);
+            }
+            const auto underFirst = [&](std::size_t j) {
+                int m = static_cast<int>(j);
+                for (int guard = 0; guard < 64 && m >= 0; ++guard) {
+                    if (m == firstRoot) return true;
+                    const std::int32_t pid = meshes[static_cast<std::size_t>(m)].parent;
+                    int next = -1;
+                    for (std::size_t q = 0; q < meshes.size(); ++q) if (meshes[q].id == pid) { next = static_cast<int>(q); break; }
+                    m = next;
+                }
+                return false;
+            };
             for (const auto& tr : d->tracks) {
                 std::int32_t mi = -1;
                 const std::string want = lower(tr.name);
                 for (const auto& m : meshes) if (lower(m.name) == want) { mi = m.index; break; }
+                if (mi < 0) {
+                    const std::string bone = suffix(tr.name);
+                    for (std::size_t j = 0; j < meshes.size(); ++j)
+                        if (suffix(meshes[j].name) == bone && underFirst(j)) { mi = meshes[j].index; break; }
+                }
                 t.ids.push_back(mi);
             }
             t.quats.assign(static_cast<std::size_t>(d->frames), {});
@@ -3689,7 +3720,8 @@ int main(int argc, char** argv) {
                 // SetHeadLook`), the target being the player's head. His
                 // world position is the frontend's; back into the pose's own
                 // space through the placement below (facing, pelvis, at).
-                if (session.looksAtPlayer(s.actor) && s.placed && s.mo->root >= 0) {
+                static const bool lookAll = std::getenv("OMK_LOOK_ALL") != nullptr;   // a diagnostic: everyone looks
+                if ((lookAll || session.looksAtPlayer(s.actor)) && s.placed && s.mo->root >= 0) {
                     const int head = omk::headMeshOf(s.mo->meshes);
                     if (head >= 0) {
                         const float* pp = (adventure && player) ? player->pos() : session.playerPos();

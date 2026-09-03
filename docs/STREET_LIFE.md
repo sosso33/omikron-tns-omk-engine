@@ -351,6 +351,18 @@ Demon's forward after the aim: 45 turns 45, 120 and behind turn 70, up 60
 lifts 40, one frame of ease is 45/8. Six shipped startup scripts ask for it
 (AREA 148 once, AREA 155 five times); the intro's beats do too.
 
+**Found by a person, 2026-09-03 (`todo/omk-play.md` 59, 60).** A woman in
+a T-pose on the street: the library's bone names carry a skeleton prefix the
+women's idle and Jaunpur's models do not share, so name matching failed —
+matched by the bone name after the prefix now. And a row of identical
+crouching men at one door: the extras' path is a PAIR (param 7 the chunk-0
+record, param 8 the path inside it) and the port read only the second, so
+Anekbah's couples and beggars all landed on its door paths — resolved as
+the pair now, and the extras stand in couples across the city. The frame
+with an extra whose head seemed detached was most likely the gym pair with
+their arms raised; `OMK_LOOK_ALL=1` makes every extra look at Kay'l so the
+head aim can be watched on demand.
+
 ### Still to be watched by a person
 
 The walkers' pace and facing over a turn, the following distance, the push
