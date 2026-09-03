@@ -283,9 +283,148 @@ function in the game.
 **The class** — every scripted object motion in every scene: doors, lifts,
 crates, vehicles.
 
+## Fixed (batch 12, 2026-09-03)
+
+### 59. The credits were not positioned and the title card was not drawn at all — A
+
+> **Fixed 2026-09-03, CONFIRMED IN PLAY.** `{X}` moves are recorded and
+> honoured, and a kind-16 DOCUMENT's bitmap is loaded and composited.
+> `verify.py: credit layout` asserts both.
+
+Filed 2026-09-03 from a play report — *the intro in Anekbah with the Bowie
+music ... credits on it, placed in different places of the screen, it is a
+specific case, maybe with some dedicated code*.
+
+**There is no dedicated code.** `AREA 0` record 78 - the 145.7 s title
+sequence, one of the 106 world-camera scripts - is a plain camera script that
+fires twenty `media.play` calls, and each object's `+280` description is a
+credit block::
+
+    716  {X010030}{f1}Ecrit et realise par
+         {X020035}{f3}David CAGE
+    719  {X090058}{f1}{D}Direction programmation
+         {X080065}{f3}{D}Olivier NALLET
+
+`{X<xxx><yyy>}` is "move to (xxx, yyy) as PERCENTAGES of the screen"
+(docs/UI.md 5), `{f1}`/`{f3}` are GENERIC1 and GENERIC3, and `{D}` right-aligns
+- which is why the right-hand blocks are at 90% across. **The port parsed
+`{X}` and threw it away** (`if (d == 'X' ...) { i += 7; continue; }`), so every
+credit fell to the bottom like an ordinary subtitle. 46 blocks, 45 carrying
+text, 7 right-aligned, 45 naming their own face, 0 off-screen.
+
+**And the title card is a BITMAP.** The one block with no text is object 715,
+`ZVO G001 TITRE`, `{X030040}{f3}` and nothing else - because `media.play` on a
+**kind-16 DOCUMENT** takes the other arm entirely: build `IMAGES\<stem>.BMP`,
+load it, put the player in ACTOR_STATE **10** (`ImageScreen`, "a full-screen
+bitmap holds it") and play NO audio. Stem `ZVOG001` -> `IMAGES/ZVOG001.BMP`,
+640x480, the logo on black, **284581 of its 307200 pixels the colour key**.
+The port's own comment said it did not draw this. It now composites the held
+bitmap each frame until the next `media.play` frees it (the engine's step 7,
+`I2D_FreeBitmap` then ACTOR_STATE 1), SCALED to the display the way every
+other interface bitmap is - `v * width / 640`, `v * height / 480` - since
+blitting 1:1 from the origin left it in the top-left corner at native size.
+
+**A near-miss worth keeping.** `grep` finds no credit name anywhere in the
+tree, which looks like proof the text is absent - but `grep` cannot find
+"Confirmer" in `IAM/` either, so the method was invalid and the negative
+worthless. The text was there all along, behind the object reader. Also ruled
+out by DECODING A FRAME and looking at it: `FLIS/GAME.MPG` at 60 s is the club
+cinematic, so the sequence is not pre-rendered video.
+
+**Severity A** - the game's own title sequence.
+
+## Fixed (batch 11, 2026-09-03)
+
+### 58. The subtitle UI: boxes, blends, fonts, alignment, anchor, wrapping, scroll — A
+
+> **Fixed 2026-09-03, CONFIRMED IN PLAY** over four rounds of review.
+> `verify.py: subtitle box` asserts every number below against the
+> decompilation.
+
+Filed 2026-09-03 from a play report describing four cases: dialogue and
+cutscene share a font; the adventure-mode interaction line (the one that
+always comes with a sound) uses another; the dialogue box is black and
+transparent with a max size and scrolling; the reply menu is a blue box.
+
+**THE BOX IS THE TEXT RENDERER'S, NOT THE DIALOGUE'S.** `Dialog_TickUI`
+(0x0046A200) makes no draw call but `Text_DrawBlock`, four times - the port
+had looked for a box there and found none. `sub_4400D0` (0x004400D0), which
+`Game_Tick` calls as `sub_4400D0(0, dword_6A52C4, dword_6A52C0, height - 1,
+dword_6A50E8)`, submits one quad before the glyphs and switches on
+`off_4C71A8`::
+
+    off_4C71A8 == 0x80002040  ->  flags 4, v6 = a2 - 32     the REPLIES
+    off_4C71A8 == 0x00808080  ->  flags 2, v6 = a2 - 4      the LINE
+    x 18 .. width-18,   y (v6 - 8) .. height - 18
+
+`I2D_SubmitQuad` copies 48 bytes - four vertices of (x, y, colour) plus a flag
+word - and `sub_480BD0` fills all four corners from the first unless flag 8 is
+set, which neither does. **The flags are the BLEND**, through `sub_480AC0`,
+which sets D3D render states 19 (SRCBLEND) and 20 (DESTBLEND)::
+
+    & 1   src 2 ONE          dst 2 ONE           additive
+    & 2   src 1 ZERO         dst 4 INVSRCCOLOR   dst *= (1 - src)
+    & 4   src 6 INVSRCALPHA  dst 5 SRCALPHA      src*(1-a) + dst*a
+
+So the line's box is a 50% DARKENING and the replies' 50% of navy 0x002040 -
+"black transparent" and "blue transparent" exactly. The line's box is
+invisible over the black letterbox band, which is why a reader watching the
+original could not say whether a plain subtitle had one.
+
+**THE FONTS, and the second one names itself.** `Text_DrawBlock` defaults
+`dword_907A10 = dword_907A0C = 74` and the dialogue's params are
+`TEXTP_FLAG_A` alone (`v56[0] = 64`), so dialogue and cutscene both get **74 =
+JOURNAL**. `Subtitle_Show` (0x0041E040) passes `params[0] = 0x20 | 0x40` and
+`params[2] = 86`, and TEXTP_SLOT2 writes `dword_907A10 = params[2]` - **86 =
+VOIXOFF**, voice-over, which is precisely the line that always comes with a
+sound. **76 = SMALL** is the sub-640x480 override.
+
+**LEFT, not centred.** `style = 2` is the default, no TEXTP_ALIGN_* bit is
+ever set, and `Text_LayOutBlock` switches on `dword_907A00 & 0x1E` with case 4
+right, case 8 centred and DEFAULT left. The port applied case 8's arithmetic
+unconditionally.
+
+**THE ANCHOR.** `dword_6A52C4 = height - height*64/480` places the block's top
+and the text fills DOWNWARD; the port anchored the text's bottom by row count,
+putting a line ~46px low with the box empty above it. The REPLY stack is
+anchored differently - `dword_6A52C4 = v18 - dword_907975`, the box's bottom
+edge less the stack's own height - so it grows with the number and length of
+the answers, where the port had floored it at the 64-scaled block and made
+every menu full height.
+
+**MARKUP IS PARSED ONCE, THEN THE RUN IS WRAPPED.** The shipped strings carry
+`{f...}`: `media.play 142` is literally `{fD}Te voil...`. Wrapping the STRING
+and parsing each row separately lost the run's state at every break, so a
+`{fD}` at the head applied to row 0 and every row after fell back - two faces
+in one paragraph, photographed in the Impasse.
+
+**THE SCROLL.** `dword_53AE24` is the laid-out height less the block's; the
+offset `dword_6A52C0` moves one pixel a tick under input bits 8 (down) and 4
+(up), clamped to it; `dword_6A50E8` is the arrow state, 2 more below, 1 more
+above, 3 both. The arrows are RED and FLASHING - `v23 = ((v15 / 0x3E7) << 24)
++ 16711680` - 7px triangles at `width-32..-25`, the up one at the text's top
+and the down one at `a4 = height - 1`. A row is drawn only if it fits WHOLE,
+which is what `Text_LayOutBlock` does; drawing a straddling row sliced the
+last line against the screen edge.
+
+**Two of the port's own comments were wrong** and are corrected: there is no
+box in `Dialog_TickUI`, and `dword_907969` is the block's LEFT X (32), not a
+font selector. **And two mistakes of mine**, both caught by review: the box's
+`-4`/`-32` are how `v6` is derived from `a2`, not a second offset on the box
+(applying both put the reply box 32 rows above its own text), and the 18/8/4
+insets are LITERAL pixels where the block height alone scales.
+
+**Left as the engine has it**: the down arrow sits at `height - 1` and the
+block can reach the screen's bottom edge. A reader felt it too low; the
+numbers say the literal insets are proportionally tighter at 800x600 than at
+the 640x480 the game shipped at (3.00% of the height below the box against
+3.75%), and faithfulness won.
+
+**Severity A** - every line of text the game speaks.
+
 ## Fixed (batch 10, 2026-09-03)
 
-### 60. The extras of a city piled onto its doors: a relative body animation's path is a PAIR — A
+### 62. The extras of a city piled onto its doors: a relative body animation's path is a PAIR — A
 
 > **Fixed 2026-09-03, confirmed by the placements (not yet by a person).**
 > `Script_SelectRelativeBodyAnimation` addresses its path like
@@ -300,9 +439,10 @@ crates, vehicles.
 > resolves the pair; the 25 extras now stand in couples across the city.
 
 Filed 2026-09-03 from a play report: *some npc in T pose, issue with
-sitting npc* - the row of clones was the second.
+sitting npc* - the row of clones was the second. (Numbered 60 at first;
+main filed 58 and 59 the same day.)
 
-### 59. Women and Jaunpur's men walked in a T-pose: the crowd library's bone prefix — A
+### 61. Women and Jaunpur's men walked in a T-pose: the crowd library's bone prefix — A
 
 > **Fixed 2026-09-03, confirmed by FRAME.** The `.ani` names a bone with a
 > two-letter skeleton prefix - `PhBassin` in the men's clips, `ShBassin` in
@@ -316,7 +456,7 @@ sitting npc* - the row of clones was the second.
 Filed 2026-09-03 from the same report: *some npc in T pose* - the woman in
 red on Anekbah's street.
 
-### 58. A crowd model is FOUR skeletons, and three of them drew at rest — A
+### 60. A crowd model is FOUR skeletons, and three of them drew at rest — A
 
 > **Fixed 2026-09-03, confirmed by FRAME (not yet by a person walking).**
 > `PSH_FN`/`FSH_FN` and the other crowd models (docs/STREET_LIFE.md 2) hold

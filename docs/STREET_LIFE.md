@@ -326,7 +326,7 @@ The viewer now cuts the rest geometry to the skeleton the tracks name, for
 the walkers and for the authored extras, which wear the same models (all
 twenty of Anekbah's couples and beggars had three T-posed skeletons inside
 them). How the engine picks an actor's LOD is not read; the crowd's four
-distances are `dword_4C8870`.
+distances are `dword_4C8870`. Filed as `todo/omk-play.md` 60.
 
 **What the frames settled**: the walkers are posed mid-stride in the city's
 own models, turned along their lanes, feet on the street, two of them a
@@ -351,7 +351,7 @@ Demon's forward after the aim: 45 turns 45, 120 and behind turn 70, up 60
 lifts 40, one frame of ease is 45/8. Six shipped startup scripts ask for it
 (AREA 148 once, AREA 155 five times); the intro's beats do too.
 
-**Found by a person, 2026-09-03 (`todo/omk-play.md` 59, 60).** A woman in
+**Found by a person, 2026-09-03 (`todo/omk-play.md` 61, 62).** A woman in
 a T-pose on the street: the library's bone names carry a skeleton prefix the
 women's idle and Jaunpur's models do not share, so name matching failed —
 matched by the bone name after the prefix now. And a row of identical

@@ -181,7 +181,7 @@ std::vector<float> wavToDevice(std::span<const std::byte> file, int deviceRate) 
 // also loads. So the BOX is read from the engine and the layout inside it is a
 // reconstruction; they are labelled differently on purpose.
 void wrapInto(const omk::TextLayout& lay, const std::string& t, int width,
-              std::vector<std::string>& out) {
+              std::vector<std::string>& out, char face = 'J') {
     std::string ln, w;
     for (std::size_t k = 0; k <= t.size(); ++k) {
         const char c = k < t.size() ? t[k] : ' ';
@@ -198,42 +198,308 @@ void wrapInto(const omk::TextLayout& lay, const std::string& t, int width,
     if (!ln.empty()) out.push_back(ln);
 }
 
+// THE SUBTITLE BOX, and both of its blends.
+//
+// `Dialog_TickUI` draws no box - it makes no call but `Text_DrawBlock`. The
+// box is the TEXT RENDERER's: `sub_4400D0` (0x004400D0), called from
+// `Game_Tick` as `sub_4400D0(0, dword_6A52C4, dword_6A52C0, height - 1, ...)`,
+// submits one quad before the glyphs and switches on `off_4C71A8`, the second
+// colour `Dialog_TickUI` sets:
+//
+//     off_4C71A8 == 0x80002040  ->  flags 4, top = a2 - 32      the REPLIES
+//     off_4C71A8 == 0x00808080  ->  flags 2, top = a2 - 4       the LINE
+//     x 18 .. width-18,  y (top - 8) .. height - 18
+//     I2D_SubmitQuad(&v21, flags, 10)
+//
+// `I2D_SubmitQuad` copies 48 bytes - four vertices of (x, y, colour) plus the
+// flag word - and `sub_480BD0` fills all four corners from the FIRST one
+// unless flag 8 is set, which neither of these sets: both are a flat fill.
+//
+// The flags are the BLEND, through `sub_480AC0`, which sets D3D render states
+// 19 (SRCBLEND) and 20 (DESTBLEND):
+//
+//     & 1   src 2 ONE,          dst 2 ONE            additive
+//     & 2   src 1 ZERO,         dst 4 INVSRCCOLOR    dst *= (1 - src)
+//     & 4   src 6 INVSRCALPHA,  dst 5 SRCALPHA       src*(1-a) + dst*a
+//
+// So the LINE's box is `dst * (1 - 0x808080/255)`, a 50% DARKENING - which
+// over the black letterbox band is invisible, and is why a reader watching
+// the original could not say whether a plain subtitle had a box. The REPLY
+// box is 50% of the navy 0x002040. Each is gated on a driver-capability test
+// (`sub_464730/40/50`) that can clear the bit and blank the colour; both are
+// supported here.
+enum class SubBox { None, Line, Replies };
+
+void drawSubtitleBox(omk::Surface& fb, SubBox kind, int top, int dispW, int dispH) {
+    if (kind == SubBox::None) return;
+    // The 18, 8, 4 and 32 are LITERAL pixels in `sub_4400D0` - `v21 = 18`,
+    // `(uint16_t)g_ScreenSize - 18`, `v6 - 8`, `a2 - 32` - not scaled by the
+    // display, unlike the block's own `height * 64 / 480`. Scaling them put
+    // the box a few rows lower than the engine does.
+    // `top` is the TEXT's top, and the box is always `v6 - 8` from it: the
+    // -4 (line) and -32 (replies) in `sub_4400D0` are how `v6` is derived
+    // from `a2`, not a second offset on the box. Applying both put the reply
+    // box 32 rows too high above its own text.
+    const int x0 = 18, x1 = dispW - 18;
+    const int y0 = top - 8;
+    const int y1 = dispH - 18;
+    (void)kind;
+    if (x1 <= x0 || y1 <= y0) return;
+    for (int y = y0 < 0 ? 0 : y0; y < y1 && y < fb.h; ++y) {
+        for (int x = x0 < 0 ? 0 : x0; x < x1 && x < fb.w; ++x) {
+            std::uint16_t& px = fb.px[static_cast<std::size_t>(y) *
+                                      static_cast<std::size_t>(fb.w) +
+                                      static_cast<std::size_t>(x)];
+            int r = ((px >> 11) & 31) << 3, g = ((px >> 5) & 63) << 2, b = (px & 31) << 3;
+            if (kind == SubBox::Line) {
+                // dst *= (1 - src), src = 0x808080
+                r = r * (255 - 0x80) / 255;
+                g = g * (255 - 0x80) / 255;
+                b = b * (255 - 0x80) / 255;
+            } else {
+                // src*(1-a) + dst*a, src = 0x002040, a = 0x80
+                const int a = 0x80;
+                r = (0x00 * (255 - a) + r * a) / 255;
+                g = (0x20 * (255 - a) + g * a) / 255;
+                b = (0x40 * (255 - a) + b * a) / 255;
+            }
+            px = static_cast<std::uint16_t>(((r >> 3) << 11) | ((g >> 2) << 5) | (b >> 3));
+        }
+    }
+}
+
+// POSITIONED TEXT - a string that carries `{X}` moves.
+//
+// `{X<xxx><yyy>}` is "move to (xxx, yyy) as percentages of the screen", and a
+// string may carry several: each opens a new block at its own spot, with the
+// `{f}` face and `{C}/{D}/{F}/{G}` alignment that follow it. That is the whole
+// of the Bowie title sequence's credits - `AREA 0` record 78 fires twenty
+// `media.play` calls and each object's `+280` description is a block like
+//
+//     {X090058}{f1}{D}Direction programmation
+//     {X080065}{f3}{D}Olivier NALLET
+//
+// so there is no credits system to write; the port simply threw the moves
+// away (`if (d == 'X' ...) { i += 7; continue; }`) and every credit landed at
+// the bottom like an ordinary subtitle. Lines inside one block stack by the
+// font's own height. -> true when the string was positioned and drawn here.
+bool drawPositioned(omk::Surface& fb, const omk::TextLayout& lay,
+                    const omk::ParsedText& pt, int dispW, int dispH) {
+    if (pt.moves.empty()) return false;
+    for (std::size_t m = 0; m < pt.moves.size(); ++m) {
+        const auto& mv = pt.moves[m];
+        const std::size_t from = mv.at;
+        const std::size_t to = m + 1 < pt.moves.size() ? pt.moves[m + 1].at : pt.run.size();
+        if (from >= to) continue;
+        // The block's own rows, split on the newlines the text carries.
+        std::vector<std::vector<omk::StyledChar>> rows(1);
+        for (std::size_t k = from; k < to; ++k) {
+            if (pt.run[k].ch == '\n') { rows.emplace_back(); continue; }
+            if (pt.run[k].ch == '\r') continue;
+            rows.back().push_back(pt.run[k]);
+        }
+        int y = dispH * mv.yPct / 100;
+        const int x = dispW * mv.xPct / 100;
+        for (auto& row : rows) {
+            if (row.empty()) { y += lay.height(row) + 2; continue; }
+            const int w = lay.measure(row);
+            int rx = x;
+            if (mv.align == omk::kAlignRight)       rx = x - w;
+            else if (mv.align == omk::kAlignCentre) rx = x - w / 2;
+            lay.drawRun(fb, rx, y, row);
+            y += lay.height(row) + 2;
+        }
+    }
+    return true;
+}
+
 void drawSubtitle(omk::Surface& fb, const omk::TextLayout& lay,
                   const std::string& line,
                   const std::vector<std::string>& menu, int selected,
-                  int dispW, int dispH, int inset640 = 32) {
+                  int dispW, int dispH, int inset640 = 32,
+                  SubBox box = SubBox::None, char face = 'J',
+                  int scroll = 0, int* overflowOut = nullptr) {
     // 32 is `Dialog_TickUI`'s block; `Subtitle_Show` (0x0041E040) lays a
     // `media.play` line out inset 16 - the caller says which.
     const int inset = inset640 * dispW / 640;
     const int left = inset, right = dispW - inset, width = right - left;
     if (width <= 0) return;
 
-    std::vector<std::string> rows;
+    // PARSE THE MARKUP ONCE, THEN WRAP THE RUN - not the other way round.
+    //
+    // The shipped strings carry `{f...}` face markup: `media.play 142` is
+    // literally `{fD}Te voil...`. Wrapping the STRING first and parsing each
+    // row separately loses the run's state at every break, so a `{fD}` at the
+    // head applied to the first row and every row after it fell back to the
+    // block's default - two faces in one paragraph, which is what a reader
+    // photographed in the Impasse (`todo/omk-play.md` 58).
+    const auto wrapRun = [&](const std::vector<omk::StyledChar>& run,
+                             std::vector<std::vector<omk::StyledChar>>& out) {
+        std::vector<omk::StyledChar> ln, word;
+        for (std::size_t k = 0; k <= run.size(); ++k) {
+            const bool end = k == run.size();
+            const char c = end ? ' ' : run[k].ch;
+            if (!end && c != ' ' && c != '\n' && c != '\r') { word.push_back(run[k]); continue; }
+            if (!word.empty()) {
+                std::vector<omk::StyledChar> cand = ln;
+                if (!cand.empty()) { omk::StyledChar sp = word.front(); sp.ch = ' '; cand.push_back(sp); }
+                cand.insert(cand.end(), word.begin(), word.end());
+                if (!ln.empty() && lay.measure(cand) > width) { out.push_back(ln); ln = word; }
+                else ln = cand;
+                word.clear();
+            }
+            if (!end && c == '\n') { out.push_back(ln); ln.clear(); }
+        }
+        if (!ln.empty()) out.push_back(ln);
+    };
+    std::vector<std::vector<omk::StyledChar>> rows;
     std::vector<std::uint8_t> tone;
-    std::vector<std::string> tmp;
     if (!line.empty()) {
-        wrapInto(lay, line, width, tmp);
-        for (auto& r : tmp) { rows.push_back(r); tone.push_back(255); }
+        std::vector<std::vector<omk::StyledChar>> tmp;
+        wrapRun(omk::parseMarkup(line, face).run, tmp);
+        for (auto& r : tmp) { rows.push_back(std::move(r)); tone.push_back(255); }
     }
     for (std::size_t k = 0; k < menu.size(); ++k) {
-        tmp.clear();
-        wrapInto(lay, menu[k], width, tmp);
+        std::vector<std::vector<omk::StyledChar>> tmp;
+        wrapRun(omk::parseMarkup(menu[k], face).run, tmp);
         for (auto& r : tmp) {
-            rows.push_back(r);
+            rows.push_back(std::move(r));
             tone.push_back(static_cast<int>(k) == selected ? 255 : 128);
         }
     }
     if (rows.empty()) return;
 
-    const auto probe = omk::parseMarkup("Ag");
+    const auto probe = omk::parseMarkup("Ag", face);
     const int lineH = lay.height(probe.run) + 2;
-    int y = dispH - inset / 2 - static_cast<int>(rows.size()) * lineH;
-    if (y < 0) y = 0;
+    // WHERE THE BLOCK SITS. `Dialog_TickUI` places it with
+    //
+    //     v3 = height << 6
+    //     dword_6A52C4 = height - v3 / 480
+    //
+    // so the block's TOP is `height - height*64/480` - 80 rows above the
+    // bottom at 600 - and `Text_LayOutBlock` fills it DOWNWARD from there.
+    // This used to anchor the text's BOTTOM at `height - inset/2` and grow it
+    // upward by the row count, which put a single line ~46 px lower and left
+    // the box standing empty above it (`todo/omk-play.md` 58). The reply
+    // stack is anchored the same way in the engine - `dword_6A52C4 = v18 -
+    // dword_907975`, the bottom less the stack's own height - so a block
+    // taller than the 64 grows upward from the same edge.
+    const int blockH = dispH * 64 / 480;
+    const int stackH = static_cast<int>(rows.size()) * lineH;
+    // THE BLOCK HAS A MAX SIZE, AND PAST IT THE TEXT SCROLLS.
+    //
+    // `Dialog_TickUI` keeps the overflow itself:
+    //
+    //     dword_53AE24 = Text_DrawBlock(32, 0, ..., v3 / 480, ...) - v3 / 480
+    //
+    // the laid-out height LESS the block's - so a line that fits leaves it <=
+    // 0 and a long one leaves the number of pixels hidden. The scroll is then
+    // one pixel a tick, clamped to it:
+    //
+    //     if ((a2 & 8) && dword_6A52C0 < dword_53AE24) ++dword_6A52C0;  // down
+    //     if ((a2 & 4) && v14 > 0)                     --dword_6A52C0;  // up
+    //     if (dword_53AE24 <= 0) return 1;
+    //     dword_6A50E8 = v14 ? (dword_53AE24 != v14 ? 3 : 1) : 2;
+    //
+    // and `Game_Tick` hands both to the renderer,
+    // `sub_4400D0(0, dword_6A52C4, dword_6A52C0, height - 1, dword_6A50E8)`.
+    // `dword_6A50E8` is the ARROW state - `sub_4400D0` draws a quad under
+    // `a5 & 1` and another under `a5 & 2`, ~7px at the bottom edge - so 2 is
+    // "more below", 1 "more above" and 3 both. The arrows are NOT drawn here.
+    // The two blocks are anchored DIFFERENTLY, and the engine says so.
+    //
+    // A spoken LINE gets the fixed block: `v3 / 480` is the BLOCK's height,
+    // not the text's, so the block stands at `height - height*64/480`
+    // whatever the text does and a long line overflows BELOW it, hidden until
+    // scrolled. The REPLY stack is anchored by its own height instead -
+    // `dword_6A52C4 = v18 - dword_907975` - and each row gets its own
+    // `Text_DrawBlock(v40, v35, v42, v35 + v36, ...)`, so it grows upward and
+    // is not clipped.
+    const bool fixedBlock = menu.empty();
+    const int overflow = (fixedBlock && stackH > blockH) ? stackH - blockH : 0;
+    if (overflowOut) *overflowOut = overflow;
+    if (scroll < 0) scroll = 0;
+    if (scroll > overflow) scroll = overflow;
+    if (blockH <= 0) return;
+    // The reply stack is EXACTLY its own height: `dword_6A52C4 = v18 -
+    // dword_907975`, the bottom less the stack's own measured height, with a
+    // `Text_DrawBlock` per row. Flooring it at the 64-scaled block made every
+    // menu as tall as the longest possible one, where the game's grows with
+    // the number and length of the answers.
+    // The reply stack ENDS ON THE BOX'S BOTTOM EDGE, not the screen's. The
+    // box runs to `height - 18` (`v25 = HIWORD(g_ScreenSize) - 18`), and
+    // `dword_6A52C4 = v18 - dword_907975` puts the text's top a stack-height
+    // above that same edge - so the rows sit inside the box. Anchoring them
+    // to `dispH` instead left the text BELOW its own box, which is what a
+    // reader photographed with a single reply.
+    // The line's text top is `a2 - 4` (`v6 -= 4`), with `a2 = height -
+    // height*64/480`; the reply stack ends on the box's bottom edge.
+    const int clipTop = fixedBlock ? dispH - blockH - 4 : dispH - 18 - stackH;
+    const int clipBot = fixedBlock ? clipTop + blockH : dispH - 18;
+    int y = clipTop - scroll;
+    drawSubtitleBox(fb, box, clipTop, dispW, dispH);
+    // THE SCROLL ARROWS - red, flashing, at the right edge. `sub_4400D0`
+    // draws them under `a5 & 1` (more above) and `a5 & 2` (more below):
+    //
+    //     v23 = ((v15 / 0x3E7) << 24) + 16711680      0xFF0000, pulsing alpha
+    //     up   (w-32, y+7) (w-25, y+7) (w-29, y)      apex at the top
+    //     down (w-32, a4-7)(w-25, a4-7)(w-29, a4)     apex at the bottom
+    //
+    // with `a4 = height - 1`. `dword_6A50E8` is 2 at the top of the text, 1
+    // at the bottom and 3 in between, so the pair says which way there is
+    // more to see.
+    if (overflow > 0) {
+        const int pulse = 128 + static_cast<int>(127.0 * std::sin(
+                              static_cast<double>(SDL_GetTicks()) * 0.006));
+        const auto tri = [&](int apexY, int baseY) {
+            const int xa = dispW - 32, xb = dispW - 25, xm = dispW - 29;
+            const int lo = apexY < baseY ? apexY : baseY;
+            const int hi = apexY < baseY ? baseY : apexY;
+            for (int y = lo; y <= hi; ++y) {
+                if (y < 0 || y >= fb.h) continue;
+                const double t = hi == lo ? 0.0
+                    : static_cast<double>(y - apexY) / static_cast<double>(baseY - apexY);
+                const int x0t = static_cast<int>(xm + (xa - xm) * t);
+                const int x1t = static_cast<int>(xm + (xb - xm) * t);
+                for (int x = x0t; x <= x1t; ++x) {
+                    if (x < 0 || x >= fb.w) continue;
+                    std::uint16_t& px = fb.px[static_cast<std::size_t>(y) *
+                                              static_cast<std::size_t>(fb.w) +
+                                              static_cast<std::size_t>(x)];
+                    int r = ((px >> 11) & 31) << 3, g = ((px >> 5) & 63) << 2,
+                        b = (px & 31) << 3;
+                    r = (0xFF * pulse + r * (255 - pulse)) / 255;
+                    g = (g * (255 - pulse)) / 255;
+                    b = (b * (255 - pulse)) / 255;
+                    px = static_cast<std::uint16_t>(((r >> 3) << 11) |
+                                                    ((g >> 2) << 5) | (b >> 3));
+                }
+            }
+        };
+        if (scroll > 0)        tri(clipTop, clipTop + 7);       // more ABOVE
+        if (scroll < overflow) tri(dispH - 1, dispH - 8);       // more BELOW
+    }
     for (std::size_t k = 0; k < rows.size(); ++k) {
-        auto pt = omk::parseMarkup(rows[k]);
+        omk::ParsedText pt;
+        pt.run = rows[k];
         for (auto& sc : pt.run) sc.rgb[0] = sc.rgb[1] = sc.rgb[2] = tone[k];
-        const int w = lay.measure(pt.run);
-        lay.drawRun(fb, left + (width - w) / 2, y, pt.run);
+        // LEFT-ALIGNED, which is the engine's default and not a choice.
+        // `Text_DrawBlock` initialises `style = 2` and the dialogue's params
+        // carry only TEXTP_FLAG_A (`v56[0] = 64`), so no TEXTP_ALIGN_* bit is
+        // ever set and the style stays 2. `Text_LayOutBlock` switches on
+        // `dword_907A00 & 0x1E`:
+        //
+        //     case 4   x = right - w                         right
+        //     case 8   x = left + (right - w - left) / 2      centred
+        //     default  x unchanged                            LEFT   <- 2
+        //
+        // This centred every row, which is visible on any line short enough
+        // not to fill the block (`todo/omk-play.md` 58).
+        // clipped to the block - a row scrolled out of it is not drawn
+        // A ROW IS DRAWN ONLY IF IT FITS WHOLE. `Text_LayOutBlock` stops at
+        // the block's bottom; drawing a row that straddles the edge left the
+        // last line sliced in half against the screen.
+        if (y >= clipTop && y + lineH <= clipBot) lay.drawRun(fb, left, y, pt.run);
         y += lineH;
     }
 }
@@ -730,7 +996,7 @@ int sceneViewer(const std::string& fr, const std::string& setName,
 #if defined(OMK_VULKAN)
     if (startVulkan) {
         if (SDL_Init(SDL_INIT_VIDEO) == 0) {
-            vkWin = SDL_CreateWindow("Omikron - scene viewer (vulkan)",
+            vkWin = SDL_CreateWindow("OMK Engine - scene viewer (vulkan)",
                                      SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
                                      640, 480, SDL_WINDOW_VULKAN);
         }
@@ -765,7 +1031,7 @@ int sceneViewer(const std::string& fr, const std::string& setName,
         }
     }
 #endif
-    if (!direct && !front.open(640, 480, "Omikron - scene viewer")) {
+    if (!direct && !front.open(640, 480, "OMK Engine - scene viewer (software)")) {
         std::fprintf(stderr, "SDL: %s\n", SDL_GetError()); return 1;
     }
     if (direct) ren = live;
@@ -1231,6 +1497,10 @@ int main(int argc, char** argv) {
     std::unique_ptr<omk::UiWalk> walk;
     int openScreen = -1, conversations = 0, lastArea = -1;
     int replySel = 0;            // which reply the player is on
+    // The spoken line's SCROLL, in pixels, and the overflow it is clamped to -
+    // `dword_6A52C0` and `dword_53AE24`. One pixel a tick while held, which is
+    // what `Dialog_TickUI` does with input bits 4 (up) and 8 (down).
+    int lineScroll = 0, lineOverflow = 0;
     bool menuShown = false;
     int  lastDlgCam = -2;
     // The absolute world cameras the script has set, as rays: during the
@@ -1299,6 +1569,20 @@ int main(int argc, char** argv) {
     // player reads.
     std::string mediaText;
     long  mediaTextFrames = 0;
+    // THE MEDIA BITMAP - `media.play` on a kind-16 DOCUMENT.
+    //
+    // `if (rec[+2] == 16)` takes the other arm entirely: build
+    // `IMAGES\<stem>.BMP`, `I2D_LoadBitmap` it, put the player in ACTOR_STATE
+    // **10** (`ImageScreen`, "a full-screen bitmap holds it") and play NO
+    // audio. It stays up until the NEXT `media.play`, which frees it (step 7,
+    // `I2D_FreeBitmap` then ACTOR_STATE 1).
+    //
+    // That is the game's TITLE CARD: object 715 `ZVO G001 TITRE` is kind 16
+    // with stem `ZVOG001`, so its `+280` description is `{X030040}{f3}` and
+    // nothing else - the words are in `IMAGES/ZVOG001.BMP`, 640x480 with the
+    // logo on black. Nothing here drew it, which is why the Bowie opening
+    // came up without its title (`todo/omk-play.md` 59).
+    omk::Surface mediaBmp;
     float playerFeet = 0.0f;
     bool  playerFeetKnown = false;
     // The model-space x/z of the hierarchy root - the PELVIS - which is what
@@ -1397,7 +1681,7 @@ int main(int argc, char** argv) {
 #if defined(OMK_VULKAN)
     if (!forceSoftware) {
         if (SDL_Init(SDL_INIT_VIDEO) == 0) {
-            vkWin = SDL_CreateWindow("Omikron - the replica (vulkan)",
+            vkWin = SDL_CreateWindow("OMK Engine (vulkan)",
                                      SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
                                      dispW, dispH, SDL_WINDOW_VULKAN);
         }
@@ -1425,7 +1709,7 @@ int main(int argc, char** argv) {
         }
     }
 #endif
-    if (!vkRen && !front.open(dispW, dispH, "Omikron - the replica")) {
+    if (!vkRen && !front.open(dispW, dispH, "OMK Engine (software)")) {
         std::fprintf(stderr, "SDL: %s\n", SDL_GetError());
         return 1;
     }
@@ -2768,6 +3052,16 @@ int main(int argc, char** argv) {
             // still followed by the line the player reads. An IMAGE (kind
             // 16) takes the other arm and shows a bitmap instead, which this
             // file does not draw.
+            // A new media.play frees whatever bitmap was up, then this one
+            // either loads its own or speaks.
+            mediaBmp = omk::Surface{};
+            if (vo.image && !vo.stem.empty()) {
+                if (const auto bp = fs.resolve("IMAGES/" + vo.stem + ".BMP")) {
+                    mediaBmp = omk::surfaceFromBmp(omk::DataFs::readPath(*bp));
+                    std::printf("media.play %d is a DOCUMENT: IMAGES/%s.BMP %dx%d\n",
+                                mediaId, vo.stem.c_str(), mediaBmp.w, mediaBmp.h);
+                }
+            }
             const auto& objs = voiceLib.objects();
             if (!vo.image && mediaId >= 0 && static_cast<std::size_t>(mediaId) < objs.size()) {
                 std::string text = objs[static_cast<std::size_t>(mediaId)].description;
@@ -2874,7 +3168,7 @@ int main(int argc, char** argv) {
                 front.stopSound(voiceShot);
                 voiceShot = dlg.pcm().empty() ? -1 : front.playSound(
                         resampleToDevice(dlg.pcm(), dlg.channels(), 22050, 44100));
-                replySel = 0; menuShown = false;
+                replySel = 0; menuShown = false; lineScroll = 0;
             }
             if (dlg.phase() == omk::DialogPhase::Menu && !menuShown) {
                 menuShown = true;
@@ -4122,8 +4416,47 @@ int main(int argc, char** argv) {
 
         // A `media.play` line, while `Subtitle_Show`'s timer runs: inset 16,
         // against the bottom, white. A conversation's own text takes over.
+        // The document bitmap sits over the frame until the next media.play
+        // replaces it. Black is the key - 284581 of `ZVOG001`'s 307200 pixels
+        // are it - so only the logo lands on the scene.
+        if (mediaBmp.w > 0 && mediaBmp.h > 0) {
+            // SCALED TO THE DISPLAY, like every other interface bitmap: the
+            // interface is authored at 640x480 and `ScreenDraw` maps it with
+            // `v * width / 640` and `v * height / 480`. Blitting 1:1 from the
+            // origin put the logo in the top-left corner at native size.
+            // Nearest-neighbour, because the port's rule for the 2D layer is
+            // an exact copy with no filtering (`ui/surface.h`).
+            for (int y = 0; y < fb.h; ++y) {
+                const int sy = y * mediaBmp.h / fb.h;
+                if (sy < 0 || sy >= mediaBmp.h) continue;
+                for (int x = 0; x < fb.w; ++x) {
+                    const int sx = x * mediaBmp.w / fb.w;
+                    if (sx < 0 || sx >= mediaBmp.w) continue;
+                    const std::uint16_t src =
+                        mediaBmp.px[static_cast<std::size_t>(sy) *
+                                    static_cast<std::size_t>(mediaBmp.w) +
+                                    static_cast<std::size_t>(sx)];
+                    if (!src) continue;                       // the colour key
+                    fb.px[static_cast<std::size_t>(y) *
+                          static_cast<std::size_t>(fb.w) +
+                          static_cast<std::size_t>(x)] = src;
+                }
+            }
+        }
         if (!session.dialogOpen() && !walk && mediaTextFrames > 0) {
-            drawSubtitle(fb, lay, mediaText, {}, -1, dispW, dispH, 16);
+            // A DIFFERENT FACE, and it is the engine's choice. The
+            // dialogue's params are TEXTP_FLAG_A alone, so its font stays the
+            // `Text_DrawBlock` default 74 = 'J'; `Subtitle_Show` (0x0041E040)
+            // passes `params[0] = 0x20 | 0x40` and `params[2] = 86`, and
+            // TEXTP_SLOT2 writes `dword_907A10 = params[2]` - the font global
+            // whose default is that 74. So the adventure-mode interaction
+            // line, the one that always comes with a sound, is face 86 = 'V'.
+            // A credit block positions itself; anything else is the
+            // ordinary bottom-anchored subtitle.
+            const auto ptMedia = omk::parseMarkup(mediaText, 'V');
+            if (!drawPositioned(fb, lay, ptMedia, dispW, dispH))
+                drawSubtitle(fb, lay, mediaText, {}, -1, dispW, dispH, 16,
+                             SubBox::None, 'V');
             --mediaTextFrames;
         }
         // The subtitle goes over whatever the frame already holds - which
@@ -4146,10 +4479,20 @@ int main(int argc, char** argv) {
             // "The game never shows the NPC line and the menu together" -
             // the rule `DialogPlayer`'s phases already carry, and it belongs
             // to the drawing too. In the menu phase the line is gone.
+            const bool inMenu = dlg.phase() == omk::DialogPhase::Menu;
+            // ONE PIXEL A TICK WHILE HELD, clamped to the overflow - the
+            // engine's own rule. Only the spoken line scrolls; the reply
+            // stack is anchored by its own height and never clipped.
+            if (!inMenu && lineOverflow > 0) {
+                const Uint8* ks = SDL_GetKeyboardState(nullptr);
+                if (ks[SDL_SCANCODE_DOWN] && lineScroll < lineOverflow) ++lineScroll;
+                if (ks[SDL_SCANCODE_UP]   && lineScroll > 0)            --lineScroll;
+            }
             drawSubtitle(fb, lay,
-                         dlg.phase() == omk::DialogPhase::Menu
-                             ? std::string() : dlg.lineText(),
-                         menu, sel, dispW, dispH);
+                         inMenu ? std::string() : dlg.lineText(),
+                         menu, sel, dispW, dispH, 32,
+                         inMenu ? SubBox::Replies : SubBox::Line, 'J',
+                         lineScroll, &lineOverflow);
         }
         // ---- THE FPS COUNTER, when asked for --------------------------
         //

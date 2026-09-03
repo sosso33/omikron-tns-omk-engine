@@ -6166,6 +6166,225 @@ def c_engine_impasse_fx():
            ("the Impasse's beats fire 15 set-piece rows and peak at 108 live "
             "particles, alive on 262 of 900 frames")
 
+def c_credit_layout():
+    r"""UI: the Bowie credits are ordinary subtitles positioned by `{X}` markup.
+
+    A reader described the Anekbah opening as "a specific case, maybe with some
+    dedicated code". It is not. `AREA 0` record 78 - the 145.7 s title sequence,
+    one of the 106 world-camera scripts - is a plain camera script that fires
+    **twenty `media.play` calls**, and each object's `+280` description is a
+    credit block::
+
+        716  {X010030}{f1}Ecrit et realise par
+             {X020035}{f3}David CAGE
+        719  {X090058}{f1}{D}Direction programmation
+             {X080065}{f3}{D}Olivier NALLET
+
+    `{X<xxx><yyy>}` is "move to (xxx, yyy) as PERCENTAGES of the screen"
+    (docs/UI.md 5), `{f1}`/`{f3}` are GENERIC1 and GENERIC3, and `{D}` is right
+    alignment - used by the blocks on the right of frame, which is why
+    `{X090058}` is 90% across. **`omk-play` parsed `{X}` and threw it away**
+    (`if (d == 'X' ...) { i += 7; continue; }`), so every credit landed at the
+    bottom like an ordinary subtitle.
+
+    Also settled on the way, by DECODING A FRAME and looking at it: the
+    sequence is NOT pre-rendered video. `FLIS/GAME.MPG` at 60 s is the club
+    cinematic, so the credits really are drawn over the live city.
+
+    One block of the 46 carries no text - object 715, `ZVO G001 TITRE`, is
+    `{X030040}{f3}` and nothing else - so the title card itself comes from
+    somewhere this does not reach. Recorded rather than explained.
+
+    A near-miss worth keeping: `grep` finds no credit name anywhere in the
+    tree, which looks like proof the text is absent - but `grep` cannot find
+    "Confirmer" in `IAM/` either, so the method was invalid and the negative
+    worthless. The text was there all along, behind the object reader.
+    """
+    import subprocess, tempfile, shutil
+    fr = omkpaths.data_root()
+    if not os.path.isdir(fr):
+        return ("no data",), ("data",), "needs the shipped tree"
+    eng = os.path.join(ROOT, "engine")
+    b = subprocess.run(["make", "-s", "build/credit_layout"], cwd=eng,
+                       capture_output=True, text=True)
+    binp = os.path.join(eng, "build", "credit_layout")
+    if b.returncode != 0 or not os.path.exists(binp):
+        return ("build failed",), ("built",), "engine/ must build"
+    tmp = tempfile.mkdtemp()
+    try:
+        out = os.path.join(tmp, "c.bin")
+        subprocess.run([binp, fr, out], capture_output=True, text=True)
+        raw = open(out, "rb").read()
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+    if len(raw) < 20:
+        return ("no output",), ("20 bytes",), "the probe must write its record"
+    blocks, withText, right, faces, bad = struct.unpack_from("<5i", raw, 0)
+    # THE TITLE CARD, which is why one block carries no text. `media.play 715`
+    # (`ZVO G001 TITRE`) is a kind-16 DOCUMENT: the handler builds
+    # `IMAGES\<stem>.BMP`, loads it, sets ACTOR_STATE 10 (`ImageScreen`) and
+    # plays NO audio, so the words are in the bitmap and the description is
+    # only its `{X}` placement. `IMAGES/ZVOG001.BMP` is 640x480 with the logo
+    # on black - 284581 of its 307200 pixels are the key.
+    b2 = subprocess.run(["make", "-s", "build/title_logo"], cwd=eng,
+                        capture_output=True, text=True)
+    lb = os.path.join(eng, "build", "title_logo")
+    logo = ("no probe",)
+    if b2.returncode == 0 and os.path.exists(lb):
+        t2 = tempfile.mkdtemp()
+        try:
+            o2 = os.path.join(t2, "l.rgb")
+            r = subprocess.run([lb, fr, o2], capture_output=True, text=True)
+            raw2 = open(o2, "rb").read() if os.path.exists(o2) else b""
+            black = sum(1 for i in range(0, len(raw2), 3) if raw2[i:i+3] == b"\0\0\0")
+            logo = ("image 1" in r.stdout, "ZVOG001" in r.stdout,
+                    "640x480" in r.stdout, black)
+        finally:
+            shutil.rmtree(t2, ignore_errors=True)
+    return (blocks, withText, right, faces, bad) + logo, \
+           (46, 45, 7, 45, 0, True, True, True, 284581), \
+           ("the twenty ZVO credit objects' `{X}` blocks; those carrying text (the "
+            "one that does not is 715, the TITRE card); those right-aligned by `{D}`; "
+            "those naming their own face; and any positioned off-screen; then the "
+            "TITLE CARD - that 715 resolves as a kind-16 DOCUMENT with stem ZVOG001, "
+            "that its bitmap is 640x480, and how many of its pixels are the black "
+            "colour key")
+
+def c_subtitle_box():
+    r"""UI: the subtitle BOX and its two blends, read out of the renderer.
+
+    `Dialog_TickUI` (0x0046A200) draws no box - it makes no call but
+    `Text_DrawBlock`, four times. The box belongs to the TEXT RENDERER:
+    `sub_4400D0` (0x004400D0), which `Game_Tick` calls as
+    `sub_4400D0(0, dword_6A52C4, dword_6A52C0, height - 1, ...)`, submits one
+    quad before the glyphs and switches on `off_4C71A8`, the second colour
+    `Dialog_TickUI` sets::
+
+        off_4C71A8 == 0x80002040  ->  flags 4, top = a2 - 32     the REPLIES
+        off_4C71A8 == 0x00808080  ->  flags 2, top = a2 - 4      the LINE
+        x 18 .. width-18,   y (top - 8) .. height - 18
+
+    `I2D_SubmitQuad` copies 0x30 bytes - four vertices of (x, y, colour) plus
+    a flag word - and `sub_480BD0` fills all four corners from the first
+    unless flag 8 is set, which neither does: both are a FLAT fill.
+
+    **The flags are the blend**, through `sub_480AC0`, which sets D3D render
+    states 19 (SRCBLEND) and 20 (DESTBLEND)::
+
+        & 1   src 2 ONE          dst 2 ONE           additive
+        & 2   src 1 ZERO         dst 4 INVSRCCOLOR   dst *= (1 - src)
+        & 4   src 6 INVSRCALPHA  dst 5 SRCALPHA      src*(1-a) + dst*a
+
+    So the LINE's box is a 50% DARKENING (`0x808080` through INVSRCCOLOR) and
+    the REPLIES' is 50% of the navy `0x002040` - the "black transparent" and
+    "blue transparent" boxes a reader described. The line's box is invisible
+    over the black letterbox band, which is why the same reader could not say
+    whether a plain subtitle had one.
+
+    Asserted against the decompilation so the reading cannot drift; skipped
+    when `readable/` is absent, since it is a derivative work and is not
+    distributed.
+    """
+    import re
+    src = os.path.join(ROOT, "readable", "src")
+    if not os.path.isdir(src):
+        return ("skipped",), ("skipped",), "readable/ is not distributed"
+    dinput = open(os.path.join(src, "15_dinput.c"), encoding="utf-8", errors="replace").read()
+    i = dinput.index("@func 0x004400D0"); j = dinput.index("@func 0x00440", i + 20)
+    box = dinput[i:j]
+    d3d = open(os.path.join(src, "21_d3d.c"), encoding="utf-8", errors="replace").read()
+    k = d3d.index("@func 0x0046A200"); m = d3d.index("@func 0x0046A", k + 20)
+    dlg = d3d[k:m]
+    # the box's own constants, and that it submits exactly one quad on layer 10
+    got = (
+        "off_4C71A8 == (void *)-2147475392" in box,   # the reply colour
+        "off_4C71A8 == &unk_808080" in box,           # the line colour
+        box.count("I2D_SubmitQuad"),
+        "v5 = 4" in box, "v5 = 2" in box,             # the two blends
+        "a2 - 32" in box,                             # the reply top
+        len(re.findall(r"v2\d+ = 18", box)) >= 1,     # the 18px inset
+        # Dialog_TickUI: no draw but Text_DrawBlock, and the three inks
+        dlg.count("Text_DrawBlock"), "I2D_" in dlg,
+        "unk_8080C0" in dlg, dlg.count("0xFFFFFF"),
+        "dword_907969 = 32" in dlg,                   # the block's LEFT x
+    )
+    # ...and the LAYOUT defaults every subtitle inherits, from Text_DrawBlock
+    # (0x0043F180): the FONT is 74 - `docs/UI.md`'s "the default and every
+    # option row", with 76 the sub-640x480 override - and the style is 2.
+    # The dialogue's params carry only TEXTP_FLAG_A, so no TEXTP_ALIGN_* bit
+    # is ever set and 2 stands; `Text_LayOutBlock` switches on
+    # `dword_907A00 & 0x1E` with case 4 right, case 8 centred and DEFAULT
+    # left, so a subtitle is LEFT-aligned. The port centred every row.
+    lay = open(os.path.join(src, "15_dinput.c"), encoding="utf-8", errors="replace").read()
+    t = lay[lay.index("@func 0x0043F180"):lay.index("@func 0x0043F3E0")]
+    o = lay.index("@func 0x0043F3E0")
+    body = lay[o:o + 40000]
+    # ...and the OTHER face. `Subtitle_Show` (0x0041E040), the adventure-mode
+    # line that always comes with a sound, passes `params[0] = 0x20 | 0x40`
+    # and `params[2] = 86`; TEXTP_SLOT2 writes `dword_907A10 = params[2]`, the
+    # same global whose default is 74. The font table names both, and the
+    # names settle it: 74 is JOURNAL and 86 is VOIXOFF - voice-over.
+    sysc = open(os.path.join(src, "05_sys.c"), encoding="utf-8", errors="replace").read()
+    sub = sysc[sysc.index("@func 0x0041E040"):sysc.index("@func 0x0041E0E0")]
+    import json as _json
+    def _fonts(o):
+        if isinstance(o, dict):
+            if "fonts" in o: return o["fonts"]
+            for v in o.values():
+                r = _fonts(v)
+                if r: return r
+        elif isinstance(o, list):
+            for v in o:
+                r = _fonts(v)
+                if r: return r
+        return None
+    ft = {e["id"]: e["name"] for e in _fonts(_json.load(open(os.path.join(ROOT, "tables", "ui.json"))))}
+    # ...and the SCROLL. The block has a max size and a long line overflows it:
+    # `dword_53AE24` is the laid-out height LESS the block's, the offset
+    # `dword_6A52C0` moves one pixel a tick under input bits 8 (down) and 4
+    # (up) clamped to it, and `dword_6A50E8` is the arrow state - 2 more
+    # below, 1 more above, 3 both - which `sub_4400D0` draws as a quad under
+    # `a5 & 1` and another under `a5 & 2`.
+    got = got + (
+        "- v3 / 480" in dlg,                                   # the overflow
+        "dword_6A52C0 < dword_53AE24" in dlg,                  # the down clamp
+        "if ((a2 & 4) != 0 && v14 > 0)" in dlg,                # the up step
+        "dword_53AE24 != v14 ? 3 : 1" in dlg,                  # the arrow state
+        "if ((a5 & 1) != 0)" in box, "if ((a5 & 2) != 0)" in box,
+        # the arrows are RED and their alpha comes off a counter, so they pulse
+        "+ 16711680" in box, "0x3E7) << 24" in box,
+        # and the box insets are LITERAL pixels, not scaled by the display
+        "v21 = 18" in box, "g_ScreenSize - 18" in box, "v6 - 8" in box,
+        "params[0] = 0x20 | 0x40" in sub, "params[2] = 86" in sub,
+        "Text_DrawBlock(16, 0" in sub,
+        ft.get(74), ft.get(86), ft.get(76),
+        "dword_907A10 = params[2]" in t,
+        "dword_907A10 = 74" in t, "dword_907A10 = 76" in t,
+        "style = 2" in t,
+        "switch (dword_907A00 & 0x1E)" in body,
+        "v42 = dword_907A08 - v43" in body,                       # case 4, right
+        "(dword_907A08 - v43 - dword_907A14) / 2" in body,        # case 8, centred
+    )
+    return got, (True, True, 1, True, True, True, True, 4, False, True, 7, True,
+                 True, True, True, True, True, True,
+                 True, True, True, True, True,
+                 True, True, True, "JOURNAL", "VOIXOFF", "SMALL", True,
+                 True, True, True, True, True, True), \
+           ("the renderer's box: the two `off_4C71A8` colours it switches on, one "
+            "I2D_SubmitQuad, both blend flags, the reply's -32 top and the 18px "
+            "inset; then Dialog_TickUI's four Text_DrawBlock calls, that it makes "
+            "NO I2D call at all, the bluish 0x8080C0 reply ink, the seven 0xFFFFFF "
+            "sites and the left-x 32; then the LAYOUT defaults - font 74 with the "
+            "76 override, style 2, and the alignment switch whose case 4 is right, "
+            "case 8 centred and DEFAULT left, which is what a subtitle gets; and "
+            "Subtitle_Show's own params - TEXTP_SLOT2|FLAG_A with font 86 and the "
+            "inset-16 block - with the table naming 74 JOURNAL, 86 VOIXOFF (the "
+            "voice-over face the interaction line uses) and 76 SMALL; and the "
+            "SCROLL - the overflow, its two clamped steps, the arrow state and the "
+            "two arrow quads the renderer draws from it - RED (0xFF0000) with an "
+            "alpha off a counter, so they flash - and the LITERAL 18/8 insets, "
+            "which are not scaled by the display the way the block height is")
+
 def c_engine_tuto_camera():
     r"""`engine/`: a scripted camera resolves against the PELVIS, like the follow one.
 
@@ -16994,7 +17213,7 @@ def c_licence_headers():
                    if TAG in open(p, encoding="utf-8",
                                   errors="replace").read(600)]
     return (authored, sorted(missing), len(vendored), mislabelled), \
-           (306, [], 1, []), \
+           (310, [], 1, []), \
            "authored source files under tools/, engine/src, engine/tools, " \
            "engine/backends and scripts/; those MISSING the SPDX tag; " \
            "vendored files in engine/third_party; and vendored files wrongly " \
@@ -18408,6 +18627,8 @@ SLOW = [
     ("engine: scene survive", c_engine_scene_survive, "todo/omk-play"),
     ("engine: env anim", c_engine_env_anim, "todo/omk-play"),
     ("engine: tuto camera", c_engine_tuto_camera, "todo/omk-play"),
+    ("subtitle box", c_subtitle_box, "docs/UI"),
+    ("credit layout", c_credit_layout, "docs/UI"),
     ("engine: impasse fx", c_engine_impasse_fx, "todo/omk-play"),
     ("sprite ids scene-local", c_sprite_ids_are_scene_local, "docs/ASSETS"),
     ("engine: scene sounds", c_engine_scene_sounds, "engine/README"),
