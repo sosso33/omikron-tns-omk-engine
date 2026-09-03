@@ -9280,13 +9280,20 @@ def c_ui_input():
     # How many of the callbacks the table names have a decompiled function at
     # all. Most do not: they carry no push prologue, so IDA folded them into
     # whatever precedes them and Runtime.exe.c has no body for them.
+    #
+    # **`readable/src` is NOT COMMITTED** - it is a derivative of the listing,
+    # like `clean/` and the listing itself (CLAUDE.md 2). Without it this glob
+    # finds nothing and the count silently reads **0 of 30**, which looks like
+    # a finding and is an absent input; `None` says so instead. Found in a
+    # worktree that had everything else, 2026-09-04.
+    srcs = _g.glob(os.path.join(ROOT, "readable/src/*.c"))
     have = set()
-    for f in _g.glob(os.path.join(ROOT, "readable/src/*.c")):
+    for f in srcs:
         have |= {int(x, 16) for x in
                  re.findall(r"@func (0x[0-9A-F]{8})", open(f, encoding="utf-8",
                                                            errors="replace").read())}
     named = {a for s in sc for a in s["cb"][:1] + s["cb"][2:3] if a}
-    decompiled = len(named & have)
+    decompiled = len(named & have) if srcs else None
     keys = [struct.unpack("<I", e.read(0x004C65B8 + 4 * i, 4))[0]
             for i in range((0x004C65F0 - 0x004C65B8) // 4)]
 
@@ -9318,14 +9325,17 @@ def c_ui_input():
             len(keys), keys[:4], keys[4], keys[5], keys[13],
             len(cbs), byPush, byCall, noCaller, pushNoProc), \
            (20, 1, 10, 2, (0x0042A0F0, 32), 5,
-            30, 3,
+            30, (3 if srcs else None),
             14, [0xCB, 0xCD, 0xC8, 0xD0], 0x12, 0x13, 0x0F,
             33, 22, 29, 32, 11), \
            "distinct open / input / close / draw callbacks across the 37 " \
            "screens (nulls excluded), the one input callback and how many " \
            "screens share it, and the screens with no callbacks at all (the " \
            "five ELIMINE); distinct open+close addresses and how many of " \
-           "them Runtime.exe.c actually has a function for; then the " \
+           "them Runtime.exe.c actually has a function for - None when " \
+           "readable/src is absent, which it is in any checkout that does " \
+           "not carry the listing's derivatives, rather than the 0 that " \
+           "reads as a finding; then the " \
            "binding table - its length, the four arrow scan codes, and " \
            "confirm E / back R / close TAB; and finally WHY those addresses " \
            "have no function - over the 33 distinct callbacks, how often a " \
@@ -10926,23 +10936,33 @@ def c_ui_sound_slots():
         if a[-3:] == "002" and b[-3:] == "003" and c[-3:] == "001":
             fam += 1
 
-    # and the dispatcher, which is what says WHICH
-    src = open(os.path.join(ROOT, "readable/src/25_sys.c")).read()
-    fn = src[src.find("signed int __cdecl sub_482FE0("):]
-    fn = fn[:fn.find("\n/* @func")]
-    arms = [
-        ("(result & 0x10) != 0"   in fn and "v4 = a1[15]" in fn),   # confirm -> slot 0
-        ("(result & 0x20) != 0"   in fn and "v5 = a1[16]" in fn),   # back    -> slot 1
-        ("(result & 0xF) != 0"    in fn and "v7 = a1[17]" in fn),   # move    -> slot 2
-        ("(result & 0x2000) != 0" in fn and "v6 = a1[18]" in fn),   # close   -> slot 3
-    ]
-    # the slots start at +60, so a1[15] IS slot 0
-    base = "v1 = (int *)(a1 + 60);" in \
-           open(os.path.join(ROOT, "readable/src/25_sys.c")).read()
+    # and the dispatcher, which is what says WHICH.
+    #
+    # `readable/src` is NOT COMMITTED - it is a derivative of the listing,
+    # like `clean/` and the listing itself (CLAUDE.md 2) - so this used to
+    # raise `FileNotFoundError` in any checkout without it rather than
+    # reporting `skipped`, which is the rule that idiom exists for. The
+    # screens-table half above needs none of it and still runs; only the four
+    # dispatch arms and the `+60` base come back None.
+    mod = os.path.join(ROOT, "readable/src/25_sys.c")
+    if os.path.exists(mod):
+        src = open(mod).read()
+        fn = src[src.find("signed int __cdecl sub_482FE0("):]
+        fn = fn[:fn.find("\n/* @func")]
+        arms = [
+            ("(result & 0x10) != 0"   in fn and "v4 = a1[15]" in fn),   # confirm -> slot 0
+            ("(result & 0x20) != 0"   in fn and "v5 = a1[16]" in fn),   # back    -> slot 1
+            ("(result & 0xF) != 0"    in fn and "v7 = a1[17]" in fn),   # move    -> slot 2
+            ("(result & 0x2000) != 0" in fn and "v6 = a1[18]" in fn),   # close   -> slot 3
+        ]
+        # the slots start at +60, so a1[15] IS slot 0
+        base = "v1 = (int *)(a1 + 60);" in src
+        want = ([True, True, True, True], True)
+    else:
+        arms, base, want = None, None, (None, None)
 
     return (fam, menu[:4], names[str(menu[0])], names[str(menu[2])], arms, base), \
-           (27, [1, 2, 0, -1], "men002", "men001",
-            [True, True, True, True], True), \
+           (27, [1, 2, 0, -1], "men002", "men001") + want, \
            "the screens whose first three slots are one family's 002/003/001 - " \
            "the pattern UI 3 established, and it holds; then the start menu's " \
            "own four slots; then the two that matter, CONFIRM (slot 0) and " \
@@ -17574,6 +17594,28 @@ def c_licence_headers():
     (LICENSING.md, "Kept locally, not published"), so they are not walked -
     a check that fails on a directory the repository does not ship would fail
     for every clone.
+
+    **AND THIS ONE WALKS THE DISK, NOT THE REPOSITORY**, which is a thing to
+    know before quoting its number. `os.walk` counts UNTRACKED files, so a
+    working tree carrying a scratch probe in `engine/tools/` reports a
+    different count from a clone of the same commit - green for one person and
+    red for the next, from the same source. That is how the count sat wrong
+    for two commits on 2026-09-04: four sessions shared one working tree with
+    untracked probes in it, and every one of them saw a number no clone could
+    reproduce.
+
+    It is the same fault as the three `readable/` checks corrected in the same
+    commit as this note, one level out: **a check that reads local state as if
+    it were the repository**. `ui input` globbed a directory that is not
+    committed, found nothing, and reported "0 of 30 callbacks decompiled" as a
+    finding about the binary. Both shapes go green while saying something
+    untrue, which is worse than either failing, and neither can be caught by
+    running the suite - only by running it somewhere else.
+
+    Walking the disk is still the right thing HERE: the point is that every
+    file a contributor has actually written carries the header, and a file
+    they have not yet committed is exactly the one to catch. The count is what
+    cannot be shared, not the walk.
     """
     import glob as _g
     TAG = "SPDX-License-Identifier: GPL-3.0-or-later"
@@ -17792,8 +17834,18 @@ def c_tutorial_one_shot():
            "zonesDirty and the Session re-registering on it"
 
 def c_no_define_renames():
-    """CLAUDE.md 3: renames go through tools/renames.json, never a #define."""
-    s = open(os.path.join(ROOT, "readable/types.h"), encoding="utf-8").read()
+    """CLAUDE.md 3: renames go through tools/renames.json, never a #define.
+
+    `readable/types.h` is a derivative of the listing and is NOT COMMITTED
+    (CLAUDE.md 2), so this reported `FileNotFoundError` rather than `skipped`
+    in any checkout without it - the third check of that shape found on
+    2026-09-04, after `ui input` and `ui sound slots`.
+    """
+    hdr = os.path.join(ROOT, "readable/types.h")
+    if not os.path.exists(hdr):
+        return ("skipped",), ("skipped",), \
+               "readable/types.h absent - it is a derivative of the listing"
+    s = open(hdr, encoding="utf-8").read()
     bad = re.findall(r"^#define\s+(\w+)\s+((?:sub|dword|unk|byte|word|flt|off)_[0-9A-F]+)\s*$",
                      s, re.M)
     return len(bad), 0, "alias #defines in types.h (%s)" % ", ".join(b[0] for b in bad)
