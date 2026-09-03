@@ -1231,7 +1231,10 @@ int main(int argc, char** argv) {
 "  omk-play <gamedata> <tables dir> [screen] [options]      play\n"
 "  omk-play <gamedata> <tables dir> --scene <set> [options] look at one set\n"
 "\n"
-"<gamedata> is the shipped tree, <tables dir> the lifted tables (tables/).\n"
+"<gamedata> is the shipped tree. <tables dir> is OPTIONAL - the lifted\n"
+"tables (tables/); without them the run still works but tells you less, and\n"
+"the interface screens cannot be drawn. `tables/vm_opcodes.json` is the one\n"
+"exception: the world scripts cannot be decoded without it.\n"
 "[screen] is the interface screen to open, default 29, the start menu.\n"
 "\n"
 "RUNNING\n"
@@ -1271,11 +1274,31 @@ int main(int argc, char** argv) {
     };
     for (int i = 1; i < argc; ++i)
         if (std::string(argv[i]) == "--help") { usage(stdout); return 0; }
-    if (argc < 3) {
+    if (argc < 2) {
         usage(stderr);
         return 2;
     }
-    const std::string fr = argv[1], tb = argv[2];
+    const std::string fr = argv[1];
+    // THE TABLES ARE OPTIONAL, and the argument for them is too.
+    //
+    // `tables/` holds what a replica cannot read out of the shipped tree - the
+    // VM opcode table, the widget tree, the fonts and key bindings, the ADPCM
+    // coefficients. Most of it only makes the run RICHER, so its absence is a
+    // warning and not a refusal; each loader below says what is lost.
+    //
+    // The second positional argument is taken as the directory when it is not
+    // a flag; otherwise a few obvious places are tried, so `omk-play <tree>`
+    // works from the repo root or from `engine/`.
+    std::string tb;
+    if (argc >= 3 && argv[2][0] != '-') tb = argv[2];
+    else {
+        for (const char* cand : {"tables", "../tables", "../../tables"}) {
+            std::ifstream probe(std::string(cand) + "/vm_opcodes.json");
+            if (probe) { tb = cand; break; }
+        }
+        if (!tb.empty())
+            std::printf("tables: none given, using %s\n", tb.c_str());
+    }
     int screenId = 29, frames = 0;
     bool playMovies = true;
     std::string dump, typeText;
@@ -1385,7 +1408,10 @@ int main(int argc, char** argv) {
 
     const omk::DataFs fs(fr);
     auto w = omk::UiWidgets::loadJson(tb + "/ui_widgets.json");
-    if (!w.valid()) { std::fprintf(stderr, "cannot load the widget tree\n"); return 1; }
+    if (!w.valid())
+        std::printf("tables: no widget tree (ui_widgets.json) - the interface "
+                    "screens cannot be drawn or walked, so the Session answers "
+                    "them itself and the start menu is skipped\n");
     w.loadScreens(tb + "/ui.json");
     const auto fonts = omk::FontTable::loadJson(tb + "/ui.json");
     const omk::TextLayout lay(fonts, fr + "/FONTS");
@@ -1445,11 +1471,27 @@ int main(int argc, char** argv) {
     // screen 29 itself would still show a menu and would be a different
     // program.
     const auto opcodes = omk::OpcodeTable::loadJson(tb + "/vm_opcodes.json");
-    if (!opcodes.valid()) { std::fprintf(stderr, "no VM opcode table\n"); return 1; }
+    // The ONE that cannot be worked around: without the operand lengths the
+    // VM cannot even step an instruction, and a hand-written table is not an
+    // option - CLAUDE.md records one being wrong three ways in an hour. It is
+    // in the repo as `tables/vm_opcodes.json`.
+    if (!opcodes.valid()) {
+        std::fprintf(stderr,
+            "no VM opcode table: looked for %s/vm_opcodes.json\n"
+            "  this one is required - the world scripts cannot be decoded "
+            "without the operand lengths.\n"
+            "  pass the directory as the second argument, e.g. "
+            "omk-play <gamedata> tables\n",
+            tb.empty() ? "<no tables dir>" : tb.c_str());
+        return 1;
+    }
     omk::GameState state = omk::GameState::fromFile(fr + "/IAM/START");
     omk::Session session(fr + "/IAM", state, opcodes);
-    session.loadAnnounceMap(tb + "/vm_announce.json");
-    session.answerUiFromPerson(true);
+    if (!session.loadAnnounceMap(tb + "/vm_announce.json"))
+        std::printf("tables: no vm_announce.json - the log will name fewer "
+                    "operands\n");
+    // A person answers the screens only when there ARE screens to draw.
+    session.answerUiFromPerson(w.valid());
     // There is a frame clock here, so `camera.set.wait` can do what the
     // handler does: hold the script for the length of the move it started.
     // Without it AREA 118's six intro cameras and its `area.goto` all happen
