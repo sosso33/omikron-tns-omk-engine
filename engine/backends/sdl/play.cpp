@@ -3063,8 +3063,22 @@ int main(int argc, char** argv) {
                 // through. `resolveCamera` handles both per point, because the
                 // engine decides per point and 959 of the 1443 relative
                 // cameras are relative in ONE of their two.
+                //
+                // ...AGAINST THE SAME SUBJECT POINT THE FOLLOW CAMERA USES.
+                // `session.playerPos()` is his FEET - the ground point the
+                // walker keeps - and a relative camera's offset is measured
+                // from the pelvis, which is why `resolveSteady` subtracts
+                // `camLift_` (Y points down, so subtracting RAISES). The
+                // follow path did that from issue 49 and this one did not, so
+                // every scripted shot naming a subject sat a whole lift too
+                // low - about 42 units for HO1_FNM, and visibly so on AREA
+                // 222's tutorial shots 4290/4291/4292
+                // (`todo/omk-play.md` 57).
+                const float lift = player ? player->cameraLift() : 0.0f;
+                const float* pp0 = session.playerPos();
+                const float subj[3] = {pp0[0], pp0[1] - lift, pp0[2]};
                 const omk::ResolvedCamera rc = omk::resolveCamera(
-                    *wc, session.playerPos(), session.playerYaw());
+                    *wc, subj, session.playerYaw());
                 for (int k = 0; k < 3; ++k) {
                     view.cam.eye[k] = rc.eye[k];
                     view.cam.at[k]  = rc.at[k];

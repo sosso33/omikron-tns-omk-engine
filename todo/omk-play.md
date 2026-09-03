@@ -283,6 +283,52 @@ function in the game.
 **The class** — every scripted object motion in every scene: doors, lifts,
 crates, vehicles.
 
+## Fixed (batch 10, 2026-09-03)
+
+### 57. Scripted cameras sat a whole pelvis-lift too low — A
+
+> **Fixed 2026-09-03.** The scripted-camera branch now resolves against the
+> same subject point the follow camera uses - the pelvis, `playerPos` minus
+> `cameraLift()` - instead of the feet. `verify.py: engine tuto camera`
+> asserts all three tutorial shots move by exactly the lift. Awaiting the
+> play test.
+
+Filed 2026-09-03 from a play report — *the camera is too low on the tuto
+cutscene ("En appuyant sur Action, je peux prendre un objet ...")*.
+
+**What the engine does.** A relative world camera is
+`point = subjectPos - R(yaw) * offset` (`sub_415D10`/`sub_415E60`), and the
+subject point is the actor's PELVIS, not the ground point the walker keeps.
+That is what issue 49 established for the follow camera, where
+`PlayerController::resolveSteady` builds
+`{pos_[0], pos_[1] - camLift_, pos_[2]}` before resolving - Y points down, so
+subtracting RAISES - with `camLift_` measured from the model's own hierarchy
+root, 41.89 for HO1_FNM.
+
+**What the port did.** The follow branch used that lifted subject; the
+SCRIPTED branch, three lines below it, called
+
+    omk::resolveCamera(*wc, session.playerPos(), session.playerYaw());
+
+with `playerPos()` - the feet. So every staged shot naming a subject sat one
+whole lift below where it belongs. AREA 222's alley tutorial is the visible
+case because all three of its shots, 4290/4291/4292, are `eyeSubject 0,
+atSubject 0` - the very shape that made issue 42 hard, since it is also the
+follow camera's shape.
+
+Measured on those three, feet against pelvis::
+
+    camera 4290   eye.y  400.00 -> 358.11    raised 41.89
+    camera 4291   eye.y  387.00 -> 345.11    raised 41.89
+    camera 4292   eye.y  397.00 -> 355.11    raised 41.89
+
+exactly the lift, and exactly the 41.89 `engine: player walk` measures from
+the other side. Shown to fail by resolving with a lift of 0, which is what
+the port was doing: all three deltas go to 0.
+
+**Severity A** - every scripted shot in the game that names a subject, which
+is 1443 of the world cameras.
+
 ## Fixed (batch 9, 2026-09-03)
 
 ### 56. The black fade blacked the WHOLE screen: it is two letterbox bands — A

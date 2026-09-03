@@ -5864,6 +5864,53 @@ def c_engine_impasse_fx():
            ("the Impasse's beats fire 15 set-piece rows and peak at 108 live "
             "particles, alive on 262 of 900 frames")
 
+def c_engine_tuto_camera():
+    r"""`engine/`: a scripted camera resolves against the PELVIS, like the follow one.
+
+    A relative world camera is `point = subjectPos - R(yaw) * offset`
+    (`sub_415D10`/`sub_415E60`), and the subject point is the actor's pelvis,
+    not the ground point the walker keeps. `PlayerController::resolveSteady`
+    subtracts `camLift_` before resolving - Y points DOWN, so subtracting
+    RAISES - and that is issue 49's fix for the FOLLOW camera.
+
+    The scripted branch of `omk-play` resolved against `session.playerPos()`,
+    the feet, so every staged shot naming a subject sat one whole lift too
+    low. Reported on AREA 222's alley tutorial, the "En appuyant sur Action"
+    sequence, whose three shots 4290/4291/4292 are all `eyeSubject 0,
+    atSubject 0` - the same shape as the follow camera, which is what made
+    issue 42 hard too.
+
+    What is asserted: each of the three is raised by exactly the lift when the
+    subject moves from the feet to the pelvis, in hundredths - 4189 for
+    HO1_FNM, the same 41.89 `engine: player walk` measures from the model's
+    own hierarchy root. A scripted camera that ignored the lift reports 0.
+    """
+    import subprocess, tempfile, shutil
+    fr = omkpaths.data_root()
+    if not os.path.isdir(fr):
+        return ("no data",), ("data",), "needs the shipped tree"
+    eng = os.path.join(ROOT, "engine")
+    b = subprocess.run(["make", "-s", "build/tuto_camera"], cwd=eng,
+                       capture_output=True, text=True)
+    binp = os.path.join(eng, "build", "tuto_camera")
+    if b.returncode != 0 or not os.path.exists(binp):
+        return ("build failed",), ("built",), "engine/ must build"
+    tmp = tempfile.mkdtemp()
+    try:
+        out = os.path.join(tmp, "t.bin")
+        subprocess.run([binp, fr, os.path.join(ROOT, "tables", "vm_opcodes.json"),
+                        os.path.join(fr, "IAM", "START"), "41.89", out],
+                       capture_output=True, text=True)
+        raw = open(out, "rb").read()
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+    if len(raw) < 12:
+        return ("no output",), ("12 bytes",), "the probe must resolve three cameras"
+    a, bb, c = struct.unpack_from("<3i", raw, 0)
+    return (a, bb, c), (4189, 4189, 4189), \
+           ("AREA 222's tutorial shots 4290/4291/4292, each raised by the pelvis "
+            "lift when resolved against the subject the follow camera uses")
+
 def c_engine_env_anim():
     r"""`engine/`: the ENVIRONMENT's own animations, and the fan that turns.
 
@@ -16645,7 +16692,7 @@ def c_licence_headers():
                    if TAG in open(p, encoding="utf-8",
                                   errors="replace").read(600)]
     return (authored, sorted(missing), len(vendored), mislabelled), \
-           (294, [], 1, []), \
+           (295, [], 1, []), \
            "authored source files under tools/, engine/src, engine/tools, " \
            "engine/backends and scripts/; those MISSING the SPDX tag; " \
            "vendored files in engine/third_party; and vendored files wrongly " \
@@ -18052,6 +18099,7 @@ SLOW = [
     ("engine: scene steps", c_engine_scene_steps, "engine/README"),
     ("engine: scene survive", c_engine_scene_survive, "todo/omk-play"),
     ("engine: env anim", c_engine_env_anim, "todo/omk-play"),
+    ("engine: tuto camera", c_engine_tuto_camera, "todo/omk-play"),
     ("engine: impasse fx", c_engine_impasse_fx, "todo/omk-play"),
     ("sprite ids scene-local", c_sprite_ids_are_scene_local, "docs/ASSETS"),
     ("engine: scene sounds", c_engine_scene_sounds, "engine/README"),
