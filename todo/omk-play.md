@@ -5,13 +5,22 @@ of the port (CLAUDE.md 5), but what it fails to draw is what a person reports,
 so its gaps are filed here in the same four-part shape as the script engine's.
 Numbering continues from `iam-script-engine.md` so a number names one thing.
 
+**A viewer fix is not done until somebody has WATCHED it** (CLAUDE.md 1: "a value
+verified standing still is not verified moving"). 42 and 43 are the case for the
+rule rather than an illustration of it: both passed the suite, and 43 shipped
+TWICE in two different wrong states - a T-pose, then a frozen mid-stride - each
+caught only by a person walking into the alley and looking. So an entry here says
+either CONFIRMED IN PLAY or it does not, and one that does not is a claim still
+waiting on its evidence.
+
 ## Fixed (batch 4, 2026-09-03)
 
 ### 42. A scripted camera shaped like the follow camera re-aims the follow camera — A
 
-> **Fixed 2026-09-03.** `followCam` now also requires `!session.playerAnimHeld()`, so a
-> held player hands the camera to the script and the requested shot resolves as a fixed
-> camera. `verify.py: held camera bracket`.
+> **Fixed 2026-09-03, CONFIRMED IN PLAY.** `followCam` now also requires
+> `!session.playerAnimHeld()`, so a held player hands the camera to the script and the
+> requested shot resolves as a fixed camera. Walked into the alley and watched: the
+> three shots hold. `verify.py: held camera bracket`.
 
 Filed 2026-09-03 from a play report — *after the Impasse cutscene, going into
 the small way, the text appears but the camera stays in adventure mode.*
@@ -48,7 +57,8 @@ decode desyncs.
 
 ### 43. `player.anim.hold` drew the REST pose, so the player T-posed — A
 
-> **Fixed 2026-09-03, on the third reading.** The controller is now TICKED while
+> **Fixed 2026-09-03 on the third reading, CONFIRMED IN PLAY** - he walks to a halt
+> and stands through the held sequence. The controller is now TICKED while
 > held, with no input, and the pose comes from the channel exactly as it does
 > unheld. Two earlier attempts were wrong in opposite directions and both
 > shipped: `composePose(meshes, {}, 0)` (the rest sentinel) drew a T-pose, and a
