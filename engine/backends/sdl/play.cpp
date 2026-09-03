@@ -1611,6 +1611,7 @@ int main(int argc, char** argv) {
     int openScreen = -1, conversations = 0, lastArea = -1;
     int replySel = 0;            // which reply the player is on
     int actionTold = 0;          // one line for a press that reaches nothing
+    int         takeCandidate = -1;      // `dword_53AF6C`, MDACTION's pick
     // The spoken line's SCROLL, in pixels, and the overflow it is clamped to -
     // `dword_6A52C0` and `dword_53AE24`. One pixel a tick while held, which is
     // what `Dialog_TickUI` does with input bits 4 (up) and 8 (down).
@@ -3172,6 +3173,83 @@ int main(int argc, char** argv) {
                 } else {
                     player->tick(static_cast<float>(frameSec * 30.0), bits);
                 }
+                // ---- THE WORLD TAKE: tab_special_move[] 3..7 -------------
+                //
+                // omk-play 66. Pressing action fires MDACTION (H1AVNT entry
+                // 24, group 0, input 0x10) and that entry has NO CHILDREN:
+                // the HANDLER carries the machine on, by finding group id 45
+                // and installing it (`loc_46AFD0`: `Cef_FindGroupById(actor+
+                // 180, 0x2D)` -> `SetPersoBankGroup`). Group 45's entry is
+                // MDGETOBJ, so the take follows from the group switch alone.
+                //
+                //   MDACTION  scan for an object within 150 cm; found ->
+                //             group 45, else nothing (the press falls through
+                //             to Script_Pump's "nothing here")
+                //   MDGETOBJ  `sub_41C490(player, slot)` - the node is linked
+                //             to the hand and actor+164 points at the object's
+                //             96-byte record - then the object's NAME through
+                //             `Subtitle_Show`
+                //   MDPUTSNK  entry 55, group 4, input 0x10: press action
+                //             AGAIN and it goes in the sack - `sub_41C720`
+                //             raises event 10 with the slot and clears +164
+                //   MDLETOBJ  reached from entry 56 (input 0x20, the CANCEL
+                //             bit): `sub_41C540(player, 0)` - released with
+                //             remove=0, so the prop returns to its placement
+                //
+                // The three-press shape a reader described - take and see the
+                // name, press again to bank it, another button to put it back
+                // - is these four rows and nothing else.
+                for (const auto& mv : player->specialMoves()) {
+                    if (mv == "MDACTION") {
+                        // The handler's success path sets `dword_53AF6C` (the
+                        // object) and `dword_53AE5C` (a result code) and
+                        // RETURNS without switching group; the switch is made
+                        // by the dispatcher that reads that code - MDNOTAKE
+                        // (0x0046B530) switches on it over four cases. That
+                        // dispatcher is not transcribed, so this installs the
+                        // take group directly.
+                        //
+                        // **RECONSTRUCTION, labelled** - but the group is NOT
+                        // guessed, it is read: group id 41 is the take group,
+                        // its default entry 51 (clip 12) has exactly one
+                        // child, entry 52, whose move is MDGETOBJ. Group 45,
+                        // which the handler's OTHER two arms name, carries no
+                        // take move at all - it is the empty action animation
+                        // `sub_467950` installs when nothing is there.
+                        const int obj = session.scanTakeable(player->pos(), player->facing());
+                        if (obj >= 0 && player->enterGroupById(41)) {
+                            takeCandidate = obj;
+                            std::printf("take: MDACTION found object %d '%s' in reach "
+                                        "-> take group 41\n",
+                                        obj, session.objectName(obj).c_str());
+                        } else if (obj >= 0) {
+                            std::printf("take: MDACTION found object %d but the bank has "
+                                        "no group 41\n", obj);
+                        }
+                    } else if (mv == "MDGETOBJ") {
+                        if (takeCandidate >= 0 && session.takeObject(takeCandidate)) {
+                            // `sub_4083F0(46, ...)` then `Subtitle_Show`
+                            // (0x0041E040): the object's NAME at the bottom of
+                            // the screen, which is what a reader described
+                            // seeing on the take. It rides the same subtitle
+                            // the voice-overs use.
+                            mediaText = session.objectName(takeCandidate);
+                            mediaTextFrames = mediaText.empty() ? 0 : 90;
+                            std::printf("take: MDGETOBJ - holding %d '%s'\n",
+                                        takeCandidate, mediaText.c_str());
+                        }
+                    } else if (mv == "MDPUTSNK") {
+                        std::printf("take: MDPUTSNK - object %d goes to the inventory\n",
+                                    takeCandidate);
+                        session.bankHeldObject(takeCandidate);
+                        takeCandidate = -1;
+                    } else if (mv == "MDLETOBJ") {
+                        std::printf("take: MDLETOBJ - object %d put back where it was\n",
+                                    takeCandidate);
+                        session.putHeldObjectBack();
+                        takeCandidate = -1;
+                    }
+                }
                 // `Actor_TickNpc`: `Actor_ApplyMotion`, then `Actor_ScanZones`
                 // at the position it left - the Session's scan reads this on
                 // its next frame (wave B, T15). Facing in the +420 degrees.
@@ -3201,12 +3279,23 @@ int main(int argc, char** argv) {
                 if ((bits & 0x10u) && !session.dialogOpen()) {
                     const int armed = session.zones().armedCount();
                     const std::int16_t z = session.zones().armedZone();
+                    // omk-play 66: EVERY press is reported, with where he
+                    // stood, because the question is whether anything arms at
+                    // the anneaux (7288 -80 3015) at all. The rings are
+                    // OBJECTS 162 and no zone with an activate script covers
+                    // them, so a press there that arms NOTHING is the result
+                    // that confirms a second, object-proximity scan.
+                    const float* pp = player ? player->pos() : nullptr;
                     if (session.pressAction())
-                        std::printf("action: zone %d activated (%d slot%s armed)\n",
-                                    z, armed, armed == 1 ? "" : "s");
-                    else if (!actionTold++)
-                        std::printf("action: pressed with %d slots armed - nothing "
-                                    "in reach is interactable from here\n", armed);
+                        std::printf("action: zone %d activated (%d slot%s armed) at %.0f %.0f %.0f\n",
+                                    z, armed, armed == 1 ? "" : "s",
+                                    pp ? pp[0] : 0.0f, pp ? pp[1] : 0.0f, pp ? pp[2] : 0.0f);
+                    else
+                        std::printf("action: pressed at %.0f %.0f %.0f - %d slots armed, "
+                                    "nothing interactable in reach\n",
+                                    pp ? pp[0] : 0.0f, pp ? pp[1] : 0.0f, pp ? pp[2] : 0.0f,
+                                    armed);
+                    (void)actionTold;
                 }
                 // `Walk_ProbeGround` -> `Game_HandleEvent` case 9: the decor
                 // under his feet, over every shown slot. The active row - the

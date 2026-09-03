@@ -182,6 +182,12 @@ public:
     // `o3de_MoveNodeBy`, before `Actor_ApplyMotion`): the position moved
     // outright, no floor probe - the next tick's motion probes the ground.
     void nudge(const float d[3]);
+    // The `tab_special_move[]` names the channel fired THIS tick, in order.
+    // The handlers are the engine's and most of them need the world, so the
+    // frontend runs them; see player.cpp. Cleared at the top of every tick.
+    const std::vector<std::string>& specialMoves() const { return moves_; }
+    // `Cef_FindGroupById` + `SetPersoBankGroup`, by the group's ID.
+    bool enterGroupById(int id);
 
     // --- what the zone scan and the frontend take ---------------------
     const float* pos() const { return pos_; }
@@ -281,6 +287,7 @@ private:
     const std::vector<Mesh>*   meshes_;
     ActorRuntime rt_;
     Walker       walker_;
+    std::vector<std::string> moves_;
     float pos_[3];
     float start_[3];
     float euler_[3] = {0, 0, 0};       // +416, +420, +424

@@ -7,6 +7,7 @@
 #include "script/scenehost.h"
 
 #include "script/world.h"
+#include "script/objects.h"
 
 #include <cstdlib>
 #include <cstring>
@@ -2614,6 +2615,58 @@ void Session::scanZonesNow() {
 int Session::objectSlotId(int slot) const {
     return slot >= 0 && slot < 50 ? objectSlotIds_[static_cast<std::size_t>(slot)] : -1;
 }
+
+// `MDACTION` (0x0046AEC0), the scan behind the world take - see area.h.
+int Session::scanTakeable(const float pos[3], float /*facing*/) const {
+    // 150 cm in inches; the handler's own `flt_4BC918`
+    constexpr float kReach = 59.055119f;
+    int best = -1;
+    float bestD2 = kReach * kReach;
+    for (const auto& p : props()) {
+        if (!p.shown || p.id < 0) continue;
+        const float dx = p.pos[0] - pos[0];
+        const float dy = p.pos[1] - pos[1];
+        const float dz = p.pos[2] - pos[2];
+        const float d2 = dx * dx + dy * dy + dz * dz;
+        if (d2 > bestD2) continue;
+        bestD2 = d2;
+        best = p.id;
+    }
+    return best;
+}
+
+std::string Session::objectName(int objectId) const {
+    // `IAM\OBJECT` is not otherwise resident in the Session, so it is read
+    // once and cached here rather than threaded through every caller.
+    if (objectId < 0 || dataRoot_.empty()) return {};
+    static std::vector<ObjectRecord> table;
+    static std::string forRoot;
+    if (forRoot != dataRoot_) {
+        forRoot = dataRoot_;
+        table = loadObjects(DataFs(dataRoot_));
+    }
+    for (const auto& o : table) if (o.id == objectId) return o.name;
+    return {};
+}
+
+bool Session::takeObject(int objectId) {
+    PropRef pr;
+    if (!hooks_.propById(objectId, pr) || pr.slot == -1) return false;
+    hooks_.holdObject(-1, pr.slot);
+    return true;
+}
+
+void Session::bankHeldObject(int objectId) {
+    // The slot leaves the hand AND the world: `sub_41C540(player, 1)` frees
+    // it (`sub_418DC0(4, slot)`) and unlinks the node, so the prop's SHOWN
+    // bit goes with it. Without clearing bit 1 the scan keeps finding an
+    // object that is already in the inventory and it can be taken for ever.
+    PropRef pr;
+    if (objectId >= 0 && hooks_.propById(objectId, pr) && pr.stateIndex >= 0)
+        state_.setPropState(pr.stateIndex, state_.propState(pr.stateIndex) & ~2);
+    hooks_.releaseObject(-1, true);
+}
+void Session::putHeldObjectBack(){ hooks_.releaseObject(-1, false); }
 
 int Session::heldSlotOf(int actor) const {
     const auto it = heldSlot_.find(actor);

@@ -2,6 +2,9 @@
 #include "actor/player.h"
 
 #include <cmath>
+#include <cstdio>
+#include <string>
+#include <set>
 #include <cstring>
 
 namespace omk {
@@ -102,6 +105,17 @@ void PlayerController::placeAt(const float pos[3], float facing) {
     for (int k = 0; k < 3; ++k) pos_[k] = static_cast<float>(walker_.pos()[k]);
     for (int k = 0; k < 3; ++k) start_[k] = pos_[k];
     euler_[1] = wrap360(facing);
+}
+
+// `Cef_FindGroupById(actor+180, id)` then `SetPersoBankGroup(actor+396, g)` -
+// the pair MDACTION ends on (`loc_46AFD0`: id 0x2D = 45) to carry the machine
+// out of the action state and into the group whose entry is MDGETOBJ. It is
+// the handler that switches the group, not a transition: entry 24, the
+// MDACTION state, has NO children at all.
+bool PlayerController::enterGroupById(int id) {
+    const int g = rt_.channel().findGroupById(id);
+    if (g < 0) return false;
+    return rt_.channel().setBankGroup(g);
 }
 
 void PlayerController::nudge(const float d[3]) {
@@ -347,7 +361,17 @@ void PlayerController::tick(float dt, std::uint32_t word) {
     stateBefore_ = s0;
     // The whole-on-transition blocks (0x100 turn / 0x200 shift) arrive as
     // channel events; apply the ones this tick produced.
+    moves_.clear();
     for (const auto& e : rt_.channel().events()) {
+        // `Cef_QueueSpecialMove` -> `tab_special_move[]`, the binary's own
+        // 66-row table of engine callbacks. The channel has always emitted
+        // these and nothing consumed them, which is why the world TAKE never
+        // worked: it IS one of those handlers (MDACTION scans for an object,
+        // MDGETOBJ takes it, MDPUTSNK banks it, MDLETOBJ puts it back). The
+        // handlers need the world, which this class does not have, so the
+        // names are collected and the frontend runs them.
+        if (e.kind == ChannelEvent::Kind::Move && !e.name.empty())
+            moves_.push_back(e.name);
         if (e.kind == ChannelEvent::Kind::Turn && e.from >= 0 &&
             e.from < static_cast<int>(S.size())) {
             const CtlState& f = S[static_cast<std::size_t>(e.from)];

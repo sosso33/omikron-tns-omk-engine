@@ -15,7 +15,7 @@ waiting on its evidence.
 
 ## Open (batch 6, filed 2026-09-04)
 
-### 66. The world TAKE is not the trigger-zone system — where does it start? — B
+### 66. The world TAKE is a .CTL SPECIAL MOVE, not a script — B
 
 Not a regression; an unported mechanic, opened while wiring object and NPC
 interaction. The reader: *"yes, i can take them after the tuto cutscene"* —
@@ -55,10 +55,82 @@ precisely where `object.show 162` lives. CLAUDE.md 6's lesson about the 5785
 slots, one tool further down: a negative result over a corpus is only as
 strong as the enumeration behind it.
 
-**Next step**: a play session with the port's existing zone/action logging —
-walk to the rings after the tutorial, press action, and see whether anything
-arms at all. If nothing does, the second scan is confirmed and the search
-moves to what fills the 16 prompt slots besides `Game_HandleEvent` case 7.
+> **ANSWERED and PARTLY IMPLEMENTED 2026-09-04.** The play session settled
+> it: standing within 3 units of the rings, every action press reported **0
+> slots armed**. No zone is involved. The take is `tab_special_move[]`.
+
+**The mechanism, end to end.** Rows 3..7 of the binary's own 66-row table are
+`MDACTION`, `MDGETOBJ`, `MDLETOBJ`, `MDPUTSNK`, `MDNOTAKE`, and `H1AVNT` — the
+player's adventure bank — carries all five:
+
+| entry | group | move | input |
+|---|---|---|---|
+| 24 | 0 (id 40) | `MDACTION` | `0x10`, the action button — **no children** |
+| 51→52 | 3 (**id 41**) | `MDGETOBJ` | 0 |
+| 55 | 4 | `MDPUTSNK` | `0x10` — press action AGAIN |
+| 56 | 4 | `MDNOTAKE` | `0x20` — the cancel bit |
+| 60 | 5 | `MDLETOBJ` | 0 |
+
+Entry 24 has **no children at all**, so the machine cannot leave the action
+state by a transition: the HANDLER carries it on by installing a group.
+`MDACTION` scans for an object within `flt_4BC918` = 59.055119 — which is
+**150 cm in the engine's inch** (150/2.54), the second branch's `flt_4BC930`
+being 120 cm — writes it to `dword_53AF6C` and a result code to
+`dword_53AE5C`. Group **id 41** is the take group: its default entry 51 (clip
+12) has exactly one child, entry 52, whose move is `MDGETOBJ`. Group 45, which
+the handler's other two arms name, carries no take move — it is the empty
+action animation `sub_467950` installs when nothing is there.
+
+`MDGETOBJ` then does `sub_41C490(player, slot)` — the node is linked to the
+hand and `actor+164` points at the object's 96-byte record — and shows the
+object's NAME through `Subtitle_Show` (0x0041E040). `MDPUTSNK` is
+`sub_41C720`, event 10 with the slot and `+164` cleared: into the inventory.
+`MDLETOBJ` is `sub_41C540(player, 0)`, released with remove=0, so the prop
+returns to its stored placement — put back where it was.
+
+**And it is ONE object system, correcting a statement made earlier in this
+entry's own investigation**: `word_4E6CA0[slot]` is the OBJECTS id and
+`unk_4E7EA0[96*slot]` the runtime record for the SAME 50 slots; `+164` is a
+pointer into the second. The VM opcodes 66..69 and the special moves are two
+doors onto one table.
+
+**Implemented**: the channel already emitted `ChannelEvent::Kind::Move` with
+the move's name and NOTHING consumed it — that one gap is why no object could
+ever be taken. The frontend now runs the four handlers, and the Impasse's
+rings can be taken, named and banked:
+
+    take: MDACTION found object 162 '3 Anneaux magiques' in reach -> take group 41
+    take: MDGETOBJ - holding 162 '3 Anneaux magiques'
+    take: MDPUTSNK - object 162 goes to the inventory
+
+**Still open, from a reader's description on the day**: *"when taking a
+object, there is sound and a camera move; when validating, another sound, a
+particle effect on the arm and the camera return to its normal position."*
+The camera half is already located and is NOT guesswork — `sub_414BF0` is
+**`Camera_Request`**, and the handlers call it directly: `MDGETOBJ` does
+`Camera_Request(1, ...)` with the subject set to `Actor_Index(player)` and
+`dword_930818 = 30.0f` (a 30-frame move), while `MDPUTSNK`/`MDLETOBJ` do
+`Camera_Request(0x10, ...)` — and mode 16 is the one mode that loads no
+parameters at all, it only swaps the double-buffered camera pair, which IS
+"the camera returns to its normal position". The sound and the arm particle
+are most likely the `.CTL` entry's own effect records (ASSETS: the `+28`
+sub-records are bone-attached sprites and frame-triggered sounds), which the
+port reads but does not play.
+
+**One RECONSTRUCTION is labelled in the code**: the handler's success path
+sets the two globals and returns WITHOUT switching group; the switch is made
+by the dispatcher reading `dword_53AE5C`, which is `MDNOTAKE` (0x0046B530,
+four cases) and is not transcribed. The port installs group 41 directly. The
+group is read, not guessed — but the path into it is reconstructed.
+
+**A method warning that cost a wrong statement to the reader.**
+`tools/script_dump.py` enumerates a chunk's 68-byte zone records and its
+second table — it does NOT enumerate the chunk's `+4` STARTUP script. A corpus
+sweep built on it misses every startup script, which is how "the Impasse
+contains no object opcodes" was reported when SCENE 55's startup script is
+precisely where `object.show 162` lives. CLAUDE.md 6's lesson about the 5785
+slots, one tool further down: a negative result over a corpus is only as
+strong as the enumeration behind it.
 
 **Housekeeping**: issue numbers **60 and 61 are each used twice** in this
 file. 61 was mine and is renumbered 65 here; the two 60s came in with the

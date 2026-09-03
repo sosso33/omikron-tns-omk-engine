@@ -716,6 +716,42 @@ public:
     };
     std::vector<PropInstance> props() const;
 
+    // ------------------------------------------- THE WORLD TAKE (omk-play 66)
+    //
+    // `MDACTION`, `tab_special_move[3]` (0x0046AEC0): the object-proximity
+    // scan the ACTION press runs. It is NOT the trigger-zone system - a zone
+    // scan is `Actor_ScanZones` and it looks at zones only, which is why
+    // standing on the Impasse's rings arms nothing at all.
+    //
+    // The range is the handler's own constant: `flt_4BC918` = 59.055119, which
+    // is 150 cm in the engine's INCH (150/2.54), and the second branch's
+    // `flt_4BC930` = 47.244095 is 120 cm. This takes the first.
+    //
+    // **RECONSTRUCTION, labelled**: the handler qualifies its candidate with
+    // `sub_465D30(actor, obj, 0)`, which is not transcribed - so "takeable"
+    // here is "a SHOWN prop whose OBJECTS record exists". Returns the prop's
+    // OBJECTS id, or -1.
+    int  scanTakeable(const float pos[3], float facing) const;
+    // The OBJECTS record's name, for the line `MDGETOBJ` puts on screen
+    // through `Subtitle_Show` (0x0041E040).
+    std::string objectName(int objectId) const;
+
+    // The three world-take actions, as the special-move handlers perform
+    // them. They go through the same hooks opcodes 66..69 use, because it is
+    // the same 50 slots: `word_4E6CA0[slot]` is the OBJECTS id and
+    // `unk_4E7EA0[96*slot]` the runtime record, and actor `+164` is a pointer
+    // into the second (`sub_41C490`).
+    //
+    // `MDGETOBJ` -> `sub_41C490(player, slot)`. False when the id names no
+    // resident prop or the prop has no runtime slot.
+    bool takeObject(int objectId);
+    // `MDPUTSNK` -> `sub_41C720(player)`: event 10 with the slot, +164
+    // cleared - the object goes to the inventory and leaves the world.
+    void bankHeldObject(int objectId);
+    // `MDLETOBJ` -> `sub_41C540(player, 0)`: released with remove=0, so the
+    // prop is re-parented at its stored placement - put back where it was.
+    void putHeldObjectBack();
+
     // ------------------------------------------------------- RESTART
     //
     // `Script_Pump` phase 1 opens `if (g_RestartRequest) { Script_Pump(3);
