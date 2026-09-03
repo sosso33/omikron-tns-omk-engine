@@ -1,0 +1,986 @@
+[
+ {
+  "dialog": 1,
+  "name": "Dakobah/GUN",
+  "decor": "Sawakent",
+  "dist": 73.5
+ },
+ {
+  "dialog": 5,
+  "name": "Dakobah/Refus d'Objet 1",
+  "decor": "Sawakent",
+  "dist": 73.5
+ },
+ {
+  "dialog": 6,
+  "name": "Dakobah/Accepte Objet 1",
+  "decor": "Sawakent",
+  "dist": 73.5
+ },
+ {
+  "dialog": 7,
+  "name": "Dakobah/Refus d'Objet 2",
+  "decor": "Sawakent",
+  "dist": 73.5
+ },
+ {
+  "dialog": 27,
+  "name": "Matanboukous/Renvoi",
+  "decor": "AHopital",
+  "dist": 569.9
+ },
+ {
+  "dialog": 34,
+  "name": "Boog/Retour Good",
+  "decor": "ACSlev-3",
+  "dist": 333.0
+ },
+ {
+  "dialog": 35,
+  "name": "Boog/Surveillance",
+  "decor": "ACSlev-3",
+  "dist": 333.0
+ },
+ {
+  "dialog": 162,
+  "name": "Jenna/Tetra/Bien Jou\u00e9",
+  "decor": "jaunpur",
+  "dist": 568.2
+ },
+ {
+  "dialog": 167,
+  "name": "Matanboukous/Wikis",
+  "decor": "AHopital",
+  "dist": 552.8
+ },
+ {
+  "dialog": 168,
+  "name": "Boz/Fin Section 2",
+  "decor": "Sbozordi",
+  "dist": 148.1
+ },
+ {
+  "dialog": 169,
+  "name": "Mashroud/Pamoka",
+  "decor": "Sprison",
+  "dist": 779.2
+ },
+ {
+  "dialog": 170,
+  "name": "Jenna/Pamoka/Prisonniers",
+  "decor": "Sprison",
+  "dist": 792.0
+ },
+ {
+  "dialog": 171,
+  "name": "Garde2/Pamoka/Insulte 4",
+  "decor": "Sprison",
+  "dist": 710.1
+ },
+ {
+  "dialog": 172,
+  "name": "Garde2/Pamoka/Insultes 1",
+  "decor": "Sprison",
+  "dist": 811.7
+ },
+ {
+  "dialog": 173,
+  "name": "Garde2/Pamoka/Insultes 2",
+  "decor": "Sprison",
+  "dist": 811.7
+ },
+ {
+  "dialog": 174,
+  "name": "Garde2/Pamoka/Insultes 3",
+  "decor": "Sprison",
+  "dist": 710.1
+ },
+ {
+  "dialog": 175,
+  "name": "Garde2/Pamoka/Insultes 5",
+  "decor": "Sprison",
+  "dist": 710.1
+ },
+ {
+  "dialog": 176,
+  "name": "Jenna/Pamoka/Pas de Plan",
+  "decor": "Sprison",
+  "dist": 701.2
+ },
+ {
+  "dialog": 177,
+  "name": "Jenna/Pamoka/Evasion",
+  "decor": "Sprison",
+  "dist": 659.9
+ },
+ {
+  "dialog": 178,
+  "name": "Garde/Pamoka",
+  "decor": "Sprison",
+  "dist": 316.0
+ },
+ {
+  "dialog": 179,
+  "name": "Yob/Temple",
+  "decor": "STempsas",
+  "dist": 351.9
+ },
+ {
+  "dialog": 180,
+  "name": "Infirmi\u00e8re/Morgue 2  (Scene)",
+  "decor": "AMorgue",
+  "dist": 856.9
+ },
+ {
+  "dialog": 181,
+  "name": "Yudin/Morgue  (Scene)",
+  "decor": "AMorgue",
+  "dist": 359.9
+ },
+ {
+  "dialog": 182,
+  "name": "Infirmi\u00e8re/Morgue 1  (Scene)",
+  "decor": "AMorgsas",
+  "dist": 847.8
+ },
+ {
+  "dialog": 183,
+  "name": "Jenna/Sneak/Labo",
+  "decor": "Stetrsas",
+  "dist": 169.1
+ },
+ {
+  "dialog": 184,
+  "name": "Telis/Toit  (Scene)",
+  "decor": "AToit",
+  "dist": 458.7
+ },
+ {
+  "dialog": 185,
+  "name": "Telis/Toit 2  (Scene)",
+  "decor": "AToit",
+  "dist": 535.3
+ },
+ {
+  "dialog": 186,
+  "name": "Telis Demon/Toit  (Scene)",
+  "decor": "AToit",
+  "dist": 545.6
+ },
+ {
+  "dialog": 187,
+  "name": "Jenna/RDV  (Scene)",
+  "decor": "AascToit",
+  "dist": 390.0
+ },
+ {
+  "dialog": 188,
+  "name": "Jenna/Base 1",
+  "decor": "Sawaken3",
+  "dist": 138.6
+ },
+ {
+  "dialog": 189,
+  "name": "Jenna/Base1/Mission 1",
+  "decor": "Sawaken3",
+  "dist": 147.3
+ },
+ {
+  "dialog": 190,
+  "name": "Jenna/Base1/Persos",
+  "decor": "Sawaken3",
+  "dist": 142.7
+ },
+ {
+  "dialog": 191,
+  "name": "Jenna/Base1/Traitre1",
+  "decor": "Sawaken3",
+  "dist": 130.9
+ },
+ {
+  "dialog": 192,
+  "name": "Krill/Base1/1",
+  "decor": "Sawaken7",
+  "dist": 158.5
+ },
+ {
+  "dialog": 193,
+  "name": "Krill/Base1/1 Retour",
+  "decor": "Sawaken7",
+  "dist": 169.2
+ },
+ {
+  "dialog": 194,
+  "name": "Krill/Base1/2",
+  "decor": "Sawaken7",
+  "dist": 165.8
+ },
+ {
+  "dialog": 195,
+  "name": "Krill/Fin/Avant Soks",
+  "decor": "Sawaken7",
+  "dist": 112.8
+ },
+ {
+  "dialog": 196,
+  "name": "Namtar/Base 1",
+  "decor": "Sawaken5",
+  "dist": 219.5
+ },
+ {
+  "dialog": 197,
+  "name": "Namtar/Base1/2",
+  "decor": "Sawaken5",
+  "dist": 223.1
+ },
+ {
+  "dialog": 198,
+  "name": "Namtar/Base1/Mission2 bis",
+  "decor": "Sawaken5",
+  "dist": 209.9
+ },
+ {
+  "dialog": 199,
+  "name": "Namtar/Base1/3",
+  "decor": "Sawaken5",
+  "dist": 209.9
+ },
+ {
+  "dialog": 200,
+  "name": "Soks/Base1/1",
+  "decor": "Sawaken4",
+  "dist": 106.3
+ },
+ {
+  "dialog": 201,
+  "name": "Soks/Base1/Retour Explo",
+  "decor": "Sawaken4",
+  "dist": 106.3
+ },
+ {
+  "dialog": 202,
+  "name": "Soks/Base1/Retour KR100",
+  "decor": "Sawaken4",
+  "dist": 113.6
+ },
+ {
+  "dialog": 203,
+  "name": "Soks/Eloigner Krill",
+  "decor": "Sawaken4",
+  "dist": 112.0
+ },
+ {
+  "dialog": 204,
+  "name": "Yob/Entrainement",
+  "decor": "sawaken8",
+  "dist": 293.9
+ },
+ {
+  "dialog": 205,
+  "name": "Yob/Entrainement Gagn\u00e9",
+  "decor": "sawaken8",
+  "dist": 360.5
+ },
+ {
+  "dialog": 206,
+  "name": "Yob/Entrainement Perdu",
+  "decor": "sawaken8",
+  "dist": 355.0
+ },
+ {
+  "dialog": 207,
+  "name": "Yob/Initiation 2",
+  "decor": "sawaken8",
+  "dist": 350.5
+ },
+ {
+  "dialog": 208,
+  "name": "Yob/Initiation 1",
+  "decor": "sawaken8",
+  "dist": 340.3
+ },
+ {
+  "dialog": 213,
+  "name": "Meshka'n/Base1/1",
+  "decor": "Sawaken9",
+  "dist": 238.0
+ },
+ {
+  "dialog": 214,
+  "name": "Meshka'n/Base1/2",
+  "decor": "Sawaken9",
+  "dist": 217.9
+ },
+ {
+  "dialog": 215,
+  "name": "Meshka'n/Base1/3",
+  "decor": "Sawaken9",
+  "dist": 184.9
+ },
+ {
+  "dialog": 216,
+  "name": "Meshka'n/Base 1/4",
+  "decor": "Sawaken9",
+  "dist": 182.9
+ },
+ {
+  "dialog": 217,
+  "name": "Dakobah/Base 1",
+  "decor": "Sawakent",
+  "dist": 117.5
+ },
+ {
+  "dialog": 218,
+  "name": "Dakobah/Base 1/ Intro",
+  "decor": "Sawakent",
+  "dist": 76.0
+ },
+ {
+  "dialog": 219,
+  "name": "Dakobah/Base1/Magie",
+  "decor": "Sawakent",
+  "dist": 138.4
+ },
+ {
+  "dialog": 220,
+  "name": "Dakobah/Sorcellerie",
+  "decor": "Sawakent",
+  "dist": 138.4
+ },
+ {
+  "dialog": 221,
+  "name": "Dakobah/Sorcellerie 2",
+  "decor": "Sawakent",
+  "dist": 130.6
+ },
+ {
+  "dialog": 222,
+  "name": "Dakobah/Sorcellerie 3",
+  "decor": "Sawakent",
+  "dist": 138.4
+ },
+ {
+  "dialog": 223,
+  "name": "Dakobah/Sorcellerie 4",
+  "decor": "Sawakent",
+  "dist": 117.2
+ },
+ {
+  "dialog": 224,
+  "name": "Dakobah/Sortie Xendar",
+  "decor": "Sawakent",
+  "dist": 130.7
+ },
+ {
+  "dialog": 225,
+  "name": "Dakobah/Base1/Conclusion",
+  "decor": "Sawakent",
+  "dist": 140.2
+ },
+ {
+  "dialog": 226,
+  "name": "Jenna/Base1/Conclusion",
+  "decor": "Sawakent",
+  "dist": 109.5
+ },
+ {
+  "dialog": 227,
+  "name": "Dakobah/Xendar",
+  "decor": "Sawaken7",
+  "dist": 435.6
+ },
+ {
+  "dialog": 228,
+  "name": "Soks / Bonne Chance",
+  "decor": "Sawaken7",
+  "dist": 386.0
+ },
+ {
+  "dialog": 229,
+  "name": "Kiwan/Parc",
+  "decor": "Jangir",
+  "dist": 3350.0
+ },
+ {
+  "dialog": 230,
+  "name": "Sorcier/Jenna  (Scene)",
+  "decor": "Asorcery",
+  "dist": 255.6
+ },
+ {
+  "dialog": 231,
+  "name": "Sorcier/Jenna/Retour  (Scene)",
+  "decor": "Asorcery",
+  "dist": 260.4
+ },
+ {
+  "dialog": 235,
+  "name": "Jenna/Sneak/Post-Boz1",
+  "decor": "Lahoreh",
+  "dist": 497.2
+ },
+ {
+  "dialog": 260,
+  "name": "Fuan/Inconnu  (Scene)",
+  "decor": "Qfuan",
+  "dist": 113.5
+ },
+ {
+  "dialog": 261,
+  "name": "Vendeur Fuan/hello",
+  "decor": "Qfuan",
+  "dist": 113.0
+ },
+ {
+  "dialog": 262,
+  "name": "Vendeur Fuan/bye",
+  "decor": "Qfuan",
+  "dist": 159.9
+ },
+ {
+  "dialog": 263,
+  "name": "Fuan/Retour Eveill\u00e9  (Scene)",
+  "decor": "Qfuan",
+  "dist": 136.6
+ },
+ {
+  "dialog": 264,
+  "name": "Fuan/Sneak  (Scene)",
+  "decor": "Qfuan",
+  "dist": 165.1
+ },
+ {
+  "dialog": 265,
+  "name": "Fuan/Sneak Retour  (Scene)",
+  "decor": "Qfuan",
+  "dist": 142.7
+ },
+ {
+  "dialog": 266,
+  "name": "Savant Traductech/Retour",
+  "decor": "LBpyrami",
+  "dist": 504.1
+ },
+ {
+  "dialog": 267,
+  "name": "Savant Traductech/Retour 2",
+  "decor": "LBpyrami",
+  "dist": 542.2
+ },
+ {
+  "dialog": 268,
+  "name": "Savant Traductech/Retour 3",
+  "decor": "LBpyrami",
+  "dist": 518.9
+ },
+ {
+  "dialog": 269,
+  "name": "Savant Traductech/Savant RAS",
+  "decor": "LBpyrami",
+  "dist": 488.1
+ },
+ {
+  "dialog": 270,
+  "name": "Savant Traductech/Traductech",
+  "decor": "LBpyrami",
+  "dist": 540.8
+ },
+ {
+  "dialog": 271,
+  "name": "Savant/Traductech/Pas Savant",
+  "decor": "LBpyrami",
+  "dist": 512.6
+ },
+ {
+  "dialog": 272,
+  "name": "Kay'l / Intro",
+  "decor": "ACSgrots",
+  "dist": 200.9
+ },
+ {
+  "dialog": 273,
+  "name": "Dakobah/Base2/Post-Finkar",
+  "decor": "LMonaste",
+  "dist": 267.0
+ },
+ {
+  "dialog": 274,
+  "name": "Dakobah/Base2/Parchemins1",
+  "decor": "LMonaste",
+  "dist": 320.0
+ },
+ {
+  "dialog": 275,
+  "name": "Dakobah/Base2/Parch",
+  "decor": "LMonaste",
+  "dist": 355.9
+ },
+ {
+  "dialog": 277,
+  "name": "Anissa/Bar 1  (Scene)",
+  "decor": "Qbar",
+  "dist": 347.3
+ },
+ {
+  "dialog": 278,
+  "name": "Anissa/Bar 2  (Scene)",
+  "decor": "Qbar",
+  "dist": 687.7
+ },
+ {
+  "dialog": 279,
+  "name": "Barman/Combat",
+  "decor": "Qbar",
+  "dist": 483.0
+ },
+ {
+  "dialog": 280,
+  "name": "Barman/Aka's Bar  (Scene)",
+  "decor": "Qbar",
+  "dist": 439.7
+ },
+ {
+  "dialog": 281,
+  "name": "Barman/Aka's Bar 2",
+  "decor": "Qbar",
+  "dist": 434.0
+ },
+ {
+  "dialog": 282,
+  "name": "Anissa / Bar / Descendre",
+  "decor": "Qbar",
+  "dist": 339.8
+ },
+ {
+  "dialog": 291,
+  "name": "Azkeel/Fodo 3",
+  "decor": "PAstar",
+  "dist": 1024.9
+ },
+ {
+  "dialog": 292,
+  "name": "Azkeel/Fodo 2",
+  "decor": "PAstar",
+  "dist": 1050.4
+ },
+ {
+  "dialog": 293,
+  "name": "Azkeel/Fodo 1/Bidons",
+  "decor": "PAstar",
+  "dist": 1077.0
+ },
+ {
+  "dialog": 294,
+  "name": "Azkeel/Fodo 1",
+  "decor": "PAstar",
+  "dist": 1053.5
+ },
+ {
+  "dialog": 307,
+  "name": "Livre de Nout 1",
+  "decor": "hamestag",
+  "dist": 2906.7
+ },
+ {
+  "dialog": 308,
+  "name": "Den/Transcan",
+  "decor": "Aapden",
+  "dist": 225.8
+ },
+ {
+  "dialog": 309,
+  "name": "Tarek/Appart Den  (Scene)",
+  "decor": "Aapden",
+  "dist": 188.8
+ },
+ {
+  "dialog": 310,
+  "name": "Kushulainn/Fin",
+  "decor": "MTrone",
+  "dist": 903.9
+ },
+ {
+  "dialog": 311,
+  "name": "Kushulainn/Accueil",
+  "decor": "MTrone",
+  "dist": 888.3
+ },
+ {
+  "dialog": 312,
+  "name": "Soyinka/Pr\u00e9sentation",
+  "decor": "mayesoyi",
+  "dist": 194.5
+ },
+ {
+  "dialog": 313,
+  "name": "Soyinka/Epilogue",
+  "decor": "Pepilog",
+  "dist": 432.5
+ },
+ {
+  "dialog": 314,
+  "name": "Matanboukous/Epilogue",
+  "decor": "Pepilog",
+  "dist": 419.5
+ },
+ {
+  "dialog": 315,
+  "name": "Jenna/Epilogue",
+  "decor": "Pepilog",
+  "dist": 443.2
+ },
+ {
+  "dialog": 316,
+  "name": "Dakobah/Epilogue 2",
+  "decor": "Pepilog",
+  "dist": 417.8
+ },
+ {
+  "dialog": 317,
+  "name": "Dakobah/Epilogue 1",
+  "decor": "Pepilog",
+  "dist": 417.4
+ },
+ {
+  "dialog": 318,
+  "name": "Boz/Epilogue 2",
+  "decor": "Pepilog",
+  "dist": 441.9
+ },
+ {
+  "dialog": 320,
+  "name": "Boz/Epilogue",
+  "decor": "Pepilog",
+  "dist": 424.6
+ },
+ {
+  "dialog": 328,
+  "name": "Policier -1 Chat 1",
+  "decor": "ACSlev-2",
+  "dist": 617.4
+ },
+ {
+  "dialog": 329,
+  "name": "Sneak/RDV Lea  (Scene)",
+  "decor": "ACSasl1",
+  "dist": 916.1
+ },
+ {
+  "dialog": 330,
+  "name": "Telis/Sneak/Dejeuner",
+  "decor": "ACSasl1",
+  "dist": 917.6
+ },
+ {
+  "dialog": 331,
+  "name": "Telis/Sneak/Retard D\u00e9je\u00fbner",
+  "decor": "ACSasl1",
+  "dist": 917.6
+ },
+ {
+  "dialog": 332,
+  "name": "Tarek/Pre-Appart Den  (Scene)",
+  "decor": "ACSlev-1",
+  "dist": 420.2
+ },
+ {
+  "dialog": 333,
+  "name": "Telis/Sneak",
+  "decor": "ACSasl1",
+  "dist": 848.0
+ },
+ {
+  "dialog": 335,
+  "name": "Astaroth/Final",
+  "decor": "PAstarot",
+  "dist": 954.4
+ },
+ {
+  "dialog": 337,
+  "name": "Policier Passant 5",
+  "decor": "ACSPtsas",
+  "dist": 438.6
+ },
+ {
+  "dialog": 338,
+  "name": "Boog/Bureau",
+  "decor": "ACSlev-2",
+  "dist": 319.5
+ },
+ {
+  "dialog": 339,
+  "name": "Tarek 1",
+  "decor": "ACSlev-4",
+  "dist": 406.3
+ },
+ {
+  "dialog": 340,
+  "name": "Tarek 2",
+  "decor": "ACSlev-4",
+  "dist": 385.1
+ },
+ {
+  "dialog": 341,
+  "name": "Tarek/Sneak",
+  "decor": "ACSlev-4",
+  "dist": 374.9
+ },
+ {
+  "dialog": 342,
+  "name": "Boog / Bad Object",
+  "decor": "ACSlev-2",
+  "dist": 343.3
+ },
+ {
+  "dialog": 343,
+  "name": "Boog / Good Object",
+  "decor": "ACSlev-3",
+  "dist": 320.3
+ },
+ {
+  "dialog": 344,
+  "name": "Boog / Reviens + Tard",
+  "decor": "ACSlev-3",
+  "dist": 315.0
+ },
+ {
+  "dialog": 345,
+  "name": "Sork 1",
+  "decor": "ACSPtsas",
+  "dist": 341.5
+ },
+ {
+  "dialog": 346,
+  "name": "Sork 2",
+  "decor": "ACSPtsas",
+  "dist": 376.5
+ },
+ {
+  "dialog": 348,
+  "name": "Sork/Sneak",
+  "decor": "ACSPtsas",
+  "dist": 376.5
+ },
+ {
+  "dialog": 349,
+  "name": "Jenna/Cellule",
+  "decor": "ACSlev-1",
+  "dist": 1146.6
+ },
+ {
+  "dialog": 350,
+  "name": "Gardien/Police/1  (Scene)",
+  "decor": "ACSlev-1",
+  "dist": 336.4
+ },
+ {
+  "dialog": 351,
+  "name": "Gardien/Police/2  (Scene)",
+  "decor": "ACSlev-1",
+  "dist": 363.3
+ },
+ {
+  "dialog": 352,
+  "name": "Employ\u00e9/Surveillance  (Scene)",
+  "decor": "ACSlev-4",
+  "dist": 328.8
+ },
+ {
+  "dialog": 353,
+  "name": "Lea/Avant Rapport",
+  "decor": "ACSlev-2",
+  "dist": 416.7
+ },
+ {
+  "dialog": 354,
+  "name": "Lea/Koil",
+  "decor": "ACSlev-2",
+  "dist": 474.5
+ },
+ {
+  "dialog": 355,
+  "name": "Lea/Koil 2",
+  "decor": "ACSlev-2",
+  "dist": 474.5
+ },
+ {
+  "dialog": 356,
+  "name": "Lea/Rapport",
+  "decor": "ACSlev-2",
+  "dist": 480.8
+ },
+ {
+  "dialog": 357,
+  "name": "Lea/Rapport Jenna",
+  "decor": "ACSlev-2",
+  "dist": 514.5
+ },
+ {
+  "dialog": 359,
+  "name": "Camir/J va vers Porte",
+  "decor": "acslev5s",
+  "dist": 492.4
+ },
+ {
+  "dialog": 360,
+  "name": "Camir/Bi\u00e8re",
+  "decor": "acslev5s",
+  "dist": 569.5
+ },
+ {
+  "dialog": 361,
+  "name": "Camir/Jette le J",
+  "decor": "acslev5s",
+  "dist": 591.3
+ },
+ {
+  "dialog": 362,
+  "name": "Camir/J revient",
+  "decor": "acslev5s",
+  "dist": 565.7
+ },
+ {
+  "dialog": 363,
+  "name": "Camir/Batterie",
+  "decor": "acslev5s",
+  "dist": 450.0
+ },
+ {
+  "dialog": 364,
+  "name": "Camir/Dr\u00f4ne",
+  "decor": "acslev5s",
+  "dist": 486.9
+ },
+ {
+  "dialog": 365,
+  "name": "Camir/Sneak",
+  "decor": "acslev5s",
+  "dist": 557.5
+ },
+ {
+  "dialog": 366,
+  "name": "Policier Passant 2",
+  "decor": "acslev-5",
+  "dist": 567.0
+ },
+ {
+  "dialog": 386,
+  "name": "Policier Sneak/Supermarch\u00e9",
+  "decor": "AResto14",
+  "dist": 678.3
+ },
+ {
+  "dialog": 387,
+  "name": "Telis/D\u00e9je\u00fbner",
+  "decor": "AResto14",
+  "dist": 45.4
+ },
+ {
+  "dialog": 388,
+  "name": "Telis/Post-D\u00e9je\u00fbner",
+  "decor": "AResto14",
+  "dist": 24.7
+ },
+ {
+  "dialog": 389,
+  "name": "Vendeur Invite",
+  "decor": "QPeepsho",
+  "dist": 193.4
+ },
+ {
+  "dialog": 390,
+  "name": "Vendeur Sex Shop  (Scene)",
+  "decor": "QPeepsho",
+  "dist": 161.2
+ },
+ {
+  "dialog": 400,
+  "name": "Barman / Sneak Ctrbande",
+  "decor": "ABar56",
+  "dist": 340.9
+ },
+ {
+  "dialog": 401,
+  "name": "Telis/Amoureuse  (Scene)",
+  "decor": "Aapkayl",
+  "dist": 134.3
+ },
+ {
+  "dialog": 402,
+  "name": "Telis/Appart",
+  "decor": "Aapkayl",
+  "dist": 70.5
+ },
+ {
+  "dialog": 406,
+  "name": "Boz/Propagande/Toits",
+  "decor": "Shall18b",
+  "dist": 300.7
+ },
+ {
+  "dialog": 407,
+  "name": "Jenna/Appart/Qazef",
+  "decor": "SAppt",
+  "dist": 83.7
+ },
+ {
+  "dialog": 409,
+  "name": "Qazef/Armurerie",
+  "decor": "SArmu02",
+  "dist": 233.8
+ },
+ {
+  "dialog": 410,
+  "name": "Qazef/Armurerie/Retour",
+  "decor": "SArmu02",
+  "dist": 230.1
+ },
+ {
+  "dialog": 411,
+  "name": "Qazef/Armurerie/Sexy",
+  "decor": "SArmu02",
+  "dist": 234.1
+ },
+ {
+  "dialog": 412,
+  "name": "Qazef/Armurerie/Sort",
+  "decor": "SArmu02",
+  "dist": 237.2
+ },
+ {
+  "dialog": 413,
+  "name": "Eveill\u00e9 Base Jaunpur",
+  "decor": "ACSgrots",
+  "dist": 383.1
+ },
+ {
+  "dialog": 414,
+  "name": "Jenna/Base1/Retour",
+  "decor": "Aapden",
+  "dist": 282.0
+ },
+ {
+  "dialog": 415,
+  "name": "Jenna/Base1/Welcome",
+  "decor": "Aapden",
+  "dist": 393.6
+ },
+ {
+  "dialog": 417,
+  "name": "Jenna/Base1/Welcome3",
+  "decor": "Aapden",
+  "dist": 288.5
+ },
+ {
+  "dialog": 418,
+  "name": "Soks/Base1/2",
+  "decor": "ACSgrot",
+  "dist": 369.9
+ },
+ {
+  "dialog": 419,
+  "name": "Soks/Base1/Spray",
+  "decor": "ACSgrot",
+  "dist": 315.1
+ }
+]

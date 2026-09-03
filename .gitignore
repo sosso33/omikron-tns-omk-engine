@@ -1,0 +1,98 @@
+# ---------------------------------------------------------------------------
+# Omikron reverse-engineering repo - what does NOT go in.
+#
+# Three reasons a path is listed here, and they are not interchangeable. Only
+# the second is safe to relax:
+#
+#   (A) COPYRIGHT. Shipped game data, the disassembly of the game's binary,
+#       and anything that reproduces either. This repository is public; the
+#       game is not ours to redistribute. Bring your own - see README.md.
+#   (B) GENERATED. Reproducible from what IS committed, by a command the
+#       README names. Committing it only creates drift.
+#   (C) JUNK. Scratch output, editor droppings, stale manual backups that git
+#       history replaces.
+#
+# Every entry says which.
+# ---------------------------------------------------------------------------
+
+# --- (A) the shipped game -------------------------------------------------
+# Your own copy of the disc, ~1.7 GB. INPUT ONLY: never written to, never
+# committed. `fr/` is the name this tree used before 2026-09-03; kept here so
+# an older checkout cannot commit it by accident.
+/gamedata/
+/fr/
+
+# --- (A) the disassembly and everything mechanically derived from it -------
+# `Runtime.exe.asm` / `.c` are an IDA listing of `Runtime 2.exe`, and a
+# disassembly is a derivative work of the binary it came from. `clean/` is a
+# mechanical pass over them (`_vmhandlers.json` is literally handler
+# assembly), and `readable/src/*.c` is the hand-cleaned decompilation. All of
+# it stays local. `tools/omkpaths.py` finds them wherever you keep them, and
+# the 13 checks that read them skip cleanly when they are absent.
+/Runtime.exe.asm
+/Runtime.exe.c
+/Runtime.exe.h
+/clean/
+/readable/src/
+/readable/types.h
+/readable/decls.h
+/readable/globals.h
+/readable/runtime.h
+/readable/libcode.json
+
+# --- (A) extracted game assets and captures of the running game -----------
+# `.DDM`/`.3DM`/`.ADP` and DIALOG are lifted straight out of the game.
+/MORPH_ANALYSIS/
+
+# renders of the game's own art
+/renders/
+/example_screenshots/
+
+# --- (A) references read while working, kept locally ----------------------
+# Read while working, never redistributed; `docs/` cites what was learned from
+# each, which needs no copy here. CLAUDE.md 2's "not a source" table describes
+# them.
+#
+#   adp/   vgmstream's ADP reader (ISC). Nothing links it - this project's
+#          decoder was transcribed independently from sub_483200, and having
+#          the upstream beside it was the point.
+#   3do/   the 3DO console version's format documentation, plus a reference
+#          Unity importer. NO copyright or licence header in any of the .cs
+#          files, so their terms are unknown - which is the same
+#          "all rights reserved" problem as publishing with no LICENSE.
+/adp/
+/3do/
+
+# NOTE: `traces/frames/*.png` are NOT excluded. They are the engine's own
+# framebuffer, and they are the only oracle `engine: frame` and
+# `engine: silhouette` have - excluding them turns those checks off for
+# everyone. Sixteen 640x480 stills used as verification evidence is a
+# different thing from redistributing the asset tree. Revisit if that reading
+# ever looks wrong.
+
+# --- (A/C) raw session transcripts ----------------------------------------
+# 120 MB, and they quote decompiled code inline. The rendered `.md` digests
+# are committed instead.
+/transcript/*.jsonl
+
+# --- (B) local configuration ----------------------------------------------
+# Machine-specific paths. `omk.conf.example` is the template and IS committed.
+/omk.conf
+
+# --- (B) build output ------------------------------------------------------
+/engine/build/
+*.o
+*.d
+__pycache__/
+*.pyc
+
+# --- (C) stale manual backups - git history replaces these ----------------
+/010926/
+/270826_1719/
+/290826/
+
+# --- (C) scratch ----------------------------------------------------------
+/log
+/engine/142
+.DS_Store
+*.swp

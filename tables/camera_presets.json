@@ -1,0 +1,480 @@
+{
+ "_": "Lifted from gamedata/Runtime 2.exe by tools/exetables.py - do not hand-edit; run the tool. These tables are compiled into the executable and are NOT in the shipped gamedata/ data, which is why a replica engine needs this file.",
+ "table": "camera_presets",
+ "documented_in": "docs/ASSETS.md",
+ "about": "The camera-mode preset table at 0x004C20C8 — 48 bytes a mode.\n\nField layout from `Camera_LoadParams` (0x004146C0), which is the only\nconsumer.  `subject` decides what each point MEANS, per point rather than\nper camera: −1 makes it absolute scene coordinates, anything else makes it\nan offset from that actor.\n\nOffsets are **inches** and authored in metric — mode 0, the default\nthird-person follow, sits at −118.11 on z, which is exactly 3.00 m.\n\nModes 12 and 13 are blank on purpose: dialogue framing and `player.move`\ncarry their parameters in the request instead, and mode 16 loads nothing\nat all.",
+ "checks": [
+  {
+   "what": "modes before the self-index breaks",
+   "got": 22,
+   "want": 22
+  },
+  {
+   "what": "the row after it reads",
+   "got": 24909,
+   "want": 24909
+  },
+  {
+   "what": "mode 0 sits this far back, in inches",
+   "got": -118.1102,
+   "want": -118.1102
+  },
+  {
+   "what": "...which is this many metres",
+   "got": 3.0,
+   "want": 3.0
+  },
+  {
+   "what": "mode 0 fov",
+   "got": 75.0,
+   "want": 75.0
+  },
+  {
+   "what": "modes with no preset of their own (12/13/16 and friends)",
+   "got": 5,
+   "want": 5
+  }
+ ],
+ "rows": [
+  {
+   "mode": 0,
+   "eye": [
+    0.0,
+    0.0,
+    -118.1102
+   ],
+   "target": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "roll": 0.0,
+   "fov": 75.0,
+   "eyeSubject": 0,
+   "targetSubject": 0,
+   "f42": 3,
+   "f44": 8,
+   "f46": 8
+  },
+  {
+   "mode": 1,
+   "eye": [
+    24.4094,
+    29.5276,
+    -4.7244
+   ],
+   "target": [
+    0.0,
+    4.7244,
+    19.685
+   ],
+   "roll": 0.0,
+   "fov": 75.0,
+   "eyeSubject": 0,
+   "targetSubject": 0,
+   "f42": 0,
+   "f44": 0,
+   "f46": 0
+  },
+  {
+   "mode": 2,
+   "eye": [
+    0.0,
+    0.0,
+    -39.3701
+   ],
+   "target": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "roll": 0.0,
+   "fov": 75.0,
+   "eyeSubject": 1,
+   "targetSubject": 1,
+   "f42": 0,
+   "f44": 8,
+   "f46": 16
+  },
+  {
+   "mode": 3,
+   "eye": [
+    0.0,
+    5.0,
+    6.8898
+   ],
+   "target": [
+    0.0,
+    3.937,
+    39.3701
+   ],
+   "roll": 0.0,
+   "fov": 75.0,
+   "eyeSubject": 1,
+   "targetSubject": 1,
+   "f42": 4,
+   "f44": 0,
+   "f46": 0
+  },
+  {
+   "mode": 4,
+   "eye": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "target": [
+    0.0,
+    0.0,
+    787.4016
+   ],
+   "roll": 0.0,
+   "fov": 75.0,
+   "eyeSubject": 0,
+   "targetSubject": 0,
+   "f42": 0,
+   "f44": 0,
+   "f46": 0
+  },
+  {
+   "mode": 5,
+   "eye": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "target": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "roll": 0.0,
+   "fov": 75.0,
+   "eyeSubject": 0,
+   "targetSubject": 0,
+   "f42": 0,
+   "f44": 0,
+   "f46": 0
+  },
+  {
+   "mode": 6,
+   "eye": [
+    0.0,
+    39.3701,
+    -98.4252
+   ],
+   "target": [
+    0.0,
+    9.8425,
+    0.0
+   ],
+   "roll": 0.0,
+   "fov": 75.0,
+   "eyeSubject": 0,
+   "targetSubject": 0,
+   "f42": 3,
+   "f44": 16,
+   "f46": 8
+  },
+  {
+   "mode": 7,
+   "eye": [
+    0.0,
+    -98.4252,
+    0.0
+   ],
+   "target": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "roll": 0.0,
+   "fov": 75.0,
+   "eyeSubject": 0,
+   "targetSubject": 0,
+   "f42": 3,
+   "f44": 16,
+   "f46": 8
+  },
+  {
+   "mode": 8,
+   "eye": [
+    0.0,
+    118.1102,
+    -275.5905
+   ],
+   "target": [
+    0.0,
+    78.7402,
+    0.0
+   ],
+   "roll": 0.0,
+   "fov": 75.0,
+   "eyeSubject": 5,
+   "targetSubject": 5,
+   "f42": 0,
+   "f44": 8,
+   "f46": 8
+  },
+  {
+   "mode": 9,
+   "eye": [
+    157.4803,
+    59.0551,
+    0.0
+   ],
+   "target": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "roll": 0.0,
+   "fov": 75.0,
+   "eyeSubject": 5,
+   "targetSubject": 5,
+   "f42": 0,
+   "f44": 0,
+   "f46": 0
+  },
+  {
+   "mode": 10,
+   "eye": [
+    -314.9606,
+    157.4803,
+    0.0
+   ],
+   "target": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "roll": 0.0,
+   "fov": 75.0,
+   "eyeSubject": 5,
+   "targetSubject": 9,
+   "f42": 0,
+   "f44": 8,
+   "f46": 16
+  },
+  {
+   "mode": 11,
+   "eye": [
+    0.0,
+    0.0,
+    -196.8504
+   ],
+   "target": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "roll": 0.0,
+   "fov": 75.0,
+   "eyeSubject": 4,
+   "targetSubject": 4,
+   "f42": 0,
+   "f44": 0,
+   "f46": 0
+  },
+  {
+   "mode": 12,
+   "eye": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "target": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "roll": 0.0,
+   "fov": 0.0,
+   "eyeSubject": -1,
+   "targetSubject": -1,
+   "f42": 0,
+   "f44": 0,
+   "f46": 0
+  },
+  {
+   "mode": 13,
+   "eye": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "target": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "roll": 0.0,
+   "fov": 0.0,
+   "eyeSubject": -1,
+   "targetSubject": -1,
+   "f42": 0,
+   "f44": 0,
+   "f46": 0
+  },
+  {
+   "mode": 14,
+   "eye": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "target": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "roll": 0.0,
+   "fov": 0.0,
+   "eyeSubject": 8,
+   "targetSubject": 8,
+   "f42": 0,
+   "f44": 0,
+   "f46": 0
+  },
+  {
+   "mode": 15,
+   "eye": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "target": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "roll": 0.0,
+   "fov": 0.0,
+   "eyeSubject": -1,
+   "targetSubject": -1,
+   "f42": 0,
+   "f44": 0,
+   "f46": 0
+  },
+  {
+   "mode": 16,
+   "eye": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "target": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "roll": 0.0,
+   "fov": 0.0,
+   "eyeSubject": -1,
+   "targetSubject": -1,
+   "f42": 0,
+   "f44": 0,
+   "f46": 0
+  },
+  {
+   "mode": 17,
+   "eye": [
+    -39.3701,
+    78.7402,
+    0.0
+   ],
+   "target": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "roll": 0.0,
+   "fov": 75.0,
+   "eyeSubject": 0,
+   "targetSubject": 0,
+   "f42": 5,
+   "f44": 0,
+   "f46": 0
+  },
+  {
+   "mode": 18,
+   "eye": [
+    0.0,
+    118.1102,
+    -3.937
+   ],
+   "target": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "roll": 0.0,
+   "fov": 75.0,
+   "eyeSubject": 0,
+   "targetSubject": 0,
+   "f42": 3,
+   "f44": 8,
+   "f46": 8
+  },
+  {
+   "mode": 19,
+   "eye": [
+    0.0,
+    118.1102,
+    -3.937
+   ],
+   "target": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "roll": 0.0,
+   "fov": 75.0,
+   "eyeSubject": 0,
+   "targetSubject": 0,
+   "f42": 3,
+   "f44": 8,
+   "f46": 8
+  },
+  {
+   "mode": 20,
+   "eye": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "target": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "roll": 0.0,
+   "fov": 75.0,
+   "eyeSubject": -1,
+   "targetSubject": -1,
+   "f42": 0,
+   "f44": 0,
+   "f46": 0
+  },
+  {
+   "mode": 21,
+   "eye": [
+    0.0,
+    78.7402,
+    -19.685
+   ],
+   "target": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "roll": 0.0,
+   "fov": 75.0,
+   "eyeSubject": 0,
+   "targetSubject": 0,
+   "f42": 0,
+   "f44": 0,
+   "f46": 0
+  }
+ ]
+}

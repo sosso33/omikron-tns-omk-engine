@@ -1,0 +1,1221 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Omikron cutscene viewer</title>
+<style>
+:root{--bg:#12141a;--panel:#1a1d26;--line:#2a2f3d;--fg:#d8dce6;--dim:#8a91a3;
+      --acc:#6fb3ff;--ok:#7fd18a;--warn:#e8a75a;--bad:#e8756a}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;background:var(--bg);color:var(--fg);
+  font:13px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace}
+a{color:var(--acc);text-decoration:none}a:hover{text-decoration:underline}
+#app{display:grid;grid-template-columns:280px 1fr;height:100%}
+#side{background:var(--panel);border-right:1px solid var(--line);
+  display:flex;flex-direction:column;min-height:0}
+#side h2{margin:0;padding:12px 14px 8px;font-size:12px;color:var(--dim);
+  text-transform:uppercase;letter-spacing:.08em;
+  display:flex;justify-content:space-between;align-items:center}
+#side h2 a{font-size:11px;text-transform:none;letter-spacing:0}
+#search{margin:0 12px 8px;padding:6px 8px;background:#0e1015;color:var(--fg);
+  border:1px solid var(--line);border-radius:5px;font:inherit}
+#scenes{overflow:auto;flex:1;padding:0 6px 14px}
+.sc{margin:2px 0 6px}
+.sc>.h{padding:5px 8px;color:var(--dim);font-size:11.5px;
+  display:flex;justify-content:space-between;gap:8px}
+.sc>.h b{color:var(--fg);font-weight:400}
+.shot{display:block;width:100%;text-align:left;padding:5px 10px;margin:1px 0;
+  background:none;border:0;border-radius:5px;color:var(--fg);font:inherit;
+  cursor:pointer;display:flex;justify-content:space-between;gap:8px}
+.shot:hover{background:#232734}
+.shot.on{background:#2b3550;color:#fff}
+.shot i{color:var(--dim);font-style:normal;font-size:11.5px}
+#main{display:flex;flex-direction:column;min-width:0;min-height:0}
+#stage{position:relative;flex:1;min-height:0;background:#000}
+canvas{width:100%;height:100%;display:block}
+#hud{position:absolute;left:12px;top:10px;font-size:11.5px;color:#cfd6e4;
+  text-shadow:0 1px 3px #000;pointer-events:none;line-height:1.7}
+#hud .k{color:var(--dim)}
+#note{position:absolute;right:12px;top:10px;max-width:290px;font-size:11px;
+  color:#b9c0cf;background:rgba(12,14,20,.82);border:1px solid var(--line);
+  border-radius:7px;padding:8px 10px;line-height:1.5}
+#note b{color:var(--warn);font-weight:400}
+#busy{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);
+  color:var(--dim);font-size:12px}
+#bar{border-top:1px solid var(--line);background:var(--panel);
+  padding:9px 12px;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+button{background:#232734;color:var(--fg);border:1px solid var(--line);
+  border-radius:5px;padding:4px 10px;font:inherit;cursor:pointer}
+button:hover{border-color:var(--acc)}
+button.on{background:#2b3550;border-color:var(--acc);color:#fff}
+input[type=range]{flex:1;min-width:160px;accent-color:var(--acc)}
+select{background:#232734;color:var(--fg);border:1px solid var(--line);
+  border-radius:5px;padding:3px 6px;font:inherit}
+.lbl{color:var(--dim)}
+#info{max-height:34%;overflow:auto;border-top:1px solid var(--line);
+  background:#141721;padding:10px 14px;font-size:12px;display:none}
+#info.open{display:block}
+#info h3{margin:10px 0 4px;font-size:11px;color:var(--dim);
+  text-transform:uppercase;letter-spacing:.07em}
+#info h3:first-child{margin-top:0}
+table{border-collapse:collapse;width:100%}
+td{padding:1px 10px 1px 0;vertical-align:top;white-space:nowrap}
+td.w{white-space:normal;color:var(--dim)}
+.tag{color:var(--acc)}.dim{color:var(--dim)}.warn{color:var(--warn)}
+#track{position:relative;height:16px;flex-basis:100%;margin-top:2px}
+#track div{position:absolute;top:4px;height:8px;border-radius:2px;
+  background:#2b3550;border:1px solid #3d4a6b}
+#track span{position:absolute;top:0;width:1px;height:16px;background:var(--warn)}
+</style>
+
+<div id="app">
+  <div id="side">
+    <h2>Cutscenes <a href="/">home</a></h2>
+    <input id="search" placeholder="filter scene or shot…">
+    <div id="scenes"></div>
+  </div>
+  <div id="main">
+    <div id="stage">
+      <canvas id="gl"></canvas>
+      <div id="hud"></div>
+      <div id="note"></div>
+      <div id="busy"></div>
+    </div>
+    <div id="bar">
+      <button id="play">▶</button>
+      <span class="lbl" id="clock">0 / 0</span>
+      <input id="scrub" type="range" min="0" max="0" value="0" step="1">
+      <span class="lbl">speed</span>
+      <select id="speed">
+        <option value="0.25">¼×</option><option value="0.5">½×</option>
+        <option value="1" selected>1×</option><option value="2">2×</option>
+      </select>
+      <button id="loop" class="on" title="restart at the end">loop</button>
+      <button id="chain" title="at the end, run straight into the scene's next shot — the shots of one scene are one cutscene">chain</button>
+      <button id="sound" class="on" title="the scene's own sounds on the frames its program fires them, plus the area's music track">sound</button>
+      <button id="actors" class="on" title="draw the characters the object's program animates">actors</button>
+      <button id="free" title="detach the view and orbit it by hand (drag, wheel)">free look</button>
+      <button id="fx" class="on" title="the set's ambient emitters - neon, steam, smoke. A mesh flagged 0x40000000 finds its effect in the .SFX by name; the spawn CADENCE is the viewer's own, the engine's is not in the data">fx</button>
+      <button id="lights" class="on" title="the light baked into every set vertex. COLOUR is what the game draws; grey is this repo's own pre-2026-08-29 bug, kept for comparison and NOT a mode the original has; off is full bright">lights: colour</button>
+      <button id="details">details</button>
+      <div id="track"></div>
+    </div>
+    <div id="info"></div>
+  </div>
+</div>
+
+<script>
+/* omkcut - the in-engine cutscene viewer.
+ *
+ * A cutscene here is an .SCX scene object whose program animates the
+ * characters, plus a chunk-10 camera *editing* linked to that object, plus the
+ * set the area names. The server resolves all three (tools/cutscene.py) and
+ * this page plays the result; see docs/CUTSCENES.md.
+ *
+ * What is solid and what is not, because the page says so on screen too:
+ *   - the CAMERA is Cam_PlayEditing's own interpolation, sampled per frame,
+ *     and all 24112 frames of all 125 shipped shots resolve;
+ *   - the SET comes from the AREA header's +88 stem, 232 of 258 shipped;
+ *   - the ACTORS are placed at the clip's root key 0 (the authored placement)
+ *     and walked by the running sum of its per-frame deltas (Anim_RootDelta),
+ *     with the root quaternion applied as a world orientation. The placement
+ *     is verified; the orientation convention is NOT - a floor test over all
+ *     76 cutscene actors cannot tell it from its two rivals.
+ *
+ * The renderer is deliberately the same one omkweb.html uses, down to the
+ * negative X in persp(): the game is right-handed with Y pointing DOWN, this
+ * page maps a world point with W(v) = [x,-y,z], and negating one axis is a
+ * reflection - so the projection negates X once to put the handedness back.
+ * Changing one without the other mirrors every frame.
+ */
+const BUILD="__BUILD__";
+const $=(s)=>document.querySelector(s);
+const cv=$("#gl");
+const gl=cv.getContext("webgl",{antialias:true,alpha:false});
+if(!gl) document.body.innerHTML="<p style='padding:24px'>WebGL is not available.</p>";
+
+let prog, dbuf={}, catalogue=[], shot=null, setName="", decor=null, decorTex=[];
+let frame=0, playing=false, speed=1, loop=true, showActors=true, freeLook=false;
+let chain=false, curScene=null, curIdx=-1;   // "chain": run the scene's shots back to back
+let camScripts=[];              // the world-camera cutscenes - the other family
+let last=performance.now();
+let actorGL=[];                 // one entry per actor: geometry, textures, pose
+let orbit={yaw:0,pitch:0,dist:0,on:false};
+
+/* ------------------------------------------------------------------ GL */
+function shader(t,src){const s=gl.createShader(t);gl.shaderSource(s,src);
+  gl.compileShader(s);
+  if(!gl.getShaderParameter(s,gl.COMPILE_STATUS))throw gl.getShaderInfoLog(s);
+  return s;}
+let litMode=0;   // 0 baked colour, 1 grey, 2 off
+function initGL(){
+  const vs=shader(gl.VERTEX_SHADER,`
+    attribute vec3 aPos; attribute vec2 aUV; attribute vec3 aLit;
+    attribute float aPhase;
+    uniform mat4 uMVP; uniform float uFxClock; uniform float uFxWave[32];
+    varying vec2 vUV; varying vec3 vLit;
+    void main(){
+      vUV=aUV;
+      /* Mesh flag 0x8000000 SHIMMERS the vertex colour: sub_4947F0 adds a
+       * signed value from a 32-entry table to all three channels and clamps.
+       * The phase is (clock >> 2) + (vertexAddress >> 4), and since the
+       * vertices are a contiguous 32-byte stride that second term steps by 2
+       * per vertex - which is what aPhase carries. aPhase < 0 = no shimmer,
+       * which is every mesh but 233 in the game. ASSETS 4. */
+      vLit = aLit;
+      if(aPhase >= 0.0){
+        int i = int(mod(uFxClock + aPhase, 32.0));
+        vLit = clamp(aLit + uFxWave[i], 0.0, 1.0);
+      }
+      gl_Position=uMVP*vec4(aPos,1.0);
+    }`);
+  const fs=shader(gl.FRAGMENT_SHADER,`
+    precision mediump float;
+    varying vec2 vUV; varying vec3 vLit;
+    uniform sampler2D uTex; uniform float uHasTex; uniform float uCutout;
+    uniform float uAlpha; uniform float uLitMode;
+    void main(){
+      vec3 c = uHasTex>0.5 ? texture2D(uTex,vUV).rgb : vec3(0.72,0.70,0.68);
+      // MaterialCutout: solid black is the alpha colour
+      if(uCutout>0.5 && c.r+c.g+c.b < 0.02) discard;
+      // 0 = the baked colour, which is what the engine draws; 1 = the old
+      // single-channel reading, through the engine's OWN luma weights; 2 = off.
+      vec3 lit = uLitMode>1.5 ? vec3(1.0)
+               : uLitMode>0.5 ? vec3(dot(vLit,vec3(0.299,0.587,0.114)))
+               : vLit;
+      gl_FragColor=vec4(c*lit,uAlpha);
+    }`);
+  prog=gl.createProgram();gl.attachShader(prog,vs);gl.attachShader(prog,fs);
+  gl.linkProgram(prog);gl.useProgram(prog);
+  for(const k of ["pos","nrm","uv","lit","phase"]) dbuf[k]=gl.createBuffer();
+  gl.useProgram(prog);
+  for(let i=0;i<32;i++)
+    gl.uniform1f(gl.getUniformLocation(prog,`uFxWave[${i}]`),[0,10,13,18,28,32,48,56,64,56,48,32,28,18,13,10,0,-10,-13,-18,-28,-32,-48,-56,-64,-56,-48,-32,-28,-18,-13,-10][i]/255.0);
+  gl.enable(gl.DEPTH_TEST); gl.clearColor(0,0,0,1);
+  /* The depth func stays at WebGL's default LESS. The engine's ZFUNC is
+   * `SetRenderState(23, 5)` and 5 is D3DCMP_GREATER, not LESSEQUAL - it runs a
+   * REVERSED depth buffer, where a larger value is nearer. Both comparisons
+   * are strict, so for two exactly-coincident faces both keep the FIRST one
+   * drawn: the engine and this viewer already agreed. Changing this to LEQUAL
+   * on a misread of the constant made the later face win and put the wrong
+   * advert on Anekbah's billboards. */
+}
+function persp(f,a,n,fa){const t=1/Math.tan(f/2);
+  return[-t/a,0,0,0, 0,t,0,0, 0,0,(fa+n)/(n-fa),-1, 0,0,2*fa*n/(n-fa),0];}
+function mul(a,b){const o=new Array(16);for(let i=0;i<4;i++)for(let j=0;j<4;j++){
+  let s=0;for(let k=0;k<4;k++)s+=a[k*4+j]*b[i*4+k];o[i*4+j]=s;}return o;}
+function lookAt(eye,at,rollDeg){
+  const f=[at[0]-eye[0],at[1]-eye[1],at[2]-eye[2]];
+  let l=Math.hypot(f[0],f[1],f[2])||1; f[0]/=l;f[1]/=l;f[2]/=l;
+  let up=[0,1,0];
+  if(Math.abs(f[1])>0.999) up=[0,0,1];
+  if(rollDeg){ // roll is about the view axis; rotate `up` around it
+    const r=rollDeg*Math.PI/180, c=Math.cos(r), s=Math.sin(r);
+    const d=f[0]*up[0]+f[1]*up[1]+f[2]*up[2];
+    const cr=[f[1]*up[2]-f[2]*up[1],f[2]*up[0]-f[0]*up[2],f[0]*up[1]-f[1]*up[0]];
+    up=[up[0]*c+cr[0]*s+f[0]*d*(1-c), up[1]*c+cr[1]*s+f[1]*d*(1-c),
+        up[2]*c+cr[2]*s+f[2]*d*(1-c)];
+  }
+  const sx=[f[1]*up[2]-f[2]*up[1],f[2]*up[0]-f[0]*up[2],f[0]*up[1]-f[1]*up[0]];
+  l=Math.hypot(sx[0],sx[1],sx[2])||1; sx[0]/=l;sx[1]/=l;sx[2]/=l;
+  const u=[sx[1]*f[2]-sx[2]*f[1],sx[2]*f[0]-sx[0]*f[2],sx[0]*f[1]-sx[1]*f[0]];
+  return [ sx[0],u[0],-f[0],0, sx[1],u[1],-f[1],0, sx[2],u[2],-f[2],0,
+           -(sx[0]*eye[0]+sx[1]*eye[1]+sx[2]*eye[2]),
+           -( u[0]*eye[0]+ u[1]*eye[1]+ u[2]*eye[2]),
+             (f[0]*eye[0]+ f[1]*eye[1]+ f[2]*eye[2]), 1 ];
+}
+// game world -> viewer space: the only difference is Y, which points down in
+// the data and up here.
+function W(v){ return [v[0], -v[1], v[2]]; }
+const MFLIP=[1,0,0,0, 0,-1,0,0, 0,0,1,0, 0,0,0,1];
+function trans(x,y,z){ return [1,0,0,0, 0,1,0,0, 0,0,1,0, x,y,z,1]; }
+function qmat(q){                       // column-major, same convention as mul
+  const w=q[0],x=q[1],y=q[2],z=q[3];
+  return [1-2*(y*y+z*z), 2*(x*y+z*w),   2*(x*z-y*w),   0,
+          2*(x*y-z*w),   1-2*(x*x+z*z), 2*(y*z+x*w),   0,
+          2*(x*z+y*w),   2*(y*z-x*w),   1-2*(x*x+y*y), 0,
+          0,0,0,1];
+}
+function qrot(q,x,y,z){
+  const w=q[0],qx=q[1],qy=q[2],qz=q[3];
+  const tx=2*(qy*z-qz*y), ty=2*(qz*x-qx*z), tz=2*(qx*y-qy*x);
+  return [x+w*tx+(qy*tz-qz*ty), y+w*ty+(qz*tx-qx*tz), z+w*tz+(qx*ty-qy*tx)];
+}
+/* The game letterboxes the 3D view: an 800x600 frame carries an 800x440 strip,
+ * measured off a capture. That matters beyond looks - the camera's fov is the
+ * HORIZONTAL one, so the aspect is what fixes the vertical. */
+const GAME_ASPECT=800/440;
+
+function busy(t){ $("#busy").textContent=t||""; }
+function floats(buf,off){ return new Float32Array(buf,off,(buf.byteLength-off)>>2); }
+
+/* ------------------------------------------------------------- the set */
+async function loadSet(name){
+  if(setName===name) return;
+  decor=null; decorTex=[]; setName="";
+  if(!name) return;
+  busy("loading set "+name+"…");
+  try{
+    const r=await fetch(`/api/decorgeo/${encodeURIComponent(name)}?v=${BUILD}`);
+    if(!r.ok) return;
+    const b=await r.arrayBuffer();
+    const hlen=new DataView(b).getUint32(0,true);
+    const meta=JSON.parse(new TextDecoder().decode(new Uint8Array(b,4,hlen)));
+    // 8 floats a vertex: x y z u v r g b. The baked light is a COLOUR - the
+    // engine copies the whole dword at vertex +28 into the D3DTLVERTEX, and
+    // its own grey fallback weights the bytes 299/587/114, which names them
+    // R/G/B. ASSETS 4c.
+    //
+    // The stride is MEASURED, never assumed. A server left running from before
+    // the colour change sends 6 floats and no `stride`, and a client that
+    // guessed 8 drew the set as giant slabs - the positions walk off by two
+    // floats a vertex. Measuring makes that impossible and lets an old payload
+    // fall back to the grey it was built for.
+    const d=floats(b,4+hlen), n=meta.count, S=Math.max(6,Math.round(d.length/n));
+    const P=new Float32Array(n*3),U=new Float32Array(n*2),L=new Float32Array(n*3),
+          PH=new Float32Array(n);
+    for(let i=0;i<n;i++){
+      P[i*3]=d[i*S];P[i*3+1]=d[i*S+1];P[i*3+2]=d[i*S+2];
+      U[i*2]=d[i*S+3]/255;U[i*2+1]=d[i*S+4]/255;
+      if(S>=8){ L[i*3]=d[i*S+5];L[i*3+1]=d[i*S+6];L[i*3+2]=d[i*S+7]; }
+      else { const g=d[i*S+5]; L[i*3]=g;L[i*3+1]=g;L[i*3+2]=g; }
+      PH[i]=S>=9?d[i*S+8]:-1;          // 9th float: the shimmer phase, or -1
+    }
+    gl.bindBuffer(gl.ARRAY_BUFFER,dbuf.pos);gl.bufferData(gl.ARRAY_BUFFER,P,gl.STATIC_DRAW);
+    gl.bindBuffer(gl.ARRAY_BUFFER,dbuf.uv); gl.bufferData(gl.ARRAY_BUFFER,U,gl.STATIC_DRAW);
+    gl.bindBuffer(gl.ARRAY_BUFFER,dbuf.lit);gl.bufferData(gl.ARRAY_BUFFER,L,gl.STATIC_DRAW);
+    gl.bindBuffer(gl.ARRAY_BUFFER,dbuf.phase);gl.bufferData(gl.ARRAY_BUFFER,PH,gl.STATIC_DRAW);
+    decorTex=[];
+    for(const b2 of meta.batches){
+      if(decorTex[b2.material]) continue;
+      decorTex[b2.material]=await texture(
+        `/api/dtex/${encodeURIComponent(name)}/${b2.material}.png?v=${BUILD}`);
+    }
+    decor=meta; setName=name;
+    await loadFx(name);
+  } finally { busy(""); }
+}
+
+/* ---------------------------------------------------------------- ambient FX
+ * A set's neon, steam and smoke are emitters, not geometry: a mesh flagged
+ * 0x40000000 finds a .SFX section C effect by the first four characters of its
+ * name, and that effect names a .SCX chunk-4 sprite whose QUADS are its frames
+ * (docs/FILE_FORMATS.md 5b6, docs/ASSETS.md 3b). tools/ambientfx.py resolves
+ * the three files; this draws the result.
+ *
+ * ONE THING HERE IS THE VIEWER'S, NOT THE ENGINE'S: how often an emitter
+ * spawns. Sfx_RegisterEmitter reloads its countdown from section C +36, which
+ * is 0.0 in every one of the 366 shipped rows, so the data does not say. This
+ * keeps a steady population per emitter instead, capped at the engine's own
+ * 1000-particle pool. It looks right; it is not a claim about the game. */
+let fxOn=true, fxData=null, fxTex={}, fxParts=[], fxGroups=[], fxbuf=null;
+const FX_POOL=1000;
+
+async function loadFx(name){
+  fxData=null; fxParts=[]; fxGroups=[];
+  try{
+    const r=await fetch(`/api/ambientfx/${encodeURIComponent(name)}?v=${BUILD}`);
+    if(!r.ok) return;
+    fxData=await r.json();
+  }catch(e){ return; }
+  if(!fxData||!fxData.emitters.length){ fxData=null; return; }
+  for(const sp of Object.keys(fxData.sprites))
+    if(!fxTex[name+"/"+sp])
+      fxTex[name+"/"+sp]=await texture(
+        `/api/fxtex/${encodeURIComponent(name)}/${encodeURIComponent(sp)}?v=${BUILD}`);
+  /* The engine's cadence implies ceil(life / period) particles alive per
+   * emitter, and every shipped set fits inside its own 1000-slot pool that way
+   * (ANEKBAH is the worst at 893), so there is no need to invent a cap - only
+   * a proportional trim if some set ever exceeds it. */
+  let want=0;
+  for(const e of fxData.emitters)
+    want+=Math.max(1,Math.ceil(e.life/(e.period>0?e.period:1)))*e.count;
+  const trim=want>FX_POOL?FX_POOL/want:1;
+  /* Sprite and blend mode are fixed per emitter, so the draw groups are known
+   * at load: sort the particles into them once and the per-frame work becomes
+   * a straight fill of preallocated typed arrays - no Map, no push, no
+   * allocation. */
+  const by=new Map();
+  for(const e of fxData.emitters){
+    const k=e.sprite+"|"+e.mode;
+    if(!by.has(k)) by.set(k,{sprite:e.sprite,mode:e.mode,list:[]});
+    /* The cadence is the engine's: section D +12 is the emitter's PERIOD in
+     * frames, and Sfx_BindAmbientEffects seeds a `rand() % period` phase when
+     * it is greater than 0. Period 0 - which is 120 of the 151 shipped rows,
+     * and every one of Anekbah's - means a particle every frame. So the number
+     * alive is ceil(life / step), staggered by one step each, capped so the
+     * whole set stays inside the engine's own 1000-particle pool. */
+    /* The emission AXIS, fixed once per emitter. Sfx_RegisterEmitter jitters
+     * the authored velocity by +[0,2) on each component under flag 0x40, then
+     * builds the cone's basis from the result - while the SPEED stays the
+     * magnitude of the authored vector. The jitter is always positive, so the
+     * lean is a fixed property of each emitter rather than of each particle.
+     * 73 of 366 effects use it.
+     *
+     * NOTE, because it looks like a bug and is not: the azimuth is uniform
+     * over the whole +x..+z quadrant, so on a given camera some flames lean
+     * screen-left and others screen-right - for Anekbah's braziers +x projects
+     * left and +z right. The engine does the same, and since it seeds with
+     * `srand(timeGetTime() - base)` its own leans differ every launch, so
+     * matching flame for flame is not a thing that exists: only the
+     * distribution is reproducible. Traced to the assembly: the jitter
+     * is +[0,2) per component (`fmul flt_4BC99C; fadd st,st`), the basis is
+     * built from the result (sub_442690, Euler from -Z), and the cone opens
+     * about that same -Z, so the axis IS the jittered vector. */
+    const V=e.vel;
+    let A=[V[0],V[1],V[2]];
+    /* Math.random() is the FAITHFUL choice here, not laziness: the engine
+     * seeds its generator once at startup with `srand(timeGetTime() - base)`,
+     * so the leans really are different every time the game is launched. A
+     * fixed seed here would be less like the original, not more. */
+    if(e.jitterDir)
+      A=[V[0]+Math.random()*2, V[1]+Math.random()*2, V[2]+Math.random()*2];
+    const al=Math.hypot(A[0],A[1],A[2])||1;
+    e._axis=[A[0]/al,A[1]/al,A[2]/al];
+    const step=e.period>0?e.period:1;
+    /* +68 is how many particles ONE emission makes, so the population is
+     * count * ceil(life / period). With it the worst set is 908, still inside
+     * the engine's 1000. */
+    const n=Math.max(1,Math.round(Math.ceil(e.life/step)*e.count*trim));
+    /* Each particle lives its FULL life and then respawns, so the cycle is the
+     * life; n of them staggered evenly across it keep the column populated.
+     * Wrapping at n*step instead - which is what this did first - capped a
+     * 23-frame flame at 6 frames, a quarter of its height and stuck on the
+     * first few of its 16 animation frames. `p.life` is the particle's own,
+     * which flag 0x100 jitters by 10%. */
+    const stagger=e.life/n;
+    const phase=e.period>0?Math.random()*e.period:0;
+    for(let i=0;i<n;i++)
+      by.get(k).list.push(seed({},e,(phase+i*stagger)%e.life));
+  }
+  fxGroups=[];
+  for(const g of by.values()){
+    const n=g.list.length;
+    fxGroups.push({sprite:g.sprite, mode:g.mode, parts:g.list, n:n,
+                   P:new Float32Array(n*18), UV:new Float32Array(n*12),
+                   L:new Float32Array(n*18).fill(1)});
+    for(const p of g.list) fxParts.push(p);
+  }
+  if(!fxbuf) fxbuf={pos:gl.createBuffer(),uv:gl.createBuffer(),lit:gl.createBuffer()};
+  console.log(`fx: ${fxData.emitters.length} emitters, ${fxParts.length} particles, `
+             +`${fxGroups.length} draw groups`);
+}
+
+/* A direction inside the effect's cone: its own velocity vector is the axis,
+ * `cone` is the half-angle in degrees, and the azimuth is uniform - which is
+ * what Sfx_TickAmbient does with sin/cos of a rand() azimuth. */
+function seed(p,e,age){
+  let ax=e._axis||[0,-1,0];
+  if(!e.speed) ax=[0,-1,0];
+  let t=[0,0,1]; if(Math.abs(ax[2])>0.9) t=[1,0,0];
+  const r=[ax[1]*t[2]-ax[2]*t[1], ax[2]*t[0]-ax[0]*t[2], ax[0]*t[1]-ax[1]*t[0]];
+  const rl=Math.hypot(r[0],r[1],r[2])||1; for(let i=0;i<3;i++) r[i]/=rl;
+  const u=[ax[1]*r[2]-ax[2]*r[1], ax[2]*r[0]-ax[0]*r[2], ax[0]*r[1]-ax[1]*r[0]];
+  /* Sfx_TickAmbient's own randomisations, each behind its flag (ASSETS 3b):
+   * 0x1000 widens the cone by up to its own value, 0x100 jitters the lifetime
+   * by 10%, 0x10 gives a random start angle - without it the sprite is
+   * unrotated. */
+  const cone=e.randCone?e.cone*(1+Math.random()):e.cone;
+  const th=Math.random()*cone*Math.PI/180, ph=Math.random()*Math.PI*2;
+  const st=Math.sin(th), ct=Math.cos(th);
+  p.e=e; p.age=age;
+  p.spin=e.randAngle?Math.random()*Math.PI*2:0;
+  p.life=e.randLife?e.life*(1+Math.random()*0.1):e.life;
+  p.dir=[ax[0]*ct+(r[0]*Math.cos(ph)+u[0]*Math.sin(ph))*st,
+         ax[1]*ct+(r[1]*Math.cos(ph)+u[1]*Math.sin(ph))*st,
+         ax[2]*ct+(r[2]*Math.cos(ph)+u[2]*Math.sin(ph))*st];
+  return p;
+}
+
+function tickFx(dt){
+  if(!fxData) return;
+  for(const p of fxParts){
+    p.age+=dt;
+    if(p.age>=p.life) seed(p,p.e,p.age-p.life);
+  }
+}
+
+/* mode -> the blend the engine's bucket bits mean (ASSETS 3b) */
+function fxBlend(mode){
+  if(mode===6||mode===7) return [gl.ZERO,gl.ONE_MINUS_SRC_COLOR];
+  return [gl.ONE,gl.ONE];                        // 4/5 additive; 2/3 default here
+}
+
+function drawFx(VP,eye){
+  if(!fxOn||!fxData||!fxGroups.length) return;
+  const eyeSet=[eye[0],-eye[1],eye[2]];          // MFLIP is its own inverse
+  gl.enable(gl.BLEND); gl.depthMask(false);
+  gl.uniformMatrix4fv(gl.getUniformLocation(prog,"uMVP"),false,
+                      new Float32Array(mul(VP,MFLIP)));
+  gl.uniform1f(gl.getUniformLocation(prog,"uAlpha"),1.0);
+  gl.uniform1f(gl.getUniformLocation(prog,"uCutout"),0);
+  gl.uniform1f(gl.getUniformLocation(prog,"uHasTex"),1);
+  gl.uniform1f(gl.getUniformLocation(prog,"uLitMode"),0);
+  for(const g of fxGroups){
+    const t=fxTex[fxData.set+"/"+g.sprite]; if(!t) continue;
+    const sp=fxData.sprites[g.sprite]; if(!sp) continue;
+    const P=g.P, UV=g.UV, L=g.L, nf=sp.frames.length;
+    let v=0, w=0, q=0;
+    for(const p of g.parts){
+      const e=p.e, age=p.age;
+      if(age>=p.life){                 // dormant between emissions: collapse it
+        for(let k=0;k<18;k++) P[v+k]=0;
+        for(let k=0;k<12;k++) UV[w+k]=0;
+        v+=18; w+=12; q+=18; continue;
+      }
+      // the engine's own index: (frames - 1) * age / life, not frames * ...
+      const c=sp.frames[Math.max(0,Math.min(nf-1,((nf-1)*age/p.life)|0))];
+      /* The integrator adds `accel` to the particle's Y velocity every frame,
+       * so Y is quadratic in age while X and Z stay linear. That is what makes
+       * a flame a tall column: the brazier's rises 175 units over its 23
+       * frames, not the 46 a constant speed gives. 159 of the 366 effects
+       * accelerate. */
+      const d=age*e.speed;
+      const px=e.pos[0]+p.dir[0]*d,
+            py=e.pos[1]+p.dir[1]*d+0.5*e.accel*age*age,
+            pz=e.pos[2]+p.dir[2]*d;
+      let fx=eyeSet[0]-px, fy=eyeSet[1]-py, fz=eyeSet[2]-pz;
+      const fl=Math.hypot(fx,fy,fz)||1; fx/=fl; fy/=fl; fz/=fl;
+      let rx=-fz, rz=fx;                          // cross([0,-1,0], f)
+      const rl=Math.hypot(rx,0,rz)||1; rx/=rl; rz/=rl;
+      const ux=fy*rz, uy=fz*rx-fx*rz, uz=-fy*rx;  // cross(f, r), r.y = 0
+      const a=p.spin+age*e.spin*Math.PI/180, ca=Math.cos(a), sa=Math.sin(a);
+      const Rx=rx*ca+ux*sa, Ry=uy*sa,        Rz=rz*ca+uz*sa;
+      const Ux=ux*ca-rx*sa, Uy=uy*ca,        Uz=uz*ca-rz*sa;
+      /* the scale ramp: Sfx_TickAmbient adds +-scale/life per frame under
+       * flags 0x4 / 0x2000, so a growing particle doubles over its life and a
+       * shrinking one fades to nothing. 241 of the 366 effects use one. */
+      const sc=(e.scale||1)*(1+e.grow*age/p.life);
+      const hw=sp.size[0]*0.5*sc, hh=sp.size[1]*0.5*sc;
+      // two triangles: (-1,1) (1,1) (1,-1) and (-1,1) (1,-1) (-1,-1)
+      const SX=[-1,1,1,-1,1,-1], SY=[1,1,-1,1,-1,-1];
+      const CU=[c[0],c[2],c[2],c[0],c[2],c[0]], CV=[c[1],c[1],c[3],c[1],c[3],c[3]];
+      /* THE PARTICLE'S COLOUR - section C +48 at birth ramping to +52 at
+       * death, packed 0x00RRGGBB (docs/ASSETS.md 3b). Sfx_TickAmbient
+       * compares the two dwords and only builds a `(c1-c0)/life` rate when
+       * they differ. This is not decoration: the intro's portal is an ORANGE
+       * impact sprite modulated by 0x2125AF, so a viewer that leaves the
+       * colour at 1 draws it the wrong colour and no reading of the texture
+       * can tell you so. Anekbah's 102 neon emitters really are white, but
+       * its five `cacC` are RED and its twelve `agaz` ramp near-black to
+       * blue-grey. NOT times the instance alpha: the tick sets 0.5 into the
+       * diffuse's high byte, and neither ONE/ONE nor ZERO/INVSRCCOLOR reads
+       * it - dividing by 510 here halved every particle (2026-09-02, the same
+       * fault the port had, found by rendering the intro beside its capture). */
+      const cf=age/p.life, C0=e.col0||[255,255,255], C1=e.col1||C0;
+      const cr=(C0[0]+(C1[0]-C0[0])*cf)/255,
+            cg=(C0[1]+(C1[1]-C0[1])*cf)/255,
+            cb=(C0[2]+(C1[2]-C0[2])*cf)/255;
+      for(let k=0;k<6;k++){
+        const sx=SX[k]*hw, sy=SY[k]*hh;
+        P[v++]=px+Rx*sx+Ux*sy; P[v++]=py+Ry*sx+Uy*sy; P[v++]=pz+Rz*sx+Uz*sy;
+        UV[w++]=CU[k]; UV[w++]=CV[k];
+        L[q++]=cr; L[q++]=cg; L[q++]=cb;
+      }
+    }
+    const bl=fxBlend(g.mode); gl.blendFunc(bl[0],bl[1]);
+    gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D,t);
+    gl.uniform1i(gl.getUniformLocation(prog,"uTex"),0);
+    for(const [nm,buf,arr,size] of [["aPos",fxbuf.pos,P,3],
+                                    ["aUV",fxbuf.uv,UV,2],
+                                    ["aLit",fxbuf.lit,g.L,3]]){
+      const l=gl.getAttribLocation(prog,nm); if(l<0) continue;
+      gl.bindBuffer(gl.ARRAY_BUFFER,buf);
+      gl.bufferData(gl.ARRAY_BUFFER,arr,gl.DYNAMIC_DRAW);
+      gl.enableVertexAttribArray(l);
+      gl.vertexAttribPointer(l,size,gl.FLOAT,false,0,0);
+    }
+    gl.drawArrays(gl.TRIANGLES,0,g.n*6);
+  }
+  gl.disable(gl.BLEND); gl.depthMask(true);
+}
+
+async function texture(url){
+  const img=new Image(); img.src=url;
+  await img.decode().catch(()=>{});
+  if(!img.width) return null;
+  const t=gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D,t);
+  gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL,false);
+  gl.texImage2D(gl.TEXTURE_2D,0,gl.RGB,gl.RGB,gl.UNSIGNED_BYTE,img);
+  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.REPEAT);
+  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.REPEAT);
+  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);
+  return t;
+}
+
+/* ---------------------------------------------------------- the actors */
+/* One frame of a posed character baked into GL buffers. The pose stream is
+ * omkweb's: meshCount * (quat wxyz + position xyz) per frame, with the ROOT
+ * rotation stripped - which is exactly why the caller applies it as a world
+ * orientation instead. Mirrors omkweb.html's bakeStatic, minus the .3DM face
+ * morph a cutscene never has. */
+function bakeFrame(a,f){
+  const g=a.geom, pose=a.pose, n=g.corners.length;
+  const P=a.P||(a.P=new Float32Array(n*3)), L=a.L||(a.L=new Float32Array(n*3));
+  const nm=pose?pose.meta.meshes:0;
+  const at=(mi)=>{const b=(Math.min(f,pose.meta.frames-1)*nm+mi)*7;
+    return [pose.data.subarray(b,b+4), pose.data.subarray(b+4,b+7)];};
+  for(let i=0;i<n;i++){
+    const c=g.corners[i];
+    let v;
+    if(c[0]===1){
+      const b=(g.faceBind&&g.faceBind[c[1]])||[0,0,0,0,1,0,1];
+      if(pose&&g.faceMeshIndex>=0){
+        const [q,o]=at(g.faceMeshIndex), r=qrot(q,b[0],b[1],b[2]);
+        v=[r[0]+o[0],r[1]+o[1],r[2]+o[2],0,0,0,b.length>6?b[6]:1];
+      } else v=[b[0],b[1],b[2],0,0,0,b.length>6?b[6]:1];
+    } else {
+      const st=g.static[c[1]]||[0,0,0,0,1,0,1], Lc=g.staticLocal&&g.staticLocal[c[1]];
+      if(pose&&Lc&&g.staticMesh[c[1]]>=0){
+        const [q,o]=at(g.staticMesh[c[1]]), r=qrot(q,Lc[0],Lc[1],Lc[2]);
+        v=[r[0]+o[0],r[1]+o[1],r[2]+o[2],0,0,0,st.length>6?st[6]:1];
+      } else v=st;
+    }
+    // characters ship a flat white light, so it goes up all three channels
+    const cl=v.length>6?v[6]:1;
+    P[i*3]=v[0];P[i*3+1]=v[1];P[i*3+2]=v[2];
+    L[i*3]=cl;L[i*3+1]=cl;L[i*3+2]=cl;
+  }
+  gl.bindBuffer(gl.ARRAY_BUFFER,a.buf.pos);gl.bufferData(gl.ARRAY_BUFFER,P,gl.DYNAMIC_DRAW);
+  gl.bindBuffer(gl.ARRAY_BUFFER,a.buf.lit);gl.bufferData(gl.ARRAY_BUFFER,L,gl.DYNAMIC_DRAW);
+  a.baked=f;
+}
+
+async function loadActors(sh){
+  actorGL=[];
+  for(const a of sh.actors){
+    if(!a.model||!a.rootBind) continue;
+    busy(`loading ${a.model}…`);
+    const g=await fetch(`/api/fullmodel/${a.model}?v=${BUILD}`).then(r=>r.json())
+                  .catch(()=>null);
+    if(!g) continue;
+    let pose=null;
+    try{
+      const r=await fetch(`/api/anipose/${a.model}/${encodeURIComponent(sh.file)}/${a.anim}?v=${BUILD}`);
+      if(r.ok){
+        const b=await r.arrayBuffer();
+        const hl=new DataView(b).getUint32(0,true);
+        pose={meta:JSON.parse(new TextDecoder().decode(new Uint8Array(b,4,hl))),
+              data:floats(b,4+hl)};
+      }
+    }catch(e){}
+    const buf={}; for(const k of ["pos","uv","lit"]) buf[k]=gl.createBuffer();
+    const n=g.corners.length, UV=new Float32Array(n*2);
+    for(const b of g.batches)
+      for(let i=b.start;i<b.start+b.count;i++){
+        UV[i*2]=g.corners[i][2]/b.w; UV[i*2+1]=g.corners[i][3]/b.w;
+      }
+    gl.bindBuffer(gl.ARRAY_BUFFER,buf.uv);gl.bufferData(gl.ARRAY_BUFFER,UV,gl.STATIC_DRAW);
+    const tex=[];
+    for(const b of g.batches){
+      if(tex[b.material]) continue;
+      tex[b.material]=await texture(`/api/tex/${a.model}/${b.material}.png?v=${BUILD}`);
+    }
+    actorGL.push({info:a,geom:g,pose,buf,tex,baked:-1});
+  }
+  busy("");
+}
+
+/* The actor's model matrix. The pose is model space with the pelvis at its
+ * bind position and no root rotation, so: bring the pelvis to the origin,
+ * turn the body by the clip's root quaternion, then drop it at the clip's
+ * world position - key 0 plus the running sum of the per-frame deltas, which
+ * the server has already accumulated. */
+function actorMatrix(a,f){
+  const r=a.info.root[Math.min(f,a.info.root.length-1)], b=a.info.rootBind;
+  return mul(MFLIP, mul(trans(r[0],r[1],r[2]),
+             mul(qmat([r[3],r[4],r[5],r[6]]), trans(-b[0],-b[1],-b[2]))));
+}
+
+/* -------------------------------------------------------------- drawing */
+function resize(){
+  const r=cv.getBoundingClientRect(), d=window.devicePixelRatio||1;
+  cv.width=Math.max(1,r.width*d|0); cv.height=Math.max(1,r.height*d|0);
+}
+/* The camera at a possibly FRACTIONAL frame.
+ *
+ * The engine samples Cam_PlayEditing at the object's program clock, which is a
+ * float (obj+88 += dt per tick), so a fractional frame is the normal case, not
+ * an edge case. The server pre-samples one entry per whole frame; since
+ * Cam_PlayEditing is piecewise linear in the frame, lerping between two
+ * neighbours reproduces it exactly inside a key segment and is off by a
+ * sub-frame only where the slope changes.
+ *
+ * The floor is not optional. `shot.camera[3.7]` is undefined, so camAt
+ * returned null, view() returned null and draw() bailed out before it had
+ * drawn anything - which is why scrubbing (integer frames) worked and pressing
+ * play (fractional frames) went black.
+ */
+function camAt(f){
+  if(!shot) return null;
+  const n=shot.camera.length;
+  const i=Math.max(0,Math.min(n-1,Math.floor(f)));
+  const a=shot.camera[i];
+  if(!a) return null;
+  // ... but never ACROSS a track boundary. Tracks are laid end to end and the
+  // next one opens on a different camera, so the change there is a cut, not a
+  // move: lerping over it slid the camera across the cut for one frame.
+  const b=(i+1<n && !cutBetween(i)) ? shot.camera[i+1] : a;
+  const u=Math.max(0,Math.min(1,f-i));
+  const L=(k)=>a[k]+(b[k]-a[k])*u;
+  return {eye:[L(0),L(1),L(2)],at:[L(3),L(4),L(5)],roll:L(6),fov:L(7)};
+}
+/* Does a cut fall between whole frames i and i+1? A track's length is its own
+ * last key frame, which need not be whole - shoot.SCX's `e1` cuts at 157.5 -
+ * so this asks for the interval, not for equality. A fractional cut then lands
+ * on the next whole frame, up to 1/30 s late, rather than being smeared. */
+function cutBetween(i){
+  return shot.shots.some(t=>t.from>0 && t.from>i && t.from<=i+1);
+}
+function view(){
+  const c=camAt(frame);
+  if(!c) return null;
+  let eye=W(c.eye), at=W(c.at);
+  if(freeLook&&orbit.dist>0){
+    const dx=eye[0]-at[0], dy=eye[1]-at[1], dz=eye[2]-at[2];
+    const base=Math.atan2(dx,dz), pit=Math.asin(Math.max(-1,Math.min(1,
+      dy/(Math.hypot(dx,dy,dz)||1))));
+    const yaw=base+orbit.yaw, p=Math.max(-1.4,Math.min(1.4,pit+orbit.pitch));
+    const d=orbit.dist;
+    eye=[at[0]+Math.sin(yaw)*Math.cos(p)*d, at[1]+Math.sin(p)*d,
+         at[2]+Math.cos(yaw)*Math.cos(p)*d];
+  }
+  /* The roll is NEGATED here, and that is not a fudge. `W()` maps the game's
+   * space to the viewer's by flipping Y, and negating one axis is a
+   * REFLECTION - which reverses the sense of every rotation about an axis. The
+   * eye and target survive it (a point is a point), the roll does not: applied
+   * unnegated in the flipped basis it turns the camera the opposite way, and
+   * every rolled shot in the Bowie title sequence came out mirrored. Checked
+   * against the game frame by frame - `camshot.py --roll` renders the same
+   * camera in the GAME's space, where the record's own sign is the right one. */
+  return {eye,at,roll:freeLook?0:-c.roll,fov:c.fov};
+}
+/* `pass` selects which batches to draw: "opaque" or "blend". The engine bins
+ * every triangle in the frame - set, actors and sprites alike - into one
+ * 0x4000-entry bucket array keyed by its render state and walks it in ASCENDING
+ * key order (ASSETS 4b). The transparent bit 0x2000 sits near the top of that
+ * key, so ALL transparent geometry draws after ALL opaque geometry, whichever
+ * object it belongs to - which is why the caller runs two passes over
+ * everything rather than drawing each object whole. */
+function drawBatches(batches,tex,bufs,MVP,pass){
+  /* Anything that does not supply aPhase gets the constant -1, which the
+   * vertex shader reads as "does not shimmer". */
+  const ph=gl.getAttribLocation(prog,"aPhase");
+  if(ph>=0 && !bufs.some(b=>b[0]==="aPhase")){
+    gl.disableVertexAttribArray(ph); gl.vertexAttrib1f(ph,-1.0);
+  }
+  gl.uniformMatrix4fv(gl.getUniformLocation(prog,"uMVP"),false,new Float32Array(MVP));
+  for(const [name,b,size] of bufs){
+    const loc=gl.getAttribLocation(prog,name);
+    if(loc<0) continue;
+    gl.enableVertexAttribArray(loc);
+    gl.bindBuffer(gl.ARRAY_BUFFER,b);
+    gl.vertexAttribPointer(loc,size,gl.FLOAT,false,0,0);
+  }
+  /* Transparency, read out of Raster_DrawTriangles rather than guessed
+   * (ASSETS 4b/4c). Mesh flag 0x1000 becomes bucket bit 0x2000, which turns
+   * ZWRITEENABLE off and ALPHABLENDENABLE on; the sub-mode is then mesh 0x2000
+   * -> bucket 0x100 -> SRCBLEND/DESTBLEND = ONE/ONE (ADDITIVE), or mesh 0x4000
+   * -> bucket 0x200 -> ZERO/INVSRCCOLOR (a darkening multiply). The shipped
+   * sets use exactly those two: 211 additive - the glass, the water, the light
+   * cards, `adtranspa` - and 6 multiply, the two mirrors and Bozo's flames and
+   * screens.
+   *
+   * This used to draw everything blended at a flat 50% alpha, on a reading
+   * that had the flag one place out: the SetRenderState(27,1) it cited is the
+   * CUTOUT path, from mesh flag 0x800. Depth writes were already right. */
+  gl.uniform1f(gl.getUniformLocation(prog,"uLitMode"),litMode);
+  let blending="";
+  for(const b of batches){
+    const mode=b.blend||"";
+    if(pass==="opaque" && mode) continue;
+    if(pass==="blend"  && !mode) continue;
+    if(mode!==blending){
+      blending=mode;
+      if(mode){ gl.enable(gl.BLEND); gl.depthMask(false);
+                if(mode==="mul") gl.blendFunc(gl.ZERO,gl.ONE_MINUS_SRC_COLOR);
+                else             gl.blendFunc(gl.ONE,gl.ONE); }
+      else { gl.disable(gl.BLEND); gl.depthMask(true); }
+    }
+    gl.uniform1f(gl.getUniformLocation(prog,"uAlpha"),1.0);
+    const t=tex[b.material];
+    gl.uniform1f(gl.getUniformLocation(prog,"uHasTex"),t?1:0);
+    gl.uniform1f(gl.getUniformLocation(prog,"uCutout"),b.cutout?1:0);
+    if(t){ gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D,t);
+           gl.uniform1i(gl.getUniformLocation(prog,"uTex"),0); }
+    gl.drawArrays(gl.TRIANGLES,b.start,b.count);
+  }
+  if(blending){ gl.disable(gl.BLEND); gl.depthMask(true); }
+}
+function draw(){
+  requestAnimationFrame(draw);
+  const now=performance.now(), dt=(now-last)/1000; last=now;
+  /* The ambient clock counts FRAMES, not seconds: the engine's default frame
+   * delta is `flt_4C30D8 dd 1.0`, so a section C lifetime of 15 is 15 frames -
+   * half a second - and a speed of 11 is 11 units per frame. Ticking these in
+   * seconds ran the whole city 30x too slow. Clamped so a backgrounded tab
+   * does not teleport every particle to the end of its life. */
+  tickFx(Math.min(dt,0.1) * (shot?shot.fps:30) * (playing?speed:1));
+  if(playing&&shot){
+    frame+=dt*shot.fps*speed;
+    if(frame>=shot.duration){
+      if(chain&&curScene&&curIdx>=0&&curIdx+1<curScene.shots.length){
+        const nx=curScene.shots[curIdx+1];
+        frame=0; open(curScene.file,nx.id,null,curScene,curIdx+1);
+      }
+      else if(loop) frame=0;
+      else { frame=shot.duration-1; setPlaying(false); }
+    }
+    syncClock();
+  }
+  tickAudio();
+  resize();
+  gl.viewport(0,0,cv.width,cv.height);
+  gl.clearColor(0,0,0,1);            // the letterbox bars
+  gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);
+  const v=view();
+  if(!v||!decor) return;
+  // letterbox to the game's 1.818:1
+  const w=cv.width, h=cv.height;
+  let vw=w, vh=w/GAME_ASPECT;
+  if(vh>h){ vh=h; vw=h*GAME_ASPECT; }
+  gl.viewport((w-vw)/2|0,(h-vh)/2|0,vw|0,vh|0);
+  gl.enable(gl.SCISSOR_TEST);
+  gl.scissor((w-vw)/2|0,(h-vh)/2|0,vw|0,vh|0);
+  gl.clearColor(0.02,0.02,0.03,1);   // inside the frame
+  gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);
+  gl.disable(gl.SCISSOR_TEST);
+  // the record's fov is the HORIZONTAL one; persp() takes the vertical
+  const Pv=persp(2*Math.atan(Math.tan(v.fov*Math.PI/360)/GAME_ASPECT),
+                 GAME_ASPECT,4,20000);
+  const V=lookAt(v.eye,v.at,v.roll);
+  const VP=mul(Pv,V);
+  /* Two passes over EVERYTHING, which is the engine's own order: it bins the
+   * whole frame into one bucket array and walks it in ascending key order, so
+   * transparent geometry follows opaque geometry across objects, not within
+   * them. See drawBatches. */
+  const setBufs=[["aPos",dbuf.pos,3],["aUV",dbuf.uv,2],["aLit",dbuf.lit,3],
+                 ["aPhase",dbuf.phase,1]];
+  /* The engine's shimmer clock: `clock += 2` a frame, wrapping at 256, and the
+   * phase uses `clock >> 2` - so a 32-step cycle takes 64 frames, about 2.1s. */
+  gl.uniform1f(gl.getUniformLocation(prog,"uFxClock"),
+               Math.floor(((frame*2)%256)/4));
+  const actors=[];
+  if(showActors) for(const a of actorGL){
+    const f=Math.floor(frame);
+    if(a.pose&&a.baked!==f) bakeFrame(a,f);
+    else if(!a.pose&&a.baked<0) bakeFrame(a,0);
+    actors.push([a,[["aPos",a.buf.pos,3],["aUV",a.buf.uv,2],["aLit",a.buf.lit,3]],
+                 mul(VP,actorMatrix(a,f))]);
+  }
+  for(const pass of ["opaque","blend"]){
+    drawBatches(decor.batches,decorTex,setBufs,mul(VP,MFLIP),pass);
+    for(const [a,bufs,M] of actors)
+      drawBatches(a.geom.batches,a.tex,bufs,M,pass);
+  }
+  drawFx(VP,v.eye);          // the emitters draw last: additive, no depth write
+  hud(v);
+}
+function hud(v){
+  if(!shot){ $("#hud").textContent=""; return; }
+  const f=Math.floor(frame);
+  let track="", cam="";
+  let base=0;
+  for(const t of shot.shots){ if(f>=t.from&&f<t.to){ track=t.name;
+    for(let i=0;i<t.keys.length-1;i++)
+      if(f>=t.from+t.keys[i].frame&&f<t.from+t.keys[i+1].frame) cam=t.keys[i].camera;
+    break; } }
+  $("#hud").innerHTML =
+    `<div><span class="k">shot</span> ${shot.name} · ${shot.file}</div>`+
+    `<div><span class="k">track</span> ${track||"—"} <span class="k">camera</span> ${cam||"—"}`+
+    ` <span class="k">fov</span> ${v.fov.toFixed(1)}°</div>`+
+    `<div><span class="k">frame</span> ${f} / ${shot.duration}`+
+    `  <span class="k">set</span> ${shot.set||"—"}</div>`;
+}
+
+/* --------------------------------------------------------------- audio */
+/* The scene's sounds are not in gamedata/SOUNDS - that ships two files. They are
+ * embedded in the .SCX streamed section as plain RIFF/WAVE, 16-bit PCM mono at
+ * 22050 Hz, exactly as Sound_Play3D hands them to DirectSound, so the browser
+ * decodes them as they stand.
+ *
+ * When each one fires is `Script_PlaySyncSound`'s param 1: its handler holds
+ * the function chain busy while `param1 > obj+88`, and obj+88 is the object's
+ * program clock - the SAME clock Cam_PlayEditing is sampled on. So a cue's
+ * frame is directly this page's frame, and the footsteps land where the feet
+ * do. `Script_PlaySound` has a different layout (param 1 is a loop flag) and
+ * fires when the program counter reaches it, which for a cutscene object is
+ * the start; the server marks those `sync:false` and gives them at = 0.
+ */
+let actx=null, cueBufs={}, cueFired=[], playingSrc=[], muted=false, lastFrame=0;
+let musicEl=null, musicTrack=null;
+
+/* The music is NOT part of the cutscene. A scene's object programs never touch
+ * it: the bed is the area's own track, `AREA +142`, which Area_Load hands to
+ * Music_PlayTrack on arrival - or, where that is 0, whatever the area's own
+ * scripts play with `music.play`. Either way it is a loop under the scene, not
+ * a cue, so it runs on its own element rather than through the cue scheduler.
+ *
+ * The VOICES cannot be played from this tree: `media.play` names a `ZVO ...`
+ * OBJECTS entry whose stem is a VOICEOFF\*.ADP, and only 10 of the 561 ship. */
+function setMusic(track){
+  if(musicTrack===track) return;
+  if(musicEl){ musicEl.pause(); musicEl=null; }
+  musicTrack=track;
+  if(track==null) return;
+  musicEl=new Audio(`/api/track/${track}.wav?v=${BUILD}`);
+  musicEl.loop=true; musicEl.volume=0.35;
+  // the clock may already be somewhere when the track finishes loading
+  musicEl.addEventListener("loadedmetadata",()=>syncMusic());
+}
+/* Where the track should be for the frame on screen.
+ *
+ * A world-camera cutscene names its own `music.play`, so the track is locked
+ * to the sequence and starts at that cue's frame - the title sequence is 145.7
+ * s over a 143.8 s track, and it is meant to line up. An .SCX shot has no
+ * music of its own: the bed is the AREA's, which in the game has been playing
+ * since you walked in, so frame 0 of the shot is as good a reference as any
+ * and at least makes looping repeatable. */
+function musicOffset(){
+  if(!shot) return 0;
+  const cue=(shot.cues||[]).find(c=>c.kind==="music");
+  return Math.max(0,(frame-(cue?cue.at:0))/shot.fps);
+}
+function syncMusic(){
+  if(!musicEl) return;
+  musicEl.playbackRate=speed;
+  const d=musicEl.duration;
+  if(!isFinite(d)||d<=0) return;          // metadata not in yet; the listener retries
+  const want=musicOffset()%d;
+  if(Math.abs(musicEl.currentTime-want)>0.12){
+    try{ musicEl.currentTime=want; }catch(e){}
+  }
+}
+function musicPlay(on){
+  if(!musicEl) return;
+  if(on&&!muted){ syncMusic(); musicEl.play().catch(()=>{}); }
+  else musicEl.pause();
+}
+
+function audioCtx(){
+  if(!actx) actx=new (window.AudioContext||window.webkitAudioContext)();
+  if(actx.state==="suspended") actx.resume();   // browsers gate on a gesture
+  return actx;
+}
+async function loadCues(sh){
+  stopAudio(); cueBufs={}; cueFired=sh.cues.map(()=>false); lastFrame=0;
+  // a world-camera cutscene's cues are voice and music markers with no wav of
+  // their own - nothing to schedule, they only annotate the timeline
+  const want=[...new Set(sh.cues.filter(c=>c.wav!==undefined).map(c=>c.wav))];
+  await Promise.all(want.map(async(i)=>{
+    try{
+      const r=await fetch(`/api/scxwav/${encodeURIComponent(sh.file)}/${i}.wav?v=${BUILD}`);
+      if(!r.ok) return;
+      cueBufs[i]=await audioCtx().decodeAudioData(await r.arrayBuffer());
+    }catch(e){ /* a cue that will not decode simply stays silent */ }
+  }));
+}
+function stopAudio(){
+  for(const s of playingSrc){ try{ s.stop(); }catch(e){} }
+  playingSrc=[];
+}
+/* `into` is how far into the sound the clock already is - non-zero only when a
+ * seek lands in the middle of one, which is what makes scrubbing sound like
+ * the frame it shows rather than restarting every cue it passes. */
+function fireCue(c, into){
+  const b=cueBufs[c.wav];
+  if(!b||muted) return;
+  let off=into||0;
+  if(c.loop) off=off%b.duration;
+  else if(off>=b.duration) return;        // this one has already finished
+  const ctx=audioCtx(), src=ctx.createBufferSource();
+  src.buffer=b; src.loop=!!c.loop;
+  // the transport's speed is a playback rate, so cues stay glued to the frame
+  // they were authored on however fast the shot is being run
+  src.playbackRate.value=speed;
+  src.connect(ctx.destination); src.start(0, off);
+  src.onended=()=>{ playingSrc=playingSrc.filter(x=>x!==src); };
+  playingSrc.push(src);
+}
+
+/* Jumping the clock - a scrub, an arrow key, the loop wrapping round.
+ *
+ * Silence everything, rearm from where we landed so nothing retro-fires, then
+ * put the audio back where the picture is: any cue whose sound would still be
+ * sounding at this frame is restarted from the right offset into it, and the
+ * music is seeked to the same point. Without this, scrubbing left the music
+ * running from wherever it happened to be and looping never took it back to
+ * the top. */
+function seeked(){
+  if(!shot) return;
+  stopAudio();
+  cueFired=shot.cues.map(c=>frame>=c.at);
+  if(playing&&!muted)
+    shot.cues.forEach((c)=>{
+      if(c.wav===undefined||frame<c.at) return;
+      fireCue(c,(frame-c.at)/shot.fps);
+    });
+  syncMusic();
+  lastFrame=frame;
+}
+/* Fire every cue the clock has just crossed, and hold the music against the
+ * picture. The <audio> element runs on its own clock, so over a 145-second
+ * sequence it drifts from the frame counter; syncMusic has a 0.12 s deadband,
+ * so nudging it once a second corrects that without ever being audible. */
+let musicCheck=0;
+function tickAudio(){
+  if(!shot) return;
+  if(frame<lastFrame) seeked();                 // the loop wrap, and any seek
+  if(playing&&!muted)
+    shot.cues.forEach((c,i)=>{
+      if(!cueFired[i]&&frame>=c.at){ cueFired[i]=true;
+                                     if(c.wav!==undefined) fireCue(c); }
+    });
+  if(playing&&musicEl&&performance.now()-musicCheck>1000){
+    musicCheck=performance.now(); syncMusic();
+  }
+  lastFrame=frame;
+}
+
+/* -------------------------------------------------------------- the UI */
+function setPlaying(on){
+  playing=on; $("#play").textContent=on?"❚❚":"▶";
+  if(on) audioCtx(); else stopAudio();
+  musicPlay(on);
+}
+function syncClock(){
+  $("#scrub").value=Math.floor(frame);
+  $("#clock").textContent=`${Math.floor(frame)} / ${shot?shot.duration:0}`;
+}
+function renderTrack(){
+  const el=$("#track"); el.innerHTML="";
+  if(!shot) return;
+  const d=shot.duration||1;
+  for(const t of shot.shots){
+    const div=document.createElement("div");
+    div.style.left=(100*t.from/d)+"%";
+    div.style.width=(100*(t.to-t.from)/d)+"%";
+    div.title=`track ${t.name}: frames ${t.from}–${t.to}, ${t.keys.length} keys`;
+    el.appendChild(div);
+  }
+  // a world-camera cutscene marks its voice and music cues instead
+  for(const c of (shot.cues||[]))
+    if(c.wav===undefined&&c.at>0&&c.at<d){
+      const s2=document.createElement("span");
+      s2.style.left=(100*c.at/d)+"%";
+      s2.style.background=c.kind==="music"?"var(--ok)":"var(--acc)";
+      s2.title=`${c.kind}: ${c.name} @ frame ${c.at}`;
+      el.appendChild(s2);
+    }
+  for(const fn of (shot.program?shot.program.functions:[]))
+    if(fn.sound&&fn.at>0&&fn.at<d){
+      const s=document.createElement("span");
+      s.style.left=(100*fn.at/d)+"%"; s.title=`${fn.sound} @ frame ${fn.at}`;
+      el.appendChild(s);
+    }
+}
+function renderInfo(){
+  const el=$("#info");
+  if(!shot){ el.innerHTML=""; return; }
+  const rows=[];
+  rows.push("<h3>camera tracks</h3><table>");
+  for(const t of shot.shots)
+    rows.push(`<tr><td class="tag">${t.name}</td><td>frames ${t.from}–${t.to}</td>`+
+              `<td>${t.keys.length} keys</td><td class="w">`+
+              t.keys.map(k=>`${k.camera}@${k.frame} (${k.fov}°)`).join(", ")+"</td></tr>");
+  rows.push("</table>");
+  if(shot.program){
+    rows.push(`<h3>program — object ${shot.program.name}</h3><table>`);
+    for(const f of shot.program.functions){
+      let x="";
+      if(f.clip!==undefined) x=`<span class="tag">${f.node}</span> ← ${f.clip}`;
+      else if(f.sound!==undefined) x=`${f.sound||"?"} <span class="dim">@${f.at}</span>`;
+      rows.push(`<tr><td class="dim">${f.kind}</td><td>${f.name}</td><td class="w">${x}</td></tr>`);
+    }
+    rows.push("</table>");
+  }
+  if(shot.actors.length){
+    rows.push("<h3>actors</h3><table>");
+    for(const a of shot.actors)
+      rows.push(`<tr><td class="tag">${a.node||"?"}</td><td>${a.clip}</td>`+
+        `<td>${a.model||'<span class="warn">no rig matched</span>'}</td>`+
+        `<td>${a.frames} frames</td><td>travels ${a.travel}</td>`+
+        `<td class="dim">at ${a.place.join(", ")}</td></tr>`);
+    rows.push("</table>");
+  }
+  rows.push(`<h3>where</h3><table><tr><td>set</td><td>${shot.set||"—"}</td></tr>`+
+    shot.areas.map(a=>`<tr><td>area ${a[0]}</td><td>${a[1]}</td></tr>`).join("")+
+    `<tr><td>camera</td><td>${shot.coverage} of ${shot.duration} frames resolve</td></tr></table>`);
+  el.innerHTML=rows.join("");
+}
+function renderNote(){
+  if(shot&&shot.kind==="camera"){
+    const vo=shot.cues.filter(c=>c.kind==="voice").length;
+    $("#note").innerHTML =
+      "A <b>world-camera</b> cutscene: no <code>.SCX</code> editing at all — the "+
+      "script cuts and travels between entries of the world camera table with "+
+      "<code>camera.set</code> / <code>camera.set.wait</code>, and the frames "+
+      "it names are its own clock."+
+      (vo?`<br>${vo} voice cue${vo>1?"s":""} marked on the timeline; the `+
+          "<code>VOICEOFF</code> audio is not in this tree.":"")+
+      (shot.music?`<br>music: track ${shot.music.track}.`:"");
+    return;
+  }
+  const missing=shot?shot.actors.filter(a=>!a.model).length:0;
+  const cues=shot?shot.cues.length:0;
+  const m=shot&&shot.music;
+  $("#note").innerHTML =
+    "The camera is <code>Cam_PlayEditing</code>'s own interpolation, frame for "+
+    "frame. The characters are placed at their clip's authored root key and "+
+    "walked by its per-frame deltas — <b>their orientation convention is not "+
+    "verified</b>, so treat the staging as a reading, not a result."+
+    (cues?`<br>${cues} sound cue${cues>1?"s":""} out of the scene's own stream, `+
+          "on the frames its program fires them.":"")+
+    (m?`<br>music: track ${m.track} (${m.source}) — the area's, not the shot's.`:"")+
+    "<br><b>No voices</b>: <code>media.play</code> names a <code>ZVO&nbsp;…</code> "+
+    "object whose <code>VOICEOFF/*.ADP</code> is not in this tree (10 of 561 ship)."+
+    (missing?`<br><b>${missing}</b> of this shot's clips animate a rig with no `+
+             "character model (props, effects).":"");
+}
+
+async function open(file,id,el,sc,idx){
+  document.querySelectorAll(".shot.on").forEach(e=>e.classList.remove("on"));
+  if(el) el.classList.add("on");
+  if(sc){ curScene=sc; curIdx=idx; }
+  else if(file.indexOf("/")>=0){ curScene=null; curIdx=-1; }
+  else { curScene=catalogue.find(s=>s.file===file)||null;
+         curIdx=curScene?curScene.shots.findIndex(s=>s.id===id):-1; }
+  const btn=document.querySelector(`.shot[data-id="${file}|${id}"]`);
+  if(btn) btn.classList.add("on");
+  busy("loading shot…");
+  // `file` is an .SCX for an editing, or "AREA/0/78" for a world-camera script
+  const url = file.indexOf("/")>=0
+    ? `/api/camerashot/${file}`
+    : `/api/cutscene/${encodeURIComponent(file)}/${id}`;
+  const s=await fetch(url).then(r=>r.ok?r.json():null).catch(()=>null);
+  busy("");
+  if(!s) return;
+  const sameScene = shot && shot.file===s.file;
+  shot=s; frame=0; orbit={yaw:0,pitch:0,dist:0,on:false};
+  $("#scrub").max=Math.max(0,s.duration-1);
+  syncClock(); renderTrack(); renderInfo(); renderNote();
+  await loadSet(s.set);
+  await loadActors(s);
+  await loadCues(s);
+  // the music belongs to the area, so chaining within a scene must not restart it
+  if(!sameScene||musicTrack!==(s.music?s.music.track:null))
+    setMusic(s.music?s.music.track:null);
+  setPlaying(true);
+  location.hash=`${file}/${s.name}`;
+}
+
+function renderList(filter){
+  const q=(filter||"").toLowerCase(), el=$("#scenes");
+  el.innerHTML="";
+  for(const sc of catalogue){
+    const shots=sc.shots.filter(s=>!q||sc.file.toLowerCase().includes(q)||
+                                   (s.name||"").toLowerCase().includes(q)||
+                                   (s.object||"").toLowerCase().includes(q));
+    if(!shots.length) continue;
+    const d=document.createElement("div"); d.className="sc";
+    const area=sc.areas.length?sc.areas[0][1]:"";
+    d.innerHTML=`<div class="h"><b>${sc.file.replace(/\.scx$/i,"")}</b>`+
+                `<span>${area}</span></div>`;
+    for(const s of shots){
+      const b=document.createElement("button");
+      b.className="shot";
+      b.dataset.id=`${sc.file}|${s.id}`;
+      const beat=s.beat?`${s.beat[0]==="Z"?"":s.beat[0]}${s.beat[1]} `:"";
+      b.innerHTML=`<span>${beat?`<b style="color:var(--dim)">${beat}</b>`:""}`+
+                  `${s.name||"("+s.id+")"}</span>`+
+                  `<i>${s.seconds}s · ${s.object||"unlinked"}</i>`;
+      b.onclick=()=>open(sc.file,s.id,b,sc,sc.shots.indexOf(s));
+      d.appendChild(b);
+    }
+    el.appendChild(d);
+  }
+
+  /* The other family. Not every cutscene is an .SCX camera editing: a world
+   * script can direct one itself, cutting and travelling between entries of
+   * the WORLD camera table with camera.set / camera.set.wait, with media.play
+   * for the voice-over. The game's title sequence is one of these - AREA 0
+   * record 78, 46 moves over 145.7 s while the credits play - and it has no
+   * editing at all, which is why the chunk-10 list above cannot see it. */
+  const cs=camScripts.filter(c=>!q||c.name.toLowerCase().includes(q)||
+                                 (c.where||"").toLowerCase().includes(q));
+  if(cs.length){
+    const d=document.createElement("div"); d.className="sc";
+    d.innerHTML=`<div class="h"><b>camera scripts</b>`+
+                `<span>${cs.length} · world cameras</span></div>`;
+    for(const c of cs){
+      const key=`${c.arch}/${c.chunk}/${c.rec}`;
+      const b=document.createElement("button");
+      b.className="shot"; b.dataset.id=`${key}|0`;
+      b.innerHTML=`<span>${c.where||c.name}</span>`+
+                  `<i>${c.seconds}s · ${c.moves} cams${c.voice?" · "+c.voice+" vo":""}</i>`;
+      b.onclick=()=>open(key,0,b,null,-1);
+      d.appendChild(b);
+    }
+    el.appendChild(d);
+  }
+}
+
+async function boot(){
+  initGL();
+  busy("loading the catalogue…");
+  catalogue=await fetch("/api/cutscenes").then(r=>r.json());
+  camScripts=await fetch("/api/camerascripts").then(r=>r.json()).catch(()=>[]);
+  busy("");
+  renderList("");
+  $("#search").oninput=e=>renderList(e.target.value);
+  $("#play").onclick=()=>setPlaying(!playing);
+  $("#scrub").oninput=e=>{frame=+e.target.value;syncClock();seeked();};
+  $("#speed").onchange=e=>{speed=+e.target.value;syncMusic();};
+  $("#loop").onclick=e=>{loop=!loop;e.target.classList.toggle("on",loop);};
+  $("#sound").onclick=e=>{muted=!muted;e.target.classList.toggle("on",!muted);
+    if(muted){ stopAudio(); musicPlay(false); } else { audioCtx(); musicPlay(playing); }};
+  $("#chain").onclick=e=>{chain=!chain;e.target.classList.toggle("on",chain);};
+  $("#actors").onclick=e=>{showActors=!showActors;e.target.classList.toggle("on",showActors);};
+  $("#fx").onclick=e=>{fxOn=!fxOn;e.target.classList.toggle("on",fxOn);};
+  // colour -> grey -> off. `grey` is the reading this repo used before the
+  // engine settled it, kept so the two can be compared on the same frame.
+  const LIT=["lights: colour","lights: grey (repo bug)","lights: off"];
+  $("#lights").onclick=e=>{ litMode=(litMode+1)%3;
+    e.target.textContent=LIT[litMode];
+    e.target.classList.toggle("on",litMode===0); };
+  $("#free").onclick=e=>{
+    freeLook=!freeLook; e.target.classList.toggle("on",freeLook);
+    if(freeLook){ const c=camAt(Math.floor(frame));
+      orbit.dist=c?Math.hypot(c.eye[0]-c.at[0],c.eye[1]-c.at[1],c.eye[2]-c.at[2]):500;
+      orbit.yaw=orbit.pitch=0; }
+  };
+  $("#details").onclick=e=>{ $("#info").classList.toggle("open");
+    e.target.classList.toggle("on",$("#info").classList.contains("open")); };
+  cv.onmousedown=e=>{ if(!freeLook) return; orbit.on=true; orbit.px=e.clientX; orbit.py=e.clientY; };
+  window.addEventListener("mouseup",()=>orbit.on=false);
+  window.addEventListener("mousemove",e=>{
+    if(!orbit.on) return;
+    orbit.yaw+=(e.clientX-orbit.px)*0.006; orbit.pitch+=(e.clientY-orbit.py)*0.006;
+    orbit.px=e.clientX; orbit.py=e.clientY;
+  });
+  cv.addEventListener("wheel",e=>{
+    if(!freeLook) return; e.preventDefault();
+    orbit.dist=Math.max(20,orbit.dist*(1+Math.sign(e.deltaY)*0.12));
+  },{passive:false});
+  window.addEventListener("keydown",e=>{
+    if(e.target.tagName==="INPUT") return;
+    if(e.key===" "){ e.preventDefault(); setPlaying(!playing); }
+    if(e.key==="ArrowRight"){ frame=Math.min((shot?shot.duration:1)-1,frame+ (e.shiftKey?10:1)); syncClock(); seeked(); }
+    if(e.key==="ArrowLeft"){ frame=Math.max(0,frame-(e.shiftKey?10:1)); syncClock(); seeked(); }
+  });
+  const h=decodeURIComponent(location.hash.slice(1));
+  const hit=h.includes("/")?h.split("/"):null;
+  if(hit){ const sc=catalogue.find(s=>s.file===hit[0]);
+    const s=sc&&sc.shots.find(x=>x.name===hit[1]);
+    if(s) await open(sc.file,s.id,null); }
+  else { const sc=catalogue.find(s=>s.file==="Impasse.SCX")||catalogue[0];
+    if(sc&&sc.shots.length) await open(sc.file,sc.shots[0].id,null); }
+  draw();
+}
+boot();
+</script>

@@ -1,0 +1,2122 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Omikron dialogue viewer</title>
+<style>
+:root{--bg:#12141a;--panel:#1a1d26;--line:#2a2f3d;--fg:#d8dce6;--dim:#8a91a3;
+      --acc:#6fb3ff;--you:#e8c46a;--ok:#7fd18a;--warn:#e8756a;}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;background:var(--bg);color:var(--fg);
+  font:13px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace}
+#app{display:grid;grid-template-columns:290px 1fr;height:100%}
+#side{background:var(--panel);border-right:1px solid var(--line);
+  display:flex;flex-direction:column;min-height:0}
+#side h2{margin:0;padding:10px 12px;font-size:11px;letter-spacing:.09em;
+  text-transform:uppercase;color:var(--dim);border-bottom:1px solid var(--line)}
+#search{margin:8px;padding:6px 8px;background:#0d0f14;border:1px solid var(--line);
+  color:var(--fg);border-radius:4px;font:inherit;width:calc(100% - 16px)}
+#dlgs{overflow:auto;flex:1;min-height:0}
+.row{padding:5px 12px;cursor:pointer;border-left:2px solid transparent;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.row:hover{background:#222634}
+.row.on{background:#243049;border-left-color:var(--acc);color:#fff}
+.row .id{color:var(--dim);margin-right:6px}
+.row.nomorph .id::after{content:" ○"}
+#main{display:grid;grid-template-rows:1fr 36%;min-height:0;min-width:0}
+#stage{position:relative;min-height:0;background:
+  radial-gradient(ellipse at 50% 40%,#20242f 0%,#101219 70%)}
+/* in camera mode the stage goes black so the letterbox bars read as the game's,
+   not as the viewer's backdrop showing through a transparent clear */
+#stage.cam{background:#000}
+canvas{width:100%;height:100%;display:block}
+/* the readout sits at the bottom of the stage so it can never collide with the
+   toolbar, which is free to wrap onto as many rows as it needs */
+#hud{position:absolute;bottom:8px;left:12px;color:var(--dim);font-size:11px;
+  pointer-events:none;line-height:1.6;text-shadow:0 1px 3px #0009;
+  max-width:calc(100% - 24px)}
+#hud b{color:var(--fg);font-weight:400}
+#camdbg{position:absolute;top:8px;left:12px;font-size:11px;line-height:1.55;
+  color:var(--dim);background:#0b0d1288;border:1px solid var(--line);
+  border-radius:4px;padding:8px 10px;pointer-events:none;display:none;
+  white-space:pre;max-width:calc(100% - 24px);overflow:hidden}
+#camdbg.on{display:block}
+#scur .fx{color:#d8b56a}
+/* the options panel: everything that is not needed every minute lives here,
+   so the primary bar stays one short row on any screen */
+#opts{position:absolute;top:40px;right:12px;display:none;z-index:6;
+  background:#0b0d12ee;border:1px solid var(--line);border-radius:5px;
+  padding:8px 10px;font-size:11px;width:280px}
+#opts.on{display:block}
+#opts .pr{display:flex;gap:6px;align-items:center;margin:4px 0}
+#opts .lbl{color:var(--dim);width:44px;flex:0 0 auto}
+#opts select{flex:1 1 auto;min-width:0}
+#more.on{border-color:var(--acc)}
+#manualbtn.on{border-color:var(--acc)}
+/* the loading badge: bottom-right, because the TOP of the stage belongs to
+   the toolbar (which may wrap onto several rows and was covering the badge
+   there). Bottom-left is the hud readout; bottom-right is only ever used by
+   the placer, and when that is open the badge steps left of it. Driven by
+   busy(): it lists whatever is currently in flight, so "no badge + empty set
+   selector" means there IS no set, while "loading set ..." means it is still
+   on its way. */
+#loading{position:absolute;bottom:10px;right:12px;font-size:11px;color:#d8b56a;
+  background:#0b0d1288;border:1px solid var(--line);border-radius:4px;
+  padding:5px 9px;pointer-events:none;display:none;white-space:pre}
+#stage:has(#placer.on) #loading{right:292px}
+#loading.on{display:block}
+@keyframes ldpulse{50%{opacity:.45}}
+#loading.on{animation:ldpulse 1.2s ease-in-out infinite}
+#placer{position:absolute;right:12px;bottom:10px;display:none;z-index:5;
+  background:#0b0d12ee;border:1px solid var(--line);border-radius:5px;
+  padding:8px 10px;font-size:11px;width:262px}
+#placer.on{display:block}
+#states{position:absolute;left:12px;bottom:10px;display:none;z-index:5;
+  background:#0b0d12ee;border:1px solid var(--line);border-radius:5px;
+  padding:8px 10px;font-size:11px;width:300px;max-height:72%;overflow:auto}
+#states.on{display:block}
+#states .pr{display:flex;gap:5px;align-items:center;margin-bottom:5px}
+#states .hd{justify-content:space-between;color:var(--fg)}
+#states .x{padding:1px 6px;line-height:1.2}
+#states select{flex:1 1 auto;min-width:0}
+#scur{border-top:1px solid var(--line);padding-top:6px;margin-top:2px;
+  color:var(--dim);line-height:1.6;white-space:pre-wrap}
+#scur b{color:var(--fg);font-weight:400}
+#scur .nm{color:var(--acc)}
+#snav{display:flex;flex-wrap:wrap;gap:4px;margin-top:6px}
+#snav button{padding:3px 7px;font-size:10.5px}
+#snav .go{border-color:var(--ok)}
+#snav .un{color:var(--dim)}
+#snav .lbl{color:var(--dim);width:100%;margin-top:3px;font-size:10px}
+#strail{color:var(--dim);font-size:10px;margin-top:7px;line-height:1.5;
+  border-top:1px solid var(--line);padding-top:5px}
+#strail a{color:var(--acc);cursor:pointer;text-decoration:none}
+#strail a:hover{text-decoration:underline}
+#placer .pr{display:flex;gap:5px;align-items:center;margin-bottom:5px;flex-wrap:wrap}
+#placer .hd{justify-content:space-between;color:var(--fg)}
+#placer .x{padding:1px 6px;line-height:1.2}
+#placer .grid{display:grid;grid-template-columns:repeat(3,1fr);gap:4px}
+#placer .grid2{display:grid;grid-template-columns:1fr auto 1fr 1fr;gap:4px;align-items:center}
+#placer button{padding:4px 5px;font-size:10.5px}
+#placer select{padding:3px 5px}
+#placer .hint{color:var(--dim);font-size:10px;flex:1 1 100%}
+#placer .lbl{color:var(--dim);text-align:center}
+#pinfo{color:var(--dim);white-space:pre;font-size:10.5px;line-height:1.5;
+  border-top:1px solid var(--line);padding-top:5px;margin-top:2px}
+#pinfo b{color:var(--fg);font-weight:400}
+#camdbg b{color:var(--fg);font-weight:400}
+#camdbg .k{color:var(--acc)}
+#stage.locked{cursor:not-allowed}
+#modelbar{position:absolute;top:8px;right:12px;left:12px;display:flex;gap:6px;
+  row-gap:4px;align-items:center;justify-content:flex-end;flex-wrap:wrap;
+  font-size:11px}
+/* The three selects are the wide items, so they are the elastic ones: they
+   shrink first (down to min-width) and the bar stays on one row long before
+   it has to wrap over the canvas. Buttons keep their natural size. */
+#modelbar select{flex:1 1 120px;min-width:64px;max-width:190px;
+  text-overflow:ellipsis}
+#modelbar .lbl{color:var(--dim)}
+select,button{background:#0d0f14;border:1px solid var(--line);color:var(--fg);
+  border-radius:4px;padding:5px 8px;font:inherit;flex:0 0 auto}
+@media (max-width:900px){
+  #modelbar .lbl{display:none}
+  #modelbar select{max-width:130px}
+  select,button{padding:4px 6px;font-size:10.5px}
+}
+@media (max-width:640px){
+  #modelbar{gap:4px}
+  #modelbar select{min-width:48px;max-width:100px}
+  select,button{padding:3px 5px;font-size:10px}
+}
+button{cursor:pointer}
+button:hover{border-color:var(--acc)}
+button:disabled{opacity:.4;cursor:default}
+#bottom{border-top:1px solid var(--line);background:var(--panel);
+  display:grid;grid-template-columns:1fr 340px;min-height:0;overflow:hidden}
+#talk{padding:12px 16px;overflow:auto;min-height:0}
+#line{font-size:15px;line-height:1.55;margin-bottom:12px;white-space:pre-wrap}
+#line.you{color:var(--you)}
+#replies{display:flex;flex-direction:column;gap:5px}
+.reply{text-align:left;padding:7px 10px;border-color:#39405280}
+.reply:hover{background:#243049}
+.reply .n{color:var(--acc);margin-right:8px}
+.reply .to{float:right;color:var(--dim);font-size:11px}
+.reply.hidden{opacity:.38;text-decoration:line-through;cursor:default}
+#log{border-left:1px solid var(--line);padding:10px 12px;overflow:auto;min-height:0;
+  font-size:11.5px;color:var(--dim);white-space:pre-wrap}
+#log .v{color:var(--ok)} #log .e{color:var(--acc)} #log .h{color:var(--fg)}
+#empty{color:var(--dim);padding:40px;text-align:center}
+.warn{color:var(--warn)}
+</style>
+<div id="app">
+  <div id="side">
+    <h2>Conversations</h2>
+    <input id="search" placeholder="filter…">
+    <div id="dlgs"></div>
+  </div>
+  <div id="main">
+    <div id="stage">
+      <canvas id="gl"></canvas>
+      <div id="hud"></div>
+      <div id="camdbg"></div>
+      <div id="loading"></div>
+      <div id="states">
+        <div class="pr hd"><b>animation state machine</b>
+          <button id="sdone" class="x" title="close">×</button></div>
+        <div class="pr">
+          <select id="sfile"></select>
+          <button id="sroot" title="cycle through the states nothing leads into">entry ▸</button>
+        </div>
+        <div id="scur"></div>
+        <div id="snav"></div>
+        <div id="strail"></div>
+      </div>
+      <div id="placer">
+        <div class="pr hd"><b>manual placement</b>
+          <button id="pdone" class="x" title="close">×</button></div>
+        <div class="pr">
+          <select id="pwho">
+            <option value="npc">character</option>
+            <option value="player">player</option>
+            <option value="both">both together</option>
+          </select>
+          <button id="pfloor" title="drop onto the set floor under this spot">floor</button>
+          <button id="preset" title="back to the position inferred from the cameras">reset</button>
+        </div>
+        <div class="pr"><span class="lbl">step</span>
+          <select id="pstep">
+            <option value="1">1</option><option value="5" selected>5</option>
+            <option value="20">20</option>
+          </select>
+          <span class="hint">arrow keys move · Q/E turn · shift = ×4</span>
+        </div>
+        <div class="pr grid">
+          <span></span><button data-mv="0,0,-1">↑ &minus;Z</button><span></span>
+          <button data-mv="-1,0,0">&minus;X →</button>
+          <button data-mv="0,0,1">↓ +Z</button>
+          <button data-mv="1,0,0">← +X</button>
+          <button data-mv="0,-1,0">▲ up</button>
+          <button data-tn="-1">↺ turn</button>
+          <button data-tn="1">turn ↻</button>
+        </div>
+        <div class="pr grid2">
+          <button data-mv="0,1,0">▼ down</button>
+          <span class="lbl">gap</span>
+          <button data-gap="-1">closer</button><button data-gap="1">further</button>
+        </div>
+        <div id="pinfo"></div>
+      </div>
+      <div id="modelbar">
+        <span class="lbl">model</span>
+        <select id="model"></select>
+        <span class="lbl">set</span>
+        <select id="place" title="load the set this conversation is staged in, so the world cameras have somewhere to point"></select>
+        <button id="cam" title="follow the camera each line names">cam</button>
+        <button id="replay" title="replay this line">↻</button>
+        <button id="restart" title="restart the conversation from the beginning — variables reset, models and set stay loaded">⟲</button>
+        <button id="more" title="more options">⋯</button>
+      </div>
+      <div id="opts">
+        <div class="pr"><span class="lbl">view</span>
+          <button id="viewmode" title="toggle body / head">body</button>
+          <button id="shade" title="add a relief light (the game bakes a light COLOUR into every vertex)">flat</button>
+          <button id="lights" class="on" title="the light baked into every set vertex. COLOUR is what the game draws; grey is this repo's own pre-2026-08-29 bug, kept for comparison and NOT a mode the original has; off is full bright">lights: colour</button>
+          <button id="bodyanim" title="animate the skeleton from the 3DM node rotations">skeleton</button>
+        </div>
+        <div class="pr"><span class="lbl">idle</span>
+          <select id="idle" title="play a body animation from ANIMS/*.ani instead"></select>
+        </div>
+        <div class="pr"><span class="lbl">player</span>
+          <select id="pmodel" title="the model drawn as the player — by default a copy of the speaker's"></select>
+          <button id="player" title="show the player. A line camera sits almost exactly where the player stands, so from those angles it fills the lens.">solo</button>
+        </div>
+        <div class="pr"><span class="lbl">tools</span>
+          <button id="statebtn" title="walk the .CTL animation state machine">states</button>
+          <button id="placebtn" title="move the characters by hand - their positions are inferred from the cameras, not read from the files">place</button>
+          <button id="manualbtn" title="apply the hand placement saved for this conversation and set. Off = pure authored/inferred staging.">manual: off</button>
+        </div>
+      </div>
+    </div>
+    <div id="bottom">
+      <div id="talk"><div id="empty">pick a conversation on the left</div></div>
+      <div id="log"></div>
+    </div>
+  </div>
+</div>
+<script>
+const $ = s => document.querySelector(s);
+
+/* What is currently being fetched, shown as a badge on the stage. Reference
+   counted by label so overlapping loads (a set and a model at once) compose,
+   and a load that fails still clears its label via the finally blocks. */
+const _busy = new Map();
+function busy(label,on){
+  if(on) _busy.set(label,true); else _busy.delete(label);
+  const el=$("#loading"); if(!el) return;
+  el.textContent=[..._busy.keys()].map(l=>"loading "+l+" \u2026").join("\n");
+  el.classList.toggle("on", _busy.size>0);
+}
+// stamped by the server; appended to every cacheable URL so a decoder
+// fix cannot be masked by a stale browser cache
+const BUILD = "__BUILD__";
+let dialogs=[], models=[], conv=null, node=0, vars={}, geom=null, morph=null;
+let audio=null, playing=false, frameCount=0, nVerts=0, morphData=null;
+let view='body', texes=[], shade=false;
+let litMode=0;   // the baked vertex light: 0 colour, 1 grey, 2 off
+let poseData=null, poseMeta=null, poseKey='', animateBody=true, poseFrame=0;
+let poseIsScene=false;   // the pose is a scene-space .SCX clip (self-orienting)
+let sceneIdleQueue=null; // several scene clips to cycle (Telis_eat: sit / eat)
+/* The head look-at (op 138 character.look_at_player in the launch script):
+ * the renderer turns the HEAD toward the other speaker. lookYaw is the
+ * current smoothed model-space yaw; the sign (+delta) was verified
+ * numerically against the matrix chain (0.9 deg residual). */
+let lookYaw=0, lookPivot=null, lookSet=null;
+let poseIsClip=false;   // true when the pose came from a .ani/.CTL clip
+
+/* Which body animation to use.
+ *
+ * A line's own .3DM carries the performance for that line - the gestures that
+ * go with the words - and it is timed by the voice. So while that voice is
+ * playing it wins outright, whatever is selected in the idle list or left
+ * standing by the state machine. When it stops, the selection comes back. */
+function bodyClip(){
+  const n = conv && conv.nodes[node];
+  if(audio && !audio.paused && n && n.asset) return null;
+  return idleClip;
+}
+let anims=[], idleClip=null, lastAutoIdle=null, dlgPose=null, dlgMeta=null, camIdx=-1;
+// the player's own model (bind pose): geometry, its GL buffers and textures
+let pgeom=null, pbufs=null, ptexes=[], playerModelName="";
+let camMode=false, modelHeight=70, showPlayer=false, modelFeet=64, modelAxis=[0,0];
+let decor=null, dbuf={}, decorTexes=[], decorName="", decorLoading="", lastAutoDecor="";
+
+// ---------------------------------------------------------------- WebGL
+const cv = $("#gl"), gl = cv.getContext("webgl", {antialias:true});
+let prog, buf={}, tex=null, rot={x:0.0,y:0.0}, dist=7.5, fitDist=7.5, drag=null;
+let userZoomed=false;   // set once the viewer scrolls, so we stop re-fitting
+
+function shader(t,src){const s=gl.createShader(t);gl.shaderSource(s,src);
+  gl.compileShader(s);
+  if(!gl.getShaderParameter(s,gl.COMPILE_STATUS))throw gl.getShaderInfoLog(s);
+  return s;}
+function initGL(){
+  const vs=shader(gl.VERTEX_SHADER,`
+    attribute vec3 aPos; attribute vec3 aNrm; attribute vec2 aUV; attribute vec3 aLit;
+    uniform mat4 uMVP; uniform mat4 uM;
+    varying vec2 vUV; varying vec3 vN; varying vec3 vLit;
+    void main(){ vUV=aUV; vN=mat3(uM)*aNrm; vLit=aLit;
+                 gl_Position=uMVP*vec4(aPos,1.0); }`);
+  const fs=shader(gl.FRAGMENT_SHADER,`
+    precision mediump float;
+    varying vec2 vUV; varying vec3 vN; varying vec3 vLit;
+    uniform sampler2D uTex; uniform float uHasTex; uniform float uShade;
+    uniform float uCutout; uniform float uAlpha; uniform float uLitMode;
+    void main(){
+      // The game bakes a COLOUR into each vertex - white on characters, so the
+      // texture shows unshaded; on a set it carries the whole lighting design,
+      // warm lamps against cold shadow. uShade adds an optional relief light.
+      vec3 n=normalize(vN);
+      float d=mix(1.0, 0.45+0.55*max(dot(n,normalize(vec3(0.35,0.55,0.9))),0.0), uShade);
+      vec3 c = uHasTex>0.5 ? texture2D(uTex,vUV).rgb : vec3(0.72,0.70,0.68);
+      // MaterialCutout (mesh flag 0x800): solid black is the alpha colour
+      if(uCutout>0.5 && c.r+c.g+c.b < 0.02) discard;
+      // 0 = the baked colour, which is what the engine draws; 1 = the old
+      // single-channel reading, through the engine's OWN luma weights; 2 = off
+      vec3 lit = uLitMode>1.5 ? vec3(1.0)
+               : uLitMode>0.5 ? vec3(dot(vLit,vec3(0.299,0.587,0.114)))
+               : vLit;
+      gl_FragColor=vec4(c*lit*d,uAlpha);
+    }`);
+  prog=gl.createProgram();gl.attachShader(prog,vs);gl.attachShader(prog,fs);
+  gl.linkProgram(prog);gl.useProgram(prog);
+  buf.pos=gl.createBuffer(); buf.nrm=gl.createBuffer();
+  buf.uv=gl.createBuffer();  buf.lit=gl.createBuffer();
+  dbuf.pos=gl.createBuffer(); dbuf.nrm=gl.createBuffer();
+  dbuf.uv=gl.createBuffer();  dbuf.lit=gl.createBuffer();
+  gl.enable(gl.DEPTH_TEST); gl.clearColor(0,0,0,0);
+  /* The depth func stays at WebGL's default LESS. The engine's ZFUNC is
+   * `SetRenderState(23, 5)` and 5 is D3DCMP_GREATER, not LESSEQUAL - it runs a
+   * REVERSED depth buffer, where a larger value is nearer. Both comparisons
+   * are strict, so for two exactly-coincident faces both keep the FIRST one
+   * drawn: the engine and this viewer already agreed. Changing this to LEQUAL
+   * on a misread of the constant made the later face win and put the wrong
+   * advert on Anekbah's billboards. */
+}
+/* The X scale is NEGATIVE, and that is the whole handedness fix.
+ *
+ * The game's Y axis points down. This viewer maps a world point with
+ * W(v) = [x, -y, z] and then looks at it with up = +Y - but negating a single
+ * axis is a REFLECTION, not a rotation, so the camera basis it produces has
+ * its right vector flipped: right_here = -R * right_game. Every frame came out
+ * mirrored left-to-right. Nothing inside the viewer could show it, because the
+ * set, the models and the cameras were all reflected together and stayed
+ * consistent with each other; it only appears against the real game.
+ *
+ * Since the reflection is exactly one axis, view space here equals the game's
+ * view space with x negated, so negating x once in the projection undoes it
+ * for every path - dialogue camera and free look alike. Checked by rendering
+ * Aapkayl from dialogue camera 4555 offline and laying the wireframe over a
+ * screenshot of dialog 402: pillars, plant, sofa, rug and ceiling all land on
+ * their counterparts. Nothing is culled here, so the flipped winding order
+ * costs nothing. */
+function persp(f,a,n,fa){const t=1/Math.tan(f/2);return[-t/a,0,0,0, 0,t,0,0,
+  0,0,(fa+n)/(n-fa),-1, 0,0,2*fa*n/(n-fa),0];}
+function mul(a,b){const o=new Array(16);for(let i=0;i<4;i++)for(let j=0;j<4;j++){
+  let s=0;for(let k=0;k<4;k++)s+=a[k*4+j]*b[i*4+k];o[i*4+j]=s;}return o;}
+function lookAt(eye, at){
+  const f=[at[0]-eye[0], at[1]-eye[1], at[2]-eye[2]];
+  let l=Math.hypot(f[0],f[1],f[2])||1; f[0]/=l; f[1]/=l; f[2]/=l;
+  let up=[0,1,0];
+  if(Math.abs(f[1])>0.999) up=[0,0,1];
+  const sx=[f[1]*up[2]-f[2]*up[1], f[2]*up[0]-f[0]*up[2], f[0]*up[1]-f[1]*up[0]];
+  l=Math.hypot(sx[0],sx[1],sx[2])||1; sx[0]/=l; sx[1]/=l; sx[2]/=l;
+  const u=[sx[1]*f[2]-sx[2]*f[1], sx[2]*f[0]-sx[0]*f[2], sx[0]*f[1]-sx[1]*f[0]];
+  return [ sx[0], u[0], -f[0], 0,
+           sx[1], u[1], -f[1], 0,
+           sx[2], u[2], -f[2], 0,
+           -(sx[0]*eye[0]+sx[1]*eye[1]+sx[2]*eye[2]),
+           -( u[0]*eye[0]+ u[1]*eye[1]+ u[2]*eye[2]),
+             (f[0]*eye[0]+ f[1]*eye[1]+ f[2]*eye[2]), 1 ];
+}
+
+/* Where a DialogCamera is at time t (0..1) through the line.
+ *
+ * pos[0..2] is the EYE and pos[3..5] the LOOK-AT, as Dialog_ApplyLineCameras
+ * unpacks them (eye -> CameraParam+4, target -> +16). The move a line makes is
+ * between two whole cameras, not within one: the first is cut to and the
+ * second travelled to over 160 frames, and Camera_Request keeps the outgoing
+ * camera in g_CameraPrev so the interpolator has both ends.
+ *
+ * The look-at point is a fixed 768 raw units from the eye - 1615 of the 1670
+ * absolute cameras are within 1 unit of exactly that - so it carries direction
+ * only and says nothing about how far away the subject is.
+ *
+ * angle[1] is the field of view, 74 degrees on 1547 of the 1923 cameras, and
+ * it is the HORIZONTAL one: the game letterboxes the 3D view to 800x440, and
+ * only at that aspect does the set line up with a real screenshot. angle[0] is
+ * a small roll, zero on 1688 of them.
+ *
+ * `subject` says whose frame each of the two points is given in - and it is
+ * per point, not per camera: sub_4146C0 stores the eye in the camera's
+ * absolute slot (+20) when subject[0] is -1 and in its relative slot (+176)
+ * otherwise, and does the same for the target with subject[1]. 253 cameras
+ * name a subject and their offsets are small (median 40 units), so those are
+ * placed against the model directly. The other 1670 are absolute scene
+ * coordinates and are used as they stand once the set is loaded.
+ *
+ * Axes: a model faces -Z - the face mesh's centroid sits 3.7 units toward -Z
+ * of the head's - and +Y is down. The camera offsets are given the other way
+ * round on both, so both are negated here; taking them at face value puts the
+ * camera behind the character, looking at the back of its head.
+ *
+ * The offsets are relative to the character's ORIGIN, which sits at head
+ * height: the model's Y runs from -6.6 at the crown to +64.3 at the feet, so
+ * y = 0 is the head and a camera at y = -2 is just above it. Everything is
+ * drawn translated by -centre to frame the model, so that origin lands at
+ * -centre, and both the eye and the look-at target have to be anchored there.
+ * Aiming at the middle of the bounding box instead points the camera at the
+ * waist and throws the whole move off.
+ *
+ * Returns { eye, at } in view space.
+ */
+function trans(x,y,z){ return [1,0,0,0, 0,1,0,0, 0,0,1,0, x,y,z,1]; }
+const RY180=[-1,0,0,0, 0,1,0,0, 0,0,-1,0, 0,0,0,1];
+const IDENT=[1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1];
+function RY(t){const c=Math.cos(t),n=Math.sin(t);
+  return [c,0,-n,0, 0,1,0,0, n,0,c,0, 0,0,0,1];}
+/* Turn a model to face `dir` (an x/z direction). A model faces -Z, and with the
+ * column convention above RY(t) sends (0,0,-1) to (-sin t, 0, -cos t). */
+function faceDir(dx,dz){ return RY(Math.atan2(-dx,-dz)); }
+// world (game) coordinates -> viewer space: the only difference is Y, which
+// points down in the game's data and up here.
+function W(v){ return [v[0], -v[1], v[2]]; }
+const MFLIP=[1,0,0,0, 0,-1,0,0, 0,0,1,0, 0,0,0,1];
+
+/* Where the two speakers stand.
+ *
+ * The dialogue files hold only one speaker - the conversation header's
+ * speakerObjectId - so the player's position is not in the data at all; in the
+ * game it is wherever the player happens to be standing. A camera anchored to
+ * the second speaker therefore has nothing to hang off here, so the player is
+ * placed at a plain conversational distance: directly in front of the NPC,
+ * facing it. A model faces -Z, so "in front" is -Z, and the player is turned
+ * 180 degrees to face back.
+ *
+ * That matters for more than the framing: of the 253 speaker-anchored cameras,
+ * 112 hang off the first speaker and 108 off the second, so about half of them
+ * are placed against the wrong character without this.
+ */
+function speakers(){
+  const origin=[-centre[0], centre[1], -centre[2]];   // the NPC's own origin
+  const gap = modelHeight * 0.95;
+  return { npc: origin, player: [origin[0], origin[1], origin[2]-gap], gap:gap };
+}
+
+/* THE STAGING: the two speakers' model matrices, in set coordinates.
+ *
+ * Split out of draw() and kept free of GL so it can be run without a context -
+ * `tools/stagecheck.js` walks a whole conversation's poses through it, which
+ * is the test the previous attempt at the pelvis anchor did not have and was
+ * reverted for want of.
+ *
+ * `o` is the npc model's origin in view space, `ws` the placement.
+ *
+ * trans(-o) puts the model's *origin* at zero, but the origin is not the body:
+ * AMH_FN's is 570 units from its pelvis. Shifting by bodyAxis as well puts the
+ * pelvis on the vertical axis, so turning a character spins them on the spot
+ * instead of swinging them around a point outside themselves - which was
+ * pushing the two speakers apart, since the player is the same model turned
+ * 180 degrees.
+ *
+ * X and Z carry over unchanged; only Y flips between the game's axes and the
+ * viewer's. The `centre` inside `o` undoes the one the npc's vertex buffers
+ * were uploaded with, and it cancels exactly - a vertex lands at
+ * (v.x - axis.x, -v.y, v.z - axis.z) - so nothing here moves when a new line
+ * re-centres the model.
+ *
+ * The PLAYER needs his own axis matrix. His buffers are not centred at all
+ * (bakeStatic writes raw model coordinates) and he is a different model with a
+ * different pelvis, so borrowing the npc's displaced him by HER bounding-box
+ * centre. Measured through dialog 387: that sank him 18.1 to 24.0 units into
+ * the floor and MOVED him by up to 5.9 of them every time Telis changed pose,
+ * since recentre() re-fits `centre` on each one (`tools/stagecheck.js` prints
+ * the column). Without a player model his buffers ARE the npc's centred ones,
+ * and then the npc's matrix is the right one.
+ *
+ * NO root motion is applied. The .3DM's leading float[3] was read as per-frame
+ * deltas (the engine's parser demonstrably integrates them), but the shipped
+ * data refutes that as playable semantics: 57 of 60 sampled files carry a
+ * near-constant, near-unit vector, so integration walks EVERY character ~30
+ * units/s. Until the engine's neutralisation of that integral is traced the
+ * field's meaning is not established, and the viewer leaves the speaker where
+ * the placement puts them.
+ *
+ * THE LIFT - and which point of the body the placement names.
+ *
+ * The anchor rides on the PLACEMENT, never on the pose, and that is the whole
+ * of the fix. A scene clip's root key 0 is the `*Bassin` bone's own world
+ * position (scene_idle only accepts a root track that IS that bone), so the
+ * body hangs from its pelvis and the lift is the pelvis's REST height. That
+ * height is a model constant: the pelvis is the hierarchy root in every
+ * character model, and _compose leaves a parentless mesh at its rest position
+ * in every pose, so no line can move it.
+ *
+ * Taking the anchor off `poseMeta` instead is the version that had to be
+ * reverted: a .3DM line pose declares no `feet`, so the lift jumped to the
+ * standing constant at the first word of every line and back at the last, and
+ * the speaker floated through each one.
+ *
+ * Any other source - a camera-ray solve, an `actor.goto_address` teleport
+ * (ADDRESSES 678 sits 2 units above Aapkayl's floor) - names a spot on the
+ * GROUND, and the model stands on it lifted by its feet: the pose's own where
+ * it declares them (a seated clip's feet sit ~40 where standing is ~64), the
+ * model's own otherwise. */
+function stageMatrices(ws, toPlayer, toNpc){
+  const o = speakers().npc;
+  const onAxis  = trans(-o[0]-modelAxis[0], -o[1], -o[2]-modelAxis[1]);
+  const ownPly  = !!(pgeom && pbufs);
+  const pAxis   = (ownPly && pgeom.bodyAxis) || modelAxis;
+  const onAxisP = ownPly ? trans(-pAxis[0], 0, -pAxis[1]) : onAxis;
+  const lift = (g, anchor, poseFeet, fallback)=>
+      (anchor==="pelvis" && g && g.pelvis!=null) ? g.pelvis[1]
+    : (poseFeet!=null ? poseFeet : fallback);
+  const npcLift = lift(geom, ws.npcAnchor,
+                       (poseData && poseMeta) ? poseMeta.feet : null, modelFeet);
+  const plyLift = lift(ownPly ? pgeom : geom, ws.playerAnchor,
+                       ownPly ? pfeet : null,
+                       ownPly && pgeom.feetY!=null ? pgeom.feetY : modelFeet);
+  const stand = (pos, turn, ft, ax)=>
+      mul(trans(pos[0], -pos[1]+ft, pos[2]), mul(turn, mul(ax, MFLIP)));
+  return { M: stand(ws.npc, toPlayer, npcLift, onAxis),
+           Mplayer: stand(ws.player, toNpc, plyLift, onAxisP),
+           npcLift, plyLift, onAxis, onAxisP };
+}
+
+function playerMatrix(){
+  const sp=speakers(), o=sp.npc, p=sp.player;
+  // rotate about the model's own origin, then stand it in front of the NPC
+  return mul(trans(p[0],p[1],p[2]),
+         mul(RY180,
+         mul(trans(-o[0],-o[1],-o[2]), MFLIP)));
+}
+
+function worldMode(){ return !!(decor && placement); }
+
+let placement=null;      // {npc,player} in set coordinates, feet on the floor
+let manual=null;         // hand-made overrides, per conversation+set
+let placeMode=false;
+
+/* The positions actually used. `placement` is inferred from the cameras;
+ * anything the user moves by hand lives in `manual` and wins. Yaw is an offset
+ * on top of "face the other speaker", so a placed character keeps looking at
+ * their partner until the user turns them. */
+let useManual=false;  // hand placement off by default (⋯ panel toggles it)
+function worldSpeakers(){
+  if(!placement) return null;
+  if(!manual || !useManual) return placement;
+  return {...placement,
+          npc:    manual.npc    || placement.npc,
+          player: manual.player || placement.player,
+          npcYaw: manual.npcYaw || 0, playerYaw: manual.playerYaw || 0,
+          edited: !!(manual.npc||manual.player||manual.npcYaw||manual.playerYaw)};
+}
+
+function manualKey(){ return conv && decorName ? `omk:place:${conv.id}:${decorName}` : null; }
+function loadManual(){
+  const k=manualKey(); manual=null;
+  if(!k) return;
+  try{ const v=localStorage.getItem(k); if(v) manual=JSON.parse(v); }catch(e){}
+  /* A manual TURN stored by a previous session must not silently rotate a
+   * character whose facing is authored by the scene (the clip's root yaw) -
+   * a stale one produced a constant "still wrong by N°" through every fix.
+   * Turns made in THIS session still apply: the placer writes `manual`
+   * directly and saveManual() re-stores it. */
+  const si=conv&&conv.actor&&conv.actor.sceneIdle;
+  if(manual && si && si.rootYaw!=null && (manual.npcYaw||manual.playerYaw)){
+    log(`   stored manual turn (npc ${manual.npcYaw||0}°, player `+
+        `${manual.playerYaw||0}°) ignored — the scene authors the facing`,"warn");
+    delete manual.npcYaw; delete manual.playerYaw;
+  }
+  /* The same trap one axis over. A stored POSITION was placed against a floor
+   * anchor; where the placement is now the clip's pelvis the two mean points
+   * ~45 units apart, so keeping it would reintroduce exactly the offset this
+   * anchor removes - and read as "still wrong by N units" through every
+   * further fix, which is what the stale turn above did for degrees. */
+  for(const who of ["npc","player"])
+    if(manual && manual[who] && placement && placement[who+"Anchor"]==="pelvis"){
+      log(`   stored hand placement for the ${who} ignored — the scene clip's `+
+          `root now anchors the pelvis, so the saved floor point is stale`,"warn");
+      delete manual[who];
+    }
+}
+function saveManual(){
+  const k=manualKey(); if(!k) return;
+  try{ manual && Object.keys(manual).length ? localStorage.setItem(k,JSON.stringify(manual))
+                                            : localStorage.removeItem(k); }catch(e){}
+}
+
+function placeTargets(){
+  return $("#pwho").value==="both" ? ["npc","player"] : [$("#pwho").value];
+}
+function nudge(dx,dy,dz){
+  const ws=worldSpeakers(); if(!ws) return;
+  manual = manual || {};
+  for(const who of placeTargets()){
+    const base = manual[who] || ws[who];
+    manual[who] = [base[0]+dx, base[1]+dy, base[2]+dz];
+  }
+  saveManual(); updatePlaceInfo();
+}
+function turn(sign){
+  const ws=worldSpeakers(); if(!ws) return;
+  manual = manual || {};
+  const step = 7.5 * sign;
+  for(const who of placeTargets())
+    manual[who+"Yaw"] = (manual[who+"Yaw"]||0) + step;
+  saveManual(); updatePlaceInfo();
+}
+function changeGap(sign){
+  /* Move along the line between the two, so "closer"/"further" means what it
+   * says regardless of which way the pair happens to be oriented in the set. */
+  const ws=worldSpeakers(); if(!ws) return;
+  let dx=ws.player[0]-ws.npc[0], dz=ws.player[2]-ws.npc[2];
+  const l=Math.hypot(dx,dz)||1; dx/=l; dz/=l;
+  const step=Number($("#pstep").value)*sign;
+  manual = manual || {};
+  const base = manual.player || ws.player;
+  manual.player = [base[0]+dx*step, base[1], base[2]+dz*step];
+  saveManual(); updatePlaceInfo();
+}
+async function dropToFloor(){
+  const ws=worldSpeakers(); if(!ws||!decorName) return;
+  manual = manual || {};
+  for(const who of placeTargets()){
+    const p = manual[who] || ws[who];
+    const r = await fetch(`/api/floor/${encodeURIComponent(decorName)}`+
+                          `?x=${p[0]}&y=${p[1]-40}&z=${p[2]}`).then(r=>r.json()).catch(()=>null);
+    if(r && r.y!=null) manual[who]=[p[0], r.y, p[2]];
+    else log(`  no floor under ${who} at ${Math.round(p[0])}, ${Math.round(p[2])}`,"e");
+  }
+  saveManual(); updatePlaceInfo();
+}
+function resetPlacement(){
+  if(!manual) return;
+  for(const who of placeTargets()){ delete manual[who]; delete manual[who+"Yaw"]; }
+  if(!Object.keys(manual).length) manual=null;
+  saveManual(); updatePlaceInfo();
+}
+function updatePlaceInfo(){
+  const ws=worldSpeakers(); const el=$("#pinfo");
+  if(!el) return;
+  if(!ws){ el.textContent = decorName
+      ? "this conversation has no world cameras, so there is nothing to place"
+      : "load a set first"; return; }
+  const f=(a)=>a.map(x=>String(Math.round(x)).padStart(6)).join(" ");
+  const g=Math.hypot(ws.player[0]-ws.npc[0], ws.player[2]-ws.npc[2]);
+  const tag=(who)=> ((manual&&(manual[who]||manual[who+"Yaw"])) ? " moved" : " inferred")
+                    + (ws[who+"Anchor"]==="pelvis" ? " · pelvis" : " · floor");
+  el.innerHTML =
+    `<b>npc</b>    ${f(ws.npc)}${tag("npc")}`+
+    `${ws.npcYaw?`  turned ${Math.round(ws.npcYaw)}°`:""}\n`+
+    `<b>player</b> ${f(ws.player)}${tag("player")}`+
+    `${ws.playerYaw?`  turned ${Math.round(ws.playerYaw)}°`:""}\n`+
+    `<b>gap</b>    ${g.toFixed(0)} units · ${(g/Math.max(1,modelHeight)).toFixed(1)}× body height`;
+}
+function setPlaceMode(on){
+  placeMode = on;
+  $("#placer").className = on ? "on" : "";
+  $("#placebtn").textContent = on ? "placing" : "place";
+  if(on) updatePlaceInfo();
+}
+
+/* Where one DialogCamera puts the eye and what it looks at.
+ *
+ * pos[0..2] is the eye and pos[3..5] the look-at point - the same shape as a
+ * .3DO scene camera, which is a fixed eye and target. Both are relative to the
+ * speaker `subject` names, in that speaker's own frame.
+ *
+ * Axes: a model faces -Z and +Y is down, and the camera coordinates are given
+ * the other way on both, so both are negated. With that, an eye at z = -37 and
+ * a target at z = -12 looks from in front of the character back toward it.
+ */
+function cameraPoint(cam){
+  const sp = speakers();
+  const sub = cam.subject[0];
+  if(sub === 65535){
+    // Absolute set coordinates. With the set loaded they can be used directly;
+    // without it there is nothing for them to point at, so fall back to a
+    // stand-in shot of the character at the origin.
+    if(worldMode())
+      return { eye:W(cam.pos.slice(0,3)), at:W(cam.pos.slice(3,6)), world:true };
+    return { eye:[sp.npc[0], sp.npc[1], sp.npc[2]-dist], at:sp.npc, world:true };
+  }
+  const second = (sub === 2 || sub === 3);
+  const anchor = second ? sp.player
+               : (sub === 6 ? [sp.npc[0], sp.npc[1], sp.npc[2]-sp.gap/2] : sp.npc);
+  const map = second ? (v)=>[-v[0], -v[1], v[2]]     // that speaker faces back
+                     : (v)=>[ v[0], -v[1], -v[2]];
+  const e = map([cam.pos[0],cam.pos[1],cam.pos[2]]);
+  const a = map([cam.pos[3],cam.pos[4],cam.pos[5]]);
+  return { eye:[anchor[0]+e[0], anchor[1]+e[1], anchor[2]+e[2]],
+           at: [anchor[0]+a[0], anchor[1]+a[1], anchor[2]+a[2]], world:false };
+}
+
+/* A line uses TWO cameras and travels between them.
+ *
+ * sub_4013B0 issues camera command 12 twice: once for the camera the node's
+ * first field names, with duration -1.0, and once for the second field's
+ * camera with duration 160.0. So the view snaps to the first framing and then
+ * moves to the second over 160 frames - 5.3 seconds at 30fps - which is why
+ * the movement stops well before a long line finishes.
+ *
+ *   command 53 (the character speaks): lineCamera  -> lineCamera2
+ *   command 57 (the player replies)  : replyCamera -> replyCamera2
+ */
+const CAMERA_MOVE_FRAMES = 160;
+
+/* The camera move has its own clock.
+ *
+ * It belongs to the *line*, not to whatever body animation happens to be
+ * running: 160 frames from the moment the line starts, then it holds. Driving
+ * it from the body frame meant that when a looping .CTL clip took over at the
+ * end of a line, the clip's frame wrapped back to 0 and dragged the camera
+ * back to the start of its move with it - the move replayed on every loop.
+ *
+ * Wall clock rather than audio time, so the move also survives the handover
+ * from the line's .3DM to a clip, and pausing or losing the audio cannot
+ * rewind it. Math.min(1, ...) is what makes it stay at the second framing.
+ */
+let camStart = null;         // null, not 0: performance.now() is ~0 at load
+/* The menu phase. In the game (observed in play, dialog 402): the NPC line
+ * and the selection menu are NEVER on screen together. The line plays on the
+ * line cameras; the player presses NEXT, and on that click the game shows the
+ * menu - even with a single entry - and cuts to the menu's own camera, the
+ * node's reply pair. A node carrying both `line` and `selfLine` is one whole
+ * beat: NPC line -> [next] -> single-choice menu of the selfLine -> the
+ * player speaks it -> the real replies menu. menuPhase flips on the click,
+ * never on the audio, and flips back on the next node. */
+let menuPhase = false;
+function cameraProgress(){
+  if(camStart === null) return 1;   // no line has started: sit at the framing
+  return Math.min(1, ((performance.now() - camStart) / 1000 * 30) / CAMERA_MOVE_FRAMES);
+}
+
+function cameraView(frame){
+  const cs = conv && conv.cameras;
+  const n  = conv && conv.nodes[node];
+  if(!cs || !n) return null;
+  const reply = (n.selfLine && !n.line) ||
+                (menuPhase && n.replyCamera!==-1 && n.replyCamera!=null);
+  const idA = reply ? n.replyCamera  : n.lineCamera;
+  const idB = reply ? n.replyCamera2 : n.lineCamera2;
+  const cA = cs.find(c=>c.id===idA), cB = cs.find(c=>c.id===idB);
+  if(!cA && !cB) return null;
+  const pA = cameraPoint(cA||cB), pB = cB ? cameraPoint(cB) : pA;
+  const u = cameraProgress();
+  const L=(a,b)=>[a[0]+(b[0]-a[0])*u, a[1]+(b[1]-a[1])*u, a[2]+(b[2]-a[2])*u];
+  return { eye:L(pA.eye,pB.eye), at:L(pA.at,pB.at),
+           fov:((cB&&u>0.5?cB:(cA||cB)).angle[1]||74),
+           world:pA.world, a:cA, b:cB, u:u };
+}
+
+function model(){
+  const cx=Math.cos(rot.x),sx=Math.sin(rot.x),cy=Math.cos(rot.y),sy=Math.sin(rot.y);
+  const ry=[cy,0,-sy,0, 0,1,0,0, sy,0,cy,0, 0,0,0,1];
+  const rx=[1,0,0,0, 0,cx,sx,0, 0,-sx,cx,0, 0,0,0,1];
+  // the model's Y axis points down, so flip it before rotating
+  const flip=[1,0,0,0, 0,-1,0,0, 0,0,1,0, 0,0,0,1];
+  return mul(mul(rx,ry),flip);
+}
+function resize(){const r=cv.getBoundingClientRect();
+  cv.width=r.width*devicePixelRatio; cv.height=r.height*devicePixelRatio;
+  gl.viewport(0,0,cv.width,cv.height);}
+addEventListener("resize",resize);
+if(window.ResizeObserver) new ResizeObserver(resize).observe($("#stage"));
+cv.addEventListener("mousedown",e=>{ if(camMode) return; drag={x:e.clientX,y:e.clientY}; });
+addEventListener("mouseup",()=>drag=null);
+addEventListener("mousemove",e=>{if(!drag||camMode)return;
+  // minus on the yaw: the projection flips X to undo the world reflection
+  // (see persp), so a drag to the right has to turn the scene the other way
+  rot.y-=(e.clientX-drag.x)*0.01; rot.x+=(e.clientY-drag.y)*0.01;
+  drag={x:e.clientX,y:e.clientY};});
+// Zoom multiplicatively and clamp against the distance that frames the model,
+// not a fixed range: a whole body sits at ~170 units and a head at ~10, so any
+// absolute limit is wrong for one of them.
+cv.addEventListener("wheel",e=>{e.preventDefault();
+  if(camMode) return;                    // the camera is script-driven now
+  dist*=Math.exp(e.deltaY*0.0015);
+  dist=Math.max(fitDist*0.08,Math.min(fitDist*8,dist));
+  userZoomed=true;},{passive:false});
+
+function uploadStatic(){
+  if(!geom) return;
+  const n=geom.corners.length, uv=new Float32Array(n*2);
+  // raw texcoord bytes over the material's width, on both axes - what the
+  // reference importer does
+  for(const b of geom.batches)
+    for(let i=b.start;i<b.start+b.count;i++){
+      uv[i*2]=geom.corners[i][2]/b.w; uv[i*2+1]=geom.corners[i][3]/b.w;
+    }
+  gl.bindBuffer(gl.ARRAY_BUFFER,buf.uv); gl.bufferData(gl.ARRAY_BUFFER,uv,gl.STATIC_DRAW);
+}
+let scratchP=null, scratchN=null, scratchL=null, centre=[0,0,0];
+
+/* Bake a geometry's rest pose into GL buffers - the player's model is drawn
+ * statically (only the speaker is animated by the line), so one bake at load
+ * is enough. Mirrors cornerPos's two unanimated branches. */
+function bakeStatic(g, pose){
+  // pose: {meta, data} - a served pose stream; the bake uses its mid frame,
+  // so the player can sit in HIS scene clip (Uzal_Stand -> HO14_01R) instead
+  // of standing in the bind pose
+  const n=g.corners.length;
+  const P=new Float32Array(n*3), N=new Float32Array(n*3),
+        L=new Float32Array(n*3), UV=new Float32Array(n*2);
+  const fo=g.faceOffset||[0,0,0];
+  let pq=null;
+  if(pose && pose.meta && pose.data){
+    const f=Math.max(1, pose.meta.frames>>1);
+    pq=(mi)=>{const b=(f*pose.meta.meshes+mi)*7;
+      return [pose.data.subarray(b,b+4), pose.data.subarray(b+4,b+7)];};
+  }
+  const rot=(q,x,y,z)=>{const w=q[0],qx=q[1],qy=q[2],qz=q[3];
+    const tx=2*(qy*z-qz*y), ty=2*(qz*x-qx*z), tz=2*(qx*y-qy*x);
+    return [x+w*tx+(qy*tz-qz*ty), y+w*ty+(qz*tx-qx*tz), z+w*tz+(qx*ty-qy*tx)];};
+  for(let i=0;i<n;i++){
+    const c=g.corners[i];
+    let v;
+    if(c[0]===1){
+      const b=(g.faceBind&&g.faceBind[c[1]])||[0,0,0,0,1,0,1];
+      if(pq && g.faceMeshIndex>=0){
+        const [q,off]=pq(g.faceMeshIndex);
+        const r=rot(q,b[0],b[1],b[2]);
+        v=[r[0]+off[0],r[1]+off[1],r[2]+off[2],b[3],b[4],b[5],b.length>6?b[6]:1];
+      } else
+        v=[b[0]+fo[0],b[1]+fo[1],b[2]+fo[2],b[3],b[4],b[5],b.length>6?b[6]:1];
+    } else {
+      const st=g.static[c[1]]||[0,0,0,0,1,0,1];
+      const Lc=g.staticLocal&&g.staticLocal[c[1]];
+      if(pq && Lc && g.staticMesh[c[1]]>=0){
+        const [q,off]=pq(g.staticMesh[c[1]]);
+        const r=rot(q,Lc[0],Lc[1],Lc[2]);
+        v=[r[0]+off[0],r[1]+off[1],r[2]+off[2],st[3],st[4],st[5],st.length>6?st[6]:1];
+      } else v=st;
+    }
+    P[i*3]=v[0];P[i*3+1]=v[1];P[i*3+2]=v[2];
+    N[i*3]=v[3];N[i*3+1]=v[4];N[i*3+2]=v[5];
+    // aLit is a vec3 now (a set's baked light is a colour); a character's is
+    // a flat 255 in every shipped model, so it goes up the three channels.
+    const cl=v.length>6?v[6]:1; L[i*3]=cl; L[i*3+1]=cl; L[i*3+2]=cl;
+  }
+  for(const b of g.batches)
+    for(let i=b.start;i<b.start+b.count;i++){
+      UV[i*2]=g.corners[i][2]/b.w; UV[i*2+1]=g.corners[i][3]/b.w;
+    }
+  const mk=(arr)=>{const bb=gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER,bb);gl.bufferData(gl.ARRAY_BUFFER,arr,gl.STATIC_DRAW);return bb;};
+  return [["aPos",mk(P),3],["aNrm",mk(N),3],["aUV",mk(UV),2],["aLit",mk(L),3]];
+}
+
+let pfeet=null;   // the player pose's own feet height (seated < standing)
+/* scenePose comes only from the 16 dialogs whose launch runs
+ * `player.anim.hold` + `scx.play.player` before dialog.start - the engine's
+ * own rule for a scene clip owning the player's body (FILE_FORMATS 5b2). */
+async function loadPlayerModel(name, scenePose){
+  if(!name) return;
+  const key=name+"|"+(scenePose?scenePose.scx+":"+scenePose.anim:"");
+  if(key===playerModelName) return;
+  busy(`player ${name}`, true);
+  try{
+    const g=await fetch(`/api/fullmodel/${name}?v=${BUILD}`).then(r=>r.json());
+    let pose=null; pfeet=null;
+    if(scenePose){
+      try{
+        const r=await fetch(`/api/anipose/${name}/${encodeURIComponent(scenePose.scx)}/${scenePose.anim}?v=${BUILD}`);
+        if(r.ok){
+          const b=await r.arrayBuffer();
+          const hl=new DataView(b).getUint32(0,true);
+          const meta=JSON.parse(new TextDecoder().decode(new Uint8Array(b,4,hl)));
+          pose={meta, data:floats(b,4+hl)};
+          if(meta.feet!=null) pfeet=meta.feet;
+          log(`player pose: ${scenePose.clip} (his scene clip - the launch holds his animation)`,"v");
+        }
+      }catch(e){}
+    }
+    pgeom=g; pbufs=bakeStatic(g, pose); playerModelName=key;
+    ptexes=[];
+    for(const b of g.batches){
+      if(ptexes[b.material]) continue;
+      const img=new Image();
+      img.onload=()=>{ const t=gl.createTexture();
+        gl.bindTexture(gl.TEXTURE_2D,t);
+        gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL,false);
+        gl.texImage2D(gl.TEXTURE_2D,0,gl.RGB,gl.RGB,gl.UNSIGNED_BYTE,img);
+        gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);
+        gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);
+        gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);
+        gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
+        ptexes[b.material]=t; };
+      img.src=`/api/tex/${name}/${b.material}.png?v=${BUILD}`;
+    }
+    log(`player model → ${name} · ${g.triangles} tris`,"v");
+  } finally { busy(`player ${name}`, false); }
+}
+function animatable(){ return morphData && geom && geom.faceVerts===nVerts; }
+function qrot(q,x,y,z,o){
+  const w=q[0],qx=q[1],qy=q[2],qz=q[3];
+  const tx=2*(qy*z-qz*y), ty=2*(qz*x-qx*z), tz=2*(qx*y-qy*x);
+  o[0]=x+w*tx+(qy*tz-qz*ty); o[1]=y+w*ty+(qz*tx-qx*tz); o[2]=z+w*tz+(qx*ty-qy*tx);
+}
+const _pr=[0,0,0];
+function place(lx,ly,lz,meshIdx,offX,offY,offZ,out){
+  if(poseData && animateBody && meshIdx>=0){
+    const f = poseIsClip
+      ? ((poseFrame % poseMeta.frames) + poseMeta.frames) % poseMeta.frames
+      : Math.min(poseMeta.frames-1, Math.max(0, poseFrame));
+    const b=(f*poseMeta.meshes+meshIdx)*7;
+    const q=[poseData[b],poseData[b+1],poseData[b+2],poseData[b+3]];
+    qrot(q,lx,ly,lz,_pr);
+    out[0]=_pr[0]+poseData[b+4]; out[1]=_pr[1]+poseData[b+5]; out[2]=_pr[2]+poseData[b+6];
+    // head look-at: yaw the head family about the neck, in model space
+    if(lookSet && lookPivot && lookSet.has(meshIdx)){
+      const c=Math.cos(lookYaw), s=Math.sin(lookYaw);
+      const rx=out[0]-lookPivot[0], rz=out[2]-lookPivot[2];
+      out[0]=lookPivot[0] + rx*c + rz*s;
+      out[2]=lookPivot[2] - rx*s + rz*c;
+    }
+    return;
+  }
+  out[0]=lx+offX; out[1]=ly+offY; out[2]=lz+offZ;
+}
+function cornerPos(c,base,out){
+  // c = [isFace, index, u, v]
+  if(c[0]===1){
+    const fo=geom.faceOffset;
+    const bind=(geom.faceBind&&geom.faceBind[c[1]])||[0,0,0,0,1,0,1];
+    let lx,ly,lz;
+    if(animatable()){
+      const o=base+c[1]*6;
+      lx=morphData[o]; ly=morphData[o+1]; lz=morphData[o+2];
+      out[3]=morphData[o+3]; out[4]=morphData[o+4]; out[5]=morphData[o+5];
+    } else {
+      // stream does not fit this model: draw its own face, unanimated
+      lx=bind[0]; ly=bind[1]; lz=bind[2];
+      out[3]=bind[3]; out[4]=bind[4]; out[5]=bind[5];
+    }
+    place(lx,ly,lz,geom.faceMeshIndex,fo[0],fo[1],fo[2],out);
+    out[6]=bind.length>6?bind[6]:1;
+  } else {
+    const v=geom.static[c[1]]||[0,0,0,0,1,0,1];
+    const L=geom.staticLocal&&geom.staticLocal[c[1]];
+    out[3]=v[3];out[4]=v[4];out[5]=v[5];
+    out[6]=v.length>6?v[6]:1;
+    if(poseData && animateBody && L){
+      place(L[0],L[1],L[2],geom.staticMesh[c[1]],0,0,0,out);
+    } else { out[0]=v[0];out[1]=v[1];out[2]=v[2]; }
+  }
+}
+function uploadFrame(f){
+  if(!geom) return;
+  const n=geom.corners.length;
+  if(!scratchP||scratchP.length!==n*3){
+    scratchP=new Float32Array(n*3);scratchN=new Float32Array(n*3);scratchL=new Float32Array(n*3);}
+  poseFrame=f;
+  // the neck's posed position: the pivot the head look-at rotates about
+  lookPivot=null;
+  if(lookSet && poseData && poseMeta && geom.headPivot>=0){
+    const fc = poseIsClip
+      ? ((f % poseMeta.frames) + poseMeta.frames) % poseMeta.frames
+      : Math.min(poseMeta.frames-1, Math.max(0, f));
+    const b=(fc*poseMeta.meshes+geom.headPivot)*7;
+    lookPivot=[poseData[b+4], poseData[b+5], poseData[b+6]];
+  }
+  // The body clip and the face morph have different lengths, and with a
+  // free-running clip f can run past the morph. Clamp the face index on its
+  // own so it holds the last frame instead of reading past the buffer.
+  const mf = frameCount ? Math.min(frameCount-1, Math.max(0, f)) : 0;
+  const base=mf*nVerts*6, t=[0,0,0,0,0,0,1];
+  for(let i=0;i<n;i++){
+    cornerPos(geom.corners[i],base,t);
+    scratchP[i*3]=t[0]-centre[0]; scratchP[i*3+1]=t[1]-centre[1]; scratchP[i*3+2]=t[2]-centre[2];
+    scratchN[i*3]=t[3]; scratchN[i*3+1]=t[4]; scratchN[i*3+2]=t[5];
+    scratchL[i*3]=t[6]; scratchL[i*3+1]=t[6]; scratchL[i*3+2]=t[6];
+  }
+  gl.bindBuffer(gl.ARRAY_BUFFER,buf.pos);gl.bufferData(gl.ARRAY_BUFFER,scratchP,gl.DYNAMIC_DRAW);
+  gl.bindBuffer(gl.ARRAY_BUFFER,buf.nrm);gl.bufferData(gl.ARRAY_BUFFER,scratchN,gl.DYNAMIC_DRAW);
+  gl.bindBuffer(gl.ARRAY_BUFFER,buf.lit);gl.bufferData(gl.ARRAY_BUFFER,scratchL,gl.DYNAMIC_DRAW);
+}
+function recentre(reframe){
+  // `reframe` re-fits the camera; otherwise the viewer's own zoom is kept, so
+  // picking a reply does not throw away how they were looking at the model
+  if(!geom) return;
+  const n=geom.corners.length, base=(morphData?0:0), t=[0,0,0,0,0,0];
+  let mn=[1e9,1e9,1e9], mx=[-1e9,-1e9,-1e9];
+  const save=centre; centre=[0,0,0];
+  for(let i=0;i<n;i++){
+    const c=geom.corners[i];
+    if(view==='head' && c[0]!==1) continue;
+    poseFrame=0;
+    cornerPos(c,0,t);
+    for(let k=0;k<3;k++){ if(t[k]<mn[k])mn[k]=t[k]; if(t[k]>mx[k])mx[k]=t[k]; }
+  }
+  if(mn[0]>1e8){ centre=save; return; }
+  centre=[(mn[0]+mx[0])/2,(mn[1]+mx[1])/2,(mn[2]+mx[2])/2];
+  const prevFit=fitDist;
+  modelHeight=Math.max(1,mx[1]-mn[1]);
+  modelFeet=mx[1];        // +Y is down in model space, so max Y is the feet
+  fitDist=Math.max(3,modelHeight*2.4);
+  if(reframe || !userZoomed) dist=fitDist;
+  else {
+    // the model may have changed size; keep the same relative framing
+    if(prevFit>0) dist*=fitDist/prevFit;
+    dist=Math.max(fitDist*0.08,Math.min(fitDist*8,dist));
+  }
+}
+async function refreshPlacement(){
+  if(!conv || !decorName){ placement=null; return; }
+  placement = await fetch(`/api/place/${conv.id}/${encodeURIComponent(decorName)}`)
+                .then(r=>r.json()).catch(()=>null);
+  if(placement && !placement.npc) placement=null;
+  loadManual(); updatePlaceInfo();
+  if(!placement)
+    log(`  ${conv.name} has no world cameras, so nobody can be placed in ${decorName}`,"e");
+}
+
+/* ---------------------------------------------------------- .CTL states
+ *
+ * A .CTL is a state machine: each state usually owns one animation, and the
+ * edges say what can follow it. Children and parents are the same edges stored
+ * both ways (all 931 in the shipped files agree), so only children are walked
+ * here. `goto` is what the state runs into when its clip finishes, and unlike
+ * children it is resolved across the whole file.
+ *
+ * States with no name (flags & 0x8002) carry no animation - they are the
+ * junctions of the machine. They are shown, greyed, because skipping them
+ * would break the chain: MC_WALK reaches MC_WK-SD only through one.
+ */
+let ctlGraph=null, ctlState=-1, ctlTrail=[], stateMode=false, ctlRootIdx=0;
+
+/* Entry points, named ones first. A file has up to 104 parentless states and
+ * most are unnamed junctions, so the named ones are what a person wants. */
+function ctlRoots(){
+  if(!ctlGraph) return [];
+  const r=[...ctlGraph.roots];
+  r.sort((a,b)=>{
+    const na=!!ctlGraph.states[a].name, nb=!!ctlGraph.states[b].name;
+    if(na!==nb) return na?-1:1;
+    return (ctlGraph.states[a].name||"").localeCompare(ctlGraph.states[b].name||"");
+  });
+  return r;
+}
+
+async function loadCtlList(){
+  const list = await fetch("/api/ctl").then(r=>r.json()).catch(()=>[]);
+  const sel = $("#sfile");
+  sel.innerHTML = list.map(c=>
+    `<option value="${c.file}">${c.file} · ${c.states} states · ${c.clips} clips</option>`
+  ).join("");
+  sel.onchange = ()=>loadCtl(sel.value);
+  if(list.length) await loadCtl(list[0].file);
+}
+
+async function loadCtl(file){
+  ctlGraph = await fetch(`/api/ctl/${encodeURIComponent(file)}?v=${BUILD}`)
+               .then(r=>r.json()).catch(()=>null);
+  ctlTrail=[]; ctlState=-1; ctlRootIdx=0;
+  if(ctlGraph){
+    const named=ctlGraph.states.filter(s=>s.name).length;
+    log(`state machine ${file}: ${ctlGraph.states.length} states `+
+        `(${named} with an animation), ${ctlGraph.roots.length} entry points`,"v");
+    gotoState(ctlRoots()[0], true);
+  }
+}
+
+function stateByIdInGroup(id, group){
+  return ctlGraph.states.findIndex(s=>s.id===id && s.group===group);
+}
+function stateById(id){ return ctlGraph.states.findIndex(s=>s.id===id); }
+
+async function gotoState(idx, fresh){
+  if(!ctlGraph || idx<0 || idx>=ctlGraph.states.length) return;
+  if(!fresh && ctlState>=0) ctlTrail.push(ctlState);
+  if(ctlTrail.length>12) ctlTrail.shift();
+  ctlState = idx;
+  renderState();
+  const st = ctlGraph.states[idx];
+  if(st.clip!=null){
+    // reuse the ordinary animation path - a .CTL clip poses like any other
+    idleClip = `${ctlGraph.file}|${st.clip}`;
+    $("#idle").value = idleClip;          // keep the dropdown honest
+    clipEpoch = performance.now();        // play this state from its first frame
+    await loadPose(true);
+    if(!poseIsClip)
+      log(`  ${st.name} selected, but the line's own 3DM is playing — `+
+          `it takes over until the voice ends`,"warn");
+  }
+}
+
+function renderState(){
+  if(!ctlGraph || ctlState<0) return;
+  const st = ctlGraph.states[ctlState];
+  const nm = st.name || "(junction — no animation)";
+  // what the flag-gated blocks say about this state (ASSETS: .CTL flags)
+  const fx=[];
+  if(st.turn){ const a=st.turn[3]||st.turn[2];
+               if(a) fx.push(`turns ${a>0?"+":""}${a}°`); }
+  if(st.shift){ const [f0,f1,dx,dy,dz]=st.shift;
+                fx.push(`root shift (${dx},${dy},${dz}) over frames ${f0}–${f1}`); }
+  if(st.combat){ const w=st.combat.filter(x=>x);
+                 fx.push(`combat window ${st.combat[3]}–${st.combat[4]}`); }
+  if(st.mdname) fx.push(`authored as ${st.mdname}`);
+  $("#scur").innerHTML =
+    `<span class="nm">${nm}</span>\n`+
+    `id ${st.id} · group ${st.group} · flags ${st.flags.toString(16).padStart(8,"0")}\n`+
+    (st.clip!=null ? `clip ${st.clip} · <b>${st.frames}</b> frames · ${st.bones} bones`
+                   : `no clip on this state`)+
+    (fx.length ? `\n<span class="fx">${fx.join(" · ")}</span>` : "");
+
+  const nav=$("#snav"); nav.innerHTML="";
+  const add=(label,idx,cls)=>{
+    const b=document.createElement("button");
+    b.textContent=label; b.className=cls||"";
+    if(idx<0){ b.disabled=true; b.title="not in this file"; }
+    else b.onclick=()=>gotoState(idx,false);
+    nav.appendChild(b);
+  };
+  const lbl=(t)=>{ const d=document.createElement("span");
+                   d.className="lbl"; d.textContent=t; nav.appendChild(d); };
+  if(st.goto!=null){
+    lbl("runs into");
+    const gi=stateById(st.goto);
+    add(gi>=0 ? (ctlGraph.states[gi].name || `#${gi}`) : `id ${st.goto}`, gi, "go");
+  }
+  if(st.children.length){
+    lbl(`can go to (${st.children.length})`);
+    for(const c of st.children){
+      const ci=stateByIdInGroup(c, st.group);
+      add(ci>=0 ? (ctlGraph.states[ci].name || `#${ci}`) : `id ${c}`, ci,
+          ci>=0 && !ctlGraph.states[ci].name ? "un" : "");
+    }
+  }
+  if(st.parents.length){
+    lbl(`comes from (${st.parents.length})`);
+    for(const p of st.parents){
+      const pi=stateByIdInGroup(p, st.group);
+      add(pi>=0 ? (ctlGraph.states[pi].name || `#${pi}`) : `id ${p}`, pi,
+          pi>=0 && !ctlGraph.states[pi].name ? "un" : "");
+    }
+  }
+  const tr=$("#strail");
+  tr.innerHTML = ctlTrail.length
+    ? "path: " + ctlTrail.map((i,k)=>
+        `<a data-i="${i}">${ctlGraph.states[i].name||"#"+i}</a>`).join(" → ")
+      + ` → ${st.name||"#"+ctlState}`
+    : "";
+  for(const a of tr.querySelectorAll("a"))
+    a.onclick=()=>{ const i=Number(a.dataset.i);
+                    ctlTrail=ctlTrail.slice(0,ctlTrail.indexOf(i)); gotoState(i,true); };
+}
+
+function setStateMode(on){
+  stateMode=on;
+  $("#states").className = on ? "on" : "";
+  $("#statebtn").textContent = on ? "states on" : "states";
+  if(on && !ctlGraph) loadCtlList();
+}
+
+async function loadDecorList(){
+  const list = await (await fetch("/api/decors")).json();
+  const sel = $("#place");
+  sel.innerHTML = '<option value="">(no set)</option>' + list.map(d=>
+    `<option value="${d.name}">${d.name} · ${d.triangles} tris</option>`).join("");
+  sel.onchange = ()=>{ lastAutoDecor=""; loadDecor(sel.value); };
+}
+
+async function loadDecor(name){
+  if(!name){ decor=null; decorName=""; decorTexes=[]; $("#place").value="";
+             log("set unloaded",""); return; }
+  if(decorName===name || decorLoading===name) return;
+  decorLoading = name;
+  busy(`set ${name}`, true);
+  try{
+    const r = await fetch(`/api/decorgeo/${encodeURIComponent(name)}?v=${BUILD}`);
+    if(!r.ok){ log(`could not load set ${name}`,"e"); decorLoading=""; return; }
+    const b = await r.arrayBuffer();
+    const hlen = new DataView(b).getUint32(0,true);
+    const meta = JSON.parse(new TextDecoder().decode(new Uint8Array(b,4,hlen)));
+    const data = floats(b, 4+hlen);
+    // interleaved x,y,z,u,v,r,g,b -> the four attribute arrays, with a face
+    // normal per triangle (only used when the relief light is on; the set's
+    // own baked vertex colour is what normally shades it)
+    //
+    // The stride is MEASURED, never assumed - a server left running from
+    // before the colour change sends 6 floats and no `stride`, and guessing 8
+    // walks the positions off by two floats a vertex and draws the set as
+    // giant slabs. An old payload then falls back to grey.
+    const n = meta.count, S = Math.max(6, Math.round(data.length/n));
+    const P=new Float32Array(n*3), N=new Float32Array(n*3),
+          U=new Float32Array(n*2), L=new Float32Array(n*3);
+    for(let i=0;i<n;i++){
+      // raw set coordinates, Y still pointing down: MFLIP turns the set the
+      // right way up at draw time, exactly as it does for a character. Doing
+      // it here as well flipped it twice and stood the room on its ceiling.
+      P[i*3]=data[i*S]; P[i*3+1]=data[i*S+1]; P[i*3+2]=data[i*S+2];
+      U[i*2]=data[i*S+3]/255; U[i*2+1]=data[i*S+4]/255;
+      if(S>=8){ L[i*3]=data[i*S+5]; L[i*3+1]=data[i*S+6]; L[i*3+2]=data[i*S+7]; }
+      else { const g=data[i*S+5]; L[i*3]=g; L[i*3+1]=g; L[i*3+2]=g; }
+    }
+    for(let t=0;t<n;t+=3){
+      const ax=P[t*3+3]-P[t*3], ay=P[t*3+4]-P[t*3+1], az=P[t*3+5]-P[t*3+2];
+      const bx=P[t*3+6]-P[t*3], by=P[t*3+7]-P[t*3+1], bz=P[t*3+8]-P[t*3+2];
+      let nx=ay*bz-az*by, ny=az*bx-ax*bz, nz=ax*by-ay*bx;
+      const l=Math.hypot(nx,ny,nz)||1; nx/=l; ny/=l; nz/=l;
+      for(let k=0;k<3;k++){ N[(t+k)*3]=nx; N[(t+k)*3+1]=ny; N[(t+k)*3+2]=nz; }
+    }
+    gl.bindBuffer(gl.ARRAY_BUFFER,dbuf.pos); gl.bufferData(gl.ARRAY_BUFFER,P,gl.STATIC_DRAW);
+    gl.bindBuffer(gl.ARRAY_BUFFER,dbuf.nrm); gl.bufferData(gl.ARRAY_BUFFER,N,gl.STATIC_DRAW);
+    gl.bindBuffer(gl.ARRAY_BUFFER,dbuf.uv);  gl.bufferData(gl.ARRAY_BUFFER,U,gl.STATIC_DRAW);
+    gl.bindBuffer(gl.ARRAY_BUFFER,dbuf.lit); gl.bufferData(gl.ARRAY_BUFFER,L,gl.STATIC_DRAW);
+    decorTexes = [];
+    for(const b of meta.batches){
+      if(decorTexes[b.material]) continue;
+      const img = new Image();
+      img.src = `/api/dtex/${encodeURIComponent(name)}/${b.material}.png?v=${BUILD}`;
+      await img.decode().catch(()=>{});
+      if(!img.width) continue;
+      const t=gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D,t);
+      gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL,false);
+      gl.texImage2D(gl.TEXTURE_2D,0,gl.RGB,gl.RGB,gl.UNSIGNED_BYTE,img);
+      gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.REPEAT);
+      gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.REPEAT);
+      gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);
+      decorTexes[b.material]=t;
+    }
+    decor = meta; decorName = name; $("#place").value = name;
+    placement = conv ? await fetch(`/api/place/${conv.id}/${encodeURIComponent(name)}`)
+                          .then(r=>r.json()).catch(()=>null) : null;
+    if(placement && !placement.npc) placement=null;
+    loadManual(); updatePlaceInfo();
+    log(`set ${name}: ${meta.triangles} triangles · ${meta.batches.length} materials · `+
+        `${meta.cameras.length} of its own cameras`,"v");
+    const ws = worldSpeakers();
+    if(ws){
+      const d=Math.hypot(ws.player[0]-ws.npc[0],ws.player[2]-ws.npc[2]);
+      const fmt=(a)=>a.map(x=>String(Math.round(x)).padStart(6)).join(" ");
+      log(`  speakers placed where the camera rays meet (the look-at point is `+
+          `a fixed 768 units ahead, so it is an aim, not a position):`,"");
+      const conf=(sc)=>sc==null?"":` ±${sc}`;
+      /* Say which point of the body the numbers are. A scene clip's root is
+       * the PELVIS and carries its own height; everything else is a spot on
+       * the ground. Printing them alike hid the one that was being thrown
+       * away, and beside furniture the floor under a seated pelvis is the
+       * TABLE - 15.9 under Telis where the player stands on 31.7. */
+      const anch=(who)=> ws[who+"Anchor"]==="pelvis"
+        ? `, pelvis (the clip's own height; floor here reads ${ws[who+"FloorY"]})`
+        : (ws[who+"Floor"] ? ", on the set floor" : ", no floor under it");
+      log(`    npc    ${fmt(ws.npc)}  ${ws.npcRays} ${ws.npcSource}`+
+          `${conf(ws.npcScatter)}${anch("npc")}`,"");
+      const psrc = ws.playerSource && ws.playerSource !== "reply cameras"
+        ? `  from ${ws.playerSource}` : `  ${ws.playerRays} reply cameras${conf(ws.playerScatter)}`;
+      log(`    player ${fmt(ws.player)}${psrc}${anch("player")}`,"");
+      log(`    ${d.toFixed(0)} units apart · ± is how far the rays miss that `+
+          `meeting point, so a large one means a loose fit`,"");
+      if(ws.edited) log(`    a hand placement is in force — "place" to adjust `+
+                        `or reset it`,"warn");
+    } else {
+      log(`  this conversation has no world cameras, so the characters cannot `+
+          `be placed in the set`,"e");
+    }
+  } finally { decorLoading=""; busy(`set ${name}`, false); }
+}
+
+/* The game letterboxes the 3D view during a conversation. Measured off a
+ * capture of the running game: an 800x600 frame carries an 800x440 strip with
+ * exactly 80px of black above and below, so the picture is 1.818:1. Matching it
+ * matters for more than looks - the camera record's angle is the *horizontal*
+ * field of view, so the aspect is what fixes the vertical one, and getting it
+ * wrong changes how far away the speaker appears. */
+const GAME_ASPECT = 800/440;
+
+function draw(){
+  requestAnimationFrame(draw);
+  gl.disable(gl.SCISSOR_TEST);
+  gl.viewport(0,0,cv.width,cv.height);
+  gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);
+  if(!geom){ $("#hud").innerHTML=""; return; }
+  const f=currentFrame();
+  uploadFrame(f);
+  let fov=0.9, V, M;
+  const cams = conv && conv.cameras;
+  const cvw = camMode ? cameraView(f) : null;
+  const ws = worldSpeakers();
+  // The set is only drawn when the characters can actually be placed in it -
+  // otherwise it sits thousands of units from a character at the origin.
+  const inWorld = !!(decor && ws);
+  const o = speakers().npc;                    // the model's origin in view space
+  let Mdecor=null, Mplayer=null;
+
+  if(inWorld){
+    const d=[ws.player[0]-ws.npc[0], ws.player[2]-ws.npc[2]];
+    // each faces the other, plus whatever the user turned them by hand.
+    // EXCEPT when a scene clip poses the speaker: those are authored in
+    // scene space and their root track already orients the body, so only
+    // the hand-turn is applied on top of the clip's own facing.
+    const RAD=Math.PI/180;
+    /* The scene facing. When the conversation has a scene idle, its clip's
+     * root yaw is the speaker's orientation for the WHOLE conversation -
+     * spoken lines included: in the 387 longplay Telis keeps her seated
+     * orientation while talking, where facing the inferred player position
+     * turned her wrong and snapped at every line end. The yaw is a
+     * game-world angle applied through the game's own convention, forward =
+     * (sin θ, −cos θ) - the ADDRESSES rule - never through the model-space
+     * mirror. (While the scene clip itself poses the body, its stripped root
+     * rotation is exactly this same yaw, so the two paths agree.) */
+    const siYaw = (conv && conv.actor && conv.actor.sceneIdle &&
+                   conv.actor.sceneIdle.rootYaw!=null)
+        ? conv.actor.sceneIdle.rootYaw*RAD
+        : ((poseIsScene && poseMeta && poseMeta.rootYaw!=null)
+           ? poseMeta.rootYaw*RAD : null);
+    const toPlayer = siYaw!=null
+        ? mul(RY((ws.npcYaw||0)*RAD), faceDir(Math.sin(siYaw), -Math.cos(siYaw)))
+        : mul(RY((ws.npcYaw||0)*RAD), faceDir(d[0], d[1]));
+    // his scene clip's root yaw is his authored facing (same rule as the npc)
+    const pYaw=(conv&&conv.actor&&conv.actor.playerSceneIdle&&
+                conv.actor.playerSceneIdle.rootYaw!=null && pfeet!=null)
+        ? conv.actor.playerSceneIdle.rootYaw*RAD : null;
+    const toNpc = pYaw!=null
+        ? mul(RY((ws.playerYaw||0)*RAD), faceDir(Math.sin(pYaw), -Math.cos(pYaw)))
+        : mul(RY((ws.playerYaw||0)*RAD), faceDir(-d[0], -d[1]));
+    // the head turns toward the player when the launch script asked for it
+    let lookTarget=0;
+    if(conv && conv.actor && conv.actor.lookAtPlayer &&
+       geom.headMeshes && geom.headMeshes.length){
+      const bodyA=(ws.npcYaw||0)*RAD + (siYaw!=null
+          ? Math.atan2(-Math.sin(siYaw), Math.cos(siYaw))
+          : Math.atan2(-d[0], -d[1]));
+      let dt=Math.atan2(-d[0], -d[1]) - bodyA;
+      while(dt> Math.PI) dt-=2*Math.PI;
+      while(dt<-Math.PI) dt+=2*Math.PI;
+      lookTarget=Math.max(-1.3, Math.min(1.3, dt));
+    }
+    lookYaw += (lookTarget-lookYaw)*0.12;
+    lookSet = (Math.abs(lookYaw)>0.01 && geom.headMeshes)
+        ? new Set(geom.headMeshes) : null;
+    const st = stageMatrices(ws, toPlayer, toNpc);
+    if(cvw){
+      fov = cvw.fov * Math.PI/180;
+      V = lookAt(cvw.eye, cvw.at);
+      Mdecor = MFLIP;
+      M       = st.M;
+      Mplayer = st.Mplayer;
+    } else {
+      // free look: orbit the set about the speaking character
+      const R = mul(mul([1,0,0,0, 0,Math.cos(rot.x),Math.sin(rot.x),0,
+                         0,-Math.sin(rot.x),Math.cos(rot.x),0, 0,0,0,1],
+                        RY(rot.y)), IDENT);
+      V = [1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,-dist,1];
+      /* Orbit the set about the middle of the speaking character. A model
+       * vertex lands at -v.y - pos.y + lift, so the body's bbox centre (model
+       * height `centre[1]`) is at -centre[1] - pos.y + npcLift - which follows
+       * the anchor instead of assuming the placement is a floor point. The
+       * `modelFeet - modelHeight*0.5` this replaces is `+centre[1]`, the same
+       * number with the wrong sign, so the pivot sat 2*centre[1] out. */
+      const p = [ws.npc[0], -centre[1]-ws.npc[1]+st.npcLift, ws.npc[2]];
+      Mdecor  = mul(R, mul(trans(-p[0],-p[1],-p[2]), MFLIP));
+      M       = mul(R, mul(trans(-p[0],-p[1],-p[2]), st.M));
+      Mplayer = mul(R, mul(trans(-p[0],-p[1],-p[2]), st.Mplayer));
+    }
+  } else if(cvw){
+    fov = cvw.fov * Math.PI/180;
+    V = lookAt(cvw.eye, cvw.at);
+    M = [1,0,0,0, 0,-1,0,0, 0,0,1,0, 0,0,0,1];   // model Y flip only
+  } else {
+    V = [1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,-dist,1];
+    M = model();
+  }
+  // sets span far more than a character does
+  /* A DialogCamera's angle[1] is the **horizontal** field of view, not the
+   * vertical one. The game letterboxes the 3D view during a conversation - a
+   * ~800x430 strip - so reading it as vertical on a wider-than-tall canvas
+   * zooms a long way out and puts the speaker much further away than the game
+   * does. Checked against a screenshot: at 79 degrees horizontal the set
+   * geometry lines up with the real frame, at 79 vertical it does not.
+   *
+   * persp() wants a vertical angle, so convert through the aspect. */
+  /* In camera mode draw into a 1.818:1 strip and leave the rest black, the way
+   * the game does. Outside camera mode the whole canvas is used. */
+  let aspect = cv.width/cv.height;
+  if(camMode){
+    let vw=cv.width, vh=Math.round(cv.width/GAME_ASPECT);
+    if(vh>cv.height){ vh=cv.height; vw=Math.round(cv.height*GAME_ASPECT); }
+    gl.viewport(Math.round((cv.width-vw)/2), Math.round((cv.height-vh)/2), vw, vh);
+    gl.enable(gl.SCISSOR_TEST);
+    gl.scissor(Math.round((cv.width-vw)/2), Math.round((cv.height-vh)/2), vw, vh);
+    aspect = vw/vh;
+  }
+  // the record's angle is horizontal; persp() wants vertical
+  const vfov = camMode ? 2*Math.atan(Math.tan(fov/2)/aspect) : fov;
+  const P=persp(vfov, aspect, inWorld?1:0.1, inWorld?60000:4000);
+  gl.useProgram(prog);
+  gl.uniform1f(gl.getUniformLocation(prog,"uShade"),shade?1:0);
+  gl.uniform1f(gl.getUniformLocation(prog,"uLitMode"),litMode);
+  const mvpl=gl.getUniformLocation(prog,"uMVP"), mml=gl.getUniformLocation(prog,"uM"),
+        tl=gl.getUniformLocation(prog,"uTex"), hl=gl.getUniformLocation(prog,"uHasTex"),
+        cl=gl.getUniformLocation(prog,"uCutout"),
+        al=gl.getUniformLocation(prog,"uAlpha");
+
+  function drawObject(g, bufs, txs, Mx, headOnly){
+    gl.uniformMatrix4fv(mvpl,false,new Float32Array(mul(P,mul(V,Mx))));
+    gl.uniformMatrix4fv(mml,false,new Float32Array(Mx));
+    for(const [nm,b,size] of bufs){
+      const l=gl.getAttribLocation(prog,nm); if(l<0)continue;
+      gl.bindBuffer(gl.ARRAY_BUFFER,b); gl.enableVertexAttribArray(l);
+      gl.vertexAttribPointer(l,size,gl.FLOAT,false,0,0);
+    }
+    // Transparency, read out of Raster_DrawTriangles (ASSETS 4b/4c): mesh flag
+    // 0x1000 -> bucket 0x2000 turns depth writes off and blending on, and the
+    // sub-mode is mesh 0x2000 -> ONE/ONE (ADDITIVE, 211 meshes) or mesh 0x4000
+    // -> ZERO/INVSRCCOLOR (multiply, 6). This drew everything at a flat 50%
+    // until the bucket key was read - the SetRenderState(27,1) that reading
+    // cited is the CUTOUT path, from mesh flag 0x800. The server sorts these
+    // batches last, additive before multiply, which is the engine's own order.
+    let blending="";
+    for(const b of g.batches){
+      if(headOnly && b.material!==headMat) continue;
+      const mode=b.blend||"";
+      if(mode!==blending){
+        blending=mode;
+        if(mode){gl.enable(gl.BLEND); gl.depthMask(false);
+                 if(mode==="mul") gl.blendFunc(gl.ZERO,gl.ONE_MINUS_SRC_COLOR);
+                 else             gl.blendFunc(gl.ONE,gl.ONE);}
+        else {gl.disable(gl.BLEND); gl.depthMask(true);}
+      }
+      gl.uniform1f(al,1.0);
+      const tx=txs[b.material];
+      gl.uniform1f(hl,tx?1:0);
+      gl.uniform1f(cl,b.cutout?1:0);
+      if(tx){gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,tx);gl.uniform1i(tl,0);}
+      gl.drawArrays(gl.TRIANGLES,b.start,b.count);
+    }
+    if(blending){gl.disable(gl.BLEND); gl.depthMask(true);}
+  }
+  const charBufs=[["aPos",buf.pos,3],["aNrm",buf.nrm,3],["aUV",buf.uv,2],["aLit",buf.lit,3]];
+  const setBufs =[["aPos",dbuf.pos,3],["aNrm",dbuf.nrm,3],["aUV",dbuf.uv,2],["aLit",dbuf.lit,3]];
+  if(inWorld) drawObject(decor, setBufs, decorTexes, Mdecor, false);
+  drawObject(geom, charBufs, texes, M, view==='head');
+  if(inWorld && showPlayer && Mplayer){
+    if(pgeom && pbufs) drawObject(pgeom, pbufs, ptexes, Mplayer, false);
+    else drawObject(geom, charBufs, texes, Mplayer, false);
+  }
+
+  const dbg=$("#camdbg");
+  if(cvw){
+    const v3=(a)=>a.map(x=>x.toFixed(1).padStart(7)).join(" ");
+    const sname=(c)=>{ if(!c) return "-"; const s0=c.subject[0];
+      return s0===65535?"scene":(s0===2||s0===3)?"player":(s0===6?"both":"npc"); };
+    dbg.className="on";
+    dbg.innerHTML =
+      `<b>camera</b>  frame <b>${f}</b>/${frameCount}   move <b>${Math.round(cvw.u*100)}%</b>`+
+      (cvw.u>=1 ? "  held at the second framing" :
+        `  (${CAMERA_MOVE_FRAMES}f = ${(CAMERA_MOVE_FRAMES/30).toFixed(1)}s)`)+"\n"+
+      `<span class="k">from</span> id ${cvw.a?cvw.a.id:"-"}  anchor ${sname(cvw.a)}`+
+      `   <span class="k">to</span> id ${cvw.b&&cvw.b!==cvw.a?cvw.b.id:"-"}  anchor ${sname(cvw.b)}\n`+
+      `<span class="k">eye</span> ${v3(cvw.eye)}\n`+
+      `<span class="k">at </span> ${v3(cvw.at)}\n`+
+      `<span class="k">fov</span> ${cvw.fov.toFixed(0)}°   `+
+      (cvw.world?"absolute scene coords - movement only":"speaker-relative")+
+      `\nmouse control disabled while the camera is on`;
+  } else dbg.className="";
+  $("#hud").innerHTML =
+    `<b>${geom.model}</b> · ${geom.meshes} meshes · ${geom.triangles} tris · `+
+    `${geom.batches.length} materials<br>`+
+    `face <b>${geom.faceMesh}</b> ${geom.faceVerts} verts · `+
+    (cvw ? `cam ${cvw.a?cvw.a.id:"-"}${cvw.b&&cvw.b!==cvw.a?"→"+cvw.b.id:""} `+
+           `${Math.round(cvw.u*100)}% · fov ${Math.round(cvw.fov)}° · `+
+           (cvw.world?"scene coords · ":"") : "")+
+    (poseMeta?`skeleton ${poseMeta.meshes} nodes · `+
+      (poseIsClip ? `clip ${poseMeta.name||""} ${poseMeta.frames}f · `
+                  : `line 3DM${idleClip?" (clip held — voice playing)":""} · `):"")+
+    `frame <b>${f+1}</b> / ${frameCount||((poseIsClip&&poseMeta&&poseMeta.frames)||0)} · 30 fps · ${((frameCount||((poseIsClip&&poseMeta&&poseMeta.frames)||0))/30).toFixed(1)}s`+
+    (morphData && !animatable()
+      ? `<br><span class="warn">face not animated — model has ${geom.faceVerts} verts, `+
+        `this line's animation has ${nVerts}</span>`
+      : "");
+}
+/* The frame clock.
+ *
+ * A dialogue line is timed by its own audio, which is the authority whenever it
+ * is playing. A clip picked from the animation list or the state machine has no
+ * audio at all, so it gets a free-running 30fps clock of its own and loops on
+ * its length - without one it sat frozen on frame 0, which looked like a fixed
+ * pose rather than an animation.
+ */
+let lastFrame=0, clipEpoch=0;
+function currentFrame(){
+  if(audio && !audio.paused && frameCount)
+    return Math.min(frameCount-1, Math.floor(audio.currentTime*30));
+  if(poseIsClip && poseMeta && poseMeta.frames > 1 && animateBody){
+    const raw = Math.floor((performance.now()-clipEpoch)/1000*30);
+    // a scene-idle set advances to its next clip after each full loop
+    if(poseIsScene && sceneIdleQueue && raw >= poseMeta.frames &&
+       idleClip===lastAutoIdle){
+      const k = sceneIdleQueue.indexOf(idleClip);
+      const next = sceneIdleQueue[(k+1) % sceneIdleQueue.length];
+      idleClip = next; lastAutoIdle = next;
+      const isel=$("#idle"); if(isel) isel.value=next;
+      clipEpoch = performance.now();
+      loadPose(true);
+      return 0;
+    }
+    return raw % poseMeta.frames;
+  }
+  if(!frameCount) return 0;
+  return lastFrame;
+}
+setInterval(()=>{ if(audio&&!audio.paused&&frameCount)
+  lastFrame=Math.min(frameCount-1,Math.floor(audio.currentTime*30)); },33);
+
+// ---------------------------------------------------------------- data
+async function boot(){
+  initGL(); resize(); draw();
+  [dialogs,models]=await Promise.all([
+    fetch("/api/dialogs").then(r=>r.json()),
+    fetch("/api/models").then(r=>r.json())]);
+  renderList();
+  // deep link from the /world script pages: /#dialog=402
+  const dl=location.hash.match(/dialog=(\d+)/);
+  if(dl) openDialog(+dl[1]);
+  const pm=$("#pmodel");
+  pm.innerHTML='<option value="">same as speaker</option>';
+  for(const m of models){
+    const o=document.createElement("option");
+    o.value=m.name; o.textContent=m.name; pm.appendChild(o);
+  }
+  anims=await fetch("/api/anims").then(r=>r.json()).catch(()=>[]);
+  const isel=$("#idle");
+  isel.innerHTML='<option value="">line animation</option>';
+  const byfile={};
+  for(const a of anims) (byfile[a.file]=byfile[a.file]||[]).push(a);
+  for(const f of Object.keys(byfile)){
+    const g=document.createElement("optgroup"); g.label=f; isel.appendChild(g);
+    for(const a of byfile[f]){
+      const o=document.createElement("option");
+      o.value=`${a.file}|${a.clip}`;
+      // type 11 is the idle a character falls back to, including after a
+      // dialogue line - worth calling out in the list
+      const ty = a.type===11 ? " · idle" : (a.type!=null ? ` · t${a.type}` : "");
+      o.textContent=`${a.name} · ${a.frames}f · ${a.bones} bones${ty}`;
+      g.appendChild(o);
+    }
+  }
+  isel.onchange=()=>{ idleClip=isel.value||null; lastAutoIdle=null;
+                      clipEpoch=performance.now(); loadPose(true); };
+  // a deep link can open a conversation before this list arrived
+  if(conv && !idleClip) pickIdleFor(conv);
+  await loadDecorList();
+  $("#search").oninput=renderList;
+  $("#model").onchange=()=>loadModel($("#model").value,true);
+  $("#manualbtn").onclick=()=>{
+    useManual=!useManual;
+    const b=$("#manualbtn");
+    b.textContent="manual: "+(useManual?"on":"off");
+    b.classList.toggle("on", useManual);
+    log(`  manual placement ${useManual?"applied":"ignored"} — the saved `+
+        `nudges/turns for this conversation ${useManual?"are back":"no longer apply"}`,"");
+  };
+  $("#more").onclick=()=>{ $("#opts").classList.toggle("on");
+                           $("#more").classList.toggle("on"); };
+  $("#pmodel").onchange=()=>{
+    const v=$("#pmodel").value;
+    if(!v){ pgeom=null; pbufs=null; ptexes=[]; playerModelName=""; pfeet=null; }
+    else loadPlayerModel(v, conv&&conv.actor&&conv.actor.playerSceneIdle);
+  };
+  $("#replay").onclick=()=>playNode(node,true);
+  $("#restart").onclick=()=>{
+    if(!conv) return;
+    vars={};                       // the conversation's variable state
+    // and the presentation goes back to the authored defaults: the idle you
+    // picked by hand is dropped and the scene's own choice re-applied
+    idleClip=null; lastAutoIdle=null;
+    const isel=$("#idle"); if(isel) isel.value="";
+    pickIdleFor(conv);
+    log(`\n— restarted ${conv.name||""} —`,"h");
+    playNode(0);
+  };
+  $("#cam").onclick=cycleCamera;
+  $("#statebtn").onclick=()=>setStateMode(!stateMode);
+  $("#sdone").onclick=()=>setStateMode(false);
+  $("#sroot").onclick=()=>{                     // cycle through the entry points
+    const r=ctlRoots(); if(!r.length) return;
+    ctlRootIdx=(ctlRootIdx+1)%r.length; ctlTrail=[]; gotoState(r[ctlRootIdx],true);
+  };
+  $("#placebtn").onclick=()=>{
+    // hand-placing implies applying it: opening the placer flips manual on
+    if(!placeMode && !useManual){
+      useManual=true;
+      const b=$("#manualbtn");
+      b.textContent="manual: on"; b.classList.add("on");
+      log("  manual placement on (opened the placer)","");
+    }
+    setPlaceMode(!placeMode);
+  };
+  $("#pdone").onclick=()=>setPlaceMode(false);
+  $("#pwho").onchange=updatePlaceInfo;
+  $("#pfloor").onclick=dropToFloor;
+  $("#preset").onclick=resetPlacement;
+  for(const b of document.querySelectorAll("#placer [data-mv]")){
+    const [x,y,z]=b.dataset.mv.split(",").map(Number);
+    b.onclick=(e)=>{ const k=Number($("#pstep").value)*(e.shiftKey?4:1);
+                     nudge(x*k, y*k, z*k); };
+  }
+  for(const b of document.querySelectorAll("#placer [data-tn]"))
+    b.onclick=()=>turn(Number(b.dataset.tn));
+  for(const b of document.querySelectorAll("#placer [data-gap]"))
+    b.onclick=(e)=>changeGap(Number(b.dataset.gap)*(e.shiftKey?4:1));
+  addEventListener("keydown",(e)=>{
+    if(!placeMode) return;
+    if(/^(INPUT|TEXTAREA)$/.test(document.activeElement.tagName)) return;
+    const k=Number($("#pstep").value)*(e.shiftKey?4:1);
+    const map={ArrowLeft:[-k,0,0],ArrowRight:[k,0,0],
+               ArrowUp:[0,0,-k],ArrowDown:[0,0,k],
+               PageUp:[0,-k,0],PageDown:[0,k,0]};
+    if(map[e.key]){ e.preventDefault(); nudge(...map[e.key]); return; }
+    if(e.key==="q"||e.key==="Q"){ e.preventDefault(); turn(-1); }
+    if(e.key==="e"||e.key==="E"){ e.preventDefault(); turn(1); }
+    if(e.key==="Escape"){ setPlaceMode(false); }
+  });
+  $("#player").onclick=()=>{ showPlayer=!showPlayer;
+    $("#player").textContent=showPlayer?"player":"solo"; };
+  $("#bodyanim").onclick=()=>{ animateBody=!animateBody;
+    $("#bodyanim").textContent=animateBody?"skeleton":"rest"; recentre(); };
+  $("#shade").onclick=()=>{ shade=!shade; $("#shade").textContent=shade?"lit":"flat"; };
+  // colour -> grey -> off. `grey` is the reading this repo used before the
+  // engine settled it, kept so the two can be compared on the same frame.
+  $("#lights").onclick=e=>{ litMode=(litMode+1)%3;
+    e.target.textContent=["lights: colour","lights: grey (repo bug)","lights: off"][litMode];
+    e.target.classList.toggle("on",litMode===0); };
+  $("#viewmode").onclick=()=>{ view = view==='body' ? 'head' : 'body';
+    $("#viewmode").textContent=view; recentre(true); };
+}
+function renderList(){
+  const q=$("#search").value.toLowerCase();
+  const el=$("#dlgs"); el.innerHTML="";
+  for(const d of dialogs){
+    if(q && !((d.name||"").toLowerCase().includes(q) || String(d.id)===q)) continue;
+    const r=document.createElement("div");
+    r.className="row"+(d.hasMorph?"":" nomorph")+(conv&&conv.id===d.id?" on":"");
+    r.innerHTML=`<span class="id">${d.id}</span>${d.name||"(unnamed)"}`;
+    r.title=d.hasMorph?"":"voice/animation not on this disc";
+    r.onclick=()=>openDialog(d.id);
+    el.appendChild(r);
+  }
+}
+function log(html,cls){ const l=$("#log");
+  l.innerHTML+=`<span class="${cls||""}">${html}</span>\n`; l.scrollTop=l.scrollHeight; }
+
+async function openDialog(id){
+  conv=await fetch("/api/dialog/"+id).then(r=>r.json());
+  vars={}; node=0; camIdx=-1; camMode=false; placement=null; manual=null;
+  if($("#cam")) $("#cam").textContent="cam";
+  renderList();
+  $("#log").innerHTML="";
+  log(`── ${conv.name||"(unnamed)"} · ${conv.nodes.length} nodes · speaker object ${conv.speaker}`,"h");
+  // follow the conversation to its own set, unless one was chosen by hand
+  if(conv.decor && (!decorName || decorName===lastAutoDecor)){
+    lastAutoDecor = conv.decor;
+    if(decorName===conv.decor) refreshPlacement();   // same set, new speakers
+    else loadDecor(conv.decor);
+  } else if(decorName) refreshPlacement();
+  /* The speaker's model is not a guess: the DIALOG header's word 0 is an
+   * actor id, and the actor record in the AREA or SCENE chunk that launches
+   * the conversation names the model at +144 and its .CTL at +72. */
+  if(conv.actor && conv.actor.model)
+    log(`   speaker: actor ${conv.actor.actor} → model ${conv.actor.model}`+
+        `${conv.actor.ctl?` · ${conv.actor.ctl}.CTL`:""} (${conv.actor.from})`,"v");
+  if(conv.decor) log(`   staged in ${conv.decor} (world cameras sit ${conv.decorDist} units `+
+                     `from that set's own cameras)`,"v");
+  await pickModelFor(conv);
+  pickIdleFor(conv);
+  pickPlayerFor(conv);
+  playNode(0);
+}
+
+/* Kay'l's own model. Both HO1_FN and HO1_FNM carry the U-rig bones the
+ * player's clips drive, but they are not interchangeable: HO1_FNM is the
+ * *morph* variant - it alone has the UVisage face mesh (130 vertices, the
+ * count 267 of the shipped .3DM morphs use) and the game plays it in the
+ * opening cutscene only. In-world, including every dialog, the player is
+ * HO1_FN. Only 6 of the 193 PERSOS models have such a twin.
+ *
+ * The scene pose applies only when the server found the authored condition
+ * (player.anim.hold + scx.play.player) - 16 dialogs, exact. */
+function pickPlayerFor(c){
+  const sel=$("#pmodel");
+  let name=sel&&sel.value;
+  if(!name){
+    name=(models.find(m=>m.name==="HO1_FN")||models.find(m=>m.name==="HO1_FNM")||{}).name;
+    if(name && sel) sel.value=name;
+  }
+  if(!name){ pgeom=null; pbufs=null; return; }
+  loadPlayerModel(name, c&&c.actor&&c.actor.playerSceneIdle);
+}
+
+/* Fill the idle picker's "scene" group with the conversation's own SCX
+ * clips, so the auto-picked contextual idle is visible and swappable. */
+async function loadSceneClips(scx, select){
+  const isel=$("#idle"); if(!isel) return;
+  let g=isel.querySelector("optgroup[data-scx]");
+  if(g && g.dataset.scx!==scx){ g.remove(); g=null; }
+  if(!g){
+    const list=await fetch(`/api/scxanims/${encodeURIComponent(scx)}`)
+                     .then(r=>r.json()).catch(()=>null);
+    if(!list) return;
+    g=document.createElement("optgroup");
+    g.label=`scene — ${scx}`; g.dataset.scx=scx;
+    for(const a of list){
+      const o=document.createElement("option");
+      o.value=`${scx}|${a.index}`;
+      o.textContent=`${a.name} · ${a.frames}f · ${a.tracks} bones`;
+      g.appendChild(o);
+    }
+    isel.insertBefore(g, isel.firstChild.nextSibling);
+  }
+  if(select) isel.value=select;
+}
+
+/* The character's own stand state, as the idle it resets to. The actor
+ * record names its .CTL at +72 (H1AVNT, F1AVNT, MECA, SHAM); many records
+ * leave the slot empty, and those humans get H1AVNT. Within the file, prefer
+ * the type-11 clip (the fall-back idle) named *STAND. A hand-picked idle is
+ * never overridden - only the previous auto choice is. */
+function pickIdleFor(c){
+  /* The launch script's own idle, when the server could name it: the last
+   * scx.play.actor before dialog.start selects a body animation out of the
+   * scene object's table (402: 'TeBassin', Telis's bathtub pose). The clip
+   * usually lives inside the scene's SCX streamed block, which is not
+   * extractable yet - so it plays only if a clip of that name happens to be
+   * in ANIMS; otherwise it is reported and the stand is used. */
+  const si=c.actor&&c.actor.sceneIdle;
+  sceneIdleQueue = (si&&si.anims&&si.anims.length>1)
+      ? si.anims.map(a=>`${si.scx}|${a.anim}`) : null;
+  if(si && (!idleClip || idleClip===lastAutoIdle)){
+    // the pose the scene itself gives the speaker: an SCX-embedded .3DA,
+    // played through the same pose path as the .ani/.CTL clips. When the
+    // object carries several (Telis_eat: sitting and eating), they are
+    // cycled, one full loop each, as the game does.
+    log(`   scene idle: ${si.anims.map(a=>a.clip).join(" / ")}`+
+        ` (object '${si.object}' in ${si.scx})`,"v");
+    if(si.rootYaw!=null){
+      const man=(manual&&manual.npcYaw)||0;
+      log(`   facing: scene yaw ${si.rootYaw}°`+
+          (man?` + manual turn ${man}° (place → reset clears it)`:"")+
+          ` — trim with place → turn and tell me the final 'turned N°'`,"v");
+    }
+    idleClip=`${si.scx}|${si.anim}`; lastAutoIdle=idleClip;
+    loadSceneClips(si.scx, idleClip);
+    return;
+  }
+  if(idleClip && idleClip!==lastAutoIdle) return;      // chosen by hand
+  // an empty +72 falls back by gender: +108 is the Sexe byte, 'M' or 'F'
+  const fallback=(c.actor&&c.actor.sexe==="F") ? "F1AVNT" : "H1AVNT";
+  const ctl=((c.actor&&c.actor.ctl)||fallback).toUpperCase();
+  const inFile=anims.filter(a=>a.file.toUpperCase().startsWith(ctl));
+  /* .CTL clips carry no type field (types belong to the .ani libraries), so
+   * the stand is found by name: H_STAND / MC_STAND / SH_STAND. The _STAND
+   * suffix match keeps S_STAND (a different stance) from winning. */
+  const pick=inFile.find(a=>["H_STAND","MC_STAND","SH_STAND"].includes(a.name.toUpperCase()))
+          || inFile.find(a=>/STAND/i.test(a.name))
+          || inFile.find(a=>a.type===11);
+  if(!pick) return;
+  idleClip=`${pick.file}|${pick.clip}`; lastAutoIdle=idleClip;
+  const isel=$("#idle"); if(isel) isel.value=idleClip;
+  log(`   idle: ${pick.name} from ${pick.file}`,"v");
+}
+async function pickModelFor(c){
+  // the counts only say which models a stream fits; the game picks by scene
+  // object. Offer the compatible ones first, but allow any.
+  const asset=c.nodes[0]&&c.nodes[0].asset;
+  let want=null;
+  if(asset){ try{ want=await fetchMorphMeta(asset); }catch(e){} }
+  const sel=$("#model"); sel.innerHTML="";
+  const fits=[], rest=[];
+  for(const m of models)
+    ((want && m.faceVerts===want.vertices && m.nodes===want.nodes)?fits:rest).push(m);
+  const add=(m,tag)=>{const o=document.createElement("option");
+    o.value=m.name;
+    o.textContent=m.name+(tag||"")+
+      `  (${m.faceVerts?m.faceVerts+"v":"no face"}/${m.nodes}n)`+
+      (m.faceVerts && want && m.faceVerts!==want.vertices ? "  · no lip-sync" : "");
+    sel.appendChild(o);};
+  if(fits.length){ const g=document.createElement("optgroup");
+    g.label=`fits this animation (${fits.length})`; sel.appendChild(g);
+    fits.forEach(m=>add(m,"")); }
+  const g2=document.createElement("optgroup");
+  g2.label="all characters"; sel.appendChild(g2);
+  rest.forEach(m=>add(m," ·"));
+  /* Which one to actually load.
+   *
+   * The actor record names it outright, so that wins. The face-vertex counts
+   * only say which models a stream *fits* - often several - and picking the
+   * first of those was loading the same wrong character for most
+   * conversations, whatever the log said.
+   */
+  const named = c.actor && c.actor.model &&
+                models.find(m => m.name.toUpperCase() === c.actor.model.toUpperCase());
+  if(named){
+    sel.value = named.name;
+    if(sel.value !== named.name){        // not in the list for some reason
+      log(`  ${c.actor.model} is not in MESHES/PERSOS — falling back`,"e");
+    } else {
+      log(`model from the actor record: ${named.name}`+
+          (want && named.faceVerts!==want.vertices
+            ? `  (its face has ${named.faceVerts} verts, the line supplies ${want.vertices} — no lip-sync)`
+            : ""),"v");
+    }
+  } else if(c.actor && c.actor.model){
+    log(`  ${c.actor.model} is not in MESHES/PERSOS`,"e");
+  }
+  if(!named){
+    if(fits.length===1) log(`model resolved uniquely: ${fits[0].name}`,"v");
+    else if(fits.length) log(`${fits.length} models fit these counts — pick one above`,"e");
+  }
+  await loadModel(sel.value);
+}
+/* The camera a node uses is named in the node itself.
+ *
+ * sub_4067D0's command 53 loads DialogNode::lineCamera when the character
+ * speaks and command 57 loads replyCamera for the player's half; command 62
+ * then applies whichever was loaded. Every one of the 3132 non-(-1) values in
+ * the shipped file names a camera in its own chunk.
+ */
+function updateCameraLabel(){
+  $("#cam").textContent = camMode ? "cam on" : "cam";
+  $("#stage").classList.toggle("cam", camMode);
+  $("#stage").classList.toggle("locked", camMode);
+  if(!camMode) $("#camdbg").className="";
+}
+
+function followCamera(announce){
+  if(!camMode || !announce) { updateCameraLabel(); return; }
+  const n = conv && conv.nodes[node];
+  const cs = conv && conv.cameras;
+  if(!n || !cs){ return; }
+  const reply = (n.selfLine && !n.line);
+  const idA = reply ? n.replyCamera  : n.lineCamera;
+  const idB = reply ? n.replyCamera2 : n.lineCamera2;
+  const v3 = (a)=>a.map(x=>String(Math.round(x)).padStart(6)).join(" ");
+  const anchor = (c)=>{ const s0=c.subject[0];
+    return s0===65535 ? "world" : (s0===2||s0===3) ? "player" : (s0===6?"both":"npc"); };
+
+  // Log each camera as eye -> target, the same shape as a .3DO scene camera.
+  // Absolute (subject -1) coordinates are printed raw so they can be compared
+  // against the set they were authored in.
+  const show = (id,tag)=>{
+    const c = cs.find(x=>x.id===id);
+    if(!c){ log(`  ${tag} camera ${id} is not in this conversation`,""); return null; }
+    const a = anchor(c);
+    log(`  ${tag} cam ${id} · ${a} · fov ${c.angle[1]}°`,"e");
+    log(`      eye ${v3(c.pos.slice(0,3))}   target ${v3(c.pos.slice(3,6))}`,"");
+    return c;
+  };
+  log(`camera ${reply?"(reply)":"(line)"}:`,"h");
+  const cA = show(idA, "from");
+  const cB = (idB!==-1 && idB!==idA) ? show(idB, "to  ") : null;
+  if(cB && cA){
+    const d = Math.hypot(cB.pos[0]-cA.pos[0], cB.pos[1]-cA.pos[1], cB.pos[2]-cA.pos[2]);
+    log(`      moves ${d.toFixed(0)} units over ${CAMERA_MOVE_FRAMES} frames `+
+        `(${(CAMERA_MOVE_FRAMES/30).toFixed(1)}s)`,"v");
+  } else if(idB===-1 || idB===idA){
+    log(`      no move — this line holds a single framing`,"");
+  }
+  if(cA && anchor(cA)==="world" && conv.decor)
+    log(`      world coords — nearest set is ${conv.decor} `+
+        `(${conv.decorDist} units from its own cameras)`,"v");
+  updateCameraLabel();
+}
+
+function cycleCamera(){
+  const cs = conv && conv.cameras;
+  if(!cs || !cs.length){ log("  this conversation has no cameras",""); return; }
+  camMode = !camMode;
+  updateCameraLabel();
+  if(!camMode){ log("  camera: free look",""); return; }
+  followCamera(true);
+}
+
+async function loadPose(force){
+  // the pose comes either from the line (a .3DM) or from a body clip picked in
+  // the idle list (an ANIMS/*.ani); reload when the model, line or clip changes
+  const asset = conv && conv.nodes[node] ? conv.nodes[node].asset : "";
+  const clip  = bodyClip();
+  const key = (geom?geom.model:"") + "/" + asset + "/" + (clip||"");
+  if(key===poseKey && !force) return;
+  /* The previous pose stays up while the next one is fetched - nulling it
+   * first flashed a T-pose (the bind pose) for the first few frames of every
+   * line. It is only dropped once the replacement has actually arrived, or
+   * when there is nothing to fetch (the deliberate rest-pose case). */
+  poseKey=key; poseIsClip=!!clip;
+  // a scene (.SCX) clip is authored in scene space: its root track carries
+  // the character's facing (TELRES05: a constant 118° yaw), so the viewer
+  // must not add its own turn on top
+  poseIsScene = !!(clip && clip.toUpperCase().includes(".SCX|"));
+  if(!geom){ poseData=null; poseMeta=null; return; }
+  const url = clip
+    ? `/api/anipose/${geom.model}/${clip.split("|")[0]}/${clip.split("|")[1]}?v=${BUILD}`
+    : (asset ? `/api/pose/${geom.model}/${asset}?v=${BUILD}` : null);
+  if(!url){ poseData=null; poseMeta=null; return; }
+  try{
+    const r=await fetch(url);
+    if(!r.ok) return;
+    const b=await r.arrayBuffer();
+    const hl=new DataView(b).getUint32(0,true);
+    const meta=JSON.parse(new TextDecoder().decode(new Uint8Array(b,4,hl)));
+    poseData=floats(b,4+hl); poseMeta=meta;
+  }catch(e){ poseData=null; poseMeta=null; log("  pose failed: "+e.message,"warn"); }
+  recentre();
+}
+// A Float32Array view needs a 4-aligned offset; the server pads the JSON
+// header so it always is, but copy rather than throw if that ever slips.
+function floats(buf, off){
+  return (off % 4) ? new Float32Array(buf.slice(off)) : new Float32Array(buf, off);
+}
+const morphMetaCache={};
+async function fetchMorphMeta(asset){
+  if(morphMetaCache[asset]) return morphMetaCache[asset];
+  busy(`line ${asset}`, true);
+  try{
+  const r=await fetch(`/api/morph/${asset}?v=${BUILD}`);
+  if(!r.ok) throw new Error("no morph");
+  const b=await r.arrayBuffer();
+  const hl=new DataView(b).getUint32(0,true);
+  const meta=JSON.parse(new TextDecoder().decode(new Uint8Array(b,4,hl)));
+  meta._blob=floats(b,4+hl);
+  morphMetaCache[asset]=meta; return meta;
+  } finally { busy(`line ${asset}`, false); }
+}
+let headMat=0;
+async function loadModel(name,keep){
+  busy(`model ${name}`, true);
+  try{
+  geom=await fetch(`/api/fullmodel/${name}?v=${BUILD}`).then(r=>r.json());
+  modelAxis = geom.bodyAxis || [0,0];
+  uploadStatic();
+  // which material the face mesh uses, so the head-only view can isolate it
+  headMat=-1;
+  for(const b of geom.batches){
+    for(let i=b.start;i<b.start+b.count;i++)
+      if(geom.corners[i][0]===1){ headMat=b.material; break; }
+    if(headMat>=0) break;
+  }
+  if(headMat<0 && geom.batches.length) headMat=geom.batches[0].material;
+  texes.forEach(t=>t&&gl.deleteTexture(t)); texes=[];
+  for(const b of geom.batches){
+    const img=new Image(); const mat=b.material;
+    img.onload=()=>{ const t=gl.createTexture();
+      gl.bindTexture(gl.TEXTURE_2D,t);
+      gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL,false);
+      gl.texImage2D(gl.TEXTURE_2D,0,gl.RGB,gl.RGB,gl.UNSIGNED_BYTE,img);
+      gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
+      texes[mat]=t; };
+    img.src=`/api/tex/${name}/${mat}.png?v=${BUILD}`;
+  }
+  await loadPose();
+  recentre(!!keep);
+  if(keep){
+    log(`model → ${name} · ${geom.triangles} tris · face ${geom.faceVerts} verts`,"e");
+    if(morphData && !animatable())
+      log(`  this model's face has ${geom.faceVerts} vertices but the line's `+
+          `animation has ${nVerts} — showing its bind pose instead`,"");
+  }
+  const bad=geom.batches.filter(b=>!b.exact).map(b=>b.name);
+  if(keep && bad.length) log(`  textures padded/trimmed: ${bad.join(", ")}`,"");
+  } finally { busy(`model ${name}`, false); }
+}
+
+/* Stop the line the way the game does: kill the voice and the animation and
+ * fall back to the idle position. With a body clip picked in the idle list,
+ * that clip takes over (as it already did at audio end); with none, the
+ * character returns to the rest pose - it no longer freezes on the morph's
+ * last frame, which is also what happens in the game when an animation ends. */
+function stopLine(){
+  if(audio){ audio.pause(); }
+  morph=null; morphData=null; frameCount=0; lastFrame=0;
+  clipEpoch=performance.now();
+  if(bodyClip()){ loadPose(true); return; }
+  poseKey="(idle)"; poseData=null; poseMeta=null; poseIsClip=false; poseIsScene=false;
+}
+
+async function playNode(i,replayOnly){
+  node=i;
+  const n=conv.nodes[i];
+  if(!n){ $("#talk").innerHTML='<div id="empty">— end of conversation —</div>'; return; }
+  menuPhase = false;
+  // The camera clock starts NOW, not after the morph/pose fetches below.
+  // cameraView() reads conv.nodes[node] every frame, so the view is already
+  // interpolating this node's two cameras while those awaits are in flight -
+  // and until followCamera() ran, cameraProgress() was still on the previous
+  // line's clock. If the previous move had not finished, the new move played
+  // from mid-way and then snapped back to its start when the loads landed
+  // (only visible when the fetches were slow enough - a cache miss).
+  camStart = performance.now();
+  // ---- animation + voice
+  morph=null; morphData=null; frameCount=0;
+  if(n.asset){
+    try{
+      const m=await fetchMorphMeta(n.asset);
+      morph=m; morphData=m._blob; nVerts=m.vertices; frameCount=m.frames;
+      if(!replayOnly) recentre();
+      if(audio){audio.pause();}
+      audio=new Audio(`/api/audio/${n.asset}.wav?v=${BUILD}`);
+      // when the voice ends, the selected clip takes over again
+      audio.onended = ()=>{ stopLine(); };
+      audio.play().catch(()=>{});
+    }catch(e){ }
+  }
+  await loadPose();
+  followCamera(true);
+  if(replayOnly) return;
+  // ---- text + replies
+  const t=$("#talk"); t.innerHTML="";
+  const line=document.createElement("div"); line.id="line";
+  /* A node with BOTH fields is one whole beat, in this order (observed in
+   * play, dialog 402 node 17): the NPC line first, then a single-choice menu
+   * offering the node's own selfLine, then the player speaks it, then the
+   * replies menu. It used to render "YOU: selfLine" above the NPC line -
+   * backwards. The pure player node (selfLine only) is unchanged. */
+  const staged = !!(n.selfLine && n.line);
+  if(n.selfLine && !n.line){ line.className="you"; line.textContent="YOU: "+n.selfLine; }
+  else line.textContent=n.line||"(no line)";
+  t.appendChild(line);
+  log(`\n[node ${n.index} id=${n.id} asset=${n.asset||"—"}${frameCount?` · ${frameCount} frames`:" · no animation"}]`,"h");
+
+  const box=document.createElement("div"); box.id="replies"; t.appendChild(box);
+  let fm=null;
+  if(staged){
+    // the "fake menu": one choice, the node's own selfLine, menu camera and all
+    fm=document.createElement("div"); fm.id="fakemenu"; t.insertBefore(fm,box);
+    const b=document.createElement("button");
+    b.className="reply";
+    b.innerHTML=`<span class="n">1</span>${n.selfLine}`;
+    b.onclick=()=>{
+      fm.remove();
+      const you=document.createElement("div");
+      you.className="you"; you.textContent="YOU: "+n.selfLine;
+      t.insertBefore(you,box);
+      box.style.display="";
+    };
+    fm.appendChild(b);
+  }
+  let any=false, named=0, firstCont=-1;
+  for(let k=0;k<4;k++){
+    const text=n.replies[k];
+    if(!text && n.param[k]===-1) continue;
+    let ok=true;
+    if(n.cond[k]){
+      const r=await runScript(n.cond[k]);
+      r.log.forEach(l=>log("  "+l));
+      ok=!!r.result;
+      log(`  reply ${k+1} condition → ${ok?"available":"hidden"}`, ok?"v":"");
+    }
+    const b=document.createElement("button");
+    b.className="reply"+(ok?"":" hidden");
+    b.innerHTML=`<span class="n">${k+1}</span>${text||"(continue)"}`+
+      `<span class="to">→ ${n.param[k]===-1?"end":"node "+n.param[k]}</span>`;
+    if(ok){ any=true; if(text) named++; else if(firstCont<0) firstCont=k;
+            b.onclick=()=>choose(n,k); } else b.disabled=true;
+    box.appendChild(b);
+  }
+  /* The game never shows the NPC line and the menu together: the player
+   * presses NEXT, and THAT click both reveals the menu and cuts to its
+   * camera. A pure player node (selfLine only) has no NPC phase and is the
+   * menu already. NEXT with nothing but an unnamed continue branch advances
+   * straight to the next line, exactly as in the game. */
+  const isPlayerNode = !!(n.selfLine && !n.line);
+  if(isPlayerNode){
+    menuPhase = true;
+    if(!any){ const e=document.createElement("div");
+      e.id="empty"; e.textContent="— end of conversation —"; t.appendChild(e); }
+    return;
+  }
+  box.style.display="none";
+  if(fm) fm.style.display="none";
+  const nx=document.createElement("button");
+  nx.id="next"; nx.className="reply"; nx.innerHTML="▸ next";
+  nx.onclick=()=>{
+    nx.remove();
+    stopLine();
+    menuPhase = true;
+    /* The cut happens on this click - but 82 nodes carry a menu pair
+     * IDENTICAL to their line pair, and resetting the clock for the same
+     * cameras visibly restarted the move mid-flight. The clock only restarts
+     * when the pair actually changes. */
+    if(n.replyCamera!==-1 && n.replyCamera!=null &&
+       !(n.replyCamera===n.lineCamera && n.replyCamera2===n.lineCamera2)){
+      camStart = performance.now();
+      if(camMode) log(`  menu — reply camera ${n.replyCamera}`,"v");
+    }
+    if(fm){ fm.style.display=""; return; }         // the single-choice menu
+    if(named){ box.style.display=""; return; }     // the real menu
+    if(firstCont>=0){ choose(n, firstCont); return; }  // straight to the next line
+    if(any){ box.style.display=""; return; }       // several unnamed branches
+    const e=document.createElement("div");
+    e.id="empty"; e.textContent="— end of conversation —"; t.appendChild(e);
+  };
+  t.appendChild(nx);
+}
+async function runScript(off){
+  const q=encodeURIComponent(JSON.stringify(vars));
+  const r=await fetch(`/api/script/${conv.id}/${off}?vars=${q}`).then(r=>r.json());
+  vars=r.vars||vars; return r;
+}
+async function choose(n,k){
+  if(n.act[k]){ log("  running action:","h");
+    const r=await runScript(n.act[k]);
+    r.log.forEach(l=>log("  "+l,"v"));
+  }
+  const next=n.param[k];
+  if(next===-1||next==null){ if(audio)audio.pause();
+    $("#talk").innerHTML='<div id="empty">— end of conversation —</div>'; return; }
+  playNode(next);
+}
+boot();
+</script>

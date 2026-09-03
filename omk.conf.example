@@ -1,0 +1,50 @@
+# omk.conf - where this repo's inputs live on THIS machine.
+#
+# Copy to `omk.conf` (which is gitignored) and edit. Every line is optional;
+# anything you leave out falls back to the in-tree default shown beside it.
+#
+#   key = value      # `#` starts a comment, blank lines are ignored
+#
+# A relative path is taken relative to the repository root, not to wherever
+# you happen to run a tool from, so one config file means the same thing
+# everywhere. `~` is expanded.
+#
+# Precedence, first hit wins:
+#     a flag (--data/--asm/--decomp/--clean)  >  the environment  >  this file
+#     >  the in-tree default
+#
+# `python3 tools/omkpaths.py` prints what each one resolved to and why.
+
+
+# --- the game data --------------------------------------------------------
+# Your own copy of Omikron: The Nomad Soul - the directory holding IAM/,
+# MESHES/, SCPTDATA/, MORPH/ and `Runtime 2.exe`. Nothing here ships it, and
+# most tools need it. Environment: OMK_DATA
+#
+# data = gamedata
+# data = ~/games/omikron/data
+# data = /Volumes/OMIKRON1
+
+
+# --- the disassembly ------------------------------------------------------
+# An IDA listing of `Runtime 2.exe`, and the Hex-Rays decompilation beside it.
+# A disassembly is a derivative work of the binary, so this repository does
+# not distribute one; point at your own if you have produced it.
+#
+# Without these, 13 of the suite's checks report `skipped` and everything else
+# runs normally - `tools/dialog_disasm.py` falls back to the committed
+# `tables/vm_opcodes.json`, which carries the same VM table.
+#
+# Environment: OMK_ASM, OMK_DECOMP, OMK_DECOMP_H
+#
+# asm    = Runtime.exe.asm
+# decomp = Runtime.exe.c
+# header = Runtime.exe.h
+
+
+# --- clean/ ---------------------------------------------------------------
+# The mechanical pass `tools/clean.py` makes over the decompilation. Derived
+# from it, so it has the same status: not distributed, regenerate it yourself.
+# Environment: OMK_CLEAN
+#
+# clean = clean

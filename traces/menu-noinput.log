@@ -1,0 +1,28 @@
+1488952.000:0028:002c:trace:relay:load_list L"RelayInclude" = L"KERNEL32.GetPrivateProfileStringA"
+1488952.017:0028:002c:trace:relay:load_list L"RelayInclude" = L"KERNEL32.GetPrivateProfileStringA"
+1488952.115:0030:0034:trace:relay:load_list L"RelayInclude" = L"KERNEL32.GetPrivateProfileStringA"
+1488952.133:0030:0034:trace:relay:load_list L"RelayInclude" = L"KERNEL32.GetPrivateProfileStringA"
+1488952.228:003c:0040:trace:relay:load_list L"RelayInclude" = L"KERNEL32.GetPrivateProfileStringA"
+1488952.246:003c:0040:trace:relay:load_list L"RelayInclude" = L"KERNEL32.GetPrivateProfileStringA"
+1488952.345:0060:0064:trace:relay:load_list L"RelayInclude" = L"KERNEL32.GetPrivateProfileStringA"
+1488952.362:0060:0064:trace:relay:load_list L"RelayInclude" = L"KERNEL32.GetPrivateProfileStringA"
+1488952.514:0078:007c:trace:relay:load_list L"RelayInclude" = L"KERNEL32.GetPrivateProfileStringA"
+1488952.530:0078:007c:trace:relay:load_list L"RelayInclude" = L"KERNEL32.GetPrivateProfileStringA"
+1488952.621:0090:0094:trace:relay:load_list L"RelayInclude" = L"KERNEL32.GetPrivateProfileStringA"
+1488952.637:0090:0094:trace:relay:load_list L"RelayInclude" = L"KERNEL32.GetPrivateProfileStringA"
+1488952.989:0020:0024:trace:relay:load_list L"RelayInclude" = L"KERNEL32.GetPrivateProfileStringA"
+1488953.008:0020:0024:trace:relay:load_list L"RelayInclude" = L"KERNEL32.GetPrivateProfileStringA"
+1488953.148:00cc:00d0:trace:relay:load_list L"RelayInclude" = L"KERNEL32.GetPrivateProfileStringA"
+1488953.165:00cc:00d0:trace:relay:load_list L"RelayInclude" = L"KERNEL32.GetPrivateProfileStringA"
+1488953.319:00d4:00d8:trace:relay:load_list L"RelayInclude" = L"KERNEL32.GetPrivateProfileStringA"
+1488953.336:00d4:00d8:trace:relay:load_list L"RelayInclude" = L"KERNEL32.GetPrivateProfileStringA"
+1488953.687:00ec:00f0:trace:relay:load_list L"RelayInclude" = L"KERNEL32.GetPrivateProfileStringA"
+1488953.704:00ec:00f0:trace:relay:load_list L"RelayInclude" = L"KERNEL32.GetPrivateProfileStringA"
+1488953.742:00fc:0100:trace:relay:load_list L"RelayInclude" = L"KERNEL32.GetPrivateProfileStringA"
+1488953.758:00fc:0100:trace:relay:load_list L"RelayInclude" = L"KERNEL32.GetPrivateProfileStringA"
+1488962.744:00ec:00f0:Call KERNEL32.GetPrivateProfileStringA(004c06e4 "VARIABLES",0022f200 "175",004e749c "",0022f240,00000400,0022f220 "IAM\\VARIABLES.TAG") ret=0040ed42
+1488962.746:00ec:00f0:Ret  KERNEL32.GetPrivateProfileStringA() retval=0000000d ret=0040ed42
+1488962.746:00ec:00f0:Call KERNEL32.GetPrivateProfileStringA(004c06f0 "VARIABLES",0022f1fc "170",004e749c "",0022f23c,00000400,0022f21c "IAM\\VARIABLES.TAG") ret=0040ed42
+1488962.747:00ec:00f0:Ret  KERNEL32.GetPrivateProfileStringA() retval=00000010 ret=0040ed42
+1488962.748:00ec:00f0:Call KERNEL32.GetPrivateProfileStringA(004c0844 "OBJECTS",0022f0f4 "997",004e749c "",0022f134,00000400,0022f114 "IAM\\OBJECTS.TAG") ret=0040ed42
+1488962.751:00ec:00f0:Ret  KERNEL32.GetPrivateProfileStringA() retval=0000001a ret=0040ed42

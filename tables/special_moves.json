@@ -1,0 +1,355 @@
+{
+ "_": "Lifted from gamedata/Runtime 2.exe by tools/exetables.py - do not hand-edit; run the tool. These tables are compiled into the executable and are NOT in the shipped gamedata/ data, which is why a replica engine needs this file.",
+ "table": "special_moves",
+ "documented_in": "docs/ASSETS.md",
+ "about": "`tab_special_move[]` at 0x004CB168 — 12 bytes a row.\n\nThe engine's own name for it, from its debug string.  A row is `char[8]`\npacked as two dwords (which is why a string search never finds it) plus\nthe handler's address.  `Cef_QueueSpecialMove` matches a `.CTL` state's\n`0x10` move name against it, player only, and queues the handler: these\nare the gameplay events a state can raise — locomotion, jumps, dives,\nobject pickup, camera modes, the 2D-menu keys.",
+ "checks": [
+  {
+   "what": "rows before the zero terminator",
+   "got": 66,
+   "want": 66
+  },
+  {
+   "what": "distinct names the shipped .CTL files use",
+   "got": 54,
+   "want": 54
+  },
+  {
+   "what": "of those the table lacks",
+   "got": 0,
+   "want": 0
+  }
+ ],
+ "rows": [
+  {
+   "index": 0,
+   "name": "MDSNEAK0",
+   "handler": "0x0046ADF0"
+  },
+  {
+   "index": 1,
+   "name": "MDHEAD00",
+   "handler": "0x0046AE70"
+  },
+  {
+   "index": 2,
+   "name": "MDHEAD01",
+   "handler": "0x0046AEA0"
+  },
+  {
+   "index": 3,
+   "name": "MDACTION",
+   "handler": "0x0046AEC0"
+  },
+  {
+   "index": 4,
+   "name": "MDGETOBJ",
+   "handler": "0x0046B380"
+  },
+  {
+   "index": 5,
+   "name": "MDLETOBJ",
+   "handler": "0x0046B460"
+  },
+  {
+   "index": 6,
+   "name": "MDPUTSNK",
+   "handler": "0x0046B4B0"
+  },
+  {
+   "index": 7,
+   "name": "MDNOTAKE",
+   "handler": "0x0046B530"
+  },
+  {
+   "index": 8,
+   "name": "MDSHOOT0",
+   "handler": "0x0046B610"
+  },
+  {
+   "index": 9,
+   "name": "MDCAMADV",
+   "handler": "0x0046B7C0"
+  },
+  {
+   "index": 10,
+   "name": "MDCAMSHT",
+   "handler": "0x0046B7D0"
+  },
+  {
+   "index": 11,
+   "name": "MDCAMFGT",
+   "handler": "0x0046B7E0"
+  },
+  {
+   "index": 12,
+   "name": "MDSLIDIN",
+   "handler": "0x0046B7F0"
+  },
+  {
+   "index": 13,
+   "name": "MDSLIDOU",
+   "handler": "0x0046B890"
+  },
+  {
+   "index": 14,
+   "name": "MDJUMP0A",
+   "handler": "0x0046BB50"
+  },
+  {
+   "index": 15,
+   "name": "MDJUMP0B",
+   "handler": "0x0046BC50"
+  },
+  {
+   "index": 16,
+   "name": "MDJUMP01",
+   "handler": "0x0046BD50"
+  },
+  {
+   "index": 17,
+   "name": "MDRG",
+   "handler": "0x0046B630"
+  },
+  {
+   "index": 18,
+   "name": "MDRD",
+   "handler": "0x0046B640"
+  },
+  {
+   "index": 19,
+   "name": "MDAR",
+   "handler": "0x0046B650"
+  },
+  {
+   "index": 20,
+   "name": "MDAV",
+   "handler": "0x0046B660"
+  },
+  {
+   "index": 21,
+   "name": "MDCO",
+   "handler": "0x0046B670"
+  },
+  {
+   "index": 22,
+   "name": "MDRA",
+   "handler": "0x0046B680"
+  },
+  {
+   "index": 23,
+   "name": "MDDT",
+   "handler": "0x0046B690"
+  },
+  {
+   "index": 24,
+   "name": "MDDG",
+   "handler": "0x0046B6A0"
+  },
+  {
+   "index": 25,
+   "name": "MDDD",
+   "handler": "0x0046B6B0"
+  },
+  {
+   "index": 26,
+   "name": "MDUP",
+   "handler": "0x0046B6C0"
+  },
+  {
+   "index": 27,
+   "name": "MDDO",
+   "handler": "0x0046B6D0"
+  },
+  {
+   "index": 28,
+   "name": "MDLUP",
+   "handler": "0x0046B6E0"
+  },
+  {
+   "index": 29,
+   "name": "MDLDO",
+   "handler": "0x0046B6F0"
+  },
+  {
+   "index": 30,
+   "name": "MDGUN",
+   "handler": "0x0046B740"
+  },
+  {
+   "index": 31,
+   "name": "MDRDP",
+   "handler": "0x0046B7A0"
+  },
+  {
+   "index": 32,
+   "name": "MDRDM",
+   "handler": "0x0046B7B0"
+  },
+  {
+   "index": 33,
+   "name": "I2DMU",
+   "handler": "0x0042B950"
+  },
+  {
+   "index": 34,
+   "name": "I2DMD",
+   "handler": "0x0042B960"
+  },
+  {
+   "index": 35,
+   "name": "I2DML",
+   "handler": "0x0042B970"
+  },
+  {
+   "index": 36,
+   "name": "I2DMR",
+   "handler": "0x0042B980"
+  },
+  {
+   "index": 37,
+   "name": "I2DM0",
+   "handler": "0x0042B990"
+  },
+  {
+   "index": 38,
+   "name": "I2DM1",
+   "handler": "0x0042B9A0"
+  },
+  {
+   "index": 39,
+   "name": "I2DM2",
+   "handler": "0x0042B9B0"
+  },
+  {
+   "index": 40,
+   "name": "I2DM3",
+   "handler": "0x0042B9C0"
+  },
+  {
+   "index": 41,
+   "name": "I2DM4",
+   "handler": "0x0042B9D0"
+  },
+  {
+   "index": 42,
+   "name": "I2DM5",
+   "handler": "0x0042B9E0"
+  },
+  {
+   "index": 43,
+   "name": "I2DM6",
+   "handler": "0x0042B9F0"
+  },
+  {
+   "index": 44,
+   "name": "I2DM7",
+   "handler": "0x0042BA00"
+  },
+  {
+   "index": 45,
+   "name": "I2DM8",
+   "handler": "0x0042BA10"
+  },
+  {
+   "index": 46,
+   "name": "I2DM9",
+   "handler": "0x0042BA20"
+  },
+  {
+   "index": 47,
+   "name": "MDTR",
+   "handler": "0x0046B700"
+  },
+  {
+   "index": 48,
+   "name": "MDJP",
+   "handler": "0x0046B710"
+  },
+  {
+   "index": 49,
+   "name": "MDJUMP02",
+   "handler": "0x0046BD90"
+  },
+  {
+   "index": 50,
+   "name": "MDJUMP03",
+   "handler": "0x0046BE40"
+  },
+  {
+   "index": 51,
+   "name": "MDRAISE0",
+   "handler": "0x0046BED0"
+  },
+  {
+   "index": 52,
+   "name": "MDHEAD01",
+   "handler": "0x0046B720"
+  },
+  {
+   "index": 53,
+   "name": "MDHEAD02",
+   "handler": "0x0046B730"
+  },
+  {
+   "index": 54,
+   "name": "MDDIVEND",
+   "handler": "0x0046BEF0"
+  },
+  {
+   "index": 55,
+   "name": "MDSW2SD",
+   "handler": "0x0046BF20"
+  },
+  {
+   "index": 56,
+   "name": "MDSTAND",
+   "handler": "0x0046BF90"
+  },
+  {
+   "index": 57,
+   "name": "RSTAVNT",
+   "handler": "0x0046C120"
+  },
+  {
+   "index": 58,
+   "name": "RSTNAGE",
+   "handler": "0x0046C150"
+  },
+  {
+   "index": 59,
+   "name": "MDRUN",
+   "handler": "0x0046C0C0"
+  },
+  {
+   "index": 60,
+   "name": "MDWALK",
+   "handler": "0x0046C050"
+  },
+  {
+   "index": 61,
+   "name": "MDSTOPR",
+   "handler": "0x0046C0E0"
+  },
+  {
+   "index": 62,
+   "name": "MDSTOPW",
+   "handler": "0x0046C070"
+  },
+  {
+   "index": 63,
+   "name": "MDADJSTP",
+   "handler": "0x0046B2D0"
+  },
+  {
+   "index": 64,
+   "name": "MDROT000",
+   "handler": "0x0046C170"
+  },
+  {
+   "index": 65,
+   "name": "MDDIVBEG",
+   "handler": "0x0046C180"
+  }
+ ]
+}

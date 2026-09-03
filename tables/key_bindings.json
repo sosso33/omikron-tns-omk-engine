@@ -1,0 +1,573 @@
+{
+ "_": "Lifted from gamedata/Runtime 2.exe by tools/exetables.py - do not hand-edit; run the tool. These tables are compiled into the executable and are NOT in the shipped gamedata/ data, which is why a replica engine needs this file.",
+ "table": "key_bindings",
+ "documented_in": "docs/ASSETS.md",
+ "about": "The four default control schemes — 4 context groups x 14 actions.\n\nThree compiled tables, one per device, at 0x004C8F90 / 0x004C9070 /\n0x004C9150.  A keybind option row's apply hook writes to\n`table[group*14 + action]`, which is what fixes the shape.\n\nThe groups are contexts and the engine installs them where their names\nsay: `Game_Init` and the end of a fight or a shoot install 0 (Aventure),\n`Fight_Begin` 3, `Shoot_Enter` 2, the swim transitions 1.  Rebinding is\ngroup-local — `Opt_RebindKey` scans all 74 option rows but clears only a\nrow in the same group, which is why \"Avancer\" is UP in Aventure and\n\"Reculer\" is LEFT in Combat without either disturbing the other.\n\n`bit` is the action's bit in the 14-slot input word — the same word `.CTL`\ntransitions match on, and the one `Game_Frame` edge-filters for the UI.",
+ "checks": [
+  {
+   "what": "cells",
+   "got": 56,
+   "want": 56
+  },
+  {
+   "what": "keyboard codes set",
+   "got": 41,
+   "want": 41
+  },
+  {
+   "what": "...all of them scan codes",
+   "got": true,
+   "want": true
+  },
+  {
+   "what": "joystick codes set",
+   "got": 48,
+   "want": 48
+  },
+  {
+   "what": "...all in its own space",
+   "got": true,
+   "want": true
+  },
+  {
+   "what": "mouse codes set",
+   "got": 4,
+   "want": 4
+  },
+  {
+   "what": "...all buttons 12..14",
+   "got": true,
+   "want": true
+  },
+  {
+   "what": "labelled cells per group",
+   "got": {
+    "0": 10,
+    "1": 7,
+    "2": 13,
+    "3": 10
+   },
+   "want": {
+    "0": 10,
+    "1": 7,
+    "2": 13,
+    "3": 10
+   }
+  }
+ ],
+ "rows": {
+  "groups": {
+   "0": "Aventure",
+   "1": "Nager",
+   "2": "Tirer",
+   "3": "Combat"
+  },
+  "slots": 14,
+  "rows": [
+   {
+    "group": 0,
+    "action": 0,
+    "label": "Tourner à gauche",
+    "bit": 1,
+    "keyboard": 203,
+    "mouse": 0,
+    "joystick": 0
+   },
+   {
+    "group": 0,
+    "action": 1,
+    "label": "Tourner à droite",
+    "bit": 2,
+    "keyboard": 205,
+    "mouse": 0,
+    "joystick": 0
+   },
+   {
+    "group": 0,
+    "action": 2,
+    "label": "Avancer",
+    "bit": 4,
+    "keyboard": 200,
+    "mouse": 0,
+    "joystick": 4
+   },
+   {
+    "group": 0,
+    "action": 3,
+    "label": "Reculer",
+    "bit": 8,
+    "keyboard": 208,
+    "mouse": 0,
+    "joystick": 4
+   },
+   {
+    "group": 0,
+    "action": 4,
+    "label": "Action / Utiliser",
+    "bit": 16,
+    "keyboard": 28,
+    "mouse": 0,
+    "joystick": 48
+   },
+   {
+    "group": 0,
+    "action": 5,
+    "label": "Annuler / Sauter",
+    "bit": 32,
+    "keyboard": 57,
+    "mouse": 0,
+    "joystick": 49
+   },
+   {
+    "group": 0,
+    "action": 6,
+    "label": null,
+    "bit": 64,
+    "keyboard": 0,
+    "mouse": 0,
+    "joystick": 50
+   },
+   {
+    "group": 0,
+    "action": 7,
+    "label": "Vue première personne",
+    "bit": 128,
+    "keyboard": 38,
+    "mouse": 12,
+    "joystick": 51
+   },
+   {
+    "group": 0,
+    "action": 8,
+    "label": null,
+    "bit": 256,
+    "keyboard": 0,
+    "mouse": 0,
+    "joystick": 52
+   },
+   {
+    "group": 0,
+    "action": 9,
+    "label": null,
+    "bit": 512,
+    "keyboard": 0,
+    "mouse": 0,
+    "joystick": 53
+   },
+   {
+    "group": 0,
+    "action": 10,
+    "label": "Pas de côté / Demi-tour",
+    "bit": 1024,
+    "keyboard": 157,
+    "mouse": 0,
+    "joystick": 54
+   },
+   {
+    "group": 0,
+    "action": 11,
+    "label": "Courir",
+    "bit": 2048,
+    "keyboard": 54,
+    "mouse": 0,
+    "joystick": 55
+   },
+   {
+    "group": 0,
+    "action": 12,
+    "label": null,
+    "bit": 4096,
+    "keyboard": 0,
+    "mouse": 0,
+    "joystick": 56
+   },
+   {
+    "group": 0,
+    "action": 13,
+    "label": "Ouvrir sneak",
+    "bit": 8192,
+    "keyboard": 15,
+    "mouse": 0,
+    "joystick": 57
+   },
+   {
+    "group": 1,
+    "action": 0,
+    "label": "Tourner à gauche",
+    "bit": 1,
+    "keyboard": 203,
+    "mouse": 0,
+    "joystick": 0
+   },
+   {
+    "group": 1,
+    "action": 1,
+    "label": "Tourner à droite",
+    "bit": 2,
+    "keyboard": 205,
+    "mouse": 0,
+    "joystick": 0
+   },
+   {
+    "group": 1,
+    "action": 2,
+    "label": "Avancer",
+    "bit": 4,
+    "keyboard": 200,
+    "mouse": 0,
+    "joystick": 4
+   },
+   {
+    "group": 1,
+    "action": 3,
+    "label": "Reculer",
+    "bit": 8,
+    "keyboard": 208,
+    "mouse": 0,
+    "joystick": 4
+   },
+   {
+    "group": 1,
+    "action": 4,
+    "label": "Action / Utiliser",
+    "bit": 16,
+    "keyboard": 28,
+    "mouse": 0,
+    "joystick": 48
+   },
+   {
+    "group": 1,
+    "action": 5,
+    "label": "Plonger",
+    "bit": 32,
+    "keyboard": 157,
+    "mouse": 0,
+    "joystick": 49
+   },
+   {
+    "group": 1,
+    "action": 6,
+    "label": null,
+    "bit": 64,
+    "keyboard": 0,
+    "mouse": 0,
+    "joystick": 50
+   },
+   {
+    "group": 1,
+    "action": 7,
+    "label": null,
+    "bit": 128,
+    "keyboard": 38,
+    "mouse": 12,
+    "joystick": 51
+   },
+   {
+    "group": 1,
+    "action": 8,
+    "label": null,
+    "bit": 256,
+    "keyboard": 0,
+    "mouse": 0,
+    "joystick": 52
+   },
+   {
+    "group": 1,
+    "action": 9,
+    "label": null,
+    "bit": 512,
+    "keyboard": 0,
+    "mouse": 0,
+    "joystick": 53
+   },
+   {
+    "group": 1,
+    "action": 10,
+    "label": null,
+    "bit": 1024,
+    "keyboard": 0,
+    "mouse": 0,
+    "joystick": 54
+   },
+   {
+    "group": 1,
+    "action": 11,
+    "label": "Crawl",
+    "bit": 2048,
+    "keyboard": 54,
+    "mouse": 0,
+    "joystick": 55
+   },
+   {
+    "group": 1,
+    "action": 12,
+    "label": null,
+    "bit": 4096,
+    "keyboard": 0,
+    "mouse": 0,
+    "joystick": 56
+   },
+   {
+    "group": 1,
+    "action": 13,
+    "label": null,
+    "bit": 8192,
+    "keyboard": 0,
+    "mouse": 0,
+    "joystick": 57
+   },
+   {
+    "group": 2,
+    "action": 0,
+    "label": "Tourner à gauche",
+    "bit": 1,
+    "keyboard": 75,
+    "mouse": 0,
+    "joystick": 0
+   },
+   {
+    "group": 2,
+    "action": 1,
+    "label": "Tourner à droite",
+    "bit": 2,
+    "keyboard": 77,
+    "mouse": 0,
+    "joystick": 0
+   },
+   {
+    "group": 2,
+    "action": 2,
+    "label": "Avancer",
+    "bit": 4,
+    "keyboard": 200,
+    "mouse": 0,
+    "joystick": 4
+   },
+   {
+    "group": 2,
+    "action": 3,
+    "label": "Reculer",
+    "bit": 8,
+    "keyboard": 208,
+    "mouse": 0,
+    "joystick": 4
+   },
+   {
+    "group": 2,
+    "action": 4,
+    "label": "Tir",
+    "bit": 16,
+    "keyboard": 54,
+    "mouse": 12,
+    "joystick": 48
+   },
+   {
+    "group": 2,
+    "action": 5,
+    "label": "Sauter",
+    "bit": 32,
+    "keyboard": 57,
+    "mouse": 13,
+    "joystick": 49
+   },
+   {
+    "group": 2,
+    "action": 6,
+    "label": "S'accroupir",
+    "bit": 64,
+    "keyboard": 157,
+    "mouse": 0,
+    "joystick": 50
+   },
+   {
+    "group": 2,
+    "action": 7,
+    "label": null,
+    "bit": 128,
+    "keyboard": 0,
+    "mouse": 0,
+    "joystick": 51
+   },
+   {
+    "group": 2,
+    "action": 8,
+    "label": "Action / Utiliser",
+    "bit": 256,
+    "keyboard": 28,
+    "mouse": 0,
+    "joystick": 52
+   },
+   {
+    "group": 2,
+    "action": 9,
+    "label": "Regarder En-Haut",
+    "bit": 512,
+    "keyboard": 72,
+    "mouse": 0,
+    "joystick": 53
+   },
+   {
+    "group": 2,
+    "action": 10,
+    "label": "Glisser à gauche",
+    "bit": 1024,
+    "keyboard": 203,
+    "mouse": 0,
+    "joystick": 54
+   },
+   {
+    "group": 2,
+    "action": 11,
+    "label": "Glisser à droite",
+    "bit": 2048,
+    "keyboard": 205,
+    "mouse": 0,
+    "joystick": 55
+   },
+   {
+    "group": 2,
+    "action": 12,
+    "label": "Regarder En-Bas",
+    "bit": 4096,
+    "keyboard": 80,
+    "mouse": 0,
+    "joystick": 56
+   },
+   {
+    "group": 2,
+    "action": 13,
+    "label": "Arme",
+    "bit": 8192,
+    "keyboard": 56,
+    "mouse": 0,
+    "joystick": 57
+   },
+   {
+    "group": 3,
+    "action": 0,
+    "label": "Reculer",
+    "bit": 1,
+    "keyboard": 203,
+    "mouse": 0,
+    "joystick": 0
+   },
+   {
+    "group": 3,
+    "action": 1,
+    "label": "Avancer",
+    "bit": 2,
+    "keyboard": 205,
+    "mouse": 0,
+    "joystick": 0
+   },
+   {
+    "group": 3,
+    "action": 2,
+    "label": "Sauter",
+    "bit": 4,
+    "keyboard": 200,
+    "mouse": 0,
+    "joystick": 4
+   },
+   {
+    "group": 3,
+    "action": 3,
+    "label": "S'accroupir",
+    "bit": 8,
+    "keyboard": 208,
+    "mouse": 0,
+    "joystick": 4
+   },
+   {
+    "group": 3,
+    "action": 4,
+    "label": "Coup de poing 1",
+    "bit": 16,
+    "keyboard": 16,
+    "mouse": 0,
+    "joystick": 48
+   },
+   {
+    "group": 3,
+    "action": 5,
+    "label": "Coup de poing 2",
+    "bit": 32,
+    "keyboard": 17,
+    "mouse": 0,
+    "joystick": 49
+   },
+   {
+    "group": 3,
+    "action": 6,
+    "label": "Coup de pied 1",
+    "bit": 64,
+    "keyboard": 30,
+    "mouse": 0,
+    "joystick": 50
+   },
+   {
+    "group": 3,
+    "action": 7,
+    "label": "Coup de pied 2",
+    "bit": 128,
+    "keyboard": 31,
+    "mouse": 0,
+    "joystick": 51
+   },
+   {
+    "group": 3,
+    "action": 8,
+    "label": null,
+    "bit": 256,
+    "keyboard": 0,
+    "mouse": 0,
+    "joystick": 52
+   },
+   {
+    "group": 3,
+    "action": 9,
+    "label": null,
+    "bit": 512,
+    "keyboard": 0,
+    "mouse": 0,
+    "joystick": 53
+   },
+   {
+    "group": 3,
+    "action": 10,
+    "label": "Glisser à gauche",
+    "bit": 1024,
+    "keyboard": 211,
+    "mouse": 0,
+    "joystick": 54
+   },
+   {
+    "group": 3,
+    "action": 11,
+    "label": "Glisser à droite",
+    "bit": 2048,
+    "keyboard": 207,
+    "mouse": 0,
+    "joystick": 55
+   },
+   {
+    "group": 3,
+    "action": 12,
+    "label": null,
+    "bit": 4096,
+    "keyboard": 0,
+    "mouse": 0,
+    "joystick": 56
+   },
+   {
+    "group": 3,
+    "action": 13,
+    "label": null,
+    "bit": 8192,
+    "keyboard": 0,
+    "mouse": 0,
+    "joystick": 57
+   }
+  ]
+ }
+}

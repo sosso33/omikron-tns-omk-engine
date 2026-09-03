@@ -1,0 +1,2703 @@
+{
+ "_": "Lifted from gamedata/Runtime 2.exe by tools/exetables.py - do not hand-edit; run the tool. These tables are compiled into the executable and are NOT in the shipped gamedata/ data, which is why a replica engine needs this file.",
+ "table": "ui",
+ "documented_in": "docs/UI.md",
+ "about": "The interface's three compiled tables, plus the option tree's shape.\n\nAlready read by `tools/ui_tables.py`; carried here so a replica has them\nas data.  The screens table is the one with an order worth trusting: its\n`+4` is 0..36 in the code, so the row order is the screen id.",
+ "checks": [
+  {
+   "what": "screens",
+   "got": 37,
+   "want": 37
+  },
+  {
+   "what": "interface sounds",
+   "got": 45,
+   "want": 45
+  },
+  {
+   "what": "option rows",
+   "got": 74,
+   "want": 74
+  },
+  {
+   "what": "option pages",
+   "got": 13,
+   "want": 13
+  },
+  {
+   "what": "animation oscillators",
+   "got": 8,
+   "want": 8
+  },
+  {
+   "what": "font faces",
+   "got": 13,
+   "want": 13
+  },
+  {
+   "what": "...keyed by a distinct letter",
+   "got": 13,
+   "want": 13
+  }
+ ],
+ "rows": {
+  "screens": [
+   {
+    "index": 0,
+    "id": 0,
+    "name": "VIDEOPHONE",
+    "param": 2,
+    "bitmap": "sneak.bmp",
+    "text": "Sneak",
+    "cb": [
+     4830208,
+     4366576,
+     4830736,
+     4676176
+    ],
+    "sounds": [
+     6,
+     7,
+     5,
+     -1,
+     14,
+     15,
+     -1,
+     -1,
+     -1,
+     -1,
+     -1,
+     -1
+    ],
+    "flags": [
+     0,
+     0
+    ]
+   },
+   {
+    "index": 1,
+    "id": 1,
+    "name": "TRANSCAN (ELIMINE)",
+    "param": -1,
+    "bitmap": "",
+    "text": "",
+    "cb": [
+     0,
+     0,
+     0,
+     0
+    ],
+    "sounds": [
+     -1,
+     -1,
+     -1,
+     -1,
+     -1,
+     -1,
+     -1,
+     -1,
+     -1,
+     -1,
+     -1,
+     -1
+    ],
+    "flags": [
+     0,
+     0
+    ]
+   },
+   {
+    "index": 2,
+    "id": 2,
+    "name": "MULTIPLAN",
+    "param": -1,
+    "bitmap": "Multipla.bmp",
+    "text": "Multip",
+    "cb": [
+     4915696,
+     4366576,
+     4915920,
+     4676176
+    ],
+    "sounds": [
+     20,
+     21,
+     19,
+     -1,
+     22,
+     23,
+     -1,
+     -1,
+     -1,
+     -1,
+     -1,
+     -1
+    ],
+    "flags": [
+     0,
+     0
+    ]
+   },
+   {
+    "index": 3,
+    "id": 3,
+    "name": "APPARTEMENT (ELIMINE)",
+    "param": -1,
+    "bitmap": "",
+    "text": "",
+    "cb": [
+     0,
+     0,
+     0,
+     0
+    ],
+    "sounds": [
+     -1,
+     -1,
+     -1,
+     -1,
+     -1,
+     -1,
+     -1,
+     -1,
+     -1,
+     -1,
+     -1,
+     -1
+    ],
+    "flags": [
+     0,
+     0
+    ]
+   },
+   {
+    "index": 4,
+    "id": 4,
+    "name": "LIFT",
+    "param": -1,
+    "bitmap": "Ascen.bmp",
+    "text": "Lift",
+    "cb": [
+     4915376,
+     4366576,
+     4366672,
+     4676176
+    ],
+    "sounds": [
+     28,
+     -1,
+     27,
+     -1,
+     -1,
+     29,
+     -1,
+     -1,
+     -1,
+     -1,
+     -1,
+     -1
+    ],
+    "flags": [
+     0,
+     0
+    ]
+   },
+   {
+    "index": 5,
+    "id": 5,
+    "name": "TERMINAL",
+    "param": 0,
+    "bitmap": "Ecran36.bmp",
+    "text": "Term",
+    "cb": [
+     4911152,
+     4366576,
+     4911328,
+     4676176
+    ],
+    "sounds": [
+     20,
+     21,
+     19,
+     -1,
+     22,
+     23,
+     -1,
+     -1,
+     -1,
+     -1,
+     -1,
+     -1
+    ],
+    "flags": [
+     0,
+     0
+    ]
+   },
+   {
+    "index": 6,
+    "id": 6,
+    "name": "JOURNAL (ELIMINE)",
+    "param": -1,
+    "bitmap": "",
+    "text": "",
+    "cb": [
+     0,
+     0,
+     0,
+     0
+    ],
+    "sounds": [
+     -1,
+     -1,
+     -1,
+     -1,
+     -1,
+     -1,
+     -1,
+     -1,
+     -1,
+     -1,
+     -1,
+     -1
+    ],
+    "flags": [
+     0,
+     0
+    ]
+   },
+   {
+    "index": 7,
+    "id": 7,
+    "name": "SLIDER",
+    "param": 1,
+    "bitmap": "sneak.bmp",
+    "text": "Sneak",
+    "cb": [
+     4830208,
+     4366576,
+     4830736,
+     4676176
+    ],
+    "sounds": [
+     6,
+     7,
+     5,
+     -1,
+     10,
+     11,
+     -1,
+     -1,
+     -1,
+     -1,
+     -1,
+     -1
+    ],
+    "flags": [
+     0,
+     0
+    ]
+   },
+   {
+    "index": 8,
+    "id": 8,
+    "name": "PUZZLE (ELIMINE)",
+    "param": -1,
+    "bitmap": "",
+    "text": "",
+    "cb": [
+     0,
+     0,
+     0,
+     0
+    ],
+    "sounds": [
+     -1,
+     -1,
+     -1,
+     -1,
+     -1,
+     -1,
+     -1,
+     -1,
+     -1,
+     -1,
+     -1,
+     -1
+    ],
+    "flags": [
+     0,
+     0
+    ]
+   },
+   {
+    "index": 9,
+    "id": 9,
+    "name": "SNEAK",
+    "param": 0,
+    "bitmap": "sneak.bmp",
+    "text": "Sneak",
+    "cb": [
+     4830208,
+     4366576,
+     4830736,
+     4676176
+    ],
+    "sounds": [
+     6,
+     7,
+     5,
+     -1,
+     10,
+     11,
+     -1,
+     13,
+     8,
+     9,
+     12,
+     -1
+    ],
+    "flags": [
+     0,
+     0
+    ]
+   },
+   {
+    "index": 10,
+    "id": 10,
+    "name": "FIGHT_NOT_SIM (ELIMINE)",
+    "param": -1,
+    "bitmap": "",
+    "text": "",
+    "cb": [
+     0,
+     0,
+     0,
+     0
+    ],
+    "sounds": [
+     -1,
+     -1,
+     -1,
+     -1,
+     -1,
+     -1,
+     -1,
+     -1,
+     -1,
+     -1,
+     -1,
+     -1
+    ],
+    "flags": [
+     0,
+     0
+    ]
+   },
+   {
+    "index": 11,
+    "id": 11,
+    "name": "FIGHT SIM",
+    "param": 1,
+    "bitmap": "Ecran36.bmp",
+    "text": "Fsim",
+    "cb": [
+     4911408,
+     4366576,
+     4366672,
+     4676176
+    ],
+    "sounds": [
+     20,
+     21,
+     19,
+     -1,
+     24,
+     -1,
+     -1,
+     26,
+     -1,
+     -1,
+     -1,
+     -1
+    ],
+    "flags": [
+     0,
+     0
+    ]
+   },
+   {
+    "index": 12,
+    "id": 12,
+    "name": "GANDHAR DOOR",
+    "param": -1,
+    "bitmap": "Gandhar.bmp",
+    "text": "Gand",
+    "cb": [
+     4914672,
+     4366576,
+     4366672,
+     4676176
+    ],
+    "sounds": [
+     36,
+     37,
+     35,
+     37,
+     -1,
+     -1,
+     -1,
+     38,
+     39,
+     -1,
+     -1,
+     -1
+    ],
+    "flags": [
+     0,
+     0
+    ]
+   },
+   {
+    "index": 13,
+    "id": 13,
+    "name": "DEN",
+    "param": -1,
+    "bitmap": "Den00.bmp",
+    "text": "Den",
+    "cb": [
+     4913936,
+     4366576,
+     4366672,
+     4676176
+    ],
+    "sounds": [
+     31,
+     32,
+     30,
+     32,
+     -1,
+     -1,
+     -1,
+     34,
+     -1,
+     -1,
+     -1,
+     -1
+    ],
+    "flags": [
+     0,
+     0
+    ]
+   },
+   {
+    "index": 14,
+    "id": 14,
+    "name": "XACHEN",
+    "param": -1,
+    "bitmap": "Xanoir1.bmp",
+    "text": "",
+    "cb": [
+     4912976,
+     4366576,
+     4366672,
+     4676176
+    ],
+    "sounds": [
+     41,
+     -1,
+     42,
+     -1,
+     -1,
+     -1,
+     -1,
+     43,
+     -1,
+     -1,
+     -1,
+     -1
+    ],
+    "flags": [
+     0,
+     0
+    ]
+   },
+   {
+    "index": 15,
+    "id": 15,
+    "name": "SURV ERROR",
+    "param": 4,
+    "bitmap": "Ecran36.bmp",
+    "text": "Surv",
+    "cb": [
+     4911744,
+     4366576,
+     4366672,
+     4676176
+    ],
+    "sounds": [
+     20,
+     21,
+     19,
+     -1,
+     22,
+     23,
+     -1,
+     -1,
+     -1,
+     -1,
+     -1,
+     -1
+    ],
+    "flags": [
+     0,
+     0
+    ]
+   },
+   {
+    "index": 16,
+    "id": 16,
+    "name": "SURV NO KIT",
+    "param": 5,
+    "bitmap": "Ecran36.bmp",
+    "text": "Surv",
+    "cb": [
+     4911104,
+     4366576,
+     4366672,
+     4676176
+    ],
+    "sounds": [
+     20,
+     21,
+     19,
+     -1,
+     22,
+     23,
+     -1,
+     -1,
+     -1,
+     -1,
+     -1,
+     -1
+    ],
+    "flags": [
+     0,
+     0
+    ]
+   },
+   {
+    "index": 17,
+    "id": 17,
+    "name": "SURV KIT",
+    "param": 6,
+    "bitmap": "Ecran36.bmp",
+    "text": "Surv",
+    "cb": [
+     4911104,
+     4366576,
+     4366672,
+     4676176
+    ],
+    "sounds": [
+     20,
+     21,
+     19,
+     -1,
+     22,
+     23,
+     -1,
+     -1,
+     -1,
+     -1,
+     -1,
+     -1
+    ],
+    "flags": [
+     0,
+     0
+    ]
+   },
+   {
+    "index": 18,
+    "id": 18,
+    "name": "ARCHIVES",
+    "param": 3,
+    "bitmap": "ecran36.bmp",
+    "text": "Arch",
+    "cb": [
+     4911616,
+     4366576,
+     4366672,
+     4676176
+    ],
+    "sounds": [
+     20,
+     21,
+     19,
+     -1,
+     22,
+     23,
+     -1,
+     -1,
+     -1,
+     -1,
+     -1,
+     -1
+    ],
+    "flags": [
+     0,
+     0
+    ]
+   },
+   {
+    "index": 19,
+    "id": 19,
+    "name": "MORGUE",
+    "param": 2,
+    "bitmap": "Ecran36.bmp",
+    "text": "Morg",
+    "cb": [
+     4911504,
+     4366576,
+     4366672,
+     4676176
+    ],
+    "sounds": [
+     20,
+     21,
+     19,
+     -1,
+     22,
+     23,
+     -1,
+     -1,
+     -1,
+     -1,
+     -1,
+     -1
+    ],
+    "flags": [
+     0,
+     0
+    ]
+   },
+   {
+    "index": 20,
+    "id": 20,
+    "name": "BANK",
+    "param": 0,
+    "bitmap": "boutiq.bmp",
+    "text": "Buy",
+    "cb": [
+     4908352,
+     4366576,
+     4909024,
+     4676176
+    ],
+    "sounds": [
+     20,
+     21,
+     19,
+     -1,
+     22,
+     23,
+     -1,
+     16,
+     18,
+     -1,
+     -1,
+     -1
+    ],
+    "flags": [
+     0,
+     0
+    ]
+   },
+   {
+    "index": 21,
+    "id": 21,
+    "name": "PHARMACIE",
+    "param": 1,
+    "bitmap": "boutiq.bmp",
+    "text": "Buy",
+    "cb": [
+     4908352,
+     4366576,
+     4909024,
+     4676176
+    ],
+    "sounds": [
+     20,
+     21,
+     19,
+     -1,
+     22,
+     23,
+     -1,
+     16,
+     18,
+     -1,
+     -1,
+     -1
+    ],
+    "flags": [
+     0,
+     0
+    ]
+   },
+   {
+    "index": 22,
+    "id": 22,
+    "name": "ARMURERIE",
+    "param": 2,
+    "bitmap": "boutiq.bmp",
+    "text": "Buy",
+    "cb": [
+     4908352,
+     4366576,
+     4909024,
+     4676176
+    ],
+    "sounds": [
+     20,
+     21,
+     19,
+     -1,
+     22,
+     23,
+     -1,
+     16,
+     18,
+     -1,
+     -1,
+     -1
+    ],
+    "flags": [
+     0,
+     0
+    ]
+   },
+   {
+    "index": 23,
+    "id": 23,
+    "name": "RESTAURANT",
+    "param": 3,
+    "bitmap": "boutiq.bmp",
+    "text": "Buy",
+    "cb": [
+     4908352,
+     4366576,
+     4909024,
+     4676176
+    ],
+    "sounds": [
+     20,
+     21,
+     19,
+     -1,
+     22,
+     23,
+     -1,
+     16,
+     18,
+     -1,
+     -1,
+     -1
+    ],
+    "flags": [
+     0,
+     0
+    ]
+   },
+   {
+    "index": 24,
+    "id": 24,
+    "name": "BAR",
+    "param": 4,
+    "bitmap": "boutiq.bmp",
+    "text": "Buy",
+    "cb": [
+     4908352,
+     4366576,
+     4909024,
+     4676176
+    ],
+    "sounds": [
+     20,
+     21,
+     19,
+     -1,
+     22,
+     23,
+     -1,
+     16,
+     18,
+     -1,
+     -1,
+     -1
+    ],
+    "flags": [
+     0,
+     0
+    ]
+   },
+   {
+    "index": 25,
+    "id": 25,
+    "name": "SORCELLERIE",
+    "param": 5,
+    "bitmap": "boutiq.bmp",
+    "text": "Buy",
+    "cb": [
+     4908352,
+     4366576,
+     4909024,
+     4676176
+    ],
+    "sounds": [
+     20,
+     21,
+     19,
+     -1,
+     22,
+     23,
+     -1,
+     16,
+     18,
+     -1,
+     -1,
+     -1
+    ],
+    "flags": [
+     0,
+     0
+    ]
+   },
+   {
+    "index": 26,
+    "id": 26,
+    "name": "LIBRAIRIE",
+    "param": 6,
+    "bitmap": "boutiq.bmp",
+    "text": "Buy",
+    "cb": [
+     4908352,
+     4366576,
+     4909024,
+     4676176
+    ],
+    "sounds": [
+     20,
+     21,
+     19,
+     -1,
+     22,
+     23,
+     -1,
+     16,
+     18,
+     -1,
+     -1,
+     -1
+    ],
+    "flags": [
+     0,
+     0
+    ]
+   },
+   {
+    "index": 27,
+    "id": 27,
+    "name": "SEX-SHOP",
+    "param": 7,
+    "bitmap": "boutiq.bmp",
+    "text": "Buy",
+    "cb": [
+     4908352,
+     4366576,
+     4909024,
+     4676176
+    ],
+    "sounds": [
+     20,
+     21,
+     19,
+     -1,
+     22,
+     23,
+     -1,
+     16,
+     18,
+     -1,
+     -1,
+     -1
+    ],
+    "flags": [
+     0,
+     0
+    ]
+   },
+   {
+    "index": 28,
+    "id": 28,
+    "name": "DIVERS",
+    "param": 8,
+    "bitmap": "boutiq.bmp",
+    "text": "Buy",
+    "cb": [
+     4908352,
+     4366576,
+     4909024,
+     4676176
+    ],
+    "sounds": [
+     20,
+     21,
+     19,
+     -1,
+     22,
+     23,
+     -1,
+     16,
+     18,
+     -1,
+     -1,
+     -1
+    ],
+    "flags": [
+     0,
+     0
+    ]
+   },
+   {
+    "index": 29,
+    "id": 29,
+    "name": "OMK START MENU",
+    "param": -1,
+    "bitmap": "gfxint.bmp",
+    "text": "Menu",
+    "cb": [
+     4693264,
+     4366576,
+     4693808,
+     4676176
+    ],
+    "sounds": [
+     1,
+     2,
+     0,
+     -1,
+     -1,
+     -1,
+     -1,
+     -1,
+     -1,
+     -1,
+     -1,
+     -1
+    ],
+    "flags": [
+     536871936,
+     0
+    ]
+   },
+   {
+    "index": 30,
+    "id": 30,
+    "name": "SAVE GAME",
+    "param": -1,
+    "bitmap": "gfxint.bmp",
+    "text": "Save",
+    "cb": [
+     4906928,
+     4366576,
+     4366672,
+     4676176
+    ],
+    "sounds": [
+     1,
+     2,
+     0,
+     -1,
+     4,
+     -1,
+     -1,
+     -1,
+     -1,
+     -1,
+     -1,
+     -1
+    ],
+    "flags": [
+     536871936,
+     0
+    ]
+   },
+   {
+    "index": 31,
+    "id": 31,
+    "name": "PAUSE GAME",
+    "param": -1,
+    "bitmap": "gfxint.bmp",
+    "text": "Pause",
+    "cb": [
+     4906416,
+     4366576,
+     4906672,
+     4676176
+    ],
+    "sounds": [
+     1,
+     2,
+     0,
+     -1,
+     3,
+     -1,
+     -1,
+     -1,
+     -1,
+     -1,
+     -1,
+     -1
+    ],
+    "flags": [
+     537133056,
+     0
+    ]
+   },
+   {
+    "index": 32,
+    "id": 32,
+    "name": "LIB. LAHOREY",
+    "param": 9,
+    "bitmap": "boutiq.bmp",
+    "text": "Buy",
+    "cb": [
+     4908352,
+     4366576,
+     4909024,
+     4676176
+    ],
+    "sounds": [
+     20,
+     21,
+     19,
+     -1,
+     22,
+     23,
+     -1,
+     -1,
+     -1,
+     -1,
+     -1,
+     -1
+    ],
+    "flags": [
+     0,
+     0
+    ]
+   },
+   {
+    "index": 33,
+    "id": 33,
+    "name": "SHOOT MECA",
+    "param": 33,
+    "bitmap": "meca.BMP",
+    "text": "Meca",
+    "cb": [
+     4383648,
+     4366576,
+     4383872,
+     4676832
+    ],
+    "sounds": [
+     -1,
+     -1,
+     -1,
+     -1,
+     -1,
+     -1,
+     -1,
+     -1,
+     -1,
+     -1,
+     -1,
+     -1
+    ],
+    "flags": [
+     537133064,
+     0
+    ]
+   },
+   {
+    "index": 34,
+    "id": 34,
+    "name": "SHOOT HUMAN",
+    "param": 34,
+    "bitmap": "",
+    "text": "Shoot",
+    "cb": [
+     4383904,
+     4366576,
+     4384160,
+     4676832
+    ],
+    "sounds": [
+     -1,
+     -1,
+     -1,
+     -1,
+     -1,
+     -1,
+     -1,
+     -1,
+     -1,
+     -1,
+     -1,
+     -1
+    ],
+    "flags": [
+     537133064,
+     0
+    ]
+   },
+   {
+    "index": 35,
+    "id": 35,
+    "name": "OPTIONS",
+    "param": -1,
+    "bitmap": "",
+    "text": "Options",
+    "cb": [
+     4787536,
+     4366576,
+     4788016,
+     4676176
+    ],
+    "sounds": [
+     6,
+     7,
+     5,
+     -1,
+     -1,
+     -1,
+     -1,
+     -1,
+     -1,
+     -1,
+     -1,
+     -1
+    ],
+    "flags": [
+     0,
+     0
+    ]
+   },
+   {
+    "index": 36,
+    "id": 36,
+    "name": "HIGH-SCORE",
+    "param": -1,
+    "bitmap": "shooting.bmp",
+    "text": "HScore",
+    "cb": [
+     4905376,
+     4366576,
+     4366672,
+     4676176
+    ],
+    "sounds": [
+     -1,
+     -1,
+     -1,
+     -1,
+     -1,
+     -1,
+     -1,
+     -1,
+     -1,
+     -1,
+     -1,
+     -1
+    ],
+    "flags": [
+     537919488,
+     0
+    ]
+   }
+  ],
+  "sounds": {
+   "0": "men001",
+   "1": "men002",
+   "2": "men003",
+   "3": "pause",
+   "4": "savgrd",
+   "5": "SNK001",
+   "6": "SNK002",
+   "7": "SNK003",
+   "8": "SNK005",
+   "9": "SNK006",
+   "10": "SNK007",
+   "11": "SNK008",
+   "12": "SNK009",
+   "13": "SNK012",
+   "14": "VID001",
+   "15": "VID002",
+   "16": "achat",
+   "17": "vente",
+   "18": "SNK004",
+   "19": "arc001",
+   "20": "arc002",
+   "21": "arc003",
+   "22": "arc007",
+   "23": "arc008",
+   "24": "FS001",
+   "25": "FS002",
+   "26": "FS003",
+   "27": "asc001",
+   "28": "asc002",
+   "29": "asc003",
+   "30": "den001",
+   "31": "den002",
+   "32": "den003",
+   "33": "den004",
+   "34": "den005",
+   "35": "gan001",
+   "36": "gan002",
+   "37": "gan003",
+   "38": "gan004",
+   "39": "gan005",
+   "40": "gan006",
+   "41": "xach001",
+   "42": "xach002",
+   "43": "xach003",
+   "44": "xach004"
+  },
+  "options": [
+   {
+    "index": 0,
+    "type": 2,
+    "kind": "header",
+    "label": "Options",
+    "label_id": 33,
+    "choices": [],
+    "hooks": [
+     0,
+     0
+    ],
+    "seq": 1
+   },
+   {
+    "index": 1,
+    "type": 2,
+    "kind": "header",
+    "label": "Vidéo",
+    "label_id": 0,
+    "choices": [],
+    "hooks": [
+     0,
+     0
+    ],
+    "seq": 2
+   },
+   {
+    "index": 2,
+    "type": 4,
+    "kind": "device",
+    "label": "Résolution",
+    "label_id": 1,
+    "choices": [],
+    "hooks": [
+     4782672,
+     4782736
+    ],
+    "seq": 3
+   },
+   {
+    "index": 3,
+    "type": 0,
+    "kind": "choice",
+    "label": "Distance de clipping",
+    "label_id": 2,
+    "choices": [
+     [
+      "Très proche",
+      25
+     ],
+     [
+      "Proche",
+      50
+     ],
+     [
+      "Intermédiaire",
+      100
+     ],
+     [
+      "Loin",
+      150
+     ],
+     [
+      "Très loin",
+      200
+     ]
+    ],
+    "hooks": [
+     4782784,
+     4782864
+    ],
+    "seq": 4
+   },
+   {
+    "index": 4,
+    "type": 0,
+    "kind": "choice",
+    "label": "Affichage du ciel",
+    "label_id": 8,
+    "choices": [
+     [
+      "Non",
+      0
+     ],
+     [
+      "Oui",
+      1
+     ]
+    ],
+    "hooks": [
+     4782976,
+     4783024
+    ],
+    "seq": 5
+   },
+   {
+    "index": 5,
+    "type": 0,
+    "kind": "choice",
+    "label": "Affichage des ombres",
+    "label_id": 9,
+    "choices": [
+     [
+      "Non",
+      0
+     ],
+     [
+      "Oui",
+      1
+     ]
+    ],
+    "hooks": [
+     4783072,
+     4783120
+    ],
+    "seq": 6
+   },
+   {
+    "index": 6,
+    "type": 0,
+    "kind": "choice",
+    "label": "Niveau d'activité dans les rues",
+    "label_id": 10,
+    "choices": [
+     [
+      "Très faible",
+      0
+     ],
+     [
+      "Faible",
+      1
+     ],
+     [
+      "Intermédiaire",
+      2
+     ],
+     [
+      "Important",
+      3
+     ],
+     [
+      "Très important",
+      4
+     ]
+    ],
+    "hooks": [
+     4783168,
+     4783216
+    ],
+    "seq": 7
+   },
+   {
+    "index": 7,
+    "type": 0,
+    "kind": "choice",
+    "label": "Niveau de détail",
+    "label_id": 72,
+    "choices": [
+     [
+      "Faible",
+      0
+     ],
+     [
+      "Intermédiaire",
+      1
+     ],
+     [
+      "Important",
+      2
+     ]
+    ],
+    "hooks": [
+     4783264,
+     4783312
+    ],
+    "seq": 8
+   },
+   {
+    "index": 8,
+    "type": 4,
+    "kind": "device",
+    "label": "Accélération 3D",
+    "label_id": 67,
+    "choices": [],
+    "hooks": [
+     4783360,
+     4783584
+    ],
+    "seq": 9
+   },
+   {
+    "index": 9,
+    "type": 2,
+    "kind": "header",
+    "label": "Audio",
+    "label_id": 16,
+    "choices": [],
+    "hooks": [
+     0,
+     0
+    ],
+    "seq": 10
+   },
+   {
+    "index": 10,
+    "type": 1,
+    "kind": "slider",
+    "label": "Volume des dialogues",
+    "label_id": 17,
+    "choices": [],
+    "hooks": [
+     4783712,
+     4783808
+    ],
+    "seq": 11
+   },
+   {
+    "index": 11,
+    "type": 1,
+    "kind": "slider",
+    "label": "Volume des musiques",
+    "label_id": 18,
+    "choices": [],
+    "hooks": [
+     4783920,
+     4784000
+    ],
+    "seq": 12
+   },
+   {
+    "index": 12,
+    "type": 1,
+    "kind": "slider",
+    "label": "Volume des effets sonores",
+    "label_id": 19,
+    "choices": [],
+    "hooks": [
+     4784112,
+     4784192
+    ],
+    "seq": 13
+   },
+   {
+    "index": 13,
+    "type": 0,
+    "kind": "choice",
+    "label": "Son 3D",
+    "label_id": 20,
+    "choices": [
+     [
+      "Non",
+      0
+     ],
+     [
+      "Oui",
+      1
+     ]
+    ],
+    "hooks": [
+     4784304,
+     4784400
+    ],
+    "seq": 14
+   },
+   {
+    "index": 14,
+    "type": 2,
+    "kind": "header",
+    "label": "Options",
+    "label_id": 21,
+    "choices": [],
+    "hooks": [
+     0,
+     0
+    ],
+    "seq": 15
+   },
+   {
+    "index": 15,
+    "type": 0,
+    "kind": "choice",
+    "label": "Sous-titres",
+    "label_id": 25,
+    "choices": [
+     [
+      "Non",
+      0
+     ],
+     [
+      "Oui",
+      1
+     ]
+    ],
+    "hooks": [
+     4784544,
+     4784592
+    ],
+    "seq": 16
+   },
+   {
+    "index": 16,
+    "type": 0,
+    "kind": "choice",
+    "label": "Difficulté des combats",
+    "label_id": 26,
+    "choices": [
+     [
+      "Facile",
+      0
+     ],
+     [
+      "Intermédiaire",
+      1
+     ],
+     [
+      "Difficile",
+      2
+     ]
+    ],
+    "hooks": [
+     4784640,
+     4784688
+    ],
+    "seq": 17
+   },
+   {
+    "index": 17,
+    "type": 0,
+    "kind": "choice",
+    "label": "Difficulté du shoot",
+    "label_id": 27,
+    "choices": [
+     [
+      "Facile",
+      0
+     ],
+     [
+      "Intermédiaire",
+      1
+     ],
+     [
+      "Difficile",
+      2
+     ]
+    ],
+    "hooks": [
+     4784736,
+     4784784
+    ],
+    "seq": 18
+   },
+   {
+    "index": 18,
+    "type": 0,
+    "kind": "choice",
+    "label": "Caméra de combat",
+    "label_id": 22,
+    "choices": [
+     [
+      "Vue de dos",
+      0
+     ],
+     [
+      "Vue de côté",
+      1
+     ]
+    ],
+    "hooks": [
+     4784448,
+     4784496
+    ],
+    "seq": 19
+   },
+   {
+    "index": 19,
+    "type": 2,
+    "kind": "header",
+    "label": "Contrôles",
+    "label_id": 28,
+    "choices": [],
+    "hooks": [
+     0,
+     0
+    ],
+    "seq": 20
+   },
+   {
+    "index": 20,
+    "type": 2,
+    "kind": "header",
+    "label": "Configuration du clavier et de la souris",
+    "label_id": 77,
+    "choices": [],
+    "hooks": [
+     0,
+     0
+    ],
+    "seq": 21
+   },
+   {
+    "index": 21,
+    "type": 2,
+    "kind": "header",
+    "label": "Configuration de la manette",
+    "label_id": 78,
+    "choices": [],
+    "hooks": [
+     0,
+     0
+    ],
+    "seq": 22
+   },
+   {
+    "index": 22,
+    "type": 2,
+    "kind": "header",
+    "label": "Configuration de la souris",
+    "label_id": 69,
+    "choices": [],
+    "hooks": [
+     0,
+     0
+    ],
+    "seq": 23
+   },
+   {
+    "index": 23,
+    "type": 1,
+    "kind": "slider",
+    "label": "Sensibilité horizontale",
+    "label_id": 29,
+    "choices": [
+     [
+      null,
+      0
+     ],
+     [
+      null,
+      0
+     ]
+    ],
+    "hooks": [
+     4785024,
+     4785088
+    ],
+    "seq": 24
+   },
+   {
+    "index": 24,
+    "type": 1,
+    "kind": "slider",
+    "label": "Sensibilité verticale",
+    "label_id": 30,
+    "choices": [
+     [
+      null,
+      0
+     ],
+     [
+      null,
+      0
+     ]
+    ],
+    "hooks": [
+     4785024,
+     4785088
+    ],
+    "seq": 25
+   },
+   {
+    "index": 25,
+    "type": 0,
+    "kind": "choice",
+    "label": "Souris inversée",
+    "label_id": 31,
+    "choices": [
+     [
+      "Non",
+      0
+     ],
+     [
+      "Oui",
+      1
+     ]
+    ],
+    "hooks": [
+     4785184,
+     4785232
+    ],
+    "seq": 26
+   },
+   {
+    "index": 26,
+    "type": 2,
+    "kind": "header",
+    "label": "Configuration de la manette",
+    "label_id": 70,
+    "choices": [],
+    "hooks": [
+     0,
+     0
+    ],
+    "seq": 27
+   },
+   {
+    "index": 27,
+    "type": 0,
+    "kind": "choice",
+    "label": "Force FeedBack",
+    "label_id": 32,
+    "choices": [
+     [
+      "Non",
+      0
+     ],
+     [
+      "Oui",
+      1
+     ]
+    ],
+    "hooks": [
+     4785280,
+     4785088
+    ],
+    "seq": 28
+   },
+   {
+    "index": 28,
+    "type": 2,
+    "kind": "header",
+    "label": "Contrôles Aventure",
+    "label_id": 35,
+    "choices": [],
+    "hooks": [
+     0,
+     0
+    ],
+    "seq": 29
+   },
+   {
+    "index": 29,
+    "type": 3,
+    "kind": "keybind",
+    "label": "Avancer",
+    "label_id": 36,
+    "choices": [],
+    "hooks": [
+     4784832,
+     4784928
+    ],
+    "seq": 30
+   },
+   {
+    "index": 30,
+    "type": 3,
+    "kind": "keybind",
+    "label": "Reculer",
+    "label_id": 37,
+    "choices": [],
+    "hooks": [
+     4784832,
+     4784928
+    ],
+    "seq": 31
+   },
+   {
+    "index": 31,
+    "type": 3,
+    "kind": "keybind",
+    "label": "Tourner à gauche",
+    "label_id": 38,
+    "choices": [],
+    "hooks": [
+     4784832,
+     4784928
+    ],
+    "seq": 32
+   },
+   {
+    "index": 32,
+    "type": 3,
+    "kind": "keybind",
+    "label": "Tourner à droite",
+    "label_id": 39,
+    "choices": [],
+    "hooks": [
+     4784832,
+     4784928
+    ],
+    "seq": 33
+   },
+   {
+    "index": 33,
+    "type": 3,
+    "kind": "keybind",
+    "label": "Pas de côté / Demi-tour",
+    "label_id": 79,
+    "choices": [],
+    "hooks": [
+     4784832,
+     4784928
+    ],
+    "seq": 34
+   },
+   {
+    "index": 34,
+    "type": 3,
+    "kind": "keybind",
+    "label": "Action / Utiliser",
+    "label_id": 42,
+    "choices": [],
+    "hooks": [
+     4784832,
+     4784928
+    ],
+    "seq": 35
+   },
+   {
+    "index": 35,
+    "type": 3,
+    "kind": "keybind",
+    "label": "Annuler / Sauter",
+    "label_id": 43,
+    "choices": [],
+    "hooks": [
+     4784832,
+     4784928
+    ],
+    "seq": 36
+   },
+   {
+    "index": 36,
+    "type": 3,
+    "kind": "keybind",
+    "label": "Vue première personne",
+    "label_id": 44,
+    "choices": [],
+    "hooks": [
+     4784832,
+     4784928
+    ],
+    "seq": 37
+   },
+   {
+    "index": 37,
+    "type": 3,
+    "kind": "keybind",
+    "label": "Courir",
+    "label_id": 45,
+    "choices": [],
+    "hooks": [
+     4784832,
+     4784928
+    ],
+    "seq": 38
+   },
+   {
+    "index": 38,
+    "type": 3,
+    "kind": "keybind",
+    "label": "Ouvrir sneak",
+    "label_id": 46,
+    "choices": [],
+    "hooks": [
+     4784832,
+     4784928
+    ],
+    "seq": 39
+   },
+   {
+    "index": 39,
+    "type": 2,
+    "kind": "header",
+    "label": "Nager",
+    "label_id": 47,
+    "choices": [],
+    "hooks": [
+     0,
+     0
+    ],
+    "seq": 40
+   },
+   {
+    "index": 40,
+    "type": 3,
+    "kind": "keybind",
+    "label": "Avancer",
+    "label_id": 36,
+    "choices": [],
+    "hooks": [
+     4784832,
+     4784928
+    ],
+    "seq": 41
+   },
+   {
+    "index": 41,
+    "type": 3,
+    "kind": "keybind",
+    "label": "Reculer",
+    "label_id": 37,
+    "choices": [],
+    "hooks": [
+     4784832,
+     4784928
+    ],
+    "seq": 42
+   },
+   {
+    "index": 42,
+    "type": 3,
+    "kind": "keybind",
+    "label": "Tourner à gauche",
+    "label_id": 38,
+    "choices": [],
+    "hooks": [
+     4784832,
+     4784928
+    ],
+    "seq": 43
+   },
+   {
+    "index": 43,
+    "type": 3,
+    "kind": "keybind",
+    "label": "Tourner à droite",
+    "label_id": 39,
+    "choices": [],
+    "hooks": [
+     4784832,
+     4784928
+    ],
+    "seq": 44
+   },
+   {
+    "index": 44,
+    "type": 3,
+    "kind": "keybind",
+    "label": "Action / Utiliser",
+    "label_id": 42,
+    "choices": [],
+    "hooks": [
+     4784832,
+     4784928
+    ],
+    "seq": 45
+   },
+   {
+    "index": 45,
+    "type": 3,
+    "kind": "keybind",
+    "label": "Plonger",
+    "label_id": 48,
+    "choices": [],
+    "hooks": [
+     4784832,
+     4784928
+    ],
+    "seq": 46
+   },
+   {
+    "index": 46,
+    "type": 3,
+    "kind": "keybind",
+    "label": "Crawl",
+    "label_id": 49,
+    "choices": [],
+    "hooks": [
+     4784832,
+     4784928
+    ],
+    "seq": 47
+   },
+   {
+    "index": 47,
+    "type": 2,
+    "kind": "header",
+    "label": "Tirer",
+    "label_id": 50,
+    "choices": [],
+    "hooks": [
+     0,
+     0
+    ],
+    "seq": 48
+   },
+   {
+    "index": 48,
+    "type": 3,
+    "kind": "keybind",
+    "label": "Avancer",
+    "label_id": 36,
+    "choices": [],
+    "hooks": [
+     4784832,
+     4784928
+    ],
+    "seq": 49
+   },
+   {
+    "index": 49,
+    "type": 3,
+    "kind": "keybind",
+    "label": "Reculer",
+    "label_id": 37,
+    "choices": [],
+    "hooks": [
+     4784832,
+     4784928
+    ],
+    "seq": 50
+   },
+   {
+    "index": 50,
+    "type": 3,
+    "kind": "keybind",
+    "label": "Glisser à gauche",
+    "label_id": 40,
+    "choices": [],
+    "hooks": [
+     4784832,
+     4784928
+    ],
+    "seq": 51
+   },
+   {
+    "index": 51,
+    "type": 3,
+    "kind": "keybind",
+    "label": "Glisser à droite",
+    "label_id": 41,
+    "choices": [],
+    "hooks": [
+     4784832,
+     4784928
+    ],
+    "seq": 52
+   },
+   {
+    "index": 52,
+    "type": 3,
+    "kind": "keybind",
+    "label": "Tir",
+    "label_id": 51,
+    "choices": [],
+    "hooks": [
+     4784832,
+     4784928
+    ],
+    "seq": 53
+   },
+   {
+    "index": 53,
+    "type": 3,
+    "kind": "keybind",
+    "label": "Action / Utiliser",
+    "label_id": 42,
+    "choices": [],
+    "hooks": [
+     4784832,
+     4784928
+    ],
+    "seq": 54
+   },
+   {
+    "index": 54,
+    "type": 3,
+    "kind": "keybind",
+    "label": "Sauter",
+    "label_id": 52,
+    "choices": [],
+    "hooks": [
+     4784832,
+     4784928
+    ],
+    "seq": 55
+   },
+   {
+    "index": 55,
+    "type": 3,
+    "kind": "keybind",
+    "label": "S'accroupir",
+    "label_id": 53,
+    "choices": [],
+    "hooks": [
+     4784832,
+     4784928
+    ],
+    "seq": 56
+   },
+   {
+    "index": 56,
+    "type": 3,
+    "kind": "keybind",
+    "label": "Arme",
+    "label_id": 54,
+    "choices": [],
+    "hooks": [
+     4784832,
+     4784928
+    ],
+    "seq": 57
+   },
+   {
+    "index": 57,
+    "type": 3,
+    "kind": "keybind",
+    "label": "Tourner à gauche",
+    "label_id": 38,
+    "choices": [],
+    "hooks": [
+     4784832,
+     4784928
+    ],
+    "seq": 58
+   },
+   {
+    "index": 58,
+    "type": 3,
+    "kind": "keybind",
+    "label": "Tourner à droite",
+    "label_id": 39,
+    "choices": [],
+    "hooks": [
+     4784832,
+     4784928
+    ],
+    "seq": 59
+   },
+   {
+    "index": 59,
+    "type": 3,
+    "kind": "keybind",
+    "label": "Regarder En-Haut",
+    "label_id": 82,
+    "choices": [],
+    "hooks": [
+     4784832,
+     4784928
+    ],
+    "seq": 60
+   },
+   {
+    "index": 60,
+    "type": 3,
+    "kind": "keybind",
+    "label": "Regarder En-Bas",
+    "label_id": 83,
+    "choices": [],
+    "hooks": [
+     4784832,
+     4784928
+    ],
+    "seq": 61
+   },
+   {
+    "index": 61,
+    "type": 2,
+    "kind": "header",
+    "label": "Combat",
+    "label_id": 55,
+    "choices": [],
+    "hooks": [
+     0,
+     0
+    ],
+    "seq": 62
+   },
+   {
+    "index": 62,
+    "type": 3,
+    "kind": "keybind",
+    "label": "Avancer",
+    "label_id": 36,
+    "choices": [],
+    "hooks": [
+     4784832,
+     4784928
+    ],
+    "seq": 63
+   },
+   {
+    "index": 63,
+    "type": 3,
+    "kind": "keybind",
+    "label": "Reculer",
+    "label_id": 37,
+    "choices": [],
+    "hooks": [
+     4784832,
+     4784928
+    ],
+    "seq": 64
+   },
+   {
+    "index": 64,
+    "type": 3,
+    "kind": "keybind",
+    "label": "Glisser à gauche",
+    "label_id": 40,
+    "choices": [],
+    "hooks": [
+     4784832,
+     4784928
+    ],
+    "seq": 65
+   },
+   {
+    "index": 65,
+    "type": 3,
+    "kind": "keybind",
+    "label": "Glisser à droite",
+    "label_id": 41,
+    "choices": [],
+    "hooks": [
+     4784832,
+     4784928
+    ],
+    "seq": 66
+   },
+   {
+    "index": 66,
+    "type": 3,
+    "kind": "keybind",
+    "label": "Sauter",
+    "label_id": 52,
+    "choices": [],
+    "hooks": [
+     4784832,
+     4784928
+    ],
+    "seq": 67
+   },
+   {
+    "index": 67,
+    "type": 3,
+    "kind": "keybind",
+    "label": "S'accroupir",
+    "label_id": 53,
+    "choices": [],
+    "hooks": [
+     4784832,
+     4784928
+    ],
+    "seq": 68
+   },
+   {
+    "index": 68,
+    "type": 3,
+    "kind": "keybind",
+    "label": "Coup de poing 1",
+    "label_id": 56,
+    "choices": [],
+    "hooks": [
+     4784832,
+     4784928
+    ],
+    "seq": 69
+   },
+   {
+    "index": 69,
+    "type": 3,
+    "kind": "keybind",
+    "label": "Coup de poing 2",
+    "label_id": 57,
+    "choices": [],
+    "hooks": [
+     4784832,
+     4784928
+    ],
+    "seq": 70
+   },
+   {
+    "index": 70,
+    "type": 3,
+    "kind": "keybind",
+    "label": "Coup de pied 1",
+    "label_id": 58,
+    "choices": [],
+    "hooks": [
+     4784832,
+     4784928
+    ],
+    "seq": 71
+   },
+   {
+    "index": 71,
+    "type": 3,
+    "kind": "keybind",
+    "label": "Coup de pied 2",
+    "label_id": 59,
+    "choices": [],
+    "hooks": [
+     4784832,
+     4784928
+    ],
+    "seq": 72
+   },
+   {
+    "index": 72,
+    "type": 6,
+    "kind": "back",
+    "label": "Retour",
+    "label_id": 80,
+    "choices": [],
+    "hooks": [
+     0,
+     0
+    ],
+    "seq": 73
+   },
+   {
+    "index": 73,
+    "type": 5,
+    "kind": "defaults",
+    "label": "Revenir à la configuration par défaut",
+    "label_id": 81,
+    "choices": [],
+    "hooks": [
+     0,
+     0
+    ],
+    "seq": 0
+   }
+  ],
+  "pages": [
+   {
+    "index": 0,
+    "va": 5100496,
+    "parent": 0,
+    "builder": 4794992,
+    "leave": 4795040,
+    "live": 5100464
+   },
+   {
+    "index": 1,
+    "va": 5100600,
+    "parent": 0,
+    "builder": 4788736,
+    "leave": 4794976,
+    "live": 5100200
+   },
+   {
+    "index": 2,
+    "va": 5100704,
+    "parent": 5100496,
+    "builder": 4789232,
+    "leave": 4794976,
+    "live": 5100200
+   },
+   {
+    "index": 3,
+    "va": 5100808,
+    "parent": 5100496,
+    "builder": 4789824,
+    "leave": 4794976,
+    "live": 5100200
+   },
+   {
+    "index": 4,
+    "va": 5100912,
+    "parent": 5100496,
+    "builder": 4790288,
+    "leave": 4794976,
+    "live": 5100200
+   },
+   {
+    "index": 5,
+    "va": 5101016,
+    "parent": 5100496,
+    "builder": 4790752,
+    "leave": 4794976,
+    "live": 5100200
+   },
+   {
+    "index": 6,
+    "va": 5101120,
+    "parent": 5101016,
+    "builder": 4791216,
+    "leave": 4794976,
+    "live": 5100200
+   },
+   {
+    "index": 7,
+    "va": 5101224,
+    "parent": 5101120,
+    "builder": 4791712,
+    "leave": 4792288,
+    "live": 5100200
+   },
+   {
+    "index": 8,
+    "va": 5101328,
+    "parent": 5101120,
+    "builder": 4792320,
+    "leave": 4794976,
+    "live": 5100200
+   },
+   {
+    "index": 9,
+    "va": 5101432,
+    "parent": 5101120,
+    "builder": 4792896,
+    "leave": 4794976,
+    "live": 5100200
+   },
+   {
+    "index": 10,
+    "va": 5101536,
+    "parent": 5101120,
+    "builder": 4793472,
+    "leave": 4794976,
+    "live": 5100200
+   },
+   {
+    "index": 11,
+    "va": 5101640,
+    "parent": 5101016,
+    "builder": 4794048,
+    "leave": 4794976,
+    "live": 5100200
+   },
+   {
+    "index": 12,
+    "va": 5101744,
+    "parent": 5101016,
+    "builder": 4794512,
+    "leave": 4794976,
+    "live": 5100200
+   }
+  ],
+  "oscillators": [
+   {
+    "index": 0,
+    "id": 0,
+    "period": 5000,
+    "flags": 0,
+    "lo": -1,
+    "hi": -1,
+    "tick": 4372176
+   },
+   {
+    "index": 1,
+    "id": 1,
+    "period": 500,
+    "flags": 3,
+    "lo": -1,
+    "hi": -1,
+    "tick": 4372176
+   },
+   {
+    "index": 2,
+    "id": 2,
+    "period": 1000,
+    "flags": 2,
+    "lo": 45,
+    "hi": 200,
+    "tick": 4372224
+   },
+   {
+    "index": 3,
+    "id": 3,
+    "period": 500,
+    "flags": 2,
+    "lo": 230,
+    "hi": 235,
+    "tick": 4372224
+   },
+   {
+    "index": 4,
+    "id": 4,
+    "period": 5000,
+    "flags": 2,
+    "lo": -1,
+    "hi": -1,
+    "tick": 4372336
+   },
+   {
+    "index": 5,
+    "id": 5,
+    "period": 0,
+    "flags": 0,
+    "lo": -1,
+    "hi": -1,
+    "tick": 4372176
+   },
+   {
+    "index": 6,
+    "id": 6,
+    "period": 0,
+    "flags": 0,
+    "lo": -1,
+    "hi": -1,
+    "tick": 4372176
+   },
+   {
+    "index": 7,
+    "id": 7,
+    "period": 0,
+    "flags": 0,
+    "lo": -1,
+    "hi": -1,
+    "tick": 4372176
+   }
+  ],
+  "fonts": [
+   {
+    "index": 0,
+    "id": 73,
+    "letter": "I",
+    "name": "MENUINTR",
+    "kern": 2,
+    "default_advance": 15,
+    "height": 36
+   },
+   {
+    "index": 1,
+    "id": 77,
+    "letter": "M",
+    "name": "MENUSAVE",
+    "kern": 1,
+    "default_advance": 8,
+    "height": 17
+   },
+   {
+    "index": 2,
+    "id": 68,
+    "letter": "D",
+    "name": "DIALOGUE",
+    "kern": 1,
+    "default_advance": 6,
+    "height": 17
+   },
+   {
+    "index": 3,
+    "id": 82,
+    "letter": "R",
+    "name": "DIALSELE",
+    "kern": -1,
+    "default_advance": 6,
+    "height": 17
+   },
+   {
+    "index": 4,
+    "id": 80,
+    "letter": "P",
+    "name": "PARCHEMI",
+    "kern": 1,
+    "default_advance": 6,
+    "height": 17
+   },
+   {
+    "index": 5,
+    "id": 67,
+    "letter": "C",
+    "name": "COMPUTER",
+    "kern": 0,
+    "default_advance": 6,
+    "height": 14
+   },
+   {
+    "index": 6,
+    "id": 83,
+    "letter": "S",
+    "name": "SNEAK",
+    "kern": 1,
+    "default_advance": 6,
+    "height": 20
+   },
+   {
+    "index": 7,
+    "id": 74,
+    "letter": "J",
+    "name": "JOURNAL",
+    "kern": 1,
+    "default_advance": 6,
+    "height": 17
+   },
+   {
+    "index": 8,
+    "id": 86,
+    "letter": "V",
+    "name": "VOIXOFF",
+    "kern": 1,
+    "default_advance": 6,
+    "height": 23
+   },
+   {
+    "index": 9,
+    "id": 49,
+    "letter": "1",
+    "name": "GENERIC1",
+    "kern": 2,
+    "default_advance": 6,
+    "height": 12
+   },
+   {
+    "index": 10,
+    "id": 50,
+    "letter": "2",
+    "name": "GENERIC2",
+    "kern": 3,
+    "default_advance": 6,
+    "height": 18
+   },
+   {
+    "index": 11,
+    "id": 51,
+    "letter": "3",
+    "name": "GENERIC3",
+    "kern": 3,
+    "default_advance": 6,
+    "height": 24
+   },
+   {
+    "index": 12,
+    "id": 76,
+    "letter": "L",
+    "name": "SMALL",
+    "kern": 0,
+    "default_advance": 6,
+    "height": 12
+   }
+  ]
+ }
+}

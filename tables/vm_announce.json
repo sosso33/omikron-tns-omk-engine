@@ -1,0 +1,388 @@
+{
+ "_": "Lifted from gamedata/Runtime 2.exe by tools/exetables.py - do not hand-edit; run the tool. These tables are compiled into the executable and are NOT in the shipped gamedata/ data, which is why a replica engine needs this file.",
+ "table": "vm_announce",
+ "documented_in": "docs/SCRIPT_VM.md",
+ "about": "Which `IAM\\*.TAG` domain each VM handler announces its operand to.\n\nRead from the assembly by `tools/vm_announce.py`: every announcing handler\npasses a section name to `Dbg_LogTagged` (sub_40EC70), and that call sits\nbefore the debug window's `if (hWnd)` - which is what makes the golden\ntraces possible at all, since the engine narrates itself through\n`GetPrivateProfileStringA` whether or not anything is listening.\n\n`field` is WHICH operand is announced, and it is not always the first:\n`scene.load(area, scene)` announces the **scene**, `inventory.add(list,\nobject)` the **object**. 49 handlers announce; every other opcode is\nsilent, and a reader must treat that as silence rather than as a default.\n\nEmitted as data because the alternative is a hand-written map, and a\nhand-written one was wrong three ways within an hour of being written:\n`scx.play` (57) and `music.play` (103) announce **nothing**, and\n`scx.play.actor.wait` (60) announces CHARACTERS - the actor - not the\nobject. Deriving it removes the guess.",
+ "checks": [
+  {
+   "what": "announcing handlers",
+   "got": 49,
+   "want": 49
+  },
+  {
+   "what": "...where the assembly and the field map agree",
+   "got": 49,
+   "want": 49
+  },
+  {
+   "what": "opcodes that announce nothing",
+   "got": 104,
+   "want": 104
+  },
+  {
+   "what": "scx.play (57) is silent",
+   "got": true,
+   "want": true
+  },
+  {
+   "what": "music.play (103) is silent",
+   "got": true,
+   "want": true
+  },
+  {
+   "what": "scx.play.actor.wait (60) announces",
+   "got": "CHARACTERS",
+   "want": "CHARACTERS"
+  },
+  {
+   "what": "scene.load (71) announces its SECOND field",
+   "got": 1,
+   "want": 1
+  }
+ ],
+ "rows": [
+  {
+   "op": 8,
+   "name": "push.i16",
+   "domain": "VALUES",
+   "field": 0,
+   "agrees": true
+  },
+  {
+   "op": 10,
+   "name": "push.var",
+   "domain": "VARIABLES",
+   "field": 0,
+   "agrees": true
+  },
+  {
+   "op": 12,
+   "name": "set.var",
+   "domain": "VARIABLES",
+   "field": 0,
+   "agrees": true
+  },
+  {
+   "op": 13,
+   "name": "set.var2",
+   "domain": "VARIABLES",
+   "field": 0,
+   "agrees": true
+  },
+  {
+   "op": 14,
+   "name": "set.var.i8",
+   "domain": "VARIABLES",
+   "field": 0,
+   "agrees": true
+  },
+  {
+   "op": 15,
+   "name": "set.var.i16",
+   "domain": "VARIABLES",
+   "field": 0,
+   "agrees": true
+  },
+  {
+   "op": 16,
+   "name": "set.var.i32",
+   "domain": "VARIABLES",
+   "field": 0,
+   "agrees": true
+  },
+  {
+   "op": 18,
+   "name": "set.var.pop",
+   "domain": "VARIABLES",
+   "field": 0,
+   "agrees": true
+  },
+  {
+   "op": 19,
+   "name": "var.add",
+   "domain": "VARIABLES",
+   "field": 0,
+   "agrees": true
+  },
+  {
+   "op": 20,
+   "name": "var.sub",
+   "domain": "VARIABLES",
+   "field": 0,
+   "agrees": true
+  },
+  {
+   "op": 21,
+   "name": "var.mul",
+   "domain": "VARIABLES",
+   "field": 0,
+   "agrees": true
+  },
+  {
+   "op": 22,
+   "name": "var.div",
+   "domain": "VARIABLES",
+   "field": 0,
+   "agrees": true
+  },
+  {
+   "op": 23,
+   "name": "var.and",
+   "domain": "VARIABLES",
+   "field": 0,
+   "agrees": true
+  },
+  {
+   "op": 24,
+   "name": "var.or",
+   "domain": "VARIABLES",
+   "field": 0,
+   "agrees": true
+  },
+  {
+   "op": 45,
+   "name": "area.preload",
+   "domain": "AREAS",
+   "field": 0,
+   "agrees": true
+  },
+  {
+   "op": 47,
+   "name": "area.goto",
+   "domain": "AREAS",
+   "field": 0,
+   "agrees": true
+  },
+  {
+   "op": 48,
+   "name": "area.arrive",
+   "domain": "AREAS",
+   "field": 0,
+   "agrees": true
+  },
+  {
+   "op": 49,
+   "name": "var.set.has_object",
+   "domain": "OBJECTS",
+   "field": 1,
+   "agrees": true
+  },
+  {
+   "op": 50,
+   "name": "inventory.add",
+   "domain": "OBJECTS",
+   "field": 1,
+   "agrees": true
+  },
+  {
+   "op": 51,
+   "name": "inventory.remove",
+   "domain": "OBJECTS",
+   "field": 1,
+   "agrees": true
+  },
+  {
+   "op": 52,
+   "name": "inventory.remove_all",
+   "domain": "OBJECTS",
+   "field": 1,
+   "agrees": true
+  },
+  {
+   "op": 53,
+   "name": null,
+   "domain": "CAMERAS",
+   "field": 0,
+   "agrees": true
+  },
+  {
+   "op": 56,
+   "name": "player.become",
+   "domain": "CHARACTERS",
+   "field": 0,
+   "agrees": true
+  },
+  {
+   "op": 59,
+   "name": "scx.play.actor",
+   "domain": "CHARACTERS",
+   "field": 0,
+   "agrees": true
+  },
+  {
+   "op": 60,
+   "name": "scx.play.actor.wait",
+   "domain": "CHARACTERS",
+   "field": 0,
+   "agrees": true
+  },
+  {
+   "op": 61,
+   "name": "dialog.start",
+   "domain": "DIALOGS",
+   "field": 0,
+   "agrees": true
+  },
+  {
+   "op": 64,
+   "name": "zone.enable",
+   "domain": "ZONES",
+   "field": 0,
+   "agrees": true
+  },
+  {
+   "op": 65,
+   "name": "zone.disable",
+   "domain": "ZONES",
+   "field": 0,
+   "agrees": true
+  },
+  {
+   "op": 66,
+   "name": "object.hold",
+   "domain": "OBJECTS",
+   "field": 0,
+   "agrees": true
+  },
+  {
+   "op": 67,
+   "name": "object.hold.actor",
+   "domain": "OBJECTS",
+   "field": 1,
+   "agrees": true
+  },
+  {
+   "op": 71,
+   "name": "scene.load",
+   "domain": "SCENES",
+   "field": 1,
+   "agrees": true
+  },
+  {
+   "op": 73,
+   "name": "actor.goto_address",
+   "domain": "ADDRESSES",
+   "field": 0,
+   "agrees": true
+  },
+  {
+   "op": 76,
+   "name": "object.show",
+   "domain": "OBJECTS",
+   "field": 0,
+   "agrees": true
+  },
+  {
+   "op": 77,
+   "name": "object.hide",
+   "domain": "OBJECTS",
+   "field": 0,
+   "agrees": true
+  },
+  {
+   "op": 78,
+   "name": "character.show",
+   "domain": "CHARACTERS",
+   "field": 0,
+   "agrees": true
+  },
+  {
+   "op": 79,
+   "name": "character.hide",
+   "domain": "CHARACTERS",
+   "field": 0,
+   "agrees": true
+  },
+  {
+   "op": 82,
+   "name": "shoot.actor.enter",
+   "domain": "CHARACTERS",
+   "field": 0,
+   "agrees": true
+  },
+  {
+   "op": 84,
+   "name": "shoot.actor.action",
+   "domain": "CHARACTERS",
+   "field": 0,
+   "agrees": true
+  },
+  {
+   "op": 87,
+   "name": "address.enable",
+   "domain": "ADDRESSES",
+   "field": 0,
+   "agrees": true
+  },
+  {
+   "op": 88,
+   "name": "address.disable",
+   "domain": "ADDRESSES",
+   "field": 0,
+   "agrees": true
+  },
+  {
+   "op": 92,
+   "name": "media.play",
+   "domain": "OBJECTS",
+   "field": 0,
+   "agrees": true
+  },
+  {
+   "op": 93,
+   "name": "actor.stat.set",
+   "domain": "VARIABLES",
+   "field": 2,
+   "agrees": true
+  },
+  {
+   "op": 95,
+   "name": "camera.set",
+   "domain": "CAMERAS",
+   "field": 0,
+   "agrees": true
+  },
+  {
+   "op": 96,
+   "name": "camera.set.wait",
+   "domain": "CAMERAS",
+   "field": 0,
+   "agrees": true
+  },
+  {
+   "op": 126,
+   "name": "camera.set.at_address",
+   "domain": "CAMERAS",
+   "field": 0,
+   "agrees": true
+  },
+  {
+   "op": 138,
+   "name": "character.look_at_player",
+   "domain": "CHARACTERS",
+   "field": 0,
+   "agrees": true
+  },
+  {
+   "op": 139,
+   "name": "character.look_away",
+   "domain": "CHARACTERS",
+   "field": 0,
+   "agrees": true
+  },
+  {
+   "op": 143,
+   "name": null,
+   "domain": "OBJECTS",
+   "field": 0,
+   "agrees": true
+  },
+  {
+   "op": 144,
+   "name": "morph.play",
+   "domain": "CHARACTERS",
+   "field": 0,
+   "agrees": true
+  }
+ ]
+}

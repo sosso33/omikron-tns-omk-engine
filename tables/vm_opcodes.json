@@ -1,0 +1,1421 @@
+{
+ "_": "Lifted from gamedata/Runtime 2.exe by tools/exetables.py - do not hand-edit; run the tool. These tables are compiled into the executable and are NOT in the shipped gamedata/ data, which is why a replica engine needs this file.",
+ "table": "vm_opcodes",
+ "documented_in": "docs/SCRIPT_VM.md",
+ "about": "The 153-entry VM dispatch table at 0x004C0140, 8 bytes an entry.\n\n`handler` and `operands` are the table's own two dwords.  `length` is what\na decoder must actually use: **12 of the table's operand counts are\nwrong**, recovered from the handlers' own assembly and corpus-confirmed\n(`dialog_disasm.LEN_FIX`), and a port that trusts the table instead will\ndesynchronise on the world scripts.  The disagreements are kept visible in\n`table_says` rather than silently overwritten.\n\n`tag` is the `IAM\\*.TAG` section the handler announces its operand to —\nwhich is how most of the unnamed opcodes are identified at all — and\n`name` the mnemonic where one has been established.",
+ "checks": [
+  {
+   "what": "entries",
+   "got": 153,
+   "want": 153
+  },
+  {
+   "what": "handlers agreeing with clean/_vmsummary.json",
+   "got": 152,
+   "want": 152
+  },
+  {
+   "what": "opcodes that JSON left unbound and the image supplies",
+   "got": [
+    2
+   ],
+   "want": [
+    2
+   ]
+  },
+  {
+   "what": "...and none of them is null in the image",
+   "got": true,
+   "want": true
+  },
+  {
+   "what": "lengths corrected against the table",
+   "got": 21,
+   "want": 21
+  },
+  {
+   "what": "named",
+   "got": 129,
+   "want": 129
+  }
+ ],
+ "rows": [
+  {
+   "op": 0,
+   "handler": "0x00401B00",
+   "length": 0,
+   "table_says": 0,
+   "corrected": false,
+   "name": "dbg.dump_ctx",
+   "tag": null
+  },
+  {
+   "op": 1,
+   "handler": "0x00401B40",
+   "length": 0,
+   "table_says": 0,
+   "corrected": false,
+   "name": "dbg.dump_code",
+   "tag": null
+  },
+  {
+   "op": 2,
+   "handler": "0x00401B80",
+   "length": 0,
+   "table_says": 0,
+   "corrected": false,
+   "name": "nop",
+   "tag": null
+  },
+  {
+   "op": 3,
+   "handler": "0x00401B90",
+   "length": 0,
+   "table_says": 0,
+   "corrected": false,
+   "name": "end",
+   "tag": null
+  },
+  {
+   "op": 4,
+   "handler": "0x00401C50",
+   "length": 2,
+   "table_says": 2,
+   "corrected": false,
+   "name": "jmp",
+   "tag": null
+  },
+  {
+   "op": 5,
+   "handler": "0x00401C90",
+   "length": 2,
+   "table_says": 2,
+   "corrected": false,
+   "name": "jmp_if_true",
+   "tag": null
+  },
+  {
+   "op": 6,
+   "handler": "0x00401CE0",
+   "length": 2,
+   "table_says": 2,
+   "corrected": false,
+   "name": "jmp_if_false",
+   "tag": null
+  },
+  {
+   "op": 7,
+   "handler": "0x00401D30",
+   "length": 1,
+   "table_says": 1,
+   "corrected": false,
+   "name": "push.i8",
+   "tag": null
+  },
+  {
+   "op": 8,
+   "handler": "0x00401D70",
+   "length": 2,
+   "table_says": 2,
+   "corrected": false,
+   "name": "push.i16",
+   "tag": null
+  },
+  {
+   "op": 9,
+   "handler": "0x00401DD0",
+   "length": 4,
+   "table_says": 4,
+   "corrected": false,
+   "name": "push.i32",
+   "tag": null
+  },
+  {
+   "op": 10,
+   "handler": "0x00401E30",
+   "length": 2,
+   "table_says": 2,
+   "corrected": false,
+   "name": "push.var",
+   "tag": "VARIABLES"
+  },
+  {
+   "op": 11,
+   "handler": "0x00401EA0",
+   "length": 0,
+   "table_says": 0,
+   "corrected": false,
+   "name": "drop",
+   "tag": null
+  },
+  {
+   "op": 12,
+   "handler": "0x00401EB0",
+   "length": 2,
+   "table_says": 2,
+   "corrected": false,
+   "name": "set.var",
+   "tag": "VARIABLES"
+  },
+  {
+   "op": 13,
+   "handler": "0x00401F10",
+   "length": 2,
+   "table_says": 2,
+   "corrected": false,
+   "name": "set.var2",
+   "tag": "VARIABLES"
+  },
+  {
+   "op": 14,
+   "handler": "0x00401F70",
+   "length": 3,
+   "table_says": 3,
+   "corrected": false,
+   "name": "set.var.i8",
+   "tag": "VARIABLES"
+  },
+  {
+   "op": 15,
+   "handler": "0x00401FE0",
+   "length": 4,
+   "table_says": 4,
+   "corrected": false,
+   "name": "set.var.i16",
+   "tag": "VARIABLES"
+  },
+  {
+   "op": 16,
+   "handler": "0x00402070",
+   "length": 6,
+   "table_says": 5,
+   "corrected": true,
+   "name": "set.var.i32",
+   "tag": "VARIABLES"
+  },
+  {
+   "op": 17,
+   "handler": "0x00402110",
+   "length": 4,
+   "table_says": 2,
+   "corrected": true,
+   "name": "set.var.var",
+   "tag": null
+  },
+  {
+   "op": 18,
+   "handler": "0x00402190",
+   "length": 2,
+   "table_says": 2,
+   "corrected": false,
+   "name": "set.var.pop",
+   "tag": "VARIABLES"
+  },
+  {
+   "op": 19,
+   "handler": "0x00402210",
+   "length": 2,
+   "table_says": 2,
+   "corrected": false,
+   "name": "var.add",
+   "tag": "VARIABLES"
+  },
+  {
+   "op": 20,
+   "handler": "0x00402290",
+   "length": 2,
+   "table_says": 2,
+   "corrected": false,
+   "name": "var.sub",
+   "tag": "VARIABLES"
+  },
+  {
+   "op": 21,
+   "handler": "0x00402310",
+   "length": 2,
+   "table_says": 2,
+   "corrected": false,
+   "name": "var.mul",
+   "tag": "VARIABLES"
+  },
+  {
+   "op": 22,
+   "handler": "0x00402390",
+   "length": 2,
+   "table_says": 2,
+   "corrected": false,
+   "name": "var.div",
+   "tag": "VARIABLES"
+  },
+  {
+   "op": 23,
+   "handler": "0x00402410",
+   "length": 2,
+   "table_says": 2,
+   "corrected": false,
+   "name": "var.and",
+   "tag": "VARIABLES"
+  },
+  {
+   "op": 24,
+   "handler": "0x00402490",
+   "length": 2,
+   "table_says": 2,
+   "corrected": false,
+   "name": "var.or",
+   "tag": "VARIABLES"
+  },
+  {
+   "op": 25,
+   "handler": "0x00402510",
+   "length": 0,
+   "table_says": 0,
+   "corrected": false,
+   "name": "cmp.eq",
+   "tag": null
+  },
+  {
+   "op": 26,
+   "handler": "0x00402550",
+   "length": 0,
+   "table_says": 0,
+   "corrected": false,
+   "name": "cmp.lt",
+   "tag": null
+  },
+  {
+   "op": 27,
+   "handler": "0x00402590",
+   "length": 0,
+   "table_says": 0,
+   "corrected": false,
+   "name": "cmp.gt",
+   "tag": null
+  },
+  {
+   "op": 28,
+   "handler": "0x004025D0",
+   "length": 0,
+   "table_says": 0,
+   "corrected": false,
+   "name": "cmp.le",
+   "tag": null
+  },
+  {
+   "op": 29,
+   "handler": "0x00402610",
+   "length": 0,
+   "table_says": 0,
+   "corrected": false,
+   "name": "cmp.ge",
+   "tag": null
+  },
+  {
+   "op": 30,
+   "handler": "0x00402650",
+   "length": 0,
+   "table_says": 0,
+   "corrected": false,
+   "name": "cmp.ne",
+   "tag": null
+  },
+  {
+   "op": 31,
+   "handler": "0x00402690",
+   "length": 0,
+   "table_says": 0,
+   "corrected": false,
+   "name": "add",
+   "tag": null
+  },
+  {
+   "op": 32,
+   "handler": "0x004026D0",
+   "length": 0,
+   "table_says": 0,
+   "corrected": false,
+   "name": "sub",
+   "tag": null
+  },
+  {
+   "op": 33,
+   "handler": "0x00402710",
+   "length": 0,
+   "table_says": 0,
+   "corrected": false,
+   "name": "mul",
+   "tag": null
+  },
+  {
+   "op": 34,
+   "handler": "0x00402750",
+   "length": 0,
+   "table_says": 0,
+   "corrected": false,
+   "name": "div",
+   "tag": null
+  },
+  {
+   "op": 35,
+   "handler": "0x00402790",
+   "length": 0,
+   "table_says": 0,
+   "corrected": false,
+   "name": "bitand",
+   "tag": null
+  },
+  {
+   "op": 36,
+   "handler": "0x004027D0",
+   "length": 0,
+   "table_says": 0,
+   "corrected": false,
+   "name": "bitor",
+   "tag": null
+  },
+  {
+   "op": 37,
+   "handler": "0x00402810",
+   "length": 0,
+   "table_says": 0,
+   "corrected": false,
+   "name": "and",
+   "tag": null
+  },
+  {
+   "op": 38,
+   "handler": "0x00402860",
+   "length": 0,
+   "table_says": 0,
+   "corrected": false,
+   "name": "or",
+   "tag": null
+  },
+  {
+   "op": 39,
+   "handler": "0x004028B0",
+   "length": 0,
+   "table_says": 0,
+   "corrected": false,
+   "name": "neg",
+   "tag": null
+  },
+  {
+   "op": 40,
+   "handler": "0x004028E0",
+   "length": 0,
+   "table_says": 0,
+   "corrected": false,
+   "name": "not",
+   "tag": null
+  },
+  {
+   "op": 41,
+   "handler": "0x00402910",
+   "length": 0,
+   "table_says": 0,
+   "corrected": false,
+   "name": "bitnot",
+   "tag": null
+  },
+  {
+   "op": 42,
+   "handler": "0x00402940",
+   "length": 3,
+   "table_says": 0,
+   "corrected": true,
+   "name": "case",
+   "tag": null
+  },
+  {
+   "op": 43,
+   "handler": "0x004029A0",
+   "length": 4,
+   "table_says": 0,
+   "corrected": true,
+   "name": "case.i16",
+   "tag": null
+  },
+  {
+   "op": 44,
+   "handler": "0x00402A30",
+   "length": 6,
+   "table_says": 0,
+   "corrected": true,
+   "name": "case.i32",
+   "tag": null
+  },
+  {
+   "op": 45,
+   "handler": "0x00402AB0",
+   "length": 2,
+   "table_says": 2,
+   "corrected": false,
+   "name": "area.preload",
+   "tag": "AREAS"
+  },
+  {
+   "op": 46,
+   "handler": "0x00402C30",
+   "length": 4,
+   "table_says": 4,
+   "corrected": false,
+   "name": "scx.play.player.wait",
+   "tag": null
+  },
+  {
+   "op": 47,
+   "handler": "0x00402D20",
+   "length": 6,
+   "table_says": 6,
+   "corrected": false,
+   "name": "area.goto",
+   "tag": "AREAS"
+  },
+  {
+   "op": 48,
+   "handler": "0x00402E10",
+   "length": 2,
+   "table_says": 2,
+   "corrected": false,
+   "name": "area.arrive",
+   "tag": "AREAS"
+  },
+  {
+   "op": 49,
+   "handler": "0x0040A440",
+   "length": 6,
+   "table_says": 6,
+   "corrected": false,
+   "name": "var.set.has_object",
+   "tag": "OBJECTS"
+  },
+  {
+   "op": 50,
+   "handler": "0x0040A4D0",
+   "length": 4,
+   "table_says": 4,
+   "corrected": false,
+   "name": "inventory.add",
+   "tag": "OBJECTS"
+  },
+  {
+   "op": 51,
+   "handler": "0x0040A5A0",
+   "length": 4,
+   "table_says": 4,
+   "corrected": false,
+   "name": "inventory.remove",
+   "tag": "OBJECTS"
+  },
+  {
+   "op": 52,
+   "handler": "0x0040A6A0",
+   "length": 4,
+   "table_says": 4,
+   "corrected": false,
+   "name": "inventory.remove_all",
+   "tag": "OBJECTS"
+  },
+  {
+   "op": 53,
+   "handler": "0x00402E80",
+   "length": 2,
+   "table_says": 2,
+   "corrected": false,
+   "name": null,
+   "tag": "CAMERAS"
+  },
+  {
+   "op": 54,
+   "handler": "0x00402ED0",
+   "length": 0,
+   "table_says": 0,
+   "corrected": false,
+   "name": "camera.follow_player",
+   "tag": null
+  },
+  {
+   "op": 55,
+   "handler": "0x00402EF0",
+   "length": 2,
+   "table_says": 2,
+   "corrected": false,
+   "name": null,
+   "tag": null
+  },
+  {
+   "op": 56,
+   "handler": "0x00402F60",
+   "length": 2,
+   "table_says": 2,
+   "corrected": false,
+   "name": "player.become",
+   "tag": "CHARACTERS"
+  },
+  {
+   "op": 57,
+   "handler": "0x004030E0",
+   "length": 6,
+   "table_says": 4,
+   "corrected": true,
+   "name": "scx.play",
+   "tag": null
+  },
+  {
+   "op": 58,
+   "handler": "0x004031E0",
+   "length": 6,
+   "table_says": 4,
+   "corrected": true,
+   "name": "scx.play.wait",
+   "tag": null
+  },
+  {
+   "op": 59,
+   "handler": "0x00403300",
+   "length": 6,
+   "table_says": 6,
+   "corrected": false,
+   "name": "scx.play.actor",
+   "tag": "CHARACTERS"
+  },
+  {
+   "op": 60,
+   "handler": "0x00403430",
+   "length": 6,
+   "table_says": 6,
+   "corrected": false,
+   "name": "scx.play.actor.wait",
+   "tag": "CHARACTERS"
+  },
+  {
+   "op": 61,
+   "handler": "0x00403560",
+   "length": 2,
+   "table_says": 2,
+   "corrected": false,
+   "name": "dialog.start",
+   "tag": "DIALOGS"
+  },
+  {
+   "op": 62,
+   "handler": "0x004035D0",
+   "length": 6,
+   "table_says": 4,
+   "corrected": true,
+   "name": "fight.begin",
+   "tag": null
+  },
+  {
+   "op": 63,
+   "handler": "0x00403730",
+   "length": 2,
+   "table_says": 2,
+   "corrected": false,
+   "name": "player.move",
+   "tag": null
+  },
+  {
+   "op": 64,
+   "handler": "0x00403780",
+   "length": 2,
+   "table_says": 2,
+   "corrected": false,
+   "name": "zone.enable",
+   "tag": "ZONES"
+  },
+  {
+   "op": 65,
+   "handler": "0x004037F0",
+   "length": 2,
+   "table_says": 2,
+   "corrected": false,
+   "name": "zone.disable",
+   "tag": "ZONES"
+  },
+  {
+   "op": 66,
+   "handler": "0x0040A910",
+   "length": 2,
+   "table_says": 2,
+   "corrected": false,
+   "name": "object.hold",
+   "tag": "OBJECTS"
+  },
+  {
+   "op": 67,
+   "handler": "0x0040A9D0",
+   "length": 4,
+   "table_says": 4,
+   "corrected": false,
+   "name": "object.hold.actor",
+   "tag": "OBJECTS"
+  },
+  {
+   "op": 68,
+   "handler": "0x0040AAF0",
+   "length": 0,
+   "table_says": 0,
+   "corrected": false,
+   "name": "object.release",
+   "tag": null
+  },
+  {
+   "op": 69,
+   "handler": "0x0040AC20",
+   "length": 2,
+   "table_says": 2,
+   "corrected": false,
+   "name": "object.release.actor",
+   "tag": null
+  },
+  {
+   "op": 70,
+   "handler": "0x00403860",
+   "length": 6,
+   "table_says": 6,
+   "corrected": false,
+   "name": "ui.open",
+   "tag": null
+  },
+  {
+   "op": 71,
+   "handler": "0x00403950",
+   "length": 4,
+   "table_says": 4,
+   "corrected": false,
+   "name": "scene.load",
+   "tag": "SCENES"
+  },
+  {
+   "op": 72,
+   "handler": "0x00403AF0",
+   "length": 2,
+   "table_says": 2,
+   "corrected": false,
+   "name": "scene.unload",
+   "tag": null
+  },
+  {
+   "op": 73,
+   "handler": "0x00403C30",
+   "length": 2,
+   "table_says": 2,
+   "corrected": false,
+   "name": "actor.goto_address",
+   "tag": "ADDRESSES"
+  },
+  {
+   "op": 74,
+   "handler": "0x00403CA0",
+   "length": 0,
+   "table_says": 0,
+   "corrected": false,
+   "name": null,
+   "tag": null
+  },
+  {
+   "op": 75,
+   "handler": "0x0040AC90",
+   "length": 2,
+   "table_says": 2,
+   "corrected": false,
+   "name": "var.set.used_object",
+   "tag": null
+  },
+  {
+   "op": 76,
+   "handler": "0x0040ACF0",
+   "length": 2,
+   "table_says": 2,
+   "corrected": false,
+   "name": "object.show",
+   "tag": "OBJECTS"
+  },
+  {
+   "op": 77,
+   "handler": "0x0040ADD0",
+   "length": 2,
+   "table_says": 2,
+   "corrected": false,
+   "name": "object.hide",
+   "tag": "OBJECTS"
+  },
+  {
+   "op": 78,
+   "handler": "0x00403CB0",
+   "length": 4,
+   "table_says": 2,
+   "corrected": true,
+   "name": "character.show",
+   "tag": "CHARACTERS"
+  },
+  {
+   "op": 79,
+   "handler": "0x00403DD0",
+   "length": 2,
+   "table_says": 2,
+   "corrected": false,
+   "name": "character.hide",
+   "tag": "CHARACTERS"
+  },
+  {
+   "op": 80,
+   "handler": "0x00403E80",
+   "length": 2,
+   "table_says": 0,
+   "corrected": true,
+   "name": "shoot.begin",
+   "tag": null
+  },
+  {
+   "op": 81,
+   "handler": "0x00403F10",
+   "length": 2,
+   "table_says": 2,
+   "corrected": false,
+   "name": "shoot.end",
+   "tag": null
+  },
+  {
+   "op": 82,
+   "handler": "0x00403FB0",
+   "length": 2,
+   "table_says": 2,
+   "corrected": false,
+   "name": "shoot.actor.enter",
+   "tag": "CHARACTERS"
+  },
+  {
+   "op": 83,
+   "handler": "0x00404030",
+   "length": 2,
+   "table_says": 2,
+   "corrected": false,
+   "name": null,
+   "tag": null
+  },
+  {
+   "op": 84,
+   "handler": "0x00404090",
+   "length": 6,
+   "table_says": 4,
+   "corrected": true,
+   "name": "shoot.actor.action",
+   "tag": "CHARACTERS"
+  },
+  {
+   "op": 85,
+   "handler": "0x00404170",
+   "length": 4,
+   "table_says": 4,
+   "corrected": false,
+   "name": null,
+   "tag": null
+  },
+  {
+   "op": 86,
+   "handler": "0x00404230",
+   "length": 6,
+   "table_says": 6,
+   "corrected": false,
+   "name": "var.set.actor_stat",
+   "tag": null
+  },
+  {
+   "op": 87,
+   "handler": "0x00404330",
+   "length": 2,
+   "table_says": 2,
+   "corrected": false,
+   "name": "address.enable",
+   "tag": "ADDRESSES"
+  },
+  {
+   "op": 88,
+   "handler": "0x00404390",
+   "length": 2,
+   "table_says": 2,
+   "corrected": false,
+   "name": "address.disable",
+   "tag": "ADDRESSES"
+  },
+  {
+   "op": 89,
+   "handler": "0x004043F0",
+   "length": 2,
+   "table_says": 2,
+   "corrected": false,
+   "name": "player.move.wait",
+   "tag": null
+  },
+  {
+   "op": 90,
+   "handler": "0x00404450",
+   "length": 4,
+   "table_says": 4,
+   "corrected": false,
+   "name": "scx.play.player",
+   "tag": null
+  },
+  {
+   "op": 91,
+   "handler": "0x00404530",
+   "length": 2,
+   "table_says": 2,
+   "corrected": false,
+   "name": "var.set.player_id",
+   "tag": null
+  },
+  {
+   "op": 92,
+   "handler": "0x00404590",
+   "length": 2,
+   "table_says": 2,
+   "corrected": false,
+   "name": "media.play",
+   "tag": "OBJECTS"
+  },
+  {
+   "op": 93,
+   "handler": "0x00404790",
+   "length": 6,
+   "table_says": 6,
+   "corrected": false,
+   "name": "actor.stat.set",
+   "tag": "VARIABLES"
+  },
+  {
+   "op": 94,
+   "handler": "0x004048D0",
+   "length": 2,
+   "table_says": 2,
+   "corrected": false,
+   "name": "image.show",
+   "tag": null
+  },
+  {
+   "op": 95,
+   "handler": "0x00404940",
+   "length": 6,
+   "table_says": 6,
+   "corrected": false,
+   "name": "camera.set",
+   "tag": "CAMERAS"
+  },
+  {
+   "op": 96,
+   "handler": "0x00404AF0",
+   "length": 6,
+   "table_says": 6,
+   "corrected": false,
+   "name": "camera.set.wait",
+   "tag": "CAMERAS"
+  },
+  {
+   "op": 97,
+   "handler": "0x00404CE0",
+   "length": 2,
+   "table_says": 2,
+   "corrected": false,
+   "name": null,
+   "tag": null
+  },
+  {
+   "op": 98,
+   "handler": "0x00404DB0",
+   "length": 4,
+   "table_says": 4,
+   "corrected": false,
+   "name": "object.place_at",
+   "tag": null
+  },
+  {
+   "op": 99,
+   "handler": "0x00404EB0",
+   "length": 2,
+   "table_says": 2,
+   "corrected": false,
+   "name": null,
+   "tag": null
+  },
+  {
+   "op": 100,
+   "handler": "0x00404F60",
+   "length": 4,
+   "table_says": 4,
+   "corrected": false,
+   "name": null,
+   "tag": null
+  },
+  {
+   "op": 101,
+   "handler": "0x00404FA0",
+   "length": 0,
+   "table_says": 0,
+   "corrected": false,
+   "name": null,
+   "tag": null
+  },
+  {
+   "op": 102,
+   "handler": "0x00405090",
+   "length": 0,
+   "table_says": 0,
+   "corrected": false,
+   "name": null,
+   "tag": null
+  },
+  {
+   "op": 103,
+   "handler": "0x00404FB0",
+   "length": 6,
+   "table_says": 2,
+   "corrected": true,
+   "name": "music.play",
+   "tag": null
+  },
+  {
+   "op": 104,
+   "handler": "0x004050A0",
+   "length": 0,
+   "table_says": 0,
+   "corrected": false,
+   "name": "player.anim.hold",
+   "tag": null
+  },
+  {
+   "op": 105,
+   "handler": "0x004050C0",
+   "length": 0,
+   "table_says": 0,
+   "corrected": false,
+   "name": "player.anim.release",
+   "tag": null
+  },
+  {
+   "op": 106,
+   "handler": "0x00405300",
+   "length": 0,
+   "table_says": 0,
+   "corrected": false,
+   "name": "shoot.freeze_all",
+   "tag": null
+  },
+  {
+   "op": 107,
+   "handler": "0x00405310",
+   "length": 0,
+   "table_says": 0,
+   "corrected": false,
+   "name": "shoot.unfreeze_all",
+   "tag": null
+  },
+  {
+   "op": 108,
+   "handler": "0x00405320",
+   "length": 0,
+   "table_says": 0,
+   "corrected": false,
+   "name": null,
+   "tag": null
+  },
+  {
+   "op": 109,
+   "handler": "0x00405330",
+   "length": 0,
+   "table_says": 0,
+   "corrected": false,
+   "name": null,
+   "tag": null
+  },
+  {
+   "op": 110,
+   "handler": "0x00405340",
+   "length": 0,
+   "table_says": 0,
+   "corrected": false,
+   "name": null,
+   "tag": null
+  },
+  {
+   "op": 111,
+   "handler": "0x00405350",
+   "length": 0,
+   "table_says": 0,
+   "corrected": false,
+   "name": "timer.stop",
+   "tag": null
+  },
+  {
+   "op": 112,
+   "handler": "0x00405360",
+   "length": 0,
+   "table_says": 0,
+   "corrected": false,
+   "name": "timer.start",
+   "tag": null
+  },
+  {
+   "op": 113,
+   "handler": "0x00405370",
+   "length": 2,
+   "table_says": 2,
+   "corrected": false,
+   "name": "timer.set",
+   "tag": null
+  },
+  {
+   "op": 114,
+   "handler": "0x004053D0",
+   "length": 2,
+   "table_says": 2,
+   "corrected": false,
+   "name": "timer.mode",
+   "tag": null
+  },
+  {
+   "op": 115,
+   "handler": "0x00405420",
+   "length": 2,
+   "table_says": 2,
+   "corrected": false,
+   "name": "var.set.timer",
+   "tag": null
+  },
+  {
+   "op": 116,
+   "handler": "0x004050E0",
+   "length": 0,
+   "table_says": 0,
+   "corrected": false,
+   "name": "shoot.player.suspend",
+   "tag": null
+  },
+  {
+   "op": 117,
+   "handler": "0x00405130",
+   "length": 0,
+   "table_says": 0,
+   "corrected": false,
+   "name": "shoot.player.resume",
+   "tag": null
+  },
+  {
+   "op": 118,
+   "handler": "0x00405180",
+   "length": 8,
+   "table_says": 6,
+   "corrected": true,
+   "name": "fade.to_color",
+   "tag": null
+  },
+  {
+   "op": 119,
+   "handler": "0x00405240",
+   "length": 8,
+   "table_says": 6,
+   "corrected": true,
+   "name": "fade.from_color",
+   "tag": null
+  },
+  {
+   "op": 120,
+   "handler": "0x00405480",
+   "length": 6,
+   "table_says": 6,
+   "corrected": false,
+   "name": "var.set.random",
+   "tag": null
+  },
+  {
+   "op": 121,
+   "handler": "0x00405540",
+   "length": 2,
+   "table_says": 2,
+   "corrected": false,
+   "name": null,
+   "tag": null
+  },
+  {
+   "op": 122,
+   "handler": "0x00405570",
+   "length": 2,
+   "table_says": 2,
+   "corrected": false,
+   "name": null,
+   "tag": null
+  },
+  {
+   "op": 123,
+   "handler": "0x004055C0",
+   "length": 2,
+   "table_says": 2,
+   "corrected": false,
+   "name": "set.hide_piece",
+   "tag": null
+  },
+  {
+   "op": 124,
+   "handler": "0x00405610",
+   "length": 0,
+   "table_says": 0,
+   "corrected": false,
+   "name": null,
+   "tag": null
+  },
+  {
+   "op": 125,
+   "handler": "0x00405620",
+   "length": 0,
+   "table_says": 0,
+   "corrected": false,
+   "name": null,
+   "tag": null
+  },
+  {
+   "op": 126,
+   "handler": "0x00405630",
+   "length": 6,
+   "table_says": 6,
+   "corrected": false,
+   "name": "camera.set.at_address",
+   "tag": "CAMERAS"
+  },
+  {
+   "op": 127,
+   "handler": "0x00405800",
+   "length": 0,
+   "table_says": 0,
+   "corrected": false,
+   "name": "player.pos.sync",
+   "tag": null
+  },
+  {
+   "op": 128,
+   "handler": "0x00405810",
+   "length": 8,
+   "table_says": 8,
+   "corrected": false,
+   "name": "inventory.transfer",
+   "tag": null
+  },
+  {
+   "op": 129,
+   "handler": "0x004059D0",
+   "length": 0,
+   "table_says": 0,
+   "corrected": false,
+   "name": "walk.ledges.ignore",
+   "tag": null
+  },
+  {
+   "op": 130,
+   "handler": "0x004059F0",
+   "length": 0,
+   "table_says": 0,
+   "corrected": false,
+   "name": "walk.ledges.obey",
+   "tag": null
+  },
+  {
+   "op": 131,
+   "handler": "0x00405A10",
+   "length": 4,
+   "table_says": 4,
+   "corrected": false,
+   "name": "music.volume",
+   "tag": null
+  },
+  {
+   "op": 132,
+   "handler": "0x00405A90",
+   "length": 0,
+   "table_says": 0,
+   "corrected": false,
+   "name": "fade.to_black",
+   "tag": null
+  },
+  {
+   "op": 133,
+   "handler": "0x00405AB0",
+   "length": 0,
+   "table_says": 0,
+   "corrected": false,
+   "name": "fade.from_black",
+   "tag": null
+  },
+  {
+   "op": 134,
+   "handler": "0x00405AD0",
+   "length": 0,
+   "table_says": 0,
+   "corrected": false,
+   "name": null,
+   "tag": null
+  },
+  {
+   "op": 135,
+   "handler": "0x00405AF0",
+   "length": 0,
+   "table_says": 0,
+   "corrected": false,
+   "name": null,
+   "tag": null
+  },
+  {
+   "op": 136,
+   "handler": "0x00405B10",
+   "length": 4,
+   "table_says": 4,
+   "corrected": false,
+   "name": "camera.shake",
+   "tag": null
+  },
+  {
+   "op": 137,
+   "handler": "0x00405BA0",
+   "length": 0,
+   "table_says": 0,
+   "corrected": false,
+   "name": null,
+   "tag": null
+  },
+  {
+   "op": 138,
+   "handler": "0x00405BB0",
+   "length": 2,
+   "table_says": 2,
+   "corrected": false,
+   "name": "character.look_at_player",
+   "tag": "CHARACTERS"
+  },
+  {
+   "op": 139,
+   "handler": "0x00405C30",
+   "length": 2,
+   "table_says": 2,
+   "corrected": false,
+   "name": "character.look_away",
+   "tag": "CHARACTERS"
+  },
+  {
+   "op": 140,
+   "handler": "0x00405CB0",
+   "length": 0,
+   "table_says": 0,
+   "corrected": false,
+   "name": null,
+   "tag": null
+  },
+  {
+   "op": 141,
+   "handler": "0x00405CC0",
+   "length": 0,
+   "table_says": 0,
+   "corrected": false,
+   "name": null,
+   "tag": null
+  },
+  {
+   "op": 142,
+   "handler": "0x00405CD0",
+   "length": 4,
+   "table_says": 4,
+   "corrected": false,
+   "name": "ui.highscore",
+   "tag": null
+  },
+  {
+   "op": 143,
+   "handler": "0x00405DD0",
+   "length": 2,
+   "table_says": 2,
+   "corrected": false,
+   "name": null,
+   "tag": "OBJECTS"
+  },
+  {
+   "op": 144,
+   "handler": "0x00405E30",
+   "length": 6,
+   "table_says": 2,
+   "corrected": true,
+   "name": "morph.play",
+   "tag": "CHARACTERS"
+  },
+  {
+   "op": 145,
+   "handler": "0x00405EF0",
+   "length": 2,
+   "table_says": 2,
+   "corrected": false,
+   "name": null,
+   "tag": null
+  },
+  {
+   "op": 146,
+   "handler": "0x00405F00",
+   "length": 0,
+   "table_says": 2,
+   "corrected": true,
+   "name": "ambience.on",
+   "tag": null
+  },
+  {
+   "op": 147,
+   "handler": "0x00405F20",
+   "length": 0,
+   "table_says": 2,
+   "corrected": true,
+   "name": "ambience.off",
+   "tag": null
+  },
+  {
+   "op": 148,
+   "handler": "0x00405F40",
+   "length": 0,
+   "table_says": 2,
+   "corrected": true,
+   "name": "inventory.save",
+   "tag": null
+  },
+  {
+   "op": 149,
+   "handler": "0x00405FC0",
+   "length": 0,
+   "table_says": 2,
+   "corrected": true,
+   "name": "inventory.restore",
+   "tag": null
+  },
+  {
+   "op": 150,
+   "handler": "0x00406050",
+   "length": 0,
+   "table_says": 2,
+   "corrected": true,
+   "name": "render.grey.on",
+   "tag": null
+  },
+  {
+   "op": 151,
+   "handler": "0x00406070",
+   "length": 0,
+   "table_says": 2,
+   "corrected": true,
+   "name": "render.grey.off",
+   "tag": null
+  },
+  {
+   "op": 152,
+   "handler": "0x00406090",
+   "length": 0,
+   "table_says": 0,
+   "corrected": false,
+   "name": "game.restart",
+   "tag": "JINGOFF2.ADP"
+  }
+ ]
+}

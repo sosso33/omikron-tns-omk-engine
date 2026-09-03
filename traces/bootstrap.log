@@ -1,0 +1,171 @@
+1351744.522:0028:002c:trace:relay:load_list L"RelayInclude" = L"KERNEL32.GetPrivateProfileStringA"
+1351744.541:0028:002c:trace:relay:load_list L"RelayInclude" = L"KERNEL32.GetPrivateProfileStringA"
+1351744.643:0030:0034:trace:relay:load_list L"RelayInclude" = L"KERNEL32.GetPrivateProfileStringA"
+1351744.661:0030:0034:trace:relay:load_list L"RelayInclude" = L"KERNEL32.GetPrivateProfileStringA"
+1351744.755:003c:0040:trace:relay:load_list L"RelayInclude" = L"KERNEL32.GetPrivateProfileStringA"
+1351744.773:003c:0040:trace:relay:load_list L"RelayInclude" = L"KERNEL32.GetPrivateProfileStringA"
+1351744.884:0060:0064:trace:relay:load_list L"RelayInclude" = L"KERNEL32.GetPrivateProfileStringA"
+1351744.900:0060:0064:trace:relay:load_list L"RelayInclude" = L"KERNEL32.GetPrivateProfileStringA"
+1351745.075:0078:007c:trace:relay:load_list L"RelayInclude" = L"KERNEL32.GetPrivateProfileStringA"
+1351745.091:0078:007c:trace:relay:load_list L"RelayInclude" = L"KERNEL32.GetPrivateProfileStringA"
+1351745.186:0090:0094:trace:relay:load_list L"RelayInclude" = L"KERNEL32.GetPrivateProfileStringA"
+1351745.203:0090:0094:trace:relay:load_list L"RelayInclude" = L"KERNEL32.GetPrivateProfileStringA"
+1351745.559:0020:0024:trace:relay:load_list L"RelayInclude" = L"KERNEL32.GetPrivateProfileStringA"
+1351745.581:0020:0024:trace:relay:load_list L"RelayInclude" = L"KERNEL32.GetPrivateProfileStringA"
+1351745.735:00cc:00d0:trace:relay:load_list L"RelayInclude" = L"KERNEL32.GetPrivateProfileStringA"
+1351745.752:00cc:00d0:trace:relay:load_list L"RelayInclude" = L"KERNEL32.GetPrivateProfileStringA"
+1351745.913:00d4:00d8:trace:relay:load_list L"RelayInclude" = L"KERNEL32.GetPrivateProfileStringA"
+1351745.930:00d4:00d8:trace:relay:load_list L"RelayInclude" = L"KERNEL32.GetPrivateProfileStringA"
+1351747.761:00ec:00f0:trace:relay:load_list L"RelayInclude" = L"KERNEL32.GetPrivateProfileStringA"
+1351747.778:00ec:00f0:trace:relay:load_list L"RelayInclude" = L"KERNEL32.GetPrivateProfileStringA"
+1351747.820:00fc:0100:trace:relay:load_list L"RelayInclude" = L"KERNEL32.GetPrivateProfileStringA"
+1351747.837:00fc:0100:trace:relay:load_list L"RelayInclude" = L"KERNEL32.GetPrivateProfileStringA"
+1351757.721:00ec:00f0:Call KERNEL32.GetPrivateProfileStringA(004c06e4 "VARIABLES",0022f200 "175",004e749c "",0022f240,00000400,0022f220 "IAM\\VARIABLES.TAG") ret=0040ed42
+1351757.723:00ec:00f0:Ret  KERNEL32.GetPrivateProfileStringA() retval=0000000d ret=0040ed42
+1351757.723:00ec:00f0:Call KERNEL32.GetPrivateProfileStringA(004c06f0 "VARIABLES",0022f1fc "170",004e749c "",0022f23c,00000400,0022f21c "IAM\\VARIABLES.TAG") ret=0040ed42
+1351757.724:00ec:00f0:Ret  KERNEL32.GetPrivateProfileStringA() retval=00000010 ret=0040ed42
+1351757.725:00ec:00f0:Call KERNEL32.GetPrivateProfileStringA(004c0844 "OBJECTS",0022f0f4 "997",004e749c "",0022f134,00000400,0022f114 "IAM\\OBJECTS.TAG") ret=0040ed42
+1351757.728:00ec:00f0:Ret  KERNEL32.GetPrivateProfileStringA() retval=0000001a ret=0040ed42
+1351828.960:0028:002c:trace:relay:load_list L"RelayInclude" = L"KERNEL32.GetPrivateProfileStringA"
+1351828.979:0028:002c:trace:relay:load_list L"RelayInclude" = L"KERNEL32.GetPrivateProfileStringA"
+1351829.088:0030:0034:trace:relay:load_list L"RelayInclude" = L"KERNEL32.GetPrivateProfileStringA"
+1351829.106:0030:0034:trace:relay:load_list L"RelayInclude" = L"KERNEL32.GetPrivateProfileStringA"
+1351829.203:003c:0040:trace:relay:load_list L"RelayInclude" = L"KERNEL32.GetPrivateProfileStringA"
+1351829.221:003c:0040:trace:relay:load_list L"RelayInclude" = L"KERNEL32.GetPrivateProfileStringA"
+1351829.319:0060:0064:trace:relay:load_list L"RelayInclude" = L"KERNEL32.GetPrivateProfileStringA"
+1351829.336:0060:0064:trace:relay:load_list L"RelayInclude" = L"KERNEL32.GetPrivateProfileStringA"
+1351829.494:0078:007c:trace:relay:load_list L"RelayInclude" = L"KERNEL32.GetPrivateProfileStringA"
+1351829.510:0078:007c:trace:relay:load_list L"RelayInclude" = L"KERNEL32.GetPrivateProfileStringA"
+1351829.604:0090:0094:trace:relay:load_list L"RelayInclude" = L"KERNEL32.GetPrivateProfileStringA"
+1351829.621:0090:0094:trace:relay:load_list L"RelayInclude" = L"KERNEL32.GetPrivateProfileStringA"
+1351829.975:0020:0024:trace:relay:load_list L"RelayInclude" = L"KERNEL32.GetPrivateProfileStringA"
+1351829.993:0020:0024:trace:relay:load_list L"RelayInclude" = L"KERNEL32.GetPrivateProfileStringA"
+1351830.142:00cc:00d0:trace:relay:load_list L"RelayInclude" = L"KERNEL32.GetPrivateProfileStringA"
+1351830.159:00cc:00d0:trace:relay:load_list L"RelayInclude" = L"KERNEL32.GetPrivateProfileStringA"
+1351830.325:00d4:00d8:trace:relay:load_list L"RelayInclude" = L"KERNEL32.GetPrivateProfileStringA"
+1351830.343:00d4:00d8:trace:relay:load_list L"RelayInclude" = L"KERNEL32.GetPrivateProfileStringA"
+1351830.800:00ec:00f0:trace:relay:load_list L"RelayInclude" = L"KERNEL32.GetPrivateProfileStringA"
+1351830.818:00ec:00f0:trace:relay:load_list L"RelayInclude" = L"KERNEL32.GetPrivateProfileStringA"
+1351830.861:00fc:0100:trace:relay:load_list L"RelayInclude" = L"KERNEL32.GetPrivateProfileStringA"
+1351830.879:00fc:0100:trace:relay:load_list L"RelayInclude" = L"KERNEL32.GetPrivateProfileStringA"
+1351840.230:00ec:00f0:Call KERNEL32.GetPrivateProfileStringA(004c06e4 "VARIABLES",0022f200 "175",004e749c "",0022f240,00000400,0022f220 "IAM\\VARIABLES.TAG") ret=0040ed42
+1351840.232:00ec:00f0:Ret  KERNEL32.GetPrivateProfileStringA() retval=0000000d ret=0040ed42
+1351840.232:00ec:00f0:Call KERNEL32.GetPrivateProfileStringA(004c06f0 "VARIABLES",0022f1fc "170",004e749c "",0022f23c,00000400,0022f21c "IAM\\VARIABLES.TAG") ret=0040ed42
+1351840.233:00ec:00f0:Ret  KERNEL32.GetPrivateProfileStringA() retval=00000010 ret=0040ed42
+1351840.234:00ec:00f0:Call KERNEL32.GetPrivateProfileStringA(004c0844 "OBJECTS",0022f0f4 "997",004e749c "",0022f134,00000400,0022f114 "IAM\\OBJECTS.TAG") ret=0040ed42
+1351840.237:00ec:00f0:Ret  KERNEL32.GetPrivateProfileStringA() retval=0000001a ret=0040ed42
+1351850.602:0030:00c8:trace:module:LdrShutdownThread ()
+1351850.602:0030:00c8:Call PE DLL (proc=7FBB3B00,module=7FBA0000 L"rpcrt4.dll",reason=THREAD_DETACH,res=00000000)
+1351850.602:0030:00c8:Ret  PE DLL (proc=7FBB3B00,module=7FBA0000 L"rpcrt4.dll",reason=THREAD_DETACH,res=00000000) retval=1
+1351850.602:0030:00c8:Call PE DLL (proc=7FC47740,module=7FC30000 L"ucrtbase.dll",reason=THREAD_DETACH,res=00000000)
+1351850.602:0030:00c8:Ret  PE DLL (proc=7FC47740,module=7FC30000 L"ucrtbase.dll",reason=THREAD_DETACH,res=00000000) retval=1
+1351850.602:0030:00c8:Call PE DLL (proc=7FD3AF70,module=7FD30000 L"msvcrt.dll",reason=THREAD_DETACH,res=00000000)
+1351850.602:0030:00c8:Ret  PE DLL (proc=7FD3AF70,module=7FD30000 L"msvcrt.dll",reason=THREAD_DETACH,res=00000000) retval=1
+1351850.603:0030:01cc:Call PE DLL (proc=7FD3AF70,module=7FD30000 L"msvcrt.dll",reason=THREAD_ATTACH,res=00000000)
+1351850.603:0030:01cc:Ret  PE DLL (proc=7FD3AF70,module=7FD30000 L"msvcrt.dll",reason=THREAD_ATTACH,res=00000000) retval=1
+1351850.603:0030:01cc:Call PE DLL (proc=7FC47740,module=7FC30000 L"ucrtbase.dll",reason=THREAD_ATTACH,res=00000000)
+1351850.603:0030:01cc:Ret  PE DLL (proc=7FC47740,module=7FC30000 L"ucrtbase.dll",reason=THREAD_ATTACH,res=00000000) retval=1
+1351850.603:0030:01cc:Call PE DLL (proc=7FBB3B00,module=7FBA0000 L"rpcrt4.dll",reason=THREAD_ATTACH,res=00000000)
+1351850.603:0030:01cc:Ret  PE DLL (proc=7FBB3B00,module=7FBA0000 L"rpcrt4.dll",reason=THREAD_ATTACH,res=00000000) retval=1
+1351850.603:0030:01cc:Starting thread proc 7BFA8BC0 (arg=0060B6A0)
+1351850.603:0030:01d0:Call PE DLL (proc=7FD3AF70,module=7FD30000 L"msvcrt.dll",reason=THREAD_ATTACH,res=00000000)
+1351850.603:0030:01d0:Ret  PE DLL (proc=7FD3AF70,module=7FD30000 L"msvcrt.dll",reason=THREAD_ATTACH,res=00000000) retval=1
+1351850.603:0030:01d0:Call PE DLL (proc=7FC47740,module=7FC30000 L"ucrtbase.dll",reason=THREAD_ATTACH,res=00000000)
+1351850.603:0030:01d0:Ret  PE DLL (proc=7FC47740,module=7FC30000 L"ucrtbase.dll",reason=THREAD_ATTACH,res=00000000) retval=1
+1351850.603:0030:01d0:Call PE DLL (proc=7FBB3B00,module=7FBA0000 L"rpcrt4.dll",reason=THREAD_ATTACH,res=00000000)
+1351850.603:0030:01d0:Ret  PE DLL (proc=7FBB3B00,module=7FBA0000 L"rpcrt4.dll",reason=THREAD_ATTACH,res=00000000) retval=1
+1351850.603:0030:01d0:Starting thread proc 7BFA8BC0 (arg=0060B6A0)
+1351850.603:0030:01cc:warn:threadname:NtSetInformationThread Thread renamed to L"wine_threadpool_worker"
+1351850.603:0030:01d0:warn:threadname:NtSetInformationThread Thread renamed to L"wine_threadpool_worker"
+1351850.603:0030:01d4:Call PE DLL (proc=7FD3AF70,module=7FD30000 L"msvcrt.dll",reason=THREAD_ATTACH,res=00000000)
+1351850.603:0030:01d4:Ret  PE DLL (proc=7FD3AF70,module=7FD30000 L"msvcrt.dll",reason=THREAD_ATTACH,res=00000000) retval=1
+1351850.603:0030:01d4:Call PE DLL (proc=7FC47740,module=7FC30000 L"ucrtbase.dll",reason=THREAD_ATTACH,res=00000000)
+1351850.603:0030:01d4:Ret  PE DLL (proc=7FC47740,module=7FC30000 L"ucrtbase.dll",reason=THREAD_ATTACH,res=00000000) retval=1
+1351850.603:0030:01d4:Call PE DLL (proc=7FBB3B00,module=7FBA0000 L"rpcrt4.dll",reason=THREAD_ATTACH,res=00000000)
+1351850.603:0030:01d4:Ret  PE DLL (proc=7FBB3B00,module=7FBA0000 L"rpcrt4.dll",reason=THREAD_ATTACH,res=00000000) retval=1
+1351850.603:0030:01d4:Starting thread proc 7BFA8BC0 (arg=0060B6A0)
+1351850.603:0030:0044:trace:module:LdrShutdownThread ()
+1351850.603:0030:0044:Call PE DLL (proc=7FBB3B00,module=7FBA0000 L"rpcrt4.dll",reason=THREAD_DETACH,res=00000000)
+1351850.603:0030:0044:Ret  PE DLL (proc=7FBB3B00,module=7FBA0000 L"rpcrt4.dll",reason=THREAD_DETACH,res=00000000) retval=1
+1351850.604:0030:0044:Call PE DLL (proc=7FC47740,module=7FC30000 L"ucrtbase.dll",reason=THREAD_DETACH,res=00000000)
+1351850.604:0030:0044:Ret  PE DLL (proc=7FC47740,module=7FC30000 L"ucrtbase.dll",reason=THREAD_DETACH,res=00000000) retval=1
+1351850.604:0030:0044:Call PE DLL (proc=7FD3AF70,module=7FD30000 L"msvcrt.dll",reason=THREAD_DETACH,res=00000000)
+1351850.604:0030:0044:Ret  PE DLL (proc=7FD3AF70,module=7FD30000 L"msvcrt.dll",reason=THREAD_DETACH,res=00000000) retval=1
+1351850.604:0030:01d4:warn:threadname:NtSetInformationThread Thread renamed to L"wine_threadpool_worker"
+1351850.604:0030:01d8:Call PE DLL (proc=7FD3AF70,module=7FD30000 L"msvcrt.dll",reason=THREAD_ATTACH,res=00000000)
+1351850.604:0030:01d8:Ret  PE DLL (proc=7FD3AF70,module=7FD30000 L"msvcrt.dll",reason=THREAD_ATTACH,res=00000000) retval=1
+1351850.604:0030:01d8:Call PE DLL (proc=7FC47740,module=7FC30000 L"ucrtbase.dll",reason=THREAD_ATTACH,res=00000000)
+1351850.604:0030:01d8:Ret  PE DLL (proc=7FC47740,module=7FC30000 L"ucrtbase.dll",reason=THREAD_ATTACH,res=00000000) retval=1
+1351850.604:0030:01d8:Call PE DLL (proc=7FBB3B00,module=7FBA0000 L"rpcrt4.dll",reason=THREAD_ATTACH,res=00000000)
+1351850.604:0030:01d8:Ret  PE DLL (proc=7FBB3B00,module=7FBA0000 L"rpcrt4.dll",reason=THREAD_ATTACH,res=00000000) retval=1
+1351850.604:0030:01d8:Starting thread proc 7BFA8BC0 (arg=0060B6A0)
+1351850.604:0030:01d8:warn:threadname:NtSetInformationThread Thread renamed to L"wine_threadpool_worker"
+1351850.605:0030:0068:trace:module:LdrShutdownThread ()
+1351850.605:0030:0068:Call PE DLL (proc=7FBB3B00,module=7FBA0000 L"rpcrt4.dll",reason=THREAD_DETACH,res=00000000)
+1351850.605:0030:0068:Ret  PE DLL (proc=7FBB3B00,module=7FBA0000 L"rpcrt4.dll",reason=THREAD_DETACH,res=00000000) retval=1
+1351850.605:0030:0068:Call PE DLL (proc=7FC47740,module=7FC30000 L"ucrtbase.dll",reason=THREAD_DETACH,res=00000000)
+1351850.605:0030:0068:Ret  PE DLL (proc=7FC47740,module=7FC30000 L"ucrtbase.dll",reason=THREAD_DETACH,res=00000000) retval=1
+1351850.605:0030:0068:Call PE DLL (proc=7FD3AF70,module=7FD30000 L"msvcrt.dll",reason=THREAD_DETACH,res=00000000)
+1351850.605:0030:0068:Ret  PE DLL (proc=7FD3AF70,module=7FD30000 L"msvcrt.dll",reason=THREAD_DETACH,res=00000000) retval=1
+1351850.605:0030:01dc:Call PE DLL (proc=7FD3AF70,module=7FD30000 L"msvcrt.dll",reason=THREAD_ATTACH,res=00000000)
+1351850.605:0030:01dc:Ret  PE DLL (proc=7FD3AF70,module=7FD30000 L"msvcrt.dll",reason=THREAD_ATTACH,res=00000000) retval=1
+1351850.605:0030:01dc:Call PE DLL (proc=7FC47740,module=7FC30000 L"ucrtbase.dll",reason=THREAD_ATTACH,res=00000000)
+1351850.605:0030:01dc:Ret  PE DLL (proc=7FC47740,module=7FC30000 L"ucrtbase.dll",reason=THREAD_ATTACH,res=00000000) retval=1
+1351850.605:0030:01dc:Call PE DLL (proc=7FBB3B00,module=7FBA0000 L"rpcrt4.dll",reason=THREAD_ATTACH,res=00000000)
+1351850.610:0030:01dc:Ret  PE DLL (proc=7FBB3B00,module=7FBA0000 L"rpcrt4.dll",reason=THREAD_ATTACH,res=00000000) retval=1
+1351850.610:0030:01dc:Starting thread proc 7BFA8BC0 (arg=0060B6A0)
+1351850.611:0030:01dc:warn:threadname:NtSetInformationThread Thread renamed to L"wine_threadpool_worker"
+1351850.613:0030:0098:trace:module:LdrShutdownThread ()
+1351850.613:0030:0098:Call PE DLL (proc=7FBB3B00,module=7FBA0000 L"rpcrt4.dll",reason=THREAD_DETACH,res=00000000)
+1351850.613:0030:0098:Ret  PE DLL (proc=7FBB3B00,module=7FBA0000 L"rpcrt4.dll",reason=THREAD_DETACH,res=00000000) retval=1
+1351850.613:0030:0098:Call PE DLL (proc=7FC47740,module=7FC30000 L"ucrtbase.dll",reason=THREAD_DETACH,res=00000000)
+1351850.613:0030:0098:Ret  PE DLL (proc=7FC47740,module=7FC30000 L"ucrtbase.dll",reason=THREAD_DETACH,res=00000000) retval=1
+1351850.613:0030:0098:Call PE DLL (proc=7FD3AF70,module=7FD30000 L"msvcrt.dll",reason=THREAD_DETACH,res=00000000)
+1351850.613:0030:0098:Ret  PE DLL (proc=7FD3AF70,module=7FD30000 L"msvcrt.dll",reason=THREAD_DETACH,res=00000000) retval=1
+1351850.614:0030:0104:trace:module:LdrShutdownThread ()
+1351850.614:0030:0104:Call PE DLL (proc=7FBB3B00,module=7FBA0000 L"rpcrt4.dll",reason=THREAD_DETACH,res=00000000)
+1351850.614:0030:0104:Ret  PE DLL (proc=7FBB3B00,module=7FBA0000 L"rpcrt4.dll",reason=THREAD_DETACH,res=00000000) retval=1
+1351850.614:0030:0104:Call PE DLL (proc=7FC47740,module=7FC30000 L"ucrtbase.dll",reason=THREAD_DETACH,res=00000000)
+1351850.614:0030:0104:Ret  PE DLL (proc=7FC47740,module=7FC30000 L"ucrtbase.dll",reason=THREAD_DETACH,res=00000000) retval=1
+1351850.614:0030:0104:Call PE DLL (proc=7FD3AF70,module=7FD30000 L"msvcrt.dll",reason=THREAD_DETACH,res=00000000)
+1351850.614:0030:0104:Ret  PE DLL (proc=7FD3AF70,module=7FD30000 L"msvcrt.dll",reason=THREAD_DETACH,res=00000000) retval=1
+1351850.616:0030:0080:trace:module:LdrShutdownThread ()
+1351850.616:0030:0080:Call PE DLL (proc=7FBB3B00,module=7FBA0000 L"rpcrt4.dll",reason=THREAD_DETACH,res=00000000)
+1351850.616:0030:0080:Ret  PE DLL (proc=7FBB3B00,module=7FBA0000 L"rpcrt4.dll",reason=THREAD_DETACH,res=00000000) retval=1
+1351850.616:0030:0080:Call PE DLL (proc=7FC47740,module=7FC30000 L"ucrtbase.dll",reason=THREAD_DETACH,res=00000000)
+1351850.616:0030:0080:Ret  PE DLL (proc=7FC47740,module=7FC30000 L"ucrtbase.dll",reason=THREAD_DETACH,res=00000000) retval=1
+1351850.616:0030:0080:Call PE DLL (proc=7FD3AF70,module=7FD30000 L"msvcrt.dll",reason=THREAD_DETACH,res=00000000)
+1351850.616:0030:0080:Ret  PE DLL (proc=7FD3AF70,module=7FD30000 L"msvcrt.dll",reason=THREAD_DETACH,res=00000000) retval=1
+1351850.617:0030:0038:trace:module:LdrShutdownThread ()
+1351850.617:0030:0038:Call PE DLL (proc=7FBB3B00,module=7FBA0000 L"rpcrt4.dll",reason=THREAD_DETACH,res=00000000)
+1351850.617:0030:0038:Ret  PE DLL (proc=7FBB3B00,module=7FBA0000 L"rpcrt4.dll",reason=THREAD_DETACH,res=00000000) retval=1
+1351850.617:0030:0038:Call PE DLL (proc=7FC47740,module=7FC30000 L"ucrtbase.dll",reason=THREAD_DETACH,res=00000000)
+1351850.617:0030:0038:Ret  PE DLL (proc=7FC47740,module=7FC30000 L"ucrtbase.dll",reason=THREAD_DETACH,res=00000000) retval=1
+1351850.617:0030:0038:Call PE DLL (proc=7FD3AF70,module=7FD30000 L"msvcrt.dll",reason=THREAD_DETACH,res=00000000)
+1351850.617:0030:0038:Ret  PE DLL (proc=7FD3AF70,module=7FD30000 L"msvcrt.dll",reason=THREAD_DETACH,res=00000000) retval=1
+1351850.617:0030:0034:trace:module:LdrGetDllHandleEx flags 0x1, load_path 00000000, dll_characteristics 00000000, name 0032FEF4, base 0032FEF0.
+1351850.617:0030:0034:trace:module:find_dll_file Skipping file search for L"mscoree.dll".
+1351850.617:0030:0034:trace:module:LdrGetDllHandleEx L"mscoree" -> 00000000 (load path (null))
+1351850.618:0030:0034:trace:module:LdrShutdownProcess ()
+1351850.618:0030:0034:Call PE DLL (proc=7FB024B0,module=7FB00000 L"userenv.dll",reason=PROCESS_DETACH,res=00000001)
+1351850.618:0030:0034:Ret  PE DLL (proc=7FB024B0,module=7FB00000 L"userenv.dll",reason=PROCESS_DETACH,res=00000001) retval=1
+1351850.618:0030:0034:Call PE DLL (proc=7FB1ABA0,module=7FB10000 L"setupapi.dll",reason=PROCESS_DETACH,res=00000001)
+1351850.618:0030:0034:Ret  PE DLL (proc=7FB1ABA0,module=7FB10000 L"setupapi.dll",reason=PROCESS_DETACH,res=00000001) retval=1
+1351850.618:0030:0034:Call PE DLL (proc=7FBB3B00,module=7FBA0000 L"rpcrt4.dll",reason=PROCESS_DETACH,res=00000001)
+1351850.618:0030:0034:Ret  PE DLL (proc=7FBB3B00,module=7FBA0000 L"rpcrt4.dll",reason=PROCESS_DETACH,res=00000001) retval=1
+1351850.618:0030:0034:Call PE DLL (proc=7FB91790,module=7FB90000 L"cryptbase.dll",reason=PROCESS_DETACH,res=00000001)
+1351850.618:0030:0034:Ret  PE DLL (proc=7FB91790,module=7FB90000 L"cryptbase.dll",reason=PROCESS_DETACH,res=00000001) retval=1
+1351850.618:0030:0034:Call PE DLL (proc=10010420,module=10000000 L"advapi32.dll",reason=PROCESS_DETACH,res=00000001)
+1351850.618:0030:0034:Ret  PE DLL (proc=10010420,module=10000000 L"advapi32.dll",reason=PROCESS_DETACH,res=00000001) retval=1
+1351850.618:0030:0034:Call PE DLL (proc=7FD14FE0,module=7FD10000 L"sechost.dll",reason=PROCESS_DETACH,res=00000001)
+1351850.618:0030:0034:Ret  PE DLL (proc=7FD14FE0,module=7FD10000 L"sechost.dll",reason=PROCESS_DETACH,res=00000001) retval=1
+1351850.618:0030:0034:Call PE DLL (proc=7FC47740,module=7FC30000 L"ucrtbase.dll",reason=PROCESS_DETACH,res=00000001)
+1351850.618:0030:0034:Ret  PE DLL (proc=7FC47740,module=7FC30000 L"ucrtbase.dll",reason=PROCESS_DETACH,res=00000001) retval=1
+1351850.618:0030:0034:Call PE DLL (proc=7FD3AF70,module=7FD30000 L"msvcrt.dll",reason=PROCESS_DETACH,res=00000001)
+1351850.618:0030:0034:Ret  PE DLL (proc=7FD3AF70,module=7FD30000 L"msvcrt.dll",reason=PROCESS_DETACH,res=00000001) retval=1
+1351850.618:0030:0034:Call PE DLL (proc=7B814D30,module=7B800000 L"kernel32.dll",reason=PROCESS_DETACH,res=00000001)
+1351850.618:0030:0034:Ret  PE DLL (proc=7B814D30,module=7B800000 L"kernel32.dll",reason=PROCESS_DETACH,res=00000001) retval=1
+1351850.618:0030:0034:Call PE DLL (proc=7B017A40,module=7B000000 L"kernelbase.dll",reason=PROCESS_DETACH,res=00000001)
+1351850.618:0030:0034:Ret  PE DLL (proc=7B017A40,module=7B000000 L"kernelbase.dll",reason=PROCESS_DETACH,res=00000001) retval=1
+1351850.618:0030:0034:Call PE DLL (proc=7BF50E70,module=7BF40000 L"ntdll.dll",reason=PROCESS_DETACH,res=00000001)
+1351850.618:0030:0034:Ret  PE DLL (proc=7BF50E70,module=7BF40000 L"ntdll.dll",reason=PROCESS_DETACH,res=00000001) retval=1
