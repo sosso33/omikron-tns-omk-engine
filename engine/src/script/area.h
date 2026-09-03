@@ -40,6 +40,8 @@
 #include "script/dialogue.h"
 #include "script/gamestate.h"
 #include "script/scenerunner.h"
+#include "actor/pedestrians.h"
+#include "actor/spatial.h"
 #include "ui/widgets.h"
 #include "script/hooks.h"
 #include "script/interp.h"
@@ -200,6 +202,54 @@ public:
     // because it is audio, and 1/30 is what `Game_Frame` gives at 30 fps.
     void setFrameSeconds(double s) { frameSeconds_ = s; }
 
+    // STREET LIFE - the procedural pedestrians (docs/STREET_LIFE.md 2,
+    // `actor/pedestrians.h`). `Area_TickLoad` case 8 hands an area's `.OPT`
+    // to `Slider_Init` at its load, and `Sliders_Tick` walks the pool every
+    // frame. Both need the gamedata tree, which the Session otherwise never
+    // opens (the `.SCX` comes the same way, through `loadScene`): without
+    // this call no pedestrians exist, with it every later area load spawns
+    // its circuit's - and a slot already loaded when it is called spawns now.
+    void loadTraffic(const std::string& gamedataRoot);
+    const Pedestrians& pedestrians() const { return peds_; }
+    // Options row 6, "Niveau d'activite dans les rues", 0..4 - the density
+    // `Slider_Init` reads from `dword_90E724+2`. Spawning happens once, at
+    // the load, so a change applies to the next circuit loaded. Default:
+    // `kDefaultStreetActivity` (the engine's own 3), until the options menu
+    // is ported and hands its value here.
+    void setStreetActivity(int level) { streetActivity_ = level < 0 ? 0 : level > 4 ? 4 : level; }
+    int  streetActivity() const { return streetActivity_; }
+
+    // THE CROWD PUSH (docs/STREET_LIFE.md 3, `actor/spatial.h`). Every
+    // walker is an instance entry of the spatial index, refreshed each frame
+    // from its body; `Actor_TickNpc` queries it for the player and adds the
+    // result to his position before `Actor_ApplyMotion`. The player's body is
+    // the frontend's (E2's walker), so the frontend asks here with his
+    // spheres and applies what comes back (`PlayerController::nudge`). Also
+    // the BUMP: a walker the query touched posts message 15 (a man) or 16 (a
+    // woman) through `Game_RaiseEvent(43)`, one at a time, held 100 frames
+    // (`Sliders_Tick`, `dword_538308`/`dword_538318`). Not while a
+    // conversation is up (state 16 skips the push).
+    bool crowdPush(const std::vector<CollisionSphere>& mine, float myReach,
+                   const float pos[3], float facing, float out[3]);
+    // `sub_452280`, what the `.CTL` action state's move callback runs
+    // (cases 4/11 of the dispatcher at 0x46AEE2): the nearest walker within
+    // 117 units in front of the player, standing at an action point, posts
+    // message 13 (a man) or 14 (a woman) and becomes the talk target whose
+    // action countdown holds. -> whether one was found. `pressAction` calls
+    // it with the tracked player position.
+    bool talkToPedestrian(const float pos[3], float facing);
+    const SpatialIndex& spatial() const { return spatial_; }
+    // `character.look_at_player` (138) / `character.look_away` (139): the
+    // actor's look-at slot (+400, slot 100) set to the player / cleared.
+    // `Actors_TickAll` aims his head at it every frame (`aimHead`, pose.h);
+    // the Session only keeps who is looking.
+    bool looksAtPlayer(int actor) const { return lookAtPlayer_.count(actor) != 0; }
+    // A model's collision spheres (its first skeleton's mesh volumes) and
+    // its reach (`+88`), read once from MESHES\PERSOS through the traffic
+    // root; empty when the model or the root is missing.
+    const std::vector<CollisionSphere>* modelSpheres(const std::string& model);
+    float modelReach(const std::string& model);
+
     // How many areas have been entered THROUGH A TRANSITION - `sub_419AF0`
     // making a destination's decor the drawn scene at `Area_Transition` mode
     // 3 - so a caller can stop once one has happened rather than after a
@@ -267,6 +317,12 @@ public:
         bool shown = false;
         int  areaCtx = -1, sceneCtx = -1;       // block +0: the startup contexts
         std::string set, scx;                   // AREA +88 / +97
+        // STREET LIFE (docs/STREET_LIFE.md 2): the traffic circuit at +115
+        // (`TRAJECTOIRES\<opt>.OPT`), the animation library at +124
+        // (`ANIMS\<ani>.ANI` - `PASSANTH` for every city), and the two masks
+        // at +164/+168 selecting which men and women models the crowd wears
+        std::string opt, ani;
+        std::uint32_t menMask = 0, womenMask = 0;
         WorldCameras cams;                      // AREA +64/+84, SCENE +32/+52 (and GLOBAL)
         std::vector<Address> addresses;         // AREA +60
         std::int16_t music = 0;                 // AREA +142, the area's own track
@@ -853,6 +909,10 @@ public:
     // and the actor runtime is not driven from here, so a caller has to check.
     const WorldCamera* camera() const { return haveCam_ ? &camNow_ : nullptr; }
     int  cameraId() const { return haveCam_ ? camTo_.id : -1; }
+    // What `camera.set` does, for a frontend starting in a street with no
+    // script to ask for one: `Camera_Request` on a world camera by id - 0 is
+    // `Camera Player`, the follow preset every hand-over ends on.
+    void requestCamera(int id, int travel = 0) { applyCamera(id, travel); }
     // Where the move is going, as opposed to where it currently IS. A caller
     // reporting a cut wants this one; a caller pointing a camera wants
     // `camera()`.
@@ -968,6 +1028,18 @@ private:
     struct Ann { std::string domain; int field; };
     std::map<std::uint8_t, Ann> announce_;   // empty = announce nothing
     SceneRunner scene_;                      // empty unless loadScene ran
+    Pedestrians peds_;                       // empty unless loadTraffic ran
+    SpatialIndex spatial_;
+    std::map<std::string, std::vector<CollisionSphere>> modelSpheres_;
+    std::map<std::string, float> modelReach_;
+    std::vector<int> pedSlots_;              // walker -> its index slot, -1 none
+    std::set<int> lookAtPlayer_;             // actors whose slot 100 is the player
+    int   bumpCooldown_ = 0;                 // dword_538318, in frames
+    void  refreshCrowdIndex();
+    std::string dataRoot_;                   // the gamedata tree, from loadTraffic
+    int         trafficSlot_ = -1;           // the slot whose circuit `peds_` holds
+    int         streetActivity_ = kDefaultStreetActivity;
+    void loadTrafficFor(int slot);
     // The AREA whose `.SCX` `scene_` holds. The file is the area's (`+97`),
     // so a scene loaded over the same area keeps the runner - and every
     // program running - exactly as the engine does; only an area change

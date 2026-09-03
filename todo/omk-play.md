@@ -479,6 +479,83 @@ the 640x480 the game shipped at (3.00% of the height below the box against
 
 ## Fixed (batch 10, 2026-09-03)
 
+### 64. A seated walker sank into the street: the height is the root's summed y, not the clip's first feet — A
+
+> **Fixed 2026-09-03, confirmed by FRAME.** A walker's height is
+> `sub_437F80(inst, x, body.y + footY - radius, z)`: the model origin one
+> root radius above the body point (41.9 for `PSH_FN`, the pelvis-to-feet
+> height) moved by the root track's summed y. The viewer seated the feet of
+> the clip's FIRST frame on the body point, and the seated clip's first
+> frame is the folded legs at pelvis level - so every sitter's pelvis went
+> to the ground and his shins below it. Now the REST pose's feet stand on
+> the body point plus the summed y (the sit's enter clip drops 20.7), and he
+> sits on the bench.
+
+Filed 2026-09-03 from a play report: *issue with sitting npc* - a man with
+his legs in the street in front of a bench.
+
+### 63. The city's couples stood turned away and intersecting: a program's Euler was never applied — A
+
+> **Fixed 2026-09-03, confirmed by FRAME.** `Script_SelectRelativeBodyAnimation`
+> writes its params 4/5/6 to the node with `Actor_SetEuler` every tick and
+> the clip's root quaternion sits under it. The viewer applied no yaw to a
+> program-driven body (`spin` is off for a scene clip), so Anekbah's Kiss
+> couples (-70), walkers (180) and gym pair (140) kept the clip's own frame:
+> placed right, facing wrong, and a kissing pair intersected with the
+> woman's back to the man. The body now turns by the call's Euler y about
+> its pelvis. Pitch and roll (three beggars carry -7 of pitch) are not
+> applied.
+
+Filed 2026-09-03 from the same report's second frame.
+
+### 62. The extras of a city piled onto its doors: a relative body animation's path is a PAIR — A
+
+> **Fixed 2026-09-03, confirmed by the placements (not yet by a person).**
+> `Script_SelectRelativeBodyAnimation` addresses its path like
+> `Script_MoveObjectOnPath` does: param 7 is the chunk-0 record (`sub_4A6500`
+> returns that record's loaded path array) and param 8 the path inside it.
+> `SceneRunner` read param 8 as a flat index into every path of the scene -
+> which the `ScxPath` comment even said was "a different question" - so in
+> Anekbah, whose couples, beggars and gym walkers name records 7 and 8,
+> every one landed on a door or watchtower path of record 0: a row of
+> identical crouching men at `Porte25*`, the reader's frame. GRID has one
+> file, which is why the Impasse never showed it. `flatPath(file, index)`
+> resolves the pair; the 25 extras now stand in couples across the city.
+
+Filed 2026-09-03 from a play report: *some npc in T pose, issue with
+sitting npc* - the row of clones was the second. (Numbered 60 at first;
+main filed 58 and 59 the same day.)
+
+### 61. Women and Jaunpur's men walked in a T-pose: the crowd library's bone prefix — A
+
+> **Fixed 2026-09-03, confirmed by FRAME.** The `.ani` names a bone with a
+> two-letter skeleton prefix - `PhBassin` in the men's clips, `ShBassin` in
+> the women's idle, and the models do not all share it: `FSH_FN` is `Fh*`,
+> `KSH_FN` (Jaunpur) `Kh*`. Matched by the whole name a woman idled and
+> every Jaunpur man walked at rest. `pedTracksFor` now matches the exact
+> name first and the bone after the prefix inside the first skeleton.
+> Whether the engine matches by name or by bone order was not read; either
+> reading gives this mapping on every shipped crowd model.
+
+Filed 2026-09-03 from the same report: *some npc in T pose* - the woman in
+red on Anekbah's street.
+
+### 60. A crowd model is FOUR skeletons, and three of them drew at rest — A
+
+> **Fixed 2026-09-03, confirmed by FRAME (not yet by a person walking).**
+> `PSH_FN`/`FSH_FN` and the other crowd models (docs/STREET_LIFE.md 2) hold
+> four LOD skeletons - `PhBassin`, `PiBassin`, `PjBassin`, `PkBassin`, 76
+> meshes for 19 a skeleton - and an animation's tracks name the first, so
+> `composePose` posed one and left three at rest: a T-pose inside every
+> walker and every one of Anekbah's twenty authored extras. `omk-play` cuts
+> the rest geometry to the skeleton the tracks name (`skeletonRootOf` /
+> `lodRestFor`) for the pedestrians and the staged extras alike. The engine's
+> own LOD selection for an ACTOR is not read; the crowd's four distances are
+> `dword_4C8870`. `verify.py: engine: street frame`.
+
+Filed 2026-09-03 from the first street frame of the pedestrians (STREET_LIFE
+step 4): a figure with its arms straight out floating over the walkers.
+
 ### 57. Scripted cameras sat a whole pelvis-lift too low — A
 
 > **Fixed 2026-09-03.** The scripted-camera branch now resolves against the

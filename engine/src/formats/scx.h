@@ -151,8 +151,9 @@ struct ScxPath {
     // the `.3dp` file and param 2 the path within it (`v89 = u32(v6, 4 *
     // GetParamInt(a2, 2))` after the file lookup) - so a flat index is the
     // wrong key and lands on another file's path in any scene with more than
-    // one. `Script_SelectRelativeBodyAnimation`'s param 8 is a different
-    // question and stays flat.
+    // one. `Script_SelectRelativeBodyAnimation` addresses the same way -
+    // param 7 the file, param 8 the path (`sub_4A6500`) - which this said
+    // otherwise until 2026-09-03, when Anekbah's extras piled onto its doors.
     int file = 0;
     int index = 0;
 };

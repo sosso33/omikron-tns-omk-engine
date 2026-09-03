@@ -65,6 +65,7 @@ that only for a file you are about to actually open.
 | docs/CUTSCENES.md | ~10k | camera editings, scene programs, what starts a scene's beats |
 | docs/UI.md | ~21k | the I2D layer, the 37 screens, the 45 sounds, the options tree, fonts and text markup |
 | docs/BOOT.md | ~2k | launch → FLIS movies → aventure.scx → the frame loop, the 30 fps clock |
+| docs/STREET_LIFE.md | ~4k | the people on a city street: the `.OPT` pedestrians and the density option, the authored extras (scene programs), the crowd push; `todo/street-life.md` is the plan |
 | engine/README.md | ~31k | NEVER whole; §"Coverage" for what is/isn't ported, §"Building and proving it" for the check recipes; grep otherwise |
 | tables/README.md | small | what each tables/*.json is and how it is regenerated |
 | readable/README.md, readable/INDEX.md | small / index | finding a decompiled function by name or address |
@@ -72,6 +73,7 @@ that only for a file you are about to actually open.
 | todo/iam-script-engine.md | ~11k | the script-engine issue list; all 39 filed issues are fixed, the labelled remainders are in its Fixed notes |
 | todo/iam-script-engine-plan.md | ~2k | who owned which files in batches 1 and 2; the T18 proposal |
 | todo/actor-runtime.md | ~1k | the .CTL channel's closed issues and notes |
+| todo/street-life.md | ~2k | the street-life work: six steps, each ending in a commit and a report |
 | todo/pending/*.md (E1, E2, T1..T17) | ~2–8k each | a specific past task's deliverable; each starts with an "Integrated" line — read only the one you need |
 | transcript/*.md | large | how a finding was reached, wrong turns included; never for facts (the docs have them) |
 
@@ -92,9 +94,9 @@ One line per directory, then the files big enough to need a warning:
 
 | file / dir | size | read when |
 |---|---|---|
-| engine/src/formats/ | 4–16 KB each | one reader per file format: iam, scx, sfx, ctl, anim, morph, mesh3do, tex3dt, fnt, adpcm, addresses |
+| engine/src/formats/ | 4–16 KB each | one reader per file format: iam, scx, sfx, ctl, anim, morph, mesh3do, tex3dt, fnt, adpcm, addresses, opt (the traffic circuit) |
 | engine/src/script/ | | the world-script runtime. `area.cpp` (108 KB) + `area.h` (52 KB) = the Session: resident slots, transitions, the frame; `interp.cpp` (44 KB) = the VM handlers; `zones.*` the zone registry; `dialogue.*` conversations; `gamestate.*` the DB; `scenerunner.*`/`program.*`/`scenehost.*` scene objects; `world.*` the zone harness; `hooks.h`/`props.*`/`inventory.*` world-side opcodes; `goldendiff.*` trace comparison; `savefile.*`, `globaldata.*`, `objects.*` |
-| engine/src/actor/ | | `channel.*` the .CTL state machine (28 KB); `player.*` the adventure-mode controller and follow camera; `pose.*` skinning; `state.*` ACTOR_STATE; `walk.*` the walker; `shoot.*` the shoot AI; `speaker.*` the dialogue speaker |
+| engine/src/actor/ | | `channel.*` the .CTL state machine (28 KB); `player.*` the adventure-mode controller and follow camera; `pose.*` skinning; `state.*` ACTOR_STATE; `walk.*` the walker; `shoot.*` the shoot AI; `speaker.*` the dialogue speaker; `pedestrians.*` the procedural street crowd (STREET_LIFE 2); `spatial.*` the spatial index, the crowd push (STREET_LIFE 3) |
 | engine/src/o3de/ | | the renderer boundary (`renderer.h`) and the software rasterizer (`raster.*`), `render.*` buckets, `geom3do.*`, `texcache.*` (the 58-slot cache), `worldcam.*`, `camedit.*` camera editings, `particles.*`/`setpiece.*` effects, `collision.*` |
 | engine/src/ui/ | | `i2d.*`, `widgets.*`, `screendraw.*`, `text.*`, `surface.*`, `options.*`, `cloud.*`, `iamtext.*` |
 | engine/src/audio/ | | `mixer.*` (voices, bank, attenuation), `voiceover.*` (media.play → VOICEOFF/*.ADP), `music.*` |
@@ -766,6 +768,7 @@ All of this is documented with its evidence in `docs/`. Headline verifications:
 | the **cutscenes**, both families | SCX programs + chunk-10 editings: 29 scenes, 125 shots, **24112/24112** frames sample; and **106 world-camera scripts** with no editing at all, the game's 145.7 s title sequence among them. What *orders* a scene's beats is open |
 | **golden traces** — the engine as behavioural oracle | `tools/goldentrace.py` runs `gamedata/Runtime 2.exe` under CrossOver and captures its own operand log; 2 captures, 55/55 events reproducible across launches; the Bowie cutscene replays 9/9 in `tools/sim` — the first proof the simulator *decides* what the engine decides |
 | the **game state** — the 8192-byte DB, `IAM\START`, the save, the clock | walk lands exactly on 5686; six counts vs six independent sources; 0 spare bits set; `State_Apply`↔`State_Save` round-trips |
+| the **street life** — the city crowd (`docs/STREET_LIFE.md`) | three mechanisms: the `.OPT` traffic circuit (7 blocks, 6/6 exact) whose pedestrians `Slider_Init` spawns at `39·(5−density)·h[3]` and `Sliders_Tick` walks (lanes, routes, following, overtaking, reservation groups, action points); the authored extras (621 `scx.play.actor` sites, Anekbah's 26 unblocked by the RAW object word); the spatial index's push (spheres for actors, an ellipse for walkers) with the bump/talk messages; the head look. **Ported and drawn** — `engine: pedestrians`, `city crowd`, `street frame`, `crowd push`, `head look`; the density is one integer awaiting options row 6 |
 
 **And it is not only read: `engine/` runs it.** 31 of the 41 rows above are
 fully ported into the C++ replica, 7 partly, none is lifted-but-unconsumed or
@@ -841,6 +844,20 @@ flag form so a framing you found by eye can be pasted straight into a check,
 `ESC` quits.
 `--frames N --dump out.bin` writes the framebuffer without a window, which is
 how it is smoke-tested and how a shot is made to lay beside a capture.
+
+**A STREET START** (STREET_LIFE, 2026-09-03) stands in a city in adventure
+mode with its crowd, no intro to replay:
+
+```bash
+build/omk-play ../gamedata ../tables --save ../traces/save-appart.bin --area 0 \
+    --stand 1804,0,-6890,336            # Anekbah's main street, walkers passing
+build/omk-play ../gamedata ../tables --save ../traces/save-appart.bin --area 1 \
+    --address 4 --density 4             # Jaunpur, at one of its ADDRESSES (listed at start)
+```
+
+The save supplies the DB player record (Kay'l's actor record is in no city
+chunk); `--density 0..4` is options row 6, `--no-crowd` leaves the
+pedestrians out.
 `--vulkan` opens a Vulkan window and PRESENTS DIRECTLY - no readback, no
 texture upload - and does the mirror with a GPU stencil.
 

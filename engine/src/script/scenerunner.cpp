@@ -43,12 +43,23 @@ int clipOf(const ScxObject& o) {
     return -1;
 }
 // `Script_SelectRelativeBodyAnimation` places its character at `Path_Sample`
-// of the path param 8 names - GRID's `1KaylArrives` takes 0 (`UBas.p1`) and
-// its two successors take 1 (`UBas.p2-3`).
-int pathOf(const ScxObject& o) {
+// of a path addressed in TWO parts, like `Script_MoveObjectOnPath`'s:
+// param 7 is the chunk-0 record (`sub_4A6500(scene, p7)` -> the record's
+// loaded path array at +24) and param 8 the path inside it (`u32(v19, 4 *
+// p8)`). Read as a flat index into every path of the scene, Anekbah's
+// couples, beggars and gym walkers - whose files are records 8 and 7 - all
+// landed on the doors and watchtowers of record 0..12, in one heap
+// (corrected 2026-09-03 from a reader's frame). GRID has one file, which is
+// why the Impasse never showed it. -> the flat index, or -1.
+int flatPath(const std::vector<ScxPath>& paths, int file, int inside) {
+    for (std::size_t i = 0; i < paths.size(); ++i)
+        if (paths[i].file == file && paths[i].index == inside) return static_cast<int>(i);
+    return -1;
+}
+int pathOf(const ScxObject& o, const std::vector<ScxPath>& paths) {
     for (const auto& f : o.functions) {
         if (f.id != 0x0200002Au) continue;
-        if (f.params.size() >= 9) return f.params[8];
+        if (f.params.size() >= 9) return flatPath(paths, f.params[7], f.params[8]);
     }
     return -1;
 }
@@ -66,9 +77,9 @@ int clipOfFn(const ScxFunction& f) {
     if (f.id != 0x02000004u && f.id != 0x0200002Au) return -1;
     return f.params.size() >= 2 ? f.params[1] : -1;
 }
-int pathOfFn(const ScxFunction& f) {
+int pathOfFn(const ScxFunction& f, const std::vector<ScxPath>& paths) {
     if (f.id != 0x0200002Au) return -1;
-    return f.params.size() >= 9 ? f.params[8] : -1;
+    return f.params.size() >= 9 ? flatPath(paths, f.params[7], f.params[8]) : -1;
 }
 bool placementOfFn(const ScxFunction& f, float offset[3], float euler[3]) {
     if (f.id != 0x0200002Au || f.params.size() < 12) return false;
@@ -107,7 +118,7 @@ int SceneRunner::start(int oid, const char* how, bool waiting) {
     }
     if (!obj) { missed_.push_back(oid); return -1; }
     programs_.push_back(std::make_unique<Program>(*scx_, *obj));
-    Started st{oid, obj->name, how, waiting, -1, clipOf(*obj), pathOf(*obj)};
+    Started st{oid, obj->name, how, waiting, -1, clipOf(*obj), pathOf(*obj, scx_->paths())};
     st.relative = placementOf(*obj, st.offset, st.euler);
     started_.push_back(std::move(st));
     const int idx = static_cast<int>(programs_.size()) - 1;
@@ -248,7 +259,18 @@ int SceneRunner::handle(const std::vector<Call>& calls) {
         const bool actorFirst = c.op == 59 || c.op == 60;
         if (c.fields.size() < (actorFirst ? 2u : 1u)) continue;
         const bool waiting = c.op == 46 || c.op == 58 || c.op == 60;
-        const int idx = start(c.fields[actorFirst ? 1 : 0], how, waiting);
+        // THE OBJECT WORD IS RAW AND UNSIGNED. All six handlers read it
+        // `and ecx, 0FFFFh; mov ebp, ecx` - no 0xFFFF test, no `test ch, 40h`
+        // indirect step - and only the actor word (59/60) and the trailing
+        // word go through the shared fetch (0x403300, 0x4030E0, asmfn --op).
+        // It is the object's `handle >> 16`, a 16-bit id that may carry bit
+        // 15 and bit 14: Anekbah's are 0xC2xx, so read as an int16 they came
+        // out negative and none of its 26 startup extras matched (and read
+        // through the indirect fetch, as the disassembler did, they became
+        // params[718]). docs/STREET_LIFE.md 1.
+        const int object = static_cast<int>(
+            static_cast<std::uint16_t>(c.fields[actorFirst ? 1 : 0]));
+        const int idx = start(object, how, waiting);
         // 59/60 name the CHARACTER first and the object second, so the actor
         // this program drives is field 0 - which is how a frontend knows whose
         // pose it is.
@@ -256,7 +278,7 @@ int SceneRunner::handle(const std::vector<Call>& calls) {
         // ...and the set pieces keyed to it. A scene object passes a1 = 0; an
         // actor one passes the caller's own value, which is not modelled, so
         // only the a1 = 0 form fires here.
-        if (idx >= 0) firePieces(0, c.fields[actorFirst ? 1 : 0]);
+        if (idx >= 0) firePieces(0, object);
         // ...and the camera. The handler's LAST operand is the travel into
         // the editing's camera, `fild`/`fstp`'d into the request's +24 as
         // `max(field, 0)` frames - see `ActiveEditing` in the header. 46/90
@@ -331,7 +353,7 @@ void SceneRunner::tick(float dt) {
         if (!fn) continue;                    // this step plays no body animation
         auto& st = started_[i];
         st.clip     = clipOfFn(*fn);
-        st.path     = pathOfFn(*fn);
+        st.path     = pathOfFn(*fn, scx_->paths());
         st.relative = placementOfFn(*fn, st.offset, st.euler);
     }
     // The set pieces register this frame's emitters (`sub_451600`), then the

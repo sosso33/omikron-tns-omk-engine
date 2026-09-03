@@ -3939,6 +3939,308 @@ def c_engine_airlock_walk():
         "to 653 and playing 405/406; and the six markers in the trace's order"
 
 
+def c_opt_tracks():
+    r"""`TRAJECTOIRES\*.OPT` - the traffic circuits the procedural pedestrians
+    and the hover-taxis move on (docs/STREET_LIFE.md 2; tools/opt_track.py).
+
+    The layout is `Slider_Init`'s: a 76-byte header of (offset, count) pairs
+    for seven blocks - lanes 24, keys 20, actions 20, routes 12, steps 16,
+    reservation groups 4, group lists 2 - each starting where the previous
+    ends and the last ending on the file size, 6/6. Every reference resolves
+    (a lane's keys and routes, a route's destination and steps, a key's
+    action, a route's or step's group, a group's list), every runtime field
+    the movers write (the list heads at lane +12, key +0, route +0, the busy
+    byte at group +3) is ZERO on disk, and no route leads from a pedestrian
+    lane to a vehicle lane or back. The two spacings are the units the
+    density option multiplies: `39 * (5 - level) * pedSpacing` between
+    walkers along a lane.
+    """
+    import opt_track as OT
+    got, want = [], []
+    for p in OT.shipped():
+        t = OT.load(p); c = OT.check(t)
+        got.append((os.path.basename(p).lower(), c["ok"], t["laneCount"], c["ped_lanes"], c["veh_lanes"],
+                    len(t["keys"]), len(t["actions"]), len(t["routes"]), len(t["steps"]),
+                    len(t["groups"]), len(t["lists"]), t["pedSpacing"], t["vehSpacing"], c["cross_class"]))
+    want = [("anekbah.opt", 1, 242, 216, 26, 2781, 84, 344, 916, 482, 648, 15, 15, 0),
+            ("biblio.opt",  1,  27,  27,  0,  269,  7,  37,  27,  25,  26, 50, 15, 0),
+            ("lahorey.opt", 1, 162, 162,  0,  719, 33, 196,  81, 128, 142, 15, 15, 0),
+            ("puit.opt",    1,   6,   6,  0,   84, 10,   6,   2,   0,   0, 30, 15, 0),
+            ("qchaud.opt",  1, 259, 226, 33, 1744, 37, 341, 500, 367, 524, 30, 30, 0),
+            ("souk.opt",    1, 201, 179, 22,  999, 68, 246, 161, 191, 222, 30, 15, 0)]
+    return tuple(got), tuple(want), "file, layout+refs+runtime-zero ok, lanes, ped, veh, keys, actions, routes, steps, groups, lists, spacings, cross-class routes"
+
+
+def c_engine_pedestrians():
+    r"""The PROCEDURAL PEDESTRIANS run in the Session (docs/STREET_LIFE.md 2;
+    engine/src/actor/pedestrians.*; engine/tools/ped_probe).
+
+    Two chains. THE SPAWN: `sub_453B40`'s rule - one walker every
+    `39 * (5 - level) * pedSpacing` units of accumulated pedestrian-lane length
+    (the accumulator carries across lanes; the 200-slot pool ends the walk) -
+    written here over tools/opt_track.py's decode, against the port's count at
+    every density level 0..4, for the four city streets, and the Session's
+    spawn at level 3 equal to that count. THE WALK, 600 frames at level 3:
+    every walker still live and moved; NO mover off the lane network (the
+    keys, the routes' steps and their implicit last leg) by more than 8
+    units - one frame's advance at the doubled gait, because a mover carries
+    its overshoot past a corner until the next end-check and one frozen at an
+    action point stays there (Qalisar: 1.15 for 300 frames, then gone);
+    every body within 500 units of its mover - the gait stops the mover
+    beyond 58.5 and the walk clip brings the body back, an action point can
+    take a body further first; lane changes and action visits both happen;
+    no NaN. Shown to fail with the spawn factor changed 39 -> 40 (every
+    count moves).
+    """
+    eng = os.path.join(ROOT, "engine")
+    if not os.path.isdir(eng):
+        return ("skipped",), ("skipped",), "engine/ absent"
+    b = subprocess.run(["make", "-s"], cwd=eng, capture_output=True, text=True)
+    binp = os.path.join(eng, "build", "ped_probe")
+    if b.returncode != 0 or not os.path.exists(binp):
+        return ("build failed",), ("built",), "engine/ must build"
+    import opt_track as OT
+    def count(t, level):
+        spacing = 39.0 * ((5 - level) * t["pedSpacing"])
+        acc, n = 0.0, 0
+        for li in range(t["pedFirst"], t["pedEnd"]):
+            L = t["lanes"][li]
+            for k in range(L["keyCount"]):
+                dx, dy, dz = t["keys"][L["firstKey"] + k]["delta"]
+                if acc > spacing:
+                    if n >= 200: return n
+                    n += 1; acc = 0.0
+                acc += (dx * dx + dy * dy + dz * dz) ** 0.5
+        return n
+    # the areas naming a circuit at +115, by name
+    areas = {}
+    for k, ch in T.archive(os.path.join(O.TAGDIR, "AREA")).items():
+        if len(ch) > 124:
+            nm = ch[115:124].split(b"\0")[0].decode("ascii", "replace")
+            if nm and nm.lower() not in areas: areas[nm.lower()] = k
+    got, want = [], []
+    for stem in ("anekbah", "souk", "lahorey", "qchaud"):
+        area = areas.get(stem)
+        t = OT.load(omkpaths.data("TRAJECTOIRES", stem + ".opt"))
+        py = tuple(count(t, l) for l in range(5))
+        r = subprocess.run([binp, omkpaths.data_root(), os.path.join(ROOT, "tables"), str(area), "600", "3"],
+                           capture_output=True, text=True)
+        if r.returncode != 0:
+            return ("no run",), ("ran",), "ped_probe must run"
+        L = {}
+        for ln in r.stdout.splitlines():
+            f = ln.split()
+            if f and f[0] in ("counts", "session", "run"): L[f[0]] = dict(zip(f[1::2], f[2::2]))
+        c, se, run = L.get("counts", {}), L.get("session", {}), L.get("run", {})
+        port = tuple(int(c.get("level%d" % l, -1)) for l in range(5))
+        live = int(run.get("live", -1))
+        got.append((stem, area, port, int(se.get("spawned", -1)), live, int(run.get("moved", -1)),
+                    float(run.get("max_offlane", 99)) < 8.0, float(run.get("max_lag", 1e9)) < 500.0,
+                    int(run.get("lane_changes", 0)) > 0, int(run.get("actions", 0)) > 0, int(run.get("nan", 1))))
+        want.append((stem, area, py, py[3], py[3], py[3], True, True, True, True, 0))
+    return tuple(got), tuple(want), "stem, area, counts at level 0..4 (port) vs (rule), spawned, live, moved, on-network, lag<500, lane changes, actions, nan"
+
+
+def c_engine_street_frame():
+    r"""`omk-play` DRAWS the city crowd (docs/STREET_LIFE.md, step 4).
+
+    A street start - `--save traces/save-appart.bin --area 0` for the DB
+    player record and Anekbah, `--stand` on a lane where the pool's walkers
+    pass at frame 120 - rendered headless twice, with the crowd and with
+    `--no-crowd`. Adventure mode is reached in both, the crowd run reports the
+    pool live and walkers drawn within the engine's last LOD distance, and the
+    two frames DIFFER by more than a few hundred pixels: the walkers are on
+    the picture. Needs SDL; reports skipped without it.
+
+    What the eye settled and this cannot: the walkers are posed mid-stride in
+    the city's own models, turned along their lanes, feet on the street (the
+    frames of 2026-09-03); what only a person can settle is the walk's pace
+    against the original and the facing convention over a turn.
+    """
+    eng = os.path.join(ROOT, "engine")
+    if not os.path.isdir(eng):
+        return ("skipped",), ("skipped",), "engine/ absent"
+    mk = subprocess.run(["make", "-s", "play"], cwd=eng, capture_output=True, text=True)
+    play = os.path.join(eng, "build", "omk-play")
+    if mk.returncode != 0 or not os.path.exists(play):
+        return ("skipped",), ("skipped",), "no SDL - the frontend is optional (PORTING A8)"
+    save = os.path.join(ROOT, "traces", "save-appart.bin")
+    env = dict(os.environ, SDL_VIDEODRIVER="dummy")
+    outs, dumps = [], []
+    for k, extra in enumerate(([], ["--no-crowd"])):
+        dump = os.path.join(eng, "build", "street-%d.bin" % k)
+        r = subprocess.run([play, omkpaths.data_root(), os.path.join(ROOT, "tables"), "--save", save,
+                            "--area", "0", "--address", "20", "--stand", "1804,0,-6890,336",
+                            "--frames", "120", "--software", "--res", "640x480", "--nofmv",
+                            "--dump", dump] + extra, capture_output=True, text=True, env=env)
+        outs.append(r.stdout)
+        dumps.append(open(dump, "rb").read() if os.path.exists(dump) else b"")
+    live = drawn = -1
+    for ln in outs[0].splitlines():
+        if "pedestrians -" in ln:
+            f = ln.split()
+            live = int(f[f.index("live,") - 1]); drawn = int(f[f.index("drawn") - 1])
+    differ = 0
+    if len(dumps[0]) == len(dumps[1]) and dumps[0]:
+        differ = sum(1 for i in range(0, len(dumps[0]), 2) if dumps[0][i:i+2] != dumps[1][i:i+2])
+    got = ("ADVENTURE MODE" in outs[0], "ADVENTURE MODE" in outs[1], live, drawn >= 1,
+           "pedestrians -" in outs[1], differ > 500, "120 frames presented" in outs[0])
+    want = (True, True, 200, True, False, True, True)
+    return got, want, "adventure reached with and without the crowd; 200 live, some drawn; no pool line without it; the two frames differ (%d pixels)" % differ
+
+
+def c_engine_crowd_push():
+    r"""The CROWD PUSH runs (docs/STREET_LIFE.md 3; engine/src/actor/spatial.*;
+    engine/tools/push_probe).
+
+    `shape`: one instance entry (a walker) at the origin facing -Z, its
+    sphere radius 20, a probe sphere of radius 10 walked in. ACROSS the
+    heading the push begins one radius plus the probe's out (x 30 nothing,
+    x 20 a push) and grows inward; ALONG the heading `sub_45E690`'s ellipse is
+    two radii long but `SpatialIndex_Query`'s reach box - the two models'
+    `+88` - clips it at 30, so z 40 is nothing and z 30 pushes twice what x 20
+    does. The quarter factor: x 20 is 10 units of penetration and a push of
+    2.5. `walk`: Anekbah, the player built on its set and stood 120 units
+    ahead of a walker on its lane facing it; the walker reaches him, the push
+    moves him tens of units, and the bump message 15/16 posts ONCE in 150
+    frames (100 frames of hold after it). `talk`: a walker in its action's
+    main phase, the player 80 units in front, `talkToPedestrian` finds it,
+    posts 13/14 once, and the walker's phase holds at 2 for 200 more frames
+    (the countdown is suspended for the talk target).
+    """
+    eng = os.path.join(ROOT, "engine")
+    if not os.path.isdir(eng):
+        return ("skipped",), ("skipped",), "engine/ absent"
+    b = subprocess.run(["make", "-s"], cwd=eng, capture_output=True, text=True)
+    binp = os.path.join(eng, "build", "push_probe")
+    if b.returncode != 0 or not os.path.exists(binp):
+        return ("build failed",), ("built",), "engine/ must build"
+    r = subprocess.run([binp, omkpaths.data_root(), os.path.join(ROOT, "tables"), "0", "150"],
+                       capture_output=True, text=True)
+    if r.returncode != 0:
+        return ("no run",), ("ran",), "push_probe must run"
+    L = {}
+    for ln in r.stdout.splitlines():
+        f = ln.split()
+        if f and f[0] == "shape":
+            L[f[1]] = {k: float(v) for k, v in (x.split(":") for x in f[2:])}
+        elif f and f[0] in ("walk", "talk"):
+            L[f[0]] = dict(zip(f[1::2], f[2::2]))
+    ac, al, w, t = L.get("across", {}), L.get("along", {}), L.get("walk", {}), L.get("talk", {})
+    got = (ac.get("x30"), ac.get("x20"), ac.get("x10") > ac.get("x20", 0) if "x10" in ac else None,
+           al.get("z40"), al.get("z30"), al.get("z10", 0) < al.get("z30", 0),
+           int(w.get("touched_frames", 0)) >= 1, float(w.get("moved", 0)) > 10.0, int(w.get("bumps", -1)),
+           int(t.get("found", 0)), int(t.get("talks", 0)), t.get("phase_before"), t.get("phase_after"))
+    want = (0.0, 2.5, True, 0.0, -5.0, True, True, True, 1, 1, 1, "2", "2")
+    return got, want, "shape across x30/x20/x10 grows; along z40 clipped, z30 = -5, z10 stronger; walk touched, moved, one bump; talk found, one message, phase held"
+
+
+def c_engine_head_look():
+    r"""`Actor_SetHeadLook` over a real model (docs/STREET_LIFE.md step 6;
+    actor/pose.h `aimHead`; engine/tools/head_probe).
+
+    `character.look_at_player` (138) writes an actor's look-at slot and
+    `Actors_TickAll` aims his head at the player's every frame: the pitch and
+    yaw from the head's forward to the target, pitch clamped to +-40 and yaw
+    to +-70 (0x00468B50), each eased an eighth of the way per frame. Over the
+    Demon's head (`D3Tete`): a target 45 degrees to either side turns the
+    forward by exactly 45; one at 120 and one behind by 70, the clamp; one 60
+    degrees up lifts it 40, one down -40; and from rest the ease covers 45/8
+    in one frame and lands within a degree in forty. The transition is the
+    thing tested: the forward MEASURED after the aim, not the angle asked.
+    """
+    eng = os.path.join(ROOT, "engine")
+    if not os.path.isdir(eng):
+        return ("skipped",), ("skipped",), "engine/ absent"
+    b = subprocess.run(["make", "-s"], cwd=eng, capture_output=True, text=True)
+    binp = os.path.join(eng, "build", "head_probe")
+    if b.returncode != 0 or not os.path.exists(binp):
+        return ("build failed",), ("built",), "engine/ must build"
+    r = subprocess.run([binp, omkpaths.data_root(), "DE3_FN"], capture_output=True, text=True)
+    if r.returncode != 0:
+        return ("no run",), ("ran",), "head_probe must run"
+    C = {}
+    head = ""
+    for ln in r.stdout.splitlines():
+        f = ln.split()
+        if f and f[0] == "model": head = f[6] if len(f) > 6 else ""
+        if f and f[0] == "case": C[f[1]] = {k: float(v) for k, v in zip(f[2::2], f[3::2])}
+    def turned(n): return round(C.get(n, {}).get("turned", 999), 1)
+    def lifted(n): return round(C.get(n, {}).get("lifted", 999), 1)
+    got = (head, turned("front"), abs(turned("left45")), abs(turned("right45")), abs(turned("right120")),
+           abs(turned("behind")), lifted("up60"), lifted("down60"),
+           round(abs(C.get("left45", {}).get("eased_one", 0)), 2), abs(C.get("left45", {}).get("eased_forty", 0)) > 44.0)
+    want = ("D3Tete", 0.0, 45.0, 45.0, 70.0, 70.0, 40.0, -40.0, 5.62, True)
+    return got, want, "the Demon's head; turned front/left45/right45/right120/behind; lifted up60/down60; one frame of ease (45/8); forty frames land"
+
+
+def c_engine_city_crowd():
+    r"""The AUTHORED EXTRAS of a city street start in the Session
+    (docs/STREET_LIFE.md 1) - and the object word of every `scx.play*` is a
+    RAW, UNSIGNED 16-bit id.
+
+    A city's startup script (chunk +4) issues one `scx.play.actor` per placed
+    extra - couples, beggars, patrols - each a looping scene program on a
+    character the placement table spawned. Two independent chains must agree:
+    the startup script decoded by tools/dialog_disasm.py (ops 59/60, the
+    object word taken raw per `RAW_WORD`) against what `engine/tools/
+    city_crowd` reports the Session actually started after 60 frames, with the
+    CHARACTERS id, the clip and the path resolved for every one.
+
+    The handlers read the object word `and ecx, 0FFFFh; mov ebp, ecx` - no
+    0xFFFF test and no 0x4000 indirect step (0x403300, 0x4030E0; `asmfn.py
+    --op 59`). Anekbah's object ids are 0xC2xx, so read as int16 they came
+    out negative and the port started NONE of its 26 (Jaunpur's and
+    Lahoreh's ids are below 0x4000 and always worked); read through the
+    indirect fetch, as the disassembler did, they were `param[718]`. Shown to
+    fail with the mask dropped from `SceneRunner::handle`: Anekbah 0/26.
+    """
+    eng = os.path.join(ROOT, "engine")
+    if not os.path.isdir(eng):
+        return ("skipped",), ("skipped",), "engine/ absent"
+    b = subprocess.run(["make", "-s"], cwd=eng, capture_output=True, text=True)
+    binp = os.path.join(eng, "build", "city_crowd")
+    if b.returncode != 0 or not os.path.exists(binp):
+        return ("build failed",), ("built",), "engine/ must build"
+    import dialog_disasm as D
+    areas = T.archive(os.path.join(O.TAGDIR, "AREA"))
+    got, want = [], []
+    for area in (0, 1, 64, 145):            # Anekbah, Jaunpur, Lahoreh, Mahaleel
+        chunk = areas[area]
+        start = struct.unpack_from("<i", chunk, 4)[0]
+        ops, st = D.disasm(chunk, start, len(chunk))
+        authored = set()
+        for pc, op, raw in ops:
+            if op in (59, 60) and len(raw) >= 4:
+                authored.add(struct.unpack_from("<H", raw, 2)[0])
+        # 300 frames: Lahoreh's startup script parks on `scx.play.wait` behind
+        # its fans before it reaches the extras (9 of 29 at 60 frames).
+        r = subprocess.run([binp, omkpaths.data_root(), os.path.join(ROOT, "tables"),
+                            str(area), "300"], capture_output=True, text=True)
+        if r.returncode != 0:
+            return ("no run",), ("ran",), "city_crowd must run"
+        head, started = {}, {}
+        for ln in r.stdout.splitlines():
+            f = ln.split()
+            if f and f[0] == "area":
+                head = dict(zip(f[2::2], f[3::2]))
+            elif f and f[0] == "program":
+                d = dict(zip(f[2:10:2], f[3:11:2]))       # the name is last, and may hold spaces
+                started[int(f[1], 16)] = (" ".join(f[11:]), d)
+        actor_objs = {o for o, (n, d) in started.items() if d.get("how") == "actor"}
+        hit = authored & actor_objs
+        resolved = sum(1 for o in hit
+                       if int(started[o][1]["actor"]) >= 0 and int(started[o][1]["clip"]) >= 0
+                       and int(started[o][1]["path"]) >= 0)
+        # a zone script fired at the spawn point may start one more; the
+        # tool's own count must cover the authored set
+        n = len(authored)
+        got.append((area, st, n, len(hit), resolved, sorted(authored - actor_objs),
+                    int(head.get("actor_programs", -1)) >= n))
+        want.append((area, "ok", n, n, n, [], True))
+    return tuple(got), tuple(want), "4 cities: every startup scx.play.actor starts, resolved"
+
+
 def c_engine_spawn_from_tables():
     r"""`Actors_SpawnFromTables` LIVE in the Session - the world's characters
     at an area load (`spawn_probe`), T19 for issue 40 of
@@ -16977,7 +17279,7 @@ def c_licence_headers():
                    if TAG in open(p, encoding="utf-8",
                                   errors="replace").read(600)]
     return (authored, sorted(missing), len(vendored), mislabelled), \
-           (301, [], 1, []), \
+           (312, [], 1, []), \
            "authored source files under tools/, engine/src, engine/tools, " \
            "engine/backends and scripts/; those MISSING the SPDX tag; " \
            "vendored files in engine/third_party; and vendored files wrongly " \
@@ -18183,6 +18485,7 @@ CHECKS = [
     ("dialog.start sites", c_trigger_sites,     "SCRIPT_VM"),
     (".CTL walk",          c_ctl,               "ASSETS"),
     (".SCX scenes",        c_scx,               "FILE_FORMATS 5c"),
+    ("opt tracks",         c_opt_tracks,        "STREET_LIFE 2"),
     ("ADDRESSES table",    c_addresses,         "FILE_FORMATS 5c"),
     ("object table",       c_objects,           "FILE_FORMATS 5c"),
     ("actor -> model",     c_actor_models,      "FILE_FORMATS 5e"),
@@ -18364,6 +18667,11 @@ SLOW = [
     ("engine: live zones", c_engine_live_zones, "SCRIPT_VM; engine/README"),
     ("engine: airlock walk", c_engine_airlock_walk, "SCRIPT_VM; engine/README"),
     ("engine: spawn from tables", c_engine_spawn_from_tables, "SCRIPT_VM; FILE_FORMATS; engine/README"),
+    ("engine: city crowd", c_engine_city_crowd, "STREET_LIFE 1; SCRIPT_VM"),
+    ("engine: pedestrians", c_engine_pedestrians, "STREET_LIFE 2; actor/pedestrians.h"),
+    ("engine: street frame", c_engine_street_frame, "STREET_LIFE; todo/street-life 4"),
+    ("engine: crowd push", c_engine_crowd_push, "STREET_LIFE 3; actor/spatial.h"),
+    ("engine: head look", c_engine_head_look, "STREET_LIFE; actor/pose.h"),
     ("engine: zone pump",  c_engine_zone_pump,  "engine/README"),
     ("engine: zone registry", c_engine_zone_registry, "engine/README"),
     ("engine: voice over", c_engine_voice_over, "CUTSCENES 5; engine/README"),

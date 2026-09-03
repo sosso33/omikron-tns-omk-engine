@@ -124,6 +124,18 @@ id`, `args[1] = the sender`. **`push.i16 0x4000` therefore pushes the sender.**
 indirect operand anywhere else would dereference null — which is exactly what
 the corpus shows.
 
+**Not every field runs the fetch - the `scx.play` family's OBJECT word is
+read RAW** (corrected 2026-09-03). Ops 46, 57, 58 and 90 read their first
+word, and 59/60 their second, as `and ecx, 0FFFFh; mov ebp, ecx`: no 0xFFFF
+test, no `test ch, 40h`, an unsigned 16-bit scene-object id (the object's
+`handle >> 16`). Only the actor word and the trailing word go through the
+shared fetch. Thirty shipped object words carry bit 14 - 26 of them Anekbah's
+startup extras, whose ids are `0xC2xx` - and reading them through the indirect
+rule turned the whole city's crowd into `param[718]`; `tools/dialog_disasm.py`
+`RAW_WORD` names the fields, `verify.py: engine: city crowd` pins it, and
+[`docs/STREET_LIFE.md`](STREET_LIFE.md) §1 has the story. The count below is
+over the fields that DO run the fetch.
+
 **All 59 indirect operands in the world scripts are `push.i16 0x4000`, and all
 59 are in message handlers**: AREA 2 (message 3), 61 (3), 141 (3), 144 (2),
 SCENE 56 (3), and two `IAM\GLOBAL` records (4 and 20) — every one of them a

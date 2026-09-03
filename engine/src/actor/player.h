@@ -178,6 +178,10 @@ public:
     // nothing else. `start_` moves too, so `distanceWalked` measures the walk
     // from where he was put down, not from where he was first built.
     void placeAt(const float pos[3], float facing);
+    // The crowd push (`Actor_TickNpc`: `f32(actor,244) += push[0]` ... and
+    // `o3de_MoveNodeBy`, before `Actor_ApplyMotion`): the position moved
+    // outright, no floor probe - the next tick's motion probes the ground.
+    void nudge(const float d[3]);
 
     // --- what the zone scan and the frontend take ---------------------
     const float* pos() const { return pos_; }

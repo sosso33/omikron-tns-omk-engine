@@ -104,6 +104,11 @@ void PlayerController::placeAt(const float pos[3], float facing) {
     euler_[1] = wrap360(facing);
 }
 
+void PlayerController::nudge(const float d[3]) {
+    walker_.moveTo(walker_.pos()[0] + d[0], walker_.pos()[1] + d[1], walker_.pos()[2] + d[2]);
+    for (int k = 0; k < 3; ++k) pos_[k] = static_cast<float>(walker_.pos()[k]);
+}
+
 PlayerController::PlayerController(const Setup& s)
     : ctl_(s.ctl), data_(s.ctlData), meshes_(s.meshes),
       rt_(*s.ctl, true),

@@ -671,6 +671,15 @@ def tag(op, value):
     return tag_in(SECTION.get(op), value)
 
 
+# The fields the handlers read RAW - no 0xFFFF test, no 0x4000 indirect step
+# (`and ecx, 0FFFFh; mov ebp, ecx`), an unsigned 16-bit value. It is the scene
+# object's `handle >> 16` in every `scx.play*` opcode: field 0 for 46/57/58/90,
+# field 1 for 59/60 (those name the actor first). Rendering these through the
+# indirect rule printed Anekbah's 0xC2xx objects as `param[718]` and hid the
+# whole city's crowd (docs/STREET_LIFE.md 1). `asmfn.py --op N` for each.
+RAW_WORD = {46: (0,), 57: (0,), 58: (0,), 90: (0,), 59: (1,), 60: (1,)}
+
+
 def word_operand(b):
     """Render one 16-bit operand the way the shared fetch (0x00401AA0) reads it.
 

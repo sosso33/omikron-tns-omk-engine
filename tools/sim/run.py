@@ -191,8 +191,12 @@ class Session:
             def step(self, op, raw, code, start, pc):
                 if op in SCX_PLAY and len(raw) >= 2:
                     f = struct.unpack_from("<%dh" % (len(raw) // 2), raw, 0)
-                    # 59/60 name the actor first, the object second
-                    oid = f[1] if op in (59, 60) else f[0]
+                    # 59/60 name the actor first, the object second - and the
+                    # object word is RAW and UNSIGNED: the handlers read it
+                    # `and ecx, 0FFFFh` with neither the 0xFFFF test nor the
+                    # 0x4000 indirect step. It is the object's `handle >> 16`,
+                    # and Anekbah's are 0xC2xx (docs/STREET_LIFE.md 1).
+                    oid = (f[1] if op in (59, 60) else f[0]) & 0xFFFF
                     prog = sess.start_object(oid, SCX_PLAY[op])
                     if op in SCX_WAIT and prog is not None:
                         # ScriptObject_Start gets the context's slot instead of
