@@ -6232,6 +6232,86 @@ def c_engine_impasse_fx():
            ("the Impasse's beats fire 15 set-piece rows and peak at 108 live "
             "particles, alive on 262 of 900 frames")
 
+def c_engine_walker_falls():
+    r"""`engine/`'s walker takes a drop instead of refusing it - and the
+    measurement that says why it had to.
+
+    Filed from a play report: *"if the character go on a bench or on a steep
+    slope, the character is stuck can not move (jumping doesn't work either)"*.
+    The walker answered every drop past the step limit with `Refused` and left
+    the actor where he was, on the reading that "ledges are obeyed", and
+    nothing in the port ever set `ignoreLedges`. There was no other way down -
+    no vertical velocity, no airborne state - so **every raised surface in the
+    game was a surface the player could never leave**.
+
+    `Walk_GroundResponse` (0x00465460) branches on whether the ground is above
+    the feet after the frame's gravity or below them, and the ledge and slope
+    refusals are in the ABOVE branch only. Below the feet is the airborne
+    branch: a drop under 7.874 units is absorbed in the frame, anything more
+    sets the fall byte at actor+1304 and enters ACTOR_STATE 18, tiered at
+    59.055 (`dword_910350`), 118.11 and 196.85. **There is no refusal in that
+    branch at all.** Gravity is 12.860892 a frame into actor+220, clamped at
+    787.40155, written into actor+228 by `Actor_LoadModel` (0x0041A730,
+    `mov dword ptr [ebx+0E4h], 414DC637h`) - 9.8 m/s^2 in the engine's own
+    unit, an inch, at 30 Hz.
+
+    And a face past the 30-degree limit is not a hole either. The same
+    function tests `cos(30) > -normal.y` and, on a steep face, adds the face
+    normal to the horizontal velocity and WRITES `dword_910340` (11.811) into
+    the vertical one - the actor slides off. The port's probe soup dropped
+    those faces outright, so a player who reached one had no floor in any
+    direction, which is the report's second half.
+
+    The census (`engine/tools/stuck_probe.cpp`) stands the walker on every
+    walkable triangle's centroid and looks in 16 directions at a running
+    stride. Before: **0** descents anywhere, from 671 / 36 / 342 spots that
+    stand beside a drop in Aapkayl / AImpasse / Anekbah - and 26 spots in
+    Aapkayl and 2 in Anekbah from which nothing moved at all. After: **315 /
+    6 / 48** descents and **0** stranded.
+
+    SHOWN TO FAIL: putting the old bound back (`kMaxUnsweptDrop = kStepDown`)
+    gives 13 / 1 descents in Aapkayl / Anekbah - the ones the SLIDE accounts
+    for - and strands 23 and 2 again.
+
+    **What is still this port's and not the game's**, and it is labelled in
+    `walk.h` as well: `kMaxUnsweptDrop`. The engine keeps the player off a
+    balcony with `Actor_Move`'s swept sphere (`Sweep_ActorMove` 0x004AD360 ->
+    `Sweep_PolygonKernel` 0x004A9D30, 930 lines of x87), which is not ported;
+    without it the ledge rule was the only wall the walker had. So the
+    refusal is kept for drops past the engine's own no-damage tier - a bench,
+    a kerb, a crate and a flight of stairs all descend, a stairwell does not.
+    That bound goes away when the sweep arrives, and until then it is the
+    reason the deep-drop columns below stay refused.
+    """
+    import subprocess, tempfile, shutil
+    eng = os.path.join(ROOT, "engine")
+    if not os.path.isdir(eng):
+        return ("skipped",), ("skipped",), "engine/ absent"
+    b = subprocess.run(["make", "-s"], cwd=eng, capture_output=True, text=True)
+    binp = os.path.join(eng, "build", "stuck_probe")
+    if b.returncode != 0 or not os.path.exists(binp):
+        return ("build failed",), ("built",), "engine/ must build"
+    tmp = tempfile.mkdtemp()
+    got = []
+    try:
+        for stem, cap in (("Aapkayl", 4000), ("AImpasse", 4000),
+                          ("Anekbah", 1500)):
+            model = omkpaths.data("MESHES/DECORS/%s.3DO" % stem)
+            if not os.path.exists(model):
+                return ("skipped",), ("skipped",), "%s absent" % stem
+            out = os.path.join(tmp, stem + ".bin")
+            subprocess.run([binp, model, "--max", str(cap), "--out", out],
+                           capture_output=True)
+            _, _, ledge, down, strand, _ = struct.unpack_from(
+                "<6i", open(out, "rb").read(), 0)
+            got.append((ledge, down, strand))
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+    return tuple(got), ((671, 315, 0), (36, 6, 0), (342, 48, 0)), \
+        "per set (Aapkayl, AImpasse, Anekbah): spots standing beside a drop, " \
+        "spots from which the walker actually goes down, and spots on a " \
+        "ledge from which nothing moves at all - the last must be 0"
+
 def c_engine_crowd_nan():
     r"""`engine/`: the crowd index REJECTS a non-finite entry.
 
@@ -17318,7 +17398,7 @@ def c_licence_headers():
                    if TAG in open(p, encoding="utf-8",
                                   errors="replace").read(600)]
     return (authored, sorted(missing), len(vendored), mislabelled), \
-           (314, [], 1, []), \
+           (316, [], 1, []), \
            "authored source files under tools/, engine/src, engine/tools, " \
            "engine/backends and scripts/; those MISSING the SPDX tag; " \
            "vendored files in engine/third_party; and vendored files wrongly " \
@@ -18736,6 +18816,7 @@ SLOW = [
     ("credit layout", c_credit_layout, "docs/UI"),
     ("engine: impasse fx", c_engine_impasse_fx, "todo/omk-play"),
     ("engine: crowd nan", c_engine_crowd_nan, "todo/omk-play"),
+    ("engine: walker falls", c_engine_walker_falls, "todo/omk-play"),
     ("engine: props", c_engine_props, "todo/omk-play"),
     ("sprite ids scene-local", c_sprite_ids_are_scene_local, "docs/ASSETS"),
     ("engine: scene sounds", c_engine_scene_sounds, "engine/README"),

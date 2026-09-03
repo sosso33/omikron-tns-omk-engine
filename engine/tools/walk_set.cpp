@@ -47,9 +47,9 @@ int main(int argc, char** argv) {
     omk::Walker w(soup, std::atof(argv[2]), sy, std::atof(argv[4]));
     const int steps = std::atoi(argv[5]);
 
-    int moved = 0, reverted = 0, blocked = 0, refused = 0;
+    int moved = 0, reverted = 0, blocked = 0, refused = 0, fell = 0, slid = 0;
     double ymin = w.pos()[1], ymax = w.pos()[1];
-    double fell = 0.0;
+    double worstFall = 0.0;
     // an outward spiral: covers the room without needing a route
     // the reference's own spiral: 2*pi*i/64 with a 25-unit stride, slow
     // enough that the walk stays inside the room
@@ -61,10 +61,15 @@ int main(int argc, char** argv) {
             case omk::StepResult::Reverted: ++reverted; break;
             case omk::StepResult::Blocked:  ++blocked; break;
             case omk::StepResult::Refused:  ++refused; break;
+            case omk::StepResult::Fell:     ++fell; break;
+            case omk::StepResult::Slid:     ++slid; break;
         }
+        // the vertical half: the controller owes the walker one of these a
+        // frame, so a spiral that never ticks would leave a fall hanging
+        w.tick(1.0);
         ymin = std::min(ymin, w.pos()[1]);
         ymax = std::max(ymax, w.pos()[1]);
-        fell = std::max(fell, w.fall());
+        worstFall = std::max(worstFall, w.fall());
     }
     std::vector<std::uint8_t> o;
     const auto put32 = [&o](std::int32_t v) {
@@ -74,14 +79,15 @@ int main(int argc, char** argv) {
     put32(static_cast<std::int32_t>(soup.size() / 9));
     put32(moved); put32(reverted); put32(blocked); put32(refused);
     put32(static_cast<std::int32_t>(std::lround((ymax - ymin) * 100)));
-    put32(static_cast<std::int32_t>(std::lround(fell * 100)));
+    put32(static_cast<std::int32_t>(std::lround(worstFall * 100)));
     if (!omk::safeOutputPath(argv[6])) return 2;
     std::ofstream f(argv[6], std::ios::binary);
     f.write(reinterpret_cast<const char*>(o.data()),
             static_cast<std::streamsize>(o.size()));
     std::printf("%zu walkable triangles; moved %d, reverted %d, blocked %d, "
-                "refused %d; height span %.2f, worst fall %.2f\n",
-                soup.size() / 9, moved, reverted, blocked, refused,
-                ymax - ymin, fell);
+                "refused %d, fell %d, slid %d; height span %.2f, "
+                "worst fall %.2f\n",
+                soup.size() / 9, moved, reverted, blocked, refused, fell, slid,
+                ymax - ymin, worstFall);
     return 0;
 }

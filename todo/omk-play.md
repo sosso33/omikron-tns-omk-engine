@@ -15,6 +15,75 @@ waiting on its evidence.
 
 ## Open (batch 6, filed 2026-09-04)
 
+### 67. Stuck on a bench and on a steep slope: the walker had no way DOWN — A
+
+> **Fixed 2026-09-04. NOT yet confirmed in play.** Both halves are live: the
+> bench through `Walker::step`'s own frame delta, and the slope through the
+> `Setup::steep` wiring in `player.*` and `play.cpp`, which is applied. The
+> reader has not played this yet - `verify.py: engine walker falls` is the
+> whole of the evidence, and a census is not a play test.
+
+Filed 2026-09-04 from a play report — *if the character go on a bench or on a
+steep slope, the character is stuck can not move (jumping doesn't work
+either).*
+
+**Two symptoms, two different causes, and the second is not a ledge at all.**
+
+**The bench.** `Walker::step` answered any drop past the step limit with
+`Refused` and left the actor standing, on the reading that "ledges are obeyed";
+`ignoreLedges`, the port's copy of `g_IgnoreLedges`, was never set by anything.
+There was no other way down - no vertical velocity, no airborne state - so
+every raised surface in the game was one the player could never leave.
+Measured before the fix: **0** downward steps anywhere in Aapkayl, AImpasse or
+Anekbah, from 671 / 36 / 342 spots that stand beside a drop, and 26 spots in
+Aapkayl and 2 in Anekbah from which nothing moved in any direction at all.
+
+`Walk_GroundResponse` (0x00465460) branches on whether the ground is above the
+feet after the frame's gravity or below them. **The ledge and slope refusals
+are in the ABOVE branch only**, are gated on quantities the port does not
+compute, and do not even stop the actor when they fire - they restore the last
+safe position and re-issue the same delta through `Actor_Move` in mode 4, the
+collide-and-slide. Below the feet is the airborne branch: under 7.874 units the
+drop is absorbed in the frame, anything more sets the fall byte at actor+1304
+and enters ACTOR_STATE 18, tiered at 59.055 (`dword_910350`), 118.11 and
+196.85. **No refusal in that branch at all.** Gravity is 12.860892 a frame into
+actor+220 clamped at 787.40155, written by `Actor_LoadModel` (0x0041A730,
+`mov dword ptr [ebx+0E4h], 414DC637h`) - 9.8 m/s^2 in inches at 30 Hz.
+
+**The slope.** A face past 30 degrees is not a hole. The same function tests
+`cos(30) > -normal.y` and, on a steep face, adds the face normal to the
+horizontal velocity and WRITES `dword_910340` (11.811) into the vertical one:
+the actor slides off. `collisionSoup(Walkable)` dropped those faces outright,
+so a player who reached one had no floor under him in any direction and every
+step reverted - which is exactly "cannot move". `SoupKind::Steep` is the
+complement and `Walker::setSteep` installs it.
+
+**Also corrected on the way**: the step limit was 11.87 and the engine's is
+11.811023 (`dword_910340`, 30 cm / 2.54); the fall tiers were 118.1 / 196.9
+against the literals 118.11024 / 196.85039.
+
+**What is still this port's and not the game's.** `kMaxUnsweptDrop` in
+`walk.h`. The engine keeps the player off a balcony with `Actor_Move`'s swept
+sphere (`Sweep_ActorMove` 0x004AD360 -> `Sweep_PolygonKernel` 0x004A9D30, 930
+lines), which is not ported, and without it the ledge rule was the only wall
+the walker had. So the refusal is kept above the engine's own no-damage tier:
+a bench, a kerb, a crate and a flight of stairs descend, a stairwell does not.
+It goes away when the sweep arrives.
+
+After: **315 / 6 / 48** descents and **0** stranded.
+`verify.py: engine walker falls`, shown to fail (315/48 -> 13/1, stranded
+0/0 -> 23/2 with the old bound restored).
+
+**The class** — every raised surface and every steep face in the game.
+
+**Next**: the swept sphere. It is what stops the player at a wall, it is what
+slides him along one instead of stopping dead (`play.cpp`'s own comment: "a
+blocked step stops instead of sliding"), and it is what makes
+`kMaxUnsweptDrop` unnecessary. `Sweep_PolygonKernel` is 930 lines of x87 and
+`engine: walk`'s docstring already records that there is no shipped fact to
+prove a transcription against - so it needs an oracle designed for it before
+it is worth starting.
+
 ### 66. The world TAKE is a .CTL SPECIAL MOVE, not a script — B
 
 Not a regression; an unported mechanic, opened while wiring object and NPC

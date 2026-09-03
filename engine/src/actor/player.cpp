@@ -134,6 +134,7 @@ PlayerController::PlayerController(const Setup& s)
     rt_.loadModel();
     rt_.scxStart();
     rt_.scxDrivenDone();
+    walker_.setSteep(s.steep);
     // Actor_TickNpc's +1308 pass: the facing is already derived by the caller
     // (headingFromClipRoot); `SetPersoBankGroup(channel, Cef_DefaultGroup)`
     // resets the machine to the default group's default entry.
@@ -435,9 +436,14 @@ void PlayerController::tick(float dt, std::uint32_t word) {
     const double dz = static_cast<double>(world[2] + last_.shift[2]);
     if (std::fabs(dx) > 1e-6 || std::fabs(dz) > 1e-6) {
         last_.stepped = true;
-        last_.step = walker_.step(dx, dz);
+        last_.step = walker_.step(dx, dz, dt);
     } else {
-        last_.step = StepResult::Moved;
+        // Standing still horizontally is not standing still. An actor who
+        // stepped off a ledge is FALLING, and `Walk_GroundResponse` runs every
+        // frame whatever `Actor_Move` was handed - so the vertical half is
+        // owed a tick even when the clip produces no root delta. Without it he
+        // hangs in the air until he asks to move again.
+        last_.step = walker_.tick(dt);
     }
     pos_[0] = static_cast<float>(walker_.pos()[0]);
     pos_[1] = static_cast<float>(walker_.pos()[1]);

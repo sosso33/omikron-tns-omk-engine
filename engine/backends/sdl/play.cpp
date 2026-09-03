@@ -1671,6 +1671,9 @@ int main(int argc, char** argv) {
     std::vector<omk::CollisionSphere> playerSpheres;   // the crowd push tests these
     float playerReach = 0.0f;                           // his model's +88
     omk::TriangleSoup playerSoup;
+    // the same merge for the STEEP faces, so the controller can stand on a
+    // slope and slide off it instead of finding no floor (omk-play 67)
+    omk::TriangleSoup playerSteep;
     std::string playerModel, playerCtlName;
     bool  playerReady = false, adventure = false, followCam = false;
     int   placementSeen = 0;      // Session::placementSeq() as last consumed
@@ -2493,6 +2496,10 @@ int main(int argc, char** argv) {
         std::vector<omk::Texture> tex;
         omk::MirrorPlane mirror;
         omk::TriangleSoup soup;      // its WALKABLE soup: the feet's decor probe
+        // and the faces PAST the slope limit: `Walk_GroundResponse` stands the
+        // actor on a steep face and slides him off it, so dropping them made a
+        // slope a hole with no floor in any direction (omk-play 67)
+        omk::TriangleSoup steep;
         // The set's own meshes, kept so a scripted motion can name one, and
         // the corners as BUILT, so a motion patches the original rather than
         // accumulating on the last frame's patch.
@@ -2583,6 +2590,7 @@ int main(int argc, char** argv) {
         if (t) w.tex = omk::textures(d, omk::DataFs::readPath(*t));
         w.mirror = omk::mirrorPlane(d);
         w.soup = omk::collisionSoup(d, omk::SoupKind::Walkable);
+        w.steep = omk::collisionSoup(d, omk::SoupKind::Steep);
         if (const auto mh = omk::readHeader(d)) w.meshes = omk::readMeshes(d, *mh);
         // THE SET'S OWN EMITTERS - `Sfx_BindAmbientEffects`, the environment
         // family. Every mesh flagged 0x40000000 whose first four name bytes
@@ -2615,6 +2623,7 @@ int main(int argc, char** argv) {
         worldTex.clear();
         worldDecors.clear();
         playerSoup.clear();
+        playerSteep.clear();   // rebuilt with the soup, or it accumulates
         for (int slot = 0; slot < 2; ++slot) {
             WorldSlot& w = worldSlots[static_cast<std::size_t>(slot)];
             worldTexBase[slot] = worldTex.size();
@@ -2622,6 +2631,7 @@ int main(int argc, char** argv) {
             worldTex.insert(worldTex.end(), w.tex.begin(), w.tex.end());
             worldDecors.push_back({w.area, &w.soup});
             playerSoup.insert(playerSoup.end(), w.soup.begin(), w.soup.end());
+            playerSteep.insert(playerSteep.end(), w.steep.begin(), w.steep.end());
         }
         world.setTextures(worldTex);
         poolSize = worldTex.size();
@@ -3065,6 +3075,7 @@ int main(int argc, char** argv) {
                         omk::PlayerController::Setup su;
                         su.ctl = &playerCtl; su.ctlData = playerCtlData;
                         su.meshes = &playerMeshes; su.soup = &playerSoup;
+                        su.steep = &playerSteep;
                         for (int k = 0; k < 3; ++k) su.pos[k] = session.playerPos()[k];
                         su.facing = handoverFacingKnown ? handoverFacing : session.playerYaw();
                         player = std::make_unique<omk::PlayerController>(su);

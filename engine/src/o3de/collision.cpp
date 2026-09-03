@@ -65,8 +65,9 @@ TriangleSoup collisionSoup(std::span<const std::byte> d, SoupKind kind) {
         const double nz = ux * vy - uy * vx;
         const double n2 = nx * nx + ny * ny + nz * nz;
         if (n2 <= 0) return;
-        if (kind == SoupKind::Walkable &&
-            std::fabs(ny) / std::sqrt(n2) < kSlopeCos30) return;
+        const double slope = std::fabs(ny) / std::sqrt(n2);
+        if (kind == SoupKind::Walkable && slope < kSlopeCos30) return;
+        if (kind == SoupKind::Steep    && slope >= kSlopeCos30) return;
         for (const P* p : {&a, &b, &c}) {
             out.push_back(static_cast<float>(p->x));
             out.push_back(static_cast<float>(p->y));
@@ -117,6 +118,37 @@ std::optional<double> floorUnder(const TriangleSoup& tris, double x, double y,
         const double hit = w0 * ay + w1 * by + w2 * cy;
         // "below" is a LARGER y, and strictly below the origin
         if (hit > y + 1.0 && (!best || hit < *best)) best = hit;
+    }
+    return best;
+}
+
+std::optional<GroundHit> surfaceUnder(const TriangleSoup& tris, double x,
+                                      double y, double z) {
+    std::optional<GroundHit> best;
+    for (std::size_t t = 0; t + 9 <= tris.size(); t += 9) {
+        const double ax = tris[t],     ay = tris[t + 1], az = tris[t + 2];
+        const double bx = tris[t + 3], by = tris[t + 4], bz = tris[t + 5];
+        const double cx = tris[t + 6], cy = tris[t + 7], cz = tris[t + 8];
+        const double d = (bz - cz) * (ax - cx) + (cx - bx) * (az - cz);
+        if (std::fabs(d) < 1e-9) continue;
+        const double w0 = ((bz - cz) * (x - cx) + (cx - bx) * (z - cz)) / d;
+        const double w1 = ((cz - az) * (x - cx) + (ax - cx) * (z - cz)) / d;
+        const double w2 = 1.0 - w0 - w1;
+        if (w0 < 0 || w1 < 0 || w2 < 0) continue;
+        const double hit = w0 * ay + w1 * by + w2 * cy;
+        if (!(hit > y + 1.0) || (best && hit >= best->y)) continue;
+        const double ux = bx - ax, uy = by - ay, uz = bz - az;
+        const double vx = cx - ax, vy = cy - ay, vz = cz - az;
+        double nx = uy * vz - uz * vy;
+        double ny = uz * vx - ux * vz;
+        double nz = ux * vy - uy * vx;
+        const double len = std::sqrt(nx * nx + ny * ny + nz * nz);
+        if (len <= 0) continue;
+        nx /= len; ny /= len; nz /= len;
+        // Point it UP, which with Y growing downward means a negative y - the
+        // orientation `Walk_GroundResponse`'s `cos(30) > -normal.y` reads.
+        if (ny > 0) { nx = -nx; ny = -ny; nz = -nz; }
+        best = GroundHit{hit, {nx, ny, nz}};
     }
     return best;
 }

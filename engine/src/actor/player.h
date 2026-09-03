@@ -158,6 +158,15 @@ public:
         std::span<const std::byte>  ctlData;            // the bank's own bytes
         const std::vector<Mesh>*    meshes  = nullptr;  // the player's .3DO
         const TriangleSoup*         soup    = nullptr;  // the set's walkable soup
+        const TriangleSoup*         steep   = nullptr;  // its faces PAST the
+                                    // slope limit. `Walk_GroundResponse` does
+                                    // not treat a steep face as a hole: it
+                                    // stands the actor on it, adds the face
+                                    // normal to his horizontal velocity and
+                                    // writes 11.811 into the vertical one, and
+                                    // he slides off. Optional - with none the
+                                    // walker behaves as it did before it could
+                                    // see them.
         float pos[3] = {0, 0, 0};   // where he stands; probed DOWN onto the
                                     // floor, so a pelvis or a feet point both
                                     // land him on the ground

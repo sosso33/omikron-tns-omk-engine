@@ -2,8 +2,41 @@
 // The walker - one frame of Actor_Move + Walk_GroundResponse.
 //
 // The order is the engine's: try the move, probe under the result, and let the
-// ground decide - revert where there is no floor, refuse a drop past the step
-// limit, otherwise snap and keep the fall accounting.
+// ground decide.
+//
+// ---------------------------------------------------------------------------
+// A DROP IS A FALL, NOT A REFUSAL (2026-09-04)
+//
+// This file used to answer a drop past the step limit with `Refused` and leave
+// the actor where he was, on the reading that "ledges are obeyed". That is not
+// what the engine does, and it is why a player who got onto a bench could
+// never get off one: measured over three shipped sets, the old walker could
+// not take a single downward step anywhere (`engine/tools/stuck_probe.cpp`:
+// 0 descents from 671 / 36 / 342 spots standing beside a drop in Aapkayl,
+// AImpasse and Anekbah).
+//
+// `Walk_GroundResponse` (0x00465460) branches on whether the ground is above
+// the feet after the frame's gravity or below them:
+//
+//   * ABOVE or level - the grounded branch. It snaps the actor up onto it, and
+//     this is the only branch carrying a ledge or slope refusal. Both are
+//     gated (`(fallByte == 0 || 2) && actor+256 + gap < 0`) on quantities the
+//     port does not compute, and a refusal there does not stop the actor: it
+//     restores the last safe position and re-issues the SAME delta through
+//     `Actor_Move` in mode 4, the collide-and-slide.
+//   * BELOW - the airborne branch, and this is the one that matters here. A
+//     drop under 7.874 units is absorbed in the frame; anything more sets the
+//     fall byte at actor+1304 and enters ACTOR_STATE 18, tiered by the drop at
+//     59.055 (`dword_910350`), 118.11 and 196.85. There is no refusal in this
+//     branch at all.
+//
+// So the port now falls. What it still does NOT have is the reason the engine
+// rarely needs to: `Actor_Move`'s swept sphere (`Sweep_ActorMove` 0x004AD360 ->
+// `Sweep_PolygonKernel` 0x004A9D30, 930 lines) stops the player at a wall long
+// before he reaches a balcony edge. Until that is ported, `kMaxUnsweptDrop`
+// below keeps the old refusal for drops past the engine's own no-damage tier -
+// a LABELLED stand-in for the missing wall, not a rule of the game.
+// ---------------------------------------------------------------------------
 #pragma once
 
 #include "o3de/collision.h"
@@ -14,18 +47,59 @@
 
 namespace omk {
 
-// The engine's own tunables, in world units (1 unit ~ 2.54 cm).
-inline constexpr double kStepUp   = 11.87;   // 30 cm, up
-inline constexpr double kStepDown = 11.87;   // the same limit, down
-inline constexpr double kTerminal = 787.4;   // 20 m/s
-inline constexpr double kFallHurt = 118.1;   // 3 m
-inline constexpr double kFallKill = 196.9;   // 5 m
+// The engine's own tunables, in world units (1 unit ~ 2.54 cm). Every one is
+// a constant the binary states about itself, at the address named.
+inline constexpr double kStepUp   = 11.811023622;  // 30 cm: dword_910340
+inline constexpr double kStepDown = 11.811023622;  // the same limit, down
+inline constexpr double kTerminal = 787.40155;     // 20 m/s: Actor_ApplyMotion
+inline constexpr double kFallHurt = 118.11024;     // 3 m
+inline constexpr double kFallKill = 196.85039;     // 5 m
+
+// The drop the ground response absorbs in the frame it happens - a kerb, a
+// stair nosing. Anything past it leaves the ground (`Walk_GroundResponse`'s
+// `v68 < 7.8740158` snap).
+inline constexpr double kSnapDrop = 7.8740158;     // 20 cm
+
+// The lowest tier that changes the actor's state at all: below it the fall
+// byte at +1304 is set to 2 and no bank group is asked for; at or above it the
+// actor enters ACTOR_STATE 18. `dword_910350`.
+inline constexpr double kFallShort = 59.055118;    // 150 cm
+
+// Gravity: added to the actor's vertical speed (+220) every frame and clamped
+// at kTerminal, with the frame's descent being `speed * (1/30) * dt`. Written
+// into actor+228 by `Actor_LoadModel` (0x0041A730,
+// `mov dword ptr [ebx+0E4h], 414DC637h`), so every actor gets it. It is 9.8
+// m/s^2 in the engine's own unit - an inch - at 30 Hz.
+inline constexpr double kGravity = 12.860892;
+
+// The vertical speed the engine WRITES (not adds) while the actor stands on a
+// face steeper than the slope limit, alongside adding the face normal to his
+// horizontal velocity. Numerically the same float as the step limit, and from
+// the same global - `f32(a1, 220) = dword_910340`.
+inline constexpr double kSlideSpeed = 11.811023622;
+
+// **RECONSTRUCTION, and the only number here that is not the engine's.**
+//
+// The engine stops the player at a wall with a swept sphere (`Actor_Move` ->
+// `Sweep_ActorMove` 0x004AD360), which is not ported. Without it the walker's
+// only reason to stay out of a stairwell or off a balcony is the ledge rule
+// this file used to apply to every drop - so removing that rule outright does
+// not restore the engine's behaviour, it removes a wall the port was leaning
+// on. Until the sweep is ported the refusal is kept for drops past the
+// engine's own no-damage tier: below 3 m the engine falls and the actor is
+// unhurt, so a bench, a kerb, a crate and a flight of stairs all descend,
+// while a drop deep enough that the engine would have stopped him at a
+// railing still refuses. This bound is this port's, not the game's, and it
+// goes away when the sweep arrives.
+inline constexpr double kMaxUnsweptDrop = kFallHurt;
 
 enum class StepResult {
     Moved,      // the step took, and the actor snapped to the new floor
     Reverted,   // no floor under the destination - nobody walks into the void
     Blocked,    // a rise past the step limit: a wall, not a stair
-    Refused,    // a drop past the step limit: a ledge, and ledges are obeyed
+    Fell,       // the step took and left the ground: the actor is airborne
+    Slid,       // the step landed on a face past the slope limit: he slides
+    Refused,    // a drop past kMaxUnsweptDrop - see the note there
 };
 
 class Walker {
@@ -44,25 +118,68 @@ public:
         return floorUnder(soup_, x, y - kStepUp - 1.0, z);
     }
 
-    StepResult step(double dx, double dz);
+    // The horizontal half. `dt` is the engine's own frame delta (30/fps, so
+    // 1.0 at 30 Hz) and is only used to carry an ALREADY-FALLING actor down
+    // this frame, so a caller that has not yet been taught about `tick` still
+    // lands him rather than walking him through the air.
+    StepResult step(double dx, double dz, double dt = 1.0);
+
+    // One frame of the vertical half - `Actor_ApplyMotion`'s gravity plus
+    // `Walk_GroundResponse`'s answer to it.
+    //
+    // The controller should call this EVERY frame, not only when the actor is
+    // moving horizontally: an actor who steps off a ledge and then lets go of
+    // the stick is still falling, and `step` is not called when the walk clip
+    // stops producing a root delta. It is cheap and a no-op on the ground.
+    // Without it he hangs in the air until he asks to move again, which is
+    // what `step`'s own `dt` is a floor under rather than a substitute for.
+    StepResult tick(double dt);
 
     // A TELEPORT: `actor.goto_address` writes the actor's position outright
     // (`sub_41BF50`), and the fall accounting starts over from the new floor.
     void moveTo(double x, double y, double z) {
         pos_[0] = x; pos_[1] = y; pos_[2] = z;
-        fall_ = 0.0; vy_ = 0.0;
+        fall_ = 0.0; vy_ = 0.0; vx_ = 0.0; vz_ = 0.0;
+        airborne_ = false; sliding_ = false;
     }
+
+    // The steep faces of the same set - what the actor slides down. Optional:
+    // with none installed a steep face is a hole, which is what the walker did
+    // before it could see them.
+    void setSteep(const TriangleSoup* steep) { steep_ = steep; }
 
     const double* pos() const { return pos_; }
     const TriangleSoup& soup() const { return soup_; }
     double fall() const { return fall_; }
-    bool   ignoreLedges = false;
+    bool   airborne() const { return airborne_; }
+    bool   sliding() const { return sliding_; }
+
+    // The tier the LAST landing arrived in - 0 none, 1 a step, 2 a fall,
+    // 3 hurt, 4 killed. The engine reads the same four bands off the drop and
+    // asks for .CTL bank group 2, 4 or 5 and ACTOR_STATE 18 or 19.
+    int lastLandingTier() const { return tier_; }
+
+    // `g_IgnoreLedges` - the engine's own global, whose only writer is
+    // `sub_41C260` (0x0041C260), a five-line setter with no caller in the
+    // decompilation. With it on, both the ledge refusal and the fall are
+    // skipped and every drop is snapped.
+    bool ignoreLedges = false;
 
 private:
+    // Land on `y`, ending an airborne or sliding stretch and banding the drop
+    // the way `Walk_GroundResponse` does.
+    void land(double y);
+
     const TriangleSoup& soup_;
+    const TriangleSoup* steep_ = nullptr;
     double pos_[3];
     double fall_ = 0.0;
     double vy_   = 0.0;
+    double vx_   = 0.0;   // the slide's horizontal velocity (+216 / +224)
+    double vz_   = 0.0;
+    bool   airborne_ = false;
+    bool   sliding_  = false;
+    int    tier_ = 0;
 };
 
 // `Walk_ProbeGround`'s OTHER answer: which decor is under the point. The
