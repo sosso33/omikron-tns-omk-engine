@@ -2,6 +2,7 @@
 #include "script/area.h"
 
 #include "platform/datafs.h"
+#include "formats/mesh3do.h"
 #include "actor/pose.h"
 #include "script/scenehost.h"
 
@@ -183,6 +184,12 @@ void Session::fillSlotTables(ResidentSlot& s) {
     s.set = headerName(s.areaChunk, 88, 9);
     s.scx = headerName(s.areaChunk, 97, 9);
     s.music = i16at(s.areaChunk, 142);
+    // the street-life fields: the circuit at +115, the animation library at
+    // +124, the crowd's model masks at +164/+168 (`sub_40E990`/`sub_40E950`)
+    s.opt = headerName(s.areaChunk, 115, 9);
+    s.ani = headerName(s.areaChunk, 124, 9);
+    s.menMask = s.areaChunk.size() >= 172 ? u32at(s.areaChunk, 164) : 0u;
+    s.womenMask = s.areaChunk.size() >= 172 ? u32at(s.areaChunk, 168) : 0u;
     s.cams.clearChunk();
     if (!s.areaChunk.empty()) {
         s.cams.setArea(s.areaChunk);
@@ -286,6 +293,9 @@ void Session::loadIntoSlot(int slot, int area) {
 
 void Session::evictSlot(int slot) {
     ResidentSlot& s = slots_[slot & 1];
+    // the circuit goes with the slot that loaded it (`Area_LoadSliderTrack`'s
+    // walk over the decor slots' "has a track" flags, `sub_4548C0`)
+    if (trafficSlot_ == (slot & 1)) { peds_.clear(); trafficSlot_ = -1; }
     if (s.sceneCtx >= 0) freeContext(s.sceneCtx);
     if (s.areaCtx >= 0) freeContext(s.areaCtx);
     for (int i = 0; i < kContextSlots; ++i)
@@ -331,6 +341,9 @@ void Session::completeLoad(int slot) {
     // the prop records' +0 written. The order is the engine's.
     spawnFromTables(slot & 1, true, true);
     loadProps(slot & 1, true, true);
+    // case 8: `Area_LoadSliderTrack` -> `Slider_Init`, for an area naming a
+    // circuit - the pedestrians spawn here, before the startup scripts run
+    loadTrafficFor(slot & 1);
     s.areaCtx = queueStartup(slot & 1, false);
     if (s.scene != -1 && !s.sceneChunk.empty())
         s.sceneCtx = queueStartup(slot & 1, true);
@@ -1816,6 +1829,7 @@ void Session::frame() {
         // ticked and the intro's portal FROZE the moment the conversation
         // opened; a reader watching it said so. The same delta as below.
         scene_.tick(static_cast<float>(frameSeconds_ * 30.0));
+        peds_.tick(static_cast<float>(frameSeconds_ * 30.0));   // `Sliders_Tick`, no dialogue gate either
         trackPlayer();
         // ...and the ZONE SCAN, which is not the pump's: `Actors_TickAll`
         // dispatches the player's state 16/17 to `Actor_TickDialogue`, which
@@ -1877,6 +1891,8 @@ void Session::frame() {
     // bounded run leaves `frameSeconds_` at its 1/30 default, so this is
     // exactly 1.0 there and the headless checks stay deterministic.
     scene_.tick(static_cast<float>(frameSeconds_ * 30.0));
+    // `Sliders_Tick`: the traffic and the pedestrians, every frame
+    peds_.tick(static_cast<float>(frameSeconds_ * 30.0));
 
     // ...and where that leaves the player. Camera 0 - the one SCENE 55's
     // cutscene asks for - is relative to him, so without this the camera sits
@@ -2751,6 +2767,38 @@ bool Session::Hooks::propById(int id, PropRef& out) {
 
 void Session::Hooks::placeObjectAt(int objectId, int address) {
     s_->propEvents_.push_back({"place", -1, objectId, address, s_->frameNo_});
+}
+
+// ------------------------------------------------------------ STREET LIFE
+
+void Session::loadTraffic(const std::string& gamedataRoot) {
+    dataRoot_ = gamedataRoot;
+    for (int sl = 0; sl < 2; ++sl)
+        if (slots_[sl].loaded && !slots_[sl].opt.empty()) loadTrafficFor(sl);
+}
+
+void Session::loadTrafficFor(int slot) {
+    // `Area_TickLoad` case 8: only an area naming a circuit at +115 calls
+    // `Area_LoadSliderTrack`, and `Slider_Init` frees whatever circuit stood
+    // before - so the pool holds the LAST such area's, and an area without
+    // one leaves the previous standing until its slot is evicted.
+    if (dataRoot_.empty()) return;
+    const ResidentSlot& s = slots_[slot & 1];
+    if (s.opt.empty()) return;
+    const DataFs fs(dataRoot_);
+    const auto track = loadOpt(fs.read("TRAJECTOIRES/" + s.opt + ".OPT"));
+    if (!track.valid) return;
+    const PedClips clips = pedClipsFrom(fs.read("ANIMS/" + s.ani + ".ANI"));
+    peds_.load(track, clips, s.menMask, s.womenMask, streetActivity_, 1u);
+    // `sub_438040`: a body's radius is its model's root mesh `+88`
+    for (const auto& m : peds_.models()) {
+        const auto d = fs.read("MESHES/PERSOS/" + m.name + ".3DO");
+        const auto h = readHeader(d);
+        if (!h) continue;
+        const auto meshes = readMeshes(d, *h);
+        if (!meshes.empty()) peds_.setModelRadius(m.name, meshes.front().radius);
+    }
+    trafficSlot_ = slot & 1;
 }
 
 }  // namespace omk

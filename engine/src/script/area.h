@@ -40,6 +40,7 @@
 #include "script/dialogue.h"
 #include "script/gamestate.h"
 #include "script/scenerunner.h"
+#include "actor/pedestrians.h"
 #include "ui/widgets.h"
 #include "script/hooks.h"
 #include "script/interp.h"
@@ -200,6 +201,23 @@ public:
     // because it is audio, and 1/30 is what `Game_Frame` gives at 30 fps.
     void setFrameSeconds(double s) { frameSeconds_ = s; }
 
+    // STREET LIFE - the procedural pedestrians (docs/STREET_LIFE.md 2,
+    // `actor/pedestrians.h`). `Area_TickLoad` case 8 hands an area's `.OPT`
+    // to `Slider_Init` at its load, and `Sliders_Tick` walks the pool every
+    // frame. Both need the gamedata tree, which the Session otherwise never
+    // opens (the `.SCX` comes the same way, through `loadScene`): without
+    // this call no pedestrians exist, with it every later area load spawns
+    // its circuit's - and a slot already loaded when it is called spawns now.
+    void loadTraffic(const std::string& gamedataRoot);
+    const Pedestrians& pedestrians() const { return peds_; }
+    // Options row 6, "Niveau d'activite dans les rues", 0..4 - the density
+    // `Slider_Init` reads from `dword_90E724+2`. Spawning happens once, at
+    // the load, so a change applies to the next circuit loaded. Default:
+    // `kDefaultStreetActivity` (the engine's own 3), until the options menu
+    // is ported and hands its value here.
+    void setStreetActivity(int level) { streetActivity_ = level < 0 ? 0 : level > 4 ? 4 : level; }
+    int  streetActivity() const { return streetActivity_; }
+
     // How many areas have been entered THROUGH A TRANSITION - `sub_419AF0`
     // making a destination's decor the drawn scene at `Area_Transition` mode
     // 3 - so a caller can stop once one has happened rather than after a
@@ -267,6 +285,12 @@ public:
         bool shown = false;
         int  areaCtx = -1, sceneCtx = -1;       // block +0: the startup contexts
         std::string set, scx;                   // AREA +88 / +97
+        // STREET LIFE (docs/STREET_LIFE.md 2): the traffic circuit at +115
+        // (`TRAJECTOIRES\<opt>.OPT`), the animation library at +124
+        // (`ANIMS\<ani>.ANI` - `PASSANTH` for every city), and the two masks
+        // at +164/+168 selecting which men and women models the crowd wears
+        std::string opt, ani;
+        std::uint32_t menMask = 0, womenMask = 0;
         WorldCameras cams;                      // AREA +64/+84, SCENE +32/+52 (and GLOBAL)
         std::vector<Address> addresses;         // AREA +60
         std::int16_t music = 0;                 // AREA +142, the area's own track
@@ -950,6 +974,11 @@ private:
     struct Ann { std::string domain; int field; };
     std::map<std::uint8_t, Ann> announce_;   // empty = announce nothing
     SceneRunner scene_;                      // empty unless loadScene ran
+    Pedestrians peds_;                       // empty unless loadTraffic ran
+    std::string dataRoot_;                   // the gamedata tree, from loadTraffic
+    int         trafficSlot_ = -1;           // the slot whose circuit `peds_` holds
+    int         streetActivity_ = kDefaultStreetActivity;
+    void loadTrafficFor(int slot);
     // The AREA whose `.SCX` `scene_` holds. The file is the area's (`+97`),
     // so a scene loaded over the same area keeps the runner - and every
     // program running - exactly as the engine does; only an area change

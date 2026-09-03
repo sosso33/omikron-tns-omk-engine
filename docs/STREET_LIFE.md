@@ -10,7 +10,7 @@ found. In order of what a player sees:
 
 | mechanism | what it is | port status (2026-09-03) |
 |---|---|---|
-| **A. the procedural pedestrians** — the `.OPT` "trajectoires" | anonymous walkers spawned along authored lanes, density from the options menu | format read (`opt tracks` 6/6), spawner and walk read; **not ported** |
+| **A. the procedural pedestrians** — the `.OPT` "trajectoires" | anonymous walkers spawned along authored lanes, density from the options menu | **ported headless** (`engine: pedestrians`); not yet drawn |
 | **B. the authored extras** — scene programs on placed characters | couples kissing, beggars, sport, patrolling Mecaguards, walking pairs; one looping `.SCX` program each | ported and running in every city **except Anekbah** (one operand misread) |
 | **C. the crowd push** — the spatial index | the player is shoved by nearby bodies | not ported |
 
@@ -134,7 +134,7 @@ reads through them:
 |---|---|---|
 | lanes | 24 | `+0` origin `float[3]`; `+12` runtime list head; `+16` first key; `+18` first route; `+20` route count (0 reads as 1); `+21` key count |
 | keys | 20 | `+0` runtime list head (the movers on this segment); `+4` delta `float[3]` to the next key; `+16` action point, −1 none |
-| actions | 20 | `+0` the point, relative to the mover reaching the key; `+12` the facing to turn to, degrees; `+16` animation **type** (0 = none); `+18` a count 1..100 for the play phase; `+19` = 1 |
+| actions | 20 | `+0` the point, relative to the mover's segment start; `+12` the facing to turn to, degrees; `+16` the **clip id** (`slot`) in the sex's `.ani` group, 0 = none — `Assis` 2, the idle 16; `+18` how many times the main clip loops; `+19` = 1 |
 | routes | 12 | `+0` runtime list head; `+4` destination lane; `+6` first step; `+8` reservation group, −1 none; `+10` step count |
 | steps | 16 | `+0` delta `float[3]`; `+12` reservation group, −1 none |
 | groups | 4 | `+0` first list entry; `+2` entry count; `+3` runtime busy count |
@@ -170,9 +170,17 @@ median of that last leg (66–115 units) is reported, not asserted.
    crowd. `sub_453A70` splits each model into up to **4 LOD sub-objects**
    sorted by vertex+face count, `sub_453E80(pool, n, 100)` turns each model's
    weight at `+84` into a **spawn quota** summing to 100 (decremented per
-   spawn, a model skipped when exhausted), and `sub_453910` builds each
-   model's four-clip list by animation type. `"sli_fn"` and `"moto"` are the
-   vehicles, from the same loader.
+   spawn, a model skipped when exhausted), and `sub_453910` chains those LOD
+   objects with the four distances at `dword_4C8870` — 10, 20, 30, 40 m in
+   inches (the vehicles' start at 20). `"sli_fn"` and `"moto"` are the
+   vehicles, from the same loader. The **clips** come from the area's `.ani`
+   at header `+124` — `PASSANTH` for every city — groups 1 (men) and 2
+   (women): the walk is type 9, the idle type 11, and each action is a named
+   trio, enter/main/exit as types 14/15/16 (`Assis`, `Attend`, `Appel`,
+   `Scato`, `Poteau` for men; only `Assis` for women). The per-city model
+   masks are the AREA header's `+164` (men) and `+168` (women) into the
+   executable's two 12-byte-row tables — Anekbah `PSH/PSH1` + `FSH/FSH1`,
+   Jaunpur the `K` models, Lahoreh `PV/VF`.
 3. **The spawner, and where density enters** — `sub_453B40(lanes, callback,
    laneTable, spacing)` with
 
@@ -244,23 +252,57 @@ a group waits (flag 1) while any group in that group's list is busy, then
 increments them all; leaving decrements. This is how vehicles and pedestrians
 cross each other's lanes without meeting.
 
-**Action points.** A key naming an action whose type is nonzero sends every
-second mover reaching it (the global counter's low bit) into the action
+**Action points.** A key naming an action whose clip id is nonzero sends
+every second mover reaching it (the global counter's low bit) into the action
 phase: `sub_455830` allocates one of the `[9]`-count 48-byte states
-(`dword_539928`), picks a clip of the action's type (`sub_434630`), and the
-mover walks to the point (mover position + the action's offset); on arrival
-`sub_455E90` snaps it there, turns it to the action's facing, plays the clip
-(phase 1 with an intro clip when one exists, else 2), and phases 1..3 run
-through `sub_4561B0`/`sub_456250` (unread) back to the lane. Note
-`u16(action, 16) = 0` on entry: the action's type is cleared, so **each point
-fires once per area load** unless the unread phase restores it.
+(`dword_539928`), finds the clip by id (`sub_434630`) and its enter and exit
+variants by name under types 14 and 16, clears the point's id (so no second
+walker takes it) and the body walks to the point (segment start + the
+action's offset) with the walk clip; on arrival `sub_455E90` snaps it there,
+turns it to the action's facing (`sub_442120`), plays the enter clip (phase 1)
+or the main one (2); `sub_4561B0` runs the clock and at each wrap
+`sub_456250` moves on — enter → main, main looped `count` times (held while
+the player is talking to this walker, `dword_53992C`), exit if there is one,
+then a walk clip again, flag `0x80` off and **the point's id restored** from
+the state. A point is reusable; the "fires once" this file said before the
+phase was read was wrong.
+
+**The body and the root motion.** The body is not the mover: it is placed by
+the walk clip's **root motion** — `Anim_RootDelta` (0x004711D0) sums the
+root track's keys, each key the motion over one frame with the two end keys
+scaled by their fractions, and turns the sum by the instance's 3x3
+(`sub_453330` builds it from the direction to the mover: row 2 is minus the
+forward, a clip walks along −Z). So a body walks at the clip's own pace,
+aimed at the carrot ahead of it, and its speed factor (0.75..1.20) scales the
+clock. The mover's base speed is the same clip's xz travel over frames
+1..frames−1, ×256, per frame (`sub_453D80`).
+
+### The port (2026-09-03, step 3)
+
+`engine/src/formats/opt.*` reads the file with the Python reader's checks;
+`engine/src/actor/pedestrians.*` is the pool — `Pedestrians::load` is
+`Slider_Init`'s pedestrian half (models from the masks, quotas, the spawner
+with `spacing = (5 − level) × h[3]`, each walker's factor), `tick` is
+`Sliders_Tick`'s loop over `moverStep` (`sub_454F40`: keys, routes, the
+snap, the occupancy lists, the reservation groups), `bodyStep` (`sub_455830`:
+root motion toward the mover, following, overtaking, the gait), and the three
+action functions. The Session loads it at `completeLoad` (case 8) for an area
+naming a circuit, ticks it beside the scene every frame, evicts it with its
+slot, and holds the density as `streetActivity_` — default 3, the engine's,
+marked for the options menu. `engine/tools/ped_probe` runs a city;
+`verify.py: engine: pedestrians` holds the four cities' counts at every level
+to the rule written independently over `opt_track.py`, and over 600 frames
+every walker live and moved, no mover further than one frame's advance off
+the network, no body further than 500 from its mover, lane changes and action
+visits happening, no NaN. Not modelled: the body's radius is the model's root
+mesh `+88` (read by the Session), the spatial-index registration and the
+bump/talk messages wait for step 5, and the facing convention is the actors'
+recipe until step 4 watches it.
 
 ### Not yet read
 
-`sub_4561B0` / `sub_456250` (the action's play and return, 27 + ? lines),
-`sub_4563A0` (per tick when the player exists), `sub_453330` (the facing
-smoother), `sub_452490`'s caller (the per-model unload), and the whole
-vehicle side — `sub_4543F0` spawns the sliders along lanes `[2]..[5]` with
+`sub_4563A0` (per tick when the player exists), `sub_452490`'s caller (the
+per-model unload), and the whole vehicle side — `sub_4543F0` spawns the sliders along lanes `[2]..[5]` with
 `sub_4544B0`, `sub_452CC0` / `sub_452570` drive them, `dword_8F5E3C` is a
 40-slot ride pool, `Slider_TickRide` is the player's state 7. The pedestrians
 never read `[16]`/`[18]` except through the groups.
@@ -289,6 +331,6 @@ per-entry tests are unread.
 | drawing every shown actor by its program | `omk-play` (T20) | done for the Impasse's three bodies; a 30-body street never watched |
 | zone lines to passers-by | zones + `voiceover` | done, never watched on a street |
 | `character.look_at_player` head aim | Session records it | drawn? unverified |
-| the `.OPT` pedestrians and the density option | `tools/opt_track.py` | the format and the walk read; nothing ported |
+| the `.OPT` pedestrians and the density option | `formats/opt.*`, `actor/pedestrians.*`, `Session::loadTraffic` | ported and run headless; drawing is step 4 |
 | the crowd push | — | nothing |
 | a way to stand in a street without replaying the intro | `omk-play` | nothing |

@@ -94,9 +94,9 @@ One line per directory, then the files big enough to need a warning:
 
 | file / dir | size | read when |
 |---|---|---|
-| engine/src/formats/ | 4–16 KB each | one reader per file format: iam, scx, sfx, ctl, anim, morph, mesh3do, tex3dt, fnt, adpcm, addresses |
+| engine/src/formats/ | 4–16 KB each | one reader per file format: iam, scx, sfx, ctl, anim, morph, mesh3do, tex3dt, fnt, adpcm, addresses, opt (the traffic circuit) |
 | engine/src/script/ | | the world-script runtime. `area.cpp` (108 KB) + `area.h` (52 KB) = the Session: resident slots, transitions, the frame; `interp.cpp` (44 KB) = the VM handlers; `zones.*` the zone registry; `dialogue.*` conversations; `gamestate.*` the DB; `scenerunner.*`/`program.*`/`scenehost.*` scene objects; `world.*` the zone harness; `hooks.h`/`props.*`/`inventory.*` world-side opcodes; `goldendiff.*` trace comparison; `savefile.*`, `globaldata.*`, `objects.*` |
-| engine/src/actor/ | | `channel.*` the .CTL state machine (28 KB); `player.*` the adventure-mode controller and follow camera; `pose.*` skinning; `state.*` ACTOR_STATE; `walk.*` the walker; `shoot.*` the shoot AI; `speaker.*` the dialogue speaker |
+| engine/src/actor/ | | `channel.*` the .CTL state machine (28 KB); `player.*` the adventure-mode controller and follow camera; `pose.*` skinning; `state.*` ACTOR_STATE; `walk.*` the walker; `shoot.*` the shoot AI; `speaker.*` the dialogue speaker; `pedestrians.*` the procedural street crowd (STREET_LIFE 2) |
 | engine/src/o3de/ | | the renderer boundary (`renderer.h`) and the software rasterizer (`raster.*`), `render.*` buckets, `geom3do.*`, `texcache.*` (the 58-slot cache), `worldcam.*`, `camedit.*` camera editings, `particles.*`/`setpiece.*` effects, `collision.*` |
 | engine/src/ui/ | | `i2d.*`, `widgets.*`, `screendraw.*`, `text.*`, `surface.*`, `options.*`, `cloud.*`, `iamtext.*` |
 | engine/src/audio/ | | `mixer.*` (voices, bank, attenuation), `voiceover.*` (media.play → VOICEOFF/*.ADP), `music.*` |

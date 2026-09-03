@@ -3971,6 +3971,76 @@ def c_opt_tracks():
     return tuple(got), tuple(want), "file, layout+refs+runtime-zero ok, lanes, ped, veh, keys, actions, routes, steps, groups, lists, spacings, cross-class routes"
 
 
+def c_engine_pedestrians():
+    r"""The PROCEDURAL PEDESTRIANS run in the Session (docs/STREET_LIFE.md 2;
+    engine/src/actor/pedestrians.*; engine/tools/ped_probe).
+
+    Two chains. THE SPAWN: `sub_453B40`'s rule - one walker every
+    `39 * (5 - level) * pedSpacing` units of accumulated pedestrian-lane length
+    (the accumulator carries across lanes; the 200-slot pool ends the walk) -
+    written here over tools/opt_track.py's decode, against the port's count at
+    every density level 0..4, for the four city streets, and the Session's
+    spawn at level 3 equal to that count. THE WALK, 600 frames at level 3:
+    every walker still live and moved; NO mover off the lane network (the
+    keys, the routes' steps and their implicit last leg) by more than 8
+    units - one frame's advance at the doubled gait, because a mover carries
+    its overshoot past a corner until the next end-check and one frozen at an
+    action point stays there (Qalisar: 1.15 for 300 frames, then gone);
+    every body within 500 units of its mover - the gait stops the mover
+    beyond 58.5 and the walk clip brings the body back, an action point can
+    take a body further first; lane changes and action visits both happen;
+    no NaN. Shown to fail with the spawn factor changed 39 -> 40 (every
+    count moves).
+    """
+    eng = os.path.join(ROOT, "engine")
+    if not os.path.isdir(eng):
+        return ("skipped",), ("skipped",), "engine/ absent"
+    b = subprocess.run(["make", "-s"], cwd=eng, capture_output=True, text=True)
+    binp = os.path.join(eng, "build", "ped_probe")
+    if b.returncode != 0 or not os.path.exists(binp):
+        return ("build failed",), ("built",), "engine/ must build"
+    import opt_track as OT
+    def count(t, level):
+        spacing = 39.0 * ((5 - level) * t["pedSpacing"])
+        acc, n = 0.0, 0
+        for li in range(t["pedFirst"], t["pedEnd"]):
+            L = t["lanes"][li]
+            for k in range(L["keyCount"]):
+                dx, dy, dz = t["keys"][L["firstKey"] + k]["delta"]
+                if acc > spacing:
+                    if n >= 200: return n
+                    n += 1; acc = 0.0
+                acc += (dx * dx + dy * dy + dz * dz) ** 0.5
+        return n
+    # the areas naming a circuit at +115, by name
+    areas = {}
+    for k, ch in T.archive(os.path.join(O.TAGDIR, "AREA")).items():
+        if len(ch) > 124:
+            nm = ch[115:124].split(b"\0")[0].decode("ascii", "replace")
+            if nm and nm.lower() not in areas: areas[nm.lower()] = k
+    got, want = [], []
+    for stem in ("anekbah", "souk", "lahorey", "qchaud"):
+        area = areas.get(stem)
+        t = OT.load(omkpaths.data("TRAJECTOIRES", stem + ".opt"))
+        py = tuple(count(t, l) for l in range(5))
+        r = subprocess.run([binp, omkpaths.data_root(), os.path.join(ROOT, "tables"), str(area), "600", "3"],
+                           capture_output=True, text=True)
+        if r.returncode != 0:
+            return ("no run",), ("ran",), "ped_probe must run"
+        L = {}
+        for ln in r.stdout.splitlines():
+            f = ln.split()
+            if f and f[0] in ("counts", "session", "run"): L[f[0]] = dict(zip(f[1::2], f[2::2]))
+        c, se, run = L.get("counts", {}), L.get("session", {}), L.get("run", {})
+        port = tuple(int(c.get("level%d" % l, -1)) for l in range(5))
+        live = int(run.get("live", -1))
+        got.append((stem, area, port, int(se.get("spawned", -1)), live, int(run.get("moved", -1)),
+                    float(run.get("max_offlane", 99)) < 8.0, float(run.get("max_lag", 1e9)) < 500.0,
+                    int(run.get("lane_changes", 0)) > 0, int(run.get("actions", 0)) > 0, int(run.get("nan", 1))))
+        want.append((stem, area, py, py[3], py[3], py[3], True, True, True, True, 0))
+    return tuple(got), tuple(want), "stem, area, counts at level 0..4 (port) vs (rule), spawned, live, moved, on-network, lag<500, lane changes, actions, nan"
+
+
 def c_engine_city_crowd():
     r"""The AUTHORED EXTRAS of a city street start in the Session
     (docs/STREET_LIFE.md 1) - and the object word of every `scx.play*` is a
@@ -18180,6 +18250,7 @@ SLOW = [
     ("engine: airlock walk", c_engine_airlock_walk, "SCRIPT_VM; engine/README"),
     ("engine: spawn from tables", c_engine_spawn_from_tables, "SCRIPT_VM; FILE_FORMATS; engine/README"),
     ("engine: city crowd", c_engine_city_crowd, "STREET_LIFE 1; SCRIPT_VM"),
+    ("engine: pedestrians", c_engine_pedestrians, "STREET_LIFE 2; actor/pedestrians.h"),
     ("engine: zone pump",  c_engine_zone_pump,  "engine/README"),
     ("engine: zone registry", c_engine_zone_registry, "engine/README"),
     ("engine: voice over", c_engine_voice_over, "CUTSCENES 5; engine/README"),
