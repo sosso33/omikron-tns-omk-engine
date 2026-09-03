@@ -20,8 +20,55 @@ waiting on its evidence.
 Filed 2026-09-04 from a play report — *"at the very end, for some reasons,
 every textures and/or models disappears (just black with npc walking)."*
 
-**Not yet diagnosed.** Recorded now with what the report itself constrains,
-because the shape is unusually informative:
+> **DIAGNOSED 2026-09-04, from a log already captured** - and it is NOT the
+> texture cache, which was this entry's first suspect and is wrong.
+
+**The reader's repro**: new game, run the cutscenes, go to Qalisar, trigger
+the falling issue, then walk on a slope. That path is what makes it findable:
+it is not exhaustion after many areas, it is one transition.
+
+**What the log shows.** `traces`-style capture of that very session:
+
+    frame 12804: area transition 12 -> world: slot 0 set TUNELAQ1 (AREA 224)
+    frame 12939: event 9 - his feet are on AREA 101's decor   <- QALISAR
+    (summary)  : world: 13236 frames drawn, last set TUNELAQ1 (1 SHOWN)
+
+So a transition linked **TUNELAQ1** into slot 0 and left QALISAR unlinked, and
+then the player's feet came back onto AREA 101. **The active ROW followed him;
+the linked DECOR did not.** He is standing inside Qalisar with only the
+tunnel's 3912 corners in the render list, so nothing draws where he is - while
+the crowd keeps drawing, because the sliders do not depend on the decor slots
+at all. That is precisely "just black with npc walking".
+
+**The texture pool is innocent, measured rather than assumed**: it ends the
+session at **17 slots** (4 set + 11 character + 2 player + 0 sprite) against a
+58-slot pool, and the drop to "4 set" is a CONSEQUENCE - four is exactly
+TUNELAQ1's texture count, which is what you get when it is the only set
+linked. The first suspect recorded below was wrong and is kept for the record.
+
+**Where the split is in the port.** `Session::playerOnArea` (area.cpp:430) is
+what event 9 calls, and it swaps `active_`, calls `zonesRegisterAll()` and
+picks up the area's music - it does not touch the shown/linked state of a
+decor slot at all. The shown set is rebuilt in the frontend from
+`Session::shown()`. So the two facts the engine keeps together - which row is
+active and which decor is linked - are updated by different code on different
+triggers, and this is the case that separates them.
+
+**Its relationship to 68 is causal, not coincidental.** The reader reaches
+this state by falling through a barrier that has no collision (the unported
+swept sphere) and then walking a slope: that carries him across a transition
+zone he should never have been able to touch, so the transition fires with him
+somewhere the transition does not expect. Fixing 68's fall does not fix this,
+but it removes the reader's route to it.
+
+**Still open**: whether the engine would have re-linked Qalisar on event 9, or
+whether it never lets the player be there at all. `Area_LoadSet` keeps two
+sets resident, state 2 linked and state 1 loaded-but-unlinked, and
+`verify.py: engine airlock walk` already asserts a case where BOTH are in
+state 2 - so one-shown is not the normal state and that check is the place to
+extend.
+
+Kept from the first pass, and wrong, so nobody re-walks it:
 
 * the **crowd still draws**, so the frame, the camera, the present and the
   pedestrian path are all alive. Whatever is lost is the WORLD's geometry and
