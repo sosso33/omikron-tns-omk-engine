@@ -875,6 +875,69 @@ in 212 files), `PlaySound` (3797) and `SelectRelativeBodyAnimation` (2398).
 **Severity A** — it affects every cutscene in the game, and the environment is
 most of what is on screen.
 
+## Fixed (batch 6, 2026-09-03)
+
+### 61. Leaving the Impasse for the city: a black screen with the bump message — A
+
+> **Fixed 2026-09-03. CONFIRMED IN PLAY** (the reader reproduced it four times
+> and reached the city clean on the fixed build).
+
+A merge regression, and the reader placed it exactly: *"the bug does not
+happen in the branch, so look at the merge commit"*, and *"it seems to happen
+when the engine loads the city"*. Both halves were individually correct; only
+together do they reach this.
+
+**The chain, end to end.** A pedestrian's body goes non-finite in **y alone**
+(`walker 0 'FSH_FN' ... 3916.30 nan -354.75`, x and z finite - y is the only
+component the walker's step reaches through a DIVISION). The player brushes
+past it in the street; `SpatialIndex::query` accepts the entry;
+`pushSphere` returns `nan 0 nan`; `PlayerController::nudge` writes it into the
+player's position; and the follow camera, whose eye and at are built from that
+position, then has nowhere to look - the frame goes black. The bump message
+that accompanies it is not a second fault but the same one: `crowdPush` posts
+GLOBAL's message 15/16 for the walker it touched, whose handler is a
+`camera.shake` and a random `media.play` of a passer-by line, so the voice and
+subtitle play over the black screen. That is the whole report in one sentence.
+
+**Why the entry was accepted, and it is the part worth keeping.** The reach
+test is `max(|dx|,|dy|,|dz|) <= reach + mine`, built with `std::fmax` - which
+is DEFINED to return the other operand when one is NaN. So a walker with a NaN
+y measures a perfectly finite distance and passes, no matter how the
+comparison is written. The first fix here rewrote the comparison so a NaN
+would "fall out", and `engine/tools/crowd_nan.cpp` showed it changed nothing:
+the case failed exactly as before. The entry is now skipped ahead of the test,
+on its own finiteness. Every value the engine ships is finite, so this rejects
+nothing real - it only decides what happens to a value the original could
+never produce.
+
+**What is fixed and what is not.** The propagation is fixed: a bad walker can
+no longer reach the player, and `crowdPush` additionally refuses a non-finite
+push. **Why a walker's y goes non-finite is still open** - the arithmetic that
+could do it is `m.body[1] += moved * to[1] / dist` in `Pedestrians::bodyStep`
+and the approach's `(point[1] - body[1]) * rootXZ / dist`, both of which
+produce a NaN from an INFINITY in the target (`finite * inf / inf`), which is
+also why only y is hit. Every normalise on the way in (`aimAtLaneKey`,
+`aimAtRouteStep`, the stride at `frames > 2`) is already guarded, so the
+infinity comes from further back. Three one-shot diagnostics are left in
+place - the walker report in `Session::refreshCrowdIndex` and the two input
+dumps in `pedestrians.cpp` - so the next reproduction names the source instead
+of costing another five play sessions.
+
+**Method note, because it cost most of the session.** Five reproductions
+looked like "no trap ever fires" while the summary printed `nan`. Two of those
+runs were instrument faults, not engine facts: the constructor trap was placed
+*before* the constructor assigns `pos_`, so it tested uninitialised memory;
+and `grep` was silently reporting nothing because the play logs contain NUL
+bytes and it had classified them as binary - the traps had been firing all
+along and `grep -a` showed them immediately. **A play log is binary; grep it
+with `-a`.**
+
+`verify.py: engine crowd nan` asserts both directions - a finite neighbour
+must still be found and still push, and the non-finite one must be skipped
+with the push left finite - because a guard that rejected everything would
+also satisfy the second alone. Licence baseline 312 -> 314 (`zone_at.cpp`,
+which a6bbc72 added without moving it, and `crowd_nan.cpp`).
+
 ## Fixed (batch 5, 2026-09-03)
 
 ### 51. No diagonal movement: holding two directions walked straight — A

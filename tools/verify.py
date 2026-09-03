@@ -6232,6 +6232,45 @@ def c_engine_impasse_fx():
            ("the Impasse's beats fire 15 set-piece rows and peak at 108 live "
             "particles, alive on 262 of 900 frames")
 
+def c_engine_crowd_nan():
+    r"""`engine/`: the crowd index REJECTS a non-finite entry.
+
+    omk-play 61, a merge regression found by playing: walking out of the
+    Impasse into the city gave a black screen with the walker-bump message.
+    The chain is short. A pedestrian's body went non-finite in y; the player
+    brushed past it; `SpatialIndex::query` accepted the entry, `pushSphere`
+    returned a NaN push, `PlayerController::nudge` wrote it into the player's
+    position, and the follow camera then had no eye to look from - the frame
+    goes black, while the bump's `media.play` still plays the voice line. That
+    is the whole reported symptom, including why the message accompanies it.
+
+    **The guard cannot live in the reach test**, and that was the first
+    attempt. That test maxes the per-axis distances with `std::fmax`, which is
+    DEFINED to return the other operand when one is NaN - so a walker with a
+    NaN y measures a perfectly finite distance and is accepted no matter how
+    the comparison is written. The probe caught that: the "fix" left the case
+    failing exactly as before. The entry is skipped ahead of the test instead.
+
+    Every value the engine ships is finite, so this rejects nothing real - it
+    only decides what happens to a value the original could never produce.
+
+    Both halves are asserted, because a guard that rejects everything would
+    also pass the second: a finite neighbour must still be found and still
+    push, and the non-finite one must not be touched at all.
+    """
+    import subprocess
+    eng = os.path.join(ROOT, "engine")
+    b = subprocess.run(["make", "-s", "build/crowd_nan"], cwd=eng,
+                       capture_output=True, text=True)
+    binp = os.path.join(eng, "build", "crowd_nan")
+    if b.returncode != 0 or not os.path.exists(binp):
+        return ("build failed",), ("built",), "engine/ must build"
+    r = subprocess.run([binp], capture_output=True, text=True)
+    got = "PASS" if r.returncode == 0 and "PASS" in r.stdout else "FAIL"
+    return (got,), ("PASS",), \
+           ("a finite neighbour still pushes; one with a NaN y is skipped and "
+            "the push stays finite")
+
 def c_credit_layout():
     r"""UI: the Bowie credits are ordinary subtitles positioned by `{X}` markup.
 
@@ -17279,7 +17318,7 @@ def c_licence_headers():
                    if TAG in open(p, encoding="utf-8",
                                   errors="replace").read(600)]
     return (authored, sorted(missing), len(vendored), mislabelled), \
-           (312, [], 1, []), \
+           (314, [], 1, []), \
            "authored source files under tools/, engine/src, engine/tools, " \
            "engine/backends and scripts/; those MISSING the SPDX tag; " \
            "vendored files in engine/third_party; and vendored files wrongly " \
@@ -18696,6 +18735,7 @@ SLOW = [
     ("subtitle box", c_subtitle_box, "docs/UI"),
     ("credit layout", c_credit_layout, "docs/UI"),
     ("engine: impasse fx", c_engine_impasse_fx, "todo/omk-play"),
+    ("engine: crowd nan", c_engine_crowd_nan, "todo/omk-play"),
     ("engine: props", c_engine_props, "todo/omk-play"),
     ("sprite ids scene-local", c_sprite_ids_are_scene_local, "docs/ASSETS"),
     ("engine: scene sounds", c_engine_scene_sounds, "engine/README"),

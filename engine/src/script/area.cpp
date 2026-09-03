@@ -2881,9 +2881,17 @@ void Session::loadTrafficFor(int slot) {
 void Session::refreshCrowdIndex() {
     // `sub_454EF0` after each walker's step: `SpatialIndex_Update` from the
     // instance's position
+    static int nanTold = 0;
     for (std::size_t i = 0; i < pedSlots_.size() && i < peds_.walkers().size(); ++i) {
         if (pedSlots_[i] < 0) continue;
         const auto& w = peds_.walkers()[i];
+        // A non-finite walker is never rejected by the reach test (every
+        // comparison against NaN is false), so it reaches the push and takes
+        // the player with it. Report the first one.
+        if ((!std::isfinite(w.body[0]) || !std::isfinite(w.body[1]) || !std::isfinite(w.body[2]) ||
+             !std::isfinite(w.facing)) && !nanTold++)
+            std::printf("NaN: walker %zu '%s' is non-finite: %f %f %f facing %f\n",
+                        i, w.model.c_str(), w.body[0], w.body[1], w.body[2], w.facing);
         spatial_.update(pedSlots_[i], w.body, w.facing);
     }
 }
@@ -2916,6 +2924,19 @@ bool Session::crowdPush(const std::vector<CollisionSphere>& mine, float myReach,
     out[0] = out[1] = out[2] = 0.0f;
     if (dialogState_ == 3) return false;             // state 16: no push
     const bool any = spatial_.query(mine, myReach, pos, facing, out, -1);
+    // and refuse to hand back a push that is not a number: it would move the
+    // player nowhere real, and the follow camera would go with him
+    if (!std::isfinite(out[0]) || !std::isfinite(out[1]) || !std::isfinite(out[2])) {
+        static bool told = false;
+        if (!told) {
+            told = true;
+            std::printf("crowd: a non-finite push was refused (%f %f %f) - a walker's "
+                        "position went bad; the player is left where he was\n",
+                        out[0], out[1], out[2]);
+        }
+        out[0] = out[1] = out[2] = 0.0f;
+        return any;
+    }
     // the bump: `Sliders_Tick` - a touched walker, no bump pending, message
     // 15/16 with the player as sender, then 100 frames of silence
     if (bumpCooldown_ <= 0) {

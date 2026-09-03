@@ -147,6 +147,17 @@ bool SpatialIndex::query(const std::vector<CollisionSphere>& mine, float myReach
         SpatialEntry& e = entries_[i];
         e.touched = false;
         if (!e.live || static_cast<int>(i) == self) continue;
+        // A non-finite entry is skipped HERE, before anything reads it.
+        // It cannot be left to the reach test below: that test maxes the
+        // per-axis distances with `std::fmax`, which by definition RETURNS
+        // THE OTHER OPERAND for a NaN, so a walker with a NaN y measures a
+        // perfectly finite distance and is accepted. Its push then comes back
+        // NaN, `PlayerController::nudge` writes it into the player, and the
+        // follow camera has no eye to look from - a black frame, with the
+        // bump message still playing (omk-play 61). Every shipped value is
+        // finite, so this rejects nothing the engine keeps.
+        if (!std::isfinite(e.pos[0]) || !std::isfinite(e.pos[1]) ||
+            !std::isfinite(e.pos[2]) || !std::isfinite(e.facing)) continue;
         // `max(|dx|,|dy|,|dz|) <= reach + mine`
         float m = std::fabs(e.pos[0] - pos[0]);
         m = std::fmax(m, std::fabs(e.pos[1] - pos[1]));

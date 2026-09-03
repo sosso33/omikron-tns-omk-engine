@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
 #include <cstring>
 
 namespace omk {
@@ -702,6 +703,25 @@ void Pedestrians::bodyStep(int wi, float dt) {
     }
     if (dist == 0.0f) dist = 1.0f;
     m.body[1] += moved * to[1] / dist;
+    // NaN TRAP (temporary, omk-play merge regression): a walker whose body
+    // goes non-finite is never rejected by the crowd index's reach test (a
+    // comparison against NaN is false), so it reaches the player's push and
+    // blacks his frame. Name the step that did it, with its inputs.
+    {
+        static bool told = false;
+        if (!told && (!std::isfinite(m.body[0]) || !std::isfinite(m.body[1]) ||
+                      !std::isfinite(m.body[2]))) {
+            told = true;
+            std::printf("NaN: bodyStep %d '%s' -> body %f %f %f | target(pos) %f %f %f | "
+                        "prev %f %f %f | dir %f %f %f | to %f %f %f | dist %f moved %f | "
+                        "rootDelta %f %f %f | speed %f remaining %f seg %d lane %d "
+                        "flags %08x\n",
+                        wi, m.model.c_str(), m.body[0], m.body[1], m.body[2],
+                        m.pos[0], m.pos[1], m.pos[2], m.prev[0], m.prev[1], m.prev[2],
+                        m.dir[0], m.dir[1], m.dir[2], to[0], to[1], to[2], dist, moved,
+                        d[0], d[1], d[2], m.speed, m.remaining, m.seg, m.lane, m.flags);
+        }
+    }
 }
 
 // ------------------------------------------------------------ the action
@@ -783,6 +803,15 @@ void Pedestrians::actionStep(int wi, float dt) {
     if (dist > 0.0f) setHeading(m, tx, 0.0f, tz);
     if (dist >= m.radius) {
         m.body[1] += (s->point[1] - m.body[1]) * rootXZ / (dist > 0.0f ? dist : 1.0f);
+        {
+            static bool told = false;
+            if (!told && !std::isfinite(m.body[1])) {
+                told = true;
+                std::printf("NaN: actionStep approach '%s' -> body %f %f %f | point %f %f %f "
+                            "| rootXZ %f dist %f\n", m.model.c_str(), m.body[0], m.body[1],
+                            m.body[2], s->point[0], s->point[1], s->point[2], rootXZ, dist);
+            }
+        }
         return;
     }
     for (int i = 0; i < 3; ++i) m.body[i] = s->point[i];
