@@ -71,6 +71,30 @@ struct CtlCombat {
     std::int32_t asInt(int i) const;
 };
 
+// One `+28` sub-record, 32 bytes. Decoded from `Cef_UpdateStateEffects`,
+// `Cef_SpawnEffect` and `Cef_TickEffects` (0x0045B260/0x0045B3B0/0x0045ADF0);
+// all 590 shipped records carry a sound (525) or a sprite (220) or both.
+struct CtlEffect {
+    float duration = 0;      // +0  how long a spawned sprite lives
+    float from = 0, to = 0;  // +4/+8 the active window; +8 == 0 means open
+    float soundAt = 0;       // +12 the frame the sound fires on
+    std::uint32_t spriteParam = 0;   // +16
+    std::uint16_t sprite = 0;        // +20 the scene's chunk-4 registry
+    // +22 the SOUND, and it is an **id**, not an index: `Cef_TickEffects`
+    // resolves it with `Scene_FindSoundIndex` (0x0048CC80), which SEARCHES the
+    // resident scene's 26-byte chunk-3 records for a matching `+24` and
+    // returns that record's `+22` handle. So the same id names different
+    // sounds in different scenes - 34 is `AASC.WAV` almost everywhere and
+    // `STPR.WAV` in the Impasse - and a state's footstep only sounds where
+    // the resident scene carries its id. All 525 shipped references resolve
+    // in some scene; none is orphaned.
+    std::uint16_t sound = 0;
+    std::uint8_t  attach = 0;        // +24 an attach code -> Actor_AttachPoint
+    std::uint8_t  flags = 0;         // +25 1 follow the bone, 4 random roll,
+                                     //     8 double advance, 0x10 kill on exit
+    float scale = 0;                 // +28
+};
+
 struct CtlState {
     std::size_t  offset = 0;
     int          group  = 0;
@@ -117,6 +141,10 @@ struct CtlState {
     std::uint16_t blendFrames = 0;       // +78 frames to blend on a 0x8000 exit
     std::uint16_t phaseOffset = 0;       // +80 added when 0x10000 phase-matches
     bool hasEffects = false;             // +76 bit 3
+    // The state's EFFECT RECORDS - what makes an animation carry its own
+    // sound and sprites. `H_WALK` is the case that shows what they are: a
+    // pair, one per footfall.
+    std::vector<CtlEffect> effects;
     bool hasTurn = false;                // flags & 0x140  -> +44, 24 B
     bool hasShift = false;               // flags & 0x280  -> +48, 20 B
     float turn[6]  = {};                 // start, end, dX, dY, dZ, ?

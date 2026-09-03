@@ -13,6 +13,355 @@ caught only by a person walking into the alley and looking. So an entry here say
 either CONFIRMED IN PLAY or it does not, and one that does not is a claim still
 waiting on its evidence.
 
+## Open (batch 5, filed 2026-09-03)
+
+Six filed together from one play report of the Impasse cutscene and the
+adventure mode after it. The reporter's framing is worth keeping: *it is a list
+of immediately visible issues, and they look like issues that will happen many
+times if not fixed* — so each is a CLASS, not a single shot, and the entry says
+what the class is.
+
+### 45. Camera ROLL is not applied — A
+
+> **Fixed 2026-09-03. NOT yet confirmed in play.** `RCamera::rollDeg` added and
+> applied in `basisOf`, so both backends get it (they share `cameraBasis`).
+> The sense is derived from the engine's own `sub_441FF0` through
+> `headingMatrix`, whose columns are this basis: 30 of 30 direction/roll pairs
+> agree to 1.2e-7. 224 of the 1073 editing cameras carry a roll.
+> `verify.py: engine: camera roll`, shown to fail (30 -> 6) with it dropped.
+
+Filed 2026-09-03 from a play report — *when we were working on the web cutscene
+viewer, you fixed a bug where rotation around the camera forward vector were
+not applied. This bug is still in the c++ engine.*
+
+**What the engine does** — a camera carries a roll (`Cam_PlayEditing` keyframes
+`position, target, roll, fov`; a world camera's is `Global_Load`'s
+4096-per-turn integer converted by 360/4096). Roll is a rotation about the
+FORWARD vector, applied when the view basis is built.
+
+**What the port does** — TO BE ESTABLISHED: whether `o3de/` builds its view
+basis with an up vector fixed to world up, which drops the roll silently.
+
+**How it will be established** — the web viewer's fix is the precedent
+(CLAUDE.md 5: `W(v) = [x, -y, z]` is a reflection, so the roll's SIGN flips
+when leaving the game's space, and `/cutscene` must negate it). The corpus has
+the numbers: 2725 of the Bowie title sequence's 4370 frames carry a roll, and
+`verify.py: camera roll` already asserts that no camera move rolls past 90°.
+
+**The class** — every rolled shot in the game, not one.
+
+### 46. A shot near the start of the Impasse has a RED FILTER and draws without it — A
+
+> **Fixed 2026-09-03 as the FADE FAMILY, and the premise was half wrong. NOT
+> yet confirmed in play.** The Impasse's own opening fade is **white**, not
+> red: 118/119 pack their colour as a DWORD out of four operand bytes, so
+> `FF FF FF 00 19 00 00 00` is 0x00FFFFFF over 25 frames, and the four-int16
+> view `-1, 255, 25, 0` that made it look red is the disassembler's, not the
+> engine's. The RED in this family is the engine's own override - a fade
+> issued by the message-0 handler is forced to 0xFF0000 - which `area.h`
+> already tracked with nothing to consume it. Both fades are now ported with
+> their refusal rules, the 60-frame black one, the linear ramp and the "a `to`
+> HOLDS" rule; the three I2D quad blends are NOT traced and the mix is
+> labelled a model. `verify.py: engine: fades`, shown to fail.
+>
+> **So whether the reported shot now looks right is still open** - if it is
+> red in the original it is a message-0 fade, and which handler issues it has
+> not been attributed.
+>
+> **REGRESSION, found in play and fixed the same day.** The first version had
+> the BLACK fade's two states backwards, and a reader saw the consequence at
+> once: *I can see the scene for 1 or 2 seconds at the beginning of each
+> cutscene and dialog scene, then a fade and the screen becomes black.* Two
+> seconds is 60 frames, the black fade's whole duration. `fade.to_black`
+> (opcode 132) is the FIRST thing SCENE 55 does, at pc 1228, and its partner
+> is at 1395 - past every waiting beat - so a fade that painted black there
+> held for the entire cutscene.
+>
+> It does not paint black: the ticker (0x00452065) draws a grey quad that
+> MULTIPLIES the frame, and in state 3 that grey is `clock * 255 / duration`,
+> RISING - black to untouched. **State 3 is the fade IN and state 4 the fade
+> OUT, the opposite way round from the opcode names**, which is also why 133
+> refuses unless 3 is running: you cannot fade out without having faded in.
+> `verify.py: engine: fades` now asserts the direction from both ends - the
+> fade in starts fully black and ends clear, the fade out the reverse - and
+> the inverted reading fails it.
+>
+> The lesson is the one CLAUDE.md 1 keeps: the ramp, the durations and the
+> refusal rules were all read correctly out of the handlers and all pinned by
+> a passing check, and the DIRECTION - the one thing no still frame and no
+> corpus count can show - was wrong. It took somebody watching.
+
+Filed 2026-09-03 — *in the impasse cutscene, one plan, near the begining, is
+with a red filter, but it appears without it.*
+
+**What the engine does** — SCENE 55's startup script runs
+`fade.from_color -1, 255, 25, 0` at pc **1229**, immediately after
+`fade.to_black` and before the first beat. 255/25/0 is the red. So this is the
+fade family (SCRIPT_VM), not a render mode.
+
+**What the port does** — TO BE ESTABLISHED.
+
+**The class** — every `fade.*` site in the game; the opcode family is used
+throughout, not just here.
+
+### 47. Environment-triggered particle effects are not drawn — A
+
+> **Fixed 2026-09-03, and the report had TWO answers. NOT yet confirmed in
+> play.** The STANDING set pieces (section E keyed `(1, -1)`, which no object
+> start can reach) were already bound by `attachSfx`. The missing family is the
+> one bound to GEOMETRY: `Sfx_BindAmbientEffects` walks the resident `.3DO`'s
+> meshes and, for every one flagged 0x40000000, compares the first FOUR RAW
+> BYTES of its name against each section-D tag, registering that binding's
+> effect at the mesh's own position. The port had read all three files - the
+> flag, the binding, `ParticleField::add` - and nothing walked the set.
+> `SceneRunner::bindSetEmitters`, called when a world slot loads its set:
+> **319 emitters over 12 sets**. The compare is on the RECORD's bytes, not the
+> parsed name, because `readMeshes` truncates at the first null.
+> `verify.py: engine: set emitters`.
+>
+> **CONFIRMED IN PLAY 2026-09-03**: the running game logs
+> `world: slot 1 AIMPASSE binds 3 ambient emitters` on entering the Impasse.
+>
+> **Two caveats, both recorded rather than smoothed over.** The count is 319
+> where `docs/ASSETS.md` quotes 321 from `tools/ambientfx.py`, which filters
+> harder; the difference is two and unexplained. And the corpus walk pairs a
+> `.SFX` with the `.3DO` of the SAME STEM, which is **not** how the game pairs
+> them - `attachSfx` takes the resident SCENE's file and `bindSetEmitters` the
+> AREA's `+97` set, so the Impasse is `Impasse.sfx` against `AIMPASSE.3DO`, a
+> pair no stem sweep produces. This entry first said "the Impasse has 0" on
+> the strength of that sweep and the running game said 3. **319 is a floor,
+> not a total**, and the check now carries the Impasse's real pairing beside
+> it.
+
+Filed 2026-09-03 — *please apply particles effects triggered by the
+environnement, and not only the ones triggered by the scene.*
+
+**What the engine does** — two families own the instances (ASSETS 3b):
+`Cef_TickEffects` (character effects, from the `.CTL` state records) and
+`Sfx_TickAmbient`, the real particle emitter, which is the one bound to
+GEOMETRY — mesh flag `0x40000000` → name → `.SFX` section D → section C effect
+→ emitter. **321 of 579 flagged meshes bind**, `neon` 102, 153 of them in
+Anekbah.
+
+**What the port does** — `o3de/particles.*` and `setpiece.*` exist and are fed
+by `SceneRunner`'s object starts (section E, keyed to an object START event).
+The ambient/standing family — section E rows keyed `(1, -1)`, which no object
+start can fire — is TO BE ESTABLISHED.
+
+**The class** — every set with ambient emitters; 12 sets, 321 emitters.
+
+### 48. Some Impasse particles draw incorrectly — B
+
+> **STILL OPEN 2026-09-03, but narrowed.** Four things ruled out cheaply, so
+> the next pass does not repeat them:
+> * **the sprites all resolve.** The Impasse's 26 effects name sprite ids
+>   13, 114, 139, 140 and 200, and `Impasse.SCX`'s chunk 4 registers all five
+>   (12 sprites: 13 14 114 115 116 117 118 121 139 140 143 200). The port
+>   already keys by ID rather than index, which is the trap `play.cpp` records
+>   ("indexing a library instead lands on the wrong sprite ... which is why the
+>   portal came out fire-orange").
+> * **every one of the 26 effects is blend mode 4**, so a mode mix-up cannot
+>   explain "some are wrong and some are right".
+> * **all 15 set pieces are object-keyed** (to 221, 259, 223, 94) and
+>   `standingPieces()` is 0, so they only appear during their beats.
+> * **the set binds 0 mesh-flag emitters** (issue 47), so nothing in this
+>   scene comes from the environment family.
+>
+> And three more from a second pass over the DRAWING, which is where the first
+> pass said the answer had to be:
+> * **the quad's size is right.** ASSETS 3b's rule - a particle's size is the
+>   sprite quad's own, not the effect's `scale` - is what `particleGeometry`
+>   does: `base = sf->extent[frame]` and the effect's scale multiplies it as an
+>   instance scale.
+> * **the blend is right.** All 26 effects are mode 4; `spriteModeBits`
+>   transcribes `Render_SubmitSprites`' switch verbatim (4 -> 0x2100) and
+>   `blendOfMode(4)` is `Blend::Add`, no cutout - additive, which is what smoke
+>   and neon want.
+> * **the frame walk is right**: `(frames - 1) * age / life`, from the age
+>   BEFORE the tick's increment.
+>
+> So seven things are ruled out and nothing cheap is left. What remains is the
+> billboard basis, the colour ramp's application, the depth/order against the
+> set, or something only a frame can show - and this file's opening rule is
+> that a viewer fix is not done until somebody has WATCHED it. This one cannot
+> even be diagnosed without that.
+
+
+Filed 2026-09-03 — *some the particles effects of the impasse cutscene are
+visible but does not render correctly.* Needs LOOKING at before it can be
+filed properly; the likely axes are the blend mode (additive `0x1000|0x2000`
+vs multiply `0x1000|0x4000`, ASSETS 4), the quad's own size (ASSETS 3b: a
+particle's size is the sprite quad's, not the effect's `scale`), and the
+frame walk.
+
+### 49. The adventure-mode camera sits too low — A
+
+> **Fixed 2026-09-03, and it SETTLES an open item. NOT yet confirmed in play.**
+> `player.h` recorded "whether the subject position +244..+252 is the FEET or
+> the pelvis is not settled by this read". It is the PELVIS, and the preset
+> table is what says so: mode 0 offsets the eye by (0, 0, -118.11) and the
+> TARGET by (0, 0, 0), so a third-person camera whose eye and target both sit
+> at the subject's own height only makes sense if that subject is a BODY point.
+> `pos()` is a floor point - the walker keeps it there - so the camera sat on
+> the ground.
+>
+> `PlayerController::cameraLift()` is the model's hierarchy root (the pelvis,
+> `parent < 0`) above its lowest extent: **41.9** for `HO1_FNM`, which is the
+> **41.8** the dialogue staging measured from the other side months ago and in
+> a different context. The camera's subject is raised by it.
+> `verify.py: engine: player walk` now asserts the camera's height above the
+> floor point equals that lift, and reads (0, 4189) with the lift removed.
+
+Filed 2026-09-03 — *the camera on adventure mode is set too low, could you
+check how the original engine set the adventure mode camera, and reproduce it.*
+
+**What the engine does** — the follow camera is `sub_415D10`/`sub_415E60`, and
+the **camera-mode presets** are a compiled table (CLAUDE.md 4, the actor
+runtime row; `tables/camera_presets.json` is lifted from the exe). `MDCAMADV`
+is the special move that installs adventure mode.
+
+**What the port does** — TO BE ESTABLISHED; `play.cpp` has its own follow
+camera and `actor/player.h` a `setCameraOffsets`.
+
+**The class** — the whole of adventure mode, which is most of the game.
+
+### 50. Scene animations that should fire at a point do not — A
+
+> **Fixed 2026-09-03: the timing AND the movement.** NOT yet confirmed in play. `Script_MoveObjectOnPath` addresses a path in TWO parts -
+> param 1 the `.3dp` file, param 2 the path inside it - so `ScxPath` now
+> carries `file`/`index` and `pathIn(file, index)` resolves it; a flat index
+> lands on another file's path in any scene with more than one. Its busy
+> window is **param 6**, the playback length in frames - and that was a
+> CORRECTION to this entry's own first fix, which took the path's duration and
+> gave 146. The handler advances `t` by `duration * dt / param6` and stays busy
+> while `t < duration`, so the path's frames are played ACROSS param 6:
+> `C_1_BoxMoves` runs **111** (param 6 = 110.01) where a window of 0 gave 40.
+> The corpus is unanimous - **4837 of the 4841** sites author a non-zero
+> param 6, and the commonest values are 36, 45, 120 and 180: round frame
+> counts, 1.2 s / 1.5 s / 4 s / 6 s at 30 Hz. The data names itself twice
+> over - the four paths are `CaisseA`..`CaisseD` and the four node names in
+> the object's own string table are `Caisse01`, `Caisse1`, `Caisse 13`,
+> `Caisse 14`, one per crate. `boxblow` holds 185.
+> `verify.py: engine: scene steps`.
+>
+> **And the MOVEMENT is done too.** `o3de_SetNodePos(node, x, y, z)` places the
+> node at the path sample OUTRIGHT - absolute world, not a delta - and param 0
+> is an index into the object's own first string table, which is how a scene
+> names a mesh of the resident set. `Program::motions()` reports them,
+> `SceneRunner::motions()` collects them, and `play.cpp` offsets that mesh's
+> corners by (target - its authored position), keyed by `cornerMesh` and
+> patched from a kept copy of the ORIGINAL corners so the offset cannot
+> accumulate.
+>
+> The data confirms the shot: **4 nodes move, all 4 resolve to meshes of
+> `AImpasse` by name, and 2 of the 4 FALL** - `Caisse01` from y -198.9 to
+> -118.7 and `Caisse 13` from -199.2 to -122.3, about 80 units down, while
+> `Caisse1` and `Caisse 14` start on the ground and slide. That is crates
+> falling. `verify.py: engine: scene steps`, shown to fail (4/4/2 -> 0/0/0).
+>
+> **Still NOT confirmed in play**, and one thing is deliberately not modelled:
+> the path key's QUATERNION. `Path_Sample` returns one and the handler passes
+> it on, but nothing here rotates the mesh - a falling crate translates and
+> does not tumble.
+
+Filed 2026-09-03 — *inside the cutscene, some animations are supposed to be
+triggered at some points, like the crates falling, but nothing happens.*
+
+**What the engine does** — the crates are `Impasse.SCX`'s `C_1_BoxMoves`,
+whose program is four `Script_MoveObjectOnPath` (0x03000008) functions and a
+`SelectBodyAnimation`, with the editing `boxblow` (185 frames) over it.
+`Script_MoveObjectOnPath` moves a scene node along an authored `.3DP` and is
+busy for the path's duration.
+
+**What the port does** — `Program::busySpan` returns **0** for
+`kFnMoveObjectOnPath` ("a path's duration belongs to the walker and is not
+modelled here"), and nothing MOVES the node. So the object runs 40 frames
+against its editing's 185 and the crates never move. It is the single largest
+remaining gap in the scene interpreter: **4841 uses**, the most-used script
+function in the game.
+
+**The class** — every scripted object motion in every scene: doors, lifts,
+crates, vehicles.
+
+## Fixed (batch 5, 2026-09-03)
+
+### 51. No diagonal movement: holding two directions walked straight — A
+
+> **Fixed 2026-09-03.** The controller applied the standalone turn from the
+> state being LEFT instead of from the CANDIDATE that carries it, so the
+> turn was zero and holding forward+left walked in a straight line.
+> `verify.py: engine player walk` now runs a fifth stream, `k200+203*40`,
+> and asserts he covers ground AND turns AND ends in the same state the
+> forward-only stream ends in. Awaiting the play test.
+
+Filed 2026-09-03 from a play report — *the new engine doesn't support the
+press of two directionals buttons at once (it forces to walk straight, then
+turn left without moving, then walk straight again)*. My first reading of the
+graph concluded the machine had no walk-and-turn edge and therefore that the
+original could not do it either. **That was wrong, and the reader — who has
+played the original — corrected it**, with the hypothesis that turned out to
+be exactly right: *maybe the animation is still the same and only the
+direction of the character change*.
+
+**What the engine does** — the walk-and-turn is not a transition at all.
+Every tick, `Cef_TickChannel` (0x004A8160, `29_win32.c:194`) runs a loop
+BEFORE the commit:
+
+    while (1) {
+      v15 = Cef_FindTransition(v1, v4, v12, 2, 784, 1);
+      if (v15) {
+        v17 = u32(v15, 8);
+        if ((v17 & 0x100) != 0) { sub_45C080(u32(v1,0), (float *)(u32(v15,44)+8));
+                                  v60 = 1; v52 &= ~v16[1]; }
+        if ((v17 & 0x200) != 0) { Cef_ApplyRootShift(...); v60 = 1; v52 &= ~v16[1]; }
+        ...
+
+It searches for a candidate carrying flag `0x100` (turn) or `0x200` (shift),
+**applies its effect, masks that candidate's own input bits out of the word,
+and loops** — without ever taking the transition. So holding forward and left
+leaves `H_WALK` playing and turns the facing underneath it. The animation
+never changes; only the direction does.
+
+`H1Avnt` group 0 carries four such aliases, and nothing else in the group
+matches `(flags & 2) && (flags & 0x310)`:
+
+    input 0x01  flags 0x00204913  turn dY = +5.0   move MDROT000
+    input 0x02  flags 0x00204913  turn dY = -5.0
+    input 0x01  flags 0x00201113  turn dY = +3.0
+    input 0x02  flags 0x00201113  turn dY = -3.0
+
+Two rates — 5 and 3 degrees a frame. None of them is on `H_WALK` itself,
+which is the whole of the bug below.
+
+**And the two turn sites read DIFFERENT records**, which is what the port
+collapsed. The on-transition one, `28_script.c:3509`, passes
+`&from->turn->dx` to `Cef_ApplyTurn` (0x0045C1B0), which adds it **whole**.
+The standalone one passes the found CANDIDATE's block (`u32(v15,44)+8`) to
+`sub_45C080` (0x0045C080), which adds `value * flt_4C30D8` — a **rate**.
+
+**What the port did** — `channel.cpp` already ran the loop and already emitted
+an event for it, but emitted it as the same `Kind::Turn` the transition site
+uses, and `player.cpp` handled that kind by reading `S[e.from]` — the state
+being left. In a walk that is `H_WALK`, which carries no turn block, so the
+applied angle was **0.0** every tick. The input bits were still masked out of
+the word, so the walk edge kept winning and he kept walking straight: the
+mechanism was running, and silently applying nothing.
+
+**How established** — read out of `Cef_TickChannel` and the two appliers, then
+measured through `tools/player_probe` on `H1AVNT`/`AIMPASSE`. Over 40 frames:
+
+    held      state at end   facing        walked
+    UP        H_WALK         0 -> 0        yes
+    LEFT      H_SDLROT       0 -> 166      no  (turn in place)
+    UP+LEFT   H_WALK         0 -> 190      yes (5 deg/frame)
+
+`LEFT` alone is the negative control: it turns through a different state and
+does not move. Shown to fail by restoring the `e.from` read — `UP+LEFT` then
+covers the same ground with the facing unchanged, and only that one field of
+the check moves.
+
+**Severity A** — half the movement vocabulary, and it is felt on every step.
+
 ## Fixed (batch 4, 2026-09-03)
 
 ### 42. A scripted camera shaped like the follow camera re-aims the follow camera — A

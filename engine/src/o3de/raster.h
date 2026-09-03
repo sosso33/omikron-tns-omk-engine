@@ -71,6 +71,21 @@ namespace omk {
 struct RCamera {
     float eye[3]{}, at[3]{};
     float hfovDeg = 60.0f;      // angle[1] is the HORIZONTAL fov, not vertical
+    // ROLL, in degrees - the rotation about the forward axis. A camera record
+    // carries one (`Cam_PlayEditing` keyframes position/target/roll/fov; a
+    // world camera's is `Global_Load`'s 4096ths converted by 360/4096) and
+    // dropping it is invisible in any single still frame, which is how it
+    // survived here until 2026-09-03 while the web viewer had been fixed.
+    //
+    // The SENSE is the engine's own, derived rather than chosen: `sub_442400`
+    // turns a direction and a roll into `sub_441FF0(pitch, yaw, roll)`, which
+    // `o3de/setpiece.cpp`'s `headingMatrix` already transcribes verbatim, and
+    // that matrix's COLUMNS are exactly this basis - column 0 is `s`, column 1
+    // is `-u` (the sign is the game's Y-down), column 2 is `f`, agreeing to
+    // 1e-3 at roll 0 for every direction tried. Rolling it 30 degrees carries
+    // `s` from +X toward +Y about a +Z forward, which is
+    // `v' = v cos(roll) + (f x v) sin(roll)`.
+    float rollDeg = 0.0f;
     int   w = 640, h = 480;
     bool  mirror = false;
     // `noClip` restores the pre-2026-09-01 rule: DROP a triangle when any

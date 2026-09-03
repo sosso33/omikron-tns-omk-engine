@@ -462,6 +462,64 @@ public:
     // message-0 handler is forced to 0xFF0000. No port of the fade colour
     // exists to consume it, so it is bookkeeping with a named reader.
     int  message0Context() const { return message0Ctx_; }
+
+    // ---- THE SCREEN FADES, and there are TWO ---------------------------
+    //
+    // `Screen_StartColorFade` (0x00451DC0) is the colour one - mode 1 to,
+    // 2 from - and `Screen_Fade` (0x0041E1B0) the black one, states 3 and 4
+    // over a fixed 60 frames. They are independent state machines and the
+    // engine runs them side by side, so this carries both.
+    //
+    // `weight` is what a frontend wants: how much of `colour` to mix into the
+    // frame, 0..1. The ticker at 0x00451E60 is linear -
+    // `alpha = clock * 255 / duration` for a "to" and `255 - ...` for a
+    // "from" - so this is that alpha over 255. **What the engine does with it
+    // is a full-screen quad through `I2D_SubmitQuad(&q, flag, 9)` with flag 1
+    // for white, 2 for black and 4 for anything else, and those three blends
+    // are NOT modelled**: mixing toward the colour matches the ramp's
+    // direction for every mode and colour, and is labelled a model here
+    // rather than dressed as the blend.
+    struct ScreenFade {
+        // 1 = to colour, 2 = from colour, 3 = FROM black, 4 = TO black.
+        //
+        // **3 and 4 are the opposite way round from the opcode names**, and
+        // that was a real bug rather than a quibble: the table calls 132
+        // `fade.to_black` and 133 `fade.from_black`, and the ticker at
+        // 0x00451FFE says otherwise. It draws a grey quad that MULTIPLIES the
+        // frame - 0 is black, 255 leaves it alone - and in state 3 that grey
+        // is `clock * 255 / duration`, RISING, so state 3 goes black -> normal
+        // and is a fade IN. State 4 takes `~al`, falling, and is the fade out.
+        //
+        // Backwards, every scene went black two seconds in and stayed there:
+        // `fade.to_black` is the FIRST thing SCENE 55 does (pc 1228) and its
+        // partner is 167 instructions later, past every waiting beat.
+        int   mode = 0;
+        std::uint32_t colour = 0;   // 0x00RRGGBB
+        float duration = 0.0f;      // frames
+        float clock = 0.0f;
+        bool  running() const { return mode != 0; }
+        float weight() const {      // 0..1 of `colour` to mix in
+            if (mode == 0 || duration <= 0.0f) return 0.0f;
+            float k = clock / duration;
+            if (k < 0.0f) k = 0.0f;
+            if (k > 1.0f) k = 1.0f;
+            // rising for the two that END on the colour (to colour, to black),
+            // falling for the two that end on the scene
+            return (mode == 1 || mode == 4) ? k : 1.0f - k;
+        }
+    };
+    const ScreenFade& colourFade() const { return colourFade_; }
+    const ScreenFade& blackFade() const  { return blackFade_; }
+    // `Screen_StartColorFade`'s refusal: a running fade blocks a new one
+    // unless the new one is a "from" over a running "to".
+    void startColourFade(int mode, std::uint32_t colour, float duration);
+    // `Screen_Fade` (0x0041E1B0). `fromBlack` is opcode **132** - the one the
+    // table calls `fade.to_black` and which actually fades IN - and it sets
+    // state 3 over a fixed 60 frames. 133 sets state 4, the fade OUT, and only
+    // from state 3: you cannot fade out without having faded in.
+    void startBlackFade(bool fromBlack);
+    // One frame of both, in FRAMES (the engine's `flt_4C30D8`).
+    void tickFades(float dt = 1.0f);
     // `dword_4E6C7C`: the boot AREA's startup context (`Game_NewGame` stores
     // the active slot's block +0 after `State_Apply`), cleared by `end` when
     // ANY context ends action 1 and by event 5 when that context answers a
@@ -469,6 +527,9 @@ public:
     // gate (`if (!dword_4E6C7C && dword_4C09B4 != -1) Game_LoadSave`), which
     // is not modelled. -1 = clear.
     int  bootContext() const { return bootCtx_; }
+private:
+    ScreenFade colourFade_, blackFade_;
+public:
     // The context's flag byte at +40: 0x10 "did something visible" (24
     // handlers OR it in before their dry-run test - see `kVisibleOps`), 8
     // "free my slot's SCENE block at end" (72, issue 25), 2 (69/75).

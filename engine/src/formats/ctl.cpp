@@ -149,8 +149,34 @@ CtlFile readCtl(std::span<const std::byte> d) {
             }
     }
 
-    for (auto e : ents)                                   // entry +28
-        if (u8(d, e + 76) & 8u) pos = 32u * u32(d, pos) + pos + 8u;
+    // entry +28 - the effect records, in entry order, 8 bytes of header and
+    // then 32 each. Walked past before; read now, because they are what makes
+    // a state carry its own sound (`Cef_TickEffects`).
+    std::vector<std::vector<CtlEffect>> effectsOf(ents.size());
+    for (std::size_t ei = 0; ei < ents.size(); ++ei) {
+        const auto e = ents[ei];
+        if (!(u8(d, e + 76) & 8u)) continue;
+        const auto n = u32(d, pos);
+        auto& st = effectsOf[ei];
+        st.reserve(n);
+        for (std::uint32_t k = 0; k < n; ++k) {
+            const auto r = pos + 8u + 32u * k;
+            if (r + 32 > d.size()) break;
+            CtlEffect fx;
+            fx.duration = f32(d, r);
+            fx.from     = f32(d, r + 4);
+            fx.to       = f32(d, r + 8);
+            fx.soundAt  = f32(d, r + 12);
+            fx.spriteParam = u32(d, r + 16);
+            fx.sprite   = u16(d, r + 20);
+            fx.sound    = u16(d, r + 22);
+            fx.attach   = u8(d, r + 24);
+            fx.flags    = u8(d, r + 25);
+            fx.scale    = f32(d, r + 28);
+            st.push_back(fx);
+        }
+        pos = 32u * n + pos + 8u;
+    }
 
     // the clips: one per DISTINCT name, in entry order
     std::set<std::string> seen;
@@ -229,6 +255,7 @@ CtlFile readCtl(std::span<const std::byte> d) {
             for (int k = 0; k < 10; ++k)
                 s.combat.raw[k] = f32(d, cb->second + 4u * static_cast<std::size_t>(k));
         }
+        s.effects = std::move(effectsOf[i]);
         if (!s.name.empty() && clipOf.count(s.name)) s.clip = clipOf[s.name];
         for (auto c : s.children) if (!byGroupId.count({s.group, c})) s.childOk = false;
         for (auto p : s.parents)  if (!byGroupId.count({s.group, p})) s.parentOk = false;

@@ -195,6 +195,13 @@ public:
     int clip() const;                  // index into CtlFile::clips, -1
     const std::string& clipName() const;
     float clipFrame() const { return rt_.channel().frame(); }
+    // THE SOUNDS THIS FRAME STARTED - the `.CTL` state's effect records, which
+    // is where adventure mode's footsteps and jump land (`H_WALK` carries the
+    // pair 203/199, one per footfall). Ids into the RESIDENT scene's chunk-3
+    // table, resolved by `Scene_FindSoundIndex`, not indices.
+    const std::vector<CefChannel::EffectSound>& sounds() const {
+        return rt_.channel().sounds();
+    }
     int clipFrames() const;
 
     // --- posing --------------------------------------------------------
@@ -217,6 +224,22 @@ public:
                           int f42 = kFollowF42, int f44 = kFollowF44,
                           int f46 = kFollowF46);
     // The smoothed camera as it stands after the last tick.
+    // How far the camera's SUBJECT sits above the controller's own position,
+    // in inches. `pos()` is a FLOOR point - the walker keeps it there and the
+    // model is drawn with its feet on it - but the camera preset's subject is
+    // the actor's own origin, and preset mode 0 offsets the eye by
+    // (0, 0, -118.11) and the TARGET by (0, 0, 0): a third-person camera whose
+    // eye and target both sit at the subject's own height only makes sense if
+    // that subject is a BODY point. It is the model's hierarchy root, the
+    // pelvis, and this is its height above the feet - 41.9 for `HO1_FNM`,
+    // which is the 41.8 the dialogue staging measured from the other side
+    // (CLAUDE.md 6, "HO1_FNM's own standing pelvis->feet is 41.8").
+    //
+    // Filed as issue 49 from a play report - *the camera on adventure mode is
+    // set too low* - and it is what `player.h` above records as unsettled:
+    // "whether the subject position +244..+252 is the FEET or the pelvis is
+    // not settled by this read". It is the pelvis.
+    float cameraLift() const { return camLift_; }
     const FollowCamera& followCamera() const { return cam_; }
     // Where it settles for the current position and facing - the resolve
     // with no lag, which is what a check can pin.
@@ -257,6 +280,7 @@ private:
     float pos_[3];
     float start_[3];
     float euler_[3] = {0, 0, 0};       // +416, +420, +424
+    float camLift_ = 0.0f;             // pelvis above the feet - see cameraLift()
     float frameBefore_ = 1.0f;         // the channel's +12/+16 pair as the
     float frameAfter_  = 1.0f;         // window rule reads them
     int   stateBefore_ = -1;

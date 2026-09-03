@@ -33,7 +33,7 @@
 /Runtime.exe.c
 /Runtime.exe.h
 /clean/
-/readable/src/
+/readable/src
 /readable/types.h
 /readable/decls.h
 /readable/globals.h

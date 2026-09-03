@@ -1091,7 +1091,9 @@ void Session::trackPlayer() {
                                  clipRootMotion(scene_.scene().clipData(st.clip))).first;
     const auto& rm = it->second;
     if (!rm.empty()) {
-        const float t = scene_.programClock(which);
+        // the frame of the clip `st.clip` now names - see
+        // `SceneRunner::programAnimClock`
+        const float t = scene_.programAnimClock(which);
         int f = t < 0 ? 0 : static_cast<int>(t);
         if (f >= static_cast<int>(rm.size())) f = static_cast<int>(rm.size()) - 1;
         for (int k = 0; k < 3; ++k)
@@ -1756,6 +1758,7 @@ bool Session::actorRecord(int actor, std::vector<std::byte>& chunk,
 
 void Session::frame() {
     ++frameNo_;
+    tickFades();          // both screen fades, on the frame clock
     // `sub_41F320`, the async reader's per-frame slice, sits at the END of the
     // frame function after the render - after the pump. Serving it here, at
     // the start of the next frame, is the same order for everything the
@@ -1910,10 +1913,86 @@ void Session::processActions(int i) {
 
 // The stubbed handlers' side effects, per recorded call - what a decision
 // trace is made of on the Session's side.
+void Session::startColourFade(int mode, std::uint32_t colour, float duration) {
+    // `if (dword_536C1C && (a1 != 2 || dword_536C1C != 1)) return 0;`
+    if (colourFade_.mode && (mode != 2 || colourFade_.mode != 1)) return;
+    colourFade_.mode = mode;
+    colourFade_.colour = colour;
+    colourFade_.duration = duration;
+    colourFade_.clock = 0.0f;
+}
+
+void Session::startBlackFade(bool fromBlack) {
+    if (fromBlack) {
+        blackFade_.mode = 3;             // fade IN - see ScreenFade's note
+        blackFade_.colour = 0;
+        blackFade_.duration = 60.0f;     // `flt_536C0C = 60.0`
+        blackFade_.clock = 0.0f;
+    } else if (blackFade_.mode == 3) {   // `else if (dword_536C18 == 3)`
+        blackFade_.mode = 4;             // fade OUT, only from 3
+        blackFade_.duration = 60.0f;
+        blackFade_.clock = 0.0f;
+    }
+}
+
+void Session::tickFades(float dt) {
+    // Each ticker's own end rule, and they are NOT the same shape:
+    //
+    //   colour (0x00451FE0)  `if (mode == 1) clock = duration;`  a TO holds
+    //                        `else mode = 0;`                    a FROM clears
+    //   black  (0x00452046)  state 4 past its end -> `mode = 0`, and state 3
+    //                        past its end keeps drawing at 0xFF, which under
+    //                        the multiply is the scene untouched.
+    //
+    // So 1 and 3 hold and 2 and 4 clear - which is the two that end ON the
+    // scene's own colour holding harmlessly, and the two that end on it
+    // stopping. Holding a mode-3 black fade is what a first version got
+    // backwards, and it painted every cutscene black.
+    for (ScreenFade* f : {&colourFade_, &blackFade_}) {
+        if (!f->mode) continue;
+        f->clock += dt;
+        if (f->clock > f->duration) {
+            if (f->mode == 2 || f->mode == 4) f->mode = 0;
+            else f->clock = f->duration;
+        }
+    }
+}
+
 void Session::onCall(int i, const Call& call) {
     Ctx* c = ctxs_[static_cast<std::size_t>(i)].get();
-    (void)c;
     switch (call.op) {
+    // ---- THE SCREEN FADES ------------------------------------------------
+    //
+    // Two independent ones, and the port had neither. `Screen_StartColorFade`
+    // (0x00451DC0) owns the COLOUR fade: mode 1 to, 2 from, and it REFUSES a
+    // new one while another runs unless the new one is a "from" over a running
+    // "to". The ticker (0x00451E60) ramps it LINEARLY -
+    // `alpha = clock * 255 / duration` rising for a "to" and
+    // `255 - clock * 255 / duration` falling for a "from" - and submits a
+    // full-screen quad. `Screen_Fade` (0x0041E1B0) owns the BLACK one: state 3
+    // to black over a fixed **60** frames, state 4 back, and only from 3.
+    //
+    // 118/119 pack the colour as a DWORD out of their first four operand
+    // bytes, which is why the disassembler's four int16 view reads the
+    // Impasse's opening fade as `-1, 255, 25, 0`: the bytes are
+    // `FF FF FF 00 19 00 00 00`, so the colour is 0x00FFFFFF (WHITE) and the
+    // duration is 25.
+    case 118: case 119: {
+        if (call.fields.size() < 3) break;
+        const auto lo = static_cast<std::uint32_t>(call.fields[0]) & 0xFFFFu;
+        const auto hi = static_cast<std::uint32_t>(call.fields[1]) & 0xFFFFu;
+        std::uint32_t colour = lo | (hi << 16);
+        // `byte_4C012C` against the context's own +30: a fade issued by the
+        // MESSAGE-0 handler is forced to pure red. The bookkeeping was already
+        // here with a named reader and nothing to consume it; this consumes it.
+        if (message0Ctx_ >= 0 && c && message0Ctx_ == c->slot) colour = 0xFF0000u;
+        startColourFade(call.op == 118 ? 1 : 2, colour,
+                        static_cast<float>(call.fields[2]));
+        break;
+    }
+    // 132 is the fade IN and 133 the fade OUT, whatever the table calls them
+    case 132: startBlackFade(true);  break;
+    case 133: startBlackFade(false); break;
     case 103:
         // `music.play`: field 0 is the track, field 1 the loop flag.
         // `Music_PlayTrack` refuses anything below 2, so 0 and 1 are the

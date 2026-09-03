@@ -39,6 +39,11 @@ struct ScxFunction {
     std::uint32_t id = 0;
     bool  isSync = false;
     std::vector<std::int32_t> params;
+    // `sync` indexes the object's SYNC array, NOT `ScxObject::functions`, which
+    // holds the main list and the sync list end to end. The loader is explicit:
+    // `obj->syncFunctions + fn->sync`, refused past `+ syncCount`. Resolving it
+    // against the flattened vector stays in range on every shipped file and
+    // still runs, so it fails silently - see `Program::chain`.
     std::int32_t sync = 0, repeat = 0, runs = 0;
 };
 
@@ -89,6 +94,20 @@ struct ScxStreamAnim {
     std::size_t  size = 0;
 };
 
+// A chunk-3 sound: the payloads are plain RIFF/WAVE, 16-bit PCM mono - the
+// same bytes `Sound_Play3D` hands DirectSound - and the object programs name
+// them by INDEX into this array (`Script_PlaySound` / `Script_PlaySyncSound`
+// param 0). The in-block record is 26 bytes and carries the name.
+struct ScxStreamWav {
+    // The in-block record is `char[22] name`, `u16` handle, `u16` id - which
+    // `Scene_FindSoundIndex` settles: it walks `base + 24` in 26-byte strides
+    // looking for the id and returns that record's `+22`.
+    std::string name;
+    int         id = -1;         // +24, what a `.CTL` effect matches on
+    std::size_t offset = 0;      // the RIFF file inside the .SCX
+    std::size_t size = 0;
+};
+
 struct ScxStreamSprite {
     std::string name;
     // The registry row's `+32`. An effect's sprite field is this ID, resolved
@@ -127,6 +146,15 @@ struct ScxPath {
     std::string name;
     std::uint32_t duration = 0;
     std::vector<ScxPathKey> keys;
+    // WHICH chunk-0 record this path came out of, and its index INSIDE it.
+    // `Script_MoveObjectOnPath` addresses a path in TWO parts - param 1 names
+    // the `.3dp` file and param 2 the path within it (`v89 = u32(v6, 4 *
+    // GetParamInt(a2, 2))` after the file lookup) - so a flat index is the
+    // wrong key and lands on another file's path in any scene with more than
+    // one. `Script_SelectRelativeBodyAnimation`'s param 8 is a different
+    // question and stays flat.
+    int file = 0;
+    int index = 0;
 };
 
 // `Path_Sample(path, t, ..., 1)` - mode 1 is LINEAR: find the key span holding
@@ -141,7 +169,7 @@ struct ScxStream {
     std::vector<ScxStreamAnim>   anims;
     std::vector<ScxStreamSprite> sprites;
     std::vector<ScxPath>         paths;
-    int wavs = 0;
+    std::vector<ScxStreamWav>    wavs;
     // chunk 10's payload - the camera EDITINGS. Only 29 of the 220 scenes
     // carry one; it is a streamed block of its own with no in-block count.
     std::size_t camOffset = 0, camSize = 0;

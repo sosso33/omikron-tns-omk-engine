@@ -1207,6 +1207,12 @@ function record, 24 bytes
   +0 int32 id   +4 int32 paramCount
   +8 int32 index into the scene's parameter pool -> pointer at load
   +12 int32 index of a sync function, -1 for none -> pointer at load
+            **into the SYNC array, not into the two laid end to end**:
+            `scene_read_objects` resolves it `obj->syncFunctions + sync`
+            and refuses the file past `syncFunctions + syncCount`
+            ("Address of SyncFunction isn't valid."), and
+            `Script_FunctionsIndexesToAdresses` does the same for the sync
+            records' own links
   +16 int32 repeat count: times to run, -1 = forever
             (1 in 13247 of 13887 shipped records, else 2..27 or -1)
   +20 int32 run counter - 0 on disk in all 13887
@@ -1235,10 +1241,46 @@ completes with loops remaining. Then, per frame:
   reached through its `+12` sync link (`Script_SyncChainTail` follows it) —
   chained functions execute the same tick, which is how an animation carries
   its sounds (`Uzal---->assis`: `SelectBodyAnimation` → three chained
-  `PlaySyncSound`);
+  `PlaySyncSound`). **The link counts in the sync array**, per the record
+  layout above, and reading it flat is a trap worth naming because it fails
+  quietly: the two arrays sit end to end in memory, all 6308 shipped links
+  stay in range either way, and 4511 objects out of 4511 still run. It cost
+  a shot. Flat, a leading `sync = 0` becomes a self-loop and drops whatever
+  hung off it — a link points at `Script_PlaySound` 37% of the time,
+  `MoveObjectOnPath` 36% and `PlaySyncSound` 21%, and the first is never busy
+  at all — but at **20 sites** it lands on a different *main* step and
+  merges two program steps into one, so the object ends at the longer of the
+  two instead of their sum. `Impasse.SCX`'s `A_2_DemonLook` is one: clip 15
+  (91 frames) then clip 17 (41) is **132**, which is exactly the duration of
+  `sautdemon`, the camera editing linked to it — the demon's jump off the
+  wall. Flat it runs 92, so the shot was cut 40 frames short and the demon's
+  "Te voilà, enfin ! Je t'attendais..." came in over the end of his own jump.
+  The **editings adjudicate it**, though only weakly, and the margin is worth
+  quoting honestly: over the 95 that name an object, agreement with their own
+  authored `+24` duration goes 65 → 66, and on the 11 rows where the two
+  readings differ at all the sync-array one is exact 4 against 3. (This read
+  66 → 69 when first measured, on the 8 rows that then differed — but that was
+  taken while the interpreter still spent a frame per program step, and the
+  margin does not survive correcting it. A corpus verdict recorded before a
+  timing fix is worth re-running rather than re-reading.) What settles the
+  question is the loader, which is not ambiguous; what the corpus still shows
+  decisively is the single row above, where flat runs 92 against an authored
+  132 (`verify.py: scx sync chain`, `engine: scene steps`);
 * each handler returns a busy bit. While any function in the chain is busy the
   PC holds; when all are done the PC advances. A function that has run `+16`
-  times reports done immediately (`+20` is its counter; -1 = forever);
+  times reports done immediately (`+20` is its counter; -1 = forever).
+  **So an object's clip is not one number** — a program is a sequence and each
+  step may name a different animation, which is easy to lose sight of because
+  most objects have only one. `A_2_DemonLook` is clip 15 (`1-02DEM`, the demon
+  perched on the wall, 91 frames) and then clip 17 (`1-03DEM`, his jump down,
+  41), and since `Script_SelectBodyAnimation` **snaps the body to the clip's
+  own root key 0** on the tick where its param 2 is still 0, the step decides
+  *where the character is* as much as what he does. A reader that takes the
+  first step's clip for the whole program leaves the demon at clip 15's last
+  frame — 267 units up the wall — for the whole shot, and the descent never
+  happens. The beat's three clips are authored to **chain**, each starting
+  exactly where the last ends (15 → 17 → 25, both gaps **0 units**), which is
+  the invariant that catches it (`verify.py: engine: scene steps`);
 * past the last function, `+56` is compared with the loop count `+52`:
   1 = the program ends (and the pair hands over, below), -1 = rewind and go
   again via `Script_StartScript`;
@@ -1368,6 +1410,47 @@ Only **17 distinct ids** occur in the 13887 shipped calls:
 | `Script_Wait` | 31 | `0x06000017` | 2 | ✓ | ✓ |
 | `Script_ScaleObjectX` / `Y` / `Z` | 15 / 6 / 14 | `0x03000023-25` | 7 | | ✓ |
 | `Script_SetSpriteDefaultPalette` | 3 | `0x0400001F` | 1 | ✓ | — |
+
+**The two sound functions, and how a scene names a sound** (read from the
+handlers 2026-09-03). They are what makes an animation carry its own effects —
+they hang off the body animation through the `+12` sync link and
+`Script_PlayScript` runs them in the same chain walk, so `Impasse.SCX`'s
+arrival clip fires `STPR`/`STPL`/`STPL`/`STPR` at frames **170, 200, 210, 280**
+— Kay'l's footsteps — plus a cloth movement and an ambient.
+
+```
+Script_PlaySyncSound  0x004A14D0   0 sound  1 the FRAME on the OBJECT's clock
+                                   2 &1 loop  3 the latch  4 the node
+Script_PlaySound      0x004A12D0   0 sound  1 &1 loop
+                                   2 the latch  3 the node
+```
+
+**The layouts differ, and reading one as the other invents a cue time for
+every call of the second.** `PlaySyncSound` holds the chain while its cue is
+pending (`if (GetParamFloat(a2,1) > obj+88) return busy`) and both fire
+**once**: the handler tests its latch on entry and writes it on the way out
+(`sub_44C690(fn, 2, 1)`), and `Script_StartScript` clears it with the rest.
+Cue times are on the object's clock, not the clip's, so a `Wait` step ahead of
+the animation shifts none of them.
+
+**Param 0 is a plain INDEX into chunk 3** — worth stating because the sprites
+in this same format are NOT (an effect's sprite field is an *id* resolved
+through the scene, and a global-index lookup lands on the wrong sprite).
+`sub_48CB30` is the whole lookup:
+
+```c
+if (a2 < scene[+24])  return u16(scene[+48] + 26 * a2, 22);   /* the handle */
+else                  return -1;                              /* refused */
+```
+
+a bounds-checked index into the 26-byte records, returning the record's `+22`
+sound handle. So **186 of the 5425** references a program makes point past
+their own scene's array, and the engine plays nothing for them — the caller
+tests `!= 0xFFFF` — which makes them a property of the data, like the 551
+voice-overs that do not ship. The other **5239 all begin `RIFF` and are all
+accepted by `Wav_LoadToBuffer`**; the corpus streams **1667** chunk-3 records
+across the 220 scenes. `verify.py: engine: scene sounds`.
+
 
 #### How the two body-animation functions PLACE the character — **read from the loaders, 2026-08-30**
 

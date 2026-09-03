@@ -34,7 +34,7 @@ int main(int argc, char** argv) {
         resyncs += st.resyncs;
         anims   += static_cast<long>(st.anims.size());
         sprites += static_cast<long>(st.sprites.size());
-        wavs    += st.wavs;
+        wavs    += static_cast<long>(st.wavs.size());
         for (const auto& pa : st.paths) {
             ++paths;
             if (pa.keys.empty()) continue;

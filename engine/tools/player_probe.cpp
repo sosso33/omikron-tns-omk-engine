@@ -291,6 +291,13 @@ int main(int argc, char** argv) {
         static_cast<std::int32_t>(std::lround(omk::kFollowFov * 100.0f)),
         static_cast<std::int32_t>(std::lround(walkHeading * 100.0)),
         static_cast<std::int32_t>(std::lround(camBehind * 100.0)),
+        // THE CAMERA'S HEIGHT above the floor point he stands on, x100. Preset
+        // 0 offsets both the eye and the target by 0 on y, so this IS the
+        // subject lift - the model's pelvis above its feet - and a camera that
+        // took `pos()` for its subject reads 0 here and sits on the ground,
+        // which is what a play report called "set too low".
+        static_cast<std::int32_t>(std::lround((pc.pos()[1] - cam.eye[1]) * 100.0)),
+        static_cast<std::int32_t>(std::lround(pc.cameraLift() * 100.0)),
     };
     std::ofstream o(outPath, std::ios::binary);
     for (auto v : out) {

@@ -19,6 +19,12 @@ std::int32_t i32(std::span<const std::byte> d, std::size_t o) {
     return static_cast<std::int32_t>(u32(d, o));
 }
 
+std::uint16_t u16(std::span<const std::byte> d, std::size_t o) {
+    if (o + 2 > d.size()) return 0;
+    return static_cast<std::uint16_t>(static_cast<std::uint32_t>(d[o]) |
+                                      static_cast<std::uint32_t>(d[o + 1]) << 8);
+}
+
 float f32(std::span<const std::byte> d, std::size_t o) {
     const auto b = u32(d, o);
     float f; std::memcpy(&f, &b, sizeof f); return f;
@@ -136,8 +142,9 @@ ScxStream readScxStream(std::span<const std::byte> d) {
 
     std::vector<int> order{2};
     std::map<int, std::uint32_t> counts;
-    std::vector<std::string> animNames, spriteNames;
+    std::vector<std::string> animNames, spriteNames, wavNames;
     std::vector<std::int32_t> animIds, spriteIds;
+    std::vector<int> wavIds;
     {
         // re-walk to recover the order and the in-block registry rows
         const auto n = u32(b, 4);
@@ -176,6 +183,10 @@ ScxStream readScxStream(std::span<const std::byte> d) {
                 if (ty == 1) {
                     animNames.push_back(str(b, rec, 24));
                     animIds.push_back(i32(b, rec + 32));
+                } else if (ty == 3) {
+                    // char[22] name, u16 handle, u16 id - see ScxStreamWav
+                    wavNames.push_back(str(b, rec, 22));
+                    wavIds.push_back(static_cast<int>(u16(b, rec + 24)));
                 } else if (ty == 4) {
                     spriteNames.push_back(str(b, rec, 24));
                     // `+32` is the sprite's ID, the same slot an anim's is in.
@@ -198,7 +209,8 @@ ScxStream readScxStream(std::span<const std::byte> d) {
     };
 
     std::size_t pos = 16u + blockSize;
-    std::size_t ai = 0, si = 0;
+    std::size_t ai = 0, si = 0, wi = 0;
+    int pathFiles = 0;
     for (int ty : order) {
         if (ty == 10) {
             if (u32(d, pos) != pos) pos = resync(pos);
@@ -236,8 +248,14 @@ ScxStream readScxStream(std::span<const std::byte> d) {
                 st.anims.push_back(std::move(a));
                 ++ai;
             } else if (ty == 3) {
-                ++st.wavs;
+                ScxStreamWav w;
+                w.name = wi < wavNames.size() ? wavNames[wi] : std::string();
+                w.id   = wi < wavIds.size() ? wavIds[wi] : -1;
+                w.offset = payload; w.size = size;
+                st.wavs.push_back(std::move(w));
+                ++wi;
             } else if (ty == 0) {
+                const int pathFile = pathFiles++;
                 // a .3dp: a count, then name/duration/keyCount + 32-byte keys
                 const auto pd = d.subspan(payload, std::min<std::size_t>(size, d.size() - payload));
                 if (pd.size() >= 4) {
@@ -245,6 +263,8 @@ ScxStream readScxStream(std::span<const std::byte> d) {
                     std::size_t q = 4;
                     for (std::uint32_t k = 0; k < np && q + 28 <= pd.size(); ++k) {
                         ScxPath path;
+                        path.file  = pathFile;
+                        path.index = static_cast<int>(k);
                         path.name = str(pd, q, 20);
                         path.duration = u32(pd, q + 20);
                         const auto nk = u32(pd, q + 24);

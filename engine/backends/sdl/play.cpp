@@ -109,6 +109,26 @@ constexpr int kTypeMarker = -1;
 // step on - `Sound_Init` hands a DirectSound primary buffer to the driver and
 // DirectSound sums into it, so the summing never had a portable half
 // (`src/audio/mixer.h`).
+// A case-insensitive name compare - a scene function names a set mesh and the
+// two spellings need not match in case.
+bool sameName(const std::string& a, const std::string& b) {
+    if (a.size() != b.size()) return false;
+    for (std::size_t i = 0; i < a.size(); ++i)
+        if (std::tolower(static_cast<unsigned char>(a[i])) !=
+            std::tolower(static_cast<unsigned char>(b[i]))) return false;
+    return true;
+}
+
+// An angle difference on the SHORT arc, wrapped to (-180, 180]. A camera roll
+// is stored 4096-per-turn and a small negative one reads as ~+359; the two are
+// the same rotation standing still and a full turn apart once interpolated
+// (CLAUDE.md 1, and `verify.py: camera roll`).
+float shortArc(float deg) {
+    while (deg > 180.0f)  deg -= 360.0f;
+    while (deg <= -180.0f) deg += 360.0f;
+    return deg;
+}
+
 std::vector<float> wavToDevice(std::span<const std::byte> file, int deviceRate) {
     const omk::audio::WavLoad w = omk::audio::loadWav(file);
     if (w.reject != omk::audio::WavReject::Ok || w.fmt.bits != 16 || !w.fmt.rate) return {};
@@ -291,6 +311,13 @@ const std::map<int, int>& keymap() {
         {SDL_SCANCODE_LEFTBRACKET, 0x1A}, {SDL_SCANCODE_RIGHTBRACKET, 0x1B},
         {SDL_SCANCODE_LSHIFT, 0x2A}, {SDL_SCANCODE_V, 0x2F},
         {SDL_SCANCODE_M, 0x32},
+        // ...and the two ADVENTURE bindings that had no key at all, which is
+        // why neither could be pressed. `tables/key_bindings.json` group 0:
+        // "Courir" is action 11, bit 0x800, keyboard **54** = DIK_RSHIFT -
+        // the RIGHT shift, not the left, which was mapped (0x2A) and reaches
+        // no binding; and "Pas de cote / Demi-tour" is action 10, bit 0x400,
+        // keyboard **157** = DIK_RCONTROL. Both are the engine's own defaults.
+        {SDL_SCANCODE_RSHIFT, 0x36}, {SDL_SCANCODE_RCTRL, 0x9D},
     };
     return m;
 }
@@ -1165,8 +1192,11 @@ int main(int argc, char** argv) {
     int   editingShown = -1;                  // the announced editing's program
     bool  haveLastDrawn = false;              // a 3D camera has been drawn
     float lastEye[3] = {0, 0, 0}, lastAt[3] = {0, 0, 0}, lastFov = 75.0f;
+    float lastRoll = 0.0f;              // the camera ROLL, blended like the fov
     bool  editFromKnown = false;              // ...and it was captured for the travel
     float editFromEye[3] = {0, 0, 0}, editFromAt[3] = {0, 0, 0}, editFromFov = 75.0f;
+    float editFromRoll = 0.0f;
+    bool  rollTold = false;
     int fxSpriteWas = -2;
 
     // ---- ADVENTURE MODE ------------------------------------------------
@@ -1208,6 +1238,10 @@ int main(int argc, char** argv) {
     long  mediaTextFrames = 0;
     float playerFeet = 0.0f;
     bool  playerFeetKnown = false;
+    // The model-space x/z of the hierarchy root - the PELVIS - which is what
+    // a turn must pivot about. `HO1_FN`'s is (2.87, 17.94); rotating about
+    // (0,0) instead swings him around a point half a metre away.
+    float playerRootXZ[2] = {0.0f, 0.0f};
     int   playerCamId = -2;
     // The facing at the hand-over. `Actor_TickScxDriven` sets +1308 when
     // the player's program ends and `Actor_TickNpc` then derives the facing
@@ -1544,6 +1578,8 @@ int main(int argc, char** argv) {
     std::uint64_t poolComposition = 1, poolBuiltFor = 0, poolTold = 0;
     bool poolHasSprites = false, poolHasPlayer = false;
     std::size_t playerTexBase = 0, spriteTexBase = 0;
+    // sprite id -> its slot within the pool's sprite section, or -1
+    std::vector<int> spriteSlot;
     bool poolOverflowTold = false;
     const bool stagedProbe = std::getenv("OMK_STAGE_PROBE") != nullptr;
     // One `.3DO`/`.3DT` per MODEL NAME, loaded once and shared by every actor
@@ -1729,6 +1765,11 @@ int main(int argc, char** argv) {
         std::vector<omk::Texture> tex;
         omk::MirrorPlane mirror;
         omk::TriangleSoup soup;      // its WALKABLE soup: the feet's decor probe
+        // The set's own meshes, kept so a scripted motion can name one, and
+        // the corners as BUILT, so a motion patches the original rather than
+        // accumulating on the last frame's patch.
+        std::vector<omk::Mesh>   meshes;
+        std::vector<omk::Corner> baseCorners;
     };
     std::array<WorldSlot, 2> worldSlots;
     std::string worldSet;            // the ACTIVE slot's stem - the set under his feet
@@ -1814,6 +1855,16 @@ int main(int argc, char** argv) {
         if (t) w.tex = omk::textures(d, omk::DataFs::readPath(*t));
         w.mirror = omk::mirrorPlane(d);
         w.soup = omk::collisionSoup(d, omk::SoupKind::Walkable);
+        if (const auto mh = omk::readHeader(d)) w.meshes = omk::readMeshes(d, *mh);
+        // THE SET'S OWN EMITTERS - `Sfx_BindAmbientEffects`, the environment
+        // family. Every mesh flagged 0x40000000 whose first four name bytes
+        // match a section-D tag registers that binding's effect at the mesh's
+        // position: the neon, the steam, the smoke. They come up with the SET,
+        // not with any object, which is why nothing started them and why they
+        // had never appeared here. 319 across the 12 sets that have any.
+        if (const int n = session.sceneMutable().bindSetEmitters(d))
+            std::printf("world: slot %d %s binds %d ambient emitters\n",
+                        slot, stem.c_str(), n);
         // The Vulkan one is already initialised - its swapchain had to exist
         // before the window could be presented to at all.
         if (!worldReady) {
@@ -2042,6 +2093,94 @@ int main(int argc, char** argv) {
         // parked at `ui.open` is waiting on a person, and `Game_HandleEvent`
         // case 5 is the only thing that releases it.
         if (!walk) session.frame();
+
+        // ---- SCRIPTED OBJECT MOTION - the crates, the doors, the lifts ---
+        //
+        // `Script_MoveObjectOnPath` ends in `o3de_SetNodePos(node, x, y, z)`
+        // with the path sample OUTRIGHT, so a moving object is a set MESH
+        // placed at a world position, named through the object's own first
+        // string table. 4841 sites - the most-used script function there is -
+        // and nothing moved until 2026-09-03.
+        //
+        // The mesh's corners are offset by (target - the mesh's authored
+        // position), which is what moving its origin means; `cornerMesh` says
+        // which corners belong to it, and the base positions are kept so the
+        // patch is applied to the ORIGINAL each frame rather than accumulated.
+        // Bumping `revision` is what tells a caching backend the buffer moved.
+        if (session.scene().loaded() && !session.scene().motions().empty()) {
+            for (int sl = 0; sl < 2; ++sl) {
+                WorldSlot& w = worldSlots[static_cast<std::size_t>(sl)];
+                if (w.geo.corners.empty() || w.meshes.empty()) continue;
+                bool moved = false;
+                for (const auto& mo : session.scene().motions()) {
+                    if (!mo.placed) continue;
+                    int mi = -1;
+                    for (std::size_t k = 0; k < w.meshes.size(); ++k)
+                        if (sameName(w.meshes[k].name, mo.name)) { mi = static_cast<int>(k); break; }
+                    if (mi < 0) continue;
+                    if (w.baseCorners.empty()) w.baseCorners = w.geo.corners;
+                    const float* mp = w.meshes[static_cast<std::size_t>(mi)].pos;
+                    const float off[3] = {mo.pos[0] - mp[0], mo.pos[1] - mp[1],
+                                          mo.pos[2] - mp[2]};
+                    for (std::size_t c = 0; c < w.geo.corners.size(); ++c) {
+                        if (c >= w.geo.cornerMesh.size() || w.geo.cornerMesh[c] != mi) continue;
+                        w.geo.corners[c].x = w.baseCorners[c].x + off[0];
+                        w.geo.corners[c].y = w.baseCorners[c].y + off[1];
+                        w.geo.corners[c].z = w.baseCorners[c].z + off[2];
+                    }
+                    moved = true;
+                }
+                if (moved) w.geo.revision = ++worldGeoRev;
+            }
+        }
+
+        // ---- ADVENTURE MODE'S SOUND EFFECTS -----------------------------
+        //
+        // A cutscene's sound rides on a scene object's program; the player's
+        // rides on the `.CTL` state machine, and the two use OPPOSITE lookups.
+        // `Cef_TickEffects` resolves its `+22` with `Scene_FindSoundIndex` -
+        // a search of the resident scene's chunk-3 records for a matching
+        // `+24` ID - where a scene program's param 0 is a bounds-checked
+        // INDEX. So `H_WALK`'s 203/199 name `STPR`/`STPL` in the Impasse and
+        // may name nothing at all in a scene that does not carry them, which
+        // is the engine's behaviour and not a gap here.
+        if (player && session.scene().loaded()) {
+            const auto& rt = session.scene().scene();
+            for (const auto& es : player->sounds()) {
+                const int i = rt.wavBydId(es.id);
+                if (i < 0) continue;            // this scene carries no such id
+                const auto pcm = wavToDevice(rt.wavData(i), 44100);
+                if (!pcm.empty()) front.playSound(pcm);
+            }
+        }
+
+        // ---- THE SCENE'S OWN SOUND EFFECTS ------------------------------
+        //
+        // An object's animation carries its sound: `Script_PlaySound` and
+        // `Script_PlaySyncSound` hang off the body animation through the
+        // `+12` sync link and run in the same chain walk, which is why the
+        // Impasse's arrival clip fires STPR/STPL at frames 170, 200, 210 and
+        // 280 - Kay'l's footsteps. `SceneRunner` reports what each frame
+        // started; the payload is a whole RIFF sitting in the `.SCX` stream.
+        //
+        // POSITION IS NOT APPLIED. `Sound_Play3D` takes the node's world
+        // position and a pair of distances, and the attenuation and pan law
+        // beyond that point is DirectSound's - `PORTING` B5: it has no
+        // reachable tier and imitating it precisely would be invention. The
+        // cue, its timing and its loop flag are the decisions, and those are
+        // what this plays.
+        {
+            const auto& sc = session.scene();
+            for (const auto& fs : sc.sounds()) {
+                const auto raw = sc.scene().wavData(fs.cue.wav);
+                if (raw.empty()) continue;      // 186 of 5425 name a sound
+                                                // their scene does not carry;
+                                                // `sub_48CB30` returns -1 and
+                                                // the engine plays nothing
+                const auto pcm = wavToDevice(raw, 44100);
+                if (!pcm.empty()) front.playSound(pcm);
+            }
+        }
 
         // ---- the hand-over, and the controller's frame ------------------
         {
@@ -2778,8 +2917,9 @@ int main(int argc, char** argv) {
             editFromKnown = haveLastDrawn;
             for (int k = 0; k < 3; ++k) { editFromEye[k] = lastEye[k]; editFromAt[k] = lastAt[k]; }
             editFromFov = lastFov;
+            editFromRoll = lastRoll;
             std::printf("frame %ld: editing %d '%s' takes the camera (mode 13): object %d '%s', "
-                        "%u frames, travel %.0f%s  [roll not drawn: RCamera has none]\n",
+                        "%u frames, travel %.0f%s\n",
                         n, edit->editing, edit->editingName.c_str(), edit->object,
                         edit->objectName.c_str(), edit->duration, edit->travel,
                         editFromKnown ? "" : " (nothing on screen to travel from: a cut)");
@@ -2836,6 +2976,24 @@ int main(int argc, char** argv) {
                 }
                 const float efov = editCam.fov > 1.0f ? editCam.fov : 75.0f;
                 view.cam.hfovDeg = editFromKnown ? editFromFov + (efov - editFromFov) * u : efov;
+                // THE ROLL, blended on the SHORT ARC. An angle that wraps is
+                // the class of error CLAUDE.md 1 keeps: +359 and 0 are the
+                // same rotation standing still and a whole turn apart once
+                // interpolated, and the title sequence span its camera
+                // through them.
+                view.cam.rollDeg = editFromKnown
+                    ? editFromRoll + shortArc(editCam.roll - editFromRoll) * u
+                    : editCam.roll;
+                // A rolled shot is worth one line, once: the roll was DROPPED
+                // by the renderer until 2026-09-03 and a still frame cannot
+                // show it, so seeing the number is how a reader knows it is
+                // being applied at all.
+                if (std::fabs(view.cam.rollDeg) > 0.5f && !rollTold) {
+                    rollTold = true;
+                    std::printf("  camera ROLL %.1f degrees is being applied "
+                                "(224 of the 1073 editing cameras carry one)\n",
+                                static_cast<double>(view.cam.rollDeg));
+                }
                 view.cam.w = dispW; view.cam.h = dispH;
             } else if (!haveDlgCam && adventure && followCam) {
                 // The controller's follow camera: the world camera's offsets
@@ -2847,6 +3005,7 @@ int main(int argc, char** argv) {
                     view.cam.at[k]  = fc.at[k];
                 }
                 view.cam.hfovDeg = fc.fov;
+                view.cam.rollDeg = 0.0f;      // the follow camera carries none
                 view.cam.w = dispW; view.cam.h = dispH;
             } else if (!haveDlgCam) {
                 // A relative point is `subjectPos - R(yaw) * offset`, which is
@@ -2861,6 +3020,7 @@ int main(int argc, char** argv) {
                     view.cam.at[k]  = rc.at[k];
                 }
                 view.cam.hfovDeg = wc->fov > 1.0f ? wc->fov : 75.0f;
+                view.cam.rollDeg = wc->roll;   // already wrapped to (-180,180]
                 view.cam.w = dispW; view.cam.h = dispH;
             }
             // AN INSTRUMENT OVERRIDE, and nothing the engine does: `--eye`
@@ -2880,6 +3040,7 @@ int main(int argc, char** argv) {
             // from.
             for (int k = 0; k < 3; ++k) { lastEye[k] = view.cam.eye[k]; lastAt[k] = view.cam.at[k]; }
             lastFov = view.cam.hfovDeg;
+            lastRoll = view.cam.rollDeg;
             haveLastDrawn = true;
             // ---- THE TEXTURE POOL ------------------------------------
             //
@@ -2902,7 +3063,29 @@ int main(int argc, char** argv) {
                 playerTexBase = pool.size();
                 if (drawPlayer) pool.insert(pool.end(), playerTex.begin(), playerTex.end());
                 spriteTexBase = pool.size();
-                if (wantSprites) pool.insert(pool.end(), spriteTex.begin(), spriteTex.end());
+                // THE SPRITES GO IN DENSELY, and that is the whole point.
+                // `spriteTex` is indexed BY SPRITE ID, because an effect names
+                // its sprite by id (`sub_4A5800`) - so 24 decoded sprites
+                // spread over ids 0..137 make a 138-entry array of which 114
+                // are EMPTY. Inserting it whole put the pool at 154 slots
+                // against the **64** a bucket key's low six bits can address,
+                // and every slot above 63 wrapped onto another texture: a
+                // particle drawing at the right size, in the right blend, with
+                // the wrong picture. That is the shape a reader reported as
+                // "visible but does not render correctly", and only some of
+                // them wrong, because which wrap depends on the id mod 64.
+                //
+                // So only the sprites that HAVE a texture go in, and
+                // `spriteSlot` maps an id to its place. The id-keyed arrays
+                // stay as they are - `particleGeometry` needs them for the
+                // frame walk and the quad extent.
+                spriteSlot.assign(spriteTex.size(), -1);
+                if (wantSprites)
+                    for (std::size_t i = 0; i < spriteTex.size(); ++i) {
+                        if (spriteTex[i].rgb.empty()) continue;   // an id nothing decoded
+                        spriteSlot[i] = static_cast<int>(pool.size() - spriteTexBase);
+                        pool.push_back(spriteTex[i]);
+                    }
                 poolSize = pool.size();
                 poolBuiltFor = poolComposition;
                 poolHasSprites = wantSprites;
@@ -3011,7 +3194,11 @@ int main(int argc, char** argv) {
                     stt = &sc.started()[static_cast<std::size_t>(prog)];
                     sceneClip = stt->clip;
                     scenePath = stt->path;
-                    sceneFrame = sc.programClock(prog);
+                    // The frame of THAT clip, not of the program: a program
+                    // walks its steps and each may name a different animation,
+                    // so the clock the pose is sampled at counts from the step
+                    // (`SceneRunner::programAnimClock`).
+                    sceneFrame = sc.programAnimClock(prog);
                 }
                 if (sceneClip != s.sceneClipWas) {
                     s.sceneClipWas = sceneClip;
@@ -3325,12 +3512,32 @@ int main(int argc, char** argv) {
                     playerFeet = -1e9f;
                     for (const auto& c : playerPosed.corners)
                         if (c.y > playerFeet) playerFeet = c.y;
+                    // the hierarchy root: the one mesh with no parent
+                    playerRootXZ[0] = playerRootXZ[1] = 0.0f;
+                    for (const auto& m : playerMeshes)
+                        if (m.parent < 0) {
+                            playerRootXZ[0] = m.pos[0];
+                            playerRootXZ[1] = m.pos[2];
+                            break;
+                        }
                     playerFeetKnown = true;
                 }
                 const float* pp = player->pos();
                 const float yaw = player->facing();
+                // ROTATE ABOUT THE PELVIS, not the model's origin. A `.3DO`'s
+                // meshes carry ABSOLUTE positions and the body is not built
+                // around (0,0,0): `HO1_FN`'s root `UBassin` sits at
+                // x 2.87, z **17.94**, and its whole bounding box spans
+                // z 10.5..21.3. Spinning the raw corners about the origin
+                // therefore swings the character around a point about 18
+                // inches - half a metre - away from himself, which is what a
+                // reader described as "the pivot is placed about a metre
+                // ahead of the character". The actor's own origin is the
+                // pelvis (`player.h`, settled with the camera lift), so that
+                // is what must stay put.
                 for (auto& c : playerPosed.corners) {
-                    const float in[3] = {c.x, c.y, c.z};
+                    const float in[3] = {c.x - playerRootXZ[0], c.y,
+                                         c.z - playerRootXZ[1]};
                     float r[3];
                     omk::rotateYaw(yaw, in, r);
                     c.x = r[0] + pp[0];
@@ -3403,10 +3610,17 @@ int main(int argc, char** argv) {
                                                b.material + static_cast<int>(playerTexBase))),
                                      &playerPosed, b.start, b.count, b.blend, b.cutout});
             if (spriteBase >= 0)
-                for (const auto& b : fxGeo.batches)
+                for (const auto& b : fxGeo.batches) {
+                    // `b.material` is the sprite's ID; the pool is packed, so
+                    // it has to be looked up rather than added to the base
+                    const int sl = (b.material >= 0 &&
+                                    b.material < static_cast<int>(spriteSlot.size()))
+                                   ? spriteSlot[static_cast<std::size_t>(b.material)] : -1;
+                    if (sl < 0) continue;      // a sprite with no texture: not drawn
                     draws.push_back({keyOf(b.blend, b.cutout,
-                                           static_cast<std::uint32_t>(spriteBase + b.material)),
+                                           static_cast<std::uint32_t>(spriteBase + sl)),
                                      &fxGeo, b.start, b.count, b.blend, b.cutout});
+                }
             std::stable_sort(draws.begin(), draws.end(),
                              [](const omk::Draw& a, const omk::Draw& b) {
                                  return (a.bucketKey & 0x3FFFu) < (b.bucketKey & 0x3FFFu);
@@ -3482,6 +3696,32 @@ int main(int argc, char** argv) {
                             drawWorld ? ", 3D" : ", 2D only");
                 std::fflush(stdout);
                 fpsSince = nowMs; fpsFrames = 0; fpsWorst = 0;
+            }
+        }
+
+        // ---- THE SCREEN FADES, over everything --------------------------
+        //
+        // `Screen_StartColorFade` and `Screen_Fade` both end in a full-screen
+        // quad the engine submits AFTER the scene, so this is the last thing
+        // before the frame goes out. Two fades run independently and the
+        // engine draws both, so both are applied in turn.
+        //
+        // The blend is a MODEL - see `Session::ScreenFade`. The engine picks
+        // one of three I2D quad flags by colour and none of the three is
+        // traced; mixing toward the colour matches the ramp's direction for
+        // every mode and colour, which is what a viewer sees.
+        for (const auto* fd : {&session.colourFade(), &session.blackFade()}) {
+            const float k = fd->weight();
+            if (!fd->running() || k <= 0.0f) continue;
+            const int cr = static_cast<int>((fd->colour >> 16) & 0xFF);
+            const int cg = static_cast<int>((fd->colour >> 8) & 0xFF);
+            const int cb = static_cast<int>(fd->colour & 0xFF);
+            for (auto& px : fb.px) {
+                int r = ((px >> 11) & 31) << 3, g = ((px >> 5) & 63) << 2, b = (px & 31) << 3;
+                r += static_cast<int>((cr - r) * k);
+                g += static_cast<int>((cg - g) * k);
+                b += static_cast<int>((cb - b) * k);
+                px = static_cast<std::uint16_t>(((r >> 3) << 11) | ((g >> 2) << 5) | (b >> 3));
             }
         }
 

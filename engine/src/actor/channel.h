@@ -68,6 +68,7 @@
 #include <cstdint>
 #include <map>
 #include <string>
+#include <set>
 #include <vector>
 
 namespace omk {
@@ -120,7 +121,27 @@ struct ChannelEvent {
         Turn,       // Cef_ApplyTurn applied whole, on leaving
         Shift,      // Cef_ApplyRootShift applied whole, on leaving
         Move,       // Cef_QueueSpecialMove: a tab_special_move[] handler
+        TurnRate,   // sub_45C080: the CANDIDATE's turn, times dt, no transition
+        ShiftRate,  // the same for the root shift
     };
+    // `Turn`/`Shift` name the state at `from` and are applied WHOLE;
+    // `TurnRate`/`ShiftRate` name the candidate at `to` and are a RATE.
+    //
+    // The distinction is the engine's, not a modelling choice, and it is what
+    // makes DIAGONAL MOVEMENT work.  `Cef_TickChannel` searches every tick for
+    // candidates carrying 0x100/0x200 and applies them WITHOUT taking the
+    // transition (0x004A8194: `Cef_FindTransition(chan, cur, word, 2, 784, 1)`
+    // then `sub_45C080(actor, cand+44+8)`, masking the candidate's own input
+    // bits out of the word and looping).  So holding forward and left keeps
+    // `H_WALK` playing while the facing turns: the animation does not change,
+    // only the direction.  H1Avnt's group 0 carries four such aliases -
+    // input 0x01/0x02 at +-5 deg/frame (flags 0x00204913) and at +-3
+    // (0x00201113).
+    //
+    // The two sites read DIFFERENT records, which is why they cannot share a
+    // kind: `28_script.c:3509` passes `&from->turn->dx` to `Cef_ApplyTurn`,
+    // which adds it whole; `29_win32.c:196` passes the found candidate's block
+    // to `sub_45C080`, which adds `value * flt_4C30D8`.
     Kind kind = Kind::Cut;
     int  from = -1;             // state index, -1 when entered from nowhere
     int  to   = -1;
@@ -240,6 +261,21 @@ public:
 
     int   state() const { return cur_; }
     float frame() const { return frame_; }
+
+    // THE SOUNDS THIS TICK STARTED - `Cef_TickEffects` (0x0045ADF0), which is
+    // what makes adventure mode audible: an effect record fires its `+22` once
+    // when the state's clock passes its `+12`, and `H_WALK` carries a PAIR of
+    // them (203 and 199) - one per footfall. Cleared and refilled by `tick`.
+    //
+    // The value is an **id**, not an index: the engine resolves it with
+    // `Scene_FindSoundIndex` against the RESIDENT scene's chunk-3 records, so
+    // the caller does that (`ScxRuntime::wavBydId`) and the same id names
+    // different sounds in different scenes. The `attach` code is carried but
+    // NOT applied - `Sound_Play3D` takes a world position and the attenuation
+    // law past that point is DirectSound's, which PORTING B5 puts out of
+    // reach; the cue and its timing are the decisions.
+    struct EffectSound { int id = 0; int attach = 0; };
+    const std::vector<EffectSound>& sounds() const { return sounds_; }
     // The input queue as the engine keeps it: the count at `+24` and the first
     // word at `+28`. Read-only, and the sweep's only way to SEE the commit's
     // two queue rules - a counter the rule increments proves nothing a stubbed
@@ -267,6 +303,12 @@ private:
     int  clipFrames(int stateIndex) const;
 
     const CtlFile* ctl_;
+    bool tickMachine(float dt, std::uint32_t code);
+    void tickEffects();
+    std::vector<EffectSound> sounds_;   // what this tick started
+    std::set<int> firedFx_;             // per state entry, so each fires once
+    int   fxState_ = -1;                // the state those latches belong to
+    float fxFrame_ = 0.0f;              // last frame seen, to notice a wrap
     int   cur_     = -1;        // +184 the current entry
     int   pending_ = -1;        // +192 the blend target
     float pendingFrame_ = 1.0f; // +196

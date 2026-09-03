@@ -143,6 +143,21 @@ PlayerController::PlayerController(const Setup& s)
             }
         }
     }
+    // THE CAMERA'S SUBJECT IS A BODY POINT, not the floor point `pos_` is.
+    // The model's hierarchy root is the pelvis (`pose.cpp`: track 2,
+    // `UBassin`), and this is its height above the model's lowest extent -
+    // 41.9 for `HO1_FNM`, the same number the dialogue staging measured from
+    // the other side. Y points DOWN, so the feet are the LARGER y.
+    if (meshes_ && !meshes_->empty()) {
+        float feet = -1e30f;
+        for (const auto& m : *meshes_)
+            feet = std::max(feet, m.pos[1] + m.boxMax[1]);
+        int root = 0;
+        for (std::size_t i = 0; i < meshes_->size(); ++i)
+            if ((*meshes_)[i].parent < 0) { root = static_cast<int>(i); break; }
+        camLift_ = feet - (*meshes_)[static_cast<std::size_t>(root)].pos[1];
+        if (!(camLift_ > 0.0f) || camLift_ > 200.0f) camLift_ = 0.0f;  // refuse a wild one
+    }
     // the first camera frame snaps (flags & 1 after Camera_LoadParams)
     for (int k = 0; k < 3; ++k) camEuler_[k] = euler_[k];
     resolveSteady(cam_, euler_);
@@ -341,6 +356,26 @@ void PlayerController::tick(float dt, std::uint32_t word) {
             float w[3];
             rotateByFacing(local, w);
             for (int k = 0; k < 3; ++k) last_.shift[k] += w[k];
+        } else if (e.kind == ChannelEvent::Kind::TurnRate && e.to >= 0 &&
+                   e.to < static_cast<int>(S.size())) {
+            // sub_45C080: the CANDIDATE's block, times the frame dt, with the
+            // state unchanged. This is how the game turns while walking - the
+            // gait keeps playing and only the facing moves - and it is what
+            // makes DIAGONAL movement work. H1Avnt group 0 carries the turn on
+            // four aliases (input 0x01/0x02, +-5 deg/frame and +-3), never on
+            // H_WALK itself, so reading `from` here applies zero.
+            const CtlState& c = S[static_cast<std::size_t>(e.to)];
+            const float d[3] = {c.turn[2] * dt, c.turn[3] * dt, c.turn[4] * dt};
+            applyTurn(d);
+            last_.turn += d[1];
+        } else if (e.kind == ChannelEvent::Kind::ShiftRate && e.to >= 0 &&
+                   e.to < static_cast<int>(S.size())) {
+            const CtlState& c = S[static_cast<std::size_t>(e.to)];
+            const float local[3] = {c.shift[2] * dt, c.shift[3] * dt,
+                                    c.shift[4] * dt};
+            float w[3];
+            rotateByFacing(local, w);
+            for (int k = 0; k < 3; ++k) last_.shift[k] += w[k];
         }
     }
     rt_.channel().clearEvents();
@@ -491,10 +526,13 @@ void PlayerController::resolveSteady(FollowCamera& c, const float e[3]) const {
     // target with the SUBJECT's euler, sub_415E60 for the eye with the lagged
     // copy). Only the yaw is non-zero here - see the header.
     float r[3];
+    // The subject, which is the actor's ORIGIN and not the floor point - see
+    // `cameraLift()`. Y points down, so raising it is a subtraction.
+    const float sub[3] = {pos_[0], pos_[1] - camLift_, pos_[2]};
     rotateYaw(e[1], camEyeOff_, r);
-    for (int k = 0; k < 3; ++k) c.eye[k] = pos_[k] - r[k];
+    for (int k = 0; k < 3; ++k) c.eye[k] = sub[k] - r[k];
     rotateYaw(euler_[1], camAtOff_, r);
-    for (int k = 0; k < 3; ++k) c.at[k] = pos_[k] - r[k];
+    for (int k = 0; k < 3; ++k) c.at[k] = sub[k] - r[k];
     c.fov = camFov_;
 }
 

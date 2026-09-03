@@ -50,6 +50,27 @@ public:
     // STANDING effects, and `Sfx_BindAmbientEffects` shows them itself at the
     // end of binding the set; attaching the file is that moment here.
     void attachSfx(const std::string& scptDataDir, const std::string& sfxName);
+
+    // THE SET'S OWN EMITTERS - the environment family, as opposed to the ones
+    // an object start fires. `Sfx_BindAmbientEffects` walks the resident
+    // `.3DO`'s meshes, and for every one flagged **0x40000000** compares the
+    // first FOUR BYTES of its name, as a dword, against each section-D
+    // binding's tag; a match registers an emitter for that binding's section-C
+    // effect at the mesh's own position. That is the whole chain a set's neon,
+    // steam and smoke come out of - three files, authored separately - and
+    // **321 of the 579 flagged meshes bind**, `neon` 102, 153 of them in
+    // Anekbah (`docs/ASSETS.md` 3b).
+    //
+    // The port read all three files and never joined them: the effects and
+    // bindings were parsed, `ParticleField::add` was there, and nothing walked
+    // the set. -> how many emitters were registered.
+    //
+    // It takes the model's BYTES rather than the parsed meshes because the
+    // compare is on four RAW bytes of the record and `readMeshes` stops a name
+    // at its first null: a mesh whose name is shorter than four characters
+    // compares differently once it has been through a C string. Reading the
+    // record at `meshOff + 140 * i + 16` is what the engine does.
+    int bindSetEmitters(std::span<const std::byte> modelData);
     const SfxFile& sfx() const { return sfx_; }
     ParticleField& effects() { return fx_; }
     const ParticleField& effects() const { return fx_; }
@@ -96,11 +117,43 @@ public:
         return idx >= 0 && idx < static_cast<int>(programs_.size()) &&
                programs_[static_cast<std::size_t>(idx)]->running();
     }
+    int programPc(int idx) const {
+        return (idx >= 0 && idx < static_cast<int>(programs_.size()))
+                   ? programs_[static_cast<std::size_t>(idx)]->pc() : -1;
+    }
+    // THE FRAME OF THE CLIP `Started::clip` NOW NAMES, which is not the
+    // program clock once a program has more than one body-animation step:
+    // `Script_SelectBodyAnimation` counts from when its own function was
+    // entered (`Program::animClock`). Sampling the Impasse demon's 41-frame
+    // jump at the program's clock asks for frame 92 of a 41-frame clip.
+    float programAnimClock(int idx) const {
+        return (idx >= 0 && idx < static_cast<int>(programs_.size()))
+                   ? programs_[static_cast<std::size_t>(idx)]->animClock() : 0.0f;
+    }
 
     // One frame of every running program. The delta is in THIRTIETHS OF A
     // SECOND, because that is the unit `Game_Frame` computes (docs/BOOT.md 4)
     // and every authored period in the data is in it.
     void tick(float dt = 1.0f);
+
+    // THE SOUNDS THIS FRAME STARTED - every running object's
+    // `Script_PlaySound` / `Script_PlaySyncSound` that fired, with the program
+    // that owns it so a caller can position the sound at its actor. Refilled
+    // by every `tick`; a frontend reads it after ticking and plays each one.
+    // `Program::SoundCue` has the parameter layouts and why the two differ.
+    struct FiredSound {
+        int program = -1;
+        int object = 0;          // the handle >> 16 the script named
+        int actor = -1;          // for an `scx.play.actor*` object
+        Program::SoundCue cue;
+    };
+    const std::vector<FiredSound>& sounds() const { return sounds_; }
+
+    // THE NODE MOTIONS this frame - every running program's
+    // `Script_MoveObjectOnPath`, with the set mesh it names and the world
+    // position to put it at. A frontend that draws the set applies these; the
+    // crates of the Impasse are four of them.
+    const std::vector<Program::NodeMotion>& motions() const { return motions_; }
 
     struct Started {
         int         object = 0;
@@ -226,6 +279,8 @@ private:
     std::vector<int>     missed_;
     CamFile              cam_;
     std::vector<ActiveEditing> editings_;
+    std::vector<FiredSound>    sounds_;
+    std::vector<Program::NodeMotion> motions_;
     long                 ticks_ = 0;
     float                lastDt_ = 0.0f;
     SfxFile              sfx_;

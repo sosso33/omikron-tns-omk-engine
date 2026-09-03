@@ -58,6 +58,27 @@ int pathOf(const ScxObject& o) {
 // Euler come out of it bit-for-bit.
 float asFloat(int v) { float f; std::memcpy(&f, &v, 4); return f; }
 
+// The same three readings for ONE function - which is what a running program
+// needs, because the pc walks the list and each step may name a different clip
+// (see `Program::animFn`). The object-wide versions above answer "what does
+// this object play", which is only the first step's answer.
+int clipOfFn(const ScxFunction& f) {
+    if (f.id != 0x02000004u && f.id != 0x0200002Au) return -1;
+    return f.params.size() >= 2 ? f.params[1] : -1;
+}
+int pathOfFn(const ScxFunction& f) {
+    if (f.id != 0x0200002Au) return -1;
+    return f.params.size() >= 9 ? f.params[8] : -1;
+}
+bool placementOfFn(const ScxFunction& f, float offset[3], float euler[3]) {
+    if (f.id != 0x0200002Au || f.params.size() < 12) return false;
+    for (int k = 0; k < 3; ++k) {
+        offset[k] = asFloat(f.params[static_cast<std::size_t>(9 + k)]) / 2.54f;
+        euler[k]  = asFloat(f.params[static_cast<std::size_t>(4 + k)]);
+    }
+    return true;
+}
+
 bool placementOf(const ScxObject& o, float offset[3], float euler[3]) {
     for (const auto& f : o.functions) {
         if (f.id != 0x0200002Au || f.params.size() < 12) continue;
@@ -133,6 +154,36 @@ void SceneRunner::attachSfx(const std::string& dir, const std::string& name) {
     // `Script_StartScript` found nothing. GRID's four sit at (-468, -82, 4)
     // and (-508, -81, 4) - head height, where the intro's portal is.
     firePieces(1, -1);
+}
+
+int SceneRunner::bindSetEmitters(std::span<const std::byte> modelData) {
+    if (!sfx_.valid) return 0;
+    const auto hd = readHeader(modelData);
+    if (!hd) return 0;
+    const auto meshes = readMeshes(modelData, *hd);
+    int n = 0;
+    for (std::size_t i = 0; i < meshes.size(); ++i) {
+        const auto& m = meshes[i];
+        if (!(static_cast<std::uint32_t>(m.flags) & 0x40000000u)) continue;
+        // FOUR RAW BYTES of the record, not of the parsed name: the mesh
+        // record is 140 bytes and its name starts at +16.
+        const std::size_t at = static_cast<std::size_t>(hd->meshOff) + 140u * i + 16u;
+        if (at + 4 > modelData.size()) continue;
+        std::uint32_t want = 0;
+        for (int k = 0; k < 4; ++k)
+            want |= static_cast<std::uint32_t>(modelData[at + static_cast<std::size_t>(k)]) << (8 * k);
+        for (const auto& b : sfx_.bindings) {
+            std::uint32_t tag = 0;
+            for (int k = 0; k < 4; ++k)
+                tag |= static_cast<std::uint32_t>(static_cast<unsigned char>(b.tag[k])) << (8 * k);
+            if (tag != want) continue;
+            if (b.effect < 0 || b.effect >= static_cast<int>(sfx_.effects.size())) continue;
+            fx_.add(sfx_.effects[static_cast<std::size_t>(b.effect)], m.pos);
+            ++n;
+            break;                       // one emitter a mesh
+        }
+    }
+    return n;
 }
 
 void SceneRunner::setPieceLinks(PieceLinkResolver r) {
@@ -240,7 +291,35 @@ bool SceneRunner::editingCamera(CamSample& out) const {
 void SceneRunner::tick(float dt) {
     ++ticks_;
     lastDt_ = dt;
+    sounds_.clear();
+    motions_.clear();
     for (auto& p : programs_) p->tick(dt);
+    // ...and collect what they started. `Script_PlayScript` runs the sound
+    // handlers inside the same chain walk as the animation, so a cue belongs
+    // to the frame its program ticked on.
+    for (std::size_t i = 0; i < programs_.size() && i < started_.size(); ++i) {
+        for (const auto& c : programs_[i]->sounds())
+            sounds_.push_back({static_cast<int>(i), started_[i].object,
+                               started_[i].actor, c});
+        for (const auto& m : programs_[i]->motions()) motions_.push_back(m);
+    }
+    // THE PROGRAM COUNTER MOVES, AND SO DOES THE CLIP. `Started::clip` was
+    // filled once at start from the object's FIRST body animation and never
+    // touched again, so a program with more than one step posed its whole run
+    // with step 0's clip and snapped the body to step 0's root key 0. The
+    // Impasse's `A_2_DemonLook` is the case: clip 15 (perched, 91 frames) then
+    // clip 17 (the jump off the wall, 41). Frozen on 15 the demon clamps at
+    // its last frame - 267 units up the wall - for the whole 132-frame shot,
+    // and the descent `sautdemon`'s last 41 frames are filmed to show never
+    // happens. Refreshed here, from the function the pc is actually on.
+    for (std::size_t i = 0; i < programs_.size() && i < started_.size(); ++i) {
+        const ScxFunction* fn = programs_[i]->animFunction();
+        if (!fn) continue;                    // this step plays no body animation
+        auto& st = started_[i];
+        st.clip     = clipOfFn(*fn);
+        st.path     = pathOfFn(*fn);
+        st.relative = placementOfFn(*fn, st.offset, st.euler);
+    }
     // The set pieces register this frame's emitters (`sub_451600`), then the
     // particles integrate (`Sfx_TickAmbient`) - the engine's order, on the
     // same clock, in FRAMES.

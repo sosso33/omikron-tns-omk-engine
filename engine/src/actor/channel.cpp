@@ -365,6 +365,15 @@ void CefChannel::setNoPlayback(bool on) {
 }
 
 bool CefChannel::tick(float dt, std::uint32_t code) {
+    // The effect pass runs on EVERY path, including the self-transition the
+    // clip wrap takes (`gotoMove(cur_, cur_, 1.0f)`), which returns early -
+    // and that path is precisely the one a looping walk goes round on.
+    const bool r = tickMachine(dt, code);
+    tickEffects();
+    return r;
+}
+
+bool CefChannel::tickMachine(float dt, std::uint32_t code) {
     ++stats_.ticks;
     if (cur_ < 0) return false;
     const auto& S = ctl_->states;
@@ -407,12 +416,19 @@ bool CefChannel::tick(float dt, std::uint32_t code) {
             if (t < 0) break;
             const CtlState& e = S[static_cast<std::size_t>(t)];
             bool consumed = false;
+            // `sub_45C080` / `Cef_ApplyRootShift`, NOT the on-transition
+            // `Cef_ApplyTurn` of `gotoMove` above: the block read is the
+            // CANDIDATE's (`u32(v15, 44) + 8`) and it is a RATE, scaled by the
+            // frame dt. Emitted as the Rate kinds so the controller cannot
+            // apply the wrong record - which is what it did until 2026-09-03,
+            // reading `from`'s turn (zero, in H_WALK) and so turning by
+            // nothing. This loop IS the diagonal walk.
             if (e.flags & 0x100u) { if (!(flags_ & 0x200u) && e.hasTurn)
-                                        events_.push_back({ChannelEvent::Kind::Turn,
+                                        events_.push_back({ChannelEvent::Kind::TurnRate,
                                                            from, t, 0, 0, word, {}});
                                     consumed = true; word &= ~e.inputCode; }
             if (e.flags & 0x200u) { if (!(flags_ & 0x200u) && e.hasShift)
-                                        events_.push_back({ChannelEvent::Kind::Shift,
+                                        events_.push_back({ChannelEvent::Kind::ShiftRate,
                                                            from, t, 0, 0, word, {}});
                                     consumed = true; word &= ~e.inputCode; }
             if ((e.flags & 0x10u) && (e.flags & 0x200000u)) {
@@ -579,6 +595,43 @@ bool CefChannel::tick(float dt, std::uint32_t code) {
     prev_  = frame_;
     if (!(flags_ & 0x200u)) frame_ += dt;
     return true;
+}
+
+// `Cef_TickEffects` (0x0045ADF0), the sound half. Its test is
+// `if (soundId && !(flags & 1) && effectClock >= record[+12])`, then
+// `Scene_FindSoundIndex` and `Sound_Play3D` - so a record fires once and is
+// then latched, the engine's latch being a pair of runtime words on the effect
+// instance. What re-arms it is the paragraph below, and it is the part that
+// matters: `H_WALK` loops without being re-entered, so a latch that only the
+// state change clears makes a walk fall silent after two steps.
+//
+// The SPRITE half (`Cef_SpawnEffect`) is not done here: it wants the scene's
+// chunk-4 registry and an attach point on the live skeleton, and the particle
+// field it feeds already has an owner in `o3de/particles.h`. Sound is what a
+// player hears missing.
+void CefChannel::tickEffects() {
+    sounds_.clear();
+    if (cur_ < 0) return;
+    // RE-ARM. A latch cleared only on a state change fires `H_WALK`'s pair
+    // once and then goes silent for as long as you walk - 2 footfalls in 300
+    // frames - because the state loops its clip without ever being re-entered.
+    // The engine re-arms: `Cef_TickEffects`'s tail zeroes the instance's two
+    // latch words when its effect clock leaves the record's window. These
+    // records carry an OPEN window (0..0), and what that path reduces to for
+    // them is not traced here - so the rule below is a RECONSTRUCTION, chosen
+    // because it is the one thing that is certainly true of a looping clip and
+    // is what the sound is for: the frame going backwards is a wrap, and a
+    // wrap starts the footfalls again.
+    if (cur_ != fxState_ || frame_ < fxFrame_) { fxState_ = cur_; firedFx_.clear(); }
+    fxFrame_ = frame_;
+    const auto& fx = ctl_->states[static_cast<std::size_t>(cur_)].effects;
+    for (std::size_t i = 0; i < fx.size(); ++i) {
+        const auto& e = fx[i];
+        if (!e.sound) continue;
+        if (frame_ < e.soundAt) continue;
+        if (!firedFx_.insert(static_cast<int>(i)).second) continue;
+        sounds_.push_back({e.sound, e.attach});
+    }
 }
 
 int CefChannel::findEntryByCode(std::int32_t code) const {

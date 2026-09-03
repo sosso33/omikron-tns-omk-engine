@@ -4,12 +4,23 @@
 //
 //     run_programs <gamedata/SCPTDATA> <out.bin>
 //
-// Two halves, and they check different things.  The CORPUS half asserts the
+// Three halves, and they check different things.  The CORPUS half asserts the
 // runtime fields really are authored repeat counts: run counter 0 on disk,
 // repeat limit small or -1, object loop count only 1 or -1.  The RUN half
 // ticks `Re14.SCX`'s `Telis_eat` 400 frames and asserts it alternates its two
 // clips for ever - a program that mishandles the repeat limit, the loop count
 // or the busy window collapses to one clip or simply ends.
+//
+// The third is two Impasse objects, here because `Telis_eat` cannot stand in
+// for either: both its functions end their sync chain and both are authored
+// `repeat = 1`.  `A_2_DemonLook` - the demon's jump off the wall - carries
+// `sync = 0` on its first step, which is sync record 0 and NOT function 0, and
+// reading that flat merges the object's two steps into one: 91 frames instead
+// of 91 + 41.  `C_2_MecaSpeaks` is one 31-frame clip authored 18 times.  Both
+// numbers have an authored oracle - 132 and 558 are exactly the durations of
+// `sautdemon` and `mecaspeak`, the camera editings linked to them - and
+// `verify.py: scx sync chain` runs the first comparison over all 95 linked
+// editings from tools/sim.
 #include "formats/scx.h"
 #include "platform/datafs.h"
 #include "script/program.h"
@@ -74,6 +85,28 @@ int main(int argc, char** argv) {
         if (t.size() < 2) alternates = 0;
     }
 
+    // --- the sync chain ---------------------------------------------------
+    // How long A_2_DemonLook's program runs, in its own frames - which since
+    // 2026-09-03 is simply the sum of its steps, because the tick that reports
+    // a function done is the tick that drew its last frame.
+    // `C_2_MecaSpeaks` rides along because it is the only case either side
+    // runs with a repeat count above 1: one 31-frame clip authored 18 times is
+    // 558, the duration of `mecaspeak`, its own editing.
+    int demonFrames = -1, mecaFrames = -1;
+    if (const auto imp = fs.resolve("Impasse.SCX")) {
+        const omk::ScxRuntime irt(omk::DataFs::readPath(*imp));
+        const auto span = [&irt](const char* name) {
+            const auto* o = irt.byName(name);
+            if (!o) return -1;
+            omk::Program pr(irt, *o);
+            int n = 0;
+            while (pr.tick(1.0f) && n < 6000) ++n;
+            return n < 6000 ? n + 1 : -1;
+        };
+        demonFrames = span("A_2_DemonLook");
+        mecaFrames  = span("C_2_MecaSpeaks");
+    }
+
     std::vector<std::uint8_t> o;
     const auto put32 = [&o](std::int32_t v) {
         const auto u = static_cast<std::uint32_t>(v);
@@ -91,6 +124,8 @@ int main(int argc, char** argv) {
     put32(static_cast<std::int32_t>(loops[-1]));
     put32(loop); put32(distinct); put32(alternates);
     put32(stillRunning); put32(restarts); put32(traceLen);
+    put32(demonFrames);
+    put32(mecaFrames);
     put32(static_cast<std::int32_t>(names.size()));
     for (char c : names) o.push_back(static_cast<std::uint8_t>(c));
     if (!omk::safeOutputPath(argv[2])) return 2;
@@ -111,5 +146,8 @@ int main(int argc, char** argv) {
                 "begun (%s)\n",
                 loop, distinct, alternates ? "yes" : "NO",
                 stillRunning ? "yes" : "NO", restarts, traceLen, names.c_str());
+    std::printf("Impasse A_2_DemonLook: %d frames (sautdemon is 132); "
+                "C_2_MecaSpeaks: %d frames (mecaspeak is 558)\n",
+                demonFrames, mecaFrames);
     return 0;
 }

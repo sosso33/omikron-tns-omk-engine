@@ -112,6 +112,7 @@ class Program:
         self.scene, self.obj = scene, obj
         self.fns = obj["functions"]
         self.nfn = obj["nfn"]
+        self.nsync = obj["nsync"]
         self.loop = obj["loop"]
         self.trace = trace if trace is not None else []
         self.start()
@@ -131,11 +132,32 @@ class Program:
 
     # ------------------------------------------------------------ the chain
     def chain(self, i):
-        """The function at `i` and everything its sync link reaches."""
+        """The function at `i` and everything its sync link reaches.
+
+        The `+12` sync field indexes the object's SYNC array, not the flattened
+        function list: `scene_read_objects` (0x00449750) resolves it as
+        `obj->syncFunctions + fn->sync` and refuses the file past
+        `syncFunctions + syncCount` ("Address of SyncFunction isn't valid."),
+        and `Script_FunctionsIndexesToAdresses` does the same for the sync
+        records' own links. `self.fns` holds both arrays end to end, main
+        first, so the sync array starts at `nfn`.
+
+        Read flat, all 6308 shipped links land one array too early. Usually
+        that only turns a leading `sync = 0` into a self-loop and drops whatever
+        hung off it, but at 20 sites it lands on a different MAIN step and merges two
+        program steps into one, ending the object at the longer of the two
+        instead of their sum. `Impasse.SCX`'s `A_2_DemonLook` - the demon's
+        jump off the wall - ran 92 frames instead of 91 + 41 = 132, which is
+        exactly the duration of `sautdemon`, the editing linked to it, so the
+        shot was cut short and the demon's line came in early. See
+        engine/src/script/program.cpp for the full note, including why the
+        corpus margin over the 95 linked editings is only 65 -> 66.
+        """
         out, seen = [], set()
         while 0 <= i < len(self.fns) and i not in seen:
             seen.add(i); out.append(i)
-            i = self.fns[i].get("sync", -1)
+            s = self.fns[i].get("sync", -1)
+            i = -1 if not (0 <= s < self.nsync) else self.nfn + s
         return out
 
     def _busy_span(self, k):
@@ -168,7 +190,13 @@ class Program:
                     continue
                 end = self.busy_until.get(k)
                 if end is None:
-                    end = self.clock + self._busy_span(k)
+                    # The last frame is drawn on the tick that reports DONE, so
+                    # a function of `span` frames occupies exactly `span` ticks
+                    # and the pc advance costs none - `Script_SelectBodyAnimation`
+                    # returns 0 on the tick it clamp-draws the last frame, and
+                    # `Script_PlayScript` advances the pc inside that same tick.
+                    # See engine/src/script/program.cpp for the listing.
+                    end = self.clock + max(0.0, self._busy_span(k) - 1.0)
                     self.busy_until[k] = end
                     if f["id"] in ANIM_FNS:
                         self.trace.append(("anim", self.pc,
@@ -176,8 +204,24 @@ class Program:
                                            round(self.clock, 1)))
                 if self.clock < end: busy = True
                 else:
+                    # `Script_SelectBodyAnimation`'s tail: the run counter goes
+                    # up and the function is done only when its `+16` count is
+                    # spent (-1 = for ever, ended by the object's loop);
+                    # otherwise it WRAPS the frame and returns busy, so the
+                    # clip plays again from the leftover. Ending after one run
+                    # regardless - which this did until 2026-09-03 - releases
+                    # the Impasse's `C_2_MecaSpeaks` at frame 31 instead of
+                    # 18 x 31 = 558, the duration of `mecaspeak`, the editing
+                    # linked to it. `engine/src/script/program.cpp` has had
+                    # this since 2026-09-02 and nothing compared the two on a
+                    # repeat above 1: `Telis_eat`, the only object either side
+                    # runs, is authored 1.
                     self.runs[k] += 1
-                    self.busy_until.pop(k, None)
+                    if f["repeat"] != -1 and self.runs[k] >= f["repeat"]:
+                        self.busy_until.pop(k, None)
+                    else:
+                        self.busy_until[k] = end + self._busy_span(k)
+                        busy = True                  # the wrap tick is this run's last
 
             if not busy:
                 if self.pc + 1 < self.nfn:

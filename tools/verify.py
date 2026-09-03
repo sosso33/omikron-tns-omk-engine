@@ -1634,17 +1634,19 @@ def c_engine_player_walk():
     def run(stream):
         out = os.path.join(tmp, "p.bin")
         subprocess.run(args + [stream, out], capture_output=True, text=True)
-        return struct.unpack_from("<21i", open(out, "rb").read(), 0)
+        return struct.unpack_from("<23i", open(out, "rb").read(), 0)
     try:
         fwd = run("k200*60,0*45")                 # UP held 2 s, then released
         left = run("k203*20,0*10")                # LEFT held 20 frames
         turnwalk = run("k203*18,k200*40,0*40")    # turn, then walk that way
         none = run("0*60")                        # nothing held
+        diag = run("k200+203*40")                 # UP+LEFT together: DIAGONAL
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
     m0 = json.load(open(os.path.join(ROOT, "tables", "camera_presets.json")))["rows"][0]
     (frames, dist, gerr, off, s0, left0, s1, camd, fov, refused, bad,
-     tm, tt, astate, turned, nstates, finite, eyeBack, pfov, heading, behind) = fwd
+     tm, tt, astate, turned, nstates, finite, eyeBack, pfov, heading, behind,
+     camHigh, camLift) = fwd
     # the displacement's heading against the facing, both in the +420
     # convention, degrees * 100
     twErr = abs(((turnwalk[19] - turnwalk[14]) + 18000) % 36000 - 18000)
@@ -1668,13 +1670,35 @@ def c_engine_player_walk():
         hErr < 300, behind,                  # walked -Z at facing 0; eye BEHIND
         turnwalk[1] > 3000, twErr < 800,     # turned, then walked that way
         turnwalk[20],                        # ...camera still behind
+        # THE DIAGONAL. Holding UP and LEFT together walks AND turns, and the
+        # animation does not change: the state at the end is the same H_WALK
+        # the UP-only stream ends in, while the facing has swept. That is the
+        # `sub_45C080` pass of `Cef_TickChannel` - candidates carrying flag
+        # 0x100 have their turn applied at `rate * dt` and their input bits
+        # masked out, WITHOUT the transition being taken - and the turn comes
+        # off the CANDIDATE's block, not the state being left. Reading `from`
+        # instead (which the port did until 2026-09-03) applies zero, because
+        # H_WALK carries no turn of its own: he walked in a straight line and
+        # the diagonal was unreachable. The negative control is `left`, which
+        # turns through H_SDLROT and does NOT walk.
+        diag[1] > 3000,                      # he covered ground
+        abs(diag[14]) > 3000,                # ...and turned while doing it
+        diag[16] == fwd[16], diag[13],       # same end state, ACTOR_STATE 1
+        # THE CAMERA'S HEIGHT. Preset 0 offsets eye and target by 0 on y, so
+        # the camera's height above the floor point IS the subject lift - the
+        # model's pelvis above its feet, 41.9 for HO1_FNM, which is the 41.8
+        # the dialogue staging measured from the other side. A camera that
+        # takes `pos()` for its subject reads 0 and sits on the ground.
+        (camHigh, camLift),
     )
     want = (
         105, True, 0, 0, (1, 1, 1), True, 11811, 7500, 0, 0,
         (1539, 1595), True, 1, 1, True, True, 11811, True, True,
         True, 11811, True, True, 11811,
+        True, True, True, 1,
+        (4189, 4189),
     )
-    return got, want, "H1AVNT on AIMPASSE, four input streams"
+    return got, want, "H1AVNT on AIMPASSE, five input streams - the last the DIAGONAL"
 
 
 def c_engine_shoot_ai():
@@ -5671,12 +5695,23 @@ def c_engine_programs():
     a value the data uses; the engine's behaviour is the specification, so the
     port reproduces it.
 
+    **The sync-chain half** is the one `Telis_eat` cannot reach: both its
+    functions end their chain, so it is blind to *which array* a `+12` sync
+    index counts in. `Impasse.SCX`'s `A_2_DemonLook` is not - its first step
+    carries `sync = 0`, which the loader resolves as sync record 0 and not as
+    function 0 - and its 132 frames (clip 15's 91 then clip 17's 41) are
+    exactly the duration of `sautdemon`, the camera editing linked to it. See
+    `verify.py: scx sync chain`, which runs both readings over all 95 linked
+    editings.
+
     **The run half** is the plan's own test: `Re14.SCX`'s `Telis_eat` has loop
     -1 and two `SelectBodyAnimation` functions each authored once, so the
     interpreter must cycle pc 0, 1, 0, 1 ... for ever. Over 400 frames it
-    begins **12** clips, alternating `TELRES02.3DA` and `TELRES05.3DA` with no
-    repeat, is still running at the end and has rewound 5 times - matching
-    `tools/sim/scene.py` exactly. Mishandle the repeat limit, the loop count
+    begins **13** clips, alternating `TELRES02.3DA` and `TELRES05.3DA` with no
+    repeat, is still running at the end and has rewound 6 times - matching
+    `tools/sim/scene.py` exactly. (12 and 5 until 2026-09-03, when the busy
+    window was corrected to end on the tick that draws the clip's last frame:
+    each cycle is a frame shorter, so more of them fit in 400.) Mishandle the repeat limit, the loop count
     or the busy window and it collapses to one clip or ends.
 
     What `busy` means per function is the one thing NOT in
@@ -5701,18 +5736,465 @@ def c_engine_programs():
         raw = open(out, "rb").read()
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
-    v = struct.unpack_from("<17i", raw, 0)
-    names = raw[68:68 + v[16]].decode("ascii")
-    return v[:16] + (names,), \
+    v = struct.unpack_from("<19i", raw, 0)
+    names = raw[76:76 + v[18]].decode("ascii")
+    return v[:18] + (names,), \
            (13887, 4511, 1, 0, 13247, 43, 0, 2, 3551, 960,
-            -1, 2, 1, 1, 5, 12, "TELRES02.3DA,TELRES05.3DA"), \
+            -1, 2, 1, 1, 6, 13, 132, 558, "TELRES02.3DA,TELRES05.3DA"), \
            "function records and objects; the distinct run counters on disk " \
            "and the only one (0); the repeat limit 1 and -1 counts and how " \
            "many fall outside 1..32 or -1 (0); the distinct loop counts and " \
            "the 1 and -1 counts; then Telis_eat's loop, its distinct clips, " \
            "whether they ALTERNATE, whether it is still running after 400 " \
-           "frames, its rewinds, the clips it began and their names - all " \
-           "matching tools/sim/scene.py"
+           "frames, its rewinds, the clips it began and their names; and " \
+           "finally the two Impasse objects Telis_eat cannot stand in for: " \
+           "A_2_DemonLook's 132 frames, which exercise the SYNC CHAIN and " \
+           "are exactly `sautdemon`'s duration, and C_2_MecaSpeaks' 558, " \
+           "which exercise a REPEAT above 1 and are exactly `mecaspeak`'s " \
+           "- all matching tools/sim/scene.py"
+
+
+def c_engine_scene_steps():
+    r"""`engine/`: a scene object's program is a SEQUENCE, and the pose follows it.
+
+    `Script_PlayScript` walks an object's functions with a program counter, so
+    "the object's clip" is not one number: `Impasse.SCX`'s `A_2_DemonLook` is
+    clip 15 (`1-02DEM`, the demon perched on the wall, 91 frames) and THEN clip
+    17 (`1-03DEM`, his jump down, 41). `SceneRunner::Started::clip` was filled
+    once at start from the FIRST body animation in the object's list and never
+    refreshed, and since the body is snapped to that clip's root key 0 the
+    demon stood in step 0's place for the whole 132-frame shot: clip 15 clamps
+    at its last frame, 267 units up the wall, and the descent that
+    `sautdemon`'s last 41 frames are filmed to show never happened. The next
+    beat's clip then put him on the ground, which is what a reader described as
+    "the shot launches too late and part of the animation is missing".
+
+    **The invariant is one the data can fail and no reader can fake**: the
+    beat's three clips are authored to CHAIN, each starting exactly where the
+    last ends - 15 ends at `6861 -267 3195` where 17 begins, 17 ends at
+    `6642 -105 3211` where 25 begins - so both gaps are **0 units**. A run that
+    plays the steps in order walks that continuous path; one frozen on step 0
+    does not, and the two readings put the demon **273 units** apart at frame
+    120, which this computes side by side so the fault is SHOWN rather than
+    asserted away.
+
+    The program runs **132** frames, which is exactly the editing's own
+    duration - and that was the second half of the fix. Until 2026-09-03 it ran
+    134: `Script_SelectBodyAnimation` (0x004A35D0) reports done on the tick it
+    clamp-draws the clip's last frame (`fcomp`/`test ah,41h`/`xor al,al` in the
+    listing) and `Script_PlayScript` does `++obj->pc; busy = 1` inside that same
+    tick, so the next step begins on the very next one and the advance costs
+    nothing; `Program::tick` was closing its window a tick later and spending a
+    frame per step. The beat's second step started a frame late and the program
+    outlived `sautdemon` by two frames, which is where the gap between beats
+    came from.
+    """
+    import subprocess, tempfile, shutil
+    eng = os.path.join(ROOT, "engine")
+    fr = omkpaths.data()
+    if not (os.path.isdir(eng) and os.path.isdir(fr)):
+        return ("skipped",), ("skipped",), "engine/ or the game data absent"
+    b = subprocess.run(["make", "-s"], cwd=eng, capture_output=True, text=True)
+    binp = os.path.join(eng, "build", "scene_steps")
+    if b.returncode != 0 or not os.path.exists(binp):
+        return ("build failed",), ("built",), "engine/ must build"
+    tmp = tempfile.mkdtemp()
+    out = os.path.join(tmp, "s.bin")
+    try:
+        subprocess.run([binp, fr, os.path.join(ROOT, "tables", "vm_opcodes.json"), out],
+                       capture_output=True)
+        raw = open(out, "rb").read()
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+    v = struct.unpack_from("<15i", raw, 0)
+    return v, (15, 17, 91, 0, 132, 0, 0, 111, 185, 4, 4, 2, -104, -267, 273), \
+           "A_2_DemonLook's first clip and the one the program counter " \
+           "reaches, the frame it reaches it on and its own clock restarting " \
+           "at 0; how long the program runs - 132, exactly its editing's own " \
+           "duration; " \
+           "then the two gaps in the beat's authored chain of clips, which are " \
+           "0 and 0; then the CRATES - `C_1_BoxMoves` is four " \
+           "`Script_MoveObjectOnPath` on the paths `CaisseA`..`CaisseD`, and " \
+           "it runs 111 frames where a busy window of 0 gave 40: the busy " \
+           "window is PARAM 6, the playback length (110.01 here), not the " \
+           "path's own 146 frames, which the handler plays ACROSS it; its " \
+           "editing holds 185; then the MOTION itself - 4 nodes placed, all " \
+           "4 of them meshes of `AImpasse` by name, and 2 of the 4 FALL (Y " \
+           "points down, so a fall ends at a larger y): `Caisse01` and " \
+           "`Caisse 13` start about 80 units up and land, `Caisse1` and " \
+           "`Caisse 14` start on the ground and slide, which is what the shot " \
+           "shows; and finally the demon's height at frame 120 following the " \
+           "pc against frozen on step 0 - landed at -104 or still 267 up the " \
+           "wall, 273 units apart"
+
+
+def c_engine_scene_sounds():
+    r"""`engine/`: the sound effects a scene object's program plays.
+
+    An object's animation CARRIES its sound. `Script_PlaySound` (0x004A12D0)
+    and `Script_PlaySyncSound` (0x004A14D0) hang off the body animation through
+    the `+12` sync link and `Script_PlayScript` runs them in the same chain
+    walk - so they were unreachable while that link was read flat (a leading
+    `sync = 0` became a self-loop and dropped the chain), and then still silent,
+    because nothing here had ever played one: `ScxStream` counted the chunk-3
+    records and threw their payloads away.
+
+    **Both parameter layouts are the handlers', not a guess**, and they differ,
+    which is the trap - reading one as the other invents a cue time for every
+    call of the second:
+
+        PlaySyncSound   0 sound  1 the FRAME on the OBJECT's clock
+                        (`if (GetParamFloat(a2,1) > obj+88) return busy`)
+                        2 &1 loop   3 the latch   4 the node
+        PlaySound       0 sound  1 &1 loop   2 the latch   3 the node
+
+    Each fires ONCE per run: the handler tests its latch on entry and writes it
+    on the way out (`sub_44C690(fn, 2, 1)`), and `Script_StartScript` clears it
+    with the rest.
+
+    **Param 0 is a plain INDEX, and that had to be checked rather than
+    assumed** - the sprites in this same format resolve by ID, and a
+    global-index lookup lands on the wrong one. `sub_48CB30` settles it:
+
+        if (a2 < scene[+24]) return u16(scene[+48] + 26 * a2, 22);
+        else                 return -1;
+
+    a bounds-checked index into the 26-byte chunk-3 records, returning the
+    record's `+22` sound handle. So the **186 of 5425** references that point
+    past their scene's own array are refused by the engine too - the caller
+    tests `!= 0xFFFF` and plays nothing - and are a property of the data, like
+    the 551 voice-overs that do not ship.
+
+    The RUN half is `A_1_KaylArrives`, the clean case because its cues are a
+    WALK: `Wait 60`, then a 270-frame arrival clip firing an ambient at the
+    start and STPR / STPL / STPL / STPR at **170, 200, 210, 280** - right,
+    left, left, right. Cue times are on the OBJECT's clock, so the 60-frame
+    wait shifts none of them and the ambient lands at 60.
+
+    The CORPUS half is self-checking: every sound a program names and that
+    resolves must begin `RIFF` and be accepted by `Wav_LoadToBuffer` - 5239 of
+    5239, so a mis-walked stream or a wrong index fails on both counts at once.
+    """
+    import subprocess, tempfile, shutil
+    eng = os.path.join(ROOT, "engine")
+    fr = omkpaths.data()
+    if not (os.path.isdir(eng) and os.path.isdir(fr)):
+        return ("skipped",), ("skipped",), "engine/ or the game data absent"
+    b = subprocess.run(["make", "-s"], cwd=eng, capture_output=True, text=True)
+    binp = os.path.join(eng, "build", "scene_sounds")
+    if b.returncode != 0 or not os.path.exists(binp):
+        return ("build failed",), ("built",), "engine/ must build"
+    tmp = tempfile.mkdtemp()
+    out = os.path.join(tmp, "s.bin")
+    try:
+        subprocess.run([binp, fr, os.path.join(ROOT, "tables", "vm_opcodes.json"), out],
+                       capture_output=True)
+        raw = open(out, "rb").read()
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+    n = struct.unpack_from("<i", raw, 0)[0]
+    frames = struct.unpack_from("<%di" % n, raw, 4)
+    rest = struct.unpack_from("<5i", raw, 4 + 4 * n)
+    return (n, frames) + rest, \
+           (6, (60, 170, 170, 200, 210, 280), 5425, 5239, 5239, 5239, 1667), \
+           "the cues A_1_KaylArrives fires and the frames they land on - the " \
+           "ambient at 60, where the 60-frame Wait hands over, then the " \
+           "footsteps at 170/200/210/280; then the corpus: sounds a program " \
+           "names, how many resolve against their own scene's chunk-3 array " \
+           "(the rest are refused by `sub_48CB30`'s bounds test in the engine " \
+           "too), how many begin RIFF, how many `Wav_LoadToBuffer` accepts, " \
+           "and the chunk-3 records streamed across the 220 scenes"
+
+
+def c_engine_actor_sounds():
+    r"""`engine/`: the sounds ADVENTURE MODE plays - the `.CTL` effect records.
+
+    A cutscene's sound rides on a scene object's program; the player's rides on
+    the `.CTL` state machine instead, and neither had been ported. The state's
+    `+28` sub-records are the mechanism (`Cef_TickEffects`, 0x0045ADF0): a
+    record fires its `+22` once when the state's clock passes its `+12`, and
+    **`H_WALK` carries a PAIR** - sound **203 at frame 3** and **199 at frame
+    15**, one per footfall.
+
+    **The id is not an index, and that is the opposite of the scene programs.**
+    `Cef_TickEffects` resolves it with `Scene_FindSoundIndex` (0x0048CC80),
+    which SEARCHES the resident scene's 26-byte chunk-3 records for a matching
+    `+24` and returns that record's `+22` handle; a scene program's param 0 is
+    a bounds-checked INDEX (`sub_48CB30`). Reading either as the other lands on
+    the wrong sound - the same id names different sounds in different scenes
+    (34 is `AASC.WAV` almost everywhere and `STPR.WAV` in the Impasse), and a
+    state's footstep is silent in a scene that does not carry its id. That is
+    the engine's behaviour, not a gap: all **62** distinct ids the states name
+    exist in some scene, so none is orphaned.
+
+    The DATA half re-derives `verify.py: ctl effects` from the port's own
+    reader rather than Python's: **590** records, **525** with a sound, **220**
+    with a sprite, **0** with neither, 0 malformed windows, 0 attach codes out
+    of range.
+
+    The RUN half is a held walk, and it is the one that catches the hard part.
+    `H_WALK` LOOPS its clip without ever being re-entered, so a latch cleared
+    only on a state change fires the pair once and then goes silent for as long
+    as you walk - **2** footfalls in 300 frames instead of **22**. The engine
+    re-arms (the tail of `Cef_TickEffects` zeroes the instance's latch words
+    when its clock leaves the record's window); these records carry an OPEN
+    window and what that reduces to for them is **not traced**, so the rule
+    here - a frame going backwards is a wrap, and a wrap starts the footfalls
+    again - is a RECONSTRUCTION and says so in the code. What is asserted is
+    its consequence: a steady ALTERNATING stream at a walking cadence, 22 steps
+    over 10 seconds, which one sound repeating or one sound then silence both
+    fail.
+
+    The clip wrap takes `gotoMove(cur_, cur_, 1.0f)`, an early return, so the
+    effect pass had to move out of `tick`'s fall-through path and onto all of
+    them - a footstep that only sounds when nothing else happened is a footstep
+    that never sounds while you walk.
+    """
+    import subprocess, tempfile, shutil
+    eng = os.path.join(ROOT, "engine")
+    fr = omkpaths.data()
+    if not (os.path.isdir(eng) and os.path.isdir(fr)):
+        return ("skipped",), ("skipped",), "engine/ or the game data absent"
+    b = subprocess.run(["make", "-s"], cwd=eng, capture_output=True, text=True)
+    binp = os.path.join(eng, "build", "actor_sounds")
+    if b.returncode != 0 or not os.path.exists(binp):
+        return ("build failed",), ("built",), "engine/ must build"
+    tmp = tempfile.mkdtemp()
+    out = os.path.join(tmp, "a.bin")
+    try:
+        subprocess.run([binp, fr, os.path.join(ROOT, "tables", "vm_opcodes.json"), out],
+                       capture_output=True)
+        raw = open(out, "rb").read()
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+    v = struct.unpack_from("<14i", raw, 0)
+    return v, (590, 525, 220, 0, 0, 0, 62, 62, 6, 203, 199, 22, 1, 2), \
+           "effect records and how many carry a sound, a sprite, neither; " \
+           "malformed windows and out-of-range attach codes (0 and 0); then " \
+           "the distinct sound ids the states name and how many exist in some " \
+           "scene's chunk 3 - all of them, so none is orphaned; the H_WALK " \
+           "states and their footstep PAIR (203 right, 199 left); and finally " \
+           "a held walk over 300 frames - 22 footfalls, ALTERNATING, over 2 " \
+           "distinct sounds, where a latch that never re-arms gives 2"
+
+
+def c_engine_camera_roll():
+    r"""`engine/`: the camera ROLL, which the renderer dropped until 2026-09-03.
+
+    A camera record carries a roll - `Cam_PlayEditing` keyframes
+    position/target/roll/fov, and a world camera's is `Global_Load`'s
+    4096-per-turn integer - and `RCamera` had **no field for it**, so the basis
+    was built from eye/at with world up pinned to (0, -1, 0) and every rolled
+    shot in the game drew upright. It is invisible in any single still frame,
+    which is exactly how it survived here for months after the same bug was
+    fixed in the web viewer (CLAUDE.md 1, "some errors are invisible at rest").
+
+    **The sense is DERIVED, not chosen.** `sub_442400` turns a direction and a
+    roll into `sub_441FF0(pitch, yaw, roll)`, and `o3de/setpiece.cpp`'s
+    `headingMatrix` already transcribes that verbatim for the set pieces. Its
+    COLUMNS are exactly this basis - column 0 is `s`, column 1 is `-u` (the
+    sign is the game's Y-down), column 2 is `f` - so the two can be compared,
+    and they agree at **30 of 30** direction/roll pairs to 1.2e-7. That is the
+    check: not "a roll is applied" but "the roll the ENGINE'S OWN matrix
+    applies".
+
+    A second, coarser assertion catches a roll that is applied backwards or
+    not at all: at 90 degrees the right axis must leave the old right entirely
+    and land on **minus** the old up. The sign is the half that can go wrong,
+    so it is asserted rather than an absolute value.
+
+    Both backends share `cameraBasis`, so the fix reaches Vulkan without a
+    second copy of the convention - which is the reason that function exists
+    (`raster.h`: "a SECOND renderer uses these conventions rather than a second
+    copy of them").
+
+    And the corpus, because a fix nothing exercises is a fix nobody can see:
+    **224 of the 1073** cameras in the scenes' chunk-10 editings carry a roll.
+    """
+    import subprocess, tempfile, shutil
+    eng = os.path.join(ROOT, "engine")
+    fr = omkpaths.data()
+    if not (os.path.isdir(eng) and os.path.isdir(fr)):
+        return ("skipped",), ("skipped",), "engine/ or the game data absent"
+    b = subprocess.run(["make", "-s"], cwd=eng, capture_output=True, text=True)
+    binp = os.path.join(eng, "build", "camera_roll")
+    if b.returncode != 0 or not os.path.exists(binp):
+        return ("build failed",), ("built",), "engine/ must build"
+    tmp = tempfile.mkdtemp()
+    out = os.path.join(tmp, "r.bin")
+    try:
+        subprocess.run([binp, fr, out], capture_output=True)
+        raw = open(out, "rb").read()
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+    v = struct.unpack_from("<6i", raw, 0)
+    return v, (30, 30, 1, 1, 1073, 224), \
+           "direction/roll pairs tried and how many agree with the basis the " \
+           "engine's own `sub_441FF0` builds (all of them); then that a " \
+           "90-degree roll lands the right axis on MINUS the old up and off " \
+           "the old right - the two ways a dropped or reversed roll shows; " \
+           "and finally the editing cameras in the shipped scenes and how " \
+           "many carry a roll at all"
+
+
+def c_engine_fades():
+    r"""`engine/`: the two SCREEN FADES, neither of them ported until 2026-09-03.
+
+    Filed from a play report — *in the impasse cutscene, one plan, near the
+    beginning, is with a red filter, but it appears without it* — and the
+    first thing it settles is that the Impasse's own fade is **not red**.
+    Opcodes 118/119 pack their colour as a DWORD out of the first FOUR operand
+    bytes, so the site at SCENE 55 pc 1229, which a four-int16 view reads as
+    `-1, 255, 25, 0`, is really the bytes `FF FF FF 00 19 00 00 00` — colour
+    **0x00FFFFFF**, WHITE, over 25 frames. The red in this family is the
+    engine's own override: `byte_4C012C` against the running context's `+30`,
+    so **a fade issued by the message-0 handler is forced to 0xFF0000**. That
+    bookkeeping was already here with a named reader and nothing to consume it
+    (`area.h`); this consumes it.
+
+    **There are two fades and they are independent state machines.**
+    `Screen_StartColorFade` (0x00451DC0) owns the colour one — mode 1 to,
+    2 from — and `Screen_Fade` (0x0041E1B0) the black one, state 3 to black
+    over a fixed **60** frames and state 4 back. What is asserted here is the
+    RULES rather than the ramp, because the rules are what a wrong port gets
+    wrong:
+
+    * a running fade refuses a new one **unless** the new one is a "from" over
+      a running "to" (`if (dword_536C1C && (a1 != 2 || dword_536C1C != 1))`);
+    * the black fade goes back **only** from state 3;
+    * a "to" HOLDS at its colour when the clock runs out instead of clearing,
+      which is what lets the next scene load behind a black screen; a "from"
+      ends.
+
+    The ramp is linear and read from the ticker (0x00451E60):
+    `alpha = clock * 255 / duration` rising for a "to", `255 - ...` falling for
+    a "from" — so a "from" starts full, is half at the halfway tick, and ends.
+
+    **The blend is a MODEL and says so.** The engine ends in
+    `I2D_SubmitQuad(&q, flag, 9)` with flag 1 for white, 2 for black and 4 for
+    anything else, and none of those three blends is traced. Mixing toward the
+    colour matches the ramp's direction for every mode and colour; it is
+    labelled a model in `area.h` and in `play.cpp` rather than dressed as the
+    blend.
+    """
+    import subprocess, tempfile, shutil
+    eng = os.path.join(ROOT, "engine")
+    fr = omkpaths.data()
+    if not (os.path.isdir(eng) and os.path.isdir(fr)):
+        return ("skipped",), ("skipped",), "engine/ or the game data absent"
+    b = subprocess.run(["make", "-s"], cwd=eng, capture_output=True, text=True)
+    binp = os.path.join(eng, "build", "fade_probe")
+    if b.returncode != 0 or not os.path.exists(binp):
+        return ("build failed",), ("built",), "engine/ must build"
+    tmp = tempfile.mkdtemp()
+    out = os.path.join(tmp, "f.bin")
+    try:
+        subprocess.run([binp, omkpaths.data("IAM"),
+                        os.path.join(ROOT, "tables", "vm_opcodes.json"),
+                        omkpaths.data("IAM", "START"), out], capture_output=True)
+        raw = open(out, "rb").read()
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+    v = struct.unpack_from("<16i", raw, 0)
+    # ...and the operand decode the report turned on, from the shipped bytes
+    import dialog_triggers
+    blk = dialog_triggers.archive(omkpaths.data("IAM", "SCENE"))[55]
+    op = blk[1229]
+    raw8 = blk[1230:1238]
+    colour = raw8[0] | raw8[1] << 8 | raw8[2] << 16 | raw8[3] << 24
+    dur = struct.unpack_from("<h", raw8, 4)[0]
+    return v + (op, colour, dur), \
+           (1, 1, 1, 1, 1, 50, 1,
+            0, 3, 60, 1, 1, 4, 1, 50, 1,
+            119, 0x00FFFFFF, 25), \
+           "the colour fade's mode after a `to`, then its three refusal " \
+           "outcomes - to over to refused, from over to allowed, from over " \
+           "from refused; that a `from` starts full, is 50% at the halfway " \
+           "tick and ends; then the black fade and its DIRECTION - a fade out " \
+           "before any fade in is refused (0); opcode 132 gives mode 3 over " \
+           "60 frames and it starts FULLY BLACK and ends CLEAR, which is a " \
+           "fade IN whatever the table calls it; 133 gives mode 4, starts " \
+           "clear, is 50% black halfway and CLEARS at the end; and finally " \
+           "the Impasse's " \
+           "own opening fade decoded from the shipped bytes: opcode 119, " \
+           "colour 0x00FFFFFF (WHITE, not the red the report went looking " \
+           "for) over 25 frames"
+
+
+def c_engine_set_emitters():
+    r"""`engine/`: a set's OWN particle emitters - the environment family.
+
+    Filed from a play report — *please apply particles effects triggered by the
+    environnement, and not only the ones triggered by the scene* — and the port
+    had read all three files of the chain and never joined them.
+
+    `Sfx_BindAmbientEffects` walks the resident `.3DO`'s meshes and, for every
+    one flagged **0x40000000**, compares the first FOUR BYTES of its name as a
+    dword against each section-D binding's tag; a match registers that
+    binding's section-C effect at the mesh's own position. Three separately
+    authored files - the `.3DO`'s flag and name, the `.SFX`'s binding and
+    effect, the `.SCX`'s sprite - and the effects, the bindings and
+    `ParticleField::add` were all already here with nothing walking the set.
+
+    **The compare is on RAW record bytes**, at `meshOff + 140 * i + 16`, not on
+    the parsed name: `readMeshes` stops a name at its first null, so a mesh
+    named in fewer than four characters compares differently once it has been
+    through a C string. That is why this takes the model's bytes.
+
+    The other family - the STANDING set pieces, section E rows keyed `(1, -1)`
+    that no object start can reach - was already bound by `attachSfx`. So the
+    report's "not only the ones triggered by the scene" had two answers and
+    this is the one that was missing.
+
+    **319 emitters over 12 sets** by that walk - but note what the walk cannot
+    see: it pairs a `.SFX` with the `.3DO` of the SAME STEM, and the game does
+    not. `attachSfx` takes the resident SCENE's file with its extension swapped
+    and `bindSetEmitters` is handed the AREA's `+97` set, so the Impasse is
+    `Impasse.sfx` against `AIMPASSE.3DO` - a pair no stem sweep produces. It
+    binds **3**, where this check first reported 0 for the Impasse and the
+    session log of the running game said otherwise. The corpus number is
+    therefore a FLOOR, not a total.
+
+    The 319 is also not quite the 321
+    `docs/ASSETS.md` 3b quotes from `tools/ambientfx.py`. The two differ by
+    two, in the direction that says this walk misses a pair the Python one
+    finds even though the Python one filters HARDER (it also requires the
+    effect's sprite to resolve in the scene's chunk 4). Recorded as a
+    difference rather than reconciled by moving one of the numbers; it is
+    bounded, it is two, and both sides agree on the 12 sets.
+    """
+    import subprocess, tempfile, shutil
+    eng = os.path.join(ROOT, "engine")
+    fr = omkpaths.data()
+    if not (os.path.isdir(eng) and os.path.isdir(fr)):
+        return ("skipped",), ("skipped",), "engine/ or the game data absent"
+    b = subprocess.run(["make", "-s"], cwd=eng, capture_output=True, text=True)
+    binp = os.path.join(eng, "build", "set_emitters")
+    if b.returncode != 0 or not os.path.exists(binp):
+        return ("build failed",), ("built",), "engine/ must build"
+    tmp = tempfile.mkdtemp()
+    out = os.path.join(tmp, "e.bin")
+    try:
+        subprocess.run([binp, fr, os.path.join(ROOT, "tables", "vm_opcodes.json"), out],
+                       capture_output=True)
+        raw = open(out, "rb").read()
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+    v = struct.unpack_from("<5i", raw, 0)
+    return v, (42, 400, 319, 12, 3), \
+           "sets carrying both a `.SFX` and a `.3DO` of the same stem; the " \
+           "meshes flagged 0x40000000 across them; how many BIND to a " \
+           "section-D tag and so register an emitter; over how many sets " \
+           "(12, which is what `docs/ASSETS.md` says, though its emitter " \
+           "count is 321 and the two-emitter difference is recorded rather " \
+           "than reconciled); and finally the Impasse, paired the way the " \
+           "GAME pairs it rather than by stem - `attachSfx` takes the SCENE's " \
+           "`Impasse.sfx` and `bindSetEmitters` the AREA's `+97` set " \
+           "`AIMPASSE.3DO` - which binds **3**. The stem sweep above never " \
+           "tests that pair and reported 0 for it, which is a caution worth " \
+           "keeping: a corpus walk that pairs files by NAME is not the " \
+           "pairing the engine makes, and the running game showed the " \
+           "difference"
 
 
 def c_engine_save():
@@ -11756,11 +12238,11 @@ def c_engine_intro_beat():
                ((1, 2),
                 ((1, "1KaylArrives", "actor", 1, 310, 0, 0),
                  (6, "2KaylStand",   "actor", 0, 310, 1, 1)),
-                187, 130,
+                186, 130,
                 ((0, "INTRO1.3DA", 185), (1, "INTRO2.3DA", 31)),
                 ((0, "UBas.p1", -478, -43, 27), (1, "UBas.p2-3", -486, -43, -79)),
                 ("1", "310", "HO1_FNM"),
-                ((372, 6.2), (188, 6.3), (95, 6.3))), \
+                ((370, 6.2), (187, 6.2), (94, 6.3))), \
                "Grid.SCX resident and how many objects the intro started; " \
                "then each - id, name, how, and whether the start WAITS; the " \
                "beat between the menu answering and the conversation opening, " \
@@ -12446,6 +12928,119 @@ def c_cam_editings():
            "scenes with a chunk 10, of which walk exactly to the payload " \
            "end; editings; unresolved id references; nonzero target ids " \
            "absent from chunk 2"
+
+
+
+def c_scx_sync_chain():
+    r"""FILE_FORMATS 5c: which array a function's `+12` sync index counts in.
+
+    `Script_PlayScript` runs the function at the pc together with everything
+    its `+12` link reaches, so where that index points decides how long a
+    program runs. It points into the object's **sync array**, not into the
+    functions laid end to end: `scene_read_objects` (0x00449750) resolves it as
+
+        ScriptFunction *sf = obj->syncFunctions + (int32_t)fn->sync;
+        if (sf >= obj->syncFunctions + obj->syncCount)  -> load fails
+
+    and `Script_FunctionsIndexesToAdresses` (0x0044A070) does the same
+    arithmetic for the sync records' own links. Read flat instead - the port
+    and `tools/sim` both did until 2026-09-03 - every one of the shipped links
+    lands one array too early.
+
+    The **camera editings adjudicate it**, and they are an oracle this repo
+    cannot fake: an editing's `+24` duration is authored, it names the object
+    it plays over, and `Script_PlayScript` samples it on that object's own
+    program clock - so a correctly modelled program must last as long as the
+    editing linked to it. `FlatProgram` below is the wrong reading, run side
+    by side, so this check is SHOWN to fail rather than asserted to pass.
+
+    **The margin is thin, and it got thinner - say so rather than re-baseline
+    it quietly.** This first read 69 against 66, and that was measured while
+    the interpreter still spent a frame per program step; correcting the timing
+    on 2026-09-03 took it to **66 against 65**, with the rows where the two
+    readings differ at all going 8 -> 11 and the sync-array reading winning
+    them 4 to 3. The old margin was partly the correction term this check used
+    to apply cancelling a real effect - a trailing `PlaySyncSound` cue holds
+    the chain one tick past the animation, so a program legitimately outlives
+    its editing by a frame. A corpus verdict recorded before a timing fix is
+    worth re-running, not re-reading (CLAUDE.md 1).
+
+    So the corpus is a **weak** adjudicator here and is not what settles the
+    question: the loader is, and it is not ambiguous. What the corpus still
+    does decisively is the one row the Impasse turns on - `sautdemon`, the
+    demon's jump off the wall, is **132** frames, `A_2_DemonLook` is clip 15
+    (91) then clip 17 (41), and flat it runs **92**, cutting the shot 40 frames
+    short and bringing "Te voilà, enfin ! Je t'attendais..." in early.
+
+    It does not pretend to a perfect score: 29 of the 95 miss, 7 of them
+    because `MoveObjectOnPath`'s busy window is not modelled (`sim/scene.py`
+    `_busy_span`) and the rest because an editing's authored length is a
+    director's choice and need not equal its object's animation. All of them
+    miss identically under both readings.
+    """
+    import glob, cam_editing, scene_scx
+    sys.path.insert(0, os.path.join(ROOT, "tools", "sim"))
+    from sim.scene import Scene, Program
+
+    class FlatProgram(Program):
+        def chain(self, i):
+            out, seen = [], set()
+            while 0 <= i < len(self.fns) and i not in seen:
+                seen.add(i); out.append(i)
+                i = self.fns[i].get("sync", -1)
+            return out
+
+    def length(cls, scene, obj, cap=4000):
+        """The program's own length in frames - the clock when it stops. Since
+        the timing was corrected (a function reports done on the tick that drew
+        its last frame) this is simply the sum of its steps, with no correction
+        term. Applied identically to both readings either way."""
+        p = cls(scene, obj, trace=[])
+        n = 0
+        while p.tick() and n < cap: n += 1
+        return None if n >= cap else n + 1
+
+    # every sync link, checked against the array the loader would index
+    links = out_of_range = 0
+    for path in sorted(glob.glob(omkpaths.data("SCPTDATA/*.SCX"))):
+        for o in scene_scx.scene(path)["objects"]:
+            for f in o["functions"]:
+                if f["sync"] == -1: continue
+                links += 1
+                if not 0 <= f["sync"] < o["nsync"]: out_of_range += 1
+
+    rows = []
+    for path in sorted(glob.glob(omkpaths.data("SCPTDATA/*.SCX"))):
+        try: ed = cam_editing.parse(cam_editing.payload(path))
+        except Exception: continue
+        linked = [e for e in ed["editings"] if e["target"]]
+        if not linked: continue
+        sc = Scene(os.path.basename(path))
+        for e in linked:
+            o = sc.byhandle.get(e["target"])
+            if not o: continue
+            rows.append((e["duration"], length(Program, sc, o),
+                         length(FlatProgram, sc, o)))
+    exact_sync = sum(1 for d, s, f in rows if s == d)
+    exact_flat = sum(1 for d, s, f in rows if f == d)
+    differ = [r for r in rows if r[1] != r[2]]
+    won  = sum(1 for d, s, f in differ if s == d)
+    lost = sum(1 for d, s, f in differ if f == d)
+
+    sc = Scene("Impasse.SCX")
+    demon = sc.byhandle[223]
+    saut = (length(Program, sc, demon), length(FlatProgram, sc, demon))
+
+    return (links, out_of_range, len(rows), exact_sync, exact_flat,
+            len(differ), won, lost, saut), \
+           (6308, 0, 95, 66, 65, 11, 4, 3, (132, 92)), \
+           "every sync link in the 220 .SCX and how many fall outside the " \
+           "object's own sync array (0 - the loader refuses the file " \
+           "otherwise); then the editings that name an object, how many the " \
+           "sync-array reading and the FLAT one time exactly, the rows where " \
+           "the two differ at all and who is right on them; and finally " \
+           "Impasse's A_2_DemonLook under both - 132 frames, which is exactly " \
+           "`sautdemon`'s own duration, against the flat reading's 91"
 
 
 
@@ -14258,9 +14853,36 @@ def c_sim_area_load():
     transition of their own: op 71's handler ends `Scene_Block(scene)` ->
     `[ebx+4]` -> `Script_NewContext` -> `Script_QueueAction(ctx, 1)`.
 
-    PACING, added 2026-08-29, is what makes the run take **1541 frames** to
+    PACING, added 2026-08-29, is what makes the run take **2220 frames** to
     reach event 42 where it used to take a handful - and it is the game's own
-    mechanism, not a delay. Seven of SCENE 55's sixteen beats are started with
+    mechanism, not a delay.
+
+    It was **1541** until 2026-09-03, and the 679 it moved that day are three
+    interpreter faults in the object programs, each attributable to the frame:
+
+    * **+41**, the sync link. It indexes the object's SYNC array, not the main
+      and sync arrays laid end to end, and read flat `A_2_DemonLook` - the
+      demon's jump - merged its two program steps and ran 91 frames instead of
+      91 + 41 = **132**, the duration its own camera editing `sautdemon`
+      declares. `verify.py: scx sync chain`.
+    * **+649**, the repeat count, which `tools/sim` was not honouring at all.
+      Three of the Impasse's beats carry `+16` above 1 and gain 1331 frames
+      between them, but only the two started with a **waiting** variant can
+      gate this run: `C_1_KaylStand` +122 and `C_2_MecaSpeaks` +527, which is
+      649 exactly. `C_2_KaylStand`'s +682 is started with plain `scx.play`
+      and blocks nothing - so the arithmetic also re-confirms which variants
+      wait. `verify.py: sim: SCX interpreter`.
+
+    * **-11**, the busy window. `Script_SelectBodyAnimation` reports done on
+      the tick it clamp-draws the clip's last frame and `Script_PlayScript`
+      advances the pc inside that same tick, so a step costs exactly its own
+      frames; the interpreter was closing the window a tick later and spending
+      one frame per step on nothing. `verify.py: engine: scene steps`.
+
+    None of the three has an oracle in the capture, which records events and
+    not the frames between them; what vouches for them is the camera editings,
+    whose authored durations the beats now match - `sautdemon` 132 and
+    `mecaspeak` 558 exactly. Seven of SCENE 55's sixteen beats are started with
     a **waiting** variant (`scx.play.player.wait` 46, `scx.play.wait` 58,
     `scx.play.actor.wait` 60), and those:
 
@@ -14333,7 +14955,7 @@ def c_sim_area_load():
             r["scene_of_222"]), \
            ([("AREA", 118, 1040)],
             [("AREA", 222, 2276), ("SCENE", 55, 1212), ("SCENE", 57, 1272)],
-            (7, 7, 3), 44, 42, 42, [], 1541, 55), \
+            (7, 7, 3), 44, 42, 42, [], 2220, 55), \
            "the new game's startup script; the chunks the transition then " \
            "loads and starts (the announced total dropped 45 -> 44 on " \
            "2026-08-31 when `loggable` started reading the assembly's own " \
@@ -14999,6 +15621,16 @@ def c_sim_scene():
     the rewind goes through `Script_StartScript`, which zeroes it - harmless
     only because the shipped loop counts are just 1 and -1.)
 
+    **A repeat count above 1 is honoured.** `Telis_eat` cannot test that - both
+    its functions are authored `repeat = 1` - so the Impasse's
+    `C_2_MecaSpeaks` is here beside it: one `SelectBodyAnimation` of a 31-frame
+    clip with `+16` = **18**, which is **558**, exactly the duration of
+    `mecaspeak`, the camera editing linked to the object. Ending the function
+    after one run - which this simulator did until 2026-09-03, while
+    `engine/src/script/program.cpp` had had the tail since 2026-09-02 and
+    nothing compared the two on a repeat above 1 - releases the editing at
+    frame 31 and the cutscene's last cameras go wrong.
+
     **Dialog 387's launch runs end to end.** Standing in zone 3732 runs its
     activate script with `scx.play*` and `dialog.start` wired to the real
     scene, so the objects actually start and the conversation actually loads:
@@ -15015,14 +15647,28 @@ def c_sim_scene():
               for i in range(len(a["clips"]) - 1))
     b = R.stage4b()
     names = sorted(e[2] for e in b["started"])
+
+    # the repeat count, which Telis_eat's authored 1 cannot reach
+    sc = SC.Scene("Impasse.SCX")
+    meca = sc.byname["C_2_MecaSpeaks"]
+    pr = SC.Program(sc, meca, trace=[])
+    n = 0
+    while pr.tick() and n < 6000: n += 1
+    meca_frames = n + 1                    # the clock when it stops
+
     return (a["loop"], a["distinct"], alt, a["running"], a["restarts"] >= 4,
-            b["scx"], names, b["dialog"][1], b["dialog"][3], b["running"]), \
+            b["scx"], names, b["dialog"][1], b["dialog"][3], b["running"],
+            meca["functions"][0]["repeat"], meca_frames), \
            (-1, ["TELRES02.3DA", "TELRES05.3DA"], True, True, True,
-            "Re14.SCX", ["Uzal---->assis", "Uzal_Stand"], 387, 13, 1), \
+            "Re14.SCX", ["Uzal---->assis", "Uzal_Stand"], 387, 13, 1,
+            18, 558), \
            "Telis_eat's loop count, the clips it alternates, that they " \
            "alternate, that it never stops and restarts freely; then the " \
            "scene 387 launches from, the objects it starts, the dialog and " \
-           "its nodes, and programs still running after 120 frames"
+           "its nodes, and programs still running after 120 frames; and " \
+           "finally C_2_MecaSpeaks' repeat count and the 558 frames it runs " \
+           "for - the duration `mecaspeak`, the editing linked to it, " \
+           "declares, and the one case here that exercises a repeat above 1"
 
 
 def c_sim_actor():
@@ -15712,7 +16358,7 @@ def c_licence_headers():
                    if TAG in open(p, encoding="utf-8",
                                   errors="replace").read(600)]
     return (authored, sorted(missing), len(vendored), mislabelled), \
-           (278, [], 1, []), \
+           (284, [], 1, []), \
            "authored source files under tools/, engine/src, engine/tools, " \
            "engine/backends and scripts/; those MISSING the SPDX tag; " \
            "vendored files in engine/third_party; and vendored files wrongly " \
@@ -16978,6 +17624,7 @@ CHECKS = [
     ("scx clips",          c_scx_clips,         "ASSETS"),
     ("script programs",    c_script_programs,   "FILE_FORMATS 5c"),
     ("camera editings",    c_cam_editings,      "FILE_FORMATS 5c"),
+    ("scx sync chain",     c_scx_sync_chain,    "FILE_FORMATS 5c"),
     ("ctl combat block",   c_ctl_combat,        "ASSETS"),
     ("ctl special moves",  c_ctl_special_moves, "ASSETS"),
     ("ctl transitions",    c_ctl_transitions,   "ASSETS"),
@@ -17115,6 +17762,12 @@ SLOW = [
     ("engine: world data", c_engine_world_data, "engine/README"),
     ("engine: fight AI",   c_engine_fight_ai,   "engine/README"),
     ("engine: programs",   c_engine_programs,   "engine/README"),
+    ("engine: scene steps", c_engine_scene_steps, "engine/README"),
+    ("engine: scene sounds", c_engine_scene_sounds, "engine/README"),
+    ("engine: actor sounds", c_engine_actor_sounds, "engine/README"),
+    ("engine: camera roll", c_engine_camera_roll, "engine/README"),
+    ("engine: fades",      c_engine_fades,      "engine/README"),
+    ("engine: set emitters", c_engine_set_emitters, "engine/README"),
     ("engine: save+clock", c_engine_save,       "engine/README"),
     ("engine: scene loop", c_engine_scene_loop, "engine/README"),
     ("engine: golden traces", c_engine_golden_traces, "engine/README"),

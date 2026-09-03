@@ -38,6 +38,21 @@ Basis basisOf(const RCamera& c) {
     norm3(b.s);
     if (c.mirror) for (int k = 0; k < 3; ++k) b.s[k] = -b.s[k];
     cross3(b.s, b.f, b.u);
+    // THE ROLL, about the forward axis and in the engine's own sense - see
+    // `RCamera::rollDeg` for where that sense comes from. Both axes turn; the
+    // third term of Rodrigues drops out because each is perpendicular to `f`.
+    if (c.rollDeg != 0.0f) {
+        const float a = c.rollDeg * 3.14159265358979323846f / 180.0f;
+        const float ca = std::cos(a), sa = std::sin(a);
+        float fs[3], fu[3];
+        cross3(b.f, b.s, fs);
+        cross3(b.f, b.u, fu);
+        for (int k = 0; k < 3; ++k) {
+            const float sk = b.s[k] * ca + fs[k] * sa;
+            const float uk = b.u[k] * ca + fu[k] * sa;
+            b.s[k] = sk; b.u[k] = uk;
+        }
+    }
     // AFTER `u`, so only x flips - see `RCamera::flipX`.
     if (c.flipX) for (int k = 0; k < 3; ++k) b.s[k] = -b.s[k];
     b.tanh_ = std::tan(c.hfovDeg * 3.14159265358979323846f / 180.0f / 2.0f);
