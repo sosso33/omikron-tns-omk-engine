@@ -133,6 +133,39 @@ and `docs/PORTING.md` A1 requires that they keep working without either.
 `scripts/install-deps.sh` reports what is present, `--install` adds the
 optional pieces via Homebrew, apt, dnf or pacman.
 
+### Platforms — portable by construction, tested only on macOS
+
+OMK is written to be platform-independent: C++20 with no dependencies, a plain
+Makefile driven by `pkg-config`, Python that is standard library only, and an
+install script with Homebrew, apt, dnf and pacman branches. `engine/src`
+contains **no operating-system `#ifdef` at all** — not one `_WIN32`,
+`__APPLE__` or `__linux__` in the whole core. The only conditionals in the
+tree are in the SDL backend, and they choose between SDL2 and SDL3 or gate
+the optional Vulkan path; none of them asks which OS it is on.
+
+**But it has only ever been built and run on macOS on Apple Silicon.** Nothing
+else has been tried, so treat any other platform as unexplored rather than
+supported. Four things are known in advance to need attention:
+
+* **Case-sensitive filesystems.** The game shipped with inconsistent casing
+  because Win95 did not care, so the C++ `DataFs` resolves every lookup
+  case-insensitively and is expected to be fine anywhere. The **Python
+  readers do not** — they let the host filesystem do it, which works on macOS
+  and will not on a case-sensitive Linux volume without normalising the tree
+  first. Expect the engine to run and some of `tools/` to fail.
+* **The golden-trace rig is macOS-only by construction.**
+  `tools/goldentrace.py` drives the original Windows executable under
+  CrossOver and captures frames with `screencapture`, including a 2x Retina
+  recovery. Its checks skip without it; the rig itself would need rewriting
+  elsewhere.
+* **Vulkan reaches the GPU through MoltenVK here.** OMK only ever talks to the
+  loader, so a native driver should need no change — but that is a
+  reasonable expectation, not a tested one.
+* **`scripts/install-deps.sh`'s Linux branches are written, not exercised.**
+
+Reports from other platforms are welcome, and so are the failures: a bug
+found by someone building on Linux is worth more than another macOS run.
+
 ## Playing it, and looking at it
 
 ```sh
