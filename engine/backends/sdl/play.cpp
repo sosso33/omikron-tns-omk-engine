@@ -1896,6 +1896,8 @@ int main(int argc, char** argv) {
         // would otherwise win on every frame but the clip-change one, and he
         // would stand at the placement plus the whole root motion.
         bool  progPlaced = false;      // a program placed him this clip
+        float progYaw = 0.0f;          // the call's Euler y (`Actor_SetEuler(node, p4, p5, p6)` every tick)
+        bool  progYawKnown = false;
         float progBase[3] = {0, 0, 0};
         bool  progPelvis = false;
         const char* src = "none";
@@ -3879,6 +3881,15 @@ int main(int argc, char** argv) {
                             s.placed = true;
                             s.pelvis = true;    // an authored path names the PELVIS
                             s.progPlaced = true; s.progPelvis = true;
+                            // ...and the FACING is the call's Euler, written to the
+                            // node every tick; the clip's root quaternion sits under
+                            // it. Anekbah's Kiss couples say -70, the walkers 180 -
+                            // without it a couple placed right still stood turned
+                            // away and intersecting (a reader's frame, 2026-09-03).
+                            // Pitch and roll (params 4 and 6) are rarely non-zero
+                            // (three beggars carry -7 of pitch) and are not applied.
+                            s.progYaw = stt ? stt->euler[1] : 0.0f;
+                            s.progYawKnown = stt != nullptr;
                             for (int k = 0; k < 3; ++k) s.progBase[k] = s.at[k];
                         }
                         std::printf("  pose: actor %d %s - clip %d '%s' (%d frames) on path "
@@ -4130,12 +4141,20 @@ int main(int argc, char** argv) {
                 // relative to the actor's own frame.
                 const bool spin = !s.sceneTracks.valid() && !useLine &&
                                   std::fabs(s.facing) > 0.01f;
+                // a program's body turns by the call's Euler y about its pelvis
+                const bool progSpin = s.sceneTracks.valid() && !useLine && s.progYawKnown &&
+                                      std::fabs(s.progYaw) > 0.01f;
                 for (auto& c : s.posed.corners) {
                     if (spin) {
                         const float in[3] = {c.x, c.y, c.z};
                         float r[3];
                         omk::rotateYaw(s.facing, in, r);
                         c.x = r[0]; c.y = r[1]; c.z = r[2];
+                    } else if (progSpin) {
+                        const float in[3] = {c.x - pelvis[0], c.y - pelvis[1], c.z - pelvis[2]};
+                        float r[3];
+                        omk::rotateYaw(s.progYaw, in, r);
+                        c.x = r[0] + pelvis[0]; c.y = r[1] + pelvis[1]; c.z = r[2] + pelvis[2];
                     }
                     c.x += off[0]; c.y += off[1]; c.z += off[2];
                 }
@@ -4204,7 +4223,6 @@ int main(int argc, char** argv) {
                     if (w.clip != p.clipWas) {
                         p.clipWas = w.clip;
                         p.tracks = pedTracksFor(w.sex, *w.clip, p.mo->meshes);
-                        p.feetKnown = false;
                     }
                     const int lodRoot = p.tracks ? skeletonRootOf(*p.mo, *p.tracks) : p.mo->root;
                     const omk::Geometry& rest = lodRestFor(w.model, *p.mo, lodRoot);
@@ -4215,15 +4233,23 @@ int main(int argc, char** argv) {
                         ? omk::composePose(p.mo->meshes, *p.tracks, frame, false)
                         : omk::composePose(p.mo->meshes, omk::NodeTracks{}, 0, false);
                     omk::applyPose(p.posed, rest, p.mo->meshes, pose);
-                    // seated once per clip, like the extras: the feet (Y down,
-                    // so the largest y) go on the body point - the lane is the
-                    // ground. The engine puts the instance origin at the body
-                    // plus the root's y minus the model radius (`sub_437F80`),
-                    // which is this for a model whose radius is its height
-                    // above the feet; the difference, if any, is for the eye.
+                    // THE HEIGHT is the engine's rule, `sub_437F80(inst, x, body.y
+                    // + footY - radius, z)`: the model origin stands one root
+                    // radius (41.9 for PSH_FN - the pelvis-to-feet height) above
+                    // the body point and the root track's summed y moves it.
+                    // Written here as the REST pose's feet on the body point plus
+                    // that summed y, which is the same constant for a model
+                    // whose radius is its height - and NOT the feet of the clip's
+                    // first frame, which for the seated clip are the folded legs
+                    // at pelvis level and sank every sitter into the street (a
+                    // reader's frame, 2026-09-03). The sit's root drops 20.7 over
+                    // its enter clip; that is what puts him on the ground.
                     if (!p.feetKnown) {
+                        const auto restPose = omk::composePose(p.mo->meshes, omk::NodeTracks{}, 0, false);
+                        omk::Geometry restPosed;
+                        omk::applyPose(restPosed, rest, p.mo->meshes, restPose);
                         p.feet = -1e9f;
-                        for (const auto& c : p.posed.corners) if (c.y > p.feet) p.feet = c.y;
+                        for (const auto& c : restPosed.corners) if (c.y > p.feet) p.feet = c.y;
                         p.feetKnown = true;
                     }
                     float rootXZ[2] = {0.0f, 0.0f};
@@ -4236,7 +4262,7 @@ int main(int argc, char** argv) {
                         float r[3];
                         omk::rotateYaw(w.facing, in, r);
                         c.x = r[0] + w.body[0];
-                        c.y = r[1] + w.body[1] - p.feet;
+                        c.y = r[1] + w.body[1] + w.footY - p.feet;
                         c.z = r[2] + w.body[2];
                     }
                     p.posed.revision = ++worldGeoRev;

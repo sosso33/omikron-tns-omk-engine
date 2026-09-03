@@ -424,6 +424,35 @@ the 640x480 the game shipped at (3.00% of the height below the box against
 
 ## Fixed (batch 10, 2026-09-03)
 
+### 64. A seated walker sank into the street: the height is the root's summed y, not the clip's first feet — A
+
+> **Fixed 2026-09-03, confirmed by FRAME.** A walker's height is
+> `sub_437F80(inst, x, body.y + footY - radius, z)`: the model origin one
+> root radius above the body point (41.9 for `PSH_FN`, the pelvis-to-feet
+> height) moved by the root track's summed y. The viewer seated the feet of
+> the clip's FIRST frame on the body point, and the seated clip's first
+> frame is the folded legs at pelvis level - so every sitter's pelvis went
+> to the ground and his shins below it. Now the REST pose's feet stand on
+> the body point plus the summed y (the sit's enter clip drops 20.7), and he
+> sits on the bench.
+
+Filed 2026-09-03 from a play report: *issue with sitting npc* - a man with
+his legs in the street in front of a bench.
+
+### 63. The city's couples stood turned away and intersecting: a program's Euler was never applied — A
+
+> **Fixed 2026-09-03, confirmed by FRAME.** `Script_SelectRelativeBodyAnimation`
+> writes its params 4/5/6 to the node with `Actor_SetEuler` every tick and
+> the clip's root quaternion sits under it. The viewer applied no yaw to a
+> program-driven body (`spin` is off for a scene clip), so Anekbah's Kiss
+> couples (-70), walkers (180) and gym pair (140) kept the clip's own frame:
+> placed right, facing wrong, and a kissing pair intersected with the
+> woman's back to the man. The body now turns by the call's Euler y about
+> its pelvis. Pitch and roll (three beggars carry -7 of pitch) are not
+> applied.
+
+Filed 2026-09-03 from the same report's second frame.
+
 ### 62. The extras of a city piled onto its doors: a relative body animation's path is a PAIR — A
 
 > **Fixed 2026-09-03, confirmed by the placements (not yet by a person).**
