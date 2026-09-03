@@ -106,6 +106,8 @@ def operand_text(op, raw):
     parts, notes = [], []
     for i, v in enumerate(fields):
         u = v & 0xFFFF
+        if i in D.RAW_WORD.get(op, ()):      # a scene object id, read raw
+            parts.append("obj 0x%04x" % u); continue
         if u == 0xFFFF:
             parts.append("-1"); continue
         if u & 0x4000:                       # the handler's indirect mode

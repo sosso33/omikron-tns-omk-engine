@@ -86,8 +86,14 @@ startup extras, 1 more `scx.play` there, 1 `scx.play.actor` in a slot script
 and 2 `scx.play.player`. SCRIPT_VM's "all 59 indirect operands are
 `push.i16 0x4000`" was counted over the 5785 slot scripts with the same
 misread; it is right about `push.i16` and wrong as a statement about the
-corpus. Ops 46, 58, 60 and 90 are to be checked for the same shape before the
-fix lands.
+corpus. **Fixed 2026-09-03** in all three: ops 46, 57, 58 and 90 read the
+object word first and 59/60 second, every one raw (`asmfn.py --op N` for each);
+`SceneRunner::handle`, `tools/sim/run.py` and `dialog_disasm.RAW_WORD` now
+take it unsigned, and `verify.py: engine: city crowd` compares each city's
+startup script against what the Session starts - Anekbah 26/26, Jaunpur 27,
+Lahoreh 29 (which parks 240 frames behind its fans' `scx.play.wait` first),
+Mahaleel 34, every one with actor, clip and path resolved. Shown to fail with
+the mask dropped: Anekbah 0/26.
 
 ## 2. Mechanism A — the procedural pedestrians (`TRAJECTOIRES\*.OPT`)
 
@@ -189,7 +195,7 @@ per-entry tests are unread.
 | piece | where | state |
 |---|---|---|
 | placement spawn, `ObjectShown` bit, show/hide | `Session::spawnFromTables` | done |
-| scene programs on actors, path + clip, loops, sync | `SceneRunner`, `Program` | done; Anekbah blocked by §1's misread |
+| scene programs on actors, path + clip, loops, sync | `SceneRunner`, `Program` | done, Anekbah included since 2026-09-03 (`engine: city crowd`) |
 | drawing every shown actor by its program | `omk-play` (T20) | done for the Impasse's three bodies; a 30-body street never watched |
 | zone lines to passers-by | zones + `voiceover` | done, never watched on a street |
 | `character.look_at_player` head aim | Session records it | drawn? unverified |

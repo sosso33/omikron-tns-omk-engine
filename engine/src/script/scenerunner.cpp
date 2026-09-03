@@ -248,7 +248,18 @@ int SceneRunner::handle(const std::vector<Call>& calls) {
         const bool actorFirst = c.op == 59 || c.op == 60;
         if (c.fields.size() < (actorFirst ? 2u : 1u)) continue;
         const bool waiting = c.op == 46 || c.op == 58 || c.op == 60;
-        const int idx = start(c.fields[actorFirst ? 1 : 0], how, waiting);
+        // THE OBJECT WORD IS RAW AND UNSIGNED. All six handlers read it
+        // `and ecx, 0FFFFh; mov ebp, ecx` - no 0xFFFF test, no `test ch, 40h`
+        // indirect step - and only the actor word (59/60) and the trailing
+        // word go through the shared fetch (0x403300, 0x4030E0, asmfn --op).
+        // It is the object's `handle >> 16`, a 16-bit id that may carry bit
+        // 15 and bit 14: Anekbah's are 0xC2xx, so read as an int16 they came
+        // out negative and none of its 26 startup extras matched (and read
+        // through the indirect fetch, as the disassembler did, they became
+        // params[718]). docs/STREET_LIFE.md 1.
+        const int object = static_cast<int>(
+            static_cast<std::uint16_t>(c.fields[actorFirst ? 1 : 0]));
+        const int idx = start(object, how, waiting);
         // 59/60 name the CHARACTER first and the object second, so the actor
         // this program drives is field 0 - which is how a frontend knows whose
         // pose it is.
@@ -256,7 +267,7 @@ int SceneRunner::handle(const std::vector<Call>& calls) {
         // ...and the set pieces keyed to it. A scene object passes a1 = 0; an
         // actor one passes the caller's own value, which is not modelled, so
         // only the a1 = 0 form fires here.
-        if (idx >= 0) firePieces(0, c.fields[actorFirst ? 1 : 0]);
+        if (idx >= 0) firePieces(0, object);
         // ...and the camera. The handler's LAST operand is the travel into
         // the editing's camera, `fild`/`fstp`'d into the request's +24 as
         // `max(field, 0)` frames - see `ActiveEditing` in the header. 46/90

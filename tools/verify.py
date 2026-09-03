@@ -3939,6 +3939,73 @@ def c_engine_airlock_walk():
         "to 653 and playing 405/406; and the six markers in the trace's order"
 
 
+def c_engine_city_crowd():
+    r"""The AUTHORED EXTRAS of a city street start in the Session
+    (docs/STREET_LIFE.md 1) - and the object word of every `scx.play*` is a
+    RAW, UNSIGNED 16-bit id.
+
+    A city's startup script (chunk +4) issues one `scx.play.actor` per placed
+    extra - couples, beggars, patrols - each a looping scene program on a
+    character the placement table spawned. Two independent chains must agree:
+    the startup script decoded by tools/dialog_disasm.py (ops 59/60, the
+    object word taken raw per `RAW_WORD`) against what `engine/tools/
+    city_crowd` reports the Session actually started after 60 frames, with the
+    CHARACTERS id, the clip and the path resolved for every one.
+
+    The handlers read the object word `and ecx, 0FFFFh; mov ebp, ecx` - no
+    0xFFFF test and no 0x4000 indirect step (0x403300, 0x4030E0; `asmfn.py
+    --op 59`). Anekbah's object ids are 0xC2xx, so read as int16 they came
+    out negative and the port started NONE of its 26 (Jaunpur's and
+    Lahoreh's ids are below 0x4000 and always worked); read through the
+    indirect fetch, as the disassembler did, they were `param[718]`. Shown to
+    fail with the mask dropped from `SceneRunner::handle`: Anekbah 0/26.
+    """
+    eng = os.path.join(ROOT, "engine")
+    if not os.path.isdir(eng):
+        return ("skipped",), ("skipped",), "engine/ absent"
+    b = subprocess.run(["make", "-s"], cwd=eng, capture_output=True, text=True)
+    binp = os.path.join(eng, "build", "city_crowd")
+    if b.returncode != 0 or not os.path.exists(binp):
+        return ("build failed",), ("built",), "engine/ must build"
+    import dialog_disasm as D
+    areas = T.archive(os.path.join(O.TAGDIR, "AREA"))
+    got, want = [], []
+    for area in (0, 1, 64, 145):            # Anekbah, Jaunpur, Lahoreh, Mahaleel
+        chunk = areas[area]
+        start = struct.unpack_from("<i", chunk, 4)[0]
+        ops, st = D.disasm(chunk, start, len(chunk))
+        authored = set()
+        for pc, op, raw in ops:
+            if op in (59, 60) and len(raw) >= 4:
+                authored.add(struct.unpack_from("<H", raw, 2)[0])
+        # 300 frames: Lahoreh's startup script parks on `scx.play.wait` behind
+        # its fans before it reaches the extras (9 of 29 at 60 frames).
+        r = subprocess.run([binp, omkpaths.data_root(), os.path.join(ROOT, "tables"),
+                            str(area), "300"], capture_output=True, text=True)
+        if r.returncode != 0:
+            return ("no run",), ("ran",), "city_crowd must run"
+        head, started = {}, {}
+        for ln in r.stdout.splitlines():
+            f = ln.split()
+            if f and f[0] == "area":
+                head = dict(zip(f[2::2], f[3::2]))
+            elif f and f[0] == "program":
+                d = dict(zip(f[2:10:2], f[3:11:2]))       # the name is last, and may hold spaces
+                started[int(f[1], 16)] = (" ".join(f[11:]), d)
+        actor_objs = {o for o, (n, d) in started.items() if d.get("how") == "actor"}
+        hit = authored & actor_objs
+        resolved = sum(1 for o in hit
+                       if int(started[o][1]["actor"]) >= 0 and int(started[o][1]["clip"]) >= 0
+                       and int(started[o][1]["path"]) >= 0)
+        # a zone script fired at the spawn point may start one more; the
+        # tool's own count must cover the authored set
+        n = len(authored)
+        got.append((area, st, n, len(hit), resolved, sorted(authored - actor_objs),
+                    int(head.get("actor_programs", -1)) >= n))
+        want.append((area, "ok", n, n, n, [], True))
+    return tuple(got), tuple(want), "4 cities: every startup scx.play.actor starts, resolved"
+
+
 def c_engine_spawn_from_tables():
     r"""`Actors_SpawnFromTables` LIVE in the Session - the world's characters
     at an area load (`spawn_probe`), T19 for issue 40 of
@@ -18079,6 +18146,7 @@ SLOW = [
     ("engine: live zones", c_engine_live_zones, "SCRIPT_VM; engine/README"),
     ("engine: airlock walk", c_engine_airlock_walk, "SCRIPT_VM; engine/README"),
     ("engine: spawn from tables", c_engine_spawn_from_tables, "SCRIPT_VM; FILE_FORMATS; engine/README"),
+    ("engine: city crowd", c_engine_city_crowd, "STREET_LIFE 1; SCRIPT_VM"),
     ("engine: zone pump",  c_engine_zone_pump,  "engine/README"),
     ("engine: zone registry", c_engine_zone_registry, "engine/README"),
     ("engine: voice over", c_engine_voice_over, "CUTSCENES 5; engine/README"),
