@@ -290,8 +290,8 @@ crates, vehicles.
 > **Fixed 2026-09-03.** The scripted-camera branch now resolves against the
 > same subject point the follow camera uses - the pelvis, `playerPos` minus
 > `cameraLift()` - instead of the feet. `verify.py: engine tuto camera`
-> asserts all three tutorial shots move by exactly the lift. Awaiting the
-> play test.
+> asserts all three tutorial shots move by exactly the lift.
+> **CONFIRMED IN PLAY.**
 
 Filed 2026-09-03 from a play report — *the camera is too low on the tuto
 cutscene ("En appuyant sur Action, je peux prendre un objet ...")*.
@@ -337,7 +337,7 @@ is 1443 of the world cameras.
 > `(height << 6) / 480` rows, from `v8`'s grey on the inner edge to `v7`'s at
 > the screen edge; the colour fade stays full-screen. `verify.py: engine
 > fades` asserts both greys at two points of each state and the band height.
-> Awaiting the play test.
+> **CONFIRMED IN PLAY.**
 
 Filed 2026-09-03 from a play report — *at the end of any cutscene (included
 tutos), when returning to adventure mode, there is a fade to a black screen
@@ -613,7 +613,7 @@ most of what is on screen.
 > turn was zero and holding forward+left walked in a straight line.
 > `verify.py: engine player walk` now runs a fifth stream, `k200+203*40`,
 > and asserts he covers ground AND turns AND ends in the same state the
-> forward-only stream ends in. Awaiting the play test.
+> forward-only stream ends in. **CONFIRMED IN PLAY.**
 
 Filed 2026-09-03 from a play report — *the new engine doesn't support the
 press of two directionals buttons at once (it forces to walk straight, then
