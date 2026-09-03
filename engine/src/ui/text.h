@@ -70,6 +70,21 @@ inline constexpr int kAlignLeft = 2, kAlignRight = 4, kAlignCentre = 8,
 struct ParsedText {
     std::vector<StyledChar> run;
     int  align = -1;              // -1: the string set none, so the item's wins
+    // `{X<xxx><yyy>}` - "move to (xxx, yyy) as PERCENTAGES of the screen"
+    // (docs/UI.md 5). One string can carry several, and each starts a new
+    // positioned block: that is how the Bowie title sequence's credits are
+    // scattered around the frame. `AREA 0` record 78 fires twenty
+    // `media.play` calls and each object's `+280` description is a block like
+    //
+    //     {X090058}{f1}{D}Direction programmation
+    //     {X080065}{f3}{D}Olivier NALLET
+    //
+    // so the credits are ORDINARY SUBTITLES, not a system of their own. `at`
+    // is the index into `run` where the move takes effect, and `align` is the
+    // alignment in force for that block - the directives arrive in separate
+    // braces AFTER the move, so it is filled in as they are read.
+    struct Move { std::size_t at = 0; int xPct = 0, yPct = 0; int align = -1; };
+    std::vector<Move> moves;
 };
 
 ParsedText parseMarkup(const std::string& text, char face = 'J',

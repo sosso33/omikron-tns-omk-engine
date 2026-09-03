@@ -5864,6 +5864,90 @@ def c_engine_impasse_fx():
            ("the Impasse's beats fire 15 set-piece rows and peak at 108 live "
             "particles, alive on 262 of 900 frames")
 
+def c_credit_layout():
+    r"""UI: the Bowie credits are ordinary subtitles positioned by `{X}` markup.
+
+    A reader described the Anekbah opening as "a specific case, maybe with some
+    dedicated code". It is not. `AREA 0` record 78 - the 145.7 s title sequence,
+    one of the 106 world-camera scripts - is a plain camera script that fires
+    **twenty `media.play` calls**, and each object's `+280` description is a
+    credit block::
+
+        716  {X010030}{f1}Ecrit et realise par
+             {X020035}{f3}David CAGE
+        719  {X090058}{f1}{D}Direction programmation
+             {X080065}{f3}{D}Olivier NALLET
+
+    `{X<xxx><yyy>}` is "move to (xxx, yyy) as PERCENTAGES of the screen"
+    (docs/UI.md 5), `{f1}`/`{f3}` are GENERIC1 and GENERIC3, and `{D}` is right
+    alignment - used by the blocks on the right of frame, which is why
+    `{X090058}` is 90% across. **`omk-play` parsed `{X}` and threw it away**
+    (`if (d == 'X' ...) { i += 7; continue; }`), so every credit landed at the
+    bottom like an ordinary subtitle.
+
+    Also settled on the way, by DECODING A FRAME and looking at it: the
+    sequence is NOT pre-rendered video. `FLIS/GAME.MPG` at 60 s is the club
+    cinematic, so the credits really are drawn over the live city.
+
+    One block of the 46 carries no text - object 715, `ZVO G001 TITRE`, is
+    `{X030040}{f3}` and nothing else - so the title card itself comes from
+    somewhere this does not reach. Recorded rather than explained.
+
+    A near-miss worth keeping: `grep` finds no credit name anywhere in the
+    tree, which looks like proof the text is absent - but `grep` cannot find
+    "Confirmer" in `IAM/` either, so the method was invalid and the negative
+    worthless. The text was there all along, behind the object reader.
+    """
+    import subprocess, tempfile, shutil
+    fr = omkpaths.data_root()
+    if not os.path.isdir(fr):
+        return ("no data",), ("data",), "needs the shipped tree"
+    eng = os.path.join(ROOT, "engine")
+    b = subprocess.run(["make", "-s", "build/credit_layout"], cwd=eng,
+                       capture_output=True, text=True)
+    binp = os.path.join(eng, "build", "credit_layout")
+    if b.returncode != 0 or not os.path.exists(binp):
+        return ("build failed",), ("built",), "engine/ must build"
+    tmp = tempfile.mkdtemp()
+    try:
+        out = os.path.join(tmp, "c.bin")
+        subprocess.run([binp, fr, out], capture_output=True, text=True)
+        raw = open(out, "rb").read()
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+    if len(raw) < 20:
+        return ("no output",), ("20 bytes",), "the probe must write its record"
+    blocks, withText, right, faces, bad = struct.unpack_from("<5i", raw, 0)
+    # THE TITLE CARD, which is why one block carries no text. `media.play 715`
+    # (`ZVO G001 TITRE`) is a kind-16 DOCUMENT: the handler builds
+    # `IMAGES\<stem>.BMP`, loads it, sets ACTOR_STATE 10 (`ImageScreen`) and
+    # plays NO audio, so the words are in the bitmap and the description is
+    # only its `{X}` placement. `IMAGES/ZVOG001.BMP` is 640x480 with the logo
+    # on black - 284581 of its 307200 pixels are the key.
+    b2 = subprocess.run(["make", "-s", "build/title_logo"], cwd=eng,
+                        capture_output=True, text=True)
+    lb = os.path.join(eng, "build", "title_logo")
+    logo = ("no probe",)
+    if b2.returncode == 0 and os.path.exists(lb):
+        t2 = tempfile.mkdtemp()
+        try:
+            o2 = os.path.join(t2, "l.rgb")
+            r = subprocess.run([lb, fr, o2], capture_output=True, text=True)
+            raw2 = open(o2, "rb").read() if os.path.exists(o2) else b""
+            black = sum(1 for i in range(0, len(raw2), 3) if raw2[i:i+3] == b"\0\0\0")
+            logo = ("image 1" in r.stdout, "ZVOG001" in r.stdout,
+                    "640x480" in r.stdout, black)
+        finally:
+            shutil.rmtree(t2, ignore_errors=True)
+    return (blocks, withText, right, faces, bad) + logo, \
+           (46, 45, 7, 45, 0, True, True, True, 284581), \
+           ("the twenty ZVO credit objects' `{X}` blocks; those carrying text (the "
+            "one that does not is 715, the TITRE card); those right-aligned by `{D}`; "
+            "those naming their own face; and any positioned off-screen; then the "
+            "TITLE CARD - that 715 resolves as a kind-16 DOCUMENT with stem ZVOG001, "
+            "that its bitmap is 640x480, and how many of its pixels are the black "
+            "colour key")
+
 def c_subtitle_box():
     r"""UI: the subtitle BOX and its two blends, read out of the renderer.
 
@@ -16827,7 +16911,7 @@ def c_licence_headers():
                    if TAG in open(p, encoding="utf-8",
                                   errors="replace").read(600)]
     return (authored, sorted(missing), len(vendored), mislabelled), \
-           (297, [], 1, []), \
+           (299, [], 1, []), \
            "authored source files under tools/, engine/src, engine/tools, " \
            "engine/backends and scripts/; those MISSING the SPDX tag; " \
            "vendored files in engine/third_party; and vendored files wrongly " \
@@ -18236,6 +18320,7 @@ SLOW = [
     ("engine: env anim", c_engine_env_anim, "todo/omk-play"),
     ("engine: tuto camera", c_engine_tuto_camera, "todo/omk-play"),
     ("subtitle box", c_subtitle_box, "docs/UI"),
+    ("credit layout", c_credit_layout, "docs/UI"),
     ("engine: impasse fx", c_engine_impasse_fx, "todo/omk-play"),
     ("sprite ids scene-local", c_sprite_ids_are_scene_local, "docs/ASSETS"),
     ("engine: scene sounds", c_engine_scene_sounds, "engine/README"),

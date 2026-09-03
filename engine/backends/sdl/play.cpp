@@ -267,6 +267,51 @@ void drawSubtitleBox(omk::Surface& fb, SubBox kind, int top, int dispW, int disp
     }
 }
 
+// POSITIONED TEXT - a string that carries `{X}` moves.
+//
+// `{X<xxx><yyy>}` is "move to (xxx, yyy) as percentages of the screen", and a
+// string may carry several: each opens a new block at its own spot, with the
+// `{f}` face and `{C}/{D}/{F}/{G}` alignment that follow it. That is the whole
+// of the Bowie title sequence's credits - `AREA 0` record 78 fires twenty
+// `media.play` calls and each object's `+280` description is a block like
+//
+//     {X090058}{f1}{D}Direction programmation
+//     {X080065}{f3}{D}Olivier NALLET
+//
+// so there is no credits system to write; the port simply threw the moves
+// away (`if (d == 'X' ...) { i += 7; continue; }`) and every credit landed at
+// the bottom like an ordinary subtitle. Lines inside one block stack by the
+// font's own height. -> true when the string was positioned and drawn here.
+bool drawPositioned(omk::Surface& fb, const omk::TextLayout& lay,
+                    const omk::ParsedText& pt, int dispW, int dispH) {
+    if (pt.moves.empty()) return false;
+    for (std::size_t m = 0; m < pt.moves.size(); ++m) {
+        const auto& mv = pt.moves[m];
+        const std::size_t from = mv.at;
+        const std::size_t to = m + 1 < pt.moves.size() ? pt.moves[m + 1].at : pt.run.size();
+        if (from >= to) continue;
+        // The block's own rows, split on the newlines the text carries.
+        std::vector<std::vector<omk::StyledChar>> rows(1);
+        for (std::size_t k = from; k < to; ++k) {
+            if (pt.run[k].ch == '\n') { rows.emplace_back(); continue; }
+            if (pt.run[k].ch == '\r') continue;
+            rows.back().push_back(pt.run[k]);
+        }
+        int y = dispH * mv.yPct / 100;
+        const int x = dispW * mv.xPct / 100;
+        for (auto& row : rows) {
+            if (row.empty()) { y += lay.height(row) + 2; continue; }
+            const int w = lay.measure(row);
+            int rx = x;
+            if (mv.align == omk::kAlignRight)       rx = x - w;
+            else if (mv.align == omk::kAlignCentre) rx = x - w / 2;
+            lay.drawRun(fb, rx, y, row);
+            y += lay.height(row) + 2;
+        }
+    }
+    return true;
+}
+
 void drawSubtitle(omk::Surface& fb, const omk::TextLayout& lay,
                   const std::string& line,
                   const std::vector<std::string>& menu, int selected,
@@ -950,7 +995,7 @@ int sceneViewer(const std::string& fr, const std::string& setName,
 #if defined(OMK_VULKAN)
     if (startVulkan) {
         if (SDL_Init(SDL_INIT_VIDEO) == 0) {
-            vkWin = SDL_CreateWindow("Omikron - scene viewer (vulkan)",
+            vkWin = SDL_CreateWindow("OMK Engine - scene viewer (vulkan)",
                                      SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
                                      640, 480, SDL_WINDOW_VULKAN);
         }
@@ -985,7 +1030,7 @@ int sceneViewer(const std::string& fr, const std::string& setName,
         }
     }
 #endif
-    if (!direct && !front.open(640, 480, "Omikron - scene viewer")) {
+    if (!direct && !front.open(640, 480, "OMK Engine - scene viewer (software)")) {
         std::fprintf(stderr, "SDL: %s\n", SDL_GetError()); return 1;
     }
     if (direct) ren = live;
@@ -1462,6 +1507,20 @@ int main(int argc, char** argv) {
     // player reads.
     std::string mediaText;
     long  mediaTextFrames = 0;
+    // THE MEDIA BITMAP - `media.play` on a kind-16 DOCUMENT.
+    //
+    // `if (rec[+2] == 16)` takes the other arm entirely: build
+    // `IMAGES\<stem>.BMP`, `I2D_LoadBitmap` it, put the player in ACTOR_STATE
+    // **10** (`ImageScreen`, "a full-screen bitmap holds it") and play NO
+    // audio. It stays up until the NEXT `media.play`, which frees it (step 7,
+    // `I2D_FreeBitmap` then ACTOR_STATE 1).
+    //
+    // That is the game's TITLE CARD: object 715 `ZVO G001 TITRE` is kind 16
+    // with stem `ZVOG001`, so its `+280` description is `{X030040}{f3}` and
+    // nothing else - the words are in `IMAGES/ZVOG001.BMP`, 640x480 with the
+    // logo on black. Nothing here drew it, which is why the Bowie opening
+    // came up without its title (`todo/omk-play.md` 59).
+    omk::Surface mediaBmp;
     float playerFeet = 0.0f;
     bool  playerFeetKnown = false;
     // The model-space x/z of the hierarchy root - the PELVIS - which is what
@@ -1560,7 +1619,7 @@ int main(int argc, char** argv) {
 #if defined(OMK_VULKAN)
     if (!forceSoftware) {
         if (SDL_Init(SDL_INIT_VIDEO) == 0) {
-            vkWin = SDL_CreateWindow("Omikron - the replica (vulkan)",
+            vkWin = SDL_CreateWindow("OMK Engine (vulkan)",
                                      SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
                                      dispW, dispH, SDL_WINDOW_VULKAN);
         }
@@ -1588,7 +1647,7 @@ int main(int argc, char** argv) {
         }
     }
 #endif
-    if (!vkRen && !front.open(dispW, dispH, "Omikron - the replica")) {
+    if (!vkRen && !front.open(dispW, dispH, "OMK Engine (software)")) {
         std::fprintf(stderr, "SDL: %s\n", SDL_GetError());
         return 1;
     }
@@ -2738,6 +2797,16 @@ int main(int argc, char** argv) {
             // still followed by the line the player reads. An IMAGE (kind
             // 16) takes the other arm and shows a bitmap instead, which this
             // file does not draw.
+            // A new media.play frees whatever bitmap was up, then this one
+            // either loads its own or speaks.
+            mediaBmp = omk::Surface{};
+            if (vo.image && !vo.stem.empty()) {
+                if (const auto bp = fs.resolve("IMAGES/" + vo.stem + ".BMP")) {
+                    mediaBmp = omk::surfaceFromBmp(omk::DataFs::readPath(*bp));
+                    std::printf("media.play %d is a DOCUMENT: IMAGES/%s.BMP %dx%d\n",
+                                mediaId, vo.stem.c_str(), mediaBmp.w, mediaBmp.h);
+                }
+            }
             const auto& objs = voiceLib.objects();
             if (!vo.image && mediaId >= 0 && static_cast<std::size_t>(mediaId) < objs.size()) {
                 std::string text = objs[static_cast<std::size_t>(mediaId)].description;
@@ -3968,6 +4037,33 @@ int main(int argc, char** argv) {
 
         // A `media.play` line, while `Subtitle_Show`'s timer runs: inset 16,
         // against the bottom, white. A conversation's own text takes over.
+        // The document bitmap sits over the frame until the next media.play
+        // replaces it. Black is the key - 284581 of `ZVOG001`'s 307200 pixels
+        // are it - so only the logo lands on the scene.
+        if (mediaBmp.w > 0 && mediaBmp.h > 0) {
+            // SCALED TO THE DISPLAY, like every other interface bitmap: the
+            // interface is authored at 640x480 and `ScreenDraw` maps it with
+            // `v * width / 640` and `v * height / 480`. Blitting 1:1 from the
+            // origin put the logo in the top-left corner at native size.
+            // Nearest-neighbour, because the port's rule for the 2D layer is
+            // an exact copy with no filtering (`ui/surface.h`).
+            for (int y = 0; y < fb.h; ++y) {
+                const int sy = y * mediaBmp.h / fb.h;
+                if (sy < 0 || sy >= mediaBmp.h) continue;
+                for (int x = 0; x < fb.w; ++x) {
+                    const int sx = x * mediaBmp.w / fb.w;
+                    if (sx < 0 || sx >= mediaBmp.w) continue;
+                    const std::uint16_t src =
+                        mediaBmp.px[static_cast<std::size_t>(sy) *
+                                    static_cast<std::size_t>(mediaBmp.w) +
+                                    static_cast<std::size_t>(sx)];
+                    if (!src) continue;                       // the colour key
+                    fb.px[static_cast<std::size_t>(y) *
+                          static_cast<std::size_t>(fb.w) +
+                          static_cast<std::size_t>(x)] = src;
+                }
+            }
+        }
         if (!session.dialogOpen() && !walk && mediaTextFrames > 0) {
             // A DIFFERENT FACE, and it is the engine's choice. The
             // dialogue's params are TEXTP_FLAG_A alone, so its font stays the
@@ -3976,8 +4072,12 @@ int main(int argc, char** argv) {
             // TEXTP_SLOT2 writes `dword_907A10 = params[2]` - the font global
             // whose default is that 74. So the adventure-mode interaction
             // line, the one that always comes with a sound, is face 86 = 'V'.
-            drawSubtitle(fb, lay, mediaText, {}, -1, dispW, dispH, 16,
-                         SubBox::None, 'V');
+            // A credit block positions itself; anything else is the
+            // ordinary bottom-anchored subtitle.
+            const auto ptMedia = omk::parseMarkup(mediaText, 'V');
+            if (!drawPositioned(fb, lay, ptMedia, dispW, dispH))
+                drawSubtitle(fb, lay, mediaText, {}, -1, dispW, dispH, 16,
+                             SubBox::None, 'V');
             --mediaTextFrames;
         }
         // The subtitle goes over whatever the frame already holds - which

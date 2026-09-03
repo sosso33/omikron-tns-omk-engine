@@ -283,6 +283,56 @@ function in the game.
 **The class** — every scripted object motion in every scene: doors, lifts,
 crates, vehicles.
 
+## Fixed (batch 12, 2026-09-03)
+
+### 59. The credits were not positioned and the title card was not drawn at all — A
+
+> **Fixed 2026-09-03, CONFIRMED IN PLAY.** `{X}` moves are recorded and
+> honoured, and a kind-16 DOCUMENT's bitmap is loaded and composited.
+> `verify.py: credit layout` asserts both.
+
+Filed 2026-09-03 from a play report — *the intro in Anekbah with the Bowie
+music ... credits on it, placed in different places of the screen, it is a
+specific case, maybe with some dedicated code*.
+
+**There is no dedicated code.** `AREA 0` record 78 - the 145.7 s title
+sequence, one of the 106 world-camera scripts - is a plain camera script that
+fires twenty `media.play` calls, and each object's `+280` description is a
+credit block::
+
+    716  {X010030}{f1}Ecrit et realise par
+         {X020035}{f3}David CAGE
+    719  {X090058}{f1}{D}Direction programmation
+         {X080065}{f3}{D}Olivier NALLET
+
+`{X<xxx><yyy>}` is "move to (xxx, yyy) as PERCENTAGES of the screen"
+(docs/UI.md 5), `{f1}`/`{f3}` are GENERIC1 and GENERIC3, and `{D}` right-aligns
+- which is why the right-hand blocks are at 90% across. **The port parsed
+`{X}` and threw it away** (`if (d == 'X' ...) { i += 7; continue; }`), so every
+credit fell to the bottom like an ordinary subtitle. 46 blocks, 45 carrying
+text, 7 right-aligned, 45 naming their own face, 0 off-screen.
+
+**And the title card is a BITMAP.** The one block with no text is object 715,
+`ZVO G001 TITRE`, `{X030040}{f3}` and nothing else - because `media.play` on a
+**kind-16 DOCUMENT** takes the other arm entirely: build `IMAGES\<stem>.BMP`,
+load it, put the player in ACTOR_STATE **10** (`ImageScreen`, "a full-screen
+bitmap holds it") and play NO audio. Stem `ZVOG001` -> `IMAGES/ZVOG001.BMP`,
+640x480, the logo on black, **284581 of its 307200 pixels the colour key**.
+The port's own comment said it did not draw this. It now composites the held
+bitmap each frame until the next `media.play` frees it (the engine's step 7,
+`I2D_FreeBitmap` then ACTOR_STATE 1), SCALED to the display the way every
+other interface bitmap is - `v * width / 640`, `v * height / 480` - since
+blitting 1:1 from the origin left it in the top-left corner at native size.
+
+**A near-miss worth keeping.** `grep` finds no credit name anywhere in the
+tree, which looks like proof the text is absent - but `grep` cannot find
+"Confirmer" in `IAM/` either, so the method was invalid and the negative
+worthless. The text was there all along, behind the object reader. Also ruled
+out by DECODING A FRAME and looking at it: `FLIS/GAME.MPG` at 60 s is the club
+cinematic, so the sequence is not pre-rendered video.
+
+**Severity A** - the game's own title sequence.
+
 ## Fixed (batch 11, 2026-09-03)
 
 ### 58. The subtitle UI: boxes, blends, fonts, alignment, anchor, wrapping, scroll — A

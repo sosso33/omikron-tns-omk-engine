@@ -74,11 +74,27 @@ ParsedText parseMarkup(const std::string& text, char face,
                     i += 10;
                     continue;
                 }
-                if (d == 'X' && digits(text, i + 1, 6)) { i += 7; continue; }
-                if (d == 'G') { out.align = kAlignLeft;    ++i; continue; }
-                if (d == 'D') { out.align = kAlignRight;   ++i; continue; }
-                if (d == 'C') { out.align = kAlignCentre;  ++i; continue; }
-                if (d == 'F') { out.align = kAlignJustify; ++i; continue; }
+                if (d == 'X' && digits(text, i + 1, 6)) {
+                    // RECORDED, not skipped. Three digits of x then three of
+                    // y, each a percentage of the screen.
+                    ParsedText::Move mv;
+                    mv.at   = out.run.size();
+                    mv.xPct = num(text, i + 1, 3);
+                    mv.yPct = num(text, i + 4, 3);
+                    out.moves.push_back(mv);
+                    i += 7;
+                    continue;
+                }
+                // An alignment applies to the block the last move opened, and
+                // arrives in a LATER brace than the move itself.
+                const auto setAlign = [&](int a) {
+                    out.align = a;
+                    if (!out.moves.empty()) out.moves.back().align = a;
+                };
+                if (d == 'G') { setAlign(kAlignLeft);    ++i; continue; }
+                if (d == 'D') { setAlign(kAlignRight);   ++i; continue; }
+                if (d == 'C') { setAlign(kAlignCentre);  ++i; continue; }
+                if (d == 'F') { setAlign(kAlignJustify); ++i; continue; }
                 if (d == 'H' || d == 'L' || d == 'M' || d == 'B' || d == 'g') {
                     ++i; continue;
                 }
