@@ -4080,6 +4080,16 @@ def c_engine_road_traffic():
     populations hold overlapping groups nine times as often (Anekbah 50 ->
     469 frames), which in play is a slider driving through a crossing.
 
+    THE NOSE, which no still frame can settle. Both models are elongated
+    along their OWN Z - a slider 1.94 to 1, a moto 2.38 - and
+    `omk::rotateYaw(facing, ...)` sends model -Z to the heading
+    (`pedHeadingOf`: facing 0 looks down -Z), so a vehicle's long axis
+    follows its travel. Measured over the sub-object ambient traffic draws;
+    the whole file gives 0.65 for a slider, because `sub_453A70`'s four
+    sub-objects sit about 200 units apart in x. Confirmed by eye the same
+    day: `omk-play --stand 5620,0,-2400,270` puts a moto and its rider
+    across the street with the nose leading, and a hover taxi beside it.
+
     NOT ported, and so not checked: the player's ride - `Slider_TickRide`
     (0x00458150) and states 1..7 of `sub_456530`. Nor is what a vehicle
     DRAWS: `sub_4544B0` hands ambient traffic sub-object 0 of the model and
@@ -4127,9 +4137,10 @@ def c_engine_road_traffic():
         L = {}
         for ln in r.stdout.splitlines():
             f = ln.split()
-            if f and f[0] in ("masks", "spawn", "run", "groups", "crowd"):
+            if f and f[0] in ("masks", "spawn", "run", "groups", "crowd", "nose"):
                 L[f[0]] = dict(zip(f[1::2], f[2::2]))
         m, sp, run, gr = L.get("masks", {}), L.get("spawn", {}), L.get("run", {}), L.get("groups", {})
+        nose = L.get("nose", {})
         capped, uncapped = count(t, True), count(t, False)
         veh = int(sp.get("placed", -1))
         got.append((stem,
@@ -4145,13 +4156,24 @@ def c_engine_road_traffic():
                     # the walkers must be exactly where they were, and the
                     # cross-class wait must be positive wherever groups are shared
                     int(gr.get("veh_waited_on_ped", -1)) > 0 if int(gr.get("shared", 0)) else
-                    int(gr.get("veh_waited_on_ped", -1)) == 0))
+                    int(gr.get("veh_waited_on_ped", -1)) == 0,
+                    # THE NOSE: both models are longer along their own Z than
+                    # wide across it, and `rotateYaw` sends model -Z to the
+                    # heading, so a vehicle's long axis follows its travel.
+                    # A slider measures 1.94 and a moto 2.38, over the
+                    # SUB-OBJECT traffic draws - the whole file gives 0.65,
+                    # because the four sub-objects sit 200 units apart in x.
+                    round(float(nose.get("worst_slider", 0)), 2) if veh and stem != "qchaud" else None,
+                    round(float(nose.get("worst_moto", 0)), 2) if veh else None))
         want.append((stem, shipped[stem][0], shipped[stem][1], shipped[stem][2],
                      uncapped, uncapped, capped, capped,
-                     True, True, True, True, True, 0, True))
+                     True, True, True, True, True, 0, True,
+                     1.94 if shipped[stem][2] and stem != "qchaud" else None,
+                     2.38 if shipped[stem][2] else None))
     return tuple(got), tuple(want), ("stem, sli/moto mask, vehicle lanes, uncapped rule (py/port), "
                                      "capped (rule/placed), qalisar all motos, live=moved, on-network, "
-                                     "lag<500, lane changes, nan, a vehicle waited on a walker")
+                                     "lag<500, lane changes, nan, a vehicle waited on a walker, "
+                                     "the models' nose ratio (slider 1.94, moto 2.38)")
 
 
 def c_engine_street_frame():
@@ -4200,6 +4222,76 @@ def c_engine_street_frame():
            "pedestrians -" in outs[1], differ > 500, "120 frames presented" in outs[0])
     want = (True, True, 200, True, False, True, True)
     return got, want, "adventure reached with and without the crowd; 200 live, some drawn; no pool line without it; the two frames differ (%d pixels)" % differ
+
+
+
+def c_engine_traffic_frame():
+    r"""`omk-play` DRAWS the road traffic (docs/STREET_LIFE.md 2b, step 3).
+
+    The same shape as `engine: street frame`, one street along: a street
+    start beside Anekbah's lane 218 looking across it, rendered headless
+    twice - once as it ships and once with `--no-crowd`, which loads no
+    circuit at all and so has no traffic either. The traffic run reports the
+    pool live and vehicles drawn within the engine's VEHICLE last-LOD
+    distance (`dword_4C8860[3]`, 1968.5 - the crowd's is 1574.8), the
+    crowd-off run reports no traffic line, and the two frames differ.
+
+    WHAT THE EYE SETTLED, 2026-09-04, and this cannot: at
+    `--stand 5620,0,-2400,270` a moto crosses the shot with its rider leaning
+    on the handlebars, nose leading and the red tail light behind, and at
+    `--stand 5980,0,-3200,270` a hover taxi passes with its canopy - both
+    sitting on the road rather than in it. What a number holds instead is the
+    NOSE ratio in `engine: road traffic`.
+
+    THE FAULT IT WAS WRITTEN FOR, and it is worth keeping the reason: the
+    viewer evicts from `charModels` every frame any model no STAGED ACTOR
+    wears, so the 64 slots a bucket key addresses are not spent on the last
+    area's cast. The circuit's own bodies are not staged actors. The crowd
+    never showed it because a city's authored extras wear the same PERSOS
+    models and kept them resident by accident; `sli_fn` and `moto` are worn
+    by nothing else, so the traffic staged itself for two frames and then
+    vanished while `VehStaged::mo` went on pointing at a freed map node.
+    Shown to fail by dropping the circuit from that eviction's `used` test:
+    `drawn` falls to 0 from frame 2 and the two frames stop differing.
+    """
+    eng = os.path.join(ROOT, "engine")
+    if not os.path.isdir(eng):
+        return ("skipped",), ("skipped",), "engine/ absent"
+    mk = subprocess.run(["make", "-s", "play"], cwd=eng, capture_output=True, text=True)
+    play = os.path.join(eng, "build", "omk-play")
+    if mk.returncode != 0 or not os.path.exists(play):
+        return ("skipped",), ("skipped",), "no SDL - the frontend is optional (PORTING A8)"
+    save = os.path.join(ROOT, "traces", "save-appart.bin")
+    env = dict(os.environ, SDL_VIDEODRIVER="dummy")
+    outs, dumps = [], []
+    for k, extra in enumerate(([], ["--no-crowd"])):
+        dump = os.path.join(eng, "build", "traffic-%d.bin" % k)
+        r = subprocess.run([play, omkpaths.data_root(), os.path.join(ROOT, "tables"), "--save", save,
+                            "--area", "0", "--stand", "5620,0,-2400,270",
+                            "--frames", "700", "--software", "--res", "640x480", "--nofmv",
+                            "--dump", dump] + extra, capture_output=True, text=True, env=env)
+        outs.append(r.stdout)
+        dumps.append(open(dump, "rb").read() if os.path.exists(dump) else b"")
+    # EVERY report, not just the first: the fault this was written for stages
+    # the traffic on frame 0 and loses it from frame 2, so a check that reads
+    # one line at the start cannot see it. The pool prints every 300 frames,
+    # and all three reports must have vehicles drawn.
+    live, reports = -1, []
+    for ln in outs[0].splitlines():
+        if "traffic -" in ln:
+            f = ln.split()
+            live = int(f[f.index("live,") - 1])
+            reports.append(int(f[f.index("drawn") - 1]))
+    drawn = min(reports) if reports else -1
+    differ = 0
+    if len(dumps[0]) == len(dumps[1]) and dumps[0]:
+        differ = sum(1 for i in range(0, len(dumps[0]), 2) if dumps[0][i:i+2] != dumps[1][i:i+2])
+    got = ("ADVENTURE MODE" in outs[0], live, len(reports) == 3, drawn >= 1,
+           "traffic -" in outs[1], differ > 3000)
+    want = (True, 40, True, True, False, True)
+    return got, want, ("adventure reached; 40 vehicles live; three reports, the LEANEST drawing %d; "
+                       "no traffic line without the circuit; the two frames differ (%d pixels)"
+                       % (drawn, differ))
 
 
 def c_engine_crowd_push():
@@ -18903,6 +18995,7 @@ SLOW = [
     ("engine: pedestrians", c_engine_pedestrians, "STREET_LIFE 2; actor/pedestrians.h"),
     ("engine: road traffic", c_engine_road_traffic, "STREET_LIFE 2b; actor/vehicles.cpp"),
     ("engine: street frame", c_engine_street_frame, "STREET_LIFE; todo/street-life 4"),
+    ("engine: traffic frame", c_engine_traffic_frame, "STREET_LIFE 2b; todo/road-traffic 3"),
     ("engine: crowd push", c_engine_crowd_push, "STREET_LIFE 3; actor/spatial.h"),
     ("engine: head look", c_engine_head_look, "STREET_LIFE; actor/pose.h"),
     ("engine: zone pump",  c_engine_zone_pump,  "engine/README"),

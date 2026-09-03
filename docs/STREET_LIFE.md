@@ -13,7 +13,7 @@ found. In order of what a player sees:
 | **A. the procedural pedestrians** — the `.OPT` "trajectoires" | anonymous walkers spawned along authored lanes, density from the options menu | **ported and drawn** (`engine: pedestrians`, `engine: street frame`); to be watched in play |
 | **B. the authored extras** — scene programs on placed characters | couples kissing, beggars, sport, patrolling Mecaguards, walking pairs; one looping `.SCX` program each | ported and running in every city **except Anekbah** (one operand misread) |
 | **C. the crowd push** — the spatial index | the player is shoved by nearby bodies | **ported** (`engine: crowd push`), with the bump and talk messages |
-| **A2. the road traffic** — the `.OPT` vehicle lanes | the hover-taxis (`sli_fn`) and the motos, spawned on the same circuit and driven by the same mover step | **ported** 2026-09-04 (`engine: road traffic`); to be watched in play |
+| **A2. the road traffic** — the `.OPT` vehicle lanes | the hover-taxis (`sli_fn`) and the motos, spawned on the same circuit and driven by the same mover step | **ported and drawn** 2026-09-04 (`engine: road traffic`, `engine: traffic frame`); seen crossing a street |
 
 Talking to a passer-by is neither: for the authored extras it is an
 ordinary zone-activate script (`var.set.random` on "n° VO passant", then one
@@ -527,6 +527,35 @@ Ambient is three calls — `sub_456C70`, the spatial-index update, `sub_456B40`:
   all three fall to 0 while the frames in which they hold overlapping groups
   rise from 50 to 469 — a slider driving through a crossing.
 
+### The viewer (step 3) — and what a person then saw
+
+`omk-play` stages every vehicle of the pool beside the walkers, and it is a
+far simpler body: no clip and no skeleton, so the chosen sub-object is
+composed once at rest, re-centred on its own root (the four sit ~200 units
+apart in model space) and only turned and translated per frame — to
+`(x, y - 30.75, z)`, `sub_437F80`'s own placement, and to the heading
+`sub_453330` built from the direction to its mover. The vehicle LOD reach is
+`dword_4C8860[3]` = 1968.5, so a slider is still drawn well past the last
+walker.
+
+**Watched 2026-09-04**, which is the point of drawing it:
+`omk-play --save traces/save-appart.bin --area 0 --stand 5620,0,-2400,270`
+puts a **moto** across the street — a blue hoverbike with its rider leaning
+onto the handlebars, nose leading, the red tail light behind — and
+`--stand 5980,0,-3200,270` a **hover taxi** with its canopy, both riding
+above the road rather than sunk into it. `verify.py: engine: traffic frame`.
+
+**And the drawing found a bug that was latent for the CROWD.** The viewer
+evicts from `charModels`, every frame, any model no *staged actor* wears, so
+the 64 slots a bucket key addresses are not spent on the last area's cast.
+The circuit's own bodies are not staged actors. The crowd never showed it:
+a city's authored extras wear the same `PERSOS` models and kept them
+resident by accident. `sli_fn` and `moto` are worn by nothing else, so the
+traffic staged itself for two frames and then vanished while its cached
+`CharModel*` went on pointing at a freed map node — `ready` reading false,
+which is why it disappeared rather than crashed. Fixed by adding the
+circuit's walkers and vehicles to that test.
+
 ### Still open
 
 * **Which sub-object an ambient vehicle draws.** `sub_4544B0` hands traffic
@@ -540,10 +569,15 @@ Ambient is three calls — `sub_456C70`, the spatial-index update, `sub_456B40`:
   `dword_8F5E44` hand-over that preserves his slider across an area load.
   A ride record in state 1..7 is left alone by the port rather than driven
   wrongly.
-* **Nothing here has been watched.** The traffic is not drawn yet — that is
-  the viewer's step, and until then the pace, the spacing, the turns and
-  whether a street reads as a street are exactly the class §1 of CLAUDE.md
-  calls "verified standing still is not verified moving".
+* **What one person has now seen, and what is still unwatched.** A moto and
+  a hover taxi were watched crossing a street on 2026-09-04, which settles
+  that they draw, sit on the road and lead with the nose — the last of those
+  also held by a number, the models' 1.94 and 2.38 elongation along their
+  own Z. What no still frame settles and nobody has watched in motion: the
+  PACE against the original, the spacing down a lane, a vehicle taking a
+  corner, one braking for the player, and whether a road full of them reads
+  as traffic. That is exactly the class §1 of CLAUDE.md calls "verified
+  standing still is not verified moving".
 
 ## 3. Mechanism C — the crowd push (the spatial index)
 
@@ -606,6 +640,6 @@ the reservation groups the vehicles now share with it.)
 | `character.look_at_player` head aim | `Session::looksAtPlayer`, `aimHead` (pose.h), the viewer | ported (`engine: head look`); to be watched |
 | the `.OPT` pedestrians and the density option | `formats/opt.*`, `actor/pedestrians.*`, `Session::loadTraffic` | ported and run headless; drawing is step 4 |
 | the crowd push | `actor/spatial.*`, `Session::crowdPush` | ported; the bump and talk messages post |
-| the road traffic (§2b) | `actor/vehicles.cpp`, the vehicle masks in `Session::loadTrafficFor` | ported and run headless (`engine: road traffic`); NOT drawn, and not watched |
+| the road traffic (§2b) | `actor/vehicles.cpp`, the vehicle masks in `Session::loadTrafficFor`, staged by `omk-play` | ported, drawn and seen (`engine: road traffic`, `engine: traffic frame`); the pace and the corners still unwatched |
 | the player riding a slider | - | not ported: `Slider_TickRide`, `ACTOR_STATE` 7/8, `sub_456530` states 1..7 |
 | a way to stand in a street without replaying the intro | `omk-play` | nothing |

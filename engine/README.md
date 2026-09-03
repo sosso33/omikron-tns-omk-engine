@@ -1674,8 +1674,18 @@ brake for a player in the road, message 17 above 1706.6666) and
 `sub_456B40`'s 585-unit sound. It shares the walkers' 240-slot pool, which
 is not tidiness: 70 of Anekbah's reservation groups are reachable from both
 classes and a vehicle waits on a walker 2197 times in 1800 frames.
-`engine: road traffic`, `engine/tools/veh_probe`. **NOT DRAWN yet** —
-`omk-play` stages the walkers and not the vehicles — and so not watched.
+`engine: road traffic`, `engine/tools/veh_probe`. **DRAWN and WATCHED** the
+same day: `omk-play` stages a vehicle as the rigid body it is — the chosen
+sub-object composed once, re-centred on its own root, turned to its heading
+and put at `sub_437F80`'s `y - 30.75` — and
+`--stand 5620,0,-2400,270` shows a moto with its rider crossing the street
+and `--stand 5980,0,-3200,270` a hover taxi, both riding above the road
+(`engine: traffic frame`). Still unwatched: the pace, the spacing, a corner,
+a brake. Drawing it also found a LATENT CROWD BUG in `play.cpp` — the
+per-frame `charModels` eviction keeps only models a staged actor wears, and
+the circuit's own bodies are not staged actors, so their cached
+`CharModel*` pointed at a freed node; the crowd was masked only because a
+city's authored extras happen to wear the same models. Fixed for both.
 Not ported: the player's RIDE (`Slider_TickRide`, `ACTOR_STATE` 7/8,
 `sub_456530` states 1..7), the engine's LOD selection for an actor's four
 skeletons (the viewer draws the first), the bump's `camera.shake`.

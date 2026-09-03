@@ -26,6 +26,9 @@
 #include "formats/iam.h"
 #include "formats/opt.h"
 #include "formats/mesh3do.h"
+#include "o3de/geom3do.h"
+#include "actor/player.h"
+#include <map>
 #include "platform/datafs.h"
 
 #include <algorithm>
@@ -199,6 +202,72 @@ int main(int argc, char** argv) {
     }
     if (hasPlayer) pool.setPlayer(player, true);
 
+    // THE NOSE. A still frame cannot settle whether a vehicle faces where it
+    // is going, but the models are elongated - a slider is about twice as
+    // long as it is wide - so the placed body's extent ALONG its heading
+    // against the extent ACROSS can. Built here from the model's own
+    // geometry, turned by each vehicle's heading exactly as the viewer turns
+    // it (`omk::rotateYaw(facing, ...)`), so a render that put the model
+    // sideways would score below 1.
+    // ...and only over the SUB-OBJECT ambient traffic draws. A model holds up
+    // to four of them (`sub_453A70`) laid out ~200 units apart in x, so
+    // measuring the whole file makes a slider look wider than it is long -
+    // 0.65 where the drawn body is 1.94.
+    std::map<std::string, std::vector<std::array<float, 3>>> vertsOf;
+    for (const std::string& name : {std::string("sli_fn"), std::string("moto")}) {
+        const auto d = fs.read("MESHES/PERSOS/" + name + ".3DO");
+        const auto g = omk::buildGeometry(d, omk::DrawFilter::Engine);
+        const auto hh = omk::readHeader(d);
+        if (!hh) continue;
+        const auto meshes = omk::readMeshes(d, *hh);
+        // the heaviest root, which is `sub_453A70`'s sub-object 0
+        int best = -1;
+        std::size_t bestW = 0;
+        auto rootOf = [&](int m) {
+            for (int guard = 0; guard < 64 && m >= 0; ++guard) {
+                int next = -1;
+                for (std::size_t k = 0; k < meshes.size(); ++k)
+                    if (meshes[k].id == meshes[static_cast<std::size_t>(m)].parent) { next = static_cast<int>(k); break; }
+                if (next < 0) return m;
+                m = next;
+            }
+            return m;
+        };
+        for (std::size_t i = 0; i < meshes.size(); ++i) {
+            if (rootOf(static_cast<int>(i)) != static_cast<int>(i)) continue;
+            std::size_t w = 0;
+            for (std::size_t j = 0; j < meshes.size(); ++j)
+                if (rootOf(static_cast<int>(j)) == static_cast<int>(i))
+                    w += static_cast<std::size_t>(meshes[j].vertices) +
+                         static_cast<std::size_t>(meshes[j].triangles) +
+                         static_cast<std::size_t>(meshes[j].quads);
+            if (w > bestW) { bestW = w; best = static_cast<int>(i); }
+        }
+        auto& v = vertsOf[name];
+        for (std::size_t c = 0; c < g.corners.size(); ++c) {
+            const auto mi = c < g.cornerMesh.size() ? g.cornerMesh[c] : -1;
+            if (mi < 0 || rootOf(mi) != best) continue;
+            v.push_back({g.corners[c].x, g.corners[c].y, g.corners[c].z});
+        }
+    }
+    // The model's OWN axes are what settle it, and the ratio is therefore one
+    // number per model rather than one per vehicle: `omk::rotateYaw(facing,
+    // ...)` sends model -Z to the heading (`pedHeadingOf`: facing 0 looks
+    // down -Z), so a model elongated along its own Z is a vehicle whose long
+    // axis follows its travel. Rotating the corners first and taking an
+    // axis-aligned box does NOT measure this - at an oblique heading the box
+    // mixes the two spans, which is what made a first version of this report
+    // 0.65 for a slider that draws correctly.
+    auto noseRatio = [&](const std::string& model) -> float {
+        const auto it = vertsOf.find(model);
+        if (it == vertsOf.end() || it->second.empty()) return 0.0f;
+        float lo[3] = {1e30f, 1e30f, 1e30f}, hi[3] = {-1e30f, -1e30f, -1e30f};
+        for (const auto& c : it->second)
+            for (int k = 0; k < 3; ++k) { if (c[k] < lo[k]) lo[k] = c[k]; if (c[k] > hi[k]) hi[k] = c[k]; }
+        const float along = hi[2] - lo[2], across = hi[0] - lo[0];
+        return across > 0.0f ? along / across : 0.0f;
+    };
+
     int sliders = 0, motos = 0;
     for (const auto& v : pool.vehicles()) if (v.live) (v.kind == 1 ? sliders : motos)++;
     // which vehicle lanes actually carry traffic: the walk stops the moment
@@ -313,6 +382,22 @@ int main(int argc, char** argv) {
     // engine's rule is asymmetric (entering tests `busy[g]` and marks
     // `list(g)`), so two movers whose lists merely intersect can legitimately
     // hold at once. What proves the sharing is the CROSS-CLASS WAIT.
+    {
+        float worstSli = 1e30f, worstMoto = 1e30f;
+        int measured = 0;
+        for (const auto& v : pool.vehicles()) {
+            if (!v.live || v.mover < 0) continue;
+            const auto& m = pool.walkers()[static_cast<std::size_t>(v.mover)];
+            (void)m;
+            const float rr = noseRatio(v.model);
+            if (rr <= 0.0f) continue;
+            ++measured;
+            if (v.kind == 1) worstSli = std::min(worstSli, rr);
+            else             worstMoto = std::min(worstMoto, rr);
+        }
+        std::printf("nose measured %d worst_slider %.2f worst_moto %.2f\n", measured,
+                    worstSli > 1e29f ? 0.0f : worstSli, worstMoto > 1e29f ? 0.0f : worstMoto);
+    }
     std::printf("groups shared %d ped_holds %d veh_holds %d both_holding_frames %d overlaps %d "
                 "veh_waited_on_ped %d ped_waited_on_veh %d\n",
                 sharedGroups(track), pedHeld, vehHeld, sharedFrames, conflicts,

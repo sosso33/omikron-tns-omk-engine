@@ -2156,6 +2156,56 @@ int main(int argc, char** argv) {
         }
         return per.emplace(rootMesh, std::move(g)).first->second;
     };
+    // THE ROAD TRAFFIC (docs/STREET_LIFE.md 2b, actor/vehicles.cpp). A vehicle
+    // is far simpler to stage than a walker: it has no clip and no skeleton -
+    // `sub_456C70` moves a POINT and `sub_437F80` puts the instance on it - so
+    // the geometry is composed once at rest and only transformed per frame.
+    struct VehStaged {
+        CharModel* mo = nullptr;
+        omk::Geometry atRest;      // the chosen sub-object, composed, in model space
+        omk::Geometry posed;       // ...that, placed in the world this frame
+        int   lodRoot = -1;
+        float origin[3] = {0, 0, 0};
+        bool  built = false;
+        bool  drawn = false;
+    };
+    std::vector<std::unique_ptr<VehStaged>> vehStaged;
+    int vehDrawn = 0, vehLive = 0, vehStopped = 0;
+    long vehTold = -1;
+    // `sub_453A70`: the model's root sub-objects sorted by vertex+face count
+    // DESCENDING - the LOD ladder. Sub-object 0 is what `sub_4544B0` hands
+    // ambient traffic (`v16[1]`); the reserved slider takes sub-object 1
+    // (`v16[2]`), which is read from the call sites, NOT judged by eye, and
+    // not drawn here because the player's ride is not ported.
+    const auto heaviestRootOf = [](const CharModel& mo) -> int {
+        int best = mo.root;
+        std::size_t bestWeight = 0;
+        for (std::size_t i = 0; i < mo.meshes.size(); ++i) {
+            bool hasParent = false;
+            for (const auto& q : mo.meshes) if (q.id == mo.meshes[i].parent) { hasParent = true; break; }
+            if (hasParent) continue;
+            // the subtree's weight, the counts `sub_453A70` adds (+44 and +48)
+            std::size_t w = 0;
+            for (std::size_t j = 0; j < mo.meshes.size(); ++j) {
+                int m = static_cast<int>(j);
+                for (int guard = 0; guard < 64 && m >= 0; ++guard) {
+                    if (static_cast<std::size_t>(m) == i) {
+                        w += static_cast<std::size_t>(mo.meshes[j].vertices) +
+                             static_cast<std::size_t>(mo.meshes[j].triangles) +
+                             static_cast<std::size_t>(mo.meshes[j].quads);
+                        break;
+                    }
+                    const std::int32_t pid = mo.meshes[static_cast<std::size_t>(m)].parent;
+                    int next = -1;
+                    for (std::size_t k = 0; k < mo.meshes.size(); ++k)
+                        if (mo.meshes[k].id == pid) { next = static_cast<int>(k); break; }
+                    m = next;
+                }
+            }
+            if (w > bestWeight) { bestWeight = w; best = static_cast<int>(i); }
+        }
+        return best;
+    };
     std::map<std::pair<int, int>, omk::NodeTracks> pedTracks;   // (sex, clip slot) -> its tracks
     std::vector<std::byte> pedAni;
     std::string pedAniName;
@@ -3759,6 +3809,24 @@ int main(int argc, char** argv) {
                 bool used = (it->first == playerModel && playerReady) ||
                             it->first == speakerModel;
                 for (const auto& up : staged) if (up->model == it->first) used = true;
+                // ...AND the models the traffic circuit's own bodies wear.
+                // The crowd's walkers and the road traffic's two vehicles are
+                // not `staged` actors, so this loop was erasing their models
+                // every frame while `PedStaged::mo` and `VehStaged::mo` went
+                // on pointing at the freed node. The crowd never showed it
+                // because a city's authored extras wear the SAME PERSOS
+                // models and kept them resident by accident; `sli_fn` and
+                // `moto` are worn by nothing else, so the traffic staged
+                // itself once and then vanished - which is how this was
+                // found (2026-09-04).
+                if (!used) {
+                    const auto& circuit = session.pedestrians();
+                    for (const auto& w : circuit.walkers())
+                        if (w.live && w.model == it->first) { used = true; break; }
+                    if (!used)
+                        for (const auto& v : circuit.vehicles())
+                            if (v.live && v.model == it->first) { used = true; break; }
+                }
                 if (used) { ++it; continue; }
                 it = charModels.erase(it);
                 ++poolComposition;
@@ -4620,6 +4688,7 @@ int main(int argc, char** argv) {
             }
             // ---- THE PEDESTRIANS ---------------------------------------
             pedDrawn = pedLive = pedInAction = pedIdle = 0;
+            vehDrawn = vehLive = vehStopped = 0;
             {
                 const auto& pd = session.pedestrians();
                 const auto& rs = session.residentSlot(session.activeSlot());
@@ -4702,6 +4771,67 @@ int main(int argc, char** argv) {
                     std::printf("frame %ld: pedestrians - %d live, %d drawn within %.0f of the eye, "
                                 "%d at an action point, %d idling\n", n, pedLive, pedDrawn, reach,
                                 pedInAction, pedIdle);
+                }
+                // ...and the ROAD TRAFFIC on the same circuit's vehicle lanes.
+                const auto& vs = pd.vehicles();
+                if (vehStaged.size() != vs.size()) {
+                    vehStaged.clear();
+                    for (std::size_t i = 0; i < vs.size(); ++i) vehStaged.push_back(std::make_unique<VehStaged>());
+                }
+                // `dword_4C8860`, the VEHICLE LOD distances - 20/30/40/50 m
+                // where the crowd's are 10/20/30/40, so a slider is still
+                // drawn a good way past the last walker.
+                const float vreach = omk::kVehLodDistances[3];
+                for (std::size_t i = 0; i < vs.size(); ++i) {
+                    const auto& v = vs[i];
+                    VehStaged& sv = *vehStaged[i];
+                    sv.drawn = false;
+                    if (!v.live || v.mover < 0) continue;
+                    const auto& m = pd.walkers()[static_cast<std::size_t>(v.mover)];
+                    ++vehLive;
+                    if (m.flags & 0x100u) ++vehStopped;
+                    const float vx = m.body[0] - view.cam.eye[0], vy = m.body[1] - view.cam.eye[1],
+                                vz = m.body[2] - view.cam.eye[2];
+                    if (vx * vx + vy * vy + vz * vz > vreach * vreach) continue;
+                    if (!sv.mo) sv.mo = charModelFor(v.model);
+                    if (!sv.mo || !sv.mo->ready) continue;
+                    if (!sv.built) {
+                        sv.lodRoot = v.lodBase == 0 ? heaviestRootOf(*sv.mo) : sv.mo->root;
+                        const omk::Geometry& rest = lodRestFor(v.model, *sv.mo, sv.lodRoot);
+                        const auto pose = omk::composePose(sv.mo->meshes, omk::NodeTracks{}, 0, false);
+                        omk::applyPose(sv.atRest, rest, sv.mo->meshes, pose);
+                        // The sub-objects of one model are laid out APART in
+                        // model space - SLI_FN's four roots sit at x 351..550 -
+                        // so each is re-centred on its own root, which is what
+                        // makes the four LOD variants land in one place. The
+                        // walkers do the same for x and z; a vehicle takes y
+                        // too, because it has no feet rule to stand on.
+                        if (sv.lodRoot >= 0 && static_cast<std::size_t>(sv.lodRoot) < sv.mo->meshes.size())
+                            for (int k = 0; k < 3; ++k)
+                                sv.origin[k] = sv.mo->meshes[static_cast<std::size_t>(sv.lodRoot)].pos[k];
+                        sv.built = true;
+                    }
+                    sv.posed = sv.atRest;
+                    // `sub_437F80(inst, x, y - 30.75, z)`: the instance sits
+                    // 30.75 units ABOVE the body point (y is down), turned to
+                    // the heading `sub_453330` built from the direction to its
+                    // mover - which for a vehicle is where it is going.
+                    for (auto& c : sv.posed.corners) {
+                        const float in[3] = {c.x - sv.origin[0], c.y - sv.origin[1], c.z - sv.origin[2]};
+                        float r[3];
+                        omk::rotateYaw(m.facing, in, r);
+                        c.x = r[0] + m.body[0];
+                        c.y = r[1] + m.body[1] - omk::kVehNodeLift;
+                        c.z = r[2] + m.body[2];
+                    }
+                    sv.posed.revision = ++worldGeoRev;
+                    sv.drawn = true;
+                    ++vehDrawn;
+                }
+                if (vehLive && (vehTold < 0 || n - vehTold >= 300)) {
+                    vehTold = n;
+                    std::printf("frame %ld: traffic - %d live, %d drawn within %.0f of the eye, "
+                                "%d stopped\n", n, vehLive, vehDrawn, vreach, vehStopped);
                 }
             }
             if (drawPlayer) {
@@ -4821,6 +4951,14 @@ int main(int argc, char** argv) {
                                      &up->posed, b.start, b.count, b.blend, b.cutout});
             }
             for (const auto& up : pedStaged) {
+                if (!up->drawn || !up->mo) continue;
+                const int base = static_cast<int>(up->mo->texBase);
+                for (const auto& b : up->posed.batches)
+                    draws.push_back({keyOf(b.blend, b.cutout,
+                                           static_cast<std::uint32_t>(b.material + base)),
+                                     &up->posed, b.start, b.count, b.blend, b.cutout});
+            }
+            for (const auto& up : vehStaged) {
                 if (!up->drawn || !up->mo) continue;
                 const int base = static_cast<int>(up->mo->texBase);
                 for (const auto& b : up->posed.batches)
