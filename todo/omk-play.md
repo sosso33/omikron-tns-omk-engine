@@ -283,6 +283,61 @@ function in the game.
 **The class** — every scripted object motion in every scene: doors, lifts,
 crates, vehicles.
 
+## Fixed (batch 13, 2026-09-03)
+
+### 60. The world's PROPS were never drawn: the Impasse's rings — A
+
+> **Fixed 2026-09-03, CONFIRMED IN PLAY.** `Session::props()` enumerates the
+> resident chunks' props and the viewer loads `MESHES/OBJETS/<stem>.3DO` and
+> draws the shown ones at their converted placement.
+> `verify.py: engine props`.
+
+Filed 2026-09-03 from a play report — *the "anneaux" in the impasse currently
+doesn't appear*.
+
+**The script side already worked.** `SCENE 55`'s startup script ends with
+`object.show 162`, OBJECTS 162 is `3 Anneaux magiques` with stem **`ANNEAU`**,
+and the port's op 76 already did the right thing: walk the prop tables, test
+bit 0, set bit 1, call `showObject`. What was missing is that **nothing
+enumerated or drew a prop**.
+
+**The prop record**, from `Scene_LoadProps` (0x00409FC0) reading it as an
+`int*` and stepping `i += 6`::
+
+    +0  i16 runtime slot (-1 on disk)   +2  i16 OBJECTS id
+    +4/+8/+12  int32 POSITION           +16/+18/+20  i16 ROTATION
+    +22 i16 index into the DB's 2-bit state array
+
+Bit 0 says the loader loads the model at all; bit 1 that it is SHOWN
+(`Object_ShowInScene` links its node in and sets its state to 2 - the same
+"linked" state a decor set uses). The int16s at +16 are the ROTATION, not the
+position, which is the first thing this got wrong.
+
+**`Area_Load` converts the table IN PLACE**, at `propTable + 8` in 24-byte
+steps: a position by `v * 100 * 0.00390625 * 0.3937007874 - 1` - hundredths of
+a 256th of a centimetre into the engine's INCH - and a rotation by
+`v * 0.087890625`, a 4096-per-turn integer into degrees, the same convention
+as the world cameras. The rings are stored `(47397, -514, 19614)` and land at
+**(7288, -80, 3015)**. That is what identifies the conversion: three
+coordinates do not land on the tutorial's arrival address by accident.
+
+**And the model is not centred on nothing.** `buildGeometry` bakes each mesh's
+authored `pos` into its corners, as it does for a decor set: `ANNEAU` is a
+4.6-unit ring whose corners run x 503.4..508.0 about a mesh position of
+`(505.7, -175.3, 14.1)`. Adding the placement on top of that put the rings
+~500 units up the alley - drawn, reported at the right coordinates, and
+nowhere a player would look. The placement names where the object's ROOT
+goes, so the corners are taken relative to the hierarchy root first, the same
+correction the scripted crates needed. Measured after: the rings at
+`(7288.2, -80.0, 3015.4)` with the player at `(7274.6, -78.7, 3014.6)` -
+**13.6 units apart**, which is where the tutorial starts.
+
+**Recorded, not copied**: op 77 guards on a null record and **op 76 does
+not** - the engine reads `[0 + 0x16]`, the Win9x null page, when the id
+matches nothing.
+
+**Severity A** - every object the world is supposed to show.
+
 ## Fixed (batch 12, 2026-09-03)
 
 ### 59. The credits were not positioned and the title card was not drawn at all — A

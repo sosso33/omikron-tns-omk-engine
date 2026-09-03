@@ -639,6 +639,24 @@ public:
     struct PropEvent { const char* what; int actor; int slot; int address; long frame; };
     const std::vector<PropEvent>& propEvents() const { return propEvents_; }
 
+    // THE RESIDENT PROPS, as `Scene_LoadProps` (0x00409FC0) sees them: every
+    // record of both chunks' prop tables whose DB state has **bit 0**, which
+    // is the test the loader makes before it loads a model at all. Bit 1 is
+    // SHOWN - `object.show` sets it, `object.hide` clears it - and the loader
+    // calls `Object_ShowInScene` for exactly those.
+    //
+    // Enumerated from the chunks and the DB rather than from the runtime
+    // slots, because the slot at `+0` is -1 on disk and only the loader fills
+    // it; a viewer that never ran the loader has no slot to key on.
+    struct PropInstance {
+        int  id = -1;
+        int  stateIndex = -1;
+        bool shown = false;
+        float pos[3] = {0, 0, 0};
+        float rotDeg[3] = {0, 0, 0};
+    };
+    std::vector<PropInstance> props() const;
+
     // ------------------------------------------------------- RESTART
     //
     // `Script_Pump` phase 1 opens `if (g_RestartRequest) { Script_Pump(3);

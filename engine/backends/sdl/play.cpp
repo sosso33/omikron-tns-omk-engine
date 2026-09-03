@@ -1810,6 +1810,33 @@ int main(int argc, char** argv) {
     // `std::map` is node-based, so a `Staged`'s pointer into these survives
     // every later insert.
     std::map<std::string, CharModel> charModels;
+    // THE WORLD'S PROPS. One model per OBJECTS stem, from
+    // `MESHES/OBJETS/<stem>.3DO` - `Object_ModelPath` (0x0040BAF0) copies the
+    // record's `+14` and appends ".3DO". A prop is static: no pose, just the
+    // placement `Object_SetPlacement` gives its node, so the rest geometry is
+    // transformed into world space per frame and submitted like any batch.
+    struct PropModel {
+        omk::Geometry rest;
+        std::vector<omk::Texture> tex;
+        std::size_t texBase = 0;
+        // THE MODEL'S OWN ORIGIN. `buildGeometry` bakes each mesh's authored
+        // `pos` into its corners, exactly as it does for a decor set, so a
+        // model is NOT centred on nothing: `ANNEAU` is a 4.6-unit ring whose
+        // corners run x 503.4..508.0, y -177.4..-173.1, z 13.2..15.0 about a
+        // mesh position of (505.7, -175.3, 14.1). Adding the placement on top
+        // of that put the rings ~500 units up the alley. The placement names
+        // where the object's ROOT goes, so the root is what is moved onto it -
+        // the same correction the scripted crates needed.
+        float origin[3] = {0, 0, 0};
+        bool ready = false;
+    };
+    std::map<std::string, PropModel> propModels;
+    omk::Geometry propGeo;                 // the shown props, in world space
+    // Which model each of `propGeo`'s batches came from: the geometry is
+    // built before the pool assigns the sections their bases, so a batch's
+    // slot is resolved at submission through its owner.
+    std::vector<const PropModel*> propBatchOwner;
+    std::set<int> propsTold;               // one line per prop, not per frame
     std::map<std::string, CharBank>  charBanks;
     struct Staged {
         int actor = -1;
@@ -1894,6 +1921,39 @@ int main(int argc, char** argv) {
         }
         ++poolComposition;      // the pool gains this model's textures
         return &charModels.emplace(name, std::move(m)).first->second;
+    };
+    const auto propModelFor = [&](const std::string& stem) -> PropModel* {
+        if (stem.empty()) return nullptr;
+        auto it = propModels.find(stem);
+        if (it != propModels.end()) return &it->second;
+        PropModel m;
+        if (const auto mo = fs.resolve("MESHES/OBJETS/" + stem + ".3DO")) {
+            const auto md = omk::DataFs::readPath(*mo);
+            m.rest = omk::buildGeometry(md, omk::DrawFilter::Engine);
+            if (const auto mt = fs.resolve("MESHES/OBJETS/" + stem + ".3DT"))
+                m.tex = omk::textures(md, omk::DataFs::readPath(*mt));
+            // The HIERARCHY ROOT's position, the way a character model's
+            // pelvis is found: the mesh whose parent resolves to nothing.
+            if (const auto mh = omk::readHeader(md)) {
+                const auto ms = omk::readMeshes(md, *mh);
+                int root = -1;
+                for (std::size_t i = 0; i < ms.size() && root < 0; ++i) {
+                    bool hasParent = false;
+                    for (const auto& q : ms)
+                        if (q.id == ms[i].parent) { hasParent = true; break; }
+                    if (!hasParent) root = static_cast<int>(i);
+                }
+                if (root >= 0)
+                    for (int k = 0; k < 3; ++k)
+                        m.origin[k] = ms[static_cast<std::size_t>(root)].pos[k];
+            }
+            m.ready = !m.rest.corners.empty();
+            std::printf("prop model %s: %zu corners, %zu batches, %zu textures\n",
+                        stem.c_str(), m.rest.corners.size(), m.rest.batches.size(),
+                        m.tex.size());
+        }
+        ++poolComposition;
+        return &propModels.emplace(stem, std::move(m)).first->second;
     };
     // One `.CTL` per BANK NAME, and the entry `Actor_LoadBankList` leaves the
     // channel on. `PlayerController`'s constructor is the rule quoted:
@@ -3410,6 +3470,70 @@ int main(int argc, char** argv) {
             // models with the same texture count swapping is exactly what a
             // size test cannot see.
             const bool drawPlayer = adventure && playerReady;
+            // ---- THE WORLD'S PROPS -----------------------------------
+            //
+            // Every prop of the resident chunks whose DB state has bit 1 -
+            // `object.show` sets it, `object.hide` clears it - drawn at the
+            // placement `Area_Load` converted: position in inches, rotation
+            // in degrees off a 4096-per-turn integer. `Object_SetPlacement`
+            // gives the node `o3de_SetNodePos(pos)` and
+            // `Matrix3x3_FromEulerAngles(rot)`, so a corner is `M * local +
+            // pos` with M applied as a ROW vector, the convention
+            // `rotateYaw` and `resolveCamera` already use.
+            propGeo.corners.clear();
+            propGeo.batches.clear();
+            propGeo.cornerMesh.clear();
+            propBatchOwner.clear();
+            {
+                const auto shown = session.props();
+                for (const auto& pr : shown) {
+                    if (!pr.shown) continue;
+                    const auto& objs = voiceLib.objects();
+                    if (pr.id < 0 || static_cast<std::size_t>(pr.id) >= objs.size()) continue;
+                    const PropModel* pm = propModelFor(objs[static_cast<std::size_t>(pr.id)].stem);
+                    if (!pm || !pm->ready) continue;
+                    const double rx = pr.rotDeg[0] * 0.0174532925199433;
+                    const double ry = pr.rotDeg[1] * 0.0174532925199433;
+                    const double rz = pr.rotDeg[2] * 0.0174532925199433;
+                    const double cx = std::cos(rx), sx = std::sin(rx);
+                    const double cy = std::cos(ry), sy = std::sin(ry);
+                    const double cz = std::cos(rz), sz = std::sin(rz);
+                    // Matrix3x3_FromEulerAngles, row-vector: Rz * Ry * Rx as
+                    // the engine composes it (player.h quotes the same call).
+                    const double m00 =  cy * cz, m01 =  cy * sz, m02 = -sy;
+                    const double m10 = sx * sy * cz - cx * sz;
+                    const double m11 = sx * sy * sz + cx * cz;
+                    const double m12 = sx * cy;
+                    const double m20 = cx * sy * cz + sx * sz;
+                    const double m21 = cx * sy * sz - sx * cz;
+                    const double m22 = cx * cy;
+                    const std::size_t base = propGeo.corners.size();
+                    for (const auto& c : pm->rest.corners) {
+                        omk::Corner w = c;
+                        // relative to the model's own root, then placed
+                        const double lx = c.x - pm->origin[0];
+                        const double ly = c.y - pm->origin[1];
+                        const double lz = c.z - pm->origin[2];
+                        w.x = static_cast<float>(lx * m00 + ly * m10 + lz * m20 + pr.pos[0]);
+                        w.y = static_cast<float>(lx * m01 + ly * m11 + lz * m21 + pr.pos[1]);
+                        w.z = static_cast<float>(lx * m02 + ly * m12 + lz * m22 + pr.pos[2]);
+                        propGeo.corners.push_back(w);
+                    }
+                    for (const auto& b : pm->rest.batches) {
+                        omk::Batch nb = b;
+                        nb.start += static_cast<int>(base);
+                        propGeo.batches.push_back(nb);
+                        propBatchOwner.push_back(pm);
+                    }
+                    if (propsTold.insert(pr.id).second)
+                        std::printf("prop %d SHOWN at %.1f %.1f %.1f rot %.1f %.1f %.1f\n",
+                                    pr.id, static_cast<double>(pr.pos[0]),
+                                    static_cast<double>(pr.pos[1]), static_cast<double>(pr.pos[2]),
+                                    static_cast<double>(pr.rotDeg[0]),
+                                    static_cast<double>(pr.rotDeg[1]),
+                                    static_cast<double>(pr.rotDeg[2]));
+                }
+            }
             refreshSprites();
             const bool wantSprites = session.scene().effects().count() && !spriteTex.empty();
             // Which sprite ids the resident scene can name. Computed BEFORE the
@@ -3427,6 +3551,13 @@ int main(int argc, char** argv) {
                 for (auto& cm : charModels) {
                     cm.second.texBase = pool.size();
                     pool.insert(pool.end(), cm.second.tex.begin(), cm.second.tex.end());
+                }
+                // ...then each PROP model's, so a prop batch's slot is its
+                // material plus its own base, the same rule every other
+                // section follows.
+                for (auto& pm : propModels) {
+                    pm.second.texBase = pool.size();
+                    pool.insert(pool.end(), pm.second.tex.begin(), pm.second.tex.end());
                 }
                 playerTexBase = pool.size();
                 if (drawPlayer) pool.insert(pool.end(), playerTex.begin(), playerTex.end());
@@ -4000,6 +4131,16 @@ int main(int argc, char** argv) {
                     draws.push_back({keyOf(b.blend, b.cutout, static_cast<std::uint32_t>(
                                                b.material + static_cast<int>(playerTexBase))),
                                      &playerPosed, b.start, b.count, b.blend, b.cutout});
+            // The props, each batch through its own model's pool section.
+            for (std::size_t bi = 0; bi < propGeo.batches.size(); ++bi) {
+                const auto& b = propGeo.batches[bi];
+                const PropModel* owner = bi < propBatchOwner.size() ? propBatchOwner[bi] : nullptr;
+                if (!owner) continue;
+                draws.push_back({keyOf(b.blend, b.cutout,
+                                       static_cast<std::uint32_t>(b.material +
+                                           static_cast<int>(owner->texBase))),
+                                 &propGeo, b.start, b.count, b.blend, b.cutout});
+            }
             if (spriteBase >= 0)
                 for (const auto& b : fxGeo.batches) {
                     // `b.material` is the sprite's ID; the pool is packed, so

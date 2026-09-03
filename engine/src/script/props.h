@@ -43,6 +43,38 @@ std::optional<PropRecord> findPropById(std::span<const std::byte> chunk,
 std::optional<PropRecord> findPropBySlot(std::span<const std::byte> chunk,
                                          ChunkKind kind, int slot);
 
+// A prop's PLACEMENT, converted the way `Area_Load` converts it in place.
+//
+// `Scene_LoadProps` reads the record as an `int*` and steps `i += 6`, so the
+// 24 bytes are `+0` i16 slot, `+2` i16 id, `+4/+8/+12` **int32** position
+// (`v19 = (float)i[1]`), `+16/+18/+20` i16 rotation and `+22` i16 the state
+// index. The position ints I first read at +16 are the ROTATION.
+//
+// `Area_Load` walks the table at `propTable + 8` in 24-byte steps and rewrites
+// it before anything reads it::
+//
+//     u32(v22 - 4) = (100 * v) * 0.00390625 * 0.3937007874015748 - 1.0   // +4
+//     u32(v22)     = ... same ...                                        // +8
+//     u32(v22 + 4) = ... same ...                                        // +12
+//     u16(v22 + 8)  = v * 0.087890625                                    // +16
+//     u16(v22 + 10) = ...                                                // +18
+//     u16(v22 + 12) = ...                                                // +20
+//
+// So a position is `v * 100 / 256 / 2.54 - 1` - hundredths of a 256th of a
+// centimetre into the engine's INCH - and a rotation is a 4096-per-turn
+// integer into DEGREES, `360/4096`, the same convention as the world cameras.
+// CLAUDE.md's warning applies to these too: an angle near 4096 is a small
+// negative one and only differs once something interpolates it.
+//
+// The Impasse's rings (OBJECTS 162, `3 Anneaux magiques`) are stored
+// `(47397, -514, 19614)` and land at `(7288, -80, 3015)`, which is where the
+// player walks - the check that the conversion is the right one.
+struct PropPlacement {
+    float pos[3] = {0, 0, 0};
+    float rotDeg[3] = {0, 0, 0};
+};
+PropPlacement propPlacement(std::span<const std::byte> chunk, const PropRecord& rec);
+
 // A 20-byte object-table record: `+0` runtime index, `+2` id, `+18` the
 // ObjectShown bit. What 86/93 resolve a non-player actor through before the
 // actor table - an id in the actor table but not here reads garbage in the

@@ -171,4 +171,32 @@ void setHeldObjectOf(std::span<std::byte> record, int objectId) {
     put16(record, 270, static_cast<std::uint16_t>(objectId & 0xFFFF));
 }
 
+PropPlacement propPlacement(std::span<const std::byte> chunk, const PropRecord& rec) {
+    const auto i32 = [&](std::size_t at) {
+        std::int32_t v = 0;
+        for (int k = 0; k < 4; ++k)
+            v |= static_cast<std::int32_t>(static_cast<unsigned char>(
+                     chunk[rec.offset + at + static_cast<std::size_t>(k)])) << (8 * k);
+        return v;
+    };
+    const auto i16 = [&](std::size_t at) {
+        return static_cast<std::int16_t>(
+            static_cast<unsigned char>(chunk[rec.offset + at]) |
+            (static_cast<unsigned char>(chunk[rec.offset + at + 1]) << 8));
+    };
+    // `Area_Load`'s own two conversions, transcribed.
+    const auto toInch = [](std::int32_t v) {
+        return static_cast<float>(static_cast<double>(100 * v) * 0.00390625 *
+                                  0.3937007874015748 - 1.0);
+    };
+    PropPlacement p;
+    p.pos[0] = toInch(i32(4));
+    p.pos[1] = toInch(i32(8));
+    p.pos[2] = toInch(i32(12));
+    p.rotDeg[0] = static_cast<float>(static_cast<double>(i16(16)) * 0.087890625);
+    p.rotDeg[1] = static_cast<float>(static_cast<double>(i16(18)) * 0.087890625);
+    p.rotDeg[2] = static_cast<float>(static_cast<double>(i16(20)) * 0.087890625);
+    return p;
+}
+
 }  // namespace omk

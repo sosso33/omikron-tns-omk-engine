@@ -5810,6 +5810,72 @@ def c_sprite_ids_are_scene_local():
             "them, which is why the table must follow the scene; ids defined in both "
             "(the global would win and draw the wrong picture); wanted ids in all")
 
+def c_engine_props():
+    r"""`engine/`: the world's PROPS - the Impasse's rings, end to end.
+
+    A play report: *the "anneaux" in the impasse currently doesn't appear*.
+
+    `SCENE 55`'s startup script ends with `object.show 162`; OBJECTS 162 is
+    `3 Anneaux magiques` with stem **`ANNEAU`**, and `MESHES/OBJETS/ANNEAU.3DO`
+    ships - the executable even carries the literal `meshes\objets\anneau.3do`.
+
+    **The prop record is 24 bytes**, read by `Scene_LoadProps` (0x00409FC0) as
+    an `int*` stepping `i += 6`::
+
+        +0  i16 runtime slot (-1 on disk)   +2  i16 OBJECTS id
+        +4/+8/+12   int32 POSITION          +16/+18/+20  i16 ROTATION
+        +22 i16 index into the DB's 2-bit state array
+
+    **Bit 0 says the loader loads the model at all; bit 1 that it is SHOWN**
+    (`Object_ShowInScene` links its node in and sets its state to 2, the same
+    "linked" state a decor set uses). Op 76 walks AREA props (`+44`/count
+    `+74`) then SCENE (`+12`/`+42`) and does
+    `if (state & 1) { state |= 2; Object_ShowInScene(slot); }`; op 77 clears
+    the bit. **Note 77 guards on a null record and 76 does not** - the engine
+    reads `[0+16h]`, the Win9x null page - which the port does not copy.
+
+    **`Area_Load` converts the table IN PLACE** before anything reads it, at
+    `propTable + 8` in 24-byte steps: a position by
+    `v * 100 * 0.00390625 * 0.3937007874 - 1` - hundredths of a 256th of a
+    centimetre into the engine's INCH - and a rotation by `v * 0.087890625`,
+    a 4096-per-turn integer into degrees, the same convention as the world
+    cameras. The rings are stored `(47397, -514, 19614)` and land at
+    **(7288, -80, 3015)**, which is where the player walks: that agreement is
+    what identifies the conversion, since three coordinates cannot land on the
+    arrival address by accident.
+
+    Asserted through a live Session: AREA 222 carries one prop that exists and
+    none shown, and after the Impasse's beats run it is shown, at that place.
+    """
+    import subprocess, tempfile, shutil
+    fr = omkpaths.data_root()
+    if not os.path.isdir(fr):
+        return ("no data",), ("data",), "needs the shipped tree"
+    eng = os.path.join(ROOT, "engine")
+    b = subprocess.run(["make", "-s", "build/prop_probe"], cwd=eng,
+                       capture_output=True, text=True)
+    binp = os.path.join(eng, "build", "prop_probe")
+    if b.returncode != 0 or not os.path.exists(binp):
+        return ("build failed",), ("built",), "engine/ must build"
+    tmp = tempfile.mkdtemp()
+    try:
+        out = os.path.join(tmp, "p.bin")
+        subprocess.run([binp, fr, os.path.join(ROOT, "tables", "vm_opcodes.json"),
+                        os.path.join(fr, "IAM", "START"),
+                        os.path.join(fr, "SCPTDATA"), out],
+                       capture_output=True, text=True)
+        raw = open(out, "rb").read()
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+    if len(raw) < 32:
+        return ("no output",), ("32 bytes",), "the probe must write its record"
+    (n0, shown0, ring0, n1, shown1, ring1, x, z) = struct.unpack_from("<8i", raw, 0)
+    return (n0, shown0, ring0, n1, shown1, ring1, x, z), \
+           (1, 0, 0, 1, 1, 1, 7288, 3015), \
+           ("AREA 222's props that EXIST and those SHOWN before the Impasse's "
+            "beats and after, whether the rings are among them, and where they "
+            "land once Area_Load's conversion is applied")
+
 def c_engine_impasse_fx():
     r"""`engine/`: the Impasse cutscene actually PRODUCES effects.
 
@@ -16911,7 +16977,7 @@ def c_licence_headers():
                    if TAG in open(p, encoding="utf-8",
                                   errors="replace").read(600)]
     return (authored, sorted(missing), len(vendored), mislabelled), \
-           (299, [], 1, []), \
+           (301, [], 1, []), \
            "authored source files under tools/, engine/src, engine/tools, " \
            "engine/backends and scripts/; those MISSING the SPDX tag; " \
            "vendored files in engine/third_party; and vendored files wrongly " \
@@ -18322,6 +18388,7 @@ SLOW = [
     ("subtitle box", c_subtitle_box, "docs/UI"),
     ("credit layout", c_credit_layout, "docs/UI"),
     ("engine: impasse fx", c_engine_impasse_fx, "todo/omk-play"),
+    ("engine: props", c_engine_props, "todo/omk-play"),
     ("sprite ids scene-local", c_sprite_ids_are_scene_local, "docs/ASSETS"),
     ("engine: scene sounds", c_engine_scene_sounds, "engine/README"),
     ("engine: actor sounds", c_engine_actor_sounds, "engine/README"),

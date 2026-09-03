@@ -2753,4 +2753,56 @@ void Session::Hooks::placeObjectAt(int objectId, int address) {
     s_->propEvents_.push_back({"place", -1, objectId, address, s_->frameNo_});
 }
 
+// Every prop of both resident chunks the loader would have loaded, with the
+// placement `Area_Load` converted in place. See `Session::PropInstance`.
+std::vector<Session::PropInstance> Session::props() const {
+    std::vector<PropInstance> out;
+    const auto walk = [&](std::span<const std::byte> chunk, ChunkKind kind) {
+        if (chunk.empty()) return;
+        // The table's own count, the way `findPropById` reaches it.
+        for (int id = 0;; ++id) {
+            (void)id;
+            break;                      // ids are not dense; walk the table
+        }
+        const std::size_t base = kind == ChunkKind::Area ? 44u : 12u;
+        const std::size_t cnt  = kind == ChunkKind::Area ? 74u : 42u;
+        if (chunk.size() < cnt + 2) return;
+        const int n = static_cast<std::int16_t>(
+            static_cast<unsigned char>(chunk[cnt]) |
+            (static_cast<unsigned char>(chunk[cnt + 1]) << 8));
+        std::uint32_t off = 0;
+        for (int k = 0; k < 4; ++k)
+            off |= static_cast<std::uint32_t>(static_cast<unsigned char>(chunk[base + static_cast<std::size_t>(k)])) << (8 * k);
+        for (int i = 0; i < n; ++i) {
+            PropRecord rec;
+            rec.offset = static_cast<std::size_t>(off) + 24u * static_cast<std::size_t>(i);
+            if (rec.offset + 24 > chunk.size()) break;
+            const auto rd16 = [&](std::size_t at) {
+                return static_cast<int>(static_cast<std::int16_t>(
+                    static_cast<unsigned char>(chunk[rec.offset + at]) |
+                    (static_cast<unsigned char>(chunk[rec.offset + at + 1]) << 8)));
+            };
+            rec.slot = rd16(0);
+            rec.id = rd16(2);
+            rec.stateIndex = rd16(22);
+            if (rec.id < 0 || rec.stateIndex < 0) continue;
+            const int st = state_.propState(rec.stateIndex);
+            if (!(st & 1)) continue;                 // the loader's own test
+            PropInstance pi;
+            pi.id = rec.id;
+            pi.stateIndex = rec.stateIndex;
+            pi.shown = (st & 2) != 0;
+            const auto pl = propPlacement(chunk, rec);
+            for (int k = 0; k < 3; ++k) { pi.pos[k] = pl.pos[k]; pi.rotDeg[k] = pl.rotDeg[k]; }
+            out.push_back(pi);
+        }
+    };
+    for (const auto& sl : slots_) {
+        if (sl.area < 0) continue;
+        walk(sl.areaChunk, ChunkKind::Area);
+        if (sl.scene != -1) walk(sl.sceneChunk, ChunkKind::Scene);
+    }
+    return out;
+}
+
 }  // namespace omk

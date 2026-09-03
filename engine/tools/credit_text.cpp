@@ -16,11 +16,12 @@ int main(int argc, char** argv) {
     const omk::DataFs fs(argv[1]);
     omk::VoiceOverLibrary lib;
     lib.load(fs);
-    const int ids[] = {715,716,717,718,719,720,739,740,741,742,743,744,745,746,747,748,749,750,751};
+    const int ids[] = {162};
     for (int id : ids) {
         if (id < 0 || static_cast<std::size_t>(id) >= lib.objects().size()) continue;
         const auto& o = lib.objects()[static_cast<std::size_t>(id)];
-        std::printf("%3d %-26s %s\n", id, o.name.c_str(), o.description.c_str());
+        std::printf("%3d name '%s' stem '%s' desc '%s'\n", id, o.name.c_str(),
+                    o.stem.c_str(), o.description.c_str());
     }
     return 0;
 }
