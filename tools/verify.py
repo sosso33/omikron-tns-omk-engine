@@ -5486,8 +5486,15 @@ def c_engine_sneak():
     r = subprocess.run([play, fr, tb, "--software", "--res", "640x480", "--nofmv",
                         "--no-crowd", "--save", save, "--area", "0",
                         "--stand", "1804,0,-6890,336", "--frames", "260",
-                        "--hold", "0*40,k15*3,0*30,k205*4,0*10,k200*4,0*10,"
-                                  "k200*4,0*10,k28*4,0*40"],
+                        # ...and then CONFIRM twice: a row, which descends
+                        # into the verb panel, then "Utiliser", whose
+                        # decision is the record's own usable bit.
+                        # CONFIRM twice first - a row, which descends into
+                        # the verb panel, then "Utiliser", whose decision is
+                        # the record's own usable bit - and then the original
+                        # walk across the tab column.
+                        "--hold", "0*40,k15*3,0*30,k28*4,0*20,k28*4,0*25,"
+                                  "k205*4,0*10,k200*4,0*10,k200*4,0*20"],
                        capture_output=True, text=True, env=env)
     o = r.stdout
     return ("MDSNEAK0 (tab_special_move[0] = 0x0046adf0)" in o,
@@ -5496,11 +5503,16 @@ def c_engine_sneak():
             "sneak: object list 0 holds" in o,
             "260 frames presented" in o,
             "world: 260 frames drawn" in o,
+            # `sub_42B470`: event 35's answer is the record's `+4 & 1`, and a
+            # document has it clear - so the verb refuses with interface
+            # sound 13 and changes nothing, which is the half of "Utiliser"
+            # that is ported whole.
+            "is not usable (record +4 bit 0 clear)" in o,
             # ...and the TICK, which is the half that actually froze: the
             # draw gate and the `adventure` gate are separate lines, and a
             # mutation of one alone left this check green.
             _sneak_ticks(o) > 200), \
-           (True, True, True, True, True, True, True), \
+           (True, True, True, True, True, True, True, True), \
            "TAB held in Anekbah: the special move fires and names its " \
            "tab_special_move row, it raises event 25 for object list 0 and " \
            "opens screen 9, the screen is attributed to the PLAYER rather " \
@@ -5510,6 +5522,10 @@ def c_engine_sneak():
            "and did not check until 2026-09-04, when a player opened the " \
            "sneak in Anekbah and watched the city freeze (19 world frames of " \
            "1924). `Game_Tick` has no test for an open screen; the only " \
+           "verb `Utiliser` then REFUSES on it, because `sub_42B470` asks " \
+           "event 35 and its answer is the record's own `+4 & 1` - a " \
+           "document has it clear, so interface sound 13 and nothing else, " \
+           "which is the half of the verb that is ported whole. The " \
            "thing that stops the world is `dword_4E9728`, whose two writes " \
            "in the whole image are screen 31 PAUSE GAME's open and close. " \
            "The last field is the player's TICK count, because the draw gate " \

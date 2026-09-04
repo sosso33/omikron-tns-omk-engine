@@ -89,6 +89,9 @@ inline constexpr std::uint32_t kPanelSneakExamine = 0x004DEF20u;
 // confirm (its plain arm, `loc_49BE7B`) and `sub_49BFF0` is "Examiner".
 inline constexpr std::uint32_t kCbSneakRowConfirm = 0x0049BC60u;
 inline constexpr std::uint32_t kCbSneakExamine    = 0x0049BFF0u;
+// "Utiliser" and "Utiliser sur", the other two verbs.
+inline constexpr std::uint32_t kCbSneakUse       = 0x0049BEA0u;
+inline constexpr std::uint32_t kCbSneakUseOn     = 0x0049BF30u;
 inline constexpr std::uint32_t kListSneakPreviews = 0x004DE420u;
 inline constexpr std::uint32_t kItemSneakExamine  = 0x004DE2C0u;
 // Panel 0x004DEF20's own list and its single item - the examine page's
@@ -359,6 +362,11 @@ struct UiListState {
     // `Ui_ItemTextStyle` (0x004769A0) reads bank B `0x2` as "blink when this
     // item is selected", and the verb list still selects it.
     std::map<std::uint32_t, std::uint32_t> flagOn;
+    // The verb a confirm just fired, for a caller to act on: 0 "Utiliser",
+    // 1 "Utiliser sur", -1 none. The walk cannot carry out either - they end
+    // in `Game_HandleEvent` - so it records which was chosen and the caller
+    // does the rest.
+    int pendingVerb = -1;
 };
 
 // One open screen, driven by input words.
@@ -401,6 +409,8 @@ public:
     // object names must too. Filling them only while the walk is on the
     // inventory page loses the name the moment an object is chosen.
     int  rowKind() const { return state_->rowKind; }
+    // Which verb was confirmed, if any; reading it CLEARS it.
+    int  takeVerb() { const int v = state_->pendingVerb; state_->pendingVerb = -1; return v; }
     int  selectionOf(std::uint32_t listAddr) const {
         const auto it = state_->sel.find(listAddr);
         return it == state_->sel.end() ? -1 : it->second;

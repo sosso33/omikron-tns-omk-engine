@@ -5508,6 +5508,43 @@ int main(int argc, char** argv) {
             // "Examiner" was confirmed, and the row list keeps its selection
             // (it is a static record), so it is still there. `Game_HandleEvent`
             // case 40 then dispatches on that object's own kind.
+            // ---- A VERB WAS CONFIRMED -------------------------------
+            //
+            // `sub_42B470`'s decision is the record's own `+4 & 1`, which is
+            // `usable()`: yes and the engine runs
+            // `Object_ApplyEffect(rec, Actor_IdBySlot(Actor_Player()))`, no
+            // and it plays interface sound 13 and does nothing else. The
+            // REFUSAL is ported whole; the apply is announced and not run,
+            // because `Object_ApplyEffect`'s body is `named` and not read and
+            // `sub_409780`'s context gate - whether the object may be used
+            // HERE - has not been read at all.
+            if (const int verb = walk->takeVerb(); verb >= 0) {
+                const auto carried =
+                    omk::objectList(state, omk::ObjectList::Carried);
+                const int row = walk->selectionOf(omk::kListSneakRows);
+                const omk::ObjectRecord* rec = nullptr;
+                if (row >= 0 && static_cast<std::size_t>(row) < carried.size()) {
+                    const int idx = carried[static_cast<std::size_t>(row)];
+                    if (idx >= 0 &&
+                        static_cast<std::size_t>(idx) < objectRecords.size())
+                        rec = &objectRecords[static_cast<std::size_t>(idx)];
+                }
+                if (!rec) {
+                    std::printf("sneak: %s with no object selected\n",
+                                verb ? "Utiliser sur" : "Utiliser");
+                } else if (!rec->usable()) {
+                    blip(sndBack);   // interface sound 13, the refusal
+                    std::printf("sneak: '%s' is not usable (record +4 bit 0 "
+                                "clear) - sound 13, nothing else\n",
+                                rec->name.c_str());
+                } else {
+                    std::printf("sneak: '%s' IS usable, effect %d -> actor "
+                                "property %d. Object_ApplyEffect is named and "
+                                "not read, so the apply is announced and not "
+                                "run\n", rec->name.c_str(), rec->effect,
+                                omk::effectProperty(rec->effect));
+                }
+            }
             comp.setExamineText(nullptr);
             if (pn && pn->addr == omk::kPanelSneakExamine) {
                 const auto carried =

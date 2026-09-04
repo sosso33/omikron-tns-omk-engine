@@ -667,6 +667,30 @@ Found because a player asked for "Utiliser" to be the default after choosing
 an object, *"unless the original code says otherwise"* — and it does: the
 original had been reset-on-open only because the port forgot.
 
+### `Utiliser` and `Utiliser sur` — one announce and one decision
+
+Both verbs start the same way: read the row list's selection, take its
+`+0x3C` tag, refuse on −1. Then:
+
+```
+sub_42B420(tag, 20)   announce - event 30 to resolve the object, then
+                      event 43 with (action, object)
+sub_42B470(tag)       event 35: MAY it be used?
+                        yes -> Object_ApplyEffect(rec, Actor_IdBySlot(Actor_Player()))
+                        no  -> interface sound 13, and nothing else
+```
+
+**Event 35's answer is the record's own `+4 & 1`** — which is exactly this
+port's `usable()`, read long before for another purpose. So the decision needs
+nothing new.
+
+**The refusal is ported whole**; the apply is announced and not run.
+`Object_ApplyEffect` is `named` in `readable/INDEX.md` with its body still as
+generated, and `sub_409780`'s context gate — whether the object may be used
+*here* — has not been read at all. A player confirming `Utiliser` on the MK400
+notice gets the beep and no state change, which is what the original does,
+and `verify.py: engine: sneak` asserts that line.
+
 ### The examine page shows one of TWO things
 
 A player who plays the original: *"for Examiner, take care, some objects are

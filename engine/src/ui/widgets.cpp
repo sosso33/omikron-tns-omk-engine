@@ -832,6 +832,25 @@ bool UiWalk::confirm() {
         // destination through `sub_40E630` and calls `sub_452570` - the
         // TRAVEL - and kind 2 is the memory page's; neither is modelled, and
         // saying so is better than descending into the wrong page.
+// THE TWO REMAINING VERBS. `sub_49BEA0` ("Utiliser") and `sub_49BF30`
+        // ("Utiliser sur") both start the same way - read the row list's
+        // selection, take its `+0x3C` tag, refuse on -1 - and then:
+        //
+        //     sub_42B420(tag, 20)   announce: event 30 to resolve the object,
+        //                           then event 43 with (action, object)
+        //     sub_42B470(tag)       event 35 - MAY it be used? The record's
+        //                           `+4 & 1`, which is this port's `usable()`.
+        //                           Yes: `Object_ApplyEffect(rec, the player)`.
+        //                           No: interface sound 13, and nothing else.
+        //
+        // The walk cannot do either - both end in `Game_HandleEvent` - so it
+        // records which verb was chosen and the caller carries it out.
+        if (it->callback == kCbSneakUse || it->callback == kCbSneakUseOn) {
+            state_->pendingVerb = (it->callback == kCbSneakUse) ? 0 : 1;
+            log_.push_back(state_->pendingVerb == 0 ? "verb: Utiliser"
+                                                    : "verb: Utiliser sur");
+            return true;
+        }
         if (it->callback == kCbSneakRowConfirm && state_->rowKind != 0) {
             approx_ = true;
             log_.push_back(state_->rowKind == 4
