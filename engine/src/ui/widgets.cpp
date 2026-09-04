@@ -309,26 +309,36 @@ bool UiWalk::moveListsSlider(std::uint32_t bits) {
     const auto go = [&](int k) { cur_ = k; log_.push_back("focus list"); return true; };
     const std::uint32_t listAxis  = bits & (kUiLeft | kUiRight);
     const std::uint32_t crossAxis = bits & (kUiUp | kUiDown);
-    const int sel = selectionOf(panel_->lists[static_cast<std::size_t>(cur_)]);
-    const int last = static_cast<int>(
-        panel_->lists[static_cast<std::size_t>(cur_)].items.size()) - 1;
+    const UiList& here = panel_->lists[static_cast<std::size_t>(cur_)];
+    const int sel = selectionOf(here);
+    // The EDGES are `sub_429560` and `sub_429590`, the first and last
+    // SELECTABLE rows - not the first and last widget. With three
+    // destinations in nine widgets the raw last is 8, which the selection can
+    // never reach, so the "at the end" transition would never fire and the
+    // move wrapped round instead of stepping back to the header.
+    const int first = firstPickable(here), last = lastPickable(here);
 
     if (cur_ == tabs) {
         if (listAxis && ok(head)) return go(head);
         return false;
     }
     if (cur_ == head) {
-        if (((bits & kUiLeft) && sel == 0) || ((bits & kUiRight) && sel == last))
+        if (((bits & kUiLeft) && sel == first) || ((bits & kUiRight) && sel == last))
             if (ok(tabs)) return go(tabs);
         if (crossAxis && ok(rows)) {
-            auto& r = panel_->lists[static_cast<std::size_t>(rows)];
-            sel_[r.addr] = (bits & kUiUp) ? static_cast<int>(r.items.size()) - 1 : 0;
+            const auto& r = panel_->lists[static_cast<std::size_t>(rows)];
+            // `sub_429590` on one bit and `sub_429560` on the other - the
+            // LAST and FIRST *selectable* row, not the last and first
+            // widget. With three destinations bound into nine widgets the
+            // raw index lands on one that draws nothing.
+            const int j = (bits & kUiUp) ? lastPickable(r) : firstPickable(r);
+            if (j >= 0) sel_[r.addr] = j;
             return go(rows);
         }
         return false;
     }
     if (cur_ == rows) {
-        if (((bits & kUiUp) && sel == 0) || ((bits & kUiDown) && sel == last))
+        if (((bits & kUiUp) && sel == first) || ((bits & kUiDown) && sel == last))
             if (ok(head)) return go(head);
         if (listAxis && ok(tabs)) return go(tabs);
         return false;
@@ -362,11 +372,28 @@ bool UiWalk::moveLists(int step) {
 // `Ui_MoveSelection`'s test for one row, with the runtime bits the static
 // record cannot carry: an item a builder switched off, or one the ROW BINDER
 // put past the end of its list, is not selectable however its record reads.
+// `sub_429560` / `sub_429590` - the FIRST and LAST selectable index of a
+// list, or -1. Both walk the items testing bank A's `0x4`, the same
+// not-selectable bit the row binder sets, so they skip a row that is past the
+// end of its list rather than returning a widget that shows nothing.
+int UiWalk::firstPickable(const UiList& l) const {
+    for (std::size_t k = 0; k < l.items.size(); ++k)
+        if (pickable(l, l.items[k])) return static_cast<int>(k);
+    return -1;
+}
+
+int UiWalk::lastPickable(const UiList& l) const {
+    for (std::size_t k = l.items.size(); k-- > 0;)
+        if (pickable(l, l.items[k])) return static_cast<int>(k);
+    return -1;
+}
+
 bool UiWalk::pickable(const UiList& l, const UiItem& it) const {
     return it.selectable(l.broadcast) && !itemOff(it.addr);
 }
 
 void UiWalk::bindRows(std::uint32_t list, int count) {
+    bound_[list] = count;
     if (!panel_) return;
     for (const auto& l : panel_->lists) {
         if (l.addr != list) continue;
@@ -766,6 +793,40 @@ bool UiWalk::press(std::uint32_t bits) {
         // sur", "Examiner") and the slider page's row of buttons are what
         // name it, and both run across rather than down.
         return move(*l, bits, kUiLeft, kUiRight);
+    }
+    if (l->hook == kHookSneakRows) {
+        // `sub_49C050` - the sneak's ROW list, and it is a thin wrapper:
+        //
+        //     if (sub_42AFF0(screen, list) != 1) return 0;
+        //     if (dword_670CB8 == 2)                 // the memory page
+        //         dword_4DEAD4 = selected_widget[+0x3C];
+        //     return 1;
+        //
+        // `sub_42AFF0` is `Ui_MoveSelection` over a WINDOW: it moves the
+        // selection, and when the list is longer than its nine widgets it
+        // scrolls the window and marks the first and last widget with
+        // `0x100000` / `0x200000`, the "more above" and "more below"
+        // indicators.
+        //
+        // THE WINDOW IS NOT MODELLED, and this is the honest half: for a
+        // list no longer than its widgets `sub_42AFF0` never scrolls and is
+        // the ordinary move, which is every list the port reaches (one
+        // carried object, three enabled destinations). Refusing the whole
+        // hook - which is what this did - meant the selection never moved
+        // inside the sneak's rows on ANY page, and a player reported it
+        // twice: "I can move between Appel du slider and the first
+        // destination but no more", "on inventory list I can go to the first
+        // element but not the second".
+        //
+        // A list longer than nine will need `sub_42AFF0` read properly; it
+        // is marked approximate here so that cannot pass unnoticed.
+        for (const auto& lm : panel_->lists)
+            if (lm.addr == l->addr &&
+                static_cast<int>(lm.items.size()) < boundCount(l->addr)) {
+                approx_ = true;
+                log_.push_back("row window: list longer than its widgets");
+            }
+        return move(*l, bits);
     }
     if (l->hook) {
         approx_ = true;

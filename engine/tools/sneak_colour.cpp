@@ -99,18 +99,26 @@ int main(int argc, char** argv) {
             walk.press(b);
             where(b == omk::kUiLeft ? "listAxis" : "crossAxis");
         }
-        // ...and now the ROW BINDER's second flag. Nine widgets, three live
-        // destinations: walking down must stop at row 2 and never put the
-        // highlight on a row that draws nothing. A player found the opposite
-        // - "the hover disappears and I don't know where it is".
+        // ...and now WALK THE ROWS. Three live destinations bound into
+        // nine widgets: entering from the header must land on a live row and
+        // stepping must move between the three and stop, never leaving the
+        // highlight on a widget that draws nothing.
         walk.bindRows(omk::kListSneakRows, 3);
-        int seen = -1;
-        for (int k = 0; k < 6; ++k) {
-            walk.press(omk::kUiDown);
+        const auto rowSel = [&]() {
             for (const auto& l : now->lists)
-                if (l.addr == omk::kListSneakRows) seen = walk.selectionOf(l);
+                if (l.addr == omk::kListSneakRows) return walk.selectionOf(l);
+            return -1;
+        };
+        std::printf("rows: enter %d", rowSel());
+        for (int k = 0; k < 4; ++k) {
+            walk.press(omk::kUiUp);
+            std::printf(" up %d(l%d)", rowSel(), walk.currentList());
         }
-        std::printf("rows bound 3 of 9, after six DOWN the selection is %d\n", seen);
+        for (int k = 0; k < 5; ++k) {
+            walk.press(omk::kUiDown);
+            std::printf(" dn %d(l%d)", rowSel(), walk.currentList());
+        }
+        std::printf("\n");
     }
     walk.open(omk::kScreenSneak);          // back to the inventory page
 

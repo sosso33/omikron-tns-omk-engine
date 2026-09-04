@@ -79,6 +79,9 @@ inline constexpr std::uint32_t kListSneakSliderHead = 0x004DEA08u;
 // `panel 0x004DEDE8 + 16` - the slider page's own list mover, hand-written
 // where the inventory page's `+16` is the generic `sub_42A710`.
 inline constexpr std::uint32_t kHookSneakSliderLists = 0x0049D4D0u;
+// `list 0x004DE6F0 + 4` - the sneak's row list hook, a wrapper over the
+// WINDOWED selection mover `sub_42AFF0`.
+inline constexpr std::uint32_t kHookSneakRows = 0x0049C050u;
 inline constexpr std::uint32_t kItemSneakClock      = 0x004DEC08u;
 
 using FlagOp = std::pair<std::uint32_t, bool>;
@@ -411,6 +414,12 @@ public:
     // Call it whenever the row contents change; it replaces the entries for
     // that list alone, so a builder's own switched-off items survive.
     void bindRows(std::uint32_t list, int count);
+    // How many things the last `bindRows` said that list holds, so the
+    // row hook can tell a windowed list from one that fits.
+    int  boundCount(std::uint32_t list) const {
+        const auto it = bound_.find(list);
+        return it == bound_.end() ? 0 : it->second;
+    }
 
 private:
     void settle();
@@ -418,6 +427,8 @@ private:
     // them. `buildPage` runs the arm for the panel being opened; a panel
     // with no builder read leaves every colour as the record has it.
     bool pickable(const UiList& l, const UiItem& it) const;
+    int  firstPickable(const UiList& l) const;   // sub_429560
+    int  lastPickable(const UiList& l) const;    // sub_429590
     void colourItem(std::uint32_t item, int r, int g, int b);
     void colourList(std::uint32_t list, int r, int g, int b);
     void buildPage(const UiPanel& p);
@@ -468,6 +479,7 @@ private:
     std::map<std::uint32_t, std::array<int, 3>> colour_;
     std::set<std::uint32_t> off_;   // what a builder switched off
     std::set<std::uint32_t> offList_;  // lists a builder made unselectable
+    std::map<std::uint32_t, int> bound_;  // list -> how many rows it holds
 };
 
 // The start menu's "Charger une partie" panel.

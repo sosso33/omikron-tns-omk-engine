@@ -605,6 +605,50 @@ wearing the old page's colour — a player reported reaching the slider page
 walks RIGHT, UP, CONFIRM into panel 0x004DEDE8 and asserts its rows turn green.
 
 
+### `sub_49C050` — the row list's own hook, and why nothing moved inside it
+
+The sneak's nine row widgets are a list with a hook of its own, and the port
+refused it (`unmodelled list hook`) — so **the selection never moved inside
+the rows on any page**. A player reported it twice: "I can move between Appel
+du slider and the first destination but no more", and "on inventory list I can
+go to the first element but not the second".
+
+It is a thin wrapper:
+
+```
+if (sub_42AFF0(screen, list) != 1) return 0;
+if (dword_670CB8 == 2)                       // the memory page
+    dword_4DEAD4 = selected_widget[+0x3C];   // remember its tag
+return 1;
+```
+
+`sub_42AFF0` is `Ui_MoveSelection` over a **window**: it moves the selection,
+and when the list is longer than its nine widgets it scrolls and marks the
+first and last widget with `0x100000` / `0x200000` — the "more above" and
+"more below" indicators. **The window is not modelled**, and that is the
+honest half: for a list no longer than its widgets `sub_42AFF0` never scrolls
+and is the ordinary move, which is every list the port reaches. A longer list
+marks the walk approximate so it cannot pass unnoticed.
+
+### The binder's second flag, and the two index helpers
+
+Three separate facts have to be right before the rows behave, and each was
+wrong on its own:
+
+1. **`sub_42AAE0` sets two flags**, not one — `0x40000001` *not drawn* and
+   `0x20000004` *not selectable*. The composer had the first; the walk had
+   neither, so the selection could sit on a row that draws nothing and the
+   highlight went with it.
+2. **`sub_49C050` must fall through** to the ordinary move rather than refuse.
+3. **`sub_429560` / `sub_429590` return the first and last SELECTABLE index**,
+   not the first and last widget — they walk the items testing bank A's `0x4`,
+   exactly the bit the binder sets. With three destinations in nine widgets
+   the raw last is 8, which the selection can never reach, so an "at the end"
+   transition never fires and the move wraps instead of stepping back to the
+   list above.
+
+`verify.py: sneak page colour` asserts the whole cycle those three produce.
+
 ### The slider page has its OWN list mover
 
 The inventory page's `panel+16` is `sub_42A710`, which is only

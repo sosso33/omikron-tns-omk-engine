@@ -168,6 +168,16 @@ def _hook_slider_lists(ui, bits):
     """
     ls = ui.lists(ui.panel)
     idx = {a: i for i, a in enumerate(ls)}
+    # `sub_429560` / `sub_429590` - the FIRST and LAST *selectable* index,
+    # skipping a row the binder put past the end of its list. Using 0 and
+    # len-1 makes the "at the end" transition unreachable, so the move wraps
+    # instead of stepping back to the list above.
+    def edges(a):
+        its = [i for i in ui.items(a) if ui.selectable(i, a)]
+        allits = ui.items(a)
+        if not its:
+            return 0, len(allits) - 1
+        return allits.index(its[0]), allits.index(its[-1])
     tabs = idx.get(SLIDER_TABS)
     head = idx.get(SLIDER_HEAD)
     rows = idx.get(SLIDER_ROWS)
@@ -184,24 +194,41 @@ def _hook_slider_lists(ui, bits):
 
     cur = ui.cur
     sel = ui.sel.get(ls[cur], 0)
-    last = len(ui.items(ls[cur])) - 1
+    first, last = edges(ls[cur])
     list_axis, cross_axis = bits & (LEFT | RIGHT), bits & (UP | DOWN)
     if cur == tabs:
         return go(head) if (list_axis and ok(head)) else False
     if cur == head:
-        if ((bits & LEFT) and sel == 0) or ((bits & RIGHT) and sel == last):
+        if ((bits & LEFT) and sel == first) or ((bits & RIGHT) and sel == last):
             if ok(tabs):
                 return go(tabs)
         if cross_axis and ok(rows):
-            ui.sel[ls[rows]] = (len(ui.items(ls[rows])) - 1) if (bits & UP) else 0
+            rf, rl = edges(ls[rows])
+            ui.sel[ls[rows]] = rl if (bits & UP) else rf
             return go(rows)
         return False
     if cur == rows:
-        if ((bits & UP) and sel == 0) or ((bits & DOWN) and sel == last):
+        if ((bits & UP) and sel == first) or ((bits & DOWN) and sel == last):
             if ok(head):
                 return go(head)
         return go(tabs) if (list_axis and ok(tabs)) else False
     return False
+
+
+#: `list 0x004DE6F0 + 4` - the sneak's ROW list hook, and a thin wrapper:
+#:
+#:     if (sub_42AFF0(screen, list) != 1) return 0
+#:     if (dword_670CB8 == 2): dword_4DEAD4 = selected[+0x3C]   # memory page
+#:     return 1
+#:
+#: `sub_42AFF0` is `Ui_MoveSelection` over a WINDOW - it scrolls when the list
+#: is longer than its nine widgets and marks the first and last with
+#: `0x100000` / `0x200000`, the "more above" / "more below" indicators. THE
+#: WINDOW IS NOT MODELLED: for a list no longer than its widgets it never
+#: scrolls and is the ordinary move, which is every list reachable here.
+#: Refusing the whole hook - which this did - stops the selection moving
+#: inside the sneak's rows on every page.
+ROWS_HOOK = 0x0049C050
 
 
 #: Panel-level input hooks (`panel+16`) that have been read. Anything else is
@@ -828,6 +855,8 @@ class Ui:
             return False
         if hook == MOVE_SELECTION_LR:
             return self._move(lst, bits, LEFT, RIGHT)
+        if hook == ROWS_HOOK:
+            return self._move(lst, bits)
         if hook:
             self.approx = True
             self.log.append(("unmodelled list hook", hex(hook)))

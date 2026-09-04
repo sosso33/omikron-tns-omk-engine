@@ -10442,7 +10442,15 @@ def c_sneak_page_colour():
             # AND not selectable - and only the first was modelled, so the
             # selection could walk off the live rows and take the highlight
             # with it.
-            "rows bound 3 of 9, after six DOWN the selection is 2" in o), \
+            # `sub_42AAE0` sets TWO flags on a row past the end - not drawn
+            # AND not selectable - and `sub_429560`/`sub_429590` return the
+            # first and LAST SELECTABLE index, not the first and last widget.
+            # With three destinations in nine widgets this whole cycle is
+            # what those two facts produce: step down to the last live row,
+            # DOWN again returns to the header, and entering from the header
+            # picks a live row at either end.
+            ("rows: enter 2 up 1(l2) up 0(l2) up 0(l1) up 2(l2) "
+             "dn 2(l1) dn 0(l2) dn 1(l2) dn 2(l2) dn 2(l1)") in o), \
            (5,
             ["20 165 250", "25 240 115", "240 135 15", "255 240 95",
              "255 100 70"],
@@ -10469,7 +10477,12 @@ def c_sneak_page_colour():
            "AND not selectable, so with three destinations bound into nine " \
            "widgets six DOWNs must leave the selection on row 2 - modelling " \
            "only the drawing half let it walk off the end and the highlight " \
-           "vanished with it"
+           "vanished with it. The last field is the whole cycle through " \
+           "three destinations bound into nine widgets, which needs THREE " \
+           "things right: the binder's not-selectable flag, `sub_49C050` " \
+           "falling through to the ordinary move where it used to refuse, " \
+           "and `sub_429560`/`sub_429590` returning the first and last " \
+           "SELECTABLE row rather than the first and last widget"
 
 
 def c_slider_destinations():
