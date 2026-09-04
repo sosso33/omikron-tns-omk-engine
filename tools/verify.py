@@ -10437,11 +10437,16 @@ def c_sneak_page_colour():
             # the other. Without it the walk cannot leave the column, which
             # is what a player hit.
             "listAxis   panel 0x4dede8 list 1 (0x4dea08)" in o,
-            "crossAxis  panel 0x4dede8 list 2 (0x4de6f0)" in o), \
+            "crossAxis  panel 0x4dede8 list 2 (0x4de6f0)" in o,
+            # `sub_42AAE0` sets TWO flags on a row past the end - not drawn
+            # AND not selectable - and only the first was modelled, so the
+            # selection could walk off the live rows and take the highlight
+            # with it.
+            "rows bound 3 of 9, after six DOWN the selection is 2" in o), \
            (5,
             ["20 165 250", "25 240 115", "240 135 15", "255 240 95",
              "255 100 70"],
-            True, True, True, True, True, True, True, True, True), \
+            True, True, True, True, True, True, True, True, True, True), \
            "the five tab icons carry the five page colours; opening screen " \
            "9 runs the inventory page's builder, which copies its own icon's " \
            "amber over the rows, the verbs and the echo bar; and the row " \
@@ -10459,7 +10464,12 @@ def c_sneak_page_colour():
            "page's is the generic `sub_42A710`, this one is hand-written " \
            "and walks `panel+24` between the tab column, the header and the " \
            "rows. Without it the walk cannot leave the column - a player " \
-           "reported the slider rows as unreachable"
+           "reported the slider rows as unreachable. And the ROW BINDER's " \
+           "second flag: `sub_42AAE0` marks a row past the end not drawn " \
+           "AND not selectable, so with three destinations bound into nine " \
+           "widgets six DOWNs must leave the selection on row 2 - modelling " \
+           "only the drawing half let it walk off the end and the highlight " \
+           "vanished with it"
 
 
 def c_slider_destinations():

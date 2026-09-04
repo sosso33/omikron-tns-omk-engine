@@ -99,6 +99,18 @@ int main(int argc, char** argv) {
             walk.press(b);
             where(b == omk::kUiLeft ? "listAxis" : "crossAxis");
         }
+        // ...and now the ROW BINDER's second flag. Nine widgets, three live
+        // destinations: walking down must stop at row 2 and never put the
+        // highlight on a row that draws nothing. A player found the opposite
+        // - "the hover disappears and I don't know where it is".
+        walk.bindRows(omk::kListSneakRows, 3);
+        int seen = -1;
+        for (int k = 0; k < 6; ++k) {
+            walk.press(omk::kUiDown);
+            for (const auto& l : now->lists)
+                if (l.addr == omk::kListSneakRows) seen = walk.selectionOf(l);
+        }
+        std::printf("rows bound 3 of 9, after six DOWN the selection is %d\n", seen);
     }
     walk.open(omk::kScreenSneak);          // back to the inventory page
 

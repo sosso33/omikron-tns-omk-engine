@@ -5465,6 +5465,12 @@ int main(int argc, char** argv) {
                         sneakRows[l.items[k].addr] = known[k];
                     }
                 }
+                // `sub_42AAE0`'s OTHER half: the rows past the end are not
+                // selectable either, so the walk must not put the highlight
+                // on one. Without this the selection walks off the end of
+                // the live destinations and the cursor goes with it.
+                walk->bindRows(omk::kListSneakRows,
+                               static_cast<int>(known.size()));
                 if (!sliderTold) {
                     sliderTold = true;
                     std::printf("sneak: slider page - %zu of %zu destinations "
@@ -5520,6 +5526,8 @@ int main(int argc, char** argv) {
                             inv.displayName(carried[row], 0);
                     }
                 }
+                walk->bindRows(omk::kListSneakRows,
+                               static_cast<int>(carried.size()));
                 // ---- THE ECHO BAR and THE CLOCK ---------------------
                 //
                 // Two of the device's rows are filled by callbacks of its

@@ -391,11 +391,33 @@ public:
     // having pressed enter on an inventory item before".
     bool listOff(std::uint32_t addr) const { return offList_.count(addr) != 0; }
 
+    // `sub_42AAE0` - THE ROW BINDER, and it sets TWO flags, not one.
+    //
+    // The device's nine row widgets are a WINDOW onto a list of `count`
+    // things, and for every widget past the end the binder writes
+    //
+    //     item+60 = -1            the tag: this row shows nothing
+    //     set 0x40000001          NOT DRAWN
+    //     set 0x20000004          NOT SELECTABLE
+    //
+    // The composer had the first two and the walk had neither, so the
+    // selection could be moved onto a row that draws nothing - and the
+    // highlight, which follows the selection, vanished with it. A player
+    // reported exactly that on both pages: "when I pressed right or up at
+    // the max top the hover disappears and I don't know where it is", and
+    // "on inventory list I can go to the first element but not the second"
+    // (there being only one object, the second row is one of these).
+    //
+    // Call it whenever the row contents change; it replaces the entries for
+    // that list alone, so a builder's own switched-off items survive.
+    void bindRows(std::uint32_t list, int count);
+
 private:
     void settle();
     // `sub_4296B0` and `sub_4296D0`, and the panel `+4` builder that calls
     // them. `buildPage` runs the arm for the panel being opened; a panel
     // with no builder read leaves every colour as the record has it.
+    bool pickable(const UiList& l, const UiItem& it) const;
     void colourItem(std::uint32_t item, int r, int g, int b);
     void colourList(std::uint32_t list, int r, int g, int b);
     void buildPage(const UiPanel& p);

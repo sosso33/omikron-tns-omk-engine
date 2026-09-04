@@ -359,12 +359,37 @@ bool UiWalk::moveLists(int step) {
     return cur_ != before;
 }
 
+// `Ui_MoveSelection`'s test for one row, with the runtime bits the static
+// record cannot carry: an item a builder switched off, or one the ROW BINDER
+// put past the end of its list, is not selectable however its record reads.
+bool UiWalk::pickable(const UiList& l, const UiItem& it) const {
+    return it.selectable(l.broadcast) && !itemOff(it.addr);
+}
+
+void UiWalk::bindRows(std::uint32_t list, int count) {
+    if (!panel_) return;
+    for (const auto& l : panel_->lists) {
+        if (l.addr != list) continue;
+        for (std::size_t k = 0; k < l.items.size(); ++k) {
+            if (static_cast<int>(k) < count) off_.erase(l.items[k].addr);
+            else                             off_.insert(l.items[k].addr);
+        }
+        // ...and if the selection was left on a row that has just gone away,
+        // pull it back to the last live one. `sub_42AAE0` cannot leave the
+        // highlight past the end and neither may this.
+        auto it = sel_.find(l.addr);
+        if (it != sel_.end() && it->second >= count)
+            it->second = count > 0 ? count - 1 : 0;
+        return;
+    }
+}
+
 bool UiWalk::usable(const UiList& l) const {
     // `Ui_MoveBetweenLists`'s own predicate: not hidden, and something in it
     // can be selected.
     if (l.hidden()) return false;
     if (listOff(l.addr)) return false;   // sub_4290D0 set 0x20000004 on it all
-    for (const auto& it : l.items) if (it.selectable(l.broadcast)) return true;
+    for (const auto& it : l.items) if (pickable(l, it)) return true;
     return false;
 }
 
@@ -411,7 +436,7 @@ void UiWalk::settle() {
         if (j < 0) {
             j = 0;
             for (std::size_t i = 0; i < l.items.size(); ++i)
-                if (l.items[i].selectable(l.broadcast)) { j = static_cast<int>(i); break; }
+                if (pickable(l, l.items[i])) { j = static_cast<int>(i); break; }
         }
         sel_.emplace(l.addr, j);      // keeps a live selection, seeds a new one
     }
@@ -589,7 +614,7 @@ bool UiWalk::move(const UiList& l, std::uint32_t bits,
             j += step;
             if (j < 0)       j = l.noWrap() ? 0 : n - 1;
             else if (j >= n) j = l.noWrap() ? n - 1 : 0;
-            if (l.items[static_cast<std::size_t>(j)].selectable(l.broadcast)) break;
+            if (pickable(l, l.items[static_cast<std::size_t>(j)])) break;
         }
         sel_[l.addr] = j;
         log_.push_back("move");
