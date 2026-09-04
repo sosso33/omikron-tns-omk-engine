@@ -222,6 +222,8 @@ issue 66 was answered: the moves are there, the channel emits them, and until
 four of the sixty-six; these are the next five, and `take_states` prints their
 groups and inputs.
 
+## Fixed (batch 15, 2026-09-04)
+
 ### 67. Stuck on a bench and on a steep slope: the walker had no way DOWN — A
 
 > **Fixed 2026-09-04. CONFIRMED IN PLAY**: *"I walked on a few bench and I was
