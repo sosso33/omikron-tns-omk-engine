@@ -61,6 +61,69 @@ zone he should never have been able to touch, so the transition fires with him
 somewhere the transition does not expect. Fixing 68's fall does not fix this,
 but it removes the reader's route to it.
 
+**THE READER'S REPRO, NARROWED 2026-09-04 — it is the tunnel's FAR DOOR.**
+*"there is a tunnel between Anekbah and Qalisar, with a big sliding door on
+each extremity (like a sas). On the Anekbah side, no issue, the door open
+(animation triggered). But, at the end of the tunnel, no animation is
+triggered: I have to stay very close to the door, the tunnel disapear execept
+the door, and I can walk through the closed door (collision not working) to
+enter Qalisar"* — and *"I think the specifity of T01door02Open is that the door
+should wait for the environnement to be loaded"*.
+
+The tunnel is **AREA 224**, set `TUNELAQ1`, scene `TUNNEL01` (`+97`). Its eight
+scripts carry FOUR routes out, and the two that matter are:
+
+    record 0   area.goto   0, 3, 4     -> Anekbah, door objects 3 and 4
+    record 1   area.goto 101, 5, 6     -> Qalisar, door objects 5 and 6
+    record 2   area.goto   0, -1, -1   + area.arrive   (NO doors)
+    record 3   area.goto 101, -1, -1   + area.arrive   (NO doors)
+
+`area.goto <area>, <open>, <close>` names a DOOR PAIR (RECONSTRUCTION
+2026-09-02: 441 of 448 object-carrying sites are zone enter scripts and the
+objects are door pairs). `Tunnel01.SCX` holds exactly those four as objects
+3/4/5/6 — `T01door01Open`, `T01door01Closed`, `T01door02Open`,
+`T01door02Closed` — and **the port's own reader resolves all six objects**
+(`build/scene_objects Tunnel01.SCX`).
+
+**RULED OUT, so nobody re-walks them:**
+
+* **not a missing scene function.** `T01door02Open` is
+  `Script_MoveObjectOnPath` + two `Script_PlaySound`, and all three are
+  implemented. Only `T01door02Closed` carries an unimplemented one,
+  `0x0400001F` (`fn_04_31`, 3 uses in the whole corpus), and an unknown
+  function has `busySpan` 0 — it completes instantly rather than stalling.
+* **not the load gate.** `areaTransition` mode 3 state 1 does `showSet(dest)`
+  and only THEN `startTransitionObject(f1)`, so the departure door already
+  waits for the destination to report loaded. The reader's hypothesis is right
+  about the mechanism and the port already models it.
+* **not object resolution.** The six handles read 3, 4, 5, 6, 10, 11.
+
+**WHAT THE ASYMMETRY POINTS AT.** Entering the tunnel the destination is
+`TUNELAQ1`, 3912 corners — about one frame of streaming. Leaving it the
+destination is `QALISAR`, **90543 corners**, many frames
+(`ceil(bytes / 0x20000)`). So anything that bites only when the load is LONG is
+invisible on the Anekbah side and fatal on the Qalisar side, which is exactly
+the shape reported. The surviving candidates, in order:
+
+1. **the wrong route fires.** AREA 224 has both a door-carrying route to
+   Qalisar (record 1) and a doorless one (record 3, `-1, -1` + `area.arrive`).
+   A doorless route resumes the caller immediately with no object at all —
+   which is "no animation is triggered" exactly. Which zone the port arms at
+   that end is the first thing to instrument.
+2. **the door has no collision**, which the reader also reports ("I can walk
+   through the closed door"). A scene object's collision is not in the walkable
+   soup, so the door is scenery the walker cannot see — and that is what lets
+   the player reach the far zone while the transition is mid-flight.
+
+**A coverage number found on the way**, worth having on its own: across all 220
+`.SCX` the corpus uses **17 distinct scene functions over 13887 call sites**,
+and the port implements **6 of the 17 — 13240 sites, 95.3%**. The
+unimplemented, by use: `Script_Display3DSprite` 232, `Script_StopSound` 86,
+`fn_04_41` 59, `fn_04_12` 58, `Script_SetSpriteRolling` 58,
+`Script_ScaleSpriteOnX`/`Y` 58 each, `Script_ScaleObjectX`/`Y`/`Z` 35 between
+them, `fn_04_31` 3. None is on this bug's path, but a scene that scales or
+rolls a sprite draws nothing today.
+
 **Still open**: whether the engine would have re-linked Qalisar on event 9, or
 whether it never lets the player be there at all. `Area_LoadSet` keeps two
 sets resident, state 2 linked and state 1 loaded-but-unlinked, and
