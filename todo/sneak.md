@@ -67,9 +67,42 @@ So it enters a mode with **two named slots**, puts the first object in one of
 them (`sub_42B520` decides which — unread, and it is the whole asymmetry),
 disables the verbs and sends you back to the rows for a second object.
 
-The recipe half is already ported: `Inventory::combine(a, b, gate)` over
-`GLOBAL +12`'s 11 symmetric recipes. What is missing is the mode, the two
-slots, and `sub_42B520`.
+**`sub_42B520` is read now (2026-09-04)** and so is the rest of the mode. It
+raises **event 37** with `obj | 0xFFFF0000` and answers whether the result is
+1, and case 37's first arm is:
+
+    if (objectId == u16(GLOBAL, 64))  { result 1; dword_4E6C70 = 1; }
+    else                              { result 2; dword_4E6C70 = 0; }
+
+`GLOBAL +64` is **object 330**, and `dword_4E6C70` IS THE RECIPE GATE — which
+the port already carries as `globalSpellItem`, so this confirms a reading
+rather than adding one. Case 37's second arm completes it:
+
+    recipe = sub_409650(second, first)
+    if (!recipe || dword_4E6C70 != recipe+6) result 2       // no recipe, or the gate
+    else { remove both; ObjectList_InsertFront(list, recipe+4); dword_4E6C70 = -1; }
+
+and `sub_49BC60`'s combine branch (`loc_49BDD6`) drives it: if slot `670BE8`
+is empty it fills it and returns; otherwise it calls the combine, plays
+interface sound **12** on success or shows text **35** on failure, and either
+way reinstalls the INVENTORY page (`sub_42A370(screen, unk_4DEE50)`).
+
+**And the shipped gates make one of the two paths fruitless.** The 11 recipes
+carry gate **0 five times and gate 8 six times — never 1**:
+
+    0 :  18+7->33,  108+156->38,  26+20->99,  607+464->286,  710+20->709
+    8 :  379+159->367, 525+391->378, 387+383->382,
+         358+379->721, 379+359->722, 360+379->723
+
+`dword_4E6C70` can only be 0, 1 or -1, so the six gate-8 recipes can never
+fire — which this repo already knew — and, newly, **starting a combine with
+object 330 sets the gate to 1, which matches nothing**, so that arm can never
+produce anything either. The reachable combine is: first object NOT 330 (gate
+0), second object, five recipes. Implement that path and record the other.
+
+What is missing is only the UI mode: `dword_670BE0`, the two slots, disabling
+the verb list, and the second row confirm going to the combine instead of to
+the verb panel.
 
 Until it is done, the honest behaviour is to REFUSE `Utiliser sur` rather
 than run `Utiliser`'s arm under its name.
