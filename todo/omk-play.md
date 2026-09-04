@@ -909,6 +909,89 @@ object at table height, so group 143 has never been entered in play. It is the
 same one test with the comparison the other way, and the printf will say so the
 first time one is taken.
 
+**AND THE ANIMATION IS STILL WRONG, because the group is only half of it: a
+take clip is a GRID OF VARIANTS and the engine plays a 21-FRAME WINDOW.**
+
+The reader, after the group fix shipped: *"the engine continue to play all the
+animations each time I grab an object"*, and earlier, from watching it: *"it
+plays the complete list of grabbing object animations (object on the floor,
+object on a table,...). The engine probably choose the correct frame range to
+play depending of the position of the character and the position of the
+objects."* That is right, and it is one level below where the group fix acts.
+
+**`sub_466390`**, which `sub_465D30`'s group arm calls right after
+`SetPersoBankGroup`:
+
+    angle  = actor[0x1C4]     // the approach angle, clamped to +-50 (flt_4BC7A8/850)
+    second = actor[0x1C8]     // clamped to [-53, +51]  (flt_4BC848/844)
+    n      = actor[0x4F4]     // 9 or 6 - THE VARIANT COUNT
+    len    = (clipFrames - n + 1) / n + 1          // frames per variant
+    out[8]  = ecx * len;   out[0Eh] = esi * len    // four indices x len
+    out[0Ah] = ebx * len;  out[0Ch] = edi * len    //   = four FRAME OFFSETS
+
+Both fields are written by `sub_465D30` itself, at `loc_46605B`, out of the
+same geometry that picks the group - so the angle that chooses WHICH take also
+chooses WHERE IN IT.
+
+**The arithmetic closes on the shipped files with no remainder**, which is the
+self-check:
+
+| clip | frames | n | len | product |
+|---|---|---|---|---|
+| `H_TAKH12` | 189 | 9 | `(189-9+1)/9+1 = 21` | **9 x 21 = 189** |
+| `H_TAKL12` | 126 | 6 | `(126-6+1)/6+1 = 21` | **6 x 21 = 126** |
+
+**And the DATA agrees, independently.** Plotting each clip's whole-body pose
+excursion frame by frame (distance of every node's quaternion from the first
+real pose - key 0 is the rest sentinel):
+
+    H_STAND    54 frames   .:--===+******#######@@@@@@@@###***++===---::...
+    H_WAITOB   54 frames   .::-===++****########@@@@@@@@@@###***+++===---::.
+    H_GETOBJ   20 frames    .:-==++*+++++**#@
+    H_TAKL12  126 frames   .:::-----=  .::::::= ..:--=====.:==+*###@ .-=++*###=.-==+*#@@@
+    H_TAKH12  189 frames   .-+*###.-++++*.-+*@@@.:-===* .:---*.-++++*.-=+*** :-===*.-+*##@
+
+The three single motions rise and settle once. `H_TAKH12` shows NINE
+rise-and-reset segments and `H_TAKL12` about six - the counts the code derives,
+reached from the other side. A take clip is a grid: approach angle on one axis,
+the `+1C8h` value on the other, 21 frames per cell, and the engine blends the
+four nearest cells.
+
+The port plays frame 0 to the end, so every variant plays in sequence. That is
+the whole of the reported symptom.
+
+`sub_466210` is the same builder for group 600 and corroborates the shape: the
+angle's QUADRANT picks the variant (indices 2/3/4/5 by sign and by +-90) and a
+0..256 fraction - `angle * 256/90`, an 8.8 fixed point - places it within.
+
+**REFUTED ON THE WAY, so nobody re-walks it**: the machine does NOT fall
+through the wait. Group 4's `H_WAITOB` is the default entry and its `MDPUTSNK`
+and `MDNOTAKE` children carry `0x80000000` and not the `0x20` default bit, so
+it is meant to be picked out of by input - and it is. Traced:
+
+    4231  H_WAITOB   input 0000   <- NO INPUT
+    4465  H_GETOBJ   input 0010
+    4472  H_STAND
+
+234 ticks held, left only when 0x10 arrived. An earlier reading that
+`MDACTION -> MDGETOBJ -> MDPUTSNK` with "no second press" meant a fall-through
+was wrong: it was the second press, invisible because the first trace printed
+no input word. **A state trace that does not print the INPUT cannot tell a wait
+from a walk-through.**
+
+**Also a lesson about the instrument, not the game**: the first widened trace
+stopped on `H_STAND`, which is still the clip at the instant the press is seen,
+so six takes logged one line each and none of the interesting half. Assert over
+the TRANSITION, not the state - the same rule CLAUDE.md 1 states for values
+verified standing still. A check for this should count DISTINCT ENTRIES per
+press rather than sample a clip name.
+
+**WHAT IS STILL UNREAD**, before this is implementable: which of
+`esi/ecx/edi/ebx` is which corner of the blend; what `out[0]`/`out[4]` (the
+0..256 fractions) drive downstream in `sub_4725B0`; and where `actor[0x4F4]` -
+the 9 or the 6 - is set per clip. The port also has no blend-four-poses path,
+so this is a slice and not a one-line fix.
+
 **Still open in 69**: the camera (`Camera_Request` is still never called on a
 take) and the sound. The reader's full description of the target:
 *"when taking a object, there is sound and a camera move; when validating,

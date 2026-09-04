@@ -3574,26 +3574,59 @@ int main(int argc, char** argv) {
                 } else {
                     player->tick(static_cast<float>(frameSec * 30.0), bits);
                 }
-                // omk-play 69: WATCH the take. Group 41 is H_TAKL12 (bend and
-                // grab) -> MDGETOBJ -> H_TAKL22 (stand up), and entry 24 has no
-                // clip at all, so the handler switching the group is right.
-                // If the animation "makes no sense" the question is whether the
-                // channel walks that sequence or stalls in it - so print every
-                // clip change for a window after the press.
+                // omk-play 69: WATCH THE WHOLE TAKE, INCLUDING THE WAIT.
+                //
+                // The take is not one animation, it is a CONVERSATION with the
+                // player - the reader's own account: "grabbing an object means
+                // taking it in the hand, waiting for the user confirmation or
+                // cancellation, and triggering the right anim for each case".
+                // H1Avnt says the same thing:
+                //
+                //   group 41   H_TAKL12 -> MDGETOBJ -> H_TAKL22 -> goto ...
+                //   group 4    H_WAITOB   (the group's DEFAULT entry - the hold)
+                //                +- MDPUTSNK  flags 80000013 -> H_GETOBJ -> H_STAND
+                //                +- MDNOTAKE  flags 80000013 -> H_GETOBJ -> H_STAND
+                //
+                // Neither child of `H_WAITOB` carries the default bit `0x20`
+                // and both carry `0x80000000`, so the machine is meant to SIT
+                // in H_WAITOB until an input picks a branch. A channel that
+                // falls through to a child when nothing matches would play the
+                // confirm or the cancel immediately - "it plays all the
+                // animations", which is the report.
+                //
+                // The old window was 120 TICKS, and a tick advances the clip by
+                // `frameSeconds * 30`, so under `--speed 3` it expired just as
+                // H_WAITOB began and the interesting half was never logged.
+                // This runs until the machine is back in the idle, so the wait
+                // and whatever leaves it are both on the record - and prints
+                // the INPUT WORD, because "did a transition fire with no input"
+                // is the whole question.
                 {
-                    static int watch = 0;
+                    static int  watch = 0;
+                    static bool leftIdle = false;
                     static std::string lastClip;
                     for (const auto& mv : player->specialMoves())
-                        if (mv == "MDACTION") watch = 120;
+                        if (mv == "MDACTION") {
+                            watch = 1200; leftIdle = false; lastClip.clear();
+                        }
                     if (watch > 0) {
                         --watch;
                         const std::string c = player->clipName();
                         if (c != lastClip) {
                             lastClip = c;
                             std::printf("  anim: frame %ld  .CTL state %d '%s'  clip '%s' "
-                                        "f %.1f\n", n, player->ctlState(),
+                                        "f %.1f  input %04x%s\n", n, player->ctlState(),
                                         player->ctlStateName().c_str(), c.c_str(),
-                                        player->clipFrame());
+                                        player->clipFrame(), bits,
+                                        bits ? "" : "   <- NO INPUT");
+                            // Stop only once the machine has LEFT the idle and
+                            // come back. Testing for H_STAND alone ended the
+                            // watch on its first tick every time, because the
+                            // press is seen while the idle clip is still up -
+                            // six takes logged one line each and none of the
+                            // interesting half.
+                            if (c != "H_STAND") leftIdle = true;
+                            else if (leftIdle) watch = 0;
                         }
                     }
                 }
