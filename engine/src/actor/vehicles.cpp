@@ -104,8 +104,8 @@ int Sliders::vehicleSpawnCount(const OptTrack& t, bool cap) {
 // flag 2 clear, marked in use. The engine's pool is 240 fixed slots; here it
 // grows, and the two callbacks' own caps (200 and 40) are what bound it.
 int Sliders::newMover() {
-    walkers_.push_back(Pedestrian{});
-    return static_cast<int>(walkers_.size()) - 1;
+    movers_.push_back(Pedestrian{});
+    return static_cast<int>(movers_.size()) - 1;
 }
 
 bool Sliders::spawnVehicle(int lane, const float at[3], const float dir[3],
@@ -145,7 +145,7 @@ bool Sliders::spawnVehicle(int lane, const float at[3], const float dir[3],
     v.mover = mi;
     vehicles_[static_cast<std::size_t>(slot)] = v;
 
-    Pedestrian& m = walkers_[static_cast<std::size_t>(mi)];
+    Pedestrian& m = movers_[static_cast<std::size_t>(mi)];
     m.live = true;
     m.vehicle = slot;
     m.model = v.model;
@@ -188,7 +188,7 @@ bool Sliders::spawnVehicle(int lane, const float at[3], const float dir[3],
 void Sliders::setVehicleModelRadius(const std::string& model, float radius) {
     for (auto& v : vehicles_) {
         if (!v.live || v.model != model || v.mover < 0) continue;
-        Pedestrian& m = walkers_[static_cast<std::size_t>(v.mover)];
+        Pedestrian& m = movers_[static_cast<std::size_t>(v.mover)];
         m.bodyRadius = radius;
         m.radius = radius * 0.5f;
     }
@@ -217,7 +217,7 @@ void Sliders::tickVehicles(float dt) {
         // `if ((u8(v17, 180) & 9) != 0) sub_456530(...)` - flag 8 is the
         // spawner's mark and flag 1 is "blocked", so every placed mover
         // passes and a hand-placed one would not.
-        if (!(walkers_[static_cast<std::size_t>(v.mover)].flags & 9u)) continue;
+        if (!(movers_[static_cast<std::size_t>(v.mover)].flags & 9u)) continue;
         // `sub_456530`'s switch on the record's +8. State 0 - ambient
         // traffic - falls to the default, which is the drive. States 1..7
         // are the player's mount and ride and are not ported; a record in
@@ -232,7 +232,7 @@ void Sliders::vehicleDrive(int vi, float dt) {
     // `sub_456C70`
     Vehicle& v = vehicles_[static_cast<std::size_t>(vi)];
     const int mi = v.mover;
-    Pedestrian& m = walkers_[static_cast<std::size_t>(mi)];
+    Pedestrian& m = movers_[static_cast<std::size_t>(mi)];
 
     moverStep(mi, dt);                                  // `sub_454F40`
 
@@ -319,7 +319,7 @@ void Sliders::vehicleSound(int vi) {
     // can start and stop the one voice the engine keeps per vehicle.
     Vehicle& v = vehicles_[static_cast<std::size_t>(vi)];
     if (!playerKnown_) return;
-    const Pedestrian& m = walkers_[static_cast<std::size_t>(v.mover)];
+    const Pedestrian& m = movers_[static_cast<std::size_t>(v.mover)];
     const float dx = m.body[0] - playerPos_[0];
     const float dy = m.body[1] - playerPos_[1];
     const float dz = m.body[2] - playerPos_[2];

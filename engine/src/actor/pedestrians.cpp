@@ -165,7 +165,7 @@ std::uint32_t Sliders::rnd() {
 
 void Sliders::clear() {
     track_ = OptTrack{}; clips_ = PedClips{};
-    models_.clear(); walkers_.clear(); states_.clear(); actionClip_.clear();
+    models_.clear(); movers_.clear(); states_.clear(); actionClip_.clear();
     laneHead_.clear(); keyList_.clear(); routeHead_.clear(); groupBusy_.clear();
     groupBusyVeh_.clear(); crossWaitVeh_ = crossWaitPed_ = 0;
     vehicles_.clear(); bumped_.clear();
@@ -176,7 +176,7 @@ void Sliders::clear() {
 }
 
 void Sliders::setModelRadius(const std::string& model, float radius) {
-    for (auto& w : walkers_) {
+    for (auto& w : movers_) {
         if (w.vehicle >= 0 || w.model != model) continue;
         w.bodyRadius = radius;
         w.radius = radius * 0.5f;
@@ -185,7 +185,7 @@ void Sliders::setModelRadius(const std::string& model, float radius) {
 
 int Sliders::liveCount() const {
     int n = 0;
-    for (const auto& w : walkers_) if (w.live && w.vehicle < 0) ++n;
+    for (const auto& w : movers_) if (w.live && w.vehicle < 0) ++n;
     return n;
 }
 
@@ -234,7 +234,7 @@ void Sliders::load(const OptTrack& track, const PedClips& clips, std::uint32_t m
     routeHead_.assign(track_.routes.size(), {});
     groupBusy_.assign(track_.groups.size(), 0);
     groupBusyVeh_.assign(track_.groups.size(), 0);
-    walkers_.reserve(static_cast<std::size_t>(kMaxWalkers + kMaxVehicles));
+    movers_.reserve(static_cast<std::size_t>(kMaxWalkers + kMaxVehicles));
     // `Slider_Init` runs its two halves in order and each has its own gate:
     // the crowd needs a pedestrian lane range and a model, the traffic needs
     // vehicle lanes. Neither is a precondition of the other, and Lahoreh
@@ -245,7 +245,7 @@ void Sliders::load(const OptTrack& track, const PedClips& clips, std::uint32_t m
                         static_cast<float>((5 - level_) * static_cast<int>(track_.pedSpacing)), false);
     }
     // `Slider_Init`'s last loop: every pedestrian's speed factor and base speed
-    for (auto& w : walkers_) {
+    for (auto& w : movers_) {
         if (!w.live || w.vehicle >= 0) continue;
         const float f = static_cast<float>(5 - static_cast<int>(rnd() % 10)) * 0.05f + 1.0f;
         w.speedFactor = f;
@@ -303,7 +303,7 @@ void Sliders::spawnAlongLanes(std::uint32_t firstLane, std::uint32_t endLane,
 bool Sliders::spawnOne(int lane, const float at[3], const float dir[3], float segLen, int keyIndex) {
     // `sub_453ED0`: the callback - a record and a mover, a sex, a model from
     // its quota, a name, the walk clip; then `sub_453B40` fills the mover
-    if (static_cast<int>(walkers_.size()) >= kMaxWalkers) return false;
+    if (static_cast<int>(movers_.size()) >= kMaxWalkers) return false;
     const bool menLeft = std::any_of(models_.begin(), models_.end(), [](const ModelQuota& m) { return m.sex == 1; });
     const bool womenLeft = std::any_of(models_.begin(), models_.end(), [](const ModelQuota& m) { return m.sex == 2; });
     int sex = static_cast<int>(rnd() & 1u) ? 2 : 1;
@@ -344,8 +344,8 @@ bool Sliders::spawnOne(int lane, const float at[3], const float dir[3], float se
     counter_ = (counter_ + 1) & 0x7FFFFFFFu;
     w.route = L.firstRoute + static_cast<int>(counter_ % static_cast<std::uint32_t>(nr));
     w.flags = 0x8;
-    const int idx = static_cast<int>(walkers_.size());
-    walkers_.push_back(std::move(w));
+    const int idx = static_cast<int>(movers_.size());
+    movers_.push_back(std::move(w));
     auto& list = listFor(lane, keyIndex + 1);
     list.insert(list.begin(), idx);
     return true;
@@ -415,7 +415,7 @@ bool Sliders::checkAhead(Pedestrian& m, const float p[3], int candidate) {
     // `sub_455230` / `sub_4552B0` / `sub_455340`'s test on ONE candidate: not
     // in an action, it is the one ahead; within the two radii the follower is
     // blocked. True when the candidate counted.
-    const auto& o = walkers_[static_cast<std::size_t>(candidate)];
+    const auto& o = movers_[static_cast<std::size_t>(candidate)];
     if (o.flags & 0x280u) return false;
     m.ahead = candidate;
     const float dx = p[0] - o.pos[0], dy = p[1] - o.pos[1], dz = p[2] - o.pos[2];
@@ -435,7 +435,7 @@ bool Sliders::checkAheadOnLane(Pedestrian& m, const float p[3], int lane, int fr
     const auto& L = track_.lanes[static_cast<std::size_t>(lane)];
     for (int k = fromKey - 2; k < L.keyCount; ++k) {
         const auto& l = keyList_[static_cast<std::size_t>(L.firstKey + k)];
-        if (l.empty() || (walkers_[static_cast<std::size_t>(l[0])].flags & 0x280u)) continue;
+        if (l.empty() || (movers_[static_cast<std::size_t>(l[0])].flags & 0x280u)) continue;
         return checkAhead(m, p, l[0]);
     }
     return false;
@@ -487,7 +487,7 @@ int Sliders::changeSegment(int wi, int oldLane, std::uint32_t newFlags, int oldS
     // `sub_455680`: the segment index after this one, the list the mover moves
     // to, the reservation groups crossed - and -1 with the mover BLOCKED when
     // a group it needs is busy
-    Pedestrian& m = walkers_[static_cast<std::size_t>(wi)];
+    Pedestrian& m = movers_[static_cast<std::size_t>(wi)];
     const auto& R = track_.routes[static_cast<std::size_t>(m.route)];
     std::vector<int>* from = nullptr;
     std::vector<int>* to = nullptr;
@@ -533,7 +533,7 @@ void Sliders::moverStep(int wi, float dt) {
     // `sub_454F40`. Everything is computed into locals and stored only if the
     // mover is not blocked - a blocked mover stands, and recomputes the same
     // segment end from its segment start next frame.
-    Pedestrian& m = walkers_[static_cast<std::size_t>(wi)];
+    Pedestrian& m = movers_[static_cast<std::size_t>(wi)];
     m.flags &= ~1u;
     std::uint32_t flags = m.flags;
     float advance = m.speed * dt;
@@ -591,7 +591,7 @@ void Sliders::moverStep(int wi, float dt) {
                                                    : &listFor(oldLane, m.seg);
         const auto it = std::find(mine->begin(), mine->end(), wi);
         const std::size_t at = it == mine->end() ? mine->size() : static_cast<std::size_t>(it - mine->begin()) + 1;
-        const bool nextOk = at < mine->size() && !(walkers_[static_cast<std::size_t>((*mine)[at])].flags & 0x280u);
+        const bool nextOk = at < mine->size() && !(movers_[static_cast<std::size_t>((*mine)[at])].flags & 0x280u);
         if (nextOk) {
             checkAhead(m, p, (*mine)[at]);
         } else if (m.flags & 0x10u) {
@@ -674,7 +674,7 @@ bool Sliders::beginAction(Pedestrian& m, int actionIndex) {
 
 void Sliders::bodyStep(int wi, float dt) {
     // `sub_455830`
-    Pedestrian& m = walkers_[static_cast<std::size_t>(wi)];
+    Pedestrian& m = movers_[static_cast<std::size_t>(wi)];
     const std::uint32_t oldFlags = m.flags;
     m.ahead = -1;
     m.action = -1;
@@ -682,7 +682,7 @@ void Sliders::bodyStep(int wi, float dt) {
     std::uint32_t flags = m.flags;
     // overtaking: a slower walker ahead on my segment, within 39 units
     if (m.ahead >= 0) {
-        const Pedestrian& a = walkers_[static_cast<std::size_t>(m.ahead)];
+        const Pedestrian& a = movers_[static_cast<std::size_t>(m.ahead)];
         if (a.baseSpeed < m.baseSpeed && !(a.flags & 1u) && !((flags ^ a.flags) & 0x10u) &&
             ((flags & 0x10u) || m.seg == a.seg)) {
             const float dx = a.body[0] - m.body[0], dz = a.body[2] - m.body[2];
@@ -800,7 +800,7 @@ void Sliders::actionTransition(Pedestrian& m, ActionState& s) {
     // walk again and the point's id restored
     if (s.phase == 1) { s.phase = 2; setClip(m, s.main); return; }
     if (s.phase == 2) {
-        const int idx = static_cast<int>(&m - walkers_.data());
+        const int idx = static_cast<int>(&m - movers_.data());
         if (idx != talkTarget_ && --s.count < 0) {
             if (s.exit) { s.phase = 3; setClip(m, s.exit); }
             else finishAction(m, s);
@@ -812,7 +812,7 @@ void Sliders::actionTransition(Pedestrian& m, ActionState& s) {
 
 void Sliders::actionStep(int wi, float dt) {
     // `sub_455E90`
-    Pedestrian& m = walkers_[static_cast<std::size_t>(wi)];
+    Pedestrian& m = movers_[static_cast<std::size_t>(wi)];
     if (m.action < 0) { m.flags &= ~0x80u; return; }
     ActionState* s = nullptr;
     for (auto& st : states_) if (st.used && st.actionIndex == m.action) { s = &st; break; }
@@ -871,8 +871,8 @@ void Sliders::actionStep(int wi, float dt) {
 void Sliders::tick(float dt) {
     // `Sliders_Tick`'s pedestrian loop
     if (!loaded_) return;
-    for (int wi = 0; wi < static_cast<int>(walkers_.size()); ++wi) {
-        Pedestrian& m = walkers_[static_cast<std::size_t>(wi)];
+    for (int wi = 0; wi < static_cast<int>(movers_.size()); ++wi) {
+        Pedestrian& m = movers_[static_cast<std::size_t>(wi)];
         if (!m.live || m.vehicle >= 0) continue;   // a vehicle's mover: the road loop below
         if (!(m.flags & 0x80u)) {
             bodyStep(wi, dt);
@@ -885,8 +885,8 @@ void Sliders::tick(float dt) {
 }
 
 int Sliders::actionPhase(int w) const {
-    if (w < 0 || static_cast<std::size_t>(w) >= walkers_.size()) return -1;
-    const auto& m = walkers_[static_cast<std::size_t>(w)];
+    if (w < 0 || static_cast<std::size_t>(w) >= movers_.size()) return -1;
+    const auto& m = movers_[static_cast<std::size_t>(w)];
     if (!(m.flags & 0x80u) || m.action < 0) return -1;
     for (const auto& st : states_) if (st.used && st.actionIndex == m.action) return st.phase;
     return -1;
@@ -900,8 +900,8 @@ int Sliders::nearestInFront(const float pos[3], float facingDeg) const {
     int found = -1;
     const float a = facingDeg * kPi / 180.0f;
     const float fs = -std::sin(a), fc = std::cos(a);
-    for (int i = 0; i < static_cast<int>(walkers_.size()); ++i) {
-        const auto& w = walkers_[static_cast<std::size_t>(i)];
+    for (int i = 0; i < static_cast<int>(movers_.size()); ++i) {
+        const auto& w = movers_[static_cast<std::size_t>(i)];
         if (!w.live || !(w.flags & 0x80u) || w.action < 0) continue;
         const ActionState* s = nullptr;
         for (const auto& st : states_) if (st.used && st.actionIndex == w.action) { s = &st; break; }

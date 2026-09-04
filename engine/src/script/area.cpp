@@ -2951,9 +2951,9 @@ void Session::loadTrafficFor(int slot) {
     trafficSlot_ = slot & 1;
     // `sub_45E040` at every spawn: each walker an instance entry of the index
     for (const int s : pedSlots_) spatial_.remove(s);
-    pedSlots_.assign(sliders_.walkers().size(), -1);
-    for (std::size_t i = 0; i < sliders_.walkers().size(); ++i) {
-        const auto& w = sliders_.walkers()[i];
+    pedSlots_.assign(sliders_.movers().size(), -1);
+    for (std::size_t i = 0; i < sliders_.movers().size(); ++i) {
+        const auto& w = sliders_.movers()[i];
         if (!w.live) continue;
         pedSlots_[i] = spatial_.add(static_cast<int>(i), 1, modelReach(w.model), modelSpheres(w.model));
     }
@@ -2964,9 +2964,9 @@ void Session::refreshCrowdIndex() {
     // `sub_454EF0` after each walker's step: `SpatialIndex_Update` from the
     // instance's position
     static int nanTold = 0;
-    for (std::size_t i = 0; i < pedSlots_.size() && i < sliders_.walkers().size(); ++i) {
+    for (std::size_t i = 0; i < pedSlots_.size() && i < sliders_.movers().size(); ++i) {
         if (pedSlots_[i] < 0) continue;
-        const auto& w = sliders_.walkers()[i];
+        const auto& w = sliders_.movers()[i];
         // A non-finite walker is never rejected by the reach test (every
         // comparison against NaN is false), so it reaches the push and takes
         // the player with it. Report the first one.
@@ -3026,7 +3026,7 @@ bool Session::crowdPush(const std::vector<CollisionSphere>& mine, float myReach,
             int w = -1;
             for (std::size_t i = 0; i < pedSlots_.size(); ++i) if (pedSlots_[i] == s) { w = static_cast<int>(i); break; }
             if (w < 0) continue;
-            const auto& walker = sliders_.walkers()[static_cast<std::size_t>(w)];
+            const auto& walker = sliders_.movers()[static_cast<std::size_t>(w)];
             postMessage(walker.sex == 1 ? 15 : 16, playerActor());
             bumpCooldown_ = 100;                     // `dword_538318 = 100.0f`
             break;
@@ -3039,7 +3039,7 @@ bool Session::talkToPedestrian(const float pos[3], float facing) {
     const int w = sliders_.nearestInFront(pos, facing);
     if (w < 0) return false;
     sliders_.setTalkTarget(w);
-    postMessage(sliders_.walkers()[static_cast<std::size_t>(w)].sex == 1 ? 13 : 14, playerActor());
+    postMessage(sliders_.movers()[static_cast<std::size_t>(w)].sex == 1 ? 13 : 14, playerActor());
     return true;
 }
 

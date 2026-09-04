@@ -112,13 +112,13 @@ int main(int argc, char** argv) {
                 slot.ani.empty() ? "-" : slot.ani.c_str(), peds.loaded() ? 1 : 0, peds.streetActivity(),
                 spawned, models.empty() ? "-" : models.c_str());
     std::vector<std::array<float, 3>> start;
-    for (const auto& w : peds.walkers()) start.push_back({w.body[0], w.body[1], w.body[2]});
+    for (const auto& w : peds.movers()) start.push_back({w.body[0], w.body[1], w.body[2]});
     for (int f = 0; f < frames; ++f) s.frame();
     const auto net = network(peds.track());
     int live = 0, moved = 0, laneChanges = 0, blocked = 0, overtakes = 0, actions = 0, idle = 0, inAction = 0, nan = 0;
     float maxLag = 0.0f, maxOff = 0.0f;
     std::size_t i = 0;
-    for (const auto& w : peds.walkers()) {
+    for (const auto& w : peds.movers()) {
         const auto& st = start[i++];
         // The pool is the engine's ONE 240-slot mover pool: the road traffic
         // shares it (actor/vehicles.cpp), and a vehicle's mover carries

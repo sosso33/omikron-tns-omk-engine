@@ -96,3 +96,11 @@ __pycache__/
 /engine/142
 .DS_Store
 *.swp
+
+# Claude Code's own working state, and it MUST be ignored rather than merely
+# left untracked: `.claude/worktrees/` holds git WORKTREES - a git repository
+# inside this one - so `git add -A` picks the directory up as an embedded-repo
+# gitlink and quietly commits a pointer to a checkout nobody else can resolve.
+# That happened on 2026-09-04 and had to be undone with a reset; it also swept
+# another session's uncommitted work into the same commit.
+.claude/

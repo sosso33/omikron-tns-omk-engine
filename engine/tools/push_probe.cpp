@@ -86,13 +86,13 @@ int main(int argc, char** argv) {
     // run the pool a little, then pick a walker on a lane, not blocked, not in an action
     for (int f = 0; f < 60; ++f) s.frame();
     int wi = -1;
-    for (std::size_t i = 0; i < peds.walkers().size(); ++i) {
-        const auto& w = peds.walkers()[i];
+    for (std::size_t i = 0; i < peds.movers().size(); ++i) {
+        const auto& w = peds.movers()[i];
         if (!w.live || (w.flags & 0x191u) || w.speed <= 0.0f) continue;
         wi = static_cast<int>(i); break;
     }
     if (wi < 0) { std::printf("walk no walker to stand in front of\n"); return 0; }
-    const auto& w0 = peds.walkers()[static_cast<std::size_t>(wi)];
+    const auto& w0 = peds.movers()[static_cast<std::size_t>(wi)];
     float stand[3] = {w0.body[0] + w0.heading[0] * 120.0f, w0.body[1], w0.body[2] + w0.heading[2] * 120.0f};
     omk::PlayerController::Setup su;
     su.ctl = &ctl; su.ctlData = ctlData; su.meshes = &meshes; su.soup = &soup;
@@ -115,7 +115,7 @@ int main(int argc, char** argv) {
         pc.tick(1.0f, 0);
         s.setPlayerPosition(pc.pos(), pc.facing());
         s.frame();
-        const auto& w = peds.walkers()[static_cast<std::size_t>(wi)];
+        const auto& w = peds.movers()[static_cast<std::size_t>(wi)];
         const float dx = w.body[0] - pc.pos()[0], dz = w.body[2] - pc.pos()[2];
         minDist = std::fmin(minDist, std::sqrt(dx * dx + dz * dz));
     }
@@ -129,11 +129,11 @@ int main(int argc, char** argv) {
     int ti = -1;
     for (int f = 0; f < 900 && ti < 0; ++f) {
         s.frame();
-        for (std::size_t i = 0; i < peds.walkers().size(); ++i)
-            if (peds.walkers()[i].live && peds.actionPhase(static_cast<int>(i)) == 2) { ti = static_cast<int>(i); break; }
+        for (std::size_t i = 0; i < peds.movers().size(); ++i)
+            if (peds.movers()[i].live && peds.actionPhase(static_cast<int>(i)) == 2) { ti = static_cast<int>(i); break; }
     }
     if (ti < 0) { std::printf("talk no walker at an action point within 900 frames\n"); return 0; }
-    const auto& t = peds.walkers()[static_cast<std::size_t>(ti)];
+    const auto& t = peds.movers()[static_cast<std::size_t>(ti)];
     float ahead[3] = {t.body[0] + t.heading[0] * 80.0f, t.body[1], t.body[2] + t.heading[2] * 80.0f};
     const float back = std::fmod(t.facing + 180.0f, 360.0f);
     const int before = talks;

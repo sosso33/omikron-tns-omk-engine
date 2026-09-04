@@ -244,7 +244,7 @@ public:
     // The shared mover pool - walkers and vehicle movers both. A vehicle's
     // entry carries `vehicle >= 0`; `liveCount` counts the walkers alone, so
     // every pedestrian number a check quotes is unmoved by the traffic.
-    const std::vector<Pedestrian>& walkers() const { return walkers_; }
+    const std::vector<Pedestrian>& movers() const { return movers_; }
     int  liveCount() const;
     const std::vector<Vehicle>& vehicles() const { return vehicles_; }
     int  liveVehicles() const;
@@ -363,7 +363,7 @@ private:
     OptTrack track_;
     PedClips clips_;
     std::vector<ModelQuota> models_;
-    std::vector<Pedestrian> walkers_;
+    std::vector<Pedestrian> movers_;
     std::vector<ActionState> states_;
     std::vector<std::int16_t> actionClip_;   // the points' clip ids, cleared while a state uses one
     std::vector<std::vector<int>> laneHead_, keyList_, routeHead_;  // newest first

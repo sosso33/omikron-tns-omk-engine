@@ -276,7 +276,7 @@ int main(int argc, char** argv) {
     std::vector<int> seen;
     for (const auto& v : pool.vehicles()) {
         if (!v.live || v.mover < 0) continue;
-        const int ln = pool.walkers()[static_cast<std::size_t>(v.mover)].lane;
+        const int ln = pool.movers()[static_cast<std::size_t>(v.mover)].lane;
         if (std::find(seen.begin(), seen.end(), ln) == seen.end()) { seen.push_back(ln); ++lanesUsed; }
     }
     std::printf("spawn rule %d uncapped %d placed %d sliders %d motos %d lanes_used %d walkers %d\n",
@@ -285,9 +285,9 @@ int main(int argc, char** argv) {
 
     std::vector<std::array<float, 3>> start;
     for (const auto& v : pool.vehicles())
-        start.push_back(v.mover >= 0 ? std::array<float, 3>{pool.walkers()[static_cast<std::size_t>(v.mover)].body[0],
-                                                            pool.walkers()[static_cast<std::size_t>(v.mover)].body[1],
-                                                            pool.walkers()[static_cast<std::size_t>(v.mover)].body[2]}
+        start.push_back(v.mover >= 0 ? std::array<float, 3>{pool.movers()[static_cast<std::size_t>(v.mover)].body[0],
+                                                            pool.movers()[static_cast<std::size_t>(v.mover)].body[1],
+                                                            pool.movers()[static_cast<std::size_t>(v.mover)].body[2]}
                                      : std::array<float, 3>{0, 0, 0});
     // THE SHARED RESERVATION GROUPS. A mover inside a route holds the group
     // its current segment names (`sub_453230`: segment 0 is the route's own
@@ -322,7 +322,7 @@ int main(int argc, char** argv) {
         pool.tick(1.0f);
         bumpEvents += static_cast<int>(pool.bumped().size());
         std::vector<int> pg, vg;
-        for (const auto& m : pool.walkers()) {
+        for (const auto& m : pool.movers()) {
             if (!m.live) continue;
             const int g = heldGroup(m);
             if (g < 0) continue;
@@ -351,7 +351,7 @@ int main(int argc, char** argv) {
     for (std::size_t i = 0; i < pool.vehicles().size(); ++i) {
         const auto& v = pool.vehicles()[i];
         if (!v.live || v.mover < 0) continue;
-        const auto& m = pool.walkers()[static_cast<std::size_t>(v.mover)];
+        const auto& m = pool.movers()[static_cast<std::size_t>(v.mover)];
         ++live;
         const float dx = m.body[0] - start[i][0], dz = m.body[2] - start[i][2];
         if (std::sqrt(dx * dx + dz * dz) > 1.0f) ++moved;
@@ -387,7 +387,7 @@ int main(int argc, char** argv) {
         int measured = 0;
         for (const auto& v : pool.vehicles()) {
             if (!v.live || v.mover < 0) continue;
-            const auto& m = pool.walkers()[static_cast<std::size_t>(v.mover)];
+            const auto& m = pool.movers()[static_cast<std::size_t>(v.mover)];
             (void)m;
             const float rr = noseRatio(v.model);
             if (rr <= 0.0f) continue;
@@ -403,6 +403,6 @@ int main(int argc, char** argv) {
                 sharedGroups(track), pedHeld, vehHeld, sharedFrames, conflicts,
                 pool.crossClassWaits(true), pool.crossClassWaits(false));
     // the crowd must be untouched by the traffic sharing its pool
-    std::printf("crowd walkers %d live_movers %zu\n", pool.liveCount(), pool.walkers().size());
+    std::printf("crowd walkers %d live_movers %zu\n", pool.liveCount(), pool.movers().size());
     return 0;
 }

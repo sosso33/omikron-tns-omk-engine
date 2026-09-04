@@ -3836,7 +3836,7 @@ int main(int argc, char** argv) {
                 // found (2026-09-04).
                 if (!used) {
                     const auto& circuit = session.sliders();
-                    for (const auto& w : circuit.walkers())
+                    for (const auto& w : circuit.movers())
                         if (w.live && w.model == it->first) { used = true; break; }
                     if (!used)
                         for (const auto& v : circuit.vehicles())
@@ -4712,7 +4712,7 @@ int main(int argc, char** argv) {
                     pedAni = fs.read("ANIMS/" + rs.ani + ".ANI");
                     pedTracks.clear();
                 }
-                const auto& ws = pd.walkers();
+                const auto& ws = pd.movers();
                 if (pedStaged.size() != ws.size()) {
                     pedStaged.clear();
                     for (std::size_t i = 0; i < ws.size(); ++i) pedStaged.push_back(std::make_unique<PedStaged>());
@@ -4802,7 +4802,7 @@ int main(int argc, char** argv) {
                     VehStaged& sv = *vehStaged[i];
                     sv.drawn = false;
                     if (!v.live || v.mover < 0) continue;
-                    const auto& m = pd.walkers()[static_cast<std::size_t>(v.mover)];
+                    const auto& m = pd.movers()[static_cast<std::size_t>(v.mover)];
                     ++vehLive;
                     if (m.flags & 0x100u) ++vehStopped;
                     const float vx = m.body[0] - view.cam.eye[0], vy = m.body[1] - view.cam.eye[1],
