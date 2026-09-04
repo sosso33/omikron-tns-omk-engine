@@ -91,6 +91,9 @@ inline constexpr std::uint32_t kCbSneakRowConfirm = 0x0049BC60u;
 inline constexpr std::uint32_t kCbSneakExamine    = 0x0049BFF0u;
 inline constexpr std::uint32_t kListSneakPreviews = 0x004DE420u;
 inline constexpr std::uint32_t kItemSneakExamine  = 0x004DE2C0u;
+// Panel 0x004DEF20's own list and its single item - the examine page's
+// content, a 3D model or a document bitmap.
+inline constexpr std::uint32_t kListSneakExamineContent = 0x004DE760u;
 inline constexpr std::uint32_t kItemSneakClock      = 0x004DEC08u;
 
 using FlagOp = std::pair<std::uint32_t, bool>;
@@ -383,6 +386,19 @@ public:
     // is the panel's current one. A drawer that treats "in the current list"
     // as selected lights every row of it, which is what this did.
     int  selectionOf(const UiList& l) const;
+    // ...and by ADDRESS, for a list the current panel does not carry. The
+    // selections are a static record keyed by list, so the examine page can
+    // ask which ROW was chosen even though it has no row list of its own.
+    // `dword_670CB8` - which source fills the shared row list. A caller
+    // filling the rows follows THIS, not the panel: the row bindings are a
+    // static record and survive the descent into the verb panel, so the
+    // object names must too. Filling them only while the walk is on the
+    // inventory page loses the name the moment an object is chosen.
+    int  rowKind() const { return state_->rowKind; }
+    int  selectionOf(std::uint32_t listAddr) const {
+        const auto it = state_->sel.find(listAddr);
+        return it == state_->sel.end() ? -1 : it->second;
+    }
     const UiItem* selected() const;
     bool closed() const { return panel_ == nullptr; }
 

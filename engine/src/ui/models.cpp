@@ -52,6 +52,75 @@ int UiModels::load(const DataFs& fs) {
     return count();
 }
 
+// `Game_HandleEvent` case 40, the arm this port needs: the record's `+2`
+// decides, and `+0x0E` (the `stem`) names the content.
+UiModels::Examine UiModels::examine(const DataFs& fs, int kind,
+                                    const std::string& stem) {
+    if (stem == exStem_ && exKind_ != Examine::None) return exKind_;
+    exKind_ = Examine::None;
+    exStem_ = stem;
+    exImage_ = Surface();
+    exModel_ = M();
+    if (stem.empty()) return exKind_;
+    if (kind == 15) {                       // result 4 - the 3D preview
+        const auto d = fs.read("MESHES/OBJETS/" + stem + ".3do");
+        if (d.empty()) return exKind_;
+        exModel_.name = stem;
+        exModel_.geo = buildGeometry(d, DrawFilter::Engine);
+        if (exModel_.geo.corners.empty()) return exKind_;
+        const auto t = fs.read("MESHES/OBJETS/" + stem + ".3dt");
+        if (!t.empty()) exModel_.tex = textures(d, t);
+        float lo[3] = {1e30f, 1e30f, 1e30f}, hi[3] = {-1e30f, -1e30f, -1e30f};
+        for (const auto& c : exModel_.geo.corners) {
+            const float v[3] = {c.x, c.y, c.z};
+            for (int j = 0; j < 3; ++j) {
+                if (v[j] < lo[j]) lo[j] = v[j];
+                if (v[j] > hi[j]) hi[j] = v[j];
+            }
+        }
+        for (int j = 0; j < 3; ++j) {
+            exModel_.centre[j] = (lo[j] + hi[j]) * 0.5f;
+            if (hi[j] - lo[j] > exModel_.extent) exModel_.extent = hi[j] - lo[j];
+        }
+        exKind_ = Examine::Model;
+    } else if (kind == 16) {                // result 5 - `Images\<stem>`
+        auto d = fs.read("IMAGES/" + stem + ".bmp");
+        if (d.empty()) d = fs.read("IMAGES/" + stem);
+        if (d.empty()) return exKind_;
+        exImage_ = surfaceFromBmp(d);
+        if (exImage_.valid()) exKind_ = Examine::Document;
+    }
+    return exKind_;
+}
+
+bool UiModels::drawExamine(Surface& dst, int x, int y, int w, int h,
+                           float angleDeg) {
+    if (exKind_ == Examine::Model) {
+        m_.push_back(exModel_);
+        const bool ok = draw(dst, static_cast<int>(m_.size()) - 1, x, y, w, h,
+                             angleDeg);
+        m_.pop_back();
+        return ok;
+    }
+    if (exKind_ != Examine::Document || !exImage_.valid() || !dst.valid())
+        return false;
+    // A document is a BITMAP, blitted into the page's rect. `sub_478EF0`
+    // hands it to the I2D bitmap cache and the page's own item draws it;
+    // scaling to fit is this port's, because the item's rect and the file's
+    // size are both fixed and the engine's blit stretches.
+    for (int j = 0; j < h; ++j) {
+        const int dy = y + j, sy = j * exImage_.h / h;
+        if (dy < 0 || dy >= dst.h || sy < 0 || sy >= exImage_.h) continue;
+        for (int i = 0; i < w; ++i) {
+            const int dx = x + i, sx = i * exImage_.w / w;
+            if (dx < 0 || dx >= dst.w || sx < 0 || sx >= exImage_.w) continue;
+            dst.px[static_cast<std::size_t>(dy) * dst.w + dx] =
+                exImage_.px[static_cast<std::size_t>(sy) * exImage_.w + sx];
+        }
+    }
+    return true;
+}
+
 bool UiModels::draw(Surface& dst, int k, int x, int y, int w, int h,
                     float angleDeg) {
     if (k < 0 || k >= count() || w <= 0 || h <= 0 || !dst.valid()) return false;

@@ -326,6 +326,21 @@ ScreenFrame ScreenComposer::draw(Surface& fb, int screenId,
                     ++out.modelsDrawn;
             }
 
+            // ---- THE EXAMINE PAGE'S CONTENT ---------------------------
+            //
+            // Panel 0x004DEF20's own list 0x004DE760 holds one item, and what
+            // it shows is whichever arm of `Game_HandleEvent` case 40 the
+            // object's kind takes - a 3D model for kind 15, an
+            // `IMAGES\<stem>.bmp` for kind 16, nothing otherwise.
+            if (models_ && l.addr == kListSneakExamineContent) {
+                if (models_->drawExamine(fb,
+                                         scaleX(it.x + q->offsetX),
+                                         scaleY(it.y + q->offsetY),
+                                         scaleX(it.w), scaleY(it.h),
+                                         UiModels::spinDegrees(clockMs_)))
+                    ++out.modelsDrawn;
+            }
+
             // ---- THE CURSOR: `Ui_DrawItemCursor` (`sub_479920`) -------
             //
             // Drawn BEFORE the fill and the sprite, because `sub_4795F0`

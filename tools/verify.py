@@ -10524,6 +10524,59 @@ def c_sneak_page_colour():
            "closing and reopening the device"
 
 
+def c_sneak_examine():
+    r"""THE EXAMINE PAGE'S TWO CONTENT PATHS - a 3D viewer and a document.
+
+    A player, who plays the original: "for Examiner, take care, some objects
+    are visible in a 3D viewer, others are documents and so 2D texts/images
+    will be displayed." The code says exactly that, and the shipped data
+    checks it two ways.
+
+    `sub_49B950` asks `sub_42B330(tag)` for the object's kind and sends kind 5
+    to `sub_478EF0`. **Both of those raise the same channel event, 40**, which
+    fills one argument block - `sub_42B330` reads the word at `+4` and
+    `sub_478EF0` the pointer at `+0`, which is why one call serves both:
+
+        rec[+2] == 15  ->  block[+4] = 4, block[+0] = dword_4C0608, the
+                           loaded preview MODEL
+        rec[+2] == 16  ->  block[+4] = 5, block[+0] = sub_40BB40(rec + 0x0E),
+                           which `sub_478EF0` sprintf's into `Images\%s` and
+                           hands to the bitmap cache
+        otherwise      ->  block[+4] = 2, and the page has no content
+
+    **`rec + 0x0E` is `o + 14`, which is the `stem` this port already reads**
+    for every object - so nothing new had to be lifted, and that is the check:
+    a field read for one purpose has to name the right file for another.
+
+    It does, both ways and with no exceptions: **83 of 83** kind-15 records
+    have a `MESHES\OBJETS\<stem>.3do` and **17 of 17** kind-16 records have an
+    `IMAGES\<stem>.bmp`. And the 17 read as documents should - "Omikron News -
+    11 Nadim 7216", "Plan des egouts de la Zone 9", "Les runes Masa'u".
+
+    Shown to fail: reading the kind from `+0` or the stem from `+12` drops
+    both counts to 0.
+    """
+    import subprocess
+    eng = os.path.join(ROOT, "engine")
+    if not os.path.isdir(eng):
+        return ("skipped",), ("skipped",), "engine/ absent"
+    mk = subprocess.run(["make", "-s", "build/exam_probe"], cwd=eng,
+                        capture_output=True, text=True)
+    tool = os.path.join(eng, "build", "exam_probe")
+    if mk.returncode != 0 or not os.path.exists(tool):
+        return ("skipped",), ("skipped",), "exam_probe did not build"
+    r = subprocess.run([tool, omkpaths.data_root()], capture_output=True, text=True)
+    o = r.stdout
+    return ("kind 15 83 of 83 have a model" in o,
+            "kind 16 17 of 17 have an image" in o), \
+           (True, True), \
+           "every object whose record kind is 15 has the model the examine " \
+           "page's 3D arm needs, and every one whose kind is 16 has the " \
+           "bitmap its document arm needs - 83 of 83 and 17 of 17, with the " \
+           "name coming from `rec + 0x0E`, the same field this port already " \
+           "read as the object's stem for another purpose"
+
+
 def c_sneak_previews():
     r"""THE SNEAK'S THREE 3D PREVIEWS - the data half, read 2026-09-04.
 
@@ -18788,7 +18841,7 @@ def c_licence_headers():
                    if TAG in open(p, encoding="utf-8",
                                   errors="replace").read(600)]
     return (authored, sorted(missing), len(vendored), mislabelled), \
-           (328, [], 1, []), \
+           (329, [], 1, []), \
            "authored source files under tools/, engine/src, engine/tools, " \
            "engine/backends and scripts/; those MISSING the SPDX tag; " \
            "vendored files in engine/third_party; and vendored files wrongly " \
@@ -20261,6 +20314,7 @@ SLOW = [
     ("cursor highlight",  c_cursor_highlight,   "UI 3b"),
     ("slider destinations", c_slider_destinations, "UI 3g"),
     ("sneak previews",   c_sneak_previews,     "UI 3g"),
+    ("sneak examine",    c_sneak_examine,      "UI 3g"),
     ("engine: movies",     c_engine_movies,     "BOOT 2"),
     ("engine: raster",     c_engine_raster,     "PORTING B6"),
     ("engine: silhouette", c_engine_silhouette, "PORTING B6"),

@@ -1583,6 +1583,7 @@ int main(int argc, char** argv) {
     // `GLOBAL +16` - the sneak's slider destinations, 39 of them.
     const auto destinations = omk::globalDestinations(globalFile);
     bool sliderTold = false;
+    std::string examineTold;
     if (objectRecords.empty())
         std::printf("no IAM/OBJECT - the sneak's inventory page will be "
                     "empty\n");
@@ -5466,12 +5467,18 @@ int main(int argc, char** argv) {
             // `StateArray::AddressEnabled`, what VM ops 87/88 write. So the
             // page lists the places the game has given the player, and a
             // capture of the original shows exactly that: four rows.
-            if (pn && pn->addr == omk::kPanelSneakSlider) {
+            // WHICH SOURCE, not which panel. `dword_670CB8` is what the
+            // engine dispatches on, and the row bindings are a static record
+            // that survives a descent - so the names stay put when an object
+            // is chosen and the walk moves to the verb panel.
+            const int rowKind = walk->rowKind();
+            if (rowKind == 4) {
                 std::vector<std::string> known;
                 for (const auto& d : destinations)
                     if (state.bit(omk::StateArray::AddressEnabled, d.bit))
                         known.push_back(d.name);
-                for (const auto& l : pn->lists) {
+                const omk::UiPanel* rp = w.at(omk::kPanelSneakSlider);
+                for (const auto& l : (rp ? rp->lists : pn->lists)) {
                     if (l.addr != omk::kListSneakRows) continue;
                     for (std::size_t k = 0; k < l.items.size(); ++k) {
                         if (k >= known.size()) {
@@ -5494,8 +5501,37 @@ int main(int argc, char** argv) {
                                 known.size(), destinations.size());
                 }
             }
-            if (pn && pn->addr == omk::kPanelSneakInventory &&
-                inv.openedList() >= 0) {
+            // ---- THE EXAMINE PAGE'S CONTENT -------------------------
+            //
+            // Which object is being examined is the ROW the walk was on when
+            // "Examiner" was confirmed, and the row list keeps its selection
+            // (it is a static record), so it is still there. `Game_HandleEvent`
+            // case 40 then dispatches on that object's own kind.
+            if (pn && pn->addr == omk::kPanelSneakExamine) {
+                const auto carried =
+                    omk::objectList(state, omk::ObjectList::Carried);
+                // BY ADDRESS: the examine page carries no row list of its
+                // own, and the selections are a static record keyed by list,
+                // so the row chosen two panels ago is still there.
+                const int row = walk->selectionOf(omk::kListSneakRows);
+                if (row >= 0 && static_cast<std::size_t>(row) < carried.size()) {
+                    const int idx = carried[static_cast<std::size_t>(row)];
+                    if (idx >= 0 &&
+                        static_cast<std::size_t>(idx) < objectRecords.size()) {
+                        const auto& rec = objectRecords[static_cast<std::size_t>(idx)];
+                        const auto k = uiModels.examine(fs, rec.kind, rec.stem);
+                        if (rec.stem != examineTold) {
+                            examineTold = rec.stem;
+                            std::printf("sneak: examine '%s' kind %d -> %s\n",
+                                        rec.name.c_str(), rec.kind,
+                                        k == omk::UiModels::Examine::Model ? "3D model"
+                                        : k == omk::UiModels::Examine::Document
+                                          ? "document bitmap" : "nothing (case 40 result 2)");
+                        }
+                    }
+                }
+            }
+            if (rowKind == 0 && inv.openedList() >= 0) {
                 const auto carried = omk::objectList(state,
                                                      omk::ObjectList::Carried);
                 // ---- `sub_42AAE0`, THE ROW BINDER --------------------
@@ -5521,7 +5557,8 @@ int main(int argc, char** argv) {
                 // The window is 0 here: scrolling is `sub_0049C050` +
                 // `sub_42AFF0`, and neither is modelled, so a list longer
                 // than nine is truncated rather than scrolled.
-                for (const auto& l : pn->lists) {
+                const omk::UiPanel* rp = w.at(omk::kPanelSneakInventory);
+                for (const auto& l : (rp ? rp->lists : pn->lists)) {
                     if (l.addr != omk::kListSneakRows) continue;
                     const std::size_t window = 0;
                     for (std::size_t k = 0; k < l.items.size(); ++k) {

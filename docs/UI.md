@@ -667,6 +667,39 @@ Found because a player asked for "Utiliser" to be the default after choosing
 an object, *"unless the original code says otherwise"* — and it does: the
 original had been reset-on-open only because the port forgot.
 
+### The examine page shows one of TWO things
+
+A player who plays the original: *"for Examiner, take care, some objects are
+visible in a 3D viewer, others are documents and so 2D texts/images will be
+displayed."* The code says exactly that.
+
+`sub_49B950` asks `sub_42B330(tag)` for the object's kind and sends kind 5 to
+`sub_478EF0`. **Both raise the same channel event, 40**, which fills one
+argument block — `sub_42B330` reads the word at `+4` and `sub_478EF0` the
+pointer at `+0`, which is why one call serves both:
+
+| `rec[+2]` | `block[+4]` | `block[+0]` | the page shows |
+|---|---|---|---|
+| **15** | 4 | `dword_4C0608`, the loaded preview model | a 3D viewer |
+| **16** | 5 | `sub_40BB40(rec + 0x0E)` | `Images\<that>.bmp`, a bitmap |
+| anything else | 2 | — | nothing |
+
+`sub_478EF0` sprintf's the name into `Images\%s`, hands it to the bitmap cache
+(`sub_428A20`) and keeps the handle in `dword_6A5094`; `sub_478F70` frees it.
+
+**`rec + 0x0E` is `o + 14`, which is the `stem` this port already read** for
+another purpose — so nothing new had to be lifted, and that is the check: a
+field read for one job has to name the right file for another. It does, both
+ways and with no exceptions — **83 of 83** kind-15 records have a
+`MESHES\OBJETS\<stem>.3do` and **17 of 17** kind-16 records have an
+`IMAGES\<stem>.bmp`. The 17 read as documents should: "Omikron News — 11
+Nadim 7216", "Plan des égouts de la Zone 9", "Les runes Masa'u".
+
+`verify.py: sneak examine`, shown to fail by reading the stem from `+12`.
+Both arms are ported; the page's camera is the previews' bounding-box fit,
+which is a reuse and not a reading — the examine page's own submitter has not
+been read.
+
 ### The three 3D previews, and the interface's own 3D primitive
 
 A player: "the 3D items are not here". They are list 0x004DE420 — three 50×50

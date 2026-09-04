@@ -75,6 +75,34 @@ public:
     // Draw model `k` into `dst`'s rect, turned `angleDeg` about Y.
     bool draw(Surface& dst, int k, int x, int y, int w, int h, float angleDeg);
 
+    // ---- THE EXAMINE PAGE'S CONTENT, and there are TWO kinds ----------
+    //
+    // `sub_49B950` asks `sub_42B330` for the object's kind and sends kind 5
+    // to `sub_478EF0`. Both of those raise the inventory channel's EVENT 40,
+    // which fills one block from the record's own `+2`:
+    //
+    //     kind 15  ->  result 4, `+0` = the loaded preview MODEL
+    //     kind 16  ->  result 5, `+0` = `sub_40BB40(rec + 0x0E)`, and
+    //                  `sub_478EF0` loads `Images\<that>` as a BITMAP
+    //     else     ->  result 2, no examine content at all
+    //
+    // `rec + 0x0E` is exactly the `stem` this port already reads, and the
+    // shipped data checks both arms two ways: **83 of 83** kind-15 records
+    // have a `MESHES\OBJETS\<stem>.3do` and **17 of 17** kind-16 records have
+    // an `IMAGES\<stem>.bmp`. Neither had to come out whole.
+    //
+    // The documents are what a player described: newspapers, notes, maps and
+    // books - "Omikron News - 11 Nadim 7216", "Plan des egouts de la Zone 9".
+    enum class Examine { None, Model, Document };
+    // Set the page's content from an object record's kind and stem. Returns
+    // what it became, so a caller can say so rather than guess.
+    Examine examine(const DataFs& fs, int kind, const std::string& stem);
+    Examine examineKind() const { return exKind_; }
+    // Draw whatever `examine` loaded into the rect. A document is blitted
+    // whole and scaled to fit; a model goes through the same camera the
+    // previews use.
+    bool drawExamine(Surface& dst, int x, int y, int w, int h, float angleDeg);
+
     // `sub_42B5E0(4)` - oscillator 4, period 5000, and this is its angle in
     // degrees. The oscillator's own ramp is `sub_42B700`'s triangle over
     // lo..hi; row 4 ships lo/hi of -1, so what it carries is the raw phase.
@@ -100,6 +128,11 @@ private:
     std::vector<M>   m_;
     SoftwareRenderer sw_;
     int rw_ = 0, rh_ = 0;
+    // The examine page's content: one model loaded on demand, or one bitmap.
+    Examine     exKind_ = Examine::None;
+    std::string exStem_;
+    M           exModel_;
+    Surface     exImage_;
 };
 
 }  // namespace omk
