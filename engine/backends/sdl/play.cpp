@@ -1363,6 +1363,7 @@ int main(int argc, char** argv) {
     std::string saveFile;
     int areaArg = -1, addressArg = -1, density = omk::kDefaultStreetActivity;
     int giveArg = -1;      // --give: an object id for the carried list
+    bool newWorld = false; // --newgame-world: START's world, the save's player
     bool noCrowd = false;
     // `--sneak` opens the device as soon as the player is on his feet,
     // through the SAME path TAB takes - `MDSNEAK0`'s handler, event 25 and
@@ -1444,6 +1445,10 @@ int main(int argc, char** argv) {
         // opcode 50 `inventory.add` is what the game uses; this writes the
         // slot and runs none of its bookkeeping.
         else if (a == "--give" && i + 1 < argc) giveArg = std::atoi(argv[++i]);
+        // ...and its companion: keep the save's PLAYER but take the world
+        // from `IAM\START`, so a flow can be tried against a new game's
+        // state without the intro. Also a harness flag, not a port.
+        else if (a == "--newgame-world") newWorld = true;
         else if (a == "--density" && i + 1 < argc) density = std::atoi(argv[++i]);
         else if (a == "--no-crowd") noCrowd = true;
         else if (a == "--sneak") openSneak = true;
@@ -1571,6 +1576,15 @@ int main(int argc, char** argv) {
         // clock row (`sub_0049E090`) is the first thing in this port to show
         // it, and it showed "1 Aqed 7216 - 0:00:00" against a save the same
         // function had just printed as a different date.
+        if (newWorld) {
+            // The save brought its own world - doors opened, addresses
+            // enabled. Put a new game's back, keeping the player record the
+            // save is loaded FOR.
+            if (state.debugCopyWorldFrom(omk::GameState::fromFile(fr + "/IAM/START")))
+                std::printf("--newgame-world: the six state arrays and the "
+                            "three object lists reset to IAM/START (a harness "
+                            "write, not `Game_NewGame`)\n");
+        }
         state.setClockDay(slot->day);
         state.setClock(slot->time);
         std::printf("save: slot 0 '%s', %s %s, area %d\n", slot->name.c_str(),

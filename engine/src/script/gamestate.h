@@ -287,6 +287,18 @@ public:
     // it writes the slot directly and runs none of the engine's bookkeeping.
     // Nothing in the port calls it.
     bool debugPutObject(int list, int id);
+
+    // ...and the other harness affordance, for the same reason. A save
+    // carries the whole 8192-byte DB, so loading one to get a working PLAYER
+    // record also brings that save's WORLD - doors already opened, addresses
+    // already enabled. This copies the six documented state arrays and the
+    // three object lists back from another DB (`IAM\START`, the new-game
+    // save), leaving everything else - the player record among it - alone.
+    //
+    // NOT a port of `Game_NewGame`, which applies the whole image; this is
+    // the opposite, a partial apply nothing in the engine does. Nothing in
+    // the port calls it.
+    bool debugCopyWorldFrom(const GameState& src);
     // The same block, WRITABLE, for the two engine paths that copy whole
     // records into it - `player.become`'s bio strings and player record
     // (`rep movsd` into `dword_69BC6C`, area.cpp) - rather than a field the

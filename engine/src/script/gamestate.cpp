@@ -388,4 +388,26 @@ bool GameState::debugPutObject(int list, int id) {
     return false;
 }
 
+bool GameState::debugCopyWorldFrom(const GameState& src) {
+    const auto other = src.raw();
+    if (other.size() != raw_.size()) return false;
+    const StateArray all[] = {StateArray::Variables, StateArray::SceneOfArea,
+                              StateArray::PropState, StateArray::ObjectShown,
+                              StateArray::AddressEnabled, StateArray::ZoneState};
+    for (const auto a : all) {
+        const auto o = offset(a);
+        const auto n = arrayBytes(a);
+        if (o + n > raw_.size()) continue;
+        for (std::size_t k = 0; k < n; ++k) raw_[o + k] = other[o + k];
+    }
+    // ...and the three object lists, which are a new game's inventory.
+    for (int L = 0; L < 3; ++L) {
+        const auto o = static_cast<std::size_t>(kListOffset[L]);
+        const auto n = static_cast<std::size_t>(kListCapacity[L]) * 2u;
+        if (o + n > raw_.size()) continue;
+        for (std::size_t k = 0; k < n; ++k) raw_[o + k] = other[o + k];
+    }
+    return true;
+}
+
 }  // namespace omk
