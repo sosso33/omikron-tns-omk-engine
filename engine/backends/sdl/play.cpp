@@ -3838,7 +3838,22 @@ int main(int argc, char** argv) {
                             }
                             player->setTakeGeometry(takeAngle, takeSecond);
                         }
-                        if (obj >= 0 && player->enterGroupById(group)) {
+                        // ---- STAGE ONE: THE ADJUST STEP ---------------
+                        //
+                        // MDACTION does NOT start the take. It calls
+                        // `sub_465D30(actor, obj, 0)`, whose `arg_8 == 0` arm
+                        // installs GROUP 600 - `H_ADJSTP` - and returns 1:
+                        // the character STEPS INTO POSITION first. The take
+                        // comes later, from MDADJSTP.
+                        //
+                        // A reader saw the gap before the code did: "I think
+                        // the original engine move the character to be in the
+                        // right position to take the object; here, the
+                        // animation is triggered directly if we are in the
+                        // triggering zone, without placing the character
+                        // correctly."
+                        player->setAdjustStep(true);
+                        if (obj >= 0 && player->enterGroupById(600)) {
                             takeCandidate = obj;
                             takeWasLow = low;
                             std::printf("take: MDACTION found object %d '%s' in reach, "
@@ -3847,9 +3862,60 @@ int main(int argc, char** argv) {
                                         obj, session.objectName(obj).c_str(), dy,
                                         low ? "LOW H_TAKL" : "HIGH H_TAKH", group,
                                         takeAngle, takeSecond);
+                            (void)group;
                         } else if (obj >= 0) {
                             std::printf("take: MDACTION found object %d but the bank has "
                                         "no group %d\n", obj, group);
+                        }
+                    } else if (mv == "MDADJSTP") {
+                        // ---- STAGE TWO: THE TAKE ----------------------
+                        //
+                        // The step has ended, so the geometry is RE-MEASURED
+                        // from where he now stands - that is the whole point
+                        // of the step - and `sub_465D30(actor, obj, 1)` takes
+                        // the other arm, installing group 41 or 143.
+                        //
+                        // The handler's own reach here is `flt_4BC930` =
+                        // 47.244095 - 120 cm, TIGHTER than MDACTION's 150,
+                        // because the step has brought him closer. If the
+                        // object is no longer within it, no take: the engine
+                        // returns without installing anything.
+                        player->setAdjustStep(false);
+                        constexpr float kAdjustReach = 47.244095f;
+                        float dy2 = 0.0f;
+                        const int obj2 = session.scanTakeable(player->pos(),
+                                                              player->facing(), &dy2);
+                        float op2[3] = {0, 0, 0};
+                        bool near2 = false;
+                        if (obj2 >= 0 && session.propPos(obj2, op2)) {
+                            const float ddx = op2[0] - player->pos()[0];
+                            const float ddy = op2[1] - player->pos()[1];
+                            const float ddz = op2[2] - player->pos()[2];
+                            near2 = ddx * ddx + ddy * ddy + ddz * ddz <=
+                                    kAdjustReach * kAdjustReach;
+                        }
+                        if (obj2 >= 0 && near2) {
+                            const float bearing2 = std::atan2(op2[2] - player->pos()[2],
+                                                              op2[0] - player->pos()[0]) *
+                                                   57.29577951308232f + 90.0f;
+                            float rel2 = bearing2 - player->facing();
+                            while (rel2 < -180.0f) rel2 += 360.0f;
+                            while (rel2 >  180.0f) rel2 -= 360.0f;
+                            const float up2 = -dy2;
+                            const bool low2 = dy2 > -27.472441f;
+                            player->setTakeGeometry(rel2, low2
+                                ? (up2 - 27.472441f) * 0.033866666f
+                                : up2 - 27.472441f);
+                            const int g2 = low2 ? 41 : 143;
+                            takeCandidate = obj2;
+                            takeWasLow = low2;
+                            std::printf("take: MDADJSTP - stepped into position, "
+                                        "dy %+.1f angle %+.1f -> %s take, group %d%s\n",
+                                        dy2, rel2, low2 ? "LOW" : "HIGH", g2,
+                                        player->enterGroupById(g2) ? "" : " - NO GROUP");
+                        } else {
+                            std::printf("take: MDADJSTP - nothing within 120 cm after "
+                                        "the step; no take\n");
                         }
                     } else if (mv == "MDGETOBJ") {
                         if (takeCandidate >= 0 && session.takeObject(takeCandidate)) {

@@ -251,6 +251,11 @@ public:
     // `second` is the raw second axis; the +-50 and [-53, +51] clamps are
     // applied here, as the engine applies them inside `sub_466390`.
     void setTakeGeometry(float angleDeg, float second);
+    // The ADJUST STEP uses the OTHER builder, `sub_466210`: the angle's
+    // QUADRANT picks one cell, its sign picks the other, and a 0..256 fraction
+    // of `angle * 256/90` blends them - no second axis at all (`out[4]` is
+    // written 0, so the cross-blend collapses). Group id 600, clip H_ADJSTP.
+    void setAdjustStep(bool on) { if (adjust_ != on) { adjust_ = on; ++takeGen_; } }
     // The current entry's variant count, 0 or 1 meaning "an ordinary clip".
     int variantCount() const;
 
@@ -356,6 +361,7 @@ private:
     int   gridClip_ = -1, gridGen_ = -1;
     float takeAngle_ = 0.0f, takeSecond_ = 0.0f;
     int   takeGen_ = 0;
+    bool  adjust_ = false;
     int matched_ = 0, total_ = 0;
 
     // the camera block's live state

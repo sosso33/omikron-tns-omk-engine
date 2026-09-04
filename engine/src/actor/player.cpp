@@ -417,7 +417,41 @@ void PlayerController::tick(float dt, std::uint32_t word) {
     // which is what keeps a looping walk from jumping back on every wrap.
     float local[3] = {0, 0, 0};
     if (s1 == s0 && f1 >= f0) {
-        if (const RootTrack* rt = rootTrackOf(clip())) rootDelta(*rt, f0, f1, local);
+        // A VARIANT-GRID CLIP MOVES BY THE CELL THE BLEND CHOSE, not by the
+        // raw frame (omk-play 69). `H_ADJSTP`'s six cells are six DIRECTIONS
+        // of one 50 cm step - 19.69 inches, measured:
+        //
+        //     cell 0  dx +19.69          cell 2,3  dz -19.69   (back)
+        //     cell 1  dx -19.69          cell 4,5  dz +19.67   (forward)
+        //
+        // Reading the raw track at frames 1..len is cell 0 every time, so the
+        // character always stepped RIGHT whatever direction he needed, which
+        // is why the approach angle was unchanged across the step (66.4 ->
+        // 66.5 degrees, where squaring up is the whole point of it).
+        //
+        // **A PORT DIVERGENCE, labelled.** `Anim_RootDelta` really does index
+        // by the raw frame and so really does read cell 0 - that is traced,
+        // not assumed. Either the engine starts a grid state's frame inside
+        // its own cell, which this port does not model, or the displacement
+        // reaches the actor by a path not yet found. Until one of those is
+        // settled this takes the motion from the BAKED window, which is the
+        // cell the rotations are already playing, so the step goes where the
+        // animation says it goes.
+        const int variants = variantCount();
+        const NodeTracks* baked = variants > 1 ? poseTracks() : nullptr;
+        if (baked && !baked->trans.empty()) {
+            const int a = static_cast<int>(std::floor(f0)) - 1;
+            const int b = static_cast<int>(std::floor(f1)) - 1;
+            const int last = static_cast<int>(baked->trans.size()) - 1;
+            const int ia = a < 0 ? 0 : (a > last ? last : a);
+            const int ib = b < 0 ? 0 : (b > last ? last : b);
+            for (int k = 0; k < 3; ++k)
+                local[static_cast<std::size_t>(k)] =
+                    baked->trans[static_cast<std::size_t>(ib)][static_cast<std::size_t>(k)] -
+                    baked->trans[static_cast<std::size_t>(ia)][static_cast<std::size_t>(k)];
+        } else if (const RootTrack* rt = rootTrackOf(clip())) {
+            rootDelta(*rt, f0, f1, local);
+        }
     }
     float world[3];
     rotateByFacing(local, world);                  // Anim_RootDelta's 3x3 = +288
@@ -581,6 +615,29 @@ PlayerController::GridSample PlayerController::gridSample(int n, int keys) const
     // and +-50. LABELLED: that correspondence is one hypothesis fitted three
     // times, not three confirmations (todo/omk-play.md 69).
     float a = takeAngle_;
+    // THE ADJUST STEP IS A DIFFERENT BUILDER (`sub_466210`, group 600). Its
+    // angle is NOT clamped to the 50 degree cone: the whole circle is split
+    // into quadrants, one cell chosen by the quadrant and the other by the
+    // sign, blended by `|angle| * 256/90` - and `out[4]` is written 0, so the
+    // cross-blend collapses and there is no second axis.
+    if (adjust_) {
+        int quad, sgn;
+        float v;
+        if (a >= 0.0f) {
+            if (a > 90.0f) { v = (180.0f - a) * 256.0f / 90.0f; quad = 5; sgn = 1; }
+            else           { v = a * 256.0f / 90.0f;            quad = 3; sgn = 1; }
+        } else {
+            if (a < -90.0f) { v = (a + 180.0f) * 256.0f / 90.0f; quad = 4; sgn = 0; }
+            else            { v = a * 256.0f / 90.0f;            quad = 2; sgn = 0; }
+        }
+        g.cell[0] = quad; g.cell[1] = sgn;      // out[8],  out[0Ah]
+        g.cell[2] = quad; g.cell[3] = sgn;      // out[0Eh], out[0Ch] - the same pair
+        float w = std::fabs(v) / 256.0f;
+        if (w > 1.0f) w = 1.0f;
+        g.wSecond = w;
+        g.wAngle  = 0.0f;                       // out[4] = 0
+        return g;
+    }
     if (a >  50.0f) a =  50.0f;
     if (a < -50.0f) a = -50.0f;
     float s = takeSecond_;
