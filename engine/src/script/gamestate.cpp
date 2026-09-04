@@ -368,4 +368,24 @@ int GameState::rings() const {
         (static_cast<unsigned char>(raw_[a + 1]) << 8));
 }
 
+bool GameState::debugPutObject(int list, int id) {
+    if (list < 0 || list > 2 || id <= 0) return false;
+    const int off = kListOffset[list], cap = kListCapacity[list];
+    for (int i = 0; i < cap; ++i) {
+        const std::size_t o = static_cast<std::size_t>(off + 2 * i);
+        if (o + 2 > raw_.size()) break;
+        // An EMPTY slot is not zero. `objectList` keeps a slot only when it
+        // is > 0, and the shipped lists pad with -1, so a free slot is any
+        // non-positive one.
+        const auto v = static_cast<std::int16_t>(
+            static_cast<std::uint16_t>(raw_[o]) |
+            (static_cast<std::uint16_t>(raw_[o + 1]) << 8));
+        if (v > 0) continue;
+        raw_[o]     = static_cast<std::byte>(id & 0xFF);
+        raw_[o + 1] = static_cast<std::byte>((id >> 8) & 0xFF);
+        return true;
+    }
+    return false;
+}
+
 }  // namespace omk

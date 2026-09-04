@@ -1362,6 +1362,7 @@ int main(int argc, char** argv) {
     // (default the engine's 3), `--no-crowd` leaves the pedestrians out.
     std::string saveFile;
     int areaArg = -1, addressArg = -1, density = omk::kDefaultStreetActivity;
+    int giveArg = -1;      // --give: an object id for the carried list
     bool noCrowd = false;
     // `--sneak` opens the device as soon as the player is on his feet,
     // through the SAME path TAB takes - `MDSNEAK0`'s handler, event 25 and
@@ -1438,6 +1439,11 @@ int main(int argc, char** argv) {
         else if (a == "--save" && i + 1 < argc) saveFile = argv[++i];
         else if (a == "--area" && i + 1 < argc) areaArg = std::atoi(argv[++i]);
         else if (a == "--address" && i + 1 < argc) addressArg = std::atoi(argv[++i]);
+        // A HARNESS FLAG, not a port: put an object into the carried list so
+        // a flow can be exercised from a save that does not carry it. VM
+        // opcode 50 `inventory.add` is what the game uses; this writes the
+        // slot and runs none of its bookkeeping.
+        else if (a == "--give" && i + 1 < argc) giveArg = std::atoi(argv[++i]);
         else if (a == "--density" && i + 1 < argc) density = std::atoi(argv[++i]);
         else if (a == "--no-crowd") noCrowd = true;
         else if (a == "--sneak") openSneak = true;
@@ -1576,6 +1582,13 @@ int main(int argc, char** argv) {
     // `IAM\GLOBAL +12`'s eleven combination recipes. `script/inventory.h` was
     // written, checked and never consumed by anything that runs - the sneak
     // is what the channel exists for, so this is where it is loaded.
+    if (giveArg > 0) {
+        if (state.debugPutObject(0, giveArg))
+            std::printf("--give: object %d put in the carried list "
+                        "(a harness write, not `inventory.add`)\n", giveArg);
+        else
+            std::printf("--give: could not place object %d\n", giveArg);
+    }
     const auto objectRecords = omk::loadObjects(fs);
     const auto globalFile = fs.read("IAM/GLOBAL");
     const auto recipes = omk::globalRecipes(globalFile);

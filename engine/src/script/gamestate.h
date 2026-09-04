@@ -279,6 +279,14 @@ public:
     std::size_t imageSize() const { return imageSize_; }
 
     std::span<const std::byte> raw() const { return {raw_.data(), raw_.size()}; }
+
+    // A HARNESS AFFORDANCE, not a port of anything. `omk-play --give` needs
+    // to put an object into the carried list so a flow can be exercised from
+    // a save that does not happen to carry the right thing; VM opcode 50
+    // `inventory.add` is what does it in the game, and this is NOT that -
+    // it writes the slot directly and runs none of the engine's bookkeeping.
+    // Nothing in the port calls it.
+    bool debugPutObject(int list, int id);
     // The same block, WRITABLE, for the two engine paths that copy whole
     // records into it - `player.become`'s bio strings and player record
     // (`rep movsd` into `dword_69BC6C`, area.cpp) - rather than a field the
