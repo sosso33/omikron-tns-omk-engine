@@ -12,7 +12,10 @@ namespace {
 // channels - one shift, and it is the dimming of every unselected row in the
 // game. The captures give white for the focused row and 0x7F7F7F for the
 // rest, which is that shift (`engine: text draw`).
-constexpr std::uint8_t kLit = 255, kDim = 0x7F;
+// The lit colour when bank C's `0x80000001` forces white. The DIM one is no
+// longer a constant: `Ui_ItemTextStyle` halves whatever colour the item
+// carries, so `0x7F` was only ever the halving of 255.
+constexpr std::uint8_t kLit = 255;
 
 }  // namespace
 
@@ -141,7 +144,6 @@ ScreenFrame ScreenComposer::draw(Surface& fb, int screenId,
     std::vector<const UiPanel*> chain{walk.panel() ? walk.panel() : p};
     out.panelsDrawn = 1;
 
-    const UiItem* sel = walk.selected();
     // The panel's CURRENT list - `Ui_DrawList` only marks a row FOCUSED when
     // its list is the one `panel+24` names.
     const UiPanel* wp = walk.panel() ? walk.panel() : p;
@@ -190,28 +192,46 @@ ScreenFrame ScreenComposer::draw(Surface& fb, int screenId,
                 l.items[static_cast<std::size_t>(selIdx)].addr == it.addr;
             const bool isFocus = isSel && &l == curList;
 
-            // ---- THE LIT LADDER, and it is where the FLASHING lives ----
+            // ---- THE TWO LIT LADDERS, and they are NOT the same ladder --
             //
-            // `Ui_DrawItemSprite` (0x00476E60) and `Ui_ItemTextStyle` share
-            // it exactly:
+            // `docs/UI.md` says `Ui_DrawItemSprite` "repeats the same ladder"
+            // as `Ui_ItemTextStyle`. Read side by side they agree on the
+            // first two rungs and differ on the other two, so a drawer that
+            // shares one ladder lights the wrong things:
             //
-            //     0x40000008 -> lit
-            //     0x40000004 -> lit = Ui_Oscillator(1).value      (pulse)
-            //     0x40000002 -> not SELECTED          : unlit
-            //                   SELECTED, not FOCUSED : lit
-            //                   SELECTED and FOCUSED  : oscillator 1  <- FLASH
-            //     otherwise  -> lit = SELECTED
+            //   both      0x40000008 -> lit
+            //             0x40000004 -> Ui_Oscillator(1)          (pulse)
+            //   SPRITE    0x40000002 -> !sel: unlit
+            //                           sel & !focus: lit
+            //                           sel &  focus: oscillator  <- FLASH
+            //             otherwise  -> lit = SELECTED
+            //   TEXT      0x40000002 -> !sel: unlit
+            //                           sel: oscillator
+            //             otherwise  -> lit = SELECTED **and** FOCUSED
+            //
+            // (`sub_476E60` LABEL_4/10/11 against `sub_4769A0` LABEL_6/12/13.)
             //
             // Oscillator 1 ships period 500, flags 3, and its completion
-            // (`sub_42B7B0`) does `osc[6] = (osc[6] == 0)` - a square wave
-            // toggling 0/1 every 500 ms. That is the user's "flashing icon
-            // to indicate the selection", read rather than invented.
+            // `sub_42B7B0` does `osc[6] = (osc[6] == 0)` - a square wave
+            // toggling every 500 ms. That is the user's "flashing icon to
+            // indicate the selection", read rather than invented.
+            //
+            // The sneak's own text carries none of the three bits, so it
+            // takes the TEXT default: the current list's selected row is
+            // white and every other row is dimmed. Its tab icons carry
+            // `0x2`, so the focused tab pulses.
             const bool blink = ((clockMs_ / 500) & 1) != 0;
-            bool lit;
-            if (eff0[1] & 8)      lit = true;
-            else if (eff0[1] & 4) lit = blink;
-            else if (eff0[1] & 2) lit = isFocus ? blink : isSel;
-            else                  lit = isSel;
+            bool litSprite, litText;
+            if (eff0[1] & 8)      { litSprite = litText = true; }
+            else if (eff0[1] & 4) { litSprite = litText = blink; }
+            else if (eff0[1] & 2) {
+                litSprite = !isSel ? false : (isFocus ? blink : true);
+                litText   = isSel && blink;
+            } else {
+                litSprite = isSel;
+                litText   = isSel && isFocus;
+            }
+            const bool lit = litSprite;
 
             // ---- THE FILL: read, TRIED, and NOT DRAWN ------------------
             //
@@ -225,18 +245,32 @@ ScreenFrame ScreenComposer::draw(Surface& fb, int screenId,
             // **It was implemented, rendered, and refuted by the picture.**
             // Two things the reading does not have:
             //
-            //  * the BLEND. `sub_4285E0`'s mode comes from
-            //    `sub_464740() ? 4 : 0`, a runtime query into the I2D back
-            //    end that is not traced. The sneak's rows carry (255, 0, 0),
-            //    and source-over at alpha 200 paints them PURE RED where the
-            //    original's bars are amber. So mode 4 is not source-over, and
-            //    what it is has to be read before this can be drawn.
-            //  * the per-row GATE. The original fills only the rows that
-            //    HOLD an object - two of nine in the capture - while every
-            //    one of the nine carries the flag statically. Something
-            //    clears it per row at runtime, and that something is the
-            //    sneak's own list code (`sub_0049C050`'s neighbourhood),
-            //    which is the same unread function that owns the scrolling.
+            //  * the COLOUR, and the blend is now READ and does not save
+            //    it. `sub_4285E0`'s mode is `sub_464740() ? 4 : 0`, and
+            //    `sub_480AC0`'s mode-4 arm sets D3D render states 19 and 20
+            //    to **6 and 5** - SRCBLEND = INVSRCALPHA, DESTBLEND =
+            //    SRCALPHA, the INVERSE of the usual source-over. So the quad
+            //    resolves to `src * (1 - a) + dst * a`, and with the record's
+            //    (255, 0, 0) at alpha 200 over the panel's black that is
+            //    **(55, 0, 0)**.
+            //
+            //    Measured off the user's own screenshot, the bars are
+            //    **(94, 60, 16)** and (61, 40, 11) - amber. A green of 60
+            //    cannot come from a red source over black under ANY blend
+            //    that mixes the two, and no permutation of the channel order
+            //    helps. So the reading is wrong somewhere the decompiler
+            //    does not show, and the honest state is a CONTRADICTION with
+            //    both sides pinned rather than a colour fitted to a picture.
+            //    (The capture is a resampled window grab, so the triples are
+            //    approximate - but the argument needs only that green is not
+            //    zero.)
+            //  * the per-row GATE - and this half IS now read.
+            //    `sub_42AAE0` binds the nine widgets to a window over the
+            //    list: a widget past `list+24` gets tag -1 and has
+            //    `0x40000001` SET, so it is not drawn, and the rest get
+            //    `tag = window + k` with it cleared. That is why the
+            //    original fills two of nine. `play.cpp` models it on the
+            //    text side already; the fill needs only the colour.
             //
             // Drawing it on the strength of the colour alone gives nine red
             // bars where the game shows two amber ones - which looks like a
@@ -292,7 +326,28 @@ ScreenFrame ScreenComposer::draw(Surface& fb, int screenId,
             const std::string& s =
                 run_ ? *run_ : text[static_cast<std::size_t>(id)];
             if (s.empty()) continue;
-            const std::uint8_t v = lit ? kLit : kDim;
+
+            // ---- THE TEXT COLOUR IS THE ITEM'S OWN --------------------
+            //
+            // `Ui_ItemTextStyle` (0x004769A0) takes `+8/+9/+10` as the
+            // colour - unless bank C carries `0x80000001`, which forces
+            // white - and **halves all three when the row is not lit**.
+            // That halving is the `>>= 1` this file already had as `kDim`;
+            // what it did not have is the colour it halves.
+            //
+            // 233 of the 275 text items carry the white flag, the sneak's
+            // among them - so white-and-grey was right there by luck. The
+            // other 42 use their own, and NINE of those are actually
+            // coloured: eight at (254, 68, 20) and one at (255, 100, 70),
+            // on the terminal and SURV screens. Those nine have been drawn
+            // white since the composer existed.
+            std::uint8_t cr = 255, cg = 255, cb = 255;
+            if (!(eff0[2] & 1)) {
+                cr = static_cast<std::uint8_t>(it.rgb[0]);
+                cg = static_cast<std::uint8_t>(it.rgb[1]);
+                cb = static_cast<std::uint8_t>(it.rgb[2]);
+            }
+            if (!litText) { cr >>= 1; cg >>= 1; cb >>= 1; }
             // THE FACE IS THE ITEM'S OWN, `+36`, not one hard-coded here.
             //
             // This drew everything in `I` (MENUINTR) because that is the
@@ -312,7 +367,7 @@ ScreenFrame ScreenComposer::draw(Surface& fb, int screenId,
             //
             // 255 means the record names none, and `Text_DrawBlock`'s own
             // global default is 74.
-            const auto run = parseMarkup(s, it.face('J'), v, v, v).run;
+            const auto run = parseMarkup(s, it.face('J'), cr, cg, cb).run;
 
             // `Ui_ItemTextStyle` (0x004769A0) maps the item's BANK 2 bits to
             // `Text_DrawBlock`'s alignment, and the mapping is NOT the

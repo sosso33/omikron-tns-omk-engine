@@ -5174,10 +5174,35 @@ int main(int argc, char** argv) {
                 inv.openedList() >= 0) {
                 const auto carried = omk::objectList(state,
                                                      omk::ObjectList::Carried);
+                // ---- `sub_42AAE0`, THE ROW BINDER --------------------
+                //
+                // The nine widgets are a WINDOW onto the list, and which of
+                // them are live is decided per row rather than by drawing
+                // whatever has text:
+                //
+                //     for each widget k of the list:
+                //       if (k + window >= list+24)     // past the end
+                //           item+60 = -1;              // tag: empty
+                //           set item 0x40000001;       // and NOT DRAWN
+                //           set item 0x20000004;       // and unselectable
+                //       else
+                //           item+60 = k + window;      // the row it shows
+                //           clear those two;
+                //
+                // so the engine draws only the rows that HOLD something -
+                // two of nine in the user's capture - and that is the gate
+                // `Ui_DrawItemFill`'s bars are behind. `list+24` is the
+                // count the channel reports (case 29).
+                //
+                // The window is 0 here: scrolling is `sub_0049C050` +
+                // `sub_42AFF0`, and neither is modelled, so a list longer
+                // than nine is truncated rather than scrolled.
                 for (const auto& l : pn->lists) {
                     if (l.addr != omk::kListSneakRows) continue;
-                    for (std::size_t k = 0; k < l.items.size() &&
-                                            k < carried.size(); ++k) {
+                    const std::size_t window = 0;
+                    for (std::size_t k = 0; k < l.items.size(); ++k) {
+                        const std::size_t row = k + window;
+                        if (row >= carried.size()) continue;   // tag -1, not drawn
                         // `playerCount` is case 33's other half and is NOT
                         // read: for kinds 2..6 the quantity lives in the
                         // player record and which field it is has not been
@@ -5185,7 +5210,7 @@ int main(int argc, char** argv) {
                         // its " - N". Kinds 7..11 take the item's own `+12`
                         // and are complete.
                         sneakRows[l.items[k].addr] =
-                            inv.displayName(carried[k], 0);
+                            inv.displayName(carried[row], 0);
                     }
                 }
                 if (!sneakTold++)
