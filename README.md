@@ -54,8 +54,9 @@ useful on its own; everything reads a copy of the game you supply.
 ```
 omk/
   gamedata/    <- YOU PROVIDE THIS: the game's data directory, from your disc
-                  or your GOG install. Must contain `Runtime 2.exe`,
-                  `IAM/`, `MESHES/`, `SCPTDATA/`, `MORPH/`, `SOUND/`.
+                  or your GOG install. Must contain the engine's
+                  `Runtime.exe` (see below), `IAM/`, `MESHES/`, `SCPTDATA/`,
+                  `MORPH/`, `SOUND/`.
 ```
 
 Put it anywhere you like instead — a flag, an environment variable or a config
@@ -80,7 +81,16 @@ from the 1999 disc, and the check that noticed ran afterwards.
 
 ### The disassembly is optional, and is not here
 
-Some analysis tools read an IDA listing of `Runtime 2.exe` (`Runtime.exe.asm`,
+**Which executable?** Two builds of the engine shipped and both are called
+`Runtime.exe` — one asks for the CD, one does not, and every address in this
+repository refers to the **no-CD** build. A tree holding both has to rename
+one; this one carries it as `Runtime 2.exe`, which is local housekeeping and
+means nothing about the game. **You do not have to rename anything**: the tools
+resolve it by size (`omkpaths.exe_path()` takes the largest candidate — the
+engine is ~985 KB, the launcher ~280 KB), so a fresh copy works as it comes,
+and they warn rather than fail if only a launcher-sized file is present.
+
+Some analysis tools read an IDA listing of that engine (`Runtime.exe.asm`,
 `Runtime.exe.c`) and the `clean/` tree derived from it. **A disassembly is a
 derivative work of the binary it came from, so this repository does not
 distribute one.** Producing your own is up to you; point at it the same way:

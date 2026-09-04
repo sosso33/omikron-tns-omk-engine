@@ -12,7 +12,7 @@ fight people hand to hand (a beat-'em-up), and you shoot people (a first-person
 shooter). The conceit is that you are a soul that moves between bodies, so the
 game has to be able to hand you a different character and keep going.
 
-The engine that carries all that is a single 1.4 MB executable — the game's
+The engine that carries all that is a single ~985 KB executable — the game's
 `Runtime.exe` — plus about 1.7 GB of data files. Almost nothing about how the
 game behaves is compiled into that executable. What is compiled in is a
 **machine**: a bytecode interpreter, a state-machine runner, a renderer, a set
@@ -43,6 +43,11 @@ the game**: every address in this repository refers to the no-CD build,
 whatever the file is called on the disk it was read from. This manual names it
 `Runtime.exe` throughout for that reason; `CLAUDE.md` and `docs/` still carry
 the local name of the tree they were written in.
+
+The tools do not hard-code either name: `omkpaths.exe_path()` takes the
+largest candidate present, because the two builds are not close — 984576 bytes
+against the launcher's 280290 — and size survives a rename in either direction
+where a name does not.
 
 It is a Win32 binary against the 1999 Microsoft stack:
 

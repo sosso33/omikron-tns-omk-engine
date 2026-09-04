@@ -7,8 +7,15 @@ it over "the project" or "the port" when writing anything new here.
 
 Working repo for reading the game's data formats out of its own executable.
 `Runtime.exe.c` / `Runtime.exe.asm` are a Hex-Rays decompilation — **of
-`gamedata/Runtime 2.exe`, despite the filenames**, not of `gamedata/Runtime.exe`, which is
-the disc version's launcher (see below); `gamedata/` is the shipped game data. Everything here is derived from those two.
+the NO-CD build of `gamedata/Runtime.exe`, despite the filenames** - which this
+tree carries renamed to `Runtime 2.exe`, because the disc build is called
+`Runtime.exe` too and both cannot sit in one folder. **That rename is local
+housekeeping and says nothing about the game**: every address here refers to
+the no-CD build whatever the file is called. The tools resolve it by RULE, not
+by name - `omkpaths.exe_path()` takes the largest candidate, since the engine
+is ~985 KB against the launcher's ~280 KB - so a fresh copy of the game, or
+somebody else's checkout, works without renaming anything.
+`gamedata/` is the shipped game data. Everything here is derived from those two.
 
 **Read this file first, then ONLY the docs §0 sends you to.** The docs hold the format findings; this
 file holds the working practice for READING the game, which is what makes the
@@ -372,7 +379,11 @@ Runtime.exe.c / .asm   the decompilation (input, NOT COMMITTED, never edited)
                        - $OMK_ASM / $OMK_DECOMP relocate them
 gamedata/              shipped game data (input, NOT COMMITTED, never edited)
                        - $OMK_DATA or `data =` in omk.conf relocates it
-  Runtime 2.exe        THE ENGINE - what every address here refers to
+  Runtime 2.exe        THE ENGINE - what every address here refers to. Its
+                       real name is Runtime.exe; it is renamed here only
+                       because the disc build below shares that name.
+                       `omkpaths.exe_path()` finds it by SIZE, so a tree that
+                       never renamed it resolves correctly too
   Runtime.exe          the disc version's launcher; asks for the CD. Not this.
 omk.conf.example       the template for omk.conf, which is gitignored
 LICENSE                GPL-3.0-or-later - the CODE (tools/, engine/,

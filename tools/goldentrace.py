@@ -139,7 +139,13 @@ BOTTLE_DIRS = [
     "/Library/Application Support/CrossOver/Bottles",
 ]
 BDIR    = os.path.join(BOTTLE_DIRS[0], BOTTLE)
-GAME    = omkpaths.data("Runtime 2.exe")
+# The engine, by RULE not by name: two builds shipped, both called
+# `Runtime.exe`, and this tree renamed the no-CD one. `omkpaths.exe_path`
+# takes the largest candidate, so a fresh copy of the game works too.
+GAME    = omkpaths.exe_path(required=False) or omkpaths.data("Runtime.exe")
+# What the RUNNING PROCESS is called - it follows the file, so every pgrep and
+# AppleScript below has to ask the resolved path rather than assume a name.
+GAMEEXE = os.path.basename(GAME)
 OUT     = os.path.join(ROOT, "traces")
 
 # Semicolon-separated, module name uppercase, exactly as Wine's load_list wants.
@@ -287,7 +293,7 @@ def kill_session():
     sh([os.path.join(CX, "bin", "wineserver"), "-k"],
        env=dict(os.environ, WINEPREFIX=BDIR))
     for _ in range(20):
-        r = sh(["pgrep", "-f", "desktop=omk|Runtime 2.exe"])
+        r = sh(["pgrep", "-f", "desktop=omk|" + GAMEEXE])
         if r.returncode != 0: return True
         time.sleep(0.5)
     return False
@@ -459,7 +465,7 @@ def send_keys(spec, settle=20, gap=2):
                            capture_output=True, text=True)
         return p.returncode == 0, (p.stderr or "").strip()
     focus = ('tell application "System Events" to tell process '
-             '"Runtime 2.exe" to set frontmost to true')
+             '"' + GAMEEXE + '" to set frontmost to true')
     time.sleep(settle)
     ok, err = osa(focus)
     if not ok:
@@ -537,7 +543,7 @@ def run(seconds=90, tag=None, twice=False, desktop="1024x768",
             except KeyboardInterrupt: pass
             print("   launcher exited; waiting for the game to close...")
             while True:
-                r = sh(["pgrep", "-f", "desktop=omk|Runtime 2.exe"])
+                r = sh(["pgrep", "-f", "desktop=omk|" + GAMEEXE])
                 if r.returncode != 0: break
                 time.sleep(2.0)
             print("   the game has quit")
@@ -1156,12 +1162,17 @@ def diff(path, show=25, save=None, slot=0, evolve=False, quiet=False,
 FRAMES = os.path.join(OUT, "frames")
 
 
-def window_rect(proc="Runtime 2.exe"):
+def window_rect(proc=None):
     """The game window's rect in POINTS, through System Events.
 
     The same route `send_keys` already uses to focus it, so it needs no
     dependency this rig did not already have. -> (rect, "") or (None, why).
+
+    `proc` defaults to whatever the resolved executable is CALLED, since the
+    process name follows the file and this tree's copy is renamed.
     """
+    if proc is None:
+        proc = GAMEEXE
     p = subprocess.run(
         ["osascript", "-e",
          'tell application "System Events" to tell process "%s" '
@@ -1258,7 +1269,7 @@ def capture(at=(20, 24, 28), tag="menu", keys=None, desktop="1024x768",
             if not no_raise:
                 subprocess.run(["osascript", "-e",
                                 'tell application "System Events" to tell process '
-                                '"Runtime 2.exe" to set frontmost to true'],
+                                '"' + GAMEEXE + '" to set frontmost to true'],
                                capture_output=True)
                 time.sleep(0.6)
             # NOT a dotfile: `screencapture` silently refuses to write one -
@@ -1324,7 +1335,7 @@ def grab(tag="shot", out=None):
           % (rect[2], rect[3], rect[0], rect[1]))
     subprocess.run(["osascript", "-e",
                     'tell application "System Events" to tell process '
-                    '"Runtime 2.exe" to set frontmost to true'],
+                    '"' + GAMEEXE + '" to set frontmost to true'],
                    capture_output=True)
     time.sleep(0.8)
     raw = os.path.join(out, "grab-raw.png")
@@ -1382,7 +1393,7 @@ def config():
     except KeyboardInterrupt:
         pass
     while True:
-        r = sh(["pgrep", "-f", "Runtime 2.exe"])
+        r = sh(["pgrep", "-f", GAMEEXE])
         if r.returncode != 0:
             break
         time.sleep(1.0)
