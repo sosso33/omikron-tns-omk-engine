@@ -15,6 +15,69 @@ waiting on its evidence.
 
 ## Open (batch 6, filed 2026-09-04)
 
+### 71. Eleven of the seventeen SCENE FUNCTIONS are not implemented, and half the game's scenes use one — A
+
+Filed 2026-09-04. Found while narrowing 70 and promoted to its own entry by the
+reader, who has already seen symptoms: *"Pretty important since it is about the
+world and I already notices some littles issues that could be linked to that
+(like audio not stopping)"*.
+
+**The measurement.** Across all 220 `.SCX`, the corpus uses **17 distinct scene
+functions over 13887 call sites**. `engine/src/script/program.h` names **six**:
+
+    0x02000004  Script_SelectBodyAnimation
+    0x0200002A  Script_SelectRelativeBodyAnimation
+    0x06000017  Wait
+    0x05000014  Script_PlaySound
+    0x05000015  Script_PlaySyncSound
+    0x03000008  Script_MoveObjectOnPath
+
+That is 13240 of 13887 sites - **95.3%** - which sounds like coverage and is
+not, because the missing 4.7% is not spread evenly: **102 of the 220 scenes
+use at least one unimplemented function.** Nearly half the scenes in the game
+contain something the port silently does nothing for.
+
+| function | sites | scenes |
+|---|---|---|
+| `Script_Display3DSprite` 0x04000028 | 232 | 65 |
+| `Script_StopSound` 0x05000016 | 86 | 61 |
+| `fn_04_41` 0x04000029 | 59 | ? |
+| `fn_04_12` 0x0400000C | 58 | ? |
+| `Script_SetSpriteRolling` 0x0400001D | 58 | ? |
+| `Script_ScaleSpriteOnX` 0x0400001B | 58 | ? |
+| `Script_ScaleSpriteOnY` 0x0400001C | 58 | ? |
+| `Script_ScaleObjectX` 0x03000023 | 15 | ? |
+| `Script_ScaleObjectZ` 0x03000025 | 14 | ? |
+| `Script_ScaleObjectY` 0x03000024 | 6 | ? |
+| `fn_04_31` 0x0400001F | 3 | ? |
+
+**`Script_StopSound` is the reader's own symptom and should go first.** A scene
+that starts a sound has no way to stop it: `Script_PlaySound` is implemented
+and its counterpart is not, so 86 sites across 61 scenes start audio the port
+can never silence. That is "audio not stopping" without any further diagnosis
+needed, and it is the cheapest of the eleven - the mixer already has the voice
+and the bank.
+
+**Then the sprite family**, which is five of the eleven and 465 sites between
+them: `Display3DSprite`, `SetSpriteRolling`, `ScaleSpriteOnX`/`Y` and
+`fn_04_12`/`fn_04_41` cluster in the same objects. A scene that scales or rolls
+a sprite currently draws NOTHING, so this is not a subtlety - it is missing
+picture. The sprite machinery itself is already ported (26 sprites, the
+particle field, the two blend modes), so these are consumers of a thing that
+exists.
+
+**Two are unnamed** - `fn_04_12` (58 uses) and `fn_04_41` (59) - so those need
+reading before porting, and `fn_04_31` (3 uses) with them.
+
+**What makes this entry worth having rather than a line in 70**: a
+percentage-of-sites number flattered the gap. 95.3% reads as nearly done; "half
+the scenes in the game contain one" is the same fact and reads correctly. The
+denominator was the wrong one, which is the shape `CLAUDE.md` 1 keeps warning
+about from the other side.
+
+**Not on 70's path** - the tunnel's far door uses only implemented functions -
+so this is independent work, and the reader has put it next after 70.
+
 ### 70. Every texture and model vanishes late in a session — black, with the NPCs still walking — A
 
 Filed 2026-09-04 from a play report — *"at the very end, for some reasons,
