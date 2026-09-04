@@ -178,6 +178,73 @@ the shape reported. The surviving candidates, in order:
    soup, so the door is scenery the walker cannot see — and that is what lets
    the player reach the far zone while the transition is mid-flight.
 
+**THE MECHANISM, 2026-09-04 — two overlapping zones per end, and the LOAD
+DURATION decides which one wins.**
+
+AREA 224 has **six** zone records, and four of them are transitions — **two at
+each end of the tunnel, one carrying the door pair and one carrying none**:
+
+| zone | x-range | arc mid ± half | route |
+|---|---|---|---|
+| 3812 | 7075..8290 | 268.9 ± 157.9 | Anekbah, **doors 3, 4** |
+| 3814 | 7077..8526 | 311.0 ± **0.0** | Anekbah, `-1, -1` + `area.arrive` |
+| 3813 | 8840..10158 | 88.9 ± 139.0 | Qalisar, **doors 5, 6** |
+| 3815 | 8619..10162 | 115.9 ± **0.0** | Qalisar, `-1, -1` + `area.arrive` |
+
+`arcWide = 0` means ANY facing (`world.h` +62), so the doorless zones carry no
+facing constraint at all, while the door zones want to be walked into roughly
+head-on. And the doorless zone is the OUTER one at both ends: walking east the
+walker touches 3815 **221 units** before 3813; walking west, 3814 **236 units**
+before 3812.
+
+**So the doorless route fires FIRST at both ends** — and that alone explains
+nothing, because both ends would then be broken. What separates them is what
+happens in those ~230 units, and it is the load:
+
+* **Anekbah end.** The doorless goto's destination is `TUNELAQ1` — 3912
+  corners, about ONE frame of streaming (`ceil(bytes / 0x20000)`). The
+  transition completes and clears long before the walker crosses 236 units, so
+  zone 3812's door-carrying goto starts fresh and **the door animates**.
+* **Qalisar end.** The destination is `QALISAR` — **90543 corners**, many
+  frames. The walker crosses 221 units while that transition is still in
+  flight, and a second `area.goto` during one is REFUSED before dispatch:
+  `if ((op == 45 || op == 47) && deferred_ != -1) { status = 9; return; }`
+  (`area.cpp`, the pre-dispatch refusal; `dword_4C0130` in the engine). The
+  door goto is held at status 9 and retried each frame — so **the door never
+  runs while it matters**, the doorless route's `showSet(QALISAR)` has already
+  fired, and the player is standing in a tunnel whose set is going away with a
+  door that was never told to open.
+
+That accounts for every symptom in the report without needing another cause:
+no animation at the far end, having to stand very close to the door, the tunnel
+vanishing while the door remains (the door is a scene object, not part of the
+decor), and walking through a closed door — it was never opened, and a scene
+object's collision is not in the walkable soup anyway.
+
+**It also explains the reader's own hypothesis being right for the wrong
+reason.** They said "the door should wait for the environment to be loaded".
+The door DOES wait — `areaTransition` mode 3 state 1 does `showSet(dest)` then
+`startTransitionObject(f1)`. What does not wait is the OTHER zone, which fires
+a competing transition first and locks the one that carries the door out.
+
+**LABELLED AS RECONSTRUCTION, and it is the part to settle before fixing.**
+Everything above is read from the data and from the port's own code; what is
+NOT established is what the ENGINE does with the same geometry. Three
+possibilities and they need different fixes:
+
+1. the engine arms only one of the two overlapping zones (a scan rule the port
+   does not model), and the doorless pair is meant for a different approach —
+   a teleport or a script — in which case the port's scan is what is wrong;
+2. the engine hits the same refusal and the original also has a race, which its
+   faster load simply hides;
+3. the door zone should win by ORDER — the engine's slot loop takes zones in
+   record order and 3813 precedes 3815 — in which case the port arms them in
+   the wrong order.
+
+The cheapest discriminator is instrumenting which zones arm and in what order
+during a real walk through the tunnel, and whether the second goto is refused.
+`todo/omk-play.md` 70's next step is that, not a fix.
+
 **A coverage number found on the way**, worth having on its own: across all 220
 `.SCX` the corpus uses **17 distinct scene functions over 13887 call sites**,
 and the port implements **6 of the 17 — 13240 sites, 95.3%**. The
