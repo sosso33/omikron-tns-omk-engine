@@ -84,7 +84,14 @@ public:
     // `loop` makes the shot WRAP rather than end - `Script_PlaySound`'s own
     // flag, which the port recorded and never honoured (omk-play 72). A
     // looping shot is reclaimed only by `stopSound`.
-    virtual int  playSound(std::span<const float>, bool loop = false) { return -1; }
+    // `gain` is a linear 0..1 volume. `Script_PlaySound` ends in
+    // `Sound_Play3D`, so a scene sound is POSITIONAL and gets quieter with
+    // distance; playing every one at full volume is what made an ambience
+    // audible across a city and through a cutscene (omk-play 73). The CURVE
+    // is this port's, not the engine's - DirectSound owned the attenuation and
+    // pan law and it has no reachable tier (PORTING, the audio row).
+    virtual int  playSound(std::span<const float>, bool loop = false,
+                           float gain = 1.0f) { return -1; }
     // Silence one shot before it ends. `Dialog_TickUI` case 2/7/8 calls
     // `Morph_Stop` on the press that leaves a line, and `Morph_Stop` stops the
     // voice buffer (`sub_46CAE0`): a line cut short by NEXT falls silent at

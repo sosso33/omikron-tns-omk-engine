@@ -688,7 +688,7 @@ public:
                     if (!one.loop || one.pcm.empty()) continue;
                     one.pos = 0;                  // a looping shot wraps
                 }
-                v += one.pcm[one.pos++];
+                v += one.pcm[one.pos++] * one.gain;
             }
             dst[i] = v < -1.0f ? -1.0f : (v > 1.0f ? 1.0f : v);
         }
@@ -738,13 +738,14 @@ public:
         stream_.insert(stream_.end(), s.begin(), s.end());
     }
 
-    int playSound(std::span<const float> s, bool loop = false) override {
+    int playSound(std::span<const float> s, bool loop = false,
+                  float gain = 1.0f) override {
         if (s.empty()) return -1;
         std::lock_guard<std::mutex> lk(amx_);
         // A cap, because a held key would otherwise stack voices without end.
         if (shots_.size() >= 8) shots_.erase(shots_.begin());
         const int id = nextShot_++;
-        shots_.push_back({std::vector<float>(s.begin(), s.end()), 0, id, loop});
+        shots_.push_back({std::vector<float>(s.begin(), s.end()), 0, id, loop, gain});
         return id;
     }
 
@@ -794,7 +795,8 @@ private:
     // was re-fired by its program every cycle - wav 23 started 33 times in 521
     // frames, a 1.76 s sample overlapping itself three deep. That restart is
     // what a reader heard as "the loop feels unnatural".
-    struct Shot { std::vector<float> pcm; std::size_t pos; int id; bool loop = false; };
+    struct Shot { std::vector<float> pcm; std::size_t pos; int id; bool loop = false;
+                  float gain = 1.0f; };
     int                 nextShot_ = 1;
     std::mutex          amx_;
     std::vector<float>  stream_;
@@ -1708,10 +1710,12 @@ int main(int argc, char** argv) {
     // one-shots it does NOT clear - the streamed music is flushed on a switch
     // and `shots_` are not, so anything long started as a one-shot outlives
     // an area change, a music switch and a cutscene.
-    const auto sfxLog = [&](const char* what, std::size_t samples, int a, int b) {
+    const auto sfxLog = [&](const char* what, std::size_t samples, int a, int b,
+                            float gain = 1.0f) {
         const double secs = samples / 44100.0 / 2.0;
         if (secs >= 0.75)                 // footsteps and blips are not the story
-            std::printf("audio: %-14s %6.2f s  (%d, %d)\n", what, secs, a, b);
+            std::printf("audio: %-14s %6.2f s  (%d, %d)  gain %.2f\n",
+                        what, secs, a, b, gain);
     };
     int         takeCandidate = -1;      // `dword_53AF6C`, MDACTION's pick
     // The spoken line's SCROLL, in pixels, and the overflow it is clamped to -
@@ -3135,9 +3139,49 @@ int main(int argc, char** argv) {
                                                 // the engine plays nothing
                 const auto pcm = wavToDevice(raw, 44100);
                 if (pcm.empty()) continue;
+                // ---- POSITIONAL, because `Script_PlaySound` is 3D ------
+                //
+                // The handler (0x004A12D0) ends in three calls to
+                // `Sound_Play3D` (0x0046CDC0), so a scene sound is placed and
+                // attenuated by distance from the listener. Played flat, an
+                // ambience is as loud across the city as beside it and goes on
+                // through a cutscene whose camera is nowhere near it - which
+                // is exactly what a reader reported (omk-play 73).
+                //
+                // **RECONSTRUCTION, and labelled in three places** (this, the
+                // frontend, and the entry): WHERE the sound is comes from the
+                // program's own motions this frame - the cue names a NODE and
+                // the port cannot resolve a scene node to a world point, so
+                // the object being animated stands in for it. And the CURVE is
+                // this port's own: DirectSound owned the attenuation law and
+                // `PORTING`'s audio row records that it has NO reachable tier,
+                // so a plausible inverse-distance is the honest most that can
+                // be done. What IS the engine's is the unit - the listener is
+                // told the world unit is an INCH.
+                float gain = 1.0f;
+                {
+                    const auto mo = sc.motionsOf(fs.program);
+                    if (!mo.empty() && player) {
+                        const float* L = player->pos();
+                        float best = 1e30f;
+                        for (const auto& m : mo) {
+                            const float dx = m.pos[0] - L[0], dy = m.pos[1] - L[1],
+                                        dz = m.pos[2] - L[2];
+                            best = std::min(best, dx * dx + dy * dy + dz * dz);
+                        }
+                        const float d = std::sqrt(best);
+                        // full within a room's width, then 1/d out to silence
+                        constexpr float kNear = 120.0f;    // inches: ~3 m
+                        constexpr float kFar  = 4000.0f;   // ~100 m
+                        gain = d <= kNear ? 1.0f
+                             : d >= kFar  ? 0.0f
+                             : kNear / d;
+                    }
+                }
                 sfxLog(fs.cue.loop ? "scene-LOOP" : "scene-sound",
-                       pcm.size(), fs.cue.wav, fs.object);
-                const int h = front.playSound(pcm, fs.cue.loop);
+                       pcm.size(), fs.cue.wav, fs.object, gain);
+                if (gain <= 0.01f) continue;      // too far to hear at all
+                const int h = front.playSound(pcm, fs.cue.loop, gain);
                 // only a LOOPING cue needs remembering - a one-shot ends by
                 // itself and the handle would go stale
                 if (h >= 0 && fs.cue.loop) {

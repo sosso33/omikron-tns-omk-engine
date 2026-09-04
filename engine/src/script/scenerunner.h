@@ -155,6 +155,15 @@ public:
     // crates of the Impasse are four of them.
     const std::vector<Program::NodeMotion>& motions() const { return motions_; }
 
+    // The motions of ONE program, so a caller can ask where the object a cue
+    // came from actually IS. `motions()` flattens every program's together and
+    // drops the attribution, which is enough to DRAW them and not enough to
+    // place a sound (omk-play 73).
+    std::vector<Program::NodeMotion> motionsOf(int idx) const {
+        if (idx < 0 || idx >= static_cast<int>(programs_.size())) return {};
+        return programs_[static_cast<std::size_t>(idx)]->motions();
+    }
+
     struct Started {
         int         object = 0;
         std::string name;

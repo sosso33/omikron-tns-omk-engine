@@ -54,6 +54,11 @@ short `--speed 3` session against **21 fires across 5169 frames** at 1x, one
 every ~8 s with clear gaps. So the OVERLAP is the flag, and the audibility is
 the port. The reader was right to say the speed could not explain the cutscene.
 
+> **FIXED 2026-09-04, CONFIRMED IN PLAY** — the reader, on the build with it:
+> *"ok, good"*. Measured in that session: of 50 scene sounds, **29 played at
+> full gain** and **21 at 0.00-0.05** — distant ones now effectively silent,
+> and the farthest skipped before they reach the mixer at all.
+
 **Fix shape**: a per-shot gain on `Shot`, the cue's node resolved to a world
 position at cue time, and the engine's own law applied — an ATTENUATION (0
 full, 100 silent) with the listener told the world unit is an INCH (0.0254),
