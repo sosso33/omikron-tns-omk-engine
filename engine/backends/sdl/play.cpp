@@ -1684,6 +1684,9 @@ int main(int argc, char** argv) {
     if (!specialMoves.valid())
         std::printf("special moves: tables/special_moves.json not read - the take will "
                     "still work, but a fired move cannot name its row\n");
+    // the LOOPING scene voices, keyed the way `Script_StopSound` matches them:
+    // by (wav, node). Only loops are kept - a one-shot ends by itself.
+    std::map<std::pair<int,int>, int> sceneVoices;
     int         takeCandidate = -1;      // `dword_53AF6C`, MDACTION's pick
     // The spoken line's SCROLL, in pixels, and the overflow it is clamped to -
     // `dword_6A52C0` and `dword_53AE24`. One pixel a tick while held, which is
@@ -3073,13 +3076,31 @@ int main(int argc, char** argv) {
         {
             const auto& sc = session.scene();
             for (const auto& fs : sc.sounds()) {
+                // `Script_StopSound` (omk-play 71): the voice playing this
+                // wav on this node is silenced, not every voice of the wav -
+                // the handler matches on BOTH, so the key is the pair.
+                const auto key = std::make_pair(fs.cue.wav, fs.cue.node);
+                if (fs.cue.stop) {
+                    const auto it = sceneVoices.find(key);
+                    if (it != sceneVoices.end()) {
+                        front.stopSound(it->second);
+                        sceneVoices.erase(it);
+                        std::printf("scene sound: STOP wav %d node %d\n",
+                                    fs.cue.wav, fs.cue.node);
+                    }
+                    continue;
+                }
                 const auto raw = sc.scene().wavData(fs.cue.wav);
                 if (raw.empty()) continue;      // 186 of 5425 name a sound
                                                 // their scene does not carry;
                                                 // `sub_48CB30` returns -1 and
                                                 // the engine plays nothing
                 const auto pcm = wavToDevice(raw, 44100);
-                if (!pcm.empty()) front.playSound(pcm);
+                if (pcm.empty()) continue;
+                const int h = front.playSound(pcm);
+                // only a LOOPING cue needs remembering - a one-shot ends by
+                // itself and the handle would go stale
+                if (h >= 0 && fs.cue.loop) sceneVoices[key] = h;
             }
         }
 

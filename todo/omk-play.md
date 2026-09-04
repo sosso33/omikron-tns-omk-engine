@@ -15,6 +15,118 @@ waiting on its evidence.
 
 ## Open (batch 6, filed 2026-09-04)
 
+### 71. Eleven of the seventeen SCENE FUNCTIONS are not implemented, and half the game's scenes use one — A
+
+Filed 2026-09-04. Found while narrowing 70 and promoted to its own entry by the
+reader, who has already seen symptoms: *"Pretty important since it is about the
+world and I already notices some littles issues that could be linked to that
+(like audio not stopping)"*.
+
+**The measurement.** Across all 220 `.SCX`, the corpus uses **17 distinct scene
+functions over 13887 call sites**. `engine/src/script/program.h` names **six**:
+
+    0x02000004  Script_SelectBodyAnimation
+    0x0200002A  Script_SelectRelativeBodyAnimation
+    0x06000017  Wait
+    0x05000014  Script_PlaySound
+    0x05000015  Script_PlaySyncSound
+    0x03000008  Script_MoveObjectOnPath
+
+That is 13240 of 13887 sites - **95.3%** - which sounds like coverage and is
+not, because the missing 4.7% is not spread evenly: **102 of the 220 scenes
+use at least one unimplemented function.** Nearly half the scenes in the game
+contain something the port silently does nothing for.
+
+| function | sites | scenes |
+|---|---|---|
+| `Script_Display3DSprite` 0x04000028 | 232 | 65 |
+| `Script_StopSound` 0x05000016 | 86 | 61 |
+| `fn_04_41` 0x04000029 | 59 | ? |
+| `fn_04_12` 0x0400000C | 58 | ? |
+| `Script_SetSpriteRolling` 0x0400001D | 58 | ? |
+| `Script_ScaleSpriteOnX` 0x0400001B | 58 | ? |
+| `Script_ScaleSpriteOnY` 0x0400001C | 58 | ? |
+| `Script_ScaleObjectX` 0x03000023 | 15 | ? |
+| `Script_ScaleObjectZ` 0x03000025 | 14 | ? |
+| `Script_ScaleObjectY` 0x03000024 | 6 | ? |
+| `fn_04_31` 0x0400001F | 3 | ? |
+
+> **AND THE PLAY TEST DID NOT EXERCISE IT, which is a finding rather than a
+> disappointment.** A session that reached AREA 224 and Qalisar produced NO
+> stop at all. The reason: nothing starts the tunnel's ambience. `AmbianceSound`
+> (object 10) and `stopambsound` (11) are named by no zone script of AREA 224,
+> and the chunk's `+4` STARTUP script is **0** — it has none. So that pair is
+> inert in play, and the probe exercises it only because it starts the objects
+> by hand. The port's behaviour is right; the tunnel is simply not where a
+> reader will hear the difference. Which of the 61 scenes actually reaches its
+> `StopSound` in normal play is unmeasured, and is what a play confirmation
+> needs.
+
+> **`Script_StopSound` DONE 2026-09-04, not yet confirmed in play.** Ten to
+> go. `verify.py: engine stop sound` holds it, shown to fail by dropping the
+> arm (the stop count goes 1 to 0 and the ambience plays for ever, which is
+> the reported bug). The handler `sub_4A16D0` was READ rather than inferred,
+> and it names a sound AND a node - it stops the voice playing that PAIR, not
+> every voice of the sound - so the port keys its live voices on `(wav, node)`.
+> Only LOOPING cues are remembered; a one-shot ends by itself and its handle
+> would go stale.
+
+**`Script_StopSound` is the reader's own symptom and should go first.** A scene
+that starts a sound has no way to stop it: `Script_PlaySound` is implemented
+and its counterpart is not, so 86 sites across 61 scenes start audio the port
+can never silence. That is "audio not stopping" without any further diagnosis
+needed, and it is the cheapest of the eleven - the mixer already has the voice
+and the bank.
+
+**GROUNDWORK FOR `Script_Display3DSprite`, and a mis-attribution caught before
+it did damage.** Searching the listing for the handler's own error strings
+("Script_Display3DSprite(): Sprite \"%s\"...") lands inside a block whose
+nearest preceding `proc` is **`sub_4A2D10`** — and `sub_4A2D10 endp` comes
+BEFORE those strings. The handler is the UNLABELLED function after it, opening
+`sub esp, 20h / push ebx / push ebp / push esi / mov esi, [esp+34h] / push edi`
+and gating on `cmp dword ptr [esi], 4000028h`, at roughly **0x004A2FB0**.
+
+That is `CLAUDE.md` 1's known trap exactly — *"a block can be the WRONG
+FUNCTION entirely"*, and *"when an address the data names has no function,
+disassemble the image at that address rather than trusting a block"*. Taking
+`sub_4A2D10` for the handler would have ported a different function's body
+under this name, and nothing downstream would have said so.
+
+What the real handler is established to do so far, from its own reads:
+
+* it refuses unless `[esi] == 0x04000028` — the family check every one of
+  these handlers opens with;
+* **param 0** is the SPRITE, resolved through `sub_4A5650(scene, id)`, and a
+  miss is the "Sprite %s not found" arm;
+* **param 1** is WHERE, and it is one of two things — `sub_44C000` tests it and
+  either a node's position is taken via `sub_446BC0` off `+178`, or it is an
+  XYZ resolved by `sub_44C020`, whose failure is the "XYZPtr is NULL" arm;
+* **params 2 and 3** are FLOATS (`sub_44C6E0`), read into the frame.
+
+Not enough to port yet — the placement, the scale and how the sprite is
+submitted are unread — but enough that the next pass starts from the right
+function, which is the part that was at risk.
+
+**Then the sprite family**, which is five of the eleven and 465 sites between
+them: `Display3DSprite`, `SetSpriteRolling`, `ScaleSpriteOnX`/`Y` and
+`fn_04_12`/`fn_04_41` cluster in the same objects. A scene that scales or rolls
+a sprite currently draws NOTHING, so this is not a subtlety - it is missing
+picture. The sprite machinery itself is already ported (26 sprites, the
+particle field, the two blend modes), so these are consumers of a thing that
+exists.
+
+**Two are unnamed** - `fn_04_12` (58 uses) and `fn_04_41` (59) - so those need
+reading before porting, and `fn_04_31` (3 uses) with them.
+
+**What makes this entry worth having rather than a line in 70**: a
+percentage-of-sites number flattered the gap. 95.3% reads as nearly done; "half
+the scenes in the game contain one" is the same fact and reads correctly. The
+denominator was the wrong one, which is the shape `CLAUDE.md` 1 keeps warning
+about from the other side.
+
+**Not on 70's path** - the tunnel's far door uses only implemented functions -
+so this is independent work, and the reader has put it next after 70.
+
 ### 70. Every texture and model vanishes late in a session — black, with the NPCs still walking — A
 
 Filed 2026-09-04 from a play report — *"at the very end, for some reasons,
@@ -114,6 +226,246 @@ the shape reported. The surviving candidates, in order:
    through the closed door"). A scene object's collision is not in the walkable
    soup, so the door is scenery the walker cannot see — and that is what lets
    the player reach the far zone while the transition is mid-flight.
+
+**THE MECHANISM, 2026-09-04 — two overlapping zones per end, and the LOAD
+DURATION decides which one wins.**
+
+AREA 224 has **six** zone records, and four of them are transitions — **two at
+each end of the tunnel, one carrying the door pair and one carrying none**:
+
+| zone | x-range | arc mid ± half | route |
+|---|---|---|---|
+| 3812 | 7075..8290 | 268.9 ± 157.9 | Anekbah, **doors 3, 4** |
+| 3814 | 7077..8526 | 311.0 ± **0.0** | Anekbah, `-1, -1` + `area.arrive` |
+| 3813 | 8840..10158 | 88.9 ± 139.0 | Qalisar, **doors 5, 6** |
+| 3815 | 8619..10162 | 115.9 ± **0.0** | Qalisar, `-1, -1` + `area.arrive` |
+
+`arcWide = 0` means ANY facing (`world.h` +62), so the doorless zones carry no
+facing constraint at all, while the door zones want to be walked into roughly
+head-on. And the doorless zone is the OUTER one at both ends: walking east the
+walker touches 3815 **221 units** before 3813; walking west, 3814 **236 units**
+before 3812.
+
+**So the doorless route fires FIRST at both ends** — and that alone explains
+nothing, because both ends would then be broken. What separates them is what
+happens in those ~230 units, and it is the load:
+
+* **Anekbah end.** The doorless goto's destination is `TUNELAQ1` — 3912
+  corners, about ONE frame of streaming (`ceil(bytes / 0x20000)`). The
+  transition completes and clears long before the walker crosses 236 units, so
+  zone 3812's door-carrying goto starts fresh and **the door animates**.
+* **Qalisar end.** The destination is `QALISAR` — **90543 corners**, many
+  frames. The walker crosses 221 units while that transition is still in
+  flight, and a second `area.goto` during one is REFUSED before dispatch:
+  `if ((op == 45 || op == 47) && deferred_ != -1) { status = 9; return; }`
+  (`area.cpp`, the pre-dispatch refusal; `dword_4C0130` in the engine). The
+  door goto is held at status 9 and retried each frame — so **the door never
+  runs while it matters**, the doorless route's `showSet(QALISAR)` has already
+  fired, and the player is standing in a tunnel whose set is going away with a
+  door that was never told to open.
+
+That accounts for every symptom in the report without needing another cause:
+no animation at the far end, having to stand very close to the door, the tunnel
+vanishing while the door remains (the door is a scene object, not part of the
+decor), and walking through a closed door — it was never opened, and a scene
+object's collision is not in the walkable soup anyway.
+
+**It also explains the reader's own hypothesis being right for the wrong
+reason.** They said "the door should wait for the environment to be loaded".
+The door DOES wait — `areaTransition` mode 3 state 1 does `showSet(dest)` then
+`startTransitionObject(f1)`. What does not wait is the OTHER zone, which fires
+a competing transition first and locks the one that carries the door out.
+
+**MEASURED LIVE 2026-09-04** (`OMK_TUNNEL=1`, a real walk through the tunnel in
+both directions). The prediction above was right about the shape and **wrong
+about the failing step**, so both are kept.
+
+**Both zones arm at both ends, in the predicted order:**
+
+    [zone] frame 7923  ARM zone 3815   (Qalisar, NO doors)
+    [zone] frame 7934  ARM zone 3813   (Qalisar, doors 5/6)     11 frames later
+    [zone] frame 8371  ARM zone 3814   (Anekbah, NO doors)
+    [zone] frame 8383  ARM zone 3812   (Anekbah, doors 3/4)     12 frames later
+
+So the doorless zone fires first at both ends, as the geometry predicted (221
+and 236 units of lead). The door-carrying goto is then REFUSED while the first
+transition is in flight — which is CORRECT and is the part that works:
+
+    Qalisar   7934, 7935   REFUSED (2 frames)
+    Anekbah   8383..8388   REFUSED (6 frames)
+
+**And `mode 0 case 8` is NOT the fault, contrary to the first reading of it.**
+It already distinguishes: `if (f1 == -1) return 1;` accepts a doorless goto and
+does nothing, but a door-carrying one is held at status 9 to retry. The log
+shows that working — frame 7936 arrives at state 8 and is retried, frame 7937
+arrives at state 0.
+
+**So the door goto DOES run at both ends.** The whole-log tally is 28 doorless
+gotos to 101 and **2 carrying 5/6**, and the door-carrying ones land at:
+
+    Qalisar   frame 7937   transition state 0
+    Anekbah   frame 8389   transition state 0
+
+**The failure is therefore AFTER the goto, not before it**, and the surviving
+explanation is the one the transition itself implies: by the time the door's
+goto runs, the doorless route has already completed and moved the player into
+the destination, so the OUTGOING scene is no longer `Tunnel01.SCX` and
+`startTransitionObject(5)` cannot resolve object 5. `startTransitionObject`
+answers a miss with `tr_.program = -2` — "ends next frame" — which is silent.
+That is a door that is asked for and never plays.
+
+**NOT YET MEASURED, and it is the next step**: whether `startTransitionObject`
+actually misses at the Qalisar end and hits at the Anekbah end. The port
+already logs it under `OMK_CAMLOG=1` (`[tr] object N -> program P (S started,
+M missed)`), so one more walk with both variables set settles it. If it misses
+at both ends then the Anekbah door is animating for some other reason and this
+account is incomplete.
+
+**MEASURED, AND THE ACCOUNT HOLDS** — second walk, the door object's resolve
+printed with the resident area beside it:
+
+    frame 7628  door object 249 -> program 32             (resident area 224)  HIT
+    frame 7678  door object 250 -> program 33             (resident area 224)  HIT
+    frame 7776  door object   5 -> program -1   MISSED    (resident area 101)
+    frame 7915  door object   6 -> program -1   MISSED    (resident area 101)
+    ... ten misses in all, every one with area 101 resident
+
+**Objects 5 and 6 miss because the player is already in Qalisar when they are
+asked for.** The doorless route (zone 3815) completed first and carried him out
+of the tunnel, so `Tunnel01.SCX` is no longer the resident scene and its doors
+cannot resolve. `startTransitionObject` answers a miss with `tr_.program = -2`,
+"ends next frame" — silently, with no error anywhere — so the transition
+continues and the door is simply never told to open.
+
+**And this explains the asymmetry, which was never about the two ends of the
+tunnel at all.** The door the reader sees working is not the tunnel's: entering
+from Anekbah uses objects **249/250**, which belong to AREA 0's own transition
+and resolve while area 224 IS resident (frames 7628/7678 above, both HIT). The
+tunnel's own four doors — 3/4 to Anekbah, 5/6 to Qalisar — never play at all.
+So the correct statement of the bug is not "the far door does not open" but
+**"neither of the tunnel's own doors ever opens, and the one that does belongs
+to the area you came from"**.
+
+**AND THE READER GOT STUCK IN IT** — *"It was stuck in the door at the end"*,
+reported of this very walk. The log corroborates it as a LOOP rather than a
+one-off: after the first two misses the door objects are asked for eight more
+times, frames 8342 to 8506, alternating 5 and 6. Each retry re-runs the same
+goto, misses the same object, ends "next frame", and is armed again by the same
+zone the player is still standing in. That is the stuck state, and it is not a
+separate fault - it is what a silent miss looks like from inside the game.
+
+**WHAT THE FIX HAS TO DECIDE, and it still has no oracle.** The port's
+behaviour is now fully traced and self-consistent; what the ENGINE does with
+two overlapping transition zones is still unobserved, because none of the five
+captures in `traces/` passes through AREA 224. The candidates:
+
+1. **the door-carrying zone should win.** It is the inner of each pair, and
+   `Zone_FindScriptsById` takes zones in record order where 3813 precedes 3815.
+   If the engine arms only one transition zone at a time, or prefers the one
+   whose facing arc actually constrains, the doorless pair would never fire
+   during a walk and the doors would always play.
+2. **the doorless pair is not for walking.** An `arcWide` of 0 means any
+   facing, so they cannot be distinguished from the door zones by facing — but
+   a pair of `-1, -1` routes that duplicate a door route's destination looks
+   like a fallback for a teleport or a script, not for a player on foot.
+3. **the object should resolve against the OUTGOING scene**, which
+   `startTransitionObject`'s own comment says the engine does — "resolved
+   against the scene the player is still standing in (416 of 448 shipped pairs
+   land there, 84 in the destination's)". The port resolves against whatever is
+   resident NOW, which after a completed transition is the destination. That is
+   the narrowest of the three and the only one that is a straightforward
+   porting gap rather than a question about the engine's intent.
+
+**THE 84-PAIR CHECK, MEASURED — and it endorses (3) decisively.** Decoded
+through `script_dump` rather than by scanning bytes for opcode 47 (a raw scan
+matches operand bytes that happen to equal 47 and reported 1092 objects against
+the 447 sites the corpus really has — the same "a regex must respect the
+grammar" trap `CLAUDE.md` 1 records):
+
+    op-47 sites carrying a door pair: 447   (894 objects)
+      source (outgoing) only   628   70.2%
+      both                     204   22.8%
+      destination only           3    0.3%
+      neither                   59    6.6%
+
+**832 of 894 objects — 93% — resolve in the OUTGOING scene, and exactly THREE
+in the whole game resolve only in the destination's.** So preferring the
+outgoing scene with a fallback to the destination cannot trade this bug for
+another: there are three objects to protect and a fallback protects them.
+
+(The comment in `startTransitionObject` says "416 of 448 shipped pairs land
+there, 84 in the destination's". Those are SITE counts against these OBJECT
+counts and the two are consistent — 204 both + 3 destination-only is ~103
+sites — but the figures are not interchangeable and the code's wording invites
+reading them as such.)
+
+**BUT (3) IS NOT A FALLBACK, IT IS A SLICE — and that is the finding.** A
+resolve alone is not enough, because the object that resolves must then RUN:
+
+    area.cpp:733   if (tr_.program >= 0 && scene_.programRunning(tr_.program)) return;
+    area.cpp:1866  scene_.tick(...)
+
+The transition waits on `scene_.programRunning` and the program is advanced by
+`scene_.tick`. An object resolved in some other runner would be started into a
+runner nothing ticks: it would never run, never end, and the transition would
+wait on it for ever — trading a silent miss for a hang, which is worse.
+
+**The real gap is that the port keeps ONE scene where the engine keeps TWO.**
+`Area_LoadScx` (0x0041B4E0) fills *the slot's* object container (`slot+8`), and
+there are two resident slots — so the engine has an object pool per slot and a
+departure object naturally resolves "against the scene the player is still
+standing in". The port has a single `SceneRunner scene_` keyed on
+`sceneArea_`, and `reloadScene` swaps it when the active area changes. When the
+doorless route completes, the tunnel's pool is simply gone.
+
+**This is the SAME COLLAPSE, one layer down, as the decor bug already fixed.**
+RECONSTRUCTION 2026-09-03: *"the Session collapsed the engine's two decor states
+into one `curSlot_`"* — that was the two decor SETS; this is the two object
+POOLS that sit beside them. The fix has the same shape as `ResidentSlot::shown`
+did: give the slot what belongs to the slot.
+
+**So the work is**: a `SceneRunner` per resident slot, both ticked, with
+`programRunning` and `handle` addressed to the right one — and
+`startTransitionObject` resolving against the outgoing slot first, then the
+destination's for those three objects. That is a slice with its own check, not
+a patch, and it should be sized as one.
+
+**(3) is the one to try first** — it needs no decision about zone arbitration,
+it matches a comment already in the code, and it would make the door resolve
+even when the doorless route has run ahead of it. But it must be checked
+against the 84 pairs that legitimately live in the destination's scene, or it
+trades this bug for those.
+
+**NO ENGINE ORACLE EXISTS FOR THIS.** None of the five captures in `traces/`
+passes through AREA 224 — they are the intro, the Impasse walk, the restaurant
+and the menu — so what the ENGINE does with two overlapping transition zones is
+unobserved and cannot be settled from what is committed here. That matters for
+the fix: the port's behaviour above is self-consistent, and "self-consistent"
+is exactly what `CLAUDE.md` 1 warns is not evidence.
+
+**One reading confirmed on the way**, because it looked like a candidate and is
+not: `arcWide == 0` really does mean ANY facing, not "no facing matches". The
+Impasse's zone 3795 carries `239.0 +-0.0` and its enter script is the tutorial
+cutscene, which fires — so a zero-width arc cannot be a zone that never arms.
+That rules out "the doorless zones should never have armed" as the fix.
+
+**LABELLED AS RECONSTRUCTION, and it is the part to settle before fixing.**
+Everything above is read from the data and from the port's own code; what is
+NOT established is what the ENGINE does with the same geometry. Three
+possibilities and they need different fixes:
+
+1. the engine arms only one of the two overlapping zones (a scan rule the port
+   does not model), and the doorless pair is meant for a different approach —
+   a teleport or a script — in which case the port's scan is what is wrong;
+2. the engine hits the same refusal and the original also has a race, which its
+   faster load simply hides;
+3. the door zone should win by ORDER — the engine's slot loop takes zones in
+   record order and 3813 precedes 3815 — in which case the port arms them in
+   the wrong order.
+
+The cheapest discriminator is instrumenting which zones arm and in what order
+during a real walk through the tunnel, and whether the second goto is refused.
+`todo/omk-play.md` 70's next step is that, not a fix.
 
 **A coverage number found on the way**, worth having on its own: across all 220
 `.SCX` the corpus uses **17 distinct scene functions over 13887 call sites**,

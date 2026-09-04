@@ -6576,6 +6576,67 @@ def c_engine_walker_falls():
         "spots from which the walker actually goes down, and spots on a " \
         "ledge from which nothing moves at all - the last must be 0"
 
+def c_engine_stop_sound():
+    r"""`engine/`: `Script_StopSound` silences the sound `Script_PlaySound`
+    started — the counterpart that was missing.
+
+    A reader's play report, promoted to `todo/omk-play.md` 71: *"audio not
+    stopping"*. `Script_PlaySound` (0x05000014) was implemented and
+    `Script_StopSound` (0x05000016) was not, so **86 sites across 61 scenes**
+    started audio the port had no way to silence. Eleven of the corpus's
+    seventeen scene functions were unimplemented and 102 of the 220 scenes use
+    at least one; this is the first of them and the one with a symptom behind
+    it.
+
+    The handler, `sub_4A16D0`, read rather than inferred:
+
+        edi = the sound index for param 0        ; 0xFFFF -> nothing to do
+        ebx = param 1, the NODE, -1 for none
+        eax = sub_46CD10(sound & 0xFFFF, node)   ; find the playing voice
+        if (eax >= 0) sub_46CD40(eax, node)      ; and stop it
+
+    So it names a sound AND a node and stops the voice playing that pair — not
+    every voice of that sound — which is why the port keys its live voices on
+    `(wav, node)` and not on the wav alone.
+
+    The tunnel between Anekbah and Qalisar carries the clearest shipped
+    example: `Tunnel01.SCX` object 10 is `AmbianceSound`, one `PlaySound` with
+    the loop flag, and object 11 is `stopambsound`, one `StopSound` — and both
+    name sound 2. The probe starts each and reads the cues back out of the
+    scene runner.
+
+    SHOWN TO FAIL by dropping the `kFnStopSound` arm from `Program::tick`:
+    the stop count goes 1 -> 0 and the ambience plays for ever, which is the
+    reported bug.
+    """
+    import subprocess, tempfile, shutil
+    eng = os.path.join(ROOT, "engine")
+    fr = omkpaths.data_root()
+    if not os.path.isdir(fr):
+        return ("no data",), ("data",), "needs the shipped tree"
+    b = subprocess.run(["make", "-s", "build/stopsound_probe"], cwd=eng,
+                       capture_output=True, text=True)
+    binp = os.path.join(eng, "build", "stopsound_probe")
+    if b.returncode != 0 or not os.path.exists(binp):
+        return ("build failed",), ("built",), "engine/ must build"
+    tmp = tempfile.mkdtemp()
+    try:
+        out = os.path.join(tmp, "ss.bin")
+        subprocess.run([binp, fr, os.path.join(ROOT, "tables", "vm_opcodes.json"),
+                        os.path.join(fr, "IAM", "START"),
+                        os.path.join(fr, "SCPTDATA"), out],
+                       capture_output=True, text=True)
+        raw = open(out, "rb").read()
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+    if len(raw) < 20:
+        return ("no output",), ("20 bytes",), "the probe must write its record"
+    plays, loops, stops, wav, same = struct.unpack_from("<5i", raw, 0)
+    return (plays, loops, stops, wav, same), (1, 1, 1, 2, 1), \
+        ("Tunnel01's AmbianceSound/stopambsound pair: play cues, of which "
+         "looping, then STOP cues, the sound they name, and whether the stop "
+         "names the same sound the play started")
+
 def c_engine_special_moves():
     r"""`engine/`: every move name the shipped banks carry resolves to a
     `tab_special_move[]` row - the table READ against the data that uses it.
@@ -18105,7 +18166,7 @@ def c_licence_headers():
                    if TAG in open(p, encoding="utf-8",
                                   errors="replace").read(600)]
     return (authored, sorted(missing), len(vendored), mislabelled), \
-           (321, [], 1, []), \
+           (322, [], 1, []), \
            "authored source files under tools/, engine/src, engine/tools, " \
            "engine/backends and scripts/; those MISSING the SPDX tag; " \
            "vendored files in engine/third_party; and vendored files wrongly " \
@@ -19535,6 +19596,7 @@ SLOW = [
     ("subtitle box", c_subtitle_box, "docs/UI"),
     ("credit layout", c_credit_layout, "docs/UI"),
     ("engine: impasse fx", c_engine_impasse_fx, "todo/omk-play"),
+    ("engine: stop sound", c_engine_stop_sound, "todo/omk-play"),
     ("engine: special moves", c_engine_special_moves, "docs/ASSETS"),
     ("engine: crowd nan", c_engine_crowd_nan, "todo/omk-play"),
     ("engine: walker falls", c_engine_walker_falls, "todo/omk-play"),
