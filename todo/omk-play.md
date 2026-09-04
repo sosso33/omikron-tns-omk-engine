@@ -51,6 +51,15 @@ contain something the port silently does nothing for.
 | `Script_ScaleObjectY` 0x03000024 | 6 | ? |
 | `fn_04_31` 0x0400001F | 3 | ? |
 
+> **`Script_StopSound` DONE 2026-09-04, not yet confirmed in play.** Ten to
+> go. `verify.py: engine stop sound` holds it, shown to fail by dropping the
+> arm (the stop count goes 1 to 0 and the ambience plays for ever, which is
+> the reported bug). The handler `sub_4A16D0` was READ rather than inferred,
+> and it names a sound AND a node - it stops the voice playing that PAIR, not
+> every voice of the sound - so the port keys its live voices on `(wav, node)`.
+> Only LOOPING cues are remembered; a one-shot ends by itself and its handle
+> would go stale.
+
 **`Script_StopSound` is the reader's own symptom and should go first.** A scene
 that starts a sound has no way to stop it: `Script_PlaySound` is implemented
 and its counterpart is not, so 86 sites across 61 scenes start audio the port

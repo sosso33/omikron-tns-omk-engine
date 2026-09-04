@@ -57,6 +57,19 @@ constexpr std::uint32_t kFnWait                = 0x06000017;
 constexpr std::uint32_t kFnPlaySound           = 0x05000014;
 constexpr std::uint32_t kFnPlaySyncSound       = 0x05000015;
 constexpr std::uint32_t kFnMoveObjectOnPath    = 0x03000008;
+// `Script_StopSound` (0x004A16D0), the counterpart `Script_PlaySound` never
+// had: 86 sites across 61 scenes started audio this port could not silence,
+// which is a reader's "audio not stopping" (omk-play 71). The handler, read:
+//
+//     edi = the sound index for param 0        ; 0xFFFF -> nothing to do
+//     ebx = param 1, the NODE, -1 for none
+//     eax = sub_46CD10(sound & 0xFFFF, node)   ; find the playing voice
+//     if (eax >= 0) sub_46CD40(eax, node)      ; and stop it
+//
+// So it names a sound AND a node, and stops the voice playing that pair -
+// not every voice of that sound. `AmbianceSound`/`stopambsound` in
+// `Tunnel01.SCX` are the shipped example: PlaySound(2, loop) and StopSound(2).
+constexpr std::uint32_t kFnStopSound           = 0x05000016;
 
 // One .SCX's objects plus the clip lengths their programs need.  The frame
 // counts come from the STREAMED animations, so a scene must carry its stream.
@@ -154,6 +167,10 @@ public:
         bool loop = false;
         int  node = -1;      // -1 = not positioned at a node
         bool sync = false;   // it came from PlaySyncSound
+        // `Script_StopSound`: silence the voice playing this wav on this node
+        // rather than start one. The cue carries the same two fields because
+        // the handler matches on the same two.
+        bool stop = false;
         float at = 0.0f;     // its cue frame, for a caller that logs
     };
     const std::vector<SoundCue>& sounds() const { return sounds_; }

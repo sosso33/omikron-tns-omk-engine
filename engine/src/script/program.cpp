@@ -254,6 +254,21 @@ bool Program::tick(float dt) {
                 }
                 continue;
             }
+            if (f.id == kFnStopSound) {
+                // `Script_StopSound` (0x004A16D0). Fires once when the chain
+                // reaches it and is never busy, like PlaySound: the handler
+                // resolves the sound and the node, finds the voice playing
+                // that pair and stops it. Param 0 is the sound, param 1 the
+                // node (-1 = none).
+                if (fired_.insert(k).second) {
+                    SoundCue c;
+                    c.stop = true;
+                    c.wav  = f.params.empty() ? -1 : f.params[0];
+                    c.node = f.params.size() > 1 ? f.params[1] : -1;
+                    sounds_.push_back(c);
+                }
+                continue;
+            }
             if (f.id == kFnMoveObjectOnPath) {
                 // `o3de_SetNodePos(node, Path_Sample(path, t))` - the sample
                 // is placed OUTRIGHT, so this reports a world position. `t`
