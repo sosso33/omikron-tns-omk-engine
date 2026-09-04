@@ -986,11 +986,74 @@ the TRANSITION, not the state - the same rule CLAUDE.md 1 states for values
 verified standing still. A check for this should count DISTINCT ENTRIES per
 press rather than sample a clip name.
 
-**WHAT IS STILL UNREAD**, before this is implementable: which of
-`esi/ecx/edi/ebx` is which corner of the blend; what `out[0]`/`out[4]` (the
-0..256 fractions) drive downstream in `sub_4725B0`; and where `actor[0x4F4]` -
-the 9 or the 6 - is set per clip. The port also has no blend-four-poses path,
-so this is a slice and not a one-line fix.
+**THE SPEC, read 2026-09-04.** Three of the four unknowns are closed; the
+fourth is named at the end.
+
+**1. WHERE THE VARIANT COUNT COMES FROM - the `.CTL` entry's own top nibble.**
+`sub_4A7F25` reads it straight off the state record and hands it to
+`sub_45C3B0`:
+
+    mov  ecx, [edi+48h]        ; the clip
+    mov  ax,  [edi+4Ch]
+    shr  eax, 0Ch              ; THE TOP FOUR BITS
+    push eax                   ; -> a3
+    call sub_45C3B0            ; actor[0x4F4] = a3 when a3 > 1,
+                               ; and actor[0x4E4] |= 4  (the "is a grid" flag)
+
+**Checked over the whole bank, and it PARTITIONS EXACTLY.** Nine states in
+`H1Avnt` carry a nibble > 1 and they are precisely the take/put families plus
+`H_ADJSTP`; every other clip - `H_STAND`, `H_WALK`, `H_RUN`, `H_WAITOB`,
+`H_GETOBJ` - reads 0. Nothing else in the bank is a grid.
+
+| state | `+0x4C` | n | frames | len | n x len |
+|---|---|---|---|---|---|
+| `H_TAKL12/22`, `H_PUTL12/22`, `H_ADJSTP` | 24593 / 24601 | **6** | 125 | 21 | **126** |
+| `H_TAKH12/22`, `H_PUTH12/22` | 36881 / 36889 | **9** | 188 | 21 | **189** |
+
+`n x len` is `frames + 1`, not `frames`, in every row - because **key 0 is the
+REST SENTINEL** and a clip holds `frames + 1` keys (CLAUDE.md 5). The variants
+occupy keys 1..126 as 6 x 21 and 1..189 as 9 x 21, landing with no remainder.
+That off-by-one looked like a refutation and is the corroboration.
+
+**2. WHICH FOUR CELLS - it is a bilinear sample of a grid.**
+
+    col = (angle  >= 0) ? 2 : 0
+    row = (second >= 0) ? 0 : 6            // n = 9 only
+    n == 9 (a 3x3 grid):  indices { 4, row+1, col+3, col+row }
+    n == 6 (a 2x3 grid):  indices { 1, col,   4,     col+3   }
+    the four frame offsets are index * len, into out[8], out[0Ah], out[0Ch], out[0Eh]
+
+Index 4 is the centre of the 3x3. The four sampled cells are the centre/edge
+pair plus the corner lying in the approach direction - angle across, the
+`+1C8h` value down.
+
+**3. THE BLEND FRACTIONS - 8.8 fixed point, each normalised by its own clamp.**
+
+    out[0] = clamp(|second| * 256 / (second >= 0 ? 51 : 53), 0, 256)   // n = 9
+    out[4] = clamp(|angle|  * 256 / 50,                      0, 256)
+
+`flt_4BC854 = 0.019607844` is 1/51, `flt_4BC858 = -0.018867925` is -1/53 and
+`flt_4BC85C = 0.02` is 1/50 - **the divisors are exactly the clamps applied to
+the same two values earlier in the function**, which is the check that the two
+halves belong together. For `n == 6` the second axis is pre-scaled by
+`flt_4BC84C = 0.033866666` = 1/29.527559, and 29.527559 inches is 75 cm - the
+same constant `sub_465D30`'s low arm uses at `flt_4BC7F0`.
+
+Then `sub_4725B0(node, clip, 0.0f, 1.0f, &tmp, actor+0x4F8)` applies it;
+that function names itself in its own error strings ("no animation applyed on
+object %s", "value for current frame is too big"), so it is the applier and the
+`0.0, 1.0` is "snap to key 1", not a range.
+
+**4. STILL UNREAD, and it is the only gap left**: exactly how `sub_4725B0`
+combines the four poses - which fraction weights which pair, and whether the
+two axes are applied in sequence or as one bilinear step. Everything feeding it
+is now known; what it does with the block is not.
+
+**PORTING NOTE**: the port has no blend-four-poses path at all, so this is a
+slice rather than a one-line fix, and it belongs in `engine/src/actor/` (the
+channel and the pose path), not in `play.cpp`. A check for it should count
+DISTINCT ENTRIES per press or assert the four offsets for a known geometry -
+never sample a clip name, which is what made the first two traces useless.
 
 **Still open in 69**: the camera (`Camera_Request` is still never called on a
 take) and the sound. The reader's full description of the target:
