@@ -680,16 +680,31 @@ sub_42B470(tag)       event 35: MAY it be used?
                         no  -> interface sound 13, and nothing else
 ```
 
-**Event 35's answer is the record's own `+4 & 1`** — which is exactly this
-port's `usable()`, read long before for another purpose. So the decision needs
-nothing new.
+**Case 35 has two arms and the record's `+4 & 1` chooses between them — it is
+not a permission bit.** Both answer, and reading it as a permission is what
+made every key refuse:
 
-**The refusal is ported whole**; the apply is announced and not run.
-`Object_ApplyEffect` is `named` in `readable/INDEX.md` with its body still as
-generated, and `sub_409780`'s context gate — whether the object may be used
-*here* — has not been read at all. A player confirming `Utiliser` on the MK400
-notice gets the beep and no state change, which is what the original does,
-and `verify.py: engine: sneak` asserts that line.
+| `+4 & 1` | arm | result | what happens |
+|---|---|---|---|
+| **clear** | `loc_407314` | **1** | loads the object's own model from its stem, and `sub_42B470` then runs `sub_41C490(dword_930724, tag)`, which writes `player[+0xA4] = &unk_4E7EA0[tag * 96]` and attaches the model to him — the object goes **IN HAND** |
+| **set** | the consumable arm | 2 | `Object_ApplyEffect(rec, Actor_IdBySlot(Actor_Player()))` runs *inside case 35*, and the sneak plays interface sound 13 |
+
+So `Utiliser` on a key **takes it in hand**, which is what a player then carries
+to a door or a lift — and a player reported exactly that: *"I tried using the
+Kay'l apartment key on the lift leading to his apartment, it doesn't work."*
+The port had the two arms the wrong way round and beeped instead.
+
+Neither arm's *effect* is ported: `Object_ApplyEffect` is `named` in
+`readable/INDEX.md` with its body still as generated, `sub_409780`'s context
+gate is unread, and the hand attach reaches into the actor runtime. What is
+ported is which arm runs and what it means, and `verify.py: engine: sneak`
+asserts the in-hand line.
+
+**And nothing gates the door on the key.** Scanned across AREA, SCENE and
+GLOBAL — **222 `has_object` sites and 235 `used_object` sites**, matching the
+totals `docs/GAME_STATE.md` records, so the scan is complete — and object 6,
+"Clé appartement Kay'l", is named by neither, nor by any `inventory.*` or
+`object.*` opcode. Whatever consumes a held key is not a world script.
 
 ### The examine page shows one of TWO things
 

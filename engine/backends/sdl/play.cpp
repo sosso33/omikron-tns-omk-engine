@@ -5533,15 +5533,29 @@ int main(int argc, char** argv) {
                     std::printf("sneak: %s with no object selected\n",
                                 verb ? "Utiliser sur" : "Utiliser");
                 } else if (!rec->usable()) {
-                    blip(sndBack);   // interface sound 13, the refusal
-                    std::printf("sneak: '%s' is not usable (record +4 bit 0 "
-                                "clear) - sound 13, nothing else\n",
-                                rec->name.c_str());
+                    // THE ARM THAT WORKS, and it is the one WITHOUT the
+                    // usable bit. Case 35's `loc_407314` loads the object's
+                    // own model from its stem and returns result **1**, and
+                    // `sub_42B470` then runs
+                    // `sub_41C490(dword_930724, tag)`, which writes
+                    // `player[+0xA4] = &unk_4E7EA0[tag * 96]` and attaches
+                    // the model to him. So "Utiliser" on a key TAKES IT IN
+                    // HAND - which is what a player then carries to a door.
+                    std::printf("sneak: '%s' -> IN HAND (case 35 result 1, "
+                                "sub_41C490 sets player+0xA4). The hand "
+                                "attach and the world-side use are not "
+                                "ported\n", rec->name.c_str());
                 } else {
-                    std::printf("sneak: '%s' IS usable, effect %d -> actor "
-                                "property %d. Object_ApplyEffect is named and "
-                                "not read, so the apply is announced and not "
-                                "run\n", rec->name.c_str(), rec->effect,
+                    // The consumable arm: `Object_ApplyEffect(rec, the
+                    // player)` runs inside case 35 itself, the result is
+                    // **2**, and `sub_42B470` plays interface sound 13.
+                    blip(sndBack);
+                    std::printf("sneak: '%s' is a CONSUMABLE (record +4 bit 0 "
+                                "set), effect %d -> actor property %d; case 35 "
+                                "applies it and returns 2, so sound 13. "
+                                "Object_ApplyEffect is named and not read, so "
+                                "the apply is announced and not run\n",
+                                rec->name.c_str(), rec->effect,
                                 omk::effectProperty(rec->effect));
                 }
             }

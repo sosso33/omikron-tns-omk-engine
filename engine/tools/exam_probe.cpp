@@ -41,6 +41,10 @@ int main(int argc, char** argv) {
             std::printf("  k15 idx %4d stem '%s' name '%s'\n",
                         o.index, o.stem.c_str(), o.name.c_str());
     for (const auto& o : objs)
+        if (o.stem == "CLEKAYL")
+            std::printf("  CLEKAYL: index %d id %d kind %d flags %#06x name '%s'\n",
+                        o.index, o.id, o.kind, o.flags, o.name.c_str());
+    for (const auto& o : objs)
         if (o.name.find("MK400") != std::string::npos ||
             o.name.find("appartement Kay") != std::string::npos ||
             o.name.find("Cl\xe9 appartement") != std::string::npos)

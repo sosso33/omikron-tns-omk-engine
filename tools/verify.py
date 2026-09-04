@@ -5503,11 +5503,14 @@ def c_engine_sneak():
             "sneak: object list 0 holds" in o,
             "260 frames presented" in o,
             "world: 260 frames drawn" in o,
-            # `sub_42B470`: event 35's answer is the record's `+4 & 1`, and a
-            # document has it clear - so the verb refuses with interface
-            # sound 13 and changes nothing, which is the half of "Utiliser"
-            # that is ported whole.
-            "is not usable (record +4 bit 0 clear)" in o,
+            # `sub_42B470` runs the use when event 35 answers 1, and the
+            # arm that answers 1 is the one WITHOUT the usable bit: case 35's
+            # `loc_407314` loads the object's own model and returns 1, and
+            # `sub_41C490` then puts it in the player's HAND. The usable bit
+            # marks a CONSUMABLE, which case 35 applies itself and answers 2
+            # to, so the sneak plays sound 13. Reading those two arms the
+            # wrong way round made every key refuse.
+            "-> IN HAND (case 35 result 1" in o,
             # ...and the TICK, which is the half that actually froze: the
             # draw gate and the `adventure` gate are separate lines, and a
             # mutation of one alone left this check green.
@@ -5522,10 +5525,11 @@ def c_engine_sneak():
            "and did not check until 2026-09-04, when a player opened the " \
            "sneak in Anekbah and watched the city freeze (19 world frames of " \
            "1924). `Game_Tick` has no test for an open screen; the only " \
-           "verb `Utiliser` then REFUSES on it, because `sub_42B470` asks " \
-           "event 35 and its answer is the record's own `+4 & 1` - a " \
-           "document has it clear, so interface sound 13 and nothing else, " \
-           "which is the half of the verb that is ported whole. The " \
+           "verb `Utiliser` then takes it IN HAND, because event 35's " \
+           "answer is 1 for an object WITHOUT the usable bit - that arm " \
+           "loads the object's own model and `sub_41C490` writes " \
+           "player+0xA4 - while the usable bit marks a CONSUMABLE, which " \
+           "case 35 applies itself and answers 2 to. The " \
            "thing that stops the world is `dword_4E9728`, whose two writes " \
            "in the whole image are screen 31 PAUSE GAME's open and close. " \
            "The last field is the player's TICK count, because the draw gate " \
