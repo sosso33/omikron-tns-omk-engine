@@ -1260,6 +1260,9 @@ int main(int argc, char** argv) {
 "  --stand x,y,z[,facing]   an explicit spot instead of an address\n"
 "  --density 0..4   how much crowd - the options menu\'s own row 6\n"
 "  --no-crowd       no pedestrians at all\n"
+"  --sneak          open the SNEAK as soon as he is on his feet, through\n"
+"                   the same path TAB takes - for testing that screen\n"
+"                   without walking to it\n"
 "  TAB              once he is on his feet, opens the SNEAK - his handheld\n"
 "                   device. It is the adventure scheme\'s own \"Ouvrir\n"
 "                   sneak\" binding, and the .CTL has to play H_SNKON first,\n"
@@ -1346,6 +1349,12 @@ int main(int argc, char** argv) {
     std::string saveFile;
     int areaArg = -1, addressArg = -1, density = omk::kDefaultStreetActivity;
     bool noCrowd = false;
+    // `--sneak` opens the device as soon as the player is on his feet,
+    // through the SAME path TAB takes - `MDSNEAK0`'s handler, event 25 and
+    // screen 9 - rather than a second way in. A testing convenience for a
+    // screen that otherwise costs a walk to reach; it sets the same
+    // `playerScreen` the special move sets and nothing else.
+    bool openSneak = false;
     float standAt[4] = {0, 0, 0, 0};
     bool haveStand = false;      // `--stand x,y,z,yaw`: put the player down there after the hand-over
     // the scene viewer's
@@ -1417,6 +1426,7 @@ int main(int argc, char** argv) {
         else if (a == "--address" && i + 1 < argc) addressArg = std::atoi(argv[++i]);
         else if (a == "--density" && i + 1 < argc) density = std::atoi(argv[++i]);
         else if (a == "--no-crowd") noCrowd = true;
+        else if (a == "--sneak") openSneak = true;
         else if (a == "--stand" && i + 1 < argc)
             haveStand = std::sscanf(argv[++i], "%f,%f,%f,%f", &standAt[0], &standAt[1], &standAt[2], &standAt[3]) >= 3;
         else if (a == "--type" && i + 1 < argc) typeText = argv[++i];
@@ -3382,6 +3392,15 @@ int main(int argc, char** argv) {
                 // The three-press shape a reader described - take and see the
                 // name, press again to bank it, another button to put it back
                 // - is these four rows and nothing else.
+                // `--sneak`: the same request the special move makes, once.
+                if (openSneak && !walk && playerScreen < 0) {
+                    openSneak = false;
+                    inv.openList(0);
+                    playerScreen = omk::kScreenSneak;
+                    std::printf("--sneak: event %d opens object list 0, "
+                                "screen %d\n", omk::kEventSneakOpen,
+                                omk::kScreenSneak);
+                }
                 for (const auto& mv : player->specialMoves()) {
                     const omk::SpecialMoves::Row* row = specialMoves.find(mv);
                     if (row)
@@ -5289,11 +5308,20 @@ int main(int argc, char** argv) {
                         }
                     }
                 }
-                if (!sneakTold++)
+                if (!sneakTold++) {
+                    // Count the ROWS, not the map: since the echo bar and
+                    // the clock share `sneakRows` this reported "2 rows
+                    // shown" for a list holding one object.
+                    std::size_t rows = 0;
+                    for (const auto& l : pn->lists)
+                        if (l.addr == omk::kListSneakRows)
+                            for (const auto& e : l.items)
+                                rows += sneakRows.count(e.addr);
                     std::printf("sneak: object list %d holds %zu, %zu rows "
                                 "shown (no scrolling - sub_0049C050 is not "
                                 "modelled)\n", inv.openedList(),
-                                carried.size(), sneakRows.size());
+                                carried.size(), rows);
+                }
             }
         }
         if (walk) {
