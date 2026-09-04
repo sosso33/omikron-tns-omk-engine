@@ -403,6 +403,8 @@ public:
         long startedFrame = 0;                  // a1[7], in frames here
         int  program = -1;                      // the object started by ScriptObject_Start:
                                                 // -1 none, -2 "not resident, ends next frame"
+        bool outPool = false;                   // which pool owns `program` -
+                                                // the OUTGOING slot's, or the active one
     };
     const Transition& transition() const { return tr_; }
     // `dword_4C0130`: the context index a staged load will release, -1 when
@@ -1000,6 +1002,11 @@ public:
     // the scene and the frontend is the only thing that knows where the files
     // are.
     SceneRunner& sceneMutable() { return scene_; }
+    // The OTHER resident slot's pool - the outgoing scene a transition's door
+    // is named against (omk-play 70). Empty (`sceneOutArea() < 0`) until an
+    // area change has actually moved one aside.
+    const SceneRunner& sceneOut() const { return sceneOut_; }
+    int sceneOutArea() const { return sceneOutArea_; }
 
     const std::vector<Announced>& announced() const { return announced_; }
 
@@ -1072,6 +1079,23 @@ private:
     struct Ann { std::string domain; int field; };
     std::map<std::uint8_t, Ann> announce_;   // empty = announce nothing
     SceneRunner scene_;                      // empty unless loadScene ran
+    // THE OTHER RESIDENT SLOT'S OBJECT POOL (omk-play 70).
+    //
+    // `Area_LoadScx` (0x0041B4E0) fills THE SLOT's object container (`slot+8`)
+    // and there are TWO resident slots, so the engine keeps two pools and a
+    // departure object resolves "against the scene the player is still
+    // standing in". This port kept ONE, keyed on `sceneArea_`, and
+    // `reloadScene` discarded the outgoing pool the moment the active area
+    // changed - so a door named by a transition that completed first could no
+    // longer be found, and `startTransitionObject` answered the miss with
+    // `-2`, "ends next frame", silently. That is the tunnel's four doors,
+    // none of which ever played.
+    //
+    // It is the same collapse, one layer down, as the two decor STATES that
+    // `ResidentSlot::shown` fixed on 2026-09-03: give the slot what belongs to
+    // the slot.
+    SceneRunner sceneOut_;                   // the outgoing pool, kept resident
+    int         sceneOutArea_ = -1;          // whose it is, -1 when empty
     Sliders sliders_;                       // empty unless loadTraffic ran
     SpatialIndex spatial_;
     std::map<std::string, std::vector<CollisionSphere>> modelSpheres_;
@@ -1206,6 +1230,11 @@ private:
     void hideSet(int area);
     // `ScriptObject_Start(obj, outgoing block, ctx, 1)` for the transition.
     void startTransitionObject(int obj);
+    // `ScriptObject_Start(obj, a1[3], a1[1], 1)` - a1[3] is the OUTGOING
+    // block, so the pool a transition's door resolves against is the one
+    // belonging to `tr_.outArea`, which after a doorless route has already
+    // completed is `sceneOut_` and not `scene_` (omk-play 70).
+    SceneRunner& transitionPool(bool& outPool);
     // `Game_HandleEvent` case 3 for the transition's object.
     void transitionObjectEnded();
     void clearTransition();

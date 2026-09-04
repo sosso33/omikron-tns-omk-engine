@@ -641,10 +641,27 @@ void Session::setStatus(int ctxIdx, int status) {
 // --------------------------------------------------------- THE TRANSITION
 
 void Session::clearTransition() {
-    const int program = tr_.program;      // an object already started still ends
+    const int  program = tr_.program;     // an object already started still ends
+    const bool outPool = tr_.outPool;     // ...in the pool it was started in
     tr_ = Transition{};
     tr_.startedFrame = frameNo_;
     tr_.program = program;
+    tr_.outPool = outPool;
+}
+
+// Which of the two resident pools a door resolves against. The engine passes
+// `a1[3]` - the OUTGOING block - to `ScriptObject_Start`, so the answer is
+// "the one that belongs to `tr_.outArea`". Ordinarily that is still `scene_`;
+// it is `sceneOut_` exactly when a route has already carried the player into
+// the destination, which is the tunnel's case and the whole of omk-play 70.
+SceneRunner& Session::transitionPool(bool& outPool) {
+    if (sceneOutArea_ >= 0 && tr_.outArea >= 0 && sceneOutArea_ == tr_.outArea &&
+        sceneOut_.loaded()) {
+        outPool = true;
+        return sceneOut_;
+    }
+    outPool = false;
+    return scene_;
 }
 
 // `ScriptObject_Start(obj, a1[3], a1[1], 1)`: the object of the OUTGOING
@@ -655,7 +672,17 @@ void Session::startTransitionObject(int obj) {
     Call c;
     c.op = 58;                            // `scx.play.wait`'s shape: object first
     c.fields = {static_cast<std::int16_t>(obj), 0, 0};
-    const int idx = scene_.handle({c});
+    bool outPool = false;
+    SceneRunner& pool = transitionPool(outPool);
+    int idx = pool.handle({c});
+    // ...and on a miss, the DESTINATION's pool. Over the 894 shipped door
+    // operands 832 resolve in the outgoing scene and exactly THREE resolve
+    // only in the destination's, so the fallback is small, real, and strictly
+    // better than answering "-2, ends next frame" for those three.
+    if (idx < 0 && outPool) {
+        idx = scene_.handle({c});
+        if (idx >= 0) outPool = false;
+    }
     // omk-play 70: the decisive line. When the door's goto finally runs, is the
     // TUNNEL's scene still resident? If the doorless route has already carried
     // the player into the destination, `Tunnel01.SCX` is gone and the door
@@ -666,16 +693,20 @@ void Session::startTransitionObject(int obj) {
         const char* t = std::getenv("OMK_TUNNEL");
         if ((e && *e == '1') || (t && *t == '1'))
             std::printf("[tr] frame %ld  door object %d -> program %d%s   "
-                        "(resident scene %d over area %d; %zu started, %zu missed)\n",
+                        "(pool %s, area %d; resident scene %d over area %d; "
+                        "%zu started, %zu missed)\n",
                         frameNo_, obj, idx, idx < 0 ? "   <- MISSED" : "",
+                        outPool ? "OUTGOING" : "active",
+                        outPool ? sceneOutArea_ : sceneArea_,
                         slots_[curSlot_].scene, slots_[curSlot_].area,
-                        scene_.started().size(), scene_.missed().size());
+                        pool.started().size(), pool.missed().size());
     }
     // Not resident (or no scene loaded): the engine would wait on an object
     // it cannot find until the 60 s watchdog. A replica with no scene must
     // run on where the game would, so the "object" ends next frame - the
     // same policy `ObjectWait` takes.
     tr_.program = idx >= 0 ? idx : -2;
+    tr_.outPool = outPool && idx >= 0;
 }
 
 // `Game_HandleEvent` case 3, raised by the object runtime when the program
@@ -730,7 +761,8 @@ void Session::setFightHook(std::function<bool(int)> h) {
 
 void Session::transitionObjectEnded() {
     if (tr_.program == -1) return;
-    if (tr_.program >= 0 && scene_.programRunning(tr_.program)) return;
+    if (tr_.program >= 0 &&
+        (tr_.outPool ? sceneOut_ : scene_).programRunning(tr_.program)) return;
     if (const char* e = std::getenv("OMK_CAMLOG"))
         if (*e == '1')
             std::fprintf(stderr, "[tr] frame %ld  program %d ENDED (state %d)\n",
@@ -1224,6 +1256,14 @@ void Session::reloadScene(int area, int scene) {
     // slots and is known to miss a scene whose only `scene.load` is in a
     // startup script (scene 55, the Impasse).
     if (fresh.load(scptData_, iam_, table_, ChunkKind::Area, area)) {
+        // The OUTGOING pool is kept, not dropped - the engine has two slots
+        // and a transition's door is named against the one the player is
+        // still standing in (omk-play 70). Its programs go on running and
+        // being ticked until the next change evicts it.
+        if (scene_.loaded() && sceneArea_ != area) {
+            sceneOut_     = std::move(scene_);
+            sceneOutArea_ = sceneArea_;
+        }
         scene_ = std::move(fresh);
         sceneArea_ = area;
         attachSceneSfx();
@@ -1864,6 +1904,10 @@ void Session::frame() {
         // ticked and the intro's portal FROZE the moment the conversation
         // opened; a reader watching it said so. The same delta as below.
         scene_.tick(static_cast<float>(frameSeconds_ * 30.0));
+        // the OUTGOING pool ticks too: its programs are still running and a
+        // transition may be waiting on one of them (omk-play 70)
+        if (sceneOutArea_ >= 0)
+            sceneOut_.tick(static_cast<float>(frameSeconds_ * 30.0));
         sliders_.tick(static_cast<float>(frameSeconds_ * 30.0));   // `Sliders_Tick`, no dialogue gate either
         refreshCrowdIndex();
         if (bumpCooldown_ > 0) --bumpCooldown_;
@@ -1928,6 +1972,10 @@ void Session::frame() {
     // bounded run leaves `frameSeconds_` at its 1/30 default, so this is
     // exactly 1.0 there and the headless checks stay deterministic.
     scene_.tick(static_cast<float>(frameSeconds_ * 30.0));
+    // the OUTGOING pool ticks too: its programs are still running and a
+    // transition may be waiting on one of them (omk-play 70)
+    if (sceneOutArea_ >= 0)
+        sceneOut_.tick(static_cast<float>(frameSeconds_ * 30.0));
     // `Sliders_Tick`: the traffic and the pedestrians, every frame
     sliders_.tick(static_cast<float>(frameSeconds_ * 30.0));
     refreshCrowdIndex();

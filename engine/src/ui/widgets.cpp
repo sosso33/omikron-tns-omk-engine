@@ -366,34 +366,57 @@ void UiWalk::colourList(std::uint32_t list, int r, int g, int b) {
 // The panel `+4` BUILDER, for the sneak family - and `panel+4` is a callback
 // slot the walker did not read until now (it lifts `+16`, the input hook).
 //
-// Each sneak page is its own panel with its own builder, and the builder's
-// last act is to copy the page's TAB ICON colour over the page's fill lists.
-// The icons are list 0x004DE210, shared by every page, and their records
-// carry the five colours the captures show.
+// Each sneak page is its own PANEL with its own builder, and the builder's
+// last act is to copy the page's TAB ICON colour over the shared lists the
+// page carries. The six builders, each named by its panel's `+4`:
 //
-// Only the INVENTORY page's builder is ported, because it is the only one
-// whose function boundary is established: 0x0049B710, bounded above by
-// `sub_49B610 endp` + `align 10h` (whose `retn` lands at 0x0049B701, and the
-// first branch target inside the new function is `loc_49B759`, which the
-// instruction lengths reach EXACTLY from 0x0049B710) and below by its own
-// `retn`. It is named by panel 0x004DEE50 `+4`, at file offset 0xDDA54.
+//     0x0049B710  panel 0x004DEE50  Inventory   icon 0x004DE040
+//     0x0049C100  panel 0x004DED80  Identity    icon 0x004DDFB0
+//     0x0049D170  panel 0x004DEDE8  Slider      icon 0x004DDFF8
+//     0x0049D750  panel 0x004DEF88  Memory      icon 0x004DE088
+//     0x0049D8F0  panel 0x004DF058  Options     icon 0x004DE0D0
+//     0x0049D980  panel 0x004DF0C0  Quit        icon 0x004DE118
 //
-// The other four pages colour themselves the same way from the same tab
-// column - identity from 0x004DDFB0, slider from 0x004DDFF8, memory from
-// 0x004DE088, options from 0x004DE0D0, each `push`ing that icon's `+8/+9/+10`
-// by address - and `docs/UI.md` records the sites. They are NOT ported here:
-// the pushes are read, but which unlabelled function each sits in is an
-// inference from the order of the listing, and the engine opens screen 9.
+// WHICH ICON BELONGS TO WHICH PAGE IS IN THE TREE, not in this file: the tab
+// column (list 0x004DE210, shared by every page) is a list of items whose
+// `child` IS the page it opens. So the mapping is read rather than tabulated,
+// and a page the tree does not carry simply has no entry.
+//
+// WHICH LISTS EACH ONE COLOURS is the shipped data's own check, and it is
+// exact. Three lists are shared between pages - the nine rows 0x004DE6F0,
+// the three verbs 0x004DE318 and the echo bar 0x004DEC58 - and every builder
+// colours PRECISELY the shared lists its own panel carries:
+//
+//     Identity   echo               <- builder colours echo
+//     Slider     rows, echo         <- rows, echo
+//     Inventory  verbs, rows, echo  <- verbs, rows, echo
+//     Memory     rows, echo         <- rows, echo
+//     Options    echo               <- echo
+//     Quit       echo               <- echo
+//
+// Six of six, and the membership is lifted from the tree while the calls are
+// read from the image, so the two could have disagreed. That is what makes
+// this a rule rather than a table of addresses.
 void UiWalk::buildPage(const UiPanel& p) {
     colour_.clear();
-    if (p.addr != kPanelSneakInventory) return;
+    // The page's own tab: the column item whose `child` is this panel.
     const UiItem* icon = nullptr;
-    for (const auto& l : p.lists)
+    for (const auto& l : p.lists) {
+        if (l.addr != kListSneakTabs) continue;
         for (const auto& it : l.items)
-            if (it.addr == kIconSneakInventory) icon = &it;
-    if (!icon) return;
+            if (it.child == p.addr) icon = &it;
+        break;
+    }
+    if (!icon) return;                       // not a page of the sneak device
     for (std::uint32_t list : {kListSneakRows, kListSneakVerbs, kListSneakEcho})
         colourList(list, icon->rgb[0], icon->rgb[1], icon->rgb[2]);
+    // ...and the CLOCK goes back to black on the pages whose builder says so.
+    // `sub_4296B0(0x004DEC08, 0, 0, 0)` runs in the Memory, Options and Quit
+    // builders and in neither Inventory nor Slider - which is why a capture
+    // of the original shows the date on those two pages and not on Memory.
+    if (p.addr == kPanelSneakMemory || p.addr == kPanelSneakOptions ||
+        p.addr == kPanelSneakQuit)
+        colourItem(kItemSneakClock, 0, 0, 0);
 }
 
 bool UiWalk::open(int screenId) {
@@ -534,6 +557,7 @@ bool UiWalk::confirm() {
     if (it->child) {
         if (const auto* kid = w_->at(it->child)) {
             panel_ = kid;
+            buildPage(*panel_);
             settle();
             log_.push_back("enter child panel");
             return true;
@@ -551,6 +575,7 @@ bool UiWalk::press(std::uint32_t bits) {
         if (panel_->parent) {
             if (const auto* up = w_->at(panel_->parent)) {
                 panel_ = up;
+                buildPage(*panel_);
                 settle();
                 log_.push_back("back");
             } else {

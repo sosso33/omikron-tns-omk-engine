@@ -570,13 +570,39 @@ of 55/255 = **0.216** and source-over **0.784**; the offset is the capture's
 lifted black. The port composes (49, 28, 0) for the row bar over black and
 (57, 32, 0) over the page's own window tile, against (56, 34, 8) measured.
 
-`verify.py: sneak page colour`. Only the inventory page's builder is ported:
-it is the one whose function boundary is established (the `retn` of
-`sub_49B610` lands at 0x0049B701, `align 10h` puts the next function at
-0x0049B710, and the instruction lengths reach `loc_49B759` exactly), and it is
-the page the port opens. The other four pages' pushes are read — the icons
-above are what they name — but which unlabelled function each sits in is an
-inference from the order of the listing, so they are recorded and not ported.
+**All six builders, attributed by ADDRESS** (2026-09-04, after a play report).
+Each site's nearest preceding `loc_` label gives its address, and every panel
+callback slot is a function start, so each call lands in a named builder:
+
+| builder | panel | page | icon |
+|---|---|---|---|
+| `0x0049B710` | 0x004DEE50 | Inventory | 0x004DE040 |
+| `0x0049C100` | 0x004DED80 | Identity | 0x004DDFB0 |
+| `0x0049D170` | 0x004DEDE8 | Slider | 0x004DDFF8 |
+| `0x0049D750` | 0x004DEF88 | Memory | 0x004DE088 |
+| `0x0049D8F0` | 0x004DF058 | Options | 0x004DE0D0 |
+| `0x0049D980` | 0x004DF0C0 | Quit | 0x004DE118 |
+
+**And the shipped data checks it.** Three lists are shared between pages — the
+nine rows 0x004DE6F0, the three verbs 0x004DE318 and the echo bar 0x004DEC58 —
+and every builder colours *precisely* the shared lists its own panel carries:
+Identity echo; Slider rows + echo; Inventory verbs + rows + echo; Memory rows +
+echo; Options echo; Quit echo. **Six of six.** The membership is lifted from
+the tree and the calls are read from the image, so the two could have
+disagreed. That is what makes this a rule rather than a table of addresses —
+and it is how the port states it: `UiWalk::buildPage` finds the page's icon as
+*the tab-column item whose `child` is this panel*, with no address list at all.
+
+Three of the six then blacken the clock (item 0x004DEC08) with the single-item
+setter — Memory, Options and Quit — and Inventory and Slider do not, which is
+why a capture of the original shows the date on those two pages.
+
+**The builder runs on every panel CHANGE, not only on `ui.open`.** The tab
+column's items carry a `child` panel, so confirming a tab *descends*: the walk
+changes panel with no second open. Building only on open leaves the new page
+wearing the old page's colour — a player reported reaching the slider page
+"with everything in amber", and that was it. `verify.py: sneak page colour`
+walks RIGHT, UP, CONFIRM into panel 0x004DEDE8 and asserts its rows turn green.
 
 
 **The cursor is ANIMATED, and it is the glow a player sees.** `0x40000200` is

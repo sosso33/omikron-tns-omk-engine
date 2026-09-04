@@ -6576,6 +6576,77 @@ def c_engine_walker_falls():
         "spots from which the walker actually goes down, and spots on a " \
         "ledge from which nothing moves at all - the last must be 0"
 
+def c_engine_tunnel_doors():
+    r"""`engine/`: a transition's door resolves in the OUTGOING slot's object
+    pool — the second resident pool the port did not have.
+
+    `todo/omk-play.md` 70, a reader's report: the tunnel between Anekbah and
+    Qalisar has a big sliding door at each end and **none of the four ever
+    plays**. AREA 224 carries two transition zones at each end, one naming a
+    door pair and one naming none, and the doorless one is the OUTER at both
+    ends — so a walk fires it first and it completes before the door-carrying
+    `area.goto` runs.
+
+    The engine keeps **two resident slots**, and `Area_LoadScx` (0x0041B4E0)
+    fills THE SLOT's object container (`slot+8`), so the tunnel's pool is still
+    there when the door is named: `ScriptObject_Start(obj, a1[3], …)` takes
+    `a1[3]`, the OUTGOING block. The port kept ONE pool, keyed on the active
+    area, and `reloadScene` discarded the outgoing one — so the door resolved
+    to nothing and `startTransitionObject` answered `-2`, "ends next frame".
+    A door asked for and never played, with no error anywhere, four times.
+
+    Preferring the outgoing pool cannot trade this for another bug, and that
+    is measured rather than assumed: over the corpus's **447 op-47 sites (894
+    door objects)** 832 — 93% — resolve in the outgoing scene and **exactly
+    three in the whole game resolve only in the destination's**, so the
+    fallback to the active pool protects three objects and costs nothing.
+
+    A resolve alone was never enough, which is why this is a slice and not a
+    one-line fix: the transition waits on `programRunning` and the program is
+    advanced by `tick`, so an object started into a runner nothing ticks would
+    never run and the transition would hang for ever — trading a silent miss
+    for a hang, which is worse. Both runners are ticked.
+
+    SHOWN TO FAIL by making `transitionPool` always answer `scene_` and
+    dropping the fallback: `door_program` goes 0 -> **-2** and `resolved`
+    1 -> **0**, which is the reported bug exactly.
+
+    This does not settle whether the door is SEEN. The outgoing set is the
+    engine's state-1 slot — loaded but unlinked, so not drawn — and which of
+    the two overlapping zones the engine arms first still has no oracle
+    (`todo/omk-play.md` 70). What is fixed here is the resolve and the run.
+    """
+    import subprocess, tempfile, shutil
+    eng = os.path.join(ROOT, "engine")
+    fr = omkpaths.data_root()
+    if not os.path.isdir(fr):
+        return ("no data",), ("data",), "needs the shipped tree"
+    b = subprocess.run(["make", "-s", "build/tunnel_doors"], cwd=eng,
+                       capture_output=True, text=True)
+    binp = os.path.join(eng, "build", "tunnel_doors")
+    if b.returncode != 0 or not os.path.exists(binp):
+        return ("build failed",), ("built",), "engine/ must build"
+    tmp = tempfile.mkdtemp()
+    try:
+        out = os.path.join(tmp, "td.bin")
+        subprocess.run([binp, fr, os.path.join(ROOT, "tables"), out],
+                       capture_output=True, text=True)
+        raw = open(out, "rb").read()
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+    if len(raw) < 32:
+        return ("no output",), ("32 bytes",), "the probe must write its record"
+    (start, after, outArea, outIsTunnel, activeMoved,
+     f1, program, resolved) = struct.unpack_from("<8i", raw, 0)
+    got = (start, outArea, outIsTunnel, activeMoved, f1,
+           1 if program >= 0 else 0, resolved)
+    want = (224, 224, 1, 1, 5, 1, 1)
+    return got, want, \
+        ("AREA 224's doorless route completes and moves the active pool to "
+         "Qalisar; the tunnel's pool stays resident as the OUTGOING one; the "
+         "door-carrying goto then resolves object 5 in it")
+
+
 def c_engine_stop_sound():
     r"""`engine/`: `Script_StopSound` silences the sound `Script_PlaySound`
     started — the counterpart that was missing.
@@ -10337,16 +10408,23 @@ def c_sneak_page_colour():
             "list 0x4de6f0 written 240 135 15 over 9 items" in o,
             "list 0x4de318 written 240 135 15 over 3 items" in o,
             "list 0x4dec58 written 240 135 15 over 2 items" in o,
-            "row bar paints 49 28 0" in o), \
+            "row bar paints 49 28 0" in o,
+            "walked to panel 0x4dede8" in o,
+            "page rows now 25 240 115" in o), \
            (5,
             ["20 165 250", "25 240 115", "240 135 15", "255 240 95",
              "255 100 70"],
-            True, True, True, True), \
+            True, True, True, True, True, True), \
            "the five tab icons carry the five page colours; opening screen " \
            "9 runs the inventory page's builder, which copies its own icon's " \
            "amber over the rows, the verbs and the echo bar; and the row " \
            "bar then paints (49, 28, 0) - (240, 135, 15) at 55/255 over " \
-           "black - where the placeholder painted (49, 0, 0)"
+           "black - where the placeholder painted (49, 0, 0). Then the PAGE " \
+           "SWITCH: the tab column's items carry a `child` panel, so " \
+           "confirming the slider tab DESCENDS - the walk changes panel " \
+           "with no second `open()` - and its rows must turn GREEN. A " \
+           "builder run only from `open()` leaves the new page wearing the " \
+           "old page's colour, which is what a player saw"
 
 
 def c_player_counters():
@@ -18329,7 +18407,7 @@ def c_licence_headers():
                    if TAG in open(p, encoding="utf-8",
                                   errors="replace").read(600)]
     return (authored, sorted(missing), len(vendored), mislabelled), \
-           (323, [], 1, []), \
+           (324, [], 1, []), \
            "authored source files under tools/, engine/src, engine/tools, " \
            "engine/backends and scripts/; those MISSING the SPDX tag; " \
            "vendored files in engine/third_party; and vendored files wrongly " \
@@ -19762,6 +19840,7 @@ SLOW = [
     ("engine: stop sound", c_engine_stop_sound, "todo/omk-play"),
     ("engine: special moves", c_engine_special_moves, "docs/ASSETS"),
     ("engine: crowd nan", c_engine_crowd_nan, "todo/omk-play"),
+    ("engine: tunnel doors", c_engine_tunnel_doors, "todo/omk-play"),
     ("engine: walker falls", c_engine_walker_falls, "todo/omk-play"),
     ("engine: props", c_engine_props, "todo/omk-play"),
     ("sprite ids scene-local", c_sprite_ids_are_scene_local, "docs/ASSETS"),

@@ -56,6 +56,30 @@ int main(int argc, char** argv) {
         }
     }
 
+    // ...THEN WALK TO ANOTHER PAGE, which is where this went wrong. The tab
+    // column's items carry a `child` panel, so confirming one DESCENDS - the
+    // walk changes panel without `open()` being called again. A builder run
+    // only from `open()` therefore leaves the new page wearing the old page's
+    // colour, which is what a player saw: "I was in the slider menu, but
+    // everything was in amber".
+    //
+    // RIGHT leaves the rows for the tab column, UP steps from the inventory
+    // tab to the slider tab, CONFIRM enters it. (`sneak chain` walks RIGHT,
+    // UP, UP, CONFIRM to the identity page the same way.)
+    for (std::uint32_t bits : {omk::kUiRight, omk::kUiUp, omk::kUiConfirm})
+        walk.press(bits);
+    if (const omk::UiPanel* now = walk.panel()) {
+        std::printf("walked to panel %#x%s\n", now->addr,
+                    walk.approximate() ? " (approximate)" : "");
+        for (const auto& l : now->lists) {
+            if (l.addr != omk::kListSneakRows || l.items.empty()) continue;
+            const int* c = walk.itemColour(l.items.front().addr);
+            std::printf("page rows now %d %d %d\n", c ? c[0] : -1,
+                        c ? c[1] : -1, c ? c[2] : -1);
+        }
+    }
+    walk.open(omk::kScreenSneak);          // back to the inventory page
+
     // ...and the pixel. The fill is `src * (1 - 200/255)` over whatever is
     // under it, so the row bar over the page's dark window is the number a
     // capture of the original can be held against.

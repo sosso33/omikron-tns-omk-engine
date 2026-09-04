@@ -617,6 +617,52 @@ The cheapest discriminator is instrumenting which zones arm and in what order
 during a real walk through the tunnel, and whether the second goto is refused.
 `todo/omk-play.md` 70's next step is that, not a fix.
 
+**FIXED, 2026-09-04 — the second object pool. Candidate (3), the narrow one.**
+
+The port kept ONE `SceneRunner`, keyed on the active area, and `reloadScene`
+DISCARDED the outgoing one the moment that area changed. The engine keeps
+**two resident slots** and `Area_LoadScx` (0x0041B4E0) fills THE SLOT's object
+container (`slot+8`), so the tunnel's pool is still there when the door is
+named — and `ScriptObject_Start(obj, a1[3], …)` takes `a1[3]`, the OUTGOING
+block, which is what `startTransitionObject`'s own comment already said. It is
+the same collapse, one layer down, as the two decor STATES that
+`ResidentSlot::shown` fixed on 2026-09-03: give the slot what belongs to it.
+
+Four changes, and the third is the one the entry above warned about:
+
+1. `Session::sceneOut_` / `sceneOutArea_` — `reloadScene` moves the outgoing
+   runner aside instead of dropping it;
+2. `Session::transitionPool()` resolves a door against the pool whose area is
+   `tr_.outArea`, falling back to the active pool on a miss (the three
+   destination-only objects), and `Transition::outPool` records which pool
+   owns the started program so `transitionObjectEnded` asks the right one;
+3. **both runners are ticked**, at both `scene_.tick` sites. Without this the
+   fix would trade a silent miss for a HANG: a program started into a runner
+   nothing advances never ends, and the transition waits on it for ever;
+4. `clearTransition` carries `outPool` across with `program`, since an object
+   already started still has to end in the pool it started in.
+
+**Reproduced headlessly and SHOWN TO FAIL** — `engine/tools/tunnel_doors.cpp`,
+`verify.py: engine tunnel doors`. It runs AREA 224's two Qalisar routes in the
+order a walk fires them: zone record 3 (doorless) completes and carries the
+active pool to `qchaud.SCX`, the tunnel's `Tunnel01.SCX` stays resident as the
+outgoing one, and record 1's door object 5 then resolves in it.
+
+    one pool:   door f1 5 -> program -2   resolved 0   from_outgoing_pool 0
+    two pools:  door f1 5 -> program  0   resolved 1   from_outgoing_pool 1
+
+`program -2` is `startTransitionObject`'s "not resident, ends next frame" —
+the silent miss, four times in the game, with no error anywhere.
+
+**What this does NOT settle, and it is the half still open.** The door now
+resolves and RUNS; whether the player SEES it is a different question, because
+by then the tunnel's set is the engine's state-1 slot — loaded but unlinked,
+so not drawn — and `play.cpp` reads only `session.scene()`. Which of the two
+overlapping zones the engine arms first (candidates 1 and 3 above) still has
+no oracle, and a capture through AREA 224 is the only thing that can supply
+one. So: the resolve gap is closed and measured; the zone-order question is
+untouched and stays open.
+
 **A coverage number found on the way**, worth having on its own: across all 220
 `.SCX` the corpus uses **17 distinct scene functions over 13887 call sites**,
 and the port implements **6 of the 17 — 13240 sites, 95.3%**. The

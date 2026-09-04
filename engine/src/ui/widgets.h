@@ -59,11 +59,22 @@ inline constexpr std::uint32_t kMoveSelectionLR = 0x0042A930u;
 // The icon is the page's own tab, and its `+8/+9/+10` is the page's COLOUR:
 // `UiWalk::buildPage` copies it over the three lists below, which is what the
 // engine's panel `+4` builder at 0x0049B710 does.
+// The six PAGES, each a panel named by a tab item's `child`.
+inline constexpr std::uint32_t kPanelSneakIdentity  = 0x004DED80u;
+inline constexpr std::uint32_t kPanelSneakSlider    = 0x004DEDE8u;
 inline constexpr std::uint32_t kPanelSneakInventory = 0x004DEE50u;
+inline constexpr std::uint32_t kPanelSneakMemory    = 0x004DEF88u;
+inline constexpr std::uint32_t kPanelSneakOptions   = 0x004DF058u;
+inline constexpr std::uint32_t kPanelSneakQuit      = 0x004DF0C0u;
+// The TAB COLUMN, carried by all six, and the amber icon the port opens on.
+inline constexpr std::uint32_t kListSneakTabs       = 0x004DE210u;
 inline constexpr std::uint32_t kIconSneakInventory  = 0x004DE040u;  // amber
+// The three SHARED lists the builders colour, and the clock three of them
+// blacken afterwards with the single-item setter.
 inline constexpr std::uint32_t kListSneakRows       = 0x004DE6F0u;  // 9 rows
 inline constexpr std::uint32_t kListSneakVerbs      = 0x004DE318u;  // 3 verbs
 inline constexpr std::uint32_t kListSneakEcho       = 0x004DEC58u;  // bar+clock
+inline constexpr std::uint32_t kItemSneakClock      = 0x004DEC08u;
 
 using FlagOp = std::pair<std::uint32_t, bool>;
 
