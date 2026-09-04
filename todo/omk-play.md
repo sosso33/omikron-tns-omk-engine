@@ -327,6 +327,60 @@ captures in `traces/` passes through AREA 224. The candidates:
    the narrowest of the three and the only one that is a straightforward
    porting gap rather than a question about the engine's intent.
 
+**THE 84-PAIR CHECK, MEASURED — and it endorses (3) decisively.** Decoded
+through `script_dump` rather than by scanning bytes for opcode 47 (a raw scan
+matches operand bytes that happen to equal 47 and reported 1092 objects against
+the 447 sites the corpus really has — the same "a regex must respect the
+grammar" trap `CLAUDE.md` 1 records):
+
+    op-47 sites carrying a door pair: 447   (894 objects)
+      source (outgoing) only   628   70.2%
+      both                     204   22.8%
+      destination only           3    0.3%
+      neither                   59    6.6%
+
+**832 of 894 objects — 93% — resolve in the OUTGOING scene, and exactly THREE
+in the whole game resolve only in the destination's.** So preferring the
+outgoing scene with a fallback to the destination cannot trade this bug for
+another: there are three objects to protect and a fallback protects them.
+
+(The comment in `startTransitionObject` says "416 of 448 shipped pairs land
+there, 84 in the destination's". Those are SITE counts against these OBJECT
+counts and the two are consistent — 204 both + 3 destination-only is ~103
+sites — but the figures are not interchangeable and the code's wording invites
+reading them as such.)
+
+**BUT (3) IS NOT A FALLBACK, IT IS A SLICE — and that is the finding.** A
+resolve alone is not enough, because the object that resolves must then RUN:
+
+    area.cpp:733   if (tr_.program >= 0 && scene_.programRunning(tr_.program)) return;
+    area.cpp:1866  scene_.tick(...)
+
+The transition waits on `scene_.programRunning` and the program is advanced by
+`scene_.tick`. An object resolved in some other runner would be started into a
+runner nothing ticks: it would never run, never end, and the transition would
+wait on it for ever — trading a silent miss for a hang, which is worse.
+
+**The real gap is that the port keeps ONE scene where the engine keeps TWO.**
+`Area_LoadScx` (0x0041B4E0) fills *the slot's* object container (`slot+8`), and
+there are two resident slots — so the engine has an object pool per slot and a
+departure object naturally resolves "against the scene the player is still
+standing in". The port has a single `SceneRunner scene_` keyed on
+`sceneArea_`, and `reloadScene` swaps it when the active area changes. When the
+doorless route completes, the tunnel's pool is simply gone.
+
+**This is the SAME COLLAPSE, one layer down, as the decor bug already fixed.**
+RECONSTRUCTION 2026-09-03: *"the Session collapsed the engine's two decor states
+into one `curSlot_`"* — that was the two decor SETS; this is the two object
+POOLS that sit beside them. The fix has the same shape as `ResidentSlot::shown`
+did: give the slot what belongs to the slot.
+
+**So the work is**: a `SceneRunner` per resident slot, both ticked, with
+`programRunning` and `handle` addressed to the right one — and
+`startTransitionObject` resolving against the outgoing slot first, then the
+destination's for those three objects. That is a slice with its own check, not
+a patch, and it should be sized as one.
+
 **(3) is the one to try first** — it needs no decision about zone arbitration,
 it matches a comment already in the code, and it would make the door resolve
 even when the doorless route has run ahead of it. But it must be checked
