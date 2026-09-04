@@ -683,8 +683,13 @@ public:
         for (std::size_t i = 0; i < n; ++i) {
             float v = 0.0f;
             if (self->sHead_ < self->stream_.size()) v += self->stream_[self->sHead_++];
-            for (auto& one : self->shots_)
-                if (one.pos < one.pcm.size()) v += one.pcm[one.pos++];
+            for (auto& one : self->shots_) {
+                if (one.pos >= one.pcm.size()) {
+                    if (!one.loop || one.pcm.empty()) continue;
+                    one.pos = 0;                  // a looping shot wraps
+                }
+                v += one.pcm[one.pos++];
+            }
             dst[i] = v < -1.0f ? -1.0f : (v > 1.0f ? 1.0f : v);
         }
         // Reclaim the consumed head rather than growing for ever.
@@ -693,7 +698,9 @@ public:
                                 self->stream_.begin() + static_cast<std::ptrdiff_t>(self->sHead_));
             self->sHead_ = 0;
         }
-        std::erase_if(self->shots_, [](const Shot& o) { return o.pos >= o.pcm.size(); });
+        std::erase_if(self->shots_, [](const Shot& o) {
+            return !o.loop && o.pos >= o.pcm.size();   // a loop ends only on stopSound
+        });
     }
 
     bool openAudio(int rate, int channels) override {
@@ -731,13 +738,13 @@ public:
         stream_.insert(stream_.end(), s.begin(), s.end());
     }
 
-    int playSound(std::span<const float> s) override {
+    int playSound(std::span<const float> s, bool loop = false) override {
         if (s.empty()) return -1;
         std::lock_guard<std::mutex> lk(amx_);
         // A cap, because a held key would otherwise stack voices without end.
         if (shots_.size() >= 8) shots_.erase(shots_.begin());
         const int id = nextShot_++;
-        shots_.push_back({std::vector<float>(s.begin(), s.end()), 0, id});
+        shots_.push_back({std::vector<float>(s.begin(), s.end()), 0, id, loop});
         return id;
     }
 
@@ -782,7 +789,12 @@ private:
     int w_ = 0, h_ = 0;
     int arate_ = 0, achan_ = 2;
 
-    struct Shot { std::vector<float> pcm; std::size_t pos; int id; };
+    // omk-play 72: a LOOPING shot wraps instead of ending. `Script_PlaySound`
+    // carries a loop flag the port recorded and never honoured, so an ambience
+    // was re-fired by its program every cycle - wav 23 started 33 times in 521
+    // frames, a 1.76 s sample overlapping itself three deep. That restart is
+    // what a reader heard as "the loop feels unnatural".
+    struct Shot { std::vector<float> pcm; std::size_t pos; int id; bool loop = false; };
     int                 nextShot_ = 1;
     std::mutex          amx_;
     std::vector<float>  stream_;
@@ -1691,6 +1703,16 @@ int main(int argc, char** argv) {
     // the LOOPING scene voices, keyed the way `Script_StopSound` matches them:
     // by (wav, node). Only loops are kept - a one-shot ends by itself.
     std::map<std::pair<int,int>, int> sceneVoices;
+    // omk-play 72: WHICH audio source is the one that will not stop. Every
+    // start is labelled with its length, and `flushAudio` says how many
+    // one-shots it does NOT clear - the streamed music is flushed on a switch
+    // and `shots_` are not, so anything long started as a one-shot outlives
+    // an area change, a music switch and a cutscene.
+    const auto sfxLog = [&](const char* what, std::size_t samples, int a, int b) {
+        const double secs = samples / 44100.0 / 2.0;
+        if (secs >= 0.75)                 // footsteps and blips are not the story
+            std::printf("audio: %-14s %6.2f s  (%d, %d)\n", what, secs, a, b);
+    };
     int         takeCandidate = -1;      // `dword_53AF6C`, MDACTION's pick
     // The spoken line's SCROLL, in pixels, and the overflow it is clamped to -
     // `dword_6A52C0` and `dword_53AE24`. One pixel a tick while held, which is
@@ -3058,7 +3080,8 @@ int main(int argc, char** argv) {
                 const int i = rt.wavBydId(es.id);
                 if (i < 0) continue;            // this scene carries no such id
                 const auto pcm = wavToDevice(rt.wavData(i), 44100);
-                if (!pcm.empty()) front.playSound(pcm);
+                if (!pcm.empty()) { sfxLog("ctl-effect", pcm.size(), es.id, i);
+                                    front.playSound(pcm); }
             }
         }
 
@@ -3098,6 +3121,13 @@ int main(int argc, char** argv) {
                     }
                     continue;
                 }
+                // A LOOPING cue is started ONCE. Its program re-reaches the
+                // function every cycle - wav 23 came round 33 times in 521
+                // frames, a 1.76 s sample overlapping itself three deep and
+                // thrashing the 8-slot pool - and the engine does not restart
+                // a sound that is already looping: the loop lives in the
+                // mixer, which is what the flag is FOR.
+                if (fs.cue.loop && sceneVoices.count(key)) continue;
                 const auto raw = sc.scene().wavData(fs.cue.wav);
                 if (raw.empty()) continue;      // 186 of 5425 name a sound
                                                 // their scene does not carry;
@@ -3105,7 +3135,9 @@ int main(int argc, char** argv) {
                                                 // the engine plays nothing
                 const auto pcm = wavToDevice(raw, 44100);
                 if (pcm.empty()) continue;
-                const int h = front.playSound(pcm);
+                sfxLog(fs.cue.loop ? "scene-LOOP" : "scene-sound",
+                       pcm.size(), fs.cue.wav, fs.object);
+                const int h = front.playSound(pcm, fs.cue.loop);
                 // only a LOOPING cue needs remembering - a one-shot ends by
                 // itself and the handle would go stale
                 if (h >= 0 && fs.cue.loop) {
@@ -3596,6 +3628,8 @@ int main(int argc, char** argv) {
         // when the track is already going, so this acts only on a change.
         if (session.musicTrack() != playingTrack) {
             playingTrack = session.musicTrack();
+            std::printf("audio: music switch to %d - the stream is flushed; "
+                        "one-shots already playing are NOT\n", playingTrack);
             front.flushAudio();
             if (music.play(fs, adpcmTables, playingTrack, session.musicLoops()))
                 std::printf("music: track %d, %.1f s%s\n", music.track(),

@@ -15,6 +15,52 @@ waiting on its evidence.
 
 ## Open (batch 6, filed 2026-09-04)
 
+### 73. Scene sounds are played FLAT: `Script_PlaySound` is 3D in the engine — A
+
+Filed 2026-09-04. The reader: *"it is more an effect/ambience sound, but the
+loop feels unatural, it stays even while moving around the city and I don't
+remember that in the original game (and it even stay during the bowie intro
+cutscene even though in the original game, only the Bowie music is played
+during this cutscene)"*.
+
+**What is making the noise.** `anekbah.SCX` object 253 is **`Eoliennes`** — the
+wind turbines. One chain function and nine syncs: nine `Script_MoveObjectOnPath`
+(one per turbine, each param 6 = **90.0** frames = 3 s) and a
+`Script_PlaySound` of wav 23 (1.76 s) at the end. So the whoosh fires once per
+rotation, by design. Object 258, `Tete-Mvt`, is the same shape with wav 26.
+
+**`Script_PlaySound` ENDS IN `Sound_Play3D`.** The handler (0x004A12D0)
+resolves its node and finishes with three calls to `sub_46CDC0` =
+`Sound_Play3D` (0x0046CDC0). **The sound is positional and attenuated by
+distance from the listener.** The port plays it FLAT through a mono
+`Frontend::playSound`, which ignores the cue's node entirely — the cue records
+`node` and nothing reads it.
+
+That one gap accounts for all three halves of the report:
+
+* **it never gets quieter as you walk away** — no distance falloff, so a
+  turbine across the city is as loud as one beside you;
+* **it survives the Bowie cutscene** — the camera flies far from Anekbah's
+  turbines and in the engine they would fall silent, which is why the reader
+  remembers only the Bowie music there;
+* **and it sounds wrong** even at the right cadence, because a positional
+  ambience played flat is a different sound.
+
+**A TEST ARTEFACT SEPARATED OUT, and it was mine.** Every play session offered
+to the reader used `--speed 3`. The program clock scales and the audio does
+not, so the 90-frame cycle becomes 1 s of real time while the sample is still
+1.76 s and each fire overlaps the previous two deep. Measured: **33 fires** in a
+short `--speed 3` session against **21 fires across 5169 frames** at 1x, one
+every ~8 s with clear gaps. So the OVERLAP is the flag, and the audibility is
+the port. The reader was right to say the speed could not explain the cutscene.
+
+**Fix shape**: a per-shot gain on `Shot`, the cue's node resolved to a world
+position at cue time, and the engine's own law applied — an ATTENUATION (0
+full, 100 silent) with the listener told the world unit is an INCH (0.0254),
+both already recorded in `CLAUDE.md` 4's audio row. It shares its path with
+issue 71's `Script_StopSound` and the loop flag, so all three want doing
+together.
+
 ### 72. Short music tracks loop for ever: `music.play`'s second operand is NOT established as a loop flag — A
 
 Filed 2026-09-04 from a play report — *"there are still sound that loops"* —

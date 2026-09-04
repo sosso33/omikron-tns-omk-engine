@@ -81,7 +81,10 @@ public:
     // the queue flushed first, which is fine when a blip is the only sound and
     // silences the music the moment there is any.
     // -> a handle for `stopSound`, or -1 when the frontend has no mixer.
-    virtual int  playSound(std::span<const float>) { return -1; }
+    // `loop` makes the shot WRAP rather than end - `Script_PlaySound`'s own
+    // flag, which the port recorded and never honoured (omk-play 72). A
+    // looping shot is reclaimed only by `stopSound`.
+    virtual int  playSound(std::span<const float>, bool loop = false) { return -1; }
     // Silence one shot before it ends. `Dialog_TickUI` case 2/7/8 calls
     // `Morph_Stop` on the press that leaves a line, and `Morph_Stop` stops the
     // voice buffer (`sub_46CAE0`): a line cut short by NEXT falls silent at
