@@ -51,6 +51,17 @@ contain something the port silently does nothing for.
 | `Script_ScaleObjectY` 0x03000024 | 6 | ? |
 | `fn_04_31` 0x0400001F | 3 | ? |
 
+> **AND THE PLAY TEST DID NOT EXERCISE IT, which is a finding rather than a
+> disappointment.** A session that reached AREA 224 and Qalisar produced NO
+> stop at all. The reason: nothing starts the tunnel's ambience. `AmbianceSound`
+> (object 10) and `stopambsound` (11) are named by no zone script of AREA 224,
+> and the chunk's `+4` STARTUP script is **0** — it has none. So that pair is
+> inert in play, and the probe exercises it only because it starts the objects
+> by hand. The port's behaviour is right; the tunnel is simply not where a
+> reader will hear the difference. Which of the 61 scenes actually reaches its
+> `StopSound` in normal play is unmeasured, and is what a play confirmation
+> needs.
+
 > **`Script_StopSound` DONE 2026-09-04, not yet confirmed in play.** Ten to
 > go. `verify.py: engine stop sound` holds it, shown to fail by dropping the
 > arm (the stop count goes 1 to 0 and the ambience plays for ever, which is
