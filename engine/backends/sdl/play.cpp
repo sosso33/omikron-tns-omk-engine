@@ -1830,6 +1830,7 @@ int main(int argc, char** argv) {
     // it. The engine keeps the same thing in `dword_53AE5C` - `(ret == 2) ? 3
     // : 0`, which `sub_46B530` turns back into a group (omk-play 69).
     bool        takeWasLow = true;
+    int         heldInHand = -1;         // the object drawn on the left hand: from MDGETOBJ to the release
     // The spoken line's SCROLL, in pixels, and the overflow it is clamped to -
     // `dword_6A52C0` and `dword_53AE24`. One pixel a tick while held, which is
     // what `Dialog_TickUI` does with input bits 4 (up) and 8 (down).
@@ -2823,6 +2824,13 @@ int main(int argc, char** argv) {
         // accumulating on the last frame's patch.
         std::vector<omk::Mesh>   meshes;
         std::vector<omk::Corner> baseCorners;
+        // ...and the collision soups the same way: the mesh each triangle
+        // came from, and the soups as BUILT, so a moved crate's collision
+        // follows the crate (a reader, 2026-09-04: "some crates fall at a
+        // moment. It looks like their colliders stay at their initial
+        // position" - the sweep made rest-baked collision visible).
+        std::vector<int>  soupMesh, steepMesh;
+        omk::TriangleSoup baseSoup, baseSteep;
     };
     std::array<WorldSlot, 2> worldSlots;
     std::string worldSet;            // the ACTIVE slot's stem - the set under his feet
@@ -2907,8 +2915,9 @@ int main(int argc, char** argv) {
         const auto t = fs.resolve("MESHES/DECORS/" + stem + ".3DT");
         if (t) w.tex = omk::textures(d, omk::DataFs::readPath(*t));
         w.mirror = omk::mirrorPlane(d);
-        w.soup = omk::collisionSoup(d, omk::SoupKind::Walkable);
-        w.steep = omk::collisionSoup(d, omk::SoupKind::Steep);
+        w.soup = omk::collisionSoup(d, omk::SoupKind::Walkable, &w.soupMesh);
+        w.steep = omk::collisionSoup(d, omk::SoupKind::Steep, &w.steepMesh);
+        w.baseSoup.clear(); w.baseSteep.clear();
         if (const auto mh = omk::readHeader(d)) w.meshes = omk::readMeshes(d, *mh);
         // THE SET'S OWN EMITTERS - `Sfx_BindAmbientEffects`, the environment
         // family. Every mesh flagged 0x40000000 whose first four name bytes
@@ -3027,6 +3036,20 @@ int main(int argc, char** argv) {
                     !skipAll        ? "played (any key skips one, ALT skips all)"
                     : bounded       ? "cut short by --frames"
                                     : "skipped (ALT)");
+    }
+    // THE AUDIO DEVICE IS THE WORLD'S TOO. `openAudio` was called in one
+    // place - the movie player, at the movie's own rate - so a run with
+    // `--nofmv` (or a street start, which skips the movies) never opened it
+    // and every world sound was dropped without a word: no music, no
+    // effects, no voices. A reader on 2026-09-04: "there is absolutely no
+    // sound at all". The world converts everything to 44100 (`wavToDevice`),
+    // so that is the rate it opens at; a device the movies already opened is
+    // kept as it is (openAudio returns early).
+    if (!frames) {
+        if (front.openAudio(44100, 2))
+            std::printf("audio: device open at 44100 Hz stereo for the world\n");
+        else
+            std::printf("audio: NO DEVICE (%s) - the world will be silent\n", SDL_GetError());
     }
 
 
@@ -3198,6 +3221,7 @@ int main(int argc, char** argv) {
         // which corners belong to it, and the base positions are kept so the
         // patch is applied to the ORIGINAL each frame rather than accumulated.
         // Bumping `revision` is what tells a caching backend the buffer moved.
+        bool soupsMoved = false;
         if (session.scene().loaded() && !session.scene().motions().empty()) {
             for (int sl = 0; sl < 2; ++sl) {
                 WorldSlot& w = worldSlots[static_cast<std::size_t>(sl)];
@@ -3210,6 +3234,8 @@ int main(int argc, char** argv) {
                         if (sameName(w.meshes[k].name, mo.name)) { mi = static_cast<int>(k); break; }
                     if (mi < 0) continue;
                     if (w.baseCorners.empty()) w.baseCorners = w.geo.corners;
+                    if (w.baseSoup.empty()) w.baseSoup = w.soup;
+                    if (w.baseSteep.empty()) w.baseSteep = w.steep;
                     const float* mp = w.meshes[static_cast<std::size_t>(mi)].pos;
                     // ...AND ITS ORIENTATION. The handler sets both - the path
                     // sample's 3x3 goes to node `+56` through `sub_437160`
@@ -3237,9 +3263,39 @@ int main(int argc, char** argv) {
                         w.geo.corners[c].y = r[1] + mo.pos[1];
                         w.geo.corners[c].z = r[2] + mo.pos[2];
                     }
+                    // the collision soups follow the mesh exactly as the
+                    // render corners above (`Sweep_MeshTest` collides
+                    // against the mesh's CURRENT matrix)
+                    const auto patchSoup = [&](omk::TriangleSoup& soup, const omk::TriangleSoup& base,
+                                               const std::vector<int>& meshOf) {
+                        for (std::size_t t = 0; t < meshOf.size() && 9 * t + 9 <= base.size(); ++t) {
+                            if (meshOf[t] != mi) continue;
+                            for (int v = 0; v < 3; ++v) {
+                                const std::size_t o = 9 * t + 3 * static_cast<std::size_t>(v);
+                                const float local[3] = {base[o] - mp[0], base[o + 1] - mp[1], base[o + 2] - mp[2]};
+                                float r[3] = {local[0], local[1], local[2]};
+                                if (mo.rotated) omk::qrot(q, local, r);
+                                soup[o] = r[0] + mo.pos[0]; soup[o + 1] = r[1] + mo.pos[1]; soup[o + 2] = r[2] + mo.pos[2];
+                            }
+                        }
+                    };
+                    patchSoup(w.soup, w.baseSoup, w.soupMesh);
+                    patchSoup(w.steep, w.baseSteep, w.steepMesh);
+                    soupsMoved = true;
                     moved = true;
                 }
                 if (moved) w.geo.revision = ++worldGeoRev;
+            }
+        }
+        if (soupsMoved) {
+            // the walker holds REFERENCES to the merged copies, so they are
+            // refilled in place rather than rebuilt (rebuildWorld's merge)
+            playerSoup.clear(); playerSteep.clear();
+            for (int sl = 0; sl < 2; ++sl) {
+                const WorldSlot& w = worldSlots[static_cast<std::size_t>(sl)];
+                if (w.stem.empty()) continue;
+                playerSoup.insert(playerSoup.end(), w.soup.begin(), w.soup.end());
+                playerSteep.insert(playerSteep.end(), w.steep.begin(), w.steep.end());
             }
         }
 
@@ -4035,6 +4091,7 @@ int main(int argc, char** argv) {
                             // camera, travelling 30 frames from what is on
                             // screen (`sub_414A90` keeps the outgoing block as
                             // g_CameraPrev, request+24 = 30 the frames).
+                            heldInHand = takeCandidate;       // `sub_41C490`: it rides the hand from here
                             takeCam = true;
                             takeCamRequest(1);
                             std::printf("take: camera mode 1 requested - preset 1 over 30 frames\n");
@@ -4069,6 +4126,7 @@ int main(int argc, char** argv) {
                                                  "so nothing counts up"
                                                : "REFUSED - list 0 is full, case 10 returns 0 "
                                                  "and it stays in his hand";
+                        heldInHand = -1;
                         std::printf("take: MDPUTSNK - object %d '%s' (kind %d) -> "
                                     "carried list %d -> %d: %s%s%s\n",
                                     takeCandidate,
@@ -4077,6 +4135,23 @@ int main(int argc, char** argv) {
                                     session.lastObjectEffect().empty() ? "" : "; effect: ",
                                     session.lastObjectEffect().c_str());
                         takeCandidate = -1;
+                    } else if (mv == "MDNOTAKE") {
+                        // `sub_46B530` (0x0046B530): a four-case switch on
+                        // `dword_53AE5C`, the code MDACTION kept - 0 -> group
+                        // 0x8C = 140 (H_PUTL12 -> MDLETOBJ -> H_PUTL22), 3 ->
+                        // group 9 (H_PUTH12/22); 1 and 2 are groups 6 and 7.
+                        // The cancel PLAYS THE PUT-BACK, and MDLETOBJ inside
+                        // that group is what releases the object and swaps
+                        // the camera. Until 2026-09-04 the port had no
+                        // MDNOTAKE handler at all, so a cancel went straight
+                        // to standing with the object still held and the
+                        // take camera still up (a reader: "if I cancel the
+                        // grab, the camera doesn't return").
+                        const int putGroup = takeWasLow ? 140 : 9;
+                        const bool got = player->enterGroupById(putGroup);
+                        std::printf("take: MDNOTAKE - cancel: the put-back plays (%s, group %d%s)\n",
+                                    takeWasLow ? "LOW H_PUTL" : "HIGH H_PUTH", putGroup,
+                                    got ? "" : " - not in this bank");
                     } else if (mv == "MDLETOBJ") {
                         if (takeCam) {                // the same mode-16 swap
                             takeCamRequest(3);
@@ -4091,13 +4166,12 @@ int main(int argc, char** argv) {
                         // switch is best-effort; a bank without the group
                         // leaves the machine where it is, which is what
                         // `Cef_FindGroupById` returning nothing does.
-                        const int putGroup = takeWasLow ? 140 : 9;
-                        const bool got = player->enterGroupById(putGroup);
-                        std::printf("take: MDLETOBJ - object %d put back where it was "
-                                    "(%s put, group %d%s)\n",
-                                    takeCandidate, takeWasLow ? "LOW H_PUTL" : "HIGH H_PUTH",
-                                    putGroup, got ? "" : " - not in this bank");
+                        // Inside the put group already (MDNOTAKE entered it):
+                        // `sub_41C540(actor, 0)` - the object back to the world.
+                        std::printf("take: MDLETOBJ - object %d put back where it was\n",
+                                    takeCandidate);
                         session.putHeldObjectBack();
+                        heldInHand = -1;
                         takeCandidate = -1;
                     } else if (mv == omk::kMoveOpenSneak) {
                         // ROW 0, and the other end of the same table. TAB is
@@ -5027,7 +5101,7 @@ int main(int argc, char** argv) {
                     // set (the bank clears bit 0 later), so a held prop is
                     // still "shown" - the engine simply draws its node where
                     // the hierarchy now puts it, the hand, and so does this.
-                    const bool held = player && takeCandidate >= 0 && pr.id == takeCandidate;
+                    const bool held = player && heldInHand >= 0 && pr.id == heldInHand;
                     if (!pr.shown && !held) continue;
                     const auto& objs = voiceLib.objects();
                     if (pr.id < 0 || static_cast<std::size_t>(pr.id) >= objs.size()) continue;

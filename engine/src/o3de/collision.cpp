@@ -7,8 +7,11 @@
 
 namespace omk {
 
-TriangleSoup collisionSoup(std::span<const std::byte> d, SoupKind kind) {
+TriangleSoup collisionSoup(std::span<const std::byte> d, SoupKind kind,
+                           std::vector<int>* meshOf) {
     TriangleSoup out;
+    if (meshOf) meshOf->clear();
+    int curMesh = -1;
     const auto header = readHeader(d);
     if (!header) return out;
     const auto ms = readMeshes(d, *header);
@@ -68,6 +71,7 @@ TriangleSoup collisionSoup(std::span<const std::byte> d, SoupKind kind) {
         const double slope = std::fabs(ny) / std::sqrt(n2);
         if (kind == SoupKind::Walkable && slope < kSlopeCos30) return;
         if (kind == SoupKind::Steep    && slope >= kSlopeCos30) return;
+        if (meshOf) meshOf->push_back(curMesh);
         for (const P* p : {&a, &b, &c}) {
             out.push_back(static_cast<float>(p->x));
             out.push_back(static_cast<float>(p->y));
@@ -80,6 +84,7 @@ TriangleSoup collisionSoup(std::span<const std::byte> d, SoupKind kind) {
         if (kind == SoupKind::Render &&
             (static_cast<std::uint32_t>(m.flags) & 0x800000u)) continue;
         const auto mi = static_cast<std::size_t>(m.index);
+        curMesh = m.index;
         for (std::size_t t = baset[mi];
              t < baset[mi] + static_cast<std::size_t>(std::max(0, m.triangles))
              && t < tris.size(); ++t) {

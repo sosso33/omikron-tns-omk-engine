@@ -53,7 +53,13 @@ enum class SoupKind {
                 // triangles against 1107 walkable collision ones.
 };
 
-TriangleSoup collisionSoup(std::span<const std::byte> model, SoupKind kind);
+// `meshOf`, when given, receives one entry per emitted TRIANGLE: the `.3DO`
+// mesh index it came from. A scene program can MOVE a set mesh (the Impasse's
+// crates fall in the tutorial), and the engine collides against each mesh's
+// current matrix (`Sweep_MeshTest` moves the sweep into it) - so a soup baked
+// at rest needs the index to be patched the way the render corners are.
+TriangleSoup collisionSoup(std::span<const std::byte> model, SoupKind kind,
+                           std::vector<int>* meshOf = nullptr);
 
 // The surface under a point, or nothing.
 //

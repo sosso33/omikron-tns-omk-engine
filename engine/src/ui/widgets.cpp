@@ -1200,6 +1200,14 @@ bool UiWalk::press(std::uint32_t bits) {
             log_.push_back("row move: event 30 for the selected row");
             return true;
         }
+        // `sub_42AFF0` is only the MOVER. A confirm on a row is the item's
+        // own callback (`kCbSneakRowConfirm` -> the verb panel), dispatched
+        // as for every other list - and this branch swallowed it from
+        // 2026-09-04's scrolling commit until a player found every verb
+        // dead: "I can't use Utiliser, Utiliser sur or Examiner when I
+        // select an item". `engine: sneak` was red on main for the same
+        // reason.
+        if (bits & kUiConfirm) return confirm();
         return false;
     }
     if (l->hook) {
