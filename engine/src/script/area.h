@@ -724,6 +724,9 @@ public:
     // -> the slot, or -1 when all 50 are taken (`ObjectSlot_Alloc`'s own -1).
     // The model load is the renderer's half and is not done here.
     int  useObject(int objectId);
+
+    // The object record's `+2` - the kind `Inventory_Insert` dispatches on.
+    int  objectKind(int objectId) const;
     // `Object_ShowInScene` / `HideFromScene`: what a frontend draws props from.
     const std::set<int>& shownSlots() const { return shownSlots_; }
     // What the hooks were asked to do in 3D and did not: for a frontend.

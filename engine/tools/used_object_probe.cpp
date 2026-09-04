@@ -103,6 +103,31 @@ int main(int argc, char** argv) {
                     carriedBefore, carriedAfter);
     }
 
+    // ---- 1b: TAKING one off the floor, `Game_HandleEvent` case 10 --------
+    // MDACTION finds a prop, MDGETOBJ holds it, MDPUTSNK banks it - and the
+    // bank is case 10, which inserts at the FRONT of list 0 and clears the
+    // prop's state bit 0. Object 173 'Note sur les anneaux' is a prop of
+    // AREA 237, Kay'l's apartment, and a player took it in play.
+    {
+        auto state = omk::GameState::fromFile(iam + "/START");
+        omk::Session s(iam, state, table);
+        // `objectName`/`objectKind` read IAM\OBJECT through `dataRoot_`,
+        // which ONLY `loadTraffic` sets - so without this the kind reads -1
+        // and `Inventory_Insert`'s gate is never exercised.
+        s.loadTraffic(fr);
+        s.loadArea(237);
+        s.frame();
+        const auto before = omk::objectList(state, omk::ObjectList::Carried);
+        const bool took = s.takeObject(173);
+        s.bankHeldObject(173);
+        const auto after = omk::objectList(state, omk::ObjectList::Carried);
+        int front = after.empty() ? -1 : after[0];
+        std::printf("take object 173 kind %d took %d carried %zu -> %zu front %d "
+                    "held_after %d\n",
+                    s.objectKind(173), took ? 1 : 0, before.size(), after.size(),
+                    front, s.heldSlotOf(-1));
+    }
+
     // ---- 3: which of HALL27's activate scripts ask what is held -----------
     {
         auto state = omk::GameState::fromFile(iam + "/START");

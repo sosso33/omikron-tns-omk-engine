@@ -2746,6 +2746,20 @@ int Session::scanTakeable(const float pos[3], float /*facing*/) const {
     return best;
 }
 
+// The record's `+2`, which is what `Inventory_Insert` dispatches on. Same
+// lazily-cached table as `objectName`; -1 when the id is unknown.
+int Session::objectKind(int objectId) const {
+    if (objectId < 0 || dataRoot_.empty()) return -1;
+    static std::vector<ObjectRecord> table;
+    static std::string forRoot;
+    if (forRoot != dataRoot_) {
+        forRoot = dataRoot_;
+        table = loadObjects(DataFs(dataRoot_));
+    }
+    for (const auto& o : table) if (o.id == objectId) return o.kind;
+    return -1;
+}
+
 std::string Session::objectName(int objectId) const {
     // `IAM\OBJECT` is not otherwise resident in the Session, so it is read
     // once and cached here rather than threaded through every caller.
@@ -2767,15 +2781,46 @@ bool Session::takeObject(int objectId) {
     return true;
 }
 
+// `Game_HandleEvent` case 10 (01_file.c), which `sub_41C720` raises with the
+// held slot when MDPUTSNK banks it - and until 2026-09-04 this did everything
+// EXCEPT the part a player can see:
+//
+//     v31 = ObjectSlot_Id(a2);
+//     if (Inventory_Insert(PropAsset_Find(v31), 0, i16(g_PlayerRecord, 272))) {
+//         v33 = !ObjectList_IsFull(0);
+//         if (v33) ObjectList_InsertFront(0, v31, 0, 0);
+//     } else v33 = 1;
+//     if (!v33) return 0;                    // the list is FULL: it stays held
+//     sub_41CB30(a2); ObjectSlot_Free(a2);
+//     ... ObjectState_Set(record[11], v37 & 0xFE);
+//
+// Three things this had wrong. It never inserted the object into list 0 at
+// all, so a prop taken off the floor left the world and went NOWHERE - the
+// sneak stayed exactly as it was. It cleared prop state bit **1** where the
+// engine clears bit **0** (`& 0xFE`), and bit 0 is the one `Scene_LoadProps`
+// tests, so the prop came back on the next area load. And it had no full-list
+// arm, where the engine REFUSES and leaves the object in the hand.
+//
+// `Inventory_Insert` is the one gate, and it is a KIND dispatch on the
+// record's `+2`: kinds 2..6, 7..11, 12 and 13 walk the 56-byte slot cache for
+// a row of the same kind and merge into its quantity, answering 0 so the
+// caller adds no row; everything else falls out of the ladder answering 1 and
+// IS given a row. The merge is not ported - it lives in the cache this state
+// does not model - so a stackable is REFUSED here rather than silently
+// destroyed, which is the difference a player could not otherwise see.
 void Session::bankHeldObject(int objectId) {
-    // The slot leaves the hand AND the world: `sub_41C540(player, 1)` frees
-    // it (`sub_418DC0(4, slot)`) and unlinks the node, so the prop's SHOWN
-    // bit goes with it. Without clearing bit 1 the scan keeps finding an
-    // object that is already in the inventory and it can be taken for ever.
-    PropRef pr;
-    if (objectId >= 0 && hooks_.propById(objectId, pr) && pr.stateIndex >= 0)
-        state_.setPropState(pr.stateIndex, state_.propState(pr.stateIndex) & ~2);
+    if (objectId < 0) return;
+    const int kind = objectKind(objectId);
+    if (kind >= 2 && kind <= 13) return;       // `Inventory_Insert`'s merge
+    // `ObjectList_InsertFront` - and `listAdd` IS that function, shifting the
+    // list up and writing slot 0, refusing when it is full.
+    if (!state_.listAdd(0, objectId)) return;  // ObjectList_IsFull -> return 0
+    // The slot leaves the hand AND the world: `sub_41C540(player, 1)` frees it
+    // (`sub_418DC0(4, slot)`) and unlinks the node.
     hooks_.releaseObject(-1, true);
+    PropRef pr;
+    if (hooks_.propById(objectId, pr) && pr.stateIndex >= 0)
+        state_.setPropState(pr.stateIndex, state_.propState(pr.stateIndex) & ~1);
 }
 void Session::putHeldObjectBack(){ hooks_.releaseObject(-1, false); }
 

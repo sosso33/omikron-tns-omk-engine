@@ -3691,9 +3691,21 @@ int main(int argc, char** argv) {
                                         takeCandidate, mediaText.c_str());
                         }
                     } else if (mv == "MDPUTSNK") {
-                        std::printf("take: MDPUTSNK - object %d goes to the inventory\n",
-                                    takeCandidate);
+                        const int was = static_cast<int>(
+                            omk::objectList(state, omk::ObjectList::Carried).size());
                         session.bankHeldObject(takeCandidate);
+                        const int now = static_cast<int>(
+                            omk::objectList(state, omk::ObjectList::Carried).size());
+                        // `Game_HandleEvent` case 10 answers 0 and leaves the
+                        // object HELD when list 0 is full, and adds no row for
+                        // a stackable kind, so the count is the thing to say.
+                        std::printf("take: MDPUTSNK - object %d '%s' (kind %d) -> "
+                                    "carried list %d -> %d%s\n",
+                                    takeCandidate,
+                                    session.objectName(takeCandidate).c_str(),
+                                    session.objectKind(takeCandidate), was, now,
+                                    now == was ? " - REFUSED (full, or a kind "
+                                                 "Inventory_Insert would merge)" : "");
                         takeCandidate = -1;
                     } else if (mv == "MDLETOBJ") {
                         std::printf("take: MDLETOBJ - object %d put back where it was\n",

@@ -4731,13 +4731,27 @@ def c_engine_used_object():
     got = [ln.split() for ln in r.stdout.strip().splitlines()]
     want = [
         "hand slot 0 held 0 id_in_slot 6 in_bag_before 2 in_bag_after 1".split(),
+        # TAKING one off the floor: `Game_HandleEvent` case 10, which
+        # `sub_41C720` raises when MDPUTSNK banks the held slot. The row goes
+        # to the FRONT of list 0 (`ObjectList_InsertFront`), the hand empties,
+        # and the prop's state bit 0 is cleared so `Scene_LoadProps` stops
+        # placing it. Object 173 is kind 15, outside `Inventory_Insert`'s
+        # 2..13 merge range, so it is given a row rather than merged.
+        # Until 2026-09-04 the bank added NOTHING to the list - a prop taken
+        # off the floor left the world and went nowhere, and the sneak looked
+        # unchanged, which is what a player asked about.
+        "take object 173 kind 15 took 1 carried 2 -> 3 front 173 "
+        "held_after -1".split(),
         "probe area 229 activates 4 ask75 2 silent 2 zones 3887 3889".split(),
         "used arm empty zone 3887 var13 -1 goto237 no voice 170".split(),
         "used arm key zone 3887 var13 6 goto237 yes voice -1".split(),
         "used arm wrong zone 3887 var13 5 goto237 no voice 112".split(),
     ]
     return got, want, \
-        "case 35 putting the key in the hand and out of the bag; how many of " \
+        "case 35 putting the key in the hand and out of the bag; then TAKING " \
+        "one off the floor - case 10 inserting object 173 at the FRONT of " \
+        "list 0, the hand emptying, and its kind 15 falling outside " \
+        "`Inventory_Insert`'s 2..13 merge; how many of " \
         "AREA 229's activate scripts reach opcode 75 and which zones they are " \
         "(the pump's dry run - answering yes to all would be 4, no to all 0); " \
         "and the SAME lift script taking three different branches with an " \
