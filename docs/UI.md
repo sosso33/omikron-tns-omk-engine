@@ -947,9 +947,20 @@ writes in the image and two readers:
 | 2 | Memory | the inventory channel, object list 2 |
 | 4 | Slider | `GLOBAL +16`, *not* the channel |
 
-`sub_42ADD0` branches on it. For 0 and 2 it raises the channel's **event 25**
-with that number as the list id; for **4** it raises nothing and instead sets
-flag `0x1000` on every row widget — and `0x1000` is the flag `sub_42AA00`
+`sub_42ADD0` branches on it, and so does the row's CONFIRM. `sub_49BC60` opens
+`mov eax, dword_670CB8` and subtracts its way down three arms — 0 the
+inventory, 2 the memory page, 4 the slider — and because the row list is
+*shared*, every page's rows carry that one callback. Treating them all as
+inventory rows confirms a slider destination as if it were a carried object,
+which a player saw as "press enter on a line of the slider list redirects to
+the inventory". Only the inventory arm is ported; kind 4 resolves the
+destination through `sub_40E630` and calls `sub_452570`, the travel, and kind
+2 is the memory page's — both are refused explicitly rather than falling into
+the wrong page.
+
+`sub_42ADD0` branches on it too. For 0 and 2 it raises the channel's **event
+25** with that number as the list id; for **4** it raises nothing and instead
+sets flag `0x1000` on every row widget — and `0x1000` is the flag `sub_42AA00`
 tests to take a row's text from `sub_40E540(tag)` rather than from case 33.
 The count comes from `sub_40E8E0` instead of case 29.
 

@@ -589,6 +589,7 @@ void UiWalk::buildPage(const UiPanel& p) {
     // from code), so the descent is not modelled - but the disable is, and
     // without it the verbs are reachable with no object chosen.
     if (p.addr == kPanelSneakInventory) {
+        state_->rowKind = 0;              // `mov dword_670CB8, 0`
         setListOff(kListSneakRows, false);
         setListOff(kListSneakVerbs, true);
     }
@@ -604,6 +605,9 @@ void UiWalk::buildPage(const UiPanel& p) {
     // reached. It also marks the chosen row `0x40000008`, which keeps it lit
     // under the verb bar - not modelled, because that flag's drawing arm is
     // the lit/unlit ladder and this port has no runtime bit to put it in.
+    // The memory page's builder writes `mov dword_670CB8, 2`; its rows come
+    // from the channel with list id 2, which this port does not fill.
+    if (p.addr == kPanelSneakMemory) state_->rowKind = 2;
     if (p.addr == kPanelSneakVerbs) {
         setListOff(kListSneakVerbs, false);
         setListOff(kListSneakTabs, true);
@@ -649,6 +653,7 @@ void UiWalk::buildPage(const UiPanel& p) {
     // two-label state (string 13 "Automatique" beside 14 "Manuelle") is
     // recorded rather than reachable.
     if (p.addr == kPanelSneakSlider) {
+        state_->rowKind = 4;              // `mov dword_670CB8, 4`
         state_->itemOff.insert(0x004DE968u);
         state_->itemOff.insert(0x004DE9B0u);
     }
@@ -804,6 +809,25 @@ bool UiWalk::confirm() {
         //
         // The channel calls each one makes are NOT modelled here; what is,
         // is the navigation, which is what a player is stopped by.
+        // THE ROW'S CONFIRM DISPATCHES ON THE SOURCE KIND. `sub_49BC60`
+        // opens `mov eax, dword_670CB8` and subtracts its way down three
+        // arms - 0 the inventory, 2 the memory page, 4 the slider - and the
+        // row list is SHARED, so every page's rows carry this one callback.
+        // Sending them all to the verb panel confirms a slider destination
+        // as if it were a carried object, which a player saw as "press enter
+        // on a line of the slider list redirects to the inventory".
+        //
+        // Only the inventory arm is ported. Kind 4 resolves the chosen
+        // destination through `sub_40E630` and calls `sub_452570` - the
+        // TRAVEL - and kind 2 is the memory page's; neither is modelled, and
+        // saying so is better than descending into the wrong page.
+        if (it->callback == kCbSneakRowConfirm && state_->rowKind != 0) {
+            approx_ = true;
+            log_.push_back(state_->rowKind == 4
+                           ? "slider destination: sub_452570 travel not modelled"
+                           : "memory row: its arm is not modelled");
+            return true;
+        }
         if (it->callback == kCbSneakRowConfirm ||
             it->callback == kCbSneakExamine) {
             const std::uint32_t to = it->callback == kCbSneakExamine

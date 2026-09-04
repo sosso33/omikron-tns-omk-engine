@@ -344,6 +344,12 @@ struct UiListState {
     std::set<std::uint32_t> itemOff;    // 0x40000001 / 0x20000004 on an item
     std::set<std::uint32_t> listOff;    // ...the same over a whole list
     std::map<std::uint32_t, int> bound; // list -> how many rows it holds
+    // `dword_670CB8` - WHICH SOURCE fills the shared row list, written by
+    // each page's builder: 0 inventory, 2 memory, 4 slider. It is a global
+    // like everything else here, and the row's confirm callback dispatches
+    // on it - so without it a slider destination confirms as if it were a
+    // carried object.
+    int rowKind = 0;
 };
 
 // One open screen, driven by input words.

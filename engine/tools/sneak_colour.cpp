@@ -157,6 +157,23 @@ int main(int argc, char** argv) {
                     was, now2, fresh);
     }
 
+    // ---- A SLIDER ROW IS NOT AN INVENTORY ROW -------------------------
+    //
+    // One callback, three arms, dispatched on `dword_670CB8`. Confirming a
+    // destination must NOT descend into the verb panel.
+    {
+        omk::UiWalk sw2(w);
+        sw2.open(omk::kScreenSneak);
+        for (auto b : {omk::kUiRight, omk::kUiUp, omk::kUiConfirm})
+            sw2.press(b);                       // into the slider page
+        sw2.bindRows(omk::kListSneakRows, 3);
+        sw2.press(omk::kUiLeft);                // its header
+        sw2.press(omk::kUiUp);                  // ...and its rows
+        sw2.press(omk::kUiConfirm);
+        std::printf("slider row confirm lands on %#x\n",
+                    sw2.panel() ? sw2.panel()->addr : 0);
+    }
+
     // ---- THE OBJECT FLOW: rows -> verbs -> examine --------------------
     //
     // Both descents are `sub_42A370` from a CALLBACK, not an item `+44`, so

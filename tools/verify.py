@@ -10454,6 +10454,15 @@ def c_sneak_page_colour():
             # THE OBJECT FLOW, and both steps are `sub_42A370` from a
             # CALLBACK rather than an item `+44` - neither panel was in the
             # tree at all until the lifter learned to follow code.
+            # ONE CALLBACK, THREE ARMS. `sub_49BC60` opens
+            # `mov eax, dword_670CB8` and subtracts its way down: 0 the
+            # inventory, 2 the memory page, 4 the slider. The row list is
+            # SHARED, so every page's rows carry that one callback, and
+            # sending them all to the verb panel confirms a slider
+            # destination as if it were a carried object - which a player saw
+            # as "press enter on a line of the slider list redirects to the
+            # inventory".
+            "slider row confirm lands on 0x4dede8" in o,
             "confirm row -> panel 0x4deeb8, list 2, tabs off 1 rows off 1" in o,
             "confirm Examiner -> panel 0x4def20, verbs off 1" in o,
             # ...and the COLOUR survives the descent. `+8/+9/+10` are fields
@@ -10474,7 +10483,7 @@ def c_sneak_page_colour():
             ["20 165 250", "25 240 115", "240 135 15", "255 240 95",
              "255 100 70"],
             True, True, True, True, True, True, True, True, True, True,
-            True, True, True, True), \
+            True, True, True, True, True), \
            "the five tab icons carry the five page colours; opening screen " \
            "9 runs the inventory page's builder, which copies its own icon's " \
            "amber over the rows, the verbs and the echo bar; and the row " \
