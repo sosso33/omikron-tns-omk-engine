@@ -138,14 +138,64 @@ Still not modelled, and now known to be invisible: the builder shrinking the
 list to **five** widgets on that page. With no rows it cannot be seen.
 The row confirm is still refused (`widgets.cpp:869`), which is right.
 
-### 2d. The identity page's character view
+### 2d. The identity page — TWO sub-sections, and it is the biggest thing left
 
-`sub_4778E0` builds a camera from the player's own model at
-`kCharacterDistance` = `0x42EC3871` = 3.0 / 0.0254, three metres for a
-standing man. The constant is lifted and carried in `ui/models.h` — kept
-there precisely because it shares `sub_478DE0` with the item previews and
-telling the two apart is what stopped the previews rendering two pixels — but
-**nothing draws the character**.
+**Read 2026-09-04 from two captures of the original a player supplied.** The
+page has two tabs across the top, `Identity` and `Characteristics`, sharing
+one character view on the left:
+
+* **Identity** — Name (`KAYL 669`), Age, Sex, Blood Type, Height, Weight,
+  Eyes, Job (`Investigating Agent`), and two prose lines, `Signs` and
+  `Interests`. All of it per-character: the text changes with whose body the
+  player is in.
+* **Characteristics** — Energy, Attack, Fight Experience (`Initiate`, a WORD
+  not a number), Body Resistance, Speed, Dodge, Mana, each with a filled BAR
+  behind the value.
+
+The widget tree already has the whole structure, in list **`0x004DE900`**
+(hook `0x0049C160`), and it matches the captures item for item:
+
+| item | rect | what |
+|---|---|---|
+| `0x004DE780` | (187, 30) 202x22 | the **Identity** tab, string 10 |
+| `0x004DE7C8` | (389, 30) 202x22 | the **Characteristics** tab, string 11 |
+| `0x004DE810` | (250, 100) 300x270 | the Identity content |
+| `0x004DE858` | (250, 100) 300x270 | the Characteristics content — **same rect**, so an ALTERNATIVE |
+| `0x004DE8A0` | (0, 50) 360x300 | the **character view** |
+
+The switch is read and is small. The page's `panel+4` builder does
+
+    sub_428FF0(&item_4DE810, 0x40000001, 0);   // Identity content DRAWN
+    word_4DE902 = 0;                            // the tab list's selection
+    sub_428FF0(&item_4DE858, 0x40000001, 1);   // Characteristics HIDDEN
+    sub_4296D0(&list_4DEC58, r, g, b);          // the echo bar, in the page's blue
+
+and `sub_49C160` — the list's own hook — is `sub_42A930` (the LEFT/RIGHT
+mover, which the port already has) followed by a two-case swap of that same
+`0x40000001` flag on the two content items. Nothing harder than the slider
+page's mover.
+
+**What is NOT established is where the text comes from.** Both content items
+ship `string -1`, `text 0` (item `+24`) and `textFn 0` (item `+32`) — no
+string id, no pointer, no callback — so something outside the item draws into
+that 300x270 box, and the per-character bio has to be found in the data
+(the actor table's 276-byte record is the obvious first place, and
+`player.become` announcing to CHARACTERS the second).
+
+> **A trap on the way, and it is CLAUDE.md 1's exactly.** The listing shows
+> `off_4DE810 dd offset unk_6400FA`, which reads as a pointer to a shared
+> text buffer and is not one: item `+0` is the X and `+2` the Y, both int16,
+> so the dword is `0x006400FA` = **y 100, x 250** — the item's own
+> coordinates. IDA saw an address-shaped dword and invented `unk_6400FA`.
+> Ten minutes went into "what fills that buffer" before the field map
+> settled it. There is no buffer.
+
+And the character view itself: `sub_4778E0` builds a camera from the player's
+own model at `kCharacterDistance` = `0x42EC3871` = 3.0 / 0.0254, three metres
+for a standing man. The constant is lifted and carried in `ui/models.h` —
+kept there precisely because it shares `sub_478DE0` with the item previews,
+and telling the two apart is what stopped the previews rendering two pixels —
+but nothing draws the character yet.
 
 ### 2e. Four of the five page builders
 
@@ -203,7 +253,7 @@ Each ends in a commit and a `verify.py` check SHOWN to fail first.
 | 4 | `Text_LayOutBlock` — the real wrap, against a caption that today wraps wrong | |
 | 5 | the hand attach, so a used object is visible for the frames it is held | |
 | 6 | `Object_ApplyEffect` and its context gate | |
-| 7 | the identity page's character view | |
+| 7 | the identity page: the two-tab switch (small - `sub_42A930` plus a flag swap, both already ported in pieces), then the character view, then the per-character TEXT, whose source is not yet found | |
 | 8 | the other four page builders, each bounded before it is shipped | |
 
 ## 4. Cautions
