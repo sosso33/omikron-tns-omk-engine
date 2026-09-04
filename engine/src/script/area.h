@@ -782,7 +782,17 @@ public:
     bool takeObject(int objectId);
     // `MDPUTSNK` -> `sub_41C720(player)`: event 10 with the slot, +164
     // cleared - the object goes to the inventory and leaves the world.
-    void bankHeldObject(int objectId);
+    // Which arm of `Inventory_Insert` the take took. The ROW half and the
+    // WORLD half are independent: every arm but `Full` frees the object and
+    // clears its prop bit, and only `Row` puts anything in list 0.
+    enum class Banked {
+        Row,       // `return 1` - a row at the FRONT of list 0
+        Consumed,  // kind 12/13 - `Object_ApplyEffect` and gone, no row
+        Merged,    // kinds 2..11 with a row of a related kind already there
+        Full,      // `ObjectList_IsFull` - case 10 returns 0 and it stays HELD
+    };
+    Banked bankHeldObject(int objectId);
+    Banked insertArm(int objectId) const;
     // `MDLETOBJ` -> `sub_41C540(player, 0)`: released with remove=0, so the
     // prop is re-parented at its stored placement - put back where it was.
     void putHeldObjectBack();

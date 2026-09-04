@@ -7,6 +7,7 @@
 #include "script/scenehost.h"
 
 #include "script/world.h"
+#include "script/inventory.h"
 #include "script/objects.h"
 
 #include <cstdlib>
@@ -2782,8 +2783,7 @@ bool Session::takeObject(int objectId) {
 }
 
 // `Game_HandleEvent` case 10 (01_file.c), which `sub_41C720` raises with the
-// held slot when MDPUTSNK banks it - and until 2026-09-04 this did everything
-// EXCEPT the part a player can see:
+// held slot when MDPUTSNK banks it:
 //
 //     v31 = ObjectSlot_Id(a2);
 //     if (Inventory_Insert(PropAsset_Find(v31), 0, i16(g_PlayerRecord, 272))) {
@@ -2794,34 +2794,68 @@ bool Session::takeObject(int objectId) {
 //     sub_41CB30(a2); ObjectSlot_Free(a2);
 //     ... ObjectState_Set(record[11], v37 & 0xFE);
 //
-// Three things this had wrong. It never inserted the object into list 0 at
-// all, so a prop taken off the floor left the world and went NOWHERE - the
-// sneak stayed exactly as it was. It cleared prop state bit **1** where the
-// engine clears bit **0** (`& 0xFE`), and bit 0 is the one `Scene_LoadProps`
-// tests, so the prop came back on the next area load. And it had no full-list
-// arm, where the engine REFUSES and leaves the object in the hand.
+// `Inventory_Insert` (0x004098E0) is the gate, and it was read too shallowly
+// the first time - a player took the rings and they stuck in his hand. Read in
+// full it is:
 //
-// `Inventory_Insert` is the one gate, and it is a KIND dispatch on the
-// record's `+2`: kinds 2..6, 7..11, 12 and 13 walk the 56-byte slot cache for
-// a row of the same kind and merge into its quantity, answering 0 so the
-// caller adds no row; everything else falls out of the ladder answering 1 and
-// IS given a row. The merge is not ported - it lives in the cache this state
-// does not model - so a stackable is REFUSED here rather than silently
-// destroyed, which is the difference a player could not otherwise see.
-void Session::bankHeldObject(int objectId) {
-    if (objectId < 0) return;
-    const int kind = objectKind(objectId);
-    if (kind >= 2 && kind <= 13) return;       // `Inventory_Insert`'s merge
-    // `ObjectList_InsertFront` - and `listAdd` IS that function, shifting the
-    // list up and writing slot 0, refusing when it is full.
-    if (!state_.listAdd(0, objectId)) return;  // ObjectList_IsFull -> return 0
-    // The slot leaves the hand AND the world: `sub_41C540(player, 1)` frees it
-    // (`sub_418DC0(4, slot)`) and unlinks the node.
+//     if (kind != 12 && kind != 13) {
+//         if (kind < 2 || kind > 6) {
+//             if (kind < 7 || kind > 11) return 1;    // ordinary -> a ROW
+//             ...a row of kind (kind - 5)?  none -> return 1
+//         } else { ...a row of the SAME kind? }
+//     }
+//     Object_ApplyEffect(a1, a3);
+//     return 0;
+//
+// Three things that first reading had wrong. **12 and 13 SKIP the ladder
+// entirely** - they are not merged into anything, they go straight to
+// `Object_ApplyEffect` and are consumed, which is why the kind-13 rings got no
+// row AND no effect. **2..11 with no matching row return 1** and DO earn a
+// row. And **every arm still frees the object**: case 10 reads the 0 as
+// `v33 = 1` and goes on to `sub_41CB30` / `ObjectSlot_Free` / clear bit 0, so
+// only the ROW ever differs, never the world half.
+//
+// The cache's match is on its `+1` word, which is the record's `+2` - the
+// KIND - so "is there already a row of kind K" is answerable from list 0 and
+// `objectKind`. The only thing that stays unported is `Object_ApplyEffect`
+// itself (NAMED, body as generated), so `Consumed` and `Merged` announce an
+// effect they do not apply, and say so at the moment it happens.
+Session::Banked Session::bankHeldObject(int objectId) {
+    if (objectId < 0) return Banked::Full;
+    const Banked arm = insertArm(objectId);
+    // `ObjectList_InsertFront` - `listAdd` IS that function, shifting the list
+    // up and writing slot 0, refusing when it is full. A refusal is case 10's
+    // `return 0`: nothing is freed and the object stays in the hand.
+    // `insertArm` never answers `Full` - that outcome belongs to the list, not
+    // to the kind ladder - but guard it rather than fall through into the
+    // world half, which is what a mutation of the ladder exposed.
+    if (arm == Banked::Full) return Banked::Full;
+    if (arm == Banked::Row && !state_.listAdd(0, objectId)) return Banked::Full;
+    // The world half, which every non-refusing arm reaches:
+    // `sub_41C540(player, 1)` frees the slot and unlinks the node...
     hooks_.releaseObject(-1, true);
+    // ...and `ObjectState_Set(record[11], state & 0xFE)` clears prop state
+    // bit **0**, the bit `Scene_LoadProps` tests. Clearing bit 1 instead let
+    // the prop come back on the next area load.
     PropRef pr;
     if (hooks_.propById(objectId, pr) && pr.stateIndex >= 0)
         state_.setPropState(pr.stateIndex, state_.propState(pr.stateIndex) & ~1);
+    return arm;
 }
+
+// `Inventory_Insert`'s answer, as the ladder above computes it.
+Session::Banked Session::insertArm(int objectId) const {
+    const int kind = objectKind(objectId);
+    if (kind == 12 || kind == 13) return Banked::Consumed;
+    int want = -1;
+    if (kind >= 2 && kind <= 6)       want = kind;
+    else if (kind >= 7 && kind <= 11) want = kind - 5;
+    else                              return Banked::Row;
+    for (const int id : objectList(state_, ObjectList::Carried))
+        if (objectKind(id) == want) return Banked::Merged;
+    return Banked::Row;               // no row of that kind: `return 1`
+}
+
 void Session::putHeldObjectBack(){ hooks_.releaseObject(-1, false); }
 
 // The comment on the declaration carries the evidence.

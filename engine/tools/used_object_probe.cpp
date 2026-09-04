@@ -126,6 +126,34 @@ int main(int argc, char** argv) {
                     "held_after %d\n",
                     s.objectKind(173), took ? 1 : 0, before.size(), after.size(),
                     front, s.heldSlotOf(-1));
+        // ...and the ARM for one object of each of `Inventory_Insert`'s four
+        // shapes, which a count alone cannot tell apart. 162 '3 Anneaux
+        // magiques' is kind 13 - a player took it and it stuck in the hand,
+        // which is what sent this back to the listing.
+        const char* nm[] = {"row", "consumed", "merged", "full"};
+        // each in an area that actually PLACES it as a prop: 173 in Kay'l's
+        // apartment, 162 (the rings) in the Impasse, which is where a player
+        // took them and found them stuck in his hand.
+        const struct { int id, area; } probes[] = {{173, 237}, {162, 222}};
+        for (const auto& pr : probes) {
+            const int id = pr.id;
+            omk::GameState st2 = omk::GameState::fromFile(iam + "/START");
+            omk::Session s2(iam, st2, table);
+            s2.loadTraffic(fr);
+            s2.loadArea(pr.area);
+            s2.frame();
+            const auto a2 = s2.insertArm(id);
+            // and the WORLD half, which every arm but `Full` reaches: take it
+            // and bank it, and the hand must be empty afterwards whatever the
+            // row did. The kind-13 bug was exactly this - no row AND still
+            // held, where the engine consumes it.
+            s2.takeObject(id);
+            const int heldBefore = s2.heldSlotOf(-1);
+            s2.bankHeldObject(id);
+            std::printf("insert arm object %d kind %d -> %s, held %d -> %d\n", id,
+                        s2.objectKind(id), nm[static_cast<int>(a2)],
+                        heldBefore, s2.heldSlotOf(-1));
+        }
     }
 
     // ---- 3: which of HALL27's activate scripts ask what is held -----------

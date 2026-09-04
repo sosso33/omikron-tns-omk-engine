@@ -4742,6 +4742,20 @@ def c_engine_used_object():
         # unchanged, which is what a player asked about.
         "take object 173 kind 15 took 1 carried 2 -> 3 front 173 "
         "held_after -1".split(),
+        # ...and WHICH ARM of `Inventory_Insert` each object takes, which a
+        # count alone cannot tell apart - a merge and a full list both leave
+        # it unchanged, and only one of those is correct. Read in full after
+        # a player took the rings and they stuck in his hand:
+        #   kind 12/13 SKIP the ladder - `Object_ApplyEffect` and consumed,
+        #     no row, and the object IS still freed from the world
+        #   kinds 2..11 merge only if a row of a related kind is already
+        #     there; with none they return 1 and DO earn a row
+        #   everything else gets a row
+        # The first reading refused all of 2..13 and left them in the hand,
+        # which is both halves wrong. `held 0 -> -1` on the rings is the bug
+        # itself: the world half runs on every arm but `Full`.
+        "insert arm object 173 kind 15 -> row, held 8 -> -1".split(),
+        "insert arm object 162 kind 13 -> consumed, held 0 -> -1".split(),
         "probe area 229 activates 4 ask75 2 silent 2 zones 3887 3889".split(),
         "used arm empty zone 3887 var13 -1 goto237 no voice 170".split(),
         "used arm key zone 3887 var13 6 goto237 yes voice -1".split(),

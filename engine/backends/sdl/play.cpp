@@ -3693,19 +3693,34 @@ int main(int argc, char** argv) {
                     } else if (mv == "MDPUTSNK") {
                         const int was = static_cast<int>(
                             omk::objectList(state, omk::ObjectList::Carried).size());
-                        session.bankHeldObject(takeCandidate);
+                        const auto arm = session.bankHeldObject(takeCandidate);
                         const int now = static_cast<int>(
                             omk::objectList(state, omk::ObjectList::Carried).size());
-                        // `Game_HandleEvent` case 10 answers 0 and leaves the
-                        // object HELD when list 0 is full, and adds no row for
-                        // a stackable kind, so the count is the thing to say.
+                        // NAME THE ARM. `Inventory_Insert`'s four outcomes are
+                        // not interchangeable and a count alone cannot tell
+                        // them apart - a merge and a full list both leave it
+                        // unchanged, and the first is correct where the second
+                        // is a refusal. Saying "REFUSED (full, or a kind
+                        // Inventory_Insert would merge)" made a reader guess,
+                        // and it was wrong: the kind-13 rings were neither.
+                        using B = omk::Session::Banked;
+                        const char* what =
+                            arm == B::Row      ? "a row at the front of list 0"
+                          : arm == B::Consumed ? "kind 12/13: applied and CONSUMED, no row "
+                                                 "- `Object_ApplyEffect` is NAMED and not "
+                                                 "read, so the effect is announced and NOT "
+                                                 "applied"
+                          : arm == B::Merged   ? "merged into an existing row of a related "
+                                                 "kind, no new row - and the quantity is in "
+                                                 "the 56-byte cache this port does not model, "
+                                                 "so nothing counts up"
+                                               : "REFUSED - list 0 is full, case 10 returns 0 "
+                                                 "and it stays in his hand";
                         std::printf("take: MDPUTSNK - object %d '%s' (kind %d) -> "
-                                    "carried list %d -> %d%s\n",
+                                    "carried list %d -> %d: %s\n",
                                     takeCandidate,
                                     session.objectName(takeCandidate).c_str(),
-                                    session.objectKind(takeCandidate), was, now,
-                                    now == was ? " - REFUSED (full, or a kind "
-                                                 "Inventory_Insert would merge)" : "");
+                                    session.objectKind(takeCandidate), was, now, what);
                         takeCandidate = -1;
                     } else if (mv == "MDLETOBJ") {
                         std::printf("take: MDLETOBJ - object %d put back where it was\n",
