@@ -227,6 +227,64 @@ The door DOES wait — `areaTransition` mode 3 state 1 does `showSet(dest)` then
 `startTransitionObject(f1)`. What does not wait is the OTHER zone, which fires
 a competing transition first and locks the one that carries the door out.
 
+**MEASURED LIVE 2026-09-04** (`OMK_TUNNEL=1`, a real walk through the tunnel in
+both directions). The prediction above was right about the shape and **wrong
+about the failing step**, so both are kept.
+
+**Both zones arm at both ends, in the predicted order:**
+
+    [zone] frame 7923  ARM zone 3815   (Qalisar, NO doors)
+    [zone] frame 7934  ARM zone 3813   (Qalisar, doors 5/6)     11 frames later
+    [zone] frame 8371  ARM zone 3814   (Anekbah, NO doors)
+    [zone] frame 8383  ARM zone 3812   (Anekbah, doors 3/4)     12 frames later
+
+So the doorless zone fires first at both ends, as the geometry predicted (221
+and 236 units of lead). The door-carrying goto is then REFUSED while the first
+transition is in flight — which is CORRECT and is the part that works:
+
+    Qalisar   7934, 7935   REFUSED (2 frames)
+    Anekbah   8383..8388   REFUSED (6 frames)
+
+**And `mode 0 case 8` is NOT the fault, contrary to the first reading of it.**
+It already distinguishes: `if (f1 == -1) return 1;` accepts a doorless goto and
+does nothing, but a door-carrying one is held at status 9 to retry. The log
+shows that working — frame 7936 arrives at state 8 and is retried, frame 7937
+arrives at state 0.
+
+**So the door goto DOES run at both ends.** The whole-log tally is 28 doorless
+gotos to 101 and **2 carrying 5/6**, and the door-carrying ones land at:
+
+    Qalisar   frame 7937   transition state 0
+    Anekbah   frame 8389   transition state 0
+
+**The failure is therefore AFTER the goto, not before it**, and the surviving
+explanation is the one the transition itself implies: by the time the door's
+goto runs, the doorless route has already completed and moved the player into
+the destination, so the OUTGOING scene is no longer `Tunnel01.SCX` and
+`startTransitionObject(5)` cannot resolve object 5. `startTransitionObject`
+answers a miss with `tr_.program = -2` — "ends next frame" — which is silent.
+That is a door that is asked for and never plays.
+
+**NOT YET MEASURED, and it is the next step**: whether `startTransitionObject`
+actually misses at the Qalisar end and hits at the Anekbah end. The port
+already logs it under `OMK_CAMLOG=1` (`[tr] object N -> program P (S started,
+M missed)`), so one more walk with both variables set settles it. If it misses
+at both ends then the Anekbah door is animating for some other reason and this
+account is incomplete.
+
+**NO ENGINE ORACLE EXISTS FOR THIS.** None of the five captures in `traces/`
+passes through AREA 224 — they are the intro, the Impasse walk, the restaurant
+and the menu — so what the ENGINE does with two overlapping transition zones is
+unobserved and cannot be settled from what is committed here. That matters for
+the fix: the port's behaviour above is self-consistent, and "self-consistent"
+is exactly what `CLAUDE.md` 1 warns is not evidence.
+
+**One reading confirmed on the way**, because it looked like a candidate and is
+not: `arcWide == 0` really does mean ANY facing, not "no facing matches". The
+Impasse's zone 3795 carries `239.0 +-0.0` and its enter script is the tutorial
+cutscene, which fires — so a zero-width arc cannot be a zone that never arms.
+That rules out "the doorless zones should never have armed" as the fix.
+
 **LABELLED AS RECONSTRUCTION, and it is the part to settle before fixing.**
 Everything above is read from the data and from the port's own code; what is
 NOT established is what the ENGINE does with the same geometry. Three

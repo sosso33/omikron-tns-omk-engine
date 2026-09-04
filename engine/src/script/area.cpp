@@ -771,6 +771,22 @@ int Session::areaTransition(int mode, int ctxIdx, int slot, int area, int f1, in
         reloadScene(slots_[curSlot_].area, slots_[curSlot_].scene);
     };
 
+    // omk-play 70: the tunnel's far door. AREA 224 has TWO transition zones at
+    // each end - one carrying the door pair, one carrying none - and the
+    // doorless one is the outer, so it fires first. Whether the door's goto is
+    // then REFUSED (a transition already in flight) is what decides the bug,
+    // and it can only be seen while walking. `OMK_TUNNEL=1` says what every
+    // goto carries and what happened to it.
+    const bool trLog = [] {
+        const char* e = std::getenv("OMK_TUNNEL");
+        return e && *e == '1';
+    }();
+    if (trLog && mode == 0)
+        std::printf("[tr] frame %ld  area.goto %d  doors %d/%d  ctx %d  "
+                    "transition state %d  deferred %d%s\n",
+                    frameNo_, area, f1, f2, ctxIdx, tr_.state, deferred_,
+                    (f1 == -1 && f2 == -1) ? "   <- NO DOORS" : "   <- carries doors");
+
     switch (mode) {
     case 0:                                               // op 47 `area.goto`
         switch (tr_.state) {
@@ -2219,6 +2235,17 @@ void Session::execute(int i) {
         // the pre-dispatch refusal: one staged load at a time
         if ((op == 45 || op == 47) && deferred_ != -1) {
             if (op == 47) c->status = 9;
+            // omk-play 70: this is the refusal that loses the tunnel's far
+            // door - the doorless zone's transition is still in flight, so the
+            // door-carrying goto never dispatches.
+            if (const char* e = std::getenv("OMK_TUNNEL"))
+                if (*e == '1') {
+                    static long told = 0;
+                    if (told++ < 40)
+                        std::printf("[tr] frame %ld  op %d REFUSED - context %d is mid-transition "
+                                    "(ctx %d held at status 9)\n",
+                                    frameNo_, op, deferred_, static_cast<int>(i));
+                }
             return;
         }
         const int n = table_.operandLength(op);
@@ -2520,6 +2547,13 @@ void Session::pumpZoneSlots() {
         a.frame = frameNo_; a.kind = e.kind; a.zone = e.zone; a.action = e.action; a.script = e.script;
         switch (e.kind) {
         case ZoneEvent::Kind::Arm:
+            // omk-play 70: WHICH zone arms, and in what ORDER. AREA 224's two
+            // ends each carry an overlapping pair - a door-carrying zone and a
+            // doorless one - so the order they arm in is what the fix turns on.
+            if (const char* tl = std::getenv("OMK_TUNNEL"))
+                if (*tl == '1')
+                    std::printf("[zone] frame %ld  ARM zone %d  ctx %d  action %d  script %zu\n",
+                                frameNo_, static_cast<int>(e.zone), idx, e.action, e.script);
             // case 1: `ctx = u32(slot,0); if (ctx && u16(ctx,42) == zoneId &&
             // u8(ctx,24) == 4) { u8(ctx,24) = 0; --u16(ctx,28); }` - the zone
             // re-armed while its FREE was still at the head of the FIFO:
