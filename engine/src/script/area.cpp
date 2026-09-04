@@ -656,10 +656,21 @@ void Session::startTransitionObject(int obj) {
     c.op = 58;                            // `scx.play.wait`'s shape: object first
     c.fields = {static_cast<std::int16_t>(obj), 0, 0};
     const int idx = scene_.handle({c});
-    if (const char* e = std::getenv("OMK_CAMLOG"))
-        if (*e == '1')
-            std::fprintf(stderr, "[tr] frame %ld  object %d -> program %d (%zu started, %zu missed)\n",
-                         frameNo_, obj, idx, scene_.started().size(), scene_.missed().size());
+    // omk-play 70: the decisive line. When the door's goto finally runs, is the
+    // TUNNEL's scene still resident? If the doorless route has already carried
+    // the player into the destination, `Tunnel01.SCX` is gone and the door
+    // object cannot resolve - which is a door asked for and never played, with
+    // no error anywhere.
+    {
+        const char* e = std::getenv("OMK_CAMLOG");
+        const char* t = std::getenv("OMK_TUNNEL");
+        if ((e && *e == '1') || (t && *t == '1'))
+            std::printf("[tr] frame %ld  door object %d -> program %d%s   "
+                        "(resident scene %d over area %d; %zu started, %zu missed)\n",
+                        frameNo_, obj, idx, idx < 0 ? "   <- MISSED" : "",
+                        slots_[curSlot_].scene, slots_[curSlot_].area,
+                        scene_.started().size(), scene_.missed().size());
+    }
     // Not resident (or no scene loaded): the engine would wait on an object
     // it cannot find until the 60 s watchdog. A replica with no scene must
     // run on where the game would, so the "object" ends next frame - the

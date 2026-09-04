@@ -272,6 +272,67 @@ M missed)`), so one more walk with both variables set settles it. If it misses
 at both ends then the Anekbah door is animating for some other reason and this
 account is incomplete.
 
+**MEASURED, AND THE ACCOUNT HOLDS** — second walk, the door object's resolve
+printed with the resident area beside it:
+
+    frame 7628  door object 249 -> program 32             (resident area 224)  HIT
+    frame 7678  door object 250 -> program 33             (resident area 224)  HIT
+    frame 7776  door object   5 -> program -1   MISSED    (resident area 101)
+    frame 7915  door object   6 -> program -1   MISSED    (resident area 101)
+    ... ten misses in all, every one with area 101 resident
+
+**Objects 5 and 6 miss because the player is already in Qalisar when they are
+asked for.** The doorless route (zone 3815) completed first and carried him out
+of the tunnel, so `Tunnel01.SCX` is no longer the resident scene and its doors
+cannot resolve. `startTransitionObject` answers a miss with `tr_.program = -2`,
+"ends next frame" — silently, with no error anywhere — so the transition
+continues and the door is simply never told to open.
+
+**And this explains the asymmetry, which was never about the two ends of the
+tunnel at all.** The door the reader sees working is not the tunnel's: entering
+from Anekbah uses objects **249/250**, which belong to AREA 0's own transition
+and resolve while area 224 IS resident (frames 7628/7678 above, both HIT). The
+tunnel's own four doors — 3/4 to Anekbah, 5/6 to Qalisar — never play at all.
+So the correct statement of the bug is not "the far door does not open" but
+**"neither of the tunnel's own doors ever opens, and the one that does belongs
+to the area you came from"**.
+
+**AND THE READER GOT STUCK IN IT** — *"It was stuck in the door at the end"*,
+reported of this very walk. The log corroborates it as a LOOP rather than a
+one-off: after the first two misses the door objects are asked for eight more
+times, frames 8342 to 8506, alternating 5 and 6. Each retry re-runs the same
+goto, misses the same object, ends "next frame", and is armed again by the same
+zone the player is still standing in. That is the stuck state, and it is not a
+separate fault - it is what a silent miss looks like from inside the game.
+
+**WHAT THE FIX HAS TO DECIDE, and it still has no oracle.** The port's
+behaviour is now fully traced and self-consistent; what the ENGINE does with
+two overlapping transition zones is still unobserved, because none of the five
+captures in `traces/` passes through AREA 224. The candidates:
+
+1. **the door-carrying zone should win.** It is the inner of each pair, and
+   `Zone_FindScriptsById` takes zones in record order where 3813 precedes 3815.
+   If the engine arms only one transition zone at a time, or prefers the one
+   whose facing arc actually constrains, the doorless pair would never fire
+   during a walk and the doors would always play.
+2. **the doorless pair is not for walking.** An `arcWide` of 0 means any
+   facing, so they cannot be distinguished from the door zones by facing — but
+   a pair of `-1, -1` routes that duplicate a door route's destination looks
+   like a fallback for a teleport or a script, not for a player on foot.
+3. **the object should resolve against the OUTGOING scene**, which
+   `startTransitionObject`'s own comment says the engine does — "resolved
+   against the scene the player is still standing in (416 of 448 shipped pairs
+   land there, 84 in the destination's)". The port resolves against whatever is
+   resident NOW, which after a completed transition is the destination. That is
+   the narrowest of the three and the only one that is a straightforward
+   porting gap rather than a question about the engine's intent.
+
+**(3) is the one to try first** — it needs no decision about zone arbitration,
+it matches a comment already in the code, and it would make the door resolve
+even when the doorless route has run ahead of it. But it must be checked
+against the 84 pairs that legitimately live in the destination's scene, or it
+trades this bug for those.
+
 **NO ENGINE ORACLE EXISTS FOR THIS.** None of the five captures in `traces/`
 passes through AREA 224 — they are the intro, the Impasse walk, the restaurant
 and the menu — so what the ENGINE does with two overlapping transition zones is
