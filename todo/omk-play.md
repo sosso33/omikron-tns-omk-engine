@@ -1044,10 +1044,87 @@ that function names itself in its own error strings ("no animation applyed on
 object %s", "value for current frame is too big"), so it is the applier and the
 `0.0, 1.0` is "snap to key 1", not a range.
 
-**4. STILL UNREAD, and it is the only gap left**: exactly how `sub_4725B0`
-combines the four poses - which fraction weights which pair, and whether the
-two axes are applied in sequence or as one bilinear step. Everything feeding it
-is now known; what it does with the block is not.
+**4. HOW THE FOUR POSES COMBINE - `sub_4725B0`, read 2026-09-04. The last
+gap is closed and the whole thing is implementable.**
+
+The four u16s are KEY-INDEX OFFSETS added to the current frame, indexing the
+node's own rotation key array (16 bytes a key):
+
+    esi   = node.anim[0x24]                  // the rotation keys
+    frame = ftol(curFrame)
+    Q(o)  = *(float[4]*)(esi + (o + frame) * 16)
+
+    f0 = out[0]                              // the `second`-axis fraction
+    A  = slerp( Q(out[8]),  Q(out[0Ah]), f0 )
+    B  = slerp( Q(out[0Eh]), Q(out[0Ch]), f0 )
+    R  = slerp( A, B, out[4] )               // then ACROSS, by the ANGLE fraction
+    sub_442A00(&R, node + 0x38)              // quaternion -> the node's 3x3
+
+Textbook bilinear: two interpolations along one axis, one across - and each
+fraction weights the axis it was derived from, which is the check that the
+index assignment above is paired correctly. With `n == 9` the first slerp is
+centre(4) against row+1 and the second is col+3 against col+row, so the two
+pairs are the same row-step taken at two columns.
+
+**`sub_4721F0(a, b, out, k)` is a quaternion SLERP with `t = k / 256`** -
+`flt_4BCA10 = 0.00390625` is 1/256 exactly, which is what makes the 0..256
+fractions fixed-point weights. It is the same `k/256` slerp primitive this repo
+already records for the dialogue line's two-sided fade. The stored quaternion is
+`[w, x, y, z]`: the function takes `acos(a[0])` for the half-angle (clamped to
++-1) and dots `+4/+8/+0Ch`.
+
+**The two guards, which a port must keep** - both name themselves in the
+engine's own error strings: `curFrame` may not exceed the clip's key count
+("value for current frame is too big (Object %s)") and `prevFrame` must not
+exceed `curFrame` ("old frame should be inferior to current"). A node with no
+animation gets an IDENTITY 3x3 copied into `+0x38` (9 dwords from
+`unk_4C7700`) rather than being left alone.
+
+**THE WHOLE SPEC, in one place:**
+
+    n     = (u16 at .CTL entry +0x4C) >> 12        // <= 1 means NOT a grid
+    keys  = clip.frames + 1                        // key 0 is the rest sentinel
+    len   = keys / n                               // 21 in every shipped grid
+
+    angle  = actor[0x1C4]  clamped to +-50         // from sub_465D30's geometry
+    second = actor[0x1C8]  clamped to [-53, +51]   // n == 9
+                           or pre-scaled by 1/29.527559 (75 cm)   // n == 6
+
+    col = (angle  >= 0) ? 2 : 0
+    row = (second >= 0) ? 0 : 6                    // n == 9 only
+    n == 9:  out[8]=4*len  out[0Ah]=(row+1)*len  out[0Eh]=(col+3)*len  out[0Ch]=(col+row)*len
+    n == 6:  out[8]=1*len  out[0Ah]=4*len        out[0Eh]=col*len      out[0Ch]=(col+3)*len
+
+    out[0] = clamp(|second| * 256 / (second >= 0 ? 51 : 53), 0, 256)
+    out[4] = clamp(|angle|  * 256 / 50,                      0, 256)
+
+    per node:  A = slerp(Q(out[8]), Q(out[0Ah]), out[0]/256)
+               B = slerp(Q(out[0Eh]), Q(out[0Ch]), out[0]/256)
+               node.matrix = quatToMatrix(slerp(A, B, out[4]/256))
+
+**LABELLED: THE FRACTIONS ARE THE WEAKEST LINK.** 256/51, 256/53 and 256/50
+against clamps of +51, -53 and +-50 is a strong correspondence, but it is ONE
+hypothesis fitted three times, not three independent confirmations - the same
+shape as a layout that happens to fit the shipped bytes (CLAUDE.md 1). The
+index assignment and the variant count are each pinned by a test the data could
+have failed (the nine-state partition; `n * len == keys` with no remainder);
+the fractions are not. What would settle them is a RENDERED POSE: pick an
+approach angle that lands mid-cell and check the blend sits between the two
+variants rather than on one of them. The pose-excursion plot is most of that
+machinery already.
+
+**What the port needs**: `engine/src/actor/` gains a four-pose bilinear sample
+on the .CTL clip path, gated on the entry's nibble - clips with `n <= 1` keep
+the present single-track behaviour, which is every clip in the bank except the
+nine. Nothing in `play.cpp` changes. The k/256 slerp already exists for the
+dialogue fade and should be reused rather than rewritten.
+
+**How to check it**: assert the FOUR OFFSETS for a known geometry (a fixed
+angle and height give four exact key indices, and `n * len == keys` is a second
+constraint the data can fail), and count DISTINCT ENTRIES per press. Never
+sample a clip name - two traces were wasted on that today, one because the
+window was in ticks under `--speed 3` and one because it stopped on `H_STAND`,
+which is still the clip at the instant the press is seen.
 
 **PORTING NOTE**: the port has no blend-four-poses path at all, so this is a
 slice rather than a one-line fix, and it belongs in `engine/src/actor/` (the
