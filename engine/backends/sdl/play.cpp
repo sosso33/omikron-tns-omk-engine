@@ -1281,6 +1281,11 @@ int main(int argc, char** argv) {
 "                   area's props. AREA 222 wants SCENE 55, whose script ends\n"
 "                   in `object.show 162`, the Impasse's rings: without it\n"
 "                   there is nothing in the world to take\n"
+"  --give a,b,c     object ids into the carried list - a HARNESS write, not\n"
+"                   `inventory.add`. A list, because a new game ships two\n"
+"                   objects and the flows worth driving want a bagful: row\n"
+"                   scrolling needs more than the nine row widgets, and\n"
+"                   `Utiliser sur` needs a recipe pair (18,7 -> 33)\n"
 "  --sneak          open the SNEAK as soon as he is on his feet, through\n"
 "                   the same path TAB takes - for testing that screen\n"
 "                   without walking to it\n"
@@ -1369,7 +1374,11 @@ int main(int argc, char** argv) {
     // (default the engine's 3), `--no-crowd` leaves the pedestrians out.
     std::string saveFile;
     int areaArg = -1, addressArg = -1, density = omk::kDefaultStreetActivity;
-    int giveArg = -1;      // --give: an object id for the carried list
+    // --give: object ids for the carried list, comma-separated. A LIST
+    // rather than one id because the flows worth driving need a bagful - row
+    // scrolling wants more than the nine row widgets, and `Utiliser sur`
+    // wants a recipe PAIR, and a new game ships exactly two objects.
+    std::string giveList;
     bool newWorld = false; // --newgame-world: START's world, the save's player
     // --scene-chunk N: run a SCENE chunk's startup script over the area, the
     // way `scene.load` does. A street start jumps straight to an area, so the
@@ -1459,7 +1468,7 @@ int main(int argc, char** argv) {
         // a flow can be exercised from a save that does not carry it. VM
         // opcode 50 `inventory.add` is what the game uses; this writes the
         // slot and runs none of its bookkeeping.
-        else if (a == "--give" && i + 1 < argc) giveArg = std::atoi(argv[++i]);
+        else if (a == "--give" && i + 1 < argc) giveList = argv[++i];
         // ...and its companion: keep the save's PLAYER but take the world
         // from `IAM\START`, so a flow can be tried against a new game's
         // state without the intro. Also a harness flag, not a port.
@@ -1612,12 +1621,25 @@ int main(int argc, char** argv) {
     // `IAM\GLOBAL +12`'s eleven combination recipes. `script/inventory.h` was
     // written, checked and never consumed by anything that runs - the sneak
     // is what the channel exists for, so this is where it is loaded.
-    if (giveArg > 0) {
-        if (state.debugPutObject(0, giveArg))
-            std::printf("--give: object %d put in the carried list "
-                        "(a harness write, not `inventory.add`)\n", giveArg);
-        else
-            std::printf("--give: could not place object %d\n", giveArg);
+    if (!giveList.empty()) {
+        int placed = 0, refused = 0;
+        std::string cur;
+        for (char ch : giveList + ",") {
+            if (ch != ',') { cur.push_back(ch); continue; }
+            if (cur.empty()) continue;
+            const int id = std::atoi(cur.c_str());
+            cur.clear();
+            if (id <= 0) continue;
+            // `debugPutObject` fills the FIRST free slot, so the ids land in
+            // the order they are given - which is the reverse of what the
+            // game's own `ObjectList_InsertFront` would do, and is fine for a
+            // harness whose point is to have a bag at all.
+            if (state.debugPutObject(0, id)) ++placed;
+            else { ++refused; std::printf("--give: no free slot for object %d\n", id); }
+        }
+        std::printf("--give: %d object%s put in the carried list, %d refused "
+                    "(a harness write, not `inventory.add`)\n",
+                    placed, placed == 1 ? "" : "s", refused);
     }
     const auto objectRecords = omk::loadObjects(fs);
     const auto globalFile = fs.read("IAM/GLOBAL");
@@ -3901,19 +3923,34 @@ int main(int argc, char** argv) {
                     } else if (mv == "MDPUTSNK") {
                         const int was = static_cast<int>(
                             omk::objectList(state, omk::ObjectList::Carried).size());
-                        session.bankHeldObject(takeCandidate);
+                        const auto arm = session.bankHeldObject(takeCandidate);
                         const int now = static_cast<int>(
                             omk::objectList(state, omk::ObjectList::Carried).size());
-                        // `Game_HandleEvent` case 10 answers 0 and leaves the
-                        // object HELD when list 0 is full, and adds no row for
-                        // a stackable kind, so the count is the thing to say.
+                        // NAME THE ARM. `Inventory_Insert`'s four outcomes are
+                        // not interchangeable and a count alone cannot tell
+                        // them apart - a merge and a full list both leave it
+                        // unchanged, and the first is correct where the second
+                        // is a refusal. Saying "REFUSED (full, or a kind
+                        // Inventory_Insert would merge)" made a reader guess,
+                        // and it was wrong: the kind-13 rings were neither.
+                        using B = omk::Session::Banked;
+                        const char* what =
+                            arm == B::Row      ? "a row at the front of list 0"
+                          : arm == B::Consumed ? "kind 12/13: applied and CONSUMED, no row "
+                                                 "- `Object_ApplyEffect` is NAMED and not "
+                                                 "read, so the effect is announced and NOT "
+                                                 "applied"
+                          : arm == B::Merged   ? "merged into an existing row of a related "
+                                                 "kind, no new row - and the quantity is in "
+                                                 "the 56-byte cache this port does not model, "
+                                                 "so nothing counts up"
+                                               : "REFUSED - list 0 is full, case 10 returns 0 "
+                                                 "and it stays in his hand";
                         std::printf("take: MDPUTSNK - object %d '%s' (kind %d) -> "
-                                    "carried list %d -> %d%s\n",
+                                    "carried list %d -> %d: %s\n",
                                     takeCandidate,
                                     session.objectName(takeCandidate).c_str(),
-                                    session.objectKind(takeCandidate), was, now,
-                                    now == was ? " - REFUSED (full, or a kind "
-                                                 "Inventory_Insert would merge)" : "");
+                                    session.objectKind(takeCandidate), was, now, what);
                         takeCandidate = -1;
                     } else if (mv == "MDLETOBJ") {
                         // The put-back matches the take's HEIGHT, the same way
@@ -5909,8 +5946,12 @@ int main(int argc, char** argv) {
                 // selectable either, so the walk must not put the highlight
                 // on one. Without this the selection walks off the end of
                 // the live destinations and the cursor goes with it.
+                // CARRYING the window, not resetting it. This runs every
+                // frame, so passing 0 would scroll the list back to the top
+                // between the keypress and the next draw.
                 walk->bindRows(omk::kListSneakRows,
-                               static_cast<int>(known.size()));
+                               static_cast<int>(known.size()),
+                               walk->rowWindow(omk::kListSneakRows));
                 if (!sliderTold) {
                     sliderTold = true;
                     std::printf("sneak: slider page - %zu of %zu destinations "
@@ -5934,6 +5975,49 @@ int main(int argc, char** argv) {
             // because `Object_ApplyEffect`'s body is `named` and not read and
             // `sub_409780`'s context gate - whether the object may be used
             // HERE - has not been read at all.
+            // ---- THE COMBINE, once both slots are full ----------------
+            //
+            // `Game_HandleEvent` case 37's SECOND arm:
+            //
+            //     recipe = sub_409650(second, first)
+            //     if (!recipe || dword_4E6C70 != recipe+6) { result 2; }
+            //     else { ObjectList_RemoveById(list, first);
+            //            ObjectList_RemoveById(list, second);
+            //            ObjectList_InsertFront(list, recipe+4, 0, 0);
+            //            dword_4E6C70 = -1; }
+            //
+            // and `sub_49BC60`'s tail plays interface sound 12 on the success
+            // and shows text 35 on the failure, then reinstalls the inventory
+            // page either way. The gate is the one `beginCombine` set.
+            if (int ra = -1, rb = -1; walk->takeCombine(ra, rb)) {
+                const auto bag = omk::objectList(state, omk::ObjectList::Carried);
+                const auto at = [&](int r) {
+                    return r >= 0 && static_cast<std::size_t>(r) < bag.size()
+                         ? bag[static_cast<std::size_t>(r)] : -1;
+                };
+                const int a = at(ra), b = at(rb);
+                const int gate = (a == omk::globalSpellItem(globalFile) ||
+                                  b == omk::globalSpellItem(globalFile)) ? 1 : 0;
+                const int made = (a >= 0 && b >= 0) ? inv.combine(a, b, gate) : -1;
+                if (made > 0) {
+                    state.listRemove(0, a);
+                    state.listRemove(0, b);
+                    state.listAdd(0, made);          // InsertFront
+                    blip(sndConfirm);                // interface sound 12
+                    std::printf("sneak: combine %d '%s' + %d '%s' (gate %d) -> "
+                                "%d '%s'\n", a, session.objectName(a).c_str(),
+                                b, session.objectName(b).c_str(), gate,
+                                made, session.objectName(made).c_str());
+                } else {
+                    blip(sndBack);
+                    std::printf("sneak: combine %d '%s' + %d '%s' (gate %d) -> "
+                                "nothing - no recipe, or its gate is not %d "
+                                "(interface text 35)\n",
+                                a, session.objectName(a).c_str(),
+                                b, session.objectName(b).c_str(), gate, gate);
+                }
+                walk->endCombine();
+            }
             if (const int verb = walk->takeVerb(); verb >= 0) {
                 const auto carried =
                     omk::objectList(state, omk::ObjectList::Carried);
@@ -5952,7 +6036,30 @@ int main(int argc, char** argv) {
                   // the OBJECTS id of the selected row - both halves need it
                   const int objIdx = carried.empty() ? -1
                       : carried[static_cast<std::size_t>(row)];
-                  if (verb == 0) {
+                  if (verb == 1) {
+                    // ---- `Utiliser sur` IS A MODE, not a use --------------
+                    //
+                    // `sub_49BF30` does not touch case 35 at all: it opens a
+                    // COMBINE, puts the object in one of two slots, disables
+                    // the verb list and sends the player back to the rows for
+                    // a second object. Running `Utiliser`'s arm here - which
+                    // this did until 2026-09-04 - took the object IN HAND
+                    // under the other verb's name.
+                    //
+                    // Which slot is `sub_42B520`'s answer: event 37's first
+                    // arm compares the object with `u16(GLOBAL, 64)`, the
+                    // spell item, and sets the recipe gate to 1 for it and 0
+                    // for anything else.
+                    const int spellItem = omk::globalSpellItem(globalFile);
+                    const bool isSpell = (objIdx == spellItem);
+                    walk->beginCombine(objIdx, isSpell);
+                    std::printf("sneak: Utiliser sur '%s' -> combine opened, "
+                                "gate %d%s. Pick a second object\n",
+                                rec->name.c_str(), isSpell ? 1 : 0,
+                                isSpell ? " (the spell item - and NO shipped "
+                                          "recipe carries gate 1, so this arm "
+                                          "cannot produce anything)" : "");
+                  } else if (verb == 0) {
                     // ---- WHAT REACHES THE WORLD -------------------------
                     //
                     // `sub_42B420(tag, 20)` announces, and its second event
@@ -6090,13 +6197,16 @@ int main(int argc, char** argv) {
                 // `Ui_DrawItemFill`'s bars are behind. `list+24` is the
                 // count the channel reports (case 29).
                 //
-                // The window is 0 here: scrolling is `sub_0049C050` +
-                // `sub_42AFF0`, and neither is modelled, so a list longer
-                // than nine is truncated rather than scrolled.
+                // THE WINDOW is `sub_42AFF0`'s, kept in widget 0's `+0x3C`
+                // and moved by the mover - so the text follows the scroll
+                // rather than always starting at row 0. Hardcoded 0 until
+                // 2026-09-04, which truncated any list longer than the nine
+                // widgets: a tenth carried object could not be reached.
                 const omk::UiPanel* rp = w.at(omk::kPanelSneakInventory);
                 for (const auto& l : (rp ? rp->lists : pn->lists)) {
                     if (l.addr != omk::kListSneakRows) continue;
-                    const std::size_t window = 0;
+                    const std::size_t window = static_cast<std::size_t>(
+                        std::max(0, walk->rowWindow(omk::kListSneakRows)));
                     for (std::size_t k = 0; k < l.items.size(); ++k) {
                         const std::size_t row = k + window;
                         if (row >= carried.size()) {
@@ -6116,7 +6226,8 @@ int main(int argc, char** argv) {
                     }
                 }
                 walk->bindRows(omk::kListSneakRows,
-                               static_cast<int>(carried.size()));
+                               static_cast<int>(carried.size()),
+                               walk->rowWindow(omk::kListSneakRows));
                 // ---- THE ECHO BAR and THE CLOCK ---------------------
                 //
                 // Two of the device's rows are filled by callbacks of its
@@ -6201,9 +6312,9 @@ int main(int argc, char** argv) {
                             for (const auto& e : l.items)
                                 rows += sneakRows.count(e.addr);
                     std::printf("sneak: object list %d holds %zu, %zu rows "
-                                "shown (no scrolling - sub_0049C050 is not "
-                                "modelled)\n", inv.openedList(),
-                                carried.size(), rows);
+                                "shown, window at %d\n", inv.openedList(),
+                                carried.size(), rows,
+                                walk->rowWindow(omk::kListSneakRows));
                 }
             }
             if (useClosedSneak) {

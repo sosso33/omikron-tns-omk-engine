@@ -403,23 +403,163 @@ bool UiWalk::pickable(const UiList& l, const UiItem& it) const {
     return it.selectable(l.broadcast) && !itemOff(it.addr);
 }
 
-void UiWalk::bindRows(std::uint32_t list, int count) {
+// `sub_42AAE0(list, window)`, and the SECOND ARGUMENT IS THE WINDOW - the
+// first row the nine widgets show. `count` is the list's own `+24`, what the
+// inventory channel reports (case 29).
+//
+//     for each widget k of the list:
+//       if (k + window >= count) { item+0x3C = -1;                 // past the end
+//                                  set 0x40000001 and 0x20000004; }  // not drawn,
+//       else                     { item+0x3C = k + window;           // not selectable
+//                                  clear both; }
+void UiWalk::bindRows(std::uint32_t list, int count, int window) {
     state_->bound[list] = count;
     if (!panel_) return;
     for (const auto& l : panel_->lists) {
         if (l.addr != list) continue;
+        if (window < 0) window = 0;
         for (std::size_t k = 0; k < l.items.size(); ++k) {
-            if (static_cast<int>(k) < count) state_->itemOff.erase(l.items[k].addr);
-            else                             state_->itemOff.insert(l.items[k].addr);
+            const int row = static_cast<int>(k) + window;
+            const bool live = row < count;
+            state_->rowTag[l.items[k].addr] = live ? row : -1;
+            if (live) state_->itemOff.erase(l.items[k].addr);
+            else      state_->itemOff.insert(l.items[k].addr);
         }
-        // ...and if the selection was left on a row that has just gone away,
-        // pull it back to the last live one. `sub_42AAE0` cannot leave the
-        // highlight past the end and neither may this.
+        // ...and if the selection was left on a widget that has just gone
+        // away, pull it back to the last live one. `sub_42AAE0` cannot leave
+        // the highlight past the end and neither may this. NOTE this clamps
+        // to the WIDGET count now, not to the row count: with a window the
+        // two are different numbers and clamping to the rows walked the
+        // selection off the end of a scrolled list.
+        const int live = std::min<int>(static_cast<int>(l.items.size()),
+                                       std::max(0, count - window));
         auto it = selMap().find(l.addr);
-        if (it != selMap().end() && it->second >= count)
-            it->second = count > 0 ? count - 1 : 0;
+        if (it != selMap().end() && it->second >= live)
+            it->second = live > 0 ? live - 1 : 0;
         return;
     }
+}
+
+// The comments on the declarations carry the evidence.
+void UiWalk::beginCombine(int objectId, bool isSpellItem) {
+    state_->combining = true;
+    if (isSpellItem) { state_->combineA = objectId; state_->combineB = -1; }
+    else             { state_->combineA = -1;       state_->combineB = objectId; }
+    state_->combineC = -1;
+    // `sub_49BF30`'s tail, and the port had only the first line of it:
+    //     sub_4290D0(&word_4DE318, 0x20000004, 1);  // the VERBS off
+    //     sub_4290D0(&word_4DE6F0, 0x20000004, 0);  // the ROWS back ON
+    //     sub_428FF0(&unk_4DE278, 0x40000002, 1);   // light `Utiliser sur`
+    //     dword_4DEED0 = 3;                          // panel+24: the ROWS
+    // The player picks the second object WITHOUT leaving the panel, which is
+    // what makes the mode usable at all - and leaving it is the cancel.
+    setListOff(kListSneakVerbs, true);
+    setListOff(kListSneakRows, false);
+    state_->flagOn[kItemSneakUseOn] |= 0x40000002u;
+    curFromBuilder_ = 3;
+    settle();
+    log_.push_back(isSpellItem ? "combine: opened with the spell item"
+                               : "combine: opened");
+}
+
+bool UiWalk::takeCombine(int& a, int& b) {
+    if (state_->readyA < 0 || state_->readyB < 0) return false;
+    a = state_->readyA; b = state_->readyB;
+    state_->readyA = state_->readyB = -1;
+    return true;
+}
+
+void UiWalk::endCombine() {
+    state_->combining = false;
+    state_->combineA = state_->combineB = state_->combineC = -1;
+    setListOff(kListSneakVerbs, false);
+    // `sub_42A370(screen, unk_4DEE50)` - the inventory page comes back
+    // whichever way the combine went.
+    installPanel(kPanelSneakInventory);
+}
+
+int UiWalk::rowWindow(std::uint32_t list) const {
+    if (!panel_) return 0;
+    for (const auto& l : panel_->lists) {
+        if (l.addr != list || l.items.empty()) continue;
+        const int t = rowOf(l.items[0].addr);
+        return t < 0 ? 0 : t;
+    }
+    return 0;
+}
+
+// `sub_42AFF0` - `Ui_MoveSelection` OVER A WINDOW, and the whole of the
+// sneak's row scrolling. Read from the listing 2026-09-04; before that the
+// window was hardcoded 0 and a list longer than its nine widgets was
+// truncated, so a tenth carried object could not be reached at all.
+//
+// It is a CENTRED window: the selection moves until it reaches the middle
+// widget and then the window moves instead.
+//
+//     widgets = list+0,  sel = list+2,  count = list+24,  base = item[0]+0x3C
+//     half    = widgets / 2
+//
+//     item[0]   .0x100000 = count > widgets && sel_item+0x3C > half
+//     item[last].0x200000 = count > widgets && sel_item+0x3C < count-half-1
+//
+//     lastBound = the highest widget whose +0x3C is not -1, plus base
+//
+//     UP   : base > 0 && sel <= half  ->  bindRows(list, count, base - 1)
+//            else if (sel_item+0x3C >  base)      --sel
+//     DOWN : lastBound != count-1 && sel >= half  ->  bindRows(.., base + 1)
+//            else if (sel_item+0x3C <  lastBound) ++sel
+//
+// and on ANY successful move it raises event 30 with the selected row's tag
+// (`sub_4083F0(0x1E, &tag)`, guarded on the tag not being -1) - the inventory
+// channel's 3D-preview load. So the preview follows the cursor because the
+// MOVER fires it; a move that does not is a move that leaves it stale.
+//
+// -> whether anything moved, which is `sub_49C050`'s `!= 1` gate.
+bool UiWalk::moveRowWindow(const UiList& l, std::uint32_t bits) {
+    const int widgets = static_cast<int>(l.items.size());
+    if (widgets <= 0) return false;
+    const int count = boundCount(l.addr);
+    const int half  = widgets / 2;
+    const int base  = rowWindow(l.addr);
+    auto& sel = selMap()[l.addr];
+    if (sel < 0) sel = 0;
+    if (sel >= widgets) sel = widgets - 1;
+    const int selRow = rowOf(l.items[static_cast<std::size_t>(sel)].addr);
+
+    // the two marks, on the first and last WIDGET
+    const auto mark = [&](std::size_t k, std::uint32_t bit, bool on) {
+        auto& f = state_->rowArrow[l.items[k].addr];
+        f = on ? (f | bit) : (f & ~bit);
+    };
+    const bool longer = count > widgets;
+    mark(0, 0x100000u, longer && selRow > half);
+    mark(l.items.size() - 1, 0x200000u,
+         longer && selRow < count - half - 1);
+
+    // the highest widget still bound, as an absolute row
+    int k = widgets - 1;
+    while (k > 0 && rowOf(l.items[static_cast<std::size_t>(k)].addr) < 0) --k;
+    const int lastBound = k + base;
+
+    bool moved = false;
+    if (bits & kUiUp) {
+        if (base > 0 && sel <= half) {
+            bindRows(l.addr, count, base - 1);
+            moved = true;
+        } else if (selRow > base) {
+            --sel;
+            moved = true;
+        }
+    } else if (bits & kUiDown) {
+        if (lastBound != count - 1 && sel >= half) {
+            bindRows(l.addr, count, base + 1);
+            moved = true;
+        } else if (selRow >= 0 && selRow < lastBound) {
+            ++sel;
+            moved = true;
+        }
+    }
+    return moved;
 }
 
 bool UiWalk::usable(const UiList& l) const {
@@ -580,6 +720,25 @@ void UiWalk::leavePage(const UiPanel& p) {
         setListOff(kListSneakTabs, false);
         setListOff(kListSneakPreviews, false);
         setListOff(kListSneakRows, false);
+        // ...AND IT CANCELS AN OPEN COMBINE. `sub_49B8A0`'s tail:
+        //
+        //     if (dword_670BE0) { dword_670BE0 = 0;
+        //                         670BE4 = 670BE8 = 670BEC = -1; }
+        //
+        // Leaving the verb panel is what ends `Utiliser sur` when the player
+        // does not follow it through, and without it the mode is a ONE-WAY
+        // DOOR: `combining` never clears, so every later row confirm feeds a
+        // dead combine instead of opening the verbs, and the verb bar is
+        // unreachable for the rest of the process. `combining` lives in the
+        // same static record as the selections and the colours, so it
+        // survives closing and reopening the device too. A player hit exactly
+        // that within minutes of the mode landing.
+        if (state_->combining) {
+            state_->combining = false;
+            state_->combineA = state_->combineB = state_->combineC = -1;
+            state_->readyA = state_->readyB = -1;
+            log_.push_back("combine: cancelled by leaving the verb panel");
+        }
     }
 }
 
@@ -862,6 +1021,38 @@ bool UiWalk::confirm() {
                                                     : "verb: Utiliser sur");
             return true;
         }
+        // `sub_49BC60`'s `loc_49BDD6`, and it comes BEFORE the descent into
+        // the verb panel: while the combine mode is open a row confirm feeds
+        // the mode instead of opening the verbs.
+        //
+        //     if (!dword_670BE0) -> the ordinary arms
+        //     if (dword_670BE8 == -1) { dword_670BE8 = obj; return 0; }
+        //     dword_670BEC = obj;
+        //     if (sub_42B4D0(dword_670BE8, obj)) { reset the rows; sound 12 }
+        //     else                               { text 35 }
+        //     sub_42A370(screen, unk_4DEE50);              // the inventory page
+        //
+        // so the SECOND object completes it and the first slot is whichever
+        // of A/B `sub_42B520` chose. The caller does the combine itself -
+        // the recipe table and the lists are the Session's - and then calls
+        // `endCombine`.
+        if (it->callback == kCbSneakRowConfirm && state_->combining) {
+            // The slots hold ROW INDICES, not object ids: `sub_49BC60`
+            // reads `[edi+3Ch]` - the widget's row tag - and case 37 maps it
+            // through `ObjectList_Header`. So the caller resolves them.
+            const int obj = rowOf(it->addr);
+            if (obj < 0) { log_.push_back("combine: no row there"); return true; }
+            if (state_->combineB == -1) {
+                state_->combineB = obj;
+                log_.push_back("combine: second slot filled, waiting");
+                return true;
+            }
+            state_->combineC = obj;
+            state_->readyA = state_->combineB;
+            state_->readyB = obj;
+            log_.push_back("combine: due");
+            return true;
+        }
         if (it->callback == kCbSneakRowConfirm && state_->rowKind != 0) {
             approx_ = true;
             log_.push_back(state_->rowKind == 4
@@ -990,25 +1181,26 @@ bool UiWalk::press(std::uint32_t bits) {
         // `0x100000` / `0x200000`, the "more above" and "more below"
         // indicators.
         //
-        // THE WINDOW IS NOT MODELLED, and this is the honest half: for a
-        // list no longer than its widgets `sub_42AFF0` never scrolls and is
-        // the ordinary move, which is every list the port reaches (one
-        // carried object, three enabled destinations). Refusing the whole
-        // hook - which is what this did - meant the selection never moved
-        // inside the sneak's rows on ANY page, and a player reported it
-        // twice: "I can move between Appel du slider and the first
-        // destination but no more", "on inventory list I can go to the first
-        // element but not the second".
+        // `sub_42AFF0` IS PORTED NOW (2026-09-04). Before that the window
+        // was hardcoded 0 and this fell through to the ordinary move, which
+        // is right for a list no longer than its nine widgets - every list
+        // the port could reach at the time - and silently truncating for
+        // anything longer. A player carrying ten things could not reach the
+        // tenth.
         //
-        // A list longer than nine will need `sub_42AFF0` read properly; it
-        // is marked approximate here so that cannot pass unnoticed.
-        for (const auto& lm : panel_->lists)
-            if (lm.addr == l->addr &&
-                static_cast<int>(lm.items.size()) < boundCount(l->addr)) {
-                approx_ = true;
-                log_.push_back("row window: list longer than its widgets");
-            }
-        return move(*l, bits);
+        // Refusing the whole hook, which is what it did before THAT, meant
+        // the selection never moved inside the sneak's rows on any page, and
+        // a player reported it twice.
+        if (moveRowWindow(*l, bits)) {
+            // The tail: `sub_4083F0(0x1E, &tag)` on any successful move,
+            // guarded on the tag not being -1 - event 30, the inventory
+            // channel's 3D-preview load. Recorded rather than raised,
+            // because the Session owns the channel and the walk does not;
+            // a caller reads `rowOf(selected())` and asks for the preview.
+            log_.push_back("row move: event 30 for the selected row");
+            return true;
+        }
+        return false;
     }
     if (l->hook) {
         approx_ = true;

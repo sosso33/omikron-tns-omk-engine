@@ -94,6 +94,9 @@ inline constexpr std::uint32_t kCbSneakUse       = 0x0049BEA0u;
 inline constexpr std::uint32_t kCbSneakUseOn     = 0x0049BF30u;
 inline constexpr std::uint32_t kListSneakPreviews = 0x004DE420u;
 inline constexpr std::uint32_t kItemSneakExamine  = 0x004DE2C0u;
+// `Utiliser sur` itself - `sub_49BF30` lights it with `0x40000002` while its
+// combine is open, the same way `sub_49B950` lights `Examiner`.
+inline constexpr std::uint32_t kItemSneakUseOn    = 0x004DE278u;
 // Panel 0x004DEF20's own list and its single item - the examine page's
 // content, a 3D model or a document bitmap.
 inline constexpr std::uint32_t kListSneakExamineContent = 0x004DE760u;
@@ -350,6 +353,15 @@ struct UiListState {
     std::set<std::uint32_t> itemOff;    // 0x40000001 / 0x20000004 on an item
     std::set<std::uint32_t> listOff;    // ...the same over a whole list
     std::map<std::uint32_t, int> bound; // list -> how many rows it holds
+    // `item+0x3C` - THE ROW a widget shows, -1 when it is past the end.
+    // `sub_42AAE0` writes it and `sub_42AFF0` reads it, and it is where the
+    // WINDOW lives: widget 0's tag IS the first visible row, so there is no
+    // separate window variable to keep in step with it. Another static
+    // data-segment record, like the selection and the colours.
+    std::map<std::uint32_t, int> rowTag;
+    // `item+0x34` bits 0x100000 / 0x200000 - the "more above" and "more
+    // below" marks `sub_42AFF0` puts on the first and last widget.
+    std::map<std::uint32_t, std::uint32_t> rowArrow;
     // `dword_670CB8` - WHICH SOURCE fills the shared row list, written by
     // each page's builder: 0 inventory, 2 memory, 4 slider. It is a global
     // like everything else here, and the row's confirm callback dispatches
@@ -367,6 +379,16 @@ struct UiListState {
     // in `Game_HandleEvent` - so it records which was chosen and the caller
     // does the rest.
     int pendingVerb = -1;
+    // `Utiliser sur`'s COMBINE MODE - `dword_670BE0` and the three slots
+    // `670BE4` / `670BE8` / `670BEC`, which are globals like everything else
+    // in this device. `sub_49BF30` opens it and `sub_49BC60`'s `loc_49BDD6`
+    // closes it.
+    bool combining = false;
+    int  combineA = -1, combineB = -1, combineC = -1;
+    // The pair a caller must actually combine, once both slots are full.
+    // The walk cannot do it - the recipe table and the object lists are the
+    // Session's - so it records the decision the way `pendingVerb` does.
+    int  readyA = -1, readyB = -1;
 };
 
 // One open screen, driven by input words.
@@ -411,6 +433,36 @@ public:
     int  rowKind() const { return state_->rowKind; }
     // Which verb was confirmed, if any; reading it CLEARS it.
     int  takeVerb() { const int v = state_->pendingVerb; state_->pendingVerb = -1; return v; }
+
+    // `sub_49BF30` (`Utiliser sur`, 0x0049BF30): open the combine mode with
+    // the chosen object, and DISABLE THE VERB LIST so the next confirm goes
+    // to a row rather than back to a verb.
+    //
+    //     dword_670BE0 = 1;
+    //     if (sub_42B520(obj)) { 670BE4 = obj; 670BE8 = -1; }
+    //     else                 { 670BE4 = -1;  670BE8 = obj; }
+    //     dword_670BEC = -1;
+    //     sub_4290D0(&word_4DE318, 0x20000004, 1);      // the verbs, off
+    //
+    // `sub_42B520` raises event 37, whose first arm answers 1 when the object
+    // IS `u16(GLOBAL, 64)` - the spell item, object 330 - and 0 otherwise,
+    // setting the recipe gate `dword_4E6C70` to match. The caller supplies
+    // that answer because the walk has no channel and no GLOBAL.
+    //
+    // NOTE the spell arm can never produce anything: the 11 shipped recipes
+    // carry gate 0 or gate 8 and never 1, so a combine begun with object 330
+    // matches no recipe. It is modelled because the engine has it, not
+    // because it can succeed.
+    void beginCombine(int objectId, bool isSpellItem);
+    bool combining() const { return state_->combining; }
+    // The pair whose combine is due, once both slots are full - as ROW
+    // INDICES into the open list, which is what the engine's slots hold
+    // (`item+0x3C`, mapped through `ObjectList_Header` by case 37). Reading
+    // it CLEARS it, as `takeVerb` does. -> false when nothing is due.
+    bool takeCombine(int& a, int& b);
+    // `loc_49BE51`'s tail: whichever way it went, the inventory page comes
+    // back and the mode closes.
+    void endCombine();
     int  selectionOf(std::uint32_t listAddr) const {
         const auto it = state_->sel.find(listAddr);
         return it == state_->sel.end() ? -1 : it->second;
@@ -519,7 +571,21 @@ public:
     //
     // Call it whenever the row contents change; it replaces the entries for
     // that list alone, so a builder's own switched-off items survive.
-    void bindRows(std::uint32_t list, int count);
+    // `sub_42AAE0(list, window)` - and the second argument is the WINDOW, not
+    // a count. `count` is the list's own `+24`, what the channel reports.
+    void bindRows(std::uint32_t list, int count, int window = 0);
+    // Where the window sits: widget 0's `+0x3C`, or 0 before any bind.
+    int  rowWindow(std::uint32_t list) const;
+    // What row a widget shows, -1 past the end.
+    int  rowOf(std::uint32_t item) const {
+        const auto it = state_->rowTag.find(item);
+        return it == state_->rowTag.end() ? -1 : it->second;
+    }
+    // The two scroll marks, for a composer that wants to draw them.
+    std::uint32_t rowArrows(std::uint32_t item) const {
+        const auto it = state_->rowArrow.find(item);
+        return it == state_->rowArrow.end() ? 0u : it->second;
+    }
     // How many things the last `bindRows` said that list holds, so the
     // row hook can tell a windowed list from one that fits.
     int  boundCount(std::uint32_t list) const {
@@ -548,6 +614,9 @@ private:
     // passes LEFT/RIGHT.
     bool move(const UiList& l, std::uint32_t bits,
               std::uint32_t back = kUiUp, std::uint32_t on = kUiDown);
+    // `sub_42AFF0` - the same move over a WINDOW, which is what the sneak's
+    // row list uses. See the definition for the rule.
+    bool moveRowWindow(const UiList& l, std::uint32_t bits);
     // `UI_GridMenuInput` (0x004B00D0) - the LIFT's floor panel, and the one
     // list hook in the image with a single reference. Six slots in a 3-wide,
     // 2-deep grid plus one standing apart at 6, which the ITEM COORDINATES

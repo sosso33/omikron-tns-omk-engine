@@ -4654,6 +4654,255 @@ def c_engine_zone_pump():
            "camera-wait park resumed into its dialog.start"
 
 
+def c_sneak_memory_page():
+    r"""THE MEMORY PAGE IS EMPTY IN THE SHIPPED GAME, and that is the answer.
+
+    `todo/sneak.md` listed "three of five pages have empty rows - the player's
+    bio, his statistics and the memos - and which list each asks has not been
+    read" as work to do. It was the wrong question twice over.
+
+    **Only THREE panels carry the row list at all.** Of the five tab pages,
+    `identity` (0x004DED80) and `options` (0x004DF058) have no
+    `0x004DE6F0` in them; the row list belongs to `slider`, `inventory` and
+    `memory` (and to the verb panel, which borrows it). So "empty rows" was
+    never the identity or options page's problem - they show a character view
+    and an option tree, neither of which is a row list.
+
+    **And the memory page's rows are empty BY THE CODE.** Its `panel+4`
+    builder (the block at `loc_49D769`) does
+
+        word_4DE6F0  = 5;              // the row list's +0: FIVE widgets, not 9
+        dword_670CB8 = 2;              // the row kind
+        ...
+        if (dword_4DE708 > 0)  dword_4DEAD4 = selected_widget[+0x3C];
+        else                   dword_4DEAD4 = -1;
+
+    and **`dword_4DE708` is never written anywhere in the image** - it is a
+    static `dd 0` with seven read sites, no store, no `offset`, no `lea`. So
+    the count is permanently 0, the selected memo is permanently -1, and the
+    two other sites that read it (`sub_49B710` at the inventory page's build,
+    and the install at 0x0049BA8E) always take their zero arm.
+
+    This is the same shape as the options menu's **page 12, built and
+    unreachable** - a page the interface constructs and the game never fills.
+    The port leaving those rows empty is therefore CORRECT, and correct for
+    the reason the code gives rather than by accident.
+
+    Asserted from `tables/ui_widgets.json`: which of the five pages carry the
+    row list and which do not, and that the list ships NINE widgets (the
+    memory builder shrinking it to five at run time is a thing the port does
+    not model, and is invisible while the count is 0). Then, when the
+    disassembly is present, that `dword_4DE708` has ZERO writes - the test the
+    claim could fail.
+    """
+    import json, re
+    tw = os.path.join(ROOT, "tables", "ui_widgets.json")
+    if not os.path.exists(tw):
+        return ("skipped",), ("skipped",), "tables/ui_widgets.json absent"
+    rows = json.load(open(tw))["rows"]
+    pans = {p["panel"]: p for p in rows["panels"]}
+    ROWS = 0x004DE6F0
+    named = [("identity", 0x004DED80), ("slider", 0x004DEDE8),
+             ("inventory", 0x004DEE50), ("memory", 0x004DEF88),
+             ("options", 0x004DF058)]
+    withRows, without, widgets = [], [], 0
+    for nm, addr in named:
+        p = pans.get(addr)
+        if not p:
+            without.append(nm + "?")
+            continue
+        hit = [l for l in p["lists"] if l["addr"] == ROWS]
+        if hit:
+            withRows.append(nm)
+            widgets = len(hit[0]["items"])
+        else:
+            without.append(nm)
+
+    # THE POSITIVE CONTROL, and it is what makes "zero writes" mean anything.
+    # A scanner that cannot see a write would report 0 for every symbol, so
+    # the same pass counts `dword_670CB8` - the row kind, which each page's
+    # builder WRITES - and that count must be nonzero. Without it this check
+    # would pass just as happily with a broken regex.
+    def scan(asm, sym):
+        w = r = 0
+        pat = re.compile(r"\b" + sym + r"\b")
+        wr = re.compile(r"mov\s+" + sym + r"\s*,")
+        le = re.compile(r"lea\b.*" + sym)
+        with open(asm, "r", errors="replace") as f:
+            for ln in f:
+                if not pat.search(ln):
+                    continue
+                t = ln.strip()
+                if wr.match(t) or ("offset " + sym) in t or le.match(t):
+                    w += 1
+                elif " dd " not in t:
+                    r += 1
+        return w, r
+
+    writes = reads = control = None
+    asm = omkpaths.asm_path()
+    if asm and os.path.exists(asm):
+        writes, reads = scan(asm, "dword_4DE708")
+        control, _ = scan(asm, "dword_670CB8")
+
+    have = bool(asm and os.path.exists(asm))
+    return (withRows, sorted(without), widgets, writes, reads, control), \
+           (["slider", "inventory", "memory"], ["identity", "options"], 9,
+            (0 if have else None), (7 if have else None),
+            (3 if have else None)), \
+        "which of the sneak's five tab pages carry the shared row list " \
+        "(slider, inventory, memory) and which carry none at all (identity, " \
+        "options - so their rows were never the gap), the nine widgets the " \
+        "list ships; and then the memory page's count `dword_4DE708`, which " \
+        "has SEVEN reads and ZERO writes in the whole image - a static dd 0 " \
+        "nothing ever fills, so that page is built and permanently empty, " \
+        "the same shape as the options menu's unreachable page 12; and the " \
+        "POSITIVE CONTROL that makes that zero mean anything - the same scan " \
+        "over `dword_670CB8`, the row kind each builder writes, must find " \
+        "THREE, because a scanner that cannot see a write reports zero for " \
+        "everything"
+
+
+def c_engine_combine():
+    r"""`Utiliser sur` - the COMBINE MODE, and a gate dead from both ends.
+
+    The port ran `Utiliser`'s arm under this verb's name until 2026-09-04, so
+    "use X on Y" took X in hand. `sub_49BF30` does something else entirely:
+
+        dword_670BE0 = 1;                            // the MODE
+        if (sub_42B520(obj)) { 670BE4 = obj; 670BE8 = -1; }
+        else                 { 670BE4 = -1;  670BE8 = obj; }
+        sub_4290D0(&word_4DE318, 0x20000004, 1);     // the VERBS, disabled
+
+    so the chosen row goes into one of two slots and the player is sent back
+    to the rows for a second object. `sub_42B520` raises **event 37**, whose
+    first arm compares the object with `u16(GLOBAL, 64)` and sets the recipe
+    gate `dword_4E6C70` to 1 for it and 0 for anything else. Case 37's second
+    arm then refuses unless the recipe's `+6` equals that gate, and on a match
+    removes both objects and inserts the product at the FRONT.
+
+    **The shipped table is dead from both ends.** `GLOBAL +64` is object 330,
+    and the 11 recipes carry gate **0 five times and gate 8 six times, never
+    1**. So the six gate-8 recipes can never fire - which this repo already
+    knew - and, newly, a combine BEGUN with object 330 sets the gate to 1 and
+    therefore matches no recipe either. Two independently unreachable arms in
+    one table is a stronger claim about cut content than either half alone,
+    which is why the gate-1 count is asserted as a number rather than left
+    implied.
+
+    Asserted: the spell item and the gate histogram, including the zero;
+    that a real gate-0 recipe (18 + 7 -> 33) applies through the mode; and
+    that the same pair at gate 1 - the spell arm - answers -1.
+    """
+    import subprocess
+    eng = os.path.join(ROOT, "engine")
+    data = omkpaths.data()
+    tbl = os.path.join(ROOT, "tables")
+    if not (os.path.isdir(eng) and os.path.isdir(os.path.join(data, "IAM"))):
+        return ("skipped",), ("skipped",), "engine/ or gamedata/ absent"
+    b = subprocess.run(["make", "-s", "build/combine_probe"], cwd=eng,
+                       capture_output=True, text=True)
+    binp = os.path.join(eng, "build", "combine_probe")
+    if b.returncode != 0 or not os.path.exists(binp):
+        return ("build failed",), ("built",), "engine/ must build"
+    r = subprocess.run([binp, data, tbl], capture_output=True, text=True,
+                       errors="replace")
+    got = [ln.split() for ln in r.stdout.strip().splitlines()]
+    want = [
+        "gates spell_item 330 recipes 11 gate0=5 gate8=6 gate1=0".split(),
+        "combine 18 + 7 gate 0 -> 33 (want 33)".split(),
+        "refused 18 + 7 gate 1 -> -1 (a combine begun with object 330 can "
+        "never fire)".split(),
+        # THE MODE IS NOT A ONE-WAY DOOR. `sub_49B8A0`, the verb panel's leave
+        # hook, ends with `if (dword_670BE0) { dword_670BE0 = 0; 670BE4 =
+        # 670BE8 = 670BEC = -1; }` - leaving the panel CANCELS an open
+        # combine. Without it `combining` never clears, and because it lives
+        # in the same static record as the selections it survives closing the
+        # device, so every later row confirm feeds the dead mode instead of
+        # opening the verbs: the verb bar becomes permanently unreachable.
+        # A player hit that within minutes of the mode landing.
+        "mode before 0 opened 1 after_leaving 0".split(),
+    ]
+    return got, want, \
+        "the spell item GLOBAL +64 names (330) and the recipe gate " \
+        "histogram - five at 0, six at 8, and ZERO at 1, which is what makes " \
+        "both arms of the table unreachable in their own way; then a real " \
+        "gate-0 recipe applied through the mode (18 + 7 -> 33), and the same " \
+        "pair at gate 1 answering -1"
+
+
+def c_engine_row_window():
+    r"""THE SNEAK'S ROW WINDOW - `sub_42AFF0`, and the tenth object.
+
+    The nine row widgets of list `0x004DE6F0` are a WINDOW onto a list that
+    may be longer, and two functions move it:
+
+    **`sub_42AAE0(list, window)`** binds them, and its second argument is the
+    WINDOW, not a count - which is the thing the port had wrong. For each
+    widget `k`: if `k + window >= list+24` the tag `item+0x3C` goes to -1 and
+    `0x40000001` / `0x20000004` mark it not-drawn and not-selectable;
+    otherwise the tag is `k + window` and both are cleared.
+
+    **`sub_42AFF0`** is `Ui_MoveSelection` over that window, and it is a
+    CENTRED rule - the cursor moves until it reaches the middle widget and
+    then the window moves under it instead:
+
+        half = widgets / 2
+        UP  : base > 0 && sel <= half  ->  bindRows(list, count, base - 1)
+              else if (sel_item+0x3C >  base)       --sel
+        DOWN: lastBound != count-1 && sel >= half   ->  bindRows(.., base + 1)
+              else if (sel_item+0x3C <  lastBound)  ++sel
+
+    It also marks the first and last widget with `0x100000` / `0x200000` -
+    "more above" and "more below" - gated on the list being longer than the
+    widgets AND on where the selection sits, and raises **event 30** with the
+    selected row's tag on any successful move (`sub_4083F0(0x1E, &tag)`,
+    guarded on the tag not being -1), which is the inventory channel's
+    3D-preview load. The preview follows the cursor because the MOVER fires
+    it.
+
+    The window was hardcoded 0 until 2026-09-04, so a list longer than its
+    nine widgets was TRUNCATED rather than scrolled: carry ten things and the
+    tenth could not be reached at all - a device lying to the player about
+    what he holds. Twelve rows in nine widgets is the case that shows it.
+
+    Asserted: the widget count and the window's start; that driving DOWN
+    reaches row **11 of 11** (it reached 8 before) with the window at **3** -
+    which is 12 - 9, the only place it can rest - and the top mark set and
+    the bottom mark clear, because at the end of the list there is more above
+    and nothing below; and that driving UP the same number of times returns
+    to row 0 with the window back at 0, which is the transition test a
+    still frame cannot give (CLAUDE.md 1, "a value verified standing still is
+    not verified moving").
+    """
+    import subprocess
+    eng = os.path.join(ROOT, "engine")
+    tbl = os.path.join(ROOT, "tables")
+    if not (os.path.isdir(eng) and os.path.isdir(tbl)):
+        return ("skipped",), ("skipped",), "engine/ or tables/ absent"
+    b = subprocess.run(["make", "-s", "build/row_window"], cwd=eng,
+                       capture_output=True, text=True)
+    binp = os.path.join(eng, "build", "row_window")
+    if b.returncode != 0 or not os.path.exists(binp):
+        return ("build failed",), ("built",), "engine/ must build"
+    r = subprocess.run([binp, tbl], capture_output=True, text=True,
+                       errors="replace")
+    got = [ln.split() for ln in r.stdout.strip().splitlines()]
+    want = [
+        "widgets 9 window 0 count 12".split(),
+        "walk down reached row 11 of 11, window 3, top_mark 1 "
+        "bot_mark 0".split(),
+        "walk up returned to row 0, window 0".split(),
+    ]
+    return got, want, \
+        "nine row widgets over a twelve-row list: driving DOWN reaches the " \
+        "LAST row (11 of 11) with the window resting at 3 = 12 - 9, the " \
+        "top scroll mark set and the bottom one clear; and driving UP the " \
+        "same number of times returns to row 0 with the window back at 0. " \
+        "With the window hardcoded 0 - what the port did until 2026-09-04 - " \
+        "the walk stops at row 8 and the tenth carried object is unreachable"
+
+
 def c_engine_used_object():
     r"""USING AN INVENTORY OBJECT ON THE WORLD - `Utiliser` reaching a zone.
 
@@ -4742,6 +4991,20 @@ def c_engine_used_object():
         # unchanged, which is what a player asked about.
         "take object 173 kind 15 took 1 carried 2 -> 3 front 173 "
         "held_after -1".split(),
+        # ...and WHICH ARM of `Inventory_Insert` each object takes, which a
+        # count alone cannot tell apart - a merge and a full list both leave
+        # it unchanged, and only one of those is correct. Read in full after
+        # a player took the rings and they stuck in his hand:
+        #   kind 12/13 SKIP the ladder - `Object_ApplyEffect` and consumed,
+        #     no row, and the object IS still freed from the world
+        #   kinds 2..11 merge only if a row of a related kind is already
+        #     there; with none they return 1 and DO earn a row
+        #   everything else gets a row
+        # The first reading refused all of 2..13 and left them in the hand,
+        # which is both halves wrong. `held 0 -> -1` on the rings is the bug
+        # itself: the world half runs on every arm but `Full`.
+        "insert arm object 173 kind 15 -> row, held 8 -> -1".split(),
+        "insert arm object 162 kind 13 -> consumed, held 0 -> -1".split(),
         "probe area 229 activates 4 ask75 2 silent 2 zones 3887 3889".split(),
         "used arm empty zone 3887 var13 -1 goto237 no voice 170".split(),
         "used arm key zone 3887 var13 6 goto237 yes voice -1".split(),
@@ -19012,7 +19275,7 @@ def c_licence_headers():
                    if TAG in open(p, encoding="utf-8",
                                   errors="replace").read(600)]
     return (authored, sorted(missing), len(vendored), mislabelled), \
-           (330, [], 1, []), \
+           (332, [], 1, []), \
            "authored source files under tools/, engine/src, engine/tools, " \
            "engine/backends and scripts/; those MISSING the SPDX tag; " \
            "vendored files in engine/third_party; and vendored files wrongly " \
@@ -20420,6 +20683,9 @@ SLOW = [
     ("engine: head look", c_engine_head_look, "STREET_LIFE; actor/pose.h"),
     ("engine: zone pump",  c_engine_zone_pump,  "engine/README"),
     ("engine: used object", c_engine_used_object, "engine/README"),
+    ("engine: row window", c_engine_row_window, "docs/UI"),
+    ("sneak memory page", c_sneak_memory_page, "docs/UI"),
+    ("engine: combine", c_engine_combine, "docs/UI"),
     ("engine: zone registry", c_engine_zone_registry, "engine/README"),
     ("engine: voice over", c_engine_voice_over, "CUTSCENES 5; engine/README"),
     ("engine: world ops",  c_engine_world_ops,  "script/hooks.h; SCRIPT_VM; GAME_STATE"),
