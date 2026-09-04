@@ -195,6 +195,20 @@ here, and is the reading I would test first — or the displacement reaches the
 actor by a path not yet found. Settling this is the next real piece of
 reverse-engineering, and it may simplify everything above.
 
+## The take CAMERA (2026-09-04, wired, unseen)
+
+`MDGETOBJ` → `Camera_Request(1)` with the player as both subjects and a
+30-frame travel; preset 1 puts the eye 62 cm to his side, 75 cm above the
+pelvis and 12 cm back, looking 12 cm up and 50 cm ahead. `MDPUTSNK` and
+`MDLETOBJ` → mode 16, the swap back over 30 frames, if the mode-1 block is
+live. `play.cpp` resolves preset 1 through `PlayerController::resolveOffsets`
+(the follow camera's own math, no lag - the preset's divisors are 0) and
+blends linearly from the last drawn camera, the editings' rule. **Nobody has
+seen it**: whether the side view reads right, and whether the strip should be
+letterboxed (left full-frame, nothing read ties the strip to mode 1), are for
+the next person at the screen. The take's SOUND and the arm particle (the
+`.CTL` entry's effect records) stay unplayed.
+
 ## Suggested order for whoever picks this up
 
 1. ~~Play the current build and answer §"NOT confirmed" 1~~ — done 2026-09-04,

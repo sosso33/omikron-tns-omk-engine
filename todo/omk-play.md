@@ -1132,8 +1132,14 @@ channel and the pose path), not in `play.cpp`. A check for it should count
 DISTINCT ENTRIES per press or assert the four offsets for a known geometry -
 never sample a clip name, which is what made the first two traces useless.
 
-**Still open in 69**: the camera (`Camera_Request` is still never called on a
-take) and the sound. The reader's full description of the target:
+**Still open in 69**: ~~the camera~~ (WIRED 2026-09-04 on branch
+`take-height`, unseen: `MDGETOBJ` requests mode 1 - preset 1, a 30-frame
+travel from what was on screen - and `MDPUTSNK`/`MDLETOBJ` request mode 16,
+the swap back, gated on the mode-1 block being live as the handlers gate it on
+`C+12 == 1`; `MDNOTAKE` swaps nothing, the cancel returning through the
+put-back's MDLETOBJ. Read from the raw listing, since none of the four
+handlers has a proc label and `asmfn.py` snaps to `MDLETOBJ` for all of
+them) and the sound. The reader's full description of the target:
 *"when taking a object, there is sound and a camera move; when validating,
 another sound, a particle effect on the arm and the camera return to its normal
 position."*

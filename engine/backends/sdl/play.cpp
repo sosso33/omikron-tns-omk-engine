@@ -1845,6 +1845,33 @@ int main(int argc, char** argv) {
     int   editingShown = -1;                  // the announced editing's program
     bool  haveLastDrawn = false;              // a 3D camera has been drawn
     float lastEye[3] = {0, 0, 0}, lastAt[3] = {0, 0, 0}, lastFov = 75.0f;
+    // omk-play 69: THE TAKE CAMERA. `MDGETOBJ` (0x0046B380, no proc label -
+    // read from the raw listing) fills the request block with the player as
+    // both subjects, a 30-frame travel (`dword_930818 = 30.0`) and calls
+    // `Camera_Request(1)`; mode 1 loads preset 1 of the table at 0x004C20C8
+    // (tables/camera_presets.json, `verify.py: camera presets`). `MDPUTSNK`
+    // (0x0046B4B0) and `MDLETOBJ` (0x0046B460) call mode 16 - the swap back
+    // with nothing loaded, 30 frames too - gated on `C+12 == 1`, the live
+    // block being the mode-1 camera. `MDNOTAKE` swaps nothing: a cancel goes
+    // through the put-back to MDLETOBJ. So the side view holds from the
+    // hand-over until the object is banked or set down, on either path.
+    bool  takeCam = false;            // `C+12 == 1`: the mode-1 camera is live
+    int   takeCamPhase = 0;           // 1 travelling in, 2 holding, 3 travelling back
+    float takeCamClock = 0.0f;        // frames since the request
+    float takeCamFromEye[3] = {0, 0, 0}, takeCamFromAt[3] = {0, 0, 0}, takeCamFromFov = 75.0f;
+    // preset 1: 62 cm to his side, 75 cm above the pelvis, 12 cm back, looking
+    // 12 cm up and 50 cm ahead of him. In the mode-0 convention the follow
+    // camera uses (`point = subject - R(yaw) * offset`, mode 0 = 3 m behind).
+    constexpr float kTakeCamEye[3] = {24.4094f, 29.5276f, -4.7244f};
+    constexpr float kTakeCamAt[3]  = {0.0f, 4.7244f, 19.685f};
+    constexpr float kTakeCamFov    = 75.0f;
+    constexpr float kTakeCamTravel = 30.0f;
+    auto takeCamRequest = [&](int phase) {
+        takeCamPhase = phase;
+        takeCamClock = 0.0f;
+        for (int k = 0; k < 3; ++k) { takeCamFromEye[k] = lastEye[k]; takeCamFromAt[k] = lastAt[k]; }
+        takeCamFromFov = lastFov;
+    };
     float lastRoll = 0.0f;              // the camera ROLL, blended like the fov
     bool  editFromKnown = false;              // ...and it was captured for the travel
     float editFromEye[3] = {0, 0, 0}, editFromAt[3] = {0, 0, 0}, editFromFov = 75.0f;
@@ -3919,8 +3946,21 @@ int main(int argc, char** argv) {
                             mediaTextFrames = mediaText.empty() ? 0 : 90;
                             std::printf("take: MDGETOBJ - holding %d '%s'\n",
                                         takeCandidate, mediaText.c_str());
+                            // `Camera_Request(1, dword_930800)`: the take
+                            // camera, travelling 30 frames from what is on
+                            // screen (`sub_414A90` keeps the outgoing block as
+                            // g_CameraPrev, request+24 = 30 the frames).
+                            takeCam = true;
+                            takeCamRequest(1);
+                            std::printf("take: camera mode 1 requested - preset 1 over 30 frames\n");
                         }
                     } else if (mv == "MDPUTSNK") {
+                        // `if (C+12 == 1) Camera_Request(16)`: back to the
+                        // camera the take displaced, 30 frames.
+                        if (takeCam) {
+                            takeCamRequest(3);
+                            std::printf("take: camera mode 16 requested - back to the follow camera over 30 frames\n");
+                        }
                         const int was = static_cast<int>(
                             omk::objectList(state, omk::ObjectList::Carried).size());
                         const auto arm = session.bankHeldObject(takeCandidate);
@@ -3953,6 +3993,10 @@ int main(int argc, char** argv) {
                                     session.objectKind(takeCandidate), was, now, what);
                         takeCandidate = -1;
                     } else if (mv == "MDLETOBJ") {
+                        if (takeCam) {                // the same mode-16 swap
+                            takeCamRequest(3);
+                            std::printf("take: camera mode 16 requested - back to the follow camera over 30 frames\n");
+                        }
                         // The put-back matches the take's HEIGHT, the same way
                         // and from the same decision: the engine keeps
                         // `dword_53AE5C = (ret == 2) ? 3 : 0` at MDACTION and
@@ -4765,6 +4809,34 @@ int main(int argc, char** argv) {
                                 static_cast<double>(view.cam.rollDeg));
                 }
                 view.cam.w = dispW; view.cam.h = dispH;
+            } else if (!haveDlgCam && takeCam && player) {
+                // THE TAKE CAMERA (omk-play 69): mode 1's preset resolved
+                // against him every frame, travelled linearly over 30 frames
+                // from the camera that was on screen at the request - the
+                // same blend the editings use, `sub_414A90`'s setup being one
+                // mechanism for both - then held; and mode 16 travels the
+                // same 30 frames back to the follow camera and hands over.
+                // Full-frame, not letterboxed: nothing read ties the strip
+                // to this mode, and the walk it interrupts is full-frame.
+                const omk::FollowCamera tc = player->resolveOffsets(kTakeCamEye, kTakeCamAt, kTakeCamFov);
+                const omk::FollowCamera& fc = player->followCamera();
+                const omk::FollowCamera& to = takeCamPhase == 3 ? fc : tc;
+                float u = 1.0f;
+                if (takeCamPhase == 1 || takeCamPhase == 3) {
+                    takeCamClock += static_cast<float>(frameSec * 30.0);
+                    u = haveLastDrawn ? std::min(1.0f, takeCamClock / kTakeCamTravel) : 1.0f;
+                }
+                for (int k = 0; k < 3; ++k) {
+                    view.cam.eye[k] = takeCamFromEye[k] + (to.eye[k] - takeCamFromEye[k]) * u;
+                    view.cam.at[k]  = takeCamFromAt[k]  + (to.at[k]  - takeCamFromAt[k])  * u;
+                }
+                view.cam.hfovDeg = takeCamFromFov + (to.fov - takeCamFromFov) * u;
+                view.cam.rollDeg = 0.0f;
+                view.cam.w = dispW; view.cam.h = dispH;
+                if (u >= 1.0f) {
+                    if (takeCamPhase == 1) takeCamPhase = 2;
+                    else if (takeCamPhase == 3) { takeCam = false; takeCamPhase = 0; }
+                }
             } else if (!haveDlgCam && adventure && followCam) {
                 // The controller's follow camera: the world camera's offsets
                 // resolved against HIS position and facing every frame, with

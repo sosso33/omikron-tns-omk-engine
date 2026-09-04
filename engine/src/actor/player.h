@@ -309,6 +309,10 @@ public:
     // Where it settles for the current position and facing - the resolve
     // with no lag, which is what a check can pin.
     FollowCamera followCameraSteady() const;
+    // The same resolve for ANOTHER preset's offsets, against his own facing
+    // with no lag - what `Camera_Request(mode)` gives a preset whose three
+    // smoothing divisors are 0. Mode 1, the TAKE camera, is one (omk-play 69).
+    FollowCamera resolveOffsets(const float eyeOff[3], const float atOff[3], float fov) const;
 
     // --- diagnostics ---------------------------------------------------
     struct Frame {

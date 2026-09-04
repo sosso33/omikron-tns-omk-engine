@@ -833,6 +833,19 @@ void PlayerController::resolveSteady(FollowCamera& c, const float e[3]) const {
     c.fov = camFov_;
 }
 
+FollowCamera PlayerController::resolveOffsets(const float eyeOff[3], const float atOff[3],
+                                              float fov) const {
+    FollowCamera c;
+    float r[3];
+    const float sub[3] = {pos_[0], pos_[1] - camLift_, pos_[2]};
+    rotateYaw(euler_[1], eyeOff, r);
+    for (int k = 0; k < 3; ++k) c.eye[k] = sub[k] - r[k];
+    rotateYaw(euler_[1], atOff, r);
+    for (int k = 0; k < 3; ++k) c.at[k] = sub[k] - r[k];
+    c.fov = fov > 1.0f ? fov : kFollowFov;
+    return c;
+}
+
 FollowCamera PlayerController::followCameraSteady() const {
     FollowCamera c;
     resolveSteady(c, euler_);
