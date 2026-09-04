@@ -67,6 +67,35 @@ can never silence. That is "audio not stopping" without any further diagnosis
 needed, and it is the cheapest of the eleven - the mixer already has the voice
 and the bank.
 
+**GROUNDWORK FOR `Script_Display3DSprite`, and a mis-attribution caught before
+it did damage.** Searching the listing for the handler's own error strings
+("Script_Display3DSprite(): Sprite \"%s\"...") lands inside a block whose
+nearest preceding `proc` is **`sub_4A2D10`** — and `sub_4A2D10 endp` comes
+BEFORE those strings. The handler is the UNLABELLED function after it, opening
+`sub esp, 20h / push ebx / push ebp / push esi / mov esi, [esp+34h] / push edi`
+and gating on `cmp dword ptr [esi], 4000028h`, at roughly **0x004A2FB0**.
+
+That is `CLAUDE.md` 1's known trap exactly — *"a block can be the WRONG
+FUNCTION entirely"*, and *"when an address the data names has no function,
+disassemble the image at that address rather than trusting a block"*. Taking
+`sub_4A2D10` for the handler would have ported a different function's body
+under this name, and nothing downstream would have said so.
+
+What the real handler is established to do so far, from its own reads:
+
+* it refuses unless `[esi] == 0x04000028` — the family check every one of
+  these handlers opens with;
+* **param 0** is the SPRITE, resolved through `sub_4A5650(scene, id)`, and a
+  miss is the "Sprite %s not found" arm;
+* **param 1** is WHERE, and it is one of two things — `sub_44C000` tests it and
+  either a node's position is taken via `sub_446BC0` off `+178`, or it is an
+  XYZ resolved by `sub_44C020`, whose failure is the "XYZPtr is NULL" arm;
+* **params 2 and 3** are FLOATS (`sub_44C6E0`), read into the frame.
+
+Not enough to port yet — the placement, the scale and how the sprite is
+submitted are unread — but enough that the next pass starts from the right
+function, which is the part that was at risk.
+
 **Then the sprite family**, which is five of the eleven and 465 sites between
 them: `Display3DSprite`, `SetSpriteRolling`, `ScaleSpriteOnX`/`Y` and
 `fn_04_12`/`fn_04_41` cluster in the same objects. A scene that scales or rolls
