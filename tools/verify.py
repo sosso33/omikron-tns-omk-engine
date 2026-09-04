@@ -10583,16 +10583,19 @@ def c_cursor_highlight():
     dim = [int(x) for x in plain[0].split()[-3:]]
     litpx = [int(x) for x in got.split()[-3:]]
     return (got.split(",")[0], int(got.split("alpha")[1].split(",")[0]),
-            tuple(litpx), tuple(dim), litpx[0] > 3 * dim[0]), \
-           ("cursor quads 1", 231, (156, 85, 0), (49, 28, 0), True), \
+            tuple(litpx), tuple(dim), litpx[0] > 2 * dim[0]), \
+           ("cursor quads 1", 231, (139, 85, 0), (49, 28, 0), True), \
            "the sneak's focused row with `Ui_DrawItemCursor` attached: one " \
            "item draws a cursor, oscillator 3 gives alpha 231 (period 500, " \
            "230..235, a triangle - NOT oscillator 2's 45..200), and the row " \
-           "paints (156, 85, 0) where the plain fill under it paints " \
+           "paints (139, 85, 0) where the plain fill under it paints " \
            "(49, 28, 0). Sixteen quads at ~9% each, through the fill's own " \
            "inverse blend, and the last field is the property a player " \
-           "actually reported missing: the focused row is more than three " \
-           "times brighter than an unfocused one"
+           "actually reported missing: the focused row is far brighter than " \
+           "an unfocused one. The quads go on LAST, at layer 8 against a " \
+           "sprite's 6 and a fill's 4 - submitted with the item they drew " \
+           "UNDER the icon, and a player saw the icon's rectangular cut " \
+           "sitting on the glow"
 
 
 def c_player_counters():

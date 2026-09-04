@@ -104,7 +104,7 @@ int main(int argc, char** argv) {
     if (row) {
         const std::uint16_t v =
             fb.px[static_cast<std::size_t>(row->y + row->h / 2) * 640 +
-                  (row->x + row->w / 2)];
+                  (row->x + row->w - 20)];
         std::printf("row bar paints %d %d %d\n", ((v >> 11) & 31) * 255 / 31,
                     ((v >> 5) & 63) * 255 / 63, (v & 31) * 255 / 31);
 
@@ -126,9 +126,13 @@ int main(int argc, char** argv) {
             lit = omk::Surface(640, 480, 0);
             f = comp.draw(lit, omk::kScreenSneak, w2);
         }
+        // Sampled at the bar's flat RIGHT-HAND END, past the label - the
+        // same place the original's screenshots were measured, and now that
+        // the cursor draws OVER the text (layer 8 against 6) a mid-bar
+        // sample lands on a glyph.
         const std::uint16_t u =
             lit.px[static_cast<std::size_t>(row->y + row->h / 2) * 640 +
-                   (row->x + row->w / 2)];
+                   (row->x + row->w - 20)];
         std::printf("cursor quads %d, alpha %d, focused row paints %d %d %d\n",
                     f.cursorQuads, cur.alpha(), ((u >> 11) & 31) * 255 / 31,
                     ((u >> 5) & 63) * 255 / 63, (u & 31) * 255 / 31);

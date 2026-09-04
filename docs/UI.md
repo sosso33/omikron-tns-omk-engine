@@ -605,6 +605,56 @@ wearing the old page's colour — a player reported reaching the slider page
 walks RIGHT, UP, CONFIRM into panel 0x004DEDE8 and asserts its rows turn green.
 
 
+### Two panels the walker never reached — and they are the verbs and the examine page
+
+`tools/exetables.py` follows an item's `child` field, and **panels 0x004DEEB8
+and 0x004DEF20 are named from CODE, not from a `child`** — `sub_42A370(item,
+panel)` inside callbacks that carry no `proc` label. Both parse as panels and
+both sit immediately after the inventory page at the 0x68 stride:
+
+| panel | parent | builder | lists |
+|---|---|---|---|
+| 0x004DEE50 | — | 0x0049B710 | tabs, previews, verbs, rows, echo |
+| **0x004DEEB8** | 0x004DEE50 | 0x0049B810 | tabs, previews, verbs, rows, echo |
+| **0x004DEF20** | 0x004DEEB8 | 0x0049B950 | tabs, verbs, **0x004DE760**, echo |
+
+* Confirming an inventory row runs `loc_49BE7B`: `sub_42A370(item,
+  0x004DEEB8)` — it **descends into the verb panel**. Its builder
+  `sub_49B810` clears the not-selectable bit on the verbs and *sets* it on the
+  tabs, the previews and the rows, so while a verb is being chosen nothing
+  else can be reached.
+* `sub_49BFF0` (Examiner) takes the row's tag, calls `sub_42B420(tag, 4)` and
+  `sub_42A370(item, 0x004DEF20)` — the **examine page**, whose own list
+  0x004DE760 is the one a capture of the original shows the 3D model on.
+
+This is why the verbs looked reachable with no object chosen, and why Examine
+did nothing: the page it opens is not in the tree.
+
+### `sub_4290D0` — a builder enables and disables whole LISTS
+
+`sub_4290D0(list, flag, value)` sets or clears a flag on every item of a list
+at once, and `0x20000004` is the not-selectable bit. The inventory page's
+builder runs it twice — rows *selectable*, **verbs not** — so the page opens
+with "Utiliser / Utiliser sur / Examiner" visible and unreachable until a row
+is confirmed. A player reported the opposite as a fault.
+
+### A shared list's selection is LIVE
+
+Every sneak page carries the same tab column, 0x004DE210. There is ONE list
+record per address; `Ui_MoveSelection` writes its `+2` in place and nothing
+rewrites it on a panel change — only an open callback does. A port that
+re-seeds every list from its static `+2` on each panel change throws the
+column back to row 0, which a player saw as "pressing enter on an item hovers
+the first item (character)".
+
+### The cursor is layer 8, so it goes on LAST
+
+The I2D display list is sorted by layer: a fill is at the item's `+11 − 2`
+(4 for the sneak), a sprite at its `+11` (6), and `sub_4795F0` submits the
+cursor at **8**. Drawn with the item it lands *under* the icon, and a player
+saw the icon's rectangular cut sitting on the glow. The composer collects the
+quads during the walk and flushes them at the end.
+
 ### Which screens stop the world — and it is not "any screen"
 
 A player opened the sneak in Anekbah and the city froze: **19 world frames in

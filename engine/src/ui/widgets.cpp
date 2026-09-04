@@ -298,6 +298,7 @@ bool UiWalk::usable(const UiList& l) const {
     // `Ui_MoveBetweenLists`'s own predicate: not hidden, and something in it
     // can be selected.
     if (l.hidden()) return false;
+    if (listOff(l.addr)) return false;   // sub_4290D0 set 0x20000004 on it all
     for (const auto& it : l.items) if (it.selectable(l.broadcast)) return true;
     return false;
 }
@@ -317,8 +318,19 @@ void UiWalk::settle() {
     // what decides which page of the sneak comes up: without it screen 9
     // opens on the tab COLUMN with "Identite" lit, and the player is looking
     // at the inventory page with the highlight somewhere else.
+    // **A LIST IS SHARED, AND ITS SELECTION IS LIVE.** `sel_` used to be
+    // cleared here, so every panel change re-seeded every list from its
+    // static `+2` - and the sneak's pages all carry the same tab column
+    // (0x004DE210), so confirming a tab threw the column's selection back to
+    // whatever that page's record happened to say. A player saw it as
+    // "pressing enter on an item hovers the first item (character)".
+    //
+    // The engine has ONE list record per address; `Ui_DrawList` and
+    // `Ui_MoveSelection` read and write its `+2` in place, and nothing
+    // rewrites it on a panel change - only an OPEN CALLBACK does, which is
+    // the `select` the tree carries. So a list already walked keeps what it
+    // has, and only lists this walk has not seen yet are seeded.
     cur_ = 0;
-    sel_.clear();
     if (!panel_) return;
     if (panel_->current >= 0 &&
         static_cast<std::size_t>(panel_->current) < panel_->lists.size()) {
@@ -336,7 +348,7 @@ void UiWalk::settle() {
             for (std::size_t i = 0; i < l.items.size(); ++i)
                 if (l.items[i].selectable(l.broadcast)) { j = static_cast<int>(i); break; }
         }
-        sel_[l.addr] = j;
+        sel_.emplace(l.addr, j);      // keeps a live selection, seeds a new one
     }
 }
 
@@ -400,6 +412,21 @@ void UiWalk::colourList(std::uint32_t list, int r, int g, int b) {
 void UiWalk::buildPage(const UiPanel& p) {
     colour_.clear();
     off_.clear();
+    offList_.clear();
+    // `sub_4290D0(list, 0x20000004, value)` - the not-selectable bit over a
+    // WHOLE list. The inventory page's builder (0x0049B710) runs it twice:
+    //
+    //     sub_4290D0(0x004DE6F0, 0x20000004, 0)   the rows,  selectable
+    //     sub_4290D0(0x004DE318, 0x20000004, 1)   the verbs, NOT
+    //
+    // so the page opens with the verb bar visible and unreachable. What
+    // enables it is confirming a row, which descends into panel 0x004DEEB8 -
+    // whose own builder 0x0049B810 clears the bit on the verbs and SETS it
+    // on the tabs, the previews and the rows. That panel is not in the tree
+    // yet (nothing names it through an item `child`; `sub_42A370` names it
+    // from code), so the descent is not modelled - but the disable is, and
+    // without it the verbs are reachable with no object chosen.
+    if (p.addr == kPanelSneakInventory) offList_.insert(kListSneakVerbs);
     // THE SLIDER PAGE'S TWO-STATE HEADER, and a builder doing more than
     // colour. `0x0049D170` opens with `cmp [arg0+4], 1` and both arms are
     // `sub_428FF0` calls on three items of list 0x004DEA08:

@@ -377,6 +377,16 @@ public:
     // "Automatique", both at 187,30) and shows exactly one of them.
     bool itemOff(std::uint32_t addr) const { return off_.count(addr) != 0; }
 
+    // Lists a builder made NOT SELECTABLE - `sub_4290D0(list, 0x20000004, 1)`,
+    // which sets the bit on every item of the list at once.
+    //
+    // The inventory page's builder (0x0049B710) does this to the VERB list
+    // 0x004DE318 and clears it on the rows, so "Utiliser / Utiliser sur /
+    // Examiner" cannot be reached until a row has been confirmed - which a
+    // player reported as an issue: "the Utiliser bar is not usable without
+    // having pressed enter on an inventory item before".
+    bool listOff(std::uint32_t addr) const { return offList_.count(addr) != 0; }
+
 private:
     void settle();
     // `sub_4296B0` and `sub_4296D0`, and the panel `+4` builder that calls
@@ -423,6 +433,7 @@ private:
     // Item address -> the RGB a page builder wrote into `+8/+9/+10`.
     std::map<std::uint32_t, std::array<int, 3>> colour_;
     std::set<std::uint32_t> off_;   // what a builder switched off
+    std::set<std::uint32_t> offList_;  // lists a builder made unselectable
 };
 
 // The start menu's "Charger une partie" panel.

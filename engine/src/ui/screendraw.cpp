@@ -120,6 +120,8 @@ ScreenFrame ScreenComposer::draw(Surface& fb, int screenId,
     ScreenFrame out;
     const UiPanel* p = w_->screen(screenId);
     if (!p) return out;
+    // The cursor's quads, held back to layer 8 (see the collect below).
+    std::vector<UiCursor::Quad> cursorLate;
 
     // The animated background goes down FIRST, and the screen's sheet is
     // colour-keyed over it.
@@ -321,15 +323,22 @@ ScreenFrame ScreenComposer::draw(Surface& fb, int screenId,
             // which is the row the player is standing on. A player reported
             // "the hovering effect is absent so it is very difficult to know
             // where I am"; this is that effect.
+            // DEFERRED, because the I2D display list is sorted by LAYER
+            // and the cursor's is 8 while a sprite's is the item's own 6 and
+            // a fill's is `+11 - 2` = 4. Submitting it here drew it UNDER the
+            // icon, and a player saw exactly that: "you put the effect
+            // between the background and the selected image so we can
+            // clearly see that a cut image of the icon is there". Collected
+            // now and drawn after the whole walk, which is what a sort by
+            // layer does with one cursor on screen.
             if (cursor_ && (eff0[1] & 0x200) && isSel && isFocus) {
                 const int cx = scaleX(it.x + q->offsetX + it.w / 2);
                 const int cy = scaleY(it.y + q->offsetY + it.h / 2);
                 int hr = rgb[0], hg = rgb[1], hb = rgb[2];
                 if (eff0[1] & 0x02000000) { hr = 255; hg = 50; hb = 50; }
-                for (const auto& c : cursor_->tick(it.addr, cx, cy,
-                                                   scaleX(it.w), scaleY(it.h),
-                                                   hr, hg, hb, deltaMs_))
-                    fillQuad(fb, c.x0, c.y0, c.x1, c.y1, c.r, c.g, c.b, c.alpha);
+                cursorLate = cursor_->tick(it.addr, cx, cy,
+                                           scaleX(it.w), scaleY(it.h),
+                                           hr, hg, hb, deltaMs_);
                 ++out.cursorQuads;
             }
             if (eff0[1] & 0x10) {
@@ -483,6 +492,10 @@ ScreenFrame ScreenComposer::draw(Surface& fb, int screenId,
         h = (h ^ (px >> 8)) * 16777619u;
     }
     out.hash = h;
+    // ...and now layer 8, over everything the walk drew at 4 and 6.
+    for (const auto& c : cursorLate)
+        fillQuad(fb, c.x0, c.y0, c.x1, c.y1, c.r, c.g, c.b, c.alpha);
+
     return out;
 }
 
