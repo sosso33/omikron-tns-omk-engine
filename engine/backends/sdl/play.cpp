@@ -1672,6 +1672,8 @@ int main(int argc, char** argv) {
     // the sneak, once the PLAYER has.
     std::unique_ptr<omk::UiWalk> walk;
     int openScreen = -1, conversations = 0, lastArea = -1;
+    constexpr int kScreenPause = 31;   // PAUSE GAME - the only screen that
+                                       // sets dword_4E9728, the pause flag
     omk::UiCursor uiCursor;   // Ui_DrawItemCursor's one pool (dword_6A4D20)
     // WHO asked for the open screen, because the two ends differ. `ui.open`
     // parks its caller at status 6 and every close path posts event 5 with
@@ -3392,8 +3394,32 @@ int main(int argc, char** argv) {
                                 playerModel.c_str(), playerCtlName.c_str(), worldSet.c_str());
                 }
             }
-            adventure = player && !playerDriven && !session.dialogOpen() && !walk &&
-                        !sc.activeEditing();
+            // WHICH SCREENS STOP THE WORLD, and it is not "any screen".
+            //
+            // This used to read `!walk` - a screen open, of any kind - and a
+            // player found it by opening the sneak in Anekbah and watching
+            // the city freeze: 19 world frames in 1924. The engine does not
+            // do that. `Game_Tick` (0x004200F0) runs `Script_SetFrameTime`,
+            // the per-slot `Script_PlayAllScripts` loop, `Projectiles_Tick`,
+            // `Sliders_Tick` and `Slider_TickRide` with NO test for an open
+            // screen anywhere in it - the block at its head that looks like
+            // one is the start menu's ATTRACT-MODE timeout (screen 29 idle
+            // past 1800 units -> `FLIS\GAME.mpg` -> `Game_Start`).
+            //
+            // The only thing that stops the world is the pause flag
+            // `dword_4E9728`, and it has exactly TWO writes in the whole
+            // image: screen 31 PAUSE GAME's open callback (0x004ADDB0) sets
+            // it and its close (0x004ADEB0) clears it. It works by forcing
+            // the frame delta to 0.0, which is why `Slider_TickRide` sits
+            // behind `flt_4C30D8 != 0.0` two lines below it in `Game_Tick`.
+            //
+            // This also REFUTES a banner: `readable/src/05_sys.c` says of
+            // `Game_Tick` that "a playing FLIS or interface screen
+            // short-circuits the world tick". It does not, and that reading
+            // was `NAMED` - read and named, never tested.
+            const bool uiPause = walk && openScreen == kScreenPause;
+            adventure = player && !playerDriven && !session.dialogOpen() &&
+                        !uiPause && !sc.activeEditing();
             if (adventure) {
                 // The follow camera is the world camera the script named -
                 // SCENE 55's camera 0 carries its own offsets and travels
@@ -4283,7 +4309,11 @@ int main(int argc, char** argv) {
         }
         const bool anyWorld = !worldSlots[0].geo.corners.empty() ||
                               !worldSlots[1].geo.corners.empty();
-        const bool drawWorld = !walk && worldReady && anyWorld &&
+        // ...and the same for DRAWING it: the screen composes over the
+        // world afterwards, and every sneak page's background is an opaque
+        // tile map, so nothing shows through that should not.
+        const bool drawWorld = !(walk && openScreen == kScreenPause) &&
+                               worldReady && anyWorld &&
                                (haveDlgCam || haveEdit ||
                                 (wc && (wc->absolute() || haveRelCam)));
         if (drawWorld) {

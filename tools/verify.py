@@ -5438,6 +5438,13 @@ def c_engine_screen_close():
            "and SDL was found"
 
 
+def _sneak_ticks(o):
+    """The player's tick count out of `omk-play`'s closing `player:` line."""
+    import re as _re
+    m = _re.search(r"^player:.*over (\d+) ticks", o, _re.M)
+    return int(m.group(1)) if m else 0
+
+
 def c_engine_sneak():
     r"""`omk-play`: TAB in a city street opens the sneak, and the game runs on.
 
@@ -5487,14 +5494,27 @@ def c_engine_sneak():
             "event 25 opens object list 0, screen 9" in o,
             "screen 9 opened by the player" in o,
             "sneak: object list 0 holds" in o,
-            "260 frames presented" in o), \
-           (True, True, True, True, True), \
+            "260 frames presented" in o,
+            "world: 260 frames drawn" in o,
+            # ...and the TICK, which is the half that actually froze: the
+            # draw gate and the `adventure` gate are separate lines, and a
+            # mutation of one alone left this check green.
+            _sneak_ticks(o) > 200), \
+           (True, True, True, True, True, True, True), \
            "TAB held in Anekbah: the special move fires and names its " \
            "tab_special_move row, it raises event 25 for object list 0 and " \
            "opens screen 9, the screen is attributed to the PLAYER rather " \
            "than to a script (so closing it answers nobody), the inventory " \
-           "page is filled from the save's carried list, and all 260 frames " \
-           "are presented - the world keeps running underneath"
+           "page is filled from the save's carried list, all 260 frames are " \
+           "presented - AND ALL 260 DREW THE WORLD, which this said in prose " \
+           "and did not check until 2026-09-04, when a player opened the " \
+           "sneak in Anekbah and watched the city freeze (19 world frames of " \
+           "1924). `Game_Tick` has no test for an open screen; the only " \
+           "thing that stops the world is `dword_4E9728`, whose two writes " \
+           "in the whole image are screen 31 PAUSE GAME's open and close. " \
+           "The last field is the player's TICK count, because the draw gate " \
+           "and the adventure gate are separate lines and mutating one alone " \
+           "left this check green"
 
 
 def c_engine_fx():

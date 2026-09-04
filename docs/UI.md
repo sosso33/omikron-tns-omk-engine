@@ -605,6 +605,36 @@ wearing the old page's colour — a player reported reaching the slider page
 walks RIGHT, UP, CONFIRM into panel 0x004DEDE8 and asserts its rows turn green.
 
 
+### Which screens stop the world — and it is not "any screen"
+
+A player opened the sneak in Anekbah and the city froze: **19 world frames in
+1924**. `omk-play` gated both its `adventure` tick and its world draw on "a
+screen is open", and the engine does not do that.
+
+`Game_Tick` (0x004200F0) runs `Script_SetFrameTime`, the per-slot
+`Script_PlayAllScripts` loop, `Projectiles_Tick`, `Sliders_Tick` and
+`Slider_TickRide` with **no test for an open screen anywhere in it**. The
+block at its head that looks like one is the start menu's **attract-mode
+timeout**: screen 29 idle past 1800 units plays `FLIS\GAME.mpg` and calls
+`Game_Start("aventure.scx")` again.
+
+The only thing that stops the world is the pause flag `dword_4E9728`, and it
+has exactly **two writes in the whole image** — screen 31 PAUSE GAME's open
+callback (0x004ADDB0) sets it, its close (0x004ADEB0) clears it. It works by
+forcing the frame delta to 0.0, which is why `Slider_TickRide` sits behind
+`flt_4C30D8 != 0.0` two lines below it (`docs/BOOT.md` §4).
+
+**This refutes a banner.** `readable/src/05_sys.c` says of `Game_Tick` that
+"a playing FLIS or interface screen short-circuits the world tick". It does
+not. The banner is `NAMED` — read and named from evidence, body left as
+generated — and nothing had tested it.
+
+`verify.py: engine: sneak` now asserts that all 260 frames drew the world
+**and** that the player ticked, which its prose had claimed since it was
+written without checking either. Both halves are needed: the draw gate and the
+`adventure` gate are separate lines, and mutating one alone left the check
+green.
+
 ### The device's nine rows are SHARED, and one global picks their source
 
 A play report of 2026-09-04: the slider page came up with "a full list of

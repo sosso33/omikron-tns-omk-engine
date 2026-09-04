@@ -42,7 +42,7 @@ names both halves precisely:
 where it previously answered `-2` (`verify.py: engine tunnel doors`), and
 neither the unload order nor the collision was touched.
 
-### 74. The action button fires EVERY FRAME while held: a 0.2 s press is six presses — B
+### 74. Every press bit is read as a LEVEL: a 0.2 s press is six presses, in the world AND in a conversation — B
 
 Filed 2026-09-04. The reader: *"In adventure mode when pressing enter, it is
 captured almost each frame as on entry so maintaining the key 0.2 seconds
@@ -82,6 +82,56 @@ cutscene, a screen — cannot leave the latch stale and manufacture a press on
 the way back. **No check**: the viewer is an instrument, the rule is one
 `bool`, and a reader judges it in one keystroke (CLAUDE.md 5). The finding
 about event 6 is the part worth keeping, and it is here.
+
+**AND THE CONVERSATION MENU, the same day and the same cause.** The reader,
+mid-test: *"I am speaking to someone on a bench in adventure mode and I have
+this problem with enter and with directional keys to select an answer."* The
+dialogue block read `bits` as a level for all three of confirm, up and down, so
+one press answered several times over and one tap ran the selection round the
+list.
+
+**What the engine hands the dialogue, and why it settles the question.**
+`Game_Frame` (0x0041D9E0) keeps TWO words:
+
+    Input_Poll(&dword_4E9718, 0);                                  /* raw held */
+    v2 = dword_4E9718 & (dword_4E9718 ^ dword_4E9720 & dword_4E9724);
+    dword_4E9724 = dword_4E9718;                                   /* last     */
+    dword_4E971C = v2;                                             /* EDGES    */
+    dword_90E0E0 = 0;
+
+`dword_4E971C` is `held & (held ^ (mask & last))`, which is
+`engine/src/input/bindings.cpp:136` byte for byte — so a set mask bit means
+EDGE-filtered and a clear one means level, and the world's mask of 0 is why a
+walk is a walk.
+
+The dialogue gets neither of those. It gets **`dword_90E0E0`**, zeroed there
+every frame and rebuilt by a family of label-less one-bit callbacks at
+0x0042B8F0 (`mov eax, dword_90E0E0 / or al, N / mov dword_90E0E0, eax / retn`,
+eleven of them) — table entries nothing calls directly, which is why they have
+no `proc` label and are absent from `Runtime.exe.c`: CLAUDE.md 1's trap,
+working exactly as described.
+
+**The decisive line is the call site**, `Actors_TickAll`'s dispatch:
+
+    case 2: Dialog_TickUI(2, dword_90E0E0 | dword_4E9718 & 0xC); break;
+    case 4: Dialog_TickUI(4, dword_90E0E0); break;
+    case 5: Dialog_TickUI(5, dword_90E0E0); break;
+
+The RAW word is spliced in **by name, for exactly two bits**, and 0xC is bits 2
+and 3 — the pair that elsewhere nudge a camera by `flt_4C30D8 * 6.0` per frame
+(`dword_4E9718 & 4` / `& 8` at 21_d3d.c:4480). Splicing the raw word in for
+those two is only meaningful if `dword_90E0E0` is NOT raw. So the confirm and
+the menu steps are EDGES and the two camera bits are the exception the engine
+had to write out longhand — which is also the only reading under which the
+menu is usable.
+
+The port now takes one `edgeBits = bits & ~prevBits` beside `in.frame(st)` —
+`dword_4E971C` with every bit masked — and the action, the dialogue confirm and
+the dialogue up/down all read it. `bits` stays the level for the walk.
+
+**Confirmed in play** (Anekbah street start, 2026-09-04): 16 action presses
+over a session, none of them on consecutive frames, and fourteen conversation
+menus stepped and answered.
 
 
 ### 73. Scene sounds are played FLAT: `Script_PlaySound` is 3D in the engine — A
