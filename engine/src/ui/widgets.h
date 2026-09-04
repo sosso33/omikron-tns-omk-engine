@@ -326,6 +326,24 @@ private:
 // and asked to have made faithful instead.
 struct UiListState {
     std::map<std::uint32_t, int> sel;   // list address -> selected index
+    // ...and the ITEM and LIST record fields a page builder writes, which are
+    // static records for the same reason and persist exactly as long.
+    //
+    // `sub_4296D0` writes `+8/+9/+10` over a list and `sub_4296B0` over one
+    // item; `sub_4290D0` writes a flag over a list and `sub_428FF0` over one
+    // item. NOTHING resets any of them - a builder that wants a flag cleared
+    // clears it explicitly, which is why `sub_49B810` and its leave
+    // `sub_49B8A0` are exact mirrors.
+    //
+    // Clearing these on a panel change is what made the device lose its amber
+    // the moment an object was chosen: the verb panel has no colour of its
+    // own to write, so the inventory page's colour must simply still be
+    // there. A player saw "an empty placeholder list with wrong colours" -
+    // the (255, 0, 0) records, unwritten.
+    std::map<std::uint32_t, std::array<int, 3>> colour;
+    std::set<std::uint32_t> itemOff;    // 0x40000001 / 0x20000004 on an item
+    std::set<std::uint32_t> listOff;    // ...the same over a whole list
+    std::map<std::uint32_t, int> bound; // list -> how many rows it holds
 };
 
 // One open screen, driven by input words.
@@ -407,9 +425,10 @@ public:
     // item: the slider, memory and options builders all blacken 0x004DEC08
     // (the clock) after colouring the list it belongs to, and the inventory
     // builder does not.
+    std::size_t colourCount() const { return state_->colour.size(); }
     const int* itemColour(std::uint32_t addr) const {
-        const auto it = colour_.find(addr);
-        return it == colour_.end() ? nullptr : it->second.data();
+        const auto it = state_->colour.find(addr);
+        return it == state_->colour.end() ? nullptr : it->second.data();
     }
 
     // Items a page BUILDER switched off - `sub_428FF0(item, 0x40000001, 1)`
@@ -417,7 +436,7 @@ public:
     // A builder does more than colour: the slider page's carries two labels
     // at the SAME coordinate (0x004DE920 "Appel du slider" and 0x004DE968
     // "Automatique", both at 187,30) and shows exactly one of them.
-    bool itemOff(std::uint32_t addr) const { return off_.count(addr) != 0; }
+    bool itemOff(std::uint32_t addr) const { return state_->itemOff.count(addr) != 0; }
 
     // Lists a builder made NOT SELECTABLE - `sub_4290D0(list, 0x20000004, 1)`,
     // which sets the bit on every item of the list at once.
@@ -427,7 +446,7 @@ public:
     // Examiner" cannot be reached until a row has been confirmed - which a
     // player reported as an issue: "the Utiliser bar is not usable without
     // having pressed enter on an inventory item before".
-    bool listOff(std::uint32_t addr) const { return offList_.count(addr) != 0; }
+    bool listOff(std::uint32_t addr) const { return state_->listOff.count(addr) != 0; }
 
     // `sub_42AAE0` - THE ROW BINDER, and it sets TWO flags, not one.
     //
@@ -452,8 +471,8 @@ public:
     // How many things the last `bindRows` said that list holds, so the
     // row hook can tell a windowed list from one that fits.
     int  boundCount(std::uint32_t list) const {
-        const auto it = bound_.find(list);
-        return it == bound_.end() ? 0 : it->second;
+        const auto it = state_->bound.find(list);
+        return it == state_->bound.end() ? 0 : it->second;
     }
 
 private:
@@ -467,6 +486,11 @@ private:
     void colourItem(std::uint32_t item, int r, int g, int b);
     void colourList(std::uint32_t list, int r, int g, int b);
     void buildPage(const UiPanel& p);
+    // The panel's `+8`, run on the way OUT - `sub_42A370` calls the old
+    // panel's before the new panel's `+4`.
+    void leavePage(const UiPanel& p);
+    // `sub_4290D0(list, 0x20000004, value)` and its item form.
+    void setListOff(std::uint32_t list, bool off);
     // `sub_42A7E0` - the selection mover, whose two direction bits are
     // parameters: the default dispatch passes UP/DOWN, `sub_42A930`
     // passes LEFT/RIGHT.
@@ -505,6 +529,8 @@ private:
     const UiWidgets* w_;
     const UiPanel*   panel_ = nullptr;
     int  cur_ = 0;
+    // What a page builder wrote into `panel+24`, consumed by `settle`.
+    int  curFromBuilder_ = -1;
     // The selections live in `state_`, which points at `own_` unless a
     // caller attached one - see `UiListState`.
     UiListState  own_;
@@ -516,10 +542,6 @@ private:
     std::string name_;
     std::vector<std::string> log_;
     // Item address -> the RGB a page builder wrote into `+8/+9/+10`.
-    std::map<std::uint32_t, std::array<int, 3>> colour_;
-    std::set<std::uint32_t> off_;   // what a builder switched off
-    std::set<std::uint32_t> offList_;  // lists a builder made unselectable
-    std::map<std::uint32_t, int> bound_;  // list -> how many rows it holds
 };
 
 // The start menu's "Charger une partie" panel.

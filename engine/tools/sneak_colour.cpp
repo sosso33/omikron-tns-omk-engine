@@ -166,7 +166,11 @@ int main(int argc, char** argv) {
     {
         omk::UiWalk f(w);
         f.open(omk::kScreenSneak);
-        f.bindRows(omk::kListSneakRows, 1);       // one carried object
+        f.bindRows(omk::kListSneakRows, 1);
+        if (const int* c0 = f.itemColour(0x004DE440u))
+            std::printf("on open, rows are %d %d %d (%zu coloured)\n", c0[0], c0[1], c0[2], f.colourCount());
+        else
+            std::printf("on open, rows have NO colour\n");
         f.press(omk::kUiConfirm);
         const omk::UiPanel* q = f.panel();
         int vsel = -1;
@@ -181,6 +185,15 @@ int main(int argc, char** argv) {
         for (int k = 0; k < 2; ++k) f.press(omk::kUiRight);  // -> Examiner
         f.press(omk::kUiConfirm);
         q = f.panel();
+        // ...and the COLOUR must still be the inventory page's amber: the
+        // verb panel writes no colour of its own, so clearing on a panel
+        // change sends the whole device back to its (255, 0, 0) placeholder.
+        {
+            int vc[3] = {-1, -1, -1};
+            if (const int* c = f.itemColour(0x004DE440u))   // the first row
+                { vc[0] = c[0]; vc[1] = c[1]; vc[2] = c[2]; }
+            std::printf("verb panel rows still %d %d %d (%zu coloured)\n", vc[0], vc[1], vc[2], f.colourCount());
+        }
         std::printf("confirm Examiner -> panel %#x, verbs off %d\n",
                     q ? q->addr : 0, f.listOff(omk::kListSneakVerbs) ? 1 : 0);
     }
@@ -250,6 +263,26 @@ int main(int argc, char** argv) {
             for (int yy = 100 + sl * 100; yy < 150 + sl * 100; ++yy)
                 for (int xx = 110; xx < 160; ++xx)
                     if (mv.px[static_cast<std::size_t>(yy) * 640 + xx]) ++painted[sl];
+        // Isolate the models: compose once WITHOUT them and once with, and
+        // measure what changed inside each slot.
+        omk::Surface bare(640, 480, 0);
+        comp.attachModels(nullptr);
+        omk::UiWalk bw2(w); bw2.open(omk::kScreenSneak);
+        comp.draw(bare, omk::kScreenSneak, bw2);
+        comp.attachModels(&mods);
+        for (int sl = 0; sl < 3; ++sl) {
+            int lo[2] = {99, 99}, hi[2] = {-1, -1};
+            for (int yy = 100 + sl * 100; yy < 150 + sl * 100; ++yy)
+                for (int xx = 110; xx < 160; ++xx) {
+                    const std::size_t o = static_cast<std::size_t>(yy) * 640 + xx;
+                    if (mv.px[o] == bare.px[o]) continue;
+                    const int rx = xx - 110, ry = yy - (100 + sl * 100);
+                    if (rx < lo[0]) lo[0] = rx;  if (rx > hi[0]) hi[0] = rx;
+                    if (ry < lo[1]) lo[1] = ry;  if (ry > hi[1]) hi[1] = ry;
+                }
+            std::printf("slot %d model bbox %d x %d\n", sl,
+                        hi[0] - lo[0] + 1, hi[1] - lo[1] + 1);
+        }
         std::printf("previews %d loaded, %d drawn, slots %d %d %d of 2500\n",
                     loaded, mf.modelsDrawn, painted[0], painted[1], painted[2]);
 

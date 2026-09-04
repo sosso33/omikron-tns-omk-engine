@@ -605,6 +605,42 @@ wearing the old page's colour — a player reported reaching the slider page
 walks RIGHT, UP, CONFIRM into panel 0x004DEDE8 and asserts its rows turn green.
 
 
+### ...and so are the COLOUR and the flag bits
+
+The same argument runs through every record field a builder writes.
+`sub_4296D0` writes `+8/+9/+10` over a list and `sub_4296B0` over one item;
+`sub_4290D0` writes a flag over a list and `sub_428FF0` over one item. **None
+of them is ever reset.** A builder that wants a flag cleared clears it
+explicitly — which is exactly why `sub_49B810` and its leave `sub_49B8A0` are
+mirrors:
+
+| | enables | disables |
+|---|---|---|
+| `sub_49B810` (enter the verbs) | the verbs | tabs, previews, rows |
+| `sub_49B8A0` (leave them) | tabs, previews, rows | the verbs |
+
+A port that clears the records on a panel change loses the page's colour the
+moment an object is chosen, because **the verb panel writes no colour of its
+own** — the inventory page's must simply still be there. A player saw exactly
+that: "when selecting an object in the inventory, the list became like an
+empty placeholder list with wrong colours". Those were the (255, 0, 0)
+records, unwritten.
+
+`sub_42A370` is what makes the pairing work: it calls the OLD panel's `+8` and
+then the new panel's `+4`, so `UiWalk::leavePage` runs beside `buildPage` at
+every panel change.
+
+### `panel+24` is written from code on two panels
+
+`dword_4DEED0 = 2` in `sub_49B810` and `dword_4DEF38 = 2` in `sub_49B950` are
+`panel+24` — the current list — on 0x004DEEB8 and 0x004DEF20. Index 2 is the
+verb list on the first and 0x004DE760, the model item, on the second. The
+walker lifts `current` for the pages it can reach through an item, and these
+two it cannot, so the writes have to be ported by hand. Without the second
+one the walk falls back to the first usable list — the tab column — and the
+highlight jumps to the identity icon, which a player reported as "the
+selection goes to the character page button".
+
 ### `list+2` is a STATIC record, so the interface remembers
 
 Nothing in the image ever writes the verb list's `+2`. Not the verb panel's

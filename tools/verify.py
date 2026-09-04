@@ -10456,6 +10456,12 @@ def c_sneak_page_colour():
             # tree at all until the lifter learned to follow code.
             "confirm row -> panel 0x4deeb8, list 2, tabs off 1 rows off 1" in o,
             "confirm Examiner -> panel 0x4def20, verbs off 1" in o,
+            # ...and the COLOUR survives the descent. `+8/+9/+10` are fields
+            # of a STATIC record too: the verb panel writes none of its own,
+            # so the inventory page's amber must simply still be there.
+            # Clearing on a panel change sent the whole device back to its
+            # (255, 0, 0) placeholder the moment an object was chosen.
+            "verb panel rows still 240 135 15" in o,
             # `list+2` is a field of a STATIC record: seeded by the linker,
             # written by `Ui_MoveSelection`, overwritten only where an open
             # callback writes it, and NEVER reset - so the device remembers
@@ -10468,7 +10474,7 @@ def c_sneak_page_colour():
             ["20 165 250", "25 240 115", "240 135 15", "255 240 95",
              "255 100 70"],
             True, True, True, True, True, True, True, True, True, True,
-            True, True, True), \
+            True, True, True, True), \
            "the five tab icons carry the five page colours; opening screen " \
            "9 runs the inventory page's builder, which copies its own icon's " \
            "amber over the rows, the verbs and the echo bar; and the row " \
@@ -10773,9 +10779,13 @@ def c_cursor_highlight():
     got = line[0]
     dim = [int(x) for x in plain[0].split()[-3:]]
     litpx = [int(x) for x in got.split()[-3:]]
-    return (got.split(",")[0], int(got.split("alpha")[1].split(",")[0]),
+    alpha = int(got.split("alpha")[1].split(",")[0])
+    # Oscillator 3 is a TRIANGLE over 230..235, so the phase a probe happens
+    # to be at is not the finding - the RANGE is. Asserting one value made
+    # this fail whenever anything else in the probe drew a frame first.
+    return (got.split(",")[0], 230 <= alpha <= 235,
             tuple(litpx), tuple(dim), litpx[0] > 2 * dim[0]), \
-           ("cursor quads 1", 231, (139, 85, 0), (49, 28, 0), True), \
+           ("cursor quads 1", True, (139, 85, 0), (49, 28, 0), True), \
            "the sneak's focused row with `Ui_DrawItemCursor` attached: one " \
            "item draws a cursor, oscillator 3 gives alpha 231 (period 500, " \
            "230..235, a triangle - NOT oscillator 2's 45..200), and the row " \

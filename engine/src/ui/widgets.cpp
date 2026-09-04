@@ -393,13 +393,13 @@ bool UiWalk::pickable(const UiList& l, const UiItem& it) const {
 }
 
 void UiWalk::bindRows(std::uint32_t list, int count) {
-    bound_[list] = count;
+    state_->bound[list] = count;
     if (!panel_) return;
     for (const auto& l : panel_->lists) {
         if (l.addr != list) continue;
         for (std::size_t k = 0; k < l.items.size(); ++k) {
-            if (static_cast<int>(k) < count) off_.erase(l.items[k].addr);
-            else                             off_.insert(l.items[k].addr);
+            if (static_cast<int>(k) < count) state_->itemOff.erase(l.items[k].addr);
+            else                             state_->itemOff.insert(l.items[k].addr);
         }
         // ...and if the selection was left on a row that has just gone away,
         // pull it back to the last live one. `sub_42AAE0` cannot leave the
@@ -447,9 +447,18 @@ void UiWalk::settle() {
     // rewrites it on a panel change - only an OPEN CALLBACK does, which is
     // the `select` the tree carries. So a list already walked keeps what it
     // has, and only lists this walk has not seen yet are seeded.
-    cur_ = 0;
+    // A BUILDER'S `panel+24` WINS. `buildPage` runs before this and two of
+    // the sneak's panels write their current list from code rather than from
+    // the lifted `current` (the verb panel 2, the examine page 2), so a
+    // wholesale reset here would throw both away.
+    if (curFromBuilder_ >= 0) {
+        cur_ = curFromBuilder_;
+        curFromBuilder_ = -1;
+    } else {
+        cur_ = 0;
+    }
     if (!panel_) return;
-    if (panel_->current >= 0 &&
+    if (cur_ == 0 && panel_->current >= 0 &&
         static_cast<std::size_t>(panel_->current) < panel_->lists.size()) {
         cur_ = panel_->current;
     } else {
@@ -482,7 +491,7 @@ void UiWalk::settle() {
 // Three call sites, all three the same write: the sneak's clock item
 // (0x004DEC08) back to black after the list it sits in has been recoloured.
 void UiWalk::colourItem(std::uint32_t item, int r, int g, int b) {
-    colour_[item] = {r, g, b};
+    state_->colour[item] = {r, g, b};
 }
 
 // `sub_4296D0` (0x004296D0) - the same three bytes over EVERY item of a list.
@@ -532,10 +541,40 @@ void UiWalk::colourList(std::uint32_t list, int r, int g, int b) {
 // Six of six, and the membership is lifted from the tree while the calls are
 // read from the image, so the two could have disagreed. That is what makes
 // this a rule rather than a table of addresses.
+void UiWalk::setListOff(std::uint32_t list, bool off) {
+    if (off) state_->listOff.insert(list);
+    else     state_->listOff.erase(list);
+}
+
+// THE PANEL'S `+8`, run on the way OUT. `sub_42A370(screen, panel)` calls the
+// OLD panel's `+8` and then the new panel's `+4`, so a page that disabled
+// something on the way in is expected to re-enable it on the way out - and
+// `sub_49B810` / `sub_49B8A0` are exact mirrors, which is what says the
+// records persist rather than being rebuilt.
+//
+//     sub_49B8A0   verbs NOT selectable; tabs, previews and rows selectable;
+//                  clear 0x40000002 over the verb list; unlight the row
+//     sub_49B9E0   clear 0x40000002 on item 0x004DE2C0
+//
+// The two lit flags are read and not modelled - this port has no runtime bit
+// to put them in - so what is ported is the selectability, which is what a
+// walk can feel.
+void UiWalk::leavePage(const UiPanel& p) {
+    if (p.addr == kPanelSneakVerbs) {
+        setListOff(kListSneakVerbs, true);
+        setListOff(kListSneakTabs, false);
+        setListOff(kListSneakPreviews, false);
+        setListOff(kListSneakRows, false);
+    }
+}
+
 void UiWalk::buildPage(const UiPanel& p) {
-    colour_.clear();
-    off_.clear();
-    offList_.clear();
+    // NOTHING IS CLEARED HERE. `+8/+9/+10` and the flag bits are fields of
+    // STATIC records: a builder writes the ones it means to write, and every
+    // other keeps what the last builder left. The verb panel has no colour of
+    // its own, so the inventory page's must simply still be there - clearing
+    // first is what made the device go back to its (255, 0, 0) placeholder
+    // the moment an object was chosen.
     // `sub_4290D0(list, 0x20000004, value)` - the not-selectable bit over a
     // WHOLE list. The inventory page's builder (0x0049B710) runs it twice:
     //
@@ -549,7 +588,10 @@ void UiWalk::buildPage(const UiPanel& p) {
     // yet (nothing names it through an item `child`; `sub_42A370` names it
     // from code), so the descent is not modelled - but the disable is, and
     // without it the verbs are reachable with no object chosen.
-    if (p.addr == kPanelSneakInventory) offList_.insert(kListSneakVerbs);
+    if (p.addr == kPanelSneakInventory) {
+        setListOff(kListSneakRows, false);
+        setListOff(kListSneakVerbs, true);
+    }
     // `sub_49B810`, the VERB panel's builder - the mirror of the line above,
     // and the reason the verbs become reachable at all:
     //
@@ -563,9 +605,15 @@ void UiWalk::buildPage(const UiPanel& p) {
     // under the verb bar - not modelled, because that flag's drawing arm is
     // the lit/unlit ladder and this port has no runtime bit to put it in.
     if (p.addr == kPanelSneakVerbs) {
-        offList_.insert(kListSneakTabs);
-        offList_.insert(kListSneakPreviews);
-        offList_.insert(kListSneakRows);
+        setListOff(kListSneakVerbs, false);
+        setListOff(kListSneakTabs, true);
+        setListOff(kListSneakPreviews, true);
+        setListOff(kListSneakRows, true);
+        // `dword_4DEED0 = 2` - panel 0x004DEEB8 `+24`, the CURRENT LIST, and
+        // index 2 of its five is the verb list. The builders write it and the
+        // walker lifts it for the pages that have one; these two panels are
+        // not in that lift because they are not reached through an item.
+        curFromBuilder_ = 2;
     }
     // `sub_49B950`, the EXAMINE page's builder. It disables the verb list and
     // sets `0x40000002` on item 0x004DE2C0 - "Examiner" itself - so the verb
@@ -573,7 +621,15 @@ void UiWalk::buildPage(const UiPanel& p) {
     // asks `sub_42B330` for the object's KIND and sends kind 5 to
     // `sub_478EF0`, which is the document path; and it plays interface sound
     // 8. None of those three is modelled here - this is the navigation only.
-    if (p.addr == kPanelSneakExamine) offList_.insert(kListSneakVerbs);
+    if (p.addr == kPanelSneakExamine) {
+        setListOff(kListSneakVerbs, true);
+        // `dword_4DEF38 = 2` - panel 0x004DEF20 `+24`, and index 2 of its
+        // four is 0x004DE760, the page's own model item. Without it the walk
+        // falls back to the first usable list, which is the tab column, and
+        // the highlight jumps to the identity icon - which a player saw as
+        // "the selection goes to the character page button".
+        curFromBuilder_ = 2;
+    }
     // THE SLIDER PAGE'S TWO-STATE HEADER, and a builder doing more than
     // colour. `0x0049D170` opens with `cmp [arg0+4], 1` and both arms are
     // `sub_428FF0` calls on three items of list 0x004DEA08:
@@ -593,8 +649,8 @@ void UiWalk::buildPage(const UiPanel& p) {
     // two-label state (string 13 "Automatique" beside 14 "Manuelle") is
     // recorded rather than reachable.
     if (p.addr == kPanelSneakSlider) {
-        off_.insert(0x004DE968u);
-        off_.insert(0x004DE9B0u);
+        state_->itemOff.insert(0x004DE968u);
+        state_->itemOff.insert(0x004DE9B0u);
     }
     // The page's own tab: the column item whose `child` is this panel.
     const UiItem* icon = nullptr;
@@ -753,6 +809,7 @@ bool UiWalk::confirm() {
             const std::uint32_t to = it->callback == kCbSneakExamine
                                    ? kPanelSneakExamine : kPanelSneakVerbs;
             if (const auto* kid = w_->at(to)) {
+                leavePage(*panel_);
                 panel_ = kid;
                 buildPage(*panel_);
                 settle();
@@ -781,6 +838,7 @@ bool UiWalk::confirm() {
     }
     if (it->child) {
         if (const auto* kid = w_->at(it->child)) {
+            leavePage(*panel_);
             panel_ = kid;
             buildPage(*panel_);
             settle();
@@ -799,6 +857,7 @@ bool UiWalk::press(std::uint32_t bits) {
     if (bits & kUiBack) {
         if (panel_->parent) {
             if (const auto* up = w_->at(panel_->parent)) {
+                leavePage(*panel_);
                 panel_ = up;
                 buildPage(*panel_);
                 settle();
