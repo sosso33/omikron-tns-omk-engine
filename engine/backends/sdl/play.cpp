@@ -1274,6 +1274,13 @@ int main(int argc, char** argv) {
 "  --stand x,y,z[,facing]   an explicit spot instead of an address\n"
 "  --density 0..4   how much crowd - the options menu\'s own row 6\n"
 "  --no-crowd       no pedestrians at all\n"
+"  --scene-chunk N  run SCENE chunk N's startup script over the area, the\n"
+"                   way `scene.load` does. A street start jumps straight to\n"
+"                   an area, so the chunk that would have been loaded on the\n"
+"                   way in never is - and with it go the beats that SHOW the\n"
+"                   area's props. AREA 222 wants SCENE 55, whose script ends\n"
+"                   in `object.show 162`, the Impasse's rings: without it\n"
+"                   there is nothing in the world to take\n"
 "  --sneak          open the SNEAK as soon as he is on his feet, through\n"
 "                   the same path TAB takes - for testing that screen\n"
 "                   without walking to it\n"
@@ -1364,6 +1371,14 @@ int main(int argc, char** argv) {
     int areaArg = -1, addressArg = -1, density = omk::kDefaultStreetActivity;
     int giveArg = -1;      // --give: an object id for the carried list
     bool newWorld = false; // --newgame-world: START's world, the save's player
+    // --scene-chunk N: run a SCENE chunk's startup script over the area, the
+    // way `scene.load` does. A street start jumps straight to an area, so the
+    // chunk that would have been loaded on the way in never is - and with it
+    // go the beats that SHOW the area's props. For AREA 222 that is SCENE 55,
+    // whose script ends in `object.show 162`, the Impasse's rings: without it
+    // there is nothing in the world to take (`tools/prop_probe.cpp` does the
+    // same call, and is where this shape comes from).
+    int sceneChunk = -1;
     bool noCrowd = false;
     // `--sneak` opens the device as soon as the player is on his feet,
     // through the SAME path TAB takes - `MDSNEAK0`'s handler, event 25 and
@@ -1449,6 +1464,7 @@ int main(int argc, char** argv) {
         // from `IAM\START`, so a flow can be tried against a new game's
         // state without the intro. Also a harness flag, not a port.
         else if (a == "--newgame-world") newWorld = true;
+        else if (a == "--scene-chunk" && i + 1 < argc) sceneChunk = std::atoi(argv[++i]);
         else if (a == "--density" && i + 1 < argc) density = std::atoi(argv[++i]);
         else if (a == "--no-crowd") noCrowd = true;
         else if (a == "--sneak") openSneak = true;
@@ -1647,6 +1663,12 @@ int main(int argc, char** argv) {
     if (startArea < 0) { std::fprintf(stderr, "IAM/START names no area\n"); return 1; }
     session.loadArea(startArea);
     std::printf("session: area %d loaded, waiting for its script\n", startArea);
+    if (sceneChunk >= 0) {
+        session.sceneLoad(startArea, sceneChunk);
+        std::printf("--scene-chunk: SCENE %d over AREA %d - its startup script "
+                    "runs, which is what SHOWS an area's props\n",
+                    sceneChunk, startArea);
+    }
     if (forceAdventure) {
         const auto& rs = session.residentSlot(session.activeSlot());
         for (const auto& ad : rs.addresses)

@@ -884,6 +884,31 @@ measured `dy` are PRINTED on every take - the sign is the kind of thing that is
 invisible at rest, and one take off a floor and one off a table is the only
 test that covers the transition.
 
+**CONFIRMED IN PLAY, 2026-09-04** - a new game, walked to the Impasse, rings
+taken after the tutorial cutscene:
+
+    take: MDACTION found object 162 '3 Anneaux magiques' in reach,
+          dy -1.3 (down-positive) -> LOW H_TAKL take, group 41
+    take: MDGETOBJ - holding 162 '3 Anneaux magiques'
+
+    anim: frame 1541  .CTL state  0 'H_STAND'    clip 'H_STAND'
+    anim: frame 1542  .CTL state 51 'H_TAKL12'   clip 'H_TAKL12'
+    anim: frame 1583  .CTL state 53 'H_TAKL22'   clip 'H_TAKL22'
+    anim: frame 1625  .CTL state 54 'H_WAITOB'   clip 'H_WAITOB'
+
+Three things at once. The measured `dy` is **-1.3**, the number `prop_probe`
+predicted from the ring at y = -80.0 and the seated feet at y = -78.7, so the
+SIGN is settled by the running game and not only by the probe. It selects
+group 41, which is right for a thing on the ground. And the chain walks ONE
+clip each - `H_TAKL12` (41 frames) -> `H_TAKL22` (42) -> `H_WAITOB` - which is
+the reader's "complete list" symptom gone. State 52 never appears because it is
+the clipless `MDGETOBJ`, which is what it should do.
+
+**The HIGH arm is still unexercised**: nothing in this session's path put an
+object at table height, so group 143 has never been entered in play. It is the
+same one test with the comparison the other way, and the printf will say so the
+first time one is taken.
+
 **Still open in 69**: the camera (`Camera_Request` is still never called on a
 take) and the sound. The reader's full description of the target:
 *"when taking a object, there is sound and a camera move; when validating,
