@@ -12,13 +12,13 @@ fight people hand to hand (a beat-'em-up), and you shoot people (a first-person
 shooter). The conceit is that you are a soul that moves between bodies, so the
 game has to be able to hand you a different character and keep going.
 
-The engine that carries all that is a single 1.4 MB executable — `Runtime 2.exe`
-— plus about 1.7 GB of data files. Almost nothing about how the game behaves is
-compiled into that executable. What is compiled in is a **machine**: a
-bytecode interpreter, a state-machine runner, a renderer, a set of file
-readers. What the game *does* — which conversation starts when you walk through
-a doorway, which camera watches it, which animation a character plays when it
-turns around — is data, sitting in the files beside it.
+The engine that carries all that is a single 1.4 MB executable — the game's
+`Runtime.exe` — plus about 1.7 GB of data files. Almost nothing about how the
+game behaves is compiled into that executable. What is compiled in is a
+**machine**: a bytecode interpreter, a state-machine runner, a renderer, a set
+of file readers. What the game *does* — which conversation starts when you
+walk through a doorway, which camera watches it, which animation a character
+plays when it turns around — is data, sitting in the files beside it.
 
 That split is why this project is possible at all. Read the machine once, and
 the content reads itself.
@@ -35,10 +35,16 @@ does not ship any game content and never will.
 
 ### What the executable is
 
-`gamedata/Runtime 2.exe` is the engine. (`gamedata/Runtime.exe`, confusingly, is
-the disc version's launcher — it asks for the CD and is not what any address in
-this repository refers to.) It is a Win32 binary against the 1999 Microsoft
-stack:
+The engine is the game's `Runtime.exe`, in the build that does not ask for the
+CD. Two builds of it shipped — one that checks for the disc and one that does
+not — and both are called `Runtime.exe`, so a tree holding both has to rename
+one of them. **That renamed name is a local convention and means nothing about
+the game**: every address in this repository refers to the no-CD build,
+whatever the file is called on the disk it was read from. This manual names it
+`Runtime.exe` throughout for that reason; `CLAUDE.md` and `docs/` still carry
+the local name of the tree they were written in.
+
+It is a Win32 binary against the 1999 Microsoft stack:
 
 | subsystem | API | what the port does with it |
 |---|---|---|
@@ -98,7 +104,7 @@ directory *and* this repository's `tables/`.
 
 | | |
 |---|---|
-| the original | `gamedata/Runtime 2.exe` (yours; never in this repo) |
+| the original | the game's `Runtime.exe`, the no-CD build (yours; never in this repo) |
 | the disassembly | `Runtime.exe.asm` / `Runtime.exe.c` — optional, not distributed (it is a derivative work), relocatable via `$OMK_ASM` / `$OMK_DECOMP` |
 | the hand-cleaned reading | `readable/src/*.c` — 33 modules, every function carrying a status banner; `readable/INDEX.md` is the index |
 | the findings | `docs/` — 11 documents |
