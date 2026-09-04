@@ -10532,6 +10532,19 @@ def c_sneak_previews():
     5000), fed to `sub_441EB0`. So the previews turn once every five seconds,
     which is the spin a capture of the original shows.
 
+    `sub_478DE0(node, distance, camOut)` builds the camera, and the whole of
+    it is four numbers. The target is the model's own `+0x24..0x2C`; the
+    position is that point with **Z + the distance**; `cam+0x30` is the FOV,
+    `0x42480000` = **50**; `cam+0x2C` is 0.
+
+    **The sign of the distance chooses the arm, and it is easy to read
+    backwards.** `fcomp` against 0 then `test ah, 41h` / `jz`: the jump is
+    taken when NEITHER C0 nor C3 is set, which is `distance > 0` - so a
+    POSITIVE distance takes the literal offset and SKIPS the bounding-box
+    block. The fit arm (`sub_437D60` for the box, then
+    `extent + extent / tan(50 deg)`) is for a non-positive argument and no
+    sneak call reaches it.
+
     This check asserts the DATA only: that the three paths the exe names
     resolve in the shipped tree under the case-insensitive rule Win95 gave
     them - and they need it, since two ship upper-case and one mixed - and
@@ -10557,15 +10570,18 @@ def c_sneak_previews():
     # docstring's.
     lit = sum(1 for n in names
               if ("meshes\\objets\\" + n).encode("latin-1") in exe.lower())
-    return (found, lit, round(dist, 3), round(dist * 0.0254, 3)), \
-           (["Setek.3do", "ANNEAU.3DO", "IMAGER.3DO"], 3, 118.11, 3.0), \
+    fov = struct.unpack("<f", struct.pack("<I", 0x42480000))[0]
+    return (found, lit, round(dist, 3), round(dist * 0.0254, 3), fov), \
+           (["Setek.3do", "ANNEAU.3DO", "IMAGER.3DO"], 3, 118.11, 3.0, 50.0), \
            "the three models the sneak's open callback names by literal " \
            "path, as they are actually spelled on disc - two upper-case and " \
            "one mixed, so the case-insensitive resolve is load-bearing; " \
            "that all three literals are in the image; and the camera " \
            "distance 0x42EC3871 = 118.110, which is 3.0 / 0.0254 - THREE " \
            "METRES in the engine's inch unit, the same 0.0254 the audio " \
-           "listener is told about"
+           "listener is told about; and the FOV, `0x42480000` = 50. Those two " \
+           "plus the model's own centre are the whole camera: it looks at " \
+           "`node+0x24..0x2C` from that point with Z offset by the distance"
 
 
 def c_slider_destinations():

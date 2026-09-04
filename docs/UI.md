@@ -641,6 +641,24 @@ and the angle it converts is **oscillator 4** (`sub_42B5E0(4)`, period 5000)
 fed to `sub_441EB0`, so the previews turn once every five seconds — the spin a
 capture of the original shows.
 
+`sub_478DE0(node, distance, camOut)` builds the camera, and the whole of it is
+four numbers:
+
+| | |
+|---|---|
+| target | the model's own `+0x24..0x2C` |
+| position | that point, with **Z + the distance** |
+| `cam+0x30` | the FOV — `0x42480000` = **50** |
+| `cam+0x2C` | 0 |
+
+**The sign of the distance picks the arm, and it reads backwards easily.**
+`fcomp` against 0 then `test ah, 41h` / `jz` — the jump is taken when neither
+C0 nor C3 is set, which is `distance > 0`. So a *positive* distance takes the
+literal offset and **skips** the bounding-box block; the fit arm (`sub_437D60`
+for the box, then `extent + extent / tan(50°)`) is for a non-positive argument,
+and no sneak call reaches it. Reading the branch the other way would make
+118.110 a flag rather than the answer.
+
 **Not ported.** `verify.py: sneak previews` asserts the data half — that the
 three paths resolve in the shipped tree (two ship upper-case and one mixed, so
 the case-insensitive resolve is load-bearing), that all three literals are in
