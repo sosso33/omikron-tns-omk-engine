@@ -37,6 +37,7 @@
 #include "formats/scx.h"
 #include "formats/tex3dt.h"
 #include "input/bindings.h"
+#include "actor/moves.h"
 #include "actor/pose.h"
 #include "actor/speaker.h"
 #include "actor/player.h"
@@ -52,12 +53,14 @@
 #include "script/area.h"
 #include "script/savefile.h"
 #include "script/gamestate.h"
+#include "script/inventory.h"
 #include "o3de/raster.h"
 #include "o3de/renderer.h"
 #include "platform/boot.h"
 #include "platform/movie.h"
 #include "platform/datafs.h"
 #include "platform/frontend.h"
+#include "ui/iamtext.h"
 #include "ui/screendraw.h"
 #include "ui/text.h"
 #include "ui/widgets.h"
@@ -1257,6 +1260,14 @@ int main(int argc, char** argv) {
 "  --stand x,y,z[,facing]   an explicit spot instead of an address\n"
 "  --density 0..4   how much crowd - the options menu\'s own row 6\n"
 "  --no-crowd       no pedestrians at all\n"
+"  --sneak          open the SNEAK as soon as he is on his feet, through\n"
+"                   the same path TAB takes - for testing that screen\n"
+"                   without walking to it\n"
+"  TAB              once he is on his feet, opens the SNEAK - his handheld\n"
+"                   device. It is the adventure scheme\'s own \"Ouvrir\n"
+"                   sneak\" binding, and the .CTL has to play H_SNKON first,\n"
+"                   so it is not instant. LEFT/RIGHT move between the\n"
+"                   device\'s columns, UP/DOWN within one, ENTER opens a tab\n"
 "\n"
 "DISPLAY\n"
 "  --res WxH        default 800x600; the interface is authored at 640x480\n"
@@ -1338,6 +1349,12 @@ int main(int argc, char** argv) {
     std::string saveFile;
     int areaArg = -1, addressArg = -1, density = omk::kDefaultStreetActivity;
     bool noCrowd = false;
+    // `--sneak` opens the device as soon as the player is on his feet,
+    // through the SAME path TAB takes - `MDSNEAK0`'s handler, event 25 and
+    // screen 9 - rather than a second way in. A testing convenience for a
+    // screen that otherwise costs a walk to reach; it sets the same
+    // `playerScreen` the special move sets and nothing else.
+    bool openSneak = false;
     float standAt[4] = {0, 0, 0, 0};
     bool haveStand = false;      // `--stand x,y,z,yaw`: put the player down there after the hand-over
     // the scene viewer's
@@ -1409,6 +1426,7 @@ int main(int argc, char** argv) {
         else if (a == "--address" && i + 1 < argc) addressArg = std::atoi(argv[++i]);
         else if (a == "--density" && i + 1 < argc) density = std::atoi(argv[++i]);
         else if (a == "--no-crowd") noCrowd = true;
+        else if (a == "--sneak") openSneak = true;
         else if (a == "--stand" && i + 1 < argc)
             haveStand = std::sscanf(argv[++i], "%f,%f,%f,%f", &standAt[0], &standAt[1], &standAt[2], &standAt[3]) >= 3;
         else if (a == "--type" && i + 1 < argc) typeText = argv[++i];
@@ -1520,11 +1538,37 @@ int main(int argc, char** argv) {
         const auto slot = omk::readSaveSlot(omk::DataFs::readPath(saveFile), 0);
         if (!slot) { std::fprintf(stderr, "%s: not a save file\n", saveFile.c_str()); return 1; }
         state = slot->state;
+        // THE CLOCK COMES FROM THE SLOT, and this used only to print it.
+        //
+        // `gamestate.h`: the clock and the timer are engine globals and NOT
+        // part of the 8192-byte image, so restoring the DB restores
+        // everything EXCEPT the date and time - and the slot header is the
+        // only place they exist. Loading a save therefore left the game at
+        // day 0, 00:00:00 while the loader printed the save's real date one
+        // line above.
+        //
+        // Nothing noticed because nothing DREW the clock. The sneak's own
+        // clock row (`sub_0049E090`) is the first thing in this port to show
+        // it, and it showed "1 Aqed 7216 - 0:00:00" against a save the same
+        // function had just printed as a different date.
+        state.setClockDay(slot->day);
+        state.setClock(slot->time);
         std::printf("save: slot 0 '%s', %s %s, area %d\n", slot->name.c_str(),
                     omk::formatDate(slot->day).c_str(), omk::formatTime(slot->time).c_str(),
                     state.currentArea());
     }
     const bool forceAdventure = areaArg >= 0;
+    // THE INVENTORY, out of the game data: `IAM\OBJECT`'s 1002 records and
+    // `IAM\GLOBAL +12`'s eleven combination recipes. `script/inventory.h` was
+    // written, checked and never consumed by anything that runs - the sneak
+    // is what the channel exists for, so this is where it is loaded.
+    const auto objectRecords = omk::loadObjects(fs);
+    const auto globalFile = fs.read("IAM/GLOBAL");
+    const auto recipes = omk::globalRecipes(globalFile);
+    omk::Inventory inv(objectRecords, recipes);
+    if (objectRecords.empty())
+        std::printf("no IAM/OBJECT - the sneak's inventory page will be "
+                    "empty\n");
     omk::Session session(fr + "/IAM", state, opcodes);
     if (!session.loadAnnounceMap(tb + "/vm_announce.json"))
         std::printf("tables: no vm_announce.json - the log will name fewer "
@@ -1607,9 +1651,27 @@ int main(int argc, char** argv) {
 
 
     // The screen currently on the player's hands, if any. `walk` is only
-    // constructed once a script has actually asked for a screen.
+    // constructed once a script has actually asked for a screen - or, since
+    // the sneak, once the PLAYER has.
     std::unique_ptr<omk::UiWalk> walk;
     int openScreen = -1, conversations = 0, lastArea = -1;
+    // WHO asked for the open screen, because the two ends differ. `ui.open`
+    // parks its caller at status 6 and every close path posts event 5 with
+    // the answer, so leaving IS an answer and the script resumes. The sneak
+    // has no caller at all: `sub_0046ADF0` calls `UI_OpenScreen(9, -1, ...)`
+    // and the `-1` is the waiting-context argument, so `dword_930744` is
+    // never written and there is nothing to resume. Answering the Session for
+    // it would release whatever script happened to be parked.
+    bool screenFromScript = true;
+    // A screen the PLAYER asked for this frame, before it is opened below -
+    // so the open, its sounds and its bookkeeping stay in one place.
+    int playerScreen = -1;
+    // The sneak's inventory ROWS - item address -> what that row shows. The
+    // nine slots of list 0x004DE6F0 ship `+28` as -1 and are never bound,
+    // because their text is the carried object list read through the channel
+    // (`Game_HandleEvent` 29 and 33), not a string in `IAM\Sneak`.
+    std::map<std::uint32_t, std::string> sneakRows;
+    int sneakTold = 0;             // one line per run, not one per frame
     int replySel = 0;            // which reply the player is on
     int actionTold = 0;          // one line for a press that reaches nothing
     // `tab_special_move[]` as a TABLE rather than a string compare: a fired
@@ -2846,7 +2908,12 @@ int main(int argc, char** argv) {
         omk::DeviceState st;
         for (int dik : host.held) st.keyboard.push_back(dik);
         // the `--hold` stream: held, not tapped, and only once he can walk
-        if (adventure && !holds.empty()) {
+        // ...and it keeps feeding while a SCREEN is up. Gated on `adventure`
+        // alone it stopped the moment the sneak opened - opening a screen is
+        // exactly what takes `adventure` false - so a stream could press TAB
+        // and then never press anything again, and the screen could not be
+        // driven headless at all.
+        if ((adventure || walk) && !holds.empty()) {
             for (int k : holds.front().keys) st.keyboard.push_back(k);
             if (--holds.front().frames <= 0) holds.erase(holds.begin());
         }
@@ -2860,7 +2927,17 @@ int main(int argc, char** argv) {
         // back, so the `.CTL` channel sees HELD keys and a walk is a walk
         // rather than a step per press. A screen over the world restores
         // `Ui_BeginScreen`'s 0x203F.
-        if (adventure) in.setRepeatMask(walk ? omk::kUiRepeatMask : 0);
+        // Keyed on the SCREEN, not on adventure mode. `Ui_BeginScreen` sets
+        // 0x203F when a screen opens and the last close puts it back to 0, and
+        // this used to do that only while `adventure` was true - which is
+        // exactly when it is NOT: a screen over the world takes `adventure`
+        // false in the same breath, so the mask stayed at the world's 0 and
+        // every held key repeated every frame. Harmless while the only
+        // screens came from `ui.open` during the boot, where `adventure` is
+        // false and the mask is still the 0x203F set at start-up; the sneak
+        // is the first screen opened from inside the world.
+        if (walk) in.setRepeatMask(omk::kUiRepeatMask);
+        else if (adventure) in.setRepeatMask(0);
         const std::uint32_t bits = in.frame(st);
 
         // THE DIALOGUE CLOCK IS REAL TIME, not a frame count.
@@ -3315,6 +3392,15 @@ int main(int argc, char** argv) {
                 // The three-press shape a reader described - take and see the
                 // name, press again to bank it, another button to put it back
                 // - is these four rows and nothing else.
+                // `--sneak`: the same request the special move makes, once.
+                if (openSneak && !walk && playerScreen < 0) {
+                    openSneak = false;
+                    inv.openList(0);
+                    playerScreen = omk::kScreenSneak;
+                    std::printf("--sneak: event %d opens object list 0, "
+                                "screen %d\n", omk::kEventSneakOpen,
+                                omk::kScreenSneak);
+                }
                 for (const auto& mv : player->specialMoves()) {
                     const omk::SpecialMoves::Row* row = specialMoves.find(mv);
                     if (row)
@@ -3368,6 +3454,33 @@ int main(int argc, char** argv) {
                                     takeCandidate);
                         session.putHeldObjectBack();
                         takeCandidate = -1;
+                    } else if (mv == omk::kMoveOpenSneak) {
+                        // ROW 0, and the other end of the same table. TAB is
+                        // the Aventure scheme's "Ouvrir sneak" (bit 0x2000);
+                        // H1Avnt/F1Avnt group 0 has an entry waiting on
+                        // exactly that bit whose flag-2 alias redirects
+                        // through its GoTo into group 6, and group 6's child
+                        // names `MDSNEAK0` (`actor/moves.h` quotes the whole
+                        // chain and `sub_0046ADF0` with it).
+                        //
+                        // The handler's own gate is `sub_41A350(actor)`: when
+                        // the actor carries a pending target at `+164` it
+                        // raises event 10 for that object and does NOT open
+                        // the sneak - which is the SAME `+164` MDGETOBJ links
+                        // an object to just above. Not modelled, so the sneak
+                        // always opens; with nothing held that is what the
+                        // engine does, and holding something is the case to
+                        // come back to.
+                        //
+                        // What IS reproduced is the pair around it: event 25
+                        // opening object list 0 on the way in, and event 26
+                        // if the open fails or when the close comes.
+                        if (walk || playerScreen >= 0) continue;   // already up
+                        inv.openList(0);          // Game_RaiseEvent(25, 0)
+                        playerScreen = omk::kScreenSneak;
+                        std::printf("MDSNEAK0: event %d opens object list 0, "
+                                    "screen %d\n", omk::kEventSneakOpen,
+                                    omk::kScreenSneak);
                     }
                 }
                 // `Actor_TickNpc`: `Actor_ApplyMotion`, then `Actor_ScanZones`
@@ -3645,25 +3758,41 @@ int main(int argc, char** argv) {
                 std::printf("--- conversation over ---\n");
         }
 
-        // A script asked for a screen: open it. Which screen is the SESSION's
-        // answer, not this file's.
-        if (!walk && session.pendingUiScreen() >= 0) {
-            openScreen = session.pendingUiScreen();
-            walk = std::make_unique<omk::UiWalk>(w);
-            if (!walk->open(openScreen)) {
-                std::fprintf(stderr, "screen %d has no panel in the tree\n", openScreen);
-                return 1;
+        // A script asked for a screen, or the PLAYER did. Which screen is the
+        // SESSION's answer or the special move's, never this file's.
+        if (!walk && (session.pendingUiScreen() >= 0 || playerScreen >= 0)) {
+            const bool fromScript = playerScreen < 0;
+            const int want = fromScript ? session.pendingUiScreen() : playerScreen;
+            playerScreen = -1;
+            auto fresh = std::make_unique<omk::UiWalk>(w);
+            if (!fresh->open(want)) {
+                // A script's screen must be in the tree - the boot depends on
+                // it. The PLAYER's need not be fatal: `sub_0046ADF0`'s own
+                // failure arm raises event 26, logs "cant start sneak" and
+                // returns, and the game carries on.
+                if (fromScript) {
+                    std::fprintf(stderr, "screen %d has no panel in the tree\n", want);
+                    return 1;
+                }
+                std::printf("cant start sneak: screen %d has no panel in the "
+                            "tree - event %d\n", want, omk::kEventSneakClose);
+                inv.closeList();
+            } else {
+                walk = std::move(fresh);
+                openScreen = want;
+                screenFromScript = fromScript;
+                std::printf("screen %d %s - arrows move, ENTER confirms, "
+                            "TAB closes\n", openScreen,
+                            fromScript ? "is asking" : "opened by the player");
+                // The screen's own sounds, by slot. Which slot is which is
+                // `sub_482FE0`'s answer - it dispatches on the INPUT BIT - not
+                // a guess from the file names. Nothing plays when a screen
+                // opens: the engine has no such slot, and the one this used to
+                // play was the MOVE sound fired at the wrong moment.
+                sndMove    = loadSlot(openScreen, omk::UiWidgets::kSoundMove);
+                sndConfirm = loadSlot(openScreen, omk::UiWidgets::kSoundConfirm);
+                sndBack    = loadSlot(openScreen, omk::UiWidgets::kSoundBack);
             }
-            std::printf("screen %d is asking - arrows move, ENTER confirms\n",
-                        openScreen);
-            // The screen's own sounds, by slot. Which slot is which is
-            // `sub_482FE0`'s answer - it dispatches on the INPUT BIT - not a
-            // guess from the file names. Nothing plays when a screen opens:
-            // the engine has no such slot, and the one this used to play was
-            // the MOVE sound fired at the wrong moment.
-            sndMove    = loadSlot(openScreen, omk::UiWidgets::kSoundMove);
-            sndConfirm = loadSlot(openScreen, omk::UiWidgets::kSoundConfirm);
-            sndBack    = loadSlot(openScreen, omk::UiWidgets::kSoundBack);
         }
 
         if (walk) {
@@ -3688,7 +3817,32 @@ int main(int argc, char** argv) {
                 else if (walk->selection() != wasSel ||
                          walk->currentList() != wasList) blip(sndMove);
             }
-            if (walk->answer() >= 0) {
+            // CLOSING THE SNEAK is not closing a script's screen, and the
+            // difference is the whole reason `screenFromScript` exists.
+            // `Ui_CloseSneakFamily`'s parameter-0 arm - the one that serves
+            // SNEAK - closes screen 35, frees the three `.3DO` previews its
+            // open loaded (`setek`, `anneau`, `imager`), raises event 26 and
+            // falls into the generic close. No answer is posted anywhere,
+            // because `sub_0046ADF0` opened it with a waiting context of -1:
+            // nothing is parked on it. Handing `session.answerUi(-1)` to a
+            // sneak close would release whatever script happened to be
+            // suspended elsewhere.
+            //
+            // (`docs/UI.md` attributes that arm and the closing animation the
+            // other way round - it reads the scene-freeing arm as VIDEOPHONE
+            // and the oscillator refusal as SNEAK. The branch decides it:
+            // parameter 0 is SNEAK and takes `loc_49B6A5`, the scene-freeing
+            // one; the refusal is parameter 2's. Corrected there too.)
+            const bool leaving = walk->answer() >= 0 || walk->closed();
+            if (leaving && !screenFromScript) {
+                std::printf("screen %d closed by the player - event %d, object "
+                            "list %d\n", openScreen, omk::kEventSneakClose,
+                            inv.openedList());
+                inv.closeList();          // Game_RaiseEvent(26, 0)
+                walk.reset();
+                openScreen = -1;
+                screenFromScript = true;
+            } else if (walk->answer() >= 0) {
                 std::printf("screen %d answered %d -> the script resumes\n",
                             openScreen, walk->answer());
                 session.answerUi(walk->answer());
@@ -5029,7 +5183,170 @@ int main(int argc, char** argv) {
             }
             ++worldFrames;
         }
-        if (walk) { comp.setFrame(n); comp.draw(fb, openScreen, *walk); }
+        // ---- THE SNEAK'S INVENTORY ROWS ------------------------------
+        //
+        // The nine row widgets of list 0x004DE6F0 belong to the DEVICE, not
+        // to one page: several pages carry the same list, and what a row
+        // shows is whatever that page's own code wrote into it -
+        // `sub_42AA00` reads the row's `+60` tag and asks the channel for a
+        // name with `Game_RaiseEvent(33, ...)`. So the text has to follow the
+        // PANEL the walk is on and not the screen. Filled once at the open,
+        // it showed the carried items on the "Memoire" tab as well, which is
+        // a different list - caught by looking at the tab, not by a number.
+        //
+        // Only the inventory page is filled. The other pages' rows are the
+        // player's bio, his statistics and the memos, and which list each one
+        // asks for has not been read: an empty row says so, where the carried
+        // list would be a plausible-looking wrong answer.
+        //
+        // The channel, in the order the interface asks it: case 29 for the
+        // count and case 33 for each name, both refusing (result 3) while no
+        // list is open - which is why the open raised event 25 first.
+        if (walk && openScreen == omk::kScreenSneak) {
+            sneakRows.clear();
+            const omk::UiPanel* pn = walk->panel();
+            if (pn && pn->addr == omk::kPanelSneakInventory &&
+                inv.openedList() >= 0) {
+                const auto carried = omk::objectList(state,
+                                                     omk::ObjectList::Carried);
+                // ---- `sub_42AAE0`, THE ROW BINDER --------------------
+                //
+                // The nine widgets are a WINDOW onto the list, and which of
+                // them are live is decided per row rather than by drawing
+                // whatever has text:
+                //
+                //     for each widget k of the list:
+                //       if (k + window >= list+24)     // past the end
+                //           item+60 = -1;              // tag: empty
+                //           set item 0x40000001;       // and NOT DRAWN
+                //           set item 0x20000004;       // and unselectable
+                //       else
+                //           item+60 = k + window;      // the row it shows
+                //           clear those two;
+                //
+                // so the engine draws only the rows that HOLD something -
+                // two of nine in the user's capture - and that is the gate
+                // `Ui_DrawItemFill`'s bars are behind. `list+24` is the
+                // count the channel reports (case 29).
+                //
+                // The window is 0 here: scrolling is `sub_0049C050` +
+                // `sub_42AFF0`, and neither is modelled, so a list longer
+                // than nine is truncated rather than scrolled.
+                for (const auto& l : pn->lists) {
+                    if (l.addr != omk::kListSneakRows) continue;
+                    const std::size_t window = 0;
+                    for (std::size_t k = 0; k < l.items.size(); ++k) {
+                        const std::size_t row = k + window;
+                        if (row >= carried.size()) continue;   // tag -1, not drawn
+                        // `playerCount` is case 33's other half and is NOT
+                        // read: for kinds 2..6 the quantity lives in the
+                        // player record and which field it is has not been
+                        // established, so those rows show the name without
+                        // its " - N". Kinds 7..11 take the item's own `+12`
+                        // and are complete.
+                        sneakRows[l.items[k].addr] =
+                            inv.displayName(carried[row], 0);
+                    }
+                }
+                // ---- THE ECHO BAR and THE CLOCK ---------------------
+                //
+                // Two of the device's rows are filled by callbacks of its
+                // own, and both are readable - `sub_0049DC20` and
+                // `sub_0049E090` carry no `proc` label (nothing calls them;
+                // they are dwords in the widget table, CLAUDE.md 1's trap),
+                // so `asmfn.py` returns a neighbour and the range has to be
+                // dumped by hand.
+                //
+                // **The echo bar shows whatever is SELECTED**, not the
+                // hovered verb as the picture suggested. `sub_0049DC20`
+                // takes the panel's current item and dispatches on its
+                // ADDRESS:
+                //
+                //     0x004DE338  "%s %d" of its string and `sub_42B1C0(4)`
+                //     0x004DE380  "%s %d" of its string and `sub_42B1C0(5)`
+                //     0x004DE3C8  its string alone
+                //     0x004DE230  its string, with `+30` forced to 1
+                //     ...
+                //
+                // which SETTLES what list 1 is: the three 50x50 icons are
+                // the setek and anneau COUNTERS and the map reader, and
+                // their strings - 8, 9 and 41, the ones a `+28`-keyed drawer
+                // printed across the page - belong to them and are rendered
+                // HERE. "Seteks en votre possession :" is echo-bar text for
+                // the setek icon, never a caption beside it.
+                //
+                // It also answers what `imager` counts: NOTHING. Its arm has
+                // no `sub_42B1C0` and no format - just the bare string "Lire
+                // plan". It is a map reader, not ammunition.
+                //
+                // The two counts come from `Game_RaiseEvent(44, {4|5})`,
+                // which is not modelled, so those two rows show their label
+                // without its number and say so rather than inventing one.
+                {
+                    const auto sneakText = omk::iamStrings(fs, "IAM/Sneak");
+                    const omk::UiItem* selItem = walk->selected();
+                    for (const auto& l : pn->lists) {
+                        for (const auto& e : l.items) {
+                            if (e.textFn == 0x0049DC20u && selItem) {
+                                const int id = selItem->label();
+                                if (id >= 0 &&
+                                    id < static_cast<int>(sneakText.size())) {
+                                    std::string t = sneakText[
+                                        static_cast<std::size_t>(id)];
+                                    // The two COUNTER arms format "%s %d",
+                                    // and the number is `Game_RaiseEvent(44,
+                                    // {4|5})` -> `sub_40B360` cases 4 and 5,
+                                    // which read the player record's +172 and
+                                    // +174. The third model, `imager`, has no
+                                    // count at all - its arm is the bare
+                                    // string - which is what settles that it
+                                    // is a map reader and not ammunition.
+                                    if (selItem->addr == 0x004DE338u)
+                                        t += " " + std::to_string(state.money());
+                                    else if (selItem->addr == 0x004DE380u)
+                                        t += " " + std::to_string(state.rings());
+                                    sneakRows[e.addr] = t;
+                                }
+                            } else if (e.textFn == 0x0049E090u) {
+                                // The clock. Both halves are the engine's own
+                                // formatters, already ported and checked
+                                // (`sub_0041E690`'s integer division); the
+                                // " - " joining them is read off the user's
+                                // screenshot - "12 Nadim 7216 - 13:01:15" -
+                                // and is the one part of this line that is
+                                // not from the code.
+                                sneakRows[e.addr] =
+                                    omk::formatDate(state.clockDay()) + " - " +
+                                    omk::formatTime(state.clock());
+                            }
+                        }
+                    }
+                }
+                if (!sneakTold++) {
+                    // Count the ROWS, not the map: since the echo bar and
+                    // the clock share `sneakRows` this reported "2 rows
+                    // shown" for a list holding one object.
+                    std::size_t rows = 0;
+                    for (const auto& l : pn->lists)
+                        if (l.addr == omk::kListSneakRows)
+                            for (const auto& e : l.items)
+                                rows += sneakRows.count(e.addr);
+                    std::printf("sneak: object list %d holds %zu, %zu rows "
+                                "shown (no scrolling - sub_0049C050 is not "
+                                "modelled)\n", inv.openedList(),
+                                carried.size(), rows);
+                }
+            }
+        }
+        if (walk) {
+            comp.setFrame(n);
+            // The oscillators run on a MILLISECOND clock, not on the frame
+            // index - their periods are 500, 1000 and 5000 and
+            // `Ui_TickScreens` advances them by the frame delta.
+            comp.setClockMs(static_cast<long>(SDL_GetTicks()));
+            comp.setRowText(sneakRows.empty() ? nullptr : &sneakRows);
+            comp.draw(fb, openScreen, *walk);
+        }
 
         // A `media.play` line, while `Subtitle_Show`'s timer runs: inset 16,
         // against the bottom, white. A conversation's own text takes over.

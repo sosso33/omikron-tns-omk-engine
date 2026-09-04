@@ -12,7 +12,10 @@ namespace {
 // channels - one shift, and it is the dimming of every unselected row in the
 // game. The captures give white for the focused row and 0x7F7F7F for the
 // rest, which is that shift (`engine: text draw`).
-constexpr std::uint8_t kLit = 255, kDim = 0x7F;
+// The lit colour when bank C's `0x80000001` forces white. The DIM one is no
+// longer a constant: `Ui_ItemTextStyle` halves whatever colour the item
+// carries, so `0x7F` was only ever the halving of 255.
+constexpr std::uint8_t kLit = 255;
 
 }  // namespace
 
@@ -33,17 +36,41 @@ int ScreenComposer::background(Surface& fb, const UiPanel& p,
             kBltWait | kBltKeySrc, key);
         return 0;
     }
+    // THE DESTINATION IS SCALED AND THE SOURCE IS NOT, and getting that
+    // backwards is invisible at 640x480 and ruins every other resolution.
+    // `Ui_DrawPanelBack` (0x00476040):
+    //
+    //     dst = (col * I2D_ScaleX(64), row * I2D_ScaleY(64), ...)
+    //     src = ((id % 10) << 6, (id / 10) << 6, ...)
+    //
+    // so ten columns of `ScaleX(64)` cover the display whatever its width,
+    // while the source keeps reading 64-pixel cells out of a 640x480 sheet.
+    // This used a literal 64 for BOTH: at the player's default 800x600 the
+    // background covered the top-left 640x480 and the world showed through
+    // on the right and bottom, while every widget - which does go through
+    // `I2D_ScaleX/Y` - sat somewhere else entirely. Reported as "the sneak
+    // interface is supposed to take all the screen".
+    //
+    // A 640x480 test cannot see this: there `ScaleX(64) == 64`. The check
+    // has to compose at a second resolution, which `engine: screen scale`
+    // now does.
     int drawn = 0;
     for (int cell = 0; cell < static_cast<int>(p.tiles.size()); ++cell) {
         const int id = p.tiles[cell];
         if (id < 0) continue;                    // ids are SIGNED; negative skips
-        const int dx = (cell % 10) * 64, dy = (cell / 10) * 64;
-        const int sx = (id % 10) * 64,   sy = (id / 10) * 64;
+        const int col = cell % 10, row = cell / 10;
+        const int dx0 = col * scaleX(64), dx1 = (col + 1) * scaleX(64);
         // Row 7 is the case the drawer hard-codes: seven rows of 64 leave 32,
-        // so it draws at half height from source y 448..480.
-        const int hgt = (cell / 10 == 7) ? 32 : 64;
-        blt(fb, {dx, dy, dx + 64, dy + hgt},
-            sheet, {sx, sy, sx + 64, sy + hgt}, false, 0);
+        // so it draws at half height from source y 448..480 - and the
+        // engine writes that as `7 * ScaleY(64) + ScaleY(64) / 2`.
+        const int dy0 = row * scaleY(64);
+        const int dy1 = (row == 7) ? 7 * scaleY(64) + scaleY(64) / 2
+                                   : (row + 1) * scaleY(64);
+        const int sx = (id % 10) * 64, sy = (id / 10) * 64;
+        const int sh = (row == 7 || id / 10 == 7) ? 32 : 64;
+        const int sy0 = (id / 10 == 7) ? 448 : sy;
+        blt(fb, {dx0, dy0, dx1, dy1},
+            sheet, {sx, sy0, sx + 64, sy0 + sh}, false, 0);
         ++drawn;
     }
     return drawn;
@@ -72,13 +99,23 @@ ScreenFrame ScreenComposer::draw(Surface& fb, int screenId,
         out.cloudDrawn = true;
     }
 
-    const std::string& art = w_->bitmap(screenId);
-    if (!art.empty()) {
-        const Surface sheet = surfaceFromBmp(fs_->read("I2D/bitmaps/" + art));
-        if (sheet.valid()) {
-            out.tilesDrawn = background(fb, *p, sheet);
-            out.fullSheet  = p->tiles.empty();
-        }
+    // THE ARTWORK, hoisted: the background AND every sprite item come out of
+    // the same sheet. `Ui_DrawItemSprite` blits from `screen+56`, which is
+    // the surface `UI_LoadScreen` put the bitmap in - the same one
+    // `Ui_DrawPanelBack` tiles - so the icons are cut from `sneak.bmp`
+    // itself rather than from any separate atlas.
+    const std::string& artName = w_->bitmap(screenId);
+    Surface art;
+    if (!artName.empty()) art = surfaceFromBmp(fs_->read("I2D/bitmaps/" + artName));
+    const bool sheetOk = art.valid();
+    // The I2D colour key, taken from the sheet's own bottom-left pixel the
+    // way the full-sheet path already does rather than named here.
+    const std::uint16_t artKey =
+        sheetOk ? art.px[static_cast<std::size_t>(art.h - 1) * art.w]
+                : std::uint16_t(0);
+    if (sheetOk) {
+        out.tilesDrawn = background(fb, *p, art);
+        out.fullSheet  = p->tiles.empty();
     }
 
     // The screen's own strings. `Ui_DrawItem` takes the item's `+28` as an
@@ -107,10 +144,21 @@ ScreenFrame ScreenComposer::draw(Surface& fb, int screenId,
     std::vector<const UiPanel*> chain{walk.panel() ? walk.panel() : p};
     out.panelsDrawn = 1;
 
-    const UiItem* focused = walk.selected();
+    // The panel's CURRENT list - `Ui_DrawList` only marks a row FOCUSED when
+    // its list is the one `panel+24` names.
+    const UiPanel* wp = walk.panel() ? walk.panel() : p;
+    const UiList* curList =
+        (walk.currentList() >= 0 &&
+         static_cast<std::size_t>(walk.currentList()) < wp->lists.size())
+            ? &wp->lists[static_cast<std::size_t>(walk.currentList())] : nullptr;
     for (const UiPanel* q : chain)
     for (const auto& l : q->lists) {
-        if (l.hidden()) continue;
+        // THE DRAW GATE IS NOT THE WALK'S. `Ui_DrawPanel` skips a list on
+        // bank B `0x40000001` (`sub_429080(list, 1073741825)`);
+        // `Ui_MoveBetweenLists` skips it on `+16 & 4`. This used the walk's
+        // flag, so it hid the sneak's bottom bar - which is `+16 = 0x20000004`
+        // and `+20 = 0`: drawn, and deliberately not navigable.
+        if (!l.drawn()) continue;
         // THE NAME FIELD. Its item carries no string - the record's label is
         // -1 - because what it shows is what the PERSON typed, not a line out
         // of `IAM\<screen>`. The list is identified by its hook, which is the
@@ -126,16 +174,200 @@ ScreenFrame ScreenComposer::draw(Surface& fb, int screenId,
             ++out.itemsDrawn;
         }
         for (const auto& it : l.items) {
+            std::uint32_t eff0[3];
+            it.effective(l.broadcast, eff0);
+            // The item's own draw gate, the same `0x40000001` the list has.
+            if (eff0[1] & 1) continue;
+
+            // ---- IS THIS ITEM SELECTED, AND IS IT FOCUSED ------------
+            //
+            // `Ui_DrawList` sets two flags before drawing each row:
+            // `0x20000002` UIF_SELECTED on the row the list's `+2` names,
+            // and `0x20000001` UIF_FOCUSED as well when that list is the
+            // panel's CURRENT one - so exactly one item on screen is
+            // focused, which is what `screen+40` caches for the input code.
+            const int selIdx = walk.selectionOf(l);
+            const bool isSel = selIdx >= 0 &&
+                static_cast<std::size_t>(selIdx) < l.items.size() &&
+                l.items[static_cast<std::size_t>(selIdx)].addr == it.addr;
+            const bool isFocus = isSel && &l == curList;
+
+            // ---- THE TWO LIT LADDERS, and they are NOT the same ladder --
+            //
+            // `docs/UI.md` says `Ui_DrawItemSprite` "repeats the same ladder"
+            // as `Ui_ItemTextStyle`. Read side by side they agree on the
+            // first two rungs and differ on the other two, so a drawer that
+            // shares one ladder lights the wrong things:
+            //
+            //   both      0x40000008 -> lit
+            //             0x40000004 -> Ui_Oscillator(1)          (pulse)
+            //   SPRITE    0x40000002 -> !sel: unlit
+            //                           sel & !focus: lit
+            //                           sel &  focus: oscillator  <- FLASH
+            //             otherwise  -> lit = SELECTED
+            //   TEXT      0x40000002 -> !sel: unlit
+            //                           sel: oscillator
+            //             otherwise  -> lit = SELECTED **and** FOCUSED
+            //
+            // (`sub_476E60` LABEL_4/10/11 against `sub_4769A0` LABEL_6/12/13.)
+            //
+            // Oscillator 1 ships period 500, flags 3, and its completion
+            // `sub_42B7B0` does `osc[6] = (osc[6] == 0)` - a square wave
+            // toggling every 500 ms. That is the user's "flashing icon to
+            // indicate the selection", read rather than invented.
+            //
+            // The sneak's own text carries none of the three bits, so it
+            // takes the TEXT default: the current list's selected row is
+            // white and every other row is dimmed. Its tab icons carry
+            // `0x2`, so the focused tab pulses.
+            const bool blink = ((clockMs_ / 500) & 1) != 0;
+            bool litSprite, litText;
+            if (eff0[1] & 8)      { litSprite = litText = true; }
+            else if (eff0[1] & 4) { litSprite = litText = blink; }
+            else if (eff0[1] & 2) {
+                litSprite = !isSel ? false : (isFocus ? blink : true);
+                litText   = isSel && blink;
+            } else {
+                litSprite = isSel;
+                litText   = isSel && isFocus;
+            }
+            const bool lit = litSprite;
+
+            // ---- THE FILL: read, TRIED, and NOT DRAWN ------------------
+            //
+            // `Ui_DrawItemFill` (0x00476FE0) puts a quad over the item's own
+            // scaled rect, and the amber bars behind the sneak's rows and its
+            // two strips are where it goes. The colour is packed
+            // `(alpha << 24) | (+8 << 16) | (+9 << 8) | +10` with alpha 200
+            // on the plain `0x40000010` arm - all read, and lifted as
+            // `rgb`/`layer`.
+            //
+            // **It was implemented, rendered, and refuted by the picture.**
+            // Two things the reading does not have:
+            //
+            //  * the COLOUR, and the blend is now READ and does not save
+            //    it. `sub_4285E0`'s mode is `sub_464740() ? 4 : 0`, and
+            //    `sub_480AC0`'s mode-4 arm sets D3D render states 19 and 20
+            //    to **6 and 5** - SRCBLEND = INVSRCALPHA, DESTBLEND =
+            //    SRCALPHA, the INVERSE of the usual source-over. So the quad
+            //    resolves to `src * (1 - a) + dst * a`, and with the record's
+            //    (255, 0, 0) at alpha 200 over the panel's black that is
+            //    **(55, 0, 0)**.
+            //
+            //    Measured off the user's own screenshot, the bars are
+            //    **(94, 60, 16)** and (61, 40, 11) - amber. A green of 60
+            //    cannot come from a red source over black under ANY blend
+            //    that mixes the two, and no permutation of the channel order
+            //    helps. So the reading is wrong somewhere the decompiler
+            //    does not show, and the honest state is a CONTRADICTION with
+            //    both sides pinned rather than a colour fitted to a picture.
+            //    (The capture is a resampled window grab, so the triples are
+            //    approximate - but the argument needs only that green is not
+            //    zero.)
+            //  * the per-row GATE - and this half IS now read.
+            //    `sub_42AAE0` binds the nine widgets to a window over the
+            //    list: a widget past `list+24` gets tag -1 and has
+            //    `0x40000001` SET, so it is not drawn, and the rest get
+            //    `tag = window + k` with it cleared. That is why the
+            //    original fills two of nine. `play.cpp` models it on the
+            //    text side already; the fill needs only the colour.
+            //
+            // Drawing it on the strength of the colour alone gives nine red
+            // bars where the game shows two amber ones - which looks like a
+            // rendering bug and is really an unread blend. Left out until
+            // both halves are read; the data is in the table for whoever
+            // reads them.
+
+            // ---- THE SPRITE: `Ui_DrawItemSprite` -----------------------
+            //
+            // The lit source at `+12/+14` or the unlit one at `+16/+18`,
+            // each `w x h`, blitted from the screen's own artwork - so the
+            // sneak's five left-hand icons are cut out of `sneak.bmp`.
+            // Source raw, destination scaled, exactly as the background.
+            //
+            // The sneak's tab column carries `0x40000302`: sprite, cursor,
+            // and lit-on-selection. Drawing its `+28` as TEXT instead - what
+            // this did - printed five labels the game has never shown.
+            if ((eff0[1] & 0x100) && sheetOk) {
+                const int* src = lit ? it.lit : it.unlit;
+                const int x0 = it.x + q->offsetX, y0 = it.y + q->offsetY;
+                blt(fb, {scaleX(x0), scaleY(y0),
+                         scaleX(x0 + it.w), scaleY(y0 + it.h)},
+                    art, {src[0], src[1], src[0] + it.w, src[1] + it.h},
+                    kBltWait | kBltKeySrc, artKey);
+                ++out.spritesDrawn;
+            }
+
+            // ---- AN ITEM SHOWS TEXT ONLY IF SOMETHING GIVES IT ANY -----
+            //
+            // `Ui_DrawItem` reads `+24` (a resolved `char *`) and, failing
+            // that, calls `+32`. It NEVER reads `+28`. An item with both
+            // zero draws nothing, whatever string id it carries - 111 of
+            // the tree's 572 items are exactly that, and this drew every
+            // one of them. The sneak's six tab icons and its three 50x50
+            // buttons are in that set, which is the whole of the user's
+            // "some of the texts are parts of sub-menu and should not be
+            // displayed at anytime": they are not sub-menu texts, they are
+            // strings belonging to a widget that does not draw text.
+            //
+            // Of the callbacks, two are modelled: `0x00476860` draws the
+            // item's own `+28`, and `0x0042AA00` is the inventory row,
+            // which asks the channel for a name and arrives here as
+            // `rows_`. The other thirteen are native and draw nothing.
+            const std::string* run_ = nullptr;
+            if (rows_) {
+                const auto r = rows_->find(it.addr);
+                if (r != rows_->end() && !r->second.empty()) run_ = &r->second;
+            }
+            const bool ownString = it.textFn == kTextFnString;
+            if (!run_ && !ownString) continue;
             const int id = it.label();
-            if (id < 0 || id >= static_cast<int>(text.size())) continue;
-            const std::string& s = text[static_cast<std::size_t>(id)];
+            if (!run_ && (id < 0 || id >= static_cast<int>(text.size()))) continue;
+            const std::string& s =
+                run_ ? *run_ : text[static_cast<std::size_t>(id)];
             if (s.empty()) continue;
-            const bool lit = focused && focused->addr == it.addr;
-            const std::uint8_t v = lit ? kLit : kDim;
-            // Face `I` is MENUINTR, the row the compiled font table names for
-            // the menus - and finding that was what took `uitext.py` from
-            // Latin letters against alien glyphs to IoU 1.000.
-            const auto run = parseMarkup(s, 'I', v, v, v).run;
+
+            // ---- THE TEXT COLOUR IS THE ITEM'S OWN --------------------
+            //
+            // `Ui_ItemTextStyle` (0x004769A0) takes `+8/+9/+10` as the
+            // colour - unless bank C carries `0x80000001`, which forces
+            // white - and **halves all three when the row is not lit**.
+            // That halving is the `>>= 1` this file already had as `kDim`;
+            // what it did not have is the colour it halves.
+            //
+            // 233 of the 275 text items carry the white flag, the sneak's
+            // among them - so white-and-grey was right there by luck. The
+            // other 42 use their own, and NINE of those are actually
+            // coloured: eight at (254, 68, 20) and one at (255, 100, 70),
+            // on the terminal and SURV screens. Those nine have been drawn
+            // white since the composer existed.
+            std::uint8_t cr = 255, cg = 255, cb = 255;
+            if (!(eff0[2] & 1)) {
+                cr = static_cast<std::uint8_t>(it.rgb[0]);
+                cg = static_cast<std::uint8_t>(it.rgb[1]);
+                cb = static_cast<std::uint8_t>(it.rgb[2]);
+            }
+            if (!litText) { cr >>= 1; cg >>= 1; cb >>= 1; }
+            // THE FACE IS THE ITEM'S OWN, `+36`, not one hard-coded here.
+            //
+            // This drew everything in `I` (MENUINTR) because that is the
+            // start menu's face and the start menu is what was measured. It
+            // is right there for a reason the record states: screen 29's
+            // four buttons carry font **73**, which IS 'I' - so the tier-4
+            // agreement with the engine's own capture never depended on the
+            // hard-coding and does not move now.
+            //
+            // The SNEAK is where it showed. Its verbs, rows and echo bar name
+            // **74** ('J', JOURNAL) and its clock **67** ('C'), and JOURNAL
+            // is two pixels shorter in the line than MENUINTR - so the port
+            // drew the whole device in the menu's face at the menu's leading.
+            // Reported as "the font used is not the one of the main menu",
+            // which is the complaint from the other side: it should not be,
+            // and it was.
+            //
+            // 255 means the record names none, and `Text_DrawBlock`'s own
+            // global default is 74.
+            const auto run = parseMarkup(s, it.face('J'), cr, cg, cb).run;
 
             // `Ui_ItemTextStyle` (0x004769A0) maps the item's BANK 2 bits to
             // `Text_DrawBlock`'s alignment, and the mapping is NOT the

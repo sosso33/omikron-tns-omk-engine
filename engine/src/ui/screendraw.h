@@ -26,10 +26,18 @@
 #include "ui/text.h"
 #include "ui/widgets.h"
 
+#include <cstdint>
+#include <map>
 #include <string>
 #include <vector>
 
 namespace omk {
+
+// `sub_476860` - the generic text callback, the one that draws the item's own
+// `+28` string (with `+30` as a printf argument when it is not -1). An item
+// whose `+32` is anything else has native text this port does not produce,
+// and an item with no `+24` and no `+32` has NO TEXT AT ALL.
+inline constexpr std::uint32_t kTextFnString = 0x00476860u;
 
 // What a composed frame reports about itself, so a headless check can assert
 // it without a window or a PNG decoder.
@@ -37,6 +45,10 @@ struct ScreenFrame {
     int  tilesDrawn = 0;      // background cells blitted
     bool fullSheet = false;   // the 0x40004000 path instead
     int  itemsDrawn = 0;      // rows whose text was rasterised
+    // Sprite items blitted - `Ui_DrawItemSprite`, bank B `0x100`. 233 items
+    // in the tree carry it and none of them was drawn before 2026-09-04;
+    // the sneak's five left-hand icons are five of them.
+    int  spritesDrawn = 0;
     int  textAdvance = 0;     // summed pen advance of every row drawn
     int  centred = 0;         // rows the alignment ladder centred
     // FNV-1a of the whole framebuffer. The counts above say what was drawn;
@@ -60,6 +72,32 @@ public:
     // sheet on black, which is what this did before the cloud was found.
     void attachCloud(const MenuCloud* c) { cloud_ = c; }
     void setFrame(long f) { frame_ = f; }
+    // THE OSCILLATOR CLOCK, in MILLISECONDS, and it is not the frame counter.
+    // The eight oscillator records carry periods of 500, 1000 and 5000, and
+    // `Ui_TickScreens` advances each by the frame DELTA - so the unit is ms,
+    // where `frame_` above is the cloud's frame index. Feeding one to the
+    // other makes the selection blink at a rate that depends on the frame
+    // rate, which is the class of bug CLAUDE.md 5 records for the effect
+    // emitters ("ticking it in seconds ran the city 30x too slow").
+    void setClockMs(long ms) { clockMs_ = ms; }
+
+    // WHAT A ROW SHOWS WHEN IT IS NOT A STRING ID.
+    //
+    // An item's `+28` indexes the screen's own `IAM\<name>`, and for most
+    // rows that is the whole story. The sneak's inventory page is the case
+    // where it is not: its nine rows (list 0x004DE6F0) ship `-1` and are
+    // never bound, because what they show is the CARRIED OBJECT LIST, which
+    // the interface asks for through `Game_HandleEvent` 29 and 33 rather than
+    // storing anywhere. An inventory slot is 56 bytes of which the first 32
+    // are the display name `case 33` wrote.
+    //
+    // So this is the same shape as the start menu's name field, which the
+    // composer already draws from `UiWalk::name()` for the same reason: the
+    // row's text is runtime state and the drawer has to be given it. Keyed by
+    // ITEM ADDRESS, so it cannot land on the wrong row. Rows with no entry
+    // fall back on the string id, and a screen with no map set behaves
+    // exactly as before.
+    void setRowText(const std::map<std::uint32_t, std::string>* t) { rows_ = t; }
 
     // THE DISPLAY SIZE, and the interface is not redesigned for it.
     //
@@ -94,7 +132,9 @@ private:
     int background(Surface& fb, const UiPanel& p, const Surface& sheet) const;
 
     const MenuCloud* cloud_ = nullptr;
+    const std::map<std::uint32_t, std::string>* rows_ = nullptr;
     long             frame_ = 0;
+    long             clockMs_ = 0;
     int              dw_ = 640, dh_ = 480;
 
     const DataFs*    fs_;

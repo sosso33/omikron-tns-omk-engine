@@ -41,6 +41,13 @@ inline constexpr std::uint32_t kItemUnselectable = 4;      // flags A bit 2
 inline constexpr std::uint32_t kListHidden       = 4;      // list flags A bit 2
 inline constexpr std::uint32_t kListNoWrap       = 0x80000;
 
+// `sub_42A930` (0x0042A930) - a LIST hook that is `Ui_MoveSelection` with
+// LEFT and RIGHT in place of UP and DOWN. Hard-coded rather than lifted
+// because it is not a table field: it is the address a list record names
+// at `+4`, the same way `gridHook` and `nameHook` are, and those two ARE
+// lifted - this one is here so the sneak works with an older table too.
+inline constexpr std::uint32_t kMoveSelectionLR = 0x0042A930u;
+
 using FlagOp = std::pair<std::uint32_t, bool>;
 
 struct UiItem {
@@ -56,6 +63,32 @@ struct UiItem {
     // The id to draw with: the binding when the callback wrote one, else the
     // record's own.
     int           label() const { return bindString >= 0 ? bindString : string; }
+    // WHAT MAKES AN ITEM SHOW TEXT - and `+28` is not it.
+    //
+    // `Ui_DrawItem` (0x004764A0) never reads `string`. It takes `+24` as a
+    // resolved `char *` and, when that is null, calls the `+32` CALLBACK to
+    // fill a buffer. **An item with both zero draws no text at all**,
+    // whatever its `+28` says - and 111 items in the shipped tree are
+    // exactly that, the sneak's six tab icons and its three 50x50 buttons
+    // among them. A composer keyed on `+28` prints every one of them.
+    //
+    // So `string` is the ARGUMENT to a text callback, not a licence to draw.
+    // `+8/+9/+10` - the fill and outline COLOUR; `+11` its I2D layer.
+    int           rgb[3] = {0, 0, 0};
+    int           layer = 0;
+    // `+36` - the item's FONT, an ASCII id into the 13-record font table
+    // (74 'J' JOURNAL, 83 'S' SNEAK, 73 'I' MENUINTR, 67 'C'), 255 unset.
+    // `Text_DrawBlock`'s own default is 74. Never lifted until 2026-09-04,
+    // so every screen drew in one hard-coded face.
+    int           font = 255;
+    char          face(char dflt = 'J') const {
+        return font == 255 ? dflt : static_cast<char>(font);
+    }
+    std::uint32_t text = 0, textFn = 0;
+    int           textArg = -1;          // `+30`, the printf argument
+    // The two SPRITE sources, `Ui_DrawItemSprite` (0x00476E60): the LIT
+    // top-left and the UNLIT one, each `w x h` out of the screen's artwork.
+    int           lit[2] = {0, 0}, unlit[2] = {0, 0};
     std::uint32_t callback = 0;
     // `Ui_ConfirmSelection` takes the `+40` callback when there is one and
     // otherwise DESCENDS into `+44`. So the tree links downward through the
@@ -77,6 +110,18 @@ struct UiList {
     std::uint32_t addr = 0;
     std::uint32_t hook = 0;          // 0 = Ui_MoveSelection, the default walk
     std::uint32_t flags = 0;
+    // `list+20`, bank B - and the DRAW gate, which is NOT the walk's flag.
+    // `Ui_DrawPanel` skips a list on `0x40000001`; `Ui_MoveBetweenLists`
+    // skips it on `+16 & 4`. The sneak's bottom bar is `+16 = 0x20000004`
+    // with `+20 = 0`: drawn, and not navigable, which is what a status bar
+    // is. Drawing keyed on the walk's flag showed the wrong set of lists.
+    std::uint32_t flagsB = 0;
+    bool drawn() const { return (flagsB & 1) == 0; }
+    // `list+2`, the SELECTED ROW - but only when the screen's open callback
+    // wrote it, and -1 when it did not. Runtime state, so the record on disk
+    // says nothing: SNEAK and SLIDER are set by `Ui_OpenSneakFamily`, and the
+    // shops, FIGHT SIM, SAVE GAME and PAUSE GAME by their own opens.
+    int           select = -1;
     std::vector<FlagOp> broadcast;
     std::vector<UiItem> items;
 
@@ -96,6 +141,15 @@ struct UiPanel {
     // the array in place gives ids like 240, which cannot index a 10-wide
     // grid.
     std::vector<int> tiles;
+    // `panel+24`, the CURRENT LIST the open callback installed, or -1 when it
+    // installed none and `Ui_MoveBetweenLists`'s rule has to decide. Fifteen
+    // panels carry one; it is what opens the sneak on its inventory page
+    // rather than on the tab column.
+    int           current = -1;
+    // `panel+72`. `sub_42A5C0` reads only its 0x80000, the NOWRAP bit that
+    // decides whether stepping off the last list wraps to the first.
+    std::uint32_t flags = 0;
+    bool          noWrap() const { return (flags & kListNoWrap) != 0; }
     std::vector<UiList> lists;
 };
 
@@ -161,6 +215,9 @@ public:
     const UiPanel* at(std::uint32_t addr) const;
     const std::vector<UiPanel>& all() const { return panels_; }
     std::uint32_t gridHook() const { return gridHook_; }
+    // `sub_42A710` - `Ui_MoveBetweenLists` on LEFT and RIGHT, a PANEL
+    // hook. The sneak device's pages are the only records naming it.
+    std::uint32_t moveListsHook() const { return moveHook_; }
     std::uint32_t nameHook() const { return nameHook_; }
     std::uint32_t startConfirmHook() const { return startHook_; }
     std::uint32_t startNameList() const { return startName_; }
@@ -193,6 +250,7 @@ private:
     std::map<int, std::string> soundName_;          // the 45, by id
     std::map<int, std::vector<int>> screenSounds_;  // each screen's 12 slots
     std::uint32_t gridHook_ = 0, nameHook_ = 0, startHook_ = 0;
+    std::uint32_t moveHook_ = 0;
     std::uint32_t startName_ = 0, startButtons_ = 0;
     int nameMax_ = 20;
     std::map<int, std::string> nameSwitch_;
@@ -224,6 +282,12 @@ public:
 
     int  currentList() const { return cur_; }
     int  selection() const;
+    // The selected row of ANY list, not just the current one.
+    // `Ui_DrawList` marks `UIF_SELECTED` on the row that list's own `+2`
+    // names - every list has one - and adds `UIF_FOCUSED` only when the list
+    // is the panel's current one. A drawer that treats "in the current list"
+    // as selected lights every row of it, which is what this did.
+    int  selectionOf(const UiList& l) const;
     const UiItem* selected() const;
     bool closed() const { return panel_ == nullptr; }
 
@@ -241,7 +305,11 @@ public:
 
 private:
     void settle();
-    bool move(const UiList& l, std::uint32_t bits);
+    // `sub_42A7E0` - the selection mover, whose two direction bits are
+    // parameters: the default dispatch passes UP/DOWN, `sub_42A930`
+    // passes LEFT/RIGHT.
+    bool move(const UiList& l, std::uint32_t bits,
+              std::uint32_t back = kUiUp, std::uint32_t on = kUiDown);
     // `UI_GridMenuInput` (0x004B00D0) - the LIFT's floor panel, and the one
     // list hook in the image with a single reference. Six slots in a 3-wide,
     // 2-deep grid plus one standing apart at 6, which the ITEM COORDINATES
@@ -254,6 +322,9 @@ private:
     // answer is the slot rotated by one: slot 1 ("Niveau 0", the entrance)
     // answers 0. All 18 `ui.open 4` sites store it in variable 496, `Etage`.
     bool grid(const UiList& l, std::uint32_t bits);
+    // `sub_42A5C0` - move the panel's focus between LISTS, which is what the
+    // sneak device's pages bind to left and right through `sub_42A710`.
+    bool moveLists(int step);
     // `sub_0047A230` - the start menu's confirm dialog moves between its two
     // lists with UP and DOWN, not left and right.
     bool startConfirm(std::uint32_t bits);

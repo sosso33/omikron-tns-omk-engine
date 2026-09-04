@@ -528,7 +528,7 @@ def t_ui_widgets(e):
         return out
 
     def read_panel(panel, screen, blists, bitems, binds=None, bpage=None,
-                   blayout=None):
+                   blayout=None, bcur=None, bsel=None):
         rec = {"screen": screen, "panel": panel,
                "parent": u._u32(panel), "hook": u._u32(panel + 16),
                # `Ui_ItemScreenX/Y` (0x004297C0 / 0x004297E0) are four lines
@@ -552,10 +552,38 @@ def t_ui_widgets(e):
                "tilesAt": u._u32(panel + 20),
                "tiles": ([u._i8(u._u32(panel + 20) + k) for k in range(80)]
                          if u._u32(panel + 20) else []),
+               # `panel+24`, the CURRENT LIST - but only when the screen's
+               # own open callback WROTE it. It is runtime state, so the disk
+               # image says nothing and a reader must fall back on
+               # `Ui_MoveBetweenLists`'s rule; `Ui_OpenSneakFamily` is the one
+               # callback that sets it, and it is what decides which page of
+               # the sneak device comes up (`sim/ui.py: open_state`). -1 means
+               # "not written", not "list -1".
+               "current": (bcur or {}).get(panel, -1),
+               # `panel+72`, the panel's own flag word. `sub_42A5C0` reads
+               # only its 0x80000 - the same NOWRAP bit a list uses at `+16`,
+               # deciding whether moving off the last list wraps to the first.
+               # Every sneak page ships 0x20000030, so they all wrap; lifted
+               # rather than assumed, because "they all wrap" is a fact about
+               # the shipped data and not about the format.
+               "flags": u._u32(panel + 72),
                "lists": []}
         for lst in u.lists(panel):
             l = {"addr": lst, "hook": u._u32(lst + 4),
                  "flags": u._u32(lst + 16),
+                 # `list+20`, bank B - and it is the DRAW gate, which is a
+                 # DIFFERENT flag from the walk's. The panel drawer skips a
+                 # list on `0x40000001` (`sub_429080(list, 1073741825)`),
+                 # while `Ui_MoveBetweenLists` skips it on `+16 & 4`. A list
+                 # can be one and not the other: the sneak's bottom bar ships
+                 # `+16 = 0x20000004` and `+20 = 0`, so it is DRAWN and not
+                 # navigable, which is exactly what a status bar should be.
+                 # Not lifted until 2026-09-04, so the composer had only the
+                 # walk's flag and drew the wrong set of lists.
+                 "flagsB": u._u32(lst + 20),
+                 # `list+2`, the SELECTED ROW, on the same terms as `current`
+                 # above: the open callback's write, or -1 for none.
+                 "select": (bsel or {}).get(lst, -1),
                  "broadcast": blists.get(lst, []),
                  # ...and the LIST's own flag words at +16/+20, which
                  # `I2D_SetListFlag` (0x004290D0) writes. A third helper with
@@ -577,6 +605,53 @@ def t_ui_widgets(e):
                     # the panel offset to
                     "x": u._i16(it), "y": u._i16(it + 2),
                     "w": u._i16(it + 4), "h": u._i16(it + 6),
+                    # WHAT MAKES AN ITEM SHOW TEXT, and it is neither of
+                    # the two fields this table used to carry. `Ui_DrawItem`
+                    # (0x004764A0) never reads `+28`: it takes `+24` as a
+                    # resolved `char *` and, when that is null, calls `+32` to
+                    # fill the buffer. An item with both zero draws NO TEXT AT
+                    # ALL, whatever `+28` says - which is what the sneak's six
+                    # tab icons and its three 50x50 buttons are, and why a
+                    # composer keyed on `+28` printed five labels the game
+                    # never shows.
+                    #
+                    # The callbacks seen on screen 9:
+                    #   0x00476860  the generic one - draws string `+28`, with
+                    #               `+30` as a printf argument when it is not -1
+                    #   0x0042AA00  the inventory row: reads the item's `+60`
+                    #               tag and asks `Game_RaiseEvent(33)` for a name
+                    #   0x0049DC20  the sneak's echo bar
+                    #   0x0049E090  the sneak's clock row
+                    # `+8/+9/+10` the fill/outline COLOUR and `+11` its
+                    # layer, packed by `Ui_DrawItemFill` as
+                    # `(alpha << 24) | (+8 << 16) | (+9 << 8) | +10`.
+                    "rgb": [u._u8(it + 8), u._u8(it + 9), u._u8(it + 10)],
+                    "layer": u._u8(it + 11),
+                    # `+36` IS A FONT, not a character - it goes into
+                    # `Text_DrawBlock`'s `params[2]`, whose global default is
+                    # **74** and steps to 76 below 640x480. The ids are ASCII
+                    # because they are meant to be typed: 74 = 'J' JOURNAL,
+                    # 83 = 'S' SNEAK, 73 = 'I' MENUINTR, 67 = 'C'. 255 is
+                    # "unset" and takes the default.
+                    #
+                    # `docs/UI.md` identified this field and it was never
+                    # lifted, so every screen drew in whatever face the
+                    # composer picked. It shows on the SNEAK first because
+                    # the sneak is the screen with a font of its own.
+                    "font": u._u8(it + 36),
+                    "text": u._u32(it + 24),
+                    "textFn": u._u32(it + 32),
+                    # `+30`, the format argument the generic callback passes to
+                    # `sub_43FEA0` when it is not -1.
+                    "textArg": u._i16(it + 30),
+                    # The SPRITE source rects, `Ui_DrawItemSprite`
+                    # (0x00476E60): `+12/+14` is the LIT top-left and
+                    # `+16/+18` the UNLIT one, each `w x h` from the item's own
+                    # size, blitted out of the screen's artwork. `ui sprites`
+                    # has read these out of the image since 2026-09-01; they
+                    # were never in the table, so nothing could DRAW one.
+                    "lit": [u._i16(it + 12), u._i16(it + 14)],
+                    "unlit": [u._i16(it + 16), u._i16(it + 18)],
                     "callback": u._u32(it + 40),
                     # `+44` is the CHILD panel. `Ui_ConfirmSelection` takes the
                     # `+40` callback when there is one and otherwise descends
@@ -631,6 +706,21 @@ def t_ui_widgets(e):
         if par in shops:
             item = u.SHOP_TITLE_FIELD - 28
             binds.setdefault(item, {})["string"] = shops[par]
+        # ...and the panel's CURRENT LIST and each list's SELECTED ROW, which
+        # need the panel and list addresses in hand for the same reason the
+        # bindings need the item ones: a store only counts when it lands on a
+        # real record at the right offset. The reachable set is the screen's
+        # own panel plus every panel an item's `+44` descends into.
+        reach, stack1 = {panel}, [panel]
+        while stack1:
+            pn = stack1.pop(0)
+            for l in u.lists(pn):
+                for it in u.items(l):
+                    kid = u._u32(it + 44)
+                    if kid and kid not in reach:
+                        reach.add(kid); stack1.append(kid)
+        allLists = {l for pn in reach for l in u.lists(pn)}
+        bcur, bsel = u.open_state(sid, reach, allLists)
         # the screen's own panel, then every panel reachable through `+44`,
         # transitively. A child carries `screen: -1` - it belongs to whichever
         # panel descended into it, and the open callback's flag edits were
@@ -639,7 +729,8 @@ def t_ui_widgets(e):
         # one another screen already named: the 28 screens share only 13
         # distinct top panels, and de-duplicating them would leave 15 screens
         # unable to look themselves up.
-        rec = read_panel(panel, sid, blists, bitems, binds, bpage, blayout)
+        rec = read_panel(panel, sid, blists, bitems, binds, bpage, blayout,
+                         bcur, bsel)
         out.append(rec)
         stack = [it["child"] for l in rec["lists"] for it in l["items"]
                  if it["child"]]
@@ -650,7 +741,8 @@ def t_ui_widgets(e):
             if addr in seen:
                 continue
             seen.add(addr)
-            kid = read_panel(addr, -1, blists, bitems, binds, bpage, blayout)
+            kid = read_panel(addr, -1, blists, bitems, binds, bpage, blayout,
+                             bcur, bsel)
             out.append(kid)
             for l in kid["lists"]:
                 for it in l["items"]:
@@ -665,6 +757,10 @@ def t_ui_widgets(e):
     # so the field is the tighter of the two.
     return {"panels": out, "unresolved": skipped,
             "gridHook": UI.GRID_HOOK, "nameHook": UI.NAME_HOOK,
+            # `sub_42A710` - `Ui_MoveBetweenLists` bound to LEFT and
+            # RIGHT. A PANEL hook rather than a list one, and the sneak
+            # device's pages are the only records that name it.
+            "moveListsHook": UI.MOVE_LISTS_HOOK,
             "nameSwitch": {str(k): v for k, v in UI.name_switch(e).items()},
             "nameMax": UI.NAME_MAX,
             "startConfirmHook": 0x0047A230,
@@ -738,23 +834,67 @@ def c_ui_widgets(rows, e):
     def mapped(va):
         try: e.read(va, 4); return True
         except Exception: return False
-    return [("screens with a panel", len(tops), 28),
-            ("screens without one", len(rows["unresolved"]), 9),
-            # 28 screens share only 13 distinct top panels, so a record per
+    # THE SNEAK FAMILY, added 2026-09-04. Screens 0, 7 and 9 (VIDEOPHONE,
+    # SLIDER, SNEAK) were three of the nine this lift skipped, because
+    # `Ui_OpenSneakFamily` writes a different panel on each arm of its `+4`
+    # branch and `panel_of` could not say which was whose. Following the
+    # branch (`sim/ui.py: SNEAK_ARM`) adds all three - and with them the
+    # sneak DEVICE, whose tab column descends into five sibling pages, so
+    # most of the counts below move by more than three.
+    return [("screens with a panel", len(tops), 31),
+            ("screens without one", len(rows["unresolved"]), 6),
+            # 31 screens share only 16 distinct top panels, so a record per
             # screen is not a record per address - and de-duplicating by
             # address would leave 15 screens unable to look themselves up.
             ("distinct top panel addresses",
-             len(set(p["panel"] for p in tops)), 13),
-            ("child panels reached through item +44", len(kids), 7),
-            ("lists", len(lists), 93),
-            ("items", len(items), 411),
+             len(set(p["panel"] for p in tops)), 16),
+            # 7 -> 13: the sneak device's tab column names five pages the
+            # family's three screens do not open on (Identite, Memoire,
+            # Options, Quitter, and the videophone's own), and one of them
+            # descends further.
+            ("child panels reached through item +44", len(kids), 13),
+            ("lists", len(lists), 125),
+            ("items", len(items), 572),
             ("item records inside the image",
              sum(1 for i in items if mapped(i["addr"])), len(items)),
-            # 20 across the whole tree; 13 of them are on a top panel, and
-            # the rest are a child descending into a child.
+            # 75 across the whole tree but only 16 distinct item RECORDS
+            # (9 before the sneak family, and its tab column adds seven):
+            # 0x004DE210 is one list carried by nine of the panels, so each
+            # of its child-naming items is counted once per panel.
             ("items naming a child panel",
-             sum(1 for i in items if i["child"]), 20),
-            ("lists with a non-default input hook", len(hooks), 36),
+             sum(1 for i in items if i["child"]), 75),
+            ("...of which distinct item records",
+             len({i["addr"] for i in items if i["child"]}), 16),
+            ("lists with a non-default input hook", len(hooks), 48),
+            # The two RUNTIME fields, and only where the open callback writes
+            # them. Neither was in this table before 2026-09-04, because the
+            # scan had no reason to look: `panel+24` is the CURRENT LIST and
+            # `list+2` the SELECTED ROW, both runtime state that the disk
+            # image says nothing about - so the walk fell back on
+            # `Ui_MoveBetweenLists`'s rule for every screen. The sneak family
+            # is what showed they are recoverable, and going looking found
+            # them on eleven more: `Ui_OpenShop`'s first instruction is
+            # `mov dword_4E3988, 0`, which is the ten shops' shared panel's
+            # `+24`, and FIGHT SIM, SAVE GAME, PAUSE GAME and SHOOT HUMAN
+            # each set one too.
+            #
+            # Counted as RECORDS, not addresses: 28 screens share 16 top
+            # panels and one list can be carried by several, so the same
+            # write is recorded once per panel that has it (8 distinct list
+            # addresses behind the 27).
+            ("panels whose open callback sets the current list",
+             sum(1 for p in ps if p.get("current", -1) >= 0), 15),
+            ("lists whose open callback sets the selection",
+             sum(1 for l in lists if l.get("select", -1) >= 0), 27),
+            ("...distinct list records among them",
+             len({l["addr"] for l in lists if l.get("select", -1) >= 0}), 8),
+            # SNEAK opens on its INVENTORY page with the tab column already on
+            # "Inventaire" - list 3 of panel 0x004DEE50, row 2 of 0x004DE210.
+            ("SNEAK's current list and tab row",
+             [[p["current"] for p in ps if p["screen"] == 9],
+              [l["select"] for p in ps if p["screen"] == 9
+               for l in p["lists"] if l["addr"] == 0x004DE210]],
+             [[3], [2]]),
             # what the OPEN callbacks bind into the items - the string id at
             # +28 and the tag at +60, neither of which is in the record: the
             # items ship with -1 and the callback writes them, so a reader
@@ -769,9 +909,9 @@ def c_ui_widgets(rows, e):
                     for l in p["lists"] for i in l["items"]
                     if "string" in (i.get("bind") or {})),
              [5, 6, 7, 8, 9, 10]),
-            ("distinct hooks among them", len(set(hooks)), 11),
+            ("distinct hooks among them", len(set(hooks)), 13),
             ("lists taking Ui_MoveSelection, the default walk",
-             sum(1 for l in lists if not l["hook"]), 57),
+             sum(1 for l in lists if not l["hook"]), 77),
             ("the LIFT grid hook is present", rows["gridHook"] in hooks, True),
             # It is here only because the walk follows `+44`: the name field
             # is in the start menu's confirm dialog, a CHILD panel. A lift

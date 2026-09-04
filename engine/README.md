@@ -1342,7 +1342,7 @@ and 0x004C37E8 for Astaroth. `sub_434C30` hands it straight to the poser
 here poses a skeleton.
 
 **`verify.py: engine UI`** — the widget tree, walked with the engine's own
-input words. **28 screens, and this and `tools/sim/ui.py` agree on every one.**
+input words. **31 screens, and this and `tools/sim/ui.py` agree on every one.**
 
 Nine of the coverage rows below are interface, and I had listed them as having
 no oracle because pixels cannot be diffed. That was too quick: the simulator is
@@ -1351,8 +1351,9 @@ though the drawing does not — the same way it did for the scripts.
 
 **The tree had to be lifted first.** A panel, its lists and their items are
 `.data` in `Runtime 2.exe`, not in `gamedata/`, so `tables/ui_widgets.json` now
-carries them — 35 panels (28 screens plus 7 children), 93 lists, 411 items — for exactly the reason the VM
-opcode table is carried, and `exe tables` re-derives it so it cannot go stale.
+carries them — 44 panels (31 screens plus 13 children), 125 lists, 572 items —
+for exactly the reason the VM opcode table is carried, and `exe tables`
+re-derives it so it cannot go stale.
 
 **The tree links downward through the item — and a first version of this got
 that wrong.** `panel+0` is the parent, so "top panels only; children need
@@ -1367,6 +1368,132 @@ look themselves up.
 
 What still needs native code is a panel a *callback* installs rather than a
 `+44`, and the answers those callbacks write.
+
+### The SNEAK — the first screen the PLAYER opens
+
+**`verify.py: sneak chain`, `engine: sneak`** (2026-09-04). Every screen the
+port could open before this came from a script: `ui.open` parks its caller and
+the Session says which screen is waiting. The sneak — Kay'l's handheld device,
+screen 9 — comes from the player's hands instead, and the chain is entirely in
+the shipped data:
+
+```
+TAB                    key_bindings group 0 action 13 "Ouvrir sneak", bit 0x2000
+-> H1Avnt/F1Avnt.CTL   group 0 entry, +4 = 0x00002000, flags bit 2 = alias
+-> GoTo group 6        H_SNKON, that group's flag-0x20 default
+-> its child           flags 0x25000013 - bit 0x10 names a move
+-> tab_special_move[0] "MDSNEAK0" -> sub_0046ADF0: event 25, then screen 9
+```
+
+Four things had to be built for it, and three of them are not about the sneak:
+
+* **`tab_special_move` had no consumer at all.** `CefChannel` has been
+  emitting `ChannelEvent::Kind::Move` with the entry's move name since it was
+  written and nothing read it, so every one of the 66 rows was a no-op.
+  `PlayerController::specialMoves()` now reports them and `actor/moves.h`
+  resolves a name to its row; 65 of the 66 are still named-and-not-run, which
+  the log says once each rather than silently.
+* **The sneak family entered the widget tree.** `Ui_OpenSneakFamily` installs
+  a different panel on each arm of a `+4` branch, which a linear scan cannot
+  attribute — the same shape as `Ui_OpenShop`'s titles. Screens 0, 7 and 9
+  and six child panels joined, and with them `panel+24` (the current list),
+  `panel+72` and `list+2` (the selection) wherever an open callback writes
+  them: 15 panels and 8 lists do, the ten shops among them. Both walkers now
+  prefer the callback's value and fall back on `Ui_MoveBetweenLists`'s rule
+  only where the engine really does.
+* **Two "unmodelled hooks" were generic movers.** `sub_42A5C0` and
+  `sub_42A7E0` take their two direction bits as PARAMETERS, and the default
+  dispatch is just `sub_42A7E0(…, UP, DOWN)`. `sub_42A710` is the first bound
+  to LEFT/RIGHT as a panel hook and `sub_42A930` the second as a list hook —
+  the sneak's tab column and its verb bar. `tools/sim/ui.py` had transcribed
+  the first as `_move_lists` and **never called it**, because until now no
+  panel in the tree named the hook.
+* **The inventory channel got its first consumer.** `script/inventory.h` was
+  written, checked and run by nothing; the sneak's nine rows are filled
+  through it — `IAM\OBJECT` and `IAM\GLOBAL` read out of `gamedata/`, event
+  25 opening object list 0 the way `sub_0046ADF0` does, event 26 closing it.
+
+Two bugs in the frame loop fell out of it, both the same mistake: a line
+gated on `adventure`, which a screen over the world takes FALSE in the same
+breath. `Ui_BeginScreen`'s 0x203F repeat mask stayed at the world's 0, so
+every held key repeated every frame; and the `--hold` stream stopped feeding,
+so a headless run could press TAB and then nothing.
+
+**What a PLAY REPORT then found, and it was four faults in one drawer**
+(2026-09-04). A player listed four complaints and every one was a field the
+widget lift had never carried, so the composer was substituting a rule of its
+own for a rule in the binary:
+
+* **`Ui_DrawItem` never reads `+28`.** Text is `+24` or the `+32` callback;
+  an item with both zero draws none, and **111 of 572 items are that**. The
+  sneak's tab icons are among them - "the menus are essentially icons".
+* **the icons are `Ui_DrawItemSprite`**, 233 items, none ever drawn.
+* **the flash is `Ui_Oscillator(1)`**, a 500 ms square wave on a MILLISECOND
+  clock; and the sprite and text ladders are NOT the same ladder, which this
+  repo's own docs said they were.
+* **`Ui_DrawPanelBack` scales the destination and not the source** - the
+  reason the device did not fill an 800x600 display, and a fault no 640x480
+  check can see.
+* **`item+36` is the font** - identified in the docs years of sessions ago
+  and never lifted, so every screen drew in one hard-coded face. MENUINTR has
+  no Latin glyphs, so the sneak was rendering the right strings through the
+  wrong alphabet.
+
+It was not a sneak bug: the LIFT's seven floor buttons are sprite items too,
+and the port had been printing seven labels over seven icons there as well.
+
+**And the clock found a bug outside the interface entirely.** The sneak's
+clock row is the first thing in this port to put the time on screen, and it
+read day 0 against a save the loader had just printed a real date for: the
+clock is an engine global and NOT in the DB image, so `omk-play` had been
+loading every save at 00:00:00 since saves were loadable. Nothing noticed
+because nothing drew a clock. `verify.py: save clock`, and the corroboration
+is that `traces/save-appart.bin` restores to 12 Nadim 7216 14:14:17 while the
+player's screenshot of the ORIGINAL shows 12 Nadim 7216 - 13:01:15: the
+fixture and that screenshot are one play session.
+
+**What is NOT done, and is visible in a screenshot rather than a number.**
+`Text_LayOutBlock` (0x0043F3E0) wraps a row's text inside the item's own box;
+this composer draws one unwrapped line. It stopped biting when the captions
+stopped being drawn at all - they were never text - but it is still there.
+`sub_0049C050`, the inventory list's SCROLLING hook, is unmodelled, so the
+page shows the first nine carried items; `sim: ui coverage` counts SLIDER and
+SNEAK as refusing for that reason, and it is an HONEST refusal rather than a
+gap to close: the hook's behaviour depends on the object COUNT and the widget
+walker has no game state to ask.
+
+The three 50x50 items are live `.3DO` MODELS - `setek`, `anneau` and `imager`,
+loaded by the screen's own open - which rotate to show selection. The UI layer
+has no 3D path, so they are not drawn; their LABELS and the two counts are,
+on the echo bar, which is where the engine puts them.
+
+`Ui_DrawItemCursor` is not drawn either, and it is the commonest decoration
+in the tree. `sub_479920` centres a 220-dword pool on the focused item and
+advances SIXTEEN per-element angles by the frame delta - a ring of turning
+pieces, which is what bleeds light around the selected verb in a capture and
+reads like a bright fill in a still frame. The elements' geometry and art are
+not read, and sixteen animated pieces invented from one still frame would be
+decoration this port cannot defend.
+
+**And `Ui_DrawItemFill`'s amber bars are a CONTRADICTION, not a gap.** Both
+halves were chased and they do not meet:
+
+* the per-row GATE is read - `sub_42AAE0` marks a widget past the object
+  count with `0x40000001`, which is why the original fills two bars of nine;
+* the BLEND is read - `sub_480AC0`'s mode-4 arm sets D3D states 19 and 20 to
+  6 and 5, SRCBLEND = INVSRCALPHA and DESTBLEND = SRCALPHA, the INVERSE of
+  the usual source-over, so the quad resolves to `src * (1 - a) + dst * a`;
+* and the record gives (255, 0, 0) at alpha 200 - the bytes checked twice,
+  through the lift and through a raw hex dump of the item - which over the
+  panel's black is **(55, 0, 0)**, where the original's bars measure
+  **(94, 60, 16)** and (61, 40, 11). A green of 60 cannot come from a red
+  source over black under any blend that mixes the two, and no channel
+  permutation helps.
+
+It was implemented, rendered and backed out: on the strength of the colour
+alone it paints nine red bars where the game shows two amber ones. Both sides
+are pinned in `screendraw.cpp`; the fill waits for whichever reading is wrong
+to be found, rather than for a colour to be fitted to a screenshot.
 
 ### The trap, which this port walked into
 

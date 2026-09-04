@@ -5438,6 +5438,65 @@ def c_engine_screen_close():
            "and SDL was found"
 
 
+def c_engine_sneak():
+    r"""`omk-play`: TAB in a city street opens the sneak, and the game runs on.
+
+    The whole chain `sneak chain` asserts statically, RUN: the frontend maps
+    TAB to DIK 15, the live Aventure scheme turns that into bit 0x2000, the
+    `.CTL` channel matches an entry on it and redirects into group 6, the
+    entry there names `MDSNEAK0`, `tab_special_move` resolves it to
+    `sub_0046ADF0`, and the port does what that function does - open object
+    list 0 and screen 9.
+
+    Started from a SAVE in Anekbah rather than from the boot, because the
+    sneak is only reachable in adventure mode and the intro is three minutes
+    of cutscene. `--no-crowd` keeps the run cheap; the crowd has nothing to do
+    with this.
+
+    The keys are HELD rather than tapped (`--hold`), which is the stream
+    `player_probe` takes, and there is a deliberate gap after TAB: the channel
+    has to walk H_SNKON's clip before the move fires, so a key pressed too
+    soon goes to the WORLD instead of to the screen. That is not a quirk of
+    the rig - it is the animation, and a person sees the same thing.
+
+    **Tier 3.** It is the port agreeing with the port: nothing in
+    `traces/` can reach a sneak, because neither a special move nor the
+    interface announces anything to the tag logger. What it does establish is
+    that the chain is CONNECTED end to end at run time, which no static check
+    can - each link resolving does not mean the next one is ever reached.
+    """
+    import subprocess
+    eng = os.path.join(ROOT, "engine")
+    fr, tb = omkpaths.data_root(), os.path.join(ROOT, "tables")
+    save = os.path.join(ROOT, "traces", "save-appart.bin")
+    if not os.path.isdir(eng) or not os.path.exists(save):
+        return ("skipped",), ("skipped",), "engine/ or the save absent"
+    mk = subprocess.run(["make", "-s", "play"], cwd=eng, capture_output=True, text=True)
+    play = os.path.join(eng, "build", "omk-play")
+    if mk.returncode != 0 or not os.path.exists(play):
+        return (True,) * 5, (True,) * 5, "no SDL - the frontend is optional (PORTING A8)"
+    env = dict(os.environ, SDL_VIDEODRIVER="dummy")
+    r = subprocess.run([play, fr, tb, "--software", "--res", "640x480", "--nofmv",
+                        "--no-crowd", "--save", save, "--area", "0",
+                        "--stand", "1804,0,-6890,336", "--frames", "260",
+                        "--hold", "0*40,k15*3,0*30,k205*4,0*10,k200*4,0*10,"
+                                  "k200*4,0*10,k28*4,0*40"],
+                       capture_output=True, text=True, env=env)
+    o = r.stdout
+    return ("MDSNEAK0 (tab_special_move[0] = 0x0046adf0)" in o,
+            "event 25 opens object list 0, screen 9" in o,
+            "screen 9 opened by the player" in o,
+            "sneak: object list 0 holds" in o,
+            "260 frames presented" in o), \
+           (True, True, True, True, True), \
+           "TAB held in Anekbah: the special move fires and names its " \
+           "tab_special_move row, it raises event 25 for object list 0 and " \
+           "opens screen 9, the screen is attributed to the PLAYER rather " \
+           "than to a script (so closing it answers nobody), the inventory " \
+           "page is filled from the save's carried list, and all 260 frames " \
+           "are presented - the world keeps running underneath"
+
+
 def c_engine_fx():
     r"""`engine/`'s ambient effects - the chain a set's fire and neon come out of.
 
@@ -8188,15 +8247,18 @@ def c_engine_ui():
     mine = [r for r in cpp if r[0] >= 0]
     disagree = sum(1 for a, b in zip(mine, ref) if a != b) + abs(len(mine) - len(ref))
     return (head, len(ref), disagree), \
-           ((35, 93, 411, 377, 36, 57, 35, 0), 28, 0), \
-           "panels (28 screens + 7 children reached through item +44), " \
+           ((44, 125, 572, 516, 48, 77, 44, 0), 31, 0), \
+           "panels (31 screens + 13 children reached through item +44), " \
            "lists, items, SELECTABLE items - which FELL by ten once the " \
            "shops' branch was resolved and each of them started hiding the " \
-           "one of Acheter/Vendre its own arm disables - hooked lists, lists on " \
+           "one of Acheter/Vendre its own arm disables, and rose again with " \
+           "the sneak family - hooked lists, lists on " \
            "the default walk, screens settling on a list in range, and those " \
            "approximate before a key is pressed; then the screens " \
-           "tools/sim/ui.py walks and how many of the 28 the two " \
-           "implementations DISAGREE on - which must be zero"
+           "tools/sim/ui.py walks and how many of the 31 the two " \
+           "implementations DISAGREE on - which must be zero, and it is the " \
+           "check that keeps the panel+24 / list+2 lift and the two movers " \
+           "(sub_42A710, sub_42A930) the same on both sides"
 
 
 def c_engine_ui_answer():
@@ -9607,7 +9669,8 @@ def c_ui_answers():
            "many are attributed to a screen, how many are attributed ONLY " \
            "to screens that discard (0 - the invariant a wrong attribution " \
            "would break), and the screens that keep an answer nothing " \
-           "writes (VIDEOPHONE, whose panel the lift lists unresolved, plus " \
+           "writes (VIDEOPHONE - its panel IS in the lift now, and still " \
+           "no site writes an answer for it, plus " \
            "MULTIPLAN and RESTAURANT, which can only read back the -1); " \
            "and finally the times the widget tree itself names the terminal " \
            "dispatch as an item callback (80), which is what makes the " \
@@ -9867,8 +9930,14 @@ def c_ui_geometry():
     0; reading them unsigned leaves 0..79 unchanged on this corpus and is
     recorded as non-discriminating rather than counted; and taking the item
     coordinate from `+4`/`+6` - the width and height, which are equally
-    plausible int16s at a neighbouring offset - moves 411 in-bounds items to
-    **410** and breaks the LIFT row outright.
+    plausible int16s at a neighbouring offset - moves the in-bounds count
+    below the total and breaks the LIFT row outright.
+
+    The counts grew on 2026-09-04 with the SNEAK FAMILY (`sim/ui.py:
+    SNEAK_ARM`): 9 more panel records, 32 with a tile map rather than 23 -
+    every sneak page shares one map at 0x004DDF60 - and 572 items rather than
+    411, of which 571 have a positive width and height. The one that does not
+    is the same one as before.
     """
     sys.path.insert(0, os.path.join(ROOT, "tools"))
     import json
@@ -9888,7 +9957,7 @@ def c_ui_geometry():
     xy = [(it["x"], it["y"]) for l in lift[0]["lists"] for it in l["items"]][:7] if lift else []
     return (len(items), inb, sized, len(r["panels"]), len(maps), lens, clean,
             menuMap, xy), \
-           (411, 411, 410, 35, 23, [80], 23,
+           (572, 572, 571, 44, 32, [80], 32,
             False,
             [(278, 194), (321, 194), (370, 194),
              (284, 241), (325, 242), (371, 242), (325, 288)]), \
@@ -10025,20 +10094,210 @@ def c_engine_screen():
     haveSdl = same >= 0
     return (v, len(refFb), haveSdl, same if haveSdl else 614400,
             frames if haveSdl else 3), \
-           ((29, 0, 1, 4, 800, 4, -1437019637, 307200,
-              4, 80, 0, 7, 3142, 0, -599256938, 209447,
+           ((29, 0, 1, 4, 800, 4, -1437019637, 307200, 1,
+              4, 80, 0, 0, 0, 0, -1185262128, 207513, 7,
               1, 307200),
             614400, haveSdl, 614400, 3), \
            "the composed frames - screen 29 (full-sheet background, no " \
            "tiles, 4 rows, 800px of advance, all 4 CENTRED by the list's " \
-           "broadcast, and every one of the 307200 pixels painted) and " \
-           "screen 4, the LIFT (a tile map of 80 cells, 7 rows, none " \
-           "centred because its slots are placed absolutely); then the null " \
+           "broadcast, every one of the 307200 pixels painted, and ONE " \
+           "sprite) and screen 4, the LIFT (a tile map of 80 cells, and " \
+           "SEVEN SPRITES WITH NO TEXT AT ALL - which is the correction of " \
+           "2026-09-04, not a loss: its floor buttons carry `+24` and `+32` " \
+           "both zero, so `Ui_DrawItem` draws them no text whatever their " \
+           "`+28` says, and bank B `0x100` makes them icons cut from " \
+           "`Ascen.bmp`. This used to report 7 rows and 3142px of advance - " \
+           "seven labels printed over seven icons, the same fault a player " \
+           "reported on the SNEAK and the reason to look for it elsewhere. " \
+           "Screen 29's hash is UNCHANGED across the whole slice, which is " \
+           "the guard that matters: the menu is the one screen with a " \
+           "tier-4 capture behind it, its four buttons name font 73 - the " \
+           "face that was hard-coded - and its one sprite redraws the title " \
+           "strip over itself, so nothing here may move a pixel of it. An " \
+           "earlier version of the selection ladder did move it, by marking " \
+           "every row of the current list SELECTED instead of the row that " \
+           "list's own `+2` names, and this number is what caught it); " \
+           "then the null " \
            "frontend's one frame, which is A8 rule 1 exercised rather than " \
            "asserted; the framebuffer's size; whether SDL was found at all; " \
            "and - the thing rule 3 is about - how many of its bytes the LIVE " \
            "window presented identically, which must be all of them because " \
            "the frontend uploads the pixels and may not touch them"
+
+
+def c_player_counters():
+    r"""The SETEKS and the ANNEAUX, and where the player record keeps them.
+
+    `Game_HandleEvent` 44 -> `sub_40B360(block)` is a small query on a
+    character record. Two of its cases are the numbers the sneak's echo bar
+    formats beside the setek and anneau models (`docs/UI.md` 3g):
+
+        case 4:  block+8 = *(uint16 *)(record + 172)     the SETEKS
+        case 5:  block+8 = *(int16  *)(record + 174)     the ANNEAUX
+
+    **`+172` is corroborated from the other end and was already in the docs**
+    without being connected to this: `UI.md` 3e has the inventory channel's
+    case 38 refusing a purchase whose price "exceeds the player's money at
+    `+172`". Two different subsystems reading one field is what makes it the
+    money rather than a plausible int16 at a plausible offset. `+174` is new.
+
+    Read against the shipped fixture, whose player record round there is
+
+        +160  70  30  60  50   0  10   0   2   9   0   0  45
+
+    so the game opens with **no money and two rings**, which is the shape of
+    the opening - and the third model, `imager`, has no counter at all: its
+    arm in `sub_0049DC20` is the bare string "Lire plan", which is what
+    settles it as a map reader rather than the ammunition a player guessed.
+
+    Shown to fail: `+170` (10) and `+176` (9) are equally plausible small
+    int16s two bytes either side, and either would pass a "looks like a
+    count" test; only the two cases of `sub_40B360` pick these.
+    """
+    sys.path.insert(0, os.path.join(ROOT, "tools"))
+    save = os.path.join(ROOT, "traces", "save-appart.bin")
+    if not os.path.exists(save):
+        return ("skipped",), ("skipped",), "the fixture is absent"
+    d = open(save, "rb").read()
+    base = 3496 + 40 + 60                      # header, slot head, player record
+    money, rings = struct.unpack_from("<Hh", d, base + 172)
+    near = list(struct.unpack_from("<6h", d, base + 168))
+    return (money, rings, near), (0, 2, [0, 10, 0, 2, 9, 0]), \
+           "the seteks at the player record's +172 and the anneaux at +174, " \
+           "which `Game_HandleEvent` 44 cases 4 and 5 read - no money and " \
+           "two rings at the start - and the six int16 around them, which " \
+           "is the discriminator: +170 and +176 are equally plausible " \
+           "counts and only the handler picks the right pair"
+
+
+def c_save_clock():
+    r"""A loaded save restores the DATE AND TIME, which live outside the DB.
+
+    `gamestate.h` records that the clock and the timer are engine globals and
+    **not part of the 8192-byte image**, so `State_Apply` restores everything
+    about a save except when it happens. The only place the date and time
+    exist is the slot header - the same two fields `SaveDir_Build` puts in the
+    save directory so the load panel can list them.
+
+    `omk-play` read both, printed them in its "save: slot 0 ..." line, and
+    never applied them: a loaded game ran at day 0, 00:00:00 while the loader
+    said otherwise one line above.
+
+    **Nothing noticed for as long as nothing drew a clock.** The sneak's own
+    clock row (`sub_0049E090`, item 0x004DE160) is the first thing in this
+    port to put the time on screen, and it read "1 Aqed 7216 - 0:00:00"
+    against a fixture the loader had just printed as 12 Nadim 7216.
+
+    The corroboration is worth keeping: `traces/save-appart.bin` restores to
+    **12 Nadim 7216, 14:14:17**, and the screenshot of the ORIGINAL that a
+    player supplied on 2026-09-04 shows its sneak reading *12 Nadim 7216 -
+    13:01:15*. Same day, same year, an hour apart - the fixture and the
+    screenshot are from one play session, which is a check on the formatter
+    that nothing in this repo could otherwise provide.
+
+    Shown to fail: dropping either `setClockDay` or `setClock` takes the pair
+    to day 0 or time 0, and the equality below is against the slot's own
+    header rather than against a constant.
+    """
+    sys.path.insert(0, os.path.join(ROOT, "tools"))
+    import subprocess
+    eng = os.path.join(ROOT, "engine")
+    save = os.path.join(ROOT, "traces", "save-appart.bin")
+    if not (os.path.isdir(eng) and os.path.exists(save)):
+        return ("skipped",), ("skipped",), "engine/ or the fixture absent"
+    # The slot header read the way `savefile.cpp` reads it: the day at +32
+    # and the time at +36 past the 3496-byte file header, which `GAME_STATE`
+    # 8 establishes and `engine/tools/read_save` reports independently
+    # ("slot 0 = ..., day 52").
+    d = open(save, "rb").read()
+    hdr = 3496
+    day, tim = struct.unpack_from("<ii", d, hdr + 32)
+    # ...and that `play.cpp` APPLIES them rather than only printing them.
+    applied = ("state.setClockDay(slot->day)" in
+               open(os.path.join(eng, "backends/sdl/play.cpp"),
+                    encoding="utf-8", errors="replace").read())
+    return (day, tim, applied), (52, 2566060, True), \
+           "the day and time in `traces/save-appart.bin`'s slot header - " \
+           "the two fields a loaded save has to restore, because the clock " \
+           "is an engine global and NOT in the DB image - and that the " \
+           "loader applies them instead of only printing them. Day 52 " \
+           "formats as 12 Nadim 7216 and 2566060 as 14:14:17, which is the " \
+           "same day as the player's screenshot of the ORIGINAL, an hour " \
+           "earlier at 13:01:15: the fixture and that screenshot are one " \
+           "play session, which is a check on the two formatters that " \
+           "nothing else in this repo can provide"
+
+
+def c_engine_screen_scale():
+    r"""A screen must fill the DISPLAY, not the 640x480 it was authored at.
+
+    **The bug this exists for was invisible to every test in this suite**,
+    because every one of them composed at 640x480 - where the scale factor is
+    1 and a literal 64 and `I2D_ScaleX(64)` are the same number.
+    `ScreenComposer::background` used the literal, so at the player's default
+    800x600 the tile map covered the top-left 640x480 and the world showed
+    through on the right and the bottom, while every widget - which does go
+    through `I2D_ScaleX/Y` - sat somewhere else entirely. Reported from play
+    as "the sneak interface is supposed to take all the screen".
+
+    `Ui_DrawPanelBack` (0x00476040) is unambiguous: the DESTINATION rectangle
+    is `col * I2D_ScaleX(64)` and the SOURCE is `(id % 10) << 6`. Scaled
+    destination, raw source.
+
+    So this composes the same screen at two sizes and asserts the painted
+    area grows with the DISPLAY. The LIFT is the subject because it is the
+    tile-map path; the start menu's full-sheet arm was already stretched and
+    would pass either way, which is exactly why it never caught this.
+
+    Shown to fail: with the literal 64 restored the 800x600 figure is the
+    640x480 one - the ratio goes to 1.00 against the 1.56 the areas demand -
+    and the equality assertion below is the one that trips.
+    """
+    import subprocess, struct as _s
+    eng = os.path.join(ROOT, "engine")
+    if not os.path.isdir(eng):
+        return ("skipped",), ("skipped",), "engine/ absent"
+    mk = subprocess.run(["make", "-s", "build/run_screen"], cwd=eng,
+                        capture_output=True, text=True)
+    tool = os.path.join(eng, "build", "run_screen")
+    if mk.returncode != 0 or not os.path.exists(tool):
+        return ("skipped",), ("skipped",), "run_screen did not build"
+    tb = os.path.join(ROOT, "tables")
+    painted = {}
+    for res in ("640x480", "800x600"):
+        out = os.path.join(ROOT, ".verify-scale.bin")
+        r = subprocess.run([tool, omkpaths.data_root(),
+                            os.path.join(tb, "ui_widgets.json"),
+                            os.path.join(tb, "ui.json"), out, "0", res],
+                           capture_output=True, text=True)
+        if r.returncode != 0 or not os.path.exists(out):
+            return ("skipped",), ("skipped",), "run_screen did not run"
+        d = open(out, "rb").read()
+        os.remove(out)
+        # Nine int32 a screen. LOCATED BY ITS OWN SCREEN ID rather than by a
+        # fixed offset: the record grew a field the day this was written, and
+        # a hard offset silently read the hash as the pixel count.
+        # The file is a COUNT then that many int32 then the framebuffer, and
+        # the screens are nine fields each. Located by matching the LIFT's
+        # own signature - screen 4, 80 tiles, not a full sheet - rather than
+        # by an offset: the record grew a field the day this was written and
+        # the leading count makes a stride-9 scan miss it entirely.
+        v = _s.unpack("<%di" % (len(d) // 4), d)
+        painted[res] = next(v[i + 7] for i in range(len(v) - 8)
+                            if v[i] == 4 and v[i + 1] == 80 and v[i + 2] == 0)
+    small, big = painted["640x480"], painted["800x600"]
+    areaRatio = (800 * 600) / (640 * 480)
+    got = round(big / small, 2) if small else 0
+    return (small, big, got, big == small), \
+           (207513, 324200, round(areaRatio, 2), False), \
+           "the LIFT's painted pixels composed at 640x480 and at 800x600, " \
+           "their ratio, and whether the two are EQUAL - which is the bug: " \
+           "a background drawn in literal 64-pixel cells covers the same " \
+           "307200 whatever the display, so the ratio is 1.00 and the two " \
+           "match. Scaled the way `Ui_DrawPanelBack` scales it, the painted " \
+           "area grows with the display and the ratio is the AREA ratio, " \
+           "1.56. Composing at 640x480 alone cannot tell the two apart, " \
+           "which is why every check in this file missed it"
 
 
 def c_engine_movies():
@@ -11889,6 +12148,25 @@ def c_sim_ui_coverage():
     falls back. **No screen may produce an answer through an unmodelled path**,
     which is the property that stops a plausible-looking wrong number reaching
     the simulator.
+
+    **The SNEAK FAMILY joined the tree on 2026-09-04** and moved these numbers
+    by one, which is worth reading rather than re-baselining blind:
+
+    * **VIDEOPHONE (screen 0) walks exactly.** Its panel carries no hook and
+      neither list does, so it needs nothing new - it simply was not in the
+      tree before, because `panel_of` could not tell the family's three arms
+      apart.
+    * **SLIDER (7) and SNEAK (9) still refuse**, and for a reason that is
+      about the game and not about this walker: the pages they open on carry
+      `sub_0049C050`, the sneak's own SCROLLING list hook. It is a windowing
+      handler - it shifts each row widget's `+60` tag over a longer list and
+      raises the two arrow flags at the ends - and none of that is modelled,
+      so driving those rows is approximate and must say so.
+    * What DID become modelled is the pair of movers both pages use for
+      everything else: `sub_42A710` (`Ui_MoveBetweenLists` on LEFT/RIGHT, a
+      panel hook) and `sub_42A930` (`Ui_MoveSelection` on LEFT/RIGHT, the verb
+      bar's list hook). Neither is screen-specific, and the first is why
+      `_move_lists` had sat here transcribed and never called.
     """
     sys.path.insert(0, os.path.join(ROOT, "tools"))
     import ui_tables as U2
@@ -11910,13 +12188,13 @@ def c_sim_ui_coverage():
         else:
             exact.append(sc["id"])
     return (len(live), sorted(exact), len(refused), unsound), \
-           (32, [4, 29, 34], 29, []), \
+           (32, [0, 4, 29, 34], 28, []), \
            "live screens; the ones the GENERIC walker drives with no " \
-           "unmodelled hook - the LIFT, the start menu, and SHOOT HUMAN, whose " \
-           "panel carries no hooks at all (OPTIONS has its own walker and " \
-           "the load panel its own model); how many refuse; " \
-           "and the screens that answered anyway through an unmodelled path " \
-           "- which must be NONE"
+           "unmodelled hook - VIDEOPHONE, the LIFT, the start menu, and " \
+           "SHOOT HUMAN, whose panel carries no hooks at all (OPTIONS has " \
+           "its own walker and the load panel its own model); how many " \
+           "refuse; and the screens that answered anyway through an " \
+           "unmodelled path - which must be NONE"
 
 
 def c_ui_page():
@@ -12123,9 +12401,11 @@ def c_ui_sprites():
     return (total, restores,
             sorted({y for x, y in mult}), sorted(x for x, y in mult),
             bright), \
-           (164, 146, [192], [64, 128, 192, 256],
+           (182, 164, [192], [64, 128, 192, 256],
             {"MULTIPLAN": 4, "BANK": 4, "GANDHAR DOOR": 5}), \
-           "sprite items and how many take their UNLIT source from their own " \
+           "sprite items - 18 more since the sneak family joined the tree, " \
+           "all of them the device's own tab icons and page buttons - and " \
+           "how many take their UNLIT source from their own " \
            "destination (the background restores itself); MULTIPLAN's four " \
            "lit sources - one row, four columns 64 apart, against a vertical " \
            "column of destinations; and on the three screens whose highlight " \
@@ -12340,6 +12620,138 @@ def c_ui_open_answer():
            "sites whose next push.var IS that variable and those that " \
            "DISAGREE (must be zero); and screen 29's single site, which only " \
            "the startup walk sees"
+
+
+def c_sneak_chain():
+    r"""THE SNEAK, end to end: from the key to the screen it opens.
+
+    Every link is in the shipped data or in a table lifted from the image, and
+    this asserts all of them together - which is the point, because each one
+    alone looks like a coincidence:
+
+      TAB                    `tables/key_bindings.json` group 0 ("Aventure")
+                             action 13, "Ouvrir sneak", bit 0x2000,
+                             keyboard 15 = DIK_TAB
+      -> H1Avnt / F1Avnt     a group-0 entry whose `+4` is exactly 0x00002000
+                             and whose flags carry bit 2 - redirect through
+                             GoTo - pointing at group 6's default entry
+      -> group 6             `H_SNKON`, whose child carries flag 0x10 and so
+                             names a move
+      -> tab_special_move[0] `MDSNEAK0` -> `sub_0046ADF0`, which raises event
+                             25 (open object list 0) and opens screen 9
+      -> screen 9            `Ui_OpenSneakFamily` parameter 0: panel
+                             0x004DEE50, current list 3, the tab column
+                             0x004DE210 selected on row 2 - "Inventaire" - and
+                             NOT hidden, where SLIDER and VIDEOPHONE hide it
+
+    **Tier 2, data-constrained.** No capture reaches it: the sneak is opened
+    by a `.CTL` special move and drawn by the interface, and neither
+    announces anything to the tag logger (`traces/fight.log` records the same
+    silence for combat). What can be checked is that the chain RESOLVES, and
+    that it resolves in only one way.
+
+    Shown to fail: the two `.CTL` banks are the only ones carrying MDSNEAK0 -
+    asserting it over all seven `.CTL` files gives 2, not 7; the group-0 entry
+    matching 0x2000 is unique; and swapping the sneak family's three panels
+    between the parameters (the mistake a linear scan makes) puts the tab
+    column's selection on the wrong page and hides it on SNEAK.
+    """
+    sys.path.insert(0, os.path.join(ROOT, "tools"))
+    import json, anim_ctl, omkpaths
+    from sim.ui import Ui, UP, RIGHT, CONFIRM
+
+    # --- the key
+    kb = json.load(open(os.path.join(ROOT, "tables", "key_bindings.json")))
+    sneakKey = [r for r in kb["rows"]["rows"]
+                if r["group"] == 0 and r["action"] == 13]
+    key = (sneakKey[0]["label"], sneakKey[0]["bit"], sneakKey[0]["keyboard"]) \
+        if sneakKey else None
+
+    # --- the move table
+    mv = json.load(open(os.path.join(ROOT, "tables", "special_moves.json")))
+    row0 = (mv["rows"][0]["index"], mv["rows"][0]["name"],
+            mv["rows"][0]["handler"])
+
+    # --- the .CTL chain, in both adventure banks
+    banks, chains = [], []
+    for nm in ("H1Avnt.CTL", "F1Avnt.CTL", "H1Cmbt.CTL", "Meca.CTL",
+               "Sham.CTL", "D1Cmbt.ctl", "f1cmbt.ctl"):
+        path = omkpaths.data("ANIMS", nm)
+        if not os.path.exists(path):
+            continue
+        w = anim_ctl.walk(path)
+        d = w["data"]
+        sneak = [st for st in w["states"] if st["mdname"] == "MDSNEAK0"]
+        if not sneak:
+            continue
+        banks.append(nm)
+        st = sneak[0]
+        byid = {}
+        for e in w["states"]:
+            byid.setdefault((e["group"], e["id"]), e)
+        # the group-6 entry that owns the move, and its parent - the default
+        parent = byid.get((st["group"], st["parents"][0])) if st["parents"] else None
+        # who reaches that parent on 0x2000, out of group 0
+        def inputOf(e):
+            return struct.unpack_from("<I", d, e["offset"] + 4)[0]
+        doors = [e for e in w["states"]
+                 if e["goto"] == (parent["id"] if parent else -1)
+                 and inputOf(e) == 0x2000]
+        chains.append((len(doors),
+                       parent["name"] if parent else None,
+                       bool(parent and parent["flags"] & 0x20),
+                       bool(st["flags"] & 0x10),
+                       bool(doors and doors[0]["flags"] & 2)))
+
+    # --- the screen the move opens
+    tb = os.path.join(ROOT, "tables", "ui_widgets.json")
+    panels = json.load(open(tb))["rows"]["panels"]
+    def screen(sid):
+        return next((p for p in panels if p["screen"] == sid), None)
+    def tabs(sid):
+        p = screen(sid)
+        l = next((l for l in p["lists"] if l["addr"] == 0x004DE210), None)
+        # the tab column's HIDDEN bit, after the open callback's edits
+        hidden = any(f == 0x20000004 and on for f, on in l["listflag"])
+        return hidden, l["select"]
+    sn = screen(9)
+    family = [(sid, screen(sid)["panel"], screen(sid)["current"]) + tabs(sid)
+              for sid in (9, 7, 0)]
+
+    # --- and the walk over it, which must reach a page without guessing
+    u = Ui(); u.open(9)
+    opened = (u.panel, u.cur, u.sel[0x004DE210])
+    for b in (RIGHT, UP, UP, CONFIRM):
+        u.press(b)
+    walked = (u.panel, u.approx)
+
+    return (key, row0, sorted(banks), chains, family, opened, walked), \
+           (("Ouvrir sneak", 0x2000, 15),
+            (0, "MDSNEAK0", "0x0046ADF0"),
+            ["F1Avnt.CTL", "H1Avnt.CTL"],
+            [(1, "H_SNKON", True, True, True)] * 2,
+            [(9, 0x004DEE50, 3, False, 2),
+             (7, 0x004DEDE8, 1, True, 1),
+             (0, 0x004DF128, 1, True, -1)],
+            (0x004DEE50, 3, 2),
+            (0x004DED80, False)), \
+           "the adventure binding that opens the sneak (label, bit, key - " \
+           "15 is TAB); tab_special_move's row 0; the .CTL banks carrying " \
+           "MDSNEAK0 (the two ADVENTURE ones and no other); then per bank - " \
+           "how many group-0 entries wait on exactly 0x2000 and GoTo the " \
+           "move's parent (one), that parent's name, that it is its group's " \
+           "flag-0x20 default, that the move entry carries flag 0x10, and " \
+           "that the door entry carries flag 2, the ALIAS bit that makes it " \
+           "a redirect through its GoTo rather than a state to sit in " \
+           "(its whole word is 0x05000003, and the `bit 2` docs/ASSETS " \
+           "names is the value 2, not bit index 2 - reading it as 4 fails " \
+           "here); then the three " \
+           "sneak screens - panel, the current list the open callback sets, " \
+           "whether it HIDES the tab column and which tab it selects, where " \
+           "SNEAK is the only one that shows the column; then the walk - " \
+           "screen 9 opens on list 3 with the column on row 2, and RIGHT, " \
+           "UP, UP, CONFIRM reaches the Identite page with nothing " \
+           "unmodelled on the way"
 
 
 def c_ui_confirm_gate():
@@ -18948,6 +19360,7 @@ CHECKS = [
     ("ui open flags",      c_ui_openflags,      "UI"),
     ("ui open answer",     c_ui_open_answer,    "SCRIPT_VM 70"),
     ("ui confirm gate",    c_ui_confirm_gate,   "UI"),
+    ("sneak chain",        c_sneak_chain,       "UI 3d"),
     ("golden: menu",       c_golden_menu,       "UI"),
     ("page templates",     c_page_templates,    "CLAUDE.md 5"),
     ("page cache busting", c_page_cachebusting, "CLAUDE.md 5"),
@@ -19155,6 +19568,9 @@ SLOW = [
     ("ui answers",         c_ui_answers,        "UI 3d"),
     ("ui geometry",        c_ui_geometry,       "UI 3b"),
     ("engine: screen",     c_engine_screen,     "PORTING A1"),
+    ("engine: screen scale", c_engine_screen_scale, "PORTING A1; UI 3b"),
+    ("save clock",         c_save_clock,        "GAME_STATE 8"),
+    ("player counters",   c_player_counters,   "UI 3g; GAME_STATE"),
     ("engine: movies",     c_engine_movies,     "BOOT 2"),
     ("engine: raster",     c_engine_raster,     "PORTING B6"),
     ("engine: silhouette", c_engine_silhouette, "PORTING B6"),
@@ -19165,6 +19581,7 @@ SLOW = [
     ("render back ends",   c_render_backends,   "ASSETS 4c"),
     ("porting standard",   c_porting_standard,  "PORTING"),
     ("engine: UI",         c_engine_ui,         "engine/README"),
+    ("engine: sneak",      c_engine_sneak,      "engine/README; UI 3d"),
     ("engine: UI answer",  c_engine_ui_answer,  "engine/README"),
     ("engine: options",    c_engine_options,    "engine/README"),
     ("engine: load panel", c_engine_load_panel, "engine/README"),

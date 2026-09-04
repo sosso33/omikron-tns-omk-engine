@@ -42,6 +42,29 @@ public:
 
     const ObjectRecord* record(int id) const;
 
+    // ---- cases 25 and 26: WHICH LIST IS OPEN ---------------------------
+    //
+    // `dword_4C0B64`, and it is the one piece of state the rest of the family
+    // reads: every other case returns result 3 while it is -1. Opening the
+    // sneak is `Game_RaiseEvent(25, 0)` - list 0, the carried items - which
+    // is what `sub_0046ADF0` does before it opens screen 9 (`actor/moves.h`).
+    //
+    //     case 25: dword_4C0B64 = a2;
+    //              if (a2 != 3) return 1;
+    //              ...size list 3 to 16 and ObjectList_Load it
+    //     case 26: if (!dword_4C0B64) dword_4C0B64 = -1;
+    //              ...free the 3D preview slot
+    //
+    // Two things to keep exactly as they are. Case 25 stores the argument
+    // whatever it is, so "open" is not a boolean; and case 26 only clears the
+    // global when the open list is **0** - closing while list 1 or 2 is up
+    // leaves it open, which is the engine's own asymmetry and not a slip
+    // here. Freeing the preview object (`dword_4C0608`) is case 26's other
+    // half and is NOT modelled: it needs case 30's model slot.
+    void openList(int list) { openList_ = list; }
+    void closeList() { if (openList_ == 0) openList_ = -1; }
+    int  openedList() const { return openList_; }
+
     // case 33 - the display name, with `" - N"` appended when the record's
     // flag 0x20 says it carries a quantity. The count comes from the PLAYER
     // record for kinds 2..6 and from the item's own `+12` for kinds 7..11.
@@ -70,6 +93,7 @@ public:
 private:
     const std::vector<ObjectRecord>* objects_;
     const std::vector<Recipe>* recipes_;
+    int openList_ = -1;              // dword_4C0B64
 };
 
 }  // namespace omk

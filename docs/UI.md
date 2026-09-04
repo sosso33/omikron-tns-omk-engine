@@ -485,6 +485,101 @@ The arrows guard is `0x403C0000`, which is **exactly the OR** of the four bits
 `Ui_DrawItemArrows` then tests one at a time — the kind of agreement that says
 the bit assignment is read right rather than fitted to what looked plausible.
 
+**The cursor is ANIMATED, and it is the glow a player sees.** `0x40000200` is
+by far the commonest decoration — every one of the sneak's tab icons, its
+three model buttons and its verbs carry it — and `sub_479920` is not a box:
+it takes a 220-dword pool, centres it on the item (`x + w/2`, `y + h/2`), and
+advances **sixteen** per-element angles by the frame delta, wrapping each at
+360°. So the focused item wears a ring of sixteen turning pieces, which is
+what "bleeds light" around the selected verb in a capture of the original and
+reads, in a still frame, like a bright fill. It is drawn only when the item
+carries `UIF_FOCUSED` **and the screen does too**, so exactly one is on screen.
+
+Not ported: the sixteen elements' geometry and art are not read, and a
+sixteen-piece animation invented from one still frame would be decoration
+this repo cannot defend.
+
+### `Ui_DrawItem` NEVER READS `+28` — and that is most of what an item shows
+
+The line above says "draws the text", and *which* text is the part that
+matters, because it is not the field this document has pointed at everywhere
+else. The function reads **`+24`**, a resolved `char *`, and when that is null
+calls **`+32`**, a callback that fills a 2048-byte buffer. `+28` is never
+touched. So:
+
+> **An item whose `+24` and `+32` are both zero draws no text at all**,
+> whatever string id it carries.
+
+**111 of the tree's 572 items are exactly that** (2026-09-04). The sneak's six
+tab icons and its three 50×50 buttons are among them, and a composer keyed on
+`+28` prints five labels the game has never shown — which is what a player
+reported as *"the menus are essentially icons"* and *"some of the texts are
+parts of sub-menu and should not be displayed at anytime"*. They are neither:
+they are **strings belonging to a widget that does not draw text**. §3g shows
+where those particular strings really surface.
+
+The callbacks that appear on the shipped items, and there are fifteen:
+
+| `+32` | what it puts in the buffer |
+|---|---|
+| `0x00476860` | the generic one: the item's own `+28`, with `+30` as a printf argument when it is not −1 |
+| `0x0042AA00` | an inventory row — reads the item's `+60` tag and asks `Game_RaiseEvent(33)` for the object's name |
+| `0x0049DC20` | the sneak's echo bar (§3g) |
+| `0x0049E090` | the sneak's clock (§3g) |
+| eleven more | per-screen native text |
+
+`0x00476860` is gated on bank C `0x80000200` only for *which* of its two arms
+runs; both walk the screen's text blob to string `+28`, and the second also
+passes `+30` through `sub_43FEA0` as a format argument.
+
+### The SPRITE is how an icon gets on screen
+
+`Ui_DrawItemSprite` (0x00476E60) blits the item's own `w × h` from the
+screen's artwork surface: the **lit** source at `+12/+14`, the **unlit** at
+`+16/+18`. **233 items carry the flag.** Decoding `sneak.bmp` and looking at
+it shows the arrangement plainly — the five left-hand icons appear twice in
+the middle of the black panel, a lit row and an unlit row, and the tile map
+punches that area out with cell 42 so the atlas never shows. It also explains
+a measurement `verify.py: ui sprites` had been making since 2026-09-01 without
+an account of it: an unlit source often **equals its own destination**,
+because the unlit icon *is* the background there.
+
+### The two lit ladders are NOT one ladder
+
+This document used to say `Ui_DrawItemSprite` "repeats the same ladder" as
+`Ui_ItemTextStyle`. Read side by side they agree on two rungs of four:
+
+| | `0x40000008` | `0x40000004` | `0x40000002` | otherwise |
+|---|---|---|---|---|
+| **sprite** | lit | oscillator 1 | ¬sel: unlit · sel ∧ ¬focus: lit · sel ∧ focus: **oscillator 1** | SELECTED |
+| **text** | lit | oscillator 1 | ¬sel: unlit · sel: **oscillator 1** | SELECTED **and** FOCUSED |
+
+(`sub_476E60` LABEL_4/10/11 against `sub_4769A0` LABEL_6/12/13.) A drawer that
+shares one of them lights the wrong things the moment two lists both have a
+selection.
+
+**Oscillator 1 is the flash.** Its record ships period 500, flags 3, and its
+completion `sub_42B7B0` does `osc[6] = (osc[6] == 0)` — a square wave toggling
+0/1 every 500 ms, on a MILLISECOND clock and not a frame count. That is a
+player's *"flashing icon to indicate the selection"*. Oscillator 2 does the
+same job for `I2D_DrawRectOutline`'s colour, through `0x40400000`.
+
+### Text colour is the item's own, halved when unlit
+
+`Ui_ItemTextStyle` takes `+8/+9/+10` as the colour — unless bank C carries
+`0x80000001`, which forces white — and **halves all three when the row is not
+lit**. That halving is the one shift this document already described; what it
+halves is the item's colour, not a constant. **233 of the 275 text items carry
+the white flag**, so a composer hard-coding white-and-grey is right for those
+by luck; nine items are genuinely coloured (eight at (254, 68, 20), one at
+(255, 100, 70), on the terminal and SURV screens).
+
+`item+36` is the FONT and is the same story: identified in §5 and never
+lifted, so a port draws every screen in one face until it is. The sneak names
+74 `J` JOURNAL for its text and 67 `C` for its clock, where the start menu's
+buttons name 73 `I` MENUINTR — and MENUINTR has no Latin glyphs, so a device
+drawn in the menu's face renders the right strings through the wrong alphabet.
+
 ### Two things that explain how the menus look
 
 **Unselected rows are dimmed by a shift.** `Ui_ItemTextStyle` decides whether
@@ -781,16 +876,185 @@ are **distinct** (a linear scan gives one id ten times), and the eight that
 name their own screen. Shifted one place, that last count goes 8 → **0**: every
 shop takes its neighbour's title and not one of them lands.
 
+### What OPENS the sneak — a key, an animation and a table
+
+Screen 9 is not opened by `ui.open`. **No script opens it**: the chain runs
+through the player's own animation channel, and every link is in the shipped
+data or in a table lifted from the image.
+
+```
+TAB                      tables/key_bindings.json group 0 "Aventure",
+                         action 13 "Ouvrir sneak", bit 0x2000, keyboard 15
+-> H1Avnt / F1Avnt.CTL   a group-0 entry whose +4 is exactly 0x00002000 and
+                         whose flags carry 2, the ALIAS bit: not a state to
+                         sit in, a redirect through its GoTo
+-> group 6               H_SNKON, that group's flag-0x20 default entry
+-> its child             flags 0x25000013 - bit 0x10 names a move
+-> tab_special_move[0]   "MDSNEAK0" -> sub_0046ADF0
+```
+
+and `sub_0046ADF0` is short enough to quote whole — the binary names it
+itself, through its own failure string:
+
+```c
+v1 = Actor_Index(a1);
+if (sub_41A350(v1) != -1)            // something pending at actor+164
+    return sub_41C720(g_Player);     // ...use THAT instead, event 10
+Game_RaiseEvent(25, 0);              // open object list 0 - the carried items
+sub_41E040(byte_53B084);
+if (!UI_OpenScreen(9, -1, -1, -1)) { // SNEAK
+    Game_RaiseEvent(26, 0);
+    return Dbg_Printf("cant start sneak");
+}
+```
+
+Three things follow, and they are why the sneak behaves unlike every other
+screen:
+
+* **it has no waiting script.** The `-1` is `UI_OpenScreen`'s waiting-context
+  argument, so `dword_930744` is never written and nothing is parked at status
+  6. Closing it answers nobody — where leaving a `ui.open` screen IS an answer
+  of −1 (§3d-bis).
+* **event 25 comes first**, opening object list 0, because the inventory page
+  reads its nine rows back out of the channel (§3e) rather than out of
+  `IAM\Sneak`. The matching 26 is raised by the close, and also by this
+  function's own failure arm.
+* **only the two ADVENTURE banks carry `MDSNEAK0`.** `H1Avnt` and `F1Avnt` do
+  and the five combat/creature ones do not, so the sneak opens in adventure
+  mode and nowhere else — which is the game's behaviour, arrived at from the
+  data rather than from playing.
+
+`verify.py: sneak chain` asserts all of it; `engine: sneak` runs it in
+`omk-play`, where TAB in Anekbah opens the device.
+
+### The background scales its DESTINATION, not its source
+
+`Ui_DrawPanelBack` (0x00476040), the tile-map arm:
+
+```
+dst = (col * I2D_ScaleX(64), row * I2D_ScaleY(64), ...)   row 7 at half height
+src = ((id % 10) << 6, (id / 10) << 6, ...)               raw 64-pixel cells
+```
+
+Ten columns of `ScaleX(64)` cover the display whatever its width, while the
+source keeps reading 64-pixel cells out of a 640×480 sheet. A port using a
+literal 64 for BOTH covers the top-left 640×480 and leaves the rest of the
+display showing whatever was under it — while every widget, which does go
+through `I2D_ScaleX/Y`, sits somewhere else entirely.
+
+**A 640×480 test cannot see this**, because there `ScaleX(64) == 64`. It has
+to be composed at a second size, which `verify.py: engine screen scale` does.
+
+Two more things the same function does before the tiles: with flag
+`0x40002000` it draws no background at all, and **without** `0x40001800` it
+CLEARS the whole display first.
+
+### 3g. The sneak's own two rows — the echo bar and the clock
+
+Neither `sub_0049DC20` nor `sub_0049E090` has a `proc` label: nothing CALLS
+them, they are dwords in the widget table, so `tools/asmfn.py` anchors on a
+neighbour and returns the wrong function. The byte range has to be counted out
+from the last labelled function before them, which is `sub_49DB80`.
+
+**The echo bar shows what is SELECTED**, not what is hovered — a still frame
+cannot tell the two apart, and the screenshot that prompted this reads as the
+latter. `sub_0049DC20` takes the panel's current item and dispatches on its
+ADDRESS:
+
+| item | what the bar shows |
+|---|---|
+| `0x004DE338` | `"%s %d"` of its string and `sub_42B1C0(4)` |
+| `0x004DE380` | `"%s %d"` of its string and `sub_42B1C0(5)` |
+| `0x004DE3C8` | its string alone |
+| `0x004DE230` | its string, with `+30` forced to 1 |
+
+**And that settles what the three 50×50 items are.** They are the **setek**
+and **anneau** counters and the **map reader** — the three `.3DO` models the
+screen's parameter-0 open loads (`setek`, `anneau`, `imager`) — and their
+strings 8, 9 and 41 are rendered *here*, on the bar, when one of them is
+selected. "Seteks en votre possession :" was never a caption beside an icon,
+which is why those items have no `+24` and no `+32`.
+
+It also answers what `imager` counts: **nothing**. Its arm carries no
+`sub_42B1C0` and no format string, just the bare "Lire plan". It is a map
+reader, not the ammunition a player guessed at.
+
+The two counts come from `Game_RaiseEvent(44, {4|5})` → `sub_40B360`, whose
+cases 4 and 5 read a character record's **`+172`** (unsigned) and **`+174`**
+(signed). `+172` is corroborated from the other end and was already in this
+document without the connection being made: §3e has case 38 refusing a
+purchase whose price "exceeds the player's money at `+172`". Two subsystems
+reading one field is what makes it the money rather than a plausible int16 at
+a plausible offset; `+174` is new. The shipped fixture opens with **0 seteks
+and 2 anneaux**. `verify.py: player counters`.
+
+**The clock** (`sub_0049E090`, item `0x004DE160` at (350, 430)) is the
+engine's own date and time formatters, `sub_0041E690`'s integer division —
+"12 Nadim 7216 - 13:01:15". Only the `" - "` joining the halves is read off a
+screenshot rather than out of the code.
+
+The clock is also where a bug outside the interface surfaced.
+[`GAME_STATE.md`](GAME_STATE.md) records that the clock is an engine global
+and **not part of the 8192-byte image**, so restoring a save restores
+everything except *when* it happens: the day and time live in the slot header
+that `SaveDir_Build` writes. A loader that restores only the DB leaves the
+game at day 0 — invisible for as long as nothing draws a clock, which in
+`engine/` was until this row existed. `verify.py: save clock`.
+
+### The rows are a WINDOW, and the gate is per row
+
+`sub_42AAE0(list, window)` binds the nine row widgets:
+
+```
+for each widget k:
+    if (k + window >= list+24)      // past the end of the real list
+        item+60 = -1;               // no tag
+        set 0x40000001;             // and NOT DRAWN
+        set 0x20000004;             // and unselectable
+    else
+        item+60 = k + window;       // the row it shows
+        clear both;
+```
+
+so the engine draws only the rows that HOLD something — two of nine in a
+capture with two objects carried — and `list+24` is the count the channel
+reports through case 29. `sub_42AFF0` moves the window on the up and down
+bits, skipping rows whose tag is −1, and raises **event 30** for the newly
+selected row, which is the 3D preview (§3e).
+
 ### The one close that can refuse
 
 `Ui_CloseSneakFamily` serves `VIDEOPHONE`, `SLIDER` and `SNEAK` by the `+4`
-parameter. `VIDEOPHONE` frees three o3de scenes and closes screen 35, which
-its own open had loaded hidden underneath; both closing paths raise **event
-26** and fall into the generic close. But `SNEAK`, with no `SHOOT HUMAN` up,
-calls `Ui_StartOscillator(5, 100)` **instead** of closing — oscillator 5 ships
-with period 0 and gets 100 ms here, and while its flag bit 0 is set the close
-is refused. The sneak interface has a closing animation; every other screen
-closes on the frame it is told to.
+parameter. **`SNEAK`** frees three o3de scenes and closes screen 35, which its
+own open had loaded hidden underneath; both closing paths raise **event 26**
+and fall into the generic close. But **`VIDEOPHONE`**, with no `SHOOT HUMAN`
+up, calls `Ui_StartOscillator(5, 100)` **instead** of closing — oscillator 5
+ships with period 0 and gets 100 ms here, and while its flag bit 0 is set the
+close is refused. That interface has a closing animation; every other screen
+closes on the frame it is told to. `SLIDER` takes neither arm and goes
+straight to the generic close.
+
+**This paragraph had `SNEAK` and `VIDEOPHONE` the wrong way round until
+2026-09-04**, and the branch is what decides it — the parameters are 0 SNEAK,
+1 SLIDER, 2 VIDEOPHONE (§2's table), and `sub_49B610` opens:
+
+```
+mov  eax, [esi+4]
+sub  eax, 0
+jz   loc_49B6A5      ; 0 SNEAK      -> close screen 35, free the three scenes
+sub  eax, 2
+jnz  loc_49B6EA      ; 1 SLIDER     -> the generic close
+                     ; 2 VIDEOPHONE -> falls through: the SHOOT HUMAN test
+                     ;                 and the oscillator refusal
+```
+
+The OPEN says the same thing from the other side and is the corroboration:
+its parameter-0 arm is the one that `Read3DO`s `setek`, `anneau` and `imager`
+and calls `UI_LoadScreen(35, …)`, and 35 is `OPTIONS` — which the sneak
+device needs because **`Options` is one of its own five tabs**. So the screen
+loaded hidden underneath is the options screen, the three models are the
+inventory page's object previews, and the arm that frees them is the arm that
+loaded them. Asserted in `verify.py: sneak chain`.
 
 ### And what the generic close does for the script layer
 
@@ -1002,10 +1266,53 @@ does it:
 
 * the **navigation is data** — the screen record names an open callback, the
   callback installs a panel with one `mov [reg+0x1C], imm32` (28 of the 32
-  live screens give exactly one; the sneak family branches on its `+4` and
-  offers three), and the panel's lists and items are static records;
+  live screens give exactly one), and the panel's lists and items are static
+  records;
 * the **callbacks are native code and are not run**. An unmodelled hook is
   logged and the answer falls back, rather than being invented.
+
+**The sneak family gives three, and following its branch is what put screens
+0, 7 and 9 into the tree** (2026-09-04). `Ui_OpenSneakFamily` writes a
+different panel on each arm of a `+4` branch, so a linear scan finds all three
+and cannot say which is whose — the same shape as `Ui_OpenShop`'s titles, and
+the same fix. `sim/ui.py: SNEAK_ARM` records the three byte ranges read out of
+the image and `panel_of` CHECKS the scan against them rather than trusting
+either alone:
+
+| param | screen | panel | the tab column `0x004DE210` |
+|---|---|---|---|
+| 0 | `SNEAK` | `0x004DEE50` | shown, selected on row 2 "Inventaire" |
+| 1 | `SLIDER` | `0x004DEDE8` | hidden |
+| 2 | `VIDEOPHONE` | `0x004DF128` | hidden |
+
+Three more things came out of doing it, and each is general rather than about
+the sneak:
+
+* **`panel+24` and `list+2` are recoverable after all.** They are the panel's
+  CURRENT LIST and that list's SELECTED ROW — runtime state, which is why this
+  document and both walkers said the disk image cannot supply them and fell
+  back on `Ui_MoveBetweenLists`'s rule. But an OPEN CALLBACK can write them,
+  and going looking found **15 panels** and **8 lists** that do:
+  `Ui_OpenSneakFamily` sets all three of its pages, `Ui_OpenShop`'s first
+  instruction is `mov dword_4E3988, 0` (its shared panel's `+24`), and
+  `FIGHT SIM`, `SAVE GAME`, `PAUSE GAME` and `SHOOT HUMAN` each set one.
+  Lifted into `tables/ui_widgets.json` as `current` and `select`, `-1` where
+  nothing wrote them.
+* **Two of the "unmodelled hooks" were not screen-specific at all.**
+  `sub_42A710` is `Ui_MoveBetweenLists` bound to LEFT/RIGHT (a PANEL hook) and
+  `sub_42A930` is `Ui_MoveSelection` bound to LEFT/RIGHT (a LIST hook) —
+  `sub_42A5C0` and `sub_42A7E0` both take their two direction bits as
+  PARAMETERS, and the default dispatch is just `sub_42A7E0(…, 4, 8)`. The
+  simulator had transcribed the first as `_move_lists` and **never called it**,
+  because until the sneak entered the tree no panel in it named the hook.
+* **What still refuses is the sneak's own scrolling.** `sub_0049C050` windows
+  a list longer than its nine row widgets — it shifts each row's `+60` tag and
+  raises the two arrow flags at the ends — and it is not modelled, so
+  `SLIDER` and `SNEAK` still count as approximate the moment those rows are
+  driven. `VIDEOPHONE` needs nothing and walks exactly.
+
+`verify.py: sneak chain` asserts the family end to end and `engine: sneak`
+runs it.
 
 The path for the game's own opening, every step an input word:
 

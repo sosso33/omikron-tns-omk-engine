@@ -62,14 +62,20 @@ int main(int argc, char** argv) {
         walk.open(sid);
         omk::Surface fb(dw, dh, 0);
         const auto f = comp.draw(fb, sid, walk);
+        // `spritesDrawn` joins the row because the SPRITE path is what
+        // `Ui_DrawItemSprite` does and nothing drew one until 2026-09-04.
+        // Without it the LIFT's seven slots read as "7 rows -> 0 rows",
+        // which looks like a loss and is the correction: they are ICONS,
+        // `+24`/`+32` both zero, and their text was never theirs.
         out.insert(out.end(), {sid, f.tilesDrawn, f.fullSheet ? 1 : 0,
                                f.itemsDrawn, f.textAdvance, f.centred,
                                static_cast<std::int32_t>(f.hash),
-                               static_cast<std::int32_t>(f.painted)});
+                               static_cast<std::int32_t>(f.painted),
+                               f.spritesDrawn});
         std::printf("screen %2d: %s background (%d tiles), %d rows drawn, "
                     "%d px advance, %d centred, %ld of %d painted, hash %08X\n",
                     sid, f.fullSheet ? "full-sheet" : "tile-map", f.tilesDrawn,
-                    f.itemsDrawn, f.textAdvance, f.centred, f.painted, 640 * 480,
+                    f.itemsDrawn, f.textAdvance, f.centred, f.painted, dw * dh,
                     f.hash);
     }
 

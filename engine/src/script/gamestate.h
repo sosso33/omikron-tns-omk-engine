@@ -235,6 +235,26 @@ public:
     static constexpr int kPlayerRecord = 60, kPlayerRecordSize = 276;
     static constexpr int kBio[2] = {336, 592}, kBioSize = 256;
 
+    // ---- THE TWO COUNTERS THE SNEAK PRINTS -----------------------------
+    //
+    // `Game_HandleEvent` 44 -> `sub_40B360(block)` is a small query on a
+    // character record, and two of its cases are the numbers the sneak's
+    // echo bar formats beside the setek and anneau models:
+    //
+    //     case 4:  block+8 = *(uint16 *)(record + 172)    the SETEKS
+    //     case 5:  block+8 = *(int16  *)(record + 174)    the ANNEAUX
+    //
+    // `+172` is corroborated from the other end: `docs/UI.md` 3e already had
+    // it as "the player's money at `+172`", from the inventory channel's
+    // case 38 refusing a purchase that exceeds it. `+174` is new, and the
+    // shipped fixture reads 0 and 2 - no money and two rings at the start of
+    // the game, which is the shape the opening has.
+    //
+    // Signedness follows the engine: the seteks are read UNSIGNED and the
+    // anneaux signed.
+    int money() const;      // seteks
+    int rings() const;      // anneaux
+
     // How many BYTES the k'th array occupies, from its own count and the
     // entry width - which is what makes the walk a test: the segments have to
     // tile the image with only alignment padding between them.
