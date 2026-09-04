@@ -17,6 +17,45 @@ namespace {
 // carries, so `0x7F` was only ever the halving of 255.
 constexpr std::uint8_t kLit = 255;
 
+// `Ui_DrawItemFill`'s quad, with the blend `sub_480AC0`'s mode-4 arm sets:
+// SRCBLEND = INVSRCALPHA (6) and DESTBLEND = SRCALPHA (5), the INVERSE of the
+// usual source-over, so
+//
+//     result = src * (1 - a) + dst * a
+//
+// and a large alpha makes the source FAINT rather than solid. The plain
+// `0x40000010` arm passes alpha 200, so a fill contributes 0.216 of its own
+// colour over whatever is beneath.
+//
+// **Confirmed against the original.** The LIFT's description panel is a fill
+// at (15, 360) 475x105 whose record colour is (80, 122, 118), over artwork
+// that is black there. This predicts (17.3, 26.3, 25.5); a player's
+// screenshot of the running game measures **(15, 25, 25)**. That is the rule
+// checked against the game rather than against this repo, and it is what
+// took the fill from refused to ported.
+void fillQuad(Surface& fb, int x0, int y0, int x1, int y1,
+              int r, int g, int b, int alpha) {
+    if (!fb.valid()) return;
+    x0 = std::max(0, x0); y0 = std::max(0, y0);
+    x1 = std::min(fb.w, x1); y1 = std::min(fb.h, y1);
+    const int keep = alpha;              // dst weight
+    const int add  = 255 - alpha;        // src weight
+    for (int y = y0; y < y1; ++y) {
+        for (int x = x0; x < x1; ++x) {
+            std::uint16_t& d = fb.px[static_cast<std::size_t>(y) * fb.w + x];
+            const int dr = ((d >> 11) & 31) * 255 / 31;
+            const int dg = ((d >> 5) & 63) * 255 / 63;
+            const int db = (d & 31) * 255 / 31;
+            const int nr = (r * add + dr * keep) / 255;
+            const int ng = (g * add + dg * keep) / 255;
+            const int nb = (b * add + db * keep) / 255;
+            d = static_cast<std::uint16_t>(((nr * 31 / 255) << 11) |
+                                           ((ng * 63 / 255) << 5) |
+                                            (nb * 31 / 255));
+        }
+    }
+}
+
 }  // namespace
 
 int ScreenComposer::background(Surface& fb, const UiPanel& p,
@@ -176,8 +215,11 @@ ScreenFrame ScreenComposer::draw(Surface& fb, int screenId,
         for (const auto& it : l.items) {
             std::uint32_t eff0[3];
             it.effective(l.broadcast, eff0);
-            // The item's own draw gate, the same `0x40000001` the list has.
+            // The item's own draw gate, the same `0x40000001` the list has -
+            // from the record, and from the RUNTIME for the lists whose
+            // widgets are a window onto something longer (`sub_42AAE0`).
             if (eff0[1] & 1) continue;
+            if (hidden_ && hidden_->count(it.addr)) continue;
 
             // ---- IS THIS ITEM SELECTED, AND IS IT FOCUSED ------------
             //
@@ -233,50 +275,45 @@ ScreenFrame ScreenComposer::draw(Surface& fb, int screenId,
             }
             const bool lit = litSprite;
 
-            // ---- THE FILL: read, TRIED, and NOT DRAWN ------------------
+            // ---- THE FILL: `Ui_DrawItemFill` (0x00476FE0) --------------
             //
-            // `Ui_DrawItemFill` (0x00476FE0) puts a quad over the item's own
-            // scaled rect, and the amber bars behind the sneak's rows and its
-            // two strips are where it goes. The colour is packed
-            // `(alpha << 24) | (+8 << 16) | (+9 << 8) | +10` with alpha 200
-            // on the plain `0x40000010` arm - all read, and lifted as
-            // `rgb`/`layer`.
+            // A quad over the item's own scaled rect. The colour is the
+            // item's `+8/+9/+10` - or (255, 50, 50) on the `0x42000000`
+            // arm - and the alpha comes from which arm runs: **200** for the
+            // plain `0x40000010`, 100 for `0x44000000`, `+9` otherwise.
+            // `fillQuad` carries the blend and the evidence for it.
             //
-            // **It was implemented, rendered, and refuted by the picture.**
-            // Two things the reading does not have:
+            // **Two things about it were wrong for three attempts.** The
+            // blend is the INVERSE of source-over, so a big alpha makes the
+            // quad faint, not solid - drawn the usual way round the sneak's
+            // rows came out bright red. And the per-row gate is real:
+            // `sub_42AAE0` sets `0x40000001` on every widget past the object
+            // count, so the engine fills only the rows that hold something,
+            // which is why a capture shows two bars of nine.
             //
-            //  * the COLOUR, and the blend is now READ and does not save
-            //    it. `sub_4285E0`'s mode is `sub_464740() ? 4 : 0`, and
-            //    `sub_480AC0`'s mode-4 arm sets D3D render states 19 and 20
-            //    to **6 and 5** - SRCBLEND = INVSRCALPHA, DESTBLEND =
-            //    SRCALPHA, the INVERSE of the usual source-over. So the quad
-            //    resolves to `src * (1 - a) + dst * a`, and with the record's
-            //    (255, 0, 0) at alpha 200 over the panel's black that is
-            //    **(55, 0, 0)**.
-            //
-            //    Measured off the user's own screenshot, the bars are
-            //    **(94, 60, 16)** and (61, 40, 11) - amber. A green of 60
-            //    cannot come from a red source over black under ANY blend
-            //    that mixes the two, and no permutation of the channel order
-            //    helps. So the reading is wrong somewhere the decompiler
-            //    does not show, and the honest state is a CONTRADICTION with
-            //    both sides pinned rather than a colour fitted to a picture.
-            //    (The capture is a resampled window grab, so the triples are
-            //    approximate - but the argument needs only that green is not
-            //    zero.)
-            //  * the per-row GATE - and this half IS now read.
-            //    `sub_42AAE0` binds the nine widgets to a window over the
-            //    list: a widget past `list+24` gets tag -1 and has
-            //    `0x40000001` SET, so it is not drawn, and the rest get
-            //    `tag = window + k` with it cleared. That is why the
-            //    original fills two of nine. `play.cpp` models it on the
-            //    text side already; the fill needs only the colour.
-            //
-            // Drawing it on the strength of the colour alone gives nine red
-            // bars where the game shows two amber ones - which looks like a
-            // rendering bug and is really an unread blend. Left out until
-            // both halves are read; the data is in the table for whoever
-            // reads them.
+            // THE SNEAK'S OWN ROWS STILL DISAGREE, and the disagreement is
+            // now narrow enough to name. The LIFT's panel predicts
+            // (17.3, 26.3, 25.5) and measures (15, 25, 25); the sneak's rows
+            // carry (255, 0, 0), which predicts (55, 0, 0) where the same
+            // screenshot measures (94, 60, 16) - a warm amber that no red
+            // source can make. 209 of the 222 fill items in the tree ship
+            // (255, 0, 0), so it is a PLACEHOLDER, and something writes the
+            // real colour into `+8/+9/+10` at run time on the screens that
+            // need one. What does that has not been found; the LIFT does not
+            // need it, which is why the LIFT is the one that could settle
+            // the rule.
+            if (eff0[1] & 0x10) {
+                int fr = it.rgb[0], fg = it.rgb[1], fb2 = it.rgb[2];
+                if (eff0[1] & 0x02000000) { fr = 255; fg = 50; fb2 = 50; }
+                const int alpha = (eff0[1] & 0x10) ? 200
+                                : (eff0[1] & 0x04000000) ? 100 : it.rgb[1];
+                const int x0 = scaleX(it.x + q->offsetX);
+                const int y0 = scaleY(it.y + q->offsetY);
+                const int x1 = scaleX(it.x + q->offsetX + it.w);
+                const int y1 = scaleY(it.y + q->offsetY + it.h);
+                fillQuad(fb, x0, y0, x1, y1, fr, fg, fb2, alpha);
+                ++out.fillsDrawn;
+            }
 
             // ---- THE SPRITE: `Ui_DrawItemSprite` -----------------------
             //

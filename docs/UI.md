@@ -474,7 +474,7 @@ tests one flag per decoration, each its own primitive:
 
 | flag | what | drawn as |
 |---|---|---|
-| `0x40000010`, `0x44000000` | `Ui_DrawItemFill` | a quad at layer `+11 − 2` |
+| `0x40000010`, `0x44000000` | `Ui_DrawItemFill` | a quad at layer `+11 − 2` — see below |
 | `0x40000080` | `I2D_DrawRectOutline` | four 1-pixel quads |
 | `0x40000200` | `Ui_DrawItemCursor` | only while focused |
 | `0x403C0000` | `Ui_DrawItemArrows` | up to four triangles, 20 px outside the box |
@@ -484,6 +484,47 @@ tests one flag per decoration, each its own primitive:
 The arrows guard is `0x403C0000`, which is **exactly the OR** of the four bits
 `Ui_DrawItemArrows` then tests one at a time — the kind of agreement that says
 the bit assignment is read right rather than fitted to what looked plausible.
+
+### The fill's blend is the INVERSE of source-over
+
+`Ui_DrawItemFill` (0x00476FE0) puts a flat quad over the item's own scaled
+rect — `sub_480BD0` copies vertex 0's colour to all four when the record's
+flag bit 3 is clear, so one colour covers it. The colour is the item's
+`+8/+9/+10`, or (255, 50, 50) on the `0x42000000` arm, and the alpha is
+**200** on the plain `0x40000010` arm.
+
+The blend is the part that matters and it is not the obvious one.
+`sub_480AC0`'s mode-4 arm sets D3D render states 19 and 20 to **6 and 5** —
+`SRCBLEND = INVSRCALPHA`, `DESTBLEND = SRCALPHA` — so
+
+```
+result = src * (1 − a) + dst * a
+```
+
+and a **large** alpha makes the quad FAINT, not solid. Drawn the usual way
+round every fill in the game is roughly four times too bright.
+
+**Checked against a picture of the original.** 209 of the tree's 222 fill
+items ship the colour (255, 0, 0), which is a placeholder rather than a
+colour — so most screens cannot test the rule. The **LIFT**'s description
+panel can: item 0x004E5078 at (15, 360) 475×105 carries (80, 122, 118) over
+artwork that is black there.
+
+| | |
+|---|---|
+| the rule predicts | (17.3, 26.3, 25.5) |
+| a screenshot of the running game measures | **(15, 25, 25)** |
+| `engine/` composes | (16, 24, 24) — the RGB565 quantisation |
+
+`verify.py: fill colour`. Drawn as source-over the same item gives
+(63, 96, 92).
+
+**What the placeholder means is still open.** The sneak's rows carry
+(255, 0, 0) and so render dark red, where the same screenshot measures
+(94, 60, 16) — a warm amber no red source can make under this blend. So
+something writes a real colour into `+8/+9/+10` at run time on the screens
+that need one, and what does that has not been found. The LIFT does not need
+it, which is why the LIFT is what settled the rule.
 
 **The cursor is ANIMATED, and it is the glow a player sees.** `0x40000200` is
 by far the commonest decoration — every one of the sneak's tab icons, its

@@ -1671,6 +1671,10 @@ int main(int argc, char** argv) {
     // because their text is the carried object list read through the channel
     // (`Game_HandleEvent` 29 and 33), not a string in `IAM\Sneak`.
     std::map<std::uint32_t, std::string> sneakRows;
+    // The row widgets `sub_42AAE0` switches off - past the object count, so
+    // tag -1 and `0x40000001` set. Without it every one of the nine rows
+    // draws its fill and the page is striped.
+    std::set<std::uint32_t> sneakHidden;
     int sneakTold = 0;             // one line per run, not one per frame
     int replySel = 0;            // which reply the player is on
     int actionTold = 0;          // one line for a press that reaches nothing
@@ -3085,8 +3089,12 @@ int main(int argc, char** argv) {
                     if (it != sceneVoices.end()) {
                         front.stopSound(it->second);
                         sceneVoices.erase(it);
-                        std::printf("scene sound: STOP wav %d node %d\n",
-                                    fs.cue.wav, fs.cue.node);
+                        std::printf("scene sound: STOP wav %d node %d - %zu still looping\n",
+                                    fs.cue.wav, fs.cue.node, sceneVoices.size());
+                    } else {
+                        std::printf("scene sound: stop asked for wav %d node %d, "
+                                    "which is not looping (%zu are)\n",
+                                    fs.cue.wav, fs.cue.node, sceneVoices.size());
                     }
                     continue;
                 }
@@ -3100,7 +3108,20 @@ int main(int argc, char** argv) {
                 const int h = front.playSound(pcm);
                 // only a LOOPING cue needs remembering - a one-shot ends by
                 // itself and the handle would go stale
-                if (h >= 0 && fs.cue.loop) sceneVoices[key] = h;
+                if (h >= 0 && fs.cue.loop) {
+                    sceneVoices[key] = h;
+                    // A stop can only be judged against what is PLAYING, so
+                    // say what is looping and keep the list current. One-shots
+                    // are not listed: they end on their own and nothing can
+                    // stop them.
+                    std::printf("scene sound: LOOP wav %d node %d (object %d, "
+                                "program %d) - %zu looping now:",
+                                fs.cue.wav, fs.cue.node, fs.object, fs.program,
+                                sceneVoices.size());
+                    for (const auto& v : sceneVoices)
+                        std::printf(" [wav %d node %d]", v.first.first, v.first.second);
+                    std::printf("\n");
+                }
             }
         }
 
@@ -5225,6 +5246,7 @@ int main(int argc, char** argv) {
         // list is open - which is why the open raised event 25 first.
         if (walk && openScreen == omk::kScreenSneak) {
             sneakRows.clear();
+            sneakHidden.clear();
             const omk::UiPanel* pn = walk->panel();
             if (pn && pn->addr == omk::kPanelSneakInventory &&
                 inv.openedList() >= 0) {
@@ -5258,7 +5280,12 @@ int main(int argc, char** argv) {
                     const std::size_t window = 0;
                     for (std::size_t k = 0; k < l.items.size(); ++k) {
                         const std::size_t row = k + window;
-                        if (row >= carried.size()) continue;   // tag -1, not drawn
+                        if (row >= carried.size()) {
+                            // `sub_42AAE0`: past the end, so tag -1 and
+                            // `0x40000001` - not drawn and not selectable.
+                            sneakHidden.insert(l.items[k].addr);
+                            continue;
+                        }
                         // `playerCount` is case 33's other half and is NOT
                         // read: for kinds 2..6 the quantity lives in the
                         // player record and which field it is has not been
@@ -5366,6 +5393,7 @@ int main(int argc, char** argv) {
             // `Ui_TickScreens` advances them by the frame delta.
             comp.setClockMs(static_cast<long>(SDL_GetTicks()));
             comp.setRowText(sneakRows.empty() ? nullptr : &sneakRows);
+            comp.setHidden(sneakHidden.empty() ? nullptr : &sneakHidden);
             comp.draw(fb, openScreen, *walk);
         }
 

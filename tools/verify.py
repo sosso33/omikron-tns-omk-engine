@@ -10156,9 +10156,9 @@ def c_engine_screen():
     return (v, len(refFb), haveSdl, same if haveSdl else 614400,
             frames if haveSdl else 3), \
            ((29, 0, 1, 4, 800, 4, -1437019637, 307200, 1,
-              4, 80, 0, 0, 0, 0, -1185262128, 207513, 7,
+              4, 80, 0, 0, 0, 0, 706294455, 257388, 7,
               1, 307200),
-            614400, haveSdl, 614400, 3), \
+            1228800, haveSdl, 614400, 3), \
            "the composed frames - screen 29 (full-sheet background, no " \
            "tiles, 4 rows, 800px of advance, all 4 CENTRED by the list's " \
            "broadcast, every one of the 307200 pixels painted, and ONE " \
@@ -10177,13 +10177,93 @@ def c_engine_screen():
            "strip over itself, so nothing here may move a pixel of it. An " \
            "earlier version of the selection ladder did move it, by marking " \
            "every row of the current list SELECTED instead of the row that " \
-           "list's own `+2` names, and this number is what caught it); " \
-           "then the null " \
+           "list's own `+2` names, and this number is what caught it). The " \
+           "LIFT's painted count rose from 207513 when `Ui_DrawItemFill` " \
+           "went in - its description panel IS a fill, and the pixels it " \
+           "covers stop being zero - and the dump is now TWO framebuffers, " \
+           "the menu then the LIFT, because `fill colour` needs the second; " \
+           "the menu is still first and still what the live window is " \
+           "diffed against; then the null " \
            "frontend's one frame, which is A8 rule 1 exercised rather than " \
            "asserted; the framebuffer's size; whether SDL was found at all; " \
            "and - the thing rule 3 is about - how many of its bytes the LIVE " \
            "window presented identically, which must be all of them because " \
            "the frontend uploads the pixels and may not touch them"
+
+
+def c_fill_colour():
+    r"""`Ui_DrawItemFill`'s quad, checked against a PICTURE OF THE ORIGINAL.
+
+    The fill was refused three times before this, and each refusal was right
+    on the evidence it had. What it needed was a screen whose fill colour is
+    not the placeholder, and there is exactly one reachable: **the LIFT's
+    description panel**, item 0x004E5078 at (15, 360) 475x105, whose record
+    carries (80, 122, 118) where 209 of the tree's 222 fills carry
+    (255, 0, 0).
+
+    The rule, all of it read:
+
+        colour   the item's `+8/+9/+10`, or (255, 50, 50) on the
+                 `0x42000000` arm
+        alpha    200 on the plain `0x40000010` arm
+        blend    `sub_480AC0`'s mode-4 sets D3D states 19 and 20 to 6 and 5 -
+                 SRCBLEND = INVSRCALPHA, DESTBLEND = SRCALPHA, the INVERSE of
+                 the usual source-over, so a big alpha makes the quad FAINT:
+
+                     result = src * (1 - a) + dst * a
+
+    Over the artwork, which is black there, that predicts
+    **(17.3, 26.3, 25.5)**. A player's screenshot of the running game
+    measures **(15, 25, 25)**, and this port composes **(16, 24, 24)** - the
+    RGB565 quantisation of the prediction. Three numbers from three
+    independent places.
+
+    **Why this is the check that mattered.** Drawn the usual way round -
+    `src * a + dst * (1 - a)` - the same item gives (63, 96, 92), nearly four
+    times as bright, and the sneak's rows come out a solid red that a player
+    would report as a bug. The inverse blend is not a detail; it is the whole
+    behaviour, and only a screen with a non-placeholder colour could show it.
+
+    Shown to fail: swapping the two weights moves this to (63, 96, 92);
+    dropping the alpha to 255 (opaque) gives (80, 122, 118) flat.
+    """
+    import subprocess, struct as _s
+    eng = os.path.join(ROOT, "engine")
+    if not os.path.isdir(eng):
+        return ("skipped",), ("skipped",), "engine/ absent"
+    mk = subprocess.run(["make", "-s", "build/run_screen"], cwd=eng,
+                        capture_output=True, text=True)
+    tool = os.path.join(eng, "build", "run_screen")
+    if mk.returncode != 0 or not os.path.exists(tool):
+        return ("skipped",), ("skipped",), "run_screen did not build"
+    tb = os.path.join(ROOT, "tables")
+    out = os.path.join(ROOT, ".verify-fill.bin")
+    r = subprocess.run([tool, omkpaths.data_root(),
+                        os.path.join(tb, "ui_widgets.json"),
+                        os.path.join(tb, "ui.json"), out, "0", "640x480"],
+                       capture_output=True, text=True)
+    if r.returncode != 0 or not os.path.exists(out):
+        return ("skipped",), ("skipped",), "run_screen did not run"
+    d = open(out, "rb").read()
+    os.remove(out)
+    n, = _s.unpack_from("<i", d, 0)
+    base = 4 + n * 4 + 2 * 640 * 480          # past the counts and the MENU frame
+    tot, cnt = [0, 0, 0], 0
+    for y in range(370, 455, 3):
+        for x in range(30, 470, 5):
+            v, = _s.unpack_from("<H", d, base + 2 * (y * 640 + x))
+            tot[0] += ((v >> 11) & 31) * 255 // 31
+            tot[1] += ((v >> 5) & 63) * 255 // 63
+            tot[2] += (v & 31) * 255 // 31
+            cnt += 1
+    got = tuple(t // cnt for t in tot)
+    return got, (16, 24, 24), \
+           "the LIFT's description panel as this port composes it. Its " \
+           "record is (80, 122, 118) and the fill blend is the INVERSE of " \
+           "source-over at alpha 200, so the rule predicts (17, 26, 25); a " \
+           "screenshot of the ORIGINAL measures (15, 25, 25) and this is " \
+           "the RGB565 quantisation of the same answer. Drawn the usual way " \
+           "round it would be (63, 96, 92)"
 
 
 def c_player_counters():
@@ -10350,7 +10430,7 @@ def c_engine_screen_scale():
     areaRatio = (800 * 600) / (640 * 480)
     got = round(big / small, 2) if small else 0
     return (small, big, got, big == small), \
-           (207513, 324200, round(areaRatio, 2), False), \
+           (257388, 402014, round(areaRatio, 2), False), \
            "the LIFT's painted pixels composed at 640x480 and at 800x600, " \
            "their ratio, and whether the two are EQUAL - which is the bug: " \
            "a background drawn in literal 64-pixel cells covers the same " \
@@ -19633,6 +19713,7 @@ SLOW = [
     ("engine: screen scale", c_engine_screen_scale, "PORTING A1; UI 3b"),
     ("save clock",         c_save_clock,        "GAME_STATE 8"),
     ("player counters",   c_player_counters,   "UI 3g; GAME_STATE"),
+    ("fill colour",       c_fill_colour,       "UI 3b"),
     ("engine: movies",     c_engine_movies,     "BOOT 2"),
     ("engine: raster",     c_engine_raster,     "PORTING B6"),
     ("engine: silhouette", c_engine_silhouette, "PORTING B6"),

@@ -28,6 +28,7 @@
 
 #include <cstdint>
 #include <map>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -49,6 +50,8 @@ struct ScreenFrame {
     // in the tree carry it and none of them was drawn before 2026-09-04;
     // the sneak's five left-hand icons are five of them.
     int  spritesDrawn = 0;
+    // `Ui_DrawItemFill` quads, bank B `0x10`. 222 items in the tree carry it.
+    int  fillsDrawn = 0;
     int  textAdvance = 0;     // summed pen advance of every row drawn
     int  centred = 0;         // rows the alignment ladder centred
     // FNV-1a of the whole framebuffer. The counts above say what was drawn;
@@ -99,6 +102,15 @@ public:
     // exactly as before.
     void setRowText(const std::map<std::uint32_t, std::string>* t) { rows_ = t; }
 
+    // ITEMS THE RUNTIME HAS SWITCHED OFF, by address.
+    //
+    // `sub_42AAE0` binds a list's widgets to a window and sets `0x40000001`
+    // on every one past the real row count - so the engine draws only the
+    // rows that hold something, and a drawer reading the STATIC record draws
+    // all nine. The flag is runtime state like the row text beside it, and
+    // arrives the same way. Empty or null means the records stand.
+    void setHidden(const std::set<std::uint32_t>* h) { hidden_ = h; }
+
     // THE DISPLAY SIZE, and the interface is not redesigned for it.
     //
     // `I2D_ScaleX` (0x00429700) and `I2D_ScaleY` (0x00429730) are
@@ -133,6 +145,7 @@ private:
 
     const MenuCloud* cloud_ = nullptr;
     const std::map<std::uint32_t, std::string>* rows_ = nullptr;
+    const std::set<std::uint32_t>* hidden_ = nullptr;
     long             frame_ = 0;
     long             clockMs_ = 0;
     int              dw_ = 640, dh_ = 480;

@@ -1475,25 +1475,32 @@ reads like a bright fill in a still frame. The elements' geometry and art are
 not read, and sixteen animated pieces invented from one still frame would be
 decoration this port cannot defend.
 
-**And `Ui_DrawItemFill`'s amber bars are a CONTRADICTION, not a gap.** Both
-halves were chased and they do not meet:
+**`Ui_DrawItemFill` IS PORTED, and it took four attempts and a picture of the
+original.** The blend is the inverse of source-over - `sub_480AC0`'s mode-4
+arm sets SRCBLEND = INVSRCALPHA and DESTBLEND = SRCALPHA, so
+`result = src * (1 - a) + dst * a` and a LARGE alpha makes the quad faint.
+Every earlier attempt drew it the usual way round, four times too bright, and
+was rightly backed out.
 
-* the per-row GATE is read - `sub_42AAE0` marks a widget past the object
-  count with `0x40000001`, which is why the original fills two bars of nine;
-* the BLEND is read - `sub_480AC0`'s mode-4 arm sets D3D states 19 and 20 to
-  6 and 5, SRCBLEND = INVSRCALPHA and DESTBLEND = SRCALPHA, the INVERSE of
-  the usual source-over, so the quad resolves to `src * (1 - a) + dst * a`;
-* and the record gives (255, 0, 0) at alpha 200 - the bytes checked twice,
-  through the lift and through a raw hex dump of the item - which over the
-  panel's black is **(55, 0, 0)**, where the original's bars measure
-  **(94, 60, 16)** and (61, 40, 11). A green of 60 cannot come from a red
-  source over black under any blend that mixes the two, and no channel
-  permutation helps.
+What settled it was a screen whose fill colour is not the placeholder. **209
+of the tree's 222 fills carry (255, 0, 0)**, so most screens cannot test the
+rule; the LIFT's description panel carries (80, 122, 118) over black artwork:
 
-It was implemented, rendered and backed out: on the strength of the colour
-alone it paints nine red bars where the game shows two amber ones. Both sides
-are pinned in `screendraw.cpp`; the fill waits for whichever reading is wrong
-to be found, rather than for a colour to be fitted to a screenshot.
+    the rule predicts                          (17.3, 26.3, 25.5)
+    a player's screenshot of the game measures (15, 25, 25)
+    engine/ composes                           (16, 24, 24)
+
+`verify.py: fill colour`, and it is the first UI number in this port checked
+against a picture of the ORIGINAL rather than against the port's own
+reference. The per-row gate went in with it - `sub_42AAE0` sets `0x40000001`
+on every row widget past the object count, so the sneak fills one bar and not
+nine, which is the shape the original has.
+
+**Still open, and narrowly**: what the placeholder means. The sneak's rows
+carry (255, 0, 0) and so draw dark red where the original measures
+(94, 60, 16), a warm amber no red source can make under this blend. Something
+writes a real colour into `+8/+9/+10` at run time on the screens that need
+one; it has not been found.
 
 ### The trap, which this port walked into
 

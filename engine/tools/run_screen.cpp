@@ -106,5 +106,20 @@ int main(int argc, char** argv) {
         const char b[2] = {static_cast<char>(v & 0xFF), static_cast<char>(v >> 8)};
         o.write(b, 2);
     }
+
+    // ...and then the LIFT's, appended, because screen 4 is the one screen
+    // with a FILL whose record colour is not the (255, 0, 0) placeholder 209
+    // of the tree's 222 fills carry. Its description panel is the only place
+    // the fill rule can be checked against a picture of the original, so the
+    // pixels have to be reachable. Appended rather than substituted: the menu
+    // frame above is what `menu layout` and `engine: screen` read.
+    omk::Surface lift(dw, dh, 0);
+    omk::UiWalk lw(w);
+    lw.open(4);
+    comp.draw(lift, 4, lw);
+    for (auto v : lift.px) {
+        const char b[2] = {static_cast<char>(v & 0xFF), static_cast<char>(v >> 8)};
+        o.write(b, 2);
+    }
     return 0;
 }
