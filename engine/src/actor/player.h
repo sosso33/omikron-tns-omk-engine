@@ -256,6 +256,17 @@ public:
     // of `angle * 256/90` blends them - no second axis at all (`out[4]` is
     // written 0, so the cross-blend collapses). Group id 600, clip H_ADJSTP.
     void setAdjustStep(bool on) { if (adjust_ != on) { adjust_ = on; ++takeGen_; } }
+    // THE STEP IS SCALED TO THE DISTANCE, NOT PLAYED AS AUTHORED. `sub_465D30`
+    // sets `dword_6A5380 = |D - target| * 0.0508` (the error over the 50 cm
+    // step) and `dword_53AE1C = 1`, and the channel tick (`sub_45C680` case
+    // 0xD/0xE/0x10) then runs the root delta through `sub_466540` - x and z
+    // multiplied by that global - while the flag is set and the actor is the
+    // player. So one authored step lands exactly on the target point.
+    void setStepScale(float s) { stepScale_ = s; }
+    // `Actor_Move(actor, dx, 0, dz, ..., 1, 1, 0)` from `sub_465D30`: the
+    // move to the target point, through the walker's floor probe, before a
+    // take starts. Returns whether the walker let it stand.
+    bool moveBy(float dx, float dz);
     // The current entry's variant count, 0 or 1 meaning "an ordinary clip".
     int variantCount() const;
 
@@ -362,6 +373,7 @@ private:
     float takeAngle_ = 0.0f, takeSecond_ = 0.0f;
     int   takeGen_ = 0;
     bool  adjust_ = false;
+    float stepScale_ = 1.0f;           // `dword_6A5380`, 1.0 outside a step
     int matched_ = 0, total_ = 0;
 
     // the camera block's live state

@@ -56,13 +56,35 @@ nearest the approach, with the pelvis dropping through root motion.
 
 ## NOT confirmed — the honest list
 
-1. **The adjust step (`7c12eb1`) has never been driven into the world.** The
-   build after it was launched twice; the first run sat on the start menu and
-   was killed, the second was never reported on. **Nothing about the step is
-   play-tested**, including whether the character now visibly squares up and
-   whether the `MDADJSTP` line shows the angle *shrinking* across the step. If
-   it still reads 66.4 → 66.5, the displacement is not reaching the walker and
-   that is a different fault from the one `7c12eb1` fixes.
+1. ~~**The adjust step (`7c12eb1`) has never been driven into the world.**~~
+   **Driven 2026-09-04, sixteen presses over two runs, and the fault was
+   neither of the two the paragraph below guessed.** The displacement DID
+   reach the walker: per frame, the step moved him 17–20 units in the
+   object's direction over frames 0–18 (the `crouch:` line now prints the
+   walker's x/z, the delta asked for and the walker's verdict). Then the
+   window's LAST frame — the seam `poseFrame()` already holds the pose short
+   of — applied the exact negative of the whole window (`dxz +17.81 -0.56`
+   after a step summing to −17.8), and he stood back on the press point when
+   `MDADJSTP` re-measured. So the step was visible to the eye and invisible
+   to the log, which is exactly what the two reports said. Fixed in
+   `player.cpp`: the grid root delta now clamps to the window's second-last
+   entry, as the pose does. **The angle test this bullet proposed was the
+   wrong test anyway**: a step straight at the object leaves the bearing
+   alone; the distance is what shrinks, and the log does not print it yet.
+
+   The seam fix then exposed the second fault plainly (third run, seven
+   presses): the step was one authored 50 cm whatever the distance, and he
+   walked *through* the rings whenever they were nearer than that (pressed
+   13 units short at −1.8°, ended with them behind him at −172.7°). That
+   sent the reading to `sub_465D30` whole, and it is ported now - see
+   §"sub_465D30, read whole" below.
+
+   The original text, for the record: *The build after it was launched twice;
+   the first run sat on the start menu and was killed, the second was never
+   reported on. Nothing about the step is play-tested, including whether the
+   character now visibly squares up and whether the `MDADJSTP` line shows the
+   angle shrinking across the step. If it still reads 66.4 → 66.5, the
+   displacement is not reaching the walker.*
 2. **The HIGH take (`n = 9`, group 143) has never been entered at all.** No
    object at table height was ever taken. Its `second` axis is a guess: the
    high arm of `sub_465D30` sets no `var_2C`, so what reaches `+0x1C8` there is
@@ -88,10 +110,77 @@ nearest the approach, with the pelvis dropping through root motion.
   the data can fail) or count DISTINCT ENTRIES per press — never sample a clip
   name, which wasted two traces.
 * **A debug printf is still in** `play.cpp` (`crouch: …`, one line per frame of
-  a take). It is the instrument that found the seam; keep or gate it, but do
-  not merge it without deciding.
+  a take). It is the instrument that found the seam — twice now: the vertical
+  one on 2026-09-03 and the horizontal one on 2026-09-04, after it grew the
+  walker's position and delta. Keep or gate it, but do not merge it without
+  deciding.
 
-## The one unresolved contradiction
+## `sub_465D30`, read whole (2026-09-04)
+
+The chooser is not twenty lines, it is the whole take setup, and the port had
+guessed everything but the group. `play.cpp`'s press handler now carries it
+line for line; the short form:
+
+* `dx, dy, dz` are object node − actor node, and the actor's node is the
+  **pelvis** (`o3de_SetNodePos(node, +244, +248, +252)`, the follow camera's
+  subject). `dy` counts DOWN like every y here. **The port's height test was
+  feet-relative and read the engine's as up-positive; it agreed on the floor
+  and on a 70 cm table by coincidence.** Now `dyP = dyFeet + cameraLift()`,
+  and `dyP <= 27.47` (less than 70 cm below the pelvis, i.e. above ~36 cm off
+  the floor) is the HIGH take. Only the floor is play-confirmed.
+* the **target point**: 40 cm (floor) or 60 cm (table) divided by cos(angle),
+  short of the object along the approach line. The LOW arm also biases the
+  angle by −10°.
+* refuse if |angle| > 50 and (from MDADJSTP, or already inside the target), or
+  the distance error exceeds 120 cm.
+* from MDACTION: within 10% of the target distance → **no step**, take at
+  once. Otherwise the step SCALE `dword_6A5380 = |D − target| / 19.69`.
+* `Actor_Move` to the target point outright before any take (from MDADJSTP,
+  and in the no-step case); before a step only a PROBE, and a probe under
+  25 cm drops the step. The port takes the requested length for the probe,
+  labelled.
+* if the step is coming and he is inside the target, the stored angle is
+  flipped by 180: he steps BACK.
+* the HIGH take's second axis is the **pitch** of the object seen from the
+  target point, `asin(−dy / hypot(target, dy))` in degrees — the value the
+  handoff called a guess. The LOW arm's is `dy − 27.47`, scaled by 1/29.53 in
+  `sub_466390` as before.
+
+**The angle's SIGN is the engine's negative of the port's `rel`.**
+`v41 = acos(cos); if (fx*dz − fz*dx > 0) v41 = −v41`, and with the heading
+recipe both facings use that cross product is `sin(bearing − facing)`, so a
+positive `rel` is a negative engine angle. Found in the data before the code:
+with the mirrored sign the step's side cell pushed him AWAY from the object
+line (lateral offset 15.4 → 26.8 and 17.7 → 20.5 across two steps, run 4);
+flipped, it shrinks or holds (19.9 → 15.1, 25.3 → 14.3, run 5), and a press
+with the rings behind him at −185° stepped BACK and landed at −10.0°, which
+is exactly the low arm's bias with zero lateral. The sign also picks which
+side the take clip reaches to, so every earlier "confirmed by eye" pose was
+mirrored left-for-right.
+
+**Run 5, twelve presses, the whole chain as ported:** scaled steps of 20 to
+42 units land 2 to 4 short of the target (the blended window's motion is a
+little under the authored 19.69, the seam excluded), the pre-take move
+closes the rest, the 10% no-step case fires from 18 and 24 units, and the
+cone refuses at +60°.
+
+## ~~The one unresolved contradiction~~ — CLOSED 2026-09-04
+
+`sub_45CE90` (the channel tick's root-delta source) does not call
+`Anim_RootDelta` for a grid clip: with flag bit 4 of +1252 set it calls
+`sub_4725B0`, whose position half `sub_472820` runs **four** `Anim_RootDelta`
+calls at the four cell offsets (`u16(sample, 8/10/12/14)`) and mixes them with
+the same two 0..256 weights as the rotations. So the engine reads the
+**blended cells' root motion**, which is what the port does; the "divergence"
+labels in `player.cpp` are wrong and should be re-worded as agreement.
+
+And the displacement's path is `sub_466540`: while `dword_53AE1C` (the step
+flag) is set and the actor is the player, the channel tick multiplies that
+delta's x and z by `dword_6A5380` before `o3de_MoveNodeBy`. Ported as
+`PlayerController::setStepScale`, applied to the grid delta in `tick`.
+
+The original text, kept for the record:
+
 
 `Anim_RootDelta` (`0x004711D0`) indexes the position keys by the **raw frame**,
 no cell offset — traced, not assumed — so the engine reads **cell 0's** root
@@ -108,12 +197,23 @@ reverse-engineering, and it may simplify everything above.
 
 ## Suggested order for whoever picks this up
 
-1. Play the current build and answer §"NOT confirmed" 1 — does he square up?
-2. Take something off a table, to exercise group 143 for the first time.
-3. Settle the frame-origin question above; it is upstream of the two labelled
-   divergences.
-4. Then decide `engine: actor states`, and write the check §"Broken / owed"
-   describes.
+1. ~~Play the current build and answer §"NOT confirmed" 1~~ — done 2026-09-04,
+   five runs; see §"sub_465D30, read whole".
+2. Take something off a table, to exercise group 143 for the first time — and
+   now also the pelvis-relative height rule between 36 and 70 cm, and the
+   pitch second axis.
+3. ~~Settle the frame-origin question~~ — closed; it was `sub_45CE90`'s
+   routing.
+4. Decide `engine: actor states` (still red with the SAME six numbers after
+   today's work, which touched only the player controller), and write the
+   check §"Broken / owed" describes. A press-and-measure harness would need
+   the props SHOWN, which `--scene-chunk 55` only gives after its ~1145
+   frames of beats — a headless attempt on 2026-09-04 pressed too early.
+5. The behind-the-back case: with the object behind and inside the target
+   distance the target goes negative, the 10% ratio passes, and the pre-take
+   move carries him THROUGH the object (run 4, 31.6 units). The engine does
+   the same arithmetic; whether its `Actor_Move` collides with the prop is
+   unread. Watch for it in the original before patching.
 
 ## How to run it
 

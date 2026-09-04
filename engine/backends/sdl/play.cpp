@@ -3711,211 +3711,180 @@ int main(int argc, char** argv) {
                     if (row)
                         std::printf("special move: %s (tab_special_move[%d] = 0x%08x)\n",
                                     row->name.c_str(), row->index, row->handler);
-                    if (mv == "MDACTION") {
-                        // The handler's success path sets `dword_53AF6C` (the
-                        // object) and `dword_53AE5C` (a result code) and
-                        // RETURNS without switching group; the switch is made
-                        // by the dispatcher that reads that code - MDNOTAKE
-                        // (0x0046B530) switches on it over four cases. That
-                        // dispatcher is not transcribed, so this installs the
-                        // take group directly.
+                    if (mv == "MDACTION" || mv == "MDADJSTP") {
+                        // ---- `sub_465D30(actor, obj, fromAdjust)` ----------
                         //
-                        // **RECONSTRUCTION, labelled** - but the group is NOT
-                        // guessed, it is read: group id 41 is the take group,
-                        // its default entry 51 (clip 12) has exactly one
-                        // child, entry 52, whose move is MDGETOBJ. Group 45,
-                        // which the handler's OTHER two arms name, carries no
-                        // take move at all - it is the empty action animation
-                        // `sub_467950` installs when nothing is there.
+                        // ONE function decides both stages of the take, and
+                        // until 2026-09-04 this ported only its last twenty
+                        // lines (which group) and guessed the rest. Read whole:
                         //
-                        // ---- AND THERE ARE TWO OF THEM (omk-play 69) -------
+                        //   dx, dy, dz  = object node pos - actor node pos.
+                        //                 The actor's node is the PELVIS (the
+                        //                 same +244..+252 the follow camera
+                        //                 targets), so dy here is the port's
+                        //                 feet-relative dy plus the pelvis
+                        //                 height - and it counts DOWN, like
+                        //                 every y in this world. An object on
+                        //                 the floor is +40 below the pelvis;
+                        //                 `dy <= 27.47` (less than 70 cm below
+                        //                 it) is the HIGH take, group 143.
+                        //   D           = hypot(dx, dz); angle = the signed
+                        //                 bearing off his facing.
+                        //   LOW arm:      angle -= 10 (a bias, authored into
+                        //                 the clips); target = 40 cm / cos;
+                        //                 second = dy - 27.47 (scaled by
+                        //                 1/29.53 inside sub_466390).
+                        //   HIGH arm:     target = 60 cm / cos; second = the
+                        //                 PITCH of the object seen from the
+                        //                 target point, asin(-dy / hypot(
+                        //                 target, dy)) in degrees - which
+                        //                 answers what reaches +0x1C8 there.
+                        //   refuse if     |angle| > 50 and (fromAdjust or
+                        //                 D < target), or |D - target| > 120cm.
+                        //   from MDACTION: if D/target is within 10%, no step:
+                        //                 take at once. Else the step SCALE
+                        //                 `dword_6A5380 = |D - target|/19.69`.
+                        //   target point = object - target * dir; the move
+                        //                 to it is `Actor_Move`d OUTRIGHT
+                        //                 before a take (both from MDADJSTP
+                        //                 and in the no-step case), and only
+                        //                 PROBED before a step: if the probe
+                        //                 moves under 25 cm the step is
+                        //                 dropped and it takes at once (and
+                        //                 fails if still > 125 cm off).
+                        //   angle stored  flipped by 180 when D < target and a
+                        //                 step is coming: he steps BACK.
                         //
-                        // A reader: the take animation "plays the complete
-                        // list of grabbing object animations (object on the
-                        // floor, object on a table...)", and guessed the
-                        // engine picks by position. It does, and the group
-                        // this used to hardcode is only HALF of it.
-                        //
-                        // `sub_465D30` is the chooser. It takes the actor's
-                        // node position and the object's, forms the three
-                        // deltas and the horizontal distance, checks a 50
-                        // degree facing cone (`dbl_4BC7F8`) and a reach, and
-                        // ends at `loc_466089`:
-                        //
-                        //     if (dy < flt_4BC7E0)  g = FindGroupById(41);  ret = 1;
-                        //     else                  g = FindGroupById(143); ret = 2;
-                        //     SetPersoBankGroup(actor[0x18C], g);
-                        //
-                        // H1Avnt.CTL confirms what those two are, which is the
-                        // check the reading has to pass: 41 is H_TAKL12 ->
-                        // MDGETOBJ -> H_TAKL22 and 143 is H_TAKH12 ->
-                        // MDGETOBJ -> H_TAKH22 - L for a thing on the floor,
-                        // H for a thing at table height. The caller then keeps
-                        // `dword_53AE5C = (ret == 2) ? 3 : 0`, which
-                        // `sub_46B530` turns into the matching PUT-BACK group
-                        // (140/6 are H_PUTL, 9/7 are H_PUTH). The symmetry is
-                        // the corroboration: four take groups, four put groups,
-                        // one test.
-                        //
-                        // **THE SIGN IS FLIPPED HERE, DELIBERATELY, AND IT WAS
-                        // MEASURED RATHER THAN REASONED.** The engine's `dy`
-                        // counts UPWARD - that is the only way `flt_4BC7E0`
-                        // discriminates, since 27.472441 inches is 69.8 cm, a
-                        // table above the feet, and the LOW arm is the one
-                        // BELOW it. This tree's world Y grows DOWNWARD
-                        // (`walk.cpp`: `const double rise = y - *g; // Y grows
-                        // downward`), so the same test reads reversed here.
-                        //
-                        // Getting that backwards swaps the two animations and
-                        // looks exactly as wrong as the bug it fixes, so it is
-                        // not left as an inference. The Impasse's rings decide
-                        // it: `prop_probe` shows OBJECTS 162 at y = -80.0, on
-                        // the ground where the player walks, and seating him
-                        // there puts his feet at y = -78.7. So a thing ON THE
-                        // FLOOR gives dy = -1.3 - which passes the test below
-                        // and takes H_TAKL, correctly - while a thing on a
-                        // 70 cm table would sit near y = -106 and give
-                        // dy = -27.5, which fails it and takes H_TAKH.
-                        //
-                        // The numbers are printed anyway: one take off a floor
-                        // and one off a table confirm it in play, which is the
-                        // only test that covers the transition.
-                        constexpr float kTakeHigh = 27.472441f;   // flt_4BC7E0
-                        float dy = 0.0f;
+                        // The step's DIRECTION and DISTANCE were the two
+                        // faults a reader saw across 16 presses: he stepped
+                        // 50 cm whatever the distance and walked through the
+                        // rings twice. Both are this function.
+                        const bool fromAdjust = mv == "MDADJSTP";
+                        constexpr float kTakeHigh  = 27.472441f;   // flt_4BC7E0, 70 cm
+                        constexpr float kReachLow  = 15.748032f;   // 40 cm
+                        constexpr float kReachHigh = 23.622047f;   // 60 cm
+                        constexpr float kStepLen   = 19.685039f;   // 1 / 0.0508, the 50 cm step
+                        constexpr float kMaxError  = 47.244096f;   // 120 cm
+                        constexpr float kNoStep    = 9.8425198f;   // 25 cm
+                        constexpr float kMaxProbe  = 49.212598f;   // 125 cm
+                        player->setAdjustStep(false);
+                        float dyFeet = 0.0f;
                         const int obj = session.scanTakeable(player->pos(),
-                                                             player->facing(), &dy);
-                        // engine `dy_up < kTakeHigh` == port `dy_down > -kTakeHigh`
-                        const bool low   = dy > -kTakeHigh;
-                        const int  group = low ? 41 : 143;
-                        // THE VARIANT GRID's two axes (omk-play 69).
-                        // `sub_465D30` leaves them at actor+0x1C4 and +0x1C8
-                        // and `sub_466390` turns them into four key offsets
-                        // and two weights. The angle is the signed bearing of
-                        // the object relative to the way he is FACING - the
-                        // same quantity the 50 degree cone tests - and the
-                        // second axis is the height, which for the low take
-                        // the engine pre-scales by 1/29.527559 (75 cm).
-                        float takeAngle = 0.0f, takeSecond = 0.0f;
-                        if (obj >= 0) {
-                            float op[3] = {0, 0, 0};
-                            if (session.propPos(obj, op)) {
-                                const float dx = op[0] - player->pos()[0];
-                                const float dz = op[2] - player->pos()[2];
-                                // The SAME convention the port's facing uses -
-                                // `headingFromClipRoot` ends
-                                // `atan2(v[2], v[0]) * rad2deg + 90`. Taking
-                                // the bare atan2 gave bearings of -99 and -164
-                                // degrees for an object a metre away, outside
-                                // the 50 degree cone and swinging with his
-                                // heading: two conventions subtracted.
+                                                             player->facing(), &dyFeet);
+                        float op[3] = {0, 0, 0};
+                        bool  ok = obj >= 0 && session.propPos(obj, op);
+                        float D = 0.0f, angle = 0.0f, target = 0.0f, second = 0.0f;
+                        float dyP = 0.0f, mx = 0.0f, mz = 0.0f, scale = 1.0f;
+                        bool  low = true, takeNow = fromAdjust, moved = false;
+                        const char* why = "no object in reach";
+                        if (ok) {
+                            const float dx = op[0] - player->pos()[0];
+                            const float dz = op[2] - player->pos()[2];
+                            dyP = dyFeet + player->cameraLift();
+                            D = std::sqrt(dx * dx + dz * dz);
+                            if (!(D > 0.0f)) { ok = false; why = "standing on it"; }
+                            else {
+                                // the port's facing convention, as before:
+                                // `headingFromClipRoot` ends `atan2(z, x) + 90`
                                 const float bearing = std::atan2(dz, dx) *
                                                       57.29577951308232f + 90.0f;
                                 float rel = bearing - player->facing();
                                 while (rel < -180.0f) rel += 360.0f;
                                 while (rel >  180.0f) rel -= 360.0f;
-                                takeAngle = rel;
-                                // THE SECOND AXIS IS NOT THE RAW HEIGHT.
-                                // `sub_465D30`'s low arm computes
-                                //   var_2C = dyUp - 57.0 - (-29.527559)
-                                //          = dyUp - 27.472441
-                                // and `sub_466390` then scales by
-                                // flt_4BC84C = 1/29.527559 (75 cm). Feeding
-                                // the raw height instead put a ring at his
-                                // feet at +0.04 where it belongs at -0.89, so
-                                // the blend sat 96% on cell 1 - the SHALLOW
-                                // reach - and he barely bent, which is what a
-                                // reader saw.
-                                //
-                                // dy here is DOWN-positive, the engine's is
-                                // up-positive, hence the negation.
-                                const float dyUp = -dy;
-                                takeSecond = low
-                                    ? (dyUp - 27.472441f) * 0.033866666f
-                                    // **UNVERIFIED for the high take**: the
-                                    // high arm sets no `var_2C`, so what
-                                    // reaches +0x1C8 there is not read yet.
-                                    : dyUp - 27.472441f;
+                                // THE ENGINE'S SIGN IS THE OPPOSITE OF `rel`.
+                                // `sub_465D30`: `v41 = acos(cos); if (fx*dz -
+                                // fz*dx > 0) v41 = -v41`, and with the heading
+                                // recipe both facings use (`atan2(z, x) + 90`,
+                                // so f = (sin F, -cos F)) that cross product is
+                                // sin(bearing - facing) = sin(rel). Positive
+                                // rel is a NEGATIVE engine angle. Measured
+                                // before the flip (2026-09-04, run 4): the
+                                // step's side cell pushed him AWAY from the
+                                // object line - lateral offset 15.4 -> 26.8
+                                // and 17.7 -> 20.5 across two steps - because
+                                // the quadrant table was fed the mirrored
+                                // sign.
+                                angle = -rel;
+                                const float cosA = std::cos(rel * 0.017453292f);
+                                low = dyP > kTakeHigh;
+                                if (low) { angle -= 10.0f; target = kReachLow / cosA;
+                                           second = dyP - kTakeHigh; }
+                                else     { target = kReachHigh / cosA; }
+                                const float err = std::fabs(D - target);
+                                if (std::fabs(angle) > 50.0f && (fromAdjust || D < target)) {
+                                    ok = false; why = "outside the 50 degree cone";
+                                } else if (err > kMaxError) {
+                                    ok = false; why = "more than 120 cm off the target";
+                                } else {
+                                    if (!fromAdjust) {
+                                        const float r = std::fabs(D / target);
+                                        if (r > 0.9f && r < 1.1f) takeNow = true;
+                                        else scale = err / kStepLen;
+                                    }
+                                    mx = dx - target * dx / D;
+                                    mz = dz - target * dz / D;
+                                    if (!low)
+                                        second = std::asin(-dyP / std::sqrt(target * target + dyP * dyP)) *
+                                                 57.29577951308232f;
+                                    if (!takeNow) {
+                                        // **PORT SHORTCUT, labelled**: the
+                                        // engine PROBES the move (Actor_Move,
+                                        // then puts him back) and measures
+                                        // what the collision let through;
+                                        // this takes the requested length.
+                                        const float probe = std::sqrt(mx * mx + mz * mz);
+                                        if (probe < kNoStep) {
+                                            takeNow = true; scale = 1.0f;
+                                            if (std::fabs(D - probe) > kMaxProbe) {
+                                                ok = false; why = "cannot close on it";
+                                            }
+                                        }
+                                    }
+                                    if (ok && takeNow) moved = player->moveBy(mx, mz);
+                                    if (!(D >= target || takeNow))
+                                        angle = angle < 0.0f ? 180.0f - angle : angle - 180.0f;
+                                }
                             }
-                            player->setTakeGeometry(takeAngle, takeSecond);
                         }
-                        // ---- STAGE ONE: THE ADJUST STEP ---------------
-                        //
-                        // MDACTION does NOT start the take. It calls
-                        // `sub_465D30(actor, obj, 0)`, whose `arg_8 == 0` arm
-                        // installs GROUP 600 - `H_ADJSTP` - and returns 1:
-                        // the character STEPS INTO POSITION first. The take
-                        // comes later, from MDADJSTP.
-                        //
-                        // A reader saw the gap before the code did: "I think
-                        // the original engine move the character to be in the
-                        // right position to take the object; here, the
-                        // animation is triggered directly if we are in the
-                        // triggering zone, without placing the character
-                        // correctly."
-                        player->setAdjustStep(true);
-                        if (obj >= 0 && player->enterGroupById(600)) {
+                        if (!ok) {
+                            if (obj >= 0)
+                                std::printf("take: %s - object %d '%s' refused (%s): D %.1f "
+                                            "target %.1f angle %+.1f dy(pelvis) %+.1f\n",
+                                            mv.c_str(), obj, session.objectName(obj).c_str(),
+                                            why, D, target, angle, dyP);
+                            else if (fromAdjust)
+                                std::printf("take: MDADJSTP - nothing in reach after the step\n");
+                            // engine: dword_53AE1C = 0, nothing installed
+                        } else if (takeNow) {
+                            const int g = low ? 41 : 143;
+                            player->setTakeGeometry(angle, low ? second * 0.033866666f : second);
                             takeCandidate = obj;
                             takeWasLow = low;
-                            std::printf("take: MDACTION found object %d '%s' in reach, "
-                                        "dy %+.1f (down-positive) -> %s take, group %d; "
-                                        "grid angle %+.1f deg, second %+.2f\n",
-                                        obj, session.objectName(obj).c_str(), dy,
-                                        low ? "LOW H_TAKL" : "HIGH H_TAKH", group,
-                                        takeAngle, takeSecond);
-                            (void)group;
-                        } else if (obj >= 0) {
-                            std::printf("take: MDACTION found object %d but the bank has "
-                                        "no group %d\n", obj, group);
-                        }
-                    } else if (mv == "MDADJSTP") {
-                        // ---- STAGE TWO: THE TAKE ----------------------
-                        //
-                        // The step has ended, so the geometry is RE-MEASURED
-                        // from where he now stands - that is the whole point
-                        // of the step - and `sub_465D30(actor, obj, 1)` takes
-                        // the other arm, installing group 41 or 143.
-                        //
-                        // The handler's own reach here is `flt_4BC930` =
-                        // 47.244095 - 120 cm, TIGHTER than MDACTION's 150,
-                        // because the step has brought him closer. If the
-                        // object is no longer within it, no take: the engine
-                        // returns without installing anything.
-                        player->setAdjustStep(false);
-                        constexpr float kAdjustReach = 47.244095f;
-                        float dy2 = 0.0f;
-                        const int obj2 = session.scanTakeable(player->pos(),
-                                                              player->facing(), &dy2);
-                        float op2[3] = {0, 0, 0};
-                        bool near2 = false;
-                        if (obj2 >= 0 && session.propPos(obj2, op2)) {
-                            const float ddx = op2[0] - player->pos()[0];
-                            const float ddy = op2[1] - player->pos()[1];
-                            const float ddz = op2[2] - player->pos()[2];
-                            near2 = ddx * ddx + ddy * ddy + ddz * ddz <=
-                                    kAdjustReach * kAdjustReach;
-                        }
-                        if (obj2 >= 0 && near2) {
-                            const float bearing2 = std::atan2(op2[2] - player->pos()[2],
-                                                              op2[0] - player->pos()[0]) *
-                                                   57.29577951308232f + 90.0f;
-                            float rel2 = bearing2 - player->facing();
-                            while (rel2 < -180.0f) rel2 += 360.0f;
-                            while (rel2 >  180.0f) rel2 -= 360.0f;
-                            const float up2 = -dy2;
-                            const bool low2 = dy2 > -27.472441f;
-                            player->setTakeGeometry(rel2, low2
-                                ? (up2 - 27.472441f) * 0.033866666f
-                                : up2 - 27.472441f);
-                            const int g2 = low2 ? 41 : 143;
-                            takeCandidate = obj2;
-                            takeWasLow = low2;
-                            std::printf("take: MDADJSTP - stepped into position, "
-                                        "dy %+.1f angle %+.1f -> %s take, group %d%s\n",
-                                        dy2, rel2, low2 ? "LOW" : "HIGH", g2,
-                                        player->enterGroupById(g2) ? "" : " - NO GROUP");
+                            std::printf("take: %s - object %d '%s' D %.1f target %.1f -> moved %s "
+                                        "%+.1f %+.1f; %s take group %d, angle %+.1f second %+.2f\n",
+                                        mv.c_str(), obj, session.objectName(obj).c_str(), D, target,
+                                        moved ? "to" : "BLOCKED toward", mx, mz,
+                                        low ? "LOW H_TAKL" : "HIGH H_TAKH", g, angle, second);
+                            if (!player->enterGroupById(g))
+                                std::printf("take: the bank has no group %d\n", g);
                         } else {
-                            std::printf("take: MDADJSTP - nothing within 120 cm after "
-                                        "the step; no take\n");
+                            // ---- STAGE ONE: THE ADJUST STEP ---------------
+                            // `sub_466210`: group 600, H_ADJSTP, the cells
+                            // picked by the angle's quadrant and sign, the
+                            // root motion scaled by `dword_6A5380`.
+                            player->setTakeGeometry(angle, low ? second * 0.033866666f : second);
+                            player->setAdjustStep(true);
+                            player->setStepScale(scale);
+                            takeCandidate = obj;
+                            takeWasLow = low;
+                            std::printf("take: MDACTION - object %d '%s' D %.1f target %.1f: "
+                                        "adjust step of %.1f (scale %.2f) at angle %+.1f, "
+                                        "then the %s take\n",
+                                        obj, session.objectName(obj).c_str(), D, target,
+                                        std::fabs(D - target), scale, angle,
+                                        low ? "LOW" : "HIGH");
+                            if (!player->enterGroupById(600))
+                                std::printf("take: the bank has no group 600\n");
                         }
                     } else if (mv == "MDGETOBJ") {
                         if (takeCandidate >= 0 && session.takeObject(takeCandidate)) {
@@ -5712,10 +5681,16 @@ int main(int argc, char** argv) {
                         float lo = -1e9f;
                         for (const auto& c : playerPosed.corners)
                             if (c.y > lo) lo = c.y;
+                        const auto& lf = player->last();
                         std::printf("  crouch: %-9s f %2d  lowest %+8.2f  "
-                                    "(latched %+8.2f, delta %+7.2f)  root %+6.2f\n",
+                                    "(latched %+8.2f, delta %+7.2f)  root %+6.2f"
+                                    "  at %.1f %.1f  dxz %+.2f %+.2f  step %d%s\n",
                                     player->clipName().c_str(), player->poseFrame(),
-                                    lo, playerFeet, lo - playerFeet, rootAccum);
+                                    lo, playerFeet, lo - playerFeet, rootAccum,
+                                    player->pos()[0], player->pos()[2],
+                                    lf.rootDelta[0], lf.rootDelta[2],
+                                    static_cast<int>(lf.step),
+                                    lf.stepped ? "" : " (no step asked)");
                     }
                 }
                 const float* pp = player->pos();

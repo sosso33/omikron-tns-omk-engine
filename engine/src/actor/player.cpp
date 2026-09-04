@@ -123,6 +123,12 @@ void PlayerController::nudge(const float d[3]) {
     for (int k = 0; k < 3; ++k) pos_[k] = static_cast<float>(walker_.pos()[k]);
 }
 
+bool PlayerController::moveBy(float dx, float dz) {
+    const StepResult r = walker_.step(dx, dz, 1.0);
+    for (int k = 0; k < 3; ++k) pos_[k] = static_cast<float>(walker_.pos()[k]);
+    return r == StepResult::Moved || r == StepResult::Slid;
+}
+
 PlayerController::PlayerController(const Setup& s)
     : ctl_(s.ctl), data_(s.ctlData), meshes_(s.meshes),
       rt_(*s.ctl, true),
@@ -429,20 +435,31 @@ void PlayerController::tick(float dt, std::uint32_t word) {
         // is why the approach angle was unchanged across the step (66.4 ->
         // 66.5 degrees, where squaring up is the whole point of it).
         //
-        // **A PORT DIVERGENCE, labelled.** `Anim_RootDelta` really does index
-        // by the raw frame and so really does read cell 0 - that is traced,
-        // not assumed. Either the engine starts a grid state's frame inside
-        // its own cell, which this port does not model, or the displacement
-        // reaches the actor by a path not yet found. Until one of those is
-        // settled this takes the motion from the BAKED window, which is the
-        // cell the rotations are already playing, so the step goes where the
-        // animation says it goes.
+        // AND THAT IS THE ENGINE'S READING TOO (settled 2026-09-04). This
+        // was labelled a port divergence because `Anim_RootDelta` indexes by
+        // the raw frame - it does - but the channel tick never calls it
+        // directly for a grid clip: `sub_45CE90` sees flag bit 4 of +1252
+        // and routes through `sub_4725B0`, whose position half `sub_472820`
+        // makes FOUR `Anim_RootDelta` calls at the four cell offsets and
+        // mixes them with the same two 0..256 weights as the rotations. The
+        // baked window below is exactly that blend.
         const int variants = variantCount();
         const NodeTracks* baked = variants > 1 ? poseTracks() : nullptr;
         if (baked && !baked->trans.empty()) {
             const int a = static_cast<int>(std::floor(f0)) - 1;
             const int b = static_cast<int>(std::floor(f1)) - 1;
-            const int last = static_cast<int>(baked->trans.size()) - 1;
+            // THE WINDOW'S LAST FRAME IS THE SEAM, AND IT MUST NOT BE READ
+            // HERE EITHER. `poseFrame()` already holds the pose one frame
+            // short of it, because both the pose and the root snap back to
+            // standing there; this read did not, so the last tick of every
+            // grid state summed the exact negative of the whole window - a
+            // step of 17.8 units toward the object followed by one tick of
+            // `dxz +17.81 -0.56` (measured, play 2026-09-04, six presses,
+            // six snap-backs) - and the character stood where he had pressed
+            // when `MDADJSTP` re-measured. That is why the adjust step
+            // "moved him" to the eye and left the angle unchanged in the log.
+            const int last = static_cast<int>(baked->trans.size()) - 2 > 0
+                                 ? static_cast<int>(baked->trans.size()) - 2 : 0;
             const int ia = a < 0 ? 0 : (a > last ? last : a);
             const int ib = b < 0 ? 0 : (b > last ? last : b);
             for (int k = 0; k < 3; ++k)
@@ -453,6 +470,13 @@ void PlayerController::tick(float dt, std::uint32_t word) {
             rootDelta(*rt, f0, f1, local);
         }
     }
+    // `sub_466540`, from the channel tick while `dword_53AE1C` is set and the
+    // actor is the player: the root delta's x and z scaled by `dword_6A5380`,
+    // which `sub_465D30` set to the distance error over the 50 cm step. That
+    // is how one authored H_ADJSTP lands on the target point whatever the
+    // distance - and the missing "path by which the displacement reaches the
+    // actor" the take handoff asked about: it is this scale, on THIS delta.
+    if (adjust_) { local[0] *= stepScale_; local[2] *= stepScale_; }
     float world[3];
     rotateByFacing(local, world);                  // Anim_RootDelta's 3x3 = +288
     for (int k = 0; k < 3; ++k) last_.rootDelta[k] = world[k];
