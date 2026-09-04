@@ -4654,6 +4654,78 @@ def c_engine_zone_pump():
            "camera-wait park resumed into its dialog.start"
 
 
+def c_engine_row_window():
+    r"""THE SNEAK'S ROW WINDOW - `sub_42AFF0`, and the tenth object.
+
+    The nine row widgets of list `0x004DE6F0` are a WINDOW onto a list that
+    may be longer, and two functions move it:
+
+    **`sub_42AAE0(list, window)`** binds them, and its second argument is the
+    WINDOW, not a count - which is the thing the port had wrong. For each
+    widget `k`: if `k + window >= list+24` the tag `item+0x3C` goes to -1 and
+    `0x40000001` / `0x20000004` mark it not-drawn and not-selectable;
+    otherwise the tag is `k + window` and both are cleared.
+
+    **`sub_42AFF0`** is `Ui_MoveSelection` over that window, and it is a
+    CENTRED rule - the cursor moves until it reaches the middle widget and
+    then the window moves under it instead:
+
+        half = widgets / 2
+        UP  : base > 0 && sel <= half  ->  bindRows(list, count, base - 1)
+              else if (sel_item+0x3C >  base)       --sel
+        DOWN: lastBound != count-1 && sel >= half   ->  bindRows(.., base + 1)
+              else if (sel_item+0x3C <  lastBound)  ++sel
+
+    It also marks the first and last widget with `0x100000` / `0x200000` -
+    "more above" and "more below" - gated on the list being longer than the
+    widgets AND on where the selection sits, and raises **event 30** with the
+    selected row's tag on any successful move (`sub_4083F0(0x1E, &tag)`,
+    guarded on the tag not being -1), which is the inventory channel's
+    3D-preview load. The preview follows the cursor because the MOVER fires
+    it.
+
+    The window was hardcoded 0 until 2026-09-04, so a list longer than its
+    nine widgets was TRUNCATED rather than scrolled: carry ten things and the
+    tenth could not be reached at all - a device lying to the player about
+    what he holds. Twelve rows in nine widgets is the case that shows it.
+
+    Asserted: the widget count and the window's start; that driving DOWN
+    reaches row **11 of 11** (it reached 8 before) with the window at **3** -
+    which is 12 - 9, the only place it can rest - and the top mark set and
+    the bottom mark clear, because at the end of the list there is more above
+    and nothing below; and that driving UP the same number of times returns
+    to row 0 with the window back at 0, which is the transition test a
+    still frame cannot give (CLAUDE.md 1, "a value verified standing still is
+    not verified moving").
+    """
+    import subprocess
+    eng = os.path.join(ROOT, "engine")
+    tbl = os.path.join(ROOT, "tables")
+    if not (os.path.isdir(eng) and os.path.isdir(tbl)):
+        return ("skipped",), ("skipped",), "engine/ or tables/ absent"
+    b = subprocess.run(["make", "-s", "build/row_window"], cwd=eng,
+                       capture_output=True, text=True)
+    binp = os.path.join(eng, "build", "row_window")
+    if b.returncode != 0 or not os.path.exists(binp):
+        return ("build failed",), ("built",), "engine/ must build"
+    r = subprocess.run([binp, tbl], capture_output=True, text=True,
+                       errors="replace")
+    got = [ln.split() for ln in r.stdout.strip().splitlines()]
+    want = [
+        "widgets 9 window 0 count 12".split(),
+        "walk down reached row 11 of 11, window 3, top_mark 1 "
+        "bot_mark 0".split(),
+        "walk up returned to row 0, window 0".split(),
+    ]
+    return got, want, \
+        "nine row widgets over a twelve-row list: driving DOWN reaches the " \
+        "LAST row (11 of 11) with the window resting at 3 = 12 - 9, the " \
+        "top scroll mark set and the bottom one clear; and driving UP the " \
+        "same number of times returns to row 0 with the window back at 0. " \
+        "With the window hardcoded 0 - what the port did until 2026-09-04 - " \
+        "the walk stops at row 8 and the tenth carried object is unreachable"
+
+
 def c_engine_used_object():
     r"""USING AN INVENTORY OBJECT ON THE WORLD - `Utiliser` reaching a zone.
 
@@ -19026,7 +19098,7 @@ def c_licence_headers():
                    if TAG in open(p, encoding="utf-8",
                                   errors="replace").read(600)]
     return (authored, sorted(missing), len(vendored), mislabelled), \
-           (330, [], 1, []), \
+           (331, [], 1, []), \
            "authored source files under tools/, engine/src, engine/tools, " \
            "engine/backends and scripts/; those MISSING the SPDX tag; " \
            "vendored files in engine/third_party; and vendored files wrongly " \
@@ -20434,6 +20506,7 @@ SLOW = [
     ("engine: head look", c_engine_head_look, "STREET_LIFE; actor/pose.h"),
     ("engine: zone pump",  c_engine_zone_pump,  "engine/README"),
     ("engine: used object", c_engine_used_object, "engine/README"),
+    ("engine: row window", c_engine_row_window, "docs/UI"),
     ("engine: zone registry", c_engine_zone_registry, "engine/README"),
     ("engine: voice over", c_engine_voice_over, "CUTSCENES 5; engine/README"),
     ("engine: world ops",  c_engine_world_ops,  "script/hooks.h; SCRIPT_VM; GAME_STATE"),

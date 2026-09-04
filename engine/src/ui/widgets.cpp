@@ -403,23 +403,125 @@ bool UiWalk::pickable(const UiList& l, const UiItem& it) const {
     return it.selectable(l.broadcast) && !itemOff(it.addr);
 }
 
-void UiWalk::bindRows(std::uint32_t list, int count) {
+// `sub_42AAE0(list, window)`, and the SECOND ARGUMENT IS THE WINDOW - the
+// first row the nine widgets show. `count` is the list's own `+24`, what the
+// inventory channel reports (case 29).
+//
+//     for each widget k of the list:
+//       if (k + window >= count) { item+0x3C = -1;                 // past the end
+//                                  set 0x40000001 and 0x20000004; }  // not drawn,
+//       else                     { item+0x3C = k + window;           // not selectable
+//                                  clear both; }
+void UiWalk::bindRows(std::uint32_t list, int count, int window) {
     state_->bound[list] = count;
     if (!panel_) return;
     for (const auto& l : panel_->lists) {
         if (l.addr != list) continue;
+        if (window < 0) window = 0;
         for (std::size_t k = 0; k < l.items.size(); ++k) {
-            if (static_cast<int>(k) < count) state_->itemOff.erase(l.items[k].addr);
-            else                             state_->itemOff.insert(l.items[k].addr);
+            const int row = static_cast<int>(k) + window;
+            const bool live = row < count;
+            state_->rowTag[l.items[k].addr] = live ? row : -1;
+            if (live) state_->itemOff.erase(l.items[k].addr);
+            else      state_->itemOff.insert(l.items[k].addr);
         }
-        // ...and if the selection was left on a row that has just gone away,
-        // pull it back to the last live one. `sub_42AAE0` cannot leave the
-        // highlight past the end and neither may this.
+        // ...and if the selection was left on a widget that has just gone
+        // away, pull it back to the last live one. `sub_42AAE0` cannot leave
+        // the highlight past the end and neither may this. NOTE this clamps
+        // to the WIDGET count now, not to the row count: with a window the
+        // two are different numbers and clamping to the rows walked the
+        // selection off the end of a scrolled list.
+        const int live = std::min<int>(static_cast<int>(l.items.size()),
+                                       std::max(0, count - window));
         auto it = selMap().find(l.addr);
-        if (it != selMap().end() && it->second >= count)
-            it->second = count > 0 ? count - 1 : 0;
+        if (it != selMap().end() && it->second >= live)
+            it->second = live > 0 ? live - 1 : 0;
         return;
     }
+}
+
+int UiWalk::rowWindow(std::uint32_t list) const {
+    if (!panel_) return 0;
+    for (const auto& l : panel_->lists) {
+        if (l.addr != list || l.items.empty()) continue;
+        const int t = rowOf(l.items[0].addr);
+        return t < 0 ? 0 : t;
+    }
+    return 0;
+}
+
+// `sub_42AFF0` - `Ui_MoveSelection` OVER A WINDOW, and the whole of the
+// sneak's row scrolling. Read from the listing 2026-09-04; before that the
+// window was hardcoded 0 and a list longer than its nine widgets was
+// truncated, so a tenth carried object could not be reached at all.
+//
+// It is a CENTRED window: the selection moves until it reaches the middle
+// widget and then the window moves instead.
+//
+//     widgets = list+0,  sel = list+2,  count = list+24,  base = item[0]+0x3C
+//     half    = widgets / 2
+//
+//     item[0]   .0x100000 = count > widgets && sel_item+0x3C > half
+//     item[last].0x200000 = count > widgets && sel_item+0x3C < count-half-1
+//
+//     lastBound = the highest widget whose +0x3C is not -1, plus base
+//
+//     UP   : base > 0 && sel <= half  ->  bindRows(list, count, base - 1)
+//            else if (sel_item+0x3C >  base)      --sel
+//     DOWN : lastBound != count-1 && sel >= half  ->  bindRows(.., base + 1)
+//            else if (sel_item+0x3C <  lastBound) ++sel
+//
+// and on ANY successful move it raises event 30 with the selected row's tag
+// (`sub_4083F0(0x1E, &tag)`, guarded on the tag not being -1) - the inventory
+// channel's 3D-preview load. So the preview follows the cursor because the
+// MOVER fires it; a move that does not is a move that leaves it stale.
+//
+// -> whether anything moved, which is `sub_49C050`'s `!= 1` gate.
+bool UiWalk::moveRowWindow(const UiList& l, std::uint32_t bits) {
+    const int widgets = static_cast<int>(l.items.size());
+    if (widgets <= 0) return false;
+    const int count = boundCount(l.addr);
+    const int half  = widgets / 2;
+    const int base  = rowWindow(l.addr);
+    auto& sel = selMap()[l.addr];
+    if (sel < 0) sel = 0;
+    if (sel >= widgets) sel = widgets - 1;
+    const int selRow = rowOf(l.items[static_cast<std::size_t>(sel)].addr);
+
+    // the two marks, on the first and last WIDGET
+    const auto mark = [&](std::size_t k, std::uint32_t bit, bool on) {
+        auto& f = state_->rowArrow[l.items[k].addr];
+        f = on ? (f | bit) : (f & ~bit);
+    };
+    const bool longer = count > widgets;
+    mark(0, 0x100000u, longer && selRow > half);
+    mark(l.items.size() - 1, 0x200000u,
+         longer && selRow < count - half - 1);
+
+    // the highest widget still bound, as an absolute row
+    int k = widgets - 1;
+    while (k > 0 && rowOf(l.items[static_cast<std::size_t>(k)].addr) < 0) --k;
+    const int lastBound = k + base;
+
+    bool moved = false;
+    if (bits & kUiUp) {
+        if (base > 0 && sel <= half) {
+            bindRows(l.addr, count, base - 1);
+            moved = true;
+        } else if (selRow > base) {
+            --sel;
+            moved = true;
+        }
+    } else if (bits & kUiDown) {
+        if (lastBound != count - 1 && sel >= half) {
+            bindRows(l.addr, count, base + 1);
+            moved = true;
+        } else if (selRow >= 0 && selRow < lastBound) {
+            ++sel;
+            moved = true;
+        }
+    }
+    return moved;
 }
 
 bool UiWalk::usable(const UiList& l) const {
@@ -990,25 +1092,26 @@ bool UiWalk::press(std::uint32_t bits) {
         // `0x100000` / `0x200000`, the "more above" and "more below"
         // indicators.
         //
-        // THE WINDOW IS NOT MODELLED, and this is the honest half: for a
-        // list no longer than its widgets `sub_42AFF0` never scrolls and is
-        // the ordinary move, which is every list the port reaches (one
-        // carried object, three enabled destinations). Refusing the whole
-        // hook - which is what this did - meant the selection never moved
-        // inside the sneak's rows on ANY page, and a player reported it
-        // twice: "I can move between Appel du slider and the first
-        // destination but no more", "on inventory list I can go to the first
-        // element but not the second".
+        // `sub_42AFF0` IS PORTED NOW (2026-09-04). Before that the window
+        // was hardcoded 0 and this fell through to the ordinary move, which
+        // is right for a list no longer than its nine widgets - every list
+        // the port could reach at the time - and silently truncating for
+        // anything longer. A player carrying ten things could not reach the
+        // tenth.
         //
-        // A list longer than nine will need `sub_42AFF0` read properly; it
-        // is marked approximate here so that cannot pass unnoticed.
-        for (const auto& lm : panel_->lists)
-            if (lm.addr == l->addr &&
-                static_cast<int>(lm.items.size()) < boundCount(l->addr)) {
-                approx_ = true;
-                log_.push_back("row window: list longer than its widgets");
-            }
-        return move(*l, bits);
+        // Refusing the whole hook, which is what it did before THAT, meant
+        // the selection never moved inside the sneak's rows on any page, and
+        // a player reported it twice.
+        if (moveRowWindow(*l, bits)) {
+            // The tail: `sub_4083F0(0x1E, &tag)` on any successful move,
+            // guarded on the tag not being -1 - event 30, the inventory
+            // channel's 3D-preview load. Recorded rather than raised,
+            // because the Session owns the channel and the walk does not;
+            // a caller reads `rowOf(selected())` and asks for the preview.
+            log_.push_back("row move: event 30 for the selected row");
+            return true;
+        }
+        return false;
     }
     if (l->hook) {
         approx_ = true;

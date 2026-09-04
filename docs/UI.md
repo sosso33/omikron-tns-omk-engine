@@ -1744,9 +1744,40 @@ for each widget k:
 
 so the engine draws only the rows that HOLD something — two of nine in a
 capture with two objects carried — and `list+24` is the count the channel
-reports through case 29. `sub_42AFF0` moves the window on the up and down
-bits, skipping rows whose tag is −1, and raises **event 30** for the newly
-selected row, which is the 3D preview (§3e).
+reports through case 29.
+
+**`sub_42AFF0` is the mover, and it is a CENTRED window** (read from the
+listing 2026-09-04). With `widgets = list+0`, `sel = list+2`,
+`count = list+24`, `base = item[0]+0x3C` — the window lives in widget 0's own
+tag, so there is no separate variable — and `half = widgets / 2`:
+
+```
+UP  : base > 0 && sel <= half   ->  sub_42AAE0(list, base - 1)   // scroll
+      else if (sel_item+0x3C >  base)        --sel               // move
+DOWN: lastBound != count-1 && sel >= half    ->  sub_42AAE0(list, base + 1)
+      else if (sel_item+0x3C <  lastBound)   ++sel
+```
+
+where `lastBound` is the highest widget whose tag is not −1, plus the base.
+So the cursor moves until it reaches the middle widget and then the window
+moves under it instead.
+
+It also marks the ends: `item[0]` gets `0x100000` and the last widget
+`0x200000` — *more above* and *more below* — each gated on `count > widgets`
+**and** on where the selection sits, so at the bottom of a list the top mark
+is lit and the bottom one is not. And on **any** successful move it raises
+**event 30** with the selected row's tag (`sub_4083F0(0x1E, &tag)`, guarded
+on the tag not being −1), which is the 3D preview (§3e) — the preview follows
+the cursor because the *mover* fires it, so a selection change that does not
+go through here leaves the preview stale.
+
+`engine/` hardcoded the window at 0 until 2026-09-04, which is right for any
+list no longer than nine and silently truncating for anything longer: a tenth
+carried object could not be reached at all. `verify.py: engine row window`
+drives twelve rows through nine widgets and asserts the last row IS reached
+(11 of 11, window resting at 12 − 9 = 3), and that driving back up returns to
+row 0 — the transition test, since a still frame cannot tell a window that
+moves from one that does not.
 
 ### The one close that can refuse
 

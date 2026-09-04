@@ -5585,8 +5585,12 @@ int main(int argc, char** argv) {
                 // selectable either, so the walk must not put the highlight
                 // on one. Without this the selection walks off the end of
                 // the live destinations and the cursor goes with it.
+                // CARRYING the window, not resetting it. This runs every
+                // frame, so passing 0 would scroll the list back to the top
+                // between the keypress and the next draw.
                 walk->bindRows(omk::kListSneakRows,
-                               static_cast<int>(known.size()));
+                               static_cast<int>(known.size()),
+                               walk->rowWindow(omk::kListSneakRows));
                 if (!sliderTold) {
                     sliderTold = true;
                     std::printf("sneak: slider page - %zu of %zu destinations "
@@ -5766,13 +5770,16 @@ int main(int argc, char** argv) {
                 // `Ui_DrawItemFill`'s bars are behind. `list+24` is the
                 // count the channel reports (case 29).
                 //
-                // The window is 0 here: scrolling is `sub_0049C050` +
-                // `sub_42AFF0`, and neither is modelled, so a list longer
-                // than nine is truncated rather than scrolled.
+                // THE WINDOW is `sub_42AFF0`'s, kept in widget 0's `+0x3C`
+                // and moved by the mover - so the text follows the scroll
+                // rather than always starting at row 0. Hardcoded 0 until
+                // 2026-09-04, which truncated any list longer than the nine
+                // widgets: a tenth carried object could not be reached.
                 const omk::UiPanel* rp = w.at(omk::kPanelSneakInventory);
                 for (const auto& l : (rp ? rp->lists : pn->lists)) {
                     if (l.addr != omk::kListSneakRows) continue;
-                    const std::size_t window = 0;
+                    const std::size_t window = static_cast<std::size_t>(
+                        std::max(0, walk->rowWindow(omk::kListSneakRows)));
                     for (std::size_t k = 0; k < l.items.size(); ++k) {
                         const std::size_t row = k + window;
                         if (row >= carried.size()) {
@@ -5792,7 +5799,8 @@ int main(int argc, char** argv) {
                     }
                 }
                 walk->bindRows(omk::kListSneakRows,
-                               static_cast<int>(carried.size()));
+                               static_cast<int>(carried.size()),
+                               walk->rowWindow(omk::kListSneakRows));
                 // ---- THE ECHO BAR and THE CLOCK ---------------------
                 //
                 // Two of the device's rows are filled by callbacks of its

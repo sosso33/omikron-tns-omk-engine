@@ -143,7 +143,7 @@ Each ends in a commit and a `verify.py` check SHOWN to fail first.
 | # | step | status |
 |---|---|---|
 | 0 | this file | **done 2026-09-04** |
-| 1 | **row scrolling**: read `sub_42AFF0` properly, model the window in the binder, make `sub_49C050` move it. Check: a carried list of >9 reaching its last row, which today is unreachable | |
+| 1 | **row scrolling**: read `sub_42AFF0` properly, model the window in the binder, make `sub_49C050` move it. Check: a carried list of >9 reaching its last row, which today is unreachable | **done 2026-09-04** — a CENTRED window (the cursor moves to the middle widget, then the window moves under it); `bindRows`'s second argument is the WINDOW, the tag lives in widget 0's `+0x3C`, and the two end marks are `0x100000`/`0x200000`. `verify.py: engine row window` drives 12 rows through 9 widgets, reaching row 11 of 11; shown to fail at row 8 with the window pinned. **The event-30 raise is RECORDED, not raised** — the walk has no channel, so a caller must ask for the preview off `rowOf(selected())` |
 | 2 | `Utiliser sur`: read `sub_42B520`, port the combine mode, the two slots and the second selection onto the already-ported `Inventory::combine`. Until then, refuse it rather than run `Utiliser`'s arm | |
 | 3 | which list the bio / statistics / memo pages ask for, and fill them | |
 | 4 | `Text_LayOutBlock` — the real wrap, against a caption that today wraps wrong | |
