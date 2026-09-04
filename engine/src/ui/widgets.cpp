@@ -399,6 +399,29 @@ void UiWalk::colourList(std::uint32_t list, int r, int g, int b) {
 // this a rule rather than a table of addresses.
 void UiWalk::buildPage(const UiPanel& p) {
     colour_.clear();
+    off_.clear();
+    // THE SLIDER PAGE'S TWO-STATE HEADER, and a builder doing more than
+    // colour. `0x0049D170` opens with `cmp [arg0+4], 1` and both arms are
+    // `sub_428FF0` calls on three items of list 0x004DEA08:
+    //
+    //   arm 1   hide 0x004DE920, show 0x004DE968 + 0x004DE9B0, select 1
+    //   else    show 0x004DE920, hide 0x004DE968 + 0x004DE9B0, select 0
+    //
+    // and the tree says why there are two: 0x004DE920 (string 12) and
+    // 0x004DE968 (string 13) are BOTH at (187, 30), 202x22 - alternatives at
+    // one coordinate, never both drawn. Drawing both is what a player saw as
+    // overlapping text.
+    //
+    // The ELSE arm is what a capture of the original shows - one wide bar
+    // reading "Appel du slider", string 12 - so that is the state the page
+    // opens in here. Which value of `arg0+4` selects the other arm is not
+    // established: it is a message code the port does not deliver, and the
+    // two-label state (string 13 "Automatique" beside 14 "Manuelle") is
+    // recorded rather than reachable.
+    if (p.addr == kPanelSneakSlider) {
+        off_.insert(0x004DE968u);
+        off_.insert(0x004DE9B0u);
+    }
     // The page's own tab: the column item whose `child` is this panel.
     const UiItem* icon = nullptr;
     for (const auto& l : p.lists) {

@@ -6998,7 +6998,7 @@ def c_subtitle_box():
                  True, True, True, True, True, True,
                  True, True, True, True, True,
                  True, True, True, "JOURNAL", "VOIXOFF", "SMALL", True,
-                 True, True, True, True, True, True), \
+                 True, True, True, True, True, True, True), \
            ("the renderer's box: the two `off_4C71A8` colours it switches on, one "
             "I2D_SubmitQuad, both blend flags, the reply's -32 top and the 18px "
             "inset; then Dialog_TickUI's four Text_DrawBlock calls, that it makes "
@@ -10410,11 +10410,12 @@ def c_sneak_page_colour():
             "list 0x4dec58 written 240 135 15 over 2 items" in o,
             "row bar paints 49 28 0" in o,
             "walked to panel 0x4dede8" in o,
-            "page rows now 25 240 115" in o), \
+            "page rows now 25 240 115" in o,
+            "slider header off 1 1 shown 1" in o), \
            (5,
             ["20 165 250", "25 240 115", "240 135 15", "255 240 95",
              "255 100 70"],
-            True, True, True, True, True, True), \
+            True, True, True, True, True, True, True), \
            "the five tab icons carry the five page colours; opening screen " \
            "9 runs the inventory page's builder, which copies its own icon's " \
            "amber over the rows, the verbs and the echo bar; and the row " \
@@ -10424,7 +10425,67 @@ def c_sneak_page_colour():
            "confirming the slider tab DESCENDS - the walk changes panel " \
            "with no second `open()` - and its rows must turn GREEN. A " \
            "builder run only from `open()` leaves the new page wearing the " \
-           "old page's colour, which is what a player saw"
+           "old page's colour, which is what a player saw. And the slider page's " \
+           "HEADER: 0x004DE920 and 0x004DE968 are two items at the SAME " \
+           "(187, 30), alternatives its builder chooses between, so exactly " \
+           "one may be drawn - a player saw both, as overlapping text"
+
+
+def c_slider_destinations():
+    r"""`IAM\GLOBAL +16` - the sneak's SLIDER DESTINATIONS, and neither this
+    field nor its count `+28` was in this repo before 2026-09-04.
+
+    A play report: the slider page came up with "a full list of empty items".
+    The nine row widgets of list 0x004DE6F0 are SHARED between the device's
+    pages, and which source fills them is one global - `dword_670CB8`, written
+    by each page's `panel+4` builder: **0** inventory, **2** memory, **4**
+    slider. Exactly three writes in the image, two readers.
+
+    `sub_42ADD0` branches on it. For 0 and 2 it raises the inventory
+    channel's event 25 with that number as the list id - which is what the
+    port already did, and why only the inventory page had rows. For **4** it
+    raises nothing and instead sets flag `0x1000` on every row widget, and
+    `0x1000` is the flag `sub_42AA00` tests to take a row's text from
+    `sub_40E540(tag)` rather than from case 33.
+
+    `sub_40E540`, and `sub_40E8E0` for the count, walk `GLOBAL +16` (36-byte
+    records, count `+28`) and keep only the entries whose bit is set in the
+    game DB's `+24` array - `StateArray::AddressEnabled`, the 791-bit map VM
+    ops 87 `address.enable` and 88 `address.disable` write, already in the
+    port. `sub_40E540` returns `record + 4`, an inline 32-byte name.
+
+    **The parse is self-checking**, which is the point: 39 records ending at
+    6584 of the file's 6760 bytes, every name NUL-terminated inside its 32,
+    and all 39 bit indices distinct. None of those had to come out right.
+
+    And it is corroborated from outside the repo: a player's capture of the
+    original shows four rows reading "Anekbah - Kay'l's Apartment", "Anekbah -
+    Access to Qalisar", "Anekbah - Security HQ", "Qalisar - Access To
+    Anekbah", which are records 0, 1, 8 and the Qalisar one of this table in
+    the English release.
+
+    Shown to fail: reading the count at `+30` (the world-camera count) gives
+    4 records; reading the array at `+20` walks into the camera table and the
+    names stop terminating.
+    """
+    d = open(omkpaths.data("IAM", "GLOBAL"), "rb").read()
+    off = int.from_bytes(d[16:20], "little", signed=True)
+    n   = int.from_bytes(d[28:30], "little", signed=True)
+    recs = [d[off + i * 36: off + i * 36 + 36] for i in range(n)]
+    bits = [int.from_bytes(r[0:2], "little", signed=True) for r in recs]
+    names = [r[4:].split(b"\0")[0].decode("latin-1") for r in recs]
+    term = sum(1 for r in recs if b"\0" in r[4:])
+    return (n, off + n * 36 <= len(d), term, len(set(bits)),
+            names[0], names[1], names[8]), \
+           (39, True, 39, 39,
+            "Anekbah - Appartement de Kay'l", "Anekbah - Sas vers Qalisar",
+            "Anekbah - Centre de sécurité"), \
+           "the destination table `GLOBAL +16` holds 39 records of 36 bytes " \
+           "(count at +28), the walk ends INSIDE the file, every name is " \
+           "NUL-terminated inside its 32 bytes and every bit index is " \
+           "distinct - four properties the parse could have failed - and " \
+           "records 0, 1 and 8 are the three Anekbah destinations a " \
+           "player's capture of the original shows on that page"
 
 
 def c_cursor_highlight():
@@ -19965,6 +20026,7 @@ SLOW = [
     ("fill colour",       c_fill_colour,       "UI 3b"),
     ("sneak page colour", c_sneak_page_colour,  "UI 3b"),
     ("cursor highlight",  c_cursor_highlight,   "UI 3b"),
+    ("slider destinations", c_slider_destinations, "UI 3g"),
     ("engine: movies",     c_engine_movies,     "BOOT 2"),
     ("engine: raster",     c_engine_raster,     "PORTING B6"),
     ("engine: silhouette", c_engine_silhouette, "PORTING B6"),

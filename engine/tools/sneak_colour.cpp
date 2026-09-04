@@ -72,6 +72,13 @@ int main(int argc, char** argv) {
     if (const omk::UiPanel* now = walk.panel()) {
         std::printf("walked to panel %#x%s\n", now->addr,
                     walk.approximate() ? " (approximate)" : "");
+        // The slider page's header is TWO items at one coordinate; its
+        // builder shows exactly one. Drawing both is what a player saw as
+        // overlapping text.
+        std::printf("slider header off %d %d shown %d\n",
+                    walk.itemOff(0x004DE968u) ? 1 : 0,
+                    walk.itemOff(0x004DE9B0u) ? 1 : 0,
+                    walk.itemOff(0x004DE920u) ? 0 : 1);
         for (const auto& l : now->lists) {
             if (l.addr != omk::kListSneakRows || l.items.empty()) continue;
             const int* c = walk.itemColour(l.items.front().addr);

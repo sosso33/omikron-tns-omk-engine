@@ -605,6 +605,56 @@ wearing the old page's colour — a player reported reaching the slider page
 walks RIGHT, UP, CONFIRM into panel 0x004DEDE8 and asserts its rows turn green.
 
 
+### The device's nine rows are SHARED, and one global picks their source
+
+A play report of 2026-09-04: the slider page came up with "a full list of
+empty items". List 0x004DE6F0 belongs to the DEVICE, not to a page — the
+inventory, slider and memory pages all carry it — and which source fills it is
+**`dword_670CB8`**, written by each page's `panel+4` builder. Exactly three
+writes in the image and two readers:
+
+| value | builder | source |
+|---|---|---|
+| 0 | Inventory | the inventory channel, object list 0 |
+| 2 | Memory | the inventory channel, object list 2 |
+| 4 | Slider | `GLOBAL +16`, *not* the channel |
+
+`sub_42ADD0` branches on it. For 0 and 2 it raises the channel's **event 25**
+with that number as the list id; for **4** it raises nothing and instead sets
+flag `0x1000` on every row widget — and `0x1000` is the flag `sub_42AA00`
+tests to take a row's text from `sub_40E540(tag)` rather than from case 33.
+The count comes from `sub_40E8E0` instead of case 29.
+
+#### `IAM\GLOBAL +16` — the slider destinations
+
+Neither this field nor its count `+28` was in this repo before. 36-byte
+records: `+0` int16 is a **bit index**, `+4` an inline name of up to 32 bytes
+(`sub_40E540` returns `record + 4`). `sub_40E540` and `sub_40E8E0` keep only
+the records whose bit is set in the game DB's `+24` array — which is
+`StateArray::AddressEnabled`, the 791-bit map VM ops 87 `address.enable` and
+88 `address.disable` write, already read in `docs/GAME_STATE.md`. So the page
+lists the places the game has given the player.
+
+The parse is self-checking, and none of the four had to come out right: **39
+records ending at 6584 of the file's 6760 bytes**, every name NUL-terminated
+inside its 32, and all 39 bit indices distinct. Corroborated from outside the
+repo too — a capture of the original shows four rows whose English names are
+records 0, 1, 8 and the Qalisar one. `verify.py: slider destinations`.
+
+#### A builder does more than colour
+
+The slider page's header is **two items at one coordinate**: 0x004DE920
+(string 12, "Appel du slider") and 0x004DE968 (string 13, "Automatique"), both
+at (187, 30) 202×22, with 0x004DE9B0 (string 14, "Manuelle") beside the
+second. `sub_49D170` opens `cmp [arg0+4], 1` and each arm shows one and hides
+the other through `sub_428FF0(item, 0x40000001, …)` — the not-drawn bit —
+together with `0x20000004`, the not-selectable one, and writes the list's
+`+2` selection to match. Drawing both is what a player saw as overlapping
+text. The **else** arm is the state a capture of the original shows, one wide
+bar reading "Appel du slider", and that is what the port opens in; which value
+of `arg0+4` reaches the other arm is a message code the port does not deliver,
+so the two-label state is recorded and not reachable.
+
 ### `Ui_DrawItemCursor` — the HIGHLIGHT, and it is what tells a player where they are
 
 Item flag `0x40000200`, bank B — by far the commonest decoration in the tree

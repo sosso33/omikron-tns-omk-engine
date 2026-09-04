@@ -220,6 +220,7 @@ ScreenFrame ScreenComposer::draw(Surface& fb, int screenId,
             // widgets are a window onto something longer (`sub_42AAE0`).
             if (eff0[1] & 1) continue;
             if (hidden_ && hidden_->count(it.addr)) continue;
+            if (walk.itemOff(it.addr)) continue;   // a builder switched it off
 
             // ---- IS THIS ITEM SELECTED, AND IS IT FOCUSED ------------
             //

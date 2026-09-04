@@ -1580,6 +1580,9 @@ int main(int argc, char** argv) {
     const auto globalFile = fs.read("IAM/GLOBAL");
     const auto recipes = omk::globalRecipes(globalFile);
     omk::Inventory inv(objectRecords, recipes);
+    // `GLOBAL +16` - the sneak's slider destinations, 39 of them.
+    const auto destinations = omk::globalDestinations(globalFile);
+    bool sliderTold = false;
     if (objectRecords.empty())
         std::printf("no IAM/OBJECT - the sneak's inventory page will be "
                     "empty\n");
@@ -1693,6 +1696,11 @@ int main(int argc, char** argv) {
     int sneakTold = 0;             // one line per run, not one per frame
     int replySel = 0;            // which reply the player is on
     int actionTold = 0;          // one line for a press that reaches nothing
+    // THE ACTION BUTTON IS AN EDGE (omk-play 74). Bit 0x10 arrives as a LEVEL
+    // - the world's repeat mask is 0, so a held key is set every frame - and
+    // this remembers the previous frame's so the press fires once. See the
+    // long note at the dispatch for why the engine needs no such variable.
+    bool actionWas = false;
     // `tab_special_move[]` as a TABLE rather than a string compare: a fired
     // move resolves to its ROW - the index the engine dispatches on and the
     // handler address it calls - so an unknown name comes back nullptr
@@ -2973,6 +2981,12 @@ int main(int argc, char** argv) {
         if (walk) in.setRepeatMask(omk::kUiRepeatMask);
         else if (adventure) in.setRepeatMask(0);
         const std::uint32_t bits = in.frame(st);
+        // The action's EDGE, taken here rather than at the dispatch so a frame
+        // that never reaches it - a dialogue, a cutscene, a screen - cannot
+        // leave the latch stale and manufacture a press on the way back.
+        const bool actionNow  = (bits & 0x10u) != 0;
+        const bool actionEdge = actionNow && !actionWas;
+        actionWas = actionNow;
 
         // THE DIALOGUE CLOCK IS REAL TIME, not a frame count.
         //
@@ -3616,11 +3630,34 @@ int main(int argc, char** argv) {
                 //     dword_4E6C90 = 1;
                 //
                 // so a press with no prompt slot taken never reaches the pump,
-                // and since the pump clears the flag at the end of its slot
-                // loop a HELD button is one press per FRAME - which is why
-                // this is not edge-filtered. `Session::pressAction` models all
-                // of that, including handing the tracked position to
-                // `talkToPedestrian` for the crowd.
+                // and the pump clears the flag at the end of its slot loop.
+                // `Session::pressAction` models all of that, including handing
+                // the tracked position to `talkToPedestrian` for the crowd.
+                //
+                // **AND IT FIRES ON THE EDGE**, which is a correction: this
+                // used to press on the LEVEL, reasoning that "the pump clears
+                // the flag each frame, so a held button is one press per
+                // frame". A reader measured what that does - a normal 0.2 s
+                // press counted as **six** presses - and the reasoning was
+                // wrong about where the raise comes from.
+                //
+                // `Game_RaiseEvent(6, 4)` is NOT raised by the input handler.
+                // Its three sites are all ACTOR functions - `sub_466B60`,
+                // `Actor_TickUiHeld` (the ACTOR_STATE 9/17 tick) and
+                // `sub_467950` - and every one uses the RETURN as a VETO:
+                // `if (!a1[41] || Game_RaiseEvent(6, 4)) goto ...`. So the
+                // engine never reads an action BIT here at all: the press
+                // reaches the actor through the `.CTL` channel, whose
+                // transition matching fires once per press because the second
+                // frame of a held button finds the actor already in the state.
+                // The channel is the edge filter, and the port does not route
+                // the action through it - so the viewer must supply the edge
+                // itself or the world sees a press a frame.
+                //
+                // It is also what the take needs to be usable at all: the
+                // mechanic is press -> the take animation and the title, press
+                // AGAIN -> the inventory (omk-play 69), and six presses inside
+                // one keystroke makes those two steps unreachable.
                 //
                 // Bit 0x10 is "Action / Utiliser" - group 0 action 4 of
                 // `tables/key_bindings.json`, keyboard 28, DIK_RETURN. The
@@ -3628,7 +3665,7 @@ int main(int argc, char** argv) {
                 // arming its slots, and nothing in the viewer ever pressed it,
                 // so no object could be taken and no pedestrian talked to
                 // (`todo/omk-play.md` 65).
-                if ((bits & 0x10u) && !session.dialogOpen()) {
+                if (actionEdge && !session.dialogOpen()) {
                     const int armed = session.zones().armedCount();
                     const std::int16_t z = session.zones().armedZone();
                     // omk-play 66: EVERY press is reported, with where he
@@ -5327,6 +5364,44 @@ int main(int argc, char** argv) {
             sneakRows.clear();
             sneakHidden.clear();
             const omk::UiPanel* pn = walk->panel();
+            // ---- THE SLIDER PAGE, and WHICH SOURCE fills the rows -----
+            //
+            // One global picks it: `dword_670CB8`, written by each page's
+            // `panel+4` builder - 0 inventory, 2 memory, **4 slider** - and
+            // `sub_42ADD0` branches on it. For 0 and 2 it raises the
+            // inventory channel's event 25 with that number as the list id;
+            // for 4 it raises NOTHING and instead sets flag `0x1000` on every
+            // row widget, which is the flag `sub_42AA00` tests to take its
+            // text from `sub_40E540(tag)` rather than from case 33.
+            //
+            // `sub_40E540`, and `sub_40E8E0` for the count, walk
+            // `GLOBAL +16` (36-byte records, count `+28`) and keep only the
+            // entries whose bit is set in the DB's `+24` array - which is
+            // `StateArray::AddressEnabled`, what VM ops 87/88 write. So the
+            // page lists the places the game has given the player, and a
+            // capture of the original shows exactly that: four rows.
+            if (pn && pn->addr == omk::kPanelSneakSlider) {
+                std::vector<std::string> known;
+                for (const auto& d : destinations)
+                    if (state.bit(omk::StateArray::AddressEnabled, d.bit))
+                        known.push_back(d.name);
+                for (const auto& l : pn->lists) {
+                    if (l.addr != omk::kListSneakRows) continue;
+                    for (std::size_t k = 0; k < l.items.size(); ++k) {
+                        if (k >= known.size()) {
+                            sneakHidden.insert(l.items[k].addr);   // sub_42AAE0
+                            continue;
+                        }
+                        sneakRows[l.items[k].addr] = known[k];
+                    }
+                }
+                if (!sliderTold) {
+                    sliderTold = true;
+                    std::printf("sneak: slider page - %zu of %zu destinations "
+                                "enabled (GLOBAL +16, DB +24)\n",
+                                known.size(), destinations.size());
+                }
+            }
             if (pn && pn->addr == omk::kPanelSneakInventory &&
                 inv.openedList() >= 0) {
                 const auto carried = omk::objectList(state,

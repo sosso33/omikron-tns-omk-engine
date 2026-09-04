@@ -15,6 +15,75 @@ waiting on its evidence.
 
 ## Open (batch 6, filed 2026-09-04)
 
+### 75. The tunnel UNLOADS before the player is out of it, and the closed door is walk-through — A
+
+Filed 2026-09-04, the reader on the two-pool fix in 70: *"it unload the tunnel
+before I exit it and I have to walk through the closed door to enter the new
+area."*
+
+So 70's resolve gap is closed and this is what is left of it, and the report
+names both halves precisely:
+
+1. **the unload is early.** The doorless zone is the OUTER one at each end
+   (`3814`/`3815`, and 70's table has the ranges), so it fires while the player
+   is still inside the tunnel and its route completes — the set is hidden and
+   the area switched with the walk not yet finished. This is 70's candidate (1)
+   and (3): which of the two overlapping zones the engine arms, and in what
+   order. It still has no oracle, and no capture in `traces/` passes through
+   AREA 224.
+2. **the door has no collision**, which the reader reported on the first pass
+   too ("I can walk through the closed door"). A scene object's collision is
+   not in the walkable soup, so a closed door is scenery the walker cannot
+   see — and that is exactly what lets the player reach the far zone while the
+   transition is still in flight, which makes (1) and (2) the same bug seen
+   from two ends rather than two independent ones.
+
+**Not a regression from the two-pool slice**: the door now resolves and runs
+where it previously answered `-2` (`verify.py: engine tunnel doors`), and
+neither the unload order nor the collision was touched.
+
+### 74. The action button fires EVERY FRAME while held: a 0.2 s press is six presses — B
+
+Filed 2026-09-04. The reader: *"In adventure mode when pressing enter, it is
+captured almost each frame as on entry so maintaining the key 0.2 seconds
+(which is a normal press) is considered as clicking 6 times."*
+
+**FIXED the same day.** `play.cpp` pressed on the LEVEL of bit 0x10. The
+world's repeat mask is 0 — `Ui_BeginScreen`'s `0x203F` is put back to 0 when
+the last screen closes, so the `.CTL` channel sees HELD keys and a walk is a
+walk rather than a step per press — and the action bit rode that same level.
+
+The comment defending it reasoned from `Game_HandleEvent` case 6: the pump
+clears `dword_4E6C90` at the end of its slot loop, so a held button is one
+press per frame. **The reasoning was wrong about where the raise comes from.**
+`Game_RaiseEvent(6, 4)` is not raised by the input handler at all. Its three
+sites are ACTOR functions — `sub_466B60`, `Actor_TickUiHeld` (the ACTOR_STATE
+9/17 tick) and `sub_467950` — and every one of them uses the RETURN as a
+**veto**:
+
+    if (!a1[41] || Game_RaiseEvent(6, 4))
+        goto LABEL_23;
+
+So event 6 asks *"is there an armed slot here that can consume an action?"*
+(`dword_4E6B24` is the armed count) and the state function bails out when there
+is. The press itself reaches the actor through the **`.CTL` channel**, whose
+transition matching fires once because the second frame of a held button finds
+the actor already in the state. **The channel is the edge filter**, and the
+port does not route the action through it — so the viewer has to supply the
+edge itself.
+
+It is also what makes the take usable at all: the mechanic is press → the take
+animation and the title, press AGAIN → the inventory (69), and six presses
+inside one keystroke puts those two steps out of reach.
+
+`engine/backends/sdl/play.cpp`: the edge is taken beside `in.frame(st)`, not at
+the dispatch, so a frame that never reaches the dispatch — a dialogue, a
+cutscene, a screen — cannot leave the latch stale and manufacture a press on
+the way back. **No check**: the viewer is an instrument, the rule is one
+`bool`, and a reader judges it in one keystroke (CLAUDE.md 5). The finding
+about event 6 is the part worth keeping, and it is here.
+
+
 ### 73. Scene sounds are played FLAT: `Script_PlaySound` is 3D in the engine — A
 
 Filed 2026-09-04. The reader: *"it is more an effect/ambience sound, but the

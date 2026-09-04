@@ -28,6 +28,7 @@
 #include <array>
 #include <cstdint>
 #include <map>
+#include <set>
 #include <string>
 #include <utility>
 #include <vector>
@@ -369,6 +370,13 @@ public:
         return it == colour_.end() ? nullptr : it->second.data();
     }
 
+    // Items a page BUILDER switched off - `sub_428FF0(item, 0x40000001, 1)`
+    // and its `0x20000004` neighbour, the not-drawn and not-selectable bits.
+    // A builder does more than colour: the slider page's carries two labels
+    // at the SAME coordinate (0x004DE920 "Appel du slider" and 0x004DE968
+    // "Automatique", both at 187,30) and shows exactly one of them.
+    bool itemOff(std::uint32_t addr) const { return off_.count(addr) != 0; }
+
 private:
     void settle();
     // `sub_4296B0` and `sub_4296D0`, and the panel `+4` builder that calls
@@ -414,6 +422,7 @@ private:
     std::vector<std::string> log_;
     // Item address -> the RGB a page builder wrote into `+8/+9/+10`.
     std::map<std::uint32_t, std::array<int, 3>> colour_;
+    std::set<std::uint32_t> off_;   // what a builder switched off
 };
 
 // The start menu's "Charger une partie" panel.
