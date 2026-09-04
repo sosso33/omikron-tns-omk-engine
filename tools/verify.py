@@ -10125,6 +10125,51 @@ def c_engine_screen():
            "the frontend uploads the pixels and may not touch them"
 
 
+def c_player_counters():
+    r"""The SETEKS and the ANNEAUX, and where the player record keeps them.
+
+    `Game_HandleEvent` 44 -> `sub_40B360(block)` is a small query on a
+    character record. Two of its cases are the numbers the sneak's echo bar
+    formats beside the setek and anneau models (`docs/UI.md` 3g):
+
+        case 4:  block+8 = *(uint16 *)(record + 172)     the SETEKS
+        case 5:  block+8 = *(int16  *)(record + 174)     the ANNEAUX
+
+    **`+172` is corroborated from the other end and was already in the docs**
+    without being connected to this: `UI.md` 3e has the inventory channel's
+    case 38 refusing a purchase whose price "exceeds the player's money at
+    `+172`". Two different subsystems reading one field is what makes it the
+    money rather than a plausible int16 at a plausible offset. `+174` is new.
+
+    Read against the shipped fixture, whose player record round there is
+
+        +160  70  30  60  50   0  10   0   2   9   0   0  45
+
+    so the game opens with **no money and two rings**, which is the shape of
+    the opening - and the third model, `imager`, has no counter at all: its
+    arm in `sub_0049DC20` is the bare string "Lire plan", which is what
+    settles it as a map reader rather than the ammunition a player guessed.
+
+    Shown to fail: `+170` (10) and `+176` (9) are equally plausible small
+    int16s two bytes either side, and either would pass a "looks like a
+    count" test; only the two cases of `sub_40B360` pick these.
+    """
+    sys.path.insert(0, os.path.join(ROOT, "tools"))
+    save = os.path.join(ROOT, "traces", "save-appart.bin")
+    if not os.path.exists(save):
+        return ("skipped",), ("skipped",), "the fixture is absent"
+    d = open(save, "rb").read()
+    base = 3496 + 40 + 60                      # header, slot head, player record
+    money, rings = struct.unpack_from("<Hh", d, base + 172)
+    near = list(struct.unpack_from("<6h", d, base + 168))
+    return (money, rings, near), (0, 2, [0, 10, 0, 2, 9, 0]), \
+           "the seteks at the player record's +172 and the anneaux at +174, " \
+           "which `Game_HandleEvent` 44 cases 4 and 5 read - no money and " \
+           "two rings at the start - and the six int16 around them, which " \
+           "is the discriminator: +170 and +176 are equally plausible " \
+           "counts and only the handler picks the right pair"
+
+
 def c_save_clock():
     r"""A loaded save restores the DATE AND TIME, which live outside the DB.
 
@@ -19525,6 +19570,7 @@ SLOW = [
     ("engine: screen",     c_engine_screen,     "PORTING A1"),
     ("engine: screen scale", c_engine_screen_scale, "PORTING A1; UI 3b"),
     ("save clock",         c_save_clock,        "GAME_STATE 8"),
+    ("player counters",   c_player_counters,   "UI 3g; GAME_STATE"),
     ("engine: movies",     c_engine_movies,     "BOOT 2"),
     ("engine: raster",     c_engine_raster,     "PORTING B6"),
     ("engine: silhouette", c_engine_silhouette, "PORTING B6"),

@@ -963,7 +963,16 @@ which is why those items have no `+24` and no `+32`.
 
 It also answers what `imager` counts: **nothing**. Its arm carries no
 `sub_42B1C0` and no format string, just the bare "Lire plan". It is a map
-reader. The two counts come from `Game_RaiseEvent(44, {4|5})`.
+reader, not the ammunition a player guessed at.
+
+The two counts come from `Game_RaiseEvent(44, {4|5})` → `sub_40B360`, whose
+cases 4 and 5 read a character record's **`+172`** (unsigned) and **`+174`**
+(signed). `+172` is corroborated from the other end and was already in this
+document without the connection being made: §3e has case 38 refusing a
+purchase whose price "exceeds the player's money at `+172`". Two subsystems
+reading one field is what makes it the money rather than a plausible int16 at
+a plausible offset; `+174` is new. The shipped fixture opens with **0 seteks
+and 2 anneaux**. `verify.py: player counters`.
 
 **The clock** (`sub_0049E090`, item `0x004DE160` at (350, 430)) is the
 engine's own date and time formatters, `sub_0041E690`'s integer division —

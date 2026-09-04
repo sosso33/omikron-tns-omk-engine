@@ -352,4 +352,20 @@ void GameState::unrelocate() {
     put16(1416, currentScene());
 }
 
+int GameState::money() const {
+    const std::size_t a = kPlayerRecord + 172;
+    if (a + 2 > raw_.size()) return 0;
+    return static_cast<int>(static_cast<std::uint16_t>(
+        static_cast<unsigned char>(raw_[a]) |
+        (static_cast<unsigned char>(raw_[a + 1]) << 8)));
+}
+
+int GameState::rings() const {
+    const std::size_t a = kPlayerRecord + 174;
+    if (a + 2 > raw_.size()) return 0;
+    return static_cast<std::int16_t>(
+        static_cast<unsigned char>(raw_[a]) |
+        (static_cast<unsigned char>(raw_[a + 1]) << 8));
+}
+
 }  // namespace omk

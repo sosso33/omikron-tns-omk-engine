@@ -5290,9 +5290,23 @@ int main(int argc, char** argv) {
                             if (e.textFn == 0x0049DC20u && selItem) {
                                 const int id = selItem->label();
                                 if (id >= 0 &&
-                                    id < static_cast<int>(sneakText.size()))
-                                    sneakRows[e.addr] = sneakText[
+                                    id < static_cast<int>(sneakText.size())) {
+                                    std::string t = sneakText[
                                         static_cast<std::size_t>(id)];
+                                    // The two COUNTER arms format "%s %d",
+                                    // and the number is `Game_RaiseEvent(44,
+                                    // {4|5})` -> `sub_40B360` cases 4 and 5,
+                                    // which read the player record's +172 and
+                                    // +174. The third model, `imager`, has no
+                                    // count at all - its arm is the bare
+                                    // string - which is what settles that it
+                                    // is a map reader and not ammunition.
+                                    if (selItem->addr == 0x004DE338u)
+                                        t += " " + std::to_string(state.money());
+                                    else if (selItem->addr == 0x004DE380u)
+                                        t += " " + std::to_string(state.rings());
+                                    sneakRows[e.addr] = t;
+                                }
                             } else if (e.textFn == 0x0049E090u) {
                                 // The clock. Both halves are the engine's own
                                 // formatters, already ported and checked
