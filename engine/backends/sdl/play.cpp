@@ -1702,7 +1702,11 @@ int main(int argc, char** argv) {
     // - the world's repeat mask is 0, so a held key is set every frame - and
     // this remembers the previous frame's so the press fires once. See the
     // long note at the dispatch for why the engine needs no such variable.
-    bool actionWas = false;
+    // THE PRESS BITS ARE EDGES (omk-play 74). In the world the repeat mask is
+    // 0, so every bit arrives as a LEVEL and a held key is set every frame -
+    // right for a walk, wrong for anything that COUNTS presses. This is the
+    // previous frame's word; `edgeBits` below is the difference.
+    std::uint32_t prevBits = 0;
     // `tab_special_move[]` as a TABLE rather than a string compare: a fired
     // move resolves to its ROW - the index the engine dispatches on and the
     // handler address it calls - so an unknown name comes back nullptr
@@ -2983,12 +2987,14 @@ int main(int argc, char** argv) {
         if (walk) in.setRepeatMask(omk::kUiRepeatMask);
         else if (adventure) in.setRepeatMask(0);
         const std::uint32_t bits = in.frame(st);
-        // The action's EDGE, taken here rather than at the dispatch so a frame
-        // that never reaches it - a dialogue, a cutscene, a screen - cannot
-        // leave the latch stale and manufacture a press on the way back.
-        const bool actionNow  = (bits & 0x10u) != 0;
-        const bool actionEdge = actionNow && !actionWas;
-        actionWas = actionNow;
+        // The EDGES, taken here rather than at each consumer so a frame that
+        // never reaches one - a dialogue, a cutscene, a screen - cannot leave
+        // the latch stale and manufacture a press on the way back. This is
+        // `Game_Frame`'s `dword_4E971C` with every bit masked: the engine's
+        // own `held & (held ^ (mask & last))` at mask = all ones.
+        const std::uint32_t edgeBits = bits & ~prevBits;
+        prevBits = bits;
+        const bool actionEdge = (edgeBits & omk::kUiConfirm) != 0;
 
         // THE DIALOGUE CLOCK IS REAL TIME, not a frame count.
         //
@@ -3910,7 +3916,23 @@ int main(int argc, char** argv) {
             // is not one. Whatever a reply plays is its branch ACTION's own
             // script. A first version borrowed the open screen's blips here,
             // which a reader heard as wrong.
-            if (bits & omk::kUiConfirm) {
+            // THE MENU COUNTS PRESSES, so it reads the EDGES (omk-play 74).
+            // A reader on a bench: one press of Enter answered several times
+            // over and one tap of a direction ran the selection round the
+            // list. `Game_Frame` hands the dialogue `dword_90E0E0` - a word
+            // ZEROED EVERY FRAME and rebuilt by the per-action callbacks (the
+            // label-less `or al, N` family at 0x42B8F0, table entries nothing
+            // calls directly) - and the call site splices the RAW word in for
+            // exactly two bits:
+            //
+            //     case 2: Dialog_TickUI(2, dword_90E0E0 | dword_4E9718 & 0xC);
+            //
+            // 0xC is bits 2 and 3, which elsewhere nudge a camera by 6.0 a
+            // frame. Splicing the raw word in by name for those two is only
+            // meaningful if `dword_90E0E0` is NOT raw - so the confirm and the
+            // menu steps are edges, and the two camera bits are the exception
+            // the engine had to write out.
+            if (edgeBits & omk::kUiConfirm) {
                 if (dlg.phase() == omk::DialogPhase::Menu) {
                     if (replySel >= 0 &&
                         replySel < static_cast<int>(dlg.replies().size())) {
@@ -3925,11 +3947,11 @@ int main(int argc, char** argv) {
                     session.dialogNext();
                 }
             } else if (dlg.phase() == omk::DialogPhase::Menu &&
-                       (bits & (omk::kUiUp | omk::kUiDown))) {
+                       (edgeBits & (omk::kUiUp | omk::kUiDown))) {
                 // Step to the next AVAILABLE reply, the way `Ui_MoveSelection`
                 // steps over an unselectable row.
                 const int n = static_cast<int>(dlg.replies().size());
-                const int dir = (bits & omk::kUiDown) ? 1 : -1;
+                const int dir = (edgeBits & omk::kUiDown) ? 1 : -1;
                 for (int step = 1; step <= n; ++step) {
                     const int c = ((replySel + dir * step) % n + n) % n;
                     if (dlg.replies()[static_cast<std::size_t>(c)].available) {
