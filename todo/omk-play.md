@@ -15,6 +15,68 @@ waiting on its evidence.
 
 ## Open (batch 6, filed 2026-09-04)
 
+### 72. Short music tracks loop for ever: `music.play`'s second operand is NOT established as a loop flag — A
+
+Filed 2026-09-04 from a play report — *"there are still sound that loops"* —
+and the cause is a READING, not a missing feature.
+
+**What plays.** A session's twelve music switches, in order, with what the port
+decided about each: 109 (155.1 s, looping), 87 (**8.5 s, looping**), 110 (9.8 s,
+not), 20 (67.9 s, looping), 88 (55.6 s, looping), 2 (182.5 s, looping), 3
+(143.8 s, not), 2, **51 (5.3 s, looping)**, 56 (142.7 s, looping), 51, 2. One
+track at a time — the switch flushes and replaces, so nothing overlaps. The
+complaint is the SHORT ones: a 5.3-second track on loop is a sting repeating
+for ever.
+
+**How they are authored.** Every one of tracks 2, 51 and 56 is written
+`music.play <track>, 1, 0` — second operand **1**. The port reads
+`musicLoop_ = call.fields[1] != 0`, so all three loop.
+
+**AND THAT READING IS NOT SUPPORTED BY THE HANDLER.** Op 103 (0x00404FB0)
+takes THREE operands and passes the first two to `sub_41E110(track, arg2)`,
+which is:
+
+    builds "TRACKS\%d.ADP" from the track
+    esi = arg2
+    eax = (esi != 0) ? 0x640000 : 0      ; 0x640000 == 100 in 16.16
+    dword_90EFA0 = eax
+    sub_41EA40(1)
+    sub_42BFD0(Buffer, esi)              ; arg2 goes to the player as well
+
+`0x640000` is **100 in the same 16.16 fixed point the volume ramp uses**
+(`Music_SetVolumeRamp` stores `target << 16`), and `dword_90EFA0` is summed
+into the value handed to `Music_SetVolume` (0x0042BE60) in the ramp's per-frame
+tick — `sar esi, 10h; add esi, edi; add esi, dword_90EF90`. So arg2 selects a
+VOLUME term, and is also passed to the player. **Nothing in the handler says it
+is a loop flag.**
+
+**Not fixed here, deliberately.** The port's reading is unverified and so is
+its opposite: flipping it would silence or unloop tracks on another guess, and
+`music.play` has **521 sites**. What settles it is `sub_42BFD0`'s second
+parameter — the player's own entry — which is unread. That is the next step,
+and it is small.
+
+**The third operand is separately explained** and is not this: when it is zero
+the handler calls `sub_41EFF0(2)` if `sub_41F2C0()` returns 2, which is the
+async read mode (`Async_SetMode`, misnamed `Music_SetFadeMode`, RECONSTRUCTION
+2026-09-02) — it controls how the track streams during the load, not whether
+it repeats.
+
+**Ruled out on the way**, both recorded because each looked like the answer:
+
+* **`music.volume` (op 131) being unimplemented is NOT the cause.** 52 sites,
+  and the tempting reading is that the 36 asking for `0` are silencing the
+  music. They are not: the handler is `Music_SetVolumeRamp(target, frames)` and
+  the law is an ATTENUATION — 0 is FULL volume, 100 is silence (`CLAUDE.md` 4,
+  and the ramp SUMS its terms, which only makes sense for attenuations). So 36
+  sites ask for full volume, 15 for a slight cut, and exactly ONE for silence.
+  Implementing it would not stop anything. It is still worth implementing.
+* **The scene-sound path cannot be the cause**, because it cannot loop at all:
+  `Frontend::playSound` is one-shot, the port records `cue.loop` and never
+  honours it. That also means `Script_StopSound` (issue 71) has nothing to stop
+  in play until looping is honoured — which is why a session that reached the
+  tunnel produced zero `scene sound` lines.
+
 ### 71. Eleven of the seventeen SCENE FUNCTIONS are not implemented, and half the game's scenes use one — A
 
 Filed 2026-09-04. Found while narrowing 70 and promoted to its own entry by the
