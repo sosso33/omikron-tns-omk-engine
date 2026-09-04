@@ -203,7 +203,24 @@ pelvis and 12 cm back, looking 12 cm up and 50 cm ahead. `MDPUTSNK` and
 `MDLETOBJ` → mode 16, the swap back over 30 frames, if the mode-1 block is
 live. `play.cpp` resolves preset 1 through `PlayerController::resolveOffsets`
 (the follow camera's own math, no lag - the preset's divisors are 0) and
-blends linearly from the last drawn camera, the editings' rule. **Nobody has
+blends linearly from the last drawn camera, the editings' rule. The reader's description of what the
+original shows there (2026-09-04, from memory, not at the screen): *"the
+camera movement shows the object in the hand of the player, when they have to
+confirm the grab or not"* - so the side view frames his HAND during
+`H_WAITOB`, and the object must be drawn in it. It is not: `sub_41C490` (the
+MDGETOBJ hand-over) re-links the prop's node under a child node of the actor
+with its local transform zeroed, i.e. the object rides a BONE from the grab
+until `sub_41C540` re-links it to the world (put back) or the bank hides it;
+the port used to set the held flag and draw nothing in the hand. **DRAWN
+2026-09-04 (unseen)**: the actor's +44 is `o3de_FindMeshByName(model,
+"Maing")` (04_sys.c 5506, a `strstr`, so the model's `UMaing`) - the LEFT
+hand - and `play.cpp`'s prop loop now draws the held prop on that node's
+composed pose through the player's own model-to-world, from the grab until
+`MDPUTSNK`/`MDLETOBJ` clear `takeCandidate`. A banked prop then drops out of
+`props()` by the loader's bit-0 test; a put-back returns it to the ground.
+One divergence, labelled here: a REFUSED bank in the engine unlinks the node
+without re-linking it (`sub_41C540(actor, 0)`), while the port puts it back on
+the ground. **Nobody has
 seen it**: whether the side view reads right, and whether the strip should be
 letterboxed (left full-frame, nothing read ties the strip to mode 1), are for
 the next person at the screen. The take's SOUND and the arm particle (the

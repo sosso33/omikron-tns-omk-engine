@@ -1941,6 +1941,7 @@ int main(int argc, char** argv) {
     // a turn must pivot about. `HO1_FN`'s is (2.87, 17.94); rotating about
     // (0,0) instead swings him around a point half a metre away.
     float playerRootXZ[2] = {0.0f, 0.0f};
+    float lastRootDrop = 0.0f;         // the crouch's root drop as drawn last frame (the held prop rides it)
     int   playerCamId = -2;
     // The facing at the hand-over. `Actor_TickScxDriven` sets +1308 when
     // the player's program ends and `Actor_TickNpc` then derives the facing
@@ -4925,11 +4926,71 @@ int main(int argc, char** argv) {
             {
                 const auto shown = session.props();
                 for (const auto& pr : shown) {
-                    if (!pr.shown) continue;
+                    // THE OBJECT IN HIS HAND (omk-play 69). `sub_41C490`, the
+                    // MDGETOBJ hand-over, unlinks the prop's node from the
+                    // world and re-links it under the actor's node at +44
+                    // with its local transform zeroed - and +44 is
+                    // `o3de_FindMeshByName(model, "Maing")` (04_sys.c 5506,
+                    // a strstr: the model's `UMaing`), the LEFT hand. So from
+                    // the grab until `sub_41C540` puts it back or the bank
+                    // hides it, the object is drawn riding the left hand's
+                    // composed pose, through the same model-to-world the
+                    // player's own corners take. A reader described the
+                    // original: "the camera movement shows the object in the
+                    // hand of the player, when they have to confirm the grab
+                    // or not" - which is what the mode-1 camera frames.
+                    // `shown` is object-state bit 2, which the hold leaves
+                    // set (the bank clears bit 0 later), so a held prop is
+                    // still "shown" - the engine simply draws its node where
+                    // the hierarchy now puts it, the hand, and so does this.
+                    const bool held = player && takeCandidate >= 0 && pr.id == takeCandidate;
+                    if (!pr.shown && !held) continue;
                     const auto& objs = voiceLib.objects();
                     if (pr.id < 0 || static_cast<std::size_t>(pr.id) >= objs.size()) continue;
                     const PropModel* pm = propModelFor(objs[static_cast<std::size_t>(pr.id)].stem);
                     if (!pm || !pm->ready) continue;
+                    if (held) {
+                        const omk::NodeTracks* pt = player->poseTracks();
+                        const std::vector<omk::MeshPose> pose = pt
+                            ? omk::composePose(playerMeshes, *pt, player->poseFrame(), false)
+                            : omk::composePose(playerMeshes, omk::NodeTracks{}, 0, false);
+                        int hand = -1;      // the LAST strstr hit, as o3de_Traverse leaves it
+                        for (std::size_t i = 0; i < playerMeshes.size(); ++i)
+                            if (std::strstr(playerMeshes[i].name, "Maing")) hand = static_cast<int>(i);
+                        if (hand < 0 || static_cast<std::size_t>(hand) >= pose.size()) continue;
+                        const omk::MeshPose& hp = pose[static_cast<std::size_t>(hand)];
+                        const float* pp = player->pos();
+                        const float yaw = player->facing();
+                        const std::size_t base = propGeo.corners.size();
+                        for (const auto& c : pm->rest.corners) {
+                            omk::Corner w = c;
+                            const float local[3] = {c.x - pm->origin[0], c.y - pm->origin[1],
+                                                    c.z - pm->origin[2]};
+                            float r[3];
+                            omk::qrot(hp.q, local, r);              // the hand's rotation
+                            const float in[3] = {hp.pos[0] + r[0] - playerRootXZ[0], hp.pos[1] + r[1],
+                                                 hp.pos[2] + r[2] - playerRootXZ[1]};
+                            float o[3];
+                            omk::rotateYaw(yaw, in, o);             // the player's model-to-world
+                            w.x = o[0] + pp[0];
+                            w.y = o[1] + pp[1] - playerFeet + lastRootDrop;
+                            w.z = o[2] + pp[2];
+                            propGeo.corners.push_back(w);
+                        }
+                        for (const auto& b : pm->rest.batches) {
+                            omk::Batch nb = b;
+                            nb.start += static_cast<int>(base);
+                            propGeo.batches.push_back(nb);
+                            propBatchOwner.push_back(pm);
+                        }
+                        static bool heldTold = false;
+                        if (!heldTold) {
+                            heldTold = true;
+                            std::printf("prop %d in the LEFT HAND (mesh %d '%s') - drawn on the hand node\n",
+                                        pr.id, hand, playerMeshes[static_cast<std::size_t>(hand)].name);
+                        }
+                        continue;
+                    }
                     const double rx = pr.rotDeg[0] * 0.0174532925199433;
                     const double ry = pr.rotDeg[1] * 0.0174532925199433;
                     const double rz = pr.rotDeg[2] * 0.0174532925199433;
@@ -5824,6 +5885,7 @@ int main(int argc, char** argv) {
                     c.y = r[1] + pp[1] - playerFeet + rootDrop;
                     c.z = r[2] + pp[2];
                 }
+                lastRootDrop = rootDrop;
                 playerPosed.revision = ++worldGeoRev;
                 for (int k = 0; k < 3; ++k) actorAt[k] = pp[k];
                 actorAt[1] -= playerFeet;
