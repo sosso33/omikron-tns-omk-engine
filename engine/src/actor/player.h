@@ -158,6 +158,12 @@ public:
         std::span<const std::byte>  ctlData;            // the bank's own bytes
         const std::vector<Mesh>*    meshes  = nullptr;  // the player's .3DO
         const TriangleSoup*         soup    = nullptr;  // the set's walkable soup
+        // The narrow phase's faces (the steep soup serves: a wall is what
+        // the walker cannot climb) and the sweep radius - the model's largest
+        // collision sphere, `Actor_Move`'s `v60 * dword_910358` with the
+        // tunable at 1.0. 0 leaves the sweep off.
+        const TriangleSoup*         blockers = nullptr;
+        float                       sweepRadius = 0.0f;
         const TriangleSoup*         steep   = nullptr;  // its faces PAST the
                                     // slope limit. `Walk_GroundResponse` does
                                     // not treat a steep face as a hole: it

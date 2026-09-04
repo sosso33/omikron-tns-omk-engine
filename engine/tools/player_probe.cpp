@@ -29,6 +29,7 @@
 //
 // **TIER 5, data-constrained** (player.h has why no capture reaches it).
 #include "actor/player.h"
+#include "actor/spatial.h"
 #include "formats/ctl.h"
 #include "formats/mesh3do.h"
 #include "input/bindings.h"
@@ -36,6 +37,7 @@
 #include "platform/datafs.h"
 
 #include <cctype>
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -163,6 +165,15 @@ int main(int argc, char** argv) {
 
     omk::PlayerController::Setup su;
     su.ctl = &ctl; su.ctlData = ctlData; su.meshes = &meshes; su.soup = &soup;
+    // the narrow phase, as the viewer binds it: the steep faces swept with
+    // the model's largest collision sphere
+    const auto steep = omk::collisionSoup(setData, omk::SoupKind::Steep);
+    su.steep = &steep; su.blockers = &steep;
+    {
+        float r = 0.0f;
+        for (const auto& c : omk::modelSweepSpheres(modData)) r = std::max(r, c.radius);
+        su.sweepRadius = r > 0.0f ? r : 12.0f;
+    }
     for (int k = 0; k < 3; ++k) su.pos[k] = pos[k];
     su.facing = facing;
     omk::PlayerController pc(su);

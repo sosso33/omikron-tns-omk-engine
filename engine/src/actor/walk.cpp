@@ -46,6 +46,14 @@ StepResult Walker::step(double dx, double dz, double dt) {
         // step from where he now stands
     }
 
+    // THE NARROW PHASE FIRST. `Actor_Move` sweeps the sphere along the move
+    // and stops at the first wall before the ground is ever probed; a move
+    // the sweep cancels outright is a block, and what it leaves is what the
+    // probe then judges. Only the horizontal move is collided here - the
+    // vertical is the ground probe's job, as in the engine's split.
+    slide(dx, dz);
+    if (dx == 0.0 && dz == 0.0 && slides_ > 0) return StepResult::Blocked;
+
     const double nx = pos_[0] + dx;
     const double nz = pos_[2] + dz;
     const double y  = pos_[1];
@@ -90,6 +98,38 @@ StepResult Walker::step(double dx, double dz, double dt) {
     airborne_ = true;
     sliding_  = false;
     return StepResult::Fell;
+}
+
+void Walker::slide(double& dx, double& dz) {
+    slides_ = 0;
+    if (!blockers_ || radius_ <= 0.0) return;
+    // the sphere sits one radius above the feet; y grows downward
+    double p[3] = {pos_[0], pos_[1] - radius_, pos_[2]};
+    for (int pass = 0; pass < 3; ++pass) {
+        if (dx == 0.0 && dz == 0.0) return;
+        const double d[3] = {dx, 0.0, dz};
+        const auto hit = sweepSphere(*blockers_, p, d, radius_);
+        if (!hit) return;
+        ++slides_;
+        // advance to the contact, then slide the remainder along the plane
+        p[0] += dx * hit->t; p[2] += dz * hit->t;
+        const double rem[3] = {dx * (1.0 - hit->t), 0.0, dz * (1.0 - hit->t)};
+        // `Walk_ClampNormal`'s mask is the ACTOR's accumulated blocked-direction
+        // state (+0x160 of the request, 0xC000C for a walking player: the y
+        // bits, so a wall pushes horizontally). Not modelled here as the sim
+        // does not model it either: mask 0 leaves the normal as the face gave
+        // it, and the slide is the projection. Synthesising a mask per contact
+        // is what made one wall cancel a whole move in the sim.
+        double cn[3];
+        if (!clampNormal(0u, false, hit->n, cn)) { dx = dz = 0.0; return; }
+        const double drop = cn[0] * rem[0] + cn[1] * rem[1] + cn[2] * rem[2];
+        dx = rem[0] - drop * cn[0];
+        dz = rem[2] - drop * cn[2];
+        // `Actor_Move`: a remaining length `<= 0.000099999997` is zero - the
+        // engine's own threshold, and what keeps a head-on contact from
+        // leaving a 1e-16 residual that reads as a move.
+        if (std::sqrt(dx * dx + dz * dz) <= 0.000099999997) { dx = dz = 0.0; return; }
+    }
 }
 
 StepResult Walker::tick(double dt) {

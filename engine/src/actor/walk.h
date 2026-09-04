@@ -91,6 +91,12 @@ inline constexpr double kSlideSpeed = 11.811023622;
 // while a drop deep enough that the engine would have stopped him at a
 // railing still refuses. This bound is this port's, not the game's, and it
 // goes away when the sweep arrives.
+// 2026-09-04: THE SWEEP HAS ARRIVED in the simulator's shape (`setBlockers`,
+// `slide`, o3de/collision.h) - a wall now stops the walker before the probe
+// runs. This bound is KEPT for one more pass: the sweep is a sphere at the
+// feet, not yet the engine's capsule with its one-unit stand-off and push-out,
+// so a low railing the capsule would catch can still be stepped over, and the
+// refusal is the guard for that case until the capsule lands.
 inline constexpr double kMaxUnsweptDrop = kFallHurt;
 
 enum class StepResult {
@@ -147,6 +153,18 @@ public:
     // with none installed a steep face is a hole, which is what the walker did
     // before it could see them.
     void setSteep(const TriangleSoup* steep) { steep_ = steep; }
+    // THE NARROW PHASE (collision.h): the faces a horizontal move is swept
+    // against - every collision face steeper than the walker climbs, the
+    // engine's split between "the probe answers with a floor" and "the sweep
+    // answers with a wall" - and the sphere's radius. Radius 0 leaves the
+    // sweep off, which is how a check shows what it is worth.
+    void setBlockers(const TriangleSoup* blockers, double radius) {
+        blockers_ = blockers; radius_ = radius;
+    }
+    // sweep, clamp, slide - `Actor_Move`'s three passes over `Sweep_ActorMove`
+    // and `Walk_ClampNormal`. -> what is left of (dx, dz); (0, 0) is a block.
+    void slide(double& dx, double& dz);
+    int  lastSlides() const { return slides_; }   // passes that hit, last step
 
     const double* pos() const { return pos_; }
     const TriangleSoup& soup() const { return soup_; }
@@ -172,6 +190,9 @@ private:
 
     const TriangleSoup& soup_;
     const TriangleSoup* steep_ = nullptr;
+    const TriangleSoup* blockers_ = nullptr;
+    double radius_ = 0.0;
+    int    slides_ = 0;
     double pos_[3];
     double fall_ = 0.0;
     double vy_   = 0.0;

@@ -154,3 +154,91 @@ std::optional<GroundHit> surfaceUnder(const TriangleSoup& tris, double x,
 }
 
 }  // namespace omk
+
+// ---------------------------------------------------------- THE NARROW PHASE
+namespace omk {
+
+namespace {
+constexpr double kSweepEps = 1e-4;
+
+bool triNormal(const float* a, const float* b, const float* c, double n[3]) {
+    const double ux = b[0] - a[0], uy = b[1] - a[1], uz = b[2] - a[2];
+    const double vx = c[0] - a[0], vy = c[1] - a[1], vz = c[2] - a[2];
+    n[0] = uy * vz - uz * vy; n[1] = uz * vx - ux * vz; n[2] = ux * vy - uy * vx;
+    const double L = std::sqrt(n[0] * n[0] + n[1] * n[1] + n[2] * n[2]);
+    if (L <= 0.0) return false;
+    n[0] /= L; n[1] /= L; n[2] /= L;
+    return true;
+}
+
+// Is p, already on the triangle's plane, inside it? (the sim's `_inside`)
+bool insideTri(const float* a, const float* b, const float* c, const double n[3],
+               const double p[3]) {
+    const float* e[3][2] = {{a, b}, {b, c}, {c, a}};
+    for (const auto& uv : e) {
+        const float* u = uv[0]; const float* v = uv[1];
+        const double ex = v[0] - u[0], ey = v[1] - u[1], ez = v[2] - u[2];
+        const double wx = p[0] - u[0], wy = p[1] - u[1], wz = p[2] - u[2];
+        const double cx = ey * wz - ez * wy, cy = ez * wx - ex * wz, cz = ex * wy - ey * wx;
+        if (cx * n[0] + cy * n[1] + cz * n[2] < 0.0) return false;
+    }
+    return true;
+}
+}  // namespace
+
+std::optional<SweepHit> sweepSphere(const TriangleSoup& tris, const double p0[3],
+                                    const double d[3], double radius) {
+    std::optional<SweepHit> best;
+    double lo[3], hi[3];
+    for (int k = 0; k < 3; ++k) {
+        lo[k] = std::min(p0[k], p0[k] + d[k]) - radius;
+        hi[k] = std::max(p0[k], p0[k] + d[k]) + radius;
+    }
+    for (std::size_t i = 0; i + 9 <= tris.size(); i += 9) {
+        const float* a = &tris[i]; const float* b = &tris[i + 3]; const float* c = &tris[i + 6];
+        // the broad phase: the face's own box against the swept box
+        bool out = false;
+        for (int k = 0; k < 3 && !out; ++k) {
+            const double mn = std::min({a[k], b[k], c[k]}), mx = std::max({a[k], b[k], c[k]});
+            if (mx < lo[k] || mn > hi[k]) out = true;
+        }
+        if (out) continue;
+        double n[3];
+        if (!triNormal(a, b, c, n)) continue;
+        double s0 = n[0] * (p0[0] - a[0]) + n[1] * (p0[1] - a[1]) + n[2] * (p0[2] - a[2]);
+        if (s0 < 0.0) { n[0] = -n[0]; n[1] = -n[1]; n[2] = -n[2]; s0 = -s0; }   // two-sided
+        const double dn = n[0] * d[0] + n[1] * d[1] + n[2] * d[2];
+        if (dn >= -kSweepEps) continue;                 // not closing on this face
+        double t = (s0 - radius) / -dn;
+        if (t > 1.0) continue;
+        if (t < 0.0) {
+            if (s0 > radius) continue;                  // behind, not penetrating
+            t = 0.0;
+        }
+        const double hit[3] = {p0[0] + t * d[0] - n[0] * radius,
+                               p0[1] + t * d[1] - n[1] * radius,
+                               p0[2] + t * d[2] - n[2] * radius};
+        if (!insideTri(a, b, c, n, hit)) continue;
+        if (!best || t < best->t) {
+            SweepHit h; h.t = t;
+            for (int k = 0; k < 3; ++k) h.n[k] = n[k];
+            best = h;
+        }
+    }
+    return best;
+}
+
+bool clampNormal(unsigned mask, bool high, const double n[3], double out[3]) {
+    for (int k = 0; k < 3; ++k) out[k] = n[k];
+    const unsigned b = high ? 16u : 0u;
+    for (int k = 0; k < 3; ++k) {
+        if (((mask >> (b + 2 * static_cast<unsigned>(k))) & 1u) && n[k] > 0.0) out[k] = 0.0;
+        if (((mask >> (b + 2 * static_cast<unsigned>(k) + 1)) & 1u) && out[k] < 0.0) out[k] = 0.0;
+    }
+    const double L = std::sqrt(out[0] * out[0] + out[1] * out[1] + out[2] * out[2]);
+    if (L <= 0.00999999987) { out[0] = out[1] = out[2] = 0.0; return false; }
+    out[0] /= L; out[1] /= L; out[2] /= L;
+    return true;
+}
+
+}  // namespace omk

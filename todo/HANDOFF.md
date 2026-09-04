@@ -42,7 +42,10 @@ AAPKAYL. Confirmed by the user, not just headlessly.
   consumable arm and the `Consumed`/`Merged` bank arms announce an effect they
   do not apply, and say so where it happens. Its sibling — the context gate,
   "may this object be used HERE" — has not been read at all.
-* **The walker does not block on walls.** AHALL27's walls are in the STEEP
+* ~~**The walker does not block on walls.**~~ **Ported 2026-09-04 on branch
+  `take-height`** (`todo/collision-scenes-transitions.md` step 1): the sweep
+  in the simulator's shape, `engine: narrow phase`; AHALL27 east now blocks
+  at x 4818. Unseen. The original text: AHALL27's walls are in the STEEP
   soup, which the walker SLIDES off rather than stopping at, so
   `StepResult::Blocked` has never fired there and walking east past x 4840
   leaves the geometry entirely (`floorUnder` NONE at 4964) and falls. A player

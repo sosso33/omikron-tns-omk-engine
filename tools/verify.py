@@ -6927,6 +6927,47 @@ def c_engine_impasse_fx():
            ("the Impasse's beats fire 15 set-piece rows and peak at 108 live "
             "particles, alive on 262 of 900 frames")
 
+def c_engine_narrow_phase():
+    r"""`engine/`'s walker sweeps a sphere against the walls - the narrow phase
+    `Actor_Move` runs before the ground is probed - held to the SIMULATOR's
+    number, which is the agreement test `Sweep_PolygonKernel`'s banner asks
+    for in place of a transcription (930 lines of x87, no shipped fact to
+    prove one against).
+
+    `engine/tools/wall_probe.cpp` is `tools/sim/actor.py`'s `wall_test` in
+    C++: the biggest partition in ARESTO14 with FLOOR ON BOTH SIDES (a wall
+    with nothing behind it is refused by the probe alone, so a test there
+    passes with no sweep), 40 steps of 6 straight at it, sweep off then on.
+    `sim: narrow phase` says -140.0 moved / 16.6 blocked; this asserts the
+    port says the same, to a tenth. SHOWN TO FAIL: radius 0 is the "off" run.
+
+    What the engine does beyond this shape is READ and listed in
+    o3de/collision.h - the capsule from the collision spheres, the one-unit
+    stand-off, the push-out of a penetrating contact - and is the next pass.
+    """
+    import subprocess, tempfile
+    eng = os.path.join(ROOT, "engine")
+    if not os.path.isdir(eng):
+        return ("skipped",), ("skipped",), "engine/ absent"
+    b = subprocess.run(["make", "-s"], cwd=eng, capture_output=True, text=True)
+    binp = os.path.join(eng, "build", "wall_probe")
+    if b.returncode != 0 or not os.path.exists(binp):
+        return ("build failed",), ("built",), "engine/ must build"
+    tmp = tempfile.mkdtemp()
+    out = os.path.join(tmp, "wall.bin")
+    r = subprocess.run([binp, omkpaths.data(), "ARESTO14", "--out", out],
+                       capture_output=True, text=True)
+    if r.returncode != 0 or not os.path.exists(out):
+        return ("run failed",), ("ran",), r.stderr[-300:]
+    v = struct.unpack("<5i", open(out, "rb").read(20))
+    names = {0: "moved", 1: "reverted", 2: "blocked", 3: "fell", 4: "slid", 5: "refused"}
+    return (v[0], v[1] / 10.0, names.get(v[2]), v[3] / 10.0, names.get(v[4])), \
+           (1, -140.0, "moved", 16.6, "blocked"), \
+           "a partition with floor on both sides exists; walking into it with " \
+           "the sweep OFF ends 140 behind the wall, moved; ON it ends 16.6 in " \
+           "front, blocked - the simulator's own two numbers"
+
+
 def c_engine_walker_falls():
     r"""`engine/`'s walker takes a drop instead of refusing it - and the
     measurement that says why it had to.
@@ -20729,6 +20770,7 @@ SLOW = [
     ("engine: actor",      c_engine_actor,      "engine/README"),
     ("engine: actor states", c_engine_actor_states, "engine/README"),
     ("engine: player walk", c_engine_player_walk, "engine/README; ASSETS"),
+    ("engine: narrow phase", c_engine_narrow_phase, "engine/README; RECONSTRUCTION 6.5"),
     ("engine: input",      c_engine_input,      "PORTING B6"),
     ("engine: audio",      c_engine_audio,      "PORTING B6"),
     ("engine: shoot AI",   c_engine_shoot_ai,   "engine/README"),

@@ -141,6 +141,7 @@ PlayerController::PlayerController(const Setup& s)
     rt_.scxStart();
     rt_.scxDrivenDone();
     walker_.setSteep(s.steep);
+    walker_.setBlockers(s.blockers, s.sweepRadius);
     // Actor_TickNpc's +1308 pass: the facing is already derived by the caller
     // (headingFromClipRoot); `SetPersoBankGroup(channel, Cef_DefaultGroup)`
     // resets the machine to the default group's default entry.

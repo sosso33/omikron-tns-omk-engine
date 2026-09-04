@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "actor/spatial.h"
+#include <cstring>
 
 #include "actor/player.h"        // rotateYaw
 #include "formats/mesh3do.h"
@@ -194,6 +195,34 @@ std::vector<CollisionSphere> collisionSpheresOf(const std::vector<Mesh>& meshes)
         for (int k = 0; k < 3; ++k) s.pos[k] = meshes[i].pos[k];
         s.radius = meshes[i].radius;
         out.push_back(s);
+    }
+    return out;
+}
+
+std::vector<CollisionSphere> modelSweepSpheres(std::span<const std::byte> model) {
+    std::vector<CollisionSphere> out;
+    const auto u32 = [&](std::size_t o) -> std::uint32_t {
+        if (o + 4 > model.size()) return 0;
+        std::uint32_t v = 0;
+        for (int k = 0; k < 4; ++k) v |= static_cast<std::uint32_t>(std::to_integer<unsigned char>(model[o + static_cast<std::size_t>(k)])) << (8 * k);
+        return v;
+    };
+    const auto f32 = [&](std::size_t o) -> float {
+        const std::uint32_t v = u32(o); float f; std::memcpy(&f, &v, 4); return f;
+    };
+    if (model.size() < 64) return out;
+    const std::size_t desc = u32(8);
+    if (desc == 0 || desc + 248 > model.size()) return out;
+    const std::uint32_t n = u32(desc + 244);
+    if (n == 0 || n > 64) return out;
+    for (std::uint32_t k = 0; k < n; ++k) {
+        const std::size_t r = desc + 248 + 16 * k;
+        if (r + 16 > model.size()) break;
+        CollisionSphere c;
+        c.pos[0] = f32(r); c.pos[1] = f32(r + 4); c.pos[2] = f32(r + 8);
+        c.radius = f32(r + 12);
+        if (!(c.radius > 0.0f) || c.radius > 1000.0f) { out.clear(); break; }
+        out.push_back(c);
     }
     return out;
 }

@@ -80,6 +80,42 @@ struct GroundHit {
     double y;        // the height of the surface under the point
     double n[3];     // its unit normal, pointing up (n[1] < 0)
 };
+// ---------------------------------------------------------- THE NARROW PHASE
+//
+// `Actor_Move` (0x00469580) does not only probe the floor: it SWEEPS a sphere
+// along the move and stops at the first face - `Sweep_ActorMove` (0x004AD360)
+// builds the swept AABB and runs `o3de_ForEachMeshInBox`, `Sweep_MeshTest`
+// (0x004AD460) skips meshes flagged 0x20000000 or 0x41 and transforms the
+// sweep into mesh-local space, `Sweep_MeshFaces` (0x004A9AB0) rejects faces
+// by vertex outcode, and `Sweep_PolygonKernel` (0x004A9D30, 930 lines of x87)
+// writes the earliest hit fraction to +136 and the surface normal to +260.
+//
+// The kernel is READ and deliberately not transcribed, for the reason its
+// banner in readable/ gives: this tree holds no shipped fact a transcription
+// could be proved against. What is here is the same algorithm SHAPE that
+// tools/sim/actor.py implements - the face case continuous (the fraction at
+// which the sphere's surface reaches the plane, contact point inside the
+// triangle), edges and vertices by the static test at t = 0 - so the two can
+// be held to the same number (`verify.py: engine: narrow phase` against
+// `sim: narrow phase`). What the engine does beyond it and this does not, read
+// from Actor_Move on 2026-09-04 and left for the next pass: the swept body is
+// a vertical CAPSULE from the model's collision spheres (bottom = min y - r,
+// top = max y + r, radius = max r x dword_910358 = 1.0), the move stops ONE
+// unit short of the contact, and a contact already inside (t < 1) is pushed
+// out along the clamped normal by repeated re-sweeps growing 1.1x.
+struct SweepHit {
+    double t = 0.0;              // fraction of the move at first contact
+    double n[3] = {0, 0, 0};     // the face normal, facing the sphere
+};
+std::optional<SweepHit> sweepSphere(const TriangleSoup& tris, const double p0[3],
+                                    const double d[3], double radius);
+
+// `Walk_ClampNormal` (0x0046A020), transcribed. Bits 0..5 (or 16..21 when
+// `high`) are +x -x +y -y +z -z; a set bit zeroes that component of the
+// normal when it points that way. Renormalised; false when it collapses
+// (length <= sqrt(1e-4), the engine's own test).
+bool clampNormal(unsigned mask, bool high, const double n[3], double out[3]);
+
 std::optional<GroundHit> surfaceUnder(const TriangleSoup& tris, double x,
                                       double y, double z);
 

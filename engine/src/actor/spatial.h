@@ -30,6 +30,7 @@
 #pragma once
 
 #include <cstddef>
+#include <span>
 #include <vector>
 
 namespace omk {
@@ -90,5 +91,15 @@ private:
 // skeleton of a crowd model, the whole of a one-skeleton one).
 struct Mesh;
 std::vector<CollisionSphere> collisionSpheresOf(const std::vector<Mesh>& meshes);
+
+// THE MODEL'S OWN SWEEP SPHERES - the list `Actor_Move` (0x00469580) reads
+// for its swept capsule: `*(node+40)` is the model, `*model` its descriptor
+// (file + 44), the count at descriptor +244 and 16-byte `(x, y, z, r)`
+// records from +248 (the y is read at +252+16k, the radius at +260+16k).
+// HO1_FN carries FOUR of radius 10.9 stacked up the body, so the capsule is
+// 28 cm wide - not the metre-wide body sphere the per-mesh list above gives,
+// which is the crowd push's and would jam him in every doorway. Empty when
+// the count is not sane.
+std::vector<CollisionSphere> modelSweepSpheres(std::span<const std::byte> model);
 
 }  // namespace omk

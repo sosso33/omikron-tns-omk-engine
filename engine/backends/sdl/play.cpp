@@ -3537,6 +3537,27 @@ int main(int argc, char** argv) {
                         su.ctl = &playerCtl; su.ctlData = playerCtlData;
                         su.meshes = &playerMeshes; su.soup = &playerSoup;
                         su.steep = &playerSteep;
+                        // THE NARROW PHASE (issues 68/75, HANDOFF "the walker
+                        // does not block on walls"): the same steep faces,
+                        // swept; the radius is his largest collision sphere
+                        // (`Actor_Move`: max r over the model's spheres, x
+                        // dword_910358 = 1.0), and 12 - the sim's stand-in -
+                        // when the model carries none.
+                        su.blockers = &playerSteep;
+                        {
+                            // the model's OWN list (descriptor +244/+248), not
+                            // the per-mesh crowd-push spheres: HO1_FN's four
+                            // are 10.9 each, the crowd list's largest is 42.5
+                            const auto sph = omk::modelSweepSpheres(md);
+                            float r = 0.0f;
+                            for (const auto& c : sph) r = std::max(r, c.radius);
+                            su.sweepRadius = r > 0.0f ? r : 12.0f;
+                            std::printf("adventure: the walker sweeps a sphere of radius %.1f "
+                                        "(the model's %zu sweep spheres%s) against %zu wall faces\n",
+                                        su.sweepRadius, sph.size(),
+                                        sph.empty() ? " - none, the sim's 12 stands in" : "",
+                                        playerSteep.size() / 9);
+                        }
                         for (int k = 0; k < 3; ++k) su.pos[k] = session.playerPos()[k];
                         su.facing = handoverFacingKnown ? handoverFacing : session.playerYaw();
                         player = std::make_unique<omk::PlayerController>(su);
