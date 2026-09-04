@@ -723,6 +723,34 @@ one-line label, and the MK400 notice is **kind 15** and shows text only — even
 though its record names a prop (`PAPIER`). So the document kinds suppress the
 model and every other kind shows it.
 
+#### Two things on that page FLASH, and both were read after a player asked
+
+* **"Examiner" itself.** `sub_49B950` sets bank B `0x2` on item 0x004DE2C0 with
+  `sub_428FF0`, and its leave `sub_49B9E0` clears it — the same mirror pattern
+  as the verb panel's pair. `Ui_ItemTextStyle` (0x004769A0) reads bank B `0x2`
+  as *blink on oscillator 1 when the item is selected*, and the verb list still
+  selects Examiner while its page is up; bank C `0x1` on the same item forces
+  the colour to white. So it alternates dim and white every 500 ms. The runtime
+  flag write is the piece the port was missing — the record cannot carry it.
+
+* **The `{B}` markup, and it flashes RED.** See the correction in the markup
+  table above: `Text_LayOutBlock` writes `run[2] = 0xFF, run[3] = 0,
+  run[4] = 0`, not white. The Khonsu line is the only shipped string that
+  shows it off.
+
+`Ui_ItemTextStyle` is worth stating in full, because it is the text ladder and
+this port had a paraphrase of it:
+
+| item flag | lit |
+|---|---|
+| bank B `0x8` | always |
+| bank B `0x4` | blinks on oscillator 1 |
+| bank B `0x2` | blinks **if** the item is selected (bank A `0x2`) |
+| otherwise | lit if selected **and** focused (bank A `0x2` and `0x1`) |
+
+and a not-lit run has its colour **halved**, while bank C `0x1` replaces it
+with white before any of that.
+
 **The WRAP is a reconstruction and is labelled as one.** `Text_LayOutBlock` is
 ~570 lines and unported; what it does with a box, a newline and a mid-run font
 change has not been read. The port breaks greedily at spaces using the
@@ -2532,10 +2560,18 @@ break without being implemented.
 | `f<letter>` | the font, by id letter. **Ignored below 640×480** |
 | `I<9 digits>` | the colour, as three 3-digit **decimals** |
 | `X<6 digits>` | move to (xxx, yyy) as **percentages** of the screen |
-| `B` | blink — white on the frames oscillator 1 is high |
+| `B` | blink — **red (255, 0, 0)** on the frames oscillator 1 is high |
 | `C` `D` `F` `G` | the four horizontal alignments |
 | `H` `L` `M` | top / bottom / middle, off the font's line height |
 | `E<byte>` | sets `dword_907A28` |
+
+> **Correction, 2026-09-04: `{B}` flashes RED, not white.** This table said
+> white until a player sent two captures of the MK400 notice two seconds
+> apart — its Khonsu line is `{fSI226198101B}`, and it is gold in one frame
+> and red in the next, measured (181, 180, 131) against (150, 33, 42).
+> `Text_LayOutBlock`'s run-emit agrees and is explicit: when the blink bit is
+> set and oscillator 1 is high it writes `run[2] = 0xFF, run[3] = 0,
+> run[4] = 0`, and otherwise the current colour. A decode nobody had drawn.
 
 > **Correction.** [`FILE_FORMATS.md`](FILE_FORMATS.md) §5b4 recorded these as
 > "`{f...}` format, `{C}`/`{fC}` centering, `{I RRGGBB}` color triplets". The

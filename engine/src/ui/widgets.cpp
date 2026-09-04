@@ -560,6 +560,10 @@ void UiWalk::setListOff(std::uint32_t list, bool off) {
 // to put them in - so what is ported is the selectability, which is what a
 // walk can feel.
 void UiWalk::leavePage(const UiPanel& p) {
+    // `sub_49B9E0` - the examine page's `+8`: `sub_428FF0(0x004DE2C0,
+    // 0x40000002, 0)`, the exact mirror of what its `+4` set.
+    if (p.addr == kPanelSneakExamine)
+        state_->flagOn[kItemSneakExamine] &= ~0x40000002u;
     if (p.addr == kPanelSneakVerbs) {
         setListOff(kListSneakVerbs, true);
         setListOff(kListSneakTabs, false);
@@ -627,6 +631,13 @@ void UiWalk::buildPage(const UiPanel& p) {
     // 8. None of those three is modelled here - this is the navigation only.
     if (p.addr == kPanelSneakExamine) {
         setListOff(kListSneakVerbs, true);
+        // `sub_428FF0(0x004DE2C0, 0x40000002, 1)` - "Examiner" itself, so it
+        // FLASHES while its page is up. `Ui_ItemTextStyle` reads bank B `0x2`
+        // as "blink on oscillator 1 when selected", and bank C `0x1` on the
+        // same item forces the colour to white - which is exactly what a
+        // player described: "Examiner should flash in white when previewing
+        // an object".
+        state_->flagOn[kItemSneakExamine] |= 0x40000002u;
         // `dword_4DEF38 = 2` - panel 0x004DEF20 `+24`, and index 2 of its
         // four is 0x004DE760, the page's own model item. Without it the walk
         // falls back to the first usable list, which is the tab column, and

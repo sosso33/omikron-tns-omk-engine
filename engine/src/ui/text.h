@@ -62,6 +62,18 @@ struct StyledChar {
     char         ch = 0;
     char         face = 0;
     std::uint8_t rgb[3] = {255, 255, 255};
+    // `{B}` - BLINK, and the colour it flashes to is RED.
+    //
+    // `Text_LayOutBlock`'s run-emit: when the blink bit is set and
+    // oscillator 1 is high it writes `run[2] = 0xFF, run[3] = 0, run[4] = 0`
+    // and otherwise the current colour. `docs/UI.md`'s markup table said
+    // "white", and that was wrong - two captures of the original two seconds
+    // apart show the MK400 notice's Khonsu line (`{fSI226198101B}`: font S,
+    // colour (226, 198, 101), blink) gold in one and RED in the other.
+    //
+    // Parsed and then DROPPED until 2026-09-04, so a string that asked to
+    // flash simply did not.
+    bool         blink = false;
 };
 
 inline constexpr int kAlignLeft = 2, kAlignRight = 4, kAlignCentre = 8,

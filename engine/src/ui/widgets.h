@@ -353,6 +353,12 @@ struct UiListState {
     // on it - so without it a slider destination confirms as if it were a
     // carried object.
     int rowKind = 0;
+    // `sub_428FF0(item, flag, 1)` - bank-B bits a builder SET at run time,
+    // over and above the record's. `sub_49B950` sets `0x40000002` on
+    // "Examiner" itself, which is what makes it flash while its page is up:
+    // `Ui_ItemTextStyle` (0x004769A0) reads bank B `0x2` as "blink when this
+    // item is selected", and the verb list still selects it.
+    std::map<std::uint32_t, std::uint32_t> flagOn;
 };
 
 // One open screen, driven by input words.
@@ -459,6 +465,11 @@ public:
     // at the SAME coordinate (0x004DE920 "Appel du slider" and 0x004DE968
     // "Automatique", both at 187,30) and shows exactly one of them.
     bool itemOff(std::uint32_t addr) const { return state_->itemOff.count(addr) != 0; }
+    // Extra bank-B bits a builder set on this item at run time.
+    std::uint32_t itemFlagsOn(std::uint32_t addr) const {
+        const auto it = state_->flagOn.find(addr);
+        return it == state_->flagOn.end() ? 0u : it->second;
+    }
 
     // Lists a builder made NOT SELECTABLE - `sub_4290D0(list, 0x20000004, 1)`,
     // which sets the bit on every item of the list at once.

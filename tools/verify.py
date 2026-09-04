@@ -10471,6 +10471,17 @@ def c_sneak_page_colour():
             # Clearing on a panel change sent the whole device back to its
             # (255, 0, 0) placeholder the moment an object was chosen.
             "verb panel rows still 240 135 15" in o,
+            # TWO FLASHES a player asked about, both read out of the image.
+            # `sub_49B950` sets bank B 0x2 on "Examiner" itself, which
+            # `Ui_ItemTextStyle` reads as "blink on oscillator 1 when
+            # selected", and bank C 0x1 on the same item forces white - so it
+            # alternates dim/white while its page is up.
+            "Examiner brightest: phase0 139 phase1 246" in o,
+            # ...and `{B}`, which flashes RED, not the white this repo's own
+            # markup table said. `Text_LayOutBlock` writes
+            # `run[2]=0xFF, run[3]=0, run[4]=0`.
+            "blink phase0: 226 198, marked 1" in o,
+            "blink phase1: 255 0, marked 1" in o,
             # `list+2` is a field of a STATIC record: seeded by the linker,
             # written by `Ui_MoveSelection`, overwritten only where an open
             # callback writes it, and NEVER reset - so the device remembers
@@ -10483,7 +10494,7 @@ def c_sneak_page_colour():
             ["20 165 250", "25 240 115", "240 135 15", "255 240 95",
              "255 100 70"],
             True, True, True, True, True, True, True, True, True, True,
-            True, True, True, True, True), \
+            True, True, True, True, True, True, True, True), \
            "the five tab icons carry the five page colours; opening screen " \
            "9 runs the inventory page's builder, which copies its own icon's " \
            "amber over the rows, the verbs and the echo bar; and the row " \
@@ -10493,7 +10504,14 @@ def c_sneak_page_colour():
            "confirming the slider tab DESCENDS - the walk changes panel " \
            "with no second `open()` - and its rows must turn GREEN. A " \
            "builder run only from `open()` leaves the new page wearing the " \
-           "old page's colour, which is what a player saw. And the slider page's " \
+           "old page's colour, which is what a player saw. Then the two " \
+           "FLASHES: \"Examiner\" alternates dim/white while its page is up " \
+           "(`sub_49B950` sets bank B 0x2 on it and bank C 0x1 forces white), " \
+           "and `{B}` flashes RED - `Text_LayOutBlock` writes " \
+           "run[2]=0xFF, run[3]=0, run[4]=0, where this repo's own markup " \
+           "table had said white until two captures of the original showed " \
+           "the Khonsu line gold in one frame and red in the next. And the " \
+           "slider page's " \
            "HEADER: 0x004DE920 and 0x004DE968 are two items at the SAME " \
            "(187, 30), alternatives its builder chooses between, so exactly " \
            "one may be drawn - a player saw both, as overlapping text. Then " \

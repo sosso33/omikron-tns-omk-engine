@@ -217,6 +217,12 @@ ScreenFrame ScreenComposer::draw(Surface& fb, int screenId,
         for (const auto& it : l.items) {
             std::uint32_t eff0[3];
             it.effective(l.broadcast, eff0);
+            // ...and the bank-B bits a builder SET at RUN TIME, which the
+            // record cannot carry and which `Ui_ItemTextStyle` reads beside
+            // the record's own. `sub_49B950` sets `0x40000002` on "Examiner",
+            // which is what makes it flash while its page is up. This has to
+            // land BEFORE the lit/unlit ladder below reads `eff0[1]`.
+            eff0[1] |= walk.itemFlagsOn(it.addr) & 0x1FFFFFFFu;
             // The item's own draw gate, the same `0x40000001` the list has -
             // from the record, and from the RUNTIME for the lists whose
             // widgets are a window onto something longer (`sub_42AAE0`).
@@ -340,16 +346,32 @@ ScreenFrame ScreenComposer::draw(Surface& fb, int screenId,
                 const int bx = scaleX(it.x + q->offsetX);
                 const int by = scaleY(it.y + q->offsetY);
                 const int bw = scaleX(it.w);
+                // `{B}` - RED, (255, 0, 0), on the frames oscillator 1 is
+                // high. `Text_LayOutBlock`'s run-emit is explicit about it:
+                //
+                //     if (blink && oscillator1) { run[2]=0xFF; run[3]=0;
+                //                                 run[4]=0; }
+                //     else                        run[2..4] = the colour
+                //
+                // `docs/UI.md`'s markup table said WHITE, and that was wrong.
+                // Two captures of the original two seconds apart settle it -
+                // the MK400 notice's Khonsu line, `{fSI226198101B}`, is gold
+                // in one and red in the other, measured (181, 180, 131)
+                // against (150, 33, 42).
                 const auto parsed = parseMarkup(*examine_, it.face('J'),
                                                 static_cast<std::uint8_t>(rgb[0]),
                                                 static_cast<std::uint8_t>(rgb[1]),
                                                 static_cast<std::uint8_t>(rgb[2]));
                 std::vector<StyledChar> line;
                 int pen = by;
+                const bool oscHigh = blink;
                 const int bottom = by + scaleY(it.h);
                 const auto flush = [&]() {
                     if (pen >= bottom) { line.clear(); return; }   // the box CLIPS
                     if (!line.empty()) {
+                        if (oscHigh)
+                            for (auto& c : line)
+                                if (c.blink) { c.rgb[0] = 255; c.rgb[1] = 0; c.rgb[2] = 0; }
                         lay_->drawRun(fb, bx, pen, line);
                         pen += lay_->height(line) + 2;
                         ++out.textLines;

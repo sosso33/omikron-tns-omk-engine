@@ -300,6 +300,45 @@ int main(int argc, char** argv) {
             std::printf("slot %d model bbox %d x %d\n", sl,
                         hi[0] - lo[0] + 1, hi[1] - lo[1] + 1);
         }
+        // ...and "Examiner" must FLASH. `sub_49B950` sets bank B 0x2 on
+        // item 0x004DE2C0, which `Ui_ItemTextStyle` reads as "blink on
+        // oscillator 1 when selected" - and the verb list still selects it -
+        // while bank C 0x1 on the same item forces the colour to white.
+        {
+            omk::UiWalk fex(w);
+            fex.open(omk::kScreenSneak);
+            fex.bindRows(omk::kListSneakRows, 1);
+            fex.press(omk::kUiConfirm);          // the verb panel
+            fex.press(omk::kUiRight);
+            fex.press(omk::kUiRight);            // ...to Examiner
+            fex.press(omk::kUiConfirm);          // ...and its page
+            omk::ScreenComposer c3(fs, w, lay);
+            c3.setDisplay(640, 480);
+            int bright[2] = {0, 0};
+            for (int ph = 0; ph < 2; ++ph) {
+                c3.setClockMs(ph * 500);
+                omk::Surface fx(640, 480, 0);
+                c3.draw(fx, omk::kScreenSneak, fex);
+                for (int yy = 30; yy < 52; ++yy)
+                    for (int xx = 456; xx < 590; ++xx) {
+                        const std::uint16_t v = fx.px[static_cast<std::size_t>(yy) * 640 + xx];
+                        const int t = ((v >> 11) & 31) * 255 / 31;
+                        if (t > bright[ph]) bright[ph] = t;
+                    }
+            }
+            std::printf("Examiner brightest: phase0 %d phase1 %d\n",
+                        bright[0], bright[1]);
+            // ...and `{B}`: a run that asks to blink is RED while
+            // oscillator 1 is high and its own colour otherwise.
+            for (int ph = 0; ph < 2; ++ph) {
+                const auto pt = omk::parseMarkup("{I226198101B}X", 'J', 255, 255, 255);
+                int r = pt.run.empty() ? -1 : pt.run[0].rgb[0];
+                int g = pt.run.empty() ? -1 : pt.run[0].rgb[1];
+                const bool bl = !pt.run.empty() && pt.run[0].blink;
+                if (ph && bl) { r = 255; g = 0; }
+                std::printf("blink phase%d: %d %d, marked %d\n", ph, r, g, bl ? 1 : 0);
+            }
+        }
         std::printf("previews %d loaded, %d drawn, slots %d %d %d of 2500\n",
                     loaded, mf.modelsDrawn, painted[0], painted[1], painted[2]);
 

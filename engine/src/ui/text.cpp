@@ -55,6 +55,7 @@ ParsedText parseMarkup(const std::string& text, char face,
     ParsedText out;
     char curF = face;
     std::uint8_t curC[3] = {r, g, b};
+    bool curBlink = false;   // `{B}` until the string says otherwise
     std::size_t i = 0;
     const std::size_t n = text.size();
     while (i < n) {
@@ -95,7 +96,8 @@ ParsedText parseMarkup(const std::string& text, char face,
                 if (d == 'D') { setAlign(kAlignRight);   ++i; continue; }
                 if (d == 'C') { setAlign(kAlignCentre);  ++i; continue; }
                 if (d == 'F') { setAlign(kAlignJustify); ++i; continue; }
-                if (d == 'H' || d == 'L' || d == 'M' || d == 'B' || d == 'g') {
+                if (d == 'B') { curBlink = true; ++i; continue; }
+                if (d == 'H' || d == 'L' || d == 'M' || d == 'g') {
                     ++i; continue;
                 }
                 if (d == 'E') { i += 2; continue; }
@@ -108,6 +110,7 @@ ParsedText parseMarkup(const std::string& text, char face,
         StyledChar sc;
         sc.ch = c;
         sc.face = curF;
+        sc.blink = curBlink;
         for (int k = 0; k < 3; ++k) sc.rgb[k] = curC[k];
         out.run.push_back(sc);
         ++i;
