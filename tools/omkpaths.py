@@ -7,7 +7,7 @@ supply, and the three are not equally available:
   * the GAME DATA tree - the contents of your own disc or GOG install.
     Most tools need it. Default `<repo>/gamedata`.
   * the DISASSEMBLY - `Runtime.exe.asm` / `.c` / `.h`, an IDA listing of
-    `Runtime 2.exe`. A disassembly is a derivative work of the binary it came
+    the engine executable. A disassembly is a derivative work of the binary it came
     from, so it is NOT distributed here; if you have produced your own, point
     at it. Default `<repo>/Runtime.exe.asm` and friends.
   * `clean/` - the mechanical pass `tools/clean.py` makes over the
@@ -159,7 +159,7 @@ def data_root(required=True):
         f"\n"
         f"This repository ships no game data. Point it at your own copy of\n"
         f"Omikron: The Nomad Soul - the directory holding IAM/, MESHES/,\n"
-        f"SCPTDATA/, MORPH/ and Runtime 2.exe - in any of:\n"
+        f"SCPTDATA/, MORPH/ and the engine's Runtime.exe - in any of:\n"
         f"\n"
         f"  a flag         --data /path/to/gamedata   (on tools that take one)\n"
         f"  the environment OMK_DATA=/path/to/gamedata\n"
@@ -187,6 +187,84 @@ def data(*parts):
 def have_data():
     """-> True when the data root exists. For a skip path."""
     return data_root(required=False) is not None
+
+
+# The engine executable, and it needs a RULE rather than a name.
+#
+# Two builds of the game's engine shipped and BOTH are called `Runtime.exe`:
+# one checks for the disc, one does not. A tree that holds both has to rename
+# one of them, and in this repository's own tree the no-CD build was renamed
+# `Runtime 2.exe` - which is local housekeeping and says nothing about the
+# game. Every address in this repository refers to the NO-CD build.
+#
+# So the rule, and it is what makes a fresh copy of the game or somebody else's
+# checkout work: among the candidates that EXIST, take the largest, and prefer
+# `Runtime 2.exe` on a tie. SIZE is the discriminator because the two builds
+# are not close - measured in this tree, the engine is 984576 bytes and the
+# disc launcher 280290, a factor of 3.5 - and because it survives a rename in
+# either direction, which a name cannot. A single candidate under the threshold
+# is reported rather than refused: it is an INDICATION, and a build this repo
+# has not seen could sit anywhere.
+EXE_NAMES = ("Runtime 2.exe", "Runtime.exe")
+
+
+def exe_path(required=True, warn=True):
+    """-> the engine executable in the data root, or None.
+
+    Not a filename but a rule: the largest of the candidates that exist,
+    preferring this tree's `Runtime 2.exe` on a tie. See EXE_NAMES above for
+    why size and not name, and `exe_looks_like_launcher` for the threshold.
+    """
+    root = data_root(required=required)
+    if root is None:
+        return None
+    found = []
+    for name in EXE_NAMES:
+        p = os.path.join(root, name)
+        if os.path.exists(p):
+            found.append((os.path.getsize(p), name != EXE_NAMES[0], p))
+    if not found:
+        if required:
+            raise SystemExit(
+                "no engine executable in %s - looked for %s.\n"
+                "Two builds shipped, both called Runtime.exe (one asks for the\n"
+                "CD, one does not); this repository's addresses are all the\n"
+                "NO-CD build." % (root, " or ".join(repr(n) for n in EXE_NAMES)))
+        return None
+    found.sort(key=lambda t: (-t[0], t[1]))
+    path = found[0][2]
+    if warn and exe_looks_like_launcher(path):
+        sys.stderr.write(
+            "omkpaths: %s is %d bytes, which is small for the engine - the\n"
+            "  disc launcher is about that size and the engine about 3.5x it.\n"
+            "  If the tables or addresses come out wrong, this is why.\n"
+            % (os.path.basename(path), os.path.getsize(path)))
+    return path
+
+
+# Between the two shipped builds, measured: the launcher 280290 bytes, the
+# engine 984576. Half a megabyte sits clear of both with room, and this is an
+# INDICATION for a warning, never a refusal - two samples do not make a bound.
+EXE_MIN_ENGINE_BYTES = 512 * 1024
+
+
+def exe_looks_like_launcher(path):
+    """-> True when `path` is too small to be the engine. See above."""
+    try:
+        return os.path.getsize(path) < EXE_MIN_ENGINE_BYTES
+    except OSError:
+        return False
+    for name in EXE_NAMES:
+        p = os.path.join(root, name)
+        if os.path.exists(p):
+            return p
+    if required:
+        raise SystemExit(
+            "no engine executable in %s - looked for %s.\n"
+            "Two builds shipped, both called Runtime.exe (one asks for the CD,\n"
+            "one does not); this repository's addresses are all the NO-CD build."
+            % (root, " or ".join(repr(n) for n in EXE_NAMES)))
+    return None
 
 
 # --- the disassembly, and clean/ -------------------------------------------
@@ -319,7 +397,7 @@ def _require(kind, getter):
         path, source = _resolve(kind)
         raise FileNotFoundError(
             f"{kind} not found at {path} (from: {source})\n"
-            f"This tool reads the disassembly of `Runtime 2.exe`, which is a\n"
+            f"This tool reads the disassembly of the engine, which is a\n"
             f"derivative work of the game's binary and is NOT distributed with\n"
             f"this repository. Point at your own with ${_ENV[kind]}, the\n"
             f"matching flag, or a line in {_CONF_NAME} at {ROOT}.\n")
@@ -400,6 +478,17 @@ def main():
     for kind, path, source, there in describe():
         print(f"{kind:8s} {'ok     ' if there else 'MISSING'} "
               f"{path}   [{source}]")
+    # the engine executable is RESOLVED, not configured, so it does not appear
+    # in describe() - but it is the thing people get wrong on a fresh copy
+    exe = exe_path(required=False, warn=False)
+    if exe is not None:
+        note = "  <- small; looks like the disc launcher" \
+               if exe_looks_like_launcher(exe) else ""
+        print(f"{'engine':8s} {'ok     '} {exe}   "
+              f"[largest of {', '.join(EXE_NAMES)}]{note}")
+    elif have_data():
+        print(f"{'engine':8s} {'MISSING'} none of {', '.join(EXE_NAMES)} "
+              f"under the data root")
     print()
     print("set any of them with a flag, the environment, or omk.conf:")
     print(FLAG_HELP, end="")
