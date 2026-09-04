@@ -256,6 +256,17 @@ Each ends in a commit and a `verify.py` check SHOWN to fail first.
 | 7 | the identity page: the two-tab switch (small - `sub_42A930` plus a flag swap, both already ported in pieces), then the character view, then the per-character TEXT, whose source is not yet found | |
 | 8 | the other four page builders, each bounded before it is shipped | |
 
+## 3b. Notes worth not rediscovering
+
+* **`traces/save-appart.bin`'s three object lists read EMPTY through
+  `GameState::fromFile`**, and that is not a bug in either. The DB image and
+  the save FILE are different formats read by different paths — `omk-play`
+  loads the save through its own reader, which is why it can print the slot
+  name and the clock. Anything wanting the save's inventory must go that way.
+* **`--give` takes a LIST** (`--give 18,7,26,20`), because a new game ships
+  exactly two objects and neither row scrolling nor `Utiliser sur` can be
+  driven with two. A harness write, not `inventory.add`.
+
 ## 4. Cautions
 
 * **The static records.** See the top of this file. `list+2`, the colour

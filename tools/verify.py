@@ -4813,6 +4813,15 @@ def c_engine_combine():
         "combine 18 + 7 gate 0 -> 33 (want 33)".split(),
         "refused 18 + 7 gate 1 -> -1 (a combine begun with object 330 can "
         "never fire)".split(),
+        # THE MODE IS NOT A ONE-WAY DOOR. `sub_49B8A0`, the verb panel's leave
+        # hook, ends with `if (dword_670BE0) { dword_670BE0 = 0; 670BE4 =
+        # 670BE8 = 670BEC = -1; }` - leaving the panel CANCELS an open
+        # combine. Without it `combining` never clears, and because it lives
+        # in the same static record as the selections it survives closing the
+        # device, so every later row confirm feeds the dead mode instead of
+        # opening the verbs: the verb bar becomes permanently unreachable.
+        # A player hit that within minutes of the mode landing.
+        "mode before 0 opened 1 after_leaving 0".split(),
     ]
     return got, want, \
         "the spell item GLOBAL +64 names (330) and the recipe gate " \

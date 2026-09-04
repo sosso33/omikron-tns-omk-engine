@@ -24,6 +24,8 @@
 #include "script/globaldata.h"
 #include "script/inventory.h"
 #include "script/objects.h"
+#include "ui/widgets.h"
+#include "actor/moves.h"
 
 #include <cstdio>
 #include <map>
@@ -54,5 +56,27 @@ int main(int argc, char** argv) {
     std::printf("refused %d + %d gate 1 -> %d (a combine begun with object "
                 "%d can never fire)\n", r0->a, r0->b,
                 inv.combine(r0->a, r0->b, 1), omk::globalSpellItem(blob));
+
+    // ---- THE MODE IS NOT A ONE-WAY DOOR ---------------------------------
+    // `sub_49B8A0`, the verb panel's leave hook, cancels an open combine.
+    // Without it `combining` never clears - and it lives in the same STATIC
+    // record as the selections, so it survives closing the device - and every
+    // later row confirm feeds the dead mode instead of opening the verbs.
+    // A player hit exactly that: "I can not use the Utiliser bar anymore".
+    const auto w = omk::UiWidgets::loadJson(std::string(argv[2]) + "/ui_widgets.json");
+    if (w.valid()) {
+        omk::UiListState st;
+        omk::UiWalk walk(w, st);
+        walk.open(omk::kScreenSneak);
+        const bool before = walk.combining();
+        walk.beginCombine(18, false);
+        const bool opened = walk.combining();
+        // leaving the verb panel: the walk is on it only after a row confirm,
+        // so drive the hook directly the way `sub_42A370` would.
+        walk.installPanel(omk::kPanelSneakVerbs);
+        walk.installPanel(omk::kPanelSneakInventory);   // leaves the verbs
+        std::printf("mode before %d opened %d after_leaving %d\n",
+                    before ? 1 : 0, opened ? 1 : 0, walk.combining() ? 1 : 0);
+    }
     return 0;
 }

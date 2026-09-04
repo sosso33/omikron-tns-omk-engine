@@ -94,6 +94,9 @@ inline constexpr std::uint32_t kCbSneakUse       = 0x0049BEA0u;
 inline constexpr std::uint32_t kCbSneakUseOn     = 0x0049BF30u;
 inline constexpr std::uint32_t kListSneakPreviews = 0x004DE420u;
 inline constexpr std::uint32_t kItemSneakExamine  = 0x004DE2C0u;
+// `Utiliser sur` itself - `sub_49BF30` lights it with `0x40000002` while its
+// combine is open, the same way `sub_49B950` lights `Examiner`.
+inline constexpr std::uint32_t kItemSneakUseOn    = 0x004DE278u;
 // Panel 0x004DEF20's own list and its single item - the examine page's
 // content, a 3D model or a document bitmap.
 inline constexpr std::uint32_t kListSneakExamineContent = 0x004DE760u;

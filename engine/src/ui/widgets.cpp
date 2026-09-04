@@ -446,7 +446,18 @@ void UiWalk::beginCombine(int objectId, bool isSpellItem) {
     if (isSpellItem) { state_->combineA = objectId; state_->combineB = -1; }
     else             { state_->combineA = -1;       state_->combineB = objectId; }
     state_->combineC = -1;
-    setListOff(kListSneakVerbs, true);       // sub_4290D0(.., 0x20000004, 1)
+    // `sub_49BF30`'s tail, and the port had only the first line of it:
+    //     sub_4290D0(&word_4DE318, 0x20000004, 1);  // the VERBS off
+    //     sub_4290D0(&word_4DE6F0, 0x20000004, 0);  // the ROWS back ON
+    //     sub_428FF0(&unk_4DE278, 0x40000002, 1);   // light `Utiliser sur`
+    //     dword_4DEED0 = 3;                          // panel+24: the ROWS
+    // The player picks the second object WITHOUT leaving the panel, which is
+    // what makes the mode usable at all - and leaving it is the cancel.
+    setListOff(kListSneakVerbs, true);
+    setListOff(kListSneakRows, false);
+    state_->flagOn[kItemSneakUseOn] |= 0x40000002u;
+    curFromBuilder_ = 3;
+    settle();
     log_.push_back(isSpellItem ? "combine: opened with the spell item"
                                : "combine: opened");
 }
@@ -709,6 +720,25 @@ void UiWalk::leavePage(const UiPanel& p) {
         setListOff(kListSneakTabs, false);
         setListOff(kListSneakPreviews, false);
         setListOff(kListSneakRows, false);
+        // ...AND IT CANCELS AN OPEN COMBINE. `sub_49B8A0`'s tail:
+        //
+        //     if (dword_670BE0) { dword_670BE0 = 0;
+        //                         670BE4 = 670BE8 = 670BEC = -1; }
+        //
+        // Leaving the verb panel is what ends `Utiliser sur` when the player
+        // does not follow it through, and without it the mode is a ONE-WAY
+        // DOOR: `combining` never clears, so every later row confirm feeds a
+        // dead combine instead of opening the verbs, and the verb bar is
+        // unreachable for the rest of the process. `combining` lives in the
+        // same static record as the selections and the colours, so it
+        // survives closing and reopening the device too. A player hit exactly
+        // that within minutes of the mode landing.
+        if (state_->combining) {
+            state_->combining = false;
+            state_->combineA = state_->combineB = state_->combineC = -1;
+            state_->readyA = state_->readyB = -1;
+            log_.push_back("combine: cancelled by leaving the verb panel");
+        }
     }
 }
 

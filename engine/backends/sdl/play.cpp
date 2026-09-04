@@ -1274,6 +1274,11 @@ int main(int argc, char** argv) {
 "  --stand x,y,z[,facing]   an explicit spot instead of an address\n"
 "  --density 0..4   how much crowd - the options menu\'s own row 6\n"
 "  --no-crowd       no pedestrians at all\n"
+"  --give a,b,c     object ids into the carried list - a HARNESS write, not\n"
+"                   `inventory.add`. A list, because a new game ships two\n"
+"                   objects and the flows worth driving want a bagful: row\n"
+"                   scrolling needs more than the nine row widgets, and\n"
+"                   `Utiliser sur` needs a recipe pair (18,7 -> 33)\n"
 "  --sneak          open the SNEAK as soon as he is on his feet, through\n"
 "                   the same path TAB takes - for testing that screen\n"
 "                   without walking to it\n"
@@ -1362,7 +1367,11 @@ int main(int argc, char** argv) {
     // (default the engine's 3), `--no-crowd` leaves the pedestrians out.
     std::string saveFile;
     int areaArg = -1, addressArg = -1, density = omk::kDefaultStreetActivity;
-    int giveArg = -1;      // --give: an object id for the carried list
+    // --give: object ids for the carried list, comma-separated. A LIST
+    // rather than one id because the flows worth driving need a bagful - row
+    // scrolling wants more than the nine row widgets, and `Utiliser sur`
+    // wants a recipe PAIR, and a new game ships exactly two objects.
+    std::string giveList;
     bool newWorld = false; // --newgame-world: START's world, the save's player
     bool noCrowd = false;
     // `--sneak` opens the device as soon as the player is on his feet,
@@ -1444,7 +1453,7 @@ int main(int argc, char** argv) {
         // a flow can be exercised from a save that does not carry it. VM
         // opcode 50 `inventory.add` is what the game uses; this writes the
         // slot and runs none of its bookkeeping.
-        else if (a == "--give" && i + 1 < argc) giveArg = std::atoi(argv[++i]);
+        else if (a == "--give" && i + 1 < argc) giveList = argv[++i];
         // ...and its companion: keep the save's PLAYER but take the world
         // from `IAM\START`, so a flow can be tried against a new game's
         // state without the intro. Also a harness flag, not a port.
@@ -1596,12 +1605,25 @@ int main(int argc, char** argv) {
     // `IAM\GLOBAL +12`'s eleven combination recipes. `script/inventory.h` was
     // written, checked and never consumed by anything that runs - the sneak
     // is what the channel exists for, so this is where it is loaded.
-    if (giveArg > 0) {
-        if (state.debugPutObject(0, giveArg))
-            std::printf("--give: object %d put in the carried list "
-                        "(a harness write, not `inventory.add`)\n", giveArg);
-        else
-            std::printf("--give: could not place object %d\n", giveArg);
+    if (!giveList.empty()) {
+        int placed = 0, refused = 0;
+        std::string cur;
+        for (char ch : giveList + ",") {
+            if (ch != ',') { cur.push_back(ch); continue; }
+            if (cur.empty()) continue;
+            const int id = std::atoi(cur.c_str());
+            cur.clear();
+            if (id <= 0) continue;
+            // `debugPutObject` fills the FIRST free slot, so the ids land in
+            // the order they are given - which is the reverse of what the
+            // game's own `ObjectList_InsertFront` would do, and is fine for a
+            // harness whose point is to have a bag at all.
+            if (state.debugPutObject(0, id)) ++placed;
+            else { ++refused; std::printf("--give: no free slot for object %d\n", id); }
+        }
+        std::printf("--give: %d object%s put in the carried list, %d refused "
+                    "(a harness write, not `inventory.add`)\n",
+                    placed, placed == 1 ? "" : "s", refused);
     }
     const auto objectRecords = omk::loadObjects(fs);
     const auto globalFile = fs.read("IAM/GLOBAL");
@@ -5951,9 +5973,9 @@ int main(int argc, char** argv) {
                             for (const auto& e : l.items)
                                 rows += sneakRows.count(e.addr);
                     std::printf("sneak: object list %d holds %zu, %zu rows "
-                                "shown (no scrolling - sub_0049C050 is not "
-                                "modelled)\n", inv.openedList(),
-                                carried.size(), rows);
+                                "shown, window at %d\n", inv.openedList(),
+                                carried.size(), rows,
+                                walk->rowWindow(omk::kListSneakRows));
                 }
             }
             if (useClosedSneak) {
