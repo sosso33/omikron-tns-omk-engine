@@ -32,6 +32,43 @@ for ever.
 `music.play <track>, 1, 0` — second operand **1**. The port reads
 `musicLoop_ = call.fields[1] != 0`, so all three loop.
 
+> **TRACED TO THE END 2026-09-04, AND THE PORT'S READING IS CORRECT.** The
+> operand IS the loop flag. The chain is five hops and the answer is at the
+> last one:
+>
+>     op 103            -> sub_41E110(track, arg2)
+>     sub_41E110        -> sub_42BFD0(path, arg2)
+>     sub_42BFD0        -> stores arg2 at block[8]; sub_42BEC0(buf, size, arg2)
+>     sub_42BEC0        -> Morph_Open(0, arg2, stream)   [0x0042C300]
+>     Morph_Open        -> mov [esi+80h], edx            ; arg2 on the stream
+>
+> and the reader of `+0x80`, in the fill loop:
+>
+>     cmp edx, ecx        ; bytes read vs bytes wanted
+>     jnb loc_42C666      ; enough -> done
+>     cmp [esi+80h], edi  ; edi = 0: is the flag zero?
+>     jz  loc_42C622      ; zero -> stop short, do NOT refill
+>     sub_42D8B0(esi)     ; else REWIND and read again
+>
+> Reading short and rewinding to continue is the loop, so `+0x80` is the loop
+> flag and it is `music.play`'s second operand. **`musicLoop_ = fields[1] != 0`
+> is right**, and a 5.3-second track authored `music.play 51, 1, 0` loops in
+> the ORIGINAL too.
+>
+> **So the looping itself is faithful and there is nothing to fix here.** What
+> is left of the report is a different question: not "why does it loop" but
+> **"why is it never replaced"**. The engine's own handler refuses a
+> `music.play` naming the track already going (`cmp dword_4C013C, ebp; jz`),
+> which the port models, so a track persists until some later site names a
+> different one. Whether the port MISSES a site that would change it is
+> unmeasured and is where this entry now points.
+>
+> Kept below is the reasoning that made the operand look unverified, because
+> the intermediate value really is stored and never read by name -
+> `dword_90E0D8` is written twice and read only through the block pointer
+> handed to `sub_42C190`, which is why a symbol grep says it is dead. A value
+> that is only ever written is not evidence that nothing consumes it.
+
 **AND THAT READING IS NOT SUPPORTED BY THE HANDLER.** Op 103 (0x00404FB0)
 takes THREE operands and passes the first two to `sub_41E110(track, arg2)`,
 which is:
