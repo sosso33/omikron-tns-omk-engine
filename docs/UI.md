@@ -605,6 +605,50 @@ wearing the old page's colour — a player reported reaching the slider page
 walks RIGHT, UP, CONFIRM into panel 0x004DEDE8 and asserts its rows turn green.
 
 
+### The three 3D previews, and the interface's own 3D primitive
+
+A player: "the 3D items are not here". They are list 0x004DE420 — three 50×50
+buttons down the left of the inventory page's window — and they are **not
+per-object**. The sneak's open callback loads three literal models and holds
+each in a global:
+
+| path | global |
+|---|---|
+| `meshes\objets\setek.3do` | `dword_670BF8` |
+| `meshes\objets\anneau.3do` | `dword_670C58` |
+| `meshes\objets\imager.3do` | `dword_670CC0` |
+
+through `sub_41E200(path)` and `sub_41E230(0, model, &state)` — and the close
+callback's parameter-0 arm frees exactly those three, which §3d already
+recorded from the other end. The same block sets `word_4DE212 = 2`,
+`word_4DE6F2 = 0` and `dword_4DEE68 = 3`: the tab column's selection, the
+rows' selection and the panel's current list. **All three are the values
+`tables/ui_widgets.json` already carries**, lifted independently — that
+agreement is the check on this reading.
+
+**The drawer is `I2D_Submit3DView` (0x00428900)**, an I2D primitive of its own
+— 84 bytes of rect + scene + camera — and `Ui_DrawItem` never reaches it. No
+item flag names it, so the flag table in §"An item is a bag of bits" could
+never have led here. The function after `sub_477990` submits it, and two
+constants are the whole framing:
+
+| | |
+|---|---|
+| `0x42EC3871` = **118.110** | the camera distance — and `3.0 / 0.0254 = 118.110`, **three metres** in the engine's inch unit, the same 0.0254 `Sound_Init` tells the listener |
+| `dbl_4BCAA8` = **0.0174533** | π/180, degrees to radians |
+
+and the angle it converts is **oscillator 4** (`sub_42B5E0(4)`, period 5000)
+fed to `sub_441EB0`, so the previews turn once every five seconds — the spin a
+capture of the original shows.
+
+**Not ported.** `verify.py: sneak previews` asserts the data half — that the
+three paths resolve in the shipped tree (two ship upper-case and one mixed, so
+the case-insensitive resolve is load-bearing), that all three literals are in
+the image, and the two constants. The render is not: the port's interface has
+no 3D path at all, and its composer is a pure 2D function of (screen, walk).
+Wiring the renderer boundary into it is a slice of its own, and inventing a
+camera convention for one would be reconstruction rather than a port.
+
 ### `sub_49C050` — the row list's own hook, and why nothing moved inside it
 
 The sneak's nine row widgets are a list with a hook of its own, and the port

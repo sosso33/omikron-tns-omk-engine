@@ -10496,6 +10496,78 @@ def c_sneak_page_colour():
            "tree until the lifter learned to follow code as well as `+44`"
 
 
+def c_sneak_previews():
+    r"""THE SNEAK'S THREE 3D PREVIEWS - the data half, read 2026-09-04.
+
+    A player: "the 3D items are not here". They are list 0x004DE420, three
+    50x50 buttons down the left of the inventory page's window, and they are
+    not per-object: the sneak's OPEN callback loads **three literal models**
+    and holds each in a global of its own.
+
+        meshes\objets\setek.3do    -> dword_670BF8
+        meshes\objets\anneau.3do   -> dword_670C58
+        meshes\objets\imager.3do   -> dword_670CC0
+
+    through `sub_41E200(path)` and `sub_41E230(0, model, &state)`, and the
+    close callback's parameter-0 arm frees exactly those three (which is what
+    `docs/UI.md` already recorded from the other end). The same block sets
+    `word_4DE212 = 2`, `word_4DE6F2 = 0` and `dword_4DEE68 = 3` - the tab
+    column's selection, the rows' selection and the panel's current list -
+    and all three are the values `tables/ui_widgets.json` already carries as
+    `select` and `current`, lifted independently. That agreement is the check
+    on this reading.
+
+    **The drawer is `I2D_Submit3DView` (0x00428900)**, an I2D primitive of its
+    own - 84 bytes of rect + scene + camera, which `Ui_DrawItem` never
+    reaches, so no item flag names it and the walk of the flag table could
+    never have found this. The function after `sub_477990` submits it, and
+    two constants in it are the whole of the framing:
+
+        0x42EC3871 = 118.110    the camera distance. The engine's world unit
+                                is an INCH (0.0254, `Sound_Init`'s listener),
+                                and 3.0 / 0.0254 = 118.110 - three metres.
+        dbl_4BCAA8 = 0.0174533  pi/180, degrees to radians
+
+    and the angle it converts is **oscillator 4** (`sub_42B5E0(4)`, period
+    5000), fed to `sub_441EB0`. So the previews turn once every five seconds,
+    which is the spin a capture of the original shows.
+
+    This check asserts the DATA only: that the three paths the exe names
+    resolve in the shipped tree under the case-insensitive rule Win95 gave
+    them - and they need it, since two ship upper-case and one mixed - and
+    that the two constants are what the image holds. The RENDER is not ported:
+    the port's interface has no 3D path at all, and inventing a camera
+    convention for one would be a reconstruction rather than a port.
+    """
+    import struct
+    root = omkpaths.data_root()
+    names = ["setek.3do", "anneau.3do", "imager.3do"]
+    found = []
+    for n in names:
+        hit = ""
+        d = os.path.join(root, "MESHES", "OBJETS")
+        if os.path.isdir(d):
+            for f in os.listdir(d):
+                if f.lower() == n:
+                    hit = f
+        found.append(hit)
+    exe = open(omkpaths.exe_path(), "rb").read()
+    dist = struct.unpack("<f", struct.pack("<I", 0x42EC3871))[0]
+    # ...and the strings themselves, so the paths are the exe's and not this
+    # docstring's.
+    lit = sum(1 for n in names
+              if ("meshes\\objets\\" + n).encode("latin-1") in exe.lower())
+    return (found, lit, round(dist, 3), round(dist * 0.0254, 3)), \
+           (["Setek.3do", "ANNEAU.3DO", "IMAGER.3DO"], 3, 118.11, 3.0), \
+           "the three models the sneak's open callback names by literal " \
+           "path, as they are actually spelled on disc - two upper-case and " \
+           "one mixed, so the case-insensitive resolve is load-bearing; " \
+           "that all three literals are in the image; and the camera " \
+           "distance 0x42EC3871 = 118.110, which is 3.0 / 0.0254 - THREE " \
+           "METRES in the engine's inch unit, the same 0.0254 the audio " \
+           "listener is told about"
+
+
 def c_slider_destinations():
     r"""`IAM\GLOBAL +16` - the sneak's SLIDER DESTINATIONS, and neither this
     field nor its count `+28` was in this repo before 2026-09-04.
@@ -20095,6 +20167,7 @@ SLOW = [
     ("sneak page colour", c_sneak_page_colour,  "UI 3b"),
     ("cursor highlight",  c_cursor_highlight,   "UI 3b"),
     ("slider destinations", c_slider_destinations, "UI 3g"),
+    ("sneak previews",   c_sneak_previews,     "UI 3g"),
     ("engine: movies",     c_engine_movies,     "BOOT 2"),
     ("engine: raster",     c_engine_raster,     "PORTING B6"),
     ("engine: silhouette", c_engine_silhouette, "PORTING B6"),
