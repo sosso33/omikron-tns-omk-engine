@@ -19,9 +19,22 @@ constexpr int kChainGuard = 64;
 int CefChannel::clipFrames(int stateIndex) const {
     if (stateIndex < 0 || stateIndex >= static_cast<int>(ctl_->states.size()))
         return 1;
-    const int clip = ctl_->states[static_cast<std::size_t>(stateIndex)].clip;
+    const auto& st = ctl_->states[static_cast<std::size_t>(stateIndex)];
+    const int clip = st.clip;
     if (clip < 0 || clip >= static_cast<int>(ctl_->clips.size())) return 1;
-    const auto n = ctl_->clips[static_cast<std::size_t>(clip)].frames;
+    auto n = ctl_->clips[static_cast<std::size_t>(clip)].frames;
+    // A VARIANT-GRID clip is one clip holding several motions, and a state
+    // plays ONE CELL of it (omk-play 69). `playBits`'s high nibble is the
+    // variant count - `sub_4A7F25` does `mov ax,[edi+4Ch]; shr eax,0Ch` - and
+    // the cell is `keys / count`, keys being `frames + 1` because key 0 is the
+    // rest sentinel. It divides exactly: 126/6 and 189/9 are both 21.
+    //
+    // Without this the state runs the WHOLE clip and every variant plays in
+    // turn, which is the reported "it plays the complete list of grabbing
+    // object animations". Nine states in `H1Avnt` carry a nibble > 1 and every
+    // other clip in the bank reads 0, so this changes nothing else.
+    const int variants = st.playBits >> 12;
+    if (variants > 1 && n > 0 && (n + 1) % variants == 0) n = (n + 1) / variants;
     return n > 0 ? n : 1;
 }
 

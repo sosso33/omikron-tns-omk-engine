@@ -2779,6 +2779,15 @@ std::string Session::objectName(int objectId) const {
     return {};
 }
 
+bool Session::propPos(int objectId, float out[3]) const {
+    for (const auto& p : props()) {
+        if (!p.shown || p.id != objectId) continue;
+        for (int k = 0; k < 3; ++k) out[k] = p.pos[k];
+        return true;
+    }
+    return false;
+}
+
 bool Session::takeObject(int objectId) {
     PropRef pr;
     if (!hooks_.propById(objectId, pr) || pr.slot == -1) return false;

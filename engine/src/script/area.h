@@ -773,6 +773,9 @@ public:
     // The OBJECTS record's name, for the line `MDGETOBJ` puts on screen
     // through `Subtitle_Show` (0x0041E040).
     std::string objectName(int objectId) const;
+    // A shown prop's world position, for the take's approach geometry
+    // (omk-play 69). False when the id names no shown prop.
+    bool propPos(int objectId, float out[3]) const;
 
     // The three world-take actions, as the special-move handlers perform
     // them. They go through the same hooks opcodes 66..69 use, because it is

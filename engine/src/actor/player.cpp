@@ -501,7 +501,11 @@ const NodeTracks* PlayerController::poseTracks() {
     const int c = clip();
     if (c < 0 || !meshes_) return nullptr;
     auto it = tracks_.find(c);
-    if (it != tracks_.end()) return it->second.valid() ? &it->second : nullptr;
+    if (it != tracks_.end()) {
+        if (!it->second.valid()) return nullptr;
+        const int v = variantCount();
+        return v > 1 ? gridTracks(it->second, v) : &it->second;
+    }
     NodeTracks t;
     const auto d = animDescriptor(data_, ctl_->clips[static_cast<std::size_t>(c)].offset);
     if (d && d->frames > 0) {
@@ -534,16 +538,150 @@ const NodeTracks* PlayerController::poseTracks() {
         }
     }
     it = tracks_.emplace(c, std::move(t)).first;
-    return it->second.valid() ? &it->second : nullptr;
+    if (!it->second.valid()) return nullptr;
+    {
+        const int v = variantCount();
+        if (v > 1) return gridTracks(it->second, v);
+    }
+    return &it->second;
+}
+
+// The four cells and the two weights, `sub_466390` transcribed. `keys` is the
+// clip's KEY count (frames + 1, key 0 being the rest sentinel), which is what
+// divides exactly by the variant count: 6 x 21 = 126 and 9 x 21 = 189.
+PlayerController::GridSample PlayerController::gridSample(int n, int keys) const {
+    GridSample g;
+    g.len = keys / n;
+    // The engine clamps both axes before using them, and each weight is
+    // normalised by ITS OWN clamp - 256/51, 256/53, 256/50 against +51, -53
+    // and +-50. LABELLED: that correspondence is one hypothesis fitted three
+    // times, not three confirmations (todo/omk-play.md 69).
+    float a = takeAngle_;
+    if (a >  50.0f) a =  50.0f;
+    if (a < -50.0f) a = -50.0f;
+    float s = takeSecond_;
+    const int col = a >= 0.0f ? 2 : 0;
+    if (n == 9) {
+        if (s >  51.0f) s =  51.0f;
+        if (s < -53.0f) s = -53.0f;
+        const int row = s >= 0.0f ? 0 : 6;
+        g.cell[0] = 4;  g.cell[1] = row + 1;
+        g.cell[2] = col + 3;  g.cell[3] = col + row;
+        g.wSecond = std::fabs(s) / (s >= 0.0f ? 51.0f : 53.0f);
+    } else {
+        // n == 6: the second axis arrives pre-scaled by 1/29.527559 - 75 cm,
+        // the same constant `sub_465D30`'s low arm uses.
+        g.cell[0] = 1;  g.cell[1] = 4;
+        g.cell[2] = col;  g.cell[3] = col + 3;
+        g.wSecond = std::fabs(s);
+    }
+    g.wAngle = std::fabs(a) / 50.0f;
+    if (g.wSecond > 1.0f) g.wSecond = 1.0f;
+    if (g.wAngle  > 1.0f) g.wAngle  = 1.0f;
+    return g;
+}
+
+// `sub_4725B0`: four key offsets added to the frame, two slerps along one axis
+// and one across. Baked for the whole window because the geometry is fixed for
+// the duration of one take.
+const NodeTracks* PlayerController::gridTracks(const NodeTracks& base, int n) {
+    const int c = clip();
+    if (gridClip_ == c && gridGen_ == takeGen_ && gridTracks_.valid())
+        return &gridTracks_;
+    const int keys = base.frames + 1;         // key 0 is the rest sentinel
+    if (n <= 1 || keys % n != 0) return &base;
+    const GridSample g = gridSample(n, keys);
+
+    NodeTracks out;
+    out.count = base.count;
+    out.rootTrack = base.rootTrack;
+    out.ids = base.ids;
+    out.frames = g.len;
+    out.quats.assign(static_cast<std::size_t>(g.len), {});
+    out.trans.assign(static_cast<std::size_t>(g.len), {0.0f, 0.0f, 0.0f});
+    const std::size_t nodes = base.quats.empty() ? 0 : base.quats[0].size();
+    for (int f = 0; f < g.len; ++f) {
+        auto& row = out.quats[static_cast<std::size_t>(f)];
+        row.resize(nodes);
+        // baked frame `x` holds key `x + 1`, so key `cell*len + f` is frame
+        // `cell*len + f - 1`; f == 0 of cell 0 is the sentinel and clamps to 0
+        const auto at = [&](int cell, std::size_t node) -> Quatf {
+            int b = g.cell[cell] * g.len + f - 1;
+            if (b < 0) b = 0;
+            if (b >= base.frames) b = base.frames - 1;
+            const auto& r = base.quats[static_cast<std::size_t>(b)];
+            return node < r.size() ? r[node] : Quatf{1.0f, 0.0f, 0.0f, 0.0f};
+        };
+        for (std::size_t i = 0; i < nodes; ++i) {
+            const Quatf A = qslerp(at(0, i), at(1, i), g.wSecond);
+            const Quatf B = qslerp(at(2, i), at(3, i), g.wSecond);
+            row[i] = qslerp(A, B, g.wAngle);
+        }
+        // THE ROOT MOTION IS PER CELL, AND RELATIVE TO IT.
+        //
+        // The pelvis is the hierarchy root in all 181 character models, so the
+        // crouch is a root TRANSLATION and not just rotation - blend the
+        // quaternions alone and the legs animate while the hips stay put,
+        // which a reader saw as the character floating.
+        //
+        // `clipRootMotion` accumulates from key 1, so at cell k it already
+        // carries every EARLIER cell's motion: six concatenated takes summed
+        // together. What a cell means on its own is the motion SINCE THE CELL
+        // BEGAN, so each is re-based on its own first key and the four are
+        // then mixed with the same weights as the rotations.
+        const auto tr = [&](int cell) -> std::array<float, 3> {
+            const int b0 = g.cell[cell] * g.len;
+            int b = b0 + f;
+            if (b >= base.frames) b = base.frames - 1;
+            if (b < 0 || b0 < 0 || b0 >= static_cast<int>(base.trans.size()) ||
+                b >= static_cast<int>(base.trans.size()))
+                return {0.0f, 0.0f, 0.0f};
+            const auto& a = base.trans[static_cast<std::size_t>(b)];
+            const auto& z = base.trans[static_cast<std::size_t>(b0)];
+            return {a[0] - z[0], a[1] - z[1], a[2] - z[2]};
+        };
+        const auto t0 = tr(0), t1 = tr(1), t2 = tr(2), t3 = tr(3);
+        for (int k = 0; k < 3; ++k) {
+            const float A = t0[static_cast<std::size_t>(k)] * (1.0f - g.wSecond) +
+                            t1[static_cast<std::size_t>(k)] * g.wSecond;
+            const float B = t2[static_cast<std::size_t>(k)] * (1.0f - g.wSecond) +
+                            t3[static_cast<std::size_t>(k)] * g.wSecond;
+            out.trans[static_cast<std::size_t>(f)][static_cast<std::size_t>(k)] =
+                A * (1.0f - g.wAngle) + B * g.wAngle;
+        }
+    }
+    gridTracks_ = std::move(out);
+    gridClip_ = c;
+    gridGen_  = takeGen_;
+    return &gridTracks_;
 }
 
 int PlayerController::poseFrame() const {
     // the channel's frame runs 1 .. clipLen; the tracks are 0-based
     int f = static_cast<int>(std::floor(rt_.channel().frame())) - 1;
-    const int n = clipFrames();
+    int n = clipFrames();
+    // A variant-grid clip is played as ONE cell, so the window is `len` and
+    // not the whole 125 or 188 (omk-play 69). Without this the channel walks
+    // the full clip and every variant plays in turn, which is the report.
+    const int v = variantCount();
+    if (v > 1 && n > 0) n = (n + 1) / v;
     if (f < 0) f = 0;
     if (n > 0 && f >= n) f = n - 1;
     return f;
+}
+
+// ------------------------------------------------- THE VARIANT GRID (69)
+
+void PlayerController::setTakeGeometry(float angleDeg, float second) {
+    takeAngle_  = angleDeg;
+    takeSecond_ = second;
+    ++takeGen_;                       // the baked window is no longer valid
+}
+
+int PlayerController::variantCount() const {
+    const int e = rt_.channel().state();
+    if (e < 0 || !ctl_ || e >= static_cast<int>(ctl_->states.size())) return 0;
+    return ctl_->states[static_cast<std::size_t>(e)].playBits >> 12;
 }
 
 // ------------------------------------------------------------- camera

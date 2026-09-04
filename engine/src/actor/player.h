@@ -232,6 +232,36 @@ public:
     // quaternions alone).
     const NodeTracks* poseTracks();
     int poseFrame() const;             // 0-based frame into the tracks
+
+    // ---- THE VARIANT GRID (omk-play 69) --------------------------------
+    //
+    // A take clip is not one motion: it is a GRID of them, and the engine
+    // plays a 21-frame window blended from the four cells nearest the
+    // approach. The entry's `playBits` (+0x4C) high nibble is the variant
+    // count - `sub_4A7F25` does `mov ax,[edi+4Ch]; shr eax,0Ch` and hands it
+    // to `sub_45C3B0`, which stores it at actor+0x4F4 - and it is > 1 for
+    // exactly nine states in `H1Avnt`: the take/put families and `H_ADJSTP`.
+    //
+    // `sub_465D30` computes the two axes at the moment the take starts and
+    // leaves them at actor+0x1C4 (the signed approach ANGLE) and +0x1C8, and
+    // `sub_466390` turns them into four key offsets and two 0..256 weights.
+    // They are constant for the whole of one take, so the caller sets them
+    // once and this bakes the blended window.
+    //
+    // `second` is the raw second axis; the +-50 and [-53, +51] clamps are
+    // applied here, as the engine applies them inside `sub_466390`.
+    void setTakeGeometry(float angleDeg, float second);
+    // The current entry's variant count, 0 or 1 meaning "an ordinary clip".
+    int variantCount() const;
+
+  private:
+    // The four cells and the two 0..1 weights `sub_466390` produces.
+    struct GridSample { int cell[4] = {0, 0, 0, 0}; int len = 0;
+                        float wSecond = 0.0f, wAngle = 0.0f; };
+    GridSample gridSample(int n, int keys) const;
+    const NodeTracks* gridTracks(const NodeTracks& base, int n);
+
+  public:
     int tracksMatched() const { return matched_; }
     int tracksTotal() const { return total_; }
 
@@ -319,6 +349,13 @@ private:
 
     std::map<int, RootTrack>  roots_;
     std::map<int, NodeTracks> tracks_;
+    // The blended window for a variant-grid clip, and the geometry it was
+    // baked from. Keyed on the clip AND on a generation that the setter bumps,
+    // because unlike an ordinary clip the result depends on the approach.
+    NodeTracks gridTracks_;
+    int   gridClip_ = -1, gridGen_ = -1;
+    float takeAngle_ = 0.0f, takeSecond_ = 0.0f;
+    int   takeGen_ = 0;
     int matched_ = 0, total_ = 0;
 
     // the camera block's live state

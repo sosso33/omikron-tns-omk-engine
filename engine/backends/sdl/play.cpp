@@ -3787,13 +3787,66 @@ int main(int argc, char** argv) {
                         // engine `dy_up < kTakeHigh` == port `dy_down > -kTakeHigh`
                         const bool low   = dy > -kTakeHigh;
                         const int  group = low ? 41 : 143;
+                        // THE VARIANT GRID's two axes (omk-play 69).
+                        // `sub_465D30` leaves them at actor+0x1C4 and +0x1C8
+                        // and `sub_466390` turns them into four key offsets
+                        // and two weights. The angle is the signed bearing of
+                        // the object relative to the way he is FACING - the
+                        // same quantity the 50 degree cone tests - and the
+                        // second axis is the height, which for the low take
+                        // the engine pre-scales by 1/29.527559 (75 cm).
+                        float takeAngle = 0.0f, takeSecond = 0.0f;
+                        if (obj >= 0) {
+                            float op[3] = {0, 0, 0};
+                            if (session.propPos(obj, op)) {
+                                const float dx = op[0] - player->pos()[0];
+                                const float dz = op[2] - player->pos()[2];
+                                // The SAME convention the port's facing uses -
+                                // `headingFromClipRoot` ends
+                                // `atan2(v[2], v[0]) * rad2deg + 90`. Taking
+                                // the bare atan2 gave bearings of -99 and -164
+                                // degrees for an object a metre away, outside
+                                // the 50 degree cone and swinging with his
+                                // heading: two conventions subtracted.
+                                const float bearing = std::atan2(dz, dx) *
+                                                      57.29577951308232f + 90.0f;
+                                float rel = bearing - player->facing();
+                                while (rel < -180.0f) rel += 360.0f;
+                                while (rel >  180.0f) rel -= 360.0f;
+                                takeAngle = rel;
+                                // THE SECOND AXIS IS NOT THE RAW HEIGHT.
+                                // `sub_465D30`'s low arm computes
+                                //   var_2C = dyUp - 57.0 - (-29.527559)
+                                //          = dyUp - 27.472441
+                                // and `sub_466390` then scales by
+                                // flt_4BC84C = 1/29.527559 (75 cm). Feeding
+                                // the raw height instead put a ring at his
+                                // feet at +0.04 where it belongs at -0.89, so
+                                // the blend sat 96% on cell 1 - the SHALLOW
+                                // reach - and he barely bent, which is what a
+                                // reader saw.
+                                //
+                                // dy here is DOWN-positive, the engine's is
+                                // up-positive, hence the negation.
+                                const float dyUp = -dy;
+                                takeSecond = low
+                                    ? (dyUp - 27.472441f) * 0.033866666f
+                                    // **UNVERIFIED for the high take**: the
+                                    // high arm sets no `var_2C`, so what
+                                    // reaches +0x1C8 there is not read yet.
+                                    : dyUp - 27.472441f;
+                            }
+                            player->setTakeGeometry(takeAngle, takeSecond);
+                        }
                         if (obj >= 0 && player->enterGroupById(group)) {
                             takeCandidate = obj;
                             takeWasLow = low;
                             std::printf("take: MDACTION found object %d '%s' in reach, "
-                                        "dy %+.1f (down-positive) -> %s take, group %d\n",
+                                        "dy %+.1f (down-positive) -> %s take, group %d; "
+                                        "grid angle %+.1f deg, second %+.2f\n",
                                         obj, session.objectName(obj).c_str(), dy,
-                                        low ? "LOW H_TAKL" : "HIGH H_TAKH", group);
+                                        low ? "LOW H_TAKL" : "HIGH H_TAKH", group,
+                                        takeAngle, takeSecond);
                         } else if (obj >= 0) {
                             std::printf("take: MDACTION found object %d but the bank has "
                                         "no group %d\n", obj, group);
