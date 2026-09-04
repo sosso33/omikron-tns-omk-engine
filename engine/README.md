@@ -1464,7 +1464,16 @@ walker has no game state to ask.
 
 The three 50x50 items are live `.3DO` MODELS - `setek`, `anneau` and `imager`,
 loaded by the screen's own open - which rotate to show selection. The UI layer
-has no 3D path, so they are not drawn.
+has no 3D path, so they are not drawn; their LABELS and the two counts are,
+on the echo bar, which is where the engine puts them.
+
+`Ui_DrawItemCursor` is not drawn either, and it is the commonest decoration
+in the tree. `sub_479920` centres a 220-dword pool on the focused item and
+advances SIXTEEN per-element angles by the frame delta - a ring of turning
+pieces, which is what bleeds light around the selected verb in a capture and
+reads like a bright fill in a still frame. The elements' geometry and art are
+not read, and sixteen animated pieces invented from one still frame would be
+decoration this port cannot defend.
 
 **And `Ui_DrawItemFill`'s amber bars are a CONTRADICTION, not a gap.** Both
 halves were chased and they do not meet:

@@ -485,6 +485,20 @@ The arrows guard is `0x403C0000`, which is **exactly the OR** of the four bits
 `Ui_DrawItemArrows` then tests one at a time — the kind of agreement that says
 the bit assignment is read right rather than fitted to what looked plausible.
 
+**The cursor is ANIMATED, and it is the glow a player sees.** `0x40000200` is
+by far the commonest decoration — every one of the sneak's tab icons, its
+three model buttons and its verbs carry it — and `sub_479920` is not a box:
+it takes a 220-dword pool, centres it on the item (`x + w/2`, `y + h/2`), and
+advances **sixteen** per-element angles by the frame delta, wrapping each at
+360°. So the focused item wears a ring of sixteen turning pieces, which is
+what "bleeds light" around the selected verb in a capture of the original and
+reads, in a still frame, like a bright fill. It is drawn only when the item
+carries `UIF_FOCUSED` **and the screen does too**, so exactly one is on screen.
+
+Not ported: the sixteen elements' geometry and art are not read, and a
+sixteen-piece animation invented from one still frame would be decoration
+this repo cannot defend.
+
 ### `Ui_DrawItem` NEVER READS `+28` — and that is most of what an item shows
 
 The line above says "draws the text", and *which* text is the part that
