@@ -10,6 +10,7 @@ and the `verify.py` check that pins each result.
 
 | file | what it is |
 |---|---|
+| [`sliders.md`](sliders.md) | **the sliders**: the player's RIDE — call, mount, choose a destination, fly, arrive. The ambient traffic is done and the sneak's slider page is built; confirming a row does nothing. Read 2026-09-04, none of it implemented |
 | [`iam-script-engine.md`](iam-script-engine.md) | **the issues file** for the IAM world-script VM and its scheduler (`engine/src/script/interp.*`, `area.*`, `world.*`, `dialogue.*`, `gamestate.*`) |
 | [`iam-script-engine-plan.md`](iam-script-engine-plan.md) | **the plan**: the same issues grouped into work packages, with the rules every agent in a batch follows |
 | [`actor-runtime.md`](actor-runtime.md) | the `.CTL` channel and the actor runtime (`engine/src/actor/*`) - all closed |
