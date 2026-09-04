@@ -5510,12 +5510,19 @@ def c_engine_sneak():
             # marks a CONSUMABLE, which case 35 applies itself and answers 2
             # to, so the sneak plays sound 13. Reading those two arms the
             # wrong way round made every key refuse.
+            # ...and the half that reaches the WORLD. `sub_42B420(tag, 20)`
+            # ends in event 43, whose block starts at the ACTION, so case 43
+            # runs `Message_RunHandlers(20, ..., object, ...)` - and a
+            # message's sender is an OBJECT id for 4, 20 and 25, which this
+            # Session's own header already recorded. Nothing had ever POSTED
+            # a message before.
+            "-> message 20, sender object" in o,
             "-> IN HAND (case 35 result 1" in o,
             # ...and the TICK, which is the half that actually froze: the
             # draw gate and the `adventure` gate are separate lines, and a
             # mutation of one alone left this check green.
             _sneak_ticks(o) > 200), \
-           (True, True, True, True, True, True, True, True), \
+           (True, True, True, True, True, True, True, True, True), \
            "TAB held in Anekbah: the special move fires and names its " \
            "tab_special_move row, it raises event 25 for object list 0 and " \
            "opens screen 9, the screen is attributed to the PLAYER rather " \
@@ -5525,7 +5532,12 @@ def c_engine_sneak():
            "and did not check until 2026-09-04, when a player opened the " \
            "sneak in Anekbah and watched the city freeze (19 world frames of " \
            "1924). `Game_Tick` has no test for an open screen; the only " \
-           "verb `Utiliser` then takes it IN HAND, because event 35's " \
+           "verb `Utiliser` then does both halves in the engine's order: it " \
+           "POSTS MESSAGE 20 with the object as sender, which walks the " \
+           "resident scene's subscription table then the area's then " \
+           "GLOBAL's - that is how a held object reaches whatever is near " \
+           "enough to answer, and nothing in this Session had ever posted a " \
+           "message. Then it takes the object IN HAND, because event 35's " \
            "answer is 1 for an object WITHOUT the usable bit - that arm " \
            "loads the object's own model and `sub_41C490` writes " \
            "player+0xA4 - while the usable bit marks a CONSUMABLE, which " \

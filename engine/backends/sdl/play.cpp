@@ -5532,7 +5532,39 @@ int main(int argc, char** argv) {
                 if (!rec) {
                     std::printf("sneak: %s with no object selected\n",
                                 verb ? "Utiliser sur" : "Utiliser");
-                } else if (!rec->usable()) {
+                } else {
+                  if (verb == 0) {
+                    // ---- WHAT REACHES THE WORLD -------------------------
+                    //
+                    // `sub_42B420(tag, 20)` announces, and its second event
+                    // is 43 - whose block starts at the ACTION, so case 43
+                    // runs `Message_RunHandlers(20, ..., object, ...)`. That
+                    // walks the resident SCENE's subscription table, then the
+                    // AREA's, then GLOBAL's, first match wins; and this
+                    // header already recorded that a message's sender is an
+                    // OBJECT id for 4, 20 and 25.
+                    //
+                    // So `Utiliser` posts message 20 with the object, and
+                    // whichever resident chunk subscribes to it decides -
+                    // which is why a player says the key "is automatically
+                    // used when you are near the location where you should
+                    // use it": proximity is which SCENE is resident, and the
+                    // handler is its own. Nothing in the Session posted a
+                    // message before this.
+                    const int objIdx = carried.empty() ? -1
+                        : carried[static_cast<std::size_t>(row)];
+                    const bool ran = session.postMessage(20, objIdx);
+                    const auto& m = session.messagesRun();
+                    std::printf("sneak: Utiliser '%s' -> message 20, sender "
+                                "object %d - %s\n", rec->name.c_str(), objIdx,
+                                ran && !m.empty()
+                                  ? (m.back().table + " table handles it").c_str()
+                                  : "no resident chunk subscribes to it");
+                  }
+                  // ...and THEN the decision. `sub_49BEA0` calls
+                  // `sub_42B420` (the announce, above) and `sub_42B470` (this)
+                  // in that order, so both happen on one confirm.
+                  if (!rec->usable()) {
                     // THE ARM THAT WORKS, and it is the one WITHOUT the
                     // usable bit. Case 35's `loc_407314` loads the object's
                     // own model from its stem and returns result **1**, and
@@ -5557,6 +5589,7 @@ int main(int argc, char** argv) {
                                 "the apply is announced and not run\n",
                                 rec->name.c_str(), rec->effect,
                                 omk::effectProperty(rec->effect));
+                  }
                 }
             }
             comp.setExamineText(nullptr);

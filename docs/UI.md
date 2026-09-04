@@ -694,11 +694,36 @@ to a door or a lift — and a player reported exactly that: *"I tried using the
 Kay'l apartment key on the lift leading to his apartment, it doesn't work."*
 The port had the two arms the wrong way round and beeped instead.
 
-Neither arm's *effect* is ported: `Object_ApplyEffect` is `named` in
-`readable/INDEX.md` with its body still as generated, `sub_409780`'s context
-gate is unread, and the hand attach reaches into the actor runtime. What is
-ported is which arm runs and what it means, and `verify.py: engine: sneak`
-asserts the in-hand line.
+#### ...and the half that reaches the WORLD is a MESSAGE
+
+`sub_49BEA0` calls `sub_42B420` *and then* `sub_42B470`, and the first is the
+one that leaves the device. `sub_42B420(tag, 20)` raises event 30 to resolve
+the object and then event **43** — and the block it passes starts at the
+ACTION, so case 43 reads the action as its first word and runs
+
+```
+Message_RunHandlers(20, slot, object, …)
+```
+
+which walks the resident **SCENE**'s subscription table, then the **AREA**'s,
+then **GLOBAL**'s, first match wins. A message's sender is an **object id** for
+messages 4, 20 and 25 — which `engine/src/script/area.h` had already recorded
+without knowing what posted them.
+
+**That is why "Utiliser" works near a place and nowhere else.** Proximity is
+not tested by the verb at all: it is *which scene is resident*, and the handler
+belongs to that scene. A player put it exactly: *"you use Utiliser when you are
+near the location where you should use it, and the key is then automatically
+used — you cannot just walk around with the key in your hand."*
+
+`Session::postMessage` is `Message_RunHandlers` and had been written, checked
+and never called — its own comment said "nothing in the Session POSTS a message
+yet". `Utiliser` is what posts one.
+
+Neither arm's *effect* is ported beyond that: `Object_ApplyEffect` is `named` in
+`readable/INDEX.md` with its body still as generated, and the hand attach
+reaches into the actor runtime. What is ported is the message, which arm runs
+and what it means; `verify.py: engine: sneak` asserts both lines.
 
 **And nothing gates the door on the key.** Scanned across AREA, SCENE and
 GLOBAL — **222 `has_object` sites and 235 `used_object` sites**, matching the
