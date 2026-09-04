@@ -5526,11 +5526,38 @@ int main(int argc, char** argv) {
                     ? omk::composePose(playerMeshes, *pt, player->poseFrame(), false)
                     : omk::composePose(playerMeshes, omk::NodeTracks{}, 0, false);
                 omk::applyPose(playerPosed, playerRest, playerMeshes, pose);
+                // THE ANCHOR IS THE FLOOR, NOT THE HIPS (omk-play 69).
+                //
+                // `playerFeet` used to be latched from the FIRST pose - the
+                // standing one - and subtracted for ever after. Every later
+                // pose was then placed by where the STANDING feet were, so a
+                // pose that lowers the body relative to its feet is drawn with
+                // the hips pinned and the legs coming up instead: a reader,
+                // watching a take, "the character anchor is their hips and not
+                // the floor... their legs go up, like the character is
+                // floating".
+                //
+                // The crouch itself is a root TRANSLATION, and this port has no
+                // path for one: `poseTracks` assigns `t.trans` all zeroes and
+                // `composePose` never reads it. Re-measuring the lowest corner
+                // each frame supplies the same result from the other side - the
+                // body's lowest point sits on the walker's floor point, so the
+                // planted foot stays down and the pelvis drops.
+                //
+                // **LABELLED, a port decision rather than a transcription**:
+                // the engine seats the actor by his own origin and lets root
+                // motion move him, which is a different mechanism. This is
+                // equivalent while some part of him is on the ground and would
+                // be WRONG for a pose where both feet leave it - a jump. The
+                // port has no jump or fall state yet (omk-play 68), so nothing
+                // today can tell them apart; when one arrives, this is the
+                // line that has to become the real root-motion path.
+                playerFeet = -1e9f;
+                for (const auto& c : playerPosed.corners)
+                    if (c.y > playerFeet) playerFeet = c.y;
                 if (!playerFeetKnown) {
-                    playerFeet = -1e9f;
-                    for (const auto& c : playerPosed.corners)
-                        if (c.y > playerFeet) playerFeet = c.y;
-                    // the hierarchy root: the one mesh with no parent
+                    // the hierarchy root: the one mesh with no parent. A model
+                    // constant, so this half stays latched.
                     playerRootXZ[0] = playerRootXZ[1] = 0.0f;
                     for (const auto& m : playerMeshes)
                         if (m.parent < 0) {

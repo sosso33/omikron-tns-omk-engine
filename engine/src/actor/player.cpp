@@ -603,10 +603,22 @@ const NodeTracks* PlayerController::gridTracks(const NodeTracks& base, int n) {
     for (int f = 0; f < g.len; ++f) {
         auto& row = out.quats[static_cast<std::size_t>(f)];
         row.resize(nodes);
-        // baked frame `x` holds key `x + 1`, so key `cell*len + f` is frame
-        // `cell*len + f - 1`; f == 0 of cell 0 is the sentinel and clamps to 0
+        // KEY 0 IS THE REST SENTINEL - a T-pose - and this must never read it.
+        //
+        // The engine takes `key = offset + curFrame` with the channel's frame
+        // running 1..len, so the lowest key it can reach is `offset + 1`. The
+        // port's `poseFrame()` is `channelFrame - 1`, and a baked frame `x`
+        // holds key `x + 1`, so the baked index is
+        //
+        //     key           = cell*len + (f + 1)
+        //     baked frame   = key - 1 = cell*len + f
+        //
+        // Taking `cell*len + f - 1` read key `cell*len + f`, which for cell 0
+        // at f == 0 is KEY 0 itself: one frame of T-pose at the start of every
+        // take, which is exactly the fault CLAUDE.md 5 records for reading the
+        // sentinel as frame 0.
         const auto at = [&](int cell, std::size_t node) -> Quatf {
-            int b = g.cell[cell] * g.len + f - 1;
+            int b = g.cell[cell] * g.len + f;
             if (b < 0) b = 0;
             if (b >= base.frames) b = base.frames - 1;
             const auto& r = base.quats[static_cast<std::size_t>(b)];
