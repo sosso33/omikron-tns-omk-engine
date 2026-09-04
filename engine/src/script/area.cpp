@@ -2728,11 +2728,12 @@ int Session::objectSlotId(int slot) const {
 }
 
 // `MDACTION` (0x0046AEC0), the scan behind the world take - see area.h.
-int Session::scanTakeable(const float pos[3], float /*facing*/) const {
+int Session::scanTakeable(const float pos[3], float /*facing*/, float* dyOut) const {
     // 150 cm in inches; the handler's own `flt_4BC918`
     constexpr float kReach = 59.055119f;
     int best = -1;
     float bestD2 = kReach * kReach;
+    float bestDy = 0.0f;
     for (const auto& p : props()) {
         if (!p.shown || p.id < 0) continue;
         const float dx = p.pos[0] - pos[0];
@@ -2741,8 +2742,12 @@ int Session::scanTakeable(const float pos[3], float /*facing*/) const {
         const float d2 = dx * dx + dy * dy + dz * dz;
         if (d2 > bestD2) continue;
         bestD2 = d2;
+        bestDy = dy;
         best = p.id;
     }
+    // The winner's height difference, which `sub_465D30` needs to pick the
+    // take group and which this loop has already computed (omk-play 69).
+    if (dyOut) *dyOut = best >= 0 ? bestDy : 0.0f;
     return best;
 }
 

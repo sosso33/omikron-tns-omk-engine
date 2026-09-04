@@ -1771,6 +1771,10 @@ int main(int argc, char** argv) {
                         what, secs, a, b, gain);
     };
     int         takeCandidate = -1;      // `dword_53AF6C`, MDACTION's pick
+    // Which HEIGHT the take was, kept from MDACTION so the put-back can match
+    // it. The engine keeps the same thing in `dword_53AE5C` - `(ret == 2) ? 3
+    // : 0`, which `sub_46B530` turns back into a group (omk-play 69).
+    bool        takeWasLow = true;
     // The spoken line's SCROLL, in pixels, and the overflow it is clamped to -
     // `dword_6A52C0` and `dword_53AE24`. One pixel a tick while held, which is
     // what `Dialog_TickUI` does with input bits 4 (up) and 8 (down).
@@ -3668,15 +3672,76 @@ int main(int argc, char** argv) {
                         // which the handler's OTHER two arms name, carries no
                         // take move at all - it is the empty action animation
                         // `sub_467950` installs when nothing is there.
-                        const int obj = session.scanTakeable(player->pos(), player->facing());
-                        if (obj >= 0 && player->enterGroupById(41)) {
+                        //
+                        // ---- AND THERE ARE TWO OF THEM (omk-play 69) -------
+                        //
+                        // A reader: the take animation "plays the complete
+                        // list of grabbing object animations (object on the
+                        // floor, object on a table...)", and guessed the
+                        // engine picks by position. It does, and the group
+                        // this used to hardcode is only HALF of it.
+                        //
+                        // `sub_465D30` is the chooser. It takes the actor's
+                        // node position and the object's, forms the three
+                        // deltas and the horizontal distance, checks a 50
+                        // degree facing cone (`dbl_4BC7F8`) and a reach, and
+                        // ends at `loc_466089`:
+                        //
+                        //     if (dy < flt_4BC7E0)  g = FindGroupById(41);  ret = 1;
+                        //     else                  g = FindGroupById(143); ret = 2;
+                        //     SetPersoBankGroup(actor[0x18C], g);
+                        //
+                        // H1Avnt.CTL confirms what those two are, which is the
+                        // check the reading has to pass: 41 is H_TAKL12 ->
+                        // MDGETOBJ -> H_TAKL22 and 143 is H_TAKH12 ->
+                        // MDGETOBJ -> H_TAKH22 - L for a thing on the floor,
+                        // H for a thing at table height. The caller then keeps
+                        // `dword_53AE5C = (ret == 2) ? 3 : 0`, which
+                        // `sub_46B530` turns into the matching PUT-BACK group
+                        // (140/6 are H_PUTL, 9/7 are H_PUTH). The symmetry is
+                        // the corroboration: four take groups, four put groups,
+                        // one test.
+                        //
+                        // **THE SIGN IS FLIPPED HERE, DELIBERATELY, AND IT WAS
+                        // MEASURED RATHER THAN REASONED.** The engine's `dy`
+                        // counts UPWARD - that is the only way `flt_4BC7E0`
+                        // discriminates, since 27.472441 inches is 69.8 cm, a
+                        // table above the feet, and the LOW arm is the one
+                        // BELOW it. This tree's world Y grows DOWNWARD
+                        // (`walk.cpp`: `const double rise = y - *g; // Y grows
+                        // downward`), so the same test reads reversed here.
+                        //
+                        // Getting that backwards swaps the two animations and
+                        // looks exactly as wrong as the bug it fixes, so it is
+                        // not left as an inference. The Impasse's rings decide
+                        // it: `prop_probe` shows OBJECTS 162 at y = -80.0, on
+                        // the ground where the player walks, and seating him
+                        // there puts his feet at y = -78.7. So a thing ON THE
+                        // FLOOR gives dy = -1.3 - which passes the test below
+                        // and takes H_TAKL, correctly - while a thing on a
+                        // 70 cm table would sit near y = -106 and give
+                        // dy = -27.5, which fails it and takes H_TAKH.
+                        //
+                        // The numbers are printed anyway: one take off a floor
+                        // and one off a table confirm it in play, which is the
+                        // only test that covers the transition.
+                        constexpr float kTakeHigh = 27.472441f;   // flt_4BC7E0
+                        float dy = 0.0f;
+                        const int obj = session.scanTakeable(player->pos(),
+                                                             player->facing(), &dy);
+                        // engine `dy_up < kTakeHigh` == port `dy_down > -kTakeHigh`
+                        const bool low   = dy > -kTakeHigh;
+                        const int  group = low ? 41 : 143;
+                        if (obj >= 0 && player->enterGroupById(group)) {
                             takeCandidate = obj;
-                            std::printf("take: MDACTION found object %d '%s' in reach "
-                                        "-> take group 41\n",
-                                        obj, session.objectName(obj).c_str());
+                            takeWasLow = low;
+                            std::printf("take: MDACTION found object %d '%s' in reach, "
+                                        "dy %+.1f (down-positive) -> %s take, group %d\n",
+                                        obj, session.objectName(obj).c_str(), dy,
+                                        low ? "LOW H_TAKL" : "HIGH H_TAKH", group);
                         } else if (obj >= 0) {
                             std::printf("take: MDACTION found object %d but the bank has "
-                                        "no group 41\n", obj);
+                                        "no group %d\n", obj, group);
                         }
                     } else if (mv == "MDGETOBJ") {
                         if (takeCandidate >= 0 && session.takeObject(takeCandidate)) {
@@ -3708,8 +3773,21 @@ int main(int argc, char** argv) {
                                                  "Inventory_Insert would merge)" : "");
                         takeCandidate = -1;
                     } else if (mv == "MDLETOBJ") {
-                        std::printf("take: MDLETOBJ - object %d put back where it was\n",
-                                    takeCandidate);
+                        // The put-back matches the take's HEIGHT, the same way
+                        // and from the same decision: the engine keeps
+                        // `dword_53AE5C = (ret == 2) ? 3 : 0` at MDACTION and
+                        // `sub_46B530` turns it back into a group - case 0 ->
+                        // 140, case 3 -> 9. H1Avnt.CTL: 140 is H_PUTL12/22 and
+                        // 9 is H_PUTH12/22, the mirrors of the two takes. The
+                        // switch is best-effort; a bank without the group
+                        // leaves the machine where it is, which is what
+                        // `Cef_FindGroupById` returning nothing does.
+                        const int putGroup = takeWasLow ? 140 : 9;
+                        const bool got = player->enterGroupById(putGroup);
+                        std::printf("take: MDLETOBJ - object %d put back where it was "
+                                    "(%s put, group %d%s)\n",
+                                    takeCandidate, takeWasLow ? "LOW H_PUTL" : "HIGH H_PUTH",
+                                    putGroup, got ? "" : " - not in this bank");
                         session.putHeldObjectBack();
                         takeCandidate = -1;
                     } else if (mv == omk::kMoveOpenSneak) {

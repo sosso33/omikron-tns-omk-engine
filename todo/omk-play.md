@@ -823,6 +823,74 @@ will be diagnosed from a play log.
 
 ### 69. The take's ANIMATION is broken, and its camera and sound never fire — B
 
+**THE ANIMATION HALF IS FIXED, 2026-09-04 — there are TWO take animations and
+the port always played one.** The reader worked it out from watching it: *"it
+plays the complete list of grabbing object animations (object on the floor,
+object on a table,...). The engine probably choose the correct frame range to
+play depending of the position of the character and the position of the
+objects."* That is right, except that it is not a frame range - it is a GROUP.
+
+**The shape in the `.CTL`.** A take group is a three-state chain, not a list:
+`H_TAK*12` (the reach, flags bit `0x20` = the group's default entry) ->  an
+unnamed, CLIPLESS state carrying `MDGETOBJ` (the frame the object changes
+hands) -> `H_TAK*22` (stand up), then `goto 16846302` into the idle. `H1Avnt`
+carries four of them, in four groups.
+
+**The chooser is `sub_465D30`.** It takes the actor's node position and the
+object's, forms the deltas and the horizontal distance, applies a 50 degree
+facing cone (`dbl_4BC7F8`) and a reach, and ends at `loc_466089`:
+
+    if (dy < flt_4BC7E0)  { g = Cef_FindGroupById(bank, 41);  ret = 1; }
+    else                  { g = Cef_FindGroupById(bank, 143); ret = 2; }
+    SetPersoBankGroup(actor[0x18C], g);
+
+The caller keeps `dword_53AE5C = (ret == 2) ? 3 : 0`, and `sub_46B530` turns
+that back into the matching PUT-BACK group over its four cases (0 -> 140,
+1 -> 6, 2 -> 7, 3 -> 9). Read against `H1Avnt.CTL` the four names close the
+loop, which is the check the reading had to pass:
+
+| group | clips | what it is |
+|---|---|---|
+| 41  | `H_TAKL12/22` | take LOW - off the floor |
+| 143 | `H_TAKH12/22` | take HIGH - off a table |
+| 140, 6 | `H_PUTL12/22` | put back low |
+| 9, 7   | `H_PUTH12/22` | put back high |
+| 45  | `H_UNKNO0` | nothing in reach - the empty action |
+
+Four takes, four puts, one test. The symmetry is the corroboration.
+
+**The constants are inches and they cross-check.** `flt_4BC918 = 59.055119` is
+150 cm to seven digits and is the number `scanTakeable` already carries, so the
+unit is established at that site by its own neighbour rather than assumed.
+`flt_4BC7E0 = 27.472441` is then 69.8 cm - table height above the feet. Also
+read: reach numerators `flt_4BC7E8 = 15.748032` (low) and `flt_4BC7F4 =
+23.622047` (high), the 50 degree cone, and a +-10% ratio band
+(`dbl_4BC808/dbl_4BC810`).
+
+**THE SIGN IS INVERTED IN THE PORT, AND IT WAS MEASURED, NOT REASONED.** The
+engine's `dy` counts UPWARD - the only reading under which `flt_4BC7E0`
+discriminates at all - while this tree's world Y grows DOWNWARD (`walk.cpp`:
+`const double rise = y - *g;  // Y grows downward`). Backwards, the two
+animations simply swap and it looks exactly as broken as the bug. The Impasse's
+rings settle it: `prop_probe` puts OBJECTS 162 at **y = -80.0**, on the ground
+where the player walks, and seating him there puts his feet at **y = -78.7** -
+so a thing on the floor gives **dy = -1.3** and a thing on a 70 cm table would
+give **dy = -27.5**. The port therefore tests `dy > -27.472441f` for LOW.
+
+Fixed in `play.cpp`'s MDACTION arm (41 or 143) and its MDLETOBJ arm (140 or 9,
+from the height the take recorded); `Session::scanTakeable` gained an optional
+`float* dyOut`, since the loop already computed it. The chosen group and the
+measured `dy` are PRINTED on every take - the sign is the kind of thing that is
+invisible at rest, and one take off a floor and one off a table is the only
+test that covers the transition.
+
+**Still open in 69**: the camera (`Camera_Request` is still never called on a
+take) and the sound. The reader's full description of the target:
+*"when taking a object, there is sound and a camera move; when validating,
+another sound, a particle effect on the arm and the camera return to its normal
+position."*
+
+
 Filed 2026-09-04 from the play test of 66 — *"the animation when grabbing the
 anneau is completely broken and nor the camera movement or sound effect is
 triggered (but I can still keep the anneau pressing a second time enter and the

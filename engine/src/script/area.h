@@ -766,7 +766,10 @@ public:
     // `sub_465D30(actor, obj, 0)`, which is not transcribed - so "takeable"
     // here is "a SHOWN prop whose OBJECTS record exists". Returns the prop's
     // OBJECTS id, or -1.
-    int  scanTakeable(const float pos[3], float facing) const;
+    // `dyOut`, when given, receives the winner's `prop.y - player.y` - the
+    // quantity `sub_465D30` picks the take GROUP with (omk-play 69). Zero when
+    // nothing is in reach.
+    int  scanTakeable(const float pos[3], float facing, float* dyOut = nullptr) const;
     // The OBJECTS record's name, for the line `MDGETOBJ` puts on screen
     // through `Subtitle_Show` (0x0041E040).
     std::string objectName(int objectId) const;
