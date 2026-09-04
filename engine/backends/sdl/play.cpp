@@ -1584,6 +1584,7 @@ int main(int argc, char** argv) {
     const auto destinations = omk::globalDestinations(globalFile);
     bool sliderTold = false;
     std::string examineTold;
+    std::string examineText;
     if (objectRecords.empty())
         std::printf("no IAM/OBJECT - the sneak's inventory page will be "
                     "empty\n");
@@ -5507,6 +5508,7 @@ int main(int argc, char** argv) {
             // "Examiner" was confirmed, and the row list keeps its selection
             // (it is a static record), so it is still there. `Game_HandleEvent`
             // case 40 then dispatches on that object's own kind.
+            comp.setExamineText(nullptr);
             if (pn && pn->addr == omk::kPanelSneakExamine) {
                 const auto carried =
                     omk::objectList(state, omk::ObjectList::Carried);
@@ -5519,7 +5521,22 @@ int main(int argc, char** argv) {
                     if (idx >= 0 &&
                         static_cast<std::size_t>(idx) < objectRecords.size()) {
                         const auto& rec = objectRecords[static_cast<std::size_t>(idx)];
-                        const auto k = uiModels.examine(fs, rec.kind, rec.stem);
+                        // Case 30 loads the model for whatever is SELECTED,
+                        // whatever its kind, and case 40 hands the
+                        // description back on every arm - so the page gets
+                        // both: the object's own prop and its text.
+                        // WHICH CONTENT. Two captures of the original
+                        // settle it between them: Kay'l's apartment key is
+                        // kind 0 and shows a 3D model with a one-line label,
+                        // and the MK400 notice is kind 15 and shows TEXT
+                        // ONLY - no prop behind it, though its record does
+                        // name one (PAPIER). So the document kinds 15 and 16
+                        // suppress the model, and everything else shows it.
+                        const auto k = uiModels.examine(
+                            fs, (rec.kind == 15 || rec.kind == 16) ? rec.kind : 15,
+                            (rec.kind == 15) ? std::string() : rec.stem);
+                        examineText = rec.description;
+                        comp.setExamineText(&examineText);
                         if (rec.stem != examineTold) {
                             examineTold = rec.stem;
                             std::printf("sneak: examine '%s' kind %d -> %s\n",

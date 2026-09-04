@@ -58,6 +58,8 @@ struct ScreenFrame {
     int  cursorQuads = 0;
     // 3D previews drawn - `I2D_Submit3DView`, 0 with no models attached.
     int  modelsDrawn = 0;
+    // Lines the examine page's description wrapped to.
+    int  textLines = 0;
     int  textAdvance = 0;     // summed pen advance of every row drawn
     int  centred = 0;         // rows the alignment ladder centred
     // FNV-1a of the whole framebuffer. The counts above say what was drawn;
@@ -95,6 +97,22 @@ public:
     // did. The three items of list 0x004DE420 take models 0, 1 and 2 in the
     // order the open callback loads them.
     void attachModels(UiModels* m) { models_ = m; }
+
+    // THE EXAMINE PAGE'S TEXT - the object's DESCRIPTION, and it is the
+    // page's real content.
+    //
+    // Item 0x004DE710 is a 400x260 box at (150, 100) whose `+24`, `+28` and
+    // `+32` are all zero, so it draws nothing from its record: its text
+    // pointer is written at RUN TIME, the same shape as the sneak's rows.
+    // What is written is `Destination`, the 1024-byte block
+    // `Game_HandleEvent` case 30 copies out of the object record's `+0x118`
+    // and every arm of case 40 hands back at `+8`.
+    //
+    // It carries the game's own markup - a shipped one opens
+    // `{fJI128128128}` for a grey title, `{I255255255}` for the body and
+    // `{fSI226198101B}` for its signature line - so it goes through
+    // `parseMarkup` like any other interface string.
+    void setExamineText(const std::string* t) { examine_ = t; }
     // Milliseconds since the last composed frame, for the cursor's eases and
     // its oscillator. Separate from `setClockMs`, which is an absolute clock.
     void setDeltaMs(long ms) { deltaMs_ = ms; }
@@ -170,6 +188,7 @@ private:
     const MenuCloud* cloud_ = nullptr;
     UiCursor*        cursor_ = nullptr;
     UiModels*        models_ = nullptr;
+    const std::string* examine_ = nullptr;
     long             deltaMs_ = 33;
     const std::map<std::uint32_t, std::string>* rows_ = nullptr;
     const std::set<std::uint32_t>* hidden_ = nullptr;

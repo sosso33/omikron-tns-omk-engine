@@ -696,9 +696,40 @@ ways and with no exceptions — **83 of 83** kind-15 records have a
 Nadim 7216", "Plan des égouts de la Zone 9", "Les runes Masa'u".
 
 `verify.py: sneak examine`, shown to fail by reading the stem from `+12`.
-Both arms are ported; the page's camera is the previews' bounding-box fit,
-which is a reuse and not a reading — the examine page's own submitter has not
-been read.
+
+#### ...but the page's real content is the DESCRIPTION
+
+A player's capture of "Notice MK400" — a kind-15 record — shows **text and no
+model at all**: a grey title, four white paragraphs and a signature line. That
+corrected a reading. Case 40's arms are not the whole story, because **case 30
+copies 1024 bytes out of the record's `+0x118` into `Destination` and every
+arm of case 40 hands that back at `+8`**. `+0x118` is `o + 280`, which this
+port already read as the object's `description`.
+
+Item 0x004DE710 — the page's only content item, a 400×260 box at (150, 100) —
+has `+24`, `+28` and `+32` all zero, so it draws nothing from its record: its
+text pointer is written at run time, the same shape as the sneak's rows. What
+is written is that block, and it carries the game's own markup:
+
+```
+{fJI128128128}    Notice MK400
+{I255255255}Félicitations ! Vous venez d'acquérir …
+{fSI226198101B}Khonsu, la technologie de demain.
+```
+
+**Two captures settle which content goes with which kind**, and neither alone
+would have: Kay'l's apartment key is **kind 0** and shows a 3D model with a
+one-line label, and the MK400 notice is **kind 15** and shows text only — even
+though its record names a prop (`PAPIER`). So the document kinds suppress the
+model and every other kind shows it.
+
+**The WRAP is a reconstruction and is labelled as one.** `Text_LayOutBlock` is
+~570 lines and unported; what it does with a box, a newline and a mid-run font
+change has not been read. The port breaks greedily at spaces using the
+layout's own `measure` and clips at the box's height, which puts the right
+words on the right lines for the shipped strings and is **not** a claim about
+the engine's algorithm — the original fits about four more lines in the same
+box, so its line spacing is tighter than this one's guess.
 
 ### The three 3D previews, and the interface's own 3D primitive
 

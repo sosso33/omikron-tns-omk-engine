@@ -326,6 +326,54 @@ ScreenFrame ScreenComposer::draw(Surface& fb, int screenId,
                     ++out.modelsDrawn;
             }
 
+            // ---- THE EXAMINE PAGE'S TEXT ------------------------------
+            //
+            // The description, wrapped into the item's own box. **The WRAP is
+            // this port's, not the engine's**: `Text_LayOutBlock` is ~570
+            // lines and unported, and what it does with a box, a newline and
+            // a mid-run font change has not been read. This is a greedy break
+            // at spaces using the layout's own `measure`, which puts the
+            // right words on the right lines for the shipped strings and is
+            // NOT a claim about the engine's algorithm.
+            if (examine_ && !examine_->empty() &&
+                l.addr == kListSneakExamineContent) {
+                const int bx = scaleX(it.x + q->offsetX);
+                const int by = scaleY(it.y + q->offsetY);
+                const int bw = scaleX(it.w);
+                const auto parsed = parseMarkup(*examine_, it.face('J'),
+                                                static_cast<std::uint8_t>(rgb[0]),
+                                                static_cast<std::uint8_t>(rgb[1]),
+                                                static_cast<std::uint8_t>(rgb[2]));
+                std::vector<StyledChar> line;
+                int pen = by;
+                const int bottom = by + scaleY(it.h);
+                const auto flush = [&]() {
+                    if (pen >= bottom) { line.clear(); return; }   // the box CLIPS
+                    if (!line.empty()) {
+                        lay_->drawRun(fb, bx, pen, line);
+                        pen += lay_->height(line) + 2;
+                        ++out.textLines;
+                    } else {
+                        pen += 12;                 // a blank line
+                    }
+                    line.clear();
+                };
+                std::vector<StyledChar> word;
+                for (const auto& c : parsed.run) {
+                    if (c.ch == '\n') { for (auto& q2 : word) line.push_back(q2);
+                                        word.clear(); flush(); continue; }
+                    word.push_back(c);
+                    if (c.ch != ' ') continue;
+                    auto trial = line;
+                    for (const auto& q2 : word) trial.push_back(q2);
+                    if (!line.empty() && lay_->measure(trial) > bw) flush();
+                    for (const auto& q2 : word) line.push_back(q2);
+                    word.clear();
+                }
+                for (const auto& q2 : word) line.push_back(q2);
+                flush();
+            }
+
             // ---- THE EXAMINE PAGE'S CONTENT ---------------------------
             //
             // Panel 0x004DEF20's own list 0x004DE760 holds one item, and what

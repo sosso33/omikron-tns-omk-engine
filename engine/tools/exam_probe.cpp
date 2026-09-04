@@ -35,5 +35,17 @@ int main(int argc, char** argv) {
     }
     std::printf("kind 15 %d of %d have a model\n", k15model, k15);
     std::printf("kind 16 %d of %d have an image\n", k16image, k16);
+    int n15 = 0;
+    for (const auto& o : objs)
+        if (o.kind == 15 && n15++ < 5)
+            std::printf("  k15 idx %4d stem '%s' name '%s'\n",
+                        o.index, o.stem.c_str(), o.name.c_str());
+    for (const auto& o : objs)
+        if (o.name.find("MK400") != std::string::npos ||
+            o.name.find("appartement Kay") != std::string::npos ||
+            o.name.find("Cl\xe9 appartement") != std::string::npos)
+            std::printf("\n%s (kind %d, stem %s)\n---\n%s\n---\n",
+                        o.name.c_str(), o.kind, o.stem.c_str(),
+                        o.description.c_str());
     return 0;
 }
