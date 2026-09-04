@@ -3463,7 +3463,25 @@ int main(int argc, char** argv) {
                         session.crowdPush(playerSpheres, playerReach, player->pos(), player->facing(), push))
                         player->nudge(push);
                 }
-                if (session.playerAnimHeld()) {
+                // A SCREEN HAS THE INPUT, and the world still runs.
+                //
+                // Removing the old `!walk` gate (which froze all of Anekbah
+                // behind the sneak) also handed the player the arrow keys
+                // while the menu had them - a session log shows MDWALK,
+                // MDROT000 and MDACTION firing after "screen 9 opened",
+                // so moving the selection walked him down the street.
+                //
+                // The two are separate: `Game_Tick` runs `Actors_TickAll`
+                // whatever is on screen, so the channel must keep ticking -
+                // it is what carries a gait to its stand state - but the
+                // INPUT WORD is the interface's while a screen is up.
+                // `Ui_BeginScreen` installs its own repeat mask over the
+                // device for exactly that reason. So this is the same shape
+                // as `player.anim.hold` right below: tick with nothing
+                // pressed rather than not ticking.
+                if (walk) {
+                    player->tick(static_cast<float>(frameSec * 30.0), 0);
+                } else if (session.playerAnimHeld()) {
                     // `Actor_HoldAnimation(player, 1)` does NOT stop the
                     // channel - it feeds it a lone IDLE word every tick and
                     // cuts the device off, and the channel then keeps running
