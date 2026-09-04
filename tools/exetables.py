@@ -571,6 +571,16 @@ def t_ui_widgets(e):
         for lst in u.lists(panel):
             l = {"addr": lst, "hook": u._u32(lst + 4),
                  "flags": u._u32(lst + 16),
+                 # `list+20`, bank B - and it is the DRAW gate, which is a
+                 # DIFFERENT flag from the walk's. The panel drawer skips a
+                 # list on `0x40000001` (`sub_429080(list, 1073741825)`),
+                 # while `Ui_MoveBetweenLists` skips it on `+16 & 4`. A list
+                 # can be one and not the other: the sneak's bottom bar ships
+                 # `+16 = 0x20000004` and `+20 = 0`, so it is DRAWN and not
+                 # navigable, which is exactly what a status bar should be.
+                 # Not lifted until 2026-09-04, so the composer had only the
+                 # walk's flag and drew the wrong set of lists.
+                 "flagsB": u._u32(lst + 20),
                  # `list+2`, the SELECTED ROW, on the same terms as `current`
                  # above: the open callback's write, or -1 for none.
                  "select": (bsel or {}).get(lst, -1),
@@ -595,6 +605,53 @@ def t_ui_widgets(e):
                     # the panel offset to
                     "x": u._i16(it), "y": u._i16(it + 2),
                     "w": u._i16(it + 4), "h": u._i16(it + 6),
+                    # WHAT MAKES AN ITEM SHOW TEXT, and it is neither of
+                    # the two fields this table used to carry. `Ui_DrawItem`
+                    # (0x004764A0) never reads `+28`: it takes `+24` as a
+                    # resolved `char *` and, when that is null, calls `+32` to
+                    # fill the buffer. An item with both zero draws NO TEXT AT
+                    # ALL, whatever `+28` says - which is what the sneak's six
+                    # tab icons and its three 50x50 buttons are, and why a
+                    # composer keyed on `+28` printed five labels the game
+                    # never shows.
+                    #
+                    # The callbacks seen on screen 9:
+                    #   0x00476860  the generic one - draws string `+28`, with
+                    #               `+30` as a printf argument when it is not -1
+                    #   0x0042AA00  the inventory row: reads the item's `+60`
+                    #               tag and asks `Game_RaiseEvent(33)` for a name
+                    #   0x0049DC20  the sneak's echo bar
+                    #   0x0049E090  the sneak's clock row
+                    # `+8/+9/+10` the fill/outline COLOUR and `+11` its
+                    # layer, packed by `Ui_DrawItemFill` as
+                    # `(alpha << 24) | (+8 << 16) | (+9 << 8) | +10`.
+                    "rgb": [u._u8(it + 8), u._u8(it + 9), u._u8(it + 10)],
+                    "layer": u._u8(it + 11),
+                    # `+36` IS A FONT, not a character - it goes into
+                    # `Text_DrawBlock`'s `params[2]`, whose global default is
+                    # **74** and steps to 76 below 640x480. The ids are ASCII
+                    # because they are meant to be typed: 74 = 'J' JOURNAL,
+                    # 83 = 'S' SNEAK, 73 = 'I' MENUINTR, 67 = 'C'. 255 is
+                    # "unset" and takes the default.
+                    #
+                    # `docs/UI.md` identified this field and it was never
+                    # lifted, so every screen drew in whatever face the
+                    # composer picked. It shows on the SNEAK first because
+                    # the sneak is the screen with a font of its own.
+                    "font": u._u8(it + 36),
+                    "text": u._u32(it + 24),
+                    "textFn": u._u32(it + 32),
+                    # `+30`, the format argument the generic callback passes to
+                    # `sub_43FEA0` when it is not -1.
+                    "textArg": u._i16(it + 30),
+                    # The SPRITE source rects, `Ui_DrawItemSprite`
+                    # (0x00476E60): `+12/+14` is the LIT top-left and
+                    # `+16/+18` the UNLIT one, each `w x h` from the item's own
+                    # size, blitted out of the screen's artwork. `ui sprites`
+                    # has read these out of the image since 2026-09-01; they
+                    # were never in the table, so nothing could DRAW one.
+                    "lit": [u._i16(it + 12), u._i16(it + 14)],
+                    "unlit": [u._i16(it + 16), u._i16(it + 18)],
                     "callback": u._u32(it + 40),
                     # `+44` is the CHILD panel. `Ui_ConfirmSelection` takes the
                     # `+40` callback when there is one and otherwise descends

@@ -143,6 +143,7 @@ UiWidgets UiWidgets::loadJson(const std::string& path) {
             list.hook  = static_cast<std::uint32_t>(l["hook"].i64());
             list.flags = static_cast<std::uint32_t>(l["flags"].i64());
             list.select = static_cast<int>(l["select"].i64(-1));
+            list.flagsB = static_cast<std::uint32_t>(l["flagsB"].i64(0));
             list.broadcast = flagOps(l["broadcast"]);
             const auto& its = l["items"];
             for (std::size_t k = 0; k < its.size(); ++k) {
@@ -157,6 +158,18 @@ UiWidgets UiWidgets::loadJson(const std::string& path) {
                 const auto& bd = it["bind"];
                 item.bindString = static_cast<int>(bd["string"].i64(-1));
                 item.bindTag    = static_cast<int>(bd["tag"].i64(-1));
+                item.font   = static_cast<int>(it["font"].i64(255));
+                item.rgb[0] = static_cast<int>(it["rgb"][0].i64(0));
+                item.rgb[1] = static_cast<int>(it["rgb"][1].i64(0));
+                item.rgb[2] = static_cast<int>(it["rgb"][2].i64(0));
+                item.layer  = static_cast<int>(it["layer"].i64(0));
+                item.text    = static_cast<std::uint32_t>(it["text"].i64(0));
+                item.textFn  = static_cast<std::uint32_t>(it["textFn"].i64(0));
+                item.textArg = static_cast<int>(it["textArg"].i64(-1));
+                item.lit[0]   = static_cast<int>(it["lit"][0].i64(0));
+                item.lit[1]   = static_cast<int>(it["lit"][1].i64(0));
+                item.unlit[0] = static_cast<int>(it["unlit"][0].i64(0));
+                item.unlit[1] = static_cast<int>(it["unlit"][1].i64(0));
                 item.callback = static_cast<std::uint32_t>(it["callback"].i64());
                 item.child    = static_cast<std::uint32_t>(it["child"].i64());
                 for (int b = 0; b < 3; ++b)
@@ -342,6 +355,11 @@ const UiList* UiWalk::curList() const {
     if (!panel_ || cur_ < 0 ||
         static_cast<std::size_t>(cur_) >= panel_->lists.size()) return nullptr;
     return &panel_->lists[static_cast<std::size_t>(cur_)];
+}
+
+int UiWalk::selectionOf(const UiList& l) const {
+    const auto it = sel_.find(l.addr);
+    return it == sel_.end() ? -1 : it->second;
 }
 
 int UiWalk::selection() const {

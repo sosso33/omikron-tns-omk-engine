@@ -33,17 +33,41 @@ int ScreenComposer::background(Surface& fb, const UiPanel& p,
             kBltWait | kBltKeySrc, key);
         return 0;
     }
+    // THE DESTINATION IS SCALED AND THE SOURCE IS NOT, and getting that
+    // backwards is invisible at 640x480 and ruins every other resolution.
+    // `Ui_DrawPanelBack` (0x00476040):
+    //
+    //     dst = (col * I2D_ScaleX(64), row * I2D_ScaleY(64), ...)
+    //     src = ((id % 10) << 6, (id / 10) << 6, ...)
+    //
+    // so ten columns of `ScaleX(64)` cover the display whatever its width,
+    // while the source keeps reading 64-pixel cells out of a 640x480 sheet.
+    // This used a literal 64 for BOTH: at the player's default 800x600 the
+    // background covered the top-left 640x480 and the world showed through
+    // on the right and bottom, while every widget - which does go through
+    // `I2D_ScaleX/Y` - sat somewhere else entirely. Reported as "the sneak
+    // interface is supposed to take all the screen".
+    //
+    // A 640x480 test cannot see this: there `ScaleX(64) == 64`. The check
+    // has to compose at a second resolution, which `engine: screen scale`
+    // now does.
     int drawn = 0;
     for (int cell = 0; cell < static_cast<int>(p.tiles.size()); ++cell) {
         const int id = p.tiles[cell];
         if (id < 0) continue;                    // ids are SIGNED; negative skips
-        const int dx = (cell % 10) * 64, dy = (cell / 10) * 64;
-        const int sx = (id % 10) * 64,   sy = (id / 10) * 64;
+        const int col = cell % 10, row = cell / 10;
+        const int dx0 = col * scaleX(64), dx1 = (col + 1) * scaleX(64);
         // Row 7 is the case the drawer hard-codes: seven rows of 64 leave 32,
-        // so it draws at half height from source y 448..480.
-        const int hgt = (cell / 10 == 7) ? 32 : 64;
-        blt(fb, {dx, dy, dx + 64, dy + hgt},
-            sheet, {sx, sy, sx + 64, sy + hgt}, false, 0);
+        // so it draws at half height from source y 448..480 - and the
+        // engine writes that as `7 * ScaleY(64) + ScaleY(64) / 2`.
+        const int dy0 = row * scaleY(64);
+        const int dy1 = (row == 7) ? 7 * scaleY(64) + scaleY(64) / 2
+                                   : (row + 1) * scaleY(64);
+        const int sx = (id % 10) * 64, sy = (id / 10) * 64;
+        const int sh = (row == 7 || id / 10 == 7) ? 32 : 64;
+        const int sy0 = (id / 10 == 7) ? 448 : sy;
+        blt(fb, {dx0, dy0, dx1, dy1},
+            sheet, {sx, sy0, sx + 64, sy0 + sh}, false, 0);
         ++drawn;
     }
     return drawn;
@@ -72,13 +96,23 @@ ScreenFrame ScreenComposer::draw(Surface& fb, int screenId,
         out.cloudDrawn = true;
     }
 
-    const std::string& art = w_->bitmap(screenId);
-    if (!art.empty()) {
-        const Surface sheet = surfaceFromBmp(fs_->read("I2D/bitmaps/" + art));
-        if (sheet.valid()) {
-            out.tilesDrawn = background(fb, *p, sheet);
-            out.fullSheet  = p->tiles.empty();
-        }
+    // THE ARTWORK, hoisted: the background AND every sprite item come out of
+    // the same sheet. `Ui_DrawItemSprite` blits from `screen+56`, which is
+    // the surface `UI_LoadScreen` put the bitmap in - the same one
+    // `Ui_DrawPanelBack` tiles - so the icons are cut from `sneak.bmp`
+    // itself rather than from any separate atlas.
+    const std::string& artName = w_->bitmap(screenId);
+    Surface art;
+    if (!artName.empty()) art = surfaceFromBmp(fs_->read("I2D/bitmaps/" + artName));
+    const bool sheetOk = art.valid();
+    // The I2D colour key, taken from the sheet's own bottom-left pixel the
+    // way the full-sheet path already does rather than named here.
+    const std::uint16_t artKey =
+        sheetOk ? art.px[static_cast<std::size_t>(art.h - 1) * art.w]
+                : std::uint16_t(0);
+    if (sheetOk) {
+        out.tilesDrawn = background(fb, *p, art);
+        out.fullSheet  = p->tiles.empty();
     }
 
     // The screen's own strings. `Ui_DrawItem` takes the item's `+28` as an
@@ -107,10 +141,22 @@ ScreenFrame ScreenComposer::draw(Surface& fb, int screenId,
     std::vector<const UiPanel*> chain{walk.panel() ? walk.panel() : p};
     out.panelsDrawn = 1;
 
-    const UiItem* focused = walk.selected();
+    const UiItem* sel = walk.selected();
+    // The panel's CURRENT list - `Ui_DrawList` only marks a row FOCUSED when
+    // its list is the one `panel+24` names.
+    const UiPanel* wp = walk.panel() ? walk.panel() : p;
+    const UiList* curList =
+        (walk.currentList() >= 0 &&
+         static_cast<std::size_t>(walk.currentList()) < wp->lists.size())
+            ? &wp->lists[static_cast<std::size_t>(walk.currentList())] : nullptr;
     for (const UiPanel* q : chain)
     for (const auto& l : q->lists) {
-        if (l.hidden()) continue;
+        // THE DRAW GATE IS NOT THE WALK'S. `Ui_DrawPanel` skips a list on
+        // bank B `0x40000001` (`sub_429080(list, 1073741825)`);
+        // `Ui_MoveBetweenLists` skips it on `+16 & 4`. This used the walk's
+        // flag, so it hid the sneak's bottom bar - which is `+16 = 0x20000004`
+        // and `+20 = 0`: drawn, and deliberately not navigable.
+        if (!l.drawn()) continue;
         // THE NAME FIELD. Its item carries no string - the record's label is
         // -1 - because what it shows is what the PERSON typed, not a line out
         // of `IAM\<screen>`. The list is identified by its hook, which is the
@@ -126,25 +172,147 @@ ScreenFrame ScreenComposer::draw(Surface& fb, int screenId,
             ++out.itemsDrawn;
         }
         for (const auto& it : l.items) {
-            // A row the RUNTIME filled beats the record's string id. The
-            // sneak's nine inventory rows are the case: their `+28` is -1 and
-            // stays -1, and what they show is the carried object list.
+            std::uint32_t eff0[3];
+            it.effective(l.broadcast, eff0);
+            // The item's own draw gate, the same `0x40000001` the list has.
+            if (eff0[1] & 1) continue;
+
+            // ---- IS THIS ITEM SELECTED, AND IS IT FOCUSED ------------
+            //
+            // `Ui_DrawList` sets two flags before drawing each row:
+            // `0x20000002` UIF_SELECTED on the row the list's `+2` names,
+            // and `0x20000001` UIF_FOCUSED as well when that list is the
+            // panel's CURRENT one - so exactly one item on screen is
+            // focused, which is what `screen+40` caches for the input code.
+            const int selIdx = walk.selectionOf(l);
+            const bool isSel = selIdx >= 0 &&
+                static_cast<std::size_t>(selIdx) < l.items.size() &&
+                l.items[static_cast<std::size_t>(selIdx)].addr == it.addr;
+            const bool isFocus = isSel && &l == curList;
+
+            // ---- THE LIT LADDER, and it is where the FLASHING lives ----
+            //
+            // `Ui_DrawItemSprite` (0x00476E60) and `Ui_ItemTextStyle` share
+            // it exactly:
+            //
+            //     0x40000008 -> lit
+            //     0x40000004 -> lit = Ui_Oscillator(1).value      (pulse)
+            //     0x40000002 -> not SELECTED          : unlit
+            //                   SELECTED, not FOCUSED : lit
+            //                   SELECTED and FOCUSED  : oscillator 1  <- FLASH
+            //     otherwise  -> lit = SELECTED
+            //
+            // Oscillator 1 ships period 500, flags 3, and its completion
+            // (`sub_42B7B0`) does `osc[6] = (osc[6] == 0)` - a square wave
+            // toggling 0/1 every 500 ms. That is the user's "flashing icon
+            // to indicate the selection", read rather than invented.
+            const bool blink = ((clockMs_ / 500) & 1) != 0;
+            bool lit;
+            if (eff0[1] & 8)      lit = true;
+            else if (eff0[1] & 4) lit = blink;
+            else if (eff0[1] & 2) lit = isFocus ? blink : isSel;
+            else                  lit = isSel;
+
+            // ---- THE FILL: read, TRIED, and NOT DRAWN ------------------
+            //
+            // `Ui_DrawItemFill` (0x00476FE0) puts a quad over the item's own
+            // scaled rect, and the amber bars behind the sneak's rows and its
+            // two strips are where it goes. The colour is packed
+            // `(alpha << 24) | (+8 << 16) | (+9 << 8) | +10` with alpha 200
+            // on the plain `0x40000010` arm - all read, and lifted as
+            // `rgb`/`layer`.
+            //
+            // **It was implemented, rendered, and refuted by the picture.**
+            // Two things the reading does not have:
+            //
+            //  * the BLEND. `sub_4285E0`'s mode comes from
+            //    `sub_464740() ? 4 : 0`, a runtime query into the I2D back
+            //    end that is not traced. The sneak's rows carry (255, 0, 0),
+            //    and source-over at alpha 200 paints them PURE RED where the
+            //    original's bars are amber. So mode 4 is not source-over, and
+            //    what it is has to be read before this can be drawn.
+            //  * the per-row GATE. The original fills only the rows that
+            //    HOLD an object - two of nine in the capture - while every
+            //    one of the nine carries the flag statically. Something
+            //    clears it per row at runtime, and that something is the
+            //    sneak's own list code (`sub_0049C050`'s neighbourhood),
+            //    which is the same unread function that owns the scrolling.
+            //
+            // Drawing it on the strength of the colour alone gives nine red
+            // bars where the game shows two amber ones - which looks like a
+            // rendering bug and is really an unread blend. Left out until
+            // both halves are read; the data is in the table for whoever
+            // reads them.
+
+            // ---- THE SPRITE: `Ui_DrawItemSprite` -----------------------
+            //
+            // The lit source at `+12/+14` or the unlit one at `+16/+18`,
+            // each `w x h`, blitted from the screen's own artwork - so the
+            // sneak's five left-hand icons are cut out of `sneak.bmp`.
+            // Source raw, destination scaled, exactly as the background.
+            //
+            // The sneak's tab column carries `0x40000302`: sprite, cursor,
+            // and lit-on-selection. Drawing its `+28` as TEXT instead - what
+            // this did - printed five labels the game has never shown.
+            if ((eff0[1] & 0x100) && sheetOk) {
+                const int* src = lit ? it.lit : it.unlit;
+                const int x0 = it.x + q->offsetX, y0 = it.y + q->offsetY;
+                blt(fb, {scaleX(x0), scaleY(y0),
+                         scaleX(x0 + it.w), scaleY(y0 + it.h)},
+                    art, {src[0], src[1], src[0] + it.w, src[1] + it.h},
+                    kBltWait | kBltKeySrc, artKey);
+                ++out.spritesDrawn;
+            }
+
+            // ---- AN ITEM SHOWS TEXT ONLY IF SOMETHING GIVES IT ANY -----
+            //
+            // `Ui_DrawItem` reads `+24` (a resolved `char *`) and, failing
+            // that, calls `+32`. It NEVER reads `+28`. An item with both
+            // zero draws nothing, whatever string id it carries - 111 of
+            // the tree's 572 items are exactly that, and this drew every
+            // one of them. The sneak's six tab icons and its three 50x50
+            // buttons are in that set, which is the whole of the user's
+            // "some of the texts are parts of sub-menu and should not be
+            // displayed at anytime": they are not sub-menu texts, they are
+            // strings belonging to a widget that does not draw text.
+            //
+            // Of the callbacks, two are modelled: `0x00476860` draws the
+            // item's own `+28`, and `0x0042AA00` is the inventory row,
+            // which asks the channel for a name and arrives here as
+            // `rows_`. The other thirteen are native and draw nothing.
             const std::string* run_ = nullptr;
             if (rows_) {
                 const auto r = rows_->find(it.addr);
                 if (r != rows_->end() && !r->second.empty()) run_ = &r->second;
             }
+            const bool ownString = it.textFn == kTextFnString;
+            if (!run_ && !ownString) continue;
             const int id = it.label();
             if (!run_ && (id < 0 || id >= static_cast<int>(text.size()))) continue;
             const std::string& s =
                 run_ ? *run_ : text[static_cast<std::size_t>(id)];
             if (s.empty()) continue;
-            const bool lit = focused && focused->addr == it.addr;
             const std::uint8_t v = lit ? kLit : kDim;
-            // Face `I` is MENUINTR, the row the compiled font table names for
-            // the menus - and finding that was what took `uitext.py` from
-            // Latin letters against alien glyphs to IoU 1.000.
-            const auto run = parseMarkup(s, 'I', v, v, v).run;
+            // THE FACE IS THE ITEM'S OWN, `+36`, not one hard-coded here.
+            //
+            // This drew everything in `I` (MENUINTR) because that is the
+            // start menu's face and the start menu is what was measured. It
+            // is right there for a reason the record states: screen 29's
+            // four buttons carry font **73**, which IS 'I' - so the tier-4
+            // agreement with the engine's own capture never depended on the
+            // hard-coding and does not move now.
+            //
+            // The SNEAK is where it showed. Its verbs, rows and echo bar name
+            // **74** ('J', JOURNAL) and its clock **67** ('C'), and JOURNAL
+            // is two pixels shorter in the line than MENUINTR - so the port
+            // drew the whole device in the menu's face at the menu's leading.
+            // Reported as "the font used is not the one of the main menu",
+            // which is the complaint from the other side: it should not be,
+            // and it was.
+            //
+            // 255 means the record names none, and `Text_DrawBlock`'s own
+            // global default is 74.
+            const auto run = parseMarkup(s, it.face('J'), v, v, v).run;
 
             // `Ui_ItemTextStyle` (0x004769A0) maps the item's BANK 2 bits to
             // `Text_DrawBlock`'s alignment, and the mapping is NOT the

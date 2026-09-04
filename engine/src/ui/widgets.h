@@ -63,6 +63,32 @@ struct UiItem {
     // The id to draw with: the binding when the callback wrote one, else the
     // record's own.
     int           label() const { return bindString >= 0 ? bindString : string; }
+    // WHAT MAKES AN ITEM SHOW TEXT - and `+28` is not it.
+    //
+    // `Ui_DrawItem` (0x004764A0) never reads `string`. It takes `+24` as a
+    // resolved `char *` and, when that is null, calls the `+32` CALLBACK to
+    // fill a buffer. **An item with both zero draws no text at all**,
+    // whatever its `+28` says - and 111 items in the shipped tree are
+    // exactly that, the sneak's six tab icons and its three 50x50 buttons
+    // among them. A composer keyed on `+28` prints every one of them.
+    //
+    // So `string` is the ARGUMENT to a text callback, not a licence to draw.
+    // `+8/+9/+10` - the fill and outline COLOUR; `+11` its I2D layer.
+    int           rgb[3] = {0, 0, 0};
+    int           layer = 0;
+    // `+36` - the item's FONT, an ASCII id into the 13-record font table
+    // (74 'J' JOURNAL, 83 'S' SNEAK, 73 'I' MENUINTR, 67 'C'), 255 unset.
+    // `Text_DrawBlock`'s own default is 74. Never lifted until 2026-09-04,
+    // so every screen drew in one hard-coded face.
+    int           font = 255;
+    char          face(char dflt = 'J') const {
+        return font == 255 ? dflt : static_cast<char>(font);
+    }
+    std::uint32_t text = 0, textFn = 0;
+    int           textArg = -1;          // `+30`, the printf argument
+    // The two SPRITE sources, `Ui_DrawItemSprite` (0x00476E60): the LIT
+    // top-left and the UNLIT one, each `w x h` out of the screen's artwork.
+    int           lit[2] = {0, 0}, unlit[2] = {0, 0};
     std::uint32_t callback = 0;
     // `Ui_ConfirmSelection` takes the `+40` callback when there is one and
     // otherwise DESCENDS into `+44`. So the tree links downward through the
@@ -84,6 +110,13 @@ struct UiList {
     std::uint32_t addr = 0;
     std::uint32_t hook = 0;          // 0 = Ui_MoveSelection, the default walk
     std::uint32_t flags = 0;
+    // `list+20`, bank B - and the DRAW gate, which is NOT the walk's flag.
+    // `Ui_DrawPanel` skips a list on `0x40000001`; `Ui_MoveBetweenLists`
+    // skips it on `+16 & 4`. The sneak's bottom bar is `+16 = 0x20000004`
+    // with `+20 = 0`: drawn, and not navigable, which is what a status bar
+    // is. Drawing keyed on the walk's flag showed the wrong set of lists.
+    std::uint32_t flagsB = 0;
+    bool drawn() const { return (flagsB & 1) == 0; }
     // `list+2`, the SELECTED ROW - but only when the screen's open callback
     // wrote it, and -1 when it did not. Runtime state, so the record on disk
     // says nothing: SNEAK and SLIDER are set by `Ui_OpenSneakFamily`, and the
@@ -249,6 +282,12 @@ public:
 
     int  currentList() const { return cur_; }
     int  selection() const;
+    // The selected row of ANY list, not just the current one.
+    // `Ui_DrawList` marks `UIF_SELECTED` on the row that list's own `+2`
+    // names - every list has one - and adds `UIF_FOCUSED` only when the list
+    // is the panel's current one. A drawer that treats "in the current list"
+    // as selected lights every row of it, which is what this did.
+    int  selectionOf(const UiList& l) const;
     const UiItem* selected() const;
     bool closed() const { return panel_ == nullptr; }
 

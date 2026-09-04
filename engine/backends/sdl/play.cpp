@@ -5197,6 +5197,10 @@ int main(int argc, char** argv) {
         }
         if (walk) {
             comp.setFrame(n);
+            // The oscillators run on a MILLISECOND clock, not on the frame
+            // index - their periods are 500, 1000 and 5000 and
+            // `Ui_TickScreens` advances them by the frame delta.
+            comp.setClockMs(static_cast<long>(SDL_GetTicks()));
             comp.setRowText(sneakRows.empty() ? nullptr : &sneakRows);
             comp.draw(fb, openScreen, *walk);
         }

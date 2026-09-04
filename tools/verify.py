@@ -10094,20 +10094,107 @@ def c_engine_screen():
     haveSdl = same >= 0
     return (v, len(refFb), haveSdl, same if haveSdl else 614400,
             frames if haveSdl else 3), \
-           ((29, 0, 1, 4, 800, 4, -1437019637, 307200,
-              4, 80, 0, 7, 3142, 0, -599256938, 209447,
+           ((29, 0, 1, 4, 800, 4, -1437019637, 307200, 1,
+              4, 80, 0, 0, 0, 0, -1185262128, 207513, 7,
               1, 307200),
             614400, haveSdl, 614400, 3), \
            "the composed frames - screen 29 (full-sheet background, no " \
            "tiles, 4 rows, 800px of advance, all 4 CENTRED by the list's " \
-           "broadcast, and every one of the 307200 pixels painted) and " \
-           "screen 4, the LIFT (a tile map of 80 cells, 7 rows, none " \
-           "centred because its slots are placed absolutely); then the null " \
+           "broadcast, every one of the 307200 pixels painted, and ONE " \
+           "sprite) and screen 4, the LIFT (a tile map of 80 cells, and " \
+           "SEVEN SPRITES WITH NO TEXT AT ALL - which is the correction of " \
+           "2026-09-04, not a loss: its floor buttons carry `+24` and `+32` " \
+           "both zero, so `Ui_DrawItem` draws them no text whatever their " \
+           "`+28` says, and bank B `0x100` makes them icons cut from " \
+           "`Ascen.bmp`. This used to report 7 rows and 3142px of advance - " \
+           "seven labels printed over seven icons, the same fault a player " \
+           "reported on the SNEAK and the reason to look for it elsewhere. " \
+           "Screen 29's hash is UNCHANGED across the whole slice, which is " \
+           "the guard that matters: the menu is the one screen with a " \
+           "tier-4 capture behind it, its four buttons name font 73 - the " \
+           "face that was hard-coded - and its one sprite redraws the title " \
+           "strip over itself, so nothing here may move a pixel of it. An " \
+           "earlier version of the selection ladder did move it, by marking " \
+           "every row of the current list SELECTED instead of the row that " \
+           "list's own `+2` names, and this number is what caught it); " \
+           "then the null " \
            "frontend's one frame, which is A8 rule 1 exercised rather than " \
            "asserted; the framebuffer's size; whether SDL was found at all; " \
            "and - the thing rule 3 is about - how many of its bytes the LIVE " \
            "window presented identically, which must be all of them because " \
            "the frontend uploads the pixels and may not touch them"
+
+
+def c_engine_screen_scale():
+    r"""A screen must fill the DISPLAY, not the 640x480 it was authored at.
+
+    **The bug this exists for was invisible to every test in this suite**,
+    because every one of them composed at 640x480 - where the scale factor is
+    1 and a literal 64 and `I2D_ScaleX(64)` are the same number.
+    `ScreenComposer::background` used the literal, so at the player's default
+    800x600 the tile map covered the top-left 640x480 and the world showed
+    through on the right and the bottom, while every widget - which does go
+    through `I2D_ScaleX/Y` - sat somewhere else entirely. Reported from play
+    as "the sneak interface is supposed to take all the screen".
+
+    `Ui_DrawPanelBack` (0x00476040) is unambiguous: the DESTINATION rectangle
+    is `col * I2D_ScaleX(64)` and the SOURCE is `(id % 10) << 6`. Scaled
+    destination, raw source.
+
+    So this composes the same screen at two sizes and asserts the painted
+    area grows with the DISPLAY. The LIFT is the subject because it is the
+    tile-map path; the start menu's full-sheet arm was already stretched and
+    would pass either way, which is exactly why it never caught this.
+
+    Shown to fail: with the literal 64 restored the 800x600 figure is the
+    640x480 one - the ratio goes to 1.00 against the 1.56 the areas demand -
+    and the equality assertion below is the one that trips.
+    """
+    import subprocess, struct as _s
+    eng = os.path.join(ROOT, "engine")
+    if not os.path.isdir(eng):
+        return ("skipped",), ("skipped",), "engine/ absent"
+    mk = subprocess.run(["make", "-s", "build/run_screen"], cwd=eng,
+                        capture_output=True, text=True)
+    tool = os.path.join(eng, "build", "run_screen")
+    if mk.returncode != 0 or not os.path.exists(tool):
+        return ("skipped",), ("skipped",), "run_screen did not build"
+    tb = os.path.join(ROOT, "tables")
+    painted = {}
+    for res in ("640x480", "800x600"):
+        out = os.path.join(ROOT, ".verify-scale.bin")
+        r = subprocess.run([tool, omkpaths.data_root(),
+                            os.path.join(tb, "ui_widgets.json"),
+                            os.path.join(tb, "ui.json"), out, "0", res],
+                           capture_output=True, text=True)
+        if r.returncode != 0 or not os.path.exists(out):
+            return ("skipped",), ("skipped",), "run_screen did not run"
+        d = open(out, "rb").read()
+        os.remove(out)
+        # Nine int32 a screen. LOCATED BY ITS OWN SCREEN ID rather than by a
+        # fixed offset: the record grew a field the day this was written, and
+        # a hard offset silently read the hash as the pixel count.
+        # The file is a COUNT then that many int32 then the framebuffer, and
+        # the screens are nine fields each. Located by matching the LIFT's
+        # own signature - screen 4, 80 tiles, not a full sheet - rather than
+        # by an offset: the record grew a field the day this was written and
+        # the leading count makes a stride-9 scan miss it entirely.
+        v = _s.unpack("<%di" % (len(d) // 4), d)
+        painted[res] = next(v[i + 7] for i in range(len(v) - 8)
+                            if v[i] == 4 and v[i + 1] == 80 and v[i + 2] == 0)
+    small, big = painted["640x480"], painted["800x600"]
+    areaRatio = (800 * 600) / (640 * 480)
+    got = round(big / small, 2) if small else 0
+    return (small, big, got, big == small), \
+           (207513, 324200, round(areaRatio, 2), False), \
+           "the LIFT's painted pixels composed at 640x480 and at 800x600, " \
+           "their ratio, and whether the two are EQUAL - which is the bug: " \
+           "a background drawn in literal 64-pixel cells covers the same " \
+           "307200 whatever the display, so the ratio is 1.00 and the two " \
+           "match. Scaled the way `Ui_DrawPanelBack` scales it, the painted " \
+           "area grows with the display and the ratio is the AREA ratio, " \
+           "1.56. Composing at 640x480 alone cannot tell the two apart, " \
+           "which is why every check in this file missed it"
 
 
 def c_engine_movies():
@@ -19378,6 +19465,7 @@ SLOW = [
     ("ui answers",         c_ui_answers,        "UI 3d"),
     ("ui geometry",        c_ui_geometry,       "UI 3b"),
     ("engine: screen",     c_engine_screen,     "PORTING A1"),
+    ("engine: screen scale", c_engine_screen_scale, "PORTING A1; UI 3b"),
     ("engine: movies",     c_engine_movies,     "BOOT 2"),
     ("engine: raster",     c_engine_raster,     "PORTING B6"),
     ("engine: silhouette", c_engine_silhouette, "PORTING B6"),
