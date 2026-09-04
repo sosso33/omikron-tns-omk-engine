@@ -10,6 +10,7 @@ and the `verify.py` check that pins each result.
 
 | file | what it is |
 |---|---|
+| [`sneak.md`](sneak.md) | **the sneak**: what is left in Kay'l's device — row scrolling (a list over nine is truncated), `Utiliser sur` running the wrong arm, three pages with empty rows, `Text_LayOutBlock`, the hand attach, `Object_ApplyEffect`. Written 2026-09-04 |
 | [`sliders.md`](sliders.md) | **the sliders**: the player's RIDE — call, mount, choose a destination, fly, arrive. The ambient traffic is done and the sneak's slider page is built; confirming a row does nothing. Read 2026-09-04, none of it implemented |
 | [`iam-script-engine.md`](iam-script-engine.md) | **the issues file** for the IAM world-script VM and its scheduler (`engine/src/script/interp.*`, `area.*`, `world.*`, `dialogue.*`, `gamestate.*`) |
 | [`iam-script-engine-plan.md`](iam-script-engine-plan.md) | **the plan**: the same issues grouped into work packages, with the rules every agent in a batch follows |
