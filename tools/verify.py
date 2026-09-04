@@ -10431,11 +10431,17 @@ def c_sneak_page_colour():
             "row bar paints 49 28 0" in o,
             "walked to panel 0x4dede8" in o,
             "page rows now 25 240 115" in o,
-            "slider header off 1 1 shown 1" in o), \
+            "slider header off 1 1 shown 1" in o,
+            # `sub_49D4D0`, the slider page's OWN list mover: the tab column
+            # steps to the header on one axis, and the header to the rows on
+            # the other. Without it the walk cannot leave the column, which
+            # is what a player hit.
+            "listAxis   panel 0x4dede8 list 1 (0x4dea08)" in o,
+            "crossAxis  panel 0x4dede8 list 2 (0x4de6f0)" in o), \
            (5,
             ["20 165 250", "25 240 115", "240 135 15", "255 240 95",
              "255 100 70"],
-            True, True, True, True, True, True, True), \
+            True, True, True, True, True, True, True, True, True), \
            "the five tab icons carry the five page colours; opening screen " \
            "9 runs the inventory page's builder, which copies its own icon's " \
            "amber over the rows, the verbs and the echo bar; and the row " \
@@ -10448,7 +10454,12 @@ def c_sneak_page_colour():
            "old page's colour, which is what a player saw. And the slider page's " \
            "HEADER: 0x004DE920 and 0x004DE968 are two items at the SAME " \
            "(187, 30), alternatives its builder chooses between, so exactly " \
-           "one may be drawn - a player saw both, as overlapping text"
+           "one may be drawn - a player saw both, as overlapping text. Then " \
+           "`sub_49D4D0`, the page's OWN `panel+16`: where the inventory " \
+           "page's is the generic `sub_42A710`, this one is hand-written " \
+           "and walks `panel+24` between the tab column, the header and the " \
+           "rows. Without it the walk cannot leave the column - a player " \
+           "reported the slider rows as unreachable"
 
 
 def c_slider_destinations():

@@ -75,6 +75,10 @@ inline constexpr std::uint32_t kIconSneakInventory  = 0x004DE040u;  // amber
 inline constexpr std::uint32_t kListSneakRows       = 0x004DE6F0u;  // 9 rows
 inline constexpr std::uint32_t kListSneakVerbs      = 0x004DE318u;  // 3 verbs
 inline constexpr std::uint32_t kListSneakEcho       = 0x004DEC58u;  // bar+clock
+inline constexpr std::uint32_t kListSneakSliderHead = 0x004DEA08u;
+// `panel 0x004DEDE8 + 16` - the slider page's own list mover, hand-written
+// where the inventory page's `+16` is the generic `sub_42A710`.
+inline constexpr std::uint32_t kHookSneakSliderLists = 0x0049D4D0u;
 inline constexpr std::uint32_t kItemSneakClock      = 0x004DEC08u;
 
 using FlagOp = std::pair<std::uint32_t, bool>;
@@ -415,6 +419,14 @@ private:
     // `sub_42A5C0` - move the panel's focus between LISTS, which is what the
     // sneak device's pages bind to left and right through `sub_42A710`.
     bool moveLists(int step);
+    // `sub_49D4D0` - the SLIDER page's own `panel+16`, and not the generic
+    // mover. The inventory page's hook is `sub_42A710`, which is just
+    // `sub_42A5C0(screen, panel, 1, 2)`; this page's is hand-written and
+    // walks `panel+24` between three of its four lists on a state machine.
+    // Without it the walk cannot leave the tab column, which a player
+    // reported as "impossible to select an item in the slider menu, the
+    // hovering stays on left vertical bar".
+    bool moveListsSlider(std::uint32_t bits);
     // `sub_0047A230` - the start menu's confirm dialog moves between its two
     // lists with UP and DOWN, not left and right.
     bool startConfirm(std::uint32_t bits);

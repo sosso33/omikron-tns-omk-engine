@@ -140,10 +140,75 @@ def _hook_move_lists(ui, bits):
     return False
 
 
+#: `panel 0x004DEDE8 + 16` - the SLIDER page's own list mover, where the
+#: inventory page's is the generic `sub_42A710`. Hand-written, and it walks
+#: `panel+24` between three of the page's four lists on a state machine.
+SLIDER_LISTS_HOOK = 0x0049D4D0
+SLIDER_TABS, SLIDER_HEAD, SLIDER_ROWS = 0x004DE210, 0x004DEA08, 0x004DE6F0
+
+
+def _hook_slider_lists(ui, bits):
+    """`sub_49D4D0` - the slider page cannot use the generic mover.
+
+    Read out of the image; the transitions, with the panel's lists being
+    [0] tabs, [1] header, [2] rows, [3] echo:
+
+        from tabs    the 0x3 pair                 -> header, if selectable
+        from header  0x1 at its first item, or
+                     0x2 at its last              -> tabs, if selectable
+        from header  the 0xC pair                 -> rows, if selectable,
+                     0x4 selecting the LAST row and 0x8 the FIRST
+        from rows    0x4 at the first row, or
+                     0x8 at the last              -> header, if selectable
+        from rows    the 0x3 pair                 -> tabs, if selectable
+
+    Which pair is which on a keyboard follows this file's existing binding
+    for `sub_42A710` rather than being re-derived: that hook is
+    `sub_42A5C0(screen, panel, 1, 2)` and is driven here from LEFT/RIGHT.
+    """
+    ls = ui.lists(ui.panel)
+    idx = {a: i for i, a in enumerate(ls)}
+    tabs = idx.get(SLIDER_TABS)
+    head = idx.get(SLIDER_HEAD)
+    rows = idx.get(SLIDER_ROWS)
+    if tabs is None or head is None or rows is None:
+        return False
+
+    def ok(k):
+        return k is not None and ui._usable(ls[k])
+
+    def go(k):
+        ui.cur = k
+        ui.log.append(("focus list", k))
+        return True
+
+    cur = ui.cur
+    sel = ui.sel.get(ls[cur], 0)
+    last = len(ui.items(ls[cur])) - 1
+    list_axis, cross_axis = bits & (LEFT | RIGHT), bits & (UP | DOWN)
+    if cur == tabs:
+        return go(head) if (list_axis and ok(head)) else False
+    if cur == head:
+        if ((bits & LEFT) and sel == 0) or ((bits & RIGHT) and sel == last):
+            if ok(tabs):
+                return go(tabs)
+        if cross_axis and ok(rows):
+            ui.sel[ls[rows]] = (len(ui.items(ls[rows])) - 1) if (bits & UP) else 0
+            return go(rows)
+        return False
+    if cur == rows:
+        if ((bits & UP) and sel == 0) or ((bits & DOWN) and sel == last):
+            if ok(head):
+                return go(head)
+        return go(tabs) if (list_axis and ok(tabs)) else False
+    return False
+
+
 #: Panel-level input hooks (`panel+16`) that have been read. Anything else is
 #: logged and the walk is marked approximate.
 PANEL_HOOKS = {0x0047A230: _hook_start_confirm,
-               MOVE_LISTS_HOOK: _hook_move_lists}
+               MOVE_LISTS_HOOK: _hook_move_lists,
+               SLIDER_LISTS_HOOK: _hook_slider_lists}
 
 
 

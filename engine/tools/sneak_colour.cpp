@@ -85,6 +85,20 @@ int main(int argc, char** argv) {
             std::printf("page rows now %d %d %d\n", c ? c[0] : -1,
                         c ? c[1] : -1, c ? c[2] : -1);
         }
+        // ...and now try to reach the slider page's ROWS, which is what
+        // `sub_49D4D0` exists for. Report the list the walk lands on after
+        // each press so a check can see the state machine step.
+        const auto where = [&](const char* tag) {
+            const omk::UiPanel* q = walk.panel();
+            const int c = walk.currentList();
+            std::printf("  %-10s panel %#x list %d (%#x)\n", tag, q ? q->addr : 0, c,
+                        (q && c >= 0 && c < (int)q->lists.size()) ? q->lists[c].addr : 0);
+        };
+        where("entered");
+        for (auto b : {omk::kUiLeft, omk::kUiUp, omk::kUiUp}) {
+            walk.press(b);
+            where(b == omk::kUiLeft ? "listAxis" : "crossAxis");
+        }
     }
     walk.open(omk::kScreenSneak);          // back to the inventory page
 

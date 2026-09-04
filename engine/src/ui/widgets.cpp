@@ -271,6 +271,71 @@ const UiPanel* UiWidgets::at(std::uint32_t addr) const {
 
 // ------------------------------------------------------------------- the walk
 
+// `sub_49D4D0` (panel 0x004DEDE8 `+16`), read out of the image. It reads the
+// screen's input word at `+0x6C` and writes `panel+24` - so it is a
+// `Ui_MoveBetweenLists` specialised for this page rather than a call to the
+// generic one. The transitions, with the panel's lists being
+// [0] tabs 0x004DE210, [1] header 0x004DEA08, [2] rows 0x004DE6F0, [3] echo:
+//
+//   from 0 (tabs)    the 0x3 pair                  -> 1, if 1 is selectable
+//   from 1 (header)  0x1 at its first item, or
+//                    0x2 at its last               -> 0, if 0 is selectable
+//   from 1 (header)  the 0xC pair                  -> 2, if 2 is selectable,
+//                    0x4 selecting the LAST row and 0x8 the FIRST
+//   from 2 (rows)    0x4 at the first row, or
+//                    0x8 at the last               -> 1, if 1 is selectable
+//   from 2 (rows)    the 0x3 pair                  -> 0, if 0 is selectable
+//
+// WHICH PAIR IS WHICH ON A KEYBOARD is taken from the port's existing
+// binding rather than re-derived here: `sub_42A710` is
+// `sub_42A5C0(screen, panel, 1, 2)`, and this port already drives that hook
+// from LEFT/RIGHT (`press`, the `moveListsHook` arm) with all 31 screens
+// agreeing with `tools/sim`. So the 0x3 pair is this file's Left/Right and
+// the 0xC pair its Up/Down, and the two are named `listAxis` and `crossAxis`
+// so that a later correction moves one line rather than five.
+bool UiWalk::moveListsSlider(std::uint32_t bits) {
+    if (!panel_) return false;
+    const auto index = [&](std::uint32_t addr) -> int {
+        for (std::size_t k = 0; k < panel_->lists.size(); ++k)
+            if (panel_->lists[k].addr == addr) return static_cast<int>(k);
+        return -1;
+    };
+    const int tabs = index(kListSneakTabs), head = index(kListSneakSliderHead),
+              rows = index(kListSneakRows);
+    if (tabs < 0 || head < 0 || rows < 0) return false;
+    const auto ok = [&](int k) {
+        return k >= 0 && usable(panel_->lists[static_cast<std::size_t>(k)]);
+    };
+    const auto go = [&](int k) { cur_ = k; log_.push_back("focus list"); return true; };
+    const std::uint32_t listAxis  = bits & (kUiLeft | kUiRight);
+    const std::uint32_t crossAxis = bits & (kUiUp | kUiDown);
+    const int sel = selectionOf(panel_->lists[static_cast<std::size_t>(cur_)]);
+    const int last = static_cast<int>(
+        panel_->lists[static_cast<std::size_t>(cur_)].items.size()) - 1;
+
+    if (cur_ == tabs) {
+        if (listAxis && ok(head)) return go(head);
+        return false;
+    }
+    if (cur_ == head) {
+        if (((bits & kUiLeft) && sel == 0) || ((bits & kUiRight) && sel == last))
+            if (ok(tabs)) return go(tabs);
+        if (crossAxis && ok(rows)) {
+            auto& r = panel_->lists[static_cast<std::size_t>(rows)];
+            sel_[r.addr] = (bits & kUiUp) ? static_cast<int>(r.items.size()) - 1 : 0;
+            return go(rows);
+        }
+        return false;
+    }
+    if (cur_ == rows) {
+        if (((bits & kUiUp) && sel == 0) || ((bits & kUiDown) && sel == last))
+            if (ok(head)) return go(head);
+        if (listAxis && ok(tabs)) return go(tabs);
+        return false;
+    }
+    return false;
+}
+
 bool UiWalk::moveLists(int step) {
     // `sub_42A5C0` (0x0042A5C0), the mover behind every panel hook that
     // steps between lists. It walks `panel+24` over the `panel+28` count,
@@ -641,6 +706,8 @@ bool UiWalk::press(std::uint32_t bits) {
     if (panel_->hook) {
         if (panel_->hook == w_->startConfirmHook()) {
             if (startConfirm(bits)) return true;
+        } else if (panel_->hook == kHookSneakSliderLists) {
+            if (moveListsSlider(bits)) return true;
         } else if (panel_->hook == w_->moveListsHook()) {
             // `sub_42A710(screen, panel) = sub_42A5C0(screen, panel, 1, 2)` -
             // `Ui_MoveBetweenLists` with LEFT stepping back and RIGHT

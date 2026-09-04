@@ -605,6 +605,32 @@ wearing the old page's colour — a player reported reaching the slider page
 walks RIGHT, UP, CONFIRM into panel 0x004DEDE8 and asserts its rows turn green.
 
 
+### The slider page has its OWN list mover
+
+The inventory page's `panel+16` is `sub_42A710`, which is only
+`sub_42A5C0(screen, panel, 1, 2)` — the generic `Ui_MoveBetweenLists` with its
+two direction bits as parameters. **The slider page's is `sub_49D4D0`, and it
+is hand-written.** It reads the screen's input word at `+0x6C` and writes
+`panel+24` itself, on a state machine over three of the page's four lists:
+
+| from | input | to |
+|---|---|---|
+| tabs `0x004DE210` | the `0x3` pair | header, if selectable |
+| header `0x004DEA08` | `0x1` at its first item, `0x2` at its last | tabs |
+| header | the `0xC` pair | **rows**, `0x4` selecting the last and `0x8` the first |
+| rows `0x004DE6F0` | `0x4` at the first row, `0x8` at the last | header |
+| rows | the `0x3` pair | tabs |
+
+Its head handles the other job: if `dword_6A17CC` — the destination the row
+confirm stored — is set, it resolves the position through `sub_40E630` and
+calls `sub_452570`, the travel.
+
+Without it a walk cannot leave the tab column, which a player reported as
+"impossible to select an item in the slider menu, the hovering stays on left
+vertical bar". Ported in both the engine and `tools/sim/ui.py` — teaching only
+one made `verify.py: engine: UI` report a screen the two disagree on, which is
+what that check is for.
+
 ### Two panels the walker never reached — and they are the verbs and the examine page
 
 `tools/exetables.py` follows an item's `child` field, and **panels 0x004DEEB8
