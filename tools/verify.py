@@ -8399,8 +8399,8 @@ def c_engine_ui():
     mine = [r for r in cpp if r[0] >= 0]
     disagree = sum(1 for a, b in zip(mine, ref) if a != b) + abs(len(mine) - len(ref))
     return (head, len(ref), disagree), \
-           ((44, 125, 572, 516, 48, 77, 44, 0), 31, 0), \
-           "panels (31 screens + 13 children reached through item +44), " \
+           ((46, 134, 611, 551, 52, 82, 46, 0), 31, 0), \
+           "panels (31 screens + 15 children - 13 reached through an item +44 and TWO named only from CODE, the verb panel 0x004DEEB8 and the examine page 0x004DEF20, which `sub_42A370` installs from a callback so nothing in the tree points at them), " \
            "lists, items, SELECTABLE items - which FELL by ten once the " \
            "shops' branch was resolved and each of them started hiding the " \
            "one of Acheter/Vendre its own arm disables, and rose again with " \
@@ -10109,7 +10109,7 @@ def c_ui_geometry():
     xy = [(it["x"], it["y"]) for l in lift[0]["lists"] for it in l["items"]][:7] if lift else []
     return (len(items), inb, sized, len(r["panels"]), len(maps), lens, clean,
             menuMap, xy), \
-           (572, 572, 571, 44, 32, [80], 32,
+           (611, 611, 610, 46, 34, [80], 34,
             False,
             [(278, 194), (321, 194), (370, 194),
              (284, 241), (325, 242), (371, 242), (325, 288)]), \

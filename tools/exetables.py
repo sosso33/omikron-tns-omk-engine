@@ -671,6 +671,33 @@ def t_ui_widgets(e):
             rec["lists"].append(l)
         return rec
 
+    # PANELS NAMED FROM CODE, not from an item's `+44`.
+    #
+    # The walk below follows `+44`, which is how `Ui_ConfirmSelection`
+    # descends - and it is not the only way a panel is entered.
+    # `sub_42A370(screen, panel)` installs one directly, and two of the
+    # sneak device's panels are reached only that way, so nothing in the
+    # tree pointed at them and the lift had never seen either:
+    #
+    #   0x004DEEB8  the VERB panel. `loc_49BE7B`, the plain arm of the
+    #               inventory row's confirm callback, is
+    #               `sub_42A370(screen, off_4DEEB8)`. Its builder
+    #               0x0049B810 clears 0x20000004 on the verb list and SETS
+    #               it on the tabs, the previews and the rows - so while a
+    #               verb is being chosen nothing else can be reached, which
+    #               is why the verbs are locked until a row is confirmed.
+    #
+    #   0x004DEF20  the EXAMINE page. `sub_49BFF0` ("Examiner") takes the
+    #               selected row's tag, calls `sub_42B420(tag, 4)` and then
+    #               `sub_42A370(screen, off_4DEF20)`. Its own list
+    #               0x004DE760 is where a capture of the original shows the
+    #               3D model and the object's name.
+    #
+    # Both parse as panels at the family's 0x68 stride and both carry the
+    # right `+0` parent, which is the check on this table: it names an
+    # address, and the record there has to agree.
+    CODE_NAMED = {0x004DEE50: [0x004DEEB8],
+                  0x004DEEB8: [0x004DEF20]}
     out, skipped, seen = [], [], set()   # `seen` tracks CHILD panels only
     for sid in sorted(u.screens):
         try:
@@ -719,6 +746,9 @@ def t_ui_widgets(e):
                     kid = u._u32(it + 44)
                     if kid and kid not in reach:
                         reach.add(kid); stack1.append(kid)
+            for kid in CODE_NAMED.get(pn, ()):
+                if kid not in reach:
+                    reach.add(kid); stack1.append(kid)
         allLists = {l for pn in reach for l in u.lists(pn)}
         bcur, bsel = u.open_state(sid, reach, allLists)
         # the screen's own panel, then every panel reachable through `+44`,
@@ -733,7 +763,7 @@ def t_ui_widgets(e):
                          bcur, bsel)
         out.append(rec)
         stack = [it["child"] for l in rec["lists"] for it in l["items"]
-                 if it["child"]]
+                 if it["child"]] + list(CODE_NAMED.get(panel, ()))
         # A CHILD, by contrast, is recorded once: it belongs to whichever
         # panel descended into it and carries `screen: -1`.
         while stack:
@@ -748,6 +778,9 @@ def t_ui_widgets(e):
                 for it in l["items"]:
                     if it["child"] and it["child"] not in seen:
                         stack.append(it["child"])
+            for nxt in CODE_NAMED.get(addr, ()):
+                if nxt not in seen:
+                    stack.append(nxt)
     # The name field's character switch, read from the compiled JUMP TABLE
     # rather than transcribed - a wrong reading shows up as a wrong label.
     # `sub_47A390` handles codes 8..27: backspace deletes, TAB and ESC are
@@ -851,10 +884,13 @@ def c_ui_widgets(rows, e):
             # 7 -> 13: the sneak device's tab column names five pages the
             # family's three screens do not open on (Identite, Memoire,
             # Options, Quitter, and the videophone's own), and one of them
-            # descends further.
-            ("child panels reached through item +44", len(kids), 13),
-            ("lists", len(lists), 125),
-            ("items", len(items), 572),
+            # descends further. 13 -> 15 on 2026-09-04: two more that no
+            # item's `+44` names at all - `CODE_NAMED` above - the VERB
+            # panel 0x004DEEB8 and the EXAMINE page 0x004DEF20, both
+            # installed by `sub_42A370` from a callback.
+            ("child panels", len(kids), 15),
+            ("lists", len(lists), 134),
+            ("items", len(items), 611),
             ("item records inside the image",
              sum(1 for i in items if mapped(i["addr"])), len(items)),
             # 75 across the whole tree but only 16 distinct item RECORDS
@@ -862,10 +898,10 @@ def c_ui_widgets(rows, e):
             # 0x004DE210 is one list carried by nine of the panels, so each
             # of its child-naming items is counted once per panel.
             ("items naming a child panel",
-             sum(1 for i in items if i["child"]), 75),
+             sum(1 for i in items if i["child"]), 88),
             ("...of which distinct item records",
-             len({i["addr"] for i in items if i["child"]}), 16),
-            ("lists with a non-default input hook", len(hooks), 48),
+             len({i["addr"] for i in items if i["child"]}), 17),
+            ("lists with a non-default input hook", len(hooks), 52),
             # The two RUNTIME fields, and only where the open callback writes
             # them. Neither was in this table before 2026-09-04, because the
             # scan had no reason to look: `panel+24` is the CURRENT LIST and
@@ -911,7 +947,7 @@ def c_ui_widgets(rows, e):
              [5, 6, 7, 8, 9, 10]),
             ("distinct hooks among them", len(set(hooks)), 13),
             ("lists taking Ui_MoveSelection, the default walk",
-             sum(1 for l in lists if not l["hook"]), 77),
+             sum(1 for l in lists if not l["hook"]), 82),
             ("the LIFT grid hook is present", rows["gridHook"] in hooks, True),
             # It is here only because the walk follows `+44`: the name field
             # is in the start menu's confirm dialog, a CHILD panel. A lift
