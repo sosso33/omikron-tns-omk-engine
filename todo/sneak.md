@@ -107,15 +107,36 @@ the verb panel.
 Until it is done, the honest behaviour is to REFUSE `Utiliser sur` rather
 than run `Utiliser`'s arm under its name.
 
-### 2c. Three of the five pages have empty rows
+### 2c. ~~Three of the five pages have empty rows~~ — CLOSED, and the question was wrong
 
-Only the inventory page is filled. The player's bio, his statistics and the
-memos each ask a different list and **which list each one asks has not been
-read** — an empty row says so, where showing the carried list would be a
-plausible-looking wrong answer. `play.cpp` 5512 states this.
+**Read 2026-09-04, and there is nothing to implement.** This entry said "the
+player's bio, his statistics and the memos each ask a different list and which
+list each one asks has not been read". Both halves were wrong.
 
-The memory page's row confirm is refused outright and says why
-(`widgets.cpp:869`, *"memory row: its arm is not modelled"*).
+**Only THREE panels carry the row list at all**: `slider`, `inventory` and
+`memory` (plus the verb panel, which borrows it). `identity` and `options` have
+no `0x004DE6F0` in them, so their rows were never the gap — they show a
+character view and an option tree, and there is no "bio" or "statistics" row
+list anywhere.
+
+**And the memory page is empty by the code.** Its `panel+4` builder sets
+`word_4DE6F0 = 5` (five widgets, not nine) and `dword_670CB8 = 2`, then reads
+its count from **`dword_4DE708`** — which is **never written anywhere in the
+image**: a static `dd 0` with seven reads, no store, no `offset`, no `lea`. So
+the count is permanently 0 and the selected memo `dword_4DEAD4` permanently -1.
+The two other sites reading it always take their zero arm.
+
+That is the same shape as the options menu's **page 12, built and unreachable**
+— a page the interface constructs and the game never fills. The port leaving
+those rows empty is CORRECT, and correct for the reason the code gives.
+
+`verify.py: sneak memory page` asserts the three/two split, the nine shipped
+widgets, and the zero writes — with a POSITIVE CONTROL on `dword_670CB8`
+(three writes) so that zero cannot be a broken scanner.
+
+Still not modelled, and now known to be invisible: the builder shrinking the
+list to **five** widgets on that page. With no rows it cannot be seen.
+The row confirm is still refused (`widgets.cpp:869`), which is right.
 
 ### 2d. The identity page's character view
 
@@ -178,7 +199,7 @@ Each ends in a commit and a `verify.py` check SHOWN to fail first.
 | 0 | this file | **done 2026-09-04** |
 | 1 | **row scrolling**: read `sub_42AFF0` properly, model the window in the binder, make `sub_49C050` move it. Check: a carried list of >9 reaching its last row, which today is unreachable | **done 2026-09-04** — a CENTRED window (the cursor moves to the middle widget, then the window moves under it); `bindRows`'s second argument is the WINDOW, the tag lives in widget 0's `+0x3C`, and the two end marks are `0x100000`/`0x200000`. `verify.py: engine row window` drives 12 rows through 9 widgets, reaching row 11 of 11; shown to fail at row 8 with the window pinned. **The event-30 raise is RECORDED, not raised** — the walk has no channel, so a caller must ask for the preview off `rowOf(selected())` |
 | 2 | `Utiliser sur`: read `sub_42B520`, port the combine mode, the two slots and the second selection onto the already-ported `Inventory::combine`. Until then, refuse it rather than run `Utiliser`'s arm | **done 2026-09-04** — the mode, the two slots, the disabled verb list and the second row confirm; the slots hold ROW INDICES (`item+0x3C`), which the caller resolves. `verify.py: engine combine` asserts the gate histogram (5 at 0, 6 at 8, **0 at 1**), a real recipe through the mode (18 + 7 -> 33) and the spell arm answering -1; shown to fail with the gate ignored |
-| 3 | which list the bio / statistics / memo pages ask for, and fill them | |
+| 3 | which list the bio / statistics / memo pages ask for, and fill them | **done 2026-09-04 — NOTHING TO FILL.** Only slider/inventory/memory carry the row list; identity and options carry none. And the memory page's count `dword_4DE708` has seven reads and ZERO writes in the image, so that page is built and permanently empty — the port is already right. `verify.py: sneak memory page`, with a positive control so the zero means something |
 | 4 | `Text_LayOutBlock` — the real wrap, against a caption that today wraps wrong | |
 | 5 | the hand attach, so a used object is visible for the frames it is held | |
 | 6 | `Object_ApplyEffect` and its context gate | |

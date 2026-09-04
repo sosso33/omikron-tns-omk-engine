@@ -4654,6 +4654,115 @@ def c_engine_zone_pump():
            "camera-wait park resumed into its dialog.start"
 
 
+def c_sneak_memory_page():
+    r"""THE MEMORY PAGE IS EMPTY IN THE SHIPPED GAME, and that is the answer.
+
+    `todo/sneak.md` listed "three of five pages have empty rows - the player's
+    bio, his statistics and the memos - and which list each asks has not been
+    read" as work to do. It was the wrong question twice over.
+
+    **Only THREE panels carry the row list at all.** Of the five tab pages,
+    `identity` (0x004DED80) and `options` (0x004DF058) have no
+    `0x004DE6F0` in them; the row list belongs to `slider`, `inventory` and
+    `memory` (and to the verb panel, which borrows it). So "empty rows" was
+    never the identity or options page's problem - they show a character view
+    and an option tree, neither of which is a row list.
+
+    **And the memory page's rows are empty BY THE CODE.** Its `panel+4`
+    builder (the block at `loc_49D769`) does
+
+        word_4DE6F0  = 5;              // the row list's +0: FIVE widgets, not 9
+        dword_670CB8 = 2;              // the row kind
+        ...
+        if (dword_4DE708 > 0)  dword_4DEAD4 = selected_widget[+0x3C];
+        else                   dword_4DEAD4 = -1;
+
+    and **`dword_4DE708` is never written anywhere in the image** - it is a
+    static `dd 0` with seven read sites, no store, no `offset`, no `lea`. So
+    the count is permanently 0, the selected memo is permanently -1, and the
+    two other sites that read it (`sub_49B710` at the inventory page's build,
+    and the install at 0x0049BA8E) always take their zero arm.
+
+    This is the same shape as the options menu's **page 12, built and
+    unreachable** - a page the interface constructs and the game never fills.
+    The port leaving those rows empty is therefore CORRECT, and correct for
+    the reason the code gives rather than by accident.
+
+    Asserted from `tables/ui_widgets.json`: which of the five pages carry the
+    row list and which do not, and that the list ships NINE widgets (the
+    memory builder shrinking it to five at run time is a thing the port does
+    not model, and is invisible while the count is 0). Then, when the
+    disassembly is present, that `dword_4DE708` has ZERO writes - the test the
+    claim could fail.
+    """
+    import json, re
+    tw = os.path.join(ROOT, "tables", "ui_widgets.json")
+    if not os.path.exists(tw):
+        return ("skipped",), ("skipped",), "tables/ui_widgets.json absent"
+    rows = json.load(open(tw))["rows"]
+    pans = {p["panel"]: p for p in rows["panels"]}
+    ROWS = 0x004DE6F0
+    named = [("identity", 0x004DED80), ("slider", 0x004DEDE8),
+             ("inventory", 0x004DEE50), ("memory", 0x004DEF88),
+             ("options", 0x004DF058)]
+    withRows, without, widgets = [], [], 0
+    for nm, addr in named:
+        p = pans.get(addr)
+        if not p:
+            without.append(nm + "?")
+            continue
+        hit = [l for l in p["lists"] if l["addr"] == ROWS]
+        if hit:
+            withRows.append(nm)
+            widgets = len(hit[0]["items"])
+        else:
+            without.append(nm)
+
+    # THE POSITIVE CONTROL, and it is what makes "zero writes" mean anything.
+    # A scanner that cannot see a write would report 0 for every symbol, so
+    # the same pass counts `dword_670CB8` - the row kind, which each page's
+    # builder WRITES - and that count must be nonzero. Without it this check
+    # would pass just as happily with a broken regex.
+    def scan(asm, sym):
+        w = r = 0
+        pat = re.compile(r"\b" + sym + r"\b")
+        wr = re.compile(r"mov\s+" + sym + r"\s*,")
+        le = re.compile(r"lea\b.*" + sym)
+        with open(asm, "r", errors="replace") as f:
+            for ln in f:
+                if not pat.search(ln):
+                    continue
+                t = ln.strip()
+                if wr.match(t) or ("offset " + sym) in t or le.match(t):
+                    w += 1
+                elif " dd " not in t:
+                    r += 1
+        return w, r
+
+    writes = reads = control = None
+    asm = omkpaths.asm_path()
+    if asm and os.path.exists(asm):
+        writes, reads = scan(asm, "dword_4DE708")
+        control, _ = scan(asm, "dword_670CB8")
+
+    have = bool(asm and os.path.exists(asm))
+    return (withRows, sorted(without), widgets, writes, reads, control), \
+           (["slider", "inventory", "memory"], ["identity", "options"], 9,
+            (0 if have else None), (7 if have else None),
+            (3 if have else None)), \
+        "which of the sneak's five tab pages carry the shared row list " \
+        "(slider, inventory, memory) and which carry none at all (identity, " \
+        "options - so their rows were never the gap), the nine widgets the " \
+        "list ships; and then the memory page's count `dword_4DE708`, which " \
+        "has SEVEN reads and ZERO writes in the whole image - a static dd 0 " \
+        "nothing ever fills, so that page is built and permanently empty, " \
+        "the same shape as the options menu's unreachable page 12; and the " \
+        "POSITIVE CONTROL that makes that zero mean anything - the same scan " \
+        "over `dword_670CB8`, the row kind each builder writes, must find " \
+        "THREE, because a scanner that cannot see a write reports zero for " \
+        "everything"
+
+
 def c_engine_combine():
     r"""`Utiliser sur` - the COMBINE MODE, and a gate dead from both ends.
 
@@ -20566,6 +20675,7 @@ SLOW = [
     ("engine: zone pump",  c_engine_zone_pump,  "engine/README"),
     ("engine: used object", c_engine_used_object, "engine/README"),
     ("engine: row window", c_engine_row_window, "docs/UI"),
+    ("sneak memory page", c_sneak_memory_page, "docs/UI"),
     ("engine: combine", c_engine_combine, "docs/UI"),
     ("engine: zone registry", c_engine_zone_registry, "engine/README"),
     ("engine: voice over", c_engine_voice_over, "CUTSCENES 5; engine/README"),
