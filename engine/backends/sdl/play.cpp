@@ -5552,10 +5552,10 @@ int main(int argc, char** argv) {
                 // port has no jump or fall state yet (omk-play 68), so nothing
                 // today can tell them apart; when one arrives, this is the
                 // line that has to become the real root-motion path.
-                playerFeet = -1e9f;
-                for (const auto& c : playerPosed.corners)
-                    if (c.y > playerFeet) playerFeet = c.y;
                 if (!playerFeetKnown) {
+                    playerFeet = -1e9f;
+                    for (const auto& c : playerPosed.corners)
+                        if (c.y > playerFeet) playerFeet = c.y;
                     // the hierarchy root: the one mesh with no parent. A model
                     // constant, so this half stays latched.
                     playerRootXZ[0] = playerRootXZ[1] = 0.0f;
@@ -5566,6 +5566,91 @@ int main(int argc, char** argv) {
                             break;
                         }
                     playerFeetKnown = true;
+                }
+                // THE ROOT TRANSLATION'S VERTICAL, which is the crouch.
+                //
+                // `Walk_ProbeGround` (0x00467030) anchors the actor by a
+                // CONSTANT: `actor[264] = actor[236] - actor[248] + groundY +
+                // sphere[12]`, where `sphere[12]` comes from
+                // `Collision_BodySphere` and does not change with the pose. So
+                // the engine's anchor never moves, and the crouch is carried
+                // entirely by the animation's ROOT MOTION - the pelvis track's
+                // summed position keys, 24.3 units (62 cm) inside one cell of
+                // H_TAKL12.
+                //
+                // Re-measuring the lowest corner each frame, which is what
+                // this did for one build, gets a similar picture and STUTTERS,
+                // because it re-derives the anchor from a pose that changes
+                // every frame. The anchor is constant again and the drop comes
+                // from `trans` instead.
+                //
+                // Only the VERTICAL is taken: X and Z would double-count
+                // against the walker, which already moves him.
+                // AND IT ACCUMULATES ACROSS STATES. `Anim_RootDelta(prev,
+                // cur)` adds the movement between the previous frame and the
+                // current one every tick and "the accumulated offset stands"
+                // (CLAUDE.md 6) - there is no reset per clip. Each clip's own
+                // sum starts at zero, so taking it as an absolute made
+                // H_TAKL22 run 0 -> -24.6: from STANDING to 62 cm above it,
+                // instead of from crouched back down to standing. A reader:
+                // "animation from up to down => ok / animation from down to up
+                // => character suddenly way higher than they should be."
+                //
+                // Carried, the pair nets out: +24.3 then -24.6 is -0.3.
+                static float rootAccum = 0.0f, rootLast = 0.0f;
+                static int   rootState = -12345;
+                float rootDrop = 0.0f;
+                if (pt && !pt->trans.empty()) {
+                    const int rf = player->poseFrame();
+                    const std::size_t ri = static_cast<std::size_t>(
+                        rf < 0 ? 0 : (rf < static_cast<int>(pt->trans.size())
+                                          ? rf : static_cast<int>(pt->trans.size()) - 1));
+                    const float cur = pt->trans[ri][1];
+                    // a new state re-bases the delta, it does not reset the sum
+                    if (player->ctlState() != rootState) {
+                        rootState = player->ctlState();
+                        rootLast  = cur;
+                    }
+                    // A WINDOW'S LAST FRAME IS A DISCONTINUITY, NOT MOTION.
+                    // Measured across a take: the blend runs 0 -> +21.90 over
+                    // H_TAKL12's 21 frames (the crouch, against 19.08 of feet
+                    // lifted by the rotations - they very nearly cancel) and
+                    // then snaps to -0.22 at f 20. That one bogus delta
+                    // poisons the sum, so H_TAKL22 starts from a corrupted
+                    // base and ends 22 units up - "it stays higher until I
+                    // release the object".
+                    //
+                    // **A PORT GUARD, labelled**: real root motion is a few
+                    // units a frame at most (H_WALK's whole cycle spans 2).
+                    // Anything larger is a seam between variants, not the
+                    // pelvis moving, so it is not accumulated. The engine has
+                    // no such guard because `Anim_RootDelta` never crosses a
+                    // seam: it indexes the position keys by the RAW frame and
+                    // so reads cell 0 only. Reading the blended cells is this
+                    // port's choice, and this is its cost.
+                    rootAccum += cur - rootLast;
+                    rootLast   = cur;
+                    // **A PORT GUARD, labelled**: the engine relies on the
+                    // authored motion netting out and has a ground probe under
+                    // it every frame; this has neither, so any residue would
+                    // live for ever. Back in the idle, the body is standing by
+                    // definition, so the sum is released there.
+                    if (player->clipName() == "H_STAND") rootAccum = 0.0f;
+                    rootDrop = rootAccum;
+                    // MEASURING, not fixing: how far does the model's own
+                    // lowest point travel across a take? If the rotations
+                    // lower the body, a CONSTANT anchor is right and the
+                    // float came from somewhere else; if it barely moves
+                    // while the legs bend, the body never crouches at all.
+                    if (player->variantCount() > 1) {
+                        float lo = -1e9f;
+                        for (const auto& c : playerPosed.corners)
+                            if (c.y > lo) lo = c.y;
+                        std::printf("  crouch: %-9s f %2d  lowest %+8.2f  "
+                                    "(latched %+8.2f, delta %+7.2f)  root %+6.2f\n",
+                                    player->clipName().c_str(), player->poseFrame(),
+                                    lo, playerFeet, lo - playerFeet, rootAccum);
+                    }
                 }
                 const float* pp = player->pos();
                 const float yaw = player->facing();
@@ -5586,7 +5671,7 @@ int main(int argc, char** argv) {
                     float r[3];
                     omk::rotateYaw(yaw, in, r);
                     c.x = r[0] + pp[0];
-                    c.y = r[1] + pp[1] - playerFeet;
+                    c.y = r[1] + pp[1] - playerFeet + rootDrop;
                     c.z = r[2] + pp[2];
                 }
                 playerPosed.revision = ++worldGeoRev;

@@ -520,7 +520,31 @@ const NodeTracks* PlayerController::poseTracks() {
             t.ids.push_back(mi);
         }
         t.quats.assign(static_cast<std::size_t>(d->frames), {});
+        // THE ROOT MOTION, which this used to assign all zeroes.
+        //
+        // The pelvis (`UBassin`) is the hierarchy root and carries POSITION
+        // keys beside its rotations; `Anim_RootDelta` sums them from key 1.
+        // For a take that sum IS the crouch - H_TAKL12's pelvis drops 24.3
+        // units (62 cm) inside one of its six cells and H_TAKL22 lifts it back
+        // - so dropping it left the body upright while the legs bent, which a
+        // reader saw as floating (omk-play 69).
         t.trans.assign(static_cast<std::size_t>(d->frames), {0.0f, 0.0f, 0.0f});
+        for (const auto& tr : d->tracks) {
+            if (!tr.posOffset || tr.posKeys <= 1) continue;
+            float acc[3] = {0.0f, 0.0f, 0.0f};
+            for (int f = 0; f < d->frames; ++f) {
+                const int key = f + 1 < tr.posKeys ? f + 1 : tr.posKeys - 1;
+                const std::size_t o = tr.posOffset + 12u * static_cast<std::size_t>(key);
+                if (o + 12 > data_.size()) break;
+                for (int k = 0; k < 3; ++k)
+                    acc[static_cast<std::size_t>(k)] +=
+                        f32at(data_, o + 4u * static_cast<std::size_t>(k));
+                for (int k = 0; k < 3; ++k)
+                    t.trans[static_cast<std::size_t>(f)][static_cast<std::size_t>(k)] =
+                        acc[static_cast<std::size_t>(k)];
+            }
+            break;                 // the pelvis is the only root track
+        }
         for (int f = 0; f < d->frames; ++f) {
             auto& row = t.quats[static_cast<std::size_t>(f)];
             row.resize(d->tracks.size());
@@ -676,7 +700,14 @@ int PlayerController::poseFrame() const {
     // not the whole 125 or 188 (omk-play 69). Without this the channel walks
     // the full clip and every variant plays in turn, which is the report.
     const int v = variantCount();
-    if (v > 1 && n > 0) n = (n + 1) / v;
+    // A grid window is `keys / variants` frames, and its LAST one is a SEAM:
+    // measured, both the pose and the root snap back to standing there
+    // (H_TAKL12 f20: the feet return to +0.67 and the root to -0.22 after
+    // reaching -19.09 and +16.03 at f18). Holding the frame one short keeps
+    // the window on real motion; a magnitude guard on the root delta did the
+    // same job but also ate genuine motion mid-crouch, which left the body
+    // floating three units at the deepest point (omk-play 69).
+    if (v > 1 && n > 0) { n = (n + 1) / v; if (n > 1) --n; }
     if (f < 0) f = 0;
     if (n > 0 && f >= n) f = n - 1;
     return f;
