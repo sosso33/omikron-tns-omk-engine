@@ -60,6 +60,7 @@
 #include "platform/movie.h"
 #include "platform/datafs.h"
 #include "platform/frontend.h"
+#include "ui/iamtext.h"
 #include "ui/screendraw.h"
 #include "ui/text.h"
 #include "ui/widgets.h"
@@ -1527,6 +1528,21 @@ int main(int argc, char** argv) {
         const auto slot = omk::readSaveSlot(omk::DataFs::readPath(saveFile), 0);
         if (!slot) { std::fprintf(stderr, "%s: not a save file\n", saveFile.c_str()); return 1; }
         state = slot->state;
+        // THE CLOCK COMES FROM THE SLOT, and this used only to print it.
+        //
+        // `gamestate.h`: the clock and the timer are engine globals and NOT
+        // part of the 8192-byte image, so restoring the DB restores
+        // everything EXCEPT the date and time - and the slot header is the
+        // only place they exist. Loading a save therefore left the game at
+        // day 0, 00:00:00 while the loader printed the save's real date one
+        // line above.
+        //
+        // Nothing noticed because nothing DREW the clock. The sneak's own
+        // clock row (`sub_0049E090`) is the first thing in this port to show
+        // it, and it showed "1 Aqed 7216 - 0:00:00" against a save the same
+        // function had just printed as a different date.
+        state.setClockDay(slot->day);
+        state.setClock(slot->time);
         std::printf("save: slot 0 '%s', %s %s, area %d\n", slot->name.c_str(),
                     omk::formatDate(slot->day).c_str(), omk::formatTime(slot->time).c_str(),
                     state.currentArea());
@@ -5211,6 +5227,66 @@ int main(int argc, char** argv) {
                         // and are complete.
                         sneakRows[l.items[k].addr] =
                             inv.displayName(carried[row], 0);
+                    }
+                }
+                // ---- THE ECHO BAR and THE CLOCK ---------------------
+                //
+                // Two of the device's rows are filled by callbacks of its
+                // own, and both are readable - `sub_0049DC20` and
+                // `sub_0049E090` carry no `proc` label (nothing calls them;
+                // they are dwords in the widget table, CLAUDE.md 1's trap),
+                // so `asmfn.py` returns a neighbour and the range has to be
+                // dumped by hand.
+                //
+                // **The echo bar shows whatever is SELECTED**, not the
+                // hovered verb as the picture suggested. `sub_0049DC20`
+                // takes the panel's current item and dispatches on its
+                // ADDRESS:
+                //
+                //     0x004DE338  "%s %d" of its string and `sub_42B1C0(4)`
+                //     0x004DE380  "%s %d" of its string and `sub_42B1C0(5)`
+                //     0x004DE3C8  its string alone
+                //     0x004DE230  its string, with `+30` forced to 1
+                //     ...
+                //
+                // which SETTLES what list 1 is: the three 50x50 icons are
+                // the setek and anneau COUNTERS and the map reader, and
+                // their strings - 8, 9 and 41, the ones a `+28`-keyed drawer
+                // printed across the page - belong to them and are rendered
+                // HERE. "Seteks en votre possession :" is echo-bar text for
+                // the setek icon, never a caption beside it.
+                //
+                // It also answers what `imager` counts: NOTHING. Its arm has
+                // no `sub_42B1C0` and no format - just the bare string "Lire
+                // plan". It is a map reader, not ammunition.
+                //
+                // The two counts come from `Game_RaiseEvent(44, {4|5})`,
+                // which is not modelled, so those two rows show their label
+                // without its number and say so rather than inventing one.
+                {
+                    const auto sneakText = omk::iamStrings(fs, "IAM/Sneak");
+                    const omk::UiItem* selItem = walk->selected();
+                    for (const auto& l : pn->lists) {
+                        for (const auto& e : l.items) {
+                            if (e.textFn == 0x0049DC20u && selItem) {
+                                const int id = selItem->label();
+                                if (id >= 0 &&
+                                    id < static_cast<int>(sneakText.size()))
+                                    sneakRows[e.addr] = sneakText[
+                                        static_cast<std::size_t>(id)];
+                            } else if (e.textFn == 0x0049E090u) {
+                                // The clock. Both halves are the engine's own
+                                // formatters, already ported and checked
+                                // (`sub_0041E690`'s integer division); the
+                                // " - " joining them is read off the user's
+                                // screenshot - "12 Nadim 7216 - 13:01:15" -
+                                // and is the one part of this line that is
+                                // not from the code.
+                                sneakRows[e.addr] =
+                                    omk::formatDate(state.clockDay()) + " - " +
+                                    omk::formatTime(state.clock());
+                            }
+                        }
                     }
                 }
                 if (!sneakTold++)

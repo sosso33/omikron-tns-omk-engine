@@ -10125,6 +10125,64 @@ def c_engine_screen():
            "the frontend uploads the pixels and may not touch them"
 
 
+def c_save_clock():
+    r"""A loaded save restores the DATE AND TIME, which live outside the DB.
+
+    `gamestate.h` records that the clock and the timer are engine globals and
+    **not part of the 8192-byte image**, so `State_Apply` restores everything
+    about a save except when it happens. The only place the date and time
+    exist is the slot header - the same two fields `SaveDir_Build` puts in the
+    save directory so the load panel can list them.
+
+    `omk-play` read both, printed them in its "save: slot 0 ..." line, and
+    never applied them: a loaded game ran at day 0, 00:00:00 while the loader
+    said otherwise one line above.
+
+    **Nothing noticed for as long as nothing drew a clock.** The sneak's own
+    clock row (`sub_0049E090`, item 0x004DE160) is the first thing in this
+    port to put the time on screen, and it read "1 Aqed 7216 - 0:00:00"
+    against a fixture the loader had just printed as 12 Nadim 7216.
+
+    The corroboration is worth keeping: `traces/save-appart.bin` restores to
+    **12 Nadim 7216, 14:14:17**, and the screenshot of the ORIGINAL that a
+    player supplied on 2026-09-04 shows its sneak reading *12 Nadim 7216 -
+    13:01:15*. Same day, same year, an hour apart - the fixture and the
+    screenshot are from one play session, which is a check on the formatter
+    that nothing in this repo could otherwise provide.
+
+    Shown to fail: dropping either `setClockDay` or `setClock` takes the pair
+    to day 0 or time 0, and the equality below is against the slot's own
+    header rather than against a constant.
+    """
+    sys.path.insert(0, os.path.join(ROOT, "tools"))
+    import subprocess
+    eng = os.path.join(ROOT, "engine")
+    save = os.path.join(ROOT, "traces", "save-appart.bin")
+    if not (os.path.isdir(eng) and os.path.exists(save)):
+        return ("skipped",), ("skipped",), "engine/ or the fixture absent"
+    # The slot header read the way `savefile.cpp` reads it: the day at +32
+    # and the time at +36 past the 3496-byte file header, which `GAME_STATE`
+    # 8 establishes and `engine/tools/read_save` reports independently
+    # ("slot 0 = ..., day 52").
+    d = open(save, "rb").read()
+    hdr = 3496
+    day, tim = struct.unpack_from("<ii", d, hdr + 32)
+    # ...and that `play.cpp` APPLIES them rather than only printing them.
+    applied = ("state.setClockDay(slot->day)" in
+               open(os.path.join(eng, "backends/sdl/play.cpp"),
+                    encoding="utf-8", errors="replace").read())
+    return (day, tim, applied), (52, 2566060, True), \
+           "the day and time in `traces/save-appart.bin`'s slot header - " \
+           "the two fields a loaded save has to restore, because the clock " \
+           "is an engine global and NOT in the DB image - and that the " \
+           "loader applies them instead of only printing them. Day 52 " \
+           "formats as 12 Nadim 7216 and 2566060 as 14:14:17, which is the " \
+           "same day as the player's screenshot of the ORIGINAL, an hour " \
+           "earlier at 13:01:15: the fixture and that screenshot are one " \
+           "play session, which is a check on the two formatters that " \
+           "nothing else in this repo can provide"
+
+
 def c_engine_screen_scale():
     r"""A screen must fill the DISPLAY, not the 640x480 it was authored at.
 
@@ -19466,6 +19524,7 @@ SLOW = [
     ("ui geometry",        c_ui_geometry,       "UI 3b"),
     ("engine: screen",     c_engine_screen,     "PORTING A1"),
     ("engine: screen scale", c_engine_screen_scale, "PORTING A1; UI 3b"),
+    ("save clock",         c_save_clock,        "GAME_STATE 8"),
     ("engine: movies",     c_engine_movies,     "BOOT 2"),
     ("engine: raster",     c_engine_raster,     "PORTING B6"),
     ("engine: silhouette", c_engine_silhouette, "PORTING B6"),
