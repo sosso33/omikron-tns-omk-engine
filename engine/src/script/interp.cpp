@@ -163,6 +163,11 @@ RunResult Interpreter::resume(std::span<const std::byte> code, std::size_t at) {
 
         const auto start = pc;
         const auto op = static_cast<std::uint8_t>(code[pc]);
+        // `sub_406120`: `cmp eax, 4Bh ; jz loc_40616B` - tested on the fetched
+        // opcode and BEFORE the handler call, so the opcode is not executed.
+        if (stopAt_ >= 0 && static_cast<int>(op) == stopAt_) {
+            r.status = RunStatus::StoppedAtOpcode; r.pc = start; return r;
+        }
         const int n = table_.operandLength(op);
         if (n < 0) { r.status = RunStatus::UnknownOpcode; r.pc = pc; return r; }
         if (pc + 1 + static_cast<std::size_t>(n) > code.size()) {

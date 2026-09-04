@@ -180,10 +180,17 @@ void ZoneRegistry::pumpSlots(bool actionPressed, std::vector<ZoneEvent>& out) {
             // NO LATCH. A one-shot zone with no activate script is spent by
             // nothing.
             if (z->zone.scripts[1]) {
-                // The inline dry run. Empty-handed both of its outcomes reach
-                // loc_407F93 and queue, so `ran` is 1; with a held object it
-                // is `Script_RunToOpcode75`'s answer, which is not modelled.
-                const bool ran = !heldObject_;
+                // The inline dry run (`sub_406180`). Empty-handed both of
+                // its outcomes reach loc_407F93 and queue, so `ran` is 1;
+                // with a held object it is `Script_RunToOpcode75`'s answer -
+                // 1 only if the script reaches opcode 75 and asks what is in
+                // the hand. `setUsedObjectProbe` supplies that run; with no
+                // probe installed the answer is 0, which is what this line
+                // returned unconditionally before 2026-09-04.
+                const bool ran = !heldObject_ ? true
+                    : (usedObjectProbe_ &&
+                       usedObjectProbe_(z->code,
+                                        static_cast<std::size_t>(z->zone.scripts[1])));
                 if (ran) {
                     out.push_back(makeEvent(
                         *z, ZoneEvent::Kind::Activate, 2,

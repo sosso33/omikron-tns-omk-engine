@@ -699,6 +699,31 @@ public:
     int  objectSlotId(int slot) const;
     // `Actor_HeldObjectSlot` by actor id (-1 the player): -1 when none.
     int  heldSlotOf(int actor) const;
+
+    // `Game_HandleEvent` case 35's NON-CONSUMABLE arm (readable 01_file.c
+    // :1546), which is what the sneak's **Utiliser** reaches on an object
+    // whose record `+4` bit 0 is clear:
+    //
+    //     v71 = ObjectSlot_Alloc(u16(v67, 0));   // word_4E6CA0's first free
+    //     Object_Load(v71, Object_ModelPath(v67 + 14), ...);
+    //     ObjectList_RemoveAt(0, v66);           // it LEAVES the bag
+    //     u32(a2,0) = v71; u32(a2,4) = 1;
+    //
+    // and `sub_42B470` hands that slot to `sub_41C490`, which writes
+    // `player[+0xA4] = &unk_4E7EA0[slot * 96]`. `Actor_HeldObjectSlot`
+    // (0x0041A350) reads that field back and divides by 96, so it returns the
+    // slot again - and `var.set.used_object` (75) then reads
+    // `word_4E6CA0[slot]` and finds the object's id.
+    //
+    // That is the whole of the user's report that "you don't carry the key:
+    // you use it near the place and it is used automatically". Using it puts
+    // it in the HAND and takes it out of the inventory; the zone script that
+    // wants it calls 75, matches, and `object.release` drops it. Nothing ever
+    // walks around holding it because no script leaves it there.
+    //
+    // -> the slot, or -1 when all 50 are taken (`ObjectSlot_Alloc`'s own -1).
+    // The model load is the renderer's half and is not done here.
+    int  useObject(int objectId);
     // `Object_ShowInScene` / `HideFromScene`: what a frontend draws props from.
     const std::set<int>& shownSlots() const { return shownSlots_; }
     // What the hooks were asked to do in 3D and did not: for a frontend.

@@ -388,6 +388,17 @@ int UiWalk::lastPickable(const UiList& l) const {
     return -1;
 }
 
+bool UiWalk::installPanel(std::uint32_t addr) {
+    const auto* kid = w_->at(addr);
+    if (!kid) return false;
+    if (panel_) leavePage(*panel_);
+    panel_ = kid;
+    buildPage(*panel_);
+    settle();
+    log_.push_back("install panel");
+    return true;
+}
+
 bool UiWalk::pickable(const UiList& l, const UiItem& it) const {
     return it.selectable(l.broadcast) && !itemOff(it.addr);
 }

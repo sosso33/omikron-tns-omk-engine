@@ -52,6 +52,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <span>
 #include <vector>
 
@@ -240,6 +241,32 @@ public:
     // `Script_Run` in pump case 2. See `pumpSlots`.
     void setHeldObject(bool held) { heldObject_ = held; }
 
+    // ...and what the pump then ASKS, which is the other half of it and was
+    // missing until 2026-09-04. `sub_406180`'s held-object arm does not queue
+    // blind: it runs the ACTIVATE script from its start with
+    // `Script_RunToOpcode75` and queues only if the script reaches opcode 75
+    // (`var.set.used_object`) - i.e. only if this zone asks what is in the
+    // player's hand. `sub_406120` restores the caller's pc on both exits, so
+    // the dry run leaves no pc behind; what it does execute on the way there
+    // is the script's own condition tests.
+    //
+    // This is the whole of "use the key AT THE LIFT and it opens, use it in
+    // the street and nothing happens": AREA 229 (HALL27)'s activate script
+    // reaches 75 at pc 1550 and compares the answer with object 6, and no
+    // street zone mentions the opcode at all.
+    //
+    // The wrapper's OTHER arm is deliberately not ported: a script that ends
+    // without reaching 75 still returns 1 when `player[+0x194] == 3` (and
+    // sets `dword_4E66B8`), and that field is untraced - so this returns 0
+    // there, which is the arm the shipped scripts take.
+    //
+    // Unset (the default) the probe answers false, which is what the port did
+    // unconditionally before: a held object suppressed every activate.
+    void setUsedObjectProbe(
+        std::function<bool(std::span<const std::byte>, std::size_t)> p) {
+        usedObjectProbe_ = std::move(p);
+    }
+
     // ------------------------------------------------------------ accessors
     const std::vector<LiveZone>& registered() const { return live_; }
     // Every record of both slots' four tables, registered or not - what
@@ -278,6 +305,7 @@ private:
     std::array<PromptSlot, 16> slots_{};
     int  armed_ = 0;
     bool heldObject_ = false;
+    std::function<bool(std::span<const std::byte>, std::size_t)> usedObjectProbe_;
     int  touches_ = 0, cameraRequests_ = 0, touchCamera_ = -1;
     std::vector<std::int16_t> detached_;
 

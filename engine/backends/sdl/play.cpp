@@ -3032,7 +3032,17 @@ int main(int argc, char** argv) {
         // own `held & (held ^ (mask & last))` at mask = all ones.
         const std::uint32_t edgeBits = bits & ~prevBits;
         prevBits = bits;
-        const bool actionEdge = (edgeBits & omk::kUiConfirm) != 0;
+        // ...and NOT while a screen has the input. `Game_RaiseEvent(6, 4)` is
+        // raised from the ACTOR tick (21_d3d.c:3460, :3513, :3962 - the
+        // `.CTL` state handlers), and this loop already ticks the player with
+        // ZERO bits while a screen is open, so the raise cannot happen. Taken
+        // from the raw edge instead, one ENTER in the sneak both confirmed the
+        // menu AND activated the zone the player was standing in - which is
+        // how `Utiliser` on the apartment key ran the lift script with an
+        // EMPTY hand a frame before the key reached it.
+        //
+        // `walk` is the widget walk, non-null exactly while a screen is up.
+        const bool actionEdge = (edgeBits & omk::kUiConfirm) != 0 && !walk;
 
         // THE DIALOGUE CLOCK IS REAL TIME, not a frame count.
         //
@@ -5476,6 +5486,12 @@ int main(int argc, char** argv) {
         // count and case 33 for each name, both refusing (result 3) while no
         // list is open - which is why the open raised event 25 first.
         if (walk && openScreen == omk::kScreenSneak) {
+            // `sub_49BEA0` (Utiliser) writes the screen slot's state word to
+            // **3** and returns 1 when `sub_42B470` returned 1 - and
+            // docs/UI.md's state machine says 3 is CLOSING. So a successful
+            // use CLOSES THE SNEAK. Acted on at the end of this block, where
+            // nothing else still holds `walk` or its panel.
+            bool useClosedSneak = false;
             sneakRows.clear();
             sneakHidden.clear();
             const omk::UiPanel* pn = walk->panel();
@@ -5560,6 +5576,9 @@ int main(int argc, char** argv) {
                     std::printf("sneak: %s with no object selected\n",
                                 verb ? "Utiliser sur" : "Utiliser");
                 } else {
+                  // the OBJECTS id of the selected row - both halves need it
+                  const int objIdx = carried.empty() ? -1
+                      : carried[static_cast<std::size_t>(row)];
                   if (verb == 0) {
                     // ---- WHAT REACHES THE WORLD -------------------------
                     //
@@ -5578,8 +5597,6 @@ int main(int argc, char** argv) {
                     // use it": proximity is which SCENE is resident, and the
                     // handler is its own. Nothing in the Session posted a
                     // message before this.
-                    const int objIdx = carried.empty() ? -1
-                        : carried[static_cast<std::size_t>(row)];
                     const bool ran = session.postMessage(20, objIdx);
                     const auto& m = session.messagesRun();
                     std::printf("sneak: Utiliser '%s' -> message 20, sender "
@@ -5600,10 +5617,23 @@ int main(int argc, char** argv) {
                     // `player[+0xA4] = &unk_4E7EA0[tag * 96]` and attaches
                     // the model to him. So "Utiliser" on a key TAKES IT IN
                     // HAND - which is what a player then carries to a door.
-                    std::printf("sneak: '%s' -> IN HAND (case 35 result 1, "
-                                "sub_41C490 sets player+0xA4). The hand "
-                                "attach and the world-side use are not "
-                                "ported\n", rec->name.c_str());
+                    // ...and it IS the hand now. `Session::useObject` is
+                    // case 35's arm: allocate a `word_4E6CA0` slot for the
+                    // id, drop the item from list 0, and hold that slot -
+                    // which is exactly what `var.set.used_object` (75) reads
+                    // back. The MODEL attach (`sub_437400`/`sub_4374E0`
+                    // inside `sub_41C490`) is the renderer's half and is
+                    // still not done, so nothing appears in his hand.
+                    const int slot = session.useObject(objIdx);
+                    std::printf("sneak: '%s' -> IN HAND, slot %d (case 35 "
+                                "result 1, sub_41C490 sets player+0xA4). A "
+                                "zone whose activate script reaches opcode 75 "
+                                "will now see object %d; the model attach is "
+                                "not ported, so it is invisible\n",
+                                rec->name.c_str(), slot, objIdx);
+                    // `sub_42B470` returns 1 on this arm alone; `sub_49BEA0`
+                    // turns that into `[slot+8] = 3`.
+                    useClosedSneak = true;
                 } else {
                     // The consumable arm: `Object_ApplyEffect(rec, the
                     // player)` runs inside case 35 itself, the result is
@@ -5616,6 +5646,11 @@ int main(int argc, char** argv) {
                                 "the apply is announced and not run\n",
                                 rec->name.c_str(), rec->effect,
                                 omk::effectProperty(rec->effect));
+                    // `sub_42B470` returned 0, so `sub_49BEA0` takes
+                    // `loc_49BEF8`: reset the row list and
+                    // `sub_42A370(screen, unk_4DEE50)` - back to the
+                    // INVENTORY page, screen still open.
+                    walk->installPanel(omk::kPanelSneakInventory);
                   }
                 }
             }
@@ -5797,6 +5832,16 @@ int main(int argc, char** argv) {
                                 "modelled)\n", inv.openedList(),
                                 carried.size(), rows);
                 }
+            }
+            if (useClosedSneak) {
+                std::printf("screen %d closed by the use - `sub_49BEA0` wrote "
+                            "state 3 because `sub_42B470` returned 1 (event "
+                            "%d, object list %d)\n", openScreen,
+                            omk::kEventSneakClose, inv.openedList());
+                inv.closeList();          // Game_RaiseEvent(26, 0)
+                walk.reset();
+                openScreen = -1;
+                screenFromScript = true;
             }
         }
         if (walk) {

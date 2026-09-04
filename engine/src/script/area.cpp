@@ -520,6 +520,21 @@ void Session::resetWorld() {
     bootCtx_ = -1;
     playerDriven_ = false;
     playerWalks_ = false;
+
+    // The pump's dry run, `sub_406180`'s held-object arm. The engine runs it
+    // on the zone's OWN context; since `sub_406120` restores the pc on both
+    // exits and stops BEFORE opcode 75, the only thing the run leaves behind
+    // is whatever the script's condition tests write - so a throwaway
+    // interpreter over the same GameState is the same run. It gets the same
+    // hooks a real context gets, because a condition may ask one.
+    zones_.setUsedObjectProbe(
+        [this](std::span<const std::byte> code, std::size_t at) {
+            if (code.empty() || at == 0 || at >= code.size()) return false;
+            Interpreter vm(state_, table_);
+            vm.setHooks(&hooks_);
+            vm.setStopAtOpcode(75);            // `cmp eax, 4Bh`
+            return vm.run(code, at).status == RunStatus::StoppedAtOpcode;
+        });
 }
 
 // ------------------------------------------------------- THE CONTEXT TABLE
@@ -2763,6 +2778,19 @@ void Session::bankHeldObject(int objectId) {
     hooks_.releaseObject(-1, true);
 }
 void Session::putHeldObjectBack(){ hooks_.releaseObject(-1, false); }
+
+// The comment on the declaration carries the evidence.
+int Session::useObject(int objectId) {
+    int k = -1;                                    // ObjectSlot_Alloc
+    for (int q = 0; q < 50; ++q)
+        if (objectSlotIds_[static_cast<std::size_t>(q)] == -1) { k = q; break; }
+    if (k < 0) return -1;
+    objectSlotIds_[static_cast<std::size_t>(k)] = objectId;
+    state_.listRemove(0, objectId);                // ObjectList_RemoveAt(0, v66)
+    hooks_.holdObject(-1, k);                      // sub_41C490's player[+0xA4]
+    refreshHeldObject();
+    return k;
+}
 
 int Session::heldSlotOf(int actor) const {
     const auto it = heldSlot_.find(actor);

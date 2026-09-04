@@ -4654,6 +4654,97 @@ def c_engine_zone_pump():
            "camera-wait park resumed into its dialog.start"
 
 
+def c_engine_used_object():
+    r"""USING AN INVENTORY OBJECT ON THE WORLD - `Utiliser` reaching a zone.
+
+    The player's report was exact: *"you don't carry the key: you use
+    `Utiliser` when you are near the location where you should use it, and the
+    key is then automatically used"*. The chain behind that is four links, and
+    the port was missing the two middle ones until 2026-09-04.
+
+    **1. The hand.** `Game_HandleEvent` case 35's NON-consumable arm
+    (`readable/src/01_file.c:1546`) does not "use" anything: it allocates a
+    `word_4E6CA0` slot for the object's id, `Object_Load`s its model there,
+    **removes it from object list 0**, and returns result 1 with the slot.
+    `sub_42B470` hands that slot to `sub_41C490`, which writes
+    `player[+0xA4] = &unk_4E7EA0[slot * 96]`; `Actor_HeldObjectSlot`
+    (0x0041A350) reads the field back and divides by 96, so it returns the
+    slot again. The object is in the HAND and out of the bag.
+
+    **2. The pump's dry run.** `Script_Pump` case 2 does not queue an activate
+    blind while something is held. `sub_406180` calls
+    `Actor_HeldObjectSlot(Actor_Player())` and, when it is not -1, runs the
+    activate script through `Script_RunToOpcode75` (`sub_406120`): the same
+    interpreter, `cmp eax, 4Bh ; jz` before the handler call, restoring the
+    caller's pc on BOTH exits. It returns 1 if the script reaches opcode
+    **75** and 0 if it ends first - "does this zone even ask what I am
+    holding?" (Its other arm, `player[+0x194] == 3`, is not ported: that field
+    is untraced, and no shipped script here takes it.)
+
+    **3. Opcode 75** (`var.set.used_object`) then writes `word_4E6CA0[slot]`
+    into the named variable, and **4.** the script branches on it.
+
+    AREA 229 (HALL27) is where a player meets it. Zone records 4 and 6 are the
+    two lift calls to Kay'l's apartment and their activate scripts read
+
+        var.set.used_object 13              ; VARIABLES[13] = 'ObjetUtilise'
+        push.i8 6   / push.var 13 / cmp.eq  -> area.goto 237 'Appart Kayl'
+        push.i8 255 / push.var 13 / cmp.eq  -> media.play 170 'Asc Sans Cle'
+        (neither)                           -> media.play 112 'Marche Pas'
+
+    and object 6 is the apartment key.
+
+    What is asserted, and each line is a test the port could fail:
+
+    * `hand` - the slot is allocated, `Actor_HeldObjectSlot` reads it back,
+      `word_4E6CA0[slot]` is the key's id, and the bag holds ONE fewer copy
+      than before. (IAM\START ships one already, so 2 -> 1.)
+    * `probe` - of AREA 229's **4** activate scripts exactly **2** reach
+      opcode 75, and they are zones **3887** and **3889**, the two lifts.
+      This is the falsification: a probe that answered "yes" to everything
+      would say 4, and the pre-fix code answered "no" to everything and would
+      say 0 - and then no activate would ever run with a full hand.
+    * `used` - the same zone driven three ways, each on its own GameState,
+      giving three DIFFERENT branches of the same script: empty-handed the
+      variable is -1 and the lift says 'Asc Sans Cle'; with the key it is 6
+      and the script reaches `area.goto 237`; with the wrong object it is that
+      object's id and the lift says 'Marche Pas'. The door opening is not a
+      special case in the port - it is the script's own compare.
+
+    Nothing here is a claim about the model in his hand: `sub_41C490`'s
+    `sub_437400`/`sub_4374E0` attach is the renderer's half and is NOT ported,
+    so the key is used and invisible.
+    """
+    import subprocess
+    eng = os.path.join(ROOT, "engine")
+    data = omkpaths.data()
+    tbl = os.path.join(ROOT, "tables")
+    if not (os.path.isdir(eng) and os.path.isdir(os.path.join(data, "IAM"))
+            and os.path.isdir(tbl)):
+        return ("skipped",), ("skipped",), "engine/, gamedata/ or tables/ absent"
+    b = subprocess.run(["make", "-s", "build/used_object_probe"], cwd=eng,
+                       capture_output=True, text=True)
+    binp = os.path.join(eng, "build", "used_object_probe")
+    if b.returncode != 0 or not os.path.exists(binp):
+        return ("build failed",), ("built",), "engine/ must build"
+    r = subprocess.run([binp, data, tbl], capture_output=True, text=True)
+    got = [ln.split() for ln in r.stdout.strip().splitlines()]
+    want = [
+        "hand slot 0 held 0 id_in_slot 6 in_bag_before 2 in_bag_after 1".split(),
+        "probe area 229 activates 4 ask75 2 silent 2 zones 3887 3889".split(),
+        "used arm empty zone 3887 var13 -1 goto237 no voice 170".split(),
+        "used arm key zone 3887 var13 6 goto237 yes voice -1".split(),
+        "used arm wrong zone 3887 var13 5 goto237 no voice 112".split(),
+    ]
+    return got, want, \
+        "case 35 putting the key in the hand and out of the bag; how many of " \
+        "AREA 229's activate scripts reach opcode 75 and which zones they are " \
+        "(the pump's dry run - answering yes to all would be 4, no to all 0); " \
+        "and the SAME lift script taking three different branches with an " \
+        "empty hand, the key, and the wrong object - -1 'Asc Sans Cle', " \
+        "6 `area.goto 237`, 5 'Marche Pas'"
+
+
 def c_engine_zone_registry():
     r"""`engine/`'s LIVE zone registry - both resident slots, all four tables.
 
@@ -5517,12 +5608,23 @@ def c_engine_sneak():
             # Session's own header already recorded. Nothing had ever POSTED
             # a message before.
             "-> message 20, sender object" in o,
-            "-> IN HAND (case 35 result 1" in o,
+            "-> IN HAND, slot" in o,
+            # ...and the screen CLOSES on it. `sub_49BEA0` writes the screen
+            # slot's state word to **3** - which docs/UI.md's state machine
+            # calls `closing` - and returns 1, but only when `sub_42B470`
+            # returned 1, and that is this same result-1 arm: result 2, the
+            # consumable, plays sound 13, returns 0, and `loc_49BEF8` puts
+            # the INVENTORY page back with the screen still open. Until
+            # 2026-09-04 the port did neither, so a player who used the
+            # apartment key was left in the device with the key in his hand
+            # and no way to press the action button - the sneak has the
+            # input while it is up.
+            "closed by the use" in o,
             # ...and the TICK, which is the half that actually froze: the
             # draw gate and the `adventure` gate are separate lines, and a
             # mutation of one alone left this check green.
             _sneak_ticks(o) > 200), \
-           (True, True, True, True, True, True, True, True, True), \
+           (True,) * 10, \
            "TAB held in Anekbah: the special move fires and names its " \
            "tab_special_move row, it raises event 25 for object list 0 and " \
            "opens screen 9, the screen is attributed to the PLAYER rather " \
@@ -10615,7 +10717,12 @@ def c_sneak_examine():
     tool = os.path.join(eng, "build", "exam_probe")
     if mk.returncode != 0 or not os.path.exists(tool):
         return ("skipped",), ("skipped",), "exam_probe did not build"
-    r = subprocess.run([tool, omkpaths.data_root()], capture_output=True, text=True)
+    # The probe prints the objects' own names, which are LATIN-1 in the
+    # shipped tree ('Ordonnance somnif\xe8re'), so a UTF-8 decode of its
+    # output raises before either assertion is looked at. Both of them hold;
+    # the check was simply dying first.
+    r = subprocess.run([tool, omkpaths.data_root()], capture_output=True,
+                       text=True, errors="replace")
     o = r.stdout
     return ("kind 15 83 of 83 have a model" in o,
             "kind 16 17 of 17 have an image" in o), \
@@ -18891,7 +18998,7 @@ def c_licence_headers():
                    if TAG in open(p, encoding="utf-8",
                                   errors="replace").read(600)]
     return (authored, sorted(missing), len(vendored), mislabelled), \
-           (329, [], 1, []), \
+           (330, [], 1, []), \
            "authored source files under tools/, engine/src, engine/tools, " \
            "engine/backends and scripts/; those MISSING the SPDX tag; " \
            "vendored files in engine/third_party; and vendored files wrongly " \
@@ -20298,6 +20405,7 @@ SLOW = [
     ("engine: crowd push", c_engine_crowd_push, "STREET_LIFE 3; actor/spatial.h"),
     ("engine: head look", c_engine_head_look, "STREET_LIFE; actor/pose.h"),
     ("engine: zone pump",  c_engine_zone_pump,  "engine/README"),
+    ("engine: used object", c_engine_used_object, "engine/README"),
     ("engine: zone registry", c_engine_zone_registry, "engine/README"),
     ("engine: voice over", c_engine_voice_over, "CUTSCENES 5; engine/README"),
     ("engine: world ops",  c_engine_world_ops,  "script/hooks.h; SCRIPT_VM; GAME_STATE"),

@@ -418,6 +418,15 @@ public:
     const UiItem* selected() const;
     bool closed() const { return panel_ == nullptr; }
 
+    // `sub_42A370(screen, panel)` itself: run the OLD panel's leave hook
+    // (`+8`), install the new one, run its build hook (`+4`) and settle the
+    // selection. The descents inside the walk do exactly this inline; this is
+    // the same thing for a caller outside it, and there is one - the sneak's
+    // `Utiliser` on a CONSUMABLE, where `sub_49BEA0` takes `loc_49BEF8` and
+    // installs `unk_4DEE50`, the inventory page, instead of closing.
+    // -> false if this widget set has no such panel.
+    bool installPanel(std::uint32_t addr);
+
     // True once the walk has passed through something it does not model - an
     // unread hook or callback. A caller must not trust an answer after this,
     // and saying so is the point: the alternative is guessing.

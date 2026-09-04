@@ -79,6 +79,16 @@ enum class RunStatus {
     PcOutOfRange,
     UnknownOpcode,
     StackUnderflow,
+    // APPENDED, and deliberately last: several probes serialise a status as
+    // its ordinal, so a new value in the middle would silently renumber them.
+    //
+    // `sub_406120` (`Script_RunToOpcode75`), the pump's DRY RUN: the same
+    // interpreter, stopping at a named opcode instead of watching the abort
+    // flag. `cmp eax, 4Bh ; jz` sits BEFORE `call off_4C0140[eax*8]`, so the
+    // opcode it stops at is NOT executed, and both of that function's exits
+    // restore the caller's pc - it answers a question and leaves no trace.
+    // `setStopAtOpcode` arms it; see `ZoneRegistry::setUsedObjectProbe`.
+    StoppedAtOpcode,
 };
 
 struct Call {                 // one stubbed subsystem call, as recorded
@@ -199,6 +209,13 @@ public:
     // actually RUNS the game leaves it on.
     void setUiOpenSuspends(bool on) { uiSuspends_ = on; }
 
+    // Stop before executing opcode `op`, reporting `StoppedAtOpcode`. -1 (the
+    // default) never stops. This is `sub_406120`'s whole difference from the
+    // ordinary loop, and its one shipped use is opcode **75**
+    // (`var.set.used_object`): the zone pump asks "does this activate script
+    // even ask what I am holding?" before queueing it.
+    void setStopAtOpcode(int op) { stopAt_ = op; }
+
     // Whether `camera.set.wait` (96) and `camera.set.at_address` (126) PARK
     // the context for the length of the move, which is what both handlers do -
     // they write status 7 and are released by the same event 4. ONE switch for
@@ -310,6 +327,7 @@ private:
     bool record_ = false;
     bool recordAll_ = false;
     bool uiSuspends_ = true;
+    int  stopAt_ = -1;                 // `setStopAtOpcode`; -1 = never stop
     bool camWaitSuspends_ = false;
     bool objWaitSuspends_ = false;
     bool moveWaitSuspends_ = false;
