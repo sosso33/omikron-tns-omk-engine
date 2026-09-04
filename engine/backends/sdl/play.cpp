@@ -1281,6 +1281,10 @@ int main(int argc, char** argv) {
 "                   area's props. AREA 222 wants SCENE 55, whose script ends\n"
 "                   in `object.show 162`, the Impasse's rings: without it\n"
 "                   there is nothing in the world to take\n"
+"  --bank-reject    DEBUG: every bank is REFUSED as a full list refuses it,\n"
+"                   the object staying in his hand. Without it, the original's\n"
+"                   Inventory_Insert: a row, a merge, or for money and rings\n"
+"                   Object_ApplyEffect - the count goes up, no row\n"
 "  --give a,b,c     object ids into the carried list - a HARNESS write, not\n"
 "                   `inventory.add`. A list, because a new game ships two\n"
 "                   objects and the flows worth driving want a bagful: row\n"
@@ -1356,6 +1360,7 @@ int main(int argc, char** argv) {
     // the mode a reader's own screenshot of the original is in.
     int dispW = 800, dispH = 600;
     std::vector<int> scripted;
+    bool bankReject = false;          // --bank-reject, a DEBUG switch
     int keyEvery = 2;
     // ADVENTURE MODE, headless: `--hold k200*120,k203*30` is a replayable
     // input stream fed AFTER the hand-over - DIK scancodes HELD for that many
@@ -1469,6 +1474,7 @@ int main(int argc, char** argv) {
         // opcode 50 `inventory.add` is what the game uses; this writes the
         // slot and runs none of its bookkeeping.
         else if (a == "--give" && i + 1 < argc) giveList = argv[++i];
+        else if (a == "--bank-reject") bankReject = true;
         // ...and its companion: keep the save's PLAYER but take the world
         // from `IAM\START`, so a flow can be tried against a new game's
         // state without the intro. Also a harness flag, not a port.
@@ -1654,6 +1660,11 @@ int main(int argc, char** argv) {
         std::printf("no IAM/OBJECT - the sneak's inventory page will be "
                     "empty\n");
     omk::Session session(fr + "/IAM", state, opcodes);
+    if (bankReject) {
+        session.setBankReject(true);
+        std::printf("DEBUG --bank-reject: every bank refused, the object stays in hand - "
+                    "NOT the original's rule\n");
+    }
     if (!session.loadAnnounceMap(tb + "/vm_announce.json"))
         std::printf("tables: no vm_announce.json - the log will name fewer "
                     "operands\n");
@@ -1855,6 +1866,28 @@ int main(int argc, char** argv) {
     // block being the mode-1 camera. `MDNOTAKE` swaps nothing: a cancel goes
     // through the put-back to MDLETOBJ. So the side view holds from the
     // hand-over until the object is banked or set down, on either path.
+    // THE `.CTL` EFFECT SPRITES (omk-play 69, point 3). `Cef_UpdateStateEffects`
+    // (0x0045B260) spawns every record of a state on ENTRY (or when the clock
+    // wraps) unless the record's flag bit 2 marks it a per-frame emitter;
+    // `Cef_SpawnEffect` (0x0045B3B0) takes one sprite instance from the scene
+    // registry by the record's +20 id, places it at `Actor_AttachPoint(code)`,
+    // scale +28, mode 4 (ADDITIVE); `Cef_TickEffects` (0x0045ADF0) keeps it
+    // alive while `from <= clock <= from + duration` (and `<= to` when +8 is
+    // set), sets its frame to `(clock - from) / duration * frames`, and with
+    // flag 1 moves it to the bone every tick. The confirm's H_GETOBJ carries
+    // two - sprites 127 and 130 on the LEFT HAND (attach 10 -> actor+44,
+    // "Maing"), which is the "particle effect on the arm" a reader saw.
+    // Attach codes map through Actor_AttachPoint's switch onto the loader's
+    // bone table (04_sys.c 5497..5513), by NAME below.
+    struct CtlSpriteInst { int sprite = 0; float duration = 0, from = 0, to = 0, scale = 1;
+                           std::uint8_t flags = 0, attach = 0; int state = -1; };
+    std::vector<CtlSpriteInst> ctlSprites;
+    int   ctlFxState = -1; float ctlFxFrame = -1.0f;
+    omk::ParticleField ctlField; omk::Geometry ctlGeo;
+    static constexpr const char* kAttachName[18] = {
+        "Buste", "Tete", "Buste", "Buste", "Buste", "Bassin", "Brasg", "Brasd",
+        "Avantg", "Avantd", "Maing", "Maind", "Cuisseg", "Cuissed", "Jambeg",
+        "Jambed", "Piedg", "Piedd"};   // 0/2/3/4 fall to the default arm, a1[5] = Buste
     bool  takeCam = false;            // `C+12 == 1`: the mode-1 camera is live
     int   takeCamPhase = 0;           // 1 travelling in, 2 holding, 3 travelling back
     float takeCamClock = 0.0f;        // frames since the request
@@ -3220,6 +3253,36 @@ int main(int argc, char** argv) {
         // INDEX. So `H_WALK`'s 203/199 name `STPR`/`STPL` in the Impasse and
         // may name nothing at all in a scene that does not carry them, which
         // is the engine's behaviour and not a gap here.
+        if (player) {
+            // the sprite half of the records, spawned as Cef_UpdateStateEffects does
+            const int   st = player->ctlState();
+            const float fr = player->channelFrame();
+            if (st != ctlFxState || fr < ctlFxFrame) {
+                // A NEW STATE (or a wrap) kills what the old one spawned - a
+                // PORT SIMPLIFICATION, labelled: the engine keeps an instance
+                // across states unless flag 0x10 is set, on a clock that keeps
+                // running; every shipped record here dies inside its window.
+                ctlSprites.clear();
+                ctlFxState = st;
+                for (const auto& e : player->stateEffects()) {
+                    if (!e.sprite || (e.flags & 2)) continue;
+                    ctlSprites.push_back({e.sprite, e.duration, e.from, e.to, e.scale,
+                                          e.flags, e.attach, st});
+                    std::printf("ctl-effect: state %d '%s' spawns sprite %d on attach %d "
+                                "('%s') for %.0f frames from %.0f, scale %.2f, flags 0x%02x\n",
+                                st, player->clipName().c_str(), e.sprite, e.attach,
+                                e.attach < 18 ? kAttachName[e.attach] : "Buste",
+                                e.duration, e.from, e.scale, e.flags);
+                }
+            }
+            ctlFxFrame = fr;
+            for (std::size_t i = 0; i < ctlSprites.size();) {
+                const auto& c = ctlSprites[i];
+                const float to = c.to == 0.0f ? 10000.0f : c.to;
+                if (fr > c.from + c.duration || fr > to) ctlSprites.erase(ctlSprites.begin() + static_cast<long>(i));
+                else ++i;
+            }
+        }
         if (player && session.scene().loaded()) {
             const auto& rt = session.scene().scene();
             for (const auto& es : player->sounds()) {
@@ -3977,10 +4040,8 @@ int main(int argc, char** argv) {
                         using B = omk::Session::Banked;
                         const char* what =
                             arm == B::Row      ? "a row at the front of list 0"
-                          : arm == B::Consumed ? "kind 12/13: applied and CONSUMED, no row "
-                                                 "- `Object_ApplyEffect` is NAMED and not "
-                                                 "read, so the effect is announced and NOT "
-                                                 "applied"
+                          : arm == B::Consumed ? "kind 12/13: Object_ApplyEffect applied and "
+                                                 "CONSUMED, no row - the count is the take"
                           : arm == B::Merged   ? "merged into an existing row of a related "
                                                  "kind, no new row - and the quantity is in "
                                                  "the 56-byte cache this port does not model, "
@@ -3988,10 +4049,12 @@ int main(int argc, char** argv) {
                                                : "REFUSED - list 0 is full, case 10 returns 0 "
                                                  "and it stays in his hand";
                         std::printf("take: MDPUTSNK - object %d '%s' (kind %d) -> "
-                                    "carried list %d -> %d: %s\n",
+                                    "carried list %d -> %d: %s%s%s\n",
                                     takeCandidate,
                                     session.objectName(takeCandidate).c_str(),
-                                    session.objectKind(takeCandidate), was, now, what);
+                                    session.objectKind(takeCandidate), was, now, what,
+                                    session.lastObjectEffect().empty() ? "" : "; effect: ",
+                                    session.lastObjectEffect().c_str());
                         takeCandidate = -1;
                     } else if (mv == "MDLETOBJ") {
                         if (takeCam) {                // the same mode-16 swap
@@ -5034,7 +5097,8 @@ int main(int argc, char** argv) {
                 }
             }
             refreshSprites();
-            const bool wantSprites = session.scene().effects().count() && !spriteTex.empty();
+            const bool wantSprites = (session.scene().effects().count() || !ctlSprites.empty()) &&
+                                     !spriteTex.empty();
             // Which sprite ids the resident scene can name. Computed BEFORE the
             // rebuild test and compared, because a scene that starts asking for
             // an id it was not asking for before needs a slot for it - a
@@ -5044,6 +5108,7 @@ int main(int argc, char** argv) {
                 spriteWanted.insert(static_cast<int>(e.sprite));
             for (const auto& pa : session.scene().effects().particles())
                 spriteWanted.insert(pa.sprite);
+            for (const auto& c : ctlSprites) spriteWanted.insert(c.sprite);
             if (poolBuiltFor != poolComposition || poolHasSprites != wantSprites ||
                 poolHasPlayer != drawPlayer || spritePooled != spriteWanted) {
                 pool = worldTex;
@@ -5902,9 +5967,60 @@ int main(int argc, char** argv) {
             // holds every sprite after the set's and the speaker's textures,
             // so a batch's slot is `spriteBase + sprite`.
             int spriteBase = -1;
-            if (session.scene().effects().count() && !spriteTex.empty()) {
+            if ((session.scene().effects().count() || !ctlSprites.empty()) && !spriteTex.empty()) {
                 omk::particleGeometry(fxGeo, session.scene().effects(),
                                       view.cam.eye, view.cam.at, spriteFr);
+                // The `.CTL` sprites, each on its bone THIS frame (flag 1,
+                // "follow the bone every frame" - all shipped records here
+                // carry it; the others are placed once and this moves them
+                // too, labelled). The frame is `(clock - from) / duration`,
+                // as Cef_TickEffects writes it; flag 8's doubled sprite
+                // clock is not modelled.
+                if (!ctlSprites.empty() && player && drawPlayer) {
+                    const omk::NodeTracks* pt = player->poseTracks();
+                    const std::vector<omk::MeshPose> pose = pt
+                        ? omk::composePose(playerMeshes, *pt, player->poseFrame(), false)
+                        : omk::composePose(playerMeshes, omk::NodeTracks{}, 0, false);
+                    const float* pp = player->pos();
+                    const float yaw = player->facing();
+                    const float fr = player->channelFrame();
+                    ctlField.clear();
+                    for (const auto& c : ctlSprites) {
+                        const char* want = c.attach < 18 ? kAttachName[c.attach] : "Buste";
+                        int node = -1;
+                        for (std::size_t i = 0; i < playerMeshes.size(); ++i)
+                            if (std::strstr(playerMeshes[i].name, want)) node = static_cast<int>(i);
+                        if (node < 0 || static_cast<std::size_t>(node) >= pose.size()) continue;
+                        const omk::MeshPose& hp = pose[static_cast<std::size_t>(node)];
+                        const float in[3] = {hp.pos[0] - playerRootXZ[0], hp.pos[1],
+                                             hp.pos[2] - playerRootXZ[1]};
+                        float o[3];
+                        omk::rotateYaw(yaw, in, o);
+                        omk::Particle p;
+                        p.pos[0] = o[0] + pp[0];
+                        p.pos[1] = o[1] + pp[1] - playerFeet + lastRootDrop;
+                        p.pos[2] = o[2] + pp[2];
+                        p.life = c.duration > 0.0f ? c.duration : 1.0f;
+                        p.frameAge = fr - c.from;
+                        if (p.frameAge < 0.0f) p.frameAge = 0.0f;
+                        if (p.frameAge > p.life) p.frameAge = p.life;
+                        p.age = p.frameAge;
+                        p.scale = c.scale > 0.0f ? c.scale : 1.0f;
+                        p.sprite = c.sprite;
+                        p.mode = 4;                        // Cef_SpawnEffect: +10 = 4, additive
+                        if (fr < c.from) continue;         // not in its window yet
+                        ctlField.addParticle(p);
+                    }
+                    omk::particleGeometry(ctlGeo, ctlField, view.cam.eye, view.cam.at, spriteFr);
+                    const std::size_t base = fxGeo.corners.size();
+                    for (omk::Batch b : ctlGeo.batches) { b.start += base; fxGeo.batches.push_back(b); }
+                    fxGeo.corners.insert(fxGeo.corners.end(), ctlGeo.corners.begin(), ctlGeo.corners.end());
+                    fxGeo.cornerMirror.insert(fxGeo.cornerMirror.end(), ctlGeo.cornerMirror.begin(), ctlGeo.cornerMirror.end());
+                    fxGeo.cornerMesh.insert(fxGeo.cornerMesh.end(), ctlGeo.cornerMesh.begin(), ctlGeo.cornerMesh.end());
+                    fxGeo.cornerVertex.insert(fxGeo.cornerVertex.end(), ctlGeo.cornerVertex.begin(), ctlGeo.cornerVertex.end());
+                    fxGeo.cornerDeclared.insert(fxGeo.cornerDeclared.end(), ctlGeo.cornerDeclared.begin(), ctlGeo.cornerDeclared.end());
+                    ++fxGeo.revision;
+                }
                 // The pool already carries them: it is built above, in one
                 // place, with a section per model.
                 spriteBase = static_cast<int>(spriteTexBase);

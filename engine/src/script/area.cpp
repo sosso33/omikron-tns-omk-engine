@@ -2835,8 +2835,15 @@ bool Session::takeObject(int objectId) {
 // itself (NAMED, body as generated), so `Consumed` and `Merged` announce an
 // effect they do not apply, and say so at the moment it happens.
 Session::Banked Session::bankHeldObject(int objectId) {
+    lastObjectEffect_.clear();
     if (objectId < 0) return Banked::Full;
+    if (bankReject_) { lastObjectEffect_ = "DEBUG --bank-reject"; return Banked::Full; }
     const Banked arm = insertArm(objectId);
+    // The kind-12/13 path of `Inventory_Insert` (01_file.c 3570):
+    // `Object_ApplyEffect(a1, a3); return 0` - applied, then consumed. So the
+    // rings ARE taken in the original: not as a row, as a COUNT. A reader,
+    // 2026-09-04: "normal behaviour for the rings are to be taken".
+    if (arm == Banked::Consumed) applyObjectEffect(objectId);
     // `ObjectList_InsertFront` - `listAdd` IS that function, shifting the list
     // up and writing slot 0, refusing when it is full. A refusal is case 10's
     // `return 0`: nothing is freed and the object stays in the hand.
@@ -2855,6 +2862,45 @@ Session::Banked Session::bankHeldObject(int objectId) {
     if (hooks_.propById(objectId, pr) && pr.stateIndex >= 0)
         state_.setPropState(pr.stateIndex, state_.propState(pr.stateIndex) & ~1);
     return arm;
+}
+
+void Session::applyObjectEffect(int objectId) {
+    if (objectId < 0 || dataRoot_.empty()) return;
+    static std::vector<ObjectRecord> table;
+    static std::string forRoot;
+    if (forRoot != dataRoot_) { forRoot = dataRoot_; table = loadObjects(DataFs(dataRoot_)); }
+    const ObjectRecord* rec = nullptr;
+    for (const auto& o : table) if (o.id == objectId) { rec = &o; break; }
+    if (!rec) return;
+    int prop = -1, sub = 0, amount = 0;
+    if (rec->flags & 0x20) {
+        const int k = rec->kind;
+        amount = rec->quantity;                        // i16(rec, 12)
+        if (k >= 2 && k <= 6)        { prop = 35; sub = k - 2; }
+        else if (k >= 7 && k <= 11)  { prop = 35; sub = k - 7; }
+        else if (k == 12)            { prop = 4; }     // Argent
+        else if (k == 13)            { prop = 5; }     // Anneaux
+    } else {
+        prop = effectProperty(rec->effect);
+        if (prop == 0) prop = -1;
+        amount = rec->amount;                          // i16(rec, 8)
+    }
+    if (prop < 0) { lastObjectEffect_ = "no effect"; return; }
+    if (prop == 35) {
+        // `Actor_SetProperty(35)` takes the sub-index in the high word; the
+        // port's writer has no case 35 - announced, not applied, labelled.
+        lastObjectEffect_ = "property 35 sub " + std::to_string(sub) + " += " +
+                            std::to_string(amount) + " (NOT applied: no writer for 35)";
+        return;
+    }
+    std::int32_t v = 0;
+    if (!hooks_.getActorProperty(-1, prop, v)) { lastObjectEffect_ = "player record unreadable"; return; }
+    int nv = v + amount;
+    if (nv > 0xFFFF) nv = 0xFFFF;                      // `if (v6 + v9 > 0xFFFF) v7 = -1`
+    hooks_.setActorProperty(-1, prop, nv);
+    lastObjectEffect_ = std::string(prop == 4 ? "Argent" : prop == 5 ? "Anneaux" : "property ") +
+                        (prop == 4 || prop == 5 ? "" : std::to_string(prop)) + " " +
+                        std::to_string(v) + " -> " + std::to_string(nv);
 }
 
 // `Inventory_Insert`'s answer, as the ladder above computes it.

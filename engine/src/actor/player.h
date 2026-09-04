@@ -204,6 +204,10 @@ public:
     const float* euler() const { return euler_; }
     ActorState state() const { return rt_.state(); }
     int ctlState() const { return rt_.channel().state(); }
+    // The channel's own frame (1..len) - the clock `Cef_TickEffects` reads.
+    float channelFrame() const { return rt_.channel().frame(); }
+    // The current entry's +28 effect records (`CtlEffect`), empty when none.
+    const std::vector<CtlEffect>& stateEffects() const;
     // The entry that OWNS the clip being played: a junction (flag 0x8000)
     // or an alias (flag 2) is a state the channel sits in while blending,
     // and `Actor_BlendToClip` binds the clip behind its GoTo chain - which

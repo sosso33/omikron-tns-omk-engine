@@ -64,6 +64,7 @@ int effectProperty(int effect) {
         case 5: return 18;  // Carac Dodge
         case 6: return 1;   // Vie
         case 7: return 19;  // Carac Fight Experience
+        case 8: return 20;  // Object_ApplyEffect's last case (0x0040A0xx: `case 8: v3 = 20`)
         default: return 0;
     }
 }

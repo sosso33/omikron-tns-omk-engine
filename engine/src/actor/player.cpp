@@ -802,6 +802,13 @@ void PlayerController::setTakeGeometry(float angleDeg, float second) {
     ++takeGen_;                       // the baked window is no longer valid
 }
 
+const std::vector<CtlEffect>& PlayerController::stateEffects() const {
+    static const std::vector<CtlEffect> none;
+    const int e = rt_.channel().state();
+    if (e < 0 || !ctl_ || e >= static_cast<int>(ctl_->states.size())) return none;
+    return ctl_->states[static_cast<std::size_t>(e)].effects;
+}
+
 int PlayerController::variantCount() const {
     const int e = rt_.channel().state();
     if (e < 0 || !ctl_ || e >= static_cast<int>(ctl_->states.size())) return 0;

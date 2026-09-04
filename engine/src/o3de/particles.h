@@ -199,6 +199,10 @@ public:
     // so what is ported is WHERE randomness enters, not which numbers come
     // out - `PORTING` B5's argument one level down.
     void seed(std::uint32_t s) { rng_ = s ? s : 1u; }
+    // A particle placed by a CALLER, not an emitter: the `.CTL` effect
+    // records spawn one sprite instance on a bone (`Cef_SpawnEffect`), and
+    // the viewer rebuilds those into a field of their own every frame.
+    void addParticle(const Particle& p) { particles_.push_back(p); }
 
 private:
     float rnd();                 // [0, 1)

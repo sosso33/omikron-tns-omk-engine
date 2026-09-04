@@ -226,6 +226,36 @@ letterboxed (left full-frame, nothing read ties the strip to mode 1), are for
 the next person at the screen. The take's SOUND and the arm particle (the
 `.CTL` entry's effect records) stay unplayed.
 
+## The confirm's PARTICLE and the rings' COUNT (2026-09-04, unseen)
+
+* **The particle is the `.CTL`'s.** The confirm goes `H_WAITOB` → `MDPUTSNK`
+  → state 57 `H_GETOBJ`, which carries two effect records: sprite 127 for 10
+  frames from frame 5 (with sound 187 at 0), scale 0.75, and sprite 130 for
+  20 frames, scale 0.25 - both attach code 10, which `Actor_AttachPoint`
+  maps to actor+44 = `Maing`, the LEFT hand, the node the object rides. The
+  cancel's `H_GETOBJ` (58) has none. `play.cpp` now spawns them as
+  `Cef_UpdateStateEffects` does (every record on state entry, per-frame
+  emitters excluded), places each on its bone every frame through the
+  player's model-to-world, frames it by `(clock − from) / duration`, mode 4
+  additive, and pools the sprite ids; `ParticleField::addParticle` is the
+  one addition to the field. Labelled simplifications: a new state kills the
+  old state's instances (the engine keeps them unless flag 0x10, on a clock
+  that runs on), and flag 8's doubled sprite clock is not modelled. Sprite
+  ids 127/130 must be registered by the resident scene for anything to show.
+* **The rings ARE taken - as a COUNT.** A reader: *"normal behaviour for the
+  rings are to be taken"*. `Object_ApplyEffect` (0x00409780), read: a
+  VALUABLE record (flags 0x20) adds its +12 quantity to a property by KIND -
+  12 → 4 Argent, 13 → 5 Anneaux, 2..6/7..11 → 35 with the sub-index in the
+  high word; a plain record adds +8 to the property its +6 effect names
+  (`effectProperty`, now with case 8 → 20). `Inventory_Insert`'s 12/13 path
+  applies it and returns 0, so the rings raise Anneaux and take no row -
+  main's "consumed" reading and the reader's "taken" are the same fact.
+  Ported: `Session::applyObjectEffect`, called on the Consumed arm; the
+  MDPUTSNK line prints `effect: Anneaux 0 -> 3`. Property 35 (guns, ammo)
+  is announced, not applied - the port's writer has no case 35.
+* **`--bank-reject`**, a DEBUG flag: every bank refused as a full list
+  refuses it, the object staying in hand. Off = the original.
+
 ## Suggested order for whoever picks this up
 
 1. ~~Play the current build and answer §"NOT confirmed" 1~~ — done 2026-09-04,

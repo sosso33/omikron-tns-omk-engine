@@ -514,6 +514,13 @@ public:
     // the unconsumed press to `sub_41C770`. Neither is modelled (labelled in
     // `pumpZoneSlots`); the registry refuses the activate rather than guess.
     void setHeldObject(bool on) { heldObject_ = on; zones_.setHeldObject(on); }
+    // A DEBUG switch, not the engine (`--bank-reject`): every bank is REFUSED
+    // the way a full list refuses it - `Inventory_Insert`'s `return 0`, the
+    // object staying in his hand. Off by default, which is the original.
+    void setBankReject(bool on) { bankReject_ = on; }
+    bool bankReject() const { return bankReject_; }
+    // What the last bank's `Object_ApplyEffect` did, for the log.
+    const std::string& lastObjectEffect() const { return lastObjectEffect_; }
     // Derive it from the hand instead - see area.cpp. The setter above stays
     // for a harness that wants to force the state without a script.
     void refreshHeldObject();
@@ -799,6 +806,13 @@ public:
     };
     Banked bankHeldObject(int objectId);
     Banked insertArm(int objectId) const;
+    // `Object_ApplyEffect` (0x00409780): a VALUABLE record (flags 0x20) adds
+    // its +12 quantity to a property picked by KIND - 12 -> 4 (Argent), 13 ->
+    // 5 (Anneaux), 2..6 and 7..11 -> 35 with the sub-index in the high word;
+    // a plain one adds +8 to the property its +6 effect names.
+    void applyObjectEffect(int objectId);
+    bool bankReject_ = false;
+    std::string lastObjectEffect_;
     // `MDLETOBJ` -> `sub_41C540(player, 0)`: released with remove=0, so the
     // prop is re-parented at its stored placement - put back where it was.
     void putHeldObjectBack();
