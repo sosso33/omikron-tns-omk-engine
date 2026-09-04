@@ -109,13 +109,8 @@ inline constexpr int kScreenSneak = 9;      // the screen table's row 9
 // `Game_HandleEvent` 25 and 26, the two ends of the inventory data channel's
 // session (docs/UI.md "the inventory data channel").
 inline constexpr int kEventSneakOpen = 25, kEventSneakClose = 26;
-// The device's INVENTORY page and its nine row widgets. Both are addresses in
-// the widget tree rather than fields, the way `gridHook` and `nameHook` are -
-// the page because `Ui_OpenSneakFamily` installs it for parameter 0, the list
-// because it is the one whose rows come from the object list rather than from
-// `IAM\Sneak`. Several of the device's pages carry the SAME list, which is why
-// a drawer has to key on the page as well.
-inline constexpr std::uint32_t kPanelSneakInventory = 0x004DEE50u;
-inline constexpr std::uint32_t kListSneakRows       = 0x004DE6F0u;
+// The device's INVENTORY page and its nine row widgets are addresses in the
+// WIDGET TREE, not fields of this table, so they live with the tree:
+// `kPanelSneakInventory` and friends in `ui/widgets.h`.
 
 }  // namespace omk

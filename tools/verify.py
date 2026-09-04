@@ -10266,6 +10266,89 @@ def c_fill_colour():
            "round it would be (63, 96, 92)"
 
 
+def c_sneak_page_colour():
+    r"""WHAT THE (255, 0, 0) PLACEHOLDER MEANS - closed 2026-09-04.
+
+    `fill colour` settled the blend and left one thing open: 209 of the tree's
+    222 fill items ship `+8/+9/+10` = (255, 0, 0), and the sneak's rows draw a
+    warm amber that no red source can make under that blend. Something wrote
+    the real colour at run time and nothing had found what.
+
+    **Two setters, and they are two lines each.**
+
+        sub_4296B0(item, r, g, b)   item[8], item[9], item[10]
+        sub_4296D0(list, r, g, b)   the same three on EVERY item of the list,
+                                    count at `+0`, item array at `+12` - the
+                                    same pair `sub_42AAE0` walks
+
+    3 and 23 call sites. **21 of the 23 sit in a function with no `proc`
+    label**, because every one of them is a panel or list callback - a dword
+    in the widget tree, which is exactly the class CLAUDE.md 1 records IDA
+    does not recognise as code. That is why no earlier search found them.
+
+    **What they are handed is a TAB ICON's own colour.** The sneak's five page
+    icons stand in one shared column (list 0x004DE210, all at x = 15) and
+    their records carry the five page colours; each page's `panel+4` builder
+    pushes the bytes of ITS OWN icon by address. The inventory page's builder
+    is at 0x0049B710 - named by panel 0x004DEE50 `+4` at file offset 0xDDA54,
+    bounded above by `sub_49B610 endp` + `align 10h` (its `retn` lands at
+    0x0049B701) and confirmed by instruction lengths reaching `loc_49B759`
+    exactly - and it does:
+
+        sub_4296D0(0x004DE6F0, byte_4DE048, byte_4DE049, byte_4DE04A)   rows
+        sub_4296D0(0x004DE318, ...)                                     verbs
+        sub_4296D0(0x004DEC58, ...)                                     echo
+
+    where `byte_4DE048` is the inventory icon 0x004DE040 `+8`. The other four
+    pages do the same from their own icons - identity 0x004DDFB0, slider
+    0x004DDFF8, memory 0x004DE088, options 0x004DE0D0 - and three of them
+    then blacken the clock item 0x004DEC08 with the single-item setter.
+
+    **Confirmed against five captures of the original.** The inventory page
+    draws amber, the slider page green, the identity page blue, matching the
+    icon beside each. Fitted over 15 channel samples of 3 hues from 3 pages,
+    `measured = 0.19 * source + 11` (the offset is the capture's lifted
+    black); the fill rule predicts a slope of 55/255 = 0.216 and source-over
+    0.784.
+
+    Shown to fail: dropping `buildPage` leaves the row bar at the placeholder,
+    which paints (49, 0, 0); pointing it at any other icon gives that page's
+    colour instead.
+    """
+    import subprocess
+    eng = os.path.join(ROOT, "engine")
+    if not os.path.isdir(eng):
+        return ("skipped",), ("skipped",), "engine/ absent"
+    mk = subprocess.run(["make", "-s", "build/sneak_colour"], cwd=eng,
+                        capture_output=True, text=True)
+    tool = os.path.join(eng, "build", "sneak_colour")
+    if mk.returncode != 0 or not os.path.exists(tool):
+        return ("skipped",), ("skipped",), "sneak_colour did not build"
+    tb = os.path.join(ROOT, "tables")
+    r = subprocess.run([tool, omkpaths.data_root(),
+                        os.path.join(tb, "ui_widgets.json"),
+                        os.path.join(tb, "ui.json")],
+                       capture_output=True, text=True)
+    o = r.stdout
+    icons = [ln.split("rgb")[1].split() for ln in o.splitlines()
+             if ln.startswith("icon ")]
+    return (len(icons),
+            [" ".join(c) for c in icons],
+            "list 0x4de6f0 written 240 135 15 over 9 items" in o,
+            "list 0x4de318 written 240 135 15 over 3 items" in o,
+            "list 0x4dec58 written 240 135 15 over 2 items" in o,
+            "row bar paints 49 28 0" in o), \
+           (5,
+            ["20 165 250", "25 240 115", "240 135 15", "255 240 95",
+             "255 100 70"],
+            True, True, True, True), \
+           "the five tab icons carry the five page colours; opening screen " \
+           "9 runs the inventory page's builder, which copies its own icon's " \
+           "amber over the rows, the verbs and the echo bar; and the row " \
+           "bar then paints (49, 28, 0) - (240, 135, 15) at 55/255 over " \
+           "black - where the placeholder painted (49, 0, 0)"
+
+
 def c_player_counters():
     r"""The SETEKS and the ANNEAUX, and where the player record keeps them.
 
@@ -18246,7 +18329,7 @@ def c_licence_headers():
                    if TAG in open(p, encoding="utf-8",
                                   errors="replace").read(600)]
     return (authored, sorted(missing), len(vendored), mislabelled), \
-           (322, [], 1, []), \
+           (323, [], 1, []), \
            "authored source files under tools/, engine/src, engine/tools, " \
            "engine/backends and scripts/; those MISSING the SPDX tag; " \
            "vendored files in engine/third_party; and vendored files wrongly " \
@@ -19714,6 +19797,7 @@ SLOW = [
     ("save clock",         c_save_clock,        "GAME_STATE 8"),
     ("player counters",   c_player_counters,   "UI 3g; GAME_STATE"),
     ("fill colour",       c_fill_colour,       "UI 3b"),
+    ("sneak page colour", c_sneak_page_colour,  "UI 3b"),
     ("engine: movies",     c_engine_movies,     "BOOT 2"),
     ("engine: raster",     c_engine_raster,     "PORTING B6"),
     ("engine: silhouette", c_engine_silhouette, "PORTING B6"),

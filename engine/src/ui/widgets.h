@@ -25,6 +25,7 @@
 // `Ui_ConfirmSelection`.
 #pragma once
 
+#include <array>
 #include <cstdint>
 #include <map>
 #include <string>
@@ -47,6 +48,22 @@ inline constexpr std::uint32_t kListNoWrap       = 0x80000;
 // at `+4`, the same way `gridHook` and `nameHook` are, and those two ARE
 // lifted - this one is here so the sneak works with an older table too.
 inline constexpr std::uint32_t kMoveSelectionLR = 0x0042A930u;
+
+// THE SNEAK DEVICE'S WIDGET ADDRESSES.
+//
+// Addresses in the tree rather than table fields, the way `gridHook` and
+// `nameHook` are. The device's five pages are five PANELS sharing one tab
+// column (list 0x004DE210) and, between them, one row list and one status
+// list - which is why a drawer has to key on the page as well as the list.
+//
+// The icon is the page's own tab, and its `+8/+9/+10` is the page's COLOUR:
+// `UiWalk::buildPage` copies it over the three lists below, which is what the
+// engine's panel `+4` builder at 0x0049B710 does.
+inline constexpr std::uint32_t kPanelSneakInventory = 0x004DEE50u;
+inline constexpr std::uint32_t kIconSneakInventory  = 0x004DE040u;  // amber
+inline constexpr std::uint32_t kListSneakRows       = 0x004DE6F0u;  // 9 rows
+inline constexpr std::uint32_t kListSneakVerbs      = 0x004DE318u;  // 3 verbs
+inline constexpr std::uint32_t kListSneakEcho       = 0x004DEC58u;  // bar+clock
 
 using FlagOp = std::pair<std::uint32_t, bool>;
 
@@ -303,8 +320,52 @@ public:
     int   answer() const { return answer_; }
     const std::vector<std::string>& log() const { return log_; }
 
+    // THE COLOUR A PAGE PAINTS ITSELF IN - `sub_4296D0` (0x004296D0), and
+    // it answers the question `Ui_DrawItemFill` could not.
+    //
+    // 209 of the tree's 222 fill items ship `+8/+9/+10` = (255, 0, 0), so
+    // the record is a PLACEHOLDER and the real colour is written at run
+    // time. What writes it is a two-line pair of setters:
+    //
+    //     sub_4296B0(item, r, g, b)   ->  item[8], item[9], item[10]
+    //     sub_4296D0(list, r, g, b)   ->  the same three, on EVERY item of
+    //                                     the list (count at +0, array +12)
+    //
+    // and they have 3 and 23 call sites. Every one of the 23 but two sits
+    // in a function with no `proc` label, because every one of them is a
+    // PANEL or LIST callback - a dword in the widget tree, the exact class
+    // CLAUDE.md 1 says IDA does not recognise as code.
+    //
+    // **What they are handed is a TAB ICON's own colour.** The sneak's five
+    // page icons (list 0x004DE210, x = 15) carry the five page colours in
+    // their records - blue (20,165,250), green (25,240,115), amber
+    // (240,135,15), yellow (255,240,95), red (255,100,70) - and each page's
+    // builder copies the bytes of ITS OWN icon over the page's fill lists.
+    // The pushes name the icon by address: `byte_4DE048/49/4A` is the
+    // inventory icon at 0x004DE040 `+8/+9/+10`.
+    //
+    // Confirmed against five captures of the original: the inventory page
+    // draws amber, the slider page green, the identity page blue, and every
+    // channel lands on `src * (1 - 200/255)` - measured slope 0.19 over 15
+    // channel samples of 3 hues, against 0.78 for source-over.
+    //
+    // Keyed by item address, so a later single-item write lands on the one
+    // item: the slider, memory and options builders all blacken 0x004DEC08
+    // (the clock) after colouring the list it belongs to, and the inventory
+    // builder does not.
+    const int* itemColour(std::uint32_t addr) const {
+        const auto it = colour_.find(addr);
+        return it == colour_.end() ? nullptr : it->second.data();
+    }
+
 private:
     void settle();
+    // `sub_4296B0` and `sub_4296D0`, and the panel `+4` builder that calls
+    // them. `buildPage` runs the arm for the panel being opened; a panel
+    // with no builder read leaves every colour as the record has it.
+    void colourItem(std::uint32_t item, int r, int g, int b);
+    void colourList(std::uint32_t list, int r, int g, int b);
+    void buildPage(const UiPanel& p);
     // `sub_42A7E0` - the selection mover, whose two direction bits are
     // parameters: the default dispatch passes UP/DOWN, `sub_42A930`
     // passes LEFT/RIGHT.
@@ -340,6 +401,8 @@ private:
     int  answer_ = -1;
     std::string name_;
     std::vector<std::string> log_;
+    // Item address -> the RGB a page builder wrote into `+8/+9/+10`.
+    std::map<std::uint32_t, std::array<int, 3>> colour_;
 };
 
 // The start menu's "Charger une partie" panel.

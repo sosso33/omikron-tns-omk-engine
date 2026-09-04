@@ -519,12 +519,65 @@ artwork that is black there.
 `verify.py: fill colour`. Drawn as source-over the same item gives
 (63, 96, 92).
 
-**What the placeholder means is still open.** The sneak's rows carry
-(255, 0, 0) and so render dark red, where the same screenshot measures
-(94, 60, 16) — a warm amber no red source can make under this blend. So
-something writes a real colour into `+8/+9/+10` at run time on the screens
-that need one, and what does that has not been found. The LIFT does not need
-it, which is why the LIFT is what settled the rule.
+### What the placeholder means: a page paints itself in its TAB ICON's colour
+
+209 of the 222 fills ship (255, 0, 0), so the record is a placeholder and the
+colour is written at run time. **What writes it is a pair of setters two lines
+long**, and they had never been found because of where their callers live:
+
+| | |
+|---|---|
+| `sub_4296B0(item, r, g, b)` | `item[8]`, `item[9]`, `item[10]` — 3 sites |
+| `sub_4296D0(list, r, g, b)` | the same three on **every** item of the list — count at `+0`, item array at `+12`, the pair `sub_42AAE0` also walks — 23 sites |
+
+**21 of those 23 sites sit in a function with no `proc` label**, because every
+one of them is a panel or list callback: a dword in the widget tree, which is
+exactly the class CLAUDE.md §1 records IDA does not recognise as code. A
+search through named functions finds nothing, and that is what happened.
+
+**What they are handed is a tab icon's own colour.** The sneak's five pages
+are five panels sharing one icon column — list 0x004DE210, every item at
+x = 15 — and those five records carry the five page colours:
+
+| icon | y | colour | page |
+|---|---|---|---|
+| 0x004DDFB0 | 60 | (20, 165, 250) | Identity |
+| 0x004DDFF8 | 129 | (25, 240, 115) | Slider |
+| 0x004DE040 | 207 | (240, 135, 15) | Inventory |
+| 0x004DE088 | 281 | (255, 240, 95) | Memory |
+| 0x004DE0D0 | 356 | (255, 100, 70) | Options |
+
+Each page's **`panel+4` builder** — a callback slot the walker did not read
+until now; it lifts `+16`, the input hook — pushes the bytes of *its own* icon
+by address. For the inventory page the builder is **0x0049B710**, named by
+panel 0x004DEE50 `+4` at file offset 0xDDA54, and it ends:
+
+```
+sub_4296D0(0x004DE6F0, byte_4DE048, byte_4DE049, byte_4DE04A)   the 9 rows
+sub_4296D0(0x004DE318, ...)                                     the 3 verbs
+sub_4296D0(0x004DEC58, ...)                                     echo + clock
+```
+
+`byte_4DE048` is icon 0x004DE040 `+8`. The other four pages do the same from
+their own icons, and identity, memory and options then blacken the clock item
+0x004DEC08 with the single-item setter, which the inventory page does not.
+
+**Confirmed against five captures of the original**, 2026-09-04: the inventory
+page draws amber, the slider page green, the identity page blue — each
+matching the icon beside it. Fitted over 15 channel samples from 3 hues and 3
+pages, `measured = 0.19 × source + 11`, where the fill rule predicts a slope
+of 55/255 = **0.216** and source-over **0.784**; the offset is the capture's
+lifted black. The port composes (49, 28, 0) for the row bar over black and
+(57, 32, 0) over the page's own window tile, against (56, 34, 8) measured.
+
+`verify.py: sneak page colour`. Only the inventory page's builder is ported:
+it is the one whose function boundary is established (the `retn` of
+`sub_49B610` lands at 0x0049B701, `align 10h` puts the next function at
+0x0049B710, and the instruction lengths reach `loc_49B759` exactly), and it is
+the page the port opens. The other four pages' pushes are read — the icons
+above are what they name — but which unlabelled function each sits in is an
+inference from the order of the listing, so they are recorded and not ported.
+
 
 **The cursor is ANIMATED, and it is the glow a player sees.** `0x40000200` is
 by far the commonest decoration — every one of the sneak's tab icons, its

@@ -340,6 +340,62 @@ void UiWalk::settle() {
     }
 }
 
+// `sub_4296B0` (0x004296B0) - the item colour setter, three bytes:
+//
+//     mov [eax+8], cl / mov [eax+9], dl / mov [eax+0Ah], cl
+//
+// Three call sites, all three the same write: the sneak's clock item
+// (0x004DEC08) back to black after the list it sits in has been recoloured.
+void UiWalk::colourItem(std::uint32_t item, int r, int g, int b) {
+    colour_[item] = {r, g, b};
+}
+
+// `sub_4296D0` (0x004296D0) - the same three bytes over EVERY item of a list.
+// The count is the list's own `+0` and the item array its `+12`, which is the
+// same pair `sub_42AAE0` walks; the loop is `jnz` on a decremented count, so a
+// list of zero writes nothing.
+void UiWalk::colourList(std::uint32_t list, int r, int g, int b) {
+    if (!panel_) return;
+    for (const auto& l : panel_->lists) {
+        if (l.addr != list) continue;
+        for (const auto& it : l.items) colourItem(it.addr, r, g, b);
+        return;
+    }
+}
+
+// The panel `+4` BUILDER, for the sneak family - and `panel+4` is a callback
+// slot the walker did not read until now (it lifts `+16`, the input hook).
+//
+// Each sneak page is its own panel with its own builder, and the builder's
+// last act is to copy the page's TAB ICON colour over the page's fill lists.
+// The icons are list 0x004DE210, shared by every page, and their records
+// carry the five colours the captures show.
+//
+// Only the INVENTORY page's builder is ported, because it is the only one
+// whose function boundary is established: 0x0049B710, bounded above by
+// `sub_49B610 endp` + `align 10h` (whose `retn` lands at 0x0049B701, and the
+// first branch target inside the new function is `loc_49B759`, which the
+// instruction lengths reach EXACTLY from 0x0049B710) and below by its own
+// `retn`. It is named by panel 0x004DEE50 `+4`, at file offset 0xDDA54.
+//
+// The other four pages colour themselves the same way from the same tab
+// column - identity from 0x004DDFB0, slider from 0x004DDFF8, memory from
+// 0x004DE088, options from 0x004DE0D0, each `push`ing that icon's `+8/+9/+10`
+// by address - and `docs/UI.md` records the sites. They are NOT ported here:
+// the pushes are read, but which unlabelled function each sits in is an
+// inference from the order of the listing, and the engine opens screen 9.
+void UiWalk::buildPage(const UiPanel& p) {
+    colour_.clear();
+    if (p.addr != kPanelSneakInventory) return;
+    const UiItem* icon = nullptr;
+    for (const auto& l : p.lists)
+        for (const auto& it : l.items)
+            if (it.addr == kIconSneakInventory) icon = &it;
+    if (!icon) return;
+    for (std::uint32_t list : {kListSneakRows, kListSneakVerbs, kListSneakEcho})
+        colourList(list, icon->rgb[0], icon->rgb[1], icon->rgb[2]);
+}
+
 bool UiWalk::open(int screenId) {
     panel_ = w_->screen(screenId);
     approx_ = false;
@@ -347,6 +403,7 @@ bool UiWalk::open(int screenId) {
     log_.clear();
     if (!panel_) { log_.push_back("no panel for this screen"); return false; }
     log_.push_back("open");
+    buildPage(*panel_);
     settle();
     return true;
 }

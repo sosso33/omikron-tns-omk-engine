@@ -275,6 +275,16 @@ ScreenFrame ScreenComposer::draw(Surface& fb, int screenId,
             }
             const bool lit = litSprite;
 
+            // THE ITEM'S COLOUR, and the record is not always it. A page
+            // builder writes `+8/+9/+10` at run time through `sub_4296D0`,
+            // which is why 209 of the 222 fill items ship the (255, 0, 0)
+            // placeholder: `UiWalk::itemColour` returns what the builder
+            // wrote, and null where nothing did.
+            const int* over = walk.itemColour(it.addr);
+            const int rgb[3] = {over ? over[0] : it.rgb[0],
+                                over ? over[1] : it.rgb[1],
+                                over ? over[2] : it.rgb[2]};
+
             // ---- THE FILL: `Ui_DrawItemFill` (0x00476FE0) --------------
             //
             // A quad over the item's own scaled rect. The colour is the
@@ -291,22 +301,17 @@ ScreenFrame ScreenComposer::draw(Surface& fb, int screenId,
             // count, so the engine fills only the rows that hold something,
             // which is why a capture shows two bars of nine.
             //
-            // THE SNEAK'S OWN ROWS STILL DISAGREE, and the disagreement is
-            // now narrow enough to name. The LIFT's panel predicts
-            // (17.3, 26.3, 25.5) and measures (15, 25, 25); the sneak's rows
-            // carry (255, 0, 0), which predicts (55, 0, 0) where the same
-            // screenshot measures (94, 60, 16) - a warm amber that no red
-            // source can make. 209 of the 222 fill items in the tree ship
-            // (255, 0, 0), so it is a PLACEHOLDER, and something writes the
-            // real colour into `+8/+9/+10` at run time on the screens that
-            // need one. What does that has not been found; the LIFT does not
-            // need it, which is why the LIFT is the one that could settle
-            // the rule.
+            // AND THE PLACEHOLDER IS ANSWERED, 2026-09-04. 209 of the
+            // 222 fill items ship (255, 0, 0) because a page BUILDER writes
+            // the real colour at run time - `sub_4296D0` over a whole list,
+            // handed the page's own tab-icon colour. `rgb` above is what it
+            // wrote; `UiWalk::buildPage` and `docs/UI.md` carry the rule and
+            // the five captures that confirm it.
             if (eff0[1] & 0x10) {
-                int fr = it.rgb[0], fg = it.rgb[1], fb2 = it.rgb[2];
+                int fr = rgb[0], fg = rgb[1], fb2 = rgb[2];
                 if (eff0[1] & 0x02000000) { fr = 255; fg = 50; fb2 = 50; }
                 const int alpha = (eff0[1] & 0x10) ? 200
-                                : (eff0[1] & 0x04000000) ? 100 : it.rgb[1];
+                                : (eff0[1] & 0x04000000) ? 100 : rgb[1];
                 const int x0 = scaleX(it.x + q->offsetX);
                 const int y0 = scaleY(it.y + q->offsetY);
                 const int x1 = scaleX(it.x + q->offsetX + it.w);
@@ -380,9 +385,9 @@ ScreenFrame ScreenComposer::draw(Surface& fb, int screenId,
             // white since the composer existed.
             std::uint8_t cr = 255, cg = 255, cb = 255;
             if (!(eff0[2] & 1)) {
-                cr = static_cast<std::uint8_t>(it.rgb[0]);
-                cg = static_cast<std::uint8_t>(it.rgb[1]);
-                cb = static_cast<std::uint8_t>(it.rgb[2]);
+                cr = static_cast<std::uint8_t>(rgb[0]);
+                cg = static_cast<std::uint8_t>(rgb[1]);
+                cb = static_cast<std::uint8_t>(rgb[2]);
             }
             if (!litText) { cr >>= 1; cg >>= 1; cb >>= 1; }
             // THE FACE IS THE ITEM'S OWN, `+36`, not one hard-coded here.

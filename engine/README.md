@@ -1496,11 +1496,27 @@ reference. The per-row gate went in with it - `sub_42AAE0` sets `0x40000001`
 on every row widget past the object count, so the sneak fills one bar and not
 nine, which is the shape the original has.
 
-**Still open, and narrowly**: what the placeholder means. The sneak's rows
-carry (255, 0, 0) and so draw dark red where the original measures
-(94, 60, 16), a warm amber no red source can make under this blend. Something
-writes a real colour into `+8/+9/+10` at run time on the screens that need
-one; it has not been found.
+**And the placeholder is ANSWERED** (2026-09-04). Two setters write
+`+8/+9/+10` at run time - `sub_4296B0` on one item, `sub_4296D0` on every
+item of a list - and **21 of their 23 list-wide call sites sit in a function
+with no `proc` label**, because every one is a panel or list callback, a
+dword in the widget tree. That is why nothing found them: a search through
+named functions cannot.
+
+What they are handed is a **tab icon's own colour**. The sneak's five pages
+share one icon column (list 0x004DE210, all at x = 15) whose five records
+carry the five page colours, and each page's `panel+4` builder pushes the
+bytes of its own icon by address. The inventory page's builder, 0x0049B710,
+ends by colouring the rows, the verbs and the echo bar from icon 0x004DE040,
+(240, 135, 15).
+
+Confirmed against five captures of the original: the inventory page draws
+amber, the slider page green, the identity page blue, each matching the icon
+beside it. Over 15 channel samples from 3 hues, `measured = 0.19 x source +
+11` against a predicted slope of 55/255 = 0.216 (source-over would be 0.784).
+`UiWalk::buildPage`, `verify.py: sneak page colour`. Only the inventory
+page's builder is ported - the one page the port opens, and the one whose
+function boundary is established rather than inferred from the listing order.
 
 ### The trap, which this port walked into
 
