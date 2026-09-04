@@ -82,6 +82,15 @@ inline constexpr std::uint32_t kHookSneakSliderLists = 0x0049D4D0u;
 // `list 0x004DE6F0 + 4` - the sneak's row list hook, a wrapper over the
 // WINDOWED selection mover `sub_42AFF0`.
 inline constexpr std::uint32_t kHookSneakRows = 0x0049C050u;
+// Two panels `sub_42A370` installs from CODE - no item's `+44` names either.
+inline constexpr std::uint32_t kPanelSneakVerbs   = 0x004DEEB8u;
+inline constexpr std::uint32_t kPanelSneakExamine = 0x004DEF20u;
+// ...and the item callbacks that install them. `sub_49BC60` is the row's
+// confirm (its plain arm, `loc_49BE7B`) and `sub_49BFF0` is "Examiner".
+inline constexpr std::uint32_t kCbSneakRowConfirm = 0x0049BC60u;
+inline constexpr std::uint32_t kCbSneakExamine    = 0x0049BFF0u;
+inline constexpr std::uint32_t kListSneakPreviews = 0x004DE420u;
+inline constexpr std::uint32_t kItemSneakExamine  = 0x004DE2C0u;
 inline constexpr std::uint32_t kItemSneakClock      = 0x004DEC08u;
 
 using FlagOp = std::pair<std::uint32_t, bool>;

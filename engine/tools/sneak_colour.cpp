@@ -120,6 +120,30 @@ int main(int argc, char** argv) {
         }
         std::printf("\n");
     }
+    // ---- THE OBJECT FLOW: rows -> verbs -> examine --------------------
+    //
+    // Both descents are `sub_42A370` from a CALLBACK, not an item `+44`, so
+    // neither panel was in the tree until 2026-09-04. Confirming a row must
+    // reach the verb panel with ONLY the verbs selectable, and confirming
+    // "Examiner" must reach the examine page.
+    {
+        omk::UiWalk f(w);
+        f.open(omk::kScreenSneak);
+        f.bindRows(omk::kListSneakRows, 1);       // one carried object
+        f.press(omk::kUiConfirm);
+        const omk::UiPanel* q = f.panel();
+        std::printf("confirm row -> panel %#x, list %d, tabs off %d rows off %d\n",
+                    q ? q->addr : 0, f.currentList(),
+                    f.listOff(omk::kListSneakTabs) ? 1 : 0,
+                    f.listOff(omk::kListSneakRows) ? 1 : 0);
+        // ...then step to "Examiner" and confirm it.
+        for (int k = 0; k < 2; ++k) f.press(omk::kUiRight);  // -> Examiner
+        f.press(omk::kUiConfirm);
+        q = f.panel();
+        std::printf("confirm Examiner -> panel %#x, verbs off %d\n",
+                    q ? q->addr : 0, f.listOff(omk::kListSneakVerbs) ? 1 : 0);
+    }
+
     walk.open(omk::kScreenSneak);          // back to the inventory page
 
     // ...and the pixel. The fill is `src * (1 - 200/255)` over whatever is

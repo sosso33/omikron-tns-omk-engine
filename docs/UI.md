@@ -698,7 +698,31 @@ both sit immediately after the inventory page at the 0x68 stride:
   0x004DE760 is the one a capture of the original shows the 3D model on.
 
 This is why the verbs looked reachable with no object chosen, and why Examine
-did nothing: the page it opens is not in the tree.
+did nothing: the page it opens was not in the tree.
+
+**Both are in it now** (2026-09-04). `tools/exetables.py` carries a
+`CODE_NAMED` table beside its `+44` walk, and the table is self-checking:
+it names an address, and the record there has to parse as a panel at the
+family's 0x68 stride *and* carry the right `+0` parent — 0x004DEEB8's is the
+inventory page and 0x004DEF20's is 0x004DEEB8. Neither had to come out that
+way. 44 → 46 panels, 125 → 134 lists, 572 → 611 items, and the number that did
+*not* move is the one that matters: `engine: UI`'s count of screens the engine
+and `tools/sim` disagree on, still 0 over the enlarged tree.
+
+**The two builders**, both `sub_4290D0` over whole lists:
+
+| builder | what it enables | what it disables |
+|---|---|---|
+| `0x0049B810` verb panel | the verbs | the tabs, the previews, the rows |
+| `0x0049B950` examine page | — | the verbs |
+
+`sub_49B810` also marks the chosen row `0x40000008`, which keeps it lit under
+the verb bar. `sub_49B950` sets `0x40000002` on item 0x004DE2C0 — "Examiner"
+itself — so the verb stays lit while its page is up, then reads the row's tag,
+asks `sub_42B330` for the object's **kind** and sends kind 5 to `sub_478EF0`,
+the document path, and plays interface sound 8. The port models the navigation
+and the list flags; the channel calls, the two lit flags and the document path
+are read and recorded here rather than shipped.
 
 ### `sub_4290D0` — a builder enables and disables whole LISTS
 

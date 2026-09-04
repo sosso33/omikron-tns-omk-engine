@@ -544,6 +544,30 @@ void UiWalk::buildPage(const UiPanel& p) {
     // from code), so the descent is not modelled - but the disable is, and
     // without it the verbs are reachable with no object chosen.
     if (p.addr == kPanelSneakInventory) offList_.insert(kListSneakVerbs);
+    // `sub_49B810`, the VERB panel's builder - the mirror of the line above,
+    // and the reason the verbs become reachable at all:
+    //
+    //     sub_4290D0(0x004DE318, 0x20000004, 0)   the verbs,    selectable
+    //     sub_4290D0(0x004DE210, 0x20000004, 1)   the tabs,     NOT
+    //     sub_4290D0(0x004DE420, 0x20000004, 1)   the previews, NOT
+    //     sub_4290D0(0x004DE6F0, 0x20000004, 1)   the rows,     NOT
+    //
+    // so while a verb is being chosen nothing else on the device can be
+    // reached. It also marks the chosen row `0x40000008`, which keeps it lit
+    // under the verb bar - not modelled, because that flag's drawing arm is
+    // the lit/unlit ladder and this port has no runtime bit to put it in.
+    if (p.addr == kPanelSneakVerbs) {
+        offList_.insert(kListSneakTabs);
+        offList_.insert(kListSneakPreviews);
+        offList_.insert(kListSneakRows);
+    }
+    // `sub_49B950`, the EXAMINE page's builder. It disables the verb list and
+    // sets `0x40000002` on item 0x004DE2C0 - "Examiner" itself - so the verb
+    // you chose stays lit while its page is up. It then reads the row's tag,
+    // asks `sub_42B330` for the object's KIND and sends kind 5 to
+    // `sub_478EF0`, which is the document path; and it plays interface sound
+    // 8. None of those three is modelled here - this is the navigation only.
+    if (p.addr == kPanelSneakExamine) offList_.insert(kListSneakVerbs);
     // THE SLIDER PAGE'S TWO-STATE HEADER, and a builder doing more than
     // colour. `0x0049D170` opens with `cmp [arg0+4], 1` and both arms are
     // `sub_428FF0` calls on three items of list 0x004DEA08:
@@ -703,6 +727,34 @@ bool UiWalk::confirm() {
     const auto* it = selected();
     if (!it) return false;
     if (it->callback) {
+        // TWO CALLBACKS THAT DESCEND. `Ui_ConfirmSelection` normally follows
+        // an item's `+44`, but a callback can install a panel itself with
+        // `sub_42A370(screen, panel)` - and the sneak's object flow is built
+        // out of exactly that:
+        //
+        //   sub_49BC60  the ROW's confirm. Its plain arm `loc_49BE7B` is
+        //               `sub_42A370(screen, off_4DEEB8)` - the VERB panel.
+        //               (Its other arms are the "use on" pairing, gated on
+        //               `dword_670BE0`, and the slider's travel; neither is
+        //               modelled and both are recorded in docs/UI.md.)
+        //   sub_49BFF0  "Examiner": `sub_42B420(tag, 4)` and then
+        //               `sub_42A370(screen, off_4DEF20)` - the EXAMINE page.
+        //
+        // The channel calls each one makes are NOT modelled here; what is,
+        // is the navigation, which is what a player is stopped by.
+        if (it->callback == kCbSneakRowConfirm ||
+            it->callback == kCbSneakExamine) {
+            const std::uint32_t to = it->callback == kCbSneakExamine
+                                   ? kPanelSneakExamine : kPanelSneakVerbs;
+            if (const auto* kid = w_->at(to)) {
+                panel_ = kid;
+                buildPage(*panel_);
+                settle();
+                log_.push_back(it->callback == kCbSneakExamine
+                               ? "enter examine page" : "enter verb panel");
+                return true;
+            }
+        }
         for (const auto& a : w_->answers())
             if (a.callback == it->callback) {
                 if (a.needsName && name_.empty()) {

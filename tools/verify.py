@@ -10450,11 +10450,17 @@ def c_sneak_page_colour():
             # DOWN again returns to the header, and entering from the header
             # picks a live row at either end.
             ("rows: enter 2 up 1(l2) up 0(l2) up 0(l1) up 2(l2) "
-             "dn 2(l1) dn 0(l2) dn 1(l2) dn 2(l2) dn 2(l1)") in o), \
+             "dn 2(l1) dn 0(l2) dn 1(l2) dn 2(l2) dn 2(l1)") in o,
+            # THE OBJECT FLOW, and both steps are `sub_42A370` from a
+            # CALLBACK rather than an item `+44` - neither panel was in the
+            # tree at all until the lifter learned to follow code.
+            "confirm row -> panel 0x4deeb8, list 2, tabs off 1 rows off 1" in o,
+            "confirm Examiner -> panel 0x4def20, verbs off 1" in o), \
            (5,
             ["20 165 250", "25 240 115", "240 135 15", "255 240 95",
              "255 100 70"],
-            True, True, True, True, True, True, True, True, True, True), \
+            True, True, True, True, True, True, True, True, True, True,
+            True, True), \
            "the five tab icons carry the five page colours; opening screen " \
            "9 runs the inventory page's builder, which copies its own icon's " \
            "amber over the rows, the verbs and the echo bar; and the row " \
@@ -10482,7 +10488,12 @@ def c_sneak_page_colour():
            "things right: the binder's not-selectable flag, `sub_49C050` " \
            "falling through to the ordinary move where it used to refuse, " \
            "and `sub_429560`/`sub_429590` returning the first and last " \
-           "SELECTABLE row rather than the first and last widget"
+           "SELECTABLE row rather than the first and last widget. Finally the " \
+           "OBJECT FLOW: confirming a row reaches the VERB panel " \
+           "0x004DEEB8 with only the verbs selectable, and confirming " \
+           "Examiner reaches the EXAMINE page 0x004DEF20 - both installed " \
+           "by `sub_42A370` from a callback, so neither panel was in the " \
+           "tree until the lifter learned to follow code as well as `+44`"
 
 
 def c_slider_destinations():
