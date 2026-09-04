@@ -485,6 +485,87 @@ The arrows guard is `0x403C0000`, which is **exactly the OR** of the four bits
 `Ui_DrawItemArrows` then tests one at a time — the kind of agreement that says
 the bit assignment is read right rather than fitted to what looked plausible.
 
+### `Ui_DrawItem` NEVER READS `+28` — and that is most of what an item shows
+
+The line above says "draws the text", and *which* text is the part that
+matters, because it is not the field this document has pointed at everywhere
+else. The function reads **`+24`**, a resolved `char *`, and when that is null
+calls **`+32`**, a callback that fills a 2048-byte buffer. `+28` is never
+touched. So:
+
+> **An item whose `+24` and `+32` are both zero draws no text at all**,
+> whatever string id it carries.
+
+**111 of the tree's 572 items are exactly that** (2026-09-04). The sneak's six
+tab icons and its three 50×50 buttons are among them, and a composer keyed on
+`+28` prints five labels the game has never shown — which is what a player
+reported as *"the menus are essentially icons"* and *"some of the texts are
+parts of sub-menu and should not be displayed at anytime"*. They are neither:
+they are **strings belonging to a widget that does not draw text**. §3g shows
+where those particular strings really surface.
+
+The callbacks that appear on the shipped items, and there are fifteen:
+
+| `+32` | what it puts in the buffer |
+|---|---|
+| `0x00476860` | the generic one: the item's own `+28`, with `+30` as a printf argument when it is not −1 |
+| `0x0042AA00` | an inventory row — reads the item's `+60` tag and asks `Game_RaiseEvent(33)` for the object's name |
+| `0x0049DC20` | the sneak's echo bar (§3g) |
+| `0x0049E090` | the sneak's clock (§3g) |
+| eleven more | per-screen native text |
+
+`0x00476860` is gated on bank C `0x80000200` only for *which* of its two arms
+runs; both walk the screen's text blob to string `+28`, and the second also
+passes `+30` through `sub_43FEA0` as a format argument.
+
+### The SPRITE is how an icon gets on screen
+
+`Ui_DrawItemSprite` (0x00476E60) blits the item's own `w × h` from the
+screen's artwork surface: the **lit** source at `+12/+14`, the **unlit** at
+`+16/+18`. **233 items carry the flag.** Decoding `sneak.bmp` and looking at
+it shows the arrangement plainly — the five left-hand icons appear twice in
+the middle of the black panel, a lit row and an unlit row, and the tile map
+punches that area out with cell 42 so the atlas never shows. It also explains
+a measurement `verify.py: ui sprites` had been making since 2026-09-01 without
+an account of it: an unlit source often **equals its own destination**,
+because the unlit icon *is* the background there.
+
+### The two lit ladders are NOT one ladder
+
+This document used to say `Ui_DrawItemSprite` "repeats the same ladder" as
+`Ui_ItemTextStyle`. Read side by side they agree on two rungs of four:
+
+| | `0x40000008` | `0x40000004` | `0x40000002` | otherwise |
+|---|---|---|---|---|
+| **sprite** | lit | oscillator 1 | ¬sel: unlit · sel ∧ ¬focus: lit · sel ∧ focus: **oscillator 1** | SELECTED |
+| **text** | lit | oscillator 1 | ¬sel: unlit · sel: **oscillator 1** | SELECTED **and** FOCUSED |
+
+(`sub_476E60` LABEL_4/10/11 against `sub_4769A0` LABEL_6/12/13.) A drawer that
+shares one of them lights the wrong things the moment two lists both have a
+selection.
+
+**Oscillator 1 is the flash.** Its record ships period 500, flags 3, and its
+completion `sub_42B7B0` does `osc[6] = (osc[6] == 0)` — a square wave toggling
+0/1 every 500 ms, on a MILLISECOND clock and not a frame count. That is a
+player's *"flashing icon to indicate the selection"*. Oscillator 2 does the
+same job for `I2D_DrawRectOutline`'s colour, through `0x40400000`.
+
+### Text colour is the item's own, halved when unlit
+
+`Ui_ItemTextStyle` takes `+8/+9/+10` as the colour — unless bank C carries
+`0x80000001`, which forces white — and **halves all three when the row is not
+lit**. That halving is the one shift this document already described; what it
+halves is the item's colour, not a constant. **233 of the 275 text items carry
+the white flag**, so a composer hard-coding white-and-grey is right for those
+by luck; nine items are genuinely coloured (eight at (254, 68, 20), one at
+(255, 100, 70), on the terminal and SURV screens).
+
+`item+36` is the FONT and is the same story: identified in §5 and never
+lifted, so a port draws every screen in one face until it is. The sneak names
+74 `J` JOURNAL for its text and 67 `C` for its clock, where the start menu's
+buttons name 73 `I` MENUINTR — and MENUINTR has no Latin glyphs, so a device
+drawn in the menu's face renders the right strings through the wrong alphabet.
+
 ### Two things that explain how the menus look
 
 **Unselected rows are dimmed by a shift.** `Ui_ItemTextStyle` decides whether
@@ -831,6 +912,92 @@ screen:
 
 `verify.py: sneak chain` asserts all of it; `engine: sneak` runs it in
 `omk-play`, where TAB in Anekbah opens the device.
+
+### The background scales its DESTINATION, not its source
+
+`Ui_DrawPanelBack` (0x00476040), the tile-map arm:
+
+```
+dst = (col * I2D_ScaleX(64), row * I2D_ScaleY(64), ...)   row 7 at half height
+src = ((id % 10) << 6, (id / 10) << 6, ...)               raw 64-pixel cells
+```
+
+Ten columns of `ScaleX(64)` cover the display whatever its width, while the
+source keeps reading 64-pixel cells out of a 640×480 sheet. A port using a
+literal 64 for BOTH covers the top-left 640×480 and leaves the rest of the
+display showing whatever was under it — while every widget, which does go
+through `I2D_ScaleX/Y`, sits somewhere else entirely.
+
+**A 640×480 test cannot see this**, because there `ScaleX(64) == 64`. It has
+to be composed at a second size, which `verify.py: engine screen scale` does.
+
+Two more things the same function does before the tiles: with flag
+`0x40002000` it draws no background at all, and **without** `0x40001800` it
+CLEARS the whole display first.
+
+### 3g. The sneak's own two rows — the echo bar and the clock
+
+Neither `sub_0049DC20` nor `sub_0049E090` has a `proc` label: nothing CALLS
+them, they are dwords in the widget table, so `tools/asmfn.py` anchors on a
+neighbour and returns the wrong function. The byte range has to be counted out
+from the last labelled function before them, which is `sub_49DB80`.
+
+**The echo bar shows what is SELECTED**, not what is hovered — a still frame
+cannot tell the two apart, and the screenshot that prompted this reads as the
+latter. `sub_0049DC20` takes the panel's current item and dispatches on its
+ADDRESS:
+
+| item | what the bar shows |
+|---|---|
+| `0x004DE338` | `"%s %d"` of its string and `sub_42B1C0(4)` |
+| `0x004DE380` | `"%s %d"` of its string and `sub_42B1C0(5)` |
+| `0x004DE3C8` | its string alone |
+| `0x004DE230` | its string, with `+30` forced to 1 |
+
+**And that settles what the three 50×50 items are.** They are the **setek**
+and **anneau** counters and the **map reader** — the three `.3DO` models the
+screen's parameter-0 open loads (`setek`, `anneau`, `imager`) — and their
+strings 8, 9 and 41 are rendered *here*, on the bar, when one of them is
+selected. "Seteks en votre possession :" was never a caption beside an icon,
+which is why those items have no `+24` and no `+32`.
+
+It also answers what `imager` counts: **nothing**. Its arm carries no
+`sub_42B1C0` and no format string, just the bare "Lire plan". It is a map
+reader. The two counts come from `Game_RaiseEvent(44, {4|5})`.
+
+**The clock** (`sub_0049E090`, item `0x004DE160` at (350, 430)) is the
+engine's own date and time formatters, `sub_0041E690`'s integer division —
+"12 Nadim 7216 - 13:01:15". Only the `" - "` joining the halves is read off a
+screenshot rather than out of the code.
+
+The clock is also where a bug outside the interface surfaced.
+[`GAME_STATE.md`](GAME_STATE.md) records that the clock is an engine global
+and **not part of the 8192-byte image**, so restoring a save restores
+everything except *when* it happens: the day and time live in the slot header
+that `SaveDir_Build` writes. A loader that restores only the DB leaves the
+game at day 0 — invisible for as long as nothing draws a clock, which in
+`engine/` was until this row existed. `verify.py: save clock`.
+
+### The rows are a WINDOW, and the gate is per row
+
+`sub_42AAE0(list, window)` binds the nine row widgets:
+
+```
+for each widget k:
+    if (k + window >= list+24)      // past the end of the real list
+        item+60 = -1;               // no tag
+        set 0x40000001;             // and NOT DRAWN
+        set 0x20000004;             // and unselectable
+    else
+        item+60 = k + window;       // the row it shows
+        clear both;
+```
+
+so the engine draws only the rows that HOLD something — two of nine in a
+capture with two objects carried — and `list+24` is the count the channel
+reports through case 29. `sub_42AFF0` moves the window on the up and down
+bits, skipping rows whose tag is −1, and raises **event 30** for the newly
+selected row, which is the 3D preview (§3e).
 
 ### The one close that can refuse
 

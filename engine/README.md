@@ -1419,14 +1419,72 @@ breath. `Ui_BeginScreen`'s 0x203F repeat mask stayed at the world's 0, so
 every held key repeated every frame; and the `--hold` stream stopped feeding,
 so a headless run could press TAB and then nothing.
 
+**What a PLAY REPORT then found, and it was four faults in one drawer**
+(2026-09-04). A player listed four complaints and every one was a field the
+widget lift had never carried, so the composer was substituting a rule of its
+own for a rule in the binary:
+
+* **`Ui_DrawItem` never reads `+28`.** Text is `+24` or the `+32` callback;
+  an item with both zero draws none, and **111 of 572 items are that**. The
+  sneak's tab icons are among them - "the menus are essentially icons".
+* **the icons are `Ui_DrawItemSprite`**, 233 items, none ever drawn.
+* **the flash is `Ui_Oscillator(1)`**, a 500 ms square wave on a MILLISECOND
+  clock; and the sprite and text ladders are NOT the same ladder, which this
+  repo's own docs said they were.
+* **`Ui_DrawPanelBack` scales the destination and not the source** - the
+  reason the device did not fill an 800x600 display, and a fault no 640x480
+  check can see.
+* **`item+36` is the font** - identified in the docs years of sessions ago
+  and never lifted, so every screen drew in one hard-coded face. MENUINTR has
+  no Latin glyphs, so the sneak was rendering the right strings through the
+  wrong alphabet.
+
+It was not a sneak bug: the LIFT's seven floor buttons are sprite items too,
+and the port had been printing seven labels over seven icons there as well.
+
+**And the clock found a bug outside the interface entirely.** The sneak's
+clock row is the first thing in this port to put the time on screen, and it
+read day 0 against a save the loader had just printed a real date for: the
+clock is an engine global and NOT in the DB image, so `omk-play` had been
+loading every save at 00:00:00 since saves were loadable. Nothing noticed
+because nothing drew a clock. `verify.py: save clock`, and the corroboration
+is that `traces/save-appart.bin` restores to 12 Nadim 7216 14:14:17 while the
+player's screenshot of the ORIGINAL shows 12 Nadim 7216 - 13:01:15: the
+fixture and that screenshot are one play session.
+
 **What is NOT done, and is visible in a screenshot rather than a number.**
 `Text_LayOutBlock` (0x0043F3E0) wraps a row's text inside the item's own box;
-this composer draws one unwrapped line. Every screen before the sneak has
-boxes wide enough that it never showed — the sneak's three object captions are
-50 pixels wide and run straight across the page. And `sub_0049C050`, the
-inventory list's SCROLLING hook, is unmodelled, so the page shows the first
-nine carried items and cannot be scrolled; `sim: ui coverage` counts SLIDER
-and SNEAK as refusing for exactly that reason.
+this composer draws one unwrapped line. It stopped biting when the captions
+stopped being drawn at all - they were never text - but it is still there.
+`sub_0049C050`, the inventory list's SCROLLING hook, is unmodelled, so the
+page shows the first nine carried items; `sim: ui coverage` counts SLIDER and
+SNEAK as refusing for that reason, and it is an HONEST refusal rather than a
+gap to close: the hook's behaviour depends on the object COUNT and the widget
+walker has no game state to ask.
+
+The three 50x50 items are live `.3DO` MODELS - `setek`, `anneau` and `imager`,
+loaded by the screen's own open - which rotate to show selection. The UI layer
+has no 3D path, so they are not drawn.
+
+**And `Ui_DrawItemFill`'s amber bars are a CONTRADICTION, not a gap.** Both
+halves were chased and they do not meet:
+
+* the per-row GATE is read - `sub_42AAE0` marks a widget past the object
+  count with `0x40000001`, which is why the original fills two bars of nine;
+* the BLEND is read - `sub_480AC0`'s mode-4 arm sets D3D states 19 and 20 to
+  6 and 5, SRCBLEND = INVSRCALPHA and DESTBLEND = SRCALPHA, the INVERSE of
+  the usual source-over, so the quad resolves to `src * (1 - a) + dst * a`;
+* and the record gives (255, 0, 0) at alpha 200 - the bytes checked twice,
+  through the lift and through a raw hex dump of the item - which over the
+  panel's black is **(55, 0, 0)**, where the original's bars measure
+  **(94, 60, 16)** and (61, 40, 11). A green of 60 cannot come from a red
+  source over black under any blend that mixes the two, and no channel
+  permutation helps.
+
+It was implemented, rendered and backed out: on the strength of the colour
+alone it paints nine red bars where the game shows two amber ones. Both sides
+are pinned in `screendraw.cpp`; the fill waits for whichever reading is wrong
+to be found, rather than for a colour to be fitted to a screenshot.
 
 ### The trap, which this port walked into
 
