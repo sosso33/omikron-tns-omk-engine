@@ -10427,6 +10427,93 @@ def c_sneak_page_colour():
            "old page's colour, which is what a player saw"
 
 
+def c_cursor_highlight():
+    r"""`Ui_DrawItemCursor` - THE HIGHLIGHT, ported 2026-09-04 after a play
+    report: "the hovering effect is absent so it is very difficult to know
+    where I am".
+
+    Item flag `0x40000200` is the commonest decoration in the tree and had no
+    drawer. `sub_479920` is not a box: it drives ONE global pool
+    (`dword_6A4D20`, so one cursor on screen) of SIXTEEN elements that chase
+    the focused item and orbit it. The pool's layout closes exactly on the 220
+    dwords an earlier read had measured - 0x30 of header plus 16 x 0x34 = 880
+    - and the size was known before the layout was, so the parse could have
+    failed and did not.
+
+    Read, and each piece from the image rather than from prose:
+
+        sub_478FE0  rebuild when the item's rect changes. The flag word comes
+                    from the item's SHAPE: elongated 0x398400, squarish
+                    0x3D8400 (whose 0x40000 halves the orbit). Per element,
+                    sizeFactor 1.0, lerpSpeed 0.5 - i*0.0125 (so the later
+                    ones trail), angle rand()%360, speed (rand()%300+10)/1000,
+                    radii rand() % min(w, h).
+        sub_479220  ease x/y toward the centre, then COPY x/y into drawX/drawY
+                    - which is why the orbit does not accumulate. Reading that
+                    four-line tail is what settled it.
+        sub_479340  ease w/h toward the item's size.
+        sub_479920  angle += speed*dt wrapped to [0,360); drawX += rx*cos,
+                    drawY += ry*sin - in DEGREES into `fcos`/`fsin`, which the
+                    engine never converts, so it is a wobble not a revolution.
+        sub_4795F0  one quad per element through `sub_4285E0(pts, 4, 8)` -
+                    blend MODE 4, the same `src*(1-a) + dst*a` as the fill.
+
+    **The alpha is OSCILLATOR 3, and that number decides the look.** Period
+    500, lo 230, hi 235, a triangle (`sub_42B700`: lo->hi over the first half,
+    hi->lo over the second). It is NOT oscillator 2's 45..200, which is what
+    this was first assumed to be from the docs' table. Under the fill's
+    inverse blend a HIGH alpha is a FAINT quad, so 230 means each of the
+    sixteen contributes about 9% - and sixteen of them leave the bar near 80%
+    of the source colour. At 45 each quad would be nearly opaque and the
+    highlight would blow out to a flat block.
+
+    THE GATE is read at the call site, not taken from the docs: bank B
+    `0x40000200` on the item, then bank A `0x20000001` - FOCUSED - on the item
+    AND on its list.
+
+    **Tier 5**: every number is read out of the image and none is checked
+    against a capture, because a still frame cannot judge sixteen eased
+    elements. What is asserted is the consequence a person reported missing -
+    the focused row gets substantially brighter than an unfocused one.
+
+    Shown to fail: without `attachCursor` the focused row stays at the plain
+    fill's (49, 28, 0); at oscillator 2's alpha it saturates instead.
+    """
+    import subprocess
+    eng = os.path.join(ROOT, "engine")
+    if not os.path.isdir(eng):
+        return ("skipped",), ("skipped",), "engine/ absent"
+    mk = subprocess.run(["make", "-s", "build/sneak_colour"], cwd=eng,
+                        capture_output=True, text=True)
+    tool = os.path.join(eng, "build", "sneak_colour")
+    if mk.returncode != 0 or not os.path.exists(tool):
+        return ("skipped",), ("skipped",), "sneak_colour did not build"
+    tb = os.path.join(ROOT, "tables")
+    r = subprocess.run([tool, omkpaths.data_root(),
+                        os.path.join(tb, "ui_widgets.json"),
+                        os.path.join(tb, "ui.json")],
+                       capture_output=True, text=True)
+    o = r.stdout
+    line = [l for l in o.splitlines() if l.startswith("cursor quads ")]
+    plain = [l for l in o.splitlines() if l.startswith("row bar paints ")]
+    if not line or not plain:
+        return ("no cursor line",), ("cursor quads ...",), "the probe printed nothing"
+    got = line[0]
+    dim = [int(x) for x in plain[0].split()[-3:]]
+    litpx = [int(x) for x in got.split()[-3:]]
+    return (got.split(",")[0], int(got.split("alpha")[1].split(",")[0]),
+            tuple(litpx), tuple(dim), litpx[0] > 3 * dim[0]), \
+           ("cursor quads 1", 231, (156, 85, 0), (49, 28, 0), True), \
+           "the sneak's focused row with `Ui_DrawItemCursor` attached: one " \
+           "item draws a cursor, oscillator 3 gives alpha 231 (period 500, " \
+           "230..235, a triangle - NOT oscillator 2's 45..200), and the row " \
+           "paints (156, 85, 0) where the plain fill under it paints " \
+           "(49, 28, 0). Sixteen quads at ~9% each, through the fill's own " \
+           "inverse blend, and the last field is the property a player " \
+           "actually reported missing: the focused row is more than three " \
+           "times brighter than an unfocused one"
+
+
 def c_player_counters():
     r"""The SETEKS and the ANNEAUX, and where the player record keeps them.
 
@@ -18407,7 +18494,7 @@ def c_licence_headers():
                    if TAG in open(p, encoding="utf-8",
                                   errors="replace").read(600)]
     return (authored, sorted(missing), len(vendored), mislabelled), \
-           (324, [], 1, []), \
+           (326, [], 1, []), \
            "authored source files under tools/, engine/src, engine/tools, " \
            "engine/backends and scripts/; those MISSING the SPDX tag; " \
            "vendored files in engine/third_party; and vendored files wrongly " \
@@ -19877,6 +19964,7 @@ SLOW = [
     ("player counters",   c_player_counters,   "UI 3g; GAME_STATE"),
     ("fill colour",       c_fill_colour,       "UI 3b"),
     ("sneak page colour", c_sneak_page_colour,  "UI 3b"),
+    ("cursor highlight",  c_cursor_highlight,   "UI 3b"),
     ("engine: movies",     c_engine_movies,     "BOOT 2"),
     ("engine: raster",     c_engine_raster,     "PORTING B6"),
     ("engine: silhouette", c_engine_silhouette, "PORTING B6"),

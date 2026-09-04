@@ -15,6 +15,7 @@
 // assert all three without a window.
 #include "actor/moves.h"        // kScreenSneak - the screen table row
 #include "platform/datafs.h"
+#include "ui/cursor.h"
 #include "ui/screendraw.h"
 #include "ui/text.h"
 #include "ui/widgets.h"
@@ -99,6 +100,31 @@ int main(int argc, char** argv) {
                   (row->x + row->w / 2)];
         std::printf("row bar paints %d %d %d\n", ((v >> 11) & 31) * 255 / 31,
                     ((v >> 5) & 63) * 255 / 63, (v & 31) * 255 / 31);
+
+        // ...and again with the HIGHLIGHT attached. `Ui_DrawItemCursor` puts
+        // sixteen quads over the focused row at oscillator 3's alpha, and
+        // because the blend is the fill's inverse one a HIGH alpha is a FAINT
+        // quad - sixteen of them at ~0.09 each leave the bar near 80% of the
+        // source. So the number to assert is that the focused row gets
+        // brighter by a factor a person can see, which is what a player said
+        // was missing: "the hovering effect is absent".
+        omk::UiCursor cur;
+        comp.attachCursor(&cur);
+        comp.setDeltaMs(33);
+        omk::Surface lit(640, 480, 0);
+        omk::UiWalk w2(w);
+        w2.open(omk::kScreenSneak);
+        omk::ScreenFrame f;
+        for (int i = 0; i < 60; ++i) {          // let the eases settle
+            lit = omk::Surface(640, 480, 0);
+            f = comp.draw(lit, omk::kScreenSneak, w2);
+        }
+        const std::uint16_t u =
+            lit.px[static_cast<std::size_t>(row->y + row->h / 2) * 640 +
+                   (row->x + row->w / 2)];
+        std::printf("cursor quads %d, alpha %d, focused row paints %d %d %d\n",
+                    f.cursorQuads, cur.alpha(), ((u >> 11) & 31) * 255 / 31,
+                    ((u >> 5) & 63) * 255 / 63, (u & 31) * 255 / 31);
     }
     return 0;
 }

@@ -307,6 +307,30 @@ ScreenFrame ScreenComposer::draw(Surface& fb, int screenId,
             // handed the page's own tab-icon colour. `rgb` above is what it
             // wrote; `UiWalk::buildPage` and `docs/UI.md` carry the rule and
             // the five captures that confirm it.
+            // ---- THE CURSOR: `Ui_DrawItemCursor` (`sub_479920`) -------
+            //
+            // Drawn BEFORE the fill and the sprite, because `sub_4795F0`
+            // submits at layer 8 while a fill goes to the item's own
+            // `+11 - 2`, and the I2D per-layer cache is a HEAD cache.
+            //
+            // THE GATE IS READ AT THE CALL SITE, not taken from the docs:
+            // bank B `0x40000200` on the item, then bank A `0x20000001` -
+            // FOCUSED - on the item AND on its list. That is the one row
+            // which is both its list's selection and in the focused list,
+            // which is the row the player is standing on. A player reported
+            // "the hovering effect is absent so it is very difficult to know
+            // where I am"; this is that effect.
+            if (cursor_ && (eff0[1] & 0x200) && isSel && isFocus) {
+                const int cx = scaleX(it.x + q->offsetX + it.w / 2);
+                const int cy = scaleY(it.y + q->offsetY + it.h / 2);
+                int hr = rgb[0], hg = rgb[1], hb = rgb[2];
+                if (eff0[1] & 0x02000000) { hr = 255; hg = 50; hb = 50; }
+                for (const auto& c : cursor_->tick(it.addr, cx, cy,
+                                                   scaleX(it.w), scaleY(it.h),
+                                                   hr, hg, hb, deltaMs_))
+                    fillQuad(fb, c.x0, c.y0, c.x1, c.y1, c.r, c.g, c.b, c.alpha);
+                ++out.cursorQuads;
+            }
             if (eff0[1] & 0x10) {
                 int fr = rgb[0], fg = rgb[1], fb2 = rgb[2];
                 if (eff0[1] & 0x02000000) { fr = 255; fg = 50; fb2 = 50; }

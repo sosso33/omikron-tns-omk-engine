@@ -1669,6 +1669,7 @@ int main(int argc, char** argv) {
     // the sneak, once the PLAYER has.
     std::unique_ptr<omk::UiWalk> walk;
     int openScreen = -1, conversations = 0, lastArea = -1;
+    omk::UiCursor uiCursor;   // Ui_DrawItemCursor's one pool (dword_6A4D20)
     // WHO asked for the open screen, because the two ends differ. `ui.open`
     // parks its caller at status 6 and every close path posts event 5 with
     // the answer, so leaving IS an answer and the script resumes. The sneak
@@ -5470,6 +5471,17 @@ int main(int argc, char** argv) {
             // index - their periods are 500, 1000 and 5000 and
             // `Ui_TickScreens` advances them by the frame delta.
             comp.setClockMs(static_cast<long>(SDL_GetTicks()));
+            // THE HIGHLIGHT. `Ui_DrawItemCursor` eases sixteen elements
+            // between frames, so it needs a delta and somewhere to live; it
+            // is attached rather than owned by the composer so that
+            // `run_screen`'s hashes stay a pure function of the screen.
+            {
+                static long uiLastMs = 0;
+                const long nowMs = static_cast<long>(SDL_GetTicks());
+                comp.setDeltaMs(uiLastMs ? nowMs - uiLastMs : 33);
+                uiLastMs = nowMs;
+            }
+            comp.attachCursor(&uiCursor);
             comp.setRowText(sneakRows.empty() ? nullptr : &sneakRows);
             comp.setHidden(sneakHidden.empty() ? nullptr : &sneakHidden);
             comp.draw(fb, openScreen, *walk);

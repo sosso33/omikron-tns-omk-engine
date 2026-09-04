@@ -605,19 +605,80 @@ wearing the old page's colour — a player reported reaching the slider page
 walks RIGHT, UP, CONFIRM into panel 0x004DEDE8 and asserts its rows turn green.
 
 
-**The cursor is ANIMATED, and it is the glow a player sees.** `0x40000200` is
-by far the commonest decoration — every one of the sneak's tab icons, its
-three model buttons and its verbs carry it — and `sub_479920` is not a box:
-it takes a 220-dword pool, centres it on the item (`x + w/2`, `y + h/2`), and
-advances **sixteen** per-element angles by the frame delta, wrapping each at
-360°. So the focused item wears a ring of sixteen turning pieces, which is
-what "bleeds light" around the selected verb in a capture of the original and
-reads, in a still frame, like a bright fill. It is drawn only when the item
-carries `UIF_FOCUSED` **and the screen does too**, so exactly one is on screen.
+### `Ui_DrawItemCursor` — the HIGHLIGHT, and it is what tells a player where they are
 
-Not ported: the sixteen elements' geometry and art are not read, and a
-sixteen-piece animation invented from one still frame would be decoration
-this repo cannot defend.
+Item flag `0x40000200`, bank B — by far the commonest decoration in the tree
+(every one of the sneak's tab icons, its three model buttons, its verbs and
+its nine rows), and unported until 2026-09-04, when a player said of the sneak
+that *"the hovering effect is absent so it is very difficult to know where I
+am"*. It is not a box and not a fill.
+
+`sub_479920` drives ONE global pool — `dword_6A4D20`, so exactly one cursor is
+on screen — of **sixteen elements** that chase the focused item and orbit it.
+The layout closes exactly on the 220 dwords an earlier read had measured,
+0x30 of header plus 16 × 0x34 = 880, and the size was known before the layout
+was, so the parse could have failed:
+
+| pool | | element (0x34) | |
+|---|---|---|---|
+| +0x00 | cx, cy, w, h | +0x00 | x, y — the eased position |
+| +0x10 | colour | +0x08 | drawX, drawY — that, plus this frame's orbit |
+| +0x14 | item | +0x10 | sizeFactor |
+| +0x2C | flags | +0x14 | w, h — the eased size |
+| | | +0x1C | lerpSpeed |
+| | | +0x20 | rx, ry — the orbit's radii |
+| | | +0x28 | angle, angularSpeed |
+| | | +0x30 | colour |
+
+* **`sub_478FE0`** rebuilds when the item's rect changes. The flag word comes
+  from the item's SHAPE — elongated (either side twice the other) 0x398400,
+  squarish 0x3D8400, whose extra 0x40000 halves the orbit. Per element:
+  sizeFactor 1.0, lerpSpeed `0.5 − i·0.0125` (so the later ones trail),
+  angle `rand()%360`, speed `(rand()%300+10)/1000`, radii `rand() % min(w,h)`.
+  It writes only those six fields, so x/y/w/h keep their old values and the
+  set eases in from wherever the last focus was — which is the sweep.
+* **`sub_479220`** eases x/y toward the centre and then **copies x/y into
+  drawX/drawY**. Reading that four-line tail is what settles the whole thing:
+  without it the orbit below looks like it accumulates for ever.
+* **`sub_479340`** eases w/h toward the item's size. Both eases clamp the step
+  to at least ±1, because `_ftol` would otherwise truncate a sub-pixel step to
+  nothing and the value would never arrive.
+* **`sub_479920`** advances `angle += speed·dt`, wraps to [0, 360), and adds
+  `rx·cos(angle)`, `ry·sin(angle)`. The wrap is in **degrees** and `fcos` /
+  `fsin` take **radians** — the engine never converts, so this is a wobble,
+  not a revolution. Ported as written.
+* **`sub_4795F0`** draws one quad per element, `drawX/drawY ± w/2, h/2`,
+  through `sub_4285E0(pts, 4, 8)` — blend **mode 4**, the same
+  `src·(1−a) + dst·a` as `Ui_DrawItemFill`, at layer 8.
+
+**The alpha is OSCILLATOR 3, and that number decides the look.** Period 500,
+lo 230, hi 235, a triangle (`sub_42B700` ramps lo→hi over the first half and
+back over the second). It is **not** oscillator 2's 45..200, which the table
+above made an easy assumption. Under the fill's inverse blend a *high* alpha
+is a *faint* quad, so 230 means each of the sixteen contributes about 9% —
+and sixteen of them leave the bar at roughly 80% of the source colour. At 45
+each quad would be nearly opaque and the highlight would blow out to a flat
+block, which is what the mutation test shows: (230, 129, 8) instead of
+(156, 85, 0).
+
+**The gate**, read at the call site rather than taken from prose: bank B
+`0x40000200` on the item, then bank A `0x20000001` — FOCUSED — on the item
+**and** on its list. That is the one row which is both its list's selection
+and in the focused list.
+
+The colour is the item's own `+8/+9/+10`, so a sneak page tints its own
+cursor, and the (255, 50, 50) arm of `0x42000000` applies here too.
+
+**Tier 5**: every number is read out of the image and none is checked against
+a capture, because a still frame cannot judge sixteen eased elements. What is
+asserted is the consequence the player reported missing — the focused row
+paints (156, 85, 0) where the plain fill under it paints (49, 28, 0), more
+than three times brighter. `verify.py: cursor highlight`.
+
+In the port it is **attached, not owned** (`ScreenComposer::attachCursor`):
+it carries state that eases between frames, so a composer that owned one would
+stop being a pure function of (screen, walk) and `engine: screen`'s hashes —
+the port's only tier-4 UI capture — would move with the frame count.
 
 ### `Ui_DrawItem` NEVER READS `+28` — and that is most of what an item shows
 

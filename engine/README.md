@@ -1467,13 +1467,26 @@ loaded by the screen's own open - which rotate to show selection. The UI layer
 has no 3D path, so they are not drawn; their LABELS and the two counts are,
 on the echo bar, which is where the engine puts them.
 
-`Ui_DrawItemCursor` is not drawn either, and it is the commonest decoration
-in the tree. `sub_479920` centres a 220-dword pool on the focused item and
-advances SIXTEEN per-element angles by the frame delta - a ring of turning
-pieces, which is what bleeds light around the selected verb in a capture and
-reads like a bright fill in a still frame. The elements' geometry and art are
-not read, and sixteen animated pieces invented from one still frame would be
-decoration this port cannot defend.
+**`Ui_DrawItemCursor` IS PORTED** (2026-09-04), and it was a play report that
+made it worth the read: "the hovering effect is absent so it is very difficult
+to know where I am". `sub_479920` drives ONE global pool of SIXTEEN elements
+that chase the focused item and orbit it, and the pool's layout closes exactly
+on the 220 dwords an earlier pass had measured - 0x30 + 16 x 0x34 = 880 - so
+the parse could have failed and did not. Five functions read: the rebuild, the
+two eases, the orbit and the renderer, which submits one quad per element at
+blend mode 4, the same inverse blend as the fill.
+
+The number that decides the look is the ALPHA, and it is oscillator **3** -
+period 500, 230..235, a triangle - not oscillator 2's 45..200, which the docs'
+table made an easy wrong assumption. Under the inverse blend a high alpha is a
+faint quad: sixteen at ~9% leave the bar near 80% of the source. At 45 it
+saturates, which is the mutation the check is shown to fail on.
+
+Tier 5 - every number read, none checked against a capture, because a still
+frame cannot judge sixteen eased elements. What is asserted is the property
+the player missed: the focused row paints (156, 85, 0) where the plain fill
+paints (49, 28, 0). It is ATTACHED rather than owned by the composer, so
+`engine: screen`'s hashes stay a pure function of the screen.
 
 **`Ui_DrawItemFill` IS PORTED, and it took four attempts and a picture of the
 original.** The blend is the inverse of source-over - `sub_480AC0`'s mode-4

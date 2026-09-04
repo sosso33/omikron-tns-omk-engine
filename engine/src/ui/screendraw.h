@@ -22,6 +22,7 @@
 
 #include "platform/datafs.h"
 #include "ui/cloud.h"
+#include "ui/cursor.h"
 #include "ui/surface.h"
 #include "ui/text.h"
 #include "ui/widgets.h"
@@ -52,6 +53,8 @@ struct ScreenFrame {
     int  spritesDrawn = 0;
     // `Ui_DrawItemFill` quads, bank B `0x10`. 222 items in the tree carry it.
     int  fillsDrawn = 0;
+    // Cursor quads submitted - 16 per focused item, 0 with none attached.
+    int  cursorQuads = 0;
     int  textAdvance = 0;     // summed pen advance of every row drawn
     int  centred = 0;         // rows the alignment ladder centred
     // FNV-1a of the whole framebuffer. The counts above say what was drawn;
@@ -74,6 +77,17 @@ public:
     // which is colour-keyed over it. Optional: a composer with none draws the
     // sheet on black, which is what this did before the cloud was found.
     void attachCloud(const MenuCloud* c) { cloud_ = c; }
+    // `Ui_DrawItemCursor` - the HIGHLIGHT, and the reason it is attached
+    // rather than owned: it carries sixteen elements of state that ease
+    // between frames, so a composer that owned one would stop being a pure
+    // function of (screen, walk) and `engine: screen`'s hashes - the port's
+    // only tier-4 UI capture - would move with the frame count. A caller
+    // that wants the highlight passes one in; `run_screen` passes none and
+    // composes exactly what it always did.
+    void attachCursor(UiCursor* c) { cursor_ = c; }
+    // Milliseconds since the last composed frame, for the cursor's eases and
+    // its oscillator. Separate from `setClockMs`, which is an absolute clock.
+    void setDeltaMs(long ms) { deltaMs_ = ms; }
     void setFrame(long f) { frame_ = f; }
     // THE OSCILLATOR CLOCK, in MILLISECONDS, and it is not the frame counter.
     // The eight oscillator records carry periods of 500, 1000 and 5000, and
@@ -144,6 +158,8 @@ private:
     int background(Surface& fb, const UiPanel& p, const Surface& sheet) const;
 
     const MenuCloud* cloud_ = nullptr;
+    UiCursor*        cursor_ = nullptr;
+    long             deltaMs_ = 33;
     const std::map<std::uint32_t, std::string>* rows_ = nullptr;
     const std::set<std::uint32_t>* hidden_ = nullptr;
     long             frame_ = 0;
