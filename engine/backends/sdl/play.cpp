@@ -1676,6 +1676,14 @@ int main(int argc, char** argv) {
                                        // sets dword_4E9728, the pause flag
     omk::UiCursor uiCursor;   // Ui_DrawItemCursor's one pool (dword_6A4D20)
     omk::UiListState uiLists; // every list's `+2`, for as long as we run
+    // The sneak's three turning previews. Loaded once - the engine loads them
+    // in the sneak's OPEN callback and frees them in its close, which for a
+    // viewer that opens the device repeatedly is the same three files each
+    // time.
+    omk::UiModels uiModels;
+    if (const int n = uiModels.load(fs))
+        std::printf("sneak: %d of 3 preview models loaded (%s...)\n",
+                    n, uiModels.name(0).c_str());
     // WHO asked for the open screen, because the two ends differ. `ui.open`
     // parks its caller at status 6 and every close path posts event 5 with
     // the answer, so leaving IS an answer and the script resumes. The sneak
@@ -5643,6 +5651,7 @@ int main(int argc, char** argv) {
                 uiLastMs = nowMs;
             }
             comp.attachCursor(&uiCursor);
+            comp.attachModels(&uiModels);
             comp.setRowText(sneakRows.empty() ? nullptr : &sneakRows);
             comp.setHidden(sneakHidden.empty() ? nullptr : &sneakHidden);
             comp.draw(fb, openScreen, *walk);

@@ -16,6 +16,7 @@
 #include "actor/moves.h"        // kScreenSneak - the screen table row
 #include "platform/datafs.h"
 #include "ui/cursor.h"
+#include "ui/models.h"
 #include "ui/screendraw.h"
 #include "ui/text.h"
 #include "ui/widgets.h"
@@ -231,6 +232,27 @@ int main(int argc, char** argv) {
         const std::uint16_t u =
             lit.px[static_cast<std::size_t>(row->y + row->h / 2) * 640 +
                    (row->x + row->w - 20)];
+        // ---- THE THREE 3D PREVIEWS ---------------------------------
+        //
+        // `I2D_Submit3DView` through the bounding-box arm of `sub_478DE0`.
+        // What is asserted is that each 50x50 slot gets a substantial
+        // picture: the wrong arm - the CHARACTER view's 118.110 - puts these
+        // 3-to-8-unit objects a hundred units off and paints two pixels.
+        omk::UiModels mods;
+        const int loaded = mods.load(fs);
+        comp.attachModels(&mods);
+        omk::Surface mv(640, 480, 0);
+        omk::UiWalk mw(w);
+        mw.open(omk::kScreenSneak);
+        const auto mf = comp.draw(mv, omk::kScreenSneak, mw);
+        int painted[3] = {0, 0, 0};
+        for (int sl = 0; sl < 3; ++sl)
+            for (int yy = 100 + sl * 100; yy < 150 + sl * 100; ++yy)
+                for (int xx = 110; xx < 160; ++xx)
+                    if (mv.px[static_cast<std::size_t>(yy) * 640 + xx]) ++painted[sl];
+        std::printf("previews %d loaded, %d drawn, slots %d %d %d of 2500\n",
+                    loaded, mf.modelsDrawn, painted[0], painted[1], painted[2]);
+
         std::printf("cursor quads %d, alpha %d, focused row paints %d %d %d\n",
                     f.cursorQuads, cur.alpha(), ((u >> 11) & 31) * 255 / 31,
                     ((u >> 5) & 63) * 255 / 63, (u & 31) * 255 / 31);

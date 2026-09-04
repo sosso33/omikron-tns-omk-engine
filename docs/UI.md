@@ -685,13 +685,43 @@ for the box, then `extent + extent / tan(50°)`) is for a non-positive argument,
 and no sneak call reaches it. Reading the branch the other way would make
 118.110 a flag rather than the answer.
 
-**Not ported.** `verify.py: sneak previews` asserts the data half — that the
-three paths resolve in the shipped tree (two ship upper-case and one mixed, so
-the case-insensitive resolve is load-bearing), that all three literals are in
-the image, and the two constants. The render is not: the port's interface has
-no 3D path at all, and its composer is a pure 2D function of (screen, walk).
-Wiring the renderer boundary into it is a slice of its own, and inventing a
-camera convention for one would be reconstruction rather than a port.
+#### Which arm, and the picture is what settled it
+
+`sub_478DE0` has two arms chosen by the **sign** of the distance argument, and
+the device's two 3D views use one each:
+
+| view | argument | arm |
+|---|---|---|
+| the item previews | `push 0` | not positive → the `jz` is **not** taken → the bounding-box fit: `E = max(dx, dy, dz)`, `dist = E + E / tan(50°)` |
+| the character view | `push 42EC3871h` = 118.110 | positive → the fit is **skipped**, the literal offset is used |
+
+and the character one is `sub_4778E0`, which builds its node from the
+**player's own model name** (`dword_930724[0] + 0x30`) and an `ANIMS\%s`
+clip — the standing Kay'l a capture of the identity page shows. Three metres
+is right for a man; it is not right for these objects, whose extents are 3.26,
+4.55 and 8.13.
+
+**Reading the character camera as the previews' paints two pixels of a
+fifty-pixel slot.** That is what attributing the wrong call site does, and
+nothing static caught it: the branch, the constant and the fov were all read
+correctly, and applied to the wrong one of two callers. A capture of the
+original shows the slots filled, so the picture is what separated them — the
+data adjudicating between two readings of one function, which §1 says is
+exactly what a render is for.
+
+**Ported** (`engine/src/ui/models.*`), attached to the composer the way the
+cursor is so `run_screen` stays a pure function of (screen, walk).
+`verify.py: sneak previews` asserts both halves: the paths, the constants, and
+that each slot gets between 120 and 1500 of its 2500 pixels — a range, because
+the models turn on oscillator 4 and the silhouette changes with the phase,
+where the wrong camera fails by two orders of magnitude.
+
+Two things the port does differently, both stated rather than hidden: the
+target is the **geometry's** centre rather than the model record's
+`+0x24..0x2C` (the same point for a model authored about its origin, which
+these are), and the **camera** turns about the model rather than the model
+under the camera — the same picture for a rigid body with baked per-vertex
+colour, and nothing in the engine's data can tell them apart.
 
 ### `sub_49C050` — the row list's own hook, and why nothing moved inside it
 

@@ -10558,12 +10558,33 @@ def c_sneak_previews():
     `extent + extent / tan(50 deg)`) is for a non-positive argument and no
     sneak call reaches it.
 
-    This check asserts the DATA only: that the three paths the exe names
-    resolve in the shipped tree under the case-insensitive rule Win95 gave
-    them - and they need it, since two ship upper-case and one mixed - and
-    that the two constants are what the image holds. The RENDER is not ported:
-    the port's interface has no 3D path at all, and inventing a camera
-    convention for one would be a reconstruction rather than a port.
+    **WHICH ARM, and the picture is what settled it.** `sub_478DE0` has two,
+    chosen by the sign of the distance argument, and the two 3D views in the
+    device use one each:
+
+        the ITEM previews   `push 0` - not positive, so the `jz` is NOT taken
+                            and the bounding-box block runs:
+                                E    = max(dx, dy, dz)   (`sub_437D60`)
+                                dist = E + E / tan(50 deg)
+        the CHARACTER view  `push 42EC3871h` = 118.110 - positive, so the fit
+                            is SKIPPED and the literal offset is used
+
+    and the character one is `sub_4778E0`, which builds its node from the
+    PLAYER's own model name (`dword_930724[0] + 0x30`) and an `ANIMS\%s`
+    clip. Three metres is right for a standing man; it is not right for these
+    objects, whose extents are 3.26, 4.55 and 8.13. Reading the character
+    camera as the previews' - which is what attributing the wrong call site
+    does - paints TWO pixels of a fifty-pixel slot, where a capture of the
+    original shows them filling it. That is the data adjudicating between two
+    readings of one function, and only a render could do it.
+
+    So this asserts both halves now: the three paths resolve in the shipped
+    tree under the case-insensitive rule Win95 gave them (two ship upper-case
+    and one mixed, so it is load-bearing), the constants are what the image
+    holds, and each 50x50 slot gets a substantial picture. The pixel counts
+    are a RANGE because the models turn - oscillator 4, once every five
+    seconds - so the silhouette changes with the phase; the wrong camera
+    fails it by two orders of magnitude, not by a few pixels.
     """
     import struct
     root = omkpaths.data_root()
@@ -10584,8 +10605,28 @@ def c_sneak_previews():
     lit = sum(1 for n in names
               if ("meshes\\objets\\" + n).encode("latin-1") in exe.lower())
     fov = struct.unpack("<f", struct.pack("<I", 0x42480000))[0]
-    return (found, lit, round(dist, 3), round(dist * 0.0254, 3), fov), \
-           (["Setek.3do", "ANNEAU.3DO", "IMAGER.3DO"], 3, 118.11, 3.0, 50.0), \
+    # ...and the render, through the probe.
+    import subprocess
+    eng = os.path.join(ROOT, "engine")
+    slots, drew = [], -1
+    mk = subprocess.run(["make", "-s", "build/sneak_colour"], cwd=eng,
+                        capture_output=True, text=True)
+    tool = os.path.join(eng, "build", "sneak_colour")
+    if mk.returncode == 0 and os.path.exists(tool):
+        tb = os.path.join(ROOT, "tables")
+        r = subprocess.run([tool, root, os.path.join(tb, "ui_widgets.json"),
+                            os.path.join(tb, "ui.json")],
+                           capture_output=True, text=True)
+        for ln in r.stdout.splitlines():
+            if ln.startswith("previews "):
+                f = ln.replace(",", " ").split()
+                drew = int(f[3])
+                slots = [int(x) for x in f[6:9]]
+    ok = len(slots) == 3 and all(120 < n < 1500 for n in slots)
+    return (found, lit, round(dist, 3), round(dist * 0.0254, 3), fov,
+            drew, ok), \
+           (["Setek.3do", "ANNEAU.3DO", "IMAGER.3DO"], 3, 118.11, 3.0, 50.0,
+            3, True), \
            "the three models the sneak's open callback names by literal " \
            "path, as they are actually spelled on disc - two upper-case and " \
            "one mixed, so the case-insensitive resolve is load-bearing; " \
@@ -10594,7 +10635,11 @@ def c_sneak_previews():
            "METRES in the engine's inch unit, the same 0.0254 the audio " \
            "listener is told about; and the FOV, `0x42480000` = 50. Those two " \
            "plus the model's own centre are the whole camera: it looks at " \
-           "`node+0x24..0x2C` from that point with Z offset by the distance"
+           "`node+0x24..0x2C` from that point with Z offset by the distance. " \
+           "Then the RENDER: all three draw, and each 50x50 slot gets " \
+           "between 120 and 1500 of its 2500 pixels - a range because the " \
+           "models turn on oscillator 4, and the CHARACTER view's camera " \
+           "read as theirs paints two"
 
 
 def c_slider_destinations():
@@ -18724,7 +18769,7 @@ def c_licence_headers():
                    if TAG in open(p, encoding="utf-8",
                                   errors="replace").read(600)]
     return (authored, sorted(missing), len(vendored), mislabelled), \
-           (326, [], 1, []), \
+           (328, [], 1, []), \
            "authored source files under tools/, engine/src, engine/tools, " \
            "engine/backends and scripts/; those MISSING the SPDX tag; " \
            "vendored files in engine/third_party; and vendored files wrongly " \

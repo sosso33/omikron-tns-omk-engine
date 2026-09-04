@@ -310,6 +310,22 @@ ScreenFrame ScreenComposer::draw(Surface& fb, int screenId,
             // handed the page's own tab-icon colour. `rgb` above is what it
             // wrote; `UiWalk::buildPage` and `docs/UI.md` carry the rule and
             // the five captures that confirm it.
+            // ---- THE 3D PREVIEWS: `I2D_Submit3DView` (0x00428900) -----
+            //
+            // Not an item flag - `Ui_DrawItem` never reaches this primitive,
+            // so the flag table cannot name it. What identifies the three
+            // slots is the LIST: 0x004DE420, whose items take the three
+            // models in the order the sneak's open callback loads them.
+            if (models_ && l.addr == kListSneakPreviews) {
+                const int slot = static_cast<int>(&it - &l.items[0]);
+                if (models_->draw(fb, slot,
+                                  scaleX(it.x + q->offsetX),
+                                  scaleY(it.y + q->offsetY),
+                                  scaleX(it.w), scaleY(it.h),
+                                  UiModels::spinDegrees(clockMs_)))
+                    ++out.modelsDrawn;
+            }
+
             // ---- THE CURSOR: `Ui_DrawItemCursor` (`sub_479920`) -------
             //
             // Drawn BEFORE the fill and the sprite, because `sub_4795F0`

@@ -23,6 +23,7 @@
 #include "platform/datafs.h"
 #include "ui/cloud.h"
 #include "ui/cursor.h"
+#include "ui/models.h"
 #include "ui/surface.h"
 #include "ui/text.h"
 #include "ui/widgets.h"
@@ -55,6 +56,8 @@ struct ScreenFrame {
     int  fillsDrawn = 0;
     // Cursor quads submitted - 16 per focused item, 0 with none attached.
     int  cursorQuads = 0;
+    // 3D previews drawn - `I2D_Submit3DView`, 0 with no models attached.
+    int  modelsDrawn = 0;
     int  textAdvance = 0;     // summed pen advance of every row drawn
     int  centred = 0;         // rows the alignment ladder centred
     // FNV-1a of the whole framebuffer. The counts above say what was drawn;
@@ -85,6 +88,13 @@ public:
     // that wants the highlight passes one in; `run_screen` passes none and
     // composes exactly what it always did.
     void attachCursor(UiCursor* c) { cursor_ = c; }
+    // THE SNEAK'S THREE 3D PREVIEWS - the interface's own 3D path, and
+    // attached for the same reason the cursor is: it owns a renderer and a
+    // clock, so a composer that owned one would stop being a pure function of
+    // (screen, walk). `run_screen` attaches none and composes what it always
+    // did. The three items of list 0x004DE420 take models 0, 1 and 2 in the
+    // order the open callback loads them.
+    void attachModels(UiModels* m) { models_ = m; }
     // Milliseconds since the last composed frame, for the cursor's eases and
     // its oscillator. Separate from `setClockMs`, which is an absolute clock.
     void setDeltaMs(long ms) { deltaMs_ = ms; }
@@ -159,6 +169,7 @@ private:
 
     const MenuCloud* cloud_ = nullptr;
     UiCursor*        cursor_ = nullptr;
+    UiModels*        models_ = nullptr;
     long             deltaMs_ = 33;
     const std::map<std::uint32_t, std::string>* rows_ = nullptr;
     const std::set<std::uint32_t>* hidden_ = nullptr;
