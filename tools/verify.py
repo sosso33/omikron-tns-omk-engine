@@ -10455,12 +10455,20 @@ def c_sneak_page_colour():
             # CALLBACK rather than an item `+44` - neither panel was in the
             # tree at all until the lifter learned to follow code.
             "confirm row -> panel 0x4deeb8, list 2, tabs off 1 rows off 1" in o,
-            "confirm Examiner -> panel 0x4def20, verbs off 1" in o), \
+            "confirm Examiner -> panel 0x4def20, verbs off 1" in o,
+            # `list+2` is a field of a STATIC record: seeded by the linker,
+            # written by `Ui_MoveSelection`, overwritten only where an open
+            # callback writes it, and NEVER reset - so the device remembers
+            # the verb you last used across closing and reopening it. Two
+            # walks sharing one `UiListState` are the engine's data segment;
+            # a walk without one stays a pure function of its input, which is
+            # what every check that compares two implementations needs.
+            "verb left at 2, remembered 2, private walk 0" in o), \
            (5,
             ["20 165 250", "25 240 115", "240 135 15", "255 240 95",
              "255 100 70"],
             True, True, True, True, True, True, True, True, True, True,
-            True, True), \
+            True, True, True), \
            "the five tab icons carry the five page colours; opening screen " \
            "9 runs the inventory page's builder, which copies its own icon's " \
            "amber over the rows, the verbs and the echo bar; and the row " \
@@ -10493,7 +10501,12 @@ def c_sneak_page_colour():
            "0x004DEEB8 with only the verbs selectable, and confirming " \
            "Examiner reaches the EXAMINE page 0x004DEF20 - both installed " \
            "by `sub_42A370` from a callback, so neither panel was in the " \
-           "tree until the lifter learned to follow code as well as `+44`"
+           "tree until the lifter learned to follow code as well as `+44`. And the " \
+           "interface REMEMBERS: nothing in the image ever writes the verb " \
+           "list's `+2` (not `sub_49B810`, not its leave `sub_49B8A0`, and " \
+           "none of `sub_4295C0`'s three sites - those are the options " \
+           "screens), so the record keeps the verb you last used across " \
+           "closing and reopening the device"
 
 
 def c_sneak_previews():

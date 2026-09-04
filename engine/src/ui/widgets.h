@@ -305,10 +305,36 @@ private:
     int saveSlots_ = 256;
 };
 
+// EVERY LIST'S SELECTION, for as long as the process lives.
+//
+// `list+2` is a field of a STATIC record in the engine's data segment. It is
+// seeded by the linker (all four of the sneak's ship 0), written by
+// `Ui_MoveSelection` as the player moves, and overwritten by an open callback
+// where one does - and nothing ever resets it. So the interface remembers
+// where you were in every list it has ever shown, across closing and
+// reopening the screen, until the process ends.
+//
+// A `UiWalk` is built fresh each time a screen opens, so keeping the map
+// inside one loses that. A caller that wants the engine's behaviour makes ONE
+// of these and hands it to every walk; a caller that wants a walk to be a
+// pure function of its input - `run_screen`, the probes, every check that
+// compares two implementations - attaches none and gets a private one.
+//
+// The case that made it visible: the sneak's three verbs are one list shared
+// by three panels, and the engine keeps the verb you last used. Not modelling
+// that meant every reopen came back to "Utiliser", which a player preferred -
+// and asked to have made faithful instead.
+struct UiListState {
+    std::map<std::uint32_t, int> sel;   // list address -> selected index
+};
+
 // One open screen, driven by input words.
 class UiWalk {
 public:
     explicit UiWalk(const UiWidgets& w) : w_(&w) {}
+    // ...with the interface's own long-lived selections. Attach before
+    // `open`, and the same object across every walk of the session.
+    UiWalk(const UiWidgets& w, UiListState& st) : w_(&w), state_(&st) {}
 
     bool open(int screenId);
     // One frame of `Ui_DispatchInput`. -> true if the frame was consumed.
@@ -479,7 +505,12 @@ private:
     const UiWidgets* w_;
     const UiPanel*   panel_ = nullptr;
     int  cur_ = 0;
-    std::map<std::uint32_t, int> sel_;   // list address -> selected index
+    // The selections live in `state_`, which points at `own_` unless a
+    // caller attached one - see `UiListState`.
+    UiListState  own_;
+    UiListState* state_ = &own_;
+    std::map<std::uint32_t, int>& selMap() { return state_->sel; }
+    const std::map<std::uint32_t, int>& selMap() const { return state_->sel; }
     bool approx_ = false;
     int  answer_ = -1;
     std::string name_;

@@ -332,7 +332,7 @@ bool UiWalk::moveListsSlider(std::uint32_t bits) {
             // widget. With three destinations bound into nine widgets the
             // raw index lands on one that draws nothing.
             const int j = (bits & kUiUp) ? lastPickable(r) : firstPickable(r);
-            if (j >= 0) sel_[r.addr] = j;
+            if (j >= 0) selMap()[r.addr] = j;
             return go(rows);
         }
         return false;
@@ -404,8 +404,8 @@ void UiWalk::bindRows(std::uint32_t list, int count) {
         // ...and if the selection was left on a row that has just gone away,
         // pull it back to the last live one. `sub_42AAE0` cannot leave the
         // highlight past the end and neither may this.
-        auto it = sel_.find(l.addr);
-        if (it != sel_.end() && it->second >= count)
+        auto it = selMap().find(l.addr);
+        if (it != selMap().end() && it->second >= count)
             it->second = count > 0 ? count - 1 : 0;
         return;
     }
@@ -435,7 +435,7 @@ void UiWalk::settle() {
     // what decides which page of the sneak comes up: without it screen 9
     // opens on the tab COLUMN with "Identite" lit, and the player is looking
     // at the inventory page with the highlight somewhere else.
-    // **A LIST IS SHARED, AND ITS SELECTION IS LIVE.** `sel_` used to be
+    // **A LIST IS SHARED, AND ITS SELECTION IS LIVE.** `selMap()` used to be
     // cleared here, so every panel change re-seeded every list from its
     // static `+2` - and the sneak's pages all carry the same tab column
     // (0x004DE210), so confirming a tab threw the column's selection back to
@@ -465,7 +465,13 @@ void UiWalk::settle() {
             for (std::size_t i = 0; i < l.items.size(); ++i)
                 if (pickable(l, l.items[i])) { j = static_cast<int>(i); break; }
         }
-        sel_.emplace(l.addr, j);      // keeps a live selection, seeds a new one
+        // An open callback's write WINS - that is the engine overwriting the
+        // record. Anything else only seeds a list this walk has not met, so a
+        // selection the player left behind survives.
+        if (l.select >= 0 && static_cast<std::size_t>(l.select) < l.items.size())
+            selMap()[l.addr] = j;
+        else
+            selMap().emplace(l.addr, j);
     }
 }
 
@@ -629,15 +635,15 @@ const UiList* UiWalk::curList() const {
 }
 
 int UiWalk::selectionOf(const UiList& l) const {
-    const auto it = sel_.find(l.addr);
-    return it == sel_.end() ? -1 : it->second;
+    const auto it = selMap().find(l.addr);
+    return it == selMap().end() ? -1 : it->second;
 }
 
 int UiWalk::selection() const {
     const auto* l = curList();
     if (!l) return -1;
-    const auto it = sel_.find(l->addr);
-    return it == sel_.end() ? -1 : it->second;
+    const auto it = selMap().find(l->addr);
+    return it == selMap().end() ? -1 : it->second;
 }
 
 const UiItem* UiWalk::selected() const {
@@ -660,14 +666,14 @@ bool UiWalk::move(const UiList& l, std::uint32_t bits,
     const int n = static_cast<int>(l.items.size());
     const int step = (bits & back) ? -1 : (bits & on) ? 1 : 0;
     if (step) {
-        int j = sel_[l.addr];
+        int j = selMap()[l.addr];
         for (int t = 0; t < n; ++t) {              // skip unselectable items
             j += step;
             if (j < 0)       j = l.noWrap() ? 0 : n - 1;
             else if (j >= n) j = l.noWrap() ? n - 1 : 0;
             if (pickable(l, l.items[static_cast<std::size_t>(j)])) break;
         }
-        sel_[l.addr] = j;
+        selMap()[l.addr] = j;
         log_.push_back("move");
         return true;
     }
@@ -676,13 +682,13 @@ bool UiWalk::move(const UiList& l, std::uint32_t bits,
 }
 
 bool UiWalk::grid(const UiList& l, std::uint32_t bits) {
-    int n = sel_[l.addr];
+    int n = selMap()[l.addr];
     const int before = n;
     if (bits & kUiUp)          n = n < 3 ? 6 : (n == 6 ? 4 : n - 3);
     else if (bits & kUiDown)   n = n < 3 ? n + 3 : (n == 6 ? 1 : 6);
     else if (bits & kUiLeft)  { if (n != 6) n = (n % 3) ? n - 1 : n + 2; }
     else if (bits & kUiRight) { if (n != 6) n = (n % 3 == 2) ? n - 2 : n + 1; }
-    sel_[l.addr] = n;
+    selMap()[l.addr] = n;
     if (n != before) log_.push_back("move");
     if (bits & kUiConfirm) {
         // Confirm writes the answer ITSELF rather than going through an item
@@ -716,7 +722,7 @@ bool UiWalk::startConfirm(std::uint32_t bits) {
         const UiList* nf = nullptr;
         for (const auto& x : panel_->lists)
             if (x.addr == w_->startNameList()) nf = &x;
-        if (nf && !nf->hidden() && sel_[l->addr] == 0 && (bits & kUiUp)) {
+        if (nf && !nf->hidden() && selMap()[l->addr] == 0 && (bits & kUiUp)) {
             cur_ = 0; log_.push_back("focus list 0"); return true;
         }
     }

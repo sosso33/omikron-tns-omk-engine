@@ -605,6 +605,32 @@ wearing the old page's colour — a player reported reaching the slider page
 walks RIGHT, UP, CONFIRM into panel 0x004DEDE8 and asserts its rows turn green.
 
 
+### `list+2` is a STATIC record, so the interface remembers
+
+Nothing in the image ever writes the verb list's `+2`. Not the verb panel's
+enter callback `sub_49B810`, not its leave `sub_49B8A0`, and none of the three
+call sites of the selection setter `sub_4295C0` — those are the options
+screens, `0x004CE820` and `0x004DD3B0`. The record ships `+2 = 0`, which is
+"Utiliser", and the only thing that moves it is `Ui_MoveSelection` as the
+player presses a key.
+
+That makes the field a **static global with process lifetime**: seeded by the
+linker, written by the mover, overwritten only where an open callback writes
+it (which is the `select` the tree carries for 8 lists), and never reset. So
+the device remembers the verb you last used, and the row you were on, across
+closing and reopening it.
+
+A `UiWalk` is built fresh each time a screen opens, so keeping the selections
+inside one loses that. `UiListState` is the data segment: a caller makes one
+and hands it to every walk — `omk-play` does — while a caller that needs a
+walk to be a pure function of its input attaches none and gets a private one.
+`run_screen`, the probes and every check that compares the engine against
+`tools/sim` are in the second group, which is what keeps them deterministic.
+
+Found because a player asked for "Utiliser" to be the default after choosing
+an object, *"unless the original code says otherwise"* — and it does: the
+original had been reset-on-open only because the port forgot.
+
 ### The three 3D previews, and the interface's own 3D primitive
 
 A player: "the 3D items are not here". They are list 0x004DE420 — three 50×50

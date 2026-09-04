@@ -1675,6 +1675,7 @@ int main(int argc, char** argv) {
     constexpr int kScreenPause = 31;   // PAUSE GAME - the only screen that
                                        // sets dword_4E9728, the pause flag
     omk::UiCursor uiCursor;   // Ui_DrawItemCursor's one pool (dword_6A4D20)
+    omk::UiListState uiLists; // every list's `+2`, for as long as we run
     // WHO asked for the open screen, because the two ends differ. `ui.open`
     // parks its caller at status 6 and every close path posts event 5 with
     // the answer, so leaving IS an answer and the script resumes. The sneak
@@ -3988,7 +3989,14 @@ int main(int argc, char** argv) {
             const bool fromScript = playerScreen < 0;
             const int want = fromScript ? session.pendingUiScreen() : playerScreen;
             playerScreen = -1;
-            auto fresh = std::make_unique<omk::UiWalk>(w);
+            // ...with the interface's OWN selections, which outlive the
+            // walk. `list+2` is a field of a static record in the engine's
+            // data segment: seeded by the linker, written by
+            // `Ui_MoveSelection`, overwritten only where an open callback
+            // writes it, and never reset. So the device remembers the verb
+            // you last used and the row you were on across closing and
+            // reopening it, and a walk built fresh each open would forget.
+            auto fresh = std::make_unique<omk::UiWalk>(w, uiLists);
             if (!fresh->open(want)) {
                 // A script's screen must be in the tree - the boot depends on
                 // it. The PLAYER's need not be fatal: `sub_0046ADF0`'s own

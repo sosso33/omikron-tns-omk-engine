@@ -120,6 +120,42 @@ int main(int argc, char** argv) {
         }
         std::printf("\n");
     }
+    // ---- THE INTERFACE REMEMBERS, because `list+2` is a STATIC record ---
+    //
+    // Seeded by the linker (all four of the sneak's ship 0), written by
+    // `Ui_MoveSelection`, overwritten only where an open callback writes it,
+    // and never reset - so the device remembers the verb you last used across
+    // closing and reopening it. A walk built fresh each open forgets. Two
+    // walks sharing one `UiListState` is the engine's data segment.
+    {
+        omk::UiListState st;
+        omk::UiWalk a(w, st);
+        a.open(omk::kScreenSneak);
+        a.bindRows(omk::kListSneakRows, 1);
+        a.press(omk::kUiConfirm);                 // into the verb panel
+        a.press(omk::kUiRight);
+        a.press(omk::kUiRight);                   // ...and along to Examiner
+        int was = -1;
+        for (const auto& l : a.panel()->lists)
+            if (l.addr == omk::kListSneakVerbs) was = a.selectionOf(l);
+        omk::UiWalk b(w, st);                     // the screen closes and reopens
+        b.open(omk::kScreenSneak);
+        b.bindRows(omk::kListSneakRows, 1);
+        b.press(omk::kUiConfirm);
+        int now2 = -1;
+        for (const auto& l : b.panel()->lists)
+            if (l.addr == omk::kListSneakVerbs) now2 = b.selectionOf(l);
+        omk::UiWalk c(w);                         // ...and with no shared state
+        c.open(omk::kScreenSneak);
+        c.bindRows(omk::kListSneakRows, 1);
+        c.press(omk::kUiConfirm);
+        int fresh = -1;
+        for (const auto& l : c.panel()->lists)
+            if (l.addr == omk::kListSneakVerbs) fresh = c.selectionOf(l);
+        std::printf("verb left at %d, remembered %d, private walk %d\n",
+                    was, now2, fresh);
+    }
+
     // ---- THE OBJECT FLOW: rows -> verbs -> examine --------------------
     //
     // Both descents are `sub_42A370` from a CALLBACK, not an item `+44`, so
@@ -132,6 +168,10 @@ int main(int argc, char** argv) {
         f.bindRows(omk::kListSneakRows, 1);       // one carried object
         f.press(omk::kUiConfirm);
         const omk::UiPanel* q = f.panel();
+        int vsel = -1;
+        for (const auto& l : (q ? q->lists : std::vector<omk::UiList>{}))
+            if (l.addr == omk::kListSneakVerbs) vsel = f.selectionOf(l);
+        std::printf("verb default %d\n", vsel);
         std::printf("confirm row -> panel %#x, list %d, tabs off %d rows off %d\n",
                     q ? q->addr : 0, f.currentList(),
                     f.listOff(omk::kListSneakTabs) ? 1 : 0,
