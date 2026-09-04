@@ -682,7 +682,7 @@ public:
         std::lock_guard<std::mutex> lk(self->amx_);
         for (std::size_t i = 0; i < n; ++i) {
             float v = 0.0f;
-            if (self->sHead_ < self->stream_.size()) v += self->stream_[self->sHead_++];
+            if (self->sHead_ < self->stream_.size()) v += self->stream_[self->sHead_++] * self->musicGain_;
             for (auto& one : self->shots_) {
                 if (one.pos >= one.pcm.size()) {
                     if (!one.loop || one.pcm.empty()) continue;
@@ -730,6 +730,11 @@ public:
         if (adev_) SDL_PauseAudioDevice(adev_, 0);
         return adev_ != 0;
 #endif
+    }
+
+    void setMusicGain(float g) override {
+        std::lock_guard<std::mutex> lk(amx_);
+        musicGain_ = g < 0.0f ? 0.0f : (g > 1.0f ? 1.0f : g);
     }
 
     void queueAudio(std::span<const float> s) override {
@@ -799,6 +804,7 @@ private:
                   float gain = 1.0f; };
     int                 nextShot_ = 1;
     std::mutex          amx_;
+    float musicGain_ = 1.0f;      // Music_SetVolume, applied to the stream in feed()
     std::vector<float>  stream_;
     std::size_t         sHead_ = 0;
     std::vector<Shot>   shots_;
@@ -1819,11 +1825,16 @@ int main(int argc, char** argv) {
     // and `shots_` are not, so anything long started as a one-shot outlives
     // an area change, a music switch and a cutscene.
     const auto sfxLog = [&](const char* what, std::size_t samples, int a, int b,
-                            float gain = 1.0f) {
+                            float gain = 1.0f, const std::vector<float>* pcm = nullptr) {
         const double secs = samples / 44100.0 / 2.0;
-        if (secs >= 0.75)                 // footsteps and blips are not the story
-            std::printf("audio: %-14s %6.2f s  (%d, %d)  gain %.2f\n",
-                        what, secs, a, b, gain);
+        // the PEAK of what is fed, because a reader heard the effects "very
+        // low" against the music: the number says whether the source or the
+        // mix is quiet
+        float peak = 0.0f;
+        if (pcm) for (const float v : *pcm) peak = std::max(peak, std::fabs(v));
+        if (secs >= 0.75 || pcm)
+            std::printf("audio: %-14s %6.2f s  (%d, %d)  gain %.2f  peak %.3f\n",
+                        what, secs, a, b, gain, static_cast<double>(peak));
     };
     int         takeCandidate = -1;      // `dword_53AF6C`, MDACTION's pick
     // Which HEIGHT the take was, kept from MDACTION so the put-back can match
@@ -2763,6 +2774,21 @@ int main(int argc, char** argv) {
     // and draw nothing, which is fire and smoke not working, while the
     // Impasse's 13/14/114... collide with the GLOBAL library's and draw the
     // wrong picture, which is `todo/omk-play.md` 48.
+    // THE GLOBAL LIBRARY IS THE EFFECTS SCENE. `Game_Start` loads
+    // `SCPTDATA\aventure.scx` into `stru_930780` (04_sys.c 4425), and
+    // `Effects_SetScene(.., &stru_930780)` (05_sys.c 2177/2208) makes THAT the
+    // scene `Cef_TickEffects` resolves a `.CTL` record's sound id in through
+    // `Scene_FindSoundIndex`, and `Cef_SpawnEffect` its sprite id through
+    // `sub_4A5800`. Not the resident scene: the Impasse's 20 sounds have no
+    // 194 (the grab, POBJ01.WAV), 199/203 (the footsteps STPR/STPL) or 180,
+    // and its 187 is a DEMON footstep where the library's 187 is SNEAKIN.WAV.
+    // Searching the resident scene - what this did until 2026-09-05 - made
+    // the grab silent and played a demon's step on the confirm.
+    std::unique_ptr<omk::ScxRuntime> globalRt;
+    if (const auto gp = fs.resolve("SCPTDATA/aventure.SCX")) {
+        globalRt = std::make_unique<omk::ScxRuntime>(omk::DataFs::readPath(*gp));
+        if (!globalRt->valid()) globalRt.reset();
+    }
     std::string spriteScx;
     {
         const int glob = loadSprites("aventure.SCX");
@@ -3207,6 +3233,7 @@ int main(int argc, char** argv) {
         // parked at `ui.open` is waiting on a person, and `Game_HandleEvent`
         // case 5 is the only thing that releases it.
         if (!walk) session.frame();
+        else session.tickMusicLevel();       // the music level moves under a screen too
 
         // ---- SCRIPTED OBJECT MOTION - the crates, the doors, the lifts ---
         //
@@ -3324,6 +3351,10 @@ int main(int argc, char** argv) {
                     if (!e.sprite || (e.flags & 2)) continue;
                     ctlSprites.push_back({e.sprite, e.duration, e.from, e.to, e.scale,
                                           e.flags, e.attach, st});
+                    if (static_cast<std::size_t>(e.sprite) >= spriteTex.size() ||
+                        spriteTex[static_cast<std::size_t>(e.sprite)].rgb.empty())
+                        std::printf("ctl-effect: sprite %d is not registered by the library or the "
+                                    "scene - nothing will draw\n", e.sprite);
                     std::printf("ctl-effect: state %d '%s' spawns sprite %d on attach %d "
                                 "('%s') for %.0f frames from %.0f, scale %.2f, flags 0x%02x\n",
                                 st, player->clipName().c_str(), e.sprite, e.attach,
@@ -3339,13 +3370,16 @@ int main(int argc, char** argv) {
                 else ++i;
             }
         }
-        if (player && session.scene().loaded()) {
-            const auto& rt = session.scene().scene();
+        if (player && globalRt) {
+            const auto& rt = *globalRt;         // the library, see its construction
             for (const auto& es : player->sounds()) {
                 const int i = rt.wavBydId(es.id);
-                if (i < 0) continue;            // this scene carries no such id
+                if (i < 0) {
+                    std::printf("ctl-effect: sound id %d is not in the global library\n", es.id);
+                    continue;
+                }
                 const auto pcm = wavToDevice(rt.wavData(i), 44100);
-                if (!pcm.empty()) { sfxLog("ctl-effect", pcm.size(), es.id, i);
+                if (!pcm.empty()) { sfxLog("ctl-effect", pcm.size(), es.id, i, 1.0f, &pcm);
                                     front.playSound(pcm); }
             }
         }
@@ -3420,6 +3454,7 @@ int main(int argc, char** argv) {
                 // be done. What IS the engine's is the unit - the listener is
                 // told the world unit is an INCH.
                 float gain = 1.0f;
+                float sceneSoundDist = -1.0f;
                 {
                     const auto mo = sc.motionsOf(fs.program);
                     if (!mo.empty() && player) {
@@ -3437,10 +3472,14 @@ int main(int argc, char** argv) {
                         gain = d <= kNear ? 1.0f
                              : d >= kFar  ? 0.0f
                              : kNear / d;
+                        sceneSoundDist = d;
                     }
                 }
                 sfxLog(fs.cue.loop ? "scene-LOOP" : "scene-sound",
-                       pcm.size(), fs.cue.wav, fs.object, gain);
+                       pcm.size(), fs.cue.wav, fs.object, gain, &pcm);
+                if (sceneSoundDist >= 0.0f)
+                    std::printf("audio:   ...at %.0f units from the nearest motion of object %d\n",
+                                static_cast<double>(sceneSoundDist), fs.object);
                 if (gain <= 0.01f) continue;      // too far to hear at all
                 const int h = front.playSound(pcm, fs.cue.loop, gain);
                 // only a LOOPING cue needs remembering - a one-shot ends by
@@ -4301,6 +4340,19 @@ int main(int argc, char** argv) {
         // this only acts on a change.
         // A LEVEL, not an event: the engine's own handler skips `music.play`
         // when the track is already going, so this acts only on a change.
+        {
+            // the engine's music level, every frame (the ramp, the dialogue
+            // duck, the fade-in) - logged when it moves by a dB or more
+            static double musicDbTold = -1.0;
+            const double db = session.musicAttenuationDb();
+            front.setMusicGain(session.musicGain());
+            if (std::fabs(db - musicDbTold) >= 1.0) {
+                musicDbTold = db;
+                std::printf("audio: music attenuation %.0f dB (gain %.2f)%s\n", db,
+                            static_cast<double>(session.musicGain()),
+                            session.dialogOpen() ? " - a conversation ducks it 10" : "");
+            }
+        }
         if (session.musicTrack() != playingTrack) {
             playingTrack = session.musicTrack();
             std::printf("audio: music switch to %d - the stream is flushed; "
@@ -4316,6 +4368,16 @@ int main(int argc, char** argv) {
         if (music.playing() && front.queuedSeconds() < 1.0) {
             std::vector<float> chunk;
             music.pull(chunk, 44100);
+            {
+                static double musicPeakTold = 0.0; static float musicPeak = 0.0f; static std::size_t musicSamples = 0;
+                for (const float v : chunk) musicPeak = std::max(musicPeak, std::fabs(v));
+                musicSamples += chunk.size();
+                if (musicSamples >= 44100u * 2u * 10u) {   // every ten seconds
+                    std::printf("audio: music peak %.3f over the last %.0f s\n",
+                                static_cast<double>(musicPeak), musicSamples / 88200.0);
+                    musicPeak = 0.0f; musicSamples = 0; (void)musicPeakTold;
+                }
+            }
             front.queueAudio(chunk);
         }
         // `media.play` is an EVENT, not a level like music: each announcement
@@ -5119,11 +5181,36 @@ int main(int argc, char** argv) {
                         const omk::MeshPose& hp = pose[static_cast<std::size_t>(hand)];
                         const float* pp = player->pos();
                         const float yaw = player->facing();
+                        // WHERE IN THE HAND - a RECONSTRUCTION, labelled. The
+                        // node's origin is the wrist joint, and a 6 cm object
+                        // (ANNEAU's extent is 2.6 units) placed there sits
+                        // inside the hand mesh: measured, the drawn rings
+                        // centred within 0.2 of the node and nobody could see
+                        // them. What offset the engine gives a re-linked prop
+                        // is not read (`sub_41C490` leaves the node's +36
+                        // alone and `Anim_ApplyNodeFrame` skips a node whose
+                        // header +12 is -1). Until it is, the object is
+                        // carried at the hand mesh's own centre, which is the
+                        // palm.
+                        float handOff[3] = {0, 0, 0};
+                        {
+                            const auto& hm = playerMeshes[static_cast<std::size_t>(hand)];
+                            std::size_t cnt = 0;
+                            for (std::size_t c = 0; c < playerRest.corners.size(); ++c) {
+                                if (c >= playerRest.cornerMesh.size() || playerRest.cornerMesh[c] != hand) continue;
+                                handOff[0] += playerRest.corners[c].x - hm.pos[0];
+                                handOff[1] += playerRest.corners[c].y - hm.pos[1];
+                                handOff[2] += playerRest.corners[c].z - hm.pos[2];
+                                ++cnt;
+                            }
+                            if (cnt) for (float& v : handOff) v /= static_cast<float>(cnt);
+                        }
                         const std::size_t base = propGeo.corners.size();
                         for (const auto& c : pm->rest.corners) {
                             omk::Corner w = c;
-                            const float local[3] = {c.x - pm->origin[0], c.y - pm->origin[1],
-                                                    c.z - pm->origin[2]};
+                            const float local[3] = {c.x - pm->origin[0] + handOff[0],
+                                                    c.y - pm->origin[1] + handOff[1],
+                                                    c.z - pm->origin[2] + handOff[2]};
                             float r[3];
                             omk::qrot(hp.q, local, r);              // the hand's rotation
                             const float in[3] = {hp.pos[0] + r[0] - playerRootXZ[0], hp.pos[1] + r[1],
@@ -5141,11 +5228,26 @@ int main(int argc, char** argv) {
                             propGeo.batches.push_back(nb);
                             propBatchOwner.push_back(pm);
                         }
-                        static bool heldTold = false;
-                        if (!heldTold) {
-                            heldTold = true;
-                            std::printf("prop %d in the LEFT HAND (mesh %d '%s') - drawn on the hand node\n",
-                                        pr.id, hand, playerMeshes[static_cast<std::size_t>(hand)].name);
+                        static long heldToldFrame = -1000;
+                        if (n - heldToldFrame >= 30) {
+                            heldToldFrame = n;
+                            double cx = 0, cy = 0, cz = 0; const std::size_t cnt = propGeo.corners.size() - base;
+                            for (std::size_t c = base; c < propGeo.corners.size(); ++c) {
+                                cx += propGeo.corners[c].x; cy += propGeo.corners[c].y; cz += propGeo.corners[c].z;
+                            }
+                            if (cnt) { cx /= cnt; cy /= cnt; cz /= cnt; }
+                            float hin[3] = {hp.pos[0] - playerRootXZ[0], hp.pos[1], hp.pos[2] - playerRootXZ[1]}, ho[3];
+                            omk::rotateYaw(yaw, hin, ho);
+                            std::printf("prop %d in the LEFT HAND (mesh %d '%s'): hand node at %.1f %.1f %.1f, "
+                                        "%zu corners centred %.1f %.1f %.1f, player at %.1f %.1f %.1f, "
+                                        "model extent r %.1f\n",
+                                        pr.id, hand, playerMeshes[static_cast<std::size_t>(hand)].name,
+                                        ho[0] + pp[0], ho[1] + pp[1] - playerFeet + lastRootDrop, ho[2] + pp[2],
+                                        cnt, cx, cy, cz, pp[0], pp[1], pp[2],
+                                        static_cast<double>(pm->rest.corners.empty() ? 0.0f :
+                                            [&]{ float m = 0; for (const auto& c : pm->rest.corners) {
+                                                 const float dx = c.x - pm->origin[0], dy = c.y - pm->origin[1], dz = c.z - pm->origin[2];
+                                                 m = std::max(m, std::sqrt(dx*dx + dy*dy + dz*dz)); } return m; }()));
                         }
                         continue;
                     }

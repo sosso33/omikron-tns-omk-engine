@@ -933,6 +933,23 @@ public:
     // compares it with what it has going. -1 is "nothing asked yet".
     int  musicTrack() const { return musicTrack_; }
     bool musicLoops() const { return musicLoop_; }
+    // THE MUSIC'S LEVEL (2026-09-05, from a reader hearing the effects "very
+    // low"). The engine's per-frame music update (05_sys.c ~995) hands
+    // `Music_SetVolume` a SUM of attenuations, each 0 full .. 100 silent and
+    // converted as `-10000 * v / 100` hundredths of a dB - one point per dB:
+    //     dword_90EF90   the BASE: 10 while `Actor_EnterDialogueMode`, else 0
+    //   + ramp >> 16     `music.volume target, frames` (op 131,
+    //                    Music_SetVolumeRamp): walks to `target` in `frames`
+    //   + dword_90E19C   the "Volume des musiques" option, default 0
+    //   + fade >> 16     `Music_PlayTrack(track, a2 != 0)` seeds 100 << 16
+    //                    and each frame subtracts 109226 * dt (1.667/frame):
+    //                    a 60-frame fade IN on every music.play with a
+    //                    nonzero second field.
+    // So the original's music sits 10 dB under the effects through every
+    // conversation and is ducked further by the scripts (36 of 52 sites set
+    // 0, i.e. restore); the port played it at 0 dB always.
+    double musicAttenuationDb() const;         // 0..100, this frame
+    float  musicGain() const;                  // 10^(-dB/20)
 
     // ------------------------------------------------------- THE WORLD
     //
@@ -1178,6 +1195,17 @@ private:
     bool personAnswers_ = false;
     int  musicTrack_ = -1;
     bool musicLoop_ = false;
+    double musicRamp_ = 0.0, musicRampTarget_ = 0.0, musicRampStep_ = 0.0;   // 16.16 in the engine
+    double musicFadeIn_ = 0.0;                 // dword_90EFA0, in points
+    int    musicOption_ = 0;                   // dword_90E19C
+public:
+    // The engine's music update runs whatever is on screen; `frame()` calls
+    // this, and a caller that skips `frame()` while a SCREEN has the world
+    // (the viewer, for the start menu) must call it itself - or the fade-in
+    // seeded by `music.play` never decays and the menu's track stays silent,
+    // which is what happened on 2026-09-05.
+    void tickMusicLevel();
+private:
     int  pendingUiScreen_ = -1, pendingUiParam_ = -1, pendingUiVar_ = -1;
     int  pendingUiCtx_ = -1;
     std::string scptData_;                   // set by loadScene; "" = no scene

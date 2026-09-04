@@ -1895,9 +1895,39 @@ bool Session::actorRecord(int actor, std::vector<std::byte>& chunk,
 
 // ------------------------------------------------------------- THE FRAME
 
+void Session::tickMusicLevel() {
+    // the engine's update at 05_sys.c ~995, on the frame clock (dt = 1 at 30 Hz)
+    const double dt = frameSeconds_ * 30.0;
+    if (musicFadeIn_ > 0.0) {
+        musicFadeIn_ -= 109226.0 / 65536.0 * dt;
+        if (musicFadeIn_ < 0.0) musicFadeIn_ = 0.0;
+    }
+    if (musicRampStep_ != 0.0) {
+        musicRamp_ += musicRampStep_ * dt;
+        if ((musicRampStep_ > 0.0 && musicRamp_ >= musicRampTarget_) ||
+            (musicRampStep_ < 0.0 && musicRamp_ <= musicRampTarget_)) {
+            musicRamp_ = musicRampTarget_;
+            musicRampStep_ = 0.0;
+        }
+    }
+}
+
+double Session::musicAttenuationDb() const {
+    const double base = dialogState_ == 3 ? 10.0 : 0.0;     // Actor_Enter/LeaveDialogueMode
+    double v = base + std::floor(musicRamp_) + musicOption_ + std::floor(musicFadeIn_);
+    if (v < 0.0) v = 0.0;
+    if (v > 100.0) v = 100.0;                                // Music_SetVolume's clamp
+    return v;
+}
+
+float Session::musicGain() const {
+    return static_cast<float>(std::pow(10.0, -musicAttenuationDb() / 20.0));
+}
+
 void Session::frame() {
     ++frameNo_;
     tickFades();          // both screen fades, on the frame clock
+    tickMusicLevel();
     // `sub_41F320`, the async reader's per-frame slice, sits at the END of the
     // frame function after the render - after the pump. Serving it here, at
     // the start of the next frame, is the same order for everything the
@@ -2154,6 +2184,19 @@ void Session::onCall(int i, const Call& call) {
         if (call.fields.size() >= 2) {
             musicTrack_ = call.fields[0];
             musicLoop_  = call.fields[1] != 0;
+            // `dword_90EFA0 = a2 != 0 ? 100 << 16 : 0`: a fade-in from silence
+            if (call.fields[0] >= 2) musicFadeIn_ = musicLoop_ ? 100.0 : 0.0;
+        }
+        break;
+    case 131:
+        // `music.volume target, frames` - Music_SetVolumeRamp (0x0041E0E0):
+        // target << 16 and the per-frame step towards it. An ATTENUATION:
+        // 0 is full and 100 silent (SCRIPT_VM's "0 = fade out" gloss has the
+        // sense inverted; the code is `-10000 * v / 100`).
+        if (call.fields.size() >= 2) {
+            musicRampTarget_ = static_cast<double>(call.fields[0]);
+            const int frames = call.fields[1] > 0 ? call.fields[1] : 1;
+            musicRampStep_ = (musicRampTarget_ - musicRamp_) / frames;
         }
         break;
     case 56:
@@ -2893,11 +2936,18 @@ void Session::applyObjectEffect(int objectId) {
                             std::to_string(amount) + " (NOT applied: no writer for 35)";
         return;
     }
+    // The PLAYER's record is the DB's, at +60 - the interpreter reads it
+    // there too (`Interpreter::getProperty`); the hook is for the world's
+    // actors and answered "unreadable" for -1, which is how a reader found
+    // the rings never counted.
     std::int32_t v = 0;
-    if (!hooks_.getActorProperty(-1, prop, v)) { lastObjectEffect_ = "player record unreadable"; return; }
+    const std::span<const std::byte> prec = state_.raw().subspan(
+        static_cast<std::size_t>(GameState::kPlayerRecord), kActorRecordSize);
+    if (!readActorProperty(prec, prop, v)) { lastObjectEffect_ = "player record unreadable"; return; }
     int nv = v + amount;
     if (nv > 0xFFFF) nv = 0xFFFF;                      // `if (v6 + v9 > 0xFFFF) v7 = -1`
-    hooks_.setActorProperty(-1, prop, nv);
+    writeActorProperty(state_.rawMutable().subspan(static_cast<std::size_t>(GameState::kPlayerRecord),
+                                                   kActorRecordSize), prop, nv);
     lastObjectEffect_ = std::string(prop == 4 ? "Argent" : prop == 5 ? "Anneaux" : "property ") +
                         (prop == 4 || prop == 5 ? "" : std::to_string(prop)) + " " +
                         std::to_string(v) + " -> " + std::to_string(nv);

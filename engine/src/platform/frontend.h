@@ -76,6 +76,9 @@ public:
     // The STREAM: the movies' soundtrack, and the game's music. Pushed in as
     // it is decoded and consumed at the device's own rate.
     virtual void queueAudio(std::span<const float>) {}
+    // The MUSIC stream's gain, 0..1 - `Music_SetVolume`'s attenuation applied
+    // by the mixer; the one-shots keep their own gains.
+    virtual void setMusicGain(float) {}
     // A ONE-SHOT, mixed OVER the stream rather than queued behind it. The
     // interface blips are these. Before there was a mixer they were queued and
     // the queue flushed first, which is fine when a blip is the only sound and
