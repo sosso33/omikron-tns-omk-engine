@@ -4654,6 +4654,65 @@ def c_engine_zone_pump():
            "camera-wait park resumed into its dialog.start"
 
 
+def c_engine_combine():
+    r"""`Utiliser sur` - the COMBINE MODE, and a gate dead from both ends.
+
+    The port ran `Utiliser`'s arm under this verb's name until 2026-09-04, so
+    "use X on Y" took X in hand. `sub_49BF30` does something else entirely:
+
+        dword_670BE0 = 1;                            // the MODE
+        if (sub_42B520(obj)) { 670BE4 = obj; 670BE8 = -1; }
+        else                 { 670BE4 = -1;  670BE8 = obj; }
+        sub_4290D0(&word_4DE318, 0x20000004, 1);     // the VERBS, disabled
+
+    so the chosen row goes into one of two slots and the player is sent back
+    to the rows for a second object. `sub_42B520` raises **event 37**, whose
+    first arm compares the object with `u16(GLOBAL, 64)` and sets the recipe
+    gate `dword_4E6C70` to 1 for it and 0 for anything else. Case 37's second
+    arm then refuses unless the recipe's `+6` equals that gate, and on a match
+    removes both objects and inserts the product at the FRONT.
+
+    **The shipped table is dead from both ends.** `GLOBAL +64` is object 330,
+    and the 11 recipes carry gate **0 five times and gate 8 six times, never
+    1**. So the six gate-8 recipes can never fire - which this repo already
+    knew - and, newly, a combine BEGUN with object 330 sets the gate to 1 and
+    therefore matches no recipe either. Two independently unreachable arms in
+    one table is a stronger claim about cut content than either half alone,
+    which is why the gate-1 count is asserted as a number rather than left
+    implied.
+
+    Asserted: the spell item and the gate histogram, including the zero;
+    that a real gate-0 recipe (18 + 7 -> 33) applies through the mode; and
+    that the same pair at gate 1 - the spell arm - answers -1.
+    """
+    import subprocess
+    eng = os.path.join(ROOT, "engine")
+    data = omkpaths.data()
+    tbl = os.path.join(ROOT, "tables")
+    if not (os.path.isdir(eng) and os.path.isdir(os.path.join(data, "IAM"))):
+        return ("skipped",), ("skipped",), "engine/ or gamedata/ absent"
+    b = subprocess.run(["make", "-s", "build/combine_probe"], cwd=eng,
+                       capture_output=True, text=True)
+    binp = os.path.join(eng, "build", "combine_probe")
+    if b.returncode != 0 or not os.path.exists(binp):
+        return ("build failed",), ("built",), "engine/ must build"
+    r = subprocess.run([binp, data, tbl], capture_output=True, text=True,
+                       errors="replace")
+    got = [ln.split() for ln in r.stdout.strip().splitlines()]
+    want = [
+        "gates spell_item 330 recipes 11 gate0=5 gate8=6 gate1=0".split(),
+        "combine 18 + 7 gate 0 -> 33 (want 33)".split(),
+        "refused 18 + 7 gate 1 -> -1 (a combine begun with object 330 can "
+        "never fire)".split(),
+    ]
+    return got, want, \
+        "the spell item GLOBAL +64 names (330) and the recipe gate " \
+        "histogram - five at 0, six at 8, and ZERO at 1, which is what makes " \
+        "both arms of the table unreachable in their own way; then a real " \
+        "gate-0 recipe applied through the mode (18 + 7 -> 33), and the same " \
+        "pair at gate 1 answering -1"
+
+
 def c_engine_row_window():
     r"""THE SNEAK'S ROW WINDOW - `sub_42AFF0`, and the tenth object.
 
@@ -19098,7 +19157,7 @@ def c_licence_headers():
                    if TAG in open(p, encoding="utf-8",
                                   errors="replace").read(600)]
     return (authored, sorted(missing), len(vendored), mislabelled), \
-           (331, [], 1, []), \
+           (332, [], 1, []), \
            "authored source files under tools/, engine/src, engine/tools, " \
            "engine/backends and scripts/; those MISSING the SPDX tag; " \
            "vendored files in engine/third_party; and vendored files wrongly " \
@@ -20507,6 +20566,7 @@ SLOW = [
     ("engine: zone pump",  c_engine_zone_pump,  "engine/README"),
     ("engine: used object", c_engine_used_object, "engine/README"),
     ("engine: row window", c_engine_row_window, "docs/UI"),
+    ("engine: combine", c_engine_combine, "docs/UI"),
     ("engine: zone registry", c_engine_zone_registry, "engine/README"),
     ("engine: voice over", c_engine_voice_over, "CUTSCENES 5; engine/README"),
     ("engine: world ops",  c_engine_world_ops,  "script/hooks.h; SCRIPT_VM; GAME_STATE"),

@@ -5614,6 +5614,49 @@ int main(int argc, char** argv) {
             // because `Object_ApplyEffect`'s body is `named` and not read and
             // `sub_409780`'s context gate - whether the object may be used
             // HERE - has not been read at all.
+            // ---- THE COMBINE, once both slots are full ----------------
+            //
+            // `Game_HandleEvent` case 37's SECOND arm:
+            //
+            //     recipe = sub_409650(second, first)
+            //     if (!recipe || dword_4E6C70 != recipe+6) { result 2; }
+            //     else { ObjectList_RemoveById(list, first);
+            //            ObjectList_RemoveById(list, second);
+            //            ObjectList_InsertFront(list, recipe+4, 0, 0);
+            //            dword_4E6C70 = -1; }
+            //
+            // and `sub_49BC60`'s tail plays interface sound 12 on the success
+            // and shows text 35 on the failure, then reinstalls the inventory
+            // page either way. The gate is the one `beginCombine` set.
+            if (int ra = -1, rb = -1; walk->takeCombine(ra, rb)) {
+                const auto bag = omk::objectList(state, omk::ObjectList::Carried);
+                const auto at = [&](int r) {
+                    return r >= 0 && static_cast<std::size_t>(r) < bag.size()
+                         ? bag[static_cast<std::size_t>(r)] : -1;
+                };
+                const int a = at(ra), b = at(rb);
+                const int gate = (a == omk::globalSpellItem(globalFile) ||
+                                  b == omk::globalSpellItem(globalFile)) ? 1 : 0;
+                const int made = (a >= 0 && b >= 0) ? inv.combine(a, b, gate) : -1;
+                if (made > 0) {
+                    state.listRemove(0, a);
+                    state.listRemove(0, b);
+                    state.listAdd(0, made);          // InsertFront
+                    blip(sndConfirm);                // interface sound 12
+                    std::printf("sneak: combine %d '%s' + %d '%s' (gate %d) -> "
+                                "%d '%s'\n", a, session.objectName(a).c_str(),
+                                b, session.objectName(b).c_str(), gate,
+                                made, session.objectName(made).c_str());
+                } else {
+                    blip(sndBack);
+                    std::printf("sneak: combine %d '%s' + %d '%s' (gate %d) -> "
+                                "nothing - no recipe, or its gate is not %d "
+                                "(interface text 35)\n",
+                                a, session.objectName(a).c_str(),
+                                b, session.objectName(b).c_str(), gate, gate);
+                }
+                walk->endCombine();
+            }
             if (const int verb = walk->takeVerb(); verb >= 0) {
                 const auto carried =
                     omk::objectList(state, omk::ObjectList::Carried);
@@ -5632,7 +5675,30 @@ int main(int argc, char** argv) {
                   // the OBJECTS id of the selected row - both halves need it
                   const int objIdx = carried.empty() ? -1
                       : carried[static_cast<std::size_t>(row)];
-                  if (verb == 0) {
+                  if (verb == 1) {
+                    // ---- `Utiliser sur` IS A MODE, not a use --------------
+                    //
+                    // `sub_49BF30` does not touch case 35 at all: it opens a
+                    // COMBINE, puts the object in one of two slots, disables
+                    // the verb list and sends the player back to the rows for
+                    // a second object. Running `Utiliser`'s arm here - which
+                    // this did until 2026-09-04 - took the object IN HAND
+                    // under the other verb's name.
+                    //
+                    // Which slot is `sub_42B520`'s answer: event 37's first
+                    // arm compares the object with `u16(GLOBAL, 64)`, the
+                    // spell item, and sets the recipe gate to 1 for it and 0
+                    // for anything else.
+                    const int spellItem = omk::globalSpellItem(globalFile);
+                    const bool isSpell = (objIdx == spellItem);
+                    walk->beginCombine(objIdx, isSpell);
+                    std::printf("sneak: Utiliser sur '%s' -> combine opened, "
+                                "gate %d%s. Pick a second object\n",
+                                rec->name.c_str(), isSpell ? 1 : 0,
+                                isSpell ? " (the spell item - and NO shipped "
+                                          "recipe carries gate 1, so this arm "
+                                          "cannot produce anything)" : "");
+                  } else if (verb == 0) {
                     // ---- WHAT REACHES THE WORLD -------------------------
                     //
                     // `sub_42B420(tag, 20)` announces, and its second event

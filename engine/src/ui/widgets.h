@@ -376,6 +376,16 @@ struct UiListState {
     // in `Game_HandleEvent` - so it records which was chosen and the caller
     // does the rest.
     int pendingVerb = -1;
+    // `Utiliser sur`'s COMBINE MODE - `dword_670BE0` and the three slots
+    // `670BE4` / `670BE8` / `670BEC`, which are globals like everything else
+    // in this device. `sub_49BF30` opens it and `sub_49BC60`'s `loc_49BDD6`
+    // closes it.
+    bool combining = false;
+    int  combineA = -1, combineB = -1, combineC = -1;
+    // The pair a caller must actually combine, once both slots are full.
+    // The walk cannot do it - the recipe table and the object lists are the
+    // Session's - so it records the decision the way `pendingVerb` does.
+    int  readyA = -1, readyB = -1;
 };
 
 // One open screen, driven by input words.
@@ -420,6 +430,36 @@ public:
     int  rowKind() const { return state_->rowKind; }
     // Which verb was confirmed, if any; reading it CLEARS it.
     int  takeVerb() { const int v = state_->pendingVerb; state_->pendingVerb = -1; return v; }
+
+    // `sub_49BF30` (`Utiliser sur`, 0x0049BF30): open the combine mode with
+    // the chosen object, and DISABLE THE VERB LIST so the next confirm goes
+    // to a row rather than back to a verb.
+    //
+    //     dword_670BE0 = 1;
+    //     if (sub_42B520(obj)) { 670BE4 = obj; 670BE8 = -1; }
+    //     else                 { 670BE4 = -1;  670BE8 = obj; }
+    //     dword_670BEC = -1;
+    //     sub_4290D0(&word_4DE318, 0x20000004, 1);      // the verbs, off
+    //
+    // `sub_42B520` raises event 37, whose first arm answers 1 when the object
+    // IS `u16(GLOBAL, 64)` - the spell item, object 330 - and 0 otherwise,
+    // setting the recipe gate `dword_4E6C70` to match. The caller supplies
+    // that answer because the walk has no channel and no GLOBAL.
+    //
+    // NOTE the spell arm can never produce anything: the 11 shipped recipes
+    // carry gate 0 or gate 8 and never 1, so a combine begun with object 330
+    // matches no recipe. It is modelled because the engine has it, not
+    // because it can succeed.
+    void beginCombine(int objectId, bool isSpellItem);
+    bool combining() const { return state_->combining; }
+    // The pair whose combine is due, once both slots are full - as ROW
+    // INDICES into the open list, which is what the engine's slots hold
+    // (`item+0x3C`, mapped through `ObjectList_Header` by case 37). Reading
+    // it CLEARS it, as `takeVerb` does. -> false when nothing is due.
+    bool takeCombine(int& a, int& b);
+    // `loc_49BE51`'s tail: whichever way it went, the inventory page comes
+    // back and the mode closes.
+    void endCombine();
     int  selectionOf(std::uint32_t listAddr) const {
         const auto it = state_->sel.find(listAddr);
         return it == state_->sel.end() ? -1 : it->second;

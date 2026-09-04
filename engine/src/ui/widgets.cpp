@@ -440,6 +440,33 @@ void UiWalk::bindRows(std::uint32_t list, int count, int window) {
     }
 }
 
+// The comments on the declarations carry the evidence.
+void UiWalk::beginCombine(int objectId, bool isSpellItem) {
+    state_->combining = true;
+    if (isSpellItem) { state_->combineA = objectId; state_->combineB = -1; }
+    else             { state_->combineA = -1;       state_->combineB = objectId; }
+    state_->combineC = -1;
+    setListOff(kListSneakVerbs, true);       // sub_4290D0(.., 0x20000004, 1)
+    log_.push_back(isSpellItem ? "combine: opened with the spell item"
+                               : "combine: opened");
+}
+
+bool UiWalk::takeCombine(int& a, int& b) {
+    if (state_->readyA < 0 || state_->readyB < 0) return false;
+    a = state_->readyA; b = state_->readyB;
+    state_->readyA = state_->readyB = -1;
+    return true;
+}
+
+void UiWalk::endCombine() {
+    state_->combining = false;
+    state_->combineA = state_->combineB = state_->combineC = -1;
+    setListOff(kListSneakVerbs, false);
+    // `sub_42A370(screen, unk_4DEE50)` - the inventory page comes back
+    // whichever way the combine went.
+    installPanel(kPanelSneakInventory);
+}
+
 int UiWalk::rowWindow(std::uint32_t list) const {
     if (!panel_) return 0;
     for (const auto& l : panel_->lists) {
@@ -962,6 +989,38 @@ bool UiWalk::confirm() {
             state_->pendingVerb = (it->callback == kCbSneakUse) ? 0 : 1;
             log_.push_back(state_->pendingVerb == 0 ? "verb: Utiliser"
                                                     : "verb: Utiliser sur");
+            return true;
+        }
+        // `sub_49BC60`'s `loc_49BDD6`, and it comes BEFORE the descent into
+        // the verb panel: while the combine mode is open a row confirm feeds
+        // the mode instead of opening the verbs.
+        //
+        //     if (!dword_670BE0) -> the ordinary arms
+        //     if (dword_670BE8 == -1) { dword_670BE8 = obj; return 0; }
+        //     dword_670BEC = obj;
+        //     if (sub_42B4D0(dword_670BE8, obj)) { reset the rows; sound 12 }
+        //     else                               { text 35 }
+        //     sub_42A370(screen, unk_4DEE50);              // the inventory page
+        //
+        // so the SECOND object completes it and the first slot is whichever
+        // of A/B `sub_42B520` chose. The caller does the combine itself -
+        // the recipe table and the lists are the Session's - and then calls
+        // `endCombine`.
+        if (it->callback == kCbSneakRowConfirm && state_->combining) {
+            // The slots hold ROW INDICES, not object ids: `sub_49BC60`
+            // reads `[edi+3Ch]` - the widget's row tag - and case 37 maps it
+            // through `ObjectList_Header`. So the caller resolves them.
+            const int obj = rowOf(it->addr);
+            if (obj < 0) { log_.push_back("combine: no row there"); return true; }
+            if (state_->combineB == -1) {
+                state_->combineB = obj;
+                log_.push_back("combine: second slot filled, waiting");
+                return true;
+            }
+            state_->combineC = obj;
+            state_->readyA = state_->combineB;
+            state_->readyB = obj;
+            log_.push_back("combine: due");
             return true;
         }
         if (it->callback == kCbSneakRowConfirm && state_->rowKind != 0) {
