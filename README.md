@@ -222,6 +222,13 @@ and it has been wrong twice, so read it rather than any summary of it.
 Open questions are listed in `CLAUDE.md` §6 **with what has already been ruled
 out**, so nobody repeats a search.
 
+[`manual/`](manual/) is the illustrated walkthrough of all of it — how the
+original works and how OMK ports it, in two registers per chapter (a plain
+summary and the technical account). It is **derivative, and a snapshot**: it
+retells `docs/` rather than establishing anything, and by its own first rule it
+is regenerated **only when explicitly asked for**, never as a side effect of
+other work. If it and `docs/` disagree, `docs/` is right.
+
 ## How this work is done
 
 `CLAUDE.md` is the working practice, and it is worth reading before the docs.
