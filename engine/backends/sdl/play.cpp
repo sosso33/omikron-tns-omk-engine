@@ -3032,17 +3032,12 @@ int main(int argc, char** argv) {
         // own `held & (held ^ (mask & last))` at mask = all ones.
         const std::uint32_t edgeBits = bits & ~prevBits;
         prevBits = bits;
-        // ...and NOT while a screen has the input. `Game_RaiseEvent(6, 4)` is
-        // raised from the ACTOR tick (21_d3d.c:3460, :3513, :3962 - the
-        // `.CTL` state handlers), and this loop already ticks the player with
-        // ZERO bits while a screen is open, so the raise cannot happen. Taken
-        // from the raw edge instead, one ENTER in the sneak both confirmed the
-        // menu AND activated the zone the player was standing in - which is
-        // how `Utiliser` on the apartment key ran the lift script with an
-        // EMPTY hand a frame before the key reached it.
-        //
-        // `walk` is the widget walk, non-null exactly while a screen is up.
-        const bool actionEdge = (edgeBits & omk::kUiConfirm) != 0 && !walk;
+        // THE WORLD'S ACTION BUTTON IS NOT READ HERE. `Game_RaiseEvent(6, 4)`
+        // is raised from the ACTOR tick (21_d3d.c:3460, :3513, :3962 - the
+        // `.CTL` state handlers), so what stands for it in this loop is
+        // `MDACTION` firing; see `actionFromMove` below. Reading it off this
+        // edge instead was wrong twice over - it fired while a SCREEN had the
+        // input, and it was spent by the time the sneak's own confirm let go.
 
         // THE DIALOGUE CLOCK IS REAL TIME, not a frame count.
         //
@@ -3632,7 +3627,27 @@ int main(int argc, char** argv) {
                                 "screen %d\n", omk::kEventSneakOpen,
                                 omk::kScreenSneak);
                 }
+                // WHERE THE ACTION RAISE COMES FROM, corrected 2026-09-04.
+                //
+                // `Game_RaiseEvent(6, 4)` has three sites in the image
+                // (21_d3d.c:3460, :3513, :3962) and every one of them is an
+                // ACTOR STATE HANDLER - the `.CTL` machine reaching the action
+                // state, which is `MDACTION`. It is not read off the input
+                // word at all. Taking it from the input EDGE instead put the
+                // press one release out of step with the game: the ENTER that
+                // confirms `Utiliser` is still held when the sneak closes, so
+                // the .CTL enters the action state and fires MDACTION while
+                // the edge has already been spent - the player pressed at the
+                // lift with the key in his hand and the world never heard it.
+                // A player hit exactly that and had to use a SECOND key.
+                //
+                // Entering a state is once per press by construction (the
+                // state persists while the button is held), which is also why
+                // the engine can raise from here without the six-presses-per
+                // -press problem the raw LEVEL had.
+                bool actionFromMove = false;
                 for (const auto& mv : player->specialMoves()) {
+                    if (mv == "MDACTION") actionFromMove = true;
                     const omk::SpecialMoves::Row* row = specialMoves.find(mv);
                     if (row)
                         std::printf("special move: %s (tab_special_move[%d] = 0x%08x)\n",
@@ -3763,7 +3778,7 @@ int main(int argc, char** argv) {
                 // arming its slots, and nothing in the viewer ever pressed it,
                 // so no object could be taken and no pedestrian talked to
                 // (`todo/omk-play.md` 65).
-                if (actionEdge && !session.dialogOpen()) {
+                if (actionFromMove && !session.dialogOpen()) {
                     const int armed = session.zones().armedCount();
                     const std::int16_t z = session.zones().armedZone();
                     // omk-play 66: EVERY press is reported, with where he
@@ -3773,10 +3788,17 @@ int main(int argc, char** argv) {
                     // them, so a press there that arms NOTHING is the result
                     // that confirms a second, object-proximity scan.
                     const float* pp = player ? player->pos() : nullptr;
+                    // ...and WHAT IS IN THE HAND, because that is what the
+                    // pump's dry run and `var.set.used_object` both read, and
+                    // a press that finds it empty takes a different arm of the
+                    // zone's script entirely.
+                    const int hs = session.heldSlotOf(-1);
                     if (session.pressAction())
-                        std::printf("action: zone %d activated (%d slot%s armed) at %.0f %.0f %.0f\n",
+                        std::printf("action: zone %d activated (%d slot%s armed) at %.0f %.0f %.0f"
+                                    " - hand slot %d, object %d\n",
                                     z, armed, armed == 1 ? "" : "s",
-                                    pp ? pp[0] : 0.0f, pp ? pp[1] : 0.0f, pp ? pp[2] : 0.0f);
+                                    pp ? pp[0] : 0.0f, pp ? pp[1] : 0.0f, pp ? pp[2] : 0.0f,
+                                    hs, hs >= 0 ? session.objectSlotId(hs) : -1);
                     else
                         std::printf("action: pressed at %.0f %.0f %.0f - %d slots armed, "
                                     "nothing interactable in reach\n",
