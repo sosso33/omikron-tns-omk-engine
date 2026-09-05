@@ -7939,13 +7939,32 @@ def c_mesh_lights():
     `Mesh3doHeader` carries `lightOff` at `+40` and a count at `desc+232`, and
     `readHeader` fills both while nothing anywhere reads the RECORDS.
 
-    Over the shipped `MESHES` tree there are
+    **The first version of this check asserted the wrong field, and the
+    correction is the interesting part.** `readHeader` had taken the count from
+    `desc+232` - where every other count in that descriptor lives - since the
+    format was decoded, and this check published "6244 lights in 375 models"
+    from it. Then the LOADER was read. `Read3DO_Init` (0x0044DF10) does
 
-        635 models, 375 of them carrying lights, 6244 lights in total,
-        the most being 470 in Qalisar.3DO
+        u32(*v1, 232) = u32(*v1, 240);   /* the count comes from +240 */
+        if (u32(*v1, 232)) v1[8] = v1[11] + v3[10];
 
-    which is far too much data to be vestigial, and settles that the marketing
-    line describes something actually shipped.
+    - it copies `desc+240` over `desc+232` and then uses it, so the on-disk
+    `+232` never reaches anything. The two disagree in **256 of 635** files and
+    `+240` is never the larger.
+
+    The corpus adjudicates independently, which is what makes this settled
+    rather than merely re-read: a `.3DO`'s light table is the LAST thing in the
+    file, so the walk has a size to land on, and at a **304-byte** record
+
+        count `desc+240`:  lightOff + n * 304 == filesize in **216 of 216**
+        count `desc+232`:  ...in 119 of 216
+
+    So the shipped figures are **4179 lights across 216 of 635 models**, the
+    most being 258 in Qalisar.3DO - still far too much to be vestigial, and
+    still settling that "Multilights" describes something real. `desc+232` is
+    an authored or allocated figure the engine ignores; nothing yet says what
+    it means, and `lightsDeclared` carries it so the next reader does not
+    rediscover it as a bug.
 
     **The question it opens is the interesting part.** The sets are shaded by a
     colour BAKED INTO EVERY VERTEX (`docs/ASSETS.md` 4c) — the baked dword is
@@ -7971,14 +7990,21 @@ def c_mesh_lights():
             if n.lower().endswith(".3do"): models.append(os.path.join(dirpath, n))
     if not models: return "no .3DO found", "the light table", ""
     out = subprocess.run([probe, *sorted(models)], capture_output=True, text=True).stdout.split()
-    if len(out) < 5: return tuple(out), (635, 375, 6244, 470, "Qalisar.3DO"), ""
-    return (int(out[0]), int(out[1]), int(out[2]), int(out[3]), out[4]), \
-           (635, 375, 6244, 470, "Qalisar.3DO"), \
+    want = (635, 216, 4179, 258, "Qalisar.3DO", 216, 119, 256)
+    if len(out) < 8: return tuple(out), want, ""
+    return (int(out[0]), int(out[1]), int(out[2]), int(out[3]), out[4],
+            int(out[5]), int(out[6]), int(out[7])), want, \
            "the .3DO light table the 1999 spec sheet's Multilights line names - " \
            "models, how many carry lights, the total number of light records " \
-           "and the largest single table. The RECORDS are undecoded; this " \
-           "pins the size of what is there, because the sets are lit by a " \
-           "baked per-vertex colour and therefore need none of it"
+           "and the largest single table, all counted from `desc+240`, which " \
+           "is what Read3DO_Init uses (it OVERWRITES +232 from it) and what " \
+           "makes the 304-byte walk land on the file size. The RECORDS are " \
+           "undecoded; this pins the size of what is there, because the sets " \
+           "are lit by a baked per-vertex colour and therefore need none of it; " \
+           "then the SELF-CHECKING half - a light table is the LAST thing in " \
+           "a .3DO, so `lightOff + n * 304` must land exactly on the file " \
+           "size, and it does for 216 of 216 under +240 against 119 under " \
+           "+232, with the two fields differing in 256 of the 635 files"
 
 
 def c_engine_fog():

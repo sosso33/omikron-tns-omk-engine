@@ -34,7 +34,18 @@ struct Mesh3doHeader {
     std::int32_t cameras    = 0;
     std::int32_t meshes     = 0;
     std::int32_t doors      = 0;
+    // THE LIGHT COUNT, and it is `desc+240` rather than the `desc+232` that
+    // sits where every other count sits. `Read3DO_Init` does
+    // `u32(*v1, 232) = u32(*v1, 240)` and then uses +232, so the on-disk +232
+    // is overwritten before anything reads it. The two disagree in 256 of the
+    // 635 shipped models and +240 is never the larger; the corpus settles it
+    // too, since the light table is the LAST thing in a .3DO and
+    // `lightOff + n * 304` lands EXACTLY on the file size for 216 of 216
+    // files under +240 and only 119 under +232. `todo/mesh-lights.md`.
     std::int32_t lights     = 0;
+    // ...and the field the engine throws away, kept because it is the one a
+    // reader will find first and wonder about. Meaning unknown.
+    std::int32_t lightsDeclared = 0;
 };
 
 // -> the header, or nothing if `d` is not a .3DO ("OD3X") or is truncated.

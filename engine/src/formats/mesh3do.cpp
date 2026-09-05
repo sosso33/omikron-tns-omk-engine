@@ -55,7 +55,9 @@ std::optional<Mesh3doHeader> readHeader(std::span<const std::byte> d) {
     h.cameras   = i32(d, desc + 220);
     h.meshes    = i32(d, desc + 224);
     h.doors     = i32(d, desc + 228);
-    h.lights    = i32(d, desc + 232);
+    // +240, not +232: `Read3DO_Init` overwrites +232 from +240 before using it
+    h.lightsDeclared = i32(d, desc + 232);
+    h.lights         = fits(d, desc + 240, 4) ? i32(d, desc + 240) : 0;
     return h;
 }
 
