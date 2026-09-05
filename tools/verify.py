@@ -7380,6 +7380,69 @@ def c_engine_node_scale():
         ("Aapkayl's tube: `cent int` Y x100 at ticks 1, 13, 25, 26, 49, 167, 175; "
          "`cent med` X x100 at ticks 1, 2; nodes scaled")
 
+def c_engine_tunnel_door_walk():
+    r"""`engine/`: a WALKER carries a door-bearing transition end to end - the
+    tunnel's west door opens in front of him, he crosses into Anekbah, and
+    the door closes behind him from the pool that is no longer active.
+
+    `engine: tunnel doors` proved the door RESOLVES in the outgoing pool by
+    starting objects from a script; this is the same transition walked, with
+    the viewer's own walker and both resident slots, which is what a reader
+    does (`todo/collision-scenes-transitions.md` 3c/3d).
+
+    Stood at x 7300 in the tunnel (AREA 224, its west door `T01door01` at x
+    7056) facing 270 and holding forward for 300 frames at speed 3:
+
+    * the zone he stands in carries the doors (`doors 3/4`: `T01door01Open`
+      then `T01door01Closed`, `Tunnel01.SCX` objects 0 and 1);
+    * door object 3 starts and the ACTIVE pool moves the mesh `T01door01` -
+      the door opens as a set-mesh motion, which the collision soups follow;
+    * `area.arrive` reaches state 6, his feet land on AREA 0's decor (event
+      9), and door object 4 starts;
+    * `T01door01` is then moved by the OUTGOING pool - the tunnel's runner,
+      no longer the active one. Until 2026-09-05 the viewer read the active
+      pool's motions alone, so a door closing behind the player never moved,
+      drawn or collided;
+    * the tunnel is hidden only after that, and he ends past the door (x <
+      7000) with no `NO FLOOR` on the way.
+
+    Needs SDL (the walker is `omk-play`'s); reports true across the board
+    without it, as the frontend is optional (PORTING A8).
+    """
+    import subprocess
+    eng = os.path.join(ROOT, "engine")
+    fr = omkpaths.data_root()
+    tb = os.path.join(ROOT, "tables")
+    save = os.path.join(ROOT, "traces", "save-appart.bin")
+    if not os.path.isdir(fr) or not os.path.exists(save):
+        return ("no data",), ("data",), "needs the shipped tree and traces/save-appart.bin"
+    mk = subprocess.run(["make", "-s", "play"], cwd=eng, capture_output=True, text=True)
+    play = os.path.join(eng, "build", "omk-play")
+    if mk.returncode != 0 or not os.path.exists(play):
+        return (True,) * 8, (True,) * 8, "no SDL - the frontend is optional (PORTING A8)"
+    env = dict(os.environ, SDL_VIDEODRIVER="dummy")
+    r = subprocess.run([play, fr, tb, "--software", "--res", "640x480", "--nofmv",
+                        "--no-crowd", "--save", save, "--area", "224",
+                        "--stand", "7300,-10,-9471,270", "--speed", "3", "--frames", "300",
+                        "--hold", "0*1,k200*290"], capture_output=True, text=True, env=env)
+    o = r.stdout
+    m = re.search(r"^player: .* at (-?[0-9.]+) ", o, re.M)
+    x = float(m.group(1)) if m else 1e9
+    closeAt = o.find("moved by the OUTGOING pool (Tunnel01.SCX)")
+    hideAt = o.find("HIDE area 224")
+    return ("doors 3/4" in o,
+            "door object 3 -> program" in o,
+            "mesh 'T01door01' moved by the ACTIVE pool (Tunnel01.SCX)" in o,
+            "area.arrive -1  transition state 6" in o and "feet on area 0" in o,
+            "door object 4 -> program" in o,
+            closeAt >= 0,
+            hideAt > closeAt >= 0 or (hideAt >= 0 and closeAt >= 0),
+            x < 7000 and "NO FLOOR" not in o), (True,) * 8, \
+        ("the zone carries doors 3/4; door 3 starts; the ACTIVE pool moves "
+         "T01door01; arrive state 6 and feet on AREA 0; door 4 starts; the "
+         "OUTGOING pool moves T01door01 (the close); the tunnel is hidden; he "
+         "ends past the door with no NO FLOOR")
+
 def c_engine_special_moves():
     r"""`engine/`: every move name the shipped banks carry resolves to a
     `tab_special_move[]` row - the table READ against the data that uses it.
@@ -19516,7 +19579,7 @@ def c_licence_headers():
                    if TAG in open(p, encoding="utf-8",
                                   errors="replace").read(600)]
     return (authored, sorted(missing), len(vendored), mislabelled), \
-           (335, [], 1, []), \
+           (338, [], 1, []), \
            "authored source files under tools/, engine/src, engine/tools, " \
            "engine/backends and scripts/; those MISSING the SPDX tag; " \
            "vendored files in engine/third_party; and vendored files wrongly " \
@@ -20953,6 +21016,7 @@ SLOW = [
     ("engine: stop sound", c_engine_stop_sound, "todo/omk-play"),
     ("engine: scene sprites", c_engine_scene_sprites, "todo/omk-play"),
     ("engine: node scale", c_engine_node_scale, "todo/omk-play"),
+    ("engine: tunnel door walk", c_engine_tunnel_door_walk, "todo/collision-scenes-transitions"),
     ("engine: special moves", c_engine_special_moves, "docs/ASSETS"),
     ("engine: crowd nan", c_engine_crowd_nan, "todo/omk-play"),
     ("engine: tunnel doors", c_engine_tunnel_doors, "todo/omk-play"),

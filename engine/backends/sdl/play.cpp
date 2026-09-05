@@ -3172,6 +3172,7 @@ int main(int argc, char** argv) {
     float spriteAnchor[3] = {0.0f, 0.0f, 0.0f};
     bool  spriteAnchorSet = false;
     std::map<int, long> spriteLogged;     // row -> the link tick already reported
+    std::set<std::string> motionLogged;   // mesh/pool pairs already reported
     for (;;) {
         const Uint32 frameStartMs = SDL_GetTicks();
         if (!front.pump(host)) break;
@@ -3303,8 +3304,29 @@ int main(int argc, char** argv) {
         // rotation a motion may have set. So a corner is (base - origin),
         // scaled per axis, rotated, placed. The apartment's transfer tube is
         // every shipped site: its beam grows along Y from 1 to 35.
-        if (session.scene().loaded() &&
-            (!session.scene().motions().empty() || !session.scene().nodeScales().empty())) {
+        // BOTH POOLS. A transition's door resolves in the OUTGOING pool
+        // (`engine: tunnel doors`: 93% of the corpus's door objects live
+        // there), and its program runs in `sceneOut()` - so a motion read
+        // from the active pool alone never moved the tunnel's doors, drawn
+        // or collided. The meshes are matched by name across both slots.
+        std::vector<omk::Program::NodeMotion> allMotions;
+        std::map<std::string, omk::SceneRunner::NodeScale> allScales;
+        for (const omk::SceneRunner* sr : {&session.sceneOut(), &session.scene()}) {
+            if (!sr->loaded()) continue;
+            for (const auto& mo : sr->motions()) {
+                // say once which pool moved which mesh - a door that resolved
+                // in the outgoing pool is the case this line exists for
+                const std::string key = mo.name + (sr == &session.scene() ? "/active" : "/out");
+                if (motionLogged.insert(key).second)
+                    std::printf("motion: mesh '%s' moved by the %s pool (%s) - first sample %.0f %.0f %.0f%s\n",
+                                mo.name.c_str(), sr == &session.scene() ? "ACTIVE" : "OUTGOING",
+                                sr->file().c_str(), mo.pos[0], mo.pos[1], mo.pos[2],
+                                mo.rotated ? ", rotated" : "");
+                allMotions.push_back(mo);
+            }
+            for (const auto& ns : sr->nodeScales()) allScales[ns.first] = ns.second;
+        }
+        if (!allMotions.empty() || !allScales.empty()) {
             struct Patch {
                 float s[3] = {1.0f, 1.0f, 1.0f};
                 bool  hasMotion = false;
@@ -3321,13 +3343,13 @@ int main(int argc, char** argv) {
                     return -1;
                 };
                 std::map<int, Patch> patches;
-                for (const auto& ns : session.scene().nodeScales()) {
+                for (const auto& ns : allScales) {
                     const int mi = meshIndex(ns.first);
                     if (mi < 0) continue;
                     Patch& p = patches[mi];
                     for (int c = 0; c < 3; ++c) p.s[c] = ns.second.s[c];
                 }
-                for (const auto& mo : session.scene().motions()) {
+                for (const auto& mo : allMotions) {
                     if (!mo.placed) continue;
                     const int mi = meshIndex(mo.name);
                     if (mi < 0) continue;
