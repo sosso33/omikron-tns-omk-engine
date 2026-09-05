@@ -7,8 +7,8 @@ does not block the rest.
 | # | item | state |
 |---|---|---|
 | 1 | the camera pass's three unmodelled details | **DONE** 2026-09-05 |
-| 2 | the shoot AI's brains are not called | **open** |
-| 3 | `.3DM`'s `float[3]`, and node slots 0 and 1 | open |
+| 2 | the shoot AI's brains are not called | **DONE (as a decision)** 2026-09-05 |
+| 3 | `.3DM`'s `float[3]`, and node slots 0 and 1 | **open** |
 | 4 | the Anekbah panel FLICKER | open |
 | 5 | the player's RIDE | open |
 
@@ -63,6 +63,25 @@ things it leaves out:
 actions; `actor/shoot.h` models them and nothing calls it. Today's pose work
 takes the SCRIPT's last action and holds it, so a gunman keeps one clip.
 Also `List_PickRandomByType` picks at RANDOM and this takes the first match.
+
+**CLOSED as a decision, not as a port.** The brains stay unwired, and the
+reason is in `shoot.cpp` itself: the generic arm - **302 of the 306 shipped
+sites** - "takes the first edge and RECORDS the choice rather than pretending
+to compute it", because the real branch needs the navigation node, the line
+of sight and the weapon's range, none of which this tree has. Driving a
+frontend from it would draw a deterministic first-edge walk **as if it were
+the game's behaviour**, which is putting a guess where a fact belongs. It is
+recorded here so the next person does not mistake the gap for an oversight.
+
+**What WAS a fact and is now faithful: the pick.** `List_PickRandomByType`
+returns a random one of the matches, and the choice is real - across the
+eleven shipped libraries there are **195** (library, group, behaviour type)
+buckets and **40 hold more than one clip** (two in 26, three in 3, four in 7,
+five in 3, six in 1). The roll is seeded per (group, action) rather than
+re-rolled per frame, because the engine rolls once per `Shoot_ActorAction`
+and there is no AI here asking again; labelled as that in the code. The cave
+sees no difference - group 11's type 9 is one of the 155 single-clip buckets.
+`verify.py: engine: shoot pose` now asserts the 195 and the 40.
 
 ## 3. `.3DM`'s `float[3]`, and node slots 0 and 1
 

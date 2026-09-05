@@ -7778,19 +7778,54 @@ def c_engine_shoot_pose():
     to expect standing in 313, not twelve; the twelfth `ZOH_FN`, 175, is not
     shown at a new game at all.
 
+    **The pick is a RANDOM one of the matches**, and the choice is real:
+    across the eleven shipped libraries there are **195** (library, group,
+    behaviour type) buckets and **40 of them hold more than one clip** - two
+    in 26, three in 3, four in 7, five in 3, six in 1. So a fifth of the time
+    the engine has something to choose between. (Group 11's type 9, the cave's
+    case, is one of the 155 with a single clip, so the cave sees no
+    difference.) The roll here is seeded per (group, action) rather than
+    re-rolled per frame - the engine rolls once per `Shoot_ActorAction`, and
+    with no AI asking again a per-request seed is the same shape and keeps a
+    still frame reproducible.
+
+    **The BRAINS are deliberately not wired**, which is a decision and not an
+    omission: the generic arm - 302 of the 306 shipped sites - takes the first
+    edge and records the choice rather than computing it, because the real
+    branch needs the navigation node, the line of sight and the weapon's
+    range. Running it in a frontend would draw a deterministic first-edge walk
+    as if it were the game's behaviour.
+
     Measured, not eyeballed: they sit deeper in the cave than the trigger and
     a corridor hides them from it.
 
     Needs SDL; reports true without it (PORTING A8).
     """
-    import subprocess
-    have = {}
+    import subprocess, collections
     d = open(os.path.join(omkpaths.data_root(), "ANIMS", "gandhar.ani"), "rb").read()
     groups = struct.unpack_from("<i", d, 4)[0]
     withClips = 0
     for g in range(groups):
         node = struct.unpack_from("<I", d, 8 + 24 * g + 4)[0]
         if node and node + 36 <= len(d): withClips += 1
+    # ...and the corpus question the random pick turns on: how often does
+    # List_PickRandomByType have more than one clip to choose between?
+    anid = omkpaths.data("ANIMS")
+    buckets = multi = 0
+    for f in sorted(os.listdir(anid)):
+        if not f.lower().endswith(".ani"): continue
+        b2 = open(os.path.join(anid, f), "rb").read()
+        if b2[:4] != b"3.0V": continue
+        for g in range(struct.unpack_from("<i", b2, 4)[0]):
+            node = struct.unpack_from("<I", b2, 8 + 24 * g + 4)[0]
+            types = collections.Counter()
+            for _ in range(500):
+                if not node or node + 36 > len(b2): break
+                types[struct.unpack_from("<i", b2, node)[0]] += 1
+                node = struct.unpack_from("<I", b2, node + 24)[0]
+            for n in types.values():
+                buckets += 1
+                if n > 1: multi += 1
     eng = os.path.join(ROOT, "engine")
     fr = omkpaths.data_root()
     tb = os.path.join(ROOT, "tables")
@@ -7800,7 +7835,7 @@ def c_engine_shoot_pose():
     mk = subprocess.run(["make", "-s", "play"], cwd=eng, capture_output=True, text=True)
     play = os.path.join(eng, "build", "omk-play")
     if mk.returncode != 0 or not os.path.exists(play):
-        return (groups, withClips, 10, 0), (14, 2, 10, 0), \
+        return (groups, withClips, 10, 0, buckets, multi), (14, 2, 10, 0, 195, 40), \
                "no SDL - the frontend is optional (PORTING A8)"
     env = dict(os.environ, SDL_VIDEODRIVER="dummy")
     def run(stand):
@@ -7818,12 +7853,16 @@ def c_engine_shoot_pose():
     if byType != posed: posed = -byType
     atSpawn = run("2352,-9,1206,271")
     armedEarly = len(re.findall(r"shoot mode, action", atSpawn))
-    return (groups, withClips, posed, armedEarly), (14, 2, 10, 0), \
+    return (groups, withClips, posed, armedEarly, buckets, multi), \
+           (14, 2, 10, 0, 195, 40), \
         ("gandhar.ani's groups and how many hold clips - one a character type, "
          "and only the two AREA 2 stages are filled; then the ZOH_FN posed from "
          "group 11 while the player stands in zone 313 - TEN, the eleventh "
          "belonging to zone 314 - and how many are armed before he reaches it "
-         "(none: the arming is that zone's, not the startup script's)")
+         "(none: the arming is that zone's, not the startup script's); and "
+         "finally the corpus the RANDOM pick turns on - (library, group, "
+         "behaviour type) buckets across the eleven libraries, and how many "
+         "hold more than one clip for the engine to choose between")
 
 
 def c_engine_scene_facing():

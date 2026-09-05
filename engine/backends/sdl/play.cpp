@@ -2536,12 +2536,24 @@ int main(int argc, char** argv) {
     //     action 1           type 9
     //     action 2,3,4,6,7   type 10, else 9
     //
-    // LABELLED, and the label matters: what runs here is the SCRIPT's last
-    // action, not the AI. `Shoot_TickNpc` calls one of four brains every
-    // frame and they go on asking for new actions; `actor/shoot.h` models
-    // those brains and is not wired to this. And the pick is the FIRST match
-    // rather than a random one, so a still frame is reproducible - the engine
-    // takes a random one of the matches.
+    // WHAT RUNS HERE IS THE SCRIPT'S LAST ACTION, NOT THE AI, and that is a
+    // decision rather than an omission. `Shoot_TickNpc` calls one of four
+    // brains every frame; `actor/shoot.h` models them and is deliberately not
+    // wired to this, because the generic arm - 302 of the 306 shipped sites -
+    // "takes the first edge and RECORDS the choice rather than pretending to
+    // compute it": the real branch needs the navigation node, the line of
+    // sight and the weapon's range, none of which this tree has. Running it
+    // here would draw a deterministic first-edge walk as if it were the
+    // game's behaviour, which is putting a guess where a fact belongs.
+    //
+    // THE PICK, though, is a fact and is now faithful. `List_PickRandomByType`
+    // returns a RANDOM one of the matches, and 40 of the 195 (library, group,
+    // behaviour type) buckets in the shipped `.ani` hold more than one clip -
+    // up to six - so the choice is real in a fifth of them. The roll is seeded
+    // per (actor, action) rather than re-rolled every frame: the engine rolls
+    // once per `Shoot_ActorAction` and this has no AI asking again, so a
+    // per-request seed is the same shape and keeps a still frame
+    // reproducible. LABELLED as that.
     std::map<int, std::vector<omk::PedClip>> shootClips;      // character type -> its group
     const auto shootClipFor = [&](int group, int action) -> const omk::PedClip* {
         if (pedAni.empty()) return nullptr;
@@ -2555,7 +2567,15 @@ int main(int argc, char** argv) {
         else if (action >= 2 && action <= 7) { want[0] = 10; want[1] = 9;  }
         for (int w : want) {
             if (w < 0) continue;
-            for (const auto& c : it->second) if (c.type == w) return &c;
+            std::vector<const omk::PedClip*> m;
+            for (const auto& c : it->second) if (c.type == w) m.push_back(&c);
+            if (m.empty()) continue;
+            // the roll: a cheap LCG on (group, action), so two characters of
+            // one type asking for one action can still draw different clips
+            std::uint32_t r = static_cast<std::uint32_t>(group * 2654435761u
+                                                         + action * 40503u + w);
+            r ^= r >> 15; r *= 2246822519u; r ^= r >> 13;
+            return m[r % m.size()];
         }
         return &it->second.front();          // "anim non existante dans le .ANI"
     };
