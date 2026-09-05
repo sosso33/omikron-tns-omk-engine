@@ -1368,8 +1368,13 @@ the option wins. It can only ever reduce.
 > One API in the engine does have real units — DirectSound's listener takes a
 > distance factor in *metres per world unit* — but it is TOLD the factor, so it
 > adapts to whatever the engine already used and cannot have forced the choice.
-> Direct3D has no units at all. The likeliest cause is the modelling tool
-> chain, and nothing in this tree evidences that, so it stays a guess.
+> Direct3D has no units at all. The cause is the modelling tool chain: **3D
+> Studio**, whose default system unit is the inch, so a model exported without
+> changing it lands exactly here. That last step is **external evidence** and
+> not derivable from this tree — a reader found period job advertisements from
+> the studio asking for 3D Studio skills (2026-09-05). Recorded as what it is:
+> a corroborated explanation from outside the data, beside a unit that is
+> settled from inside it.
 >
 > `verify.py: world unit`, which measures the models rather than quoting
 > either constant, and fails if the metre reading of a human body is accepted.
