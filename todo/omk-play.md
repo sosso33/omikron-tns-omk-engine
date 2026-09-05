@@ -43,6 +43,26 @@ placement record for anyone else). Headless the snap now lands on frame 59,
 the wait's 60th tick, where it landed on frame 0. `verify.py: engine arrival
 wait`, shown to fail by dropping the gate. Not yet confirmed in play.
 
+**The portal itself, measured (2026-09-05).** The reader's four frames cut out
+and scaled to one glow radius: glow diameter 17.5-19% of the picture width in
+the original against 15-21% in the port, black core 12.4-14.4% against 12%,
+peak glow (92,230,250) against (107,178,203) - the same portal. Two
+differences. (1) The RING between core and glow is dark red in the original
+((64,10,11) on a row through the centre, 22,000 red pixels) and grey-blue in
+the port (0 red pixels). (2) After the jump the original's core stays a circle
+(fill of its bounding circle 0.98) and the port's does not (0.79). The second
+is the two `ttt` pieces: rings of 26 multiply-blended `EFFECTS1_IMPACT2` star
+particles, scale 2.2, respawned every frame at radius ~62 around the centre -
+the core's own edge - which stamp large dark stars on the rim. With that one
+effect left out (`OMK_SKIP_EFFECT=14`, a diagnostic env var on the set-piece
+runner) the port's disc is a clean circle with a dark red core and a soft
+cyan halo, roundness 0.96, and looks like the original's frames. The data
+authors the rings and nothing read says the engine skips them, so whether
+the engine draws them smaller, elsewhere or not at all is OPEN; the port
+draws what the records say. The engine's device init asks for POINT texture
+filtering (stage states 16/17/18 = 1 in `sub_4638C0`), so the smooth edges
+in the video are the capture's driver, not the game's.
+
 ### 75. The tunnel UNLOADS before the player is out of it, and the closed door is walk-through — A
 
 Filed 2026-09-04, the reader on the two-pool fix in 70: *"it unload the tunnel

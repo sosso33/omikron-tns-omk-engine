@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // The set pieces. See `setpiece.h` for which function each rule is.
+#include <cstdlib>
 #include "o3de/setpiece.h"
 
 #include <cmath>
@@ -275,7 +276,10 @@ void SetPieceRunner::tick(float dt, ParticleField& fx) {
         if (!s.waiting) {
             advance(static_cast<int>(i));
             const int id = p.effectId > 0 ? p.effectId : indirectEffect(static_cast<int>(i));
-            if (id > 0)
+            // A DIAGNOSTIC, not a port: `OMK_SKIP_EFFECT=n` leaves effect n
+            // unspawned, so a picture can be argued with one ingredient out.
+            static const int skip = std::getenv("OMK_SKIP_EFFECT") ? std::atoi(std::getenv("OMK_SKIP_EFFECT")) : -1;
+            if (id > 0 && id != skip)
                 if (const FxEffect* e = sfx_->byId(id)) {
                     fx.spawn(*e, s.pos);
                     ++registered_;
