@@ -27,6 +27,7 @@ bool SceneRunner::load(const std::string& scptDataDir, const std::string& iamDir
     editings_.clear();
     ticks_ = 0;
     sprites_.clear();        // `Scene_LoadSCX` respawns every row's instance
+    nodeScales_.clear();     // the set's nodes come back at 1/1/1
     const auto st = readScxStream(d);
     if (st.valid && st.camSize && d.size() >= st.camOffset + st.camSize)
         cam_ = readCamFile(std::span<const std::byte>(d).subspan(st.camOffset, st.camSize));
@@ -340,6 +341,12 @@ void SceneRunner::tick(float dt) {
                                started_[i].actor, c});
         for (const auto& m : programs_[i]->motions()) motions_.push_back(m);
     }
+    for (const auto& p : programs_)
+        for (const auto& op : p->scaleOps()) {
+            auto& ns = nodeScales_[op.name];
+            ns.s[op.axis] = op.value;
+            ns.mode = op.mode;
+        }
     // A sprite is positioned only on a tick a `Display3DSprite` runs: the
     // flag is this tick's, and an instance nobody wrote to keeps its place.
     for (auto& kv : sprites_) kv.second.tracking = false;

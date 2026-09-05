@@ -182,6 +182,15 @@ public:
     // (the XYZ table it would prefer is never written in the shipped engine;
     // program.h has the trace). Set it before `tick`; unset, a tracking
     // sprite stays where it was.
+    // THE NODE SCALES - what `Script_ScaleObjectX/Y/Z` has written to the
+    // set's meshes (program.h), by mesh name, persisting the way a node's
+    // position does. Mode 8 (the subtree) is recorded and not spread: no
+    // shipped site uses it.
+    struct NodeScale {
+        float s[3] = {1.0f, 1.0f, 1.0f};
+        int   mode = 4;
+    };
+    const std::map<std::string, NodeScale>& nodeScales() const { return nodeScales_; }
     void setSpriteAnchor(const float at[3]) {
         for (int c = 0; c < 3; ++c) anchor_[c] = at[c];
         anchorSet_ = true;
@@ -323,6 +332,7 @@ private:
     std::vector<FiredSound>    sounds_;
     std::vector<Program::NodeMotion> motions_;
     std::map<int, SceneSprite> sprites_;
+    std::map<std::string, NodeScale> nodeScales_;
     float anchor_[3] = {0, 0, 0};
     bool  anchorSet_ = false;
     long                 ticks_ = 0;

@@ -126,6 +126,28 @@ constexpr std::uint32_t kFnSetSpriteRolling     = 0x0400001D;
 constexpr std::uint32_t kFnSetSpriteDefaultPal  = 0x0400001F;
 constexpr std::uint32_t kFnDisplay3DSprite      = 0x04000028;
 
+// `Script_ScaleObjectX/Y/Z` (0x03000023..25, `sub_4707A0` and its two
+// siblings) - the last of the eleven. 35 sites, ALL in `Aapkayl.SCX`: the
+// apartment's transfer tube, whose beam meshes (`cent int`/`med`/`ext`,
+// `lum ext`, `lum fx1..3`) grow along Y from 1 to 35 over 24, 36 or 60
+// frames and swell 1 -> 1.5 or 2 on X/Z in a 0.3-frame ramp.
+//
+//   0 object (the set mesh, through the object's first string table)
+//   1 mode: 4 = this node, 8 = its whole subtree (`o3de_Traverse` with
+//     `sub_437BF0`; no shipped site uses it, and it is NOT ported)
+//   2 start  3 end  4 current  5 duration  6 clock - the sprite ramps' shape
+//
+// The setter (`SetObjectScaleX`, 0x00437B90) writes node `+128` (`+132`,
+// `+136` for Y, Z) and the consumer is the vertex transform `sub_494E80`:
+// each ROW of the node's 3x3 at `+92` is multiplied by that axis's scale
+// before the vertices go through it, so the scale is in the node's LOCAL
+// axes, about its origin, and precedes its rotation. The node's `+128` is
+// not the mesh RECORD's `+128` (the parent-relative offset `Mesh::local`
+// reads): two structs, one offset.
+constexpr std::uint32_t kFnScaleObjectX         = 0x03000023;
+constexpr std::uint32_t kFnScaleObjectY         = 0x03000024;
+constexpr std::uint32_t kFnScaleObjectZ         = 0x03000025;
+
 // One .SCX's objects plus the clip lengths their programs need.  The frame
 // counts come from the STREAMED animations, so a scene must carry its stream.
 class ScxRuntime {
@@ -278,6 +300,18 @@ public:
     };
     const std::vector<SpriteOp>& spriteOps() const { return spriteOps_; }
 
+    // THE NODE SCALES written this tick - `Script_ScaleObjectX/Y/Z`, one
+    // axis each, the value the handler wrote (its ramp's current value, or
+    // `end` on the finishing tick). The node's scale persists in the scene
+    // the way its position does, so `SceneRunner` keeps the table.
+    struct NodeScaleOp {
+        std::string name;      // the set mesh, param 0 resolved
+        int   axis = 0;        // 0 X, 1 Y, 2 Z
+        int   mode = 4;        // param 1: 4 the node, 8 its subtree
+        float value = 1.0f;
+    };
+    const std::vector<NodeScaleOp>& scaleOps() const { return scaleOps_; }
+
     // THE FUNCTION DRIVING THE POSE THIS TICK - the first
     // `SelectBodyAnimation` / `...Relative` in the chain at the program
     // counter, or -1 when the step at the pc plays none.
@@ -317,6 +351,7 @@ private:
     std::vector<NodeMotion> motions_; // what moved this tick
     std::vector<SoundCue> sounds_;   // what this tick started
     std::vector<SpriteOp> spriteOps_; // what the sprite family wrote this tick
+    std::vector<NodeScaleOp> scaleOps_; // what ScaleObjectX/Y/Z wrote this tick
     std::vector<std::string> trace_;
 };
 

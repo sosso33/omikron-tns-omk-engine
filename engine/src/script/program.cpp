@@ -221,11 +221,28 @@ float Program::busySpan(int k) const {
     // tick, so it is busy for `duration - clock` ticks: 60 at every shipped
     // site. The scale and roll ramps are busy for THEIR param 4, which is 0
     // at every shipped site - they finish on their first tick.
+    //
+    // The tick counts are the handlers' own: `Display3DSprite` positions,
+    // THEN adds dt, THEN compares, so it runs on every tick where
+    // `clock + k < duration` and finishes on the last of them - ceil(60) =
+    // 60 ticks. The ramps compare FIRST: in progress while `clock + k <
+    // duration`, and the tick that fails the compare writes `end` and
+    // finishes - so ceil(duration - clock) + 1 ticks: 1 for duration 0, 2
+    // for the tube's 0.3, 25 for its 24. A first version gave the ramps
+    // `duration` ticks, which for 0.3 wrote the START value and never the
+    // end.
     if (f.id == kFnDisplay3DSprite && f.params.size() > 3)
-        return std::max(0.0f, asFloat(f.params[2]) - asFloat(f.params[3]));
+        return std::max(0.0f, std::ceil(asFloat(f.params[2]) - asFloat(f.params[3])));
     if ((f.id == kFnScaleSpriteOnX || f.id == kFnScaleSpriteOnY ||
-         f.id == kFnSetSpriteRolling) && f.params.size() > 5)
-        return std::max(0.0f, asFloat(f.params[4]) - asFloat(f.params[5]));
+         f.id == kFnSetSpriteRolling) && f.params.size() > 5) {
+        const float left = asFloat(f.params[4]) - asFloat(f.params[5]);
+        return left > 0.0f ? std::ceil(left) + 1.0f : 1.0f;
+    }
+    if ((f.id == kFnScaleObjectX || f.id == kFnScaleObjectY ||
+         f.id == kFnScaleObjectZ) && f.params.size() > 6) {
+        const float left = asFloat(f.params[5]) - asFloat(f.params[6]);
+        return left > 0.0f ? std::ceil(left) + 1.0f : 1.0f;
+    }
     // PlaySyncSound has its own cue time, handled in tick.
     return 0.0f;
 }
@@ -234,6 +251,7 @@ bool Program::tick(float dt) {
     sounds_.clear();
     motions_.clear();
     spriteOps_.clear();
+    scaleOps_.clear();
     if (!running_) return false;
     bool busy = false;
     if (obj_->nfn > 0) {
@@ -369,9 +387,11 @@ bool Program::tick(float dt) {
                     op.kind = SpriteOp::Kind::Display;
                     const float dur = f.params.size() > 2 ? asFloat(f.params[2]) : 0.0f;
                     const float at  = f.params.size() > 3 ? asFloat(f.params[3]) : 0.0f;
-                    // the handler positions the sprite only on a tick where
-                    // clock < duration; the tick that reaches it finishes
-                    op.tracking = at + since < dur;
+                    // the handler returns before LINKING when its clock is
+                    // already past the duration (NbTrames 0, say), and
+                    // positions the sprite on every tick it does run
+                    if (at + since >= dur) goto spriteOpDone;
+                    op.tracking = true;
                 } else if (f.id == kFnSetSpriteFrame) {
                     op.kind = SpriteOp::Kind::Frame;
                     op.ivalue = f.params.size() > 1 ? f.params[1] : 0;
@@ -402,6 +422,25 @@ bool Program::tick(float dt) {
                     }
                 }
                 spriteOps_.push_back(op);
+            spriteOpDone:;
+            }
+            if ((f.id == kFnScaleObjectX || f.id == kFnScaleObjectY ||
+                 f.id == kFnScaleObjectZ) && f.params.size() > 6) {
+                // `Script_ScaleObjectX/Y/Z` - the sprite ramps' shape on a set
+                // mesh's node (program.h). The handler resolves the mesh by
+                // name and writes the ramp's current value, or `end` once the
+                // clock has reached the duration.
+                const auto ea = entryAt_.find(k);
+                const float since = ea == entryAt_.end() ? 0.0f : clock_ - ea->second;
+                const float start = asFloat(f.params[2]), end = asFloat(f.params[3]);
+                const float cur = asFloat(f.params[4]), dur = asFloat(f.params[5]);
+                const float at = asFloat(f.params[6]);
+                NodeScaleOp op;
+                op.name = rt_->objectName(*obj_, f.params[0]);
+                op.axis = f.id == kFnScaleObjectX ? 0 : f.id == kFnScaleObjectY ? 1 : 2;
+                op.mode = f.params[1];
+                op.value = at + since < dur ? cur + since * (end - start) / dur : end;
+                if (!op.name.empty()) scaleOps_.push_back(std::move(op));
             }
             if (clock_ < it->second) {
                 busy = true;

@@ -360,6 +360,23 @@ contain something the port silently does nothing for.
 > (35 sites), the node scale on `+128/+132/+136` with mode 4 = the node, 8 =
 > its subtree.
 
+> **`ScaleObjectX/Y/Z` DONE 2026-09-05 - ELEVEN OF ELEVEN.** All 35 sites are
+> `Aapkayl.SCX`'s transfer tube (`00 Tube Begin End`, `00 Face lite`, `00
+> tube loop`): the beam meshes grow along Y 1 -> 35 over 24/36/60 frames and
+> swell on X/Z in a 0.3-frame ramp, mode 4 everywhere. The consumer settled
+> the meaning: `sub_494E80` multiplies each row of the node's 3x3 at `+92` by
+> its axis's scale before the vertices go through it - the node's LOCAL
+> axes, about its origin, ahead of its rotation - and node `+128` is not the
+> mesh record's `+128` (`Mesh::local`). The viewer's mesh patch now composes
+> scale, then the motion's rotation, then the placement, for the render
+> corners and the collision soups alike. The ramps' tick counts were
+> corrected on the way: the handler compares clock < duration BEFORE
+> writing, so a 0.3-frame ramp is two ticks (start, then end) and a first
+> version that gave it `duration` ticks never wrote the end. Mode 8 (the
+> subtree through `sub_437BF0`) is unused by any shipped site and is not
+> ported. `verify.py: engine node scale`. Not yet confirmed in play - the
+> apartment's tube is the place to look.
+
 **`Script_StopSound` is the reader's own symptom and should go first.** A scene
 that starts a sound has no way to stop it: `Script_PlaySound` is implemented
 and its counterpart is not, so 86 sites across 61 scenes start audio the port

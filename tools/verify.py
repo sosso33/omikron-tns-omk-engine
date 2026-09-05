@@ -7321,6 +7321,65 @@ def c_engine_scene_sprites():
          "frozen once the camera moved, still linked; then fx2_smoke1's row 0: "
          "linked, default type, registry id")
 
+def c_engine_node_scale():
+    r"""`engine/`: `Script_ScaleObjectX/Y/Z` scales a set mesh's node, which
+    closes `todo/omk-play.md` 71 - all eleven scene functions now run.
+
+    All 35 shipped sites are in `Aapkayl.SCX`, Kay'l's apartment: the
+    transfer tube's beam meshes (`cent int`/`med`/`ext`, `lum ext`, `lum
+    fx1..3`) grow along Y from 1 to 35 over 24, 36 or 60 frames and swell on
+    X/Z in a 0.3-frame ramp - mode 4 everywhere (the node alone; mode 8, the
+    subtree, is unused and unported).
+
+    The handler (`sub_4707A0`) has the sprite ramps' shape - start, end,
+    current, duration, clock - and the setter `SetObjectScaleX` (0x00437B90)
+    writes node `+128` (`+132`, `+136`). The CONSUMER settles what the number
+    means: `sub_494E80`, the vertex transform, multiplies each row of the
+    node's 3x3 at `+92` by its axis's scale before the vertices go through
+    it - a scale in the node's local axes, about its origin, ahead of its
+    rotation. The node's `+128` is not the mesh record's `+128` that
+    `Mesh::local` reads: two structs, one offset.
+
+    The tick counts are the handler's: it compares clock < duration FIRST,
+    so a ramp of duration d runs ceil(d) + 1 ticks and the last writes `end`
+    outright. The probe starts `00 Tube Begin End` (handle 169) and reads
+    `cent int`'s Y at ticks 1, 13, 25, 26, 49, 167 and 175 (1, 18, 35, 35,
+    35 - step 1's chain holds 61 ticks for `cent ext`'s 60-frame ramp and a
+    105-frame `Script_Wait` follows - then 35 as step 3 opens on tick 167
+    and 23.67 eight ticks into its 35 -> 1) and `cent med`'s X at ticks 1
+    and 2 (1, then 1.5: the 0.3-frame ramp's two ticks).
+
+    SHOWN TO FAIL by dropping the arm from `Program::tick`: no node is
+    scaled and every value reads -1.
+    """
+    import subprocess, tempfile, shutil
+    eng = os.path.join(ROOT, "engine")
+    fr = omkpaths.data_root()
+    if not os.path.isdir(fr):
+        return ("no data",), ("data",), "needs the shipped tree"
+    b = subprocess.run(["make", "-s", "build/scale_probe"], cwd=eng,
+                       capture_output=True, text=True)
+    binp = os.path.join(eng, "build", "scale_probe")
+    if b.returncode != 0 or not os.path.exists(binp):
+        return ("build failed",), ("built",), "engine/ must build"
+    tmp = tempfile.mkdtemp()
+    try:
+        out = os.path.join(tmp, "sc.bin")
+        subprocess.run([binp, fr, os.path.join(ROOT, "tables", "vm_opcodes.json"),
+                        os.path.join(fr, "IAM", "START"),
+                        os.path.join(fr, "SCPTDATA"), out],
+                       capture_output=True, text=True)
+        raw = open(out, "rb").read()
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+    if len(raw) < 40:
+        return ("no output",), ("40 bytes",), "the probe must write its record"
+    got = struct.unpack_from("<10i", raw, 0)
+    want = (100, 1800, 3500, 3500, 3500, 3500, 2367, 100, 150, 4)
+    return got, want, \
+        ("Aapkayl's tube: `cent int` Y x100 at ticks 1, 13, 25, 26, 49, 167, 175; "
+         "`cent med` X x100 at ticks 1, 2; nodes scaled")
+
 def c_engine_special_moves():
     r"""`engine/`: every move name the shipped banks carry resolves to a
     `tab_special_move[]` row - the table READ against the data that uses it.
@@ -19457,7 +19516,7 @@ def c_licence_headers():
                    if TAG in open(p, encoding="utf-8",
                                   errors="replace").read(600)]
     return (authored, sorted(missing), len(vendored), mislabelled), \
-           (334, [], 1, []), \
+           (335, [], 1, []), \
            "authored source files under tools/, engine/src, engine/tools, " \
            "engine/backends and scripts/; those MISSING the SPDX tag; " \
            "vendored files in engine/third_party; and vendored files wrongly " \
@@ -20893,6 +20952,7 @@ SLOW = [
     ("engine: impasse fx", c_engine_impasse_fx, "todo/omk-play"),
     ("engine: stop sound", c_engine_stop_sound, "todo/omk-play"),
     ("engine: scene sprites", c_engine_scene_sprites, "todo/omk-play"),
+    ("engine: node scale", c_engine_node_scale, "todo/omk-play"),
     ("engine: special moves", c_engine_special_moves, "docs/ASSETS"),
     ("engine: crowd nan", c_engine_crowd_nan, "todo/omk-play"),
     ("engine: tunnel doors", c_engine_tunnel_doors, "todo/omk-play"),

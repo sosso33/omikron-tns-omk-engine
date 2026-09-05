@@ -3296,46 +3296,77 @@ int main(int argc, char** argv) {
         // patch is applied to the ORIGINAL each frame rather than accumulated.
         // Bumping `revision` is what tells a caching backend the buffer moved.
         bool soupsMoved = false;
-        if (session.scene().loaded() && !session.scene().motions().empty()) {
+        // ...AND ITS SCALE. `Script_ScaleObjectX/Y/Z` (program.h) writes the
+        // node's `+128..+136`, and `sub_494E80` multiplies each row of the
+        // node's 3x3 by its axis's scale before the vertices go through it:
+        // a scale in the node's LOCAL axes, about its origin, ahead of the
+        // rotation a motion may have set. So a corner is (base - origin),
+        // scaled per axis, rotated, placed. The apartment's transfer tube is
+        // every shipped site: its beam grows along Y from 1 to 35.
+        if (session.scene().loaded() &&
+            (!session.scene().motions().empty() || !session.scene().nodeScales().empty())) {
+            struct Patch {
+                float s[3] = {1.0f, 1.0f, 1.0f};
+                bool  hasMotion = false;
+                float pos[3] = {0, 0, 0};
+                omk::Quatf q{1, 0, 0, 0};
+                bool  rotated = false;
+            };
             for (int sl = 0; sl < 2; ++sl) {
                 WorldSlot& w = worldSlots[static_cast<std::size_t>(sl)];
                 if (w.geo.corners.empty() || w.meshes.empty()) continue;
-                bool moved = false;
+                const auto meshIndex = [&](const std::string& name) {
+                    for (std::size_t k = 0; k < w.meshes.size(); ++k)
+                        if (sameName(w.meshes[k].name, name)) return static_cast<int>(k);
+                    return -1;
+                };
+                std::map<int, Patch> patches;
+                for (const auto& ns : session.scene().nodeScales()) {
+                    const int mi = meshIndex(ns.first);
+                    if (mi < 0) continue;
+                    Patch& p = patches[mi];
+                    for (int c = 0; c < 3; ++c) p.s[c] = ns.second.s[c];
+                }
                 for (const auto& mo : session.scene().motions()) {
                     if (!mo.placed) continue;
-                    int mi = -1;
-                    for (std::size_t k = 0; k < w.meshes.size(); ++k)
-                        if (sameName(w.meshes[k].name, mo.name)) { mi = static_cast<int>(k); break; }
+                    const int mi = meshIndex(mo.name);
                     if (mi < 0) continue;
+                    Patch& p = patches[mi];
+                    p.hasMotion = true;
+                    for (int c = 0; c < 3; ++c) p.pos[c] = mo.pos[c];
+                    p.q = omk::Quatf{mo.quat[0], mo.quat[1], mo.quat[2], mo.quat[3]};
+                    p.rotated = mo.rotated;
+                }
+                bool moved = false;
+                for (const auto& kv : patches) {
+                    const int mi = kv.first;
+                    const Patch& pa = kv.second;
                     if (w.baseCorners.empty()) w.baseCorners = w.geo.corners;
                     if (w.baseSoup.empty()) w.baseSoup = w.soup;
                     if (w.baseSteep.empty()) w.baseSteep = w.steep;
                     const float* mp = w.meshes[static_cast<std::size_t>(mi)].pos;
-                    // ...AND ITS ORIENTATION. The handler sets both - the path
-                    // sample's 3x3 goes to node `+56` through `sub_437160`
-                    // beside the `o3de_SetNodePos` - and an object that turns
-                    // in place has ONLY the rotation: the Impasse's fan,
-                    // `Ventilo`, samples the same point every frame and is
-                    // animated entirely by the quaternion. Position-only, it
-                    // stood still (`todo/omk-play.md` 53).
-                    //
-                    // A `Mesh` record carries no orientation of its own, only
-                    // `pos`, so the node's matrix starts as identity and the
-                    // sample's applies directly: a corner is rotated about the
-                    // mesh's authored origin and then placed at the sample.
-                    // With an identity quaternion this is exactly the offset
-                    // the position-only version applied.
-                    const omk::Quatf q{mo.quat[0], mo.quat[1], mo.quat[2], mo.quat[3]};
+                    // The motion's orientation: the path sample's 3x3 goes to
+                    // node `+56` through `sub_437160` beside the
+                    // `o3de_SetNodePos`, and an object that turns in place
+                    // has ONLY the rotation - the Impasse's fan `Ventilo`
+                    // (omk-play 53). A `Mesh` record carries no orientation,
+                    // so the node's matrix starts as identity and the
+                    // sample's applies directly, about the authored origin.
+                    const float* at = pa.hasMotion ? pa.pos : mp;
+                    const auto place = [&](const float in[3], float out[3]) {
+                        const float local[3] = {(in[0] - mp[0]) * pa.s[0],
+                                                (in[1] - mp[1]) * pa.s[1],
+                                                (in[2] - mp[2]) * pa.s[2]};
+                        float r[3] = {local[0], local[1], local[2]};
+                        if (pa.rotated) omk::qrot(pa.q, local, r);
+                        out[0] = r[0] + at[0]; out[1] = r[1] + at[1]; out[2] = r[2] + at[2];
+                    };
                     for (std::size_t c = 0; c < w.geo.corners.size(); ++c) {
                         if (c >= w.geo.cornerMesh.size() || w.geo.cornerMesh[c] != mi) continue;
-                        const float local[3] = {w.baseCorners[c].x - mp[0],
-                                                w.baseCorners[c].y - mp[1],
-                                                w.baseCorners[c].z - mp[2]};
-                        float r[3] = {local[0], local[1], local[2]};
-                        if (mo.rotated) omk::qrot(q, local, r);
-                        w.geo.corners[c].x = r[0] + mo.pos[0];
-                        w.geo.corners[c].y = r[1] + mo.pos[1];
-                        w.geo.corners[c].z = r[2] + mo.pos[2];
+                        const float in[3] = {w.baseCorners[c].x, w.baseCorners[c].y, w.baseCorners[c].z};
+                        float o[3];
+                        place(in, o);
+                        w.geo.corners[c].x = o[0]; w.geo.corners[c].y = o[1]; w.geo.corners[c].z = o[2];
                     }
                     // the collision soups follow the mesh exactly as the
                     // render corners above (`Sweep_MeshTest` collides
@@ -3346,10 +3377,9 @@ int main(int argc, char** argv) {
                             if (meshOf[t] != mi) continue;
                             for (int v = 0; v < 3; ++v) {
                                 const std::size_t o = 9 * t + 3 * static_cast<std::size_t>(v);
-                                const float local[3] = {base[o] - mp[0], base[o + 1] - mp[1], base[o + 2] - mp[2]};
-                                float r[3] = {local[0], local[1], local[2]};
-                                if (mo.rotated) omk::qrot(q, local, r);
-                                soup[o] = r[0] + mo.pos[0]; soup[o + 1] = r[1] + mo.pos[1]; soup[o + 2] = r[2] + mo.pos[2];
+                                float out[3];
+                                place(&base[o], out);
+                                soup[o] = out[0]; soup[o + 1] = out[1]; soup[o + 2] = out[2];
                             }
                         }
                     };
