@@ -18,6 +18,31 @@
 // over an IN-MEMORY directory, not over this file.  Two readings had been
 // disagreeing about that, and neither was checkable until a save existed.
 //
+// ## The header is the SETTINGS, field by field
+//
+// The 117 non-zero bytes after the magic are now all named (GAME_STATE 8a).
+// The header is the global `byte_90E180`; `sub_41F4C0` writes every field of
+// it in one run, `Game_WriteSave` copies all 3496 over the file's head on
+// EVERY slot save, and `SaveDir_Load` reads them back behind the magic and a
+// version dword at +8.  So there is one copy of the settings for all 256
+// slots, and saving a game saves the player's options.
+//
+// Each field is named by the option row that reads it: +12 the resolution,
+// +16 sky, +17 shadows, +20 clip distance, +24/+28/+32 the three volumes,
+// +36 3D sound, +37 subtitles, +38/+40 the two difficulties, +42 the combat
+// camera, +44/+46 mouse sensitivity, +48 inverted, +49 force feedback,
+// +1446 CROWD DENSITY and +1447 LEVEL OF DETAIL.  The last two matter here
+// because they are the two graphical options with no `[Preferences]` ini key,
+// and they persist anyway.
+//
+// +52 / +276 / +500 are the three control-scheme tables verbatim - the same
+// 4 x 14 x u32 the port carries in `tables/key_bindings.json`, at the offsets
+// the globals' own addresses give (0x90E1B4/0x90E294/0x90E374 minus
+// 0x90E180).  All 168 cells match in both shipped saves, and the two saves
+// differ in exactly two bytes of the 3496: +20 (200 vs 150, two of row 3's
+// five choices) and +1446 (4 vs 3, two of row 6's five).
+// `verify.py: settings block`.
+//
 // ## The clock
 //
 // Omikron's calendar: 41 days a month, 13 months a year, year 7216, and a day

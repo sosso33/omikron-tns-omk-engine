@@ -509,7 +509,7 @@ the golden-trace rig. It now has exactly one file behind it, and everything
 below is checked against that.
 
 ```
-+0                3496 bytes   the slot directory (see below)
++0                3496 bytes   the SETTINGS block (see 8a)
 +3496 + 32808*n                slot n, for n in 0..255
       +0     char[32]          the profile name (byte_6A05C0, "OMK_SAVE")
       +32    u32               the day counter
@@ -552,6 +552,74 @@ slot directory: it opens with the profile name `OMK_SAVE`, then `0280 01e0` —
 the display mode, 640x480 — and only 119 of its 3496 bytes are non-zero in a
 fresh file. `gamestate.from_save(path, n)` reads a slot's DB, which is what
 lets a golden-trace replay start from the state a script actually ran under.
+
+### 8a. The 3496-byte header is the SETTINGS, and every field is named
+
+The header is not a directory and not merely "the profile block": it is the
+global `byte_90E180`, and **saving a game saves your options**.
+
+`sub_41F4C0` (0x0041F4C0) is the defaults function — it `memset`s all 3496
+bytes, stamps `OMK_SAVE`, and then writes every field of the block in one run,
+which is what fixes the layout. `Game_WriteSave` copies the whole 3496 over the
+file's head on **every** slot save; `sub_4092A0` writes them alone (a
+settings-only save); `SaveDir_Load` reads them back over the global, gated on
+the magic and a **version dword at +8** (`0x10000` or `0x10001`, and a 0x10000
+file has `LOWORD(dword_90E724)` cleared as it loads). There is one copy for all
+256 slots, so the settings are the file's, not the save's.
+
+Each field is named by the option row whose read hook reads it, and the option
+rows come in the same order the defaults function writes them:
+
+| off | global | option row | default |
+|---|---|---|---|
+| +0 | | `OMK_SAVE` | |
+| +8 | `dword_90E188` | the block's version | 0x00010001 |
+| +12 | `g_ScreenSize` | 2 *Résolution* — two `int16` | 640 x 480 |
+| +16 | `byte_90E190` | 4 *Affichage du ciel* | 1 |
+| +17 | `byte_90E191` | 5 *Affichage des ombres* | 1 |
+| +20 | `dword_90E194` | 3 *Distance de clipping* | 50 |
+| +24 | `dword_90E198` | 10 *Volume des dialogues* | 0 |
+| +28 | `dword_90E19C` | 11 *Volume des musiques* | 0 |
+| +32 | `dword_90E1A0` | 12 *Volume des effets sonores* | 0 |
+| +36 | `byte_90E1A4` | 13 *Son 3D* | 1 |
+| +37 | `byte_90E1A5` | 15 *Sous-titres* | 1 |
+| +38 | `word_90E1A6` | 16 *Difficulté des combats* | 1 |
+| +40 | `word_90E1A8` | 17 *Difficulté du shoot* | 1 |
+| +42 | `byte_90E1AA` | 18 *Caméra de combat* | 1 |
+| +44 | `word_90E1AC` | 23 *Sensibilité horizontale* | 20 |
+| +46 | `word_90E1AE` | 24 *Sensibilité verticale* | 15 |
+| +48 | `byte_90E1B0` | 25 *Souris inversée* | 0 |
+| +49 | `byte_90E1B1` | 27 *Force FeedBack* | 0 |
+| +52 | `dword_90E1B4` | rows 29..71 — **keyboard**, 4 groups x 14 x u32 | |
+| +276 | `dword_90E294` | rows 29..71 — **mouse** | |
+| +500 | `dword_90E374` | rows 29..71 — **joystick** | |
+| +724 | | 720 bytes, never written and never non-zero | |
+| +1444 | `LOWORD(dword_90E724)` | the display driver's, cleared on load | |
+| +1446 | `dword_90E724+2` | 6 *Niveau d'activité dans les rues* | |
+| +1447 | `dword_90E724+3` | 7 *Niveau de détail* | |
+
+The three device tables are the decisive part, because they are **168 values
+this repo had already lifted independently**: `tables/key_bindings.json` came
+out of the compiled tables at 0x004C8F90 / 0x004C9070 / 0x004C9150, and both
+shipped saves reproduce all 168 exactly. The offsets are not fitted either —
+they are the globals' own addresses, `0x90E1B4 − 0x90E180 = 52`,
+`0x90E294 − 0x90E180 = 276`, `0x90E374 − 0x90E180 = 500` — three contiguous
+224-byte tables, the same 0xE0 stride the executable has between them.
+
+**The two shipped saves disagree in exactly two of the 3496 bytes**, which is
+what makes them evidence rather than a fixed point. `+20` is 200 in
+`save-appart` and 150 in `games-resto`, and row 3's five choices are
+25 / 50 / 100 / 150 / 200 — *Très loin* and *Loin*, against a default of 50.
+`+1446` is 4 and 3, and row 6's choices are 0..4 — *Très important* and
+*Important*. Two play sessions, two clip distances, two crowd densities, each a
+legal value of its own row's list. A layout read off one file could not show
+that.
+
+Note what this settles for the port: **the crowd density and the level of
+detail persist**, even though they are the two graphical options with no
+`[Preferences]` ini key. `todo/options-config.md` had concluded from the
+missing key that they were menu-only; they are menu-only in the *ini*, and
+saved here. `verify.py: settings block`.
 
 **And the DB inside a real save parses**, which is the part no literal could
 have supplied. `traces/save-appart.bin` is the engine's own file reduced to its

@@ -19573,6 +19573,125 @@ def c_save_file():
            "walking the start menu rather than supplying"
 
 
+def c_settings_block():
+    r"""The save file's 3496-byte header is the SETTINGS block, field by field.
+
+    `save file` established what the header is not (a slot directory) and two
+    things it is (`OMK_SAVE`, then 640 x 480). It did not say what the other
+    117 non-zero bytes were, and a note in `todo/options-config.md` drew the
+    wrong conclusion from that silence: it said the crowd density and the level
+    of detail were "menu-only", having no `[Preferences]` key. They have no ini
+    key, and they persist anyway - in here.
+
+    The block is the global `byte_90E180`, and `sub_41F4C0` writes every field
+    of it in one run, which is what fixes the layout. `Game_WriteSave` copies
+    all 3496 bytes over the file's head on every slot save, `sub_4092A0` writes
+    them alone, and `SaveDir_Load` reads them back over the global behind the
+    `OMK_SAVE` magic and a version dword at +8. So SAVING A GAME SAVES THE
+    SETTINGS, and there is only one copy of them for all 256 slots.
+
+    Each field is named by the option row whose read hook reads it - the row
+    order and the defaults-function order are the same order:
+
+        +12  g_ScreenSize      row  2  Resolution           640 x 480 (2 x i16)
+        +16  byte_90E190       row  4  Affichage du ciel            1
+        +17  byte_90E191       row  5  Affichage des ombres         1
+        +20  dword_90E194      row  3  Distance de clipping        50
+        +24  dword_90E198      row 10  Volume des dialogues         0
+        +28  dword_90E19C      row 11  Volume des musiques          0
+        +32  dword_90E1A0      row 12  Volume des effets sonores    0
+        +36  byte_90E1A4       row 13  Son 3D                       1
+        +37  byte_90E1A5       row 15  Sous-titres                  1
+        +38  word_90E1A6       row 16  Difficulte des combats       1
+        +40  word_90E1A8       row 17  Difficulte du shoot          1
+        +42  byte_90E1AA       row 18  Camera de combat             1
+        +44  word_90E1AC       row 23  Sensibilite horizontale     20
+        +46  word_90E1AE       row 24  Sensibilite verticale       15
+        +48  byte_90E1B0       row 25  Souris inversee              0
+        +49  byte_90E1B1       row 27  Force FeedBack               0
+        +52  dword_90E1B4      rows 29..71, keyboard   4 groups x 14 x u32
+       +276  dword_90E294      rows 29..71, mouse      4 groups x 14 x u32
+       +500  dword_90E374      rows 29..71, joystick   4 groups x 14 x u32
+      +1445  dword_90E724+1    row  8  Acceleration 3D
+      +1446  dword_90E724+2    row  6  Niveau d'activite dans les rues
+      +1447  dword_90E724+3    row  7  Niveau de detail
+
+    The three binding tables are the decisive part, because they are 168 values
+    this repo already lifted independently: `tables/key_bindings.json` came out
+    of the compiled tables at 0x004C8F90 / 0x004C9070 / 0x004C9150, and the
+    header reproduces all 168 exactly, in both shipped saves, at +52 / +276 /
+    +500 - which is `0x90E1B4 - 0x90E180` = 52, `0x90E294 - 0x90E180` = 276 and
+    `0x90E374 - 0x90E180` = 500. Three contiguous 224-byte tables, the same
+    0xE0 stride the exe has between them.
+
+    And the two shipped saves DISAGREE in exactly two bytes of the 3496, which
+    is what makes them evidence rather than a fixed point:
+
+      * +20 is **200** in `save-appart` and **150** in `games-resto` - and row
+        3's five choices are 25 / 50 / 100 / 150 / 200, "Tres loin" and "Loin".
+        The default is 50.
+      * +1446 is **4** and **3** - row 6's choices are 0..4, "Tres important"
+        and "Important".
+
+    Two different play sessions, two different clip distances and two different
+    crowd densities, each a legal value of its own row's choice list. A layout
+    read off one file cannot show that; a wrong one would have to be wrong the
+    same way twice, on the two fields a player would actually touch.
+
+    What is NOT here: nothing between +724 and +1443 is ever non-zero in either
+    file, `sub_41F4C0` writes nothing there, and no symbol in the range is
+    referenced - 720 bytes of the block are unexplained and unused. The low
+    half of the +1444 dword is the display driver's, written by `03_win32.c`
+    and zeroed on load of a version-0x10000 file, so only its top two bytes -
+    the two option rows - actually persist.
+    """
+    import json
+    kb = os.path.join(ROOT, "tables/key_bindings.json")
+    fa = os.path.join(ROOT, "traces/save-appart.bin")
+    fr = os.path.join(ROOT, "traces/games-resto.bin")
+    for p in (kb, fa, fr):
+        if not os.path.exists(p): return "missing fixture", "the settings block", ""
+    rows = json.load(open(kb))["rows"]["rows"]
+    opts = json.load(open(os.path.join(ROOT, "tables/ui.json")))["rows"]["options"]
+    A, R = open(fa, "rb").read()[:3496], open(fr, "rb").read()[:3496]
+
+    # the three device tables, 168 cells, against the tables lifted from the exe
+    def bind_hits(h):
+        n = 0
+        for dev, base in (("keyboard", 52), ("mouse", 276), ("joystick", 500)):
+            for r in rows:
+                o = base + r["group"] * 56 + r["action"] * 4
+                if struct.unpack_from("<I", h, o)[0] == r[dev]: n += 1
+        return n
+
+    # every field sub_41F4C0 writes, read back out of save-appart
+    u32 = lambda h, o: struct.unpack_from("<I", h, o)[0]
+    i16 = lambda h, o: struct.unpack_from("<h", h, o)[0]
+    fields = (u32(A, 8), (i16(A, 12), i16(A, 14)), A[16], A[17], u32(A, 20),
+              u32(A, 24), u32(A, 28), u32(A, 32), A[36], A[37],
+              i16(A, 38), i16(A, 40), A[42], i16(A, 44), i16(A, 46), A[48], A[49])
+
+    # the two bytes that differ, checked against their own row's choice list
+    clip = [v for _, v in opts[3]["choices"]]
+    dens = [v for _, v in opts[6]["choices"]]
+    differ = tuple(i for i in range(3496) if A[i] != R[i])
+    gap = sum(1 for i in range(724, 1444) if A[i] or R[i])
+
+    return (bind_hits(A), bind_hits(R), fields, differ,
+            (u32(A, 20), u32(R, 20)), (u32(A, 20) in clip, u32(R, 20) in clip),
+            (A[1446], R[1446]), (A[1446] in dens, R[1446] in dens), gap), \
+           (168, 168,
+            (65537, (640, 480), 1, 1, 200, 0, 0, 0, 1, 1, 1, 1, 1, 20, 15, 0, 0),
+            (20, 1446), (200, 150), (True, True), (4, 3), (True, True), 0), \
+           "that the header carries the three control-scheme tables VERBATIM - " \
+           "168 of 168 cells against tables/key_bindings.json, in both saves, " \
+           "at the +52 / +276 / +500 the globals' own addresses give; every " \
+           "field sub_41F4C0 writes, read back; that the two saves differ in " \
+           "exactly two bytes, +20 and +1446, each holding a legal choice of " \
+           "its own option row (clip distance 200 vs 150, density 4 vs 3); " \
+           "and that +724..+1443 is empty in both"
+
+
 def c_telis_dialogue():
     r"""A captured conversation, reproduced - and the reply menu is observable.
 
@@ -21921,6 +22040,7 @@ CHECKS = [
     ("vm announce fields",c_vm_announce_fields,"SCRIPT_VM"),
     ("sim: dialogue",     c_sim_dialogue,      "RECONSTRUCTION 4"),
     ("save file",         c_save_file,         "GAME_STATE 8"),
+    ("settings block",    c_settings_block,    "GAME_STATE 8"),
     ("telis dialogue",    c_telis_dialogue,    "RECONSTRUCTION 4"),
     ("attribution reach", c_attribution_reach,  "RECONSTRUCTION 4"),
     ("area.goto objects",  c_area_goto,         "SCRIPT_VM"),
