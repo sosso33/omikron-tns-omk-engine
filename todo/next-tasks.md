@@ -45,21 +45,63 @@ items are research and can be done any time they are wanted.
 
 ## The items
 
-### 1. Enter held for ~0.5 s counts as several presses — S, strong evidence
+### 1. Enter held for ~0.5 s counts as several presses — DIAGNOSED 2026-09-06
 
-`docs/UI.md` and `engine/src/input/bindings.h` both carry it: the interface
-reads a **14-slot binding word** and `Ui_BeginScreen` sets a repeat mask of
-**`0x203F`** — bits in the mask repeat every frame while held, the rest are
-edge-filtered. `kUiRepeatMask` is already a constant in the port.
+**Reproduced, and it is exactly linear in hold time** (`--hold`, headless):
 
-So the mechanism is known and the likely fault is narrow: the ADVENTURE and
-DIALOGUE paths are probably not applying the filter that the UI path does.
-**Check which bits should repeat before changing anything** — confirm is
-almost certainly *not* one of them, and the fix is to filter rather than to
-add a timer, which would be inventing a rule the engine does not have.
+    hold Enter  1 frame  -> 1 action
+    hold Enter 15 frames -> 15 actions      (the reader's 0.5 s)
+    hold Enter 30 frames -> 30 actions
 
-Do this first: it is cheap, it is mechanism-known, and it degrades every menu
-and every conversation.
+**It is NOT the repeat mask, which was this file's first guess.** The port
+already implements the engine's rule faithfully - `edges = held & (held ^
+(repeatMask & last))`, `0x203F` under a screen and `0` in the world - and the
+dialogue confirm already takes `edgeBits`. That guess was wrong.
+
+**Where it actually happens.** The `.CTL` channel never changes state: it sits
+in `0 'H_STAND'` with the idle clip advancing while the *per-tick* entry path
+(`channel.cpp`, flags `0x10 | 0x200000`) emits the `MDACTION` special move
+every frame:
+
+    per-tick move 'MDACTION'  from 0 to 24  flags 0xC5F00013
+                              inputCode 0x10  word 0x10  lastInput 0x0
+
+The channel does carry the engine's held-button guard - `if (word !=
+lastInput_) commit`, transcribed from `Cef_TickChannel` 0x004A853A - but this
+entry's flags include **`0x10000000`, whose only job is `lastInput_ = 0`**, so
+the guard is cleared every tick and the same held word commits again. The
+port's comment claiming "entering a state is once per press by construction"
+is false here: no state is ever entered.
+
+**And the engine does the same thing.** Traced rather than assumed:
+`Cef_TickChannel` reads the raw input with `sub_43E080` -> `sub_43D920`, which
+is a DirectInput STATE read (bit `0x80` = key down, so held), and
+`sub_4A7A20(channel, raw, &word)` is a pure bit remapper onto the 14 slots
+with a left/right mirror under channel flag 8 - **no edge logic anywhere**.
+The port's per-tick loop even passes the same `Cef_FindTransition(.., 2, 784,
+1)` filters. So the original ALSO queues `MDACTION` every frame while Enter is
+held.
+
+**So the guard is in the HANDLER, and the port does not run it.**
+`tab_special_move[3]` = **0x0046AEC0** (no `proc` label - read it with
+`asmfn.py`). It switches on `[esi+194h]`, the actor's **`+404` ACTOR_STATE**,
+over 11 cases with states 5-10 and 12 falling to a default arm that:
+
+* clears `dword_53AE1C`, then calls `sub_41C810(actor, &obj, &dist,
+  dword_53B078)` - the nearest-interactable search;
+* returns immediately if it found nothing (`obj == -1`);
+* returns if **ACTOR_STATE == 3**;
+* compares the returned distance against `flt_4BC918` and returns if it fails;
+* branches on the actor's `+164`, and only then reaches
+  `sub_465D30(actor, obj, 0)` - the function `play.cpp` already names.
+
+`omk-play` today fires `session.pressAction()` for **every** `MDACTION` name it
+sees, with none of that gating. **The fix is to transcribe 0x0046AEC0**, not to
+add an edge filter or a timer - both of which would invent a rule the engine
+has not got, and the second of which would have papered over this.
+
+Size revised **S -> M**: the mechanism is fully understood but the work is
+transcribing a state-gated handler and its object search, not changing a mask.
 
 ### 2. Black stripes entering/leaving a building — S, strong evidence
 
