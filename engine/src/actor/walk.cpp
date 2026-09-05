@@ -38,8 +38,17 @@ StepResult Walker::step(double dx, double dz, double dt) {
     // the ground does not get to answer it until he lands.
     if (airborne_ || sliding_) {
         if (tick(dt) != StepResult::Moved) {
-            pos_[0] += dx;
-            pos_[2] += dz;
+            // A FALL IS VERTICAL. `Actor_ApplyMotion` moves the actor by
+            // +216/+224 x dt, his own horizontal velocity fields, and in the
+            // fall state nothing writes them: the walk's root motion reaches
+            // the position through the channel's clip, and the fall state's
+            // clip is a held pose. A reader watching the original (issue 68):
+            // "falling mainly on a single axis (just Y)". This port carried
+            // the walk's delta through the air - "continuing walking in the
+            // air" - and on 2026-09-05 that walked a reader diagonally off
+            // the restaurant's sunken ledge into a hole in the geometry and
+            // down for ever. A SLIDE keeps its own +216/+224, which `tick`
+            // applies.
             return sliding_ ? StepResult::Slid : StepResult::Fell;
         }
         // he landed this frame: fall through and let the ground answer the

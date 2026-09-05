@@ -3846,14 +3846,17 @@ int main(int argc, char** argv) {
                                                     lf.step == omk::StepResult::Fell);
                     if (off && n - voidTold >= 30) {
                         voidTold = n;
+                        const auto gp = player->walker().ground(player->pos()[0], player->pos()[1], player->pos()[2]);
                         std::printf("walker: %s at %.1f %.1f %.1f facing %.0f - move %+.2f %+.2f, "
-                                    "%d wall passes hit, ground %s\n",
+                                    "%d wall passes hit, ground %s (probe: %s, soup %zu tris)\n",
                                     lf.step == omk::StepResult::Reverted ? "NO FLOOR ahead (reverted)"
                                                                           : "FALLING",
                                     player->pos()[0], player->pos()[1], player->pos()[2],
                                     player->facing(), lf.rootDelta[0], lf.rootDelta[2],
                                     player->walker().lastSlides(),
-                                    lf.onGround ? "under him" : "NOT under him");
+                                    lf.onGround ? "under him" : "NOT under him",
+                                    gp ? (std::to_string(*gp)).c_str() : "none",
+                                    player->walker().soup().size() / 9);
                     }
                 }
                 // omk-play 69: WATCH THE WHOLE TAKE, INCLUDING THE WAIT.
