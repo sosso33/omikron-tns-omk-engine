@@ -290,6 +290,26 @@ aimed at the carrot ahead of it, and its speed factor (0.75..1.20) scales the
 clock. The mover's base speed is the same clip's xz travel over frames
 1..frames−1, ×256, per frame (`sub_453D80`).
 
+### The crowd is LIT, and that is what a set's light table is for
+
+Added 2026-09-05 (`todo/mesh-lights.md`). A decor `.3DO` carries a table of
+lights — 4179 of them across 216 of the 635 shipped models — and the walkers,
+the vehicles and the player's ride are what receive them. The chain is the one
+`sub_4380B0` names: *LightInstance* registers a drawn instance in the same
+spatial structure the set's lights went into ("Lights Collisions"), and **its
+eight call sites are six functions, every one of them in this module** — the
+walker and vehicle spawn callbacks, the walker tick, two reached from
+`Slider_Init`, and the ride mount. Nothing else in the game is lit this way.
+
+It has to be the crowd, because a set is shaded by a colour **baked into every
+vertex** and a walker is not: all 446 of `PSH_FN`'s vertices ship pure white.
+The lights are the crowd's entire illumination, and a lit instance starts from
+BLACK — `sub_494E80` writes `instance[+416]`, which every site sets to 0.
+
+`o3de/vertexlight.*` is the per-vertex arithmetic and
+`docs/FILE_FORMATS.md` §5b the record. On Anekbah's street start it is 53
+light hits across 13 drawn walkers.
+
 ### The port (2026-09-03, step 3)
 
 `engine/src/formats/opt.*` reads the file with the Python reader's checks;

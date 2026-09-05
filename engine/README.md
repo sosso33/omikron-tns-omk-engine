@@ -1825,6 +1825,52 @@ hands its value in. Checks: `engine: pedestrians`, `engine: city crowd`,
 `engine: street frame`, `engine: crowd push`, `engine: head look`, `opt
 tracks`.
 
+**And 2026-09-05, the GRAPHICAL OPTIONS and what they size**
+(`todo/options-config.md`, `docs/ASSETS.md`) — four things that turned out to
+be one piece of plumbing, because a single option sizes all of them:
+
+* **the settings, from three sources.** `platform/options.*` reads the game's
+  own ini (`[Preferences]`, the 65 keys the binary spells) and
+  `platform/settings.*` resolves *defaults (`sub_41F4C0`) ← `[Preferences]` ←
+  the SAVE FILE's 3496-byte header*, recording which source supplied each
+  field. `script/savefile.*` gained `SettingsBlock`: the header is the global
+  `byte_90E180` and carries all 74 option rows including the three
+  control-scheme tables verbatim, so **saving a game saves the options**
+  (`GAME_STATE.md` §8a). Checks: `options file`, `settings block`,
+  `settings resolve`.
+* **the clip distance** (row 3), which is in METRES against a world unit of an
+  INCH. `sub_440BE0(scene, D, 1)` writes `+340 = D`, `+328 = D×0.25` and
+  `+332 = D×0.95`, and those are the visible-set radius, `bucketKey`'s
+  nearSplit and its farSplit — so `omk-play` now runs the distance half of
+  `sub_48D3B0` per set mesh over runs precomputed at the load. The four SIDE
+  planes are deliberately not applied.
+* **the sky** (row 4) — the AREA chunk's `+133`, a flat 12×12 quad grid hung
+  2250 units up that follows the camera in x and z. Not a dome: a painted
+  ceiling. `ResidentSlot::sky`, drawn at bucket state 0x800. Check: `the sky`.
+* **the fog** — linear, `FOGTABLEMODE` 3, from `D×0.25` to `D`, and its colour
+  is BLACK in the shipped game. A field of the renderer boundary's `View`, with
+  the bucket key's two exclusions applied in `o3de/renderer.cpp` and
+  `backends/vulkan/vkrender.cpp` by the same rule. Check: `engine fog`.
+
+Flags: `--config`, `--clip`, `--sky`, `--fog`, `--fog-colour`.
+
+**And 2026-09-05, the CROWD'S DYNAMIC LIGHTING** (`todo/mesh-lights.md`,
+`docs/FILE_FORMATS.md` §5b) — the `.3DO` light table, which the 1999 spec
+sheet's *Multilights* line pointed at and nothing had ever read.
+`formats/light3do.*` reads the 304-byte records (count at `desc+240`, NOT the
+`desc+232` the loader overwrites) and `o3de/vertexlight.*` is `sub_493E40`
+transcribed: a decor set supplies the lights and the street's moving population
+receives them, per vertex, `−(N·L)` over a linear falloff, added through the
+engine's own `(t × c) >> 8` ramp. Two things it needed that this port did not
+have: the vertex NORMAL at `.3DO` vertex `+12` (twelve bytes skipped since the
+format was decoded, now read and turned by `applyPose` and the walker's yaw),
+and the knowledge that a lit instance starts from BLACK rather than its baked
+colour — the crowd models ship pure white. Declared deviations: the reach and
+falloff are per BODY where the engine does them per MESH, and the falloff is
+clamped to 1 where the engine has an undecoded guard. `--no-crowd-light` is
+the before/after. Check: `engine vertex light`; the reading is pinned by
+`mesh lights`, `light record` and `light consumers`.
+
 **And 2026-09-04, the ROAD TRAFFIC** (`docs/STREET_LIFE.md` §2b,
 `todo/road-traffic.md`) — the vehicle half of the same circuit:
 `actor/vehicles.cpp` is `Slider_Init`'s vehicle branch (the two model tables

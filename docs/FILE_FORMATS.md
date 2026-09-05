@@ -628,6 +628,29 @@ goes wrong when two files share a name.
 | meshes | **140** | flags, id, name[20] at +16, position at +36, hierarchy at +48, counts at +64 |
 | cameras | 52 | name[20], eye float[3], target float[3], unused, fov |
 
+### The vertex record — 32 bytes, and the middle twelve are a NORMAL
+
+Read 2026-09-05, and this repo had skipped them since the format was decoded:
+the position and the colour sit at the two ends and nothing had asked what was
+between.
+
+| off | what |
+|---|---|
+| `+0` | `float[3]` the position, in the mesh's own frame |
+| `+12` | `float[3]` the **NORMAL** |
+| `+24` | `float` — 1.0 in about half the corpus, in [0,1] otherwise. **No traced consumer** |
+| `+28` | `b, g, r, a` — the baked vertex colour (`ASSETS.md` §4c) |
+
+`sub_493E40`, the crowd's per-vertex dynamic lighting, is what reads `+12`: it
+dots it with the light direction, which is what fixes the field as a normal
+rather than an unread gap. It is unit to 1e-3 in **400 of the 635 models
+entirely**, 233 more are mixed and 2 have none — and the models that matter,
+the ones that actually get lit, are 97–100% (PSH_FN 98.7%, HO1_FNM 100%).
+
+The mixed models are mostly the ones carrying lights, i.e. the decor sets, so
+the non-unit tail is very likely vertices of meshes that are never drawn. Not
+established; recorded so nobody re-measures it from scratch.
+
 **The mesh record is 140 bytes, not the 136 the earlier notes gave.** Only 140
 divides evenly on every file, and only 140 keeps the mesh names readable past
 the first one — at 136 the second name reads as `\x01\x00\x00\x00Ag`.
