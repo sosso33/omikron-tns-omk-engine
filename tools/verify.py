@@ -8359,6 +8359,75 @@ def c_engine_vertex_light():
            "the squared radius the loader caches"
 
 
+def c_do_bytes():
+    r"""Every byte of every `.3DO` accounted for - and the BSP is not in there.
+
+    The 1999 spec sheet claims a *"Systeme de tri de face par Arbre BSP"*
+    (`todo/engine-spec-1999.md`) and nothing in this repo evidences one: the
+    shipped face sort is the 14-bit bucket key and `Render_FlushBuckets`'
+    single ascending walk over 16384 buckets. Three explanations were open, and
+    exactly one of them is testable from this tree - that a tree sits in the
+    `.3DO` where the nine known header offsets do not reach. `tools/domap.py`
+    is that test, built the way `chunkmap.py` accounts for `IAM\AREA`: claim
+    what a documented structure explains, report the rest.
+
+        635 models, 33370836 bytes
+        99.9986% claimed
+        460 bytes unexplained, in 24 files
+        611 of 635 accounted for byte for byte
+
+    **There is no room for a BSP.** A tree over Anekbah's 16188 meshes would be
+    tens of kilobytes; what is actually left is 460 bytes across 33 MB, the
+    largest single run being 80 bytes, and their contents are short ascending
+    integers (`45 01, 46 01, aa 01, a9 01` in Qalisar; `4c, 4a, 4b, 4d, 4f`
+    in AToit) - index lists, not nodes. So the claim is **not corroborated**,
+    and the two surviving explanations are both outside this tree: an earlier
+    or internal build, or the phrase describing the bucket sort or the mesh
+    hierarchy loosely for a page written to sell.
+
+    Recorded as a REFUTATION OF ONE CANDIDATE rather than as a verdict on the
+    sentence. What this cannot see: a tree the engine BUILDS at run time from
+    the geometry (nothing in `Read3DO_Init` does, but that is one function),
+    and anything in a build this repo does not have.
+
+    ### What the accounting established on the way
+
+    **The descriptor is 328 bytes at +44**, so the header and descriptor
+    together are exactly 372 - and the first table begins at 372 in **all 635
+    files**, which is what fixes it rather than assumes it. A first pass
+    claiming only the 244 bytes up to the counts left 84 bytes unexplained in
+    every single model, which is the shape of a size that is too small rather
+    than of a hidden structure: a real gap does not appear identically
+    everywhere.
+
+    This is a useful check in its own right beyond the BSP question. It fails
+    if any record stride is wrong - the strides it depends on are materials
+    80, vertices 32, triangles 28, quads 32, meshes 140, doors 28, cameras 52
+    and lights 304, and the last of those was only settled today.
+    """
+    sys.path.insert(0, os.path.join(ROOT, "tools"))
+    import domap
+    files = domap.models()
+    if not files: return "no MESHES tree", "the .3DO accounting", ""
+    total = claimed = exact = 0
+    biggest = 0
+    for p in files:
+        n, c, gaps = domap.account(p)
+        total += n; claimed += c
+        if not gaps: exact += 1
+        for a, b in gaps: biggest = max(biggest, b - a)
+    return (len(files), total, total - claimed, exact, biggest,
+            domap.HEADER + domap.DESC_LEN), \
+           (635, 33370836, 460, 611, 80, 372), \
+           "byte accounting over every shipped .3DO - the models, the total " \
+           "size, how many bytes NO documented structure explains, how many " \
+           "files are accounted for exactly, the largest single unexplained " \
+           "run, and where the first table begins. 460 bytes across 33 MB " \
+           "leaves no room for the 1999 spec sheet's claimed BSP tree; it " \
+           "also fails if any record stride is wrong, the light table's 304 " \
+           "having been settled the same day"
+
+
 def c_slider_ride():
     r"""The player's RIDE, read rather than ported - the three facts that make
     it worth reading before anyone starts.
@@ -21477,7 +21546,7 @@ def c_licence_headers():
                    if TAG in open(p, encoding="utf-8",
                                   errors="replace").read(600)]
     return (authored, sorted(missing), len(vendored), mislabelled), \
-           (356, [], 1, []), \
+           (357, [], 1, []), \
            "authored source files under tools/, engine/src, engine/tools, " \
            "engine/backends and scripts/; those MISSING the SPDX tag; " \
            "vendored files in engine/third_party; and vendored files wrongly " \
@@ -22710,6 +22779,7 @@ CHECKS = [
     ("engine fog",        c_engine_fog,        "todo/options-config"),
     ("mesh lights",       c_mesh_lights,       "todo/engine-spec-1999"),
     ("light record",      c_light_record,      "todo/mesh-lights"),
+    (".3DO bytes",        c_do_bytes,          "todo/engine-spec-1999"),
     ("light consumers",   c_light_consumers,   "todo/mesh-lights"),
     ("engine vertex light", c_engine_vertex_light, "todo/mesh-lights"),
     ("camera aim = 768",   c_aim_length,        "FILE_FORMATS 2"),

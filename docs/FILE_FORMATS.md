@@ -628,6 +628,24 @@ goes wrong when two files share a name.
 | meshes | **140** | flags, id, name[20] at +16, position at +36, hierarchy at +48, counts at +64 |
 | cameras | 52 | name[20], eye float[3], target float[3], unused, fov |
 
+### Every byte accounted for
+
+`tools/domap.py` claims what a documented structure explains and reports the
+rest, the way `chunkmap.py` does for `IAM\AREA`. Over the shipped tree:
+**635 models, 33370836 bytes, 99.9986% claimed, 611 accounted for byte for
+byte**, and the 460 bytes left over are short ascending integers in 24 files —
+index lists, the largest run 80 bytes.
+
+The header is **44 bytes** and the descriptor **328**, so the first table
+begins at **372** — in all 635 files, which is what establishes the
+descriptor's size rather than assuming it.
+
+That completeness is what settles the 1999 spec sheet's claimed BSP tree: there
+is no room for one (`todo/engine-spec-1999.md`). It is also a check on every
+record stride at once — materials 80, vertices 32, triangles 28, quads 32,
+meshes 140, doors 28, cameras 52, lights 304 — since getting any of them wrong
+leaves a trail of unexplained bytes. `verify.py: .3DO bytes`.
+
 ### The vertex record — 32 bytes, and the middle twelve are a NORMAL
 
 Read 2026-09-05, and this repo had skipped them since the format was decoded:

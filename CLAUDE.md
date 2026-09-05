@@ -586,6 +586,12 @@ tools/                 readers, the pipeline, and the viewer
                        `--dump=` hands the matrices to stagerender.py (ASSETS)
   stagerender.py       draws a dump: the set and both posed bodies, through a
                        real dialogue camera or `--wide` (ASSETS)
+  domap.py             byte-accounting for the .3DO models, the same idea:
+                       635 models, 99.9986% claimed, 611 exact. Built to
+                       settle whether the 1999 spec sheet's claimed BSP tree
+                       hides in the gaps - it does not, 460 bytes across
+                       33 MB - and it doubles as a check on every record
+                       stride at once
   chunkmap.py          byte-accounting for IAM\AREA / IAM\SCENE: claims every
                        byte a documented structure explains and reports the
                        rest. 97 bytes left in 330 chunks (FILE_FORMATS)

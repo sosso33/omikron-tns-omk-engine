@@ -20,7 +20,7 @@ last one.
 | *Gouraud mappé* | `D3DFVF_DIFFUSE` per vertex plus a texture; the baked dword is a colour, not a brightness (ASSETS 4c) | **confirmed** |
 | *Z-mapping (mapping exact)* | `D3D_SetRenderState(dev, 4, 1)` — state 4 is `D3DRENDERSTATE_TEXTUREPERSPECTIVE`. "Mapping exact" is perspective-correct texturing | **confirmed**, and the marketing phrase decodes |
 | *Personnages en faces déformables* | the `.3DM` face morph, 777/777 files | **confirmed** |
-| *Système de tri de face par Arbre BSP* | **nothing in this repo evidences a BSP.** The shipped face sort is the 14-bit bucket key; the `.3DO` header's nine offsets include no tree, and the meshes' parent/child/next is a scene hierarchy, not a BSP | **not corroborated** — see below |
+| *Système de tri de face par Arbre BSP* | the shipped face sort is the 14-bit bucket key, and byte accounting now shows there is **no room** for a tree in a `.3DO` | **one candidate refuted**, 2026-09-05 — see below |
 | *Algorithme de collisions de grande précision* | the walker and the collision soups | true, not specific |
 | *Animations par rotation et par Morph en Motion Blending* | quaternion tracks (`.ani`/`.CTL`) **and** the `.3DM` morph, with the two-sided fade `min(30, frames/4)` at a k/256 slerp — which is the "motion blending" | **confirmed**, and it names the blend |
 | *Multilights* | the `.3DO` header carries a light table at `+40` with a count at `desc+232`. The port reads the OFFSET AND THE COUNT and **nothing reads the records** | **REAL AND UNREAD** — see below |
@@ -48,19 +48,37 @@ light — the **characters**, who walk through those sets — but nothing here h
 established that, and the records themselves are undecoded. `verify.py:
 mesh lights` pins the counts so the claim has a number behind it.
 
-### 2. BSP — claimed, and not visible
+### 2. BSP — one candidate refuted, 2026-09-05
 
 The face sort this repo has read end to end is the 14-bit bucket key and
 `Render_FlushBuckets`'s single ascending walk, which is not a BSP by any
-reading. Three possibilities, in the order they should be tested:
+reading. Three possibilities were open, and exactly one of them was testable
+from this tree — that a tree sits in the `.3DO` where the nine known header
+offsets do not reach. `tools/domap.py` is that test, built the way
+`chunkmap.py` accounts for `IAM\AREA`:
 
-* the copy describes an **earlier or internal** build (the same list claims two
-  painter directions where one ships, which leans this way);
-* "arbre BSP" describes the **mesh hierarchy** loosely, for a marketing page;
-* there is a tree in the `.3DO` that the nine known offsets do not reach — the
-  test for which is byte accounting over a `.3DO`, the way `chunkmap.py` does
-  it for `IAM\AREA`. That does not exist yet and would settle it.
+    635 models, 33370836 bytes
+    99.9986% claimed by documented structures
+    460 bytes unexplained, in 24 files
+    611 of 635 accounted for byte for byte
 
-Until one of those is done, the honest state is **not corroborated**, and the
-CLAUDE.md 1 rule applies in its usual form: a document is a hypothesis about
-the code, and only the code decides.
+**There is no room for a BSP.** A tree over Anekbah's 16188 meshes would be
+tens of kilobytes; what is left is 460 bytes across 33 MB, the largest single
+run 80 bytes, and their contents are short ascending integers — index lists,
+not nodes.
+
+So the two surviving explanations are both outside this tree: an **earlier or
+internal build** (the same list claims two painter directions where one ships,
+which leans that way), or the phrase describing the bucket sort or the mesh
+hierarchy loosely for a page written to sell. Recorded as the refutation of
+one candidate, not as a verdict on the sentence — what this cannot see is a
+tree the engine BUILDS at run time (nothing in `Read3DO_Init` does, but that is
+one function), or anything in a build this repo does not have.
+
+**The accounting paid for itself on the way.** The descriptor is **328 bytes at
++44**, so the header and descriptor together are exactly 372 — and the first
+table begins at 372 in all 635 files, which is what fixes it rather than
+assumes it. A first pass claiming only the 244 bytes up to the counts left 84
+bytes unexplained in every single model, and that is the shape of a size that
+is too small rather than of a hidden structure: **a real gap does not appear
+identically everywhere.** `verify.py: .3DO bytes`.
