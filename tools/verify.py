@@ -7513,6 +7513,84 @@ def c_engine_tunnel_door_walk():
          "6 and feet on AREA 0; door 4 the same; the door mesh moved; the "
          "tunnel is hidden; he ends past the door with no NO FLOOR")
 
+def c_unlaunched_conversations():
+    r"""The 105 conversations no script launches look like CUT CONTENT, and
+    that is a discriminator rather than a restatement.
+
+    `CLAUDE.md` §6 has carried two readings of them since 2026-08-28: "either
+    the mechanism is outside the data or the content is cut". Every search for
+    a launcher has come back empty - opcode 61 is the only way into
+    `Dialog_Load`, all 1246 of its operands are direct literals, the
+    conversation scripts contain no opcode 61, `IAM\OBJECT` holds one site,
+    and `Game_HandleEvent` case 0 is a dead entry nothing raises. A reader
+    supplied the outside half on 2026-09-05: the studio cut content under the
+    publisher's pressure, and the DIALOG file reads that way.
+
+    **This is the inside half, and it separates the two readings.** If the 105
+    were reached by some mechanism not yet found, they would be as FINISHED as
+    the rest. They are not:
+
+        launched    216   morph .3DM 146 (68%)   mean 4.1 nodes
+        unlaunched  105   morph .3DM  15 (14%)   mean 2.7 nodes
+
+    A conversation's `.3DM` is its per-line face animation - the expensive,
+    late asset. The unlaunched set is missing it nearly five times as often.
+
+    **And the TEXT is equally written in both**, which is what makes the
+    reading "cut late" rather than "never authored": all-lines-empty is 3% of
+    the launched set against 2% of the unlaunched, and first-line-empty is
+    **26% of each**. So the writing exists and the facial animation was never
+    made for the material that was dropped.
+
+    Also pinned here because it was the obvious suspect and is NOT the answer:
+    the `+4` startup scripts, which turned out to hide half the
+    `scx.play.actor` cast (`c_played_actor_inventory`), add exactly **one**
+    conversation to `dialog.start`'s reach - 215 from the 5785 slots, 216 with
+    them. The enumeration gap that explained the actor census does not explain
+    this one.
+
+    LABELLED: this is a correlation over the shipped corpus, not a proof that
+    no launcher exists. What it does is make the cut-content reading the one
+    that predicts the data.
+    """
+    import dialog_triggers as T2, script_dump as SD
+    slots = set(struct.unpack_from("<h", r, 0)[0] for r in _world_ops().get(61, []))
+    allL = set(slots)
+    for arch in ("AREA", "SCENE"):
+        for k, b in sorted(T2.archive(omkpaths.data("IAM", arch)).items()):
+            if len(b) < 8: continue
+            at = struct.unpack_from("<i", b, 4)[0]
+            if at <= 0 or at >= len(b): continue
+            try: txt = SD.listing(b, at, "s")
+            except Exception: continue
+            for m in re.finditer(r"dialog\.start +(\d+)", txt): allL.add(int(m.group(1)))
+    convs = O.conversations()
+    ids = {c['id'] for c in convs}
+    L, U = ids & allL, ids - allL
+    def stat(sel):
+        v = [c for c in convs if c['id'] in sel]
+        morph = sum(1 for c in v if c['hasMorph'])
+        return len(v), morph, round(100.0 * morph / len(v)) if v else 0
+    nL, mL, pL = stat(L)
+    nU, mU, pU = stat(U)
+    def firstEmpty(sel):
+        n = e = 0
+        for i in sel:
+            c = O.conversation(i)
+            if not c: continue
+            n += 1
+            if not c['nodes'] or not c['nodes'][0]['line']: e += 1
+        return round(100.0 * e / n) if n else 0
+    return (len(slots & ids), len(allL & ids), nL, pL, nU, pU,
+            firstEmpty(L), firstEmpty(U)), \
+           (215, 216, 216, 68, 105, 14, 26, 26), \
+        ("conversations dialog.start reaches, from the 5785 slots and with the "
+         "+4 startup scripts (which add ONE); then launched and unlaunched, "
+         "with the percentage carrying a face-animation .3DM - 68 against 14; "
+         "and the percentage whose first line is empty, which is 26 for BOTH, "
+         "so the text is equally written and only the animation is missing")
+
+
 def c_played_actor_inventory():
     r"""Which actors any script can PLAY - and the enumeration that has to
     include the `+4` startup scripts, or the answer is half.
@@ -21641,6 +21719,7 @@ SLOW = [
     ("engine: walk-in scene", c_engine_walk_in_scene, "todo/collision-scenes-transitions"),
     ("engine: scene facing", c_engine_scene_facing, "todo/omk-play"),
     ("played actors", c_played_actor_inventory, "todo/reader-followups"),
+    ("unlaunched dialogs", c_unlaunched_conversations, "CLAUDE.md 6"),
     ("engine: shoot pose", c_engine_shoot_pose, "todo/reader-followups"),
     ("engine: camera collision", c_engine_camera_collision, "todo/reader-followups"),
     ("engine: tunnel door walk", c_engine_tunnel_door_walk, "todo/collision-scenes-transitions"),

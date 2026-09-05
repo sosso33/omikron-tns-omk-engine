@@ -1161,6 +1161,26 @@ Listed with what has already been ruled out, so nobody repeats the search.
   a hidden launcher; and the message-subscription scripts are inside the
   already-scanned 5785. Either the mechanism is outside the data or the
   content is cut.
+
+  **The CUT reading is the one that predicts the data (2026-09-05).** A reader
+  supplied the outside half — the studio cut content under the publisher's
+  pressure, and `IAM\DIALOG` reads that way — and the inside half separates
+  the two hypotheses, because a conversation reached by some undiscovered
+  launcher would be as FINISHED as the rest:
+
+  | | count | face-animation `.3DM` | mean nodes | first line empty |
+  |---|---|---|---|---|
+  | launched | 216 | **68%** | 4.1 | 26% |
+  | unlaunched | 105 | **14%** | 2.7 | **26%** |
+
+  The `.3DM` is the per-line facial animation, the expensive late asset, and
+  the unlaunched set lacks it nearly five times as often — while the TEXT is
+  equally written in both, which makes it content cut LATE rather than never
+  authored. Note what is NOT the answer: the `+4` startup scripts, which hide
+  half the `scx.play.actor` cast, add exactly **one** conversation to
+  `dialog.start`'s reach (215 → 216). A correlation over the shipped corpus
+  and not a proof that no launcher exists, but the search for one can stop.
+  `verify.py: unlaunched dialogs`.
 * ~~**What starts a cutscene's beats**~~ — **CLOSED 2026-08-29: the SCENE
   chunk's own startup script, at chunk offset `+4`.** `Scene_Load` relocates
   `+4` like every other pointer field and `Area_TickLoad` runs it —
