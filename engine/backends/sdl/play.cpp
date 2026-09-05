@@ -2358,6 +2358,7 @@ int main(int argc, char** argv) {
         bool  progYawKnown = false;
         float progBase[3] = {0, 0, 0};
         bool  progPelvis = false;
+        const omk::SceneRunner* poolWas = nullptr;   // which pool last drove him
         const char* src = "none";
         omk::HeadLook look;            // `character.look_at_player`'s head aim, eased
         bool  lookSnap = true;
@@ -5699,24 +5700,56 @@ int main(int argc, char** argv) {
                     }
                     continue;
                 }
-                // (a) THE PROGRAM THAT NAMES HIM.
+                // (a) THE PROGRAM THAT NAMES HIM - IN EITHER RESIDENT POOL.
+                //
+                // `Session::reloadScene` records why: an area transition does
+                // not call `Scene_LoadSCX`, so every running program survives
+                // it and the OUTGOING pool goes on being ticked. This file
+                // already reads set-mesh MOTIONS from both (the tunnel door,
+                // which closes behind the player out of `sceneOut()`), and
+                // read the POSE from the active one alone - so the moment the
+                // resident `.SCX` swapped, every body the outgoing scene was
+                // animating fell to its bank idle, or with no bank to the REST
+                // pose. Walking Anekbah -> the restaurant that is 17 of
+                // Anekbah's street bodies frozen while both sets are still
+                // drawn. The active pool is tried FIRST, so a body both pools
+                // could claim keeps the incoming scene's program.
+                const omk::SceneRunner* run = &sc;
                 int prog = -1;
-                for (std::size_t k = 0; k < sc.started().size(); ++k) {
-                    const auto& t = sc.started()[k];
-                    if (!drivenBy(t, s.actor)) continue;
-                    if (!sc.programRunning(static_cast<int>(k))) continue;
-                    prog = static_cast<int>(k);
+                static const bool activeOnly =
+                    std::getenv("OMK_ACTIVE_POOL_ONLY") != nullptr;   // the old, wrong lookup
+                for (const omk::SceneRunner* cand : {&sc, &session.sceneOut()}) {
+                    if (activeOnly && cand != &sc) break;
+                    if (!cand->loaded()) continue;
+                    for (std::size_t k = 0; k < cand->started().size(); ++k) {
+                        const auto& t = cand->started()[k];
+                        if (!drivenBy(t, s.actor)) continue;
+                        if (!cand->programRunning(static_cast<int>(k))) continue;
+                        prog = static_cast<int>(k);
+                        run = cand;
+                    }
+                    if (prog >= 0) break;
                 }
                 bool byLone = false;
                 if (prog < 0 && loneProgs == 1 && staged.size() == 1) {
                     prog = loneProg;
+                    run = &sc;                 // the lone-program fallback is the ACTIVE pool's
                     byLone = true;
+                }
+                // Which pool answered, said once per change - a body that
+                // swaps pools mid-transition is worth seeing in the log.
+                if (run != s.poolWas) {
+                    s.poolWas = run;
+                    if (prog >= 0 && stagedProbe)
+                        std::printf("    pool %ld actor %d %s driven by the %s pool (%s)\n",
+                                    n, s.actor, s.model.c_str(),
+                                    run == &sc ? "ACTIVE" : "OUTGOING", run->file().c_str());
                 }
                 int sceneClip = -1, scenePath = -1;
                 float sceneFrame = 0.0f;
                 const omk::SceneRunner::Started* stt = nullptr;
                 if (prog >= 0) {
-                    stt = &sc.started()[static_cast<std::size_t>(prog)];
+                    stt = &run->started()[static_cast<std::size_t>(prog)];
                     // Nothing is posed or placed before the program's first
                     // body-animation step RUNS (`Started::animReached`): an
                     // object that opens with a wait leaves its actor where
@@ -5728,7 +5761,7 @@ int main(int argc, char** argv) {
                     // walks its steps and each may name a different animation,
                     // so the clock the pose is sampled at counts from the step
                     // (`SceneRunner::programAnimClock`).
-                    sceneFrame = sc.programAnimClock(prog);
+                    sceneFrame = run->programAnimClock(prog);
                     // THE FACING, from the step the pc is on - and from BOTH
                     // kinds of body animation, because both end in
                     // `Actor_SetEuler(node, p4, p5, p6)`. It is not sticky:
@@ -5756,11 +5789,11 @@ int main(int argc, char** argv) {
                     const bool hadOne = s.progRan && s.sceneClipWas >= 0;
                     s.sceneClipWas = sceneClip;
                     s.sceneTracks = omk::NodeTracks{};
-                    if (sceneClip >= 0 && sc.loaded())
-                        s.sceneTracks = omk::clipTracks(sc.scene().clipData(sceneClip));
-                    if (scenePath >= 0 && sc.loaded() &&
-                        scenePath < static_cast<int>(sc.scene().paths().size())) {
-                        const auto& pa = sc.scene().paths()[static_cast<std::size_t>(scenePath)];
+                    if (sceneClip >= 0 && run->loaded())
+                        s.sceneTracks = omk::clipTracks(run->scene().clipData(sceneClip));
+                    if (scenePath >= 0 && run->loaded() &&
+                        scenePath < static_cast<int>(run->scene().paths().size())) {
+                        const auto& pa = run->scene().paths()[static_cast<std::size_t>(scenePath)];
                         if (!pa.keys.empty()) {
                             // `Path_Sample(path, 1.0, ..., 1)` - the engine's
                             // own call, mode 1 being LINEAR: find the key span
@@ -5798,12 +5831,12 @@ int main(int argc, char** argv) {
                         }
                         std::printf("  pose: actor %d %s - clip %d '%s' (%d frames) on path "
                                     "%d '%s' at %.0f %.0f %.0f%s\n", s.actor, s.model.c_str(),
-                                    sceneClip, sc.scene().clipName(sceneClip).c_str(),
+                                    sceneClip, run->scene().clipName(sceneClip).c_str(),
                                     s.sceneTracks.frames, scenePath, pa.name.c_str(),
                                     s.at[0], s.at[1], s.at[2],
                                     byLone ? "  [the program names another actor; this is "
                                              "the frame's only body - LABELLED]" : "");
-                    } else if (sceneClip >= 0 && sc.loaded()) {
+                    } else if (sceneClip >= 0 && run->loaded()) {
                         // No path: the plain `Script_SelectBodyAnimation`
                         // (0x02000004) SNAPS the node to the clip's root key 0
                         // - the authored placement, a PELVIS point whose
@@ -5815,7 +5848,7 @@ int main(int argc, char** argv) {
                         // roots, framed nobody: Kay'l's arrival clip starts at
                         // 6462 -121 3215 while his record puts him at 7217.
                         float base[3] = {0, 0, 0};
-                        if (omk::clipRootStart(sc.scene().clipData(sceneClip), base)) {
+                        if (omk::clipRootStart(run->scene().clipData(sceneClip), base)) {
                             // ...plus the call's own offset, params 7/8/9 in
                             // inches: `x = node.x - GetParamFloatB(fn, 7) *
                             // -0.39370078`. Zero at every shipped site read so
@@ -5831,7 +5864,7 @@ int main(int argc, char** argv) {
                             std::printf("  pose: actor %d %s - clip %d '%s' (%d frames), no "
                                         "path: snapped to its root key 0 at %.0f %.0f %.0f%s\n",
                                         s.actor, s.model.c_str(), sceneClip,
-                                        sc.scene().clipName(sceneClip).c_str(),
+                                        run->scene().clipName(sceneClip).c_str(),
                                         s.sceneTracks.frames, s.at[0], s.at[1], s.at[2],
                                         byLone ? "  [the program names another actor; this "
                                                  "is the frame's only body - LABELLED]" : "");

@@ -7658,7 +7658,15 @@ def c_engine_walk_in_scene():
     * all eight of the startup script's actors end on `a scene program's
       clip`, and none of them on the rest pose;
     * the diners are on their PATHS, not their placement records - actor 59's
-      record is (6716, -41, 419) and his path sample (7277, 8, 556).
+      record is (6716, -41, 419) and his path sample (7277, 8, 556);
+    * and NO staged body ends in the rest pose, which is the OUTGOING pool's
+      half of the same walk. `Session::reloadScene` records that a transition
+      does not call `Scene_LoadSCX`, so every running program survives it and
+      the outgoing pool goes on being ticked; this file read set-mesh motions
+      from both pools and a body's POSE from the active one alone, so the
+      instant the resident `.SCX` swapped, everything the outgoing scene was
+      animating froze - 14 of Anekbah's street bodies here, while both sets
+      are still drawn. `OMK_ACTIVE_POOL_ONLY` is that mutation.
 
     SHOWN TO FAIL by reverting `completeLoad`'s case-2 call: 0 of 8 on a clip,
     8 on the rest pose, and actor 59 standing on his record.
@@ -7675,7 +7683,7 @@ def c_engine_walk_in_scene():
     mk = subprocess.run(["make", "-s", "play"], cwd=eng, capture_output=True, text=True)
     play = os.path.join(eng, "build", "omk-play")
     if mk.returncode != 0 or not os.path.exists(play):
-        return (True, 8, 0, True), (True, 8, 0, True), \
+        return (True, 8, 0, True, 0, True), (True, 8, 0, True, 0, True), \
                "no SDL - the frontend is optional (PORTING A8)"
     env = dict(os.environ, SDL_VIDEODRIVER="dummy")
     r = subprocess.run([play, fr, tb, "--software", "--res", "640x480", "--nofmv",
@@ -7695,11 +7703,24 @@ def c_engine_walk_in_scene():
     m59 = re.search(r"^  actor 59 \S+ \(bank \S+\) at (-?\d+) (-?\d+) (-?\d+)", tail, re.M)
     onPath = bool(m59 and abs(int(m59.group(1)) - 7277) <= 40 and
                   abs(int(m59.group(3)) - 556) <= 40)
-    return (inTime, onClip, onRest, onPath), (True, 8, 0, True), \
+    frozen = len(re.findall(r"^  actor \d+ \S+ .*- the rest pose", tail, re.M))
+    envOld = dict(os.environ, SDL_VIDEODRIVER="dummy", OMK_ACTIVE_POOL_ONLY="1")
+    oOld = subprocess.run([play, fr, tb, "--software", "--res", "640x480", "--nofmv",
+                           "--no-crowd", "--save", save, "--area", "0",
+                           "--stand", "6411,0,450,90", "--frames", "420",
+                           "--hold", "k200*260"], capture_output=True, text=True,
+                          env=envOld).stdout
+    tailOld = oOld[oOld.rfind("staged "):] if "staged " in oOld else ""
+    frozenOld = len(re.findall(r"^  actor \d+ \S+ .*- the rest pose", tailOld, re.M))
+    return (inTime, onClip, onRest, onPath, frozen, frozenOld >= 10), \
+           (True, 8, 0, True, 0, True), \
         ("resto.SCX is resident by the frame AREA 46 is shown; of the startup "
          "script's 8 actors, how many end on a scene program's clip and how "
-         "many on the REST pose; and whether actor 59 stands on his path "
-         "(7277, 556) rather than his placement record")
+         "many on the REST pose; whether actor 59 stands on his path "
+         "(7277, 556) rather than his placement record; then how many staged "
+         "bodies of EITHER resident scene end frozen in the rest pose, and "
+         "that reading the pose from the active pool alone freezes at least "
+         "ten of them")
 
 
 def c_engine_arrival_wait():
