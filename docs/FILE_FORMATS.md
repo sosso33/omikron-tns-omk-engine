@@ -1489,6 +1489,37 @@ The 12-vs-10 parameter count in the table above is exactly this — two extra
 slots, because the path takes a file **and** an index where the root takes
 neither.
 
+**And params 4/5/6 are an EULER that turns the ROOT MOTION as well as the
+body** — read from the same function, 2026-09-05, which closes what
+`CLAUDE.md` §6 listed as open about `Anim_RootDelta`'s optional 3×3. The tail
+of `Script_SelectRelativeBodyAnimation` is
+
+```c
+Anim_SetFrame(node, clip, prev, cur, delta);      /* delta out */
+if (Anim_TickClipSfx(rec, node, delta)) {
+    Actor_SetEuler(node, p4, p5, p6);             /* the facing, EVERY tick */
+    Actor_MoveBy (node, delta[0], delta[1], delta[2]);
+```
+
+and the order is load-bearing, because the Euler is what the delta is turned
+by:
+
+| step | what |
+|---|---|
+| `Actors_TickAll` | `Matrix3x3_FromEulerAngles(a[104], a[105], a[106], a + 288)` — every actor, every frame, from the Euler `Actor_SetEuler` wrote |
+| `Actor_LoadModel` | `sub_437140(node, actor + 288)` — binds that matrix to **`node+156`** |
+| `Anim_SetFrame` | `Anim_RootDelta(clip, node+156, prev, cur, out)` |
+| `Anim_RootDelta` tail | `out.x = m0·dx + m3·dy + m6·dz`, `out.y = m1·dx + m4·dy + m7·dz`, `out.z = m2·dx + m5·dy + m8·dz` — the row-vector multiply |
+
+So a scene clip's root motion travels in the direction the call's Euler
+points, not the clip's authored one. **The Euler is STICKY**:
+`Script_SelectBodyAnimation` writes none, so a program that alternates the two
+carries the last one written — the restaurant's `Serveur00` is Euler y 145 on
+its `V5H_ATT` waits and its `SERV00`/`01`/`02` walk clips travel under that
+145. Turning the body and not the motion is a walk cycle played forward while
+the character slides backward, which is how this was found.
+`verify.py: engine: scene facing`.
+
 **Worked example, and it is the one that found this.** Dialog 401
 (`Telis/Amoureuse`) is launched from AREA 237 with
 `scx.play.actor 53, 184`; object 184 in `Aapkayl.SCX` is `TelisAuRevoir`,

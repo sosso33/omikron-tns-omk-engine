@@ -7513,6 +7513,87 @@ def c_engine_tunnel_door_walk():
          "6 and feet on AREA 0; door 4 the same; the door mesh moved; the "
          "tunnel is hidden; he ends past the door with no NO FLOOR")
 
+def c_engine_scene_facing():
+    r"""`engine/`: a scene call's EULER turns the root motion and the head aim,
+    not only the body - the restaurant's waiter and its diners.
+
+    Three reader's frames, 2026-09-05: the waiter "walking forward, character
+    moving backward"; the diners' heads "at 90 degrees when I think they
+    should be at 0"; and a seated character off her stool.
+
+    `Script_SelectRelativeBodyAnimation` (0x004A3AD0) writes
+    `Actor_SetEuler(node, p4, p5, p6)` and THEN `Actor_MoveBy(node, delta)`,
+    and the order is load-bearing:
+
+        Actors_TickAll   Matrix3x3_FromEulerAngles(a[104], a[105], a[106],
+                                                   a + 288)   -- every frame
+        Actor_LoadModel  sub_437140(node, actor + 288)        -- node+156
+        Anim_SetFrame    Anim_RootDelta(clip, node+156, prev, cur, out)
+        Anim_RootDelta   out = d * M, the row-vector multiply in its tail
+
+    so the clip's root delta is turned by the actor's facing.  The Euler is
+    STICKY: `Script_SelectBodyAnimation` never writes one, so the waiter's ABS
+    walk clips travel under the 145 his preceding REL wait left in the record.
+    `Serveur00` is Euler y 145, the diners 90 (Pass04 270), Samyaza 180.
+
+    THE HEAD is the same fact seen from the other side.  `Actor_SetHeadLook`
+    (0x00468B50) clamps yaw to +-70 and pitch to +-40 - so 90 degrees cannot
+    come from that path at all - and the aim has to be computed in the frame
+    the body is DRAWN in.  The viewer backed the target out through the
+    placement record's facing, 0 for every diner, while the body is turned by
+    the call's Euler of 90: the aim sat 90 degrees off and pinned at the
+    clamp.  Zones 967/968 (`character.look_at_player 63` / `71` on enter,
+    `look_away` on leave) hold it for as long as the player is at that table.
+
+    Asserted, headless in AREA 46 over 320 frames from the spawn address:
+
+    * diners 63 and 71 hold a head twist well inside the clamp - the aim
+      wants -7 and -14 degrees, and -14 is what the geometry says by hand
+      (71 sits at 7418/818 facing +X, the player at 7609/773);
+    * neither is pinned at 70;
+    * Samyaza ends at z 695 with the delta turned and z 732 without - a
+      37-unit swing, about a seat's width, and `OMK_NO_ROOTSPIN` is the
+      mutation that shows it.
+
+    Needs SDL; reports true without it (PORTING A8).
+    """
+    import subprocess
+    eng = os.path.join(ROOT, "engine")
+    fr = omkpaths.data_root()
+    tb = os.path.join(ROOT, "tables")
+    save = os.path.join(ROOT, "traces", "save-appart.bin")
+    if not os.path.isdir(fr) or not os.path.exists(save):
+        return ("no data",), ("data",), "needs the shipped tree and traces/save-appart.bin"
+    mk = subprocess.run(["make", "-s", "play"], cwd=eng, capture_output=True, text=True)
+    play = os.path.join(eng, "build", "omk-play")
+    if mk.returncode != 0 or not os.path.exists(play):
+        return (True, True, True, True), (True,) * 4, \
+               "no SDL - the frontend is optional (PORTING A8)"
+    def run(extra):
+        env = dict(os.environ, SDL_VIDEODRIVER="dummy", OMK_STAGE_PROBE="1")
+        env.update(extra)
+        return subprocess.run([play, fr, tb, "--software", "--res", "640x480", "--nofmv",
+                               "--no-crowd", "--save", save, "--area", "46",
+                               "--frames", "320"], capture_output=True, text=True,
+                              env=env).stdout
+    o = run({})
+    def twist(actor):
+        v = [float(m) for m in re.findall(
+            r"head 3\d\d actor %d \S+ twist (-?[0-9.]+) deg" % actor, o)]
+        return v[-1] if v else 999.0
+    t63, t71 = twist(63), twist(71)
+    def samz(out):
+        m = re.search(r"^  actor 312 \S+ \(bank \S+\) at (-?\d+) (-?\d+) (-?\d+)", out, re.M)
+        return int(m.group(3)) if m else 0
+    zOn = samz(o)
+    zOff = samz(run({"OMK_NO_ROOTSPIN": "1"}))
+    return (abs(t63) <= 20.0, abs(t71) <= 20.0 and abs(t71) >= 8.0,
+            abs(zOn - 695) <= 6, abs(zOff - 732) <= 6), (True,) * 4, \
+        ("diner 63's head twist is inside the engine's +-70 clamp rather than "
+         "pinned on it; 71's is the -14 the geometry wants; and Samyaza ends "
+         "at z 695 with the root delta turned by her Euler 180, z 732 without")
+
+
 def c_engine_walk_in_scene():
     r"""`engine/`: an area's `.SCX` is resident BEFORE its startup script runs,
     walked - the restaurant's diners are on their paths when you walk in.
@@ -21276,6 +21357,7 @@ SLOW = [
     ("engine: scene sprites", c_engine_scene_sprites, "todo/omk-play"),
     ("engine: node scale", c_engine_node_scale, "todo/omk-play"),
     ("engine: walk-in scene", c_engine_walk_in_scene, "todo/collision-scenes-transitions"),
+    ("engine: scene facing", c_engine_scene_facing, "todo/omk-play"),
     ("engine: tunnel door walk", c_engine_tunnel_door_walk, "todo/collision-scenes-transitions"),
     ("engine: arrival wait", c_engine_arrival_wait, "todo/omk-play"),
     ("engine: linked rings", c_engine_linked_rings, "todo/omk-play"),

@@ -2615,6 +2615,10 @@ int main(int argc, char** argv) {
     std::set<int> spriteWanted, spritePooled;
     bool poolOverflowTold = false;
     const bool stagedProbe = std::getenv("OMK_STAGE_PROBE") != nullptr;
+    // A DIAGNOSTIC for the sign of the scene call's Euler: CLAUDE.md 5's
+    // rule is that leaving the game's space reflects one axis and so
+    // reverses the sense of every rotation about it.
+    const float progYawSign = std::getenv("OMK_PROGYAW_NEG") ? -1.0f : 1.0f;
     // One `.3DO`/`.3DT` per MODEL NAME, loaded once and shared by every actor
     // wearing it.
     const auto charModelFor = [&](const std::string& name) -> CharModel* {
@@ -5945,7 +5949,22 @@ int main(int argc, char** argv) {
                             for (int k = 0; k < 3; ++k) pelvis[k] = pose[static_cast<std::size_t>(s.mo->root)].pos[k];
                         const float rel[3] = {world[0] - s.at[0], world[1] - s.at[1], world[2] - s.at[2]};
                         float local[3];
-                        omk::rotateYaw(-s.facing, rel, local);
+                        // ...IN THE FRAME THE BODY WILL ACTUALLY BE DRAWN IN.
+                        // A body a scene program drives is turned by the
+                        // call's Euler (`progYaw`), not by its placement
+                        // record's facing, and the aim was always backed out
+                        // through `s.facing` - 0 for every one of the
+                        // restaurant's diners while their Euler is 90. So the
+                        // target sat 90 degrees off, the yaw pinned at
+                        // `Actor_SetHeadLook`'s own +-70 clamp, and a diner
+                        // the player is standing almost in front of stared
+                        // sideways for as long as his zone held (a reader's
+                        // frames, 2026-09-05: "head at 90 when I think they
+                        // should be at 0"). Diner 71 wants -13 degrees.
+                        const bool progTurned = s.sceneTracks.valid() && !useLine &&
+                                                s.progYawKnown;
+                        const float bodyYaw = progTurned ? progYawSign * s.progYaw : s.facing;
+                        omk::rotateYaw(-bodyYaw, rel, local);
                         const float target[3] = {local[0] + pelvis[0], local[1] + pelvis[1], local[2] + pelvis[2]};
                         omk::aimHead(pose, s.mo->meshes, head, target, s.look,
                                      static_cast<float>(frameSec * 30.0), s.lookSnap);
@@ -5992,6 +6011,42 @@ int main(int argc, char** argv) {
                         rootMove[k] = rootW *
                             s.sceneTracks.trans[static_cast<std::size_t>(fi)]
                                                [static_cast<std::size_t>(k)];
+                    // ...TURNED BY THE ACTOR'S FACING, which is what
+                    // `Anim_RootDelta` (0x004711D0) does and this file did
+                    // not. Its second argument is `node+156`, and
+                    // `Actor_LoadModel` binds that to `actor+288` -
+                    // `sub_437140(node, actor + 288)` - which `Actors_TickAll`
+                    // rebuilds every frame from the Euler at `actor+416..424`:
+                    //
+                    //     Matrix3x3_FromEulerAngles(a[104]*rad, a[105]*rad,
+                    //                               a[106]*rad, a + 288);
+                    //
+                    // and the Euler is what `Script_SelectRelativeBodyAnimation`
+                    // writes with `Actor_SetEuler(node, p4, p5, p6)` on the tick
+                    // BEFORE it calls `Actor_MoveBy(node, delta)`. The tail of
+                    // `Anim_RootDelta` is the row-vector multiply
+                    //
+                    //     out.x = m0*dx + m3*dy + m6*dz
+                    //     out.y = m1*dx + m4*dy + m7*dz
+                    //     out.z = m2*dx + m5*dy + m8*dz
+                    //
+                    // so for a yaw-only Euler it is the same `rotateYaw` the
+                    // body is turned by. Without it the restaurant's waiter -
+                    // `Serveur00`, Euler y 145 - played a walk cycle facing one
+                    // way and travelled the other: a reader's report, "animation
+                    // of walking forward, character moving backward".
+                    // Note the Euler is STICKY, as it is in the engine: only
+                    // the relative call writes it, `Script_SelectBodyAnimation`
+                    // never does, and the actor record keeps the last one - so
+                    // the waiter's ABS walk clips travel under the 145 his
+                    // preceding REL wait left there.
+                    static const bool noRootSpin =
+                        std::getenv("OMK_NO_ROOTSPIN") != nullptr;
+                    if (!noRootSpin && s.progYawKnown && std::fabs(s.progYaw) > 0.01f) {
+                        float r[3];
+                        omk::rotateYaw(progYawSign * s.progYaw, rootMove, r);
+                        for (int k = 0; k < 3; ++k) rootMove[k] = r[k];
+                    }
                 }
                 // THE ANCHOR. An authored PATH names the pelvis - the
                 // hierarchy root, whose height is authored - so the model
@@ -6049,8 +6104,17 @@ int main(int argc, char** argv) {
                 const bool spin = !s.sceneTracks.valid() && !useLine &&
                                   std::fabs(s.facing) > 0.01f;
                 // a program's body turns by the call's Euler y about its pelvis
-                const bool progSpin = s.sceneTracks.valid() && !useLine && s.progYawKnown &&
-                                      std::fabs(s.progYaw) > 0.01f;
+                // A DIAGNOSTIC, because a still frame is what decides this:
+                // `node+156` (the actor's facing matrix, `Actor_LoadModel` ->
+                // `sub_437140(node, actor+288)`) has exactly three readers in
+                // the binary and all three are the ROOT-MOTION path
+                // (`Anim_RootDelta`, `sub_471460`). Nothing in the draw walk
+                // reads it - `Anim_ApplyNodeFrame` orients every node,
+                // the pelvis included, from the CLIP's own quaternion. So the
+                // call's Euler may well turn the motion and not the body.
+                static const bool noProgSpin = std::getenv("OMK_NO_PROGSPIN") != nullptr;
+                const bool progSpin = !noProgSpin && s.sceneTracks.valid() && !useLine &&
+                                      s.progYawKnown && std::fabs(s.progYaw) > 0.01f;
                 for (auto& c : s.posed.corners) {
                     if (spin) {
                         const float in[3] = {c.x, c.y, c.z};
@@ -6060,7 +6124,7 @@ int main(int argc, char** argv) {
                     } else if (progSpin) {
                         const float in[3] = {c.x - pelvis[0], c.y - pelvis[1], c.z - pelvis[2]};
                         float r[3];
-                        omk::rotateYaw(s.progYaw, in, r);
+                        omk::rotateYaw(progYawSign * s.progYaw, in, r);
                         c.x = r[0] + pelvis[0]; c.y = r[1] + pelvis[1]; c.z = r[2] + pelvis[2];
                     }
                     c.x += off[0]; c.y += off[1]; c.z += off[2];
@@ -6073,6 +6137,29 @@ int main(int argc, char** argv) {
                 s.drawAt[2] = s.at[2] + rootMove[2];
                 s.posed.revision = ++worldGeoRev;
                 s.drawn = true;
+                // THE HEAD'S TWIST against the shoulders, in degrees - a
+                // number for the reader's "head at 90 degrees". The engine
+                // clamps its own head look to +-70 of yaw and +-40 of pitch
+                // (`Actor_SetHeadLook`, 0x00468B50, and the player's free look
+                // in `Actors_TickAll` uses the same two), so anything past 70
+                // cannot have come from that path and is the CLIP's or the
+                // composition's.
+                if (stagedProbe && (n % 100) == 0 && s.mo->root >= 0) {
+                    const int hd = omk::headMeshOf(s.mo->meshes);
+                    if (hd >= 0 && static_cast<std::size_t>(hd) < pose.size() &&
+                        static_cast<std::size_t>(s.mo->root) < pose.size()) {
+                        const float fwd[3] = {0.0f, 0.0f, -1.0f};
+                        float hf[3], rf[3];
+                        omk::qrot(pose[static_cast<std::size_t>(hd)].q, fwd, hf);
+                        omk::qrot(pose[static_cast<std::size_t>(s.mo->root)].q, fwd, rf);
+                        const float d = std::atan2(rf[0] * hf[2] - rf[2] * hf[0],
+                                                   rf[0] * hf[0] + rf[2] * hf[2]) * 57.29578f;
+                        std::printf("    head %ld actor %d %s twist %.0f deg from the pelvis"
+                                    "%s\n", n, s.actor, s.model.c_str(), d,
+                                    std::fabs(d) > 70.0f ? "   <- past the engine's own "
+                                                           "+-70 clamp" : "");
+                    }
+                }
                 if (stagedProbe && (n % 100) == 0) {
                     float lo[3] = {1e9f, 1e9f, 1e9f}, hi[3] = {-1e9f, -1e9f, -1e9f};
                     for (const auto& c : s.posed.corners) {

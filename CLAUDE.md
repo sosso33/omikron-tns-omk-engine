@@ -1193,12 +1193,23 @@ Listed with what has already been ruled out, so nobody repeats the search.
   "Faces the camera filming them" is a bad prior: a guard in a corridor is not
   looking at the lens. Kept as a caution — a weak corpus signal measured
   through a wrong prior can look like structure in the data.
-  Still open from the same area: what `Anim_RootDelta`'s optional 3x3 is for.
-  **Answered for the ACTOR path (2026-09-02)**: node+156 is actor+288, the
-  facing matrix - a `.CTL` clip's root keys are in the character's frame and
-  turned into the world by his facing (`engine/src/actor/player.h`). The scene
-  path (`Script_SelectRelativeBodyAnimation`, the `sub_437140(node, 0)` sites)
-  stays as recorded.
+  ~~Still open from the same area: what `Anim_RootDelta`'s optional 3x3 is
+  for.~~ **Answered for the ACTOR path (2026-09-02)**: node+156 is actor+288,
+  the facing matrix - a `.CTL` clip's root keys are in the character's frame
+  and turned into the world by his facing (`engine/src/actor/player.h`).
+  **CLOSED for the SCENE path too, 2026-09-05**: it is the SAME matrix.
+  `Actor_LoadModel` does `sub_437140(node, actor + 288)` for every actor,
+  `Actors_TickAll` rebuilds actor+288 each frame from the Euler at
+  `actor+416..424`, and that Euler is what
+  `Script_SelectRelativeBodyAnimation` writes with `Actor_SetEuler(node, p4,
+  p5, p6)` on the tick before `Actor_MoveBy(node, delta)`. So a scene clip's
+  root motion travels where the call's Euler points, and the Euler is STICKY -
+  `Script_SelectBodyAnimation` writes none, so an alternating program carries
+  the last one. Found because the restaurant's waiter (Euler y 145) played a
+  walk cycle forward and slid backward. The `sub_437140(node, 0)` sites are
+  the ones that CLEAR it, not the scene path.
+  [`docs/FILE_FORMATS.md`](docs/FILE_FORMATS.md);
+  `verify.py: engine: scene facing`.
 * ~~**The scene clip's root ORIENTATION.**~~ *(superseded above.)* Position is settled — key 0 is the
   authored placement and keys 1.. are the per-frame deltas `Anim_RootDelta`
   sums — but which way the quaternion goes is not. The conjugate (the
