@@ -4320,6 +4320,30 @@ def c_engine_street_frame():
 def c_engine_traffic_frame():
     r"""`omk-play` DRAWS the road traffic (docs/STREET_LIFE.md 2b, step 3).
 
+    ### The DENSITY is pinned at 3, and the reason is the interesting part
+
+    This check compares a frame drawn with the crowd against one drawn with
+    `--no-crowd` and requires the two to differ. It was calibrated at the
+    viewer's old default density; on 2026-09-06 the settings layer landed and
+    the density began coming from the SAVE's own header, which says **4**.
+    Density is a SPACING - `39 * (5 - level) * h[3]` - so a different level
+    puts entirely different walkers in front of the camera after 700 frames,
+    and the measured difference fell from **9095 pixels to 1104** without one
+    colour changing anywhere.
+
+    Three wrong explanations were tried and MEASURED away before that, which is
+    the part worth keeping: the crowd's new dynamic lighting (off 1106, on
+    1104 - not it), the new fog (off 1104, on 1104 - not it), and only then a
+    build of the engine at the session's starting commit, which gave 9095 and
+    settled that the regression was real rather than pre-existing. Density 3 at
+    HEAD gives **9093** - two pixels from the base, which is the whole visible
+    effect of the crowd lighting at this framing.
+
+    So the fix is not the threshold. A check whose scene depends on what a
+    fixture save's settings happen to say is measuring something it did not
+    choose; `settings resolve` is what covers the settings path.
+`omk-play` DRAWS the road traffic (docs/STREET_LIFE.md 2b, step 3).
+
     The same shape as `engine: street frame`, one street along: a street
     start beside Anekbah's lane 218 looking across it, rendered headless
     twice - once as it ships and once with `--no-crowd`, which loads no
@@ -4361,6 +4385,23 @@ def c_engine_traffic_frame():
         r = subprocess.run([play, omkpaths.data_root(), os.path.join(ROOT, "tables"), "--save", save,
                             "--area", "0", "--stand", "5620,0,-2400,270",
                             "--frames", "700", "--software", "--res", "640x480", "--nofmv",
+                            # PIN THE DENSITY. This check is calibrated on a
+                            # particular arrangement of walkers, and the
+                            # density is a SPACING - `39 * (5 - level) *
+                            # h[3]` - so a different level puts entirely
+                            # different walkers in front of the camera after
+                            # 700 frames. Until 2026-09-06 the viewer defaulted
+                            # to `kDefaultStreetActivity` (3) and this check
+                            # silently inherited it; then the settings layer
+                            # landed and the density began coming from the
+                            # SAVE's header, which says 4 - and the measured
+                            # difference fell from 9095 pixels to 1104 without
+                            # a single colour changing. Pinned so the check
+                            # measures the scene it was calibrated on rather
+                            # than whatever the fixture save happens to ask
+                            # for; `settings resolve` is what covers the
+                            # settings path.
+                            "--density", "3",
                             "--dump", dump] + extra, capture_output=True, text=True, env=env)
         outs.append(r.stdout)
         dumps.append(open(dump, "rb").read() if os.path.exists(dump) else b"")
