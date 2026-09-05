@@ -7579,6 +7579,88 @@ def c_played_actor_inventory():
          "played, and named by NOTHING")
 
 
+def c_engine_camera_collision():
+    r"""`engine/`: the adventure follow camera does not sit through a wall -
+    `sub_417070`, the arm flag 8 selects.
+
+    A reader's report: the camera "does not respect the wall position and
+    collider - it is often placed on the other side of the wall", and the
+    requirement was the ORIGINAL's behaviour. The engine has the pass:
+
+        sub_413C00 (the ordinary follow camera's setup)  flags |= 0x1C
+                                                         = 4 | 8 | 0x10
+        sub_417CF0 (the tick)   flag 4 opens the collision branch,
+                                0x10 runs sub_416450 first, and flag 8
+                                selects sub_417070 as the arm.  A camera
+                                with 4 but NOT 8 takes sub_416570, the
+                                nine-line version: cast target -> eye and
+                                put the eye at the hit.
+
+    `sub_417070`, transcribed:
+
+        D = eye - target ;  d = |D|
+        P = target + D * (+300)/d                        ; +300 = 1.2
+        hit?  -> eye pulled to the hit, the distance kept in +328
+        none? -> +328 eased back OUT over +320 = 8 frames
+        plus a LIFT of (+312 + +156) = -0.7 x pelvis height + the subject's
+        own y, blended in as the camera closes past half its free distance
+        and eased over +324 = 4 frames
+
+    and the 1.2, the 8 and the 4 are `sub_413C00`'s own constants, not a
+    spring arm invented here.
+
+    THE INVARIANT is the one the pass exists to keep: nothing solid lies
+    between the camera's target and its eye. Sixteen views of AREA 46 - four
+    stands, four facings - cast that segment against the walker's two soups:
+
+        without the pass   5 of 16 sit THROUGH a solid face
+        with it            0
+
+    `OMK_NO_CAM_COLLIDE` is the mutation, and this check runs both sides, so
+    the failing half is measured rather than asserted.
+
+    Three things NOT modelled, and the code says so too: the second ray of
+    the recovery branch; flag 1, the "just changed" bit that makes the engine
+    snap instead of ease for one frame; and the face set - `sub_444810` walks
+    the scene's meshes and can skip one by flag, where this casts against the
+    walkable faces and the steep complement.
+
+    Needs SDL; reports true without it (PORTING A8).
+    """
+    import subprocess
+    eng = os.path.join(ROOT, "engine")
+    fr = omkpaths.data_root()
+    tb = os.path.join(ROOT, "tables")
+    save = os.path.join(ROOT, "traces", "save-appart.bin")
+    if not os.path.isdir(fr) or not os.path.exists(save):
+        return ("no data",), ("data",), "needs the shipped tree and traces/save-appart.bin"
+    mk = subprocess.run(["make", "-s", "play"], cwd=eng, capture_output=True, text=True)
+    play = os.path.join(eng, "build", "omk-play")
+    if mk.returncode != 0 or not os.path.exists(play):
+        return (16, 5, 0), (16, 5, 0), "no SDL - the frontend is optional (PORTING A8)"
+    stands = ["6980,30,450", "7100,30,600", "7100,30,450", "6980,30,880"]
+    n = through = withPass = 0
+    for st in stands:
+        for f in (0, 90, 180, 270):
+            n += 1
+            for off in (True, False):
+                env = dict(os.environ, SDL_VIDEODRIVER="dummy", OMK_STAGE_PROBE="1")
+                if off: env["OMK_NO_CAM_COLLIDE"] = "1"
+                o = subprocess.run([play, fr, tb, "--software", "--res", "640x480",
+                                    "--nofmv", "--no-crowd", "--save", save,
+                                    "--area", "46", "--stand", "%s,%d" % (st, f),
+                                    "--frames", "60"], capture_output=True,
+                                   text=True, env=env).stdout
+                last = re.findall(r"^    cam .*$", o, re.M)
+                bad = bool(last) and "THROUGH" in last[-1]
+                if off: through += bad
+                else:   withPass += bad
+    return (n, through, withPass), (16, 5, 0), \
+        ("views of AREA 46 - four stands x four facings - and how many put a "
+         "solid face between the camera's target and its eye, without the "
+         "collision pass and with it")
+
+
 def c_engine_shoot_pose():
     r"""`engine/`: a SHOOT-mode character is posed from the area's `.ani`, by
     his character type - the 41 bodies that had no pose at all.
@@ -21560,6 +21642,7 @@ SLOW = [
     ("engine: scene facing", c_engine_scene_facing, "todo/omk-play"),
     ("played actors", c_played_actor_inventory, "todo/reader-followups"),
     ("engine: shoot pose", c_engine_shoot_pose, "todo/reader-followups"),
+    ("engine: camera collision", c_engine_camera_collision, "todo/reader-followups"),
     ("engine: tunnel door walk", c_engine_tunnel_door_walk, "todo/collision-scenes-transitions"),
     ("engine: arrival wait", c_engine_arrival_wait, "todo/omk-play"),
     ("engine: linked rings", c_engine_linked_rings, "todo/omk-play"),

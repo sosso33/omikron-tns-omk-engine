@@ -8,7 +8,7 @@ Each ends in a commit and a report; the plan file records what is done.
 | 1 | the OUTGOING pool's bodies freeze during a transition | **DONE** 2026-09-05 |
 | 2 | the shoot-mode bodies have no pose (41 of them, 7 areas) | **DONE** 2026-09-05 |
 | 3 | ~~21~~ **4** bodies named by nothing in the corpus | **DONE** 2026-09-05 |
-| 4 | the adventure follow camera passes through walls | open |
+| 4 | the adventure follow camera passes through walls | **DONE** 2026-09-05 |
 
 ---
 
@@ -103,3 +103,28 @@ Reported by a reader: the follow camera "does not respect the wall position
 and collider - it is often placed on the other side of the wall". The
 requirement is the ORIGINAL's behaviour, so this starts by reading what the
 engine's camera does about collision, not by inventing a spring arm.
+
+**DONE, and the engine does have the pass.** `sub_413C00` — the ordinary
+follow camera's setup — sets `flags |= 0x1C` (4 | 8 | 0x10); in the tick
+`sub_417CF0` flag 4 opens the collision branch, 0x10 runs `sub_416450` first,
+and flag 8 selects **`sub_417070`** as the arm. (A camera with 4 but not 8
+takes `sub_416570`, the nine-line version: cast target → eye and put the eye
+at the hit.) Transcribed into `PlayerController::cameraCollide`:
+
+    D = eye - target ;  P = target + D * 1.2            ; +300
+    hit?  -> eye pulled to the hit, distance kept in +328
+    none? -> +328 eased back out over 8 frames          ; +320
+    plus a LIFT of -0.7 x pelvis height + the subject's own y, blended in as
+    it closes past half its free distance, eased over 4 frames  ; +324, +312/+316
+
+and the 1.2, the 8 and the 4 are `sub_413C00`'s own constants.
+
+**16 views of AREA 46: 5 put a wall between the target and the eye without the
+pass, 0 with it.** `OMK_NO_CAM_COLLIDE` is the mutation and the check runs
+both sides. `verify.py: engine: camera collision`.
+
+**Three things NOT modelled**, labelled in the code: the second ray of the
+recovery branch; flag 1, the "just changed" bit that makes the engine snap
+instead of ease for one frame; and the face set — `sub_444810` walks the
+scene's meshes and can skip one by flag, where this casts against the walker's
+walkable faces and the steep complement.

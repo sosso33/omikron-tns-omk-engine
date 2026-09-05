@@ -568,6 +568,103 @@ void PlayerController::tick(float dt, std::uint32_t word) {
         }
         cam_.fov = camFov_;
     }
+    cameraCollide(dt);
+}
+
+// `sub_417070` (04_sys.c 3370), the arm flag 8 selects - the adventure
+// camera's collision pass. Transcribed:
+//
+//     D = eye - target ;  d = |D|                       (+52..+60, +64..+72)
+//     P = target + D * (+300)/d                         ; +300 is 1.2
+//     if (cast target -> P hits) {
+//         if (flags & 0x1000 && hit->flags & 0x20000000) return;   see-through
+//         if (+208 == 0) +328 = d ;  +208 = 1
+//         V = hit - target ;  r = |V| / (+300)
+//         if (r > +328 && !(flags & 1))
+//             r = (r - +328) * dt / (+320) + +328       ; ease OUT over 8
+//         +328 = r ;  eye = target + V * r/|V|
+//     } else if (+208 == 2) {
+//         if (d <= +328) { +208 = 0; return; }
+//         +328 = (d - +328) * dt / (+320) + +328        ; ease back OUT
+//         eye = target + D * (+328)/d
+//     }
+//     t = (r <= d/2) ? 0 : (r - d/2) / (d - d/2)        ; the LIFT's blend
+//     eye.y    = (+312 + +156)*(1-t) + eye.y   * t
+//     target.y = (+316 + +156)*(1-t) + target.y* t
+//     ...each eased toward +24 / +36 over +324 frames when flag 1 is clear
+//
+// `sub_413C00` loads the constants: +300 = 1.2, +320 = 8, +324 = 4, and
+// +312/+316 = -0.7 x the subject's pelvis height, which with Y growing
+// DOWNWARD lifts the pinched camera ABOVE him rather than dropping it.
+//
+// WHAT IS NOT MODELLED, and it is labelled here rather than left to be found:
+// the engine's ray is `sub_444810` over the scene's meshes and can answer with
+// the surface's own flags, so a mesh flagged 0x20000000 is see-through to a
+// camera carrying 0x1000; this casts against the two triangle soups it is
+// given and has no per-face flag. And the second ray of the no-hit branch -
+// rebuilt from the subject's UNLAGGED euler and offsets, for a camera that
+// was blocked last frame - is not here: it decides how fast the recovery
+// starts, not whether the camera is inside a wall.
+//
+// Nor is FLAG 1, the "just changed" bit `Camera_LoadParams` sets and the tick
+// clears on its way out: the engine skips both easings on that one frame and
+// snaps, where this always eases. One frame at a camera change.
+//
+// And the soups are this port's, not the engine's set: `sub_444810` walks the
+// scene's meshes and can skip one by flag, where these are the walker's
+// walkable faces and the steep complement - so a mesh the engine would let
+// the camera through is solid here.
+void PlayerController::cameraCollide(float dt) {
+    if (!camSolidA_ && !camSolidB_) return;
+    const double eye[3] = {cam_.eye[0], cam_.eye[1], cam_.eye[2]};
+    const double at[3]  = {cam_.at[0],  cam_.at[1],  cam_.at[2]};
+    double D[3] = {eye[0] - at[0], eye[1] - at[1], eye[2] - at[2]};
+    const double d = std::sqrt(D[0]*D[0] + D[1]*D[1] + D[2]*D[2]);
+    if (d < 1e-3) return;
+    constexpr double kOver = 1.2;      // +300
+    constexpr double kOut  = 8.0;      // +320
+    constexpr double kLift = 4.0;      // +324
+    // the over-reach ray, target -> 1.2x the eye distance
+    double ray[3] = {D[0] * kOver, D[1] * kOver, D[2] * kOver};
+    double best = 2.0;
+    for (const TriangleSoup* s : {camSolidA_, camSolidB_}) {
+        if (!s || s->empty()) continue;
+        if (const auto h = sweepSphere(*s, at, ray, 0.0))
+            if (h->t < best) best = h->t;
+    }
+    double r = d;
+    if (best <= 1.0) {
+        if (!camBlock_) camDist_ = static_cast<float>(d);
+        camBlock_ = 1;
+        // |hit - target| is `best` of the 1.2x ray, and the engine divides
+        // that by +300 to undo the over-reach - so the free distance is
+        // simply `best * d`.
+        r = best * d;
+        if (r > camDist_) r = (r - camDist_) * dt / kOut + camDist_;
+        camDist_ = static_cast<float>(r);
+    } else if (camBlock_ == 1 || camBlock_ == 2) {
+        camBlock_ = 2;
+        if (d <= camDist_) { camBlock_ = 0; return; }
+        camDist_ = static_cast<float>((d - camDist_) * dt / kOut + camDist_);
+        r = camDist_;
+    } else {
+        return;                                   // clear and was clear
+    }
+    const double k = r / d;
+    float e[3];
+    for (int i = 0; i < 3; ++i) e[i] = static_cast<float>(at[i] + D[i] * k);
+    // THE LIFT, blended in as the camera closes past half its free distance.
+    // `+156` is the eye's SUBJECT position - the actor's own origin, which is
+    // his pelvis, `pos_[1] - camLift_` (the walker keeps `pos_` on the floor
+    // and Y grows downward). `+312`/`+316` are -0.7x the pelvis height, so a
+    // pinched camera rises ABOVE him rather than dropping through the floor.
+    const double half = d * 0.5;
+    const double t = r <= half ? 0.0 : (r - half) / (d - half);
+    const double subjY = static_cast<double>(pos_[1]) - camLift_;
+    const double lift  = -0.7 * camLift_ + subjY;          // +312 + +156
+    e[1]       = static_cast<float>(lift * (1.0 - t) + e[1] * t);
+    cam_.at[1] = static_cast<float>(lift * (1.0 - t) + cam_.at[1] * t);
+    for (int i = 0; i < 3; ++i) cam_.eye[i] = e[i];
 }
 
 // ------------------------------------------------------------- posing

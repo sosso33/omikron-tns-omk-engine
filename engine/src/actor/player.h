@@ -320,6 +320,19 @@ public:
     // not settled by this read". It is the pelvis.
     float cameraLift() const { return camLift_; }
     const FollowCamera& followCamera() const { return cam_; }
+    // --- the camera's COLLISION pass ------------------------------------
+    // `sub_413C00` sets the ordinary follow camera's flags to `0x1C` - 4 | 8 |
+    // 0x10 - and in the tick `sub_417CF0` flag 4 opens the collision branch,
+    // 0x10 runs `sub_416450` first and flag 8 selects `sub_417070` as the arm.
+    // (A camera with 4 but not 8 takes `sub_416570` instead, which is the same
+    // idea in nine lines: cast target -> eye, and on a hit put the eye at the
+    // hit point.) Hand it the solid faces and it runs; hand it nothing and the
+    // camera behaves as it did before, which is what every headless check that
+    // does not set one still measures.
+    void setCameraSolids(const TriangleSoup* a, const TriangleSoup* b) {
+        camSolidA_ = a; camSolidB_ = b;
+    }
+
     // Where it settles for the current position and facing - the resolve
     // with no lag, which is what a check can pin.
     FollowCamera followCameraSteady() const;
@@ -365,6 +378,14 @@ private:
     float start_[3];
     float euler_[3] = {0, 0, 0};       // +416, +420, +424
     float camLift_ = 0.0f;             // pelvis above the feet - see cameraLift()
+    // `sub_417070`'s state. `+328` is the distance it keeps between frames -
+    // the camera snaps IN to a blocking hit and eases back OUT over `+320`
+    // frames - and `+208` is 0 clear / 1 blocked / 2 recovering.
+    const TriangleSoup* camSolidA_ = nullptr;
+    const TriangleSoup* camSolidB_ = nullptr;
+    float camDist_ = 0.0f;             // +328
+    int   camBlock_ = 0;               // +208
+    void  cameraCollide(float dt);
     float frameBefore_ = 1.0f;         // the channel's +12/+16 pair as the
     float frameAfter_  = 1.0f;         // window rule reads them
     int   stateBefore_ = -1;

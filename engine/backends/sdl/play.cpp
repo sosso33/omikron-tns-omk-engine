@@ -3803,6 +3803,20 @@ int main(int argc, char** argv) {
                         for (int k = 0; k < 3; ++k) su.pos[k] = session.playerPos()[k];
                         su.facing = handoverFacingKnown ? handoverFacing : session.playerYaw();
                         player = std::make_unique<omk::PlayerController>(su);
+                        // THE CAMERA'S SOLIDS. `sub_417070` casts from the
+                        // camera's target to 1.2x its eye distance and pulls
+                        // the eye in to the first hit; the engine's ray
+                        // (`sub_444810`) walks the scene's meshes, and the
+                        // nearest thing here is the two soups the walker
+                        // already keeps - the walkable faces and the steep
+                        // complement, which between them are the set's solid
+                        // surfaces. Both are refilled in place by
+                        // `rebuildWorld`, so the pointers survive a
+                        // transition the way the walker's do.
+                        static const bool noCamCollide =
+                            std::getenv("OMK_NO_CAM_COLLIDE") != nullptr;
+                        if (!noCamCollide)
+                            player->setCameraSolids(&playerSteep, &playerSoup);
                         // `Walk_ProbeGround` raises event 9 when the decor
                         // under his feet changes to a slot in state 2 - and
                         // from here on the feet are probed every tick
@@ -5297,6 +5311,28 @@ int main(int argc, char** argv) {
                 // The controller's follow camera: the world camera's offsets
                 // resolved against HIS position and facing every frame, with
                 // the engine's lag (player.h quotes sub_415D10/sub_415E60).
+                // THE CAMERA THROUGH A WALL, measured: the one invariant
+                // `sub_417070` exists to keep is that nothing solid lies
+                // between the camera's target and its eye. Cast the segment
+                // and say so.
+                if (stagedProbe && (n % 10) == 0) {
+                    const omk::FollowCamera& c = player->followCamera();
+                    const double at[3] = {c.at[0], c.at[1], c.at[2]};
+                    const double d[3]  = {c.eye[0] - c.at[0], c.eye[1] - c.at[1],
+                                          c.eye[2] - c.at[2]};
+                    bool through = false;
+                    for (const omk::TriangleSoup* sp : {&playerSteep, &playerSoup})
+                        if (!sp->empty())
+                            if (const auto h = omk::sweepSphere(*sp, at, d, 1.0))
+                                if (h->t < 0.98) through = true;
+                    std::printf("    cam %ld eye %.0f %.0f %.0f  at %.0f %.0f %.0f  "
+                                "dist %.0f  %s  (soups %zu steep / %zu walk tris)\n", n,
+                                c.eye[0], c.eye[1], c.eye[2],
+                                c.at[0], c.at[1], c.at[2],
+                                std::sqrt(d[0]*d[0] + d[1]*d[1] + d[2]*d[2]),
+                                through ? "THROUGH a solid face" : "clear",
+                                playerSteep.size() / 9, playerSoup.size() / 9);
+                }
                 const omk::FollowCamera& fc = player->followCamera();
                 for (int k = 0; k < 3; ++k) {
                     view.cam.eye[k] = fc.eye[k];
