@@ -83,17 +83,50 @@ int pathOfFn(const ScxFunction& f, const std::vector<ScxPath>& paths) {
     if (f.id != 0x0200002Au) return -1;
     return f.params.size() >= 9 ? flatPath(paths, f.params[7], f.params[8]) : -1;
 }
+// THE EULER IS WRITTEN BY BOTH body-animation functions, from params 4/5/6,
+// and it is NOT sticky - every step writes it, and a step that authors 0
+// turns the actor back to 0. `Script_SelectRelativeBodyAnimation`
+// (0x004A3AD0) and `Script_SelectBodyAnimation` (0x004A35D0) each end
+//
+//     Anim_SetFrame(node, clip, prev, cur, delta);
+//     Actor_SetEuler(node, p4, p5, p6);
+//     Actor_MoveBy (node, delta[0], delta[1], delta[2]);
+//
+// (the relative one gated on `Anim_TickClipSfx`), and that Euler is what
+// `Actors_TickAll` turns into `actor+288`, the matrix `Anim_RootDelta` rotates
+// the root motion by. Reading it as sticky - only the relative call writing it
+// - rotated the restaurant waiter's whole WALK by the 145 degrees his standing
+// step had left behind, which is a route through the walls and a yank back at
+// every hand-over ("his whole moving pattern is mirrored", a reader,
+// 2026-09-05). His walk clips author 0.
+//
+// Where the two DO differ is the offset: params 9/10/11 for the relative call,
+// against the path sample, and 7/8/9 for the absolute one, against the clip's
+// root key 0. Both in inches. The return says which kind this is.
 bool placementOfFn(const ScxFunction& f, float offset[3], float euler[3]) {
-    if (f.id != 0x0200002Au || f.params.size() < 12) return false;
+    const bool rel = f.id == 0x0200002Au;
+    const bool abs = f.id == 0x02000004u;
+    if (!rel && !abs) return false;
+    if (f.params.size() < (rel ? 12u : 10u)) return false;
+    const std::size_t oi = rel ? 9u : 7u;
     for (int k = 0; k < 3; ++k) {
-        offset[k] = asFloat(f.params[static_cast<std::size_t>(9 + k)]) / 2.54f;
+        offset[k] = asFloat(f.params[oi + static_cast<std::size_t>(k)]) / 2.54f;
         euler[k]  = asFloat(f.params[static_cast<std::size_t>(4 + k)]);
     }
-    return true;
+    return rel;
 }
 
+// The object-wide answer, for a `Started` before its program has run a step:
+// the FIRST body animation of either kind, since both author the Euler.
 bool placementOf(const ScxObject& o, float offset[3], float euler[3]) {
     for (const auto& f : o.functions) {
+        if (f.id == 0x02000004u && f.params.size() >= 10) {
+            for (int k = 0; k < 3; ++k) {
+                offset[k] = asFloat(f.params[static_cast<std::size_t>(7 + k)]) / 2.54f;
+                euler[k]  = asFloat(f.params[static_cast<std::size_t>(4 + k)]);
+            }
+            return false;
+        }
         if (f.id != 0x0200002Au || f.params.size() < 12) continue;
         // `x -= param * -0.39370078` is `x += param / 2.54` - the inch the
         // engine measures the world in.

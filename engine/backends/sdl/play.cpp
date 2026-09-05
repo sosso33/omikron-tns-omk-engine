@@ -5729,8 +5729,31 @@ int main(int argc, char** argv) {
                     // so the clock the pose is sampled at counts from the step
                     // (`SceneRunner::programAnimClock`).
                     sceneFrame = sc.programAnimClock(prog);
+                    // THE FACING, from the step the pc is on - and from BOTH
+                    // kinds of body animation, because both end in
+                    // `Actor_SetEuler(node, p4, p5, p6)`. It is not sticky:
+                    // the waiter's walk clips author 0 and turn him back to 0,
+                    // and reading only the relative call's Euler rotated his
+                    // whole route by the 145 his standing step had left.
+                    static const bool stickyEuler =
+                        std::getenv("OMK_STICKY_EULER") != nullptr;   // the old, wrong reading
+                    if (stt->animReached && (!stickyEuler || stt->relative)) {
+                        s.progYaw = stt->euler[1];
+                        s.progYawKnown = true;
+                    }
                 }
                 if (sceneClip != s.sceneClipWas) {
+                    // THE HAND-OVER GAP. A program's steps are authored to
+                    // chain: each clip's placement is where the previous one
+                    // left the body, so a correct run re-places him on the
+                    // spot he already occupies and nothing visibly moves.
+                    // Where the accumulated root motion is wrong the two
+                    // disagree and the next step YANKS him - "he is teleported
+                    // sometimes" (a reader, 2026-09-05). The gap is therefore
+                    // a measure of the root motion, independent of the walk
+                    // mesh: two chains that must agree.
+                    const float wasAt[3] = {s.drawAt[0], s.drawAt[1], s.drawAt[2]};
+                    const bool hadOne = s.progRan && s.sceneClipWas >= 0;
                     s.sceneClipWas = sceneClip;
                     s.sceneTracks = omk::NodeTracks{};
                     if (sceneClip >= 0 && sc.loaded())
@@ -5771,8 +5794,6 @@ int main(int argc, char** argv) {
                             // away and intersecting (a reader's frame, 2026-09-03).
                             // Pitch and roll (params 4 and 6) are rarely non-zero
                             // (three beggars carry -7 of pitch) and are not applied.
-                            s.progYaw = stt ? stt->euler[1] : 0.0f;
-                            s.progYawKnown = stt != nullptr;
                             for (int k = 0; k < 3; ++k) s.progBase[k] = s.at[k];
                         }
                         std::printf("  pose: actor %d %s - clip %d '%s' (%d frames) on path "
@@ -5795,6 +5816,12 @@ int main(int argc, char** argv) {
                         // 6462 -121 3215 while his record puts him at 7217.
                         float base[3] = {0, 0, 0};
                         if (omk::clipRootStart(sc.scene().clipData(sceneClip), base)) {
+                            // ...plus the call's own offset, params 7/8/9 in
+                            // inches: `x = node.x - GetParamFloatB(fn, 7) *
+                            // -0.39370078`. Zero at every shipped site read so
+                            // far, but it is the field the function reads.
+                            for (int k = 0; k < 3; ++k)
+                                base[k] += stt ? stt->offset[k] : 0.0f;
                             for (int k = 0; k < 3; ++k) s.at[k] = base[k];
                             s.placed = true;
                             s.pelvis = true;
@@ -5848,6 +5875,13 @@ int main(int argc, char** argv) {
                         // .CTL at all and whom only `shoot.actor.enter` names,
                         // every one of them teleported to 0 0 0 on frame 0.
                         s.progPlaced = false;
+                    }
+                    if (stagedProbe && hadOne && sceneClip >= 0) {
+                        const float dx = s.at[0] - wasAt[0], dz = s.at[2] - wasAt[2];
+                        std::printf("    handover %ld actor %d %s  %.0f %.0f -> %.0f %.0f"
+                                    "   gap %.0f\n", n, s.actor, s.model.c_str(),
+                                    wasAt[0], wasAt[2], s.at[0], s.at[2],
+                                    std::sqrt(dx * dx + dz * dz));
                     }
                 }
                 // (b) THE CONVERSATION'S LINE, for its speaker only. The
@@ -6042,9 +6076,15 @@ int main(int argc, char** argv) {
                     // preceding REL wait left there.
                     static const bool noRootSpin =
                         std::getenv("OMK_NO_ROOTSPIN") != nullptr;
+                    // ...and the SENSE is its own question: the body's spin and
+                    // `Anim_RootDelta`'s multiply are different code paths in the
+                    // engine and need not share it. `OMK_ROOTSPIN_NEG` turns the
+                    // delta the other way while leaving the body alone.
+                    static const float rootSpinSign =
+                        std::getenv("OMK_ROOTSPIN_NEG") ? -1.0f : 1.0f;
                     if (!noRootSpin && s.progYawKnown && std::fabs(s.progYaw) > 0.01f) {
                         float r[3];
-                        omk::rotateYaw(progYawSign * s.progYaw, rootMove, r);
+                        omk::rotateYaw(rootSpinSign * progYawSign * s.progYaw, rootMove, r);
                         for (int k = 0; k < 3; ++k) rootMove[k] = r[k];
                     }
                 }
@@ -6137,6 +6177,19 @@ int main(int argc, char** argv) {
                 s.drawAt[2] = s.at[2] + rootMove[2];
                 s.posed.revision = ++worldGeoRev;
                 s.drawn = true;
+                // ON THE FLOOR? A scene program's body walks its clip's root
+                // motion, and the one invariant that motion has to satisfy is
+                // that it stays on the set's own walkable mesh - which is what
+                // decides the SENSE the delta is turned in, over a corpus
+                // rather than over one waiter.
+                if (stagedProbe && (n % 20) == 0 && !playerSoup.empty() &&
+                    s.sceneTracks.valid()) {
+                    const auto g = omk::floorUnder(playerSoup, s.drawAt[0],
+                                                   s.drawAt[1] - 120.0, s.drawAt[2]);
+                    std::printf("    floor %ld actor %d %s at %.0f %.0f %.0f  %s\n", n,
+                                s.actor, s.model.c_str(), s.drawAt[0], s.drawAt[1],
+                                s.drawAt[2], g ? "on the walk mesh" : "OFF the walk mesh");
+                }
                 // THE HEAD'S TWIST against the shoulders, in degrees - a
                 // number for the reader's "head at 90 degrees". The engine
                 // clamps its own head look to +-70 of yaw and +-40 of pitch

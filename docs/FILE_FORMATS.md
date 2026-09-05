@@ -1512,12 +1512,45 @@ by:
 | `Anim_RootDelta` tail | `out.x = m0·dx + m3·dy + m6·dz`, `out.y = m1·dx + m4·dy + m7·dz`, `out.z = m2·dx + m5·dy + m8·dz` — the row-vector multiply |
 
 So a scene clip's root motion travels in the direction the call's Euler
-points, not the clip's authored one. **The Euler is STICKY**:
-`Script_SelectBodyAnimation` writes none, so a program that alternates the two
-carries the last one written — the restaurant's `Serveur00` is Euler y 145 on
-its `V5H_ATT` waits and its `SERV00`/`01`/`02` walk clips travel under that
-145. Turning the body and not the motion is a walk cycle played forward while
-the character slides backward, which is how this was found.
+points, not the clip's authored one. Turning the body and not the motion is a
+walk cycle played forward while the character slides backward, which is how
+this was found.
+
+**And the Euler is NOT sticky — corrected 2026-09-05, the same day it was
+first written down wrong here.** `Script_SelectBodyAnimation` (0x004A35D0)
+ends the same way, with params 4/5/6 of its own:
+
+```c
+Anim_SetFrame (node, clip, prev, cur, delta);
+Actor_SetEuler(node, p4, p5, p6);
+Actor_MoveBy  (node, delta[0], delta[1], delta[2]);
+```
+
+so **every** body-animation step writes the actor's Euler, and a step that
+authors 0 turns him back to 0. The restaurant's `Serveur00` is the worked
+case: Euler y **145** on its `V5H_ATT` standing waits, **0** on its
+`SERV00`/`01`/`02` walk clips. Read as sticky, his walks ran at 145 — a route
+through the walls, and a yank back at every hand-over, which is what a reader
+saw as "his whole moving pattern is mirrored" and "he is teleported
+sometimes".
+
+**The invariant that settles it, and it is a corpus one.** A program's steps
+are authored to CHAIN: each step's placement is where the previous one left
+the body, so a run whose accumulated root motion is right re-places him on the
+spot he already occupies and nothing visibly moves. Over the restaurant's
+**68** clip hand-overs:
+
+| reading | mean gap | worst |
+|---|---|---|
+| the Euler per step (right) | **0** | **2** |
+| the Euler as sticky (wrong) | 28 | **628** |
+
+Note what did *not* decide it: the walls. The assembly is unambiguous about
+the SENSE — `Matrix3x3_FromEulerAngles` with pitch and roll zero is
+`[[cy,0,sy],[0,1,0],[-sy,0,cy]]` and `Anim_RootDelta`'s row-vector tail is
+exactly `rotateYaw(+yaw)` — so a character walking through a wall was a
+symptom to locate, not a verdict to accept, and the thing to locate was which
+calls write the Euler. `CLAUDE.md` §1.
 `verify.py: engine: scene facing`.
 
 **Worked example, and it is the one that found this.** Dialog 401

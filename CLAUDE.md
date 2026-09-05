@@ -1203,10 +1203,15 @@ Listed with what has already been ruled out, so nobody repeats the search.
   `actor+416..424`, and that Euler is what
   `Script_SelectRelativeBodyAnimation` writes with `Actor_SetEuler(node, p4,
   p5, p6)` on the tick before `Actor_MoveBy(node, delta)`. So a scene clip's
-  root motion travels where the call's Euler points, and the Euler is STICKY -
-  `Script_SelectBodyAnimation` writes none, so an alternating program carries
-  the last one. Found because the restaurant's waiter (Euler y 145) played a
-  walk cycle forward and slid backward. The `sub_437140(node, 0)` sites are
+  root motion travels where the call's Euler points - and **every** step
+  writes that Euler, `Script_SelectBodyAnimation` (0x004A35D0) included, from
+  params 4/5/6 of its own. Found because the restaurant's waiter played a walk
+  cycle forward and slid backward; **corrected the same day** from a first
+  reading that called the Euler sticky, which instead ran his walks (authored
+  0) at the 145 his standing step left and sent him through the walls. The
+  invariant is a corpus one: a program's steps CHAIN, so a correct run
+  re-places the body where it already stands - 68 hand-overs at mean gap 0,
+  worst 2, against 28 and 628 read as sticky. The `sub_437140(node, 0)` sites are
   the ones that CLEAR it, not the scene path.
   [`docs/FILE_FORMATS.md`](docs/FILE_FORMATS.md);
   `verify.py: engine: scene facing`.

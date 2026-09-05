@@ -7553,7 +7553,22 @@ def c_engine_scene_facing():
     * neither is pinned at 70;
     * Samyaza ends at z 695 with the delta turned and z 732 without - a
       37-unit swing, about a seat's width, and `OMK_NO_ROOTSPIN` is the
-      mutation that shows it.
+      mutation that shows it;
+    * and the HAND-OVER GAP over all 68 clip changes of the scene, which is
+      the corpus form of the whole question. A program's steps are authored
+      to CHAIN: each step's placement is where the previous one left the
+      body, so a run whose accumulated root motion is right re-places him on
+      the spot he already occupies and nothing visibly moves. Mean 0, worst
+      2. Under the old reading of the Euler as STICKY - only the relative
+      call writing it - the waiter's walks ran at the 145 his standing step
+      had left and the gaps are mean 28, worst **628**: a route through the
+      walls and a yank at every hand-over ("his whole moving pattern is
+      mirrored", "he is teleported sometimes"). `OMK_STICKY_EULER` is that
+      mutation, and this is what settled the sense: the assembly is
+      unambiguous - `Matrix3x3_FromEulerAngles` with pitch and roll zero is
+      `[[cy,0,sy],[0,1,0],[-sy,0,cy]]` and `Anim_RootDelta`'s row-vector tail
+      is exactly `rotateYaw(+yaw)` - so a route through the walls was a
+      symptom to locate, not a verdict to accept (CLAUDE.md 1).
 
     Needs SDL; reports true without it (PORTING A8).
     """
@@ -7567,14 +7582,15 @@ def c_engine_scene_facing():
     mk = subprocess.run(["make", "-s", "play"], cwd=eng, capture_output=True, text=True)
     play = os.path.join(eng, "build", "omk-play")
     if mk.returncode != 0 or not os.path.exists(play):
-        return (True, True, True, True), (True,) * 4, \
+        return (True, True, True, True, 68, True, True, True), \
+               (True, True, True, True, 68, True, True, True), \
                "no SDL - the frontend is optional (PORTING A8)"
-    def run(extra):
+    def run(extra, frames=320):
         env = dict(os.environ, SDL_VIDEODRIVER="dummy", OMK_STAGE_PROBE="1")
         env.update(extra)
         return subprocess.run([play, fr, tb, "--software", "--res", "640x480", "--nofmv",
                                "--no-crowd", "--save", save, "--area", "46",
-                               "--frames", "320"], capture_output=True, text=True,
+                               "--frames", str(frames)], capture_output=True, text=True,
                               env=env).stdout
     o = run({})
     def twist(actor):
@@ -7587,11 +7603,21 @@ def c_engine_scene_facing():
         return int(m.group(3)) if m else 0
     zOn = samz(o)
     zOff = samz(run({"OMK_NO_ROOTSPIN": "1"}))
+    def gaps(out):
+        v = [float(m) for m in re.findall(r"handover \d+ actor \d+ \S+ .* gap ([0-9.]+)", out)]
+        return (len(v), sum(v) / len(v) if v else 999.0, max(v) if v else 999.0)
+    nG, meanG, worstG = gaps(run({}, 1200))
+    _, meanS, worstS = gaps(run({"OMK_STICKY_EULER": "1"}, 1200))
     return (abs(t63) <= 20.0, abs(t71) <= 20.0 and abs(t71) >= 8.0,
-            abs(zOn - 695) <= 6, abs(zOff - 732) <= 6), (True,) * 4, \
+            abs(zOn - 695) <= 6, abs(zOff - 732) <= 6,
+            nG, meanG <= 2.0, worstG <= 5.0, worstS >= 200.0), \
+           (True, True, True, True, 68, True, True, True), \
         ("diner 63's head twist is inside the engine's +-70 clamp rather than "
-         "pinned on it; 71's is the -14 the geometry wants; and Samyaza ends "
-         "at z 695 with the root delta turned by her Euler 180, z 732 without")
+         "pinned on it; 71's is the -14 the geometry wants; Samyaza ends at z "
+         "695 with the root delta turned by her Euler 180 and z 732 without; "
+         "then the 68 clip hand-overs of the scene - their mean gap is at most "
+         "2 units and the worst at most 5, and reading the Euler as STICKY "
+         "takes the worst past 200")
 
 
 def c_engine_walk_in_scene():
