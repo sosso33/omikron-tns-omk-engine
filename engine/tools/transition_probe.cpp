@@ -169,16 +169,26 @@ int main(int argc, char** argv) {
         long gotoF = -1, f1F = -1, f2F = -1, doneF = -1, endF = -1;
         int f1 = -1, f2 = -1, dest = -1;
         std::string f1Name, f2Name;
-        // The objects are found in the scene's started list the frame they
-        // appear; the list is the OUTGOING scene's and goes with it when the
-        // transition completes and the destination's `.SCX` replaces it.
+        // The objects are found in a started list the frame they appear -
+        // and it has to be BOTH resident lists, not just the active one.
+        // `Area_TickLoad` case 2 loads the destination's `.SCX` at the START
+        // of the load (2026-09-05), so by the time a door starts, the
+        // outgoing scene it belongs to has already moved to `sceneOut()` -
+        // which is where `transitionPool` finds it and reports `pool
+        // OUTGOING`. Reading `scene()` alone left both names blank while the
+        // objects themselves started, on time and with 0 missed: an
+        // observation bug, not a behaviour one, and exactly the shape of the
+        // motion and pose lookups that had to learn the same thing.
         for (int f = 0; f < 3000 && endF < 0; ++f) {
             s.frame();
             const auto& tr = s.transition();
             if (gotoF < 0 && tr.state != 0) { gotoF = s.frameNo(); dest = tr.dest; f1 = tr.f1; f2 = tr.f2; }
-            for (const auto& st : s.scene().started()) {
-                if (st.object == f1 && f1F < 0) { f1F = s.frameNo(); f1Name = st.name; }
-                if (st.object == f2 && f2F < 0) { f2F = s.frameNo(); f2Name = st.name; }
+            for (const omk::SceneRunner* sr : {&s.scene(), &s.sceneOut()}) {
+                if (!sr->loaded()) continue;
+                for (const auto& st : sr->started()) {
+                    if (st.object == f1 && f1F < 0) { f1F = s.frameNo(); f1Name = st.name; }
+                    if (st.object == f2 && f2F < 0) { f2F = s.frameNo(); f2Name = st.name; }
+                }
             }
             if (doneF < 0 && gotoF >= 0 && tr.state == 0 && s.contextStatus(idx) == 1) doneF = s.frameNo();
             if (doneF >= 0 && s.contextStatus(idx) == 0) endF = s.frameNo();
