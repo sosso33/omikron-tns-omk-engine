@@ -1300,8 +1300,9 @@ this out as a table of independent bits.
 `g_NearSplit` and `g_FarSplit` are not constants: **both are the options
 menu's clip distance**, and so is the fog. Row 3 (*Distance de clipping*,
 choices 25 / 50 / 100 / 150 / 200) is in **metres**, and the world unit is an
-inch, so the engine converts with `39.37007874015748` (1/0.0254) and hands the
-result to `sub_440BE0(scene, D, 1)`, which writes three floats on the scene:
+**inch** (see the box below — a reader was right to query it), so the engine
+converts with `39.37007874015748` (1/0.0254) and hands the result to
+`sub_440BE0(scene, D, 1)`, which writes three floats on the scene:
 
 | field | value | what reads it |
 |---|---|---|
@@ -1316,6 +1317,43 @@ the fog end is wrong by 5%.
 The option is a **cap** rather than a value: the per-set path (`05_sys.c`) takes
 a set's own clip distance unless it is 0 or exceeds the option, in which case
 the option wins. It can only ever reduce.
+
+> ### Why inches, in a French game?
+>
+> A reader objected, and the objection is a good one: *Omikron*'s engine was
+> written in-house at a French studio and nobody there thinks in inches. Both
+> halves of the answer are true and they do not conflict.
+>
+> **The stored unit is an inch, and it is measured rather than inferred.**
+> The engine does state the ratio itself in both directions — `State_Save`
+> writes the player's position as `round(w * 0.0254 * 256)`, `Area_LoadSet`
+> reads the option with `* 39.37007874015748` — but a constant only says what
+> somebody typed. `HO1_FNM`, Kay'l's body, is **70.85 units tall**: 1.80 m as
+> inches, or a twenty-storey building as metres. The two crowd models say it
+> again and add a check on themselves — `PSH_FN` 71.5 and `FSH_FN` 66.7, which
+> as inches are **1.82 m and 1.69 m**, a male and a female adult in the right
+> order. (Their *X* extent is four bodies wide because a crowd model carries
+> four LOD skeletons side by side, so only the height measures anything.)
+>
+> **The authored numbers are round metres**, which is the reader's half and it
+> is right. Nobody picks 1574.8031 by hand:
+>
+> | constant | world units | metres |
+> |---|---|---|
+> | crowd LOD rings | 393.70 / 787.40 / 1181.10 / 1574.80 | **10 / 20 / 30 / 40** |
+> | vehicle LOD rings | 787.40 / 1181.10 / 1574.80 / 1968.50 | **20 / 30 / 40 / 50** |
+> | ride camera, eye up / back / target up | 118.1102 / 275.5905 / 78.7402 | **3.00 / 7.00 / 2.00** |
+> | options row 3 | (converted at use) | **25 / 50 / 100 / 150 / 200** |
+>
+> So the **metre is the unit the game was designed in** and the **inch is the
+> unit it is stored in**, with the conversion at the boundary — a property of
+> the modelling tool chain, not of anyone's sense of distance. Two constants
+> are not round metres and are consistent anyway: the crowd's spacing factor
+> and overtake reach are both **39**, an inch-rounded metre (0.991 m), and the
+> walker's gait thresholds 195 and 390 are exactly 5 and 10 of that 39.
+>
+> `verify.py: world unit`, which measures the models rather than quoting
+> either constant, and fails if the metre reading of a human body is accepted.
 
 **The fog is linear.** `20_ddraw.c` 1921-1936 sets `D3DRENDERSTATE_FOGENABLE`
 (28), `FOGTABLEMODE` (35) = **3 = `D3DFOG_LINEAR`**, `FOGDENSITY` (38) = 1.0,

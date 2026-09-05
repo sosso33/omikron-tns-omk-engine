@@ -7721,6 +7721,105 @@ def c_settings_resolve():
            "0.95 split"
 
 
+def c_world_unit():
+    r"""The world unit is an INCH - and the studio still worked in metres.
+
+    A reader pushed back on this, and the objection is a good one: *Omikron*
+    is a French game with an engine written in-house, and nobody in France
+    thinks in inches.  Both halves of the answer turn out to be true, and they
+    are not in conflict.
+
+    ### The STORED unit is an inch
+
+    The engine states the ratio itself, in both directions:
+
+    * `State_Save` (0x0040D950) writes the player's position into the save as
+      `round(w * 0.0254 * 256)` - world units OUT through the inch;
+    * `Area_LoadSet` and `sub_419340` turn the clip-distance option into world
+      units with `* 39.37007874015748` - metres IN through the inch.
+
+    But a constant only says what a programmer typed, so this check does not
+    rest on either.  It MEASURES a model whose real size everybody knows.
+    `HO1_FNM` is Kay'l's body and it is **70.85 units tall**:
+
+        as inches   70.85 x 0.0254 = 1.80 m   - a man
+        as metres   70.85 m                   - a twenty-storey building
+
+    The two crowd models settle it again and add a detail: `PSH_FN` is 71.5
+    and `FSH_FN` 66.7, which as inches are **1.82 m and 1.69 m** - a male and
+    a female adult, and in the right order.  Their X extent is four times a
+    body because a crowd model carries FOUR LOD skeletons side by side
+    (`sub_453A70`), so only the height is a measure of anything.
+
+    No reading of the data can make 70.85 metres a person.
+
+    ### The AUTHORED numbers are round METRES
+
+    Which is the reader's point, and it is right.  Every authored distance in
+    the engine is a round metre value written out in inches:
+
+    | constant | world units | metres |
+    |---|---|---|
+    | crowd LOD rings | 393.70 / 787.40 / 1181.10 / 1574.80 | **10 / 20 / 30 / 40** |
+    | vehicle LOD rings | 787.40 / 1181.10 / 1574.80 / 1968.50 | **20 / 30 / 40 / 50** |
+    | the ride camera's eye up / back, target up | 118.1102 / 275.5905 / 78.7402 | **3.00 / 7.00 / 2.00** |
+    | options row 3's five choices | (converted at use) | **25 / 50 / 100 / 150 / 200** |
+
+    Nobody picks 1574.8031 by hand.  Somebody typed 40 m and something
+    multiplied.  So the metre is the unit the game was DESIGNED in and the
+    inch is the unit it is STORED in, with the conversion at the boundary -
+    which is a property of the modelling tool chain rather than of anyone's
+    intuition about distance.  Two constants are NOT round metres and are
+    consistent anyway: the crowd's spacing factor and overtake reach are both
+    **39**, which is an inch-rounded metre (0.991 m), and the walker's two
+    gait thresholds are 195 and 390 - exactly 5 and 10 of that same 39.
+
+    The lesson is the one CLAUDE.md 1 keeps making, pointed the other way: a
+    reading that is *culturally* implausible is worth re-deriving, and the
+    re-derivation here neither confirmed nor refuted the objection - it split
+    the question into two that have different answers.
+    """
+    probe = os.path.join(ROOT, "engine", "build", "unit_probe")
+    root = omkpaths.data()
+    models = ["HO1_FNM", "PSH_FN", "FSH_FN"]
+    paths = []
+    for m in models:
+        p = os.path.join(root, "MESHES", "PERSOS", m + ".3DO")
+        if not os.path.exists(p): return "missing model " + m, "the world unit", ""
+        paths.append(p)
+    if not os.path.exists(probe): return "unit_probe not built", "the world unit", ""
+    out = subprocess.run([probe, *paths], capture_output=True, text=True).stdout
+    hi = {}
+    for ln in out.splitlines():
+        f = ln.split()
+        if len(f) == 5: hi[os.path.basename(f[0]).upper()[:-4]] = float(f[3])   # the Y span
+    IN = 0.0254
+    # a human body, read both ways
+    kayl = hi.get("HO1_FNM", 0.0)
+    asInch, asMetre = kayl * IN, kayl
+    # the crowd pair, and that the man is the taller
+    man, woman = hi.get("PSH_FN", 0.0) * IN, hi.get("FSH_FN", 0.0) * IN
+    human = lambda m: 1.4 < m < 2.1
+    # the authored constants, divided back
+    rings = [393.7007751, 787.4015503, 1181.1024170, 1574.8031006]
+    veh   = [787.4015503, 1181.1024170, 1574.8031006, 1968.5039062]
+    ride  = [118.1102, 275.5905, 78.7402]
+    rnd = lambda v: [round(x * IN, 3) for x in v]
+    return (round(kayl, 2), human(asInch), human(asMetre),
+            round(man, 2), round(woman, 2), man > woman,
+            rnd(rings), rnd(veh), rnd(ride)), \
+           (70.85, True, False,
+            1.82, 1.69, True,
+            [10.0, 20.0, 30.0, 40.0], [20.0, 30.0, 40.0, 50.0], [3.0, 7.0, 2.0]), \
+           "the world unit, MEASURED rather than taken from a constant - " \
+           "Kay'l's body is 70.85 units, which is a man as inches and a " \
+           "tower block as metres; the crowd's male and female models at " \
+           "1.82 and 1.69 m, in that order; and then the reader's half of it, " \
+           "that every authored distance is a ROUND METRE written out in " \
+           "inches - the LOD rings at 10/20/30/40 and 20/30/40/50 m and the " \
+           "ride camera at exactly 3.00, 7.00 and 2.00"
+
+
 def c_slider_ride():
     r"""The player's RIDE, read rather than ported - the three facts that make
     it worth reading before anyone starts.
@@ -20839,7 +20938,7 @@ def c_licence_headers():
                    if TAG in open(p, encoding="utf-8",
                                   errors="replace").read(600)]
     return (authored, sorted(missing), len(vendored), mislabelled), \
-           (346, [], 1, []), \
+           (347, [], 1, []), \
            "authored source files under tools/, engine/src, engine/tools, " \
            "engine/backends and scripts/; those MISSING the SPDX tag; " \
            "vendored files in engine/third_party; and vendored files wrongly " \
@@ -22067,6 +22166,7 @@ CHECKS = [
     ("slider ride",        c_slider_ride,       "todo/standing-unknowns"),
     ("options file",       c_options_file,      "todo/options-config"),
     ("settings resolve",  c_settings_resolve,  "todo/options-config"),
+    ("world unit",        c_world_unit,        "PORTING"),
     ("camera aim = 768",   c_aim_length,        "FILE_FORMATS 2"),
     ("line-cam bundles",   c_bundles,           "ASSETS"),
     ("dialog 402 vs game", c_dialog402,         "ASSETS"),
