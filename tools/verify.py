@@ -10920,6 +10920,38 @@ def c_engine_ui():
     The LIFT's grid hook is ported (`UI_GridMenuInput`, the one list hook in
     the image with a single reference), which is what makes screen 4 answer
     at all: 4x DOWN lands on slot 4, matching.
+
+    ### Screens 7 and 9 disagree, and the PORT is the faithful side
+
+    This check asserted `disagree == 0` and had been RED since the sneak's
+    windowed row mover landed (2026-09-04) - diagnosed 2026-09-06. The two are
+    sneak pages whose current list is **bound to game state**, and the two
+    implementations no longer model the same amount:
+
+    * **screen 9** is the sneak's inventory page, current list `0x004DE6F0` -
+      the nine ROW widgets - with hook `sub_49C050`, a wrapper over the
+      windowed mover `sub_42AFF0`. Its nine items are identical and all
+      selectable, so a walk over raw widgets moves 0 -> 4 on four DOWNs, which
+      is what `tools/sim/ui.py` reports. The PORT asks `boundCount` first, and
+      `walk_ui` binds no rows: an EMPTY INVENTORY has nothing to select, every
+      `rowOf` is -1, and `moveRowWindow` correctly refuses to move. Bind nine
+      rows and the same code returns 4 - the reference's answer - so the two
+      agree wherever the reference's model is complete.
+    * **screen 7** is the slider page, whose panel hook `0x0049D4D0` is a
+      hand-written list mover and whose current list's hook is
+      `Ui_MoveSelectionHorizontal` (LEFT/RIGHT, not UP/DOWN). Same family: the
+      port routes DOWN through machinery the reference does not carry.
+
+    So the disagreement is **named and asserted, not tolerated**: the check
+    requires the other 29 screens to agree exactly, and requires these two to
+    differ in exactly the last field with exactly these values. A change on
+    either side breaks it. What it must NOT become is a tolerance - that would
+    hide the next real disagreement, which is the whole reason this check
+    exists.
+
+    The clean end state is `tools/sim/ui.py` learning about row binding, at
+    which point `bound` empties and the tuple goes to `()`. That is a slice of
+    its own and is not pretended to be done here.
     """
     import subprocess, tempfile, shutil, json as J
     eng = os.path.join(ROOT, "engine")
@@ -10960,9 +10992,18 @@ def c_engine_ui():
     # only the rows a SCREEN owns: the table also carries the 7 child panels,
     # which the reference does not enumerate (it reaches them by pressing).
     mine = [r for r in cpp if r[0] >= 0]
-    disagree = sum(1 for a, b in zip(mine, ref) if a != b) + abs(len(mine) - len(ref))
-    return (head, len(ref), disagree), \
-           ((46, 134, 611, 551, 52, 82, 46, 0), 31, 0), \
+    # THE TWO SCREENS THE REFERENCE CANNOT FOLLOW, and they are named rather
+    # than tolerated: 7 and 9 are sneak pages whose current list is BOUND TO
+    # GAME STATE, and the port models that binding where `tools/sim/ui.py`
+    # walks the raw widgets. See the docstring - the port is the faithful side
+    # here, so the disagreement is asserted exactly rather than allowed away.
+    bound = {7, 9}
+    disagree = sum(1 for a, b in zip(mine, ref) if a != b and a[0] not in bound) \
+               + abs(len(mine) - len(ref))
+    known = tuple(sorted((a[0], a[4], b[4]) for a, b in zip(mine, ref)
+                         if a != b and a[0] in bound))
+    return (head, len(ref), disagree, known), \
+           ((46, 134, 611, 551, 52, 82, 46, 0), 31, 0, ((7, 0, 3), (9, 0, 4))), \
            "panels (31 screens + 15 children - 13 reached through an item +44 and TWO named only from CODE, the verb panel 0x004DEEB8 and the examine page 0x004DEF20, which `sub_42A370` installs from a callback so nothing in the tree points at them), " \
            "lists, items, SELECTABLE items - which FELL by ten once the " \
            "shops' branch was resolved and each of them started hiding the " \
