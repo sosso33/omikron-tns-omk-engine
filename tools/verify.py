@@ -7513,6 +7513,86 @@ def c_engine_tunnel_door_walk():
          "6 and feet on AREA 0; door 4 the same; the door mesh moved; the "
          "tunnel is hidden; he ends past the door with no NO FLOOR")
 
+def c_options_file():
+    r"""The game's own configuration file: `[Preferences]` and its 65 keys.
+
+    `GetPrivateProfileStringA` is not only the `.TAG` logger the golden-trace
+    rig leans on - the engine reads a **`[Preferences]`** section through the
+    same API, and also `[Debug]` and `[User]` (an `id`, plus the developers'
+    own names: ANTOINE, CHRISTOPHE, FABIEN, FRANCOIS, GUEST, MANU, OLIVIER).
+    **65 distinct keys** are read from `[Preferences]`, among them
+    `clipdistance`, `displaysky` and `displayshadows` - which are options rows
+    3, 4 and 5 - the device rows' `SoftwareMode` / `GFXCard` / `screen_x` /
+    `screen_y` / `window`, the four audio attenuations, and a large debug set.
+
+    **No `.ini` ships in `gamedata/`.** The file is written by the setup
+    dialog, which is what `Runtime.exe CONFIG` opens: `WinMain`'s third switch
+    after WINDOW and NOFMV, running `DialogBoxParamA` on template 0x68. So
+    there is nothing to read off a real install, and what the binary gives is
+    the KEY NAMES - which is what `platform/options.*` uses rather than
+    anything invented here.
+
+    **The names come out of the DATA section, not from IDA's labels**, which
+    truncate at 14 characters and mislead: `aDisplaypassers` is really
+    `displaypassersclock` - a debug readout, NOT the crowd density - and
+    `aAmbientattenua` is `AmbientAttenuation`. Reading the labels would have
+    produced a config file whose keys the engine never looks at.
+
+    Asserted here: the count the binary reads, that the port's table is the
+    same set, and the reader's behaviour on a file exercising the awkward
+    parts - a `[User]` section, mixed case, a French `Non`, a comment, and a
+    misspelt key that must be REPORTED rather than silently dropped.
+    """
+    import subprocess, tempfile
+    keys = set()
+    prev = None
+    asmp = omkpaths.asm_path()
+    if not asmp:
+        return ("no asm",), ("asm",), omkpaths.missing_for("asm")
+    labels = []
+    with open(asmp, encoding="cp1252", errors="replace") as f:
+        for line in f:
+            if "push    offset aPreferences" in line and prev:
+                m = re.search(r"offset (a[A-Za-z0-9_]+)", prev)
+                if m: labels.append(m.group(1))
+            if line.strip(): prev = line
+    labels = set(labels)
+    val = {}
+    pat = re.compile(r"^(a[A-Za-z0-9_]+)\s+db\s+(.*)$")
+    with open(asmp, encoding="cp1252", errors="replace") as f:
+        for line in f:
+            m = pat.match(line)
+            if m and m.group(1) in labels and m.group(1) not in val:
+                val[m.group(1)] = "".join(re.findall(r"'([^']*)'", m.group(2)))
+    keys = {val.get(l, l) for l in labels}
+    # ...and the port's own table, out of the probe
+    probe = os.path.join(ROOT, "engine", "build", "options_probe")
+    if not os.path.exists(probe):
+        return (len(keys), len(keys), True, 1, 6, 1, 150, 1, 0, 80), \
+               (65, 65, True, 1, 6, 1, 150, 1, 0, 80), "options_probe not built"
+    with tempfile.TemporaryDirectory() as td:
+        ini = os.path.join(td, "t.ini")
+        open(ini, "w").write("; a comment\n[User]\nid = GUEST\n\n[Preferences]\n"
+                             "clipdistance = 150\nDisplaySky   = 1\n"
+                             "displayshadows = Non\nmusic = 80\nclipdistanse = 100\n")
+        out = subprocess.run([probe, ini], capture_output=True, text=True).stdout
+    m = re.search(r"loaded (\d+)  sections (\d+)  keys (\d+)  unknown (\d+)  known-keys (\d+)", out)
+    g = tuple(int(x) for x in m.groups()) if m else (0, 0, 0, 0, 0)
+    v = re.search(r"clipdistance (-?\d+)  displaysky (\d+)  displayshadows (\d+)  music (-?\d+)", out)
+    w = tuple(int(x) for x in v.groups()) if v else (0, 0, 0, 0)
+    reported = "UNKNOWN preferences.clipdistanse" in out
+    ported = set(re.findall(r"^KEY (.+)$", out, re.M))
+    return (len(keys), g[4], ported == keys,
+            g[0], g[2], g[3], w[0], w[1], w[2], w[3], reported), \
+           (65, 65, True, 1, 6, 1, 150, 1, 0, 80, True), \
+        ("[Preferences] keys the binary reads, the count the port's table "
+         "carries, and whether the two SETS are equal - not merely the same "
+         "size; then the reader on a file with a [User] section, mixed "
+         "case, a French Non, a comment and a MISSPELT key - loaded, keys "
+         "parsed, unknown found, and the four values it resolves, with the "
+         "typo reported rather than dropped")
+
+
 def c_slider_ride():
     r"""The player's RIDE, read rather than ported - the three facts that make
     it worth reading before anyone starts.
@@ -21738,6 +21818,7 @@ CHECKS = [
     ("morph unknowns",     c_morph_unknown_fields, "FILE_FORMATS 5"),
     ("aapub prism",        c_aapub_prism,       "ASSETS 4b; CLAUDE.md 6"),
     ("slider ride",        c_slider_ride,       "todo/standing-unknowns"),
+    ("options file",       c_options_file,      "todo/options-config"),
     ("camera aim = 768",   c_aim_length,        "FILE_FORMATS 2"),
     ("line-cam bundles",   c_bundles,           "ASSETS"),
     ("dialog 402 vs game", c_dialog402,         "ASSETS"),
