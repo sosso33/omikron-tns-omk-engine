@@ -635,6 +635,58 @@ the first one — at 136 the second name reads as `\x01\x00\x00\x00Ag`.
 Mesh positions are **absolute** in model space. Accumulating them up the parent
 chain pulls the model apart; rendering them as given produces a coherent figure.
 
+### The LIGHT table — 304-byte records, and they name themselves
+
+Pointed at by the 1999 spec sheet's *Multilights* line
+(`todo/engine-spec-1999.md`), and read 2026-09-05. The table is the **last**
+thing in a `.3DO`, at the header's `+40`.
+
+**The count is `desc+240`, not `desc+232`** — where every other count in that
+descriptor lives, and where this repo read it for months. `Read3DO_Init` does
+`u32(*v1, 232) = u32(*v1, 240)` and then uses `+232`, so the on-disk `+232`
+never reaches anything; the two disagree in 256 of 635 files. The corpus
+settles it independently, because the table's position gives the walk a file
+size to land on: `lightOff + n × 304 == filesize` in **216 of 216** files under
+`+240` and 119 under `+232`. **4179 lights across 216 of the 635 models**, the
+most 258 in Qalisar.
+
+**The record says what it is.** All 4179 open with the tag `LIGH` at `+4` and a
+NUL-terminated name beginning `LIGHT` — 573 distinct — which is what settles
+that this is the light table and not a plausible reading of something else.
+
+| off | what |
+|---|---|
+| `+0` | flags — low byte 2 or `0x12`, bit `0x40000000` set or not; **four** combinations in the corpus. `sub_493CE0` ORs in 8 at runtime |
+| `+4` | `char[12]` the NAME, `LIGHT`, `LIGHT0`, … |
+| `+24` / `+28` | two radii — authored in **round metres**, 20.0 m and 10.0 m median |
+| `+32`, `+36`, `+40` | three floats with **no traced consumer** |
+| `+44` | the **COLOUR**, `0x00RRGGBB` — 420 distinct: white, warm orange (244,177,104), cyan, red |
+| `+48` | the light's **POSITION** |
+| `+80` | the **CENTRE** of a footprint |
+| `+112`, `+144`, `+176`, `+208` | the four **CORNERS** of that footprint — the same five slots at a 32-byte stride `sub_48DEA0` walks to build the record's bounding box |
+| `+60`, `+124`, `+240`, `+244` | **runtime only** — the transformed position, the transformed direction, and the two radii squared |
+
+`+112` is doing double duty: on disk it is the first corner, and at load
+`sub_493C30` writes `normalize(centre − position)` — the light's **direction** —
+over it.
+
+**The invariants a wrong layout would break.** The eight runtime-only floats
+are zero on disk in **4179 of 4179**, which is what a load-time field must be
+and which fails if the record is read one field wide or narrow; and the
+authored centre lies inside the four corners' bounding box in **4178 of 4179**.
+
+The one exception is worth its sentence: `MTrone.3DO`'s `LIGHT15` carries
+**NaN** corners. Every comparison against a NaN is false, so a containment test
+written the obvious way passes it and reports 4179 of 4179 — which is what the
+first C++ probe did, caught only because an independently written Python pass
+said 4178. `verify.py: light record` tests finiteness first.
+
+Still open: the three floats, and what CONSUMES a light. The sets are shaded by
+a colour **baked into every vertex**, so a static set needs none of this; the
+error string `Read3DO,Init, unable to add light for Lights Collisions` says the
+table feeds a spatial structure, which is how one would ask *which lights reach
+this point*. `todo/mesh-lights.md` step 3.
+
 ### Which meshes are geometry
 
 This differs between characters and sets, and getting it wrong is silent:

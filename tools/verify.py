@@ -8095,6 +8095,86 @@ def c_engine_fog():
            "depth is less fogged and a depth past the undoubled end still is"
 
 
+def c_light_record():
+    r"""The `.3DO` LIGHT record decoded - 304 bytes, and it names itself.
+
+    Step 2 of `todo/mesh-lights.md`. The stride and the count came from the
+    loader (`mesh lights`); this is what a record contains.
+
+    **The record says what it is**, which is CLAUDE.md 3's preferred standard
+    and the reason this is not a plausible reading of some other table: all
+    **4179** shipped records carry the tag `LIGH` at `+4` and a NUL-terminated
+    name beginning `LIGHT` - `LIGHT`, `LIGHT0`, `LIGHT1`, ... 573 distinct.
+
+    The layout is in `engine/src/formats/light3do.h`. The parts with a traced
+    consumer:
+
+    * `+0` flags - low byte 2 or 0x12, bit `0x40000000` set or not, exactly
+      **four** combinations across the corpus; `sub_493CE0` ORs in 8 at runtime;
+    * `+24`/`+28` two radii, whose SQUARES `sub_493C30` computes into `+240`
+      and `+244` at load - and they are authored in round metres, 20.0 m and
+      10.0 m median (`world unit`);
+    * `+44` the COLOUR as `0x00RRGGBB` - **420 distinct**, and they read as a
+      neon city's palette: white, warm orange (244,177,104), cyan, red;
+    * `+48` the POSITION, `+80` the CENTRE of a footprint, and `+112`, `+144`,
+      `+176`, `+208` the four CORNERS of it - the same five slots at a 32-byte
+      stride that `sub_48DEA0` walks to build the record's bounding box;
+    * `+112` is also the slot the runtime REUSES: `sub_493C30` writes
+      `normalize(centre - position)` - the light's direction - over the
+      authored first corner at load.
+
+    ### The invariants, which is what makes this a parse rather than a reading
+
+    * **the runtime scratch is zero on disk in 4179 of 4179.** `sub_493CE0`
+      writes the transformed position into `+60` and the transformed direction
+      into `+124`, and `sub_493C30` the two squared radii into `+240`; all
+      eight floats are zero in every shipped record, which is what a
+      load-time-only field must be. Read the record one field wider or one
+      narrower and this fails.
+    * **the authored centre lies inside the four corners' bounding box in 4178
+      of 4179.**
+
+    ### The one exception, and why it is in the check
+
+    `MTrone.3DO`'s `LIGHT15` has **NaN** corners - corrupt or uninitialised
+    authoring data. It matters beyond being an oddity: every comparison
+    against a NaN is false, so a containment test written the obvious way
+    silently PASSES it and reports 4179 of 4179. This check's C++ probe did
+    exactly that, and it was caught only because a Python pass written
+    independently said 4178. The probe now tests finiteness first and counts
+    the record separately, so the corpus's one bad light is an asserted fact
+    rather than a rounding-up.
+
+    ### What is NOT established
+
+    Three floats have no traced consumer at all - `+32` (median 1.5, max 25),
+    `+36` and `+40`. And the light is above its footprint in only **2871** of
+    4179, so "a spot shining down" is the common case and not the rule.
+    Nothing here says what CONSUMES a light either; that is step 3.
+    """
+    probe = os.path.join(ROOT, "engine", "build", "light_probe")
+    if not os.path.exists(probe): return "light_probe not built", "the light record", ""
+    root = omkpaths.data("MESHES")
+    if not os.path.isdir(root): return "no MESHES tree", "the light record", ""
+    models = []
+    for dirpath, _, names in os.walk(root):
+        for n in names:
+            if n.lower().endswith(".3do"): models.append(os.path.join(dirpath, n))
+    out = subprocess.run([probe, *sorted(models)], capture_output=True,
+                         text=True).stdout.split()
+    want = (4179, 4179, 4179, 4179, 4178, 420, 4, 1)
+    if len(out) < 8: return tuple(out), want, ""
+    return tuple(int(x) for x in out[:8]), want, \
+           "every shipped .3DO light: the count; the `LIGH` tag at +4 and the " \
+           "name beginning LIGHT, which is what says these ARE lights; that " \
+           "the eight runtime-only floats (the transformed position, the " \
+           "transformed direction, the two squared radii) are ZERO on disk in " \
+           "all of them, which a layout read one field off would break; that " \
+           "the authored centre lies inside the four corners' bounding box; " \
+           "the distinct colours and flag words; and the ONE record with NaN " \
+           "corners, counted rather than silently passed by a comparison"
+
+
 def c_slider_ride():
     r"""The player's RIDE, read rather than ported - the three facts that make
     it worth reading before anyone starts.
@@ -21213,7 +21293,7 @@ def c_licence_headers():
                    if TAG in open(p, encoding="utf-8",
                                   errors="replace").read(600)]
     return (authored, sorted(missing), len(vendored), mislabelled), \
-           (350, [], 1, []), \
+           (353, [], 1, []), \
            "authored source files under tools/, engine/src, engine/tools, " \
            "engine/backends and scripts/; those MISSING the SPDX tag; " \
            "vendored files in engine/third_party; and vendored files wrongly " \
@@ -22445,6 +22525,7 @@ CHECKS = [
     ("the sky",           c_the_sky,           "todo/options-config"),
     ("engine fog",        c_engine_fog,        "todo/options-config"),
     ("mesh lights",       c_mesh_lights,       "todo/engine-spec-1999"),
+    ("light record",      c_light_record,      "todo/mesh-lights"),
     ("camera aim = 768",   c_aim_length,        "FILE_FORMATS 2"),
     ("line-cam bundles",   c_bundles,           "ASSETS"),
     ("dialog 402 vs game", c_dialog402,         "ASSETS"),

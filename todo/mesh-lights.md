@@ -9,9 +9,33 @@ never read the records of. This is the work.
 | # | step | state |
 |---|---|---|
 | 1 | the count and the stride, from the LOADER | **DONE** 2026-09-05 |
-| 2 | decode the 304-byte record | open |
+| 2 | decode the 304-byte record | **DONE** 2026-09-05 |
 | 3 | what CONSUMES a light - the question that makes it worth doing | open |
 | 4 | port, if step 3 warrants it | open |
+
+## Step 2, done
+
+The record is decoded and it NAMES ITSELF: all 4179 open with the tag `LIGH`
+and a name beginning `LIGHT` (573 distinct). Layout in
+`engine/src/formats/light3do.h` and `docs/FILE_FORMATS.md`; the parts with a
+traced consumer are the flags, the two radii (whose squares the loader caches),
+the RGB colour, the position, and a footprint given as a centre and four
+corners. `+112` is the first corner on disk and the light's DIRECTION at
+runtime - `sub_493C30` writes `normalize(centre - position)` over it.
+
+Two invariants a wrong layout breaks: the eight runtime-only floats are zero on
+disk in 4179/4179, and the centre lies inside the corners' bounding box in
+4178/4179.
+
+**The one failure is instructive.** `MTrone.3DO`'s `LIGHT15` has NaN corners,
+and because every comparison against a NaN is false, the C++ probe's
+containment test PASSED it and reported 4179/4179. It was caught only because
+a Python pass written separately said 4178. A check that cannot see its own
+blind spot is worth less than two implementations that disagree.
+
+Open from this step: three floats (`+32`, `+36`, `+40`) with no traced
+consumer, and the light is above its footprint in only 2871 of 4179 - so "a
+spot shining down" is the common case, not the rule.
 
 ## Step 1, done - and it corrected a number this repo had just published
 
