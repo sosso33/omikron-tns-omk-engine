@@ -20,6 +20,7 @@
 #include "script/program.h"
 #include "script/script.h"
 
+#include <map>
 #include <memory>
 #include <string>
 #include <vector>
@@ -154,6 +155,37 @@ public:
     // position to put it at. A frontend that draws the set applies these; the
     // crates of the Impasse are four of them.
     const std::vector<Program::NodeMotion>& motions() const { return motions_; }
+
+    // THE SCENE'S SPRITE INSTANCES - what `Script_Display3DSprite` and the
+    // rest of the sprite family (program.h, the ids) have done to them.
+    // `Scene_LoadSCX` chunk 4 spawns one instance per sprite row and the
+    // scripts address them BY ROW; the state is the scene's, so it lives
+    // here and outlives any one program. `Sprite_SpawnInstance`'s defaults:
+    // scale 1/1, alpha 0.5, frame set to 0 by the loader, type 0.
+    struct SceneSprite {
+        int   row = -1;
+        int   id  = -1;          // the row's registry id - the library slot
+        bool  linked = false;    // in the scene's `+36` draw list; never leaves
+        float pos[3] = {0, 0, 0};
+        // Positioned THIS tick by a running `Display3DSprite`: the handler
+        // reads the active camera's target every tick it runs and never
+        // moves the sprite afterwards, so a caller supplies that point
+        // through `setSpriteAnchor` and a tracking sprite follows it.
+        bool  tracking = false;
+        int   frame = 0;
+        int   type = 0;          // the blend mode, `Render_SubmitSprites`' switch
+        float sx = 1.0f, sy = 1.0f, roll = 0.0f;
+        long  linkedAt = -1;     // the tick it was linked, for a log
+    };
+    const std::map<int, SceneSprite>& sprites() const { return sprites_; }
+    // The active camera's TARGET, which `Display3DSprite` places a sprite at
+    // (the XYZ table it would prefer is never written in the shipped engine;
+    // program.h has the trace). Set it before `tick`; unset, a tracking
+    // sprite stays where it was.
+    void setSpriteAnchor(const float at[3]) {
+        for (int c = 0; c < 3; ++c) anchor_[c] = at[c];
+        anchorSet_ = true;
+    }
 
     // The motions of ONE program, so a caller can ask where the object a cue
     // came from actually IS. `motions()` flattens every program's together and
@@ -290,6 +322,9 @@ private:
     std::vector<ActiveEditing> editings_;
     std::vector<FiredSound>    sounds_;
     std::vector<Program::NodeMotion> motions_;
+    std::map<int, SceneSprite> sprites_;
+    float anchor_[3] = {0, 0, 0};
+    bool  anchorSet_ = false;
     long                 ticks_ = 0;
     float                lastDt_ = 0.0f;
     SfxFile              sfx_;

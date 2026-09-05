@@ -71,6 +71,61 @@ constexpr std::uint32_t kFnMoveObjectOnPath    = 0x03000008;
 // `Tunnel01.SCX` are the shipped example: PlaySound(2, loop) and StopSound(2).
 constexpr std::uint32_t kFnStopSound           = 0x05000016;
 
+// THE SPRITE FAMILY - five of the eleven unimplemented scene functions and
+// 465 sites between them (omk-play 71). Every handler was read from the
+// listing; the four with no `proc` label (`Script_Display3DSprite` is the
+// unlabelled block after `sub_4A2D10 endp`) from the raw assembly, since
+// `asmfn.py` snaps to the wrong function there.
+//
+//   `Script_SetSpriteType`     0x0400000C  0 sprite  1 type -> instance +20
+//   `Script_SetSpriteFrame`    0x04000029  0 sprite  1 frame -> +22 (>= the
+//                                          sprite's frame count -> 0xFFFF, hidden)
+//   `Script_ScaleSpriteOnX`    0x0400001B  0 sprite  1 start  2 end  3 current
+//                                          4 duration  5 clock -> +24
+//   `Script_ScaleSpriteOnY`    0x0400001C  the same, -> +28
+//   `Script_SetSpriteRolling`  0x0400001D  the same, -> +32; the running
+//                                          value is `current * pi/180`, the
+//                                          FINISHED value is `end` RAW - the
+//                                          degrees land in the radians field,
+//                                          which is the engine's own quirk and
+//                                          is ported as read. Every shipped
+//                                          site rolls 0 -> 0, so it shows
+//                                          nowhere.
+//   `Script_SetSpriteDefaultPalette` 0x0400001F  0 sprite; `sub_48EDE0`
+//                                          resets the morph palette, which
+//                                          this port does not draw. Consumed.
+//   `Script_Display3DSprite`   0x04000028  0 sprite  1 XYZ index  2 duration
+//                                          3 clock. Links the instance into
+//                                          the scene's `+36` draw list on its
+//                                          first run and NEVER unlinks it;
+//                                          positions it every tick while
+//                                          clock < duration.
+//
+// The ramps: each in-progress tick writes the CURRENT value, then advances
+// it by `dt * (end - start) / duration`; the finishing tick (clock >=
+// duration) writes `end` outright and counts a run. With duration 0 - all
+// 57 shipped scale sites, the 57 roll sites - the first tick finishes.
+//
+// WHERE a sprite goes: param 1 indexes a 256-entry XYZ table
+// (`unk_905F20`, 16 bytes a row, flag byte at +12) that `sub_44C000` tests.
+// Both functions that write that table - the unlabelled `set_xyz` at
+// 0x0044C040 and the modifier before `Script_ModifyObject1` - have NO
+// reference anywhere in the listing, so in the shipped engine the flag is
+// never set and every one of the 232 sites takes the other branch:
+// `Camera_GetPosition(scene->+178)` - the scene's ACTIVE camera - and the
+// SECOND triple it returns (a1[8..10], the camera's TARGET; the pushes were
+// followed through the handler's stack frame). So a scripted sprite appears
+// where the camera is looking, which is what an `fx1impact` flash in a
+// fight scene wants. The corpus is uniform: 232/232 sites have duration 60,
+// clock 0, repeat 1.
+constexpr std::uint32_t kFnSetSpriteType        = 0x0400000C;
+constexpr std::uint32_t kFnSetSpriteFrame       = 0x04000029;
+constexpr std::uint32_t kFnScaleSpriteOnX       = 0x0400001B;
+constexpr std::uint32_t kFnScaleSpriteOnY       = 0x0400001C;
+constexpr std::uint32_t kFnSetSpriteRolling     = 0x0400001D;
+constexpr std::uint32_t kFnSetSpriteDefaultPal  = 0x0400001F;
+constexpr std::uint32_t kFnDisplay3DSprite      = 0x04000028;
+
 // One .SCX's objects plus the clip lengths their programs need.  The frame
 // counts come from the STREAMED animations, so a scene must carry its stream.
 class ScxRuntime {
@@ -108,6 +163,12 @@ public:
     // where a scene object's character actually stands - `GRID`'s two are
     // `UBas.p1` and `UBas.p2-3`, Kay'l's pelvis before and after his arrival.
     const std::vector<ScxPath>& paths() const { return stream_.paths; }
+    // Chunk 4's rows, which `Scene_SpriteIsLoaded(scene, k)` indexes BY
+    // POSITION (`scene+52 + 36*k`, k < scene+28) - a script's sprite param is
+    // the row, and the row's `+32` is the registry id a sprite library slot
+    // is keyed by. -1 for a row the scene has not got.
+    int spriteRows() const { return static_cast<int>(stream_.sprites.size()); }
+    int spriteId(int row) const;
     // `Script_MoveObjectOnPath` addresses a path in two parts: param 1 the
     // `.3dp` FILE (a chunk-0 record) and param 2 the path inside it. -> null
     // when either names nothing, which the engine logs and refuses.
@@ -199,6 +260,24 @@ public:
     };
     const std::vector<NodeMotion>& motions() const { return motions_; }
 
+    // THE SPRITE OPERATIONS this tick, in chain order - what the sprite
+    // family (see the ids above) did to the SCENE's instances. The instance
+    // itself is per scene, not per object (`Scene_SpriteIsLoaded` hands out
+    // the scene's row), so the state lives in `SceneRunner` and a program
+    // only reports what it wrote. Cleared and refilled by every `tick`.
+    struct SpriteOp {
+        enum class Kind { Display, Frame, Type, ScaleX, ScaleY, Roll, Palette };
+        Kind  kind = Kind::Display;
+        int   row = -1;        // chunk-4 row, param 0
+        int   ivalue = 0;      // Frame: the frame; Type: the type
+        float fvalue = 0.0f;   // the scale or the roll written this tick
+        // Display: true on a tick the handler POSITIONS the sprite (clock <
+        // duration); the finishing tick reports false and the instance keeps
+        // where it was, because the handler never moves it again.
+        bool  tracking = false;
+    };
+    const std::vector<SpriteOp>& spriteOps() const { return spriteOps_; }
+
     // THE FUNCTION DRIVING THE POSE THIS TICK - the first
     // `SelectBodyAnimation` / `...Relative` in the chain at the program
     // counter, or -1 when the step at the pc plays none.
@@ -237,6 +316,7 @@ private:
     std::set<int>        fired_;     // the sound functions' latch (+8 / +12)
     std::vector<NodeMotion> motions_; // what moved this tick
     std::vector<SoundCue> sounds_;   // what this tick started
+    std::vector<SpriteOp> spriteOps_; // what the sprite family wrote this tick
     std::vector<std::string> trace_;
 };
 

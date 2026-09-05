@@ -3147,6 +3147,14 @@ int main(int argc, char** argv) {
     Uint32 lastMs = SDL_GetTicks();
     Uint32 fpsSince = lastMs, fpsLastMs = lastMs, fpsWorst = 0;
     int    fpsFrames = 0;
+    // Where `Script_Display3DSprite` puts a sprite: the active camera's
+    // TARGET, read by the handler on every tick it runs (program.h has the
+    // trace; the XYZ table it would prefer is never written). The runner is
+    // handed the camera the LAST frame drew with - one frame behind, since
+    // the script ticks before this frame's camera is settled.
+    float spriteAnchor[3] = {0.0f, 0.0f, 0.0f};
+    bool  spriteAnchorSet = false;
+    std::map<int, long> spriteLogged;     // row -> the link tick already reported
     for (;;) {
         const Uint32 frameStartMs = SDL_GetTicks();
         if (!front.pump(host)) break;
@@ -3242,6 +3250,7 @@ int main(int argc, char** argv) {
         // The script runs unless a screen is up. That is the engine: a script
         // parked at `ui.open` is waiting on a person, and `Game_HandleEvent`
         // case 5 is the only thing that releases it.
+        if (spriteAnchorSet) session.sceneMutable().setSpriteAnchor(spriteAnchor);
         if (!walk) session.frame();
         else session.tickMusicLevel();       // the music level moves under a screen too
 
@@ -6287,7 +6296,10 @@ int main(int argc, char** argv) {
             // holds every sprite after the set's and the speaker's textures,
             // so a batch's slot is `spriteBase + sprite`.
             int spriteBase = -1;
-            if ((session.scene().effects().count() || !ctlSprites.empty()) && !spriteTex.empty()) {
+            for (int k = 0; k < 3; ++k) spriteAnchor[k] = view.cam.at[k];
+            spriteAnchorSet = true;
+            const bool scriptSprites = session.scene().loaded() && !session.scene().sprites().empty();
+            if ((session.scene().effects().count() || !ctlSprites.empty() || scriptSprites) && !spriteTex.empty()) {
                 omk::particleGeometry(fxGeo, session.scene().effects(),
                                       view.cam.eye, view.cam.at, spriteFr);
                 // The `.CTL` sprites, each on its bone THIS frame (flag 1,
@@ -6339,6 +6351,51 @@ int main(int argc, char** argv) {
                     fxGeo.cornerMesh.insert(fxGeo.cornerMesh.end(), ctlGeo.cornerMesh.begin(), ctlGeo.cornerMesh.end());
                     fxGeo.cornerVertex.insert(fxGeo.cornerVertex.end(), ctlGeo.cornerVertex.begin(), ctlGeo.cornerVertex.end());
                     fxGeo.cornerDeclared.insert(fxGeo.cornerDeclared.end(), ctlGeo.cornerDeclared.begin(), ctlGeo.cornerDeclared.end());
+                    ++fxGeo.revision;
+                }
+                // THE SCRIPTED SPRITES - `Script_Display3DSprite` and its
+                // family (program.h). An instance the scene has linked is
+                // drawn every frame from its own fields: frame `+22`, type
+                // `+20` (the blend mode), the two scales, the roll. The
+                // engine walks the scene's `+36` list after the effects, and
+                // `Sprite_SetFrame` hides an instance whose frame is past the
+                // sprite's count by writing 0xFFFF, which the clamp here
+                // stands in for.
+                if (scriptSprites) {
+                    omk::ParticleField scField;
+                    for (const auto& kv : session.scene().sprites()) {
+                        const auto& sp = kv.second;
+                        if (!sp.linked || sp.id < 0 ||
+                            static_cast<std::size_t>(sp.id) >= spriteFr.size() ||
+                            spriteFr[static_cast<std::size_t>(sp.id)].frames.empty()) continue;
+                        const int n = static_cast<int>(spriteFr[static_cast<std::size_t>(sp.id)].frames.size());
+                        if (sp.frame < 0 || sp.frame >= n) continue;   // 0xFFFF: not drawn
+                        if (spriteLogged[sp.row] != sp.linkedAt + 1) {
+                            spriteLogged[sp.row] = sp.linkedAt + 1;
+                            std::printf("sprite: LINKED row %d id %d type %d frame %d/%d scale %.2f/%.2f at %.0f,%.0f,%.0f (scene tick %ld)\n",
+                                        sp.row, sp.id, sp.type, sp.frame, n, sp.sx, sp.sy,
+                                        sp.pos[0], sp.pos[1], sp.pos[2], sp.linkedAt);
+                        }
+                        omk::Particle p;
+                        for (int k = 0; k < 3; ++k) p.pos[k] = sp.pos[k];
+                        p.life = 1.0f;
+                        p.frame = sp.frame;
+                        p.scale = sp.sx;
+                        p.scaleY = sp.sy;
+                        p.angle = sp.roll;
+                        p.sprite = sp.id;
+                        p.mode = static_cast<std::uint8_t>(sp.type & 0xF);
+                        scField.addParticle(p);
+                    }
+                    omk::Geometry scGeo;
+                    omk::particleGeometry(scGeo, scField, view.cam.eye, view.cam.at, spriteFr);
+                    const std::size_t base = fxGeo.corners.size();
+                    for (omk::Batch b : scGeo.batches) { b.start += base; fxGeo.batches.push_back(b); }
+                    fxGeo.corners.insert(fxGeo.corners.end(), scGeo.corners.begin(), scGeo.corners.end());
+                    fxGeo.cornerMirror.insert(fxGeo.cornerMirror.end(), scGeo.cornerMirror.begin(), scGeo.cornerMirror.end());
+                    fxGeo.cornerMesh.insert(fxGeo.cornerMesh.end(), scGeo.cornerMesh.begin(), scGeo.cornerMesh.end());
+                    fxGeo.cornerVertex.insert(fxGeo.cornerVertex.end(), scGeo.cornerVertex.begin(), scGeo.cornerVertex.end());
+                    fxGeo.cornerDeclared.insert(fxGeo.cornerDeclared.end(), scGeo.cornerDeclared.begin(), scGeo.cornerDeclared.end());
                     ++fxGeo.revision;
                 }
                 // The pool already carries them: it is built above, in one

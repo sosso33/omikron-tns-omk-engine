@@ -584,7 +584,19 @@ path this time rather than from mesh flags.
   sites against the banner's two, so the negative result cannot be re-derived
   from the same wrong count.
 
-  **Not yet ported**: nothing in `engine/` draws a sprite.
+  **Ported 2026-09-05**: `Script_Display3DSprite` and the five setters
+  (`SetSpriteType`/`Frame`/`Rolling`, `ScaleSpriteOnX`/`Y`) run in
+  `Program::tick`, the scene's instances live in `SceneRunner::sprites()`,
+  and `omk-play` draws them through the particle path with the instance's
+  own frame, two scales, roll and type. Two readings worth keeping: the
+  handler places a sprite at the active camera's **TARGET** - it prefers a
+  256-row XYZ table (`unk_905F20`) whose two writers are unreferenced in the
+  listing, so every one of the 232 shipped sites takes the fallback - and it
+  **never unlinks** the instance, so a shown sprite stays in the draw list
+  where it was last put. `Script_SetSpriteRolling`'s finishing tick writes
+  its `end` parameter RAW into the radians field (the running value is
+  `x pi/180`); every shipped site rolls 0, so it shows nowhere. `verify.py:
+  engine scene sprites`.
 
   **And what STARTS a sprite object is still open — the search is bounded.**
   `Script_StartScript` (0x0044A7E0) has **9** call sites. Eight are explicit

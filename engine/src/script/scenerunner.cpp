@@ -26,6 +26,7 @@ bool SceneRunner::load(const std::string& scptDataDir, const std::string& iamDir
     cam_ = CamFile{};
     editings_.clear();
     ticks_ = 0;
+    sprites_.clear();        // `Scene_LoadSCX` respawns every row's instance
     const auto st = readScxStream(d);
     if (st.valid && st.camSize && d.size() >= st.camOffset + st.camSize)
         cam_ = readCamFile(std::span<const std::byte>(d).subspan(st.camOffset, st.camSize));
@@ -338,6 +339,35 @@ void SceneRunner::tick(float dt) {
             sounds_.push_back({static_cast<int>(i), started_[i].object,
                                started_[i].actor, c});
         for (const auto& m : programs_[i]->motions()) motions_.push_back(m);
+    }
+    // A sprite is positioned only on a tick a `Display3DSprite` runs: the
+    // flag is this tick's, and an instance nobody wrote to keeps its place.
+    for (auto& kv : sprites_) kv.second.tracking = false;
+    // ...and apply the sprite family to the scene's instances, in the order
+    // the chains ran them. Two objects naming one row share the instance,
+    // as they do in the engine (last writer wins within a tick).
+    for (const auto& p : programs_) {
+        for (const auto& op : p->spriteOps()) {
+            auto& sp = sprites_[op.row];
+            if (sp.row < 0) {
+                sp.row = op.row;
+                sp.id  = scx_ ? scx_->spriteId(op.row) : -1;
+            }
+            switch (op.kind) {
+            case Program::SpriteOp::Kind::Display:
+                if (!sp.linked) { sp.linked = true; sp.linkedAt = ticks_; }
+                sp.tracking = op.tracking;
+                if (op.tracking && anchorSet_)
+                    for (int c = 0; c < 3; ++c) sp.pos[c] = anchor_[c];
+                break;
+            case Program::SpriteOp::Kind::Frame:  sp.frame = op.ivalue; break;
+            case Program::SpriteOp::Kind::Type:   sp.type  = op.ivalue; break;
+            case Program::SpriteOp::Kind::ScaleX: sp.sx    = op.fvalue; break;
+            case Program::SpriteOp::Kind::ScaleY: sp.sy    = op.fvalue; break;
+            case Program::SpriteOp::Kind::Roll:   sp.roll  = op.fvalue; break;
+            case Program::SpriteOp::Kind::Palette: break;   // the morph palette is not drawn
+            }
+        }
     }
     // THE PROGRAM COUNTER MOVES, AND SO DOES THE CLIP. `Started::clip` was
     // filled once at start from the object's FIRST body animation and never

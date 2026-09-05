@@ -10,7 +10,7 @@ listed under each.
 | step | what | status |
 |---|---|---|
 | 1 | **the collision sweep** — `Actor_Move`'s swept sphere (`Sweep_ActorMove` 0x004AD360 → `Sweep_MeshTest` → `Sweep_PolygonKernel` 0x004A9D30, 930 lines) so walls, railings and closed doors stop the walker; issues 68/75 and HANDOFF "the walker does not block on walls" | **done** — 1 (the sweep in the sim's shape) and 1b (the capsule, the stand-off, the push-out, the mask; the drop guard retired); walls confirmed by the reader's play, railings unseen |
-| 2 | **the scene functions** — the eleven of seventeen `.SCX` object functions the port does nothing for (issue 71), starting with `Script_StopSound` (61 scenes, the audio that never stops) and `Script_Display3DSprite` (65 scenes) | pending |
+| 2 | **the scene functions** — the eleven of seventeen `.SCX` object functions the port does nothing for (issue 71), starting with `Script_StopSound` (61 scenes, the audio that never stops) and `Script_Display3DSprite` (65 scenes) | **in progress**: `StopSound` done 2026-09-04; the SPRITE FAMILY (six functions, 465 sites) done 2026-09-05 with `verify.py: engine scene sprites`; left `ScaleObjectX/Y/Z` (35 sites) |
 | 3 | **the area transitions** — the two-slot decor split that leaves the player on an unlinked set (issue 70), and the tunnel's early unload / which of two overlapping zones fires (issue 75) | **in progress** (taken before step 2: the reader walked into the void from the Impasse airlock on 2026-09-05) |
 
 ## Step 1 — the collision sweep

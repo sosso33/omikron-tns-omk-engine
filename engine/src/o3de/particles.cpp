@@ -298,6 +298,7 @@ void particleGeometry(Geometry& g, const ParticleField& f, const float eye[3],
         if (sf) {
             const int n = static_cast<int>(sf->frames.size());
             int fi = p.life > 0 ? static_cast<int>((n - 1) * (p.frameAge / p.life)) : 0;
+            if (p.frame >= 0) fi = p.frame;      // a scripted sprite's own `+22`
             if (fi < 0) fi = 0;
             if (fi > n - 1) fi = n - 1;
             uv = sf->frames[static_cast<std::size_t>(fi)];
@@ -306,13 +307,17 @@ void particleGeometry(Geometry& g, const ParticleField& f, const float eye[3],
         if (sf) {
             const int n = static_cast<int>(sf->extent.size());
             int ei = p.life > 0 ? static_cast<int>((n - 1) * (p.frameAge / p.life)) : 0;
+            if (p.frame >= 0) ei = p.frame;
             if (ei < 0) ei = 0;
             if (ei > n - 1) ei = n - 1;
             if (n) base = sf->extent[static_cast<std::size_t>(ei)];
         }
         const float s = base * p.scale;
+        // `+24` scales the X corners and `+28` the Y ones - two scales, which
+        // a scripted sprite may set apart; an effect's particle has one
+        const float sy = p.scaleY >= 0.0f ? base * p.scaleY : s;
         const float ca = std::cos(p.angle), sa = std::sin(p.angle);
-        const float ox[4] = {-s, s, s, -s}, oy[4] = {-s, -s, s, s};
+        const float ox[4] = {-s, s, s, -s}, oy[4] = {-sy, -sy, sy, sy};
         Corner c[4];
         for (int k = 0; k < 4; ++k) {
             const float rx = ox[k] * ca - oy[k] * sa;

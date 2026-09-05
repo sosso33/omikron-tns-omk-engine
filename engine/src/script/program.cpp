@@ -63,6 +63,11 @@ const ScxPath* ScxRuntime::pathIn(int file, int index) const {
     return nullptr;
 }
 
+int ScxRuntime::spriteId(int row) const {
+    if (row < 0 || static_cast<std::size_t>(row) >= stream_.sprites.size()) return -1;
+    return stream_.sprites[static_cast<std::size_t>(row)].id;
+}
+
 int ScxRuntime::wavId(int i) const {
     if (i < 0 || static_cast<std::size_t>(i) >= stream_.wavs.size()) return -1;
     return stream_.wavs[static_cast<std::size_t>(i)].id;
@@ -211,6 +216,16 @@ float Program::busySpan(int k) const {
         const float over = asFloat(f.params[6]);
         return over > 0.0f ? over : 1.0f;
     }
+    // `Script_Display3DSprite` positions the sprite while param 3 (its
+    // clock) < param 2 (the duration) and adds `Script_GetFrameTime()` each
+    // tick, so it is busy for `duration - clock` ticks: 60 at every shipped
+    // site. The scale and roll ramps are busy for THEIR param 4, which is 0
+    // at every shipped site - they finish on their first tick.
+    if (f.id == kFnDisplay3DSprite && f.params.size() > 3)
+        return std::max(0.0f, asFloat(f.params[2]) - asFloat(f.params[3]));
+    if ((f.id == kFnScaleSpriteOnX || f.id == kFnScaleSpriteOnY ||
+         f.id == kFnSetSpriteRolling) && f.params.size() > 5)
+        return std::max(0.0f, asFloat(f.params[4]) - asFloat(f.params[5]));
     // PlaySyncSound has its own cue time, handled in tick.
     return 0.0f;
 }
@@ -218,6 +233,7 @@ float Program::busySpan(int k) const {
 bool Program::tick(float dt) {
     sounds_.clear();
     motions_.clear();
+    spriteOps_.clear();
     if (!running_) return false;
     bool busy = false;
     if (obj_->nfn > 0) {
@@ -335,6 +351,57 @@ bool Program::tick(float dt) {
                 if (f.id == kFnSelectBodyAnimation || f.id == kFnSelectRelativeAnim)
                     trace_.push_back(rt_->clipName(
                         f.params.size() > 1 ? f.params[1] : -1));
+            }
+            if (!f.params.empty() &&
+                (f.id == kFnDisplay3DSprite || f.id == kFnSetSpriteFrame ||
+                 f.id == kFnSetSpriteType || f.id == kFnScaleSpriteOnX ||
+                 f.id == kFnScaleSpriteOnY || f.id == kFnSetSpriteRolling ||
+                 f.id == kFnSetSpriteDefaultPal)) {
+                // The sprite family, each handler as read (program.h has the
+                // parameter layouts). `since` stands in for the clock the
+                // handler keeps in its own parameter block: ticks since this
+                // run of the function began.
+                const auto ea = entryAt_.find(k);
+                const float since = ea == entryAt_.end() ? 0.0f : clock_ - ea->second;
+                SpriteOp op;
+                op.row = f.params[0];
+                if (f.id == kFnDisplay3DSprite) {
+                    op.kind = SpriteOp::Kind::Display;
+                    const float dur = f.params.size() > 2 ? asFloat(f.params[2]) : 0.0f;
+                    const float at  = f.params.size() > 3 ? asFloat(f.params[3]) : 0.0f;
+                    // the handler positions the sprite only on a tick where
+                    // clock < duration; the tick that reaches it finishes
+                    op.tracking = at + since < dur;
+                } else if (f.id == kFnSetSpriteFrame) {
+                    op.kind = SpriteOp::Kind::Frame;
+                    op.ivalue = f.params.size() > 1 ? f.params[1] : 0;
+                } else if (f.id == kFnSetSpriteType) {
+                    op.kind = SpriteOp::Kind::Type;
+                    op.ivalue = f.params.size() > 1 ? f.params[1] : 0;
+                } else if (f.id == kFnSetSpriteDefaultPal) {
+                    op.kind = SpriteOp::Kind::Palette;
+                } else {
+                    op.kind = f.id == kFnScaleSpriteOnX ? SpriteOp::Kind::ScaleX
+                            : f.id == kFnScaleSpriteOnY ? SpriteOp::Kind::ScaleY
+                            : SpriteOp::Kind::Roll;
+                    const float start = f.params.size() > 1 ? asFloat(f.params[1]) : 0.0f;
+                    const float end   = f.params.size() > 2 ? asFloat(f.params[2]) : 0.0f;
+                    const float cur   = f.params.size() > 3 ? asFloat(f.params[3]) : 0.0f;
+                    const float dur   = f.params.size() > 4 ? asFloat(f.params[4]) : 0.0f;
+                    const float at    = f.params.size() > 5 ? asFloat(f.params[5]) : 0.0f;
+                    if (at + since < dur) {
+                        // in progress: the CURRENT value, which the handler
+                        // then advances by dt * (end - start) / duration
+                        const float v = cur + since * (end - start) / dur;
+                        op.fvalue = op.kind == SpriteOp::Kind::Roll
+                                  ? v * 0.017453292f : v;
+                    } else {
+                        // finished: `end` outright - and for the roll, RAW,
+                        // degrees into the radians field (the engine's quirk)
+                        op.fvalue = end;
+                    }
+                }
+                spriteOps_.push_back(op);
             }
             if (clock_ < it->second) {
                 busy = true;

@@ -340,6 +340,26 @@ contain something the port silently does nothing for.
 > Only LOOPING cues are remembered; a one-shot ends by itself and its handle
 > would go stale.
 
+> **THE SPRITE FAMILY DONE 2026-09-05, not yet confirmed in play.** Five
+> more of the eleven (465 sites): `Display3DSprite`, `SetSpriteType`
+> (`fn_04_12`), `SetSpriteFrame` (`fn_04_41`), `ScaleSpriteOnX`/`Y`,
+> `SetSpriteRolling`, and `SetSpriteDefaultPalette` (`fn_04_31`) consumed
+> without a picture (the morph palette is not drawn). All six handlers READ
+> - the four unlabelled ones from the raw listing. The port: `Program::tick`
+> reports per-tick `SpriteOp`s, `SceneRunner::sprites()` holds the scene's
+> instances (per scene, as `Scene_SpriteIsLoaded` hands them out by ROW),
+> `omk-play` draws them through `particleGeometry` with a frame override and
+> two scales, and logs `sprite: LINKED ...` when one appears. WHERE they go
+> is the finding: the handler's XYZ table (param 1) has NO writer reachable
+> in the listing, so all 232 sites fall back to the active camera's TARGET
+> (`Camera_GetPosition`'s second triple, followed through the stack frame) -
+> the viewer hands the runner the camera it last drew with. A sprite is
+> positioned on each of its 60 ticks and NEVER unlinked afterwards.
+> `verify.py: engine scene sprites` (Impasse's `effects2_glow` and
+> `fx2_smoke1`), shown to fail by dropping the arm. Left: `ScaleObjectX/Y/Z`
+> (35 sites), the node scale on `+128/+132/+136` with mode 4 = the node, 8 =
+> its subtree.
+
 **`Script_StopSound` is the reader's own symptom and should go first.** A scene
 that starts a sound has no way to stop it: `Script_PlaySound` is implemented
 and its counterpart is not, so 86 sites across 61 scenes start audio the port

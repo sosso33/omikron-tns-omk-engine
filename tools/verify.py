@@ -7256,6 +7256,71 @@ def c_engine_stop_sound():
          "looping, then STOP cues, the sound they name, and whether the stop "
          "names the same sound the play started")
 
+def c_engine_scene_sprites():
+    r"""`engine/`: the SPRITE FAMILY of scene functions - `Script_Display3DSprite`
+    and the five that set an instance's type, frame, scales and roll - runs,
+    and a scene's sprite instances come out of the runner with the values the
+    handlers write.
+
+    Five of the eleven unimplemented scene functions (`todo/omk-play.md` 71)
+    and 465 sites between them: `Display3DSprite` alone is 232 sites in 65
+    scenes, and a scene that showed a flash, a glow or a smoke puff through
+    them drew NOTHING. Every handler was read from the listing - four of them
+    from the raw assembly, because they carry no `proc` label and `asmfn.py`
+    snaps to `sub_4A2D10` instead (the mis-attribution 71 records).
+
+    What the reading settled, and the probe asserts on `Impasse.SCX`:
+
+    * `effects2_glow` (object 10, handle 26) is the full chain on sprite row
+      1: type 4, frame 0, roll 0, scale 1/1, then `Display3DSprite` for 60
+      frames. After one tick the instance is LINKED with exactly those values
+      and the row's registry id (14, `EFFECTS2_GLOW`), which is the library
+      slot the viewer draws it from.
+    * the handler positions the sprite on every tick its clock is under the
+      duration - 60 of them, the 61st idle - and NEVER unlinks it: the
+      instance stays in the scene's draw list where it was last put. The
+      probe moves the camera afterwards and the sprite does not follow.
+    * WHERE: the handler prefers a 256-row XYZ table and falls back to the
+      active camera's TARGET - and both writers of that table are
+      unreferenced in the listing, so every shipped site takes the fallback.
+      The probe feeds the runner a target and reads it back as the position.
+    * `fx2_smoke1` (object 21, handle 134) is a bare `Display3DSprite` on
+      row 0: the instance carries `Sprite_SpawnInstance`'s defaults, type 0
+      and frame 0, and resolves to id 13 (`EFFECTS2_SMOKE1`).
+
+    SHOWN TO FAIL by dropping the family's arm from `Program::tick`: nothing
+    is linked, the record is all zeros, which is the picture that was missing.
+    """
+    import subprocess, tempfile, shutil
+    eng = os.path.join(ROOT, "engine")
+    fr = omkpaths.data_root()
+    if not os.path.isdir(fr):
+        return ("no data",), ("data",), "needs the shipped tree"
+    b = subprocess.run(["make", "-s", "build/sprite_probe"], cwd=eng,
+                       capture_output=True, text=True)
+    binp = os.path.join(eng, "build", "sprite_probe")
+    if b.returncode != 0 or not os.path.exists(binp):
+        return ("build failed",), ("built",), "engine/ must build"
+    tmp = tempfile.mkdtemp()
+    try:
+        out = os.path.join(tmp, "sp.bin")
+        subprocess.run([binp, fr, os.path.join(ROOT, "tables", "vm_opcodes.json"),
+                        os.path.join(fr, "IAM", "START"),
+                        os.path.join(fr, "SCPTDATA"), out],
+                       capture_output=True, text=True)
+        raw = open(out, "rb").read()
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+    if len(raw) < 56:
+        return ("no output",), ("56 bytes",), "the probe must write its record"
+    got = struct.unpack_from("<14i", raw, 0)
+    want = (1, 0, 4, 14, 1000, 1000, 0, 60, 61, 1, 1, 1, 0, 13)
+    return got, want, \
+        ("Impasse's effects2_glow after one tick: linked, frame, type, registry "
+         "id, scale x/y x1000, roll x1000; ticks positioned, first idle tick, "
+         "frozen once the camera moved, still linked; then fx2_smoke1's row 0: "
+         "linked, default type, registry id")
+
 def c_engine_special_moves():
     r"""`engine/`: every move name the shipped banks carry resolves to a
     `tab_special_move[]` row - the table READ against the data that uses it.
@@ -19392,7 +19457,7 @@ def c_licence_headers():
                    if TAG in open(p, encoding="utf-8",
                                   errors="replace").read(600)]
     return (authored, sorted(missing), len(vendored), mislabelled), \
-           (332, [], 1, []), \
+           (334, [], 1, []), \
            "authored source files under tools/, engine/src, engine/tools, " \
            "engine/backends and scripts/; those MISSING the SPDX tag; " \
            "vendored files in engine/third_party; and vendored files wrongly " \
@@ -20827,6 +20892,7 @@ SLOW = [
     ("credit layout", c_credit_layout, "docs/UI"),
     ("engine: impasse fx", c_engine_impasse_fx, "todo/omk-play"),
     ("engine: stop sound", c_engine_stop_sound, "todo/omk-play"),
+    ("engine: scene sprites", c_engine_scene_sprites, "todo/omk-play"),
     ("engine: special moves", c_engine_special_moves, "docs/ASSETS"),
     ("engine: crowd nan", c_engine_crowd_nan, "todo/omk-play"),
     ("engine: tunnel doors", c_engine_tunnel_doors, "todo/omk-play"),

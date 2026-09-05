@@ -158,6 +158,13 @@ struct Particle {
     float drift = 0;
     int   sprite = 0;
     std::uint8_t mode = 0;
+    // A SCRIPTED sprite (`Script_Display3DSprite` and its family) is an
+    // instance the script sets outright rather than one an effect ages: its
+    // frame is `+22` as written (`-1` here = take it from the age, the
+    // effect's way), its two scales are `+24` and `+28` separately (`scaleY`
+    // < 0 = the same as `scale`), and its roll is `+32`, which is `angle`.
+    int   frame = -1;
+    float scaleY = -1.0f;
     // The tick's own test: integrated and drawn while `age <= life`.
     bool  alive() const { return age <= life; }
 };
