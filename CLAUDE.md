@@ -865,8 +865,15 @@ own pre-2026-08-29 bug — **`V` swaps the software reference for the VULKAN
 backend**, same camera a keypress apart, `P` prints the current camera in the
 flag form so a framing you found by eye can be pasted straight into a check,
 `ESC` quits.
-`--frames N --dump out.bin` writes the framebuffer without a window, which is
-how it is smoke-tested and how a shot is made to lay beside a capture.
+`--frames N --dump out.bin` writes the framebuffer and is how it is
+smoke-tested and how a shot is made to lay beside a capture — but it does
+**NOT** suppress the window, whatever this said before. **Set
+`SDL_VIDEODRIVER=dummy` for a headless render**, which is what `verify.py`
+does. Without it the render opens a real window that takes the keyboard, and
+on 2026-09-06 two comparison renders came out of different places entirely
+because a reader saw a window appear, assumed it was for them, and walked the
+player — which is the reasonable thing to assume. The frames were then
+evidence about their walk rather than about the change under test.
 
 **A STREET START** (STREET_LIFE, 2026-09-03) stands in a city in adventure
 mode with its crowd, no intro to replay:

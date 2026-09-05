@@ -1965,6 +1965,24 @@ def c_engine_input():
 def c_engine_i2d():
     r"""`engine/`'s I2D layer - the display list, its pools and its flag banks.
 
+    **The flag-bank counts were re-baselined 2026-09-06, and the reason is
+    worth having.** This check had been RED since the sneak work regenerated
+    `tables/ui_widgets.json` (three commits: the sneak opening, its drawing,
+    and the two panels no item points at). It counts the widget tree's flag
+    CONSTANTS, and the tree grew: 99 constants became 115, the middle bank 75
+    became 91, the set/test round trips 47 became 57, and the item flag words
+    the data actually uses went from (24, 357, 190) to (116, 544, 291).
+
+    None of that is a fault - it is a census of a generated table, and the
+    table legitimately gained records. What matters is that **the two
+    INVARIANTS held throughout**: every flag constant still resolves to a bank
+    (115 of 115, and one naming none would be silently dropped), and every
+    set/test round trip is still correct (57 of 57). Those are now asserted as
+    RELATIONS - `v[19] == v[20]`, `v[24] == v[25]` - rather than as a
+    coincidence between two literals, so a future regeneration moves the
+    counts without touching the claims, and a constant that stops resolving
+    fails even if somebody re-baselines the census.
+
     I2D is the engine's 2D compositor: `LIBI2D` and `libpoly2d/gereaff.c` in
     its own strings. It is not part of the 3D path - every primitive ends in an
     `IDirectDrawSurface::Blt` - and `I2D_Flush` (0x00428B00) is one line of the
@@ -2053,13 +2071,22 @@ def c_engine_i2d():
         v = struct.unpack_from("<29i", open(out, "rb").read(), 0)
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
-    return v, (4862, 7, 1, 1,
-               200, 200, 5032, 1407, 1407, 147,
-               1, 1, 0, 24, 2, 1,
-               2, 1, 2,
-               99, 99, 22, 75, 2,
-               47, 47,
-               24, 357, 190), \
+    # THE TWO INVARIANTS, asserted as relations rather than as a coincidence
+    # between two literals: every flag constant must resolve to a bank (one
+    # naming none is silently dropped), and every set/test round trip must be
+    # correct. Those are the claims; the COUNTS beside them are a census of a
+    # generated table and move whenever it is regenerated - which is exactly
+    # what happened, see the docstring.
+    allResolve = v[19] == v[20]
+    allRoundTripsCorrect = v[24] == v[25]
+    return (v, allResolve, allRoundTripsCorrect), \
+           ((4862, 7, 1, 1,
+             200, 200, 5032, 1407, 1407, 147,
+             1, 1, 0, 24, 2, 1,
+             2, 1, 2,
+             115, 115, 22, 91, 2,
+             57, 57,
+             116, 544, 291), True, True), \
            "the seven pools' total capacity, how many are live, how many are " \
            "UNREFERENCED, and whether the total equals the display list's own " \
            "node cap of 4862 - which is what makes that number derived rather " \
@@ -9576,6 +9603,13 @@ def c_subtitle_box():
         "switch (dword_907A00 & 0x1E)" in body,
         "v42 = dword_907A08 - v43" in body,                       # case 4, right
         "(dword_907A08 - v43 - dword_907A14) / 2" in body,        # case 8, centred
+        # ...and the DEFAULT arm, which is `break;` and nothing else - it
+        # leaves the x where the left margin put it, and LEFT is what a
+        # subtitle gets. The docstring claimed all three arms and `got` only
+        # built two, so this tuple was 36 long against a 37-long expectation
+        # and the check had been failing on a LENGTH mismatch - not on any
+        # value being wrong. Restored 2026-09-06.
+        bool(re.search(r"case 8:.*?default:\s*break;", body, re.S)),
     )
     return got, (True, True, 1, True, True, True, True, 4, False, True, 7, True,
                  True, True, True, True, True, True,
