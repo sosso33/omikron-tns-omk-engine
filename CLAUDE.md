@@ -334,6 +334,18 @@ stopped guarding the moment the name changed, and nothing would have said so.
   When an address the *data* names has no function, disassemble the image at
   that address rather than trusting a block; `verify.py: ui input` asserts the
   size of the gap and the two prediction rates so this stays measured.
+* **A mutation that does not apply passes, and a stale object file passes.**
+  `PORTING` B2 requires every check to be SHOWN to fail; on 2026-09-06 four
+  separate mutations "passed" for reasons that had nothing to do with the
+  check. Two were string replacements whose anchor did not match (wrong
+  whitespace, or an anchor appearing three times in the file), one was
+  `find A -o B | xargs rm` deleting only B - `-print` binds to the LAST
+  expression, so the object file survived and the rebuild relinked it - and
+  one was a probe too weak to tell the right value from the wrong one (a light
+  shining straight down cannot distinguish a direction from a point when the
+  differing component is zero either way). **Assert that the file changed, name
+  the object files explicitly, and check the mutated run's OUTPUT differs -
+  not just that the check went red.**
 * A regex over decompiler output must respect nesting.
   `List_PickRandomByType(u32(a2, 20), 11)` reads as type **20** with a naive
   `[^,]+` pattern — which made type 20 look like the most-used in the game.
@@ -902,6 +914,21 @@ free-look tool was generalising a camera-mode property to all rendering.
 > ignored - the viewer then uses camera 0 and renders something that looks
 > broken but is correct. Three debugging rounds went into that. Use
 > `${=CAM}`, or type the flags out.
+>
+> **It recurred three times in one session (2026-09-06)** despite this
+> paragraph, so here is what each looked like, because the SYMPTOM is what you
+> will meet first and it is never "bad argument":
+> * `set -- $tag` in a loop: the flags ended up in the output FILENAME and all
+>   three renders were identical defaults - a comparison with nothing being
+>   compared;
+> * `build/omk-play $B --dump ...`: one giant argument, the program waited
+>   instead of rendering, and it read as a slow render for fourteen minutes;
+> * and the same shape in a `for` loop over "label|pattern|replacement" triples.
+>
+> The rule that would have caught all three: **after building a command from a
+> variable, assert the effect, not the exit status.** A render that produced no
+> file, three dumps with identical bytes, and a mutation that changed nothing
+> all exit 0.
 
 It is an **instrument, not a slice of the port** — but it draws through the
 same `drawGeometry`, the same batch order and the same blend modes that
