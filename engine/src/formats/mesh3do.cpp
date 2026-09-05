@@ -146,6 +146,7 @@ std::vector<Mesh> readMeshes(std::span<const std::byte> d, const Mesh3doHeader& 
         m.triangles = i32(d, o + 68);
         m.quads     = i32(d, o + 72);
         m.radius    = f32(d, o + 88);
+        m.local[0] = f32(d, o + 128); m.local[1] = f32(d, o + 132); m.local[2] = f32(d, o + 136);
         for (int k = 0; k < 3; ++k) {
             m.boxMin[k] = f32(d, o + 92u + 4u * static_cast<std::size_t>(k));
             m.boxMax[k] = f32(d, o + 104u + 4u * static_cast<std::size_t>(k));

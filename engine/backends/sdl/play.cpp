@@ -2288,6 +2288,7 @@ int main(int argc, char** argv) {
         // where the object's ROOT goes, so the root is what is moved onto it -
         // the same correction the scripted crates needed.
         float origin[3] = {0, 0, 0};
+        float localOff[3] = {0, 0, 0};   // the root mesh's +128: where it sits under a parent
         bool ready = false;
     };
     std::map<std::string, PropModel> propModels;
@@ -2631,6 +2632,8 @@ int main(int argc, char** argv) {
                 if (root >= 0)
                     for (int k = 0; k < 3; ++k)
                         m.origin[k] = ms[static_cast<std::size_t>(root)].pos[k];
+                    for (int k = 0; k < 3; ++k)
+                        m.localOff[k] = ms[static_cast<std::size_t>(root)].local[k];
             }
             m.ready = !m.rest.corners.empty();
             std::printf("prop model %s: %zu corners, %zu batches, %zu textures\n",
@@ -4131,6 +4134,21 @@ int main(int argc, char** argv) {
                             // screen (`sub_414A90` keeps the outgoing block as
                             // g_CameraPrev, request+24 = 30 the frames).
                             heldInHand = takeCandidate;       // `sub_41C490`: it rides the hand from here
+                            {
+                                float op[3] = {0, 0, 0};
+                                session.propPos(takeCandidate, op);
+                                const auto& objs = voiceLib.objects();
+                                const PropModel* pm = takeCandidate >= 0 &&
+                                    static_cast<std::size_t>(takeCandidate) < objs.size()
+                                    ? propModelFor(objs[static_cast<std::size_t>(takeCandidate)].stem) : nullptr;
+                                std::printf("take: GRAB object %d - placement %.1f %.1f %.1f, model %s "
+                                            "origin %.2f %.2f %.2f local(+128) %.2f %.2f %.2f, %zu rest corners\n",
+                                            takeCandidate, op[0], op[1], op[2],
+                                            pm ? "ready" : "MISSING",
+                                            pm ? pm->origin[0] : 0.f, pm ? pm->origin[1] : 0.f, pm ? pm->origin[2] : 0.f,
+                                            pm ? pm->localOff[0] : 0.f, pm ? pm->localOff[1] : 0.f, pm ? pm->localOff[2] : 0.f,
+                                            pm ? pm->rest.corners.size() : 0u);
+                            }
                             takeCam = true;
                             takeCamRequest(1);
                             std::printf("take: camera mode 1 requested - preset 1 over 30 frames\n");
@@ -4166,6 +4184,7 @@ int main(int argc, char** argv) {
                                                : "REFUSED - list 0 is full, case 10 returns 0 "
                                                  "and it stays in his hand";
                         heldInHand = -1;
+                        std::printf("take: RELEASE object %d into the bank\n", takeCandidate);
                         std::printf("take: MDPUTSNK - object %d '%s' (kind %d) -> "
                                     "carried list %d -> %d: %s%s%s\n",
                                     takeCandidate,
@@ -4207,7 +4226,7 @@ int main(int argc, char** argv) {
                         // `Cef_FindGroupById` returning nothing does.
                         // Inside the put group already (MDNOTAKE entered it):
                         // `sub_41C540(actor, 0)` - the object back to the world.
-                        std::printf("take: MDLETOBJ - object %d put back where it was\n",
+                        std::printf("take: MDLETOBJ - RELEASE object %d, put back where it was\n",
                                     takeCandidate);
                         session.putHeldObjectBack();
                         heldInHand = -1;
@@ -5192,19 +5211,24 @@ int main(int argc, char** argv) {
                         // header +12 is -1). Until it is, the object is
                         // carried at the hand mesh's own centre, which is the
                         // palm.
-                        float handOff[3] = {0, 0, 0};
-                        {
-                            const auto& hm = playerMeshes[static_cast<std::size_t>(hand)];
-                            std::size_t cnt = 0;
-                            for (std::size_t c = 0; c < playerRest.corners.size(); ++c) {
-                                if (c >= playerRest.cornerMesh.size() || playerRest.cornerMesh[c] != hand) continue;
-                                handOff[0] += playerRest.corners[c].x - hm.pos[0];
-                                handOff[1] += playerRest.corners[c].y - hm.pos[1];
-                                handOff[2] += playerRest.corners[c].z - hm.pos[2];
-                                ++cnt;
-                            }
-                            if (cnt) for (float& v : handOff) v /= static_cast<float>(cnt);
-                        }
+                        // THE ENGINE'S RULE, read 2026-09-05. The transform pass
+                        // (`sub_4942A0`, 26_ole.c) composes a child as
+                        // `world = parent.world + parent.worldMatrix * local`,
+                        // `local` being the mesh record's +128..+136 - which
+                        // `sub_41C490` leaves as the prop's file carries it
+                        // (ANNEAU: -2.24, -0.17, -2.01, three units from the
+                        // wrist toward the knuckles) - and the child's rotation
+                        // is `matrix(+56) x facing(+156)` under the parent's.
+                        // A prop's placement ROTATION lives in +156, not +56:
+                        // `Object_SetPlacement` builds its Euler matrix into the
+                        // slot record and points +156 at it, while +56 stays
+                        // identity - and the grab's `sub_437140(node, 0)` clears
+                        // +156. So a held object turns with the HAND ALONE. The
+                        // release (`sub_41C540(actor, 0)`) resets +56, re-links
+                        // the node under the scene root and restores the saved
+                        // placement, position and angles both, which is what
+                        // drawing a released prop from its record already does.
+                        const float handOff[3] = {pm->localOff[0], pm->localOff[1], pm->localOff[2]};
                         const std::size_t base = propGeo.corners.size();
                         for (const auto& c : pm->rest.corners) {
                             omk::Corner w = c;
@@ -5212,7 +5236,7 @@ int main(int argc, char** argv) {
                                                     c.y - pm->origin[1] + handOff[1],
                                                     c.z - pm->origin[2] + handOff[2]};
                             float r[3];
-                            omk::qrot(hp.q, local, r);              // the hand's rotation
+                            omk::qrot(hp.q, local, r);              // the hand's rotation, alone
                             const float in[3] = {hp.pos[0] + r[0] - playerRootXZ[0], hp.pos[1] + r[1],
                                                  hp.pos[2] + r[2] - playerRootXZ[1]};
                             float o[3];
@@ -5232,22 +5256,37 @@ int main(int argc, char** argv) {
                         if (n - heldToldFrame >= 30) {
                             heldToldFrame = n;
                             double cx = 0, cy = 0, cz = 0; const std::size_t cnt = propGeo.corners.size() - base;
+                            float lo[3] = {1e9f, 1e9f, 1e9f}, hi[3] = {-1e9f, -1e9f, -1e9f};
                             for (std::size_t c = base; c < propGeo.corners.size(); ++c) {
-                                cx += propGeo.corners[c].x; cy += propGeo.corners[c].y; cz += propGeo.corners[c].z;
+                                const auto& w = propGeo.corners[c];
+                                cx += w.x; cy += w.y; cz += w.z;
+                                lo[0] = std::min(lo[0], w.x); hi[0] = std::max(hi[0], w.x);
+                                lo[1] = std::min(lo[1], w.y); hi[1] = std::max(hi[1], w.y);
+                                lo[2] = std::min(lo[2], w.z); hi[2] = std::max(hi[2], w.z);
                             }
                             if (cnt) { cx /= cnt; cy /= cnt; cz /= cnt; }
                             float hin[3] = {hp.pos[0] - playerRootXZ[0], hp.pos[1], hp.pos[2] - playerRootXZ[1]}, ho[3];
                             omk::rotateYaw(yaw, hin, ho);
-                            std::printf("prop %d in the LEFT HAND (mesh %d '%s'): hand node at %.1f %.1f %.1f, "
-                                        "%zu corners centred %.1f %.1f %.1f, player at %.1f %.1f %.1f, "
-                                        "model extent r %.1f\n",
-                                        pr.id, hand, playerMeshes[static_cast<std::size_t>(hand)].name,
-                                        ho[0] + pp[0], ho[1] + pp[1] - playerFeet + lastRootDrop, ho[2] + pp[2],
-                                        cnt, cx, cy, cz, pp[0], pp[1], pp[2],
-                                        static_cast<double>(pm->rest.corners.empty() ? 0.0f :
-                                            [&]{ float m = 0; for (const auto& c : pm->rest.corners) {
-                                                 const float dx = c.x - pm->origin[0], dy = c.y - pm->origin[1], dz = c.z - pm->origin[2];
-                                                 m = std::max(m, std::sqrt(dx*dx + dy*dy + dz*dz)); } return m; }()));
+                            // the FIST as drawn: the hand mesh's corners in playerPosed, world
+                            float flo[3] = {1e9f, 1e9f, 1e9f}, fhi[3] = {-1e9f, -1e9f, -1e9f}; std::size_t fc = 0;
+                            for (std::size_t c = 0; c < playerPosed.corners.size(); ++c) {
+                                if (c >= playerPosed.cornerMesh.size() || playerPosed.cornerMesh[c] != hand) continue;
+                                const auto& w = playerPosed.corners[c]; ++fc;
+                                flo[0] = std::min(flo[0], w.x); fhi[0] = std::max(fhi[0], w.x);
+                                flo[1] = std::min(flo[1], w.y); fhi[1] = std::max(fhi[1], w.y);
+                                flo[2] = std::min(flo[2], w.z); fhi[2] = std::max(fhi[2], w.z);
+                            }
+                            std::printf("held %d: hand node %.1f %.1f %.1f q(%.2f %.2f %.2f %.2f); object centre "
+                                        "%.1f %.1f %.1f box [%.1f..%.1f %.1f..%.1f %.1f..%.1f] %zu corners %zu batches "
+                                        "(mat %d texBase %zu); fist box [%.1f..%.1f %.1f..%.1f %.1f..%.1f] %zu corners "
+                                        "(as drawn LAST frame); player %.1f %.1f %.1f yaw %.0f; camera eye %.0f %.0f %.0f\n",
+                                        pr.id, ho[0] + pp[0], ho[1] + pp[1] - playerFeet + lastRootDrop, ho[2] + pp[2],
+                                        hp.q.w, hp.q.x, hp.q.y, hp.q.z,
+                                        cx, cy, cz, lo[0], hi[0], lo[1], hi[1], lo[2], hi[2], cnt,
+                                        pm->rest.batches.size(),
+                                        pm->rest.batches.empty() ? -1 : pm->rest.batches[0].material, pm->texBase,
+                                        flo[0], fhi[0], flo[1], fhi[1], flo[2], fhi[2], fc,
+                                        pp[0], pp[1], pp[2], yaw, lastEye[0], lastEye[1], lastEye[2]);
                         }
                         continue;
                     }
@@ -5257,15 +5296,20 @@ int main(int argc, char** argv) {
                     const double cx = std::cos(rx), sx = std::sin(rx);
                     const double cy = std::cos(ry), sy = std::sin(ry);
                     const double cz = std::cos(rz), sz = std::sin(rz);
-                    // Matrix3x3_FromEulerAngles, row-vector: Rz * Ry * Rx as
-                    // the engine composes it (player.h quotes the same call).
-                    const double m00 =  cy * cz, m01 =  cy * sz, m02 = -sy;
-                    const double m10 = sx * sy * cz - cx * sz;
-                    const double m11 = sx * sy * sz + cx * cz;
-                    const double m12 = sx * cy;
-                    const double m20 = cx * sy * cz + sx * sz;
-                    const double m21 = cx * sy * sz - sx * cz;
-                    const double m22 = cx * cy;
+                    // `Matrix3x3_FromEulerAngles` (0x00441EB0, CLEAN in readable/),
+                    // TRANSCRIBED term for term - `Object_SetPlacement` builds a
+                    // prop's facing matrix with it, the transform pass composes
+                    // it under the scene root, and the vertex pass applies it
+                    // row-vector (`v . M`, as `Matrix3x3_RotateVector`). The
+                    // block this replaces claimed to be that function and was
+                    // its INVERSE: numerically it equals the engine's with all
+                    // three angles negated, so every prop on the floor was
+                    // turned the wrong way - unnoticed on symmetric props until
+                    // the rings came back from a correctly turned hand
+                    // (2026-09-05).
+                    const double m00 = cz * cy,                 m01 = -(sz * cy),               m02 = sy;
+                    const double m10 = sy * sx * cz + sz * cx,  m11 = cz * cx - sx * sz * sy,   m12 = -(sx * cy);
+                    const double m20 = sz * sx - sy * cz * cx,  m21 = cx * sz * sy + sx * cz,   m22 = cy * cx;
                     const std::size_t base = propGeo.corners.size();
                     for (const auto& c : pm->rest.corners) {
                         omk::Corner w = c;
@@ -5293,6 +5337,23 @@ int main(int argc, char** argv) {
                                     static_cast<double>(pr.rotDeg[2]));
                 }
             }
+            // THE PROPS' GEOMETRY CHANGES, AND THE GPU MUST HEAR OF IT. The Vulkan
+            // backend keys a vertex buffer on the Geometry's pointer and
+            // `revision` and returns the cached buffer while they match - and
+            // `propGeo`'s revision was never bumped, so the props uploaded on the
+            // first frame were drawn for ever: the rings stayed on the floor and
+            // never appeared in the hand however right the CPU-side placement
+            // was (the log showed it exactly on the hand node for three days of
+            // reports). Every other per-frame geometry here bumps its revision;
+            // this one does now, whenever a prop is held or the set of shown
+            // props changes size.
+            // ...and on EVERY rebuild, not "while held or when the count changes":
+            // that rule missed the first frame after a release, so the GPU kept
+            // the last held frame's buffer - the rings standing where the hand
+            // let them go - while the CPU had them back on the floor (a reader's
+            // before/after screenshots, 2026-09-05). A few hundred corners a
+            // frame is nothing.
+            propGeo.revision = ++worldGeoRev;
             refreshSprites();
             const bool wantSprites = (session.scene().effects().count() || !ctlSprites.empty()) &&
                                      !spriteTex.empty();

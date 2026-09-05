@@ -93,6 +93,14 @@ struct Mesh {
     std::int32_t id       = 0;
     char         name[21] = {};
     float        pos[3]   = {0, 0, 0};   // absolute, not relative to a parent
+    // +128..+136: the position RELATIVE TO THE PARENT - what the engine's
+    // transform pass composes a child from (`sub_4942A0`: `node.world =
+    // parent.world + parent.worldMatrix * local`, and `header+36 =
+    // parent.header+36 + local`; `o3de_SetNodePos` on a parented node writes
+    // it as `pos - parent.pos`). Every HO1_FN bone's equals its `pos` minus
+    // its parent's; a prop's ROOT carries the offset the engine uses when the
+    // prop is re-linked under a hand (ANNEAU: -2.24, -0.17, -2.01).
+    float        local[3] = {0, 0, 0};
     std::int32_t parent   = 0;
     std::int32_t child    = 0;
     std::int32_t next     = 0;
