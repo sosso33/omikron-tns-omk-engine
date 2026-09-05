@@ -10,7 +10,7 @@ does not block the rest.
 | 2 | the shoot AI's brains are not called | **DONE (as a decision)** 2026-09-05 |
 | 3 | `.3DM`'s `float[3]`, and node slots 0 and 1 | **NARROWED** 2026-09-05 |
 | 4 | the Anekbah panel FLICKER | **candidate REFUTED** 2026-09-05 |
-| 5 | the player's RIDE | **open** |
+| 5 | the player's RIDE | **READ, not ported** 2026-09-05 |
 
 The reader cannot watch the screen, so anything that needs an eye is settled
 by sending frames rather than by asking them to look.
@@ -147,3 +147,27 @@ The road traffic is ported - the sliders and motos on the vehicle lanes - and
 the player mounting one is not. `ACTOR_STATE` 7 and 8 are the mount and the
 ride of one slider (`MDSLIDOU` refuses to dismount from anything but 8), and
 7 has no case in `Actors_TickAll` at all.
+
+**READ, and deliberately not ported - with the size measured rather than
+guessed.** `Slider_TickRide` (0x00458150) is what runs, and it needs
+`sub_4573E0` (**387 lines, RAW**), `sub_458600` (75) and `sub_457F50` (66):
+about 600 lines of undecompiled machinery with its own globals. That is a
+slice of its own.
+
+Three facts from the read are pinned by `verify.py: slider ride` so they are
+not lost in the meantime:
+
+* **the ride runs at HALF SPEED** - `Slider_TickRide`'s first act is
+  `flt_4C30D8 = flt_4C30D8 * 0.5`, the engine's own frame delta (the one
+  `Game_Frame` sets to `30.0 / fps`), saved in a local first. Everything
+  ticked inside the ride advances at half a frame per frame.
+* **camera mode 8 is the ride camera and its SUBJECT is the slider**, not the
+  player: `eyeSubject` and `targetSubject` are both 5. Its offsets are exact
+  metres, the same authoring mode 0 shows - eye 118.1102 up and 275.5905
+  back, target 78.7402 up, which is **3.00 m, 7.00 m and 2.00 m**. `f42` is 0
+  so the target does not lag; `f44`/`f46` are 8, mode 0's eighth-per-frame.
+* **the mount binds the player's `node+156` to the SLIDER's matrix** -
+  `sub_437140(playerNode, sub_438450(slider))` - which is the same field
+  `Anim_RootDelta` turns a clip's root motion by. So a mounted player's root
+  motion is rotated into the vehicle's frame by machinery this port already
+  has, rather than by anything new.

@@ -7513,6 +7513,51 @@ def c_engine_tunnel_door_walk():
          "6 and feet on AREA 0; door 4 the same; the door mesh moved; the "
          "tunnel is hidden; he ends past the door with no NO FLOOR")
 
+def c_slider_ride():
+    r"""The player's RIDE, read rather than ported - the three facts that make
+    it worth reading before anyone starts.
+
+    `ACTOR_STATE` 7 and 8 are the mount and the ride of one slider, and 7 has
+    no case in `Actors_TickAll` at all. `Slider_TickRide` (0x00458150) is what
+    runs, and three things in it are worth having written down:
+
+    * **the ride runs at HALF SPEED.** Its first act is
+      `flt_4C30D8 = flt_4C30D8 * 0.5` - the engine's own frame delta, the one
+      `Game_Frame` sets to `30.0 / fps` - saved in a local first. Everything
+      ticked inside the ride therefore advances at half a frame per frame.
+    * **camera mode 8 is the ride camera, and its SUBJECT is the slider, not
+      the player** (`eyeSubject` and `targetSubject` are both 5). Its offsets
+      are exact metres, which is the same authoring the mode-0 row shows:
+      eye 118.1102 up and 275.5905 back, target 78.7402 up - **3.00 m, 7.00 m
+      and 2.00 m**. `f42` is 0, so the target does not lag at all; `f44` and
+      `f46` are 8, the same eighth-per-frame chase mode 0 uses.
+    * **the mount binds the player's `node+156` to the SLIDER's matrix** -
+      `sub_437140(playerNode, sub_438450(slider))` - which is the same field
+      `Anim_RootDelta` turns a clip's root motion by (`FILE_FORMATS`, the
+      scene call's Euler). So a mounted player's root motion is rotated into
+      the vehicle's frame by the machinery already ported for the scene
+      programs, rather than by anything new.
+
+    WHY IT IS NOT PORTED, measured rather than asserted: the ride is
+    `Slider_TickRide` plus `sub_4573E0` (**387 lines, RAW**), `sub_458600`
+    (75) and `sub_457F50` (66) - about 600 lines of undecompiled machinery
+    with its own globals. That is a slice of its own, not a finish-now item,
+    and this check exists so the reading is not lost in the meantime.
+    """
+    import json
+    rows = json.load(open(os.path.join(ROOT, "tables", "camera_presets.json")))["rows"]
+    r8 = next((r for r in rows if r["mode"] == 8), None)
+    if not r8:
+        return ("no preset 8",), ("preset 8",), "camera_presets.json has no mode 8"
+    m = [round(v * 0.0254, 4) for v in (r8["eye"][1], -r8["eye"][2], r8["target"][1])]
+    return (r8["eyeSubject"], r8["targetSubject"], r8["f42"], r8["f44"], r8["f46"],
+            m[0], m[1], m[2]), \
+           (5, 5, 0, 8, 8, 3.0, 7.0, 2.0), \
+        ("camera preset 8, the RIDE camera: its eye and target subjects - 5, "
+         "the slider and not the player - the three smoothing divisors, and "
+         "its offsets in METRES, which are exactly 3, 7 and 2")
+
+
 def c_aapub_prism():
     r"""Anekbah's `AApub*` billboards are PRISMS, not stacked faces - which
     refutes the standing account of the panel flicker.
@@ -21909,6 +21954,7 @@ SLOW = [
     ("engine: scene facing", c_engine_scene_facing, "todo/omk-play"),
     ("played actors", c_played_actor_inventory, "todo/reader-followups"),
     ("unlaunched dialogs", c_unlaunched_conversations, "CLAUDE.md 6"),
+    ("slider ride", c_slider_ride, "todo/standing-unknowns"),
     ("aapub prism", c_aapub_prism, "ASSETS 4b; CLAUDE.md 6"),
     ("morph unknowns", c_morph_unknown_fields, "FILE_FORMATS 5"),
     ("engine: shoot pose", c_engine_shoot_pose, "todo/reader-followups"),
