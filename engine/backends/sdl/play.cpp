@@ -2346,6 +2346,14 @@ int main(int argc, char** argv) {
         // would otherwise win on every frame but the clip-change one, and he
         // would stand at the placement plus the whole root motion.
         bool  progPlaced = false;      // a program placed him this clip
+        // ...and whether one EVER did. The two are not the same question:
+        // "the program ended, so he stays where it left him" is only true of
+        // a body a program actually moved. An actor no program ever named -
+        // Gandhar's cave stages twelve of them, `shoot.actor.enter` bodies
+        // driven by the shoot AI - has only his placement record, and
+        // carrying `drawAt` over on his FIRST frame reads it before anything
+        // wrote it and teleports him to the world origin.
+        bool  progRan = false;         // a program placed him at some point
         float progYaw = 0.0f;          // the call's Euler y (`Actor_SetEuler(node, p4, p5, p6)` every tick)
         bool  progYawKnown = false;
         float progBase[3] = {0, 0, 0};
@@ -5733,6 +5741,7 @@ int main(int argc, char** argv) {
                             s.placed = true;
                             s.pelvis = true;    // an authored path names the PELVIS
                             s.progPlaced = true; s.progPelvis = true;
+                            s.progRan = true;
                             // ...and the FACING is the call's Euler, written to the
                             // node every tick; the clip's root quaternion sits under
                             // it. Anekbah's Kiss couples say -70, the walkers 180 -
@@ -5768,6 +5777,7 @@ int main(int argc, char** argv) {
                             s.placed = true;
                             s.pelvis = true;
                             s.progPlaced = true; s.progPelvis = true;
+                            s.progRan = true;
                             for (int k = 0; k < 3; ++k) s.progBase[k] = base[k];
                             std::printf("  pose: actor %d %s - clip %d '%s' (%d frames), no "
                                         "path: snapped to its root key 0 at %.0f %.0f %.0f%s\n",
@@ -5795,7 +5805,7 @@ int main(int argc, char** argv) {
                                     "animation yet; he stays where the world has him "
                                     "(%.0f %.0f %.0f)\n", s.actor, s.model.c_str(),
                                     s.at[0], s.at[1], s.at[2]);
-                    } else if (sceneClip < 0) {
+                    } else if (sceneClip < 0 && s.progRan) {
                         // The program ended. `Script_SelectBodyAnimation` never
                         // resets the node, so the accumulated offset STANDS
                         // (CLAUDE.md 6): he stays where the clip left him and
@@ -5807,6 +5817,15 @@ int main(int argc, char** argv) {
                                     "it left him (%.0f %.0f %.0f) and falls back to the "
                                     "bank's idle\n", s.actor, s.model.c_str(),
                                     s.at[0], s.at[1], s.at[2]);
+                    } else if (sceneClip < 0) {
+                        // NO program ever drove this body. `drawAt` is not
+                        // "where the program left him" - on the first frame it
+                        // has never been written - so the placement record the
+                        // chunk gives him STANDS, untouched. Gandhar's cave is
+                        // the case: twelve ZOH_FN whose actor records carry no
+                        // .CTL at all and whom only `shoot.actor.enter` names,
+                        // every one of them teleported to 0 0 0 on frame 0.
+                        s.progPlaced = false;
                     }
                 }
                 // (b) THE CONVERSATION'S LINE, for its speaker only. The

@@ -138,6 +138,58 @@ def c_objects():
     return (n, len(bits)), (830, 830), \
            "AREA object records, and distinct save-game state bits"
 
+def c_area_ani_library():
+    r"""AREA +124 - the ANIMS library the area's SHOOT actors are posed from.
+
+    A character posed by the `.CTL` channel names his state machine in the
+    actor record's three 9-byte slots (`c_fight_and_player`).  A character
+    posed by the SHOOT AI names nothing there at all, and the twelve ZOH_FN of
+    Gandhar's cave carry an empty slot 0, 1 and 2 - which is not a gap in the
+    data.  Their clips come from a different place entirely:
+
+        sub_434010(name)           sprintf("ANIMS\\%s", name), checks the
+                                   file's own "3.0V" magic, and fills
+                                   dword_52B95C with 24-byte records
+        sub_434530(type)           scans that array for a record whose +0 is
+                                   the CHARACTER TYPE, else Dbg_Trace's
+                                   "Perso %d non existant dans le .ani"
+        Shoot_ActorEnter           stores the result in the shoot record +20
+        Shoot_ActorAction          List_PickRandomByType(list, 9 / 10 / 11),
+                                   else "anim non existante dans le .ANI"
+
+    and the name `sub_434010` is handed comes from the AREA chunk's `+124`
+    with `dword_4C0D48`/`byte_4C0D4C` (".ani") appended, at 0x0040CA9C - so
+    ONE library is resident per area, holding every character type in it.
+
+    The shipped names say the same thing twice over: AREA 2 (Gandhar's cave)
+    names GANDHAR and stages GND_FN and ZOH_FN; AREA 144 names ZTECH and
+    stages ZTK_FN; AREA 59 names BRAQUEUR and stages BRA_FN.  `zombie` and
+    `biblio` ship and no area names either.
+
+    SCENE has no such field - the same offset there is inside its pointer
+    block, which is why this is asserted as ASCII-or-empty on AREA alone.
+    """
+    import dialog_triggers as T2
+    have = {f.lower()[:-4] for f in os.listdir(omkpaths.data("ANIMS"))
+            if f.lower().endswith(".ani")}
+    chunks = named = ok = nonascii = 0
+    names = set()
+    for k, b in sorted(T2.archive(omkpaths.data("IAM", "AREA")).items()):
+        if len(b) < 0x7C + 16: continue
+        chunks += 1
+        raw = b[0x7C:0x7C + 16].split(b"\x00")[0]
+        if not raw: continue
+        if not all(32 <= c < 127 for c in raw): nonascii += 1; continue
+        named += 1
+        names.add(raw.decode("ascii").lower())
+    ok = sum(n in have for n in names)
+    return (chunks, named, nonascii, len(names), ok, len(have), len(have - names)), \
+           (259, 20, 0, 9, 9, 11, 2), \
+           "AREA chunks, of which name an ANIMS library at +124 and how many " \
+           "are not ASCII; distinct names, of which are a shipped .ani; " \
+           ".ani files shipped, of which no area names"
+
+
 def c_actor_models():
     have = {f.lower()[:-4] for f in os.listdir(O.PERSOS)
             if f.lower().endswith(".3do")}
@@ -20907,6 +20959,7 @@ CHECKS = [
     ("ADDRESSES table",    c_addresses,         "FILE_FORMATS 5c"),
     ("object table",       c_objects,           "FILE_FORMATS 5c"),
     ("actor -> model",     c_actor_models,      "FILE_FORMATS 5e"),
+    ("area .ani library",  c_area_ani_library,  "FILE_FORMATS 5e"),
     ("camera aim = 768",   c_aim_length,        "FILE_FORMATS 2"),
     ("line-cam bundles",   c_bundles,           "ASSETS"),
     ("dialog 402 vs game", c_dialog402,         "ASSETS"),

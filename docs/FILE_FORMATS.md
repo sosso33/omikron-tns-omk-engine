@@ -2338,6 +2338,36 @@ the game DB at `+68` — the player's persistent character sheet — and
 `fight.begin` switches both combatants to slot 2. See
 [SCRIPT_VM](SCRIPT_VM.md).
 
+**And a character can carry no slot at all, which is not a gap in the data.**
+Of the 1032 records, 136 name an adventure machine, 92 a shoot one and 141 a
+combat one; the rest name none, and the twelve `ZOH_FN` zombies and `GND_FN`
+of AREA 2 (Gandhar's cave, a **shoot-mode** area) are empty in all three.
+Those characters are posed from a different place entirely — an **`.ani`
+library named by the AREA chunk's `+124`**:
+
+```
+0x0040CA9C   sprintf(buf, "%s%s", chunk+124, ".ani")  ->  sub_434010(buf)
+sub_434010   sprintf("ANIMS\%s"), checks the file's own "3.0V" magic, and
+             fills dword_52B95C with 24-byte records — ONE library resident
+             at a time, holding every character type in the area
+sub_434530   scans it for a record whose +0 is the CHARACTER TYPE, else
+             Dbg_Trace("Perso %d non existant dans le .ani")
+Shoot_ActorEnter (0x00422C10)   stores that list in the shoot record's +20,
+             sets ACTOR_STATE 3, and installs one of the four AI callbacks
+Shoot_ActorAction (0x00423170)  List_PickRandomByType(list, 9 / 10 / 11) —
+             a clip drawn at RANDOM by type, else "anim non existante dans
+             le .ANI"
+```
+
+**20 of the 259 AREA chunks name one, 9 distinct names, and every one of the
+9 is a shipped file.** They corroborate themselves against the models the same
+areas stage: AREA 2 names `GANDHAR` and stages `GND_FN`/`ZOH_FN`, AREA 144
+names `ZTECH` and stages `ZTK_FN`, AREA 59 and 230 name `BRAQUEUR` and stage
+`BRA_FN`, the three cities name `PASSANTH` and wear the street crowd. Two of
+the eleven shipped libraries — `zombie.ani` and `biblio.ani` — are named by no
+area. `SCENE` has no such field: the same offset there is inside its pointer
+block. `verify.py: area .ani library`.
+
 Contiguous, and in property order. Across opcode 86's 459 sites **18 distinct
 variables are written and every one by exactly one property**, which is what
 attaches each name to its offset; see [SCRIPT_VM](SCRIPT_VM.md). The values
