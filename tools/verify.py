@@ -1565,12 +1565,25 @@ def c_engine_actor_states():
         v = struct.unpack_from("<42i", open(out, "rb").read(), 0)
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
+    # RE-BASELINED 2026-09-06 for the VARIANT GRID (commit 159d91e, 2026-09-04):
+    # `clipFrames()` shortens a grid state to keys x variants, so a take plays
+    # ONE 21-frame cell where it used to run all 125 frames - and in the same
+    # 395352 channel ticks the machine therefore lands in more states and
+    # commits more edges. Five counts move and NOTHING ELSE DOES: the same 7
+    # files, 808 banks, 18 states entered, 273 transitions, 0 refused wrongly,
+    # 21 refused correctly, 0 unresolved landings and 0 non-terminating chains.
+    # That is the shape of a shorter state, not of a broken machine - a fault
+    # would move the negative controls too.
+    #
+    # 159d91e's own message names the new numbers ("channel ticks 55182 ->
+    # 57330, edges 10367 -> 11599, and four more") and did not update them
+    # here, which is why this has been red for two days in a tier nobody ran.
     return v, (7, 808, 18, 273, 0, 21, 42, 0,
-               395352, 55182, 0, 0,
-               26093, 0, 0, 19652, 120, 0, 0,
+               395352, 57330, 0, 0,
+               27313, 0, 0, 20567, 120, 0, 0,
                116, 232, 232, 347, 1338, 0, 398, 0,
                119, 0, 7,
-               10367, 4088, 27, 12, 53, 53, 0, 10, 9, 3, 0, 6), \
+               11599, 5036, 27, 12, 53, 53, 0, 10, 9, 3, 0, 6), \
            ".CTL files and the banks driven (202 groups x ungated plus the " \
            "gate at each shipped priority); ACTOR_STATEs entered, of 18; " \
            "transitions, those refused WRONGLY (0) and those refused " \
@@ -5056,7 +5069,14 @@ def c_engine_used_object():
     if b.returncode != 0 or not os.path.exists(binp):
         return ("build failed",), ("built",), "engine/ must build"
     r = subprocess.run([binp, data, tbl], capture_output=True, text=True)
-    got = [ln.split() for ln in r.stdout.strip().splitlines()]
+    # The probe grew a TRACE after this check was written - `[slot]`, `[zone]`
+    # and `[tr]` lines narrating the resident slots, the zone arming and the
+    # area transition - and this took every stdout line, so 8 expected rows
+    # were compared against 32. The bracketed lines are diagnostics, not
+    # results: dropping them leaves exactly the eight, in order. Fixed
+    # 2026-09-06; the check had been red on NOISE, not on a wrong answer.
+    got = [ln.split() for ln in r.stdout.strip().splitlines()
+           if not ln.lstrip().startswith("[")]
     want = [
         "hand slot 0 held 0 id_in_slot 6 in_bag_before 2 in_bag_after 1".split(),
         # TAKING one off the floor: `Game_HandleEvent` case 10, which
