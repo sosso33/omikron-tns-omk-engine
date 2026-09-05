@@ -141,7 +141,7 @@ PlayerController::PlayerController(const Setup& s)
     rt_.scxStart();
     rt_.scxDrivenDone();
     walker_.setSteep(s.steep);
-    walker_.setBlockers(s.blockers, s.sweepRadius);
+    walker_.setBlockers(s.blockers, s.sweepRadius);   // rebound below once camLift_ is known
     // Actor_TickNpc's +1308 pass: the facing is already derived by the caller
     // (headingFromClipRoot); `SetPersoBankGroup(channel, Cef_DefaultGroup)`
     // resets the machine to the default group's default entry.
@@ -184,6 +184,22 @@ PlayerController::PlayerController(const Setup& s)
             if ((*meshes_)[i].parent < 0) { root = static_cast<int>(i); break; }
         camLift_ = feet - (*meshes_)[static_cast<std::size_t>(root)].pos[1];
         if (!(camLift_ > 0.0f) || camLift_ > 200.0f) camLift_ = 0.0f;  // refuse a wild one
+    }
+    // THE SWEPT BODY: the model's sphere list sits about the PELVIS (the
+    // actor's node), and the walker's origin is the feet, `camLift_` below it
+    // (y grows down: pelvis.y = feet.y - camLift_). Each centre becomes an
+    // offset from the feet; the x/z offsets are a unit or two and are not
+    // turned with the facing, which `Actor_Move` does not do either - its
+    // capsule is a vertical segment through the node.
+    if (!s.sweepSpheres.empty() && s.sweepRadius > 0.0f) {
+        std::vector<std::array<double, 3>> centres;
+        for (const auto& c : s.sweepSpheres)
+            centres.push_back({static_cast<double>(c.pos[0]),
+                               static_cast<double>(c.pos[1]) - static_cast<double>(camLift_),
+                               static_cast<double>(c.pos[2])});
+        walker_.setBlockers(s.blockers, s.sweepRadius, std::move(centres));
+    }
+    {
     }
     // the first camera frame snaps (flags & 1 after Camera_LoadParams)
     for (int k = 0; k < 3; ++k) camEuler_[k] = euler_[k];

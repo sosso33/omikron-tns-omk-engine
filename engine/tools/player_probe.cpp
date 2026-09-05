@@ -171,8 +171,10 @@ int main(int argc, char** argv) {
     su.steep = &steep; su.blockers = &steep;
     {
         float r = 0.0f;
-        for (const auto& c : omk::modelSweepSpheres(modData)) r = std::max(r, c.radius);
+        const auto sph = omk::modelSweepSpheres(modData);
+        for (const auto& c : sph) r = std::max(r, c.radius);
         su.sweepRadius = r > 0.0f ? r : 12.0f;
+        su.sweepSpheres = sph;
     }
     for (int k = 0; k < 3; ++k) su.pos[k] = pos[k];
     su.facing = facing;

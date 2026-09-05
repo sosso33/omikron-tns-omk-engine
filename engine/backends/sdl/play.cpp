@@ -3650,6 +3650,7 @@ int main(int argc, char** argv) {
                             float r = 0.0f;
                             for (const auto& c : sph) r = std::max(r, c.radius);
                             su.sweepRadius = r > 0.0f ? r : 12.0f;
+                            su.sweepSpheres = sph;
                             std::printf("adventure: the walker sweeps a sphere of radius %.1f "
                                         "(the model's %zu sweep spheres%s) against %zu wall faces\n",
                                         su.sweepRadius, sph.size(),

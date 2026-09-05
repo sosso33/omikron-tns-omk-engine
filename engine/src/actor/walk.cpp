@@ -51,8 +51,14 @@ StepResult Walker::step(double dx, double dz, double dt) {
     // the sweep cancels outright is a block, and what it leaves is what the
     // probe then judges. Only the horizontal move is collided here - the
     // vertical is the ground probe's job, as in the engine's split.
-    slide(dx, dz);
-    if (dx == 0.0 && dz == 0.0 && slides_ > 0) return StepResult::Blocked;
+    double push[2] = {0.0, 0.0};
+    slide(dx, dz, push);
+    // A hit that leaves nothing but the push-out's jitter - hundredths of a
+    // unit against the wall, `Actor_Move`'s stand-off re-established every
+    // frame - is a BLOCK for the caller, not a move. The engine draws no such
+    // line (it returns "hit" and applies the fraction); this verdict is the
+    // port's, for the channel and the checks.
+    if (slides_ > 0 && std::sqrt(dx * dx + dz * dz) < 0.05) return StepResult::Blocked;
 
     const double nx = pos_[0] + dx;
     const double nz = pos_[2] + dz;
@@ -100,36 +106,76 @@ StepResult Walker::step(double dx, double dz, double dt) {
     return StepResult::Fell;
 }
 
-void Walker::slide(double& dx, double& dz) {
-    slides_ = 0;
-    if (!blockers_ || radius_ <= 0.0) return;
-    // the sphere sits one radius above the feet; y grows downward
-    double p[3] = {pos_[0], pos_[1] - radius_, pos_[2]};
-    for (int pass = 0; pass < 3; ++pass) {
-        if (dx == 0.0 && dz == 0.0) return;
-        const double d[3] = {dx, 0.0, dz};
-        const auto hit = sweepSphere(*blockers_, p, d, radius_);
-        if (!hit) return;
-        ++slides_;
-        // advance to the contact, then slide the remainder along the plane
-        p[0] += dx * hit->t; p[2] += dz * hit->t;
-        const double rem[3] = {dx * (1.0 - hit->t), 0.0, dz * (1.0 - hit->t)};
-        // `Walk_ClampNormal`'s mask is the ACTOR's accumulated blocked-direction
-        // state (+0x160 of the request, 0xC000C for a walking player: the y
-        // bits, so a wall pushes horizontally). Not modelled here as the sim
-        // does not model it either: mask 0 leaves the normal as the face gave
-        // it, and the slide is the projection. Synthesising a mask per contact
-        // is what made one wall cancel a whole move in the sim.
-        double cn[3];
-        if (!clampNormal(0u, false, hit->n, cn)) { dx = dz = 0.0; return; }
-        const double drop = cn[0] * rem[0] + cn[1] * rem[1] + cn[2] * rem[2];
-        dx = rem[0] - drop * cn[0];
-        dz = rem[2] - drop * cn[2];
-        // `Actor_Move`: a remaining length `<= 0.000099999997` is zero - the
-        // engine's own threshold, and what keeps a head-on contact from
-        // leaving a 1e-16 residual that reads as a move.
-        if (std::sqrt(dx * dx + dz * dz) <= 0.000099999997) { dx = dz = 0.0; return; }
+std::optional<SweepHit> Walker::bodyHit(const double p[3], const double d[3]) const {
+    std::optional<SweepHit> best;
+    if (centres_.empty()) {
+        const double c[3] = {p[0], p[1] - radius_, p[2]};      // one sphere on the feet
+        return sweepSphere(*blockers_, c, d, radius_);
     }
+    for (const auto& off : centres_) {
+        const double c[3] = {p[0] + off[0], p[1] + off[1], p[2] + off[2]};
+        const auto h = sweepSphere(*blockers_, c, d, radius_);
+        if (h && (!best || h->t < best->t)) best = h;
+    }
+    return best;
+}
+
+void Walker::slide(double& dx, double& dz, double push[2]) {
+    slides_ = 0;
+    push[0] = push[1] = 0.0;
+    if (!blockers_ || radius_ <= 0.0) return;
+    // `p` is the FEET; the body's spheres hang off it. `total` is what the
+    // actor has been moved by so far across the passes - the engine adds
+    // `a4 * dir + a3 * normal` to the position each pass and re-sweeps from
+    // there - and what is returned is that plus the last remainder.
+    double p[3] = {pos_[0], pos_[1], pos_[2]};
+    double total[2] = {0.0, 0.0};
+    for (int pass = 0; pass < 3; ++pass) {
+        const double len = std::sqrt(dx * dx + dz * dz);
+        // `Actor_Move`: a remaining length `<= 0.000099999997` is zero
+        if (len <= 0.000099999997) { dx = total[0]; dz = total[1]; return; }
+        const double d[3] = {dx, 0.0, dz};
+        const auto hit = bodyHit(p, d);
+        if (!hit) { dx = total[0] + dx; dz = total[1] + dz; return; }
+        ++slides_;
+        // `Walk_ClampNormal(0xC000C)`: the walking player's mask is the y bits,
+        // so a wall's normal is made HORIZONTAL and renormalised. A face too
+        // flat to be a wall keeps its y in the engine (the cos 30 test adds the
+        // bits only for walls); the faces swept here are the steep ones, so
+        // every normal is a wall's.
+        double cn[3];
+        if (!clampNormal(0xC000Cu, false, hit->n, cn)) { dx = dz = 0.0; return; }
+        const double ux = dx / len, uz = dz / len;
+        const double dist = hit->t * len;              // flt_6A5188: units, not a fraction
+        double moved = 0.0;
+        if (dist >= 1.0) {
+            moved = dist - 1.0;                        // ONE UNIT SHORT of the contact
+        } else {
+            // already touching: no forward move; PUSH OUT along the normal by
+            // 1 - dist, re-sweeping the same move from the pushed start and
+            // growing the push 1.1x until the contact is a unit away
+            // (`Actor_Move`'s loop over `sub_4AD6F0`).
+            double pushLen = 1.0 - dist;
+            for (int k = 0; k < 12; ++k) {
+                const double q[3] = {p[0] + pushLen * cn[0], p[1], p[2] + pushLen * cn[2]};
+                const auto h2 = bodyHit(q, d);
+                if (!h2 || h2->t * len >= 1.0) break;
+                pushLen *= 1.1;
+            }
+            p[0] += pushLen * cn[0]; p[2] += pushLen * cn[2];
+            total[0] += pushLen * cn[0]; total[1] += pushLen * cn[2];
+            push[0] += pushLen * cn[0]; push[1] += pushLen * cn[2];
+        }
+        p[0] += ux * moved; p[2] += uz * moved;
+        total[0] += ux * moved; total[1] += uz * moved;
+        // the remainder, projected along the wall (`-(n . dir)` clamped >= 0)
+        const double remLen = std::max(0.0, len - moved);
+        const double along = std::max(0.0, -(cn[0] * ux + cn[2] * uz));
+        dx = remLen * (ux + along * cn[0]);
+        dz = remLen * (uz + along * cn[2]);
+    }
+    // three passes spent: the last remainder is applied unswept, as the engine's is
+    dx = total[0] + dx; dz = total[1] + dz;
 }
 
 StepResult Walker::tick(double dt) {

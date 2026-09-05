@@ -103,12 +103,17 @@ struct GroundHit {
 // which the sphere's surface reaches the plane, contact point inside the
 // triangle), edges and vertices by the static test at t = 0 - so the two can
 // be held to the same number (`verify.py: engine: narrow phase` against
-// `sim: narrow phase`). What the engine does beyond it and this does not, read
-// from Actor_Move on 2026-09-04 and left for the next pass: the swept body is
-// a vertical CAPSULE from the model's collision spheres (bottom = min y - r,
-// top = max y + r, radius = max r x dword_910358 = 1.0), the move stops ONE
-// unit short of the contact, and a contact already inside (t < 1) is pushed
-// out along the clamped normal by repeated re-sweeps growing 1.1x.
+// `sim: narrow phase`). What Actor_Move does beyond that shape was read on
+// 2026-09-04 and ported on 2026-09-05 (step 1b) in actor/walk.cpp: the swept
+// body is the model's own sphere list (descriptor +244/+248: HO1_FN's four of
+// radius 10.9 from the feet to the head), swept sphere by sphere for the
+// earliest hit; the move stops ONE unit short of the contact; a contact
+// already inside (d < 1) is pushed out along the clamped normal by 1 - d,
+// re-swept, growing 1.1x until clear; the walking player's clamp mask is
+// 0xC000C, the normal made horizontal. Still this port's and not the
+// engine's: the faces swept are the STEEP soup (the engine filters by mesh
+// flag 0x20000000 | 0x41, not by slope), and the mask is a constant rather
+// than the actor's accumulated blocked-direction state.
 struct SweepHit {
     double t = 0.0;              // fraction of the move at first contact
     double n[3] = {0, 0, 0};     // the face normal, facing the sphere

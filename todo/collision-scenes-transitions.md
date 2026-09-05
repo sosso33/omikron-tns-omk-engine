@@ -9,7 +9,7 @@ listed under each.
 
 | step | what | status |
 |---|---|---|
-| 1 | **the collision sweep** — `Actor_Move`'s swept sphere (`Sweep_ActorMove` 0x004AD360 → `Sweep_MeshTest` → `Sweep_PolygonKernel` 0x004A9D30, 930 lines) so walls, railings and closed doors stop the walker; issues 68/75 and HANDOFF "the walker does not block on walls" | **done, first pass** (commit below); unseen |
+| 1 | **the collision sweep** — `Actor_Move`'s swept sphere (`Sweep_ActorMove` 0x004AD360 → `Sweep_MeshTest` → `Sweep_PolygonKernel` 0x004A9D30, 930 lines) so walls, railings and closed doors stop the walker; issues 68/75 and HANDOFF "the walker does not block on walls" | **done** — 1 (the sweep in the sim's shape) and 1b (the capsule, the stand-off, the push-out, the mask; the drop guard retired); walls confirmed by the reader's play, railings unseen |
 | 2 | **the scene functions** — the eleven of seventeen `.SCX` object functions the port does nothing for (issue 71), starting with `Script_StopSound` (61 scenes, the audio that never stops) and `Script_Display3DSprite` (65 scenes) | pending |
 | 3 | **the area transitions** — the two-slot decor split that leaves the player on an unlinked set (issue 70), and the tunnel's early unload / which of two overlapping zones fires (issue 75) | pending |
 
@@ -57,10 +57,22 @@ it used to walk to the floor's end. The viewer binds it with the model's
 radius (10.9) against both slots' steep faces (31152 in Anekbah); the
 walker checks stay green.
 
-**Not yet the engine's, and listed in collision.h:** the capsule (a sphere at
-the feet for now), the one-unit stand-off, the push-out of a penetrating
-contact, the accumulated blocked-direction mask, the mesh-flag filter (the
-steep soup stands in — the engine filters by flag, not slope). And the
-CLOSED DOOR of issue 75 is a scene OBJECT, whose faces are not in the decor
-soup at all; that is step 3's, with the transition it guards.
-`kMaxUnsweptDrop` stays until the capsule lands (walk.h says why).
+**Step 1b (2026-09-05): the rest of `Actor_Move`.** The body is the model's
+own sphere list hung off the feet (pelvis.y = feet.y − camLift), swept sphere
+by sphere for the earliest hit; a hit at distance d ≥ 1 moves d − 1 (the
+stand-off), d < 1 pushes out along the clamped normal by 1 − d, re-swept and
+grown 1.1× until clear; the clamp mask is the walking player's 0xC000C (the
+normal made horizontal); the returned displacement is the sum of the passes'
+advances plus the last remainder, as the engine adds `a4·dir + a3·normal`
+each pass. `kMaxUnsweptDrop` is retired: a drop is a fall, as
+`Walk_GroundResponse` has it. The numbers moved as the engine's rules say:
+ARESTO14's wall now stops the body at 13.0 (the sphere's 12 plus the
+stand-off; the sim, with no stand-off, at 16.6), AHALL27 east blocks at
+x 4817, and the ledge census descends 318/14/126 where the guard had held
+315/6/48, 0 stranded. A hit whose only remainder is the push-out's jitter
+under 0.05 is reported as `Blocked`, a verdict of the port's.
+
+**Still not the engine's, listed in collision.h:** the mesh-flag filter (the
+steep soup stands in) and the accumulated blocked-direction mask. The CLOSED
+DOOR of issue 75 is a scene OBJECT, whose faces are not in the decor soup at
+all; that is step 3's, with the transition it guards.

@@ -6938,12 +6938,20 @@ def c_engine_narrow_phase():
     C++: the biggest partition in ARESTO14 with FLOOR ON BOTH SIDES (a wall
     with nothing behind it is refused by the probe alone, so a test there
     passes with no sweep), 40 steps of 6 straight at it, sweep off then on.
-    `sim: narrow phase` says -140.0 moved / 16.6 blocked; this asserts the
-    port says the same, to a tenth. SHOWN TO FAIL: radius 0 is the "off" run.
+    `sim: narrow phase` says -140.0 moved / 16.6 blocked. The port stops at
+    13.0, and the difference IS the engine: `Actor_Move` moves to one unit
+    SHORT of the contact (a hit at distance d >= 1 moves d - 1), so a body
+    of radius 12 rests 13 from the wall, where the simulator - no stand-off,
+    advancing to the contact fraction of each 6-unit step - rests at 16.6.
+    The "off" run agrees with the sim to the tenth. SHOWN TO FAIL: radius 0
+    is the "off" run.
 
-    What the engine does beyond this shape is READ and listed in
-    o3de/collision.h - the capsule from the collision spheres, the one-unit
-    stand-off, the push-out of a penetrating contact - and is the next pass.
+    2026-09-05, step 1b: the capsule from the model's own sphere list, the
+    stand-off and the push-out of a penetrating contact (1 - d along the
+    clamped normal, re-swept, growing 1.1x), and the walking player's clamp
+    mask 0xC000C (the normal made horizontal) are ported. Still the steep
+    soup rather than the engine's mesh-flag filter, and no accumulated
+    blocked-direction state - both listed in o3de/collision.h.
     """
     import subprocess, tempfile
     eng = os.path.join(ROOT, "engine")
@@ -6962,10 +6970,12 @@ def c_engine_narrow_phase():
     v = struct.unpack("<5i", open(out, "rb").read(20))
     names = {0: "moved", 1: "reverted", 2: "blocked", 3: "fell", 4: "slid", 5: "refused"}
     return (v[0], v[1] / 10.0, names.get(v[2]), v[3] / 10.0, names.get(v[4])), \
-           (1, -140.0, "moved", 16.6, "blocked"), \
+           (1, -140.0, "moved", 13.0, "blocked"), \
            "a partition with floor on both sides exists; walking into it with " \
-           "the sweep OFF ends 140 behind the wall, moved; ON it ends 16.6 in " \
-           "front, blocked - the simulator's own two numbers"
+           "the sweep OFF ends 140 behind the wall, moved; ON it ends 13.0 in " \
+           "front, blocked - the sphere's 12 plus Actor_Move's one-unit " \
+           "stand-off (the simulator, which has no stand-off, stops at 16.6: " \
+           "it advances only to the contact fraction of a step)"
 
 
 def c_engine_walker_falls():
@@ -7018,6 +7028,15 @@ def c_engine_walker_falls():
     a kerb, a crate and a flight of stairs all descend, a stairwell does not.
     That bound goes away when the sweep arrives, and until then it is the
     reason the deep-drop columns below stay refused.
+
+    2026-09-05: THE BOUND IS GONE. The swept capsule (step 1b of
+    todo/collision-scenes-transitions.md) stops the body at a railing the way
+    `Actor_Move` does, so the refusal it stood in for is retired and a drop is
+    a fall, which is what `Walk_GroundResponse`'s below-the-feet branch does.
+    The census moves 315 / 6 / 48 -> 318 / 14 / 126 descents - the deep
+    drops that were refused now fall - and stays at 0 stranded. This census
+    stands the walker WITHOUT blockers, so it measures the ground response
+    alone, as before.
     """
     import subprocess, tempfile, shutil
     eng = os.path.join(ROOT, "engine")
@@ -7043,7 +7062,7 @@ def c_engine_walker_falls():
             got.append((ledge, down, strand))
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
-    return tuple(got), ((671, 315, 0), (36, 6, 0), (342, 48, 0)), \
+    return tuple(got), ((671, 318, 0), (36, 14, 0), (342, 126, 0)), \
         "per set (Aapkayl, AImpasse, Anekbah): spots standing beside a drop, " \
         "spots from which the walker actually goes down, and spots on a " \
         "ledge from which nothing moves at all - the last must be 0"

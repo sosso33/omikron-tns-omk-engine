@@ -124,6 +124,7 @@
 
 #include "actor/pose.h"
 #include "actor/state.h"
+#include "actor/spatial.h"
 #include "actor/walk.h"
 #include "formats/anim.h"
 #include "formats/ctl.h"
@@ -164,6 +165,9 @@ public:
         // tunable at 1.0. 0 leaves the sweep off.
         const TriangleSoup*         blockers = nullptr;
         float                       sweepRadius = 0.0f;
+        // the model's own sweep spheres (`modelSweepSpheres`), in the model's
+        // frame about the pelvis; the controller hangs them off the feet
+        std::vector<CollisionSphere> sweepSpheres;
         const TriangleSoup*         steep   = nullptr;  // its faces PAST the
                                     // slope limit. `Walk_GroundResponse` does
                                     // not treat a steep face as a hole: it
