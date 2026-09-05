@@ -6880,7 +6880,9 @@ def c_engine_impasse_fx():
     sixteen beats fire **15 set-piece rows** through the object-start path
     (`sub_451470(0, id)` at the tail of `ScriptObject_Start`, which shows every
     section E row whose `+8`/`+12` match the id) and the particle field peaks
-    at **108** live particles, alive on 262 of the 900 frames.
+    at **99** live particles, alive on 262 of the 900 frames (108 until
+    2026-09-05, when the two `ttt` star rings on an undefined anchor stopped
+    being drawn - `engine: linked rings`).
 
     **This check exists because a regression got past the whole suite.**
     Issue 52 stopped `reloadScene` rebuilding the runner when the area is
@@ -6923,8 +6925,8 @@ def c_engine_impasse_fx():
     if len(raw) < 16:
         return ("no output",), ("16 bytes",), "the probe must write its record"
     fired, peak, frames, emitters = struct.unpack_from("<4i", raw, 0)
-    return (fired, peak, frames, emitters), (15, 108, 262, 0), \
-           ("the Impasse's beats fire 15 set-piece rows and peak at 108 live "
+    return (fired, peak, frames, emitters), (15, 99, 262, 0), \
+           ("the Impasse's beats fire 15 set-piece rows and peak at 99 live "
             "particles, alive on 262 of 900 frames")
 
 def c_engine_narrow_phase():
@@ -7498,6 +7500,56 @@ def c_engine_arrival_wait():
     return (notYet, snapAt, seenSnap), (True, 59, True), \
         ("Kay'l is left where the world has him at frame 0; the frame his jump "
          "clip snaps him to its root key 0 (the wait's 60th tick); the snap happened")
+
+def c_engine_linked_rings():
+    r"""`engine/`: a set piece linked to a row with ONE record - an anchor whose
+    heading the engine never defines - draws nothing; one linked to a row
+    with a heading draws its ring.
+
+    The Impasse portal's rim (omk-play 76): the port stamped 26 dark stars
+    round the black core every frame where the reader's frames of the
+    original show a clean disc. The stars are `Impasse.sfx` rows 3 and 11
+    (`ttt`, `EFFECTS1_IMPACT2` multiply), whose 26 records are offsets on a
+    circle put into the frame of row 2 by a type-1 link (`sub_450330`:
+    `sub_450200` case 1 for the row's position, `sub_450280` case 1 for its
+    matrix from `sub_450940`'s heading). Row 2 has ONE record, and
+    `sub_450940` zeroes the heading for a one-record row and then - `cmp
+    [eax+8], 1 / jg loc_450962`, a fall-through with no return - computes it
+    anyway from the record 36 bytes past the only one, which is the next
+    block's 16-byte header: an orientation out of uninitialised stack. The
+    intro's ring, GRID's `ttt`, is linked to a two-record row with a real
+    heading, and `docs/ASSETS.md` records the capture's dark spiky ring
+    there. So a ring on an undefined anchor is not drawn (a RECONSTRUCTION,
+    settled by the capture and labelled in `setpiece.cpp`) and a ring on a
+    defined one is.
+
+    Peaks of the ring sprite's live particles: Impasse's sprite 117 over
+    SCENE 55's first 150 frames (27 before the rule, the one left is another
+    effect's), GRID's sprite 10 over 120 frames of AREA 118 (its rows are
+    standing pieces, keyed (1, -1)).
+
+    SHOWN TO FAIL by dropping `undefinedAnchor`: Impasse back to 27.
+    """
+    import subprocess
+    eng = os.path.join(ROOT, "engine")
+    fr = omkpaths.data_root()
+    if not os.path.isdir(fr):
+        return ("no data",), ("data",), "needs the shipped tree"
+    b = subprocess.run(["make", "-s", "build/ring_probe"], cwd=eng, capture_output=True, text=True)
+    binp = os.path.join(eng, "build", "ring_probe")
+    if b.returncode != 0 or not os.path.exists(binp):
+        return ("build failed",), ("built",), "engine/ must build"
+    got = []
+    for area, chunk, sprite, frames in ((222, 55, 117, 150), (118, -1, 10, 120)):
+        r = subprocess.run([binp, fr, os.path.join(ROOT, "tables", "vm_opcodes.json"),
+                            os.path.join(fr, "IAM", "START"), os.path.join(fr, "SCPTDATA"),
+                            str(area), str(chunk), "-1", str(sprite), str(frames)],
+                           capture_output=True, text=True)
+        m = re.search(r"peaks at (\d+) particles", r.stdout)
+        got.append(int(m.group(1)) if m else -1)
+    return tuple(got), (1, 24), \
+        ("peak live ring particles: Impasse's ttt (anchored to a one-record "
+         "row: not drawn), GRID's ttt (anchored to a two-record row: drawn)")
 
 def c_engine_special_moves():
     r"""`engine/`: every move name the shipped banks carry resolves to a
@@ -19635,7 +19687,7 @@ def c_licence_headers():
                    if TAG in open(p, encoding="utf-8",
                                   errors="replace").read(600)]
     return (authored, sorted(missing), len(vendored), mislabelled), \
-           (339, [], 1, []), \
+           (340, [], 1, []), \
            "authored source files under tools/, engine/src, engine/tools, " \
            "engine/backends and scripts/; those MISSING the SPDX tag; " \
            "vendored files in engine/third_party; and vendored files wrongly " \
@@ -21074,6 +21126,7 @@ SLOW = [
     ("engine: node scale", c_engine_node_scale, "todo/omk-play"),
     ("engine: tunnel door walk", c_engine_tunnel_door_walk, "todo/collision-scenes-transitions"),
     ("engine: arrival wait", c_engine_arrival_wait, "todo/omk-play"),
+    ("engine: linked rings", c_engine_linked_rings, "todo/omk-play"),
     ("engine: special moves", c_engine_special_moves, "docs/ASSETS"),
     ("engine: crowd nan", c_engine_crowd_nan, "todo/omk-play"),
     ("engine: tunnel doors", c_engine_tunnel_doors, "todo/omk-play"),

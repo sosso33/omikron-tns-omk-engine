@@ -63,6 +63,21 @@ draws what the records say. The engine's device init asks for POINT texture
 filtering (stage states 16/17/18 = 1 in `sub_4638C0`), so the smooth edges
 in the video are the capture's driver, not the game's.
 
+**The rings READ and settled (2026-09-05).** `sub_450330` puts a linked
+record in the frame of its link: for a type-1 link, the target row's position
+(`sub_450200` case 1) and a matrix from its heading (`sub_450280` case 1 ->
+`sub_450940` -> `sub_442400`; type 2 is an actor's own 3x3, type 3 the
+PLAYER's position and facing). The two rings are linked to row 2, which has
+ONE record - and `sub_450940` zeroes a one-record row's heading, then falls
+through (`cmp [eax+8], 1 / jg loc_450962`, no return, confirmed in the
+assembly) and computes it anyway from the record 36 bytes past the only one,
+the next block's 16-byte header: an orientation out of uninitialised stack.
+GRID's ring, linked to a two-record row, is the capture's dark spiky ring. So
+the port draws no ring on an undefined anchor, labelled a reconstruction
+settled by the reader's frames: `verify.py: engine linked rings` (Impasse's
+ttt peak 27 -> 1, GRID's 24 unchanged). The portal is now the original's:
+a round black core with a red rim in a cyan halo. **Fixed**, pending play.
+
 ### 75. The tunnel UNLOADS before the player is out of it, and the closed door is walk-through — A
 
 Filed 2026-09-04, the reader on the two-pool fix in 70: *"it unload the tunnel

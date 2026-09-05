@@ -279,7 +279,23 @@ void SetPieceRunner::tick(float dt, ParticleField& fx) {
             // A DIAGNOSTIC, not a port: `OMK_SKIP_EFFECT=n` leaves effect n
             // unspawned, so a picture can be argued with one ingredient out.
             static const int skip = std::getenv("OMK_SKIP_EFFECT") ? std::atoi(std::getenv("OMK_SKIP_EFFECT")) : -1;
-            if (id > 0 && id != skip)
+            // AN UNDEFINED ANCHOR. A type-1 link puts this row's records in
+            // the frame of another row, whose heading `sub_450940` builds
+            // from its current and NEXT record. For a row with ONE record
+            // the function zeroes the heading and then - `cmp [eax+8], 1 /
+            // jg` falls through, no return - computes it anyway from the
+            // record 36 bytes past the only one, which is the next block's
+            // 16-byte header and the front of its first record: an
+            // orientation out of stack garbage. Impasse's two `ttt` star
+            // rings are linked that way (row 2, one record), and the
+            // reader's frames of the original show no ring on the portal,
+            // where the intro's ring - GRID's `ttt`, anchored to a
+            // three-record row - is the capture's dark spiky ring. So: a
+            // ring on an undefined anchor is not drawn. A RECONSTRUCTION
+            // settled by the capture, not a value the engine computes.
+            const bool undefinedAnchor = p.linkType == 1 && s.chain >= 0 &&
+                sfx_->pieces[static_cast<std::size_t>(s.chain)].parts.size() <= 1;
+            if (id > 0 && id != skip && !undefinedAnchor)
                 if (const FxEffect* e = sfx_->byId(id)) {
                     fx.spawn(*e, s.pos);
                     ++registered_;
