@@ -491,6 +491,19 @@ void applyPose(Geometry& g, const Geometry& rest,
         g.corners[i].x = mp.pos[0] + r[0];
         g.corners[i].y = mp.pos[1] + r[1];
         g.corners[i].z = mp.pos[2] + r[2];
+        // THE NORMAL turns with the bone and does NOT translate - it is a
+        // direction. Without this the dynamic lighting (`o3de/vertexlight.h`)
+        // reads a walking figure's normals in its REST orientation, so the
+        // light falls on the wrong side of a character who has turned round -
+        // a fault that is invisible in any single still frame of a model
+        // facing the way it was authored, which is CLAUDE.md 1's class of
+        // error that only moving reveals.
+        const float n0[3] = {rest.corners[i].nx, rest.corners[i].ny, rest.corners[i].nz};
+        float rn[3];
+        qrot(mp.q, n0, rn);
+        g.corners[i].nx = rn[0];
+        g.corners[i].ny = rn[1];
+        g.corners[i].nz = rn[2];
     }
 }
 

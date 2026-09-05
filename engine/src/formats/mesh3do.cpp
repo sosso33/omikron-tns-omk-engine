@@ -166,6 +166,8 @@ std::vector<Vertex> readVertices(std::span<const std::byte> d, const Mesh3doHead
         const auto o = static_cast<std::size_t>(h.vtxOff) + kVertexRecord * i;
         Vertex v;
         v.p[0] = f32(d, o); v.p[1] = f32(d, o + 4); v.p[2] = f32(d, o + 8);
+        v.n[0] = f32(d, o + 12); v.n[1] = f32(d, o + 16); v.n[2] = f32(d, o + 20);
+        v.f24  = f32(d, o + 24);
         v.b = static_cast<std::uint8_t>(d[o + 28]);
         v.g = static_cast<std::uint8_t>(d[o + 29]);
         v.r = static_cast<std::uint8_t>(d[o + 30]);

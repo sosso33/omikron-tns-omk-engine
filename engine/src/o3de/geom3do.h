@@ -51,6 +51,11 @@ struct Corner {
     float x, y, z;      // world position: the vertex plus its mesh's offset
     float u, v;         // texel, still in the material's own pixel units
     float r, g, b;      // the baked light - a COLOUR, not a brightness
+    // The vertex NORMAL, straight from the `.3DO`'s +12 - what `sub_493E40`
+    // dots the light direction with. Kept on the Corner rather than beside it
+    // because, unlike `cornerMesh`, it travels with the vertex through the
+    // pose: a bone's rotation turns its normals with it.
+    float nx, ny, nz;
     float phase;        // shimmer phase, or -1 when this mesh does not
 };
 

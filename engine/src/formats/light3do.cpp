@@ -2,6 +2,7 @@
 #include "formats/light3do.h"
 #include "formats/mesh3do.h"
 
+#include <cmath>
 #include <cstring>
 
 namespace omk {
@@ -54,6 +55,12 @@ std::vector<Light3do> readLights(std::span<const std::byte> d, const Mesh3doHead
             for (int k = 0; k < 3; ++k)
                 l.corner[c][k] = f32at(d, o + 112 + 32 * static_cast<std::size_t>(c)
                                               + 4 * static_cast<std::size_t>(k));
+        // `sub_493C30`, exactly: the direction the loader writes over corner 0
+        float dv[3] = {l.centre[0] - l.pos[0], l.centre[1] - l.pos[1],
+                       l.centre[2] - l.pos[2]};
+        const float len = std::sqrt(dv[0] * dv[0] + dv[1] * dv[1] + dv[2] * dv[2]);
+        if (len > 0.0f)
+            for (int k = 0; k < 3; ++k) l.dir[k] = dv[k] / len;
         out.push_back(std::move(l));
     }
     return out;

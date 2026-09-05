@@ -144,6 +144,18 @@ inline constexpr std::size_t kVertexRecord = 32;
 
 struct Vertex {
     float        p[3] = {0, 0, 0};
+    // THE NORMAL, at +12, and this port ignored it until 2026-09-05.
+    //
+    // `sub_493E40` - the per-vertex dynamic lighting - reads a float[3] at
+    // +12 of each 32-byte vertex and dots it with the light direction, so the
+    // gap between the position and the colour was never padding. It is unit
+    // to 1e-3 in 400 of the 635 models entirely, and 97-100% of the vertices
+    // of the crowd models that actually get lit (PSH_FN 98.7%, HO1_FNM 100%).
+    // `todo/mesh-lights.md`.
+    float        n[3] = {0, 0, 0};
+    // +24: a float, 1.0 in half the corpus and in [0,1] otherwise. No traced
+    // consumer.
+    float        f24 = 0.0f;
     std::uint8_t b = 0, g = 0, r = 0, a = 0;
 };
 

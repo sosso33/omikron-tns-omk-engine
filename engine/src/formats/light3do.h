@@ -74,6 +74,12 @@ struct Light3do {
     float         pos[3] = {0, 0, 0};
     float         centre[3] = {0, 0, 0};
     float         corner[4][3] = {};
+    // THE DIRECTION, which is NOT in the file: `sub_493C30` computes
+    // `normalize(centre - pos)` at load and writes it OVER the first corner
+    // (+112). A reader that took +112 as given would hand the lighting a
+    // world-space point where it wants a unit vector - which is exactly what
+    // this port did on its first attempt.
+    float         dir[3] = {0, 0, 0};
 };
 
 // Every light of a model, in file order. Empty when the header has none.

@@ -8274,6 +8274,91 @@ def c_light_consumers():
            "these lights are FOR"
 
 
+def c_engine_vertex_light():
+    r"""The crowd's dynamic lighting, ported - `sub_493E40` on known inputs.
+
+    Step 4 of `todo/mesh-lights.md`. A decor set's `.3DO` supplies the lights
+    and the street's moving population receives them (`light consumers`); this
+    is that arithmetic, measured on a synthetic light and four normals so that
+    no model's geometry is in the answer.
+
+    **The base is BLACK, and that is what the step turned on.** A lit instance
+    does not start from the model's baked vertex colour: `sub_494E80` writes
+    `instance[+416]` into every runtime vertex's colour, and every site that
+    sets `+416` sets it to **0**. It has to be that way, because the crowd
+    models carry no baked light at all - **all 446 of `PSH_FN`'s vertices are
+    (255,255,255)**. The `.3DO` lights ARE their lighting.
+
+    That was found by the port changing **exactly zero pixels**: adding light
+    to white saturates to white. The first attempt was correct in every line
+    and invisible, which is the same shape as the fog in
+    `todo/options-config.md` step 4 and worth the same note - a mechanism that
+    does nothing is not evidence that it is wrong.
+
+    **And a second slip the data caught.** The direction is NOT in the file:
+    `sub_493C30` computes `normalize(centre - pos)` at load and writes it OVER
+    the first corner at `+112`. A reader that takes `+112` as given hands the
+    lighting a world-space POINT where it wants a unit vector - which this port
+    did, giving `L = (73457, 3457, 8857)` and a tenth of the right effect
+    (5277 changed bytes against 49877). `readLights` computes the direction the
+    way the loader does.
+
+    The cases, with a light 100 units up shining down (+Y is down), colour
+    R 244 G 177 B 104, radii 1000 outer and 200 inner, intensity 1.0:
+
+**The light is OBLIQUE on purpose** - `centre - pos` is (60, 100, 80), so
+    all three components of the direction are non-zero. A light shining
+    straight down cannot tell `l.dir` from `l.corner[0]`, and the first version
+    of this check was exactly that: it PASSED the corner-as-direction bug,
+    twice, because the wrong component was zero either way. `xfacing` is the
+    row that separates them - **102 right, 243 wrong**.
+
+    | case | normal | at | what it tests | got |
+    |---|---|---|---|---|
+    | `facing` | (0,-1,0) | under it | the Y component of the direction | 172 125 73 |
+    | `away` | (0,1,0) | under it | the sign: no contribution | 0 0 0 |
+    | `side` | (1,0,0) | under it | `N.L` <= 0 gives nothing | 0 0 0 |
+    | `oblique` | (-.577,-.577,-.577) | under it | all three components at once | 238 172 101 |
+    | `xfacing` | (-1,0,0) | under it | the X component ALONE | 102 74 43 |
+    | `far` | (0,-1,0) | 890 of 1000 | the linear falloff | 21 15 9 |
+    | `beyond` | (0,-1,0) | 2000 | the reach test - not reached | 0 0 0, hit 0 |
+
+    ### What this does NOT establish
+
+    No captured frame validates a lit pixel, and `docs/PORTING.md` says none
+    can. This is the same tier as the blend modes and the fog: the parameters
+    are read out of the code and the arithmetic is asserted against itself.
+
+    Two deviations are declared rather than hidden. The engine tests the reach
+    and computes the falloff **per MESH**; this port does it **per BODY**,
+    because its posed geometry is flattened into batches by material - below a
+    colour byte's quantisation for anything person-sized, and the vehicles are
+    the case to watch. And the engine guards the falloff with a condition
+    (`if (!(v11 | v12))`) this reading did not decode; the port clamps it to 1
+    instead, which is that guard's only sensible sense since the expression
+    exceeds 1 inside the inner radius.
+    """
+    probe = os.path.join(ROOT, "engine", "build", "vlight_probe")
+    if not os.path.exists(probe): return "vlight_probe not built", "the vertex light", ""
+    out = subprocess.run([probe], capture_output=True, text=True).stdout
+    got = {}
+    for ln in out.splitlines():
+        f = ln.split()
+        if len(f) == 5: got[f[0]] = tuple(int(x) for x in f[1:])
+    order = ["facing", "away", "side", "oblique", "xfacing", "far", "beyond"]
+    return tuple(got.get(k) for k in order), \
+           ((172, 125, 73, 1), (0, 0, 0, 1), (0, 0, 0, 1),
+            (238, 172, 101, 1), (102, 74, 43, 1),
+            (21, 15, 9, 1), (0, 0, 0, 0)), \
+           "a synthetic light and four known normals through the ported " \
+           "sub_493E40: a vertex FACING the light takes the ramp's near-full " \
+           "colour (255*244>>8 = 243), one facing away or exactly side-on " \
+           "takes nothing though the light still REACHES it, one 890 of 1000 " \
+           "units out takes the linear falloff (0.1375), and one past the " \
+           "outer radius is not reached at all - which is the reach test on " \
+           "the squared radius the loader caches"
+
+
 def c_slider_ride():
     r"""The player's RIDE, read rather than ported - the three facts that make
     it worth reading before anyone starts.
@@ -21392,7 +21477,7 @@ def c_licence_headers():
                    if TAG in open(p, encoding="utf-8",
                                   errors="replace").read(600)]
     return (authored, sorted(missing), len(vendored), mislabelled), \
-           (353, [], 1, []), \
+           (356, [], 1, []), \
            "authored source files under tools/, engine/src, engine/tools, " \
            "engine/backends and scripts/; those MISSING the SPDX tag; " \
            "vendored files in engine/third_party; and vendored files wrongly " \
@@ -22626,6 +22711,7 @@ CHECKS = [
     ("mesh lights",       c_mesh_lights,       "todo/engine-spec-1999"),
     ("light record",      c_light_record,      "todo/mesh-lights"),
     ("light consumers",   c_light_consumers,   "todo/mesh-lights"),
+    ("engine vertex light", c_engine_vertex_light, "todo/mesh-lights"),
     ("camera aim = 768",   c_aim_length,        "FILE_FORMATS 2"),
     ("line-cam bundles",   c_bundles,           "ASSETS"),
     ("dialog 402 vs game", c_dialog402,         "ASSETS"),

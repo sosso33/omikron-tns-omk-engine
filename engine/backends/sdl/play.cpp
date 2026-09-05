@@ -52,6 +52,8 @@
 #include "formats/adpcm.h"
 #include "script/area.h"
 #include "script/savefile.h"
+#include "formats/light3do.h"
+#include "o3de/vertexlight.h"
 #include "platform/options.h"
 #include "platform/settings.h"
 #include "script/gamestate.h"
@@ -1287,6 +1289,7 @@ int main(int argc, char** argv) {
 "                   a --save's own header supplies it otherwise\n"
 "  --sky 0|1        options row 4, Affichage du ciel\n"
 "  --fog 0|1        the linear fog (default on - the engine always fogs)\n"
+"  --no-crowd-light  do not light the crowd from the set's .3DO lights\n"
 "  --fog-colour r,g,b   override the scene's +336, which ships as 0,0,0\n"
 "  --no-crowd       no pedestrians at all\n"
 "  --no-script-sprites  DEBUG: do not draw Script_Display3DSprite's sprites (a before/after)\n"
@@ -1410,6 +1413,10 @@ int main(int argc, char** argv) {
     // is a diagnostic switch, not a setting. Default ON, because that is what
     // the game does.
     bool drawFog = true;
+    // The crowd's dynamic lighting from the set's own light table. On by
+    // default because that is what the engine does; `--no-crowd-light` is the
+    // before/after.
+    bool lightCrowd = true;
     std::uint8_t fogRGB[3] = {0, 0, 0};   // the scene's +336, which ships as 0
     // --give: object ids for the carried list, comma-separated. A LIST
     // rather than one id because the flows worth driving need a bagful - row
@@ -1520,6 +1527,7 @@ int main(int argc, char** argv) {
         else if (a == "--clip" && i + 1 < argc) { clipArg = std::atoi(argv[++i]); clipFlag = true; }
         else if (a == "--sky" && i + 1 < argc) skyFlag = std::atoi(argv[++i]);
         else if (a == "--fog" && i + 1 < argc) drawFog = std::atoi(argv[++i]) != 0;
+        else if (a == "--no-crowd-light") lightCrowd = false;
         else if (a == "--fog-colour" && i + 1 < argc) {
             int rr = 0, gg = 0, bb = 0;
             if (std::sscanf(argv[++i], "%d,%d,%d", &rr, &gg, &bb) == 3) {
@@ -2597,6 +2605,8 @@ int main(int argc, char** argv) {
     std::vector<std::byte> pedAni;
     std::string pedAniName;
     int pedDrawn = 0, pedLive = 0, pedInAction = 0, pedIdle = 0;
+    // how many (walker, light) pairs actually reached this frame
+    int pedLit = 0;
     long pedTold = -1;
     // THE SHOOT-MODE POSE. These characters carry no `.CTL` in any of the
     // three 9-byte slots, so nothing the actor runtime does can pose them:
@@ -3015,6 +3025,10 @@ int main(int argc, char** argv) {
         // the corners as BUILT, so a motion patches the original rather than
         // accumulating on the last frame's patch.
         std::vector<omk::Mesh>   meshes;
+        // THE SET'S LIGHTS (`todo/mesh-lights.md`). A decor `.3DO` supplies
+        // them and the street's moving population receives them - the static
+        // set is shaded by a colour baked into every vertex and needs none.
+        std::vector<omk::Light3do> lights;
         std::vector<omk::Corner> baseCorners;
         // THE VISIBLE-SET WALK's unit of work. `sub_48D3B0` walks the scene
         // MESH BY MESH and submits each one that passes; this port flattens a
@@ -3144,6 +3158,7 @@ int main(int argc, char** argv) {
         const auto t = fs.resolve("MESHES/DECORS/" + stem + ".3DT");
         if (t) w.tex = omk::textures(d, omk::DataFs::readPath(*t));
         w.mirror = omk::mirrorPlane(d);
+        if (const auto mh = omk::readHeader(d)) w.lights = omk::readLights(d, *mh);
         // The runs, in submission order: batch by batch, and inside a batch
         // split wherever `cornerMesh` changes. A set whose corners carry no
         // mesh index leaves this empty, and the draw path then submits whole
@@ -6570,6 +6585,7 @@ int main(int argc, char** argv) {
             }
             // ---- THE PEDESTRIANS ---------------------------------------
             pedDrawn = pedLive = pedInAction = pedIdle = 0;
+            pedLit = 0;
             vehDrawn = vehLive = vehStopped = 0;
             {
                 const auto& pd = session.sliders();
@@ -6647,6 +6663,36 @@ int main(int argc, char** argv) {
                         c.x = r[0] + w.body[0];
                         c.y = r[1] + w.body[1] + w.footY - p.feet;
                         c.z = r[2] + w.body[2];
+                        // the normal turns with the walker and does not move
+                        const float n[3] = {c.nx, c.ny, c.nz};
+                        float rn[3];
+                        omk::rotateYaw(w.facing, n, rn);
+                        c.nx = rn[0]; c.ny = rn[1]; c.nz = rn[2];
+                    }
+                    // THE DYNAMIC LIGHTS (`o3de/vertexlight.h`). `sub_4380B0`
+                    // registers a walker in the same structure the set's
+                    // lights went into and `sub_48D7F0` applies every one that
+                    // reaches it, per frame, before submitting. Both resident
+                    // slots contribute, because during a transition two sets
+                    // are drawn and the engine's structure holds both.
+                    if (lightCrowd) {
+                        // THE BASE IS BLACK, and that is the part that had to
+                        // be read rather than assumed. A lit instance does not
+                        // start from the model's baked vertex colour: the lit
+                        // path `sub_494E80` writes `instance[+416]` into every
+                        // runtime vertex's colour, and every site that sets
+                        // +416 sets it to 0. The crowd models ship pure white
+                        // (all 446 of PSH_FN's vertices are 255,255,255), so
+                        // there is no baked light in them to keep - the .3DO
+                        // lights ARE their lighting, and adding to white is
+                        // what made this port's first attempt change exactly
+                        // zero pixels.
+                        for (auto& c : p.posed.corners) { c.r = 0.0f; c.g = 0.0f; c.b = 0.0f; }
+                        const float at[3] = {w.body[0], w.body[1], w.body[2]};
+                        for (const WorldSlot& ws2 : worldSlots)
+                            if (!ws2.lights.empty())
+                                pedLit += omk::applyLights(p.posed, 0, p.posed.corners.size(),
+                                                           at, ws2.lights);
                     }
                     p.posed.revision = ++worldGeoRev;
                     p.drawn = true;
@@ -6655,8 +6701,8 @@ int main(int argc, char** argv) {
                 if (pedLive && (pedTold < 0 || n - pedTold >= 300)) {
                     pedTold = n;
                     std::printf("frame %ld: pedestrians - %d live, %d drawn within %.0f of the eye, "
-                                "%d at an action point, %d idling\n", n, pedLive, pedDrawn, reach,
-                                pedInAction, pedIdle);
+                                "%d at an action point, %d idling, %d light hits\n",
+                                n, pedLive, pedDrawn, reach, pedInAction, pedIdle, pedLit);
                 }
                 // ...and the ROAD TRAFFIC on the same circuit's vehicle lanes.
                 const auto& vs = pd.vehicles();

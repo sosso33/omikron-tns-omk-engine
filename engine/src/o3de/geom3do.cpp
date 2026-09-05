@@ -131,6 +131,9 @@ Geometry buildGeometry(std::span<const std::byte> d, DrawFilter filter) {
             c.r = static_cast<float>(v.r) / 255.0f;
             c.g = static_cast<float>(v.g) / 255.0f;
             c.b = static_cast<float>(v.b) / 255.0f;
+            // the normal comes through unrotated - a POSE turns it, and a set
+            // never needs it turned at all
+            c.nx = v.n[0]; c.ny = v.n[1]; c.nz = v.n[2];
             c.phase = shimmer ? static_cast<float>((2u * r.gi) % 32u) : -1.0f;
             return c;
         };

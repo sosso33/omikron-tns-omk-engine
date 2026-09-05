@@ -11,7 +11,44 @@ never read the records of. This is the work.
 | 1 | the count and the stride, from the LOADER | **DONE** 2026-09-05 |
 | 2 | decode the 304-byte record | **DONE** 2026-09-05 |
 | 3 | what CONSUMES a light - the question that makes it worth doing | **DONE** 2026-09-05 |
-| 4 | port, if step 3 warrants it | open |
+| 4 | port, if step 3 warrants it | **DONE** 2026-09-05 |
+
+## Step 4, done - the crowd is lit
+
+Ported and drawn. `formats/light3do.*` reads the table, `o3de/vertexlight.*` is
+`sub_493E40` transcribed, and `omk-play` applies every light of both resident
+slots to every drawn walker before submitting. On Anekbah's street start:
+**53 light hits across 13 drawn walkers**, moving **49877 bytes** of the frame.
+`--no-crowd-light` is the before/after.
+
+Three things had to be read rather than assumed, and each cost a round:
+
+* **the vertex NORMAL is at `.3DO` vertex `+12`**, in the twelve bytes this
+  port has skipped since the format was decoded. `applyPose` and the walker's
+  yaw now turn it, because a normal that stays in the rest orientation lights a
+  turning figure from the wrong side - invisible in any one still frame.
+* **the base colour is BLACK, not the baked vertex colour.** `sub_494E80`
+  writes `instance[+416]` into every runtime vertex and every site setting
+  `+416` sets 0; the crowd models ship pure white (all 446 of PSH_FN's
+  vertices are 255,255,255), so there is no baked light in them to keep. The
+  first attempt added light to white and changed EXACTLY ZERO pixels - correct
+  in every line and invisible.
+* **the direction is not in the file.** `sub_493C30` computes
+  `normalize(centre - pos)` at load and writes it over corner 0 at `+112`.
+  Taking `+112` as given hands the lighting a world-space POINT: 5277 changed
+  bytes against 49877.
+
+**And the check could not see the third of those until it was rebuilt.** Its
+first version used a light shining straight down, where the wrong component is
+zero either way, so it passed the corner-as-direction bug twice. The light is
+oblique now and an `xfacing` row separates them 102 against 243. Twice more,
+a `find A -o B | xargs rm` deleted only the second pattern and a mutation
+"passed" on a stale object - the rule is to name the object files explicitly.
+
+Declared deviations: the reach and falloff are per BODY where the engine does
+them per MESH, and the falloff is clamped to 1 where the engine has a guard
+(`if (!(v11 | v12))`) this reading did not decode. `verify.py: engine vertex
+light`.
 
 ## Step 3, done - it is the CROWD
 
