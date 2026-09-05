@@ -7443,6 +7443,62 @@ def c_engine_tunnel_door_walk():
          "OUTGOING pool moves T01door01 (the close); the tunnel is hidden; he "
          "ends past the door with no NO FLOOR")
 
+def c_engine_arrival_wait():
+    r"""`engine/`: a scene actor is not placed or posed before his program's
+    first BODY-ANIMATION step runs - the Impasse's Kay'l stays hidden for the
+    60-frame wait that opens `A_1_KaylArrives`.
+
+    A reader's report (2026-09-05, with frames of the original): in the alley
+    cutscene the portal's black disc hides Kay'l until he jumps out of it,
+    and the port showed him "floating without moving" in the portal before
+    the animation. The portal was blamed; the cause was the placement.
+    `SceneRunner::start` pre-fills a started object's `clip` from its first
+    body animation (a model has to be resolved before anything plays), and
+    the viewer snapped the body to that clip's root key 0 at frame 0. The
+    engine touches the actor only when `Script_SelectBodyAnimation` itself
+    runs - `Script_PlayScript` walks the chain at the pc and nothing else -
+    and `A_1_KaylArrives` opens with `Script_Wait 60`, so for 60 frames Kay'l
+    is wherever the world put him: address 654, (6753, 397, 3021), five
+    hundred units under the alley. `Started::animReached` records the first
+    animation step reached and the viewer leaves the body where the world
+    has it until then.
+
+    Headless, AREA 222 with SCENE 55's beats, 150 frames: at frame 0 actor 49
+    reports "has not reached an animation yet"; the snap to `1-01KAY.3DA`'s
+    root key 0 happens on frame 59, the wait's 60th tick, and not before.
+    SHOWN TO FAIL by dropping the gate: the snap comes at frame 0.
+
+    Needs SDL; reports true without it (PORTING A8).
+    """
+    import subprocess
+    eng = os.path.join(ROOT, "engine")
+    fr = omkpaths.data_root()
+    tb = os.path.join(ROOT, "tables")
+    save = os.path.join(ROOT, "traces", "save-appart.bin")
+    if not os.path.isdir(fr) or not os.path.exists(save):
+        return ("no data",), ("data",), "needs the shipped tree and traces/save-appart.bin"
+    mk = subprocess.run(["make", "-s", "play"], cwd=eng, capture_output=True, text=True)
+    play = os.path.join(eng, "build", "omk-play")
+    if mk.returncode != 0 or not os.path.exists(play):
+        return (True, 59, True), (True, 59, True), "no SDL - the frontend is optional (PORTING A8)"
+    env = dict(os.environ, SDL_VIDEODRIVER="dummy")
+    r = subprocess.run([play, fr, tb, "--software", "--res", "640x480", "--nofmv",
+                        "--no-crowd", "--save", save, "--area", "222", "--scene-chunk", "55",
+                        "--frames", "150"], capture_output=True, text=True, env=env)
+    o = r.stdout
+    notYet = "actor 49 HO1_FN - its program has not reached an animation yet" in o
+    snapAt = -1
+    seenSnap = False
+    for ln in o.splitlines():
+        if "actor 49 HO1_FN - clip 18 '1-01KAY.3DA'" in ln and "snapped to its root key 0" in ln:
+            seenSnap = True
+        m = re.match(r"frame (\d+): actor 49 HO1_FN - pose source: a scene program's clip", ln)
+        if m and seenSnap and snapAt < 0:
+            snapAt = int(m.group(1))
+    return (notYet, snapAt, seenSnap), (True, 59, True), \
+        ("Kay'l is left where the world has him at frame 0; the frame his jump "
+         "clip snaps him to its root key 0 (the wait's 60th tick); the snap happened")
+
 def c_engine_special_moves():
     r"""`engine/`: every move name the shipped banks carry resolves to a
     `tab_special_move[]` row - the table READ against the data that uses it.
@@ -21017,6 +21073,7 @@ SLOW = [
     ("engine: scene sprites", c_engine_scene_sprites, "todo/omk-play"),
     ("engine: node scale", c_engine_node_scale, "todo/omk-play"),
     ("engine: tunnel door walk", c_engine_tunnel_door_walk, "todo/collision-scenes-transitions"),
+    ("engine: arrival wait", c_engine_arrival_wait, "todo/omk-play"),
     ("engine: special moves", c_engine_special_moves, "docs/ASSETS"),
     ("engine: crowd nan", c_engine_crowd_nan, "todo/omk-play"),
     ("engine: tunnel doors", c_engine_tunnel_doors, "todo/omk-play"),

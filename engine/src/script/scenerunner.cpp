@@ -389,6 +389,7 @@ void SceneRunner::tick(float dt) {
         const ScxFunction* fn = programs_[i]->animFunction();
         if (!fn) continue;                    // this step plays no body animation
         auto& st = started_[i];
+        st.animReached = true;                // the engine touches the actor from here on
         st.clip     = clipOfFn(*fn);
         st.path     = pathOfFn(*fn, scx_->paths());
         st.relative = placementOfFn(*fn, st.offset, st.euler);

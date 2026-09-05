@@ -5687,8 +5687,13 @@ int main(int argc, char** argv) {
                 const omk::SceneRunner::Started* stt = nullptr;
                 if (prog >= 0) {
                     stt = &sc.started()[static_cast<std::size_t>(prog)];
-                    sceneClip = stt->clip;
-                    scenePath = stt->path;
+                    // Nothing is posed or placed before the program's first
+                    // body-animation step RUNS (`Started::animReached`): an
+                    // object that opens with a wait leaves its actor where
+                    // the world has him - Kay'l under the alley at address
+                    // 654 for the 60 frames before his jump out of the portal.
+                    sceneClip = stt->animReached ? stt->clip : -1;
+                    scenePath = stt->animReached ? stt->path : -1;
                     // The frame of THAT clip, not of the program: a program
                     // walks its steps and each may name a different animation,
                     // so the clock the pose is sampled at counts from the step
@@ -5772,6 +5777,24 @@ int main(int argc, char** argv) {
                                         byLone ? "  [the program names another actor; this "
                                                  "is the frame's only body - LABELLED]" : "");
                         }
+                    } else if (sceneClip < 0 && stt && !stt->animReached) {
+                        // NOT YET: the program has not reached a body-animation
+                        // step, so the engine has not touched the actor. He is
+                        // where the world has him - for the player, the DB
+                        // position (`actor.goto_address` parks Kay'l at address
+                        // 654, under the alley, before his jump); for anyone
+                        // else, the placement record.
+                        s.progPlaced = false;
+                        if (stt->how == "player") {
+                            const float* pp = session.playerPos();
+                            for (int k = 0; k < 3; ++k) s.at[k] = pp[k];
+                            s.placed = true;
+                            s.pelvis = false;
+                        }
+                        std::printf("  pose: actor %d %s - its program has not reached an "
+                                    "animation yet; he stays where the world has him "
+                                    "(%.0f %.0f %.0f)\n", s.actor, s.model.c_str(),
+                                    s.at[0], s.at[1], s.at[2]);
                     } else if (sceneClip < 0) {
                         // The program ended. `Script_SelectBodyAnimation` never
                         // resets the node, so the accumulated offset STANDS

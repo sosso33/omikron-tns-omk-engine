@@ -15,6 +15,34 @@ waiting on its evidence.
 
 ## Open (batch 6, filed 2026-09-04)
 
+### 76. Kay'l FLOATS in the alley's portal before his jump — the placement, not the portal — A
+
+A reader, with frames of the original beside the port (2026-09-05): *"the
+portal has not totally the same shape than the original ... the original shape
+hides Kay'l before the start of the animation, so the player can't see Kay'l
+floating without moving. In the new engine, the unfaithful shape doesn't hide
+Kay'l."*
+
+The portal is faithful enough - `Impasse.sfx`'s `oeil` (sprite 200, mode 6,
+scale 6.5, colour 56efff), a MULTIPLY disc that darkens to black with a red
+rim inside the additive `burn` glow, drawn after the bodies in the same
+bucket order the engine walks. What differed was WHERE KAY'L WAS. Impasse's
+`A_1_KaylArrives` opens with `Script_Wait 60` and only THEN
+`Script_SelectBodyAnimation` (clip 18, `1-01KAY.3DA`); `Script_PlayScript`
+walks the chain at the pc and nothing else, so for those 60 frames the engine
+has not touched the actor and he is wherever the world left him - address
+654, `(6753, 397, 3021)`, five hundred units under the alley, the intro
+script's `actor.goto_address` right after `scene.load`. The port pre-filled
+the started object's clip from its FIRST body animation and snapped him to
+that clip's root key 0 at frame 0: inside the portal, visible, motionless.
+
+**Fixed 2026-09-05.** `SceneRunner::Started::animReached` records the first
+animation step the pc reaches; until then the viewer poses nothing and leaves
+the body where the world has it (the DB position for the player, the
+placement record for anyone else). Headless the snap now lands on frame 59,
+the wait's 60th tick, where it landed on frame 0. `verify.py: engine arrival
+wait`, shown to fail by dropping the gate. Not yet confirmed in play.
+
 ### 75. The tunnel UNLOADS before the player is out of it, and the closed door is walk-through — A
 
 Filed 2026-09-04, the reader on the two-pool fix in 70: *"it unload the tunnel

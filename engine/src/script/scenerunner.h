@@ -240,6 +240,17 @@ public:
         // provably invisible here and stops being so the moment it is not.
         float       euler[3]  = {0, 0, 0};   // params 4/5/6, degrees
         bool        relative = false;        // 0x0200002A rather than 0x02000004
+        // Whether the program has REACHED a body-animation step yet. `clip`
+        // is pre-filled at start from the object's first body animation (a
+        // model has to be resolved before anything plays), but the engine
+        // touches the actor only when `Script_SelectBodyAnimation` itself
+        // runs: an object that opens with a `Script_Wait` leaves its actor
+        // wherever the world put him for that long. Impasse's
+        // `A_1_KaylArrives` waits 60 frames while Kay'l sits at address 654,
+        // 500 units under the alley - snapping him to the clip's root key 0
+        // at frame 0 showed him floating in the portal before his jump (a
+        // reader's report, 2026-09-05).
+        bool        animReached = false;
     };
     const std::vector<Started>& started() const { return started_; }
     const std::vector<int>&     missed()  const { return missed_; }
