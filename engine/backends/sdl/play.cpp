@@ -1713,6 +1713,13 @@ int main(int argc, char** argv) {
         for (const auto& ad : rs.addresses)
             std::printf("address %d at %.0f %.0f %.0f yaw %.0f\n", ad.id, ad.pos[0], ad.pos[1], ad.pos[2], ad.yaw);
         if (addressArg < 0 && !rs.addresses.empty()) addressArg = rs.addresses.front().id;
+        if (addressArg < 0 && haveStand) {
+            // an area with no ADDRESSES table (the Impasse airlock, 142):
+            // `--stand` is the only placement there is, so it is the one
+            session.setPlayerPosition(standAt, standAt[3]);
+            std::printf("street start: no address in area %d - --stand places the player at "
+                        "%.0f %.0f %.0f facing %.0f\n", startArea, standAt[0], standAt[1], standAt[2], standAt[3]);
+        }
         if (addressArg >= 0) {
             if (session.placeActorAt(addressArg))
                 std::printf("street start: the player at address %d, %.0f %.0f %.0f facing %.0f\n",
@@ -3807,6 +3814,26 @@ int main(int argc, char** argv) {
                 } else {
                     player->tick(static_cast<float>(frameSec * 30.0), bits);
                 }
+                // STUCK BETWEEN WALLS. A move blocked for a whole second while a
+                // direction is being asked for is the sweep's own failure to
+                // slide out of a corner - a reader was held between the alley's
+                // wall and the crates (2026-09-05). Printed with the position,
+                // the heading and the move asked, so the corner can be probed.
+                {
+                    static int blockedRun = 0; static long stuckTold = -1000;
+                    const auto& lf = player->last();
+                    const bool asked = std::fabs(lf.rootDelta[0]) + std::fabs(lf.rootDelta[2]) > 0.05f;
+                    if (lf.stepped && asked && lf.step == omk::StepResult::Blocked) ++blockedRun;
+                    else blockedRun = 0;
+                    if (blockedRun >= 30 && n - stuckTold >= 30) {
+                        stuckTold = n;
+                        std::printf("walker: STUCK - blocked %d frames running at %.1f %.1f %.1f facing %.0f, "
+                                    "asking %+.2f %+.2f, %d wall passes hit last step\n",
+                                    blockedRun, player->pos()[0], player->pos()[1], player->pos()[2],
+                                    player->facing(), lf.rootDelta[0], lf.rootDelta[2],
+                                    player->walker().lastSlides());
+                    }
+                }
                 // WHERE THE FLOOR ENDS. A step that finds no floor under its
                 // destination (`Reverted`), or a fall that begins, is the moment
                 // the walker leaves the geometry - which a reader did through the
@@ -4898,7 +4925,16 @@ int main(int argc, char** argv) {
                     changed = true;
                 }
             }
-            if (changed) rebuildWorld();
+            if (changed) {
+                rebuildWorld();
+                std::printf("world: rebuilt - slot 0 '%s' (area %d, %s), slot 1 '%s' (area %d, %s); "
+                            "walkable %zu tris, walls %zu tris\n",
+                            worldSlots[0].stem.c_str(), worldSlots[0].area,
+                            session.slotShown(0) ? "shown" : "hidden",
+                            worldSlots[1].stem.c_str(), worldSlots[1].area,
+                            session.slotShown(1) ? "shown" : "hidden",
+                            playerSoup.size() / 9, playerSteep.size() / 9);
+            }
             const WorldSlot& act = worldSlots[static_cast<std::size_t>(session.activeSlot() & 1)];
             const WorldSlot& oth = worldSlots[static_cast<std::size_t>(1 - (session.activeSlot() & 1))];
             worldSet = !act.stem.empty() ? act.stem : oth.stem;

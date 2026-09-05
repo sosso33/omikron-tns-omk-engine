@@ -6978,6 +6978,63 @@ def c_engine_narrow_phase():
            "it advances only to the contact fraction of a step)"
 
 
+def c_engine_airlock_walk():
+    r"""A doorless transition whose ARRIVE runs during the load must not hide
+    the set under the player - the Impasse airlock, walked by a reader into
+    the void on 2026-09-05.
+
+    AREA 142 (set AIMPASAS, no scene of its own) is a corridor along x with
+    three doorless zones: 2320 at the Anekbah end (`area.goto 0, -1, -1`),
+    2329 in the middle (`area.arrive -1`), 2319 at the alley end (`area.goto
+    222, -1, -1`). Stand in 2320 facing west and walk: the goto starts the
+    Anekbah load (17 slices), the middle zone's arrive fires while it is
+    still loading (state 3 -> 4), and at completion the engine's arms
+    (`Area_Transition` mode 3 case 4: `sub_419A90` on the NON-ACTIVE slot,
+    nothing else) hide the destination just loaded, since the player is
+    still on the origin. The port's reconstruction - a forced `playerOnArea
+    (dest)` before the hide, written for walker-less runs where nothing
+    raises event 9 - flipped the active row to Anekbah and hid the airlock
+    under his feet: both slots hidden, 0 triangles under the walker, a
+    reader standing in the void. It is now gated on `playerWalks_`.
+
+    Asserted from the viewer's own log: the arrive lands DURING the load,
+    the airlock (142) is never hidden, no step finds the floor gone, the
+    alley (222) is shown by the far zone, and the walker gets past the
+    middle of the corridor. SHOWN TO FAIL: the play log of that day, and
+    the same walk with the gate removed prints `HIDE area 142 ... THE ACTIVE
+    ROW'S OWN SET`.
+    """
+    import subprocess
+    eng = os.path.join(ROOT, "engine")
+    fr = omkpaths.data(); tb = os.path.join(ROOT, "tables")
+    save = os.path.join(ROOT, "traces", "save-appart.bin")
+    if not os.path.isdir(eng) or not os.path.exists(save):
+        return ("skipped",), ("skipped",), "engine/ or the save absent"
+    mk = subprocess.run(["make", "-s", "play"], cwd=eng, capture_output=True, text=True)
+    play = os.path.join(eng, "build", "omk-play")
+    if mk.returncode != 0 or not os.path.exists(play):
+        return (True,) * 6, (True,) * 6, "no SDL - the frontend is optional (PORTING A8)"
+    env = dict(os.environ, SDL_VIDEODRIVER="dummy", SDL_AUDIODRIVER="dummy")
+    r = subprocess.run([play, fr, tb, "--software", "--res", "640x480", "--nofmv",
+                        "--no-crowd", "--save", save, "--area", "142",
+                        "--stand", "7691,-79,3450,270", "--speed", "3", "--frames", "120",
+                        "--hold", "0*1,k200*100"], capture_output=True, text=True, env=env)
+    o = r.stdout
+    m = re.search(r"^player: .* at (-?[0-9.]+) ", o, re.M)
+    x = float(m.group(1)) if m else 9999.0
+    return ("area.arrive -1  transition state 3" in o,
+            "HIDE area 142" not in o,
+            "NO FLOOR" not in o,
+            "SHOW area 222" in o,
+            "HIDE area 0" in o,
+            x < 7600.0), \
+           (True, True, True, True, True, True), \
+           "the arrive fires during the load; the airlock is never hidden; no step " \
+           "loses the floor; the alley is shown by the far zone; the loaded " \
+           "destination is what gets hidden (the non-active slot, as the engine's " \
+           "arm hides it); and the walker is past the corridor's middle"
+
+
 def c_engine_walker_falls():
     r"""`engine/`'s walker takes a drop instead of refusing it - and the
     measurement that says why it had to.
@@ -20790,6 +20847,7 @@ SLOW = [
     ("engine: actor states", c_engine_actor_states, "engine/README"),
     ("engine: player walk", c_engine_player_walk, "engine/README; ASSETS"),
     ("engine: narrow phase", c_engine_narrow_phase, "engine/README; RECONSTRUCTION 6.5"),
+    ("engine: airlock walk", c_engine_airlock_walk, "todo/collision-scenes-transitions 3a"),
     ("engine: input",      c_engine_input,      "PORTING B6"),
     ("engine: audio",      c_engine_audio,      "PORTING B6"),
     ("engine: shoot AI",   c_engine_shoot_ai,   "engine/README"),

@@ -415,6 +415,10 @@ void Session::showSet(int area) {
     if (s < 0) return;
     slots_[s].shown = true;
     curSlot_ = s;
+    std::printf("[slot] frame %ld  SHOW area %d in slot %d   (active slot %d = area %d, activeArea %d; "
+                "slot0 area %d %s, slot1 area %d %s)\n", frameNo_, area, s, active_,
+                slots_[active_].area, activeArea_, slots_[0].area, slots_[0].shown ? "shown" : "hidden",
+                slots_[1].area, slots_[1].shown ? "shown" : "hidden");
 }
 
 // sub_419A90: back to state 1 (`sub_441200`) - loaded, not drawn. The
@@ -425,10 +429,17 @@ void Session::hideSet(int area) {
     if (s < 0) return;
     slots_[s].shown = false;
     if (curSlot_ == s && slots_[1 - s].area != -1) curSlot_ = 1 - s;
+    std::printf("[slot] frame %ld  HIDE area %d in slot %d   (active slot %d = area %d, activeArea %d; "
+                "slot0 area %d %s, slot1 area %d %s)%s\n", frameNo_, area, s, active_,
+                slots_[active_].area, activeArea_, slots_[0].area, slots_[0].shown ? "shown" : "hidden",
+                slots_[1].area, slots_[1].shown ? "shown" : "hidden",
+                s == active_ ? "   <- THE ACTIVE ROW'S OWN SET" : "");
 }
 
 // `Game_HandleEvent` case 9.
 void Session::playerOnArea(int area) {
+    std::printf("[slot] frame %ld  event 9: feet on area %d   (was activeArea %d, active slot %d = area %d)\n",
+                frameNo_, area, activeArea_, active_, slots_[active_].area);
     activeArea_ = area;                                   // dword_69BC64 = a2
     const int other = 1 - active_;
     if (slots_[other].area == -1) return;                 // the other row is empty
@@ -705,9 +716,10 @@ void Session::startTransitionObject(int obj) {
     // object cannot resolve - which is a door asked for and never played, with
     // no error anywhere.
     {
-        const char* e = std::getenv("OMK_CAMLOG");
-        const char* t = std::getenv("OMK_TUNNEL");
-        if ((e && *e == '1') || (t && *t == '1'))
+        // Printed ALWAYS since 2026-09-05: a transition's door resolve is a
+        // handful of lines a session, and a reader walking into the void
+        // needs it in the log they hand over.
+        if (true)
             std::printf("[tr] frame %ld  door object %d -> program %d%s   "
                         "(pool %s, area %d; resident scene %d over area %d; "
                         "%zu started, %zu missed)\n",
@@ -820,8 +832,21 @@ int Session::areaTransition(int mode, int ctxIdx, int slot, int area, int f1, in
     // it is raised here first. **RECONSTRUCTION**: the departure and arrival
     // animations carry the player onto the new set, and `Walk_ProbeGround`
     // would have said so.
+    // ...AND ONLY WITHOUT A WALKER. With one, the active row is the decor
+    // under his feet, raised by the probe (`playerOnArea` from the viewer's
+    // `decorUnder`) exactly as `Walk_ProbeGround` raises it, and forcing it
+    // here is wrong in the one case the engine's arms are written for: a
+    // doorless goto whose ARRIVE ran while the destination was still
+    // loading (state 3 -> 4). The player is then still on the ORIGIN when
+    // the load completes, the engine hides the non-active slot - the
+    // freshly loaded destination, to be re-shown when he walks into it -
+    // and this port instead flipped the row to the destination and hid the
+    // origin under his feet. Measured 2026-09-05 in the Impasse airlock:
+    // "event 9: feet on area 0" with Anekbah not yet shown, then "HIDE area
+    // 142 ... THE ACTIVE ROW'S OWN SET", both slots hidden, 0 triangles
+    // under the walker, and a reader standing in the void.
     const auto hideOutgoing = [&]() {
-        if (tr_.dest >= 0 && slots_[active_].area != tr_.dest &&
+        if (!playerWalks_ && tr_.dest >= 0 && slots_[active_].area != tr_.dest &&
             slots_[1 - active_].area == tr_.dest)
             playerOnArea(tr_.dest);
         hideSet(slots_[1 - active_].area);
@@ -836,10 +861,7 @@ int Session::areaTransition(int mode, int ctxIdx, int slot, int area, int f1, in
     // then REFUSED (a transition already in flight) is what decides the bug,
     // and it can only be seen while walking. `OMK_TUNNEL=1` says what every
     // goto carries and what happened to it.
-    const bool trLog = [] {
-        const char* e = std::getenv("OMK_TUNNEL");
-        return e && *e == '1';
-    }();
+    const bool trLog = true;              // always, since 2026-09-05 (see the door resolve above)
     if (trLog && mode == 0)
         std::printf("[tr] frame %ld  area.goto %d  doors %d/%d  ctx %d  "
                     "transition state %d  deferred %d%s\n",
@@ -893,6 +915,8 @@ int Session::areaTransition(int mode, int ctxIdx, int slot, int area, int f1, in
             return 0;
         }
     case 1:                                               // op 48 `area.arrive`
+        std::printf("[tr] frame %ld  area.arrive %d  transition state %d%s\n", frameNo_, area, tr_.state,
+                    tr_.state == 3 ? "   <- DURING the load: completes as state 4" : "");
         if (tr_.state == 3) {
             tr_.state = 4;
             tr_.startedFrame = frameNo_;
@@ -2668,10 +2692,8 @@ void Session::pumpZoneSlots() {
             // omk-play 70: WHICH zone arms, and in what ORDER. AREA 224's two
             // ends each carry an overlapping pair - a door-carrying zone and a
             // doorless one - so the order they arm in is what the fix turns on.
-            if (const char* tl = std::getenv("OMK_TUNNEL"))
-                if (*tl == '1')
-                    std::printf("[zone] frame %ld  ARM zone %d  ctx %d  action %d  script %zu\n",
-                                frameNo_, static_cast<int>(e.zone), idx, e.action, e.script);
+            std::printf("[zone] frame %ld  ARM zone %d  ctx %d  action %d  script %zu\n",
+                        frameNo_, static_cast<int>(e.zone), idx, e.action, e.script);
             // case 1: `ctx = u32(slot,0); if (ctx && u16(ctx,42) == zoneId &&
             // u8(ctx,24) == 4) { u8(ctx,24) = 0; --u16(ctx,28); }` - the zone
             // re-armed while its FREE was still at the head of the FIFO:
