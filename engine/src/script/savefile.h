@@ -75,6 +75,61 @@ inline constexpr std::size_t kSaveShot   = 24576;
 inline constexpr std::size_t kSaveSlotSize = kSaveSlotDb + kGameDbSize + kSaveShot;
 inline constexpr std::size_t kSaveFileSize = kSaveHeader + kSaveSlots * kSaveSlotSize;
 
+// ------------------------------------------------- the header: the SETTINGS
+//
+// The 3496 bytes are the global `byte_90E180`, and `sub_41F4C0` writes every
+// field of it in one run (GAME_STATE 8a).  `Game_WriteSave` copies the whole
+// block over the file's head on EVERY slot save, so there is one copy of the
+// settings for all 256 slots and saving a game saves the player's options.
+//
+// Each field is named by the option row whose read hook reads it - the rows
+// and the defaults function are in the same order.  Two of them, the crowd
+// density and the level of detail, are the graphical settings with no
+// `[Preferences]` ini key, and they persist here.
+struct SettingsBlock {
+    // +8, `dword_90E188`.  `SaveDir_Load` accepts 0x10000 and 0x10001, and
+    // clears the low half of the +1444 dword for the older one.
+    std::uint32_t version = 0x10001u;
+    int screenX = 640, screenY = 480;   // +12/+14, row 2
+    bool sky = true;                    // +16,  row 4
+    bool shadows = true;                // +17,  row 5
+    int  clipDistance = 50;             // +20,  row 3 - METRES, one of 25/50/100/150/200
+    int  volumeDialogue = 0;            // +24,  row 10
+    int  volumeMusic = 0;               // +28,  row 11
+    int  volumeEffects = 0;             // +32,  row 12
+    bool sound3d = true;                // +36,  row 13
+    bool subtitles = true;              // +37,  row 15
+    int  fightDifficulty = 1;           // +38,  row 16
+    int  shootDifficulty = 1;           // +40,  row 17
+    int  combatCamera = 1;              // +42,  row 18
+    int  mouseSensitivityX = 20;        // +44,  row 23
+    int  mouseSensitivityY = 15;        // +46,  row 24
+    bool mouseInverted = false;         // +48,  row 25
+    bool forceFeedback = false;         // +49,  row 27
+    // +52 / +276 / +500 - the three control-scheme tables VERBATIM, in the
+    // 4 groups x 14 actions layout of `tables/key_bindings.json`, at the
+    // offsets the globals' own addresses give (0x90E1B4/0x90E294/0x90E374
+    // minus 0x90E180).  Three contiguous 224-byte tables.
+    std::array<std::uint32_t, 56> keyboard{};
+    std::array<std::uint32_t, 56> mouse{};
+    std::array<std::uint32_t, 56> joystick{};
+    int  streetActivity = 0;            // +1446, row 6 - the CROWD DENSITY
+    int  levelOfDetail = 0;             // +1447, row 7
+};
+
+inline constexpr std::size_t kBindKeyboard = 52;
+inline constexpr std::size_t kBindMouse    = 276;
+inline constexpr std::size_t kBindJoystick = 500;
+
+// Parse the block.  Nothing unless the buffer reaches 3496 bytes AND opens
+// with `OMK_SAVE` - the magic is what `SaveDir_Load` gates on, and without it
+// the engine keeps the defaults rather than reading garbage.
+std::optional<SettingsBlock> readSettingsBlock(std::span<const std::byte> d);
+
+// The values `sub_41F4C0` writes - a default-constructed SettingsBlock, minus
+// the binding tables, which come from `tables/key_bindings.json`.
+SettingsBlock defaultSettingsBlock();
+
 struct SaveSlot {
     std::string  name;
     std::int32_t day = 0;

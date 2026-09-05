@@ -16,6 +16,56 @@ std::int32_t i32(std::span<const std::byte> d, std::size_t o) {
 
 }  // namespace
 
+std::optional<SettingsBlock> readSettingsBlock(std::span<const std::byte> d) {
+    if (d.size() < kSaveHeader) return std::nullopt;
+    const auto* b = reinterpret_cast<const unsigned char*>(d.data());
+    // the magic `SaveDir_Load` gates on, before anything is believed
+    static const char kMagic[] = "OMK_SAVE";
+    for (int i = 0; i < 8; ++i)
+        if (b[i] != static_cast<unsigned char>(kMagic[i])) return std::nullopt;
+
+    auto u32 = [&](std::size_t o) {
+        return static_cast<std::uint32_t>(b[o]) | (static_cast<std::uint32_t>(b[o + 1]) << 8) |
+               (static_cast<std::uint32_t>(b[o + 2]) << 16) | (static_cast<std::uint32_t>(b[o + 3]) << 24);
+    };
+    auto i16 = [&](std::size_t o) {
+        return static_cast<int>(static_cast<std::int16_t>(
+            static_cast<std::uint16_t>(b[o]) | (static_cast<std::uint16_t>(b[o + 1]) << 8)));
+    };
+
+    SettingsBlock s;
+    s.version           = u32(8);
+    s.screenX           = i16(12);
+    s.screenY           = i16(14);
+    s.sky               = b[16] != 0;
+    s.shadows           = b[17] != 0;
+    s.clipDistance      = static_cast<int>(u32(20));
+    s.volumeDialogue    = static_cast<int>(u32(24));
+    s.volumeMusic       = static_cast<int>(u32(28));
+    s.volumeEffects     = static_cast<int>(u32(32));
+    s.sound3d           = b[36] != 0;
+    s.subtitles         = b[37] != 0;
+    s.fightDifficulty   = i16(38);
+    s.shootDifficulty   = i16(40);
+    s.combatCamera      = b[42];
+    s.mouseSensitivityX = i16(44);
+    s.mouseSensitivityY = i16(46);
+    s.mouseInverted     = b[48] != 0;
+    s.forceFeedback     = b[49] != 0;
+    for (std::size_t k = 0; k < 56; ++k) {
+        s.keyboard[k] = u32(kBindKeyboard + k * 4);
+        s.mouse[k]    = u32(kBindMouse    + k * 4);
+        s.joystick[k] = u32(kBindJoystick + k * 4);
+    }
+    // `dword_90E724`: the low half is the display driver's and `SaveDir_Load`
+    // clears it for a 0x10000 file, so only these two bytes persist.
+    s.streetActivity = b[1446];
+    s.levelOfDetail  = b[1447];
+    return s;
+}
+
+SettingsBlock defaultSettingsBlock() { return SettingsBlock{}; }
+
 std::optional<SaveSlot> readSaveSlot(std::span<const std::byte> d, int slot) {
     if (slot < 0) return std::nullopt;
     const std::size_t base = kSaveHeader + kSaveSlotSize * static_cast<std::size_t>(slot);

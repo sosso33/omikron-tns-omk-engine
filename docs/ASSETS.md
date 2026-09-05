@@ -1295,6 +1295,47 @@ The `0x10000 → state = 0x800` line really is a `mov esi, 800h`, not an `or`: t
 one flag **wipes** every state bit set before it. Worth knowing before writing
 this out as a table of independent bits.
 
+### Where the two splits come from — the CLIP DISTANCE, and the fog
+
+`g_NearSplit` and `g_FarSplit` are not constants: **both are the options
+menu's clip distance**, and so is the fog. Row 3 (*Distance de clipping*,
+choices 25 / 50 / 100 / 150 / 200) is in **metres**, and the world unit is an
+inch, so the engine converts with `39.37007874015748` (1/0.0254) and hands the
+result to `sub_440BE0(scene, D, 1)`, which writes three floats on the scene:
+
+| field | value | what reads it |
+|---|---|---|
+| `+340` | `D` | `dword_6A2B9C` — `sub_48D3B0`'s visible-set radius (`radius + D` against the distance to the camera) and the four side planes built from it at `25_sys.c` 11598; **and `D3DRENDERSTATE_FOGEND`** |
+| `+328` | `D * 0.25` | `g_NearSplit`, the `0x80` bit — **and `D3DRENDERSTATE_FOGSTART`** |
+| `+332` | `D * 0.95` | `g_FarSplit`, the `0x1000` bit |
+
+So one option sizes the visible set, both depth splits and the fog together.
+Note that the fog **ends at `D`, not at the 0.95 split** — reading `+332` for
+the fog end is wrong by 5%.
+
+The option is a **cap** rather than a value: the per-set path (`05_sys.c`) takes
+a set's own clip distance unless it is 0 or exceeds the option, in which case
+the option wins. It can only ever reduce.
+
+**The fog is linear.** `20_ddraw.c` 1921-1936 sets `D3DRENDERSTATE_FOGENABLE`
+(28), `FOGTABLEMODE` (35) = **3 = `D3DFOG_LINEAR`**, `FOGDENSITY` (38) = 1.0,
+then `FOGSTART` and `FOGEND` from the two globals above. Its COLOUR is the
+scene's `+336`, three bytes packed and sent through `FOGCOLOR` (34). Two
+exclusions and one modifier, all keyed off the bucket key of the batch being
+drawn:
+
+* fog is **off** for key bits `0x2080` — the near bucket (`0x80`, geometry
+  closer than the fog start anyway) and the transparent state (`0x2000`);
+* it is off entirely when the device flag `dword_7CAD20` is clear;
+* for key bit `0x800` (the cutout path) both start and end are **doubled**.
+
+Ported so far: the clip distance itself, resolved from the config file and the
+save header (`engine/src/platform/settings.h`) and driving the viewer's
+visible-set walk. The fog is **not drawn** — `todo/options-config.md` step 4.
+Note what stays out of reach either way: `docs/PORTING.md` rules that no
+pixel's VALUE is checkable against the captures, so the fog's appearance can
+never rise above a decision-level claim however well its parameters are read.
+
 ### What draws it
 
 `Render_FlushBuckets` (0x00460060) runs `for (i = 0; i < 0x4000; i++)`, and for

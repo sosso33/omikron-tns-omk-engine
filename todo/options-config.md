@@ -64,10 +64,10 @@ changed - clip distance 200 against 150, crowd density 4 against 3.
 | # | step | state |
 |---|---|---|
 | 1 | the reader: `[Preferences]` with the game's own key names | **DONE** 2026-09-05 |
-| 2 | wire what the port already has - density, clipdistance | **open** |
-| 2b | read the settings out of a save header too, and let it win | **open**, new |
+| 2 | wire what the port already has - density, clipdistance | **DONE** 2026-09-05 |
+| 2b | read the settings out of a save header too, and let it win | **DONE**, with step 2 |
 | 3 | the sky: establish whether one exists in the data at all | open |
-| 4 | fog | open |
+| 4 | fog - the READING is done (see step 2); what is left is DRAWING it | open |
 
 Step 3 is research and may end in "narrowed": `PORTING` records that fog has
 **no reachable evidence tier**, because the captures cannot validate pixel
@@ -76,6 +76,57 @@ dialog-402 captures are black where the render has holes, "because the game
 does not clear to a sky either" - but that is an apartment and says nothing
 about a street.
 
+**That sentence about fog needs splitting in two, and step 2 is what split
+it.** PORTING's ruling is about a pixel's VALUE, and it stands. The fog's
+EXISTENCE and its parameters are a different question and they are now read
+out of the code, at the same decision level as the blend modes already ported:
+the game draws **linear** fog (`D3DRENDERSTATE_FOGTABLEMODE` = 3) at density
+1.0, from `clipdistance x 39.37 x 0.25` to `clipdistance x 39.37`, coloured
+from the scene's `+336` through `FOGCOLOR`, skipped for key bits `0x2080` and
+doubled for `0x800`. So step 4 is not research any more - it is a renderer
+change with a written spec, and only its APPEARANCE stays untestable.
+
+
+## Step 2, done
+
+**One option turned out to size four things.** The clip distance is in METRES
+and the world unit is an inch, so the engine converts with 39.37007874015748
+and hands `D` to `sub_440BE0(scene, D, 1)`, which writes `+340 = D`,
+`+328 = D*0.25` and `+332 = D*0.95`. Those are, in order: `sub_48D3B0`'s
+visible-set radius **and** the fog END; `bucketKey`'s nearSplit **and** the fog
+START; and `bucketKey`'s farSplit. (The fog ends at `D`, not at the 0.95 split
+- two different numbers, and reading the wrong one is a silent 5%.) The full
+chain is in `docs/ASSETS.md`, "Where the two splits come from".
+
+`engine/src/platform/settings.h` resolves the three sources in the engine's own
+order - defaults from `sub_41F4C0`, then `[Preferences]`, then the save
+header - and records which one supplied each field, because a setting that
+silently came from the wrong place shows up only as "the config file does
+nothing". The two rows with no ini key keep this port's own `[Options]`
+section, at the ini's precedence level, so a save still wins.
+
+Wired: **the crowd density** goes to `Session::setStreetActivity`, and **the
+clip distance** drives a real visible-set walk in `omk-play` - the distance
+half of `sub_48D3B0`, run per set mesh over runs of consecutive corners
+precomputed at the load. Anekbah's five choices give 68 / 242 / 565 / 902 /
+1264 mesh runs drawn of 1632, and an absurd distance culls 0. The four SIDE
+planes are deliberately left out: they are the camera's business rather than
+the option's, and a wrong plane sign deletes the world silently.
+
+Two things worth knowing from doing it:
+
+* **the density is a SPACING, not a count** (`39 * (5 - level) * h[3]`), and
+  the walker pool caps at 200 - so on Anekbah levels 2, 3 and 4 all saturate
+  and only level 0 (138 walkers) looks different. The port is faithful; the
+  option simply has less room than its five labels suggest.
+* **the clip distance without the fog looks wrong**, and that is the argument
+  for step 4. At 25 m the far buildings are gone behind a hard black edge -
+  which is exactly the edge `FOGEND = clipdistance` exists to hide.
+
+`omk-play --config <ini>` and `--clip <metres>`; a `--save`'s header supplies
+both otherwise, and an explicit flag beats both. `verify.py: settings
+resolve`, shown to fail with the precedence inverted and with the fog end read
+from the 0.95 split.
 
 ## Step 1, done
 

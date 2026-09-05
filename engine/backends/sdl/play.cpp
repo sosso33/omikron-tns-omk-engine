@@ -52,6 +52,8 @@
 #include "formats/adpcm.h"
 #include "script/area.h"
 #include "script/savefile.h"
+#include "platform/options.h"
+#include "platform/settings.h"
 #include "script/gamestate.h"
 #include "script/inventory.h"
 #include "o3de/raster.h"
@@ -1279,6 +1281,10 @@ int main(int argc, char** argv) {
 "  --address A      the ADDRESSES record to stand on\n"
 "  --stand x,y,z[,facing]   an explicit spot instead of an address\n"
 "  --density 0..4   how much crowd - the options menu\'s own row 6\n"
+"  --config <ini>   the game's own config file - [Preferences], and this\n"
+"                   port's [Options] for density and level of detail\n"
+"  --clip <metres>  options row 3, the clip distance (25/50/100/150/200);\n"
+"                   a --save's own header supplies it otherwise\n"
 "  --no-crowd       no pedestrians at all\n"
 "  --no-script-sprites  DEBUG: do not draw Script_Display3DSprite's sprites (a before/after)\n"
 "  --scx-play h,h   HARNESS: start scene objects by handle on the first adventure frame\n"
@@ -1387,6 +1393,15 @@ int main(int argc, char** argv) {
     // (default the engine's 3), `--no-crowd` leaves the pedestrians out.
     std::string saveFile;
     int areaArg = -1, addressArg = -1, density = omk::kDefaultStreetActivity;
+    // --config: the game's own ini (`[Preferences]`, 65 keys) plus this
+    // port's `[Options]` for the two rows with no key. The SAVE's 3496-byte
+    // header carries the same settings and is LATER, so it wins - see
+    // `platform/settings.h`. An explicit --density or --clip beats both,
+    // because a flag typed on the command line is the most recent word of
+    // all; `densityFlag`/`clipFlag` record whether one was.
+    std::string configFile;
+    bool densityFlag = false, clipFlag = false;
+    int clipArg = 0;
     // --give: object ids for the carried list, comma-separated. A LIST
     // rather than one id because the flows worth driving need a bagful - row
     // scrolling wants more than the nine row widgets, and `Utiliser sur`
@@ -1491,7 +1506,9 @@ int main(int argc, char** argv) {
         // state without the intro. Also a harness flag, not a port.
         else if (a == "--newgame-world") newWorld = true;
         else if (a == "--scene-chunk" && i + 1 < argc) sceneChunk = std::atoi(argv[++i]);
-        else if (a == "--density" && i + 1 < argc) density = std::atoi(argv[++i]);
+        else if (a == "--density" && i + 1 < argc) { density = std::atoi(argv[++i]); densityFlag = true; }
+        else if (a == "--config" && i + 1 < argc) configFile = argv[++i];
+        else if (a == "--clip" && i + 1 < argc) { clipArg = std::atoi(argv[++i]); clipFlag = true; }
         else if (a == "--no-crowd") noCrowd = true;
         else if (a == "--no-script-sprites") noScriptSprites = true;
         // A HARNESS FLAG: start scene objects by their `scx.play` operand (the
@@ -1613,6 +1630,41 @@ int main(int argc, char** argv) {
         return 1;
     }
     omk::GameState state = omk::GameState::fromFile(fr + "/IAM/START");
+    // THE SETTINGS, from the three sources in their own order: the engine's
+    // defaults (`sub_41F4C0`), then the ini, then the save file's 3496-byte
+    // header - which is what the options MENU last wrote, and so is later
+    // than the ini and wins (`platform/settings.h`, GAME_STATE 8a). The
+    // header is read from the same bytes the slot comes out of, because it
+    // IS the head of that file.
+    std::optional<omk::SettingsBlock> saveSettings;
+    if (!saveFile.empty())
+        saveSettings = omk::readSettingsBlock(omk::DataFs::readPath(saveFile));
+    const omk::OptionsFile ini =
+        configFile.empty() ? omk::OptionsFile{} : omk::loadOptionsFile(configFile);
+    if (!configFile.empty() && !ini.loaded)
+        std::fprintf(stderr, "%s: no such config file - using defaults\n", configFile.c_str());
+    const omk::Settings settings = omk::resolveSettings(ini, saveSettings);
+    // A flag typed on the command line is the most recent word of all.
+    if (!densityFlag) density = settings.v.streetActivity;
+    const double clipInches =
+        clipFlag ? static_cast<double>(clipArg) * omk::kInchesPerMetre : settings.clipInches();
+    // one line the first frame that draws, so a run says what the option did
+    bool clipReport = true;
+    std::printf("settings: clip %d m (%s) = %.0f in, near/far split %.0f/%.0f;"
+                " crowd %d (%s); sky %d (%s), shadows %d (%s), detail %d (%s)\n",
+                clipFlag ? clipArg : settings.v.clipDistance,
+                clipFlag ? "flag" : omk::sourceName(settings.clipDistance),
+                clipInches, clipInches * 0.25, clipInches * 0.95,
+                density, densityFlag ? "flag" : omk::sourceName(settings.streetActivity),
+                settings.v.sky ? 1 : 0, omk::sourceName(settings.sky),
+                settings.v.shadows ? 1 : 0, omk::sourceName(settings.shadows),
+                settings.v.levelOfDetail, omk::sourceName(settings.levelOfDetail));
+    if (!ini.unknown.empty()) {
+        std::printf("settings: %zu key(s) under [Preferences] the engine never reads:",
+                    ini.unknown.size());
+        for (const auto& k : ini.unknown) std::printf(" %s", k.c_str());
+        std::printf("\n");
+    }
     if (!saveFile.empty()) {
         const auto slot = omk::readSaveSlot(omk::DataFs::readPath(saveFile), 0);
         if (!slot) { std::fprintf(stderr, "%s: not a save file\n", saveFile.c_str()); return 1; }
@@ -2944,6 +2996,15 @@ int main(int argc, char** argv) {
         // accumulating on the last frame's patch.
         std::vector<omk::Mesh>   meshes;
         std::vector<omk::Corner> baseCorners;
+        // THE VISIBLE-SET WALK's unit of work. `sub_48D3B0` walks the scene
+        // MESH BY MESH and submits each one that passes; this port flattens a
+        // set into batches by material, so a mesh's corners are runs inside
+        // them. One run is a maximal stretch of consecutive corners in one
+        // batch that all belong to one mesh - computed once at the load, so a
+        // frame tests each mesh once (a few thousand) instead of each corner
+        // (1.7 million).
+        struct MeshRun { std::uint32_t start, count; std::int32_t mesh; std::size_t batch; };
+        std::vector<MeshRun> runs;
         // ...and the collision soups the same way: the mesh each triangle
         // came from, and the soups as BUILT, so a moved crate's collision
         // follows the crate (a reader, 2026-09-04: "some crates fall at a
@@ -3035,6 +3096,26 @@ int main(int argc, char** argv) {
         const auto t = fs.resolve("MESHES/DECORS/" + stem + ".3DT");
         if (t) w.tex = omk::textures(d, omk::DataFs::readPath(*t));
         w.mirror = omk::mirrorPlane(d);
+        // The runs, in submission order: batch by batch, and inside a batch
+        // split wherever `cornerMesh` changes. A set whose corners carry no
+        // mesh index leaves this empty, and the draw path then submits whole
+        // batches exactly as it did before.
+        w.runs.clear();
+        if (w.geo.cornerMesh.size() == w.geo.corners.size()) {
+            for (std::size_t bi = 0; bi < w.geo.batches.size(); ++bi) {
+                const auto& b = w.geo.batches[bi];
+                std::uint32_t c = 0;
+                while (c < b.count) {
+                    const std::size_t at = static_cast<std::size_t>(b.start) + c;
+                    const std::int32_t mi = w.geo.cornerMesh[at];
+                    std::uint32_t n = 0;
+                    while (c + n < b.count &&
+                           w.geo.cornerMesh[static_cast<std::size_t>(b.start) + c + n] == mi) ++n;
+                    w.runs.push_back({static_cast<std::uint32_t>(b.start + c), n, mi, bi});
+                    c += n;
+                }
+            }
+        }
         w.soup = omk::collisionSoup(d, omk::SoupKind::Walkable, &w.soupMesh);
         w.steep = omk::collisionSoup(d, omk::SoupKind::Steep, &w.steepMesh);
         w.baseSoup.clear(); w.baseSteep.clear();
@@ -6854,12 +6935,71 @@ int main(int argc, char** argv) {
                 else if (cutout)                state = 0x400;
                 return state | (slot & 0x3Fu);
             };
+            // THE VISIBLE SET, and it is the CLIP DISTANCE that sizes it.
+            //
+            // `sub_48D3B0` walks the scene's meshes and keeps one when
+            // `radius + dword_6A2B9C` exceeds its distance from the camera -
+            // and `dword_6A2B9C` is the scene's `+340`, which is options row
+            // 3 in metres times 39.37 (`platform/settings.h`). So the option
+            // is exactly this radius, and at 25 m ("Tres proche") a street
+            // ends a few buildings away.
+            //
+            // What is NOT applied here: the engine follows that test with the
+            // four SIDE planes, built from the same global at `25_sys.c`
+            // 11598. Those are the camera's business rather than the option's,
+            // this backend already clips to the viewport, and a wrong plane
+            // sign deletes the world silently - so only the distance half is
+            // taken, and the visible set is a superset of the engine's.
+            const float clipReach = static_cast<float>(clipInches);
+            std::size_t runsDrawn = 0, runsCulled = 0;
             for (int slot = 0; slot < 2; ++slot) {
                 const WorldSlot& w = worldSlots[static_cast<std::size_t>(slot)];
-                for (const auto& b : w.geo.batches)
-                    draws.push_back({keyOf(b.blend, b.cutout, static_cast<std::uint32_t>(
-                                               b.material + static_cast<int>(worldTexBase[slot]))),
-                                     &w.geo, b.start, b.count, b.blend, b.cutout});
+                const std::uint32_t texBase = static_cast<std::uint32_t>(worldTexBase[slot]);
+                if (w.runs.empty()) {          // no per-corner mesh: whole batches
+                    for (const auto& b : w.geo.batches)
+                        draws.push_back({keyOf(b.blend, b.cutout,
+                                               static_cast<std::uint32_t>(b.material) + texBase),
+                                         &w.geo, b.start, b.count, b.blend, b.cutout});
+                    continue;
+                }
+                // One test per mesh, cached across its runs.
+                std::vector<std::uint8_t> vis(w.meshes.size(), 2);   // 2 = untested
+                const auto visible = [&](std::int32_t mi) -> bool {
+                    if (mi < 0 || static_cast<std::size_t>(mi) >= w.meshes.size()) return true;
+                    std::uint8_t& v = vis[static_cast<std::size_t>(mi)];
+                    if (v != 2) return v != 0;
+                    const omk::Mesh& m = w.meshes[static_cast<std::size_t>(mi)];
+                    const float dx = m.pos[0] - view.cam.eye[0];
+                    const float dy = m.pos[1] - view.cam.eye[1];
+                    const float dz = m.pos[2] - view.cam.eye[2];
+                    const float reach = m.radius + clipReach;
+                    v = (reach * reach > dx * dx + dy * dy + dz * dz) ? 1 : 0;
+                    return v != 0;
+                };
+                // Emit, merging adjacent surviving runs so a fully visible
+                // batch still costs one draw.
+                std::size_t i = 0;
+                while (i < w.runs.size()) {
+                    if (!visible(w.runs[i].mesh)) { ++runsCulled; ++i; continue; }
+                    const auto& first = w.runs[i];
+                    std::uint32_t start = first.start, count = first.count;
+                    std::size_t j = i + 1;
+                    while (j < w.runs.size() && w.runs[j].batch == first.batch &&
+                           w.runs[j].start == start + count && visible(w.runs[j].mesh)) {
+                        count += w.runs[j].count; ++j;
+                    }
+                    runsDrawn += j - i;
+                    const auto& b = w.geo.batches[first.batch];
+                    draws.push_back({keyOf(b.blend, b.cutout,
+                                           static_cast<std::uint32_t>(b.material) + texBase),
+                                     &w.geo, start, count, b.blend, b.cutout});
+                    i = j;
+                }
+            }
+            if (clipReport) {
+                std::printf("clip: %.0f in - %zu mesh runs drawn, %zu culled\n",
+                            clipInches, runsDrawn, runsCulled);
+                clipReport = false;
             }
             // EVERY staged body, each with its own model's base - the change
             // issue 41 asks for. One geometry per actor, so two bodies wearing

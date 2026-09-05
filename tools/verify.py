@@ -7593,6 +7593,134 @@ def c_options_file():
          "typo reported rather than dropped")
 
 
+def c_settings_resolve():
+    r"""The settings resolved from their three sources, in the engine's order.
+
+    The game keeps its options in TWO places (GAME_STATE 8a): the `.ini`'s 65
+    `[Preferences]` keys, read at boot, and the SAVE FILE's 3496-byte header,
+    which is what the options MENU last wrote.  The header is therefore the
+    later of the two and wins for anything the player has touched, so the port
+    resolves
+
+        defaults (`sub_41F4C0`)  <-  [Preferences]  <-  the save header
+
+    and `platform/settings.h` records which of the three actually supplied
+    each field, because a setting that silently came from the wrong place is
+    the kind of fault that only ever shows up as "the config file does
+    nothing".  Two rows - the crowd density and the level of detail - have no
+    ini key at all, so the port adds an `[Options]` section of its own for
+    them at the ini's precedence level.
+
+    Three runs of `settings_probe` pin the three tiers:
+
+    * **defaults alone** must be exactly what `sub_41F4C0` writes - clip 50,
+      mouse 20/15, sky and shadows on, the volumes 0;
+    * **the ini alone** takes clip 100, `DisplaySky = Non` (the French build's
+      own word, mixed case), `MouseSensX = 33` and the port's own
+      `[Options] streetactivity = 1`, leaving `MouseSensY` at its default -
+      which is the test that a source writes only the fields it names;
+    * **the ini AND the save** must come out entirely `save`, at the save's
+      own values, over an ini that disagrees with every one of them.
+
+    ### What the clip distance derives, and why it is one number
+
+    The world unit is an INCH and row 3 is in METRES, so the engine converts
+    with `39.37007874015748` (1/0.0254) and hands the result to
+    `sub_440BE0(scene, D, 1)`, which writes three floats:
+
+        +340 = D          -> `dword_6A2B9C` -> `sub_48D3B0`'s visible-set
+                             radius (`radius + D` against the distance), the
+                             four side planes at `25_sys.c` 11598, AND
+                             `D3DRENDERSTATE_FOGEND`
+        +328 = D * 0.25   -> `bucketKey`'s nearSplit, AND the FOG START
+        +332 = D * 0.95   -> `bucketKey`'s farSplit
+
+    So one option sizes the visible set, both depth-bucket splits and the fog
+    range together - which is why `todo/options-config.md` step 4 (the fog) is
+    the same plumbing as step 2 and not a separate one.  The fog is LINEAR
+    (`FOGTABLEMODE` 3) at density 1.0, its colour the scene's `+336` through
+    `D3DRENDERSTATE_FOGCOLOR`; it is skipped for key bits `0x2080` (the near
+    bucket and the transparent state) and DOUBLED for `0x800`.  Not drawn yet.
+
+    Note the fog ends at **D**, not at the 0.95 split - the two are different
+    numbers and reading `+332` for the fog end would be wrong by 5%.
+
+    ### The visible set is live in the viewer
+
+    `omk-play` now runs the distance half of `sub_48D3B0` per set mesh, over
+    runs of consecutive corners precomputed at the load (a set is flattened
+    into batches by material, so a mesh's corners are runs inside them).  On
+    Anekbah from the street start the five choices row 3 offers give 68 / 242 /
+    565 / 902 / 1264 mesh runs drawn of 1632, and an absurd distance culls
+    **0** - which is the test that the walk is not dropping geometry for some
+    other reason.  The four side planes are deliberately NOT applied: they are
+    the camera's business rather than the option's, and a wrong plane sign
+    deletes the world silently.
+    """
+    import json, tempfile
+    probe = os.path.join(ROOT, "engine", "build", "settings_probe")
+    sv = os.path.join(ROOT, "traces/save-appart.bin")
+    if not os.path.exists(probe): return "settings_probe not built", "the resolver", ""
+    if not os.path.exists(sv): return "missing fixture", "the resolver", ""
+
+    def run(*args):
+        out = subprocess.run([probe, *args], capture_output=True, text=True).stdout
+        d = {}
+        for ln in out.splitlines():
+            f = ln.split()
+            if f: d[f[0]] = f[1:]
+        return d
+
+    with tempfile.TemporaryDirectory() as td:
+        ini = os.path.join(td, "t.ini")
+        open(ini, "w").write(
+            "; the port's own [Options] beside the game's [Preferences]\n"
+            "[Preferences]\nclipdistance = 100\nDisplaySky = Non\n"
+            "displayshadows = Oui\nMouseSensX = 33\nmusic = 40\n"
+            "[Options]\nstreetactivity = 1\nlevelofdetail = 0\n")
+        a = run()                                   # defaults
+        b = run("--config", ini)                    # + the ini
+        c = run("--config", ini, "--save", sv)      # + the save, which wins
+
+    # the defaults are sub_41F4C0's
+    defaults = (int(a["clip"][0]), a["clip"][1], int(a["sky"][0]), int(a["shadows"][0]),
+                int(a["mouse"][0]), int(a["mouse"][1]), a["mouse"][2],
+                tuple(int(x) for x in a["volumes"][:3]))
+    # the ini writes only what it names - MouseSensY stays 15 and default
+    fromIni = (int(b["clip"][0]), b["clip"][1], int(b["sky"][0]), b["sky"][1],
+               int(b["mouse"][0]), int(b["mouse"][1]),
+               int(b["density"][0]), b["density"][1], int(b["volumes"][1]))
+    # the save wins on every field it carries, over an ini that disagrees
+    fromSave = (int(c["clip"][0]), c["clip"][1], int(c["density"][0]), c["density"][1],
+                int(c["detail"][0]), c["detail"][1], int(c["mouse"][0]), c["mouse"][2],
+                int(c["sky"][0]), c["sky"][1], c["bindings"][4])
+    # the three named binding cells, against tables/key_bindings.json itself
+    kb = json.load(open(os.path.join(ROOT, "tables/key_bindings.json")))["rows"]["rows"]
+    cell = lambda g, ac: [r for r in kb if r["group"] == g and r["action"] == ac][0]["keyboard"]
+    bind = (int(c["bindings"][1]), int(c["bindings"][2]), int(c["bindings"][3]))
+    want = (cell(0, 2), cell(3, 6), cell(2, 4))
+    # and what the clip distance derives, at the save's own 200 m
+    d = [float(x) for x in c["derived"]]
+    inch = 200.0 * 39.37007874015748
+    derived = (abs(d[0] - inch) < 1e-3, abs(d[1] - inch * 0.25) < 1e-3,
+               abs(d[2] - inch * 0.95) < 1e-3, d[3] == d[1], d[4] == d[0], d[4] != d[2])
+
+    return (defaults, fromIni, fromSave, bind == want, derived), \
+           ((50, "default", 1, 1, 20, 15, "default", (0, 0, 0)),
+            (100, "config", 0, "config", 33, 15, 1, "config", 40),
+            (200, "save", 4, "save", 2, "save", 20, "save", 1, "save", "save"),
+            True,
+            (True, True, True, True, True, True)), \
+           "the three tiers of the resolver - sub_41F4C0's defaults alone; " \
+           "the ini writing only the fields it names (MouseSensY stays 15 " \
+           "and 'default') including the port's own [Options] density; and " \
+           "the save header beating an ini that disagrees with every field, " \
+           "its three binding cells matching tables/key_bindings.json; then " \
+           "what the clip distance derives - D, D*0.25, D*0.95, the fog " \
+           "starting at the near split and ENDING AT D rather than at the " \
+           "0.95 split"
+
+
 def c_slider_ride():
     r"""The player's RIDE, read rather than ported - the three facts that make
     it worth reading before anyone starts.
@@ -20711,7 +20839,7 @@ def c_licence_headers():
                    if TAG in open(p, encoding="utf-8",
                                   errors="replace").read(600)]
     return (authored, sorted(missing), len(vendored), mislabelled), \
-           (343, [], 1, []), \
+           (346, [], 1, []), \
            "authored source files under tools/, engine/src, engine/tools, " \
            "engine/backends and scripts/; those MISSING the SPDX tag; " \
            "vendored files in engine/third_party; and vendored files wrongly " \
@@ -21938,6 +22066,7 @@ CHECKS = [
     ("aapub prism",        c_aapub_prism,       "ASSETS 4b; CLAUDE.md 6"),
     ("slider ride",        c_slider_ride,       "todo/standing-unknowns"),
     ("options file",       c_options_file,      "todo/options-config"),
+    ("settings resolve",  c_settings_resolve,  "todo/options-config"),
     ("camera aim = 768",   c_aim_length,        "FILE_FORMATS 2"),
     ("line-cam bundles",   c_bundles,           "ASSETS"),
     ("dialog 402 vs game", c_dialog402,         "ASSETS"),
