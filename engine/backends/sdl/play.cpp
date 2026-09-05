@@ -1285,6 +1285,7 @@ int main(int argc, char** argv) {
 "                   port's [Options] for density and level of detail\n"
 "  --clip <metres>  options row 3, the clip distance (25/50/100/150/200);\n"
 "                   a --save's own header supplies it otherwise\n"
+"  --sky 0|1        options row 4, Affichage du ciel\n"
 "  --no-crowd       no pedestrians at all\n"
 "  --no-script-sprites  DEBUG: do not draw Script_Display3DSprite's sprites (a before/after)\n"
 "  --scx-play h,h   HARNESS: start scene objects by handle on the first adventure frame\n"
@@ -1402,6 +1403,7 @@ int main(int argc, char** argv) {
     std::string configFile;
     bool densityFlag = false, clipFlag = false;
     int clipArg = 0;
+    int skyFlag = -1;      // --sky 0|1, options row 4; -1 = take it from the settings
     // --give: object ids for the carried list, comma-separated. A LIST
     // rather than one id because the flows worth driving need a bagful - row
     // scrolling wants more than the nine row widgets, and `Utiliser sur`
@@ -1509,6 +1511,7 @@ int main(int argc, char** argv) {
         else if (a == "--density" && i + 1 < argc) { density = std::atoi(argv[++i]); densityFlag = true; }
         else if (a == "--config" && i + 1 < argc) configFile = argv[++i];
         else if (a == "--clip" && i + 1 < argc) { clipArg = std::atoi(argv[++i]); clipFlag = true; }
+        else if (a == "--sky" && i + 1 < argc) skyFlag = std::atoi(argv[++i]);
         else if (a == "--no-crowd") noCrowd = true;
         else if (a == "--no-script-sprites") noScriptSprites = true;
         // A HARNESS FLAG: start scene objects by their `scx.play` operand (the
@@ -1650,13 +1653,14 @@ int main(int argc, char** argv) {
         clipFlag ? static_cast<double>(clipArg) * omk::kInchesPerMetre : settings.clipInches();
     // one line the first frame that draws, so a run says what the option did
     bool clipReport = true;
+    const bool drawSky = skyFlag >= 0 ? skyFlag != 0 : settings.v.sky;
     std::printf("settings: clip %d m (%s) = %.0f in, near/far split %.0f/%.0f;"
                 " crowd %d (%s); sky %d (%s), shadows %d (%s), detail %d (%s)\n",
                 clipFlag ? clipArg : settings.v.clipDistance,
                 clipFlag ? "flag" : omk::sourceName(settings.clipDistance),
                 clipInches, clipInches * 0.25, clipInches * 0.95,
                 density, densityFlag ? "flag" : omk::sourceName(settings.streetActivity),
-                settings.v.sky ? 1 : 0, omk::sourceName(settings.sky),
+                drawSky ? 1 : 0, skyFlag >= 0 ? "flag" : omk::sourceName(settings.sky),
                 settings.v.shadows ? 1 : 0, omk::sourceName(settings.shadows),
                 settings.v.levelOfDetail, omk::sourceName(settings.levelOfDetail));
     if (!ini.unknown.empty()) {
@@ -3016,6 +3020,34 @@ int main(int argc, char** argv) {
     std::array<WorldSlot, 2> worldSlots;
     std::string worldSet;            // the ACTIVE slot's stem - the set under his feet
     std::size_t worldTexBase[2] = {0, 0};   // each slot's first index in `worldTex`
+
+    // ------------------------------------------------------------- THE SKY
+    //
+    // `Area_TickLoad` case 4 hands the AREA chunk's `+133` to
+    // `Area_LoadMiscModel` (0x0041D2C0), which loads `MESHES\MISC\<name>.3DO`,
+    // takes its node 0, scales it 12.5x on all three axes and lifts it 2250
+    // units (Y is DOWN, so `-2250.0` is UP). Every frame, while options row 4
+    // is on, `sub_41CF10` sets the node to the CAMERA's x and z and its OWN y
+    // and relinks it under the scene root - so it follows you horizontally and
+    // never gets closer.
+    //
+    // It is not a dome. All 864 corners sit at Y = 401.09: a flat 12x12 quad
+    // grid, 5310 x 5164 units, carrying one 256x256 texture whose name in the
+    // file is `ciel2` - French for sky - over a mesh called `face`, or
+    // `TOITCIEL` in the roof set. So Omikron's sky is a painted CEILING, which
+    // is what a domed city has.
+    struct Sky {
+        std::string stem;
+        omk::Geometry geo;                 // the plane, rebuilt each frame
+        std::vector<omk::Corner> base;     // ...from these, as loaded
+        std::vector<omk::Texture> tex;
+        std::size_t texBase = 0;
+        float origin[3] = {0, 0, 0};       // node 0's own position
+    };
+    Sky sky;
+    // `Area_LoadMiscModel`'s two constants.
+    constexpr float kSkyScale = 12.5f;
+    constexpr float kSkyLift  = 2250.0f;
     std::vector<omk::DecorSoup> worldDecors; // the shown slots' soups, for decorUnder
     // A set's geometry is REBUILT on every area change, and a fresh
     // Geometry's revision is 0 - the same value the previous set was cached
@@ -5196,8 +5228,42 @@ int main(int argc, char** argv) {
                     loadWorldSlot(slot, want, wantArea);
                     changed = true;
                 }
+                // THE SKY follows slot 0's area, because `Area_LoadMiscModel`
+                // keeps ONE model globally rather than one per slot - a second
+                // area naming a different sky replaces it, and one naming none
+                // (`*a1` false) leaves the previous standing rather than
+                // clearing it. Loaded here so it arrives with the set.
+                if (slot == 0) {
+                    const std::string wantSky = shown ? rs.sky : std::string();
+                    if (!wantSky.empty() && wantSky != sky.stem) {
+                        sky = Sky{};
+                        const auto o = fs.resolve("MESHES/MISC/" + wantSky + ".3DO");
+                        if (!o) std::printf("sky: no model %s.3DO\n", wantSky.c_str());
+                        else {
+                            const auto d = omk::DataFs::readPath(*o);
+                            sky.stem = wantSky;
+                            sky.geo  = omk::buildGeometry(d, omk::DrawFilter::Engine);
+                            sky.base = sky.geo.corners;
+                            const auto t = fs.resolve("MESHES/MISC/" + wantSky + ".3DT");
+                            if (t) sky.tex = omk::textures(d, omk::DataFs::readPath(*t));
+                            const auto hdr = omk::readHeader(d);
+                            if (hdr) {
+                                const auto ms = omk::readMeshes(d, *hdr);
+                                if (!ms.empty())
+                                    for (int k = 0; k < 3; ++k) sky.origin[k] = ms[0].pos[k];
+                            }
+                            std::printf("sky: %s - %zu corners, %zu texture(s), origin"
+                                        " %.1f %.1f %.1f, drawn at y %.1f\n",
+                                        wantSky.c_str(), sky.base.size(), sky.tex.size(),
+                                        sky.origin[0], sky.origin[1], sky.origin[2],
+                                        sky.origin[1] - kSkyLift);
+                            changed = true;
+                        }
+                    }
+                }
             }
             if (changed) {
+                ++poolComposition;      // the sky section of the pool changed
                 rebuildWorld();
                 std::printf("world: rebuilt - slot 0 '%s' (area %d, %s), slot 1 '%s' (area %d, %s); "
                             "walkable %zu tris, walls %zu tris\n",
@@ -5734,6 +5800,10 @@ int main(int argc, char** argv) {
                     pm.second.texBase = pool.size();
                     pool.insert(pool.end(), pm.second.tex.begin(), pm.second.tex.end());
                 }
+                // the sky's one texture, on the same rule as every other
+                // section: a batch's slot is its material plus its own base
+                sky.texBase = pool.size();
+                pool.insert(pool.end(), sky.tex.begin(), sky.tex.end());
                 playerTexBase = pool.size();
                 if (drawPlayer) pool.insert(pool.end(), playerTex.begin(), playerTex.end());
                 spriteTexBase = pool.size();
@@ -6935,6 +7005,39 @@ int main(int argc, char** argv) {
                 else if (cutout)                state = 0x400;
                 return state | (slot & 0x3Fu);
             };
+            // THE SKY, placed and submitted before anything else.
+            //
+            // `sub_41CF10` sets the node to the camera's x and z and its own
+            // y, so the plane slides with you and never approaches; the
+            // corners are rebuilt from the loaded ones about node 0's origin,
+            // scaled 12.5x. Options row 4 turns it off by UNLINKING the node,
+            // which is simply not submitting it.
+            //
+            // Its bucket state is 0x800 and not computed from the blend flags:
+            // `Area_LoadMiscModel` sets mesh flag 0x10000, and 0x10000's line
+            // in `Render_SubmitMesh` is an ASSIGNMENT - `state = 0x800` - which
+            // wipes everything else. That is also why the sky never picks up
+            // the far-bucket bit (`!(key & 0x800)` guards it) and why its fog
+            // range is DOUBLED. It clears 0x3000 too, so the sky is opaque
+            // whatever the material says.
+            if (drawSky && !sky.base.empty() && !sky.geo.batches.empty()) {
+                const float sx = view.cam.eye[0], sz = view.cam.eye[2];
+                const float sy = sky.origin[1] - kSkyLift;
+                for (std::size_t k = 0; k < sky.base.size(); ++k) {
+                    const omk::Corner& b0 = sky.base[k];
+                    omk::Corner& c = sky.geo.corners[k];
+                    c = b0;
+                    c.x = sx + (b0.x - sky.origin[0]) * kSkyScale;
+                    c.y = sy + (b0.y - sky.origin[1]) * kSkyScale;
+                    c.z = sz + (b0.z - sky.origin[2]) * kSkyScale;
+                }
+                sky.geo.revision = ++worldGeoRev;
+                for (const auto& b : sky.geo.batches)
+                    draws.push_back({0x800u | ((static_cast<std::uint32_t>(b.material) +
+                                                static_cast<std::uint32_t>(sky.texBase)) & 0x3Fu),
+                                     &sky.geo, b.start, b.count, omk::Blend::Opaque, false});
+            }
+
             // THE VISIBLE SET, and it is the CLIP DISTANCE that sizes it.
             //
             // `sub_48D3B0` walks the scene's meshes and keeps one when

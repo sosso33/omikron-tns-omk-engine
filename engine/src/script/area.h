@@ -323,6 +323,13 @@ public:
         bool shown = false;
         int  areaCtx = -1, sceneCtx = -1;       // block +0: the startup contexts
         std::string set, scx;                   // AREA +88 / +97
+        // THE SKY, AREA +133 - `Area_TickLoad` case 4 hands it to
+        // `Area_LoadMiscModel`, which loads `MESHES\MISC\<name>.3DO`, takes
+        // its node 0, scales it 12.5x and lifts it 2250 units. 17 of the 259
+        // areas name one and 242 are empty, which is what an interior should
+        // be; the six distinct names all ship. See `docs/ASSETS.md`, "The
+        // sky".
+        std::string sky;                        // AREA +133
         // STREET LIFE (docs/STREET_LIFE.md 2): the traffic circuit at +115
         // (`TRAJECTOIRES\<opt>.OPT`), the animation library at +124
         // (`ANIMS\<ani>.ANI` - `PASSANTH` for every city), and the two masks

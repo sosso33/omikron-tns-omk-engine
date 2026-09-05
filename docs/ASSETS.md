@@ -1295,6 +1295,61 @@ The `0x10000 → state = 0x800` line really is a `mov esi, 800h`, not an `or`: t
 one flag **wipes** every state bit set before it. Worth knowing before writing
 this out as a table of independent bits.
 
+### The sky — a painted CEILING, not a dome
+
+Options row 4 is *Affichage du ciel*, and there really is one in the data.
+`Area_TickLoad` case 4 hands the AREA chunk's **`+133`** to
+`Area_LoadMiscModel` (0x0041D2C0), which loads `MESHES\MISC\<name>.3DO`, takes
+its node 0 and:
+
+* scales it **12.5x** on all three axes;
+* lifts it **2250** units (`+40 -= 2250.0`; Y is DOWN, so that is up);
+* clears mesh flags `0x3000`, forcing it opaque whatever the material says;
+* sets `0x10000|0x20000` via `sub_437220(node, 192, 4)`.
+
+That `0x10000` is worth following, because it is why the sky behaves unlike
+anything else in the frame. `Render_SubmitMesh`'s line for it is an
+**assignment** — `state = 0x800` — which wipes every other state bit (the trap
+noted above). So the sky's bucket state is exactly 0x800, and that one flag has
+three consequences: its own bucket, exclusion from the far bucket
+(`!(key & 0x800)` guards the 0x1000 bit), and a **doubled fog range**
+(`HIBYTE(key) & 8`).
+
+Then every frame, while the option is on, `sub_41CF10` sets the node to the
+**camera's x and z and its own y** and relinks it under the scene root; with the
+option off it just unlinks it. The sky slides with the player and never
+approaches.
+
+**17 of the 259 AREA chunks name one and 242 name none** — which is what
+interiors should look like, and is the check that `+133` is a field rather than
+noise. Six names, all shipping as a `.3DO` and a `.3DT` in `MESHES/MISC`:
+
+| model | areas |
+|---|---|
+| `ASKY` | ANEKBAH, ATOIT, QALISAR, AIMPASAS, AIMPASSE |
+| `SSKY` | JAUNPUR, SBOZZINT, SPRISON, SRUETOIT |
+| `LSKY` | LAHOREH, LYRMALY, LMOEXTER, L_KHONSU |
+| `MASKY` | MAHALEEL, SASNEIGE |
+| `DOCKSKY` | SDOCKS |
+| `TOITSKY` | STOITS |
+
+A seventh, `jansky`, ships and **no area names it**.
+
+**It is flat.** All seven carry identical geometry: one mesh, one batch, **864
+corners** (a 12x12 quad grid) and every vertex at **Y = 401.09**, so the Y
+extent is exactly **zero**. 5310 x 5164 units, which at 12.5x is 1686 x 1640 m
+— against a clip distance of at most 200 m, so the edge is unreachable. Not a
+skybox and not a dome: a ceiling, which is what a domed city has.
+
+And the file says so itself, which beats any inference: the single 256x256
+texture is `ciel1` or `ciel2` — French for *sky* — and `toitsky`'s mesh is
+named **`TOITCIEL`**, "roof sky".
+
+Ported: `omk-play` loads it from the resident slot's `+133`, places it at the
+camera each frame and submits it first at state 0x800. Turning row 4 off moves
+6.3% of the frame on Anekbah's street start — the gap between the buildings,
+which was black before. `verify.py: the sky`.
+
 ### Where the two splits come from — the CLIP DISTANCE, and the fog
 
 `g_NearSplit` and `g_FarSplit` are not constants: **both are the options

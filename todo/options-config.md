@@ -66,7 +66,7 @@ changed - clip distance 200 against 150, crowd density 4 against 3.
 | 1 | the reader: `[Preferences]` with the game's own key names | **DONE** 2026-09-05 |
 | 2 | wire what the port already has - density, clipdistance | **DONE** 2026-09-05 |
 | 2b | read the settings out of a save header too, and let it win | **DONE**, with step 2 |
-| 3 | the sky: establish whether one exists in the data at all | open |
+| 3 | the sky: establish whether one exists in the data at all | **DONE** 2026-09-05 - and drawn |
 | 4 | fog - the READING is done (see step 2); what is left is DRAWING it | open |
 
 Step 3 is research and may end in "narrowed": `PORTING` records that fog has
@@ -86,6 +86,29 @@ from the scene's `+336` through `FOGCOLOR`, skipped for key bits `0x2080` and
 doubled for `0x800`. So step 4 is not research any more - it is a renderer
 change with a written spec, and only its APPEARANCE stays untestable.
 
+
+## Step 3, done - and the answer is yes
+
+A sky exists, ships, and is now drawn. It is **not** a skybox or a dome: it is
+a flat painted CEILING, 864 corners in a 12x12 grid with every vertex at
+Y = 401.09, scaled 12.5x and hung 2250 units up, following the camera in x and
+z and never in y. Which is what a domed city has.
+
+The AREA chunk's `+133` names it and 17 of the 259 areas do; 242 name none,
+which is what interiors should look like. Six models ship, plus a seventh
+(`jansky`) that nothing names. The single texture on each is called `ciel1` or
+`ciel2` and one mesh is `TOITCIEL`, so the files name themselves and no
+inference was needed.
+
+The mechanism is in `docs/ASSETS.md`, "The sky". One detail matters beyond this
+step: `Area_LoadMiscModel` sets mesh flag `0x10000`, whose line in
+`Render_SubmitMesh` is an ASSIGNMENT (`state = 0x800`) rather than an OR — so
+the sky's bucket state is exactly 0x800, which keeps it out of the far bucket
+AND doubles its fog range. Step 4 needs that.
+
+Drawn in `omk-play`, off with `--sky 0`; turning row 4 off moves 6.3% of the
+frame on Anekbah's street start. `verify.py: the sky`, shown to fail by reading
+`+134` instead of `+133` and by making the probe report a non-flat plane.
 
 ## Step 2, done
 

@@ -7820,6 +7820,116 @@ def c_world_unit():
            "ride camera at exactly 3.00, 7.00 and 2.00"
 
 
+def c_the_sky():
+    r"""Step 3 of `todo/options-config.md`: does a sky exist in the data?
+
+    **Yes**, and it is not a skybox or a dome - it is a painted CEILING, which
+    is what a domed city has.
+
+    ### The mechanism
+
+    Options row 4 is *Affichage du ciel* and its hook reads `byte_90E190`,
+    header `+16`. `Area_TickLoad` case 4 hands the AREA chunk's **`+133`** to
+    `Area_LoadMiscModel` (0x0041D2C0), which loads `MESHES\MISC\<name>.3DO`,
+    takes its node 0 and:
+
+    * scales it **12.5x** on all three axes;
+    * lifts it **2250** units (`+40 -= 2250.0`, and Y is DOWN, so that is up);
+    * clears mesh flags `0x3000`, forcing it opaque whatever the material says;
+    * sets `0x10000|0x20000` through `sub_437220(node, 192, 4)`.
+
+    That `0x10000` is worth following, because it is why the sky behaves
+    unlike anything else in the frame: `Render_SubmitMesh`'s line for it is an
+    **assignment**, `state = 0x800`, wiping every other state bit. So the sky's
+    bucket state is exactly 0x800 - which also keeps it out of the far bucket
+    (`!(key & 0x800)` guards the 0x1000 bit) and **doubles its fog range**
+    (`HIBYTE(key) & 8`). One flag, three consequences.
+
+    Then every frame, while the option is on, `sub_41CF10` sets the node to the
+    **camera's x and z and its own y** and relinks it under the scene root; with
+    the option off it simply unlinks it. So it slides with the player and never
+    comes closer.
+
+    ### What ships
+
+    **17 of the 259 AREA chunks name a sky and 242 name none** - which is what
+    interiors should look like, and is the check that `+133` is being read as a
+    field rather than as noise. Six distinct names, and all six ship in
+    `MESHES/MISC` as a `.3DO` and a `.3DT` - `ASKY` (Anekbah, Atoit, Qalisar,
+    both Impasses), `SSKY` (Jaunpur, Bozzint, the prison, Ruetoit), `LSKY`
+    (Lahoreh, Lyrmaly, Lmoexter, Khonsu), `MASKY` (Mahaleel, Sasneige),
+    `DOCKSKY` (the docks) and `TOITSKY` (the roofs). A seventh, `jansky`,
+    ships and **no area names it**.
+
+    ### It is a flat plane, and the file says what it is
+
+    All seven carry the same geometry: one mesh, one batch, **864 corners** -
+    a 12x12 quad grid - and every vertex at **Y = 401.09**, so the Y extent is
+    exactly **zero**. 5310 x 5164 units, which at 12.5x is 1686 x 1640 m,
+    against a clip distance of at most 200 m: the player can never reach its
+    edge.
+
+    And it names itself, which is the standard CLAUDE.md 3 prefers. The one
+    256x256 texture is called **`ciel1`** or **`ciel2`** - French for *sky* -
+    and `toitsky`'s mesh is **`TOITCIEL`**, "roof sky". No inference needed.
+
+    ### Ported
+
+    `omk-play` loads it from the resident slot's `+133`, places it at the
+    camera each frame and submits it first, at bucket state 0x800. Turning row
+    4 off moves **30206 pixels** (6.3%) on Anekbah's street start - the gap
+    between the buildings, which was black before. `--sky 0|1` overrides the
+    setting.
+    """
+    import json
+    sys.path.insert(0, os.path.join(ROOT, "tools"))
+    import dialog_triggers as T
+    ch = T.archive(omkpaths.data("IAM", "AREA"))
+    items = list(ch.items()) if hasattr(ch, "items") else list(enumerate(ch))
+
+    def field(b, off, n=9):
+        if not b or len(b) < off + n: return ""
+        return bytes(b[off:off + n]).split(b"\0")[0].decode("cp1252", "replace")
+
+    named = [(k, field(b, 133)) for k, b in items if field(b, 133)]
+    names = sorted({s for _, s in named})
+    # every named model must ship, as a .3DO AND a .3DT
+    misc = omkpaths.data("MESHES", "MISC")
+    have = {}
+    if os.path.isdir(misc):
+        for f in os.listdir(misc): have[f.upper()] = f
+    ships = [n for n in names if (n.upper() + ".3DO") in have and (n.upper() + ".3DT") in have]
+    # ...and the ones that ship but nothing names
+    onDisk = sorted({have[f][:-4] for f in have if f.endswith(".3DO") and "SKY" in f})
+    orphan = sorted(s for s in onDisk if s.upper() not in {n.upper() for n in names})
+
+    probe = os.path.join(ROOT, "engine", "build", "sky_probe")
+    if not os.path.exists(probe): return "sky_probe not built", "the sky", ""
+    paths = [os.path.join(misc, have[n.upper() + ".3DO"]) for n in ships]
+    out = subprocess.run([probe, *paths], capture_output=True, text=True).stdout
+    rows = [ln.split() for ln in out.splitlines() if len(ln.split()) == 15]
+    # every sky the same flat plane, and every texture a "ciel"
+    flat = all(r[4] == r[5] for r in rows)                        # ylo == yhi
+    oneY = sorted({r[4] for r in rows})
+    corners = sorted({int(r[1]) for r in rows})
+    batches = sorted({int(r[2]) for r in rows})
+    meshes  = sorted({int(r[3]) for r in rows})
+    ciel = all(r[12].lower().startswith("ciel") for r in rows)
+    tex = sorted({(r[12].lower(), r[13]) for r in rows})
+    return (len(items), len(named), len(names), sorted(names), len(ships),
+            orphan, flat, oneY, corners, batches, meshes, ciel, tex), \
+           (259, 17, 6, ["ASKY", "DOCKSKY", "LSKY", "MASKY", "SSKY", "TOITSKY"], 6,
+            ["jansky"], True, ["401.09"], [864], [1], [1], True,
+            [("ciel1", "256"), ("ciel2", "256")]), \
+           "the AREA chunks naming a sky at +133 - 17 of 259, so the field is " \
+           "read rather than noise, and 242 interiors name none; the six " \
+           "distinct names, that all six ship as a .3DO AND a .3DT, and the " \
+           "one that ships with nothing naming it (jansky); then the model " \
+           "itself - one mesh, one batch, 864 corners, and a Y extent of " \
+           "EXACTLY ZERO at 401.09, so it is a flat ceiling and not a dome; " \
+           "and that every texture is called `ciel`, the file naming itself"
+
+
 def c_slider_ride():
     r"""The player's RIDE, read rather than ported - the three facts that make
     it worth reading before anyone starts.
@@ -20938,7 +21048,7 @@ def c_licence_headers():
                    if TAG in open(p, encoding="utf-8",
                                   errors="replace").read(600)]
     return (authored, sorted(missing), len(vendored), mislabelled), \
-           (347, [], 1, []), \
+           (348, [], 1, []), \
            "authored source files under tools/, engine/src, engine/tools, " \
            "engine/backends and scripts/; those MISSING the SPDX tag; " \
            "vendored files in engine/third_party; and vendored files wrongly " \
@@ -22167,6 +22277,7 @@ CHECKS = [
     ("options file",       c_options_file,      "todo/options-config"),
     ("settings resolve",  c_settings_resolve,  "todo/options-config"),
     ("world unit",        c_world_unit,        "PORTING"),
+    ("the sky",           c_the_sky,           "todo/options-config"),
     ("camera aim = 768",   c_aim_length,        "FILE_FORMATS 2"),
     ("line-cam bundles",   c_bundles,           "ASSETS"),
     ("dialog 402 vs game", c_dialog402,         "ASSETS"),

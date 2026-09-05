@@ -185,6 +185,9 @@ void Session::fillSlotTables(ResidentSlot& s) {
     // is the area's own music track, which event 9 plays on entering.
     s.set = headerName(s.areaChunk, 88, 9);
     s.scx = headerName(s.areaChunk, 97, 9);
+    // ...and `+133`, the sky model `Area_LoadMiscModel` loads out of
+    // `MESHES\MISC\`. Empty in 242 of the 259 areas.
+    s.sky = headerName(s.areaChunk, 133, 9);
     s.music = i16at(s.areaChunk, 142);
     // the street-life fields: the circuit at +115, the animation library at
     // +124, the crowd's model masks at +164/+168 (`sub_40E990`/`sub_40E950`)
