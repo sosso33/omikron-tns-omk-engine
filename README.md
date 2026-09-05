@@ -13,16 +13,22 @@ three intro movies, shows the splash, draws the start menu and takes your
 answer, runs the Kay'l intro conversation with its dialogue cameras and
 voice-over, plays the seven camera editings of the Impasse arrival, and then
 **hands you the player**: adventure mode, arrows to walk and turn, a follow
-camera, the walkable floor under you, and area transitions that load the next
-set. On an M1 that is one uninterrupted run of ~3600 frames through three
-sets.
+camera, a walkable floor under you that stops at walls, and area transitions
+that keep two sets resident and play the doors between them. On an M1 that
+is one uninterrupted run of ~3600 frames through three sets. From there you
+can open the **sneak** — Kay'l's handheld device, drawn as the engine draws
+it, with its inventory, its verbs and its examine page — and **take an object
+from the world**: the two-stage take animation, its camera, and the object
+in his hand while you decide. The city's crowd and its traffic walk their
+circuit around you. All seventeen of the scene scripts' functions run.
 
-It is not a finished game, and no claim is made about anything past the
-opening. The open items are filed in
-[`todo/iam-script-engine.md`](todo/iam-script-engine.md) under `## Open` —
-the largest being that `Actors_SpawnFromTables` is not ported, so the
-world's own ambient characters never spawn; only the ones a script names
-with `character.show` appear. [`engine/README.md`](engine/README.md) audits
+It is not a finished game, and no claim is made about anything a reader has
+not confirmed in play. The play reports and what became of each are filed
+in [`todo/omk-play.md`](todo/omk-play.md) (76 entries, 2026-09-05); the
+script-engine items in [`todo/iam-script-engine.md`](todo/iam-script-engine.md)
+under `## Open` — the largest being that `Actors_SpawnFromTables` is not
+ported, so the world's own ambient characters never spawn; only the ones a
+script names with `character.show` appear. [`engine/README.md`](engine/README.md) audits
 what is ported row by row, and it has been wrong twice, so trust it over
 this paragraph.
 
@@ -99,8 +105,8 @@ distribute one.** Producing your own is up to you; point at it the same way:
 OMK_ASM=~/ida/Runtime.exe.asm OMK_CLEAN=~/ida/clean python3 tools/verify.py
 ```
 
-Without it, **14 of the suite's 159 checks report `skipped`** — naming the
-variable to set — and the other 145 run normally. `tools/dialog_disasm.py`
+Without it, **15 of the suite's 295 checks report `skipped`** — naming the
+variable to set — and the other 280 run normally. `tools/dialog_disasm.py`
 falls back to the committed `tables/vm_opcodes.json`, which carries the same
 VM table; `verify.py: vm table sources` asserts the two agree, 153/153 operand
 counts and 49/49 `.TAG` domains, so the fallback cannot drift unnoticed.
@@ -185,7 +191,14 @@ build/omk-play ../gamedata ../tables       # THE GAME: movies, menu, intro,
 ```
 
 Arrows walk and turn, `RSHIFT` runs, `ENTER` advances a conversation and
-chooses a reply, any key skips a movie and `ALT` skips all three.
+chooses a reply, any key skips a movie and `ALT` skips all three. Once he is
+on his feet, `TAB` opens the sneak (through the `.CTL`, so not instantly):
+`LEFT`/`RIGHT` move between the device's columns, `UP`/`DOWN` within one,
+`ENTER` opens a tab or confirms a row and its verbs. The adventure scheme's
+action binding picks up an object in front of you; `build/omk-play --help`
+lists every key and every flag, including the harness flags (`--give`,
+`--scene-chunk`, `--sneak`, `--scx-play`…) that reach a flow without the
+script that would.
 
 The same binary is also a free-look viewer for one set, which is how a
 rendering question gets answered by eye instead of by metric:
