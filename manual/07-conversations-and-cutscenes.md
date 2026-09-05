@@ -138,6 +138,30 @@ subscriptions, and nothing in that walk reaches `+4` — so "no shipped script
 starts them" was really "no script I enumerate". A negative result over a
 corpus is only as strong as the enumeration behind it.
 
+**The seventeen scene functions all run** (`todo/omk-play.md` 71, closed
+2026-09-05). Eleven did nothing in the port until this month, and 102 of the
+220 scenes use at least one: `Script_StopSound` (86 sites), the sprite family
+— `Script_Display3DSprite` (232 sites in 65 scenes) and its five setters — and
+`Script_ScaleObjectX/Y/Z` (35 sites, all the apartment's transfer tube). Two
+readings worth carrying: a scripted sprite is placed at the **active camera's
+target**, because the XYZ table the handler prefers has no writer anywhere in
+the listing, and it is **never unlinked** once shown; the tube's beam grows
+along Y by a scale in the node's own axes, ahead of its rotation
+(`verify.py: engine scene sprites`, `engine node scale`, `engine stop sound`).
+
+Two things about **timing** were settled by a reader's frames of the original.
+A scene actor is untouched until his program's first *body-animation* step
+runs: Impasse's arrival opens with a 60-frame wait, during which the engine
+has Kay'l parked 500 units under the alley, where the port used to snap him to
+his jump clip's first key at frame 0 — visible, motionless, inside the portal
+(`verify.py: engine arrival wait`). And a set piece's records sit in the frame
+of what the piece is **linked** to (`sub_450330`): the portal's two rings of
+dark stars hang on a one-record row whose heading the engine never defines —
+`sub_450940` zeroes it and then falls through to compute it from the record
+past the block — so the port draws no ring on such an anchor. That one is a
+**reconstruction**, settled by the capture rather than computed
+(`verify.py: engine linked rings`).
+
 ### The clocks, and the traps
 
 Four things that caused real confusion while building the viewers, all fixed:
@@ -167,10 +191,10 @@ only found by watching.
 | | |
 |---|---|
 | findings | [`docs/FILE_FORMATS.md`](../docs/FILE_FORMATS.md) (DIALOG, the two placement functions), [`docs/CUTSCENES.md`](../docs/CUTSCENES.md), [`docs/ASSETS.md`](../docs/ASSETS.md) (staging) |
-| the port | `engine/src/script/dialogue.*`, `scenerunner.*`, `program.*`, `scenehost.*`; `engine/src/actor/speaker.*`, `pose.*`; `engine/src/o3de/camedit.*` |
+| the port | `engine/src/script/dialogue.*`, `scenerunner.*`, `program.*` (the seventeen scene functions), `scenehost.*`; `engine/src/actor/speaker.*`, `pose.*`; `engine/src/o3de/camedit.*`, `setpiece.*` |
 | to watch it | `python3 tools/omkweb.py` → `/dialog` and `/cutscene` |
 | staging under test | `tools/stagecheck.js` runs the page's own `stageMatrices` under node and asserts over the **transitions**; `tools/stagerender.py` draws the result |
-| checks | `verify.py: dialog staging`, `dialog staging sweep` (--slow), `cutscene frames`, `impasse beats` |
+| checks | `verify.py: dialog staging`, `dialog staging sweep` (--slow), `cutscene frames`, `impasse beats`, `engine scene sprites`, `engine node scale`, `engine stop sound`, `engine arrival wait`, `engine linked rings` |
 
 ## What is not settled
 
@@ -190,3 +214,7 @@ only found by watching.
   object whose stem is a `VOICEOFF\*.ADP`, and **10 of 561** are on the disc.
   That is a property of the data, not a gap in the reading, and it is asserted
   so it stays explained.
+* **A ring on an undefined anchor is a reconstruction.** The engine's heading
+  for a one-record row is stack garbage by construction; that the original
+  shows no ring is the capture's word, not a computed value. And **none of the
+  seventeen scene functions' new arms is confirmed in play yet**.

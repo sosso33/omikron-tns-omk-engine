@@ -80,7 +80,20 @@ Audio is not only played by scripts. Two other paths carry it:
   frame-triggered sounds, footsteps among them; all 590 decode.
 
 So a footstep is not a script event. It is a frame number in a state's own
-record.
+record — and the sound it names resolves in the **global** library,
+`aventure.scx` (`Effects_SetScene(&stru_930780)`), not in the resident scene's,
+which is why the port's footsteps were silent until 2026-09-04
+(`docs/RECONSTRUCTION.md` 2026-09-04, "the sound half of the take").
+
+Three more decisions the port took on this month, each from the code: a scene
+sound is played **in 3D** and attenuates with the listener's distance
+(`todo/omk-play.md` 73); the music has a **level** — a base attenuation of 10
+while a conversation is open (`Actor_EnterDialogueMode`), opcode 131
+`music.volume` ramping it, `Music_SetVolume` taking −100 × attenuation in
+decibels, and a fade-in on every `music.play` (`docs/RECONSTRUCTION.md`
+2026-09-04); and `Script_StopSound` silences the voice playing a given sound
+*on a given node*, not every voice of that sound (`verify.py: engine stop
+sound`).
 
 ### Dead code, found by asking the right question
 
@@ -120,7 +133,7 @@ control that must differ.
 | findings | [`docs/ASSETS.md`](../docs/ASSETS.md) (ADPCM, `.SFX`, effect records), [`docs/UI.md`](../docs/UI.md) (the 45 interface sounds), [`docs/PORTING.md`](../docs/PORTING.md) §A5 |
 | the port | `engine/src/audio/mixer.*`, `voiceover.*`, `music.*`; `engine/src/formats/adpcm.*`, `sfx.*` |
 | the reference decoder | `tools/adp.py`; `adp/pc_adp_otns.c` is the reference C decoder |
-| checks | `verify.py: engine audio`, `adpcm`, `sfx sections`, `actor sounds` |
+| checks | `verify.py: engine audio`, `adpcm`, `sfx sections`, `actor sounds`, `engine stop sound`, `engine scene sounds` |
 
 ## What is not settled
 
@@ -130,5 +143,8 @@ control that must differ.
   the checks around it.
 * **The twelve per-screen interface sound slots are not fired** by the port's
   widget walk yet.
+* **The music level under a conversation is ported from the code, not from a
+  capture** — no rig here records sound, so the dialogue's base attenuation of
+  10 and the opcode-131 ramps are read, not heard.
 * **10 of 561 named voice-over files ship.** A property of the data, asserted so
   it stays explained rather than looking like a decode failure.

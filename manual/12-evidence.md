@@ -142,7 +142,7 @@ subsystem announces before asking anyone to capture it.
 
 ### The suite
 
-`python3 tools/verify.py` runs **270 checks**, exiting with the number of
+`python3 tools/verify.py` runs **295 checks**, exiting with the number of
 failures so it drops into a hook or an `&&` chain.
 
 ```sh
@@ -237,7 +237,7 @@ that.
 |---|---|
 | the standard | [`docs/PORTING.md`](../docs/PORTING.md) Part B |
 | the ground rules for reading | `CLAUDE.md` §1 |
-| the suite | `tools/verify.py` — 270 checks; `--list` is the index into the docs |
+| the suite | `tools/verify.py` — 295 checks; `--list` is the index into the docs |
 | the rig | `tools/goldentrace.py` (`bootstrap` provisions it in one command), `tools/frame.py` |
 | the captures | `traces/` — six operand logs, sixteen framebuffer grabs, two saves |
 | the play reports | `todo/omk-play.md`, `todo/iam-script-engine.md` |
@@ -249,6 +249,10 @@ that.
   pointers, and the `.CTL` channel's *behaviour* (as opposed to its data).
 * **The 3D frame oracle covers one camera in one set.** It is not a claim about
   the renderer.
+* **A growing class of checks drives the viewer itself** headless — `engine:
+  airlock walk`, `tunnel door walk`, `arrival wait` — and needs SDL, which the
+  bare build does not have; they report true without it, as the frontend is
+  optional (`docs/PORTING.md` A8), so a bare checkout cannot see them fail.
 * **Some checks read the optional disassembly** — 15 guarded sites in
   `verify.py` — and must report *skipped*, never crash, when it is absent,
   because the listing is a derivative work of the executable and is not

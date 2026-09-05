@@ -173,6 +173,16 @@ One correction worth carrying: **the view is not letterboxed by default**. The
 camera mode, and nothing establishes it for free roaming. Imposing it on a
 free-look tool was generalising a camera-mode property to all rendering.
 
+The viewer carries a set of **harness flags**, each labelled in its own help
+text as a harness write and not a port: `--give` (objects into the carried
+list), `--newgame-world` (a save's player over a new game's world),
+`--scene-chunk` (a scene's startup script over an area), `--sneak`,
+`--bank-reject`, `--scx-play` (start scene objects by handle),
+`--no-script-sprites`, and the environment variable `OMK_SKIP_EFFECT` on the
+set-piece runner. They exist so a flow can be reached without the script that
+would reach it, which is how the take, the tunnel doors and the portal were
+looked at; none of them is evidence about the engine.
+
 ### Where the port stands
 
 Audited row by row against the 41 content rows of `CLAUDE.md` §4:
@@ -208,6 +218,9 @@ decompilation.
 
 * The **7 partly-ported rows**, each with its missing half named in
   `engine/README.md`.
-* The port **plays the opening and no further**, and no claim is made past it.
+* The port **plays the opening, the sneak, the take of an object and the
+  door-carrying transitions**, and no claim is made past what a reader has
+  confirmed in play: the seventeen scene functions' new arms, the arrival's
+  wait and the portal's rings are ported and checked but not yet seen in play.
 * **`Actors_SpawnFromTables`** is the largest single gap: without it the world's
   own ambient characters never spawn.

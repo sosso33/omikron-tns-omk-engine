@@ -113,6 +113,10 @@ data.**
 * **Two parts of the mirror stay reconstruction**, and are labelled as such: how
   the engine confines the reflection to the mirror's area, and the plane's
   normal.
+* **A set-piece ring on a one-record anchor is a reconstruction**: the engine's
+  heading there is stack garbage by construction, and "not drawn" is what a
+  reader's frames of the original showed, not a value computed. The portal's
+  red rim has not been re-measured since (`todo/omk-play.md` 76).
 
 ### Audio
 
@@ -129,7 +133,15 @@ data.**
   the answers they write are not ported.
 * **The player's ride**, the LOD selection among an actor's four skeletons, the
   bump's camera shake, and the joystick axes.
-* Nothing past the opening is claimed.
+* **Two parts of `Actor_Move`**: the mesh-flag filter and the accumulated
+  blocked-direction mask; and the corner of the Impasse airlock where the port
+  holds the player under a hanging crate, which only a play comparison in the
+  original can settle (`todo/collision-scenes-transitions.md` 3e).
+* **Ported and checked but not seen in play**: the seventeen scene functions'
+  new arms, the arrival's wait, the portal's rings, the door closing behind the
+  player in the tunnel.
+* Claimed: the opening, the sneak, the take of an object, the door-carrying
+  transitions — each confirmed by a reader. Nothing past those.
 
 ### Not a gap, but a property of the data
 

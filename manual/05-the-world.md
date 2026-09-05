@@ -40,6 +40,21 @@ consequence the game shipped with; see [chapter 8](08-rendering.md).
 stored back at block `+0`, which is why `+0` is zero on disk. **173 of 330
 chunks carry a startup script, and all 173 disassemble clean.**
 
+**A transition keeps both slots' object pools.** The door a transition names
+resolves in the **outgoing** slot's pool: over the corpus's 447 door-carrying
+`area.goto` sites (894 door objects) 832 resolve in the outgoing scene and
+exactly three only in the destination's (`verify.py: engine tunnel doors`).
+The completion hides the non-active slot and nothing else (`Area_Transition`,
+mode 3 case 4 / mode 4 case 9 / mode 1); a reconstruction in the port that
+forced the player's row onto the destination *before* hiding was what walked a
+reader off the Impasse airlock into the void (`todo/collision-scenes-transitions.md`
+step 3a, `verify.py: engine airlock walk`). The tunnel's and the restaurant's
+doors are set meshes moved by `Script_MoveObjectOnPath`, so the collision
+follows them, and a walker now carries a door-bearing transition end to end —
+the door opening from the active pool, the feet landing on the destination,
+the door closing behind him from the pool that is no longer active
+(`verify.py: engine tunnel door walk`).
+
 ### The trigger zones
 
 The 68-byte record, all 4 558 of them decoding with 0 bad:
@@ -115,7 +130,8 @@ flowchart TD
 ### How the port runs it
 
 `engine/src/script/area.cpp` and `area.h` are the **Session**: the resident
-slots, the transitions, and the frame. `zones.*` is the zone registry;
+slots, the transitions, and the frame — with a `SceneRunner` per resident
+slot, the outgoing one kept alive until the transition completes. `zones.*` is the zone registry;
 `world.*` the zone harness; `gamestate.*` the database; `savefile.*` and
 `globaldata.*` the persistence.
 
@@ -134,7 +150,7 @@ disagreements** by modelling `ui.open`'s park.
 | the port | `engine/src/script/area.*`, `zones.*`, `world.*`, `gamestate.*`, `savefile.*`, `globaldata.*`, `objects.*` |
 | the reference | `tools/sim/world.py`, `tools/sim/scene.py` |
 | byte accounting | `tools/chunkmap.py` |
-| checks | `verify.py: startup scripts`, `world scripts`, `zones`, `game state`, `trace agreement` |
+| checks | `verify.py: startup scripts`, `world scripts`, `zones`, `game state`, `trace agreement`, `engine tunnel doors`, `engine airlock walk`, `engine tunnel door walk` |
 
 ## What is not settled
 
@@ -146,3 +162,8 @@ disagreements** by modelling `ui.open`'s park.
 * **`Actors_SpawnFromTables` is not ported**, so in the replica the world's own
   ambient characters never spawn; only the ones a script names with
   `character.show` appear. This is the largest single gap in the port.
+* **A corner of the Impasse airlock holds the player** where a reader expected
+  to pass: the sas floor's diagonal edge under a hanging crate that is a
+  collider by the engine's own flag rule. Reproduced headless; nothing read
+  says the engine passes where the port holds, and only a play comparison in
+  the original settles it (`todo/collision-scenes-transitions.md` 3e).

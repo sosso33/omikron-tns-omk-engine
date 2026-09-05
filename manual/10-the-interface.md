@@ -164,6 +164,21 @@ the filter is *shown* to matter.
 The other 29 screens keep their native hooks and are **not modelled**; the
 invariant is that none of them ever answers through an unmodelled path.
 
+**The sneak — the first screen the player opens** (2026-09-04). Kay'l's
+handheld device is screen 9, opened by TAB through the `.CTL` and
+`tab_special_move[0]`, and the port now draws it as the engine draws it: the
+nine rows the device's pages **share** with one global picking their source,
+the highlight (`Ui_DrawItemCursor`, oscillator 3), a page painting itself in
+its tab icon's colour, the fill whose blend is the inverse of source-over,
+the three 3D previews, the examine page's description, and the object flow —
+a row opens the verbs, `Utiliser` posts message 20 to the world or takes an
+object in hand, `Utiliser sur` is a mode with a gate that matches nothing, and
+the bank of a taken object reaches the inventory (`docs/UI.md` §3b from "The
+device's nine rows are SHARED", §3d "What OPENS the sneak", §3g;
+`todo/sneak.md`; `verify.py: engine sneak`). Six play reports shaped it, and
+the last two verbs were dead on `main` for a day because a row branch
+swallowed the confirm bit — caught by a reader, bisected in worktrees.
+
 ## Where it lives
 
 | | |
@@ -174,7 +189,7 @@ invariant is that none of them ever answers through an unmodelled path.
 | the reference | `tools/sim/ui.py` — five panels modelled |
 | tools | `tools/ui_tables.py`, `tools/fnt.py`, `tools/uitext.py` |
 | to drive it | `python3 tools/omkweb.py` → `/ui` — stateless: it sends the whole key history and the server replays it, so undo is dropping the last key |
-| checks | `verify.py: ui page`, `ui input`, `ui answers`, `engine I2D blit`, `engine input`, `sim: ui coverage` |
+| checks | `verify.py: ui page`, `ui input`, `ui answers`, `engine I2D blit`, `engine input`, `sim: ui coverage`, `engine sneak` |
 
 ## What is not settled
 

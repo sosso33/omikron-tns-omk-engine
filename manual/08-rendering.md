@@ -88,6 +88,16 @@ correcting a decode.
 
 No mesh asks for either blend without `0x1000`.
 
+Sprites take the same two buckets through the instance's mode — 4 is additive
+(key `0x2100`), 6 multiply (`0x2200`) — and the multiply is `dst × (1 − src)`,
+which darkens where the sprite is bright: the Impasse portal's black core is
+twenty-two of those stacked (`docs/ASSETS.md` §3b). One more decision worth
+knowing when a video of the original looks smoother than the port: the device
+init asks Direct3D for **point sampling** on every texture stage
+(`sub_4638C0`, stage states 16/17/18 = 1), so the port's blocky sprite edges
+are the engine's own and a capture's soft ones are its driver's
+(`todo/omk-play.md` 76).
+
 ### Colour, not brightness
 
 The sets are shaded by a **colour** baked into every vertex. The engine copies
@@ -179,6 +189,13 @@ implementation standing where D3D stood. What *is* ported is everything on this
 page above it — the mask, the key, the cache, the blend modes, the visible-set
 walk.
 
+Since 2026-09-05 the same path also draws what the **scene scripts** put up:
+`Script_Display3DSprite`'s instances through the particle geometry with the
+instance's own frame, two scales and roll; a `Script_ScaleObjectX/Y/Z` scale in
+the mesh patch that also moves the scripted doors and crates — and that patch
+reads **both** resident pools, since a transition's door closes from the
+outgoing one (chapter 5).
+
 ### What the frame comparison establishes, and what it does not
 
 For **one camera** — the set of conversation 402 through camera 4555 — the
@@ -220,7 +237,7 @@ flying the scene viewer saw it in one session.
 | backends | `engine/backends/sdl/play.cpp` (the viewer), `engine/backends/vulkan/vkrender.cpp` |
 | the 2D layer | `engine/src/ui/i2d.*`, `surface.*` |
 | the metric | `tools/frame.py` — `edge_map` / `edge_match` / `hole_darkness`, directed, density-normalised, and quoted against its own chance floor |
-| checks | `verify.py: engine silhouette`, `render bucket key`, `drawable mask`, `texture name cache`, `anekbah signs`, `near clip`, `mirror pass`, `engine I2D blit`, `render back ends` |
+| checks | `verify.py: engine silhouette`, `render bucket key`, `drawable mask`, `texture name cache`, `anekbah signs`, `near clip`, `mirror pass`, `engine I2D blit`, `render back ends`, `engine scene sprites`, `engine impasse fx`, `engine linked rings` |
 
 ## What is not settled
 
@@ -239,3 +256,7 @@ flying the scene viewer saw it in one session.
   correctness is inherited from the software backend it mirrors.
 * **Pixel values keep no tier.** Filtering, dither, fog and the blend arithmetic
   are the driver's, and Wine's driver is not a Voodoo.
+* **The Impasse portal's red rim.** Measured against a reader's frames the
+  glow, the core and their sizes agree; the dark-red ring between them is in
+  the original and grey-blue in the port's frames taken *before* the rings
+  were removed. Not re-measured since (`todo/omk-play.md` 76).

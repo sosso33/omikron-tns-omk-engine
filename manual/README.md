@@ -42,11 +42,11 @@ Anything less explicit than that is not a request to regenerate.
 
 | | |
 |---|---|
-| **Generated** | 2026-09-04 |
-| **Repository commit** | `a6e092e` |
-| **Sources at that commit** | `CLAUDE.md`, `docs/` (11 documents), `engine/README.md`, `README.md`, `tables/README.md`, `python3 tools/verify.py --list` (270 checks), `git log` |
+| **Generated** | 2026-09-05 |
+| **Repository commit** | `a9fa05a` |
+| **Sources at that commit** | `CLAUDE.md`, `docs/` (11 documents), `engine/README.md`, `README.md`, `tables/README.md`, `python3 tools/verify.py --list` (295 checks), `git log`, and for this revision the play-report entries `todo/omk-play.md` 66–76 and the plan files `todo/take-animation.md`, `todo/sneak.md`, `todo/collision-scenes-transitions.md` |
 | **Chapters** | 13 |
-| **Status of the port** | plays the opening end to end — three intro movies, splash, start menu, the Kay'l intro conversation, the Impasse camera editings, then adventure mode with a walkable floor and area transitions. Nothing past the opening is claimed. |
+| **Status of the port** | plays the opening end to end — three intro movies, splash, start menu, the Kay'l intro conversation, the Impasse camera editings, then adventure mode with a walkable floor that now stops at walls, the sneak (Kay'l's device) with its object flow, the two-stage take of a world object, and door-carrying area transitions between two resident slots. All seventeen scene functions run. Nothing past what a reader has confirmed in play is claimed. |
 
 ---
 

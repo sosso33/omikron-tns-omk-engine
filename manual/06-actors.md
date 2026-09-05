@@ -87,6 +87,33 @@ recorded in `todo/omk-play.md`:
 Neither is visible in any check that looks at one state at a time. Both are
 obvious in five seconds of play. Chapter 12 makes the general case.
 
+**The walls, since 2026-09-04.** `Actor_Move` (0x00469580) was read whole: a
+collide-and-slide of up to three passes, sweeping a vertical **capsule built
+from the model's own sphere list** (HO1_FN: four spheres of radius 10.9, a
+28 cm capsule) along the move, stopping one unit short of the contact, pushing
+an already-touching body out along the wall's normal — made horizontal by the
+mask `0xC000C` — and projecting the remainder along the wall. The port runs it
+in the simulator's shape, the polygon kernel deliberately not transcribed
+(`docs/RECONSTRUCTION.md` 2026-09-04, "THE NARROW PHASE"): ARESTO14's
+partition stops the body at 13.0 units where a walker with no sweep ends 140
+behind it (`verify.py: engine narrow phase`). **A fall is vertical**:
+`Actor_ApplyMotion` moves the actor by his own velocity fields, which the fall
+state never writes, so the walk's delta no longer rides through the air — a
+reader had been carried off the restaurant's ledge that way (`verify.py:
+engine walker falls`, 318/14/126 landings, 0 stranded). Two parts are still
+not the engine's and are listed in `collision.h`: the mesh-flag filter (the
+steep soup stands in) and the accumulated blocked-direction mask.
+
+**Taking an object** is not a script but a `.CTL` **special move** — five of
+the 66 `tab_special_move` rows (`MDACTION`, `MDADJSTP`, `MDGETOBJ`, `MDLETOBJ`,
+`MDPUTSNK`) — in two stages: an *adjust step* (`sub_465D30`: the target
+distance is 40 or 60 cm over the cosine of the bearing, the step is scaled by
+how far he is from it, none within 10%) and a take clip that is a **grid of
+variants** blended bilinearly over the object's height and bearing
+(`sub_4725B0`), with a camera preset that shows the object in his left hand
+while he decides (`todo/take-animation.md`, `todo/omk-play.md` 66 and 69;
+`verify.py: engine special moves`). Confirmed in play, 2026-09-05.
+
 ### Combat, and the AI that plays it
 
 The combat block is fully decoded. The **fight AI** lives in the `.CTL` at
@@ -149,7 +176,7 @@ look that turns a passer-by's head toward you.
 | findings | [`docs/ASSETS.md`](../docs/ASSETS.md) (`.CTL`, clips, special moves), [`docs/STREET_LIFE.md`](../docs/STREET_LIFE.md) (the crowd and the traffic) |
 | the port | `engine/src/actor/` — `channel.*` (the `.CTL` machine), `state.*` (`ACTOR_STATE`), `walk.*`, `player.*`, `shoot.*`, `pose.*`, `speaker.*`, `pedestrians.*`, `spatial.*`, `vehicles.cpp` |
 | lifted tables | `tables/special_moves.json` (66 rows), `tables/shoot_ai.json` |
-| checks | `verify.py: engine actor states`, `ctl channel`, `pedestrians`, `city crowd`, `crowd push`, `head look`, `road traffic`, `street frame` |
+| checks | `verify.py: engine actor states`, `ctl channel`, `pedestrians`, `city crowd`, `crowd push`, `head look`, `road traffic`, `street frame`, `engine narrow phase`, `engine walker falls`, `engine special moves` |
 | to watch it | `build/omk-play … --save ../traces/save-appart.bin --area 0 --stand 1804,0,-6890,336 --density 4` |
 
 ## What is not settled
@@ -173,3 +200,6 @@ look that turns a passer-by's head toward you.
   steers with them yet).
 * The crowd **density is held at the engine's default 3** until the options menu
   hands its value in.
+* **Two parts of `Actor_Move` are not the engine's**: the mesh-flag filter (the
+  steep soup stands in for it) and the accumulated blocked-direction mask. The
+  sweep's polygon kernel is read and deliberately not transcribed.
