@@ -151,6 +151,11 @@ struct PedClips {
 };
 // The clips of one library; empty when `ani` is not a "3.0V" file.
 PedClips pedClipsFrom(std::span<const std::byte> ani);
+// One GROUP of a library, by CHARACTER TYPE - the same walk `pedClipsFrom`
+// does for the pedestrians' types 1 and 2, for any type. A shoot-mode
+// character's clips come from here: he carries no `.CTL` at all and his type
+// is the actor record's `+176`.
+std::vector<PedClip> animGroupClips(std::span<const std::byte> ani, int group);
 
 // The model tables compiled into the executable (`aPshFn` / `aFshFn`, 12
 // bytes a row: an 8-char name and a weight), which the AREA header's masks

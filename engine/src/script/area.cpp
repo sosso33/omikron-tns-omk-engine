@@ -1639,6 +1639,19 @@ std::string Session::bankOfActor(int actor) const {
     return out;
 }
 
+// The character record's `+176`, `Type Spectre` - property 7, which
+// `Shoot_ActorEnter` raises event 44 for and switches its four AI brains on,
+// and which is ALSO the group index of his clips in the area's `.ani`
+// library (`sub_434530`). 330 of the 1032 shipped records carry -1.
+std::uint32_t Session::typeOfActor(int actor) const {
+    std::vector<std::byte> chunk;
+    std::size_t o = 0;
+    if (!actorRecord(actor, chunk, o)) return 0xFFFFFFFFu;
+    std::uint32_t v = 0;
+    std::memcpy(&v, chunk.data() + o + 176u, 4);
+    return v;
+}
+
 const Session::Character* Session::characterOf(int actor) const {
     for (int k = 0; k < 2; ++k) {
         const ResidentSlot& s = slots_[(curSlot_ + k) & 1];
@@ -2254,6 +2267,29 @@ void Session::onCall(int i, const Call& call) {
     case 72:
         if (!call.fields.empty()) sceneUnload(call.fields[0], i);
         break;
+    case 82: case 84: {
+        // `shoot.actor.enter` (0x00422C10) and `shoot.actor.action`
+        // (0x00423170). The first puts the actor in `ACTOR_STATE` 3 and
+        // resolves his CHARACTER TYPE's animation list out of the area's
+        // `.ani` library - `sub_434530(type)` scanning `dword_52B95C`, the
+        // 24-byte records `Anim_Load` filled - into the shoot record's +20.
+        // The second asks that list for a clip: `List_PickRandomByType(list,
+        // 9 / 10 / 11)`, a RANDOM one of the matches, and the binary names its
+        // own failures ("Perso %d non existant dans le .ani", "anim non
+        // existante dans le .ANI").
+        //
+        // What is recorded here is only that the actor is IN shoot mode and
+        // which action was last asked of him. The AI that would go on asking
+        // - `Shoot_TickNpc` calling one of the four brains every frame - is
+        // `actor/shoot.h`'s and is not wired to this; a frontend uses these to
+        // pose a body that has no `.CTL` at all, which is every one of these
+        // characters. LABELLED as that, not as the shoot AI running.
+        if (call.fields.empty()) break;
+        const int who = call.fields[0];
+        if (call.op == 82) shootActors_[who] = 1;      // the enter's own default
+        else if (call.fields.size() >= 2) shootActors_[who] = call.fields[1];
+        break;
+    }
     case 138: case 139: {
         // `character.look_at_player` / `character.look_away`: the actor's
         // look-at slot (+400) written with the player's index / -1. The head

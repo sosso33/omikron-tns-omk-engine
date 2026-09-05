@@ -2432,6 +2432,25 @@ the eleven shipped libraries — `zombie.ani` and `biblio.ani` — are named by 
 area. `SCENE` has no such field: the same offset there is inside its pointer
 block. `verify.py: area .ani library`.
 
+**A group's index IS the character type.** `Anim_Load` fills `dword_52B95C`
+with one 24-byte record per group and `sub_434530(type)` scans it for the
+record whose `+0` is that type. `gandhar.ani` carries **14 groups indexed
+0..13** — exactly the fourteen character types the binary names
+(`tables/shoot_ai.json`) — and only **two of them hold clips**: 10 and 11,
+which are exactly the two types AREA 2 stages (`DE3_FN` is type 10, Gandhar;
+its twelve `ZOH_FN` are type 11). The type is the actor record's `+176`,
+`Type Spectre`. The pedestrians are the same mechanism seen from the other
+side: they are types 1 and 2, which is why `pedClipsFrom` filters on those two
+group indices.
+
+**And the arming is a ZONE's, not the startup script's.** AREA 2's `+4` is
+three `op_122` calls and an `end`; its gunmen are entered by zone 313
+*"Départ Shoot Grotte"* (ten of them) and zone 314 *"Zombie 1"* (one), both
+well inside the cave. Until the player trips those, nothing in the engine can
+pose these characters either — they have no `.CTL` and no shoot list — so a
+rest pose there is the engine's own state and not a gap in a replica.
+`verify.py: engine: shoot pose`.
+
 Contiguous, and in property order. Across opcode 86's 459 sites **18 distinct
 variables are written and every one by exactly one property**, which is what
 attaches each name to its offset; see [SCRIPT_VM](SCRIPT_VM.md). The values

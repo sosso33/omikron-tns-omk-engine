@@ -56,6 +56,43 @@ const PedClip* PedClips::byNameType(int sex, const std::string& name, int type) 
     return nullptr;
 }
 
+// One GROUP of a `.ani` library. A group's index is the CHARACTER TYPE -
+// `Anim_Load` (0x00434010) fills `dword_52B95C` with one 24-byte record a
+// group and `sub_434530(type)` scans it for the record whose +0 is that type,
+// failing with "Perso %d non existant dans le .ani". The pedestrians are
+// types 1 and 2 (men, women); the shoot-mode characters are whatever their
+// record's +176 says - the cave's ZOH_FN are type 11 and its DE3_FN type 10,
+// and `gandhar.ani` carries clips for exactly those two of its fourteen
+// groups.
+std::vector<PedClip> animGroupClips(std::span<const std::byte> ani, int group) {
+    std::vector<PedClip> out;
+    for (const auto& clip : animClips(ani)) {
+        if (clip.group != group) continue;
+        const auto desc = animDescriptor(ani, clip.descriptor);
+        if (!desc) continue;
+        PedClip c;
+        c.slot = clip.slot; c.type = clip.type; c.name = clip.name; c.frames = desc->frames;
+        c.descriptor = clip.descriptor;
+        for (const auto& t : desc->tracks) {
+            if (!t.rotKeys) continue;
+            c.root.resize(static_cast<std::size_t>(std::max(t.posKeys, 0)) * 3);
+            for (std::int32_t k = 0; k < t.posKeys; ++k) {
+                const std::size_t o = t.posOffset + 12 * static_cast<std::size_t>(k);
+                if (o + 12 > ani.size()) { c.root.clear(); break; }
+                std::memcpy(&c.root[static_cast<std::size_t>(3 * k)], ani.data() + o, 12);
+            }
+            break;
+        }
+        if (c.frames > 2 && !c.root.empty()) {
+            float d[3];
+            pedRootDelta(c, 1.0f, static_cast<float>(c.frames - 1), nullptr, d);
+            c.strideX256 = len2(d[0], d[2]) * 256.0f / static_cast<float>(c.frames);
+        }
+        out.push_back(std::move(c));
+    }
+    return out;
+}
+
 PedClips pedClipsFrom(std::span<const std::byte> ani) {
     PedClips out;
     for (const auto& clip : animClips(ani)) {

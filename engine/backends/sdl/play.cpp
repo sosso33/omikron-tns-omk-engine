@@ -2362,6 +2362,7 @@ int main(int argc, char** argv) {
         const char* src = "none";
         omk::HeadLook look;            // `character.look_at_player`'s head aim, eased
         bool  lookSnap = true;
+        bool  shootTold = false;
         // SEATED ONCE, the way the engine seats an actor once and then
         // `Actor_MoveBy`s him: the feet go on the floor when the pose SOURCE
         // or the clip changes, and the clip's root motion moves him from
@@ -2525,6 +2526,39 @@ int main(int argc, char** argv) {
     std::string pedAniName;
     int pedDrawn = 0, pedLive = 0, pedInAction = 0, pedIdle = 0;
     long pedTold = -1;
+    // THE SHOOT-MODE POSE. These characters carry no `.CTL` in any of the
+    // three 9-byte slots, so nothing the actor runtime does can pose them:
+    // `Shoot_ActorEnter` resolves their CHARACTER TYPE's group in the area's
+    // `.ani` (`sub_434530`) and `Shoot_ActorAction` asks it for a clip by
+    // BEHAVIOUR type through `List_PickRandomByType`:
+    //
+    //     action 0, 5        type 11, else 25
+    //     action 1           type 9
+    //     action 2,3,4,6,7   type 10, else 9
+    //
+    // LABELLED, and the label matters: what runs here is the SCRIPT's last
+    // action, not the AI. `Shoot_TickNpc` calls one of four brains every
+    // frame and they go on asking for new actions; `actor/shoot.h` models
+    // those brains and is not wired to this. And the pick is the FIRST match
+    // rather than a random one, so a still frame is reproducible - the engine
+    // takes a random one of the matches.
+    std::map<int, std::vector<omk::PedClip>> shootClips;      // character type -> its group
+    const auto shootClipFor = [&](int group, int action) -> const omk::PedClip* {
+        if (pedAni.empty()) return nullptr;
+        auto it = shootClips.find(group);
+        if (it == shootClips.end())
+            it = shootClips.emplace(group, omk::animGroupClips(pedAni, group)).first;
+        if (it->second.empty()) return nullptr;
+        int want[2] = {9, -1};
+        if (action == 0 || action == 5)      { want[0] = 11; want[1] = 25; }
+        else if (action == 1)                { want[0] = 9;  want[1] = -1; }
+        else if (action >= 2 && action <= 7) { want[0] = 10; want[1] = 9;  }
+        for (int w : want) {
+            if (w < 0) continue;
+            for (const auto& c : it->second) if (c.type == w) return &c;
+        }
+        return &it->second.front();          // "anim non existante dans le .ANI"
+    };
     const auto pedTracksFor = [&](int sex, const omk::PedClip& c, const std::vector<omk::Mesh>& meshes)
         -> const omk::NodeTracks* {
         // `PlayerController::poseTracks`'s recipe over the crowd library: the
@@ -5935,6 +5969,29 @@ int main(int argc, char** argv) {
                     s.idleBuilt = true;
                     if (s.bk && s.bk->ready) s.idle = idleTracksFor(*s.bk, s.mo->meshes);
                 }
+                // (c0) SHOOT MODE, ahead of the bank's idle: `Shoot_ActorEnter`
+                // puts him in ACTOR_STATE 3 and his clips come from the area's
+                // `.ani`, not from a `.CTL` he does not have.
+                const omk::NodeTracks* shootTracks = nullptr;
+                {
+                    const int act = session.shootAction(s.actor);
+                    if (act >= 0) {
+                        const int grp = static_cast<int>(session.typeOfActor(s.actor));
+                        const omk::PedClip* c = (grp >= 0 && grp < 64)
+                                              ? shootClipFor(grp, act) : nullptr;
+                        if (c) shootTracks = pedTracksFor(grp, *c, s.mo->meshes);
+                        if (!s.shootTold) {
+                            s.shootTold = true;
+                            std::printf("frame %ld: actor %d %s - shoot mode, action %d, "
+                                        "character type %d -> %s (%s, %zu clips in the "
+                                        "group)\n", n, s.actor, s.model.c_str(), act, grp,
+                                        c ? "a clip" : "NO CLIP",
+                                        pedAniName.empty() ? "no .ani loaded"
+                                                           : pedAniName.c_str(),
+                                        shootClips.count(grp) ? shootClips[grp].size() : 0u);
+                        }
+                    }
+                }
                 // The program's placement wins over a `fromTable` reset every
                 // frame it is driving, not only on the clip-change frame.
                 if (s.progPlaced && sceneClip >= 0) {
@@ -5992,6 +6049,9 @@ int main(int argc, char** argv) {
                     pose = omk::composePose(s.mo->meshes, s.sceneTracks, rootFrame, false);
                     rootW = 1.0f;
                     src = "a scene program's clip";
+                } else if (shootTracks && shootTracks->valid()) {
+                    pose = omk::composePose(s.mo->meshes, *shootTracks, 0, false);
+                    src = "shoot mode: the area's .ani, by character type";
                 } else if (s.idle.valid()) {
                     pose = omk::composePose(s.mo->meshes, s.idle, 0, false);
                     src = "the bank's default entry, frame 0";
@@ -6276,7 +6336,11 @@ int main(int argc, char** argv) {
             {
                 const auto& pd = session.sliders();
                 const auto& rs = session.residentSlot(session.activeSlot());
-                if (pd.loaded() && !rs.ani.empty() && rs.ani != pedAniName) {
+                // `Area_TickLoad` case 7 loads `ANIMS\<+124>.ANI` for the area
+                // whether or not it has a slider circuit - the crowd is only
+                // one of its consumers, and a shoot-mode character with no
+                // `.CTL` is another. So this no longer waits on `pd.loaded()`.
+                if (!rs.ani.empty() && rs.ani != pedAniName) {
                     pedAniName = rs.ani;
                     pedAni = fs.read("ANIMS/" + rs.ani + ".ANI");
                     pedTracks.clear();

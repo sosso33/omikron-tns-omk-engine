@@ -6,8 +6,8 @@ Each ends in a commit and a report; the plan file records what is done.
 | # | item | state |
 |---|---|---|
 | 1 | the OUTGOING pool's bodies freeze during a transition | **DONE** 2026-09-05 |
-| 2 | the shoot-mode bodies have no pose (41 of them, 7 areas) | **open** |
-| 3 | 21 placement-record bodies named by nothing in the corpus | open |
+| 2 | the shoot-mode bodies have no pose (41 of them, 7 areas) | **DONE** 2026-09-05 |
+| 3 | ~~21~~ **4** bodies named by nothing in the corpus | **DONE** 2026-09-05 |
 | 4 | the adventure follow camera passes through walls | open |
 
 ---
@@ -55,6 +55,22 @@ and 84 are not in `interp.cpp` and the shoot AI is not consumed by the
 viewer. See `docs/FILE_FORMATS.md` (the `.ani` library at AREA +124) and
 `engine/src/actor/shoot.h` for the standard this row can be held to.
 
+**DONE.** Opcodes 82 and 84 now reach the Session (`shootActors_`, actor ->
+the last action asked of him), `animGroupClips(ani, group)` generalises
+`pedClipsFrom`'s walk to any character type, and the viewer poses such a body
+from the area's library ahead of the bank idle. Standing in zone 313, all ten
+of its `ZOH_FN` pose from `gandhar.ani` group 11.
+
+**Two things this does NOT do, and they are labelled in the code**: the pick
+is the FIRST match rather than a random one, so a still frame is
+reproducible; and what runs is the SCRIPT's last action, not the AI -
+`Shoot_TickNpc` calling one of four brains every frame is `actor/shoot.h`'s
+and is not wired to this.
+
+**And the rest pose before the trigger is the engine's own state.** The
+arming is zone 313's and 314's, not the startup script's, and until the
+player trips them nothing in the engine can pose these characters either.
+
 ## 3. The bodies named by nothing
 
 21 placement records are SHOWN at a new game, carry no `.CTL`, and are named
@@ -63,6 +79,23 @@ by no `scx.play.actor` or `shoot.actor.enter` anywhere in the 5785 slots -
 35 (2), 68 (2) and 230 (1). Either another mechanism drives them or they are
 pre-loads; the corpus walk that produced the count is in the 2026-09-05 log
 row.
+
+**DONE, and the count was WRONG: it is 4, not 21.** The walk behind it used
+the 5785 script slots, which come from the zone records and the message
+subscriptions - and `CLAUDE.md` §6 already records that **nothing in that walk
+reaches a chunk's `+4`**. 173 chunks carry a startup script and they name half
+the cast: `scx.play.actor` covers **166** distinct actors from the slots and
+**328** once the `+4` scripts are read. Re-run, the 72 rest-posed bodies split
+43 shoot / 25 played / **4** named by nothing.
+
+The four are `MOOBJ_FN` and `M2_FN` in the Morgue and `BRA_FN`/`PSH_FN` in
+Anekbah's first supermarket. None carries a `.CTL` in any slot, neither area
+names an `.ani` at `+124`, and none is a conversation speaker - so nothing in
+the shipped data can pose them, which makes it a property of the data.
+`MOOBJ_FN` says so itself: its pelvis is baked at an absolute
+(-1565, -114, -8494) where an ordinary character's sits near the origin, so it
+is a fixed prop - a body on a slab - and its rest pose is its authored pose.
+`verify.py: played actors`.
 
 ## 4. The adventure follow camera passes through walls
 

@@ -244,6 +244,12 @@ public:
     // `Actors_TickAll` aims his head at it every frame (`aimHead`, pose.h);
     // the Session only keeps who is looking.
     bool looksAtPlayer(int actor) const { return lookAtPlayer_.count(actor) != 0; }
+    // -> the last `shoot.actor.action` asked of him, or -1 if he is not in
+    // shoot mode at all.
+    int shootAction(int actor) const {
+        const auto it = shootActors_.find(actor);
+        return it == shootActors_.end() ? -1 : it->second;
+    }
     // A model's collision spheres (its first skeleton's mesh volumes) and
     // its reach (`+88`), read once from MESHES\PERSOS through the traffic
     // root; empty when the model or the root is missing.
@@ -888,6 +894,9 @@ public:
     // The bank a CHARACTERS id resolves to (the actor record's +72, the
     // `.CTL` name `Actor_LoadBankList` opens). Empty when nothing names it.
     std::string bankOfActor(int actor) const;
+    // The record's `+176`, `Type Spectre` - and the GROUP his clips sit in
+    // inside the area's `.ani` library.
+    std::uint32_t typeOfActor(int actor) const;
     // The spawned character with this id, or nullptr - the shown slot's
     // tables first, the same order `Scene_FindObjectRecord` searches.
     const Character* characterOf(int actor) const;
@@ -1177,6 +1186,10 @@ private:
     std::map<std::string, float> modelReach_;
     std::vector<int> pedSlots_;              // walker -> its index slot, -1 none
     std::set<int> lookAtPlayer_;             // actors whose slot 100 is the player
+    // `shoot.actor.enter` / `.action`: actor -> the last action asked of him.
+    // These characters carry no `.CTL` in any of the three slots, so nothing
+    // else can pose them; see the handler for what is and is not modelled.
+    std::map<int, int> shootActors_;
     int   bumpCooldown_ = 0;                 // dword_538318, in frames
     void  refreshCrowdIndex();
     std::string dataRoot_;                   // the gamedata tree, from loadTraffic

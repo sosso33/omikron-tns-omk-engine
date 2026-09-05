@@ -7513,6 +7513,159 @@ def c_engine_tunnel_door_walk():
          "6 and feet on AREA 0; door 4 the same; the door mesh moved; the "
          "tunnel is hidden; he ends past the door with no NO FLOOR")
 
+def c_played_actor_inventory():
+    r"""Which actors any script can PLAY - and the enumeration that has to
+    include the `+4` startup scripts, or the answer is half.
+
+    A census of the bodies a replica has no pose for produced "21 named by
+    nothing in the whole corpus". That was a false negative, and it repeated
+    the mistake `CLAUDE.md` §6 already records against itself: the 5785 script
+    slots come from the zone records and the message subscriptions, and
+    **nothing in that walk reaches a chunk's `+4`**. 173 chunks carry a
+    startup script and they name half the cast:
+
+        scx.play.actor / .wait   166 distinct actors from the slots
+                                 328 once the +4 startup scripts are read
+
+    (`shoot.actor.enter` is unaffected - all 260 of its ids are in the slots.)
+    Re-run over the 72 bodies the viewer reports in the rest pose, the census
+    is 43 shoot, 25 played, **4** named by nothing - not 21.
+
+    The four are `MOOBJ_FN` and `M2_FN` in the Morgue and `BRA_FN`/`PSH_FN` in
+    Anekbah's first supermarket. None carries a `.CTL` in any of the three
+    slots, neither area names an `.ani` library at `+124`, and none is a
+    conversation speaker - so there is nothing in the shipped data that could
+    pose them, which makes this a property of the data rather than a gap in
+    the port. `MOOBJ_FN` corroborates that from the other side: its pelvis is
+    baked at an absolute (-1565, -114, -8494) where an ordinary character's
+    sits near the origin, so it is a fixed prop - a body on a slab - and its
+    rest pose is its authored pose.
+    """
+    import dialog_triggers as T2, script_dump as SD
+    play, shoot = set(), set()
+    for op in (59, 60):
+        for r in _world_ops().get(op, []): play.add(struct.unpack_from("<h", r, 0)[0])
+    for r in _world_ops().get(82, []): shoot.add(struct.unpack_from("<h", r, 0)[0])
+    fromSlots = len(play)
+    for arch in ("AREA", "SCENE"):
+        for k, b in sorted(T2.archive(omkpaths.data("IAM", arch)).items()):
+            if len(b) < 8: continue
+            at = struct.unpack_from("<i", b, 4)[0]
+            if at <= 0 or at >= len(b): continue
+            try: txt = SD.listing(b, at, "s")
+            except Exception: continue
+            for m in re.finditer(r"scx\.play\.actor(?:\.wait)? +(\d+),", txt): play.add(int(m.group(1)))
+            for m in re.finditer(r"shoot\.actor\.enter +(\d+)", txt): shoot.add(int(m.group(1)))
+    # the 72 bodies the viewer reports in the rest pose, by area
+    tp = {2: [17, 172, 173, 174, 176, 177, 178, 179, 180, 181, 182, 183, 184, 185, 186],
+          35: [154, 156], 61: [124, 125], 68: [37, 38, 39, 40, 41, 42, 43, 44],
+          71: [100, 101, 102, 103], 77: [104, 105, 106, 107, 108],
+          80: [110, 111, 112, 113, 114, 116, 117, 118], 144: [524, 525, 526],
+          218: [50, 59, 61, 62, 63, 69, 70, 71, 72, 459, 460, 461, 462, 463, 464,
+                465, 466, 467, 468, 469],
+          230: [60, 65, 88], 237: [0], 249: [319]}
+    tot = sh = pl = none = 0
+    for ids in tp.values():
+        for i in ids:
+            tot += 1
+            if i in shoot: sh += 1
+            elif i in play: pl += 1
+            else: none += 1
+    return (fromSlots, len(play), len(shoot), tot, sh, pl, none), \
+           (166, 328, 260, 72, 43, 25, 4), \
+        ("actors any scx.play.actor names, from the 5785 slots alone and then "
+         "with the 173 chunks' +4 startup scripts; actors shoot.actor.enter "
+         "names; then the bodies the viewer rest-poses, split into shoot, "
+         "played, and named by NOTHING")
+
+
+def c_engine_shoot_pose():
+    r"""`engine/`: a SHOOT-mode character is posed from the area's `.ani`, by
+    his character type - the 41 bodies that had no pose at all.
+
+    These characters carry no `.CTL` in ANY of the three 9-byte slots, so
+    nothing the actor runtime does can pose them. Their clips come from the
+    library the AREA chunk names at `+124`:
+
+        Anim_Load (0x00434010)   fills dword_52B95C, one 24-byte record a
+                                 GROUP, and a group's index is the CHARACTER
+                                 TYPE - the record's +176, `Type Spectre`
+        sub_434530(type)         finds that group, else Dbg_Trace
+                                 "Perso %d non existant dans le .ani"
+        Shoot_ActorEnter         stores it in the shoot record's +20 and puts
+                                 the actor in ACTOR_STATE 3
+        Shoot_ActorAction        List_PickRandomByType(list, N):
+                                     action 0, 5        N = 11, else 25
+                                     action 1           N = 9
+                                     action 2,3,4,6,7   N = 10, else 9
+
+    The data corroborates itself: `gandhar.ani` carries **14 groups indexed
+    0..13**, which is exactly the fourteen character types the binary names
+    (`tables/shoot_ai.json`), and only **two of them hold clips** - 10 and 11,
+    which are exactly the two types AREA 2 stages (`DE3_FN` is 10, Gandhar;
+    the twelve `ZOH_FN` are 11).
+
+    **And they are rest-posed until the trigger fires, which is the engine's
+    own state.** AREA 2's `+4` startup script is three `op_122` calls and an
+    `end`; the arming lives in ZONE 313, *"Départ Shoot Grotte"*, at x
+    1765..1858 - the player spawns at 2352 and walks into it. Before that
+    nothing in the engine can pose these bodies either, so a T-pose there is
+    not a fault of the port. Standing in the zone, all twelve resolve.
+
+    Zone 313 arms exactly TEN of them - 173, 174, 176..183 - and the
+    eleventh, 172, belongs to zone 314 *"Zombie 1"* (script 8811, which
+    disables itself and then enters him with action 3). So ten is the number
+    to expect standing in 313, not twelve; the twelfth `ZOH_FN`, 175, is not
+    shown at a new game at all.
+
+    Measured, not eyeballed: they sit deeper in the cave than the trigger and
+    a corridor hides them from it.
+
+    Needs SDL; reports true without it (PORTING A8).
+    """
+    import subprocess
+    have = {}
+    d = open(os.path.join(omkpaths.data_root(), "ANIMS", "gandhar.ani"), "rb").read()
+    groups = struct.unpack_from("<i", d, 4)[0]
+    withClips = 0
+    for g in range(groups):
+        node = struct.unpack_from("<I", d, 8 + 24 * g + 4)[0]
+        if node and node + 36 <= len(d): withClips += 1
+    eng = os.path.join(ROOT, "engine")
+    fr = omkpaths.data_root()
+    tb = os.path.join(ROOT, "tables")
+    save = os.path.join(ROOT, "traces", "save-appart.bin")
+    if not os.path.isdir(fr) or not os.path.exists(save):
+        return ("no data",), ("data",), "needs the shipped tree and traces/save-appart.bin"
+    mk = subprocess.run(["make", "-s", "play"], cwd=eng, capture_output=True, text=True)
+    play = os.path.join(eng, "build", "omk-play")
+    if mk.returncode != 0 or not os.path.exists(play):
+        return (groups, withClips, 10, 0), (14, 2, 10, 0), \
+               "no SDL - the frontend is optional (PORTING A8)"
+    env = dict(os.environ, SDL_VIDEODRIVER="dummy")
+    def run(stand):
+        return subprocess.run([play, fr, tb, "--software", "--res", "640x480", "--nofmv",
+                               "--no-crowd", "--save", save, "--area", "2",
+                               "--stand", stand, "--frames", "120"],
+                              capture_output=True, text=True, env=env).stdout
+    inZone = run("1812,-9,1217,270")
+    # keyed on the POSE SOURCE, not on the diagnostic beside it: what is
+    # asserted is that the body is actually posed from the library
+    posed = len(re.findall(
+        r"actor \d+ ZOH_FN - pose source: shoot mode: the area's \.ani", inZone))
+    byType = len(re.findall(
+        r"shoot mode, action 1, character type 11 -> a clip \(GANDHAR", inZone))
+    if byType != posed: posed = -byType
+    atSpawn = run("2352,-9,1206,271")
+    armedEarly = len(re.findall(r"shoot mode, action", atSpawn))
+    return (groups, withClips, posed, armedEarly), (14, 2, 10, 0), \
+        ("gandhar.ani's groups and how many hold clips - one a character type, "
+         "and only the two AREA 2 stages are filled; then the ZOH_FN posed from "
+         "group 11 while the player stands in zone 313 - TEN, the eleventh "
+         "belonging to zone 314 - and how many are armed before he reaches it "
+         "(none: the arming is that zone's, not the startup script's)")
+
+
 def c_engine_scene_facing():
     r"""`engine/`: a scene call's EULER turns the root motion and the head aim,
     not only the body - the restaurant's waiter and its diners.
@@ -21405,6 +21558,8 @@ SLOW = [
     ("engine: node scale", c_engine_node_scale, "todo/omk-play"),
     ("engine: walk-in scene", c_engine_walk_in_scene, "todo/collision-scenes-transitions"),
     ("engine: scene facing", c_engine_scene_facing, "todo/omk-play"),
+    ("played actors", c_played_actor_inventory, "todo/reader-followups"),
+    ("engine: shoot pose", c_engine_shoot_pose, "todo/reader-followups"),
     ("engine: tunnel door walk", c_engine_tunnel_door_walk, "todo/collision-scenes-transitions"),
     ("engine: arrival wait", c_engine_arrival_wait, "todo/omk-play"),
     ("engine: linked rings", c_engine_linked_rings, "todo/omk-play"),
