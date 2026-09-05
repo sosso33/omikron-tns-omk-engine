@@ -3807,6 +3807,28 @@ int main(int argc, char** argv) {
                 } else {
                     player->tick(static_cast<float>(frameSec * 30.0), bits);
                 }
+                // WHERE THE FLOOR ENDS. A step that finds no floor under its
+                // destination (`Reverted`), or a fall that begins, is the moment
+                // the walker leaves the geometry - which a reader did through the
+                // Impasse alley's wall on 2026-09-05. Printed with the position,
+                // the heading and the sweep's verdict, once a second at most.
+                {
+                    static long voidTold = -1000;
+                    const auto& lf = player->last();
+                    const bool off = lf.stepped && (lf.step == omk::StepResult::Reverted ||
+                                                    lf.step == omk::StepResult::Fell);
+                    if (off && n - voidTold >= 30) {
+                        voidTold = n;
+                        std::printf("walker: %s at %.1f %.1f %.1f facing %.0f - move %+.2f %+.2f, "
+                                    "%d wall passes hit, ground %s\n",
+                                    lf.step == omk::StepResult::Reverted ? "NO FLOOR ahead (reverted)"
+                                                                          : "FALLING",
+                                    player->pos()[0], player->pos()[1], player->pos()[2],
+                                    player->facing(), lf.rootDelta[0], lf.rootDelta[2],
+                                    player->walker().lastSlides(),
+                                    lf.onGround ? "under him" : "NOT under him");
+                    }
+                }
                 // omk-play 69: WATCH THE WHOLE TAKE, INCLUDING THE WAIT.
                 //
                 // The take is not one animation, it is a CONVERSATION with the
