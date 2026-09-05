@@ -9,8 +9,8 @@ does not block the rest.
 | 1 | the camera pass's three unmodelled details | **DONE** 2026-09-05 |
 | 2 | the shoot AI's brains are not called | **DONE (as a decision)** 2026-09-05 |
 | 3 | `.3DM`'s `float[3]`, and node slots 0 and 1 | **NARROWED** 2026-09-05 |
-| 4 | the Anekbah panel FLICKER | **open** |
-| 5 | the player's RIDE | open |
+| 4 | the Anekbah panel FLICKER | **candidate REFUTED** 2026-09-05 |
+| 5 | the player's RIDE | **open** |
 
 The reader cannot watch the screen, so anything that needs an eye is settled
 by sending frames rather than by asking them to look.
@@ -121,6 +121,25 @@ texture name cache` - and the flicker is not. The `AApub*` prism (7 vertices,
 3 quads of identical UVs) with `D3DCULL_NONE` and no depth bias is the
 standing account. The neon half was WITHDRAWN: 148 of Anekbah's 153 emitters
 have period 0, a particle every frame, which is a steady glow.
+
+**The prism account is now REFUTED too, so the flicker has none left.** The
+UVs half was right and the geometry half was not. Over all **36** of
+Anekbah's three-quad `AApub` meshes: every one carries its three quads on
+**one material**, **none** has any two of them coincident, and the closest two
+face centres are **13.8 / 14.2 / 15.3** units apart (min / median / max).
+`AApub04`'s quads index (0,2,3,1), (1,3,5,4) and (4,5,2,0) - a ring of six
+vertices with a seventh above them, which is a triangular **prism** with a
+cap: three SIDE faces about fourteen units apart, each carrying the same
+advert. A real trivision hoarding, not two adverts on one quad. They cannot
+z-fight.
+
+The coincident faces that DO exist in Anekbah are the shop signs - 18 pairs,
+exact to the float, in the same mesh - and their tie-break is already known
+(ASSETS 4b, the texture slot in material order). Those are the WRONG-TEXTURE
+half, which is solved.
+
+Result: a candidate removed rather than a fault fixed, which is worth more
+than leaving it to be built on. `verify.py: aapub prism`.
 
 ## 5. The player's RIDE
 

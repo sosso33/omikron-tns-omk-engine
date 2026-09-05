@@ -1082,8 +1082,15 @@ frame driving the face, through the same data path the browser app uses:
 * **Coincident faces are common, and their tie-break is now known.** ANEKBAH
   carries **189** face groups whose world positions agree to four decimals,
   **18** of them pairing different materials with completely different UVs — two adverts printed on
-  one quad. They are not the `AApub*` billboards (each of those uses a single
-  material); they are the **shop signs**, one mesh apiece and the names say so:
+  one quad. They are not the `AApub*` billboards — each of those uses a single
+  material, and **none of the 36 has any two of its three quads coincident**:
+  their closest face centres are 13.8–15.3 units apart, because the mesh is a
+  triangular **prism** (a ring of six vertices with a seventh above, quads
+  indexing (0,2,3,1), (1,3,5,4), (4,5,2,0)) — a trivision hoarding whose three
+  SIDES carry the same advert. That refutes the standing account of the panel
+  FLICKER, which had them as coincident faces z-fighting; the flicker now has
+  no candidate. `verify.py: aapub prism`. The coincident pairs are the
+  **shop signs**, one mesh apiece and the names say so:
   `Abank01`, `Apolice01`–`04`, `Adrugs02`, `Ahosp04`/`05`, `Asmarket01`–`07`,
   `Abooks01`/`02`. All 18 are exact to the float, all 18 sit on meshes with
   `flags = 0x4`, and both faces of every pair are **in the same mesh** — so the

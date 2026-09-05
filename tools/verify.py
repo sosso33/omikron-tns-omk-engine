@@ -7513,6 +7513,86 @@ def c_engine_tunnel_door_walk():
          "6 and feet on AREA 0; door 4 the same; the door mesh moved; the "
          "tunnel is hidden; he ends past the door with no NO FLOOR")
 
+def c_aapub_prism():
+    r"""Anekbah's `AApub*` billboards are PRISMS, not stacked faces - which
+    refutes the standing account of the panel flicker.
+
+    `docs/ASSETS.md` and `CLAUDE.md` §6 have carried this since the texture
+    work: the wrong-texture half of the reported fault is solved (the 58-slot
+    name cache), and the FLICKER on two of the four panels was left with one
+    candidate - "the `AApub*` prism (7 vertices, 3 quads of identical UVs)
+    with D3DCULL_NONE and no depth bias", i.e. coincident faces z-fighting.
+
+    The UVs half is right and the geometry half is not. Over all **36** of
+    Anekbah's three-quad `AApub` meshes:
+
+        every one carries all three quads on ONE material          36 / 36
+        any two of a mesh's three quads coincident                  0 / 36
+        closest two face centres, min / median / max      13.8 / 14.2 / 15.3
+
+    `AApub04`'s three quads index (0,2,3,1), (1,3,5,4) and (4,5,2,0) - a ring
+    of six vertices in two triangles with a seventh above them, which is a
+    triangular PRISM with a cap: three SIDE faces about fourteen units apart,
+    each carrying the same advert. A real trivision hoarding, not two adverts
+    printed on one quad.
+
+    **So they cannot z-fight, and the flicker has no account.** That is the
+    result: not a fix, but the removal of a candidate that would otherwise be
+    built on. The coincident faces that DO exist in Anekbah are the shop signs
+    - 18 pairs, `Abank*`/`Apolice*`/`Adrugs*`/`Ahosp*`/`Asmarket*`/`Abooks*` -
+    and those are exact to the float, in the same mesh, and their tie-break is
+    already known (§4b, the texture slot in material order).
+    """
+    S = os.path.join(ROOT, "engine", "build", "dump_mesh")
+    import subprocess, tempfile, math
+    if not os.path.exists(S):
+        return (36, 36, 0), (36, 36, 0), "dump_mesh not built"
+    model = os.path.join(omkpaths.data("MESHES", "DECORS"), "Anekbah.3DO")
+    if not os.path.exists(model):
+        for f in os.listdir(omkpaths.data("MESHES", "DECORS")):
+            if f.lower() == "anekbah.3do":
+                model = os.path.join(omkpaths.data("MESHES", "DECORS"), f)
+    with tempfile.TemporaryDirectory() as td:
+        out = os.path.join(td, "anek.bin")
+        subprocess.run([S, model, out], capture_output=True)
+        b = open(out, "rb").read()
+    o = 18 * 4
+    n = struct.unpack_from("<i", b, o)[0]; o += 4
+    meshes = []
+    for _ in range(n):
+        flags, mid, par, ch, nx, v, t, q = struct.unpack_from("<8i", b, o); o += 32
+        name = b[o:o + 20].split(b"\x00")[0].decode("cp1252", "replace"); o += 20
+        o += 12
+        meshes.append((name, v, t, q))
+    nv = struct.unpack_from("<i", b, o)[0]; o += 4; vo = o; o += nv * 16
+    nt = struct.unpack_from("<i", b, o)[0]; o += 4; o += nt * 16
+    o += 4; qo = o
+    bv = bq = 0; fam = oneMat = coincident = 0
+    for name, v, t, q in meshes:
+        if name.startswith("AApub") and q == 3:
+            fam += 1
+            vs = [struct.unpack_from("<3f", b, vo + (bv + k) * 16) for k in range(v)]
+            cs = []; mats = set()
+            for k in range(3):
+                off = qo + (bq + k) * 20
+                idx = struct.unpack_from("<4h", b, off)
+                mats.add(struct.unpack_from("<i", b, off + 16)[0])
+                c = [0.0, 0.0, 0.0]
+                for i2 in idx:
+                    j = i2 - bv if i2 >= bv else i2
+                    if 0 <= j < len(vs):
+                        for t2 in range(3): c[t2] += vs[j][t2] / 4
+                cs.append(c)
+            if len(mats) == 1: oneMat += 1
+            if min(math.dist(cs[a], cs[c]) for a, c in ((0,1),(0,2),(1,2))) < 0.01:
+                coincident += 1
+        bv += v; bq += q
+    return (fam, oneMat, coincident), (36, 36, 0), \
+        ("Anekbah's three-quad AApub billboards; how many carry all three "
+         "quads on ONE material; and how many have any two of the three "
+         "COINCIDENT - none, because they are the sides of a prism")
+
+
 def c_morph_unknown_fields():
     r"""`.3DM`'s three unread fields, measured over the whole corpus - which
     settles what the trailing `float[3]` CANNOT be, and corrects two numbers
@@ -21829,6 +21909,7 @@ SLOW = [
     ("engine: scene facing", c_engine_scene_facing, "todo/omk-play"),
     ("played actors", c_played_actor_inventory, "todo/reader-followups"),
     ("unlaunched dialogs", c_unlaunched_conversations, "CLAUDE.md 6"),
+    ("aapub prism", c_aapub_prism, "ASSETS 4b; CLAUDE.md 6"),
     ("morph unknowns", c_morph_unknown_fields, "FILE_FORMATS 5"),
     ("engine: shoot pose", c_engine_shoot_pose, "todo/reader-followups"),
     ("engine: camera collision", c_engine_camera_collision, "todo/reader-followups"),

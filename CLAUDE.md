@@ -1355,11 +1355,21 @@ Listed with what has already been ruled out, so nobody repeats the search.
   `flags & 0x800043`, which replaces three viewer heuristics and disagrees with
   them in both directions (ASSETS 4).
 
-  Still unexplained: the **flicker** on panels 1 and 4. The `AApub*` prism
-  (7 vertices, 3 quads of identical UVs) with D3DCULL_NONE and no depth bias
-  remains the best account — and note that the other half of that story is now
-  **withdrawn**: Anekbah's neon does **not** flicker. All 102 neon emitters,
-  and 148 of the set's 153, have **period 0** (ASSETS 4) — a particle every
+  Still unexplained: the **flicker** on panels 1 and 4 — and as of 2026-09-05
+  it has **no account at all**, because the standing one is refuted. The
+  `AApub*` billboard was described as "7 vertices, 3 quads of identical UVs"
+  with D3DCULL_NONE and no depth bias, i.e. coincident faces z-fighting. The
+  UVs half is right and the geometry half is not: over all **36** of Anekbah's
+  three-quad `AApub` meshes, **0 have any two quads coincident** and the
+  closest two face centres are 13.8–15.3 units apart. `AApub04`'s quads index
+  (0,2,3,1), (1,3,5,4) and (4,5,2,0) — a ring of six vertices with a seventh
+  above, which is a triangular **prism**: three SIDE faces, all on one
+  material, a real trivision hoarding. They cannot z-fight.
+  `verify.py: aapub prism`.
+
+  And the other half of that story was already **withdrawn**: Anekbah's neon
+  does **not** flicker either — so both candidates are gone. All 102 neon
+  emitters, and 148 of the set's 153, have **period 0** (ASSETS 4) — a particle every
   frame, and with a 1-frame lifetime that is a steady glow. The flicker reading
   came from a `rand()` that a period-0 emitter never reaches. Only five `cacC`
   emitters in the set blink at all.
