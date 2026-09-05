@@ -208,6 +208,21 @@ public:
     // GoToMove into the group's flag-0x20 default entry. Returns false the
     // way the original logs "SetPersoBank, start move not found".
     bool setBankGroup(int groupIndex);
+
+    // THE INPUT HALF of `SetPersoBankGroup`'s memset, on its own.
+    //
+    // `sub_465D30` - the world's ACTION, `tab_special_move[3]`'s reach - ends
+    // by calling `SetPersoBankGroup`, and that is what stops a HELD action
+    // button from firing over and over: the memset clears the queue and the
+    // latches and seeds both with the idle word, so the held word has to
+    // change before anything matches again. The group it switches to is
+    // computed from the object being used and `sub_465D30` is not ported, so
+    // the port cannot do the whole call - but the input half is the half that
+    // guards the repeat, and it is these three lines verbatim.
+    //
+    // Labelled rather than folded into `setBankGroup`, because a caller that
+    // wanted the bank switch and got only this would be silently wrong.
+    void resetInputLatch();
     // Cef_FindGroupById (0x0046ACE0) / Cef_DefaultGroup (0x0046AD90).
     int  findGroupById(std::int32_t id) const;
     int  defaultGroup() const;

@@ -205,6 +205,31 @@ public:
     // The handlers are the engine's and most of them need the world, so the
     // frontend runs them; see player.cpp. Cleared at the top of every tick.
     const std::vector<std::string>& specialMoves() const { return moves_; }
+    // `SetPersoBankGroup`'s input memset, which is what stops a HELD action
+    // button repeating - see `CefChannel::resetInputLatch`. The frontend calls
+    // it when an MDACTION actually did something, the way `sub_465D30` does.
+    void resetInputLatch() { rt_.channel().resetInputLatch(); }
+
+    // `sub_465D30`'s tail, which is what stops a HELD action button repeating:
+    //
+    //     if (dy <= 27.472441)  g = Cef_FindGroupById(bank, 143);   // low
+    //     else                  g = Cef_FindGroupById(bank, 41);    // standing
+    //     SetPersoBankGroup(channel, g);
+    //
+    // The memset alone does NOT stop it - `setBankGroup` then does `gotoMove`
+    // to the new group's default entry, and it is that STATE CHANGE that makes
+    // the `H_STAND -> 24` per-tick entry stop matching. Measured: with the
+    // memset alone a 20-frame hold still fired 20 times.
+    //
+    // 27.472441 units is 0.6978 m - the low/standing split. **The LOW arm is
+    // not ported**: choosing it needs the object's height, which `sub_465D30`
+    // computes and this port does not carry to the press. So this takes the
+    // standing arm, and a low object will play the wrong take until
+    // `sub_465D30` is ported. -> whether the switch happened.
+    bool enterActionBank() {
+        const int g = rt_.channel().findGroupById(41);
+        return g >= 0 && rt_.channel().setBankGroup(g);
+    }
     // `Cef_FindGroupById` + `SetPersoBankGroup`, by the group's ID.
     bool enterGroupById(int id);
 

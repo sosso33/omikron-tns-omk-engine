@@ -357,6 +357,12 @@ bool CefChannel::setBankGroup(int groupIndex) {
     return gotoMove(cur_, entry, 1.0f);  // "SetPersoBank, error on GoToMove"
 }
 
+void CefChannel::resetInputLatch() {
+    queue_.assign(1, kIdleInput);
+    for (auto& l : latch_) l = 0;
+    lastInput_ = kIdleInput;
+}
+
 void CefChannel::injectInput(const std::vector<std::uint32_t>& words,
                              std::uint32_t orWith) {
     queue_.clear();

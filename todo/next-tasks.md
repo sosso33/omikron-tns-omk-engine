@@ -100,8 +100,34 @@ sees, with none of that gating. **The fix is to transcribe 0x0046AEC0**, not to
 add an edge filter or a timer - both of which would invent a rule the engine
 has not got, and the second of which would have papered over this.
 
-Size revised **S -> M**: the mechanism is fully understood but the work is
-transcribing a state-gated handler and its object search, not changing a mask.
+**What was DONE 2026-09-06**: the two gates that transcribe exactly — the
+ACTOR_STATE switch (`byte_46B2BC[state-4] = {0,4,4,4,4,4,4,1,4,2,3}`, so states
+4/11, 13 and 14 take other arms and are now refused with a log line) and the
+arm's own `ACTOR_STATE == 3` refusal. Those are safe and correct.
+
+**What is NOT done, and the attempt is recorded because it half-worked.** The
+repeat guard is `sub_465D30`'s tail:
+
+    SetPersoBankGroup(channel,
+        Cef_FindGroupById(bank, dy <= 27.472441 ? 143 : 41))
+
+— 27.472441 units being 0.6978 m, the low/standing split. It is that STATE
+CHANGE that stops the `H_STAND -> 24` per-tick entry matching, **not** the
+memset beside it: with the memset alone a 20-frame hold still fired 20 times.
+
+Doing only the switch takes a 20-frame hold from 20 activations to **1** — and
+**parks the player in `.CTL` state 54 `H_WAITOB` for ever**, because the engine
+leaves that bank again when the action completes and this port has no such
+path. A second press then never works, which is worse than the repeat. So it
+was measured, backed out, and written down here.
+
+`CefChannel::resetInputLatch()` was added and kept: it is the memset half
+transcribed verbatim and will be wanted when the rest lands.
+
+**So the remaining work is `sub_465D30` itself** (190 lines, `21_d3d.c`) plus
+whatever restores the default bank when the action ends — `Cef_DefaultGroup` at
+`21_d3d.c` 3211 is the shape of it. Size **M**, and it is a real slice, not a
+mask change.
 
 ### 2. Black stripes entering/leaving a building — S, strong evidence
 

@@ -4681,7 +4681,46 @@ int main(int argc, char** argv) {
                 // arming its slots, and nothing in the viewer ever pressed it,
                 // so no object could be taken and no pedestrian talked to
                 // (`todo/omk-play.md` 65).
-                if (actionFromMove && !session.dialogOpen()) {
+                // ---- `tab_special_move[3]` = 0x0046AEC0, the MDACTION
+                // handler, and it is what makes a HELD action button fire
+                // ONCE (todo/next-tasks.md 1).
+                //
+                // It has no `proc` label - read it with `asmfn.py`. It opens
+                // by switching on `[esi+194h]`, the actor's `+404`
+                // ACTOR_STATE, over eleven cases indexed `state - 4` through
+                // `byte_46B2BC[] = {0,4,4,4,4,4,4,1,4,2,3}`:
+                //
+                //     state 4, 11   -> arm at loc_46B29F        (unported)
+                //     state 13      -> sub_4A9580(actor)        (unported)
+                //     state 14      -> Game_RaiseEvent(6, 4)    (unported)
+                //     everything else, including 0..3 and 15+ which fall past
+                //                      the `ja` -> the object-search arm
+                //
+                // and the object-search arm refuses on `ACTOR_STATE == 3`.
+                //
+                // WHY THE ENGINE DOES NOT REPEAT, traced rather than assumed:
+                // it is NOT an edge filter. `Cef_TickChannel` reads DirectInput
+                // STATE (`sub_43D920`, bit 0x80 = down) and `sub_4A7A20` is a
+                // pure bit remap, so the engine queues MDACTION every frame
+                // while the button is held, exactly as this port does. The
+                // guard is at the END of a SUCCESSFUL action: `sub_465D30`
+                // calls `SetPersoBankGroup`, whose memset clears the channel's
+                // queue and latches and seeds them with the idle word - so the
+                // held word must change before anything matches again.
+                //
+                // Ported here as the two gates that can be transcribed exactly
+                // plus that input memset. What is NOT ported and is labelled
+                // so: the three special arms above, and the BANK the engine
+                // switches to (it comes from the object, in `sub_465D30`).
+                const int actorState = player ? static_cast<int>(player->state()) : -1;
+                const bool stateAllowsAction =
+                    actorState != 3 &&                       // the arm's own refusal
+                    actorState != 4 && actorState != 11 &&   // loc_46B29F
+                    actorState != 13 && actorState != 14;    // the other two arms
+                if (actionFromMove && !stateAllowsAction)
+                    std::printf("action: refused - ACTOR_STATE %d takes another arm of "
+                                "tab_special_move[3]\n", actorState);
+                if (actionFromMove && stateAllowsAction && !session.dialogOpen()) {
                     const int armed = session.zones().armedCount();
                     const std::int16_t z = session.zones().armedZone();
                     // omk-play 66: EVERY press is reported, with where he
@@ -4696,7 +4735,32 @@ int main(int argc, char** argv) {
                     // a press that finds it empty takes a different arm of the
                     // zone's script entirely.
                     const int hs = session.heldSlotOf(-1);
-                    if (session.pressAction())
+                    // THE REPEAT GUARD, and it fires on the SUCCESSFUL press
+                    // only - which is the engine's rule, not a convenience:
+                    // `sub_465D30` reaches `SetPersoBankGroup` only when the
+                    // action actually did something, so a press that finds
+                    // nothing leaves the latch alone and the next frame tries
+                    // again. That is why holding the button at a door opens it
+                    // once, while holding it in the open street keeps looking.
+                    const bool did = session.pressAction();
+                    // THE REPEAT GUARD IS NOT PORTED, and the attempt is
+                    // recorded because it half-worked, which is the dangerous
+                    // kind. `sub_465D30` ends with
+                    //
+                    //     SetPersoBankGroup(channel,
+                    //         Cef_FindGroupById(bank, dy <= 27.472441 ? 143 : 41))
+                    //
+                    // and it is that STATE CHANGE - not the memset beside it -
+                    // that stops the `H_STAND -> 24` per-tick entry matching.
+                    // Doing only the switch takes the count from 20 holds to 1
+                    // - and PARKS the player in `.CTL` state 54 `H_WAITOB` for
+                    // ever, because the engine leaves that bank again when the
+                    // action completes and this port has no such path. A
+                    // second press then never works at all, which is worse
+                    // than the repeat. Measured both ways; see
+                    // `todo/next-tasks.md` 1.
+                    (void)did;
+                    if (did)
                         std::printf("action: zone %d activated (%d slot%s armed) at %.0f %.0f %.0f"
                                     " - hand slot %d, object %d\n",
                                     z, armed, armed == 1 ? "" : "s",
