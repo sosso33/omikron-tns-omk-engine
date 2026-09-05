@@ -18,7 +18,8 @@
 //     +16   u32 x2    zero in all 4179
 //     +24   float     radius A - 1.0 m minimum, 20.0 m median
 //     +28   float     radius B - 10.0 m median, always <= A in the corpus
-//     +32   float     median 1.5, max 25 - an intensity or falloff. OPEN
+//     +32   float     the INTENSITY - `sub_493E40` scales the direction by
+//                     `+32 * 256`. Median 1.5, max 25
 //     +36   float     median 164     OPEN
 //     +40   float     median 169     OPEN
 //     +44   u32       the COLOUR, 0x00RRGGBB. 420 distinct: white, warm
@@ -48,9 +49,14 @@
 //
 // ## What is NOT established
 //
-// Three floats (+32, +36, +40) have no traced consumer. And the light is only
-// ABOVE its footprint in 2871 of 4179, so "a spot shining down" is the common
-// case and not the rule - wall and up lights are in here too.
+// **`+32` is the INTENSITY** - `sub_493E40` scales the light direction by
+// `light[+32] * 256` before the dot, so this was traced by step 3 and the
+// "three unexplained floats" of step 2 are down to **two**: `+36` and `+40`,
+// which that function does not touch and nothing else has been found to read.
+//
+// And the light is only ABOVE its footprint in 2871 of 4179, so "a spot
+// shining down" is the common case and not the rule - wall and up lights are
+// in here too.
 #pragma once
 
 #include <cstddef>
@@ -69,7 +75,9 @@ struct Light3do {
     std::uint32_t flags = 0;
     std::string   name;
     float         radiusA = 0.0f, radiusB = 0.0f;
-    float         f32 = 0.0f, f36 = 0.0f, f40 = 0.0f;   // no traced consumer
+    // +32 is the INTENSITY (`sub_493E40` scales by `f32 * 256`); +36 and +40
+    // have no traced consumer.
+    float         f32 = 0.0f, f36 = 0.0f, f40 = 0.0f;
     std::uint32_t colour = 0;                            // 0x00RRGGBB
     float         pos[3] = {0, 0, 0};
     float         centre[3] = {0, 0, 0};

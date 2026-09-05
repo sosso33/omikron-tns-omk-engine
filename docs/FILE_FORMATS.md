@@ -700,7 +700,8 @@ that this is the light table and not a plausible reading of something else.
 | `+0` | flags — low byte 2 or `0x12`, bit `0x40000000` set or not; **four** combinations in the corpus. `sub_493CE0` ORs in 8 at runtime |
 | `+4` | `char[12]` the NAME, `LIGHT`, `LIGHT0`, … |
 | `+24` / `+28` | two radii — authored in **round metres**, 20.0 m and 10.0 m median |
-| `+32`, `+36`, `+40` | three floats with **no traced consumer** |
+| `+32` | the **INTENSITY** — `sub_493E40` scales the light direction by `+32 × 256` |
+| `+36`, `+40` | two floats with **no traced consumer** |
 | `+44` | the **COLOUR**, `0x00RRGGBB` — 420 distinct: white, warm orange (244,177,104), cyan, red |
 | `+48` | the light's **POSITION** |
 | `+80` | the **CENTRE** of a footprint |
