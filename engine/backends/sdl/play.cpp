@@ -1280,6 +1280,8 @@ int main(int argc, char** argv) {
 "  --stand x,y,z[,facing]   an explicit spot instead of an address\n"
 "  --density 0..4   how much crowd - the options menu\'s own row 6\n"
 "  --no-crowd       no pedestrians at all\n"
+"  --no-script-sprites  DEBUG: do not draw Script_Display3DSprite's sprites (a before/after)\n"
+"  --scx-play h,h   HARNESS: start scene objects by handle on the first adventure frame\n"
 "  --scene-chunk N  run SCENE chunk N's startup script over the area, the\n"
 "                   way `scene.load` does. A street start jumps straight to\n"
 "                   an area, so the chunk that would have been loaded on the\n"
@@ -1400,6 +1402,9 @@ int main(int argc, char** argv) {
     // same call, and is where this shape comes from).
     int sceneChunk = -1;
     bool noCrowd = false;
+    bool noScriptSprites = false;   // DEBUG: leave the scripted sprites undrawn, for a before/after
+    std::vector<int> scxPlay;       // --scx-play: objects to start by handle, once
+    bool scxPlayed = false;
     // `--sneak` opens the device as soon as the player is on his feet,
     // through the SAME path TAB takes - `MDSNEAK0`'s handler, event 25 and
     // screen 9 - rather than a second way in. A testing convenience for a
@@ -1488,6 +1493,18 @@ int main(int argc, char** argv) {
         else if (a == "--scene-chunk" && i + 1 < argc) sceneChunk = std::atoi(argv[++i]);
         else if (a == "--density" && i + 1 < argc) density = std::atoi(argv[++i]);
         else if (a == "--no-crowd") noCrowd = true;
+        else if (a == "--no-script-sprites") noScriptSprites = true;
+        // A HARNESS FLAG: start scene objects by their `scx.play` operand (the
+        // handle >> 16) on the first adventure frame the scene is resident,
+        // so a scene function can be looked at without the script that
+        // would reach it. Not a port of anything.
+        else if (a == "--scx-play" && i + 1 < argc) {
+            std::string t = argv[++i], cur;
+            for (char c : t + ",") {
+                if (c == ',') { if (!cur.empty()) scxPlay.push_back(std::atoi(cur.c_str())); cur.clear(); }
+                else cur.push_back(c);
+            }
+        }
         else if (a == "--sneak") openSneak = true;
         else if (a == "--stand" && i + 1 < argc)
             haveStand = std::sscanf(argv[++i], "%f,%f,%f,%f", &standAt[0], &standAt[1], &standAt[2], &standAt[3]) >= 3;
@@ -3250,6 +3267,17 @@ int main(int argc, char** argv) {
         // The script runs unless a screen is up. That is the engine: a script
         // parked at `ui.open` is waiting on a person, and `Game_HandleEvent`
         // case 5 is the only thing that releases it.
+        if (!scxPlayed && !scxPlay.empty() && adventure && session.scene().loaded()) {
+            scxPlayed = true;
+            for (const int h : scxPlay) {
+                omk::Call c;
+                c.op = 58;
+                c.fields = {static_cast<std::int16_t>(h), 0, 0};
+                const int idx = session.sceneMutable().handle({c});
+                std::printf("--scx-play: frame %ld  object handle %d -> program %d (a harness start)\n",
+                            frames, h, idx);
+            }
+        }
         if (spriteAnchorSet) session.sceneMutable().setSpriteAnchor(spriteAnchor);
         if (!walk) session.frame();
         else session.tickMusicLevel();       // the music level moves under a screen too
@@ -6298,7 +6326,7 @@ int main(int argc, char** argv) {
             int spriteBase = -1;
             for (int k = 0; k < 3; ++k) spriteAnchor[k] = view.cam.at[k];
             spriteAnchorSet = true;
-            const bool scriptSprites = session.scene().loaded() && !session.scene().sprites().empty();
+            const bool scriptSprites = !noScriptSprites && session.scene().loaded() && !session.scene().sprites().empty();
             if ((session.scene().effects().count() || !ctlSprites.empty() || scriptSprites) && !spriteTex.empty()) {
                 omk::particleGeometry(fxGeo, session.scene().effects(),
                                       view.cam.eye, view.cam.at, spriteFr);
