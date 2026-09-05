@@ -1324,11 +1324,24 @@ the option wins. It can only ever reduce.
 > written in-house at a French studio and nobody there thinks in inches. Both
 > halves of the answer are true and they do not conflict.
 >
-> **The stored unit is an inch, and it is measured rather than inferred.**
-> The engine does state the ratio itself in both directions — `State_Save`
-> writes the player's position as `round(w * 0.0254 * 256)`, `Area_LoadSet`
-> reads the option with `* 39.37007874015748` — but a constant only says what
-> somebody typed. `HO1_FNM`, Kay'l's body, is **70.85 units tall**: 1.80 m as
+> **The engine says it in its own words.** The debug overlay `sub_473620`
+> prints a world-space height as
+>
+> ```c
+> sprintf(buf, "normale : %f %f %f - Angle : %f - Hauteur : %f meter",
+>         ..., (v10 - v11) * 0.0254);
+> ```
+>
+> — it multiplies world units by 0.0254 and labels the result **`meter`**.
+> That is the binary naming the unit about itself, which is the standard
+> CLAUDE.md 3 prefers over any inference. (Found only after a reader asked the
+> question; the constants below were what the claim originally rested on, and
+> they were the weaker evidence.)
+>
+> **And it is measured, not merely inferred.** The engine states the ratio in
+> both directions — `State_Save` writes the player's position as
+> `round(w * 0.0254 * 256)`, `Area_LoadSet` reads the option with
+> `* 39.37007874015748` — but a constant only says what somebody typed. `HO1_FNM`, Kay'l's body, is **70.85 units tall**: 1.80 m as
 > inches, or a twenty-storey building as metres. The two crowd models say it
 > again and add a check on themselves — `PSH_FN` 71.5 and `FSH_FN` 66.7, which
 > as inches are **1.82 m and 1.69 m**, a male and a female adult in the right
@@ -1351,6 +1364,12 @@ the option wins. It can only ever reduce.
 > are not round metres and are consistent anyway: the crowd's spacing factor
 > and overtake reach are both **39**, an inch-rounded metre (0.991 m), and the
 > walker's gait thresholds 195 and 390 are exactly 5 and 10 of that 39.
+>
+> One API in the engine does have real units — DirectSound's listener takes a
+> distance factor in *metres per world unit* — but it is TOLD the factor, so it
+> adapts to whatever the engine already used and cannot have forced the choice.
+> Direct3D has no units at all. The likeliest cause is the modelling tool
+> chain, and nothing in this tree evidences that, so it stays a guess.
 >
 > `verify.py: world unit`, which measures the models rather than quoting
 > either constant, and fails if the metre reading of a human body is accepted.
