@@ -10,8 +10,32 @@ never read the records of. This is the work.
 |---|---|---|
 | 1 | the count and the stride, from the LOADER | **DONE** 2026-09-05 |
 | 2 | decode the 304-byte record | **DONE** 2026-09-05 |
-| 3 | what CONSUMES a light - the question that makes it worth doing | open |
+| 3 | what CONSUMES a light - the question that makes it worth doing | **DONE** 2026-09-05 |
 | 4 | port, if step 3 warrants it | open |
+
+## Step 3, done - it is the CROWD
+
+The question that made the table worth decoding is answered, and the answer is
+the one this repo recorded as a hypothesis and refused to assert: **a decor set
+supplies the lights and the street's moving population receives them.**
+
+`Read3DO_Init` registers a set's lights into the structure the binary calls
+"Lights Collisions". `sub_4380B0` - LightInstance, by its own error strings -
+registers a drawn instance in the same structure, and its eight call sites are
+six functions of which **every one is street-life**: the walker and vehicle
+spawn callbacks, the walker tick, two reached from `Slider_Init`, and the
+player's ride mount. `sub_48D7F0` then queries the structure per mesh per
+frame and calls `sub_493E40` for each overlapping light before submitting.
+
+The lighting is per-vertex, `−(N · L)` gated on a squared-radius reach test,
+with a LINEAR falloff between the inner and outer radii and the colour added
+through 256-entry ramps and a saturating table. That traces `+32` as the
+INTENSITY, closing one of step 2's three unexplained floats; `+36` and `+40`
+remain open.
+
+`verify.py: light consumers` asserts the offsets `sub_493E40` reads and that
+no caller of LightInstance sits outside the street-life module. It reads the
+decompilation and skips without it.
 
 ## Step 2, done
 

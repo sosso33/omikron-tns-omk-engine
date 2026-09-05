@@ -8175,6 +8175,105 @@ def c_light_record():
            "corners, counted rather than silently passed by a comparison"
 
 
+def c_light_consumers():
+    r"""What CONSUMES a `.3DO` light - step 3, and it is the crowd.
+
+    The question that made the table worth decoding: a set is shaded by a
+    colour **baked into every vertex** (`docs/ASSETS.md` 4c), so a static set
+    needs no runtime light at all. What are 4179 of them for?
+
+    **The moving population of a street.** The chain is three functions:
+
+    * `Read3DO_Init` registers every light of a loaded `.3DO` into a spatial
+      structure the binary names itself - the failure path says
+      `Read3DO,Init, unable to add light for Lights Collisions`. A DECOR set
+      supplies the lights.
+    * `sub_4380B0` - "LightInstance" by its own two error strings, *"cant light
+      instance - collision buffer full"* and *"LightInstance, internal error,
+      instance is not in a scene"* - registers a drawn INSTANCE in the same
+      structure and stores its handle at instance `+40`, `-1` meaning unlit.
+      Its **eight call sites are all in the street-life module**:
+      `sub_4544B0` and `sub_453ED0` (the vehicle and walker spawn callbacks),
+      `sub_454860` (the walker tick), `sub_4548C0` and `sub_4541E0` (both
+      reached from `Slider_Init`) and `sub_452CC0` (the player's ride mount) -
+      `docs/STREET_LIFE.md`. **Six functions, eight sites, and not one of them
+      outside the street-life module.**
+    * `sub_48D7F0`, the per-instance draw walk, closes it. Per mesh, if the
+      instance's handle is not -1 it opens a query on the structure
+      (`sub_48E980`/`sub_48E9C0`), transforms each overlapping light **once**
+      per frame (`sub_493CE0`, gated on flag bit 8), calls `sub_493E40` for
+      each, and only then `Render_SubmitMesh`.
+
+    So: **the set provides the lights and the crowd receives them.** The
+    hypothesis this repo recorded as unestablished when the table was first
+    measured is now traced end to end.
+
+    ### The lighting itself, which also traces a field
+
+    `sub_493E40(instance, mesh, light)` is per-vertex, and its arithmetic names
+    the record's fields:
+
+        d   = mesh.pos - light.transformedPos      (light +60)
+        if |d|^2 <= light[+240]                    (the OUTER radius SQUARED,
+                                                    cached at load)
+            k = light[+32] * 256
+            k *= 1 - (|d| - light[+28]) / (light[+24] - light[+28])
+                                                   (LINEAR falloff between the
+                                                    inner and outer radii)
+            per vertex:  t = -(N . L)              (L = light +124, the
+                                                    transformed direction,
+                                                    rotated into the mesh frame)
+            if t > 0:  vertex.rgb += ramp[light[+44,+45,+46]][t]   saturating
+
+    **`+32` is therefore the INTENSITY**, which closes one of the three floats
+    step 2 left with no consumer. `+36` and `+40` are still untouched by this
+    function and remain open.
+
+    The three colour BYTES index 256-entry ramps at `unk_660BA8` and the add
+    goes through a saturating table (`byte_6A2CE0`), which is how a
+    palette-era engine adds light without a multiply per channel.
+
+    This check asserts the shape of that code rather than any pixel: the set of
+    light-record offsets `sub_493E40` reads, and that `sub_4380B0`'s callers
+    are the street-life functions and nothing else. It reads the
+    decompilation, so it SKIPS where that is absent.
+
+    What it does NOT establish: nothing here is ported, and no frame is
+    compared. `todo/mesh-lights.md` step 4.
+    """
+    s = _need("decomp")
+    if s: return s
+    src = os.path.join(ROOT, "readable", "src")
+    body, callers = "", []
+    for fn in sorted(os.listdir(src)):
+        if not fn.endswith(".c"): continue
+        txt = open(os.path.join(src, fn), encoding="utf-8", errors="replace").read()
+        # sub_493E40's body, from its banner to the next one
+        m = re.search(r"/\* @func 0x00493E40.*?\*/(.*?)\n/\* @func ", txt, re.S)
+        if m: body = m.group(1)
+        # every CALL of sub_4380B0, with the function it sits in
+        for mm in re.finditer(r"sub_4380B0\(", txt):
+            if txt[max(0, mm.start() - 60):mm.start()].rstrip().endswith("__cdecl"): continue
+            head = txt[:mm.start()]
+            fm = None
+            for f2 in re.finditer(r"/\* @func (0x[0-9A-F]+) +(\w+)", head): fm = f2
+            if fm and fm.group(2) != "sub_4380B0": callers.append(fm.group(2))
+    offs = sorted({int(x) for x in re.findall(r"\(a3, (\d+)\)", body)})
+    return (offs, sorted(set(callers)), len(callers)), \
+           ([24, 28, 32, 44, 45, 46, 60, 64, 68, 124, 128, 132, 240],
+            ["sub_452CC0", "sub_453ED0", "sub_4541E0", "sub_4544B0",
+             "sub_454860", "sub_4548C0"], 8), \
+           "every light-record offset the per-vertex lighting sub_493E40 " \
+           "reads - the two radii and the intensity at +24/+28/+32, the three " \
+           "colour BYTES at +44/+45/+46, the transformed position at +60, the " \
+           "transformed direction at +124 and the cached outer radius SQUARED " \
+           "at +240 (and NOT +36 or +40, which stay unexplained); then that " \
+           "every caller of sub_4380B0 'LightInstance' is a street-life " \
+           "function - the walker and vehicle spawns, the walker tick, slider " \
+           "init and the ride mount - which is what says the crowd is what " \
+           "these lights are FOR"
+
+
 def c_slider_ride():
     r"""The player's RIDE, read rather than ported - the three facts that make
     it worth reading before anyone starts.
@@ -22526,6 +22625,7 @@ CHECKS = [
     ("engine fog",        c_engine_fog,        "todo/options-config"),
     ("mesh lights",       c_mesh_lights,       "todo/engine-spec-1999"),
     ("light record",      c_light_record,      "todo/mesh-lights"),
+    ("light consumers",   c_light_consumers,   "todo/mesh-lights"),
     ("camera aim = 768",   c_aim_length,        "FILE_FORMATS 2"),
     ("line-cam bundles",   c_bundles,           "ASSETS"),
     ("dialog 402 vs game", c_dialog402,         "ASSETS"),

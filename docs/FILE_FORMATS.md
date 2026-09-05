@@ -681,11 +681,49 @@ written the obvious way passes it and reports 4179 of 4179 — which is what the
 first C++ probe did, caught only because an independently written Python pass
 said 4178. `verify.py: light record` tests finiteness first.
 
-Still open: the three floats, and what CONSUMES a light. The sets are shaded by
-a colour **baked into every vertex**, so a static set needs none of this; the
-error string `Read3DO,Init, unable to add light for Lights Collisions` says the
-table feeds a spatial structure, which is how one would ask *which lights reach
-this point*. `todo/mesh-lights.md` step 3.
+### What the lights are FOR — the crowd
+
+A set is shaded by a colour **baked into every vertex**, so a static set needs
+no runtime light at all. The answer is the moving population of a street, and
+the chain is three functions:
+
+* `Read3DO_Init` registers every light of a loaded `.3DO` into a spatial
+  structure the binary names in its own failure path —
+  `Read3DO,Init, unable to add light for Lights Collisions`. **A decor set
+  supplies the lights.**
+* `sub_4380B0` — *LightInstance* by its two error strings, *"cant light
+  instance - collision buffer full"* and *"LightInstance, internal error,
+  instance is not in a scene"* — registers a drawn INSTANCE in the same
+  structure, its handle at instance `+40` and `-1` meaning unlit. Its **eight
+  call sites are six functions and every one is street-life**: `sub_4544B0`
+  and `sub_453ED0` (the vehicle and walker spawn callbacks), `sub_454860` (the
+  walker tick), `sub_4548C0` and `sub_4541E0` (both from `Slider_Init`) and
+  `sub_452CC0` (the player's ride mount).
+* `sub_48D7F0`, the per-instance draw walk, closes it: per mesh, if the handle
+  is not `-1` it opens a query (`sub_48E980`/`sub_48E9C0`), transforms each
+  overlapping light **once** a frame (`sub_493CE0`, gated on flag bit 8),
+  calls `sub_493E40` per light, and only then `Render_SubmitMesh`.
+
+**The set provides the lights and the crowd receives them.**
+
+`sub_493E40` is per-vertex, and its arithmetic names the record's fields:
+
+```
+d = mesh.pos − light.transformedPos                    (light +60)
+if |d|² <= light[+240]                    the OUTER radius SQUARED, cached
+    k  = light[+32] × 256
+    k *= 1 − (|d| − light[+28]) / (light[+24] − light[+28])   LINEAR falloff
+    per vertex:  t = −(N · L)             L = light +124, rotated into the mesh
+    if t > 0:  vertex.rgb += ramp[light[+44,+45,+46]][t]      saturating
+```
+
+So **`+32` is the intensity**, which closes one of the three unexplained
+floats; `+36` and `+40` are untouched here and stay open. The three colour
+bytes index 256-entry ramps at `unk_660BA8` and the add goes through a
+saturating table (`byte_6A2CE0`) — how a palette-era engine adds light without
+a multiply per channel. `verify.py: light consumers`.
+
+Not ported: `todo/mesh-lights.md` step 4.
 
 ### Which meshes are geometry
 
