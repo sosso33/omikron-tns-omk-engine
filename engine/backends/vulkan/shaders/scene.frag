@@ -9,21 +9,36 @@
 //     38.9% of set vertices are not grey, and reading one byte as a brightness
 //     renders every set in monochrome, which was this repo's own bug;
 //   * `cutout` is flag 0x800 - a COLOUR KEY on black, the engine's
-//     SetRenderState(27, 1) arm - and never alpha.
+//     SetRenderState(27, 1) arm - and never alpha;
+//   * the fog is linear over the clip distance's range, the CPU having
+//     already applied the bucket key's exclusions (`renderer.h`, the View).
 layout(push_constant) uniform Push {
-    mat4 mvp;
-    int  cutout;
-    int  pad0, pad1, pad2;
+    mat4  mvp;
+    int   cutout;      // flag 0x800: a colour key on black, never alpha
+    float fogStart;    // 0 = no fog for this batch; see renderer.h's View
+    float fogEnd;
+    vec3  fogColour;
 } pc;
 
 layout(set = 0, binding = 0) uniform sampler2D tex;
 
 layout(location = 0) in vec2 vUV;
 layout(location = 1) in vec3 vCol;
+layout(location = 2) in float vDepth;
 layout(location = 0) out vec4 outColour;
 
 void main() {
     vec3 t = texture(tex, vUV / vec2(textureSize(tex, 0))).rgb;
     if (pc.cutout != 0 && t.r == 0.0 && t.g == 0.0 && t.b == 0.0) discard;
-    outColour = vec4(clamp(t * vCol, 0.0, 1.0), 1.0);
+    vec3 c = clamp(t * vCol, 0.0, 1.0);
+    // THE FOG, and it is raster.cpp's line transcribed. Linear -
+    // `FOGTABLEMODE` 3 at density 1.0, the only mode the engine sets - over
+    // the range the clip distance sizes. The CPU side has already applied the
+    // bucket key's two exclusions and any doubling, so a zero end means this
+    // batch is not fogged.
+    if (pc.fogEnd > pc.fogStart && vDepth > pc.fogStart) {
+        float f = clamp((pc.fogEnd - vDepth) / (pc.fogEnd - pc.fogStart), 0.0, 1.0);
+        c = mix(pc.fogColour, c, f);
+    }
+    outColour = vec4(c, 1.0);
 }

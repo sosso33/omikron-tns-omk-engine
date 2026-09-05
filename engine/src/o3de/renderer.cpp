@@ -14,6 +14,7 @@
 // that this data has coincident faces whose tie-break is decided by exactly
 // that order.
 #include "o3de/renderer.h"
+#include <cstdio>
 
 #include <algorithm>
 #include <vector>
@@ -60,7 +61,22 @@ void SoftwareRenderer::submit(const Draw& d) {
     b.count = one.corners.size();
     one.batches.push_back(b);
 
-    const RasterStats s = drawGeometry(fb_, depth_, view_.cam, one, tex_);
+    // THE FOG's two exclusions are applied HERE, because this is where the
+    // bucket key is - `renderer.h`'s View documents them. Key bits 0x2080 (the
+    // near bucket and the transparent state) are not fogged at all, and key
+    // bit 0x800 (the cutout path, and the sky through mesh flag 0x10000)
+    // doubles both ends.
+    Fog fog;
+    if (view_.fog && !(d.bucketKey & 0x2080u)) {
+        const float k = (d.bucketKey & 0x800u) ? 2.0f : 1.0f;
+        fog.on = true;
+        fog.start = view_.fogStart * k;
+        fog.end   = view_.fogEnd * k;
+        fog.r = view_.fogColour[0];
+        fog.g = view_.fogColour[1];
+        fog.b = view_.fogColour[2];
+    }
+    const RasterStats s = drawGeometry(fb_, depth_, view_.cam, one, tex_, fog);
     st_.triangles += s.triangles;
     st_.drawn += s.drawn;
     st_.behind += s.behind;

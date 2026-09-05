@@ -1437,21 +1437,52 @@ the option wins. It can only ever reduce.
 **The fog is linear.** `20_ddraw.c` 1921-1936 sets `D3DRENDERSTATE_FOGENABLE`
 (28), `FOGTABLEMODE` (35) = **3 = `D3DFOG_LINEAR`**, `FOGDENSITY` (38) = 1.0,
 then `FOGSTART` and `FOGEND` from the two globals above. Its COLOUR is the
-scene's `+336`, three bytes packed and sent through `FOGCOLOR` (34). Two
-exclusions and one modifier, all keyed off the bucket key of the batch being
-drawn:
+scene's `+336`, three bytes packed and sent through `FOGCOLOR` (34).
+
+**And that colour is BLACK in the shipped game.** This is the part that had to
+be read rather than guessed. The scene object is `memset` to 0 at load
+(`Scene_Load3DO`, 0x1A8 bytes) and `sub_44E830` then writes `a1[84] = 0` —
+which *is* `+336` — explicitly. **No other writer of the scene's `+336` exists
+in the decompilation**: the three that a grep finds are two camera structs and
+a draw record, at the same offset in different types, which is exactly the
+collision CLAUDE.md §1 warns about. So the shipped fog **darkens** toward the
+horizon rather than hazing it — which is what a domed city at night wants, and
+what hides the hard edge the clip distance would otherwise leave.
+
+One mode replaces it. With `dword_93082C == 1` the scene takes colour
+`0x00405028` and a clip distance of `flt_4C2C34` = 590.551 units = exactly
+**15.0 m** (another round metre — see the unit box above). IDA labels the
+colour `off_` because the value looks like an address, but `0x405028` lands in
+`.rdata` on bytes that are no sensible target, so it is data: through
+`20_ddraw.c`'s own packing that is **R 40, G 80, B 64**, a murky green. The
+mode is entered when a camera carrying flag `0x800` passes a height threshold
+derived from the player, and it flags the player's own node. Consistent with
+going underwater; **not proven**, and recorded as a reading.
+
+Two exclusions and one modifier, all keyed off the bucket key of the batch
+being drawn:
 
 * fog is **off** for key bits `0x2080` — the near bucket (`0x80`, geometry
   closer than the fog start anyway) and the transparent state (`0x2000`);
 * it is off entirely when the device flag `dword_7CAD20` is clear;
 * for key bit `0x800` (the cutout path) both start and end are **doubled**.
 
-Ported so far: the clip distance itself, resolved from the config file and the
-save header (`engine/src/platform/settings.h`) and driving the viewer's
-visible-set walk. The fog is **not drawn** — `todo/options-config.md` step 4.
-Note what stays out of reach either way: `docs/PORTING.md` rules that no
-pixel's VALUE is checkable against the captures, so the fog's appearance can
-never rise above a decision-level claim however well its parameters are read.
+**Ported, both backends** (2026-09-05). The clip distance resolves from the
+config file and the save header (`engine/src/platform/settings.h`) and drives
+the visible-set walk; the fog is a field of the renderer boundary's `View`, and
+the two exclusions and the doubling are applied where the bucket key is — in
+`renderer.cpp` for the software loop and `vkrender.cpp` for Vulkan, by the same
+rule in both, since a backend that fogged differently would draw a different
+picture. On Anekbah's street start at a 25 m clip the fog moves **42.9%** of
+the Vulkan frame and **46.1%** of the software one, the gap being the two
+rasterizers' own coverage.
+
+`verify.py: engine fog` measures it on a white quad at ten known depths, so no
+set's geometry is in the answer. Note what stays out of reach: `docs/PORTING.md`
+rules that no pixel's VALUE is checkable against the captures, so the fog's
+appearance can never rise above a decision-level claim however well its
+parameters are read — the maths is asserted against itself, and the parameters
+against the code.
 
 ### What draws it
 

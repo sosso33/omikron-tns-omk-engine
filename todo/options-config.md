@@ -67,7 +67,7 @@ changed - clip distance 200 against 150, crowd density 4 against 3.
 | 2 | wire what the port already has - density, clipdistance | **DONE** 2026-09-05 |
 | 2b | read the settings out of a save header too, and let it win | **DONE**, with step 2 |
 | 3 | the sky: establish whether one exists in the data at all | **DONE** 2026-09-05 - and drawn |
-| 4 | fog - the READING is done (see step 2); what is left is DRAWING it | open |
+| 4 | fog | **DONE** 2026-09-05 - drawn, both backends |
 
 Step 3 is research and may end in "narrowed": `PORTING` records that fog has
 **no reachable evidence tier**, because the captures cannot validate pixel
@@ -86,6 +86,43 @@ from the scene's `+336` through `FOGCOLOR`, skipped for key bits `0x2080` and
 doubled for `0x800`. So step 4 is not research any more - it is a renderer
 change with a written spec, and only its APPEARANCE stays untestable.
 
+
+## Step 4, done - the list is finished
+
+The fog is drawn, in both backends, and the reading turned up the thing the
+step actually hinged on: **the fog colour is BLACK**.
+
+`Scene_Load3DO` memsets the scene object and `sub_44E830` then writes
+`a1[84] = 0` - which is `+336`, the fog colour - explicitly, and nothing else
+in the decompilation writes that field on a scene. (Three greps hit `+336`;
+all three are other structs at the same offset, the collision CLAUDE.md 1
+warns about.) So the shipped fog DARKENS toward the horizon rather than hazing
+it - which is what a domed city at night wants, and what hides the hard edge
+step 2's clip distance would otherwise leave. The two go together, and that is
+why they were one piece of plumbing.
+
+One mode colours it: `dword_93082C == 1` gives R 40, G 80, B 64 (a murky
+green) with a 15.0 m clip distance, entered when a camera with flag 0x800
+passes a player-derived height and flagging the player's own node. Consistent
+with underwater; recorded as a reading, not a finding.
+
+Implementation: the fog is a field of the renderer boundary's `View`, and the
+two bucket-key exclusions (0x2080 unfogged, 0x800 doubled) are applied where
+the key is - `renderer.cpp` and `vkrender.cpp`, the same rule in both. On
+Anekbah at a 25 m clip it moves 42.9% of the Vulkan frame and 46.1% of the
+software one. `--fog 0|1`, `--fog-colour r,g,b`.
+
+`verify.py: engine fog` measures a white quad at ten known depths through the
+boundary, so no set's geometry is in the answer; shown to fail three ways -
+the end read from the 0.95 split, the 0x800 doubling dropped, and the 0x2080
+exclusion forgotten.
+
+**A note on how long this took to find.** All four steps' screenshots were
+rendered through VULKAN without my noticing - the viewer picks it up by
+default on this machine - so the software fog measured 0 changed pixels for
+several rounds while being perfectly correct. The lesson is CLAUDE.md 5's,
+one level out: when a render does not change, check WHICH renderer ran before
+checking the code.
 
 ## Step 3, done - and the answer is yes
 

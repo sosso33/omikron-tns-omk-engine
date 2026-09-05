@@ -150,9 +150,22 @@ struct RasterStats {
 // draws its vertex colour alone.
 //
 // The z buffer is the caller's so a frame can be composed from several models.
+// THE FOG, resolved. `renderer.h`'s View carries the engine's parameters and
+// the two bucket-key exclusions; by the time it reaches here the caller has
+// applied them, so `on` already means "this batch is fogged" and `start`/`end`
+// are already doubled if the key asked for it. Colours are 0..255.
+//
+// Linear, which is `FOGTABLEMODE` 3 with density 1.0 - the only mode the
+// engine sets.
+struct Fog {
+    bool  on = false;
+    float start = 0.0f, end = 0.0f;
+    float r = 0.0f, g = 0.0f, b = 0.0f;
+};
+
 RasterStats drawGeometry(Surface& fb, std::vector<float>& depth,
                          const RCamera& cam, const Geometry& g,
-                         std::span<const Texture> textures);
+                         std::span<const Texture> textures, const Fog& fog = {});
 
 // Clear a depth buffer to "nothing here yet".
 void clearDepth(std::vector<float>& depth, int w, int h);

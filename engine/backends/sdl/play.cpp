@@ -1286,6 +1286,8 @@ int main(int argc, char** argv) {
 "  --clip <metres>  options row 3, the clip distance (25/50/100/150/200);\n"
 "                   a --save's own header supplies it otherwise\n"
 "  --sky 0|1        options row 4, Affichage du ciel\n"
+"  --fog 0|1        the linear fog (default on - the engine always fogs)\n"
+"  --fog-colour r,g,b   override the scene's +336, which ships as 0,0,0\n"
 "  --no-crowd       no pedestrians at all\n"
 "  --no-script-sprites  DEBUG: do not draw Script_Display3DSprite's sprites (a before/after)\n"
 "  --scx-play h,h   HARNESS: start scene objects by handle on the first adventure frame\n"
@@ -1404,6 +1406,11 @@ int main(int argc, char** argv) {
     bool densityFlag = false, clipFlag = false;
     int clipArg = 0;
     int skyFlag = -1;      // --sky 0|1, options row 4; -1 = take it from the settings
+    // The fog is not an option row - it is always on in the engine - so this
+    // is a diagnostic switch, not a setting. Default ON, because that is what
+    // the game does.
+    bool drawFog = true;
+    std::uint8_t fogRGB[3] = {0, 0, 0};   // the scene's +336, which ships as 0
     // --give: object ids for the carried list, comma-separated. A LIST
     // rather than one id because the flows worth driving need a bagful - row
     // scrolling wants more than the nine row widgets, and `Utiliser sur`
@@ -1512,6 +1519,15 @@ int main(int argc, char** argv) {
         else if (a == "--config" && i + 1 < argc) configFile = argv[++i];
         else if (a == "--clip" && i + 1 < argc) { clipArg = std::atoi(argv[++i]); clipFlag = true; }
         else if (a == "--sky" && i + 1 < argc) skyFlag = std::atoi(argv[++i]);
+        else if (a == "--fog" && i + 1 < argc) drawFog = std::atoi(argv[++i]) != 0;
+        else if (a == "--fog-colour" && i + 1 < argc) {
+            int rr = 0, gg = 0, bb = 0;
+            if (std::sscanf(argv[++i], "%d,%d,%d", &rr, &gg, &bb) == 3) {
+                fogRGB[0] = static_cast<std::uint8_t>(std::clamp(rr, 0, 255));
+                fogRGB[1] = static_cast<std::uint8_t>(std::clamp(gg, 0, 255));
+                fogRGB[2] = static_cast<std::uint8_t>(std::clamp(bb, 0, 255));
+            }
+        }
         else if (a == "--no-crowd") noCrowd = true;
         else if (a == "--no-script-sprites") noScriptSprites = true;
         // A HARNESS FLAG: start scene objects by their `scx.play` operand (the
@@ -5403,6 +5419,21 @@ int main(int argc, char** argv) {
             if (view.vh > dispH) view.vh = dispH;
             view.vx = 0;
             view.vy = (dispH - view.vh) / 2;
+            // THE FOG (todo/options-config.md step 4). Linear, over the range
+            // the clip distance sizes - `sub_440BE0` writes `+328 = D * 0.25`
+            // as the start and `+340 = D` as the end, so it ENDS at the clip
+            // distance and not at the 0.95 bucket split. The colour is the
+            // scene's `+336`, which `Scene_Load3DO`'s caller sets to ZERO and
+            // nothing else in the decompilation writes: the shipped fog
+            // DARKENS toward the horizon rather than hazing it, which is what
+            // a domed city at night wants - and it is what hides the hard edge
+            // at the clip distance. `--fog 0` turns it off, `--fog-colour
+            // r,g,b` overrides it (the one mode that colours it uses
+            // 40,80,64 with a 15 m clip - `docs/ASSETS.md`, "The fog").
+            view.fog      = drawFog;
+            view.fogStart = static_cast<float>(clipInches * 0.25);
+            view.fogEnd   = static_cast<float>(clipInches);
+            for (int k = 0; k < 3; ++k) view.fogColour[k] = fogRGB[k];
             if (!haveDlgCam && haveEdit) {
                 // MODE 13: the editing's camera, at the object's own clock -
                 // so the shot and the animation cannot drift apart, they are

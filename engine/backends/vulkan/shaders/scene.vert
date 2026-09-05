@@ -4,9 +4,11 @@
 // because the game's Y points DOWN; hfov is HORIZONTAL) so that this file
 // cannot disagree with the software rasterizer about them.
 layout(push_constant) uniform Push {
-    mat4 mvp;
-    int  cutout;      // flag 0x800: a colour key on black, never alpha
-    int  pad0, pad1, pad2;
+    mat4  mvp;
+    int   cutout;      // flag 0x800: a colour key on black, never alpha
+    float fogStart;    // 0 = no fog for this batch; see renderer.h's View
+    float fogEnd;
+    vec3  fogColour;
 } pc;
 
 layout(location = 0) in vec3 inPos;    // world position
@@ -15,9 +17,14 @@ layout(location = 2) in vec3 inCol;    // the baked light - a COLOUR, not a brig
 
 layout(location = 0) out vec2 vUV;
 layout(location = 1) out vec3 vCol;
+// The VIEW-SPACE depth, in world units, for the fog. Row 3 of `mvp` is
+// `f . (world - eye)` - the forward axis dotted with the offset from the eye -
+// so `gl_Position.w` is exactly the `z` raster.cpp's inner loop fogs on.
+layout(location = 2) out float vDepth;
 
 void main() {
     vUV  = inUV;
     vCol = inCol;
     gl_Position = pc.mvp * vec4(inPos, 1.0);
+    vDepth = gl_Position.w;
 }

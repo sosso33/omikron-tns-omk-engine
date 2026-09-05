@@ -179,7 +179,7 @@ ClipVert lerp(const ClipVert& a, const ClipVert& b, float f) {
 
 RasterStats drawGeometry(Surface& fb, std::vector<float>& depth,
                          const RCamera& cam, const Geometry& g,
-                         std::span<const Texture> textures) {
+                         std::span<const Texture> textures, const Fog& fog) {
     RasterStats st;
     if (depth.size() != static_cast<std::size_t>(fb.w) * fb.h)
         clearDepth(depth, fb.w, fb.h);
@@ -321,6 +321,23 @@ RasterStats drawGeometry(Surface& fb, std::vector<float>& depth,
                     r = std::clamp(r, 0, 255);
                     gg = std::clamp(gg, 0, 255);
                     b = std::clamp(b, 0, 255);
+
+                    // THE FOG. Linear, `FOGTABLEMODE` 3, over the range the
+                    // clip distance sizes - applied to the shaded, textured
+                    // colour before the blend, which is where a table fog sits
+                    // in the pipeline. `f` is the fraction of the SOURCE kept:
+                    // 1 at the start distance, 0 at the end.
+                    //
+                    // The two exclusions are the engine's, not a choice:
+                    // `0x2080` (the near bucket and the transparent state) is
+                    // skipped, and `0x800` doubles both ends.
+                    if (fog.on && fog.end > fog.start && z > fog.start) {
+                        float f = (fog.end - z) / (fog.end - fog.start);
+                        f = f < 0.0f ? 0.0f : (f > 1.0f ? 1.0f : f);
+                        r  = static_cast<int>(static_cast<float>(r)  * f + fog.r * (1.0f - f));
+                        gg = static_cast<int>(static_cast<float>(gg) * f + fog.g * (1.0f - f));
+                        b  = static_cast<int>(static_cast<float>(b)  * f + fog.b * (1.0f - f));
+                    }
 
                     const std::uint16_t dst = fb.at(x, y);
                     std::uint16_t out;

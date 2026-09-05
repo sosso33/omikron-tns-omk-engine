@@ -7981,6 +7981,94 @@ def c_mesh_lights():
            "baked per-vertex colour and therefore need none of it"
 
 
+def c_engine_fog():
+    r"""The FOG, measured at known depths through the renderer boundary.
+
+    Step 4 of `todo/options-config.md`. `20_ddraw.c` 1921-1936 sets
+    `FOGENABLE`, `FOGTABLEMODE` = **3 = D3DFOG_LINEAR**, `FOGDENSITY` = 1.0,
+    then `FOGSTART` and `FOGEND` from the scene's `+328` and `+340` - which
+    `sub_440BE0(scene, D, 1)` writes as `D * 0.25` and `D`, `D` being the
+    options-menu clip distance in world units. `FOGCOLOR` is the scene's
+    `+336`.
+
+    **That colour is BLACK in the shipped game**, which is the part that needed
+    reading rather than guessing. The scene object is `memset` to 0 at load and
+    `sub_44E830` then writes `a1[84] = 0` - which IS `+336` - explicitly, and
+    **no other writer of the scene's `+336` exists in the decompilation** (the
+    three that grep finds are two camera structs and a draw record, at the same
+    offset in different types - the collision CLAUDE.md 1 warns about). So the
+    shipped fog DARKENS toward the horizon rather than hazing it, which is what
+    a domed city at night wants, and is what hides the hard edge the clip
+    distance would otherwise leave.
+
+    One mode replaces it: with `dword_93082C == 1` the scene takes colour
+    `0x00405028` - which IDA labels `off_` because the value looks like an
+    address, but 0x405028 lands in `.rdata` on bytes that are not a sensible
+    target, so it is a colour: **R 40, G 80, B 64**, a murky green - and a clip
+    distance of `flt_4C2C34` = 590.551 units = exactly **15.0 m** (another
+    round metre, `verify.py: world unit`). It is entered when a camera carrying
+    flag `0x800` passes a height threshold derived from the player and it flags
+    the player's own node. Consistent with going underwater; **not proven**,
+    and recorded as a reading rather than a finding.
+
+    `fog_probe` draws a white quad face-on at known depths through
+    `SoftwareRenderer` - so nothing of any set's geometry is in the answer -
+    with the range 100..500 and a black fog, and reads the centre pixel:
+
+    | case | key | depth | expected | got |
+    |---|---|---|---|---|
+    | before the start | 0 | 50 | untouched | 255 |
+    | at the start | 0 | 100 | untouched | 255 |
+    | quarter in | 0 | 200 | 0.75 -> 191 | 189 |
+    | half in | 0 | 300 | 0.50 -> 127 | 123 |
+    | at the end | 0 | 500 | 0 | 0 |
+    | past the end | 0 | 800 | 0 | 0 |
+    | the near bucket | 0x80 | 300 | NOT fogged | 255 |
+    | the transparent state | 0x2000 | 300 | NOT fogged | 255 |
+    | the cutout, doubled | 0x800 | 300 | 200..1000, 0.875 -> 223 | 222 |
+    | the cutout, deep | 0x800 | 900 | 0.125 -> 32 | 32 |
+
+    The small shortfalls are RGB565: the framebuffer has 5 bits of red and
+    blue, so 191 quantises to 189 and 127 to 123. The values asserted are the
+    measured ones, because the software loop is deterministic.
+
+    The two exclusions and the doubling are applied where the BUCKET KEY is -
+    `renderer.cpp` for the software loop and `vkrender.cpp` for Vulkan, by the
+    same rule in both, since a backend that fogged differently would draw a
+    different picture. The fragment shader is the same lerp; on Anekbah's
+    street start at a 25 m clip the fog moves **42.9%** of the Vulkan frame and
+    **46.1%** of the software one, the difference being the two rasterizers'
+    own coverage, which `PORTING` B5 already rules out of any pixel claim.
+
+    **What this does NOT establish**: no captured frame validates a fogged
+    pixel's VALUE, and `PORTING` says none can. The tier here is the same as
+    the blend modes' - the parameters are read out of the code and the maths is
+    asserted against itself.
+    """
+    probe = os.path.join(ROOT, "engine", "build", "fog_probe")
+    if not os.path.exists(probe): return "fog_probe not built", "the fog", ""
+    out = subprocess.run([probe], capture_output=True, text=True).stdout
+    got = {}
+    for ln in out.splitlines():
+        f = ln.split()
+        if len(f) == 6: got[f[0]] = (int(f[3]), int(f[4]), int(f[5]))
+    order = ["before", "start", "quarter", "half", "end", "past",
+             "near80", "trans", "cut800", "cut800f"]
+    grey = [got.get(k, (-1, -1, -1))[0] for k in order]
+    # the ramp must DESCEND over the range and be flat outside it
+    descends = all(grey[i] >= grey[i + 1] for i in range(1, 5))
+    return (tuple(grey), descends,
+            got.get("near80"), got.get("trans")), \
+           ((255, 255, 189, 123, 0, 0, 255, 255, 222, 32), True,
+            (255, 255, 255), (255, 255, 255)), \
+           "a white quad at ten known depths through SoftwareRenderer, its " \
+           "centre pixel read back: the LINEAR ramp from fogStart to fogEnd " \
+           "(untouched before the start, 0 at the end and past it, and " \
+           "monotone between); that key bits 0x80 and 0x2000 are NOT fogged " \
+           "at all; and that key bit 0x800 DOUBLES both ends, so the same " \
+           "depth is less fogged and a depth past the undoubled end still is"
+
+
 def c_slider_ride():
     r"""The player's RIDE, read rather than ported - the three facts that make
     it worth reading before anyone starts.
@@ -21099,7 +21187,7 @@ def c_licence_headers():
                    if TAG in open(p, encoding="utf-8",
                                   errors="replace").read(600)]
     return (authored, sorted(missing), len(vendored), mislabelled), \
-           (349, [], 1, []), \
+           (350, [], 1, []), \
            "authored source files under tools/, engine/src, engine/tools, " \
            "engine/backends and scripts/; those MISSING the SPDX tag; " \
            "vendored files in engine/third_party; and vendored files wrongly " \
@@ -22329,6 +22417,7 @@ CHECKS = [
     ("settings resolve",  c_settings_resolve,  "todo/options-config"),
     ("world unit",        c_world_unit,        "PORTING"),
     ("the sky",           c_the_sky,           "todo/options-config"),
+    ("engine fog",        c_engine_fog,        "todo/options-config"),
     ("mesh lights",       c_mesh_lights,       "todo/engine-spec-1999"),
     ("camera aim = 768",   c_aim_length,        "FILE_FORMATS 2"),
     ("line-cam bundles",   c_bundles,           "ASSETS"),

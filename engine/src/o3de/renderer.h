@@ -91,6 +91,36 @@ struct View {
     // window-sized, which its swapchain present needs.
     int vx = 0, vy = 0, vw = 0, vh = 0;
     bool letterboxed() const { return vw > 0 && vh > 0; }
+
+    // THE FOG, and it is a ported decision like everything else here.
+    //
+    // `20_ddraw.c` 1921-1936 sets `D3DRENDERSTATE_FOGENABLE`, `FOGTABLEMODE`
+    // = **3 = D3DFOG_LINEAR**, `FOGDENSITY` = 1.0, then `FOGSTART` and
+    // `FOGEND` from the scene's `+328` and `+340` - which are the options
+    // menu's clip distance times 0.25 and times 1 (`platform/settings.h`).
+    // `FOGCOLOR` comes from the scene's `+336`.
+    //
+    // **That colour is BLACK in normal play**, and this is the part that took
+    // reading rather than guessing: the scene object is `memset` to 0 at load
+    // and `sub_44E830` then writes `a1[84] = 0` - which IS `+336` - explicitly.
+    // No other writer of the scene's `+336` exists in the decompilation. So
+    // the shipped fog darkens toward the horizon rather than hazing it, which
+    // is what a domed city at night wants and what the captures show.
+    //
+    // One mode replaces it: with `dword_93082C == 1` the scene takes colour
+    // 0x00405028 and a clip distance of `flt_4C2C34` = 590.551 units = exactly
+    // **15.0 m**. See `docs/ASSETS.md`, "The fog".
+    //
+    // Two exclusions, both keyed off the bucket key of the batch being drawn,
+    // and a backend must honour them or it draws a different picture:
+    //   * key bits `0x2080` - the near bucket and the transparent state - get
+    //     NO fog;
+    //   * key bit `0x800` - the cutout path, and the sky, which carries it
+    //     through mesh flag 0x10000 - gets both start and end DOUBLED.
+    bool  fog      = false;
+    float fogStart = 0.0f;
+    float fogEnd   = 0.0f;
+    std::uint8_t fogColour[3] = {0, 0, 0};   // r, g, b
 };
 
 // One submission. This is the whole vocabulary a backend gets, and every field

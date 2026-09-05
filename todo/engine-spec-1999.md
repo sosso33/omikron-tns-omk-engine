@@ -2,9 +2,10 @@
 
 A reader supplied the technical bullet list from the game's official site, via
 an Internet Archive copy of the 1999 original. It is **external evidence**: not
-derivable from this tree, and marketing copy rather than a technical report
-("Moteur 3D gérant décors intérieurs et extérieurs" — thank you for
-specifying). But it is the developers describing their own engine, and several
+derivable from this tree, and written to sell rather than to specify — several
+lines state the obvious ("Moteur 3D gérant décors intérieurs et extérieurs"),
+which in 1999 was worth saying. Stating the obvious is not the same as being
+wrong, and none of these lines turned out to be false. But it is the developers describing their own engine, and several
 lines land on things this repo has read, has half-read, or has never looked at.
 
 Audited against what the repo can actually show. The column that matters is the
@@ -20,13 +21,13 @@ last one.
 | *Z-mapping (mapping exact)* | `D3D_SetRenderState(dev, 4, 1)` — state 4 is `D3DRENDERSTATE_TEXTUREPERSPECTIVE`. "Mapping exact" is perspective-correct texturing | **confirmed**, and the marketing phrase decodes |
 | *Personnages en faces déformables* | the `.3DM` face morph, 777/777 files | **confirmed** |
 | *Système de tri de face par Arbre BSP* | **nothing in this repo evidences a BSP.** The shipped face sort is the 14-bit bucket key; the `.3DO` header's nine offsets include no tree, and the meshes' parent/child/next is a scene hierarchy, not a BSP | **not corroborated** — see below |
-| *Algorithme de collisions de grande précision* | the walker and the collision soups | marketing |
+| *Algorithme de collisions de grande précision* | the walker and the collision soups | true, not specific |
 | *Animations par rotation et par Morph en Motion Blending* | quaternion tracks (`.ani`/`.CTL`) **and** the `.3DM` morph, with the two-sided fade `min(30, frames/4)` at a k/256 slerp — which is the "motion blending" | **confirmed**, and it names the blend |
 | *Multilights* | the `.3DO` header carries a light table at `+40` with a count at `desc+232`. The port reads the OFFSET AND THE COUNT and **nothing reads the records** | **REAL AND UNREAD** — see below |
 | *Transparence/Opacité* | two blend modes, additive (211 meshes) and multiply (6), plus the cutout path | **confirmed** |
 | *Flat/Gouraud Fog* | linear fog, `FOGTABLEMODE` 3, density 1.0, range from the clip distance (ASSETS) | **confirmed**, and it is step 4 |
 | *Chargement dynamique des données* | `Area_TickLoad`'s nine staged cases | **confirmed** |
-| *Animations en Motion Capture* | consistent with the clip data; nothing in the files says "mocap" either way | consistent |
+| *Animations en Motion Capture* | consistent with the clip data; nothing in the files says "mocap" either way | true, not checkable here |
 | *Motion Capture sur des visages temps réel, entrelacé avec les voix* | the `.3DM` frame record is face vertices, then nodes, then a `float[3]`, **then the audio** — literally interleaved with the voice, one record per frame | **confirmed, and it explains the format's shape** |
 
 ## The two leads worth chasing

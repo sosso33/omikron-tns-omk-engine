@@ -98,7 +98,12 @@ struct GpuVert {
 struct Push {
     float mvp[16];
     int32_t cutout;
-    int32_t pad[3];
+    // The fog, resolved the same way `renderer.cpp` resolves it for the
+    // software loop: the View's parameters with the bucket key's two
+    // exclusions already applied, so `fogEnd == 0` means "not fogged".
+    float fogStart;
+    float fogEnd;
+    float fogColour[3];
 };
 
 class VulkanRenderer : public omk::Renderer {
@@ -177,6 +182,10 @@ private:
     std::map<const omk::Geometry*, std::uint64_t> vboRev_;
 
     Push             push_{};
+    // the fog, held between begin() and each submit()
+    bool             fog_ = false;
+    float            fogStart_ = 0.0f, fogEnd_ = 0.0f;
+    float            fogColour_[3] = {0.0f, 0.0f, 0.0f};
     omk::RasterStats st_;
     omk::Surface     fb_{1, 1, 0};
     bool             recording_ = false;
@@ -1125,6 +1134,11 @@ void VulkanRenderer::pushView(const omk::View& view) {
 
 void VulkanRenderer::begin(const omk::View& view) {
     st_ = omk::RasterStats{};
+    fog_ = view.fog;
+    fogStart_ = view.fogStart;
+    fogEnd_ = view.fogEnd;
+    for (int i = 0; i < 3; ++i)
+        fogColour_[i] = static_cast<float>(view.fogColour[i]) / 255.0f;
     pushView(view);
 
     VkCommandBufferBeginInfo bi{VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
@@ -1167,6 +1181,20 @@ void VulkanRenderer::submit(const omk::Draw& d) {
     vkCmdBindDescriptorSets(cb_, VK_PIPELINE_BIND_POINT_GRAPHICS, plo_, 0, 1, &ds, 0, nullptr);
 
     push_.cutout = d.cutout ? 1 : 0;
+    // THE FOG's two exclusions, applied here because this is where the bucket
+    // key is - the same rule `renderer.cpp` applies for the software loop, and
+    // it MUST be the same rule or the two backends draw different pictures.
+    // Key bits 0x2080 (the near bucket, the transparent state) are not fogged;
+    // key bit 0x800 (the cutout path, and the sky through mesh flag 0x10000)
+    // doubles both ends.
+    push_.fogStart = 0.0f;
+    push_.fogEnd = 0.0f;
+    if (fog_ && !(d.bucketKey & 0x2080u)) {
+        const float k = (d.bucketKey & 0x800u) ? 2.0f : 1.0f;
+        push_.fogStart = fogStart_ * k;
+        push_.fogEnd   = fogEnd_ * k;
+        for (int i = 0; i < 3; ++i) push_.fogColour[i] = fogColour_[i];
+    }
     vkCmdPushConstants(cb_, plo_, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
                        0, sizeof(Push), &push_);
 
