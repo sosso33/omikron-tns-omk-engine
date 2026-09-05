@@ -81,6 +81,8 @@ that only for a file you are about to actually open.
 | todo/iam-script-engine-plan.md | ~2k | who owned which files in batches 1 and 2; the T18 proposal |
 | todo/actor-runtime.md | ~1k | the .CTL channel's closed issues and notes |
 | todo/street-life.md | ~2k | the street-life work: six steps, each ending in a commit and a report |
+| todo/options-config.md | ~6k | the graphical options: the config file, the save header, the clip distance, the sky, the fog. Four steps, three done |
+| todo/engine-spec-1999.md | ~2k | the official 1999 engine spec sheet, audited line by line against what this repo can show. EXTERNAL evidence; two open leads (the .3DO light table, the claimed BSP) |
 | todo/pending/*.md (E1, E2, T1..T17) | ~2–8k each | a specific past task's deliverable; each starts with an "Integrated" line — read only the one you need |
 | transcript/*.md | large | how a finding was reached, wrong turns included; never for facts (the docs have them) |
 

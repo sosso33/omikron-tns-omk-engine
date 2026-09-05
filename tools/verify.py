@@ -7930,6 +7930,57 @@ def c_the_sky():
            "and that every texture is called `ciel`, the file naming itself"
 
 
+def c_mesh_lights():
+    r""""Multilights" is real, and 6244 light records have never been read.
+
+    A reader supplied the 1999 official spec sheet (`todo/engine-spec-1999.md`),
+    which lists **Multilights** among the engine's features. That line lands on
+    a field this repo has parsed and then ignored for the whole project:
+    `Mesh3doHeader` carries `lightOff` at `+40` and a count at `desc+232`, and
+    `readHeader` fills both while nothing anywhere reads the RECORDS.
+
+    Over the shipped `MESHES` tree there are
+
+        635 models, 375 of them carrying lights, 6244 lights in total,
+        the most being 470 in Qalisar.3DO
+
+    which is far too much data to be vestigial, and settles that the marketing
+    line describes something actually shipped.
+
+    **The question it opens is the interesting part.** The sets are shaded by a
+    colour BAKED INTO EVERY VERTEX (`docs/ASSETS.md` 4c) — the baked dword is
+    copied straight into the D3DTLVERTEX — so a static set needs no runtime
+    light at all. The obvious candidate for what 6244 of them are for is the
+    thing that CANNOT carry baked light, namely the characters walking through
+    those sets. Nothing here establishes that, and the records are undecoded;
+    this check exists so the counts are pinned while the question is open, and
+    so that a decode later has a corpus number to reproduce.
+
+    Note what this check does NOT claim: nothing about what a light record
+    contains, nothing about how the engine consumes it, and nothing about
+    whether characters are lit at all. It asserts that the table is there and
+    how big it is.
+    """
+    probe = os.path.join(ROOT, "engine", "build", "mesh_lights")
+    if not os.path.exists(probe): return "mesh_lights not built", "the light table", ""
+    root = omkpaths.data("MESHES")
+    if not os.path.isdir(root): return "no MESHES tree", "the light table", ""
+    models = []
+    for dirpath, _, names in os.walk(root):
+        for n in names:
+            if n.lower().endswith(".3do"): models.append(os.path.join(dirpath, n))
+    if not models: return "no .3DO found", "the light table", ""
+    out = subprocess.run([probe, *sorted(models)], capture_output=True, text=True).stdout.split()
+    if len(out) < 5: return tuple(out), (635, 375, 6244, 470, "Qalisar.3DO"), ""
+    return (int(out[0]), int(out[1]), int(out[2]), int(out[3]), out[4]), \
+           (635, 375, 6244, 470, "Qalisar.3DO"), \
+           "the .3DO light table the 1999 spec sheet's Multilights line names - " \
+           "models, how many carry lights, the total number of light records " \
+           "and the largest single table. The RECORDS are undecoded; this " \
+           "pins the size of what is there, because the sets are lit by a " \
+           "baked per-vertex colour and therefore need none of it"
+
+
 def c_slider_ride():
     r"""The player's RIDE, read rather than ported - the three facts that make
     it worth reading before anyone starts.
@@ -21048,7 +21099,7 @@ def c_licence_headers():
                    if TAG in open(p, encoding="utf-8",
                                   errors="replace").read(600)]
     return (authored, sorted(missing), len(vendored), mislabelled), \
-           (348, [], 1, []), \
+           (349, [], 1, []), \
            "authored source files under tools/, engine/src, engine/tools, " \
            "engine/backends and scripts/; those MISSING the SPDX tag; " \
            "vendored files in engine/third_party; and vendored files wrongly " \
@@ -22278,6 +22329,7 @@ CHECKS = [
     ("settings resolve",  c_settings_resolve,  "todo/options-config"),
     ("world unit",        c_world_unit,        "PORTING"),
     ("the sky",           c_the_sky,           "todo/options-config"),
+    ("mesh lights",       c_mesh_lights,       "todo/engine-spec-1999"),
     ("camera aim = 768",   c_aim_length,        "FILE_FORMATS 2"),
     ("line-cam bundles",   c_bundles,           "ASSETS"),
     ("dialog 402 vs game", c_dialog402,         "ASSETS"),
