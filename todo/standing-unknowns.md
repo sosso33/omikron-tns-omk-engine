@@ -8,8 +8,8 @@ does not block the rest.
 |---|---|---|
 | 1 | the camera pass's three unmodelled details | **DONE** 2026-09-05 |
 | 2 | the shoot AI's brains are not called | **DONE (as a decision)** 2026-09-05 |
-| 3 | `.3DM`'s `float[3]`, and node slots 0 and 1 | **open** |
-| 4 | the Anekbah panel FLICKER | open |
+| 3 | `.3DM`'s `float[3]`, and node slots 0 and 1 | **NARROWED** 2026-09-05 |
+| 4 | the Anekbah panel FLICKER | **open** |
 | 5 | the player's RIDE | open |
 
 The reader cannot watch the screen, so anything that needs an eye is settled
@@ -93,6 +93,26 @@ narrowed: uploaded with preamble ids 0/1, bound by no drawn mesh, not
 rotations, and NOT the voice envelope (|r| < 0.2 against per-frame RMS in four
 files). Slot 0 stays in [0,1]^4 and varies smoothly; slot 1 is a signed
 low-magnitude 4-vector with one dominant component.
+
+**NARROWED, not solved - and two recorded numbers were wrong.** Measured over
+all **777 files, 5327 frame samples** (`verify.py: morph unknowns`):
+
+* the trailing `float[3]` is **unit to 0.001 in 5327 of 5327**. That refutes
+  the translation reading from the DATA rather than from the drift it
+  predicts: a per-frame displacement is not exactly unit length every frame of
+  every file. It is a **direction**, and the parser integrates a direction -
+  which is precisely why applying its output as displacement walks every
+  character off the map. What it points at is still open; it is **not** any
+  node's -Z forward (best mean |dot| 0.66 over the nodes of two files).
+* **the two node slots were recorded backwards.** FILE_FORMATS had node 0 unit
+  in 15 of 80 and node 1 in 2, from one seeded sample. Over the corpus it is
+  the reverse and much sharper: **slot 0 is NEVER unit (0/5327) and slot 1 is
+  unit in 71% (3790/5327)**. Slot 1 is a quaternion most of the time; slot 0
+  is not one at all, and its third and fourth components sit near 1.30 and
+  -1.29 with the first two swinging a unit either side - parameters rather
+  than a vector.
+
+Still open: what the direction is for, and what slot 0 holds.
 
 ## 4. The Anekbah panel FLICKER
 

@@ -7513,6 +7513,76 @@ def c_engine_tunnel_door_walk():
          "6 and feet on AREA 0; door 4 the same; the door mesh moved; the "
          "tunnel is hidden; he ends past the door with no NO FLOOR")
 
+def c_morph_unknown_fields():
+    r"""`.3DM`'s three unread fields, measured over the whole corpus - which
+    settles what the trailing `float[3]` CANNOT be, and corrects two numbers
+    the docs carried from an unrepresentative sample.
+
+    Each frame record ends with a `float[3]`, and node slots 0 and 1 (16 bytes
+    each, where slots 2.. are the drawn meshes' quaternions) hold something
+    that is not a rotation. All three have been open since the format was
+    read. Over **777 files and 5327 frame samples**:
+
+        the trailing float[3] is unit to 0.001   5327 / 5327   (100%)
+        node slot 1 is a unit 4-vector to 0.01   3790 / 5327   (71%)
+        node slot 0 is a unit 4-vector           0    / 5327   (0%)
+
+    **The first of those refutes the translation reading from the DATA.** The
+    streaming parser integrates that `float[3]` into an accumulator at `+212`,
+    which is why it was once written down as per-frame root-motion deltas; the
+    corpus refuted that through the drift it predicts (`FILE_FORMATS`, "the
+    deltas reading predicts universal drift"). This is the direct form: a
+    per-frame displacement is not exactly unit length 5327 times out of 5327.
+    It is a DIRECTION, and the parser integrates a direction - which is why
+    applying its output as displacement walks every character off the map.
+    What the direction MEANS is still not established, and one obvious
+    candidate is ruled out here: it is not any node's -Z forward (best mean
+    |dot| 0.66 over the nodes of two files).
+
+    **And the two node slots were recorded the wrong way round.** FILE_FORMATS
+    said "node 0 is unit in 15 [of 80] and node 1 in 2, with components
+    reaching 35". Over the corpus it is the reverse and much sharper: slot 0
+    is NEVER unit and slot 1 is unit in 71% of samples - so slot 1 is a
+    quaternion most of the time and slot 0 is not one at all. Slot 0's third
+    and fourth components sit near 1.30 and -1.29 with the first two swinging
+    a full unit either side, which is the shape of parameters rather than of a
+    vector.
+
+    Kept as a NARROWING, not a solution: what the direction is for, and what
+    slot 0 holds, remain open.
+    """
+    import math, statistics
+    d = omkpaths.data("MORPH")
+    files = [f for f in sorted(os.listdir(d)) if f.lower().endswith(".3dm")]
+    nf = n = f3u = s1u = s0u = 0
+    for f in files:
+        b = open(os.path.join(d, f), "rb").read()
+        if len(b) < 20: continue
+        aud, verts, nom, nodes = struct.unpack_from("<4I", b, 0)
+        audio = aud & 0xFFFFFF
+        pre = 16 + 4 * nodes
+        rec = 24 * verts + 16 * nodes + 12 + audio
+        if rec <= 0 or nodes < 2 or len(b) <= pre: continue
+        frames = (len(b) - pre) // rec
+        if frames < 3: continue
+        nf += 1
+        for k in range(0, frames, max(1, frames // 6)):
+            o = pre + rec * k
+            if o + rec > len(b): break
+            s0 = struct.unpack_from("<4f", b, o + 24 * verts)
+            s1 = struct.unpack_from("<4f", b, o + 24 * verts + 16)
+            f3 = struct.unpack_from("<3f", b, o + 24 * verts + 16 * nodes)
+            n += 1
+            if abs(math.sqrt(sum(v * v for v in f3)) - 1.0) <= 0.001: f3u += 1
+            if abs(math.sqrt(sum(v * v for v in s1)) - 1.0) <= 0.01: s1u += 1
+            if abs(math.sqrt(sum(v * v for v in s0)) - 1.0) <= 0.01: s0u += 1
+    return (nf, n, f3u, s1u, s0u), (777, 5327, 5327, 3790, 0), \
+        ("`.3DM` files and frame samples; then how many have a UNIT trailing "
+         "float[3] - all of them, which is why it cannot be a per-frame "
+         "displacement - a unit node slot 1, and a unit node slot 0, which is "
+         "none")
+
+
 def c_unlaunched_conversations():
     r"""The 105 conversations no script launches look like CUT CONTENT, and
     that is a discriminator rather than a restatement.
@@ -21759,6 +21829,7 @@ SLOW = [
     ("engine: scene facing", c_engine_scene_facing, "todo/omk-play"),
     ("played actors", c_played_actor_inventory, "todo/reader-followups"),
     ("unlaunched dialogs", c_unlaunched_conversations, "CLAUDE.md 6"),
+    ("morph unknowns", c_morph_unknown_fields, "FILE_FORMATS 5"),
     ("engine: shoot pose", c_engine_shoot_pose, "todo/reader-followups"),
     ("engine: camera collision", c_engine_camera_collision, "todo/reader-followups"),
     ("engine: tunnel door walk", c_engine_tunnel_door_walk, "todo/collision-scenes-transitions"),

@@ -415,9 +415,18 @@ They are stored **w first**. Posing a model with w last gives a mean vertex
 error of 9.1 against the rest pose; w first gives 1.6, the residual being the
 genuine difference between the rest T-pose and the animation's standing pose.
 
-The 44-byte header is 11 floats — a `float[3]` of length ≈ 0.985 that varies
-smoothly, then two 4-float groups that are never unit length. Its role is not
-established.
+The 44-byte header is 11 floats — a `float[3]`, then two 4-float groups. Its
+role is not established, but the lengths are, over the whole corpus
+(**777 files, 5327 frame samples**, `verify.py: morph unknowns`):
+
+| | unit length | |
+|---|---|---|
+| the trailing `float[3]` | **5327 / 5327** | to 0.001 |
+| node slot 1 | 3790 / 5327 (71%) | to 0.01 |
+| node slot 0 | **0 / 5327** | never |
+
+so the `float[3]` is a unit **direction**, slot 1 is a quaternion most of the
+time, and slot 0 is not one at all.
 
 **verified.** Frame counts derived this way account for all **777** PC files
 exactly — 582 end on a record boundary, and in the other 195 the last frame is
@@ -433,8 +442,13 @@ Dreamcast `.DDM`: **707 of 707 frame counts agree**, across all six
 **verified.** For the record body, sampled across the shipped set: every one of
 1368 sampled vertex normals is a unit vector, and 1263 of 1368 node entries
 have sum-of-squares 1, i.e. are unit quaternions. The exceptions are only ever
-nodes 0 and 1 (in a wider seeded sample of 80 frames, node 0 is unit in 15 and
-node 1 in 2, with components reaching 35) — those two slots are not rotations.
+nodes 0 and 1 — but **which of the two, and how often, was recorded backwards**
+from that 80-frame sample (it said node 0 unit in 15 and node 1 in 2).
+Corrected 2026-09-05 over all 777 files: **slot 0 is never unit (0 of 5327)
+and slot 1 is unit in 71% (3790 of 5327)**. So slot 1 is a rotation most of
+the time and slot 0 is not one at all; slot 0's third and fourth components
+sit near 1.30 and −1.29 with the first two swinging a full unit either side,
+which is the shape of parameters rather than of a vector.
 
 **The leading `float[3]`: mechanism read, meaning NOT established.** What the
 code demonstrably does: the streaming parser (0x0042CC40, the `timeSetEvent`
@@ -445,8 +459,15 @@ back both to the accumulator and to the served frame array). The apply pass
 rotates the stored value by the actor's facing, subtracts the first frame's,
 and moves the morph's scene node.
 
-**But that cannot be the playable semantics.** 57 of 60 sampled files carry a
-**near-constant, near-unit vector** whose total deviation across the whole
+**But that cannot be the playable semantics, and the corpus now says so
+directly.** The vector is **unit to 0.001 in 5327 of 5327 frame samples across
+all 777 files** — and a per-frame *displacement* is not exactly unit length
+every frame of every file. So the field is a DIRECTION and the parser
+integrates a direction, which is exactly why applying its output as
+displacement walks every character off the map. One obvious candidate for what
+the direction points at is ruled out: it is not any node's −Z forward (best
+mean |dot| 0.66 over the nodes of two files). Also, 57 of 60 sampled files
+carry a **near-constant** vector whose total deviation across the whole
 file is under one unit — integrated, that walks *every* character ≈ 30 units a
 second, which is not what the game does, and applying exactly that recipe in
 the viewer made every speaker drift (it was reverted). Something in the engine
