@@ -7449,14 +7449,27 @@ def c_engine_tunnel_door_walk():
 
     * the zone he stands in carries the doors (`doors 3/4`: `T01door01Open`
       then `T01door01Closed`, `Tunnel01.SCX` objects 0 and 1);
-    * door object 3 starts and the ACTIVE pool moves the mesh `T01door01` -
-      the door opens as a set-mesh motion, which the collision soups follow;
+    * door object 3 starts, resolving with 0 missed, and the mesh
+      `T01door01` moves - the door opens as a set-mesh motion, which the
+      collision soups follow;
     * `area.arrive` reaches state 6, his feet land on AREA 0's decor (event
-      9), and door object 4 starts;
-    * `T01door01` is then moved by the OUTGOING pool - the tunnel's runner,
-      no longer the active one. Until 2026-09-05 the viewer read the active
-      pool's motions alone, so a door closing behind the player never moved,
-      drawn or collided;
+      9), and door object 4 starts, also with 0 missed;
+    * both doors resolve in `Tunnel01.SCX`, the OUTGOING area's file - which
+      is what `ScriptObject_Start(obj, a1[3], ...)` is handed. Until
+      2026-09-05 the viewer read the ACTIVE pool's motions alone, so a door
+      closing behind the player never moved, drawn or collided;
+
+    **WHICH of the port's two pools holds that file is not asserted, and the
+    first version of this check got that wrong.** It required the open to
+    come from the ACTIVE pool and the close from the OUTGOING one, which was
+    true only because the port loaded the destination's `.SCX` at the END of
+    the transition. `Area_TickLoad` case 2 loads it at the START (the same
+    read that put the restaurant's diners in a T-pose when walked into,
+    2026-09-05), so the tunnel's file is already the outgoing pool by the
+    time either door starts, and both now report OUTGOING. The engine passes
+    the outgoing block for both, so this is the faithful order; the label was
+    an artefact of the timing the fix removed.  What the check exists for -
+    that a door behind the player still moves - is asserted on the MOTION;
     * the tunnel is hidden only after that, and he ends past the door (x <
       7000) with no `NO FLOOR` on the way.
 
@@ -7484,18 +7497,103 @@ def c_engine_tunnel_door_walk():
     x = float(m.group(1)) if m else 1e9
     closeAt = o.find("moved by the OUTGOING pool (Tunnel01.SCX)")
     hideAt = o.find("HIDE area 224")
+    starts = re.findall(r"door object (\d) -> program \d+ +\(pool \w+, area (\d+);"
+                        r"[^)]*?(\d+) missed\)", o)
+    moved = re.findall(r"motion: mesh 'T01door01' moved by the (\w+) pool \((\S+)\)", o)
     return ("doors 3/4" in o,
-            "door object 3 -> program" in o,
-            "mesh 'T01door01' moved by the ACTIVE pool (Tunnel01.SCX)" in o,
+            [t for t in starts if t[0] == "3" and t[1] == "224" and t[2] == "0"] != [],
+            moved != [] and all(f == "(Tunnel01.SCX)" or f == "Tunnel01.SCX" for _, f in moved),
             "area.arrive -1  transition state 6" in o and "feet on area 0" in o,
-            "door object 4 -> program" in o,
+            [t for t in starts if t[0] == "4" and t[1] == "224" and t[2] == "0"] != [],
             closeAt >= 0,
             hideAt > closeAt >= 0 or (hideAt >= 0 and closeAt >= 0),
             x < 7000 and "NO FLOOR" not in o), (True,) * 8, \
-        ("the zone carries doors 3/4; door 3 starts; the ACTIVE pool moves "
-         "T01door01; arrive state 6 and feet on AREA 0; door 4 starts; the "
-         "OUTGOING pool moves T01door01 (the close); the tunnel is hidden; he "
-         "ends past the door with no NO FLOOR")
+        ("the zone carries doors 3/4; door 3 starts in AREA 224's pool with 0 "
+         "missed; every T01door01 motion comes from Tunnel01.SCX; arrive state "
+         "6 and feet on AREA 0; door 4 the same; the door mesh moved; the "
+         "tunnel is hidden; he ends past the door with no NO FLOOR")
+
+def c_engine_walk_in_scene():
+    r"""`engine/`: an area's `.SCX` is resident BEFORE its startup script runs,
+    walked - the restaurant's diners are on their paths when you walk in.
+
+    A reader's report (2026-09-05): characters indoors "most of the time in a
+    T pose or at the wrong place", and the restaurant near the Impasse and
+    Kay'l's apartment specifically - *"could you test entering it from the
+    outside to test the script loading in real exploration conditions"*.
+    Jumping straight to the area hid it, because `omk-play` makes the `.SCX`
+    resident itself before the first frame.
+
+    `Area_TickLoad` (0x0040C7E0) is explicit about the order:
+
+        case 2   Area_LoadScx(chunk+97, area)     <- the area's own .SCX
+        case 3   Map2D_Load(chunk+106)
+        case 4   Area_LoadMiscModel(chunk+133)
+        case 5   Actors_SpawnFromTables
+        case 6   Scene_LoadProps
+        case 7   Anim_Load(chunk+124)             <- the .ani library
+        case 8   Area_LoadSliderTrack
+        case 9   the startup contexts
+
+    so the object pool a startup script addresses is ALWAYS the destination's.
+    This port loaded the `.SCX` from the far end of the transition state
+    machine instead. Walking Anekbah -> the restaurant (AREA 0 -> 46 through
+    zone 10, "Porte 26"), the area loaded at frame 65 and its `+4` startup
+    script - `scx.play.actor` for 65, 59, 62, 63, 69, 70, 71 and 312, the
+    seven diners, the waitress and Samyaza - ran against `anekbah.SCX`, still
+    resident; `resto.SCX` only arrived at frame 145. Every handle missed and
+    all eight bodies stood on their 20-byte placement records in the REST
+    pose, which for the `PSH`/`FSH` crowd models is a T-pose.
+
+    Stood at (6411, 0, 450) in Anekbah facing 90 and held forward:
+
+    * `resto.SCX` becomes resident no later than the frame AREA 46 is shown;
+    * all eight of the startup script's actors end on `a scene program's
+      clip`, and none of them on the rest pose;
+    * the diners are on their PATHS, not their placement records - actor 59's
+      record is (6716, -41, 419) and his path sample (7277, 8, 556).
+
+    SHOWN TO FAIL by reverting `completeLoad`'s case-2 call: 0 of 8 on a clip,
+    8 on the rest pose, and actor 59 standing on his record.
+
+    Needs SDL; reports true without it (PORTING A8).
+    """
+    import subprocess
+    eng = os.path.join(ROOT, "engine")
+    fr = omkpaths.data_root()
+    tb = os.path.join(ROOT, "tables")
+    save = os.path.join(ROOT, "traces", "save-appart.bin")
+    if not os.path.isdir(fr) or not os.path.exists(save):
+        return ("no data",), ("data",), "needs the shipped tree and traces/save-appart.bin"
+    mk = subprocess.run(["make", "-s", "play"], cwd=eng, capture_output=True, text=True)
+    play = os.path.join(eng, "build", "omk-play")
+    if mk.returncode != 0 or not os.path.exists(play):
+        return (True, 8, 0, True), (True, 8, 0, True), \
+               "no SDL - the frontend is optional (PORTING A8)"
+    env = dict(os.environ, SDL_VIDEODRIVER="dummy")
+    r = subprocess.run([play, fr, tb, "--software", "--res", "640x480", "--nofmv",
+                        "--no-crowd", "--save", save, "--area", "0",
+                        "--stand", "6411,0,450,90", "--frames", "420",
+                        "--hold", "k200*260"], capture_output=True, text=True, env=env)
+    o = r.stdout
+    mScx  = re.search(r"^\[scx\] frame (\d+)  resident scene is now resto\.SCX", o, re.M)
+    mShow = re.search(r"^\[slot\] frame (\d+)  SHOW area 46 ", o, re.M)
+    inTime = bool(mScx and mShow and int(mScx.group(1)) <= int(mShow.group(1)))
+    who = (65, 59, 62, 63, 69, 70, 71, 312)
+    tail = o[o.rfind("staged "):] if "staged " in o else ""
+    onClip = sum(1 for a in who
+                 if re.search(r"^  actor %d \S+ .*- a scene program's clip" % a, tail, re.M))
+    onRest = sum(1 for a in who
+                 if re.search(r"^  actor %d \S+ .*- the rest pose" % a, tail, re.M))
+    m59 = re.search(r"^  actor 59 \S+ \(bank \S+\) at (-?\d+) (-?\d+) (-?\d+)", tail, re.M)
+    onPath = bool(m59 and abs(int(m59.group(1)) - 7277) <= 40 and
+                  abs(int(m59.group(3)) - 556) <= 40)
+    return (inTime, onClip, onRest, onPath), (True, 8, 0, True), \
+        ("resto.SCX is resident by the frame AREA 46 is shown; of the startup "
+         "script's 8 actors, how many end on a scene program's clip and how "
+         "many on the REST pose; and whether actor 59 stands on his path "
+         "(7277, 556) rather than his placement record")
+
 
 def c_engine_arrival_wait():
     r"""`engine/`: a scene actor is not placed or posed before his program's
@@ -21177,6 +21275,7 @@ SLOW = [
     ("engine: stop sound", c_engine_stop_sound, "todo/omk-play"),
     ("engine: scene sprites", c_engine_scene_sprites, "todo/omk-play"),
     ("engine: node scale", c_engine_node_scale, "todo/omk-play"),
+    ("engine: walk-in scene", c_engine_walk_in_scene, "todo/collision-scenes-transitions"),
     ("engine: tunnel door walk", c_engine_tunnel_door_walk, "todo/collision-scenes-transitions"),
     ("engine: arrival wait", c_engine_arrival_wait, "todo/omk-play"),
     ("engine: linked rings", c_engine_linked_rings, "todo/omk-play"),

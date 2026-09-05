@@ -340,6 +340,22 @@ bool Session::tickLoad(int slot) {
 void Session::completeLoad(int slot) {
     asyncMode_ = 0;
     ResidentSlot& s = slots_[slot & 1];
+    // CASE 2, and it belongs HERE rather than at the end of the transition.
+    // `Area_TickLoad` case 2 is `Area_LoadScx(chunk+97, area)` - the area's
+    // own `.SCX` - and case 9 is the startup contexts, so the object pool the
+    // startup script addresses is ALWAYS the destination's.
+    //
+    // This port loaded it from `finishScene()` instead, at the far end of the
+    // transition state machine. Measured 2026-09-05 walking from Anekbah into
+    // the restaurant (AREA 0 -> 46, zone 10 "Porte 26"): the area loaded at
+    // frame 65 and its startup script - seven `scx.play.actor` calls that put
+    // the diners on their paths - ran against `anekbah.SCX`, still resident;
+    // `resto.SCX` only arrived at frame 145. Every handle missed, no program
+    // started, and all eight bodies stood on their 20-byte placement records
+    // in the REST pose, which for the crowd models is a T-pose. Jumping
+    // straight to the area hid it, because `omk-play` makes the `.SCX`
+    // resident itself before the first frame.
+    if (!scptData_.empty()) reloadScene(s.area, s.scene);
     // case 9: `Script_NewContext(slot, block[+4], 0, 0)`, `*block = ctx`,
     // `Script_QueueAction(ctx, 1)` for the AREA, then the SCENE the DB names.
     // The active slot and area are set to this slot for the duration and

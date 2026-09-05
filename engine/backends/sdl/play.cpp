@@ -4877,6 +4877,24 @@ int main(int argc, char** argv) {
             if (lastArea > 0) std::printf("area transition %d\n", lastArea);
         }
 
+        // WHICH `.SCX` IS RESIDENT, every time it changes. A transition is
+        // supposed to swap it (`Session::reloadScene`), and if it does not
+        // the destination's `scx.play*` have no objects to start - every one
+        // of its bodies then falls back to the bank idle, or for a character
+        // with no bank to the REST pose, standing on his 20-byte placement
+        // record instead of his program's path.
+        {
+            static std::string scxWas = "-";
+            const std::string now = session.scene().loaded() ? session.scene().file() : "(none)";
+            if (now != scxWas) {
+                scxWas = now;
+                std::printf("[scx] frame %ld  resident scene is now %s (%zu objects)\n", n,
+                            now.c_str(),
+                            session.scene().loaded()
+                                ? session.scene().scene().scene().objects.size() : 0u);
+            }
+        }
+
         // The absolute world cameras the script has set, as rays. Collected
         // BEFORE the character is staged, because `character.show` and the two
         // `camera.set`s before it land in the same VM run - AREA 118 sets 2172
