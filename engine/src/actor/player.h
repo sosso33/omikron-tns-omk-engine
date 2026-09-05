@@ -385,6 +385,11 @@ private:
     const TriangleSoup* camSolidB_ = nullptr;
     float camDist_ = 0.0f;             // +328
     int   camBlock_ = 0;               // +208
+    // FLAG 1, the "just changed" bit: `Camera_LoadParams` sets it, the tick
+    // clears it on its way out, and while it is set BOTH of the collision
+    // pass's easings are skipped and the camera snaps. `camFresh_` is the
+    // same bit for the eye/target smoothing; this is the frame it covers.
+    bool  camJustChanged_ = false;
     void  cameraCollide(float dt);
     float frameBefore_ = 1.0f;         // the channel's +12/+16 pair as the
     float frameAfter_  = 1.0f;         // window rule reads them

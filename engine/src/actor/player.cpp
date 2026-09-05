@@ -548,6 +548,7 @@ void PlayerController::tick(float dt, std::uint32_t word) {
         for (int k = 0; k < 3; ++k) camEuler_[k] = euler_[k];
         resolveSteady(cam_, camEuler_);
         camFresh_ = false;
+        camJustChanged_ = true;        // flag 1, for this tick's collision pass
     } else {
         // the lagged Euler triple: chase, snapping inside 0.1 degrees
         const int k46 = camF46_ == 1 ? 2 : camF46_;
@@ -569,6 +570,7 @@ void PlayerController::tick(float dt, std::uint32_t word) {
         cam_.fov = camFov_;
     }
     cameraCollide(dt);
+    camJustChanged_ = false;      // flag 1: the tick clears it on its way out
 }
 
 // `sub_417070` (04_sys.c 3370), the arm flag 8 selects - the adventure
@@ -597,23 +599,24 @@ void PlayerController::tick(float dt, std::uint32_t word) {
 // +312/+316 = -0.7 x the subject's pelvis height, which with Y growing
 // DOWNWARD lifts the pinched camera ABOVE him rather than dropping it.
 //
-// WHAT IS NOT MODELLED, and it is labelled here rather than left to be found:
-// the engine's ray is `sub_444810` over the scene's meshes and can answer with
-// the surface's own flags, so a mesh flagged 0x20000000 is see-through to a
-// camera carrying 0x1000; this casts against the two triangle soups it is
-// given and has no per-face flag. And the second ray of the no-hit branch -
-// rebuilt from the subject's UNLAGGED euler and offsets, for a camera that
-// was blocked last frame - is not here: it decides how fast the recovery
-// starts, not whether the camera is inside a wall.
+// THE SEE-THROUGH FLAG IS UNREACHABLE FOR THIS CAMERA, which is why it is not
+// modelled. `sub_417070` and `sub_416570` both guard their hit with
 //
-// Nor is FLAG 1, the "just changed" bit `Camera_LoadParams` sets and the tick
-// clears on its way out: the engine skips both easings on that one frame and
-// snaps, where this always eases. One frame at a camera change.
+//     if ((cam[356] & 0x1000) && (hit->flags & 0x20000000)) return;
 //
-// And the soups are this port's, not the engine's set: `sub_444810` walks the
-// scene's meshes and can skip one by flag, where these are the walker's
-// walkable faces and the steep complement - so a mesh the engine would let
-// the camera through is solid here.
+// and 93 of the 12203 shipped decor meshes do carry 0x20000000 (41 in
+// Lahoreh, 10 in Jangir), so the surface half is live. The CAMERA half is
+// not: `Camera_LoadParams` sets `+356` to 1 on every request, `sub_413C00`
+// then ORs in `0x1C` through a LOBYTE write that cannot reach bit 12, and the
+// only write in the binary that sets 0x1000 is `sub_413CD0`'s ACTOR_STATE 13
+// arm - and `sub_413CD0` runs only for states 11, 13 and 14. So the ordinary
+// follow camera never carries 0x1000 and the test can never fire for it,
+// which puts it with `nullsub_9` and the six dead spell recipes.
+//
+// The soups are still this port's rather than the engine's set - `sub_444810`
+// walks the scene's meshes where these are the walker's walkable faces and
+// the steep complement - but that is a difference in WHICH faces exist, not
+// the flag rule.
 void PlayerController::cameraCollide(float dt) {
     if (!camSolidA_ && !camSolidB_) return;
     const double eye[3] = {cam_.eye[0], cam_.eye[1], cam_.eye[2]};
@@ -640,10 +643,45 @@ void PlayerController::cameraCollide(float dt) {
         // that by +300 to undo the over-reach - so the free distance is
         // simply `best * d`.
         r = best * d;
-        if (r > camDist_) r = (r - camDist_) * dt / kOut + camDist_;
+        if (r > camDist_ && !camJustChanged_) r = (r - camDist_) * dt / kOut + camDist_;
         camDist_ = static_cast<float>(r);
-    } else if (camBlock_ == 1 || camBlock_ == 2) {
-        camBlock_ = 2;
+    } else if (camBlock_ == 1) {
+        // THE SECOND RAY. The engine does not go straight to recovery: with
+        // no hit on the over-reach ray and `+208 == 1` it rebuilds both ends
+        // from the SUBJECT's own euler and offsets - `+100..+120` and
+        // `+152..+172`, which `sub_414F30` fills with the actor's position
+        // and Euler triple, i.e. the camera with no lag in it - and casts
+        // again. Only if THAT misses does it go to state 2. So a camera whose
+        // lagged ray has swung clear of the wall its unlagged one is still
+        // behind does not start recovering yet.
+        FollowCamera st;
+        resolveSteady(st, euler_);
+        const double at2[3] = {st.at[0], st.at[1], st.at[2]};
+        double D2[3] = {st.eye[0] - st.at[0], st.eye[1] - st.at[1], st.eye[2] - st.at[2]};
+        const double d2 = std::sqrt(D2[0]*D2[0] + D2[1]*D2[1] + D2[2]*D2[2]);
+        double best2 = 2.0;
+        if (d2 > 1e-3) {
+            const double ray2[3] = {D2[0] * kOver, D2[1] * kOver, D2[2] * kOver};
+            for (const TriangleSoup* sp : {camSolidA_, camSolidB_}) {
+                if (!sp || sp->empty()) continue;
+                if (const auto h = sweepSphere(*sp, at2, ray2, 0.0))
+                    if (h->t < best2) best2 = h->t;
+            }
+        }
+        if (best2 <= 1.0) {
+            // still blocked: hold the distance rather than easing out.
+            // LABELLED - the engine also re-places the eye here, at `+328`
+            // along the CURRENT direction and shifted by the subject's own
+            // vertical movement this frame (`+340 - +344`); this holds the
+            // distance and lets the next frame's first ray place it.
+            r = camDist_;
+        } else {
+            camBlock_ = 2;
+            if (d <= camDist_) { camBlock_ = 0; return; }
+            camDist_ = static_cast<float>((d - camDist_) * dt / kOut + camDist_);
+            r = camDist_;
+        }
+    } else if (camBlock_ == 2) {
         if (d <= camDist_) { camBlock_ = 0; return; }
         camDist_ = static_cast<float>((d - camDist_) * dt / kOut + camDist_);
         r = camDist_;
@@ -662,8 +700,15 @@ void PlayerController::cameraCollide(float dt) {
     const double t = r <= half ? 0.0 : (r - half) / (d - half);
     const double subjY = static_cast<double>(pos_[1]) - camLift_;
     const double lift  = -0.7 * camLift_ + subjY;          // +312 + +156
+    // ...each then eased toward the un-lifted value over `+324` frames, unless
+    // flag 1 says the camera changed this frame, in which case it snaps.
+    const double eyeWas = e[1], atWas = cam_.at[1];
     e[1]       = static_cast<float>(lift * (1.0 - t) + e[1] * t);
     cam_.at[1] = static_cast<float>(lift * (1.0 - t) + cam_.at[1] * t);
+    if (!camJustChanged_) {
+        e[1]       = static_cast<float>((e[1] - eyeWas) * dt / kLift + eyeWas);
+        cam_.at[1] = static_cast<float>((cam_.at[1] - atWas) * dt / kLift + atWas);
+    }
     for (int i = 0; i < 3; ++i) cam_.eye[i] = e[i];
 }
 
