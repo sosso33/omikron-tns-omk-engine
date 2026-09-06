@@ -273,7 +273,13 @@ screen is that item's work, and until it exists the screen is reached with
 
 `docs/GAME_STATE.md` gained §8b (the writer), §8c (the save points, the price)
 and a corrected §5, §5a and §8; `engine/README.md` gained the three engine
-checks. The full `verify.py --slow` is run at the end of each sitting.
+checks. The full `verify.py --slow` is run at the end of each sitting: **326 checks,
+0 failed** on 2026-09-06. Its one failure that day was `engine: voice over`,
+and it was not a regression — the check globbed `traces/*.log`, and a
+golden-trace run had left a stray log there and overwritten a committed
+capture. Both put back, and the glob replaced by the 13 named captures with
+each one's own count, so a stray file is ignored and a capture that *changes*
+names itself.
 
 Still owed, and all of it waits on `engine/src/ui/` being free:
 
