@@ -3020,6 +3020,285 @@ def c_ui_item_bindings():
 
 
 
+def c_start_cancel():
+    r"""ANNULER - the one item callback whose whole body is a return.
+
+    `Ui_ConfirmSelection` normally takes an item's `+40` callback and, failing
+    that, descends into its `+44` panel. Item 0x004CE8F8 - string **9**,
+    "Annuler", on the start menu's new-game dialog - has a callback and no
+    child, and the callback is 25 bytes:
+
+        0047A370  mov  eax, [esp+4]        ; the screen
+        0047A374  mov  ecx, [eax+1Ch]      ; screen+28 = the current panel
+        0047A377  mov  edx, [ecx]          ; panel+0   = its PARENT
+        0047A379  push edx
+        0047A37A  push eax
+        0047A37B  call sub_42A370          ; install it
+        0047A380  add  esp, 8
+        0047A383  mov  eax, 1              ; ...and the frame is consumed
+        0047A388  retn
+
+    So cancelling is exactly what the BACK bit does, reached by CONFIRM on a
+    row instead - and `sub_42A370` is the same installer the sneak's row and
+    Examiner callbacks use, so the address is corroborated three ways rather
+    than named here.
+
+    **It is the ONLY callback in the tree of that shape**, and this scans all
+    37 distinct item callbacks to say so rather than asserting it of the one
+    it already knows. That is what makes naming it by address honest: there is
+    no family to generalise to, and a pattern-matcher at run time would be
+    machinery for a single site. Confirmer's own callback (0x0047A2B0) is the
+    negative control - same list, same panel, and it does not match.
+
+    **And the panel's builder CLEARS the field.** `sub_47A050` opens with
+    `rep stosd` over 32 bytes of `byte_69BDA0` and `mov dword_657994, ebx`, so
+    cancelling and coming back gives an EMPTY name box, not the text typed a
+    moment ago. Modelled in both walkers, because it is what the second visit
+    shows and because `Confirmer`'s empty-field gate is unreachable again
+    without it.
+
+    Both walkers are driven through the same seven presses and must agree:
+    CONFIRM into the dialog, type "Kay'l", DOWN to the buttons, DOWN to
+    Annuler, CONFIRM. The dialog must close onto the start menu (0x004CF218)
+    with **no answer**, the walk still EXACT - it logged "unmodelled item
+    callback" and went approximate before - and the next visit's field empty.
+
+    Shown to fail: dropping the callback from the port's `confirm` leaves the
+    walk on 0x004CF280 and turns `approx` on; dropping the builder's reset
+    leaves 5 characters in the field on the second visit; and pointing the
+    scan's signature one byte along finds 0 callbacks instead of 1.
+    """
+    import subprocess, tempfile, shutil, json as J
+    exe = omkpaths.exe_path()
+    wid = os.path.join(ROOT, "tables", "ui_widgets.json")
+    iam = omkpaths.data("IAM")
+    if not (exe and os.path.exists(wid) and os.path.isdir(iam)):
+        return ("skipped",), ("skipped",), "the engine or tables/ absent"
+    # `ui_tables.Exe` is the one thing that knows the image's VA mapping.
+    E = ui_tables.Exe()
+    def at(va, n):
+        return E.read(va, n)
+    body = at(0x0047A370, 25)
+    want = bytes.fromhex("8b4424048b481c8b115250") \
+         + b"\xe8" + b"\x00\x00\x00\x00" \
+         + bytes.fromhex("83c408b801000000c3")
+    shape = body[:11] == want[:11] and body[16:] == want[16:]
+    target = 0x0047A37B + 5 + struct.unpack_from("<i", body, 12)[0]
+
+    W = J.load(open(wid))["rows"]
+    cbs = {}
+    for p in W["panels"]:
+        for l in p["lists"] or []:
+            for it in l["items"] or []:
+                if it["callback"]:
+                    cbs.setdefault(it["callback"], set()).add(it["addr"])
+    matching = sorted(cb for cb in cbs
+                      if at(cb, 11) == want[:11] and at(cb, 25)[16:] == want[16:])
+    on = sorted(cbs[matching[0]]) if len(matching) == 1 else []
+    label = -1
+    for p in W["panels"]:
+        for l in p["lists"] or []:
+            for it in l["items"] or []:
+                if on and it["addr"] == on[0]:
+                    label = it["string"]
+    listing = os.listdir(iam)
+    menu = next((f for f in listing if f.lower() == "menu"), None)
+    strings = (open(os.path.join(iam, menu), "rb").read().split(b"\0")
+               if menu else [])
+    word = (strings[label].decode("latin-1")
+            if 0 <= label < len(strings) else "")
+
+    # ---- the SIMULATOR's walk
+    sys.path.insert(0, os.path.join(ROOT, "tools", "sim"))
+    import ui as UI
+    u = UI.Ui(E)
+    u.open(29)
+    u.press(UI.CONFIRM)
+    u.type_name("Kay'l")
+    u.press(UI.DOWN)
+    onButtons = u._cur_list()
+    u.press(UI.DOWN)
+    sel = u.sel[onButtons]
+    u.press(UI.CONFIRM)
+    simBack, simAnswer, simApprox = u.panel, u.answer, u.approx
+    u.press(UI.CONFIRM)
+    simSecond = (u.panel, len(u.name))
+
+    # ---- and the PORT's, out of the same probe `engine: name field` runs
+    eng = os.path.join(ROOT, "engine")
+    b = subprocess.run(["make", "-s"], cwd=eng, capture_output=True, text=True)
+    binp = os.path.join(eng, "build", "new_game_panel")
+    port = ("no engine",)
+    if b.returncode == 0 and os.path.exists(binp):
+        tmp = tempfile.mkdtemp()
+        try:
+            o = os.path.join(tmp, "n.bin")
+            subprocess.run([binp, omkpaths.data_root(), wid,
+                            os.path.join(ROOT, "tables", "ui.json"), o],
+                           capture_output=True)
+            raw = open(o, "rb").read()
+            port = struct.unpack("<%di" % (len(raw) // 4), raw)[20:27]
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+    return (shape, hex(target), len(matching), [hex(a) for a in on], label, word,
+            hex(onButtons), sel, hex(simBack), simAnswer, simApprox,
+            (hex(simSecond[0]), simSecond[1]), port), \
+           (True, "0x42a370", 1, ["0x4ce8f8"], 9, "Annuler",
+            "0x4ce948", 1, "0x4cf218", None, False,
+            ("0x4cf280", 0),
+            (1, 1, 0x004CF218, -1, 0, 0, 0x004CF280)), \
+           "the callback's body matches `mov eax,[esp+4]; mov ecx,[eax+1Ch]; " \
+           "mov edx,[ecx]; push; push; call; add esp,8; mov eax,1; retn` and " \
+           "its call resolves to sub_42A370, the panel installer; then how " \
+           "many of the tree's 37 item callbacks have that body (ONE), which " \
+           "item carries it, that item's string id and the word it names in " \
+           "`IAM\\Menu`; then the SIMULATOR walked CONFIRM / type / DOWN / " \
+           "DOWN / CONFIRM - the buttons list it lands on, the row (1, " \
+           "Annuler), the panel it comes back to (the start menu), that NO " \
+           "answer was written and the walk stayed EXACT, and that the next " \
+           "visit's field is empty because the panel's builder zeroes the " \
+           "buffer; and last the PORT's own walk through the same presses, " \
+           "which must agree with all of it"
+
+
+def c_name_field_edits():
+    r"""BACKSPACE, the caret, the cap - the field's CHARACTER channel.
+
+    `sub_4397B0` hands `sub_47A390` one character a frame and the hook's switch
+    decides what it is. `docs/UI.md` 3f has the table and `sim: name field`
+    already tests it on the class; what neither covered is the two places the
+    character has to TRAVEL through, and both were broken:
+
+    * **the frontend never delivered a control character.** SDL's text-input
+      events carry printable text only, while the channel this ports is
+      Windows' `WM_CHAR`, which carries 8, 9, 13 and 27 alongside the letters.
+      So backspace reached nothing at all - a player could type a name and had
+      no way to correct it. `charmap()` in the SDL backend puts them back, the
+      same job `keymap()` does for scan codes;
+    * **the walkers rebuilt the field from its text each frame**, which put the
+      caret back at the end. BACKSPACE then always deleted the LAST character,
+      whatever the arrows had done, and the simulator's `type_name` did not go
+      through the switch at all - it appended and capped, so a backspace was
+      inserted as a character.
+
+    **And a key can be both a character and a bit.** RETURN is `WM_CHAR` 13 AND
+    the confirm bit, and it reaches the engine twice for that reason -
+    DirectInput for the scan code, `WM_CHAR` for the character.
+    `Ui_DispatchInput` (0x0042A430) stops at the first hook that returns 1, so
+    the field consuming the character is what stops the bit becoming a confirm:
+    its `LABEL_27` runs the panel hook, then the list hook, and jumps to the
+    exit the moment either answers. `typeName` therefore reports whether it
+    consumed the frame and the caller drops the bits when it did - without
+    which ENTER moved the focus to the buttons and confirmed one of them in the
+    same press, starting a game the player never asked for.
+
+    The walk, run identically through `tools/sim/ui.py` and the port's
+    `UiWalk`, on the new-game dialog:
+
+    | typed | buffer | caret | consumed |
+    |---|---|---|---|
+    | `Burntpin`  | Burntpin | 8 | yes |
+    | BACKSPACE   | Burntpi  | 7 | yes |
+    | LEFT, LEFT  | Burntpi  | 5 | - |
+    | BACKSPACE   | Burnpi   | 4 | yes - it deletes at the CARET, not the end |
+    | `X`         | BurnXpi  | 5 | yes - and inserts at the caret |
+    | 30 x `z`    | 20 chars | 18 | yes - the buffer's own cap |
+    | TAB         | unchanged | 18 | **no** - an `ignore` case |
+    | ESC         | unchanged | 18 | **no** |
+    | RETURN      | unchanged | 18 | yes, and the focus moves to list 1 |
+
+    ...and RETURN on an EMPTY buffer is refused, so nothing is consumed and the
+    focus stays on the field - the same gate `Confirmer` enforces a second time
+    at the button.
+
+    The two `ignore` cases matter more than they look: TAB and ESC are also
+    interface bits (close, back), so a field that "consumed" them would eat the
+    keys that leave the screen.
+
+    Shown to fail: seeding the caret from the buffer's end again puts the
+    middle backspace's result at `Burntp` with caret 6; dropping the sim's
+    `NameField` for the old append-and-cap leaves `Burntpin\x08` at 9
+    characters; making TAB consume the frame turns its 0 into a 1; and
+    dropping RETURN's `panel+24 = 1` leaves the focus on list 0.
+
+    NOT covered, and it is the frontend half: that SDL's BACKSPACE scan code
+    becomes character 8. `charmap()` is a table like `keymap()`, unreachable
+    without a window and a real key event; what is reachable, and what
+    `--keys c8` exercises, is everything downstream of `HostInput::text`.
+    """
+    import subprocess, tempfile, shutil
+    E = ui_tables.Exe()
+    sys.path.insert(0, os.path.join(ROOT, "tools", "sim"))
+    import ui as UI
+
+    def walk(u):
+        u.open(29)
+        u.press(UI.CONFIRM)
+        out = []
+        def fnv(t):
+            h = 2166136261
+            for c in t.encode("latin-1"):
+                h = ((h ^ c) * 16777619) & 0xFFFFFFFF
+            return h - (1 << 32) if h >= (1 << 31) else h
+        u.type_name("Burntpin");  out += [fnv(u.name), u.cursor]
+        u.type_name("\b");        out += [fnv(u.name), u.cursor]
+        u.press(UI.LEFT); u.press(UI.LEFT)
+        out.append(u.cursor)
+        u.type_name("\b");        out += [fnv(u.name), u.cursor]
+        u.type_name("X");         out += [fnv(u.name), u.cursor]
+        u.type_name("z" * 30);    out += [len(u.name), u.cursor]
+        out.append(1 if u.type_name("\t") else 0)
+        out.append(1 if u.type_name("\x1b") else 0)
+        out.append(1 if u.type_name("\r") else 0)
+        out.append(u.cur)
+        return out
+
+    sim = walk(UI.Ui(E))
+    v = UI.Ui(E)
+    v.open(29)
+    v.press(UI.CONFIRM)
+    sim.append(1 if v.type_name("\r") else 0)
+    sim.append(v.cur)
+
+    eng = os.path.join(ROOT, "engine")
+    b = subprocess.run(["make", "-s"], cwd=eng, capture_output=True, text=True)
+    binp = os.path.join(eng, "build", "new_game_panel")
+    port = ["no engine"]
+    if b.returncode == 0 and os.path.exists(binp):
+        tmp = tempfile.mkdtemp()
+        try:
+            o = os.path.join(tmp, "n.bin")
+            subprocess.run([binp, omkpaths.data_root(),
+                            os.path.join(ROOT, "tables", "ui_widgets.json"),
+                            os.path.join(ROOT, "tables", "ui.json"), o],
+                           capture_output=True)
+            raw = open(o, "rb").read()
+            port = list(struct.unpack("<%di" % (len(raw) // 4), raw)[27:])
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+    # The buffers themselves, so the table above is asserted and not just its
+    # shape: the two hashes a reader can check by hand.
+    def fnv(t):
+        h = 2166136261
+        for c in t.encode("latin-1"):
+            h = ((h ^ c) * 16777619) & 0xFFFFFFFF
+        return h - (1 << 32) if h >= (1 << 31) else h
+    want = [fnv("Burntpin"), 8, fnv("Burntpi"), 7, 5,
+            fnv("Burnpi"), 4, fnv("BurnXpi"), 5, 20, 18,
+            0, 0, 1, 1, 0, 0]
+    return (sim, port, sim == port), (want, want, True), \
+           "the SIMULATOR and the PORT walked through the same eleven edits " \
+           "on the new-game dialog - type, BACKSPACE at the end, two LEFTs, " \
+           "BACKSPACE in the MIDDLE (which must delete at the caret and not " \
+           "at the end), an insert at the caret, thirty characters truncated " \
+           "to the buffer's twenty, TAB and ESC consuming NOTHING because " \
+           "they are the switch's two `ignore` cases and their own bits have " \
+           "to survive, RETURN consuming the frame and moving the focus to " \
+           "list 1, and RETURN on an EMPTY buffer refused - and that the two " \
+           "agree on every one of them. The buffers are asserted by FNV, so " \
+           "`Burnpi` and `BurnXpi` are the claim and not merely a length"
+
+
 def c_ui_shop_titles():
     r"""The ten shops' titles, and the branch a linear scan cannot follow.
 
@@ -12705,15 +12984,36 @@ def c_ui_widgets():
         h = open(os.path.join(d, f), "rb").read(54)
         dims.add(struct.unpack_from("<ii", h, 18))
     osc = U.oscillators()
+    # ...and OSCILLATOR 0, which is what `Ui_DispatchInput`'s tail actually
+    # touches. `Ui_Oscillator(n)` is `40*n + 0x004C3EA0`, so the two globals
+    # in that tail are fields of record 0: `byte_4C3EAC` is its `+12` FLAGS
+    # (the same word `Ui_OscillatorFlags` reads) and `off_4C3EC4` its `+36`
+    # callback slot, which ships `sub_42B7B0` - the square-wave toggle. The
+    # docs called that call "the confirm sound" and it is not a sound at all;
+    # the interface sound is `Ui_ScreenInput`'s UNCONDITIONAL `sub_482FE0`.
+    # Record 0 ships flags 0, so on the shipped table the gate is shut.
+    E = ui_tables.Exe()
+    osc0 = U.OSCILLATORS[0]
+    tail = (0x004C3EAC - osc0, 0x004C3EC4 - osc0,
+            struct.unpack_from("<I", E.read(0x004C3EC4, 4), 0)[0])
     return (len(os.listdir(d)), sorted(dims), 10 * 64, 7 * 64 + 32,
             U.OSCILLATORS[0], len(osc), [o["id"] for o in osc] == list(range(8)),
-            (osc[2]["period"], osc[2]["lo"], osc[2]["hi"])), \
+            (osc[2]["period"], osc[2]["lo"], osc[2]["hi"]),
+            (osc[0]["period"], osc[0]["flags"]), tail), \
            (11, [(640, 480)], 640, 480,
-            0x004C3EA0, 8, True, (1000, 45, 200)), \
+            0x004C3EA0, 8, True, (1000, 45, 200),
+            (5000, 0), (12, 36, 0x0042B7B0)), \
            "screen bitmaps and the distinct sizes among them; the tile grid's " \
            "width and its seven-and-a-half rows, which have to be those; the " \
            "oscillator table's base, its records, ids 0..7, and number 2's " \
-           "period and range - the pulse on every arrow and marker"
+           "period and range - the pulse on every arrow and marker; then " \
+           "OSCILLATOR 0, period 5000 with flags 0, and the two globals " \
+           "`Ui_DispatchInput` ends on resolved against it - `byte_4C3EAC` " \
+           "is its +12 flags word and `off_4C3EC4` its +36 callback slot, " \
+           "holding `sub_42B7B0`, the square-wave toggle. So that tail is an " \
+           "oscillator kick and NOT the confirm sound the docs called it - " \
+           "and with record 0's flags shipping 0 its gate is shut, which is " \
+           "why nothing was ever heard from it"
 
 
 def c_ui_fonts():
@@ -14336,7 +14636,10 @@ def c_engine_name_field():
         subprocess.run([binp, fr, os.path.join(tb, "ui_widgets.json"),
                         os.path.join(tb, "ui.json"), out], capture_output=True)
         raw = open(out, "rb").read()
-        v = struct.unpack("<%di" % (len(raw) // 4), raw)
+        # The tool emits the DRAWING half first and the cancel walk after it;
+        # `start cancel` asserts the tail. Sliced rather than split into two
+        # tools because both halves want the same walk built the same way.
+        v = struct.unpack("<%di" % (len(raw) // 4), raw)[:20]
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
     return v, (0x004CF218, 4, 800, 78210,
@@ -23717,6 +24020,12 @@ CHECKS = [
     ("ui open flags",      c_ui_openflags,      "UI"),
     ("ui open answer",     c_ui_open_answer,    "SCRIPT_VM 70"),
     ("ui confirm gate",    c_ui_confirm_gate,   "UI"),
+    # The FAST set, unlike `engine: screen` and `engine: name field`: most of
+    # this is a byte scan and a simulator walk, and its engine half is one
+    # run of a tool `make` has already built. It guards a button a player
+    # presses, so it should not need --slow.
+    ("start cancel",       c_start_cancel,      "UI 3f"),
+    ("name field edits",   c_name_field_edits,  "UI 3f"),
     ("sneak chain",        c_sneak_chain,       "UI 3d"),
     ("golden: menu",       c_golden_menu,       "UI"),
     ("page templates",     c_page_templates,    "CLAUDE.md 5"),

@@ -1472,7 +1472,7 @@ so gamepad button 0 is confirm and button 1 is back, matching E and R.
 ### The dispatch chain
 
 `Ui_DispatchInput` delegates in a fixed order, and the first to return 1
-consumes the frame (and clicks the confirm sound):
+consumes the frame:
 
 ```
 the back / close bits          handled here
@@ -1480,6 +1480,31 @@ the panel's own hook           panel+16
 the CURRENT list's hook        list+4      (panel+32 indexed by panel+24)
 Ui_MoveSelection               the default
 ```
+
+**A list with its own `+4` hook therefore never CONFIRMS**, because the hook
+*replaces* `Ui_MoveSelection` — and `Ui_ConfirmSelection` is only reached by
+falling through it (below). The name field is the case that matters: its hook
+answers the character channel and returns 0 for every bit, so the confirm bit
+does nothing there at all, which is why RETURN moves the focus instead of
+pressing a button (§3f).
+
+**Two corrections, 2026-09-06.** This said the first hook to answer 1 "clicks
+the confirm sound", and neither half is right.
+
+* The tail it meant is `if (result == 1 && byte_4C3EAC & 1) off_4C3EC4(&unk_4C3EA0)`,
+  and `Ui_Oscillator(n)` is `40·n + 0x004C3EA0` — so those three globals are
+  **oscillator 0**: its base, its `+12` flags (the word `Ui_OscillatorFlags`
+  reads) and its `+36` callback slot, which ships `sub_42B7B0`, the square-wave
+  toggle. It is an oscillator kick, not a sound. Record 0 ships period 5000 and
+  **flags 0**, so on the shipped table the gate is shut and it never fires.
+* The interface sound is elsewhere and is **not gated on the dispatch at all**:
+  `Ui_ScreenInput` (0x0042A0F0) calls `Ui_DispatchInput` and then
+  `sub_482FE0(screen)`
+  unconditionally, so the slot is picked from the live input word (§3d)
+  whatever any hook did with the frame. A frame a widget consumed still clicks
+  — RETURN in the name box plays the confirm sound and presses nothing.
+
+`verify.py: ui widgets`.
 
 `Ui_MoveSelection(screen, list, prev, next)` steps `list+2` and **keeps
 stepping over any item flagged `UIF_UNSELECTABLE`**, so a caption or a disabled
@@ -2316,6 +2341,23 @@ inert and getting out of it is the panel hook's DOWN.
 so the frame is consumed. The cursor is `dword_657994`, and it is what the
 field's drawer puts the caret after.
 
+**The channel is `WM_CHAR`, and that is why the switch covers 8..27.**
+BACKSPACE, TAB, RETURN and ESCAPE are characters here, not input bits — which
+is a fact about the port's frontend as much as about the engine: SDL's
+text-input events carry printable text only, so a replica has to put the four
+control codes back from key events (`charmap()` in `engine/backends/sdl`, the
+same job `keymap()` does for scan codes). Without that, backspace reaches
+nothing and a typed name cannot be corrected.
+
+**A key can be both**, and RETURN is: character 13 *and* the confirm bit,
+reaching the engine twice because DirectInput and `WM_CHAR` are separate
+queues. `Ui_DispatchInput` (§3c) stops at the first hook that answers 1, so
+the field consuming the character is exactly what stops the bit becoming a
+confirm — one press moves the focus to the buttons and does not also press
+one. The two `ignore` cases are the other side of it: TAB and ESC are
+interface bits (close, back), so the field must NOT consume them.
+`verify.py: name field edits`.
+
 Its switch is a compact jump table over the characters 8..27:
 
 | | |
@@ -2339,6 +2381,38 @@ screen 29   CONFIRM on "Nouvelle partie"     -> the confirm dialog
             DOWN                              the panel hook -> the buttons
             CONFIRM on "Confirmer"            -> answer 1
 ```
+
+### …and the other button: `Annuler`
+
+Item 0x004CE8F8, string **9**, carries a callback and no child, and the
+callback is twenty-five bytes:
+
+```
+0047A370  mov  eax, [esp+4]        ; the screen
+0047A374  mov  ecx, [eax+1Ch]      ; screen+28 = the current panel
+0047A377  mov  edx, [ecx]          ; panel+0   = its PARENT
+0047A379  push edx / push eax
+0047A37B  call sub_42A370          ; install it
+0047A380  add  esp, 8
+0047A383  mov  eax, 1              ; ...and the frame is consumed
+0047A388  retn
+```
+
+So **cancelling is the BACK bit reached through a row** — the dialog closes
+onto the start menu and nothing is answered. `sub_42A370` is the same
+installer the sneak's row and Examiner callbacks use (§3g), so the address is
+corroborated rather than named here.
+
+It is the **only** callback in the tree with that body — all 37 distinct item
+callbacks were scanned, and `Confirmer`'s (0x0047A2B0), same list and same
+panel, is the negative control. That is what makes naming it by address
+honest: there is no family to generalise to.
+
+**And the dialog's builder clears the field.** `sub_47A050` opens with
+`rep stosd` over 32 bytes of `byte_69BDA0` and `mov dword_657994, ebx`, so
+cancelling and coming back gives an empty box, not the text typed a moment
+ago — and `Confirmer`'s empty-field gate above is reachable again.
+`verify.py: start cancel`.
 
 ### What the field DRAWS — an item's `+20` hook
 

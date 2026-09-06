@@ -916,6 +916,14 @@ because a reader saw a window appear, assumed it was for them, and walked the
 player — which is the reasonable thing to assume. The frames were then
 evidence about their walk rather than about the change under test.
 
+**Driving a SCREEN headlessly**: `--keys` takes a comma list of set-1 scan
+codes (`0x1C` ENTER, `0xC8/0xD0/0xCB/0xCD` the arrows), `T` types whatever
+`--type` supplies, and **`cN` sends CHARACTER N down the field's own channel**
+— `c8` is a backspace, `c13` a return. The last is not a nicety: the name
+field answers `WM_CHAR`, and BACKSPACE and RETURN reach no binding table at
+all, so a scan code in that list cannot express them (`docs/UI.md` §3f).
+`--keydelay N` spaces the presses.
+
 **A STREET START** (STREET_LIFE, 2026-09-03) stands in a city in adventure
 mode with its crowd, no intro to replay:
 

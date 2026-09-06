@@ -1509,6 +1509,38 @@ The correction is toward the capture, not merely away from where it was: the
 top 150 rows of the composed menu are now **281854 of 288000** bytes identical
 to `traces/frames/menu-18`.
 
+**And the field could not be corrected.** The switch at `sub_47A390` covers
+characters 8..27 — BACKSPACE, TAB, RETURN and ESCAPE are `WM_CHAR` codes on
+the same channel as the letters — and `NameField` had modelled every case
+since the widget lift. Two things in between were wrong. SDL's text-input
+events carry printable text only, so the frontend delivered no control
+character at all and backspace reached nothing; `charmap()` puts the four
+back, which is the same job `keymap()` does for scan codes. And both walkers
+rebuilt the field from its text each frame, which put the caret at the end —
+so BACKSPACE always deleted the last character whatever the arrows had done,
+and the simulator's `type_name` bypassed the switch entirely, appending a
+backspace as a character.
+
+`typeName` now reports whether the field CONSUMED the frame, and the caller
+drops the frame's bits when it did: `Ui_DispatchInput` stops at the first hook
+that answers 1, and RETURN is character 13 *and* the confirm bit. Without the
+gate one ENTER moved the focus to the buttons and confirmed one of them,
+starting a game nobody asked for. `verify.py: name field edits` walks the
+simulator and the port through the same eleven edits and requires them to
+agree; `--keys c8` drives a backspace headlessly.
+
+**Then the other button.** `Annuler` (item 0x004CE8F8, string 9) had a
+callback the walk did not know, so confirming it logged "unmodelled item
+callback", turned the walk approximate and left the dialog up — the only way
+out was R. Its whole body is `sub_42A370(screen, screen->panel->parent)`:
+cancelling is the BACK bit reached through a row. It is the only item callback
+in the tree of that shape, which `verify.py: start cancel` establishes by
+scanning all 37 rather than asserting it of the one it already knows, so
+`UiWalk::toParent` is shared with the back bit and the callback is named by
+address. The panel's own builder also zeroes the name buffer every time it is
+installed, so a second visit opens empty; both walkers model that, and the
+simulator and the port are driven through the same five presses and compared.
+
 ### The SNEAK — the first screen the PLAYER opens
 
 **`verify.py: sneak chain`, `engine: sneak`** (2026-09-04). Every screen the

@@ -145,6 +145,83 @@ int main(int argc, char** argv) {
     out.push_back(dlg.nameCursor());
     std::printf("caret after two RIGHT %d\n", dlg.nameCursor());
 
+    // 5. ANNULER. DOWN leaves the name field for the buttons (the panel's own
+    // hook), DOWN again moves the selection from Confirmer to Annuler, and
+    // CONFIRM runs `sub_47A370` - which installs the panel's PARENT. So the
+    // walk must be back on the start menu with NO answer written, still
+    // exact, and the name buffer cleared by the dialog's builder the next
+    // time it is entered.
+    omk::UiWalk c(w);
+    c.open(29);
+    c.press(omk::kUiConfirm);              // into the dialog
+    c.typeName("Kay'l");
+    c.press(omk::kUiDown);                 // the name field -> the buttons
+    const int onButtons = c.currentList();
+    c.press(omk::kUiDown);                 // Confirmer -> Annuler
+    const int sel = c.selection();
+    c.press(omk::kUiConfirm);              // Annuler
+    out.push_back(onButtons);
+    out.push_back(sel);
+    out.push_back(static_cast<std::int32_t>(c.panel() ? c.panel()->addr : 0));
+    out.push_back(c.answer());
+    out.push_back(c.approximate() ? 1 : 0);
+    std::printf("cancel: list %d, row %d, back on panel %08X, answer %d, "
+                "approx %d\n", onButtons, sel, c.panel() ? c.panel()->addr : 0,
+                c.answer(), c.approximate() ? 1 : 0);
+    // ...and the SECOND visit opens empty, because the panel's builder zeroes
+    // the buffer every time it is installed.
+    c.press(omk::kUiConfirm);
+    out.push_back(static_cast<std::int32_t>(c.name().size()));
+    out.push_back(static_cast<std::int32_t>(c.panel() ? c.panel()->addr : 0));
+    std::printf("second visit: panel %08X, %zu characters in the field\n",
+                c.panel() ? c.panel()->addr : 0, c.name().size());
+
+    // 6. THE FIELD'S EDITS - backspace, the caret, the cap, and which
+    // characters CONSUME the frame. `sub_47A390`'s switch decides all four,
+    // and the caret has to survive between frames because the arrows move it
+    // without touching the buffer.
+    const auto fnv = [](const std::string& t) {
+        std::uint32_t h = 2166136261u;
+        for (unsigned char c : t) h = (h ^ c) * 16777619u;
+        return static_cast<std::int32_t>(h);
+    };
+    const auto step = [&](omk::UiWalk& u, const std::string& t) {
+        const bool ate = u.typeName(t);
+        std::printf("  typed %-10s -> '%s' caret %d, consumed %d\n",
+                    ("'" + t + "'").c_str(), u.name().c_str(),
+                    u.nameCursor(), ate ? 1 : 0);
+        return ate;
+    };
+    omk::UiWalk ed(w);
+    ed.open(29);
+    ed.press(omk::kUiConfirm);
+    step(ed, "Burntpin");
+    out.push_back(fnv(ed.name())); out.push_back(ed.nameCursor());
+    step(ed, "\b");                              // BACKSPACE at the end
+    out.push_back(fnv(ed.name())); out.push_back(ed.nameCursor());
+    ed.press(omk::kUiLeft); ed.press(omk::kUiLeft);
+    out.push_back(ed.nameCursor());
+    step(ed, "\b");                              // ...and in the MIDDLE
+    out.push_back(fnv(ed.name())); out.push_back(ed.nameCursor());
+    step(ed, "X");                               // an insert AT the caret
+    out.push_back(fnv(ed.name())); out.push_back(ed.nameCursor());
+    step(ed, std::string(30, 'z'));              // the 20-character cap
+    out.push_back(static_cast<std::int32_t>(ed.name().size()));
+    out.push_back(ed.nameCursor());
+    // TAB and ESC are the switch's two `ignore` cases: they must NOT consume
+    // the frame, or their own bits would be dropped by the caller.
+    out.push_back(step(ed, "\t") ? 1 : 0);
+    out.push_back(step(ed, "\x1b") ? 1 : 0);
+    // RETURN on a NON-EMPTY buffer: consumed, and the focus moves to list 1.
+    out.push_back(step(ed, "\r") ? 1 : 0);
+    out.push_back(ed.currentList());
+    // ...and on an EMPTY one it is refused, so the focus stays put.
+    omk::UiWalk g(w);
+    g.open(29);
+    g.press(omk::kUiConfirm);
+    out.push_back(step(g, "\r") ? 1 : 0);
+    out.push_back(g.currentList());
+
     if (!omk::safeOutputPath(argv[4])) return 2;
     std::ofstream f(argv[4], std::ios::binary);
     f.write(reinterpret_cast<const char*>(out.data()),

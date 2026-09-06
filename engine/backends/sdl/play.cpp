@@ -103,6 +103,10 @@ namespace {
 
 // A scripted-key entry meaning "type the --type string here", not a scan code.
 constexpr int kTypeMarker = -1;
+// `cN` in a `--keys` list arrives as `kCharMarker - N`, so one negative range
+// carries any character the field's switch understands. -2 is character 0,
+// which nothing sends, so the first real one is -10 for backspace.
+constexpr int kCharMarker = -2;
 
 // ------------------------------------------------------ THE INTERFACE SOUNDS
 //
@@ -598,6 +602,37 @@ const std::map<int, int>& keymap() {
     return m;
 }
 
+// THE CONTROL CHARACTERS THE ENGINE'S CHARACTER CHANNEL CARRIES.
+//
+// `sub_4397B0` hands the name-field hook ONE character a frame, and the
+// hook's switch covers 8..27 - so BACKSPACE, TAB, RETURN and ESCAPE arrive
+// there as characters, not as input bits. That channel is Windows' `WM_CHAR`,
+// which delivers exactly those four alongside the printable keys.
+//
+// SDL's text-input events do NOT: `SDL_TEXTINPUT` carries printable text
+// only. So the frontend has to put them back, which is the same job
+// `keymap()` above does for scan codes - a physical key turned into the code
+// the engine expects, and no interface behaviour of its own. Without it a
+// player could type a name and never correct it: backspace did nothing at
+// all, which is what one reported.
+//
+// A key that is both - RETURN is character 13 AND the confirm bit - reaches
+// the walk twice, exactly as it reaches the engine twice (DirectInput for the
+// scan code, `WM_CHAR` for the character). `Ui_DispatchInput` stops at the
+// first hook to return 1, and the caller below models that by dropping the
+// frame's bits when the field consumed it.
+//
+// Repeats are kept rather than filtered: `WM_CHAR` auto-repeats, so holding
+// BACKSPACE deletes until the field is empty.
+const std::map<int, char>& charmap() {
+    static const std::map<int, char> m = {
+        {SDL_SCANCODE_BACKSPACE, 8},  {SDL_SCANCODE_TAB,    9},
+        {SDL_SCANCODE_RETURN,    13}, {SDL_SCANCODE_KP_ENTER, 13},
+        {SDL_SCANCODE_ESCAPE,    27},
+    };
+    return m;
+}
+
 class SdlFrontend : public omk::Frontend {
 public:
     bool open(int w, int h, const std::string& title) override {
@@ -632,9 +667,18 @@ public:
 #if defined(OMK_SDL3)
             if (e.type == SDL_EVENT_QUIT) out.quit = true;
             else if (e.type == SDL_EVENT_TEXT_INPUT) out.text += e.text.text;
+            else if (e.type == SDL_EVENT_KEY_DOWN) {
+                const auto c = charmap().find(static_cast<int>(e.key.scancode));
+                if (c != charmap().end()) out.text += c->second;
+            }
 #else
             if (e.type == SDL_QUIT) out.quit = true;
             else if (e.type == SDL_TEXTINPUT) out.text += e.text.text;
+            else if (e.type == SDL_KEYDOWN) {
+                const auto c = charmap().find(
+                    static_cast<int>(e.key.keysym.scancode));
+                if (c != charmap().end()) out.text += c->second;
+            }
 #endif
         }
         out.held.clear();
@@ -1598,10 +1642,19 @@ int main(int argc, char** argv) {
             // A `T` in the list means "type `--type` here" - the start menu's
             // confirm is gated on a non-empty name field, so a scripted walk
             // has to type between two presses, not before them.
+            //
+            // ...and `cN` sends CHARACTER N down the same channel, which is
+            // the only way to drive the field's control codes headlessly:
+            // BACKSPACE and RETURN are `WM_CHAR` 8 and 13 to the engine and
+            // reach no binding table at all, so a scan code in this list
+            // cannot express them. `c8` is a backspace.
             std::string t = argv[++i], cur;
             for (char c : t + ",") {
                 if (c == ',') {
                     if (cur == "T") scripted.push_back(kTypeMarker);
+                    else if (cur.size() > 1 && cur[0] == 'c')
+                        scripted.push_back(kCharMarker -
+                                           std::stoi(cur.substr(1), nullptr, 0));
                     else if (!cur.empty()) scripted.push_back(std::stoi(cur, nullptr, 0));
                     cur.clear();
                 }
@@ -3577,6 +3630,8 @@ int main(int argc, char** argv) {
             const int k = scripted.front();
             scripted.erase(scripted.begin());
             if (k == kTypeMarker) host.text += typeText;   // as if it were typed
+            else if (k <= kCharMarker)                    // `cN`: one character
+                host.text += static_cast<char>(kCharMarker - k);
             else st.keyboard.push_back(k);
         }
         // The world's repeat mask is 0 - closing the last screen sets it
@@ -5357,10 +5412,23 @@ int main(int argc, char** argv) {
             // bits, because `Confirmer` opens by testing the field's cursor
             // and writes nothing when it is empty (docs/UI.md) - so a confirm
             // in the same frame as the last letter must see the letter.
-            if (!host.text.empty()) walk->typeName(host.text);
+            // ...and the field may CONSUME the frame. `Ui_DispatchInput`
+            // returns at the first hook that answers 1, so a key that is both
+            // a character and a bit - RETURN is 13 and confirm - must not do
+            // both. Without this gate ENTER moved the focus to the buttons
+            // and then confirmed one of them in the same press, which starts
+            // a game the player never asked for.
+            const bool ate = !host.text.empty() && walk->typeName(host.text);
             if (bits) {
                 const int wasSel = walk->selection(), wasList = walk->currentList();
-                walk->press(bits);
+                // THE SOUND IS NOT GATED ON IT, and that is read rather than
+                // assumed: `Ui_ScreenInput` (0x0042A0F0) calls
+                // `Ui_DispatchInput` and then `sub_482FE0(screen)`
+                // UNCONDITIONALLY, so the slot is picked from the live input
+                // word whatever the dispatch did. A frame the field ate still
+                // clicks - RETURN in the name box plays the confirm sound and
+                // presses nothing.
+                if (!ate) walk->press(bits);
                 // The MOVE sound fires when the selection actually MOVED, not
                 // on every press: `Ui_MoveSelection` steps over unselectable
                 // rows and a pinned list stops at its ends, so a key that

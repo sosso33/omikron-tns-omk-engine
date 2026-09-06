@@ -60,6 +60,29 @@ inline constexpr std::uint32_t kMoveSelectionLR = 0x0042A930u;
 // The icon is the page's own tab, and its `+8/+9/+10` is the page's COLOUR:
 // `UiWalk::buildPage` copies it over the three lists below, which is what the
 // engine's panel `+4` builder at 0x0049B710 does.
+// THE START MENU'S CONFIRM DIALOG, and the two items that leave it.
+//
+// `Annuler` (item 0x004CE8F8, string 9) carries a callback whose whole body
+// is a return to the panel it came from - and it is the ONLY item callback in
+// the tree of that shape, which `verify.py: start cancel` asserts by scanning
+// all 37:
+//
+//     0047A370  mov  eax, [esp+4]        ; the screen
+//               mov  ecx, [eax+1Ch]      ; screen+28 = the current panel
+//               mov  edx, [ecx]          ; panel+0   = its PARENT
+//               push edx
+//               push eax
+//               call sub_42A370          ; install it
+//               mov  eax, 1              ; ...and the frame is consumed
+//               retn
+//
+// So cancelling is BACK, reached by CONFIRM on a row instead of by the back
+// bit. Without it the walk logged "unmodelled item callback", went `approx`,
+// and the dialog could not be left except with R - which is what a player
+// meets first, because the button is right there and says Annuler.
+inline constexpr std::uint32_t kPanelStartConfirm = 0x004CF280u;
+inline constexpr std::uint32_t kCbStartCancel     = 0x0047A370u;
+
 // The six PAGES, each a panel named by a tab item's `child`.
 inline constexpr std::uint32_t kPanelSneakIdentity  = 0x004DED80u;
 inline constexpr std::uint32_t kPanelSneakSlider    = 0x004DEDE8u;
@@ -248,6 +271,15 @@ public:
 
     bool type(char c);                 // -> consumed?
     void enter(const std::string& s) { for (char c : s) type(c); }
+    // Resume a field rather than replay it. The caret survives between
+    // frames - the arrows move it without touching the buffer - so a caller
+    // that rebuilds the field from its text alone puts the caret back at the
+    // end, and the next BACKSPACE then deletes the wrong character.
+    void seed(const std::string& buf, int cursor) {
+        buf_ = buf;
+        cursor_ = cursor < 0 ? 0 : (cursor > static_cast<int>(buf.size())
+                                    ? static_cast<int>(buf.size()) : cursor);
+    }
 
     const std::string& text() const { return buf_; }
     int  cursor() const { return cursor_; }
@@ -430,7 +462,12 @@ public:
     // One frame of `Ui_DispatchInput`. -> true if the frame was consumed.
     bool press(std::uint32_t bits);
 
-    // Type into the name field, when the current list is one.
+    // One frame of the field's CHARACTER channel, when the current list is
+    // one. -> did the field CONSUME the frame? `Ui_DispatchInput` stops at
+    // the first hook returning 1, so a caller that also has input bits for
+    // this frame must drop them when this says yes - otherwise ENTER, which
+    // is both character 13 and the confirm bit, moves the focus to the
+    // buttons AND confirms one of them in a single press.
     bool typeName(const std::string& text);
     const std::string& name() const { return name_; }
     // Where the caret stands in that buffer - `dword_657994`. The field's
@@ -510,6 +547,10 @@ public:
     // installs `unk_4DEE50`, the inventory page, instead of closing.
     // -> false if this widget set has no such panel.
     bool installPanel(std::uint32_t addr);
+    // `sub_42A370(screen, panel->parent)` - the pop the back bit takes and
+    // the pop `Annuler` takes through its callback. Closes the screen when
+    // the panel has no parent, which is what the back bit does at the top.
+    bool toParent();
 
     // True once the walk has passed through something it does not model - an
     // unread hook or callback. A caller must not trust an answer after this,

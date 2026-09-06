@@ -78,6 +78,29 @@ ANSWER_NEEDS_NAME = {0x0047A2B0}
 #: name cannot start a new game either.
 ANSWER_NEEDS_UNIQUE_NAME = {0x0047A2B0}
 
+#: Item callbacks whose whole body is `sub_42A370(screen, panel->parent)` -
+#: the pop the BACK bit takes, reached by CONFIRM on a row instead.
+#:
+#:      0047A370  mov  eax, [esp+4]      ; the screen
+#:                mov  ecx, [eax+1Ch]    ; screen+28 = the current panel
+#:                mov  edx, [ecx]        ; panel+0   = its PARENT
+#:                push edx / push eax
+#:                call sub_42A370
+#:                mov  eax, 1 / retn
+#:
+#: `Annuler` on the start menu's new-game dialog (item 0x004CE8F8, string 9)
+#: is the only one in the whole tree, which `verify.py: start cancel` asserts
+#: by scanning every item callback rather than trusting this line.
+TO_PARENT = {0x0047A370}
+
+#: Panels whose `+4` builder CLEARS the name buffer. `sub_47A050`, the confirm
+#: dialog's, opens with `rep stosd` over 32 bytes of `byte_69BDA0` and
+#: `mov dword_657994, ebx`, so leaving the dialog and coming back gives an
+#: empty field rather than what was typed a moment ago. (This walker keeps no
+#: cursor of its own - `NameField` does, and it is rebuilt per walk - so only
+#: the buffer is reset here.)
+RESETS_NAME = {0x004CF280}
+
 
 def _hook_start_confirm(ui, bits):
     """`sub_0047A230` - the start menu's confirm dialog moves between its two
@@ -781,15 +804,40 @@ class Ui:
         #: clears that buffer and zeroes the cursor on entry, so EMPTY is the
         #: right starting state - and `ANSWER_NEEDS_NAME` reads it.
         self.name = ""
+        #: `dword_657994`, the caret. LEFT and RIGHT move it without touching
+        #: the buffer, and BACKSPACE and an insert both act AT it.
+        self.cursor = 0
         self.log = []
 
     def type_name(self, text):
-        """Type into the name field, capped where the buffer is."""
+        """One frame of the field's CHARACTER channel. -> did it consume it?
+
+        `sub_4397B0` hands `sub_47A390` one character and the hook's switch
+        decides: BACKSPACE deletes before the cursor, TAB and ESC are ignored,
+        RETURN moves the focus to the buttons when the buffer is not empty,
+        and anything else inserts AT the cursor, refused once 20 characters
+        are in. That is `NameField`, which this used to bypass entirely - it
+        appended and capped, so a backspace was inserted as a character and
+        the cursor did not exist.
+
+        The cursor persists across frames, because the arrows move it without
+        changing the buffer: `press` steps `self.cursor` and the next
+        backspace has to delete in front of wherever it now is.
+
+        RETURN's effect is the hook's own `mov [panel+24], 1` - list 1 of the
+        four is the buttons - and the caller must then DROP the frame's bits,
+        the way `Ui_DispatchInput` stops at the first hook returning 1.
+        """
+        f = NameField(self.e)
+        f.buf, f.cursor = self.name, self.cursor
+        ate = False
         for ch in text:
-            if len(self.name) >= NAME_MAX:
-                break
-            self.name += ch
-        return self.name
+            ate = f.type(ch) or ate
+        self.name, self.cursor = f.buf, f.cursor
+        if f.done:
+            self.cur = 1
+            self.log.append(("focus list", 1))
+        return ate
 
     def open(self, screen_id):
         self.reset()
@@ -874,15 +922,7 @@ class Ui:
         if self.panel is None:
             return False
         if bits & BACK:
-            parent = self._u32(self.panel)
-            if parent:
-                self.panel = parent
-                self._settle()
-                self.log.append(("back", parent))
-            else:
-                self.panel = None
-                self.log.append(("close",))
-            return True
+            return self._to_parent()
         hook = self._u32(self.panel + 16)
         if hook:
             fn = PANEL_HOOKS.get(hook)
@@ -901,11 +941,25 @@ class Ui:
         if hook == GRID_HOOK:
             return self._grid(lst, bits)
         if hook == NAME_HOOK:
-            # The name field answers the CHARACTER channel (sub_4397B0), not
-            # the input bits, and returns 0 for everything here - so the list
-            # simply does not respond to a direction, and because the hook
-            # exists `Ui_MoveSelection` is not reached either. Type into it
-            # with `NameField`; DOWN off it is the panel hook's job.
+            # The name field answers the CHARACTER channel (sub_4397B0) and
+            # not the input bits - with one exception. `loc_47A499`, the arm
+            # taken when no character is waiting, reads `screen+0x6C` (the
+            # live input word) and moves the CARET: bit 1 (LEFT) steps it back
+            # unless it is already 0, bit 2 (RIGHT) steps it on while there is
+            # a character under it - `cl = byte_69BDA0[cursor]; if (!cl)
+            # return 0`. Both return 1, so the frame is consumed. Every other
+            # bit returns 0, and because the hook exists `Ui_MoveSelection` is
+            # not reached either; DOWN off the field is the panel hook's job.
+            before = self.cursor
+            if bits & LEFT:
+                if self.cursor:
+                    self.cursor -= 1
+            elif bits & RIGHT:
+                if self.cursor < len(self.name):
+                    self.cursor += 1
+            if self.cursor != before:
+                self.log.append(("caret", self.cursor))
+                return True
             self.log.append(("name field: no bit response",))
             return False
         if hook == MOVE_SELECTION_LR:
@@ -1005,10 +1059,30 @@ class Ui:
             return self._confirm(its[self.sel[lst]])
         return False
 
+    def _to_parent(self):
+        """`sub_42A370(screen, panel->parent)` - the pop, from BACK or Annuler."""
+        parent = self._u32(self.panel)
+        if parent:
+            self._enter(parent)
+            self.log.append(("back", parent))
+        else:
+            self.panel = None
+            self.log.append(("close",))
+        return True
+
+    def _enter(self, panel):
+        """Install a panel, running the part of its `+4` builder that is read."""
+        self.panel = panel
+        if panel in RESETS_NAME:
+            self.name = ""
+        self._settle()
+
     def _confirm(self, item):
         """`Ui_ConfirmSelection`: the +40 callback, else the +44 panel."""
         cb = self._u32(item + 40)
         if cb:
+            if cb in TO_PARENT:
+                return self._to_parent()
             if cb in ANSWER:
                 if cb in ANSWER_NEEDS_NAME and not self.name:
                     # The engine's own first instruction. Nothing is written
@@ -1024,8 +1098,7 @@ class Ui:
             return True
         nxt = self._u32(item + 44)
         if nxt:
-            self.panel = nxt
-            self._settle()
+            self._enter(nxt)
             self.log.append(("enter", hex(nxt)))
             return True
         return False

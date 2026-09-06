@@ -401,6 +401,27 @@ bool UiWalk::installPanel(std::uint32_t addr) {
     return true;
 }
 
+bool UiWalk::toParent() {
+    if (!panel_) return false;
+    if (!panel_->parent) {                 // the top panel: the screen closes
+        panel_ = nullptr;
+        log_.push_back("close");
+        return true;
+    }
+    const auto* up = w_->at(panel_->parent);
+    if (!up) {
+        approx_ = true;
+        log_.push_back("parent panel not in the table");
+        return true;
+    }
+    leavePage(*panel_);
+    panel_ = up;
+    buildPage(*panel_);
+    settle();
+    log_.push_back("back");
+    return true;
+}
+
 bool UiWalk::pickable(const UiList& l, const UiItem& it) const {
     return it.selectable(l.broadcast) && !itemOff(it.addr);
 }
@@ -751,6 +772,17 @@ void UiWalk::buildPage(const UiPanel& p) {
     // its own, so the inventory page's must simply still be there - clearing
     // first is what made the device go back to its (255, 0, 0) placeholder
     // the moment an object was chosen.
+    // `sub_47A050`, the confirm dialog's own `+4`, and its FIRST act:
+    //
+    //     mov ecx, 8; xor eax, eax; mov edi, offset byte_69BDA0; rep stosd
+    //     mov dword_657994, ebx
+    //
+    // - 32 bytes of the name buffer zeroed and the cursor reset, every time
+    // the panel is installed. So cancelling and coming back gives an EMPTY
+    // field, not the name typed a moment ago; without this the second visit
+    // opens with the first visit's text and `Confirmer`'s empty-field gate
+    // cannot be reached again.
+    if (p.addr == kPanelStartConfirm) { name_.clear(); nameCursor_ = 0; }
     // `sub_4290D0(list, 0x20000004, value)` - the not-selectable bit over a
     // WHOLE list. The inventory page's builder (0x0049B710) runs it twice:
     //
@@ -949,16 +981,21 @@ bool UiWalk::typeName(const std::string& text) {
     const auto* l = curList();
     if (!l || l->hook != w_->nameHook()) return false;
     NameField f(w_->nameSwitch(), w_->nameMax());
-    f.enter(name_);
-    f.enter(text);
+    // SEEDED, not replayed. `f.enter(name_)` put the caret back at the end of
+    // the buffer every frame, so BACKSPACE always deleted the last character
+    // and the arrows' caret was thrown away between frames - and it is the
+    // same buffer and the same `dword_657994` the field's DRAWER reads.
+    f.seed(name_, nameCursor_);
+    bool ate = false;
+    for (char c : text) ate = f.type(c) || ate;
     name_ = f.text();
-    // ...and where the caret ended up. `sub_47A390` keeps it in
-    // `dword_657994` and the FIELD'S DRAWER reads it: the `_` goes after
-    // exactly this many characters of the typed name. Kept here rather than
-    // recomputed as `name_.size()` because the hook moves it on LEFT and
-    // RIGHT without changing the buffer at all.
     nameCursor_ = f.cursor();
-    return true;
+    // Case 13, RETURN: `mov ecx,[eax+1Ch]; mov dword ptr [ecx+18h], 1` -
+    // `panel+24 = 1`, and list 1 of the dialog's four is the BUTTONS. The
+    // hook refuses it on an empty buffer, which `NameField::type` already
+    // models, so `done()` is only true when the engine would have moved.
+    if (f.done()) { cur_ = 1; log_.push_back("focus list 1"); }
+    return ate;
 }
 
 bool UiWalk::startConfirm(std::uint32_t bits) {
@@ -983,6 +1020,13 @@ bool UiWalk::confirm() {
     const auto* it = selected();
     if (!it) return false;
     if (it->callback) {
+        // `sub_47A370` - ANNULER. Its whole body is
+        // `sub_42A370(screen, screen->panel->parent)`, so it is the back bit
+        // reached through a row: the dialog closes onto the start menu and
+        // the frame is consumed. It is the only callback in the tree with
+        // that body (`verify.py: start cancel`), so it is named by address
+        // and not pattern-matched at run time.
+        if (it->callback == kCbStartCancel) return toParent();
         // TWO CALLBACKS THAT DESCEND. `Ui_ConfirmSelection` normally follows
         // an item's `+44`, but a callback can install a panel itself with
         // `sub_42A370(screen, panel)` - and the sneak's object flow is built
@@ -1118,24 +1162,7 @@ bool UiWalk::confirm() {
 
 bool UiWalk::press(std::uint32_t bits) {
     if (!panel_) return false;
-    if (bits & kUiBack) {
-        if (panel_->parent) {
-            if (const auto* up = w_->at(panel_->parent)) {
-                leavePage(*panel_);
-                panel_ = up;
-                buildPage(*panel_);
-                settle();
-                log_.push_back("back");
-            } else {
-                approx_ = true;
-                log_.push_back("parent panel not in the table");
-            }
-        } else {
-            panel_ = nullptr;
-            log_.push_back("close");
-        }
-        return true;
-    }
+    if (bits & kUiBack) return toParent();
     if (panel_->hook) {
         if (panel_->hook == w_->startConfirmHook()) {
             if (startConfirm(bits)) return true;
