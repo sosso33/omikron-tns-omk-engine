@@ -879,6 +879,9 @@ struct LoadPanel {
     int profile = 0;                 // which one is listed (`list + 0x18`)
     int row = -1;                    // `dword_4CEBAC`; -1 = nothing chosen
     int mode = 0;                    // `word_4CEA9A`: 0 load, 3 empty
+    // Where the file is, so the selected row's THUMBNAIL can be read the way
+    // `sub_408D70` reads it - on the move, not held for all 256 slots.
+    std::string path;
 
     // The rows of the listed profile, in slot order.
     std::vector<SaveEntry> rows() const;

@@ -227,6 +227,24 @@ std::vector<std::byte> thumbFromRgb565(std::span<const std::uint16_t> px,
     return out;
 }
 
+std::vector<std::uint16_t> readSaveThumb(std::span<const std::byte> file, int slot) {
+    std::vector<std::uint16_t> out;
+    if (slot < 0 || slot >= static_cast<int>(kSaveSlots)) return out;
+    const std::size_t b = slotBase(slot) + kSaveSlotDb + kGameDbSize;
+    if (b + kSaveShot > file.size()) return out;
+    out.resize(static_cast<std::size_t>(kThumbW) * kThumbH);
+    for (std::size_t i = 0; i < out.size(); ++i) {
+        // stored X1 R5 G5 B5 (GAME_STATE 8b); the display is RGB565, so only
+        // green changes width
+        const auto lo = static_cast<unsigned>(file[b + 2 * i]);
+        const auto hi = static_cast<unsigned>(file[b + 2 * i + 1]);
+        const unsigned v = lo | (hi << 8);
+        const unsigned r = (v >> 10) & 0x1F, g = (v >> 5) & 0x1F, bl = v & 0x1F;
+        out[i] = static_cast<std::uint16_t>((r << 11) | ((g << 1) << 5) | bl);
+    }
+    return out;
+}
+
 std::vector<std::byte> readSaveFile(const std::string& writablePath,
                                     const std::string& shippedPath,
                                     std::string* usedPath) {

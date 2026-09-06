@@ -5434,6 +5434,9 @@ int main(int argc, char** argv) {
             loadPanelState = omk::buildLoadPanel(
                 omk::saveDirectory(omk::readSaveFile(savesPath, fr + "/IAM/GAMES").empty()
                                        ? fr + "/IAM/GAMES" : savesPath, w));
+            loadPanelState.path =
+                omk::readSaveFile(savesPath, fr + "/IAM/GAMES").empty()
+                    ? fr + "/IAM/GAMES" : savesPath;
             fresh->attachLoadPanel(&loadPanelState);
             // `Ui_BuildLoadPanel` runs in the OPEN callback and lays the
             // shared panel out differently for each of its two screens - 29

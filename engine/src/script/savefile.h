@@ -215,6 +215,12 @@ inline constexpr int kThumbW = 128, kThumbH = 96;
 std::vector<std::byte> thumbFromRgb565(std::span<const std::uint16_t> px,
                                        int w, int h);
 
+// One slot's THUMBNAIL, decoded to RGB565 for the display. The engine reads
+// it on the MOVE (`sub_408D70`, whose two stack buffers are 8232 and 24576
+// bytes), not on the draw, which is why the picture beside the selected row
+// changes as the selection does.
+std::vector<std::uint16_t> readSaveThumb(std::span<const std::byte> file, int slot);
+
 // --------------------------------------------------------------- the STORE
 //
 // Reading prefers the writable file and falls back to the data tree's, so a

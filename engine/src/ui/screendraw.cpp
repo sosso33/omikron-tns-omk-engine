@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "ui/screendraw.h"
 
+#include "script/savefile.h"
+
 #include "ui/iamtext.h"
 
 #include <algorithm>
@@ -352,6 +354,56 @@ ScreenFrame ScreenComposer::draw(Surface& fb, int screenId,
                 const std::string t = 15 < static_cast<int>(text.size())
                     ? text[15] : std::string("Nouvelle sauvegarde");
                 if (k < 8) line(k + 1, t, k == lp.row);
+            }
+            // ---- THE SELECTION BOX, and the connector, and the picture ----
+            //
+            // `I2D_DrawRectOutline` (0x004777A0): four `I2D_SubmitQuad`s with
+            // flags 4, which is `quadMode` 1. Its rectangle was measured off
+            // `traces/frames/loadpanel-mode2.png` and solved back through the
+            // function's own arithmetic to **a1=20, a2=173, a3=370, a4=16**
+            // for the first row - and 173 is this list's own second slot,
+            // which is the two readings agreeing (`engine: I2D outline`).
+            if (lp.row >= 0) {
+                const int v7 = 1;                     // `I2D_ScaleX(1)` at 640
+                const int a1 = f.x + q->offsetX, a3 = f.w;
+                const int a2 = f.y + q->offsetY + slot * (lp.row + 1) + 33 - slot;
+                const int a4 = 16;
+                const std::uint16_t c = rgb565(255, 255, 255);
+                const int quads[4][8] = {
+                    {a1-v7, a2-v7, a1+a3+v7, a2-v7, a1+a3+v7, a2,       a1-v7, a2},
+                    {a1-v7, a2+a4, a1+a3+v7, a2+a4, a1+a3+v7, a2+a4+v7, a1-v7, a2+a4+v7},
+                    {a1-v7, a2,    a1,       a2,    a1,       a2+a4,    a1-v7, a2+a4},
+                    {a1+a3, a2,    a1+a3+v7, a2,    a1+a3+v7, a2+a4,    a1+a3, a2+a4},
+                };
+                for (const auto& qd : quads) {
+                    const int xs[4] = {scaleX(qd[0]), scaleX(qd[2]), scaleX(qd[4]), scaleX(qd[6])};
+                    const int ys[4] = {scaleY(qd[1]), scaleY(qd[3]), scaleY(qd[5]), scaleY(qd[7])};
+                    fillQuad(fb, xs, ys, c, quadMode(4));
+                }
+                // the CONNECTOR to the picture - not a line: `Ui_DrawItem`'s
+                // vocabulary has no line at all, and the captured bar is two
+                // rows by sixty-nine columns, a mode-1 quad's signature.
+                const int cy = a2 + a4 / 2;
+                const int cx[4] = {scaleX(a1+a3+v7), scaleX(460), scaleX(460), scaleX(a1+a3+v7)};
+                const int cys[4] = {scaleY(cy), scaleY(cy), scaleY(cy+2), scaleY(cy+2)};
+                fillQuad(fb, cx, cys, c, quadMode(4));
+                // ...and the slot's own 128x96 picture, read on the MOVE the
+                // way `sub_408D70` reads it.
+                const int sl = lp.slotOfRow();
+                if (sl >= 0 && !lp.path.empty()) {
+                    const auto file = DataFs::readPath(lp.path);
+                    const auto px = readSaveThumb(file, sl);
+                    if (!px.empty())
+                        for (int yy = 0; yy < omk::kThumbH; ++yy)
+                            for (int xx = 0; xx < omk::kThumbW; ++xx) {
+                                const int dx = scaleX(460 + xx), dy = scaleY(140 + yy);
+                                if (dx < 0 || dy < 0 || dx >= fb.w || dy >= fb.h) continue;
+                                fb.px[static_cast<std::size_t>(dy) * static_cast<std::size_t>(fb.w) +
+                                      static_cast<std::size_t>(dx)] =
+                                    px[static_cast<std::size_t>(yy) * omk::kThumbW +
+                                       static_cast<std::size_t>(xx)];
+                            }
+                }
             }
             continue;
         }
