@@ -1167,24 +1167,22 @@ void Session::applyCamera(int id, int travel) {
         haveCam_ = true;
         return;
     }
-    // THE TRAVEL STARTS FROM WHERE THE CAMERA ACTUALLY IS, in world.
+    // THE TRAVEL STARTS FROM WHERE THE CAMERA ACTUALLY IS, and `camNow_` is
+    // that in both of the engine's two cases.
     //
-    // `camNow_` may be a RELATIVE camera, whose `eye`/`at` are OFFSETS from an
-    // actor and not world points at all - the follow camera's are
-    // (-1, 26, -119). Interpolating those numbers toward an absolute camera's
-    // (3089, 1006, -753) mixes two spaces, and the frames in between are
-    // wherever that arithmetic lands. `Camera_Request` swaps the LIVE block
-    // into `g_CameraPrev` and the move interpolates away from that, and the
-    // live block holds resolved world coordinates.
+    // `Camera_Request` swaps the live block into `g_CameraPrev` and the move
+    // interpolates away from that - and that block keeps being SOLVED while
+    // the move runs (`sub_417CF0(g_CameraPrev)`, 04_sys.c:4165), so an
+    // outgoing camera with a subject goes on tracking it. The one case that
+    // freezes is a request arriving DURING a move: `sub_414A90` redirects
+    // `g_CameraPrev` to a third block, `dword_4E7D10`, filled from the
+    // interpolator's own live output - a world point.
+    //
+    // `camNow_` is exactly that pair: it carries its subjects when the camera
+    // is standing, and `tickCamera` leaves it ABSOLUTE for the length of a
+    // travel. So one assignment serves both, and nothing here needs to
+    // flatten anything.
     camFrom_ = camNow_;
-    if (!camFrom_.absolute() && playerPlaced_) {
-        const auto r = resolveCamera(camFrom_, playerPos_, playerYaw_);
-        for (int k = 0; k < 3; ++k) {
-            camFrom_.eye[k] = r.eye[k];
-            camFrom_.at[k]  = r.at[k];
-        }
-        camFrom_.eyeSubject = camFrom_.atSubject = -1;
-    }
     camTo_     = *c;
     camTravel_ = travel;
     camElapsed_ = 0;
@@ -1201,9 +1199,54 @@ void Session::tickCamera() {
                         ? 1.0f
                         : static_cast<float>(camElapsed_) /
                               static_cast<float>(camTravel_);
+    // ---- BOTH ENDS ARE SOLVED TO WORLD, EVERY FRAME ------------------
+    //
+    // `sub_418410` (04_sys.c:4047) is the engine's interpolator and it is a
+    // plain lerp of the two camera blocks' `+20..+40`:
+    //
+    //     out[52..60] = C[20..28] * u + prev[20..28] * (1 - u);   // eye
+    //     out[64..72] = C[32..40] * u + prev[32..40] * (1 - u);   // target
+    //
+    // - no subjects, no offsets. Both ends are already WORLD points, because
+    // `sub_417CF0` is the per-frame camera SOLVE: for any mode but 13 it runs
+    // `sub_415D10`/`sub_415E60`, which call `sub_415A10` to resolve the
+    // block's subject into `+100..+108` and build the eye from that plus the
+    // rotated offset at `+124..+132`. The moving path calls it on BOTH blocks
+    // (`sub_417CF0(g_CameraPrev)` at :4165, the live one earlier) and then
+    // lerps what those solves wrote.
+    //
+    // Two readings of this have now been wrong, and each was right about the
+    // set it was found on. Lerping the RAW records mixes an offset with a
+    // world point whenever the two ends disagree, which took the flat's
+    // lift-door camera 3000 units outside the building; carrying `camTo_`'s
+    // subjects onto the result instead made the absolute destinations right
+    // and the RELATIVE ones worse - AREA 222's tutorial cameras 4290/4291/4292
+    // are all `eyeSubject 0 / atSubject 0`, so the port lerped a world point
+    // toward a raw offset (`eye -24 10 59`) and then added the player on top
+    // of the mixture. A reader met that as the tutorial shot pointing at the
+    // sky. Solving both ends first is the mechanism rather than either
+    // approximation of it.
+    const auto solve = [&](const WorldCamera& c, float eye[3], float at[3]) {
+        if (c.absolute() || !playerPlaced_) {
+            for (int k = 0; k < 3; ++k) { eye[k] = c.eye[k]; at[k] = c.at[k]; }
+            return;
+        }
+        // ...at the PELVIS, which is what `sub_414F30` reads out of the
+        // actor record (+244/+248/+252); `playerPos_` is the feet. The
+        // frontend solves a standing relative camera at exactly this point
+        // (`player->cameraLift()`), and a travel solved here at the feet sat
+        // a whole lift too low - a reader's screenshot of the Impasse
+        // tutorial framing Kay'l's legs.
+        const float subj[3] = {playerPos_[0], playerPos_[1] - subjectLift_, playerPos_[2]};
+        const auto r = resolveCamera(c, subj, playerYaw_);
+        for (int k = 0; k < 3; ++k) { eye[k] = r.eye[k]; at[k] = r.at[k]; }
+    };
+    float fe[3], fa[3], te[3], ta[3];
+    solve(camFrom_, fe, fa);
+    solve(camTo_,   te, ta);
     for (int k = 0; k < 3; ++k) {
-        camNow_.eye[k] = camFrom_.eye[k] + (camTo_.eye[k] - camFrom_.eye[k]) * u;
-        camNow_.at[k]  = camFrom_.at[k]  + (camTo_.at[k]  - camFrom_.at[k])  * u;
+        camNow_.eye[k] = fe[k] + (te[k] - fe[k]) * u;
+        camNow_.at[k]  = fa[k] + (ta[k] - fa[k]) * u;
     }
     camNow_.fov = camFrom_.fov + (camTo_.fov - camFrom_.fov) * u;
     // Roll is an ANGLE: take the SHORT arc. A move between +179 and -179 is
@@ -1216,18 +1259,23 @@ void Session::tickCamera() {
     camNow_.roll = camFrom_.roll + d * u;
     camNow_.id = camTo_.id;
     camNow_.mode = camTo_.mode;
-    // ...AND THE SUBJECTS, which decide whether these numbers are world
-    // points or offsets. Without this `camNow_` keeps the OUTGOING camera's,
-    // so a travel from the follow camera (subject 0, the player) to an
-    // absolute one left the arrived camera flagged relative for ever: its
-    // eye, a correct 3089/1006/-753, was then resolved as an offset FROM the
-    // player and the shot ended 3000 units outside the building, drawing a
-    // black screen. That is the flat's lift-door camera 4463, which a reader
-    // met as "I walk through the closed door and finish in the void" - the
-    // player was blocked the whole time; only the picture was gone.
-    camNow_.eyeSubject = camTo_.eyeSubject;
-    camNow_.atSubject  = camTo_.atSubject;
-    if (camElapsed_ >= camTravel_) camTravel_ = 0;
+    // ...and the result of that lerp is a WORLD point, so it is absolute for
+    // the length of the move. `camera()` hands `camNow_` to the frontend,
+    // which resolves whatever subject it carries - and there is nothing left
+    // to resolve.
+    camNow_.eyeSubject = camNow_.atSubject = -1;
+    // WHEN THE MOVE ENDS THE LIVE BLOCK TAKES OVER AGAIN, subjects and all.
+    // The engine simply stops interpolating and uses `C`, which `sub_417CF0`
+    // goes on solving every frame - so a travel INTO a camera that hangs off
+    // an actor must hand that camera back, or the shot freezes at the world
+    // point the last tick happened to compute. Adventure mode's own camera 0
+    // is one of those.
+    if (camElapsed_ >= camTravel_) {
+        camTravel_ = 0;
+        const int id = camNow_.id;
+        camNow_ = camTo_;
+        camNow_.id = id;
+    }
 }
 
 // ------------------------------------------------------------ THE PLAYER

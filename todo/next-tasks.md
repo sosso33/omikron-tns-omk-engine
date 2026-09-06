@@ -42,7 +42,7 @@ items are research and can be done any time they are wanted.
 | 17 | fight mode | **L** | good | the AI profiles and combat block are read; nothing is wired |
 | 18 | shoot mode | **L** | good | read, and deliberately unwired - a DECISION to revisit, not a gap |
 | 19 | does the original filter (anti-aliasing, …)? | **research** | fair | cheap to answer, and the answer may be "no reachable tier" |
-| 22 | the Telis cutscene in Kay'l's flat — four faults | **M** | strong | reported 2026-09-06. The waver in Telis's hand: **FIXED** (a set mesh on an ABSOLUTE path; parameter 5 picks the arm). Kay'l invisible: **FIXED** (a `scx.play.player` program poses the PLAYER'S ACTOR, and the viewer drew him only in adventure mode). The transcan camera: **FIXED** (the travel dropped the subjects). Open: the Gun Waver in her hands is not drawn, she faces the wrong way before the idle, and the bedroom mirror renders transparent instead of reflecting |
+| 22 | the Telis cutscene in Kay'l's flat — four faults, then the transcan's two | **M** | **DONE** | reported 2026-09-06, all six closed. The transcan: its advert's only camera hangs off the speaker (`[2,2]`) and the port drew only absolute dialogue cameras; and `speakerReady` was gated on a camera solve that conversation could not make, so the line's morph never loaded. The waver in Telis's hand: **FIXED** (a set mesh on an ABSOLUTE path; parameter 5 picks the arm). Kay'l invisible: **FIXED** (a `scx.play.player` program poses the PLAYER'S ACTOR, and the viewer drew him only in adventure mode). The transcan camera: **FIXED** (the travel dropped the subjects). Open: the Gun Waver in her hands is not drawn, she faces the wrong way before the idle, and the bedroom mirror renders transparent instead of reflecting |
 
 The **#** column is the item's id, not its position: 20 and 21 were added on
 2026-09-06 and sit in the table where they belong rather than at the end.
@@ -520,16 +520,17 @@ through a camera travel (`camera travel`); confirmed by the reader.
   carried to her hand by `Script_MoveObjectOnPath` — whose two arms are
   selected by **parameter 5**, which the port was ignoring. See FILE_FORMATS,
   "`Script_MoveObjectOnPath`".
-* **She faces the wrong way and then snaps to the idle.** The facing half of
-  the placement-record clobber is a hypothesis that fits and has never been
-  measured: `s->facing` is written from the 20-byte record every frame and
-  from the program's Euler on its own frames, so which one wins alternates.
-  `program placement`'s docstring says so explicitly; a check that watches a
-  facing flip and then watches it stop is what would settle it.
-* **The bedroom mirror renders transparent.** `AP_mirror` carries flags
-  `0x00103000` — the mirror bit `0x100000` **and** the additive pair
-  `0x1000|0x2000`. The port's drawable filter sees the transparency and the
-  mirror pass never claims the mesh, so it blends instead of reflecting. Which
-  of the two the engine honours for a mesh carrying both is the question to
-  answer in `sub_440D90` before changing the filter.
+* ~~**She faces the wrong way and then snaps to the idle.**~~ **FIXED**,
+  by `Morph_Play`'s own rule and not by a tuned yaw: a line plays in the
+  frame the node was in when it started — the scene clip's root yaw plus the
+  Euler — and holds it. Three readings were needed (engine/README, "A spoken
+  line plays in the frame…"); each of the first two looked right on one
+  scene and was caught by the transition on the other.
+* ~~**The bedroom mirror renders transparent.**~~ **FIXED**, and the flags
+  were a red herring: `AP_mirror`'s `0x00103000` is the mirror bit plus the
+  additive pair, and the blend is the compositing operator OVER a reflection,
+  not a substitute for one. The real cause is that `drawWithMirror` had only a
+  single-`Geometry` form and only the `--scene` free-fly viewer ever called
+  it, so the game path drew the pane and nothing under it. The plane was
+  already being read per set and used for nothing but a log line.
 

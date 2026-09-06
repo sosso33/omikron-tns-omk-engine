@@ -3615,20 +3615,45 @@ def c_object_path_anchor():
 
 
 def c_camera_travel_subjects():
-    r"""A CAMERA TRAVEL CARRIES THE SUBJECTS, or the shot never arrives.
+    r"""A CAMERA TRAVEL IS A LERP OF TWO SOLVED WORLD POINTS - and two wrong
+    readings of that each broke a different set of shots.
 
     A `WorldCamera`'s `eyeSubject`/`atSubject` say whether its `eye` and `at`
     are WORLD POINTS or OFFSETS from an actor - `-1` is absolute, anything
-    else names the actor the point hangs off (`worldcam.h`). `Session::
-    tickCamera` interpolated eye, target, fov, roll, id and mode across a
-    travel and copied NEITHER subject, so `camNow_` kept the OUTGOING
-    camera's for ever.
+    else names the actor the point hangs off (`worldcam.h`).
 
-    In adventure mode the outgoing camera is the follow camera, whose subject
-    is the player. So a travel to an absolute camera arrived with the right
-    numbers flagged relative, and the viewer then resolved them as an offset
-    FROM Kay'l - putting the shot about 3000 units outside the building and
-    drawing a black screen.
+    **What the engine does.** `sub_418410` (`readable/src/04_sys.c` 4047) is
+    the interpolator and it is a plain lerp of the two camera blocks:
+
+        out[52..60] = C[20..28] * u + prev[20..28] * (1 - u);   // eye
+        out[64..72] = C[32..40] * u + prev[32..40] * (1 - u);   // target
+
+    no subjects and no offsets, because both ends are already WORLD points.
+    They get there through `sub_417CF0`, the per-frame camera SOLVE: for any
+    mode but 13 it runs `sub_415D10` / `sub_415E60`, which call `sub_415A10`
+    to resolve the block's subject into `+100..+108` and build the eye from
+    that plus the rotated offset at `+124..+132`. The moving path solves BOTH
+    blocks - `sub_417CF0(g_CameraPrev)` at :4165 as well as the live one - and
+    then lerps what those solves wrote.
+
+    **Reading 1, and the set it was found on.** `Session::tickCamera`
+    interpolated the RAW records and copied neither subject, so `camNow_` kept
+    the OUTGOING camera's for ever. In adventure mode the outgoing camera is
+    the follow camera, whose subject is the player. So a travel to an absolute
+    camera arrived with the right numbers flagged relative, and the viewer
+    resolved them as an offset FROM Kay'l - putting the shot about 3000 units
+    outside the building and drawing a black screen.
+
+    **Reading 2, which fixed that and broke the opposite case.** Carrying
+    `camTo_`'s subjects onto the result, and flattening `camFrom_` to world
+    once at request time, is right whenever the destination is ABSOLUTE and
+    wrong whenever it is not: AREA 222's tutorial cameras 4290/4291/4292 are
+    all `eyeSubject 0 / atSubject 0`, so the port lerped a world point toward
+    a raw offset (`eye -24 10 59`) and then added the player on top of the
+    mixture. A reader met that as the Impasse tutorial pointing at the sky.
+    Measured on that travel, the eye sat **7100 units** from the player on its
+    first frame and only converged at the very end; solving both ends first it
+    never leaves **127**, which is what a pair of ~60-unit offsets should give.
 
     **That is the flat's lift door**, and it is what a reader met as *"there
     are no colliders, I walk through the closed door and finish in the void"*.
@@ -3642,23 +3667,32 @@ def c_camera_travel_subjects():
     is what separated "the camera sees nothing" from "the Session drives it
     wrong".
 
-    **The travel's START was wrong too**, and it is why the frame darkened
-    progressively rather than failing outright: `camFrom_` was the follow
-    camera's OFFSETS `(-1, 26, -119)`, lerped toward an absolute
-    `(3089, 1006, -753)` - two different spaces, and every frame in between
-    wherever that arithmetic landed. `Camera_Request` swaps the LIVE block
-    into `g_CameraPrev` and the move interpolates away from that; the live
-    block holds resolved world coordinates, so `applyCamera` now resolves a
-    relative outgoing camera before it becomes `camFrom_`.
+    **And the START needs nothing of its own.** `Camera_Request` swaps the
+    live block into `g_CameraPrev`, and that block keeps being solved while
+    the move runs - so an outgoing camera with a subject goes on tracking it.
+    The one case that freezes is a request arriving DURING a move, where
+    `sub_414A90` redirects `g_CameraPrev` to a third block, `dword_4E7D10`,
+    filled from the interpolator's own live output. `camNow_` is exactly that
+    pair once the lerp leaves its result absolute, so `camFrom_ = camNow_`
+    serves both and nothing has to be flattened by hand.
 
-    Asserted: camera 4463's record straight out of the shipped tables, and
-    then the door shot itself - non-black pixels a third of the way through
-    the travel, at its end, and long after it, which were **4824 / 0 / 0** and
-    are now a stable ~224000.
+    Asserted, both arms in one check:
 
-    Shown to fail: dropping the subject copy takes all three counts to 0;
-    dropping the resolve of `camFrom_` leaves the arrival right and the
-    middle of the travel dark.
+    * camera 4463's record straight out of the shipped tables, and the flat's
+      door shot itself - non-black pixels a third of the way through its
+      50-frame travel, at its end, and long after it, which were
+      **4824 / 0 / 0** under reading 1 and are now a stable ~224000. That is
+      the ABSOLUTE destination.
+    * the Impasse tutorial's 4290 -> 4291 -> 4292, the RELATIVE one: the
+      furthest the resolved eye ever gets from the player across the whole
+      sequence. 127 units with both ends solved, and thousands under reading 2
+      - `OMK_CAMEYE` reports the resolved eye per frame, because a lit-pixel
+      count cannot tell a correct shot from a wrong one that happens to be
+      looking at the sky, and the sky is exactly what the reader saw.
+
+    Shown to fail: dropping the subject copy takes the door's three counts to
+    0; keeping it and flattening `camFrom_` (reading 2) leaves the door right
+    and takes the tutorial's eye past 7000.
     """
     import subprocess, tempfile, shutil, struct as _st, re as _re
     eng = os.path.join(ROOT, "engine")
@@ -3700,8 +3734,40 @@ def c_camera_travel_subjects():
             lit.append(sum(1 for q in px if q) > 150000)
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
-    return (rec, tuple(lit)), \
-           ((3089, 1006, -753, 2975, 1037, -753), (True, True, True)), \
+    # ---- AND THE RELATIVE DESTINATION, which the absolute one cannot see.
+    # The Impasse tutorial travels 4290 -> 4291 -> 4292, all three
+    # `eyeSubject 0`, so every frame's resolved eye must stay within a stride
+    # or two of the player - their offsets are about 60 units. `--newgame-world`
+    # takes the world from `IAM\START` so zone 3795 is still live; the save
+    # supplies only the player record.
+    import math as _m
+    far = None
+    lift4 = None        # frame 4: how far the eye sits ABOVE the feet
+    env2 = dict(os.environ, SDL_VIDEODRIVER="dummy", OMK_CAMEYE="1")
+    tut = subprocess.run([play, fr, os.path.join(ROOT, "tables"),
+                          "--save", os.path.join(ROOT, "traces", "save-appart.bin"),
+                          "--newgame-world", "--area", "222",
+                          "--stand", "7275,-89,3019,239",
+                          "--frames", "300", "--res", "640x480"],
+                         capture_output=True, env=env2, encoding="latin-1")
+    for line in tut.stdout.splitlines():
+        mm = _re.search(r"\[cameye\].*eye (\S+) (\S+) (\S+)\s+at \S+ \S+ \S+"
+                        r"\s+player (\S+) (\S+) (\S+)", line)
+        if not mm: continue
+        e = [float(mm.group(i)) for i in (1, 2, 3)]
+        pl = [float(mm.group(i)) for i in (4, 5, 6)]
+        d = _m.dist(e, pl)
+        far = d if far is None else max(far, d)
+        # THE ANCHOR IS THE PELVIS. `sub_414F30` reads +244/+248/+252 for
+        # every mode but 4/5, and +248 is the pelvis (issue 49): Y points
+        # down, so the eye of a shot offset (-24, 10, 59) must sit well ABOVE
+        # the walker's ground point. Solved at the feet it sat 3 units below
+        # it and framed Kay'l's legs; at the pelvis it is 39 above.
+        if lift4 is None and "frame 4 " in line:
+            lift4 = pl[1] - e[1]
+    return (rec, tuple(lit), far is not None and far < 200.0,
+            lift4 is not None and lift4 > 20.0), \
+           ((3089, 1006, -753, 2975, 1037, -753), (True, True, True), True, True), \
            "camera 4463's record as AREA 237 ships it - the flat's lift-door " \
            "shot, eye 3089/1006/-753 looking at 2975/1037/-753; then whether " \
            "that shot DRAWS anything, a third of the way through its 50-frame " \
@@ -3712,7 +3778,15 @@ def c_camera_travel_subjects():
            "offset from the player - 3000 units outside the building. A reader " \
            "met that as walking through a closed door into the void; the " \
            "player was blocked at the door throughout and only the picture " \
-           "was missing"
+           "was missing. And the other arm, which that one cannot see: across " \
+           "the Impasse tutorial's 4290 -> 4291 -> 4292, all three relative to " \
+           "the player, the resolved eye never gets further from him than a " \
+           "camera offset of about 60 units allows - 127 with both ends of " \
+           "the travel solved to world, and 7100 on its first frame when only " \
+           "the destination's subjects are carried; and that the eye sits " \
+           "more than 20 units ABOVE the feet on the travel's first frame, " \
+           "because the offsets hang off +248, the pelvis, and solved at the " \
+           "feet the same shot framed Kay'l's legs"
 
 
 def c_program_placement_holds():
@@ -4014,6 +4088,174 @@ def c_path_form():
            "the path's own sample, 3352/1056/-884, in her hand and not the " \
            "3636/1317/-683 the set parks it at; the kitchen door's is its " \
            "own authored position, which is what a displacement at t0 means"
+
+
+def c_line_facing():
+    r"""A SPOKEN LINE PLAYS IN THE FRAME THE NODE WAS IN WHEN IT STARTED - and
+    that frame is latched once, not read every tick.
+
+    `Morph_Play` (0x0041AFC0, CLEAN):
+
+        Matrix3x3_RotateVector(0,0,-1, node+92, &dir)     // the WORLD matrix
+        heading = atan2(dirZ, dirX)*180/pi + 90 - actor[ACTOR_FACING]
+        sub_42BE00(heading)
+
+    `ACTOR_FACING` is +420, the Euler y, so `heading` is the node's world yaw
+    less the Euler - the scene clip's own root orientation, the one
+    `Anim_ApplyNodeFrame` left on the pelvis - and the morph player composes
+    the .3DM root with `yaw(heading)` (`08_wave.c` 963-965) under the node's
+    facing matrix. So a line keeps the clip's root yaw plus the Euler, its
+    own root on top, and `sub_42BE00` is called ONCE: the morph holds that
+    yaw for its whole length whatever the scene program does after.
+
+    The viewer got this wrong three ways in one day, each caught by the
+    transition and not by a still. (1) Both facing terms carried `!useLine`,
+    so a line was drawn with no yaw at all and the body turned to its real
+    one when the idle came back - a reader: *she's looking at the wrong
+    direction then goes back to the correct one for the idle*. (2) Dropping
+    `!useLine` kept the Euler but lost the clip's root yaw, the ~90 degrees
+    between the port and the engine's own capture of the greeting. (3)
+    Adding the root yaw from the LIVE program re-read it every tick, so when
+    the goodbye's program ended mid-line (frame 124) she snapped from -102 to
+    0 with the line still playing.
+
+    Asserted from `OMK_TRACE_ACTOR`'s `yaw` column on the two scenes that
+    separate the readings: the goodbye (`TelisAuRevoir`, Euler -80, clip root
+    ~338), where the drawn yaw over the line and the idle after it must be ONE
+    value, non-zero, and not the bare Euler; and the greeting (dialog 402,
+    Euler 0), where the line's yaw must be one non-zero value - the clip's
+    root, which is what turns her to the lens in `traces/frames/dlg402-44`.
+
+    Shown to fail: restoring `!useLine` (reading 1) gives the goodbye yaws
+    {-80, 0} and the greeting {0}; re-reading the root each tick (reading 3)
+    gives the goodbye {-80, 258, 0}.
+    """
+    import subprocess, re as _re
+    eng = os.path.join(ROOT, "engine")
+    fr = omkpaths.data_root()
+    saves = os.path.join(ROOT, "omk-saves", "GAMES")
+    if not (os.path.isdir(eng) and os.path.isdir(fr)):
+        return ("skipped",), ("skipped",), "engine/ or gamedata/ absent"
+    if not os.path.exists(saves):
+        return ("skipped",), ("skipped",), "omk-saves/GAMES absent (not committed)"
+    b = subprocess.run(["make", "-s", "play"], cwd=eng, capture_output=True)
+    play = os.path.join(eng, "build", "omk-play")
+    if b.returncode != 0 or not os.path.exists(play):
+        return ("build failed",), ("built",), "engine/ must build"
+
+    def yaws(actor, args, lo, hi):
+        env = dict(os.environ, SDL_VIDEODRIVER="dummy", OMK_TRACE_ACTOR=str(actor))
+        r = subprocess.run([play, fr, os.path.join(ROOT, "tables")] + args,
+                           capture_output=True, env=env, encoding="latin-1")
+        out = set()
+        for line in r.stdout.splitlines():
+            m = _re.search(r"\[trace\] frame (\d+) actor %d\b.*\byaw (\S+)" % actor, line)
+            if m and lo <= int(m.group(1)) <= hi:
+                out.add(int(round(float(m.group(2)))))
+        return sorted(out)
+
+    goodbye = yaws(53, ["--save", saves, "--slot", "0", "--var", "652=1,657=1",
+                        "--give", "0:42,0:3,1:3", "--stand", "3054,1071,-753,154",
+                        "--hold", "0*90,k28*3,0*300", "--frames", "260",
+                        "--res", "640x480"], 66, 259)
+    greeting = yaws(0, ["--save", saves, "--slot", "0",
+                        "--stand", "3572,1071,-991,181", "--frames", "470",
+                        "--res", "640x480"], 408, 469)
+    return (len(goodbye), goodbye != [0], goodbye != [-80],
+            len(greeting), greeting != [0]), \
+           (1, True, True, 1, True), \
+           "the goodbye's drawn yaw from the line's first frame through the " \
+           "idle after the program ends - one value, not 0 and not the bare " \
+           "Euler -80, because Morph_Play latches the node's world heading " \
+           "once and the morph keeps it; and the greeting's, one non-zero " \
+           "value through the line, the clip's root yaw that turns her to " \
+           "the lens in the engine's own capture"
+
+
+def c_dialogue_camera_subject():
+    r"""A DIALOGUE CAMERA'S POINTS CAN HANG OFF A SPEAKER - and the port drew
+    only the absolute ones.
+
+    `Camera_LoadParams` (0x004146C0): a point whose subject is -1 is absolute
+    and lands at +20/+32; any other subject makes it an OFFSET at +124, and
+    the block's subject resolver fills the anchor. Kind 2 is `sub_4151E0`: the
+    actor NODE's world origin (+36/+40/+44 of its matrix) and its heading,
+    `atan2` of the matrix's forward, +90. The solver then places the point at
+    `anchor - R(heading) * offset` - the sign `resolveCamera` already carries.
+    `dialog_issue_camera` (01_file.c) maps the code to an actor: 0/1 the first
+    speaker, 2/3 the second, 6 both. The second is the conversation's speaker,
+    read off the data: every camera of DIALOG 39 is [2,2] and the engine's own
+    frame of it is a close-up of the hologram it speaks with; 401's camera 11
+    is [1,1].
+
+    The viewer's own line said it - `haveDlgCam = ca->absolute() &&
+    cbb->absolute()`, `[relative - not drawn]` - so the transcan's advert,
+    whose ONLY camera is [2,2], fell through to the follow camera and framed
+    the room from across it. A reader, with the original beside it: *transcan
+    camera is not good*.
+
+    **And the same conversation hid a second fault.** `speakerReady` was the
+    camera SOLVE's validity (`stageSpeaker` casts rays from absolute cameras
+    to find where a speaker stands), and the line's .3DM was loaded only when
+    ready - so a conversation framed entirely off its speaker cast no rays,
+    solved nothing, and never loaded its morph: "frame 95 of 0", the hologram
+    playing its scene clip through the whole advert. `Morph_Play` runs on the
+    speaker's own node whatever the cameras are; the solve exists only to
+    PLACE a speaker nothing else places. *The character on transcan is not
+    animated correctly.*
+
+    Asserted on DIALOG 39 from zone 4096 (ENTER is scan 28, the Aventure
+    Action key): that camera 73 is reported as hanging off a speaker; that
+    the line's morph binds (`face: mesh 19, 130 verts`) and runs for its 813
+    frames; and that the resolved eye settles within 80 units of the
+    hologram's staged position - the (0,20,46) offset turned by his facing -
+    rather than the ~200 the follow camera stood at.
+
+    Shown to fail: restoring the absolute-only gate drops the camera line to
+    `[relative - not drawn]` and puts the eye 200+ from him; restoring
+    `speakerReady = st.valid` drops the face line and "of 813" to "of 0".
+    """
+    import subprocess, re as _re, math as _m
+    eng = os.path.join(ROOT, "engine")
+    fr = omkpaths.data_root()
+    saves = os.path.join(ROOT, "omk-saves", "GAMES")
+    if not (os.path.isdir(eng) and os.path.isdir(fr)):
+        return ("skipped",), ("skipped",), "engine/ or gamedata/ absent"
+    if not os.path.exists(saves):
+        return ("skipped",), ("skipped",), "omk-saves/GAMES absent (not committed)"
+    b = subprocess.run(["make", "-s", "play"], cwd=eng, capture_output=True)
+    play = os.path.join(eng, "build", "omk-play")
+    if b.returncode != 0 or not os.path.exists(play):
+        return ("build failed",), ("built",), "engine/ must build"
+    env = dict(os.environ, SDL_VIDEODRIVER="dummy", OMK_CAMEYE="1")
+    r = subprocess.run([play, fr, os.path.join(ROOT, "tables"),
+                        "--save", saves, "--slot", "0",
+                        "--stand", "3429,1079,-674,132",
+                        "--hold", "0*30,k28*4,0*300", "--frames", "80",
+                        "--res", "640x480"],
+                       capture_output=True, env=env, encoding="latin-1")
+    out = r.stdout
+    hangs = "dialogue camera 73 -> 73" in out and "[hangs off a speaker]" in out
+    face = _re.search(r"face: mesh (\d+), (\d+) verts", out)
+    frames = _re.search(r"dialogue: line '034035' at \S+ of \S+ s - frame \d+ of (\d+)", out)
+    eye = None
+    for line in out.splitlines():
+        m = _re.search(r"\[cameye\] frame 79\s+eye (\S+) (\S+) (\S+)", line)
+        if m: eye = [float(m.group(i)) for i in (1, 2, 3)]
+    holo = _re.search(r"actor 334 HMT_FNM \(bank none\) at (\S+) (\S+) (\S+)", out)
+    dist = None
+    if eye and holo:
+        dist = _m.dist(eye, [float(holo.group(i)) for i in (1, 2, 3)])
+    return (hangs, face.groups() if face else None,
+            int(frames.group(1)) if frames else 0,
+            dist is not None and dist < 80.0), \
+           (True, ("19", "130"), 813, True), \
+           "DIALOG 39 from zone 4096: camera 73 reported as hanging off a " \
+           "speaker; the line's .3DM binding to the hologram (face mesh 19, " \
+           "130 verts) and running for its 813 frames rather than 0; and the " \
+           "resolved eye settling within 80 units of the hologram - the " \
+           "(0,20,46) offset turned by his facing - where the follow camera " \
+           "it used to fall back to stood about 200 away"
 
 
 def c_ui_shop_titles():
@@ -25301,6 +25543,8 @@ SLOW = [
     ("program placement",  c_program_placement_holds, "engine/README"),
     ("engine: player program", c_engine_player_program, "engine/README"),
     ("path form",          c_path_form,          "FILE_FORMATS 5c"),
+    ("line facing",        c_line_facing,        "engine/README"),
+    ("dialogue camera subject", c_dialogue_camera_subject, "FILE_FORMATS 5b; engine/README"),
     ("save clock",         c_save_clock,        "GAME_STATE 8"),
     ("player counters",   c_player_counters,   "UI 3g; GAME_STATE"),
     ("fill colour",       c_fill_colour,       "UI 3b"),

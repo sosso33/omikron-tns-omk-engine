@@ -2244,7 +2244,34 @@ block, whose format phase 3 opens with.
 > false friend caught by a reader who plays the game: bassin here is anatomy,
 > and the sibling name `TeCuissed` settles it.
 
-#### `Script_MoveObjectOnPath` — the path is a displacement or a position, and **parameter 5 says which**
+#### A dialogue camera's `+32`/`+34` — whose frame each point is in
+
+**read from the code, 2026-09-06.** The two subject shorts of a 44-byte
+`DialogCamera` are not the world camera's "actor id or −1". `Camera_LoadParams`
+(0x004146C0) tests each: `0xFFFF` makes that point an **absolute** set
+coordinate (`+20`/`+32` of the live block); anything else makes it an
+**offset** (`+124`), resolved each frame against an anchor the block's subject
+resolver fills. `dialog_issue_camera` (`01_file.c`, the body of
+`Dialog_ApplyLineCameras`) maps the code to an actor:
+
+| code | anchor |
+|---|---|
+| `0xFFFF` | none — absolute |
+| 0, 1 | the first speaker |
+| 2, 3 | the second speaker |
+| 6 | both (a two-shot, `field36..40` carry its parameters) |
+| other | detached |
+
+For kind 2 (`sub_4151E0`) the anchor is the actor **node's** world origin and
+heading, and the point is `anchor − R(heading)·offset`. Which actor is which:
+every camera of DIALOG 39 (the transcan's Chokovat advert) is `[2,2]` and the
+engine's own frame of it is a close-up of the hologram it speaks with, so the
+second speaker is the conversation's `speaker`; 401's camera 11 is `[1,1]`.
+Of the shipped file, all of 402's and all but one of 401's are absolute, which
+is why a port that drew only absolute ones passed every check it had.
+`verify.py: dialogue camera subject`.
+
+### `Script_MoveObjectOnPath` — the path is a displacement or a position, and **parameter 5 says which**
 
 The most-used scene function in the game, and the one whose reading was wrong
 twice on 2026-09-06 — first by placing the sample outright for everything,

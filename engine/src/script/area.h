@@ -1017,6 +1017,16 @@ public:
     // FOLLOW CAMERA to stand down (`sub_415D10`), which is omk-play 42.
     bool playerAnimHeld() const { return playerAnimHeld_; }
     const float* playerPos() const { return playerPos_; }
+    // THE CAMERA SUBJECT IS +244..+252, THE PELVIS, not the feet. `sub_414F30`
+    // (the subject resolver behind `sub_415A10`) reads the actor record's
+    // +244/+248/+252 for every mode but 4/5, and `player.h` settled from the
+    // other side that +248 is the pelvis - HO1_FNM's standing pelvis sits
+    // 41.8 above the feet (issue 49, *the camera on adventure mode is set
+    // too low*). `playerPos_` is the walker's ground point, so a camera that
+    // hangs off him is solved at `playerPos_ - lift`. The frontend, which
+    // knows the model, tells the Session the lift when it builds the player.
+    void  setCameraSubjectLift(float lift) { subjectLift_ = lift; }
+    float cameraSubjectLift() const { return subjectLift_; }
     float playerYaw() const { return playerYaw_; }
     // The address the last `actor.goto_address` named, or -1. Reported so a
     // check can assert the id the script chose as well as where it landed.
@@ -1260,6 +1270,7 @@ private:
     std::vector<ZoneApplied> zoneLog_;
     std::vector<NothingHere> nothingHere_;
     bool playerDriven_ = false;              // a scx.play.player* program owns him
+    float subjectLift_ = 0.0f;               // feet -> pelvis, the camera's +248
     bool playerWalks_ = false;               // something outside feeds his position
     int  placementSeq_ = 0;                  // landings of placeActorAt
     bool playerAnimHeld_ = false;            // Actor_HoldAnimation's 0x81 on the player

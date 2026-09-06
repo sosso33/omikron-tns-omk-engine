@@ -92,6 +92,30 @@ namespace {
 // MIRROR mesh. A batch groups by (blend, material, cutout), so a batch can hold
 // both - the mirror shares a material with the wall around it - and the split
 // has to be by RUN inside the batch, not by batch.
+// The same split over a PREPARED draw list - the game path builds one from
+// several geometries (the set, the staged bodies, the props, the sprites) and
+// sorts it by bucket key, and only the set's corners carry `cornerMirror`.
+// Each draw is run-split exactly as a batch is, so a batch that straddles the
+// mirror's faces still separates.
+void splitList(std::span<const Draw> in, std::vector<Draw>& scene,
+               std::vector<Draw>& mirror) {
+    for (const auto& src : in) {
+        const Geometry* g = src.geo;
+        const bool haveFlags = g && g->cornerMirror.size() == g->corners.size();
+        if (!haveFlags) { scene.push_back(src); continue; }
+        std::size_t i = src.start;
+        while (i < src.start + src.count) {
+            const std::uint8_t m = g->cornerMirror[i];
+            std::size_t j = i;
+            while (j < src.start + src.count && g->cornerMirror[j] == m) ++j;
+            Draw d = src;
+            d.start = i; d.count = j - i;
+            (m ? mirror : scene).push_back(d);
+            i = j;
+        }
+    }
+}
+
 void splitDraws(const Geometry& g, std::vector<Draw>& scene,
                 std::vector<Draw>& mirror) {
     const bool haveFlags = g.cornerMirror.size() == g.corners.size();
@@ -126,10 +150,12 @@ void splitDraws(const Geometry& g, std::vector<Draw>& scene,
 // The test is per TRIANGLE and keeps any triangle with a vertex more than
 // `eps` in front, so geometry meeting the mirror is kept while the mirror's
 // own wall - which lies ON the plane - is not.
-std::vector<Draw> inFrontOf(const std::vector<Draw>& in, const Geometry& g,
+std::vector<Draw> inFrontOf(const std::vector<Draw>& in,
                             const float n[3], float d, float eps) {
     std::vector<Draw> out;
     for (const auto& src : in) {
+        if (!src.geo) continue;
+        const Geometry& g = *src.geo;      // each draw carries its own
         std::size_t runStart = src.start;
         std::size_t runLen = 0;
         for (std::size_t t = src.start; t + 2 < src.start + src.count; t += 3) {
@@ -162,18 +188,26 @@ void runPass(Renderer& r, const View& v, const std::vector<Draw>& ds) {
 MirrorStats drawWithMirror(Renderer& r, const Geometry& g,
                            std::span<const Texture> tex, const View& v,
                            const MirrorPlane& mp) {
-    MirrorStats st;
-    // NOT `setTextures` - that is a LOAD-time call, and calling it per frame
-    // crashed the viewer. The software renderer only stores a span, so it
-    // looked harmless; the Vulkan one allocates a VkImage and a descriptor set
-    // per texture, so a per-frame call exhausted the 128-set pool in a handful
-    // of frames and then bound a set that had failed to allocate. The caller
-    // sets the textures when it loads the set, which is what the interface
-    // says (`Renderer::setTextures`).
     (void)tex;
-
     std::vector<Draw> scene, mirror;
     splitDraws(g, scene, mirror);
+    std::vector<Draw> all = scene;
+    all.insert(all.end(), mirror.begin(), mirror.end());
+    return drawWithMirror(r, all, v, mp);
+}
+
+MirrorStats drawWithMirror(Renderer& r, std::span<const Draw> draws,
+                           const View& v, const MirrorPlane& mp) {
+    MirrorStats st;
+    // The textures are NOT set here. That is a LOAD-time call, and calling it
+    // per frame crashed the viewer: the software renderer only stores a span,
+    // so it looked harmless, but the Vulkan one allocates a VkImage and a
+    // descriptor set per texture and a per-frame call exhausted the 128-set
+    // pool in a handful of frames, then bound a set that had failed to
+    // allocate. The caller sets them when it loads the set
+    // (`Renderer::setTextures`).
+    std::vector<Draw> scene, mirror;
+    splitList(draws, scene, mirror);
 
     // No mirror in this set, or none visible: one pass, exactly as before.
     if (!mp.found || mirror.empty()) {
@@ -213,7 +247,7 @@ MirrorStats drawWithMirror(Renderer& r, const Geometry& g,
             rvn.cam.at[k]  = v.cam.at[k]  - 2.0f * dAt     * n[k];
         }
         rvn.cam.flipX = !v.cam.flipX;
-        const auto clipped = inFrontOf(scene, g, n, d, 1.0f);
+        const auto clipped = inFrontOf(scene, n, d, 1.0f);
         if (r.drawMirrorScene(v, rvn, scene, clipped, mirror)) {
             st.native = true;     // on the GPU; nothing to composite, nothing to upload
             return st;
@@ -235,7 +269,7 @@ MirrorStats drawWithMirror(Renderer& r, const Geometry& g,
     }
     // The screen-X flip, not a 180-degree rotation - see `RCamera::flipX`.
     rv.cam.flipX = !v.cam.flipX;
-    runPass(r, rv, inFrontOf(scene, g, n, d, 1.0f));
+    runPass(r, rv, inFrontOf(scene, n, d, 1.0f));
     const Surface reflection = r.readback();   // a copy: the next pass reuses it
 
     // ---- pass 2: the scene WITHOUT the mirror, and pass 3 WITH it.

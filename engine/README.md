@@ -1680,15 +1680,217 @@ wrong.
 **The travel's START was wrong as well**, and it is why the frame darkened
 progressively instead of failing outright: `camFrom_` was the follow camera's
 offsets `(-1, 26, -119)`, lerped toward an absolute `(3089, 1006, -753)` — two
-different spaces. `Camera_Request` swaps the LIVE block into `g_CameraPrev`
-and the move interpolates away from that, and the live block holds resolved
-world coordinates, so `applyCamera` resolves a relative outgoing camera before
-it becomes `camFrom_`.
+different spaces.
 
 Non-black pixels a third of the way through the travel, at its end, and long
-after: **4824 / 0 / 0** before, ~224000 after. `verify.py: camera travel`, with
-both halves mutation-tested — dropping the subject copy blacks all three,
-dropping the resolve blacks only the middle.
+after: **4824 / 0 / 0** before, ~224000 after.
+
+### …and it is a LERP OF TWO SOLVED WORLD POINTS — the correction, 2026-09-06
+
+The paragraphs above fixed the flat's lift door and **broke the Impasse
+tutorial**, which is worth keeping side by side because the two faults are one
+mechanism read two ways.
+
+`sub_418410` (`readable/src/04_sys.c` 4047) is the engine's interpolator and
+it is a plain lerp of the two camera blocks:
+
+```
+out[52..60] = C[20..28] * u + prev[20..28] * (1 - u);   // eye
+out[64..72] = C[32..40] * u + prev[32..40] * (1 - u);   // target
+```
+
+— no subjects and no offsets, because **both ends are already world points**.
+They get there through `sub_417CF0`, the per-frame camera SOLVE: for any mode
+but 13 it runs `sub_415D10`/`sub_415E60`, which call `sub_415A10` to resolve
+the block's subject into `+100..+108` and build the eye from that plus the
+rotated offset at `+124..+132`. The moving path solves **both** blocks —
+`sub_417CF0(g_CameraPrev)` at `:4165` as well as the live one — and then lerps
+what those solves wrote.
+
+Carrying `camTo_`'s subjects onto the result is right exactly when the
+destination is absolute. AREA 222's tutorial cameras 4290/4291/4292 are all
+`eyeSubject 0 / atSubject 0`, so the port lerped a world point toward a raw
+offset (`eye -24 10 59`) and then added the player on top of the mixture: a
+reader's screenshot of the tutorial pointing at the sky. Measured, the eye sat
+**7100 units** from the player on the travel's first frame and only converged
+at the very end; solving both ends first it never leaves **127**, which is
+what a pair of ~60-unit offsets should give.
+
+The START needs nothing of its own, either. `Camera_Request` swaps the live
+block into `g_CameraPrev` and that block keeps being solved while the move
+runs, so an outgoing camera with a subject goes on tracking it — flattening it
+once at request time froze the travel's start, which is the residue a reader
+described as the transcan camera being *"better, but not completely correct"*.
+The one case that does freeze is a request arriving DURING a move, where
+`sub_414A90` redirects `g_CameraPrev` to a third block, `dword_4E7D10`, filled
+from the interpolator's own live output. `camNow_` is exactly that pair once
+the lerp leaves its result absolute, so `camFrom_ = camNow_` serves both. And
+when the move ends the live block takes over again, subjects and all — a
+travel INTO a camera that hangs off an actor must hand that camera back, or
+the shot freezes at the world point the last tick computed.
+
+**And the anchor is the PELVIS.** `sub_414F30` — the subject resolver behind
+`sub_415A10` — reads the actor record's `+244/+248/+252` for every mode but
+4/5, and `player.h` had settled from the other side that `+248` is the pelvis
+(issue 49, 41.8 above the feet for HO1_FNM). The Session solved a travel's
+ends at `playerPos_`, the walker's ground point, so the tutorial shot sat a
+whole lift too low and framed Kay'l's legs; `Session::setCameraSubjectLift`
+now carries the same lift the frontend applies to a standing relative camera.
+Eye height on the tutorial's first frame: 3 units below the feet → 39 above.
+
+`verify.py: camera travel` now asserts both arms and the anchor: the flat's
+door still draws, across the tutorial's 4290 → 4291 → 4292 the resolved eye
+never gets more than 200 units from the player, and it sits more than 20
+units above his feet. Mutation-tested both ways — dropping the
+subject copy blacks the door's three frames, and the previous reading leaves
+the door right and takes the tutorial's eye past 7000.
+
+### A SPOKEN LINE PLAYS IN THE FRAME THE NODE WAS IN WHEN IT STARTED
+
+A reader, of the goodbye in Kay'l's flat: *she's looking at the wrong
+direction then goes back to the correct one for the idle.* The mechanism is
+`Morph_Play` (0x0041AFC0, CLEAN):
+
+```
+Matrix3x3_RotateVector(0,0,-1, node+92, &dir)     // the node's WORLD matrix
+heading = atan2(dirZ, dirX)·180/π + 90 − actor[ACTOR_FACING]
+sub_42BE00(heading)                               // the morph's yaw, set ONCE
+```
+
+`ACTOR_FACING` is `+420`, the Euler y, so `heading` is the node's world yaw
+less the Euler — the scene clip's own root orientation, the one
+`Anim_ApplyNodeFrame` left on the pelvis — and the morph player composes the
+`.3DM` root with `yaw(heading)` (`08_wave.c` 963–965) under the node's facing
+matrix. A line therefore keeps the clip's root yaw plus the Euler, its own
+root on top, **and holds that yaw for its whole length**, whatever the scene
+program does after.
+
+The viewer got this wrong three ways in one day, and each was caught by the
+transition, never by a still frame:
+
+1. both facing terms carried `!useLine`, so a line was drawn with **no yaw at
+   all** and the body turned to its real one when the idle came back —
+   `TelisAuRevoir` authors Euler `(0, −80, 0)`, an 80-degree snap;
+2. dropping `!useLine` kept the Euler but lost the clip's root yaw — the ~90
+   degrees between the port and `traces/frames/dlg402-44`, the engine's own
+   frame of the greeting;
+3. adding the root yaw from the LIVE program re-read it every tick, so when
+   the goodbye's program ended mid-line (frame 124) she snapped from −102 to 0
+   with the line still playing.
+
+`Staged::lineYaw` is now a latch taken on the line's first frame, and
+`Staged::restYaw` keeps the heading a program left — nothing resets `+416` or
+the last node frame when a program ends, so a body a program TURNED stays
+turned, the facing half of the rule the position already obeys.
+
+**And a fourth, caught by the reader rather than the trace:** *Telis starts
+each line turned to the right of the screen before turning to look at the
+camera.* That was the fade. The morph player composes the `.3DM` root with
+`yaw(heading)` (`sub_442940(&root, &yaw)`, the Hamilton product `root ⊗ yaw`,
+`16_o3de.c` 1704) **before** the fade-in slerps the node's current pose toward
+the morph — so both ends of the fade share one frame. The port blended the raw
+morph against a clip whose root already carried the yaw and then added the yaw
+on top: the clip end came out double-turned and faded to single over the
+blend's frames, which is a slow turn-in on every line. `turnRootBy` now turns
+the line's root by the clip's heading at latch time, in the engine's own order
+— adjudicated against the port's heading extractor on a real root, where of
+the four candidate products only `stored ⊗ Ry(+H)` moves the heading by
+exactly H — and the fade blends two poses in one frame. The latch reads the
+clip at the frame the fade's idle end reads (`rec[47]`, `lineIdleFrame`), not
+the live frame; read live, 402's greeting latched 73 against an idle end at 85
+and stepped 12 degrees on the first frame. Measured with
+`OMK_TRACE_ACTOR`'s `yaw` column: the goodbye holds one value from the line's
+first frame through the idle after its program ends, the greeting holds 85
+through its line. `tools/omkdata.py` had the answer from the other side all
+along, written when 387 was staged. `verify.py: line facing`, mutation-tested
+against readings 1 and 3.
+
+### KAY'L IS DRAWN THROUGH A CONVERSATION
+
+*Kay'l is not visible when the camera changes.* `Actor_EnterDialogueMode` puts
+the player's channel on group 400, the dialogue stance, and he goes on being
+drawn like any actor — the reverse shots of 402 frame him across the room. The
+viewer drew him only in adventure mode (`drawPlayer = adventure &&
+playerReady`), so every cut to him during a conversation showed an empty
+floor. The controller ticks through the conversation, so its pose is the
+stance; `drawPlayer` now holds in a conversation too, unless a
+`scx.play.player` program has him staged.
+
+**And drawing him exposed where he was standing.** In 4555's close-up the
+engine's own frame (`traces/frames/dlg402-44`) has no Kay'l; the port drew
+his head in the corner. Not a hide rule — the `0x800` arm in the camera tick
+is the **swim** camera's (a water-surface probe, ACTOR_STATE 11/13/14), and
+the near plane is 2.0 (`sub_440BB0`, `25_sys.c:182`) against the port's 1.0,
+one unit — but a position: `actor.goto_address 678` and `dialog.start 402`
+run on the same pump frame, and the frontend consumed a teleport only inside
+`if (adventure)`, which the open conversation had just made false. The Session
+stood at 678 (`3541/1079/−914`); the controller — the body the shot is framed
+against — stayed at 3523, 18 units short. Camera 4555 is an over-the-shoulder
+POV authored 15 units *in front of* 678's face: at 678 his head is behind the
+eye and out of the frustum; short of it, the eye sits inside his head.
+`sub_41BF50` writes the actor's position whatever the mode; the teleport is
+now consumed whatever the mode.
+
+### A DIALOGUE CAMERA CAN HANG OFF A SPEAKER — the transcan's advert
+
+*Transcan camera is not good; the character on transcan is not animated
+correctly.* Two faults in one conversation, DIALOG 39 'Publicité Chokovat',
+whose only camera is 73 with subject `[2,2]`.
+
+`Camera_LoadParams` (0x004146C0): a point whose subject is `-1` is absolute
+and lands at `+20`/`+32`; any other subject makes it an **offset** at `+124`,
+and the block's subject resolver fills the anchor. Kind 2 is `sub_4151E0`: the
+actor **node's** world origin and its heading (`atan2` of the matrix's
+forward, +90). The solver places the point at `anchor − R(heading)·offset`,
+the sign `resolveCamera` already carries. `dialog_issue_camera` maps the code
+to an actor — 0/1 the first speaker, 2/3 the second, 6 both — and the second
+is the conversation's speaker, read off the data: every camera of 39 is
+`[2,2]` and the engine's own frame of it is a close-up of the hologram; 401's
+camera 11 is `[1,1]`. The viewer's own line said what it did with them:
+`haveDlgCam = ca->absolute() && cbb->absolute()`, `[relative - not drawn]` —
+so the advert fell through to the follow camera and framed the room from
+across it. `Staged::drawnYaw` now records the heading a body was drawn with,
+and the dialogue-camera block resolves each point per subject code.
+
+The second fault hid behind the first: `speakerReady` was the camera SOLVE's
+validity — `stageSpeaker` casts rays from absolute cameras to find where a
+speaker stands — and the line's `.3DM` was loaded only when ready. A
+conversation framed entirely off its speaker cast no rays, solved nothing,
+and never loaded its morph: *frame 95 of 0*, the hologram playing its scene
+clip through the whole advert. `Morph_Play` runs on the speaker's own node
+whatever the cameras are; the solve exists only to PLACE a speaker nothing
+else places, and `speakerSolved` already carried that. Now `face: mesh 19,
+130 verts`, `frame 115 of 813`, and the eye settles 50 units from the
+hologram. `verify.py: dialogue camera subject`.
+
+### The MIRROR reflects in the GAME, not only in the scene viewer
+
+`drawWithMirror` has been on the renderer boundary since 2026-09-01, and until
+2026-09-06 the free-fly `--scene` viewer was its **only caller**. So a mirror
+reflected when a reader flew the set and was a flat blended pane in adventure
+mode and in every cutscene — which is where a player actually meets one. A
+reader: *the mirror in the chamber is displayed with transparency instead of
+reflecting.* `AP_mirror` carries `0x00103000`, the mirror bit `0x100000` plus
+the additive pair, so what was on screen was exactly the compositing operator
+with nothing composited under it.
+
+The plane was already there and used for nothing: `w.mirror =
+mirrorPlane(d)` per set, read once to print the word "mirror" in a log line.
+What the pass lacked was a form for a draw LIST — the game path builds one out
+of the resident set, the staged bodies, the props and the sprites and sorts it
+into the engine's bucket order, while `drawWithMirror` took a single
+`Geometry`. `splitList` run-splits a supplied list by `cornerMirror`, which
+only the set's corners carry, and `inFrontOf` reads each draw's own geometry,
+so nothing else has to know a mirror exists — and the staged bodies now appear
+in the reflection for free, which the viewer could never exercise because it
+draws no characters. The engine keeps a single global (`dword_534F48`), so at
+most one mirror is live at a time and the shown slot's is the one.
+
+Measured in the flat: 34807 mask pixels and 33945 frame pixels moved with the
+pass on against off, from the corridor the mirror faces. `OMK_NO_MIRROR`
+renders the control. Everything the pass itself does is unchanged and its
+reconstruction caveats stand — the mask and the plane's normal are still this
+port's reading, and a mirror is only settled by MOVING the camera.
 
 ### The SNEAK — the first screen the PLAYER opens
 

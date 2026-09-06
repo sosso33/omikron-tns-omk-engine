@@ -1294,6 +1294,23 @@ int sceneViewer(const std::string& fr, const std::string& setName,
 
 }  // namespace
 
+// THE MORPH ROOT TURNED BY A WORLD YAW, the engine's own composition.
+// `08_wave.c` 963-965: `sub_442B50(v40, 0, X, 0)` builds the yaw and
+// `sub_442940(&root, &yaw, out)` - the Hamilton product `root ⊗ yaw`
+// (16_o3de.c 1704) - composes it onto the .3DM's root, per frame, BEFORE the
+// fade against the node's current pose. Adjudicated against the port's own
+// heading extractor on a real root: of the four candidate products only
+// `stored ⊗ Ry(+H)` moves the heading by exactly H (338.0 for H = 338).
+static void turnRootBy(omk::NodeTracks& t, float yawDeg) {
+    if (!t.valid() || t.rootTrack < 0) return;
+    const float h = yawDeg * 0.0174532925199433f * 0.5f;
+    const omk::Quatf ry{std::cos(h), 0.0f, std::sin(h), 0.0f};
+    for (auto& frame : t.quats)
+        if (static_cast<std::size_t>(t.rootTrack) < frame.size())
+            frame[static_cast<std::size_t>(t.rootTrack)] =
+                omk::qmul(frame[static_cast<std::size_t>(t.rootTrack)], ry);
+}
+
 int main(int argc, char** argv) {
     // `--help` anywhere on the line, and the same text the argument check
     // prints. Kept in one place so a flag cannot be added without a line here.
@@ -2359,6 +2376,8 @@ int main(int argc, char** argv) {
     // A `scx.play.player` program owns his body right now (op 46/90).
     bool  playerProgram = false;
     bool  playerProgramWas = false;   // ...and did last frame, for the hand-back
+    bool  mirrorLive = false;         // the set's mirror is reflecting, said once
+    bool  mirrorSeen = false;         // ...and has actually covered a pixel
     int   placementSeen = 0;      // Session::placementSeq() as last consumed
     long  heldFrames = 0;         // frames under player.anim.hold
     // The `media.play` SUBTITLE: `Subtitle_Show(unk_4E6268)` is step 13 of
@@ -2757,6 +2776,30 @@ int main(int argc, char** argv) {
         const char* seatSrc = "";
         bool  seatKnown = false;
         bool  placeTold = false, groundTold = false;
+        // THE YAW THE BODY WAS DRAWN WITH - the node's world heading, which is
+        // what subject kind 2 (`sub_4151E0`) reads back for a camera that
+        // hangs off him: `atan2` of the node matrix's forward, +90.
+        float drawnYaw = 0.0f;
+        bool  drawnYawKnown = false;
+        // `Morph_Play` reads the node's world heading ONCE, when the line
+        // starts, and `sub_42BE00` hands the morph that yaw for its whole
+        // length - so the line's yaw is a LATCH, not a per-frame read.
+        float lineYaw = 0.0f;
+        bool  lineYawLatched = false;
+        // ...and the heading a scene clip left the node with, kept after the
+        // program ends: nothing resets the Euler at +416 or the last frame
+        // `Anim_ApplyNodeFrame` wrote, so a body a program turned stays
+        // turned - the facing half of the rule the position already obeys.
+        float restYaw = 0.0f;
+        bool  restYawKnown = false;
+        // The line's .3DM with its root already turned by the clip's heading
+        // - `Morph_Play`'s `heading`, composed the way `08_wave.c` does it -
+        // so the fade blends two poses in ONE frame. Blending the raw morph
+        // against a clip whose root carries the yaw, then adding the yaw on
+        // top, double-turned the clip end and faded to single: she started
+        // every line turned away and slowly came round to the lens.
+        omk::NodeTracks lineTracks;
+        float lineRootYaw = 0.0f;
     };
     // OWNING POINTERS, not a vector of values: the Vulkan backend caches a
     // vertex buffer by (pointer, revision), so a `Staged` may never be moved
@@ -4429,6 +4472,25 @@ int main(int argc, char** argv) {
             const bool uiPause = walk && openScreen == kScreenPause;
             adventure = player && !playerDriven && !session.dialogOpen() &&
                         !uiPause && !sc.activeEditing();
+            // A TELEPORT IS CONSUMED WHATEVER THE MODE. `sub_41BF50` writes the
+            // actor's position outright; nothing about it waits for adventure
+            // mode. This sat inside `if (adventure)` below, and Kay'l's flat
+            // runs `actor.goto_address 678` and `dialog.start 402` on the
+            // SAME pump frame - so by the time the frontend looked, the
+            // conversation was open, `adventure` was false, and the body the
+            // shot is framed against stayed 18 units short of the address.
+            // Camera 4555 is an over-the-shoulder POV authored 15 units in
+            // front of 678's face; with him short of it the eye sat inside
+            // his head and the close-up drew the inside of it. The engine's
+            // own frame of that shot (`traces/frames/dlg402-44`) has no Kay'l.
+            if (player && session.placementSeq() != placementSeen) {
+                placementSeen = session.placementSeq();
+                player->placeAt(session.playerPos(), session.playerYaw());
+                std::printf("frame %ld: actor.goto_address %d - the player put down at "
+                            "%.0f %.0f %.0f facing %.0f\n", n, session.playerAddress(),
+                            player->pos()[0], player->pos()[1], player->pos()[2],
+                            player->facing());
+            }
             if (adventure) {
                 // The follow camera is the world camera the script named -
                 // SCENE 55's camera 0 carries its own offsets and travels
@@ -4448,14 +4510,8 @@ int main(int argc, char** argv) {
                 // Session's position outright (the airlock beat's 653,
                 // 'Tutorial'). Without this the next line writes the walker's
                 // old position straight back over it.
-                if (session.placementSeq() != placementSeen) {
-                    placementSeen = session.placementSeq();
-                    player->placeAt(session.playerPos(), session.playerYaw());
-                    std::printf("frame %ld: actor.goto_address %d - the player put down at "
-                                "%.0f %.0f %.0f facing %.0f\n", n, session.playerAddress(),
-                                player->pos()[0], player->pos()[1], player->pos()[2],
-                                player->facing());
-                }
+                // (the placement itself is consumed above `if (adventure)`,
+                // whatever mode the frame is in - see there)
                 // THE CROWD PUSH - `Actor_TickNpc`, before `Actor_ApplyMotion`:
                 // the spatial index's answer for his spheres, added to his
                 // position outright (docs/STREET_LIFE.md 3). The Session
@@ -5365,7 +5421,19 @@ int main(int argc, char** argv) {
                     // to a body nothing else has placed.
                     for (int k = 0; k < 3; ++k) speakerAt[k] = st.pos[k];
                     speakerSolved = st.valid;
-                    speakerReady = st.valid;
+                    // READY MEANS THE MODEL IS LOADED, NOT THAT A CAMERA SOLVE
+                    // FOUND HIM. `Morph_Play` runs the line on the speaker's
+                    // own node whatever the cameras are; the solve exists
+                    // only to PLACE a speaker nothing else places, and
+                    // `speakerSolved` carries that for the staging below.
+                    // Gating readiness on the solve meant a conversation
+                    // framed entirely off its speaker - the transcan's
+                    // advert, whose one camera is [2,2] - cast no rays,
+                    // solved nothing, and never loaded the line's .3DM: the
+                    // hologram played its scene clip through the whole
+                    // advert, "frame 95 of 0". A reader: *the character on
+                    // transcan is not animated correctly*.
+                    speakerReady = true;
                     std::printf("speaker: %s (%zu meshes, %zu corners), %d rays "
                                 "converge scatter %.1f, stands at %.0f %.0f %.0f%s\n",
                                 speakerModel.c_str(), speakerMeshes.size(),
@@ -5890,7 +5958,7 @@ int main(int argc, char** argv) {
             for (const auto& sh : session.shown()) {
                 // In adventure mode the CONTROLLER owns the player's body; a
                 // second one here would draw him twice.
-                if (adventure && player && sh.actor == playerId) continue;
+                if ((adventure || session.dialogOpen()) && player && sh.actor == playerId) continue;
                 Staged* s = nullptr;
                 for (auto& up : staged) if (up->actor == sh.actor) { s = up.get(); break; }
                 if (!s) {
@@ -6165,9 +6233,86 @@ int main(int argc, char** argv) {
             if (ca) {
                 const omk::DialogCamera* cbb = cb ? cb : ca;
                 const float u = dlg.cameraProgress();
+                // ---- A DIALOGUE CAMERA'S POINTS CAN HANG OFF A SPEAKER ----
+                //
+                // `Camera_LoadParams` (0x004146C0): a point whose subject is
+                // -1 is absolute and lands at +20/+32; any other subject makes
+                // it an OFFSET at +124, and the block's subject resolver
+                // (`sub_415A10` -> kind 2 is `sub_4151E0`) fills the anchor -
+                // the actor NODE's world origin and its heading, `atan2` of
+                // the node matrix's forward, +90 - and the solver places the
+                // point at `anchor - R(heading) * offset`, the very sign
+                // `resolveCamera` carries. `dialog_issue_camera` maps the
+                // code to an actor: 0/1 the first speaker, 2/3 the second,
+                // 6 both. The first is the player and the second the
+                // conversation's speaker - read off the data rather than the
+                // driver's write: every camera of DIALOG 39 is [2,2] and the
+                // engine's own frame of it is a close-up of the hologram it
+                // speaks with, and 401's camera 11 is [1,1].
+                //
+                // This viewer drew ONLY absolute dialogue cameras and marked
+                // the rest `[relative - not drawn]`, so the transcan's advert
+                // - the only camera the conversation has - fell through to
+                // the follow camera and framed the room from across it. A
+                // reader, with the original beside it: *transcan camera is
+                // not good*.
+                const auto anchorFor = [&](std::uint16_t code, float pos[3], float& yaw) -> bool {
+                    if (code == 0xFFFF) return false;               // absolute: no anchor
+                    const auto speakerBody = [&]() -> const Staged* {
+                        const int sp = session.dialogue().conversation().speaker;
+                        for (const auto& up : staged) if (up->actor == sp) return up.get();
+                        return nullptr;
+                    };
+                    const auto playerAnchor = [&](float out[3], float& y) {
+                        const float lift = player ? player->cameraLift() : 0.0f;
+                        const float* pp = session.playerPos();
+                        out[0] = pp[0]; out[1] = pp[1] - lift; out[2] = pp[2];
+                        y = session.playerYaw();
+                    };
+                    const auto npcAnchor = [&](float out[3], float& y) -> bool {
+                        const Staged* sb = speakerBody();
+                        if (!sb) return false;
+                        const float* at = sb->progRan ? sb->drawAt : sb->at;
+                        for (int k = 0; k < 3; ++k) out[k] = at[k];
+                        y = sb->drawnYawKnown ? sb->drawnYaw : sb->facing;
+                        return true;
+                    };
+                    switch (code) {
+                        case 0: case 1: playerAnchor(pos, yaw); return true;
+                        case 2: case 3: return npcAnchor(pos, yaw);
+                        case 6: {                                   // the two-shot: both
+                            float a[3], b[3], ya, yb;
+                            playerAnchor(a, ya);
+                            if (!npcAnchor(b, yb)) return false;
+                            for (int k = 0; k < 3; ++k) pos[k] = 0.5f * (a[k] + b[k]);
+                            yaw = ya;
+                            return true;
+                        }
+                        default: return false;                      // detached: unresolvable
+                    }
+                };
+                const auto placePoint = [&](const float off[3], std::uint16_t code, float out[3]) -> bool {
+                    float p[3], yaw;
+                    if (!anchorFor(code, p, yaw)) {
+                        if (code != 0xFFFF) return false;
+                        for (int k = 0; k < 3; ++k) out[k] = off[k];
+                        return true;
+                    }
+                    const float t = yaw * 0.0174532925199433f;
+                    const float cs = std::cos(t), sn = std::sin(t);
+                    const float rx = off[0] * cs - off[2] * sn;
+                    const float rz = off[0] * sn + off[2] * cs;
+                    out[0] = p[0] - rx; out[1] = p[1] - off[1]; out[2] = p[2] - rz;
+                    return true;
+                };
+                float ea[3], aa[3], eb[3], ab[3];
+                const bool okA = placePoint(ca->eye, ca->subject[0], ea) &&
+                                 placePoint(ca->at,  ca->subject[1], aa);
+                const bool okB = placePoint(cbb->eye, cbb->subject[0], eb) &&
+                                 placePoint(cbb->at,  cbb->subject[1], ab);
                 for (int k = 0; k < 3; ++k) {
-                    dlgView.cam.eye[k] = ca->eye[k] + (cbb->eye[k] - ca->eye[k]) * u;
-                    dlgView.cam.at[k]  = ca->at[k]  + (cbb->at[k]  - ca->at[k])  * u;
+                    dlgView.cam.eye[k] = ea[k] + (eb[k] - ea[k]) * u;
+                    dlgView.cam.at[k]  = aa[k] + (ab[k] - aa[k]) * u;
                 }
                 // The viewer takes the fov from whichever camera the move is
                 // nearer, rather than blending it.
@@ -6176,7 +6321,7 @@ int main(int argc, char** argv) {
                 // NOT ported: `RCamera` carries no ROLL, and dialogue cameras
                 // use one - conversation 272's first is -15 degrees. The shot
                 // is drawn upright.
-                haveDlgCam = ca->absolute() && cbb->absolute();
+                haveDlgCam = okA && okB;
                 if (ca->id != lastDlgCam) {
                     lastDlgCam = ca->id;
                     std::printf("  dialogue camera %d -> %d (%s), fov %.0f, "
@@ -6184,7 +6329,8 @@ int main(int argc, char** argv) {
                                 dlg.phase() == omk::DialogPhase::Menu
                                     ? "reply pair" : "line pair",
                                 ca->fov, ca->roll,
-                                haveDlgCam ? "" : "  [relative - not drawn]");
+                                haveDlgCam ? (ca->absolute() ? "" : "  [hangs off a speaker]")
+                                           : "  [unresolvable subject - not drawn]");
                 }
             }
         }
@@ -6406,6 +6552,9 @@ int main(int argc, char** argv) {
                 // 222's tutorial shots 4290/4291/4292
                 // (`todo/omk-play.md` 57).
                 const float lift = player ? player->cameraLift() : 0.0f;
+                // ...and the Session solves a TRAVEL's two ends at the same
+                // point, so it has to know the lift too
+                session.setCameraSubjectLift(lift);
                 const float* pp0 = session.playerPos();
                 const float subj[3] = {pp0[0], pp0[1] - lift, pp0[2]};
                 const omk::ResolvedCamera rc = omk::resolveCamera(
@@ -6434,6 +6583,17 @@ int main(int argc, char** argv) {
             // What is on screen this frame, for the next editing to travel
             // from.
             for (int k = 0; k < 3; ++k) { lastEye[k] = view.cam.eye[k]; lastAt[k] = view.cam.at[k]; }
+            // ...and the RESOLVED eye, which is the quantity a camera fault
+            // is actually about. A frame counts lit pixels and cannot tell a
+            // correct shot from a wrong one that happens to see the sky; the
+            // eye's distance from the player can (`verify.py: camera travel`).
+            if (std::getenv("OMK_CAMEYE"))
+                std::printf("  [cameye] frame %ld  eye %.0f %.0f %.0f  at %.0f %.0f %.0f"
+                            "  player %.0f %.0f %.0f\n", n,
+                            view.cam.eye[0], view.cam.eye[1], view.cam.eye[2],
+                            view.cam.at[0], view.cam.at[1], view.cam.at[2],
+                            session.playerPos()[0], session.playerPos()[1],
+                            session.playerPos()[2]);
             lastFov = view.cam.hfovDeg;
             lastRoll = view.cam.rollDeg;
             haveLastDrawn = true;
@@ -6446,7 +6606,16 @@ int main(int argc, char** argv) {
             // Rebuilt on a COMPOSITION change rather than a size change: two
             // models with the same texture count swapping is exactly what a
             // size test cannot see.
-            const bool drawPlayer = adventure && playerReady;
+            // ...AND IN A CONVERSATION. `Actor_EnterDialogueMode` puts the
+            // player's channel on group 400, the dialogue stance, and he goes
+            // on being drawn like any actor - the reverse shots of 402 frame
+            // him across the room. This viewer drew him only in adventure
+            // mode, so every cut to Kay'l during a conversation showed an
+            // empty floor. A reader: *Kay'l is not visible when the camera
+            // changes*. The controller ticks through the conversation, so
+            // its pose is the stance.
+            const bool drawPlayer = playerReady && player &&
+                                    (adventure || (session.dialogOpen() && !playerProgram));
             // ---- THE WORLD'S PROPS -----------------------------------
             //
             // Every prop of the resident chunks whose DB state has bit 1 -
@@ -7092,6 +7261,34 @@ int main(int argc, char** argv) {
                 const char* src = "the rest pose (no bank clip)";
                 if (useLine) {
                     const int frame = static_cast<int>(lineT);
+                    // THE LATCH, on the line's first frame - what `Morph_Play`
+                    // reads off the node once and `sub_42BE00` hands the morph
+                    // for its whole length. `heading` is the node's world yaw
+                    // less the Euler: the scene clip's root heading at the
+                    // frame the line began. The clip's root goes INTO the
+                    // morph's root here (`turnRootBy`), the Euler is kept
+                    // beside it, and neither is re-read while the line plays -
+                    // the program may end under it, as the goodbye's does.
+                    if (!s.lineYawLatched) {
+                        const bool haveClip = s.sceneTracks.valid() && sceneClip >= 0 && run && run->loaded();
+                        // ...at the frame the FADE blends from. `Morph_Play`
+                        // hands the morph `rec[47]` (`sub_42BDD0`), and the
+                        // fade-in slerps from the clip at that frame -
+                        // `lineIdleFrame` here - toward the morph. The latch
+                        // must read the clip at the SAME frame, or the two
+                        // ends of the fade sit at different headings: read at
+                        // the live `sceneFrame` instead, 402's greeting
+                        // latched 73 against an idle end at 85 and she stepped
+                        // 12 degrees on the line's first frame.
+                        s.lineRootYaw = haveClip
+                            ? omk::headingFromClipRoot(run->scene().clipData(sceneClip),
+                                                       static_cast<int>(lineIdleFrame))
+                            : (s.restYawKnown ? s.restYaw - (s.progYawKnown ? progYawSign * s.progYaw : 0.0f) : 0.0f);
+                        s.lineYaw = s.progYawKnown ? progYawSign * s.progYaw : 0.0f;   // the Euler
+                        s.lineTracks = speakerTracks;
+                        turnRootBy(s.lineTracks, s.lineRootYaw);
+                        s.lineYawLatched = true;
+                    }
                     // THE FADE at both ends of the line - `sub_42D120`'s,
                     // pose.h has the read - and the root is NOT cancelled when
                     // a scene clip stages him, because the engine's
@@ -7114,11 +7311,11 @@ int main(int argc, char** argv) {
                     const bool cancelLineRoot = !s.sceneTracks.valid();
                     if (w < 1.0f) {
                         const auto mixed = omk::blendTracks(s.sceneTracks, idleFrame, false,
-                                                            speakerTracks, frame,
+                                                            s.lineTracks, frame,
                                                             cancelLineRoot, w);
                         pose = omk::composePose(s.mo->meshes, mixed, 0, false);
                     } else {
-                        pose = omk::composePose(s.mo->meshes, speakerTracks, frame,
+                        pose = omk::composePose(s.mo->meshes, s.lineTracks, frame,
                                                 cancelLineRoot);
                     }
                     rootW = 1.0f - w;
@@ -7212,16 +7409,17 @@ int main(int argc, char** argv) {
                 if (traceEnv && s.actor == std::atoi(traceEnv))
                     std::printf("  [trace] frame %ld actor %d  at %.0f %.0f %.0f"
                                 "  drawAt %.0f %.0f %.0f  placed %d progPlaced %d"
-                                "  progRan %d  sceneClip %d  src %s\n",
+                                "  progRan %d  sceneClip %d  yaw %.0f  src %s\n",
                                 n, s.actor, s.at[0], s.at[1], s.at[2],
                                 s.drawAt[0], s.drawAt[1], s.drawAt[2],
                                 s.placed ? 1 : 0, s.progPlaced ? 1 : 0,
-                                s.progRan ? 1 : 0, sceneClip, src);
+                                s.progRan ? 1 : 0, sceneClip,
+                                static_cast<double>(s.drawnYawKnown ? s.drawnYaw : 0.0f), src);
                 // A crowd model (the PSH/FSH family the city extras wear) is
                 // four LOD skeletons in one file; posing one left the other
                 // three at rest - a T-pose inside every couple and beggar.
                 // The rest geometry is cut to the skeleton the tracks name.
-                const omk::NodeTracks& posingTracks = useLine ? speakerTracks
+                const omk::NodeTracks& posingTracks = useLine ? s.lineTracks
                                                      : s.sceneTracks.valid() ? s.sceneTracks : s.idle;
                 const int skel = skeletonRootOf(*s.mo, posingTracks);
                 const omk::Geometry& restUsed = skel == s.mo->root && s.mo->root >= 0 &&
@@ -7333,11 +7531,25 @@ int main(int argc, char** argv) {
                                       (s.pelvis ? s.at[1] - pelvis[1] : ground - feet)
                                           + rootMove[1],
                                       s.at[2] - pelvis[2] + rootMove[2]};
-                // THE FACING, and only for a body no clip is turning:
+                // THE FACING, for a body no scene clip is turning:
                 // `Actor_SetEuler` is what a placement authors, while a scene
-                // clip carries its own root orientation and a line's root is
-                // relative to the actor's own frame.
-                const bool spin = !s.sceneTracks.valid() && !useLine &&
+                // clip carries its own root orientation.
+                //
+                // A SPOKEN LINE DOES NOT CANCEL IT, and that was the fault a
+                // reader met as *"she's looking at the wrong direction then
+                // goes back to the correct one for the idle"*. Both this and
+                // `progSpin` below carried `!useLine`, so while a line played
+                // a body was drawn with NO yaw at all and turned to its real
+                // one the moment the line ended. The line's own `.3DM` root
+                // rotation is RELATIVE to the actor's frame - it is the
+                // whole-body bow (CLAUDE.md 4) - so the frame still has to be
+                // applied under it, and `tools/omkdata.py` says the same from
+                // the other side, written when 387 was staged: "the clip's
+                // root yaw is the character's facing for the WHOLE
+                // conversation - the game keeps the scene orientation during
+                // spoken lines too (compared frame-by-frame against a longplay
+                // of 387)".
+                const bool spin = !s.sceneTracks.valid() &&
                                   std::fabs(s.facing) > 0.01f;
                 // a program's body turns by the call's Euler y about its pelvis
                 // A DIAGNOSTIC, because a still frame is what decides this:
@@ -7349,18 +7561,73 @@ int main(int argc, char** argv) {
                 // the pelvis included, from the CLIP's own quaternion. So the
                 // call's Euler may well turn the motion and not the body.
                 static const bool noProgSpin = std::getenv("OMK_NO_PROGSPIN") != nullptr;
-                const bool progSpin = !noProgSpin && s.sceneTracks.valid() && !useLine &&
+                const bool progSpin = !noProgSpin && s.sceneTracks.valid() &&
                                       s.progYawKnown && std::fabs(s.progYaw) > 0.01f;
+                // A LINE PLAYS IN THE FRAME THE NODE WAS IN WHEN IT STARTED.
+                // `Morph_Play` (0x0041AFC0, CLEAN):
+                //
+                //     Matrix3x3_RotateVector(0,0,-1, node+92, &dir)   // the WORLD matrix
+                //     heading = atan2(dirZ, dirX)*180/pi + 90 - actor[ACTOR_FACING]
+                //     sub_42BE00(heading)                             // the morph's yaw
+                //
+                // and the morph player composes the .3DM root's rotation with
+                // yaw(heading) (`08_wave.c` 963-965) under the node's own
+                // facing matrix. `ACTOR_FACING` is +420, the Euler y, so
+                // `heading` is the node's world yaw LESS the Euler - which is
+                // the scene clip's own root orientation, the one
+                // `Anim_ApplyNodeFrame` left on the pelvis. A line therefore
+                // keeps the clip's root yaw plus the Euler, and its own root
+                // goes on top. This viewer drew the .3DM alone and lost the
+                // clip's yaw for the length of the line: Telis in profile
+                // through "Oh Kay'l, je croyais ne plus jamais te revoir"
+                // where the engine's own capture has her facing the lens,
+                // then turning to face it when the idle came back.
+                // THE BODY'S YAW, one decision. A scene clip's own root
+                // quaternion is already in the pose (`Anim_ApplyNodeFrame`
+                // orients the pelvis from it), so under a clip only the
+                // step's Euler is added; a LINE's .3DM carries no world yaw,
+                // so the node's heading at the moment `Morph_Play` ran - the
+                // clip's root yaw plus the Euler - is latched and applied for
+                // the whole line; and once the program is over the last
+                // heading it left is kept.
+                const float rootYawNow = (s.sceneTracks.valid() && sceneClip >= 0 && run && run->loaded())
+                    ? omk::headingFromClipRoot(run->scene().clipData(sceneClip),
+                                               static_cast<int>(sceneFrame)) : 0.0f;
+                if (s.sceneTracks.valid() && !useLine) {
+                    s.restYaw = (progSpin ? progYawSign * s.progYaw : 0.0f) + rootYawNow;
+                    s.restYawKnown = true;
+                }
+                if (!useLine) s.lineYawLatched = false;
+                // THE BODY'S YAW, one decision. Under a scene clip the clip's
+                // own root quaternion is in the pose, so only the Euler is
+                // added; under a LINE the clip's root heading is in the
+                // morph's root (the latch above), so again only the Euler -
+                // the latched one; after the program the last heading it
+                // left is kept whole; a placement-only body spins by its
+                // record about the origin.
+                float bodyYaw = 0.0f;
+                bool aboutPelvis = true;
+                if (useLine)                      bodyYaw = s.lineYaw;
+                else if (s.sceneTracks.valid())   bodyYaw = progSpin ? progYawSign * s.progYaw : 0.0f;
+                else if (s.restYawKnown)          bodyYaw = s.restYaw;
+                else if (spin)                  { bodyYaw = s.facing; aboutPelvis = false; }
+                // ...and the WORLD heading the body ends up drawn with, which
+                // is what a camera hanging off him reads back.
+                s.drawnYaw = useLine ? s.lineYaw + s.lineRootYaw
+                           : s.sceneTracks.valid() ? bodyYaw + rootYawNow
+                           : aboutPelvis ? bodyYaw : s.facing;
+                s.drawnYawKnown = true;
+                const bool turn = std::fabs(bodyYaw) > 0.01f;
                 for (auto& c : s.posed.corners) {
-                    if (spin) {
+                    if (turn && !aboutPelvis) {
                         const float in[3] = {c.x, c.y, c.z};
                         float r[3];
-                        omk::rotateYaw(s.facing, in, r);
+                        omk::rotateYaw(bodyYaw, in, r);
                         c.x = r[0]; c.y = r[1]; c.z = r[2];
-                    } else if (progSpin) {
+                    } else if (turn) {
                         const float in[3] = {c.x - pelvis[0], c.y - pelvis[1], c.z - pelvis[2]};
                         float r[3];
-                        omk::rotateYaw(progYawSign * s.progYaw, in, r);
+                        omk::rotateYaw(bodyYaw, in, r);
                         c.x = r[0] + pelvis[0]; c.y = r[1] + pelvis[1]; c.z = r[2] + pelvis[2];
                     }
                     c.x += off[0]; c.y += off[1]; c.z += off[2];
@@ -8089,9 +8356,33 @@ int main(int argc, char** argv) {
                              [](const omk::Draw& a, const omk::Draw& b) {
                                  return (a.bucketKey & 0x3FFFu) < (b.bucketKey & 0x3FFFu);
                              });
-            world.begin(view);
-            for (const auto& d : draws) world.submit(d);
-            world.end();
+            // ---- AND THE MIRROR, which until now only `--scene` ever got.
+            //
+            // `drawWithMirror` has been on the renderer boundary since
+            // 2026-09-01 and the free-fly viewer was its only caller, so a
+            // mirror reflected there and was a flat blended pane in adventure
+            // mode and in every cutscene - which is where a player meets one.
+            // A reader: *the mirror in the chamber is displayed with
+            // transparency instead of reflecting.* The plane was already
+            // being read per set (`w.mirror`) and used for nothing but a word
+            // in a log line.
+            //
+            // The engine keeps a SINGLE global (`dword_534F48`), so at most
+            // one mirror is live at a time; the shown slot's is the one.
+            static const bool noMirror = std::getenv("OMK_NO_MIRROR") != nullptr;
+            const omk::MirrorPlane& wmp =
+                worldSlots[static_cast<std::size_t>(session.shownSlot() & 1)].mirror;
+            const auto mst = omk::drawWithMirror(world, draws, view,
+                                                 noMirror ? omk::MirrorPlane{} : wmp);
+            if (mst.active != mirrorLive || (mst.maskPixels > 0 && !mirrorSeen)) {
+                mirrorLive = mst.active;
+                if (mst.maskPixels > 0) mirrorSeen = true;
+                std::printf("frame %ld: the set's mirror is %s%s (%ld px, camera "
+                            "%.0f in front)\n", n,
+                            mst.active ? "REFLECTING" : "out of view - the camera is behind it",
+                            mst.native ? " [gpu stencil]" : "",
+                            mst.maskPixels, static_cast<double>(mst.distance));
+            }
             // The backend drew the picture into the top-left `vw x vh`; place
             // it, leaving the bands as the black `fb` was cleared to.
             const omk::Surface& pic = world.readback();

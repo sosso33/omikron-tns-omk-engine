@@ -280,4 +280,18 @@ MirrorStats drawWithMirror(Renderer& r, const Geometry& g,
                            std::span<const Texture> tex, const View& v,
                            const MirrorPlane& mp);
 
+// ...and the form the GAME path needs: a draw list already built and sorted
+// into the engine's bucket order out of several geometries - the resident
+// set, the staged bodies, the props, the sprites. Only the set's corners
+// carry `cornerMirror`, and each draw is run-split by it, so nothing else has
+// to know a mirror exists.
+//
+// Until 2026-09-06 the pass had only the `Geometry` form and only the scene
+// viewer called it, so a mirror reflected under `--scene` and was a flat
+// blended pane everywhere a player would actually meet one. A reader: *the
+// mirror in the chamber is displayed with transparency instead of
+// reflecting.*
+MirrorStats drawWithMirror(Renderer& r, std::span<const Draw> draws,
+                           const View& v, const MirrorPlane& mp);
+
 }  // namespace omk
