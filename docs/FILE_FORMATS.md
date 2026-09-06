@@ -2244,37 +2244,81 @@ block, whose format phase 3 opens with.
 > false friend caught by a reader who plays the game: bassin here is anatomy,
 > and the sibling name `TeCuissed` settles it.
 
-#### `Script_MoveObjectOnPath` — the path is a DISPLACEMENT, not a position
+#### `Script_MoveObjectOnPath` — the path is a displacement or a position, and **parameter 5 says which**
 
-The most-used scene function in the game, and the one whose reading was
-wrong until 2026-09-06. The handler does not place the path sample: it
-captures the node's own position on the move's **first tick**, into the call's
-own parameters 9/10/11, and thereafter places
+The most-used scene function in the game, and the one whose reading was wrong
+twice on 2026-09-06 — first by placing the sample outright for everything,
+then by treating it as a displacement for everything. The handler has **two
+arms**, and it chooses between them on a parameter:
 
+```c
+v88 = Script_GetParamInt(a2, 5);
+...
+if (!v88) goto LABEL_39;      /* ... o3de_SetNodePos(node, v61, v63, v62) */
 ```
-node = sample(t) − sample(t0) + anchor
-```
 
-so the path contributes only the DELTA from its own first sample, laid on
-wherever the object stood when the move began (`readable/src/23_script.c`; the
-capture is the `sub_44C6C0(a2, 9|10|11, …)` arm taken when the span is at its
-start, and the read-back is `Script_GetParamFloatB(a2, 9|10|11)`).
+* **parameter 5 zero** — `LABEL_39`, one line: `o3de_SetNodePos(node,
+  sample(t))`. The path is placed **outright**, in world coordinates.
+* **parameter 5 non-zero** — the handler captures the node's own position on
+  the move's **first tick**, into the call's own parameters 9/10/11, and
+  thereafter places
 
-**Two sets hide this from each other, which is why it survived.** Some paths
-are authored on top of the mesh they move and some about another origin
-entirely:
+  ```
+  node = sample(t) − sample(t0) + anchor
+  ```
+
+  so the path contributes only the DELTA from its own first sample, laid on
+  wherever the object stood when the move began (`readable/src/23_script.c`;
+  the capture is the `sub_44C6C0(a2, 9|10|11, …)` arm taken when the span is
+  at its start, and the read-back is `Script_GetParamFloatB(a2, 9|10|11)`).
+
+**One set uses both, on the same trigger's worth of script.** In `AAPKAYL`
+the kitchen and entrance doors carry parameter 5 = 1 and are displacements
+laid on the doors' own authored positions; `Gunbl` — the waver Telis holds
+through the greeting — and `boitkcle` carry parameter 5 = 0 and are placed
+outright. `Gunbl` is authored at 3635.9/1317.2/−682.9, parked below the floor
+out of sight, and its path is authored in world coordinates at her hand
+(3352/1056/−884 → 3363/1080/−929). Read as a displacement it animates the
+parked spot and she holds nothing, which is what a reader reported twice; read
+outright it lands in her hand, and the shot then matches the engine's own
+framebuffer in `traces/frames/dlg402-32.png`.
+
+**Neither arm can be inferred from the path's own numbers**, which is why the
+first two readings each looked right on the set that motivated them: the
+door's `sample(t0)` is (632, −43.2, 33.8) and looks local, `Gunbl`'s is
+(3352, 1056, −884) and looks absolute, but `AHALL40`'s lift doors are
+displacements whose samples are within ~7 units of the mesh and would pass
+for either. The parameter is the only discriminator.
+
+**The corpus split, and what each arm is for.** Over the 220 shipped scenes
+`Script_MoveObjectOnPath` is called **4841** times: **4119 displacements, 722
+absolute, and not one call too short to carry the parameter.** The two arms
+divide by intent rather than by set. Every door, drawer, safe and cupboard in
+`AAPKAYL` is a displacement — "move this from where it is" — while its
+absolute calls are the ones that PUT a node somewhere: `boitkcle`, the key box
+appearing in Koopy's place; `Gunbl`; and the `Fx InitFightPos` / `Fx
+ParkingPos` families, which park effect nodes at named spots.
+`verify.py: path form`, which asserts the census, the three calls the two
+wrong readings turned on, and — because the census alone cannot see a fault in
+the port — the position the port's own `NodeMotion::placeOn` gives `Gunbl`
+when the beat is actually run.
+
+**Two sets hid the displacement arm from each other, which is why the first
+reading survived.** Among the paths that ask for it, some are authored on top
+of the mesh they move and some about another origin entirely:
 
 | set | mesh authored at | its path's `sample(t0)` | offset |
 |---|---|---|---|
 | `AHALL40` | 3947.6, −58.6, −1206.0 | 3949, −52, −1207 | ~7 |
 | `AAPKAYL` | 3759.9, 1037.3, −815.8 | **632, −43.2, 33.8** | **~3400** |
 
-Placing the raw sample therefore moves Anekbah Hall 40's lift doors correctly
-— they were watched opening — and throws Kay'l's entrance door out of the
-building, where it vanishes on the trigger and never returns. That single
-fault reads as two: no door animation, and doors that never close. Corrected,
-the flat's door lands exactly on its authored position at `t0` and slides
-**87.2 units straight down** into the floor.
+Placing the raw sample for a **displacement** path therefore moves Anekbah
+Hall 40's lift doors correctly — they were watched opening — and throws
+Kay'l's entrance door out of the building, where it vanishes on the trigger
+and never returns. That single fault reads as two: no door animation, and
+doors that never close. Corrected, the flat's door lands exactly on its
+authored position at `t0` and slides **87.2 units straight down** into the
+floor.
 
 Closing needs nothing of its own: the leave script runs the same path
 backwards, so the delta walks from the full displacement back to zero.

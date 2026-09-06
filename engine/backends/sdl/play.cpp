@@ -3900,6 +3900,18 @@ int main(int argc, char** argv) {
                     // not, and that is the whole of the apartment door bug.
                     mo.placeOn(w.meshes[static_cast<std::size_t>(mi)].pos, p.pos);
                     motionAt[mo.name] = {p.pos[0], p.pos[1], p.pos[2]};
+                    if (std::getenv("OMK_TRACE_MOTION")) {
+                        const float* mp = w.meshes[static_cast<std::size_t>(mi)].pos;
+                        std::printf("  [motion] %-12s sample %.0f %.0f %.0f  from %.0f %.0f %.0f"
+                                    "  anchor %.0f %.0f %.0f  ->  %.0f %.0f %.0f  (%s)\n",
+                                    mo.name.c_str(), mo.pos[0], mo.pos[1], mo.pos[2],
+                                    mo.hasFrom ? mo.from[0] : 0.0f,
+                                    mo.hasFrom ? mo.from[1] : 0.0f,
+                                    mo.hasFrom ? mo.from[2] : 0.0f,
+                                    mp[0], mp[1], mp[2], p.pos[0], p.pos[1], p.pos[2],
+                                    mo.hasFrom ? "param 5 set: a displacement"
+                                               : "param 5 zero: the sample OUTRIGHT");
+                    }
                     p.q = omk::Quatf{mo.quat[0], mo.quat[1], mo.quat[2], mo.quat[3]};
                     p.rotated = mo.rotated;
                 }

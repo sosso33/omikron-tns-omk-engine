@@ -3906,6 +3906,116 @@ def c_engine_player_program():
            "cutscene"
 
 
+def c_path_form():
+    r"""`Script_MoveObjectOnPath` HAS TWO ARMS, and **parameter 5** picks one.
+
+    The most-used scene function in the game (4841 calls) was read wrong twice
+    in one day. First the port placed every path sample OUTRIGHT, which threw
+    Kay'l's entrance door 3400 units out of the building. Then it treated every
+    path as a DISPLACEMENT laid on the node's own position, which fixed the
+    doors and left the waver Telis holds through the flat's greeting animating
+    a spot below the floor - a reader, twice: *"the waver Telis has in her
+    hands is not visible"*.
+
+    Both readings were half of one function. `readable/src/23_script.c`:
+
+        v88 = Script_GetParamInt(a2, 5);
+        ...
+        if (!v88) goto LABEL_39;    /* o3de_SetNodePos(node, sample(t)) */
+
+    * parameter 5 **zero** -> `LABEL_39`, one line: the sample is the world
+      position, placed outright;
+    * parameter 5 **non-zero** -> the anchor form, `sample(t) - sample(t0) +
+      the node's position when the move began` (captured into the call's own
+      parameters 9/10/11 on the first tick).
+
+    **Nothing in a path's own numbers separates them**, which is why each
+    wrong reading looked right on the set that motivated it: the flat's door
+    starts at 632/-43.2/33.8 and reads local, `Gunbl` starts at
+    3352/1056/-884 and reads absolute, and `AHALL40`'s lift doors are
+    displacements whose first sample sits within 7 units of their own mesh and
+    would pass for either. Only the parameter decides.
+
+    What the corpus says, and it is the shape that makes the reading legible:
+    **722 of the 4841 calls are absolute and 4119 are displacements, and not
+    one call is too short to carry the parameter.** In `AAPKAYL` every door,
+    drawer, safe and cupboard is a displacement; the absolute ones are the
+    calls that PUT a node somewhere - `boitkcle` (the key box appearing),
+    `Gunbl` (the waver into her hand) and the `Fx InitFightPos` / `Fx
+    ParkingPos` families, which park effect nodes at named spots.
+
+    Asserted here: the corpus split; that `Ap01DorEnt` (the flat's entrance
+    door) and `HA40DoorL` (the lift's) both ask for the displacement; and that
+    `Gunbl` does not.
+
+    Shown to fail: dropping the gate in `Program::tick` - `m.hasFrom = true`
+    unconditionally, the reading of 2026-09-06 - leaves `Gunbl` drawn at
+    3636/1317/-683, its parked spot below the floor, instead of the
+    3352/1056/-884 the path names; forcing the other way puts the entrance
+    door back outside the building.
+    """
+    import subprocess, re as _re
+    eng = os.path.join(ROOT, "engine")
+    fr = omkpaths.data_root()
+    if not (os.path.isdir(eng) and os.path.isdir(fr)):
+        return ("skipped",), ("skipped",), "engine/ or gamedata/ absent"
+    b = subprocess.run(["make", "-s", "build/path_form"], cwd=eng,
+                       capture_output=True, text=True)
+    pf = os.path.join(eng, "build", "path_form")
+    if b.returncode != 0 or not os.path.exists(pf):
+        return ("build failed",), ("built",), "engine/ must build"
+    r = subprocess.run([pf, fr], capture_output=True, text=True,
+                       encoding="latin-1")
+    m = _re.search(r"scx (\d+)\s+moveOnPath (\d+)\s+absolute (\d+)\s+"
+                   r"displacement (\d+)\s+short (\d+)", r.stdout)
+    if not m:
+        return ("no census",), ("a census",), "path_form must report the corpus"
+    scx, calls, absolute, rel, short = (int(x) for x in m.groups())
+
+    def form(scene, node):
+        rr = subprocess.run([pf, fr, scene], capture_output=True, text=True,
+                            encoding="latin-1")
+        for line in rr.stdout.splitlines():
+            f = line.split()
+            # `<object> <node...> param5 <n> <form>` - the node name may have
+            # a space in it (`Ap01Door L`), so read the form off the END.
+            if node in line and " param5 " in line:
+                return f[-1]
+        return None
+
+    # ...and the PORT'S OWN placement, which the census alone cannot see. The
+    # census reads the parameter out of the `.SCX`; only running the beat puts
+    # `Program::tick`'s gate and `NodeMotion::placeOn` under test, and a check
+    # that skipped it passed unchanged with the gate mutated away.
+    run = subprocess.run([pf, fr, os.path.join(ROOT, "tables"), "--run"],
+                         capture_output=True, text=True, encoding="latin-1")
+    placed = {}
+    for line in run.stdout.splitlines():
+        mm = _re.search(r"\s(\S+)\s+sample\s+(\S+)\s+(\S+)\s+(\S+)\s+anchor"
+                        r"\s+(\S+)\s+(\S+)\s+(\S+)\s+->\s+(\S+)\s+(\S+)\s+(\S+)",
+                        line)
+        if mm and mm.group(1) not in placed:
+            placed[mm.group(1)] = tuple(round(float(mm.group(i)), 0) for i in (8, 9, 10))
+    got = (scx, calls, absolute, rel, short,
+           form("Aapkayl.SCX", "Ap01DorEnt"),
+           form("Hall40.SCX", "HA40DoorL"),
+           form("Aapkayl.SCX", "Gunbl"),
+           placed.get("Gunbl"), placed.get("Ap01dKit"))
+    return got, (220, 4841, 722, 4119, 0, "displacement", "displacement", "ABSOLUTE",
+                 (3352.0, 1056.0, -884.0), (3573.0, 1038.0, -983.0)), \
+           "every `Script_MoveObjectOnPath` call in the 220 shipped scenes, " \
+           "split by the parameter the handler branches on: 722 place the " \
+           "sample outright and 4119 lay it on the node as a displacement, " \
+           "and none of the 4841 is too short to carry it. Then the three " \
+           "calls the two wrong readings turned on - the flat's entrance " \
+           "door and the lift's left door, both displacements, and `Gunbl`, " \
+           "the waver in Telis's hand, which is not. And finally the PORT " \
+           "running the flat's greeting: `Gunbl`'s first placed position is " \
+           "the path's own sample, 3352/1056/-884, in her hand and not the " \
+           "3636/1317/-683 the set parks it at; the kitchen door's is its " \
+           "own authored position, which is what a displacement at t0 means"
+
+
 def c_ui_shop_titles():
     r"""The ten shops' titles, and the branch a linear scan cannot follow.
 
@@ -23603,7 +23713,7 @@ def c_licence_headers():
                    if TAG in open(p, encoding="utf-8",
                                   errors="replace").read(600)]
     return (authored, sorted(missing), len(vendored), mislabelled), \
-           (364, [], 1, []), \
+           (365, [], 1, []), \
            "authored source files under tools/, engine/src, engine/tools, " \
            "engine/backends and scripts/; those MISSING the SPDX tag; " \
            "vendored files in engine/third_party; and vendored files wrongly " \
@@ -25190,6 +25300,7 @@ SLOW = [
     ("camera travel",      c_camera_travel_subjects, "engine/README"),
     ("program placement",  c_program_placement_holds, "engine/README"),
     ("engine: player program", c_engine_player_program, "engine/README"),
+    ("path form",          c_path_form,          "FILE_FORMATS 5c"),
     ("save clock",         c_save_clock,        "GAME_STATE 8"),
     ("player counters",   c_player_counters,   "UI 3g; GAME_STATE"),
     ("fill colour",       c_fill_colour,       "UI 3b"),

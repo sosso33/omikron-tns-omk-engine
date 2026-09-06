@@ -344,11 +344,22 @@ bool Program::tick(float dt) {
                     // end, so its delta starts at the full displacement and
                     // ends at zero - which is exactly a door closing back
                     // onto the anchor it opened from.
+                    // ...but ONLY when the call asks for it. `v88 =
+                    // Script_GetParamInt(a2, 5)` selects the two arms of the
+                    // handler: nonzero takes the displacement form above, and
+                    // ZERO falls to LABEL_39, which is
+                    // `o3de_SetNodePos(node, sample)` - the path placed
+                    // OUTRIGHT. A path authored in world coordinates on a
+                    // node parked out of sight needs the second, and the flat
+                    // has both kinds.
+                    const bool relative = f.params.size() > 5 && f.params[5] != 0;
                     float q0[4];
-                    if (pathSampleQuat(*pa, 0.0f, m.from, q0)) m.hasFrom = true;
-                    else if (!pa->keys.empty()) {
-                        for (int c = 0; c < 3; ++c) m.from[c] = pa->keys.front().pos[c];
-                        m.hasFrom = true;
+                    if (relative) {
+                        if (pathSampleQuat(*pa, 0.0f, m.from, q0)) m.hasFrom = true;
+                        else if (!pa->keys.empty()) {
+                            for (int c = 0; c < 3; ++c) m.from[c] = pa->keys.front().pos[c];
+                            m.hasFrom = true;
+                        }
                     }
                     if (!m.name.empty()) motions_.push_back(std::move(m));
                 }
