@@ -306,6 +306,15 @@ Two consequences:
   They are `0xFFFFFFFF` in `IAM\START`. This is exactly the 8 bytes the round
   trip in §8 is allowed to differ at.
 
+**And `+8` is the character's NAME.** Read out of the save file 2026-09-06,
+where the player record's strings are plainly visible: `+8` is `KAY'L 669`,
+`+40` is `Agent-Enquêteur`, `+72` is the `.CTL` (`H1AVNT`) and `+144` the
+`.3DO` (`HO1_FN`) — the last two already documented from the other end. `+8`
+matters beyond the record, because `SaveDir_Build` lifts exactly those 32
+bytes into the save directory and the load panel draws them as the row label
+(§8). Since reincarnation replaces the record, the name in a save is the body
+the player was wearing when it was written, not "Kay'l" for ever.
+
 Fields established here that FILE_FORMATS did not yet carry, all from
 `Actor_GetProperty` (0x0040B360) and the inventory screen's item labeller:
 
@@ -612,11 +621,40 @@ file+3496:
 | +0 | `char[32]` the profile name | slot +0 |
 | +32 | `u32` the day counter | slot +32 |
 | +36 | `u32` the time within the day | slot +36 |
-| +40 | 32 bytes | slot **+76** — 36 into the slot's DB |
+| +40 | `char[32]` the **character's name** | slot **+108** — 68 into the DB, the player record's `+8` |
 
-The last field is **not a string** in the one real save
-(`traces/save-appart.bin` has binary DB data there) and nothing read so far
-consumes it, so what it is for stays open. `verify.py: sim: load panel`. The header is also plainly not a
+**The last row said `slot +76` and "not a string" until 2026-09-06, and the
+first error caused the second.** The copy is `qmemcpy(v7, v3 + 19, 0x20)` with
+`v3` sitting at **slot + 32**, so `+19` dwords is +76 bytes *from v3* — which
+is **slot + 108**. At slot + 76 you land in the DB's array counts, which is
+binary, and that is exactly the "not a string" that got written down: a wrong
+offset produced a negative result about the field, and the negative result was
+recorded as a property of the field. It is the §1 trap in miniature.
+
+At slot + 108 the three slots of `traces/games-resto.bin` all read
+**`KAY'L 669`** — the player record's `+8`, the character's name (§4). And
+because reincarnation replaces that record, this is the body the player was
+wearing when the save was made, not a constant.
+
+**A photograph of the original settles what the directory is FOR.** A reader
+supplied a screen grab of `Charger une partie` taken against exactly this save
+file, and it draws
+
+```
+Joueur : hereIsTheProfileName
+KAY'L 669 - 12 Nadim 7216 - 14:14:17
+KAY'L 669 - 12 Nadim 7216 - 16:08:15
+KAY'L 669 - 12 Nadim 7216 - 17:14:30
+```
+
+with a framed thumbnail of the save location beside the selected row, and
+*Charger une partie* / *Détruire* / *Annuler* down the right — three buttons,
+which is `Nouvelle partie` hidden exactly as [UI.md](UI.md) says it is on
+screen 29. So a row is **`+40` — date(`+32`) — time(`+36`)**, the heading is
+`+0`, and the picture is the slot's 24576-byte tail. Rebuilding those three
+strings from the file reproduces them character for character, which tests the
+field, both formatters and the 41-day calendar at once.
+`verify.py: save directory`. `verify.py: sim: load panel`. The header is also plainly not a
 slot directory: it opens with the profile name `OMK_SAVE`, then `0280 01e0` —
 the display mode, 640x480 — and only 119 of its 3496 bytes are non-zero in a
 fresh file. `gamestate.from_save(path, n)` reads a slot's DB, which is what
@@ -751,6 +789,14 @@ locked surface and repacks them in place, `12288` iterations — which is
 shifts are computed from the **device's** own channel widths (`10 - greenBits`,
 `15 - redBits`) into fixed destination masks `0x1F`, `0x3E0`, `0x7F00`, so
 whatever the display format is, what reaches the disk is **X1 R5 G5 B5**.
+
+**Confirmed against a frame of the original, 2026-09-06.** Decoded that way,
+all three slots of `traces/games-resto.bin` come out as rooms — and slot 0's
+is pixel-for-pixel the picture in the reader's screen grab of the load panel,
+the apartment with its chequered floor. Mechanically the discriminating number
+is the unused top bit: it is set in **0 of the 36864** pixels, where a 5:6:5
+reading would set it in about half. A wrong channel order still decodes to
+*a* picture, so "it looks like a room" is not the test.
 
 **Loading is not quite the mirror.** `Game_LoadSave` (0x00408FC0) reads the
 3496-byte header and *discards* it — the settings come back through

@@ -10641,6 +10641,92 @@ def c_save_points():
            "it, and every save point with no gate at all"
 
 
+def c_save_directory():
+    r"""The save DIRECTORY's fourth field, and what the load panel draws.
+
+    `SaveDir_Build` (0x00408A10) lifts four fields out of every 32808-byte
+    slot into a 256 x 72 table.  Three were read long ago - the profile name,
+    the day and the time.  The fourth was recorded as `slot + 76`, "**NOT** a
+    string in the one real save, and nothing read so far consumes it".
+
+    **Both halves of that were wrong, and the first caused the second.**  The
+    arithmetic is `qmemcpy(v7, v3 + 19, 0x20)` with `v3` at **slot + 32**, so
+    `+ 19` dwords is + 76 bytes FROM v3 - which is **slot + 108**, not slot +
+    76.  At slot + 76 you get the DB's array counts, binary, which is exactly
+    the "not a string" that got written down.  At slot + 108 you get
+    `KAY'L 669`.
+
+    Slot + 108 is DB + 68, which is the **player record's + 8** (the record is
+    at DB + 60): the character's NAME.  So the field is the name of the body
+    the player is wearing - which matters, because reincarnation replaces that
+    record (op 56) and the player is not Kay'l for the whole game.
+
+    **And a photograph of the original settles what it is for.**  A reader
+    supplied a screen grab of `Charger une partie` taken with exactly the
+    save file this repo has, and its three rows read
+
+        KAY'L 669 - 12 Nadim 7216 - 14:14:17
+        KAY'L 669 - 12 Nadim 7216 - 16:08:15
+        KAY'L 669 - 12 Nadim 7216 - 17:14:30
+
+    over a heading `Joueur : hereIsTheProfileName`.  So a row is the fourth
+    field, then the day through `Timer_Format`'s calendar, then the time - and
+    the heading is the first field.  This check builds those three strings out
+    of `traces/games-resto.bin` and compares them to what the original drew,
+    which tests the field, both formatters and the calendar in one line each.
+
+    **The thumbnails decode.**  The slot's last 24576 bytes are the picture
+    the panel shows beside the selected row, 128 x 96 at 2 bytes a pixel
+    (GAME_STATE 8b).  Read as the X1R5G5B5 that `sub_4331B0`'s shifts predict,
+    all three slots come out as rooms - and slot 0's IS the image in the
+    reader's screen grab, the apartment with its chequered floor.  Mechanically:
+    the unused top bit is set in **0** of the 36864 pixels, none of the three
+    is uniform, and no two are alike.  A wrong channel order would still
+    decode to a picture, so the top-bit count is the part that discriminates -
+    at 5:6:5 it would be set in about half of them.
+    """
+    import gamestate as _G
+    path = os.path.join(ROOT, "traces/games-resto.bin")
+    if not os.path.exists(path):
+        return ("skipped",), ("skipped",), "traces/games-resto.bin absent"
+    d = open(path, "rb").read()
+    HDR, SLOT, SHOT = 3496, 32808, 8232
+    rows, names = [], []
+    for k in range(3):
+        b = d[HDR + SLOT * k:]
+        nm = b[108:140].split(b"\0")[0].decode("cp1252")
+        day, tm = struct.unpack_from("<II", b, 32)
+        names.append(nm)
+        rows.append("%s - %s - %s" % (nm, _G.format_date(day), _G.format_time(tm)))
+    profile = d[HDR:HDR + 32].split(b"\0")[0].decode("cp1252")
+    # the same 32 bytes at the offset the docs used to name
+    wrong = d[HDR + 76:HDR + 108]
+    wrongIsText = all(32 <= c < 127 for c in wrong[:4])
+
+    # the thumbnails
+    topbit, uniform, pix = 0, 0, 0
+    shots = []
+    for k in range(3):
+        px = struct.unpack_from("<%dH" % (128 * 96), d, HDR + SLOT * k + SHOT)
+        pix += len(px)
+        topbit += sum(1 for v in px if v & 0x8000)
+        if len(set(px)) <= 1: uniform += 1
+        shots.append(px)
+    distinct = len({tuple(s) for s in shots})
+    return (rows, profile, wrongIsText, (pix, topbit, uniform, distinct)), \
+           (["KAY'L 669 - 12 Nadim 7216 - 14:14:17",
+             "KAY'L 669 - 12 Nadim 7216 - 16:08:15",
+             "KAY'L 669 - 12 Nadim 7216 - 17:14:30"],
+            "hereIsTheProfileName", False, (36864, 0, 0, 3)), \
+           "the three rows the original's load panel draws, built here out " \
+           "of the save file - the directory's fourth field (slot+108, the " \
+           "player record's +8) then the day and time through the calendar - " \
+           "and the heading's profile name; whether the offset the docs used " \
+           "to name (slot+76) holds text at all; then the thumbnails: pixels " \
+           "read, how many set the X1R5G5B5 layout's unused top bit, how " \
+           "many of the three images are uniform, and how many are distinct"
+
+
 def c_engine_save_write():
     r"""WRITING a save: `Game_WriteSave` and the three functions around it.
 
@@ -23699,6 +23785,7 @@ CHECKS = [
     ("sim: dialogue",     c_sim_dialogue,      "RECONSTRUCTION 4"),
     ("save file",         c_save_file,         "GAME_STATE 8"),
     ("save points",       c_save_points,       "GAME_STATE 8c"),
+    ("save directory",    c_save_directory,    "GAME_STATE 8"),
     ("settings block",    c_settings_block,    "GAME_STATE 8"),
     ("telis dialogue",    c_telis_dialogue,    "RECONSTRUCTION 4"),
     ("attribution reach", c_attribution_reach,  "RECONSTRUCTION 4"),

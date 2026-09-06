@@ -216,7 +216,20 @@ inside one of those quads. So the work is:
   2476 in AREA 152 *Ix Astaroth*.
 * **write the thumbnail.** The load panel draws the picture of the player at
   the save location — that is the slot's 24576-byte tail, and `writeSaveSlot`
-  already takes one; step 3 has to actually capture it.
+  already takes one; step 3 has to actually capture it. The format is settled
+  and now checked against a frame of the original (`GAME_STATE` §8b).
+* **the ring is spent on CONFIRM**, for an overwrite exactly as for a new
+  slot, and deleting a save does not refund it (the reader, 2026-09-06). The
+  panel shows no ring count anywhere, so nothing on screen has to display it.
+  Rings are found in the world, not bought.
+
+**Owed to the UI side, once `engine/src/ui/` is free** (another session holds
+it): `saveDirectory` in `widgets.cpp` reads only three of the directory's four
+fields — it needs the character name at **slot + 108** — and `SaveEntry` needs
+somewhere to put it, because the load row is `<name> - <date> - <time>` and
+without the field the port cannot draw a row at all. `tools/sim/ui.py`'s
+`save_directory` has the same gap. Both are one field each; they are listed
+here rather than done so as not to collide.
 
 Nothing needs a new mechanism, and binding it to a key would be inventing one.
 
