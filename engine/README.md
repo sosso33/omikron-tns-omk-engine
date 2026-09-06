@@ -1124,6 +1124,44 @@ offset search**, and they correct the state map this repo has been carrying:
 * **state 7 has no case in `Actors_TickAll`.** It falls through `default:` and
   gets no tick from that loop at all. An absent case is content, not a gap in
   the read.
+* **16 and 17 are DIALOGUE, and the pair that writes them does more than the
+  state.** `Actor_EnterDialogueMode` (0x00468DE0) parks the previous state in
+  `[102]` and writes 16 - or 17 from state 9, where the interface still owns
+  what is parked - and `Actor_LeaveDialogueMode` (0x00468E80) restores it.
+  **Both also switch the `.CTL` BANK**: group 400 on the way in, group 100 on
+  the way out, and group 100 is H1AVNT's own default group (`flags & 1`, 44
+  entries, entry `H_STAND`/`MDSTAND`), so leaving a conversation puts the
+  actor back in adventure mode through `SetPersoBankGroup` rather than through
+  the state alone. Ported since the machine was, and **not called by anything
+  until 2026-09-06** - see `verify.py: dialogue mode` below for what that cost.
+
+**`verify.py: dialogue mode`** (2026-09-06) - the two ends of a conversation,
+and the two readings that were wrong.
+
+`Perso_SetInputEnabled` is a name from `tools/renames.json`, not from the
+binary, and **its sense is backwards**: flag `0x80` BLOCKS the device pass,
+since `Cef_TickChannel` runs the input search only under `!(flags & 0x81)`.
+Argument 1 is `or cl, 80h` and nothing else; argument 0 is `and al, 7Fh`
+followed by the queue reset. `Perso_GetInputEnabled` (0x0045ACB0) returns
+`flags & 0x80` precisely so `Actor_LeaveDialogueMode` can **restore** what the
+enter saved in `dword_53AE28`. The port asserted it instead, and the player's
+action button was then dead for the rest of the session - so wiring the pair in
+made the viewer worse until the arms were read. The port spells it
+`setInputBlocked` now, and the check's mutation is exactly this: asserting the
+flag rather than restoring it takes `MDACTION after leaving` from 8 to 0.
+
+And what the resets do NOT do. `SetPersoBankGroup` (0x0045A630) and
+`Perso_SetInputEnabled(ch, 0)` both reset the input with one `mov ecx, 10h` /
+`rep stosd` over **16 dwords from +28**, ending at **+87**, then write the
+count at +24 and `lastInput_` at +20. The **20-slot latch is at +92** and is
+untouched - the store stops one dword short of it - so neither reset forgets
+which inputs the current states have already consumed. This port cleared it in
+all three of its resets; corrected, though on H1AVNT it changes nothing
+observable, because the action entry is reached through the per-tick chain loop
+and a GoTo redirect and neither of those writes a latch id. The check prints
+the latch either side of a bank switch as an observation and says so rather
+than dressing it as a test.
+
 
 **`verify.py: engine player walk`** - the player controller, adventure mode.
 The chain `Actor_TickNpc` runs is joined from modules already ported: the

@@ -347,6 +347,21 @@ stopped guarding the moment the name changed, and nothing would have said so.
   differing component is zero either way). **Assert that the file changed, name
   the object files explicitly, and check the mutated run's OUTPUT differs -
   not just that the check went red.**
+* **A NAME IN `tools/renames.json` IS A HYPOTHESIS, NOT EVIDENCE - and one of
+  them has the sense backwards.** `Perso_SetInputEnabled` (0x0045A3E0) reads
+  as an enable and is a **block**: flag `0x80` makes `Cef_TickChannel` SKIP the
+  input search (`!(flags & 0x81)`), argument 1 is `or cl, 80h` and argument 0
+  is `and al, 7Fh` plus a queue reset. So `Perso_SetInputEnabled(ch, 1)` stops
+  the actor reading keys. The port trusted the name in
+  `Actor_LeaveDialogueMode`, asserted the flag on the way out of every
+  conversation, and the player's action button was dead from the first
+  conversation onward - a change that was RIGHT in outline made the viewer
+  worse, and only reading the two arms showed why. `readable/`'s own rule
+  covers this (§3: "if nothing establishes what it is, leave the address
+  name"), and the practical form of it is: **before a rename decides a
+  behaviour, read the handler, not the map.** A boolean argument is where this
+  bites hardest, because a wrong name inverts it silently and both values look
+  plausible at the call site.
 * A regex over decompiler output must respect nesting.
   `List_PickRandomByType(u32(a2, 20), 11)` reads as type **20** with a naive
   `[^,]+` pattern — which made type 20 look like the most-used in the game.
@@ -924,7 +939,11 @@ free-look tool was generalising a camera-mode property to all rendering.
 >   compared;
 > * `build/omk-play $B --dump ...`: one giant argument, the program waited
 >   instead of rendering, and it read as a slow render for fourteen minutes;
-> * and the same shape in a `for` loop over "label|pattern|replacement" triples.
+> * and the same shape in a `for` loop over "label|pattern|replacement" triples;
+> * and a FOURTH the same day, in a shell FUNCTION: `run(){ omk-play ... $1 ...; }`
+>   called as `run "--area 237 --address 687" ...` passes one argument, so every
+>   run in that round used the defaults and a comparison of three scenarios
+>   came back as three zeros - which reads as "the fix broke everything".
 >
 > The rule that would have caught all three: **after building a command from a
 > variable, assert the effect, not the exit status.** A render that produced no

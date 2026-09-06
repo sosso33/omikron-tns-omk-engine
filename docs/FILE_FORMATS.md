@@ -813,7 +813,18 @@ model on that, not on its origin.
 switches to `.CTL` **group 400, the dialogue-stance group**, and his
 `ACTOR_STATE` becomes 16 (or 17 when a UI screen already held him — state 9,
 which all three writers in the binary set for interface screens). Leaving
-restores group **100** and the saved state. The NPC is *never touched*: her
+restores group **100** and the saved state.
+
+"His input is cut" is a `Perso_SetInputEnabled(channel, 0)`, and the argument
+is not what the name suggests: flag `0x80` **blocks** the device pass, so 0
+*unblocks* it and also resets the queue and `lastInput_`. What actually stops
+the channel acting during the conversation is `ACTOR_STATE` 16, which gets no
+device word. The enter SAVES the flag into `dword_53AE28` and the leave
+**restores** it — `if (dword_53AE28) Perso_SetInputEnabled(channel, 1)` — so a
+port that asserts the flag on the way out silently stops the player acting
+ever again. Group **100** is the bank's own default group (`flags & 1`), whose
+entry is `H_STAND`/`MDSTAND`, which is why the restore needs no separate
+"return to adventure mode" step. The NPC is *never touched*: her
 scene-object program simply keeps running, which is why Telis stays seated
 and eating through dialog 387 with no dialogue-specific machinery at all.
 

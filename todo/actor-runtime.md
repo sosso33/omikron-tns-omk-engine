@@ -62,3 +62,23 @@ be what the engine does). `CefChannel::gotoOf` is now the single read.
   models that path with `kQueueDrives` instead of with the flag; the two agree
   on the queue and differ on what the input pass does with the idle word, and
   nothing has been measured either way. Not a fault, an unexplored branch.
+
+  **And on 2026-09-06 the port got it wrong anyway, with this note already
+  written.** `ActorRuntime::leaveDialogue` called `setInputEnabled(true)` -
+  reading the rename as an enable - which SET the block flag, and the player's
+  action button was dead after the first conversation. The note above says the
+  sense; nothing connected it to the one call site that depended on it. The
+  method is spelled `setInputBlocked` now so the call site reads as what it
+  does, and `verify.py: dialogue mode` asserts the flag either side of a
+  conversation. The lesson for whoever takes the channel next is the general
+  one: a note recording that a NAME is wrong does not protect the code that
+  uses the name - renaming the thing does.
+
+* **Neither channel reset clears the 20-slot latch, and the port used to.**
+  `SetPersoBankGroup` (0x0045A630) and `Perso_SetInputEnabled(ch, 0)` both do
+  `mov ecx, 10h` / `rep stosd` over **16 dwords from +28**, ending at +87, then
+  write the count (+24) and `lastInput_` (+20). The latch is at **+92** - one
+  dword past the end. Fixed 2026-09-06; unobservable on H1AVNT, because its
+  action entry is reached through the per-tick chain loop and a GoTo redirect
+  and neither writes a latch id, so a bank where it MATTERS is still untested.
+  That is the next thing to measure here.
