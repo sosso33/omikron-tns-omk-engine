@@ -5631,8 +5631,16 @@ def c_engine_voice_over():
         exactly ONE `push offset` in the image (Runtime.exe.asm:5528) - so a
         trace line naming that address is `media.play` and nothing else. The
         captures therefore hand over the engine's own media ids: **102**
-        announcements over the eight non-empty traces, **56 distinct**, and
-        **56 of 56** resolve to a ZVO-tagged object through this rule.
+        announcements over the **13 named captures** (11 of which carry at
+        least one), **56 distinct**, and **56 of 56** resolve to a ZVO-tagged
+        object through this rule.  The corpus is NAMED, with each file's own
+        count beside it, because it used to be a `traces/*.log` glob - and on
+        2026-09-06 a rig run that left one extra log in the directory and
+        overwrote another moved this number to 105 and turned the check red
+        with nothing in the port changed.  A number asserted over whatever
+        happens to be in a directory is not asserted over anything; and per
+        file, a capture that changes now shows itself by name rather than as
+        a shifted total.
         `traces/impasse-walk.log` opens the Impasse cutscene with
         **142, 141, 404, 410** in that order, which is what the port has to
         play, and its one kind-16 id (**715**, "ZVO G001 TITRE") has its
@@ -5767,12 +5775,28 @@ def c_engine_voice_over():
     # `aObjects` at 0x004C0844 has ONE `push offset` in the image, so this
     # address is `media.play` and no other OBJECTS announcer.
     pat = re.compile(r'004c0844 "OBJECTS",[0-9a-f]+ "(-?[0-9]+)"')
-    tid, impasse = [], []
-    for fn in sorted(glob.glob(os.path.join(ROOT, "traces", "*.log"))):
+    # THE CAPTURES ARE NAMED, NOT GLOBBED, and the reason is a failure this
+    # check actually had on 2026-09-06: it globbed `traces/*.log`, so a rig
+    # run that left one extra log in the directory and overwrote another
+    # silently moved this number from 102 to 105 and turned the check red
+    # with nothing in the port changed.  A number asserted over "whatever is
+    # in that directory" is not asserted over anything.  The per-file counts
+    # are here too, so the 102 can be audited rather than believed - and a
+    # capture that changes shows up as its own line rather than as a total.
+    corpus = {"bootstrap.log": 2, "fight.log": 4, "impasse-walk.log": 36,
+              "intro.log": 8, "menu-keys.log": 4, "menu-noinput.log": 1,
+              "resto-387-shot.log": 2, "resto-387.log": 33, "selftest.log": 0,
+              "smoke.log": 0, "smoke2.log": 1, "telis-dialog.log": 4,
+              "walkin.log": 7}
+    tid, impasse, missing, moved = [], [], 0, []
+    for name in sorted(corpus):
+        fn = os.path.join(ROOT, "traces", name)
+        if not os.path.exists(fn): missing += 1; continue
         got = [int(m.group(1)) for ln in open(fn, errors="replace")
                for m in [pat.search(ln)] if m]
+        if len(got) != corpus[name]: moved.append((name, len(got)))
         tid += got
-        if fn.endswith("impasse-walk.log"):
+        if name == "impasse-walk.log":
             impasse = got
     tzvo = sum(1 for i in set(tid) if i in zset)
     head = tuple(impasse[1:5])         # after the 997 nearly every trace opens with
@@ -5788,6 +5812,7 @@ def c_engine_voice_over():
         g("poll", 2, 3, 4, 6, 8),
         (m92, mzvo, other, ozvo),
         (len(tid), len(set(tid)), tzvo, head),
+        (missing, moved),
     )
     want = (
         ("561", "10", "520", "31", "17"),
@@ -5800,6 +5825,7 @@ def c_engine_voice_over():
         ("2", "142", "404", "0", "4"),
         (2605, 2605, 1584, 1),
         (102, 56, 56, (142, 141, 404, 410)),
+        (0, []),
     )
     return got, want, \
         "the ZVO partition (objects, shipped, JINGOFF3-substituted, silent) " \
@@ -5808,7 +5834,10 @@ def c_engine_voice_over():
         "the kind-16 document arm playing nothing; the announcement filter " \
         "consuming each id once; media.play sites, all naming a ZVO object, " \
         "against the other nine OBJECTS opcodes' single collision; and the " \
-        "golden traces' own media ids, with the Impasse cutscene's first four"
+        "golden traces' own media ids, with the Impasse cutscene's first " \
+        "four; then the captures MISSING from the named corpus and any whose " \
+        "own count has moved, which is how a changed capture shows itself " \
+        "instead of being absorbed into the total"
 
 
 def c_engine_world_ops():
