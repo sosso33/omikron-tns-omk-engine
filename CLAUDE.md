@@ -684,6 +684,19 @@ traces/                captures. `frames/` holds the engine's own
 `tools/_*.py` are one-shot scratch scripts from earlier cleaning passes. Ignore
 them.
 
+**STANDING DECISION, 2026-09-06: do not add any more transcripts.** The
+repository is PUBLIC, and the fourteen archived between 2026-08-26 and
+2026-09-06 stay where they are, but no new session is to be rendered into
+`transcript/` or added to its README table. Save one outside the repo if it
+is asked for. Two mechanical notes, because both bite: `verify.py:
+transcript index` compares the `.md` on disk against the README table in
+BOTH directions, so a rendered file that is present but unlisted fails it
+exactly as a listed file that is missing does - the file and the row move
+together, which is why gitignoring the `.md` does not work and deleting it
+does; and a transcript pushed even once is public for good, since a revert
+clears the tip and not the history. The `-raw.jsonl` snapshots are already
+gitignored (line 76) and may stay on disk.
+
 `transcript/` holds the sessions this work was done in, one `-raw.jsonl`
 snapshot and one rendered `.md` each, named `session-<date>_<session id>`.
 The fourth (`2026-08-28_5b4133f8`) is the golden-trace one, the
