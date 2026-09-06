@@ -1337,6 +1337,15 @@ int main(int argc, char** argv) {
 "                   own area, standing where it was saved. --area, --stand\n"
 "                   or --address override the placement; --save names a\n"
 "                   file to take the slot from instead of --saves\n"
+"  --save-slot N    when the run ENDS, write a save into slot N: the live\n"
+"                   area and the scene over it, the player's position and\n"
+"                   facing, the clock, and a 128x96 picture of the last\n"
+"                   frame - which is what the load panel draws beside the\n"
+"                   row. A HARNESS path: in the game a save is `ui.open 30`\n"
+"                   out of a save point's activate script and costs one\n"
+"                   anneau, and neither of those is here yet\n"
+"  --save-name S    the profile name to write with (default: the name of\n"
+"                   the slot this run loaded)\n"
 "\n"
 "STARTING IN A STREET (street life)\n"
 "  --save FILE      load a save instead of IAM/START, so there is no intro.\n"
@@ -1476,6 +1485,13 @@ int main(int argc, char** argv) {
     // adventure mode in the save's own area at its own placement, the way
     // `Game_LoadSave` -> `State_Apply` does.
     int slotArg = -1;
+    // ...and the slot a run WRITES when it ends.  A harness path, not the
+    // game's: in the game a save is `ui.open 30` out of a save point's
+    // activate script and the ring is spent when the panel confirms
+    // (GAME_STATE 8c).  This writes the file without either, so a save can be
+    // made and re-loaded before the panel exists.
+    int saveSlotArg = -1;
+    std::string saveNameArg;
     int areaArg = -1, addressArg = -1, density = omk::kDefaultStreetActivity;
     // --config: the game's own ini (`[Preferences]`, 65 keys) plus this
     // port's `[Options]` for the two rows with no key. The SAVE's 3496-byte
@@ -1594,6 +1610,8 @@ int main(int argc, char** argv) {
         else if (a == "--save" && i + 1 < argc) saveFile = argv[++i];
         else if (a == "--saves" && i + 1 < argc) savesPath = argv[++i];
         else if (a == "--slot" && i + 1 < argc) slotArg = std::atoi(argv[++i]);
+        else if (a == "--save-slot" && i + 1 < argc) saveSlotArg = std::atoi(argv[++i]);
+        else if (a == "--save-name" && i + 1 < argc) saveNameArg = argv[++i];
         else if (a == "--area" && i + 1 < argc) areaArg = std::atoi(argv[++i]);
         else if (a == "--address" && i + 1 < argc) addressArg = std::atoi(argv[++i]);
         // A HARNESS FLAG, not a port: put an object into the carried list so
@@ -1763,7 +1781,7 @@ int main(int argc, char** argv) {
     // a file directly (the fixtures do), otherwise a `--slot` reads the saves
     // file - the writable one if it exists, else the shipped `IAM/GAMES`.
     std::vector<std::byte> saveBytes;
-    std::string saveFrom;
+    std::string saveFrom, loadedName;
     if (!saveFile.empty()) {
         saveBytes = omk::DataFs::readPath(saveFile);
         saveFrom = saveFile;
@@ -1896,6 +1914,7 @@ int main(int argc, char** argv) {
         // nothing and the engine never applies it.  `IAM\START` is exactly
         // that block, which is why a new game stands wherever the opening
         // puts him.
+        loadedName = slot->name;
         haveSavedPlacement = state.playerActorId() != -1;
         if (!haveSavedPlacement)
             std::printf("save: slot %d's player record names no actor (+272 "
@@ -8339,6 +8358,64 @@ int main(int argc, char** argv) {
             const char b2[2] = {static_cast<char>(v & 0xFF), static_cast<char>(v >> 8)};
             o.write(b2, 2);
         }
+    }
+    // ------------------------------------------------- WRITING A SAVE
+    //
+    // `Game_WriteSave` (0x00408EF0), with `State_Save`'s snapshot half in
+    // front of it (GAME_STATE 5a, 8b).  The order is the engine's: take the
+    // snapshot the block does not otherwise keep, then the four copies into
+    // the slot, then the whole file back.
+    //
+    // WHERE the scene comes from matters.  `State_Save` reads the LIVE
+    // resident slot (`dword_69BC4C[4 * dword_69BC60]`), not the scene-per-area
+    // table - and `State_Apply` copies the header back INTO that table before
+    // `Area_Load` reads it, so the header is what a load believes.  Taking it
+    // from the table here would make the port unable to express a divergence
+    // the engine can.
+    if (saveSlotArg >= 0) {
+        state.setCurrentArea(static_cast<std::int16_t>(session.activeArea()));
+        state.setCurrentScene(static_cast<std::int16_t>(
+            session.residentSlot(session.activeSlot()).scene));
+        state.setPlacement(session.playerPos(), session.playerYaw());
+
+        omk::SaveSlot out;
+        out.name = !saveNameArg.empty() ? saveNameArg
+                 : (!loadedName.empty() ? loadedName : std::string("omk-play"));
+        out.day  = state.clockDay();
+        out.time = state.clock();
+        out.state = state;
+
+        // The picture the load panel draws beside the selected row: the back
+        // buffer scaled into a 128 x 96 rect and repacked to X1R5G5B5
+        // (GAME_STATE 8b).  `fb` is what the window was shown, so this is the
+        // frame the player was looking at - which is what the engine's blit
+        // takes too.
+        const auto thumb = omk::thumbFromRgb565(fb.px, fb.w, fb.h);
+
+        auto file = omk::readSaveFile(savesPath, fr + "/IAM/GAMES");
+        if (file.size() < omk::kSaveFileSize) {
+            // `sub_4092A0`'s create arm - the settings, then 256 empty slots.
+            file = omk::blankSaveFile(saveSettings ? *saveSettings
+                                                   : omk::defaultSettingsBlock());
+            std::printf("save: %s did not exist - created, %zu bytes\n",
+                        savesPath.c_str(), file.size());
+        }
+        // ...and `Game_WriteSave`'s first copy: the settings over the head, on
+        // EVERY slot save.  Saving a game saves the options (GAME_STATE 8a).
+        if (saveSettings) omk::putSettings(file, *saveSettings);
+        if (!omk::writeSaveSlot(file, saveSlotArg, out, thumb))
+            std::fprintf(stderr, "save: slot %d is out of range\n", saveSlotArg);
+        else if (omk::writeSaveFile(savesPath, file))
+            std::printf("save: slot %d written to %s - '%s', %s %s, area %d "
+                        "scene %d, standing at %.0f %.0f %.0f facing %.0f, "
+                        "with a %dx%d picture\n",
+                        saveSlotArg, savesPath.c_str(), out.name.c_str(),
+                        omk::formatDate(out.day).c_str(),
+                        omk::formatTime(out.time).c_str(),
+                        state.currentArea(), state.currentScene(),
+                        session.playerPos()[0], session.playerPos()[1],
+                        session.playerPos()[2], session.playerYaw(),
+                        omk::kThumbW, omk::kThumbH);
     }
     {
         const auto& ps = session.scene().effects().particles();

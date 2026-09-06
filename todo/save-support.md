@@ -164,17 +164,35 @@ gap:
 All three are ported, and (1)'s agreement is asserted at 4 of 4 by
 `verify.py: engine: save write` so it stops being an assumption.
 
-### Step 3 — saving from the running game  ☐
+### Step 3 — saving from the running game  ☑ (2026-09-06)
 
 The snapshot taken from the live Session — area, scene, player node, facing,
 the clock — plus the 128x96 thumbnail out of the framebuffer. A `--save-to`
 smoke path in `omk-play` so a save can be written and re-loaded without a menu.
 
-Note from §2a: the scene written to `+1416` must come from the **live resident
-slot**, the way `State_Save` takes it (`dword_69BC4C[4 * dword_69BC60]`), and
-not from the scene-per-area table — the header is what a load believes, so
-taking it from the table would make the port unable to express a divergence
-the engine can.
+`--save-slot N` writes one when the run ends and `--save-name S` names it.
+The snapshot is `State_Save`'s, in the engine's order: the live area and the
+scene over it, the player's position and facing, the clock, then the four
+copies into the slot and the whole 8402344 bytes back — with the settings over
+the head, because `Game_WriteSave` does that on every slot save.
+
+The scene comes from the **live resident slot**, the way `State_Save` takes it
+(`dword_69BC4C[4 * dword_69BC60]`), and not from the scene-per-area table:
+§2a showed the header is what a load believes, so taking it from the table
+would leave the port unable to express a divergence the engine can. One of the
+two mutations proves the check sees it.
+
+The thumbnail is the last frame through `thumbFromRgb565` — a real picture,
+looked at rather than assumed, and Kay'l is standing in it.
+
+`verify.py: engine: save round trip` runs `omk-play` twice, writes a save of a
+game it was playing and loads it back: the file is 8402344, the slot reads
+back with its name, date, area and scene, the position moves by exactly
+(−1, −1, −1) — the engine's own asymmetry, reproduced — and the picture holds
+hundreds of colours with the X bit set in none of its 12288 pixels.
+
+**Still a harness path, deliberately.** No save point, no panel, no ring
+spent: those are steps 4 and 5.
 
 ### Step 4 — the load menu  ☐
 

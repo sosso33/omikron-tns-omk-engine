@@ -11255,6 +11255,95 @@ def c_engine_save_load():
            "--stand overrides the save's own placement"
 
 
+def c_engine_save_round_trip():
+    r"""WRITING a save out of a running game, and loading it back.
+
+    The two halves have been separately true for a while - `engine: save
+    write` builds a file from fixture bytes, `engine: save load` resumes one -
+    and neither shows the port producing a save of ITS OWN state.  This runs
+    `omk-play` twice: the first loads `traces/games-resto.bin` slot 0 and
+    writes a save of wherever it ends up, the second loads that save back.
+
+    What has to hold, and each is a different way to be wrong:
+
+    * **the file is a save file** - 8402344 bytes with the settings over its
+      head, created from nothing by `sub_4092A0`'s create arm;
+    * **the slot reads back** with the name, day, time, area and scene the
+      writing run had;
+    * **the position round-trips MINUS ONE PER AXIS.**  `State_Apply`
+      subtracts a whole world unit that `State_Save` never adds (GAME_STATE
+      5), so a save and a reload move the player by exactly (-1, -1, -1) and
+      leave the facing alone.  Reproducing the engine's asymmetry end to end
+      is the point: a port that "fixed" it would return the same coordinates
+      and fail here;
+    * **the thumbnail is a picture.**  The load panel draws the slot's last
+      24576 bytes beside the selected row, so a save written with a black or
+      empty capture is a save that shows nothing.  Asserted as its own shape -
+      most pixels non-zero, hundreds of distinct colours, and the X1R5G5B5
+      layout's unused top bit set in none of the 12288.
+
+    The write itself is a HARNESS path (`--save-slot`), not the game's: in the
+    game a save is `ui.open 30` out of a save point's activate script and the
+    ring is spent when the panel confirms (GAME_STATE 8c).  Neither exists yet,
+    and this exercises everything below them.
+    """
+    import subprocess, tempfile, shutil
+    eng = os.path.join(ROOT, "engine")
+    if not os.path.isdir(eng):
+        return ("skipped",), ("skipped",), "engine/ absent"
+    mk = subprocess.run(["make", "-s", "play"], cwd=eng, capture_output=True, text=True)
+    play = os.path.join(eng, "build", "omk-play")
+    if mk.returncode != 0 or not os.path.exists(play):
+        return ("skipped",), ("skipped",), "no SDL - the frontend is optional (PORTING A8)"
+    fixture = os.path.join(ROOT, "traces", "games-resto.bin")
+    if not os.path.exists(fixture):
+        return ("skipped",), ("skipped",), "traces/games-resto.bin absent"
+    env = dict(os.environ, SDL_VIDEODRIVER="dummy")
+    tb = os.path.join(ROOT, "tables")
+    tmp = tempfile.mkdtemp()
+    games = os.path.join(tmp, "GAMES")
+    try:
+        a = subprocess.run([play, omkpaths.data_root(), tb, "--save", fixture,
+                            "--slot", "0", "--saves", games, "--save-slot", "4",
+                            "--save-name", "RoundTrip", "--nofmv", "--no-crowd",
+                            "--software", "--frames", "40"],
+                           capture_output=True, text=True, env=env).stdout
+        size = os.path.getsize(games) if os.path.exists(games) else 0
+        # where the writing run's player actually stood
+        m = re.search(r"ADVENTURE MODE.*standing at (-?\d+) (-?\d+) (-?\d+) "
+                      r"facing (-?\d+)", a)
+        wrote = tuple(int(m.group(k)) for k in (1, 2, 3, 4)) if m else None
+        b = subprocess.run([play, omkpaths.data_root(), tb, "--saves", games,
+                            "--slot", "4", "--nofmv", "--no-crowd",
+                            "--software", "--frames", "40"],
+                           capture_output=True, text=True, env=env).stdout
+        m2 = re.search(r"^save: slot 4 '([^']*)', (.+?), area (-?\d+) scene "
+                       r"(-?\d+), standing at (-?\d+) (-?\d+) (-?\d+) facing "
+                       r"(-?\d+)$", b, re.M)
+        back = (m2.group(1), m2.group(2), int(m2.group(3)), int(m2.group(4))) if m2 else None
+        drift = tuple(int(m2.group(4 + k)) - wrote[k - 1] for k in (1, 2, 3)) \
+                if (m2 and wrote) else None
+        faceSame = (int(m2.group(8)) == wrote[3]) if (m2 and wrote) else False
+        # the picture
+        d = open(games, "rb").read()
+        base = 3496 + 32808 * 4 + 8232
+        px = struct.unpack_from("<%dH" % (128 * 96), d, base)
+        shot = (len(px), sum(1 for v in px if v) > len(px) // 2,
+                len(set(px)) > 100, sum(1 for v in px if v & 0x8000))
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+    return (size, back, drift, faceSame, shot), \
+           (8402344, ("RoundTrip", "12 Nadim 7216 14:14:17", 237, 57),
+            (-1, -1, -1), True, (12288, True, True, 0)), \
+           "the size of a save file the port created from nothing; the slot " \
+           "read back - name, date and time, area and the scene over it; how " \
+           "far the reloaded position sits from where the writing run left " \
+           "the player, which is the engine's own -1 per axis; whether the " \
+           "facing survives unchanged; then the thumbnail - pixels, whether " \
+           "most are non-zero, whether it holds over a hundred colours, and " \
+           "how many set the X1R5G5B5 layout's unused top bit"
+
+
 def c_boot_sequence():
     r"""BOOT: the launch chain, the two movie skips, and the frame delta.
 
@@ -24233,6 +24322,7 @@ SLOW = [
     ("engine: save+clock", c_engine_save,       "engine/README"),
     ("engine: save write", c_engine_save_write, "engine/README"),
     ("engine: save load", c_engine_save_load,  "engine/README"),
+    ("engine: save round trip", c_engine_save_round_trip, "engine/README"),
     ("engine: scene loop", c_engine_scene_loop, "engine/README"),
     ("engine: golden traces", c_engine_golden_traces, "engine/README"),
     ("engine: render",     c_engine_render,     "engine/README"),

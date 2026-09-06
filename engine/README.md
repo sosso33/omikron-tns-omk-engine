@@ -804,6 +804,35 @@ intact while the player walked to the first address several hundred units away.
 It reads the hand-over line now. A value printed on the way past is not
 evidence that anything used it.
 
+**`verify.py: engine save round trip`** is the port saving its own state, and
+it closes the loop the other two only half-close: `engine save write` builds a
+file out of fixture bytes and `engine save load` resumes one, and neither
+shows the port producing a save of a game it was playing. This runs `omk-play`
+twice — the first loads `traces/games-resto.bin` slot 0 and writes a save of
+wherever it ends up, the second loads that save back.
+
+Four things have to hold and each fails differently. The file is a real save
+file — **8402344** bytes, created from nothing by `sub_4092A0`'s create arm,
+the settings over its head because `Game_WriteSave` copies them on *every*
+slot save. The slot reads back with the name, day, time, area and scene the
+writing run had. **The position round-trips minus one per axis**, which is the
+engine's own asymmetry (`GAME_STATE` §5) reproduced end to end — a port that
+"fixed" it would return the same coordinates and fail here. And the thumbnail
+is a *picture*: the load panel draws those last 24576 bytes beside the
+selected row, so a save written with an empty capture shows nothing, and the
+check asserts the shape — most pixels non-zero, hundreds of colours, and the
+X1R5G5B5 layout's unused top bit set in none of the 12288.
+
+The two mutations it was shown to fail under are the two tidier-looking
+mistakes: writing no thumbnail (which changes nothing else at all, and which
+the fixture-based checks cannot see), and taking the scene from anywhere but
+the live resident slot.
+
+The write itself is a **harness** path, `--save-slot N`. In the game a save is
+`ui.open 30` out of a save point's activate script and costs one *anneau*
+(`GAME_STATE` §8c); neither exists in the port yet, and this exercises
+everything below them.
+
 **`verify.py: engine scene loop`** is the two halves of a frame joined. Until
 this, the object interpreter ran standalone — `Program` could be ticked, but
 nothing in the engine ever *started* one, because `scx.play*` was recorded and
