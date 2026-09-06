@@ -780,6 +780,28 @@ placement fields of `traces/games-resto.bin` reading 4/4/4 and every other row
 of the check unchanged. Only the sweep moves. A dozen real values were not
 enough to test this.
 
+**`verify.py: engine save load`** is the reading half run rather than
+described. `omk-play --slot N` resumes a save: adventure mode in the save's own
+area, standing where it was saved, with the clock the slot carries. All three
+slots of `traces/games-resto.bin` reach it — 237/57 at 14:14, 179/49 at 16:08,
+217/53 at 17:14, three places on one day — and the x/z are checked against a
+conversion `tools/gamestate.py` performs independently from the same raws.
+
+What this closed is that `+44..+56` and `+1414/+1416` **had no reader in this
+tree**. The engine has exactly one, `State_Apply`, and nothing here was it, so
+a loaded save came up wherever the harness happened to put the player — which
+never showed, because every street-start recipe pairs `--save` with an explicit
+`--area` and `--stand`. The precedence is now `--stand` > `--address` > the
+save's own placement (when its area is the one being loaded) > the area's first
+ADDRESSES record.
+
+**The first version of that check passed its own mutation.** It read the
+position off the loader's `save:` line — which prints whether or not anything
+consumes the value — so switching the placement off entirely left the line
+intact while the player walked to the first address several hundred units away.
+It reads the hand-over line now. A value printed on the way past is not
+evidence that anything used it.
+
 **`verify.py: engine scene loop`** is the two halves of a frame joined. Until
 this, the object interpreter ran standalone — `Program` could be ticked, but
 nothing in the engine ever *started* one, because `scx.play*` was recorded and

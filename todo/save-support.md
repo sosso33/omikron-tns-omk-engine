@@ -103,12 +103,43 @@ port reproduces the arms rather than the paraphrase; the twelve real placement
 fields in `traces/games-resto.bin` cannot see the difference, which is why the
 check sweeps 60001 raws instead.
 
-### Step 2 — loading any slot, with its clock and its placement  ☐
+### Step 2 — loading any slot, with its clock and its placement  ☑ (2026-09-06)
 
-`--save` gains `--slot N`; the DB's +44..+56 and +1414/+1416 actually place the
-player (raw -> world, including the `- 1.0` the save side never added, recorded
-as observed). Checked against `traces/games-resto.bin`'s three slots, whose
-positions `verify.py: saved player anchor` already measures against the floor.
+Three flags, and the placement finally read.
+
+* **`--saves FILE`** — where this port reads and writes saves, default
+  `omk-saves/GAMES`. Reading falls back to the shipped `IAM/GAMES`, so a
+  checkout never saved into still sees the directory the game would; the error
+  messages name whichever file was actually opened.
+* **`--slot N`** — load slot N and **resume**: adventure mode in the save's own
+  area, standing where it was saved, with its clock. Takes the slot from
+  `--save FILE` when one is named, otherwise from the saves file.
+* **`--save FILE` keeps its old meaning** — the DB as a starting state, the
+  intro still playing — because every street-start recipe in the tree pairs it
+  with `--area` and drops the save's player record into a city he was never in.
+
+`+44..+56` and `+1414/+1416` had **no reader in this tree at all**: the engine
+has exactly one (`State_Apply`) and the port was not it, so a loaded save came
+up wherever the harness put the player. The precedence is now `--stand` >
+`--address` > the save's own placement (only when the save's area is the one
+being loaded) > the area's first ADDRESSES record.
+
+An **empty slot is refused** rather than loaded as zeroes — `SaveDir_Build`
+skips it and the load panel never offers it — but a slot whose name was
+cleared while its DB is still on disk loads with a note, since that is the
+distinction `SaveDir_ClearSlot`'s one byte actually makes.
+
+`verify.py: engine: save load` runs all three slots of
+`traces/games-resto.bin` — three places on one day, 14:14, 16:08, 17:14 — and
+asserts the area, the scene, the clock, and the x/z against a conversion
+`tools/gamestate.py` does independently.
+
+**The first version of that check passed its own mutation**, and the reason is
+worth keeping: it read the position off the `save:` line, which the loader
+prints whether or not anything consumes it. Switching the placement off
+entirely left that line intact while the player walked to the area's first
+address, several hundred units away. It now reads the hand-over line — where
+he is actually standing.
 
 ### Step 3 — saving from the running game  ☐
 

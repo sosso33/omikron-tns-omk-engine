@@ -228,10 +228,17 @@ std::vector<std::byte> thumbFromRgb565(std::span<const std::uint16_t> px,
 }
 
 std::vector<std::byte> readSaveFile(const std::string& writablePath,
-                                    const std::string& shippedPath) {
+                                    const std::string& shippedPath,
+                                    std::string* usedPath) {
     auto d = DataFs::readPath(writablePath);
-    if (!d.empty()) return d;
-    return shippedPath.empty() ? d : DataFs::readPath(shippedPath);
+    if (!d.empty()) {
+        if (usedPath) *usedPath = writablePath;
+        return d;
+    }
+    if (shippedPath.empty()) return d;
+    d = DataFs::readPath(shippedPath);
+    if (usedPath && !d.empty()) *usedPath = shippedPath;
+    return d;
 }
 
 bool writeSaveFile(const std::string& path, std::span<const std::byte> file) {

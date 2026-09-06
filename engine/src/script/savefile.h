@@ -220,8 +220,11 @@ std::vector<std::byte> thumbFromRgb565(std::span<const std::uint16_t> px,
 // Reading prefers the writable file and falls back to the data tree's, so a
 // tree that has never been saved into still shows the shipped directory.
 // Writing goes through `safeOutputPath` and creates the parent directory.
+// `usedPath`, when given, comes back naming the file actually read, so a
+// caller's error message says which of the two it means.
 std::vector<std::byte> readSaveFile(const std::string& writablePath,
-                                    const std::string& shippedPath);
+                                    const std::string& shippedPath,
+                                    std::string* usedPath = nullptr);
 bool writeSaveFile(const std::string& path, std::span<const std::byte> file);
 
 // ------------------------------------------------------------------ the clock

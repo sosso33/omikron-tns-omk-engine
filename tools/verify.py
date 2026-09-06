@@ -10575,6 +10575,103 @@ def c_engine_save_write():
            "its X1R5G5B5"
 
 
+def c_engine_save_load():
+    r"""LOADING a slot: `Game_LoadSave` -> `State_Apply`, run in the viewer.
+
+    The port could read a save's DB and had never read its **placement**:
+    `+44..+56` and `+1414/+1416` have exactly one writer and one reader in the
+    engine (GAME_STATE 5), and nothing in this tree was the reader.  So a
+    loaded save came up wherever the harness happened to put the player, and
+    `--save` was only ever used with an explicit `--area` and `--stand`, which
+    hid it.
+
+    `omk-play --slot N` is the resume: adventure mode in the save's own area,
+    standing where it was saved, with the clock the slot carries.  Run over
+    all three slots of `traces/games-resto.bin` - which are three different
+    places on the same day, an hour and a half apart - it has to reach:
+
+      * slot 0, area **237** with scene **57** (Kay'l's apartment) at 14:14:17;
+      * slot 1, area **179** with scene **49** at 16:08:15;
+      * slot 2, area **217** with scene **53** (the restaurant) at 17:14:30.
+
+    **The positions are a differential, not a transcription.**  `tools/
+    gamestate.py` converts the stored raws itself, and what is compared is
+    that number against the one the C++ prints - two implementations of
+    `State_Apply`'s `raw * 100 * 0.00390625 * 0.3937007874015748 - 1.0` from
+    the same bytes.  The X and Z are asserted; the Y is NOT, because the
+    walker then drops him onto the floor under his feet and that is a
+    different fact (`saved player anchor` measures it, and it is the pelvis).
+
+    The position asserted is the one on the **hand-over** line - where the
+    player is actually standing when adventure mode begins - and not the one
+    on the `save:` line, which says only what the DB decoded as.  The first
+    version of this check read the latter, and a mutation that switched the
+    placement off entirely PASSED it: the decode still printed while the
+    player went to the area's first ADDRESSES record, several hundred units
+    away.  A value the code prints on its way past is not evidence that
+    anything consumed it.
+
+    And the override is asserted with it: `--stand` beats the save, because a
+    reader who typed a spot means it.  Without that the street starts - every
+    one of which pairs `--save` with `--area` and puts the player in a city
+    the save was never made in - would be dragged back to an apartment.
+    """
+    eng = os.path.join(ROOT, "engine")
+    if not os.path.isdir(eng):
+        return ("skipped",), ("skipped",), "engine/ absent"
+    mk = subprocess.run(["make", "-s", "play"], cwd=eng, capture_output=True, text=True)
+    play = os.path.join(eng, "build", "omk-play")
+    if mk.returncode != 0 or not os.path.exists(play):
+        return ("skipped",), ("skipped",), "no SDL - the frontend is optional (PORTING A8)"
+    fixture = os.path.join(ROOT, "traces", "games-resto.bin")
+    if not os.path.exists(fixture):
+        return ("skipped",), ("skipped",), "traces/games-resto.bin absent"
+    import gamestate as _G
+    env = dict(os.environ, SDL_VIDEODRIVER="dummy")
+    tb = os.path.join(ROOT, "tables")
+    rows, agree = [], 0
+    for slot in (0, 1, 2):
+        r = subprocess.run([play, omkpaths.data_root(), tb, "--save", fixture,
+                            "--slot", str(slot), "--nofmv", "--no-crowd",
+                            "--software", "--frames", "20"],
+                           capture_output=True, text=True, env=env).stdout
+        m = re.search(r"^save: slot %d '([^']*)', (.+?), area (-?\d+) scene "
+                      r"(-?\d+), standing at" % slot, r, re.M)
+        if not m:
+            rows.append((slot, "no line")); continue
+        rows.append((slot, m.group(2), int(m.group(3)), int(m.group(4))))
+        # WHERE HE ACTUALLY STANDS, off the hand-over line - not off the
+        # `save:` line, which only says what the DB was decoded as.
+        h = re.search(r"ADVENTURE MODE.*standing at (-?\d+) (-?\d+) (-?\d+) "
+                      r"facing (-?\d+)", r)
+        if not h: continue
+        # the same bytes through the Python reader, converted independently
+        st = _G.from_save(fixture, slot)
+        w = [v * 100 * 0.00390625 * 0.3937007874015748 - 1.0 for v in st.player_pos]
+        # `%.0f` is round-half-away-from-zero, which is not Python's round()
+        def r0(v):
+            return int(math.floor(v + 0.5)) if v >= 0 else -int(math.floor(-v + 0.5))
+        if (r0(w[0]), r0(w[2])) == (int(h.group(1)), int(h.group(3))): agree += 1
+    # ...and the reader's own word beats the save's
+    o = subprocess.run([play, omkpaths.data_root(), tb, "--save", fixture,
+                        "--slot", "0", "--stand", "1000,0,-2000,90", "--nofmv",
+                        "--no-crowd", "--software", "--frames", "20"],
+                       capture_output=True, text=True, env=env).stdout
+    h = re.search(r"ADVENTURE MODE.*standing at (-?\d+) (-?\d+) (-?\d+) "
+                  r"facing (-?\d+)", o)
+    overridden = bool(h) and (int(h.group(1)), int(h.group(3)), int(h.group(4))) == \
+                 (1000, -2000, 90)
+    return (rows, agree, overridden), \
+           ([(0, "12 Nadim 7216 14:14:17", 237, 57),
+             (1, "12 Nadim 7216 16:08:15", 179, 49),
+             (2, "12 Nadim 7216 17:14:30", 217, 53)], 3, True), \
+           "per slot of traces/games-resto.bin: the date and time the viewer " \
+           "restores, the area it resumes in and the scene over it; then how " \
+           "many of the three put the player at the x/z tools/gamestate.py " \
+           "converts from the same raws independently; and that an explicit " \
+           "--stand overrides the save's own placement"
+
+
 def c_boot_sequence():
     r"""BOOT: the launch chain, the two movie skips, and the frame delta.
 
@@ -23360,6 +23457,7 @@ SLOW = [
     ("engine: set emitters", c_engine_set_emitters, "engine/README"),
     ("engine: save+clock", c_engine_save,       "engine/README"),
     ("engine: save write", c_engine_save_write, "engine/README"),
+    ("engine: save load", c_engine_save_load,  "engine/README"),
     ("engine: scene loop", c_engine_scene_loop, "engine/README"),
     ("engine: golden traces", c_engine_golden_traces, "engine/README"),
     ("engine: render",     c_engine_render,     "engine/README"),

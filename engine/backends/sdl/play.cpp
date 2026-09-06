@@ -1282,8 +1282,24 @@ int main(int argc, char** argv) {
 "  --snaps <dir>    write a framebuffer every 30 frames after the hand-over\n"
 "  --fps            report the rate and the worst frame once a second\n"
 "\n"
+"SAVED GAMES\n"
+"  --saves FILE     the save file this port reads and WRITES, default\n"
+"                   omk-saves/GAMES. The engine keeps it as IAM\\GAMES\n"
+"                   inside the game tree; this port must not, because\n"
+"                   gamedata/ is input and safeOutputPath refuses it. When\n"
+"                   the file does not exist yet, reading falls back to the\n"
+"                   shipped IAM/GAMES so the directory still reads\n"
+"  --slot N         load slot N and RESUME: adventure mode in the save's\n"
+"                   own area, standing where it was saved. --area, --stand\n"
+"                   or --address override the placement; --save names a\n"
+"                   file to take the slot from instead of --saves\n"
+"\n"
 "STARTING IN A STREET (street life)\n"
-"  --save FILE      load a save instead of IAM/START, so there is no intro\n"
+"  --save FILE      load a save instead of IAM/START, so there is no intro.\n"
+"                   Slot 0 unless --slot says otherwise. Paired with --area\n"
+"                   this drops the save's PLAYER RECORD into another area,\n"
+"                   which is what the street starts want; on its own with\n"
+"                   --slot it resumes the game the save holds\n"
 "  --area N         the area to stand in\n"
 "  --address A      the ADDRESSES record to stand on\n"
 "  --stand x,y,z[,facing]   an explicit spot instead of an address\n"
@@ -1403,6 +1419,19 @@ int main(int argc, char** argv) {
     // no intro to replay. `--density` is options row 6 for the crowd
     // (default the engine's 3), `--no-crowd` leaves the pedestrians out.
     std::string saveFile;
+    // WHERE THIS PORT KEEPS ITS SAVES, and it is deliberately not where the
+    // engine keeps them.  `Game_WriteSave` writes `IAM\GAMES` inside the game
+    // directory; `omk::safeOutputPath` refuses that, because `gamedata/` is
+    // input and a shipped file was destroyed once already (CLAUDE.md 1).  So
+    // the file lives outside the tree and READING falls back to the shipped
+    // one, which means a checkout that has never been saved into still sees
+    // the (empty) directory the game would see.  `--saves FILE` moves it.
+    std::string savesPath = "omk-saves/GAMES";
+    // Which slot of it to load.  -1 is "no slot asked for", which is not the
+    // same as slot 0: asking for a slot is asking to RESUME, and that starts
+    // adventure mode in the save's own area at its own placement, the way
+    // `Game_LoadSave` -> `State_Apply` does.
+    int slotArg = -1;
     int areaArg = -1, addressArg = -1, density = omk::kDefaultStreetActivity;
     // --config: the game's own ini (`[Preferences]`, 65 keys) plus this
     // port's `[Options]` for the two rows with no key. The SAVE's 3496-byte
@@ -1449,6 +1478,11 @@ int main(int argc, char** argv) {
     bool openSneak = false;
     float standAt[4] = {0, 0, 0, 0};
     bool haveStand = false;      // `--stand x,y,z,yaw`: put the player down there after the hand-over
+    // ...and the save's OWN placement, which is `State_Apply`'s and not a
+    // harness flag: a loaded game stands where it was saved unless something
+    // explicit says otherwise.
+    float savedAt[3] = {0, 0, 0}, savedYaw = 0.0f;
+    bool  haveSavedPlacement = false;
     // the scene viewer's
     std::string scene;
     int camIndex = -1;
@@ -1514,6 +1548,8 @@ int main(int argc, char** argv) {
         else if (a == "--dump" && i + 1 < argc) dump = argv[++i];
         else if (a == "--nofmv") playMovies = false;   // the engine's own switch
         else if (a == "--save" && i + 1 < argc) saveFile = argv[++i];
+        else if (a == "--saves" && i + 1 < argc) savesPath = argv[++i];
+        else if (a == "--slot" && i + 1 < argc) slotArg = std::atoi(argv[++i]);
         else if (a == "--area" && i + 1 < argc) areaArg = std::atoi(argv[++i]);
         else if (a == "--address" && i + 1 < argc) addressArg = std::atoi(argv[++i]);
         // A HARNESS FLAG, not a port: put an object into the carried list so
@@ -1668,9 +1704,26 @@ int main(int argc, char** argv) {
     // than the ini and wins (`platform/settings.h`, GAME_STATE 8a). The
     // header is read from the same bytes the slot comes out of, because it
     // IS the head of that file.
+    //
+    // WHICH FILE, and it is one decision made once so the settings and the
+    // slot cannot come from two different places: an explicit `--save` names
+    // a file directly (the fixtures do), otherwise a `--slot` reads the saves
+    // file - the writable one if it exists, else the shipped `IAM/GAMES`.
+    std::vector<std::byte> saveBytes;
+    std::string saveFrom;
+    if (!saveFile.empty()) {
+        saveBytes = omk::DataFs::readPath(saveFile);
+        saveFrom = saveFile;
+    } else if (slotArg >= 0) {
+        saveFrom = savesPath;
+        saveBytes = omk::readSaveFile(savesPath, fr + "/IAM/GAMES", &saveFrom);
+        if (saveBytes.empty())
+            std::fprintf(stderr, "--slot: no save file at %s, and none in the "
+                                 "game tree either\n", savesPath.c_str());
+    }
     std::optional<omk::SettingsBlock> saveSettings;
-    if (!saveFile.empty())
-        saveSettings = omk::readSettingsBlock(omk::DataFs::readPath(saveFile));
+    if (!saveBytes.empty())
+        saveSettings = omk::readSettingsBlock(saveBytes);
     const omk::OptionsFile ini =
         configFile.empty() ? omk::OptionsFile{} : omk::loadOptionsFile(configFile);
     if (!configFile.empty() && !ini.loaded)
@@ -1698,9 +1751,39 @@ int main(int argc, char** argv) {
         for (const auto& k : ini.unknown) std::printf(" %s", k.c_str());
         std::printf("\n");
     }
-    if (!saveFile.empty()) {
-        const auto slot = omk::readSaveSlot(omk::DataFs::readPath(saveFile), 0);
-        if (!slot) { std::fprintf(stderr, "%s: not a save file\n", saveFile.c_str()); return 1; }
+    if (!saveBytes.empty()) {
+        const int slotNo = slotArg >= 0 ? slotArg : 0;
+        const auto slot = omk::readSaveSlot(saveBytes, slotNo);
+        if (!slot) { std::fprintf(stderr, "%s: not a save file, or it has no slot %d\n",
+                                  saveFrom.c_str(), slotNo); return 1; }
+        // AN EMPTY SLOT IS NOT A SAVE.  `SaveDir_Build` skips a slot whose
+        // name begins with a zero and the load panel never offers one, so
+        // loading it would put the player in area 0 out of a zeroed DB and
+        // read as a fault in the port.  The distinction worth keeping is
+        // between a slot that was CLEARED - `SaveDir_ClearSlot` writes one
+        // byte and leaves the DB on disk - and one that was never written,
+        // where there is nothing behind the name either.
+        if (slot->name.empty()) {
+            bool anything = false;
+            for (const auto b : slot->state.raw())
+                if (b != std::byte{0}) { anything = true; break; }
+            if (!anything) {
+                std::fprintf(stderr, "%s: slot %d is empty. Occupied slots:",
+                             saveFrom.c_str(), slotNo);
+                int shown = 0;
+                for (int k = 0; k < static_cast<int>(omk::kSaveSlots); ++k) {
+                    const auto o = omk::readSaveSlot(saveBytes, k);
+                    if (!o || o->name.empty()) continue;
+                    if (shown++ < 12) std::fprintf(stderr, " %d (%s)", k, o->name.c_str());
+                }
+                std::fprintf(stderr, shown ? "\n" : " none\n");
+                return 1;
+            }
+            std::printf("save: slot %d's name is empty - `SaveDir_ClearSlot` "
+                        "writes one byte and leaves the rest, so this slot was "
+                        "DELETED and its game is still on disk. Loading it\n",
+                        slotNo);
+        }
         state = slot->state;
         // THE CLOCK COMES FROM THE SLOT, and this used only to print it.
         //
@@ -1726,11 +1809,25 @@ int main(int argc, char** argv) {
         }
         state.setClockDay(slot->day);
         state.setClock(slot->time);
-        std::printf("save: slot 0 '%s', %s %s, area %d\n", slot->name.c_str(),
+        // WHERE THE SAVE SAYS HE WAS.  `State_Apply` converts +44..+56 back to
+        // world units and stands the player there; the port had never read
+        // those four fields at all, so a loaded save came up wherever the
+        // harness put him.  Kept here and applied at the hand-over, because
+        // that is when there is a player to place.
+        state.placementWorld(savedAt, savedYaw);
+        haveSavedPlacement = true;
+        std::printf("save: slot %d '%s', %s %s, area %d scene %d, standing at "
+                    "%.0f %.0f %.0f facing %.0f\n", slotNo, slot->name.c_str(),
                     omk::formatDate(slot->day).c_str(), omk::formatTime(slot->time).c_str(),
-                    state.currentArea());
+                    state.currentArea(), state.currentScene(),
+                    savedAt[0], savedAt[1], savedAt[2], savedYaw);
     }
-    const bool forceAdventure = areaArg >= 0;
+    // Asking for a SLOT is asking to resume: adventure mode in the save's own
+    // area, at its own placement, which is what `Game_LoadSave` does.  A bare
+    // `--save FILE` keeps its old meaning - the DB as a starting state, the
+    // intro still playing - because every street-start recipe in the tree is
+    // written that way and pairs it with `--area`.
+    const bool forceAdventure = areaArg >= 0 || slotArg >= 0;
     // THE INVENTORY, out of the game data: `IAM\OBJECT`'s 1002 records and
     // `IAM\GLOBAL +12`'s eleven combination recipes. `script/inventory.h` was
     // written, checked and never consumed by anything that runs - the sneak
@@ -1814,7 +1911,24 @@ int main(int argc, char** argv) {
         const auto& rs = session.residentSlot(session.activeSlot());
         for (const auto& ad : rs.addresses)
             std::printf("address %d at %.0f %.0f %.0f yaw %.0f\n", ad.id, ad.pos[0], ad.pos[1], ad.pos[2], ad.yaw);
-        if (addressArg < 0 && !rs.addresses.empty()) addressArg = rs.addresses.front().id;
+        // THE PRECEDENCE, and the save's own placement is now in it: an
+        // explicit `--stand` or `--address` is the reader's word and wins;
+        // otherwise a save that was made IN THIS AREA says where he stood;
+        // otherwise the area's first ADDRESSES record, which is the harness
+        // default and was previously the only one.  The area test matters -
+        // `--save X --area 0` deliberately drops a save's player record into
+        // a city he was never in, and his apartment coordinates mean nothing
+        // there.
+        const bool useSaved = haveSavedPlacement && !haveStand && addressArg < 0 &&
+                              state.currentArea() == startArea;
+        if (useSaved) {
+            session.setPlayerPosition(savedAt, savedYaw);
+            std::printf("save: the player stands where the save left him, "
+                        "%.0f %.0f %.0f facing %.0f\n",
+                        savedAt[0], savedAt[1], savedAt[2], savedYaw);
+        }
+        if (!useSaved && addressArg < 0 && !rs.addresses.empty())
+            addressArg = rs.addresses.front().id;
         if (addressArg < 0 && haveStand) {
             // an area with no ADDRESSES table (the Impasse airlock, 142):
             // `--stand` is the only placement there is, so it is the one

@@ -104,3 +104,8 @@ __pycache__/
 # That happened on 2026-09-04 and had to be undone with a reset; it also swept
 # another session's uncommitted work into the same commit.
 .claude/
+
+# the port's save file - `omk-play --saves` writes here by default. The
+# engine keeps saves in IAM\GAMES inside the game tree; this port must not,
+# because gamedata/ is input (CLAUDE.md 1), so they land outside it.
+omk-saves/
