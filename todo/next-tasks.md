@@ -273,6 +273,17 @@ so 42° is what `arcMid` 477 means.
 `verify.py: engine: lift doors` pins the census, the three Hall 40 objects, the
 Entry/Exit arc invariant and the port's own run.
 
+**The third symptom was NOT a collider, 2026-09-06.** "There are no colliders,
+I walk through the closed door and finish in the void" turned out to be a
+CAMERA fault: the player is blocked at 3023.7 throughout (his run and four
+teleport runs agree, at floor height, and the door puts six faces into the
+narrow phase), and what fails is the picture. `Session::tickCamera` did not
+copy `eyeSubject`/`atSubject` across a travel, so the flat's lift-door camera
+arrived flagged relative and was resolved as an offset from the player — 3000
+units outside the building, drawing black. A black screen in front of a door
+you cannot pass reads exactly like walking into nothing. Fixed with the
+travel's start also resolved to world; `verify.py: camera travel`.
+
 **What this does NOT settle**: whether the lift then TRAVELS. The door opening
 is a scene program on a trigger; riding one is item 16's territory
 (`Slider_TickRide` and friends), and nothing here touches it.

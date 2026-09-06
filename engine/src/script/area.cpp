@@ -1167,7 +1167,24 @@ void Session::applyCamera(int id, int travel) {
         haveCam_ = true;
         return;
     }
-    camFrom_   = camNow_;
+    // THE TRAVEL STARTS FROM WHERE THE CAMERA ACTUALLY IS, in world.
+    //
+    // `camNow_` may be a RELATIVE camera, whose `eye`/`at` are OFFSETS from an
+    // actor and not world points at all - the follow camera's are
+    // (-1, 26, -119). Interpolating those numbers toward an absolute camera's
+    // (3089, 1006, -753) mixes two spaces, and the frames in between are
+    // wherever that arithmetic lands. `Camera_Request` swaps the LIVE block
+    // into `g_CameraPrev` and the move interpolates away from that, and the
+    // live block holds resolved world coordinates.
+    camFrom_ = camNow_;
+    if (!camFrom_.absolute() && playerPlaced_) {
+        const auto r = resolveCamera(camFrom_, playerPos_, playerYaw_);
+        for (int k = 0; k < 3; ++k) {
+            camFrom_.eye[k] = r.eye[k];
+            camFrom_.at[k]  = r.at[k];
+        }
+        camFrom_.eyeSubject = camFrom_.atSubject = -1;
+    }
     camTo_     = *c;
     camTravel_ = travel;
     camElapsed_ = 0;
@@ -1199,6 +1216,17 @@ void Session::tickCamera() {
     camNow_.roll = camFrom_.roll + d * u;
     camNow_.id = camTo_.id;
     camNow_.mode = camTo_.mode;
+    // ...AND THE SUBJECTS, which decide whether these numbers are world
+    // points or offsets. Without this `camNow_` keeps the OUTGOING camera's,
+    // so a travel from the follow camera (subject 0, the player) to an
+    // absolute one left the arrived camera flagged relative for ever: its
+    // eye, a correct 3089/1006/-753, was then resolved as an offset FROM the
+    // player and the shot ended 3000 units outside the building, drawing a
+    // black screen. That is the flat's lift-door camera 4463, which a reader
+    // met as "I walk through the closed door and finish in the void" - the
+    // player was blocked the whole time; only the picture was gone.
+    camNow_.eyeSubject = camTo_.eyeSubject;
+    camNow_.atSubject  = camTo_.atSubject;
     if (camElapsed_ >= camTravel_) camTravel_ = 0;
 }
 

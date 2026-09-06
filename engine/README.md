@@ -1583,6 +1583,42 @@ address. The panel's own builder also zeroes the name buffer every time it is
 installed, so a second visit opens empty; both walkers model that, and the
 simulator and the port are driven through the same five presses and compared.
 
+### A camera travel carries the SUBJECTS — the black screen at the flat's lift
+
+A `WorldCamera`'s `eyeSubject`/`atSubject` decide whether its `eye` and `at`
+are world points or OFFSETS from an actor: `-1` is absolute, anything else
+names the actor the point hangs off. `Session::tickCamera` interpolated eye,
+target, fov, roll, id and mode across a travel and copied **neither subject**,
+so `camNow_` kept the OUTGOING camera's for ever.
+
+In adventure mode the outgoing camera is the follow camera, whose subject is
+the player — so a travel to an absolute camera *arrived with the right numbers
+flagged relative*, and the viewer resolved them as an offset from Kay'l. The
+shot ended about 3000 units outside the building and drew black.
+
+**A reader met that as "there are no colliders — I walk through the closed
+door and finish in the void."** He was blocked at the door the whole time: his
+run and four teleport runs all stop at `3023.7` at floor height, and
+`soup_probe` shows the door putting six faces into the narrow phase. Only the
+picture was gone, and a black screen in front of a door you cannot pass reads
+exactly like walking into nothing. What separated the two was rendering the
+same camera from the scene viewer, which drew **305647** lit pixels from the
+identical eye — so the camera saw the room fine and the Session was driving it
+wrong.
+
+**The travel's START was wrong as well**, and it is why the frame darkened
+progressively instead of failing outright: `camFrom_` was the follow camera's
+offsets `(-1, 26, -119)`, lerped toward an absolute `(3089, 1006, -753)` — two
+different spaces. `Camera_Request` swaps the LIVE block into `g_CameraPrev`
+and the move interpolates away from that, and the live block holds resolved
+world coordinates, so `applyCamera` resolves a relative outgoing camera before
+it becomes `camFrom_`.
+
+Non-black pixels a third of the way through the travel, at its end, and long
+after: **4824 / 0 / 0** before, ~224000 after. `verify.py: camera travel`, with
+both halves mutation-tested — dropping the subject copy blacks all three,
+dropping the resolve blacks only the middle.
+
 ### The SNEAK — the first screen the PLAYER opens
 
 **`verify.py: sneak chain`, `engine: sneak`** (2026-09-04). Every screen the

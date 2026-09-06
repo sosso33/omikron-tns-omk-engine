@@ -3614,6 +3614,107 @@ def c_object_path_anchor():
            "no collision"
 
 
+def c_camera_travel_subjects():
+    r"""A CAMERA TRAVEL CARRIES THE SUBJECTS, or the shot never arrives.
+
+    A `WorldCamera`'s `eyeSubject`/`atSubject` say whether its `eye` and `at`
+    are WORLD POINTS or OFFSETS from an actor - `-1` is absolute, anything
+    else names the actor the point hangs off (`worldcam.h`). `Session::
+    tickCamera` interpolated eye, target, fov, roll, id and mode across a
+    travel and copied NEITHER subject, so `camNow_` kept the OUTGOING
+    camera's for ever.
+
+    In adventure mode the outgoing camera is the follow camera, whose subject
+    is the player. So a travel to an absolute camera arrived with the right
+    numbers flagged relative, and the viewer then resolved them as an offset
+    FROM Kay'l - putting the shot about 3000 units outside the building and
+    drawing a black screen.
+
+    **That is the flat's lift door**, and it is what a reader met as *"there
+    are no colliders, I walk through the closed door and finish in the void"*.
+    The player was blocked at 3023.7 the whole time - his own run and four
+    teleport runs all stop there, at floor height - and `soup_probe` shows the
+    door putting six faces into the narrow phase. Only the PICTURE was gone,
+    and a black screen past a door you cannot pass reads exactly like walking
+    into nothing. Zone 4094, at 3019, installs camera 4463 with a 50-frame
+    travel; the camera's record is `eye 3089 1006 -753 -> at 2975 1037 -753`,
+    and the scene viewer draws 305647 lit pixels from that very point, which
+    is what separated "the camera sees nothing" from "the Session drives it
+    wrong".
+
+    **The travel's START was wrong too**, and it is why the frame darkened
+    progressively rather than failing outright: `camFrom_` was the follow
+    camera's OFFSETS `(-1, 26, -119)`, lerped toward an absolute
+    `(3089, 1006, -753)` - two different spaces, and every frame in between
+    wherever that arithmetic landed. `Camera_Request` swaps the LIVE block
+    into `g_CameraPrev` and the move interpolates away from that; the live
+    block holds resolved world coordinates, so `applyCamera` now resolves a
+    relative outgoing camera before it becomes `camFrom_`.
+
+    Asserted: camera 4463's record straight out of the shipped tables, and
+    then the door shot itself - non-black pixels a third of the way through
+    the travel, at its end, and long after it, which were **4824 / 0 / 0** and
+    are now a stable ~224000.
+
+    Shown to fail: dropping the subject copy takes all three counts to 0;
+    dropping the resolve of `camFrom_` leaves the arrival right and the
+    middle of the travel dark.
+    """
+    import subprocess, tempfile, shutil, struct as _st, re as _re
+    eng = os.path.join(ROOT, "engine")
+    fr = omkpaths.data_root()
+    saves = os.path.join(ROOT, "omk-saves", "GAMES")
+    if not (os.path.isdir(eng) and os.path.isdir(fr)):
+        return ("skipped",), ("skipped",), "engine/ or gamedata/ absent"
+    if not os.path.exists(saves):
+        return ("skipped",), ("skipped",), "omk-saves/GAMES absent (not committed)"
+    b = subprocess.run(["make", "-s", "play"], cwd=eng, capture_output=True)
+    play = os.path.join(eng, "build", "omk-play")
+    dwc = os.path.join(eng, "build", "dump_world_cameras")
+    if b.returncode != 0 or not os.path.exists(play):
+        return ("build failed",), ("built",), "engine/ must build"
+
+    tmp = tempfile.mkdtemp()
+    rec, lit = None, []
+    try:
+        if os.path.exists(dwc):
+            out = os.path.join(tmp, "c.txt")
+            subprocess.run([dwc, fr, out], capture_output=True)
+            for line in open(out, encoding="latin-1"):
+                f = line.split()
+                if len(f) > 8 and f[0] == "AREA" and f[1] == "237" and f[2] == "4463":
+                    rec = tuple(int(x) for x in f[3:9])
+        env = dict(os.environ, SDL_VIDEODRIVER="dummy")
+        for n in (45, 95, 300):
+            dump = os.path.join(tmp, "f%d.bin" % n)
+            # the game's own strings are latin-1; decoding them as UTF-8
+            # throws and the check dies on a message it never reads
+            subprocess.run([play, fr, os.path.join(ROOT, "tables"),
+                            "--save", saves, "--slot", "0",
+                            "--stand", "3060,1071,-753,271",
+                            "--hold", "0*20,k200*120", "--frames", str(n),
+                            "--res", "640x480", "--dump", dump],
+                           capture_output=True, env=env)
+            raw = open(dump, "rb").read()
+            px = _st.unpack_from("<%dH" % (640 * 480), raw, len(raw) - 2 * 640 * 480)
+            lit.append(sum(1 for q in px if q) > 150000)
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+    return (rec, tuple(lit)), \
+           ((3089, 1006, -753, 2975, 1037, -753), (True, True, True)), \
+           "camera 4463's record as AREA 237 ships it - the flat's lift-door " \
+           "shot, eye 3089/1006/-753 looking at 2975/1037/-753; then whether " \
+           "that shot DRAWS anything, a third of the way through its 50-frame " \
+           "travel, at the end of it, and long after. All three were black " \
+           "(4824, 0, 0 non-black pixels of 307200) because the travel copied " \
+           "neither `eyeSubject` nor `atSubject`, so the arrived camera stayed " \
+           "flagged relative and its correct world eye was resolved as an " \
+           "offset from the player - 3000 units outside the building. A reader " \
+           "met that as walking through a closed door into the void; the " \
+           "player was blocked at the door throughout and only the picture " \
+           "was missing"
+
+
 def c_ui_shop_titles():
     r"""The ten shops' titles, and the branch a linear scan cannot follow.
 
@@ -24895,6 +24996,7 @@ SLOW = [
     ("engine: name field", c_engine_name_field, "UI 3b; PORTING A1"),
     ("engine: lift doors", c_lift_doors,       "todo/next-tasks 7"),
     ("object path anchor", c_object_path_anchor, "todo/next-tasks 7"),
+    ("camera travel",      c_camera_travel_subjects, "engine/README"),
     ("save clock",         c_save_clock,        "GAME_STATE 8"),
     ("player counters",   c_player_counters,   "UI 3g; GAME_STATE"),
     ("fill colour",       c_fill_colour,       "UI 3b"),
