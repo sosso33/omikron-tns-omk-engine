@@ -146,9 +146,49 @@ reading further shows it is the WORLD TAKE slice, not a bug fix. Decomposed
    `Actor_TickScxDriven`'s `actor+1308 = 1` -> `Cef_DefaultGroup` restore is a
    different path, for actors a script was driving.
 
-So the order is **3 before 2**: port enough of the take for `H_WAITOB` to have
-an exit, then the bank switch closes the repeat for free. Doing 2 first is
-measurably worse than the bug (proven above).
+**CORRECTION, same day, and it is good news.** "The actor leaves `H_WAITOB`
+when the object is delivered" was wrong. `take_probe` reads the graph and
+`H_WAITOB` (state 54, group 4) exits on **player input**:
+
+| state | group | input | move |
+|---|---|---|---|
+| 24 | 0 | `0x10` Enter | `MDACTION` |
+| 52 | 3 | — | `MDGETOBJ` (automatic) |
+| **54 `H_WAITOB`** | 4 | — | the wait pose, clip 14 |
+| **55** | 4 | **`0x10` Enter** | `MDPUTSNK` — take and bank it |
+| **56** | 4 | **`0x20` Space** | `MDNOTAKE` — decline |
+
+So the original's interaction is: press Enter at an object, he reaches for it
+and waits; press Enter again to take it, or Space to decline. Two presses, and
+holding the button does not repeat because after the first the machine is in
+group 4 where the same bit means *take*, not *reach*.
+
+**And the port already gets most of the way.** With the bank switch applied,
+`MDACTION` fires ONCE, `MDGETOBJ` follows automatically, and the actor reaches
+`H_WAITOB` correctly. `findTransition(54, 0x10)` **finds state 55**. The chain
+is right.
+
+**The blocker is the FRONTEND, not the take.** In `H_WAITOB` the channel is
+handed `0x40000000` (the idle word) every tick even with Enter held for 60
+frames, and `play.cpp`'s own `bits` is `0000` at the same moment. The suspect
+is the repeat-mask gating:
+
+    if (walk) in.setRepeatMask(kUiRepeatMask);
+    else if (adventure) in.setRepeatMask(0);
+
+With neither true - which is what a running zone script looks like - the mask
+KEEPS ITS LAST VALUE, and after the boot screens that is `0x203F`. The world
+then gets EDGES where it should get held bits. That is a one-line-shaped bug
+and it is the next thing to test.
+
+So the order is now: **fix the input gating first**, then the bank switch, and
+the take completes itself. Doing the bank switch alone is still measurably
+worse than the bug (proven above) until the input reaches `H_WAITOB`.
+
+**Also reported (2026-09-06): the same repeat happens in SHOP SELLER
+dialogues.** Not yet reproduced. Worth checking whether that path is the
+dialogue confirm (which already takes `edgeBits`) or a screen whose mask is
+left at the world's 0 - the same gating suspect from the other side.
 
 Size **M -> M/L**, and it is the same work as the "world TAKE" the port's own
 comments already reference. The Enter-repeat symptom is a consequence of the
