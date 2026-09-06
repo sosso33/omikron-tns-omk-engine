@@ -1406,8 +1406,28 @@ bool UiWalk::press(std::uint32_t bits) {
                 : "load panel: row " + std::to_string(load_->row));
             return true;
         }
-        // A confirm on a row is not the hook's - it falls through to the
-        // panel, whose buttons are `Charger`, `Detruire` and `Annuler`.
+        // A CONFIRM ON A ROW MOVES TO THE BUTTONS. The hook's own tail,
+        // which this used to fall through:
+        //
+        //     if (!(bits & 0x10)) return 0;
+        //     if (row == -1)      return 0;
+        //     panel[+0x18] = 1;                 // the current LIST
+        //     if (screen == 29) word_4CEA9A = 0;
+        //     if (screen == 30) word_4CEA9A = 1;
+        //     return 1;
+        //
+        // `panel+24` is the current list and 1 is the button list, so ENTER
+        // on a slot focuses `Charger`/`Sauvegarde`, `Detruire` and
+        // `Annuler` - and sets the load/save mode on the way. Without it the
+        // only way across was LEFT/RIGHT through the panel hook, which a
+        // reader noticed was missing.
+        if ((bits & kUiConfirm) && load_->row >= 0) {
+            load_->mode = panel_ && panel_->screen == 30 ? 1 : 0;
+            for (std::size_t k = 0; k < panel_->lists.size(); ++k)
+                if (panel_->lists[k].addr == 0x004CEA98u) { cur_ = static_cast<int>(k); break; }
+            log_.push_back("slot confirmed: the buttons take the focus");
+            return true;
+        }
         return false;
     }
     if (l->hook) {
