@@ -208,6 +208,16 @@ inside one of those quads. So the work is:
   — this is the same path screen 29 takes at boot);
 * the panel itself, below.
 
+* **charge the ring.** The activate script only TESTS `actor_stat 5` > 0 and
+  refuses with `media.play 990` (`ZVO P652  Anneaux Y'en a pu !`); nothing in
+  it decrements. So the spend is inside screen 30's own code, and that is one
+  of the per-screen callbacks with no `proc` label — read it off the raw
+  listing with `asmfn.py`, do not guess it. The one free save point is zone
+  2476 in AREA 152 *Ix Astaroth*.
+* **write the thumbnail.** The load panel draws the picture of the player at
+  the save location — that is the slot's 24576-byte tail, and `writeSaveSlot`
+  already takes one; step 3 has to actually capture it.
+
 Nothing needs a new mechanism, and binding it to a key would be inventing one.
 
 

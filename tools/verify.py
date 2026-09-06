@@ -10479,13 +10479,46 @@ def c_save_points():
     4558 shipped zones carry that bit, and these are 37 DIFFERENT zones; the
     two sets are disjoint.
 
+    **A save is PAID FOR, and the script says so.**  36 of the 37 are the same
+    eleven-instruction program, differing only in their two camera ids:
+
+        camera.set <the save point's own camera>, 2
+        var.set.actor_stat  -1, 5, 60      ; the PLAYER's stat 5 -> variable 60
+        push.i8 0 / push.var 60 / cmp.gt   ; is it greater than zero?
+        jmp_if_false -> media.play 990
+        ui.open 30, -1, -1                 ; SAVE GAME
+        camera.set <back>, 2
+
+    Stat **5** is `Actor_GetProperty`'s case 5, `record + 174` - the
+    **anneaux**, the rings (GAME_STATE 4) - and object **990** is named, by
+    the game, `ZVO P652  Anneaux Y'en a pu !`.  So the rings are what a save
+    costs: no ring, no screen, and a voice line saying there are none left.
+    All 36 use the same stat, the same variable and the same refusal.
+
+    The script only TESTS.  Nothing in it decrements the count, so the spend
+    is inside screen 30's own code - which is in the decompilation's blind
+    spot, the per-screen callbacks that are dwords in a table and get no
+    `proc` label (CLAUDE.md 1), so it has to be read off the raw listing.
+    That is step 5's work, not this check's.
+
+    **One save point is free.**  The 37th, zone 2476 in AREA 152 *Ix
+    Astaroth*, is `camera.set / ui.open 30 / camera.set / end` with no gate at
+    all - so there is exactly one place in the game where you may save with no
+    rings.
+
+    Every save point also frames itself: the pair of `camera.set` either side
+    of the screen, over 40 distinct camera ids.
+
     What it settles for the port: the save screen's in-game route is the
     zone-activate path, so binding it to a pause key would be inventing a
-    mechanism the game does not have (`todo/save-support.md` step 5).
+    mechanism the game does not have; and a save has a PRICE, so a port that
+    does not charge the ring is not saving the way the game does
+    (`todo/save-support.md` step 5).
     """
     import dialog_triggers as _T, dialog_disasm as _D
     root = omkpaths.data("IAM")
     sites, wrongSlot = [], 0
+    gate, refuse, ungated = [], [], []
     for name in ("AREA", "SCENE"):
         path = os.path.join(root, name)
         if not os.path.isfile(path): continue
@@ -10506,6 +10539,15 @@ def c_save_points():
                     if field != 4: wrongSlot += 1
                     sites.append((name, k, rec,
                                   struct.unpack_from("<h", b, lo + 68 * rec + 64)[0]))
+                    # the price: `var.set.actor_stat -1, 5, 60` then a
+                    # `cmp.gt` against 0, and `media.play 990` when it fails
+                    for _pc, _op, _o in ops:
+                        if _op == 86 and len(_o) >= 6:
+                            gate.append(struct.unpack("<3h", _o[:6]))
+                        if _op == 92 and len(_o) >= 2:
+                            refuse.append(struct.unpack("<h", _o[:2])[0])
+                    if not any(_op == 86 for _pc, _op, _o in ops):
+                        ungated.append((name, k, rec))
     tags = O.TAGS.get("ZONES", {})
     nm = [tags.get(z & 0x7FFF, "") for _, _, _, z in sites]
     shape = (len(sites), wrongSlot,
@@ -10554,14 +10596,27 @@ def c_save_points():
                      struct.unpack_from("<iii", b, base + 12 + 12 * i)] for i in range(4)]
             w = [v * 100 * 0.00390625 * 0.3937007874015748 for v in st.player_pos]
             if distXZ(w, poly) == 0.0: inZone += 1
-    return (shape, checked, inZone), \
-           ((37, 0, 35, 25, 2, 10, 0), 4, 4), \
+    price = (len(gate),
+             len({g for g in gate}),
+             gate[0] if gate else None,
+             len({r for r in refuse}),
+             refuse[0] if refuse else None,
+             O.TAGS.get("OBJECTS", {}).get(refuse[0] if refuse else -1, ""),
+             ungated)
+    return (shape, checked, inZone, price), \
+           ((37, 0, 35, 25, 2, 10, 0), 4, 4,
+            (36, 1, (-1, 5, 60), 1, 990, "ZVO P652  Anneaux Y'en a pu !",
+             [("AREA", 152, 13)])), \
            "`ui.open 30` sites in the world scripts, how many are NOT in the " \
            "zone's activate slot (+4), how many are in AREA chunks, then " \
            "their ZONES.TAG names - Sauvegarde*, Anneaux, unnamed - and how " \
            "many are one-shot latched; then the real save slots whose area " \
            "holds one of these zones, and how many serialise a player " \
-           "position INSIDE that zone's quad"
+           "position INSIDE that zone's quad; then the PRICE - how many of " \
+           "the scripts gate on a stat and how many distinct (actor, stat, " \
+           "variable) triples they use, the triple itself, the distinct " \
+           "refusal objects and the first one with the name the game gives " \
+           "it, and every save point with no gate at all"
 
 
 def c_engine_save_write():

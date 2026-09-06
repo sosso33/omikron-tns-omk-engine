@@ -805,9 +805,48 @@ will otherwise chase: [`FILE_FORMATS.md`](FILE_FORMATS.md) §5b2b records that
 **37 of the 4558** shipped zones carry that bit, and these are 37 *different*
 zones. The two sets are disjoint.
 
-`verify.py: save points`. For the port this fixes the route: the save screen
+**A save is PAID FOR, in rings.** 36 of the 37 are the same eleven-instruction
+program, differing only in their two camera ids:
+
+```
+camera.set <the save point's own camera>, 2
+var.set.actor_stat  -1, 5, 60        ; the PLAYER's stat 5 -> variable 60
+push.i8 0 / push.var 60 / cmp.gt     ; is it greater than zero?
+jmp_if_false -> media.play 990
+ui.open 30, -1, -1                   ; SAVE GAME
+camera.set <back>, 2
+```
+
+Stat **5** is `Actor_GetProperty`'s case 5, `record + 174` — the **anneaux**
+(§4) — and object **990** is named, by the game itself,
+**`ZVO P652  Anneaux Y'en a pu !`**. So the rings are the currency of saving:
+no ring, no screen, and a voice line saying there are none left. All 36 use
+the same stat, the same variable and the same refusal object.
+
+The script only *tests*. Nothing in it decrements the count, so the **spend**
+is inside screen 30's own code — one of the per-screen callbacks that are
+dwords in a table and therefore absent from the decompilation (CLAUDE.md §1),
+so it has to be read off the raw listing. That is `todo/save-support.md`
+step 5's work.
+
+**One save point is free**: zone 2476 in AREA 152 *Ix Astaroth* is
+`camera.set / ui.open 30 / camera.set / end`, no gate at all — the only place
+in the game you can save with no rings.
+
+Every save point also **frames itself**, with a `camera.set` either side of
+the screen, over 40 distinct camera ids.
+
+**And the slot's 24576-byte tail is what the load panel shows.** A reader
+confirms the load menu draws a picture of the player at the save location,
+which is exactly the 128 x 96 X1R5G5B5 thumbnail §8b derives from
+`sub_4331B0`'s blit — so that field is a live feature of the interface, not
+dead space, and a port that writes zeroes there gives the load panel nothing
+to draw.
+
+`verify.py: save points`. For the port this fixes two things: the save screen
 is reached through the zone-activate path, so binding it to a pause key would
-be inventing a mechanism the game does not have.
+be inventing a mechanism the game does not have; and a save has a **price**,
+so a port that does not charge the ring is not saving the way the game does.
 
 ### What a save does *not* carry
 
