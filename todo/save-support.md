@@ -194,7 +194,7 @@ hundreds of colours with the X bit set in none of its 12288 pixels.
 **Still a harness path, deliberately.** No save point, no panel, no ring
 spent: those are steps 4 and 5.
 
-### Step 4 — the load menu  ☐
+### Step 4 — the load menu  ☑ (2026-09-06)
 
 The load panel is `0x004CF2E8`, the child of the start menu's item 1 AND of
 `SAVE GAME`'s item 0 — one panel, told apart by `word_4CEA9A`. Its parts, none
@@ -282,7 +282,7 @@ the port's `evictSlot` may already do it and simply not be reached.
 
 Until then, `--slot N` at start-up is the reliable way in.
 
-### Step 5 — the save menu, and the SAVE POINTS  ◐ (read 2026-09-06, not wired)
+### Step 5 — the save menu, and the SAVE POINTS  ☑ (2026-09-06)
 
 **The reading is done and needs no UI code**; what is left is the wiring, which
 does. See the price mechanism below and `GAME_STATE` §8c.
@@ -339,6 +339,40 @@ marks the new-save row unselectable). Its flag `0x20000400` also opens screen
 31, and screen 31 is `todo/next-tasks.md` item 3 — so the in-game ROUTE to this
 screen is that item's work, and until it exists the screen is reached with
 `omk-play … 30`.
+
+### DONE, and what each step cost
+
+Steps 1-5 are complete and were driven end to end in the running game by a
+reader: load a save from the menu (with the Grid sequence covering it), save
+into a new slot, overwrite an existing one through `Ecraser ce fichier ?`,
+delete one through its own confirm, with an *anneau* charged on every write
+and refused in both the places the game refuses it. The panel draws its
+heading, rows, wrapping selection, profile wheel, selection box, connector and
+thumbnail against a reader's screen grab of the original.
+
+**Nine faults were found by PLAYING and none by a check.** Worth listing,
+because eight of the nine are one shape:
+
+| | |
+|---|---|
+| the panel drew one line where three buttons go | the builder writes their POSITIONS |
+| the save screen drew the menu's artwork over the world | the cloud is the menu's, not every screen's |
+| the save panel showed `Indices` where `Détruire` goes | the builder writes their STRING IDS |
+| the start menu's name field appeared on the save screen | the builder writes the panel's PARENT |
+| `Oui` and `Non` did nothing | the builder writes both buttons' CHILD |
+| the confirm's text was three real strings in the wrong places | its own builder does all of that again |
+| the save point opened straight into the slot list | a key held AT a screen's open is not input to it |
+| leaving the menu reopened it | ...and the key that CLOSES one is not the world's action |
+| choosing a slot loaded instead of saving | a remembered selection outlived the screen that made it unreachable |
+
+The first six are the same mistake six times: **a builder writes into records
+the table lifts as static, and porting some of its writes gives a panel that
+looks nearly right.** When a panel is shared between two screens, assume its
+builder rewrites more than you have found.
+
+The last three are one boundary problem each, and all three were invisible to
+every headless check, because the checks compare the port to another reader in
+this tree and none of them draws.
 
 ### Step 6 — the docs and the sweep  ◐
 
