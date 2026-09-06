@@ -3551,6 +3551,24 @@ def c_object_path_anchor():
     # reader's next report after the animation was fixed was that the door
     # still made no sound; it was playing at gain 0.03. The distance has to
     # come from the PLACED position, which is why `motionAt` exists.
+    # ---- AND WHETHER A DOOR IS A BLOCKER AT ALL (item 7's third symptom).
+    # The viewer patches the collision soups from the same corners as the
+    # render (`patchSoup`), so a door drawn 3400 units out was COLLIDED there
+    # too - which is what walking through a closed door looks like, and the
+    # placement fix above moves it back. What that fix does not establish is
+    # the question underneath: does a door mesh reach a soup at all? It does -
+    # six faces each - and the walker blocks on them, `su.blockers =
+    # &playerSteep`. The lift's are ALL steep, the flat's split 2/4, and a
+    # steep face is the one the walker sweeps against.
+    soup = {}
+    sp = os.path.join(eng, "build", "soup_probe")
+    if os.path.exists(sp):
+        for st, mesh in (("AAPKAYL.3DO", "Ap01Porte1"), ("AHALL40.3DO", "HA40DoorL")):
+            r = subprocess.run([sp, omkpaths.data("MESHES/DECORS/" + st), mesh],
+                               capture_output=True, text=True)
+            m = _re.search(r"walkable (\d+)\s+steep (\d+)\s+all (\d+)", r.stdout)
+            soup[mesh] = tuple(int(x) for x in m.groups()) if m else None
+
     gain, dist = -1.0, -1
     play = os.path.join(eng, "build", "omk-play")
     mk = subprocess.run(["make", "-s", "play"], cwd=eng, capture_output=True, text=True)
@@ -3567,10 +3585,12 @@ def c_object_path_anchor():
             if m: gain = float(m.group(1))
             m = _re.search(r"at (\d+) units from the nearest motion of object 142", line)
             if m: dist = int(m.group(1))
-    return (flat, lift, fromPt, offset, atT0, disp, liftGap, gain, dist), \
+    return (flat, lift, fromPt, offset, atT0, disp, liftGap, gain, dist,
+            soup.get("Ap01Porte1"), soup.get("HA40DoorL")), \
            ((3759.9, 1037.3, -815.8), (3947.6, -58.6, -1206.0),
             (632.0, -43.2, 33.8), (3127.9, 1080.5, -849.6),
-            (3759.9, 1037.3, -815.8), (0.0, -87.2, 0.0), 6.6, 1.0, 50), \
+            (3759.9, 1037.3, -815.8), (0.0, -87.2, 0.0), 6.6, 1.0, 50,
+            (2, 4, 6), (0, 6, 6)), \
            "the flat's entrance door and the lift's left door as the `.3DO`s " \
            "author them; then the flat's path's FIRST sample and the offset " \
            "between the two - the origin the path is written about, which is " \
@@ -3585,7 +3605,13 @@ def c_object_path_anchor():
            "outside the building is inaudible as well as invisible, and wav " \
            "23 played at gain 0.03 until the attenuation was measured from " \
            "the PLACED position too. Standing at the door it is gain 1.00 at " \
-           "50 units"
+           "50 units; and last whether a door is a BLOCKER at all - both " \
+           "meshes put six faces into the narrow phase, the flat's split 2 " \
+           "walkable / 4 steep and the lift's all six STEEP, which is the " \
+           "set the walker actually sweeps against (`su.blockers = " \
+           "&playerSteep`). So a door blocks by construction, and walking " \
+           "through one is a door in the wrong PLACE rather than a door with " \
+           "no collision"
 
 
 def c_ui_shop_titles():
@@ -23285,7 +23311,7 @@ def c_licence_headers():
                    if TAG in open(p, encoding="utf-8",
                                   errors="replace").read(600)]
     return (authored, sorted(missing), len(vendored), mislabelled), \
-           (363, [], 1, []), \
+           (364, [], 1, []), \
            "authored source files under tools/, engine/src, engine/tools, " \
            "engine/backends and scripts/; those MISSING the SPDX tag; " \
            "vendored files in engine/third_party; and vendored files wrongly " \
