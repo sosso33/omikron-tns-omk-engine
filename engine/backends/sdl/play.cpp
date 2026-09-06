@@ -8262,6 +8262,21 @@ int main(int argc, char** argv) {
             comp.attachModels(&uiModels);
             comp.setRowText(sneakRows.empty() ? nullptr : &sneakRows);
             comp.setHidden(sneakHidden.empty() ? nullptr : &sneakHidden);
+            // THE CLOUD IS THE MENU'S BACKGROUND, NOT EVERY SCREEN'S.
+            //
+            // A reader's screenshots of the original settle it from both
+            // sides: the load panel (screen 29, at the menu) draws over the
+            // animated cloud, and the SAVE screen (30, opened from a save
+            // point) draws over the LIVE 3D SCENE - Kay'l is visible standing
+            // on the rings behind the menu text.
+            //
+            // What gates it in the engine is not read: `sub_4B19C0` only
+            // creates and frees the cloud's surface around a resolution
+            // change, and the per-frame drawer has no `proc` label, so it is
+            // in the decompilation's blind spot (CLAUDE.md 1). The rule here
+            // is taken from those screenshots - no cloud once the world is
+            // live - and is labelled a RECONSTRUCTION for that reason.
+            comp.attachCloud(adventure ? nullptr : &cloud);
             comp.draw(fb, openScreen, *walk);
         }
 
