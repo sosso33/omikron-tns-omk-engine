@@ -27,7 +27,7 @@ items are research and can be done any time they are wanted.
 | 4 | tuto zone fires repeatedly, player not stopped | **M** | strong | zone lifecycle is read and there is already a check nearby |
 | 5 | black frames in the Impasse cutscene | **M** | strong | the port already LOGS the moment it happens |
 | 6 | street NPCs stop and T-pose | **M** | good | same family as the scene-facing work of 2026-09-05 |
-| 7 | missing animations (lift doors, Kay'l's drawer) | **done/partly** | good | CONFIRMED 2026-09-06: the apartment doors AND the drawer both animate; the lift is gated behind a guard conversation and stays untested |
+| 7 | missing animations (lift doors, Kay'l's drawer) | **done** | strong | CONFIRMED 2026-09-06: the apartment doors, the drawer AND the lift doors all animate. The "gated behind a guard" lift is 1 of 53; **114** lift plays have no gate at all |
 | 8 | save support (save, save menu, load menu) | **M** | very strong | the format is solved end to end; this is plumbing, not research |
 | 9 | main menu completed (new game correct, the rest) | **M** | very strong | the widget tree and the answer sites are lifted |
 | 10 | sneak: character / info / config pages | **M** | very strong | the panels are already named constants in the port |
@@ -182,11 +182,10 @@ Worth checking whether these are procedural WALKERS (`.OPT` sliders) or
 authored extras (`scx.play.actor`) — the two have different owners and the
 answer changes the fix entirely.
 
-### 7. Missing animations — **CONFIRMED for the apartment, 2026-09-06; the
-lift is untested and says so**
+### 7. Missing animations — **CONFIRMED, 2026-09-06: none of it reproduces**
 
 Lift doors, the drawer in Kay'l's apartment. Confirmed first, as this entry
-asked, and **the apartment half does not reproduce.**
+asked, and **not one of the three reproduces.**
 
 * **The doors animate.** They are `Open`/`Closed` scene-object pairs on a
   zone's *enter* and *leave* scripts — `Aapkayl.SCX` carries eleven such pairs
@@ -198,12 +197,42 @@ asked, and **the apartment half does not reproduce.**
   `scx.play.wait 130` (`TiroirCui1Open`), and the port runs it end to end: the
   player is put down at frame 18 and object 130 moves the kitchen mesh.
 
-**The lift is NOT confirmed either way, and that is the honest half.** The
+**The lift is CONFIRMED too, 2026-09-06 — and the paragraph that used to
+stand here generalised from the hardest case in the game.** It said: *"The
 lift doors that exist are gated: `LBibli.SCX`'s `PorteAscOpen` sits behind
-zone 1700 *Garde Ascenseur*, which tests two variables, runs a `dialog.start`
-with a guard and only then opens the door. Not reachable from a cold start, so
-nothing here confirms or refutes it — someone who can reach a lift in play
-should say what they see.
+zone 1700 Garde Ascenseur, which tests two variables, runs a `dialog.start`
+with a guard and only then opens the door. Not reachable from a cold start."*
+That is true of AREA 86's lift and of nothing much else.
+
+**Counted instead of assumed**: across `IAM\AREA` and `IAM\SCENE`, **167**
+scripts on zones named *ascenseur* play a scene object, over 43 chunks. **53**
+sit behind a variable or a dialogue — and only **one** of those 53 is a
+dialogue; the rest are variable tests. The other **114 are a bare `scx.play`
+and `end`**, two instructions, no gate whatsoever. Anekbah Hall 40 (AREA 13)
+has three of them side by side, one per lift, playing objects 11, 15 and 19.
+
+**Watched in the port.** Standing in the centre lift's entry zone with
+`--save traces/save-appart.bin --area 13 --stand 3923,-19,-1200,42`: the enter
+script queues at `@1204`, `scx.play.wait` starts one program and misses none,
+and both `HA40DoorL` and `HA40DoorR` are moved by the active pool. At frame 4
+the doorway is a closed lit panel; by frame 120 it is an open shaft.
+
+**Two traps cost the first attempt, and both are about the RECORDS.** An Entry
+zone and its Exit zone are one doorway from two sides, and what separates them
+is the **facing arc**, not the quad: of the 31 Entry/Exit pairs, 15 share a
+quad to within 2 units, and in 30 of 31 the exit's `arcMid` is the entry's
+reversed — a half turn, 2048, within 64 (within 128 for all 31). Standing
+facing 180° armed zone 513, the EXIT, whose only script is a leave slot with
+nothing to queue, and that reads exactly like a dead lift. The second trap is
+underneath it: **`--stand`'s heading is in DEGREES and the arc is in 4096ths**,
+so 42° is what `arcMid` 477 means.
+
+`verify.py: engine: lift doors` pins the census, the three Hall 40 objects, the
+Entry/Exit arc invariant and the port's own run.
+
+**What this does NOT settle**: whether the lift then TRAVELS. The door opening
+is a scene program on a trigger; riding one is item 16's territory
+(`Slider_TickRide` and friends), and nothing here touches it.
 
 **Two false diagnoses on the way, and both were tooling rather than the port.**
 The first press landed at frame 2 while the zone armed at frame 4, so nothing

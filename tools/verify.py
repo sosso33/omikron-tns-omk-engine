@@ -3299,6 +3299,156 @@ def c_name_field_edits():
            "`Burnpi` and `BurnXpi` are the claim and not merely a length"
 
 
+def c_lift_doors():
+    r"""THE LIFT DOORS - `todo/next-tasks.md` item 7's open half, settled.
+
+    The entry said the apartment doors and Kay'l's drawer were confirmed but
+    "the lift is gated behind a guard conversation and stays untested": the
+    lift it looked at is `LBibli.SCX`'s, whose zone 1700 *Garde Ascenseur*
+    tests two variables and runs a `dialog.start` before opening anything, and
+    that one really is out of reach from a cold start.
+
+    **It is one of 53.** Across `IAM\AREA` and `IAM\SCENE`, **167** scripts on
+    zones named *ascenseur* play a scene object, over 43 chunks; 53 of them sit
+    behind a variable or a dialogue and **114 are a bare `scx.play` and
+    `end`** - two instructions, no gate at all. Anekbah Hall 40 (AREA 13) has
+    three of them side by side, one per lift: its Entry zones play objects
+    **11**, **15** and **19**. So the honest answer to "are lift doors
+    animated" was always available; the triage generalised from the single
+    hardest case.
+
+    **What made the first attempt look like a failure**, and it is a fact
+    about the records rather than about the port. An Entry zone and its Exit
+    zone are the same doorway from opposite sides, and what separates them is
+    the FACING ARC, not the quad: of the 31 Entry/Exit pairs, **15 share a
+    quad** to within 2 units, and in **30 of 31** the exit's `arcMid` is the
+    entry's reversed - the difference is 2048 (half a turn) within 64, and
+    within 128 for all 31. Standing at the centre lift facing 180 deg armed
+    zone 513, the EXIT, whose script slot is the leave one and which had
+    nothing to queue; facing 42 deg - which is where `arcMid` 477 of 4096
+    points - arms 512 and runs the door. `--stand`'s heading is in DEGREES
+    while the arc is in 4096ths, which is the trap underneath that.
+
+    The port half is asserted from `omk-play`'s own log at that stand:
+
+        [zone] frame 2  ARM zone 512 -> context 0 action 1 @1204
+        [obj]  frame 2  op 58  program 0  (1 started, 0 missed)
+        motion: mesh 'HA40DoorL' moved by the ACTIVE pool (Hall40.SCX)
+        motion: mesh 'HA40DoorR' moved by the ACTIVE pool (Hall40.SCX)
+
+    - the entry script queued, `scx.play.wait` starting one program and missing
+    none, and the two meshes the active pool moves being the doors themselves.
+    Watched as well as counted: at frame 4 the doorway is a closed lit panel
+    and by frame 120 it is an open shaft.
+
+    **What is NOT asserted, and why.** A whole-frame pixel delta between two
+    moments of the same run looked like the obvious measure and is worthless
+    here: in the zone it is 46786 pixels and at a control stand 200 units away,
+    where no zone fires at all, it is **200373** - the follow camera is still
+    settling and swamps the doors. A differential needs the two runs to share a
+    camera, and changing where the player stands changes it. So this checks the
+    door program and the meshes it drives, and the picture is evidence a person
+    looked at rather than a number.
+    """
+    import subprocess, tempfile, shutil
+    sys.path.insert(0, os.path.join(ROOT, "tools", "sim"))
+    import world as W, dialog_triggers as T, dialog_disasm as D
+    iam = omkpaths.data("IAM")
+    if not os.path.isdir(iam):
+        return ("skipped",), ("skipped",), "gamedata/IAM absent"
+    names = {}
+    for line in open(os.path.join(iam, "ZONES.TAG"), "rb").read() \
+            .decode("latin-1").splitlines():
+        k, _, v = line.partition("=")
+        if k.lstrip("-").isdigit():
+            names[int(k)] = v
+    PLAY = {op for op, n in D.NAME.items() if "scx.play" in n}
+    GATE = {op for op, n in D.NAME.items() if n in ("push.var", "dialog.start")}
+    plays = gated = 0
+    chunks, entry13, pairs, sameQuad, reversed64, reversed128 = set(), {}, 0, 0, 0, 0
+    for arch in ("AREA", "SCENE"):
+        for chunk in sorted(T.archive(omkpaths.data("IAM", arch))):
+            zs, b = W.zones_of(arch, chunk)
+            lift = {names.get(z.id, ""): z for z in zs
+                    if "scenseur" in names.get(z.id, "").lower()}
+            for z in zs:
+                nm = names.get(z.id, "")
+                if "scenseur" not in nm.lower():
+                    continue
+                for si, off in enumerate(z.scripts):
+                    if not off:
+                        continue
+                    ins, _ = D.disasm(b, off, len(b))
+                    ops = {i[1] for i in ins}
+                    if not (ops & PLAY):
+                        continue
+                    plays += 1
+                    chunks.add((arch, chunk))
+                    if ops & GATE:
+                        gated += 1
+                    if arch == "AREA" and chunk == 13 and nm.endswith("Entry"):
+                        # the operand of the play - the scene object id
+                        for pc, op, ops_b in ins:
+                            if op in PLAY:
+                                entry13[nm] = ops_b[0] | (ops_b[1] << 8)
+                                break
+            for nm, z in lift.items():
+                ex = lift.get(nm[:-5] + "Exit") if nm.endswith("Entry") else None
+                if ex is None:
+                    continue
+                pairs += 1
+                if max(abs(a - c) for qa, qb in zip(z.quad, ex.quad)
+                       for a, c in zip(qa, qb)) <= 2:
+                    sameQuad += 1
+                d = (ex.arcMid - z.arcMid) % 4096
+                reversed64 += abs(d - 2048) <= 64
+                reversed128 += abs(d - 2048) <= 128
+
+    # ---- and the PORT, standing in the centre lift's entry zone
+    eng = os.path.join(ROOT, "engine")
+    live = ("no sdl",)
+    mk = subprocess.run(["make", "-s", "play"], cwd=eng,
+                        capture_output=True, text=True)
+    play = os.path.join(eng, "build", "omk-play")
+    if mk.returncode == 0 and os.path.exists(play):
+        tmp = tempfile.mkdtemp()
+        try:
+            env = dict(os.environ, SDL_VIDEODRIVER="dummy", OMK_CAMLOG="1")
+            r = subprocess.run(
+                [play, omkpaths.data_root(), os.path.join(ROOT, "tables"),
+                 "--save", os.path.join(ROOT, "traces", "save-appart.bin"),
+                 "--area", "13", "--stand", "3923,-19,-1200,42",
+                 "--frames", "120", "--res", "640x480",
+                 "--dump", os.path.join(tmp, "f.bin")],
+                capture_output=True, text=True, env=env)
+            out = r.stdout + r.stderr
+            live = ("ARM zone 512 -> context 0 action 1 @1204" in out,
+                    "op 58  program 0  (1 started, 0 missed)" in out,
+                    sum(1 for m in ("'HA40DoorL'", "'HA40DoorR'")
+                        if "motion: mesh %s moved by the ACTIVE pool" % m in out))
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+    return (plays, gated, plays - gated, len(chunks),
+            sorted(entry13.items()), pairs, sameQuad, reversed64, reversed128,
+            live), \
+           (167, 53, 114, 43,
+            [("Ascenseur Centre Entry", 11), ("Ascenseur Droite Entry", 19),
+             ("Ascenseur Gauche Entry", 15)], 31, 15, 30, 31,
+            (True, True, 2)), \
+           "zone scripts named `ascenseur` that play a scene object; how many " \
+           "are GATED on a variable or a dialogue and how many are a bare " \
+           "play with no gate at all; the chunks they span; then Anekbah " \
+           "Hall 40's three Entry zones with the object each one plays - the " \
+           "lifts `todo/next-tasks` item 7 called untested, none of them " \
+           "gated by anything; then the Entry/Exit pairs, how many share a " \
+           "QUAD (so the facing ARC is what tells them apart) and in how many " \
+           "the exit arc is the entry's reversed, within 64 and within 128 of " \
+           "a half turn; and last the PORT standing in the centre lift's " \
+           "entry zone - the enter script queued at @1204, `scx.play.wait` " \
+           "starting one program and missing none, and BOTH door meshes moved " \
+           "by the active pool"
+
+
 def c_ui_shop_titles():
     r"""The ten shops' titles, and the branch a linear scan cannot follow.
 
@@ -24578,6 +24728,7 @@ SLOW = [
     ("engine: screen",     c_engine_screen,     "PORTING A1"),
     ("engine: screen scale", c_engine_screen_scale, "PORTING A1; UI 3b"),
     ("engine: name field", c_engine_name_field, "UI 3b; PORTING A1"),
+    ("engine: lift doors", c_lift_doors,       "todo/next-tasks 7"),
     ("save clock",         c_save_clock,        "GAME_STATE 8"),
     ("player counters",   c_player_counters,   "UI 3g; GAME_STATE"),
     ("fill colour",       c_fill_colour,       "UI 3b"),
