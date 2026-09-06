@@ -657,6 +657,27 @@ void UiWalk::settle() {
             selMap()[l.addr] = j;
         else
             selMap().emplace(l.addr, j);
+        // ...AND A REMEMBERED SELECTION THAT IS NO LONGER PICKABLE MOVES.
+        //
+        // A list's selection outlives the screen (`list+2` is never reset),
+        // and one LIST can serve two screens whose builders hide different
+        // items. The load panel's button list is exactly that: `Charger une
+        // partie` is live on screen 29 and hidden on screen 30, so a player
+        // who used it on the start menu and then opened a save point had the
+        // save panel sitting on a hidden `Charger` - and confirming it LOADED
+        // instead of saving. A reader met that as "I pressed enter on a save
+        // slot then the menu closed".
+        //
+        // `Ui_MoveSelection` steps over unselectable rows, so a selection can
+        // never REACH one by moving; this is the same rule applied to one
+        // arriving from somewhere else.
+        const auto cur = selMap().find(l.addr);
+        if (cur != selMap().end() && cur->second >= 0 &&
+            static_cast<std::size_t>(cur->second) < l.items.size() &&
+            !pickable(l, l.items[static_cast<std::size_t>(cur->second)])) {
+            for (std::size_t i = 0; i < l.items.size(); ++i)
+                if (pickable(l, l.items[i])) { cur->second = static_cast<int>(i); break; }
+        }
     }
 }
 
