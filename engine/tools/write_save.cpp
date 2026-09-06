@@ -163,6 +163,26 @@ int main(int argc, char** argv) {
         drift = back[0] - p0[0];
     }
 
+    // --- the header pair against the TABLE ---------------------------------
+    //
+    // `State_Apply` copies the header's scene into the scene-per-area table
+    // for the header's area, and `Area_Load` then reads that entry back and
+    // `Scene_Load`s it.  The two have different writers - opcode 71
+    // `scene.load` writes the table, `State_Save` writes the header out of
+    // the live resident slot - so they CAN disagree, and when they do the
+    // engine's answer is the header's.  Over every real save slot this tree
+    // holds they agree; the number is here so that stops being an assumption.
+    int pairs = 0, pairsAgree = 0;
+    for (const auto* f : {&fixture, &resto}) {
+        for (int k = 0; k < 3; ++k) {
+            const auto sl = omk::readSaveSlot(*f, k);
+            if (!sl) continue;
+            ++pairs;
+            const int area = sl->state.currentArea();
+            if (sl->state.sceneOfArea(area) == sl->state.currentScene()) ++pairsAgree;
+        }
+    }
+
     // --- clearing and deleting --------------------------------------------
     auto cleared = out;
     omk::clearSaveSlot(cleared, 0);
@@ -226,6 +246,7 @@ int main(int argc, char** argv) {
     put32(static_cast<std::int32_t>(drift * 100.0f + (drift < 0 ? -0.5f : 0.5f)));
     put32(sweep); put32(sweepNeg); put32(badNeg); put32(badPos);
     put32(badTowardsZero);
+    put32(pairs); put32(pairsAgree);
     put32(clearDiff); put32(deleted);
     put32(dirNames); put32(dirProfiles); putStr(dirFirst);
     put32(static_cast<std::int32_t>(th.size()));
@@ -260,6 +281,9 @@ int main(int argc, char** argv) {
                 "positives fail to return, %d of them landing one unit "
                 "TOWARDS ZERO\n",
                 sweep, sweepNeg, badNeg, badPos, badTowardsZero);
+    std::printf("header vs table: over %d real save slots, %d have the "
+                "scene-per-area entry for their own area already equal to "
+                "the header's scene\n", pairs, pairsAgree);
     std::printf("clear: %d byte(s) change; deleteProfile emptied %d slot(s)\n",
                 clearDiff, deleted);
     if (dirProfiles >= 0)

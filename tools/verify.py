@@ -10506,6 +10506,22 @@ def c_engine_save_write():
     is 24576 exactly.  RGB565's F800 / 07E0 / 001F / FFFF pack to
     7C00 / 03E0 / 001F / 7FFF.
 
+    **The header pair is measured against the table it feeds.**  `State_Apply`
+    opens with
+
+        u16(u32(g_GameDB, 12), 2 * i16(g_GameDB, 1414)) = u16(g_GameDB, 1416);
+        Area_Load(i16(g_GameDB, 1414), 0);
+
+    - `+12` being the scene-per-area table - and `Area_Load` reads that same
+    entry at its top and ends `Scene_Load(slot, it)`.  So the header's `+1416`
+    is what decides which SCENE goes over the area a save resumes in, and the
+    table only carries it there.  The two have different writers (opcode 71
+    `scene.load` writes the table, `State_Save` writes the header out of the
+    live resident slot) so they can disagree, and when they do the engine
+    takes the header's.  Over all **4** real save slots this tree holds they
+    already agree, which is why the port's omission of that write had never
+    shown; the number is asserted so it stops being an assumption.
+
     Finally the whole loop closes: a file this writer produced goes back
     through `SaveDir_Build`'s own walk and the interface reads two named slots
     and one distinct profile out of it.
@@ -10545,15 +10561,16 @@ def c_engine_save_write():
     (drift,) = take(1)                   # world units * 100
     sweep   = take(5)                    # raws swept, negatives, failures by sign,
                                          # and how many land towards zero
+    pair    = take(2)                    # real slots, and how many agree
     life    = take(2)                    # bytes a clear changes, slots deleted
     dirn    = take(2)                    # named slots, distinct profiles
     dirfirst = takes()
     thumb   = take(5)                    # size, then four packed words
     return (created, header, slot, name, ident, quant, stored, drift, sweep,
-            life, dirn, dirfirst, thumb), \
+            pair, life, dirn, dirfirst, thumb), \
            ((8402344, 1, 0), (0, -1), (0, -1), "hereIsTheProfileName",
             (52, 2566060, 237, 57), (4, 4, 4), (23727, 6757, -7825, 112),
-            -100, (60001, 30000, 15113, 0, 15113), (1, 3), (2, 1),
+            -100, (60001, 30000, 15113, 0, 15113), (4, 4), (1, 3), (2, 1),
             "hereIsTheProfileName",
             (24576, 0x7C00, 0x03E0, 0x001F, 0x7FFF)), \
            "a created file's size, its magic and how many of its 256 slots " \
@@ -10567,7 +10584,9 @@ def c_engine_save_write():
            "raws swept through the engine's own inverse and back, how many " \
            "of them were negative, how many negatives and how many " \
            "positives fail to return, and how many of the failures land one " \
-           "unit TOWARDS ZERO; the " \
+           "unit TOWARDS ZERO; the real save slots in this tree and how many " \
+           "already have the scene-per-area entry for their own area equal " \
+           "to the header's scene; the " \
            "bytes SaveDir_ClearSlot changes and the slots SaveDir_Delete " \
            "empties; the named slots and distinct profiles SaveDir_Build " \
            "finds in a file this writer produced, and the first name; then " \

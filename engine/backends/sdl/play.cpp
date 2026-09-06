@@ -1809,13 +1809,45 @@ int main(int argc, char** argv) {
         }
         state.setClockDay(slot->day);
         state.setClock(slot->time);
+        // `State_Apply`'s FIRST use of the header pair, and the port had only
+        // ever read its second:
+        //
+        //     u16(u32(g_GameDB, 12), 2 * i16(g_GameDB, 1414)) = u16(g_GameDB, 1416);
+        //     result = Area_Load(i16(g_GameDB, 1414), 0);
+        //
+        // `+12` is the scene-per-area table, so the header's scene is copied
+        // INTO it for the header's area before the area is loaded - and
+        // `Area_Load` reads exactly that entry at its top (`v35 = i16(u32(
+        // g_GameDB, 12), 2 * a1)`) and ends `Scene_Load(slot, v35)`.  So the
+        // header is what decides which SCENE goes over the area a save
+        // resumes in, and the table merely carries it there.
+        //
+        // In all four save slots this tree has the two already agree, which
+        // is why nothing has broken; they can disagree, because they have
+        // different writers - the table is written by opcode 71 `scene.load`
+        // and the header by `State_Save` out of the live resident slot - and
+        // when they do, the engine's answer is the HEADER's.
+        // `verify.py: engine: save write` measures the agreement so a
+        // divergence cannot pass unnoticed.
+        state.setSceneOfArea(state.currentArea(), state.currentScene());
         // WHERE THE SAVE SAYS HE WAS.  `State_Apply` converts +44..+56 back to
         // world units and stands the player there; the port had never read
         // those four fields at all, so a loaded save came up wherever the
         // harness put him.  Kept here and applied at the hand-over, because
         // that is when there is a player to place.
         state.placementWorld(savedAt, savedYaw);
-        haveSavedPlacement = true;
+        // ...and `State_Apply`'s own guard on it.  The whole spawn half -
+        // the model, the bank list, `Player_SetActor` and the placement with
+        // them - sits inside `if (u16(g_PlayerRecord, 272) != 0xFFFF)`, so a
+        // block whose player record names no actor has a placement that means
+        // nothing and the engine never applies it.  `IAM\START` is exactly
+        // that block, which is why a new game stands wherever the opening
+        // puts him.
+        haveSavedPlacement = state.playerActorId() != -1;
+        if (!haveSavedPlacement)
+            std::printf("save: slot %d's player record names no actor (+272 "
+                        "is 0xFFFF), so its placement is not applied - which "
+                        "is `State_Apply`'s own guard\n", slotNo);
         std::printf("save: slot %d '%s', %s %s, area %d scene %d, standing at "
                     "%.0f %.0f %.0f facing %.0f\n", slotNo, slot->name.c_str(),
                     omk::formatDate(slot->day).c_str(), omk::formatTime(slot->time).c_str(),

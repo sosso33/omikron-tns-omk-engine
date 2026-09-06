@@ -383,6 +383,58 @@ missing its half. Recorded as observed; nothing here says it was intended.
 
 The facing pair is a true inverse to within rounding.
 
+### 5a. Everything `State_Apply` does with these five fields
+
+Re-read end to end on 2026-09-06, because the port had begun consuming them
+and a field consumed on a partial reading is one that corrupts a save later.
+In `State_Apply`'s own order:
+
+```
+u16(u32(g_GameDB, 12), 2 * i16(g_GameDB, 1414)) = u16(g_GameDB, 1416);
+result = Area_Load(i16(g_GameDB, 1414), 0);
+...
+if (u16(g_PlayerRecord, 272) != 0xFFFF) {          <- THE GUARD
+    ... the area's music, the actor slot, the model, then
+    v21[0..2] = (double)(100 * raw) * 0.00390625 * 0.3937007874015748 - 1.0;
+    v21[3]    = (double)facing * 0.087890625;
+    Actor_SetPlacement(slot, v21);
+    ... Actor_Attach, the .CTL bank list, Player_SetActor
+}
+```
+
+**`+1416` is used twice, and the first use is the one that matters.** `+12` is
+the scene-per-area table, so the header's scene is copied into that table for
+the header's area *before* the area is loaded — and `Area_Load` opens with
+`v35 = i16(u32(g_GameDB, 12), 2 * a1)` and ends
+`if (v35 == -1) residentScene[slot] = -1; else Scene_Load(slot, v35)`. So the
+**header decides which scene goes over the area a save resumes in**, and the
+table is only how it gets there.
+
+That the two can disagree is what makes the write meaningful: they have
+different writers — the table is written by opcode 71 `scene.load`
+(`Area_SetLoadedScene`), the header by `State_Save` out of the live resident
+slot. In all **4** real save slots this repo holds they already agree, which
+is why the port's omission of the copy never showed;
+`verify.py: engine: save write` asserts the 4 so it stops being an assumption.
+
+**The placement is gated on the player record's `+272`.** The entire spawn
+half — model, bank list, `Player_SetActor` and the placement with them — sits
+inside `if (u16(g_PlayerRecord, 272) != 0xFFFF)`. A block whose record names
+no actor carries a placement that means nothing, and `IAM\START` is exactly
+that block.
+
+**The conversion is signed, and integer before it is float.** The assembly is
+`lea eax,[eax+eax*4]` twice then `shl eax, 2` — a wrapping 32-bit multiply by
+100 — and then `fild`, a **signed** load. (Hex-Rays types three of the four
+operands unsigned and casts the fourth `(int)`; that is decompiler noise, all
+four are `fild`.) No position a player can reach comes near the wrap — it
+needs about 84 km — but the port reproduces it anyway, because the only place
+it could ever show is a corrupt or hand-edited slot, which is the case worth
+being right about.
+
+**And the round trip is still not the identity**, for the reason §5 gives: the
+`- 1.0` here has no counterpart on the save side.
+
 ## 6. The clock, and the Omikron calendar
 
 Two globals, saved beside the block and restored with it:

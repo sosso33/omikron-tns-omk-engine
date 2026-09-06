@@ -141,11 +141,40 @@ entirely left that line intact while the player walked to the area's first
 address, several hundred units away. It now reads the hand-over line — where
 he is actually standing.
 
+### Step 2a — the five fields re-read end to end  ☑ (2026-09-06)
+
+Step 2 made the port consume `+44..+56` and `+1414/+1416` on the strength of
+reading only as much of `State_Apply` as the feature needed. Read whole
+(`docs/GAME_STATE.md` §5a) it had three more things to say, and one was a real
+gap:
+
+1. **`+1416` is used TWICE.** Before `Area_Load`, `State_Apply` copies it into
+   the scene-per-area table for `+1414`'s area — and `Area_Load` opens by
+   reading exactly that entry and ends by `Scene_Load`ing it. So the **header**
+   decides which scene goes over a resumed area; the table is only how it gets
+   there. The port did not do the copy. It happens to agree in all 4 real
+   slots, which is why nothing had broken, and the two have different writers
+   (opcode 71 writes the table, `State_Save` the header) so they can diverge.
+2. **The placement is gated on the player record's `+272`.** No actor named,
+   no placement applied — `IAM\START` is exactly that block.
+3. **The conversion is a wrapping 32-bit multiply then a signed `fild`**, not
+   the mixed-signedness arithmetic the decompiler shows. Reproduced, so a
+   corrupt or hand-edited slot cannot decode two different ways.
+
+All three are ported, and (1)'s agreement is asserted at 4 of 4 by
+`verify.py: engine: save write` so it stops being an assumption.
+
 ### Step 3 — saving from the running game  ☐
 
 The snapshot taken from the live Session — area, scene, player node, facing,
 the clock — plus the 128x96 thumbnail out of the framebuffer. A `--save-to`
 smoke path in `omk-play` so a save can be written and re-loaded without a menu.
+
+Note from §2a: the scene written to `+1416` must come from the **live resident
+slot**, the way `State_Save` takes it (`dword_69BC4C[4 * dword_69BC60]`), and
+not from the scene-per-area table — the header is what a load believes, so
+taking it from the table would make the port unable to express a divergence
+the engine can.
 
 ### Step 4 — the load menu  ☐
 

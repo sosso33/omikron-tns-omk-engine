@@ -256,6 +256,14 @@ public:
     //
     // The facing is a 4096-per-turn integer and a true inverse to rounding.
     struct Placement { std::int32_t raw[3] = {0, 0, 0}; std::int32_t facing = 0; };
+    // `+272` of the player record: the actor id the save spawns as the
+    // player, or **-1** (0xFFFF on disk) for a DB that has no player yet.
+    // `State_Apply` gates its whole spawn half on this - the model, the bank
+    // list, `Player_SetActor` AND the placement - so a block whose record
+    // names no actor carries a placement that means nothing.  `IAM\START`
+    // ships exactly that: a new game has no player until the opening casts
+    // one.
+    int playerActorId() const;
     Placement placement() const;
     // The same four, converted the way `State_Apply` converts them - degrees
     // for the facing, world units (with the -1) for the position.

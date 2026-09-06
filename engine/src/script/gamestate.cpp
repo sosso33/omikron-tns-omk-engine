@@ -96,6 +96,12 @@ std::int16_t GameState::sceneOfArea(int area) const {
 std::int16_t GameState::currentArea() const  { return static_cast<std::int16_t>(u16(1414)); }
 std::int16_t GameState::currentScene() const { return static_cast<std::int16_t>(u16(1416)); }
 
+int GameState::playerActorId() const {
+    const std::size_t o = static_cast<std::size_t>(kPlayerRecord) + 272;
+    if (o + 2 > raw_.size()) return -1;
+    return static_cast<std::int16_t>(u16(o));
+}
+
 GameState::Placement GameState::placement() const {
     Placement p;
     for (int k = 0; k < 3; ++k)
@@ -106,9 +112,20 @@ GameState::Placement GameState::placement() const {
 
 void GameState::placementWorld(float pos[3], float& facingDeg) const {
     const Placement p = placement();
-    for (int k = 0; k < 3; ++k)
-        pos[k] = static_cast<float>(p.raw[k] * 100.0 * 0.00390625 *
+    for (int k = 0; k < 3; ++k) {
+        // `lea eax,[eax+eax*4]` twice then `shl eax, 2` - the multiply by 100
+        // is a WRAPPING 32-bit integer one, and the `fild` that follows is a
+        // SIGNED load.  (Hex-Rays types three of these unsigned and the
+        // fourth `(int)`, which is noise: all four are `fild`.)  No plausible
+        // position reaches the wrap - it needs |world| past 3.3 million, some
+        // 84 km - but reproducing it costs one cast and removes a class of
+        // difference on a corrupt or hand-edited slot, which is the only
+        // place it could ever show.
+        const auto scaled = static_cast<std::int32_t>(
+            static_cast<std::uint32_t>(p.raw[k]) * 100u);
+        pos[k] = static_cast<float>(scaled * 0.00390625 *
                                     0.3937007874015748 - 1.0);
+    }
     facingDeg = static_cast<float>(p.facing * 0.087890625);
 }
 
