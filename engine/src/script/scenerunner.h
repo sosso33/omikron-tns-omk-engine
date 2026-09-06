@@ -51,6 +51,20 @@ public:
     // STANDING effects, and `Sfx_BindAmbientEffects` shows them itself at the
     // end of binding the set; attaching the file is that moment here.
     void attachSfx(const std::string& scptDataDir, const std::string& sfxName);
+    // RE-BIND AFTER A MOVE, and it is not optional.
+    //
+    // `pieces_` holds a `const SfxFile*` into this object's OWN `sfx_`
+    // member, so a move copies the pointer verbatim and leaves it addressing
+    // the SOURCE - which for `sceneOut_ = std::move(scene_)` is a runner that
+    // is then moved into again, and for `scene_ = std::move(fresh)` is a
+    // local about to be destroyed.  `attachSceneSfx` re-attaches `scene_`
+    // straight afterwards and has always hidden the first case; nothing
+    // re-attached `sceneOut_`, and it goes on being ticked.
+    //
+    // It surfaced when loading a save from the menu started moving these
+    // runners a second time: a null `SetPieceRunner::advance`.  A pointer
+    // into `*this` and a defaulted move are what make it possible at all.
+    void rebindPieces() { pieces_.attach(&sfx_); pieces_.setLinks(links_); }
 
     // THE SET'S OWN EMITTERS - the environment family, as opposed to the ones
     // an object start fires. `Sfx_BindAmbientEffects` walks the resident

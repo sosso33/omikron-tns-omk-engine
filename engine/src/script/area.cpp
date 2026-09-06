@@ -385,6 +385,23 @@ int Session::loadArea(int areaId) {
     // `State_Apply`'s `Area_Load(START +1414, 0)` with the async reader in
     // mode 0 - the boot load is synchronous, and its startup contexts are in
     // the table when this returns.
+    // EVICT BEFORE WIPING, and it is not optional once anything is running.
+    // At boot both slots are empty and this does nothing; on a LOAD it is
+    // what stops the game you were playing from carrying on underneath the
+    // one you loaded. Assigning a fresh `ResidentSlot` drops the slot's
+    // bookkeeping but frees no CONTEXT - `evictSlot` is the only thing that
+    // does (`sub_40C090`: the slot's area and scene startup contexts and
+    // every context created with that slot number).
+    //
+    // A reader found this by loading a save from the menu and watching the
+    // NEW GAME's opening play over the top of it: the intro, a flash of the
+    // apartment, then the Impasse with its own music. That is AREA 118's
+    // startup script, which survived the load and drove the whole chain.
+    // The same surviving contexts drove `scx.play` into a scene that had
+    // been replaced, which is the null `SetPieceRunner::advance` crash on
+    // the second save - one fault, three symptoms.
+    evictSlot(0);
+    evictSlot(1);
     slots_[0] = ResidentSlot{};
     slots_[1] = ResidentSlot{};
     active_ = 0;
@@ -1322,8 +1339,12 @@ void Session::reloadScene(int area, int scene) {
         if (scene_.loaded() && sceneArea_ != area) {
             sceneOut_     = std::move(scene_);
             sceneOutArea_ = sceneArea_;
+            // the moved-into runner's set pieces still point at the SOURCE's
+            // `sfx_`; only it can re-bind them to its own
+            sceneOut_.rebindPieces();
         }
         scene_ = std::move(fresh);
+        scene_.rebindPieces();
         sceneArea_ = area;
         attachSceneSfx();
     }

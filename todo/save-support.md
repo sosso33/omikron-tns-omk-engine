@@ -211,7 +211,43 @@ yet modelled:
 Read those four, model them in `widgets.*`/`UiWalk` the way the LIFT grid and
 the name field are, then make the walk's answer actually load.
 
-### KNOWN DEFECT — a mid-run load crashes in the set pieces
+### FIXED — the mid-run load crash, and it was an ownership bug
+
+**Reported by a reader 2026-09-06 and fixed the same day.** Kept in full,
+because the reported symptom, the crash and a third oddity all had one cause
+and none of them looked related.
+
+What the reader saw on loading a save from the menu: *the intro cutscene, then
+very briefly the apartment, then the Impasse cutscene with an ambience music* —
+which is the **new game's opening chain**, playing over the top of the save.
+Loading the second save crashed outright.
+
+**Two faults, found in that order.**
+
+1. **`loadArea` freed no script contexts.** It assigned fresh `ResidentSlot`
+   structs and called `resetWorld`, neither of which frees a CONTEXT -
+   `evictSlot` is the only thing that does. Harmless at boot, where nothing is
+   running; on a load it left AREA 118's startup script alive, and that script
+   drove the whole opening. Fixed by evicting both slots first.
+
+2. **`SetPieceRunner` holds a pointer into its owner, and `SceneRunner` is
+   MOVED.** `pieces_.attach(&sfx_)` stores a `const SfxFile*` addressing the
+   runner's own member, so `sceneOut_ = std::move(scene_)` and
+   `scene_ = std::move(fresh)` leave that pointer addressing the *source*.
+   `attachSceneSfx` re-attaches `scene_` immediately afterwards and had always
+   hidden it; nothing re-attached `sceneOut_`, which goes on being ticked.
+   A load moves these runners a second time and the pointer finally dangled:
+   `SetPieceRunner::advance` on a null `sfx_`. Fixed with `rebindPieces()`
+   after every move.
+
+The second is worth remembering beyond this slice: **a pointer into `*this`
+plus a defaulted move constructor is a latent bug that only shows when the
+object is moved twice.** The port had lived with it for as long as a scene was
+attached exactly once, at boot.
+
+All three slots now load from the menu and reach adventure mode.
+
+### The earlier note, kept: how it was reproduced
 
 **Reported by a reader 2026-09-06, loading the second save from the menu, and
 reproduced.** `Charger` on slot 1 segfaults about 25 frames later.

@@ -178,11 +178,23 @@ void SceneRunner::attachSfx(const std::string& dir, const std::string& name) {
     sfx_ = SfxFile{};
     fx_.clear();
     fired_ = 0;
-    if (name.empty()) return;
     const DataFs fs(dir);
-    const auto d = fs.read(name);
-    if (!d.empty()) sfx_ = readSfx(d);
+    // ATTACH EVEN WHEN THERE IS NO `.SFX`, and this used to return first.
+    // `attach` is what re-sizes the runner's per-piece state to the file it
+    // is given; skipping it left `st_` sized for the PREVIOUS scene while
+    // `sfx_` had just been emptied, so the next tick walked off the end of
+    // `sfx_->pieces` - a null `SetPieceRunner::advance`.
+    //
+    // It never showed while a scene was only ever attached once, at boot.
+    // Loading a save from the menu attaches a second time, and a reader hit
+    // it on the first save whose set has no `.SFX` beside it: area 179's
+    // `lev-2` after the apartment, which has one.
+    if (!name.empty()) {
+        const auto d = fs.read(name);
+        if (!d.empty()) sfx_ = readSfx(d);
+    }
     pieces_.attach(&sfx_);
+    if (name.empty()) { pieces_.setLinks(links_); return; }
     pieces_.setLinks(links_);
 
     // BINDING a set's ambient effects also brings up its STANDING ones.
