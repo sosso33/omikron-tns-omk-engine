@@ -889,10 +889,42 @@ which is exactly the 128 x 96 X1R5G5B5 thumbnail §8b derives from
 dead space, and a port that writes zeroes there gives the load panel nothing
 to draw.
 
-`verify.py: save points`. For the port this fixes two things: the save screen
-is reached through the zone-activate path, so binding it to a pause key would
-be inventing a mechanism the game does not have; and a save has a **price**,
-so a port that does not charge the ring is not saving the way the game does.
+**Where the ring actually goes: the confirm.** The script only *tests*, so the
+spend had to be in the panel, and it is — read off the raw listing 2026-09-06,
+because none of these callbacks has a `proc` label (they are dwords in a widget
+table, which is also why `Game_WriteSave` reads as having no callers at all).
+`Game_WriteSave` has **four** call sites in the image and all four are preceded
+by the same run:
+
+```
+cmp     <the screen's +78>, -1
+jnz     skip                        ; not -1 -> no charge at all
+mov     dword ptr [esp+8], 5        ; property 5 - the ANNEAUX, record +174
+call    Actor_Player
+push    2Ch / call Game_RaiseEvent  ; event 44 -> Actor_GetProperty
+jz      skip                        ; ZERO rings: no decrement...
+dec     eax                         ; ...otherwise exactly ONE
+push    2Dh / call Game_RaiseEvent  ; event 45 -> Actor_SetProperty
+skip:
+call    Game_WriteSave
+```
+
+Three things follow that neither the scripts nor a player could state:
+
+* **An overwrite costs the same as a new slot.** A *new save* row resolves its
+  slot through `sub_408AA0` and an existing row through
+  `sub_408D20`/`sub_408DE0`, and both arms land on this one run.
+* **Zero rings does not stop the save.** The `jz` skips the *decrement* only —
+  `Game_WriteSave` is called either way. So what actually stops you saving is
+  the save point's script, not the panel: reach the panel with no rings and it
+  writes for free. Which is presumably why the free save point in AREA 152
+  needs no special case in the panel at all.
+* **And the charge can be waived** by the screen's `+78`: not −1, no charge.
+
+`verify.py: save points`, `save price`. For the port this fixes two things: the
+save screen is reached through the zone-activate path, so binding it to a pause
+key would be inventing a mechanism the game does not have; and a save has a
+**price**, charged here and not in the script.
 
 ### What a save does *not* carry
 

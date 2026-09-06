@@ -226,12 +226,15 @@ inside one of those quads. So the work is:
   — this is the same path screen 29 takes at boot);
 * the panel itself, below.
 
-* **charge the ring.** The activate script only TESTS `actor_stat 5` > 0 and
-  refuses with `media.play 990` (`ZVO P652  Anneaux Y'en a pu !`); nothing in
-  it decrements. So the spend is inside screen 30's own code, and that is one
-  of the per-screen callbacks with no `proc` label — read it off the raw
-  listing with `asmfn.py`, do not guess it. The one free save point is zone
-  2476 in AREA 152 *Ix Astaroth*.
+* **charge the ring — READ, 2026-09-06, so this no longer needs guessing.**
+  All four of `Game_WriteSave`'s call sites are preceded by the same run:
+  read property 5 (the anneaux) through event 44, `dec` by exactly one, write
+  it back through event 45, then write the save — the whole run skipped when
+  the screen's `+78` is not −1. An overwrite is charged like a new slot (both
+  row arms merge before it), and **zero rings does not stop the save**: the
+  `jz` skips the decrement only, so the panel would write for free if you
+  reached it. What stops you is the save point's script.
+  `verify.py: save price`, `GAME_STATE` §8c.
 * **write the thumbnail.** The load panel draws the picture of the player at
   the save location — that is the slot's 24576-byte tail, and `writeSaveSlot`
   already takes one; step 3 has to actually capture it. The format is settled

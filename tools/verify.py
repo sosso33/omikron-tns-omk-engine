@@ -11006,6 +11006,78 @@ def c_save_directory():
            "many of the three images are uniform, and how many are distinct"
 
 
+def c_save_price():
+    r"""WHAT A SAVE COSTS, read at the four places that write one.
+
+    `docs/GAME_STATE.md` 8c has the save point's side: 36 of the 37 activate
+    scripts refuse to open `SAVE GAME` unless the player's *anneaux* are
+    greater than zero.  The script only TESTS, though - nothing in it
+    decrements - so where the ring actually goes was open, and a reader said
+    it is spent when the slot is confirmed, for an overwrite as for a new one.
+
+    It is, and the code is uniform.  `Game_WriteSave` (0x00408EF0) has **four**
+    call sites in the image, and all four are preceded by the same run:
+
+        cmp     <the screen's +78>, -1
+        jnz     skip                    ; not -1 -> no charge at all
+        mov     dword ptr [esp+8], 5    ; property 5 - the ANNEAUX, record+174
+        call    Actor_Player
+        push    2Ch / call Game_RaiseEvent   ; event 44 -> Actor_GetProperty
+        jz      skip                    ; ZERO rings: no decrement...
+        dec     eax                     ; ...otherwise exactly ONE
+        push    2Dh / call Game_RaiseEvent   ; event 45 -> Actor_SetProperty
+    skip:
+        call    Game_WriteSave
+
+    Three things fall out that the reader could not have known and the scripts
+    do not say.
+
+    * **The charge is after the two row arms merge.**  A "new save" row
+      resolves its slot through `sub_408AA0` and an existing row through
+      `sub_408D20`/`sub_408DE0`, and both land on this same run - so an
+      overwrite costs a ring exactly as a new slot does, which is what the
+      reader reported.
+    * **Zero rings does not stop the save.**  The `jz` skips the decrement
+      only; `Game_WriteSave` is called either way.  So the thing that actually
+      stops you saving is the save point's own script, not the panel - the
+      panel would happily write for free if you reached it.
+    * **And the charge can be waived**, by the screen field at `+78`: when it
+      is not -1 the whole run is jumped.
+
+    None of the four sites is in the decompilation, because none of them has a
+    `proc` label - they are the per-screen callbacks that exist only as dwords
+    in a widget table (CLAUDE.md 1), which is also why `Game_WriteSave` reads
+    as having no callers at all.  This check therefore scans the raw listing.
+    """
+    s = _need("asm")
+    if s: return s
+    asm = omkpaths.asm_path()
+    lines = open(asm, "r", encoding="latin1").read().splitlines()
+    sites = [i for i, t in enumerate(lines) if t.strip() == "call    sub_408EF0"]
+    charged = 0
+    for i in sites:
+        # the run above the call, in order
+        w = [t.strip() for t in lines[max(0, i - 36):i]]
+        want = ["mov     dword ptr [esp+8], 5", "call    sub_419E00",
+                "push    2Ch ; ','", "call    sub_4083F0",
+                "push    2Dh ; '-'", "call    sub_4083F0"]
+        at, ok = 0, True
+        for t in want:
+            while at < len(w) and w[at] != t: at += 1
+            if at == len(w): ok = False; break
+            at += 1
+        # ...and the decrement between the two events, and the waiver test
+        dec = any(t in ("dec     eax", "dec     ecx") for t in w)
+        waive = any(t.startswith("cmp     dword ptr [edi+78h], 0FFFFFFFFh") or
+                    t == "cmp     eax, 0FFFFFFFFh" for t in w)
+        if ok and dec and waive: charged += 1
+    return (len(sites), charged), (4, 4), \
+           "call sites of Game_WriteSave in the image, and how many are " \
+           "preceded by the ring charge - property 5 read through event 44, " \
+           "decremented by one, written back through event 45, the whole run " \
+           "skipped when the screen's +78 is not -1"
+
+
 def c_engine_save_write():
     r"""WRITING a save: `Game_WriteSave` and the three functions around it.
 
@@ -24183,6 +24255,7 @@ CHECKS = [
     ("sim: dialogue",     c_sim_dialogue,      "RECONSTRUCTION 4"),
     ("save file",         c_save_file,         "GAME_STATE 8"),
     ("save points",       c_save_points,       "GAME_STATE 8c"),
+    ("save price",        c_save_price,        "GAME_STATE 8c"),
     ("save directory",    c_save_directory,    "GAME_STATE 8"),
     ("settings block",    c_settings_block,    "GAME_STATE 8"),
     ("telis dialogue",    c_telis_dialogue,    "RECONSTRUCTION 4"),
