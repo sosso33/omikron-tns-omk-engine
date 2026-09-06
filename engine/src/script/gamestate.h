@@ -230,6 +230,45 @@ public:
     int          timerFlags() const { return timerFlags_; }
     std::int32_t timerValue() const { return timerValue_; }
     std::int32_t timerBase()  const { return timerStart_; }   // g_TimerStart
+    // ------------------------------------------- THE PLACEMENT, +44..+56
+    //
+    // Where the player was standing when the game was written out.  These
+    // five fields have exactly ONE writer, `State_Save` (0x0040D950), and one
+    // reader, `State_Apply`; during play they are stale and the live answer is
+    // in the area-slot globals and the player's actor record (GAME_STATE 5).
+    //
+    // The units are the engine's raw ones - a world unit is an INCH, and the
+    // stored number is 256ths of a metre - and the two conversions are
+    // quoted from the two functions rather than derived:
+    //
+    //     save   raw = trunc(world * 0.0254 * 256), then +1 when that is
+    //            further from the world value than raw+1 is, measured
+    //            through 0.15378937 ( = 100/(256*2.54) )
+    //     load   world = raw * 100 * 0.00390625 * 0.3937007874015748 - 1.0
+    //
+    // **The pair is not the identity**, and the asymmetry is the engine's:
+    // the load subtracts a whole world unit the save never added, so a save
+    // and a reload move the player by (-1, -1, -1).  `Global_Load` applies
+    // the same `- 1` to the world-camera coordinates, so it is the standard
+    // raw->world conversion and it is the SAVE side that is missing its half.
+    // Recorded as observed; nothing says it was intended, and reproducing it
+    // is what makes this a port rather than a correction.
+    //
+    // The facing is a 4096-per-turn integer and a true inverse to rounding.
+    struct Placement { std::int32_t raw[3] = {0, 0, 0}; std::int32_t facing = 0; };
+    Placement placement() const;
+    // The same four, converted the way `State_Apply` converts them - degrees
+    // for the facing, world units (with the -1) for the position.
+    void placementWorld(float pos[3], float& facingDeg) const;
+    // `State_Save`'s first half: the snapshot the block does not otherwise
+    // keep.  The caller supplies what the engine reads out of the live
+    // session - the resident area and the scene over it, and the player node's
+    // position and facing.  Everything else a save holds is already in the
+    // block.
+    void setPlacement(const float pos[3], float facingDeg);
+    void setCurrentArea(std::int16_t a);
+    void setCurrentScene(std::int16_t s);
+
     // The player's character record and the two bio strings its +0 and +4
     // point at.
     static constexpr int kPlayerRecord = 60, kPlayerRecordSize = 276;

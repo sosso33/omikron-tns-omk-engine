@@ -745,6 +745,41 @@ legal in the 41-day, 13-month calendar, with `41 Andar` landing exactly on the
 month length. A new game starts 12 Nadim 7216 at 11:10:00 — and every division
 in the formatter is integer and none of them even, so a float there drifts.
 
+**`verify.py: engine save write`** is the other half of that file, and until
+2026-09-06 it did not exist: the port could read a slot and not write one,
+which is the half a player needs. `Game_WriteSave` is a read-modify-write of
+the whole 8402344 bytes — the settings over the head, then the name, day, time,
+DB and thumbnail at four offsets that tile the 32808 exactly — and
+`SaveDir_ClearSlot` is one byte, `sub_4092A0`'s create arm writes 3496 and
+extends by `0x802800`. All of it round-trips: a slot written from the
+fixture's own parts is byte-identical to it over the 8232 bytes the fixture
+holds.
+
+Two things it establishes that the reading side could not.
+
+**The settings serialiser puts the fixture's 3496 bytes back, all of them.**
+`GAME_STATE` §8a claims every non-zero byte of the header is a named field;
+that claim survives every reader in this tree whether it is true or not,
+because a reader ignores what it does not know about. Writing it back is where
+an unnamed field would show, and **0 of 3496** differ.
+
+**And the position quantisation is not `nearest_int`.** `State_Save` calls
+`_ftol`, which truncates *towards zero*, and its one correction is
+`lea edx, [ecx+1]` — it tries `v+1` and never `v-1`. For a positive coordinate
+the two candidates straddle the value and the comparison picks the nearer; for
+a **negative** one they are both on the zero side, so the result can only be
+rounded towards zero. Swept over every raw from −30000 to 30000 through the
+engine's own inverse: **15113 of the 30000 negatives do not return and 0 of
+the positives fail, every one of the 15113 landing one unit towards zero.**
+One unit is 0.154 world units. `docs/GAME_STATE.md` §5 said `nearest_int` and
+has been corrected.
+
+The mutation that shows the check is the point of it: replacing the two arms
+with `lround` — the obvious, tidier, wrong thing — leaves the twelve real
+placement fields of `traces/games-resto.bin` reading 4/4/4 and every other row
+of the check unchanged. Only the sweep moves. A dozen real values were not
+enough to test this.
+
 **`verify.py: engine scene loop`** is the two halves of a frame joined. Until
 this, the object interpreter ran standalone — `Program` could be ticked, but
 nothing in the engine ever *started* one, because `scx.play*` was recorded and

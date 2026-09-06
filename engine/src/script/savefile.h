@@ -65,6 +65,7 @@
 #include <optional>
 #include <span>
 #include <string>
+#include <vector>
 
 namespace omk {
 
@@ -142,6 +143,86 @@ struct SaveSlot {
 // slot 0's first 8232 bytes, so a reader that insisted on the whole 8402344
 // could not read the only real save there is.
 std::optional<SaveSlot> readSaveSlot(std::span<const std::byte> d, int slot);
+
+// ------------------------------------------------------------- WRITING one
+//
+// `Game_WriteSave` (0x00408EF0) is eleven lines and they fix the whole shape:
+// it loads the WHOLE file, copies the 3496-byte settings global over its head,
+// then writes the slot's name, day and time, hands `State_Save` the slot's DB
+// and copies 24576 bytes of thumbnail after it, and writes all 8402344 bytes
+// back.  So a save is a read-modify-write of one file, never an append, and a
+// slot's four parts are written by four separate copies at four offsets that
+// tile it exactly.
+//
+// **Where it lives is this port's one deviation, and it is deliberate.**  The
+// engine writes `IAM\GAMES` inside the game directory; `omk::safeOutputPath`
+// refuses that, because `gamedata/` is INPUT and a shipped file was destroyed
+// once already (CLAUDE.md 1).  So the port keeps its saves outside the data
+// tree and falls back to the shipped (empty) `IAM/GAMES` for READING, so a
+// fresh run still sees what the game would.  Everything about the file's
+// CONTENT is the engine's; only its location is not.
+// `todo/save-support.md`.
+
+// The 3496 bytes `sub_41F4C0` writes: a zeroed block with the magic and every
+// named field stamped into it.  That is the defaults function's own shape - it
+// `memset`s first - so anything not named here goes out as zero.
+std::vector<std::byte> settingsBytes(const SettingsBlock& s);
+
+// A save file the engine would accept and every slot of which is empty:
+// 8402344 bytes, the settings at the head, zeroes behind it.  `sub_4092A0`'s
+// create arm - it writes the 3496 and extends the file by 0x802800.
+std::vector<std::byte> blankSaveFile(const SettingsBlock& s);
+
+// `Game_WriteSave`'s first copy, on its own: the settings over the file's
+// head, leaving the 256 slots alone.  This is `sub_4092A0`'s other arm, the
+// settings-only save, and it is what "the options are saved with the game"
+// means - there is one copy of them for all 256 slots.
+bool putSettings(std::vector<std::byte>& file, const SettingsBlock& s);
+
+// The rest of `Game_WriteSave`: the name (32 bytes, truncated - the field is
+// 32 and the interface's own name field caps at 20), the day, the time, the
+// 8192-byte DB, and the thumbnail.  `thumb` may be empty, in which case the
+// slot's 24576 bytes are zeroed rather than left stale, so a slot never shows
+// the previous game's picture.
+bool writeSaveSlot(std::vector<std::byte>& file, int slot, const SaveSlot& s,
+                   std::span<const std::byte> thumb = {});
+
+// `SaveDir_ClearSlot` (0x004090A0), and it really is one byte: the first byte
+// of the slot's NAME.  An empty slot is an empty name and nothing else - the
+// day, the DB and the picture stay on disk until something overwrites them.
+bool clearSaveSlot(std::vector<std::byte>& file, int slot);
+
+// `SaveDir_Delete` (0x00409100): every slot whose 32-byte name matches, each
+// emptied the same one-byte way.  Returns how many were cleared.
+int deleteProfile(std::vector<std::byte>& file, const std::string& name);
+
+// ------------------------------------------------------------ the THUMBNAIL
+//
+// `sub_4331B0` blits the back buffer into a 128 x 96 rect, copies 0x6000
+// bytes out of the locked surface and then repacks every one of the 12288
+// pixels in place.  The destination layout is FIXED whatever the device's is,
+// because the three shifts are computed from the device's own channel widths:
+// blue lands in bits 0..4 (`& 0x1F`), green in 5..9 (`& 0x3E0`, reached by
+// `<< (10 - greenBits)`) and red in 10..14 (`<< (15 - redBits)`).  So a
+// thumbnail on disk is X1 R5 G5 B5, little-endian, 128 x 96 - and 128 * 96 is
+// exactly the 12288 iterations of the loop and 128 * 96 * 2 exactly the 24576
+// bytes of the slot's tail.
+inline constexpr int kThumbW = 128, kThumbH = 96;
+
+// The port's framebuffer is RGB565 (`docs/PORTING.md` A2), so this is the one
+// conversion the engine's loop performs for a 565 device: green loses its low
+// bit, the other two are already 5.
+std::vector<std::byte> thumbFromRgb565(std::span<const std::uint16_t> px,
+                                       int w, int h);
+
+// --------------------------------------------------------------- the STORE
+//
+// Reading prefers the writable file and falls back to the data tree's, so a
+// tree that has never been saved into still shows the shipped directory.
+// Writing goes through `safeOutputPath` and creates the parent directory.
+std::vector<std::byte> readSaveFile(const std::string& writablePath,
+                                    const std::string& shippedPath);
+bool writeSaveFile(const std::string& path, std::span<const std::byte> file);
 
 // ------------------------------------------------------------------ the clock
 inline constexpr int kDaysPerMonth = 41, kMonthsPerYear = 13, kYearZero = 7216;

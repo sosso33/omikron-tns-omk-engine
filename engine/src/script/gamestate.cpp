@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "script/gamestate.h"
 
+#include <cmath>
+
 #include <algorithm>
 #include <cstring>
 #include <fstream>
@@ -93,6 +95,47 @@ std::int16_t GameState::sceneOfArea(int area) const {
 
 std::int16_t GameState::currentArea() const  { return static_cast<std::int16_t>(u16(1414)); }
 std::int16_t GameState::currentScene() const { return static_cast<std::int16_t>(u16(1416)); }
+
+GameState::Placement GameState::placement() const {
+    Placement p;
+    for (int k = 0; k < 3; ++k)
+        p.raw[k] = static_cast<std::int32_t>(u32(44 + 4 * static_cast<std::size_t>(k)));
+    p.facing = static_cast<std::int32_t>(u32(56));
+    return p;
+}
+
+void GameState::placementWorld(float pos[3], float& facingDeg) const {
+    const Placement p = placement();
+    for (int k = 0; k < 3; ++k)
+        pos[k] = static_cast<float>(p.raw[k] * 100.0 * 0.00390625 *
+                                    0.3937007874015748 - 1.0);
+    facingDeg = static_cast<float>(p.facing * 0.087890625);
+}
+
+void GameState::setPlacement(const float pos[3], float facingDeg) {
+    // `State_Save`'s own rounding, arm for arm: a truncation towards zero,
+    // then the one comparison that pulls it up when the next integer is the
+    // closer of the two.  Written this way rather than as a `lround` because
+    // the two differ - on a negative coordinate the truncation goes the other
+    // way, and this is the side a check can be run against.
+    for (int k = 0; k < 3; ++k) {
+        const double w = pos[k];
+        long long v = static_cast<long long>(w * 0.0254 * 256.0);
+        if (std::fabs(w - static_cast<double>(v + 1) * 0.15378937) <
+            std::fabs(w - static_cast<double>(v) * 0.15378937))
+            ++v;
+        put32(44 + 4 * static_cast<std::size_t>(k), static_cast<std::int32_t>(v));
+    }
+    // 4096 per turn, truncated and MASKED - which is how a negative angle
+    // comes out near 4096 rather than negative (CLAUDE.md 1, "an angle that
+    // wraps").
+    const auto f = static_cast<long long>(static_cast<double>(facingDeg) *
+                                          11.37777777777778) & 0xFFF;
+    put32(56, static_cast<std::int32_t>(f));
+}
+
+void GameState::setCurrentArea(std::int16_t a)  { put16(1414, a); }
+void GameState::setCurrentScene(std::int16_t s) { put16(1416, s); }
 
 void GameState::setSceneOfArea(int area, std::int16_t scene) {
     if (area < 0 || area >= 259) return;

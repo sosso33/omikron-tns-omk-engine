@@ -347,14 +347,31 @@ written out.
 The two conversions, quoted exactly because a replica has to reproduce them:
 
 ```
-save   raw = nearest_int(world * 0.0254 * 256)         flt_4BC050, flt_4BC054
-                comparing against raw * 0.15378937     flt_4BC058
+save   raw = trunc(world * 0.0254 * 256)               flt_4BC050, flt_4BC054
+                then +1 if that is closer, measured
+                through raw * 0.15378937               flt_4BC058
 load   world = raw * 100 * 0.00390625 * 0.3937007874015748 - 1.0
                                         dbl_4BC030  dbl_4BC038  dbl_4BC040
 
 save   raw = int(degrees * 11.37777777777778) & 0xFFF     ( = 4096 / 360 )
 load   degrees = raw * 0.087890625                        ( = 360 / 4096 )
 ```
+
+**The save side is not `nearest_int`, and this paragraph said it was until
+2026-09-06.** The assembly is `call _ftol` — MSVC's helper, which truncates
+**towards zero** — followed by `lea edx, [ecx+1]` and one `fcompp`: the only
+alternative it ever considers is `v+1`, never `v-1`. For a positive coordinate
+those two straddle the true value and the comparison does pick the nearer, so
+the paraphrase is right there. For a **negative** one both candidates lie on
+the zero side of it, and the result can only ever be rounded *towards zero*.
+
+Measured over every raw from −30000 to 30000 pushed back through the engine's
+own inverse: **15113 of the 30000 negatives do not come back, 0 of the
+positives do, and all 15113 land exactly one unit towards zero.** One unit is
+0.154 world units, so the bias is small — and an order of magnitude smaller
+than the whole unit the load side subtracts below. It is recorded because a
+replica that writes the obvious `lround` here passes every other check in this
+tree and is wrong on half the map; `verify.py: engine: save write` sweeps it.
 
 The scale factors are inverses — `0.15378937 == 100/(256*2.54)` — but **the
 load subtracts a whole world unit that the save never added**, so a position
@@ -640,6 +657,61 @@ without the thumbnail — from a save made in Kay'l's apartment. Read through
   choice between two known paths.
 
 `verify.py: save file` pins all of it against the fixture.
+
+### 8b. Writing one
+
+`Game_WriteSave` (0x00408EF0) is eleven lines, and they fix the whole shape:
+
+```
+v1 = File_LoadWhole("IAM\GAMES")          the WHOLE file, into memory
+memcpy(v1, byte_90E180, 0xDA8)            the 3496-byte settings over its head
+v2 = v1 + 32808*slot
+memcpy(v2 + 3496, g_SaveProfileName, 32)  the slot's name
+u32(v2, 882) = Clock_GetDay()             = v2 + 3528 = 3496 + 32
+u32(v2, 883) = Clock_GetTimeOfDay()       = 3496 + 36
+State_Save(v2 + 3536)                     = 3496 + 40, the 8192-byte DB
+memcpy(v2 + 11728, sub_433090(), 0x6000)  = 3496 + 8232, the thumbnail
+write(v1, 0x8035A8)                       8402344 - the whole file back
+```
+
+So a save is a **read-modify-write of one file**, never an append; the four
+copies land at four offsets that tile the 32808 exactly; and every slot save
+also writes the settings, which is §8a's "saving a game saves your options"
+seen from the writing end.
+
+Three functions around it complete the file's life, and each is smaller than
+it sounds:
+
+* **`SaveDir_ClearSlot` (0x004090A0)** writes exactly **one zero byte**, at
+  `32808*slot + 3496` — the first byte of the name. An empty slot is an empty
+  *name* and nothing else: the day, the DB and the picture stay on disk until
+  something overwrites them.
+* **`SaveDir_Delete` (0x00409100)** does that to every slot whose 32-byte name
+  matches a profile.
+* **`sub_4092A0`** is the settings-only save *and* the file's creator: when
+  `IAM\GAMES` does not open it writes the 3496 bytes and extends the file by
+  `0x802800` = 256 × 32808.
+
+**The thumbnail's format is derived rather than assumed.** `sub_4331B0` blits
+the back buffer into a rect `(0,0)-(127,95)`, copies `0x6000` bytes out of the
+locked surface and repacks them in place, `12288` iterations — which is
+128 × 96 exactly, as 128 × 96 × 2 is the 24576 the slot ends with. The three
+shifts are computed from the **device's** own channel widths (`10 - greenBits`,
+`15 - redBits`) into fixed destination masks `0x1F`, `0x3E0`, `0x7F00`, so
+whatever the display format is, what reaches the disk is **X1 R5 G5 B5**.
+
+**Loading is not quite the mirror.** `Game_LoadSave` (0x00408FC0) reads the
+3496-byte header and *discards* it — the settings come back through
+`SaveDir_Load`, separately and gated on the magic plus the version dword at
++8 — then takes the slot's name, day, time and DB and hands the DB to
+`State_Apply`.
+
+The port implements all of this in `engine/src/script/savefile.h`, with one
+deliberate deviation: it does **not** write `IAM\GAMES` inside the game
+directory, because `gamedata/` is input and `omk::safeOutputPath` refuses any
+path under the shipped tree (CLAUDE.md §1). Saves go to a writable root
+outside it and reading falls back to the shipped file, so a tree never saved
+into still shows what the game would show. `verify.py: engine: save write`.
 
 ### What a save does *not* carry
 

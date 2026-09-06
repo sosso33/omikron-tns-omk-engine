@@ -10442,6 +10442,139 @@ def c_engine_save():
            "pointers State_Apply plants and State_Save leaves"
 
 
+def c_engine_save_write():
+    r"""WRITING a save: `Game_WriteSave` and the three functions around it.
+
+    The port could read a slot and not write one, which is the half that
+    matters for playing.  `Game_WriteSave` (0x00408EF0) is a read-modify-write
+    of one 8402344-byte file - the 3496-byte settings over its head, then the
+    slot's name, day, time, DB and thumbnail at four offsets that tile the
+    32808 exactly - and `SaveDir_ClearSlot`, `SaveDir_Delete` and
+    `sub_4092A0`'s create arm are the rest of the file's life.
+
+    Four of these can fail, and each fails for a different reason:
+
+    * **A created file** is 8402344 bytes, opens `OMK_SAVE`, and every one of
+      its 256 slots reads as empty - which is `sub_4092A0`'s create arm, the
+      3496 bytes then an extension of 0x802800.
+    * **The settings serialiser reproduces the fixture's own 3496 bytes, all
+      of them.**  This is `GAME_STATE` 8a's claim - that every non-zero byte
+      of the header is a named field - stated as a number a byte could break:
+      an unnamed field survives every reader in this tree and shows up ONLY
+      here, as a byte the writer cannot put back.  It is 0 of 3496.
+    * **A slot written from a real save's own parts is byte-identical to it**
+      over the 8232 bytes the truncated fixture holds, and reads back as the
+      same name, day, time, area and scene.  A reader alone cannot show this;
+      it is the first round trip through the writing side.
+    * **`State_Save`'s position quantisation**, run against numbers the engine
+      itself wrote.  Take a stored raw back to the world value the engine held
+      (through the 0.15378937 its own rounding test uses), re-quantise, and
+      the same integer has to come out - 4 fields, three slots of
+      `traces/games-resto.bin`, 4/4/4.
+
+    And the asymmetry is measured rather than described: `State_Apply`
+    subtracts a whole world unit that `State_Save` never added, so a save and
+    a reload move the player by exactly **-1.00** per axis (GAME_STATE 5).
+    Reproducing that is what makes this a port rather than a correction.  It
+    is measured from a position that lands exactly on a stored integer, so the
+    number is the asymmetry alone and not half a raw unit of rounding.
+
+    **The twelve real fields barely test the rounding**, which the mutation
+    showed: removing `State_Save`'s correction arm entirely moves one of them.
+    So the quantisation is also swept - every raw from -30000 to 30000 through
+    the engine's own inverse and back, 60001 of them and half negative.
+
+    **And that sweep corrected the docs.**  `GAME_STATE` 5 wrote the save side
+    as `nearest_int(world * 0.0254 * 256)`, which is what the arithmetic looks
+    like; it is not what the function does.  `_ftol` truncates TOWARDS ZERO
+    and the only correction is `lea edx, [ecx+1]` - the arm tries `v+1` and
+    never `v-1` - so for a NEGATIVE coordinate both candidates lie on the
+    zero side of the true value and the result can only ever be rounded
+    towards zero.  The sweep measures exactly that: **15113 of the 30000
+    negative raws fail to return and 0 of the positives do, and every one of
+    the 15113 lands one unit towards zero.**  One raw unit is 0.154 world
+    units, so this is a real but small bias, and it is dwarfed by the -1.00
+    the load side subtracts.  The port reproduces the arm rather than the
+    paraphrase; writing `lround` here would pass every other check in this
+    tree and be wrong on half the map.
+
+    The thumbnail is the slot's last 24576 bytes and its layout is derived,
+    not assumed: `sub_4331B0` blits a 128 x 96 rect, then repacks all
+    **12288** pixels with shifts computed from the DEVICE's channel widths
+    into a fixed target - blue at `& 0x1F`, green into `0x3E0`, red into
+    `0x7F00`.  So it is X1 R5 G5 B5 whatever the device is, and 128 * 96 * 2
+    is 24576 exactly.  RGB565's F800 / 07E0 / 001F / FFFF pack to
+    7C00 / 03E0 / 001F / 7FFF.
+
+    Finally the whole loop closes: a file this writer produced goes back
+    through `SaveDir_Build`'s own walk and the interface reads two named slots
+    and one distinct profile out of it.
+    """
+    import subprocess, tempfile, shutil
+    eng = os.path.join(ROOT, "engine")
+    fx  = os.path.join(ROOT, "traces/save-appart.bin")
+    rs  = os.path.join(ROOT, "traces/games-resto.bin")
+    tab = os.path.join(ROOT, "tables")
+    if not (os.path.isdir(eng) and os.path.exists(fx) and os.path.exists(rs)):
+        return ("skipped",), ("skipped",), "engine/ or a save fixture absent"
+    b = subprocess.run(["make", "-s"], cwd=eng, capture_output=True, text=True)
+    binp = os.path.join(eng, "build", "write_save")
+    if b.returncode != 0 or not os.path.exists(binp):
+        return ("build failed",), ("built",), "engine/ must build"
+    tmp = tempfile.mkdtemp()
+    out = os.path.join(tmp, "w.bin")
+    try:
+        subprocess.run([binp, fx, rs, out, tab], capture_output=True)
+        raw = open(out, "rb").read()
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+    o = 0
+    def take(n):
+        nonlocal o
+        v = struct.unpack_from("<%di" % n, raw, o); o += 4 * n; return v
+    def takes():
+        nonlocal o
+        (n,) = take(1); v = raw[o:o + n].decode("cp1252"); o += n; return v
+    created = take(3)                    # size, magic, slots in use
+    header  = take(2)                    # differing bytes, first
+    slot    = take(2)                    # differing bytes, first
+    name    = takes()
+    ident   = take(4)                    # day, time, area, scene
+    quant   = take(3)                    # fields requantising, per slot
+    stored  = take(4)                    # slot 0's three raws and its facing
+    (drift,) = take(1)                   # world units * 100
+    sweep   = take(5)                    # raws swept, negatives, failures by sign,
+                                         # and how many land towards zero
+    life    = take(2)                    # bytes a clear changes, slots deleted
+    dirn    = take(2)                    # named slots, distinct profiles
+    dirfirst = takes()
+    thumb   = take(5)                    # size, then four packed words
+    return (created, header, slot, name, ident, quant, stored, drift, sweep,
+            life, dirn, dirfirst, thumb), \
+           ((8402344, 1, 0), (0, -1), (0, -1), "hereIsTheProfileName",
+            (52, 2566060, 237, 57), (4, 4, 4), (23727, 6757, -7825, 112),
+            -100, (60001, 30000, 15113, 0, 15113), (1, 3), (2, 1),
+            "hereIsTheProfileName",
+            (24576, 0x7C00, 0x03E0, 0x001F, 0x7FFF)), \
+           "a created file's size, its magic and how many of its 256 slots " \
+           "are in use; how many of the 3496 header bytes the settings " \
+           "serialiser cannot put back (and the first); the same for a slot " \
+           "written from the fixture's own parts, over the 8232 it holds; " \
+           "the name, day, time, area and scene it reads back as; how many " \
+           "of the four placement fields requantise to the same integer in " \
+           "each of games-resto's three slots, and slot 0's stored raws; the " \
+           "world units x100 a save and a reload move the player by; the " \
+           "raws swept through the engine's own inverse and back, how many " \
+           "of them were negative, how many negatives and how many " \
+           "positives fail to return, and how many of the failures land one " \
+           "unit TOWARDS ZERO; the " \
+           "bytes SaveDir_ClearSlot changes and the slots SaveDir_Delete " \
+           "empties; the named slots and distinct profiles SaveDir_Build " \
+           "finds in a file this writer produced, and the first name; then " \
+           "the thumbnail's size and RGB565 F800/07E0/001F/FFFF packed into " \
+           "its X1R5G5B5"
+
+
 def c_boot_sequence():
     r"""BOOT: the launch chain, the two movie skips, and the frame delta.
 
@@ -21682,7 +21815,7 @@ def c_licence_headers():
                    if TAG in open(p, encoding="utf-8",
                                   errors="replace").read(600)]
     return (authored, sorted(missing), len(vendored), mislabelled), \
-           (359, [], 1, []), \
+           (360, [], 1, []), \
            "authored source files under tools/, engine/src, engine/tools, " \
            "engine/backends and scripts/; those MISSING the SPDX tag; " \
            "vendored files in engine/third_party; and vendored files wrongly " \
@@ -23226,6 +23359,7 @@ SLOW = [
     ("engine: fades",      c_engine_fades,      "engine/README"),
     ("engine: set emitters", c_engine_set_emitters, "engine/README"),
     ("engine: save+clock", c_engine_save,       "engine/README"),
+    ("engine: save write", c_engine_save_write, "engine/README"),
     ("engine: scene loop", c_engine_scene_loop, "engine/README"),
     ("engine: golden traces", c_engine_golden_traces, "engine/README"),
     ("engine: render",     c_engine_render,     "engine/README"),
