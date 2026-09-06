@@ -4759,7 +4759,28 @@ int main(int argc, char** argv) {
                     // second press then never works at all, which is worse
                     // than the repeat. Measured both ways; see
                     // `todo/next-tasks.md` 1.
-                    (void)did;
+                    // `sub_465D30`'s TAIL, and it is what makes a held
+                    // action button behave: SetPersoBankGroup switches the
+                    // actor into the take bank, so the next tick's same held
+                    // bit means TAKE rather than REACH.
+                    //
+                    //     MDACTION -> MDGETOBJ -> [H_WAITOB] -> MDPUTSNK -> MDSTAND
+                    //
+                    // Measured at area 237's zone 4051 with Enter held: 40
+                    // frames reaches and waits, 55 completes the take, 70+
+                    // completes it and begins a new cycle - which is what
+                    // holding the button SHOULD do. Press-release-press works
+                    // the same. Without this the port fired MDACTION every
+                    // frame: 20 activations for a 20-frame hold.
+                    //
+                    // The LOW arm is still unported - `sub_465D30` picks
+                    // `Cef_FindGroupById(bank, 143)` when the object is within
+                    // 27.472441 units (0.6978 m) of the actor's height, and
+                    // that needs the object's position, which this press does
+                    // not carry. A low object therefore plays the standing
+                    // take. `todo/next-tasks.md` 1.
+                    if (did && player && !player->enterActionBank())
+                        player->resetInputLatch();
                     if (did)
                         std::printf("action: zone %d activated (%d slot%s armed) at %.0f %.0f %.0f"
                                     " - hand slot %d, object %d\n",

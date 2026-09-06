@@ -45,155 +45,56 @@ items are research and can be done any time they are wanted.
 
 ## The items
 
-### 1. Enter held for ~0.5 s counts as several presses — DIAGNOSED 2026-09-06
+### 1. Enter held for ~0.5 s counts as several presses — **FIXED 2026-09-06**
 
-**Reproduced, and it is exactly linear in hold time** (`--hold`, headless):
+Was: one action per frame held (15 frames = 15 presses). Now one per
+interaction, however long the button is down.
 
-    hold Enter  1 frame  -> 1 action
-    hold Enter 15 frames -> 15 actions      (the reader's 0.5 s)
-    hold Enter 30 frames -> 30 actions
+**It was never an input bug.** The port implements the engine's repeat mask
+faithfully, the dialogue confirm already took edges, and the mask in the world
+is correctly 0 - all three checked and all three innocent. The engine reads
+DirectInput STATE and `sub_4A7A20` is a pure bit remap, so the ORIGINAL also
+queues `MDACTION` every frame while Enter is held.
 
-**It is NOT the repeat mask, which was this file's first guess.** The port
-already implements the engine's rule faithfully - `edges = held & (held ^
-(repeatMask & last))`, `0x203F` under a screen and `0` in the world - and the
-dialogue confirm already takes `edgeBits`. That guess was wrong.
+**The guard is `sub_465D30`'s tail**, `tab_special_move[3]` = 0x0046AEC0:
 
-**Where it actually happens.** The `.CTL` channel never changes state: it sits
-in `0 'H_STAND'` with the idle clip advancing while the *per-tick* entry path
-(`channel.cpp`, flags `0x10 | 0x200000`) emits the `MDACTION` special move
-every frame:
+    SetPersoBankGroup(channel, Cef_FindGroupById(bank, dy <= 27.472441 ? 143 : 41))
 
-    per-tick move 'MDACTION'  from 0 to 24  flags 0xC5F00013
-                              inputCode 0x10  word 0x10  lastInput 0x0
+It switches the actor into the take bank, where the same held bit means TAKE
+rather than REACH — so the machine walks the interaction instead of repeating
+the first step:
 
-The channel does carry the engine's held-button guard - `if (word !=
-lastInput_) commit`, transcribed from `Cef_TickChannel` 0x004A853A - but this
-entry's flags include **`0x10000000`, whose only job is `lastInput_ = 0`**, so
-the guard is cleared every tick and the same held word commits again. The
-port's comment claiming "entering a state is once per press by construction"
-is false here: no state is ever entered.
+    MDACTION -> MDGETOBJ -> [H_WAITOB] -> MDPUTSNK -> MDSTAND -> (a new cycle)
 
-**And the engine does the same thing.** Traced rather than assumed:
-`Cef_TickChannel` reads the raw input with `sub_43E080` -> `sub_43D920`, which
-is a DirectInput STATE read (bit `0x80` = key down, so held), and
-`sub_4A7A20(channel, raw, &word)` is a pure bit remapper onto the 14 slots
-with a left/right mirror under channel flag 8 - **no edge logic anywhere**.
-The port's per-tick loop even passes the same `Cef_FindTransition(.., 2, 784,
-1)` filters. So the original ALSO queues `MDACTION` every frame while Enter is
-held.
+Measured at area 237's zone 4051 with Enter held: 40 frames reaches and waits,
+55 completes the take, 70+ completes it and begins a new cycle - which is what
+holding SHOULD do. Press-release-press gives two activations. A press with
+nothing in reach still retries every frame, which is also the engine (it never
+reaches `sub_465D30`, so nothing switches).
 
-**So the guard is in the HANDLER, and the port does not run it.**
-`tab_special_move[3]` = **0x0046AEC0** (no `proc` label - read it with
-`asmfn.py`). It switches on `[esi+194h]`, the actor's **`+404` ACTOR_STATE**,
-over 11 cases with states 5-10 and 12 falling to a default arm that:
+Also ported: the handler's ACTOR_STATE switch, `byte_46B2BC[state-4] =
+{0,4,4,4,4,4,4,1,4,2,3}` — states 4/11, 13 and 14 take other arms and are
+refused with a log line — and the arm's own `ACTOR_STATE == 3` refusal.
 
-* clears `dword_53AE1C`, then calls `sub_41C810(actor, &obj, &dist,
-  dword_53B078)` - the nearest-interactable search;
-* returns immediately if it found nothing (`obj == -1`);
-* returns if **ACTOR_STATE == 3**;
-* compares the returned distance against `flt_4BC918` and returns if it fails;
-* branches on the actor's `+164`, and only then reaches
-  `sub_465D30(actor, obj, 0)` - the function `play.cpp` already names.
+**Still unported and labelled in the code**: the LOW arm. `sub_465D30` picks
+group 143 when the object is within 27.472441 units (0.6978 m) of the actor's
+height, and that needs the object's position which the press does not carry, so
+a low object plays the standing take. And `sub_465D30`'s ADJUST - the walk to
+0.600 m / 0.400 m with its 0.25 m settle and 1.25 m give-up - is not ported
+either; the port acts where the player stands.
 
-`omk-play` today fires `session.pressAction()` for **every** `MDACTION` name it
-sees, with none of that gating. **The fix is to transcribe 0x0046AEC0**, not to
-add an edge filter or a timer - both of which would invent a rule the engine
-has not got, and the second of which would have papered over this.
+**Two false conclusions were published on the way, both from a broken
+measurement**, and the tooling lesson is worth more than the fix. `--hold`
+takes COMMA-separated runs and uses `+` only to join simultaneous keys within
+one run: `k28*5+0*10+k28*60` parses as Enter for **five** frames. Every
+"second press" test silently pressed nothing, which produced (a) "the bank
+switch parks the player in H_WAITOB for ever" and (b) "the actor leaves
+H_WAITOB only when the object is delivered". Both were wrong; the take
+completes on the second press exactly as the `.CTL` says.
 
-**What was DONE 2026-09-06**: the two gates that transcribe exactly — the
-ACTOR_STATE switch (`byte_46B2BC[state-4] = {0,4,4,4,4,4,4,1,4,2,3}`, so states
-4/11, 13 and 14 take other arms and are now refused with a log line) and the
-arm's own `ACTOR_STATE == 3` refusal. Those are safe and correct.
-
-**What is NOT done, and the attempt is recorded because it half-worked.** The
-repeat guard is `sub_465D30`'s tail:
-
-    SetPersoBankGroup(channel,
-        Cef_FindGroupById(bank, dy <= 27.472441 ? 143 : 41))
-
-— 27.472441 units being 0.6978 m, the low/standing split. It is that STATE
-CHANGE that stops the `H_STAND -> 24` per-tick entry matching, **not** the
-memset beside it: with the memset alone a 20-frame hold still fired 20 times.
-
-Doing only the switch takes a 20-frame hold from 20 activations to **1** — and
-**parks the player in `.CTL` state 54 `H_WAITOB` for ever**, because the engine
-leaves that bank again when the action completes and this port has no such
-path. A second press then never works, which is worse than the repeat. So it
-was measured, backed out, and written down here.
-
-`CefChannel::resetInputLatch()` was added and kept: it is the memset half
-transcribed verbatim and will be wanted when the rest lands.
-
-**So the remaining work is `sub_465D30` itself** (190 lines, `21_d3d.c`) — and
-reading further shows it is the WORLD TAKE slice, not a bug fix. Decomposed
-2026-09-06:
-
-1. **`sub_465D30`'s adjust**, the first two thirds: it takes the actor→object
-   vector, the actor's facing (`-Z` through `node+156`), the signed angle
-   between them, and walks the actor with `Actor_Move` to stand
-   **23.622047 units (0.600 m)** from a low object or **15.748032 (0.400 m)**
-   from a standing one, with a 9.8425198 (0.25 m) settle tolerance and a
-   49.21259842519685 (1.25 m) give-up. All round metres again.
-2. **the bank switch**, its tail — `Cef_FindGroupById(bank, dy <= 27.472441
-   ? 143 : 41)`. This is the repeat guard and it is one line.
-3. **THE WAY BACK, which is the part that makes 1 and 2 safe**, and the reason
-   the switch alone strands the player. Group id 41's default entry lands in
-   `.CTL` state **54 `H_WAITOB`** (H1Avnt, group index 4, clip 14) — *wait for
-   object*. Its only two exits are states **55 and 56**, flags `0x80000013`,
-   **no clip**, both carrying the move bit `0x10`: they are entries waiting on
-   the take pipeline's own special move. So the actor leaves `H_WAITOB` when
-   the OBJECT is delivered (`MDGETOBJ` and friends), and nothing else does it.
-   `Actor_TickScxDriven`'s `actor+1308 = 1` -> `Cef_DefaultGroup` restore is a
-   different path, for actors a script was driving.
-
-**CORRECTION, same day, and it is good news.** "The actor leaves `H_WAITOB`
-when the object is delivered" was wrong. `take_probe` reads the graph and
-`H_WAITOB` (state 54, group 4) exits on **player input**:
-
-| state | group | input | move |
-|---|---|---|---|
-| 24 | 0 | `0x10` Enter | `MDACTION` |
-| 52 | 3 | — | `MDGETOBJ` (automatic) |
-| **54 `H_WAITOB`** | 4 | — | the wait pose, clip 14 |
-| **55** | 4 | **`0x10` Enter** | `MDPUTSNK` — take and bank it |
-| **56** | 4 | **`0x20` Space** | `MDNOTAKE` — decline |
-
-So the original's interaction is: press Enter at an object, he reaches for it
-and waits; press Enter again to take it, or Space to decline. Two presses, and
-holding the button does not repeat because after the first the machine is in
-group 4 where the same bit means *take*, not *reach*.
-
-**And the port already gets most of the way.** With the bank switch applied,
-`MDACTION` fires ONCE, `MDGETOBJ` follows automatically, and the actor reaches
-`H_WAITOB` correctly. `findTransition(54, 0x10)` **finds state 55**. The chain
-is right.
-
-**The blocker is the FRONTEND, not the take.** In `H_WAITOB` the channel is
-handed `0x40000000` (the idle word) every tick even with Enter held for 60
-frames, and `play.cpp`'s own `bits` is `0000` at the same moment. The suspect
-is the repeat-mask gating:
-
-    if (walk) in.setRepeatMask(kUiRepeatMask);
-    else if (adventure) in.setRepeatMask(0);
-
-With neither true - which is what a running zone script looks like - the mask
-KEEPS ITS LAST VALUE, and after the boot screens that is `0x203F`. The world
-then gets EDGES where it should get held bits. That is a one-line-shaped bug
-and it is the next thing to test.
-
-So the order is now: **fix the input gating first**, then the bank switch, and
-the take completes itself. Doing the bank switch alone is still measurably
-worse than the bug (proven above) until the input reaches `H_WAITOB`.
-
-**Also reported (2026-09-06): the same repeat happens in SHOP SELLER
-dialogues.** Not yet reproduced. Worth checking whether that path is the
-dialogue confirm (which already takes `edgeBits`) or a screen whose mask is
-left at the world's 0 - the same gating suspect from the other side.
-
-Size **M -> M/L**, and it is the same work as the "world TAKE" the port's own
-comments already reference. The Enter-repeat symptom is a consequence of the
-take being unported, not an input bug - which is worth knowing before anyone
-spends a day on input code.
+**Also reported (2026-09-06): the same repeat in SHOP SELLER dialogues.** Not
+reproduced yet, and now worth re-testing against this fix - if that path also
+runs through `MDACTION` it may already be gone.
 
 ### 2. Black stripes entering/leaving a building — S, strong evidence
 
