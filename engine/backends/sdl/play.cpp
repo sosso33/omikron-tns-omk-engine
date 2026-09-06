@@ -5432,6 +5432,12 @@ int main(int argc, char** argv) {
                 omk::saveDirectory(omk::readSaveFile(savesPath, fr + "/IAM/GAMES").empty()
                                        ? fr + "/IAM/GAMES" : savesPath, w));
             fresh->attachLoadPanel(&loadPanelState);
+            // `Ui_BuildLoadPanel` runs in the OPEN callback and lays the
+            // shared panel out differently for each of its two screens - 29
+            // puts `Charger une partie` in the top slot and hides `Nouvelle
+            // partie`, 30 does the opposite. Re-applied per open for that
+            // reason.
+            omk::applyLoadPanelLayout(w, want);
             if (!fresh->open(want)) {
                 // A script's screen must be in the tree - the boot depends on
                 // it. The PLAYER's need not be fatal: `sub_0046ADF0`'s own

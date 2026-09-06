@@ -1036,6 +1036,27 @@ bool UiWalk::confirm() {
         // one-shot, with a 15-frame fade in from white (GAME_STATE 8).  So
         // the walk's job is to record the request and close; the caller
         // consumes it.
+        // `Sauvegarde` on screen 30 (0x004AE060). It installs the shared slot
+        // panel - except when the player has NO RINGS, where it installs
+        // 0x004E2FB0 instead, which is the screen's own
+        // `Je n'ai pas assez d'Anneaux pour faire ca !`:
+        //
+        //     if (screen[+78] && sub_42B1C0(5) == 0)
+        //         sub_42A370(screen, off_4E2FB0);   // the refusal
+        //     else
+        //         sub_42A370(screen, off_4CF2E8);   // the slots
+        //
+        // `sub_42B1C0(5)` is the anneaux - property 5, the same one the save
+        // point's script tests before it opens this screen at all. So a save
+        // is refused twice over, once in the world and once here.
+        if (it->callback == kCbSaveSauvegarde) {
+            if (rings_ == 0) {
+                log_.push_back("sauvegarde: no anneaux -> the refusal panel");
+                return installPanel(kPanelSaveNoRings);
+            }
+            if (load_) load_->mode = 1;        // `word_4CEA9A = 1`, saving
+            return installPanel(kPanelLoadSlots);
+        }
         if (it->callback == kCbLoadCharger) {
             if (!load_) { approx_ = true; log_.push_back("charger: no directory"); return false; }
             const int slot = loadPanelCharger(*load_);

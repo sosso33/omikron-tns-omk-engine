@@ -490,6 +490,10 @@ public:
     // load), so a request cannot be served twice.
     int  pendingLoad() const { return pendingLoad_; }
     int  takePendingLoad() { const int s = pendingLoad_; pendingLoad_ = -1; return s; }
+    // `Actor_GetProperty` case 5, the player record's +174 - what a save
+    // costs and what the hints on this screen are bought with.
+    void setRings(int n) { rings_ = n; }
+    int  rings() const { return rings_; }
 
     // The panel the walk is ON, which is not always the screen's own: an item
     // with a `child` descends into one, and that is how the start menu's
@@ -758,6 +762,10 @@ private:
     // REQUEST, not a load - the engine consumes it at the top of the next
     // script pump, not in the callback.
     int         pendingLoad_ = -1;
+    // The player's ANNEAUX, for `Sauvegarde`'s refusal arm. A walk that is
+    // never told keeps 0 and refuses, which is the safe way round: it shows
+    // the game's own message rather than offering a save it cannot pay for.
+    int         rings_ = 0;
     std::vector<std::string> log_;
     // Item address -> the RGB a page builder wrote into `+8/+9/+10`.
 };
@@ -892,6 +900,9 @@ int loadPanelCharger(const LoadPanel& p);
 
 inline constexpr std::uint32_t kHookLoadSlotList = 0x0047AEC0u;
 inline constexpr std::uint32_t kHookLoadPanel    = 0x0047ABA0u;
+inline constexpr std::uint32_t kCbSaveSauvegarde = 0x004AE060u;
+inline constexpr std::uint32_t kPanelLoadSlots   = 0x004CF2E8u;
+inline constexpr std::uint32_t kPanelSaveNoRings = 0x004E2FB0u;
 inline constexpr std::uint32_t kCbLoadCharger    = 0x0047AC90u;
 inline constexpr std::uint32_t kCbLoadDetruire   = 0x0047AE90u;
 inline constexpr std::uint32_t kPanelLoadConfirm = 0x004CF350u;
