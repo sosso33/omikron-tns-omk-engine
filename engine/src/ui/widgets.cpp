@@ -1051,11 +1051,24 @@ bool UiWalk::confirm() {
         // is refused twice over, once in the world and once here.
         if (it->callback == kCbSaveSauvegarde) {
             if (rings_ == 0) {
-                log_.push_back("sauvegarde: no anneaux -> the refusal panel");
-                return installPanel(kPanelSaveNoRings);
+                // `off_4E2FB0` is NOT in the lifted widget table, so this
+                // cannot install it - and saying so matters, because the
+                // first version of this returned `installPanel`'s quiet
+                // false and the button did nothing at all. A reader met that
+                // as "the enter sound plays and nothing happens".
+                log_.push_back("sauvegarde: no anneaux - the refusal panel "
+                               "0x004E2FB0 is not in the table");
+                approx_ = true;
+                return true;                  // the frame is still consumed
             }
             if (load_) load_->mode = 1;        // `word_4CEA9A = 1`, saving
             return installPanel(kPanelLoadSlots);
+        }
+        // `Annuler` on the save screen (0x0042A990): it closes.
+        if (it->callback == kCbSaveAnnuler) {
+            log_.push_back("annuler: the screen closes");
+            panel_ = nullptr;
+            return true;
         }
         if (it->callback == kCbLoadCharger) {
             if (!load_) { approx_ = true; log_.push_back("charger: no directory"); return false; }
@@ -1476,30 +1489,43 @@ void applyLoadPanelLayout(UiWidgets& w, int screen) {
     // setting only the first moves a hidden button on top of a visible one
     // and draws both - which is what the first version of this did, and it
     // showed as two words superimposed on the top row.
-    const auto place = [&](std::uint32_t addr, int y, bool hidden) {
+    const auto place = [&](std::uint32_t addr, int y, bool hidden, int str = -1) {
         UiItem* it = item(addr);
         if (!it) return;
         if (!hidden) it->y = y;      // a hidden button is not moved either
         if (hidden) { it->flags[0] |= 0x20000004u; it->flags[1] |= 1u; }
         else        { it->flags[0] &= ~0x20000004u; it->flags[1] &= ~1u; }
+        // ...AND THE STRING ID, which the builder rewrites into each item's
+        // `+28` because ONE panel serves two screens with two text files:
+        //
+        //     screen 29   word_4CEA14 = 2    Detruire   word_4CEA5C = 9  Annuler
+        //     screen 30   word_4CEA14 = 11   Detruire   word_4CEA5C = 3  Annuler
+        //
+        // Without it the save screen drew `Charger une partie`'s neighbours
+        // out of `IAM\Save`, where 1, 2 and 9 are `Indices`, `Cet indice te
+        // coutera :` and `Indice achete !` - which is what a reader saw.
+        if (str >= 0) it->bindString = str;
     };
     const auto& L = w.loadPanel();
     if (screen == 30) {
-        // the SAVE panel: Nouvelle partie in the top slot, Charger hidden
-        place(L.nouvelle, 266, false);
+        // the SAVE panel: `Sauvegarde` in the top slot, Charger hidden
+        place(L.nouvelle, 266, false, 0);
         place(L.charger,  266, true);
+        place(L.detruire, 326, false, 11);
     } else {
-        place(L.charger,  266, false);
+        place(L.charger,  266, false, 1);
         place(L.nouvelle, 266, true);
+        place(L.detruire, 326, false, 2);
     }
-    place(L.detruire, 326, false);
     // Annuler is the fourth item of the button list, the one whose child is
     // the start menu; the table names the other three.
     for (auto& p : w.panels_)
         if (p.addr == 0x004CF2E8u)
             for (auto& l : p.lists)
-                if (l.addr == 0x004CEA98u && l.items.size() >= 4)
+                if (l.addr == 0x004CEA98u && l.items.size() >= 4) {
                     l.items[3].y = 386;
+                    l.items[3].bindString = screen == 30 ? 3 : 9;   // Annuler
+                }
 }
 
 bool loadPanelInput(LoadPanel& p, std::uint32_t bits) {

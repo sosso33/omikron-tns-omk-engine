@@ -901,6 +901,7 @@ int loadPanelCharger(const LoadPanel& p);
 inline constexpr std::uint32_t kHookLoadSlotList = 0x0047AEC0u;
 inline constexpr std::uint32_t kHookLoadPanel    = 0x0047ABA0u;
 inline constexpr std::uint32_t kCbSaveSauvegarde = 0x004AE060u;
+inline constexpr std::uint32_t kCbSaveAnnuler    = 0x0042A990u;
 inline constexpr std::uint32_t kPanelLoadSlots   = 0x004CF2E8u;
 inline constexpr std::uint32_t kPanelSaveNoRings = 0x004E2FB0u;
 inline constexpr std::uint32_t kCbLoadCharger    = 0x0047AC90u;

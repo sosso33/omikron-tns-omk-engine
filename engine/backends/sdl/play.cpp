@@ -5438,6 +5438,10 @@ int main(int argc, char** argv) {
             // partie`, 30 does the opposite. Re-applied per open for that
             // reason.
             omk::applyLoadPanelLayout(w, want);
+            // The player's ANNEAUX, which the save screen's `Sauvegarde`
+            // refuses without. `Actor_GetProperty` case 5 is the player
+            // record's +174, and `GameState::rings` reads it.
+            fresh->setRings(state.rings());
             if (!fresh->open(want)) {
                 // A script's screen must be in the tree - the boot depends on
                 // it. The PLAYER's need not be fatal: `sub_0046ADF0`'s own
