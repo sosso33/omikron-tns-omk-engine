@@ -20,19 +20,19 @@
    "want": 16
   },
   {
-   "what": "child panels reached through item +44",
+   "what": "child panels",
    "got": 15,
-   "want": 13
+   "want": 15
   },
   {
    "what": "lists",
    "got": 134,
-   "want": 125
+   "want": 134
   },
   {
    "what": "items",
    "got": 611,
-   "want": 572
+   "want": 611
   },
   {
    "what": "item records inside the image",
@@ -42,17 +42,17 @@
   {
    "what": "items naming a child panel",
    "got": 88,
-   "want": 75
+   "want": 88
   },
   {
    "what": "...of which distinct item records",
    "got": 17,
-   "want": 16
+   "want": 17
   },
   {
    "what": "lists with a non-default input hook",
    "got": 52,
-   "want": 48
+   "want": 52
   },
   {
    "what": "panels whose open callback sets the current list",
@@ -90,13 +90,13 @@
   },
   {
    "what": "items with a bound string",
-   "got": 35,
-   "want": 35
+   "got": 42,
+   "want": 42
   },
   {
    "what": "items with a bound tag",
-   "got": 22,
-   "want": 22
+   "got": 24,
+   "want": 24
   },
   {
    "what": "TERMINAL's bound strings",
@@ -118,6 +118,30 @@
    ]
   },
   {
+   "what": "panels by background arm (none, sheet, tiles, no tile array)",
+   "got": [
+    16,
+    1,
+    24,
+    5
+   ],
+   "want": [
+    16,
+    1,
+    24,
+    5
+   ]
+  },
+  {
+   "what": "the one panel that blits its sheet whole",
+   "got": [
+    36
+   ],
+   "want": [
+    36
+   ]
+  },
+  {
    "what": "distinct hooks among them",
    "got": 13,
    "want": 13
@@ -125,7 +149,7 @@
   {
    "what": "lists taking Ui_MoveSelection, the default walk",
    "got": 82,
-   "want": 77
+   "want": 82
   },
   {
    "what": "the LIFT grid hook is present",
@@ -291,6 +315,7 @@
     ],
     "current": 1,
     "flags": 536870920,
+    "flagsB": 0,
     "lists": [
      {
       "addr": 5106296,
@@ -318,6 +343,7 @@
         "font": 255,
         "text": 0,
         "textFn": 0,
+        "drawFn": 4686512,
         "textArg": -1,
         "lit": [
          0,
@@ -353,6 +379,7 @@
         "font": 67,
         "text": 0,
         "textFn": 0,
+        "drawFn": 4685520,
         "textArg": 0,
         "lit": [
          0,
@@ -414,6 +441,7 @@
         "font": 83,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          128,
@@ -449,6 +477,7 @@
         "font": 83,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          192,
@@ -484,6 +513,7 @@
         "font": 83,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          256,
@@ -519,6 +549,7 @@
         "font": 83,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          320,
@@ -554,6 +585,7 @@
         "font": 83,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          384,
@@ -589,6 +621,7 @@
         "font": 83,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          448,
@@ -624,6 +657,7 @@
         "font": 67,
         "text": 0,
         "textFn": 4841616,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          448,
@@ -659,6 +693,7 @@
         "font": 67,
         "text": 0,
         "textFn": 0,
+        "drawFn": 4685520,
         "textArg": 0,
         "lit": [
          0,
@@ -788,6 +823,7 @@
     ],
     "current": -1,
     "flags": 536870960,
+    "flagsB": 0,
     "lists": [
      {
       "addr": 5104144,
@@ -824,6 +860,7 @@
         "font": 83,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          128,
@@ -859,6 +896,7 @@
         "font": 83,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          192,
@@ -894,6 +932,7 @@
         "font": 83,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          256,
@@ -929,6 +968,7 @@
         "font": 83,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          320,
@@ -964,6 +1004,7 @@
         "font": 83,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          384,
@@ -999,6 +1040,7 @@
         "font": 83,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          448,
@@ -1034,6 +1076,7 @@
         "font": 67,
         "text": 0,
         "textFn": 4841616,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          448,
@@ -1069,6 +1112,7 @@
         "font": 67,
         "text": 0,
         "textFn": 0,
+        "drawFn": 4685520,
         "textArg": 0,
         "lit": [
          0,
@@ -1121,6 +1165,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4679776,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          0,
@@ -1156,6 +1201,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4679776,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          0,
@@ -1191,6 +1237,7 @@
         "font": 67,
         "text": 0,
         "textFn": 0,
+        "drawFn": 4833968,
         "textArg": -1,
         "lit": [
          0,
@@ -1226,6 +1273,7 @@
         "font": 67,
         "text": 0,
         "textFn": 0,
+        "drawFn": 4835888,
         "textArg": -1,
         "lit": [
          0,
@@ -1261,6 +1309,7 @@
         "font": 255,
         "text": 0,
         "textFn": 0,
+        "drawFn": 4684224,
         "textArg": -1,
         "lit": [
          0,
@@ -1308,6 +1357,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4840480,
+        "drawFn": 0,
         "textArg": -1,
         "lit": [
          0,
@@ -1343,6 +1393,7 @@
         "font": 255,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": -1,
         "lit": [
          0,
@@ -1467,6 +1518,7 @@
     ],
     "current": -1,
     "flags": 536870960,
+    "flagsB": 0,
     "lists": [
      {
       "addr": 5104144,
@@ -1503,6 +1555,7 @@
         "font": 83,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          128,
@@ -1538,6 +1591,7 @@
         "font": 83,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          192,
@@ -1573,6 +1627,7 @@
         "font": 83,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          256,
@@ -1608,6 +1663,7 @@
         "font": 83,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          320,
@@ -1643,6 +1699,7 @@
         "font": 83,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          384,
@@ -1678,6 +1735,7 @@
         "font": 83,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          448,
@@ -1713,6 +1771,7 @@
         "font": 67,
         "text": 0,
         "textFn": 4841616,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          448,
@@ -1748,6 +1807,7 @@
         "font": 67,
         "text": 0,
         "textFn": 0,
+        "drawFn": 4685520,
         "textArg": 0,
         "lit": [
          0,
@@ -1800,6 +1860,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4679776,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          0,
@@ -1835,6 +1896,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4679776,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          0,
@@ -1870,6 +1932,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4679776,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          0,
@@ -1925,6 +1988,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4368896,
+        "drawFn": 4833424,
         "textArg": -1,
         "lit": [
          0,
@@ -1960,6 +2024,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4368896,
+        "drawFn": 4833424,
         "textArg": -1,
         "lit": [
          0,
@@ -1995,6 +2060,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4368896,
+        "drawFn": 4833424,
         "textArg": -1,
         "lit": [
          0,
@@ -2030,6 +2096,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4368896,
+        "drawFn": 4833424,
         "textArg": -1,
         "lit": [
          0,
@@ -2065,6 +2132,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4368896,
+        "drawFn": 4833424,
         "textArg": -1,
         "lit": [
          0,
@@ -2100,6 +2168,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4368896,
+        "drawFn": 4833424,
         "textArg": -1,
         "lit": [
          0,
@@ -2135,6 +2204,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4368896,
+        "drawFn": 4833424,
         "textArg": -1,
         "lit": [
          0,
@@ -2170,6 +2240,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4368896,
+        "drawFn": 4833424,
         "textArg": -1,
         "lit": [
          0,
@@ -2205,6 +2276,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4368896,
+        "drawFn": 4833424,
         "textArg": -1,
         "lit": [
          0,
@@ -2252,6 +2324,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4840480,
+        "drawFn": 0,
         "textArg": -1,
         "lit": [
          0,
@@ -2287,6 +2360,7 @@
         "font": 255,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": -1,
         "lit": [
          0,
@@ -2411,6 +2485,7 @@
     ],
     "current": -1,
     "flags": 536870960,
+    "flagsB": 0,
     "lists": [
      {
       "addr": 5104144,
@@ -2447,6 +2522,7 @@
         "font": 83,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          128,
@@ -2482,6 +2558,7 @@
         "font": 83,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          192,
@@ -2517,6 +2594,7 @@
         "font": 83,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          256,
@@ -2552,6 +2630,7 @@
         "font": 83,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          320,
@@ -2587,6 +2666,7 @@
         "font": 83,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          384,
@@ -2622,6 +2702,7 @@
         "font": 83,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          448,
@@ -2657,6 +2738,7 @@
         "font": 67,
         "text": 0,
         "textFn": 4841616,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          448,
@@ -2692,6 +2774,7 @@
         "font": 67,
         "text": 0,
         "textFn": 0,
+        "drawFn": 4685520,
         "textArg": 0,
         "lit": [
          0,
@@ -2744,6 +2827,7 @@
         "font": 83,
         "text": 0,
         "textFn": 0,
+        "drawFn": 4841264,
         "textArg": -1,
         "lit": [
          0,
@@ -2779,6 +2863,7 @@
         "font": 83,
         "text": 0,
         "textFn": 0,
+        "drawFn": 4841184,
         "textArg": -1,
         "lit": [
          0,
@@ -2814,6 +2899,7 @@
         "font": 83,
         "text": 0,
         "textFn": 0,
+        "drawFn": 4841344,
         "textArg": -1,
         "lit": [
          0,
@@ -2861,6 +2947,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4679776,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          0,
@@ -2896,6 +2983,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4679776,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          0,
@@ -2931,6 +3019,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4679776,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          0,
@@ -2986,6 +3075,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4368896,
+        "drawFn": 4833424,
         "textArg": -1,
         "lit": [
          0,
@@ -3021,6 +3111,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4368896,
+        "drawFn": 4833424,
         "textArg": -1,
         "lit": [
          0,
@@ -3056,6 +3147,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4368896,
+        "drawFn": 4833424,
         "textArg": -1,
         "lit": [
          0,
@@ -3091,6 +3183,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4368896,
+        "drawFn": 4833424,
         "textArg": -1,
         "lit": [
          0,
@@ -3126,6 +3219,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4368896,
+        "drawFn": 4833424,
         "textArg": -1,
         "lit": [
          0,
@@ -3161,6 +3255,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4368896,
+        "drawFn": 4833424,
         "textArg": -1,
         "lit": [
          0,
@@ -3196,6 +3291,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4368896,
+        "drawFn": 4833424,
         "textArg": -1,
         "lit": [
          0,
@@ -3231,6 +3327,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4368896,
+        "drawFn": 4833424,
         "textArg": -1,
         "lit": [
          0,
@@ -3266,6 +3363,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4368896,
+        "drawFn": 4833424,
         "textArg": -1,
         "lit": [
          0,
@@ -3313,6 +3411,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4840480,
+        "drawFn": 0,
         "textArg": -1,
         "lit": [
          0,
@@ -3348,6 +3447,7 @@
         "font": 255,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": -1,
         "lit": [
          0,
@@ -3472,6 +3572,7 @@
     ],
     "current": -1,
     "flags": 536870960,
+    "flagsB": 0,
     "lists": [
      {
       "addr": 5104144,
@@ -3508,6 +3609,7 @@
         "font": 83,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          128,
@@ -3543,6 +3645,7 @@
         "font": 83,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          192,
@@ -3578,6 +3681,7 @@
         "font": 83,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          256,
@@ -3613,6 +3717,7 @@
         "font": 83,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          320,
@@ -3648,6 +3753,7 @@
         "font": 83,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          384,
@@ -3683,6 +3789,7 @@
         "font": 83,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          448,
@@ -3718,6 +3825,7 @@
         "font": 67,
         "text": 0,
         "textFn": 4841616,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          448,
@@ -3753,6 +3861,7 @@
         "font": 67,
         "text": 0,
         "textFn": 0,
+        "drawFn": 4685520,
         "textArg": 0,
         "lit": [
          0,
@@ -3813,6 +3922,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4368896,
+        "drawFn": 4833424,
         "textArg": -1,
         "lit": [
          0,
@@ -3848,6 +3958,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4368896,
+        "drawFn": 4833424,
         "textArg": -1,
         "lit": [
          0,
@@ -3883,6 +3994,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4368896,
+        "drawFn": 4833424,
         "textArg": -1,
         "lit": [
          0,
@@ -3918,6 +4030,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4368896,
+        "drawFn": 4833424,
         "textArg": -1,
         "lit": [
          0,
@@ -3953,6 +4066,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4368896,
+        "drawFn": 4833424,
         "textArg": -1,
         "lit": [
          0,
@@ -3988,6 +4102,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4368896,
+        "drawFn": 4833424,
         "textArg": -1,
         "lit": [
          0,
@@ -4023,6 +4138,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4368896,
+        "drawFn": 4833424,
         "textArg": -1,
         "lit": [
          0,
@@ -4058,6 +4174,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4368896,
+        "drawFn": 4833424,
         "textArg": -1,
         "lit": [
          0,
@@ -4093,6 +4210,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4368896,
+        "drawFn": 4833424,
         "textArg": -1,
         "lit": [
          0,
@@ -4140,6 +4258,7 @@
         "font": 74,
         "text": 0,
         "textFn": 0,
+        "drawFn": 4685664,
         "textArg": 0,
         "lit": [
          0,
@@ -4157,7 +4276,9 @@
          2147483651
         ],
         "setflag": [],
-        "bind": {}
+        "bind": {
+         "tag": 4294967295
+        }
        }
       ]
      },
@@ -4187,6 +4308,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4840480,
+        "drawFn": 0,
         "textArg": -1,
         "lit": [
          0,
@@ -4222,6 +4344,7 @@
         "font": 255,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": -1,
         "lit": [
          0,
@@ -4346,6 +4469,7 @@
     ],
     "current": -1,
     "flags": 536870960,
+    "flagsB": 0,
     "lists": [
      {
       "addr": 5104144,
@@ -4382,6 +4506,7 @@
         "font": 83,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          128,
@@ -4417,6 +4542,7 @@
         "font": 83,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          192,
@@ -4452,6 +4578,7 @@
         "font": 83,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          256,
@@ -4487,6 +4614,7 @@
         "font": 83,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          320,
@@ -4522,6 +4650,7 @@
         "font": 83,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          384,
@@ -4557,6 +4686,7 @@
         "font": 83,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          448,
@@ -4592,6 +4722,7 @@
         "font": 67,
         "text": 0,
         "textFn": 4841616,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          448,
@@ -4627,6 +4758,7 @@
         "font": 67,
         "text": 0,
         "textFn": 0,
+        "drawFn": 4685520,
         "textArg": 0,
         "lit": [
          0,
@@ -4679,6 +4811,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4840480,
+        "drawFn": 0,
         "textArg": -1,
         "lit": [
          0,
@@ -4714,6 +4847,7 @@
         "font": 255,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": -1,
         "lit": [
          0,
@@ -4838,6 +4972,7 @@
     ],
     "current": -1,
     "flags": 536870960,
+    "flagsB": 0,
     "lists": [
      {
       "addr": 5104144,
@@ -4874,6 +5009,7 @@
         "font": 83,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          128,
@@ -4909,6 +5045,7 @@
         "font": 83,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          192,
@@ -4944,6 +5081,7 @@
         "font": 83,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          256,
@@ -4979,6 +5117,7 @@
         "font": 83,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          320,
@@ -5014,6 +5153,7 @@
         "font": 83,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          384,
@@ -5049,6 +5189,7 @@
         "font": 83,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          448,
@@ -5084,6 +5225,7 @@
         "font": 67,
         "text": 0,
         "textFn": 4841616,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          448,
@@ -5119,6 +5261,7 @@
         "font": 67,
         "text": 0,
         "textFn": 0,
+        "drawFn": 4685520,
         "textArg": 0,
         "lit": [
          0,
@@ -5171,6 +5314,7 @@
         "font": 83,
         "text": 0,
         "textFn": 4679776,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          0,
@@ -5206,6 +5350,7 @@
         "font": 83,
         "text": 0,
         "textFn": 4679776,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          0,
@@ -5253,6 +5398,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4840480,
+        "drawFn": 0,
         "textArg": -1,
         "lit": [
          0,
@@ -5288,6 +5434,7 @@
         "font": 255,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": -1,
         "lit": [
          0,
@@ -5412,6 +5559,7 @@
     ],
     "current": -1,
     "flags": 536870960,
+    "flagsB": 0,
     "lists": [
      {
       "addr": 5104144,
@@ -5448,6 +5596,7 @@
         "font": 83,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          128,
@@ -5483,6 +5632,7 @@
         "font": 83,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          192,
@@ -5518,6 +5668,7 @@
         "font": 83,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          256,
@@ -5553,6 +5704,7 @@
         "font": 83,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          320,
@@ -5588,6 +5740,7 @@
         "font": 83,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          384,
@@ -5623,6 +5776,7 @@
         "font": 83,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          448,
@@ -5658,6 +5812,7 @@
         "font": 67,
         "text": 0,
         "textFn": 4841616,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          448,
@@ -5693,6 +5848,7 @@
         "font": 67,
         "text": 0,
         "textFn": 0,
+        "drawFn": 4685520,
         "textArg": 0,
         "lit": [
          0,
@@ -5745,6 +5901,7 @@
         "font": 83,
         "text": 0,
         "textFn": 0,
+        "drawFn": 4841264,
         "textArg": -1,
         "lit": [
          0,
@@ -5780,6 +5937,7 @@
         "font": 83,
         "text": 0,
         "textFn": 0,
+        "drawFn": 4841184,
         "textArg": -1,
         "lit": [
          0,
@@ -5815,6 +5973,7 @@
         "font": 83,
         "text": 0,
         "textFn": 0,
+        "drawFn": 4841344,
         "textArg": -1,
         "lit": [
          0,
@@ -5862,6 +6021,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4679776,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          0,
@@ -5897,6 +6057,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4679776,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          0,
@@ -5932,6 +6093,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4679776,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          0,
@@ -5987,6 +6149,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4368896,
+        "drawFn": 4833424,
         "textArg": -1,
         "lit": [
          0,
@@ -6022,6 +6185,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4368896,
+        "drawFn": 4833424,
         "textArg": -1,
         "lit": [
          0,
@@ -6057,6 +6221,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4368896,
+        "drawFn": 4833424,
         "textArg": -1,
         "lit": [
          0,
@@ -6092,6 +6257,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4368896,
+        "drawFn": 4833424,
         "textArg": -1,
         "lit": [
          0,
@@ -6127,6 +6293,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4368896,
+        "drawFn": 4833424,
         "textArg": -1,
         "lit": [
          0,
@@ -6162,6 +6329,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4368896,
+        "drawFn": 4833424,
         "textArg": -1,
         "lit": [
          0,
@@ -6197,6 +6365,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4368896,
+        "drawFn": 4833424,
         "textArg": -1,
         "lit": [
          0,
@@ -6232,6 +6401,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4368896,
+        "drawFn": 4833424,
         "textArg": -1,
         "lit": [
          0,
@@ -6267,6 +6437,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4368896,
+        "drawFn": 4833424,
         "textArg": -1,
         "lit": [
          0,
@@ -6314,6 +6485,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4840480,
+        "drawFn": 0,
         "textArg": -1,
         "lit": [
          0,
@@ -6349,6 +6521,7 @@
         "font": 255,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": -1,
         "lit": [
          0,
@@ -6473,6 +6646,7 @@
     ],
     "current": -1,
     "flags": 536870944,
+    "flagsB": 0,
     "lists": [
      {
       "addr": 5104144,
@@ -6509,6 +6683,7 @@
         "font": 83,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          128,
@@ -6544,6 +6719,7 @@
         "font": 83,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          192,
@@ -6579,6 +6755,7 @@
         "font": 83,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          256,
@@ -6614,6 +6791,7 @@
         "font": 83,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          320,
@@ -6649,6 +6827,7 @@
         "font": 83,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          384,
@@ -6684,6 +6863,7 @@
         "font": 83,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          448,
@@ -6719,6 +6899,7 @@
         "font": 67,
         "text": 0,
         "textFn": 4841616,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          448,
@@ -6754,6 +6935,7 @@
         "font": 67,
         "text": 0,
         "textFn": 0,
+        "drawFn": 4685520,
         "textArg": 0,
         "lit": [
          0,
@@ -6806,6 +6988,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4679776,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          0,
@@ -6841,6 +7024,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4679776,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          0,
@@ -6876,6 +7060,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4679776,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          0,
@@ -6923,6 +7108,7 @@
         "font": 74,
         "text": 0,
         "textFn": 0,
+        "drawFn": 4685984,
         "textArg": -1,
         "lit": [
          0,
@@ -6970,6 +7156,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4840480,
+        "drawFn": 0,
         "textArg": -1,
         "lit": [
          0,
@@ -7005,6 +7192,7 @@
         "font": 255,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": -1,
         "lit": [
          0,
@@ -7129,6 +7317,7 @@
     ],
     "current": -1,
     "flags": 536870960,
+    "flagsB": 0,
     "lists": [
      {
       "addr": 5133216,
@@ -7156,6 +7345,7 @@
         "font": 255,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          64,
@@ -7191,6 +7381,7 @@
         "font": 255,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          128,
@@ -7226,6 +7417,7 @@
         "font": 255,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          192,
@@ -7261,6 +7453,7 @@
         "font": 255,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          256,
@@ -7313,6 +7506,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4368896,
+        "drawFn": 0,
         "textArg": -1,
         "lit": [
          0,
@@ -7350,6 +7544,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4368896,
+        "drawFn": 0,
         "textArg": -1,
         "lit": [
          0,
@@ -7385,6 +7580,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4368896,
+        "drawFn": 0,
         "textArg": -1,
         "lit": [
          0,
@@ -7420,6 +7616,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4368896,
+        "drawFn": 0,
         "textArg": -1,
         "lit": [
          0,
@@ -7455,6 +7652,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4368896,
+        "drawFn": 0,
         "textArg": -1,
         "lit": [
          0,
@@ -7490,6 +7688,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4368896,
+        "drawFn": 0,
         "textArg": -1,
         "lit": [
          0,
@@ -7525,6 +7724,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4368896,
+        "drawFn": 0,
         "textArg": -1,
         "lit": [
          0,
@@ -7560,6 +7760,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4368896,
+        "drawFn": 0,
         "textArg": -1,
         "lit": [
          0,
@@ -7595,6 +7796,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4368896,
+        "drawFn": 0,
         "textArg": -1,
         "lit": [
          0,
@@ -7642,6 +7844,7 @@
         "font": 83,
         "text": 0,
         "textFn": 4918112,
+        "drawFn": 0,
         "textArg": -1,
         "lit": [
          0,
@@ -7689,6 +7892,7 @@
         "font": 67,
         "text": 0,
         "textFn": 0,
+        "drawFn": 4685520,
         "textArg": 0,
         "lit": [
          0,
@@ -7813,6 +8017,7 @@
     ],
     "current": -1,
     "flags": 536870960,
+    "flagsB": 0,
     "lists": [
      {
       "addr": 5132376,
@@ -7840,6 +8045,7 @@
         "font": 255,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          513,
@@ -7875,6 +8081,7 @@
         "font": 255,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          555,
@@ -7910,6 +8117,7 @@
         "font": 255,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          605,
@@ -7945,6 +8153,7 @@
         "font": 255,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          519,
@@ -7980,6 +8189,7 @@
         "font": 255,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          560,
@@ -8015,6 +8225,7 @@
         "font": 255,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          606,
@@ -8050,6 +8261,7 @@
         "font": 255,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          560,
@@ -8097,6 +8309,7 @@
         "font": 67,
         "text": 0,
         "textFn": 4915648,
+        "drawFn": 0,
         "textArg": -1,
         "lit": [
          0,
@@ -8221,6 +8434,7 @@
     ],
     "current": -1,
     "flags": 536870960,
+    "flagsB": 0,
     "lists": [
      {
       "addr": 5128160,
@@ -8248,6 +8462,7 @@
         "font": 255,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          70,
@@ -8285,6 +8500,7 @@
         "font": 255,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          100,
@@ -8323,6 +8539,7 @@
         "font": 255,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          130,
@@ -8361,6 +8578,7 @@
         "font": 255,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          70,
@@ -8399,6 +8617,7 @@
         "font": 255,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          100,
@@ -8437,6 +8656,7 @@
         "font": 255,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          130,
@@ -8472,6 +8692,7 @@
         "font": 255,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          70,
@@ -8507,6 +8728,7 @@
         "font": 255,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          100,
@@ -8542,6 +8764,7 @@
         "font": 255,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          130,
@@ -8577,6 +8800,7 @@
         "font": 255,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          100,
@@ -8612,6 +8836,7 @@
         "font": 255,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          64,
@@ -8661,6 +8886,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4912592,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          0,
@@ -8696,6 +8922,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4912544,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          0,
@@ -8731,6 +8958,7 @@
         "font": 67,
         "text": 0,
         "textFn": 0,
+        "drawFn": 4685520,
         "textArg": 0,
         "lit": [
          0,
@@ -8778,6 +9006,7 @@
         "font": 255,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          66,
@@ -8813,6 +9042,7 @@
         "font": 255,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          66,
@@ -8937,6 +9167,7 @@
     ],
     "current": -1,
     "flags": 536870960,
+    "flagsB": 0,
     "lists": [
      {
       "addr": 5128160,
@@ -8964,6 +9195,7 @@
         "font": 255,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          70,
@@ -9001,6 +9233,7 @@
         "font": 255,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          100,
@@ -9039,6 +9272,7 @@
         "font": 255,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          130,
@@ -9077,6 +9311,7 @@
         "font": 255,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          70,
@@ -9115,6 +9350,7 @@
         "font": 255,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          100,
@@ -9153,6 +9389,7 @@
         "font": 255,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          130,
@@ -9188,6 +9425,7 @@
         "font": 255,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          70,
@@ -9223,6 +9461,7 @@
         "font": 255,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          100,
@@ -9258,6 +9497,7 @@
         "font": 255,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          130,
@@ -9293,6 +9533,7 @@
         "font": 255,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          100,
@@ -9328,6 +9569,7 @@
         "font": 255,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          64,
@@ -9377,6 +9619,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4912592,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          0,
@@ -9412,6 +9655,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4912544,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          0,
@@ -9447,6 +9691,7 @@
         "font": 67,
         "text": 0,
         "textFn": 0,
+        "drawFn": 4685520,
         "textArg": 0,
         "lit": [
          0,
@@ -9494,6 +9739,7 @@
         "font": 255,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          66,
@@ -9529,6 +9775,7 @@
         "font": 255,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          66,
@@ -9653,6 +9900,7 @@
     ],
     "current": 1,
     "flags": 536870960,
+    "flagsB": 0,
     "lists": [
      {
       "addr": 5104144,
@@ -9689,6 +9937,7 @@
         "font": 83,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          128,
@@ -9724,6 +9973,7 @@
         "font": 83,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          192,
@@ -9759,6 +10009,7 @@
         "font": 83,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          256,
@@ -9794,6 +10045,7 @@
         "font": 83,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          320,
@@ -9829,6 +10081,7 @@
         "font": 83,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          384,
@@ -9864,6 +10117,7 @@
         "font": 83,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          448,
@@ -9899,6 +10153,7 @@
         "font": 67,
         "text": 0,
         "textFn": 4841616,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          448,
@@ -9934,6 +10189,7 @@
         "font": 67,
         "text": 0,
         "textFn": 0,
+        "drawFn": 4685520,
         "textArg": 0,
         "lit": [
          0,
@@ -9981,6 +10237,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4679776,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          0,
@@ -10016,6 +10273,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4679776,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          0,
@@ -10051,6 +10309,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4679776,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          0,
@@ -10106,6 +10365,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4368896,
+        "drawFn": 4833424,
         "textArg": -1,
         "lit": [
          0,
@@ -10141,6 +10401,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4368896,
+        "drawFn": 4833424,
         "textArg": -1,
         "lit": [
          0,
@@ -10176,6 +10437,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4368896,
+        "drawFn": 4833424,
         "textArg": -1,
         "lit": [
          0,
@@ -10211,6 +10473,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4368896,
+        "drawFn": 4833424,
         "textArg": -1,
         "lit": [
          0,
@@ -10246,6 +10509,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4368896,
+        "drawFn": 4833424,
         "textArg": -1,
         "lit": [
          0,
@@ -10281,6 +10545,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4368896,
+        "drawFn": 4833424,
         "textArg": -1,
         "lit": [
          0,
@@ -10316,6 +10581,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4368896,
+        "drawFn": 4833424,
         "textArg": -1,
         "lit": [
          0,
@@ -10351,6 +10617,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4368896,
+        "drawFn": 4833424,
         "textArg": -1,
         "lit": [
          0,
@@ -10386,6 +10653,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4368896,
+        "drawFn": 4833424,
         "textArg": -1,
         "lit": [
          0,
@@ -10433,6 +10701,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4840480,
+        "drawFn": 0,
         "textArg": -1,
         "lit": [
          0,
@@ -10468,6 +10737,7 @@
         "font": 255,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": -1,
         "lit": [
          0,
@@ -10592,6 +10862,7 @@
     ],
     "current": 3,
     "flags": 536870960,
+    "flagsB": 0,
     "lists": [
      {
       "addr": 5104144,
@@ -10628,6 +10899,7 @@
         "font": 83,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          128,
@@ -10663,6 +10935,7 @@
         "font": 83,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          192,
@@ -10698,6 +10971,7 @@
         "font": 83,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          256,
@@ -10733,6 +11007,7 @@
         "font": 83,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          320,
@@ -10768,6 +11043,7 @@
         "font": 83,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          384,
@@ -10803,6 +11079,7 @@
         "font": 83,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          448,
@@ -10838,6 +11115,7 @@
         "font": 67,
         "text": 0,
         "textFn": 4841616,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          448,
@@ -10873,6 +11151,7 @@
         "font": 67,
         "text": 0,
         "textFn": 0,
+        "drawFn": 4685520,
         "textArg": 0,
         "lit": [
          0,
@@ -10920,6 +11199,7 @@
         "font": 83,
         "text": 0,
         "textFn": 0,
+        "drawFn": 4841264,
         "textArg": -1,
         "lit": [
          0,
@@ -10955,6 +11235,7 @@
         "font": 83,
         "text": 0,
         "textFn": 0,
+        "drawFn": 4841184,
         "textArg": -1,
         "lit": [
          0,
@@ -10990,6 +11271,7 @@
         "font": 83,
         "text": 0,
         "textFn": 0,
+        "drawFn": 4841344,
         "textArg": -1,
         "lit": [
          0,
@@ -11037,6 +11319,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4679776,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          0,
@@ -11072,6 +11355,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4679776,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          0,
@@ -11107,6 +11391,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4679776,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          0,
@@ -11162,6 +11447,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4368896,
+        "drawFn": 4833424,
         "textArg": -1,
         "lit": [
          0,
@@ -11197,6 +11483,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4368896,
+        "drawFn": 4833424,
         "textArg": -1,
         "lit": [
          0,
@@ -11232,6 +11519,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4368896,
+        "drawFn": 4833424,
         "textArg": -1,
         "lit": [
          0,
@@ -11267,6 +11555,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4368896,
+        "drawFn": 4833424,
         "textArg": -1,
         "lit": [
          0,
@@ -11302,6 +11591,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4368896,
+        "drawFn": 4833424,
         "textArg": -1,
         "lit": [
          0,
@@ -11337,6 +11627,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4368896,
+        "drawFn": 4833424,
         "textArg": -1,
         "lit": [
          0,
@@ -11372,6 +11663,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4368896,
+        "drawFn": 4833424,
         "textArg": -1,
         "lit": [
          0,
@@ -11407,6 +11699,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4368896,
+        "drawFn": 4833424,
         "textArg": -1,
         "lit": [
          0,
@@ -11442,6 +11735,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4368896,
+        "drawFn": 4833424,
         "textArg": -1,
         "lit": [
          0,
@@ -11489,6 +11783,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4840480,
+        "drawFn": 0,
         "textArg": -1,
         "lit": [
          0,
@@ -11524,6 +11819,7 @@
         "font": 255,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": -1,
         "lit": [
          0,
@@ -11648,6 +11944,7 @@
     ],
     "current": 0,
     "flags": 536870960,
+    "flagsB": 0,
     "lists": [
      {
       "addr": 5128160,
@@ -11675,6 +11972,7 @@
         "font": 255,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          70,
@@ -11712,6 +12010,7 @@
         "font": 255,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          100,
@@ -11749,6 +12048,7 @@
         "font": 255,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          130,
@@ -11786,6 +12086,7 @@
         "font": 255,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          70,
@@ -11821,6 +12122,7 @@
         "font": 255,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          100,
@@ -11856,6 +12158,7 @@
         "font": 255,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          130,
@@ -11891,6 +12194,7 @@
         "font": 255,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          70,
@@ -11926,6 +12230,7 @@
         "font": 255,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          100,
@@ -11961,6 +12266,7 @@
         "font": 255,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          130,
@@ -11996,6 +12302,7 @@
         "font": 255,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          100,
@@ -12031,6 +12338,7 @@
         "font": 255,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          64,
@@ -12080,6 +12388,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4912592,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          0,
@@ -12115,6 +12424,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4912544,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          0,
@@ -12150,6 +12460,7 @@
         "font": 67,
         "text": 0,
         "textFn": 0,
+        "drawFn": 4685520,
         "textArg": 0,
         "lit": [
          0,
@@ -12197,6 +12508,7 @@
         "font": 255,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          66,
@@ -12232,6 +12544,7 @@
         "font": 255,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          66,
@@ -12356,6 +12669,7 @@
     ],
     "current": -1,
     "flags": 536870960,
+    "flagsB": 0,
     "lists": [
      {
       "addr": 5131416,
@@ -12383,6 +12697,7 @@
         "font": 255,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          576,
@@ -12418,6 +12733,7 @@
         "font": 255,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          576,
@@ -12458,6 +12774,7 @@
         "font": 255,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          576,
@@ -12498,6 +12815,7 @@
         "font": 255,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          576,
@@ -12538,6 +12856,7 @@
         "font": 255,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          576,
@@ -12667,6 +12986,7 @@
     ],
     "current": -1,
     "flags": 536870960,
+    "flagsB": 0,
     "lists": [
      {
       "addr": 5130608,
@@ -12694,6 +13014,7 @@
         "font": 255,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          276,
@@ -12729,6 +13050,7 @@
         "font": 255,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          320,
@@ -12764,6 +13086,7 @@
         "font": 255,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          364,
@@ -12799,6 +13122,7 @@
         "font": 255,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          406,
@@ -12834,6 +13158,7 @@
         "font": 255,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          467,
@@ -12874,6 +13199,7 @@
         "font": 255,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          467,
@@ -13003,6 +13329,7 @@
     ],
     "current": -1,
     "flags": 536870960,
+    "flagsB": 0,
     "lists": [
      {
       "addr": 5129392,
@@ -13030,6 +13357,7 @@
         "font": 255,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": -1,
         "lit": [
          0,
@@ -13067,6 +13395,7 @@
         "font": 255,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": -1,
         "lit": [
          0,
@@ -13104,6 +13433,7 @@
         "font": 255,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": -1,
         "lit": [
          0,
@@ -13141,6 +13471,7 @@
         "font": 255,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": -1,
         "lit": [
          0,
@@ -13190,6 +13521,7 @@
         "font": 255,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": -1,
         "lit": [
          539,
@@ -13227,6 +13559,7 @@
         "font": 255,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": -1,
         "lit": [
          539,
@@ -13264,6 +13597,7 @@
         "font": 255,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": -1,
         "lit": [
          590,
@@ -13301,6 +13635,7 @@
         "font": 255,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": -1,
         "lit": [
          488,
@@ -13427,6 +13762,7 @@
     ],
     "current": -1,
     "flags": 536870960,
+    "flagsB": 0,
     "lists": [
      {
       "addr": 5128160,
@@ -13454,6 +13790,7 @@
         "font": 255,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          70,
@@ -13489,6 +13826,7 @@
         "font": 255,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          100,
@@ -13524,6 +13862,7 @@
         "font": 255,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          130,
@@ -13559,6 +13898,7 @@
         "font": 255,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          70,
@@ -13594,6 +13934,7 @@
         "font": 255,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          100,
@@ -13629,6 +13970,7 @@
         "font": 255,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          130,
@@ -13664,6 +14006,7 @@
         "font": 255,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          70,
@@ -13699,6 +14042,7 @@
         "font": 255,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          100,
@@ -13734,6 +14078,7 @@
         "font": 255,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          130,
@@ -13769,6 +14114,7 @@
         "font": 255,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          100,
@@ -13804,6 +14150,7 @@
         "font": 255,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          64,
@@ -13821,7 +14168,9 @@
          0
         ],
         "setflag": [],
-        "bind": {}
+        "bind": {
+         "string": 0
+        }
        }
       ]
      },
@@ -13851,6 +14200,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4912592,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          0,
@@ -13886,6 +14236,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4912544,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          0,
@@ -13921,6 +14272,7 @@
         "font": 67,
         "text": 0,
         "textFn": 0,
+        "drawFn": 4685520,
         "textArg": 0,
         "lit": [
          0,
@@ -13968,6 +14320,7 @@
         "font": 255,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          66,
@@ -14003,6 +14356,7 @@
         "font": 255,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          66,
@@ -14127,6 +14481,7 @@
     ],
     "current": -1,
     "flags": 536870960,
+    "flagsB": 0,
     "lists": [
      {
       "addr": 5128160,
@@ -14154,6 +14509,7 @@
         "font": 255,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          70,
@@ -14189,6 +14545,7 @@
         "font": 255,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          100,
@@ -14224,6 +14581,7 @@
         "font": 255,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          130,
@@ -14259,6 +14617,7 @@
         "font": 255,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          70,
@@ -14294,6 +14653,7 @@
         "font": 255,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          100,
@@ -14329,6 +14689,7 @@
         "font": 255,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          130,
@@ -14364,6 +14725,7 @@
         "font": 255,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          70,
@@ -14399,6 +14761,7 @@
         "font": 255,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          100,
@@ -14434,6 +14797,7 @@
         "font": 255,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          130,
@@ -14469,6 +14833,7 @@
         "font": 255,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          100,
@@ -14504,6 +14869,7 @@
         "font": 255,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          64,
@@ -14551,6 +14917,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4912592,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          0,
@@ -14586,6 +14953,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4912544,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          0,
@@ -14621,6 +14989,7 @@
         "font": 67,
         "text": 0,
         "textFn": 0,
+        "drawFn": 4685520,
         "textArg": 0,
         "lit": [
          0,
@@ -14668,6 +15037,7 @@
         "font": 255,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          66,
@@ -14703,6 +15073,7 @@
         "font": 255,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          66,
@@ -14827,6 +15198,7 @@
     ],
     "current": -1,
     "flags": 536870960,
+    "flagsB": 0,
     "lists": [
      {
       "addr": 5128160,
@@ -14854,6 +15226,7 @@
         "font": 255,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          70,
@@ -14889,6 +15262,7 @@
         "font": 255,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          100,
@@ -14924,6 +15298,7 @@
         "font": 255,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          130,
@@ -14959,6 +15334,7 @@
         "font": 255,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          70,
@@ -14994,6 +15370,7 @@
         "font": 255,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          100,
@@ -15029,6 +15406,7 @@
         "font": 255,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          130,
@@ -15064,6 +15442,7 @@
         "font": 255,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          70,
@@ -15099,6 +15478,7 @@
         "font": 255,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          100,
@@ -15134,6 +15514,7 @@
         "font": 255,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          130,
@@ -15169,6 +15550,7 @@
         "font": 255,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          100,
@@ -15204,6 +15586,7 @@
         "font": 255,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          64,
@@ -15251,6 +15634,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4912592,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          0,
@@ -15286,6 +15670,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4912544,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          0,
@@ -15321,6 +15706,7 @@
         "font": 67,
         "text": 0,
         "textFn": 0,
+        "drawFn": 4685520,
         "textArg": 0,
         "lit": [
          0,
@@ -15368,6 +15754,7 @@
         "font": 255,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          66,
@@ -15403,6 +15790,7 @@
         "font": 255,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          66,
@@ -15527,6 +15915,7 @@
     ],
     "current": -1,
     "flags": 536870960,
+    "flagsB": 0,
     "lists": [
      {
       "addr": 5128160,
@@ -15554,6 +15943,7 @@
         "font": 255,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          70,
@@ -15572,7 +15962,8 @@
         ],
         "setflag": [],
         "bind": {
-         "tag": 6
+         "tag": 6,
+         "string": 0
         }
        },
        {
@@ -15591,6 +15982,7 @@
         "font": 255,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          100,
@@ -15629,6 +16021,7 @@
         "font": 255,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          130,
@@ -15667,6 +16060,7 @@
         "font": 255,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          70,
@@ -15705,6 +16099,7 @@
         "font": 255,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          100,
@@ -15740,6 +16135,7 @@
         "font": 255,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          130,
@@ -15775,6 +16171,7 @@
         "font": 255,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          70,
@@ -15810,6 +16207,7 @@
         "font": 255,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          100,
@@ -15845,6 +16243,7 @@
         "font": 255,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          130,
@@ -15880,6 +16279,7 @@
         "font": 255,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          100,
@@ -15915,6 +16315,7 @@
         "font": 255,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          64,
@@ -15964,6 +16365,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4912592,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          0,
@@ -15999,6 +16401,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4912544,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          0,
@@ -16034,6 +16437,7 @@
         "font": 67,
         "text": 0,
         "textFn": 0,
+        "drawFn": 4685520,
         "textArg": 0,
         "lit": [
          0,
@@ -16081,6 +16485,7 @@
         "font": 255,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          66,
@@ -16116,6 +16521,7 @@
         "font": 255,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          66,
@@ -16240,6 +16646,7 @@
     ],
     "current": -1,
     "flags": 536870960,
+    "flagsB": 0,
     "lists": [
      {
       "addr": 5128160,
@@ -16267,6 +16674,7 @@
         "font": 255,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          70,
@@ -16284,7 +16692,9 @@
          0
         ],
         "setflag": [],
-        "bind": {}
+        "bind": {
+         "string": 0
+        }
        },
        {
         "addr": 5127392,
@@ -16302,6 +16712,7 @@
         "font": 255,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          100,
@@ -16339,6 +16750,7 @@
         "font": 255,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          130,
@@ -16376,6 +16788,7 @@
         "font": 255,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          70,
@@ -16413,6 +16826,7 @@
         "font": 255,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          100,
@@ -16450,6 +16864,7 @@
         "font": 255,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          130,
@@ -16485,6 +16900,7 @@
         "font": 255,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          70,
@@ -16520,6 +16936,7 @@
         "font": 255,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          100,
@@ -16555,6 +16972,7 @@
         "font": 255,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          130,
@@ -16590,6 +17008,7 @@
         "font": 255,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          100,
@@ -16625,6 +17044,7 @@
         "font": 255,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          64,
@@ -16674,6 +17094,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4912592,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          0,
@@ -16709,6 +17130,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4912544,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          0,
@@ -16744,6 +17166,7 @@
         "font": 67,
         "text": 0,
         "textFn": 0,
+        "drawFn": 4685520,
         "textArg": 0,
         "lit": [
          0,
@@ -16791,6 +17214,7 @@
         "font": 255,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          66,
@@ -16826,6 +17250,7 @@
         "font": 255,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          66,
@@ -16950,6 +17375,7 @@
     ],
     "current": 0,
     "flags": 536870960,
+    "flagsB": 1073756160,
     "lists": [
      {
       "addr": 5124976,
@@ -16977,6 +17403,7 @@
         "font": 255,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          64,
@@ -17021,6 +17448,7 @@
         "font": 255,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          128,
@@ -17065,6 +17493,7 @@
         "font": 255,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 1,
         "lit": [
          192,
@@ -17100,6 +17529,7 @@
         "font": 255,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          257,
@@ -17173,6 +17603,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4368896,
+        "drawFn": 0,
         "textArg": -1,
         "lit": [
          0,
@@ -17208,6 +17639,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4368896,
+        "drawFn": 0,
         "textArg": -1,
         "lit": [
          0,
@@ -17243,6 +17675,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4368896,
+        "drawFn": 0,
         "textArg": -1,
         "lit": [
          0,
@@ -17278,6 +17711,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4368896,
+        "drawFn": 0,
         "textArg": -1,
         "lit": [
          0,
@@ -17313,6 +17747,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4368896,
+        "drawFn": 0,
         "textArg": -1,
         "lit": [
          0,
@@ -17348,6 +17783,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4368896,
+        "drawFn": 0,
         "textArg": -1,
         "lit": [
          0,
@@ -17383,6 +17819,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4368896,
+        "drawFn": 0,
         "textArg": -1,
         "lit": [
          0,
@@ -17418,6 +17855,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4368896,
+        "drawFn": 0,
         "textArg": -1,
         "lit": [
          0,
@@ -17453,6 +17891,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4368896,
+        "drawFn": 0,
         "textArg": -1,
         "lit": [
          0,
@@ -17500,6 +17939,7 @@
         "font": 83,
         "text": 0,
         "textFn": 4679776,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          0,
@@ -17537,6 +17977,7 @@
         "font": 83,
         "text": 0,
         "textFn": 4910640,
+        "drawFn": 0,
         "textArg": -1,
         "lit": [
          0,
@@ -17572,6 +18013,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4910864,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          0,
@@ -17607,6 +18049,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4910944,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          0,
@@ -17731,6 +18174,7 @@
     ],
     "current": 0,
     "flags": 536870960,
+    "flagsB": 1073756160,
     "lists": [
      {
       "addr": 5124976,
@@ -17758,6 +18202,7 @@
         "font": 255,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          64,
@@ -17802,6 +18247,7 @@
         "font": 255,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          128,
@@ -17846,6 +18292,7 @@
         "font": 255,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 1,
         "lit": [
          192,
@@ -17881,6 +18328,7 @@
         "font": 255,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          257,
@@ -17954,6 +18402,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4368896,
+        "drawFn": 0,
         "textArg": -1,
         "lit": [
          0,
@@ -17989,6 +18438,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4368896,
+        "drawFn": 0,
         "textArg": -1,
         "lit": [
          0,
@@ -18024,6 +18474,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4368896,
+        "drawFn": 0,
         "textArg": -1,
         "lit": [
          0,
@@ -18059,6 +18510,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4368896,
+        "drawFn": 0,
         "textArg": -1,
         "lit": [
          0,
@@ -18094,6 +18546,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4368896,
+        "drawFn": 0,
         "textArg": -1,
         "lit": [
          0,
@@ -18129,6 +18582,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4368896,
+        "drawFn": 0,
         "textArg": -1,
         "lit": [
          0,
@@ -18164,6 +18618,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4368896,
+        "drawFn": 0,
         "textArg": -1,
         "lit": [
          0,
@@ -18199,6 +18654,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4368896,
+        "drawFn": 0,
         "textArg": -1,
         "lit": [
          0,
@@ -18234,6 +18690,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4368896,
+        "drawFn": 0,
         "textArg": -1,
         "lit": [
          0,
@@ -18281,6 +18738,7 @@
         "font": 83,
         "text": 0,
         "textFn": 4679776,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          0,
@@ -18318,6 +18776,7 @@
         "font": 83,
         "text": 0,
         "textFn": 4910640,
+        "drawFn": 0,
         "textArg": -1,
         "lit": [
          0,
@@ -18353,6 +18812,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4910864,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          0,
@@ -18388,6 +18848,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4910944,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          0,
@@ -18512,6 +18973,7 @@
     ],
     "current": 0,
     "flags": 536870960,
+    "flagsB": 1073756160,
     "lists": [
      {
       "addr": 5124976,
@@ -18539,6 +19001,7 @@
         "font": 255,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          64,
@@ -18583,6 +19046,7 @@
         "font": 255,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          128,
@@ -18627,6 +19091,7 @@
         "font": 255,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 1,
         "lit": [
          192,
@@ -18662,6 +19127,7 @@
         "font": 255,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          257,
@@ -18735,6 +19201,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4368896,
+        "drawFn": 0,
         "textArg": -1,
         "lit": [
          0,
@@ -18770,6 +19237,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4368896,
+        "drawFn": 0,
         "textArg": -1,
         "lit": [
          0,
@@ -18805,6 +19273,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4368896,
+        "drawFn": 0,
         "textArg": -1,
         "lit": [
          0,
@@ -18840,6 +19309,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4368896,
+        "drawFn": 0,
         "textArg": -1,
         "lit": [
          0,
@@ -18875,6 +19345,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4368896,
+        "drawFn": 0,
         "textArg": -1,
         "lit": [
          0,
@@ -18910,6 +19381,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4368896,
+        "drawFn": 0,
         "textArg": -1,
         "lit": [
          0,
@@ -18945,6 +19417,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4368896,
+        "drawFn": 0,
         "textArg": -1,
         "lit": [
          0,
@@ -18980,6 +19453,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4368896,
+        "drawFn": 0,
         "textArg": -1,
         "lit": [
          0,
@@ -19015,6 +19489,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4368896,
+        "drawFn": 0,
         "textArg": -1,
         "lit": [
          0,
@@ -19062,6 +19537,7 @@
         "font": 83,
         "text": 0,
         "textFn": 4679776,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          0,
@@ -19099,6 +19575,7 @@
         "font": 83,
         "text": 0,
         "textFn": 4910640,
+        "drawFn": 0,
         "textArg": -1,
         "lit": [
          0,
@@ -19134,6 +19611,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4910864,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          0,
@@ -19169,6 +19647,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4910944,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          0,
@@ -19293,6 +19772,7 @@
     ],
     "current": 0,
     "flags": 536870960,
+    "flagsB": 1073756160,
     "lists": [
      {
       "addr": 5124976,
@@ -19320,6 +19800,7 @@
         "font": 255,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          64,
@@ -19364,6 +19845,7 @@
         "font": 255,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          128,
@@ -19408,6 +19890,7 @@
         "font": 255,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 1,
         "lit": [
          192,
@@ -19443,6 +19926,7 @@
         "font": 255,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          257,
@@ -19516,6 +20000,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4368896,
+        "drawFn": 0,
         "textArg": -1,
         "lit": [
          0,
@@ -19551,6 +20036,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4368896,
+        "drawFn": 0,
         "textArg": -1,
         "lit": [
          0,
@@ -19586,6 +20072,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4368896,
+        "drawFn": 0,
         "textArg": -1,
         "lit": [
          0,
@@ -19621,6 +20108,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4368896,
+        "drawFn": 0,
         "textArg": -1,
         "lit": [
          0,
@@ -19656,6 +20144,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4368896,
+        "drawFn": 0,
         "textArg": -1,
         "lit": [
          0,
@@ -19691,6 +20180,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4368896,
+        "drawFn": 0,
         "textArg": -1,
         "lit": [
          0,
@@ -19726,6 +20216,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4368896,
+        "drawFn": 0,
         "textArg": -1,
         "lit": [
          0,
@@ -19761,6 +20252,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4368896,
+        "drawFn": 0,
         "textArg": -1,
         "lit": [
          0,
@@ -19796,6 +20288,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4368896,
+        "drawFn": 0,
         "textArg": -1,
         "lit": [
          0,
@@ -19843,6 +20336,7 @@
         "font": 83,
         "text": 0,
         "textFn": 4679776,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          0,
@@ -19880,6 +20374,7 @@
         "font": 83,
         "text": 0,
         "textFn": 4910640,
+        "drawFn": 0,
         "textArg": -1,
         "lit": [
          0,
@@ -19915,6 +20410,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4910864,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          0,
@@ -19950,6 +20446,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4910944,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          0,
@@ -20074,6 +20571,7 @@
     ],
     "current": 0,
     "flags": 536870960,
+    "flagsB": 1073756160,
     "lists": [
      {
       "addr": 5124976,
@@ -20101,6 +20599,7 @@
         "font": 255,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          64,
@@ -20145,6 +20644,7 @@
         "font": 255,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          128,
@@ -20189,6 +20689,7 @@
         "font": 255,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 1,
         "lit": [
          192,
@@ -20224,6 +20725,7 @@
         "font": 255,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          257,
@@ -20297,6 +20799,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4368896,
+        "drawFn": 0,
         "textArg": -1,
         "lit": [
          0,
@@ -20332,6 +20835,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4368896,
+        "drawFn": 0,
         "textArg": -1,
         "lit": [
          0,
@@ -20367,6 +20871,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4368896,
+        "drawFn": 0,
         "textArg": -1,
         "lit": [
          0,
@@ -20402,6 +20907,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4368896,
+        "drawFn": 0,
         "textArg": -1,
         "lit": [
          0,
@@ -20437,6 +20943,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4368896,
+        "drawFn": 0,
         "textArg": -1,
         "lit": [
          0,
@@ -20472,6 +20979,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4368896,
+        "drawFn": 0,
         "textArg": -1,
         "lit": [
          0,
@@ -20507,6 +21015,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4368896,
+        "drawFn": 0,
         "textArg": -1,
         "lit": [
          0,
@@ -20542,6 +21051,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4368896,
+        "drawFn": 0,
         "textArg": -1,
         "lit": [
          0,
@@ -20577,6 +21087,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4368896,
+        "drawFn": 0,
         "textArg": -1,
         "lit": [
          0,
@@ -20624,6 +21135,7 @@
         "font": 83,
         "text": 0,
         "textFn": 4679776,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          0,
@@ -20661,6 +21173,7 @@
         "font": 83,
         "text": 0,
         "textFn": 4910640,
+        "drawFn": 0,
         "textArg": -1,
         "lit": [
          0,
@@ -20696,6 +21209,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4910864,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          0,
@@ -20731,6 +21245,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4910944,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          0,
@@ -20855,6 +21370,7 @@
     ],
     "current": 0,
     "flags": 536870960,
+    "flagsB": 1073756160,
     "lists": [
      {
       "addr": 5124976,
@@ -20882,6 +21398,7 @@
         "font": 255,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          64,
@@ -20926,6 +21443,7 @@
         "font": 255,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          128,
@@ -20970,6 +21488,7 @@
         "font": 255,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 1,
         "lit": [
          192,
@@ -21005,6 +21524,7 @@
         "font": 255,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          257,
@@ -21078,6 +21598,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4368896,
+        "drawFn": 0,
         "textArg": -1,
         "lit": [
          0,
@@ -21113,6 +21634,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4368896,
+        "drawFn": 0,
         "textArg": -1,
         "lit": [
          0,
@@ -21148,6 +21670,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4368896,
+        "drawFn": 0,
         "textArg": -1,
         "lit": [
          0,
@@ -21183,6 +21706,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4368896,
+        "drawFn": 0,
         "textArg": -1,
         "lit": [
          0,
@@ -21218,6 +21742,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4368896,
+        "drawFn": 0,
         "textArg": -1,
         "lit": [
          0,
@@ -21253,6 +21778,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4368896,
+        "drawFn": 0,
         "textArg": -1,
         "lit": [
          0,
@@ -21288,6 +21814,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4368896,
+        "drawFn": 0,
         "textArg": -1,
         "lit": [
          0,
@@ -21323,6 +21850,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4368896,
+        "drawFn": 0,
         "textArg": -1,
         "lit": [
          0,
@@ -21358,6 +21886,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4368896,
+        "drawFn": 0,
         "textArg": -1,
         "lit": [
          0,
@@ -21405,6 +21934,7 @@
         "font": 83,
         "text": 0,
         "textFn": 4679776,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          0,
@@ -21442,6 +21972,7 @@
         "font": 83,
         "text": 0,
         "textFn": 4910640,
+        "drawFn": 0,
         "textArg": -1,
         "lit": [
          0,
@@ -21477,6 +22008,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4910864,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          0,
@@ -21512,6 +22044,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4910944,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          0,
@@ -21636,6 +22169,7 @@
     ],
     "current": 0,
     "flags": 536870960,
+    "flagsB": 1073756160,
     "lists": [
      {
       "addr": 5124976,
@@ -21663,6 +22197,7 @@
         "font": 255,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          64,
@@ -21707,6 +22242,7 @@
         "font": 255,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          128,
@@ -21751,6 +22287,7 @@
         "font": 255,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 1,
         "lit": [
          192,
@@ -21786,6 +22323,7 @@
         "font": 255,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          257,
@@ -21859,6 +22397,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4368896,
+        "drawFn": 0,
         "textArg": -1,
         "lit": [
          0,
@@ -21894,6 +22433,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4368896,
+        "drawFn": 0,
         "textArg": -1,
         "lit": [
          0,
@@ -21929,6 +22469,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4368896,
+        "drawFn": 0,
         "textArg": -1,
         "lit": [
          0,
@@ -21964,6 +22505,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4368896,
+        "drawFn": 0,
         "textArg": -1,
         "lit": [
          0,
@@ -21999,6 +22541,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4368896,
+        "drawFn": 0,
         "textArg": -1,
         "lit": [
          0,
@@ -22034,6 +22577,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4368896,
+        "drawFn": 0,
         "textArg": -1,
         "lit": [
          0,
@@ -22069,6 +22613,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4368896,
+        "drawFn": 0,
         "textArg": -1,
         "lit": [
          0,
@@ -22104,6 +22649,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4368896,
+        "drawFn": 0,
         "textArg": -1,
         "lit": [
          0,
@@ -22139,6 +22685,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4368896,
+        "drawFn": 0,
         "textArg": -1,
         "lit": [
          0,
@@ -22186,6 +22733,7 @@
         "font": 83,
         "text": 0,
         "textFn": 4679776,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          0,
@@ -22223,6 +22771,7 @@
         "font": 83,
         "text": 0,
         "textFn": 4910640,
+        "drawFn": 0,
         "textArg": -1,
         "lit": [
          0,
@@ -22258,6 +22807,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4910864,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          0,
@@ -22293,6 +22843,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4910944,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          0,
@@ -22417,6 +22968,7 @@
     ],
     "current": 0,
     "flags": 536870960,
+    "flagsB": 1073756160,
     "lists": [
      {
       "addr": 5124976,
@@ -22444,6 +22996,7 @@
         "font": 255,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          64,
@@ -22488,6 +23041,7 @@
         "font": 255,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          128,
@@ -22532,6 +23086,7 @@
         "font": 255,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 1,
         "lit": [
          192,
@@ -22567,6 +23122,7 @@
         "font": 255,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          257,
@@ -22640,6 +23196,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4368896,
+        "drawFn": 0,
         "textArg": -1,
         "lit": [
          0,
@@ -22675,6 +23232,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4368896,
+        "drawFn": 0,
         "textArg": -1,
         "lit": [
          0,
@@ -22710,6 +23268,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4368896,
+        "drawFn": 0,
         "textArg": -1,
         "lit": [
          0,
@@ -22745,6 +23304,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4368896,
+        "drawFn": 0,
         "textArg": -1,
         "lit": [
          0,
@@ -22780,6 +23340,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4368896,
+        "drawFn": 0,
         "textArg": -1,
         "lit": [
          0,
@@ -22815,6 +23376,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4368896,
+        "drawFn": 0,
         "textArg": -1,
         "lit": [
          0,
@@ -22850,6 +23412,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4368896,
+        "drawFn": 0,
         "textArg": -1,
         "lit": [
          0,
@@ -22885,6 +23448,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4368896,
+        "drawFn": 0,
         "textArg": -1,
         "lit": [
          0,
@@ -22920,6 +23484,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4368896,
+        "drawFn": 0,
         "textArg": -1,
         "lit": [
          0,
@@ -22967,6 +23532,7 @@
         "font": 83,
         "text": 0,
         "textFn": 4679776,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          0,
@@ -23004,6 +23570,7 @@
         "font": 83,
         "text": 0,
         "textFn": 4910640,
+        "drawFn": 0,
         "textArg": -1,
         "lit": [
          0,
@@ -23039,6 +23606,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4910864,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          0,
@@ -23074,6 +23642,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4910944,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          0,
@@ -23198,6 +23767,7 @@
     ],
     "current": 0,
     "flags": 536870960,
+    "flagsB": 1073756160,
     "lists": [
      {
       "addr": 5124976,
@@ -23225,6 +23795,7 @@
         "font": 255,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          64,
@@ -23269,6 +23840,7 @@
         "font": 255,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          128,
@@ -23313,6 +23885,7 @@
         "font": 255,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 1,
         "lit": [
          192,
@@ -23348,6 +23921,7 @@
         "font": 255,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          257,
@@ -23421,6 +23995,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4368896,
+        "drawFn": 0,
         "textArg": -1,
         "lit": [
          0,
@@ -23456,6 +24031,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4368896,
+        "drawFn": 0,
         "textArg": -1,
         "lit": [
          0,
@@ -23491,6 +24067,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4368896,
+        "drawFn": 0,
         "textArg": -1,
         "lit": [
          0,
@@ -23526,6 +24103,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4368896,
+        "drawFn": 0,
         "textArg": -1,
         "lit": [
          0,
@@ -23561,6 +24139,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4368896,
+        "drawFn": 0,
         "textArg": -1,
         "lit": [
          0,
@@ -23596,6 +24175,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4368896,
+        "drawFn": 0,
         "textArg": -1,
         "lit": [
          0,
@@ -23631,6 +24211,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4368896,
+        "drawFn": 0,
         "textArg": -1,
         "lit": [
          0,
@@ -23666,6 +24247,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4368896,
+        "drawFn": 0,
         "textArg": -1,
         "lit": [
          0,
@@ -23701,6 +24283,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4368896,
+        "drawFn": 0,
         "textArg": -1,
         "lit": [
          0,
@@ -23748,6 +24331,7 @@
         "font": 83,
         "text": 0,
         "textFn": 4679776,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          0,
@@ -23785,6 +24369,7 @@
         "font": 83,
         "text": 0,
         "textFn": 4910640,
+        "drawFn": 0,
         "textArg": -1,
         "lit": [
          0,
@@ -23820,6 +24405,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4910864,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          0,
@@ -23855,6 +24441,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4910944,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          0,
@@ -23898,6 +24485,7 @@
     "tiles": [],
     "current": -1,
     "flags": 0,
+    "flagsB": 1073750016,
     "lists": [
      {
       "addr": 5040160,
@@ -23939,6 +24527,7 @@
         "font": 73,
         "text": 0,
         "textFn": 4679776,
+        "drawFn": 0,
         "textArg": -1,
         "lit": [
          0,
@@ -23974,6 +24563,7 @@
         "font": 73,
         "text": 0,
         "textFn": 4679776,
+        "drawFn": 0,
         "textArg": -1,
         "lit": [
          0,
@@ -24009,6 +24599,7 @@
         "font": 73,
         "text": 0,
         "textFn": 4679776,
+        "drawFn": 0,
         "textArg": -1,
         "lit": [
          0,
@@ -24044,6 +24635,7 @@
         "font": 73,
         "text": 0,
         "textFn": 4679776,
+        "drawFn": 0,
         "textArg": -1,
         "lit": [
          0,
@@ -24091,6 +24683,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4701776,
+        "drawFn": 0,
         "textArg": -1,
         "lit": [
          0,
@@ -24138,6 +24731,7 @@
         "font": 255,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": -1,
         "lit": [
          0,
@@ -24181,6 +24775,7 @@
     "tiles": [],
     "current": -1,
     "flags": 536871040,
+    "flagsB": 1073750016,
     "lists": [
      {
       "addr": 5040272,
@@ -24208,6 +24803,7 @@
         "font": 74,
         "text": 0,
         "textFn": 0,
+        "drawFn": 4695312,
         "textArg": -1,
         "lit": [
          0,
@@ -24263,6 +24859,7 @@
         "font": 83,
         "text": 0,
         "textFn": 4679776,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          0,
@@ -24298,6 +24895,7 @@
         "font": 83,
         "text": 0,
         "textFn": 4679776,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          0,
@@ -24345,6 +24943,7 @@
         "font": 73,
         "text": 0,
         "textFn": 4679776,
+        "drawFn": 0,
         "textArg": -1,
         "lit": [
          0,
@@ -24362,7 +24961,9 @@
          2147483664
         ],
         "setflag": [],
-        "bind": {}
+        "bind": {
+         "string": 0
+        }
        }
       ]
      },
@@ -24392,6 +24993,7 @@
         "font": 74,
         "text": 5043584,
         "textFn": 4679776,
+        "drawFn": 0,
         "textArg": -1,
         "lit": [
          0,
@@ -24435,6 +25037,7 @@
     "tiles": [],
     "current": -1,
     "flags": 0,
+    "flagsB": 1073750016,
     "lists": [
      {
       "addr": 5041160,
@@ -24462,6 +25065,7 @@
         "font": 74,
         "text": 0,
         "textFn": 0,
+        "drawFn": 4698496,
         "textArg": -1,
         "lit": [
          0,
@@ -24499,6 +25103,7 @@
         "font": 255,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": -1,
         "lit": [
          0,
@@ -24551,6 +25156,7 @@
         "font": 83,
         "text": 0,
         "textFn": 4679776,
+        "drawFn": 0,
         "textArg": -1,
         "lit": [
          0,
@@ -24586,6 +25192,7 @@
         "font": 83,
         "text": 0,
         "textFn": 4679776,
+        "drawFn": 0,
         "textArg": -1,
         "lit": [
          0,
@@ -24621,6 +25228,7 @@
         "font": 83,
         "text": 0,
         "textFn": 4679776,
+        "drawFn": 0,
         "textArg": -1,
         "lit": [
          0,
@@ -24656,6 +25264,7 @@
         "font": 83,
         "text": 0,
         "textFn": 4679776,
+        "drawFn": 0,
         "textArg": -1,
         "lit": [
          0,
@@ -24703,6 +25312,7 @@
         "font": 255,
         "text": 0,
         "textFn": 0,
+        "drawFn": 4685312,
         "textArg": -1,
         "lit": [
          0,
@@ -24738,6 +25348,7 @@
         "font": 255,
         "text": 0,
         "textFn": 0,
+        "drawFn": 4699248,
         "textArg": -1,
         "lit": [
          0,
@@ -24785,6 +25396,7 @@
         "font": 73,
         "text": 0,
         "textFn": 4679776,
+        "drawFn": 0,
         "textArg": -1,
         "lit": [
          0,
@@ -24832,6 +25444,7 @@
         "font": 74,
         "text": 5043584,
         "textFn": 4679776,
+        "drawFn": 0,
         "textArg": -1,
         "lit": [
          0,
@@ -24875,6 +25488,7 @@
     "tiles": [],
     "current": -1,
     "flags": 536871168,
+    "flagsB": 1073750016,
     "lists": [
      {
       "addr": 5042232,
@@ -24902,6 +25516,7 @@
         "font": 73,
         "text": 0,
         "textFn": 4679776,
+        "drawFn": 0,
         "textArg": -1,
         "lit": [
          0,
@@ -24919,7 +25534,9 @@
          2147483664
         ],
         "setflag": [],
-        "bind": {}
+        "bind": {
+         "string": 4
+        }
        }
       ]
      }
@@ -24945,6 +25562,7 @@
     "tiles": [],
     "current": -1,
     "flags": 0,
+    "flagsB": 1073750016,
     "lists": [
      {
       "addr": 5041936,
@@ -24980,6 +25598,7 @@
         "font": 83,
         "text": 0,
         "textFn": 4679776,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          0,
@@ -25015,6 +25634,7 @@
         "font": 83,
         "text": 0,
         "textFn": 4679776,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          0,
@@ -25062,6 +25682,7 @@
         "font": 73,
         "text": 0,
         "textFn": 4679776,
+        "drawFn": 0,
         "textArg": -1,
         "lit": [
          0,
@@ -25079,7 +25700,9 @@
          2147483664
         ],
         "setflag": [],
-        "bind": {}
+        "bind": {
+         "string": 5
+        }
        }
       ]
      }
@@ -25105,6 +25728,7 @@
     "tiles": [],
     "current": -1,
     "flags": 0,
+    "flagsB": 1073750016,
     "lists": [
      {
       "addr": 5040160,
@@ -25146,6 +25770,7 @@
         "font": 73,
         "text": 0,
         "textFn": 4679776,
+        "drawFn": 0,
         "textArg": -1,
         "lit": [
          0,
@@ -25181,6 +25806,7 @@
         "font": 73,
         "text": 0,
         "textFn": 4679776,
+        "drawFn": 0,
         "textArg": -1,
         "lit": [
          0,
@@ -25216,6 +25842,7 @@
         "font": 73,
         "text": 0,
         "textFn": 4679776,
+        "drawFn": 0,
         "textArg": -1,
         "lit": [
          0,
@@ -25251,6 +25878,7 @@
         "font": 73,
         "text": 0,
         "textFn": 4679776,
+        "drawFn": 0,
         "textArg": -1,
         "lit": [
          0,
@@ -25298,6 +25926,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4701776,
+        "drawFn": 0,
         "textArg": -1,
         "lit": [
          0,
@@ -25345,6 +25974,7 @@
         "font": 255,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": -1,
         "lit": [
          0,
@@ -25388,6 +26018,7 @@
     "tiles": [],
     "current": -1,
     "flags": 536870928,
+    "flagsB": 1073747968,
     "lists": [
      {
       "addr": 5122384,
@@ -25420,6 +26051,7 @@
         "font": 73,
         "text": 0,
         "textFn": 4679776,
+        "drawFn": 0,
         "textArg": -1,
         "lit": [
          0,
@@ -25455,6 +26087,7 @@
         "font": 73,
         "text": 0,
         "textFn": 4679776,
+        "drawFn": 0,
         "textArg": -1,
         "lit": [
          0,
@@ -25490,6 +26123,7 @@
         "font": 73,
         "text": 0,
         "textFn": 4679776,
+        "drawFn": 0,
         "textArg": -1,
         "lit": [
          0,
@@ -25537,6 +26171,7 @@
         "font": 255,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": -1,
         "lit": [
          41,
@@ -25580,6 +26215,7 @@
     "tiles": [],
     "current": -1,
     "flags": 0,
+    "flagsB": 1073747968,
     "lists": [
      {
       "addr": 5122800,
@@ -25612,6 +26248,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4368896,
+        "drawFn": 0,
         "textArg": -1,
         "lit": [
          0,
@@ -25647,6 +26284,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4368896,
+        "drawFn": 0,
         "textArg": -1,
         "lit": [
          0,
@@ -25682,6 +26320,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4368896,
+        "drawFn": 0,
         "textArg": -1,
         "lit": [
          0,
@@ -25717,6 +26356,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4368896,
+        "drawFn": 0,
         "textArg": -1,
         "lit": [
          0,
@@ -25752,6 +26392,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4368896,
+        "drawFn": 0,
         "textArg": -1,
         "lit": [
          0,
@@ -25799,6 +26440,7 @@
         "font": 74,
         "text": 0,
         "textFn": 0,
+        "drawFn": 4685664,
         "textArg": -1,
         "lit": [
          0,
@@ -25816,7 +26458,9 @@
          2147483651
         ],
         "setflag": [],
-        "bind": {}
+        "bind": {
+         "tag": 4294967295
+        }
        }
       ]
      },
@@ -25846,6 +26490,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4907664,
+        "drawFn": 0,
         "textArg": -1,
         "lit": [
          0,
@@ -25863,7 +26508,9 @@
          2147483664
         ],
         "setflag": [],
-        "bind": {}
+        "bind": {
+         "string": 6
+        }
        },
        {
         "addr": 5123240,
@@ -25881,6 +26528,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4679776,
+        "drawFn": 0,
         "textArg": -1,
         "lit": [
          0,
@@ -25928,6 +26576,7 @@
         "font": 255,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": -1,
         "lit": [
          41,
@@ -25971,6 +26620,7 @@
     "tiles": [],
     "current": -1,
     "flags": 0,
+    "flagsB": 1073747968,
     "lists": [
      {
       "addr": 5121328,
@@ -26003,6 +26653,7 @@
         "font": 73,
         "text": 0,
         "textFn": 4679776,
+        "drawFn": 0,
         "textArg": -1,
         "lit": [
          0,
@@ -26038,6 +26689,7 @@
         "font": 73,
         "text": 0,
         "textFn": 4679776,
+        "drawFn": 0,
         "textArg": -1,
         "lit": [
          0,
@@ -26073,6 +26725,7 @@
         "font": 73,
         "text": 0,
         "textFn": 4679776,
+        "drawFn": 0,
         "textArg": -1,
         "lit": [
          0,
@@ -26120,6 +26773,7 @@
         "font": 255,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": -1,
         "lit": [
          41,
@@ -26244,6 +26898,7 @@
     ],
     "current": 0,
     "flags": 536870960,
+    "flagsB": 1073756160,
     "lists": [
      {
       "addr": 5124976,
@@ -26271,6 +26926,7 @@
         "font": 255,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          64,
@@ -26315,6 +26971,7 @@
         "font": 255,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          128,
@@ -26359,6 +27016,7 @@
         "font": 255,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 1,
         "lit": [
          192,
@@ -26394,6 +27052,7 @@
         "font": 255,
         "text": 0,
         "textFn": 0,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          257,
@@ -26467,6 +27126,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4368896,
+        "drawFn": 0,
         "textArg": -1,
         "lit": [
          0,
@@ -26502,6 +27162,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4368896,
+        "drawFn": 0,
         "textArg": -1,
         "lit": [
          0,
@@ -26537,6 +27198,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4368896,
+        "drawFn": 0,
         "textArg": -1,
         "lit": [
          0,
@@ -26572,6 +27234,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4368896,
+        "drawFn": 0,
         "textArg": -1,
         "lit": [
          0,
@@ -26607,6 +27270,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4368896,
+        "drawFn": 0,
         "textArg": -1,
         "lit": [
          0,
@@ -26642,6 +27306,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4368896,
+        "drawFn": 0,
         "textArg": -1,
         "lit": [
          0,
@@ -26677,6 +27342,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4368896,
+        "drawFn": 0,
         "textArg": -1,
         "lit": [
          0,
@@ -26712,6 +27378,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4368896,
+        "drawFn": 0,
         "textArg": -1,
         "lit": [
          0,
@@ -26747,6 +27414,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4368896,
+        "drawFn": 0,
         "textArg": -1,
         "lit": [
          0,
@@ -26794,6 +27462,7 @@
         "font": 83,
         "text": 0,
         "textFn": 4679776,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          0,
@@ -26831,6 +27500,7 @@
         "font": 83,
         "text": 0,
         "textFn": 4910640,
+        "drawFn": 0,
         "textArg": -1,
         "lit": [
          0,
@@ -26866,6 +27536,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4910864,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          0,
@@ -26901,6 +27572,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4910944,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          0,
@@ -26944,6 +27616,7 @@
     "tiles": [],
     "current": 0,
     "flags": 536870920,
+    "flagsB": 1073743872,
     "lists": [
      {
       "addr": 4998648,
@@ -26971,6 +27644,7 @@
         "font": 76,
         "text": 0,
         "textFn": 4385568,
+        "drawFn": 4385296,
         "textArg": 0,
         "lit": [
          0,
@@ -27006,6 +27680,7 @@
         "font": 74,
         "text": 0,
         "textFn": 4385632,
+        "drawFn": 0,
         "textArg": 0,
         "lit": [
          0,
@@ -27041,6 +27716,7 @@
         "font": 67,
         "text": 0,
         "textFn": 0,
+        "drawFn": 4385152,
         "textArg": 0,
         "lit": [
          0,
@@ -27076,6 +27752,7 @@
         "font": 74,
         "text": 4999156,
         "textFn": 0,
+        "drawFn": 4385248,
         "textArg": 0,
         "lit": [
          0,
@@ -27111,6 +27788,7 @@
         "font": 255,
         "text": 0,
         "textFn": 0,
+        "drawFn": 4384880,
         "textArg": 0,
         "lit": [
          0,
@@ -27146,6 +27824,7 @@
         "font": 255,
         "text": 0,
         "textFn": 0,
+        "drawFn": 4386816,
         "textArg": 0,
         "lit": [
          0,
@@ -27194,6 +27873,7 @@
     "tiles": [],
     "current": -1,
     "flags": 0,
+    "flagsB": 0,
     "lists": [
      {
       "addr": 5100200,
@@ -27232,6 +27912,7 @@
         "font": 74,
         "text": 0,
         "textFn": 0,
+        "drawFn": 4797312,
         "textArg": -1,
         "lit": [
          0,
@@ -27267,6 +27948,7 @@
         "font": 74,
         "text": 0,
         "textFn": 0,
+        "drawFn": 4797312,
         "textArg": -1,
         "lit": [
          0,
@@ -27302,6 +27984,7 @@
         "font": 74,
         "text": 0,
         "textFn": 0,
+        "drawFn": 4797312,
         "textArg": -1,
         "lit": [
          0,
@@ -27337,6 +28020,7 @@
         "font": 74,
         "text": 0,
         "textFn": 0,
+        "drawFn": 4797312,
         "textArg": -1,
         "lit": [
          0,
@@ -27372,6 +28056,7 @@
         "font": 74,
         "text": 0,
         "textFn": 0,
+        "drawFn": 4797312,
         "textArg": -1,
         "lit": [
          0,
@@ -27407,6 +28092,7 @@
         "font": 74,
         "text": 0,
         "textFn": 0,
+        "drawFn": 4797312,
         "textArg": -1,
         "lit": [
          0,
@@ -27442,6 +28128,7 @@
         "font": 74,
         "text": 0,
         "textFn": 0,
+        "drawFn": 4797312,
         "textArg": -1,
         "lit": [
          0,
@@ -27477,6 +28164,7 @@
         "font": 74,
         "text": 0,
         "textFn": 0,
+        "drawFn": 4797312,
         "textArg": -1,
         "lit": [
          0,
@@ -27512,6 +28200,7 @@
         "font": 74,
         "text": 0,
         "textFn": 0,
+        "drawFn": 4797312,
         "textArg": -1,
         "lit": [
          0,
@@ -27547,6 +28236,7 @@
         "font": 74,
         "text": 0,
         "textFn": 0,
+        "drawFn": 4797312,
         "textArg": -1,
         "lit": [
          0,
@@ -27582,6 +28272,7 @@
         "font": 74,
         "text": 0,
         "textFn": 0,
+        "drawFn": 4797312,
         "textArg": -1,
         "lit": [
          0,
@@ -27617,6 +28308,7 @@
         "font": 74,
         "text": 0,
         "textFn": 0,
+        "drawFn": 4797312,
         "textArg": -1,
         "lit": [
          0,
@@ -27652,6 +28344,7 @@
         "font": 74,
         "text": 0,
         "textFn": 0,
+        "drawFn": 4797312,
         "textArg": -1,
         "lit": [
          0,
@@ -27687,6 +28380,7 @@
         "font": 74,
         "text": 0,
         "textFn": 0,
+        "drawFn": 4797312,
         "textArg": -1,
         "lit": [
          0,
@@ -27722,6 +28416,7 @@
         "font": 74,
         "text": 0,
         "textFn": 0,
+        "drawFn": 4797312,
         "textArg": -1,
         "lit": [
          0,
@@ -27757,6 +28452,7 @@
         "font": 74,
         "text": 0,
         "textFn": 0,
+        "drawFn": 4797312,
         "textArg": -1,
         "lit": [
          0,
@@ -27800,6 +28496,7 @@
     "tiles": [],
     "current": -1,
     "flags": 536870960,
+    "flagsB": 1073764352,
     "lists": [
      {
       "addr": 5120720,
@@ -27827,6 +28524,7 @@
         "font": 67,
         "text": 0,
         "textFn": 0,
+        "drawFn": 4905680,
         "textArg": -1,
         "lit": [
          0,

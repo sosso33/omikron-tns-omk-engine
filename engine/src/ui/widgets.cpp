@@ -135,6 +135,7 @@ UiWidgets UiWidgets::loadJson(const std::string& path) {
         // rule for those and takes this value for the rest.
         panel.current = static_cast<int>(p["current"].i64(-1));
         panel.flags = static_cast<std::uint32_t>(p["flags"].i64(0));
+        panel.flagsB = static_cast<std::uint32_t>(p["flagsB"].i64(0));
         const auto& ls = p["lists"];
         for (std::size_t j = 0; j < ls.size(); ++j) {
             const auto& l = ls[j];
@@ -166,6 +167,7 @@ UiWidgets UiWidgets::loadJson(const std::string& path) {
                 item.text    = static_cast<std::uint32_t>(it["text"].i64(0));
                 item.textFn  = static_cast<std::uint32_t>(it["textFn"].i64(0));
                 item.textArg = static_cast<int>(it["textArg"].i64(-1));
+                item.drawFn  = static_cast<std::uint32_t>(it["drawFn"].i64(0));
                 item.lit[0]   = static_cast<int>(it["lit"][0].i64(0));
                 item.lit[1]   = static_cast<int>(it["lit"][1].i64(0));
                 item.unlit[0] = static_cast<int>(it["unlit"][0].i64(0));
@@ -950,6 +952,12 @@ bool UiWalk::typeName(const std::string& text) {
     f.enter(name_);
     f.enter(text);
     name_ = f.text();
+    // ...and where the caret ended up. `sub_47A390` keeps it in
+    // `dword_657994` and the FIELD'S DRAWER reads it: the `_` goes after
+    // exactly this many characters of the typed name. Kept here rather than
+    // recomputed as `name_.size()` because the hook moves it on LEFT and
+    // RIGHT without changing the buffer at all.
+    nameCursor_ = f.cursor();
     return true;
 }
 
@@ -1152,10 +1160,23 @@ bool UiWalk::press(std::uint32_t bits) {
     if (!l) return false;
     if (l->hook == w_->gridHook()) return grid(*l, bits);
     if (l->hook == w_->nameHook()) {
-        // The name field answers the CHARACTER channel (`sub_4397B0`), not the
-        // input bits, and returns 0 for every bit - so the list does not
-        // respond to a direction, and because the hook exists the default walk
-        // is not reached either.
+        // The name field answers the CHARACTER channel (`sub_4397B0`) and not
+        // the input bits - with ONE exception this used to miss. `loc_47A499`,
+        // the arm taken when no character is waiting, reads `screen+0x6C` -
+        // the live input word `sub_482FE0` reads - and moves the CARET: bit 1
+        // (LEFT) steps it back when it is not already at 0, bit 2 (RIGHT)
+        // steps it on while there is a character under it. Both return 1, so
+        // the frame is consumed; every other bit returns 0 and the default
+        // walk is not reached either, because the hook exists.
+        const int before = nameCursor_;
+        if (bits & kUiLeft) {
+            if (nameCursor_ > 0) --nameCursor_;
+        } else if (bits & kUiRight) {
+            // `cl = byte_69BDA0[cursor]; if (!cl) return 0` - RIGHT stops at
+            // the end of the buffer rather than running past it.
+            if (nameCursor_ < static_cast<int>(name_.size())) ++nameCursor_;
+        }
+        if (nameCursor_ != before) { log_.push_back("caret"); return true; }
         log_.push_back("name field: no bit response");
         return false;
     }

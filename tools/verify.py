@@ -2933,7 +2933,7 @@ def c_ui_item_bindings():
     it is why the two forms are decoded separately rather than by one pattern.
 
     What the check itself catches is the absence of the 16-bit form: removing
-    it takes the string bindings from **35 to 0**. It does not reproduce the
+    it takes the string bindings from **42 to 0**. It does not reproduce the
     3345350661 shape, because the current scanner only records `+28` from the
     16-bit branch - the mutation removes the finding rather than corrupting
     it, and saying so is more useful than implying a sharper test.
@@ -2954,6 +2954,28 @@ def c_ui_item_bindings():
     their per-screen titles come from a branch a linear scan does not follow.
     All ten therefore report the same binding, and the ten screens share one
     panel, so the items dedupe to one set.
+
+    **The PANEL's own `+4` builder joined the scan on 2026-09-06**, which is
+    where 35 and 22 became 42 and 24. `Ui_DrawScreen` runs it when the panel
+    is installed, and for a CHILD panel it is the only code that binds
+    anything - the start menu's four children write their heading into the one
+    item record they share (0x004CEFE8): 0 "Nouvelle partie", 4 "Options",
+    5 "Quitter". Without them the confirm dialog came up with no title at all.
+    Four of the seven sit on child panels, which carry `screen: -1` and no
+    text file, so `nofile` rises from 6 to 10; the other three are on screens
+    that have one and resolve there, taking `resolvable` from 29 to 32 - and
+    every one of the 32 still names a non-empty string, which is the part the
+    shipped data could have failed.
+
+    **Two rules keep that scan from inventing things**, and both were added
+    because the first version did. A field written TWICE in one builder is
+    dropped: `sub_47A6D0`, the load panel's, has its two arms - saves present
+    and none - in one straight run and writes the title as 1 then 0, so a scan
+    that stops at the ret records the second and calls it the reading. And
+    only the 16-BIT register form (`66 89 /r 05`) is decoded, not the 32-bit
+    one: `89 /r 05` matched inside a neighbouring instruction in that same
+    builder and produced a tag of 3921739881 for an item the screen's own
+    callback had correctly bound to -1.
     """
     import json as J
     wid = os.path.join(ROOT, "tables", "ui_widgets.json")
@@ -2987,7 +3009,7 @@ def c_ui_item_bindings():
                 if 0 <= b["string"] < len(st) and st[b["string"]].strip():
                     ok += 1
     return (nstr, ntag, resolvable, ok, nofile, sorted(terminal)), \
-           (35, 22, 29, 29, 6, [5, 6, 7, 8, 9, 10]), \
+           (42, 24, 32, 32, 10, [5, 6, 7, 8, 9, 10]), \
            "items whose open callback binds a string id and items it binds a " \
            "tag on - neither is in the item record, which ships -1 and 0; " \
            "then how many of those bindings sit on a screen that HAS a text " \
@@ -13322,6 +13344,21 @@ def c_engine_screen():
 
     Dropping the `bind` fallback still moves nothing, and that is now recorded
     as a fact about these two screens rather than counted as evidence.
+
+    **Screen 29's hash and its background flag DID move, on 2026-09-06**, and
+    the paragraph above is why that is worth stating rather than quietly
+    rebaselining. Three readings changed at once and all three are traced in
+    `engine: name field`: the background arm is the panel's bank-B flag
+    (`0x40002000` is its first arm and draws NOTHING, where this composed the
+    whole sheet), the I2D colour key is a flat 0 set by
+    `I2D_CreateSurfaceFromBmp` and not each sheet's bottom-left pixel, and the
+    display list is sorted by LAYER - the title band is a sprite at layer 3
+    and the four rows are text at layer 6, so drawn in record order the band
+    painted over "Nouvelle partie" and the menu's first row was GONE. The new
+    frame is closer to the capture than the old one, not merely different: the
+    top 150 rows are now 281854 of 288000 bytes identical to
+    `traces/frames/menu-18` where before they were the sheet keyed over the
+    cloud.
     """
     import subprocess, tempfile, shutil
     eng = os.path.join(ROOT, "engine")
@@ -13371,11 +13408,11 @@ def c_engine_screen():
     haveSdl = same >= 0
     return (v, len(refFb), haveSdl, same if haveSdl else 614400,
             frames if haveSdl else 3), \
-           ((29, 0, 1, 4, 800, 4, -1437019637, 307200, 1,
+           ((29, 0, 0, 4, 800, 4, 2025997196, 307200, 1,
               4, 80, 0, 0, 0, 0, 706294455, 257388, 7,
               1, 307200),
             1228800, haveSdl, 614400, 3), \
-           "the composed frames - screen 29 (full-sheet background, no " \
+           "the composed frames - screen 29 (NO background at all, no " \
            "tiles, 4 rows, 800px of advance, all 4 CENTRED by the list's " \
            "broadcast, every one of the 307200 pixels painted, and ONE " \
            "sprite) and screen 4, the LIFT (a tile map of 80 cells, and " \
@@ -14112,6 +14149,137 @@ def c_save_clock():
            "nothing else in this repo can provide"
 
 
+def c_engine_name_field():
+    r"""THE NEW-GAME DIALOG - the item DRAW HOOK, the caret, and the band.
+
+    A player's capture of the original showed this panel as: the title
+    "New Game" centred at the top in the menu's own glyph face, `Enter Name :
+    <typed>_` down the left in a Latin one, "Confirm" and "Cancel" dimmed
+    below - and the animated cloud running edge to edge behind all of it, with
+    no title band and no logo. The port drew the typed name alone, in the
+    wrong face, over `gfxint.bmp` blitted whole. Three separate readings were
+    wrong and each is asserted here.
+
+    **1. The background arm is the panel's bank-B flag, not "has no tiles".**
+    `Ui_DrawPanelBack` (0x00476040) tests `panel+76` and nothing else:
+    `0x2000` draws nothing at all, `0x4000` blits the whole sheet over the
+    display, and failing both it walks `panel+20`'s 80 tile ids - of which
+    there are NONE when that pointer is 0. All five of the start menu's panels
+    ship `0x40002000`, the first arm, so the menu draws no artwork whatsoever.
+    (The three constants were converted from the decompiler's decimals by hand
+    first and every one came out a bit high, which gives the same answer on 36
+    screens and blanks HIGH-SCORE - the one panel that blits its sheet whole.
+    They are read from `sub_476040`'s raw pushes now.) What the capture shows as a black title band is a **640x150
+    SPRITE ITEM** (0x004CF1A8, bank B `0x100`, layer 3) on the screen's own
+    panel; the confirm dialog is a CHILD panel and does not carry it, which is
+    exactly why the cloud reaches y = 0 there and not on the menu.
+
+    **2. The I2D colour key is 0**, and it is not a property of any sheet.
+    `I2D_CreateSurfaceFromBmp` (0x00428DB0) ends every load with
+    `SetColorKey(DDCKEY_SRCBLT, {0, 0})` - the vtable call at +116 - so the key
+    is pure black for all eleven bitmaps, and `I2D_BlitBitmap`'s third
+    argument (1 on every interface blit) is what turns DDBLT_KEYSRC on against
+    it (`sub_4810D0`: `v3 & 1` -> `0x1008000`). The composer took the key from
+    each sheet's own BOTTOM-LEFT PIXEL, which is index 255 = rgb(4, 4, 4) in
+    `gfxint.bmp`, index 37 in `Ascen.bmp` and index 9 in `sneak.bmp` - three
+    sheets keyed on a colour the engine draws. `traces/frames/menu-18`
+    settles it: the whole title band is (0, 4, 0), which is (4, 4, 4) through
+    RGB565, so those pixels are DRAWN.
+
+    **3. The display list is sorted by LAYER.** The band's sprite is layer 3
+    and the four menu rows are text at layer 6, but the sprite's list is the
+    panel's third - so composed in record order the band paints over
+    "Nouvelle partie" and the menu's first row disappears. It did.
+
+    **And the field itself is an item `+20` DRAW HOOK**, a whole primitive
+    class this port had never carried: `Ui_DrawItem` runs `item+20` before the
+    text and before every decoration, 24 distinct hooks over 45 items. Item
+    0x004CE840's is `sub_47A510`, which does
+
+        sprintf(buf, "%s : %s", Ui_ScreenString(screen, 13), byte_69BDA0)
+        Text_DrawBlock(the item's box, buf, Ui_ItemTextStyle(item))
+        if (Ui_Oscillator(1)[24])
+            Text_DrawBlock(x + width(buf[0 .. strlen(label) + cursor + 3]),
+                           y, +20, +20, "_", the same style)
+
+    - so the label is the screen's own string **13** ("Entrez votre nom"), the
+    caret sits after the CURSOR rather than after the last character, and it
+    blinks on the same 500 ms square wave as every other flashing row. The
+    title beside it is string **0** ("Nouvelle partie"), written into the
+    shared item 0x004CEFE8 by the panel's own `+4` builder - `sub_47A050`'s
+    `mov word_4CF004, bx` with `ebx` zeroed - which nothing scanned until the
+    widget lift learned to read a PANEL builder as well as a screen's open
+    callback.
+
+    Asserted: the menu panel's address and its band pixel count; the dialog's
+    panel, the caret after eight characters and after one LEFT; its band
+    count, which must be **0** - the cloud behind the dialog; the rows and
+    advance with the blink LOW and HIGH, which differ by exactly one row and
+    not at all in advance; the label's length and the measured width of
+    everything before the caret; the bounding box of the pixels the two blink
+    phases differ in, which is the caret and must begin at the item's own x
+    (95) plus that width; and the caret refusing to run past the end of the
+    buffer on two RIGHTs.
+
+    **The LEFT before the two blink shots is load-bearing**: with the caret at
+    the end of the name, drawing it after the last character and drawing it
+    after the CURSOR put it on the same pixel, and the mutation that swapped
+    them passed. Stepped back one they are ten pixels apart.
+
+    Shown to fail: reading the background arm as `tiles.empty()` again puts
+    the band on the dialog (0 -> 79188 band pixels); taking the key from the
+    sheet's bottom-left pixel takes the MENU's band from 78210 to 0; dropping
+    the label leaves the advance at 487 instead of 650 and moves the caret box
+    to x 161; drawing the caret unconditionally makes both blink phases 5
+    rows; and measuring the prefix to the end of the string instead of to the
+    cursor moves the box to 324.
+    """
+    import subprocess, tempfile, shutil
+    eng = os.path.join(ROOT, "engine")
+    tb  = os.path.join(ROOT, "tables")
+    fr  = omkpaths.data_root()
+    if not (os.path.isdir(eng) and os.path.isdir(fr)):
+        return ("skipped",), ("skipped",), "engine/ or gamedata/ absent"
+    b = subprocess.run(["make", "-s"], cwd=eng, capture_output=True, text=True)
+    binp = os.path.join(eng, "build", "new_game_panel")
+    if b.returncode != 0 or not os.path.exists(binp):
+        return ("build failed",), ("built",), "engine/ must build"
+    tmp = tempfile.mkdtemp()
+    out = os.path.join(tmp, "n.bin")
+    try:
+        subprocess.run([binp, fr, os.path.join(tb, "ui_widgets.json"),
+                        os.path.join(tb, "ui.json"), out], capture_output=True)
+        raw = open(out, "rb").read()
+        v = struct.unpack("<%di" % (len(raw) // 4), raw)
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+    return v, (0x004CF218, 4, 800, 78210,
+               0x004CF280, 8, 7,
+               4, 650, 0,
+               5, 650, 0,
+               16, 219,
+               314, 215, 323, 216,
+               8), \
+           "the start menu's own panel (4 rows, 800px, and 78210 pixels of " \
+           "the sheet's own rgb(4,4,4) in the top 150 rows - its title band, " \
+           "which is a 640x150 SPRITE ITEM and not the panel background); " \
+           "then the NEW-GAME dialog it descends into, the caret at 8 after " \
+           "eight characters typed, and ZERO band pixels, because a child " \
+           "panel does not carry that sprite and the cloud runs to y=0 " \
+           "behind it; the caret stepped back one by LEFT, so that drawing " \
+           "it after the cursor and drawing it after the last character are " \
+           "ten pixels apart rather than the same pixel; the same dialog " \
+           "with the blink LOW then HIGH - one more row and the same " \
+           "advance, which is the caret and only the caret; the label's 16 " \
+           "characters ('Entrez votre nom', the screen's string 13) and the " \
+           "219px width of everything before the caret; the bounding box of " \
+           "what the two blink phases differ in, which begins at " \
+           "95 + 219 = 314 - the item's own x plus that width, which is " \
+           "where `Ui_DrawNameField`'s second Text_DrawBlock puts the `_`; " \
+           "and the caret refusing to run past the end of the buffer on two " \
+           "RIGHTs"
+
+
 def c_engine_screen_scale():
     r"""A screen must fill the DISPLAY, not the 640x480 it was authored at.
 
@@ -14173,7 +14341,7 @@ def c_engine_screen_scale():
     areaRatio = (800 * 600) / (640 * 480)
     got = round(big / small, 2) if small else 0
     return (small, big, got, big == small), \
-           (257388, 402014, round(areaRatio, 2), False), \
+           (257388, 402355, round(areaRatio, 2), False), \
            "the LIFT's painted pixels composed at 640x480 and at 800x600, " \
            "their ratio, and whether the two are EQUAL - which is the bug: " \
            "a background drawn in literal 64-pixel cells covers the same " \
@@ -15360,13 +15528,27 @@ def c_menu_cloud():
     | full-int weights | 29 | 57 | 7.1% |
     | byte-wrapped | **17** | 26 | **0.0%** |
 
-    **OPEN, and measured rather than waved at**: in the 640x480 captures rows
-    ~0-150 are a STATIC dark band - luma 12.9, identical across all three
-    frames while the middle varies - yet the sheet is transparent there and a
-    reader's own 800x600 screenshot of the game has the cloud running behind
-    the title. So something confines the effect vertically at this resolution
-    and it has not been traced. This check therefore measures the ANIMATED
-    band and says nothing about the top.
+    **The STATIC TOP BAND is answered, 2026-09-06**, and it was never the
+    cloud being confined. In the 640x480 captures rows 0-149 are dark and
+    identical across all three frames while the middle varies, and the reason
+    is that the menu's own panel carries a **640x150 SPRITE ITEM**
+    (0x004CF1A8) which blits the top of `gfxint.bmp` over the cloud - the
+    logo and, around it, the sheet's own background, palette index 255 =
+    rgb(4, 4, 4). That is NOT the I2D colour key, which
+    `I2D_CreateSurfaceFromBmp` sets to a flat 0, so those pixels are drawn and
+    the band is exactly (0, 4, 0) in RGB565. The docstring above still says
+    the sheet is transparent; it is transparent nowhere, and what makes the
+    cloud visible below y=150 is that nothing draws the sheet there - the
+    panel's own background arm is "no tiles, no sheet bit, draw nothing"
+    (`engine: name field`). The confirm dialog, a CHILD panel without that
+    item, has the cloud running to y=0, which is what a player's capture of it
+    shows.
+
+    What that leaves open is only the reader's 800x600 screenshot, in which
+    the cloud ran behind the title: the sprite's destination is scaled like
+    every other, so it should have painted the band there too. That screenshot
+    is not in the tree and cannot be re-measured. This check still measures
+    the ANIMATED band and says nothing about the top.
 
     **CONFIRMED IN PLAY.** The statistics matching is necessary and not
     sufficient - a wrong sampling can hit the same median - and each of the
@@ -22108,7 +22290,7 @@ def c_licence_headers():
                    if TAG in open(p, encoding="utf-8",
                                   errors="replace").read(600)]
     return (authored, sorted(missing), len(vendored), mislabelled), \
-           (360, [], 1, []), \
+           (361, [], 1, []), \
            "authored source files under tools/, engine/src, engine/tools, " \
            "engine/backends and scripts/; those MISSING the SPDX tag; " \
            "vendored files in engine/third_party; and vendored files wrongly " \
@@ -23680,6 +23862,7 @@ SLOW = [
     ("ui geometry",        c_ui_geometry,       "UI 3b"),
     ("engine: screen",     c_engine_screen,     "PORTING A1"),
     ("engine: screen scale", c_engine_screen_scale, "PORTING A1; UI 3b"),
+    ("engine: name field", c_engine_name_field, "UI 3b; PORTING A1"),
     ("save clock",         c_save_clock,        "GAME_STATE 8"),
     ("player counters",   c_player_counters,   "UI 3g; GAME_STATE"),
     ("fill colour",       c_fill_colour,       "UI 3b"),

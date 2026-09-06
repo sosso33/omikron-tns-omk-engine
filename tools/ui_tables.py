@@ -473,6 +473,16 @@ def bitmap(name):
 
 
 #: `Ui_DrawPanelBack`'s flags, on the panel's bank-B word at +72.
+# `Ui_DrawPanelBack`'s two tests, and the WORD they are tested against is
+# `panel+76` - bank B - not `panel+72`. Corrected 2026-09-06: the function
+# pushes `40002000h` for "draw nothing" and `40004000h` for "the whole
+# sheet", read from the raw assembly rather than from the decompiler's
+# decimals. Reading bank A instead happened to give the right ANSWER on 36
+# of the 37 screens, because they all fall through to the tile pointer -
+# HIGH-SCORE, whose `+76` is 0x40005800, is the one that blits its sheet
+# whole, and the start menu's five panels (`+76 = 0x40002000`, `+72 = 0`)
+# are the ones that draw nothing.
+PANEL_FLAGS_AT = 76
 PANEL_NO_BACK, PANEL_WHOLE_SHEET = 0x40002000, 0x40004000
 TILE, TILES_ACROSS, TILE_ROWS = 64, 10, 8
 
@@ -483,10 +493,14 @@ def panel_background(screen_id, panel, e=None):
     Not the raw sheet - that is the mistake a viewer makes. The engine takes
     one of three paths and only the middle one shows the sheet whole:
 
-      flag 0x40002000  nothing at all
-      flag 0x40004000  the sheet, stretched over the screen
-      else, panel+20   EIGHTY TILE IDS - a 10-wide, 8-deep grid of 64x64
-                       cells, each id selecting a source cell (id%10, id/10)
+      panel+76 & 0x2000   nothing at all
+      panel+76 & 0x4000   the sheet, stretched over the screen
+      else, panel+20      EIGHTY TILE IDS - a 10-wide, 8-deep grid of 64x64
+                          cells, each id selecting a source cell (id%10, id/10)
+
+    The flag word is `panel+76`, BANK B - `Ui_TestPanelFlag` picks `+72` for a
+    0x20000000 constant and `+76` for a 0x40000000 one, and both of these are
+    the latter.
 
     So the parts of a sheet that are *source art* - the lit copies of the
     buttons, which sit in their own strip - are never on screen. Drawing the
@@ -500,7 +514,7 @@ def panel_background(screen_id, panel, e=None):
     scr = {s["id"]: s for s in screens(e)}.get(screen_id)
     if not scr or not scr["bitmap"]:
         return None
-    flags = struct.unpack_from("<I", e.read(panel + 72, 4), 0)[0]
+    flags = struct.unpack_from("<I", e.read(panel + PANEL_FLAGS_AT, 4), 0)[0]
     if flags & (PANEL_NO_BACK & 0x3FFFFFFF):
         return None
     sheet = bitmap(scr["bitmap"])

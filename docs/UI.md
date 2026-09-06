@@ -337,8 +337,14 @@ for, not a decode gap.
 
 > **THE MENU'S ANIMATED BACKGROUND** (found 2026-09-01). `gfxint.bmp` is the
 > title on palette index **255** — rgb(4,4,4) — and nothing else: every sampled
-> pixel outside the title glyphs is that one index, and it is the I2D colour
-> key. So the sheet is TRANSPARENT and a lower layer shows through.
+> pixel outside the title glyphs is that one index.
+>
+> **Corrected 2026-09-06: that index is NOT the colour key**, and the sheet is
+> transparent nowhere. The key is a flat 0 set by `I2D_CreateSurfaceFromBmp`
+> (§3b), so rgb(4,4,4) is painted. What lets the cloud show is that screen
+> 29's panels draw no sheet at all — `+76 & 0x2000`, the first arm — and the
+> only part of `gfxint.bmp` that reaches the screen is the 640×150 sprite item
+> that puts the title band at the top.
 >
 > Screen 29's open callback calls `sub_4B19C0`, which loads
 > `IMAGES\CLOUD.BMP` (256×256 greyscale), mallocs `0x20000` = 256·256·2 and
@@ -402,12 +408,18 @@ for, not a decode gap.
 > | full-int weights | 29 | 57 | 7.1% |
 > | byte-wrapped | **17** | 26 | **0.0%** |
 >
-> **Open**: in the 640×480 captures rows ~0–150 are a static dark band (luma
-> 12.9, identical across all three frames while the middle animates) even
-> though the sheet is transparent there — and a reader's own 800×600
-> screenshot of the game has the cloud running behind the title. Something
-> confines the effect vertically at this resolution and it has not been traced.
-> `verify.py: menu cloud`.
+> **The static band is answered, 2026-09-06.** Rows 0–149 of the 640×480
+> captures are dark and identical across all three frames while the middle
+> animates because the menu's own panel carries a 640×150 SPRITE ITEM
+> (0x004CF1A8, layer 3) that blits the top of `gfxint.bmp` over the cloud —
+> the logo, and around it the sheet's opaque rgb(4,4,4). Nothing confines the
+> effect: below y=150 nothing draws the sheet. The confirm dialog is a child
+> panel without that item and has the cloud running to y=0, which is what a
+> player's capture of it shows. What stays unexplained is only the reader's
+> 800×600 screenshot, where the cloud ran behind the title although the
+> sprite's destination scales like every other; that screenshot is not in the
+> tree and cannot be re-measured. `verify.py: menu cloud`,
+> `engine: name field`.
 
 **Four levels**, and the reason there are four *different* flag-helper pairs
 (§1) is that each level has its own flag words. The bank in a flag constant
@@ -445,19 +457,69 @@ A screen keeps a **second** panel at `+32` while a transition runs, and
 `Ui_DrawScreen`'s body is written out twice for it: incoming first, outgoing
 after.
 
-### The background is a tile map
+### The background is a tile map — or nothing at all
 
-The screen's artwork is one 640×480 sheet. With flag `0x40004000`
-`Ui_DrawPanelBack` blits the whole thing full-screen; **without it,
-`panel+20` is 80 tile ids** — a 10-wide by 8-deep grid of 64×64 tiles, each id
-selecting the source cell `(id % 10, id / 10)`.
+The screen's artwork is one 640×480 sheet, and which of three things
+`Ui_DrawPanelBack` (0x00476040) does with it is decided by the panel's **bank
+B word at `+76`**, tested through `Ui_TestPanelFlag`:
 
-The arithmetic is the check. 10 × 64 is exactly 640, and seven rows of 64
-leave 32 — which is precisely the case the function hard-codes, row 7 drawing
-at half height from source y 448..480. **All eleven shipped bitmaps are
-640×480**, so the grid tiles every one of them exactly. That is what lets
-`boutiq.bmp` serve ten different shops and `gfxint.bmp` all the menus: one
-sheet, a different 80-byte map per panel.
+| bit | what happens |
+|---|---|
+| `0x2000` | return at once — **no background** |
+| `0x0800` clear | a full-screen quad goes down first |
+| `0x4000` | blit the WHOLE sheet over the display |
+| none of them | walk `panel+20`'s 80 tile ids |
+
+(The pushes are `40002000h`, `40000800h` and `40004000h` in `sub_476040`; the
+decompiler prints them in decimal, and converting them by hand is how a first
+pass here got all three wrong by one bit — which changes the answer on exactly
+one screen, HIGH-SCORE, and would have left it blank.)
+
+`panel+20` is a **pointer**, so a panel that carries neither `0x4000` nor a
+tile array draws no artwork whatsoever. **All five of the start menu's panels
+take the first arm outright** — `+76 = 0x40002000` — which is why the animated
+cloud reaches the top of the screen behind its confirm dialog. The bit is
+static: `40002000h` appears exactly twice in the whole image, once as this test
+and once as that panel's own dword, so nothing ever sets or clears it. What a capture
+of the menu itself shows as a black title band is **not** the background: it is
+a 640×150 SPRITE ITEM (0x004CF1A8, bank B `0x100`, layer 3) on the screen's
+own panel, and the child dialogs do not carry it.
+
+Reading "no tiles" as the full-sheet arm is the mistake to avoid, and the
+replica made it: `gfxint.bmp` was blitted over both the menu and its dialog,
+so the cloud only showed where the sheet's own background happened to be
+transparent — which brings up the next point, because it is not transparent at
+all.
+
+**The colour key is 0, and it belongs to the LOADER, not to the sheet.**
+`I2D_CreateSurfaceFromBmp` (0x00428DB0) ends every load with the vtable call at
++116 — `SetColorKey(DDCKEY_SRCBLT, {low = 0, high = 0})` — so all eleven
+bitmaps key on **pure black** and on nothing else; `I2D_BlitBitmap`'s third
+argument, 1 on every interface blit, is what turns `DDBLT_KEYSRC` on against
+it. `gfxint.bmp`'s whole background is palette index **255 = rgb(4, 4, 4)**,
+which is *not* the key: it is drawn, opaquely. `traces/frames/menu-18` settles
+it — the entire 640×150 band is (0, 4, 0), which is (4, 4, 4) through RGB565.
+A reader who takes the key from each sheet's own bottom-left pixel gets 4,4,4
+for `gfxint.bmp`, index 37 for `Ascen.bmp` and index 9 for `sneak.bmp`: three
+sheets keyed on a colour the engine paints.
+
+The tile arithmetic is the check on the last arm. 10 × 64 is exactly 640, and
+seven rows of 64 leave 32 — which is precisely the case the function
+hard-codes, row 7 drawing at half height from source y 448..480. **All eleven
+shipped bitmaps are 640×480**, so the grid tiles every one of them exactly.
+That is what lets `boutiq.bmp` serve ten different shops: one sheet, a
+different 80-byte map per panel.
+
+**And the display list is sorted by LAYER**, which decides what the tile map or
+the sprite ends up under. `I2D_Enqueue` files every primitive under the layer
+it is submitted at and the flush walks the sixteen in order, so an item's `+11`
+is its depth and record order settles nothing between two items with different
+ones. The start menu is where it shows: the title band is a sprite at layer 3
+and the four buttons are text at layer 6, but the sprite's list is the panel's
+THIRD — composed in record order the band paints over "Nouvelle partie" and
+the menu's first row disappears.
+
+`verify.py: engine: name field`, `engine: screen`.
 
 ### Focus, and why only one item has it
 
@@ -2247,6 +2309,13 @@ bits. That is why a direction does nothing inside the field — and why the hook
 *existing* stops `Ui_MoveSelection` being reached, so up and down there are
 inert and getting out of it is the panel hook's DOWN.
 
+**Left and right are the exception**, and they are not "nothing": the arm at
+`loc_47A499`, taken when no character is waiting, reads the live input word at
+`screen+0x6C` and moves the CURSOR — bit 1 steps it back unless it is already
+0, bit 2 steps it on while there is a character under it — and both return 1,
+so the frame is consumed. The cursor is `dword_657994`, and it is what the
+field's drawer puts the caret after.
+
 Its switch is a compact jump table over the characters 8..27:
 
 | | |
@@ -2270,6 +2339,36 @@ screen 29   CONFIRM on "Nouvelle partie"     -> the confirm dialog
             DOWN                              the panel hook -> the buttons
             CONFIRM on "Confirmer"            -> answer 1
 ```
+
+### What the field DRAWS — an item's `+20` hook
+
+`Ui_DrawItem` (0x004764A0) runs the item's own `+20` **first**, before the text
+and before every decoration. It is a whole primitive class beside the flag
+table above, and there are 24 distinct hooks over 45 items in the shipped tree.
+The name field's is `sub_47A510`, on item 0x004CE840, and nothing else in that
+record says what the box shows: `+24`, `+28` and `+32` are 0, −1 and 0.
+
+    sprintf(buf, "%s : %s", Ui_ScreenString(screen, 13), byte_69BDA0)
+    Text_DrawBlock(the item's own scaled box, buf, Ui_ItemTextStyle(item))
+    if (Ui_Oscillator(1)[24])                            // the 500 ms blink
+        Text_DrawBlock(x + Text_Width(buf[0 .. strlen(label) + cursor + 3],
+                                      item->font),
+                       y, +20, +20, "_", the same style)
+
+So the box reads **`<string 13> : <typed>_`** — for the start menu, string 13
+of `IAM\Menu` is "Entrez votre nom" ("Enter Name" in the English release), the
+3 is the `" : "`, and the caret sits after the CURSOR rather than after the
+last character. Its face is the item's own `+36 = 74` ('J', JOURNAL), which is
+why the label reads in Latin letters while the dialog's title and its two
+buttons — font 73, MENUINTR — are the game's own glyphs.
+
+The **title** beside it is item 0x004CEFE8, which all four of the start menu's
+child panels share, and each one writes its own string id into `+28` from its
+`+4` builder: `sub_47A050` (new game) writes **0** "Nouvelle partie",
+`sub_47BB40` **4** "Options", `sub_47BBB0` **5** "Quitter". A widget lift that
+scans only a screen's open callback finds none of them, and the dialog comes up
+with no heading — which is what the replica drew until 2026-09-06.
+`verify.py: engine: name field`, `ui item bindings`.
 
 ### Rendering the text: `tools/uitext.py`
 

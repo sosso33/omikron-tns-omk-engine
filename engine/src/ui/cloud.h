@@ -3,9 +3,22 @@
 //
 // The start menu's own sheet, `I2D/bitmaps/gfxint.bmp`, is the title on a
 // uniform fill: every pixel of the area below it is palette index **255**,
-// which is rgb(4,4,4). That is the I2D colour key, so the sheet is
-// TRANSPARENT there and something on a lower layer shows through. This is
-// that something, and until it was found the replica drew the menu on black.
+// which is rgb(4,4,4). Something on a lower layer shows through there, and
+// this is that something - until it was found the replica drew the menu on
+// black.
+//
+// **Why it shows through was read wrong, and corrected 2026-09-06.** It is
+// not that rgb(4,4,4) is the I2D colour key: the key is a flat **0**, set by
+// `I2D_CreateSurfaceFromBmp`'s `SetColorKey(DDCKEY_SRCBLT, {0, 0})`, so
+// rgb(4,4,4) is PAINTED. The cloud shows because screen 29's panels draw no
+// sheet at all - `panel+76 & 0x2000` is `Ui_DrawPanelBack`'s first arm, an
+// immediate return - and the only part of `gfxint.bmp` that reaches the screen
+// is the
+// 640x150 sprite item that puts the title band across the top. Below y=150
+// nothing draws the sheet, which is a stronger statement than transparency
+// and predicts the capture exactly: rows 0..149 are (0, 4, 0), the band, and
+// the confirm dialog - a child panel without that item - has the cloud
+// running to y=0.
 //
 // The chain, traced from screen 29's open callback (0x00479D10):
 //

@@ -111,9 +111,11 @@ def _ui_state(u, screen):
                 "off_src": [u._i16(it + 16), u._i16(it + 18)]})
         lists.append({"at": lst, "current": k == u.cur,
                       "hook": u._u32(lst + 4), "items": items})
-    flags = u._u32(u.panel + 72)
-    back = ("none" if flags & 0x2000 else
-            "sheet" if flags & 0x4000 else
+    # `Ui_DrawPanelBack` reads `panel+76`, bank B, not `panel+72` - and the
+    # bits are 0x2000 and 0x4000. See `ui_tables.panel_background`.
+    flags = u._u32(u.panel + ui_tables.PANEL_FLAGS_AT)
+    back = ("none" if flags & (ui_tables.PANEL_NO_BACK & 0x3FFFFFFF) else
+            "sheet" if flags & (ui_tables.PANEL_WHOLE_SHEET & 0x3FFFFFFF) else
             "tiles" if u._u32(u.panel + 20) else "none")
     return {"screen": screen, "name": scr["name"], "bitmap": scr["bitmap"],
             "text": txt, "panel": u.panel, "lists": lists, "back": back,

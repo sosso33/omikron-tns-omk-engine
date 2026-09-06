@@ -515,7 +515,42 @@ class Ui:
         first `ret` and does not follow branches.
         """
         s = self.screens[screen_id]
-        fn = s["cb"][0]
+        return self.binds_at(s["cb"][0], items)
+
+    def binds_at(self, fn, items):
+        """`open_binds`'s scan, over ANY builder - a panel's `+4` included.
+
+        A screen's open callback is not the only code that binds an item.
+        `Ui_DrawScreen` runs the PANEL's own `+4` builder when the panel is
+        installed, and a child panel has one of its own: the start menu's
+        confirm dialog (0x004CF280) is built by `sub_47A050`, which writes
+        `word_4CF004 = 0` - item 0x004CEFE8's `+28` - and that is the
+        dialog's TITLE, string 0 of `IAM\\Menu`, "Nouvelle partie". Scanned
+        only from the screen's callback the title has string -1 and the
+        dialog comes up with no heading at all, which is what the port drew.
+
+        **The 16-bit REGISTER form is needed here and was not in
+        `open_binds`.** That builder zeroes `ebx` once and writes it into the
+        field (`66 89 1D <abs32>`), so an immediate-only scan finds nothing.
+        The constant tracking is `open_flags`'s: only `xor r, r` and
+        `mov r32, imm32` are followed, and a register with no known constant
+        binds nothing rather than guessing. The 32-bit register form is NOT
+        decoded: `89 /r 05` is two bytes of opcode and matches inside
+        neighbouring instructions often enough that the load panel's builder
+        produced a tag of 3921739881 for an item the screen callback had
+        already bound to -1. Nothing needs it, so it is not read.
+
+        **A field written TWICE is not read at all**, and that is the rule
+        that keeps a linear scan honest here. `sub_47A6D0`, the load panel's
+        builder, has two arms in one straight run - saves present and none -
+        and writes the title as string 1 in the first and 0 in the second,
+        the button labels as 2/9 and then 11/3. A scan that stops at the ret
+        records whichever arm comes last, which is a guess dressed as a
+        reading; `Ui_OpenShop`'s ten titles are the same shape and are
+        overridden by hand for exactly this reason. So a target written more
+        than once is dropped, and the load panel - whose branch
+        `loadPanelFor` models natively - keeps the bindings it had.
+        """
         if not fn or not items:
             return {}
         def at(addr):
@@ -524,26 +559,46 @@ class Ui:
                     return a, addr - a
             return None, None
         d = self.e.read(fn, 1400)
-        out, i = {}, 0
+        seen, regs, i = {}, {}, 0
+        def put(tgt, val, field):
+            a, off = at(tgt)
+            if a is not None and off == (28 if field == "string" else 60):
+                seen.setdefault((a, field), []).append(val)
         while i < len(d) - 12:
             if d[i] == 0x66 and d[i + 1] == 0xC7 and d[i + 2] == 0x05:
-                tgt = struct.unpack_from("<I", d, i + 3)[0]
-                val = struct.unpack_from("<H", d, i + 7)[0]
-                a, off = at(tgt)
-                if a is not None and off == 28:
-                    out.setdefault(a, {})["string"] = val
+                put(struct.unpack_from("<I", d, i + 3)[0],
+                    _s16(struct.unpack_from("<H", d, i + 7)[0]), "string")
                 i += 9
                 continue
             if d[i] == 0xC7 and d[i + 1] == 0x05:
                 tgt, val = struct.unpack_from("<II", d, i + 2)
-                a, off = at(tgt)
-                if a is not None and off == 60:
-                    out.setdefault(a, {})["tag"] = val
+                put(tgt, val, "tag")
                 i += 10
+                continue
+            # `66 89 /r 05 <abs32>` - mov [abs], r16
+            if d[i] == 0x66 and d[i + 1] == 0x89 and (d[i + 2] & 0xC7) == 0x05:
+                r = regs.get((d[i + 2] >> 3) & 7)
+                if r is not None:
+                    put(struct.unpack_from("<I", d, i + 3)[0],
+                        _s16(r & 0xFFFF), "string")
+                i += 7
+                continue
+            if d[i] == 0x33 and (d[i + 1] & 0xC0) == 0xC0 \
+                    and ((d[i + 1] >> 3) & 7) == (d[i + 1] & 7):
+                regs[d[i + 1] & 7] = 0
+                i += 2
+                continue
+            if 0xB8 <= d[i] <= 0xBF:
+                regs[d[i] - 0xB8] = struct.unpack_from("<I", d, i + 1)[0]
+                i += 5
                 continue
             if d[i] == 0xC3:
                 break
             i += 1
+        out = {}
+        for (a, field), vals in seen.items():
+            if len(vals) == 1:
+                out.setdefault(a, {})[field] = vals[0]
         return out
 
     def open_state(self, screen_id, panels, lists):

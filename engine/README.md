@@ -128,10 +128,12 @@ src/ui/          the interface
     options      screen 35 - thirteen pages over sixteen shared row widgets
     text         Text_LayOutBlock - the markup, the faces, the advances,
                  and Text_DrawRun's 32-entry coverage ramp
-    screendraw   COMPOSE a screen: the background (full sheet or the 80-cell
-                 tile map), then every visible row's text through the
-                 alignment ladder. The first thing that puts the drawers
-                 together into one frame
+    screendraw   COMPOSE a screen: the background (the panel's bank-B arm -
+                 nothing, the whole sheet, or the 80-cell tile map), then
+                 every visible row's text through the alignment ladder, in
+                 LAYER order. The first thing that puts the drawers together
+                 into one frame. Carries the one item `+20` DRAW HOOK that is
+                 ported, the start menu's name field
     i2d          the I2D display list: 16 layers, seven pools, the flag banks
     surface      the RGB565 surface, the BMP loader, Blt, and the mode-2
                  software rasterizer
@@ -1463,6 +1465,49 @@ look themselves up.
 
 What still needs native code is a panel a *callback* installs rather than a
 `+44`, and the answers those callbacks write.
+
+### The NEW-GAME dialog — three readings, all wrong (2026-09-06)
+
+A player's capture of the original showed the panel as: the title "New Game"
+centred at the top in the menu's glyph face, `Enter Name : <typed>_` down the
+left in a Latin one, "Confirm" and "Cancel" dimmed below, and the animated
+cloud edge to edge behind all of it. The replica drew the typed name alone, in
+the menu's face, over `gfxint.bmp` blitted whole. Four things were wrong and
+each is now asserted by `verify.py: engine: name field`:
+
+* **the background arm.** `Ui_DrawPanelBack` reads the panel's bank-B word at
+  `+76`: `0x2000` draws nothing, `0x4000` blits the whole sheet, otherwise it
+  walks `panel+20`'s 80 tile ids — of which there are none when the pointer is
+  0. This composer tested `tiles.empty()` and called that the full-sheet arm,
+  which is the one shape the engine never draws. All five start-menu panels
+  ship `0x40002000`, the first arm: **no artwork at all**. (The three
+  constants were then converted from the decompiler's decimals by hand and
+  every one came out a bit high — same answer on 36 of the 37 screens, and
+  HIGH-SCORE, which blits its sheet whole, blank. They are read from the raw
+  pushes now);
+* **the colour key.** It is a flat 0, set once per bitmap by
+  `I2D_CreateSurfaceFromBmp`'s `SetColorKey(DDCKEY_SRCBLT, {0, 0})` — not each
+  sheet's bottom-left pixel, which is rgb(4,4,4) for `gfxint.bmp`, index 37 for
+  `Ascen.bmp` and index 9 for `sneak.bmp`. What the menu's capture shows as a
+  black title band is a 640×150 **sprite item** painting the sheet's own opaque
+  rgb(4,4,4); the dialog is a child panel without that item, so the cloud
+  reaches y=0 there;
+* **the layer.** The display list is sorted by layer and the composer drew in
+  record order. That band is layer 3 and the four buttons are text at layer 6,
+  but the band's list is the panel's third — so it painted over "Nouvelle
+  partie" and the menu's first row was gone;
+* **the field itself is an item `+20` DRAW HOOK**, a primitive class this port
+  had never carried (24 distinct hooks over 45 items). `sub_47A510` composes
+  `"%s : %s"` from the screen's string 13 and the typed buffer, draws it in the
+  item's own face (74, JOURNAL), and puts a `_` after the CURSOR on the 500 ms
+  blink. The heading beside it comes from the panel's own `+4` builder writing
+  string 0 into the item all four child panels share — which nothing scanned
+  until `binds_at` learned to read a panel builder as well as a screen's open
+  callback.
+
+The correction is toward the capture, not merely away from where it was: the
+top 150 rows of the composed menu are now **281854 of 288000** bytes identical
+to `traces/frames/menu-18`.
 
 ### The SNEAK — the first screen the PLAYER opens
 

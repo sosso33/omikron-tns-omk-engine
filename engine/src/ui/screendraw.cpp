@@ -17,6 +17,36 @@ namespace {
 // carries, so `0x7F` was only ever the halving of 255.
 constexpr std::uint8_t kLit = 255;
 
+// THE I2D COLOUR KEY, and it is a constant of the loader rather than a
+// property of any sheet. `I2D_CreateSurfaceFromBmp` (0x00428DB0) ends with
+//
+//     surface->SetColorKey(DDCKEY_SRCBLT, {low = 0, high = 0})
+//
+// (the vtable call at +116; DDCKEY_SRCBLT is the literal 8 it passes), so
+// every one of the eleven interface bitmaps keys on **pure black** and on
+// nothing else. `I2D_BlitBitmap`'s third argument, 1 on every interface
+// blit, is what sets DDBLT_KEYSRC against it (`sub_4810D0`: `v3 & 1` ->
+// 0x1008000 = DDBLT_WAIT | DDBLT_KEYSRC).
+//
+// This composer took the key from each sheet's own bottom-left pixel, which
+// for `gfxint.bmp` is palette index 255 = rgb(4, 4, 4) - NOT black, and so
+// not the key. The engine's own capture settles it: `traces/frames/menu-18`
+// has the whole 640x150 title band at exactly (0, 4, 0), which is (4, 4, 4)
+// through RGB565. Those pixels are DRAWN, opaquely, over the cloud. Read as
+// the key they were skipped and the cloud showed through the band.
+constexpr std::uint16_t kI2dColourKey = 0;
+
+// `sub_47A510` - the start menu's NAME FIELD drawer, the item `+20` hook on
+// item 0x004CE840 and the only one of the tree's 24 that is ported. It is
+// named by address because that is what identifies it: the record carries no
+// string, no text pointer and no text callback, so nothing else in the item
+// says what the box shows.
+constexpr std::uint32_t kDrawNameField = 0x0047A510;
+// ...and the string it prefixes the typed name with, `push 0Dh` in that hook:
+// index 13 of the screen's own `IAM\<name>` file, which for the start menu's
+// `IAM\Menu` is its last line, "Entrez votre nom".
+constexpr int kNameFieldLabel = 13;
+
 // `Ui_DrawItemFill`'s quad, with the blend `sub_480AC0`'s mode-4 arm sets:
 // SRCBLEND = INVSRCALPHA (6) and DESTBLEND = SRCALPHA (5), the INVERSE of the
 // usual source-over, so
@@ -60,21 +90,36 @@ void fillQuad(Surface& fb, int x0, int y0, int x1, int y1,
 
 int ScreenComposer::background(Surface& fb, const UiPanel& p,
                               const Surface& sheet) const {
-    if (p.tiles.empty()) {                       // the 0x40004000 full-sheet arm
-        // COLOUR-KEYED. `gfxint.bmp`'s whole background is one palette index -
-        // 255, rgb(4,4,4) - which is the I2D key, so the sheet is transparent
-        // there and the layer beneath shows through. Blitted opaquely the menu
-        // comes out on black, which is how it looked until the cloud was
-        // found. The key is taken from the sheet's own bottom-left pixel
-        // rather than named here: it is the corner every one of these full
-        // sheets fills with its background.
-        const std::uint16_t key =
-            sheet.valid() ? sheet.px[static_cast<std::size_t>(sheet.h - 1) * sheet.w]
-                          : std::uint16_t(0);
+    // WHICH ARM RUNS IS THE PANEL'S BANK-B FLAG, not whether it has tiles.
+    //
+    // `Ui_DrawPanelBack` (0x00476040) reads three bits of `panel+76` and
+    // nothing else: `0x2000` draws no background at all, `0x4000` blits the
+    // whole sheet over the display, and failing both it walks `panel+20`'s 80
+    // tile ids - of which there are NONE when that pointer is 0.
+    //
+    // This tested `tiles.empty()` and called it "the full-sheet arm", which
+    // is the one panel shape the engine never draws. The start menu's three
+    // five panels ship `0x40002000`: no artwork whatsoever. The
+    // title band a capture shows is not the sheet - it is a 640x150 SPRITE
+    // ITEM (0x004CF1A8) on the screen's own panel, which is why the menu has
+    // it and its confirm dialog, a CHILD panel that does not carry that item,
+    // does not. Blitting the whole sheet here painted `gfxint.bmp` over the
+    // animated cloud on both.
+    //
+    // NOT MODELLED, and deliberately: the fourth bit, `0x0800`, gates a
+    // full-screen `I2D_SubmitQuad(rect, 0, 0)` that goes down when it is
+    // CLEAR - which it is for every start-menu panel. Drawn here it would be
+    // a black rectangle over the cloud, and the engine's own capture has the
+    // cloud, so whatever layer that quad lands on is below the cloud's blit.
+    // The composer clears its framebuffer to 0 and draws the cloud first,
+    // which is the same picture; the quad is left out rather than guessed at.
+    if (p.backNone()) return 0;
+    if (p.backSheet()) {
         blt(fb, {0, 0, fb.w, fb.h}, sheet, {0, 0, sheet.w, sheet.h},
-            kBltWait | kBltKeySrc, key);
+            kBltWait | kBltKeySrc, kI2dColourKey);
         return 0;
     }
+    if (p.tiles.empty()) return 0;
     // THE DESTINATION IS SCALED AND THE SOURCE IS NOT, and getting that
     // backwards is invisible at 640x480 and ruins every other resolution.
     // `Ui_DrawPanelBack` (0x00476040):
@@ -149,14 +194,18 @@ ScreenFrame ScreenComposer::draw(Surface& fb, int screenId,
     Surface art;
     if (!artName.empty()) art = surfaceFromBmp(fs_->read("I2D/bitmaps/" + artName));
     const bool sheetOk = art.valid();
-    // The I2D colour key, taken from the sheet's own bottom-left pixel the
-    // way the full-sheet path already does rather than named here.
-    const std::uint16_t artKey =
-        sheetOk ? art.px[static_cast<std::size_t>(art.h - 1) * art.w]
-                : std::uint16_t(0);
+    // The I2D colour key is **0**, and it is not read off the sheet.
+    // `I2D_CreateSurfaceFromBmp` (0x00428DB0) finishes every bitmap it loads
+    // with `SetColorKey(DDCKEY_SRCBLT, {0, 0})` - vtable +116 - so the key is
+    // pure black for all eleven of them, and `I2D_BlitBitmap`'s `a3 = 1` is
+    // what turns DDBLT_KEYSRC on against it.
+    const std::uint16_t artKey = kI2dColourKey;
     if (sheetOk) {
         out.tilesDrawn = background(fb, *p, art);
-        out.fullSheet  = p->tiles.empty();
+        // ...and it is the panel's own arm, not "has no tiles". A panel with
+        // neither the sheet bit nor a tile pointer draws NO background, which
+        // is what the start menu does.
+        out.fullSheet  = p->backSheet();
     }
 
     // The screen's own strings. `Ui_DrawItem` takes the item's `+28` as an
@@ -192,6 +241,41 @@ ScreenFrame ScreenComposer::draw(Surface& fb, int screenId,
         (walk.currentList() >= 0 &&
          static_cast<std::size_t>(walk.currentList()) < wp->lists.size())
             ? &wp->lists[static_cast<std::size_t>(walk.currentList())] : nullptr;
+    // ---- THE DISPLAY LIST IS SORTED BY LAYER -------------------------
+    //
+    // `I2D_Enqueue` files every primitive under the layer it is submitted at
+    // and the flush walks the sixteen layers in order, so an item's `+11` is
+    // its DEPTH and record order decides nothing between two items that
+    // carry different ones. This composer drew in record order, and the start
+    // menu is where that shows: its title band is a sprite item at layer 3
+    // and its four buttons are text at layer 6, but the sprite's list is the
+    // panel's THIRD, so the band was painted over "Nouvelle partie" and the
+    // menu's first row vanished. The engine's own capture
+    // (`traces/frames/menu-18`) has that row white on the band.
+    //
+    // So the walk runs once per distinct layer, ascending. The two primitives
+    // that do NOT take the item's own layer keep their existing treatment:
+    // `Ui_DrawItemFill` submits at `+11 - 2` and the cursor at a flat 8,
+    // which is why the cursor is still collected and drawn last.
+    //
+    // WITHIN one layer this keeps submission order, and the engine does not:
+    // the I2D per-layer cache is a HEAD cache, so the rest of a layer draws in
+    // REVERSE submission order (`docs/UI.md` 1). Not modelled, because nothing
+    // in the shipped tree puts two items of one layer over the same pixels -
+    // the pairs that do overlap (the slider page's two headers at (187, 30))
+    // are alternatives a builder chooses between, exactly one drawn. Left as
+    // a known gap rather than implemented blind: reversing it would move
+    // every screen and no capture separates the two.
+    std::vector<int> layers;
+    for (const UiPanel* q : chain)
+        for (const auto& l : q->lists) {
+            if (!l.drawn()) continue;
+            for (const auto& it : l.items) layers.push_back(it.layer);
+        }
+    std::sort(layers.begin(), layers.end());
+    layers.erase(std::unique(layers.begin(), layers.end()), layers.end());
+
+    for (const int layer : layers)
     for (const UiPanel* q : chain)
     for (const auto& l : q->lists) {
         // THE DRAW GATE IS NOT THE WALK'S. `Ui_DrawPanel` skips a list on
@@ -200,21 +284,74 @@ ScreenFrame ScreenComposer::draw(Surface& fb, int screenId,
         // flag, so it hid the sneak's bottom bar - which is `+16 = 0x20000004`
         // and `+20 = 0`: drawn, and deliberately not navigable.
         if (!l.drawn()) continue;
-        // THE NAME FIELD. Its item carries no string - the record's label is
-        // -1 - because what it shows is what the PERSON typed, not a line out
-        // of `IAM\<screen>`. The list is identified by its hook, which is the
-        // widget table's own `nameHook`, so this is not a guess about which
-        // box it is. Without it the field is invisible: a player types and
-        // nothing appears, which is most of why the start menu could not be
-        // got past.
-        if (l.hook == w_->nameHook() && !walk.name().empty() && !l.items.empty()) {
+        // THE NAME FIELD, and it is a whole ITEM DRAW HOOK rather than a
+        // special case of the text path. `Ui_DrawItem` runs the item's `+20`
+        // first, before the text and before every decoration; item
+        // 0x004CE840's is `sub_47A510`, and what it draws is
+        //
+        //     sprintf(buf, "%s : %s", Ui_ScreenString(screen, 13), typed)
+        //     Text_DrawBlock(the item's own box, buf, Ui_ItemTextStyle(item))
+        //     if (Ui_Oscillator(1)[24])                       // the 2 Hz blink
+        //         Text_DrawBlock(x + width(buf[0 .. label+3+cursor]), y,
+        //                        + 20, + 20, "_", the same style)
+        //
+        // so the box is not the typed name at all: it is the screen's own
+        // string 13 - "Entrez votre nom", "Enter Name" in English - then
+        // " : ", then what the player typed, then a caret that blinks on the
+        // same square wave as everything else and sits after the CURSOR, not
+        // after the last character. This drew the bare buffer in the menu's
+        // face, so the dialog came up with a name and no label and no caret;
+        // the capture the user supplied has all three.
+        //
+        // The face is the item's own, `+36 = 74` ('J', JOURNAL) - which is
+        // why the label reads in Latin letters while the title and the two
+        // buttons, font 73 (MENUINTR), are the game's own glyphs.
+        if (!l.items.empty() && l.items.front().drawFn == kDrawNameField &&
+            l.items.front().layer == layer) {
             const UiItem& f = l.items.front();
-            const auto run = parseMarkup(walk.name(), 'I', kLit, kLit, kLit).run;
-            lay_->drawRun(fb, scaleX(f.x + q->offsetX),
-                          scaleY(f.y + q->offsetY), run);
+            // The same lit ladder every other row takes: the item carries no
+            // bank-B bit, so it is white while its list is the current one
+            // and halved otherwise.
+            const int selIdx = walk.selectionOf(l);
+            const bool isSel = selIdx >= 0 &&
+                static_cast<std::size_t>(selIdx) < l.items.size() &&
+                l.items[static_cast<std::size_t>(selIdx)].addr == f.addr;
+            std::uint8_t nr = kLit, ng = kLit, nb = kLit;
+            std::uint32_t eff[3];
+            f.effective(l.broadcast, eff);
+            if (!(eff[2] & 1)) {
+                nr = static_cast<std::uint8_t>(f.rgb[0]);
+                ng = static_cast<std::uint8_t>(f.rgb[1]);
+                nb = static_cast<std::uint8_t>(f.rgb[2]);
+            }
+            if (!(isSel && &l == curList)) { nr >>= 1; ng >>= 1; nb >>= 1; }
+
+            const std::string label =
+                kNameFieldLabel < static_cast<int>(text.size())
+                    ? text[static_cast<std::size_t>(kNameFieldLabel)]
+                    : std::string();
+            const std::string shown = label + " : " + walk.name();
+            const int x0 = scaleX(f.x + q->offsetX);
+            const int y0 = scaleY(f.y + q->offsetY);
+            const auto run = parseMarkup(shown, f.face('J'), nr, ng, nb).run;
+            out.textAdvance += lay_->drawRun(fb, x0, y0, run);
             ++out.itemsDrawn;
+            // ...and the caret, on oscillator 1 - the same 500 ms square wave
+            // the flashing rows take. `strncpy(prefix, shown, strlen(label) +
+            // cursor + 3)`: the 3 is `" : "`.
+            if (((clockMs_ / 500) & 1) != 0) {
+                const std::size_t cut = std::min(
+                    shown.size(), label.size() + 3 +
+                    static_cast<std::size_t>(walk.nameCursor()));
+                const auto pre = parseMarkup(shown.substr(0, cut),
+                                             f.face('J'), nr, ng, nb).run;
+                const auto caret = parseMarkup("_", f.face('J'), nr, ng, nb).run;
+                lay_->drawRun(fb, x0 + lay_->measure(pre), y0, caret);
+                ++out.itemsDrawn;
+            }
         }
         for (const auto& it : l.items) {
+            if (it.layer != layer) continue;
             std::uint32_t eff0[3];
             it.effective(l.broadcast, eff0);
             // ...and the bank-B bits a builder SET at RUN TIME, which the

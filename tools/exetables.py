@@ -44,7 +44,7 @@ user's data like everything else, and lifting them here would be the second
 copy the plan warned about.
 """
 import omkpaths
-import bisect, json, os, struct, sys
+import bisect, inspect, json, os, struct, sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, "tools"))
@@ -567,7 +567,31 @@ def t_ui_widgets(e):
                # rather than assumed, because "they all wrap" is a fact about
                # the shipped data and not about the format.
                "flags": u._u32(panel + 72),
+               # ...and `panel+76`, bank B - which is the one that decides
+               # the BACKGROUND. `Ui_DrawPanelBack` (0x00476040) tests three
+               # of its bits and nothing else:
+               #
+               #     0x2000  draw no background at all, return
+               #     0x0800  clear: without it a full-screen quad goes down
+               #     0x4000  blit the WHOLE 640x480 sheet over the display
+               #
+               # and failing 0x4000 it reads `panel+20`'s 80 tile ids, of
+               # which there are none when the pointer is 0. So a panel with
+               # no tiles is not "the full-sheet arm": the start menu's five
+               # panels ship `+76 = 0x40002000`, the FIRST arm, which draws
+               # NO artwork - its title band is a 640x150 SPRITE ITEM
+               # (0x004CF1A8) instead. Reading an empty tile array as the
+               # full-sheet arm painted `gfxint.bmp` over the whole menu, and
+               # over the animated cloud its confirm dialog is supposed to
+               # show through.
+               "flagsB": u._u32(panel + 76),
                "lists": []}
+        # THE PANEL'S OWN BUILDER, `panel+4`, which `Ui_DrawScreen` runs
+        # when the panel is installed. It binds items exactly as a screen's
+        # open callback does, and until 2026-09-06 nothing scanned it - so a
+        # child panel built entirely by its own `+4` had no bindings at all.
+        local = sorted({it for l in u.lists(panel) for it in u.items(l)})
+        pbind = u.binds_at(u._u32(panel + 4), local)
         for lst in u.lists(panel):
             l = {"addr": lst, "hook": u._u32(lst + 4),
                  "flags": u._u32(lst + 16),
@@ -641,6 +665,18 @@ def t_ui_widgets(e):
                     "font": u._u8(it + 36),
                     "text": u._u32(it + 24),
                     "textFn": u._u32(it + 32),
+                    # `+20`, the item's OWN DRAW HOOK - `Ui_DrawItem`
+                    # (0x004764A0) runs it first, before the text and before
+                    # every decoration, and it is where a widget that draws
+                    # something no flag can describe lives. 24 distinct hooks
+                    # over 45 items; the one this table exists to name is
+                    # 0x0047A510 on item 0x004CE840, the start menu's NAME
+                    # FIELD, which composes `"%s : %s"` from the screen's
+                    # string 13 and the typed buffer and puts a blinking
+                    # caret after the cursor. Nothing in the record says any
+                    # of that, so a composer without this field draws an
+                    # empty box where a player types.
+                    "drawFn": u._u32(it + 20),
                     # `+30`, the format argument the generic callback passes to
                     # `sub_43FEA0` when it is not -1.
                     "textArg": u._i16(it + 30),
@@ -666,7 +702,8 @@ def t_ui_widgets(e):
                     # its string id at +28 and its tag at +60. Both ship as
                     # -1/0 in the record, so without these the widget walk
                     # finds a screen with no labels.
-                    "bind": (binds or {}).get(it, {}),
+                    "bind": {**(binds or {}).get(it, {}),
+                             **pbind.get(it, {})},
                 })
             rec["lists"].append(l)
         return rec
@@ -936,15 +973,40 @@ def c_ui_widgets(rows, e):
             # items ship with -1 and the callback writes them, so a reader
             # that trusts the record alone finds a screen with no labels.
             # TERMINAL is the shape: strings 5..10 on six rows, tags 1..4.
+            #
+            # 35 and 22 until 2026-09-06, when the PANEL's own `+4` builder
+            # joined the scan: seven more, and four of them are the start
+            # menu's four child panels writing their TITLE into the one item
+            # record they share (0x004CEFE8) - 0 "Nouvelle partie",
+            # 4 "Options", 5 "Quitter". Without them the confirm dialog comes
+            # up with no heading, which is what the port drew.
             ("items with a bound string",
-             sum(1 for i in items if "string" in (i.get("bind") or {})), 35),
+             sum(1 for i in items if "string" in (i.get("bind") or {})), 42),
             ("items with a bound tag",
-             sum(1 for i in items if "tag" in (i.get("bind") or {})), 22),
+             sum(1 for i in items if "tag" in (i.get("bind") or {})), 24),
             ("TERMINAL's bound strings",
              sorted(i["bind"]["string"] for p in ps if p["screen"] == 5
                     for l in p["lists"] for i in l["items"]
                     if "string" in (i.get("bind") or {})),
              [5, 6, 7, 8, 9, 10]),
+            # THE BACKGROUND ARM each panel takes, which `panel+76` decides
+            # and `panel+20` alone cannot: 0x2000 draws nothing, 0x4000 the
+            # whole sheet, otherwise the 80 tile ids - and "no tile pointer"
+            # is a fourth case that draws nothing either. Carried as a check
+            # because the ONE sheet panel is what separates the right
+            # constants from the wrong ones: read a bit high, HIGH-SCORE
+            # (0x40005800) comes out blank and the other 45 are unchanged.
+            ("panels by background arm (none, sheet, tiles, no tile array)",
+             [sum(1 for p in ps if p["flagsB"] & 0x2000),
+              sum(1 for p in ps if not p["flagsB"] & 0x2000
+                  and p["flagsB"] & 0x4000),
+              sum(1 for p in ps if not p["flagsB"] & 0x6000 and p["tilesAt"]),
+              sum(1 for p in ps if not p["flagsB"] & 0x6000
+                  and not p["tilesAt"])],
+             [16, 1, 24, 5]),
+            ("the one panel that blits its sheet whole",
+             [p["screen"] for p in ps
+              if not p["flagsB"] & 0x2000 and p["flagsB"] & 0x4000], [36]),
             ("distinct hooks among them", len(set(hooks)), 13),
             ("lists taking Ui_MoveSelection, the default walk",
              sum(1 for l in lists if not l["hook"]), 82),
@@ -1156,7 +1218,11 @@ def build():
     for name, take, check, doc in _TABLES:
         rows = take(e)
         out[name] = {"table": rows, "checks": check(rows, e), "doc": doc,
-                     "about": (take.__doc__ or "").strip()}
+                     # `inspect.cleandoc` rather than `.strip()`: Python 3.13
+                     # dedents docstrings at compile time and 3.11 does not, so
+                     # a bare strip writes a DIFFERENT `about` depending on the
+                     # interpreter and every table diffs on nothing.
+                     "about": inspect.cleandoc(take.__doc__ or "")}
     return out
 
 

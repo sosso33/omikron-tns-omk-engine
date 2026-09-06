@@ -140,6 +140,11 @@ struct UiItem {
     }
     std::uint32_t text = 0, textFn = 0;
     int           textArg = -1;          // `+30`, the printf argument
+    // `+20`, the item's OWN DRAW HOOK. `Ui_DrawItem` runs it before the text
+    // and before every decoration, and it is where a widget that draws what
+    // no flag can describe lives - 24 distinct hooks over 45 items. Only one
+    // is ported: `kDrawNameField`, the start menu's typed-name box.
+    std::uint32_t drawFn = 0;
     // The two SPRITE sources, `Ui_DrawItemSprite` (0x00476E60): the LIT
     // top-left and the UNLIT one, each `w x h` out of the screen's artwork.
     int           lit[2] = {0, 0}, unlit[2] = {0, 0};
@@ -204,6 +209,28 @@ struct UiPanel {
     // decides whether stepping off the last list wraps to the first.
     std::uint32_t flags = 0;
     bool          noWrap() const { return (flags & kListNoWrap) != 0; }
+    // `panel+76`, bank B - and it is the one that decides the BACKGROUND.
+    // `Ui_DrawPanelBack` (0x00476040) tests three of its bits, in this order:
+    //
+    //     0x2000  return at once - NO background
+    //     0x0800  clear: without it a full-screen quad goes down first
+    //     0x4000  blit the WHOLE sheet over the display
+    //
+    // and failing 0x4000 it walks `panel+20`'s 80 tile ids - of which there
+    // are none when that pointer is 0. So "no tiles" is NOT the full-sheet
+    // arm, which is what this composer assumed: all five of the start menu's
+    // panels ship `0x40002000` and draw NO artwork at all.
+    //
+    // **The constants are read from the raw assembly**, because the numbers
+    // the decompiler prints are decimal and a first pass here converted three
+    // of them by hand and got every one wrong by a bit - which happened to
+    // give the same answer on 36 of the 37 screens and would have blitted
+    // nothing where HIGH-SCORE blits its whole sheet. The pushes are
+    // `40002000h`, `40000800h`, `40004000h` in `sub_476040`.
+    std::uint32_t flagsB = 0;
+    // The three arms, named rather than tested at the call site.
+    bool backNone()  const { return (flagsB & 0x2000) != 0; }
+    bool backSheet() const { return (flagsB & 0x4000) != 0; }
     std::vector<UiList> lists;
 };
 
@@ -406,6 +433,11 @@ public:
     // Type into the name field, when the current list is one.
     bool typeName(const std::string& text);
     const std::string& name() const { return name_; }
+    // Where the caret stands in that buffer - `dword_657994`. The field's
+    // hook (`sub_47A390`) inserts and deletes AT the caret and moves it on
+    // LEFT and RIGHT, and its drawer puts a blinking `_` after exactly this
+    // many characters, so a drawer cannot place the caret without it.
+    int nameCursor() const { return nameCursor_; }
 
     // The panel the walk is ON, which is not always the screen's own: an item
     // with a `child` descends into one, and that is how the start menu's
@@ -661,6 +693,7 @@ private:
     bool approx_ = false;
     int  answer_ = -1;
     std::string name_;
+    int         nameCursor_ = 0;
     std::vector<std::string> log_;
     // Item address -> the RGB a page builder wrote into `+8/+9/+10`.
 };
