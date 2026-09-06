@@ -393,16 +393,33 @@ ScreenFrame ScreenComposer::draw(Surface& fb, int screenId,
                 if (sl >= 0 && !lp.path.empty()) {
                     const auto file = DataFs::readPath(lp.path);
                     const auto px = readSaveThumb(file, sl);
-                    if (!px.empty())
-                        for (int yy = 0; yy < omk::kThumbH; ++yy)
-                            for (int xx = 0; xx < omk::kThumbW; ++xx) {
-                                const int dx = scaleX(460 + xx), dy = scaleY(140 + yy);
-                                if (dx < 0 || dy < 0 || dx >= fb.w || dy >= fb.h) continue;
+                    // WALK THE DESTINATION AND SAMPLE THE SOURCE, never the
+                    // other way round. Scaling each of the 128x96 source
+                    // pixels to ONE destination point leaves the gaps between
+                    // them unwritten, and at 640x480 there are none - so it
+                    // looks perfect here and comes out as a dark grid over
+                    // the picture on any larger window, which is what a
+                    // reader saw. `background`'s own comment says the same
+                    // thing about the tile blit: "the destination is scaled
+                    // and the source is not, and getting that backwards is
+                    // invisible at 640x480 and ruins every other resolution."
+                    if (!px.empty()) {
+                        const int x0 = scaleX(460), x1 = scaleX(460 + omk::kThumbW);
+                        const int y0 = scaleY(140), y1 = scaleY(140 + omk::kThumbH);
+                        const int w = x1 - x0, h = y1 - y0;
+                        for (int dy = y0; dy < y1; ++dy) {
+                            if (dy < 0 || dy >= fb.h || h <= 0) continue;
+                            const int sy = (dy - y0) * omk::kThumbH / h;
+                            for (int dx = x0; dx < x1; ++dx) {
+                                if (dx < 0 || dx >= fb.w || w <= 0) continue;
+                                const int sx = (dx - x0) * omk::kThumbW / w;
                                 fb.px[static_cast<std::size_t>(dy) * static_cast<std::size_t>(fb.w) +
                                       static_cast<std::size_t>(dx)] =
-                                    px[static_cast<std::size_t>(yy) * omk::kThumbW +
-                                       static_cast<std::size_t>(xx)];
+                                    px[static_cast<std::size_t>(sy) * omk::kThumbW +
+                                       static_cast<std::size_t>(sx)];
                             }
+                        }
+                    }
                 }
             }
             continue;
