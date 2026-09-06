@@ -1029,6 +1029,27 @@ bool UiWalk::confirm() {
         // that body (`verify.py: start cancel`), so it is named by address
         // and not pattern-matched at run time.
         if (it->callback == kCbStartCancel) return toParent();
+        // `Charger une partie` (0x0047AC90).  It does NOT load: it resolves
+        // the row to a slot, refuses an empty one, stores the index in
+        // `dword_4C09B4` and closes the screen (`screen[+8] = 3`).  The load
+        // happens later, at the top of the next script pump - `sub_408410`,
+        // one-shot, with a 15-frame fade in from white (GAME_STATE 8).  So
+        // the walk's job is to record the request and close; the caller
+        // consumes it.
+        if (it->callback == kCbLoadCharger) {
+            if (!load_) { approx_ = true; log_.push_back("charger: no directory"); return false; }
+            const int slot = loadPanelCharger(*load_);
+            if (slot < 0) {
+                // the callback's own `if (!dl) return` - nothing chosen, or
+                // an empty slot: the frame is consumed and the screen stays
+                log_.push_back("charger: no slot on this row");
+                return true;
+            }
+            pendingLoad_ = slot;
+            log_.push_back("charger: slot " + std::to_string(slot) + " requested");
+            panel_ = nullptr;                  // `screen[+8] = 3` - it closes
+            return true;
+        }
         // TWO CALLBACKS THAT DESCEND. `Ui_ConfirmSelection` normally follows
         // an item's `+44`, but a callback can install a panel itself with
         // `sub_42A370(screen, panel)` - and the sneak's object flow is built
@@ -1170,6 +1191,24 @@ bool UiWalk::press(std::uint32_t bits) {
             if (startConfirm(bits)) return true;
         } else if (panel_->hook == kHookSneakSliderLists) {
             if (moveListsSlider(bits)) return true;
+        } else if (panel_->hook == kHookLoadPanel) {
+            // `Ui_LoadPanelInput` (0x0047ABA0), and its first line is the one
+            // that matters:
+            //
+            //     if (dword_4CEBAC == -1) return 0;
+            //     result = Ui_MoveListsLeftRight(screen, panel);
+            //
+            // So while NO ROW is chosen the panel hook declines and LEFT and
+            // RIGHT fall through to the slot list's own hook, which changes
+            // the PROFILE.  Once a row is chosen they move between the lists
+            // instead - which is the only way to reach `Charger`, `Detruire`
+            // and `Annuler` at all.  Without this the buttons are
+            // unreachable, which is exactly how it behaved before: the walk
+            // could pick a row and then had nowhere to go.
+            if (load_ && load_->row >= 0) {
+                if (bits & kUiLeft)  { if (moveLists(-1)) return true; }
+                if (bits & kUiRight) { if (moveLists(1))  return true; }
+            }
         } else if (panel_->hook == w_->moveListsHook()) {
             // `sub_42A710(screen, panel) = sub_42A5C0(screen, panel, 1, 2)` -
             // `Ui_MoveBetweenLists` with LEFT stepping back and RIGHT

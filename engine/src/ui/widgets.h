@@ -485,6 +485,11 @@ public:
     // which slot was chosen.
     void attachLoadPanel(LoadPanel* p) { load_ = p; }
     const LoadPanel* loadPanel() const { return load_; }
+    // The slot `Charger` asked for, or -1. `takePendingLoad` reads and clears
+    // it, the way `sub_408410` does (`dword_4C09B4 = -1` right after the
+    // load), so a request cannot be served twice.
+    int  pendingLoad() const { return pendingLoad_; }
+    int  takePendingLoad() { const int s = pendingLoad_; pendingLoad_ = -1; return s; }
 
     // The panel the walk is ON, which is not always the screen's own: an item
     // with a `child` descends into one, and that is how the start menu's
@@ -749,6 +754,10 @@ private:
     // is not walk state: it is the SAVE FILE's, it outlives the screen, and
     // a walk with none logs that rather than inventing rows.
     LoadPanel*  load_ = nullptr;
+    // `dword_4C09B4`: the slot `Charger` asked for, -1 for none. It is a
+    // REQUEST, not a load - the engine consumes it at the top of the next
+    // script pump, not in the callback.
+    int         pendingLoad_ = -1;
     std::vector<std::string> log_;
     // Item address -> the RGB a page builder wrote into `+8/+9/+10`.
 };
@@ -882,6 +891,7 @@ bool loadPanelInput(LoadPanel& p, std::uint32_t bits);
 int loadPanelCharger(const LoadPanel& p);
 
 inline constexpr std::uint32_t kHookLoadSlotList = 0x0047AEC0u;
+inline constexpr std::uint32_t kHookLoadPanel    = 0x0047ABA0u;
 inline constexpr std::uint32_t kCbLoadCharger    = 0x0047AC90u;
 inline constexpr std::uint32_t kCbLoadDetruire   = 0x0047AE90u;
 inline constexpr std::uint32_t kPanelLoadConfirm = 0x004CF350u;

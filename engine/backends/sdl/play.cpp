@@ -1947,7 +1947,10 @@ int main(int argc, char** argv) {
     // `--save FILE` keeps its old meaning - the DB as a starting state, the
     // intro still playing - because every street-start recipe in the tree is
     // written that way and pairs it with `--area`.
-    const bool forceAdventure = areaArg >= 0 || slotArg >= 0;
+    // ...and a LOAD sets it too, below: loading a save is resuming, so the
+    // hand-over should not wait on the scene's beats any more than `--slot`
+    // does. Not const for that reason.
+    bool forceAdventure = areaArg >= 0 || slotArg >= 0;
     // THE INVENTORY, out of the game data: `IAM\OBJECT`'s 1002 records and
     // `IAM\GLOBAL +12`'s eleven combination recipes. `script/inventory.h` was
     // written, checked and never consumed by anything that runs - the sneak
@@ -2108,6 +2111,7 @@ int main(int argc, char** argv) {
     constexpr int kScreenPause = 31;   // PAUSE GAME - the only screen that
                                        // sets dword_4E9728, the pause flag
     omk::LoadPanel loadPanelState;   // rebuilt each time a screen opens
+    int  pendingLoadSlot = -1;       // `dword_4C09B4`
     omk::UiCursor uiCursor;   // Ui_DrawItemCursor's one pool (dword_6A4D20)
     omk::UiListState uiLists; // every list's `+2`, for as long as we run
     // The sneak's three turning previews. Loaded once - the engine loads them
@@ -5503,6 +5507,14 @@ int main(int argc, char** argv) {
             // and the oscillator refusal as SNEAK. The branch decides it:
             // parameter 0 is SNEAK and takes `loc_49B6A5`, the scene-freeing
             // one; the refusal is parameter 2's. Corrected there too.)
+            // `dword_4C09B4`, taken before the walk is dropped.  `Charger`
+            // does not load - it records a request and closes the screen, and
+            // `sub_408410` consumes it at the top of the NEXT script pump.
+            // Kept here and served below for the same reason: a load in the
+            // middle of a screen's own dispatch would free the panel it is
+            // standing in.
+            if (const int req = walk->takePendingLoad(); req >= 0)
+                pendingLoadSlot = req;
             const bool leaving = walk->answer() >= 0 || walk->closed();
             if (leaving && !screenFromScript) {
                 std::printf("screen %d closed by the player - event %d, object "
@@ -5534,6 +5546,60 @@ int main(int argc, char** argv) {
                 session.answerUi(-1);
                 walk.reset();
                 openScreen = -1;
+            }
+        }
+
+        // ---- THE PENDING LOAD, served the way `sub_408410` serves it
+        //
+        //     if (!dword_4E6C7C && dword_4C09B4 != -1) {
+        //         v1 = playerActorRec[+396];
+        //         Game_LoadSave(dword_4C09B4);
+        //         dword_4C09B4 = -1;
+        //         playerActorRec[+396] = v1;
+        //         Screen_FadeFromColor(0xFFFFFF, 15, 0);
+        //     }
+        //     Script_Pump(...)
+        //
+        // - so it happens BETWEEN pumps, one-shot, and the screen is already
+        // gone by then.  `Game_LoadSave` is the slot's name, day, time and DB
+        // into `State_Apply`, which relocates, copies the header's scene into
+        // the scene-per-area table and calls `Area_Load` (GAME_STATE 5a).
+        if (pendingLoadSlot >= 0) {
+            const int slotNo = pendingLoadSlot;
+            pendingLoadSlot = -1;
+            const auto bytes = omk::readSaveFile(savesPath, fr + "/IAM/GAMES");
+            if (const auto sl = omk::readSaveSlot(bytes, slotNo)) {
+                state = sl->state;
+                state.setClockDay(sl->day);
+                state.setClock(sl->time);
+                // `State_Apply`'s first act, before `Area_Load` reads it back
+                state.setSceneOfArea(state.currentArea(), state.currentScene());
+                state.placementWorld(savedAt, savedYaw);
+                haveSavedPlacement = state.playerActorId() != -1;
+                loadedName = sl->name;
+                session.loadArea(state.currentArea());
+                if (haveSavedPlacement)
+                    session.setPlayerPosition(savedAt, savedYaw);
+                session.requestCamera(0, 0);
+                // the hand-over gate rebuilds the player for the new area,
+                // on the same terms `--slot` gets: a resume does not wait for
+                // the scene's beats to finish before handing over
+                playerReady = false; adventure = false;
+                forceAdventure = true;
+                // `Screen_FadeFromColor(0xFFFFFF, 15, 0)` is
+                // `Screen_StartColorFade(2, 0xFFFFFF, 15, 0)` - mode 2, the
+                // "from" arm, fifteen frames, and in WHITE rather than the
+                // black every other fade in the game uses.
+                session.startColourFade(2, 0xFFFFFFu, 15.0f);
+                std::printf("load: slot %d '%s', %s %s, area %d scene %d, "
+                            "standing at %.0f %.0f %.0f facing %.0f\n",
+                            slotNo, sl->name.c_str(),
+                            omk::formatDate(sl->day).c_str(),
+                            omk::formatTime(sl->time).c_str(),
+                            state.currentArea(), state.currentScene(),
+                            savedAt[0], savedAt[1], savedAt[2], savedYaw);
+            } else {
+                std::fprintf(stderr, "load: slot %d cannot be read\n", slotNo);
             }
         }
 
