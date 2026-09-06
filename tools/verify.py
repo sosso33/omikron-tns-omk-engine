@@ -3970,12 +3970,20 @@ def c_engine_player_program():
            int(ended.group(1)) if ended else -1,
            round(float(ended.group(2))) if ended else -1,
            round(float(final.group(1))) if final else -1)
-    return got, ("HO1_FN", 4, "HOCINE07.3DA", 60, 64, 3099, 3099), \
+    # The hand-back lands him at 3099 on frame 64; on frame 65 the beat's own
+    # `actor.goto_address 691` (3085/1079/-750) moves him again - a teleport the
+    # frontend used to DROP because the conversation opened on the same pump
+    # frame and it consumed placements only in adventure mode. Both happen now,
+    # so the final x is the address's, not the hand-back's.
+    return got, ("HO1_FN", 4, "HOCINE07.3DA", 60, 64, 3099, 3085), \
            "the flat's goodbye traced frame by frame: the player joins the " \
            "staged bodies as HO1_FN on frame 4, the program poses him from " \
            "HOCINE07.3DA, he is traced for all 60 of its frames, and on " \
            "frame 64 - when it ends - he is handed back at x 3099, where the " \
-           "clip left him, not the 3054 the walker still held. Before this, " \
+           "clip left him, not the 3054 the walker still held; and on frame " \
+           "65 the beat's own goto_address 691 puts him at 3085, a teleport " \
+           "the frontend used to drop with the conversation opening on the " \
+           "same frame. Before this, " \
            "`scx.play.player` posed nobody and Kay'l was absent from his own " \
            "cutscene"
 
@@ -4160,7 +4168,7 @@ def c_line_facing():
                         "--res", "640x480"], 66, 259)
     greeting = yaws(0, ["--save", saves, "--slot", "0",
                         "--stand", "3572,1071,-991,181", "--frames", "470",
-                        "--res", "640x480"], 408, 469)
+                        "--res", "640x480"], 409, 469)   # 408 is the frame TE_STD snaps in
     return (len(goodbye), goodbye != [0], goodbye != [-80],
             len(greeting), greeting != [0]), \
            (1, True, True, 1, True), \

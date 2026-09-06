@@ -2800,6 +2800,15 @@ int main(int argc, char** argv) {
         // every line turned away and slowly came round to the lens.
         omk::NodeTracks lineTracks;
         float lineRootYaw = 0.0f;
+        std::string lineVoice;         // whose line `lineTracks` was taken from
+        // A body nothing drives keeps the pose it was last given. The engine
+        // never resets a node - the last frame `Anim_ApplyNodeFrame` wrote
+        // stays - so when a program and a line are both over and the model
+        // has no bank, this is what stands there; the REST pose was drawn
+        // instead, a T-pose in software and nothing at all in the Vulkan
+        // window (a reader: *Telis appears normally at the beginning before
+        // disappearing*).
+        std::vector<omk::MeshPose> lastPose;
     };
     // OWNING POINTERS, not a vector of values: the Vulkan backend caches a
     // vertex buffer by (pointer, revision), so a `Staged` may never be moved
@@ -7269,7 +7278,18 @@ int main(int argc, char** argv) {
                     // morph's root here (`turnRootBy`), the Euler is kept
                     // beside it, and neither is re-read while the line plays -
                     // the program may end under it, as the goodbye's does.
+                    // ...and it must be THIS line's tracks. The Session enters
+                    // a line on its tick and the frontend rebuilds
+                    // `speakerTracks` on the next frame's `lineChanged`, so
+                    // the first `useLine` frame still holds the PREVIOUS
+                    // line's. Latched then, a 451-frame line ran on a
+                    // 135-frame copy and `composePose` clamped at 135: Telis
+                    // frozen but for her mouth for the last two thirds of
+                    // "Il y a quatre jours..." - a reader's report. The latch
+                    // is re-taken when the tracks' line changes under it.
+                    if (s.lineYawLatched && s.lineVoice != speakerVoice) s.lineYawLatched = false;
                     if (!s.lineYawLatched) {
+                        s.lineVoice = speakerVoice;
                         const bool haveClip = s.sceneTracks.valid() && sceneClip >= 0 && run && run->loaded();
                         // ...at the frame the FADE blends from. `Morph_Play`
                         // hands the morph `rec[47]` (`sub_42BDD0`), and the
@@ -7339,9 +7359,14 @@ int main(int argc, char** argv) {
                 } else if (s.idle.valid()) {
                     pose = omk::composePose(s.mo->meshes, s.idle, 0, false);
                     src = "the bank's default entry, frame 0";
+                } else if (!s.lastPose.empty()) {
+                    pose = s.lastPose;
+                    src = "the last pose it was given (nothing drives it now)";
                 } else {
                     pose = omk::composePose(s.mo->meshes, omk::NodeTracks{}, 0, false);
                 }
+                if (useLine || s.sceneTracks.valid() || (shootTracks && shootTracks->valid()) || s.idle.valid())
+                    s.lastPose = pose;
                 // THE HEAD LOOK: an actor a script pointed at the player turns
                 // his head toward him every frame (`Actors_TickAll` -> `Actor_
                 // SetHeadLook`), the target being the player's head. His

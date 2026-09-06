@@ -1863,6 +1863,36 @@ else places, and `speakerSolved` already carried that. Now `face: mesh 19,
 130 verts`, `frame 115 of 813`, and the eye settles 50 units from the
 hologram. `verify.py: dialogue camera subject`.
 
+### THREE MORE FROM THE SAME CONVERSATIONS (2026-09-07)
+
+**The camera jumps back mid-travel.** `DialogPlayer` restarted the camera
+clock on every menu open — "the cut to the reply pair happens on the press
+that reveals the menu". When the node names no reply pair, `menuPair()` is
+false and `cameraA/B` keep returning the *line's* pair, so its 160-frame
+travel played again from its first framing: *the camera suddenly returns to
+a previous position while continuing the interpolation*. The engine's
+`Dialog_ApplyLineCameras` returns at `request[0] == -1` — no request, the
+camera holds. The clock now restarts only when the menu brings a pair.
+
+**Telis frozen but for her mouth, two thirds of a long line.** Measured on
+402's third line (000006, 451 frames): ~200k pixels move per 30 frames during
+the camera's travel, then 6–13k — the mouth alone — from frame 1441 to 1621
+with the line running to 1674, and the data's bones move to frame 449. The
+cause was the day-old latch. The Session enters a line on its tick, the
+frontend rebuilds `speakerTracks` on the *next* frame's `lineChanged`, and
+the pose pass on the first `useLine` frame still holds the previous line's
+tracks — before the latch that cost one stale frame; the latch copied the
+previous line's 135 frames and `composePose` clamped there. Line 2 escaped
+because 174 > 135. The latch is now keyed to the line's voice and re-taken
+when the tracks change under it.
+
+**Telis vanishing after the goodbye.** When the line and her program are
+both over and `TE1_FNM` has no bank, the port drew the REST pose — a T-pose
+in software, nothing at all in the Vulkan window. The engine never resets a
+node: the last frame `Anim_ApplyNodeFrame` wrote stays. A body nothing drives
+now keeps the last pose it was given — the pose half of "a body a program
+moved stays moved".
+
 ### The MIRROR reflects in the GAME, not only in the scene viewer
 
 `drawWithMirror` has been on the renderer boundary since 2026-09-01, and until

@@ -332,9 +332,15 @@ void DialogPlayer::next() {
         return;
     }
     // The cut to the reply pair happens on the press that reveals the menu,
-    // so the move's clock restarts with it.
-    camFrames_ = 0.0;
+    // so the move's clock restarts with it - WHEN THERE IS ONE.
+    // `Dialog_ApplyLineCameras` returns at `request[0] == -1`: a node whose
+    // reply pair is unset issues no camera command, and the camera holds
+    // where the line's travel left it. Restarting the clock regardless made
+    // the line's own pair play its 160-frame travel AGAIN from its first
+    // framing - a reader: *the camera suddenly returns to a previous position
+    // while continuing the interpolation*.
     phase_ = DialogPhase::Menu;
+    if (menuPair()) camFrames_ = 0.0;
 }
 
 void DialogPlayer::choose(int branch) {
