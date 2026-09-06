@@ -27,7 +27,7 @@ items are research and can be done any time they are wanted.
 | 4 | tuto zone fires repeatedly, player not stopped | **M** | strong | zone lifecycle is read and there is already a check nearby |
 | 5 | black frames in the Impasse cutscene | **M** | strong | the port already LOGS the moment it happens |
 | 6 | street NPCs stop and T-pose | **M** | good | same family as the scene-facing work of 2026-09-05 |
-| 7 | missing animations (lift doors, Kay'l's drawer) | **done** | strong | CONFIRMED 2026-09-06: the apartment doors, the drawer AND the lift doors all animate. The "gated behind a guard" lift is 1 of 53; **114** lift plays have no gate at all |
+| 7 | missing animations (lift doors, Kay'l's drawer) | **REOPENED** | strong | the LIFT doors animate (Hall 40, watched). The APARTMENT doors do not: their motion samples are in a different space from the set, so the door is displaced instead of slid - it vanishes on the trigger and never comes back |
 | 8 | save support (save, save menu, load menu) | **M** | very strong | the format is solved end to end; this is plumbing, not research |
 | 9 | main menu completed (new game correct, the rest) | **M** | very strong | the widget tree and the answer sites are lifted |
 | 10 | sneak: character / info / config pages | **M** | very strong | the panels are already named constants in the port |
@@ -182,10 +182,48 @@ Worth checking whether these are procedural WALKERS (`.OPT` sliders) or
 authored extras (`scx.play.actor`) — the two have different owners and the
 answer changes the fix entirely.
 
-### 7. Missing animations — **CONFIRMED, 2026-09-06: none of it reproduces**
+### 7. Missing animations — **REOPENED 2026-09-06: the apartment doors DO NOT animate**
 
-Lift doors, the drawer in Kay'l's apartment. Confirmed first, as this entry
-asked, and **not one of the three reproduces.**
+Lift doors, the drawer in Kay'l's apartment.
+
+> **The confirmation below was wrong for the apartment, and the way it was
+> wrong is the useful part.** It rested on two things that cannot tell an
+> animation from a mesh disappearing: `omk-play`'s `motion:` line, which is
+> printed once when a pool first claims a mesh and says nothing about whether
+> it then moves, and two stills taken from **two different camera positions**
+> — 3900 and 3784 — whose difference I read as "the door opened". A reader
+> watching the apartment reported no animation at all, and no door closing
+> behind them either.
+>
+> **What actually happens.** `door_probe` samples the mesh every tick, and in
+> the SESSION the door is animated correctly both ways: `Ap01Porte1` slides
+> 632/−43.2 → 632/−130.4 over 27 frames with an ease-out, and on stepping out
+> of the zone the leave script reverses it. The scripts, the zone lifecycle
+> and the program player are all right.
+>
+> **The samples are in the wrong SPACE for this set**, and that is the bug:
+>
+> | set | mesh authored at | first motion sample |
+> |---|---|---|
+> | `AHALL40` (the lift) | 3947.6, −58.6, −1206.0 | 3949, −52, −1207 |
+> | `AAPKAYL` (the flat) | 3759.9, 1037.3, −815.8 | **632, −43.2, 33.8** |
+>
+> Hall 40's samples ARE the set's world space, which is why its lift doors
+> visibly slide and why item 7's lift half stands. The apartment's are not:
+> the port offsets a mesh's corners by `sample − authored`, so this door is
+> displaced about 3400 units instead of sliding a few. It vanishes on the
+> first trigger and never returns — which is exactly "no animation" AND "the
+> doors don't close any more", from one cause.
+>
+> **Open: why the space differs.** The likely shape is a path authored
+> relative to the object's own node where the port takes it as absolute, but
+> that is a guess and needs the `.3DP`/program read before anyone acts on it.
+> A reader also reports **no collision against a closed door** — consistent
+> with a door that is not where it is drawn, and worth re-checking once the
+> space is right.
+
+The rest of this entry stands as written: the drawer's script runs end to end
+and the lift doors were watched opening in Anekbah Hall 40.
 
 * **The doors animate.** They are `Open`/`Closed` scene-object pairs on a
   zone's *enter* and *leave* scripts — `Aapkayl.SCX` carries eleven such pairs
