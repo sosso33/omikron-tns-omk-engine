@@ -1517,6 +1517,7 @@ int main(int argc, char** argv) {
     // scrolling wants more than the nine row widgets, and `Utiliser sur`
     // wants a recipe PAIR, and a new game ships exactly two objects.
     std::string giveList;
+    std::string varList;
     bool newWorld = false; // --newgame-world: START's world, the save's player
     // --scene-chunk N: run a SCENE chunk's startup script over the area, the
     // way `scene.load` does. A street start jumps straight to an area, so the
@@ -1619,6 +1620,12 @@ int main(int argc, char** argv) {
         // opcode 50 `inventory.add` is what the game uses; this writes the
         // slot and runs none of its bookkeeping.
         else if (a == "--give" && i + 1 < argc) giveList = argv[++i];
+        // A HARNESS FLAG, not a port: `--var 652=1,657=1` writes the game DB
+        // directly. A flow can sit behind state no flag can otherwise reach -
+        // the flat's lift gate tests `Porte Asc Fermee` and `Rencontre Telis`
+        // before it even looks at what you carry, so the Telis cutscene
+        // behind it cannot be entered from a save that predates them.
+        else if (a == "--var" && i + 1 < argc) varList = argv[++i];
         else if (a == "--bank-reject") bankReject = true;
         // ...and its companion: keep the save's PLAYER but take the world
         // from `IAM\START`, so a flow can be tried against a new game's
@@ -1961,19 +1968,52 @@ int main(int argc, char** argv) {
         for (char ch : giveList + ",") {
             if (ch != ',') { cur.push_back(ch); continue; }
             if (cur.empty()) continue;
-            const int id = std::atoi(cur.c_str());
+            // `LIST:ID` names the list, a bare `ID` means list 0. Op 49
+            // `var.set.has_object`'s FIELD 0 is the list and field 1 the
+            // object, and the lists are not interchangeable: the flat's lift
+            // gate asks `has_object 1, 3, 20` - list ONE for the police card
+            // - so a bag written only into list 0 never satisfies it, and the
+            // cutscene behind that gate could not be reached at all.
+            int list = 0;
+            std::string idPart = cur;
+            const auto colon = cur.find(':');
+            if (colon != std::string::npos) {
+                list = std::atoi(cur.substr(0, colon).c_str());
+                idPart = cur.substr(colon + 1);
+            }
+            const int id = std::atoi(idPart.c_str());
             cur.clear();
             if (id <= 0) continue;
             // `debugPutObject` fills the FIRST free slot, so the ids land in
             // the order they are given - which is the reverse of what the
             // game's own `ObjectList_InsertFront` would do, and is fine for a
             // harness whose point is to have a bag at all.
-            if (state.debugPutObject(0, id)) ++placed;
-            else { ++refused; std::printf("--give: no free slot for object %d\n", id); }
+            if (state.debugPutObject(list, id)) ++placed;
+            else { ++refused; std::printf("--give: no free slot for object %d "
+                                          "in list %d\n", id, list); }
         }
         std::printf("--give: %d object%s put in the carried list, %d refused "
                     "(a harness write, not `inventory.add`)\n",
                     placed, placed == 1 ? "" : "s", refused);
+    }
+    if (!varList.empty()) {
+        std::string cur;
+        int wrote = 0;
+        for (char ch : varList + ",") {
+            if (ch != ',') { cur.push_back(ch); continue; }
+            const auto eq = cur.find('=');
+            if (eq != std::string::npos) {
+                const int id = std::atoi(cur.substr(0, eq).c_str());
+                const int v  = std::atoi(cur.substr(eq + 1).c_str());
+                state.setVar(id, v);
+                std::printf("--var: VARIABLES[%d] = %d\n", id, v);
+                ++wrote;
+            }
+            cur.clear();
+        }
+        std::printf("--var: %d variable%s written straight into the DB "
+                    "(a harness write, not a script)\n", wrote,
+                    wrote == 1 ? "" : "s");
     }
     const auto objectRecords = omk::loadObjects(fs);
     const auto globalFile = fs.read("IAM/GLOBAL");
