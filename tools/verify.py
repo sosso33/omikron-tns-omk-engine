@@ -3449,6 +3449,145 @@ def c_lift_doors():
            "by the active pool"
 
 
+def c_object_path_anchor():
+    r"""A MOVED OBJECT'S PATH IS A DISPLACEMENT, not a place to stand.
+
+    `Script_MoveObjectOnPath` is the most-used scene function in the game -
+    4841 calls - and the port placed its path sample OUTRIGHT. The handler
+    (`readable/src/23_script.c`) does not:
+
+        first tick   params 9/10/11 = the node's own position    (the anchor)
+        every tick   node = sample(t) - sample(t0) + anchor
+
+    so what the path contributes is the delta from its own first sample, laid
+    on wherever the object stood when the move began. For a set mesh that
+    anchor is where the set authored it.
+
+    **Two sets hid this from each other.** `AHALL40`'s paths are authored on
+    top of their meshes - `HA40DoorL` sits at 3947.6/-58.6/-1206.0 and its
+    path's first sample is 3949/-52/-1207, within 7 units - so `sample` and
+    `sample - sample(t0) + authored` agree and the lift doors moved correctly
+    under the wrong rule. That is why `engine: lift doors` passed and why a
+    confirmation built on it was wrong. `AAPKAYL`'s are authored about another
+    origin entirely: `Ap01Porte1` is authored at 3759.9/1037.3/-815.8 and its
+    path starts at **632/-43.2/33.8**, so the raw sample threw the flat's
+    entrance door about **3400 units** out of the building. It vanished the
+    moment its zone fired and never came back - which a reader watching the
+    apartment reported as BOTH "the doors have no animation" AND "the doors
+    don't close any more", from the one fault.
+
+    Closing needs no code of its own: the leave script runs the same path
+    backwards, so the delta walks from the full displacement back to zero and
+    the door lands exactly on its anchor.
+
+    What is asserted, all of it out of the shipped data and the port:
+
+    * the two meshes' AUTHORED positions, read from the `.3DO`s;
+    * the path's first sample for the flat's door, and the offset between the
+      two - the 3127.9/1080.5/-849.6 that had to be found;
+    * that the corrected placement at `t0` lands EXACTLY on the authored
+      position, which is the property the rule exists to give;
+    * and the displacement at the far end: **87.2 units straight down**, x and
+      z unmoved - a door sliding into the floor, which is what that model does.
+
+    `NodeMotion::placeOn` is the one place the rule lives, and `door_probe`
+    calls it rather than re-deriving it, so this measures the port's own
+    arithmetic instead of a copy made to agree with it.
+
+    Shown to fail: dropping `hasFrom` (the old reading) puts `t0` at
+    632/-43.2/33.8 instead of the authored position and the displacement
+    becomes the whole 3400-unit jump; anchoring on the path's LAST key instead
+    of its first inverts the slide.
+    """
+    import subprocess, re as _re
+    eng = os.path.join(ROOT, "engine")
+    fr = omkpaths.data_root()
+    if not (os.path.isdir(eng) and os.path.isdir(fr)):
+        return ("skipped",), ("skipped",), "engine/ or gamedata/ absent"
+    b = subprocess.run(["make", "-s"], cwd=eng, capture_output=True, text=True)
+    ml = os.path.join(eng, "build", "mesh_list")
+    dp = os.path.join(eng, "build", "door_probe")
+    if b.returncode != 0 or not (os.path.exists(ml) and os.path.exists(dp)):
+        return ("build failed",), ("built",), "engine/ must build"
+
+    def authored(setName, mesh):
+        r = subprocess.run([ml, omkpaths.data("MESHES/DECORS/" + setName)],
+                           capture_output=True, text=True)
+        for line in r.stdout.splitlines():
+            f = line.split()
+            # `<index> <name> flags <hex> pos <x> <y> <z> local ...`
+            if len(f) > 7 and f[1] == mesh and f[4] == "pos":
+                return tuple(round(float(x), 1) for x in f[5:8])
+        return None
+
+    flat = authored("AAPKAYL.3DO", "Ap01Porte1")
+    lift = authored("AHALL40.3DO", "HA40DoorL")
+    if flat is None or lift is None:
+        return ("mesh missing",), ("both meshes",), "the door meshes must be there"
+
+    r = subprocess.run([dp, fr, os.path.join(ROOT, "tables"),
+                        str(flat[0]), str(flat[1]), str(flat[2])],
+                       capture_output=True, text=True)
+    rows = []
+    for line in r.stdout.splitlines():
+        m = _re.search(r"sample\s+(\S+)\s+(\S+)\s+(\S+)\s+from\s+(\S+)\s+(\S+)"
+                       r"\s+(\S+)\s+->\s+(\S+)\s+(\S+)\s+(\S+)", line)
+        if m:
+            rows.append([float(x) for x in m.groups()])
+    if not rows:
+        return ("no motion",), ("samples",), "door_probe must report samples"
+    first = rows[0]
+    fromPt = tuple(round(v, 1) for v in first[3:6])
+    atT0   = tuple(round(v, 1) for v in first[6:9])
+    # the far end of the open: the biggest displacement from the anchor
+    far = max(rows, key=lambda v: abs(v[7] - flat[1]))
+    disp = tuple(round(far[6 + c] - flat[c], 1) for c in range(3))
+    offset = tuple(round(flat[c] - fromPt[c], 1) for c in range(3))
+    liftGap = round(max(abs(lift[c] - s0) for c, s0 in
+                        enumerate((3949.0, -52.0, -1207.0))), 1)
+    # ---- AND WHAT IT SOUNDS LIKE. `Script_PlaySound` is 3D and the port
+    # attenuates by distance from the listener, so a door placed 3400 units
+    # outside the building is not merely invisible - it is INAUDIBLE. The
+    # reader's next report after the animation was fixed was that the door
+    # still made no sound; it was playing at gain 0.03. The distance has to
+    # come from the PLACED position, which is why `motionAt` exists.
+    gain, dist = -1.0, -1
+    play = os.path.join(eng, "build", "omk-play")
+    mk = subprocess.run(["make", "-s", "play"], cwd=eng, capture_output=True, text=True)
+    if mk.returncode == 0 and os.path.exists(play):
+        env = dict(os.environ, SDL_VIDEODRIVER="dummy")
+        rp = subprocess.run(
+            [play, fr, os.path.join(ROOT, "tables"),
+             "--save", os.path.join(ROOT, "traces", "save-appart.bin"),
+             "--area", "237", "--stand", "3784,1071,-816,271",
+             "--frames", "60", "--res", "640x480"],
+            capture_output=True, text=True, env=env)
+        for line in rp.stdout.splitlines():
+            m = _re.search(r"scene-sound.*\(23, 142\)\s+gain (\S+)", line)
+            if m: gain = float(m.group(1))
+            m = _re.search(r"at (\d+) units from the nearest motion of object 142", line)
+            if m: dist = int(m.group(1))
+    return (flat, lift, fromPt, offset, atT0, disp, liftGap, gain, dist), \
+           ((3759.9, 1037.3, -815.8), (3947.6, -58.6, -1206.0),
+            (632.0, -43.2, 33.8), (3127.9, 1080.5, -849.6),
+            (3759.9, 1037.3, -815.8), (0.0, -87.2, 0.0), 6.6, 1.0, 50), \
+           "the flat's entrance door and the lift's left door as the `.3DO`s " \
+           "author them; then the flat's path's FIRST sample and the offset " \
+           "between the two - the origin the path is written about, which is " \
+           "why placing the raw sample threw that door 3400 units out of the " \
+           "building; then the corrected placement at t0, which must land " \
+           "EXACTLY on the authored position, and the displacement at the far " \
+           "end of the open - 87.2 units straight DOWN with x and z unmoved, " \
+           "a door sliding into the floor; and last how far the LIFT's path " \
+           "starts from its own mesh, 6.6 units, which is why the wrong rule " \
+           "moved those doors correctly and hid this for so long; and last " \
+           "the DOOR'S SOUND - `Script_PlaySound` is 3D, so a door placed " \
+           "outside the building is inaudible as well as invisible, and wav " \
+           "23 played at gain 0.03 until the attenuation was measured from " \
+           "the PLACED position too. Standing at the door it is gain 1.00 at " \
+           "50 units"
+
+
 def c_ui_shop_titles():
     r"""The ten shops' titles, and the branch a linear scan cannot follow.
 
@@ -24729,6 +24868,7 @@ SLOW = [
     ("engine: screen scale", c_engine_screen_scale, "PORTING A1; UI 3b"),
     ("engine: name field", c_engine_name_field, "UI 3b; PORTING A1"),
     ("engine: lift doors", c_lift_doors,       "todo/next-tasks 7"),
+    ("object path anchor", c_object_path_anchor, "todo/next-tasks 7"),
     ("save clock",         c_save_clock,        "GAME_STATE 8"),
     ("player counters",   c_player_counters,   "UI 3g; GAME_STATE"),
     ("fill colour",       c_fill_colour,       "UI 3b"),

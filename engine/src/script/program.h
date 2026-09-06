@@ -279,6 +279,37 @@ public:
         bool  rotated = false;   // the sample's quaternion is not identity
         float t = 0.0f;          // where along the path, in the path's frames
         bool  placed = false;    // false when the sample fell outside every span
+        // THE PATH IS A DISPLACEMENT TRACK, not a place to stand, and reading
+        // it as the latter is why the apartment's doors never moved.
+        // `Script_MoveObjectOnPath` (23_script.c) captures the node's own
+        // position into the call's params 9/10/11 on the move's FIRST tick -
+        //
+        //     if (first tick) { p9,p10,p11 = node.x,y,z }   // the anchor
+        //     node = sample(t) - sample(t0) + (p9,p10,p11)
+        //
+        // - so what the path contributes is the DELTA from its own first
+        // sample. `from` is that first sample, and a consumer places the
+        // object at `anchor + (pos - from)`.
+        //
+        // Two sets hid this from each other. `AHALL40`'s paths are authored
+        // with `sample(t0)` already ON the mesh (within 7 units of its
+        // authored 3947.6/-58.6/-1206.0), so `pos` and the corrected form
+        // agree and the lift doors looked right. `AAPKAYL`'s are authored
+        // about a different origin - `sample(t0)` is 632/-43.2/33.8 against a
+        // door authored at 3759.9/1037.3/-815.8 - so reading `pos` outright
+        // threw that door 3400 units out of the flat. It vanished on the
+        // trigger and never came back, which a reader saw as "the doors have
+        // no animation" AND "the doors don't close any more": one fault.
+        float from[3] = {0, 0, 0};   // the path's sample at t0
+        bool  hasFrom = false;
+        // Where this sample puts the object, given the node's position when
+        // the move began. THE ONE PLACE the rule lives, so the viewer and
+        // `door_probe` cannot drift: a check that re-derived it would be
+        // testing its own arithmetic rather than the port's.
+        void placeOn(const float anchor[3], float out[3]) const {
+            for (int c = 0; c < 3; ++c)
+                out[c] = hasFrom ? anchor[c] + (pos[c] - from[c]) : pos[c];
+        }
     };
     const std::vector<NodeMotion>& motions() const { return motions_; }
 

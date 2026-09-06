@@ -3793,6 +3793,14 @@ int main(int argc, char** argv) {
         // there), and its program runs in `sceneOut()` - so a motion read
         // from the active pool alone never moved the tunnel's doors, drawn
         // or collided. The meshes are matched by name across both slots.
+        // WHERE EACH MOVED MESH ENDED UP, by name - filled by the patch
+        // below and read by the scene-sound attenuation further down, which
+        // needs the same answer. It used the raw path sample, and a sample is
+        // not a position (`NodeMotion::placeOn`): the flat's entrance door
+        // reports 632/-43/34, so the listener was measured against a point
+        // 3400 units outside the building and the door slid in silence at
+        // gain 0.03. Computed once here rather than twice.
+        std::map<std::string, std::array<float, 3>> motionAt;
         std::vector<omk::Program::NodeMotion> allMotions;
         std::map<std::string, omk::SceneRunner::NodeScale> allScales;
         for (const omk::SceneRunner* sr : {&session.sceneOut(), &session.scene()}) {
@@ -3839,7 +3847,16 @@ int main(int argc, char** argv) {
                     if (mi < 0) continue;
                     Patch& p = patches[mi];
                     p.hasMotion = true;
-                    for (int c = 0; c < 3; ++c) p.pos[c] = mo.pos[c];
+                    // THE PATH IS A DISPLACEMENT, and the anchor is the mesh
+                    // itself. `Script_MoveObjectOnPath` places the node at
+                    // `sample(t) - sample(t0) + the node's position when the
+                    // move began`; for a set mesh that anchor is where the
+                    // set authored it, which is `mp` below. Taking `pos`
+                    // outright is right only where a path happens to be
+                    // authored on its mesh - `AHALL40`'s are, `AAPKAYL`'s are
+                    // not, and that is the whole of the apartment door bug.
+                    mo.placeOn(w.meshes[static_cast<std::size_t>(mi)].pos, p.pos);
+                    motionAt[mo.name] = {p.pos[0], p.pos[1], p.pos[2]};
                     p.q = omk::Quatf{mo.quat[0], mo.quat[1], mo.quat[2], mo.quat[3]};
                     p.rotated = mo.rotated;
                 }
@@ -4044,8 +4061,12 @@ int main(int argc, char** argv) {
                         const float* L = player->pos();
                         float best = 1e30f;
                         for (const auto& m : mo) {
-                            const float dx = m.pos[0] - L[0], dy = m.pos[1] - L[1],
-                                        dz = m.pos[2] - L[2];
+                            // the PLACED position, not the raw sample
+                            const auto pl = motionAt.find(m.name);
+                            const float* w = pl == motionAt.end() ? m.pos
+                                                                 : pl->second.data();
+                            const float dx = w[0] - L[0], dy = w[1] - L[1],
+                                        dz = w[2] - L[2];
                             best = std::min(best, dx * dx + dy * dy + dz * dz);
                         }
                         const float d = std::sqrt(best);

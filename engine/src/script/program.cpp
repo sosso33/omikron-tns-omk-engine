@@ -338,6 +338,18 @@ bool Program::tick(float dt) {
                         m.placed = true;
                     }
                     m.rotated = std::fabs(m.quat[0]) < 0.999999f;
+                    // ...and the path's own FIRST sample, which is what the
+                    // handler subtracts. `t0` is 0 whichever way the path is
+                    // run: a backward run walks the same track from the far
+                    // end, so its delta starts at the full displacement and
+                    // ends at zero - which is exactly a door closing back
+                    // onto the anchor it opened from.
+                    float q0[4];
+                    if (pathSampleQuat(*pa, 0.0f, m.from, q0)) m.hasFrom = true;
+                    else if (!pa->keys.empty()) {
+                        for (int c = 0; c < 3; ++c) m.from[c] = pa->keys.front().pos[c];
+                        m.hasFrom = true;
+                    }
                     if (!m.name.empty()) motions_.push_back(std::move(m));
                 }
             }

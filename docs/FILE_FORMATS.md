@@ -1559,7 +1559,7 @@ Only **17 distinct ids** occur in the 13887 shipped calls:
 
 | function | uses | id | params | start | play |
 |---|---|---|---|---|---|
-| `Script_MoveObjectOnPath` | 4841 | `0x03000008` | 15 | ✓ | ✓ |
+| `Script_MoveObjectOnPath` | 4841 | `0x03000008` | 15 | ✓ | ✓ | ← §the anchor |
 | `Script_PlaySound` | 3797 | `0x05000014` | 4 | | ✓ |
 | `Script_SelectRelativeBodyAnimation` | 2398 | `0x0200002A` | 12 | ✓ | ✓ |
 | `Script_PlaySyncSound` | 1628 | `0x05000015` | 5 | | ✓ |
@@ -2243,6 +2243,50 @@ block, whose format phase 3 opens with.
 > The first version of this note read `TeBassin` as "the bathtub pose" — a
 > false friend caught by a reader who plays the game: bassin here is anatomy,
 > and the sibling name `TeCuissed` settles it.
+
+#### `Script_MoveObjectOnPath` — the path is a DISPLACEMENT, not a position
+
+The most-used scene function in the game, and the one whose reading was
+wrong until 2026-09-06. The handler does not place the path sample: it
+captures the node's own position on the move's **first tick**, into the call's
+own parameters 9/10/11, and thereafter places
+
+```
+node = sample(t) − sample(t0) + anchor
+```
+
+so the path contributes only the DELTA from its own first sample, laid on
+wherever the object stood when the move began (`readable/src/23_script.c`; the
+capture is the `sub_44C6C0(a2, 9|10|11, …)` arm taken when the span is at its
+start, and the read-back is `Script_GetParamFloatB(a2, 9|10|11)`).
+
+**Two sets hide this from each other, which is why it survived.** Some paths
+are authored on top of the mesh they move and some about another origin
+entirely:
+
+| set | mesh authored at | its path's `sample(t0)` | offset |
+|---|---|---|---|
+| `AHALL40` | 3947.6, −58.6, −1206.0 | 3949, −52, −1207 | ~7 |
+| `AAPKAYL` | 3759.9, 1037.3, −815.8 | **632, −43.2, 33.8** | **~3400** |
+
+Placing the raw sample therefore moves Anekbah Hall 40's lift doors correctly
+— they were watched opening — and throws Kay'l's entrance door out of the
+building, where it vanishes on the trigger and never returns. That single
+fault reads as two: no door animation, and doors that never close. Corrected,
+the flat's door lands exactly on its authored position at `t0` and slides
+**87.2 units straight down** into the floor.
+
+Closing needs nothing of its own: the leave script runs the same path
+backwards, so the delta walks from the full displacement back to zero.
+
+**And it is heard as well as seen.** `Script_PlaySound` is 3D, so a consumer
+that attenuates by distance must measure to the PLACED position and not to the
+sample: the flat's door raised its cue every time and played it at **gain
+0.03**, because the listener was being measured against a point 3400 units
+outside the building. Corrected it is gain 1.00 at 50 units. A reader reported
+the animation and the sound separately, an hour apart, and they were the same
+bug twice — the second time because only the DRAW path had been put through
+the rule. `verify.py: object path anchor`.
 
 The clip data itself lives in the SCX **streamed block**, now solved — see
 [ASSETS](ASSETS.md), "`.3DA` — scene animations": 220/220 streamed walks land

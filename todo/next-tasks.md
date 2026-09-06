@@ -26,8 +26,10 @@ items are research and can be done any time they are wanted.
 | 3 | ESC quits instead of opening the pause menu | **S/M** | strong | the screen exists in the lifted table; today ESC loses the session |
 | 4 | tuto zone fires repeatedly, player not stopped | **M** | strong | zone lifecycle is read and there is already a check nearby |
 | 5 | black frames in the Impasse cutscene | **M** | strong | the port already LOGS the moment it happens |
+| 20 | stuck on the last step of the bank's stairs | **S/M** | good | the walker's step and slope rules are ported; this is one threshold, and it blocks a whole location |
+| 21 | a shop conversation's first camera is outside the shop | **M** | good | same family as item 5 and item 7 - what is resident when a script runs on ENTERING a building |
 | 6 | street NPCs stop and T-pose | **M** | good | same family as the scene-facing work of 2026-09-05 |
-| 7 | missing animations (lift doors, Kay'l's drawer) | **REOPENED** | strong | the LIFT doors animate (Hall 40, watched). The APARTMENT doors do not: their motion samples are in a different space from the set, so the door is displaced instead of slid - it vanishes on the trigger and never comes back |
+| 7 | missing animations (lift doors, Kay'l's drawer) | **FIXED** | strong | the path is a DISPLACEMENT, not a position: `node = sample(t) - sample(t0) + anchor`. The flat's doors now slide 87.2 down, close behind you, and are AUDIBLE (gain 0.03 -> 1.00, the same fault reaching the 3D sound). The lift's were right by accident. Door COLLISION still to check |
 | 8 | save support (save, save menu, load menu) | **M** | very strong | the format is solved end to end; this is plumbing, not research |
 | 9 | main menu completed (new game correct, the rest) | **M** | very strong | the widget tree and the answer sites are lifted |
 | 10 | sneak: character / info / config pages | **M** | very strong | the panels are already named constants in the port |
@@ -40,6 +42,9 @@ items are research and can be done any time they are wanted.
 | 17 | fight mode | **L** | good | the AI profiles and combat block are read; nothing is wired |
 | 18 | shoot mode | **L** | good | read, and deliberately unwired - a DECISION to revisit, not a gap |
 | 19 | does the original filter (anti-aliasing, …)? | **research** | fair | cheap to answer, and the answer may be "no reachable tier" |
+
+The **#** column is the item's id, not its position: 20 and 21 were added on
+2026-09-06 and sit in the table where they belong rather than at the end.
 
 ---
 
@@ -389,3 +394,73 @@ if it were set at all.
 captures, so the likely honest outcome is "the engine sets these states, and
 their effect has no reachable tier" — which is a real result and should be
 recorded as one rather than left as a question.
+
+### 20. Stuck on the last step of the bank's stairs — S/M, good evidence
+
+Reported 2026-09-06: the bank has stairs, and climbing them the player stops
+dead on the **last** step and cannot get up. So the walker climbs a run of
+steps and then refuses one — which makes it a threshold question, not a
+"stairs are unimplemented" question.
+
+**Do the reading first, in the original.** The task as given is: find how the
+engine handles stairs and make the port do that. What the tree already has is
+the walker's two refusals, both in `engine/src/actor/walk.h`: `kStepUp =
+11.811023622` (30 cm, `dword_910340`) and the 30° slope limit, with
+`WalkResult::Slid` for a face past it. Neither is a stair rule as such — the
+engine may well climb stairs purely through those two, in which case the last
+step differs from the others in geometry (a taller riser, a landing whose face
+normal is past the limit, or a wall face meeting the top step so the step-up
+probe hits it) and the fix is in how the probe is done, not in a new rule. It
+may also have something the port does not: check whether anything in
+`Actors_TickAll` / the walker's caller carries a stair or ledge case before
+concluding.
+
+**Localise it before theorising.** The bank is a shop location, so stand in it
+with `--save`/`--area`/`--stand` the way item 7's lift was watched, walk the
+stairs and log which of the walker's branches the failing step takes — a
+step-up refusal, a slope refusal and a collision against a wall all look
+identical from outside and have three different fixes.
+
+Worth pairing with item 15: the fall tiers and the step rules are the same
+walker, and both are unfinished.
+
+### 21. A shop conversation's first camera is placed outside the shop — M, good evidence
+
+Reported 2026-09-06, and the shape of the report is the useful part: in many
+shops (the drugstore is the reader's example) the **first** attempt to talk to
+the seller frames the camera far outside the building, looking at the whole
+store from the void. Break off the conversation and speak to them again and
+the camera is correct.
+
+**Right the second time is the diagnosis.** Something the camera needs is not
+yet resolved when the conversation opens the first time and is by the second,
+so this is an initialisation-order bug and not a camera-maths bug. Two
+candidate mechanisms, and they are distinguishable:
+
+* **The set is not resident yet.** A dialogue camera with `subject[0] ==
+  0xFFFF` is an absolute point in the **set's** coordinates
+  (`engine/src/script/dialogue.h`), so a camera resolved while the shop's
+  scene is still loading — or against the area the player walked in from,
+  which `Area_LoadSet` keeps resident in the other slot — lands in the
+  outdoor set's space. "Far outside the store" is what that looks like.
+* **The speaker is not staged yet.** A camera whose `+32` names one of the two
+  speakers resolves against that actor's position; an actor not yet placed
+  sits at the origin or at his authored pre-load spot, and the camera follows
+  him there. This is the same family as the 2026-09-05 finding that a scene
+  actor's Euler must be written before his first step, and as the T-pose of
+  item 6.
+
+Read which of the two it is off the conversation's own camera records before
+changing anything: if the drugstore's cameras are all absolute, the second
+mechanism is ruled out in one command.
+
+**Test it in real conditions — the reader asks for this explicitly, and the
+repo has already been bitten by not doing it.** Reproduce by starting
+*outside* the shop, walking in through the door, and talking to the seller —
+not by standing in the shop with `--stand`, and not from a save taken inside.
+Several faults here have turned out to be about what the scripts do on
+**entering a building from the outside** (item 7's apartment doors, the
+texture-cache substitution that depends on which neighbour is resident), and a
+test that skips the entry cannot see them. The first attempt must be a genuine
+first attempt: once the conversation has been opened once the bug is gone, so
+a rerun in the same session proves nothing.
