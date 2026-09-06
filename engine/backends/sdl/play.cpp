@@ -5571,6 +5571,21 @@ int main(int argc, char** argv) {
             // deferring: `Game_WriteSave(slot)` right after the charge, and
             // then the screen closes. So this is served here and not at the
             // pump.
+            // `Detruire`'s confirm: `SaveDir_ClearSlot` (0x004090A0), which
+            // is ONE zero byte over the slot's name. The day, the DB and the
+            // picture stay on disk - an empty slot is an empty NAME and
+            // nothing else (GAME_STATE 8b).
+            if (const int slot = walk->takePendingClear(); slot >= 0) {
+                auto file = omk::readSaveFile(savesPath, fr + "/IAM/GAMES");
+                if (omk::clearSaveSlot(file, slot) &&
+                    omk::writeSaveFile(savesPath, file)) {
+                    std::printf("detruire: slot %d cleared\n", slot);
+                    loadPanelState = omk::buildLoadPanel(
+                        omk::saveDirectory(loadPanelState.path, w));
+                } else {
+                    std::fprintf(stderr, "detruire: slot %d not cleared\n", slot);
+                }
+            }
             if (const int slot = walk->takePendingSave(); slot >= 0) {
                 // ONE RING, through `Actor_GetProperty` / `Actor_SetProperty`
                 // (events 44 and 45, property 5) exactly as the callback

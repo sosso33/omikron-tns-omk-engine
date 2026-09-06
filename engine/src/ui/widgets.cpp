@@ -1085,6 +1085,30 @@ bool UiWalk::confirm() {
             panel_ = nullptr;
             return true;
         }
+        // `Detruire` (0x0047AE90): it refuses a row outside 0..count and
+        // otherwise opens its own confirm.
+        if (it->callback == kCbLoadDetruire) {
+            if (!load_) return false;
+            const int n = static_cast<int>(load_->rows().size());
+            if (load_->row < 0 || load_->row >= n) {
+                log_.push_back("detruire: no row");
+                return true;
+            }
+            return installPanel(kPanelLoadDestroy);
+        }
+        // ...and that confirm's `Oui` (0x0047B800): ONE slot cleared, through
+        // the listed profile. Not the profile-wide `SaveDir_Delete`.
+        if (it->callback == kCbDestroyYes) {
+            if (!load_) return false;
+            const auto rows = load_->rows();
+            if (load_->row < 0 || load_->row >= static_cast<int>(rows.size())) {
+                log_.push_back("detruire: no row to clear");
+                return true;
+            }
+            pendingClear_ = rows[static_cast<std::size_t>(load_->row)].slot;
+            log_.push_back("detruire: clearing slot " + std::to_string(pendingClear_));
+            return installPanel(kPanelLoadSlots);      // back to the list
+        }
         // The confirm panel's `Oui` (0x0047BA30), the save arm. The delete
         // arm - screen 29's `Detruire` - is read and not modelled: it calls
         // `SaveDir_Delete`, which empties every slot of a profile, and that
@@ -1667,6 +1691,15 @@ void applyLoadPanelLayout(UiWidgets& w, int screen) {
     place(0x004CED50u, -1, false, screen == 30 ? 12 : 6);    // Oui
     place(0x004CED98u, -1, false, screen == 30 ? 13 : 7);    // Non
     place(0x004CF0C8u, -1, false, screen == 30 ? 16 : 10);   // the question
+    // `sub_47B710`, the DESTROY confirm's builder - the same shape again:
+    //     screen 29   question 2,  oui 6,  no 7
+    //     screen 30   question 11, oui 12, no 13
+    // and the symbols are those items' own `+0x1C`: `word_4CECB4` is
+    // 0x004CEC98 + 0x1C, `word_4CECFC` is 0x004CECE0 + 0x1C and `word_4CF074`
+    // is 0x004CF058 + 0x1C.
+    place(0x004CEC98u, -1, false, screen == 30 ? 12 : 6);    // Oui
+    place(0x004CECE0u, -1, false, screen == 30 ? 13 : 7);    // Non
+    place(0x004CF058u, -1, false, screen == 30 ? 11 : 2);    // the question
     // ...and BOTH buttons' `+44`, the child they return to. The builder's
     // `off_4CED7C` and `dword_4CEDC4` are `0x004CED50 + 0x2C` and
     // `0x004CED98 + 0x2C` - the child field, not the string. The table ships

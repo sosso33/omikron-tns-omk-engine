@@ -504,6 +504,7 @@ public:
     // ring, which is state the walk does not own either.
     int  pendingSave() const { return pendingSave_; }
     int  takePendingSave() { const int s = pendingSave_; pendingSave_ = -1; return s; }
+    int  takePendingClear() { const int s = pendingClear_; pendingClear_ = -1; return s; }
     // `Actor_GetProperty` case 5, the player record's +174 - what a save
     // costs and what the hints on this screen are bought with.
     void setRings(int n) { rings_ = n; }
@@ -784,6 +785,8 @@ private:
     // The row an overwrite confirm is standing over, so its `Oui` knows
     // which slot it agreed to. -1 when no confirm is up.
     int         overwriteRow_ = -1;
+    // The slot `Detruire`'s `Oui` asked to clear, or -1.
+    int         pendingClear_ = -1;
     // The SCREEN this walk was opened with. Child panels carry `screen ==
     // -1`, so a callback that branches on the screen - and several of the
     // save/load family do - cannot ask the panel it is standing on.
@@ -949,6 +952,16 @@ inline constexpr std::uint32_t kPanelLoadDestroy   = 0x004CF350u;
 // so one panel is `Detruire`'s confirmation on the load screen and the
 // overwrite confirmation on the save screen.
 inline constexpr std::uint32_t kCbConfirmYes = 0x0047BA30u;
+// `Detruire` (0x0047AE90) and its OWN confirm's `Oui` (0x0047B800), which is
+// a different button from the one above and does a different thing:
+//
+//     row = dword_4CEBAC;
+//     if (row >= 0) SaveDir_ClearSlot(indexOf(recordAt(dir, byte_657970, row)));
+//
+// - ONE slot, cleared with the single zero byte `SaveDir_ClearSlot` writes,
+// and addressed through the LISTED profile. The `SaveDir_Delete` that empties
+// a whole profile is in 0x0047BA30's screen-29 arm, not here.
+inline constexpr std::uint32_t kCbDestroyYes   = 0x0047B800u;
 inline constexpr std::uint32_t kPanelLoadSlots   = 0x004CF2E8u;
 inline constexpr std::uint32_t kPanelSaveNoRings = 0x004E2FB0u;
 inline constexpr std::uint32_t kCbLoadCharger    = 0x0047AC90u;
