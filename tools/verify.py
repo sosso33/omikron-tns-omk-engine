@@ -11266,6 +11266,14 @@ def c_engine_save_load():
     away.  A value the code prints on its way past is not evidence that
     anything consumed it.
 
+    **And the rows are checked against a photograph of the original.** A reader
+    supplied a screen grab of `Charger une partie` taken against exactly this
+    save file (GAME_STATE 8), and the port now builds the same three rows out
+    of the DB - the character name at the player record's `+8`, then the date
+    and time - under the same `Joueur :` heading. They match character for
+    character, which is the port reproducing the original's own display rather
+    than agreeing with another reader in this tree.
+
     And the override is asserted with it: `--stand` beats the save, because a
     reader who typed a spot means it.  Without that the street starts - every
     one of which pairs `--save` with `--area` and puts the player in a city
@@ -11284,7 +11292,7 @@ def c_engine_save_load():
     import gamestate as _G
     env = dict(os.environ, SDL_VIDEODRIVER="dummy")
     tb = os.path.join(ROOT, "tables")
-    rows, agree = [], 0
+    rows, agree, panel = [], 0, []
     for slot in (0, 1, 2):
         r = subprocess.run([play, omkpaths.data_root(), tb, "--save", fixture,
                             "--slot", str(slot), "--nofmv", "--no-crowd",
@@ -11295,6 +11303,11 @@ def c_engine_save_load():
         if not m:
             rows.append((slot, "no line")); continue
         rows.append((slot, m.group(2), int(m.group(3)), int(m.group(4))))
+        # ...and the row the load panel would draw, which the port now builds
+        # out of the DB itself - the character name at the player record's +8
+        r2 = re.search(r'^save: the load panel\'s row for it is "(.*)" under '
+                       r'"Joueur : (.*)"$', r, re.M)
+        if r2: panel.append((r2.group(1), r2.group(2)))
         # WHERE HE ACTUALLY STANDS, off the hand-over line - not off the
         # `save:` line, which only says what the DB was decoded as.
         h = re.search(r"ADVENTURE MODE.*standing at (-?\d+) (-?\d+) (-?\d+) "
@@ -11316,15 +11329,21 @@ def c_engine_save_load():
                   r"facing (-?\d+)", o)
     overridden = bool(h) and (int(h.group(1)), int(h.group(3)), int(h.group(4))) == \
                  (1000, -2000, 90)
-    return (rows, agree, overridden), \
+    return (rows, agree, overridden, panel), \
            ([(0, "12 Nadim 7216 14:14:17", 237, 57),
              (1, "12 Nadim 7216 16:08:15", 179, 49),
-             (2, "12 Nadim 7216 17:14:30", 217, 53)], 3, True), \
+             (2, "12 Nadim 7216 17:14:30", 217, 53)], 3, True,
+            [("KAY'L 669 - 12 Nadim 7216 - 14:14:17", "hereIsTheProfileName"),
+             ("KAY'L 669 - 12 Nadim 7216 - 16:08:15", "hereIsTheProfileName"),
+             ("KAY'L 669 - 12 Nadim 7216 - 17:14:30", "hereIsTheProfileName")]), \
            "per slot of traces/games-resto.bin: the date and time the viewer " \
            "restores, the area it resumes in and the scene over it; then how " \
            "many of the three put the player at the x/z tools/gamestate.py " \
            "converts from the same raws independently; and that an explicit " \
-           "--stand overrides the save's own placement"
+           "--stand overrides the save's own placement; then the row and " \
+           "heading the load panel would draw for each slot, which are " \
+           "compared against a photograph of the ORIGINAL drawing the same " \
+           "save file"
 
 
 def c_engine_save_round_trip():

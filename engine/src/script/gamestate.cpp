@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <cstring>
 #include <fstream>
+#include <string>
 
 namespace omk {
 namespace {
@@ -100,6 +101,17 @@ int GameState::playerActorId() const {
     const std::size_t o = static_cast<std::size_t>(kPlayerRecord) + 272;
     if (o + 2 > raw_.size()) return -1;
     return static_cast<std::int16_t>(u16(o));
+}
+
+std::string GameState::characterName() const {
+    std::string out;
+    const std::size_t b = static_cast<std::size_t>(kPlayerRecord) + 8;
+    for (std::size_t k = 0; k < 32 && b + k < raw_.size(); ++k) {
+        const auto c = static_cast<unsigned char>(raw_[b + k]);
+        if (!c) break;
+        out.push_back(static_cast<char>(c));
+    }
+    return out;
 }
 
 GameState::Placement GameState::placement() const {

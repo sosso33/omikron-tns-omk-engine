@@ -211,7 +211,11 @@ yet modelled:
 Read those four, model them in `widgets.*`/`UiWalk` the way the LIFT grid and
 the name field are, then make the walk's answer actually load.
 
-### Step 5 — the save menu, and the SAVE POINTS  ☐
+### Step 5 — the save menu, and the SAVE POINTS  ◐ (read 2026-09-06, not wired)
+
+**The reading is done and needs no UI code**; what is left is the wiring, which
+does. See the price mechanism below and `GAME_STATE` §8c.
+
 
 **The route is not a pause menu.** A reader supplied this and the data
 confirms it (`docs/GAME_STATE.md` §8c, `verify.py: save points`): screen 30 is
@@ -265,7 +269,34 @@ marks the new-save row unselectable). Its flag `0x20000400` also opens screen
 screen is that item's work, and until it exists the screen is reached with
 `omk-play … 30`.
 
-### Step 6 — the docs and the sweep  ☐
+### Step 6 — the docs and the sweep  ◐
 
-`docs/GAME_STATE.md` §8 gains the writer, `engine/README.md` its coverage rows,
-and one full `verify.py --slow` before this is called done.
+`docs/GAME_STATE.md` gained §8b (the writer), §8c (the save points, the price)
+and a corrected §5, §5a and §8; `engine/README.md` gained the three engine
+checks. The full `verify.py --slow` is run at the end of each sitting.
+
+Still owed, and all of it waits on `engine/src/ui/` being free:
+
+| | |
+|---|---|
+| `saveDirectory` (`widgets.cpp`) | reads three of the directory's four fields; needs the character name at **slot + 108**, and `SaveEntry` a place to put it. Without it the port cannot build a load row at all, since a row is `<name> - <date> - <time>` |
+| `tools/sim/ui.py` `save_directory` | the same gap |
+| the load panel | make `Charger` load the chosen slot (step 4) |
+| the save panel | screen 30, its slot rows, and the ring charged on confirm (step 5) |
+| the route | a save zone's activate script reaching `ui.open 30` must open the screen — the same path screen 29 takes at boot |
+
+### What the whole slice established, beyond the port
+
+Four things that were not known when it started, three of them corrections:
+
+1. `State_Save`'s position quantisation is **not** `nearest_int` — it can only
+   round towards zero, and does so on half of all negative coordinates.
+2. `State_Apply` copies the header's scene **into** the scene-per-area table
+   before loading the area, so the header is what a load believes.
+3. The save directory's fourth field is at **slot + 108**, not +76, and is the
+   **character's name** — the load row's label — not the binary the docs
+   recorded from reading the wrong offset.
+4. Saving is a thing in the world: 37 zone-activate scripts, gated on the
+   **anneaux**, refusing with the game's own `Anneaux Y'en a pu !`, and the
+   ring is taken at the confirm — where zero rings turns out not to stop the
+   write at all.

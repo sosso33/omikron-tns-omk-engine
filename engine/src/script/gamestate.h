@@ -264,6 +264,14 @@ public:
     // ships exactly that: a new game has no player until the opening casts
     // one.
     int playerActorId() const;
+    // `+8` of the player record: the CHARACTER'S NAME - `KAY'L 669` in every
+    // real save this tree holds.  It is not decoration: `SaveDir_Build` lifts
+    // exactly these 32 bytes into the save directory (from slot + 108) and
+    // the load panel draws them as a row's label, `<name> - <date> - <time>`
+    // (GAME_STATE 8).  And it is not a constant either - reincarnation
+    // (op 56) replaces the record, so a save carries the body the player was
+    // wearing when it was written.
+    std::string characterName() const;
     Placement placement() const;
     // The same four, converted the way `State_Apply` converts them - degrees
     // for the facing, world units (with the -1) for the position.

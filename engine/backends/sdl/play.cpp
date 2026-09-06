@@ -1920,6 +1920,15 @@ int main(int argc, char** argv) {
             std::printf("save: slot %d's player record names no actor (+272 "
                         "is 0xFFFF), so its placement is not applied - which "
                         "is `State_Apply`'s own guard\n", slotNo);
+        // The row the load panel would draw for this slot, which is the
+        // directory's four fields in the order the original puts them
+        // (GAME_STATE 8): the character name, the date, the time - over a
+        // heading that is the profile name.
+        std::printf("save: the load panel's row for it is \"%s - %s - %s\" "
+                    "under \"Joueur : %s\"\n",
+                    state.characterName().c_str(),
+                    omk::formatDate(slot->day).c_str(),
+                    omk::formatTime(slot->time).c_str(), slot->name.c_str());
         std::printf("save: slot %d '%s', %s %s, area %d scene %d, standing at "
                     "%.0f %.0f %.0f facing %.0f\n", slotNo, slot->name.c_str(),
                     omk::formatDate(slot->day).c_str(), omk::formatTime(slot->time).c_str(),
