@@ -2326,6 +2326,96 @@ shipped save directory the load panel comes up offering exactly one thing,
 one-profile directory beside it so the model is shown to *branch* rather than
 always saying the same thing.
 
+### 3g. The load and save panel, walked and DRAWN (2026-09-06)
+
+The section above has the panel's *shape*; this is the rest of it, read while
+porting the save slice and every line of it confirmed by running the thing.
+
+**Four hooks and six callbacks.** The panel's own hook is
+`Ui_LoadPanelInput` (0x0047ABA0) and the slot list's is 0x0047AEC0, and the
+division between them is one line:
+
+```
+Ui_LoadPanelInput:  if (dword_4CEBAC == -1) return 0;
+                    result = Ui_MoveListsLeftRight(screen, panel);
+```
+
+So **while no row is chosen the panel hook declines**, LEFT and RIGHT fall
+through to the slot list, and there they change the **profile** —
+`byte_657970` is re-read from `SaveDir_NameAt` and the rows recounted. That is
+what the `Joueur :` heading is for, and why the panel opens with nothing
+selected: the first thing it asks is *whose* saves to look at. Once a row is
+chosen the same keys move between the lists instead.
+
+The slot list's own hook does three things, in this order: the two scroll
+indicators (`0x40100000` / `0x40200000`, gated on more than nine rows), the
+profile wheel above, and then
+
+```
+if (bits & 4)       row = row > dword_657990 ? row - 1 : dword_657964;
+else if (bits & 8)  row = row < dword_657964 ? row + 1 : dword_657990;
+...
+if (bits & 0x10 && row != -1) { panel[+0x18] = 1;      // the BUTTON list
+                                word_4CEA9A = screen == 29 ? 0 : 1; }
+```
+
+— so the selection **wraps**, `-1` is a position in the ring on screen 29
+(`dword_657990` is -1 there), and **a confirm on a row moves the focus to the
+buttons**. Landing on a valid row also calls `sub_408D70`, whose two stack
+buffers are 8232 and 24576: the thumbnail is fetched by the MOVE, not by the
+draw.
+
+| callback | |
+|---|---|
+| `0x0047AC90` | `Charger`. Resolves the row to a slot, **refuses an empty one**, stores it in `dword_4C09B4`, sets the answer to **0** and closes. It does not load — see below |
+| `0x0047ADB0` | `Sauvegarde`. An existing row opens `off_4CF3B8`; the new-save row takes `sub_408AA0`'s first free slot, charges a ring and writes |
+| `0x0047AE90` | `Détruire`. Refuses a row outside 0..count, else opens `off_4CF350` |
+| `0x0047BA30` | the overwrite confirm's `Oui` — **and screen 29's profile delete**, one callback with two meanings |
+| `0x0047B800` | the destroy confirm's `Oui`: `SaveDir_ClearSlot` on **one** slot |
+| `0x004AE060` | `Sauvegarde` on screen 30: the slot panel, or `off_4E2FB0` when property 5 reads zero |
+
+**Choosing a save does not load it.** `Charger` answers **0**, and AREA 118's
+startup script — parked at `ui.open 29, -1, -> var 19` — has an arm for
+exactly that: the GRID fly-through (cameras 2152/2153/2154/2158 over
+`scx.play 20`), after which the script ends. The `-1` a plain close leaves
+takes the other arm, which runs `dialog.start 272` and walks on into the
+Impasse. So **the engine covers a load with its own script and the interface
+only has to answer the right number**; `sub_408410` then performs the load
+between pumps, gated on the boot context having finished.
+
+**THREE PANELS EXIST ONLY IN CODE.** `sub_42A370` installs them and no item's
+`+44` names any: `0x004CF3B8` (`Ecraser ce fichier ?`), `0x004CF350`
+(`Détruire`'s confirm) and `0x004E2FB0` (`Je n'ai pas assez d'Anneaux`).
+`tools/exetables.py`'s `CODE_NAMED` reaches them now; before that they were
+absent from the lifted table and the buttons that open them did nothing.
+
+**AND THE BUILDERS WRITE MORE THAN THE STRINGS.** This is the section's real
+lesson, and it cost six separate faults to learn. One panel serves two
+screens, and each screen's builder rewrites the *shared item records*:
+
+| written | by | |
+|---|---|---|
+| the buttons' **y** | `Ui_BuildLoadPanel` | all four ship at (460, 210); 266/326/386 pull them apart |
+| their **string ids** | `Ui_BuildLoadPanel` | `Détruire` is 2 on screen 29 and 11 on screen 30 |
+| the panel's **parent** | `Ui_BuildLoadPanel` | 0x004CF218 or 0x004E2ED8 — the composer draws the parent chain |
+| the confirm's three strings | `sub_47B850` | question 10/16, yes 6/12, no 7/13 |
+| **both its buttons' child** (`+0x2C`) | `sub_47B850` | the table ships `Non`'s as 0 |
+| the destroy confirm's three | `sub_47B710` | question 2/11, yes 6/12, no 7/13 |
+
+A reader who ports the positions and stops gets a panel that looks nearly
+right, which is harder to notice than one that is obviously broken. When a
+panel is shared between screens, **assume its builder rewrites more of the
+records than you have found**, and check the symbol names against the item
+addresses: every one of these is an item's own address plus `0x1C` (the string
+id) or `0x2C` (the child).
+
+**A child panel does not know its screen.** The slot panel and both confirms
+carry `screen == -1`, so a callback that branches on the screen — and
+`0x0047BA30` does — has to be told which screen the walk was opened with.
+
+`verify.py: engine: load walk`; the drawing is
+[`GAME_STATE.md`](GAME_STATE.md) §8.
+
 ### The name field — the last refusal
 
 `sub_47A390` is the only list hook besides the LIFT's grid, and it answers a

@@ -804,6 +804,19 @@ intact while the player walked to the first address several hundred units away.
 It reads the hand-over line now. A value printed on the way past is not
 evidence that anything used it.
 
+**The save and load MENUS** are ported as of 2026-09-06 and the whole loop was
+driven by hand: load a slot from the start menu, save into a new one, overwrite
+an existing one through `Ecraser ce fichier ?`, delete one through its own
+confirm - with an *anneau* charged on every write and refused both in the world
+(the save point's script) and on the panel. `docs/UI.md` §3g has the hooks, the
+six callbacks and the builders; the two things worth carrying here are that
+**choosing a save does not load it** - `Charger` answers 0 and AREA 118's own
+startup script flies the Grid while `sub_408410` performs the load between
+pumps - and that **six of this slice's nine faults were one shape**: a builder
+writing into records the lifted table holds as static (positions, string ids,
+parentage, both confirm buttons' child). Every one of the nine was found by
+PLAYING; none by a check, because no check draws.
+
 **`verify.py: engine save round trip`** is the port saving its own state, and
 it closes the loop the other two only half-close: `engine save write` builds a
 file out of fixture bytes and `engine save load` resumes one, and neither
@@ -2121,7 +2134,7 @@ decompilation at all:
 
 | row | ported | not |
 |---|---|---|
-| the interface text / save directory | the save file, its geometry, the 72-byte directory | the `IAM\<Screen>` text archives |
+| the interface text / save directory | the save file, its geometry, the 72-byte directory **including its fourth field** (slot +108, the character's name), the writer, the load, and both menus - driven end to end in the running game | the `IAM\<Screen>` text archives |
 | the 37 screens | the definition table, the widget tree, the walk over it | the per-screen native callbacks |
 | the per-screen open/close | the flag broadcasts, **and now the item bindings** — 35 string ids and 22 tags the opens write into `+28`/`+60`, none of which is in the item record | the answers the callbacks write. `Ui_OpenShop`'s per-screen titles are **done** — the `+8` jump table at `0x004AE7AC`, which the linear scan bound wrongly (all ten shops to string 19) rather than missing |
 | the four control schemes | **the whole path** — `Input_InstallScheme`'s 4 x 14 x 3 copy into the live tables, `Input_Poll`'s slot-k-to-bit-`1 << k`, `Game_Frame`'s edge filter against `Ui_BeginScreen`'s 0x203F mask, and group-local rebinding with its 0/1/4 refusals. Tier **3, differential**: the start menu answered by SCANCODE reaches the answer `tools/sim` reaches from words | the joystick axes (codes 0 and 4) are carried but nothing steers with them yet |
