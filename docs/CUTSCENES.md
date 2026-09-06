@@ -249,6 +249,21 @@ take the body, fade, play the beats in order, cut to dialogue, fade, give
 everything back. The camera never appears in it — `SPrison.SCX`'s twenty
 editings are attached to the objects being started, so it follows by itself.
 
+**"Take the body" is literal, and it is the same body.** `player.anim.hold`
+stops the `.CTL` channel driving the player's actor, and the
+`scx.play.player.wait` beats above then drive **that actor's own node**: op 46
+ends `ScriptObject_StartOnActor(Actor_Player(), object, scene, caller)`, and
+that function resolves its first argument as `&g_Actors + 1312 * a1` before
+binding the object to the record's node at `+8` — exactly what it does for the
+character 59/60 names (SCRIPT_VM §46/90). Nothing hands the player a second
+representation for the duration, and nothing takes him off screen: he is an
+actor being animated by a program, the way Mashroud is three lines later. A
+frontend that draws the player through a separate free-roaming controller has
+to keep drawing him here, posed and placed by the program, or he is missing
+from the shot the editing is framing — which is precisely what happened in
+`engine/`'s viewer through Kay'l's flat, and what `verify.py: engine: player
+program` now holds shut.
+
 ## 4b. The other family — world-camera cutscenes
 
 **Not every cutscene is an `.SCX` camera editing**, and the ones that are not

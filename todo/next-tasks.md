@@ -42,6 +42,7 @@ items are research and can be done any time they are wanted.
 | 17 | fight mode | **L** | good | the AI profiles and combat block are read; nothing is wired |
 | 18 | shoot mode | **L** | good | read, and deliberately unwired - a DECISION to revisit, not a gap |
 | 19 | does the original filter (anti-aliasing, …)? | **research** | fair | cheap to answer, and the answer may be "no reachable tier" |
+| 22 | the Telis cutscene in Kay'l's flat — four faults | **M** | strong | reported 2026-09-06. Kay'l invisible: **FIXED** (a `scx.play.player` program poses the PLAYER'S ACTOR, and the viewer drew him only in adventure mode). The transcan camera: **FIXED** (the travel dropped the subjects). Open: the Gun Waver in her hands is not drawn, she faces the wrong way before the idle, and the bedroom mirror renders transparent instead of reflecting |
 
 The **#** column is the item's id, not its position: 20 and 21 were added on
 2026-09-06 and sit in the table where they belong rather than at the end.
@@ -475,3 +476,56 @@ texture-cache substitution that depends on which neighbour is resident), and a
 test that skips the entry cannot see them. The first attempt must be a genuine
 first attempt: once the conversation has been opened once the bug is gone, so
 a rerun in the same session proves nothing.
+
+---
+
+### 22. The Telis cutscene in Kay'l's flat — four faults, two fixed
+
+Reported by a reader on 2026-09-06, from the first slot of `omk-saves/GAMES`:
+after the goodbye scene, *"she's looking at the wrong direction then goes back
+to the correct one for the idle, and Kay'l and the waver Telis has in her
+hands are not visible"*, plus *"the mirror in the chamber is displayed with
+transparency instead of reflecting"*.
+
+Reproduce headlessly with the gate already open:
+
+```
+build/omk-play ../gamedata ../tables --save ../omk-saves/GAMES --slot 0 \
+    --var 652=1,657=1 --give 0:42,0:3,1:3 --stand 3054,1071,-753,154 \
+    --frames 220 --res 640x480
+```
+
+**Kay'l invisible — FIXED.** Op 46 is
+`ScriptObject_StartOnActor(Actor_Player(), …)`, and that function binds the
+object to `&g_Actors + 1312 * a1`'s node: a player program animates the
+player's **own actor**, exactly as 59/60 animate the actor they name. The
+viewer built `staged` from `Session::shown()` — which the player is not in,
+because no placement record puts him anywhere — and drew him through the
+adventure controller, which the same program suspends. So the program ran, the
+editing flew, and the body it was posing belonged to nobody. He now joins the
+staged bodies for the sixty frames of `HOCINE07.3DA` and is handed back at the
+place the clip left him (x 3099) rather than the 3054 the walker still held.
+`verify.py: engine: player program`.
+
+**The transcan camera — FIXED** on 2026-09-06 by carrying the subjects
+through a camera travel (`camera travel`); confirmed by the reader.
+
+**Still open.**
+
+* **The Gun Waver in her hands is not drawn.** `OBJECTS[42]`; nothing in the
+  port attaches a prop to a character's bone, and the `.CTL` effect records
+  (bone-attached sprites) are decoded but not the mechanism for a held mesh.
+  Start from what shows the object during the scene, not from the model.
+* **She faces the wrong way and then snaps to the idle.** The facing half of
+  the placement-record clobber is a hypothesis that fits and has never been
+  measured: `s->facing` is written from the 20-byte record every frame and
+  from the program's Euler on its own frames, so which one wins alternates.
+  `program placement`'s docstring says so explicitly; a check that watches a
+  facing flip and then watches it stop is what would settle it.
+* **The bedroom mirror renders transparent.** `AP_mirror` carries flags
+  `0x00103000` — the mirror bit `0x100000` **and** the additive pair
+  `0x1000|0x2000`. The port's drawable filter sees the transparency and the
+  mirror pass never claims the mesh, so it blends instead of reflecting. Which
+  of the two the engine honours for a mesh carrying both is the question to
+  answer in `sub_440D90` before changing the filter.
+

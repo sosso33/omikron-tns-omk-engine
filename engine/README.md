@@ -1279,6 +1279,37 @@ and one mutation the corpus cannot separate: 0 for "nothing held" passes,
 because `H1AVNT`'s stop edges open on it as on the idle word. Six others
 bite.
 
+**`verify.py: engine: player program`** - the same body, when a scene program
+owns it. Adventure mode is the viewer's construct, not the engine's: op 46
+(`scx.play.player.wait`) ends
+`ScriptObject_StartOnActor(Actor_Player(), object, scene, caller)` - the three
+pushes before `call sub_419E00` are that call's own last arguments, since
+`Actor_Player` takes none, and `add esp, 10h` counts all four - and
+`ScriptObject_StartOnActor` binds the object to `&g_Actors + 1312 * a1`'s node
+at `+8`, exactly as it does for the actor 59/60 name. So a player program
+animates the PLAYER'S ACTOR and the engine draws it through the same walk it
+draws every other actor with.
+
+`omk-play` did not: `staged` is built from `Session::shown()`, which the player
+is never in - no placement record puts him anywhere, the save does - and the
+controller draws him only while `adventure`, which `playerDriven` (a running
+`how == "player"` program) turns off. The program therefore ran, the editing
+flew its shot, and **the body it was posing was drawn by nobody**; a reader,
+of the goodbye in Kay'l's flat, "Kay'l is not visible in the cutscene". He now
+joins the staged list for exactly the life of such a program, and the machinery
+that poses and places every other program-driven actor - the clip's root key 0,
+the `.3DP` path, the step's Euler - poses and places him too. Measured on
+`UzalAuRevoir` (object 167, editing 14 `uzalbye`): staged on frame 4 as
+`HO1_FN`, posed from clip 13 `HOCINE07.3DA`, traced for all 60 of its frames.
+
+**The hand BACK is half of it.** The engine has one body, so when the program
+ends the walker carries on from where it left him. Returning the controller's
+own stale position would snap him across the room on that frame - the same
+shape as the placement-record clobber (`program placement`), one level up - so
+the controller is `placeAt`'d on the staged body's last drawn position and the
+yaw it was actually drawn with (the step's Euler, not the record's facing):
+x 3099, where the clip left him, against the 3054 the walker still held.
+
 **`verify.py: engine actor states`** — since 2026-09-02 the sweep also drives
 the two queue rules of `Cef_TickChannel`'s commit, which it cannot reach any
 other way: it injects whole queues, and `injectInput` replaces the queue, so a

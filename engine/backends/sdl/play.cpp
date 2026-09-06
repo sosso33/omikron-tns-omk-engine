@@ -2356,6 +2356,9 @@ int main(int argc, char** argv) {
     omk::TriangleSoup playerSteep;
     std::string playerModel, playerCtlName;
     bool  playerReady = false, adventure = false, followCam = false;
+    // A `scx.play.player` program owns his body right now (op 46/90).
+    bool  playerProgram = false;
+    bool  playerProgramWas = false;   // ...and did last frame, for the hand-back
     int   placementSeen = 0;      // Session::placementSeq() as last consumed
     long  heldFrames = 0;         // frames under player.anim.hold
     // The `media.play` SUBTITLE: `Subtitle_Show(unk_4E6268)` is step 13 of
@@ -4186,6 +4189,37 @@ int main(int argc, char** argv) {
                 }
             }
             if (playerDriven) playerDrivenSeen = true;
+            // ---- WHO A `scx.play.player` PROGRAM POSES --------------------
+            //
+            // Op 46 (0x00402C30) ends
+            // `ScriptObject_StartOnActor(Actor_Player(), object, scene,
+            // caller)` - the three pushes before `call sub_419E00` are that
+            // call's own last three arguments, since `Actor_Player` takes
+            // none - and `ScriptObject_StartOnActor` binds the program to
+            // `&g_Actors + 1312 * a1`, the player's actor record, exactly as
+            // 59/60 bind one to the actor they name. So the body a player
+            // program poses and places is an ACTOR like any other, and the
+            // engine draws it through the same walk.
+            //
+            // This viewer had no path for that: `staged` is built from
+            // `Session::shown()`, which the player is not in (no placement
+            // record puts him anywhere - the save does), and the controller
+            // draws him only in adventure mode, which a program suspends. So
+            // during the flat's goodbye the program ran, posed NOBODY, and
+            // Kay'l was simply absent from his own cutscene.
+            playerProgram = playerDriven;
+            // ...and the OUTGOING pool drives bodies too (`poolFor` below
+            // searches both), so a program that survives a scene swap keeps
+            // him staged. `playerDriven` itself stays the active scene's
+            // question, because the camera hold and the adventure gate are
+            // about who is at the keys now.
+            if (!playerProgram && session.sceneOut().loaded()) {
+                const auto& so = session.sceneOut();
+                for (std::size_t k = 0; k < so.started().size(); ++k)
+                    if (so.started()[k].how == "player" &&
+                        so.programRunning(static_cast<int>(k)))
+                        playerProgram = true;
+            }
             const omk::WorldCamera* hc = session.cameraTarget();
             // A HELD PLAYER MEANS THE SCRIPT OWNS THE CAMERA.
             //
@@ -5925,6 +5959,73 @@ int main(int argc, char** argv) {
                     s->pelvis = false;   // the solve names a spot on the GROUND
                 }
             }
+            // ...and neither need the PLAYER, when a `scx.play.player`
+            // program owns him. The engine has no separate player body: op 46
+            // starts the program on `Actor_Player()`'s own actor record, so it
+            // is that actor the program poses, places and turns. He joins the
+            // staged list exactly while such a program runs - which is also
+            // exactly when the adventure controller stands down, so the two
+            // can never both draw him - and the sweep below drops him again
+            // when it ends.
+            const int progPid = session.playerActor();
+            if (playerProgram && player && progPid >= 0 && !playerModel.empty()) {
+                const int pid = progPid;
+                Staged* s = nullptr;
+                for (auto& up : staged) if (up->actor == pid) { s = up.get(); break; }
+                if (!s) {
+                    staged.push_back(std::make_unique<Staged>());
+                    s = staged.back().get();
+                    s->actor = pid;
+                    s->model = playerModel;
+                    s->bank  = playerCtlName;
+                    s->mo = charModelFor(playerModel);
+                    s->bk = charBankFor(playerCtlName);
+                    ++stagedEver;
+                    stagedIds.push_back(pid);
+                    // Where he stands until the program's first body step
+                    // RUNS: the walker's own position, which is where the
+                    // world last had him. `pelvis` is false because that is a
+                    // point on the GROUND (`Walk_ProbeGround`'s anchor), not
+                    // an authored hip height.
+                    for (int k = 0; k < 3; ++k) s->at[k] = player->pos()[k];
+                    s->at[1] -= playerFeetKnown ? playerFeet : 0.0f;
+                    s->facing = player->facing();
+                    s->placed = true;
+                    s->pelvis = false;
+                    std::printf("frame %ld: staged the PLAYER as actor %d %s "
+                                "(bank %s) at %.0f %.0f %.0f facing %.0f - a "
+                                "scene program owns his body (scx.play.player "
+                                "starts on Actor_Player())\n",
+                                n, pid, playerModel.c_str(),
+                                playerCtlName.empty() ? "none" : playerCtlName.c_str(),
+                                s->at[0], s->at[1], s->at[2], s->facing);
+                }
+                s->seen = true;
+            } else if (playerProgramWas && player) {
+                // ---- AND THE HAND BACK -------------------------------
+                //
+                // The engine has one body: the program moved the player's own
+                // actor, so when it ends he is standing where it left him and
+                // the walker carries on from there. Handing back the
+                // CONTROLLER's stale position instead would snap him across
+                // the room the frame the cutscene ends - the same shape as the
+                // placement-record clobber, one level up.
+                for (const auto& up : staged)
+                    if (up->actor == session.playerActor() && up->progRan) {
+                        // ...and the yaw the body was DRAWN with, which for a
+                        // program-driven one is the step's own Euler and not
+                        // the placement record's facing (`bodyYaw` below).
+                        const float yaw = up->progYawKnown ? up->progYaw : up->facing;
+                        player->placeAt(up->drawAt, yaw);
+                        session.setPlayerPosition(up->drawAt, yaw);
+                        std::printf("frame %ld: the program ended - the player "
+                                    "keeps the body's place, %.0f %.0f %.0f "
+                                    "facing %.0f\n", n, up->drawAt[0],
+                                    up->drawAt[1], up->drawAt[2], yaw);
+                        break;
+                    }
+            }
+            playerProgramWas = playerProgram;
             for (std::size_t k = 0; k < staged.size(); ) {
                 if (staged[k]->seen) { ++k; continue; }
                 std::printf("frame %ld: dropped actor %d %s\n", n,

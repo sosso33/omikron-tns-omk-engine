@@ -1445,6 +1445,21 @@ request, field 1 the travel time. 46 registers the script's slot and writes
 status **4** — `scx.play.player.wait`; 90 passes −1 and runs on. The family is
 now complete: scene (57/58), named actor (59/60), player (90/46).
 
+**And "the player" here means his ACTOR, not a separate kind of body.** The
+handler's tail is one call with four arguments, which is easy to misread as
+two: `Actor_Player` takes none, so the three pushes that precede
+`call sub_419E00` belong to `ScriptObject_StartOnActor` and its result is
+pushed last — `add esp, 10h` accounts for all four. `ScriptObject_StartOnActor`
+then opens `v5 = (char *)&g_Actors + 1312 * a1` and binds the object to
+`u32i(v5, 2)`, the actor record's node, exactly as it does for the actor
+59/60 name. So a player program poses, places and turns the same node the
+`.CTL` channel drives the rest of the time, and the renderer draws it through
+the same walk; there is no separate player-drawing path to suspend. A port
+that draws the player only while its own adventure controller is active will
+therefore lose him for the length of every such program — which is what
+`engine: player program` now measures, on the sixty frames of `HOCINE07.3DA`
+in Kay'l's flat.
+
 ### 87 / 88 — `address.enable` / `address.disable`
 
 **verified as mechanism.** An opposite pair on the game DB's **third bitmap**

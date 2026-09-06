@@ -3811,6 +3811,101 @@ def c_program_placement_holds():
            "conversation"
 
 
+def c_engine_player_program():
+    r"""A `scx.play.player` PROGRAM POSES THE PLAYER'S OWN ACTOR - so his body
+    has to be on screen while it runs.
+
+    Op 46 (`scx.play.player.wait`, handler 0x00402C30) ends
+
+        push ecx / push eax / push ebp      ; the LAST THREE arguments
+        call sub_419E00                     ; Actor_Player()  - takes none
+        push eax                            ; ...its result, the first
+        call sub_41BA80                     ; ScriptObject_StartOnActor
+        add  esp, 10h                       ; four dwords: one call, four args
+
+    and `ScriptObject_StartOnActor(a1, ...)` opens
+    `v5 = (char *)&g_Actors + 1312 * a1`, then binds the object to `u32i(v5,
+    2)` - the actor record's node. That is exactly what 59/60 do with the
+    actor they name. **The player is an actor like any other**, and the engine
+    draws him through the same walk; "adventure mode" is not a rendering
+    concept in it at all.
+
+    The viewer had no path for that. `staged` is built from
+    `Session::shown()`, which the player is not in - no placement record puts
+    him anywhere, the save does - and the controller draws him only while
+    `adventure`, which a running player program suspends by design
+    (`playerDriven`). So in Kay'l's flat the program ran, the camera flew its
+    editing, and **the body it was posing was drawn by nobody**: a reader,
+    "Kay'l is not visible in the cutscene". Measured here on the flat's
+    goodbye, `UzalAuRevoir` (object 167, editing 14 `uzalbye`):
+
+        frame  4  staged the PLAYER as actor 49 HO1_FN ... a scene program owns his body
+        frame  4  pose: clip 13 'HOCINE07.3DA' (61 frames), snapped to its root key 0
+        frame 64  the program ended - the player keeps the body's place
+
+    Sixty frames of clip, and the hand BACK matters as much as the hand over:
+    the engine has one body, so when the program ends the walker carries on
+    from where it left him. Returning the controller's own stale position
+    would snap him across the room on that frame - the same shape as the
+    placement-record clobber (`program placement`), one level up. He is put
+    down at x 3099, where the clip left him, not at the 3054 the walker still
+    held.
+
+    **This check SKIPS without `omk-saves/GAMES`**, which is not distributed,
+    for the reason `program placement` gives: the scene is behind a gate the
+    committed `traces/save-appart.bin` does not reach.
+
+    Shown to fail: making the staging branch's condition `false &&
+    playerProgram` - the state before the fix - drops the staged line, the
+    pose line and the 60 traced frames to nothing, and leaves the player at
+    3054.
+    """
+    import subprocess, re as _re
+    eng = os.path.join(ROOT, "engine")
+    fr = omkpaths.data_root()
+    saves = os.path.join(ROOT, "omk-saves", "GAMES")
+    if not (os.path.isdir(eng) and os.path.isdir(fr)):
+        return ("skipped",), ("skipped",), "engine/ or gamedata/ absent"
+    if not os.path.exists(saves):
+        return ("skipped",), ("skipped",), \
+               "omk-saves/GAMES absent - the scene is behind a gate no " \
+               "committed save reaches"
+    b = subprocess.run(["make", "-s", "play"], cwd=eng, capture_output=True)
+    play = os.path.join(eng, "build", "omk-play")
+    if b.returncode != 0 or not os.path.exists(play):
+        return ("build failed",), ("built",), "engine/ must build"
+    env = dict(os.environ, SDL_VIDEODRIVER="dummy", OMK_TRACE_ACTOR="49")
+    r = subprocess.run([play, fr, os.path.join(ROOT, "tables"),
+                        "--save", saves, "--slot", "0",
+                        "--var", "652=1,657=1", "--give", "0:42,0:3,1:3",
+                        "--stand", "3054,1071,-753,154",
+                        "--frames", "220", "--res", "640x480"],
+                       capture_output=True, env=env)
+    out = r.stdout.decode("latin-1") + r.stderr.decode("latin-1")
+    staged = _re.search(r"frame (\d+): staged the PLAYER as actor (\d+) (\S+)", out)
+    posed = _re.search(r"pose: actor 49 \S+ - clip \d+ '(\S+?)'.*?"
+                       r"root key 0 at (\S+) (\S+) (\S+)", out)
+    ended = _re.search(r"frame (\d+): the program ended - the player keeps "
+                       r"the body's place, (\S+) (\S+) (\S+)", out)
+    frames = len(_re.findall(r"\[trace\] frame \d+ actor 49\b", out))
+    final = _re.search(r"^player: \S+ at (\S+) ", out, _re.M)
+    got = (staged.group(3) if staged else None,
+           int(staged.group(1)) if staged else -1,
+           posed.group(1) if posed else None,
+           frames,
+           int(ended.group(1)) if ended else -1,
+           round(float(ended.group(2))) if ended else -1,
+           round(float(final.group(1))) if final else -1)
+    return got, ("HO1_FN", 4, "HOCINE07.3DA", 60, 64, 3099, 3099), \
+           "the flat's goodbye traced frame by frame: the player joins the " \
+           "staged bodies as HO1_FN on frame 4, the program poses him from " \
+           "HOCINE07.3DA, he is traced for all 60 of its frames, and on " \
+           "frame 64 - when it ends - he is handed back at x 3099, where the " \
+           "clip left him, not the 3054 the walker still held. Before this, " \
+           "`scx.play.player` posed nobody and Kay'l was absent from his own " \
+           "cutscene"
+
+
 def c_ui_shop_titles():
     r"""The ten shops' titles, and the branch a linear scan cannot follow.
 
@@ -25094,6 +25189,7 @@ SLOW = [
     ("object path anchor", c_object_path_anchor, "todo/next-tasks 7"),
     ("camera travel",      c_camera_travel_subjects, "engine/README"),
     ("program placement",  c_program_placement_holds, "engine/README"),
+    ("engine: player program", c_engine_player_program, "engine/README"),
     ("save clock",         c_save_clock,        "GAME_STATE 8"),
     ("player counters",   c_player_counters,   "UI 3g; GAME_STATE"),
     ("fill colour",       c_fill_colour,       "UI 3b"),
