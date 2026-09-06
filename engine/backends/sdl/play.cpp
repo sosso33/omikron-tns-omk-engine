@@ -2136,6 +2136,9 @@ int main(int argc, char** argv) {
     // never written and there is nothing to resume. Answering the Session for
     // it would release whatever script happened to be parked.
     bool screenFromScript = true;
+    // The input word as it stood when the current screen opened - see the
+    // edge gate below. Cleared once those bits are released.
+    std::uint32_t screenOpenBits = 0;
     // A screen the PLAYER asked for this frame, before it is opened below -
     // so the open, its sounds and its bookkeeping stay in one place.
     int playerScreen = -1;
@@ -5442,6 +5445,9 @@ int main(int argc, char** argv) {
             // refuses without. `Actor_GetProperty` case 5 is the player
             // record's +174, and `GameState::rings` reads it.
             fresh->setRings(state.rings());
+            // whatever is held on the frame it opens does not count as input
+            // to it (see the gate in the walk's dispatch below)
+            screenOpenBits = bits;
             if (!fresh->open(want)) {
                 // A script's screen must be in the tree - the boot depends on
                 // it. The PLAYER's need not be fatal: `sub_0046ADF0`'s own
@@ -5469,6 +5475,15 @@ int main(int argc, char** argv) {
                 sndMove    = loadSlot(openScreen, omk::UiWidgets::kSoundMove);
                 sndConfirm = loadSlot(openScreen, omk::UiWidgets::kSoundConfirm);
                 sndBack    = loadSlot(openScreen, omk::UiWidgets::kSoundBack);
+                // ...and the screen's OWN sound, slot 4, played as it comes
+                // up. Only SAVE GAME and PAUSE GAME carry one.
+                if (const auto own = loadSlot(openScreen, omk::UiWidgets::kSoundScreen);
+                    !own.empty()) {
+                    blip(own);
+                    std::printf("screen %d: its own sound (slot 4, `%s`)\n",
+                                openScreen,
+                                w.soundName(openScreen, omk::UiWidgets::kSoundScreen).c_str());
+                }
             }
         }
 
@@ -5484,7 +5499,25 @@ int main(int argc, char** argv) {
             // and then confirmed one of them in the same press, which starts
             // a game the player never asked for.
             const bool ate = !host.text.empty() && walk->typeName(host.text);
-            if (bits) {
+            // A KEY ALREADY DOWN WHEN THE SCREEN OPENED IS NOT A PRESS.
+            //
+            // `Ui_BeginScreen` installs the 0x203F repeat mask and
+            // `Game_Frame` edge-filters against it, so the interface sees
+            // EDGES. The action button that activates a save point is still
+            // held on the frame `ui.open 30` puts the screen up, and without
+            // this it is read again as that screen's confirm - so the save
+            // menu opened and descended into the slot list in one press,
+            // which is what a reader met ("when I interact with the save
+            // point I have directly this"). The bits are swallowed until they
+            // are RELEASED.
+            std::uint32_t uiBits = bits;
+            if (screenOpenBits & uiBits) {
+                screenOpenBits &= uiBits;    // still down: keep swallowing
+                uiBits = 0;
+            } else {
+                screenOpenBits = 0;
+            }
+            if (uiBits) {
                 const int wasSel = walk->selection(), wasList = walk->currentList();
                 // THE SOUND IS NOT GATED ON IT, and that is read rather than
                 // assumed: `Ui_ScreenInput` (0x0042A0F0) calls
@@ -5493,7 +5526,7 @@ int main(int argc, char** argv) {
                 // word whatever the dispatch did. A frame the field ate still
                 // clicks - RETURN in the name box plays the confirm sound and
                 // presses nothing.
-                if (!ate) walk->press(bits);
+                if (!ate) walk->press(uiBits);
                 // The MOVE sound fires when the selection actually MOVED, not
                 // on every press: `Ui_MoveSelection` steps over unselectable
                 // rows and a pinned list stops at its ends, so a key that

@@ -326,6 +326,14 @@ public:
     const std::string& soundName(int screenId, int slot) const;
     static constexpr int kSoundConfirm = 0, kSoundBack = 1,
                          kSoundMove    = 2, kSoundClose = 3;
+    // Slot 4 is the SCREEN'S OWN sound, and only two screens carry one:
+    // `SAVE GAME` (sound 4, `savgrd`) and `PAUSE GAME` (sound 3, `pause`).
+    // `sub_482FE0` picks 0..3 by input bit and never reaches this one, so it
+    // is played by the screen rather than by a key - which is what a reader
+    // describes, a sound when the save/clue menu comes up. The exact call
+    // site is not traced; the slot's exclusivity to the two screens that
+    // announce themselves is the evidence.
+    static constexpr int kSoundScreen = 4;
     // The screen's artwork, opened as `I2d\\bitmaps\\%s` - one 640x480 sheet
     // for all eleven, which is what lets the tile map serve every screen.
     const std::string& bitmap(int screenId) const;
