@@ -784,6 +784,10 @@ private:
     // The row an overwrite confirm is standing over, so its `Oui` knows
     // which slot it agreed to. -1 when no confirm is up.
     int         overwriteRow_ = -1;
+    // The SCREEN this walk was opened with. Child panels carry `screen ==
+    // -1`, so a callback that branches on the screen - and several of the
+    // save/load family do - cannot ask the panel it is standing on.
+    int         screen_ = -1;
     std::vector<std::string> log_;
     // Item address -> the RGB a page builder wrote into `+8/+9/+10`.
 };

@@ -916,6 +916,7 @@ void UiWalk::buildPage(const UiPanel& p) {
 }
 
 bool UiWalk::open(int screenId) {
+    screen_ = screenId;
     panel_ = w_->screen(screenId);
     approx_ = false;
     answer_ = -1;
@@ -1090,7 +1091,12 @@ bool UiWalk::confirm() {
         // is not a thing to wire on a guess.
         if (it->callback == kCbConfirmYes) {
             if (!load_ || !panel_) return false;
-            if (panel_->screen == 29 || load_->mode == 0) {
+            // THE SCREEN, not the panel's - the confirm and the slot panel
+            // are both CHILD panels and carry `screen == -1`, so testing the
+            // panel sent every confirm down the delete arm and `Oui` did
+            // nothing. `sub_47BA30` tests `*a1`, the screen the walk was
+            // opened with.
+            if (screen_ != 30) {
                 approx_ = true;
                 log_.push_back("oui: the DELETE arm is not modelled");
                 return true;
@@ -1458,7 +1464,7 @@ bool UiWalk::press(std::uint32_t bits) {
         // only way across was LEFT/RIGHT through the panel hook, which a
         // reader noticed was missing.
         if ((bits & kUiConfirm) && load_->row >= 0) {
-            load_->mode = panel_ && panel_->screen == 30 ? 1 : 0;
+            load_->mode = screen_ == 30 ? 1 : 0;   // `word_4CEA9A`
             for (std::size_t k = 0; k < panel_->lists.size(); ++k)
                 if (panel_->lists[k].addr == 0x004CEA98u) { cur_ = static_cast<int>(k); break; }
             log_.push_back("slot confirmed: the buttons take the focus");
@@ -1661,6 +1667,18 @@ void applyLoadPanelLayout(UiWidgets& w, int screen) {
     place(0x004CED50u, -1, false, screen == 30 ? 12 : 6);    // Oui
     place(0x004CED98u, -1, false, screen == 30 ? 13 : 7);    // Non
     place(0x004CF0C8u, -1, false, screen == 30 ? 16 : 10);   // the question
+    // ...and BOTH buttons' `+44`, the child they return to. The builder's
+    // `off_4CED7C` and `dword_4CEDC4` are `0x004CED50 + 0x2C` and
+    // `0x004CED98 + 0x2C` - the child field, not the string. The table ships
+    // `Non`'s as 0, so unported it went nowhere at all, which is what a
+    // reader met: "pressing enter on oui or non does nothing".
+    const std::uint32_t back = screen == 30 ? kPanelLoadSlots : 0x004CF280u;
+    for (auto& p : w.panels_)
+        if (p.addr == kPanelSaveOverwrite)
+            for (auto& l : p.lists)
+                for (auto& it : l.items)
+                    if (it.addr == 0x004CED50u || it.addr == 0x004CED98u)
+                        it.child = back;
     for (auto& p : w.panels_)
         if (p.addr == kPanelSaveOverwrite)
             p.parent = screen == 30 ? kPanelLoadSlots : 0x004CF280u;
