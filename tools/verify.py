@@ -3715,6 +3715,102 @@ def c_camera_travel_subjects():
            "was missing"
 
 
+def c_program_placement_holds():
+    r"""A BODY A PROGRAM MOVED STAYS MOVED - the placement record must not
+    clobber it back.
+
+    Every frame, for every actor a chunk's placement table shows, the viewer
+    did
+
+        if (sh.fromTable) { s->at = sh.pos; s->facing = sh.facing; }
+
+    While a program is driving, a later branch puts the program's own
+    placement back (`progPlaced && sceneClip >= 0`), so the clobber never
+    showed. The frame the program ENDS, `progPlaced` goes false, that restore
+    stops running and this wins: the body snaps back to where the chunk parked
+    it. `Script_SelectBodyAnimation` never resets the node (CLAUDE.md 6), so
+    the accumulated placement stands, and the branch that carries `drawAt`
+    over on the clip-change frame exists for exactly that - it was being
+    undone one frame later.
+
+    Traced on Telis in Kay'l's flat, `OMK_TRACE_ACTOR=53`:
+
+        frame 123  at 3651 1040 -598   progPlaced 0    the program has ended
+        frame 124  at 3635 1278 -656                   clobbered to the record
+        frame 125  drawAt follows
+
+    3635/1278/-656 is where that chunk parks her, 240 units above a floor at
+    1040 - and parking a model out of sight is the authoring workflow, not a
+    fault, which is why the record itself is right and only the return trip is
+    wrong. She vanishes from her own conversation; the shot the dialogue
+    camera frames is an empty corner.
+
+    **The FACING half is the same line and is NOT asserted here.** `s->facing`
+    is overwritten from the record too, so it alternates with the program's
+    Euler depending on which wrote last, which is a plausible mechanism for a
+    reader's "she looks the wrong way, then goes back to the correct one for
+    the idle" - but no measurement here watches a facing flip and then watches
+    it stop, so it is recorded as a hypothesis that fits, not a fixed bug.
+
+    **This check SKIPS without `omk-saves/GAMES`**, which is not distributed.
+    The scene sits behind a gate - `Porte Asc Fermee` and `Rencontre Telis`
+    both 1, then `has_object` on the Gun Waver and the police card in two
+    different lists - and the committed `traces/save-appart.bin` does not
+    reach it even with `--var` and `--give`: actor 53 is never staged. Saying
+    so beats asserting something weaker somewhere else.
+
+    Shown to fail: dropping the `!s->progRan` guard puts `at` back to
+    3635/1278/-656 one frame after the program ends, which is the whole bug.
+    """
+    import subprocess, re as _re
+    eng = os.path.join(ROOT, "engine")
+    fr = omkpaths.data_root()
+    saves = os.path.join(ROOT, "omk-saves", "GAMES")
+    if not (os.path.isdir(eng) and os.path.isdir(fr)):
+        return ("skipped",), ("skipped",), "engine/ or gamedata/ absent"
+    if not os.path.exists(saves):
+        return ("skipped",), ("skipped",), \
+               "omk-saves/GAMES absent - the scene is behind a gate no " \
+               "committed save reaches"
+    b = subprocess.run(["make", "-s", "play"], cwd=eng, capture_output=True)
+    play = os.path.join(eng, "build", "omk-play")
+    if b.returncode != 0 or not os.path.exists(play):
+        return ("build failed",), ("built",), "engine/ must build"
+    env = dict(os.environ, SDL_VIDEODRIVER="dummy", OMK_TRACE_ACTOR="53")
+    r = subprocess.run([play, fr, os.path.join(ROOT, "tables"),
+                        "--save", saves, "--slot", "0",
+                        "--var", "652=1,657=1", "--give", "0:42,0:3,1:3",
+                        "--stand", "3054,1071,-753,154",
+                        "--frames", "220", "--res", "640x480"],
+                       capture_output=True, env=env)
+    out = r.stdout.decode("latin-1") + r.stderr.decode("latin-1")
+    rows = []
+    for m in _re.finditer(r"\[trace\] frame (\d+) actor 53\s+at (\S+) (\S+) (\S+)"
+                          r".*?progPlaced (\d)\s+progRan (\d)", out):
+        rows.append((int(m.group(1)),
+                     tuple(round(float(m.group(i)), 0) for i in (2, 3, 4)),
+                     int(m.group(5)), int(m.group(6))))
+    if not rows:
+        return ("no trace",), ("frames"), "the actor must be staged"
+    park = (3635.0, 1278.0, -656.0)
+    onFloor = (3651.0, 1040.0, -598.0)
+    placedAt = next((p for _, p, _, _ in rows if p == onFloor), None)
+    ended = [f for f, _, pp, pr in rows if pp == 0 and pr == 1]
+    # after the program ends, does he ever go back to the car park?
+    backInPark = sum(1 for f, p, pp, pr in rows if pr == 1 and p == park)
+    return (len(rows) > 100, placedAt, bool(ended), backInPark), \
+           (True, onFloor, True, 0), \
+           "Telis traced frame by frame through her own cutscene: that the " \
+           "run is long enough to see it, that her program places her at " \
+           "3651/1040/-598 - on the flat's floor - that the program does END " \
+           "while she is still on screen, and that after it ends she is NEVER " \
+           "put back at 3635/1278/-656, the spot the chunk parks her 240 " \
+           "units above the floor. She used to be, one frame later, every " \
+           "time: the placement record's per-frame write beat the carry-over " \
+           "that exists to stop exactly that, and she vanished from her own " \
+           "conversation"
+
+
 def c_ui_shop_titles():
     r"""The ten shops' titles, and the branch a linear scan cannot follow.
 
@@ -24997,6 +25093,7 @@ SLOW = [
     ("engine: lift doors", c_lift_doors,       "todo/next-tasks 7"),
     ("object path anchor", c_object_path_anchor, "todo/next-tasks 7"),
     ("camera travel",      c_camera_travel_subjects, "engine/README"),
+    ("program placement",  c_program_placement_holds, "engine/README"),
     ("save clock",         c_save_clock,        "GAME_STATE 8"),
     ("player counters",   c_player_counters,   "UI 3g; GAME_STATE"),
     ("fill colour",       c_fill_colour,       "UI 3b"),

@@ -5873,7 +5873,24 @@ int main(int argc, char** argv) {
                 // show carries none (`Session::showCharacter` pushes a bare
                 // record), so such a body waits for a program or a camera
                 // solve to say where he is.
-                if (sh.fromTable) {
+                // ...BUT NOT ONCE A PROGRAM HAS MOVED HIM. This ran every
+                // frame and overwrote both the position and the FACING from
+                // the 20-byte record. While a program drives, the placement
+                // below puts its own back (`progPlaced && sceneClip >= 0`),
+                // so the clobber was invisible; the frame the program ENDS,
+                // `progPlaced` goes false and this wins - the body snaps back
+                // to where the chunk parked him, which for Kay'l's flat is
+                // 3635/1278/-656 against a floor at 1040, and vanishes.
+                //
+                // `Script_SelectBodyAnimation` never resets the node
+                // (CLAUDE.md 6), so the accumulated placement STANDS; the
+                // branch that carries `drawAt` over on the clip-change frame
+                // is already written for exactly that and was being undone
+                // one frame later. The facing half is the same bug seen from
+                // the side: a reader watched Telis "look the wrong way, then
+                // go back to the right one for the idle" - the record's
+                // facing and the program's Euler alternating.
+                if (sh.fromTable && !s->progRan) {
                     for (int k = 0; k < 3; ++k) s->at[k] = sh.pos[k];
                     s->facing = sh.facing;
                     if (!s->placed) { s->placed = true; s->pelvis = false; }
@@ -7071,6 +7088,22 @@ int main(int argc, char** argv) {
                     std::printf("frame %ld: actor %d %s - pose source: %s\n",
                                 n, s.actor, s.model.c_str(), src);
                 }
+                // `OMK_TRACE_ACTOR=<id>` - one line a frame for one body:
+                // where the port thinks he stands and where it last drew him,
+                // with the three flags that decide between them. A pose
+                // source changes hands rarely and the position between two
+                // such changes is exactly what a per-change report cannot
+                // show, which is how "he stays where the program left him"
+                // could be printed and then not happen.
+                static const char* traceEnv = std::getenv("OMK_TRACE_ACTOR");
+                if (traceEnv && s.actor == std::atoi(traceEnv))
+                    std::printf("  [trace] frame %ld actor %d  at %.0f %.0f %.0f"
+                                "  drawAt %.0f %.0f %.0f  placed %d progPlaced %d"
+                                "  progRan %d  sceneClip %d  src %s\n",
+                                n, s.actor, s.at[0], s.at[1], s.at[2],
+                                s.drawAt[0], s.drawAt[1], s.drawAt[2],
+                                s.placed ? 1 : 0, s.progPlaced ? 1 : 0,
+                                s.progRan ? 1 : 0, sceneClip, src);
                 // A crowd model (the PSH/FSH family the city extras wear) is
                 // four LOD skeletons in one file; posing one left the other
                 // three at rest - a T-pose inside every couple and beggar.

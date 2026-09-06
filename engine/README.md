@@ -1583,6 +1583,46 @@ address. The panel's own builder also zeroes the name buffer every time it is
 installed, so a second visit opens empty; both walkers model that, and the
 simulator and the port are driven through the same five presses and compared.
 
+### A body a program moved stays moved
+
+Every frame, for every actor a chunk's placement table shows, the viewer did
+`if (sh.fromTable) { s->at = sh.pos; s->facing = sh.facing; }`. While a
+program is driving, a later branch puts the program's own placement back
+(`progPlaced && sceneClip >= 0`), so the clobber never showed. The frame the
+program **ends**, `progPlaced` goes false, that restore stops running, and
+this wins — the body snaps back to where the chunk parked it.
+
+`Script_SelectBodyAnimation` never resets the node (CLAUDE.md §6), so the
+accumulated placement stands; the branch that carries `drawAt` over on the
+clip-change frame is written for exactly that and was being undone one frame
+later. Traced on Telis in Kay'l's flat with `OMK_TRACE_ACTOR=53`:
+
+```
+frame 123  at 3651 1040 -598   progPlaced 0    her program has just ended
+frame 124  at 3635 1278 -656                   clobbered back to the record
+frame 125  drawAt follows
+```
+
+She vanishes from her own conversation — the dialogue camera frames an empty
+corner. **Parking a model out of sight is the authoring workflow**, not a
+fault: a reader who has been through the sets by hand reports characters and
+objects placed in unreachable spots all over the game. The record is right;
+only the return trip was wrong. Guarded with `!s->progRan`, so a body no
+program has touched still takes its record.
+
+**The FACING half is the same line and is not claimed as fixed.** `s->facing`
+is overwritten from the record too, so it alternates with the program's Euler
+depending on which wrote last — a plausible mechanism for "she looks the wrong
+way, then goes back to the correct one for the idle", but nothing here watches
+a flip and then watches it stop. `verify.py: program placement` asserts the
+position and says so.
+
+`OMK_TRACE_ACTOR=<id>` is what found it: one line a frame for one body, its
+position, its drawn position and the three flags that choose between them. A
+pose source changes hands rarely, and what happens BETWEEN two such changes is
+exactly what a per-change report cannot show — which is how "he stays where
+the program left him" could be printed and then not happen.
+
 ### A camera travel carries the SUBJECTS — the black screen at the flat's lift
 
 A `WorldCamera`'s `eyeSubject`/`atSubject` decide whether its `eye` and `at`
