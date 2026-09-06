@@ -178,6 +178,10 @@ private:
     bool       isPlayer_;
     ActorState state_  = ActorState::Inert;
     ActorState parked_ = ActorState::Inert;
+    // `dword_53AE28`: the channel's input-block flag as it stood when the
+    // conversation opened, so `leaveDialogue` restores it rather than
+    // asserting it (`Actor_EnterDialogueMode` / `Actor_LeaveDialogueMode`).
+    bool savedInputBlocked_ = false;
     std::vector<Log> log_;
     long refused_ = 0;
 };

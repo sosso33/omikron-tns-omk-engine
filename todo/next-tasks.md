@@ -92,9 +92,47 @@ switch parks the player in H_WAITOB for ever" and (b) "the actor leaves
 H_WAITOB only when the object is delivered". Both were wrong; the take
 completes on the second press exactly as the `.CTL` says.
 
-**Also reported (2026-09-06): the same repeat in SHOP SELLER dialogues.** Not
-reproduced yet, and now worth re-testing against this fix - if that path also
-runs through `MDACTION` it may already be gone.
+**The shop seller's dialogue, and the correction it forced (2026-09-06).**
+The repeat itself was gone there, but a reader finishing the conversation
+watched the whole TAKE GRAPH run on nothing: reach, wait, put back. Three
+faults, all in this item:
+
+1. **The bank switch was made on the wrong condition.** `sub_465D30` reaches
+   `SetPersoBankGroup` only when MDACTION's object scan FOUND something - a
+   press that merely activates a zone never gets there. The port switched into
+   the take bank (group 41) on ANY successful press, so activating a talk zone
+   installed `H_TAKL12` and played a take of nothing. The object case was
+   already ported 300 lines above and installs 41/143/600 itself; the extra
+   switch is removed, and one activation per press is now carried by the
+   frontend gate (labelled as the reconstruction it is - the engine gets it
+   from `Script_Pump`'s slot machine, which is not modelled to that depth).
+2. **The viewer never entered or left DIALOGUE MODE.** `ActorRuntime` has
+   carried `Actor_EnterDialogueMode` / `Actor_LeaveDialogueMode` since the
+   ACTOR_STATE machine was ported and NOTHING called them, so the player's
+   channel was never switched to group 400 and never switched back to 100.
+   Wired into `omk-play` on the frame the Session's conversation opens and
+   closes - the leave has to land on the SAME frame the dialogue ends, because
+   the MDACTION gate runs earlier in the next one.
+3. **`Perso_SetInputEnabled` is misnamed, and reading it as an enable killed
+   the action button.** Flag 0x80 BLOCKS the device pass (`Cef_TickChannel`
+   searches only under `!(flags & 0x81)`); the handler's arms are `or cl, 80h`
+   for argument 1 and `and al, 7Fh` plus a reset for argument 0, and
+   `Perso_GetInputEnabled` returns `flags & 0x80` precisely so the LEAVE can
+   restore what the enter saved. `leaveDialogue` asserted it instead, and the
+   player could never act again after any conversation. Renamed to
+   `setInputBlocked` in the port so the sense cannot be misread twice.
+
+And one transcription fix found on the way, which is real but did NOT cause
+the symptom: **neither of the engine's two channel resets clears the 20-slot
+latch.** `SetPersoBankGroup`'s `rep stosd` is 16 dwords from +28, ending at
++87; the latch is at +92. The port cleared it in `setBankGroup`,
+`resetInputQueue` and `setInputBlocked`. Corrected; on H1AVNT it changes
+nothing observable, because the action entry is reached by the per-tick chain
+loop and a GoTo redirect and neither writes a latch id.
+
+`verify.py: dialogue mode` pins the group table and the block flag either side
+of a conversation; the mutation that asserts the flag instead of restoring it
+takes `MDACTION after leaving` from 8 to 0.
 
 ### 2. Black stripes entering/leaving a building — S, strong evidence
 

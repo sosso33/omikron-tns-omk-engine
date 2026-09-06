@@ -205,33 +205,49 @@ public:
     // The handlers are the engine's and most of them need the world, so the
     // frontend runs them; see player.cpp. Cleared at the top of every tick.
     const std::vector<std::string>& specialMoves() const { return moves_; }
-    // `SetPersoBankGroup`'s input memset, which is what stops a HELD action
-    // button repeating - see `CefChannel::resetInputLatch`. The frontend calls
-    // it when an MDACTION actually did something, the way `sub_465D30` does.
-    void resetInputLatch() { rt_.channel().resetInputLatch(); }
+    // `SetPersoBankGroup`'s three input writes without its group switch - the
+    // queue, its count and `lastInput_`, and NOT the 20-slot latch, which the
+    // engine's memset stops one dword short of (`CefChannel::setBankGroup`).
+    // The frontend calls it when an MDACTION did something but the bank switch
+    // could not be made, the way `sub_465D30` does.
+    void resetInputQueue() { rt_.channel().resetInputQueue(); }
 
-    // `sub_465D30`'s tail, which is what stops a HELD action button repeating:
+    // `sub_465D30`'s tail is
     //
     //     if (dy <= 27.472441)  g = Cef_FindGroupById(bank, 143);   // low
     //     else                  g = Cef_FindGroupById(bank, 41);    // standing
     //     SetPersoBankGroup(channel, g);
     //
-    // The memset alone does NOT stop it - `setBankGroup` then does `gotoMove`
-    // to the new group's default entry, and it is that STATE CHANGE that makes
-    // the `H_STAND -> 24` per-tick entry stop matching. Measured: with the
-    // memset alone a 20-frame hold still fired 20 times.
+    // and it is reached ONLY when MDACTION's object scan found something.
+    // There WAS an `enterActionBank()` here that installed group 41 on any
+    // successful press; it is gone, because a press that merely activates a
+    // zone never reaches `sub_465D30` and installing the take bank for one
+    // played a take of nothing - a reader finishing a shop seller's
+    // conversation watched the whole graph run (2026-09-06). The take's own
+    // switch lives where the scan does, in `play.cpp`, through the call below.
     //
     // 27.472441 units is 0.6978 m - the low/standing split. **The LOW arm is
-    // not ported**: choosing it needs the object's height, which `sub_465D30`
-    // computes and this port does not carry to the press. So this takes the
-    // standing arm, and a low object will play the wrong take until
-    // `sub_465D30` is ported. -> whether the switch happened.
-    bool enterActionBank() {
-        const int g = rt_.channel().findGroupById(41);
-        return g >= 0 && rt_.channel().setBankGroup(g);
-    }
+    // still not ported**: choosing it needs the object's height, which
+    // `sub_465D30` computes and the press does not carry, so a low object
+    // plays the standing take. `todo/next-tasks.md` 1.
+    //
     // `Cef_FindGroupById` + `SetPersoBankGroup`, by the group's ID.
     bool enterGroupById(int id);
+
+    // `Actor_EnterDialogueMode` (0x00468DE0) and `Actor_LeaveDialogueMode`
+    // (0x00468E80), which bracket every conversation. The runtime has carried
+    // both since the ACTOR_STATE machine was ported; these are the frontend's
+    // handles on them, because it is the frontend that knows when the
+    // Session's conversation opens and closes.
+    //
+    // The half that matters outside the state machine is the BANK SWITCH:
+    // enter installs group 400 with the channel's input disabled, leave
+    // installs group 100 - the bank's default, `H_STAND` - and re-enables it.
+    // `SetPersoBankGroup`'s memset clears the queue and the latches, so the
+    // ENTER that dismisses a conversation's last line cannot go on to match
+    // `H_STAND -> 24` and fire MDACTION while it is still held.
+    bool enterDialogueMode() { return rt_.enterDialogue(); }
+    bool leaveDialogueMode() { return rt_.leaveDialogue(); }
 
     // --- what the zone scan and the frontend take ---------------------
     const float* pos() const { return pos_; }

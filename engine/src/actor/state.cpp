@@ -258,7 +258,13 @@ bool ActorRuntime::imageScreenClose() {
 bool ActorRuntime::enterDialogue() {
     // The park is the whole point: state 9 becomes 17 and does NOT overwrite
     // [102], because the interface still owns what is parked there.
-    channel_.setInputEnabled(false);
+    // `dword_53AE28 = Perso_GetInputEnabled(channel)` then
+    // `Perso_SetInputEnabled(channel, 0)`: SAVE the block flag, then clear it
+    // - which also resets the latch, the queue and `lastInput_`. The leave
+    // restores what was saved instead of asserting the flag; see
+    // `CefChannel::setInputBlocked` for why the sense is spelled out.
+    savedInputBlocked_ = channel_.inputBlocked();
+    channel_.setInputBlocked(false);
     installGroup(kGroupDialogue);
     if (state_ == ActorState::UiHeld)
         return setState(ActorState::DialogueFromUi, "Actor_EnterDialogueMode");
@@ -272,8 +278,15 @@ bool ActorRuntime::enterDialogue() {
 }
 
 bool ActorRuntime::leaveDialogue() {
+    // `SetPersoBankGroup(channel, Cef_FindGroupById(bank, 100))` - group 100
+    // is H1AVNT's DEFAULT group (`flags & 1`, 44 entries, default `H_STAND` /
+    // `MDSTAND`), so leaving a conversation puts the actor back in adventure
+    // mode AND runs `SetPersoBankGroup`'s reset over the channel.
     installGroup(kGroupLocomotion);
-    channel_.setInputEnabled(true);
+    // `if (dword_53AE28) Perso_SetInputEnabled(channel, 1)` - restore, do not
+    // assert. For the player the flag is never set, so this is a no-op and
+    // the channel keeps reading keys.
+    if (savedInputBlocked_) channel_.setInputBlocked(true);
     channel_.setNoPlayback(false);
     if (state_ == ActorState::DialogueFromUi) {
         parked_ = ActorState::Normal;

@@ -21682,12 +21682,82 @@ def c_licence_headers():
                    if TAG in open(p, encoding="utf-8",
                                   errors="replace").read(600)]
     return (authored, sorted(missing), len(vendored), mislabelled), \
-           (358, [], 1, []), \
+           (359, [], 1, []), \
            "authored source files under tools/, engine/src, engine/tools, " \
            "engine/backends and scripts/; those MISSING the SPDX tag; " \
            "vendored files in engine/third_party; and vendored files wrongly " \
            "stamped with OMK's licence (must be empty - pl_mpeg.h " \
            "is MIT and is not ours to relicense)"
+
+
+def c_dialogue_mode():
+    r"""`Actor_EnterDialogueMode` / `Actor_LeaveDialogueMode`, and the two
+    things about them that were wrong until 2026-09-06.
+
+    The pair (0x00468DE0 and 0x00468E80) brackets every conversation, and both
+    ends do a BANK SWITCH on the player's `.CTL` channel:
+
+        enter: dword_53AE28 = Perso_GetInputEnabled(channel)
+               Perso_SetInputEnabled(channel, 0)
+               SetPersoBankGroup(channel, Cef_FindGroupById(bank, 400))
+        leave: SetPersoBankGroup(channel, Cef_FindGroupById(bank, 100))
+               if (dword_53AE28) Perso_SetInputEnabled(channel, 1)
+
+    **`Perso_SetInputEnabled` is misnamed and the sense is the whole point.**
+    Flag 0x80 BLOCKS the device pass - `Cef_TickChannel` runs the input search
+    only under `!(flags & 0x81)` - and the handler's arms are `or cl, 80h` for
+    argument 1 and `and al, 7Fh` plus a 16-dword reset for argument 0. So
+    passing 1 is what STOPS the channel reading keys, and the leave RESTORES
+    what the enter saved rather than asserting it. Read as an enable, the port
+    set the flag on the way out of every conversation and the player's action
+    button was dead from there on - which is what the `after leaving` and
+    `MDACTION after leaving` figures below catch: 1 and 0 before, 0 and 8 now.
+
+    The group table is the other half. Group id 100 is the bank's DEFAULT
+    group (`flags & 1`) and its entry is `MDSTAND`, so leaving a conversation
+    puts the actor back in adventure mode; 400 is the 15-entry dialogue group;
+    41 and 143 are `sub_465D30`'s standing and low take groups, and they are
+    named here so a change that renumbers them is caught in one place.
+
+    **The latch numbers are an observation, not a proof, and say so.** The
+    engine's memset - `mov ecx, 10h` over 16 dwords from +28 - covers the
+    queue and its count and stops at +87, one dword short of the 20-slot latch
+    at +92, so neither `SetPersoBankGroup` nor `Perso_SetInputEnabled` forgets
+    what a state has consumed. This port cleared it in both, which is fixed;
+    but H1AVNT's own action entry is reached through the per-tick chain loop
+    and a GoTo redirect, neither of which writes a latch id, so both sides of
+    the switch read 0 here and the row cannot fail on that bank. It is printed
+    so a change that starts latching is visible rather than silent.
+    """
+    probe = os.path.join(ROOT, "engine", "build", "dialog_bank")
+    if not os.path.exists(probe): return "dialog_bank not built", "dialogue mode", ""
+    data = omkpaths.data()
+    if not os.path.isdir(data): return "no data tree", "dialogue mode", ""
+    out = subprocess.run([probe, data], capture_output=True, text=True).stdout
+    import re as _re
+    g = _re.search(r"groups: enter (-?\d+) leave (-?\d+) take (-?\d+) low (-?\d+); "
+                   r"the bank's default group id is (-?\d+) and its entry is (\S+)", out)
+    d = _re.search(r"dialogue: input blocked at rest (\d+), in a conversation (\d+), "
+                   r"after leaving (\d+); MDACTION after leaving (\d+)", out)
+    l = _re.search(r"latch: (\d+) id\(s\) held after (\d+) MDACTION, (\d+) after", out)
+    if not (g and d and l): return out.strip()[:200], "dialogue mode", ""
+    got = (int(g.group(1)), int(g.group(2)), int(g.group(3)), int(g.group(4)),
+           int(g.group(5)), g.group(6),
+           int(d.group(1)), int(d.group(2)), int(d.group(3)), int(d.group(4)),
+           int(l.group(1)), int(l.group(3)))
+    want = (36, 0, 3, 11, 100, "MDSTAND", 0, 0, 0, 8, 0, 0)
+    return got, want, \
+           "H1AVNT's dialogue bank groups - the indices of id 400 (enter), " \
+           "100 (leave), 41 (the standing take) and 143 (the low take), then " \
+           "the bank's DEFAULT group id and the move its entry names; then " \
+           "the channel's input-BLOCK flag at rest, inside a conversation and " \
+           "after leaving one, and how many MDACTION a held action word fires " \
+           "after the leave (0 there was the bug: `Perso_SetInputEnabled` " \
+           "takes 1 to BLOCK, so a leave that asserts the flag kills the " \
+           "action button for the rest of the session); and last the latch " \
+           "ids held across SetPersoBankGroup, an observation rather than a " \
+           "test - the engine's 16-dword memset stops at +87 and the latch is " \
+           "at +92, but this bank's action entry latches nothing either way"
 
 
 def c_transcript_index():
@@ -23067,6 +23137,7 @@ CHECKS = [
     ("vm table sources",   c_vm_table_sources,  "CLAUDE.md 2"),
     ("input paths",        c_input_paths,       "CLAUDE.md 2"),
     ("licence headers",    c_licence_headers,   "LICENSING.md"),
+    ("dialogue mode",     c_dialogue_mode,     "engine/README"),
     ("transcript index",   c_transcript_index,  "transcript/README"),
     ("held camera bracket",c_held_camera_bracket,"todo/omk-play 42"),
     ("tutorial one-shot",  c_tutorial_one_shot, "todo/omk-play 42"),

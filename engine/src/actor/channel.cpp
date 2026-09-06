@@ -345,10 +345,31 @@ int CefChannel::defaultGroup() const {
 bool CefChannel::setBankGroup(int groupIndex) {
     if (groupIndex < 0 || groupIndex >= static_cast<int>(ctl_->groupList.size()))
         return false;
-    // The memset in the original clears the queue and the latch set together,
-    // then seeds both with the idle word.
+    // THE MEMSET CLEARS THE QUEUE AND NOT THE LATCH, and the difference is the
+    // whole of `todo/next-tasks.md` 1. `SetPersoBankGroup` (0x0045A630) does
+    //
+    //     mov  ecx, 10h
+    //     lea  esi, dword_8F5920[edx]      ; the channel base
+    //     lea  ebp, [esi+1Ch]              ; +28, queue[0]
+    //     mov  edi, ebp
+    //     rep  stosd                       ; 16 dwords: +28 .. +87
+    //     mov  dword ptr [esi+18h], 1      ; +24  count = 1
+    //     mov  [ebp+0], 40000000h          ; +28  queue[0] = the idle word
+    //     mov  [esi+14h], 40000000h        ; +20  lastInput = the idle word
+    //
+    // 16 dwords from +28 end at +87. The 20-slot LATCH is at +92 and is not
+    // touched - the store stops one dword short of it. `Perso_SetInputEnabled`
+    // (0x0045A3E0) writes the same three fields with the same 16-dword store,
+    // so neither of the engine's two resets forgets what a state has consumed.
+    //
+    // This port cleared the latch in both, and that is what let the ENTER
+    // which ends a conversation fire MDACTION on the next frame: the bit was
+    // still down, the latch that had recorded it was gone, and `lastInput_`
+    // had been seeded with the idle word, so the held word looked new. Keeping
+    // the latch is what makes a HELD button stay spent until it is released -
+    // which is the same rule that stops the repeat, one level down from the
+    // group switch.
     queue_.assign(1, kIdleInput);
-    for (auto& l : latch_) l = 0;
     lastInput_ = kIdleInput;
     pendingFrame_ = 1.0f;
     flags_ &= ~1u;
@@ -357,9 +378,10 @@ bool CefChannel::setBankGroup(int groupIndex) {
     return gotoMove(cur_, entry, 1.0f);  // "SetPersoBank, error on GoToMove"
 }
 
-void CefChannel::resetInputLatch() {
+void CefChannel::resetInputQueue() {
+    // `SetPersoBankGroup`'s three writes without its `gotoMove` - and, like
+    // it, the 20-slot latch at +92 is NOT touched. See `setBankGroup`.
     queue_.assign(1, kIdleInput);
-    for (auto& l : latch_) l = 0;
     lastInput_ = kIdleInput;
 }
 
@@ -369,11 +391,13 @@ void CefChannel::injectInput(const std::vector<std::uint32_t>& words,
     for (auto w : words) queue_.push_back(w | orWith);
 }
 
-void CefChannel::setInputEnabled(bool on) {
+void CefChannel::setInputBlocked(bool on) {
     if (on) {
-        flags_ |= 0x80u;
+        flags_ |= 0x80u;            // `or cl, 80h`, and nothing else
     } else {
-        flags_ &= ~0x80u;
+        flags_ &= ~0x80u;           // `and al, 7Fh`, then the reset below
+        // ...which is the same 16-dword store as `SetPersoBankGroup`: the
+        // queue, the count and `lastInput_`, and NOT the latch at +92.
         queue_.assign(1, kIdleInput);
         lastInput_ = kIdleInput;
     }

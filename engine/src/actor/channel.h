@@ -222,7 +222,7 @@ public:
     //
     // Labelled rather than folded into `setBankGroup`, because a caller that
     // wanted the bank switch and got only this would be silently wrong.
-    void resetInputLatch();
+    void resetInputQueue();
     // Cef_FindGroupById (0x0046ACE0) / Cef_DefaultGroup (0x0046AD90).
     int  findGroupById(std::int32_t id) const;
     int  defaultGroup() const;
@@ -234,9 +234,34 @@ public:
     void injectInput(const std::vector<std::uint32_t>& words,
                      std::uint32_t orWith = 0);
 
-    // Perso_SetInputEnabled (0x0045A3E0) toggles flag 0x80 and, when clearing
-    // it, resets the queue; Perso_SetNoPlayback (0x0045A470) is flag 0x200.
-    void setInputEnabled(bool on);
+    // `Perso_SetInputEnabled` (0x0045A3E0) is misnamed in `tools/renames.json`
+    // and the sense matters, so it is spelled the other way round here: flag
+    // 0x80 BLOCKS the device pass. `Cef_TickChannel` runs the input search
+    // only under `!(flags & 0x81)`, and the handler's two arms are
+    //
+    //     arg 1 -> `or  cl, 80h`                    - block, nothing else
+    //     arg 0 -> `and al, 7Fh`, then `rep stosd`  - unblock AND reset the
+    //              20-slot latch, the queue and `lastInput_` to the idle word
+    //
+    // so passing 1 is what STOPS the channel reading keys. Calling it the
+    // enable made `Actor_LeaveDialogueMode` set the flag on the way out of
+    // every conversation, and the player's action button then never worked
+    // again - the whole input pass was skipped from there on.
+    //
+    // `Perso_GetInputEnabled` (0x0045ACB0) returns `flags & 0x80`, which is
+    // what `Actor_EnterDialogueMode` saves so the leave can RESTORE it rather
+    // than assert it.
+    bool inputBlocked() const { return (flags_ & 0x80u) != 0; }
+    // How many of the 20 latch slots hold an id. Exposed so a check can
+    // assert that the engine's two resets do NOT clear them - see
+    // `setBankGroup` for the 16-dword store that stops one dword short.
+    int latchedCount() const {
+        int n = 0;
+        for (auto l : latch_) if (l) ++n;
+        return n;
+    }
+    void setInputBlocked(bool on);
+    // Perso_SetNoPlayback (0x0045A470) is flag 0x200.
     void setNoPlayback(bool on);
 
     // The priority gate: channel flag 0x400 makes `Cef_FindTransition` honour

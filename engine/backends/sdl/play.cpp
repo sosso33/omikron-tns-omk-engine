@@ -1894,6 +1894,10 @@ int main(int argc, char** argv) {
     // A screen the PLAYER asked for this frame, before it is opened below -
     // so the open, its sounds and its bookkeeping stay in one place.
     int playerScreen = -1;
+    // The world's action button is spent until it is RELEASED - see the
+    // one-activation-per-press gate below. Cleared where `bits` is taken, so
+    // a frame that never reaches the gate cannot leave it stale.
+    bool actionSpent = false;
     // The sneak's inventory ROWS - item address -> what that row shows. The
     // nine slots of list 0x004DE6F0 ship `+28` as -1 and are never bound,
     // because their text is the carried object list read through the channel
@@ -2327,6 +2331,10 @@ int main(int argc, char** argv) {
     bool  speakerSolved = false;
     bool  speakerReady = false;
     int   speakerConv = -1;
+    // Whether the player's actor is in DIALOGUE MODE, so the two sides of
+    // `Actor_EnterDialogueMode` / `Actor_LeaveDialogueMode` are called once
+    // each per conversation. See the transition below.
+    bool  dialogMode = false;
 
     // ---- EVERY BODY THE SESSION SAYS IS ON SCREEN (issue 41) -----------
     //
@@ -3409,7 +3417,13 @@ int main(int argc, char** argv) {
         // exactly what takes `adventure` false - so a stream could press TAB
         // and then never press anything again, and the screen could not be
         // driven headless at all.
-        if ((adventure || walk) && !holds.empty()) {
+        // ...and a CONVERSATION, which is neither `adventure` nor `walk` and
+        // so used to swallow the whole stream: every scripted press after the
+        // one that opened a dialogue was dropped, and a headless run could
+        // never reach the end of one. `--hold` is a harness, and a harness
+        // that cannot press ENTER through a conversation cannot test what
+        // happens when the conversation ends.
+        if ((adventure || walk || session.dialogOpen()) && !holds.empty()) {
             for (int k : holds.front().keys) st.keyboard.push_back(k);
             if (--holds.front().frames <= 0) holds.erase(holds.begin());
         }
@@ -3442,6 +3456,10 @@ int main(int argc, char** argv) {
         // own `held & (held ^ (mask & last))` at mask = all ones.
         const std::uint32_t edgeBits = bits & ~prevBits;
         prevBits = bits;
+        // ...and the world's action, which is not an edge: it is HELD, and
+        // stays spent until the bit goes up. `kUiConfirm` is 0x10, the same
+        // bit `H1AVNT` entry 24 (MDACTION) matches on.
+        if (!(bits & omk::kUiConfirm)) actionSpent = false;
         // THE WORLD'S ACTION BUTTON IS NOT READ HERE. `Game_RaiseEvent(6, 4)`
         // is raised from the ACTOR tick (21_d3d.c:3460, :3513, :3962 - the
         // `.CTL` state handlers), so what stands for it in this loop is
@@ -4131,7 +4149,18 @@ int main(int argc, char** argv) {
                     ++heldFrames;
                     player->tick(static_cast<float>(frameSec * 30.0), 0);
                 } else {
-                    player->tick(static_cast<float>(frameSec * 30.0), bits);
+                    // `sub_4A7A20` NEVER YIELDS 0 - nothing held remaps to the
+                    // idle word - and the channel reads a literal 0 as
+                    // `kQueueDrives`, the "no device this tick" contract, which
+                    // SKIPS the input pass entirely. Passing the raw `bits`
+                    // therefore stopped the 20-slot latch from ever being
+                    // dropped once nothing was pressed (`latch_[i] = 0` lives
+                    // inside that pass), so a button spent by one press stayed
+                    // spent for ever and the SECOND press did nothing at all.
+                    // Invisible until the latch was made to survive
+                    // `SetPersoBankGroup` the way the engine's does.
+                    player->tick(static_cast<float>(frameSec * 30.0),
+                                 bits ? bits : omk::kIdleInput);
                 }
                 // STUCK BETWEEN WALLS. A move blocked for a whole second while a
                 // direction is being asked for is the sweep's own failure to
@@ -4720,7 +4749,37 @@ int main(int argc, char** argv) {
                 if (actionFromMove && !stateAllowsAction)
                     std::printf("action: refused - ACTOR_STATE %d takes another arm of "
                                 "tab_special_move[3]\n", actorState);
-                if (actionFromMove && stateAllowsAction && !session.dialogOpen()) {
+                // ---- ONE ACTIVATION PER PRESS ----------------------
+                //
+                // `MDACTION` fires EVERY frame the button is held - that is
+                // the engine, not a fault, and `Cef_TickChannel`'s chain loop
+                // (`readable/src/29_win32.c`, the `(v17 & 0x10) && (v17 &
+                // 0x200000)` arm) re-applies it from the raw device word on
+                // every tick. What the engine does NOT do is run the zone's
+                // activate script every one of those frames: `Game_RaiseEvent
+                // (6, 4)` is raised by the ACTOR's state handlers, once on the
+                // way INTO the action state, and `Script_Pump`'s slot machine
+                // then runs the arm once.
+                //
+                // The slot machine is not modelled to that depth here, so this
+                // stands in for it and is labelled as the RECONSTRUCTION it
+                // is: the world's action is honoured once per press, and the
+                // bit must go up before another is. The take's own second and
+                // third presses are unaffected - `MDPUTSNK` (entry 55, input
+                // 0x10) and `MDNOTAKE` (entry 56, 0x20) are transitions inside
+                // the take bank, reached by the `.CTL` machine and not by this
+                // gate.
+                //
+                // This replaces an earlier guard that installed the take bank
+                // (group 41) on ANY successful press. That was wrong twice
+                // over: `sub_465D30` reaches `SetPersoBankGroup` only when its
+                // object scan FOUND something - a press that merely activates
+                // a zone never gets there - and the take pipeline above
+                // already installs 41/143/600 when it does. Its symptom was a
+                // reader finishing a shop seller's conversation and watching
+                // the whole take graph run on nothing: reach, wait, put back.
+                if (actionFromMove && stateAllowsAction && !session.dialogOpen() &&
+                    !actionSpent) {
                     const int armed = session.zones().armedCount();
                     const std::int16_t z = session.zones().armedZone();
                     // omk-play 66: EVERY press is reported, with where he
@@ -4759,28 +4818,13 @@ int main(int argc, char** argv) {
                     // second press then never works at all, which is worse
                     // than the repeat. Measured both ways; see
                     // `todo/next-tasks.md` 1.
-                    // `sub_465D30`'s TAIL, and it is what makes a held
-                    // action button behave: SetPersoBankGroup switches the
-                    // actor into the take bank, so the next tick's same held
-                    // bit means TAKE rather than REACH.
-                    //
-                    //     MDACTION -> MDGETOBJ -> [H_WAITOB] -> MDPUTSNK -> MDSTAND
-                    //
-                    // Measured at area 237's zone 4051 with Enter held: 40
-                    // frames reaches and waits, 55 completes the take, 70+
-                    // completes it and begins a new cycle - which is what
-                    // holding the button SHOULD do. Press-release-press works
-                    // the same. Without this the port fired MDACTION every
-                    // frame: 20 activations for a 20-frame hold.
-                    //
-                    // The LOW arm is still unported - `sub_465D30` picks
-                    // `Cef_FindGroupById(bank, 143)` when the object is within
-                    // 27.472441 units (0.6978 m) of the actor's height, and
-                    // that needs the object's position, which this press does
-                    // not carry. A low object therefore plays the standing
-                    // take. `todo/next-tasks.md` 1.
-                    if (did && player && !player->enterActionBank())
-                        player->resetInputLatch();
+                    // The press is spent whether or not it found anything:
+                    // the engine's event is raised once on the way into the
+                    // action state, and a second one needs the button to go up
+                    // and come down again. A press that reaches nothing still
+                    // costs the press - which is also why holding the button
+                    // in the open street does not keep re-running a script.
+                    actionSpent = true;
                     if (did)
                         std::printf("action: zone %d activated (%d slot%s armed) at %.0f %.0f %.0f"
                                     " - hand slot %d, object %d\n",
@@ -4922,6 +4966,16 @@ int main(int argc, char** argv) {
         // on screen during a conversation is the world camera the script last
         // set.
         if (session.dialogOpen()) {
+            // THE PRESS BELONGS TO THE CONVERSATION. While a dialogue is up
+            // the action bit is the interface's - `Dialog_TickUI` takes it -
+            // and the world must not see the same press again when the
+            // conversation closes. Without this the ENTER that dismisses the
+            // last line was still down on the next frame, `MDACTION` matched
+            // `H_STAND -> 24`, and the seller was talked to a second time the
+            // instant he had finished. Marking it spent here means the button
+            // has to go up first, which is the same rule the gate above
+            // applies to two presses in the world.
+            if (bits & omk::kUiConfirm) actionSpent = true;
             const auto& dlg = session.dialogue();
             // A new conversation: stage the speaker (the model itself is
             // loaded on `character.show`, which comes first).
@@ -5063,6 +5117,51 @@ int main(int argc, char** argv) {
                 std::printf("--- conversation over ---\n");
         }
 
+        // ---- DIALOGUE MODE, and the bug its absence caused ---------------
+        //
+        // `Actor_EnterDialogueMode` (0x00468DE0) and `Actor_LeaveDialogueMode`
+        // (0x00468E80) bracket every conversation, and both end with a BANK
+        // SWITCH on the player's channel:
+        //
+        //     enter: Perso_SetInputEnabled(channel, 0)
+        //            SetPersoBankGroup(channel, Cef_FindGroupById(bank, 400))
+        //     leave: SetPersoBankGroup(channel, Cef_FindGroupById(bank, 100))
+        //            Perso_SetInputEnabled(channel, 1)
+        //
+        // H1AVNT has both (`engine/tools/dialog_bank.cpp`): group id 400 is
+        // the 15-entry dialogue group, and id 100 is the bank's DEFAULT group
+        // (`flags & 1`), 44 entries, default `H_STAND`/`MDSTAND` - adventure
+        // mode. `SetPersoBankGroup`'s memset clears the channel's queue and
+        // latches and its `gotoMove` re-enters that default, which is the
+        // SAME guard `sub_465D30` uses at the end of a successful take: the
+        // held word must CHANGE before anything matches again.
+        //
+        // That is what stops the ENTER which dismisses a conversation's last
+        // line from falling straight through into the take. `ActorRuntime`
+        // has carried both functions since the ACTOR_STATE machine was
+        // ported, but NOTHING here called them - so the viewer never entered
+        // dialogue mode, never left it, and a reader who finished a shop
+        // seller's dialogue with Enter still held watched the take graph run
+        // (MDACTION -> MDGETOBJ -> H_WAITOB -> MDPUTSNK) on the next frame.
+        //
+        // The transition is tested HERE, after the block that may have ended
+        // the conversation, so the leave lands on the SAME frame the dialogue
+        // closes - one frame later would be one frame too late, because the
+        // MDACTION gate above runs before this point in the next frame.
+        if (session.dialogOpen() != dialogMode) {
+            dialogMode = session.dialogOpen();
+            if (player) {
+                if (dialogMode) player->enterDialogueMode();
+                else            player->leaveDialogueMode();
+            }
+            std::printf("frame %ld: dialogue mode %s - bank group %d, ACTOR_STATE %d\n",
+                        n,
+                        dialogMode ? "ENTER (Actor_EnterDialogueMode)"
+                                   : "LEAVE (Actor_LeaveDialogueMode)",
+                        dialogMode ? 400 : 100,
+                        player ? static_cast<int>(player->state()) : -1);
+        }
+
         // A script asked for a screen, or the PLAYER did. Which screen is the
         // SESSION's answer or the special move's, never this file's.
         if (!walk && (session.pendingUiScreen() >= 0 || playerScreen >= 0)) {
@@ -5093,8 +5192,8 @@ int main(int argc, char** argv) {
                 walk = std::move(fresh);
                 openScreen = want;
                 screenFromScript = fromScript;
-                std::printf("screen %d %s - arrows move, ENTER confirms, "
-                            "TAB closes\n", openScreen,
+                std::printf("frame %ld: screen %d %s - arrows move, ENTER confirms, "
+                            "TAB closes\n", n, openScreen,
                             fromScript ? "is asking" : "opened by the player");
                 // The screen's own sounds, by slot. Which slot is which is
                 // `sub_482FE0`'s answer - it dispatches on the INPUT BIT - not

@@ -2471,6 +2471,33 @@ which decide *when* a press takes effect rather than whether:
 * **and the push itself dedupes against the BACK**, not the front:
   `if (!n || queue[n-1] != word) queue[n++] = word;`.
 
+**What the memset does NOT touch, and it matters (2026-09-06).**
+`SetPersoBankGroup` (0x0045A630) and `Perso_SetInputEnabled(ch, 0)`
+(0x0045A3E0) both reset the channel's input with the same store:
+
+    mov  ecx, 10h
+    lea  esi, <channel base>
+    lea  ebp, [esi+1Ch]        ; +28, queue[0]
+    rep  stosd                 ; 16 dwords, +28 .. +87
+    mov  dword ptr [esi+18h], 1     ; +24  count = 1
+    mov  [ebp+0], 40000000h         ; +28  queue[0] = the idle word
+    mov  [esi+14h], 40000000h       ; +20  lastInput = the idle word
+
+Sixteen dwords from +28 end at **+87**. The **20-slot latch is at +92** and is
+left alone — the store stops one dword short of it. So neither reset forgets
+which inputs the current states have already consumed, and a button that was
+spent stays spent across a bank switch until it is released.
+
+**And `Perso_SetInputEnabled` is misnamed** (the name comes from
+`tools/renames.json`, not from the binary): flag `0x80` **blocks** the device
+pass, since `Cef_TickChannel`'s input search runs only under
+`!(flags & 0x81)`. Argument 1 is `or cl, 80h` and nothing else; argument 0 is
+`and al, 7Fh` followed by the reset above. `Perso_GetInputEnabled`
+(0x0045ACB0) returns `flags & 0x80`, and `Actor_EnterDialogueMode` saves it
+into `dword_53AE28` precisely so `Actor_LeaveDialogueMode` can **restore** it
+rather than assert it — a leave that asserts the flag silently stops the actor
+reading keys for the rest of the session.
+
 **Nothing held is the idle word, and it is never 0.** `sub_4A7A20`
 (0x004A7A20) opens `*a3 = 0; if (!a2) *a3 = 0x40000000;` and then ORs one bit
 per bound key, so the word `Cef_TickChannel` commits is either a bitfield or
