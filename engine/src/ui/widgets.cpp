@@ -1051,15 +1051,8 @@ bool UiWalk::confirm() {
         // is refused twice over, once in the world and once here.
         if (it->callback == kCbSaveSauvegarde) {
             if (rings_ == 0) {
-                // `off_4E2FB0` is NOT in the lifted widget table, so this
-                // cannot install it - and saying so matters, because the
-                // first version of this returned `installPanel`'s quiet
-                // false and the button did nothing at all. A reader met that
-                // as "the enter sound plays and nothing happens".
-                log_.push_back("sauvegarde: no anneaux - the refusal panel "
-                               "0x004E2FB0 is not in the table");
-                approx_ = true;
-                return true;                  // the frame is still consumed
+                log_.push_back("sauvegarde: no anneaux -> the refusal panel");
+                return installPanel(kPanelSaveNoRings);
             }
             if (load_) load_->mode = 1;        // `word_4CEA9A = 1`, saving
             return installPanel(kPanelLoadSlots);
@@ -1067,6 +1060,29 @@ bool UiWalk::confirm() {
         // `Annuler` on the save screen (0x0042A990): it closes.
         if (it->callback == kCbSaveAnnuler) {
             log_.push_back("annuler: the screen closes");
+            panel_ = nullptr;
+            return true;
+        }
+        // The confirm panel's `Oui` (0x0047BA30), the save arm. The delete
+        // arm - screen 29's `Detruire` - is read and not modelled: it calls
+        // `SaveDir_Delete`, which empties every slot of a profile, and that
+        // is not a thing to wire on a guess.
+        if (it->callback == kCbConfirmYes) {
+            if (!load_ || !panel_) return false;
+            if (panel_->screen == 29 || load_->mode == 0) {
+                approx_ = true;
+                log_.push_back("oui: the DELETE arm is not modelled");
+                return true;
+            }
+            const auto rows = load_->rows();
+            const int row = overwriteRow_ >= 0 ? overwriteRow_ : load_->row;
+            if (row < 0 || row >= static_cast<int>(rows.size())) {
+                log_.push_back("oui: no row to overwrite");
+                return true;
+            }
+            pendingSave_ = rows[static_cast<std::size_t>(row)].slot;
+            overwriteRow_ = -1;
+            log_.push_back("oui: overwriting slot " + std::to_string(pendingSave_));
             panel_ = nullptr;
             return true;
         }
@@ -1087,14 +1103,13 @@ bool UiWalk::confirm() {
             const int n = static_cast<int>(rows.size());
             if (load_->row < 0) { log_.push_back("save: no row chosen"); return true; }
             if (load_->row < n) {
-                // `off_4CF3B8` - `Ecraser ce fichier ?` - is not in the
-                // lifted table, so this cannot install it. Said out loud
-                // rather than silently doing nothing, which is how the
-                // no-rings arm went unnoticed.
-                log_.push_back("save: overwriting row " + std::to_string(load_->row) +
-                               " needs panel 0x004CF3B8, which is not in the table");
-                approx_ = true;
-                return true;
+                // an EXISTING row is confirmed before it is overwritten:
+                // `off_4CF3B8`, the screen's `Ecraser ce fichier ?`
+                pendingSave_ = -1;
+                overwriteRow_ = load_->row;
+                log_.push_back("save: row " + std::to_string(load_->row) +
+                               " -> the overwrite confirm");
+                return installPanel(kPanelSaveOverwrite);
             }
             // the `Nouvelle sauvegarde` row: `sub_408AA0`'s first free slot
             int slot = -1;

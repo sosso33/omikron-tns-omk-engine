@@ -781,6 +781,9 @@ private:
     // the game's own message rather than offering a save it cannot pay for.
     int         rings_ = 0;
     int         pendingSave_ = -1;
+    // The row an overwrite confirm is standing over, so its `Oui` knows
+    // which slot it agreed to. -1 when no confirm is up.
+    int         overwriteRow_ = -1;
     std::vector<std::string> log_;
     // Item address -> the RGB a page builder wrote into `+8/+9/+10`.
 };
@@ -923,9 +926,22 @@ inline constexpr std::uint32_t kCbSaveAnnuler    = 0x0042A990u;
 // The save panel's top button on screen 30 - the item the table calls
 // `Nouvelle partie` and the builder relabels `Sauvegarde` (0x0047ADB0).
 inline constexpr std::uint32_t kCbSaveDo         = 0x0047ADB0u;
-// ...and the OVERWRITE confirm it opens for a row that already holds a save.
-// Not in the lifted table, so it can be named but not installed.
+// ...and the OVERWRITE confirm it opens for a row that already holds a save,
+// `Ecraser ce fichier ?`. Reached only from code (`sub_42A370`), so the lift
+// finds it through `exetables.py`'s CODE_NAMED rather than through any
+// item's `+44`.
 inline constexpr std::uint32_t kPanelSaveOverwrite = 0x004CF3B8u;
+// the DETRUIRE confirm, installed the same way by `sub_47AE90`
+inline constexpr std::uint32_t kPanelLoadDestroy   = 0x004CF350u;
+// The confirm panel's `Oui`, and it is SHARED between the two screens:
+//
+//     if (screen == 29) { SaveDir_Delete(dir, name); close; answer 1; }
+//     if (screen == 30) { slot = row == count ? firstFree : indexOf(row);
+//                         charge a ring; Game_WriteSave(slot); }
+//
+// so one panel is `Detruire`'s confirmation on the load screen and the
+// overwrite confirmation on the save screen.
+inline constexpr std::uint32_t kCbConfirmYes = 0x0047BA30u;
 inline constexpr std::uint32_t kPanelLoadSlots   = 0x004CF2E8u;
 inline constexpr std::uint32_t kPanelSaveNoRings = 0x004E2FB0u;
 inline constexpr std::uint32_t kCbLoadCharger    = 0x0047AC90u;

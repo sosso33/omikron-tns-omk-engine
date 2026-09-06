@@ -733,8 +733,28 @@ def t_ui_widgets(e):
     # Both parse as panels at the family's 0x68 stride and both carry the
     # right `+0` parent, which is the check on this table: it names an
     # address, and the record there has to agree.
+    # THE SAVE AND LOAD PANEL'S THREE REFUSALS, added 2026-09-06 for the same
+    # reason: nothing in the tree points at any of them, and a reader met the
+    # first as "nothing happens when I select Sauvegarder on an existing
+    # slot".
+    #
+    #   0x004CF3B8  `Ecraser ce fichier ?`. The save button (0x0047ADB0)
+    #               opens with `if (row < dword_657968) sub_42A370(screen,
+    #               off_4CF3B8)` - an existing row is confirmed before it is
+    #               overwritten, and only the NEW-save row writes directly.
+    #
+    #   0x004CF350  the DETRUIRE confirm. `sub_47AE90` refuses a row outside
+    #               0..count and otherwise calls `sub_42A370(screen,
+    #               off_4CF350)`; `sub_47AB30` names the same address when it
+    #               slides the panel out.
+    #
+    #   0x004E2FB0  `Je n'ai pas assez d'Anneaux pour faire ca !`.
+    #               `sub_4AE060` (`Sauvegarde` on screen 30) installs it
+    #               instead of the slot list when property 5 reads zero.
     CODE_NAMED = {0x004DEE50: [0x004DEEB8],
-                  0x004DEEB8: [0x004DEF20]}
+                  0x004DEEB8: [0x004DEF20],
+                  0x004CF2E8: [0x004CF3B8, 0x004CF350],
+                  0x004E2ED8: [0x004E2FB0]}
     out, skipped, seen = [], [], set()   # `seen` tracks CHILD panels only
     for sid in sorted(u.screens):
         try:
@@ -925,9 +945,9 @@ def c_ui_widgets(rows, e):
             # item's `+44` names at all - `CODE_NAMED` above - the VERB
             # panel 0x004DEEB8 and the EXAMINE page 0x004DEF20, both
             # installed by `sub_42A370` from a callback.
-            ("child panels", len(kids), 15),
-            ("lists", len(lists), 134),
-            ("items", len(items), 611),
+            ("child panels", len(kids), 19),
+            ("lists", len(lists), 143),
+            ("items", len(items), 624),
             ("item records inside the image",
              sum(1 for i in items if mapped(i["addr"])), len(items)),
             # 75 across the whole tree but only 16 distinct item RECORDS
@@ -935,9 +955,9 @@ def c_ui_widgets(rows, e):
             # 0x004DE210 is one list carried by nine of the panels, so each
             # of its child-naming items is counted once per panel.
             ("items naming a child panel",
-             sum(1 for i in items if i["child"]), 88),
+             sum(1 for i in items if i["child"]), 94),
             ("...of which distinct item records",
-             len({i["addr"] for i in items if i["child"]}), 17),
+             len({i["addr"] for i in items if i["child"]}), 21),
             ("lists with a non-default input hook", len(hooks), 52),
             # The two RUNTIME fields, and only where the open callback writes
             # them. Neither was in this table before 2026-09-04, because the
@@ -958,7 +978,7 @@ def c_ui_widgets(rows, e):
             ("panels whose open callback sets the current list",
              sum(1 for p in ps if p.get("current", -1) >= 0), 15),
             ("lists whose open callback sets the selection",
-             sum(1 for l in lists if l.get("select", -1) >= 0), 27),
+             sum(1 for l in lists if l.get("select", -1) >= 0), 28),
             ("...distinct list records among them",
              len({l["addr"] for l in lists if l.get("select", -1) >= 0}), 8),
             # SNEAK opens on its INVENTORY page with the tab column already on
@@ -1003,13 +1023,13 @@ def c_ui_widgets(rows, e):
               sum(1 for p in ps if not p["flagsB"] & 0x6000 and p["tilesAt"]),
               sum(1 for p in ps if not p["flagsB"] & 0x6000
                   and not p["tilesAt"])],
-             [16, 1, 24, 5]),
+             [18, 1, 24, 7]),
             ("the one panel that blits its sheet whole",
              [p["screen"] for p in ps
               if not p["flagsB"] & 0x2000 and p["flagsB"] & 0x4000], [36]),
             ("distinct hooks among them", len(set(hooks)), 13),
             ("lists taking Ui_MoveSelection, the default walk",
-             sum(1 for l in lists if not l["hook"]), 82),
+             sum(1 for l in lists if not l["hook"]), 91),
             ("the LIFT grid hook is present", rows["gridHook"] in hooks, True),
             # It is here only because the walk follows `+44`: the name field
             # is in the start menu's confirm dialog, a CHILD panel. A lift
