@@ -1577,7 +1577,8 @@ void applyLoadPanelLayout(UiWidgets& w, int screen) {
     const auto place = [&](std::uint32_t addr, int y, bool hidden, int str = -1) {
         UiItem* it = item(addr);
         if (!it) return;
-        if (!hidden) it->y = y;      // a hidden button is not moved either
+        if (!hidden && y >= 0) it->y = y;   // y < 0 = leave it where it is,
+                                            // and a hidden one is never moved
         if (hidden) { it->flags[0] |= 0x20000004u; it->flags[1] |= 1u; }
         else        { it->flags[0] &= ~0x20000004u; it->flags[1] &= ~1u; }
         // ...AND THE STRING ID, which the builder rewrites into each item's
@@ -1622,6 +1623,26 @@ void applyLoadPanelLayout(UiWidgets& w, int screen) {
         place(L.nouvelle, 266, true);
         place(L.detruire, 326, false, 2);
     }
+    // THE CONFIRM PANEL IS BUILT PER SCREEN TOO - `sub_47B850`, which is the
+    // same shape as the slot panel's builder and which a reader met as
+    // "texts on the confirm panel are wrong":
+    //
+    //     screen 29   parent = off_4CF280   question 10, yes 6,  no 7
+    //     screen 30   parent = off_4CF2E8   question 16, yes 12, no 13
+    //
+    // The three item addresses are the symbols' own arithmetic: `word_4CED6C`
+    // is item 0x004CED50 + 0x1C, `word_4CEDB4` is 0x004CED98 + 0x1C and
+    // `word_4CF0E4` is 0x004CF0C8 + 0x1C - each one an item's `+28`, the
+    // string id. On screen 30 that reads `Ecraser ce fichier ?` over `Oui`
+    // and `Non`; unported it drew strings 6, 7 and 10, which there are
+    // `Anneaux en votre possession :`, the save question and
+    // `Votre ame va etre sauvegardee !`.
+    place(0x004CED50u, -1, false, screen == 30 ? 12 : 6);    // Oui
+    place(0x004CED98u, -1, false, screen == 30 ? 13 : 7);    // Non
+    place(0x004CF0C8u, -1, false, screen == 30 ? 16 : 10);   // the question
+    for (auto& p : w.panels_)
+        if (p.addr == kPanelSaveOverwrite)
+            p.parent = screen == 30 ? kPanelLoadSlots : 0x004CF280u;
     // Annuler is the fourth item of the button list, the one whose child is
     // the start menu; the table names the other three.
     for (auto& p : w.panels_)
