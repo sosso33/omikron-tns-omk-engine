@@ -211,6 +211,41 @@ yet modelled:
 Read those four, model them in `widgets.*`/`UiWalk` the way the LIFT grid and
 the name field are, then make the walk's answer actually load.
 
+### KNOWN DEFECT — a mid-run load crashes in the set pieces
+
+**Reported by a reader 2026-09-06, loading the second save from the menu, and
+reproduced.** `Charger` on slot 1 segfaults about 25 frames later.
+
+```
+SDL_VIDEODRIVER=dummy build/omk-play ../gamedata ../tables 29 --nofmv \
+    --no-crowd --software --keys 208,28,208,208,205,28 --keydelay 5 --frames 200
+    -> exit 139
+```
+
+The save is NOT at fault: `--slot 1` at **start-up** loads the same slot,
+reaches adventure mode and exits 0. It is the **mid-run load path** — the one
+step 4d added — that breaks, and the crash report names it exactly:
+
+```
+Session::frame() -> SceneRunner::tick -> SetPieceRunner::tick
+                 -> SetPieceRunner::advance(int)
+EXC_BAD_ACCESS (SIGSEGV), KERN_INVALID_ADDRESS at 0x38
+```
+
+A null dereference at a small member offset, in the `.SFX` **set pieces**. The
+shape of it: `session.loadArea()` rebuilds the resident slot and its scene, but
+the `SceneRunner`'s set-piece runner is still holding what the PREVIOUS world
+gave it — the menu's `Grid.SCX` here — and ticks it against the new one. Slot 0
+does not crash because its area is the one the menu already had resident;
+slot 1 is area 179 (`ACSLEV-2`), a different set entirely.
+
+So the fix is a teardown, not a load fix: whatever `Area_Load`'s eviction does
+to the effects chain (`sub_40C090` frees the slot's contexts, `sub_40D4A0` its
+actors) has to happen on this path too. Read that before changing anything —
+the port's `evictSlot` may already do it and simply not be reached.
+
+Until then, `--slot N` at start-up is the reliable way in.
+
 ### Step 5 — the save menu, and the SAVE POINTS  ◐ (read 2026-09-06, not wired)
 
 **The reading is done and needs no UI code**; what is left is the wiring, which
