@@ -10954,6 +10954,13 @@ def c_save_directory():
     of `traces/games-resto.bin` and compares them to what the original drew,
     which tests the field, both formatters and the calendar in one line each.
 
+    **And how a row becomes a slot** (GAME_STATE 8): a new save goes to
+    `sub_408AA0`'s first free slot - the lowest whose name byte is zero, -1
+    when all 256 are taken - and an existing row is `SaveDir_RecordAt`'s n'th
+    record *matching the profile name*, so a panel's list is filtered by
+    player.  In this fixture the first free slot is **3** and **3** slots
+    carry the profile, which is the three rows the screen grab shows.
+
     **The thumbnails decode.**  The slot's last 24576 bytes are the picture
     the panel shows beside the selected row, 128 x 96 at 2 bytes a pixel
     (GAME_STATE 8b).  Read as the X1R5G5B5 that `sub_4331B0`'s shifts predict,
@@ -10978,6 +10985,16 @@ def c_save_directory():
         names.append(nm)
         rows.append("%s - %s - %s" % (nm, _G.format_date(day), _G.format_time(tm)))
     profile = d[HDR:HDR + 32].split(b"\0")[0].decode("cp1252")
+    # `sub_408AA0`'s walk: the first slot whose name byte is 0, -1 when all
+    # 256 are taken - where a NEW save goes.  And `SaveDir_RecordAt`'s: how
+    # many slots carry this profile's name, which is what the panel lists.
+    firstFree, mine = -1, 0
+    for k in range(256):
+        nm = d[HDR + SLOT * k:HDR + SLOT * k + 32]
+        if nm[0] == 0:
+            if firstFree < 0: firstFree = k
+        elif nm.split(b"\0")[0].decode("cp1252") == profile:
+            mine += 1
     # the same 32 bytes at the offset the docs used to name
     wrong = d[HDR + 76:HDR + 108]
     wrongIsText = all(32 <= c < 127 for c in wrong[:4])
@@ -10992,16 +11009,20 @@ def c_save_directory():
         if len(set(px)) <= 1: uniform += 1
         shots.append(px)
     distinct = len({tuple(s) for s in shots})
-    return (rows, profile, wrongIsText, (pix, topbit, uniform, distinct)), \
+    return (rows, profile, wrongIsText, (firstFree, mine),
+            (pix, topbit, uniform, distinct)), \
            (["KAY'L 669 - 12 Nadim 7216 - 14:14:17",
              "KAY'L 669 - 12 Nadim 7216 - 16:08:15",
              "KAY'L 669 - 12 Nadim 7216 - 17:14:30"],
-            "hereIsTheProfileName", False, (36864, 0, 0, 3)), \
+            "hereIsTheProfileName", False, (3, 3), (36864, 0, 0, 3)), \
            "the three rows the original's load panel draws, built here out " \
            "of the save file - the directory's fourth field (slot+108, the " \
            "player record's +8) then the day and time through the calendar - " \
            "and the heading's profile name; whether the offset the docs used " \
-           "to name (slot+76) holds text at all; then the thumbnails: pixels " \
+           "to name (slot+76) holds text at all; then where a NEW save would " \
+           "go (`sub_408AA0`'s first free slot) and how many slots carry " \
+           "this profile's name, which is what the panel lists; then the " \
+           "thumbnails: pixels " \
            "read, how many set the X1R5G5B5 layout's unused top bit, how " \
            "many of the three images are uniform, and how many are distinct"
 

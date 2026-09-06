@@ -636,6 +636,19 @@ At slot + 108 the three slots of `traces/games-resto.bin` all read
 because reincarnation replaces that record, this is the body the player was
 wearing when the save was made, not a constant.
 
+**How a row becomes a slot**, which is the rest of what a panel needs
+(read 2026-09-06):
+
+| | |
+|---|---|
+| `sub_408AA0(dir)` | the **first free slot** — walks the 72-byte records and returns the index of the first whose name byte is 0, or **−1** when all 256 are taken. A *new save* goes to the lowest empty slot, and there is no new save at all when the file is full, which is what [UI.md](UI.md) sees from the other end: `sub_47A6D0` marks the new-save row unselectable at exactly 256 |
+| `SaveDir_RecordAt(dir, profile, n)` | the **n'th record matching that profile name**. So a panel's list is *filtered by player*, which is why it counts distinct profiles and why the screen carries a `Joueur :` heading |
+| `sub_408DE0(dir, rec)` | `(rec − dir) / 72` — a record pointer back to its slot index |
+
+So the confirm's two arms are `slot = firstFree(dir)` for a new save and
+`slot = indexOf(recordAt(dir, profile, row))` for an existing row, and they
+meet at the ring charge (§8c).
+
 **A photograph of the original settles what the directory is FOR.** A reader
 supplied a screen grab of `Charger une partie` taken against exactly this save
 file, and it draws
