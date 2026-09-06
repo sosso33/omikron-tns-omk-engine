@@ -50,6 +50,10 @@ inline constexpr std::uint32_t kListNoWrap       = 0x80000;
 // lifted - this one is here so the sneak works with an older table too.
 inline constexpr std::uint32_t kMoveSelectionLR = 0x0042A930u;
 
+// Declared here because `UiWalk` holds a pointer to one; defined below, with
+// the save directory it is built out of.
+struct LoadPanel;
+
 // THE SNEAK DEVICE'S WIDGET ADDRESSES.
 //
 // Addresses in the tree rather than table fields, the way `gridHook` and
@@ -475,6 +479,11 @@ public:
     // LEFT and RIGHT, and its drawer puts a blinking `_` after exactly this
     // many characters, so a drawer cannot place the caret without it.
     int nameCursor() const { return nameCursor_; }
+    // Attach the load panel's state - see `LoadPanel`. The walk moves the
+    // row and the profile; the caller owns the directory and reads back
+    // which slot was chosen.
+    void attachLoadPanel(LoadPanel* p) { load_ = p; }
+    const LoadPanel* loadPanel() const { return load_; }
 
     // The panel the walk is ON, which is not always the screen's own: an item
     // with a `child` descends into one, and that is how the start menu's
@@ -735,6 +744,10 @@ private:
     int  answer_ = -1;
     std::string name_;
     int         nameCursor_ = 0;
+    // The load panel's directory state, when a caller has attached one. It
+    // is not walk state: it is the SAVE FILE's, it outlives the screen, and
+    // a walk with none logs that rather than inventing rows.
+    LoadPanel*  load_ = nullptr;
     std::vector<std::string> log_;
     // Item address -> the RGB a page builder wrote into `+8/+9/+10`.
 };
@@ -749,8 +762,14 @@ private:
 // apart by `word_4CEA9A`.
 struct SaveEntry {
     int slot = 0;
-    std::string name;
+    std::string name;          // +0,  the PROFILE name - the `Joueur :` heading
     std::uint32_t day = 0, time = 0;
+    // +40 of the directory record, lifted from slot **+108** - the player
+    // record's `+8`, the CHARACTER'S name.  This is the row's label, and the
+    // panel draws `<character> - <date> - <time>` under `Joueur : <profile>`
+    // (GAME_STATE 8).  The offset read +76 until 2026-09-06, which is inside
+    // the DB's array counts and is why it was recorded as "not a string".
+    std::string character;
 };
 
 // `sub_408A10` - the 72-byte directory entries, read out of `IAM\GAMES`:
@@ -772,5 +791,83 @@ struct LoadPanelState {
 };
 
 LoadPanelState loadPanelFor(int profiles, const UiWidgets& w);
+
+// ------------------------------------------------------- THE LOAD PANEL
+//
+// `Ui_BuildLoadPanel` (0x0047A6D0) and the slot list's own hook
+// (0x0047AEC0), which between them are the whole of `Charger une partie`.
+// One panel serves screen 29 and screen 30; this is the 29 half.
+//
+// The engine keeps the panel's state in five globals, and they are the whole
+// model:
+//
+//     byte_657970    the PROFILE being listed - `SaveDir_NameAt(dir, 0)` at
+//                    build time, and changed by LEFT/RIGHT (below)
+//     dword_65796C   how many distinct profiles the directory holds
+//     dword_657968   how many slots THIS profile has = the number of rows
+//     dword_657964   that minus one, the last row index
+//     dword_4CEBAC   the selected row, and it starts at **-1** on screen 29:
+//                    the panel opens with nothing chosen
+//
+// **At row -1, LEFT and RIGHT change the PROFILE**, not the row - the hook
+// steps `list+0x18` with a wrap at either end, re-reads `SaveDir_NameAt` into
+// `byte_657970` and recounts the rows.  That is what the `Joueur :` heading
+// is for, and it is why the panel opens with no row selected: the first
+// choice offered is *whose* saves to look at.
+//
+// UP and DOWN then move the row, and they **wrap**, between the two limits
+// the builder set:
+//
+//     if (bits & 4)       row = row > dword_657990 ? row - 1 : dword_657964;
+//     else if (bits & 8)  row = row < dword_657964 ? row + 1 : dword_657990;
+//
+// On screen 29 the low limit is **-1**, so the "nothing chosen" position is
+// part of the cycle: DOWN off the last row comes back to it, and there LEFT
+// and RIGHT change the profile again.  Screen 30 sets the low limit to 0 and
+// has no such position.
+//
+// Landing on a valid row also calls `sub_408D70(dir, slot)`, whose two stack
+// buffers are 8232 and 24576 bytes - it reads the slot's **thumbnail**. So
+// the picture beside the selected row is loaded by the MOVE, not by the draw.
+//
+// The list shows **nine** widgets and marks the first and last with
+// `0x40100000` / `0x40200000` - "more above", "more below" - once there are
+// more rows than that.
+struct LoadPanel {
+    std::vector<SaveEntry> dir;      // every non-empty slot, in slot order
+    std::vector<std::string> profiles;   // the distinct names, first-seen order
+    int profile = 0;                 // which one is listed (`list + 0x18`)
+    int row = -1;                    // `dword_4CEBAC`; -1 = nothing chosen
+    int mode = 0;                    // `word_4CEA9A`: 0 load, 3 empty
+
+    // The rows of the listed profile, in slot order.
+    std::vector<SaveEntry> rows() const;
+    // `sub_408D20` + `sub_408DE0`: the selected row's SLOT index, or -1.
+    int slotOfRow() const;
+    // The label the panel draws: `<character> - <date> - <time>`.
+    std::string rowLabel(const SaveEntry& e) const;
+    // The two scroll indicators, `count + 1 >= 9` gating both.
+    bool moreAbove() const;
+    bool moreBelow() const;
+};
+
+// Build it the way `Ui_BuildLoadPanel` does for screen 29: the directory,
+// the first profile, no row chosen - and mode 3 with the slot list hidden
+// when there is nothing to list.
+LoadPanel buildLoadPanel(const std::vector<SaveEntry>& dir);
+
+// The slot list's hook (0x0047AEC0).  -> true when the frame was consumed.
+// `bits` is the interface's input word.
+bool loadPanelInput(LoadPanel& p, std::uint32_t bits);
+
+// `Charger une partie` (0x0047AC90): resolve the row to a slot and answer
+// with it - but ONLY when that slot is occupied, which is the callback's own
+// `if (dir[72*idx] == 0) return` guard.  -> the slot, or -1 for no answer.
+int loadPanelCharger(const LoadPanel& p);
+
+inline constexpr std::uint32_t kHookLoadSlotList = 0x0047AEC0u;
+inline constexpr std::uint32_t kCbLoadCharger    = 0x0047AC90u;
+inline constexpr std::uint32_t kCbLoadDetruire   = 0x0047AE90u;
+inline constexpr std::uint32_t kPanelLoadConfirm = 0x004CF350u;
 
 }  // namespace omk

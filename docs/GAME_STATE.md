@@ -636,6 +636,28 @@ At slot + 108 the three slots of `traces/games-resto.bin` all read
 because reincarnation replaces that record, this is the body the player was
 wearing when the save was made, not a constant.
 
+**Choosing a save does not load it.** `Charger une partie` (0x0047AC90)
+resolves the row to a slot, refuses an empty one (`dl = dir[72*idx]; if (!dl)
+return`), stores the index in `dword_4C09B4` and closes the screen. The load
+happens later, at the top of **every script pump**:
+
+```
+sub_408410(action):                       ; the wrapper around Script_Pump
+    if (!dword_4E6C7C && dword_4C09B4 != -1) {
+        v1 = playerActorRec[+396];        ; one field kept across the load
+        Game_LoadSave(dword_4C09B4);
+        dword_4C09B4 = -1;                ; one-shot
+        playerActorRec[+396] = v1;
+        Screen_FadeFromColor(0xFFFFFF, 15, 0);   ; 15 frames, from WHITE
+    }
+    return Script_Pump(action);
+```
+
+So a load is a **pending request consumed at a safe point**, not an action the
+button performs — which is why `Game_LoadSave` has exactly one caller and it
+is nowhere near the interface. The fade in is from white, over 15 frames, and
+`playerActorRec + 396` is the single field that survives the swap.
+
 **How a row becomes a slot**, which is the rest of what a panel needs
 (read 2026-09-06):
 

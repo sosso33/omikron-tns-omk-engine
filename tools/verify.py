@@ -11128,6 +11128,93 @@ def c_save_price():
            "skipped when the screen's +78 is not -1"
 
 
+def c_engine_load_panel_walk():
+    r"""`Charger une partie` WALKED - the panel driven with the input words.
+
+    `engine: load panel` already asserts the panel's *shape* - how it branches
+    on the profile count.  This is the panel actually used: the rows it draws,
+    the selection moving, and `Charger` answering with a slot.
+
+    **The rows are the ones the original draws.**  Against
+    `traces/games-resto.bin` the panel lists one profile,
+    `hereIsTheProfileName`, with three rows - and they are character for
+    character the three in a reader's screen grab of the original
+    (GAME_STATE 8):
+
+        KAY'L 669 - 12 Nadim 7216 - 14:14:17
+        KAY'L 669 - 12 Nadim 7216 - 16:08:15
+        KAY'L 669 - 12 Nadim 7216 - 17:14:30
+
+    **The selection WRAPS, and -1 is in the cycle.**  The hook (0x0047AEC0) is
+
+        if (bits & 4)       row = row > dword_657990 ? row - 1 : dword_657964;
+        else if (bits & 8)  row = row < dword_657964 ? row + 1 : dword_657990;
+
+    and `Ui_BuildLoadPanel` sets the low limit to **-1** on screen 29.  So the
+    "nothing chosen" position is a place in the ring: DOWN off the last row
+    comes back to it.  Recorded as the sequence of rows visited rather than as
+    a count, because the shape is the claim - `0 1 2 -1 0 1` down and
+    `2 1 0 -1 2 1` up.  A first version of this model CLAMPED instead, and
+    could never leave the list once entered; a count of moves would not have
+    shown that.
+
+    **At row -1, LEFT and RIGHT change the PROFILE**, not the row - the hook's
+    own `screen == 29 && dword_4CEBAC == -1 && dword_65796C != 0` arm steps
+    `list + 0x18` with a wrap and re-reads `SaveDir_NameAt`.  That is what the
+    `Joueur :` heading is for, and why the panel opens with no row chosen: the
+    first thing it asks is *whose* saves to look at.  One profile here, so the
+    wheel returns to 0.
+
+    **And `Charger` refuses an empty slot**, which is its own guard:
+    `dl = dir[72*idx]; if (!dl) return` - it answers -1 rather than loading a
+    slot with no name.  Row -1 answers -1 for the same reason.
+    """
+    import subprocess, tempfile, shutil
+    eng = os.path.join(ROOT, "engine")
+    fx = os.path.join(ROOT, "traces", "games-resto.bin")
+    if not (os.path.isdir(eng) and os.path.exists(fx)):
+        return ("skipped",), ("skipped",), "engine/ or the save fixture absent"
+    b = subprocess.run(["make", "-s"], cwd=eng, capture_output=True, text=True)
+    binp = os.path.join(eng, "build", "load_panel_walk")
+    if b.returncode != 0 or not os.path.exists(binp):
+        return ("build failed",), ("built",), "engine/ must build"
+    tmp = tempfile.mkdtemp()
+    out = os.path.join(tmp, "lp.bin")
+    try:
+        subprocess.run([binp, fx, os.path.join(ROOT, "tables"), out],
+                       capture_output=True)
+        raw = open(out, "rb").read()
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+    o = 0
+    def take(n):
+        nonlocal o
+        v = struct.unpack_from("<%di" % n, raw, o); o += 4 * n; return v
+    def takes():
+        nonlocal o
+        (n,) = take(1); v = raw[o:o + n].decode("cp1252"); o += n; return v
+    head = take(4)                     # directory entries, profiles, rows, mode
+    profile = takes()
+    (nl,) = take(1)
+    labels = [takes() for _ in range(nl)]
+    (nd,) = take(1); down = take(nd)
+    (nu,) = take(1); up = take(nu)
+    charge = take(3)                   # row 0, row -1, the last row
+    wheel = take(2)                    # steps that moved, and where it wrapped to
+    return (head, profile, labels, down, up, charge, wheel), \
+           ((256, 1, 3, 0), "hereIsTheProfileName",
+            ["KAY'L 669 - 12 Nadim 7216 - 14:14:17",
+             "KAY'L 669 - 12 Nadim 7216 - 16:08:15",
+             "KAY'L 669 - 12 Nadim 7216 - 17:14:30"],
+            (0, 1, 2, -1, 0, 1), (2, 1, 0, -1, 2, 1),
+            (0, -1, 2), (2, 0)), \
+           "the directory entries read, the distinct profiles, the rows of " \
+           "the first, and the panel's mode; that profile's name; the three " \
+           "rows AS THE PANEL DRAWS THEM; the rows DOWN visits and the rows " \
+           "UP visits, which wrap through -1; what Charger answers on row 0, " \
+           "on row -1 and on the last row; and the profile wheel at row -1"
+
+
 def c_engine_save_write():
     r"""WRITING a save: `Game_WriteSave` and the three functions around it.
 
@@ -22909,7 +22996,7 @@ def c_licence_headers():
                    if TAG in open(p, encoding="utf-8",
                                   errors="replace").read(600)]
     return (authored, sorted(missing), len(vendored), mislabelled), \
-           (361, [], 1, []), \
+           (362, [], 1, []), \
            "authored source files under tools/, engine/src, engine/tools, " \
            "engine/backends and scripts/; those MISSING the SPDX tag; " \
            "vendored files in engine/third_party; and vendored files wrongly " \
@@ -24513,6 +24600,7 @@ SLOW = [
     ("engine: UI answer",  c_engine_ui_answer,  "engine/README"),
     ("engine: options",    c_engine_options,    "engine/README"),
     ("engine: load panel", c_engine_load_panel, "engine/README"),
+    ("engine: load walk",  c_engine_load_panel_walk, "engine/README"),
     ("engine: inventory",  c_engine_inventory,  "engine/README"),
     ("engine: text",       c_engine_text,       "engine/README"),
     ("engine: boot",       c_engine_boot,       "engine/README"),

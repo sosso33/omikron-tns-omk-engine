@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "ui/widgets.h"
 
+#include "script/savefile.h"
+
 #include "platform/json.h"
 
 #include <algorithm>
@@ -1258,6 +1260,25 @@ bool UiWalk::press(std::uint32_t bits) {
         if (bits & kUiConfirm) return confirm();
         return false;
     }
+    if (l->hook == kHookLoadSlotList) {
+        // The load panel's slot list (0x0047AEC0).  The panel's own state
+        // lives outside the walk, because it is the SAVE DIRECTORY's - a
+        // caller attaches one with `attachLoadPanel` and reads it back.
+        if (!load_) {
+            approx_ = true;
+            log_.push_back("load panel: no directory attached");
+            return false;
+        }
+        if (loadPanelInput(*load_, bits)) {
+            log_.push_back(load_->row < 0
+                ? "load panel: profile " + std::to_string(load_->profile)
+                : "load panel: row " + std::to_string(load_->row));
+            return true;
+        }
+        // A confirm on a row is not the hook's - it falls through to the
+        // panel, whose buttons are `Charger`, `Detruire` and `Annuler`.
+        return false;
+    }
     if (l->hook) {
         approx_ = true;
         log_.push_back("unmodelled list hook");
@@ -1287,6 +1308,11 @@ std::vector<SaveEntry> saveDirectory(const std::string& gamesPath,
         for (std::size_t i = 0; i < 32 && d[s + i]; ++i) e.name.push_back(d[s + i]);
         e.day  = u32(s + 32);
         e.time = u32(s + 36);
+        // the directory's fourth field: `qmemcpy(v7, v3 + 19, 0x20)` with v3
+        // at slot + 32, so +76 bytes FROM v3 - slot + 108, the player
+        // record's +8, the character's name (GAME_STATE 8)
+        for (std::size_t i = 0; i < 32 && s + 108 + i < d.size() && d[s + 108 + i]; ++i)
+            e.character.push_back(d[s + 108 + i]);
         out.push_back(std::move(e));
     }
     return out;
@@ -1299,6 +1325,105 @@ int saveProfiles(const std::vector<SaveEntry>& dir) {
             std::find(seen.begin(), seen.end(), e.name) == seen.end())
             seen.push_back(e.name);
     return static_cast<int>(seen.size());
+}
+
+// --------------------------------------------------------- the LOAD PANEL
+
+std::vector<SaveEntry> LoadPanel::rows() const {
+    // `SaveDir_CountByName` / `SaveDir_RecordAt`: the slots whose PROFILE name
+    // matches the one being listed, in directory order.
+    std::vector<SaveEntry> out;
+    if (profile < 0 || profile >= static_cast<int>(profiles.size())) return out;
+    for (const auto& e : dir)
+        if (!e.name.empty() && e.name == profiles[static_cast<std::size_t>(profile)])
+            out.push_back(e);
+    return out;
+}
+
+int LoadPanel::slotOfRow() const {
+    const auto r = rows();
+    if (row < 0 || row >= static_cast<int>(r.size())) return -1;
+    return r[static_cast<std::size_t>(row)].slot;
+}
+
+std::string LoadPanel::rowLabel(const SaveEntry& e) const {
+    return e.character + " - " + formatDate(static_cast<int>(e.day)) + " - " +
+           formatTime(static_cast<int>(e.time));
+}
+
+// `cmp ecx, 9 / jl` twice: nine widgets, and the indicator is set only once
+// there are more rows than fit.  The window keeps four rows above the
+// selection and four below.
+bool LoadPanel::moreAbove() const {
+    return static_cast<int>(rows().size()) >= 9 && row >= 4;
+}
+bool LoadPanel::moreBelow() const {
+    const int n = static_cast<int>(rows().size());
+    return n >= 9 && row < n - 4;
+}
+
+LoadPanel buildLoadPanel(const std::vector<SaveEntry>& dir) {
+    LoadPanel p;
+    for (const auto& e : dir) {
+        if (e.name.empty()) continue;          // an empty slot is not listed
+        p.dir.push_back(e);
+        if (std::find(p.profiles.begin(), p.profiles.end(), e.name) == p.profiles.end())
+            p.profiles.push_back(e.name);
+    }
+    // `if (v3) { ... byte_657970 = SaveDir_NameAt(dir, 0); dword_4CEBAC = -1 }
+    //  else { word_4CEA9A = 3; ... }` - with nothing to list the panel goes to
+    // mode 3, hides the slot list and disables Charger and Detruire, which is
+    // what `loadPanelFor` already models from the other end.
+    p.profile = p.profiles.empty() ? -1 : 0;
+    p.row = -1;
+    p.mode = p.profiles.empty() ? 3 : 0;
+    return p;
+}
+
+bool loadPanelInput(LoadPanel& p, std::uint32_t bits) {
+    const int n = static_cast<int>(p.rows().size());
+    // AT ROW -1, LEFT AND RIGHT CHANGE THE PROFILE.  The hook's own guard is
+    // `screen == 29 && dword_4CEBAC == -1 && dword_65796C != 0`, and each arm
+    // steps `list + 0x18` with a wrap - `jns` back to count-1 going down,
+    // `cmp/jl` back to 0 going up - then re-reads the name and recounts.
+    if (p.row == -1 && !p.profiles.empty()) {
+        const int m = static_cast<int>(p.profiles.size());
+        if (bits & kUiLeft) {
+            if (--p.profile < 0) p.profile = m - 1;
+            return true;
+        }
+        if (bits & kUiRight) {
+            if (++p.profile >= m) p.profile = 0;
+            return true;
+        }
+    }
+    // ...and UP/DOWN move the row, WITH A WRAP, between two limits the
+    // builder set:
+    //
+    //     if (bits & 4)       row = row > dword_657990 ? row - 1 : dword_657964;
+    //     else if (bits & 8)  row = row < dword_657964 ? row + 1 : dword_657990;
+    //
+    // On screen 29 `dword_657990` is **-1** and `dword_657964` is count - 1,
+    // so the "nothing chosen" position is part of the cycle: DOWN off the
+    // last row returns to -1, where LEFT and RIGHT change the profile again.
+    // (Screen 30 sets the low limit to 0 and has no such position.)
+    //
+    // Getting this wrong is easy and quiet - a first version here clamped
+    // instead of wrapping and could never leave the list once entered.
+    const int lo = -1, hi = n - 1;
+    if (bits & kUiUp)   { p.row = p.row > lo ? p.row - 1 : hi; return true; }
+    if (bits & kUiDown) { p.row = p.row < hi ? p.row + 1 : lo; return true; }
+    return false;
+}
+
+int loadPanelCharger(const LoadPanel& p) {
+    const int slot = p.slotOfRow();
+    if (slot < 0) return -1;
+    // the callback's own guard: `dl = dir[72*idx]; if (!dl) return` - an empty
+    // slot answers nothing rather than loading zeroes
+    for (const auto& e : p.dir)
+        if (e.slot == slot) return e.name.empty() ? -1 : slot;
+    return -1;
 }
 
 LoadPanelState loadPanelFor(int profiles, const UiWidgets& w) {
