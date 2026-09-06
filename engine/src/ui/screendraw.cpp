@@ -42,6 +42,11 @@ constexpr std::uint16_t kI2dColourKey = 0;
 // string, no text pointer and no text callback, so nothing else in the item
 // says what the box shows.
 constexpr std::uint32_t kDrawNameField = 0x0047A510;
+// The LOAD PANEL's row list (item 0x004CEB70, 370 x 300 at 20,140). Its own
+// `+20` draw hook - the table's `drawFn` - and what it composes is the
+// `Joueur :` heading and the save rows, neither of which is a string in any
+// record: they come from the save DIRECTORY.
+constexpr std::uint32_t kDrawLoadRows = 0x0047B180;
 // ...and the string it prefixes the typed name with, `push 0Dh` in that hook:
 // index 13 of the screen's own `IAM\<name>` file, which for the start menu's
 // `IAM\Menu` is its last line, "Entrez votre nom".
@@ -306,6 +311,42 @@ ScreenFrame ScreenComposer::draw(Surface& fb, int screenId,
         // The face is the item's own, `+36 = 74` ('J', JOURNAL) - which is
         // why the label reads in Latin letters while the title and the two
         // buttons, font 73 (MENUINTR), are the game's own glyphs.
+        // ---- THE LOAD PANEL'S ROWS AND HEADING -------------------------
+        //
+        // `sub_47B180`, the row list's own draw hook.  The box is divided
+        // into **nine** slots - the hook's `dword_657960` (the row count plus
+        // one) is compared against 9, and its height arithmetic is a divide
+        // by the same - with the `Joueur :` heading in slot 0 and the rows
+        // from slot 1.  Against a reader's screen grab of the original at
+        // 640x480 that puts the heading at y=140 and the rows at 173, 206 and
+        // 240; the grab measures 143, 175, 206 and 239.
+        //
+        // RECONSTRUCTION, and labelled as one: the slot arithmetic is read
+        // from the hook and the CONTENT is exact (the directory's own fields,
+        // checked against that grab character for character), but the pixel
+        // offsets inside a slot are not - the hook's text layout has not been
+        // transcribed.
+        if (!l.items.empty() && l.items.front().drawFn == kDrawLoadRows &&
+            l.items.front().layer == layer && walk.loadPanel()) {
+            const UiItem& f = l.items.front();
+            const LoadPanel& lp = *walk.loadPanel();
+            const int slot = f.h / 9;
+            const int x0 = scaleX(f.x + q->offsetX);
+            const auto line = [&](int k, const std::string& t, bool lit) {
+                const std::uint8_t v = lit ? kLit : static_cast<std::uint8_t>(kLit >> 1);
+                const auto run = parseMarkup(t, f.face('J'), v, v, v).run;
+                lay_->drawRun(fb, x0, scaleY(f.y + q->offsetY + k * slot), run);
+                ++out.itemsDrawn;
+            };
+            if (!lp.profiles.empty() &&
+                lp.profile < static_cast<int>(lp.profiles.size()))
+                line(0, "Joueur : " + lp.profiles[static_cast<std::size_t>(lp.profile)], true);
+            const auto rows = lp.rows();
+            for (std::size_t i = 0; i < rows.size() && i < 8; ++i)
+                line(static_cast<int>(i) + 1, lp.rowLabel(rows[i]),
+                     static_cast<int>(i) == lp.row);
+            continue;
+        }
         if (!l.items.empty() && l.items.front().drawFn == kDrawNameField &&
             l.items.front().layer == layer) {
             const UiItem& f = l.items.front();

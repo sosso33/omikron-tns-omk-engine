@@ -2107,6 +2107,7 @@ int main(int argc, char** argv) {
     int openScreen = -1, conversations = 0, lastArea = -1;
     constexpr int kScreenPause = 31;   // PAUSE GAME - the only screen that
                                        // sets dword_4E9728, the pause flag
+    omk::LoadPanel loadPanelState;   // rebuilt each time a screen opens
     omk::UiCursor uiCursor;   // Ui_DrawItemCursor's one pool (dword_6A4D20)
     omk::UiListState uiLists; // every list's `+2`, for as long as we run
     // The sneak's three turning previews. Loaded once - the engine loads them
@@ -5412,6 +5413,15 @@ int main(int argc, char** argv) {
             // you last used and the row you were on across closing and
             // reopening it, and a walk built fresh each open would forget.
             auto fresh = std::make_unique<omk::UiWalk>(w, uiLists);
+            // The load panel's directory, so its rows have something to be.
+            // `Ui_BuildLoadPanel` calls `SaveDir_Build` itself in the OPEN
+            // callback, which is why it is read here and not once at start-up:
+            // a save written during this run has to show up next time the
+            // panel opens.
+            loadPanelState = omk::buildLoadPanel(
+                omk::saveDirectory(omk::readSaveFile(savesPath, fr + "/IAM/GAMES").empty()
+                                       ? fr + "/IAM/GAMES" : savesPath, w));
+            fresh->attachLoadPanel(&loadPanelState);
             if (!fresh->open(want)) {
                 // A script's screen must be in the tree - the boot depends on
                 // it. The PLAYER's need not be fatal: `sub_0046ADF0`'s own

@@ -58,7 +58,17 @@ DEPS     := $(SRCOBJS:.o=.d) $(TOOLOBJS:.o=.d)
 NPROC := $(shell nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 4)
 MAKEFLAGS += -j$(NPROC)
 
-all: $(BINS)
+# `omk-play` IS THE DEFAULT, because it is what this project is for: the
+# playable replica, not the probes that measure it. It was a separate target
+# until 2026-09-06, and the cost of that showed the same day - a change to the
+# load panel was built with plain `make`, which left the viewer stale, and a
+# reader met a menu that drew nothing.
+#
+# PORTING A8 rule 1 still holds - "`make` with nothing installed builds every
+# tool and passes the suite" - because the `play` target below already prints
+# why and exits 0 when SDL is absent rather than failing. So this adds a
+# window where one can be built and a one-line note where one cannot.
+all: $(BINS) play
 
 # ---------------------------------------------------------------------------
 # THE OPTIONAL LIVE FRONTEND
