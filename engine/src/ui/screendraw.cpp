@@ -345,6 +345,14 @@ ScreenFrame ScreenComposer::draw(Surface& fb, int screenId,
             for (std::size_t i = 0; i < rows.size() && i < 8; ++i)
                 line(static_cast<int>(i) + 1, lp.rowLabel(rows[i]),
                      static_cast<int>(i) == lp.row);
+            // `Nouvelle sauvegarde` - the screen's string 15, one row past
+            // the last slot, and only on the save screen.
+            if (lp.hasNewRow()) {
+                const int k = static_cast<int>(rows.size());
+                const std::string t = 15 < static_cast<int>(text.size())
+                    ? text[15] : std::string("Nouvelle sauvegarde");
+                if (k < 8) line(k + 1, t, k == lp.row);
+            }
             continue;
         }
         if (!l.items.empty() && l.items.front().drawFn == kDrawNameField &&

@@ -1421,6 +1421,17 @@ int saveProfiles(const std::vector<SaveEntry>& dir) {
 
 // --------------------------------------------------------- the LOAD PANEL
 
+// On the SAVE screen the list carries one row more than the profile has
+// slots - `Nouvelle sauvegarde`, the screen's string 15 - unless all 256 are
+// taken, where `Ui_BuildLoadPanel` takes it away again:
+//
+//     if (total == 256) { dword_657964 = dword_657968 - 1; ...hide it... }
+//     else              { dword_657964 = dword_657968; }
+//
+// `dword_657964` is the last row INDEX, so `== count` is one past the last
+// slot: the new-save row.
+bool LoadPanel::hasNewRow() const { return mode == 1 && dir.size() < 256; }
+
 std::vector<SaveEntry> LoadPanel::rows() const {
     // `SaveDir_CountByName` / `SaveDir_RecordAt`: the slots whose PROFILE name
     // matches the one being listed, in directory order.
@@ -1507,6 +1518,26 @@ void applyLoadPanelLayout(UiWidgets& w, int screen) {
         if (str >= 0) it->bindString = str;
     };
     const auto& L = w.loadPanel();
+    // REPARENT THE SHARED PANEL, which is the half of this that is not
+    // cosmetic. `Ui_BuildLoadPanel` writes the panel's own parent field and
+    // `Annuler`'s child together:
+    //
+    //     screen 29   *panel = &unk_4CF218;   off_4CEA6C = &unk_4CF218;
+    //     screen 30   *panel = &unk_4E2ED8;   off_4CEA6C = &unk_4E2ED8;
+    //
+    // Without it the slot panel still names the START MENU as its parent on
+    // screen 30, so the composer's parent chain draws the start menu's items
+    // over the save screen - its name field included, which is why a reader
+    // saw `Non : zfe` and the hints strings piled on one frame - and BACK
+    // leaves to the wrong panel.
+    const std::uint32_t owner = screen == 30 ? 0x004E2ED8u : 0x004CF218u;
+    for (auto& p : w.panels_)
+        if (p.addr == kPanelLoadSlots) p.parent = owner;
+    for (auto& p : w.panels_)
+        if (p.addr == kPanelLoadSlots)
+            for (auto& l : p.lists)
+                if (l.addr == 0x004CEA98u && l.items.size() >= 4)
+                    l.items[3].child = owner;      // `Annuler` goes home
     if (screen == 30) {
         // the SAVE panel: `Sauvegarde` in the top slot, Charger hidden
         place(L.nouvelle, 266, false, 0);
@@ -1558,7 +1589,9 @@ bool loadPanelInput(LoadPanel& p, std::uint32_t bits) {
     //
     // Getting this wrong is easy and quiet - a first version here clamped
     // instead of wrapping and could never leave the list once entered.
-    const int lo = -1, hi = n - 1;
+    // ...and on the save screen the ring is one longer: `dword_657964` is
+    // `count` rather than `count - 1`, the `Nouvelle sauvegarde` row.
+    const int lo = -1, hi = n - 1 + (p.hasNewRow() ? 1 : 0);
     if (bits & kUiUp)   { p.row = p.row > lo ? p.row - 1 : hi; return true; }
     if (bits & kUiDown) { p.row = p.row < hi ? p.row + 1 : lo; return true; }
     return false;

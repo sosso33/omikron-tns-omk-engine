@@ -860,6 +860,9 @@ struct LoadPanel {
 
     // The rows of the listed profile, in slot order.
     std::vector<SaveEntry> rows() const;
+    // ...and whether a `Nouvelle sauvegarde` row sits after them, which the
+    // SAVE screen has and the load screen does not.
+    bool hasNewRow() const;
     // `sub_408D20` + `sub_408DE0`: the selected row's SLOT index, or -1.
     int slotOfRow() const;
     // The label the panel draws: `<character> - <date> - <time>`.
