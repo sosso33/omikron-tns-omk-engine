@@ -765,6 +765,50 @@ path under the shipped tree (CLAUDE.md §1). Saves go to a writable root
 outside it and reading falls back to the shipped file, so a tree never saved
 into still shows what the game would show. `verify.py: engine: save write`.
 
+### 8c. You cannot save anywhere — the save points
+
+A reader supplied this on 2026-09-06: in Omikron you do not save from a menu,
+you save at fixed spots in the world marked by a **"triple rings"** object,
+by walking up and interacting with it. The shipped data says it three ways.
+
+**Screen 30 is opened by the WORLD.** Opcode 70 `ui.open` has **241** sites
+across `IAM\AREA`, `SCENE` and `GLOBAL`, and **37** of them name screen 30 —
+`SAVE GAME`. Every one of the 37 is in a trigger zone's script slot **+4**,
+the *activate* script that the action button runs
+([`FILE_FORMATS.md`](FILE_FORMATS.md) §5b2c); **none** is in the enter or
+leave slot, and nothing in the interface raises the screen at all.
+
+**The zones name themselves.** In `ZONES.TAG`:
+
+| | |
+|---|---|
+| 25 | `Sauvegarde…` — *Docks*, *Armurerie*, *Resto*, *Entrée*, *Fodo*, *Soyinka*, *Berges* |
+| **2** | **`Anneaux`** — French for **rings**, which is the object itself |
+| 10 | no tag |
+
+35 sit in AREA chunks and 2 in SCENE chunks, across 33 distinct chunks.
+
+**And every real save this repo holds was written standing on one.** The four
+slots of `traces/save-appart.bin` and `traces/games-resto.bin` are in areas
+237, 237, 179 and 217; each of those areas holds exactly one of the 37 zones;
+and the serialised player position (§5's load conversion, without the −1 the
+save side never added) is **inside that zone's quad footprint** in all four —
+distance 0.0, not merely close. Two play sessions, three different rooms, and
+the position lands in the trigger volume every time. That is not something a
+save made from a menu could produce, and it is the strongest of the three
+because it comes from bytes the engine wrote rather than from bytes it reads.
+
+**A save point is not one-shot.** None of the 37 carries `+64`'s bit 15, the
+latch that stops a zone being activated a second time — so a save point can be
+used as often as you like. Worth stating because of a coincidence somebody
+will otherwise chase: [`FILE_FORMATS.md`](FILE_FORMATS.md) §5b2b records that
+**37 of the 4558** shipped zones carry that bit, and these are 37 *different*
+zones. The two sets are disjoint.
+
+`verify.py: save points`. For the port this fixes the route: the save screen
+is reached through the zone-activate path, so binding it to a pause key would
+be inventing a mechanism the game does not have.
+
 ### What a save does *not* carry
 
 Only the four items above. In particular the block is written by `State_Save`,

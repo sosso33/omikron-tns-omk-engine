@@ -193,7 +193,23 @@ yet modelled:
 Read those four, model them in `widgets.*`/`UiWalk` the way the LIFT grid and
 the name field are, then make the walk's answer actually load.
 
-### Step 5 — the save menu  ☐
+### Step 5 — the save menu, and the SAVE POINTS  ☐
+
+**The route is not a pause menu.** A reader supplied this and the data
+confirms it (`docs/GAME_STATE.md` §8c, `verify.py: save points`): screen 30 is
+opened by **37 `ui.open 30` sites in the world scripts**, every one of them in
+a trigger zone's *activate* slot — the action button — and 25 of those zones
+are named `Sauvegarde…` while **2 are named `Anneaux`**, the rings object
+itself. All four real saves in this tree were written with the player standing
+inside one of those quads. So the work is:
+
+* make a zone's activate script that reaches `ui.open 30` open the screen (the
+  port already parks a script at `ui.open` and walks the screen for an answer
+  — this is the same path screen 29 takes at boot);
+* the panel itself, below.
+
+Nothing needs a new mechanism, and binding it to a key would be inventing one.
+
 
 Screen **30 `SAVE GAME`**, panel `0x004E2ED8`: item 0 (callback `0x004AE060`)
 opens the load panel in save mode, item 1 opens `0x004E3018` — the save-slot

@@ -10442,6 +10442,128 @@ def c_engine_save():
            "pointers State_Apply plants and State_Save leaves"
 
 
+def c_save_points():
+    r"""YOU CANNOT SAVE ANYWHERE - `SAVE GAME` is a thing in the world.
+
+    A reader supplied the outside half on 2026-09-06: saving in Omikron
+    happens only at fixed spots, at a "triple rings" object the player
+    interacts with.  The inside half is here, and the shipped data says it
+    three separate ways.
+
+    **Screen 30 is opened by the WORLD, not by the interface.**  Opcode 70
+    `ui.open` has 241 sites across `IAM\AREA`/`SCENE`/`GLOBAL`, and **37** of
+    them name screen 30.  Every one of the 37 is in a trigger zone's script
+    slot **+4** - the ACTIVATE script, the one the action button runs
+    (FILE_FORMATS 5b2c) - and **0** are in the enter or leave slots.  So the
+    route to the save screen is standing somewhere and pressing action, and
+    nothing in the interface raises it.
+
+    **The zones name themselves.**  Of the 37, **25** are called
+    `Sauvegarde...` in `ZONES.TAG` - Docks, Armurerie, Resto, Entree, Fodo,
+    Soyinka, Berges - **2** are called **`Anneaux`**, French for RINGS, which
+    is the object the reader described, and 10 carry no tag. 35 are in AREA
+    chunks and 2 in SCENE chunks, over 33 distinct chunks.
+
+    **And every real save this repo holds was made standing on one.**  The
+    four slots of `traces/save-appart.bin` and `traces/games-resto.bin` are in
+    areas 237, 237, 179 and 217; each of those holds exactly one of the 37
+    zones; and the serialised player position (GAME_STATE 5's load
+    conversion, without the -1 the save side never added) is **inside that
+    zone's quad footprint** in all four - distance 0.0, not merely near it.
+    Two play sessions, three rooms, and the position lands in the trigger
+    volume every time.  A save written from a menu could not do that.
+
+    **A save point is not one-shot**: 0 of the 37 carry `+64`'s bit 15, the
+    latch that stops a zone being activated again.  Note the coincidence,
+    because somebody will chase it - FILE_FORMATS 5b2b records that 37 of the
+    4558 shipped zones carry that bit, and these are 37 DIFFERENT zones; the
+    two sets are disjoint.
+
+    What it settles for the port: the save screen's in-game route is the
+    zone-activate path, so binding it to a pause key would be inventing a
+    mechanism the game does not have (`todo/save-support.md` step 5).
+    """
+    import dialog_triggers as _T, dialog_disasm as _D
+    root = omkpaths.data("IAM")
+    sites, wrongSlot = [], 0
+    for name in ("AREA", "SCENE"):
+        path = os.path.join(root, name)
+        if not os.path.isfile(path): continue
+        for k, b in sorted(_T.archive(path).items()):
+            r = _T.LAYOUT[name](b)
+            if not r: continue
+            lo, n = r
+            for rec in range(n):
+                for field in (0, 4, 8):
+                    p = struct.unpack_from("<i", b, lo + 68 * rec + field)[0]
+                    if p <= 0: continue
+                    ops, st = _D.disasm(b, p, len(b))
+                    if st != "ok": continue
+                    if not any(op == 70 and len(o) >= 2 and
+                               struct.unpack("<h", o[:2])[0] == 30
+                               for _, op, o in ops):
+                        continue
+                    if field != 4: wrongSlot += 1
+                    sites.append((name, k, rec,
+                                  struct.unpack_from("<h", b, lo + 68 * rec + 64)[0]))
+    tags = O.TAGS.get("ZONES", {})
+    nm = [tags.get(z & 0x7FFF, "") for _, _, _, z in sites]
+    shape = (len(sites), wrongSlot,
+             sum(1 for x in sites if x[0] == "AREA"),
+             sum(1 for x in nm if x.startswith("Sauvegarde")),
+             sum(1 for x in nm if x == "Anneaux"),
+             sum(1 for x in nm if not x),
+             sum(1 for _, _, _, z in sites if z & 0x8000))
+
+    # ...and where the real saves were written: the zone in each save's own
+    # area, and how far the serialised position is from its quad.
+    import gamestate as _G
+    areaZone = {k: rec for name, k, rec, _z in sites if name == "AREA"}
+    arch = _T.archive(os.path.join(root, "AREA"))
+    def distXZ(w, poly):
+        x, z = w[0], w[2]
+        inside, j = False, len(poly) - 1
+        for i in range(len(poly)):
+            xi, zi = poly[i][0], poly[i][2]
+            xj, zj = poly[j][0], poly[j][2]
+            if (zi > z) != (zj > z) and x < (xj - xi) * (z - zi) / (zj - zi) + xi:
+                inside = not inside
+            j = i
+        if inside: return 0.0
+        best = 1e18
+        for i in range(len(poly)):
+            xi, zi = poly[i][0], poly[i][2]
+            xj, zj = poly[(i + 1) % len(poly)][0], poly[(i + 1) % len(poly)][2]
+            dx, dz = xj - xi, zj - zi
+            L = dx * dx + dz * dz
+            t = 0.0 if L == 0 else max(0.0, min(1.0, ((x - xi) * dx + (z - zi) * dz) / L))
+            best = min(best, ((x - (xi + t * dx)) ** 2 + (z - (zi + t * dz)) ** 2) ** 0.5)
+        return best
+    inZone, checked = 0, 0
+    for path, slots in ((os.path.join(ROOT, "traces/save-appart.bin"), [0]),
+                        (os.path.join(ROOT, "traces/games-resto.bin"), [0, 1, 2])):
+        if not os.path.exists(path): continue
+        for sl in slots:
+            st = _G.from_save(path, sl)
+            if st.area not in areaZone or st.area not in arch: continue
+            checked += 1
+            b = arch[st.area]
+            lo, _n = _T.area_records(b)
+            base = lo + 68 * areaZone[st.area]
+            poly = [[v * 100 / 256 / 2.54 - 1 for v in
+                     struct.unpack_from("<iii", b, base + 12 + 12 * i)] for i in range(4)]
+            w = [v * 100 * 0.00390625 * 0.3937007874015748 for v in st.player_pos]
+            if distXZ(w, poly) == 0.0: inZone += 1
+    return (shape, checked, inZone), \
+           ((37, 0, 35, 25, 2, 10, 0), 4, 4), \
+           "`ui.open 30` sites in the world scripts, how many are NOT in the " \
+           "zone's activate slot (+4), how many are in AREA chunks, then " \
+           "their ZONES.TAG names - Sauvegarde*, Anneaux, unnamed - and how " \
+           "many are one-shot latched; then the real save slots whose area " \
+           "holds one of these zones, and how many serialise a player " \
+           "position INSIDE that zone's quad"
+
+
 def c_engine_save_write():
     r"""WRITING a save: `Game_WriteSave` and the three functions around it.
 
@@ -23339,6 +23461,7 @@ CHECKS = [
     ("vm announce fields",c_vm_announce_fields,"SCRIPT_VM"),
     ("sim: dialogue",     c_sim_dialogue,      "RECONSTRUCTION 4"),
     ("save file",         c_save_file,         "GAME_STATE 8"),
+    ("save points",       c_save_points,       "GAME_STATE 8c"),
     ("settings block",    c_settings_block,    "GAME_STATE 8"),
     ("telis dialogue",    c_telis_dialogue,    "RECONSTRUCTION 4"),
     ("attribution reach", c_attribution_reach,  "RECONSTRUCTION 4"),
