@@ -1046,7 +1046,26 @@ bool UiWalk::confirm() {
                 return true;
             }
             pendingLoad_ = slot;
-            log_.push_back("charger: slot " + std::to_string(slot) + " requested");
+            // ...AND IT ANSWERS 0. `mov dword_930750, 0` sits between the
+            // slot store and the close, so the parked script resumes with
+            // **0** and not with the -1 a plain close leaves.
+            //
+            // That is the whole loading sequence. AREA 118's startup script
+            // is parked at `ui.open 29, -1, -> var 19`, and its next act is
+            // `if (var19 == 0)`: that arm is `fade.from_color`, cameras
+            // 2152/2153/2154/2158 over `scx.play 20` (`Wait5sec`) and a
+            // `media.play 753`, and then it ENDS - no dialogue, no
+            // `area.goto`. The other arm, which -1 takes, shows character
+            // 310, runs `dialog.start 272` and walks on into the Impasse.
+            //
+            // So the engine plays the Grid fly-through over a load by
+            // ANSWERING A DIFFERENT NUMBER, and a port that closes the
+            // screen without one gets the new game's opening instead. A
+            // reader saw exactly that - the Kay'l dialogue before the
+            // apartment - and it is what sent me back to this callback.
+            answer_ = 0;
+            log_.push_back("charger: slot " + std::to_string(slot) +
+                           " requested, answering 0");
             panel_ = nullptr;                  // `screen[+8] = 3` - it closes
             return true;
         }

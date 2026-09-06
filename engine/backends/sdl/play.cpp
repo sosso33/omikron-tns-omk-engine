@@ -2112,35 +2112,12 @@ int main(int argc, char** argv) {
                                        // sets dword_4E9728, the pause flag
     omk::LoadPanel loadPanelState;   // rebuilt each time a screen opens
     int  pendingLoadSlot = -1;       // `dword_4C09B4`
-    // ---- THE GRID SEQUENCE, played before a load lands
-    //
-    // A reader: loading a game shows the same animation the opening does
-    // between Kay'l's introduction dialogue and the Impasse, with different
-    // music.  That animation is in AREA 118's startup script, and this is it
-    // verbatim - the tail after `dialog.start 272`, which both of the
-    // script's two arms run:
-    //
-    //     scx.play 20                     ; `Wait5sec`, GRID.SCX object 20
-    //     camera.set      2153, 0,   1
-    //     camera.set.wait 2154, 180, 1
-    //     fade.to_color   white, 5
-    //     camera.set.wait 2158, 25,  1
-    //
-    // AREA 118's set is GRID - the between-worlds space, whose objects are
-    // `1KaylArrives`, `2KaylStand`, `3KaylLeaves` and the smoke and impact
-    // effects.  So the "tunnel" is the Grid fly-through.
-    //
-    // RECONSTRUCTION, and labelled: the SEQUENCE is the engine's, copied out
-    // of its own script, but nothing traced says the engine plays it on a
-    // LOAD - `Game_LoadSave` and `sub_408410` do a synchronous load and a
-    // white fade and no more.  It is here because a reader who has played
-    // the game says that is what the game does, which is the same kind of
-    // evidence their save-point and ring reports were.  The MUSIC is not
-    // known: the opening uses `music.play 110` here and the reader says the
-    // load uses another, so none is started.
-    int gridStep = -1;        // -1 idle, else the step under way
-    float gridClock = 0.0f;   // frames spent in it
-    int gridPendingSlot = -1; // the load this sequence is covering
+    // THE LOADING SEQUENCE IS NOT WIRED HERE, and a first version of it
+    // was. `Charger` answers **0**, and AREA 118's parked startup script
+    // has an arm for exactly that: the Grid fly-through - cameras
+    // 2152/2153/2154/2158 over `scx.play 20` with a `media.play 753` - after
+    // which the script ends. So the engine covers a load with its own
+    // script, and the port only has to answer the right number.
     omk::UiCursor uiCursor;   // Ui_DrawItemCursor's one pool (dword_6A4D20)
     omk::UiListState uiLists; // every list's `+2`, for as long as we run
     // The sneak's three turning previews. Loaded once - the engine loads them
@@ -5593,46 +5570,15 @@ int main(int argc, char** argv) {
         // gone by then.  `Game_LoadSave` is the slot's name, day, time and DB
         // into `State_Apply`, which relocates, copies the header's scene into
         // the scene-per-area table and calls `Area_Load` (GAME_STATE 5a).
-        // A load asks for the Grid first; the load itself lands when it ends.
-        if (pendingLoadSlot >= 0 && gridStep < 0 && gridPendingSlot < 0) {
-            gridPendingSlot = pendingLoadSlot;
-            pendingLoadSlot = -1;
-            gridStep = 0;
-            gridClock = 0.0f;
-            std::printf("load: the GRID sequence first - AREA 118's own, "
-                        "cameras 2153/2154/2158 over object 20 `Wait5sec`\n");
-            // ONLY IF WE ARE NOT ALREADY THERE. Loading AREA 118 re-runs its
-            // startup script, and that script's first act is `ui.open 29` -
-            // the start menu, drawn straight back over the sequence it is
-            // supposed to be covering. From the menu the Grid is already the
-            // resident area, so nothing needs loading; from inside the world
-            // it does.
-            if (session.activeArea() != 118) session.loadArea(118);
-            session.requestCamera(2152, 0);
-        }
-        if (gridStep >= 0) {
-            gridClock += 1.0f;
-            // the script's own travels: 2154 for 180 frames, then white over
-            // 5, then 2158 for 25
-            if (gridStep == 0) {
-                omk::Call c; c.op = 58; c.fields = {20, 0, 0};
-                session.sceneMutable().handle({c});      // `scx.play 20`
-                session.requestCamera(2153, 0);
-                gridStep = 1; gridClock = 0.0f;
-            } else if (gridStep == 1 && gridClock >= 1.0f) {
-                session.requestCamera(2154, 180);
-                gridStep = 2; gridClock = 0.0f;
-            } else if (gridStep == 2 && gridClock >= 180.0f) {
-                session.startColourFade(1, 0xFFFFFFu, 5.0f);   // `fade.to_color`
-                session.requestCamera(2158, 25);
-                gridStep = 3; gridClock = 0.0f;
-            } else if (gridStep == 3 && gridClock >= 25.0f) {
-                gridStep = -1;
-                pendingLoadSlot = gridPendingSlot;
-                gridPendingSlot = -1;
-            }
-        }
-        if (pendingLoadSlot >= 0) {
+        // `if (!dword_4E6C7C && dword_4C09B4 != -1)` - and `dword_4E6C7C` is
+        // the BOOT STARTUP CONTEXT (`bootCtx_`, AREA 118's own `+4` script).
+        // So a load WAITS while that script is still running, which is what
+        // gives the Grid sequence time to play: `Charger` answers 0, the
+        // script's `var19 == 0` arm flies the cameras and ends, the context
+        // frees, and only then does the save land. Serve it any earlier and
+        // the fly-through is replaced by the apartment a frame later, which
+        // is what a first version did.
+        if (pendingLoadSlot >= 0 && session.bootContext() < 0) {
             const int slotNo = pendingLoadSlot;
             pendingLoadSlot = -1;
             const auto bytes = omk::readSaveFile(savesPath, fr + "/IAM/GAMES");
