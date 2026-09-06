@@ -362,6 +362,7 @@ public:
     int saveSlots() const { return saveSlots_; }
 
 private:
+    friend void applyLoadPanelLayout(UiWidgets&, int);
     std::vector<UiPanel> panels_;
     std::map<int, std::string> textFile_, bitmap_;
     std::map<int, std::string> soundName_;          // the 45, by id
@@ -855,6 +856,21 @@ struct LoadPanel {
 // the first profile, no row chosen - and mode 3 with the slot list hidden
 // when there is nothing to list.
 LoadPanel buildLoadPanel(const std::vector<SaveEntry>& dir);
+
+// `Ui_BuildLoadPanel`'s LAYOUT half, which is not optional: the panel's four
+// buttons all ship at **(460, 210)** in the widget table and the builder moves
+// three of them apart -
+//
+//     word_4CE96A = 266     Charger une partie   (item + 2 is its Y)
+//     word_4CE9FA = 326     Detruire
+//     word_4CEA42 = 386     Annuler
+//     word_4CE9B2 = 266     Nouvelle partie, on screen 30 instead of Charger
+//
+// - and hides the one that does not belong to the screen.  Without this the
+// three draw on top of each other and the panel shows a single line of text,
+// which is exactly what a reader saw.  The engine does it in the OPEN
+// callback, so it is per-open; `screen` selects which of the two layouts.
+void applyLoadPanelLayout(UiWidgets& w, int screen);
 
 // The slot list's hook (0x0047AEC0).  -> true when the frame was consumed.
 // `bits` is the interface's input word.

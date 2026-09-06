@@ -1691,6 +1691,13 @@ int main(int argc, char** argv) {
 
     const omk::DataFs fs(fr);
     auto w = omk::UiWidgets::loadJson(tb + "/ui_widgets.json");
+    // `Ui_BuildLoadPanel`'s layout, applied for screen 29.  The four buttons
+    // of the load panel all ship at (460, 210) and the builder moves three of
+    // them apart; without this they draw on top of one another and the panel
+    // shows one line of text where the original shows three.  The engine does
+    // this in the OPEN callback and would redo it for screen 30's save
+    // layout - which this port does not open yet, so it is applied once.
+    omk::applyLoadPanelLayout(w, 29);
     if (!w.valid())
         std::printf("tables: no widget tree (ui_widgets.json) - the interface "
                     "screens cannot be drawn or walked, so the Session answers "

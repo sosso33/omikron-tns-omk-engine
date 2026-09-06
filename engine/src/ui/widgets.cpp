@@ -1380,6 +1380,49 @@ LoadPanel buildLoadPanel(const std::vector<SaveEntry>& dir) {
     return p;
 }
 
+void applyLoadPanelLayout(UiWidgets& w, int screen) {
+    const auto item = [&w](std::uint32_t addr) -> UiItem* {
+        for (auto& p : w.panels_)
+            for (auto& l : p.lists)
+                for (auto& it : l.items)
+                    if (it.addr == addr) return &it;
+        return nullptr;
+    };
+    // The builder sets TWO flags per button, and only one of them hides it:
+    //
+    //     I2D_SetFlag(item, 0x20000004, on)   bank A - not NAVIGABLE
+    //     I2D_SetFlag(item, 0x40000001, on)   bank B - not DRAWN
+    //
+    // `Ui_DrawItem`'s gate is the second (`eff0[1] & 1` in `screendraw`), so
+    // setting only the first moves a hidden button on top of a visible one
+    // and draws both - which is what the first version of this did, and it
+    // showed as two words superimposed on the top row.
+    const auto place = [&](std::uint32_t addr, int y, bool hidden) {
+        UiItem* it = item(addr);
+        if (!it) return;
+        if (!hidden) it->y = y;      // a hidden button is not moved either
+        if (hidden) { it->flags[0] |= 0x20000004u; it->flags[1] |= 1u; }
+        else        { it->flags[0] &= ~0x20000004u; it->flags[1] &= ~1u; }
+    };
+    const auto& L = w.loadPanel();
+    if (screen == 30) {
+        // the SAVE panel: Nouvelle partie in the top slot, Charger hidden
+        place(L.nouvelle, 266, false);
+        place(L.charger,  266, true);
+    } else {
+        place(L.charger,  266, false);
+        place(L.nouvelle, 266, true);
+    }
+    place(L.detruire, 326, false);
+    // Annuler is the fourth item of the button list, the one whose child is
+    // the start menu; the table names the other three.
+    for (auto& p : w.panels_)
+        if (p.addr == 0x004CF2E8u)
+            for (auto& l : p.lists)
+                if (l.addr == 0x004CEA98u && l.items.size() >= 4)
+                    l.items[3].y = 386;
+}
+
 bool loadPanelInput(LoadPanel& p, std::uint32_t bits) {
     const int n = static_cast<int>(p.rows().size());
     // AT ROW -1, LEFT AND RIGHT CHANGE THE PROFILE.  The hook's own guard is
