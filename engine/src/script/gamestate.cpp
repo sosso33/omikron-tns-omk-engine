@@ -440,6 +440,11 @@ int GameState::rings() const {
         (static_cast<unsigned char>(raw_[a + 1]) << 8));
 }
 
+void GameState::setRings(int n) {
+    put16(static_cast<std::size_t>(kPlayerRecord) + 174,
+          static_cast<std::int16_t>(n));
+}
+
 bool GameState::debugPutObject(int list, int id) {
     if (list < 0 || list > 2 || id <= 0) return false;
     const int off = kListOffset[list], cap = kListCapacity[list];

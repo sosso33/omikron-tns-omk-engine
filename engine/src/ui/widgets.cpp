@@ -1070,6 +1070,45 @@ bool UiWalk::confirm() {
             panel_ = nullptr;
             return true;
         }
+        // `Sauvegarde` on the slot panel (0x0047ADB0), read whole:
+        //
+        //     if (row < dword_657968) { sub_42A370(screen, off_4CF3B8); return; }
+        //     if (row == -1) return;
+        //     slot = row == count ? firstFree(dir)
+        //                         : indexOf(recordAt(dir, profile, row));
+        //     if (screen[+78] == -1) charge one ring (events 44/45, prop 5)
+        //     Game_WriteSave(slot); screen[+8] = 3;
+        //
+        // So a NEW save writes at once into the first free slot and closes;
+        // an EXISTING row goes through the overwrite confirm first.
+        if (it->callback == kCbSaveDo) {
+            if (!load_) { approx_ = true; log_.push_back("save: no directory"); return false; }
+            const auto rows = load_->rows();
+            const int n = static_cast<int>(rows.size());
+            if (load_->row < 0) { log_.push_back("save: no row chosen"); return true; }
+            if (load_->row < n) {
+                // `off_4CF3B8` - `Ecraser ce fichier ?` - is not in the
+                // lifted table, so this cannot install it. Said out loud
+                // rather than silently doing nothing, which is how the
+                // no-rings arm went unnoticed.
+                log_.push_back("save: overwriting row " + std::to_string(load_->row) +
+                               " needs panel 0x004CF3B8, which is not in the table");
+                approx_ = true;
+                return true;
+            }
+            // the `Nouvelle sauvegarde` row: `sub_408AA0`'s first free slot
+            int slot = -1;
+            for (int k = 0; k < 256; ++k) {          // `sub_408AA0`'s 256
+                bool used = false;
+                for (const auto& e : load_->dir) if (e.slot == k) { used = true; break; }
+                if (!used) { slot = k; break; }
+            }
+            if (slot < 0) { log_.push_back("save: every slot is taken"); return true; }
+            pendingSave_ = slot;
+            log_.push_back("save: slot " + std::to_string(slot) + " requested");
+            panel_ = nullptr;                  // `screen[+8] = 3`
+            return true;
+        }
         if (it->callback == kCbLoadCharger) {
             if (!load_) { approx_ = true; log_.push_back("charger: no directory"); return false; }
             const int slot = loadPanelCharger(*load_);

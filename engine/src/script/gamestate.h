@@ -309,6 +309,9 @@ public:
     // anneaux signed.
     int money() const;      // seteks
     int rings() const;      // anneaux
+    // `Actor_SetProperty`'s case 5: `u16(record + 174) = v`. What a save
+    // costs - the panel decrements it by one on confirm (GAME_STATE 8c).
+    void setRings(int n);
 
     // How many BYTES the k'th array occupies, from its own count and the
     // entry width - which is what makes the walk a test: the segments have to

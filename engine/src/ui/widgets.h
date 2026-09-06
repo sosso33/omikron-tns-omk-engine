@@ -498,6 +498,12 @@ public:
     // load), so a request cannot be served twice.
     int  pendingLoad() const { return pendingLoad_; }
     int  takePendingLoad() { const int s = pendingLoad_; pendingLoad_ = -1; return s; }
+    // The slot `Sauvegarde` asked to WRITE, or -1. Like the load, it is a
+    // request the caller serves - the walk cannot write a file, and the
+    // engine's own callback only calls `Game_WriteSave` after charging the
+    // ring, which is state the walk does not own either.
+    int  pendingSave() const { return pendingSave_; }
+    int  takePendingSave() { const int s = pendingSave_; pendingSave_ = -1; return s; }
     // `Actor_GetProperty` case 5, the player record's +174 - what a save
     // costs and what the hints on this screen are bought with.
     void setRings(int n) { rings_ = n; }
@@ -774,6 +780,7 @@ private:
     // never told keeps 0 and refuses, which is the safe way round: it shows
     // the game's own message rather than offering a save it cannot pay for.
     int         rings_ = 0;
+    int         pendingSave_ = -1;
     std::vector<std::string> log_;
     // Item address -> the RGB a page builder wrote into `+8/+9/+10`.
 };
@@ -913,6 +920,12 @@ inline constexpr std::uint32_t kHookLoadSlotList = 0x0047AEC0u;
 inline constexpr std::uint32_t kHookLoadPanel    = 0x0047ABA0u;
 inline constexpr std::uint32_t kCbSaveSauvegarde = 0x004AE060u;
 inline constexpr std::uint32_t kCbSaveAnnuler    = 0x0042A990u;
+// The save panel's top button on screen 30 - the item the table calls
+// `Nouvelle partie` and the builder relabels `Sauvegarde` (0x0047ADB0).
+inline constexpr std::uint32_t kCbSaveDo         = 0x0047ADB0u;
+// ...and the OVERWRITE confirm it opens for a row that already holds a save.
+// Not in the lifted table, so it can be named but not installed.
+inline constexpr std::uint32_t kPanelSaveOverwrite = 0x004CF3B8u;
 inline constexpr std::uint32_t kPanelLoadSlots   = 0x004CF2E8u;
 inline constexpr std::uint32_t kPanelSaveNoRings = 0x004E2FB0u;
 inline constexpr std::uint32_t kCbLoadCharger    = 0x0047AC90u;

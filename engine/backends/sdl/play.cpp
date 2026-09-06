@@ -5564,6 +5564,43 @@ int main(int argc, char** argv) {
             // standing in.
             if (const int req = walk->takePendingLoad(); req >= 0)
                 pendingLoadSlot = req;
+            // ...and the SAVE, which the callback performs itself rather than
+            // deferring: `Game_WriteSave(slot)` right after the charge, and
+            // then the screen closes. So this is served here and not at the
+            // pump.
+            if (const int slot = walk->takePendingSave(); slot >= 0) {
+                // ONE RING, through `Actor_GetProperty` / `Actor_SetProperty`
+                // (events 44 and 45, property 5) exactly as the callback
+                // does - and only when it has one to spend, which is the
+                // `jz` that skips the decrement without skipping the write.
+                const int had = state.rings();
+                if (had > 0) state.setRings(had - 1);
+                state.setCurrentArea(static_cast<std::int16_t>(session.activeArea()));
+                state.setCurrentScene(static_cast<std::int16_t>(
+                    session.residentSlot(session.activeSlot()).scene));
+                state.setPlacement(session.playerPos(), session.playerYaw());
+                omk::SaveSlot out;
+                out.name = loadedName.empty() ? std::string("OMK") : loadedName;
+                out.day  = state.clockDay();
+                out.time = state.clock();
+                out.state = state;
+                const auto thumb = omk::thumbFromRgb565(fb.px, fb.w, fb.h);
+                auto file = omk::readSaveFile(savesPath, fr + "/IAM/GAMES");
+                if (file.size() < omk::kSaveFileSize)
+                    file = omk::blankSaveFile(saveSettings ? *saveSettings
+                                                           : omk::defaultSettingsBlock());
+                if (saveSettings) omk::putSettings(file, *saveSettings);
+                if (omk::writeSaveSlot(file, slot, out, thumb) &&
+                    omk::writeSaveFile(savesPath, file))
+                    std::printf("save: slot %d written - '%s', %s %s, area %d "
+                                "scene %d; %d anneau%s left\n", slot,
+                                out.name.c_str(), omk::formatDate(out.day).c_str(),
+                                omk::formatTime(out.time).c_str(),
+                                state.currentArea(), state.currentScene(),
+                                state.rings(), state.rings() == 1 ? "" : "x");
+                else
+                    std::fprintf(stderr, "save: slot %d could not be written\n", slot);
+            }
             const bool leaving = walk->answer() >= 0 || walk->closed();
             // THE KEY THAT CLOSED THE SCREEN IS NOT THE WORLD'S ACTION.
             //
