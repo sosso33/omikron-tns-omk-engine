@@ -124,10 +124,36 @@ was measured, backed out, and written down here.
 `CefChannel::resetInputLatch()` was added and kept: it is the memset half
 transcribed verbatim and will be wanted when the rest lands.
 
-**So the remaining work is `sub_465D30` itself** (190 lines, `21_d3d.c`) plus
-whatever restores the default bank when the action ends — `Cef_DefaultGroup` at
-`21_d3d.c` 3211 is the shape of it. Size **M**, and it is a real slice, not a
-mask change.
+**So the remaining work is `sub_465D30` itself** (190 lines, `21_d3d.c`) — and
+reading further shows it is the WORLD TAKE slice, not a bug fix. Decomposed
+2026-09-06:
+
+1. **`sub_465D30`'s adjust**, the first two thirds: it takes the actor→object
+   vector, the actor's facing (`-Z` through `node+156`), the signed angle
+   between them, and walks the actor with `Actor_Move` to stand
+   **23.622047 units (0.600 m)** from a low object or **15.748032 (0.400 m)**
+   from a standing one, with a 9.8425198 (0.25 m) settle tolerance and a
+   49.21259842519685 (1.25 m) give-up. All round metres again.
+2. **the bank switch**, its tail — `Cef_FindGroupById(bank, dy <= 27.472441
+   ? 143 : 41)`. This is the repeat guard and it is one line.
+3. **THE WAY BACK, which is the part that makes 1 and 2 safe**, and the reason
+   the switch alone strands the player. Group id 41's default entry lands in
+   `.CTL` state **54 `H_WAITOB`** (H1Avnt, group index 4, clip 14) — *wait for
+   object*. Its only two exits are states **55 and 56**, flags `0x80000013`,
+   **no clip**, both carrying the move bit `0x10`: they are entries waiting on
+   the take pipeline's own special move. So the actor leaves `H_WAITOB` when
+   the OBJECT is delivered (`MDGETOBJ` and friends), and nothing else does it.
+   `Actor_TickScxDriven`'s `actor+1308 = 1` -> `Cef_DefaultGroup` restore is a
+   different path, for actors a script was driving.
+
+So the order is **3 before 2**: port enough of the take for `H_WAITOB` to have
+an exit, then the bank switch closes the repeat for free. Doing 2 first is
+measurably worse than the bug (proven above).
+
+Size **M -> M/L**, and it is the same work as the "world TAKE" the port's own
+comments already reference. The Enter-repeat symptom is a consequence of the
+take being unported, not an input bug - which is worth knowing before anyone
+spends a day on input code.
 
 ### 2. Black stripes entering/leaving a building — S, strong evidence
 
