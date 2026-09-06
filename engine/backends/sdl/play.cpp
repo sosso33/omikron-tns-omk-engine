@@ -5565,6 +5565,23 @@ int main(int argc, char** argv) {
             if (const int req = walk->takePendingLoad(); req >= 0)
                 pendingLoadSlot = req;
             const bool leaving = walk->answer() >= 0 || walk->closed();
+            // THE KEY THAT CLOSED THE SCREEN IS NOT THE WORLD'S ACTION.
+            //
+            // The mirror of the gate at the open. The world's action button
+            // is HELD rather than edged - "spent until the bit goes up" - but
+            // while a screen is up the world never reaches that gate, so
+            // `actionSpent` is still false when the screen closes. The Enter
+            // that pressed `Annuler` is then read as a fresh press on the
+            // save point the player is standing on, and the menu reopens at
+            // once. A reader met this here and had met it elsewhere in the
+            // game: "it is like the enter pressed event continues to be
+            // triggered while the button is not released".
+            //
+            // Spending it costs nothing when the key is already up: the gate
+            // above clears `actionSpent` on the first frame the bit is not
+            // held.
+            if (leaving || walk->answer() >= 0 || walk->closed())
+                actionSpent = true;
             if (leaving && !screenFromScript) {
                 std::printf("screen %d closed by the player - event %d, object "
                             "list %d\n", openScreen, omk::kEventSneakClose,
