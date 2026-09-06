@@ -2747,8 +2747,16 @@ void Session::pumpZoneSlots() {
             // omk-play 70: WHICH zone arms, and in what ORDER. AREA 224's two
             // ends each carry an overlapping pair - a door-carrying zone and a
             // doorless one - so the order they arm in is what the fix turns on.
-            std::printf("[zone] frame %ld  ARM zone %d  ctx %d  action %d  script %zu\n",
-                        frameNo_, static_cast<int>(e.zone), idx, e.action, e.script);
+            //
+            // The ARM line itself is the SHARED one at the bottom of this
+            // loop, which prints all four lifecycle events alike.  There used
+            // to be a second one here, unconditional and on stdout, while
+            // ACTIVATE, LEAVE and FREE printed only under `OMK_CAMLOG=1` and
+            // on stderr - so a default run showed a zone arm and then never
+            // showed it activate, which reads exactly like an activate script
+            // that never runs.  That cost a wrong diagnosis on 2026-09-06
+            // (the drawer in Kay'l's apartment, which works).  A lifecycle is
+            // only legible whole: all four events on, or none.
             // case 1: `ctx = u32(slot,0); if (ctx && u16(ctx,42) == zoneId &&
             // u8(ctx,24) == 4) { u8(ctx,24) = 0; --u16(ctx,28); }` - the zone
             // re-armed while its FREE was still at the head of the FIFO:

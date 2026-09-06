@@ -27,7 +27,7 @@ items are research and can be done any time they are wanted.
 | 4 | tuto zone fires repeatedly, player not stopped | **M** | strong | zone lifecycle is read and there is already a check nearby |
 | 5 | black frames in the Impasse cutscene | **M** | strong | the port already LOGS the moment it happens |
 | 6 | street NPCs stop and T-pose | **M** | good | same family as the scene-facing work of 2026-09-05 |
-| 7 | missing animations (lift doors, Kay'l's drawer) | **S/M** | good | may already be fixed - CONFIRM FIRST, it is the cheapest item on the list |
+| 7 | missing animations (lift doors, Kay'l's drawer) | **done/partly** | good | CONFIRMED 2026-09-06: the apartment doors AND the drawer both animate; the lift is gated behind a guard conversation and stays untested |
 | 8 | save support (save, save menu, load menu) | **M** | very strong | the format is solved end to end; this is plumbing, not research |
 | 9 | main menu completed (new game correct, the rest) | **M** | very strong | the widget tree and the answer sites are lifted |
 | 10 | sneak: character / info / config pages | **M** | very strong | the panels are already named constants in the port |
@@ -182,12 +182,37 @@ Worth checking whether these are procedural WALKERS (`.OPT` sliders) or
 authored extras (`scx.play.actor`) — the two have different owners and the
 answer changes the fix entirely.
 
-### 7. Missing animations — S/M, good evidence, **confirm first**
+### 7. Missing animations — **CONFIRMED for the apartment, 2026-09-06; the
+lift is untested and says so**
 
-Lift doors, the drawer in Kay'l's apartment. The reader notes it may already
-be fixed. `engine: env anim` exists and covers a scripted environment
-animation. **The cheapest item on the list is establishing whether this
-reproduces at all** — do that before estimating anything.
+Lift doors, the drawer in Kay'l's apartment. Confirmed first, as this entry
+asked, and **the apartment half does not reproduce.**
+
+* **The doors animate.** They are `Open`/`Closed` scene-object pairs on a
+  zone's *enter* and *leave* scripts — `Aapkayl.SCX` carries eleven such pairs
+  (`PorteEnt1`, `PorteCui`, `PorteCha`, `PorteWC`, `Coffre`, `Placard`,
+  `Console`, three `Tiroir`s). Standing in zone 4028 fires object 142
+  `PorteEnt1Open`, and the audio path reports its motion.
+* **The drawer animates.** Zone 4033's *activate* script is
+  `actor.goto_address 685` → two `object.show` → `player.move.wait` →
+  `scx.play.wait 130` (`TiroirCui1Open`), and the port runs it end to end: the
+  player is put down at frame 18 and object 130 moves the kitchen mesh.
+
+**The lift is NOT confirmed either way, and that is the honest half.** The
+lift doors that exist are gated: `LBibli.SCX`'s `PorteAscOpen` sits behind
+zone 1700 *Garde Ascenseur*, which tests two variables, runs a `dialog.start`
+with a guard and only then opens the door. Not reachable from a cold start, so
+nothing here confirms or refutes it — someone who can reach a lift in play
+should say what they see.
+
+**Two false diagnoses on the way, and both were tooling rather than the port.**
+The first press landed at frame 2 while the zone armed at frame 4, so nothing
+was ever activated — the `--hold` trap item 1 already documents, fixed with a
+leading `0*15,`. Then the `ACTIVATE` log line turned out to be gated behind
+`OMK_CAMLOG=1` while `ARM` printed unconditionally, so the default output
+showed a zone arming and never activating, which reads exactly like a broken
+activate script. That asymmetry is fixed: all four lifecycle events print
+together or not at all.
 
 ### 8. Save support — M, very strong evidence
 
