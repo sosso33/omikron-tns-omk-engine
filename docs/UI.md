@@ -2068,8 +2068,32 @@ many areas roam under a FIXED one. A reader met the difference as *black
 stripes entering/leaving a building*: leaving Kay'l's flat hands over to
 Hall 27, whose script leaves absolute camera 4353 up, and a port that
 letterboxed anything that was not the follow camera put the bars on three
-frames in and never took them off. `todo/next-tasks.md` 2;
-`verify.py: letterbox`.
+frames in and never took them off.
+
+**And "he has control" is `player.anim.hold`, plus the fade.** The scripts
+bracket a staged beat with both, in one idiom that appears three times —
+SCENE 53's restaurant lunch, `sub_452570`'s slider travel and `sub_4452A0`'s
+fight, the last two as `Screen_Fade(1)` beside `Actor_HoldAnimation(player,
+1)` and the mirror on the way out:
+
+    1089  fade.to_black        ; Screen_Fade(1) -> state 3
+    1090  player.anim.hold
+     ...  387, the sneak call, 388, and the talisman ZOOM
+    1220  player.anim.release
+    1221  fade.from_black      ; Screen_Fade(0) -> state 4
+
+Two things follow, and a reader met both. The zoom after the conversation is
+still inside the hold, so it is camera mode even though nothing is on screen
+and the player is "placed" — *the stripes were not displayed on the zoom on
+the talisman*. And the release comes **before** the fade, so a strip that ends
+with the hold ends one frame early — *there was fade to show the black stripes
+then they suddenly disappeared*. Mode 3 stays armed once set and only mode 4
+clears itself, so `blackFade().running()` is true for exactly the bracket and
+carries the strip to the end of the fade.
+
+`todo/next-tasks.md` 2; `verify.py: letterbox`, whose last pair is one street
+frame plain and the same frame with the hold set — the two differ by exactly
+the strip.
 
 ---
 

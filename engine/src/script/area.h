@@ -1051,6 +1051,11 @@ public:
     // T-pose (todo/omk-play.md 43). A held channel is also what tells the
     // FOLLOW CAMERA to stand down (`sub_415D10`), which is omk-play 42.
     bool playerAnimHeld() const { return playerAnimHeld_; }
+    // A HARNESS, like `harnessStartDialogue`: hold the player the way
+    // `player.anim.hold` does, so a check can reach the state a staged beat
+    // puts him in without playing the beat. `omk-play --anim-hold` uses it
+    // to assert the letterbox over a held frame (UI 3j).
+    void harnessHoldPlayer(bool on) { playerAnimHeld_ = on; }
     const float* playerPos() const { return playerPos_; }
     // THE CAMERA SUBJECT IS +244..+252, THE PELVIS, not the feet. `sub_414F30`
     // (the subject resolver behind `sub_415A10`) reads the actor record's

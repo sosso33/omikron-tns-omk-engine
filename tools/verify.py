@@ -7505,45 +7505,87 @@ def c_letterbox():
     # the frame the reader met with bars on it.
     eng = os.path.join(ROOT, "engine")
     save = os.path.join(ROOT, "traces", "games-resto.bin")
-    walked = (0, 0)
+    walked, held = (0, 0), (64, 64)
+    roam, heldRoam = (0, 0), (64, 64)
     if os.path.isdir(eng) and os.path.exists(save):
         mk = subprocess.run(["make", "-s", "play"], cwd=eng,
                             capture_output=True, text=True)
         play = os.path.join(eng, "build", "omk-play")
         if mk.returncode == 0 and os.path.exists(play):
             tmp = tempfile.mkdtemp()
-            out = os.path.join(tmp, "hall.bin")
-            try:
+            def bandsAt(frames):
+                out = os.path.join(tmp, "f%d.bin" % frames)
                 subprocess.run([play, omkpaths.data_root(),
                                 os.path.join(ROOT, "tables"),
                                 "--software", "--res", "640x480", "--nofmv",
                                 "--no-crowd", "--save", save, "--slot", "0",
                                 "--stand", "2939,1038,-749,89",
-                                "--frames", "900",
+                                "--frames", str(frames),
                                 "--hold", "0*40,k28*4,0*820",
                                 "--dump", out],
                                capture_output=True, text=True,
                                env=dict(os.environ, SDL_VIDEODRIVER="dummy"))
-                if os.path.exists(out):
-                    d = open(out, "rb").read()
-                    px = struct.unpack("<%dH" % (len(d) // 2), d)
-                    if len(px) == 640 * 480:
-                        lit = [y for y in range(480)
-                               if any(px[y * 640 + x] for x in range(0, 640, 4))]
-                        walked = (lit[0], 479 - lit[-1]) if lit else (480, 480)
+                if not os.path.exists(out):
+                    return (-1, -1)
+                d = open(out, "rb").read()
+                px = struct.unpack("<%dH" % (len(d) // 2), d)
+                if len(px) != 640 * 480:
+                    return (-2, -2)
+                lit = [y for y in range(480)
+                       if any(px[y * 640 + x] for x in range(0, 640, 4))]
+                return (lit[0], 479 - lit[-1]) if lit else (480, 480)
+            # ...and a STREET START, plain and then with the player held.
+            # This is the pair that isolates the rule: same area, same fixed
+            # camera, same frame - the only difference is `player.anim.hold`,
+            # which is the state SCENE 53's beat leaves him in over the
+            # talisman zoom a reader found unbarred.
+            def street(extra):
+                out = os.path.join(tmp, "s%s.bin" % (extra or "plain"))
+                subprocess.run([play, omkpaths.data_root(),
+                                os.path.join(ROOT, "tables"),
+                                "--software", "--res", "640x480", "--nofmv",
+                                "--no-crowd", "--save",
+                                os.path.join(ROOT, "traces", "save-appart.bin"),
+                                "--area", "0", "--stand", "1804,0,-6890,336",
+                                "--frames", "60", "--dump", out]
+                               + ([extra] if extra else []),
+                               capture_output=True, text=True,
+                               env=dict(os.environ, SDL_VIDEODRIVER="dummy"))
+                if not os.path.exists(out):
+                    return (-1, -1)
+                d = open(out, "rb").read()
+                px = struct.unpack("<%dH" % (len(d) // 2), d)
+                lit = [y for y in range(480)
+                       if any(px[y * 640 + x] for x in range(0, 640, 4))]
+                return (lit[0], 479 - lit[-1]) if lit else (480, 480)
+            try:
+                # 200 frames in the player is HELD by the exit script and the
+                # black fade is armed, so the strip must be UP; by 900 he has
+                # control in Hall 27 under its fixed camera and it must be
+                # gone. The two together are the whole of next-tasks 2.
+                held   = bandsAt(200)
+                walked = bandsAt(900)
+                roam   = street(None)
+                heldRoam = street("--anim-hold")
             finally:
                 shutil.rmtree(tmp, ignore_errors=True)
 
     return (shots["dlg402-32"], shots["dlg402-44"], shots["intro-75"],
-            shots["menu-18"], shots["intro-60"], walked), \
-           ((64, 64), (64, 32), (64, 65), (1, 1), (0, 1), (0, 0)), \
+            shots["menu-18"], shots["intro-60"], held, walked,
+            roam, heldRoam), \
+           ((64, 64), (64, 32), (64, 65), (1, 1), (0, 1), (64, 64), (0, 0),
+            (0, 0), (64, 64)), \
            "the top and bottom dark bands of five captures - the " \
            "conversation at 64/64, the same conversation with its SUBTITLE " \
            "lighting the bottom band, the intro CUTSCENE at 64/65 (a " \
            "scripted world camera, letterboxed), and the two 2D interface " \
-           "frames at none; then the port walked out of Kay'l's flat into " \
-           "Hall 27, where the area leaves an ABSOLUTE camera installed and " \
-           "the player has control - which must be FULL-FRAME"
+           "frames at none; then the port walked out of Kay'l's flat - " \
+           "letterboxed WHILE the exit script holds him and its fade is " \
+           "armed, and FULL-FRAME once he has control in Hall 27, where the " \
+           "area leaves an absolute camera installed; and last the pair " \
+           "that isolates the rule - one street frame plain and the same " \
+           "frame with `player.anim.hold` set, which must differ by exactly " \
+           "the strip"
 
 
 def c_sneak_call():

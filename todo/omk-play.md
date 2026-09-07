@@ -17,8 +17,19 @@ waiting on its evidence.
 
 ### 84. Black stripes on for ever after entering or leaving a building — A
 
-> **Fixed 2026-09-07.** Not yet watched: the evidence below is a headless walk
-> and the shipped captures.
+> **Fixed 2026-09-07 in two rounds, the second from a play report.** Round one
+> keyed the strip on `adventure` and a reader confirmed the stripes were gone
+> at the door - and found two more: *the stripes were not displayed on the
+> zoom on the talisman* at the end of the Telis lunch, and *there was fade to
+> show the black stripes then they suddenly disappeared*. Both are the same
+> gap, and the script has them: SCENE 53 brackets the whole beat with
+> `fade.to_black` / `player.anim.hold` at 1089-1090 and
+> `player.anim.release` / `fade.from_black` at 1220-1221. The zoom is inside
+> the hold, so it is camera mode with nothing on screen; and the release comes
+> BEFORE the fade, so a strip that ends with the hold ends one frame early.
+> The predicate is now control AND not held AND no black fade armed - the
+> third because mode 3 stays armed once set and only mode 4 clears itself, so
+> `running()` is exactly the bracket. Round two is not watched yet.
 
 A reader: *black stripes entering/leaving a building*. The letterbox, and the
 port had the wrong predicate for it.
@@ -49,9 +60,14 @@ which is why the exit script's `fade.to_black` darkens exactly the strip.
 And `dlg402-44/47` measure 64/**32** not because the band differs but because
 the line's SUBTITLE is drawn inside the bottom one.
 
-`verify.py: letterbox` asserts the five captures and the port's own walk;
-shown to fail by putting `followCam` back, which returns the walked frame to
-64/64 - the reader's stripes, to the row. `docs/UI.md` §3j.
+`verify.py: letterbox` asserts the five captures, the port's walk at both
+ends, and - the pair that isolates the rule - one street frame plain against
+the same frame with `player.anim.hold` set, which must differ by exactly the
+strip. `--anim-hold` is the harness for that, in the same spirit as `--call`:
+reaching camera mode without playing a beat. Shown to fail twice: putting
+`followCam` back returns the walked frame to 64/64 (the reader's stripes, to
+the row), and dropping the hold and fade terms leaves the held street frame
+full-frame, which is the talisman zoom. `docs/UI.md` §3j.
 
 ### 83. The SNEAK CALL was never played — the device opened and the call did not
 
