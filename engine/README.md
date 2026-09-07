@@ -2459,6 +2459,8 @@ Five things it shows that no slice could:
 
 ### The sweep starts a step above the feet (2026-09-07)
 
+**CONFIRMED IN PLAY** the same day, from the foot of the flight.
+
 A reader could not climb the stairs into Anekbah's bank: nine steps, then
 blocked on the last. It is not the step rule — the riser is 10.8 units against
 a 30 cm (11.811) limit, and the bare walker climbs it. It is the **capsule**.

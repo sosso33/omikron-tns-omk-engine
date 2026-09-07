@@ -468,6 +468,10 @@ recorded as one rather than left as a question.
 
 ### 20. Stuck on the last step of the bank's stairs — **FIXED 2026-09-07**
 
+> **CONFIRMED IN PLAY 2026-09-07.** The reader ran the fixed build from the
+> foot of the flight — launched standing at (4870, 1, −2577) facing up the
+> stairs — and reported it good.
+
 Reported 2026-09-06, reproduced and fixed 2026-09-07 once the reader placed it:
 *"when you are at the bottom of the bank's stairs, try to climb them and enter
 the bank: I was blocked by the very last step."*
