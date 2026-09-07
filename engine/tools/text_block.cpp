@@ -104,6 +104,43 @@ int main(int argc, char** argv) {
     };
     std::printf("centre %d plain %d\n", firstInk(b2), firstInk(a));
 
+    // `{P}` IS NOT A DIRECTIVE AND DOES NOTHING. `P` is not a case in the
+    // switch, so it reaches the flush test - and so does its closing brace -
+    // but neither changes a style bit, so `(style ^ working) & 0x1C1E` is 0
+    // and no line breaks. Every shipped `{P}` sits beside a `\r\n\r\n` that
+    // does the paragraph break for real, which is why nobody could see it.
+    // An ALIGNMENT directive does break the line, `{C}` at its closing brace
+    // and `{F}` at its own letter, because both reach the same test with the
+    // bit changed.
+    int lp = 0, lq = 0, lc = 0;
+    const std::string plainTwo = "Alpha beta\r\n\r\nGamma delta";
+    const std::string withP    = "Alpha beta {P}{P}\r\n\r\nGamma delta";
+    const std::string withC    = "Alpha beta{C}Gamma delta";
+    const std::string noBrace   = "Alpha betaGamma delta";
+    const int hp = lay.layOutBlock(nullptr, plainTwo, box);
+    omk::BlockResult r1, r2, r3, r4;
+    lay.layOutBlock(nullptr, plainTwo, box, &r1);
+    lay.layOutBlock(nullptr, withP,    box, &r2);
+    lay.layOutBlock(nullptr, withC,    box, &r3);
+    lay.layOutBlock(nullptr, noBrace,  box, &r4);
+    lp = r1.lines; lq = r2.lines; lc = r3.lines;
+    // P: the same line count as the string without it. C: two lines where the
+    // same text with no brace at all is one.
+    std::printf("brace P %d plain %d C %d bare %d height %d\n",
+                lq, lp, lc, r4.lines, hp);
+
+    // ...and how many shipped strings use `{P}` at all.
+    int pSites = 0, pNextToCrlf = 0;
+    for (const auto& o : objects) {
+        for (std::size_t k = 0; k + 2 < o.description.size(); ++k)
+            if (o.description.compare(k, 3, "{P}") == 0) {
+                ++pSites;
+                if (o.description.find("\r\n\r\n") != std::string::npos)
+                    ++pNextToCrlf;
+            }
+    }
+    std::printf("psites %d beside_crlf %d\n", pSites, pNextToCrlf);
+
     // `if (!*a1) return dword_907A18` - the empty string reports the box's
     // TOP, where every other path reports a height. Kept because its one
     // consumer subtracts the box height and floors at 0.

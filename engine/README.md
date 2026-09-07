@@ -2116,6 +2116,61 @@ loaded by the screen's own open - which rotate to show selection. The UI layer
 has no 3D path, so they are not drawn; their LABELS and the two counts are,
 on the echo bar, which is where the engine puts them.
 
+**`Text_LayOutBlock` IS PORTED** (2026-09-07), and with it the last guess in
+the interface's text path. Everything around it had been ported and checked -
+the 13 fonts, the 2899 glyphs, the coverage ramp, the markup parse, the advance
+- but the part that turns a string and a box into POSITIONED LINES was this
+repo's own: a greedy break at spaces, a line advance of `height + 2`, a blank
+line of a flat 12, no vertical placement and no alignment. `docs/UI.md` had
+labelled it a reconstruction from the day the composer was written, and
+`omk-play` 86's scroll made it matter, because the scroll bound is
+`laidOutHeight - boxHeight`.
+
+`TextLayout::layOutBlock` is the engine's 577 lines: the vertical placement
+(bottom / middle / top against the current font's `+12`, and `{H}`/`{L}`/`{M}`
+redoing it mid-string); the wrap, where a SPACE remembers both the run position
+and the input position and a character that no longer fits cuts the line back
+to it - with no space seen the character is KEPT, so a word wider than the box
+overflows rather than breaking; the pitch, `120 * lineHeight / 100`, a blank
+line taking the same; the alignment at the flush; the counted `[`/`]` spans
+that swap in the alternate colour, font, style and `{E}`; and `{B}`, whose red
+this port had measured off two captures before it could read it in the code.
+`TextBlock` is `Text_DrawBlock`'s globals, named for them - including the
+ORIGIN, which is how a box scrolls: `Ui_ItemTextStyle` writes the clamped
+`dword_6A5090` into the params block at `+0x10` and every line is drawn at
+`y - originY`, so scrolling is not a special case in any drawer.
+
+Three callers moved onto it: the examine page, an ITEM's own text (`Ui_DrawItem`
+scales the item's box and hands it to `Text_DrawBlock`, so the engine wraps and
+aligns inside it where this composer drew one unwrapped line), and `omk-play`'s
+subtitle stack, whose own greedy wrap and `height + 2` pitch are gone. **The
+composed-frame hashes did not move**, which is the result worth having: the new
+layout reproduces the old single-line output pixel for pixel wherever nothing
+wraps.
+
+`verify.py: engine: text block` runs it over the 941 object descriptions that
+carry text, in the examine page's own 400x260 box: 95 are taller than the box,
+the MK400 notice lays out 484 tall and paints 15 lines at 389 wide, the pitch
+is 20 of font `'J'`'s 17, the tallest description is 891, and a centred line
+starts at 320 against the box's own left of 150.
+
+**Two readings were wrong on the way and both are corrected in place.** `{`,
+`}`, `[` and `]` are the else-halves of the four nested `if`s that end at the
+flush test, so they fall through to it - which is what makes `{C}` break a line
+at its CLOSING BRACE where `{F}` breaks at its own letter. And **`{P}` is
+inert**: it changes no style bit, so neither the letter nor the brace flushes
+anything, and `docs/UI.md`'s "which is how `{P}` works as a paragraph break" was
+wrong. All five shipped occurrences sit beside a `\r\n\r\n` that does the break
+for real, which is why an author could write it and nobody could see it did
+nothing.
+
+**One thing it does NOT settle**, and it is recorded rather than smoothed over:
+`docs/UI.md` had noted from a capture that the original fits about four more
+lines in the same box than the port's guess did, and concluded the engine's
+spacing must be tighter. It is LOOSER - 20 against the guess's 19, and 20
+against 12 for a blank line - so the gap widened. Whatever explains that
+capture, it is not the line pitch.
+
 **Two more the SNEAK got wrong, both from one play report** (2026-09-07): the
 verb menu *"does not take the scrolling in account and will always apply the
 command on the object that was at the selected slot before the scrolling"*, and

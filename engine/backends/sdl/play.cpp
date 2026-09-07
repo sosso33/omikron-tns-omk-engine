@@ -185,30 +185,14 @@ std::vector<float> wavToDevice(std::span<const std::byte> file, int deviceRate) 
 // of the screen"). Both numbers scale with the display: `width - 64` and
 // `height * 64 / 480`.
 //
-// **What is NOT recovered**: `Text_LayOutBlock` is not ported, so the WRAPPING
-// here is this file's - break on spaces at the block's width - and the FACE is
-// the port's default rather than whatever `dword_907969 = 32` selects. The
-// reply menu has no recovered placement at all and is stacked under the line,
-// with the selected row in the ink and the rest in the 0x808080 the engine
-// also loads. So the BOX is read from the engine and the layout inside it is a
-// reconstruction; they are labelled differently on purpose.
-void wrapInto(const omk::TextLayout& lay, const std::string& t, int width,
-              std::vector<std::string>& out, char face = 'J') {
-    std::string ln, w;
-    for (std::size_t k = 0; k <= t.size(); ++k) {
-        const char c = k < t.size() ? t[k] : ' ';
-        const bool brk = (c == '\n');
-        if (c != ' ' && c != '\n' && c != '\r') { w.push_back(c); continue; }
-        if (!w.empty()) {
-            const std::string cand = ln.empty() ? w : ln + " " + w;
-            if (lay.measure(cand) > width && !ln.empty()) { out.push_back(ln); ln = w; }
-            else ln = cand;
-            w.clear();
-        }
-        if (brk && !ln.empty()) { out.push_back(ln); ln.clear(); }
-    }
-    if (!ln.empty()) out.push_back(ln);
-}
+// **What is NOT recovered**: the reply menu has no recovered placement at all
+// and is stacked under the line, with the selected row in the ink and the rest
+// in the 0x808080 the engine also loads. So the BOX is read from the engine
+// and the STACK inside it is a reconstruction; they are labelled differently
+// on purpose. The WRAP is no longer among them - `Text_LayOutBlock` is ported
+// (2026-09-07) and `drawSubtitle` lays every string through it.
+//
+// `wrapInto` was this file's own greedy break on spaces and has gone with it.
 
 // THE SUBTITLE BOX, and both of its blends.
 //
@@ -345,35 +329,38 @@ void drawSubtitle(omk::Surface& fb, const omk::TextLayout& lay,
     // head applied to the first row and every row after it fell back to the
     // block's default - two faces in one paragraph, which is what a reader
     // photographed in the Impasse (`todo/omk-play.md` 58).
-    const auto wrapRun = [&](const std::vector<omk::StyledChar>& run,
+    //
+    // ...and since 2026-09-07 the wrap itself is the ENGINE'S, not this
+    // file's: `TextLayout::layOutBlock` is `Text_LayOutBlock` (0x0043F3E0),
+    // and it parses the markup, wraps and breaks in one pass, so the two
+    // paragraphs above describe what it already does rather than what this
+    // lambda has to arrange. What is still this file's is the STACK - which
+    // row is the line and which are replies, and the tone each takes - because
+    // the engine issues a separate `Text_DrawBlock` per string and colours it
+    // at the call, so the rows have to come back rather than be drawn.
+    const auto wrapRun = [&](const std::string& text,
                              std::vector<std::vector<omk::StyledChar>>& out) {
-        std::vector<omk::StyledChar> ln, word;
-        for (std::size_t k = 0; k <= run.size(); ++k) {
-            const bool end = k == run.size();
-            const char c = end ? ' ' : run[k].ch;
-            if (!end && c != ' ' && c != '\n' && c != '\r') { word.push_back(run[k]); continue; }
-            if (!word.empty()) {
-                std::vector<omk::StyledChar> cand = ln;
-                if (!cand.empty()) { omk::StyledChar sp = word.front(); sp.ch = ' '; cand.push_back(sp); }
-                cand.insert(cand.end(), word.begin(), word.end());
-                if (!ln.empty() && lay.measure(cand) > width) { out.push_back(ln); ln = word; }
-                else ln = cand;
-                word.clear();
-            }
-            if (!end && c == '\n') { out.push_back(ln); ln.clear(); }
-        }
-        if (!ln.empty()) out.push_back(ln);
+        omk::TextBlock blk;
+        blk.left = left; blk.right = right;
+        blk.top = 0;     blk.bottom = dispH;
+        blk.font = face;
+        blk.measureOnly = true;         // the caller draws
+        blk.screenW = dispW; blk.screenH = dispH;
+        omk::BlockResult res;
+        lay.layOutBlock(nullptr, text, blk, &res);
+        for (auto& r : res.rows)
+            if (!r.empty()) out.push_back(std::move(r));
     };
     std::vector<std::vector<omk::StyledChar>> rows;
     std::vector<std::uint8_t> tone;
     if (!line.empty()) {
         std::vector<std::vector<omk::StyledChar>> tmp;
-        wrapRun(omk::parseMarkup(line, face).run, tmp);
+        wrapRun(line, tmp);
         for (auto& r : tmp) { rows.push_back(std::move(r)); tone.push_back(255); }
     }
     for (std::size_t k = 0; k < menu.size(); ++k) {
         std::vector<std::vector<omk::StyledChar>> tmp;
-        wrapRun(omk::parseMarkup(menu[k], face).run, tmp);
+        wrapRun(menu[k], tmp);
         for (auto& r : tmp) {
             rows.push_back(std::move(r));
             tone.push_back(static_cast<int>(k) == selected ? 255 : 128);
@@ -381,8 +368,10 @@ void drawSubtitle(omk::Surface& fb, const omk::TextLayout& lay,
     }
     if (rows.empty()) return;
 
+    // THE LINE PITCH is the engine's `120 * i16i(font, 6) / 100` - 120% of the
+    // face's own line height - not this file's old `height + 2`.
     const auto probe = omk::parseMarkup("Ag", face);
-    const int lineH = lay.height(probe.run) + 2;
+    const int lineH = 120 * lay.height(probe.run) / 100;
     // WHERE THE BLOCK SITS. `Dialog_TickUI` places it with
     //
     //     v3 = height << 6

@@ -147,6 +147,20 @@ struct TextBlock {
     int clipTop = -(1 << 30), clipBottom = 1 << 30;
 };
 
+// What a `layOutBlock` pass measured on the way, for a caller that wants more
+// than the height: `lines` is every flush that carried something, `advance`
+// the summed pen advance of them all - the same number `drawRun` returns for
+// one line, which is what the composed-frame checks count.
+struct BlockResult {
+    int lines = 0;
+    int advance = 0;
+    // The wrapped lines themselves, in the order they were laid, for a caller
+    // that draws them itself - the dialogue subtitle stack, which colours the
+    // selected reply differently from the rest and so cannot hand the whole
+    // block to one pass.
+    std::vector<std::vector<StyledChar>> rows;
+};
+
 // The advance of a run in pixels: per character, the glyph's own width or the
 // face's default, plus the face's kerning.
 class TextLayout {
@@ -163,7 +177,7 @@ public:
     // measures with it to bound a scroll and the drawers draw with it, and a
     // separate measure would be a second algorithm to keep in step.
     int layOutBlock(Surface* dst, const std::string& text,
-                    const TextBlock& b) const;
+                    const TextBlock& b, BlockResult* out = nullptr) const;
 
     int measure(const std::vector<StyledChar>& run) const;
     int measure(const std::string& text, char face = 'J') const;

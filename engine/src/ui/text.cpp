@@ -250,10 +250,14 @@ int TextLayout::drawRun(Surface& dst, int x, int y,
 // * the LINE ADVANCE is `120 * lineHeight / 100`, and a blank line advances by
 //   the same rather than by a constant;
 // * a line is FLUSHED when a newline is pending or when the alignment or
-//   vertical bits changed (`(style ^ working) & 0x1C1E`). That is why `{F}`
-//   breaks a line and `{C}` does not - and why `{P}`, which is not a directive
-//   at all, works as a paragraph break: an unrecognised letter falls into the
-//   same test;
+//   vertical bits changed (`(style ^ working) & 0x1C1E`), so ANY of the four
+//   alignment directives breaks the line - `{F}` at its own letter, which
+//   falls into the test, and `{C}`, `{D}`, `{G}` one character later at the
+//   closing brace, which falls into it too. **`{P}` does NOT**: it is not a
+//   directive, it changes no style bit, and both the `P` and the `}` reach the
+//   test and find nothing to flush. The five shipped `{P}` sites all sit
+//   beside a `\r\n\r\n` that does the paragraph break for real, which is why
+//   nobody could have noticed;
 // * `[` and `]` are COUNTED, and the span whose index equals `span` swaps in
 //   the alternate colour, font, style and `E` value;
 // * `{B}` TOGGLES blink (`v57 ^= 0x4000`), and a blinking character on a high
@@ -265,7 +269,8 @@ int TextLayout::drawRun(Surface& dst, int x, int y,
 // carries the face and the colour per character and rebuilds its ramp on a
 // change - the engine's own `cmp word_4C6F54, ax` cache.
 int TextLayout::layOutBlock(Surface* dst, const std::string& text,
-                            const TextBlock& b) const {
+                            const TextBlock& b, BlockResult* res) const {
+    if (res) *res = BlockResult{};
     // `if (!*a1) return dword_907A18` - the engine returns the box's TOP for
     // an empty string, not 0, where every other path returns a height. Kept:
     // its one consumer subtracts the box height and floors at 0.
@@ -327,8 +332,14 @@ int TextLayout::layOutBlock(Surface* dst, const std::string& text,
         const int c = (i < n) ? static_cast<unsigned char>(text[i]) : 0;
         ++i;
 
-        if (c == '{' && !b.literal)      { inBrace = true;  goto tail; }
-        if (c == '}' && !b.literal)      { inBrace = false; goto tail; }
+        // `{`, `}`, `[` and `]` all fall THROUGH to the flush test - their
+        // arms in the listing are the else-halves of the four nested `if`s
+        // that end at LABEL_101, not gotos past it. Which is what makes an
+        // alignment directive break the line at its CLOSING BRACE: `{C}` sets
+        // the bit and skips the test itself, and the `}` a character later
+        // reaches it and sees the style differ.
+        if (c == '{' && !b.literal)      { inBrace = true;  goto test; }
+        if (c == '}' && !b.literal)      { inBrace = false; goto test; }
         if (c == '[' && !b.literal) {
             // `if (++v70 == dword_907A24)` - SAVE, then install the alternates
             if (++spanIndex == b.span) {
@@ -337,14 +348,14 @@ int TextLayout::layOutBlock(Surface* dst, const std::string& text,
                 rgb[0] = b.altRgb[0]; rgb[1] = b.altRgb[1]; rgb[2] = b.altRgb[2];
                 font = b.altFont; style = b.altStyle; eValue = b.altE;
             }
-            goto tail;
+            goto test;
         }
         if (c == ']' && !b.literal) {
             if (spanIndex == b.span) {
                 rgb[0] = saveRgb[0]; rgb[1] = saveRgb[1]; rgb[2] = saveRgb[2];
                 font = saveFont; style = saveStyle; eValue = saveE;
             }
-            goto tail;
+            goto test;
         }
 
         if (inBrace) {
@@ -437,9 +448,14 @@ int TextLayout::layOutBlock(Surface* dst, const std::string& text,
     test:
         if (newline || ((style ^ working) & 0x1C1E) != 0) {
             if (lineOpen || wrapMark >= 0) {
+                if (res) {
+                    if (!line.empty()) ++res->lines;
+                    res->rows.push_back(line);
+                }
                 if (!b.measureOnly && !line.empty()) {
                     int x = penX - b.originX;
                     const int runW = measure(line);
+                    if (res) res->advance += runW;
                     switch (style & 0x1E) {
                     case 4: x = b.right - runW; break;
                     case 8: x = b.left + (b.right - runW - b.left) / 2; break;

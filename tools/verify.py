@@ -6711,9 +6711,21 @@ def c_engine_text_block():
       bottom, `0x1000` middle, neither top - against the current font's height,
       and `{H}` / `{L}` / `{M}` redo it mid-string;
     * **a line flushes** on a newline OR when `(style ^ working) & 0x1C1E`, so
-      `{F}` breaks a line and `{C}` does not - and `{P}`, which is not a
-      directive at all, works as a paragraph break because an unrecognised
-      letter falls into the same test.
+      any of the four alignment directives breaks the line: `{F}` at its own
+      letter, which falls into the test, and `{C}` / `{D}` / `{G}` one
+      character later at the CLOSING BRACE - because `{`, `}`, `[` and `]` are
+      the else-halves of the four nested `if`s that end at LABEL_101, so they
+      fall through to the test too.
+
+    **And `{P}` does NOTHING**, which corrects the reading this check was
+    written with. `P` is not a case in the switch, so it reaches the test - but
+    it changes no style bit, and neither does its brace, so nothing flushes.
+    All three `{P}` sites in the object descriptions sit beside a
+    `\r\n\r\n` that does the paragraph break for real, which is why an author
+    could write it and nobody could see that it was inert. The check asserts
+    the no-op directly: the same string with and without `{P}` lays out to the
+    same two lines, while `{C}` in the middle of a line that is otherwise one
+    line makes it two.
 
     Asserted over the 941 object descriptions that carry text, in the examine
     page's own box (400x260 at 150,100, font `'J'`): how many are taller than
@@ -6754,6 +6766,8 @@ def c_engine_text_block():
         "advance 20 of height 17".split(),
         "overflow 891 of 260 for 'Journal de Meshka'n'".split(),
         "centre 320 plain 150".split(),
+        "brace P 2 plain 2 C 2 bare 1 height 60".split(),
+        "psites 3 beside_crlf 3".split(),
         "height0 100".split(),
     ]
     return got, want, \
@@ -6764,8 +6778,11 @@ def c_engine_text_block():
         "engine's `v6 += 120 * i16i(font, 6) / 100` and not this port's old " \
         "`height + 2`; the tallest description in the corpus is 891; a " \
         "centred line starts at 320 where a plain one starts at the box's " \
-        "own left, 150; and the empty string reports the box's TOP, 100, " \
-        "because `if (!*a1) return dword_907A18` does"
+        "own left, 150; `{P}` is a NO-OP (the same two lines with it and " \
+        "without) while `{C}` mid-line turns one line into two, and all " \
+        "three `{P}` sites in the object descriptions sit beside a CRLF pair " \
+        "that does the break for real; and the empty string reports the " \
+        "box's TOP, 100, because `if (!*a1) return dword_907A18` does"
 
 
 def c_engine_used_object():
@@ -25385,7 +25402,7 @@ def c_licence_headers():
                    if TAG in open(p, encoding="utf-8",
                                   errors="replace").read(600)]
     return (authored, sorted(missing), len(vendored), mislabelled), \
-           (377, [], 1, []), \
+           (378, [], 1, []), \
            "authored source files under tools/, engine/src, engine/tools, " \
            "engine/backends and scripts/; those MISSING the SPDX tag; " \
            "vendored files in engine/third_party; and vendored files wrongly " \

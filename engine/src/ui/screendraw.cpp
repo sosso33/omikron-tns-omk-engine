@@ -607,101 +607,66 @@ ScreenFrame ScreenComposer::draw(Surface& fb, int screenId,
 
             // ---- THE EXAMINE PAGE'S TEXT ------------------------------
             //
-            // The description, wrapped into the item's own box. **The WRAP is
-            // this port's, not the engine's**: `Text_LayOutBlock` is ~570
-            // lines and unported, and what it does with a box, a newline and
-            // a mid-run font change has not been read. This is a greedy break
-            // at spaces using the layout's own `measure`, which puts the
-            // right words on the right lines for the shipped strings and is
-            // NOT a claim about the engine's algorithm.
+            // The description, laid into the item's own box by
+            // `TextLayout::layOutBlock` - `Text_LayOutBlock` (0x0043F3E0)
+            // itself, since 2026-09-07. It replaced this port's own greedy
+            // wrap, whose line advance was `height + 2` and whose blank line
+            // was a flat 12; the engine's pitch is 120% of the current font's
+            // `+12` and a blank line takes the same.
+            //
+            // AND IT SCROLLS. Bank C `0x2` on the item, four of which the
+            // tree carries. `Ui_ItemTextStyle` lays the block out, takes
+            // `laidOutHeight - boxHeight` floored at 0, clamps `dword_6A5090`
+            // into [0, that] and hands the result to the run at `+0x10` -
+            // which `Text_DrawBlock` unpacks into `dword_9079F8`, the layout's
+            // ORIGIN Y. So the scroll is not a special case in the drawer at
+            // all: it is the block's origin, subtracted from every line
+            // (`v41 = v6 - dword_9079F8`). `sub_42A9A0`, the list hook, steps
+            // the same global eight pixels per UP or DOWN and does no
+            // clamping, so the bound is discovered HERE and written back.
+            //
+            // `{B}` is RED, (255, 0, 0), on the frames oscillator 1 is high -
+            // `Text_LayOutBlock`'s run-emit is explicit about it, and
+            // `docs/UI.md`'s markup table had said white. Two captures of the
+            // original two seconds apart settled it before it could be read:
+            // the MK400 notice's Khonsu line, `{fSI226198101B}`, is gold in
+            // one and red in the other, (181, 180, 131) against (150, 33, 42).
             if (examine_ && !examine_->empty() &&
                 l.addr == kListSneakExamineContent) {
-                const int bx = scaleX(it.x + q->offsetX);
-                const int by = scaleY(it.y + q->offsetY);
-                const int bw = scaleX(it.w);
-                // `{B}` - RED, (255, 0, 0), on the frames oscillator 1 is
-                // high. `Text_LayOutBlock`'s run-emit is explicit about it:
-                //
-                //     if (blink && oscillator1) { run[2]=0xFF; run[3]=0;
-                //                                 run[4]=0; }
-                //     else                        run[2..4] = the colour
-                //
-                // `docs/UI.md`'s markup table said WHITE, and that was wrong.
-                // Two captures of the original two seconds apart settle it -
-                // the MK400 notice's Khonsu line, `{fSI226198101B}`, is gold
-                // in one and red in the other, measured (181, 180, 131)
-                // against (150, 33, 42).
-                const auto parsed = parseMarkup(*examine_, it.face('J'),
-                                                static_cast<std::uint8_t>(rgb[0]),
-                                                static_cast<std::uint8_t>(rgb[1]),
-                                                static_cast<std::uint8_t>(rgb[2]));
-                //
-                // ---- AND IT SCROLLS -------------------------------------
-                //
-                // Bank C `0x2` on the item, which four items in the tree
-                // carry. `Ui_ItemTextStyle`'s arm for it lays the block out,
-                // takes `laidOutHeight - boxHeight` floored at 0, CLAMPS
-                // `dword_6A5090` into [0, that] and hands the result to the
-                // run at `+0x10`; `sub_42A9A0`, the list hook, steps the same
-                // global eight pixels per UP or DOWN and does no clamping at
-                // all. So the wrap has to happen BEFORE the draw here too -
-                // the bound is a property of the laid-out text, not of the
-                // record - which is why this collects the lines first and
-                // paints them second.
-                std::vector<std::vector<StyledChar>> lines;
-                std::vector<StyledChar> line;
-                const bool oscHigh = blink;
-                const int boxH = scaleY(it.h);
-                const auto flush = [&]() { lines.push_back(line); line.clear(); };
-                std::vector<StyledChar> word;
-                for (const auto& c : parsed.run) {
-                    if (c.ch == '\n') { for (auto& q2 : word) line.push_back(q2);
-                                        word.clear(); flush(); continue; }
-                    word.push_back(c);
-                    if (c.ch != ' ') continue;
-                    auto trial = line;
-                    for (const auto& q2 : word) trial.push_back(q2);
-                    if (!line.empty() && lay_->measure(trial) > bw) flush();
-                    for (const auto& q2 : word) line.push_back(q2);
-                    word.clear();
-                }
-                for (const auto& q2 : word) line.push_back(q2);
-                flush();
+                TextBlock blk;
+                blk.left   = scaleX(it.x + q->offsetX);
+                blk.top    = scaleY(it.y + q->offsetY);
+                blk.right  = blk.left + scaleX(it.w);
+                blk.bottom = blk.top + scaleY(it.h);
+                blk.font   = it.face('J');
+                blk.rgb[0] = static_cast<std::uint8_t>(rgb[0]);
+                blk.rgb[1] = static_cast<std::uint8_t>(rgb[1]);
+                blk.rgb[2] = static_cast<std::uint8_t>(rgb[2]);
+                blk.blinkOn = blink;
+                blk.screenW = fb.w;
+                blk.screenH = fb.h;
+                // Rows outside the box are not written, so the line
+                // straddling each edge of a scrolled block is CUT rather than
+                // dropped or spilled over the page art.
+                blk.clipTop = blk.top;
+                blk.clipBottom = blk.bottom;
 
-                // The advance is the same one the single-pass version used -
-                // a drawn line's own height plus 2, and 12 for a blank - so
-                // the total is what the old `pen` would have finished at.
-                const auto advance = [&](const std::vector<StyledChar>& ln) {
-                    return ln.empty() ? 12 : lay_->height(ln) + 2;
-                };
-                int total = 0;
-                for (const auto& ln : lines) total += advance(ln);
-                const int overflow = std::max(0, total - boxH);
+                // Measure first, because the clamp needs the height and the
+                // hook that moves the offset has no bound of its own. This is
+                // `Ui_ItemTextStyle`'s own order.
+                TextBlock probe = blk;
+                probe.measureOnly = true;
+                const int total = lay_->layOutBlock(nullptr, *examine_, probe);
+                const int overflow = std::max(0, total - (blk.bottom - blk.top));
                 if (scroll_) {
                     if (*scroll_ > overflow) *scroll_ = overflow;
                     else if (*scroll_ < 0)   *scroll_ = 0;
                 }
-                const int scroll = scroll_ ? *scroll_ : 0;
                 out.textOverflow = overflow;
-
-                int pen = by - scroll;
-                for (const auto& ln : lines) {
-                    const int h = advance(ln);
-                    // Clipped at BOTH ends, per PIXEL rather than per line: a
-                    // scrolled block has a line straddling each edge, and
-                    // dropping it makes the text jump while drawing it whole
-                    // spills over the page art above the box.
-                    if (pen >= by + boxH) break;
-                    if (pen + h > by && !ln.empty()) {
-                        auto copy = ln;
-                        if (oscHigh)
-                            for (auto& c : copy)
-                                if (c.blink) { c.rgb[0] = 255; c.rgb[1] = 0; c.rgb[2] = 0; }
-                        lay_->drawRun(fb, bx, pen, copy, by, by + boxH);
-                        ++out.textLines;
-                    }
-                    pen += h;
-                }
+                blk.originY = scroll_ ? *scroll_ : 0;
+                BlockResult res;
+                lay_->layOutBlock(&fb, *examine_, blk, &res);
+                out.textLines += res.lines;
             }
 
             // ---- THE EXAMINE PAGE'S CONTENT ---------------------------
@@ -852,8 +817,6 @@ ScreenFrame ScreenComposer::draw(Surface& fb, int screenId,
             //
             // 255 means the record names none, and `Text_DrawBlock`'s own
             // global default is 74.
-            const auto run = parseMarkup(s, it.face('J'), cr, cg, cb).run;
-
             // `Ui_ItemTextStyle` (0x004769A0) maps the item's BANK 2 bits to
             // `Text_DrawBlock`'s alignment, and the mapping is NOT the
             // identity - the ladder is
@@ -869,7 +832,6 @@ ScreenFrame ScreenComposer::draw(Surface& fb, int screenId,
             // read (docs/UI.md 5).
             std::uint32_t eff[3];
             it.effective(l.broadcast, eff);
-            const int width = lay_->measure(run);
             // `Ui_DrawItem` scales the item's BOX and hands that to
             // `Text_DrawBlock`, which aligns inside it:
             //
@@ -881,15 +843,41 @@ ScreenFrame ScreenComposer::draw(Surface& fb, int screenId,
             // native-size glyph run. Centring in the 640-wide design space and
             // scaling the result instead pulls every centred row left of
             // centre as the display grows.
+            //
+            // ...and since 2026-09-07 the row goes through `layOutBlock` -
+            // `Text_LayOutBlock` itself - rather than through one unwrapped
+            // `drawRun`, because that call above IS a `Text_DrawBlock` with
+            // the item's box: the engine WRAPS inside it, aligns inside it and
+            // steps 120% of the font's height between lines. `docs/UI.md`
+            // named the missing wrap as a gap ("this composer draws one
+            // unwrapped line") from the day the composer was written.
+            //
+            // The alignment goes in as the STYLE word the ladder above
+            // produces, which is the same 2/4/8/0x10 `Ui_ItemTextStyle` hands
+            // `Text_DrawBlock`, so the case-4/case-8 arms inside the layout
+            // do the arithmetic these two lines used to.
             const int x0 = scaleX(it.x + q->offsetX);
             const int x1 = scaleX(it.x + q->offsetX + it.w);
-            int x = x0;
-            if (eff[2] & 0x10)      x += (x1 - x0 - width) / 2;   // centred
-            else if (eff[2] & 0x08) x += (x1 - x0) - width;       // right
-            const int y = scaleY(it.y + q->offsetY);
-            // `drawRun` returns the pen ADVANCE, not a pixel count - the
-            // width the row occupies. Named for what it is.
-            out.textAdvance += lay_->drawRun(fb, x, y, run);
+            const int y  = scaleY(it.y + q->offsetY);
+            TextBlock row;
+            row.left   = x0;
+            row.top    = y;
+            row.right  = x1;
+            row.bottom = scaleY(it.y + q->offsetY + it.h);
+            row.font   = it.face('J');
+            row.rgb[0] = static_cast<std::uint8_t>(cr);
+            row.rgb[1] = static_cast<std::uint8_t>(cg);
+            row.rgb[2] = static_cast<std::uint8_t>(cb);
+            row.style  = (eff[2] & 0x10) ? 8 : (eff[2] & 0x08) ? 4 : 2;
+            row.blinkOn = blink;
+            row.screenW = fb.w;
+            row.screenH = fb.h;
+            BlockResult rr;
+            lay_->layOutBlock(&fb, s, row, &rr);
+            // `drawRun` returned the pen ADVANCE, not a pixel count - the
+            // width the row occupies - and `BlockResult::advance` is the same
+            // number summed over the lines a block wrapped to.
+            out.textAdvance += rr.advance;
             out.centred += (eff[2] & 0x10) ? 1 : 0;
             ++out.itemsDrawn;
         }

@@ -901,13 +901,19 @@ this port had a paraphrase of it:
 and a not-lit run has its colour **halved**, while bank C `0x1` replaces it
 with white before any of that.
 
-**The WRAP is a reconstruction and is labelled as one.** `Text_LayOutBlock` is
-~570 lines and unported; what it does with a box, a newline and a mid-run font
-change has not been read. The port breaks greedily at spaces using the
-layout's own `measure` and clips at the box's height, which puts the right
-words on the right lines for the shipped strings and is **not** a claim about
-the engine's algorithm — the original fits about four more lines in the same
-box, so its line spacing is tighter than this one's guess.
+~~**The WRAP is a reconstruction and is labelled as one.**~~ — **PORTED
+2026-09-07**, and it is `Text_LayOutBlock` itself; see §5 ("How a BLOCK is laid out") below. What this
+paragraph used to say — a greedy break at spaces, a line advance of
+`height + 2`, a blank line of a flat 12 — is gone.
+
+One observation from it does **not** survive intact and is kept as an open
+question rather than quietly dropped: it recorded that a capture of the
+original fits *about four more lines in the same box* than the port did, and
+concluded that the engine's line spacing must be tighter. The engine's spacing
+is now read, and it is **looser** — 120% of the font's own height, 20 pixels
+against the old guess's 19, and 20 against 12 for a blank line — so the gap
+widened rather than closed. Whatever explains that capture, it is not the line
+pitch.
 
 #### The description SCROLLS, and it is one global and one flag bit
 
@@ -3332,8 +3338,17 @@ painted over them.
 
 `{` opens a directive and one letter is one command. Several **chain inside a
 single brace** — `{fCC}` is font `C` then command `C` — and an **unrecognised**
-letter falls through to the line flush, which is how `{P}` works as a paragraph
-break without being implemented.
+letter falls through to the line-flush test.
+
+> **Correction, 2026-09-07.** This used to finish "…which is how `{P}` works as
+> a paragraph break without being implemented". It does not: the test is
+> `if (newlinePending || ((style ^ working) & 0x1C1E))`, and `P` changes no
+> style bit, so neither the letter nor its closing brace flushes anything.
+> **`{P}` is inert.** Every one of the five shipped occurrences — three in one
+> object description, two in `Fsim` — sits beside a `\r\n\r\n` that does the
+> break for real, which is exactly why an author could write it and nobody
+> could see it was doing nothing. `verify.py: engine: text block` asserts the
+> no-op.
 
 | directive | effect |
 |---|---|
@@ -3368,3 +3383,67 @@ well-formed `{I}` colours.
 `params[11]` the alternate style is swapped in and restored at the close. That
 is how one string carries a label and a value in different colours, and it is
 what an item's `+30` selects.
+
+### How a BLOCK is laid out — `Text_LayOutBlock` (0x0043F3E0)
+
+577 lines, one caller, and until 2026-09-07 the one piece of this path the
+port had a guess in place of. `Text_DrawBlock` (0x0043F180, 20 callers) writes
+the box and a dozen style globals out of its `params` block and calls it;
+it returns **`maxY − top`**, the laid-out height, which is why one function
+serves both the draw and the measure — `Ui_ItemTextStyle` measures with it to
+bound a scroll and the drawers draw with it.
+
+| global | what |
+|---|---|
+| `907A14` / `907A18` / `907A08` / `907A1C` | left, top, right, bottom |
+| `907A10` | the current font, by id LETTER: 74 `'J'`, or 76 `'L'` below 640×480 |
+| `907A0C` | the ALTERNATE font, for a bracketed span |
+| `9079F4` / `9079F8` | the ORIGIN, subtracted from every drawn position |
+| `907A00` | the style word: `0x1E` the four alignments, `0x1C00` the three verticals, `0x4000` blink |
+| `907A04` | the ALTERNATE style |
+| `907A24` | WHICH bracketed span swaps (`-1`: none) |
+| `9079FC/FD/FE` | the colour; `907940/41/42` the alternate |
+| `907A28` / `907A2C` | the `{E}` value and its alternate |
+
+* **Vertical placement runs before a character is read.** `0x800` → bottom
+  (`y = bottom − lineHeight`), `0x1000` → middle
+  (`y = top + (bottom − lineHeight − top) / 2`), neither → top, against the
+  CURRENT font's `+12`; `{H}` / `{L}` / `{M}` redo the same three mid-string,
+  and `{H}` also zeroes `907A18`, so it moves the height the function reports.
+* **The wrap** accumulates `Text_GlyphAdvance` per character; a SPACE remembers
+  both the run position and the input position, and a character that no longer
+  fits cuts the line back to that space and rewinds the input to just after it.
+  With **no space seen the character is kept anyway**, so a single word wider
+  than the box overflows rather than breaking.
+* **The line pitch is `120 × lineHeight / 100`** — the font record's `+12`,
+  nothing else — and a **blank line advances by the same**, not by a constant.
+* **Alignment at the flush**, from `style & 0x1E`: 4 → `x = right − runWidth`,
+  8 → `x = left + (right − runWidth − left) / 2`, anything else → the pen.
+* **A line flushes** on a pending newline or when
+  `(style ^ working) & 0x1C1E`. All four alignment directives therefore break
+  the line: `{F}` at its own letter, and `{C}` / `{D}` / `{G}` one character
+  later at the **closing brace** — because `{`, `}`, `[` and `]` are the
+  else-halves of the four nested `if`s that end at that test and fall through
+  to it as well.
+* **The origin is how a box SCROLLS.** `Ui_ItemTextStyle` writes the clamped
+  `dword_6A5090` into the params block at `+0x10`, `Text_DrawBlock` unpacks it
+  into `dword_9079F8`, and every line is drawn at `y − originY`. So
+  scrolling is not a special case in any drawer: it is the block's origin.
+* **The run buffer is six bytes a character** — char, styleChanged, r, g, b,
+  font — and one `Text_DrawRun` is issued per span of constant style.
+
+`measureOnly` (`TEXTP_FLAG_A`) does all of it but the drawing; `literal`
+(`TEXTP_FLAG_B`) turns the markup off, so `{`, `}`, `[` and `]` are ordinary
+characters.
+
+**One anomaly, reproduced rather than tidied**: `if (!*a1) return
+dword_907A18` — an empty string reports the box's TOP where every other path
+reports a height. Its one consumer subtracts the box height and floors at 0, so
+it never shows.
+
+`verify.py: engine: text block` runs it over the **941** object descriptions
+that carry text, in the examine page's own 400×260 box: **95** are taller than
+the box, the MK400 notice lays out **484** tall and paints 15 lines at 389
+wide, the pitch is **20** of font `'J'`'s 17, the tallest description is
+**891**, and a centred line starts at 320 where a plain one starts at the box's
+own left of 150.

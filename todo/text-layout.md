@@ -57,11 +57,18 @@ and the algorithm:
   run width is re-measured with each character's OWN font.
 * **A line is flushed** when a newline is pending OR when
   `(style ^ workingStyle) & 0x1C1E` — the alignment or vertical bits changed.
-  Which is why `{F}` (justify) breaks the line and `{C}` (centre) does not:
-  `F` and the unrecognised letters fall into that test and `C`/`D`/`G` skip it.
-  **`{P}` is not a directive at all** — it is an unrecognised letter reaching
-  the test, which is exactly how the shipped strings use it as a paragraph
-  break.
+  All four alignment directives therefore break the line: `{F}` at its own
+  letter, which falls into the test, and `{C}` / `{D}` / `{G}` one character
+  later at the **closing brace**, because `{`, `}`, `[` and `]` are the
+  else-halves of the four nested `if`s that end at that test and fall through
+  to it as well.
+* **`{P}` does NOTHING**, and this was read wrong first time round. `P` is not
+  a case in the switch, so it reaches the test — but it changes no style bit,
+  and neither does its brace, so nothing flushes. Every one of the five
+  shipped `{P}` occurrences (three in one object description, two in `Fsim`)
+  sits beside a `\r\n\r\n` that does the paragraph break for real, which is
+  exactly why an author could write it and nobody could see it was inert.
+  `verify.py: engine: text block` asserts the no-op directly.
 * **Brackets are COUNTED.** `[` increments a counter and, when it reaches
   `907A24`, saves the colour/font/style/`E` and installs the alternates; `]`
   restores them at the same index. That is how one string carries a label and a
@@ -87,9 +94,13 @@ Each ends in a commit and a report.
 2. **The examine page uses it**, replacing the greedy wrap, and
    `engine: text scroll` and `engine: sneak` are re-baselined against the real
    height.  — **DONE**
-3. **The other callers**: an item's own text (`Text_LayOutBlock` wraps inside
-   the item's box; this port draws one unwrapped line, a gap `docs/UI.md`
-   already names) and the subtitle path in `omk-play`.  — open
+3. **The other callers**: an item's own text — `Ui_DrawItem` scales the item's
+   box and hands it to `Text_DrawBlock`, so the engine wraps and aligns inside
+   it, where this port drew one unwrapped line — and the subtitle path in
+   `omk-play`, whose `wrapInto`/`wrapRun` greedy break and `height + 2` pitch
+   are gone. **`engine: screen`'s framebuffer hashes did not move**, which is
+   the result worth having: the new layout reproduces the old single-line
+   output pixel for pixel wherever nothing wraps.  — **DONE**
 
 ## What stays out
 
