@@ -60,6 +60,45 @@ on a destination row. It should call a slider; the journey belongs to screen 7,
 after boarding. The reader met it as *"calling a slider with the sneak
 teleports me"*.
 
+### The header's three buttons, and the hook — read 2026-09-08 from the reader's memory
+
+The reader: *"if you called it by selecting a destination, it transports you
+directly; if you called it by 'Appel du slider', the slider menu opens - and I
+think there is an extra button, which lets you drive it manually."* All of it
+is in the widget table. List 0x004DEA08 has three items, and which show is
+`sub_49D170`'s two-state arm on the live slot's `+4`:
+
+| item | string | callback | what it does |
+|---|---|---|---|
+| 0x004DE920 | 12 *Appel du slider* | **0x0049D400** | `sub_452570(player's position)`, close the screen. `dword_6A17CC` is NOT touched: a call with no destination remembered |
+| 0x004DE968 | 13 *Automatique* | **0x0049D480** | five instructions - `panel+24 = 2`, the destination rows get the focus |
+| 0x004DE9B0 | 14 *Manuelle* | **0x0049D4A0** | `sub_457040(slider, player)`: save the prior ACTOR_STATE, write **7**, slider mode 3, and `Slider_TickRide` owns the body - **drive it yourself**. The extra button the reader remembered |
+
+From the sneak (screen 9, param 0) the bar shows *Appel du slider*; from inside
+the vehicle (screen 7, param 1) it shows *Automatique* beside *Manuelle*. The
+port had recorded that second state as "reachable only through a message code
+the port does not deliver" - the message is the screen.
+
+**The page's own hook, 0x0049D4D0** (both records of panel 0x004DEDE8 name
+it), on the frame screen 7 opens:
+
+```
+if (dword_6A17CC != -1) {           ; a destination was remembered
+    point = sub_40E630(tag)         ; ...resolve it (and load its area)
+    if (sub_452570(&point)) screen[+8] = 3   ; state 6, the journey, close
+    else text 42
+} else {
+    ordinary navigation: header <-> rows on the input word
+}
+```
+
+So *called by a destination → transported directly* is the hook firing the
+journey before the menu is ever used, and *called by the header → the menu
+opens* is `dword_6A17CC == -1` leaving the page up for Automatique/Manuelle.
+Both arms of `sub_49BC60` write `dword_6A17CC`; its only reset is in the
+new-game path (`sub_49B400`, beside `F1AVNT.CTL` and `UI_LoadScreen(35)`), so
+the engine remembers the last destination across calls.
+
 **Still not found**: the *correct side* test. `MDSLIDIN` itself has no side
 check in it, so the constraint is somewhere else — the `.CTL` entry's own
 conditions, or a proximity test at the action button. Recorded as open rather
@@ -333,37 +372,32 @@ Each ends in a commit and a report.
    **8** while it comes, **0** when it arrives, **10** when it leaves with
    you, and **17** when you get off.
 
-## What is left — and the task is NOT finished until it is done
+## What is left — 2026-09-08, after the journey landed
 
 The reader, 2026-09-07: *"So, slider task is not finished if it is not usable,
-don't you think?"* — and they are right. Everything above is read, ported and
-checked, and none of it can be reached by a person playing: you cannot call a
-slider and have one arrive, and mounting works only through the `--ride`
-harness with no vehicle under the rider. **`next-tasks` 16 stays open.**
+don't you think?"* — and they were right. Since then the whole flow they
+described has been built and run headlessly (`verify.py: engine: slider
+journey`): a destination row on the sneak calls a slider, it comes on camera,
+you board it, screen 7 opens and fires the journey, it drives you there, you
+get out, it leaves. "Appel du slider" → the menu → *Manuelle* → the controls
+are yours. **`next-tasks` 16 stays OPEN until a person has played it.**
 
-What remains is not reading but PLUMBING, and it is named here so the labelling
-is not mistaken for a gap in the findings:
+What is still not there, so the labelling is not mistaken for done:
 
-* the free-slot take and the linked-list relink — `slot[+22] == 1` and the
-  mover's `+180 & 8`, then `sub_452CC0`'s unlink/relink through the engine's
-  own lane lists, which this port's traffic does its own way;
-* driving the called slider along its route until the machine's 117 units are
-  met, which needs the port's mover pointed at a lane it did not spawn on;
-* `MDSLIDIN` wired to the gate (ACTOR_STATE 6 plus mode 3), so a ride starts
-  from the world rather than from `--ride`;
-* and the vehicle DRAWN under the rider.
-
-None of that needs another read of the binary.
-
-## What is already there, and must not be re-done
-
-* the `.OPT` circuit, its lanes, routes, reservation groups and action points;
-* the 40-slot ride pool and the vehicles ON it, spawned by `sub_453B40` at
-  `39 x h[4]` with no density factor and driven by the walkers' own mover with
-  the VEHICLE thresholds 195/390 (`docs/STREET_LIFE.md` §2b);
-* `readAddresses`, 791/791;
-* the sneak's slider PAGE — the panel, the two-state header, the destination
-  list filtered by the DB's `AddressEnabled` bits, and the row binder.
-
-The three facts `verify.py: slider ride` pins (half speed, camera mode 8's
-subjects, the node bind) come from the same read and are already asserted.
+* **a journey to a destination in ANOTHER area** loads the area and places
+  him — the arrive arm — instead of driving. `sub_40E630` loads the area
+  first and only then looks for a lane; the circuit changes under the
+  vehicle, and driving across that is not ported;
+* **the correct SIDE to board from** — not in `MDSLIDIN`; unfound;
+* **the door animation** — `A_SliderIn` / `A_SliderOut` / `H_Slider` exist in
+  `H1Avnt.CTL` and `F1Avnt.CTL` and nothing plays them; he keeps his walking
+  pose aboard;
+* **ACTOR_STATE 7 on the mount** — the engine reaches it from 6 and nothing
+  in the port puts him in 6; the state table refuses `1 -> 7` correctly;
+* **the optional CUTSCENE** of the slider on its road — a longer thing than
+  the camera cut, *not every time*; unfound. State 2's `+180 & 0x10` /
+  `0x400` pair is the right shape and nothing read ties it to an editing;
+* **the 600-frame idle** (state 1) is in the machine and not driven;
+* the engine's **swap** of an occupying vehicle (`sub_452CC0`) — this port
+  relinks an ambient one instead; same effect, one of the engine's two
+  mechanisms.

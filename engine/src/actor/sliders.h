@@ -449,6 +449,14 @@ public:
     // ...and off, which is `sub_4570F0`'s slot state 7 - it drives away once
     // he is 300 clear and in front of it.
     void dismountCalled();
+    // THE JOURNEY: send the called (and boarded) vehicle to the lane nearest
+    // `target` - `sub_452570`'s arm when a slider is ALREADY assigned, which
+    // sets its state to **6** rather than 2. `sub_456530` then drives it and
+    // the same 117-unit arrival test ends at state 4 and camera mode 10.
+    // -> false when the target has no vehicle lane within reach.
+    bool sendCalledTo(const float target[3]);
+    // ...and whether that journey has ARRIVED (state 6 -> 4 this tick or since).
+    bool journeyArrived() const { return called_ >= 0 && callRide_.state == 4 && journeyDone_; }
     // Put the called vehicle where the ride is, so it is DRAWN under him.
     void placeCalled(const float pos[3], float yawDeg);
     // The player's position, for `sub_456C70`'s two tests - the brake and the
@@ -473,6 +481,8 @@ private:
     int         called_ = -1;
     RideMachine callRide_;
     float       callTarget_[3] = {0, 0, 0};
+    bool        journeyDone_ = false;
+    void placeOnLane(int vi, const SliderCall& c);
 
     struct ActionState {                      // one of `dword_539928`'s 48-byte records
         bool  used = false;

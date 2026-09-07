@@ -75,40 +75,35 @@ blank line) — so the gap widened rather than closed. If your captures still
 show more lines than this build, the difference is something other than the
 line pitch and I would rather chase it than leave it recorded as a mystery.
 
-## 4. CALL a slider, and ride it away — the one to try first
+## 4. CALL a slider and be TAKEN — the one to try first
 
-`TAB`, `RIGHT`, `UP`, `ENTER` (the slider tab), `DOWN` (onto the
-destinations), `ENTER` **on a row**. From the sneak, choosing a destination
-does not take you there — it **calls a slider to you** and remembers where you
-wanted to go. That is the engine's own rule: screen 9's `param` is 0, and only
-screen 7 (the same page, opened from inside the vehicle) travels.
+Two ways in, and they end differently, exactly as the original does:
 
-**You should not move.** The camera should cut to the slider — behind and
-above it, its subject the vehicle — as it spawns at the top of the nearest
-road and **drives down it to you**, twenty-one segments of lane in Anekbah,
-stopping within 117 units (about 3 m) of the kerb nearest you. It is a real
-vehicle out of the same pool the traffic uses.
+**A. Choose a destination.** `TAB`, `RIGHT`, `UP`, `ENTER` (the slider tab),
+`DOWN`, `ENTER` on a row. **You should not move.** The camera should cut to a
+slider spawning at the top of the nearest road and driving down it toward
+you, behind and above it. It stops on the road within about 3 m of the kerb
+nearest you. Walk to it and press `ENTER`: you board, the slider page opens by
+itself as screen 7 — and because you chose a destination, **it closes again at
+once and the slider drives you there**, you on it, the camera on the vehicle.
+At the destination you are put out and the slider leaves.
 
-If the camera does NOT cut to the slider, or you are moved anywhere, that is
-wrong.
-
-When it has stopped, **walk to it and press the action button** (`ENTER`). You
-should be aboard: arrows steer, up/down thrust, **SPACE** stops it once you are
-slow. That is `MDSLIDIN`'s own gate — an active slider, standing open, in
-reach.
+**B. "Appel du slider".** Same page, `ENTER` on the header instead of a row.
+A slider comes the same way. Board it and the page opens and **stays**: the
+header now reads *Automatique* / *Manuelle*. `Manuelle` hands you the controls
+— arrows steer, up/down thrust, SPACE stops. `Automatique` moves the cursor to
+the destinations; confirm one and it drives you there.
 
 What to judge: whether it takes a sensible route, whether it stops somewhere
-you can actually reach, and whether boarding it feels like boarding rather than
-teleporting onto it.
+you can reach, whether boarding feels like boarding, and whether the journey's
+route and stop look right.
 
-**Knowingly missing.** Once aboard, the slider page should open again (screen
-7) so you can confirm the destination and be DRIVEN there — it does not yet, so
-you can fly it but not be taken anywhere. The ACTOR_STATE the move writes (7)
-is not set (the engine reaches it from state 6 and nothing puts him there), so
-he keeps his walking pose aboard; the door animation (`A_SliderIn`) is not
-played; the correct side to board from is not enforced; and the optional
-cutscene of the slider on its road — the longer one, not the camera cut — is
-not found. See `todo/handoff.md` §3.
+**Knowingly missing.** He keeps his walking pose aboard (ACTOR_STATE 7 is not
+written, and `A_SliderIn`/`A_SliderOut` are not played); the correct side to
+board from is not enforced; a journey to a destination in ANOTHER area loads
+the area and places you instead of driving (the circuit changes under the
+vehicle); the optional cutscene of the slider on its road is not found; and a
+called slider you never board does not yet give up after its 600 frames.
 
 ## 4b. The slider takes you somewhere — 1 minute
 

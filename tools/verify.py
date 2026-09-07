@@ -7315,6 +7315,65 @@ def c_engine_slider_arrives():
         "who is 518 away and could never have been reached"
 
 
+def c_engine_slider_journey():
+    r"""THE WHOLE SLIDER, from the sneak to getting out at the destination.
+
+    The reader described the original: call it by choosing a destination in
+    the sneak, it comes along the road, you board it, and it takes you there
+    without the menu being used. Every piece is a read function, and this
+    runs them in one chain:
+
+    1. the destination row on the SNEAK (screen 9, param 0) CALLS - he does
+       not move, and the row is remembered as `dword_6A17CC`;
+    2. `sub_456530` state 2 drives it to within 117 units of the lane point
+       and it goes OPEN;
+    3. he walks to it and the action button is `MDSLIDIN`: aboard, and
+       `UI_OpenScreen(7, ...)`;
+    4. the page's hook 0x0049D4D0 finds `dword_6A17CC != -1` and fires
+       `sub_40E630` + `sub_452570` at once - state **6**, the journey, with
+       him seated on the vehicle the whole way;
+    5. the same arrival test ends at state 4, he is put out at the
+       destination's address, camera 0 and the fade, and the slider is
+       released (state 7).
+
+    The journey compares the destination's area with the RESIDENT one, not
+    the DB's `currentArea`: the harness's `--area` leaves the DB at the save's
+    237 while the world is Anekbah, and compared against the DB every journey
+    in the fixture took the other-area arm and was placed instead of driven.
+    """
+    import subprocess
+    eng = os.path.join(ROOT, "engine")
+    fr, tb = omkpaths.data_root(), os.path.join(ROOT, "tables")
+    save = os.path.join(ROOT, "traces", "save-appart.bin")
+    if not os.path.isdir(eng) or not os.path.exists(save):
+        return ("skipped",), ("skipped",), "engine/ or the save absent"
+    mk = subprocess.run(["make", "-s", "play"], cwd=eng, capture_output=True, text=True)
+    play = os.path.join(eng, "build", "omk-play")
+    if mk.returncode != 0 or not os.path.exists(play):
+        return (True,) * 5, (True,) * 5, "no SDL - the frontend is optional (PORTING A8)"
+    env = dict(os.environ, SDL_VIDEODRIVER="dummy")
+    r = subprocess.run([play, fr, tb, "--software", "--res", "640x480", "--nofmv",
+                        "--save", save, "--area", "0",
+                        "--stand", "1804,0,-6890,225", "--frames", "1700",
+                        "--hold", "0*40,k15*3,0*30,k205*4,0*10,k200*4,0*10,"
+                                  "k28*4,0*30,k208*4,0*10,k28*4,0*330,"
+                                  "k200*120,0*10,k28*4,0*1000"],
+                       capture_output=True, text=True, env=env, errors="replace")
+    o = r.stdout
+    return ("chosen - a slider is COMING to 1804 0 -6890" in o,
+            "slider: OPEN at 1448 6 -6540" in o,
+            "MDSLIDIN: aboard at 1448 6 -6540" in o,
+            "a destination was remembered (row 0), the journey starts" in o,
+            "JOURNEY to 'Anekbah - Appartement de Kay'l' - state 6" in o,
+            "slider: ARRIVED - out at address 0" in o), \
+           (True,) * 6, \
+        "from the sneak's destination row: the call (he stays put), the " \
+        "slider OPEN at the kerb, MDSLIDIN aboard and screen 7 opening, the " \
+        "page's hook firing the journey for the remembered row, state 6 " \
+        "driving him to the lane nearest address 0, and the arrival putting " \
+        "him out there with the slider released"
+
+
 def c_engine_used_object():
     r"""USING AN INVENTORY OBJECT ON THE WORLD - `Utiliser` reaching a zone.
 
@@ -27280,6 +27339,7 @@ CHECKS = [
     ("engine: slider ride", c_engine_slider_ride, "todo/slider"),
     ("engine: slider call", c_engine_slider_call, "todo/slider"),
     ("engine: slider arrives", c_engine_slider_arrives, "todo/slider"),
+    ("engine: slider journey", c_engine_slider_journey, "todo/slider"),
     ("ui open answer",     c_ui_open_answer,    "SCRIPT_VM 70"),
     ("ui confirm gate",    c_ui_confirm_gate,   "UI"),
     # The FAST set, unlike `engine: screen` and `engine: name field`: most of

@@ -236,8 +236,13 @@ void Sliders::tickVehicles(float dt) {
             }
             const int was = callRide_.state;
             callRide_.tick(dt, d, 0.0f, false);
-            if (was != callRide_.state && callRide_.state != 2 &&
-                callRide_.state != 6) {
+            if (was == 6 && callRide_.state == 4) {
+                // The JOURNEY arrived: state 6 -> 4, camera mode 10. The
+                // vehicle stops here; the caller lets the rider out.
+                journeyDone_ = true;
+                v.state = 4;
+            } else if (was != callRide_.state && callRide_.state != 2 &&
+                       callRide_.state != 6) {
                 // It stopped where it arrived. `sub_456530` leaves state 1
                 // (the 600-frame idle) on the transport arm; a slider CALLED
                 // to be boarded goes OPEN instead, which is mode 3 - what
@@ -557,26 +562,7 @@ bool Sliders::callSlider(const float target[3]) {
         for (int i = 0; i < static_cast<int>(vehicles_.size()); ++i) {
             Vehicle& av = vehicles_[static_cast<std::size_t>(i)];
             if (!av.live || av.state != 0 || av.reserved || av.mover < 0) continue;
-            // `sub_452CC0`'s relink, in this pool's terms: off whatever lane
-            // it was on, onto the one the call chose, at the same place the
-            // spawner would have put it.
-            removeFromLists(av.mover);
-            Pedestrian& m = movers_[static_cast<std::size_t>(av.mover)];
-            for (int k = 0; k < 3; ++k) {
-                m.pos[k] = c.place[k];
-                m.prev[k] = c.place[k];
-                m.dir[k] = c.dir[k];
-            }
-            setHeading(m, c.dir[0], c.dir[1], c.dir[2]);
-            m.body[0] = c.place[0] - c.dir[0] * kCarrotBehind;
-            m.body[1] = c.place[1];
-            m.body[2] = c.place[2] - c.dir[2] * kCarrotBehind;
-            m.remaining = segLen * 256.0f;
-            m.seg = 1;
-            m.lane = c.at.lane;
-            m.route = c.route;
-            m.flags = 0x8;
-            listFor(c.at.lane, 1).insert(listFor(c.at.lane, 1).begin(), av.mover);
+            placeOnLane(i, c);
             called_ = i;
             break;
         }
@@ -587,6 +573,7 @@ bool Sliders::callSlider(const float target[3]) {
     v.state = 2;                                // `u32(slot, 8) = 2` - COMING
     callRide_ = RideMachine{};
     callRide_.state = 2;
+    journeyDone_ = false;
     // THE PICKUP POINT IS THE LANE POINT, not the player. `sub_452A80`
     // writes the closest point on the lane into the request block's `+20`,
     // and `sub_456530`'s arrival test reads `flt_8F5E74` - which is that same
@@ -595,6 +582,51 @@ bool Sliders::callSlider(const float target[3]) {
     // point to him here is 518 units away and the radius is 117, so it drove
     // all the way in and then sat there. Caught by running it, not by
     // re-reading.
+    for (int k = 0; k < 3; ++k) callTarget_[k] = c.at.at[k];
+    return true;
+}
+
+// `sub_452CC0`'s relink, in this pool's terms: off whatever lane the vehicle
+// was on, onto the one the call chose, at the same place the spawner would
+// have put it.
+void Sliders::placeOnLane(int vi, const SliderCall& c) {
+    Vehicle& av = vehicles_[static_cast<std::size_t>(vi)];
+    if (!av.live || av.mover < 0) return;
+    const OptLane& L = track_.lanes[static_cast<std::size_t>(c.at.lane)];
+    const OptKey& K = track_.keys[static_cast<std::size_t>(L.firstKey)];
+    const float segLen = std::sqrt(K.delta[0] * K.delta[0] + K.delta[1] * K.delta[1] +
+                                   K.delta[2] * K.delta[2]);
+    removeFromLists(av.mover);
+    Pedestrian& m = movers_[static_cast<std::size_t>(av.mover)];
+    for (int k = 0; k < 3; ++k) {
+        m.pos[k] = c.place[k];
+        m.prev[k] = c.place[k];
+        m.dir[k] = c.dir[k];
+    }
+    setHeading(m, c.dir[0], c.dir[1], c.dir[2]);
+    m.body[0] = c.place[0] - c.dir[0] * kCarrotBehind;
+    m.body[1] = c.place[1];
+    m.body[2] = c.place[2] - c.dir[2] * kCarrotBehind;
+    m.remaining = segLen * 256.0f;
+    m.seg = 1;
+    m.lane = c.at.lane;
+    m.route = c.route;
+    m.flags = 0x8;
+    listFor(c.at.lane, 1).insert(listFor(c.at.lane, 1).begin(), av.mover);
+}
+
+// `sub_452570` with `dword_8F5E44` already set: the same lane search, and
+// then `u32(dword_8F5E44, 8) = 6` instead of 2 - FETCHING. The vehicle goes
+// to the lane nearest the destination and `sub_456530`'s state 6 drives it
+// in; the rider is on it the whole way (the caller seats him each frame).
+bool Sliders::sendCalledTo(const float target[3]) {
+    if (called_ < 0 || !track_.valid) return false;
+    const SliderCall c = planSliderCall(track_, target, counter_ + 1);
+    if (!c.ok()) return false;
+    placeOnLane(called_, c);
+    vehicles_[static_cast<std::size_t>(called_)].state = 6;
+    callRide_.state = 6;
+    journeyDone_ = false;
     for (int k = 0; k < 3; ++k) callTarget_[k] = c.at.at[k];
     return true;
 }

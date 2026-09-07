@@ -1517,6 +1517,8 @@ int main(int argc, char** argv) {
     bool rideArg = false;
     bool mountSpent = false;    // the action button is edged, not held
     bool calledOpenTold = false;
+    bool boarded = false;           // aboard, `Slider_TickRide` not yet driving
+    int  journeyTo = -1;            // the address the journey ends at
     // `dword_6A17CC` - which destination row the call was made for.
     int  calledDestination = -1;
     // THE LIVE RIDE, when there is one. `todo/slider.md` step 3's harness.
@@ -4859,15 +4861,22 @@ int main(int argc, char** argv) {
                         if (session.sliders().canMount(me)) {
                             float at[3];
                             session.sliders().calledAt(at);
-                            omk::SliderRide r;
-                            r.x = at[0]; r.y = at[1]; r.z = at[2];
-                            r.yaw = session.playerYaw();
-                            ride = r;
+                            // `sub_438420(slider, 4); player[+404] = 7;
+                            // UI_OpenScreen(7, -1, -1, -1)` - he is ABOARD,
+                            // and the slider page opens as SCREEN 7, whose
+                            // param is 1. What happens next is that page's
+                            // hook (0x0049D4D0): with a destination
+                            // remembered from the sneak the journey starts
+                            // at once; with none, the bar reads Automatique /
+                            // Manuelle and he chooses.
+                            boarded = true;
                             session.sliders().mountCalled();
                             mountSpent = true;
                             std::printf("MDSLIDIN: aboard at %.0f %.0f %.0f - "
                                         "the slider was OPEN (mode 3) and in "
-                                        "reach\n", at[0], at[1], at[2]);
+                                        "reach; screen 7 opens\n",
+                                        at[0], at[1], at[2]);
+                            playerScreen = 7;
                         }
                     }
                     if (!(bits & 0x10u)) mountSpent = false;
@@ -4876,13 +4885,51 @@ int main(int argc, char** argv) {
                     // false - and the ride owns the body: `sub_457F50` writes
                     // his position outright every frame. Ticking the walker
                     // as well made the two fight, and the walker won.
-                    if (!ride)
+                    if (!ride && !boarded)
                         player->tick(static_cast<float>(frameSec * 30.0),
                                      bits ? bits : omk::kIdleInput);
                 }
                 // ---- THE RIDE ---------------------------------------
                 //
                 // `Slider_TickRide` (0x00458150), with the pool and the
+                // ---- SEATED, not driving ------------------------------
+                //
+                // Aboard between the mount and either "Manuelle" or the end
+                // of a journey: `sub_457F50` writes his position from the
+                // slider's every frame, and the slider is where the pool's
+                // drive put it.
+                if (boarded && !ride) {
+                    float at[3];
+                    if (session.sliders().calledAt(at)) {
+                        const float seat[3] = {at[0],
+                                               at[1] + static_cast<float>(omk::SliderRide::kNodeUp),
+                                               at[2]};
+                        const float yaw = session.sliders().calledYaw();
+                        session.setPlayerPosition(seat, yaw);
+                        if (player) player->rideAt(seat, yaw);
+                    }
+                    // ...and THE JOURNEY'S END: state 6 -> 4, camera 10. He
+                    // gets out at the destination, the slider leaves
+                    // (state 7, released once he is 300 clear and ahead).
+                    if (session.sliders().journeyArrived() && journeyTo >= 0) {
+                        const bool placed = session.placeActorAt(journeyTo);
+                        if (player) {
+                            const float p3[3] = {session.playerPos()[0],
+                                                 session.playerPos()[1],
+                                                 session.playerPos()[2]};
+                            player->placeAt(p3, session.playerYaw());
+                        }
+                        session.requestCamera(0, 0);
+                        session.startColourFade(4, 0u, 60.0f);
+                        session.sliders().dismountCalled();
+                        std::printf("slider: ARRIVED - out at address %d %s, "
+                                    "the slider leaves (state 7)\n", journeyTo,
+                                    placed ? "" : "(NOT in this area)");
+                        boarded = false;
+                        journeyTo = -1;
+                        calledDestination = -1;
+                    }
+                }
                 // arrival left out: `--ride` mounts him where he stands, and
                 // what runs from there is the engine's own model.
                 //
@@ -6074,6 +6121,17 @@ int main(int argc, char** argv) {
                 std::printf("frame %ld: screen %d %s - arrows move, ENTER confirms, "
                             "TAB closes\n", n, openScreen,
                             fromScript ? "is asking" : "opened by the player");
+                // THE SLIDER PAGE'S HOOK, 0x0049D4D0, on the frame screen 7
+                // opens: `if (dword_6A17CC != -1)` resolve it with
+                // `sub_40E630` and call `sub_452570` at once - the journey
+                // starts without the menu being used. That is what "called
+                // by a destination -> transported directly" is.
+                if (want == 7 && boarded && calledDestination >= 0) {
+                    walk->requestTravel(calledDestination);
+                    std::printf("slider: screen 7 - a destination was "
+                                "remembered (row %d), the journey starts\n",
+                                calledDestination);
+                }
                 // The screen's own sounds, by slot. Which slot is which is
                 // `sub_482FE0`'s answer - it dispatches on the INPUT BIT - not
                 // a guess from the file names. Nothing plays when a screen
@@ -6247,6 +6305,41 @@ int main(int argc, char** argv) {
             if (const int row = walk->takeTravel(); row >= 0) {
                 std::vector<const omk::Destination*> known;
                 for (const auto& d : destinations)
+            // ---- "Appel du slider" ----------------------------------
+            //
+            // 0x0049D400: `sub_452570` on the player's own position, and
+            // `dword_6A17CC` untouched - a call with NO destination. The only
+            // reset of that global is in the new-game path (`sub_49B400`),
+            // so a destination chosen earlier would still be remembered by
+            // the engine; the port keeps that faithfully rather than
+            // clearing it here.
+            if (walk->takeCallHere()) {
+                float me[3] = {session.playerPos()[0], session.playerPos()[1],
+                               session.playerPos()[2]};
+                if (session.sliders().callSlider(me))
+                    std::printf("slider: Appel du slider - a slider is COMING "
+                                "to %.0f %.0f %.0f, no destination\n",
+                                me[0], me[1], me[2]);
+                else
+                    std::printf("slider: Appel du slider, but no vehicle lane "
+                                "here - the call FAILS (text 42)\n");
+            }
+            // ---- "Manuelle" -----------------------------------------
+            //
+            // 0x0049D4A0: `sub_457040(slider, player)` - ACTOR_STATE 7 and
+            // `Slider_TickRide` takes the body. The flight model, from where
+            // the vehicle stands.
+            if (walk->takeManual() && boarded) {
+                float at[3];
+                if (session.sliders().calledAt(at)) {
+                    omk::SliderRide r;
+                    r.x = at[0]; r.y = at[1]; r.z = at[2];
+                    r.yaw = session.sliders().calledYaw();
+                    ride = r;
+                    std::printf("slider: Manuelle - `sub_457040`, the controls "
+                                "are his\n");
+                }
+            }
                     if (state.bit(omk::StateArray::AddressEnabled, d.bit))
                         known.push_back(&d);
                 if (row >= static_cast<int>(known.size())) {
@@ -6279,9 +6372,50 @@ int main(int argc, char** argv) {
                 } else {
                     const auto* d = known[static_cast<std::size_t>(row)];
                     const int wasArea = state.currentArea();
+                } else if (boarded && known[static_cast<std::size_t>(row)]->area
+                                       == session.residentSlot(session.activeSlot()).area) {
+                    // ...the RESIDENT area, not `state.currentArea()`: the
+                    // drive is possible exactly when the destination is in
+                    // the world the circuit belongs to, and the harness's
+                    // `--area` leaves the DB's current area at the save's
+                    // (237) while the world is Anekbah (0). Compared against
+                    // the DB, every journey in the fixture took the
+                    // other-area arm and was placed instead of driven.
+                    // ---- THE JOURNEY, inside this area --------------------
+                    //
+                    // Screen 7's row confirm: `sub_40E630(tag)` finds the
+                    // address, `sub_452570` with a slider already assigned
+                    // sets it to state 6, and `sub_456530` drives it to the
+                    // lane nearest that address. He is on it the whole way.
+                    const auto* d = known[static_cast<std::size_t>(row)];
+                    const auto& rs = session.residentSlot(session.activeSlot());
+                    const omk::Address* ad = nullptr;
+                    for (const auto& x : rs.addresses) if (x.id == d->bit) ad = &x;
+                    if (ad && session.sliders().sendCalledTo(ad->pos)) {
+                        journeyTo = d->bit;
+                        std::printf("slider: JOURNEY to '%s' - state 6, driving "
+                                    "to the lane nearest address %d\n",
+                                    d->name.c_str(), d->bit);
+                    } else {
+                        std::printf("slider: '%s' has no road within reach - "
+                                    "the journey FAILS (text 42)\n", d->name.c_str());
+                    }
                     if (d->area != wasArea) {
+                    // ---- THE JOURNEY, to another AREA -------------------
+                    //
+                    // `sub_40E630` loads the area first and only then looks
+                    // for a lane; the circuit changes under the vehicle. Not
+                    // driven here: the port loads the area and places him,
+                    // which is the arrive arm, and says so.
                         state.setCurrentArea(static_cast<std::int16_t>(d->area));
                         session.loadArea(d->area);
+                    if (boarded) {
+                        session.sliders().dismountCalled();
+                        boarded = false;
+                        std::printf("slider: journey to another area - the "
+                                    "drive across a circuit change is not "
+                                    "ported; loading and placing instead\n");
+                    }
                     }
                     // The address whose `+14` is this record's own bit - the
                     // one number that joins the two tables.
@@ -7293,7 +7427,8 @@ int main(int argc, char** argv) {
             } else if (!haveDlgCam && !ride &&
                        session.sliders().calledVehicle() >= 0 &&
                        (session.sliders().callMachine().state == 2 ||
-                        session.sliders().callMachine().state == 6)) {
+                        session.sliders().callMachine().state == 6 ||
+                        (boarded && session.sliders().callMachine().state == 4))) {
                 // ---- THE CAMERA THAT WATCHES IT COME ------------------
                 //
                 // `sub_456530` case 2 asks for **camera mode 8 on the

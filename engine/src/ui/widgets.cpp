@@ -978,8 +978,22 @@ void UiWalk::buildPage(const UiPanel& p) {
     // recorded rather than reachable.
     if (p.addr == kPanelSneakSlider) {
         state_->rowKind = 4;              // `mov dword_670CB8, 4`
-        state_->itemOff.insert(0x004DE968u);
-        state_->itemOff.insert(0x004DE9B0u);
+        // `sub_49D170`'s `cmp [arg0+4], 1`: the live slot's +4, which is the
+        // screen's own `param` - 1 from INSIDE the vehicle (screen 7), 0 from
+        // the device (screen 9). Arm 1 hides "Appel du slider" and shows
+        // "Automatique" + "Manuelle" with the selection on 1; the else arm
+        // is the reverse. Both were recorded as "the other state is
+        // unreachable" until the screen that reaches it was read.
+        const bool aboard = w_->screenParam(screen_) == 1;
+        if (aboard) {
+            state_->itemOff.insert(kItemSliderCall);
+            state_->itemOff.erase(kItemSliderAuto);
+            state_->itemOff.erase(kItemSliderManual);
+        } else {
+            state_->itemOff.erase(kItemSliderCall);
+            state_->itemOff.insert(kItemSliderAuto);
+            state_->itemOff.insert(kItemSliderManual);
+        }
     }
     // The page's own tab: the column item whose `child` is this panel.
     const UiItem* icon = nullptr;
@@ -1431,6 +1445,30 @@ bool UiWalk::confirm() {
         // own bit. So the walk records the tag and the caller does all three,
         // exactly as it does for a verb: the area, the address and the fade
         // are the Session's, not a widget walker's.
+        // ---- THE SLIDER PAGE'S HEADER, three buttons ---------------
+        //
+        // Keyed on the items' own callbacks, read 2026-09-08 (widgets.h has
+        // the three). "Appel du slider" is `sub_452570` on the player's own
+        // position with `dword_6A17CC` untouched - a call, no destination.
+        if (it->callback == kCbSliderCall) {
+            state_->pendingCallHere = true;
+            log_.push_back("slider: Appel du slider - call one here, no destination");
+            panel_ = nullptr;                  // `screen[+8] = 3`
+            return true;
+        }
+        // "Automatique" is five instructions: `panel+24 = 2`, the rows.
+        if (it->callback == kCbSliderAuto) {
+            cur_ = 2;
+            log_.push_back("slider: Automatique - focus the destinations");
+            return true;
+        }
+        // "Manuelle" is `sub_457040(slider, player)`: the manual drive.
+        if (it->callback == kCbSliderManual) {
+            state_->pendingManual = true;
+            log_.push_back("slider: Manuelle - take the controls");
+            panel_ = nullptr;
+            return true;
+        }
         if (it->callback == kCbSneakRowConfirm && state_->rowKind == 4) {
             const int row = rowOf(it->addr);
             if (row < 0) { log_.push_back("slider: no destination there");

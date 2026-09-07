@@ -133,6 +133,25 @@ inline constexpr std::uint32_t kCbSneakExamine    = 0x0049BFF0u;
 // "Utiliser" and "Utiliser sur", the other two verbs.
 inline constexpr std::uint32_t kCbSneakUse       = 0x0049BEA0u;
 inline constexpr std::uint32_t kCbSneakUseOn     = 0x0049BF30u;
+// THE SLIDER PAGE'S HEADER, list 0x004DEA08 - three items, and which of them
+// show is `sub_49D170`'s two-state arm on the live slot's `+4` (the screen's
+// own `param`): from the SNEAK (screen 9, param 0) the bar reads "Appel du
+// slider"; from INSIDE the vehicle (screen 7, param 1) it reads "Automatique"
+// beside "Manuelle". Their callbacks, read 2026-09-08:
+//
+//   0x0049D400  Appel du slider  `sub_452570(player's position)`, close - a
+//                                plain call, and `dword_6A17CC` untouched, so
+//                                NO destination is remembered
+//   0x0049D480  Automatique      `panel+24 = 2` - focus the destination rows
+//   0x0049D4A0  Manuelle         `sub_457040(slider, player)` - ACTOR_STATE 7,
+//                                the slider's mode 3, and `Slider_TickRide`
+//                                owns the body: DRIVE IT YOURSELF
+inline constexpr std::uint32_t kCbSliderCall      = 0x0049D400u;
+inline constexpr std::uint32_t kCbSliderAuto      = 0x0049D480u;
+inline constexpr std::uint32_t kCbSliderManual    = 0x0049D4A0u;
+inline constexpr std::uint32_t kItemSliderCall    = 0x004DE920u;   // string 12
+inline constexpr std::uint32_t kItemSliderAuto    = 0x004DE968u;   // string 13
+inline constexpr std::uint32_t kItemSliderManual  = 0x004DE9B0u;   // string 14
 inline constexpr std::uint32_t kListSneakPreviews = 0x004DE420u;
 inline constexpr std::uint32_t kItemSneakExamine  = 0x004DE2C0u;
 // `Utiliser sur` itself - `sub_49BF30` lights it with `0x40000002` while its
@@ -523,7 +542,10 @@ struct UiListState {
     // takes the PLAYER'S - "call one to where I am". Only the first is
     // reachable here, and the second is recorded rather than invented.
     bool travelToDestination = true;
+    // "Appel du slider" (0x0049D400): a call with NO destination remembered.
     bool pendingCallHere = false;
+    // "Manuelle" (0x0049D4A0): `sub_457040` - take the controls.
+    bool pendingManual = false;
     // `dword_6A5090` - THE SCROLL OFFSET OF A LONG TEXT BOX, in pixels, and
     // ONE global for the whole interface the way every other field here is.
     // Two functions touch it:
@@ -639,6 +661,18 @@ public:
     // it was not (screen 9, the device - a CALL to where he stands, with the
     // row remembered as `dword_6A17CC` for the arrival camera).
     bool travelIsJourney() const { return state_->travelToDestination; }
+    // "Appel du slider" was confirmed: a call to where he stands, with no
+    // destination remembered. Reading it clears it.
+    bool takeCallHere() { const bool v = state_->pendingCallHere;
+                          state_->pendingCallHere = false; return v; }
+    // "Manuelle" was confirmed: `sub_457040`, the manual drive.
+    // The page's hook (0x0049D4D0) firing a journey for a remembered row on
+    // the frame screen 7 opens - as if the row had been confirmed there.
+    void requestTravel(int row) { state_->pendingTravel = row;
+                                  state_->travelToDestination = true;
+                                  panel_ = nullptr; }
+    bool takeManual()   { const bool v = state_->pendingManual;
+                          state_->pendingManual = false; return v; }
 
     // `sub_49BF30` (`Utiliser sur`, 0x0049BF30): open the combine mode with
     // the chosen object, and DISABLE THE VERB LIST so the next confirm goes
