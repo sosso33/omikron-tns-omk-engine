@@ -6323,13 +6323,31 @@ int main(int argc, char** argv) {
                     dlgView.cam.eye[k] = ea[k] + (eb[k] - ea[k]) * u;
                     dlgView.cam.at[k]  = aa[k] + (ab[k] - aa[k]) * u;
                 }
-                // The viewer takes the fov from whichever camera the move is
-                // nearer, rather than blending it.
-                dlgView.cam.hfovDeg = (u > 0.5f ? cbb : ca)->fov;
+                // THE FOV AND THE ROLL TRAVEL WITH THE POINTS. `sub_418410`
+                // lerps four things across a move, not two:
+                //
+                //     out[52..60] = C[20..28]*u + prev[20..28]*(1-u)   // eye
+                //     out[64..72] = C[32..40]*u + prev[32..40]*(1-u)   // target
+                //     out[44]     = prev[11]*(1-u) + C[11]*u           // ROLL
+                //     out[48]     = C[12]*u + prev[12]*(1-u)           // FOV
+                //
+                // and `Camera_LoadParams` (0x004146C0) settles which is which:
+                // `+44` is the roll, WRAPPED to (-180, 180] as it is loaded
+                // (`if (v14 > 180) v14 -= 360; if (v14 <= -180) v14 += 360`),
+                // and `+48` the fov. `angle4096` already wraps on load here,
+                // so a plain lerp of each is the engine's own arithmetic.
+                //
+                // This viewer SNAPPED the fov at the halfway point and dropped
+                // the roll entirely. Six of 402's sixteen pairs change fov
+                // across the move and one changes it by 15 degrees
+                // (4572 -> 4574, 84 -> 99): a 15-degree widening in one frame
+                // in the middle of a travel reads exactly as a reader
+                // described it - *the camera suddenly returns to a previous
+                // position while continuing the interpolation*. Eleven pairs
+                // are rolled, up to 12 degrees, and were drawn upright.
+                dlgView.cam.hfovDeg = ca->fov  + (cbb->fov  - ca->fov)  * u;
+                dlgView.cam.rollDeg = ca->roll + (cbb->roll - ca->roll) * u;
                 dlgView.cam.w = dispW; dlgView.cam.h = dispH;
-                // NOT ported: `RCamera` carries no ROLL, and dialogue cameras
-                // use one - conversation 272's first is -15 degrees. The shot
-                // is drawn upright.
                 haveDlgCam = okA && okB;
                 if (ca->id != lastDlgCam) {
                     lastDlgCam = ca->id;
@@ -6596,13 +6614,26 @@ int main(int argc, char** argv) {
             // is actually about. A frame counts lit pixels and cannot tell a
             // correct shot from a wrong one that happens to see the sky; the
             // eye's distance from the player can (`verify.py: camera travel`).
-            if (std::getenv("OMK_CAMEYE"))
+            if (std::getenv("OMK_CAMEYE")) {
+                if (session.dialogOpen()) {
+                    const auto& dg = session.dialogue();
+                    const omk::DialogCamera* qa = dg.cameraA();
+                    const omk::DialogCamera* qb = dg.cameraB();
+                    std::printf("  [dlgcam] frame %ld  pair %d -> %d  u %.3f  phase %d  node %d"
+                                "  inForce %d  fov %.2f  roll %.2f\n", n,
+                                qa ? qa->id : -1, qb ? qb->id : -1,
+                                static_cast<double>(dg.cameraProgress()),
+                                static_cast<int>(dg.phase()), dg.node(), haveDlgCam ? 1 : 0,
+                                static_cast<double>(dlgView.cam.hfovDeg),
+                                static_cast<double>(dlgView.cam.rollDeg));
+                }
                 std::printf("  [cameye] frame %ld  eye %.0f %.0f %.0f  at %.0f %.0f %.0f"
                             "  player %.0f %.0f %.0f\n", n,
                             view.cam.eye[0], view.cam.eye[1], view.cam.eye[2],
                             view.cam.at[0], view.cam.at[1], view.cam.at[2],
                             session.playerPos()[0], session.playerPos()[1],
                             session.playerPos()[2]);
+            }
             lastFov = view.cam.hfovDeg;
             lastRoll = view.cam.rollDeg;
             haveLastDrawn = true;

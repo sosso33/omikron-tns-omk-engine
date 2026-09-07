@@ -317,6 +317,38 @@ int SceneRunner::handle(const std::vector<Call>& calls) {
         // params[718]). docs/STREET_LIFE.md 1.
         const int object = static_cast<int>(
             static_cast<std::uint16_t>(c.fields[actorFirst ? 1 : 0]));
+        // ---- ONE PROGRAM PER ACTOR ------------------------------------
+        //
+        // `ScriptObject_StartOnActor` (0x0041BA80) opens by clearing whatever
+        // the actor was already running:
+        //
+        //     v5 = &g_Actors + 1312 * a1;        // the actor record
+        //     if (u32i(v5, 43)) {                // +172, its script object
+        //         Scene_ResetObjectState(u32i(v5, 43));
+        //         u32i(v5, 43) = 0;
+        //     }
+        //
+        // so a second `scx.play.actor` on the same actor STOPS the first.
+        // This runner only appended, and the two then fought over the body.
+        // Kay'l's flat is the case: the opening cutscene starts
+        // `TélisLitSeule` on actor 53 and that object LOOPS FOR EVER
+        // (loop -1), so when the goodbye starts `TelisAuRevoir` on her the
+        // old program is still live; the moment the goodbye's own program
+        // ends, the bed one takes the body back and she vanishes from the
+        // doorway the shot is framed on. A reader: *Telis appears normally at
+        // the beginning before disappearing.* A repro that teleports into the
+        // goodbye never sees it, because the opening never ran.
+        //
+        // 57/58 are `ScriptObject_Start`, NOT `...OnActor`, and bind to no
+        // actor - they reset nothing.
+        if (how[0] != 's') {                       // "actor" or "player"
+            const int onActor = actorFirst ? c.fields[0] : -1;   // -1: the player's
+            for (std::size_t j = 0; j < started_.size(); ++j) {
+                if (started_[j].actor != onActor) continue;
+                if ((started_[j].how == "player") != (onActor == -1)) continue;
+                if (j < programs_.size() && programs_[j]->running()) programs_[j]->reset();
+            }
+        }
         const int idx = start(object, how, waiting);
         // 59/60 name the CHARACTER first and the object second, so the actor
         // this program drives is field 0 - which is how a frontend knows whose

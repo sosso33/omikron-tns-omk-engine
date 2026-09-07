@@ -1863,6 +1863,51 @@ else places, and `speakerSolved` already carried that. Now `face: mesh 19,
 130 verts`, `frame 115 of 813`, and the eye settles 50 units from the
 hologram. `verify.py: dialogue camera subject`.
 
+### AN ACTOR IS DRIVEN BY ONE SCENE PROGRAM AT A TIME
+
+*Telis appears normally at the beginning before disappearing.*
+`ScriptObject_StartOnActor` (0x0041BA80) opens by clearing whatever the actor
+is already running — `if (u32i(v5, 43)) { Scene_ResetObjectState(...); u32i(v5,
+43) = 0; }`, where `+172` is the actor's current script object and the reset is
+two stores, the busy word and the low nibble of the state. `SceneRunner::start`
+only appended, so both programs stayed live and fought over the body.
+
+The numbers are why it hid. `Aapkayl.SCX`'s `TélisLitSeule` (handle 156)
+carries **loop −1** — it runs for ever — and SCENE 57's opening cutscene starts
+it on actor 53; the goodbye (AREA 237 record 73) then starts `TelisAuRevoir`
+(184, loop 1) on the same actor. With both running, the moment the goodbye's
+own program ends the bed one takes the body back, and she vanishes from the
+doorway camera 4504/4505 frames.
+
+**Every repro that teleports into the goodbye misses it** — software and
+Vulkan, with input and without, 640×480 and the reader's own 1024×768 with
+clip 200 all drew her correctly for 700 frames, because the opening never ran
+and there was only ever one program. `engine/tools/actor_program` starts both,
+as a playthrough does. `verify.py: one program per actor`.
+
+### A DIALOGUE CAMERA MOVE CARRIES ITS FOV AND ITS ROLL
+
+*The camera suddenly returns to a previous position while continuing the
+interpolation.* `sub_418410` lerps four things across a move, not two: the eye,
+the target, `+44` and `+48`. `Camera_LoadParams` says which — `+44` is the
+roll, wrapped to (−180, 180] as it loads, and `+48` the fov. The viewer
+snapped the fov at the halfway point and dropped the roll.
+
+Measured through the port's own loader: 402's `4572 → 4574` runs
+**84.99° → 99.58°**, so a 14.6° widening was applied in ONE frame mid-travel;
+eleven of its pairs carry a roll, two of them over 10°, all drawn upright.
+What the measurement ruled out first matters as much: over the whole
+conversation the interpolant is monotonic and the pair never flips — `u` never
+goes backwards, so the position was never the fault, which two earlier
+readings had assumed. And the wrap is real but happens on LOAD: 4583/4584
+store 359 and 2 *in 4096ths*, which `angle4096` brings to −0.61° and 2.02°, so
+the plain lerp takes the 2.6° short arc. Reading those stored fields as
+degrees is a trap — they are not.
+
+`verify.py: dialogue camera blend`, which had to be taught to build `omk-play`
+as well as its probe: reading the records alone, it passed unchanged with the
+snap put back.
+
 ### THREE MORE FROM THE SAME CONVERSATIONS (2026-09-07)
 
 **The camera jumps back mid-travel.** `DialogPlayer` restarted the camera

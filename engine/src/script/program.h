@@ -216,6 +216,17 @@ public:
     // `Script_StartScript`: running, pc, loops, clock and run counters cleared.
     void start();
 
+    // `Scene_ResetObjectState` (0x0044AA20), which is two stores:
+    //
+    //     u16(obj, 30) &= 0xFFF0;    // the low nibble of the state word
+    //     u16(obj, 28) = 0;          // BUSY
+    //
+    // - the object stops being busy and leaves its running state. It is what
+    // `ScriptObject_StartOnActor` calls on the actor's PREVIOUS script object
+    // before binding a new one, so an actor is driven by one program at a
+    // time (`scenerunner.cpp`).
+    void reset() { running_ = false; busyUntil_.clear(); }
+
     // One frame.  -> true while the program is still running.
     bool tick(float dt = 1.0f);
 

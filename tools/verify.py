@@ -4266,6 +4266,188 @@ def c_dialogue_camera_subject():
            "it used to fall back to stood about 200 away"
 
 
+def c_one_program_per_actor():
+    r"""AN ACTOR IS DRIVEN BY ONE SCENE PROGRAM AT A TIME.
+
+    `ScriptObject_StartOnActor` (0x0041BA80) opens by clearing whatever the
+    actor is already running:
+
+        v5 = &g_Actors + 1312 * a1;        // the actor record
+        if (u32i(v5, 43)) {                // +172: its current script object
+            Scene_ResetObjectState(u32i(v5, 43));
+            u32i(v5, 43) = 0;
+        }
+
+    and `Scene_ResetObjectState` (0x0044AA20) is two stores - `u16(+30) &=
+    0xFFF0` and `u16(+28) = 0`, the busy word - so the previous object stops.
+    57/58 go through `ScriptObject_Start`, which binds to no actor and resets
+    nothing.
+
+    `SceneRunner::start` only ever appended, so both programs stayed live and
+    fought over the body. Kay'l's flat is where it shows and the numbers are
+    the reason it hid: `Aapkayl.SCX`'s `TélisLitSeule` (handle 156) carries
+    **loop -1** - it runs for ever - and SCENE 57's opening cutscene starts it
+    on actor 53; the goodbye (AREA 237 record 73) then starts `TelisAuRevoir`
+    (184, loop 1) on the same actor. With both running, the moment the
+    goodbye's own program ends the bed one takes the body back and Telis
+    vanishes from the doorway camera 4504/4505 is framed on - a reader:
+    *Telis appears normally at the beginning before disappearing.*
+
+    **Every repro that teleports into the goodbye misses it**, which is why
+    four separate runs - software and Vulkan, with input and without, 640x480
+    and the reader's own 1024x768 and clip 200 - all drew her correctly for
+    700 frames. The opening cutscene never ran in them, so there was only ever
+    one program. Only a probe that starts both, as a playthrough does,
+    separates the readings.
+
+    Shown to fail: dropping the reset leaves `TélisLitSeule` running after the
+    goodbye starts.
+    """
+    import subprocess
+    eng = os.path.join(ROOT, "engine")
+    fr = omkpaths.data_root()
+    if not (os.path.isdir(eng) and os.path.isdir(fr)):
+        return ("skipped",), ("skipped",), "engine/ or gamedata/ absent"
+    b = subprocess.run(["make", "-s", "build/actor_program"], cwd=eng, capture_output=True)
+    probe = os.path.join(eng, "build", "actor_program")
+    if b.returncode != 0 or not os.path.exists(probe):
+        return ("build failed",), ("built",), "engine/ must build"
+    r = subprocess.run([probe, fr, os.path.join(ROOT, "tables")],
+                       capture_output=True, encoding="latin-1")
+    out = r.stdout
+    def state(line, obj):
+        for l in out.splitlines():
+            if l.startswith(line):
+                for tok in l.split():
+                    if tok.startswith("T") or tok.startswith("E"):
+                        if "(%d)=" % obj in tok: return tok.split("=")[1]
+        return None
+    return (state("bed started:", 156),
+            state("goodbye started:", 156), state("goodbye started:", 184),
+            state("a scene object too:", 184), state("a scene object too:", 137)), \
+           ("running", "stopped", "running", "running", "running"), \
+           "Aapkayl's `TelisLitSeule` (156, loop -1) started on actor 53 and " \
+           "running; the goodbye's `TelisAuRevoir` (184) started on the SAME " \
+           "actor, which stops it, as `ScriptObject_StartOnActor` stops the " \
+           "actor's previous script object; and a scene object (57/58, " \
+           "`ScriptObject_Start`) started after both, which binds to no actor " \
+           "and stops nothing"
+
+
+def c_dialogue_camera_blend():
+    r"""A DIALOGUE CAMERA MOVE CARRIES ITS FOV AND ITS ROLL.
+
+    `sub_418410` (04_sys.c 4047) lerps FOUR things across a move, not two:
+
+        out[52..60] = C[20..28]*u + prev[20..28]*(1-u)     // eye
+        out[64..72] = C[32..40]*u + prev[32..40]*(1-u)     // target
+        out[44]     = prev[11]*(1-u) + C[11]*u             // +44
+        out[48]     = C[12]*u + prev[12]*(1-u)             // +48
+
+    and `Camera_LoadParams` (0x004146C0) settles which is which - `+44` is the
+    ROLL, wrapped to (-180, 180] as it is loaded:
+
+        v14 = f32(a2, 28);
+        if (v14 > 180.0)   v14 = v14 - 360.0;
+        if (v14 <= -180.0) v14 = v14 - -360.0;
+        f32(a1, 44) = v14;
+        ...
+        f32(a1, 48) = f32(a2, 32);                          // the FOV
+
+    The viewer SNAPPED the fov at the halfway point (`(u > 0.5f ? cbb : ca)
+    ->fov`) and dropped the roll entirely. Measured through the port's own
+    loader (`engine/tools/dlgcam`), dialog 402's `4572 -> 4574` runs
+    **84.99 -> 99.58 degrees**: a 14.6-degree widening applied in ONE frame in
+    the middle of a travel, which is what a reader met as *the camera suddenly
+    returns to a previous position while continuing the interpolation*. Eleven
+    of its pairs carry a roll and two of them more than 10 degrees, all drawn
+    upright.
+
+    Note what the measurement RULED OUT first, because two earlier readings of
+    this camera were about the position: over the whole of 402 the interpolant
+    is monotonic and the pair never flips - `u` never goes backwards on any
+    frame. The position was never the fault.
+
+    And the wrap is real but it happens on LOAD, not in the blend: 4583's roll
+    is stored as 359 and 4584's as 2 in 4096ths, and `angle4096` - like
+    `Camera_LoadParams` - brings them to -0.615 and 2.021 degrees, so the
+    plain lerp the engine does takes the 2.6-degree short arc rather than a
+    357-degree spin. Reading those stored fields as degrees is a trap this
+    check exists to stop: they are 4096ths of a turn.
+
+    Shown to fail: snapping the fov again puts the mid-travel fov of
+    `4572 -> 4574` at one end or the other instead of between them.
+    """
+    import subprocess, sys as _sys
+    eng = os.path.join(ROOT, "engine")
+    fr = omkpaths.data_root()
+    if not (os.path.isdir(eng) and os.path.isdir(fr)):
+        return ("skipped",), ("skipped",), "engine/ or gamedata/ absent"
+    # BOTH binaries: the probe reads the records and `omk-play` is what
+    # actually blends them. Building only the probe left the blend under test
+    # stale, and the check then passed with the snap put back.
+    b = subprocess.run(["make", "-s", "build/dlgcam", "play"], cwd=eng,
+                       capture_output=True)
+    probe = os.path.join(eng, "build", "dlgcam")
+    if b.returncode != 0 or not os.path.exists(probe):
+        return ("build failed",), ("built",), "engine/ must build"
+    r = subprocess.run([probe, fr, "402"], capture_output=True, encoding="latin-1")
+    cam = {}
+    for line in r.stdout.splitlines():
+        f = line.split()
+        if len(f) == 6 and f[0] == "cam":
+            cam[int(f[1])] = (float(f[3]), float(f[5]))     # roll, fov
+    _sys.path.insert(0, os.path.join(ROOT, "tools"))
+    import omkdata
+    c = omkdata.conversation(402)
+    seen, fovMoves, rolled, big10, biggest = set(), 0, 0, 0, 0.0
+    for n in c["nodes"]:
+        for a, b2 in ((n["lineCamera"], n["lineCamera2"]),
+                      (n["replyCamera"], n["replyCamera2"])):
+            if a == -1 or b2 == -1 or (a, b2) in seen: continue
+            if a not in cam or b2 not in cam: continue
+            seen.add((a, b2))
+            d = abs(cam[a][1] - cam[b2][1])
+            if d >= 2.0: fovMoves += 1
+            biggest = max(biggest, d)
+            if abs(cam[a][0]) >= 1.0 or abs(cam[b2][0]) >= 1.0: rolled += 1
+            if abs(cam[a][0]) >= 10.0 or abs(cam[b2][0]) >= 10.0: big10 += 1
+    # ...AND THE PORT'S OWN BLEND, which the records alone cannot see: a
+    # check that only reads the data passed unchanged with the snap put back.
+    # 4554 -> 4555 is the first line's pair, reached with no input at all, and
+    # runs 79.98 -> 83.58; mid-travel the fov must be strictly BETWEEN them,
+    # not at either end.
+    saves = os.path.join(ROOT, "omk-saves", "GAMES")
+    mid = None
+    if os.path.exists(saves):
+        env = dict(os.environ, SDL_VIDEODRIVER="dummy", OMK_CAMEYE="1")
+        rr = subprocess.run([os.path.join(eng, "build", "omk-play"), fr,
+                             os.path.join(ROOT, "tables"), "--save", saves,
+                             "--slot", "0", "--stand", "3572,1071,-991,181",
+                             "--frames", "500", "--res", "640x480"],
+                            capture_output=True, env=env, encoding="latin-1")
+        import re as _re
+        for line in rr.stdout.splitlines():
+            m = _re.search(r"\[dlgcam\].*pair 4554 -> 4555\s+u (\S+).*fov (\S+)", line)
+            if m and 0.25 < float(m.group(1)) < 0.75:
+                mid = float(m.group(2))
+    between = mid is not None and 80.5 < mid < 83.0
+    return (len(seen), fovMoves, round(biggest, 1), rolled, big10,
+            round(cam[4583][0], 2), round(cam[4584][0], 2), between), \
+           (19, 6, 14.6, 11, 2, 2.02, -0.61, True), \
+           "dialog 402's distinct camera pairs through the port's own " \
+           "loader; how many change FOV across the move and the largest, " \
+           "14.6 degrees (4572 -> 4574, 84.99 -> 99.58), which the viewer " \
+           "used to apply in ONE frame at the halfway point; how many carry " \
+           "a ROLL and how many more than 10 degrees, all of which it drew " \
+           "upright; and the 4583/4584 rolls, stored as 359 and 2 in 4096ths " \
+           "and wrapped on load to -0.61 and 2.02 degrees, so the engine's " \
+           "plain lerp takes the short arc. And the port's own output: " \
+           "halfway through the 4554 -> 4555 travel the drawn fov is " \
+           "strictly between 79.98 and 83.58, where the snap put it at one " \
+           "end or the other"
+
+
 def c_ui_shop_titles():
     r"""The ten shops' titles, and the branch a linear scan cannot follow.
 
@@ -25553,6 +25735,8 @@ SLOW = [
     ("path form",          c_path_form,          "FILE_FORMATS 5c"),
     ("line facing",        c_line_facing,        "engine/README"),
     ("dialogue camera subject", c_dialogue_camera_subject, "FILE_FORMATS 5b; engine/README"),
+    ("one program per actor", c_one_program_per_actor, "FILE_FORMATS 5c; engine/README"),
+    ("dialogue camera blend", c_dialogue_camera_blend, "engine/README"),
     ("save clock",         c_save_clock,        "GAME_STATE 8"),
     ("player counters",   c_player_counters,   "UI 3g; GAME_STATE"),
     ("fill colour",       c_fill_colour,       "UI 3b"),
