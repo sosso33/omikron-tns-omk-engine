@@ -2117,7 +2117,7 @@ has no 3D path, so they are not drawn; their LABELS and the two counts are,
 on the echo bar, which is where the engine puts them.
 
 **And a screen HIDES THE WORLD unless its own flag says otherwise**
-(2026-09-07). A reader: *the sneak background is transparent* — with the device
+(2026-09-07, CONFIRMED IN PLAY). A reader: *the sneak background is transparent* — with the device
 open the city street showed through the middle of its page art. Two separate
 things had to be told apart, and the first is not the fault: the colour key
 `8f5fd11` added is right (`I2D_BlitBitmap(&rect, surface, 1, 3)`, the third

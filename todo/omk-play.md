@@ -41,7 +41,8 @@ waiting on its evidence.
 > mask) and `engine: sneak`, whose "all 260 frames drew the world" was itself
 > the over-generalisation that made this possible and now reads 221 drawn / 39
 > hidden, exactly screen 9's window. `docs/UI.md` §3b.
-> **Not yet CONFIRMED IN PLAY.**
+> **CONFIRMED IN PLAY** 2026-09-07: a reader opened the device and the
+> middle is black rather than the street.
 >
 > Two arms of `sub_466B30` are still unported and are named where they belong:
 > the sound-bank suspend (`Mixer` has no suspend API) and the player's
