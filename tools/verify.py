@@ -7404,6 +7404,113 @@ def c_engine_cam_mode13():
            "differ by more than 0.02 (worst %.4f)" % worst
 
 
+def c_sneak_call():
+    r"""The VIDEOPHONE call: a screen that answers its own question.
+
+    The device a caller appears on, and the mechanism a reader named as "the
+    sneak cutscene" - it happens ten times in the game.
+
+    **The idiom is two instructions.** Across `IAM\AREA` and `IAM\SCENE` there
+    are **10** `ui.open 0` sites; **8** are followed immediately by
+    `dialog.start` and the other **2** by `media.play 534`, which is
+    `OBJECTS[534] = 'ZVO P315 DATA MEMORIZED'` - the caption a capture of the
+    original shows top right. All ten sit in a ZONE record: **8** in its enter
+    script (`slot +0`) and **2** in its activate (`slot +4`). The restaurant
+    is one of the two - SCENE 53's zone record 0, where `ui.open 0` at pc 1158
+    is followed by `dialog.start 386` (`Policier Sneak/Supermarche`) at 1165
+    and `character.hide 95` at 1168.
+
+    **Why the script does not wait.** `ui.open` parks its caller at status 6
+    and only `Game_HandleEvent` case 5 releases it (SCRIPT_VM 70) - but
+    screen 0's own open callback sends that event itself.
+    `Ui_OpenSneakFamily`'s param-2 arm ends:
+
+        0049B45C  C7 46 1C 28 F1 4D 00   mov [esi+1Ch], offset unk_4DF128
+                  89 3D 40 F1 4D 00      mov dword_4DF140, edi     ; 1
+                  89 3D F0 0B 67 00      mov dword_670BF0, edi     ; 1
+        0049B46F  E8 EC 00 F9 FF         call UI_SendAnswer        ; 0x0042B560
+
+    and `UI_SendAnswer` fires event 5 with `dword_930750`, which
+    `UI_OpenScreen` seeded at **-1** and which nothing on this screen ever
+    writes. So the screen opens, hands -1 straight back, and STAYS UP while
+    the script runs on into the call. That is also why `docs/UI.md` 3d-bis
+    lists VIDEOPHONE among the three screens that "keep the answer with no
+    writer": the answer is never written because the open sends whatever is
+    there.
+
+    **The caller is a real actor, parked off-stage.** Conversation 386's
+    speaker is actor **95**, `GD1_FNM`, whom `ARESTO14` places 745 units above
+    the restaurant floor in a sealed room (docs/UI.md 3d-bis); the script
+    hides him with `character.hide 95` once the call is over. The 3D inside
+    the panel is not a special view - `I2D_Submit3DView`'s full-screen submit
+    (`sub_479C20`) is the ordinary world, and the device's artwork has the
+    viewport hole.
+
+    **Tier 2**, corpus- and image-constrained. It asserts the idiom, the
+    bytes and the actor; the port's own run of it is not here, because
+    reaching a call needs either the restaurant beat played through or a walk
+    into one of the nine zones, and neither is a headless step.
+    """
+    import re as _re, json as _json
+    sys.path.insert(0, os.path.join(ROOT, "tools"))
+    import script_dump as SD
+    sites = []
+    for arch in ("AREA", "SCENE", "GLOBAL"):
+        rng = range(0, 400) if arch != "GLOBAL" else [0]
+        for chunk in rng:
+            try:
+                b, scripts = SD.scripts_of(arch, chunk)
+            except Exception:
+                continue
+            for i, (label, off) in enumerate(scripts):
+                try:
+                    txt = SD.listing(b, off, label)
+                except Exception:
+                    continue
+                lines = txt.splitlines()
+                for k, ln in enumerate(lines):
+                    m = _re.search(r"ui\.open\s+(\d+),", ln)
+                    if m and m.group(1) == "0":
+                        nxt = lines[k + 1].strip() if k + 1 < len(lines) else ""
+                        sites.append((arch, chunk, label, nxt))
+    withDialog = sum(1 for s in sites if "dialog.start" in s[3])
+    withMedia  = sum(1 for s in sites if "media.play" in s[3] and "534" in s[3])
+    onEnter    = sum(1 for s in sites if s[2].endswith("slot +0"))
+    onActivate = sum(1 for s in sites if s[2].endswith("slot +4"))
+    resto = [s for s in sites if s[0] == "SCENE" and s[1] == 53]
+
+    e = ui_tables.Exe()
+    arm = e.read(0x0049B45C, 24)
+    call = 0x0049B46F + 5 + struct.unpack_from("<i", e.read(0x0049B46F, 5), 1)[0]
+
+    ui = _json.load(open(os.path.join(ROOT, "tables", "ui.json")))["rows"]["screens"]
+    vp = next(r for r in ui if r["id"] == 0)
+    wid = _json.load(open(os.path.join(ROOT, "tables", "ui_widgets.json")))["rows"]
+    panel0 = next((p for p in wid["panels"] if p["screen"] == 0), None)
+
+    conv = O.conversation(386)
+    return ((len(sites), withDialog, withMedia, onEnter, onActivate),
+            len(resto) == 1,
+            arm[:7] == bytes.fromhex("c7461c28f14d00"),   # the panel store
+            arm[7:19] == bytes.fromhex("893d40f14d00893df00b6700"),
+            call == 0x0042B560,                            # UI_SendAnswer
+            vp["name"], vp["param"], vp["cb"][0] == 0x0049B400,
+            panel0 is not None and panel0["panel"] == 0x004DF128,
+            conv["speaker"]), \
+           ((10, 8, 2, 8, 2), True,
+            True, True, True,
+            "VIDEOPHONE", 2, True, True, 95), \
+           "the `ui.open 0` sites and what follows each (8 a conversation, 2 " \
+           "`media.play 534` = ZVO P315 DATA MEMORIZED), and which SLOT each " \
+           "sits in - 8 a zone's ENTER script and 2 its ACTIVATE, the " \
+           "restaurant's among them; then " \
+           "`Ui_OpenSneakFamily`'s param-2 arm byte for byte - the panel it " \
+           "installs, the two flags, and that the call it ends on is " \
+           "UI_SendAnswer, which is what lets the script run on with the " \
+           "device up; the screen record and its panel; and that conversation " \
+           "386's speaker is actor 95, the guard the restaurant parks upstairs"
+
+
 def c_engine_pause():
     r"""ESC opens screen 31 PAUSE GAME, and the four items do what they do.
 
@@ -26142,6 +26249,7 @@ SLOW = [
     ("engine: cam mode 13",    c_engine_cam_mode13,    "engine/README"),
     ("engine: screen close",   c_engine_screen_close,  "engine/README"),
     ("engine: pause",       c_engine_pause,       "todo/next-tasks 3; UI 3b"),
+    ("sneak call",         c_sneak_call,         "UI 3d-bis"),
 
     ("engine: DataFs",     c_engine_datafs,     "engine/README"),
     ("engine: SCX stream", c_engine_scx_stream, "engine/README"),

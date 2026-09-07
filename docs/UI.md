@@ -253,20 +253,32 @@ Two flags in +84 have visible consequences:
   the player actor into `ACTOR_STATE` 9 for as long as the screen is up,
   saving the old state at +408. Exactly three screens set it: `PAUSE GAME`
   and the two `SHOOT` screens — the ones you are still playing during.
-* **0x20000400 — refuse `PAUSE GAME` while this screen is up.** Set on
-  `OMK START MENU` and `SAVE GAME`, and on no other screen. **This said the
-  opposite until 2026-09-07** — "opening either fires screen 31's open
-  callback" — and the branch says the reverse. `UI_LoadScreen`'s slot scan
-  is
+* **0x20000400 — `PAUSE GAME` and this screen are mutually exclusive, and
+  this screen wins.** Set on `OMK START MENU` and `SAVE GAME`, and on no
+  other screen. `UI_LoadScreen` enforces it from **both** ends:
 
+      /* the slot scan, at the head */
       if (slot->screen == a1) return 1;                    // already open
       ...
       if (v5 || a1 == 31 && UI_TestScreenFlag(slot, 0x20000400))
-          return 1;                                        // refused
+          return 1;                                        // 31 REFUSED
 
-  so a slot holding one of those two makes a request for **31** return
-  without opening anything. It is what stops ESC putting the pause menu over
-  the start menu, which is where the boot parks. See §3h.
+      /* ...and the tail, once the new screen is going up */
+      if (the new screen carries 0x400) {
+          v29 = UI_FindScreen(31);
+          if (v29 && v29[2]) v29[5](v29);                  // 31's CLOSE cb
+      }
+
+  So a request for 31 returns without opening anything while one of those two
+  is up, and opening one of those two **closes** 31 if it is up. It is what
+  stops ESC putting the pause menu over the start menu, which is where the
+  boot parks. See §3h.
+
+  **This said "opening either fires screen 31's open callback" until
+  2026-09-07**, and both halves of that were wrong: it is `v29[5]`, the
+  screen record's `+20`, which is the CLOSE, and the refusal arm was not
+  described at all. The first correction that day named only the refusal;
+  the tail is the other half.
 
 ---
 
@@ -2030,6 +2042,58 @@ choosing") and not a missing decode.
 `verify.py: ui answers` — **tier 2**, corpus-constrained. What it establishes
 is the set of values each screen can write, not that any screen behaves
 correctly.
+
+### 3i. THE SNEAK CALL — a screen that answers its own question
+
+The videophone call a reader named "the sneak cutscene", and it happens **ten
+times** in the game. The idiom is two instructions:
+
+    1158  ui.open          0, -1, 19        ; SCREEN[0] = 'VIDEOPHONE'
+    1165  dialog.start     386              ; 'Policier Sneak/Supermarché'
+    1168  character.hide   95               ; the caller, put away again
+
+Across `IAM\AREA` and `IAM\SCENE` there are **10** `ui.open 0` sites — **8**
+followed at once by `dialog.start` and **2** by `media.play 534`,
+`OBJECTS[534] = 'ZVO P315 DATA MEMORIZED'`, which is the caption a capture
+shows in the top right. All ten sit in a zone record: 8 in its **enter**
+script and 2 in its **activate**, the restaurant's lunch beat (SCENE 53,
+record 0) among the latter.
+
+**`ui.open` parks its caller, so how does the next instruction run?** Because
+this screen answers itself. `Ui_OpenSneakFamily`'s param-2 arm ends:
+
+    0049B45C  C7 46 1C 28 F1 4D 00   mov [esi+1Ch], offset unk_4DF128
+              89 3D 40 F1 4D 00      mov dword_4DF140, edi     ; 1
+              89 3D F0 0B 67 00      mov dword_670BF0, edi     ; 1 — a call is up
+    0049B46F  E8 EC 00 F9 FF         call UI_SendAnswer        ; 0x0042B560
+
+and `UI_SendAnswer` fires `Game_RaiseEvent(5, {ctx, dword_930750})` — the
+event that resumes a script parked at `ui.open` (§70 in
+[`SCRIPT_VM.md`](SCRIPT_VM.md)). `UI_OpenScreen` seeded that answer at **−1**
+and nothing on this screen ever writes it, so the device opens, hands −1
+straight back, and **stays up** while the script runs on into the call. It is
+also the reason §3d-bis lists VIDEOPHONE among the three screens that "keep
+the answer with no writer": the answer is never written because the open
+sends whatever is there.
+
+**The 3D inside the panel is the ordinary world.** `I2D_Submit3DView`'s
+full-screen submit (`sub_479C20`, gated on `byte_90E155`) is the same one
+every frame uses; the device's artwork simply has the viewport hole. Nothing
+special renders a caller.
+
+**Closing it is read only half-way.** `Ui_CloseSneakFamily`'s param-2 arm
+REFUSES the first attempt — it clears `dword_670BF0`, resumes the player
+(`sub_466B60`) and starts oscillator 5 for 100 ms, a closing animation — and
+closes on the next one. What *makes* the attempt is not established: no VM
+opcode closes a screen, the only other screen whose open closes this one is
+`SHOOT HUMAN` (`if (a1 == 34) UI_CloseScreen(0)` in `UI_LoadScreen`'s tail),
+and the function has no direct caller because it is a dword in the screen
+table.
+
+Ported into `omk-play` 2026-09-07: `ui.open 0` answers itself, the session
+keeps running under the screen, and the call closes when its conversation
+ends — that last part **labelled a reconstruction** for the reason above.
+`verify.py: sneak call` asserts the idiom, the arm's bytes and the speaker.
 
 ### A CALLER IS A REAL ACTOR, PARKED OFF-STAGE
 

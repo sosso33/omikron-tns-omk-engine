@@ -15,6 +15,51 @@ waiting on its evidence.
 
 ## Open (batch 6, filed 2026-09-04)
 
+### 83. The SNEAK CALL was never played — the device opened and the call did not
+
+> **Ported 2026-09-07. NOT confirmed in play**, and this entry says so: no
+> headless run reaches a call, so the runtime path below is reasoned from the
+> script and the image, not watched.
+
+A reader, with a capture of the original: the videophone comes up in the
+middle of the Telis restaurant lunch, a caller speaks inside it with the
+subtitle under him and `DATA MEMORIZED` in the corner - *and it happens
+multiple times in the game*. It does: **ten** `ui.open 0` sites, 8 followed by
+`dialog.start` and 2 by `media.play 534` (`ZVO P315 DATA MEMORIZED`).
+`docs/UI.md` §3i has the whole reading.
+
+**Three things in the port were in the way, and two of them are the same old
+assumption.**
+
+1. **`ui.open 0` parked for ever.** `ui.open` suspends its caller at status 6
+   and only event 5 releases it - but screen 0's own open callback fires that
+   event (`Ui_OpenSneakFamily`'s param-2 arm ends `call UI_SendAnswer`), so
+   the script resumes with the preset −1 **while the device stays up**. The
+   port waited for a person to close it, so the call's own `dialog.start`
+   never ran: an empty videophone.
+2. **The session stopped under a screen** - `if (!walk) session.frame()`.
+   `Game_Tick` has no test for an open screen anywhere in it; the only thing
+   that stops the world is the pause flag, and that is a delta of zero. This
+   is the THIRD time that assumption has come out: once for the world DRAW
+   (the sneak froze Anekbah, 19 frames in 1924), once for the player's tick,
+   and this was the line that still held it for the SCRIPTS. A call cannot
+   play through it, because the instruction after `ui.open` is the one that
+   starts the conversation.
+3. **Nothing closed it.** Reconstructed: the call closes when the
+   conversation opened over it ends. What the engine does is read only
+   half-way - `Ui_CloseSneakFamily`'s param-2 arm refuses the first attempt
+   (oscillator 5, 100 ms, a closing animation) and closes on the second - but
+   what MAKES the attempt is not established. Labelled in the code.
+
+**How established** - the script (SCENE 53 record 0's activate, pc 1158/1165/
+1168), `Ui_OpenSneakFamily`'s bytes, and the corpus of ten sites.
+`verify.py: sneak call` pins all three. **What is NOT established**: that the
+port draws it correctly. Reaching a call headlessly needs either the
+restaurant beat played through - it opens with `scx.play.player.wait`, so a
+`--scene-chunk` replay parks - or a walk into one of the nine zones, and
+several attempts at both failed to arm. The natural confirmation is a person
+playing to the restaurant lunch.
+
 ### 82. ESC ended the run instead of opening the pause screen — A
 
 > **Fixed 2026-09-07, CONFIRMED IN PLAY.** A session on
