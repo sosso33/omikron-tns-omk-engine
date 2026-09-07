@@ -2505,10 +2505,41 @@ cancellation `tools/omkdata.pose` stages conversations with is a viewer
 convenience the engine does not have; `engine/` keeps it only for a speaker
 no scene object drives.
 
+**And the line's ROOT TRANSLATION is a DELTA, never a placement** (2026-09-07,
+from a reader watching Telis in the restaurant *fly* between her line and her
+idle). The same apply loop that cannot cancel the rotation also never writes
+the frame's translation into the node: `f32(node + 28) = frameTranslation` sits
+behind the same `track == g_MorphRootTrack` test, so with the index at −2 it
+matches nothing. What the translation is actually used for is a few lines
+later —
+
+```c
+Matrix3x3_FromEulerAngles(0.0, yaw * PI/180, 0.0, v36);
+Matrix3x3_RotateVector(t[0], t[1], t[2], v36, &x, &y, &z);
+if (dword_4EA8FC) {                      /* latched once, at the line's start */
+    dword_4EA8FC = 0;
+    flt_4EA8F0 = x + g_MorphOriginX - flt_4EA8E4;
+    ...
+}
+```
+
+— the frame's translation turned by the heading and taken **relative to
+`g_MorphOrigin`**, the origin captured when the line began. So a line moves the
+body from where it already stands; the scene clip's placement and its
+accumulated root motion stay under it, and are what the body returns to when
+the line ends. Nothing about the position belongs to the fade.
+
+`engine/` had weighted the scene clip's root motion by the fade (`rootW =
+1 - w`), so a speaking body drifted back to its bare staged placement and the
+fade lerped it there and back — which is the *flying*. Corrected 2026-09-07:
+the scene clip's placement is kept whole through a line
+(`todo/omk-play.md` 81).
+
 Ported in `engine/src/actor/pose.h` (`qslerp`, `blendTracks`,
 `morphBlendFrames`) and `backends/sdl/play.cpp`; `verify.py: engine pose
 blend` asserts the arithmetic and the lengths through
-`tools/blend_probe.cpp`. The `/dialog` web viewer still cuts to the idle
+`tools/blend_probe.cpp` — **the POSE half only**, which is why the placement
+reading above survived five days: no check looked at where the body stood. The `/dialog` web viewer still cuts to the idle
 without a blend, and still cancels the root.
 
 ## 5d. `IAM\GLOBAL` and `IAM\START` — plain files, not archives

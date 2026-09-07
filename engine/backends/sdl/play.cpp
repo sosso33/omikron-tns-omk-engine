@@ -7528,8 +7528,30 @@ int main(int argc, char** argv) {
                         pose = omk::composePose(s.mo->meshes, s.lineTracks, frame,
                                                 cancelLineRoot);
                     }
-                    rootW = 1.0f - w;
-                    rootFrame = w > 0.0f ? idleFrame : static_cast<int>(sceneFrame);
+                    // THE PLACEMENT IS THE SCENE CLIP'S, WHOLE, WHILE A LINE
+                    // PLAYS. A line changes the POSE, never where the body
+                    // stands: the morph player (08_wave.c) never writes the
+                    // line's root translation into the node - `g_MorphRootTrack`
+                    // is -2, so the `f32(node + 28) = frameTranslation` write
+                    // matches no track - and instead rotates that translation
+                    // by the Y euler and adds it to `g_MorphOrigin`, latched
+                    // once at the start of the line (`dword_4EA8FC`). So a
+                    // line's root is a DELTA from where the body already
+                    // stands, and the scene clip's own root motion is still
+                    // under it.
+                    //
+                    // This weighted it by the blend (`rootW = 1 - w`), so a
+                    // speaking body drifted back to its bare staged placement
+                    // and the fade lerped it there and back: a reader watching
+                    // Telis in the restaurant saw her FLY between the line and
+                    // the idle, and said which end was right - the idle's,
+                    // because her face leaves the (correct) camera while she
+                    // speaks. The 2026-09-02 reading that put the weight here
+                    // had the same report ("alternate between flying and
+                    // landing") and treated the position as something the fade
+                    // owns; it is not (`todo/omk-play.md` 81).
+                    rootW = 1.0f;
+                    rootFrame = static_cast<int>(sceneFrame);
                     // The FACE has no bone track: its vertices come straight
                     // out of the line's own frame, which is what moves the lips.
                     if (!speakerMorph.empty()) fv = omk::faceFrame(speakerMorph, frame);

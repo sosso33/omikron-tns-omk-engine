@@ -240,7 +240,18 @@ POSES), with its ROOT rotation kept - the engine's identity-key write misses
 (`g_MorphRootTrack` is only ever -2), and that is the whole-body bow the
 original shows; a speaker no scene object drives keeps the old cancellation
 as its staging fallback. `tools/blend_probe` pins the arithmetic,
-`tools/dump_lineblend` prints a line's poses beside the idle's. The press
+`tools/dump_lineblend` prints a line's poses beside the idle's.
+**And the fade owns the POSE and not the POSITION** (2026-09-07): the morph
+player never writes a line's root translation into the node - the store sits
+behind `track == g_MorphRootTrack` and that index is -2 - and uses it instead
+as an offset from `g_MorphOrigin`, latched at the line's start, so a line moves
+the body from where it already stands and the scene clip's placement stays
+under it. Weighting that placement by the fade (`rootW = 1 - w`) made a speaker
+drift to her bare staged spot and back: a reader watching Telis in the
+restaurant saw her FLY, and named the right end - the idle's. The placement is
+now kept whole through a line, and `engine: pose blend` says in its own
+docstring that it asserts the pose half only, which is how the wrong reading
+stayed green for five days (`todo/omk-play.md` 81). The press
 that leaves a line SILENCES its voice: `Dialog_TickUI` case 2/7/8 calls
 `Morph_Stop`, which stops the voice buffer (`sub_46CAE0`), so the frontend's
 `playSound` now returns a handle and `stopSound` drops that shot from the

@@ -15,6 +15,43 @@ waiting on its evidence.
 
 ## Open (batch 6, filed 2026-09-04)
 
+### 81. A speaker FLIES between her line and her idle: the fade owned the position — A
+
+> **Fixed 2026-09-07, CONFIRMED IN PLAY.** The reader, on Telis in the
+> restaurant: *the npc of the dialog has a totally different position between
+> the dialog animation and the idle animation (the interpolation between the
+> two makes it look like the character is flying)* — and, decisively, **which
+> end is right**: *the correct position is the one of the idle animation, since
+> Telis face is out of the camera when she's speaking (the camera is correct)*.
+
+**A line changes the POSE, never the position.** The morph player
+(`readable/src/08_wave.c`) never writes a line's root translation into the
+node: the `f32(node + 28) = frameTranslation` store sits behind
+`track == g_MorphRootTrack`, and that index is −2 in the whole image, so it
+matches no track. The translation is used instead to build an offset from
+`g_MorphOrigin`, latched once at the start of the line (`dword_4EA8FC`) — a
+**delta from where the body already stands**. The scene clip's placement and
+its accumulated root motion stay under it.
+
+**What the port did.** `rootW = 1.0f - w` weighted the scene clip's root motion
+by the line/idle fade, so while she spoke the body drifted back to its bare
+staged placement and the fade lerped it there and back. The idle end looked
+right because that is where `rootW` is 1 and the scene's placement is fully
+applied. Fixed by keeping the scene clip's placement whole through a line.
+
+**This is the second report of the same thing, and the first fix caused the
+second.** On 2026-09-02 a reader saw the fade *"alternate between flying and
+landing"*, and the reading then was that the position is something the fade
+owns — which is what put `rootW` there. It is not: only the pose is.
+
+**Why it survived five days of green checks.** `verify.py: engine pose blend`
+pins the fade's arithmetic, its lengths and the root-kept bow — the POSE half —
+and nothing asserted where the body stood. There is still no check on the
+placement through a line, because it needs a running conversation the headless
+harness cannot yet open (walking to Telis in `traces/games-resto.bin` and
+pressing action); the pose checks' docstring now says what it does not cover.
+That is the open half of this entry.
+
 ### 80. `engine: walk-in scene`'s mutation arm no longer fires — B
 
 Filed 2026-09-07, found while checking that the city-pool swap (79) broke

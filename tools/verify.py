@@ -4707,7 +4707,18 @@ def c_engine_particles():
 
 
 def c_engine_pose_blend():
-    r"""actor/pose.h, BLENDING TWO POSES: the fade at a line's two ends.
+    r"""`engine/`: the line/idle fade - the POSE, and deliberately not the placement.
+
+    **What this does NOT cover, stated because its absence cost five days.**
+    Everything below is about the pose: the qslerp, the fade lengths, the root
+    rotation kept rather than cancelled. Where the body STANDS through a line
+    is a separate rule - a line's root translation is a delta from
+    `g_MorphOrigin` and the scene clip's placement stays under it
+    (`docs/FILE_FORMATS.md` 5c) - and no check asserts it, which is why the
+    port could weight that placement by the fade and make a speaker fly while
+    every one of these columns stayed green (`todo/omk-play.md` 81).
+
+    actor/pose.h, BLENDING TWO POSES: the fade at a line's two ends.
 
     A reader: the character "is supposed to fade to an idle animation" at the
     end of a line, and the port "just stops at the last frame". The fade is

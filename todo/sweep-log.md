@@ -12,7 +12,7 @@ longer than most tasks it validates. So it is **not** run per task. The rule
 Increment `tasks since` when a task is committed; reset it to 0 and add a row
 when a full sweep is run.
 
-**tasks since the last full sweep: 4**
+**tasks since the last full sweep: 5**
 
 | date | what was swept | result |
 |---|---|---|
@@ -20,7 +20,9 @@ when a full sweep is run.
 
 The three tasks since are `4dffb70` (omk-play 78, the beat hand-over), the
 frame-by-frame follow-up `74ed743`, and omk-play 79 (the city's pool coming
-back out of a building). Each was verified with `--only` over the checks it
+back out of a building). The fifth is omk-play 81, the speaker's placement through a line.
+**A full sweep is now DUE** - the counter has reached the bottom of the 5-10
+band. Each task was verified with `--only` over the checks it
 touches - `engine: editing hold`, `engine: frame hold`, `engine: beat
 handover`, `engine: city return`, `engine: airlock walk`, `engine: area
 transition`, `engine: live zones`, `licence headers`.
