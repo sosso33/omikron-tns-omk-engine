@@ -84,6 +84,7 @@ that only for a file you are about to actually open.
 | todo/options-config.md | ~6k | the graphical options: the config file, the save header, the clip distance, the sky, the fog. Four steps, three done |
 | todo/engine-spec-1999.md | ~2k | the official 1999 engine spec sheet, audited line by line against what this repo can show. EXTERNAL evidence; two open leads (the .3DO light table, the claimed BSP) |
 | todo/mesh-lights.md | ~2k | the .3DO light table: 304-byte records, the count at desc+240 (NOT +232, which the loader overwrites). Four steps, one done |
+| todo/play-test.md | ~3k | what is committed and NOT yet confirmed by a person, and how to reach each of it in play. Written before a test pass; delete or rewrite it after one |
 | todo/sweep-log.md | ~1k | the full-sweep counter: how many finished tasks since the last one, and the rule that it runs every 5-10 rather than per task |
 | todo/slider.md | ~17k | the SLIDER (next-tasks 16): the sneak's transport, the flight model, how a ride is entered and ends, where a called one comes to and is put, and the 8-state ride machine. Six steps, ALL DONE - what is left is plumbing, named in its own section |
 | todo/text-layout.md | ~4k | `Text_LayOutBlock` (0x0043F3E0): what the engine's own text layout does - the wrap, the 120% line pitch, the alignment, the vertical placement, the counted spans - and the three callers moved onto it. All three steps done |
