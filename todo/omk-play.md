@@ -15,6 +15,94 @@ waiting on its evidence.
 
 ## Open (batch 6, filed 2026-09-04)
 
+### 80. `engine: walk-in scene`'s mutation arm no longer fires — B
+
+Filed 2026-09-07, found while checking that the city-pool swap (79) broke
+nothing. The check's last column asserted that reading a body's pose from the
+ACTIVE pool alone (`OMK_ACTIVE_POOL_ONLY`) freezes at least ten of Anekbah's
+street bodies. It now freezes **none**: both modes end with 27 staged bodies,
+8 on a clip, 0 in the rest pose and the same 14 holding "the last pose it was
+given".
+
+Two changes of the same day mask it, and neither is wrong in itself:
+`ScriptObject_StartOnActor` now stops an actor's previous program, so by frame
+420 the outgoing pool has nothing running for the mutation to take away; and a
+body nothing drives now holds its last pose instead of falling to the REST
+pose, so the symptom the column counts has a different name.
+
+**Not a fault in the port** - the five columns that matter still pass, and the
+two-pool pose lookup they were added for is still in place. What is lost is the
+proof, and CLAUDE.md 1 is explicit that a mutation which does not apply passes
+for reasons unrelated to the check. Re-arming it needs a moment in the walk
+where the outgoing pool IS still running something: earlier than frame 420, or
+a set whose extras loop. The check says so in its own docstring rather than
+carrying a green column that proves nothing.
+
+### 79. Leaving a building left the city DEAD: its animations and its neon never came back — A
+
+> **Fixed 2026-09-07.** Not yet confirmed in play — the measurement is
+> `tools/city_return`, which walks the game's own door pair rather than a
+> viewer.
+
+A reader's question: *could you check in the city scripts (animations, street
+lights, fire, ...) are correctly reloaded when exiting a building?* The answer
+turned out to be that **nothing is reloaded, because in the engine nothing is
+lost** — and the port was losing it.
+
+**What the engine does.** `Area_LoadScx` (0x0041B4E0) walks the decor slots for
+the one holding the area (`u8i(slot,110) && *slot == area`, stride 33 dwords)
+and fills THAT slot's object container at `slot+8`, then binds THAT slot's
+`.sfx`: `Sfx_LoadFile(v6, slot)` and `Sfx_BindAmbientEffects(slot)`. **One pool
+per slot**, and `Game_Frame` ticks both. `Area_LoadIntoSlot` (0x00402B70) on a
+resident return does only `sub_41D380(area, block + 144)` — the fog block — and
+nothing else: no `Area_Load`, so no case 2 and no case 9. The city you walked
+out of still has its own pool, with its own programs running, because it was
+never touched.
+
+**What the port did.** It keeps the outgoing pool in `sceneOut_` and ticks it
+(so the city goes on animating while you are inside, which is right), but it
+had **no way home**: the transition's `finishScene()` calls `reloadScene`, and
+with `sceneArea_` being the building's that builds a FRESH runner from the
+file. Measured over the round trip Anekbah → Hall 43 → Anekbah:
+
+| | scene | programs running | ambient emitters | particles |
+|---|---|---|---|---|
+| in the city | `anekbah.SCX` | **32** | **153** | 1101 |
+| inside Hall 43 | `Hall43.SCX` | 0 (city kept: 32) | 0 | 0 |
+| back, before the fix | `anekbah.SCX` | **0** | **0** | **0** |
+| back, after | `anekbah.SCX` | **32** | **153** | 1110 |
+
+and 200 frames later the pre-fix numbers were still 0: the city's ambient
+animations were dead for the rest of the session.
+
+**The neon went with them, and that is the part reading alone nearly missed.**
+`bindSetEmitters` — the `0x40000000` mesh family, the neon, the steam, the
+smoke — binds into the RUNNER, and its only caller is the viewer's set load. A
+resident return loads no set, so nothing re-binds them and they die with the
+runner it replaced. **The street lights are fine**: the `.3DO` light table
+lives in the `WorldSlot` beside the set's geometry, which a resident return
+neither rebuilds nor reloads.
+
+**The fix is one branch**: coming back to the area the kept pool holds is a
+SWAP, not a load. `reloadScene` swaps `scene_` and `sceneOut_` (and re-points
+each one's set pieces at its own `sfx_`) and returns.
+
+`verify.py: engine: city return`, shown to fail (`if (false && sceneOutArea_ ==
+area ...)` gives 0 running and 0 emitters coming back).
+
+**One number differs legitimately on the two sides** and the check reads around
+it: started-EVER goes 32 → 34, because the transition's own two door objects
+(153 and 240) start on the outgoing pool, which is the city's. So the test is
+`running`, not `count`.
+
+**And a harness fault worth keeping**, because it produced a confident wrong
+answer first. The probe ran the return leg's zone script on slot 0 when Hall 43
+was resident in slot 1; `area.goto` loads into `1 - slot`, so it targeted the
+slot holding the city and evicted it — which manufactured a DOUBLE load, 64
+programs on 32 objects, and read exactly like "the startup script runs twice on
+the way back". The real fault was the opposite (nothing runs at all). A zone
+script has to be run on the slot its chunk is resident in.
+
 ### 78. Between two beats of a cutscene Kay'l pops to his idle pose and another place — A
 
 > **Fixed 2026-09-07. CONFIRMED IN PLAY** — reported by the reader after 77

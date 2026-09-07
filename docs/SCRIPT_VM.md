@@ -2028,6 +2028,41 @@ handlers of 45 (0x402AB0), 47 (0x402D20) and 48 (0x402E10),
 `Script_Pump`'s tail and `Game_HandleEvent` case 3. The section above decodes
 `area.goto`'s operands; this is what they drive.
 
+### One OBJECT POOL per slot, and what that means for coming back
+
+The pool of scene objects belongs to the **slot**, not to the game.
+`Area_LoadScx` (0x0041B4E0) walks the decor slots for the one holding the area
+it is given — `u8i(slot, 110) && *slot == area`, stride 33 dwords — and fills
+**that slot's** object container at `slot + 8`, then binds **that slot's**
+`.sfx`:
+
+```c
+sub_44B140(slot + 8);                       /* clear the container      */
+Scene_LoadSCX(Buffer, slot + 8);            /* ...and fill it           */
+Buffer[strlen(Buffer) - 2] = 'f';
+if ((v6 = File_LoadWhole(Buffer, ...))) {
+    Sfx_LoadFile(v6, slot);
+    Sfx_BindAmbientEffects(slot);           /* the ambient family, per slot */
+}
+```
+
+`Game_Frame` then plays **both** pools every frame (the `v4 += 33` walk over
+the slots, gated on `u8i(v4, 106)`), which is why the area you are not standing
+in goes on animating.
+
+**So walking back out of a building reloads nothing.** `Area_LoadIntoSlot`
+opens `if (dword_69BC48[4 * slot] == area) return sub_41D380(area, block +
+144);` — the fog block refreshed and nothing else. No `Area_Load`, so
+`Area_TickLoad` never reaches case 2 (`Area_LoadScx`) or case 9 (the startup
+contexts): the city's container, its `.sfx` binding and its running programs
+are exactly as you left them, because nothing touched them.
+
+A replica that keeps one "current scene" has to model this as two pools that
+swap, and `engine/` did not: it kept the outgoing one and ticked it but rebuilt
+a fresh one on the way back, so a city came out of a building with **0 of its
+32 programs running and 0 of its 153 ambient emitters bound**, dead for the
+rest of the session (`verify.py: engine: city return`, `todo/omk-play.md` 79).
+
 ### Two resident slots
 
 The engine keeps **two** areas loaded. The table at `0x0069BC40` is two 16-byte

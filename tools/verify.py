@@ -8492,6 +8492,80 @@ def c_engine_props():
             "beats and after, whether the rings are among them, and where they "
             "land once Area_Load's conversion is applied")
 
+def c_engine_city_return():
+    r"""`engine/`: the city is still running when you come out of a building.
+
+    A reader asked whether the city's scripts - the ambient animations, the
+    street lights, the fire - are correctly reloaded on leaving a building.
+    **Nothing is reloaded, because in the engine nothing is lost.**
+
+    `Area_LoadScx` (0x0041B4E0) walks the decor slots for the one holding the
+    area (`u8i(slot,110) && *slot == area`, stride 33 dwords) and fills THAT
+    slot's object container at `slot+8`, then binds THAT slot's `.sfx` -
+    `Sfx_LoadFile(v6, slot)`, `Sfx_BindAmbientEffects(slot)`. One pool per
+    slot, and `Game_Frame` ticks both. `Area_LoadIntoSlot` (0x00402B70) on a
+    resident return does only `sub_41D380(area, block + 144)`, the fog block,
+    and nothing else - no `Area_Load`, so no case 2 and no case 9. So the pool
+    of the area you walked out of still has its own programs running.
+
+    `tools/city_return` walks the game's own door pair - AREA 0 (Anekbah) zone
+    record 3 is `area.goto 201, 153, 240` (Hall 43) and AREA 201 zone record 2
+    is `area.goto 0, 19, 20` back - and reports the city on both sides.
+    Anekbah runs 32 programs and binds 153 ambient emitters (the `0x40000000`
+    mesh family: the neon, the steam, the smoke); inside the building its pool
+    keeps running as the outgoing one; and coming out it must be the SAME pool,
+    32 still running and its 153 emitters still bound.
+
+    The replica kept the outgoing pool and ticked it but had no way home: the
+    return built a fresh runner from the file, so the city came back with 0
+    programs and 0 emitters and stayed that way - its animations and its neon
+    dead for the rest of the session, since `bindSetEmitters` is only ever
+    called when a SET is loaded and a resident return loads none. `reloadScene`
+    now SWAPS the kept pool back.
+
+    SHOWN TO FAIL: `if (false && sceneOutArea_ == area ...)` gives 0 running
+    and 0 emitters on the way back.
+
+    The one number that is not the same on both sides is the started-EVER
+    count, 32 then 34: the transition's own two door objects (153 and 240)
+    start on the outgoing pool, which is the city's. That is the engine's
+    behaviour and the reason the check reads `running` and not `count`.
+    """
+    import subprocess, re
+    eng = os.path.join(ROOT, "engine")
+    fr, tb = omkpaths.data_root(), os.path.join(ROOT, "tables")
+    if not (os.path.isdir(eng) and os.path.isdir(os.path.join(fr, "SCPTDATA"))):
+        return ("skipped",), ("skipped",), "engine/ or gamedata/ absent"
+    b = subprocess.run(["make", "-s", "build/city_return"], cwd=eng,
+                       capture_output=True, text=True)
+    binp = os.path.join(eng, "build", "city_return")
+    if b.returncode != 0 or not os.path.exists(binp):
+        return ("build failed",), ("built",), "engine/ must build"
+    r = subprocess.run([binp, fr, tb], capture_output=True, text=True,
+                       encoding="utf-8", errors="replace")
+    rows = {}
+    pat = re.compile(r"^(in the city|inside \(Hall 43\)|back in the city|\.\.\.200 frames later)"
+                     r"\s+area\s+(\d+)\s+scx (\S+)\s+running\s+(-?\d+) of\s+(\d+).*?"
+                     r"emitters\s+(\d+)\s+particles\s+(\d+).*?\| out: area\s+(-?\d+)", re.M)
+    for m in pat.finditer(r.stdout):
+        rows[m.group(1)] = (int(m.group(2)), m.group(3), int(m.group(4)),
+                            int(m.group(6)), int(m.group(8)))
+    if len(rows) != 4:
+        return ("no output", len(rows)), ("4 rows", 4), "the probe must report four states"
+    before = rows["in the city"]
+    inside = rows["inside (Hall 43)"]
+    after  = rows["back in the city"]
+    later  = rows["...200 frames later"]
+    return (before[:2] + before[2:4], inside[0], inside[4],
+            after[:2] + after[2:4], later[2], later[3]), \
+           ((0, "anekbah.SCX", 32, 153), 201, 0,
+            (0, "anekbah.SCX", 32, 153), 32, 153), \
+           ("Anekbah's 32 scene programs and 153 ambient emitters before " \
+            "stepping into Hall 43, its pool kept as the outgoing one while " \
+            "inside, and the SAME pool back - not a fresh one with nothing " \
+            "running")
+
+
 def c_engine_beat_handover():
     r"""`omk-play`: the body between two beats of one cutscene.
 
@@ -10920,6 +10994,23 @@ def c_engine_walk_in_scene():
       animating froze - 14 of Anekbah's street bodies here, while both sets
       are still drawn. `OMK_ACTIVE_POOL_ONLY` is that mutation.
 
+    **THAT ARM IS DEAD as of 2026-09-07 and is recorded here rather than
+    quietly re-baselined.** The mutation now changes nothing measurable: both
+    modes end with 27 staged bodies, 8 on a clip, 0 in the rest pose and the
+    same 14 holding "the last pose it was given". Two changes landed the same
+    day and between them they mask it - `ScriptObject_StartOnActor` stopping an
+    actor's previous program (so by frame 420 the outgoing pool has nothing
+    running left for the mutation to take away), and the `lastPose` fallback
+    for a body nothing drives (so what would have shown as the REST pose now
+    shows as a held one). Neither is wrong; the differential simply no longer
+    discriminates, so the last column reads the raw count and expects the
+    measured 0 rather than pretending the arm still fires.
+
+    Re-arming it needs a moment in the walk where the outgoing pool IS still
+    running something - earlier than frame 420, or a set whose extras loop -
+    and until then this check proves its first five columns and not its sixth
+    (`todo/omk-play.md` 80).
+
     SHOWN TO FAIL by reverting `completeLoad`'s case-2 call: 0 of 8 on a clip,
     8 on the rest pose, and actor 59 standing on his record.
 
@@ -10964,15 +11055,16 @@ def c_engine_walk_in_scene():
                           env=envOld).stdout
     tailOld = oOld[oOld.rfind("staged "):] if "staged " in oOld else ""
     frozenOld = len(re.findall(r"^  actor \d+ \S+ .*- the rest pose", tailOld, re.M))
-    return (inTime, onClip, onRest, onPath, frozen, frozenOld >= 10), \
-           (True, 8, 0, True, 0, True), \
+    return (inTime, onClip, onRest, onPath, frozen, frozenOld), \
+           (True, 8, 0, True, 0, 0), \
         ("resto.SCX is resident by the frame AREA 46 is shown; of the startup "
          "script's 8 actors, how many end on a scene program's clip and how "
          "many on the REST pose; whether actor 59 stands on his path "
          "(7277, 556) rather than his placement record; then how many staged "
          "bodies of EITHER resident scene end frozen in the rest pose, and "
-         "that reading the pose from the active pool alone freezes at least "
-         "ten of them")
+         "then how many the ACTIVE-POOL-ONLY mutation leaves in the rest "
+         "pose - 0 now, because nothing is left running in the outgoing pool "
+         "for it to take away: that arm is dead, see the docstring")
 
 
 def c_engine_arrival_wait():
@@ -24368,7 +24460,7 @@ def c_licence_headers():
                    if TAG in open(p, encoding="utf-8",
                                   errors="replace").read(600)]
     return (authored, sorted(missing), len(vendored), mislabelled), \
-           (368, [], 1, []), \
+           (369, [], 1, []), \
            "authored source files under tools/, engine/src, engine/tools, " \
            "engine/backends and scripts/; those MISSING the SPDX tag; " \
            "vendored files in engine/third_party; and vendored files wrongly " \
@@ -25901,6 +25993,7 @@ SLOW = [
     ("engine: editing hold", c_engine_editing_hold, "docs/CUTSCENES.md 2"),
     ("engine: frame hold", c_engine_frame_hold, "docs/CUTSCENES.md 2"),
     ("engine: beat handover", c_engine_beat_handover, "todo/omk-play 78"),
+    ("engine: city return", c_engine_city_return, "docs/SCRIPT_VM.md; todo/omk-play 79"),
     ("engine: impasse fx", c_engine_impasse_fx, "todo/omk-play"),
     ("engine: stop sound", c_engine_stop_sound, "todo/omk-play"),
     ("engine: scene sprites", c_engine_scene_sprites, "todo/omk-play"),

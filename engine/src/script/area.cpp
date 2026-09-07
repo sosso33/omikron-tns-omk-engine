@@ -1401,6 +1401,35 @@ void Session::reloadScene(int area, int scene) {
     // resetting every program counter, clock and run count for nothing
     // (`todo/omk-play.md` 52).
     if (area == sceneArea_ && scene_.loaded()) return;
+    // COMING BACK IS A SWAP, NEVER A LOAD - the pool belongs to the SLOT.
+    // `Area_LoadScx` (0x0041B4E0) walks the decor slots for the one holding
+    // the area (`u8i(slot,110) && *slot == area`, stride 33 dwords) and fills
+    // THAT slot's object container at `slot+8`, then binds THAT slot's `.sfx`:
+    // `Sfx_LoadFile(v6, slot)` and `Sfx_BindAmbientEffects(slot)`. One pool
+    // per slot, and `Game_Frame` ticks both (05_sys.c's `v4 += 33` walk). And
+    // `Area_LoadIntoSlot` on a resident return does only `sub_41D380(area,
+    // block + 144)` - the fog block - and nothing else, so the pool of the
+    // area you walked out of still has its own programs running: nothing is
+    // reloaded because nothing was lost.
+    //
+    // This port keeps the outgoing pool in `sceneOut_` and ticks it, but had
+    // no way home: the return built a FRESH runner from the file, so a city's
+    // 32 running programs became 0 and stayed 0 - its ambient animations dead
+    // for the rest of the session - and the set's own emitters went with them,
+    // since `bindSetEmitters` (the `0x40000000` mesh family: the neon, the
+    // steam, the smoke) binds into the runner and is only ever called when a
+    // SET is loaded, which a resident return does not do. A reader asked
+    // whether the city's scripts come back when you leave a building; they did
+    // not (`engine: city return`).
+    if (sceneOutArea_ == area && sceneOut_.loaded()) {
+        std::swap(scene_, sceneOut_);
+        std::swap(sceneArea_, sceneOutArea_);
+        // a moved runner's set pieces still point at the other one's `sfx_`;
+        // only the owner can re-point them at its own
+        scene_.rebindPieces();
+        sceneOut_.rebindPieces();
+        return;
+    }
     SceneRunner fresh;
     // Always by AREA: the stem is the area chunk's `+97` whichever kind is
     // asked for, so this is the same file the scene path resolved to - and it

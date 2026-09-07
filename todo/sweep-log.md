@@ -12,13 +12,15 @@ longer than most tasks it validates. So it is **not** run per task. The rule
 Increment `tasks since` when a task is committed; reset it to 0 and add a row
 when a full sweep is run.
 
-**tasks since the last full sweep: 2**
+**tasks since the last full sweep: 4**
 
 | date | what was swept | result |
 |---|---|---|
 | 2026-09-07 | the full sweep before `74f6f8a` (next-tasks 5) | 187 checks, 0 failed |
 
-The two tasks since are `4dffb70` (omk-play 78, the beat hand-over) and the
-frame-by-frame follow-up committed with this file. Both were verified with
-`--only` over the checks they touch: `engine: editing hold`,
-`engine: frame hold`, `engine: beat handover`, `licence headers`.
+The three tasks since are `4dffb70` (omk-play 78, the beat hand-over), the
+frame-by-frame follow-up `74ed743`, and omk-play 79 (the city's pool coming
+back out of a building). Each was verified with `--only` over the checks it
+touches - `engine: editing hold`, `engine: frame hold`, `engine: beat
+handover`, `engine: city return`, `engine: airlock walk`, `engine: area
+transition`, `engine: live zones`, `licence headers`.
