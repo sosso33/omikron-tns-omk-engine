@@ -2142,6 +2142,13 @@ what the engine does; and `run_screen` grew `OMK_NOCLOUD` because with the
 cells transparent every pixel of a composed frame is non-zero and `painted`
 stops measuring the artwork's own coverage.
 
+**Confirmed in play 2026-09-07**, over three rounds of the restaurant lunch:
+the caller appears in the device, his face driven by the line's own `.3DM`
+between his two idle poses, and the device ignores every press while he
+speaks. `todo/omk-play.md` 83 carries the four hypotheses that were measured
+and refuted on the way, because each of them was true and none of them was the
+fault.
+
 ### A CALLER IS A REAL ACTOR, PARKED OFF-STAGE
 
 Reported by a reader 2026-09-07, after a body in the restaurant looked like a

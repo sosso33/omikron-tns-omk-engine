@@ -17,12 +17,14 @@ waiting on its evidence.
 
 ### 83. The SNEAK CALL was never played — the device opened and the call did not
 
-> **Ported 2026-09-07, and PLAYED — two faults reported and one fixed.** A
-> reader played the restaurant lunch: the call opens, both lines play in the
-> right order and the script goes on. But *the guard is not visible and the
-> sneak continues to be interactable like it was opened normally*. The second
-> is fixed below; **the first is OPEN**, and there is now a headless repro for
-> it: `--call 386`.
+> **Ported 2026-09-07, CONFIRMED IN PLAY over three rounds.** The first run
+> played the call end to end - both lines in order, the script going on - but
+> a reader reported two faults: *the guard is not visible and the sneak
+> continues to be interactable like it was opened normally*. The second was
+> the panel's own input flag; the first was a missing colour key on the tile
+> blit, and took four refuted hypotheses and a headless repro to find. Both
+> fixed and both watched: the caller now appears in the device and the device
+> ignores every press.
 >
 > **`--call N` is the repro** (a harness, labelled): it fires the whole idiom -
 > `ui.open 0` then `dialog.start N` - on the first adventure frame, so the
