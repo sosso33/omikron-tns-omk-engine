@@ -2411,6 +2411,56 @@ by writing the facing Euler directly.
   x/z; and the accumulated fall distance (actor `+280`) grades the landing
   at **3 m** (118.1 in) and **5 m** (196.9 in) — the injury and death tiers —
   with `.CTL` **group 2** as the falling state and camera mode 18 its shot.
+* **THE STEP REFUSAL HAS THREE ARMS, not two** (read 2026-09-07, `21_d3d.c`
+  2644). The mover refuses to step up when
+
+  ```c
+  rise > dword_910340                       /* 11.811023 = 30 cm            */
+      || cos(dword_91033C * PI/180) > -n    /* dword_91033C = 30.0 degrees  */
+      || (**(uint32_t **)a2 & 0x20000000)   /* ...or the MESH IS FLAGGED    */
+  ```
+
+  The third is a per-mesh **"you may not step onto this"** bit, and it refuses
+  whatever the height. The same bit gates the descent branch at 2548
+  (`if (v68 <= 0.0 && (mesh & 0x20000000) == 0)`).
+* **AND THE SWEEP HAS ITS OWN EXCLUSION.** `Sweep_MeshTest` (0x004AD460) opens
+  `if ((flags & 0x20000000) == 0 && (flags & 0x41) == 0)` — so a mesh carrying
+  either bit is never swept against at all. Note the SENSE: both tests are
+  exclusions. A filter that admitted only those bits would keep 0-4% of a
+  set's meshes and let the player walk through the world, which is how the
+  first reading of this was caught.
+
+  Measured over 14 sets: **43 meshes carry an excluded bit**, 41 of them in
+  `Lahoreh` and one in `L_Khonsu`; Anekbah's single one has no triangles at
+  all. `engine/` applies the SWEEP exclusion. It does **not** apply the step
+  arm, and the reason is a measurement rather than caution: that arm sits in a
+  PUSH-BACK branch, so dropping those meshes from the walkable floor is a
+  different rule — it takes **3606 of Lahoreh's 17658** floor triangles away,
+  a fifth of the city's floor. Porting it faithfully means carrying the flag
+  per triangle into the step test.
+* **A DROP UNDER 20 cm IS SILENT** (`21_d3d.c` 2734):
+
+  ```c
+  if (g_IgnoreLedges || v68 < 7.8740158 && !sub_47CF00())
+      o3de_MoveNodeBy(node, 0.0, v68, 0.0);     /* just step down */
+  else if (v68 >= 196.85039) ...                /* 5 m: the death tier   */
+  else if (v68 >= 118.11024) ...                /* 3 m: the injury tier  */
+  ```
+
+  `7.8740158` is **20 cm** in inches, and it is the fourth cm→inch constant in
+  the engine. It is not the step limit: 30 cm is what you may climb, 20 cm is
+  what you may drop without the fall path taking over. The same constant
+  appears in `Walk_ProbeGround`'s probe call as a **same-surface tolerance**,
+  where two candidate floors closer than 20 cm are treated as one — which is
+  what decides whether the actor is re-parented to another decor and raises
+  event 9.
+* **THE GAME'S OWN STAIRCASES, measured** (`engine/tools/stairs_probe`).
+  Thirteen shipped decor sets carry a mesh whose name says `escalier`. Their
+  real risers run **6.17 to 8.30 units** — every one of them under the 30 cm
+  step limit, so **no staircase in the game can be refused for its height**.
+  Several are over the 20 cm silent-drop line, though (7.88 in `Lahoreh`, 8.30
+  in `LMFinkar`), so walking DOWN those stairs takes the fall path on every
+  step rather than the silent one.
 * **where the forward motion comes from - the CLIP.** `sub_45C680`
   (0x0045C680), the tail of `Cef_TickChannel`, case 1 (state 1 and 11..16):
   `sub_45CE90` -> `Anim_SetFrame(node, clip, prevFrame, frame, &d)` ->

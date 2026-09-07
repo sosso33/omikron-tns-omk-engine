@@ -8637,6 +8637,91 @@ def c_engine_props():
             "beats and after, whether the rings are among them, and where they "
             "land once Area_Load's conversion is applied")
 
+def c_engine_stairs():
+    r"""The game's staircases, and the mover's THREE step refusals.
+
+    A reader reported being stuck on the last step of the bank's stairs
+    (`todo/next-tasks.md` 20). The bank's own staircase climbs — measured from
+    five approaches in the running game — so the question became which
+    staircase does not, and guessing the building is the wrong way to answer
+    it. `engine/tools/stairs_probe` walks every one the game ships.
+
+    **The engine has no stair rule.** Climbing is `Walk_ProbeGround`'s window
+    plus the mover's refusal (`21_d3d.c` 2644), which has three arms:
+
+        rise > dword_910340                       11.811023 = 30 cm
+            || cos(dword_91033C * PI/180) > -n    30.0 degrees
+            || (mesh flags & 0x20000000)          ...whatever the height
+
+    The third was not ported. Nor was `Sweep_MeshTest`'s own exclusion
+    (0x004AD460): `if ((flags & 0x20000000) == 0 && (flags & 0x41) == 0)`.
+    **Both are exclusions** - a filter admitting only those bits would keep
+    0-4% of a set's meshes and let the player through the world, which is how
+    the first reading of this was caught.
+
+    What this asserts:
+
+    * the two constants, read out of their initialisers - 11.811023 and 30.0;
+    * the shipped staircases' worst REAL riser, 8.30 units, which is under the
+      step limit, so no staircase in the game can be refused for its height -
+      and the smallest, 6.17;
+    * the exclusions' size: 43 meshes over 14 sets, 41 of them in Lahoreh;
+    * and that the port's soups now apply them.
+
+    Only the SWEEP exclusion is applied. The step arm is not, and that is
+    measured rather than cautious: it sits in a push-back branch, so dropping
+    those meshes from the walkable floor would take **3606 of Lahoreh's
+    17658** floor triangles - a fifth of the city - which is a different rule
+    from "you may not step onto it".
+
+    SHOWN TO FAIL: removing the `Steep` exclusion puts the flagged meshes back
+    into the swept set.
+
+    What it does NOT settle is the reader's report: the bank climbs, and every
+    riser in the game is inside the limit, so whatever stopped them is not the
+    step rule. That is recorded in item 20 rather than guessed at.
+    """
+    import subprocess, re
+    eng = os.path.join(ROOT, "engine")
+    fr = omkpaths.data_root()
+    if not (os.path.isdir(eng) and os.path.isdir(os.path.join(fr, "MESHES"))):
+        return ("skipped",), ("skipped",), "engine/ or gamedata/ absent"
+    for tool in ("stairs_probe", "soup_flags"):
+        b = subprocess.run(["make", "-s", "build/" + tool], cwd=eng,
+                           capture_output=True, text=True)
+        if b.returncode != 0:
+            return ("build failed",), ("built",), "engine/ must build"
+    st = subprocess.run([os.path.join(eng, "build", "stairs_probe"), fr],
+                        capture_output=True, text=True,
+                        encoding="utf-8", errors="replace").stdout
+    fl = subprocess.run([os.path.join(eng, "build", "soup_flags"), fr],
+                        capture_output=True, text=True,
+                        encoding="utf-8", errors="replace").stdout
+    # the REAL risers: a "worst rise" over 20 units is this probe's own level
+    # grouping meeting a distant landing, not a riser - the flights themselves
+    rises = [float(m) for m in re.findall(r"worst rise\s+(\d+\.\d+)", st)]
+    real = rises                      # the probe now counts only real risers
+    climbed = re.findall(r"risers (\d+)/(\d+)", st)
+    allUp = all(a == b for a, b in climbed)
+    m = re.search(r"(\d+) of (\d+) sets carry an excluded mesh; (\d+) no-step, (\d+) no-sweep", fl)
+    lah = re.search(r"^Lahoreh\s+\d+ meshes \| no-step\s+(\d+)", fl, re.M)
+    # the constants, out of the decompilation's own initialisers
+    import struct
+    step = struct.unpack("<f", struct.pack("<I", 1094515188))[0]
+    slope = struct.unpack("<f", struct.pack("<I", 1106247680))[0]
+    return (round(step, 6), slope, len(real), round(max(real), 2), round(min(real), 2),
+            max(real) < step, allUp, sum(int(x[1]) for x in climbed),
+            (int(m.group(1)), int(m.group(3)), int(m.group(4))) if m else None,
+            int(lah.group(1)) if lah else None), \
+           (11.811024, 30.0, 12, 8.30, 6.17, True, True, 119, (3, 43, 43), 41), \
+           ("the step limit and the slope limit out of their initialisers; the " \
+            "shipped staircases' real risers - worst 8.30, smallest 6.17, all " \
+            "under the 30 cm limit; that all 119 risers of all 12 flights " \
+            "CLIMB, so the port refuses no staircase step in the game; and " \
+            "the engine's mesh exclusions, 43 meshes over 3 of 14 sets with " \
+            "41 of them in Lahoreh")
+
+
 def c_engine_city_return():
     r"""`engine/`: the city is still running when you come out of a building.
 
@@ -24626,7 +24711,7 @@ def c_licence_headers():
                    if TAG in open(p, encoding="utf-8",
                                   errors="replace").read(600)]
     return (authored, sorted(missing), len(vendored), mislabelled), \
-           (369, [], 1, []), \
+           (371, [], 1, []), \
            "authored source files under tools/, engine/src, engine/tools, " \
            "engine/backends and scripts/; those MISSING the SPDX tag; " \
            "vendored files in engine/third_party; and vendored files wrongly " \
@@ -26161,6 +26246,7 @@ SLOW = [
     ("engine: frame hold", c_engine_frame_hold, "docs/CUTSCENES.md 2"),
     ("engine: beat handover", c_engine_beat_handover, "todo/omk-play 78"),
     ("engine: city return", c_engine_city_return, "docs/SCRIPT_VM.md; todo/omk-play 79"),
+    ("engine: stairs", c_engine_stairs, "docs/ASSETS.md; todo/next-tasks 20"),
     ("engine: impasse fx", c_engine_impasse_fx, "todo/omk-play"),
     ("engine: stop sound", c_engine_stop_sound, "todo/omk-play"),
     ("engine: scene sprites", c_engine_scene_sprites, "todo/omk-play"),

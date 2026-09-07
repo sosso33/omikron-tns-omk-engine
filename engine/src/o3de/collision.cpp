@@ -83,6 +83,29 @@ TriangleSoup collisionSoup(std::span<const std::byte> d, SoupKind kind,
         // the render soup drops CollisionOnly, the two collision soups keep it
         if (kind == SoupKind::Render &&
             (static_cast<std::uint32_t>(m.flags) & 0x800000u)) continue;
+        // ...AND THE ENGINE'S OWN MESH EXCLUSIONS, which are two different
+        // tests read out of two different functions (2026-09-07):
+        //
+        //   the SWEEP   `Sweep_MeshTest` (0x004AD460) opens
+        //               `if ((flags & 0x20000000) == 0 && (flags & 0x41) == 0)`
+        //               - so a mesh carrying either bit is never swept against.
+        //   the STEP    the mover's refusal (21_d3d.c:2644) is
+        //               `rise > 11.811 || cos(30 deg) > -n || (flags & 0x20000000)`
+        //               - a THIRD arm this port does not have. It is NOT
+        //               applied here, and the reason is measured: that arm
+        //               sits in a PUSH-BACK branch, not a "you may not stand
+        //               here" one, so dropping those meshes from the walkable
+        //               soup is a different rule - it takes **3606 of
+        //               Lahoreh's 17658** floor triangles away, a fifth of the
+        //               city's floor. Porting it properly means carrying the
+        //               flag per triangle into the walker's step test, which
+        //               is the open half of `todo/next-tasks.md` 20.
+        //
+        // Both are exclusions, which is the opposite of how the note below
+        // first read: a filter that ADMITTED only those bits would keep 0-4%
+        // of a set's meshes and let the player walk through the world.
+        const auto mf = static_cast<std::uint32_t>(m.flags);
+        if (kind == SoupKind::Steep && (mf & (0x20000000u | 0x41u))) continue;
         const auto mi = static_cast<std::size_t>(m.index);
         curMesh = m.index;
         for (std::size_t t = baset[mi];

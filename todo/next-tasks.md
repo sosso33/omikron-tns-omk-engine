@@ -26,7 +26,7 @@ items are research and can be done any time they are wanted.
 | 3 | ESC quits instead of opening the pause menu | **DONE, WATCHED** | strong | 2026-09-07: ESC is `Game_RunLoop`'s own `GetAsyncKeyState(27)`, not a binding, and the four item callbacks are four instructions each. `Quitter le jeu` is `Game_NewGame`, not an exit |
 | 4 | tuto zone fires repeatedly, player not stopped | **M** | strong | zone lifecycle is read and there is already a check nearby |
 | 5 | black frames in the Impasse cutscene | **FIXED, WATCHED** | strong | the camera should HOLD at the end of an editing, and a shot is as long as its editing |
-| 20 | stuck on the last step of the bank's stairs | **S/M** | good | the walker's step and slope rules are ported; this is one threshold, and it blocks a whole location |
+| 20 | stuck on the last step of the bank's stairs | **READ** | measured | the original's stair rule is read and the port climbs all 119 risers in the game - the symptom does not reproduce and needs the reader to place it |
 | 21 | a shop conversation's first camera is outside the shop | **M** | good | same family as item 5 and item 7 - what is resident when a script runs on ENTERING a building |
 | 6 | street NPCs stop and T-pose | **M** | good | same family as the scene-facing work of 2026-09-05 |
 | 7 | missing animations (lift doors, Kay'l's drawer) | **FIXED** | strong | the path is a DISPLACEMENT, not a position: `node = sample(t) - sample(t0) + anchor`. The flat's doors now slide 87.2 down, close behind you, and are AUDIBLE (gain 0.03 -> 1.00, the same fault reaching the 3D sound). The lift's were right by accident. Door COLLISION still to check |
@@ -466,34 +466,58 @@ captures, so the likely honest outcome is "the engine sets these states, and
 their effect has no reachable tier" — which is a real result and should be
 recorded as one rather than left as a question.
 
-### 20. Stuck on the last step of the bank's stairs — S/M, good evidence
+### 20. Stuck on the last step of the bank's stairs — **READ, and NOT REPRODUCED**
 
-Reported 2026-09-06: the bank has stairs, and climbing them the player stops
-dead on the **last** step and cannot get up. So the walker climbs a run of
-steps and then refuses one — which makes it a threshold question, not a
-"stairs are unimplemented" question.
+Reported 2026-09-06. Worked 2026-09-07: the original's stair handling is read,
+the port's is measured against it, and **the reported symptom does not
+reproduce** — which is recorded here rather than closed, because the reader saw
+something.
 
-**Do the reading first, in the original.** The task as given is: find how the
-engine handles stairs and make the port do that. What the tree already has is
-the walker's two refusals, both in `engine/src/actor/walk.h`: `kStepUp =
-11.811023622` (30 cm, `dword_910340`) and the 30° slope limit, with
-`WalkResult::Slid` for a face past it. Neither is a stair rule as such — the
-engine may well climb stairs purely through those two, in which case the last
-step differs from the others in geometry (a taller riser, a landing whose face
-normal is past the limit, or a wall face meeting the top step so the step-up
-probe hits it) and the fix is in how the probe is done, not in a new rule. It
-may also have something the port does not: check whether anything in
-`Actors_TickAll` / the walker's caller carries a stair or ledge case before
-concluding.
+**How the engine handles stairs: it doesn't.** There is no stair rule. Climbing
+is `Walk_ProbeGround`'s window plus the mover's refusal (`21_d3d.c` 2644),
+which has **three** arms and not the two this port had:
 
-**Localise it before theorising.** The bank is a shop location, so stand in it
-with `--save`/`--area`/`--stand` the way item 7's lift was watched, walk the
-stairs and log which of the walker's branches the failing step takes — a
-step-up refusal, a slope refusal and a collision against a wall all look
-identical from outside and have three different fixes.
+```c
+rise > dword_910340                       /* 11.811023 = 30 cm           */
+    || cos(dword_91033C * PI/180) > -n    /* dword_91033C = 30.0 degrees */
+    || (**(uint32_t **)a2 & 0x20000000)   /* ...or the mesh is FLAGGED   */
+```
 
-Worth pairing with item 15: the fall tiers and the step rules are the same
-walker, and both are unfinished.
+Two more constants came out of the same read. **A drop under 20 cm
+(7.8740158, the fourth cm→inch constant) is silent**; anything more takes the
+fall path, whose tiers are 118.11 (3 m) and 196.85 (5 m). And `Sweep_MeshTest`
+(0x004AD460) never sweeps a mesh flagged `0x20000000` or `0x41` — an
+**exclusion**, which is the opposite of how `collision.h`'s note first read it.
+
+**The measurement** (`engine/tools/stairs_probe`, `verify.py: engine: stairs`).
+Thirteen sets ship a staircase mesh; twelve are real flights. Their risers run
+**6.17 to 8.30 units** — every one under the 30 cm limit — and **all 119 risers
+of all 12 flights climb** in the port. The bank's own staircase climbs in the
+running game from five different approaches, and Kay'l ends on the upper floor.
+
+So **the step rule cannot be what stopped anyone**, and no staircase in the
+game is even close to the limit.
+
+**What is now ported**: the sweep exclusion. **What is not**, with its reason
+measured rather than guessed: the step arm sits in a PUSH-BACK branch, so
+dropping those meshes from the walkable floor is a *different* rule — it takes
+**3606 of Lahoreh's 17658** floor triangles, a fifth of the city. Doing it
+faithfully means carrying the flag per triangle into the step test. That is the
+open half of this item.
+
+**Three of my own measurements were wrong on the way**, all the same shape —
+the probe's aim rather than the port's walker. Walking a whole flight along one
+guessed axis "failed" seven flights; walking bbox-centre to bbox-centre
+"failed" Anekbah's at riser 6; and grouping treads by height turned one
+platform into a 0.90-unit riser and a distant landing into a 106-unit one. The
+probe now tries sixteen headings per riser and counts only rises between 1 and
+20 units, because the question is whether the RULE admits the step, not whether
+I aimed well.
+
+**What to do next**: this needs the reader to say which staircase, or a frame
+of it. Every one in the game is climbable by the rule, so the cause is
+elsewhere — the capsule sweep against a banister, a prop, or a zone. Worth
+pairing with item 15 (the fall tiers), which the same read now describes.
 
 ### 21. A shop conversation's first camera is placed outside the shop — M, good evidence
 
