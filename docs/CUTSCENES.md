@@ -134,6 +134,76 @@ Four consequences worth stating plainly:
   with `tools/cutscene.py` at 6940.40 against 6938.87 on the very first sample
   (`SceneRunner::editingClock`, `verify.py: engine: cam mode 13`).
 
+### What happens when the editing ENDS — the camera HOLDS
+
+Two things follow from the same tick, and the replica got both wrong until
+2026-09-07 (`todo/next-tasks.md` item 5).
+
+**The editing keeps its object alive.** `Script_PlayScript` computes
+`ediPlaying` before it walks the function chain and then returns
+`ediPlaying + busy`; it stops the object only under
+`if (!(ediPlaying + busy)) { ...; obj->running = 0; }`, and its one early-out
+for an object whose chain is empty is `else if (!ediPlaying) return 0`. So a
+program whose steps have all run out **goes on running, and goes on advancing
+the clock the editing is sampled at**, until the editing's own `+24` duration
+expires. The shot is as long as the editing says, never as long as the
+animation happens to be. The Impasse measures it: `C_1_BoxMoves` spends its
+steps at frame 110 of a 185-frame editing, and the replica — which required
+the program to be running — dropped the last 75 frames of that shot and left
+a 73-frame hole before the next beat.
+
+Note the second consequence, because it reaches beyond the camera: a waiting
+`scx.play.wait` is released when the object finishes, and the object does not
+finish until its editing does.
+
+**And when it does expire, the camera does not go anywhere.** Per frame, for
+each resident scene, `Game_Frame` (`readable/src/05_sys.c` ~2125) clears the
+active camera, runs every object, and reads it back:
+
+```c
+Scene_SetActiveCamera(scene, 0);
+Script_PlayAllScripts(...);                  /* an editing may set one */
+v7 = Scene_GetActiveCamera(scene);
+dword_9103D4 = v7;
+if (v7) { ... }
+else if (Camera_GetMode(C) == 13 && byte_910322 && g_PlayerActorRec)
+    Camera_Request(0, &dword_930800);        /* the follow camera */
+```
+
+That `else if` is the only fall-back there is, and **it is gated on a
+preference that ships off**. `byte_910322` is the `[Preferences]` ini key
+**`autocameraplayer`**, read with a default of `"0"`
+(`Runtime.exe.asm:23252`: `GetPrivateProfileStringA("Preferences",
+"autocameraplayer", "0")` → `atoi`). The whole image holds exactly two writes
+to it — that one and the defaults block that zeroes it — so nothing in the
+game can turn it on and, with the shipped configuration, the branch never
+runs. (The same flag gates `Dialog_ClearSubjectActor`'s restore, so it reads
+as an authoring convenience: *put the camera back on the player by itself*.)
+
+With no request, the mode stays 13, and the camera tick's mode-13 arm
+(`sub_417CF0`, `readable/src/04_sys.c` ~3701) is
+
+```c
+if (u32(cam, 12) == 13) {
+    if (dword_9103D4) { /* copy eye, target, fov, roll */ }
+}
+```
+
+— a null active camera copies **nothing**, so the block keeps the values it
+already had. **The view freezes on the editing's last frame** until something
+else issues a `Camera_Request`: the next beat's editing, a script's
+`camera.set`, a conversation, or the hand-over to adventure mode.
+
+The replica had read the fall-back branch but not its condition, and cut back
+to whatever world camera the Session last held. On the intro path that is
+camera **2158** — AREA 118's, from the area the player has just left, and
+absolute — so it pointed at a set 5500 units away and every gap frame was
+black: **0 of 480000 pixels lit**, after each of eight beats, one of the gaps
+73 frames long. That is `next-tasks` item 5's "black frames in the Impasse
+cutscene", entire.
+
+`verify.py: engine: editing hold`.
+
 ### The link, and a correction
 
 The object record's four bytes at `+94..97` are its **camera-editing slots**.

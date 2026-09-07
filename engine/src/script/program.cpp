@@ -507,6 +507,11 @@ bool Program::tick(float dt) {
             }
         }
     }
+    // `ediPlaying` - the linked editing holds the object open even with every
+    // step spent, and `Script_PlayScript` returns `ediPlaying + busy` (see
+    // `setEditingDuration`). The comparison is `obj->clock < edi->+24`, made
+    // BEFORE the clock advances, which is where it sits here too.
+    if (!busy && clock_ < ediUntil_) busy = true;
     clock_ += dt;
     if (!busy) running_ = false;
     return running_;

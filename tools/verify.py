@@ -8492,6 +8492,137 @@ def c_engine_props():
             "beats and after, whether the rings are among them, and where they "
             "land once Area_Load's conversion is applied")
 
+def c_engine_frame_hold():
+    r"""`omk-play`: the frame an editing ENDS on is the frame it held.
+
+    The camera half of `engine: editing hold`. `Game_Frame` clears the scene's
+    active camera, runs the objects, and falls back to the player only under
+    `Camera_GetMode(C) == 13 && byte_910322 && g_PlayerActorRec` - and
+    `byte_910322` is the `[Preferences]` key `autocameraplayer`, read with a
+    default of "0" (`Runtime.exe.asm:23252`), with the image's only other write
+    being the defaults block that zeroes it. So in a shipped game that branch
+    never runs: the mode stays 13, `sub_417CF0`'s mode-13 arm is
+    `if (dword_9103D4) { copy ... }` and copies NOTHING with a null active
+    camera, and the block keeps its values. The view freezes on the editing's
+    last frame until something else requests a camera.
+
+    Three renders of the Impasse - `--frames 330`, `331`, `332` over AREA 222
+    with SCENE 55, which is the tick before the first beat ends, the gap tick,
+    and the next beat's first tick. The gap must be **byte-identical** to the
+    frame before it (the camera did not move and the scene animated nothing
+    that tick), and the next beat's must not be.
+
+    SHOWN TO FAIL: before the hold landed, the gap frame cut to the player's
+    follow camera - and full-frame, since that branch drops the letterbox - so
+    it differed in 232000 of 480000 pixels and went from 51.5% lit to 97.0%.
+    On the intro path, where the Session still held AREA 118's camera 2158, the
+    same gap was 0 of 480000 pixels lit: a black frame after every beat
+    (`next-tasks` 5, `docs/CUTSCENES.md` 2).
+
+    A render, so it needs SDL; `no sdl` when `make play` cannot build.
+    """
+    import subprocess, tempfile, shutil
+    eng = os.path.join(ROOT, "engine")
+    fr = omkpaths.data_root()
+    if not (os.path.isdir(eng) and os.path.isdir(os.path.join(fr, "SCPTDATA"))):
+        return ("skipped",), ("skipped",), "engine/ or gamedata/ absent"
+    mk = subprocess.run(["make", "-s", "play"], cwd=eng, capture_output=True, text=True)
+    play = os.path.join(eng, "build", "omk-play")
+    if mk.returncode != 0 or not os.path.exists(play):
+        return ("no sdl",), ("no sdl",), "needs SDL to render"
+    tmp = tempfile.mkdtemp()
+    try:
+        env = dict(os.environ, SDL_VIDEODRIVER="dummy")
+        shots = {}
+        for n in (330, 331, 332):
+            out = os.path.join(tmp, "f%d.bin" % n)
+            subprocess.run(
+                [play, fr, os.path.join(ROOT, "tables"),
+                 "--save", os.path.join(ROOT, "traces", "save-appart.bin"),
+                 "--area", "222", "--scene-chunk", "55", "--nofmv",
+                 "--frames", str(n), "--res", "800x600", "--dump", out],
+                capture_output=True, text=True, env=env)
+            shots[n] = open(out, "rb").read() if os.path.exists(out) else b""
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+    if not all(len(v) == 800 * 600 * 2 for v in shots.values()):
+        return ("no render",), ("3 frames",), "the three frames must render"
+    def lit(b):
+        return sum(1 for v in struct.unpack("<%dH" % (len(b) // 2), b) if v)
+    held = shots[330] == shots[331]
+    moved = shots[331] != shots[332]
+    return (held, moved, round(100.0 * lit(shots[331]) / (800 * 600), 1)), \
+           (True, True, 51.5), \
+           ("the tick an editing ends on holds the frame before it, byte for " \
+            "byte, and the next beat then changes it")
+
+
+def c_engine_editing_hold():
+    r"""`engine/`: a camera EDITING outlives its program, and the camera HOLDS
+    when it ends.
+
+    Two readings of `Script_PlayScript` and `Game_Frame`, both of which the
+    port had wrong until 2026-09-07 - together they are `next-tasks` item 5,
+    "black frames in the Impasse cutscene".
+
+    **The editing keeps its object alive.** `ediPlaying` is computed before the
+    function chain is walked, the function returns `ediPlaying + busy`, and the
+    object is stopped only under `if (!(ediPlaying + busy))`. So a program
+    whose steps have run out goes on running - and goes on advancing the clock
+    the shot is sampled at - until the editing's own `+24` expires.
+    `SceneRunner::activeEditing` required the program to be RUNNING, so the
+    Impasse's `C_1_BoxMoves`, whose steps end at frame 110 of a 185-frame
+    editing, lost the last 75 frames of its shot and left a 73-frame hole.
+
+    `tools/editing_hold` walks SCENE 55 over AREA 222 with the beats chained
+    (`setObjectWait`) and records, for every editing, the program clock on the
+    tick it stops driving. The invariant is on that CLOCK and not on a frame
+    count, because an observer outside the frame cannot count a shot's frames:
+    the object's first tick happens inside the frame that starts it. All eight
+    editings that run to an end must end at their duration exactly, and
+    `boxblow` at 185.
+
+    SHOWN TO FAIL: `if (false && !busy && clock_ < ediUntil_)` in
+    `Program::tick` takes it to 7 of 8 with boxblow ending at **111**. Note
+    that only boxblow discriminates - the other seven programs happen to
+    outlast their own editings - so the check asserts boxblow's number as well
+    as the count.
+
+    **The second half is the camera, and it is asserted by `engine frame
+    hold` below**: with no active camera the mode stays 13 and `sub_417CF0`
+    copies nothing, so the view freezes on the editing's last frame. The
+    fall-back the port used to do is real code but is gated on
+    `byte_910322` - the `[Preferences]` key `autocameraplayer`, default "0",
+    with no other writer in the image - so it never runs in a shipped game.
+    """
+    import subprocess, tempfile, shutil
+    eng = os.path.join(ROOT, "engine")
+    fr = omkpaths.data_root()
+    if not (os.path.isdir(eng) and os.path.isdir(os.path.join(fr, "SCPTDATA"))):
+        return ("skipped",), ("skipped",), "engine/ or gamedata/ absent"
+    b = subprocess.run(["make", "-s", "build/editing_hold"], cwd=eng,
+                       capture_output=True, text=True)
+    binp = os.path.join(eng, "build", "editing_hold")
+    if b.returncode != 0 or not os.path.exists(binp):
+        return ("build failed",), ("built",), "engine/ must build"
+    tmp = tempfile.mkdtemp()
+    try:
+        out = os.path.join(tmp, "e.bin")
+        subprocess.run([binp, fr, os.path.join(ROOT, "tables", "vm_opcodes.json"),
+                        os.path.join(fr, "IAM", "START"),
+                        os.path.join(fr, "SCPTDATA"), out],
+                       capture_output=True, text=True)
+        raw = open(out, "rb").read()
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+    if len(raw) < 16:
+        return ("no output",), ("16 bytes",), "the probe must write its record"
+    ended, exact, boxEnd, boxDur = struct.unpack_from("<4i", raw, 0)
+    return (ended, exact, boxEnd, boxDur), (8, 8, 185, 185), \
+           ("every Impasse editing drives until its program clock reaches its "
+            "own duration - boxblow to 185, not to the 110 its steps last")
+
+
 def c_engine_impasse_fx():
     r"""`engine/`: the Impasse cutscene actually PRODUCES effects.
 
@@ -24145,7 +24276,7 @@ def c_licence_headers():
                    if TAG in open(p, encoding="utf-8",
                                   errors="replace").read(600)]
     return (authored, sorted(missing), len(vendored), mislabelled), \
-           (365, [], 1, []), \
+           (368, [], 1, []), \
            "authored source files under tools/, engine/src, engine/tools, " \
            "engine/backends and scripts/; those MISSING the SPDX tag; " \
            "vendored files in engine/third_party; and vendored files wrongly " \
@@ -25675,6 +25806,8 @@ SLOW = [
     ("engine: tuto camera", c_engine_tuto_camera, "todo/omk-play"),
     ("subtitle box", c_subtitle_box, "docs/UI"),
     ("credit layout", c_credit_layout, "docs/UI"),
+    ("engine: editing hold", c_engine_editing_hold, "docs/CUTSCENES.md 2"),
+    ("engine: frame hold", c_engine_frame_hold, "docs/CUTSCENES.md 2"),
     ("engine: impasse fx", c_engine_impasse_fx, "todo/omk-play"),
     ("engine: stop sound", c_engine_stop_sound, "todo/omk-play"),
     ("engine: scene sprites", c_engine_scene_sprites, "todo/omk-play"),

@@ -170,6 +170,10 @@ int SceneRunner::start(int oid, const char* how, bool waiting) {
         a.duration = e->duration;
         a.startedTick = ticks_;
         editings_.push_back(std::move(a));
+        // ...and the editing keeps the object running for its whole duration,
+        // which is `Script_PlayScript`'s `ediPlaying` (see `Program`).
+        programs_[static_cast<std::size_t>(idx)]->setEditingDuration(
+            static_cast<float>(e->duration));
     }
     return idx;
 }
@@ -374,6 +378,13 @@ int SceneRunner::handle(const std::vector<Call>& calls) {
 const SceneRunner::ActiveEditing* SceneRunner::activeEditing() const {
     const ActiveEditing* best = nullptr;
     for (const auto& a : editings_) {
+        // `Script_PlayScript` reaches the editing block only past
+        // `if (!obj->running) return 2;`, so an object STOPPED - by
+        // `scx.stop`, or by `ScriptObject_StartOnActor` rebinding the actor -
+        // drives no camera. The natural end is not that case: the editing
+        // itself keeps the object running (`Program::setEditingDuration`), so
+        // these two conditions now expire together rather than the first
+        // cutting the second short.
         if (!programRunning(a.program)) continue;
         if (programClock(a.program) >= static_cast<float>(a.duration)) continue;
         // `Script_PlayAllScripts` walks the object array, so the LAST setter

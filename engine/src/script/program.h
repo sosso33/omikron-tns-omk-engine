@@ -227,6 +227,25 @@ public:
     // time (`scenerunner.cpp`).
     void reset() { running_ = false; busyUntil_.clear(); }
 
+    // THE LINKED CAMERA EDITING KEEPS THE OBJECT ALIVE, which is the whole
+    // reason `Script_PlayScript` computes `ediPlaying` before it walks the
+    // chain: the function returns `ediPlaying + busy`, stops the object only
+    // `if (!(ediPlaying + busy))`, and its one early-out for an object with no
+    // functions at all is `else if (!ediPlaying) { status &= 0xFFF0; return 0; }`.
+    // So a program whose steps have all run out goes on running - and goes on
+    // advancing its clock, which is what the editing is sampled at - until the
+    // editing's own `+24` duration expires.
+    //
+    // Without it a shot dies with its program: the Impasse's `C_1_BoxMoves`
+    // ends its steps at frame 110 of a 185-frame editing, and the 75 frames
+    // that should still be its shot are handed back to whatever camera the
+    // Session last held (todo/omk-play.md, next-tasks 5).
+    //
+    // In FRAMES, 0 for an object with no editing. `SceneRunner::start` sets it
+    // from the chunk-10 record it links at the same moment.
+    void setEditingDuration(float frames) { ediUntil_ = frames; }
+    float editingDuration() const { return ediUntil_; }
+
     // One frame.  -> true while the program is still running.
     bool tick(float dt = 1.0f);
 
@@ -384,6 +403,7 @@ private:
     const ScxRuntime* rt_;
     const ScxObject*  obj_;
     bool  running_ = false;
+    float ediUntil_ = 0.0f;     // the linked editing's duration - see setEditingDuration
     int   pc_ = 0, loops_ = 0, restarts_ = -1;
     float clock_ = 0.0f;
     std::vector<int>   runs_;

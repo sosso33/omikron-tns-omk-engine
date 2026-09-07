@@ -25,7 +25,7 @@ items are research and can be done any time they are wanted.
 | 2 | black stripes entering/leaving a building | **S** | strong | the letterbox rule is already written down and this contradicts it |
 | 3 | ESC quits instead of opening the pause menu | **S/M** | strong | the screen exists in the lifted table; today ESC loses the session |
 | 4 | tuto zone fires repeatedly, player not stopped | **M** | strong | zone lifecycle is read and there is already a check nearby |
-| 5 | black frames in the Impasse cutscene | **M** | strong | the port already LOGS the moment it happens |
+| 5 | black frames in the Impasse cutscene | **FIXED** | strong | the camera should HOLD at the end of an editing, and a shot is as long as its editing |
 | 20 | stuck on the last step of the bank's stairs | **S/M** | good | the walker's step and slope rules are ported; this is one threshold, and it blocks a whole location |
 | 21 | a shop conversation's first camera is outside the shop | **M** | good | same family as item 5 and item 7 - what is resident when a script runs on ENTERING a building |
 | 6 | street NPCs stop and T-pose | **M** | good | same family as the scene-facing work of 2026-09-05 |
@@ -167,15 +167,32 @@ the first thing to look at** — a zone that should fire once is normally made
 one-shot by state, and firing several sounds and fades is what an un-cleared
 bit looks like.
 
-### 5. Black frames in the Impasse cutscene — M, strong evidence
+### 5. Black frames in the Impasse cutscene — **FIXED 2026-09-07** (not yet watched)
 
-The port already prints the moment: `editing over - camera falls back to world
-camera 2158 (a cut, Camera_Request(0) with travel 0)`. So the question is what
-the engine does at the end of an editing that this does not. `docs/CUTSCENES.md`
-covers the editings and the fact that they do not wait; the black frame is
-likely one frame with no valid camera between the two.
+The entry point was right and so was the guess: the black frame is the gap
+between two editings. Measured on the intro path, it is **eight** gaps, every
+one **0 of 480000 pixels lit**, seven of one frame and one of **73**.
 
-Cheap to reproduce, and the log line is the entry point.
+**What the engine does at the end of an editing that the port did not: nothing
+at all.** `Game_Frame`'s fall-back to the player camera is gated on
+`byte_910322`, which is the `[Preferences]` key **`autocameraplayer`**, default
+`"0"` and with no other writer in the image — so it never runs in a shipped
+game. The mode stays 13, and the camera tick's mode-13 arm copies nothing when
+the active camera is null, so **the view holds the editing's last frame**. The
+port cut back to the Session's world camera, which through the whole cutscene
+is still **2158** — AREA 118's, from the area the player just left.
+
+**And a second fault underneath the long one:** a shot is as long as its
+EDITING, not as long as its program. `Script_PlayScript` returns
+`ediPlaying + busy`, so an object whose steps have run out keeps running until
+the editing's duration expires; the port required the program to be running,
+and `C_1_BoxMoves` lost 75 of its 185 frames.
+
+Both fixed and both checked (`engine: editing hold`, `engine: frame hold`,
+shown to fail); the readings are in `docs/CUTSCENES.md` §2 and the entry is
+`todo/omk-play.md` 77. **Still wants a reader watching the alley** — the
+cold-start intro could not be driven headlessly on the day, so the post-fix
+evidence is the repro and not the path the report came from.
 
 ### 6. Street NPCs stop walking and T-pose — M, good evidence
 

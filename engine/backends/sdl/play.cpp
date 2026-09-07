@@ -2336,6 +2336,28 @@ int main(int argc, char** argv) {
         takeCamFromFov = lastFov;
     };
     float lastRoll = 0.0f;              // the camera ROLL, blended like the fov
+    // THE CAMERA HOLDS WHEN AN EDITING ENDS, and the fall-back this used to do
+    // is a PREFERENCE that ships off. `Game_Frame` (05_sys.c 2144) requests
+    // mode 0 on the player only under
+    //
+    //     else if (Camera_GetMode(C) == 13 && byte_910322 && g_PlayerActorRec)
+    //
+    // and `byte_910322` is the `[Preferences]` key `autocameraplayer`, read
+    // with a default of "0" (Runtime.exe.asm:23252; the only other write in
+    // the image is the defaults block that zeroes it, so nothing else can turn
+    // it on). With it off the branch never runs, and the camera tick's own
+    // mode-13 arm is `if (dword_9103D4) { copy eye/at/fov/roll }` (sub_417CF0,
+    // 04_sys.c 3701): a null active camera copies NOTHING, so the block keeps
+    // the values it had. The view therefore FREEZES on the editing's last
+    // frame until something else requests a camera.
+    //
+    // Measured before this landed, on the intro path: the Impasse's eight
+    // gaps were 0 of 480000 pixels lit - a black frame after every beat and a
+    // 73-frame black stretch mid-cutscene - because the Session still held
+    // camera 2158, AREA 118's, from the area the player had just left
+    // (next-tasks 5).
+    bool  holdEditCam = false;          // mode 13 with no active camera: hold
+    int   heldUnderCamera = -1;         // the Session camera the hold began under
     bool  editFromKnown = false;              // ...and it was captured for the travel
     float editFromEye[3] = {0, 0, 0}, editFromAt[3] = {0, 0, 0}, editFromFov = 75.0f;
     float editFromRoll = 0.0f;
@@ -6468,9 +6490,27 @@ int main(int argc, char** argv) {
                         editFromKnown ? "" : " (nothing on screen to travel from: a cut)");
         } else if (!edit && editingShown >= 0) {
             editingShown = -1;
-            std::printf("frame %ld: editing over - camera falls back to world camera %d "
-                        "(a cut, Camera_Request(0) with travel 0)\n", n, session.cameraId());
+            // Mode 13 stays installed and the scene sets no active camera, so
+            // the camera holds what it last drew. `holdEditCam` is cleared by
+            // the next thing that requests one - a script's `camera.set`, a
+            // conversation, or the hand-over to adventure mode, all of which
+            // are a real `Camera_Request` in the engine.
+            holdEditCam = haveLastDrawn;
+            heldUnderCamera = session.cameraId();
+            std::printf("frame %ld: editing over - the camera HOLDS its last frame "
+                        "(mode 13, no active camera, autocameraplayer 0)%s\n", n,
+                        holdEditCam ? "" : " - nothing drawn yet, so the world camera stands");
         }
+        if (edit) holdEditCam = false;      // a new editing takes it back
+        // ...and any other `Camera_Request` ends mode 13. The Session's target
+        // id changing IS one: `camera.set` is mode 12 and the hand-over asks
+        // for the follow preset.
+        if (holdEditCam && session.cameraId() != heldUnderCamera) holdEditCam = false;
+        // ...and so are the other two the frontend issues itself: a
+        // conversation is `Camera_Request(12)` (`Dialog_ApplyLineCameras`) and
+        // the take is mode 1 out of `MDGETOBJ`. Either installs a mode that is
+        // not 13, so the hold is over.
+        if (holdEditCam && (haveDlgCam || takeCam)) holdEditCam = false;
         const bool anyWorld = !worldSlots[0].geo.corners.empty() ||
                               !worldSlots[1].geo.corners.empty();
         // ...and the same for DRAWING it: the screen composes over the
@@ -6478,7 +6518,7 @@ int main(int argc, char** argv) {
         // tile map, so nothing shows through that should not.
         const bool drawWorld = !(walk && openScreen == kScreenPause) &&
                                worldReady && anyWorld &&
-                               (haveDlgCam || haveEdit ||
+                               (haveDlgCam || haveEdit || holdEditCam ||
                                 (wc && (wc->absolute() || haveRelCam)));
         if (drawWorld) {
             omk::View view = dlgView;
@@ -6495,7 +6535,7 @@ int main(int argc, char** argv) {
             // ...and adventure mode is NOT camera mode: a reader confirmed
             // the strip belongs to conversations and cutscenes, so the
             // walk is drawn full-frame.
-            if (adventure && followCam) view.vh = dispH;
+            if (adventure && followCam && !holdEditCam) view.vh = dispH;
             if (view.vh > dispH) view.vh = dispH;
             view.vx = 0;
             view.vy = (dispH - view.vh) / 2;
@@ -6556,6 +6596,19 @@ int main(int argc, char** argv) {
                                 "(224 of the 1073 editing cameras carry one)\n",
                                 static_cast<double>(view.cam.rollDeg));
                 }
+                view.cam.w = dispW; view.cam.h = dispH;
+            } else if (!haveDlgCam && holdEditCam) {
+                // MODE 13 WITH NO ACTIVE CAMERA: the block is not written, so
+                // the last frame stands. Right after the editing branch,
+                // because the engine's hold outranks everything the frontend
+                // would otherwise pick - the follow camera included, since the
+                // mode is still 13 and nothing has requested another.
+                for (int k = 0; k < 3; ++k) {
+                    view.cam.eye[k] = lastEye[k];
+                    view.cam.at[k]  = lastAt[k];
+                }
+                view.cam.hfovDeg = lastFov;
+                view.cam.rollDeg = lastRoll;
                 view.cam.w = dispW; view.cam.h = dispH;
             } else if (!haveDlgCam && takeCam && player) {
                 // THE TAKE CAMERA (omk-play 69): mode 1's preset resolved

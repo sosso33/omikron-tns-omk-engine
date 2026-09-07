@@ -15,6 +15,67 @@ waiting on its evidence.
 
 ## Open (batch 6, filed 2026-09-04)
 
+### 77. Black frames in the Impasse cutscene: the camera should HOLD, and a shot is as long as its EDITING — A
+
+> **Fixed 2026-09-07. Not yet CONFIRMED IN PLAY** — the cold-start intro
+> cannot be driven headlessly at the moment (the start menu does not answer
+> the scripted keys at HEAD; see the note at the end), so this is measured on
+> the `--area 222 --scene-chunk 55` repro and on the intro run taken before
+> the fix. It wants a reader watching the alley.
+
+Filed as `next-tasks` item 5 and reported as *black frames in the Impasse
+cutscene*. Measured on the intro path before the fix: **eight** gaps, every one
+of them **0 of 480000 pixels lit**, seven a single frame and one **73 frames**
+long.
+
+**Two faults, both at the end of an editing, both read out of the original.**
+
+1. **The camera should not go anywhere.** `Game_Frame` (`05_sys.c` ~2144)
+   falls back to the player only under
+   `Camera_GetMode(C) == 13 && byte_910322 && g_PlayerActorRec`, and
+   `byte_910322` is the `[Preferences]` key **`autocameraplayer`**, read with
+   a default of `"0"` (`Runtime.exe.asm:23252`). The image holds exactly two
+   writes to it — that read and the defaults block that zeroes it — so nothing
+   in a shipped game turns it on and the branch never runs. The mode therefore
+   stays 13, and `sub_417CF0`'s mode-13 arm is `if (dword_9103D4) { copy … }`:
+   a null active camera copies **nothing**, so the camera block keeps its
+   values and **the view freezes on the editing's last frame**. The port had
+   read the branch but not its condition (the comment in `scenerunner.h`
+   quotes one and not the other) and cut back to whatever world camera the
+   Session last held — on the intro path camera **2158**, AREA 118's, from the
+   area the player has just left, absolute and 5500 units away. Hence black.
+
+2. **A shot is as long as its EDITING, not as long as its program.**
+   `Script_PlayScript` computes `ediPlaying` before it walks the chain,
+   returns `ediPlaying + busy`, and stops the object only under
+   `if (!(ediPlaying + busy))`. So an object whose steps have run out goes on
+   running — and goes on advancing the clock the shot is sampled at — until
+   the editing's `+24` expires. `SceneRunner::activeEditing` required the
+   program to be RUNNING, so `C_1_BoxMoves`, whose steps end at frame 110 of a
+   185-frame editing, lost the last 75 frames of its shot; that is the
+   73-frame black stretch, not a second bug. Note the reach beyond the camera:
+   a waiting `scx.play.wait` is released when the object finishes, and the
+   object does not finish until its editing does — so the beat after such a
+   shot now starts where the editing ends.
+
+**Measured after the fix.** All eight Impasse editings drive until their
+program clock reaches their own duration exactly, `boxblow` to 185; and the
+gap frame is **byte-identical** to the frame before it (0 of 480000 pixels
+differ) where it used to jump to the follow camera, full-frame, 51.5% lit to
+97.0%. `verify.py: engine: editing hold`, `engine: frame hold`, both shown to
+fail (`if (false && …)` in `Program::tick` takes boxblow to 111 of 185;
+`holdEditCam = false` takes the frame check to `(False, True, 97.0)`).
+
+**A note for whoever confirms this in play, because it cost an hour here.**
+`omk-play`'s start menu did not answer `--keys 0x1C,T,0xD0,0x1C` (nor four
+other sequences) at HEAD on 2026-09-07, so the cold-start path to the Impasse
+could not be driven headlessly; the same keys answered it on a build from
+earlier the same day. Nothing in this entry touches the interface — the
+difference was measured with these changes STASHED, so it belongs to the save
+/ load panel work landing in parallel (`5c99062` moves `ui_widgets` and the
+overwrite confirm) — but it does mean the intro-path numbers above are the
+pre-fix ones and the post-fix confirmation is on the repro.
+
 ### 76. Kay'l FLOATS in the alley's portal before his jump — the placement, not the portal — A
 
 A reader, with frames of the original beside the port (2026-09-05): *"the
