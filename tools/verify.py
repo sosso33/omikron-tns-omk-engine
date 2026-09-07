@@ -8520,7 +8520,7 @@ def c_engine_beat_handover():
     gate gives 6 drops and 6 re-stagings from the placement record; keeping the
     gate but removing the pose branch gives 6 idle frames.
     """
-    import subprocess, re
+    import subprocess, re, math
     eng = os.path.join(ROOT, "engine")
     fr = omkpaths.data_root()
     save = os.path.join(ROOT, "traces", "save-appart.bin")
@@ -8530,7 +8530,7 @@ def c_engine_beat_handover():
     play = os.path.join(eng, "build", "omk-play")
     if mk.returncode != 0 or not os.path.exists(play):
         return ("no sdl",), ("no sdl",), "needs SDL to run the viewer"
-    env = dict(os.environ, SDL_VIDEODRIVER="dummy")
+    env = dict(os.environ, SDL_VIDEODRIVER="dummy", OMK_BODYLOG="1")
     r = subprocess.run([play, fr, os.path.join(ROOT, "tables"), "--software",
                         "--res", "640x480", "--nofmv", "--save", save,
                         "--area", "222", "--scene-chunk", "55", "--frames", "1400"],
@@ -8548,10 +8548,33 @@ def c_engine_beat_handover():
         r"frame (\d+): actor %d \S+ - pose source: the bank's default entry" % pid, o)
         if int(m.group(1)) > 0])
     held = len(re.findall(r"pose source: the pose the last beat left", o))
-    return (drops, stagings, idles, held), (0, 1, 0, 7), \
+    # ...and the BODY, which is what a reader actually sees. `OMK_BODYLOG`
+    # prints where each staged body was drawn every frame, and a pop is a
+    # step in that. Three survive and all three are a beat START, where a new
+    # object snaps him to its own clip's root key 0 - the engine does that
+    # too; none is at a hand-over, which is the thing being asserted.
+    bp = re.compile(r"\[body\] frame (\d+) actor %d\s+at (\S+) (\S+) (\S+)\s+yaw (\S+)" % pid)
+    pos = {int(m.group(1)): tuple(float(m.group(i)) for i in (2, 3, 4))
+           for m in bp.finditer(o)}
+    steps = {f: math.dist(pos[f - 1], pos[f]) for f in sorted(pos) if f - 1 in pos}
+    jumps = sum(1 for d in steps.values() if d > 20.0)
+    holdFrames = [330, 462, 554, 628, 979, 1162]
+    worstHold = max((steps.get(f, 99.0) for f in holdFrames), default=99.0)
+    # ...and the YAW, which the position cannot see: the held pose already
+    # carries the clip's root rotation, so applying the world heading over
+    # it spun him 147 degrees for exactly the held frame and back.
+    yaw = {int(m.group(1)): float(m.group(5)) for m in bp.finditer(o)}
+    yawStep = {f: abs((yaw[f] - yaw[f - 1] + 180.0) % 360.0 - 180.0)
+               for f in sorted(yaw) if f - 1 in yaw}
+    worstYaw = max((yawStep.get(f, 999.0) for f in holdFrames), default=999.0)
+    return (drops, stagings, idles, held, jumps, round(worstHold, 1),
+            round(worstYaw, 1)), \
+           (0, 1, 0, 7, 3, 0.0, 0.0), \
            ("across the Impasse's beats the player's body is staged once and " \
             "never dropped, never falls back to the bank idle, and holds the " \
-            "last beat's pose over each of the six hand-overs (and from frame 1)")
+            "last beat's pose over each of the six hand-overs (and from frame 1); " \
+            "and the BODY moves 0.0 units on every one of those six frames, with " \
+            "the only three jumps left being beat STARTS")
 
 
 def c_engine_frame_hold():
@@ -8580,6 +8603,13 @@ def c_engine_frame_hold():
     On the intro path, where the Session still held AREA 118's camera 2158, the
     same gap was 0 of 480000 pixels lit: a black frame after every beat
     (`next-tasks` 5, `docs/CUTSCENES.md` 2).
+
+    The lit figure was **51.5** until 2026-09-07 and moved to 52.5 in the same
+    session, which is this check seeing a DIFFERENT fix rather than drifting:
+    the body used to snap back to its clip's authored start on a beat's last
+    frame (`engine: beat handover`, `todo/omk-play.md` 78), so the frame this
+    one holds had Kay'l 121 units away and covering slightly less of the
+    picture. The two booleans - the hold itself - did not move.
 
     A render, so it needs SDL; `no sdl` when `make play` cannot build.
     """
@@ -8614,7 +8644,7 @@ def c_engine_frame_hold():
     held = shots[330] == shots[331]
     moved = shots[331] != shots[332]
     return (held, moved, round(100.0 * lit(shots[331]) / (800 * 600), 1)), \
-           (True, True, 51.5), \
+           (True, True, 52.5), \
            ("the tick an editing ends on holds the frame before it, byte for " \
             "byte, and the next beat then changes it")
 

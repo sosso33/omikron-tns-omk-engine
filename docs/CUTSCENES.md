@@ -225,6 +225,21 @@ Kay'l: his `.CTL` idle pose, and his body rebuilt from its 20-byte placement
 record 3400 units away. A reader saw it as *a normal idle pose while being in
 a totally different position* — and only after the camera above stopped cutting
 away on the same frame, which is what made it visible at all.
+Two more of the same rule sit under it, and both are about the tick a step
+ENDS rather than the gap after it:
+
+* **A finished body animation does not re-pose.**
+  `Script_SelectBodyAnimation`'s tail is `runCounter += 1; if (runCounter >=
+  repeatLimit && repeatLimit != -1) return 0;` — on the tick the run is spent
+  it returns without writing the node, so the node keeps the frame the
+  previous tick wrote. A replica that recomputes the clip frame there and
+  finds no live animation will read frame 0, which is the clip's authored
+  START: the body snaps back to where its animation began on the last frame of
+  every beat.
+* **And a held pose has to be held with its yaw.** Under a scene clip the
+  clip's root rotation is already in the pose, so only the Euler is applied;
+  applying a world heading over a held clip pose rotates it twice.
+
 `verify.py: engine: beat handover`, `todo/omk-play.md` 78.
 
 ### The link, and a correction

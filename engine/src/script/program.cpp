@@ -111,6 +111,8 @@ void Program::start() {
     runs_.assign(obj_->functions.size(), 0);
     busyUntil_.clear();
     entryAt_.clear();
+    animLastFn_ = -1;
+    animLast_ = 0.0f;
     fired_.clear();          // the sound latches, cleared with everything else
     sounds_.clear();
     ++restarts_;
@@ -138,7 +140,10 @@ const ScxFunction* Program::animFunction() const {
 
 float Program::animClock() const {
     const int k = animFn();
-    if (k < 0) return 0.0f;
+    // No animation function left in the chain: the last one has run its count
+    // out. The engine's node keeps the frame that function last posed, so
+    // report the END of its clip rather than 0, which is its START.
+    if (k < 0) return animLastFn_ >= 0 ? animLast_ : 0.0f;
     const auto it = entryAt_.find(k);
     return it == entryAt_.end() ? 0.0f : clock_ - it->second;
 }
@@ -481,6 +486,9 @@ bool Program::tick(float dt) {
                 // wrong. -1 repeats for ever (the object's loop ends it).
                 const int n = ++runs_[static_cast<std::size_t>(k)];
                 if (f.repeat != -1 && n >= f.repeat) {
+                    // Remember where a body animation left the node before
+                    // its entry goes (see `animLast_`).
+                    if (isAnim(k)) { animLastFn_ = k; animLast_ = busySpan(k); }
                     busyUntil_.erase(it);
                     entryAt_.erase(k);
                 } else {

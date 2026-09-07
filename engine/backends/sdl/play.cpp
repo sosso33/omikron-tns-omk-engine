@@ -2791,6 +2791,13 @@ int main(int argc, char** argv) {
         omk::NodeTracks idle;         // the bank's default clip, frame 0
         bool  idleBuilt = false;
         float drawAt[3] = {0, 0, 0};   // where he was actually put, for a set piece
+        std::vector<float> poseWas;    // OMK_BODYLOG: last frame's posed corners
+        // The yaw the body was last DRAWN with, kept so a held pose is held
+        // whole: a scene clip's pose already carries the clip's root rotation,
+        // so the world heading must not be applied over it a second time.
+        bool  lastYawKnown = false;
+        float lastBodyYaw = 0.0f, lastDrawnYaw = 0.0f;
+        bool  lastAboutPelvis = true;
         // The placement a running scene PROGRAM gives him (a path sample or
         // the clip's root key 0), cached so it can be re-asserted every
         // frame - a `fromTable` body's per-frame reset to its 20-byte record
@@ -7444,6 +7451,12 @@ int main(int argc, char** argv) {
                 std::vector<float> fv;
                 float rootW = 0.0f;      // how much of the position the scene owns
                 int rootFrame = 0;
+                // Whether this frame is holding the last beat's pose. It
+                // decides the YAW too: that pose already carries the clip's
+                // root rotation, so the branch below must not add the world
+                // heading over it - which spun Kay'l 147 degrees for exactly
+                // the held frame and back again on the next.
+                bool poseHeld = false;
                 const char* src = "the rest pose (no bank clip)";
                 if (useLine) {
                     const int frame = static_cast<int>(lineT);
@@ -7550,6 +7563,7 @@ int main(int argc, char** argv) {
                     // (`Cef_TickChannel`), so the idle below stays the right
                     // answer everywhere else.
                     pose = s.lastPose;
+                    poseHeld = true;
                     src = "the pose the last beat left (the chain is mid-flight)";
                 } else if (s.idle.valid()) {
                     pose = omk::composePose(s.mo->meshes, s.idle, 0, false);
@@ -7829,14 +7843,24 @@ int main(int argc, char** argv) {
                 bool aboutPelvis = true;
                 if (useLine)                      bodyYaw = s.lineYaw;
                 else if (s.sceneTracks.valid())   bodyYaw = progSpin ? progYawSign * s.progYaw : 0.0f;
+                else if (poseHeld && s.lastYawKnown) {
+                    bodyYaw = s.lastBodyYaw;      // held whole, with its pose
+                    aboutPelvis = s.lastAboutPelvis;
+                }
                 else if (s.restYawKnown)          bodyYaw = s.restYaw;
                 else if (spin)                  { bodyYaw = s.facing; aboutPelvis = false; }
                 // ...and the WORLD heading the body ends up drawn with, which
                 // is what a camera hanging off him reads back.
-                s.drawnYaw = useLine ? s.lineYaw + s.lineRootYaw
+                s.drawnYaw = poseHeld && s.lastYawKnown ? s.lastDrawnYaw
+                           : useLine ? s.lineYaw + s.lineRootYaw
                            : s.sceneTracks.valid() ? bodyYaw + rootYawNow
                            : aboutPelvis ? bodyYaw : s.facing;
                 s.drawnYawKnown = true;
+                // ...and remember it, so the next held frame can hold it.
+                s.lastBodyYaw = bodyYaw;
+                s.lastAboutPelvis = aboutPelvis;
+                s.lastDrawnYaw = s.drawnYaw;
+                s.lastYawKnown = true;
                 if (const int hd = omk::headMeshOf(s.mo->meshes);
                     hd >= 0 && static_cast<std::size_t>(hd) < pose.size()) {
                     const float hp[3] = {pose[static_cast<std::size_t>(hd)].pos[0] - pelvis[0],
@@ -7876,6 +7900,37 @@ int main(int argc, char** argv) {
                 s.drawAt[2] = s.at[2] + rootMove[2];
                 s.posed.revision = ++worldGeoRev;
                 s.drawn = true;
+                // ---- A BODY THAT JUMPS, measured on the body and not on the
+                // picture. `OMK_BODYLOG` prints, per staged body per frame,
+                // where it was DRAWN and how far its posed vertices moved
+                // since the last frame. A pop - a beat hand-over that changes
+                // the owner, a placement record clobbering a program's
+                // position, a pose falling back to an idle - shows as a step
+                // in one or both; walking and animating show as a small
+                // steady value. A diagnostic: nothing draws differently.
+                if (std::getenv("OMK_BODYLOG")) {
+                    double moved = 0.0;
+                    std::size_t nc = s.posed.corners.size();
+                    if (s.poseWas.size() == nc * 3 && nc) {
+                        for (std::size_t k = 0; k < nc; ++k) {
+                            const double dx = s.posed.corners[k].x - s.poseWas[k * 3];
+                            const double dy = s.posed.corners[k].y - s.poseWas[k * 3 + 1];
+                            const double dz = s.posed.corners[k].z - s.poseWas[k * 3 + 2];
+                            moved += std::sqrt(dx * dx + dy * dy + dz * dz);
+                        }
+                        moved /= static_cast<double>(nc);
+                    }
+                    s.poseWas.resize(nc * 3);
+                    for (std::size_t k = 0; k < nc; ++k) {
+                        s.poseWas[k * 3]     = s.posed.corners[k].x;
+                        s.poseWas[k * 3 + 1] = s.posed.corners[k].y;
+                        s.poseWas[k * 3 + 2] = s.posed.corners[k].z;
+                    }
+                    std::printf("  [body] frame %ld actor %d  at %.1f %.1f %.1f"
+                                "  yaw %.1f  vertsMoved %.2f  src %s\n",
+                                n, s.actor, s.drawAt[0], s.drawAt[1], s.drawAt[2],
+                                bodyYaw * 57.2957795f, moved, src ? src : "-");
+                }
                 // ON THE FLOOR? A scene program's body walks its clip's root
                 // motion, and the one invariant that motion has to satisfy is
                 // that it stays on the set's own walkable mesh - which is what
@@ -9342,9 +9397,21 @@ int main(int argc, char** argv) {
         // "Kay'l with a black background" and what no still frame can be
         // chosen to catch.
         if (std::getenv("OMK_CLIPLOG")) {
-            long litpx = 0;
+            // Lit pixels, and how many changed since the previous frame. The
+            // second is what a POP looks like: a body or a camera moving a
+            // long way in one frame repaints a large part of the picture, and
+            // a hold repaints almost none. Neither is a claim about the
+            // engine - this is a diagnostic and nothing draws differently
+            // because of it.
+            static std::vector<std::uint16_t> prevPx;
+            long litpx = 0, diffpx = 0;
             for (std::uint16_t v : fb.px) if (v) ++litpx;
-            std::printf("  [lit] frame %ld  %ld of %zu\n", n, litpx, fb.px.size());
+            if (prevPx.size() == fb.px.size())
+                for (std::size_t k = 0; k < fb.px.size(); ++k)
+                    if (fb.px[k] != prevPx[k]) ++diffpx;
+            prevPx = fb.px;
+            std::printf("  [lit] frame %ld  %ld of %zu  changed %ld\n",
+                        n, litpx, fb.px.size(), diffpx);
         }
         // ---- THE FLICKER CATCHER -------------------------------------
         if (!flickerDir.empty()) {

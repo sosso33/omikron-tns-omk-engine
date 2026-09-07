@@ -404,6 +404,19 @@ private:
     const ScxObject*  obj_;
     bool  running_ = false;
     float ediUntil_ = 0.0f;     // the linked editing's duration - see setEditingDuration
+    // THE FRAME A FINISHED BODY ANIMATION LEFT THE NODE AT.
+    // `Script_SelectBodyAnimation`'s tail is `runCounter += 1; if (runCounter
+    // >= repeatLimit && repeatLimit != -1) return 0;` - on the tick a run is
+    // spent it returns without posing, so the node KEEPS the last frame the
+    // previous tick wrote. `animFn()` skips a spent function and `animClock()`
+    // then had no entry to measure from and returned 0 - the clip's authored
+    // START - so on the last frame of every cutscene beat the body snapped
+    // back to where its animation began, held there for the hand-over frame
+    // and returned. 121 units in the Impasse, twice a beat, which is a
+    // reader's *suddenly in a totally different position*
+    // (todo/omk-play.md 78).
+    int   animLastFn_ = -1;
+    float animLast_ = 0.0f;
     int   pc_ = 0, loops_ = 0, restarts_ = -1;
     float clock_ = 0.0f;
     std::vector<int>   runs_;

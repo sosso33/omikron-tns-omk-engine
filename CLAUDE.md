@@ -84,6 +84,7 @@ that only for a file you are about to actually open.
 | todo/options-config.md | ~6k | the graphical options: the config file, the save header, the clip distance, the sky, the fog. Four steps, three done |
 | todo/engine-spec-1999.md | ~2k | the official 1999 engine spec sheet, audited line by line against what this repo can show. EXTERNAL evidence; two open leads (the .3DO light table, the claimed BSP) |
 | todo/mesh-lights.md | ~2k | the .3DO light table: 304-byte records, the count at desc+240 (NOT +232, which the loader overwrites). Four steps, one done |
+| todo/sweep-log.md | ~1k | the full-sweep counter: how many finished tasks since the last one, and the rule that it runs every 5-10 rather than per task |
 | todo/next-tasks.md | ~4k | the reader's list of what to do next, 19 items triaged: size, how much evidence the tree already holds, and a suggested order. Read it to pick up work |
 | todo/pending/*.md (E1, E2, T1..T17) | ~2–8k each | a specific past task's deliverable; each starts with an "Integrated" line — read only the one you need |
 | transcript/*.md | large | how a finding was reached, wrong turns included; never for facts (the docs have them) |
@@ -881,11 +882,20 @@ affected by a rendering change, a docs edit or a new check, and that tells you
 nothing when it passes for the hundredth time. Run the checks your change could
 plausibly break, and `--list` if you are unsure which those are.
 
-The full sweep earns its cost in exactly one place: **once, before calling a
-slice done** — and even then only when the slice touched something broad. A
-docs-only edit needs no run at all; the exception is a doc that QUOTES a number
-a check asserts, where the two should move in one command so they cannot drift
-apart. Adding a check does not require running the other four hundred.
+**The full sweep runs every 5 to 10 FINISHED TASKS, not once a task** (rule of
+2026-09-07). It takes upwards of half an hour, which is longer than most of the
+work it validates, so per task the rule is `--only` over the checks the change
+could plausibly break and nothing else. `todo/sweep-log.md` carries the count
+since the last full sweep — increment it on a commit, reset it when a sweep is
+run and recorded there — so the cadence survives between sessions.
+
+A docs-only edit needs no run at all; the exception is a doc that QUOTES a
+number a check asserts, where the two should move in one command so they cannot
+drift apart. Adding a check does not require running the other four hundred.
+
+And a check you ADD is a cost every future sweep pays: prefer one that measures
+the same thing from a short run, and mark anything that renders or replays a
+whole cutscene `--slow` so the default sweep does not carry it.
 
 Add a check whenever a finding produces a number — a count in `docs/` that
 nothing asserts is a claim with no test behind it.

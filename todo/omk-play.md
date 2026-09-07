@@ -79,10 +79,47 @@ falling back to the bank's default entry. The pose branch is scoped to the gap
 deliberately: a body with a bank and nothing coming IS driven by its channel
 (`Cef_TickChannel`), so the idle stays right everywhere else.
 
+**Then a frame-by-frame recheck on the BODY found two more, and the reader
+asked exactly the right question** — *could you look for sudden change of pose
+or position of kay'l?* Measuring the picture had found nothing; measuring the
+body (`OMK_BODYLOG`, which prints where each staged body was drawn and how far
+its posed vertices moved each frame) found **17 jumps** over the Impasse's 1400
+frames, and two more causes under them:
+
+3. **The held pose was held without its yaw.** A scene clip's pose already
+   carries the clip's root rotation, so under a clip the body's yaw is the
+   Euler alone; the hold fell through to the branch that applies the whole
+   WORLD heading, which is a second rotation over a pose that already has one.
+   Kay'l spun **147 degrees** on exactly the held frame and back on the next.
+   `Staged` now remembers the yaw a body was drawn with and the hold holds it
+   whole.
+
+4. **The last frame of every beat posed the clip's START.**
+   `Script_SelectBodyAnimation`'s tail is `runCounter += 1; if (runCounter >=
+   repeatLimit && repeatLimit != -1) return 0;` — on the tick a run is spent it
+   returns *without posing*, so the node keeps the frame the previous tick
+   wrote. In the port `animFn()` skips a spent function and `animClock()` then
+   had no entry to measure from and returned **0**, which is the clip's
+   authored start: on the last frame of each beat the body snapped back to
+   where its animation began — 121 units in the Impasse — held there for the
+   hand-over frame, and returned on the next. Out and back, two frames, which
+   is *max 5 frames* exactly. `Program` now remembers where a finished
+   animation left the node and reports that instead of 0.
+
 Measured after: 0 drops, 1 staging, 0 idle frames, and the pose source becomes
 "the last beat's" 7 times — the six hand-overs plus frame 1, where he holds
-frame 0's idle until the opening beat poses him at 59. Walking is unaffected
-(a street start still covers 498.8 units in 199 ticks).
+frame 0's idle until the opening beat poses him at 59. the body moves **0.0 units and 0.0 degrees** on every one of
+the six hand-over frames, and the 17 jumps are down to **3**. Walking is
+unaffected (a street start still covers 498.8 units in 199 ticks).
+
+**The three that remain are beat STARTS, not hand-overs, and are left alone
+deliberately.** Frame 1 and frame 59 are the opening (he stands on his
+placement record until the first beat's clip places him 776 units away), and
+frame 629 is `KaylDemonAme` starting him 236 from where the previous beat left
+him. `Script_SelectBodyAnimation` snaps to the new clip's root key 0, so a jump
+at an object boundary is what the engine does too — whether these three
+particular placements are authored that way is unread, and the check asserts
+the count so that if one of them is a fault it cannot be fixed by accident.
 `verify.py: engine: beat handover`, shown to fail on each half separately:
 without the parked gate, 5 drops and 6 re-stagings; without the pose branch,
 6 idle frames.
