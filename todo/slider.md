@@ -76,6 +76,24 @@ One function, two arms, and which one runs is whether a slider POOL exists
   rebuilt from the actor's own Euler at `+416/420/424` (so the address's
   heading is NOT used by this path), `Walk_ProbeGround`, `ACTOR_STATE` 1.
 
+### How a ride is ENTERED, from the binary's own debug strings
+
+`MDSLIDIN` (`tab_special_move[12]`, 0x0046B7F0) names its three refusals:
+
+```
+player[+404] != 6        -> "bad mode getting in slider !"
+sub_438240() == 0        -> "no active slider !"
+sub_438410(slider) != 3  -> "slider is not in open mode !"
+else: sub_438420(slider, 4); player[+404] = 7; node flag 8;
+      sub_41DF30(7, -1, -1, -1) or "cant find slider interface !"
+```
+
+and `MDSLIDOU` (0x0046B890) refuses unless `player[+404]` is **8**, leaving to
+1. So the gate is **ACTOR_STATE 6 plus a slider standing OPEN (mode 3)** —
+CLAUDE.md §4's "7 and 8 are the mount and the ride of one slider" names the two
+ride states and says nothing about the way in, which is 6. 7 is what
+`Slider_TickRide` binds the body in; 8 is what `MDSLIDOU` will leave from.
+
 ### `Slider_TickRide` (0x00458150) — the ride
 
 82 lines, and the three helpers under it are the machinery: `sub_4573E0`
@@ -96,14 +114,42 @@ What the 82 say:
   `-dword_8F5DD8` (less 180 when `dword_8F5DBC < 0`), and `Actor_ScanZones`
   runs — so **riding still triggers zones**.
 
-### `sub_4573E0` — the flight model (387 lines, not yet fully read)
+### `sub_4573E0` — the flight model (387 lines, transcribed)
 
-Read as far as the input decode: `dword_8F5DE0` is the frame's input word,
-copied from `dword_4E9718` by the tick. `0x20` with a small `dword_8F5DBC`
-stops the ride (`sub_4570F0`); `0xC` is the turn pair (4 and 8) and picks one
-of six hard-coded float constants for `dword_8F5DCC` depending on the sign of
-`dword_8F5DBC` — a bank angle; `0x3` is the throttle pair, ±5.0 into `v60`.
-The rest is untranscribed.
+`dword_8F5DE0` is the frame's input word, copied from `dword_4E9718`, and its
+low four bits are the same four the interface uses.
+
+* **`0x20`** with `|speed| < 10` zeroes the speed and calls `sub_4570F0` — the
+  only way out of the model that is not a dismount.
+* **`0x1` / `0x2` STEER** at ±5 degrees a frame, negated when the slider is
+  reversing so the stick still turns the nose the way it points. While
+  steering, the bank ramps at **1.75 degrees a frame** to a hard **11**
+  (349 being −11 in the wrapped angle); released, it unwinds at the same rate.
+* **`0x4` / `0x8` THRUST**, from a six-value ladder that is 0.615, three times
+  it and six times it, chosen by the SIGN OF THE SPEED: forward, up is
+  **+1.845** and down **−3.690**; reversing, they mirror. Gated on a
+  frame counter (`dword_8F5E08 < 0x50`).
+* **The drag is quadratic** — `speed² × 0.1538 × 0.0078125` off the thrust —
+  and a dead band snaps a coasting slider to a stop.
+* **A SKID test** takes the angle between the nose and the velocity: inside
+  **37 degrees** it grips and the simple arm runs (one speed along the nose);
+  past that and inside 170 it is sliding, and either the velocity is snapped
+  back toward the nose (over 16 units of speed) or the hard arm runs, where the
+  two components take their own quadratic drag and the yaw is pulled by their
+  cross product.
+* **The position integrates with a MINUS**: `x -= vx·dt`, `z -= vz·dt`.
+* **The pitch** is `asin` of the difference between two ground probes a
+  **metre** fore and aft — 39.370079 units is 1.00 m at the world's 39.3701 to
+  the metre, and the 0.0127 it multiplies by is 1/78.74, the reciprocal of that
+  2 m span.
+
+`sub_458600`'s hover has **two arms**, and which runs is a comparison the
+decompilation lost (`v7`, "possibly undefined" at 458775). The listing keeps
+it — `fld dword_8F5DBC / fcomp flt_4BC5E0 / test ah, 40h`, and `flt_4BC5E0` is
+**0.0** — so a **stationary** slider bobs (8.43 degrees a frame, one cycle in
+42.7 frames, amplitude a sixteenth of the 30.75 hover height) and a **moving**
+one eases toward its height at a third of the gap a frame. A surface whose mesh
+name begins `OP` damps the ride by a quarter a frame.
 
 ## The steps
 
@@ -125,11 +171,17 @@ Each ends in a commit and a report.
    destination's — "call one to where I am" — which is recorded in
    `UiListState::travelToDestination` rather than invented, since nothing in
    the port reaches it yet.
-2. **The MOUNT and the RIDE** — `ACTOR_STATE` 7/8, camera mode 8 with the
-   slider as both subjects, the half-speed delta, the node bind, and the
-   zone scan under the rider. — open
-3. **The DRIVE** — `sub_4573E0` transcribed: the input word, the bank, the
-   throttle, and whatever the remaining ~330 lines do. — open
+2. **The FLIGHT MODEL** — `sub_4573E0` and `sub_458600` transcribed into
+   `engine/src/actor/slider.*` and RUN: the six-value thrust ladder, the
+   5-degrees-a-frame steer, the 11-degree bank, the quadratic drag, the skid
+   test and its recovery arm, the two-probe pitch, and the hover with both of
+   its arms. — **DONE 2026-09-07**. `verify.py: engine: slider fly`, shown to
+   fail by bobbing always.
+3. **The MOUNT, in the world** — nothing calls the model yet. It needs
+   `sub_452570`'s ARM arm (reserve a slider out of the 40, fade, hold the
+   player), the slider arriving in mode 3, `MDSLIDIN`'s gate, camera mode 8
+   with the slider as both subjects, `sub_457F50`'s placement of the rider and
+   the node, and `Actor_ScanZones` under him. — open
 
 ## What is already there, and must not be re-done
 

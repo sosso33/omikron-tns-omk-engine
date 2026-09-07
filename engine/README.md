@@ -2116,6 +2116,47 @@ loaded by the screen's own open - which rotate to show selection. The UI layer
 has no 3D path, so they are not drawn; their LABELS and the two counts are,
 on the echo bar, which is where the engine puts them.
 
+**THE SLIDER'S FLIGHT MODEL IS PORTED** (2026-09-07, `todo/slider.md` step
+2). `todo/standing-unknowns.md` §5 had measured the ride at ~600 undecompiled
+lines and recorded the decision not to port it; `engine/src/actor/slider.*` is
+the arithmetic half of that - `sub_4573E0` (387 lines) and `sub_458600` (75) -
+and it RUNS.
+
+The input word is the interface's own, and its low four bits are the four the
+UI walker uses. `0x1`/`0x2` steer at 5 degrees a frame, negated when reversing
+so the stick still turns the nose the way it points, with the bank ramping at
+1.75 a frame to a hard 11 degrees. `0x4`/`0x8` drive a six-value thrust LADDER
+- 0.615, three times it and six times it - chosen by the SIGN of the speed, so
+"up" accelerates going forward and brakes hard going backward. `0x20` under 10
+units of speed ends the ride. Drag is quadratic; a skid test compares the nose
+with the velocity and past 37 degrees switches to an arm where the two
+components drift apart and the yaw is pulled by their cross product; and the
+pitch is `asin` of two ground probes a METRE fore and aft (39.370079 units is
+1.00 m, and the 0.0127 is 1/78.74, that span's reciprocal).
+
+**The hover has two arms and the decompilation lost the test.** `v7` is
+"possibly undefined" at 458775; the listing has `fld dword_8F5DBC / fcomp
+flt_4BC5E0 / test ah, 40h` and `flt_4BC5E0` is 0.0 - so a STATIONARY slider
+bobs (8.43 degrees a frame, one cycle in 42.7 frames, amplitude a sixteenth of
+the 30.75 hover height) and a MOVING one eases toward its height at a third of
+the gap a frame. `engine: slider fly` asserts both, and is shown to fail by
+bobbing always - a transcription that did would look right in a still frame.
+
+Everything runs at HALF SPEED, because `Slider_TickRide`'s first act is
+`flt_4C30D8 *= 0.5` for all three helpers.
+
+**And the way IN is ACTOR_STATE 6, not 7** - the binary says so in its own
+debug strings. `MDSLIDIN` (`tab_special_move[12]`) refuses with *"bad mode
+getting in slider !"* unless `player[+404]` is 6, with *"no active slider !"*
+when there is none and with *"slider is not in open mode !"* unless the
+slider's mode is 3; it then sets mode 4 and state 7. `MDSLIDOU` refuses unless
+the state is 8. CLAUDE.md §4's "7 and 8 are the mount and the ride" names the
+two ride states and is silent about the gate.
+
+NOTHING CALLS THE MODEL YET. The mount in the world - the pool reservation,
+`sub_452570`'s arm arm, camera mode 8 with the slider as both subjects and
+`sub_457F50`'s placement of the rider - is step 3.
+
 **THE SNEAK'S SLIDER TAKES THE PLAYER SOMEWHERE** (2026-09-07) - step 1 of
 `todo/slider.md`. The page had listed its destinations since the sneak landed
 and refused to act on one (`slider destination: sub_452570 travel not

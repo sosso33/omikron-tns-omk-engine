@@ -148,6 +148,19 @@ the player mounting one is not. `ACTOR_STATE` 7 and 8 are the mount and the
 ride of one slider (`MDSLIDOU` refuses to dismount from anything but 8), and
 7 has no case in `Actors_TickAll` at all.
 
+> **PARTLY PORTED 2026-09-07** (`todo/slider.md`). The two arithmetic helpers
+> are transcribed and run - `sub_4573E0`'s flight model and `sub_458600`'s
+> hover, in `engine/src/actor/slider.*`, asserted by `verify.py: engine:
+> slider fly` - and so is the sneak's TRANSPORT, which turned out not to need
+> a ride at all. What is still open is the MOUNT in the world: the pool
+> reservation, the slider arriving open, and `sub_457F50` placing the rider.
+>
+> One correction the read produced: the way IN is `ACTOR_STATE` **6**, not 7.
+> `MDSLIDIN` says so in its own debug string - *"bad mode getting in slider
+> !"* guards `player[+404] != 6` - and 7 is what it SETS. The paragraph below
+> named 7 and 8 as "the mount and the ride", which is right about the two ride
+> states and silent about the gate.
+
 **READ, and deliberately not ported - with the size measured rather than
 guessed.** `Slider_TickRide` (0x00458150) is what runs, and it needs
 `sub_4573E0` (**387 lines, RAW**), `sub_458600` (75) and `sub_457F50` (66):

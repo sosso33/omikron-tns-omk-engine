@@ -6933,6 +6933,86 @@ def c_engine_slider_travel():
         "in, which is `--area`'s own doing and not the travel's"
 
 
+def c_engine_slider_fly():
+    r"""THE SLIDER'S FLIGHT MODEL, RUN - `sub_4573E0` and `sub_458600`.
+
+    `todo/standing-unknowns.md` §5 measured the ride at ~600 undecompiled
+    lines and recorded the decision not to port it. This is the arithmetic
+    half of that, transcribed 2026-09-07: `sub_4573E0` (387 lines) and
+    `sub_458600` (75). No game data is involved - the model is the engine's
+    own numbers over a floor - so what this can catch is the shape of the
+    transcription, which is the part that fails silently.
+
+    **The entry, from the binary's own debug strings.** `MDSLIDIN`
+    (`tab_special_move[12]`, 0x0046B7F0) refuses with *"bad mode getting in
+    slider !"* unless `player[+404]` is **6**, with *"no active slider !"*
+    when there is none, and with *"slider is not in open mode !"* unless the
+    slider's mode is 3; it then sets the slider to mode 4 and the player to
+    ACTOR_STATE **7**. `MDSLIDOU` (0x0046B890) refuses unless the state is
+    **8** and leaves to 1. So the gate is state 6 plus a slider standing
+    OPEN, which CLAUDE.md §4's "7 and 8 are the mount and the ride" does not
+    say - it names the two ride states and not the way in.
+
+    **The model.** The input word is the interface's own, and its low four
+    bits are the same four the UI walker uses: `0x1`/`0x2` steer at 5 degrees
+    a frame, `0x4`/`0x8` drive a six-value thrust LADDER - 0.615, three times
+    it and six times it, signed by the direction of travel, so "up"
+    accelerates going forward and brakes hard going backward - and `0x20`
+    stops the ride once the speed is under 10. The bank ramps at 1.75 a frame
+    to a hard 11 degrees (349 being -11 wrapped). Drag is quadratic. A skid
+    test compares the nose with the velocity and, past 37 degrees, switches
+    to an arm where the two components drift apart and the yaw is pulled by
+    their cross product. The pitch is `asin` of the difference between two
+    ground probes **a metre fore and aft** - 39.370079 units is 1.00 m, and
+    the 0.0127 it multiplies by is 1/78.74, the reciprocal of that span.
+
+    **And the hover has two arms, decided by a comparison the decompilation
+    lost.** `v7` is "possibly undefined" at 458775; the listing has
+    `fld dword_8F5DBC / fcomp flt_4BC5E0 / test ah, 40h`, and `flt_4BC5E0` is
+    **0.0** - so a STATIONARY slider bobs (8.43 degrees a frame, one cycle in
+    42.7 frames, amplitude a sixteenth of the 30.75 hover height) and a MOVING
+    one eases toward its height at a third of the gap a frame. Asserted both
+    ways here, because a transcription that bobbed always would look right in
+    a still frame.
+
+    The frame delta is the engine's own unit halved, because
+    `Slider_TickRide`'s first act is `flt_4C30D8 *= 0.5` for all three
+    helpers - the whole ride advances at half a frame per frame.
+    """
+    import subprocess
+    eng = os.path.join(ROOT, "engine")
+    if not os.path.isdir(eng):
+        return ("skipped",), ("skipped",), "engine/ absent"
+    b = subprocess.run(["make", "-s", "build/slider_fly"], cwd=eng,
+                       capture_output=True, text=True)
+    binp = os.path.join(eng, "build", "slider_fly")
+    if b.returncode != 0 or not os.path.exists(binp):
+        return ("build failed",), ("built",), "engine/ must build"
+    r = subprocess.run([binp], capture_output=True, text=True, errors="replace")
+    got = [ln.split() for ln in r.stdout.strip().splitlines()]
+    want = [
+        "thrust up 1.845 down -3.690 rev_up 3.690 rev_down -1.845 none 0.000".split(),
+        "accel speed 29.17 z -171.2 y -29.95".split(),
+        "bank roll 11.00 limit 11.00 yaw 50.00".split(),
+        "steer right 50.00 left 310.00".split(),
+        "coast frames 272 z -1074.7".split(),
+        "hover y -30.75 bob 3.84 amp 1.922".split(),
+        "moving y -30.75 drift 0.0000 phase 0.00".split(),
+    ]
+    return got, want, \
+        "the six-value thrust LADDER by input and by the direction of travel " \
+        "(1.845 and -3.690 forward, their mirror in reverse, 0 with no key); " \
+        "twenty frames of UP reaching 29.17 and 171 units; the bank ramping " \
+        "to its hard 11 degrees and the steer turning 50 one way and -50 the " \
+        "other at 5 degrees a frame over a halved delta; a released slider " \
+        "coasting 272 frames to the dead band; a PARKED one settling 30.75 " \
+        "over the floor and bobbing 3.84 peak to peak, which is twice the " \
+        "sixteenth-of-the-hover amplitude; and a MOVING one holding its " \
+        "height with the bob phase never advancing, because the arm is " \
+        "chosen by `speed == 0.0` - a comparison the decompilation lost and " \
+        "the listing keeps"
+
+
 def c_engine_used_object():
     r"""USING AN INVENTORY OBJECT ON THE WORLD - `Utiliser` reaching a zone.
 
@@ -25550,7 +25630,7 @@ def c_licence_headers():
                    if TAG in open(p, encoding="utf-8",
                                   errors="replace").read(600)]
     return (authored, sorted(missing), len(vendored), mislabelled), \
-           (378, [], 1, []), \
+           (381, [], 1, []), \
            "authored source files under tools/, engine/src, engine/tools, " \
            "engine/backends and scripts/; those MISSING the SPDX tag; " \
            "vendored files in engine/third_party; and vendored files wrongly " \
@@ -26894,6 +26974,7 @@ CHECKS = [
     ("engine: text block", c_engine_text_block, "UI"),
     ("slider addresses",    c_slider_address_join, "docs/UI 3b"),
     ("engine: slider travel", c_engine_slider_travel, "todo/slider"),
+    ("engine: slider fly", c_engine_slider_fly, "todo/slider"),
     ("ui open answer",     c_ui_open_answer,    "SCRIPT_VM 70"),
     ("ui confirm gate",    c_ui_confirm_gate,   "UI"),
     # The FAST set, unlike `engine: screen` and `engine: name field`: most of
