@@ -98,6 +98,14 @@ int main(int argc, char** argv) {
                         omk::laneRoute(t, lp.lane, 1),
                         omk::laneRoute(t, lp.lane, 2),
                         omk::laneRoute(t, lp.lane, 3));
+            // ...and where `sub_452CC0` puts the slider: the chosen lane's
+            // ORIGIN, set back 39 units along its own direction in x and z,
+            // with the node 30.75 under it - the ride's own hover height.
+            const auto c = omk::planSliderCall(t, addrs.front().pos, 1);
+            std::printf("call area %d lane %d route %d at %.0f %.0f %.0f "
+                        "dir %.2f %.2f node %.0f\n", area, c.at.lane, c.route,
+                        c.place[0], c.place[1], c.place[2],
+                        c.dir[0], c.dir[2], c.nodeY);
         }
     }
     return 0;

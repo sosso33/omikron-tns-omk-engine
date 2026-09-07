@@ -27,6 +27,7 @@
 // UNITS are the engine's throughout: a speed is units*256 a frame, so a body
 // advances `speed * dt / 256`.
 #include "actor/sliders.h"
+#include "actor/slider.h"
 
 #include <algorithm>
 #include <cmath>
@@ -412,6 +413,33 @@ int laneRoute(const OptTrack& t, int lane, unsigned counter) {
     // it. Nothing downstream here can see the write, so this only reads.
     const int count = L.routeCount ? L.routeCount : 1;
     return L.firstRoute + static_cast<int>(counter % static_cast<unsigned>(count));
+}
+
+// `sub_452CC0`'s DECISIONS - see the header for what is deliberately not
+// transcribed. The engine reaches this only after walking all 40 slots
+// without finding a blocker; with one it swaps the two vehicles instead, and
+// either way the last thing it does is put the node at `y - 30.75`.
+SliderCall planSliderCall(const OptTrack& t, const float target[3],
+                          unsigned counter) {
+    SliderCall c;
+    c.at = nearestVehicleLane(t, target);
+    if (!c.at.found()) return c;
+    c.route = laneRoute(t, c.at.lane, counter);
+    const OptLane& L = t.lanes[static_cast<std::size_t>(c.at.lane)];
+    const std::size_t ki = static_cast<std::size_t>(L.firstKey);
+    if (ki >= t.keys.size()) { c.at.lane = -1; return c; }
+    const OptKey& K = t.keys[ki];
+    const float len = std::sqrt(K.delta[0] * K.delta[0] + K.delta[1] * K.delta[1] +
+                                K.delta[2] * K.delta[2]);
+    if (len > 0.0f)
+        for (int k = 0; k < 3; ++k) c.dir[k] = K.delta[k] / len;
+    // The set-back is in x and z only: `u32(v22, 40) = v61[6]` leaves the
+    // origin's y exactly as it is.
+    c.place[0] = L.origin[0] - c.dir[0] * SliderCall::kSetBack;
+    c.place[1] = L.origin[1];
+    c.place[2] = L.origin[2] - c.dir[2] * SliderCall::kSetBack;
+    c.nodeY = c.place[1] - SliderRide::kHover;
+    return c;
 }
 
 }  // namespace omk

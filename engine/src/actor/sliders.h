@@ -131,6 +131,40 @@ struct LanePoint {
     bool  found() const { return lane >= 0; }
 };
 LanePoint nearestVehicleLane(const OptTrack& t, const float target[3]);
+
+// ...AND WHAT `sub_452CC0` THEN DOES WITH IT - the DECISIONS, which is the
+// half of that function a port can hold to a number.
+//
+// Its bookkeeping is the engine's own linked lists: the mover is unlinked
+// from whatever lane list it is on and relinked onto the chosen one, and if
+// another vehicle is already there with a priority no higher than the call's
+// (`+186 <= a1[4]`) the two are SWAPPED outright - node blocks and all - so
+// the vehicle that was in the way BECOMES the player's slider. This port's
+// traffic keeps its own occupancy structures (`docs/STREET_LIFE.md` §2b), so
+// none of that is transcribed and this carries only what the function
+// DECIDES:
+//
+//   * the mover goes to the chosen lane's ORIGIN, set back **39 units** along
+//     the lane's own direction in x and z - the y is the origin's, untouched;
+//   * the direction is the lane's FIRST key delta, normalised;
+//   * `mover+56 = 256.0` and `mover+52 = 0`, `mover+186 = 1` (the priority
+//     the swap test compares against), and the node's flag word takes `| 8`;
+//   * the node itself sits at `y - 30.75` - the SAME hover height the ride
+//     uses (`SliderRide::kHover`), which is the third place that number
+//     turns up.
+struct SliderCall {
+    LanePoint at;                    // the lane the search chose
+    int   route = -1;                // the round-robin route off it
+    float place[3] = {0, 0, 0};      // where the mover is put
+    float dir[3] = {0, 0, 0};        // the lane's normalised direction
+    float nodeY = 0.0f;              // `place[1] - 30.75`, where the node sits
+    static constexpr float kSetBack = 39.0f;    // a flat 39, not the 39.370079
+                                                // that is a metre elsewhere
+    static constexpr float kSpeed   = 256.0f;   // mover +56
+    bool ok() const { return at.found(); }
+};
+SliderCall planSliderCall(const OptTrack& t, const float target[3],
+                          unsigned counter);
 // The route `sub_452570` would take for that lane on the `counter`-th call.
 int laneRoute(const OptTrack& t, int lane, unsigned counter);
 

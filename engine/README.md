@@ -2116,6 +2116,21 @@ loaded by the screen's own open - which rotate to show selection. The UI layer
 has no 3D path, so they are not drawn; their LABELS and the two counts are,
 on the echo bar, which is where the engine puts them.
 
+**AND WHERE IT IS PUT** (step 5) - `sub_452CC0`'s decision half. The mover
+goes to the chosen lane's ORIGIN, set back **39 units** along that lane's own
+direction in x and z (the y untouched), with the node **30.75** under it -
+`SliderRide::kHover`, the ride's own hover height, out of a third function.
+`mover+56 = 256.0`, `+52 = 0`, `+186 = 1`, and the node's flag word takes
+`| 8`. So a called slider does not appear beside you: it starts at the top of
+the road and drives down. The set-back is a flat 39, not the 39.370079 that is
+a metre elsewhere in the same file - it looks like a typo and is not.
+
+The rest of that function is the engine's own linked lists and is deliberately
+not transcribed, because this port's traffic keeps its own occupancy
+structures. One arm is recorded anyway: **if a vehicle is already on the target
+lane** with a priority no higher than the call's, the two are SWAPPED outright,
+node blocks and all - the one in the way becomes the player's slider.
+
 **AND WHERE A CALLED ONE COMES TO** (step 4). `sub_452570` looks for the
 nearest point on a VEHICLE lane before it reserves anything: the scan is
 `for (lane = header[2]; lane < header[5])` - the range after the pedestrian

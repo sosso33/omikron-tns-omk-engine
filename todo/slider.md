@@ -230,15 +230,42 @@ Each ends in a commit and a report.
      doing its job: they are more than 99 m from any road on at least one
      axis.
 
-5. **The RESERVATION and the ARRIVAL** — `sub_452CC0` (303 lines) routes the
-   chosen slider to that lane point; `sub_452570` then takes a free slot out
-   of the 40 (`slot[+22] == 1` and the mover's `+180 & 8` — and the port's own
-   read of `Slider_Init` already says `+22 == 1` is **slot 0, the player's own
-   slider**, so the pool is there), sets its state to 2 (or 6 when one was
-   already assigned), and calls `Screen_Fade(1)` with
-   `Actor_HoldAnimation(player, 1)` while it comes. Then the slider arrives in
-   mode 3, `MDSLIDIN`'s gate opens, and the vehicle is drawn under the rider.
-   — open
+5. **What `sub_452CC0` DECIDES** — where the chosen slider is put, and how
+   fast. — **DONE 2026-09-07**, `verify.py: engine: slider call` extended and
+   shown to fail by dropping the hover.
+
+   The mover goes to the chosen lane's **ORIGIN**, set back **39 units** along
+   that lane's own direction in x and z (the y is the origin's, untouched),
+   with the node **30.75** under it — `SliderRide::kHover`, the ride's own
+   hover height, turning up for the third time and out of a different
+   function. `mover+56 = 256.0`, `mover+52 = 0`, `mover+186 = 1` (the priority
+   the swap test compares against) and the node's flag word takes `| 8`. So a
+   called slider does not appear beside you: it starts at the top of the road
+   and drives down it.
+
+   The **set-back is a flat 39**, not the 39.370079 that is a metre elsewhere
+   in the same file. It looks like a typo and is not — worth keeping written
+   down for exactly that reason.
+
+   **What is deliberately NOT transcribed** is the rest of that function: the
+   mover is unlinked from whatever lane list it is on and relinked onto the
+   chosen one, through the engine's own linked lists, and this port's traffic
+   keeps its own occupancy structures (`docs/STREET_LIFE.md` §2b). Its most
+   interesting arm is recorded anyway: **if another vehicle is already on the
+   target lane** with a priority no higher than the call's (`+186 <= a1[4]`),
+   the two are **swapped outright**, node blocks and all — the vehicle that
+   was in the way BECOMES the player's slider. Cheap, and not what a reader
+   would guess.
+
+6. **THE ARRIVAL** — `sub_452570` takes a free slot out of the 40
+   (`slot[+22] == 1` and the mover's `+180 & 8`; the port's own read of
+   `Slider_Init` already says `+22 == 1` is **slot 0, the player's own
+   slider**, so the pool is there), sets its state to 2 — or 6 when one was
+   already assigned — and calls `Screen_Fade(1)` with
+   `Actor_HoldAnimation(player, 1)` while it comes. Then the slider has to
+   REACH you and open (mode 3), `MDSLIDIN`'s gate opens, and the vehicle is
+   drawn under the rider. This is the last step, and the only one that needs
+   the pool driven rather than read. — open
 
 ## What is already there, and must not be re-done
 

@@ -7119,6 +7119,22 @@ def c_engine_slider_call():
     on three consecutive calls, so that lane has two routes and the counter
     really does alternate; Anekbah's 218 answers 313 three times, because it
     has one.
+
+    **And where the slider is then PUT**, which is `sub_452CC0`'s decision
+    half: the chosen lane's ORIGIN, set back **39 units** along that lane's own
+    direction in x and z - the y is the origin's, untouched - with the node
+    30.75 under it. That last number is `SliderRide::kHover`, the ride's own
+    hover height, turning up for the third time and from a different function.
+    The set-back is a flat **39**, not the 39.370079 that is a metre elsewhere
+    in the same file, which is worth keeping because it looks like a typo and
+    is not.
+
+    What `sub_452CC0` does BESIDE that is the engine's own linked lists and is
+    deliberately not transcribed - this port's traffic keeps its own occupancy
+    structures. Its most interesting arm is worth recording anyway: if another
+    vehicle is already on the target lane with a priority no higher than the
+    call's, the two are **swapped outright**, node blocks and all, so the
+    vehicle that was in the way BECOMES the player's slider.
     """
     import subprocess
     eng = os.path.join(ROOT, "engine")
@@ -7136,15 +7152,19 @@ def c_engine_slider_call():
         "circuit 0 ANEKBAH lanes 242 ped 0..216 vehicle 216..242".split(),
         "nearest 34 of 34 addresses, median 16.4 m worst 46.4 m".split(),
         "route area 0 lane 218 key 0 -> 313 313 313".split(),
+        "call area 0 lane 218 route 313 at 5463 6 -700 dir -0.01 -1.00 node -25".split(),
         "circuit 1 SOUK lanes 201 ped 0..179 vehicle 179..201".split(),
         "nearest 32 of 34 addresses, median 24.6 m worst 72.3 m".split(),
         "route area 1 lane 191 key 9 -> 234 234 234".split(),
+        "call area 1 lane 191 route 234 at 16861 -384 9096 dir -1.00 -0.00 node -415".split(),
         "circuit 64 LAHOREY lanes 162 ped 0..162 vehicle 162..162".split(),
         "nearest 0 of 7 addresses, median -1.0 m worst -1.0 m".split(),
         "route area 64 lane -1 key -1 -> -1 -1 -1".split(),
+        "call area 64 lane -1 route -1 at 0 0 0 dir 0.00 0.00 node 0".split(),
         "circuit 101 QCHAUD lanes 259 ped 0..226 vehicle 226..259".split(),
         "nearest 3 of 3 addresses, median 12.4 m worst 13.4 m".split(),
         "route area 101 lane 254 key 0 -> 334 333 334".split(),
+        "call area 101 lane 254 route 334 at 10481 6 -9602 dir 1.00 -0.00 node -25".split(),
     ]
     return got, want, \
         "the four circuits the sneak's destinations name, and the nearest " \
