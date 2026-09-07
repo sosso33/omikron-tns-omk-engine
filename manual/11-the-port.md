@@ -1,226 +1,163 @@
 # 11. The port
 
-← [The interface](10-the-interface.md) · [Contents](README.md) · next: [Evidence](12-evidence.md)
+← [Contents](README.md) · prev: [The interface](10-the-interface.md) · next: [Evidence](12-evidence.md)
 
 ---
 
 ## In short
 
-OMK is three trees, and the split is the point:
+`engine/` is the re-implementation: C++20, about 37 400 lines across eight
+directories, and **no required dependencies at all**. `make` on a machine with
+nothing installed builds every probe and passes the test suite. SDL and the
+Vulkan loader are optional and buy you a window.
 
-* **`readable/`** — the decompilation, hand-cleaned. It is a specification to
-  read. **It is never built.**
-* **`tools/sim/`** — a Python implementation of the same machine, written
-  independently. It is the executable specification.
-* **`engine/`** — the C++20 replica that actually runs.
-
-Nothing is ever copied from the first into the third. That is a rule, not a
-preference: the decompilation addresses the original's 32-bit memory image
-through some 15 100 offset accessors, carries 306 inline-assembly blocks, and
-has 84 places where the decompiler **admits it dropped a conditional**. Turning
-those offsets into real fields *is* the port.
-
-The replica builds with `make` and nothing installed. That is not asceticism —
-it is what makes the evidence portable to any machine. The *playable* frontend
-needs a window and a sound device and has dependencies, and should; but the half
-that proves the port is right must build on a bare checkout.
-
-## In detail
-
-### The three rules
-
-1. **No original assembly, ever.** The binary and its listing are a reference
-   and an oracle, never a component. No static recompilation.
-2. **Never copy from `readable/`.**
-3. **Every file format is written fresh and proved against the corpus.** Not
-   against the decompiled C, and not against a reading — against every shipped
-   file. That is why the formats could be ported before their decompiled bodies
-   were cleaned: the proof does not come from the body at all.
-
-### Why C++, when the original is not
-
-Measured rather than assumed: of 432 `__thiscall` functions in the binary,
-**422 are the linked C++ runtime and 9 are game code**. There are no vtables, no
-`__purecall`, no exceptions and effectively no `std::`. **The game is C written
-with a C++ toolchain**, and its idiom is structs, free functions and tables of
-function pointers.
-
-C++ is therefore a choice about the *replica*:
-
-* the port's real failure mode is a silent field-offset error, and strong typing
-  is the tool for it;
-* every format is "load the file whole, relocate offsets in place" — an
-  ownership problem, where RAII beats reproducing manual `Mem_Free` discipline;
-* differential testing wants a test binary and easy byte comparison.
-
-And where object orientation would actively hurt, it stays plain: **the VM's 153
-opcodes are a table**, matching `tables/vm_opcodes.json` — never 153 classes.
-Same for the 66 special moves, the camera presets and the key bindings. They are
-*data*, and keeping them data is what lets them be diffed against the extraction.
-The hot paths stay data-oriented; floats stay `float`, and there is no
-`-ffast-math`.
-
-The decomposition stays close to the engine's — one module per subsystem,
-functions carrying the engine's own names — so that when behaviour diverges it
-can still be compared to a decompiled body function by function.
-
-### The shape of it
-
-```
-engine/src/
-  formats/     26 files   one reader per file format
-  script/      33 files   the world-script runtime; area.* is the Session
-  actor/       19 files   the .CTL channel, states, walker, AI, the crowd
-  o3de/        20 files   the renderer boundary and everything behind it
-  ui/          16 files   I2D, widgets, text, options
-  audio/        6 files   the voice pool, the bank, voice-over, music
-  platform/     9 files   DataFs, boot, movies, JSON
-  input/        2 files   the four control schemes
-engine/backends/
-  sdl/         the window: build/omk-play
-  vulkan/      the GPU backend
-engine/tools/  109 probes and dumps, one per check or finding
-```
-
-About 29 900 lines across `src/`.
-
-### Two implementations behind one boundary
-
-Playability and verifiability are both goals, and they are not the same target.
-The resolution is that **every output subsystem has two implementations behind
-one boundary**:
+The shape of it comes from one decision. Every output subsystem — picture,
+sound, input — has **two implementations behind one boundary**:
 
 | | the reference | the live one |
 |---|---|---|
-| render | a software rasterizer into an RGB565 framebuffer | Vulkan (MoltenVK on macOS) |
+| render | a software rasterizer into an RGB565 framebuffer | Vulkan, through MoltenVK on macOS |
 | audio | PCM buffers | an audio device |
-| input | a replayable event stream | a live device |
+| input | a replayable event stream | a real keyboard |
 
-The reference is what the test suite checks. The live one is what makes the
-replica playable. **Neither may be required to build the other** — and in
-particular a bare checkout with no Vulkan SDK must still build and pass. That
-property is what keeps the evidence half honest on any machine.
+The reference is what the checks measure. The live one is what makes the
+replica playable. Neither may be required to build the other, and a bare
+checkout with no Vulkan SDK must still build and still pass — that property is
+what keeps the evidence honest on somebody else's machine.
 
-The software backend was built **first**, for three reasons, and only the third
-is about caution: it *is* the port for the 2D path; it is the only path the
-frame oracle can check; and it separates a wrong ported decision from a wrong
-API call, which is expensive to tell apart exactly when the code is newest.
+## In detail
 
-### `DataFs`, and why it is a class
+### The layout
 
-All data access goes through it, and it resolves **case-insensitively** because
-Win95/98 did. **2 367 of 2 367 files resolve under four manglings of their
-path.**
-
-This is not defensive programming. As [chapter 2](02-boot-and-frame.md) shows,
-the executable spells the intro movies in lower case and the disc ships them in
-upper — so the very first file the game opens already needs it, before any
-asset and before any archive.
-
-The inverse, `omk::safeOutputPath`, refuses any output path carrying a
-shipped-data extension or lying inside the shipped tree. It keys on the
-extension and the tree's own subdirectory names, **never on the root's name** —
-which is why renaming the data directory did not silently stop it guarding. A
-guard written against a name stops guarding the moment the name changes, and
-nothing says so.
-
-### `tables/` — the one thing a replica cannot read out of the data
-
-Nine JSON files, each self-checking, lifted from the executable by
-`tools/exetables.py` (`--check` re-derives and diffs):
-
-| | |
+| directory | what is in it |
 |---|---|
-| `vm_opcodes.json` | the 153-opcode table at `0x004C0140` |
-| `vm_announce.json` | which operand each handler announces — **derived from the assembly, not hand-written**; a hand-written one was wrong three ways in an hour |
-| `ui.json` | 37 screens, 45 sounds, 74 option rows |
-| `ui_widgets.json` | 35 panels, 93 lists, 411 items, the option pages, the answer sites |
-| `key_bindings.json` | 4 groups × 14 actions × 3 devices |
-| `special_moves.json` | `tab_special_move`'s 66 rows |
-| `camera_presets.json`, `shoot_ai.json`, `adpcm.json` | |
+| `formats/` | one reader per file format — iam, scx, sfx, ctl, anim, morph, mesh3do, tex3dt, fnt, adpcm, addresses, opt |
+| `script/` | the world-script runtime: the Session with its two resident slots and its frame, the VM handlers, the zone registry, conversations, the game state, the scene objects |
+| `actor/` | the `.CTL` channel, the player controller and follow camera, skinning, the walker, the shoot AI, the street crowd, the spatial index |
+| `o3de/` | the renderer boundary and the software rasterizer, the draw buckets, geometry, the texture cache, world cameras, camera editings, particles, collision |
+| `ui/` | the I2D layer, the widget walk, screen drawing, text, surfaces, the options tree |
+| `audio/` | the voice bank and pool, the voice-over path, music |
+| `input/` | the four control schemes |
+| `platform/` | all data access, the boot path, the frontend interface, the movie decoder, JSON |
 
-### Building, and running
+Plus `backends/sdl/` (the viewer), `backends/vulkan/`, and 145 small
+command-line probes in `engine/tools/` — one per check, mostly.
 
-```sh
-cd engine && make                    # ~11 s clean, 0.03 s no-op, no dependencies
-python3 ../tools/verify.py --only "engine: cull" "drawable mask"
+The build compiles to `build/obj/**.o` with dependency tracking and links. A
+clean build is about 11 seconds and a no-op 0.03; it used to rebuild every
+source for every tool, which meant roughly 1 500 translation units a build, and
+the test suite paid that cost once per engine check.
 
-make play                            # needs SDL2 or SDL3
-build/omk-play "$DATA" ../tables --scene Aapkayl
+### The boundary is at the decision level
+
+This is the load-bearing choice, and getting it wrong is expensive in a way
+that is hard to undo. What is ported is not triangles but **decisions** — the
+drawable mask, the bucket key, the blend modes, the texture cache, the
+visible-set walk (chapter 8). The interface takes those:
+
+```
+begin(view) · submit(draw) · submit2d(list) · end() -> Frame
 ```
 
-The Makefile compiles to `build/obj/**.o` with `-MMD -MP` and links. It used to
-rebuild every source for every tool — about 1 500 translation units a build,
-taking minutes — and `verify.py` ran it once per engine check, so the suite paid
-that too.
+Put the boundary at the API level instead and those decisions leak into
+API-specific code; the software backend then cannot be added without extracting
+them again, and the frame oracle becomes unusable.
 
-### The viewer, and why it exists
+The software backend was written first, for three reasons, and only the third
+is caution: it *is* the port for the 2D rasterizers, which have to be
+transcribed anyway; it is the only path a captured frame can check exactly; and
+it separates a wrong ported decision from a wrong API call at the moment the
+code is newest.
 
-`build/omk-play` is an **instrument, not a slice of the port**. But it draws
-through the same batch order, the same blend modes and the same geometry path
-that the checks measure, so a fault you can see in it is a fault in the thing
-the checks check.
+### What "dependency-free" actually means
 
-Until 2026-09-01 the port did not draw into a window at all — the rasterizer
-only ever wrote `.bin` files for the test suite, so every claim about the 3D
-path was a number nobody could judge by eye. **Look at the replica before
-measuring it.** A picture settles "does the set draw" in five seconds; a metric
-is for what the eye cannot do — an exact count, a cache substitution, a
-regression guard on something already agreed correct.
+It is a property of the **verification path**, not of the program. Everything
+the suite touches builds with nothing installed. The playable frontend needs
+dependencies and should have them — hand-rolling Cocoa, Win32 and X11 to avoid
+SDL, or writing an MPEG decoder, would be more code, no verification benefit,
+and a port of nothing in the original.
 
-One correction worth carrying: **the view is not letterboxed by default**. The
-1.818:1 letterbox is measured off *dialogue* captures, so it is evidence about
-camera mode, and nothing establishes it for free roaming. Imposing it on a
-free-look tool was generalising a camera-mode property to all rendering.
+Three rules keep that honest:
 
-The viewer carries a set of **harness flags**, each labelled in its own help
-text as a harness write and not a port: `--give` (objects into the carried
-list), `--newgame-world` (a save's player over a new game's world),
-`--scene-chunk` (a scene's startup script over an area), `--sneak`,
-`--bank-reject`, `--scx-play` (start scene objects by handle),
-`--no-script-sprites`, and the environment variable `OMK_SKIP_EFFECT` on the
-set-piece runner. They exist so a flow can be reached without the script that
-would reach it, which is how the take, the tunnel doors and the portal were
-looked at; none of them is evidence about the engine.
+1. **`make` with nothing installed builds every probe and passes the suite.** A
+   dependency that breaks this is rejected, not worked around.
+2. **No ported source includes a dependency header.** They appear only in
+   backend files, behind the boundary.
+3. **No dependency may do work a reference implementation is supposed to be a
+   port of.** Using SDL's blitter instead of the ported one, or a library's BMP
+   loader instead of the ported one, means the check tests the library — and it
+   passes exactly as green while establishing nothing.
+
+The third is the one that is not hygiene, and it is the easiest to breach by
+accident, because the result looks identical.
+
+Vendored and system dependencies fail differently, so they are kept apart: the
+MPEG decoder is checked in and always present, so the boot path may use it
+directly; SDL and Vulkan are found by the build and their absence disables the
+frontend and nothing else.
+
+### Two rules that shaped the code more than any design
+
+**Everything counts in frames.** The simulation is fed thirtieths of a second,
+never seconds, however fast the frontend presents — chapter 2 has why. Two bugs
+came from breaking it: an ambient period read as seconds ran a city 30× too
+slow, and a viewer that pre-sampled one entry per whole frame went black on a
+fractional index.
+
+**All data access goes through one class.** `DataFs` resolves case-insensitively
+because Win95 did, and it is also where the write guard lives: `safeOutputPath`
+refuses any output path inside the shipped tree or carrying a shipped-data
+extension. That guard exists because a tool whose second positional argument was
+its output once truncated a file from the 1999 disc, and the check that noticed
+ran afterwards — the wrong side of the event.
+
+### The instruments
+
+Three things exist to be looked at rather than measured:
+
+* **`omk-play`** — the game, and also a free-look viewer for one set. It draws
+  through the same boundary the checks measure, so a fault you can see in it is
+  a fault in the thing they check. It is where several corrections in `docs/`
+  came from.
+* **four web viewers** that read the data directly rather than through the port
+  — a conversation player, a cutscene player, the menus, and the world scripts
+  as annotated listings. They are an independent implementation, which is what
+  makes the differential tier possible.
+* **`tools/sim`** — a Python model of the runtime, about 3 800 lines, that the
+  C++ is compared against.
 
 ### Where the port stands
 
-Audited row by row against the 41 content rows of `CLAUDE.md` §4:
+The coverage audit in `engine/README.md` is the authority, and it is written out
+row by row rather than summarised, because it has been wrong twice — once
+because it quietly dropped the rows it judged unportable, once with a figure
+left stale by a day's work.
 
-| | |
-|---|---|
-| **31** | fully ported |
-| **7** | partly — and the missing half of each is the same kind of thing: the runtime that *uses* the data, or native code absent from the decompilation |
-| **0** | lifted as a table but not consumed |
-| **0** | not ported |
-| **3** | not portable subjects at all — the simulator, the UI under the simulator, and the golden traces. They are this project's instruments. |
+As it stands: **31 rows fully ported**, **7 partly**, **0 lifted as a table but
+never consumed**, **0 unported**, and **3 that are not portable subjects at
+all** — the simulator, the UI model and the trace rig, which are this project's
+instruments rather than parts of the game.
 
-**That table has been wrong twice** — once with a count that had quietly dropped
-the rows it judged unportable, once with a figure left stale by a day's work — so
-it is written out row by row in `engine/README.md` rather than summarised, and
-**that file is the authority, not this page**.
-
-What remains unported is, honestly summarised, all **device**: DirectDraw,
-DirectSound's mix, and the 26 screen callbacks that are absent from the
-decompilation.
+What is left is essentially **device**: DirectDraw's back end, DirectSound's
+mix, and the screen callbacks that are not in the disassembly.
 
 ## Where it lives
 
 | | |
 |---|---|
-| the standard | [`docs/PORTING.md`](../docs/PORTING.md) — Part A is the target, Part B the evidence |
-| the audit | `engine/README.md` §Coverage — **read it, do not read a summary of it** |
-| the roadmap and log | `docs/RECONSTRUCTION.md` — never end to end; grep it by date or subsystem |
-| the tables | `tables/README.md` |
-| licensing | `LICENSING.md` — GPL-3.0-or-later for the code, CC-BY-4.0 for the prose, split on the code/prose line so the findings stay quotable |
+| the standard | `docs/PORTING.md` — Part A is this chapter, Part B is chapter 12 |
+| the audit | `engine/README.md` §Coverage |
+| the build | `engine/Makefile` |
+| the enforcement | `verify.py: porting standard`, which asserts the audit's counts sum and that every item the standard calls unfinished is still called unfinished |
 
 ## What is not settled
 
-* The **7 partly-ported rows**, each with its missing half named in
-  `engine/README.md`.
-* The port **plays the opening, the sneak, the take of an object and the
-  door-carrying transitions**, and no claim is made past what a reader has
-  confirmed in play: the seventeen scene functions' new arms, the arrival's
-  wait and the portal's rings are ported and checked but not yet seen in play.
-* **`Actors_SpawnFromTables`** is the largest single gap: without it the world's
-  own ambient characters never spawn.
+* **The port has only ever been built and run on macOS on Apple Silicon.** It
+  contains no operating-system conditional in its core — not one — so it is
+  portable by construction, but that is a property of the source rather than a
+  tested fact. Case-sensitive filesystems will break some of the *Python*
+  tools, which let the host do the resolving; the C++ will not care.
+* **The Vulkan backend has no reachable tier**, by construction: its
+  correctness is inherited from the software backend it mirrors.
+* **The trace rig is macOS-only** — it drives the original under CrossOver and
+  captures with a platform screenshot tool.

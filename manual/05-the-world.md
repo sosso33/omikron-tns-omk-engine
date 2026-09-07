@@ -1,169 +1,174 @@
 # 5. The world
 
-← [The script VM](04-the-script-vm.md) · [Contents](README.md) · next: [Actors](06-actors.md)
+← [Contents](README.md) · prev: [The script VM](04-the-script-vm.md) · next: [Actors](06-actors.md)
 
 ---
 
 ## In short
 
-The city is cut into **areas** — a street, an apartment, a rooftop. On top of
-an area the engine can lay a **scene**, which is a set of events staged in it: a
-cutscene, a conversation, an ambush. Two of each are resident at once, so
-walking from one place to the next does not stall.
+The world is a set of **places**, and a place is a chunk in an archive: its
+set, its characters, its props, its scripts, and the invisible boxes that make
+things happen when you walk into them.
 
-Inside an area, the floor is covered in invisible **trigger zones**: 4 558 of
-them across the game. A zone is a quadrilateral, plus an arc saying which way
-you must be facing, plus a pointer to a script. Walk into one facing the right
-way and something happens. That is how nearly everything in the game starts.
+Three ideas carry the whole chapter.
 
-Two things join them up. **Messages** — an area can subscribe scripts to
-numbered events, so "the player was bumped" or "an object finished moving" can
-be listened for. And the **game database**: 8 192 bytes that hold everything the
-game remembers about you. That block *is* the save file, and the new-game state
-is a save file too, shipped on the disc.
+**A place runs a script the moment it loads.** Nothing has to name it — arriving
+*is* the trigger. That is how a new game starts talking to you.
 
-There is also a third way in, and it went unfound for a long time because
-nothing enumerated it: **each chunk carries its own startup script at offset
-+4**, run the moment the chunk loads. Entering the area *is* the trigger.
+**Everything else is a trigger zone.** A quad on the floor, plus an arc saying
+which way you have to be facing, plus up to three scripts: one for entering,
+one for pressing the action button inside it, one for leaving. There are 4 558
+of them, and each has one bit in the saved game, which is how a one-shot stays
+shot.
+
+**Two places are loaded at once.** When you walk out of a street into a
+building, the street is not thrown away — it stays resident in the other slot,
+its animations still running, and walking back is not a reload. This is the
+detail a replica is most likely to get wrong, and this one did: it rebuilt the
+street from the file, and a city that had 32 animations running came back with
+none of them, its fires and its neon gone with them.
 
 ## In detail
 
-### Areas, scenes, and the two resident slots
+### Areas and scenes
 
-`IAM\AREA` and `IAM\SCENE` are archives of numbered chunks. `Area_LoadSet` keeps
-**two decor sets resident** — state `2` linked into the render list, state `1`
-loaded but unlinked. **Hidden is not unloaded**, and that has a visible
-consequence the game shipped with; see [chapter 8](08-rendering.md).
+`IAM\AREA` and `IAM\SCENE` are archives of chunks. An AREA chunk is a location:
+it names its set (`+97`), its 2D map, its animation library, its traffic
+circuit, its characters and props, and its trigger zones. A SCENE chunk is a
+*layer* loaded over an area — a cutscene's cast and its own zones — and
+`scene.load` brings one in without disturbing the area under it.
 
-`Area_TickLoad` hands the AREA block's `+4` and the SCENE block's `+4` to
-`Script_NewContext` and queues each the moment its chunk loads — the context
-stored back at block `+0`, which is why `+0` is zero on disk. **173 of 330
-chunks carry a startup script, and all 173 disassemble clean.**
+Both carry a **startup script at `+4`**. `Area_TickLoad` hands it to
+`Script_NewContext` and queues it the moment the chunk loads, so entering the
+place is what runs it. **173 of the 330 chunks carry one and all 173 decode.**
 
-**A transition keeps both slots' object pools.** The door a transition names
-resolves in the **outgoing** slot's pool: over the corpus's 447 door-carrying
-`area.goto` sites (894 door objects) 832 resolve in the outgoing scene and
-exactly three only in the destination's (`verify.py: engine tunnel doors`).
-The completion hides the non-active slot and nothing else (`Area_Transition`,
-mode 3 case 4 / mode 4 case 9 / mode 1); a reconstruction in the port that
-forced the player's row onto the destination *before* hiding was what walked a
-reader off the Impasse airlock into the void (`todo/collision-scenes-transitions.md`
-step 3a, `verify.py: engine airlock walk`). The tunnel's and the restaurant's
-doors are set meshes moved by `Script_MoveObjectOnPath`, so the collision
-follows them, and a walker now carries a door-bearing transition end to end —
-the door opening from the active pool, the feet landing on the destination,
-the door closing behind him from the pool that is no longer active
-(`verify.py: engine tunnel door walk`).
+That field is worth a paragraph because of how long it stayed hidden. The
+question "what starts a cutscene's beats?" was open for weeks while every
+route that *was* checked came back empty — and the enumeration was the problem,
+not the reasoning: the 5 785 script slots come from the zone records and the
+message subscriptions, and nothing in that walk reaches `+4`. So "no shipped
+script starts them" really meant "no script I enumerate". The golden trace had
+been announcing the answer the whole time.
 
 ### The trigger zones
 
-The 68-byte record, all 4 558 of them decoding with 0 bad:
+68 bytes, and the whole surface through which the world reacts to you:
 
 ```
- a quadrilateral on the floor    the area you must be standing in
- a facing arc                    which way you must be looking
- a save bit                      whether firing it is remembered
- a camera                        what watches you while it runs
- a script pointer                what to run
++0/+4/+8  three script slots — enter, activate, leave
++12       four corners × {int32 x, y, z} — the quad on the floor
++60       facing-arc centre  } 4096ths of a turn on disk; the loader
++62       facing-arc width   } converts both to degrees as it relocates
++64       int16 id — one save-game bit each
++66       int16 world camera, -1 = none
 ```
 
-The lifecycle has three edges, not one — **enter**, **activate** and **leave** —
-which is why a zone can start something when you walk in, something else when
-you press the action button inside it, and a third thing when you leave.
+`Zones_RegisterAll` puts each into a sweep-and-prune index, and only zones
+whose save bit is set are registered — which is how `zone.disable` retires a
+one-shot permanently. Every frame, the actor scan tests containment, raises
+event 8 on touch, and raises event 7 — the 16-slot "what can I press the button
+on" table — when the facing matches too.
 
-Zone ids resolve through `IAM\ZONES.TAG`, which is how a listing can print
-`ZONES[2027] = 'Dialogue Savant'` rather than a number. Every `.TAG` domain
-works this way; they are the level designers' own names, shipped.
+54 of the zones carry a world camera, and walking into one forces that camera:
+the game's walk-into-a-room auto-cut.
+
+**Verified**: 4 558 zones, 0 invalid script offsets, 0 arcs past 4096, 0
+duplicate ids.
 
 ### Messages
 
-`Game_HandleEvent` is the switch. 154 subscriptions across the game, ids 0..32.
-A subscription is an 8-byte record; the count is at chunk `+86` and the table at
-`+68`.
+Scripts also subscribe to **events** — 154 subscriptions across ids 0..32 —
+which is how one script tells another that something happened without either
+knowing about the other. The same dispatcher is what resumes every parked
+script in chapter 4's table.
 
-That `+68` is worth a paragraph, because it is the repository's best example of
-a right answer reached for a wrong reason. A capture of the game's opening
-logged conversation 272 and two cameras that **no script slot could emit**. The
-bytes were found at the offset held in `+68`, and `+68` was therefore read as a
-script pointer. It is not — `Message_RunHandlers` reads it as the subscription
-table. Chunk 118 declares **0 zones and 0 subscriptions**, so both walks are
-right to find nothing, and the empty table's base coincides with the start of
-the code after it. `+4` and `+68` are the same number, 1040, for that chunk
-alone. It looked like a coincidence because it was one.
+### Two resident slots, and one pool each
 
-### The 8 192-byte game database
+The engine keeps **two** areas loaded, in a two-row table, with one row active.
+Everything that walks the world walks both rows: the zone registry, the camera
+search, the message handlers. The outgoing area stays live — zones armed,
+scripts running — for as long as it is resident.
 
-Everything the game remembers. The walk over it lands **exactly** on 5 686
-bytes of documented structure; six independent counts agree with six
-independent sources; **0 spare bits are set**; and `State_Apply` ↔ `State_Save`
-round-trips.
+And the object pool belongs to the **slot**, not to the game. `Area_LoadScx`
+walks the decor slots for the one holding the area, fills *that slot's*
+container, and binds *that slot's* sound file:
 
-`IAM\START` is the new-game save — not an archive, not a script container. That
-was established the hard way: it did not fit the archive header, was written off
-as "a different format", and a section offset read as a count produced a
-reported "5016 scripts" that do not exist.
-
-`IAM\GAMES` is the save directory: 3 496 bytes of header, then 256 slots of
-32 808. The 256×72 directory record is established from `SaveDir_Build`.
-
-The clock is a **41-day calendar**, ported with the rest.
-
-### Putting it together — a frame
-
-```mermaid
-flowchart TD
-    F["Game_Frame — delta = 30 / fps"] --> I["Input_Poll + edge filter"]
-    I --> T["Game_Tick"]
-    T --> P["Script_Pump — walk every context"]
-    P --> R{"status == 1?"}
-    R -->|yes| X["Script_Execute — run until it ends or parks"]
-    R -->|no| S["skip: it is waiting on something"]
-    X --> Q["Script_ProcessActions — arm queued actions<br/>(refused while any status is non-zero)"]
-    T --> Z["zone lifecycle: enter / activate / leave"]
-    T --> M["Game_HandleEvent — 154 subscriptions, ids 0..32"]
-    T --> A["Actors_TickAll — the .CTL channel per character"]
-    T --> C["camera tick, area transition, scene objects"]
-    Z --> P
-    M --> P
+```c
+sub_44B140(slot + 8);                       /* clear the container      */
+Scene_LoadSCX(Buffer, slot + 8);            /* ...and fill it           */
+if ((v6 = File_LoadWhole(Buffer, ...))) {
+    Sfx_LoadFile(v6, slot);
+    Sfx_BindAmbientEffects(slot);
+}
 ```
 
-### How the port runs it
+`Game_Frame` then plays **both** pools every frame, which is why the place you
+are not standing in goes on animating.
 
-`engine/src/script/area.cpp` and `area.h` are the **Session**: the resident
-slots, the transitions, and the frame — with a `SceneRunner` per resident
-slot, the outgoing one kept alive until the transition completes. `zones.*` is the zone registry;
-`world.*` the zone harness; `gamestate.*` the database; `savefile.*` and
-`globaldata.*` the persistence.
+**So walking back out of a building reloads nothing.** `Area_LoadIntoSlot`
+opens by testing whether the slot already holds that area, and if it does it
+refreshes the fog block and returns — no `Area_Load`, so no `.SCX` reload and no
+startup script. The street's container, its sound binding and its running
+programs are exactly as you left them.
 
-Two results anchor it. The world scripts execute over **5 958 slots** with the
-resulting database **byte-identical** to `tools/sim`, the independent Python
-implementation. And the golden traces — five captures of the original engine,
-1 315 events, 112 anchors — replay with the port agreeing with `tools/sim`
-everywhere; the port in fact **closed one of the reference implementation's six
-disagreements** by modelling `ui.open`'s park.
+That is the rule this port broke and has now fixed. It kept the outgoing pool
+and ticked it, correctly, but had no way home: the return built a fresh runner
+from the file. Measured over the game's own door pair — Anekbah into Hall 43
+and back — the city went from **32 programs running and 153 ambient emitters
+bound** to **0 and 0**, and stayed there. Its animations and its neon were dead
+for the rest of the session. Coming back is a *swap*, and now is one.
+
+### The transition
+
+`area.goto` names a destination and up to two **door objects**: one played on
+the outgoing scene, one on the arriving one. The set streams in at 0x20000
+bytes a frame while the game keeps running; the caller parks at status 10 and
+is handed back through the pump's tail. A second `area.goto` supersedes the
+first and leaves its caller parked for ever (chapter 4's status 5).
+
+### The saved game is one block
+
+There is one 8 192-byte structure, and it is both the live game state and the
+save file's payload:
+
+```
+IAM\START ────► the 8192-byte DB ────► State_Apply ────► playing
+   5686 bytes                                ▲
+IAM\GAMES slot ─────────────────────────────┘
+```
+
+`IAM\START` **is the new-game save** — not a script archive, which is what it
+was first read as. The file is 5 686 bytes and the block 8 192; everything past
+the file is zero and stays zero, and the save writes all 8 192 back. The walk
+over it lands exactly on the file size, and six independent counts agree with
+six independent sources.
+
+Saves are not free and not anywhere: you save at a **save point**, by
+interacting with it, and each save spends one *anneau* — a ring — charged when
+the slot is confirmed. The port does that too, through the game's own panels.
+
+### The calendar
+
+Time is two globals saved beside the block, and every constant is a `dd` in the
+data segment: **41 days per month, 13 months**, year zero 7216, 3 600 000 units
+per day divided into 21 hours of 15 minutes of 33 seconds, with the months
+named Aqed, Nadim, Andar, Xenep, Nevod, Ganevat, Osmydep, Qomivo, Taznevet,
+Ustanevat, Nivat, Mozkanep, Primevat.
+
+A new game begins on **12 Nadim 7216 at 11:10:00**.
 
 ## Where it lives
 
 | | |
 |---|---|
-| findings | [`docs/FILE_FORMATS.md`](../docs/FILE_FORMATS.md) (containers), [`docs/GAME_STATE.md`](../docs/GAME_STATE.md) (the DB, START, the save, the clock) |
-| the port | `engine/src/script/area.*`, `zones.*`, `world.*`, `gamestate.*`, `savefile.*`, `globaldata.*`, `objects.*` |
-| the reference | `tools/sim/world.py`, `tools/sim/scene.py` |
-| byte accounting | `tools/chunkmap.py` |
-| checks | `verify.py: startup scripts`, `world scripts`, `zones`, `game state`, `trace agreement`, `engine tunnel doors`, `engine airlock walk`, `engine tunnel door walk` |
+| the findings | `docs/GAME_STATE.md`, `docs/FILE_FORMATS.md` §5b2b–5b3, `docs/SCRIPT_VM.md` "The area transition" |
+| the port | `engine/src/script/area.*` (the Session: slots, transitions, the frame), `zones.*`, `gamestate.*`, `savefile.*` |
+| the checks | `zone records`, `startup scripts`, `engine live zones`, `engine: area transition`, `engine: airlock walk`, `engine: city return` |
 
 ## What is not settled
 
-* **97 bytes across 330 chunks** are unexplained (chapter 3).
-* **What orders a scene's beats was closed; what starts the other 105
-  conversations was not.** Across all 173 startup scripts, the only
-  `dialog.start` not already reachable from a script slot is 272 itself — one,
-  not a hundred. Chapter 13 lists everything ruled out.
-* **`Actors_SpawnFromTables` is not ported**, so in the replica the world's own
-  ambient characters never spawn; only the ones a script names with
-  `character.show` appear. This is the largest single gap in the port.
-* **A corner of the Impasse airlock holds the player** where a reader expected
-  to pass: the sas floor's diagonal edge under a hanging crate that is a
-  collider by the engine's own flag rule. Reproduced headless; nothing read
-  says the engine passes where the port holds, and only a play comparison in
-  the original settles it (`todo/collision-scenes-transitions.md` 3e).
+* **One field of the 72-byte save-directory record** is still unexplained.
+* **Status 5** — a superseded transition caller — is parked with no resumer
+  anywhere in the image. Recorded as the engine's shape rather than as a gap.
+* The **fog block** refreshed by a resident return is read as a refresh and its
+  contents are not traced.

@@ -1,180 +1,145 @@
 # 3. The data
 
-← [Boot, and the frame](02-boot-and-frame.md) · [Contents](README.md) · next: [The script VM](04-the-script-vm.md)
+← [Contents](README.md) · prev: [Boot, and the frame](02-boot-and-frame.md) · next: [The script VM](04-the-script-vm.md)
 
 ---
 
 ## In short
 
-The game is about 1.7 GB of files, and almost all of it is one of five things:
-**pictures**, **shapes**, **movement**, **sound**, and **instructions**.
+About 1.7 GB in 2 812 files, and almost all of the game is in there rather than
+in the executable. The directories that matter:
 
-The instructions are the interesting part. The game's rooms, streets, doors,
-conversations and cutscenes are not code — they are data, compiled by whoever
-built the levels into a bytecode the engine interprets. Walking into a doorway
-does not run a function called `enter_apartment`; it steps into a rectangle on
-the floor that carries a pointer to a script, and the engine runs it.
+| | |
+|---|---|
+| `IAM/` | 67 files — the **archives**: conversations, the world scripts, the areas, the interface text, the saved games |
+| `MESHES/` | 1 271 — models, sets and their textures |
+| `SCPTDATA/` | 287 — the scene scripts, their animation clips, paths and sound tables |
+| `MORPH/` | 779 — facial animation with the voice recording inside it |
+| `FONTS/`, `I2D/`, `IMAGES/`, `MAP2D/` | the interface: 21 fonts, 73 sprite sheets, 45 bitmaps, 32 map screens |
+| `FLIS/` | the three intro movies |
+| `VOICEOFF/`, `SOUNDS/`, `TRACKS/` | speech, effects and music |
 
-The other thing to know is that **most "file formats" are not files**. The game
-ships 635 model files, but 2 534 textures — because textures live inside the
-model files. It ships 220 scene files, but 1 490 animation clips and 6 756
-paths — because those live inside the scene files. Opening the folder and
-counting extensions tells you almost nothing about what is in there.
+There are two shapes of file. Most are **archives**: one file holding hundreds
+of numbered chunks, with a directory at the front. The rest are ordinary files
+in a dozen small formats, each read by one loader in the engine.
+
+The important thing about all of it is that the formats are *plain*. There is
+no compression anywhere in the shipped tree, no encryption, and no versioning
+beyond one field. A record is a struct, an array is an array, and a count is
+usually right there. That is what made the whole project tractable.
 
 ## In detail
 
-### The shipped tree
+### The IAM container
 
-| directory | size | what |
-|---|---|---|
-| `MORPH/` | 1.0 GB | `.3DM` — facial animation and the voice audio that drives it, 777 files |
-| `SCPTDATA/` | 236 MB | `.SCX` scene scripts (220) and `.SFX` scene sounds; the animation clips and paths live in their streamed blocks |
-| `MESHES/` | 135 MB | `.3DO` models, characters and sets (635) with their `.3DT` textures (2 534) |
-| `FLIS/` | 59 MB | the three MPEG-1 intro movies |
-| `IAM/` | 17 MB | the archives — the world scripts, conversations, interface text, save directory, and the `.TAG` name tables |
-| `VOICEOFF/` | 1.4 MB | `.ADP` voice-over, of which only 10 of 561 named ever shipped |
-| `SOUNDS/`, `FONTS/`, `I2D/`, `IMAGES/`, `TRACKS/`, `ANIMS/`, `TRAJECTOIRES/`, `MAP2D/`, `RADAR/` | small | interface `.wav` (61), `.FNT` fonts (13), 2D artwork, `.ani` libraries, `.OPT` traffic circuits (6) |
+Files directly under `IAM/` with no extension — `DIALOG`, `AREA`, `SCENE`,
+`OBJECT`, `GAMES` — are flat archives, read by `Archive_ReadChunk`
+(0x0040FF90):
 
-`gamedata/IAM/FRENCH/` is a **byte-identical duplicate** of `gamedata/IAM/`
-(same MD5) — not a second corpus, which was worth establishing once so nobody
-treats it as one.
+```
+offset 0   directory: an array of 8-byte entries
+             uint32 offset      absolute, from the start of the file
+             uint32 size        in bytes
+             (0,0) means "no chunk with this index"
+offset N   payload
+```
 
-### The archives: `IAM`
+The directory ends where the first payload byte begins, so **its length is
+implied rather than stored** — `IAM/DIALOG` has a 4 096-byte directory, so 512
+entries, 420 of which hold data. The loader computes an entry's address as
+`(index >> 8) * 2048 + 8 * (index & 255)`, which is `8 * index` written the long
+way: it reads a 2 048-byte sector and indexes inside it.
 
-`IAM` is the container format, and the mistake worth not repeating is assuming
-everything in that directory is one. `IAM\AREA` and `IAM\SCENE` are archives of
-numbered chunks. `IAM\GLOBAL` is **not** — `Global_Load` `fopen`s it as a plain
-file with a fixed header, and parsing it as an archive loses 2 of 10 scripts
-and 86 trigger sites. `IAM\START` is not an archive either; it is the
-**new-game save file**, which `Game_NewGame` hands straight to `State_Apply`.
+There is a second path in: called with a positive fourth argument,
+`Archive_ReadChunk` skips the directory entirely and the caller supplies the
+offset and the stride.
 
-That table is worth reading as a whole, because it is the clearest example in
-the repository of why a plausible parse is not a parse:
+### Two files in that directory are not archives at all
 
-| found in the data | what the code said | cost of not checking |
-|---|---|---|
-| `SCENE` count looked like an int32 at +44 | `Scene_Load` reads an **int16** | 22 of 71 chunks silently rejected — 257 scripts instead of 605 |
-| `IAM\GLOBAL` parsed plausibly as an archive | `Global_Load` **fopen**s it | 2 of 10 scripts, 86 trigger sites |
-| `START` did not fit that header, so "different format" | it is the new-game **save** | "5016 scripts" reported from a section offset read as a count |
+This is the trap the repository's first ground rule was written for, and it
+cost real work twice:
+
+* **`IAM\GLOBAL` parses plausibly as an archive** and is not one. `Global_Load`
+  `fopen`s it — a plain file with a fixed header. Reading it as an archive lost
+  2 of its 10 scripts and 86 trigger sites, silently.
+* **`IAM\START` does not fit that header either**, and the conclusion "a
+  different format" was also wrong: `Game_NewGame` hands it to `State_Apply`.
+  It is **the new-game save** — the 8 192-byte game state as it stands before
+  the first frame — and reading a section offset in it as a count once produced
+  a confident "5 016 scripts".
+
+Both were settled the same way: by finding the loader. A layout that fits the
+shipped bytes looks exactly like a correct one.
 
 ### The format families
 
-```mermaid
-flowchart LR
-    subgraph P["pictures"]
-        T[".3DT — 2534 textures<br/>inside 635 files"]
-        F[".FNT — 13 fonts,<br/>2899 glyphs"]
-        B["BMP / I2D artwork"]
-    end
-    subgraph S["shapes"]
-        O[".3DO — models, characters,<br/>sets, 16188 meshes, 666 cameras"]
-    end
-    subgraph M["movement"]
-        A[".ani — 243362 quaternions"]
-        C[".CTL — 7 state machines,<br/>398 clips, 2044 edges"]
-        DA[".3DA — 1490 scene clips"]
-        DP[".3DP — 6756 paths"]
-        DM[".3DM — 777 morph + voice"]
-    end
-    subgraph Snd["sound"]
-        ADP["OTNS ADPCM"]
-        W[".wav — 61 interface"]
-        SFX[".SFX — 59 scene sound sets"]
-    end
-    subgraph I["instructions"]
-        SCX[".SCX — 220 scene scripts"]
-        IAM["IAM#92;AREA / SCENE / GLOBAL<br/>5785 world script slots"]
-        D["IAM#92;DIALOG — 321 conversations"]
-    end
-```
+Each is one loader in the engine and one reader in `engine/src/formats/`. The
+numbers are what the checks assert:
 
-### Established, and how
+| format | what it is | established |
+|---|---|---|
+| `.3DO` | models, characters and sets — and the **lights** inside them | 635 models, 16 188 meshes, 666 cameras; 4 179 light records over 216 models; 99.9986% of every byte claimed |
+| `.3DT` | textures | 2 534 of 2 534 byte-identical |
+| `.ani` | animation libraries | 243 362 of 243 362 unit quaternions |
+| `.CTL` | the actor state machines | 7 of 7 walks landing exactly on the file size; 398 clips; all 2 044 graph edges resolving |
+| `.SCX` | scene scripts — objects, programs, camera editings | 220 of 220; 4 511 objects; 6 756 paths |
+| `.3DA` / `.3DP` | scene animation clips and authored paths | 1 490 clips; every path's duration field confirmed |
+| `.3DM` | facial animation with its voice audio inside | 777 of 777, sample-identical |
+| `.SFX` | a scene's sounds and ambient effects | 59 of 59, a six-section walk exact |
+| `.OPT` | the city's traffic circuits | 7 blocks, 6 of 6 exact |
+| `.FNT` | the interface fonts | 2 899 glyphs, none outside its file, none overlapping |
+| `IAM\AREA`, `SCENE`, `GLOBAL` | the world scripts and trigger zones | 5 785 of 5 785 script slots decoding; 4 558 zones, none malformed |
 
-Every row below is asserted by a check; the "state" column is the standard from
-[chapter 12](12-evidence.md).
+Two audio formats sit under that: **OTNS ADPCM**, transcribed from
+`sub_483200` and sample-identical across all 777 morph files, and plain
+`.wav` for the 61 interface and effect sounds.
 
-| format | state |
-|---|---|
-| `.3DT` textures | 2 534 / 2 534 byte-identical |
-| OTNS ADPCM | decoder transcribed from `sub_483200`; 777 / 777 sample-identical, 225 441 216 samples |
-| `.3DM` morph — bones, face, root motion, audio | 777 / 777 files |
-| `.3DO` meshes, characters and sets | records of 140 / 32 / 28 / 32 / 52 bytes, all 401 files walked |
-| `.ani` animation libraries | 243 362 / 243 362 unit quaternions |
-| `.CTL` state machines | 7 / 7 landing exactly on the file size; 398 clips; all 2 044 graph edges resolve |
-| `.SCX` scene scripts | 220 / 220; chunk 2 lands exactly on the next chunk tag in all 220 |
-| `.3DA` scene clips | 1 490 clips; root key 0 = the authored placement |
-| `.3DP` paths | keys and facing convention closed; header u32 = duration, 6 756 / 6 756 |
-| `.SFX` scene sounds | 59 / 59 six-section walk exact |
-| `IAM` archives, `IAM\DIALOG` | solved |
-| world scripts | 5 785 / 5 785 slots decode |
-| the 8192-byte game state | walk lands exactly on 5 686; six counts against six independent sources |
+### Case, and why it needed a class
 
-### The self-checking parse
+The game shipped with inconsistent casing because Win95 did not care: the
+executable asks for `FLIS\EIDOS.mpg` and the disc holds `EIDOS.MPG`; eight of
+the scene sound files are spelled `.Sfx` where the rest are `.SFX`, and five
+checks once missed them by globbing the wrong one. A count that is quietly
+short looks exactly like a count that is right.
 
-The invariants above are not decoration — they are the method. A parse is
-trusted when the shipped data *could have failed it and did not*:
+So **every data access in the port goes through one class**, `DataFs`, which
+resolves case-insensitively — 2 367 of 2 367 shipped files resolve under four
+manglings of their path. It is also where the write guard lives: `safeOutputPath`
+refuses any path inside the shipped tree or carrying a shipped-data extension,
+because a tool whose second positional argument was its output once truncated a
+26 KB mesh from the 1999 disc, and the check that noticed it ran afterwards.
 
-* the walk must land **exactly** on the file size;
-* a shared pool must be consumed **in order with no gaps**;
-* every cross-reference must resolve (the `.CTL` loader refuses to start
-  otherwise);
-* quaternions must be unit;
-* two independent chains must agree — a conversation's model via the actor
-  record and via the `.3DM` face-vertex count, 150 of 153;
-* an accumulation must have the **right shape**, not merely a plausible total.
+### What cannot be read out of the data
 
-That last one is the subtle one, and it decided a real question. Two per-frame
-`float[3]` tracks were read as deltas. The `.3DM` one was **refuted** because
-integrating it walks every character off the map for ever. The `.3DA` root
-track was **confirmed** because its integral converges — Kay'l's x climbs 0→117
-over forty frames then sits flat at 110–118 for the remaining 230, which is a
-man walking in and stopping. Read as absolute offsets, the same numbers never
-leave ±2.3 and he never moves at all. **The discriminator is the curve, not the
-endpoint.**
+Some tables are compiled into the executable, and a replica cannot recover them
+from any file: the VM's 153-entry opcode table, the interface widget tree, the
+four control schemes, the camera-mode presets, the ADPCM coefficients, the
+66 special-move rows. Those are lifted to `tables/*.json` — nine files, each
+self-checking, each regenerable by `tools/exetables.py --check`.
 
-"It decodes without crashing" is not a check. Random bytes decode.
-
-### How the port reads it
-
-One rule, and it is architectural rather than stylistic: **all data access goes
-through `DataFs`**, which resolves case-insensitively because Win95/98 did.
-2 367 of 2 367 files resolve under four manglings of their path. Chapter 2
-explains why this cannot be an afterthought — the boot path needs it before the
-first asset is touched.
-
-The inverse rule guards the other direction. `gamedata/` is input, and
-`omk::safeOutputPath` refuses any output path carrying a shipped-data extension
-or lying inside the shipped tree, and every tool in `engine/tools/` that takes
-an output path calls it on each `argv` path it opens for writing — because on
-2026-09-02 a 26 KB mesh
-from the 1999 disc was truncated to an 8-byte header by a tool whose second
-positional argument was its output. `verify.py` caught it — afterwards, which
-is the wrong side of the event.
-
-The guard keys on the file's **extension** and the tree's own subdirectory
-names, never on the root's name. That is why renaming the data directory from
-`fr/` to `gamedata/` in 2026-09-03 did not silently stop it guarding.
+This is the one place where the port depends on this repository as well as on
+your copy of the game.
 
 ## Where it lives
 
 | | |
 |---|---|
-| container formats | [`docs/FILE_FORMATS.md`](../docs/FILE_FORMATS.md) — IAM, DIALOG, VM, TAG, 3DM, 3DO, SCX, GLOBAL/START |
-| asset formats | [`docs/ASSETS.md`](../docs/ASSETS.md) — ADPCM, .ani, .CTL, textures, cameras, sets, clip types |
-| the port's readers | `engine/src/formats/` — 26 files, one per format |
-| path resolution | `tools/omkpaths.py` (Python), `engine/src/platform/datafs.*` (C++) |
-| byte accounting | `tools/chunkmap.py` — claims every byte a documented structure explains and reports the rest: **97 bytes left in 330 chunks** |
+| the container and the asset formats | `docs/FILE_FORMATS.md`, `docs/ASSETS.md` |
+| the readers | `engine/src/formats/` — one file per format |
+| all data access | `engine/src/platform/datafs.*` |
+| the lifted tables | `tables/*.json`, regenerated by `tools/exetables.py` |
+| the Python readers | `tools/omkdata.py` and one module per format |
 
 ## What is not settled
 
-* **97 bytes**, across 330 `IAM\AREA` / `IAM\SCENE` chunks, are not explained by
-  any documented structure. `chunkmap.py` reports them rather than hiding them.
-* **`.3DM`'s `float[3]` track.** The parser's integration of it is read and
-  confirmed against the assembly, but the corpus refutes "root-motion deltas"
-  as playable semantics — near-constant, near-unit in 57 of 60 files, which
-  means universal drift. Whatever neutralises the integral in the engine is
-  untraced.
-* **`.3DM` node slots 0 and 1.** Uploaded with preamble ids 0/1, bound by no
-  drawn mesh, not rotations, and **not the voice envelope** either. Eye-direction
-  or blink channels are the surviving shapes.
-* **One 32-byte field** of the save directory's 72-byte record.
+* **`.3DM` still has unread fields.** Three `float[3]` tracks whose meaning is
+  narrowed rather than settled: read as root-motion deltas they walk every
+  character off the map, so that reading is refuted, and what neutralises the
+  integral in the engine is untraced. Two node slots (0 and 1) are uploaded
+  with ids no drawn mesh binds — not rotations, and measurably not the voice
+  envelope either.
+* **The Dreamcast `.DDM` variant** is decoded only as far as its section tags.
+  It is not this port's subject.
+* **The 1999 spec sheet claims a BSP tree** in the models. Every byte of every
+  `.3DO` is now accounted for — 460 unexplained bytes across 33 MB — so
+  whatever the sheet meant, it is not a structure hiding in those files.

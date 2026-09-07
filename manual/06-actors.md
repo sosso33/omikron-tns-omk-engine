@@ -1,205 +1,161 @@
 # 6. Actors
 
-← [The world](05-the-world.md) · [Contents](README.md) · next: [Conversations and cutscenes](07-conversations-and-cutscenes.md)
+← [Contents](README.md) · prev: [The world](05-the-world.md) · next: [Conversations and cutscenes](07-conversations-and-cutscenes.md)
 
 ---
 
 ## In short
 
 Every character in the game — the one you steer and the ones you do not — is
-run by the same machine: a **state graph read out of a data file**. Standing,
-walking, running, drawing a weapon, climbing, swimming, being hit: each is a
-node, and the arrows between them carry the button combinations that take you
-along them.
+driven by the same machine: a **state graph that shipped on the disc**.
 
-Because the graph is data, the game can hand you a different body and keep
-going, which is the whole premise of *Omikron*.
+A `.CTL` file is a list of states, each naming an animation, and a list of
+transitions between them, each naming the buttons that take it. Press forward
+and the graph moves from standing to walking, because an author drew that edge.
+Press the action button next to an object and it walks a chain of four states —
+reach, wait, put away, stand — for the same reason.
 
-Sitting above that graph is a shorter list of **18 modes** the engine itself
-knows about — on foot, in water, riding, in a fight — and under it is a
-**walker** that decides whether the ground in front of you is a step you can
-climb, a slope you can walk, or a drop you will fall down.
+So "the player draws a gun" and "the player takes a step" are the same kind of
+event, and the fight and shoot modes are not separate engines: they are
+different **input context groups** feeding the same graph.
 
-The city's crowd is a third thing again: not scripted characters but a
-**circuit** of lanes shipped in a data file, with pedestrians spawned onto it
-in proportion to a menu setting, following, overtaking, queueing at junctions
-and stepping around you.
-
-<p align="center">
-  <img src="images/anekbah-street.png" width="560" alt="Kay'l standing in Anekbah's main street with the procedural crowd, drawn by the port">
-  <br><em>Drawn by the port: Kay'l in Anekbah, with the crowd on the circuit around him.<br>Everyone here is the same state machine reading the same kind of file.</em>
-</p>
+Around that sits a walker that decides whether a step is possible — how steep
+is too steep, how high a ledge you can climb, how far you can fall — and, in
+the cities, a crowd: pedestrians and vehicles following a circuit authored as
+lanes and routes, keeping out of each other's way and out of yours.
 
 ## In detail
 
 ### The `.CTL` channel
 
-Seven `.CTL` files ship, and each is a state machine. All seven walk to
-**exactly** the file size; 398 clips; **all 2 044 graph edges resolve**, which
-is not a nicety — the loader refuses to start otherwise.
+Seven files, and all seven parse to the byte: the walk lands exactly on the
+file size, 398 clips, and **every one of 2 044 graph edges resolves** — the
+loader refuses to start otherwise, which is what makes that a test the data
+could fail.
 
-The format is fully read, and every flag-gated block has its traced consumer:
+A state's entry carries flags, and every flag-gated block now has its traced
+consumer:
 
-| block | consumer | what it carries |
-|---|---|---|
-| combat | `Fight_ResolveHit` | damage, hit window, reaction by low-16 id, knockback |
-| turn / root shift | `Cef_ApplyTurn`, `Cef_ApplyRootShift` | two modes each — over-the-window and on-transition, which are the two bits of `0x140` / `0x280` |
-| move name | `Cef_QueueSpecialMove` | into the binary's own 66-row `tab_special_move[]` of engine callbacks; **209 / 209** shipped sites resolve |
-| bit `0x20` | — | the group's default entry (202 / 202) |
-| bit 2 | — | redirect through GoTo |
-| `+28` sub-records | the states' **effect records** | bone-attached sprites and frame-triggered sounds, footsteps included; all 590 decode |
+| block | what it is |
+|---|---|
+| the combat block | damage, the hit window, the reaction keyed by the low 16 bits of an id, and knockback |
+| turn and root-shift | each with an over-the-window mode and an on-transition mode — the two bits of `0x140` / `0x280` |
+| the move name | resolves into the executable's own 66-row `tab_special_move[]` of engine callbacks; all 209 shipped sites resolve |
+| bit `0x20` | this is the group's default entry — 202 of 202 |
+| bit 2 | redirect through a GoTo rather than entering |
 
-The transition model is read too: input-bitfield matching, cancel windows,
-priorities, group-global edges.
+The `+28` sub-records are the states' **effect records**: bone-attached sprites
+and frame-triggered sounds, footsteps among them. All 590 decode. Nothing in
+the format is unread.
 
-A caution attaches to the priority rule, and it is a model of the kind of
-honesty this repository tries to keep. Of 9 103 gated transitions, 120 are a
-real priority contest, and in **0** of them is the first match not also of
-maximal priority — so a plain first-match rule changes not one of 12 063 edges.
-**The rule stands on `Cef_FindTransition`'s code; the corpus is silent.** A
-corpus test that cannot separate the rule from a simpler one is not evidence
-for the rule.
+Transitions are matched against the current input bitfield, with cancel
+windows, priorities and group-global edges. The port re-derives all **12 063
+edges** from the file. Its standard is *data-constrained*, not
+engine-verified, and the reason is worth stating: the trace rig in chapter 12
+cannot reach this code at all, so no oracle exists for it.
 
-### `ACTOR_STATE` — the 18 modes
+### `ACTOR_STATE`
 
-Mapped 0..17, and **run** rather than merely described. Three findings from
-running it:
+Eighteen states, 0..17, mapped **and run**. Two of them repay the reading:
 
-* **14 is the water state** — `RSTNAGE` and `MDDIVEND` write it.
-* **7 and 8 are the mount and the ride** of one slider; `MDSLIDOU` refuses to
-  dismount from anything but 8.
-* **7 has no case in `Actors_TickAll` at all**, which is the kind of asymmetry
-  you only find by building the machine.
+* **14 is the water state** — two special moves write it.
+* **7 and 8 are the mount and the ride of a slider**, and the dismount move
+  refuses to leave anything but 8. State 7 has **no case at all** in the
+  per-frame actor tick, which is the engine's shape rather than a gap in the
+  reading.
 
 ### The walker
 
-30° slope limit, 30 cm step height, and tiered falls. It is what turns "the
-player pressed forward" into a position, and it is the subsystem most
-thoroughly corrected **by playing rather than by testing** — two examples
-recorded in `todo/omk-play.md`:
+A step is refused for two reasons and only two: the face is steeper than **30°**,
+or the ledge is higher than **30 cm** (`dword_910340`, 11.811023622 world
+units). Falls are graded in tiers. The narrow phase sweeps a capsule built from
+the model's own sphere list and stops **one unit short of the contact**, which
+is why a body of radius 12 rests 13 from a wall; a penetrating contact is
+pushed out along the clamped normal and re-swept.
 
-* the walker **had no way down**: every raised surface in the game was one the
-  player could never leave, and a face past 30° was treated as a hole rather
-  than a slide;
-* a transition could leave the active row and the linked decor disagreeing,
-  which draws a black world with the crowd still walking in it.
+The world unit is an **inch** — measured, not assumed — and the studio still
+authored in metres, which is why the constants above look like round numbers
+in one system and not the other.
 
-Neither is visible in any check that looks at one state at a time. Both are
-obvious in five seconds of play. Chapter 12 makes the general case.
+### The two AIs
 
-**The walls, since 2026-09-04.** `Actor_Move` (0x00469580) was read whole: a
-collide-and-slide of up to three passes, sweeping a vertical **capsule built
-from the model's own sphere list** (HO1_FN: four spheres of radius 10.9, a
-28 cm capsule) along the move, stopping one unit short of the contact, pushing
-an already-touching body out along the wall's normal — made horizontal by the
-mask `0xC000C` — and projecting the remainder along the wall. The port runs it
-in the simulator's shape, the polygon kernel deliberately not transcribed
-(`docs/RECONSTRUCTION.md` 2026-09-04, "THE NARROW PHASE"): ARESTO14's
-partition stops the body at 13.0 units where a walker with no sweep ends 140
-behind it (`verify.py: engine narrow phase`). **A fall is vertical**:
-`Actor_ApplyMotion` moves the actor by his own velocity fields, which the fall
-state never writes, so the walk's delta no longer rides through the air — a
-reader had been carried off the restaurant's ledge that way (`verify.py:
-engine walker falls`, 318/14/126 landings, 0 stranded). Two parts are still
-not the engine's and are listed in `collision.h`: the mesh-flag filter (the
-steep soup stands in) and the accumulated blocked-direction mask.
+**Fight** is four profiles of button combinations injected into the player's own
+input queue: the harder the profile, the shorter the wait between them, over an
+input-bit union of `0xCFF`. It is the same channel the player drives, fed by a
+table instead of a keyboard.
 
-**Taking an object** is not a script but a `.CTL` **special move** — five of
-the 66 `tab_special_move` rows (`MDACTION`, `MDADJSTP`, `MDGETOBJ`, `MDLETOBJ`,
-`MDPUTSNK`) — in two stages: an *adjust step* (`sub_465D30`: the target
-distance is 40 or 60 cm over the cosine of the bearing, the step is scaled by
-how far he is from it, none within 10%) and a take clip that is a **grid of
-variants** blended bilinearly over the object's height and bearing
-(`sub_4725B0`), with a camera preset that shows the object in his left hand
-while he decides (`todo/take-animation.md`, `todo/omk-play.md` 66 and 69;
-`verify.py: engine special moves`). Confirmed in play, 2026-09-05.
+**Shoot** picks one of four callbacks by character *type*, from the binary's own
+14-name type table — and it does have data: Gandhar plays three compiled
+behaviour scripts (healthy, wounded, critical) through two 12-entry handler
+tables. Over the 306 resolved sites the split is **302 generic, 3 Astaroth, 1
+Gandhar, 0 X-Tech**, and **no character is type 7 at all**, so one of the four
+callbacks is unreachable in the shipped game.
 
-### Combat, and the AI that plays it
+Neither is wired to a frontend, and the shoot AI's silence is a **decision**
+rather than a gap — see chapter 13.
 
-The combat block is fully decoded. The **fight AI** lives in the `.CTL` at
-`+76` / `+80`: four difficulty profiles, each a set of button combinations
-**injected into the player's own input queue**. Harder profiles wait less
-between combos. The union of input bits they use is `0xCFF`.
+### The street
 
-That is worth dwelling on as a design: the AI does not have a separate
-movement system. It presses buttons.
+Three mechanisms, all ported and all drawn:
 
-The **shoot AI** picks one of four callbacks by character type, from the
-binary's own 14-name type table. The shipped split over 306 resolved
-`shoot.actor.enter` sites is **302 generic / 3 Astaroth / 1 Gandhar / 0
-X-Tech** — and **no character in the game is type 7 at all**, so one callback
-is unreachable.
+**The `.OPT` traffic circuit.** Seven blocks, six of six exact. Pedestrians are
+spawned by `Slider_Init` at `39 × (5 − density) × h[3]` and walked by
+`Sliders_Tick` over lanes and routes, with following, overtaking, reservation
+groups and action points.
 
-Gandhar is the exception that corrected a documented claim. "The shoot AI has
-no data table behind it" was true of the *dispatch* and false of the *AI*: he
-plays three compiled behaviour scripts — healthy, wounded ≤100, critical ≤50 —
-through two 12-entry handler tables, all chaining end to end at `0x004CFA30`.
-That error survived in three documents, which is why [chapter 12](12-evidence.md)
-insists a tier is declared in three places.
+**The road traffic** rides the same circuit's vehicle lanes, behind two masks in
+the AREA chunk that are non-zero in exactly the three areas that have such
+lanes. Vehicles spawn at `39 × h[4]` with **no** density factor, capped by the
+40-slot ride pool, driven by the walkers' own mover with vehicle thresholds. One
+city's mask is the reserved row alone, so all 40 of its vehicles are motos.
 
-### The street: sliders, and what they carry
+They share a pool, because they share the **reservation groups**: 70 of one
+city's groups are reached by both classes, and a vehicle waits on a walker
+2 197 times in 1 800 frames. Counting them separately gives zero.
 
-Established 2026-09-03/04, in [`docs/STREET_LIFE.md`](../docs/STREET_LIFE.md).
-Three mechanisms make a city street look inhabited, and only one of them is
-scripted:
+**The authored extras** are ordinary scene programs — 621 `scx.play.actor`
+sites — plus the spatial index's push (spheres for actors, an ellipse for
+walkers), the bump and talk messages, and the head look that turns an NPC's
+head toward you.
 
-**1. The `.OPT` traffic circuit.** Six files, 7 blocks each, 6 / 6 walking
-exactly. It is a network of lanes, routes, junctions and action points.
-`Slider_Init` spawns pedestrians onto it at `39 × (5 − density) × h[3]` — the
-density being the options-menu setting, so **the crowd size is a menu row** —
-and `Sliders_Tick` walks them: lanes, routes, following, overtaking,
-reservation groups, action points.
+<p align="center">
+  <img src="images/anekbah-street.png" width="560" alt="Anekbah's street with its crowd">
+  <br><em>The crowd, the traffic, the ambient fire and the set's baked lights,<br>drawn by the port in adventure mode.</em>
+</p>
 
-**2. The road traffic**, on the same circuit's vehicle lanes, behind the AREA
-masks at `+172` / `+174` (int16, and nonzero in exactly the three areas that
-have vehicle lanes). Spawned by the walkers' own code at `39 × h[4]` with **no
-density factor**, capped at a 40-slot ride pool, driven by the walkers' own
-mover step and gait with the vehicle thresholds 195 / 390. Qalisar's slider
-mask of 1 is the reserved row alone, so all 40 of its vehicles are motorbikes.
+### A misnamed function, and why it is in this chapter
 
-The port puts vehicles in the **same pool** as walkers, and that is not
-tidiness: 70 of Anekbah's reservation groups are reachable from both classes,
-and a vehicle waits on a walker **2 197 times in 1 800 frames** — 0 with a
-counter per class.
+`tools/renames.json` is a map of hypotheses, and one of them had its sense
+backwards. `Perso_SetInputEnabled` reads as an enable and is a **block**: flag
+`0x80` makes the channel tick *skip* the input search, argument 1 sets it and
+argument 0 clears it. The port trusted the name, asserted the flag on the way
+out of every conversation, and the player's action button was dead from the
+first conversation onward — a change that was right in outline made the game
+worse.
 
-**3. The authored extras** — 621 `scx.play.actor` sites, characters a scene
-program places and animates.
-
-Over all of it sits the **spatial index**: spheres for actors, an ellipse for
-walkers, producing the crowd push and the bump and talk messages, plus the head
-look that turns a passer-by's head toward you.
+The rule that follows is the chapter's, not an aside: **before a rename decides
+a behaviour, read the handler rather than the map.** A boolean argument is
+where this bites hardest, because a wrong name inverts it silently and both
+values look plausible at the call site.
 
 ## Where it lives
 
 | | |
 |---|---|
-| findings | [`docs/ASSETS.md`](../docs/ASSETS.md) (`.CTL`, clips, special moves), [`docs/STREET_LIFE.md`](../docs/STREET_LIFE.md) (the crowd and the traffic) |
-| the port | `engine/src/actor/` — `channel.*` (the `.CTL` machine), `state.*` (`ACTOR_STATE`), `walk.*`, `player.*`, `shoot.*`, `pose.*`, `speaker.*`, `pedestrians.*`, `spatial.*`, `vehicles.cpp` |
-| lifted tables | `tables/special_moves.json` (66 rows), `tables/shoot_ai.json` |
-| checks | `verify.py: engine actor states`, `ctl channel`, `pedestrians`, `city crowd`, `crowd push`, `head look`, `road traffic`, `street frame`, `engine narrow phase`, `engine walker falls`, `engine special moves` |
-| to watch it | `build/omk-play … --save ../traces/save-appart.bin --area 0 --stand 1804,0,-6890,336 --density 4` |
+| the findings | `docs/ASSETS.md` (the `.CTL` format), `docs/STREET_LIFE.md` |
+| the port | `engine/src/actor/` — `channel.*` (the state machine), `walk.*`, `player.*`, `shoot.*`, `pedestrians.*`, `spatial.*`, `pose.*` |
+| the tables | `tables/special_moves.json`, `tables/shoot_ai.json`, `tables/key_bindings.json` |
+| the checks | `engine: actor states`, `engine player walk`, `engine: narrow phase`, `engine: pedestrians`, `engine: city crowd`, `crowd push`, `head look`, `opt tracks` |
 
 ## What is not settled
 
-* **The `.CTL` channel has no oracle, and cannot have one from this rig.** This
-  is stated plainly rather than glossed: the golden-trace logger sees only what
-  a VM handler narrates, and combat has two opcodes — `fight.begin` announces
-  nothing, and `player.become` announces to a domain the logger filters.
-  `Fight_TickAI`, `Fight_ResolveHit`, the 18 `ACTOR_STATE`s and the transition
-  matching are native code and never touch it. A capture **did** reach combat —
-  32 of its anchored scripts carry `fight.begin` — so the silence is the
-  mechanism, not the play. The channel's standard is therefore
-  **data-constrained** (12 063 edges, every one re-derived from the file), not
-  engine-verified. The general lesson: *check whether a subsystem announces
-  before asking anyone to capture it.*
-* **Astaroth's and the generic shooter's per-state geometry** are ported as
-  state graphs only.
-* **Not ported**: the player's ride (`Slider_TickRide`, `ACTOR_STATE` 7/8), the
-  engine's LOD selection among an actor's four skeletons (the viewer draws the
-  first), the bump's `camera.shake`, and the joystick axes (carried, but nothing
-  steers with them yet).
-* The crowd **density is held at the engine's default 3** until the options menu
-  hands its value in.
-* **Two parts of `Actor_Move` are not the engine's**: the mesh-flag filter (the
-  steep soup stands in for it) and the accumulated blocked-direction mask. The
-  sweep's polygon kernel is read and deliberately not transcribed.
+* **The `.CTL` runtime has no oracle and cannot have one from this rig.** The
+  trace logger sees only what a VM handler narrates, and combat has two
+  opcodes: one announces nothing, the other announces to a domain the logger
+  filters. A capture *did* reach combat — 32 of its anchored scripts carry the
+  fight opcode — so the silence is the mechanism, not the play.
+* **Fight mode and shoot mode are not wired to a frontend.**
+* **The player's ride** — calling a slider, mounting, driving — is read and
+  measured at ~600 undecompiled lines, and deliberately not ported.
+* **The jump and the fall** have no consumer yet: the walker reports a fall and
+  nothing acts on it, and the five jump moves are lifted but unwired.

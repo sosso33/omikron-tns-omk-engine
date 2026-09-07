@@ -1,168 +1,156 @@
 # 13. Open questions
 
-← [Evidence](12-evidence.md) · [Contents](README.md)
+← [Contents](README.md) · prev: [Evidence](12-evidence.md)
 
 ---
 
 ## In short
 
-What is still unknown, listed **with what has already been ruled out**, so
-nobody repeats a search that has already been done.
+What is not known, and — just as usefully — what has already been ruled out, so
+that nobody repeats a search.
 
-That framing is deliberate. A negative result is a finding: *"`IAM\OBJECT`
-contains one `dialog.start` site in 1 002 records"* saves the next person a day.
-And a negative result over a corpus is **only as strong as the enumeration
-behind it** — which is exactly how the largest question on this page was
-answered, after standing open for months while being false.
+The largest single question turned out to have an answer of a different kind
+from the one everybody was looking for. A third of the game's conversations are
+launched by no script anywhere in the shipped data, and after a long search for
+a hidden launcher the evidence now says there isn't one: they are **content
+that was cut**, and the data says so about itself.
+
+The rest are smaller and honestly stated: fields whose meaning is narrowed but
+not settled, a visual fault with no surviving explanation, and several
+subsystems whose behaviour no instrument here can reach.
 
 ## In detail
 
-### The big one: 105 conversations with no launch path
+### The 105 conversations nothing launches
 
-The game ships **321 conversations. 105 of them cannot be started by anything
-found in the data.**
+The game ships 321 conversations. Following every path a script can take to
+open one reaches **216** of them. The other 105 are unreachable.
 
-Not for want of looking. What has been ruled out:
+**What was ruled out**, and the list matters because each item cost real work:
 
-| ruled out | how |
-|---|---|
-| another opcode starts conversations | opcode 61 is the **only** way into `Dialog_Load` |
-| indirect operands hide targets | all **1 246** of its operands are direct literals; the handler's indirect mode is never used |
-| conversations start conversations | the conversation scripts contain no opcode 61 |
-| a missed pointer array | every relocated pointer array in `AREA` / `SCENE` is accounted for |
-| the object archive | `IAM\OBJECT` — 1 002 slots of 2 048 — holds **one** site |
-| a hidden event | `Game_HandleEvent` case 0 calls `Dialog_Load` directly, but **nothing in the binary raises event 0**. A dead entry, not a launcher |
-| the message subscriptions | they are inside the already-scanned 5 785 slots |
-| a second corpus | `gamedata/IAM/FRENCH/` is a **byte-identical duplicate** of `gamedata/IAM/`, same MD5 |
-| the startup scripts | all 173 decode, and the only `dialog.start` in them not already reachable is **272** itself — one, not a hundred |
+* one opcode is the only way into the loader, and all **1 246** of its operands
+  are direct literals — the handler's indirect mode is never used;
+* the conversation scripts themselves contain no such opcode;
+* every relocated pointer array in the area and scene chunks is accounted for;
+* the object archive holds exactly **one** launch site in 1 002 records;
+* the event dispatcher's case 0 calls the loader directly, and **nothing in the
+  binary raises event 0** — a dead entry, not a hidden launcher;
+* the message-subscription scripts are inside the 5 785 already scanned;
+* the French text directory is a **byte-identical duplicate** of the main one,
+  not a second corpus;
+* and the startup scripts at chunk `+4` — which had hidden half the cast of
+  every cutscene and were exactly the kind of thing that could have hidden
+  this — add **one** conversation to the reachable set, 215 → 216.
 
-**Either the mechanism is outside the data, or the content is cut.**
+**What settled it** was a measurement rather than another search. A conversation
+reached by some undiscovered launcher would be as *finished* as the rest; cut
+content would not be:
 
-### Closed, and why they are worth reading anyway
+| | count | has facial animation | mean nodes | first line empty |
+|---|---|---|---|---|
+| launched | 216 | **68%** | 4.1 | 26% |
+| unlaunched | 105 | **14%** | 2.7 | **26%** |
 
-Three of these were open long enough to teach something, and the lesson is in
-*why* they closed rather than in the answer.
+The facial animation is the expensive late asset, and the unlaunched set lacks
+it nearly five times as often — while the *text* is equally written in both,
+which makes it content cut **late** rather than never authored.
 
-**What starts a cutscene's beats.** Closed 2026-08-29: the SCENE chunk's own
-`+4` startup script. Every ruled-out route had been correctly ruled out — the
-**inventory** was incomplete. The 5 785 script slots come from zone records and
-message subscriptions, and nothing in that walk reaches `+4`, so "no shipped
-script starts them" was really "no script I enumerate". The golden trace had
-been flagging the gap all along, announcing scenes that no slot could emit.
+It is a correlation over the shipped corpus and not a proof. But it is the
+reading that predicts the data, and the search for a launcher can stop.
 
-**What reaches the intro's code.** The script was found at the offset held in
-chunk 118's `+68`, and `+68` was read as a script pointer. It is the
-message-subscription table. The chunk declares 0 zones and 0 subscriptions, so
-the empty table's base coincides with the start of the code — `+4` and `+68` are
-the same number, 1040, for that chunk alone. It looked like a coincidence
-because it was one.
+### Fields whose meaning is narrowed, not settled
 
-**One Anekbah panel shows the wrong texture.** Closed by reading the renderer,
-not by a depth rule or a draw order — it is the global texture cache plus two
-resident sets. [Chapter 8](08-rendering.md) has it. Note which side that put in
-the wrong: the viewers are right and the game is the odd one out.
+* **The morph files' `float[3]` track.** The parser's handling is read and
+  confirmed against the assembly, but "root-motion deltas" is refuted as
+  playable semantics: near-constant, near-unit in 57 of 60 files, which
+  integrates into universal drift. Whatever neutralises it in the engine is
+  untraced.
+* **Node slots 0 and 1 in the same files.** Uploaded with ids no drawn mesh
+  binds; measurably not rotations, and measurably **not** the voice envelope
+  either. Slot 0 stays in [0,1]⁴ and varies smoothly; slot 1 is a signed
+  low-magnitude vector with one dominant component. Eye direction or blink
+  channels are the surviving shapes.
+* **One field of the 72-byte save-directory record.**
+* **Four of the second render bank's six swapped pointers.** No capture
+  distinguishes them.
 
-**The scene clip's root orientation.** Closed by *looking*. Three statistics
-leaned one way without deciding, and each convention appeared to win on some
-shots — but the two decisive cases both read correct in the viewer, so the
-apparent split was the metric's fault. "Faces the camera filming them" is a bad
-prior: a guard in a corridor is not looking at the lens. Kept as a caution — **a
-weak corpus signal measured through a wrong prior can look like structure in the
-data.**
+### Things with no account at all
 
-### Formats
+* **One panel in Anekbah flickers**, and both explanations are dead. It was
+  attributed to coincident faces z-fighting: measured, **none** of the 36
+  three-quad advertising meshes has any two quads coincident, and the closest
+  two face centres are 14 units apart — the geometry is a triangular prism, a
+  real trivision hoarding, which cannot z-fight. It was also attributed to a
+  flickering neon emitter: 148 of that set's 153 emitters have period 0, which
+  with a one-frame lifetime is a steady glow, and the flicker reading came from
+  a random call a period-0 emitter never reaches.
 
-* **`.3DM`'s `float[3]` track.** The parser's integration of it is read and
-  confirmed against the assembly, but the corpus **refutes** "root-motion
-  deltas" as playable semantics: near-constant and near-unit in 57 of 60 files,
-  which means universal drift. Whatever neutralises the integral in the engine
-  is untraced.
-* **`.3DM` node slots 0 and 1.** Narrowed rather than solved: uploaded with
-  preamble ids 0/1, bound by no drawn mesh, not rotations, and **not the voice
-  envelope** either (|r| < 0.2 against per-frame RMS in four files). Slot 0 stays
-  in [0,1]⁴ and varies smoothly; slot 1 is a signed low-magnitude 4-vector with
-  one dominant component. Eye-direction or blink channels are the surviving
-  shapes.
-* **97 bytes** across 330 `AREA` / `SCENE` chunks that no documented structure
-  explains.
-* **One 32-byte field** of the save directory's 72-byte record.
-* **`Anim_RootDelta`'s optional 3×3**, on the scene path. Answered for the actor
-  path (it is the character's facing matrix).
+  The *stably wrong* panel beside it **is** explained — the texture cache
+  substituting an atlas from the neighbouring set (chapter 8) — and that fault
+  is now reproduced and measured. The flicker is not.
 
-### The VM
+* **Three placement jumps at cutscene beat starts.** A new scene object snaps a
+  character to its own clip's root key 0, which is what the engine does; whether
+  those three particular placements are authored that way is unread. The check
+  pins the count so one of them cannot change unnoticed.
 
-* **24 of 153 opcodes are unnamed**, identified only by the operand domain they
-  announce. They are the tail — 32 uses or fewer each. The world scripts
-  exercise 124 opcodes, so there is a large corpus to test any guess against.
-* **Context status 5 is read and not resolved.** `Area_Transition` writes it into
-  a superseded caller, and no event, pump step or handler in this reading writes
-  it back to running — that context would be parked for good. It needs two
-  transitions in flight, which the shipped scripts may never produce, and a claim
-  either way needs a trace this rig cannot take.
+### Things no instrument here can reach
 
-### Rendering
+These are not gaps in the reading — they are limits of the apparatus, and each
+is recorded with the reason:
 
-* **The flicker on two Anekbah panels.** Best account: a 7-vertex prism of three
-  quads with identical UVs, `D3DCULL_NONE` and no depth bias. Note the
-  neon-flicker half of that story is **withdrawn** — 148 of the set's 153
-  emitters have period 0, which with a one-frame lifetime is a steady glow.
-* **Four of the six swapped render-bank pointers** are unread, and have no
-  oracle here.
-* **Pixel values keep no reachable tier** — filtering, dither, fog and blend
-  arithmetic are the driver's.
-* **Two parts of the mirror stay reconstruction**, and are labelled as such: how
-  the engine confines the reflection to the mirror's area, and the plane's
-  normal.
-* **A set-piece ring on a one-record anchor is a reconstruction**: the engine's
-  heading there is stack garbage by construction, and "not drawn" is what a
-  reader's frames of the original showed, not a value computed. The portal's
-  red rim has not been re-measured since (`todo/omk-play.md` 76).
+* **The actor channel has no oracle and cannot have one from this rig.** Combat
+  has two opcodes: one announces nothing, the other announces to a domain the
+  logger filters. The capture reached combat; the silence is the mechanism.
+* **The audio attenuation and pan law is DirectSound's**, described nowhere in
+  the image, and nothing here records sound.
+* **The Vulkan backend is unverifiable by construction**, inheriting whatever
+  the software backend establishes.
+* **No pixel's value in 3D** has a reachable tier: filtering, dither, fog and
+  blend arithmetic belong to a driver that is not the one the game shipped
+  against.
+* **Where a body stands through a spoken line has no check**, though the rule
+  is established and ported: asserting it needs a running conversation the
+  headless harness cannot yet open.
 
-### Audio
+### Decisions that look like gaps
 
-* **The attenuation and pan law** is DirectSound's, described nowhere in the
-  image, and no rig here records sound. **No reachable tier.**
+Two things are missing on purpose, and would be wrong to "fix" quietly:
 
-### The port
+* **The shoot AI's brains are not wired.** The generic arm's choices depend on
+  navigation, line of sight and weapon range, none of which this tree has, so
+  driving a body from it would draw a deterministic first-edge walk *as though*
+  it were the game's behaviour. If shoot mode is wanted, that decision is the
+  thing to revisit first — it may need the navigation data before it needs any
+  code.
+* **The player's ride** — calling a slider, mounting it, driving it — is read,
+  measured at about 600 undecompiled lines, and left.
 
-* **`Actors_SpawnFromTables` is not ported** — the largest single gap. The
-  world's own ambient characters never spawn.
-* **The 7 partly-ported rows**, each with its missing half named in
-  `engine/README.md`.
-* **The per-screen native callbacks** (26 of 30 absent from the decompilation);
-  the answers they write are not ported.
-* **The player's ride**, the LOD selection among an actor's four skeletons, the
-  bump's camera shake, and the joystick axes.
-* **Two parts of `Actor_Move`**: the mesh-flag filter and the accumulated
-  blocked-direction mask; and the corner of the Impasse airlock where the port
-  holds the player under a hanging crate, which only a play comparison in the
-  original can settle (`todo/collision-scenes-transitions.md` 3e).
-* **Ported and checked but not seen in play**: the seventeen scene functions'
-  new arms, the arrival's wait, the portal's rings, the door closing behind the
-  player in the tunnel.
-* Claimed: the opening, the sneak, the take of an object, the door-carrying
-  transitions — each confirmed by a reader. Nothing past those.
+### Smaller open ends
 
-### Not a gap, but a property of the data
-
-Kept here so nobody spends a day treating one as a decode failure:
-
-* **10 of 561** named voice-over files ship.
-* **6 spell recipes cannot fire** and 5 spell items are unobtainable: the
-  combination table's gate is never 8. One survives as a world prop.
-* **No character in the game is type 7**, so one shoot-AI callback is
-  unreachable.
-* **13 of the 45 interface sounds can never be resident** — the cache is 32
-  slots and the loader returns silently when full.
-* **Options page 12 is built and unreachable.**
-* **One item in the whole widget tree** carries the arrows-or-marker bits, on a
-  child panel no screen reaches — so no reachable screen draws an I2D triangle.
+* **24 VM opcodes are unnamed**, identified only by the operand domain they
+  announce. No shipped world script reaches any of them.
+* **A superseded transition caller is parked for ever**: status 5 has no
+  resumer anywhere in the image. The engine's shape, not a missing reader.
+* **The movie player's decoder and parameters** are untraced, and nothing needs
+  them.
+* **What the engine's external clock reads** — the thing that pulls a cutscene
+  along so it cannot drift from its soundtrack — is inferred from where the
+  call sits, not established.
+* **The music opcode's second operand** is not established as a loop flag,
+  though reading it as one explains a reported symptom.
+* **551 of the 561 voice-over files are not on the disc.** Explained rather
+  than missing, and asserted by a check so it stays explained.
+* **The 1999 press sheet's claimed BSP tree** is not in the model files: every
+  byte of every one of them is now accounted for, with 460 unexplained bytes
+  across 33 MB.
 
 ## Where it lives
 
 | | |
 |---|---|
-| the live list | `CLAUDE.md` §6 — this chapter is its retelling, and `CLAUDE.md` is the authority |
-| per-subsystem | the "What this does not settle" section at the end of each `docs/` file |
-| the port's open items | `todo/iam-script-engine.md` §Open, `todo/omk-play.md`, `todo/street-life.md` |
-| the roadmap | `docs/RECONSTRUCTION.md` — grep it, never read it whole |
+| the standing list, with what has been ruled out | `CLAUDE.md` §6 |
+| the roadmap and the running log | `docs/RECONSTRUCTION.md` — grep it by date or subsystem, never read it whole |
+| the play reports, and what became of each | `todo/omk-play.md` |
+| the reader's list of what to do next | `todo/next-tasks.md` |
+| the per-subsystem plans | `todo/*.md` |

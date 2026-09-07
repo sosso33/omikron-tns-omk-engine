@@ -42,13 +42,11 @@ Anything less explicit than that is not a request to regenerate.
 
 | | |
 |---|---|
-| **Generated** | 2026-09-05 |
-| **Repository commit** | `a9fa05a` |
-| **Sources at that commit** | `CLAUDE.md`, `docs/` (11 documents), `engine/README.md`, `README.md`, `tables/README.md`, `python3 tools/verify.py --list` (295 checks), `git log`, and for this revision the play-report entries `todo/omk-play.md` 66–76 and the plan files `todo/take-animation.md`, `todo/sneak.md`, `todo/collision-scenes-transitions.md` |
+| **Generated** | 2026-09-07 |
+| **Repository commit** | `aa5dfc7` |
+| **Sources at that commit** | `CLAUDE.md`, `README.md`, `docs/PORTING.md` and `docs/BOOT.md` whole, the sections needed of the other eight `docs/`, `engine/README.md` §Coverage by grep, `tables/ui.json` and `tables/ui_widgets.json` read directly, `python3 tools/verify.py --list` (341 checks), `git log` over the 134 commits since the last snapshot, and the play-report entries `todo/omk-play.md` 77–81 |
 | **Chapters** | 13 |
-| **Status of the port** | plays the opening end to end — three intro movies, splash, start menu, the Kay'l intro conversation, the Impasse camera editings, then adventure mode with a walkable floor that now stops at walls, the sneak (Kay'l's device) with its object flow, the two-stage take of a world object, and door-carrying area transitions between two resident slots. All seventeen scene functions run. Nothing past what a reader has confirmed in play is claimed. |
-
----
+| **Status of the port** | plays the opening end to end — three intro movies, splash, start menu, the Kay'l intro conversation, the Impasse's camera editings — then adventure mode with a follow camera and a walkable floor that stops at walls, area transitions that keep two sets resident and play the doors between them, the sneak, the two-stage take of a world object, **saving and loading through the game's own panels** with a ring charged as the game charges it, and the **pause screen** on Escape. Cities carry their crowd, their road traffic, their ambient fire and neon, and the lights baked into the set. Nothing past what a reader has confirmed in play is claimed. |
 
 ## The rules of this document
 
@@ -174,12 +172,12 @@ surviving three regenerations because nobody re-read it.
 | 2 | [Boot, and the frame](02-boot-and-frame.md) | icon → movies → the first frame; where "one frame" comes from |
 | 3 | [The data](03-the-data.md) | the shipped tree, the archives, the format families |
 | 4 | [The script VM](04-the-script-vm.md) | the 153-opcode machine that runs the game |
-| 5 | [The world](05-the-world.md) | areas, scenes, trigger zones, messages, saved state |
-| 6 | [Actors](06-actors.md) | the state-machine channel, the walker, combat, the street crowd |
-| 7 | [Conversations and cutscenes](07-conversations-and-cutscenes.md) | dialogue, staging, camera editings |
-| 8 | [Rendering](08-rendering.md) | the 3D path, the 2D layer, RGB565 |
+| 5 | [The world](05-the-world.md) | areas, scenes, trigger zones, the two resident slots, saved state |
+| 6 | [Actors](06-actors.md) | the state-machine channel, the walker, combat, the street crowd and its traffic |
+| 7 | [Conversations and cutscenes](07-conversations-and-cutscenes.md) | dialogue, staging, camera editings, and what happens between two beats |
+| 8 | [Rendering](08-rendering.md) | the 3D path, the lights, the 2D layer, RGB565 |
 | 9 | [Audio](09-audio.md) | ADPCM, the voice pool, and the mixer that isn't there |
-| 10 | [The interface](10-the-interface.md) | 37 screens, the widget tree, fonts, input |
+| 10 | [The interface](10-the-interface.md) | 37 screens, the widget tree, fonts, input, save and load |
 | 11 | [The port](11-the-port.md) | how `engine/` is built, and the boundary that shapes it |
 | 12 | [Evidence](12-evidence.md) | the six tiers, the golden traces, what a green tick means |
 | 13 | [Open questions](13-open-questions.md) | what is not known, and what has been ruled out |

@@ -57,7 +57,7 @@ It is a Win32 binary against the 1999 Microsoft stack:
 | 2D / blitting | DirectDraw, `IDirectDrawSurface::Blt` with colour keys | ported exactly; a blit is a memory copy, so it is reproducible pixel for pixel |
 | audio | DirectSound — a primary buffer plus secondary buffers it mixes itself | the *decisions* are ported; there is no mixer in the engine to port |
 | input | DirectInput, polled into a key-state array | ported, including the edge filter |
-| video playback | DirectShow, for three MPEG-1 files | replaced by a vendored decoder; not a port of anything |
+| video playback | DirectShow (`CoCreateInstance`) and MCI (`mciSendCommandA`), for three MPEG-1 files | replaced by a vendored decoder; not a port of anything |
 
 The engine's whole frame is gated behind a Win32 idle loop — see chapter 2.
 
@@ -81,13 +81,14 @@ Measured, from `CLAUDE.md` §4 and the checks that assert each figure:
 
 | | |
 |---|---|
-| textures (`.3DT`) | 2 534 |
+| textures (`.3DT`) | 2 534, all byte-identical |
 | models and sets (`.3DO`) | 635 models, 16 188 meshes, 666 cameras |
-| animation quaternions (`.ani`) | 243 362 |
-| morph/voice files (`.3DM`) | 777 |
+| lights inside those models | 4 179 records across 216 models |
+| animation quaternions (`.ani`) | 243 362, every one a unit quaternion |
+| morph/voice files (`.3DM`) | 777, sample-identical audio |
 | scene scripts (`.SCX`) | 220 |
-| world script slots | 5 785 |
-| trigger zones | 4 558 |
+| world script slots | 5 785, all decoding |
+| trigger zones | 4 558, none malformed |
 | conversations | 321 |
 | VM opcodes | 153, of which 129 are named |
 
@@ -105,6 +106,28 @@ key bindings, the camera presets, the ADPCM coefficients. Those are lifted to
 JSON in `tables/` (9 files), which is why a replica needs both your data
 directory *and* this repository's `tables/`.
 
+### Where the replica has got to
+
+From a cold start it steps the three intro movies, shows the splash, draws the
+start menu and takes an answer, plays the Kay'l intro conversation with its
+dialogue cameras and voice-over, flies the Impasse's camera editings, and hands
+over the player: adventure mode with a follow camera, a walkable floor that
+stops at walls, and area transitions that keep two sets resident and play the
+doors between them. From there it opens the **sneak** (Kay'l's handheld
+device), **takes an object** from the world with its two-stage animation and
+camera, **saves and loads** through the game's own panels — with a ring charged
+for the save, as the game charges it — and puts up the **pause screen** on
+Escape. The city's crowd and its road traffic walk and drive around you, lit by
+the lights baked into the set.
+
+`engine/README.md` audits this row by row, and it has been wrong twice, so read
+it rather than this paragraph.
+
+<p align="center">
+  <img src="images/anekbah-street.png" width="560" alt="Kay'l standing in Anekbah's main street, drawn by the port">
+  <br><em>The port, in adventure mode: Anekbah's main street with its procedural<br>crowd, its ambient fire and neon, and the set's own lights. The command<br>that produced this frame is in <code>manual/images/README.md</code>.</em>
+</p>
+
 ## Where it lives
 
 | | |
@@ -112,18 +135,23 @@ directory *and* this repository's `tables/`.
 | the original | the game's `Runtime.exe`, the no-CD build (yours; never in this repo) |
 | the disassembly | `Runtime.exe.asm` / `Runtime.exe.c` — optional, not distributed (it is a derivative work), relocatable via `$OMK_ASM` / `$OMK_DECOMP` |
 | the hand-cleaned reading | `readable/src/*.c` — 33 modules, every function carrying a status banner; `readable/INDEX.md` is the index |
-| the findings | `docs/` — 11 documents |
-| the port | `engine/` — C++20, ~29 900 lines across 8 source directories, no required dependencies |
+| the findings | `docs/` — 10 documents |
+| the port | `engine/` — C++20, ~37 400 lines across 8 source directories, no required dependencies (~67 300 counting both backends and the 145 probe tools) |
 | the lifted tables | `tables/*.json` — 9 files, each self-checking |
-| the readers and viewers | `tools/` — 67 Python files, stdlib only |
+| the readers and viewers | `tools/` — 68 Python files, stdlib only |
 
 ## What is not settled
 
-* **105 of the game's 321 conversations have no known launch path.** Not for
-  want of looking — chapter 13 lists everything ruled out. Either the mechanism
-  is outside the data or the content was cut.
-* **The port plays the opening and no further.** The largest single gap is that
-  `Actors_SpawnFromTables` is not ported, so the world's own ambient characters
-  never spawn; only the ones a script names with `character.show` appear.
+* **105 of the game's 321 conversations are launched by no script**, and since
+  2026-09-05 the reading is that they are **cut content** rather than evidence
+  of a launcher nobody has found. The measurement is in chapter 13; it is a
+  correlation over the shipped corpus, not a proof, but it is what closed the
+  search.
+* **Fight mode and shoot mode are read and not wired.** Shoot mode's silence is
+  a recorded *decision* rather than a gap — driving a body from a brain that
+  needs navigation data this tree does not have would draw a deterministic walk
+  as though it were the game's behaviour.
+* **The player's ride** — calling a slider, mounting it, driving it — is read,
+  measured at about 600 undecompiled lines, and deliberately not ported.
 * Whole subsystems of the original are **read but not exercised**, because the
   port has not reached the part of the game that uses them.

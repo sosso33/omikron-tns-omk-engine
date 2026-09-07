@@ -1,262 +1,209 @@
 # 8. Rendering
 
-← [Conversations and cutscenes](07-conversations-and-cutscenes.md) · [Contents](README.md) · next: [Audio](09-audio.md)
+← [Contents](README.md) · prev: [Conversations and cutscenes](07-conversations-and-cutscenes.md) · next: [Audio](09-audio.md)
 
 ---
 
 ## In short
 
-The picture is built in two layers. Underneath is the **3D scene** — the set,
-the characters, the effects — drawn through Direct3D in 1999. On top is a **2D
-display list** called I2D: the menus, the subtitles, the inventory, the
-letterbox bars. The 2D layer is just memory copies, so it can be reproduced
-exactly; the 3D layer went through a graphics driver, so it cannot.
+The original draws through Direct3D in its 1999 fixed-function form: it hands
+the driver a stream of already-transformed, already-lit vertices and a texture,
+and the driver fills triangles. There are no shaders, no lighting equations at
+run time and no depth of field. A set is *pre-lit* — every vertex carries a
+colour baked into the file — and a character is lit at run time only by a small
+table of lights that also ships inside the model.
 
-The framebuffer is **16-bit** — five bits of red, six of green, five of blue.
-That is not a detail. A replica that renders in 24-bit fails a comparison
-everywhere for a trivial reason, and a captured frame's 8-bit values are the
-*capturing host's* expansion rather than the game's data. Comparisons are made
-in 16-bit, always, by bringing the capture down to the framebuffer's space and
-never the other way.
+The interface is a separate world: a 16-layer display list of rectangles,
+sprites and text, blitted with a colour key. A blit is a memory copy, which is
+why the 2D half of this chapter can be reproduced pixel for pixel and the 3D
+half cannot.
 
-The engine's own decisions about what to draw are surprisingly compact. One bit
-test decides whether a mesh is drawable at all. One 14-bit number decides the
-order everything draws in — and its **low six bits are the texture**, which
-turns out to explain a visual oddity the game shipped with.
+The framebuffer is **16-bit RGB565**, and that is not a detail: it decides what
+a comparison against a captured frame is even allowed to mean.
 
-<p align="center">
-  <img src="../traces/frames/dlg402-47.png" width="400" alt="The original engine">
-  <img src="images/dlg402-port-render.png" width="400" alt="The port, same set, same camera">
-  <br><em><b>Left:</b> the original engine's framebuffer. <b>Right:</b> the port's software rasterizer,<br>same set, same camera. The port draws the set; the capture also carries Telis,<br>the props and a subtitle — which is exactly what the comparison is built around.</em>
-</p>
+The port draws through one boundary with two implementations behind it — a
+software rasterizer that the checks measure, and a Vulkan backend that makes it
+playable. The boundary is at the level of **decisions**, not API calls, which is
+what makes two backends possible at all.
 
 ## In detail
 
-### What is drawable
+### What is ported is decisions
 
-One test: `flags & 0x800043`. That single expression replaced three separate
-heuristics in this repository's viewers, and **disagrees with them in both
-directions** — it draws things they skipped and skips things they drew.
-
-### The bucket key, and the texture in its low bits
-
-Every draw is filed under a 14-bit key that decides its bucket and therefore
-its order. `Raster_DrawTriangles` binds `g_D3DTextures[key & 0x3F]` — **the
-texture is the low six bits of the key and nothing else.**
-
-Those six bits are the material's slot at `+64`, a field that ships as `−1` in
-all 2 534 materials because the loader writes it at load time.
-`Tex3DT_BindMaterials` hands out **58** slots (`SetMaterialsMemory(58, 0)`, the
-binary's own name) from a **global** pool, matching on the **19-character
-texture file name alone**. On a hit it seeks past the file's own pixels and
-points the material at what is already there.
-
-### The consequence: Anekbah's wrong signs
-
-Combine that global cache with the fact from [chapter 5](05-the-world.md) that
-**two decor sets stay resident** — hidden is not unloaded — and you get a
-shipped bug that has puzzled players:
-
-> **182 texture names ship with different pixels in different `.3DO` files.**
-> All twenty of Anekbah's are among them, colliding with `AToit`, `AImpasse`,
-> `A_shootg` and `Qalisar` — Anekbah's own neighbours.
-
-So the shop signs in Anekbah depend on **which way you walked in**. An incoming
-set cache-hits against the outgoing location's atlases, and since the alternates
-are *revisions* rather than different images, a substitution repaints some
-adverts on an atlas and leaves the rest — neighbouring panels disagreeing, which
-is exactly the reported symptom.
-
-This was found by reading the renderer, and then **rendered and confirmed**:
-same set, same camera, only the resident neighbour changing. `AImpasse`
-substitutes 7 atlases and moves 6 920 frame pixels; `AToit` substitutes 18 and
-moves **121 588**. A golden trace taken before any of this was known lands on it
-— `traces/impasse-walk.log` announces `AREAS 222` then `AREAS 0`, walking the
-player out of the Impasse into Anekbah with the Impasse's set still resident.
-
-Note which side that puts in the wrong: **the viewers are right and the game is
-the odd one out.** "Fixing" a viewer would mean reproducing the cache, not
-correcting a decode.
-
-### Transparency is two blend modes, not one
-
-| mesh flags | mode | meshes |
-|---|---|---|
-| `0x1000 \| 0x2000` | additive | 211 |
-| `0x1000 \| 0x4000` | multiply | 6 |
-| `0x800` | cutout (the `SetRenderState(27, 1)` path) | — |
-
-No mesh asks for either blend without `0x1000`.
-
-Sprites take the same two buckets through the instance's mode — 4 is additive
-(key `0x2100`), 6 multiply (`0x2200`) — and the multiply is `dst × (1 − src)`,
-which darkens where the sprite is bright: the Impasse portal's black core is
-twenty-two of those stacked (`docs/ASSETS.md` §3b). One more decision worth
-knowing when a video of the original looks smoother than the port: the device
-init asks Direct3D for **point sampling** on every texture stage
-(`sub_4638C0`, stage states 16/17/18 = 1), so the port's blocky sprite edges
-are the engine's own and a capture's soft ones are its driver's
-(`todo/omk-play.md` 76).
-
-### Colour, not brightness
-
-The sets are shaded by a **colour** baked into every vertex. The engine copies
-the whole dword at vertex `+28` into the `D3DTLVERTEX`, and
-`Raster_DrawTriangles` declares `D3DFVF_DIFFUSE` in both its `DrawPrimitive`
-calls — so the baked dword is a `D3DCOLOR` and reaches the screen in colour.
-
-Reading only the green byte, as a well-known reference importer does, renders
-every set in monochrome. **38.9% of set vertices are not grey.** This
-repository shipped that bug itself until 2026-08-29 and keeps it as a
-selectable mode in the viewers purely so the two can be compared on one frame.
-
-The engine *does* contain a luma-to-grey conversion, and it is in a **second
-render bank**: six two-entry arrays swapped by `sub_42FA00(bank)`. `Game_Init`
-installs bank 0; **VM opcode 150 installs bank 1**. Bank 1 is the same
-0x4000-bucket walk of near-identical length — 660 lines against 659 — differing
-only in converting every vertex colour to luma. Fourteen shipped installs, all
-bracketing runs of camera and fade opcodes: **the game has black-and-white
-cutscenes**, and nothing about ordinary play's colour depends on it.
-
-### Mirrors
-
-Mesh flag `0x100000`, **6 of 12 203 meshes**, one live at a time. `sub_440D90`
-reflects the camera through the mirror's plane and calls the scene draw again —
-a **second full pass**, with screen X flipped, gated on the display driver index
-so it is hardware-mode only.
-
-This was found by a reader flying the viewer, and it **refuted** a documented
-claim that "a mirror is a darkening overlay". Two parts of the port's version
-stay reconstruction and are labelled as such: how the engine confines the
-reflection to the mirror's area (its X flip is global; no clip or stencil step
-was traced) and the plane's normal (the engine reads a runtime value, so the
-port takes the face's cross product). Both were **confirmed by playing** — flown
-across viewpoints the mirror is correct and its edges line up, which is the only
-thing that can settle a plane, a normal's sign or a flip. Each of the three
-looks plausible from one still frame.
-
-### The 2D layer: I2D
-
-A **16-layer display list** with 7 primitives and their pools (plus 2 calls that
-do nothing, without which the 4 862-node cap does not add up), a DirectDraw
-colour-key back end, a bitmap cache, and four flag families.
-
-Two behaviours that a straightforward reimplementation gets wrong:
-
-* the per-layer cache is a **head** cache, so within one layer everything after
-  the first draws in **reverse submission order**;
-* the blits **do not test the source Y**.
-
-### RGB565, and how comparisons are made
-
-Measured from a captured frame: the red channel carries **32** distinct levels,
-green **63**, blue 25 of a possible 32, with gaps of 8 and 9 in the 5-bit
-channels and 4 and 5 in the 6-bit one — the signature of a 5/6-bit value
-expanded by bit replication.
-
-And the rule that follows: **bring the capture into the framebuffer's space,
-never the framebuffer into the capture's.** Expand a reference frame to 24-bit
-and the menu's title region matches 94.9%, every difference an artefact of the
-host's expansion. Quantise the capture back to 16-bit instead and it matches
-**66 560 of 66 560**.
-
-### How the port does it
-
-The load-bearing design decision is that **the renderer boundary is at the
-decision level, not the API level**:
+The interface between the engine and a backend carries four things:
 
 ```
-    begin(view)                 the camera and its frustum
-    submit(draw)                {bucketKey, mesh, range, blend, cutout}
-    submit2d(I2dList)           the display list, already ordered
-    end() -> Frame              RGB565, 640x480
+begin(view)                        the camera and its frustum
+submit(draw)                       {bucketKey, mesh, range, blend, cutout}
+submit2d(I2dList)                  the display list, already ordered
+end() -> Frame                     RGB565, 640x480
 ```
 
-**A backend receives decisions and turns them into API calls. It never makes
-one.** Put the boundary at the Vulkan level instead and the ported decisions
-leak into API-specific code; the software backend then cannot be added without
-extracting them again, and the frame oracle becomes unusable.
+A backend receives decisions and turns them into API calls; it never makes one.
+The decisions themselves are the port:
 
-Behind it sit two implementations: a **software rasterizer** — textured,
-vertex-coloured, z-buffered triangles into an RGB565 framebuffer — and a
-**Vulkan backend** (MoltenVK on macOS) that presents directly, with a GPU
-stencil for the mirror. They agree on coverage to **0.995**, and the boundary
-itself moves **0 pixels**.
+* **the drawable mask** — one test, `flags & 0x800043`, which replaced three
+  separate viewer heuristics and disagrees with them in both directions;
+* **the 14-bit bucket key** that orders every draw;
+* **the texture slot as that key's low six bits** — the texture is the low six
+  bits of the key and nothing else;
+* **two blend modes** — `0x1000|0x2000` additive (211 meshes) and
+  `0x1000|0x4000` multiply (6) — with `0x800` a separate cutout path;
+* **the 58-slot texture cache**, matched on a 19-character name;
+* **the visible-set walk** against the engine's own frustum.
 
-The software rasterizer is **not a port**, and says so in its own header: the
-engine has no software 3D path, D3D drew every triangle. It is a reference
-implementation standing where D3D stood. What *is* ported is everything on this
-page above it — the mask, the key, the cache, the blend modes, the visible-set
-walk.
+### RGB565, and how a comparison has to be done
 
-Since 2026-09-05 the same path also draws what the **scene scripts** put up:
-`Script_Display3DSprite`'s instances through the particle geometry with the
-instance's own frame, two scales and roll; a `Script_ScaleObjectX/Y/Z` scale in
-the mesh patch that also moves the scripted doors and crates — and that patch
-reads **both** resident pools, since a transition's door closes from the
-outgoing one (chapter 5).
+Measured from a captured frame: the red channel carries 32 distinct levels,
+green 63, blue 25 of a possible 32, with gaps of 8 and 9 in the 5-bit channels
+and 4 and 5 in the 6-bit one — the signature of a 5/6-bit value expanded by bit
+replication.
 
-### What the frame comparison establishes, and what it does not
+So comparisons are made **in 565, not in 888**. A captured frame's 8-bit values
+are the *host's* expansion, not the game's data, and the host does not expand
+the way you would guess. Expanding the reference up to 888 matches the menu's
+title region 94.9%, every difference a rounding artefact of something that is
+not the game; quantising the capture back down to 565 matches **66 560 of
+66 560**. Bring the capture into the framebuffer's space, never the other way.
 
-For **one camera** — the set of conversation 402 through camera 4555 — the
-render reaches **tier 4** against the original engine's own framebuffer:
+### The set is lit before it ships
 
-| metric | render | chance floor |
-|---|---|---|
-| edge alignment, two parked captures | 0.73 / 0.83 | 0.27 / 0.30 |
-| holes falling where the capture is black | 92% / 99% | 33% frame-wide |
+A set's vertices carry a **colour**, not a brightness — the engine copies the
+whole dword at vertex `+28` into the vertex it hands the driver, and declares
+`D3DFVF_DIFFUSE` in both its draw calls. Reading only the green byte, which is
+what one importer does, renders every set in monochrome; 38.9% of set vertices
+are not grey.
 
-Four mid-sweep captures of the same set with the camera elsewhere reach only
-0.14–0.38. The mirrored reading lands at 0.18 — **below its own floor**.
+The engine *does* contain a luma conversion, and it is in the **second render
+bank** — the same 660-line scene walk with every vertex colour converted to
+grey. VM opcode 150 installs it at 14 shipped sites against 15 restores, and 74
+of the 82 instructions between them are camera and fade opcodes. The game has
+black-and-white cutscenes.
 
-And the limits are stated as loudly as the result, because that is the house
-rule: **one camera in one set is not a claim about the renderer**; the render
-has no characters or props and the metric is *built* so it cannot see that; **no
-pixel's value is checked at all**, so filtering, dither, fog and the blend
-arithmetic keep no reachable tier; and the drawable mask is not exercised,
-because both rules select the identical 10 257 corners of this set.
+### The lights inside a model
 
-Per-pixel comparison is not merely unattempted, it is **refuted by the capture
-itself**: between two frames of the same *parked* scene, 42% of pixels differ by
-≤8, which is low-bit noise, while 17% differ by ≥32, which is the character
-animating.
+The 1999 press sheet advertised "Multilights", and the table is real: **4 179
+records of 304 bytes across 216 models**, each naming itself `LIGHT` and
+carrying two radii in round metres, an RGB colour, a position and a footprint.
+The count is at `desc+240`, not the `+232` a first reading used — the loader
+overwrites `+232` from it.
 
-**And the one-camera limit bit within hours.** The rasterizer had no near-plane
-clipping at all — a triangle with any vertex behind the cut was dropped whole,
-so a floor or a wall with one corner behind you vanished while still in shot.
-Through camera 4555 the fix changes **0 pixels**, because every triangle it
-rescues there is off the edge anyway. Nothing in `verify.py` saw it. A player
-flying the scene viewer saw it in one session.
+They are not for the set, which is pre-lit. A decor supplies them and the
+**street's moving population receives them**: every call site of the lighting
+function is street life. Per vertex it is `−(N·L)` over a linear falloff
+through a fixed ramp — which needed the vertex **normal** at `.3DO` vertex
+`+12`, twelve bytes this project had skipped since the format was first
+decoded.
+
+### What one option sizes
+
+The graphical options are not decoration. The clip distance — quoted in metres
+against an inch world unit — sizes **four things at once**: the visible-set
+radius, both bucket splits, and the fog range. The fog is **linear**, starts at
+a quarter of the clip distance and ends exactly at it, and its colour ships as
+**black**, so it darkens toward the horizon rather than hazing — which is what
+hides the hard edge at the clip distance in a domed city at night.
+
+The sky is a flat painted **ceiling**, not a dome, following the camera in x
+and z.
+
+### The mirrors
+
+Six meshes in the whole game carry the mirror flag, one is live at a time, and
+the engine reflects the camera through the mirror's plane and **draws the whole
+scene again** with screen X flipped — a second full pass, gated on the display
+driver, so hardware mode only.
+
+Two parts of the port's version stay reconstruction and say so: how the engine
+confines the reflection to the mirror's area (its flip is global, and no clip or
+stencil step was traced) and the plane's normal (the engine reads a runtime
+value; the port takes the face's cross product). Both were confirmed by
+**flying a camera across viewpoints** rather than by a metric — which is the
+only thing that can settle a plane, a normal's sign or a flip, since each looks
+plausible in any single still frame.
+
+### The texture cache, and a prediction that came true
+
+The cache hands out 58 slots from a **global** pool, matching on the texture's
+19-character name alone; on a hit it points the material at whatever is already
+there. And two decor sets are resident at once — hidden is not unloaded — so an
+arriving set cache-hits against the one you walked out of.
+
+**182 texture names ship with different pixels in different model files.** So
+the same panel in the same street should look different depending on which
+location you walked in from. That claim stood for three days as an argument
+about atlases, and then the port could draw it: same set, same camera, only the
+resident neighbour changing — one neighbour substitutes 7 atlases and moves
+6 920 pixels, another substitutes 18 and moves **121 588**. A quarter of the
+frame repaints depending on where you came from.
+
+### The 2D layer
+
+A 16-layer display list with seven primitives and their own pools, ending in
+`IDirectDrawSurface::Blt` with a colour key. Two details decide what it draws:
+the per-layer cache is a **head** cache, so within one layer the rest draw in
+**reverse** submission order; and the blits do not test the source Y.
+
+Because a blit is a memory copy with no filtering, this half is exactly
+reproducible, and it is: the menu's deterministic region comes out **66 560 of
+66 560** pixels identical to the engine's own framebuffer, the load panel's
+selection box 1 518 of 1 518, and the ported text 6 132 of 6 132.
+
+<p align="center">
+  <img src="images/menu-text-port.png" width="440" alt="The start menu's labels drawn by the port">
+  <br><em>The four start-menu labels, drawn by the ported text renderer out of the<br>game's own fonts at the coordinates its widget tree gives them.</em>
+</p>
+
+### The 3D path, and what a captured frame can prove
+
+A captured 3D frame is exact about **geometry and ordering** and not about a
+pixel's low bits — filtering, dithering and the fog table belong to the driver,
+and the capture was taken under Wine rather than on a Voodoo. Between two
+captures of the same parked scene, 42% of pixels differ by ≤ 8.
+
+So the criterion is **silhouette and coverage**, and per-pixel equality is
+explicitly not claimed. Rendered through one conversation's camera, the set
+scores 0.73 / 0.83 against the two parked captures on a chance floor of 0.27 /
+0.30, and 92% / 99% of the holes a set-only render leaves fall where the capture
+is black, against 33% frame-wide. Mid-sweep captures of the same set with the
+camera elsewhere reach 0.14–0.38; a mirrored reading lands *below* its own
+floor.
+
+<p align="center">
+  <img src="images/dlg402-port-render.png" width="440" alt="The port's render of the apartment through camera 4555">
+  <br><em>The same set through the same camera as <code>traces/frames/dlg402-47.png</code>.<br>The capture also carries a character, the props and a subtitle; the render<br>draws the set alone, which is the asymmetry the metric is built around.</em>
+</p>
+
+**And that tier covers one camera in one set.** Within hours of it being
+reached, a player flying the free-look viewer found that the rasterizer had no
+near-plane clipping at all — a triangle with any vertex behind the cut was
+dropped whole, so a floor with one corner behind you vanished while still in
+shot. Through that one camera the fix changes **0 pixels**, because every
+triangle it rescues is off the edge anyway. One step into the room it changes
+12 710, and closes a 10 878-pixel hole in the floor.
 
 ## Where it lives
 
 | | |
 |---|---|
-| findings | [`docs/ASSETS.md`](../docs/ASSETS.md) §4 (the renderer, the cache, blend modes, colour), [`docs/PORTING.md`](../docs/PORTING.md) §A2–A4 (the boundary, RGB565) |
-| the port | `engine/src/o3de/` — `renderer.h` (the boundary), `raster.*` (software), `render.*` (buckets), `texcache.*` (58 slots), `geom3do.*`, `worldcam.*`, `camedit.*`, `particles.*`, `collision.*` |
-| backends | `engine/backends/sdl/play.cpp` (the viewer), `engine/backends/vulkan/vkrender.cpp` |
+| the findings | `docs/ASSETS.md` §4 (the render path, the lights, the fog), `docs/PORTING.md` A2–A4 |
+| the boundary | `engine/src/o3de/renderer.h` |
+| the backends | `engine/src/o3de/raster.*` (software), `engine/backends/vulkan/` |
 | the 2D layer | `engine/src/ui/i2d.*`, `surface.*` |
-| the metric | `tools/frame.py` — `edge_map` / `edge_match` / `hole_darkness`, directed, density-normalised, and quoted against its own chance floor |
-| checks | `verify.py: engine silhouette`, `render bucket key`, `drawable mask`, `texture name cache`, `anekbah signs`, `near clip`, `mirror pass`, `engine I2D blit`, `render back ends`, `engine scene sprites`, `engine impasse fx`, `engine linked rings` |
+| the checks | `engine: silhouette`, `engine: raster`, `engine near clip`, `drawable mask`, `render bucket key`, `texture name cache`, `anekbah rendered`, `mirror pass`, `engine I2D blit` |
 
 ## What is not settled
 
-* **The flicker on two Anekbah panels.** An `AApub*` prism — 7 vertices, 3 quads
-  of identical UVs — with `D3DCULL_NONE` and no depth bias remains the best
-  account. Note the other half of that story is **withdrawn**: Anekbah's neon
-  does *not* flicker. 148 of the set's 153 emitters have period 0, which with a
-  one-frame lifetime is a steady glow.
-* **The attribution of the wrong-sign report is narrowed, not confirmed.**
-  Masked exactly, `BATITR12`'s own 8 023 visible pixels move 545 and **0
-  visibly**, so the reported panel samples something else, or another shot shows
-  it.
-* **Four of the six swapped render-bank pointers are unread**, and have no
-  oracle here — no capture distinguishes them.
-* **The Vulkan backend is explicitly unverifiable**, and says so. Its
-  correctness is inherited from the software backend it mirrors.
-* **Pixel values keep no tier.** Filtering, dither, fog and the blend arithmetic
-  are the driver's, and Wine's driver is not a Voodoo.
-* **The Impasse portal's red rim.** Measured against a reader's frames the
-  glow, the core and their sizes agree; the dark-red ring between them is in
-  the original and grey-blue in the port's frames taken *before* the rings
-  were removed. Not re-measured since (`todo/omk-play.md` 76).
+* **No pixel's *value* has a reachable tier in 3D.** Filtering, dither, the fog
+  arithmetic and the blend maths are the driver's, and no rig here can
+  distinguish them.
+* **The Vulkan backend is explicitly unverifiable.** Its correctness is
+  inherited from the software backend it mirrors, and it says so in its own
+  header.
+* **The mirror's confinement and its plane normal** are reconstruction,
+  labelled as such.
+* **Four of the second render bank's six swapped pointers** are unread, and no
+  capture distinguishes them.
+* **One Anekbah panel flickers** and has no account at all: the two candidate
+  explanations — coincident faces z-fighting, and a flickering neon emitter —
+  are both measured and both refuted.

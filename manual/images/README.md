@@ -42,6 +42,11 @@ cd engine && ./build/omk-play "$DATA" ../tables --scene Aapkayl \
 Adventure mode: Kay'l standing in Anekbah's main street with the procedural
 crowd, 800x600, drawn after 120 ticks so the pedestrians have walked.
 
+Re-run on 2026-09-07 it carries three things it did not when it was first
+taken: the set's **ambient emitters** (the flame on the left, the neon), the
+**lights** the decor's own `.3DO` table supplies to the moving population, and
+the painted **sky**. Same command — the picture changed because the port did.
+
 ```sh
 cd engine && ./build/omk-play "$DATA" ../tables \
     --save ../traces/save-appart.bin --area 0 --stand 1804,0,-6890,336 \
@@ -79,3 +84,9 @@ Note what that expansion is for: it is **for looking at**. Comparisons between
 a render and a capture are made **in 565, never in 888** — `docs/PORTING.md`
 §A3 — because a capture's 8-bit values are the host's expansion and not the
 game's data.
+
+## When these were last refreshed
+
+**2026-09-07**, against commit `aa5dfc7`, by re-running every command above.
+All three still run. The text render still paints exactly **6 132** pixels,
+which is the figure chapters 8 and 10 quote.
