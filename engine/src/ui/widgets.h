@@ -347,6 +347,14 @@ public:
     // MECA (33) and SHOOT HUMAN (34) - and every other screen, the sneak
     // included, hides the world while it is open.
     bool worldBehind(int screenId) const;
+    // The screen record's `param` (its `+8`), which `UI_LoadScreen` writes
+    // into the live slot's `+4` when it is not -1 - and which `sub_49BC60`
+    // reads to tell the slider page's two meanings apart. -1 when the table
+    // does not name one.
+    int screenParam(int screenId) const {
+        const auto it = screenParam_.find(screenId);
+        return it == screenParam_.end() ? -1 : it->second;
+    }
 
     // The `.wav` stem for one of a screen's twelve sound slots, or empty when
     // the screen does not name that slot (the record ships -1).
@@ -417,6 +425,7 @@ private:
     std::map<int, std::string> soundName_;          // the 45, by id
     std::map<int, std::vector<int>> screenSounds_;  // each screen's 12 slots
     std::map<int, std::uint32_t> screenFlags_;   // +112, for the 0x40000 bit
+    std::map<int, int> screenParam_;            // +8, the slot's +4
     std::uint32_t gridHook_ = 0, nameHook_ = 0, startHook_ = 0;
     std::uint32_t moveHook_ = 0;
     std::uint32_t startName_ = 0, startButtons_ = 0;
@@ -514,6 +523,7 @@ struct UiListState {
     // takes the PLAYER'S - "call one to where I am". Only the first is
     // reachable here, and the second is recorded rather than invented.
     bool travelToDestination = true;
+    bool pendingCallHere = false;
     // `dword_6A5090` - THE SCROLL OFFSET OF A LONG TEXT BOX, in pixels, and
     // ONE global for the whole interface the way every other field here is.
     // Two functions touch it:
@@ -624,6 +634,11 @@ public:
     // ones. Reading it CLEARS it, as `takeVerb` does. -1 when none is due.
     int  takeTravel() { const int v = state_->pendingTravel;
                         state_->pendingTravel = -1; return v; }
+    // ...and WHICH of the page's two meanings that row had: true when the
+    // slot's `+4` was 1 (screen 7, inside the slider - a JOURNEY), false when
+    // it was not (screen 9, the device - a CALL to where he stands, with the
+    // row remembered as `dword_6A17CC` for the arrival camera).
+    bool travelIsJourney() const { return state_->travelToDestination; }
 
     // `sub_49BF30` (`Utiliser sur`, 0x0049BF30): open the combine mode with
     // the chosen object, and DISABLE THE VERB LIST so the next confirm goes

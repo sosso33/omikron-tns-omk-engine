@@ -220,9 +220,37 @@ void Sliders::tickVehicles(float dt) {
         // passes and a hand-placed one would not.
         if (!(movers_[static_cast<std::size_t>(v.mover)].flags & 9u)) continue;
         // `sub_456530`'s switch on the record's +8. State 0 - ambient
-        // traffic - falls to the default, which is the drive. States 1..7
-        // are the player's mount and ride and are not ported; a record in
-        // one of them is left alone rather than driven wrongly.
+        // traffic - falls to the default, which is the drive; 2 and 6 are the
+        // player's slider COMING, which is also driven, because the arrival
+        // test in those arms only decides when to stop. 3 (open), 4/5
+        // (aboard) and 7 (leaving) hold still: `Slider_TickRide` owns the
+        // body in 4/5, and an open slider is waiting for `MDSLIDIN`.
+        if (vi == called_) {
+            float d = 1e9f;
+            if (callRide_.state == 2 || callRide_.state == 6) {
+                const Pedestrian& m = movers_[static_cast<std::size_t>(v.mover)];
+                const float dx = m.pos[0] - callTarget_[0];
+                const float dy = m.pos[1] - callTarget_[1];
+                const float dz = m.pos[2] - callTarget_[2];
+                d = std::sqrt(dx * dx + dy * dy + dz * dz);
+            }
+            const int was = callRide_.state;
+            callRide_.tick(dt, d, 0.0f, false);
+            if (was != callRide_.state && callRide_.state != 2 &&
+                callRide_.state != 6) {
+                // It stopped where it arrived. `sub_456530` leaves state 1
+                // (the 600-frame idle) on the transport arm; a slider CALLED
+                // to be boarded goes OPEN instead, which is mode 3 - what
+                // `MDSLIDIN` demands.
+                callRide_.state = 3;
+                v.state = 3;
+            }
+            if (callRide_.state == 2 || callRide_.state == 6) {
+                vehicleDrive(vi, dt);
+                vehicleSound(vi);
+            }
+            continue;
+        }
         if (v.state != 0) continue;
         vehicleDrive(vi, dt);
         vehicleSound(vi);
@@ -489,6 +517,141 @@ void RideMachine::tick(float dt, float toTarget, float toPlayer, bool ahead) {
     default:
         return;                       // 0: ambient traffic, the ordinary drive
     }
+}
+
+// ------------------------------------------------- THE PLAYER'S OWN SLIDER
+//
+// `sub_452570`'s ARM arm in this pool's terms. The engine takes a FREE SLOT
+// out of the 40 - `slot[+22] == 1` and the mover's `+180 & 8` - which this
+// port's own read of `Slider_Init` already identified as slot 0, the player's
+// reserved slider; here the spawner picks the first dead slot, which is the
+// same thing for a pool that has one call out at a time.
+bool Sliders::callSlider(const float target[3]) {
+    if (!loaded_ || !track_.valid) return false;
+    if (called_ >= 0) return true;              // one call at a time
+    const SliderCall c = planSliderCall(track_, target, counter_ + 1);
+    // No vehicle lanes at all is LAHOREY, and the engine fails there too.
+    if (!c.ok()) return false;
+    const OptLane& L = track_.lanes[static_cast<std::size_t>(c.at.lane)];
+    const OptKey& K = track_.keys[static_cast<std::size_t>(L.firstKey)];
+    const float segLen = std::sqrt(K.delta[0] * K.delta[0] +
+                                   K.delta[1] * K.delta[1] +
+                                   K.delta[2] * K.delta[2]);
+    // A FREE SLOT FIRST, and an AMBIENT ONE when the pool is full - which it
+    // is in a city, because the spawner fills all 40. The engine has the same
+    // problem and answers it twice over: it reserves slot 0 for the player
+    // (`slot[+22] == 1`, which this port's read of `Slider_Init` already
+    // named), and where the target lane is occupied `sub_452CC0` SWAPS the
+    // two vehicles outright so the one in the way becomes the player's. Both
+    // come to the same thing - a call always finds a vehicle where there are
+    // roads - and taking an ambient one is the second of them.
+    const int before = liveVehicles();
+    if (spawnVehicle(c.at.lane, c.place, c.dir, segLen, 0) &&
+        liveVehicles() != before) {
+        for (int i = 0; i < static_cast<int>(vehicles_.size()); ++i)
+            if (vehicles_[static_cast<std::size_t>(i)].live &&
+                vehicles_[static_cast<std::size_t>(i)].state == 0 &&
+                !vehicles_[static_cast<std::size_t>(i)].reserved)
+                called_ = i;                    // the newest live slot
+    } else {
+        for (int i = 0; i < static_cast<int>(vehicles_.size()); ++i) {
+            Vehicle& av = vehicles_[static_cast<std::size_t>(i)];
+            if (!av.live || av.state != 0 || av.reserved || av.mover < 0) continue;
+            // `sub_452CC0`'s relink, in this pool's terms: off whatever lane
+            // it was on, onto the one the call chose, at the same place the
+            // spawner would have put it.
+            removeFromLists(av.mover);
+            Pedestrian& m = movers_[static_cast<std::size_t>(av.mover)];
+            for (int k = 0; k < 3; ++k) {
+                m.pos[k] = c.place[k];
+                m.prev[k] = c.place[k];
+                m.dir[k] = c.dir[k];
+            }
+            setHeading(m, c.dir[0], c.dir[1], c.dir[2]);
+            m.body[0] = c.place[0] - c.dir[0] * kCarrotBehind;
+            m.body[1] = c.place[1];
+            m.body[2] = c.place[2] - c.dir[2] * kCarrotBehind;
+            m.remaining = segLen * 256.0f;
+            m.seg = 1;
+            m.lane = c.at.lane;
+            m.route = c.route;
+            m.flags = 0x8;
+            listFor(c.at.lane, 1).insert(listFor(c.at.lane, 1).begin(), av.mover);
+            called_ = i;
+            break;
+        }
+    }
+    if (called_ < 0) return false;
+    Vehicle& v = vehicles_[static_cast<std::size_t>(called_)];
+    v.reserved = true;                          // `slot[+22] = 1`
+    v.state = 2;                                // `u32(slot, 8) = 2` - COMING
+    callRide_ = RideMachine{};
+    callRide_.state = 2;
+    // THE PICKUP POINT IS THE LANE POINT, not the player. `sub_452A80`
+    // writes the closest point on the lane into the request block's `+20`,
+    // and `sub_456530`'s arrival test reads `flt_8F5E74` - which is that same
+    // `+20`, twenty bytes into `dword_8F5E60`. Measuring against the PLAYER
+    // instead is a test a slider on a road can never pass: the nearest lane
+    // point to him here is 518 units away and the radius is 117, so it drove
+    // all the way in and then sat there. Caught by running it, not by
+    // re-reading.
+    for (int k = 0; k < 3; ++k) callTarget_[k] = c.at.at[k];
+    return true;
+}
+
+bool Sliders::calledAt(float out[3]) const {
+    if (called_ < 0) return false;
+    const Vehicle& v = vehicles_[static_cast<std::size_t>(called_)];
+    if (!v.live || v.mover < 0) return false;
+    const Pedestrian& m = movers_[static_cast<std::size_t>(v.mover)];
+    for (int k = 0; k < 3; ++k) out[k] = m.pos[k];
+    return true;
+}
+
+float Sliders::calledYaw() const {
+    if (called_ < 0) return 0.0f;
+    const Vehicle& v = vehicles_[static_cast<std::size_t>(called_)];
+    if (!v.live || v.mover < 0) return 0.0f;
+    const Pedestrian& m = movers_[static_cast<std::size_t>(v.mover)];
+    // the inverse of `setHeading(m, sin t, 0, cos t)`
+    return static_cast<float>(std::atan2(m.dir[0], m.dir[2]) * 57.29577951308232);
+}
+
+// `MDSLIDIN`'s two data conditions - "no active slider !" and "slider is not
+// in open mode !". The third, `player[+404] == 6`, belongs to the caller.
+bool Sliders::canMount(const float playerPos[3], float reach) const {
+    if (!calledIsOpen()) return false;
+    float at[3];
+    if (!calledAt(at)) return false;
+    const float dx = at[0] - playerPos[0], dy = at[1] - playerPos[1],
+                dz = at[2] - playerPos[2];
+    return std::sqrt(dx * dx + dy * dy + dz * dz) <= reach;
+}
+
+void Sliders::mountCalled() {
+    if (called_ < 0) return;
+    callRide_.state = 4;                        // aboard
+    vehicles_[static_cast<std::size_t>(called_)].state = 4;
+}
+
+void Sliders::dismountCalled() {
+    if (called_ < 0) return;
+    callRide_.state = 7;                        // LEAVING
+    vehicles_[static_cast<std::size_t>(called_)].state = 7;
+}
+
+// While he is aboard the vehicle IS the ride: `sub_457F50` writes the
+// slider's node from the ride's own position every frame, so the model the
+// pool draws has to follow it or he flies on nothing.
+void Sliders::placeCalled(const float pos[3], float yawDeg) {
+    if (called_ < 0) return;
+    const Vehicle& v = vehicles_[static_cast<std::size_t>(called_)];
+    if (!v.live || v.mover < 0) return;
+    Pedestrian& m = movers_[static_cast<std::size_t>(v.mover)];
+    for (int k = 0; k < 3; ++k) { m.prev[k] = m.pos[k]; m.pos[k] = pos[k]; }
+    for (int k = 0; k < 3; ++k) m.body[k] = pos[k];
+    const float t = yawDeg * 0.0174532925199433f;
+    setHeading(m, std::sin(t), 0.0f, std::cos(t));
 }
 
 }  // namespace omk

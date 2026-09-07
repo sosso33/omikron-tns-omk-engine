@@ -253,6 +253,21 @@ void UiWidgets::loadScreens(const std::string& uiTable) {
         // PAUSE GAME, SHOOT MECA and SHOOT HUMAN - which are the three that
         // must show the live world behind them; every other screen, the sneak
         // included, turns it off (`docs/UI.md`).
+        // ...and the record's `param`, which `UI_LoadScreen` copies into the
+        // live slot's `+4` whenever it is not -1:
+        //
+        //     mov [ebx+4], ecx          ; the caller's argument first
+        //     mov eax, [esi+8]          ; ...then the record's own param
+        //     cmp eax, -1
+        //     jz  short keep
+        //     mov [ebx+4], eax          ; which OVERRIDES it
+        //
+        // and `sub_49BC60` branches on that slot field. It is what tells the
+        // slider page which of its two meanings it has: screen 7 SLIDER
+        // carries **1** and screen 9 SNEAK carries **0**, so the same page
+        // TRAVELS when it is opened from inside the vehicle and CALLS one
+        // when it is opened from the device.
+        screenParam_[id] = static_cast<int>(ss[i]["param"].i64(-1));
         const Json& fl = ss[i]["flags"];
         std::uint32_t f = 0;
         for (std::size_t k = 0; k < fl.size(); ++k)
@@ -1420,10 +1435,28 @@ bool UiWalk::confirm() {
             const int row = rowOf(it->addr);
             if (row < 0) { log_.push_back("slider: no destination there");
                            return true; }
+            // WHICH OF THE PAGE'S TWO MEANINGS, and it is the slot's `+4`:
+            //
+            //     if (screen[+4] == 1) { rec = sub_40E630(tag);        // TRAVEL
+            //                            point = rec[0], rec[4], rec[8]; }
+            //     else                 { point = player[+0xF4/F8/FC]; } // CALL
+            //
+            // and that field is the screen record's own `param`, which
+            // `UI_LoadScreen` copies in. Screen **7 SLIDER** carries 1 and
+            // screen **9 SNEAK** carries 0 - so the same page TRAVELS from
+            // inside the vehicle and CALLS one to where he stands from the
+            // device. `MDSLIDIN` is what opens screen 7 (`UI_OpenScreen(7,
+            // -1, -1, -1)`, "cant find slider interface !"), so a journey is
+            // something you ask for once you are ABOARD.
+            //
+            // The port teleported on this row whatever the screen, which is
+            // the arrive arm and belongs to neither: a reader met it as
+            // "calling a slider with the sneak teleports me".
             state_->pendingTravel = row;
-            state_->travelToDestination = true;
-            log_.push_back("slider: travel to destination row " +
-                           std::to_string(row));
+            state_->travelToDestination = w_->screenParam(screen_) == 1;
+            log_.push_back(state_->travelToDestination
+                           ? "slider: travel to destination row " + std::to_string(row)
+                           : "slider: CALL one here, remembering row " + std::to_string(row));
             panel_ = nullptr;                  // `screen[+8] = 3`
             return true;
         }

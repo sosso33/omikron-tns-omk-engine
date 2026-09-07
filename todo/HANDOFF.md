@@ -1,173 +1,171 @@
-# Handoff — 2026-09-04, the sneak and the object flow
+# Handoff — 2026-09-08, the slider session
 
-Written at the end of a long session so another can pick it up. **The durable
-findings are in `todo/sneak.md`, `todo/sliders.md` and `docs/UI.md`; this file
-is the session state around them** — what landed, what broke on the way, what
-is open, and how to drive it.
+Written for whoever picks this up next, on either machine. Read this, then
+`todo/slider.md`, then nothing else until you need it.
 
-Tree state at handoff: **`main` = `c1d0681`, clean, in sync with `origin`,
-`verify.py` 164 checks / 0 failed.**
+## 1. THE TREE — the 2026-09-08 batch, and what it holds
 
----
+One batch, committed on top of `b500487` (the play-test list), produced in
+response to the reader's report *"calling a slider with the sneak teleports me
+and makes the character disappear"*. Sixteen files, 659 insertions. What it
+contains, file by file:
 
-## 1. What landed (13 commits, all pushed)
-
-Every one has a `verify.py` check that was SHOWN to fail first.
-
-| commit | what |
+| file | what |
 |---|---|
-| `6805974` | **using an object on the world**: `Session::useObject` (case 35's non-consumable arm), the pump's dry run (`Script_RunToOpcode75`), and `Utiliser` closing the sneak |
-| `c3f13da` | the world's **action button comes from `MDACTION`**, not the input edge |
-| `11cd32a` | the key at the lift **confirmed in play**, plus the demo recipe |
-| `ce1a0cc` | **taking an object reaches the inventory** (case 10) and clears the right prop bit |
-| `d1f5e28` `958d286` | `todo/sliders.md` and `todo/sneak.md` — what is left in each |
-| `a538ce3` | **`Inventory_Insert` read in full**: kinds 12/13 are CONSUMED, not merged |
-| `3c462a1` | **the rows SCROLL** — `sub_42AFF0` is a centred window |
-| `644b51a` `7e1c58d` | **`Utiliser sur` is a MODE**, and its gate is dead from both ends |
-| `4c8d8cf` | the **memory page is empty by the code** — step 3 was a non-task |
-| `f415e6c` | the **identity page has two sub-sections**, from two player captures |
-| `c1d0681` | the combine mode was a **one-way door** — a player lost the verb bar |
+| `engine/src/actor/player.{h,cpp}` | `rideAt`: `placeAt` without the floor seat. `sub_457F50` does no ground probe; going through `placeAt` sat the rider on the pavement while his slider hovered 30 units up |
+| `engine/src/actor/sliders.h`, `vehicles.cpp` | the CALL: `callSlider`, `calledAt`, `calledYaw`, `canMount`, `mountCalled`, `dismountCalled`, `placeCalled`; the `RideMachine` driven per tick for the called vehicle; the pickup point taken from the LANE point; an ambient vehicle relinked onto the called lane when the pool is full; **the `flt_536C28` fov misread reverted** (it is a 90-frame latch, see §4) |
+| `engine/src/actor/state.cpp` | `MDSLIDIN`'s gate corrected from `kAny -> 7` to **`6 -> 7`**, from the move's own debug string |
+| `engine/src/script/area.h` | `Sliders& sliders()` writable |
+| `engine/src/ui/widgets.{h,cpp}` | `screenParam()` lifted from `ui.json`; the slider page's row confirm now branches on it exactly as `sub_49BC60` does; the invented header-confirm call REMOVED |
+| `engine/backends/sdl/play.cpp` | the sneak's row CALLS (screen 9) and only screen 7 travels; the same-area travel no longer tears the player down; `MDSLIDIN` from the world on the action button; the vehicle follows the ride so it is drawn under him; **camera mode 8 on the VEHICLE while it comes** (states 2/6); the `--ride` harness kept; debug prints removed |
+| `engine/tools/slider_call.cpp` | the ride machine driven in the probe |
+| `tools/verify.py` | `engine: slider arrives` (new), `engine: slider travel` RENAMED `engine: slider call page` and retargeted to assert the call (it had been certifying the teleport), `engine: actor states` re-baselined 18/273 -> **17/266**, the `flt_536C28` docstring corrected |
+| `todo/slider.md` | the corrected flow at the top (§"THE WHOLE FLOW"), `next-tasks` 16 reopened |
+| `todo/next-tasks.md`, `todo/sweep-log.md`, `CLAUDE.md` | 16 marked OPEN - not usable; counter back to **9**; the "a task is one thing the reader asked for" rule |
+| `todo/play-test.md` | partly stale - see §5 |
 
-**The chain that now works end to end, in play:** open the sneak → use the
-apartment key → the sneak closes itself → press action at the lift → zone 3889
-→ camera 4354 → `actor.goto_address 663` → `area.goto 237` → standing in
-AAPKAYL. Confirmed by the user, not just headlessly.
+**Before committing, run and get green:**
 
-## 2. What is NOT working, or is knowingly absent
+    python3 tools/verify.py --only "engine: slider" "slider addresses" "slider ride" \
+        "engine: actor states" "licence headers" "ui page" "sim: ui"
 
-* **The object in the hand is invisible.** `sub_41C490` writes `player[+0xA4]`
-  AND attaches the model (`sub_437400` / `sub_4374E0`); the port does the first
-  only. A used key works and shows nothing. `todo/sneak.md` step 5.
-* **`Object_ApplyEffect` (0x00409780) is NAMED, body as generated.** The
-  consumable arm and the `Consumed`/`Merged` bank arms announce an effect they
-  do not apply, and say so where it happens. Its sibling — the context gate,
-  "may this object be used HERE" — has not been read at all.
-* ~~**The walker does not block on walls.**~~ **Ported 2026-09-04 on branch
-  `take-height`** (`todo/collision-scenes-transitions.md` step 1): the sweep
-  in the simulator's shape, `engine: narrow phase`; AHALL27 east now blocks
-  at x 4818. Unseen. The original text: AHALL27's walls are in the STEEP
-  soup, which the walker SLIDES off rather than stopping at, so
-  `StepResult::Blocked` has never fired there and walking east past x 4840
-  leaves the geometry entirely (`floorUnder` NONE at 4964) and falls. A player
-  hit this twice. The narrow phase against `SoupKind::All` is unported. **Not
-  a sneak problem — it is the walker**, and it is the thing most likely to
-  interrupt the next play-test.
-* **A held button re-enters the `.CTL` action state**, so two frames of ENTER
-  give two activations (two voice lines at the lift). Cosmetic, not chased.
-* **The identity page draws nothing.** Structure fully read (see below), no
-  code written.
-* **`Text_LayOutBlock` is not ported** — the composer's wrap is a labelled
-  reconstruction, visible on the sneak's short captions.
+**All of it was green before the commit** - the ten above ran 10/10 once
+run one at a time (`engine: slider arrives` had to be retargeted from the
+removed header confirm to a destination row first, and a red on
+`engine: slider call` turned out to be a rebuild racing the run, §4.8).
 
-### The build system, and it cost real time
+Do NOT run several `omk-play` instances or a `make` concurrently. One "still
+broken" reading this session was a run against a binary being rewritten
+underneath it (§4).
 
-**`make` does not always rebuild after an edit.** Six times this session a
-measurement flipped with no source change, and twice `touch` was not enough —
-only `rm -f build/obj/<path>.o` settled it. It has twice made a falsification
-look like it passed. **When a number changes and the source did not, distrust
-the binary before the reading.** Worth fixing in the Makefile's `-MMD -MP`
-dependency generation before it causes a wrong conclusion.
+## 2. What the slider does NOW, end to end
 
-## 3. What is left
+From `save-appart.bin` in Anekbah (`--area 0 --stand 1804,0,-6890,336`):
 
-`todo/sneak.md` §3 is the queue; steps 1-3 are done, **4-8 open**:
+1. `TAB`, `RIGHT`, `UP`, `ENTER` (the slider tab), `DOWN`, `ENTER` on a
+   destination. **He does not move.** A vehicle is taken out of the traffic
+   pool, put at the top of lane 237 and driven down it - twenty-one segments -
+   while **camera mode 8 watches it from behind and above**, its subject the
+   vehicle.
+2. Inside 117 units of the nearest lane point it stops and goes **OPEN**.
+3. Walk to it and press the action button: `MDSLIDIN`'s two data conditions
+   (an active slider, standing open, in reach) and he is aboard, seated at
+   the slider's own height, the vehicle drawn under him.
+4. Arrows steer, up/down thrust, SPACE stops under 10 units of speed. The
+   flight model is the engine's (`actor/slider.*`).
 
-| # | step |
-|---|---|
-| 4 | `Text_LayOutBlock` — the real wrap |
-| 5 | the hand attach, so a used object is visible while held |
-| 6 | `Object_ApplyEffect` and its context gate |
-| 7 | **the identity page** — the two-tab switch is small and read; then the character view; then the per-character TEXT, whose source is NOT found |
-| 8 | the other four page builders, each bounded before it is shipped |
+Every step above has been run headlessly and printed; steps 1-2 are asserted
+by `engine: slider call page` and `engine: slider arrives`. **None of it has
+been confirmed by a person since the teleport was fixed.**
 
-**Step 7 is the biggest and best-specified.** From two captures a player
-supplied: the page is `Identity` (Name, Age, Sex, Blood Type, Height, Weight,
-Eyes, Job, and the prose lines Signs / Interests) and `Characteristics`
-(Energy, Attack, Fight Experience — **a WORD, "Initiate", not a number** —
-Body Resistance, Speed, Dodge, Mana, each with a **filled bar**). The widget
-tree already carries it: list `0x004DE900`, two tabs at (187,30)/(389,30)
-strings 10/11, **two content items at the same rect (250,100) 300x270** so
-alternatives, and the character view at (0,50) 360x300. The switch is
-`sub_42A930` plus a two-case swap of `0x40000001` — both already ported in
-pieces. **What is missing is where the text comes from**: both content items
-ship `string -1`, `text 0` (+24) and `textFn 0` (+32), so something outside
-the item draws that box. The actor table's 276-byte record is the first place
-to look; `player.become` announcing to CHARACTERS the second.
+## 3. What is MISSING, and the task stays OPEN until it is not
 
-`todo/sliders.md` is a separate, untouched queue — the player's RIDE (call,
-mount, choose, fly, arrive) is not ported at all; step 1 there is reading
-`sub_452570`.
+The reader's description of the original, which is the spec
+(`todo/slider.md` §"THE WHOLE FLOW"):
 
-## 4. How to drive it
+> call → (optional cutscene of it on the road) → it stops on the road → ENTER
+> close enough on the right side → door animation → aboard, and the slider
+> page opens again → choose where → (optional cutscene near the destination)
+> → it stops, he gets out, it drives away
 
-```bash
-cd engine && make play
-build/omk-play <gamedata> ../tables --vulkan --res 1024x768 --nofmv \
-    --save ../traces/save-appart.bin --newgame-world \
-    --area 237 --address 677 --give 18,7,26,20,108,156,44,45,46,47,48
-```
+Against that:
 
-13 carried objects in Kay'l's apartment — enough for **row scrolling** (more
-than the nine widgets) and for **`Utiliser sur`** (18 `Petite boîte` + 7
-`Petite clé` → 33 `Petite boîte ouverte`; 26 `Tasse de koil` + 20 `Somnifère`
-→ 99 `Tasse de koil droguée`).
+* **The JOURNEY is not there.** `MDSLIDIN` ends in `UI_OpenScreen(7, ...)`;
+  screen 7 is the same slider page with `param = 1`, and a row confirmed THERE
+  is the travel (`sub_40E630` loads the area, `sub_452570` arms state 6,
+  camera 10 near the destination, state 4). The port never opens screen 7, so
+  after boarding you can fly but not be taken anywhere. The travel arm is
+  still in `play.cpp` behind `travelIsJourney()`; what it needs is the screen
+  opening on the mount.
+* **The correct SIDE to board from.** Not in `MDSLIDIN`. Somewhere else - the
+  `.CTL` entry's own conditions, or a proximity test at the action button.
+  Unfound.
+* **The door animation.** The clips exist and are named: `A_SliderIn`,
+  `A_SliderOut`, `H_Slider`, in `H1Avnt.CTL` / `F1Avnt.CTL` beside `MDSLIDIN`
+  and `MDSLIDOU`. Nothing plays them; he keeps his walking pose aboard.
+* **ACTOR_STATE 7 is not written on the mount**, because the engine reaches
+  it from **6** and nothing in the port puts him in 6. The state table now
+  refuses `1 -> 7` correctly; forcing it would be inventing a transition.
+* **The optional CUTSCENE** - a few seconds, camera following the slider along
+  the road, *not every time*. NOT FOUND. The always-on special camera (mode 8)
+  is in; the reader is explicit that the cutscene is a different, longer
+  thing. `sub_456530` state 2 tests the mover's `+180 & 0x10` and sets `0x400`
+  on arrival, which is the right *shape* for "sometimes something longer",
+  but nothing read ties either bit to a camera editing or a scene program.
+  Start there, or at what `scx.play` sites name a slider.
+* **The 600-frame idle** (state 1: a called slider you never board gives up)
+  is in the machine and not driven.
+* **The departure** (state 7, `MDSLIDOU`, `sub_4570F0` -> camera 17) is
+  wired on SPACE but not watched.
 
-The lift, which is the object-use chain end to end:
+## 4. Corrections made this session — read these, they are the lessons
 
-```bash
-build/omk-play <gamedata> ../tables --save ../traces/save-appart.bin \
-    --newgame-world --area 229 --stand 4460,-25,-742,0
-```
+Four of these were found only by RUNNING; none was visible in the reading.
 
-**No `--give`** there: a new game already carries object 6. Two gotchas —
-`--stand 4482,...` (the zone centre) is walkable but the hall is small, and
-the user found `4460,-25,-742,0` better; and this is **zsh**, so a flag string
-in a variable needs `${=VAR}`.
+1. **The pickup point is the LANE point, not the player.** `sub_452A80` writes
+   the closest lane point into the request block's `+20`, and `sub_456530`'s
+   117-unit test reads `flt_8F5E74`, which is that `+20`. Measured against
+   the player the test can never pass (the nearest lane point was 518 away),
+   so the slider drove all the way in and sat there for ever.
+2. **`MDSLIDIN` is gated on ACTOR_STATE 6**, not `kAny` - *"bad mode getting
+   in slider !"*. CLAUDE.md §4's "7 and 8 are the mount and the ride" names
+   the two ride states and is silent about the gate.
+3. **The rider was seated on the pavement**: `placeAt` probes to the floor,
+   `sub_457F50` does not.
+4. **Travelling inside the city you stand in deleted the player.** Dropping
+   `playerReady` asks the hand-over to rebuild him after a load; without a
+   load nothing rebuilds him. Every headless test took the other branch,
+   because the fixture save's area is 237 and all 39 destinations are in 0,
+   1, 64 or 101 - the fixture *guaranteed* the area changed. The common case
+   was structurally untestable from it.
+5. **The sneak's page must CALL, never travel.** Decided by the screen
+   record's `param` via the slot's `+4`: 7 SLIDER = 1 (journey), 9 SNEAK = 0
+   (call). One field, in the port as in the engine. The old
+   `engine: slider travel` check had been asserting the teleport - green, and
+   certifying the bug.
+6. **`flt_536C28` is a 90-FRAME LATCH, not a 90-degree fov.** I set both ride
+   cameras to 90° on that misreading and reverted within the hour; the port's
+   own `tickVehicles` comment had it right all along. `fld / fsub flt_4C30D8 /
+   fst`, clearing itself and `dword_538E20` at zero.
+7. **`--no-crowd` disables the VEHICLE pool too**, so a call under it fails
+   for want of a slider. The call checks must not pass it.
+8. **Concurrent `omk-play` runs and rebuilds gave a false "still broken".**
+   One at a time.
+9. **The camera that shows the slider coming is not optional.** Case 2's
+   `if (sub_413360(C) != 8)` only stops a re-request. I had read it as "not
+   every time"; the reader corrected it.
 
-## 5. Coordination — there is a SECOND session in this checkout
+And two rules the reader set, now in memory and in the repo:
 
-`omikron-tns-omk-engine-58`, addressable at `uds:/tmp/cc-socks/78950.sock`.
-It is on branch **`take-height`** (a git worktree), which its user has said is
-**not to be merged into main for now**. Its two commits `c318a57` / `55d7125`
-sit off main.
+* **A task is finished when a person can use it in the game** - not when the
+  reading is done and the checks pass. `--ride` is a harness, not delivery.
+* **The sweep counter counts TASKS the reader asked for**, not commits or
+  steps. It stands at **9**; the slider is not counted because it is not
+  finished.
 
-**The protocol we agreed, and it should continue:**
+## 5. `todo/play-test.md` is partly stale
 
-* **Ask per FILE before editing, and say when you are done with it.** Not per
-  slice — they explicitly preferred answering four times over having it
-  inferred once.
-* **Never `git add -A`.** Stage explicit paths. My `git add -A` swept their
-  uncommitted work into a commit earlier in the day (`d6a7999`) and reverted
-  their `play.cpp` fix in another (`8f9de78`/`323f1ff`). That is what the
-  whole protocol exists for.
-* **Commit and push promptly** so main is never far ahead of what they would
-  rebase onto.
-* Their region of `play.cpp` is the **flag cluster in the first ~1800 lines**
-  plus the **take arms at 3650-3710**. Mine has been 5590-5860 (the sneak).
-  `docs/UI.md`'s **"UI input path"** section is theirs to write — they found
-  that the engine has THREE input words with three filters (`Ui_BeginScreen`'s
-  0x203F mask for a screen, the raw word for the world, `dword_90E0E0` for a
-  conversation) and a dialogue is NOT a screen. Do not generalise one to the
-  others; the sneak must keep reading `bits`, not edges.
+Its item 4 describes confirming the slider page's HEADER to call one. That arm
+was removed; a **destination row** on the sneak's page is what calls now, and
+the header does nothing modelled. Rewrite item 4 before the reader's next
+pass: TAB, RIGHT, UP, ENTER, DOWN, ENTER on a row - he stays put, the camera
+cuts to the slider coming, it stops open, walk to it, ENTER to board. Items
+1-3 and 5 stand. Item 6 (`--ride`) stands and is still the harness.
 
-**Their in-flight work, for context:** the take is two stages and the port did
-only the second — `MDACTION` installs group 600 `H_ADJSTP` (the character
-steps into position) and the take comes from `MDADJSTP`, whose reach is 120 cm
-against MDACTION's 150. And a take clip is a GRID of 21-frame variants
-(`H_TAKH12` 189 frames = 9 x 21, `H_TAKL12` 126 = 6 x 21), the count coming
-from the `.CTL` entry's own top nibble, which partitions the bank exactly.
-The port plays frame 0 to the end, which is every grab in a row.
+## 6. Where the reading is, for the next reader
 
-## 6. Two traps this session, both worth not repeating
+Everything read is written in `todo/slider.md`; nothing below needs the
+listing re-opened except the two marked unfound.
 
-* **IDA invents pointers out of coordinate pairs.** The listing shows
-  `off_4DE810 dd offset unk_6400FA`, which reads as a pointer to a shared text
-  buffer. It is not one: item `+0` is the X and `+2` the Y, both int16, so the
-  dword is `0x006400FA` = y 100, x 250 — the item's own coordinates. Ten
-  minutes went into "what fills that buffer". There is no buffer.
-* **Reading a function to the first plausible stopping point.** `ce1a0cc`
-  shipped a gate over `Inventory_Insert`'s kinds "2..13" from the first 45
-  lines, with a green check beside it. The other 100 lines say 12 and 13 skip
-  the ladder entirely and 2..11 with no matching row still earn a row. A
-  player's play-test found it, not the suite. **A check written beside a
-  half-read function tests the half you read.**
+| function | what | state |
+|---|---|---|
+| `sub_452570` | the call: lane search, reserve, fade+hold / or arrive | read; both arms ported except the linked-list relink |
+| `sub_40E630` | the transport: enabled-record walk, `Area_Load`, address by bit | read, ported |
+| `sub_452A80` | point-to-segment on a lane, 3900-unit box | read, ported |
+| `sub_452CC0` | relink onto the lane, the SWAP, 39-unit set-back, node at -30.75 | decisions ported; lists deliberately not |
+| `sub_456530` | the 8-state ride machine, cameras 8/0/10 | read, ported, driven |
+| `Slider_TickRide`, `sub_4573E0`, `sub_458600`, `sub_457F50` | the ride, the flight model, the hover, the rider placement | read, ported, flown |
+| `sub_4570F0` | the stop: camera 17, mode 7 | read, wired on SPACE |
+| `MDSLIDIN` / `MDSLIDOU` | the gates, `UI_OpenScreen(7)` | read; gate corrected; screen 7 NOT opened |
+| the correct SIDE | — | **unfound** |
+| the optional CUTSCENE | — | **unfound** |

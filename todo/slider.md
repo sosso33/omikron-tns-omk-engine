@@ -10,6 +10,61 @@ size measured rather than guessed.
 Three separable things, and the numbering below is the order they are worth
 doing in, not the order the game does them.
 
+## THE WHOLE FLOW, corrected 2026-09-08
+
+A reader described what the original actually does, and every part of it is in
+the code — including the part this plan had backwards. The sequence:
+
+> call a slider → a cutscene of it on its road (**not every time**) → it stops
+> near you, always **on the road** → press ENTER close enough and **on the
+> right side** → a small animation of opening the door, getting in, closing it
+> → another potential cutscene near the destination → it stops, the character
+> gets out, the slider drives away.
+
+| what the player sees | what it is |
+|---|---|
+| the cutscene of it on its road | `sub_456530` state **2** requesting **camera mode 8**, whose two subjects are the SLIDER and not the player — and it is *"not every time"* because the request is guarded `if (sub_413360(C) != 8)`, so it is skipped when the camera is already there |
+| it stops **on the road**, near you | the **117-unit** arrival test, measured against the nearest **lane point** and not against the player. That is exactly why it stops on the road and you have to walk to it |
+| press ENTER close enough | `MDSLIDIN` (`tab_special_move[12]`), gated on ACTOR_STATE **6**, an active slider, and its mode **3** — its three refusals are its own debug strings |
+| the door animation | the `.CTL`'s own clips: **`A_SliderIn`** and **`A_SliderOut`**, with **`H_Slider`** the riding state, in `H1Avnt.CTL` and `F1Avnt.CTL` beside the two move names |
+| the cutscene near the destination | state **6**'s arrival: **camera mode 10**, framed between `sub_40E630(dword_6A17CC)` — the remembered destination's own address record — and the vehicle |
+| he gets out, it drives away | `MDSLIDOU` (8 → 1), `sub_4570F0` (camera **17**), then state **7**, which releases the slider once he is **300** units clear AND in front of it |
+
+### ...and the SNEAK'S PAGE NEVER TRAVELS. It CALLS.
+
+This is the correction, and it is one field. `MDSLIDIN`'s last act is
+`UI_OpenScreen(7, -1, -1, -1)` — *"cant find slider interface !"* if it fails —
+so **boarding opens SCREEN 7**, which is the same slider page seen from inside
+the vehicle. `UI_LoadScreen` writes the slot's `+4` from the screen record's
+own `param` whenever that is not −1:
+
+    screen 7  SLIDER   param = 1
+    screen 9  SNEAK    param = 0
+
+and `sub_49BC60`'s kind-4 arm is `if (slot[+4] == 1) … else …`:
+
+* **from the SNEAK (screen 9, param 0)** the point is the PLAYER'S own
+  position — it **calls one to where he stands**, and remembers which row he
+  picked in `dword_6A17CC`;
+* **from inside the slider (screen 7, param 1)** the point is
+  `sub_40E630(tag)` — which loads the destination's AREA and returns its
+  address — and that is the journey.
+
+So the two modes are not two buttons on one page: they are **the same page
+opened by two different screens**, and the panel appears twice in the widget
+lift for exactly that reason (which is also why `UiWidgets::at` had to learn to
+prefer the record carrying a `current`).
+
+**What this port does today is wrong at the root**: the sneak's page teleports
+on a destination row. It should call a slider; the journey belongs to screen 7,
+after boarding. The reader met it as *"calling a slider with the sneak
+teleports me"*.
+
+**Still not found**: the *correct side* test. `MDSLIDIN` itself has no side
+check in it, so the constraint is somewhere else — the `.CTL` entry's own
+conditions, or a proximity test at the action button. Recorded as open rather
+than invented.
+
 ## What the original does — read 2026-09-07, before any code
 
 ### The sneak's slider page, and where a destination's COORDINATES live
@@ -278,11 +333,16 @@ Each ends in a commit and a report.
    **8** while it comes, **0** when it arrives, **10** when it leaves with
    you, and **17** when you get off.
 
-## What is left
+## What is left — and the task is NOT finished until it is done
 
-The task's readable half is done. What remains is not reading but PLUMBING,
-and it is named here so nobody mistakes the labelling for a gap in the
-findings:
+The reader, 2026-09-07: *"So, slider task is not finished if it is not usable,
+don't you think?"* — and they are right. Everything above is read, ported and
+checked, and none of it can be reached by a person playing: you cannot call a
+slider and have one arrive, and mounting works only through the `--ride`
+harness with no vehicle under the rider. **`next-tasks` 16 stays open.**
+
+What remains is not reading but PLUMBING, and it is named here so the labelling
+is not mistaken for a gap in the findings:
 
 * the free-slot take and the linked-list relink — `slot[+22] == 1` and the
   mover's `+180 & 8`, then `sub_452CC0`'s unlink/relink through the engine's

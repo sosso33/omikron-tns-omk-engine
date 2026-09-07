@@ -168,9 +168,15 @@ SliderCall planSliderCall(const OptTrack& t, const float target[3],
 
 // THE RIDE STATE MACHINE - `sub_456530` (0x00456530), on the slot's `+8`.
 //
-// One switch, eight states, and every arm of it sets `flt_536C28 = 90.0` -
-// the field of view a ride is watched at, against the 75 of every other
-// camera. What the states are:
+// One switch, eight states, and every arm of it re-arms `flt_536C28 = 90.0`.
+//
+// **That is a ninety-FRAME latch, not a field of view**, and this port had
+// already read it as one before the slider work began (`tickVehicles`: "the
+// 90-frame latch that lets one bump be reported at a time"). The listing is
+// unambiguous - `fld flt_536C28 / fsub flt_4C30D8 / fst flt_536C28`, and at
+// zero it clears itself and `dword_538E20` with it. Reading `= 90.0` in these
+// arms as a camera fov was a wrong turn on 2026-09-08, caught by looking at
+// what DECREMENTS it. What the states are:
 //
 //   0  AMBIENT   not in the switch at all; the default arm falls through to
 //                the ordinary drive, which is what the traffic already does
@@ -215,7 +221,9 @@ struct RideMachine {
     static constexpr float kArrive = 117.0f;   // 2.97 m
     static constexpr float kIdle   = 600.0f;
     static constexpr float kLeave  = 300.0f;
-    static constexpr float kRideFov = 90.0f;   // `flt_536C28`
+    // `flt_536C28`, re-armed by every arm: ninety FRAMES, the latch that lets
+    // one bump be reported at a time. Not a fov.
+    static constexpr float kLatchFrames = 90.0f;
 
     // One tick. `toTarget` is the distance from the slider to its pickup
     // point, `toPlayer` the distance from the player to the slider, and
@@ -410,6 +418,39 @@ public:
     // `sub_438040` for a vehicle: the body radius of one of the two shipped
     // models, which the pool cannot read itself.
     void setVehicleModelRadius(const std::string& model, float radius);
+
+    // ------------------------------------------------- THE PLAYER'S SLIDER
+    //
+    // `sub_452570`'s ARM arm, in this pool's own terms. It puts a vehicle on
+    // the lane `planSliderCall` chose, marks it the player's (`slot+22 == 1`,
+    // which this port's read of `Slider_Init` already called "slot 0, the
+    // player's own slider") and drives it with `RideMachine` state 2 until it
+    // is inside the 117 units of the pickup point - at which point it stops
+    // and goes OPEN (state 3), which is what `MDSLIDIN` demands.
+    //
+    // -> false when the area has no vehicle lanes at all, which is what
+    // LAHOREY is and what makes a call there fail in the engine too.
+    bool callSlider(const float target[3]);
+    // Which vehicle the call is using, -1 when none is out.
+    int  calledVehicle() const { return called_; }
+    // Its state machine, for a caller that wants the camera or the mount gate.
+    const RideMachine& callMachine() const { return callRide_; }
+    // Where it is, and whether it is OPEN and near enough to board.
+    bool calledAt(float out[3]) const;
+    // ...and which way it points, for the camera that watches it come.
+    float calledYaw() const;
+    bool calledIsOpen() const { return called_ >= 0 && callRide_.state == 3; }
+    // `MDSLIDIN`'s gate, minus the ACTOR_STATE half the caller owns: an
+    // active slider, standing OPEN, within reach.
+    bool canMount(const float playerPos[3], float reach = 200.0f) const;
+    // The player got on: the slot goes to 4 (aboard) and the vehicle stops
+    // being driven, because `Slider_TickRide` owns the body from here.
+    void mountCalled();
+    // ...and off, which is `sub_4570F0`'s slot state 7 - it drives away once
+    // he is 300 clear and in front of it.
+    void dismountCalled();
+    // Put the called vehicle where the ride is, so it is DRAWN under him.
+    void placeCalled(const float pos[3], float yawDeg);
     // The player's position, for `sub_456C70`'s two tests - the brake and the
     // run-over. `onRoad` is `dword_8F5E38`, which `Sliders_Tick` sets when the
     // player's ground probe lands on a mesh named `X...` or `OP...`. Cleared
@@ -428,6 +469,11 @@ public:
     }
 
 private:
+    // THE PLAYER'S SLIDER - the one `sub_452570` reserves out of the 40.
+    int         called_ = -1;
+    RideMachine callRide_;
+    float       callTarget_[3] = {0, 0, 0};
+
     struct ActionState {                      // one of `dword_539928`'s 48-byte records
         bool  used = false;
         float point[3] = {0, 0, 0};           // +0

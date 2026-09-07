@@ -38,7 +38,7 @@ items are research and can be done any time they are wanted.
 | 13 | any remaining UI screens | **M** | fair | 37 screens are enumerated; what is left is the tail |
 | 14 | health: fall damage and vehicle hits | **M/L** | **weak** | nothing in the DB doc or the port; needs reading before estimating |
 | 15 | jump / fall animation and physics | **L** | fair | the walker's slope and step rules are ported; the fall tiers are not |
-| 16 | slider: call, ride, drive | **L** | good | **READ AND MOSTLY PORTED** 2026-09-07 - see `todo/slider.md`: the sneak's transport, the flight model, the ride machine and where a called one comes to. What is left is plumbing, not reading |
+| 16 | slider: call, ride, drive | **L** | good | **OPEN - not usable yet.** The reading is done and ported (`todo/slider.md`): the transport, the flight model, the ride machine, the lane search. But you cannot call a slider and have one arrive, and mounting works only through the `--ride` harness with no vehicle drawn. A task is finished when it can be USED |
 | 17 | fight mode | **L** | good | the AI profiles and combat block are read; nothing is wired |
 | 18 | shoot mode | **L** | good | read, and deliberately unwired - a DECISION to revisit, not a gap |
 | 19 | does the original filter (anti-aliasing, …)? | **research** | fair | cheap to answer, and the answer may be "no reachable tier" |

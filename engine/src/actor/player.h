@@ -197,6 +197,13 @@ public:
     // nothing else. `start_` moves too, so `distanceWalked` measures the walk
     // from where he was put down, not from where he was first built.
     void placeAt(const float pos[3], float facing);
+    // ...and the same WITHOUT the floor seat, for a body the ground does not
+    // hold up. `sub_457F50` writes a rider's `+248` straight from the
+    // slider's own y (`slider.y + 10`) and calls `o3de_SetNodePos` - there is
+    // no `Walk_ProbeGround` anywhere in it, because a hovering vehicle is not
+    // standing on anything. Going through `placeAt` instead dropped the rider
+    // onto the pavement while his slider hovered 30 units over him.
+    void rideAt(const float pos[3], float facing);
     // The crowd push (`Actor_TickNpc`: `f32(actor,244) += push[0]` ... and
     // `o3de_MoveNodeBy`, before `Actor_ApplyMotion`): the position moved
     // outright, no floor probe - the next tick's motion probes the ground.

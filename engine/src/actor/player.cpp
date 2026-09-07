@@ -107,6 +107,14 @@ void PlayerController::placeAt(const float pos[3], float facing) {
     euler_[1] = wrap360(facing);
 }
 
+// The rider's, and the difference is the whole point: no `seatOnFloor`.
+void PlayerController::rideAt(const float pos[3], float facing) {
+    walker_.moveTo(pos[0], pos[1], pos[2]);
+    for (int k = 0; k < 3; ++k) pos_[k] = static_cast<float>(walker_.pos()[k]);
+    for (int k = 0; k < 3; ++k) start_[k] = pos_[k];
+    euler_[1] = wrap360(facing);
+}
+
 // `Cef_FindGroupById(actor+180, id)` then `SetPersoBankGroup(actor+396, g)` -
 // the pair MDACTION ends on (`loc_46AFD0`: id 0x2D = 45) to carry the machine
 // out of the action state and into the group whose entry is MDGETOBJ. It is

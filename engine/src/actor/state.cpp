@@ -121,7 +121,13 @@ const std::vector<ActorTransition> kTransitions = {
  {kAny, 1, "RSTAVNT",                 0x0046C120, "reset to the adventure state"},
  {kAny,14, "RSTNAGE",                 0x0046C150, "reset to the SWIM state - `nage`"},
  {kAny, 6, "MDACTION",                0x0046AEC0, "a tab_special_move[] handler"},
- {kAny, 7, "MDSLIDIN",                0x0046B7F0, "mount the slider, and open screen 7"},
+ {   6, 7, "MDSLIDIN",                0x0046B7F0, "mount the slider, and open screen 7 - "
+                                                  "and it REFUSES unless the state is 6: "
+                                                  "\"bad mode getting in slider !\", beside "
+                                                  "\"no active slider !\" and \"slider is not "
+                                                  "in open mode !\" (its mode must be 3). "
+                                                  "Recorded as kAny until 2026-09-07, when "
+                                                  "the move's own debug strings were read"},
  {   8, 1, "MDSLIDOU",                0x0046B890, "dismount - and it REFUSES unless the "
                                                   "state is 8: \"bad mode getting out of the slider !\""},
  {kAny, 7, "sub_457040",              0x00457040, "the slider system's own hold; the prior "

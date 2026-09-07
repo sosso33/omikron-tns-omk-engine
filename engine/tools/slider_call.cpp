@@ -150,8 +150,8 @@ int main(int argc, char** argv) {
         m.tick(1.0f, 0.0f, 200.0f, true);         // ahead, but too close
         const int close = m.state;
         m.tick(1.0f, 0.0f, 400.0f, true);         // clear and ahead
-        std::printf("leaving behind %d close %d clear %d fov %.0f\n",
-                    behind, close, m.state, omk::RideMachine::kRideFov);
+        std::printf("leaving behind %d close %d clear %d latch %.0f\n",
+                    behind, close, m.state, omk::RideMachine::kLatchFrames);
     }
     return 0;
 }

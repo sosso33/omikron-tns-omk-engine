@@ -1515,6 +1515,10 @@ int main(int argc, char** argv) {
     // harness. The flight model is the engine's (`actor/slider.h`); what this
     // skips is how a slider gets to you, which is `sub_452570`'s other arm.
     bool rideArg = false;
+    bool mountSpent = false;    // the action button is edged, not held
+    bool calledOpenTold = false;
+    // `dword_6A17CC` - which destination row the call was made for.
+    int  calledDestination = -1;
     // THE LIVE RIDE, when there is one. `todo/slider.md` step 3's harness.
     std::optional<omk::SliderRide> ride;
     // --config: the game's own ini (`[Preferences]`, 65 keys) plus this
@@ -4830,6 +4834,43 @@ int main(int argc, char** argv) {
                     // spent for ever and the SECOND press did nothing at all.
                     // Invisible until the latch was made to survive
                     // `SetPersoBankGroup` the way the engine's does.
+                    // The call's own arrival, announced once: state 2
+                    // drives until the 117 units are met, and then the slot
+                    // goes OPEN (3) - `MDSLIDIN`'s "slider is not in open
+                    // mode !" is the refusal that guards this.
+                    if (session.sliders().calledIsOpen() && !calledOpenTold) {
+                        calledOpenTold = true;
+                        float at[3] = {0, 0, 0};
+                        session.sliders().calledAt(at);
+                        std::printf("slider: OPEN at %.0f %.0f %.0f - walk to "
+                                    "it and press the action button\n",
+                                    at[0], at[1], at[2]);
+                    }
+                    // ---- MDSLIDIN, from the world --------------------
+                    //
+                    // The move's own gate, minus the ACTOR_STATE half:
+                    // `sub_438240()` must return a slider ("no active slider
+                    // !") and `sub_438410(slider)` must be 3 ("slider is not
+                    // in open mode !"). The action button is what asks.
+                    if (!ride && (bits & 0x10u) && !mountSpent) {
+                        const float me[3] = {session.playerPos()[0],
+                                             session.playerPos()[1],
+                                             session.playerPos()[2]};
+                        if (session.sliders().canMount(me)) {
+                            float at[3];
+                            session.sliders().calledAt(at);
+                            omk::SliderRide r;
+                            r.x = at[0]; r.y = at[1]; r.z = at[2];
+                            r.yaw = session.playerYaw();
+                            ride = r;
+                            session.sliders().mountCalled();
+                            mountSpent = true;
+                            std::printf("MDSLIDIN: aboard at %.0f %.0f %.0f - "
+                                        "the slider was OPEN (mode 3) and in "
+                                        "reach\n", at[0], at[1], at[2]);
+                        }
+                    }
+                    if (!(bits & 0x10u)) mountSpent = false;
                     // ...UNLESS HE IS RIDING. ACTOR_STATE 7 and 8 do not
                     // walk - `Actors_TickAll`'s row for each has `walks`
                     // false - and the ride owns the body: `sub_457F50` writes
@@ -4885,6 +4926,9 @@ int main(int argc, char** argv) {
                                              static_cast<float>(ride->z)};
                         session.setPlayerPosition(at, static_cast<float>(ride->yaw));
                         if (player) player->placeAt(at, static_cast<float>(ride->yaw));
+                        // `sub_456530` state 7: it drives off once he is 300
+                        // clear and in front of it.
+                        session.sliders().dismountCalled();
                         ride.reset();
                     } else {
                         // `sub_457F50`: the rider takes the slider's x and z,
@@ -4895,7 +4939,16 @@ int main(int argc, char** argv) {
                                              static_cast<float>(at[1]),
                                              static_cast<float>(at[2])};
                         session.setPlayerPosition(p3, static_cast<float>(ride->yaw));
-                        if (player) player->placeAt(p3, static_cast<float>(ride->yaw));
+                        if (player) player->rideAt(p3, static_cast<float>(ride->yaw));
+                        // ...and the VEHICLE goes where the ride is, so the
+                        // model the crowd pool draws is under him rather than
+                        // left on the road. `sub_457F50` writes the slider's
+                        // node from the ride's own position for the same
+                        // reason.
+                        const float vp[3] = {static_cast<float>(ride->x),
+                                             static_cast<float>(ride->y),
+                                             static_cast<float>(ride->z)};
+                        session.sliders().placeCalled(vp, static_cast<float>(ride->yaw));
                     }
                 }
                 // STUCK BETWEEN WALLS. A move blocked for a whole second while a
@@ -6199,6 +6252,30 @@ int main(int argc, char** argv) {
                 if (row >= static_cast<int>(known.size())) {
                     std::printf("slider: row %d is past the %zu enabled "
                                 "destinations\n", row, known.size());
+                } else if (!walk->travelIsJourney()) {
+                    // ---- THE SNEAK'S PAGE CALLS ONE ---------------------
+                    //
+                    // Screen 9's `param` is 0, so `sub_49BC60` takes the arm
+                    // that uses the PLAYER'S own position: a slider is armed
+                    // and comes to him, and the row he chose is remembered
+                    // (`dword_6A17CC = tag`) for the arrival camera. The
+                    // JOURNEY is a second confirm, on screen 7, once he is
+                    // aboard - which is why `MDSLIDIN` ends in
+                    // `UI_OpenScreen(7, ...)`.
+                    const auto* d = known[static_cast<std::size_t>(row)];
+                    calledDestination = row;
+                    float me[3] = {session.playerPos()[0], session.playerPos()[1],
+                                   session.playerPos()[2]};
+                    if (session.sliders().callSlider(me))
+                        std::printf("slider: '%s' chosen - a slider is COMING "
+                                    "to %.0f %.0f %.0f. Wait for it, then walk "
+                                    "to it and press the action button\n",
+                                    d->name.c_str(), me[0], me[1], me[2]);
+                    else
+                        std::printf("slider: '%s' chosen, but there is no "
+                                    "vehicle lane here - the call FAILS, which "
+                                    "is what the engine does too (text 42)\n",
+                                    d->name.c_str());
                 } else {
                     const auto* d = known[static_cast<std::size_t>(row)];
                     const int wasArea = state.currentArea();
@@ -6208,12 +6285,33 @@ int main(int argc, char** argv) {
                     }
                     // The address whose `+14` is this record's own bit - the
                     // one number that joins the two tables.
+                    const bool changed = d->area != wasArea;
                     const bool placed = session.placeActorAt(d->bit);
                     session.requestCamera(0, 0);
                     // `Screen_Fade(0)`: mode 4, 60 frames, black.
                     session.startColourFade(4, 0u, 60.0f);
-                    playerReady = false; adventure = false;
-                    forceAdventure = true;
+                    // ONLY WHEN THE AREA ACTUALLY CHANGED. Dropping
+                    // `playerReady` asks the hand-over gate to build the
+                    // player again for a new area's set, which is right after
+                    // a load and WRONG without one: nothing rebuilds him, so
+                    // there is no player left at all and control goes with
+                    // him. A reader met exactly that - *"calling a slider
+                    // with the sneak teleports me and makes the character
+                    // disappear"* - and every headless test of this path had
+                    // taken the other branch, because the fixture save's area
+                    // is 237 and every destination is in 0, 1, 64 or 101.
+                    // Travelling INSIDE the city you are standing in is the
+                    // common case and was the untested one.
+                    if (changed) {
+                        playerReady = false; adventure = false;
+                        forceAdventure = true;
+                    }
+                    if (player) {
+                        const float at[3] = {session.playerPos()[0],
+                                             session.playerPos()[1],
+                                             session.playerPos()[2]};
+                        player->placeAt(at, session.playerYaw());
+                    }
                     std::printf("slider: '%s' - area %d -> %d, address %d %s"
                                 " at %.0f %.0f %.0f facing %.0f\n",
                                 d->name.c_str(), wasArea, d->area, d->bit,
@@ -7192,6 +7290,42 @@ int main(int argc, char** argv) {
                 view.cam.hfovDeg = lastFov;
                 view.cam.rollDeg = lastRoll;
                 view.cam.w = dispW; view.cam.h = dispH;
+            } else if (!haveDlgCam && !ride &&
+                       session.sliders().calledVehicle() >= 0 &&
+                       (session.sliders().callMachine().state == 2 ||
+                        session.sliders().callMachine().state == 6)) {
+                // ---- THE CAMERA THAT WATCHES IT COME ------------------
+                //
+                // `sub_456530` case 2 asks for **camera mode 8 on the
+                // SLIDER** the moment a call is armed, and the only guard on
+                // it is `if (sub_413360(C) != 8)` - which stops it RE-asking
+                // when it is already there, not from asking at all. So the
+                // camera cuts to the vehicle and follows it in every time,
+                // which is what a reader described as seeing the slider on
+                // its road; this port kept the follow camera on the player
+                // and showed none of it.
+                //
+                // Same preset and same resolution as the ride's, because it
+                // is the same mode - only the subject differs, and in both
+                // cases the subject is the VEHICLE.
+                float at[3];
+                session.sliders().calledAt(at);
+                const float t = session.sliders().calledYaw() * 0.0174532925199433f;
+                const float cs = std::cos(t), sn = std::sin(t);
+                const auto place = [&](const float off[3], float out[3]) {
+                    const float rx = off[0] * cs - off[2] * sn;
+                    const float rz = off[0] * sn + off[2] * cs;
+                    out[0] = at[0] - rx;
+                    out[1] = at[1] - off[1];
+                    out[2] = at[2] - rz;
+                };
+                static constexpr float kComeEye[3] = {0.0f, 118.1102f, -275.5905f};
+                static constexpr float kComeAt[3]  = {0.0f, 78.7402f, 0.0f};
+                place(kComeEye, view.cam.eye);
+                place(kComeAt,  view.cam.at);
+                view.cam.hfovDeg = 75.0f;      // the preset's own fov
+                view.cam.rollDeg = 0.0f;
+                view.cam.w = dispW; view.cam.h = dispH;
             } else if (!haveDlgCam && ride) {
                 // CAMERA MODE 8, the ride camera, and its subject is the
                 // SLIDER and not the player: `camera_presets.json`'s row 8 is
@@ -7220,7 +7354,7 @@ int main(int argc, char** argv) {
                 static constexpr float kRideAt[3]  = {0.0f, 78.7402f, 0.0f};
                 place(kRideEye, view.cam.eye);
                 place(kRideAt,  view.cam.at);
-                view.cam.hfovDeg = 75.0f;
+                view.cam.hfovDeg = 75.0f;      // the preset's own fov
                 view.cam.rollDeg = 0.0f;
                 view.cam.w = dispW; view.cam.h = dispH;
             } else if (!haveDlgCam && takeCam && player) {

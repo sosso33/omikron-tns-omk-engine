@@ -246,6 +246,9 @@ public:
     // its circuit's - and a slot already loaded when it is called spawns now.
     void loadTraffic(const std::string& gamedataRoot);
     const Sliders& sliders() const { return sliders_; }
+    // ...and writable, for the player's own slider: a CALL puts a vehicle on
+    // the circuit and the ride moves it (`todo/slider.md`).
+    Sliders& sliders() { return sliders_; }
     // Options row 6, "Niveau d'activite dans les rues", 0..4 - the density
     // `Slider_Init` reads from `dword_90E724+2`. Spawning happens once, at
     // the load, so a change applies to the next circuit loaded. Default:

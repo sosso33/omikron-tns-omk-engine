@@ -1444,6 +1444,15 @@ def c_engine_actor_states():
       transitions per file are REFUSED - `MDSLIDOU` dismounts only from state
       8 ("bad mode getting out of the slider !"), `Morph_Play` writes 5 only
       out of 4, and a writer that does not carry the edge cannot take it.
+    * **and `MDSLIDIN` is gated the same way, which this table said it was
+      not.** It was recorded as `kAny -> 7`; the move's own debug strings say
+      otherwise - *"bad mode getting in slider !"* guards `player[+404] != 6`,
+      beside *"no active slider !"* and *"slider is not in open mode !"* (its
+      mode must be 3). Corrected to `6 -> 7` on 2026-09-07 while porting the
+      ride (`todo/slider.md`), and that is why the states entered fall from 18
+      to **17** and the transitions from 273 to **266**: state 7 is no longer
+      reachable from anywhere, because nothing in this port yet puts the
+      player in 6. The numbers moving is the correction being real.
     * **the park round-trips, and 16 and 17 are NOT alike**: 16 restores
       [102], 17 lands in **1** and closes the screens. An implementation that
       treated them the same passes every other number here, and dropping the
@@ -1570,7 +1579,7 @@ def c_engine_actor_states():
     # ONE 21-frame cell where it used to run all 125 frames - and in the same
     # 395352 channel ticks the machine therefore lands in more states and
     # commits more edges. Five counts move and NOTHING ELSE DOES: the same 7
-    # files, 808 banks, 18 states entered, 273 transitions, 0 refused wrongly,
+    # files, 808 banks, 17 states entered, 266 transitions, 0 refused wrongly,
     # 21 refused correctly, 0 unresolved landings and 0 non-terminating chains.
     # That is the shape of a shorter state, not of a broken machine - a fault
     # would move the negative controls too.
@@ -1578,7 +1587,7 @@ def c_engine_actor_states():
     # 159d91e's own message names the new numbers ("channel ticks 55182 ->
     # 57330, edges 10367 -> 11599, and four more") and did not update them
     # here, which is why this has been red for two days in a tier nobody ran.
-    return v, (7, 808, 18, 273, 0, 21, 42, 0,
+    return v, (7, 808, 17, 266, 0, 21, 42, 0,
                395352, 57330, 0, 0,
                27313, 0, 0, 20567, 120, 0, 0,
                116, 232, 232, 347, 1338, 0, 398, 0,
@@ -6874,11 +6883,20 @@ def c_engine_slider_travel():
     2. **The position is an ADDRESS**, in the destination's own area, whose
        `+14` is the record's own DB bit (`verify.py: slider addresses`, 39 of
        39).
-    3. **`sub_452570`'s arrive arm places him**: position, velocities zeroed,
-       the facing rebuilt from his own Euler - so the address's heading is NOT
-       used by this path - `Walk_ProbeGround`, ACTOR_STATE 1, camera mode 0
-       and `Screen_Fade(0)`, which is `Screen_StartColorFade` mode 4 over 60
-       frames.
+    3. **and from the SNEAK it does not travel at all - it CALLS.** Which of
+       the page's two meanings a row has is the live slot's `+4`, and
+       `UI_LoadScreen` writes that from the screen record's own `param`:
+       screen **7 SLIDER** carries 1 and screen **9 SNEAK** carries 0, so
+       `sub_49BC60`'s `if (slot[+4] == 1)` takes `sub_40E630(tag)` from
+       inside the vehicle and the PLAYER'S own position from the device.
+       `MDSLIDIN` is what opens screen 7 (`UI_OpenScreen(7, -1, -1, -1)`,
+       "cant find slider interface !"), so a journey is something asked for
+       once ABOARD.
+
+       The port teleported on this row whatever the screen - the arrive arm,
+       which belongs to neither - and a reader met it as *"calling a slider
+       with the sneak teleports me"*. What is asserted now is the call: he
+       does not move, and a slider comes.
 
     Walked here the way a player does: TAB opens the device on its inventory
     page, RIGHT reaches the tab column, UP selects the slider tab, confirm
@@ -6911,11 +6929,16 @@ def c_engine_slider_travel():
     if mk.returncode != 0 or not os.path.exists(play):
         return (True,) * 2, (True,) * 2, "no SDL - the frontend is optional (PORTING A8)"
     env = dict(os.environ, SDL_VIDEODRIVER="dummy")
+    # NO `--no-crowd` HERE, and that is not an oversight: the crowd flag is
+    # what spawns the VEHICLE pool as well as the pedestrians, and a call with
+    # no pool fails for want of a slider - correctly, and for a reason that
+    # has nothing to do with what this is testing. 700 frames, because the
+    # slider has twenty-one lane segments to drive.
     r = subprocess.run([play, fr, tb, "--software", "--res", "640x480", "--nofmv",
-                        "--no-crowd", "--save", save, "--area", "0",
-                        "--stand", "1804,0,-6890,336", "--frames", "320",
+                        "--save", save, "--area", "0",
+                        "--stand", "1804,0,-6890,336", "--frames", "700",
                         "--hold", "0*40,k15*3,0*30,k205*4,0*10,k200*4,0*10,"
-                                  "k28*4,0*30,k208*4,0*10,k28*4,0*60"],
+                                  "k28*4,0*30,k208*4,0*10,k28*4,0*500"],
                        capture_output=True, text=True, env=env, errors="replace")
     o = r.stdout
     line = ""
@@ -6923,14 +6946,16 @@ def c_engine_slider_travel():
         if ln.startswith("slider: '"): line = ln.strip()
     return ("3 of 39 destinations enabled" in o, line), \
            (True,
-            "slider: 'Anekbah - Appartement de Kay'l' - area 237 -> 0, "
-            "address 0 placed him at 4839 -103 -677 facing -1"), \
+            "slider: 'Anekbah - Appartement de Kay'l' chosen - a slider is "
+            "COMING to 1804 0 -6890. Wait for it, then walk to it and press "
+            "the action button"), \
         "three of the 39 destinations are enabled in this save, and " \
-        "confirming the first one travels: `sub_40E630` resolves it to AREA " \
-        "0 and `sub_452570` puts the player on the ADDRESS whose id is the " \
-        "record's own DB bit, at 4839 -103 -677. The area printed as the " \
-        "SOURCE is the save's 237 rather than the 0 the harness is standing " \
-        "in, which is `--area`'s own doing and not the travel's"
+        "confirming the first one from the SNEAK does not move him at all: " \
+        "it CALLS a slider, because screen 9's `param` is 0 and " \
+        "`sub_49BC60` takes the player's own position on that arm. The " \
+        "journey belongs to screen 7, which `MDSLIDIN` opens once he is " \
+        "aboard. This check asserted the teleport until 2026-09-08 - it was " \
+        "certifying the bug a reader then reported"
 
 
 def c_engine_slider_fly():
@@ -7193,7 +7218,7 @@ def c_engine_slider_call():
         "coming 96 frames -> state 1 camera 0 fade 1 hold 1".split(),
         "idle 600 frames -> state 0".split(),
         "fetching away 8 arrived state 4 camera 10".split(),
-        "leaving behind 7 close 7 clear 0 fov 90".split(),
+        "leaving behind 7 close 7 clear 0 latch 90".split(),
     ]
     return got, want, \
         "the four circuits the sneak's destinations name, and the nearest " \
@@ -7206,6 +7231,88 @@ def c_engine_slider_call():
         "3900-unit box reject doing its job. Qchaud's lane 254 answers 334, " \
         "333, 334 on three calls and Anekbah's 218 answers 313 three times, " \
         "so the round-robin over `routeCount` is running"
+
+
+def c_engine_slider_arrives():
+    r"""A CALLED SLIDER ACTUALLY ARRIVES - the feature, not a harness.
+
+    Everything else about the slider was read, ported and checked while none
+    of it could be reached by a person: the reader's answer to being told the
+    task was "mostly ported" was *"So, slider task is not finished if it is not
+    usable, don't you think?"*. This is the check that says it is.
+
+    The sneak's slider page has two meanings on the live slot's `+4`, which
+    `UI_LoadScreen` fills from the screen record's own `param`: screen 7
+    SLIDER carries 1 (a journey, from inside the vehicle) and screen 9 SNEAK
+    carries 0 (a CALL, with the row remembered). So from the device a
+    destination row does not travel - `TAB`, the slider tab, DOWN, confirm on
+    a row - it takes the PLAYER'S own position. `sub_452570` then
+    plans the nearest vehicle lane, puts a vehicle on it in state **2**, and
+    `sub_456530` drives it until it is inside **117 units** of the pickup
+    point - at which point it stops and goes **OPEN** (mode 3), which is what
+    `MDSLIDIN` demands before it will let the player in.
+
+    Walked headlessly from Anekbah's main street, the vehicle spawns at the
+    top of lane 237 and drives twenty-one segments down the road:
+
+        state 2  d 4478  seg 1     state 2  d 1355  seg 14
+        state 2  d 3625  seg 3     state 2  d  479  seg 20
+        state 2  d 3058  seg 5     state 3  OPEN    seg 21
+        state 2  d 2195  seg 10
+
+    **THE PICKUP POINT IS THE LANE POINT, NOT THE PLAYER**, and that was a
+    reading error this check caught by running rather than by re-reading.
+    `sub_452A80` writes the closest point on the lane into the request block's
+    `+20`, and `sub_456530`'s arrival test reads `flt_8F5E74` - the same `+20`,
+    twenty bytes into `dword_8F5E60`. Measured against the player instead, the
+    test is one a slider on a road can never pass: the nearest lane point here
+    is **518** units from where he stands and the radius is 117, so it drove
+    the whole way in and then sat there for ever. Nothing static could have
+    shown that; the distance log did.
+
+    One thing this port does that the engine does differently, and it is
+    labelled rather than hidden: in a city the spawner fills all 40 vehicle
+    slots, so a call finds none free. The engine answers that twice over - it
+    reserves slot 0 for the player (`slot[+22] == 1`), and where the target
+    lane is occupied `sub_452CC0` swaps the two vehicles outright so the one in
+    the way becomes the player's. This takes the second: an ambient vehicle is
+    relinked onto the called lane. The effect is the engine's - a call always
+    finds a vehicle where there are roads - and the mechanism is one of its two.
+    """
+    import subprocess
+    eng = os.path.join(ROOT, "engine")
+    fr, tb = omkpaths.data_root(), os.path.join(ROOT, "tables")
+    save = os.path.join(ROOT, "traces", "save-appart.bin")
+    if not os.path.isdir(eng) or not os.path.exists(save):
+        return ("skipped",), ("skipped",), "engine/ or the save absent"
+    mk = subprocess.run(["make", "-s", "play"], cwd=eng, capture_output=True, text=True)
+    play = os.path.join(eng, "build", "omk-play")
+    if mk.returncode != 0 or not os.path.exists(play):
+        return (True,) * 3, (True,) * 3, "no SDL - the frontend is optional (PORTING A8)"
+    env = dict(os.environ, SDL_VIDEODRIVER="dummy")
+    # A ROW, not the header: the sneak's slider page calls on a destination
+    # row (screen 9's `param` is 0), and the header confirm this once used
+    # was an invention of the port's, removed 2026-09-08.
+    r = subprocess.run([play, fr, tb, "--software", "--res", "640x480", "--nofmv",
+                        "--save", save, "--area", "0",
+                        "--stand", "1804,0,-6890,336", "--frames", "700",
+                        "--hold", "0*40,k15*3,0*30,k205*4,0*10,k200*4,0*10,"
+                                  "k28*4,0*30,k208*4,0*10,k28*4,0*500"],
+                       capture_output=True, text=True, env=env, errors="replace")
+    o = r.stdout
+    called = "chosen - a slider is COMING to 1804 0 -6890" in o
+    line = ""
+    for ln in o.splitlines():
+        if ln.startswith("slider: OPEN at"): line = ln.strip()
+    return (called, line), \
+           (True, "slider: OPEN at 1448 6 -6540 - walk to it and press the "
+                  "action button"), \
+        "confirming a destination ROW on the sneak's slider page calls one " \
+        "to where the player stands; it spawns at the top of lane 237, drives twenty-one " \
+        "segments down the road and STOPS OPEN at 1448 6 -6540, within the " \
+        "117 units of the pickup point that `sub_456530`'s state 2 tests " \
+        "against - and that point is the nearest LANE point, not the player, " \
+        "who is 518 away and could never have been reached"
 
 
 def c_engine_used_object():
@@ -27168,10 +27275,11 @@ CHECKS = [
     ("engine: text scroll", c_engine_text_scroll, "UI"),
     ("engine: text block", c_engine_text_block, "UI"),
     ("slider addresses",    c_slider_address_join, "docs/UI 3b"),
-    ("engine: slider travel", c_engine_slider_travel, "todo/slider"),
+    ("engine: slider call page", c_engine_slider_travel, "todo/slider"),
     ("engine: slider fly", c_engine_slider_fly, "todo/slider"),
     ("engine: slider ride", c_engine_slider_ride, "todo/slider"),
     ("engine: slider call", c_engine_slider_call, "todo/slider"),
+    ("engine: slider arrives", c_engine_slider_arrives, "todo/slider"),
     ("ui open answer",     c_ui_open_answer,    "SCRIPT_VM 70"),
     ("ui confirm gate",    c_ui_confirm_gate,   "UI"),
     # The FAST set, unlike `engine: screen` and `engine: name field`: most of
