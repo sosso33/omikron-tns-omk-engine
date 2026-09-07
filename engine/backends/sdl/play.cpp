@@ -2193,6 +2193,7 @@ int main(int argc, char** argv) {
                                        // sets dword_4E9728, the pause flag
     omk::LoadPanel loadPanelState;   // rebuilt each time a screen opens
     int  pendingLoadSlot = -1;       // `dword_4C09B4`
+    bool quitRequested = false;      // `dword_4E6C9C`, the pause screen's Oui
     // THE LOADING SEQUENCE IS NOT WIRED HERE, and a first version of it
     // was. `Charger` answers **0**, and AREA 118's parked startup script
     // has an arm for exactly that: the Grid fly-through - cameras
@@ -3775,7 +3776,8 @@ int main(int argc, char** argv) {
         }
     }
 
-    std::printf("screen %d. arrows move, ENTER confirms, ESC quits.\n", screenId);
+    std::printf("screen %d. arrows move, ENTER confirms, TAB closes, "
+                "ESC opens the pause screen.\n", screenId);
 
     omk::HostInput host;
     omk::Surface fb(dispW, dispH, 0);
@@ -3789,7 +3791,6 @@ int main(int argc, char** argv) {
         if (host.held.empty()) break;
         SDL_Delay(10);
     }
-    bool escWas = false;
     Uint32 lastMs = SDL_GetTicks();
     Uint32 fpsSince = lastMs, fpsLastMs = lastMs, fpsWorst = 0;
     int    fpsFrames = 0;
@@ -3805,11 +3806,60 @@ int main(int argc, char** argv) {
     for (;;) {
         const Uint32 frameStartMs = SDL_GetTicks();
         if (!front.pump(host)) break;
-        // ESC on its EDGE, not while held, for the same reason.
-        const bool esc = host.held.count(0x01) != 0;
-        if (esc && !escWas) break;
-        escWas = esc;
-
+        // ---- ESC OPENS THE PAUSE SCREEN (next-tasks 3) -------------------
+        //
+        // It is not a binding, and `Game_Frame` never sees it. `Game_RunLoop`
+        // (0x00439310) polls it itself, one line before the frame:
+        //
+        //     if ((((uint16_t)GetAsyncKeyState(27) >> 8) & 0x80) != 0
+        //         && !dword_4E9728)
+        //         UI_LoadScreen(31, -1, -1);
+        //     Game_Frame(dword_4C5944, word_90EF2E);
+        //
+        // Three things follow, and all three are the engine's:
+        //
+        //  * VK_ESCAPE is read LEVEL-triggered - `GetAsyncKeyState`'s bit 15
+        //    is "currently down", not an edge. Nothing debounces it except
+        //    the guard;
+        //  * the guard is `dword_4E9728`, the PAUSE FLAG, and it has exactly
+        //    two writes in the image: screen 31's open callback (0x004ADDB0)
+        //    sets it, its close (0x004ADEB0) clears it. So ESC held opens the
+        //    screen once and cannot open it twice, and ESC held THROUGH the
+        //    close reopens it at once - which is the same shape as the held
+        //    action button of next-tasks 1, and is what the original does;
+        //  * it is `UI_LoadScreen`, not `UI_OpenScreen`, so no answer
+        //    variable is written and no script is parked on it. The port
+        //    therefore asks for it the way the PLAYER asks for the sneak,
+        //    not the way a script asks.
+        //
+        // AND `UI_LoadScreen` REFUSES IT OVER TWO SCREENS BY NAME. Its slot
+        // scan opens
+        //
+        //     if (slot->screen == a1) return 1;              // already up
+        //     ...
+        //     if (v5 || a1 == 31 && UI_TestScreenFlag(slot, 0x20000400))
+        //         return 1;                                  // refused
+        //
+        // and 0x20000400 is set on exactly two screens, `OMK START MENU` and
+        // `SAVE GAME` (`tables/ui.json`, flags 0x20000400). So ESC at the
+        // start menu or over the save panel does NOTHING - which is the
+        // guard this port needs most, since the boot parks on screen 29.
+        // (`docs/UI.md` 2 read that flag the other way round - "opening
+        // either fires screen 31's open callback" - and the branch says the
+        // opposite: it is what makes 31 decline. Corrected there.)
+        //
+        // ONE DEPARTURE, and it is this frontend's rather than a reading:
+        // the engine has THREE slots and would put the pause screen up over
+        // a screen that does not carry that flag - the sneak, say - while
+        // `omk-play` holds one `walk`. So any screen already up refuses the
+        // pause here, which is the engine's answer for two screens and a
+        // limitation of this frontend for the rest. Nothing here models the
+        // three slots.
+        //
+        // This used to `break`, ending the run: the viewer quit on the one
+        // key everybody presses, so a reader could not stop to look at
+        // anything. Quitting is now what the screen's own `Quitter le jeu`
+        // does, behind its Oui/Non confirm, exactly as in the game.
         // A scripted key is fed on its own frame and then RELEASED, which is
         // the only way it produces an edge - `Game_Frame`'s filter is why
         // holding a direction does not scroll (docs/UI.md 3c), and a driver
@@ -3839,6 +3889,20 @@ int main(int argc, char** argv) {
             else if (k <= kCharMarker)                    // `cN`: one character
                 host.text += static_cast<char>(kCharMarker - k);
             else st.keyboard.push_back(k);
+        }
+        // ...and ESC is read off THAT, once the scripted streams have been
+        // merged in, rather than off `host.held`. The engine reads it from
+        // Windows (`GetAsyncKeyState`) and not through DirectInput, so
+        // either is faithful to "is the key down"; taking it here is what
+        // lets `--keys`/`--hold` drive it, and a screen the harness cannot
+        // open is a screen nothing can check.
+        const bool esc = std::find(st.keyboard.begin(), st.keyboard.end(), 0x01)
+                         != st.keyboard.end();
+        if (esc && !walk && playerScreen < 0) {
+            playerScreen = kScreenPause;
+            std::printf("frame %ld: ESC -> screen %d PAUSE GAME "
+                        "(`Game_RunLoop`'s own GetAsyncKeyState(27), guarded "
+                        "by the pause flag)\n", n, kScreenPause);
         }
         // The world's repeat mask is 0 - closing the last screen sets it
         // back, so the `.CTL` channel sees HELD keys and a walk is a walk
@@ -3903,6 +3967,22 @@ int main(int argc, char** argv) {
             frameSec = speed / 30.0;
             session.setFrameSeconds(frameSec);
         }
+        // ---- THE PAUSE FLAG, and it is a DELTA and nothing else ----------
+        //
+        // `dword_4E9728` has two writes in the image - screen 31's open
+        // callback sets it, its close clears it - and what it does is force
+        // the frame delta to 0.0. That is why `Slider_TickRide` sits behind
+        // `flt_4C30D8 != 0.0` two lines down in `Game_Tick`, and why
+        // `Game_Tick` needs no test for an open screen anywhere in it
+        // (docs/UI.md 2a: it has none - that reading was corrected once
+        // already, when the sneak froze the city).
+        //
+        // So the pause is not "skip the tick": every subsystem still runs,
+        // on a delta of zero. Modelled here for the same reason - the port
+        // used to express it as `adventure = false`, which stops the PLAYER
+        // and leaves the crowd walking behind the menu.
+        const bool uiPause = walk && openScreen == kScreenPause;
+        if (uiPause) { frameSec = 0.0; session.setFrameSeconds(0.0); }
 
         // ---- one frame of the GAME -------------------------------------
         //
@@ -4540,7 +4620,6 @@ int main(int argc, char** argv) {
             // `Game_Tick` that "a playing FLIS or interface screen
             // short-circuits the world tick". It does not, and that reading
             // was `NAMED` - read and named, never tested.
-            const bool uiPause = walk && openScreen == kScreenPause;
             // ...AND NOT BETWEEN TWO BEATS OF ONE CUTSCENE.
             // `!playerDriven && !activeEditing()` asks "is a program driving
             // him THIS FRAME", which is false for the one or two frames
@@ -5842,6 +5921,11 @@ int main(int argc, char** argv) {
             // standing in.
             if (const int req = walk->takePendingLoad(); req >= 0)
                 pendingLoadSlot = req;
+            // ...and the QUIT the pause screen's `Oui` asks for, taken here
+            // for the same reason: `dword_4E6C9C` is a request the engine
+            // serves at the top of the next `Script_Pump(1)`, not work the
+            // callback does.
+            if (walk->takeQuitRequest()) quitRequested = true;
             // ...and the SAVE, which the callback performs itself rather than
             // deferring: `Game_WriteSave(slot)` right after the charge, and
             // then the screen closes. So this is served here and not at the
@@ -5912,7 +5996,20 @@ int main(int argc, char** argv) {
             // held.
             if (leaving || walk->answer() >= 0 || walk->closed())
                 actionSpent = true;
-            if (leaving && !screenFromScript) {
+            // THE PAUSE SCREEN CLOSES ON ITS OWN TERMS, and they are not
+            // the sneak's. Its close callback (0x004ADEB0) clears the pause
+            // flag, restores the sound volume it saved at the open, undoes
+            // the four subsystem pauses and `Sleep`s 500 ms; it raises no
+            // event 26 and frees no object list, because nothing was opened.
+            // Sending it through the branch below would have raised the
+            // sneak's close event and shut a list that was never open.
+            if (leaving && openScreen == kScreenPause) {
+                std::printf("screen %d PAUSE GAME closed - the world runs "
+                            "again\n", openScreen);
+                walk.reset();
+                openScreen = -1;
+                screenFromScript = true;
+            } else if (leaving && !screenFromScript) {
                 std::printf("screen %d closed by the player - event %d, object "
                             "list %d\n", openScreen, omk::kEventSneakClose,
                             inv.openedList());
@@ -5943,6 +6040,39 @@ int main(int argc, char** argv) {
                 walk.reset();
                 openScreen = -1;
             }
+        }
+
+        // ---- THE QUIT `Quitter le jeu` ASKED FOR, served between pumps
+        //
+        // `Script_Pump(1)` (0x00407DC0) opens with
+        //
+        //     if (dword_4E6C9C) { Script_Pump(3);      // tear the game down
+        //                         dword_4E6C9C = 0;
+        //                         Script_Pump(2);      // Game_NewGame
+        //                         Screen_FadeFromColor(0xFFFFFF, 15, 0); }
+        //
+        // and `Script_Pump(2)` is `Game_NewGame` (0x0040E060) - reset the
+        // session, load `IAM\START` over a zeroed DB, apply it. So the
+        // engine does NOT exit here: `Quitter le jeu` ends the GAME and
+        // starts a fresh one, which walks straight back out through AREA
+        // 118's startup script into `ui.open 29`, the start menu. Quitting
+        // the PROGRAM is the start menu's own `Quitter`, a different item on
+        // a different screen.
+        //
+        // **The port ends the run instead, and that is a gap rather than a
+        // reading.** `omk-play`'s whole boot - the data root, the tables, the
+        // Session, the movies, the first area - is `main`'s body, not a
+        // function that can be called twice, so there is nothing here to
+        // restart into. The request, the flag and the two menu items are all
+        // the engine's; only what happens after the fade is missing, and the
+        // line below says so rather than pretending the run ended for the
+        // reader's own reason.
+        if (quitRequested) {
+            std::printf("pause: `Quitter le jeu` confirmed - the engine would "
+                        "run Script_Pump(3), Game_NewGame and fade in from "
+                        "white at the START MENU; this viewer has no restart, "
+                        "so the run ends here\n");
+            break;
         }
 
         // ---- THE PENDING LOAD, served the way `sub_408410` serves it
@@ -6558,8 +6688,18 @@ int main(int argc, char** argv) {
         // ...and the same for DRAWING it: the screen composes over the
         // world afterwards, and every sneak page's background is an opaque
         // tile map, so nothing shows through that should not.
-        const bool drawWorld = !(walk && openScreen == kScreenPause) &&
-                               worldReady && anyWorld &&
+        //
+        // THE PAUSE SCREEN IS THE EXCEPTION, and it was excluded here on an
+        // assumption that nothing had tested, because nothing had ever
+        // opened screen 31. Its panel 0x004E26C8 takes the FOURTH background
+        // arm - `+76` is 0x40001800, so neither 0x2000 nor 0x4000, and
+        // `+20`, the 80-tile array, is null - which is the arm that paints
+        // nothing at all (`exetables.py: panels by background arm`). All it
+        // draws is one fill item and three lines of text. So the world has
+        // to be behind it, frozen: `uiPause` above already stops it
+        // advancing, and stopping the DRAW as well left a pause menu on
+        // black.
+        const bool drawWorld = worldReady && anyWorld &&
                                (haveDlgCam || haveEdit || holdEditCam ||
                                 (wc && (wc->absolute() || haveRelCam)));
         if (drawWorld) {
@@ -6577,7 +6717,10 @@ int main(int argc, char** argv) {
             // ...and adventure mode is NOT camera mode: a reader confirmed
             // the strip belongs to conversations and cutscenes, so the
             // walk is drawn full-frame.
-            if (adventure && followCam && !holdEditCam) view.vh = dispH;
+            // (`|| uiPause`: a pause does not change the camera mode, so it
+            // does not put bars on a walk either.)
+            if ((adventure || uiPause) && followCam && !holdEditCam)
+                view.vh = dispH;
             if (view.vh > dispH) view.vh = dispH;
             view.vx = 0;
             view.vy = (dispH - view.vh) / 2;
@@ -6680,10 +6823,20 @@ int main(int argc, char** argv) {
                     if (takeCamPhase == 1) takeCamPhase = 2;
                     else if (takeCamPhase == 3) { takeCam = false; takeCamPhase = 0; }
                 }
-            } else if (!haveDlgCam && adventure && followCam) {
+            } else if (!haveDlgCam && (adventure || uiPause) && followCam &&
+                       player) {
                 // The controller's follow camera: the world camera's offsets
                 // resolved against HIS position and facing every frame, with
                 // the engine's lag (player.h quotes sub_415D10/sub_415E60).
+                //
+                // `|| uiPause` because OPENING A SCREEN DOES NOT MOVE THE
+                // CAMERA. Nothing in the pause screen's open callback touches
+                // the camera mode, and `Game_Frame` renders with whatever is
+                // installed, so the view behind the menu is the view that was
+                // on screen. `adventure` alone is a per-frame mode that any
+                // screen takes false, so pausing used to swap the follow
+                // camera for the area's own camera 0 - the shot jumped the
+                // moment the menu came up.
                 // THE CAMERA THROUGH A WALL, measured: the one invariant
                 // `sub_417070` exists to keep is that nothing solid lies
                 // between the camera's target and its eye. Cast the segment
@@ -6807,8 +6960,14 @@ int main(int argc, char** argv) {
             // empty floor. A reader: *Kay'l is not visible when the camera
             // changes*. The controller ticks through the conversation, so
             // its pose is the stance.
+            // ...and the THIRD time this mode test has been too narrow: a
+            // PAUSE also takes `adventure` false, and the pause screen draws
+            // over the live scene, so without `uiPause` the menu came up on
+            // a street with the player deleted from it. Same shape as the
+            // conversation above.
             const bool drawPlayer = playerReady && player &&
-                                    (adventure || (session.dialogOpen() && !playerProgram));
+                                    (adventure || uiPause ||
+                                     (session.dialogOpen() && !playerProgram));
             // ---- THE WORLD'S PROPS -----------------------------------
             //
             // Every prop of the resident chunks whose DB state has bit 1 -
@@ -9238,7 +9397,16 @@ int main(int argc, char** argv) {
             // in the decompilation's blind spot (CLAUDE.md 1). The rule here
             // is taken from those screenshots - no cloud once the world is
             // live - and is labelled a RECONSTRUCTION for that reason.
-            comp.attachCloud(adventure ? nullptr : &cloud);
+            //
+            // "THE WORLD IS LIVE" IS `player`, NOT `adventure`, and the two
+            // differ exactly where this matters. `adventure` is a per-frame
+            // MODE and a screen over the world takes it false in the same
+            // breath - so the rule as written drew the cloud over every
+            // world-side screen, which is the one case the screenshots
+            // decide against. It went unseen because until the pause screen
+            // no screen was ever opened from inside the world; the SAVE
+            // screen the reader photographed would have had it too.
+            comp.attachCloud(player ? nullptr : &cloud);
             comp.draw(fb, openScreen, *walk);
         }
 

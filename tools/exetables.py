@@ -751,10 +751,19 @@ def t_ui_widgets(e):
     #   0x004E2FB0  `Je n'ai pas assez d'Anneaux pour faire ca !`.
     #               `sub_4AE060` (`Sauvegarde` on screen 30) installs it
     #               instead of the slot list when property 5 reads zero.
+    #
+    #   0x004E2730  the PAUSE screen's `Quitter le jeu ?` confirm.
+    #               `Quitter le jeu` (0x004ADF40, string 2 of `IAM\Pause`)
+    #               is `sub_42A370(screen, off_4E2730)` and nothing else;
+    #               its own `Non` (0x004ADF90) installs 0x004E26C8 back,
+    #               which is the only way out - the panel's `+0` parent is
+    #               0, so the back bit CLOSES the screen rather than
+    #               returning to the pause page.
     CODE_NAMED = {0x004DEE50: [0x004DEEB8],
                   0x004DEEB8: [0x004DEF20],
                   0x004CF2E8: [0x004CF3B8, 0x004CF350],
-                  0x004E2ED8: [0x004E2FB0]}
+                  0x004E2ED8: [0x004E2FB0],
+                  0x004E26C8: [0x004E2730]}
     out, skipped, seen = [], [], set()   # `seen` tracks CHILD panels only
     for sid in sorted(u.screens):
         try:
@@ -807,7 +816,8 @@ def t_ui_widgets(e):
                 if kid not in reach:
                     reach.add(kid); stack1.append(kid)
         allLists = {l for pn in reach for l in u.lists(pn)}
-        bcur, bsel = u.open_state(sid, reach, allLists)
+        bcur, bsel = u.open_state(sid, reach, allLists,
+                                  {u._u32(pn + 4) for pn in reach})
         # the screen's own panel, then every panel reachable through `+44`,
         # transitively. A child carries `screen: -1` - it belongs to whichever
         # panel descended into it, and the open callback's flag edits were
@@ -945,9 +955,9 @@ def c_ui_widgets(rows, e):
             # item's `+44` names at all - `CODE_NAMED` above - the VERB
             # panel 0x004DEEB8 and the EXAMINE page 0x004DEF20, both
             # installed by `sub_42A370` from a callback.
-            ("child panels", len(kids), 19),
-            ("lists", len(lists), 143),
-            ("items", len(items), 624),
+            ("child panels", len(kids), 20),
+            ("lists", len(lists), 145),
+            ("items", len(items), 628),
             ("item records inside the image",
              sum(1 for i in items if mapped(i["addr"])), len(items)),
             # 75 across the whole tree but only 16 distinct item RECORDS
@@ -973,14 +983,26 @@ def c_ui_widgets(rows, e):
             #
             # Counted as RECORDS, not addresses: 28 screens share 16 top
             # panels and one list can be carried by several, so the same
-            # write is recorded once per panel that has it (8 distinct list
-            # addresses behind the 27).
-            ("panels whose open callback sets the current list",
+            # write is recorded once per panel that has it.
+            #
+            # 15/28/8 -> 15/30/10 on 2026-09-07, when the PANEL BUILDERS
+            # joined this scan the way they had already joined `open_binds`
+            # a day earlier. Eleven of the nineteen distinct `+4` hooks write
+            # one of these two fields somewhere in their body, but only TWO
+            # write one before their first branch, and only those two are
+            # taken (`sim/ui.py: open_state` has why - the loose reading puts
+            # the start menu's confirm dialog on `Annuler` and breaks the
+            # walk that types a name). The one this was done for is the pause
+            # screen's quit confirm, whose builder IS the store:
+            # `0x004ADF60` is `mov word_4E263A, 2; retn` and `0x004E263A` is
+            # list `0x004E2638 + 2`, so its page comes up on `Non`. Without
+            # it a confirm settles on the first selectable row, `Oui`.
+            ("panels whose open callback or builder sets the current list",
              sum(1 for p in ps if p.get("current", -1) >= 0), 15),
-            ("lists whose open callback sets the selection",
-             sum(1 for l in lists if l.get("select", -1) >= 0), 28),
+            ("lists whose open callback or builder sets the selection",
+             sum(1 for l in lists if l.get("select", -1) >= 0), 30),
             ("...distinct list records among them",
-             len({l["addr"] for l in lists if l.get("select", -1) >= 0}), 8),
+             len({l["addr"] for l in lists if l.get("select", -1) >= 0}), 10),
             # SNEAK opens on its INVENTORY page with the tab column already on
             # "Inventaire" - list 3 of panel 0x004DEE50, row 2 of 0x004DE210.
             ("SNEAK's current list and tab row",
@@ -1023,13 +1045,13 @@ def c_ui_widgets(rows, e):
               sum(1 for p in ps if not p["flagsB"] & 0x6000 and p["tilesAt"]),
               sum(1 for p in ps if not p["flagsB"] & 0x6000
                   and not p["tilesAt"])],
-             [18, 1, 24, 7]),
+             [18, 1, 24, 8]),
             ("the one panel that blits its sheet whole",
              [p["screen"] for p in ps
               if not p["flagsB"] & 0x2000 and p["flagsB"] & 0x4000], [36]),
             ("distinct hooks among them", len(set(hooks)), 13),
             ("lists taking Ui_MoveSelection, the default walk",
-             sum(1 for l in lists if not l["hook"]), 91),
+             sum(1 for l in lists if not l["hook"]), 93),
             ("the LIFT grid hook is present", rows["gridHook"] in hooks, True),
             # It is here only because the walk follows `+44`: the name field
             # is in the start menu's confirm dialog, a CHILD panel. A lift

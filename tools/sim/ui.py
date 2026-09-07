@@ -624,7 +624,7 @@ class Ui:
                 out.setdefault(a, {})[field] = vals[0]
         return out
 
-    def open_state(self, screen_id, panels, lists):
+    def open_state(self, screen_id, panels, lists, builders=()):
         """-> ({panel: current list}, {list: selected row}) the callback SETS.
 
         Two fields this lift recorded as unknowable, because until the sneak
@@ -667,19 +667,52 @@ class Ui:
         `open_binds` resolves against the known items: a linear walk over a
         callback finds stores to plenty of globals, and only the ones landing
         on a real record at the right offset are these.
+
+        **`builders` extends the same scan to the panels' own `+4` hooks**,
+        which write exactly the same two fields and which this docstring used
+        to write off ("every builder is native code the simulator does not
+        run"). Eleven of the tree's nineteen distinct builders write one, and
+        every one of them is a DEFAULT SELECTION - the start menu's name
+        confirm on row 1, the load slot list on row 3, and each of the four
+        Oui/Non confirms on its `Non`. The pause screen's quit confirm is the
+        clearest case: `0x004ADF60` is the whole builder, `mov word_4E263A,
+        2`, and `0x004E263A` is list `0x004E2638 + 2`. Without it a walk
+        settles on the first selectable row, which on a confirm panel is
+        `Oui` - the opposite of what the game offers.
         """
         s = self.screens[screen_id]
         fn = s["cb"][0]
         if not fn:
             return {}, {}
         panels, lists = set(panels), set(lists)
-        windows = [(fn, 1400, True, False)]
+        windows = [(fn, 1400, True, False, False)]
         if fn == self.SNEAK_OPEN and s["param"] in self.SNEAK_ARM:
             lo, hi = self.SNEAK_ARM[s["param"]]
-            windows = [(fn, self.SNEAK_BODY - fn, False, True),
-                       (lo, hi - lo, False, True),
+            windows = [(fn, self.SNEAK_BODY - fn, False, True, False),
+                       (lo, hi - lo, False, True, False),
                        (self.SNEAK_TAIL, self.SNEAK_END - self.SNEAK_TAIL,
-                        False, True)]
+                        False, True, False)]
+        # ...and every panel builder reachable from this screen - but only
+        # its STRAIGHT LINE, and that restriction is the whole of what makes
+        # this sound.
+        #
+        # A linear byte walk cannot tell an unconditional store from one in a
+        # branch arm, and eleven of the nineteen builders write one of these
+        # two fields somewhere in their body. Nine of the eleven write it
+        # under a condition: `0x0047A050`, the start menu's confirm dialog,
+        # has `mov word ptr [4CE94A], 1` at +264 - past a `je` at +50 - and
+        # taking it unconditionally puts that dialog's selection on `Annuler`
+        # and breaks the walk that types a name and presses DOWN. The store
+        # is real code; it is just not what the panel does when it opens.
+        #
+        # So a builder window ends at the first `ret` OR the first branch of
+        # any kind, which leaves only the stores the builder makes before it
+        # can have decided anything. Two survive: `0x0049C100` (the sneak's
+        # identity page) and `0x004ADF60`, which IS the pause confirm's whole
+        # builder - `mov word_4E263A, 2; retn`.
+        for b in builders:
+            if b:
+                windows.append((b, 1400, True, False, True))
         cur, sel, regs = {}, {}, {}
 
         def store(tgt, val):
@@ -688,7 +721,7 @@ class Ui:
             elif tgt - 2 in lists:
                 sel[tgt - 2] = val
 
-        for base, size, stop_at_ret, track in windows:
+        for base, size, stop_at_ret, track, straight in windows:
             d = self.e.read(base, size)
             i = 0
             while i < len(d) - 10:
@@ -718,6 +751,11 @@ class Ui:
                     regs[d[i] - 0xB8] = struct.unpack_from("<I", d, i + 1)[0]
                     i += 5; continue
                 if d[i] == 0xC3 and stop_at_ret:
+                    break
+                # a builder window stops at the first BRANCH too - see above
+                if straight and (0x70 <= d[i] <= 0x7F
+                                 or d[i] in (0xE3, 0xE9, 0xEB)
+                                 or (d[i] == 0x0F and 0x80 <= d[i + 1] <= 0x8F)):
                     break
                 i += 1
         return cur, sel
@@ -856,7 +894,8 @@ class Ui:
                     if kid and kid not in reach:
                         reach.add(kid); stack.append(kid)
         self._ocur, self._osel = self.open_state(
-            screen_id, reach, {l for pn in reach for l in self.lists(pn)})
+            screen_id, reach, {l for pn in reach for l in self.lists(pn)},
+            {self._u32(pn + 4) for pn in reach})
         self.log.append(("open", screen_id, self.panel))
         self._settle()
         return self.panel

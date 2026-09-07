@@ -21,33 +21,33 @@
   },
   {
    "what": "child panels",
-   "got": 19,
-   "want": 15
+   "got": 20,
+   "want": 20
   },
   {
    "what": "lists",
-   "got": 143,
-   "want": 134
+   "got": 145,
+   "want": 145
   },
   {
    "what": "items",
-   "got": 624,
-   "want": 611
+   "got": 628,
+   "want": 628
   },
   {
    "what": "item records inside the image",
-   "got": 624,
-   "want": 624
+   "got": 628,
+   "want": 628
   },
   {
    "what": "items naming a child panel",
    "got": 94,
-   "want": 88
+   "want": 94
   },
   {
    "what": "...of which distinct item records",
    "got": 21,
-   "want": 17
+   "want": 21
   },
   {
    "what": "lists with a non-default input hook",
@@ -55,19 +55,19 @@
    "want": 52
   },
   {
-   "what": "panels whose open callback sets the current list",
+   "what": "panels whose open callback or builder sets the current list",
    "got": 15,
    "want": 15
   },
   {
-   "what": "lists whose open callback sets the selection",
-   "got": 28,
-   "want": 27
+   "what": "lists whose open callback or builder sets the selection",
+   "got": 30,
+   "want": 30
   },
   {
    "what": "...distinct list records among them",
-   "got": 8,
-   "want": 8
+   "got": 10,
+   "want": 10
   },
   {
    "what": "SNEAK's current list and tab row",
@@ -123,13 +123,13 @@
     18,
     1,
     24,
-    7
+    8
    ],
    "want": [
-    16,
+    18,
     1,
     24,
-    5
+    8
    ]
   },
   {
@@ -148,8 +148,8 @@
   },
   {
    "what": "lists taking Ui_MoveSelection, the default walk",
-   "got": 91,
-   "want": 82
+   "got": 93,
+   "want": 93
   },
   {
    "what": "the LIFT grid hook is present",
@@ -1144,7 +1144,7 @@
       "hook": 4833632,
       "flags": 0,
       "flagsB": 0,
-      "select": -1,
+      "select": 0,
       "broadcast": [],
       "listflag": [],
       "layout": {},
@@ -27419,6 +27419,203 @@
          0
         ],
         "callback": 4906816,
+        "child": 0,
+        "flags": [
+         0,
+         0,
+         2147483664
+        ],
+        "setflag": [],
+        "bind": {}
+       }
+      ]
+     },
+     {
+      "addr": 5121704,
+      "hook": 0,
+      "flags": 536870916,
+      "flagsB": 0,
+      "select": -1,
+      "broadcast": [],
+      "listflag": [],
+      "layout": {},
+      "items": [
+       {
+        "addr": 5121624,
+        "string": -1,
+        "x": 44,
+        "y": 4,
+        "w": 555,
+        "h": 119,
+        "rgb": [
+         255,
+         255,
+         255
+        ],
+        "layer": 12,
+        "font": 255,
+        "text": 0,
+        "textFn": 0,
+        "drawFn": 0,
+        "textArg": -1,
+        "lit": [
+         41,
+         21
+        ],
+        "unlit": [
+         0,
+         0
+        ],
+        "callback": 0,
+        "child": 0,
+        "flags": [
+         0,
+         1073742080,
+         0
+        ],
+        "setflag": [],
+        "bind": {}
+       }
+      ]
+     }
+    ]
+   },
+   {
+    "screen": -1,
+    "panel": 5121840,
+    "parent": 0,
+    "hook": 0,
+    "offset": [
+     0,
+     0
+    ],
+    "slide": [
+     0,
+     0,
+     0,
+     0,
+     0
+    ],
+    "tilesAt": 0,
+    "tiles": [],
+    "current": -1,
+    "flags": 0,
+    "flagsB": 1073747968,
+    "lists": [
+     {
+      "addr": 5121592,
+      "hook": 0,
+      "flags": 0,
+      "flagsB": 0,
+      "select": 2,
+      "broadcast": [
+       [
+        1073742336,
+        false
+       ]
+      ],
+      "listflag": [],
+      "layout": {},
+      "items": [
+       {
+        "addr": 5121360,
+        "string": 2,
+        "x": 0,
+        "y": 150,
+        "w": 640,
+        "h": 40,
+        "rgb": [
+         255,
+         100,
+         70
+        ],
+        "layer": 12,
+        "font": 73,
+        "text": 0,
+        "textFn": 4679776,
+        "drawFn": 0,
+        "textArg": 0,
+        "lit": [
+         0,
+         0
+        ],
+        "unlit": [
+         0,
+         0
+        ],
+        "callback": 0,
+        "child": 0,
+        "flags": [
+         536870916,
+         0,
+         2147483664
+        ],
+        "setflag": [],
+        "bind": {}
+       },
+       {
+        "addr": 5121432,
+        "string": 3,
+        "x": 0,
+        "y": 220,
+        "w": 640,
+        "h": 20,
+        "rgb": [
+         255,
+         255,
+         255
+        ],
+        "layer": 12,
+        "font": 83,
+        "text": 0,
+        "textFn": 4679776,
+        "drawFn": 0,
+        "textArg": 0,
+        "lit": [
+         0,
+         0
+        ],
+        "unlit": [
+         0,
+         0
+        ],
+        "callback": 4906864,
+        "child": 0,
+        "flags": [
+         0,
+         0,
+         2147483664
+        ],
+        "setflag": [],
+        "bind": {}
+       },
+       {
+        "addr": 5121504,
+        "string": 4,
+        "x": 0,
+        "y": 260,
+        "w": 640,
+        "h": 20,
+        "rgb": [
+         255,
+         255,
+         255
+        ],
+        "layer": 12,
+        "font": 83,
+        "text": 0,
+        "textFn": 4679776,
+        "drawFn": 0,
+        "textArg": 0,
+        "lit": [
+         0,
+         0
+        ],
+        "unlit": [
+         0,
+         0
+        ],
+        "callback": 4906896,
         "child": 0,
         "flags": [
          0,

@@ -505,6 +505,21 @@ public:
     int  pendingSave() const { return pendingSave_; }
     int  takePendingSave() { const int s = pendingSave_; pendingSave_ = -1; return s; }
     int  takePendingClear() { const int s = pendingClear_; pendingClear_ = -1; return s; }
+    // `dword_4E6C9C`, the QUIT REQUEST the pause screen's `Oui` sets
+    // (0x00409090 is `mov dword_4E6C9C, 1` and nothing else). Like the load
+    // it is served between script pumps, not in the callback:
+    // `Script_Pump(1)` opens with
+    //
+    //     if (dword_4E6C9C) { Script_Pump(3);          // tear the game down
+    //                         dword_4E6C9C = 0;
+    //                         Script_Pump(2);          // Game_NewGame
+    //                         Screen_FadeFromColor(0xFFFFFF, 15, 0); }
+    //
+    // so `Quitter le jeu` does not end the process - it ends the GAME and
+    // starts a new one, which walks back out through the boot into the start
+    // menu. The caller reads and clears this the way it does the load.
+    bool quitRequested() const { return quitRequest_; }
+    bool takeQuitRequest() { const bool q = quitRequest_; quitRequest_ = false; return q; }
     // `Actor_GetProperty` case 5, the player record's +174 - what a save
     // costs and what the hints on this screen are bought with.
     void setRings(int n) { rings_ = n; }
@@ -787,6 +802,8 @@ private:
     int         overwriteRow_ = -1;
     // The slot `Detruire`'s `Oui` asked to clear, or -1.
     int         pendingClear_ = -1;
+    // `dword_4E6C9C`, set by the pause screen's quit confirm.
+    bool        quitRequest_ = false;
     // The SCREEN this walk was opened with. Child panels carry `screen ==
     // -1`, so a callback that branches on the screen - and several of the
     // save/load family do - cannot ask the panel it is standing on.
@@ -967,5 +984,33 @@ inline constexpr std::uint32_t kPanelSaveNoRings = 0x004E2FB0u;
 inline constexpr std::uint32_t kCbLoadCharger    = 0x0047AC90u;
 inline constexpr std::uint32_t kCbLoadDetruire   = 0x0047AE90u;
 inline constexpr std::uint32_t kPanelLoadConfirm = 0x004CF350u;
+
+// ---- SCREEN 31, `PAUSE GAME` (next-tasks 3) -------------------------------
+//
+// The pause page is `IAM\Pause`: string 0 `Pause` (the title, no callback),
+// 1 `Reprendre le jeu`, 2 `Quitter le jeu`. Its two working items are four
+// instructions each, read out of the image at the addresses the tree names -
+// none of the four has a `proc` label, because nothing CALLS them:
+//
+//   0x004ADF20  Reprendre   `mov [screen+8], 3; return 1`
+//               and `+8 = 3` is the state machine's CLOSING state
+//               (`UI_TickScreens`, docs/UI.md 3b) - the same store
+//               `Confirmer` makes at 0x0047A34D. So it just closes.
+//   0x004ADF40  Quitter     `sub_42A370(screen, 0x004E2730)` - install the
+//               confirm panel, whose builder 0x004ADF60 is
+//               `mov word_4E263A, 2`, i.e. list 0x004E2638 `+2`, the
+//               SELECTED ROW: the page comes up on `Non`.
+//   0x004ADF70  Oui         `sub_409090(); [screen+8] = 3` and 0x00409090 is
+//               five bytes, `mov dword_4E6C9C, 1` - a REQUEST, not an exit.
+//   0x004ADF90  Non         `sub_42A370(screen, 0x004E26C8)` - back to the
+//               pause page. It needs its own callback because the confirm
+//               panel's `+0` parent is 0, so the back bit would close the
+//               screen instead of returning.
+inline constexpr std::uint32_t kPanelPause        = 0x004E26C8u;
+inline constexpr std::uint32_t kPanelPauseConfirm = 0x004E2730u;
+inline constexpr std::uint32_t kCbPauseResume  = 0x004ADF20u;
+inline constexpr std::uint32_t kCbPauseQuit    = 0x004ADF40u;
+inline constexpr std::uint32_t kCbPauseQuitYes = 0x004ADF70u;
+inline constexpr std::uint32_t kCbPauseQuitNo  = 0x004ADF90u;
 
 }  // namespace omk

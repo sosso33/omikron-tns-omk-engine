@@ -1137,6 +1137,35 @@ bool UiWalk::confirm() {
             panel_ = nullptr;
             return true;
         }
+        // ---- SCREEN 31, `PAUSE GAME` ---------------------------------
+        //
+        // Four callbacks, each four instructions, all read out of the image
+        // at the addresses the widget tree names (widgets.h has the bytes).
+        // None is a guess and none needs state this walk does not own.
+        if (it->callback == kCbPauseResume) {
+            log_.push_back("pause: reprendre le jeu");
+            panel_ = nullptr;                  // `mov [screen+8], 3`
+            return true;
+        }
+        if (it->callback == kCbPauseQuit) {
+            log_.push_back("pause: quitter le jeu -> the confirm");
+            return installPanel(kPanelPauseConfirm);
+        }
+        if (it->callback == kCbPauseQuitNo) {
+            // `sub_42A370(screen, off_4E26C8)`. NOT `toParent()`: the confirm
+            // panel's `+0` is 0, so the back bit closes the screen and only
+            // this callback returns to the pause page.
+            log_.push_back("pause: non -> back to the pause page");
+            return installPanel(kPanelPause);
+        }
+        if (it->callback == kCbPauseQuitYes) {
+            // `sub_409090()` - `mov dword_4E6C9C, 1` - and then the close.
+            // The caller serves the request between pumps.
+            quitRequest_ = true;
+            log_.push_back("pause: oui -> quit requested (dword_4E6C9C)");
+            panel_ = nullptr;                  // `mov [screen+8], 3`
+            return true;
+        }
         // `Sauvegarde` on the slot panel (0x0047ADB0), read whole:
         //
         //     if (row < dword_657968) { sub_42A370(screen, off_4CF3B8); return; }

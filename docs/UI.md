@@ -253,8 +253,20 @@ Two flags in +84 have visible consequences:
   the player actor into `ACTOR_STATE` 9 for as long as the screen is up,
   saving the old state at +408. Exactly three screens set it: `PAUSE GAME`
   and the two `SHOOT` screens — the ones you are still playing during.
-* **0x20000400 — tell `PAUSE GAME` about it.** Set on `OMK START MENU` and
-  `SAVE GAME`; opening either fires screen 31's open callback.
+* **0x20000400 — refuse `PAUSE GAME` while this screen is up.** Set on
+  `OMK START MENU` and `SAVE GAME`, and on no other screen. **This said the
+  opposite until 2026-09-07** — "opening either fires screen 31's open
+  callback" — and the branch says the reverse. `UI_LoadScreen`'s slot scan
+  is
+
+      if (slot->screen == a1) return 1;                    // already open
+      ...
+      if (v5 || a1 == 31 && UI_TestScreenFlag(slot, 0x20000400))
+          return 1;                                        // refused
+
+  so a slot holding one of those two makes a request for **31** return
+  without opening anything. It is what stops ESC putting the pause menu over
+  the start menu, which is where the boot parks. See §3h.
 
 ---
 
@@ -2731,6 +2743,83 @@ afterwards by scripted input alone.
 > result here needs a positive control in the same run — which is exactly what
 > `menu-keys.log` supplies for the reopen, since its preamble count proves the
 > keys arrived.
+
+---
+
+### 3h. The PAUSE screen, and the one key that is not a binding (2026-09-07)
+
+Screen **31, `PAUSE GAME`**. It is the only screen the player opens without a
+binding, without a special move and without a script.
+
+**ESC is polled by `Game_RunLoop` itself**, one instruction before the frame
+(0x004393D7):
+
+    6A 1B              push 1Bh                 ; VK_ESCAPE
+    FF 15 D8 16 93 00  call ds:GetAsyncKeyState
+    F6 C4 80           test ah, 80h             ; bit 15 - currently DOWN
+    74 16              jz  short over
+    39 1D 28 97 4E 00  cmp dword_4E9728, ebx    ; the pause flag, vs 0
+    75 0E              jnz short over
+    6A FF 6A FF 6A 1F  push -1, -1, 31
+    E8 ...             call UI_LoadScreen       ; 0x00429BB0
+                       call Game_Frame          ; 0x0041F740
+
+Four things follow, and every one of them matters to a replica:
+
+* it is **level-triggered** — `GetAsyncKeyState`'s bit 15 is "down now", not
+  an edge — so the only debounce is the guard;
+* the guard is **`dword_4E9728`**, the pause flag, whose two writes in the
+  whole image are this screen's open callback (0x004ADDB0) setting it and its
+  close (0x004ADEB0) clearing it. Holding ESC therefore opens it once; holding
+  ESC *through* the close reopens it at once;
+* it is **`UI_LoadScreen`, not `UI_OpenScreen`** — no answer variable is
+  written and no script is parked, so this screen answers nobody;
+* and `UI_LoadScreen` **refuses it** while a slot holds a screen carrying
+  0x20000400, which is `OMK START MENU` and `SAVE GAME` (§2).
+
+**What the pause flag does is force the frame delta to 0.0**, and that is
+all: `Game_Tick` has no test for an open screen anywhere in it (§2a), which is
+why `Slider_TickRide` sits behind `flt_4C30D8 != 0.0` two lines below. Every
+subsystem still runs, on nothing.
+
+**The page.** `IAM\Pause` is `Pause` / `Reprendre le jeu` / `Quitter le jeu` /
+`Oui` / `Non`. Panel **0x004E26C8** carries one list of those first three
+(0x004E2530) plus the shared frame item, and its `+76` is `0x40001800` with a
+null tile pointer — the background arm that **paints nothing**, so the pause
+menu sits over the live scene. Its two working items are four instructions
+each, and none of the four has a `proc` label because nothing calls them:
+
+| addr | item | body |
+|---|---|---|
+| 0x004ADF20 | `Reprendre le jeu` | `[screen+8] = 3` — the CLOSING state (§3b) |
+| 0x004ADF40 | `Quitter le jeu` | `sub_42A370(screen, 0x004E2730)` |
+| 0x004ADF70 | `Oui` | `sub_409090()` then `[screen+8] = 3` |
+| 0x004ADF90 | `Non` | `sub_42A370(screen, 0x004E26C8)` |
+
+`Non` needs its own callback because the confirm panel's `+0` parent is **0**:
+the back bit would close the screen rather than return. And the confirm's
+builder is the store on its own — `0x004ADF60` is `mov word_4E263A, 2; retn`,
+and `0x004E263A` is list `0x004E2638 + 2`, the selected row — so the page
+comes up on **`Non`**.
+
+**`Quitter le jeu` does not quit the program.** `sub_409090` is five bytes,
+`mov dword_4E6C9C, 1`, and that is a REQUEST served at the top of the next
+`Script_Pump(1)` (0x00407DC0):
+
+    if (dword_4E6C9C) { Script_Pump(3);        // tear the session down
+                        dword_4E6C9C = 0;
+                        Script_Pump(2);        // Game_NewGame (0x0040E060)
+                        Screen_FadeFromColor(0xFFFFFF, 15, 0); }
+
+so it ends the GAME and starts a fresh one, which walks back out through AREA
+118's startup script into `ui.open 29` — the start menu. Quitting the process
+is that menu's own `Quitter`.
+
+Ported into `omk-play` 2026-09-07 (`todo/next-tasks` 3), with the restart the
+one part missing: this viewer's boot is `main`'s body rather than a function,
+so `Oui` ends the run and says so. `verify.py: engine: pause` asserts the ESC
+site, all six callback bodies byte for byte, the two screen flags, and then
+the port's own run.
 
 ---
 

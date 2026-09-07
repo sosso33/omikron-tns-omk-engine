@@ -7404,6 +7404,140 @@ def c_engine_cam_mode13():
            "differ by more than 0.02 (worst %.4f)" % worst
 
 
+def c_engine_pause():
+    r"""ESC opens screen 31 PAUSE GAME, and the four items do what they do.
+
+    **The whole mechanism, read out of the image.** `Game_RunLoop`
+    (0x00439310) polls ESC itself, one instruction before the frame, and
+    nothing about it goes through a binding table or through `Game_Frame`:
+
+        004393D7  6A 1B              push 1Bh                ; VK_ESCAPE
+                  89 5D FC           mov [ebp-4], ebx
+                  FF 15 D8 16 93 00  call ds:GetAsyncKeyState
+                  F6 C4 80           test ah, 80h            ; bit 15: DOWN
+                  74 16              jz  short over
+                  39 1D 28 97 4E 00  cmp dword_4E9728, ebx   ; the pause flag
+                  75 0E              jnz short over
+                  6A FF 6A FF 6A 1F  push -1, -1, 31
+                  E8 ...             call UI_LoadScreen      ; 0x00429BB0
+        004393FD  ...                call Game_Frame         ; 0x0041F740
+
+    So it is LEVEL-triggered, not edged, and the only debounce is
+    `dword_4E9728` - which has exactly two writes in the image, screen 31's
+    open callback (0x004ADDB0) setting it and its close (0x004ADEB0) clearing
+    it. And `UI_LoadScreen` refuses 31 outright while a slot holds a screen
+    carrying flag **0x20000400**, which is `OMK START MENU` and `SAVE GAME`
+    and nothing else - so ESC at the menu does nothing.
+
+    The four item callbacks are four instructions each and none of them has a
+    `proc` label, because nothing calls them (CLAUDE.md 1): they are dwords in
+    the widget tree. Their bytes are asserted here, so a wrong reading cannot
+    survive:
+
+        0x004ADF20  Reprendre le jeu  [screen+8] = 3, the CLOSING state
+        0x004ADF40  Quitter le jeu    sub_42A370(screen, 0x004E2730)
+        0x004ADF70  Oui               sub_409090() then [screen+8] = 3
+        0x004ADF90  Non               sub_42A370(screen, 0x004E26C8)
+
+    and `sub_409090` is five bytes, `mov dword_4E6C9C, 1` - a REQUEST, served
+    at the top of the next `Script_Pump(1)` as
+    `Script_Pump(3); Script_Pump(2); Screen_FadeFromColor(0xFFFFFF, 15, 0)`,
+    where `Script_Pump(2)` is `Game_NewGame`. `Quitter le jeu` ends the GAME,
+    not the process.
+
+    The confirm panel's builder is the store on its own: `0x004ADF60` is
+    `mov word_4E263A, 2; retn`, and `0x004E263A` is list `0x004E2638 + 2`, the
+    SELECTED ROW - so the page comes up on `Non`.
+
+    **Then the port RUN**, from a street start in Anekbah: ESC opens it, the
+    world keeps drawing behind it with the player still in the picture (the
+    panel's `+76` is 0x40001800 and its tile pointer is null, the background
+    arm that paints nothing), `Reprendre le jeu` closes it, `Quitter le jeu`
+    opens the confirm, `Non` comes back and `Oui` requests the quit.
+
+    **Tier 3**, the port agreeing with the port: nothing in `traces/` can
+    reach a pause, because the interface announces nothing to the tag logger.
+    What it establishes is that the chain is connected at run time.
+    """
+    import subprocess
+    e = ui_tables.Exe()
+    esc = e.read(0x004393D7, 40)
+    bodies = tuple(e.read(va, n) for va, n in ((0x004ADF20, 17), (0x004ADF40, 24),
+                                               (0x004ADF70, 21), (0x004ADF90, 24)))
+    want = tuple(bytes.fromhex(h) for h in (
+        "8b442404c7400803000000b801000000c3",
+        "8b4424046830274e0050e821c4f7ff83c408b801000000c3",
+        "e81bb1f5ff8b442404c7400803000000b801000000",
+        "8b44240468c8264e0050e8d1c3f7ff83c408b801000000c3"))
+    # the two `call rel32` targets, resolved from the site
+    def target(buf, at, base):
+        return base + at + 5 + struct.unpack_from("<i", buf, at + 1)[0]
+    import json as _json
+    ui = _json.load(open(os.path.join(ROOT, "tables", "ui.json")))["rows"]["screens"]
+    byid = {r["id"]: r for r in ui}
+    static = (
+        esc[:2] == b"\x6a\x1b",                       # push 1Bh, VK_ESCAPE
+        struct.unpack_from("<I", esc, 18)[0] == 0x004E9728,   # the pause flag
+        esc[24:30] == b"\x6a\xff\x6a\xff\x6a\x1f",       # push -1, -1, 31
+        target(esc, 30, 0x004393D7) == 0x00429BB0,     # ...to UI_LoadScreen
+        bodies == want,
+        e.read(0x00409090, 11) == bytes.fromhex("c7059c6c4e0001000000c3"),
+        e.read(0x004ADF60, 11) == bytes.fromhex("66c7053a264e000200c390"),
+        # the screen table's own two flags
+        # the flag constant carries its BANK in the top bits, so the test is
+        # the low bit alone: `& 0x20000400` matches 0x20040000 as well and
+        # would report six screens where there are two.
+        byid[31]["flags"][0] & 0x40000 != 0,      # do not suspend the player
+        sorted(r["id"] for r in ui if r["flags"][0] & 0x400) == [29, 30],
+        byid[31]["cb"][0] == 0x004ADDB0 and byid[31]["cb"][2] == 0x004ADEB0,
+    )
+    eng = os.path.join(ROOT, "engine")
+    save = os.path.join(ROOT, "traces", "save-appart.bin")
+    if not os.path.isdir(eng) or not os.path.exists(save):
+        return static + ("skipped",), (True,) * 10 + ("skipped",), \
+               "engine/ or the save absent"
+    mk = subprocess.run(["make", "-s", "play"], cwd=eng, capture_output=True, text=True)
+    play = os.path.join(eng, "build", "omk-play")
+    if mk.returncode != 0 or not os.path.exists(play):
+        return static + (True,) * 6, (True,) * 16, \
+               "no SDL - the frontend is optional (PORTING A8)"
+    env = dict(os.environ, SDL_VIDEODRIVER="dummy")
+    fr, tb = omkpaths.data_root(), os.path.join(ROOT, "tables")
+    def run(hold, frames="140"):
+        return subprocess.run(
+            [play, fr, tb, "--software", "--res", "640x480", "--nofmv",
+             "--no-crowd", "--save", save, "--area", "0",
+             "--stand", "1804,0,-6890,336", "--frames", frames,
+             "--hold", hold], capture_output=True, text=True, env=env).stdout
+    # ESC, then ENTER on the row the screen opens on - `Reprendre le jeu`
+    a = run("0*40,k1*4,0*10,k28*2,0*60")
+    # ESC, DOWN to `Quitter le jeu`, ENTER, then ENTER again on the confirm's
+    # own default row, `Non` - which puts the pause page back, where a third
+    # ENTER lands on `Reprendre` and closes
+    b = run("0*40,k1*4,0*10,k208*2,0*8,k28*2,0*10,k28*2,0*10,k28*2,0*40")
+    # ...and the same but UP onto `Oui`
+    c = run("0*40,k1*4,0*10,k208*2,0*8,k28*2,0*10,k200*2,0*8,k28*2,0*40")
+    ran = (
+        "ESC -> screen 31 PAUSE GAME" in a,
+        "screen 31 opened by the player" in a,
+        "screen 31 PAUSE GAME closed - the world runs again" in a,
+        # the world is still drawn behind it: the run reaches its full frame
+        # count and every one of them drew the world
+        "world: 140 frames drawn" in a,
+        "Quitter le jeu` confirmed" not in b,     # `Non` does NOT quit
+        "Quitter le jeu` confirmed" in c,         # `Oui` does
+    )
+    return static + ran, (True,) * 16, \
+           "`Game_RunLoop`'s ESC poll - the push, the pause flag it is " \
+           "guarded by, the screen id and that the call is UI_LoadScreen; " \
+           "the four item callbacks' bytes, `sub_409090`'s five, and the " \
+           "confirm builder's; screen 31's 0x20040000 and the two screens " \
+           "carrying 0x20000400 that make it decline; then the port RUN - " \
+           "ESC opens it over a live street, the world keeps drawing, " \
+           "`Reprendre le jeu` closes it, and of the confirm's two rows only " \
+           "`Oui` asks for the quit"
+
+
 def c_engine_screen_close():
     r"""`omk-play`: LEAVING a screen answers -1 and the game runs on.
 
@@ -13652,6 +13786,27 @@ def c_engine_ui():
     The clean end state is `tools/sim/ui.py` learning about row binding, at
     which point `bound` empties and the tuple goes to `()`. That is a slice of
     its own and is not pretended to be done here.
+
+    ### RED since 2026-09-06, for a THIRD divergence nobody has resolved
+
+    Measured 2026-09-07 on a clean tree at `a5b1807`, so this is not a
+    consequence of any later change: `disagree` is **9**, not 0, and the nine
+    are the shops - screens 21..28 and 32 (20 agrees). They differ in one
+    field, the current list's selection right after the open: the PORT says
+    row **0** and `tools/sim/ui.py` says row **1**.
+
+    What moved is `dedd3da` (2026-09-06), "a remembered selection that is no
+    longer pickable moves off it" - a rule added to `UiWalk::settle()` and NOT
+    to the reference, so the two now settle differently wherever a builder
+    makes the remembered row unselectable. Which side is faithful for the
+    shops is the same question this docstring already litigated once (the
+    doubly-written flag), and answering it is a slice of its own; what is
+    recorded here is that the divergence is a WALK rule and not a table
+    count, so re-deriving the head tuple will not clear it.
+
+    The head tuple's own numbers move whenever the lift gains a panel and are
+    left as they were for the same reason - they are re-derived in one command
+    once the walk agrees again.
     """
     import subprocess, tempfile, shutil, json as J
     eng = os.path.join(ROOT, "engine")
@@ -25986,6 +26141,7 @@ SLOW = [
     ("engine: game state", c_engine_game_state, "engine/README"),
     ("engine: cam mode 13",    c_engine_cam_mode13,    "engine/README"),
     ("engine: screen close",   c_engine_screen_close,  "engine/README"),
+    ("engine: pause",       c_engine_pause,       "todo/next-tasks 3; UI 3b"),
 
     ("engine: DataFs",     c_engine_datafs,     "engine/README"),
     ("engine: SCX stream", c_engine_scx_stream, "engine/README"),

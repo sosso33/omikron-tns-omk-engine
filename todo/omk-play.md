@@ -15,6 +15,50 @@ waiting on its evidence.
 
 ## Open (batch 6, filed 2026-09-04)
 
+### 82. ESC ended the run instead of opening the pause screen — A
+
+> **Fixed 2026-09-07, CONFIRMED IN PLAY.** A session on
+> `traces/games-resto.bin` slot 0 - the apartment, `AAPKAYL`, adventure mode
+> with the mirror reflecting and five bodies staged - opened the pause screen
+> with ESC twice (frames 719 and 825), resumed from the first, and ended the
+> second with `Quitter le jeu` -> `Oui`. 859 frames.
+
+**What the engine does.** `Game_RunLoop` polls VK_ESCAPE itself with
+`GetAsyncKeyState`, one instruction before `Game_Frame`, guarded only by the
+pause flag `dword_4E9728`, and hands 31 to `UI_LoadScreen`. It is not a
+binding and `Game_Frame` never sees it. `docs/UI.md` §3h has the site, the
+four item callbacks' bodies and what `Quitter le jeu` actually does (it is
+`Game_NewGame`, not an exit).
+
+**What the port did.** `if (esc && !escWas) break;` - the viewer quit on the
+one key everybody presses, so a reader could not stop to look at anything.
+
+**Three latent faults came out with it**, all of the same shape: a rule
+written as `adventure`, which is a per-frame MODE that any open screen takes
+false, where the thing meant was "the world is live".
+
+* the **cloud** (`comp.attachCloud(adventure ? ...)`) painted the menu's
+  animated background over every world-side screen. The reader's own
+  screenshots of the original decide it the other way - the SAVE screen draws
+  over the live 3D scene - so this would have shown on screen 30 too. Now
+  keyed on `player`;
+* the **pause itself** was `adventure = false`, which stops the player and
+  leaves the crowd walking behind the menu. The flag's actual mechanism is
+  `frameSec = 0`, and that is what the port does now;
+* and the **player was not drawn** while a screen was up, which is the third
+  time this same test has been too narrow (the second was every cut to Kay'l
+  during a conversation, `todo/omk-play` 71).
+
+**How established** - the image for the mechanism, and a street start in
+Anekbah for the run: ESC opens 31 over the live set with Kay'l still in the
+picture, `Reprendre le jeu` closes it, `Quitter le jeu` opens the Oui/Non
+confirm on `Non`, `Non` returns and `Oui` requests the quit.
+`verify.py: engine: pause`, shown to fail three ways.
+
+**Still missing**: the restart. `Oui` should tear the session down, run
+`Game_NewGame` and fade in from white at the start menu; `omk-play`'s boot is
+`main`'s body rather than a function, so the run ends with a line saying so.
+
 ### 81. A speaker FLIES between her line and her idle: the fade owned the position — A
 
 > **Fixed 2026-09-07, CONFIRMED IN PLAY.** The reader, on Telis in the

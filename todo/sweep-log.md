@@ -12,7 +12,15 @@ longer than most tasks it validates. So it is **not** run per task. The rule
 Increment `tasks since` when a task is committed; reset it to 0 and add a row
 when a full sweep is run.
 
-**tasks since the last full sweep: 0**
+**tasks since the last full sweep: 1**
+
+> **`engine: UI` is RED and was already red at `a5b1807`, on a clean tree.**
+> Measured 2026-09-07: `disagree` is 9, not 0 - the shops, screens 21..28 and
+> 32, whose current list settles on row 0 in the port and row 1 in
+> `tools/sim/ui.py`. What moved is `dedd3da` (2026-09-06), which added
+> "a remembered selection that is no longer pickable moves off it" to
+> `UiWalk::settle()` and not to the reference. So the 2026-09-07 row below
+> cannot have covered it, and the next sweep should not read this as new.
 
 | date | what was swept | result |
 |---|---|---|

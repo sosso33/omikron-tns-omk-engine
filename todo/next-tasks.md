@@ -23,7 +23,7 @@ items are research and can be done any time they are wanted.
 |---|---|---|---|---|
 | 1 | Enter held ≈ 0.5 s counts as several presses | **S** | strong | mechanism already documented; affects every screen and every conversation |
 | 2 | black stripes entering/leaving a building | **S** | strong | the letterbox rule is already written down and this contradicts it |
-| 3 | ESC quits instead of opening the pause menu | **S/M** | strong | the screen exists in the lifted table; today ESC loses the session |
+| 3 | ESC quits instead of opening the pause menu | **DONE, WATCHED** | strong | 2026-09-07: ESC is `Game_RunLoop`'s own `GetAsyncKeyState(27)`, not a binding, and the four item callbacks are four instructions each. `Quitter le jeu` is `Game_NewGame`, not an exit |
 | 4 | tuto zone fires repeatedly, player not stopped | **M** | strong | zone lifecycle is read and there is already a check nearby |
 | 5 | black frames in the Impasse cutscene | **FIXED, WATCHED** | strong | the camera should HOLD at the end of an editing, and a shot is as long as its editing |
 | 20 | stuck on the last step of the bank's stairs | **S/M** | good | the walker's step and slope rules are ported; this is one threshold, and it blocks a whole location |
@@ -151,12 +151,54 @@ follow camera is briefly not selected while the areas swap.
 Cheap to localise: log the camera mode across a door. The rule is written
 down, so this is making the code obey a rule the repo has already established.
 
-### 3. ESC quits instead of opening the pause menu — S/M, strong evidence
+### 3. ESC quits instead of opening the pause menu — **DONE 2026-09-07, CONFIRMED IN PLAY**
 
-The pause screen is one of the 37 in the lifted table and the widget walk can
-already open screens. Today ESC ends the process, which also means a reader
-cannot pause to look at anything. Two parts: bind ESC to the screen rather
-than to quit, and give the screen its items' behaviour.
+Both parts. `docs/UI.md` §3h is the reading, `todo/omk-play.md` 82 the port
+entry, `verify.py: engine: pause` the check (shown to fail three ways).
+
+**ESC is not a binding.** `Game_RunLoop` (0x00439310) polls VK_ESCAPE with
+`GetAsyncKeyState` one instruction before `Game_Frame`, level-triggered, and
+the only debounce is `dword_4E9728` - the pause flag, whose two writes in the
+image are screen 31's open and close callbacks. It calls `UI_LoadScreen`, not
+`UI_OpenScreen`, so the screen answers nobody; and `UI_LoadScreen` refuses it
+outright while a slot holds a screen carrying **0x20000400**, which is `OMK
+START MENU` and `SAVE GAME` - the guard that keeps ESC from stacking a pause
+menu on the boot's own screen.
+
+**The items are four instructions each** and none of the four has a `proc`
+label: `Reprendre le jeu` writes the screen's state word to 3 (closing),
+`Quitter le jeu` installs the confirm panel 0x004E2730, whose `Oui` sets
+`dword_4E6C9C` and whose `Non` installs the pause page back (it must, because
+the confirm's parent is 0 and the back bit would close the screen). The
+confirm's builder is `mov word_4E263A, 2; retn` - list 0x004E2638's selected
+row - so it comes up on `Non`.
+
+**`Quitter le jeu` does not quit the program**, which was the surprise:
+`dword_4E6C9C` is a request served at the top of the next `Script_Pump(1)` as
+`Script_Pump(3)` / `Game_NewGame` / `Screen_FadeFromColor(0xFFFFFF, 15, 0)`.
+It ends the GAME and boots a new one, back out to the start menu. The port
+ends the run instead and says so - `omk-play`'s boot is `main`'s body rather
+than a function, so there is nothing to restart into.
+
+**Three latent faults came out with it**, all the same shape - a rule written
+as `adventure`, a per-frame MODE that any open screen takes false, where the
+thing meant was "the world is live". The menu's animated CLOUD was painted
+over every world-side screen (the reader's own screenshots of the original
+show the save screen drawing over the live 3D scene, so this would have shown
+there too); the pause was expressed as `adventure = false`, which stops the
+player and leaves the crowd walking; and the PLAYER was not drawn at all while
+a screen was up, which is the third time that test has been too narrow. The
+pause flag's real mechanism is `frameSec = 0` - `Game_Tick` has no test for an
+open screen anywhere in it.
+
+**Two corrections to `docs/UI.md`.** §2 read flag 0x20000400 backwards
+("opening either fires screen 31's open callback"); the branch says the
+opposite, it is what makes 31 decline. And the widget lift now takes a panel
+BUILDER's straight-line stores as well as the open callback's - which is what
+gives the quit confirm its `Non` default - but only up to the first branch,
+because nine of the eleven builders that write one of those fields write it
+inside a conditional arm, and taking them all put the start menu's confirm
+dialog on `Annuler`.
 
 ### 4. Tuto zone fires repeatedly and does not stop the player — M, strong
 
