@@ -2424,6 +2424,7 @@ int main(int argc, char** argv) {
     // 73-frame black stretch mid-cutscene - because the Session still held
     // camera 2158, AREA 118's, from the area the player had just left
     // (next-tasks 5).
+    bool  musicPaused = false;          // the pause screen suspends the sound
     bool  holdEditCam = false;          // mode 13 with no active camera: hold
     int   heldUnderCamera = -1;         // the Session camera the hold began under
     bool  editFromKnown = false;              // ...and it was captured for the travel
@@ -5555,10 +5556,44 @@ int main(int argc, char** argv) {
                 std::printf("music: track %d, %.1f s%s\n", music.track(),
                             music.seconds(), music.looping() ? ", looping" : "");
         }
+        // ---- AND THE PAUSE SCREEN STOPS THE SOUND ------------------------
+        //
+        // Read out of screen 31's own open and close callbacks (0x004ADDB0 /
+        // 0x004ADEB0), which do far more than set the pause flag: after
+        // `mov dword_4E9728, 1` the open calls FOUR suspend routines, and the
+        // close calls their four partners in the same order.
+        //
+        //     sub_46C290 / sub_46C2C0   walk the sound bank at unk_53B36C and
+        //                               stop / restart every buffer in it
+        //     sub_42BA70 / sub_42BA90   one streaming handle (word_4EB5F8):
+        //                               `sub_46CAE0(h)` to stop, and
+        //                               `sub_46CBB0(h, dword_4EB614)` to
+        //                               restart FROM THE SAVED POSITION
+        //     sub_42BB10 / sub_42BB30   the same for word_4EA7B8, saved in
+        //                               dword_4EB610
+        //     sub_412120 / sub_412140   `timeGetTime` re-baselined, so the
+        //                               paused interval is never integrated
+        //
+        // Both stream pairs guard on `handle != 0xFFFF` and both restart from
+        // a position stored on the way in - so it is a SUSPEND, not a stop:
+        // the music resumes where it was rather than from the top.
+        //
+        // Here that is two things, because the port pulls a second of music
+        // ahead into the device: stop pulling, and FLUSH what is already
+        // queued - otherwise the pause is silent-eventually rather than
+        // silent. `MusicPlayer::pos_` is untouched while nothing pulls, so it
+        // is already the engine's saved position and the resume needs nothing.
+        if (uiPause != musicPaused) {
+            musicPaused = uiPause;
+            if (musicPaused) front.flushAudio();
+            std::printf("audio: the pause screen %s the sound (screen 31's own "
+                        "open/close callbacks suspend the bank and both streams)\n",
+                        musicPaused ? "SUSPENDS" : "resumes");
+        }
         // Keep about a second of it in the device. The player decides what
         // comes next - including whether the track wraps - so all this does
         // is ask for more and hand it over.
-        if (music.playing() && front.queuedSeconds() < 1.0) {
+        if (!musicPaused && music.playing() && front.queuedSeconds() < 1.0) {
             std::vector<float> chunk;
             music.pull(chunk, 44100);
             {

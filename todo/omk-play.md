@@ -15,6 +15,41 @@ waiting on its evidence.
 
 ## Open (batch 6, filed 2026-09-04)
 
+### 82. The sneak's middle is transparent — the key is right, what is BEHIND it is not — A
+
+Filed 2026-09-07 from a reader: *the sneak background is transparent*, and
+*the sneak issue is a recent regression*. It is: `8f5fd11` turned the colour
+key on for `Ui_DrawPanelBack`'s tile blit.
+
+**The key itself is correct, and a revert would be wrong twice.** Traced end to
+end: both of `Ui_DrawPanelBack`'s calls are `I2D_BlitBitmap(&rect, surface, 1,
+3)`; in `I2D_BlitBitmap` the fourth argument is the LAYER (`I2D_Enqueue(...,
+a4)`, guarded by `a4 >= 16`) and the third lands at the node's `+52`; and the
+drawer `sub_4810D0` reads it as `if ((v3 & 1) != 0) v1 = 16809984`, which is
+`DDBLT_WAIT | DDBLT_KEYSRC`. `I2D_CreateSurfaceFromBmp` sets
+`DDCOLORKEY{0, 0}` through vtable +116 with flag 8 (`DDCKEY_SRCBLT`) on every
+bitmap it loads. So the engine keys the tile blit against black, exactly as the
+commit says — and reverting would re-break the videophone viewport it fixed.
+
+**What the page actually is.** `sneak.bmp` is a 640x480 SHEET of 64x64 cells,
+not a picture, and screen 9's panel tiles it **1:1** (ids 0, 1, 2 … 19 …). Of
+its 80 cells, **21 are more than 90% palette index 0** — the key colour — and
+they are the middle of the device. 31.8% of the whole bitmap is that colour.
+So the hole is deliberate: the engine means the centre of the sneak to be
+transparent, because that is where the device's own 3D goes — the object
+preview, the map, the videophone's caller.
+
+**So the fault is what the port draws behind it**: the city street. Rendered
+with `--sneak` in Anekbah, the frame decoration is right and the whole centre
+is the world, Kay'l included.
+
+**Not fixed here, deliberately.** The fix belongs in the sneak's own rendering,
+which is where the videophone work is live, and it needs a decision this entry
+cannot make alone: the object list wants the device's preview behind the hole
+and the videophone wants a real actor, so "suppress the world while the sneak
+is open" is right for one page and fatal for the other. What would settle it is
+a capture of the original with the sneak open.
+
 ### 84. Black stripes on for ever after entering or leaving a building — A
 
 > **Fixed 2026-09-07 over three rounds, CONFIRMED IN PLAY** - a 7029-frame
