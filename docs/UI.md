@@ -2031,6 +2031,32 @@ choosing") and not a missing decode.
 is the set of values each screen can write, not that any screen behaves
 correctly.
 
+### A CALLER IS A REAL ACTOR, PARKED OFF-STAGE
+
+Reported by a reader 2026-09-07, after a body in the restaurant looked like a
+fault and was not one. `ARESTO14` (AREA 217) places **actor 95 `GD1_FNM`** at
+2776 −734 −6595 — 745 units, about 19 m, above the restaurant floor, where
+every other body in the chunk sits between −16 and +8. It reads exactly like a
+character left floating.
+
+It is a **videophone caller**. He is not meant to be in the room at all: the
+call shows his model, so the chunk parks him somewhere the player cannot reach
+and the camera never frames. The chunk's own bounds are y −869…+32 — it is a
+23 m tall building, not one room — and he is standing on a real wooden floor
+in a small sealed room on an upper storey, which a shot from 80 units away
+shows and a shot from 300 does not, because that room's own wall closes over
+him. Stand the player at his height and the walker snaps to **−145**, another
+surface between the two.
+
+**The data names the mechanism.** The scene program that runs him uses path 13
+`TBas_sneak` and clip `STDSNKL.3DA` — *stand, sneak*. The authors named his
+path after the device he appears on.
+
+The general form, worth having before the next one: **a body's height means
+nothing without its chunk's bounds**, and an actor far from the playable floor
+of a location is as likely to be staged for a screen as misplaced. Check what
+is under his feet before calling it a placement fault.
+
 ---
 
 ## 3e. The inventory screen's data channel — `Game_HandleEvent` 25..42
