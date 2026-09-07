@@ -885,7 +885,9 @@ nothing when it passes for the hundredth time. Run the checks your change could
 plausibly break, and `--list` if you are unsure which those are.
 
 **The full sweep runs every 5 to 10 FINISHED TASKS, not once a task** (rule of
-2026-09-07). It takes upwards of half an hour, which is longer than most of the
+2026-09-07). **A TASK is one thing the reader asked for** - not a commit, and
+not a step inside one: a five-step port that takes four commits adds ONE to the
+count. It takes upwards of half an hour, which is longer than most of the
 work it validates, so per task the rule is `--only` over the checks the change
 could plausibly break and nothing else. `todo/sweep-log.md` carries the count
 since the last full sweep — increment it on a commit, reset it when a sweep is

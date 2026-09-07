@@ -9,10 +9,18 @@ longer than most tasks it validates. So it is **not** run per task. The rule
 * run the full sweep after **5 to 10 finished tasks**;
 * record it here, so the count survives between sessions.
 
-Increment `tasks since` when a task is committed; reset it to 0 and add a row
+Increment `tasks since` when a task is finished; reset it to 0 and add a row
 when a full sweep is run.
 
-**tasks since the last full sweep: 13**
+**A TASK IS ONE THING THE READER ASKED FOR, not a commit and not a step inside
+one** (their correction, 2026-09-07: *"I said 5-10 tasks, not 5-10 steps"*).
+Porting `Text_LayOutBlock` was one task over three steps and two commits; the
+slider is one task over a five-step plan file and four commits so far. Each
+adds **one**. Counting commits ran this number to 13 when about nine tasks had
+been finished, which would have called for a half-hour sweep long before the
+rule intends one.
+
+**tasks since the last full sweep: 9**
 
 > **`engine: UI` is RED and was already red at `a5b1807`, on a clean tree.**
 > Measured 2026-09-07: `disagree` is 9, not 0 - the shops, screens 21..28 and
