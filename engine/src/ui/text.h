@@ -103,12 +103,67 @@ ParsedText parseMarkup(const std::string& text, char face = 'J',
                        std::uint8_t r = 255, std::uint8_t g = 255,
                        std::uint8_t b = 255);
 
+// ------------------------------------------------- `Text_LayOutBlock`'s box
+//
+// Everything `Text_DrawBlock` (0x0043F180) writes into the renderer's globals
+// before calling `Text_LayOutBlock` (0x0043F3E0), which is the only reader of
+// them. Named for the global each field is, because that is what makes the
+// port checkable against the listing.
+struct TextBlock {
+    int left = 0, top = 0, right = 640, bottom = 480;  // 907A14/18/08/1C
+    // The current font, as the id LETTER of the 13-record table. The engine's
+    // default is 74 `'J'`, stepping to 76 `'L'` below 640x480 - a size choice,
+    // not a face choice.
+    char font = 'J';                                   // 907A10
+    char altFont = 'J';                                // 907A0C
+    std::uint8_t rgb[3] = {255, 255, 255};             // 9079FE/FD/FC
+    std::uint8_t altRgb[3] = {255, 255, 255};          // 907941/42/40
+    // The style word. `0x1E` is the four horizontal alignments (2 left,
+    // 4 right, 8 centre, 16 justify), `0x1C00` the three verticals (0x400
+    // top, 0x800 bottom, 0x1000 middle) and `0x4000` blink.
+    int style = 2;                                     // 907A00
+    int altStyle = 2;                                  // 907A04
+    // THE ORIGIN, subtracted from every drawn position. `originY` is where a
+    // scrolling box's offset arrives - `Ui_ItemTextStyle` writes the clamped
+    // `dword_6A5090` into the params block at `+0x10`, which `Text_DrawBlock`
+    // unpacks into `dword_9079F8` under `TEXTP_ORIGIN`.
+    int originX = 0, originY = 0;                      // 9079F4 / 9079F8
+    // WHICH bracketed span swaps to the alternates; -1 for none.
+    int span = -1;                                     // 907A24
+    // Carried through the bracket save/restore because the engine does;
+    // nothing in this port reads it (the engine reads it outside this
+    // function).
+    int eValue = 0, altE = 0;                          // 907A28 / 907A2C
+    bool measureOnly = false;   // TEXTP_FLAG_A - lay out, do not draw
+    bool literal = false;       // TEXTP_FLAG_B - `{}[]` are ordinary text
+    // Is oscillator 1 high this frame, for `{B}`. The engine asks
+    // `Ui_Oscillator(1)` itself; a composer already has the answer.
+    bool blinkOn = false;
+    // `g_ScreenSize`, for `{X}`'s percentages. The window's size, not the
+    // box's.
+    int screenW = 640, screenH = 480;
+    // The port's own, for a box that SCROLLS: rows outside these are not
+    // written, so the line straddling each edge is cut rather than dropped.
+    int clipTop = -(1 << 30), clipBottom = 1 << 30;
+};
+
 // The advance of a run in pixels: per character, the glyph's own width or the
 // face's default, plus the face's kerning.
 class TextLayout {
 public:
     TextLayout(const FontTable& t, const std::string& fontsDir)
         : table_(&t), dir_(fontsDir) {}
+
+    // `Text_LayOutBlock` (0x0043F3E0) - the string, the box, the markup, the
+    // wrap, the alignment and the vertical placement, in one pass, returning
+    // the laid-out HEIGHT (`maxY - top`) whether or not it drew. `dst` may be
+    // null, and is ignored when `b.measureOnly`.
+    //
+    // One function for both because the engine has one: `Ui_ItemTextStyle`
+    // measures with it to bound a scroll and the drawers draw with it, and a
+    // separate measure would be a second algorithm to keep in step.
+    int layOutBlock(Surface* dst, const std::string& text,
+                    const TextBlock& b) const;
 
     int measure(const std::vector<StyledChar>& run) const;
     int measure(const std::string& text, char face = 'J') const;

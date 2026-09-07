@@ -6680,6 +6680,94 @@ def c_engine_text_scroll():
         "own first instruction"
 
 
+def c_engine_text_block():
+    r"""`Text_LayOutBlock` (0x0043F3E0) OVER THE SHIPPED STRINGS.
+
+    The last piece of the interface's text path this port had a GUESS in place
+    of. Everything around it was ported and checked - the 13 fonts, the 2899
+    glyphs, the coverage ramp, the markup parse, and the advance
+    (`Text_GlyphAdvance` = the face's kerning plus the glyph's own width, or
+    the face's default advance where the file has no glyph) - but the part
+    that turns a string and a box into POSITIONED LINES was this repo's own: a
+    greedy break at spaces, a line advance of `height + 2`, a blank line of a
+    flat 12, no vertical placement and no alignment. `docs/UI.md` had labelled
+    it a reconstruction since it was written, and the examine page's scroll
+    made it matter, because the scroll bound is `laidOutHeight - boxHeight`.
+
+    The engine's own algorithm, now transcribed:
+
+    * **the line pitch is `120 * lineHeight / 100`** - the font record's `+12`
+      and nothing else - and a BLANK line advances by the same, not by a
+      constant. For the examine page's font `'J'`, height 17, that is 20;
+    * **the wrap** accumulates `Text_GlyphAdvance` per character, a SPACE
+      remembers both the run position and the input position, and a character
+      that no longer fits cuts the line back to that space and rewinds the
+      input to just after it. With no space seen the character is kept anyway,
+      so a single word wider than the box overflows rather than breaking;
+    * **the alignment** is `style & 0x1E` at the flush: 4 right
+      (`x = right - runWidth`), 8 centre
+      (`x = left + (right - runWidth - left) / 2`), anything else the pen;
+    * **the vertical placement** runs before a character is read - `0x800`
+      bottom, `0x1000` middle, neither top - against the current font's height,
+      and `{H}` / `{L}` / `{M}` redo it mid-string;
+    * **a line flushes** on a newline OR when `(style ^ working) & 0x1C1E`, so
+      `{F}` breaks a line and `{C}` does not - and `{P}`, which is not a
+      directive at all, works as a paragraph break because an unrecognised
+      letter falls into the same test.
+
+    Asserted over the 941 object descriptions that carry text, in the examine
+    page's own box (400x260 at 150,100, font `'J'`): how many are taller than
+    the box; the MK400 notice's height, the lines it actually paints and its
+    widest inked row, which must stay inside the 400; the pitch against the
+    font's own height; the tallest description in the corpus; a centred line's
+    x against a plain one (320 against the box's own 150); and the empty
+    string, which returns the box's TOP rather than 0 because
+    `if (!*a1) return dword_907A18` does.
+
+    Shown to fail by putting the pitch back to 100% and by restoring the old
+    `height + 2` advance - both move the height and the line count.
+
+    **One thing this does NOT settle**, and it is recorded rather than
+    smoothed over: a reader's capture of the original was noted in
+    `docs/UI.md` as fitting about four more lines in the same box than the
+    port's guess did, and the engine's own pitch is LOOSER than that guess
+    (20 against 19, and 20 against 12 for a blank line), so the gap widened
+    rather than closed. The algorithm here is the listing's; whatever explains
+    the capture is not the line pitch.
+    """
+    import subprocess
+    eng = os.path.join(ROOT, "engine")
+    fr, tbl = omkpaths.data_root(), os.path.join(ROOT, "tables")
+    if not os.path.isdir(eng) or not os.path.isdir(fr):
+        return ("skipped",), ("skipped",), "engine/ or gamedata/ absent"
+    b = subprocess.run(["make", "-s", "build/text_block"], cwd=eng,
+                       capture_output=True, text=True)
+    binp = os.path.join(eng, "build", "text_block")
+    if b.returncode != 0 or not os.path.exists(binp):
+        return ("build failed",), ("built",), "engine/ must build"
+    r = subprocess.run([binp, fr, tbl], capture_output=True, text=True,
+                       errors="replace")
+    got = [ln.split() for ln in r.stdout.strip().splitlines()]
+    want = [
+        "corpus 941 taller 95".split(),
+        "mk400 height 484 lines 15 widest 389".split(),
+        "advance 20 of height 17".split(),
+        "overflow 891 of 260 for 'Journal de Meshka'n'".split(),
+        "centre 320 plain 150".split(),
+        "height0 100".split(),
+    ]
+    return got, want, \
+        "941 object descriptions carry text and 95 of them are taller than " \
+        "the examine page's 400x260 box; the MK400 notice lays out 484 tall, " \
+        "paints 15 lines and stays inside the box at 389 wide; the line " \
+        "pitch is 120% of font 'J''s own height, 20 of 17, which is the " \
+        "engine's `v6 += 120 * i16i(font, 6) / 100` and not this port's old " \
+        "`height + 2`; the tallest description in the corpus is 891; a " \
+        "centred line starts at 320 where a plain one starts at the box's " \
+        "own left, 150; and the empty string reports the box's TOP, 100, " \
+        "because `if (!*a1) return dword_907A18` does"
+
+
 def c_engine_used_object():
     r"""USING AN INVENTORY OBJECT ON THE WORLD - `Utiliser` reaching a zone.
 
@@ -26638,6 +26726,7 @@ CHECKS = [
     ("ui open flags",      c_ui_openflags,      "UI"),
     ("engine: screen world", c_engine_screen_world, "UI"),
     ("engine: text scroll", c_engine_text_scroll, "UI"),
+    ("engine: text block", c_engine_text_block, "UI"),
     ("ui open answer",     c_ui_open_answer,    "SCRIPT_VM 70"),
     ("ui confirm gate",    c_ui_confirm_gate,   "UI"),
     # The FAST set, unlike `engine: screen` and `engine: name field`: most of

@@ -230,4 +230,258 @@ int TextLayout::drawRun(Surface& dst, int x, int y,
     return pen - x;
 }
 
+
+// ------------------------------------------- `Text_LayOutBlock` (0x0043F3E0)
+//
+// 577 lines in the listing, one caller (`Text_DrawBlock`), and the last piece
+// of the interface's text path this port had a GUESS in place of: a greedy
+// break at spaces, a line advance of `height + 2` and a blank line of 12. The
+// engine's own algorithm, transcribed:
+//
+// * the VERTICAL placement runs before a character is read - `0x800` bottom,
+//   `0x1000` middle, neither top - against the CURRENT font's line height
+//   (record `+12`), and the markup letters `H` / `L` / `M` redo the same three
+//   at any point;
+// * the WRAP accumulates `Text_GlyphAdvance` per character; a SPACE remembers
+//   both the run position and the input position, and a character that no
+//   longer fits cuts the line back to that space and rewinds the input to just
+//   after it. With NO space seen the character is kept anyway, so a single
+//   word wider than the box overflows rather than breaking;
+// * the LINE ADVANCE is `120 * lineHeight / 100`, and a blank line advances by
+//   the same rather than by a constant;
+// * a line is FLUSHED when a newline is pending or when the alignment or
+//   vertical bits changed (`(style ^ working) & 0x1C1E`). That is why `{F}`
+//   breaks a line and `{C}` does not - and why `{P}`, which is not a directive
+//   at all, works as a paragraph break: an unrecognised letter falls into the
+//   same test;
+// * `[` and `]` are COUNTED, and the span whose index equals `span` swaps in
+//   the alternate colour, font, style and `E` value;
+// * `{B}` TOGGLES blink (`v57 ^= 0x4000`), and a blinking character on a high
+//   oscillator is written (255, 0, 0) - red, which this port had measured off
+//   two captures before it could read it here.
+//
+// The engine emits one `Text_DrawRun` per span of constant style; this emits
+// one `drawRun` per LINE, which is the same pixels because `drawRun` already
+// carries the face and the colour per character and rebuilds its ramp on a
+// change - the engine's own `cmp word_4C6F54, ax` cache.
+int TextLayout::layOutBlock(Surface* dst, const std::string& text,
+                            const TextBlock& b) const {
+    // `if (!*a1) return dword_907A18` - the engine returns the box's TOP for
+    // an empty string, not 0, where every other path returns a height. Kept:
+    // its one consumer subtracts the box height and floors at 0.
+    if (text.empty()) return b.top;
+
+    const auto lineHeight = [&](char f) -> int {
+        const auto* rec = table_->byLetter(f);
+        return rec ? rec->height : 0;
+    };
+    const auto advance = [&](unsigned char ch, char f) -> int {
+        const auto* rec = table_->byLetter(f);
+        if (!rec) return 0;
+        const Font* fn = face(f);
+        int adv = rec->defaultAdvance;
+        if (fn && fn->glyphs[ch].present) adv = fn->glyphs[ch].width;
+        return adv + rec->kern;
+    };
+
+    int   left = b.left, top = b.top;               // 907A14 / 907A18, movable
+    char  font = b.font;                            // 907A10
+    int   style = b.style;                          // 907A00, the LINE's
+    int   working = b.style;                        // v57, the pending one
+    std::uint8_t rgb[3] = {b.rgb[0], b.rgb[1], b.rgb[2]};
+    int   eValue = b.eValue;
+
+    // The bracket save slots (v62/v60/v61, v76, v75, v77), seeded from the
+    // entry state exactly as the engine seeds them.
+    std::uint8_t saveRgb[3] = {b.rgb[0], b.rgb[1], b.rgb[2]};
+    char  saveFont = b.font;
+    int   saveStyle = b.style, saveE = b.eValue;
+    int   spanIndex = -1;                           // v70
+
+    const int width = b.right - b.left;             // v79
+    int   penX = b.left;                            // v73
+    int   y;                                        // v6 / v63
+    if ((b.style & 0x800) != 0)        y = b.bottom - lineHeight(font);
+    else if ((b.style & 0x1000) != 0)  y = top + ((b.bottom - lineHeight(font) - top) >> 1);
+    else                               y = top;
+    // `v72 = dword_907A18` - seeded from the box's TOP, not from the pen, and
+    // only ever raised. A bottom- or middle-placed block therefore reports a
+    // height measured from the top of its box.
+    int   maxY = b.top;                             // v72
+
+    std::vector<StyledChar> line;                   // the 6-byte run buffer
+    bool  lineOpen = false;                         // v58 != 0
+    int   lineW = 0;                                // v74
+    int   wrapMark = -1;                            // v66: run length at the space
+    std::size_t wrapInput = 0;                      // v64: input just after it
+    bool  haveWrap = false;
+    bool  inBrace = false;                          // v71
+    bool  done = false;                             // v68
+
+    std::size_t i = 0;
+    const std::size_t n = text.size();
+    // The engine walks a NUL-terminated buffer and reads the terminator as a
+    // character; `i == n` stands in for that, so the last line flushes.
+    while (!done) {
+        bool newline = false;                       // v67
+        const int c = (i < n) ? static_cast<unsigned char>(text[i]) : 0;
+        ++i;
+
+        if (c == '{' && !b.literal)      { inBrace = true;  goto tail; }
+        if (c == '}' && !b.literal)      { inBrace = false; goto tail; }
+        if (c == '[' && !b.literal) {
+            // `if (++v70 == dword_907A24)` - SAVE, then install the alternates
+            if (++spanIndex == b.span) {
+                saveRgb[0] = rgb[0]; saveRgb[1] = rgb[1]; saveRgb[2] = rgb[2];
+                saveFont = font; saveStyle = style; saveE = eValue;
+                rgb[0] = b.altRgb[0]; rgb[1] = b.altRgb[1]; rgb[2] = b.altRgb[2];
+                font = b.altFont; style = b.altStyle; eValue = b.altE;
+            }
+            goto tail;
+        }
+        if (c == ']' && !b.literal) {
+            if (spanIndex == b.span) {
+                rgb[0] = saveRgb[0]; rgb[1] = saveRgb[1]; rgb[2] = saveRgb[2];
+                font = saveFont; style = saveStyle; eValue = saveE;
+            }
+            goto tail;
+        }
+
+        if (inBrace) {
+            switch (c) {
+            case 0:   done = true; goto test;           // ...and still FLUSH
+            case 'B': working ^= 0x4000; goto tail;
+            case 'C': working = (working & ~0x1E) | 8;  goto tail;
+            case 'D': working = (working & ~0x1E) | 4;  goto tail;
+            case 'E': if (i < n) eValue = static_cast<unsigned char>(text[i++]);
+                      goto tail;
+            case 'F': working = (working & ~0x1E) | 0x10; break;   // ...and TEST
+            case 'G': working = (working & ~0x1E) | 2;  goto tail;
+            case 'H': working = (working & ~0x1C00) | 0x400;
+                      top = 0; y = 0; goto tail;
+            case 'I': {
+                // THREE 3-DIGIT DECIMALS, not a hex triple
+                if (i + 9 <= n) {
+                    const auto d3 = [&](std::size_t k) {
+                        int v = 0;
+                        for (std::size_t j = 0; j < 3 && k + j < n; ++j)
+                            v = v * 10 + (text[k + j] - '0');
+                        return static_cast<std::uint8_t>(v);
+                    };
+                    rgb[0] = d3(i); rgb[1] = d3(i + 3); rgb[2] = d3(i + 6);
+                    i += 9;
+                }
+                goto tail;
+            }
+            case 'L': working = (working & ~0x1C00) | 0x800;
+                      y = b.bottom - lineHeight(font); goto tail;
+            case 'M': working = (working & ~0x1C00) | 0x1000;
+                      y = top + ((b.bottom - lineHeight(font) - top) >> 1);
+                      goto tail;
+            case 'X': {
+                // Six digits: three of x then three of y, each a PERCENTAGE
+                // of the screen - and the box's own left/top are pulled back
+                // if the move lands above or left of them.
+                if (i + 6 <= n) {
+                    const auto d3 = [&](std::size_t k) {
+                        int v = 0;
+                        for (std::size_t j = 0; j < 3; ++j)
+                            v = v * 10 + (text[k + j] - '0');
+                        return v;
+                    };
+                    penX = b.screenW * d3(i) / 100;
+                    y    = b.screenH * d3(i + 3) / 100;
+                    i += 6;
+                    if (penX < left) left = penX;
+                    if (y < top)     top = y;
+                }
+                break;                                   // ...and TEST
+            }
+            case 'f': if (i < n) font = text[i++]; goto tail;
+            case 'g': goto tail;                         // read and ignored
+            default:  break;                             // ...and TEST
+            }
+            goto test;
+        }
+
+        // ---- the TEXT path ------------------------------------------------
+        if (!lineOpen) { lineW = 0; line.clear(); lineOpen = true;
+                         haveWrap = false; wrapMark = -1; }
+        if (c == 13) goto tail;                          // '\r' is dropped
+        if (c == 10) { haveWrap = false; newline = true; goto test; }
+        {
+            bool keep = true;                            // v34
+            const int w = lineW + advance(static_cast<unsigned char>(c), font);
+            if (w <= width) {
+                if (c == ' ') { wrapMark = static_cast<int>(line.size());
+                                wrapInput = i; haveWrap = true; }
+                else if (!c)  { keep = false; newline = true;
+                                wrapInput = i - 1; haveWrap = true; }
+            } else if (haveWrap || c == ' ' || !c) {
+                keep = false;
+                if (wrapMark >= 0)
+                    line.resize(static_cast<std::size_t>(wrapMark));
+                newline = true;
+            }
+            if (keep) {
+                StyledChar sc;
+                sc.ch = static_cast<char>(c);
+                sc.face = font;
+                sc.blink = (working & 0x4000) != 0;
+                sc.rgb[0] = rgb[0]; sc.rgb[1] = rgb[1]; sc.rgb[2] = rgb[2];
+                line.push_back(sc);
+            }
+            lineW = w;                    // ...whether or not it was kept
+        }
+
+    test:
+        if (newline || ((style ^ working) & 0x1C1E) != 0) {
+            if (lineOpen || wrapMark >= 0) {
+                if (!b.measureOnly && !line.empty()) {
+                    int x = penX - b.originX;
+                    const int runW = measure(line);
+                    switch (style & 0x1E) {
+                    case 4: x = b.right - runW; break;
+                    case 8: x = b.left + (b.right - runW - b.left) / 2; break;
+                    default: break;
+                    }
+                    if (dst) {
+                        auto copy = line;
+                        if (b.blinkOn)
+                            for (auto& sc : copy)
+                                if (sc.blink) { sc.rgb[0] = 255; sc.rgb[1] = 0;
+                                                sc.rgb[2] = 0; }
+                        drawRun(*dst, x, y - b.originY, copy,
+                                b.clipTop, b.clipBottom);
+                    }
+                }
+                // The REWIND, and it is what makes the wrap work: the input
+                // goes back to just after the space the line was cut at.
+                if (haveWrap) {
+                    i = wrapInput;
+                    haveWrap = false;
+                    if (i >= n) done = true;
+                } else if (!c) {
+                    done = true;
+                }
+            }
+            lineOpen = false;
+            line.clear();
+            wrapMark = -1;
+            style = working;
+            if (newline) {
+                y += 120 * lineHeight(font) / 100;
+                if (y > maxY) maxY = y;
+            }
+        }
+    tail:
+        if (i > n) done = true;                 // past the terminator
+    }
+    // `v72 - dword_907A18`, and `dword_907A18` is MUTABLE: `{H}` zeroes it
+    // and `{X}` pulls it back to a move above the box, so the height is
+    // measured from wherever the top ended up.
+    return maxY - top;
+}
+
+
 }  // namespace omk
