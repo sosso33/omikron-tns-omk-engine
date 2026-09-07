@@ -2314,10 +2314,52 @@ also the reason §3d-bis lists VIDEOPHONE among the three screens that "keep
 the answer with no writer": the answer is never written because the open
 sends whatever is there.
 
-**The 3D inside the panel is the ordinary world.** `I2D_Submit3DView`'s
-full-screen submit (`sub_479C20`, gated on `byte_90E155`) is the same one
-every frame uses; the device's artwork simply has the viewport hole. Nothing
-special renders a caller.
+**The 3D inside the panel is the ordinary world, submitted by the PANEL
+ITSELF** (read 2026-09-08, after 82's world-hiding took the caller away). The
+engine has no "world behind the interface": a 3D view is a node in the same
+display list as every blit, and there are two producers of it.
+
+* `Game_Frame` calls `sub_479C20(flt_90E120)` only `if (byte_90E155)`
+  (05_sys.c:2210) - the full 640x480 rectangle on layers 0 and 1. This is the
+  call the screen's `0x40000` bit switches off, and it is ALL it switches off.
+* A UI item whose draw callback is **`sub_4782B0`** submits its OWN rectangle.
+  The videophone's panel carries one, at (105, 85) 500x280 on layer 6
+  (`tables/ui_widgets.json`, drawFn 4686512): it takes the item's screen
+  position through `Ui_ItemScreenX/Y` and `I2D_ScaleX/Y` and calls
+  `I2D_Submit3DView(&rect, dword_93076C, flt_90E120, 0, layer - 1)` - the
+  same world scene and the same live camera struct as the full-screen path,
+  which is why the conversation's camera 4159 is what the device shows.
+  Nothing on this path reads `byte_90E155`.
+
+`I2D_Submit3DView` (0x00428900) takes one of sixteen 84-byte view slots for
+the frame, copies the six-dword rectangle and a 52-byte SNAPSHOT of the
+camera, points the scene's active camera at the snapshot, and enqueues
+`sub_4812E0` on the requested layer. `I2D_Enqueue` inserts by ascending
+layer and `I2D_Flush` calls the nodes in that order, so on screen it is the
+sheet on layer 3, the 3D view on layer 5 painted over it inside its
+rectangle, then the device's items on 6 and 7. The keyed hole in `sneak.bmp`
+is where the view lands; the picture does not depend on the key.
+
+The node (`sub_4812E0`, 25_sys.c:87), in order: for any layer above 1,
+`sub_45FAC0` blits the rectangle with `0x03000000` and fill depth 0 - a
+**Z-buffer clear of the rectangle only**, since the full-screen view's clear
+did not happen; render states, the camera snapshot, near 2 and far 1000, the
+fog range from options row 3 at 39.37 per metre; `sub_440C40` stores the
+rectangle in the scene at `+408..+414`, and the scene renderer `sub_42FF80`
+hands those four to `sub_45FA20` - `SetViewport2` with a 44-byte
+D3DVIEWPORT2 whose aspect is **w/h**, so the vertical fov follows the
+rectangle; the ordinary bucket walk, mirror pass included, clipped to it;
+`sub_474AB0` projects the engine's 2D line list through the same camera and
+clips it to the rectangle; and the viewport goes back to the full screen. So
+the device is a clipped second submission of the main view, with its own
+depth clear and its own aspect, one node among the interface's own.
+
+**Ported** the same way: `ScreenComposer::viewportItem` finds the item, the
+frontend renders the world with the item's rectangle as the `View`'s viewport
+(`vx, vy, vw, vh`, so the rasterizer's `tanv = tanh / (W/H)` takes the
+rectangle's aspect), and `attachView3D` hands the picture to the composer,
+which blits it at the item's layer. The screen's world-hiding gate is
+untouched, and `verify.py: sneak call` asserts the rectangle holds a picture.
 
 **Closing it is read only half-way.** `Ui_CloseSneakFamily`'s param-2 arm
 REFUSES the first attempt — it clears `dword_670BF0`, resumes the player

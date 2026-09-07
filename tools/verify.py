@@ -8289,8 +8289,15 @@ def _sneak_call_frame():
     framebuffer's. The viewport is item 0x004DEA28's rect, (105, 85) 500x280.
 
     -> "many colours" when the rect holds a rendered scene, "one colour
-    <rgb565>" when it is the flat fill an unkeyed tile map leaves, or a reason
-    it could not be measured.
+    <rgb565>" when it does not, or a reason it could not be measured. Two
+    failures have looked like the second: the flat grey (48, 52, 48) an
+    UNKEYED tile map leaves (2026-09-07), and "one colour 0" - the black hole
+    a HIDDEN world leaves (2026-09-08, after `omk-play` 82 gated the world
+    off behind every screen without the 0x40000 bit and the videophone's own
+    viewport item was not yet ported). The port draws that item's picture
+    now - `ScreenComposer::attachView3D`, the world rendered with the item's
+    rect as the View's viewport - and measured on 2026-09-08 the rect samples
+    414 colours at mean luminance 50; with the blit removed, 1 colour, 0.
     """
     import subprocess, tempfile, shutil
     eng = os.path.join(ROOT, "engine")
@@ -8628,7 +8635,7 @@ def c_sneak_call():
            "upstairs; then that BOTH of `Ui_DrawPanelBack`'s blits pass the " \
            "DDBLT_KEYSRC argument, and last the port's own render of the " \
            "call - the viewport must hold a picture rather than the ONE " \
-           "colour an unkeyed tile map leaves"
+           "colour an unkeyed tile map (grey) or a hidden world (black) leaves"
 
 
 def c_engine_pause():

@@ -185,6 +185,16 @@ int ScreenComposer::background(Surface& fb, const UiPanel& p,
     return drawn;
 }
 
+const UiItem* ScreenComposer::viewportItem(const UiPanel* p) {
+    if (!p) return nullptr;
+    for (const auto& l : p->lists) {
+        if (!l.drawn()) continue;
+        for (const auto& it : l.items)
+            if (it.drawFn == kDrawViewport) return &it;
+    }
+    return nullptr;
+}
+
 ScreenFrame ScreenComposer::draw(Surface& fb, int screenId,
                                  const UiWalk& walk) const {
     ScreenFrame out;
@@ -502,6 +512,26 @@ ScreenFrame ScreenComposer::draw(Surface& fb, int screenId,
             if (eff0[1] & 1) continue;
             if (hidden_ && hidden_->count(it.addr)) continue;
             if (walk.itemOff(it.addr)) continue;   // a builder switched it off
+
+            // THE 3D VIEWPORT (`sub_4782B0`): the node `sub_4812E0` clears
+            // the rectangle's DEPTH, sets the D3D viewport to it
+            // (`sub_440C40` -> `sub_42FF80` -> `sub_45FA20`, aspect w/h),
+            // draws the ordinary scene through the camera snapshot the
+            // submit took, and restores the full-screen viewport. The
+            // frontend has done the rendering at that size; this is the
+            // node's place in the layer walk, and nothing else of the item
+            // is drawn - the callback IS its draw.
+            if (it.drawFn == kDrawViewport) {
+                if (view3d_ && view3d_->valid()) {
+                    const int x0 = scaleX(it.x + q->offsetX);
+                    const int y0 = scaleY(it.y + q->offsetY);
+                    blt(fb, {x0, y0, scaleX(it.x + q->offsetX + it.w),
+                             scaleY(it.y + q->offsetY + it.h)},
+                        *view3d_, {0, 0, view3d_->w, view3d_->h}, kBltWait);
+                    ++out.itemsDrawn;
+                }
+                continue;
+            }
 
             // ---- IS THIS ITEM SELECTED, AND IS IT FOCUSED ------------
             //

@@ -2400,11 +2400,17 @@ has no test for an open screen, so the world keeps TICKING — generalised onto
 the DRAW, where a different global decides. It now reads 221 drawn against 39
 hidden, which is exactly screen 9's window, with the tick assertion untouched.
 
-The device's own 3D is a different view and is still not drawn: the interface
-submits it for itself through `I2D_Submit3DView` (`sub_428900`, seven call
-sites, all `Ui_*`) as a display-list node with its own rectangle. Two arms of
-`sub_466B30` are also unported — the sound-bank suspend, and driving
-`ActorState::UiHeld` from a screen open.
+The device's own 3D is a different view, and **it is drawn** (2026-09-08):
+the interface submits it for itself through `I2D_Submit3DView` (`sub_428900`,
+seven call sites, all `Ui_*`) as a display-list node with its own rectangle,
+and the videophone's panel carries the item that does so - `sub_4782B0`, at
+(105, 85) 500x280, the world through the LIVE camera, ungated by
+`byte_90E155`. `ScreenComposer::viewportItem` finds it, the frontend renders
+the world with that rectangle as the `View`'s viewport, and `attachView3D`
+places the picture at the item's layer (`docs/UI.md` 3i). Hiding the world
+behind the screen took the caller's face away for a day; this is the half
+that gives it back. Two arms of `sub_466B30` are still unported — the
+sound-bank suspend, and driving `ActorState::UiHeld` from a screen open.
 
 **`Ui_DrawItemCursor` IS PORTED** (2026-09-04), and it was a play report that
 made it worth the read: "the hovering effect is absent so it is very difficult

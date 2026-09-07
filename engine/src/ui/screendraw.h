@@ -80,6 +80,15 @@ struct ScreenFrame {
     bool cloudDrawn = false;
 };
 
+// The draw callback of a panel's 3D VIEWPORT item - `sub_4782B0`, the one
+// the VIDEOPHONE's panel carries at (105, 85) 500x280 on layer 6. It ends in
+// `I2D_Submit3DView(&rect, dword_93076C, flt_90E120, 0, layer - 1)`: the
+// WORLD scene through the LIVE camera struct, as a display-list node with the
+// item's own rectangle, one layer under the item. Not gated on `byte_90E155`,
+// which only guards `Game_Frame`'s full-screen submit - so a screen that
+// hides the world still shows it inside this item (`docs/UI.md` 3i).
+constexpr std::uint32_t kDrawViewport = 0x004782B0;
+
 class ScreenComposer {
 public:
     // The menu's animated background, drawn UNDER the screen's own sheet -
@@ -170,6 +179,17 @@ public:
     // arrives the same way. Empty or null means the records stand.
     void setHidden(const std::set<std::uint32_t>* h) { hidden_ = h; }
 
+    // THE 3D VIEW INSIDE A PANEL. The frontend renders the world through the
+    // live camera into a picture the size of the viewport item's rectangle
+    // and hands it here; `draw` blits it at that item's place, at that
+    // item's layer - over the sheet (layer 3) and under the panel's other
+    // items (7), which is where `I2D_Flush`'s layer walk puts the node
+    // `sub_4812E0`. nullptr when no screen is showing one.
+    void attachView3D(const Surface* pic) { view3d_ = pic; }
+    // The panel's viewport item, if a drawn list carries one - so the caller
+    // knows the rectangle to render before `draw` runs. nullptr otherwise.
+    static const UiItem* viewportItem(const UiPanel* p);
+
     // THE DISPLAY SIZE, and the interface is not redesigned for it.
     //
     // `I2D_ScaleX` (0x00429700) and `I2D_ScaleY` (0x00429730) are
@@ -210,6 +230,7 @@ private:
     long             deltaMs_ = 33;
     const std::map<std::uint32_t, std::string>* rows_ = nullptr;
     const std::set<std::uint32_t>* hidden_ = nullptr;
+    const Surface*   view3d_ = nullptr;
     long             frame_ = 0;
     long             clockMs_ = 0;
     int              dw_ = 640, dh_ = 480;

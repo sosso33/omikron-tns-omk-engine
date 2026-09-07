@@ -1755,6 +1755,9 @@ int main(int argc, char** argv) {
     const auto fonts = omk::FontTable::loadJson(tb + "/ui.json");
     const omk::TextLayout lay(fonts, fr + "/FONTS");
     omk::ScreenComposer comp(fs, w, lay);
+    // The world rendered at a panel's 3D VIEWPORT item's size, for the
+    // composer to place (`ScreenComposer::attachView3D`).
+    omk::Surface view3dPic;
     // The menu's animated background - `IMAGES/cloud.bmp` embossed by a
     // rotating light and warped by two cosine tables (`ui/cloud.h`). The
     // screen's own sheet is colour-keyed over it.
@@ -4872,11 +4875,11 @@ int main(int argc, char** argv) {
                             boarded = true;
                             session.sliders().mountCalled();
                             mountSpent = true;
+                            playerScreen = 7;
                             std::printf("MDSLIDIN: aboard at %.0f %.0f %.0f - "
                                         "the slider was OPEN (mode 3) and in "
                                         "reach; screen 7 opens\n",
                                         at[0], at[1], at[2]);
-                            playerScreen = 7;
                         }
                     }
                     if (!(bits & 0x10u)) mountSpent = false;
@@ -4889,9 +4892,6 @@ int main(int argc, char** argv) {
                         player->tick(static_cast<float>(frameSec * 30.0),
                                      bits ? bits : omk::kIdleInput);
                 }
-                // ---- THE RIDE ---------------------------------------
-                //
-                // `Slider_TickRide` (0x00458150), with the pool and the
                 // ---- SEATED, not driving ------------------------------
                 //
                 // Aboard between the mount and either "Manuelle" or the end
@@ -4930,6 +4930,9 @@ int main(int argc, char** argv) {
                         calledDestination = -1;
                     }
                 }
+                // ---- THE RIDE ---------------------------------------
+                //
+                // `Slider_TickRide` (0x00458150), with the pool and the
                 // arrival left out: `--ride` mounts him where he stands, and
                 // what runs from there is the engine's own model.
                 //
@@ -6118,9 +6121,6 @@ int main(int argc, char** argv) {
                 walk = std::move(fresh);
                 openScreen = want;
                 screenFromScript = fromScript;
-                std::printf("frame %ld: screen %d %s - arrows move, ENTER confirms, "
-                            "TAB closes\n", n, openScreen,
-                            fromScript ? "is asking" : "opened by the player");
                 // THE SLIDER PAGE'S HOOK, 0x0049D4D0, on the frame screen 7
                 // opens: `if (dword_6A17CC != -1)` resolve it with
                 // `sub_40E630` and call `sub_452570` at once - the journey
@@ -6132,6 +6132,9 @@ int main(int argc, char** argv) {
                                 "remembered (row %d), the journey starts\n",
                                 calledDestination);
                 }
+                std::printf("frame %ld: screen %d %s - arrows move, ENTER confirms, "
+                            "TAB closes\n", n, openScreen,
+                            fromScript ? "is asking" : "opened by the player");
                 // The screen's own sounds, by slot. Which slot is which is
                 // `sub_482FE0`'s answer - it dispatches on the INPUT BIT - not
                 // a guess from the file names. Nothing plays when a screen
@@ -6302,9 +6305,6 @@ int main(int argc, char** argv) {
             // reserves a real slider and fades the other way instead. That is
             // the RIDE, and it is step 2 of `todo/slider.md`; what is here is
             // the arm the engine itself takes wherever there is no circuit.
-            if (const int row = walk->takeTravel(); row >= 0) {
-                std::vector<const omk::Destination*> known;
-                for (const auto& d : destinations)
             // ---- "Appel du slider" ----------------------------------
             //
             // 0x0049D400: `sub_452570` on the player's own position, and
@@ -6340,6 +6340,9 @@ int main(int argc, char** argv) {
                                 "are his\n");
                 }
             }
+            if (const int row = walk->takeTravel(); row >= 0) {
+                std::vector<const omk::Destination*> known;
+                for (const auto& d : destinations)
                     if (state.bit(omk::StateArray::AddressEnabled, d.bit))
                         known.push_back(&d);
                 if (row >= static_cast<int>(known.size())) {
@@ -6369,9 +6372,6 @@ int main(int argc, char** argv) {
                                     "vehicle lane here - the call FAILS, which "
                                     "is what the engine does too (text 42)\n",
                                     d->name.c_str());
-                } else {
-                    const auto* d = known[static_cast<std::size_t>(row)];
-                    const int wasArea = state.currentArea();
                 } else if (boarded && known[static_cast<std::size_t>(row)]->area
                                        == session.residentSlot(session.activeSlot()).area) {
                     // ...the RESIDENT area, not `state.currentArea()`: the
@@ -6400,15 +6400,15 @@ int main(int argc, char** argv) {
                         std::printf("slider: '%s' has no road within reach - "
                                     "the journey FAILS (text 42)\n", d->name.c_str());
                     }
-                    if (d->area != wasArea) {
+                } else {
                     // ---- THE JOURNEY, to another AREA -------------------
                     //
                     // `sub_40E630` loads the area first and only then looks
                     // for a lane; the circuit changes under the vehicle. Not
                     // driven here: the port loads the area and places him,
                     // which is the arrive arm, and says so.
-                        state.setCurrentArea(static_cast<std::int16_t>(d->area));
-                        session.loadArea(d->area);
+                    const auto* d = known[static_cast<std::size_t>(row)];
+                    const int wasArea = state.currentArea();
                     if (boarded) {
                         session.sliders().dismountCalled();
                         boarded = false;
@@ -6416,6 +6416,9 @@ int main(int argc, char** argv) {
                                     "drive across a circuit change is not "
                                     "ported; loading and placing instead\n");
                     }
+                    if (d->area != wasArea) {
+                        state.setCurrentArea(static_cast<std::int16_t>(d->area));
+                        session.loadArea(d->area);
                     }
                     // The address whose `+14` is this record's own bit - the
                     // one number that joins the two tables.
@@ -7268,7 +7271,23 @@ int main(int argc, char** argv) {
         // (todo/omk-play.md 82).
         const bool screenKeepsWorld = !walk || openScreen < 0 ||
                                       w.worldBehind(openScreen);
-        const bool drawWorld = screenKeepsWorld && worldReady && anyWorld &&
+        // ...UNLESS THE PANEL CARRIES A 3D VIEWPORT ITEM. `byte_90E155` only
+        // guards `Game_Frame`'s full-screen submit; a UI item whose draw
+        // callback is `sub_4782B0` submits the SAME world through the SAME
+        // live camera (`I2D_Submit3DView(&rect, dword_93076C, flt_90E120, 0,
+        // layer - 1)`) as a display-list node with its own rectangle, and
+        // nothing gates it. The VIDEOPHONE's panel has one at (105, 85)
+        // 500x280 on layer 6, and it is how the caller's face reaches the
+        // device: the world is rendered into that rectangle - its own
+        // viewport, its own aspect - and composed between the sheet and the
+        // panel's items (`docs/UI.md` 3i, todo/omk-play.md 83).
+        const omk::UiItem* vpItem = (walk && openScreen >= 0)
+            ? omk::ScreenComposer::viewportItem(walk->panel() ? walk->panel()
+                                                              : w.screen(openScreen))
+            : nullptr;
+        comp.attachView3D(nullptr);
+        const bool drawWorld = (screenKeepsWorld || vpItem) &&
+                               worldReady && anyWorld &&
                                (haveDlgCam || haveEdit || holdEditCam ||
                                 (wc && (wc->absolute() || haveRelCam)));
         if (drawWorld) {
@@ -7353,6 +7372,16 @@ int main(int argc, char** argv) {
             if (view.vh > dispH) view.vh = dispH;
             view.vx = 0;
             view.vy = (dispH - view.vh) / 2;
+            if (vpItem) {
+                // The viewport item's rectangle, scaled the way `I2D_ScaleX/Y`
+                // scale it (`v * screen / 640`), and it replaces the
+                // letterbox: `sub_45FA20` sets the D3D viewport to exactly
+                // this rect and the vertical fov follows its aspect.
+                view.vx = vpItem->x * dispW / 640;
+                view.vy = vpItem->y * dispH / 480;
+                view.vw = vpItem->w * dispW / 640;
+                view.vh = vpItem->h * dispH / 480;
+            }
             // THE FOG (todo/options-config.md step 4). Linear, over the range
             // the clip distance sizes - `sub_440BE0` writes `+328 = D * 0.25`
             // as the start and `+340 = D` as the end, so it ENDS at the clip
@@ -9597,7 +9626,16 @@ int main(int argc, char** argv) {
             // The backend drew the picture into the top-left `vw x vh`; place
             // it, leaving the bands as the black `fb` was cleared to.
             const omk::Surface& pic = world.readback();
-            if (pic.w == fb.w) {
+            if (vpItem && pic.w == fb.w) {
+                // The picture is the viewport item's; the composer places it
+                // at the item's layer, not the frame.
+                view3dPic = omk::Surface(view.vw, view.vh, 0);
+                for (int y = 0; y < view.vh && y < pic.h; ++y)
+                    std::copy(pic.px.begin() + static_cast<long>(y) * pic.w,
+                              pic.px.begin() + static_cast<long>(y) * pic.w + view.vw,
+                              view3dPic.px.begin() + static_cast<long>(y) * view.vw);
+                comp.attachView3D(&view3dPic);
+            } else if (pic.w == fb.w) {
                 for (int y = 0; y < view.vh && y < pic.h; ++y) {
                     const int dy = view.vy + y;
                     if (dy < 0 || dy >= fb.h) continue;

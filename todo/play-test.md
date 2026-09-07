@@ -163,6 +163,10 @@ way `sub_457F50` moves the slider's node.
 
 ## What is NOT worth testing yet
 
-* the videophone's own picture inside the sneak — the world no longer shows
-  through the device's hole, which is correct, but the interface's own 3D view
-  that belongs there is not drawn (`omk-play` 83).
+* ~~the videophone's own picture inside the sneak~~ — **testable again
+  (2026-09-08)**: the panel's own viewport item now renders the world into
+  its 500x280 rectangle through the live camera, so the caller's face should
+  be back in the device during the restaurant call (`--call 386` is the
+  headless repro). What to look for: the face fills the rectangle the way
+  the original's capture shows, the frame of the device is drawn around it,
+  and the street is NOT visible anywhere else on the sneak.
