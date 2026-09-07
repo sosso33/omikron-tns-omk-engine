@@ -26,7 +26,7 @@ items are research and can be done any time they are wanted.
 | 3 | ESC quits instead of opening the pause menu | **DONE, WATCHED** | strong | 2026-09-07: ESC is `Game_RunLoop`'s own `GetAsyncKeyState(27)`, not a binding, and the four item callbacks are four instructions each. `Quitter le jeu` is `Game_NewGame`, not an exit |
 | 4 | tuto zone fires repeatedly, player not stopped | **M** | strong | zone lifecycle is read and there is already a check nearby |
 | 5 | black frames in the Impasse cutscene | **FIXED, WATCHED** | strong | the camera should HOLD at the end of an editing, and a shot is as long as its editing |
-| 20 | stuck on the last step of the bank's stairs | **READ** | measured | the original's stair rule is read and the port climbs all 119 risers in the game - the symptom does not reproduce and needs the reader to place it |
+| 20 | stuck on the last step of the bank's stairs | **FIXED** | measured | the capsule swept from the feet, so a 10.8-unit riser blocked him a sphere-radius short of the step; the sweep now starts a step-height up |
 | 21 | a shop conversation's first camera is outside the shop | **M** | good | same family as item 5 and item 7 - what is resident when a script runs on ENTERING a building |
 | 6 | street NPCs stop and T-pose | **M** | good | same family as the scene-facing work of 2026-09-05 |
 | 7 | missing animations (lift doors, Kay'l's drawer) | **FIXED** | strong | the path is a DISPLACEMENT, not a position: `node = sample(t) - sample(t0) + anchor`. The flat's doors now slide 87.2 down, close behind you, and are AUDIBLE (gain 0.03 -> 1.00, the same fault reaching the 3D sound). The lift's were right by accident. Door COLLISION still to check |
@@ -466,58 +466,62 @@ captures, so the likely honest outcome is "the engine sets these states, and
 their effect has no reachable tier" — which is a real result and should be
 recorded as one rather than left as a question.
 
-### 20. Stuck on the last step of the bank's stairs — **READ, and NOT REPRODUCED**
+### 20. Stuck on the last step of the bank's stairs — **FIXED 2026-09-07**
 
-Reported 2026-09-06. Worked 2026-09-07: the original's stair handling is read,
-the port's is measured against it, and **the reported symptom does not
-reproduce** — which is recorded here rather than closed, because the reader saw
-something.
+Reported 2026-09-06, reproduced and fixed 2026-09-07 once the reader placed it:
+*"when you are at the bottom of the bank's stairs, try to climb them and enter
+the bank: I was blocked by the very last step."*
 
-**How the engine handles stairs: it doesn't.** There is no stair rule. Climbing
-is `Walk_ProbeGround`'s window plus the mover's refusal (`21_d3d.c` 2644),
-which has **three** arms and not the two this port had:
+**It is the ENTRANCE stairs, outside in Anekbah** — ten steps up from the
+street to the bank's door — and my first day of work missed them entirely
+because I enumerated staircases by mesh NAME. These are part of the building
+mesh `Bat29`, not a mesh called `escalier`, so a name search does not see them.
+That is the lesson of the item: the thing you are looking for need not be named
+after itself.
 
-```c
-rise > dword_910340                       /* 11.811023 = 30 cm           */
-    || cos(dword_91033C * PI/180) > -n    /* dword_91033C = 30.0 degrees */
-    || (**(uint32_t **)a2 & 0x20000000)   /* ...or the mesh is FLAGGED   */
-```
+**The reproduction.** Standing at the foot (4870, 1, −2577) and walking −x, the
+player climbs nine steps of 10.25 units and then stops dead at **x 4604.6,
+y −91.5** — the second-to-last tread — and never moves again in 300 frames. The
+door is 10 units away. The last riser is **10.8** units, against a step limit
+of 11.811 (30 cm), so the step rule allows it.
 
-Two more constants came out of the same read. **A drop under 20 cm
-(7.8740158, the fourth cm→inch constant) is silent**; anything more takes the
-fall path, whose tiers are 118.11 (3 m) and 196.85 (5 m). And `Sweep_MeshTest`
-(0x004AD460) never sweeps a mesh flagged `0x20000000` or `0x41` — an
-**exclusion**, which is the opposite of how `collision.h`'s note first read it.
+**The cause is the capsule, not the step rule.** The bare walker climbs the
+same step cleanly (rise 10.35, `engine/tools/step_probe`); with the sweep on it
+is `BLOCKED` at x 4605.06 — the same spot. Kay'l's four collision spheres hang
+off his feet and the lowest has its **bottom exactly there** (centre 30.90,
+radius 10.91; the pelvis-to-feet distance is 41.8), so every riser in the game
+is inside that sphere. The sweep then stops him a sphere-radius short of the
+step he is trying to climb, where the ground probe can never reach the tread
+above. Nine risers of 10.25 squeak through and the one of 10.8 does not — a
+knife-edge, which is why only the last step blocks.
 
-**The measurement** (`engine/tools/stairs_probe`, `verify.py: engine: stairs`).
-Thirteen sets ship a staircase mesh; twelve are real flights. Their risers run
-**6.17 to 8.30 units** — every one under the 30 cm limit — and **all 119 risers
-of all 12 flights climb** in the port. The bank's own staircase climbs in the
-running game from five different approaches, and Kay'l ends on the upper floor.
+**The fix**: the sweep starts a step-height above the feet, so the two halves
+agree. `Walk_ProbeGround` already casts from `feet − kStepUp − 1`, and anything
+inside that window is something the actor CLIMBS — it cannot also be something
+he collides with. A wall taller than the limit still blocks: `engine: narrow
+phase` still stops him 13.0 in front of one, and `engine: airlock walk` is
+unchanged. He now climbs the ten steps, the door zone fires at frame 148, and
+he walks into the bank.
 
-So **the step rule cannot be what stopped anyone**, and no staircase in the
-game is even close to the limit.
+**Labelled a RECONSTRUCTION**, because what the engine does here is not read:
+`Sweep_ActorMove` and the 930-line `Sweep_PolygonKernel` were deliberately not
+transcribed, so the sweep's own start height is unknown. What is known is that
+the game climbs its own stairs, that its limit is 30 cm, and that a sweep
+anchored at the feet cannot do both. Reading `Actor_Move`'s order — whether the
+step-up runs before the sweep — would settle it.
 
-**What is now ported**: the sweep exclusion. **What is not**, with its reason
-measured rather than guessed: the step arm sits in a PUSH-BACK branch, so
-dropping those meshes from the walkable floor is a *different* rule — it takes
-**3606 of Lahoreh's 17658** floor triangles, a fifth of the city. Doing it
-faithfully means carrying the flag per triangle into the step test. That is the
-open half of this item.
+**What the original does, read on the way** (`docs/ASSETS.md`): there is no
+stair rule at all. The step refusal has **three** arms, not the two this port
+had — `rise > 11.811 || cos(30°) > −n || (mesh flags & 0x20000000)` — and a
+drop under **20 cm** (7.8740158, the fourth cm→inch constant) is silent, with
+anything more taking the fall path at 3 m and 5 m. `Sweep_MeshTest` never
+sweeps a mesh flagged `0x20000000` or `0x41`; that exclusion is now ported, and
+the step arm is not, because it sits in a push-back branch and dropping those
+meshes from the walkable floor would take 3606 of Lahoreh's 17658 floor
+triangles.
 
-**Three of my own measurements were wrong on the way**, all the same shape —
-the probe's aim rather than the port's walker. Walking a whole flight along one
-guessed axis "failed" seven flights; walking bbox-centre to bbox-centre
-"failed" Anekbah's at riser 6; and grouping treads by height turned one
-platform into a 0.90-unit riser and a distant landing into a 106-unit one. The
-probe now tries sixteen headings per riser and counts only rises between 1 and
-20 units, because the question is whether the RULE admits the step, not whether
-I aimed well.
-
-**What to do next**: this needs the reader to say which staircase, or a frame
-of it. Every one in the game is climbable by the rule, so the cause is
-elsewhere — the capsule sweep against a banister, a prop, or a zone. Worth
-pairing with item 15 (the fall tiers), which the same read now describes.
+**Still open**: the third refusal above, which needs the flag carried per
+triangle into the step test.
 
 ### 21. A shop conversation's first camera is placed outside the shop — M, good evidence
 

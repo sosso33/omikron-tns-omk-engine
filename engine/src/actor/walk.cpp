@@ -137,7 +137,34 @@ void Walker::slide(double& dx, double& dz, double push[2]) {
     // actor has been moved by so far across the passes - the engine adds
     // `a4 * dir + a3 * normal` to the position each pass and re-sweeps from
     // there - and what is returned is that plus the last remainder.
-    double p[3] = {pos_[0], pos_[1], pos_[2]};
+    // THE SWEEP STARTS A STEP ABOVE THE FEET, and without that the actor
+    // cannot climb a stair at all.
+    //
+    // The model's own spheres hang off the feet, and Kay'l's lowest has its
+    // BOTTOM exactly there (centre 30.90, radius 10.91, and the pelvis-to-feet
+    // distance is 41.8). So every riser in the game is inside that sphere, and
+    // the sweep stops him one unit short of it - a sphere-radius from the step
+    // he is trying to climb, where the ground probe can never reach the tread
+    // above. Measured on Anekbah's bank entrance (`todo/next-tasks.md` 20):
+    // ten steps, nine of 10.25 units that squeak through and a last one of
+    // 10.8 that does not, leaving him stuck at x 4605 with the door 10 units
+    // away - which is exactly the reader's report.
+    //
+    // Starting the sweep a step-height up makes the two halves agree:
+    // `Walk_ProbeGround` already casts from `feet - kStepUp - 1`, so anything
+    // inside that window is something the actor CLIMBS, and it cannot also be
+    // something he collides with. A wall taller than the step limit still
+    // blocks - the spheres above the raise still meet it - and
+    // `verify.py: engine: narrow phase` still stops him 13.0 in front of one.
+    //
+    // RECONSTRUCTION, and labelled as one: what the engine does here is not
+    // read. `Sweep_ActorMove` (0x004AD360) and the 930-line
+    // `Sweep_PolygonKernel` were deliberately not transcribed, so the sweep's
+    // own start height is unknown; what IS known is that the game climbs its
+    // own stairs, that its step limit is 30 cm, and that a sweep anchored at
+    // the feet cannot do both. Reading `Actor_Move`'s order - whether the
+    // step-up runs before the sweep - would settle it.
+    double p[3] = {pos_[0], pos_[1] - kStepUp, pos_[2]};
     double total[2] = {0.0, 0.0};
     for (int pass = 0; pass < 3; ++pass) {
         const double len = std::sqrt(dx * dx + dz * dz);

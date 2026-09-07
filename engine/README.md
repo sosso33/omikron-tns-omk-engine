@@ -2457,6 +2457,32 @@ Five things it shows that no slice could:
   every item the widget walk finds is a number, and a booting engine that
   prints its menu as integers is obviously half-done.
 
+### The sweep starts a step above the feet (2026-09-07)
+
+A reader could not climb the stairs into Anekbah's bank: nine steps, then
+blocked on the last. It is not the step rule — the riser is 10.8 units against
+a 30 cm (11.811) limit, and the bare walker climbs it. It is the **capsule**.
+
+The model's collision spheres hang off the feet and Kay'l's lowest has its
+bottom exactly there (centre 30.90, radius 10.91, pelvis-to-feet 41.8), so
+every riser in the game sits inside it. The sweep then stops him one unit short
+of the riser — a sphere-radius from the step — where the ground probe can never
+reach the tread above. Nine risers of 10.25 squeaked through and the 10.8 one
+did not, which is why only the last step blocked.
+
+`Walker::slide` now sweeps from `feet - kStepUp`. `Walk_ProbeGround` already
+casts from that same window, and something inside it is a step to CLIMB rather
+than a thing to collide with. A wall taller than the limit still blocks —
+`engine: narrow phase` is unchanged at 13.0 in front of one — and he now climbs
+the ten steps, fires the door zone at frame 148 and walks into the bank.
+
+**A RECONSTRUCTION, labelled**: the engine's own sweep start is not read.
+`Sweep_ActorMove` and the 930-line `Sweep_PolygonKernel` were deliberately not
+transcribed. What is known is that the game climbs its own stairs, that the
+limit is 30 cm, and that a sweep anchored at the feet cannot do both; reading
+`Actor_Move`'s order would settle it. `verify.py: engine: stairs`, shown to
+fail (without it the walker tops out at y -91.5 instead of -102.1).
+
 ## Coverage — what is ported, and what is not
 
 **Added 2026-09-03, outside the 41-row audit below: the street life**

@@ -8677,9 +8677,15 @@ def c_engine_stairs():
     SHOWN TO FAIL: removing the `Steep` exclusion puts the flagged meshes back
     into the swept set.
 
-    What it does NOT settle is the reader's report: the bank climbs, and every
-    riser in the game is inside the limit, so whatever stopped them is not the
-    step rule. That is recorded in item 20 rather than guessed at.
+    **And the reader's report is a different staircase**, found once they placed
+    it: the bank's ENTRANCE stairs, outside in Anekbah, are part of the
+    building mesh `Bat29` and carry no `escalier` in their name, so the sweep
+    above never saw them. Ten steps, the last of 10.8 units - inside the step
+    limit, and the CAPSULE blocked it, because the model's lowest sphere has
+    its bottom exactly at the feet. The sweep now starts a step-height up
+    (`actor/walk.cpp`, labelled a reconstruction), and this check walks that
+    staircase too: from the foot at (4870, 1, -2577) he must reach the landing
+    at y -102 rather than stopping at -91.
     """
     import subprocess, re
     eng = os.path.join(ROOT, "engine")
@@ -8691,6 +8697,15 @@ def c_engine_stairs():
                            capture_output=True, text=True)
         if b.returncode != 0:
             return ("build failed",), ("built",), "engine/ must build"
+    # the bank's entrance, which is the reader's staircase: bare walker and
+    # capsule both, from the foot of the flight
+    sp = subprocess.run([os.path.join(eng, "build", "step_probe"),
+                         os.path.join(fr, "MESHES", "DECORS", "Anekbah.3DO"),
+                         "4620", "-81.2", "-2577", "-2", "0", "24", "10.9"],
+                        capture_output=True, text=True,
+                        encoding="utf-8", errors="replace").stdout
+    bankTop = min([float(x) for x in re.findall(r"^\s+\d+\s+\S+\s+(-?\d+\.\d+)",
+                                               sp, re.M)] or [0.0])
     st = subprocess.run([os.path.join(eng, "build", "stairs_probe"), fr],
                         capture_output=True, text=True,
                         encoding="utf-8", errors="replace").stdout
@@ -8710,10 +8725,10 @@ def c_engine_stairs():
     step = struct.unpack("<f", struct.pack("<I", 1094515188))[0]
     slope = struct.unpack("<f", struct.pack("<I", 1106247680))[0]
     return (round(step, 6), slope, len(real), round(max(real), 2), round(min(real), 2),
-            max(real) < step, allUp, sum(int(x[1]) for x in climbed),
+            max(real) < step, allUp, sum(int(x[1]) for x in climbed), round(bankTop, 1),
             (int(m.group(1)), int(m.group(3)), int(m.group(4))) if m else None,
             int(lah.group(1)) if lah else None), \
-           (11.811024, 30.0, 12, 8.30, 6.17, True, True, 119, (3, 43, 43), 41), \
+           (11.811024, 30.0, 12, 8.30, 6.17, True, True, 119, -102.1, (3, 43, 43), 41), \
            ("the step limit and the slope limit out of their initialisers; the " \
             "shipped staircases' real risers - worst 8.30, smallest 6.17, all " \
             "under the 30 cm limit; that all 119 risers of all 12 flights " \
@@ -24711,7 +24726,7 @@ def c_licence_headers():
                    if TAG in open(p, encoding="utf-8",
                                   errors="replace").read(600)]
     return (authored, sorted(missing), len(vendored), mislabelled), \
-           (371, [], 1, []), \
+           (375, [], 1, []), \
            "authored source files under tools/, engine/src, engine/tools, " \
            "engine/backends and scripts/; those MISSING the SPDX tag; " \
            "vendored files in engine/third_party; and vendored files wrongly " \

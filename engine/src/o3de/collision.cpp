@@ -67,7 +67,25 @@ TriangleSoup collisionSoup(std::span<const std::byte> d, SoupKind kind,
         const double ny = uz * vx - ux * vz;
         const double nz = ux * vy - uy * vx;
         const double n2 = nx * nx + ny * ny + nz * nz;
-        if (n2 <= 0) return;
+        // DEGENERATE FACES ARE DROPPED, and the test is against an area rather
+        // than against exact zero. `n2 <= 0` only catches a cross product that
+        // cancels bit for bit; a triangle whose three vertices are collinear
+        // to within float noise survives it carrying a normal that IS that
+        // noise. Nothing can legitimately hit a face of no area - but this
+        // port's own sweep can, and then `Walk_ClampNormal` collapses the
+        // meaningless normal and `slide` zeroes the move: the actor stops dead
+        // with nothing in front of him.
+        //
+        // That is what blocked the player on the LAST step of the bank's
+        // entrance stairs in Anekbah - a sliver at x 4566.9 whose three
+        // vertices print identically to a decimal (`todo/next-tasks.md` 20).
+        // 102 of the 143325 collision triangles over ten sets are like it.
+        //
+        // This is the port's own numerical hygiene and NOT a ported decision:
+        // `Sweep_PolygonKernel` is 930 lines of x87 and whether it rejects a
+        // degenerate face is unread. |n| is twice the area, so this drops
+        // anything under half a square inch.
+        if (n2 <= 1.0) return;
         const double slope = std::fabs(ny) / std::sqrt(n2);
         if (kind == SoupKind::Walkable && slope < kSlopeCos30) return;
         if (kind == SoupKind::Steep    && slope >= kSlopeCos30) return;
