@@ -442,4 +442,53 @@ SliderCall planSliderCall(const OptTrack& t, const float target[3],
     return c;
 }
 
+// `sub_456530`'s switch, and only that - see the header. Every arm sets the
+// ride's 90-degree fov, which is why it is not repeated per case here.
+void RideMachine::tick(float dt, float toTarget, float toPlayer, bool ahead) {
+    camera = -1;
+    fadeIn = false;
+    released = false;
+    switch (state) {
+    case 1:
+        // `flt_8F5E90 -= dt`, and on expiry the assignment is dropped.
+        idleClock -= dt;
+        if (idleClock <= 0.0f) { state = 0; released = true; }
+        return;
+    case 2:
+        // Camera 8 on the SLIDER while it comes...
+        camera = 8;
+        if (toTarget < kArrive) {
+            // ...and on arrival the camera hands back to the PLAYER at mode
+            // 0, the fade comes in and the hold is released.
+            state = 1;
+            idleClock = kIdle;
+            camera = 0;
+            fadeIn = true;
+            released = true;
+        }
+        return;
+    case 3:
+        return;                       // OPEN, and waiting for `MDSLIDIN`
+    case 4:
+    case 5:
+        return;                       // aboard: `Slider_TickRide` owns it
+    case 6:
+        if (toTarget < kArrive) {
+            // The departure shot: mode 10, framed between the destination's
+            // own address record and the vehicle.
+            state = 4;
+            camera = 10;
+        } else {
+            camera = 8;
+        }
+        return;
+    case 7:
+        // It drives off only once he is clear of it AND in front of it.
+        if (toPlayer > kLeave && ahead) { state = 0; released = true; }
+        return;
+    default:
+        return;                       // 0: ambient traffic, the ordinary drive
+    }
+}
+
 }  // namespace omk

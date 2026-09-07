@@ -108,5 +108,50 @@ int main(int argc, char** argv) {
                         c.dir[0], c.dir[2], c.nodeY);
         }
     }
+
+    // ---- THE RIDE STATE MACHINE, driven ----------------------------
+    //
+    // `sub_456530`'s switch, walked the way a call actually goes: COMING
+    // until the slider is inside 117 units of the pickup point, then the
+    // camera hands back to the player at mode 0 with the fade and the hold
+    // released, and the slot idles for 600 before giving up. Then the
+    // FETCHING arm, which ends at mode 10 and state 4 instead; and LEAVING,
+    // which needs the player both 300 units clear AND in front of it.
+    {
+        omk::RideMachine m;
+        m.state = 2;
+        int frames = 0;
+        float d = 2000.0f;
+        for (; frames < 400 && m.state == 2; ++frames) {
+            m.tick(1.0f, d, 0.0f, false);
+            d -= 20.0f;                       // it drives in at 20 a frame
+        }
+        std::printf("coming %d frames -> state %d camera %d fade %d hold %d\n",
+                    frames, m.state, m.camera, m.fadeIn ? 1 : 0,
+                    m.released ? 1 : 0);
+        int idle = 0;
+        for (; idle < 1000 && m.state == 1; ++idle) m.tick(1.0f, 0.0f, 0.0f, false);
+        std::printf("idle %d frames -> state %d\n", idle, m.state);
+    }
+    {
+        omk::RideMachine m;
+        m.state = 6;
+        m.tick(1.0f, 200.0f, 0.0f, false);
+        const int away = m.camera;
+        m.tick(1.0f, 100.0f, 0.0f, false);
+        std::printf("fetching away %d arrived state %d camera %d\n",
+                    away, m.state, m.camera);
+    }
+    {
+        omk::RideMachine m;
+        m.state = 7;
+        m.tick(1.0f, 0.0f, 400.0f, false);        // far, but behind it
+        const int behind = m.state;
+        m.tick(1.0f, 0.0f, 200.0f, true);         // ahead, but too close
+        const int close = m.state;
+        m.tick(1.0f, 0.0f, 400.0f, true);         // clear and ahead
+        std::printf("leaving behind %d close %d clear %d fov %.0f\n",
+                    behind, close, m.state, omk::RideMachine::kRideFov);
+    }
     return 0;
 }

@@ -257,15 +257,43 @@ Each ends in a commit and a report.
    was in the way BECOMES the player's slider. Cheap, and not what a reader
    would guess.
 
-6. **THE ARRIVAL** — `sub_452570` takes a free slot out of the 40
-   (`slot[+22] == 1` and the mover's `+180 & 8`; the port's own read of
-   `Slider_Init` already says `+22 == 1` is **slot 0, the player's own
-   slider**, so the pool is there), sets its state to 2 — or 6 when one was
-   already assigned — and calls `Screen_Fade(1)` with
-   `Actor_HoldAnimation(player, 1)` while it comes. Then the slider has to
-   REACH you and open (mode 3), `MDSLIDIN`'s gate opens, and the vehicle is
-   drawn under the rider. This is the last step, and the only one that needs
-   the pool driven rather than read. — open
+6. **THE RIDE STATE MACHINE** — `sub_456530`'s switch on the slot's `+8`,
+   ported and driven. — **DONE 2026-09-07**, `verify.py: engine: slider call`
+   extended and shown to fail by doubling the arrival radius.
+
+   Every arm of that switch sets `flt_536C28 = 90.0`, the field of view a ride
+   is watched at against the 75 of every other camera, and the states are:
+
+   | state | what |
+   |---|---|
+   | 0 | ambient traffic — not in the switch; the default arm is the ordinary drive |
+   | 1 | IDLE, a **600**-frame countdown; a slider you called and did not board gives up exactly then |
+   | 2 | COMING — camera 8 on the SLIDER, and within **117 units** (2.97 m) of the pickup point the camera hands back to the player at mode 0, `Screen_Fade(0)` fades in and the hold is released |
+   | 3 | OPEN — what `MDSLIDIN` demands ("slider is not in open mode !") |
+   | 4, 5 | aboard; `Slider_TickRide` owns the body |
+   | 6 | FETCHING — the same arrival test, ending at state **4** and camera **mode 10**, framed between the destination's own address record and the vehicle |
+   | 7 | LEAVING — it drives off once the player is **300** units clear AND in front of it |
+
+   So a ride passes through four camera modes and none of them is guessed:
+   **8** while it comes, **0** when it arrives, **10** when it leaves with
+   you, and **17** when you get off.
+
+## What is left
+
+The task's readable half is done. What remains is not reading but PLUMBING,
+and it is named here so nobody mistakes the labelling for a gap in the
+findings:
+
+* the free-slot take and the linked-list relink — `slot[+22] == 1` and the
+  mover's `+180 & 8`, then `sub_452CC0`'s unlink/relink through the engine's
+  own lane lists, which this port's traffic does its own way;
+* driving the called slider along its route until the machine's 117 units are
+  met, which needs the port's mover pointed at a lane it did not spawn on;
+* `MDSLIDIN` wired to the gate (ACTOR_STATE 6 plus mode 3), so a ride starts
+  from the world rather than from `--ride`;
+* and the vehicle DRAWN under the rider.
+
+None of that needs another read of the binary.
 
 ## What is already there, and must not be re-done
 

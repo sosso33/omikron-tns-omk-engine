@@ -2116,6 +2116,22 @@ loaded by the screen's own open - which rotate to show selection. The UI layer
 has no 3D path, so they are not drawn; their LABELS and the two counts are,
 on the echo bar, which is where the engine puts them.
 
+**THE RIDE STATE MACHINE** (step 6, the last read) - `sub_456530`'s switch on
+the slot's `+8`, ported and driven. Every arm sets `flt_536C28 = 90.0`, the fov
+a ride is watched at against the 75 of every other camera. State **2** is
+COMING: camera 8 on the SLIDER, and within **117 units** (2.97 m) of the pickup
+point the camera hands back to the player at mode 0, `Screen_Fade(0)` fades in
+and `Actor_HoldAnimation(player, 0)` releases the hold `sub_452570` put on.
+State **1** is a **600**-frame idle - a slider you called and did not board
+gives up exactly then. **3** is OPEN, which is what `MDSLIDIN` demands. **6**
+is FETCHING, the same arrival test ending at state 4 and camera **mode 10**,
+framed between the destination's own address record and the vehicle. **7** is
+LEAVING, and it drives off only once the player is **300** units clear AND in
+front of it.
+
+So a ride passes through four camera modes and none is guessed: 8 while it
+comes, 0 when it arrives, 10 when it leaves with you, 17 when you get off.
+
 **AND WHERE IT IS PUT** (step 5) - `sub_452CC0`'s decision half. The mover
 goes to the chosen lane's ORIGIN, set back **39 units** along that lane's own
 direction in x and z (the y untouched), with the node **30.75** under it -

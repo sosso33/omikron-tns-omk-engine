@@ -165,6 +165,63 @@ struct SliderCall {
 };
 SliderCall planSliderCall(const OptTrack& t, const float target[3],
                           unsigned counter);
+
+// THE RIDE STATE MACHINE - `sub_456530` (0x00456530), on the slot's `+8`.
+//
+// One switch, eight states, and every arm of it sets `flt_536C28 = 90.0` -
+// the field of view a ride is watched at, against the 75 of every other
+// camera. What the states are:
+//
+//   0  AMBIENT   not in the switch at all; the default arm falls through to
+//                the ordinary drive, which is what the traffic already does
+//   1  IDLE      a 600-unit countdown (`flt_8F5E90`); when it runs out the
+//                slot goes back to 0, the mover's `+180 & 4` is cleared and
+//                the assignment is released. A slider you called and did not
+//                board gives up after 600
+//   2  COMING    the TRANSPORT arm. Camera mode 8 on the SLIDER while it
+//                drives to the pickup point; within **117 units** of it
+//                (2.97 m, so three metres) the camera hands back to mode 0 on
+//                the PLAYER with parameter 56, `Screen_Fade(0)` fades in and
+//                `Actor_HoldAnimation(player, 0)` releases the hold that
+//                `sub_452570` put on. The slot then goes to 1 with the 600
+//                on its clock
+//   3  OPEN      it publishes the assignment (`dword_538E20`) and waits -
+//                and this is the mode `MDSLIDIN` demands before it will let
+//                the player in ("slider is not in open mode !")
+//   4/5 ABOARD   nothing but the fov: `Slider_TickRide` owns the body now
+//   6  FETCHING  the arm `sub_452570` takes when a slider was ALREADY
+//                assigned. The same 117-unit arrival test, and on arrival the
+//                slot goes to **4**, the player is probed onto the ground,
+//                the slider's node is re-parented, and the camera goes to
+//                **mode 10** framed between the DESTINATION's own address
+//                record and the vehicle
+//   7  LEAVING   once the player is more than **300 units** away AND in front
+//                of the slider (a dot product against his facing), it is put
+//                back where it was parked and released
+//
+// So the cameras a ride passes through are 8 while it comes, 0 when it
+// arrives, 10 when it leaves with you, and 17 when you get off
+// (`sub_4570F0`) - four modes, none of them guessed.
+//
+// The LINKED LISTS this machine runs over are the engine's and are not
+// transcribed (see `planSliderCall`); what is here is the machine.
+struct RideMachine {
+    int   state = 0;              // the slot's `+8`
+    float idleClock = 0.0f;       // `flt_8F5E90`, in frames
+    int   camera = -1;            // the mode this tick asked for, -1 for none
+    bool  fadeIn = false;         // `Screen_Fade(0)` fired this tick
+    bool  released = false;       // the hold was released this tick
+
+    static constexpr float kArrive = 117.0f;   // 2.97 m
+    static constexpr float kIdle   = 600.0f;
+    static constexpr float kLeave  = 300.0f;
+    static constexpr float kRideFov = 90.0f;   // `flt_536C28`
+
+    // One tick. `toTarget` is the distance from the slider to its pickup
+    // point, `toPlayer` the distance from the player to the slider, and
+    // `ahead` whether he is in front of it. `dt` is the engine's frame delta.
+    void tick(float dt, float toTarget, float toPlayer, bool ahead);
+};
 // The route `sub_452570` would take for that lane on the `counter`-th call.
 int laneRoute(const OptTrack& t, int lane, unsigned counter);
 

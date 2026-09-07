@@ -7135,6 +7135,31 @@ def c_engine_slider_call():
     vehicle is already on the target lane with a priority no higher than the
     call's, the two are **swapped outright**, node blocks and all, so the
     vehicle that was in the way BECOMES the player's slider.
+
+    **AND THE RIDE STATE MACHINE**, `sub_456530`'s switch on the slot's `+8`,
+    driven here rather than described. Every arm of it sets `flt_536C28 =
+    90.0`, the field of view a ride is watched at against the 75 of every
+    other camera, and the states are:
+
+    * **2 COMING** - camera mode 8 on the SLIDER while it drives in; within
+      **117 units** of the pickup point (2.97 m, so three metres) the camera
+      hands back to the PLAYER at mode 0, `Screen_Fade(0)` fades in and
+      `Actor_HoldAnimation(player, 0)` releases the hold `sub_452570` put on.
+      Driven at 20 units a frame from 2000 out, that is 96 frames.
+    * **1 IDLE** - a 600-frame countdown, and a slider you called and did not
+      board gives up exactly then.
+    * **3 OPEN** - what `MDSLIDIN` demands before it will let the player in
+      ("slider is not in open mode !").
+    * **6 FETCHING** - the same arrival test, but it ends at state **4** and
+      camera **mode 10**, framed between the destination's own address record
+      and the vehicle.
+    * **7 LEAVING** - it drives off only once the player is more than **300
+      units** clear AND in front of it, which the check exercises in all three
+      combinations.
+
+    So a ride passes through four camera modes and none is guessed: **8** while
+    it comes, **0** when it arrives, **10** when it leaves with you, and **17**
+    when you get off (`sub_4570F0`).
     """
     import subprocess
     eng = os.path.join(ROOT, "engine")
@@ -7165,6 +7190,10 @@ def c_engine_slider_call():
         "nearest 3 of 3 addresses, median 12.4 m worst 13.4 m".split(),
         "route area 101 lane 254 key 0 -> 334 333 334".split(),
         "call area 101 lane 254 route 334 at 10481 6 -9602 dir 1.00 -0.00 node -25".split(),
+        "coming 96 frames -> state 1 camera 0 fade 1 hold 1".split(),
+        "idle 600 frames -> state 0".split(),
+        "fetching away 8 arrived state 4 camera 10".split(),
+        "leaving behind 7 close 7 clear 0 fov 90".split(),
     ]
     return got, want, \
         "the four circuits the sneak's destinations name, and the nearest " \
