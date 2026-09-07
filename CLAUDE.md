@@ -347,6 +347,23 @@ stopped guarding the moment the name changed, and nothing would have said so.
   differing component is zero either way). **Assert that the file changed, name
   the object files explicitly, and check the mutated run's OUTPUT differs -
   not just that the check went red.**
+* **A CHECK MUST BUILD THE BINARY IT MEASURES.** `verify.py: dialogue camera
+  blend` ran `make build/dlgcam` - its probe - and then invoked `omk-play`,
+  which it had not built. Mutating the blend and re-running left the check
+  GREEN, because the binary under test was the one from before the mutation.
+  This is the same family as the stale object file above and it passed the
+  usual guard: the mutation applied, the file changed, the check ran. What it
+  did not do was reach the code. **Name every binary the check invokes in its
+  `make` line**, and when a mutation does not turn a check red, suspect the
+  build before the reading.
+* **A FIELD IN 4096ths IS NOT DEGREES, and it reads plausibly as either.** A
+  dialogue camera's roll ships as 2 and 359 for one pair, which looks exactly
+  like the wrap trap the docs already warn about - 2 degrees to 359 degrees,
+  lerping the long way round. They are 4096ths of a turn: 0.18 and 31.5
+  degrees, and after `angle4096` they are 2.02 and -0.61. A whole paragraph
+  was written about a wrap that was not there. `tools/omkdata.py` returns the
+  RAW record fields and the port's loaders convert; check which side of the
+  conversion a number came from before reasoning about it.
 * **A NAME IN `tools/renames.json` IS A HYPOTHESIS, NOT EVIDENCE - and one of
   them has the sense backwards.** `Perso_SetInputEnabled` (0x0045A3E0) reads
   as an enable and is a **block**: flag `0x80` makes `Cef_TickChannel` SKIP the

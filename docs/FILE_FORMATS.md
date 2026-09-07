@@ -2244,32 +2244,60 @@ block, whose format phase 3 opens with.
 > false friend caught by a reader who plays the game: bassin here is anatomy,
 > and the sibling name `TeCuissed` settles it.
 
-#### A dialogue camera's `+32`/`+34` — whose frame each point is in
+#### A dialogue camera's `+32`/`+34` — the RESOLVER KIND, and which actor
 
-**read from the code, 2026-09-06.** The two subject shorts of a 44-byte
-`DialogCamera` are not the world camera's "actor id or −1". `Camera_LoadParams`
-(0x004146C0) tests each: `0xFFFF` makes that point an **absolute** set
-coordinate (`+20`/`+32` of the live block); anything else makes it an
-**offset** (`+124`), resolved each frame against an anchor the block's subject
-resolver fills. `dialog_issue_camera` (`01_file.c`, the body of
-`Dialog_ApplyLineCameras`) maps the code to an actor:
+**read from the code 2026-09-06, corrected 2026-09-07** — the first reading
+had these as an actor selector alone, which is half of what they are.
 
-| code | anchor |
-|---|---|
-| `0xFFFF` | none — absolute |
-| 0, 1 | the first speaker |
-| 2, 3 | the second speaker |
-| 6 | both (a two-shot, `field36..40` carry its parameters) |
-| other | detached |
+The two subject shorts of a 44-byte `DialogCamera` are not the world camera's
+"actor id or −1". `Camera_LoadParams` (0x004146C0) tests each: `0xFFFF` makes
+that point an **absolute** set coordinate (`+20`/`+32` of the live block);
+anything else makes it an **offset** (`+124`) and puts the code itself at the
+block's `+88` (for the target) and `+140` (for the eye). Two different things
+then read that code:
 
-For kind 2 (`sub_4151E0`) the anchor is the actor **node's** world origin and
-heading, and the point is `anchor − R(heading)·offset`. Which actor is which:
+* **`dialog_issue_camera`** (`01_file.c`, the body of
+  `Dialog_ApplyLineCameras`) picks the ACTOR — 0/1 the first speaker, 2/3 the
+  second, 6 both, anything else detached — and writes it to the request, which
+  `Camera_Request` copies to the block's `+92`/`+144`;
+* **`sub_415A10`** switches on the same code to pick the RESOLVER, and the
+  four do not anchor in the same place:
+
+| code | actor | resolver | anchor |
+|---|---|---|---|
+| `0xFFFF` | — | — | absolute, no anchor |
+| 0 | first speaker | `sub_414F30` | the actor record's `+244/+248/+252`, euler `+416..+424` |
+| 1 | first speaker | `sub_415050` | the **`Tete` node** — `actor+16` — falling back to the node origin |
+| 2 | second speaker | `sub_4151E0` | the body node's world origin, heading `atan2` of its forward `+ 90` |
+| 3 | second speaker | `sub_415320` | the **head node's** world origin |
+| 6 | both | `sub_415540` | the two-shot; `field36..40` carry its parameters |
+
+`actor+16` is the head because `Actor_LoadModel` fills it from the name
+`"Tete"`, in the same run of stores that caches `Maing` at `+44` and `Maind`
+at `+48`. The point is then placed at `anchor − R(heading)·offset`, which is
+the sign `resolveCamera` already carried for world cameras.
+
+Which actor is which is read off the data rather than the driver's write:
 every camera of DIALOG 39 (the transcan's Chokovat advert) is `[2,2]` and the
 engine's own frame of it is a close-up of the hologram it speaks with, so the
-second speaker is the conversation's `speaker`; 401's camera 11 is `[1,1]`.
-Of the shipped file, all of 402's and all but one of 401's are absolute, which
-is why a port that drew only absolute ones passed every check it had.
+second speaker is the conversation's `speaker`; 401's camera 11 is `[1,1]` and
+frames Kay'l.
+
+**The distribution is why reading one kind was not enough.** Across the 321
+shipped conversations, 1670 of the 1923 camera points are absolute and 253 are
+not — and those split **20 / 92 / 24 / 84 / 33** over kinds 0 / 1 / 2 / 3 / 6.
+So **176 of the 253 anchor on a head**, and kind 2 — the only one the first
+reading covered — is the rarest of the three body/head kinds. A port that
+applied kind 2's body anchor to all of them put 401's camera 11, authored 40
+units in front of Kay'l's face, at chest height inside him.
 `verify.py: dialogue camera subject`.
+
+**And the move carries more than the two points.** `sub_418410` lerps four
+things across a travel — the eye, the target, `+44` and `+48` — and
+`Camera_LoadParams` names the last two: `+44` is the **roll**, wrapped to
+(−180, 180] as it loads, and `+48` the **fov**. Both are plain lerps, so a
+pair whose fov differs sweeps rather than cutting: 402's `4572 → 4574` runs
+84.99° → 99.58°. `verify.py: dialogue camera blend`.
 
 ### `Script_MoveObjectOnPath` — the path is a displacement or a position, and **parameter 5 says which**
 
