@@ -15,6 +15,44 @@ waiting on its evidence.
 
 ## Open (batch 6, filed 2026-09-04)
 
+### 84. Black stripes on for ever after entering or leaving a building — A
+
+> **Fixed 2026-09-07.** Not yet watched: the evidence below is a headless walk
+> and the shipped captures.
+
+A reader: *black stripes entering/leaving a building*. The letterbox, and the
+port had the wrong predicate for it.
+
+**What it did.** `view.vh` was full-frame only for `adventure && followCam` -
+`followCam` being the area's own camera 0, relative to actor 0. A great many
+areas roam under a FIXED camera instead, so the bars went on at the door and
+stayed on.
+
+**Measured on the walk out of Kay'l's flat.** Zone 24's activate script is
+`player.anim.hold` / `fade.to_black` / `camera.set 4418, 0, 2` /
+`scx.play.wait obj 0x8a` / `area.goto 229`, handing over to Hall 27, whose own
+script leaves absolute camera 4353 up. The bars go on at frame 3 and by frame
+400 `adventure` is 1 and `animHeld` is 0 - the player has control - while
+`followCam` is still 0. They never come off.
+
+**The captures decide the rule.** Every letterboxed frame in `traces/frames`
+is one the player does NOT control, and that includes a cutscene on a
+scripted world camera - `intro-75`, 64/65 - so the strip is neither "a
+conversation" nor "not the follow camera". It is camera mode, and camera mode
+is "he has no control". The fix is one term: `adventure` alone.
+
+Two things fell out. **64 rows is the engine's own band height**:
+`Screen_Fade`'s ticker draws its vignette quads
+`v3 = (HIWORD(g_ScreenSize) << 6) / 480` tall, 64 at 480, leaving the 352 the
+captures measure - the letterbox and the fade vignette are the same two bands,
+which is why the exit script's `fade.to_black` darkens exactly the strip.
+And `dlg402-44/47` measure 64/**32** not because the band differs but because
+the line's SUBTITLE is drawn inside the bottom one.
+
+`verify.py: letterbox` asserts the five captures and the port's own walk;
+shown to fail by putting `followCam` back, which returns the walked frame to
+64/64 - the reader's stripes, to the row. `docs/UI.md` §3j.
+
 ### 83. The SNEAK CALL was never played — the device opened and the call did not
 
 > **Ported 2026-09-07, CONFIRMED IN PLAY over three rounds.** The first run

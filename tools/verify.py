@@ -7445,6 +7445,107 @@ def _sneak_call_frame():
     return "many colours" if len(seen) > 50 else "one colour %d" % next(iter(seen))
 
 
+def c_letterbox():
+    r"""The 1.818:1 strip is CAMERA MODE, and camera mode is "he has no control".
+
+    A reader: *black stripes entering/leaving a building*. Leaving Kay'l's
+    flat runs zone 24's activate script -
+
+        player.anim.hold / fade.to_black / camera.set 4418, 0, 2 /
+        scx.play.wait obj 0x8a / area.goto 229 / actor.goto_address 663
+
+    - and hands over to Hall 27, whose own script leaves **absolute** camera
+    4353 installed. `omk-play` letterboxed whenever the camera was not the
+    area's follow camera, so the bars went on three frames in and never came
+    off: measured over that walk, by frame 400 `adventure` is 1 and
+    `animHeld` is 0 - the player has control - while `followCam` is still 0.
+
+    **The captures decide it, and they refute the narrower reading too.**
+    Every letterboxed frame in `traces/frames` is one the player does not
+    control, and that includes a CUTSCENE shot with a scripted world camera:
+
+        dlg402-32/35/38/41   64 / 64     the conversation
+        dlg402-44/47         64 / 32     the same, with the line's SUBTITLE
+                                         drawn inside the bottom band
+        intro-75             64 / 65     the intro cutscene, camera-set
+        menu-*, loadpanel-*  none        2D interface
+        intro-42/48/60       none        2D interface (the load panel)
+
+    So the strip is not "a conversation", and it is not "not the follow
+    camera" either. **64 rows is the engine's own band height**: the fade
+    vignette's two quads are `v3 = (HIWORD(g_ScreenSize) << 6) / 480` tall
+    (18_d3d.c, `Screen_Fade`'s ticker), which is 64 at 480 and leaves 352 -
+    the same number the captures measure, so the letterbox and the vignette
+    are the same two bands.
+
+    **Tier 4 for the rule and tier 3 for the port**: the band heights are
+    measured off the engine's own framebuffer; that a controlled frame is
+    full-frame is a NEGATIVE over five captures plus a reader's report, which
+    is weaker and is what the row above says.
+    """
+    import subprocess, tempfile, shutil
+    sys.path.insert(0, os.path.join(ROOT, "tools"))
+    import frame as F
+
+    def bands(path):
+        w, h, rgb = F.read_png(path)
+        lit = [y for y in range(h)
+               if any(max(rgb[3 * (y * w + x) + k] for k in range(3)) > 8
+                      for x in range(0, w, 4))]
+        return (lit[0], h - 1 - lit[-1]) if lit else (h, h)
+
+    fr = os.path.join(ROOT, "traces", "frames")
+    shots = {}
+    for name in ("dlg402-32", "dlg402-44", "intro-75", "menu-18", "intro-60"):
+        p = os.path.join(fr, name + ".png")
+        shots[name] = bands(p) if os.path.exists(p) else None
+
+    # ...and the PORT, walked out of the flat. The frame it ends on is Hall
+    # 27 under absolute camera 4353 with the player back in control, which is
+    # the frame the reader met with bars on it.
+    eng = os.path.join(ROOT, "engine")
+    save = os.path.join(ROOT, "traces", "games-resto.bin")
+    walked = (0, 0)
+    if os.path.isdir(eng) and os.path.exists(save):
+        mk = subprocess.run(["make", "-s", "play"], cwd=eng,
+                            capture_output=True, text=True)
+        play = os.path.join(eng, "build", "omk-play")
+        if mk.returncode == 0 and os.path.exists(play):
+            tmp = tempfile.mkdtemp()
+            out = os.path.join(tmp, "hall.bin")
+            try:
+                subprocess.run([play, omkpaths.data_root(),
+                                os.path.join(ROOT, "tables"),
+                                "--software", "--res", "640x480", "--nofmv",
+                                "--no-crowd", "--save", save, "--slot", "0",
+                                "--stand", "2939,1038,-749,89",
+                                "--frames", "900",
+                                "--hold", "0*40,k28*4,0*820",
+                                "--dump", out],
+                               capture_output=True, text=True,
+                               env=dict(os.environ, SDL_VIDEODRIVER="dummy"))
+                if os.path.exists(out):
+                    d = open(out, "rb").read()
+                    px = struct.unpack("<%dH" % (len(d) // 2), d)
+                    if len(px) == 640 * 480:
+                        lit = [y for y in range(480)
+                               if any(px[y * 640 + x] for x in range(0, 640, 4))]
+                        walked = (lit[0], 479 - lit[-1]) if lit else (480, 480)
+            finally:
+                shutil.rmtree(tmp, ignore_errors=True)
+
+    return (shots["dlg402-32"], shots["dlg402-44"], shots["intro-75"],
+            shots["menu-18"], shots["intro-60"], walked), \
+           ((64, 64), (64, 32), (64, 65), (1, 1), (0, 1), (0, 0)), \
+           "the top and bottom dark bands of five captures - the " \
+           "conversation at 64/64, the same conversation with its SUBTITLE " \
+           "lighting the bottom band, the intro CUTSCENE at 64/65 (a " \
+           "scripted world camera, letterboxed), and the two 2D interface " \
+           "frames at none; then the port walked out of Kay'l's flat into " \
+           "Hall 27, where the area leaves an ABSOLUTE camera installed and " \
+           "the player has control - which must be FULL-FRAME"
+
+
 def c_sneak_call():
     r"""The VIDEOPHONE call: a screen that answers its own question.
 
@@ -26342,6 +26443,7 @@ SLOW = [
     ("engine: screen close",   c_engine_screen_close,  "engine/README"),
     ("engine: pause",       c_engine_pause,       "todo/next-tasks 3; UI 3b"),
     ("sneak call",         c_sneak_call,         "UI 3d-bis"),
+    ("letterbox",          c_letterbox,          "todo/next-tasks 2"),
 
     ("engine: DataFs",     c_engine_datafs,     "engine/README"),
     ("engine: SCX stream", c_engine_scx_stream, "engine/README"),

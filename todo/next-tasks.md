@@ -22,7 +22,7 @@ items are research and can be done any time they are wanted.
 | # | task | size | evidence | why here |
 |---|---|---|---|---|
 | 1 | Enter held ≈ 0.5 s counts as several presses | **S** | strong | mechanism already documented; affects every screen and every conversation |
-| 2 | black stripes entering/leaving a building | **S** | strong | the letterbox rule is already written down and this contradicts it |
+| 2 | black stripes entering/leaving a building | **DONE** | strong | 2026-09-07: the strip is CAMERA MODE, and camera mode is "he has no control" - not "the camera is not the follow camera". Areas that roam under a FIXED camera had the bars on for ever |
 | 3 | ESC quits instead of opening the pause menu | **DONE, WATCHED** | strong | 2026-09-07: ESC is `Game_RunLoop`'s own `GetAsyncKeyState(27)`, not a binding, and the four item callbacks are four instructions each. `Quitter le jeu` is `Game_NewGame`, not an exit |
 | 4 | tuto zone fires repeatedly, player not stopped | **M** | strong | zone lifecycle is read and there is already a check nearby |
 | 5 | black frames in the Impasse cutscene | **FIXED, WATCHED** | strong | the camera should HOLD at the end of an editing, and a shot is as long as its editing |
@@ -140,16 +140,43 @@ loop and a GoTo redirect and neither writes a latch id.
 of a conversation; the mutation that asserts the flag instead of restoring it
 takes `MDACTION after leaving` from 8 to 0.
 
-### 2. Black stripes entering/leaving a building — S, strong evidence
+### 2. Black stripes entering/leaving a building — **DONE 2026-09-07**
 
-Almost certainly the **letterbox**. `CLAUDE.md` §5 and `play.cpp` already say
-it: the 1.818:1 strip is measured off DIALOGUE captures, so it is evidence
-about *camera mode* and not about free roaming — the viewer draws full-frame
-when `adventure && followCam`. Stripes on a transition therefore mean the
-follow camera is briefly not selected while the areas swap.
+It was the letterbox, and the triage above was half right: the strip does
+belong to camera mode. What was wrong is what the port took camera mode to BE.
 
-Cheap to localise: log the camera mode across a door. The rule is written
-down, so this is making the code obey a rule the repo has already established.
+**Reproduced.** Leaving Kay'l's flat is zone 24's activate script —
+`player.anim.hold` / `fade.to_black` / `camera.set 4418, 0, 2` /
+`scx.play.wait obj 0x8a` / `area.goto 229` — handing over to Hall 27, whose
+own script leaves **absolute camera 4353** installed. `omk-play` letterboxed
+whenever the camera was not the area's follow camera, so over that walk the
+bars went on at frame 3 and never came off: by frame 400 `adventure` is 1 and
+`animHeld` is 0 — the player has control — while `followCam` is still 0,
+because a great many areas roam under a fixed camera.
+
+**The captures decide the rule, and they refute the narrower reading too.**
+Every letterboxed frame in `traces/frames` is one the player does not control,
+and that includes a cutscene shot with a scripted world camera:
+
+| capture | bands | what it is |
+|---|---|---|
+| `dlg402-32/35/38/41` | 64 / 64 | the conversation |
+| `dlg402-44/47` | 64 / **32** | the same, with the line's SUBTITLE lighting the bottom band |
+| `intro-75` | 64 / 65 | the intro CUTSCENE, on a scripted world camera |
+| `menu-*`, `loadpanel-*`, `intro-42/48/60` | none | 2D interface |
+
+So the strip is not "a conversation", and it is not "not the follow camera".
+It is **he has no control**, and the fix is one term: `adventure` alone.
+
+**And 64 rows is the engine's own band height.** `Screen_Fade`'s ticker draws
+its two vignette quads `v3 = (HIWORD(g_ScreenSize) << 6) / 480` tall — 64 at
+480, leaving 352, which is exactly what the captures measure. The letterbox
+and the fade vignette are the same two bands, which is why the exit script's
+`fade.to_black` darkens precisely them.
+
+`verify.py: letterbox` asserts the five captures and the port's own walk out
+of the flat; shown to fail by putting `followCam` back, which returns the
+walked frame to 64/64 — the reader's stripes, to the row.
 
 ### 3. ESC quits instead of opening the pause menu — **DONE 2026-09-07, CONFIRMED IN PLAY**
 

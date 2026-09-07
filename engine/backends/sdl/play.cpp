@@ -6851,7 +6851,26 @@ int main(int argc, char** argv) {
             // walk is drawn full-frame.
             // (`|| uiPause`: a pause does not change the camera mode, so it
             // does not put bars on a walk either.)
-            if ((adventure || uiPause) && followCam && !holdEditCam)
+            //
+            // **AND IT IS THE PLAYER'S CONTROL THAT DECIDES, NOT THE SHAPE OF
+            // THE CAMERA** (next-tasks 2, "black stripes entering/leaving a
+            // building"). This also required `followCam` - the area's own
+            // camera 0, relative to actor 0 - and a great many areas roam
+            // under a FIXED camera instead: leaving Kay'l's flat runs
+            // `player.anim.hold` / `fade.to_black` / `camera.set 4418` and
+            // hands over to Hall 27, whose script leaves absolute camera 4353
+            // installed. Measured on that walk: by frame 400 `adventure` is 1
+            // and `animHeld` is 0 - the player has control - while `followCam`
+            // is still 0, so the bars went on at frame 3 and never came off
+            // again in 900 frames. That is the report.
+            //
+            // The captures say the same thing from the other side. Every
+            // letterboxed one is a frame the player does NOT control -
+            // `dlg402-32..41` at 64/64 rows, and `intro-75`, a CUTSCENE shot
+            // with a scripted world camera, at 64/65 - so the strip is not
+            // "a conversation" either, it is camera mode. Nothing establishes
+            // it for a frame he does control, whatever camera is up.
+            if ((adventure || uiPause) && !holdEditCam)
                 view.vh = dispH;
             if (view.vh > dispH) view.vh = dispH;
             view.vx = 0;
