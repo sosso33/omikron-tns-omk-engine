@@ -204,6 +204,29 @@ cutscene", entire.
 
 `verify.py: engine: editing hold`.
 
+### And the BODY between two beats
+
+The same gap, one level out, and it is worth stating because a replica with a
+separate player controller will get it wrong: **between two beats nothing is
+driving the characters, and nothing needs to be.**
+
+A beat's script parks on the object it started (`Ctx` status 4,
+`waitingForProgram`, resumed by `Game_HandleEvent` case 3 when the program
+ends) and starts the next when it is resumed. In whatever gap that leaves, the
+engine has ONE actor record per character: `Script_SelectBodyAnimation` writes
+its node's animation, nothing clears it when the program ends, and there is no
+second owner to hand the body to — the walker is not a different body. So the
+character keeps the pose and the place his last step left him in until the next
+beat writes them.
+
+`engine/` had two owners and chose between them on "is a program driving him
+this frame", so for the one frame of the gap the adventure controller took
+Kay'l: his `.CTL` idle pose, and his body rebuilt from its 20-byte placement
+record 3400 units away. A reader saw it as *a normal idle pose while being in
+a totally different position* — and only after the camera above stopped cutting
+away on the same frame, which is what made it visible at all.
+`verify.py: engine: beat handover`, `todo/omk-play.md` 78.
+
 ### The link, and a correction
 
 The object record's four bytes at `+94..97` are its **camera-editing slots**.

@@ -8492,6 +8492,68 @@ def c_engine_props():
             "beats and after, whether the rings are among them, and where they "
             "land once Area_Load's conversion is applied")
 
+def c_engine_beat_handover():
+    r"""`omk-play`: the body between two beats of one cutscene.
+
+    A beat's script parks on the scene object it started (`Ctx` status 4,
+    `waitingForProgram`, resumed by `Game_HandleEvent` case 3 when the program
+    ends) and then starts the next; the replica resumes it a frame later, so
+    for one or two frames no program is driving the player. The engine cannot
+    show anything there - it has ONE actor record, its node keeps whatever pose
+    and place the last step left, and there is no second owner to hand it to.
+    The replica has two, and was choosing per frame on "is a program running
+    now": the adventure controller took the body, drew its `.CTL` idle and the
+    hand-back's `facing 0`, and the staged body was dropped and rebuilt from
+    the 20-byte placement record 3400 units away. A reader watching the Impasse
+    reported *a normal idle pose while being in a totally different position*
+    (todo/omk-play.md 78) - visible only after item 5 stopped the camera
+    cutting away at the same instant, which is why one fix surfaced the other.
+
+    Over the Impasse's 1400 frames: the player's body is staged ONCE and never
+    dropped, no frame after the first falls back to the bank's default entry,
+    and the pose source becomes "the last beat's" SEVEN times - once at each of
+    the six hand-overs, plus frame 1, where he holds frame 0's idle until the
+    opening beat first poses him at 59. That seventh is the same rule and not
+    an off-by-one: a node keeps its pose until something writes it.
+
+    SHOWN TO FAIL: dropping `!session.parkedOnProgram()` from the adventure
+    gate gives 6 drops and 6 re-stagings from the placement record; keeping the
+    gate but removing the pose branch gives 6 idle frames.
+    """
+    import subprocess, re
+    eng = os.path.join(ROOT, "engine")
+    fr = omkpaths.data_root()
+    save = os.path.join(ROOT, "traces", "save-appart.bin")
+    if not os.path.isdir(fr) or not os.path.exists(save):
+        return ("no data",), ("data",), "needs the shipped tree and traces/save-appart.bin"
+    mk = subprocess.run(["make", "-s", "play"], cwd=eng, capture_output=True, text=True)
+    play = os.path.join(eng, "build", "omk-play")
+    if mk.returncode != 0 or not os.path.exists(play):
+        return ("no sdl",), ("no sdl",), "needs SDL to run the viewer"
+    env = dict(os.environ, SDL_VIDEODRIVER="dummy")
+    r = subprocess.run([play, fr, os.path.join(ROOT, "tables"), "--software",
+                        "--res", "640x480", "--nofmv", "--save", save,
+                        "--area", "222", "--scene-chunk", "55", "--frames", "1400"],
+                       capture_output=True, text=True, env=env,
+                       # the log carries the game's own Latin-1 subtitles, so it
+                       # is not UTF-8 - the Python form of "a play log is binary,
+                       # grep it with -a" (todo/omk-play.md 65)
+                       encoding="utf-8", errors="replace")
+    o = r.stdout
+    pid = 49                                   # HO1_FN, the Impasse's Kay'l
+    drops   = len(re.findall(r"dropped actor %d " % pid, o))
+    stagings = len(re.findall(r"staged actor %d " % pid, o))
+    # frame 0 has no last pose yet, so its idle is the honest one
+    idles = len([m for m in re.finditer(
+        r"frame (\d+): actor %d \S+ - pose source: the bank's default entry" % pid, o)
+        if int(m.group(1)) > 0])
+    held = len(re.findall(r"pose source: the pose the last beat left", o))
+    return (drops, stagings, idles, held), (0, 1, 0, 7), \
+           ("across the Impasse's beats the player's body is staged once and " \
+            "never dropped, never falls back to the bank idle, and holds the " \
+            "last beat's pose over each of the six hand-overs (and from frame 1)")
+
+
 def c_engine_frame_hold():
     r"""`omk-play`: the frame an editing ENDS on is the frame it held.
 
@@ -25808,6 +25870,7 @@ SLOW = [
     ("credit layout", c_credit_layout, "docs/UI"),
     ("engine: editing hold", c_engine_editing_hold, "docs/CUTSCENES.md 2"),
     ("engine: frame hold", c_engine_frame_hold, "docs/CUTSCENES.md 2"),
+    ("engine: beat handover", c_engine_beat_handover, "todo/omk-play 78"),
     ("engine: impasse fx", c_engine_impasse_fx, "todo/omk-play"),
     ("engine: stop sound", c_engine_stop_sound, "todo/omk-play"),
     ("engine: scene sprites", c_engine_scene_sprites, "todo/omk-play"),

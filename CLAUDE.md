@@ -934,6 +934,16 @@ because a reader saw a window appear, assumed it was for them, and walked the
 player — which is the reasonable thing to assume. The frames were then
 evidence about their walk rather than about the change under test.
 
+**Catching a fault too short to screenshot**: `--flicker <dir>` watches the
+viewer's own output and, when a frame is far darker than the median of the last
+31, writes that frame with the three before and three after it plus a line of
+context each (which camera, the set runs drawn and culled, the bodies staged).
+It is for the class of report that begins "for a few frames I saw..." — but
+note what it did NOT find: a reader's *Kay'l with a black background* turned
+out to be a POSE and PLACEMENT pop with no darkness in it at all, and what
+found that was the viewer's own `dropped actor` / `pose source:` lines
+(`todo/omk-play.md` 78). Read the log before building a detector.
+
 **Driving a SCREEN headlessly**: `--keys` takes a comma list of set-1 scan
 codes (`0x1C` ENTER, `0xC8/0xD0/0xCB/0xCD` the arrows), `T` types whatever
 `--type` supplies, and **`cN` sends CHARACTER N down the field's own channel**

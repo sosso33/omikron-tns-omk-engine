@@ -188,6 +188,41 @@ public:
     // Slot 0's attached characters, then slot 1's, then anything a script
     // showed that no table places. Rebuilt whenever attachment changes.
     const std::vector<Shown>& shown() const { return shown_; }
+
+    // IS A CUTSCENE CHAIN STILL IN FLIGHT? A beat's script parks on the scene
+    // object it started (`Ctx::waitingForProgram`, status 4, resumed by
+    // `Game_HandleEvent` case 3 when the program ends) and then starts the
+    // next beat.
+    //
+    // **This is a RECONSTRUCTION and it stands in for something else.** What
+    // the engine has is the actor's own `+172`, the script object bound to it:
+    // `ScriptObject_StartOnActor` (0x0041BA80) clears the PREVIOUS one when a
+    // new object binds the same actor, and nothing clears it when a program
+    // merely ends - so the engine's player is still bound to the finished beat
+    // through the gap, and the walker does not own him. Porting that needs the
+    // site that eventually CLEARS the binding, which is not traced here; a
+    // resident `started_` entry alone would keep the walker out for ever,
+    // including after the cutscene. The parked chain is the narrowest signal
+    // available that covers the gap and ends with it.
+    //
+    // The CONCLUSION it serves is not a reconstruction: the engine has ONE
+    // actor record, its node keeps whatever pose and place the last step left,
+    // and no second owner exists to hand it to - so no gap of any length can
+    // make a character pop.
+    //
+    // The replica has two - a scene program and the adventure controller - and
+    // was choosing between them per frame on "is a program running now", so
+    // the one-frame gap between beats handed Kay'l to the walker: his idle
+    // pose, and the hand-back's `facing 0`, for a frame. A reader watching the
+    // Impasse saw it as *a normal idle pose while being in a totally different
+    // position* (todo/omk-play.md 78), and only after the camera stopped
+    // cutting away at the same moment (item 5) was there anything to see it
+    // against.
+    bool parkedOnProgram() const {
+        for (const auto& c : ctxs_)
+            if (c && c->status == 4 && c->waitingForProgram >= 0) return true;
+        return false;
+    }
     // The model a CHARACTERS id resolves to, through the resident chunks'
     // 276-byte actor records (`sub_40B190`). Empty when it names none.
     std::string modelOfActor(int actor) const;

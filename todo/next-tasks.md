@@ -25,7 +25,7 @@ items are research and can be done any time they are wanted.
 | 2 | black stripes entering/leaving a building | **S** | strong | the letterbox rule is already written down and this contradicts it |
 | 3 | ESC quits instead of opening the pause menu | **S/M** | strong | the screen exists in the lifted table; today ESC loses the session |
 | 4 | tuto zone fires repeatedly, player not stopped | **M** | strong | zone lifecycle is read and there is already a check nearby |
-| 5 | black frames in the Impasse cutscene | **FIXED** | strong | the camera should HOLD at the end of an editing, and a shot is as long as its editing |
+| 5 | black frames in the Impasse cutscene | **FIXED, WATCHED** | strong | the camera should HOLD at the end of an editing, and a shot is as long as its editing |
 | 20 | stuck on the last step of the bank's stairs | **S/M** | good | the walker's step and slope rules are ported; this is one threshold, and it blocks a whole location |
 | 21 | a shop conversation's first camera is outside the shop | **M** | good | same family as item 5 and item 7 - what is resident when a script runs on ENTERING a building |
 | 6 | street NPCs stop and T-pose | **M** | good | same family as the scene-facing work of 2026-09-05 |
@@ -167,7 +167,7 @@ the first thing to look at** — a zone that should fire once is normally made
 one-shot by state, and firing several sounds and fades is what an un-cleared
 bit looks like.
 
-### 5. Black frames in the Impasse cutscene — **FIXED 2026-09-07** (not yet watched)
+### 5. Black frames in the Impasse cutscene — **FIXED 2026-09-07, CONFIRMED IN PLAY**
 
 The entry point was right and so was the guess: the black frame is the gap
 between two editings. Measured on the intro path, it is **eight** gaps, every
@@ -190,8 +190,8 @@ and `C_1_BoxMoves` lost 75 of its 185 frames.
 
 Both fixed and both checked (`engine: editing hold`, `engine: frame hold`,
 shown to fail); the readings are in `docs/CUTSCENES.md` §2 and the entry is
-`todo/omk-play.md` 77. **Still wants a reader watching the alley** — the
-cold-start intro could not be driven headlessly on the day, so the post-fix
+`todo/omk-play.md` 77. **A reader played it the same day and the black screen
+is gone** — which is the confirmation this needed, since the post-fix headless
 evidence is the repro and not the path the report came from.
 
 ### 6. Street NPCs stop walking and T-pose — M, good evidence

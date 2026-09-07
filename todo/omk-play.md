@@ -15,13 +15,99 @@ waiting on its evidence.
 
 ## Open (batch 6, filed 2026-09-04)
 
+### 78. Between two beats of a cutscene Kay'l pops to his idle pose and another place — A
+
+> **Fixed 2026-09-07. CONFIRMED IN PLAY** — reported by the reader after 77
+> landed: *at some points, i got very quick moment (max 5 frames) when I can
+> see some errors (like a Kay'l with a black background)*, and then, decisively,
+> *try maybe find a few frames where kay'l is suddenly in normal idle pose
+> while being in a totally different position just before*. The second
+> description is what the log shows exactly.
+
+**It is 77's sequel, and worth saying why.** The pop had always been there; it
+was hidden because the camera cut away on the very frame it happened. Holding
+the shot (77) left the reader looking straight at it. A fix that makes a
+second fault visible is not a regression, but it does mean the two have to be
+read together.
+
+**What the log shows**, over the Impasse's 1400 frames — at each of the six
+beat hand-overs:
+
+    frame 330: dropped actor 49 HO1_FN
+    frame 330: the program ended - the player keeps the body's place, ... facing 0
+    frame 330: actor 49 HO1_FN - pose source: the bank's default entry, frame 0
+    frame 331: staged actor 49 HO1_FN ... at 7216 -121 3040 - a placement record puts him here
+    frame 331: actor 49 HO1_FN - pose source: a scene program's clip
+
+so for one frame (two at three of the six) the body is dropped, re-created from
+its 20-byte placement record about 3400 units away, posed with the bank's idle
+and handed back at `facing 0`. Position, orientation and pose all pop, for one
+frame, and then the next beat takes him back.
+
+**Why: the replica has two owners for one body.** `adventure` was
+`player && !playerDriven && !dialogOpen && !uiPause && !activeEditing()` —
+every term of which asks *is something driving him THIS FRAME*. A beat's
+script parks on the object it started (`Ctx` status 4, `waitingForProgram`,
+resumed by `Game_HandleEvent` case 3 when the program ends) and starts the
+next when it is resumed, which in the replica is a frame later. In that gap all
+five terms say "nobody", so the adventure controller took the body.
+
+**The engine cannot have this fault at all**, and that is the whole argument:
+there is ONE actor record. `Script_SelectBodyAnimation` writes its node's
+animation, nothing clears it when a program ends, and there is no second owner
+to hand it to — the walker is not a different body. A gap in the engine is a
+gap in which the node simply keeps its pose and its place.
+
+**Fixed in two pieces, each the same rule — and the gate is a labelled
+reconstruction.** What the engine actually has is the actor's `+172`, the
+script object bound to it: `ScriptObject_StartOnActor` clears the previous one
+when a new object binds the same actor, and nothing clears it when a program
+merely ends, so the engine's player is still bound to the finished beat through
+the gap. Porting that needs the site that eventually clears the binding, which
+is not traced; a resident `started_` entry alone would keep the walker out for
+ever, cutscene over or not. `Session::parkedOnProgram()` is the narrowest
+signal available that covers the gap and ends with it — the conclusion it
+serves (one body, no second owner, so no gap can make a character pop) is not
+a reconstruction, only this expression of it is.
+`Session::parkedOnProgram()` is the chain still being in flight; `adventure` now takes it, so the controller
+does not take the body between beats — and with `adventure` false the body is
+also still listed by `shown()`, so it is never dropped and its
+program-placed position survives (the placement-record clobber is already
+guarded once the `Staged` entry lives). And a body whose program has ended
+while the chain is mid-flight now holds the pose its last step left instead of
+falling back to the bank's default entry. The pose branch is scoped to the gap
+deliberately: a body with a bank and nothing coming IS driven by its channel
+(`Cef_TickChannel`), so the idle stays right everywhere else.
+
+Measured after: 0 drops, 1 staging, 0 idle frames, and the pose source becomes
+"the last beat's" 7 times — the six hand-overs plus frame 1, where he holds
+frame 0's idle until the opening beat poses him at 59. Walking is unaffected
+(a street start still covers 498.8 units in 199 ticks).
+`verify.py: engine: beat handover`, shown to fail on each half separately:
+without the parked gate, 5 drops and 6 re-stagings; without the pose branch,
+6 idle frames.
+
+**A note on how it was found, because the first search was aimed wrong.** The
+reader's first description was *a Kay'l with a black background*, so I built a
+detector for DARK frames — a per-frame lit-pixel count against a rolling
+median — and ran 1400 frames of the Impasse, 400 of the airlock transition and
+900 of an Anekbah street walk: zero dips in any of them. The fault was never
+darkness. What found it in one command was the reader's second sentence and
+the viewer's own existing log lines (`dropped actor`, `pose source:`), which
+had been printing it all along. The lit-count detector survives as
+`--flicker <dir>`, which writes the frames around a dip with a line of context
+each, because a one-to-five-frame fault cannot be screenshotted — but the
+lesson is that a symptom described in one vocabulary can be the same event as
+one the log already names in another.
+
 ### 77. Black frames in the Impasse cutscene: the camera should HOLD, and a shot is as long as its EDITING — A
 
-> **Fixed 2026-09-07. Not yet CONFIRMED IN PLAY** — the cold-start intro
-> cannot be driven headlessly at the moment (the start menu does not answer
-> the scripted keys at HEAD; see the note at the end), so this is measured on
-> the `--area 222 --scene-chunk 55` repro and on the intro run taken before
-> the fix. It wants a reader watching the alley.
+> **Fixed 2026-09-07. CONFIRMED IN PLAY** the same day — a reader played the
+> Impasse and reported the black screen gone. The headless evidence below is
+> the `--area 222 --scene-chunk 55` repro and the intro run taken *before* the
+> fix, because the cold-start intro could not be driven headlessly that day
+> (the start menu did not answer the scripted keys at HEAD; see the note at
+> the end); the confirmation is the reader's.
 
 Filed as `next-tasks` item 5 and reported as *black frames in the Impasse
 cutscene*. Measured on the intro path before the fix: **eight** gaps, every one

@@ -1341,7 +1341,13 @@ int main(int argc, char** argv) {
 "                   out of different places because a reader saw the window\n"
 "                   appear and walked the player, quite reasonably\n"
 "  --snaps <dir>    write a framebuffer every 30 frames after the hand-over\n"
-"  --fps            report the rate and the worst frame once a second\n"
+"  --flicker <dir>  CATCH A ONE-TO-FIVE-FRAME FAULT. Watches its own\n"
+"                   output and, when a frame is far darker than the median\n"
+"                   of the last 31 - a body drawn on a set that is not\n"
+"                   there - writes that frame with the three before and\n"
+"                   three after it, plus a line of context each (which\n"
+"                   camera, the set runs drawn and culled, the bodies).\n"
+"                   For a fault you can see and cannot screenshot\n""  --fps            report the rate and the worst frame once a second\n"
 "\n"
 "SAVED GAMES\n"
 "  --saves FILE     the save file this port reads and WRITES, default\n"
@@ -1480,7 +1486,7 @@ int main(int argc, char** argv) {
     // person at the keys. `--snaps DIR` writes the framebuffer as raw LE
     // RGB565 every 30 frames from the hand-over on (`snap-<frame>.bin`,
     // 640x480 after the display size), which is how the walk was LOOKED at.
-    std::string holdStream, snapsDir;
+    std::string holdStream, snapsDir, flickerDir;
     // A STREET START (docs/STREET_LIFE.md, step 4): `--save FILE` takes the
     // game DB from a save's slot 0 - the player record lives there, and
     // Kay'l's actor record is in no city chunk - `--area N` loads that area
@@ -1616,6 +1622,7 @@ int main(int argc, char** argv) {
         else if (a == "--keydelay" && i + 1 < argc) keyEvery = std::atoi(argv[++i]);
         else if (a == "--hold" && i + 1 < argc) holdStream = argv[++i];
         else if (a == "--snaps" && i + 1 < argc) snapsDir = argv[++i];
+        else if (a == "--flicker" && i + 1 < argc) flickerDir = argv[++i];
         else if (a == "--res" && i + 1 < argc)
             std::sscanf(argv[++i], "%dx%d", &dispW, &dispH);
         else if (a == "--eye" && i + 1 < argc)
@@ -1837,6 +1844,23 @@ int main(int argc, char** argv) {
         clipFlag ? static_cast<double>(clipArg) * omk::kInchesPerMetre : settings.clipInches();
     // one line the first frame that draws, so a run says what the option did
     bool clipReport = true;
+    // THE FLICKER CATCHER (--flicker <dir>). A fault a player sees for one to
+    // five frames cannot be screenshotted and cannot be found by choosing a
+    // frame to render: a reader reported "a Kay'l with a black background" and
+    // could not say where. So the viewer watches its own output - a frame far
+    // darker than its neighbours is a body drawn on a set that is not there -
+    // and writes the frames AROUND the dip, with a line of context each, so
+    // the event arrives on disk instead of in a description.
+    //
+    // It is an INSTRUMENT and no part of the port: nothing here changes a
+    // pixel, and with the flag absent none of it runs.
+    std::vector<std::vector<std::uint16_t>> flickRing;   // the last kFlickPre frames
+    std::vector<std::string> flickNote;                  // ...and their context
+    std::vector<long> flickLit;                          // the lit-count window
+    std::string frameNote;                               // this frame's context
+    int  flickAfter = 0;                                 // frames still to write
+    long flickEvent = -1, flickQuietUntil = -1;
+    constexpr int kFlickPre = 3, kFlickPost = 3, kFlickWindow = 31;
     const bool drawSky = skyFlag >= 0 ? skyFlag != 0 : settings.v.sky;
     std::printf("settings: clip %d m (%s) = %.0f in, near/far split %.0f/%.0f;"
                 " crowd %d (%s); sky %d (%s), shadows %d (%s), detail %d (%s)\n",
@@ -4510,8 +4534,19 @@ int main(int argc, char** argv) {
             // short-circuits the world tick". It does not, and that reading
             // was `NAMED` - read and named, never tested.
             const bool uiPause = walk && openScreen == kScreenPause;
+            // ...AND NOT BETWEEN TWO BEATS OF ONE CUTSCENE.
+            // `!playerDriven && !activeEditing()` asks "is a program driving
+            // him THIS FRAME", which is false for the one or two frames
+            // between a beat ending and the script starting the next - and
+            // for those frames the controller took his body, drew his .CTL
+            // idle and the hand-back's `facing 0`. `Session::parkedOnProgram`
+            // is the chain still being in flight: the beat's script is parked
+            // on the object it started and will start the next when case 3
+            // resumes it. See the accessor for why the engine cannot have
+            // this fault at all (todo/omk-play.md 78).
             adventure = player && !playerDriven && !session.dialogOpen() &&
-                        !uiPause && !sc.activeEditing();
+                        !uiPause && !sc.activeEditing() &&
+                        !session.parkedOnProgram();
             // A TELEPORT IS CONSUMED WHATEVER THE MODE. `sub_41BF50` writes the
             // actor's position outright; nothing about it waits for adventure
             // mode. This sat inside `if (adventure)` below, and Kay'l's flat
@@ -7498,6 +7533,24 @@ int main(int argc, char** argv) {
                 } else if (shootTracks && shootTracks->valid()) {
                     pose = omk::composePose(s.mo->meshes, *shootTracks, 0, false);
                     src = "shoot mode: the area's .ani, by character type";
+                } else if (!s.lastPose.empty() && session.parkedOnProgram()) {
+                    // BETWEEN TWO BEATS OF ONE CUTSCENE the body holds the
+                    // pose its last step left it in. The engine never resets a
+                    // node - `Script_SelectBodyAnimation` writes the node's
+                    // animation and nothing clears it when the program ends -
+                    // and the chain is still in flight, so the next beat is
+                    // about to pose him again. Falling back to the bank's idle
+                    // here put Kay'l in his standing stance for the one frame
+                    // between every pair of the Impasse's beats, which is what
+                    // a reader saw once the camera stopped cutting away at the
+                    // same moment (todo/omk-play.md 78).
+                    //
+                    // Scoped to the gap deliberately: a body with a bank and
+                    // NOTHING coming IS driven by its channel
+                    // (`Cef_TickChannel`), so the idle below stays the right
+                    // answer everywhere else.
+                    pose = s.lastPose;
+                    src = "the pose the last beat left (the chain is mid-flight)";
                 } else if (s.idle.valid()) {
                     pose = omk::composePose(s.mo->meshes, s.idle, 0, false);
                     src = "the bank's default entry, frame 0";
@@ -8493,6 +8546,36 @@ int main(int argc, char** argv) {
                             clipInches, runsDrawn, runsCulled);
                 clipReport = false;
             }
+            // A FRAME WHERE THE SET IS CULLED AND THE BODIES ARE NOT draws a
+            // character on black, which is what a reader sees as a flicker:
+            // the visible-set walk above tests every mesh against the clip
+            // distance FROM THE CAMERA EYE, and a staged body is added below
+            // with no such test. One line a frame, so a run can be read for
+            // the frames where the two disagree.
+            std::size_t litBodies = 0;
+            for (const auto& up : staged) if (up->drawn && up->mo) ++litBodies;
+            if (std::getenv("OMK_CLIPLOG")) {
+                std::printf("  [clip] frame %ld  runs %zu drawn %zu culled  bodies %zu"
+                            "  eye %.0f %.0f %.0f\n", n, runsDrawn, runsCulled, litBodies,
+                            view.cam.eye[0], view.cam.eye[1], view.cam.eye[2]);
+            }
+            // ...and the same facts as one line for the flicker catcher, which
+            // needs to say WHY a frame went dark, not just that it did.
+            if (!flickerDir.empty()) {
+                char buf[320];
+                std::snprintf(buf, sizeof buf,
+                    "3D  cam %s  eye %.0f %.0f %.0f  at %.0f %.0f %.0f  fov %.1f"
+                    "  set runs %zu drawn / %zu culled  bodies %zu  area %d scx '%s'",
+                    haveDlgCam ? "dialogue" : haveEdit ? "editing" : holdEditCam ? "held"
+                        : (takeCam && player) ? "take"
+                        : (adventure && followCam) ? "follow" : "world",
+                    view.cam.eye[0], view.cam.eye[1], view.cam.eye[2],
+                    view.cam.at[0], view.cam.at[1], view.cam.at[2],
+                    static_cast<double>(view.cam.hfovDeg),
+                    runsDrawn, runsCulled, litBodies,
+                    session.currentArea(), session.scene().file().c_str());
+                frameNote = buf;
+            }
             // EVERY staged body, each with its own model's base - the change
             // issue 41 asks for. One geometry per actor, so two bodies wearing
             // the same model still draw at their own two places.
@@ -9253,6 +9336,70 @@ int main(int argc, char** argv) {
             }
         }
 
+        // ...and what the finished frame actually CONTAINS, for hunting a
+        // flicker: a body drawn on a set that is not there shows up as a lit
+        // count far below its neighbours', which is what a reader reports as
+        // "Kay'l with a black background" and what no still frame can be
+        // chosen to catch.
+        if (std::getenv("OMK_CLIPLOG")) {
+            long litpx = 0;
+            for (std::uint16_t v : fb.px) if (v) ++litpx;
+            std::printf("  [lit] frame %ld  %ld of %zu\n", n, litpx, fb.px.size());
+        }
+        // ---- THE FLICKER CATCHER -------------------------------------
+        if (!flickerDir.empty()) {
+            long lit = 0;
+            for (std::uint16_t v : fb.px) if (v) ++lit;
+            if (frameNote.empty()) frameNote = "2D only - the world was not drawn";
+            auto write = [&](long fno, const std::vector<std::uint16_t>& px,
+                             const std::string& note) {
+                const std::string path = flickerDir + "/flick-" + std::to_string(flickEvent) +
+                                         "-" + std::to_string(fno) + ".bin";
+                if (!omk::safeOutputPath(path)) return;
+                std::ofstream o(path, std::ios::binary);
+                for (auto v : px) {
+                    const char b2[2] = {static_cast<char>(v & 0xFF), static_cast<char>(v >> 8)};
+                    o.write(b2, 2);
+                }
+                std::ofstream t(flickerDir + "/flick-" + std::to_string(flickEvent) + ".txt",
+                                std::ios::app);
+                t << "frame " << fno << "  " << note << "\n";
+            };
+            // The baseline is the MEDIAN of a window, not the previous frame:
+            // the fault lasts up to five frames, so its neighbours are inside
+            // it and a neighbour test cannot see it.
+            long base = 0;
+            if (flickLit.size() >= static_cast<std::size_t>(kFlickWindow)) {
+                std::vector<long> w(flickLit.end() - kFlickWindow, flickLit.end());
+                std::nth_element(w.begin(), w.begin() + w.size() / 2, w.end());
+                base = w[w.size() / 2];
+            }
+            if (flickAfter > 0) {                       // still writing an event
+                write(n, fb.px, frameNote);
+                --flickAfter;
+            } else if (base > 0 && lit < base * 3 / 5 && n > flickQuietUntil) {
+                flickEvent = n;
+                flickQuietUntil = n + 60;               // one dump per two seconds
+                std::printf("frame %ld: FLICKER - %ld lit against a median of %ld; "
+                            "writing %d frames to %s/flick-%ld-*.bin\n",
+                            n, lit, base, kFlickPre + 1 + kFlickPost,
+                            flickerDir.c_str(), flickEvent);
+                for (std::size_t k = 0; k < flickRing.size(); ++k)
+                    write(n - static_cast<long>(flickRing.size() - k), flickRing[k],
+                          k < flickNote.size() ? flickNote[k] : std::string());
+                write(n, fb.px, frameNote);
+                flickAfter = kFlickPost;
+            }
+            flickLit.push_back(lit);
+            if (flickLit.size() > static_cast<std::size_t>(kFlickWindow)) flickLit.erase(flickLit.begin());
+            flickRing.push_back(fb.px);
+            flickNote.push_back(frameNote);
+            if (flickRing.size() > static_cast<std::size_t>(kFlickPre)) {
+                flickRing.erase(flickRing.begin());
+                flickNote.erase(flickNote.begin());
+            }
+            frameNote.clear();
+        }
         present(fb);
         if (!snapsDir.empty() && handoverFrame >= 0 && ((n - handoverFrame) % 30) == 0) {
             const std::string path = snapsDir + "/snap-" + std::to_string(n) + ".bin";
