@@ -160,8 +160,26 @@ int ScreenComposer::background(Surface& fb, const UiPanel& p,
         const int sx = (id % 10) * 64, sy = (id / 10) * 64;
         const int sh = (row == 7 || id / 10 == 7) ? 32 : 64;
         const int sy0 = (id / 10 == 7) ? 448 : sy;
+        // ...AND THE TILE BLIT IS COLOUR-KEYED, exactly like the sheet arm
+        // above. `Ui_DrawPanelBack`'s two calls are
+        //
+        //     I2D_BlitBitmap(&rect, u32(a1, 56), 1, 3)      // the whole sheet
+        //     I2D_BlitBitmap(&rect, u32(a1, 56), 1, 3)      // each of the 80
+        //
+        // and that third argument is what turns DDBLT_KEYSRC on against the
+        // flat **0** key `I2D_CreateSurfaceFromBmp` sets on every bitmap it
+        // loads. This passed `false, 0` and painted the black cells solid.
+        //
+        // Invisible on every page that has no hole in it - the sneak's and
+        // the slider's are opaque - and fatal on the one that does: the
+        // VIDEOPHONE's viewport is a black rectangle in `sneak.bmp` meant to
+        // be keyed out so the 3D view shows through. Painted solid it made
+        // the caller's picture a flat grey (the item's own 21.6% white fill
+        // over black, which is exactly the (48,52,48) a reader photographed),
+        // and the world was rendering correctly the whole time.
         blt(fb, {dx0, dy0, dx1, dy1},
-            sheet, {sx, sy0, sx + 64, sy0 + sh}, false, 0);
+            sheet, {sx, sy0, sx + 64, sy0 + sh}, kBltWait | kBltKeySrc,
+            kI2dColourKey);
         ++drawn;
     }
     return drawn;

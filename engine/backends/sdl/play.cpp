@@ -1579,6 +1579,10 @@ int main(int argc, char** argv) {
     // generalising a camera-mode property to all rendering. `--letterbox`
     // brings it back for comparing against those captures, which is the one
     // job it is evidence for.
+    // `--call N`: the SNEAK CALL idiom - `ui.open 0` then `dialog.start N` -
+    // fired on the first adventure frame. A HARNESS: in the game it is a zone
+    // script that does this, and reaching one means playing the beat.
+    int  callDialog = -1;
     bool haveEye = false, haveAt = false, letterbox = false, startVulkan = false, noDelay = false;
     double speed = 1.0;                 // --speed: the frame delta's multiplier
     bool forceSoftware = false, showFps = false;
@@ -1587,6 +1591,7 @@ int main(int argc, char** argv) {
         if (a == "--scene" && i + 1 < argc) scene = argv[++i];
         else if (a == "--cam" && i + 1 < argc) camIndex = std::atoi(argv[++i]);
         else if (a == "--fov" && i + 1 < argc) fovA = static_cast<float>(std::atof(argv[++i]));
+        else if (a == "--call" && i + 1 < argc) callDialog = std::atoi(argv[++i]);
         else if (a == "--letterbox") letterbox = true;   // camera mode, for comparing with captures
         else if (a == "--full") letterbox = false;       // kept: it was the old spelling
         else if (a == "--vulkan") startVulkan = true;
@@ -2191,9 +2196,42 @@ int main(int argc, char** argv) {
     int openScreen = -1, conversations = 0, lastArea = -1;
     constexpr int kScreenPause = 31;   // PAUSE GAME - the only screen that
                                        // sets dword_4E9728, the pause flag
+    // ---- THE SNEAK CALL (screen 0, `VIDEOPHONE`) ----------------------
+    //
+    // The device the game shows a caller on, and the ONE screen in the game
+    // that answers its own question. `Ui_OpenSneakFamily`'s param-2 arm
+    // (0x0049B400) hides the tab column, installs panel 0x004DF128 and ends
+    //
+    //     mov  dword_4DF140, edi        ; 1
+    //     mov  dword_670BF0, edi        ; 1 - "a call is up"
+    //     call sub_42B560               ; UI_SendAnswer
+    //
+    // and `UI_SendAnswer` fires `Game_RaiseEvent(5, {ctx, dword_930750})`,
+    // which is what resumes a script parked at `ui.open`. `UI_OpenScreen`
+    // seeded that answer at **-1** and nothing on this screen ever writes it
+    // - which is exactly why `docs/UI.md` 3d-bis lists VIDEOPHONE as one of
+    // the three screens that "keep the answer with no writer". The screen
+    // does not ask a question: it opens, hands -1 straight back, and STAYS
+    // UP while the script runs on.
+    //
+    // That is the whole call idiom, and the corpus is unambiguous: **10
+    // `ui.open 0` sites**, 8 of them followed immediately by `dialog.start`
+    // and 2 by `media.play 534` (`ZVO P315 DATA MEMORIZED`, the caption a
+    // capture shows top-right). The conversation's SPEAKER is a real actor
+    // parked off-stage in the chunk - 386 `Policier Sneak/Supermarche` is
+    // actor 95, the guard `ARESTO14` parks 745 units above the restaurant
+    // (docs/UI.md 3d-bis) - and the script hides him afterwards with
+    // `character.hide`.
+    constexpr int kScreenVideophone = 0;
     omk::LoadPanel loadPanelState;   // rebuilt each time a screen opens
     int  pendingLoadSlot = -1;       // `dword_4C09B4`
     bool quitRequested = false;      // `dword_4E6C9C`, the pause screen's Oui
+    // `dword_670BF0`: a sneak CALL is up. Set by the videophone's open arm,
+    // cleared by the first close attempt.
+    bool videophoneCall = false;
+    bool videophoneSpoke = false;   // a line or a voice-over has played
+    bool callHarness = false;       // `--call` opened this one
+    int  callPending = -1;          // ...and the conversation it owes
     // THE LOADING SEQUENCE IS NOT WIRED HERE, and a first version of it
     // was. `Charger` answers **0**, and AREA 118's parked startup script
     // has an arm for exactly that: the Grid fly-through - cameras
@@ -4001,8 +4039,27 @@ int main(int argc, char** argv) {
             }
         }
         if (spriteAnchorSet) session.sceneMutable().setSpriteAnchor(spriteAnchor);
-        if (!walk) session.frame();
-        else session.tickMusicLevel();       // the music level moves under a screen too
+        // ---- AND THE SESSION RUNS UNDER A SCREEN, which it did not ------
+        //
+        // `Game_Tick` (0x004200F0) has NO test for an open screen anywhere in
+        // it - `Script_SetFrameTime`, the per-slot `Script_PlayAllScripts`
+        // loop, `Projectiles_Tick`, `Sliders_Tick` and `Slider_TickRide` all
+        // run whatever is on screen. The only thing that stops the world is
+        // the pause flag, and that is a DELTA of zero (docs/UI.md 2a), which
+        // is already applied above.
+        //
+        // This is the THIRD time that assumption has had to come out. It was
+        // corrected once for the world DRAW (a player opened the sneak and
+        // watched Anekbah freeze, 19 frames in 1924), once for the player's
+        // own tick, and this is the line that still held it for the SCRIPTS.
+        // The sneak call is what needs it: `ui.open 0` answers itself and the
+        // script's very next instruction is `dialog.start`, so a session that
+        // stops while the screen is up can never play the call.
+        //
+        // A script parked at `ui.open` does not run either way - its status
+        // is 6 and only `answerUi` clears it - so what this releases is
+        // everything ELSE: the scene programs, the crowd, the other slots.
+        session.frame();
 
         // ---- SCRIPTED OBJECT MOTION - the crates, the doors, the lifts ---
         //
@@ -4903,6 +4960,19 @@ int main(int argc, char** argv) {
                 // name, press again to bank it, another button to put it back
                 // - is these four rows and nothing else.
                 // `--sneak`: the same request the special move makes, once.
+                // `--call N`: the sneak-call idiom, fired once. The screen
+                // is requested the way a SCRIPT requests it (so it answers
+                // itself) and the conversation started right after, which is
+                // exactly `ui.open 0` / `dialog.start N`.
+                if (callDialog >= 0 && !walk && playerScreen < 0) {
+                    std::printf("--call: ui.open 0 + dialog.start %d (a "
+                                "harness for the sneak call, UI 3i)\n",
+                                callDialog);
+                    playerScreen = kScreenVideophone;
+                    callHarness  = true;
+                    callPending  = callDialog;
+                    callDialog   = -1;
+                }
                 if (openSneak && !walk && playerScreen < 0) {
                     openSneak = false;
                     inv.openList(0);
@@ -5841,6 +5911,26 @@ int main(int argc, char** argv) {
                                 openScreen,
                                 w.soundName(openScreen, omk::UiWidgets::kSoundScreen).c_str());
                 }
+                // ...AND THE SNEAK CALL ANSWERS ITSELF ON THE WAY IN.
+                // `Ui_OpenSneakFamily`'s param-2 arm ends `call sub_42B560`,
+                // so the screen hands its preset -1 back the moment it is up
+                // and the parked script runs on with the device still on
+                // screen. Without this the port waited for a person to close
+                // it and the call's own `dialog.start` never ran - the game
+                // showed an empty videophone.
+                if ((fromScript || callHarness) && openScreen == kScreenVideophone) {
+                    std::printf("screen %d VIDEOPHONE answers itself (-1, "
+                                "`UI_SendAnswer` in its own open callback) - "
+                                "the script runs on with the call up\n",
+                                openScreen);
+                    session.answerUi(-1);
+                    videophoneCall = true;
+                    callHarness = false;
+                    if (callPending >= 0) {
+                        session.harnessStartDialogue(callPending);
+                        callPending = -1;
+                    }
+                }
             }
         }
 
@@ -5874,6 +5964,12 @@ int main(int argc, char** argv) {
             } else {
                 screenOpenBits = 0;
             }
+            // ...AND A PANEL CAN OPT OUT OF INPUT ALTOGETHER. `panel+72 & 8`,
+            // which `Ui_ScreenInput` tests before it dispatches anything, and
+            // the VIDEOPHONE's panel is the one in the tree that sets it. So
+            // a sneak CALL swallows nothing: every press goes past the device
+            // to the conversation running over it.
+            if (!walk->takesInput()) uiBits = 0;
             if (uiBits) {
                 const int wasSel = walk->selection(), wasList = walk->currentList();
                 // THE SOUND IS NOT GATED ON IT, and that is read rather than
@@ -6039,6 +6135,42 @@ int main(int argc, char** argv) {
                 session.answerUi(-1);
                 walk.reset();
                 openScreen = -1;
+            }
+            // ...AND THE SNEAK CALL CLOSES WHEN THE CALL IS OVER.
+            //
+            // What is READ: `Ui_CloseSneakFamily`'s param-2 arm refuses the
+            // first attempt - it clears `dword_670BF0`, resumes the player
+            // (`sub_466B60`) and starts oscillator 5 for 100 ms, a closing
+            // ANIMATION - and closes on the next one. What is NOT read is
+            // what makes the attempt: no VM opcode closes a screen, no other
+            // screen's open closes this one (only `UI_LoadScreen(34)`, SHOOT
+            // HUMAN, does), and the function has no direct caller because it
+            // is a dword in the screen table.
+            //
+            // So this is a RECONSTRUCTION, and it is labelled as one: the
+            // call closes when the conversation opened over it ends. It is
+            // what the script requires - SCENE 53 runs `dialog.start 386`
+            // over the device and then `dialog.start 388` in the world, and
+            // 388 cannot play through a videophone - and what a capture
+            // shows. The alternative, that the player presses a key to hang
+            // up, is not excluded by anything here.
+            //
+            // A CALL IS A CONVERSATION **OR** A VOICE-OVER. Two of the ten
+            // sites are `media.play 534` rather than `dialog.start`, and a
+            // close keyed on the dialogue alone would leave those two on
+            // screen for ever.
+            if (walk && openScreen == kScreenVideophone && videophoneCall) {
+                if (session.dialogOpen() || mediaTextFrames > 0)
+                    videophoneSpoke = true;
+                else if (videophoneSpoke) {
+                    std::printf("screen %d VIDEOPHONE: the call is over - "
+                                "closing (reconstruction: the engine's own "
+                                "trigger is not read)\n", openScreen);
+                    walk.reset();
+                    openScreen = -1;
+                    screenFromScript = true;
+                    videophoneCall = videophoneSpoke = false;
+                }
             }
         }
 
@@ -9407,7 +9539,11 @@ int main(int argc, char** argv) {
             // no screen was ever opened from inside the world; the SAVE
             // screen the reader photographed would have had it too.
             comp.attachCloud(player ? nullptr : &cloud);
-            comp.draw(fb, openScreen, *walk);
+            // `OMK_NOUI=1` draws the frame WITHOUT the interface layer. An
+            // instrument, and the one that found the keyed-tile fault: with
+            // the device off, the caller was there all along, so the world
+            // was never the problem.
+            if (!std::getenv("OMK_NOUI")) comp.draw(fb, openScreen, *walk);
         }
 
         // A `media.play` line, while `Subtitle_Show`'s timer runs: inset 16,
@@ -9439,7 +9575,11 @@ int main(int argc, char** argv) {
                 }
             }
         }
-        if (!session.dialogOpen() && !walk && mediaTextFrames > 0) {
+        // ...and it DOES draw over the videophone: two of the ten sneak
+        // calls are a `media.play` and nothing else, so a subtitle suppressed
+        // by "a screen is up" would lose the whole of those two.
+        if (!session.dialogOpen() && (!walk || openScreen == kScreenVideophone) &&
+            mediaTextFrames > 0) {
             // A DIFFERENT FACE, and it is the engine's choice. The
             // dialogue's params are TEXTP_FLAG_A alone, so its font stays the
             // `Text_DrawBlock` default 74 = 'J'; `Subtitle_Show` (0x0041E040)

@@ -12,7 +12,7 @@ longer than most tasks it validates. So it is **not** run per task. The rule
 Increment `tasks since` when a task is committed; reset it to 0 and add a row
 when a full sweep is run.
 
-**tasks since the last full sweep: 1**
+**tasks since the last full sweep: 4**
 
 > **`engine: UI` is RED and was already red at `a5b1807`, on a clean tree.**
 > Measured 2026-09-07: `disagree` is 9, not 0 - the shops, screens 21..28 and

@@ -1110,6 +1110,12 @@ public:
     // the object's program ends. Off by default for the same reason.
     void setObjectWait(bool on);
 
+    // A HARNESS, and nothing the engine has: start a conversation directly,
+    // the way `dialog.start` would. `omk-play --call` uses it to reproduce a
+    // SNEAK CALL - `ui.open 0` + `dialog.start N` - without playing the beat
+    // that contains one, which is the only way that path can be looked at
+    // headlessly (UI 3i).
+    void harnessStartDialogue(int id) { dialogState_ = 3; openDialog(id); }
     int  pendingUiScreen() const { return pendingUiScreen_; }
     int  pendingUiParam() const { return pendingUiParam_; }
     // Write the named variable and release the parked context. Safe to call

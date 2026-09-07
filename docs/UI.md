@@ -253,20 +253,32 @@ Two flags in +84 have visible consequences:
   the player actor into `ACTOR_STATE` 9 for as long as the screen is up,
   saving the old state at +408. Exactly three screens set it: `PAUSE GAME`
   and the two `SHOOT` screens — the ones you are still playing during.
-* **0x20000400 — refuse `PAUSE GAME` while this screen is up.** Set on
-  `OMK START MENU` and `SAVE GAME`, and on no other screen. **This said the
-  opposite until 2026-09-07** — "opening either fires screen 31's open
-  callback" — and the branch says the reverse. `UI_LoadScreen`'s slot scan
-  is
+* **0x20000400 — `PAUSE GAME` and this screen are mutually exclusive, and
+  this screen wins.** Set on `OMK START MENU` and `SAVE GAME`, and on no
+  other screen. `UI_LoadScreen` enforces it from **both** ends:
 
+      /* the slot scan, at the head */
       if (slot->screen == a1) return 1;                    // already open
       ...
       if (v5 || a1 == 31 && UI_TestScreenFlag(slot, 0x20000400))
-          return 1;                                        // refused
+          return 1;                                        // 31 REFUSED
 
-  so a slot holding one of those two makes a request for **31** return
-  without opening anything. It is what stops ESC putting the pause menu over
-  the start menu, which is where the boot parks. See §3h.
+      /* ...and the tail, once the new screen is going up */
+      if (the new screen carries 0x400) {
+          v29 = UI_FindScreen(31);
+          if (v29 && v29[2]) v29[5](v29);                  // 31's CLOSE cb
+      }
+
+  So a request for 31 returns without opening anything while one of those two
+  is up, and opening one of those two **closes** 31 if it is up. It is what
+  stops ESC putting the pause menu over the start menu, which is where the
+  boot parks. See §3h.
+
+  **This said "opening either fires screen 31's open callback" until
+  2026-09-07**, and both halves of that were wrong: it is `v29[5]`, the
+  screen record's `+20`, which is the CLOSE, and the refusal arm was not
+  described at all. The first correction that day named only the refusal;
+  the tail is the other half.
 
 ---
 
@@ -2030,6 +2042,138 @@ choosing") and not a missing decode.
 `verify.py: ui answers` — **tier 2**, corpus-constrained. What it establishes
 is the set of values each screen can write, not that any screen behaves
 correctly.
+
+### 3i. THE SNEAK CALL — a screen that answers its own question
+
+The videophone call a reader named "the sneak cutscene", and it happens **ten
+times** in the game. The idiom is two instructions:
+
+    1158  ui.open          0, -1, 19        ; SCREEN[0] = 'VIDEOPHONE'
+    1165  dialog.start     386              ; 'Policier Sneak/Supermarché'
+    1168  character.hide   95               ; the caller, put away again
+
+Across `IAM\AREA` and `IAM\SCENE` there are **10** `ui.open 0` sites — **8**
+followed at once by `dialog.start` and **2** by `media.play 534`,
+`OBJECTS[534] = 'ZVO P315 DATA MEMORIZED'`, which is the caption a capture
+shows in the top right. All ten sit in a zone record: 8 in its **enter**
+script and 2 in its **activate**, the restaurant's lunch beat (SCENE 53,
+record 0) among the latter.
+
+**`ui.open` parks its caller, so how does the next instruction run?** Because
+this screen answers itself. `Ui_OpenSneakFamily`'s param-2 arm ends:
+
+    0049B45C  C7 46 1C 28 F1 4D 00   mov [esi+1Ch], offset unk_4DF128
+              89 3D 40 F1 4D 00      mov dword_4DF140, edi     ; 1
+              89 3D F0 0B 67 00      mov dword_670BF0, edi     ; 1 — a call is up
+    0049B46F  E8 EC 00 F9 FF         call UI_SendAnswer        ; 0x0042B560
+
+and `UI_SendAnswer` fires `Game_RaiseEvent(5, {ctx, dword_930750})` — the
+event that resumes a script parked at `ui.open` (§70 in
+[`SCRIPT_VM.md`](SCRIPT_VM.md)). `UI_OpenScreen` seeded that answer at **−1**
+and nothing on this screen ever writes it, so the device opens, hands −1
+straight back, and **stays up** while the script runs on into the call. It is
+also the reason §3d-bis lists VIDEOPHONE among the three screens that "keep
+the answer with no writer": the answer is never written because the open
+sends whatever is there.
+
+**The 3D inside the panel is the ordinary world.** `I2D_Submit3DView`'s
+full-screen submit (`sub_479C20`, gated on `byte_90E155`) is the same one
+every frame uses; the device's artwork simply has the viewport hole. Nothing
+special renders a caller.
+
+**Closing it is read only half-way.** `Ui_CloseSneakFamily`'s param-2 arm
+REFUSES the first attempt — it clears `dword_670BF0`, resumes the player
+(`sub_466B60`) and starts oscillator 5 for 100 ms, a closing animation — and
+closes on the next one. What *makes* the attempt is not established: no VM
+opcode closes a screen, the only other screen whose open closes this one is
+`SHOOT HUMAN` (`if (a1 == 34) UI_CloseScreen(0)` in `UI_LoadScreen`'s tail),
+and the function has no direct caller because it is a dword in the screen
+table.
+
+**A call takes no interface input at all.** `Ui_ScreenInput` (0x0042A0F0),
+the one input callback all 32 live screens share, dispatches only when the
+PANEL's own `+72 & 8` is clear:
+
+    result = a1[7];                          /* the panel */
+    if (result && !(dword_4C3F74 & 1) && !(byte_4C3F9C & 1))
+        if ((result[18] & 8) == 0)           /* panel+72 */
+            Ui_DispatchInput(a1, result);
+
+and the videophone's panel **0x004DF128 ships `+72 = 0x20000008`** where the
+sneak's and the slider's ship `0x20000030`. So while a call is up every press
+goes past the device to the conversation running over it — which is what a
+reader met the port getting wrong ("the sneak continues to be interactable
+like it was opened normally").
+
+Ported into `omk-play` 2026-09-07: `ui.open 0` answers itself, the session
+keeps running under the screen, the panel takes no input, and the call closes
+when its conversation or voice-over ends — that last part **labelled a
+reconstruction** for the reason above. `verify.py: sneak call` asserts the
+idiom, the arm's bytes and the speaker; `omk-play --call N` fires the whole
+idiom as a harness, which is the only way the path can be looked at without
+playing a beat that contains one.
+
+**The picture took a fifth attempt, and the answer was in the BLIT.** The
+viewport came out flat grey — a reader photographed it — and four reasonable
+diagnoses were all refuted by measurement: the world *is* drawn; the camera
+resolves correctly to the conversation's own 4159 at (2757, −751, −6570),
+20 units from the caller's head, which is the enormous face the original's
+capture shows; the caller is placed (the ray solve's `0 0 0` is what a
+ONE-camera conversation gives, and that solve is only applied to a body
+nothing else places); and the eye/at reading is right, because `pos[3..5]` is
+an aim handle a fixed 768 raw units from `pos[0..2]` in 1615 of the file's
+1670 absolute cameras.
+
+**`Ui_DrawPanelBack` keys BOTH its blits, and the composer keyed only one.**
+
+    00476122  6A 03 6A 01 …  E8 → 0x004287A0   ; the whole-sheet arm
+    00476266  6A 03 6A 01 …  E8 → 0x004287A0   ; each of the 80 tiles
+
+That `1` is DDBLT_KEYSRC against the flat **0** key of §1. `sneak.bmp`'s
+viewport is a black cell meant to be keyed out so the 3D shows through;
+painted solid, the item's own 21.6% white fill over it gives exactly
+**(48, 52, 48)** — the grey in the report, and what the check's mutation
+reproduces to the number. Invisible on every other page, because the sneak's
+and the slider's have no hole in them.
+
+Two consequences worth knowing: a tiled screen over the world now shows the
+world through its transparent cells (the LIFT has 49812 such pixels), which is
+what the engine does; and `run_screen` grew `OMK_NOCLOUD` because with the
+cells transparent every pixel of a composed frame is non-zero and `painted`
+stops measuring the artwork's own coverage.
+
+**Confirmed in play 2026-09-07**, over three rounds of the restaurant lunch:
+the caller appears in the device, his face driven by the line's own `.3DM`
+between his two idle poses, and the device ignores every press while he
+speaks. `todo/omk-play.md` 83 carries the four hypotheses that were measured
+and refuted on the way, because each of them was true and none of them was the
+fault.
+
+### A CALLER IS A REAL ACTOR, PARKED OFF-STAGE
+
+Reported by a reader 2026-09-07, after a body in the restaurant looked like a
+fault and was not one. `ARESTO14` (AREA 217) places **actor 95 `GD1_FNM`** at
+2776 −734 −6595 — 745 units, about 19 m, above the restaurant floor, where
+every other body in the chunk sits between −16 and +8. It reads exactly like a
+character left floating.
+
+It is a **videophone caller**. He is not meant to be in the room at all: the
+call shows his model, so the chunk parks him somewhere the player cannot reach
+and the camera never frames. The chunk's own bounds are y −869…+32 — it is a
+23 m tall building, not one room — and he is standing on a real wooden floor
+in a small sealed room on an upper storey, which a shot from 80 units away
+shows and a shot from 300 does not, because that room's own wall closes over
+him. Stand the player at his height and the walker snaps to **−145**, another
+surface between the two.
+
+**The data names the mechanism.** The scene program that runs him uses path 13
+`TBas_sneak` and clip `STDSNKL.3DA` — *stand, sneak*. The authors named his
+path after the device he appears on.
+
+The general form, worth having before the next one: **a body's height means
+nothing without its chunk's bounds**, and an actor far from the playable floor
+of a location is as likely to be staged for a screen as misplaced. Check what
+is under his feet before calling it a placement fault.
 
 ---
 

@@ -15,6 +15,116 @@ waiting on its evidence.
 
 ## Open (batch 6, filed 2026-09-04)
 
+### 83. The SNEAK CALL was never played — the device opened and the call did not
+
+> **Ported 2026-09-07, CONFIRMED IN PLAY over three rounds.** The first run
+> played the call end to end - both lines in order, the script going on - but
+> a reader reported two faults: *the guard is not visible and the sneak
+> continues to be interactable like it was opened normally*. The second was
+> the panel's own input flag; the first was a missing colour key on the tile
+> blit, and took four refuted hypotheses and a headless repro to find. Both
+> fixed and both watched: the caller now appears in the device and the device
+> ignores every press.
+>
+> **`--call N` is the repro** (a harness, labelled): it fires the whole idiom -
+> `ui.open 0` then `dialog.start N` - on the first adventure frame, so the
+> path can be looked at without playing the beat that contains one.
+>
+>     build/omk-play ../gamedata ../tables --save ../traces/games-resto.bin \
+>         --slot 2 --nofmv --call 386 --frames 80 --dump call.bin
+>
+> **FIXED, and the answer was in the BLIT.** `Ui_DrawPanelBack` blits its 80
+> tiles with `I2D_BlitBitmap(&rect, sheet, 1, 3)` - the same DDBLT_KEYSRC the
+> whole-sheet arm above it uses - and `ScreenComposer::background` passed the
+> key on the sheet arm and `false, 0` on the tile arm. `sneak.bmp`'s viewport
+> is a black cell meant to be keyed out so the 3D shows through; painted
+> solid, the item's own 21.6% white fill over it gives exactly (48, 52, 48),
+> the grey in the report. Invisible on every page without a hole in it - the
+> sneak's and the slider's - and fatal on the one with one.
+>
+> **How it was found is the part worth keeping**: `OMK_NOUI=1`, which draws
+> the frame without the interface layer. With the device off the caller was
+> there in full, which put the fault on the composer's side in one command
+> after four wrong hypotheses. Cutting the frame in half beat reasoning about
+> it, and all four hypotheses below were reasonable and all four were wrong:
+>
+> * the world IS drawn - `drawWorld`, `haveDlgCam`, `anyWorld` and
+>   `worldReady` are all 1 through the call;
+> * the camera is the conversation's own and resolves correctly, to
+>   **(2757, -751, -6570)** with fov 98 - camera 4159, whose subjects are
+>   both 0xFFFF, so it is absolute in the set's space;
+> * the caller is NOT mis-staged. `speaker_positions`' ray solve reports
+>   `stands at 0 0 0` because a one-camera conversation has nothing to
+>   intersect, but that solve is only applied to a body nothing else places,
+>   and actor 95 is placed - the staged list has him at 2767 -737 -6577;
+> * and `pos[3..5]` is an AIM HANDLE, not the eye: it sits a fixed 768 raw
+>   units from `pos[0..2]` in 1615 of the shipped file's 1670 absolute
+>   cameras, so the port's eye/at reading is right and the "camera looks the
+>   wrong way" reading is not available.
+>
+> - and every one of them was true and none of them was the fault. The shot
+> really is the camera 20 units from the caller's head, which is exactly the
+> enormous face the original's capture shows filling the panel.
+>
+> Two consequences: a tiled screen over the world now shows the world through
+> its transparent cells (the LIFT has 49812 such pixels), which is what the
+> engine does; and `run_screen` grew `OMK_NOCLOUD`, because with the cells
+> transparent every pixel of a composed frame is non-zero and `painted` stops
+> measuring the artwork's own coverage - which is the whole quantity
+> `engine: screen scale` is built on.
+>
+> Worth knowing for that: the viewport item carries `drawFn 0x004782B0`, which
+> ends `I2D_Submit3DView(rect, dword_93076C, flt_90E120, 0, layer)` - the
+> WORLD scene through the SAME camera struct the full-screen submit uses. So
+> the device is a clipped copy of the main view and nothing more, and a
+> full-frame render behind the artwork is the right shape for the port.
+
+A reader, with a capture of the original: the videophone comes up in the
+middle of the Telis restaurant lunch, a caller speaks inside it with the
+subtitle under him and `DATA MEMORIZED` in the corner - *and it happens
+multiple times in the game*. It does: **ten** `ui.open 0` sites, 8 followed by
+`dialog.start` and 2 by `media.play 534` (`ZVO P315 DATA MEMORIZED`).
+`docs/UI.md` §3i has the whole reading.
+
+**Three things in the port were in the way, and two of them are the same old
+assumption.**
+
+1. **`ui.open 0` parked for ever.** `ui.open` suspends its caller at status 6
+   and only event 5 releases it - but screen 0's own open callback fires that
+   event (`Ui_OpenSneakFamily`'s param-2 arm ends `call UI_SendAnswer`), so
+   the script resumes with the preset −1 **while the device stays up**. The
+   port waited for a person to close it, so the call's own `dialog.start`
+   never ran: an empty videophone.
+2. **The session stopped under a screen** - `if (!walk) session.frame()`.
+   `Game_Tick` has no test for an open screen anywhere in it; the only thing
+   that stops the world is the pause flag, and that is a delta of zero. This
+   is the THIRD time that assumption has come out: once for the world DRAW
+   (the sneak froze Anekbah, 19 frames in 1924), once for the player's tick,
+   and this was the line that still held it for the SCRIPTS. A call cannot
+   play through it, because the instruction after `ui.open` is the one that
+   starts the conversation.
+3. **The device stayed interactable.** `Ui_ScreenInput` (0x0042A0F0), the
+   one input callback every live screen shares, dispatches only when
+   `panel[+72] & 8` is clear - and the VIDEOPHONE's panel 0x004DF128 ships
+   **0x20000008** where the sneak's and the slider's ship 0x20000030. So a
+   call takes no interface input at all and every press goes to the
+   conversation over it. `UiPanel::takesInput()`, and the reader's report is
+   what sent me to that gate.
+4. **Nothing closed it.** Reconstructed: the call closes when the
+   conversation opened over it ends. What the engine does is read only
+   half-way - `Ui_CloseSneakFamily`'s param-2 arm refuses the first attempt
+   (oscillator 5, 100 ms, a closing animation) and closes on the second - but
+   what MAKES the attempt is not established. Labelled in the code.
+
+**How established** - the script (SCENE 53 record 0's activate, pc 1158/1165/
+1168), `Ui_OpenSneakFamily`'s bytes, and the corpus of ten sites.
+`verify.py: sneak call` pins all three. **What is NOT established**: that the
+port draws it correctly. Reaching a call headlessly needs either the
+restaurant beat played through - it opens with `scx.play.player.wait`, so a
+`--scene-chunk` replay parks - or a walk into one of the nine zones, and
+several attempts at both failed to arm. The natural confirmation is a person
+playing to the restaurant lunch.
+
 ### 82. ESC ended the run instead of opening the pause screen — A
 
 > **Fixed 2026-09-07, CONFIRMED IN PLAY.** A session on

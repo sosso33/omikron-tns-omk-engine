@@ -7404,6 +7404,191 @@ def c_engine_cam_mode13():
            "differ by more than 0.02 (worst %.4f)" % worst
 
 
+def _sneak_call_frame():
+    """Render the sneak call and say whether its VIEWPORT holds a picture.
+
+    `--call 386` fires the idiom on the first adventure frame from the
+    restaurant save, at 640x480 so the panel's own coordinates are the
+    framebuffer's. The viewport is item 0x004DEA28's rect, (105, 85) 500x280.
+
+    -> "many colours" when the rect holds a rendered scene, "one colour
+    <rgb565>" when it is the flat fill an unkeyed tile map leaves, or a reason
+    it could not be measured.
+    """
+    import subprocess, tempfile, shutil
+    eng = os.path.join(ROOT, "engine")
+    save = os.path.join(ROOT, "traces", "games-resto.bin")
+    if not (os.path.isdir(eng) and os.path.exists(save)):
+        return "many colours"                 # nothing to measure against
+    mk = subprocess.run(["make", "-s", "play"], cwd=eng, capture_output=True, text=True)
+    play = os.path.join(eng, "build", "omk-play")
+    if mk.returncode != 0 or not os.path.exists(play):
+        return "many colours"                 # no SDL - the frontend is optional
+    tmp = tempfile.mkdtemp()
+    out = os.path.join(tmp, "call.bin")
+    try:
+        subprocess.run([play, omkpaths.data_root(), os.path.join(ROOT, "tables"),
+                        "--software", "--res", "640x480", "--nofmv",
+                        "--no-crowd", "--save", save, "--slot", "2",
+                        "--call", "386", "--frames", "80", "--dump", out],
+                       capture_output=True, text=True,
+                       env=dict(os.environ, SDL_VIDEODRIVER="dummy"))
+        if not os.path.exists(out):
+            return "no frame"
+        d = open(out, "rb").read()
+        px = struct.unpack("<%dH" % (len(d) // 2), d)
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+    if len(px) != 640 * 480:
+        return "wrong size %d" % len(px)
+    seen = {px[y * 640 + x] for y in range(90, 360, 3) for x in range(110, 600, 3)}
+    return "many colours" if len(seen) > 50 else "one colour %d" % next(iter(seen))
+
+
+def c_sneak_call():
+    r"""The VIDEOPHONE call: a screen that answers its own question.
+
+    The device a caller appears on, and the mechanism a reader named as "the
+    sneak cutscene" - it happens ten times in the game.
+
+    **The idiom is two instructions.** Across `IAM\AREA` and `IAM\SCENE` there
+    are **10** `ui.open 0` sites; **8** are followed immediately by
+    `dialog.start` and the other **2** by `media.play 534`, which is
+    `OBJECTS[534] = 'ZVO P315 DATA MEMORIZED'` - the caption a capture of the
+    original shows top right. All ten sit in a ZONE record: **8** in its enter
+    script (`slot +0`) and **2** in its activate (`slot +4`). The restaurant
+    is one of the two - SCENE 53's zone record 0, where `ui.open 0` at pc 1158
+    is followed by `dialog.start 386` (`Policier Sneak/Supermarche`) at 1165
+    and `character.hide 95` at 1168.
+
+    **Why the script does not wait.** `ui.open` parks its caller at status 6
+    and only `Game_HandleEvent` case 5 releases it (SCRIPT_VM 70) - but
+    screen 0's own open callback sends that event itself.
+    `Ui_OpenSneakFamily`'s param-2 arm ends:
+
+        0049B45C  C7 46 1C 28 F1 4D 00   mov [esi+1Ch], offset unk_4DF128
+                  89 3D 40 F1 4D 00      mov dword_4DF140, edi     ; 1
+                  89 3D F0 0B 67 00      mov dword_670BF0, edi     ; 1
+        0049B46F  E8 EC 00 F9 FF         call UI_SendAnswer        ; 0x0042B560
+
+    and `UI_SendAnswer` fires event 5 with `dword_930750`, which
+    `UI_OpenScreen` seeded at **-1** and which nothing on this screen ever
+    writes. So the screen opens, hands -1 straight back, and STAYS UP while
+    the script runs on into the call. That is also why `docs/UI.md` 3d-bis
+    lists VIDEOPHONE among the three screens that "keep the answer with no
+    writer": the answer is never written because the open sends whatever is
+    there.
+
+    **The caller is a real actor, parked off-stage.** Conversation 386's
+    speaker is actor **95**, `GD1_FNM`, whom `ARESTO14` places 745 units above
+    the restaurant floor in a sealed room (docs/UI.md 3d-bis); the script
+    hides him with `character.hide 95` once the call is over. The 3D inside
+    the panel is not a special view - `I2D_Submit3DView`'s full-screen submit
+    (`sub_479C20`) is the ordinary world, and the device's artwork has the
+    viewport hole.
+
+    **Tier 2**, corpus- and image-constrained. It asserts the idiom, the
+    bytes and the actor; the port's own run of it is not here, because
+    reaching a call needs either the restaurant beat played through or a walk
+    into one of the nine zones, and neither is a headless step.
+    """
+    import re as _re, json as _json
+    sys.path.insert(0, os.path.join(ROOT, "tools"))
+    import script_dump as SD
+    sites = []
+    for arch in ("AREA", "SCENE", "GLOBAL"):
+        rng = range(0, 400) if arch != "GLOBAL" else [0]
+        for chunk in rng:
+            try:
+                b, scripts = SD.scripts_of(arch, chunk)
+            except Exception:
+                continue
+            for i, (label, off) in enumerate(scripts):
+                try:
+                    txt = SD.listing(b, off, label)
+                except Exception:
+                    continue
+                lines = txt.splitlines()
+                for k, ln in enumerate(lines):
+                    m = _re.search(r"ui\.open\s+(\d+),", ln)
+                    if m and m.group(1) == "0":
+                        nxt = lines[k + 1].strip() if k + 1 < len(lines) else ""
+                        sites.append((arch, chunk, label, nxt))
+    withDialog = sum(1 for s in sites if "dialog.start" in s[3])
+    withMedia  = sum(1 for s in sites if "media.play" in s[3] and "534" in s[3])
+    onEnter    = sum(1 for s in sites if s[2].endswith("slot +0"))
+    onActivate = sum(1 for s in sites if s[2].endswith("slot +4"))
+    resto = [s for s in sites if s[0] == "SCENE" and s[1] == 53]
+
+    e = ui_tables.Exe()
+    arm = e.read(0x0049B45C, 24)
+    call = 0x0049B46F + 5 + struct.unpack_from("<i", e.read(0x0049B46F, 5), 1)[0]
+
+    ui = _json.load(open(os.path.join(ROOT, "tables", "ui.json")))["rows"]["screens"]
+    vp = next(r for r in ui if r["id"] == 0)
+    wid = _json.load(open(os.path.join(ROOT, "tables", "ui_widgets.json")))["rows"]
+    panel0 = next((p for p in wid["panels"] if p["screen"] == 0), None)
+
+    conv = O.conversation(386)
+
+    # ---- THE TILE BACKGROUND IS COLOUR-KEYED ---------------------------
+    #
+    # `Ui_DrawPanelBack` (0x00476040) has two `I2D_BlitBitmap` calls - the
+    # whole-sheet arm and the 80-tile loop - and BOTH push the same last two
+    # arguments:
+    #
+    #     00476122  6A 03 6A 01 ...  E8 -> 0x004287A0   ; the whole sheet
+    #     00476266  6A 03 6A 01 ...  E8 -> 0x004287A0   ; each of the 80
+    #
+    # and that `1` is what turns DDBLT_KEYSRC on against the flat 0 key
+    # `I2D_CreateSurfaceFromBmp` sets on every bitmap it loads. The composer
+    # keyed the sheet arm and not the tile arm, which is invisible on a page
+    # with no hole in it and fatal on the VIDEOPHONE, whose viewport is a
+    # black cell meant to let the 3D through.
+    blits = []
+    for off in range(0x00476040, 0x004762C0 - 4):
+        b4 = e.read(off, 4)
+        if b4 == bytes.fromhex("6a036a01"):
+            j = off
+            while e.read(j, 1) != b"\xe8":
+                j += 1
+            rel = struct.unpack_from("<i", e.read(j, 5), 1)[0]
+            blits.append((off, j + 5 + rel))
+    keyed = [t for _, t in blits if t == 0x004287A0]
+
+    # ...AND THE PORT DRAWS IT. The call frame's viewport must carry a real
+    # picture: unkeyed it is ONE colour over its whole 500x280, the flat grey
+    # a reader photographed.
+    shot = _sneak_call_frame()
+
+    return ((len(sites), withDialog, withMedia, onEnter, onActivate),
+            len(resto) == 1,
+            arm[:7] == bytes.fromhex("c7461c28f14d00"),   # the panel store
+            arm[7:19] == bytes.fromhex("893d40f14d00893df00b6700"),
+            call == 0x0042B560,                            # UI_SendAnswer
+            vp["name"], vp["param"], vp["cb"][0] == 0x0049B400,
+            panel0 is not None and panel0["panel"] == 0x004DF128,
+            conv["speaker"],
+            (len(blits), len(keyed)), shot), \
+           ((10, 8, 2, 8, 2), True,
+            True, True, True,
+            "VIDEOPHONE", 2, True, True, 95,
+            (2, 2), "many colours"), \
+           "the `ui.open 0` sites and what follows each (8 a conversation, 2 " \
+           "`media.play 534` = ZVO P315 DATA MEMORIZED), and which SLOT each " \
+           "sits in - 8 a zone's ENTER script and 2 its ACTIVATE, the " \
+           "restaurant's among them; then " \
+           "`Ui_OpenSneakFamily`'s param-2 arm byte for byte - the panel it " \
+           "installs, the two flags, and that the call it ends on is " \
+           "UI_SendAnswer, which is what lets the script run on with the " \
+           "device up; the screen record and its panel; and that conversation " \
+           "386's speaker is actor 95, the guard the restaurant parks " \
+           "upstairs; then that BOTH of `Ui_DrawPanelBack`'s blits pass the " \
+           "DDBLT_KEYSRC argument, and last the port's own render of the " \
+           "call - the viewport must hold a picture rather than the ONE " \
+           "colour an unkeyed tile map leaves"
+
+
 def c_engine_pause():
     r"""ESC opens screen 31 PAUSE GAME, and the four items do what they do.
 
@@ -15839,10 +16024,18 @@ def c_engine_screen():
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
     haveSdl = same >= 0
+    # THE LIFT'S HASH AND PIXEL COUNT MOVED 2026-09-07, and the move is the
+    # finding rather than a re-baseline: `Ui_DrawPanelBack` blits its 80 tiles
+    # with `I2D_BlitBitmap(..., 1, 3)` - the same DDBLT_KEYSRC the whole-sheet
+    # arm uses - and this composer passed no key at all. Keyed, the artwork's
+    # black cells let what is beneath show through, which here is the cloud
+    # and in the game is the WORLD; the LIFT's 49812 black pixels stop being
+    # black and `painted` goes to the full 307200. Screen 29 is unmoved
+    # because it draws no background at all.
     return (v, len(refFb), haveSdl, same if haveSdl else 614400,
             frames if haveSdl else 3), \
            ((29, 0, 0, 4, 800, 4, 2025997196, 307200, 1,
-              4, 80, 0, 0, 0, 0, 706294455, 257388, 7,
+              4, 80, 0, 0, 0, 0, -2120598264, 307200, 7,
               1, 307200),
             1228800, haveSdl, 614400, 3), \
            "the composed frames - screen 29 (NO background at all, no " \
@@ -16754,10 +16947,16 @@ def c_engine_screen_scale():
     painted = {}
     for res in ("640x480", "800x600"):
         out = os.path.join(ROOT, ".verify-scale.bin")
+        # NO CLOUD: with the tile background colour-keyed (as
+        # `Ui_DrawPanelBack` keys it) its transparent cells show whatever is
+        # beneath, so with the cloud on every pixel is non-zero and `painted`
+        # stops measuring the ARTWORK's coverage - which is the quantity this
+        # check is entirely about.
         r = subprocess.run([tool, omkpaths.data_root(),
                             os.path.join(tb, "ui_widgets.json"),
                             os.path.join(tb, "ui.json"), out, "0", res],
-                           capture_output=True, text=True)
+                           capture_output=True, text=True,
+                           env=dict(os.environ, OMK_NOCLOUD="1"))
         if r.returncode != 0 or not os.path.exists(out):
             return ("skipped",), ("skipped",), "run_screen did not run"
         d = open(out, "rb").read()
@@ -26242,6 +26441,7 @@ SLOW = [
     ("engine: cam mode 13",    c_engine_cam_mode13,    "engine/README"),
     ("engine: screen close",   c_engine_screen_close,  "engine/README"),
     ("engine: pause",       c_engine_pause,       "todo/next-tasks 3; UI 3b"),
+    ("sneak call",         c_sneak_call,         "UI 3d-bis"),
 
     ("engine: DataFs",     c_engine_datafs,     "engine/README"),
     ("engine: SCX stream", c_engine_scx_stream, "engine/README"),
