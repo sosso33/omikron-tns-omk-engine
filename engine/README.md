@@ -2116,6 +2116,25 @@ loaded by the screen's own open - which rotate to show selection. The UI layer
 has no 3D path, so they are not drawn; their LABELS and the two counts are,
 on the echo bar, which is where the engine puts them.
 
+**AND WHERE A CALLED ONE COMES TO** (step 4). `sub_452570` looks for the
+nearest point on a VEHICLE lane before it reserves anything: the scan is
+`for (lane = header[2]; lane < header[5])` - the range after the pedestrian
+one - and inside each lane it walks the polyline asking `sub_452A80` for the
+point-to-segment distance, behind a **3900-unit box reject** (99 m) that comes
+first, so a far-off lane is never measured. Outside the segment it compares the
+two ENDPOINTS and keeps the nearer rather than clamping the parameter. A ROUTE
+is then picked round-robin off that lane from a global counter.
+
+Run over the four areas the shipped destinations name, it says something about
+the authoring the data could have refused: **every destination the game offers
+in a city is within 46 m of a road** in Anekbah and within 13 m in Qchaud. And
+two rows are findings of their own - **LAHOREY has no vehicle lanes at all**
+(`pedEnd == laneCount == 162`), so a call there can only fail, which is exactly
+why the port's transport teleports instead; and two of the Souk's 34 addresses
+find nothing, which is the box reject working. `engine: slider call`, shown to
+fail by searching the pedestrian lanes as well - which gives a nearer, entirely
+plausible 6.0 m median, because a pavement is closer than a road.
+
 **AND IT FLIES** (`todo/slider.md` step 3). `--ride` mounts the model where
 the player stands and drives it from the same input word the walker takes,
 placing him with `sub_457F50`'s rule and drawing the frame through **camera

@@ -331,4 +331,87 @@ void Sliders::vehicleSound(int vi) {
     }
 }
 
+// ------------------------------------------- `sub_452570`'s own lane search
+//
+// `sub_452A80(state, point, key, best)`: the distance from the TARGET (which
+// the caller left at `state+32/36/40`) to the segment that starts at `point`
+// and runs along the key's delta, with the closest point itself written back
+// to `state+20/24/28`. -1 when the target is outside the 3900-unit box on any
+// axis, or when the result is no better than `best`.
+//
+// Transcribed rather than replaced by a library routine, because two details
+// are the engine's and not a textbook's: the box reject comes FIRST, so a
+// far-off lane is never measured at all; and outside the segment it compares
+// the two ENDPOINTS and keeps the nearer, rather than clamping the parameter.
+static float segmentDistance(const float target[3], const float point[3],
+                             const float delta[3], float best, float out[3]) {
+    const float d[3] = {point[0] - target[0], point[1] - target[1],
+                        point[2] - target[2]};
+    if (std::fabs(d[0]) > 3900.0f || std::fabs(d[1]) > 3900.0f ||
+        std::fabs(d[2]) > 3900.0f)
+        return -1.0f;
+    const float len2 = delta[0] * delta[0] + delta[1] * delta[1] +
+                       delta[2] * delta[2];
+    float r[3] = {d[0], d[1], d[2]};
+    float dist;
+    if (len2 <= 0.0f) {
+        dist = std::sqrt(d[0] * d[0] + d[1] * d[1] + d[2] * d[2]);
+    } else {
+        const float u = -(d[2] * delta[2] + d[1] * delta[1] + d[0] * delta[0]) / len2;
+        if (u < 0.0f || u >= 1.0f) {
+            dist = std::sqrt(d[0] * d[0] + d[1] * d[1] + d[2] * d[2]);
+            const float e[3] = {d[0] + delta[0], d[1] + delta[1], d[2] + delta[2]};
+            const float de = std::sqrt(e[0] * e[0] + e[1] * e[1] + e[2] * e[2]);
+            if (de < dist) { dist = de; r[0] = e[0]; r[1] = e[1]; r[2] = e[2]; }
+        } else {
+            r[0] = delta[0] * u + d[0];
+            r[1] = delta[1] * u + d[1];
+            r[2] = delta[2] * u + d[2];
+            dist = std::sqrt(r[0] * r[0] + r[1] * r[1] + r[2] * r[2]);
+        }
+    }
+    if (best >= 0.0f && dist >= best) return -1.0f;
+    for (int k = 0; k < 3; ++k) out[k] = target[k] + r[k];
+    return dist;
+}
+
+LanePoint nearestVehicleLane(const OptTrack& t, const float target[3]) {
+    LanePoint best;
+    if (!t.valid) return best;
+    // `for (lane = header[2]; lane < header[5])` - the lanes AFTER the
+    // pedestrian range, which is what makes this a VEHICLE search.
+    for (std::size_t lane = t.pedEnd; lane < t.laneCount && lane < t.lanes.size();
+         ++lane) {
+        const OptLane& L = t.lanes[lane];
+        float p[3] = {L.origin[0], L.origin[1], L.origin[2]};
+        const int n = L.keyCount;
+        for (int k = 0; k < n; ++k) {
+            const std::size_t ki = static_cast<std::size_t>(L.firstKey) +
+                                   static_cast<std::size_t>(k);
+            if (ki >= t.keys.size()) break;
+            const OptKey& K = t.keys[ki];
+            float at[3];
+            const float d = segmentDistance(target, p, K.delta, best.dist, at);
+            if (d >= 0.0f) {
+                best.dist = d;
+                best.lane = static_cast<int>(lane);
+                best.key = k;
+                for (int j = 0; j < 3; ++j) best.at[j] = at[j];
+            }
+            for (int j = 0; j < 3; ++j) p[j] += K.delta[j];
+        }
+    }
+    return best;
+}
+
+int laneRoute(const OptTrack& t, int lane, unsigned counter) {
+    if (lane < 0 || static_cast<std::size_t>(lane) >= t.lanes.size()) return -1;
+    const OptLane& L = t.lanes[static_cast<std::size_t>(lane)];
+    // `if (!u8(v24, 20)) u8(v24, 20) = 1;` - a lane with no routes is read as
+    // having one, and the engine WRITES the 1 back rather than only reading
+    // it. Nothing downstream here can see the write, so this only reads.
+    const int count = L.routeCount ? L.routeCount : 1;
+    return L.firstRoute + static_cast<int>(counter % static_cast<unsigned>(count));
+}
+
 }  // namespace omk

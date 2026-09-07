@@ -103,6 +103,37 @@ inline constexpr float kVehLodDistances[4] = {787.4015503f, 1181.1024170f, 1574.
 // `sub_4544B0`'s coin.
 const std::vector<std::string>& vehModelTable(int kind);
 
+// WHERE A CALLED SLIDER COMES TO - `sub_452570`'s search, and `sub_452A80`.
+//
+// The sneak's slider page hands `sub_452570` a point (a destination's address,
+// or the player's own position) and it looks for the nearest point on a
+// VEHICLE lane. The scan is `for (lane = header[2]; lane < header[5])` - which
+// is exactly the range after the pedestrian one, `pedEnd .. laneCount` - and
+// inside each lane it walks the polyline key by key, asking `sub_452A80` for
+// the distance from the target to that segment:
+//
+//     u = -dot(point - target, delta) / |delta|^2
+//     inside  (0 <= u < 1)  the perpendicular foot
+//     outside               the nearer of the two ENDPOINTS
+//
+// behind a 3900-unit box reject on each axis (99 m), which is what stops the
+// search crossing a city. The best is kept with its lane and its key.
+//
+// `sub_452570` then picks a ROUTE off that lane round-robin, from a global
+// counter: `dword_4C8854 = (dword_4C8854 + 1) & 0x7FFFFFFF` and
+// `firstRoute + counter % routeCount` - with `routeCount` 0 read as 1, which
+// the engine WRITES back into the record rather than only reading.
+struct LanePoint {
+    int   lane = -1;          // into `OptTrack::lanes`
+    int   key  = -1;          // which segment of that lane
+    float at[3] = {0, 0, 0};  // the closest point itself, in world units
+    float dist = -1.0f;       // -1 when nothing was in range
+    bool  found() const { return lane >= 0; }
+};
+LanePoint nearestVehicleLane(const OptTrack& t, const float target[3]);
+// The route `sub_452570` would take for that lane on the `counter`-th call.
+int laneRoute(const OptTrack& t, int lane, unsigned counter);
+
 struct Vehicle {
     bool  live = false;
     int   kind = 1;                 // 1 a slider, 0 a moto

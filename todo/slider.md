@@ -209,12 +209,36 @@ Each ends in a commit and a report.
    standing OPEN in mode 3, and there is no vehicle under him — he flies
    standing up.
 
-4. **The POOL, the reservation and the arrival** — `sub_452570`'s ARM arm
-   (search the circuit's lanes for the point nearest a target, take a free
-   slot out of the 40, `sub_452CC0` to reserve and route it, `Screen_Fade(1)`
-   and `Actor_HoldAnimation` while it comes), the slider arriving in mode 3,
-   `MDSLIDIN`'s gate, and the vehicle drawn under the rider. `sub_452CC0` is
-   303 lines and is the routing. — open
+4. **WHERE a called slider comes to** — `sub_452570`'s lane search and
+   `sub_452A80`, and the round-robin route off the chosen lane. — **DONE
+   2026-09-07**, `verify.py: engine: slider call`, shown to fail by searching
+   the pedestrian lanes as well (which gives a nearer and entirely plausible
+   6.0 m median, because a pavement is closer than a road).
+
+   The search itself is short — the point-to-segment distance behind a
+   3900-unit box reject, over the lanes AFTER the pedestrian range — and what
+   it produced is a statement about the AUTHORING the data could have refused:
+   **every destination the game offers in a city is within 46 m of a road** in
+   Anekbah and within 13 m in Qchaud. Two rows are worth keeping:
+
+   * **LAHOREY has no vehicle lanes at all** (`pedEnd == laneCount == 162`),
+     so none of its 7 addresses finds one and a call there can only fail —
+     `sub_452570` returns 0 and the page shows text 42. Which squares with
+     step 1: with no pool the ARRIVE arm runs instead and the transport is a
+     teleport, which is what the port does there.
+   * **Two of the Souk's 34 addresses find nothing**, which is the box reject
+     doing its job: they are more than 99 m from any road on at least one
+     axis.
+
+5. **The RESERVATION and the ARRIVAL** — `sub_452CC0` (303 lines) routes the
+   chosen slider to that lane point; `sub_452570` then takes a free slot out
+   of the 40 (`slot[+22] == 1` and the mover's `+180 & 8` — and the port's own
+   read of `Slider_Init` already says `+22 == 1` is **slot 0, the player's own
+   slider**, so the pool is there), sets its state to 2 (or 6 when one was
+   already assigned), and calls `Screen_Fade(1)` with
+   `Actor_HoldAnimation(player, 1)` while it comes. Then the slider arrives in
+   mode 3, `MDSLIDIN`'s gate opens, and the vehicle is drawn under the rider.
+   — open
 
 ## What is already there, and must not be re-done
 

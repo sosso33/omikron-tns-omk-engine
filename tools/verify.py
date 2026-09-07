@@ -7077,6 +7077,88 @@ def c_engine_slider_ride():
         "the ride made the two fight and the walker win"
 
 
+def c_engine_slider_call():
+    r"""WHERE A CALLED SLIDER COMES TO - `sub_452570`'s lane search.
+
+    The sneak's slider page hands `sub_452570` a POINT - a destination's
+    address, or the player's own position - and before it reserves anything it
+    looks for the nearest point on a **vehicle** lane of the resident `.OPT`
+    circuit. The scan is `for (lane = header[2]; lane < header[5])`, which is
+    the range AFTER the pedestrian one, and inside each lane it walks the
+    polyline key by key asking `sub_452A80`:
+
+        u = -dot(point - target, delta) / |delta|^2
+        inside  (0 <= u < 1)   the perpendicular foot
+        outside                the nearer of the two ENDPOINTS, not a clamp
+
+    behind a **3900-unit box reject on each axis** (99 m) that comes FIRST, so
+    a far-off lane is never measured. `sub_452570` then picks a ROUTE off that
+    lane round-robin from a global counter (`firstRoute + counter %
+    routeCount`, a `routeCount` of 0 read as 1 - and the engine WRITES that 1
+    back into the record).
+
+    Run over the four areas the shipped destinations name, against those
+    areas' own ADDRESSES, with each circuit's stem taken from its chunk's
+    `+115` rather than guessed. What comes out is a statement about the
+    AUTHORING that the data could have refused: **every destination the game
+    offers in a city is within 46 m of a road** in Anekbah and within 13 m in
+    Qchaud.
+
+    Two of the four rows are the interesting ones.
+
+    * **LAHOREY has no vehicle lanes at all** - `pedEnd == laneCount == 162` -
+      so none of its 7 addresses finds one and a call there can only fail
+      (`sub_452570` returns 0 and the page shows text 42). That squares with
+      step 1: with no pool the function's ARRIVE arm runs instead and the
+      transport is a teleport, which is what the port does there.
+    * **Two of the Souk's 34 addresses find nothing**, which is the 3900-unit
+      box doing its job - they are further than 99 m from any road on at least
+      one axis. A search without the reject would have found them.
+
+    And the round-robin shows itself: Qchaud's lane 254 answers 334, 333, 334
+    on three consecutive calls, so that lane has two routes and the counter
+    really does alternate; Anekbah's 218 answers 313 three times, because it
+    has one.
+    """
+    import subprocess
+    eng = os.path.join(ROOT, "engine")
+    fr = omkpaths.data_root()
+    if not os.path.isdir(eng) or not os.path.isdir(fr):
+        return ("skipped",), ("skipped",), "engine/ or gamedata/ absent"
+    b = subprocess.run(["make", "-s", "build/slider_call"], cwd=eng,
+                       capture_output=True, text=True)
+    binp = os.path.join(eng, "build", "slider_call")
+    if b.returncode != 0 or not os.path.exists(binp):
+        return ("build failed",), ("built",), "engine/ must build"
+    r = subprocess.run([binp, fr], capture_output=True, text=True, errors="replace")
+    got = [ln.split() for ln in r.stdout.strip().splitlines()]
+    want = [
+        "circuit 0 ANEKBAH lanes 242 ped 0..216 vehicle 216..242".split(),
+        "nearest 34 of 34 addresses, median 16.4 m worst 46.4 m".split(),
+        "route area 0 lane 218 key 0 -> 313 313 313".split(),
+        "circuit 1 SOUK lanes 201 ped 0..179 vehicle 179..201".split(),
+        "nearest 32 of 34 addresses, median 24.6 m worst 72.3 m".split(),
+        "route area 1 lane 191 key 9 -> 234 234 234".split(),
+        "circuit 64 LAHOREY lanes 162 ped 0..162 vehicle 162..162".split(),
+        "nearest 0 of 7 addresses, median -1.0 m worst -1.0 m".split(),
+        "route area 64 lane -1 key -1 -> -1 -1 -1".split(),
+        "circuit 101 QCHAUD lanes 259 ped 0..226 vehicle 226..259".split(),
+        "nearest 3 of 3 addresses, median 12.4 m worst 13.4 m".split(),
+        "route area 101 lane 254 key 0 -> 334 333 334".split(),
+    ]
+    return got, want, \
+        "the four circuits the sneak's destinations name, and the nearest " \
+        "VEHICLE lane to each of those areas' own addresses: all 34 of " \
+        "Anekbah's within 46 m of a road and all 3 of Qchaud's within 13 m, " \
+        "which is a claim about the AUTHORING the data could have refused. " \
+        "LAHOREY has NO vehicle lanes (pedEnd == laneCount == 162), so a call " \
+        "there can only fail - which is why the port's transport teleports " \
+        "instead; and two of the Souk's find nothing, which is the " \
+        "3900-unit box reject doing its job. Qchaud's lane 254 answers 334, " \
+        "333, 334 on three calls and Anekbah's 218 answers 313 three times, " \
+        "so the round-robin over `routeCount` is running"
+
+
 def c_engine_used_object():
     r"""USING AN INVENTORY OBJECT ON THE WORLD - `Utiliser` reaching a zone.
 
@@ -25694,7 +25776,7 @@ def c_licence_headers():
                    if TAG in open(p, encoding="utf-8",
                                   errors="replace").read(600)]
     return (authored, sorted(missing), len(vendored), mislabelled), \
-           (381, [], 1, []), \
+           (382, [], 1, []), \
            "authored source files under tools/, engine/src, engine/tools, " \
            "engine/backends and scripts/; those MISSING the SPDX tag; " \
            "vendored files in engine/third_party; and vendored files wrongly " \
@@ -27040,6 +27122,7 @@ CHECKS = [
     ("engine: slider travel", c_engine_slider_travel, "todo/slider"),
     ("engine: slider fly", c_engine_slider_fly, "todo/slider"),
     ("engine: slider ride", c_engine_slider_ride, "todo/slider"),
+    ("engine: slider call", c_engine_slider_call, "todo/slider"),
     ("ui open answer",     c_ui_open_answer,    "SCRIPT_VM 70"),
     ("ui confirm gate",    c_ui_confirm_gate,   "UI"),
     # The FAST set, unlike `engine: screen` and `engine: name field`: most of
