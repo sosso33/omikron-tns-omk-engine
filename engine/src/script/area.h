@@ -650,6 +650,19 @@ public:
         //
         // past the end, state 4 clears (`mode = 0`) and state 3 holds both at
         // 255, which under the multiply is the frame untouched.
+        // THE BANDS ARE ONLY DARK WHILE THE FADE IS RUNNING ITS CLOCK.
+        //
+        // `running()` is not the same question, and the difference is a bug a
+        // reader met: *the stripes of the loading screen are not removed when
+        // I can actually play*. Mode 3 HOLDS once its clock passes the
+        // duration - the ticker sets `clock = duration` rather than clearing
+        // it - and holds both greys at 255, which under the multiply is the
+        // frame untouched. So a `fade.to_black` that has finished leaves the
+        // fade armed for ever with no bands drawn at all, and a letterbox
+        // keyed on `running()` never lifts.
+        bool bandsDark() const {
+            return bandGrey(false) < 255 || bandGrey(true) < 255;
+        }
         int bandGrey(bool outer) const {
             if (mode != 3 && mode != 4) return 255;
             if (duration <= 0.0f) return 255;

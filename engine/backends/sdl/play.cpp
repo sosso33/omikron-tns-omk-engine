@@ -6911,13 +6911,18 @@ int main(int argc, char** argv) {
             // - the release comes BEFORE the fade, so a strip that ends with
             // the hold ends one frame early and vanishes instead of fading.
             // A reader: *there was fade to show the black stripes then they
-            // suddenly disappeared*. Mode 3 stays armed once set (its ticker
-            // holds rather than clears) and only mode 4 clears itself, so
-            // `blackFade().running()` is true for exactly the bracket - and
-            // it is the engine's own bands, `(h << 6) / 480` tall, which is
+            // suddenly disappeared*.
+            //
+            // **The test is `bandsDark`, not `running`**, and that is a
+            // second report: *the stripes of the loading screen are not
+            // removed when I can actually play*. Mode 3 HOLDS once its clock
+            // is spent - armed for ever, drawing no bands at all - so a strip
+            // keyed on the fade being armed never lifts after a load.
+            // `bandsDark` asks whether it is darkening the bands THIS frame,
+            // which is the engine's own two quads, `(h << 6) / 480` tall -
             // the 64 the captures measure.
             if ((adventure || uiPause) && !holdEditCam &&
-                !session.playerAnimHeld() && !session.blackFade().running())
+                !session.playerAnimHeld() && !session.blackFade().bandsDark())
                 view.vh = dispH;
             if (view.vh > dispH) view.vh = dispH;
             view.vx = 0;

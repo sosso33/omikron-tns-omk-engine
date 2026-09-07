@@ -27,9 +27,21 @@ waiting on its evidence.
 > `player.anim.release` / `fade.from_black` at 1220-1221. The zoom is inside
 > the hold, so it is camera mode with nothing on screen; and the release comes
 > BEFORE the fade, so a strip that ends with the hold ends one frame early.
-> The predicate is now control AND not held AND no black fade armed - the
-> third because mode 3 stays armed once set and only mode 4 clears itself, so
-> `running()` is exactly the bracket. Round two is not watched yet.
+> Round two keyed the third term on the fade being ARMED, and a reader found
+> that wrong within the hour: *the stripes of the loading screen are not
+> removed when I can actually play*, and then the tell - *they are removed
+> when I launch then exit a dialog*. AREA 118's startup arms one at pc 1092
+> (`fade.to_black`, right after the menu answers) and never clears it, and
+> mode 3 HOLDS once its clock is spent while drawing no bands at all, so
+> `running()` is true for ever after any boot; a beat that ends on
+> `fade.from_black` is mode 4, the only mode that clears itself, which is why
+> a dialogue released it. **Round three keys it on `bandsDark`** - is the fade
+> darkening the bands THIS frame - and that is the question the strip is
+> actually about.
+>
+> Worth recording: a `--slot` load does NOT reproduce it, because it skips
+> AREA 118's script entirely. Two rounds of headless testing came back clean
+> on a fault a boot has every time.
 
 A reader: *black stripes entering/leaving a building*. The letterbox, and the
 port had the wrong predicate for it.

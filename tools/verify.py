@@ -7494,6 +7494,26 @@ def c_letterbox():
                       for x in range(0, w, 4))]
         return (lit[0], h - 1 - lit[-1]) if lit else (h, h)
 
+    # ---- WHY `running()` CANNOT BE THE TEST -----------------------------
+    #
+    # AREA 118's startup script arms the black fade and never clears it:
+    # `fade.to_black` at pc 1092, right after the start menu answers, and NO
+    # `fade.from_black` anywhere in it - every other fade there is the COLOUR
+    # one. Mode 3 HOLDS once its clock is spent (the ticker sets
+    # `clock = duration` rather than clearing it), so after any boot the fade
+    # stays armed for ever while drawing no bands at all. A strip keyed on the
+    # fade being ARMED therefore never lifts - "the stripes of the loading
+    # screen are not removed when I can actually play" - and the reader's own
+    # second observation names the release: "they are removed when I launch
+    # then exit a dialog", because a beat like SCENE 53's ends on
+    # `fade.from_black`, which is mode 4, the only mode that clears itself.
+    sys.path.insert(0, os.path.join(ROOT, "tools"))
+    import script_dump as _SD
+    _b, _ = _SD.scripts_of("AREA", 118)
+    _boot = _SD.listing(_b, struct.unpack_from("<i", _b, 4)[0], "startup +4")
+    bootFades = (sum(1 for l in _boot.splitlines() if "fade.to_black" in l),
+                 sum(1 for l in _boot.splitlines() if "fade.from_black" in l))
+
     fr = os.path.join(ROOT, "traces", "frames")
     shots = {}
     for name in ("dlg402-32", "dlg402-44", "intro-75", "menu-18", "intro-60"):
@@ -7572,9 +7592,9 @@ def c_letterbox():
 
     return (shots["dlg402-32"], shots["dlg402-44"], shots["intro-75"],
             shots["menu-18"], shots["intro-60"], held, walked,
-            roam, heldRoam), \
+            roam, heldRoam, bootFades), \
            ((64, 64), (64, 32), (64, 65), (1, 1), (0, 1), (64, 64), (0, 0),
-            (0, 0), (64, 64)), \
+            (0, 0), (64, 64), (1, 0)), \
            "the top and bottom dark bands of five captures - the " \
            "conversation at 64/64, the same conversation with its SUBTITLE " \
            "lighting the bottom band, the intro CUTSCENE at 64/65 (a " \
@@ -7585,7 +7605,9 @@ def c_letterbox():
            "area leaves an absolute camera installed; and last the pair " \
            "that isolates the rule - one street frame plain and the same " \
            "frame with `player.anim.hold` set, which must differ by exactly " \
-           "the strip"
+           "the strip; and AREA 118's startup script, which arms the black " \
+           "fade ONCE and never clears it - so `running()` is true for ever " \
+           "after a boot and cannot be what holds the strip"
 
 
 def c_sneak_call():

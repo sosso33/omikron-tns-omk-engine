@@ -2091,9 +2091,20 @@ then they suddenly disappeared*. Mode 3 stays armed once set and only mode 4
 clears itself, so `blackFade().running()` is true for exactly the bracket and
 carries the strip to the end of the fade.
 
+**And the third term is `bandsDark`, not "a fade is armed".** AREA 118's
+startup script arms one at pc 1092 — `fade.to_black`, right after the start
+menu answers — and **never clears it**: there is no `fade.from_black` anywhere
+in that script, and mode 3 *holds* once its clock is spent rather than
+clearing, drawing no bands at all. So after any boot the fade is armed for
+ever. A reader met both halves of that: *the stripes of the loading screen are
+not removed when I can actually play*, and then — decisively — *they are
+removed when I launch then exit a dialog*, because a beat like SCENE 53's ends
+on `fade.from_black`, which is mode 4, the only mode that clears itself. What
+holds the strip is the bands being DARK this frame, not the fade being armed.
+
 `todo/next-tasks.md` 2; `verify.py: letterbox`, whose last pair is one street
 frame plain and the same frame with the hold set — the two differ by exactly
-the strip.
+the strip — and which asserts AREA 118's unmatched fade for the same reason.
 
 ---
 
