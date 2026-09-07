@@ -58,6 +58,23 @@ bit and the name.
 `sub_40E8E0()` is the count of enabled destinations, which the port already
 computes its own way.
 
+### `sub_4570F0` — how a ride ENDS
+
+The brake (`0x20` under 10 units of speed) reaches it, and it is the mirror of
+the mount: probe the ground and drop the slider onto it, restore the player's
+ACTOR_STATE from `dword_53999C` and the slider's mode from `dword_539970`
+(both saved on the way in), set `dword_539988` — the flag `Slider_TickRide`
+gates its three helpers on — place the player at the seat height
+(`y − 33.149605`), then `sub_4521E0(slider)`, `sub_468FA0(player)`, the
+slider's mode to **7**, and
+
+    Camera_Request(17, ...)   with the PLAYER as both subjects,
+                              dword_930818 = 56.0, dword_93081C = 1
+
+so a ride hands back at **camera mode 17**, not mode 0 — which is exactly why
+`sub_452570`'s arrive arm guards its own `Camera_Request(0, ...)` on the mode
+not already being 17.
+
 ### `sub_452570` — arm the ride, or arrive
 
 One function, two arms, and which one runs is whether a slider POOL exists
@@ -177,11 +194,27 @@ Each ends in a commit and a report.
    test and its recovery arm, the two-probe pitch, and the hover with both of
    its arms. — **DONE 2026-09-07**. `verify.py: engine: slider fly`, shown to
    fail by bobbing always.
-3. **The MOUNT, in the world** — nothing calls the model yet. It needs
-   `sub_452570`'s ARM arm (reserve a slider out of the 40, fade, hold the
-   player), the slider arriving in mode 3, `MDSLIDIN`'s gate, camera mode 8
-   with the slider as both subjects, `sub_457F50`'s placement of the rider and
-   the node, and `Actor_ScanZones` under him. — open
+3. **The RIDE, FLOWN** — the model wired into `omk-play` behind `--ride`,
+   which mounts it where the player stands: the halved delta, the same input
+   word the walker takes, `sub_457F50`'s placement of the rider, camera mode 8
+   resolved against the SLIDER, and `sub_4570F0`'s stop handing back at camera
+   mode 17. The walker does not tick beside it, because ACTOR_STATE 7 and 8
+   have `walks` false and the ride writes the body outright — ticking both
+   made them fight and the walker won. — **DONE 2026-09-07**, and it is
+   watchable: `--ride` in Anekbah flies. `verify.py: engine: slider ride`,
+   shown to fail by ticking the walker as well.
+
+   **What it is not**: `--ride` is a harness and its own log line says so. The
+   engine's way in is `MDSLIDIN`, which wants ACTOR_STATE 6 and a slider
+   standing OPEN in mode 3, and there is no vehicle under him — he flies
+   standing up.
+
+4. **The POOL, the reservation and the arrival** — `sub_452570`'s ARM arm
+   (search the circuit's lanes for the point nearest a target, take a free
+   slot out of the 40, `sub_452CC0` to reserve and route it, `Screen_Fade(1)`
+   and `Actor_HoldAnimation` while it comes), the slider arriving in mode 3,
+   `MDSLIDIN`'s gate, and the vehicle drawn under the rider. `sub_452CC0` is
+   303 lines and is the routing. — open
 
 ## What is already there, and must not be re-done
 

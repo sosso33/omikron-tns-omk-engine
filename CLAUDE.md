@@ -85,7 +85,7 @@ that only for a file you are about to actually open.
 | todo/engine-spec-1999.md | ~2k | the official 1999 engine spec sheet, audited line by line against what this repo can show. EXTERNAL evidence; two open leads (the .3DO light table, the claimed BSP) |
 | todo/mesh-lights.md | ~2k | the .3DO light table: 304-byte records, the count at desc+240 (NOT +232, which the loader overwrites). Four steps, one done |
 | todo/sweep-log.md | ~1k | the full-sweep counter: how many finished tasks since the last one, and the rule that it runs every 5-10 rather than per task |
-| todo/slider.md | ~9k | the SLIDER (next-tasks 16): the sneak's transport, the flight model (`sub_4573E0`/`sub_458600`) and how a ride is entered. Three steps, two done |
+| todo/slider.md | ~11k | the SLIDER (next-tasks 16): the sneak's transport, the flight model, how a ride is entered and how it ends. Four steps, three done |
 | todo/text-layout.md | ~4k | `Text_LayOutBlock` (0x0043F3E0): what the engine's own text layout does - the wrap, the 120% line pitch, the alignment, the vertical placement, the counted spans - and the three callers moved onto it. All three steps done |
 | todo/next-tasks.md | ~4k | the reader's list of what to do next, 19 items triaged: size, how much evidence the tree already holds, and a suggested order. Read it to pick up work |
 | todo/pending/*.md (E1, E2, T1..T17) | ~2–8k each | a specific past task's deliverable; each starts with an "Integrated" line — read only the one you need |
@@ -963,6 +963,14 @@ codes (`0x1C` ENTER, `0xC8/0xD0/0xCB/0xCD` the arrows), `T` types whatever
 field answers `WM_CHAR`, and BACKSPACE and RETURN reach no binding table at
 all, so a scan code in that list cannot express them (`docs/UI.md` §3f).
 `--keydelay N` spaces the presses.
+
+**FLYING A SLIDER**: `--ride` mounts the engine's own flight model where the
+player stands and drives it with the same input word the walker takes - arrows
+to steer, up and down for the six-value thrust ladder, and the interface's
+`0x20` bit to stop. Camera mode 8, the ride camera, whose subject is the
+SLIDER and not the player. It is a HARNESS: the engine's way in is `MDSLIDIN`
+(ACTOR_STATE 6 plus a slider standing open in mode 3), and there is no vehicle
+model under him yet - see `todo/slider.md`.
 
 **A STREET START** (STREET_LIFE, 2026-09-03) stands in a city in adventure
 mode with its crowd, no intro to replay:

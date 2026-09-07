@@ -38,6 +38,9 @@
 #include "formats/tex3dt.h"
 #include "input/bindings.h"
 #include "actor/moves.h"
+#include "actor/slider.h"
+
+#include <optional>
 #include "actor/pose.h"
 #include "actor/speaker.h"
 #include "actor/player.h"
@@ -1367,6 +1370,8 @@ int main(int argc, char** argv) {
 "                   --slot it resumes the game the save holds\n"
 "  --area N         the area to stand in\n"
 "  --address A      the ADDRESSES record to stand on\n"
+"  --ride           mount a slider where he stands and FLY it (step 3's\n"
+"                   harness: no pool, no reservation, no arrival)\n"
 "  --stand x,y,z[,facing]   an explicit spot instead of an address\n"
 "  --density 0..4   how much crowd - the options menu\'s own row 6\n"
 "  --config <ini>   the game's own config file - [Preferences], and this\n"
@@ -1505,6 +1510,13 @@ int main(int argc, char** argv) {
     int saveSlotArg = -1;
     std::string saveNameArg;
     int areaArg = -1, addressArg = -1, density = omk::kDefaultStreetActivity;
+    // `--ride`: MOUNT the player on a slider where he stands, without the
+    // pool, the reservation or the arrival - `todo/slider.md` step 3's
+    // harness. The flight model is the engine's (`actor/slider.h`); what this
+    // skips is how a slider gets to you, which is `sub_452570`'s other arm.
+    bool rideArg = false;
+    // THE LIVE RIDE, when there is one. `todo/slider.md` step 3's harness.
+    std::optional<omk::SliderRide> ride;
     // --config: the game's own ini (`[Preferences]`, 65 keys) plus this
     // port's `[Options]` for the two rows with no key. The SAVE's 3496-byte
     // header carries the same settings and is LATER, so it wins - see
@@ -1638,6 +1650,7 @@ int main(int argc, char** argv) {
         else if (a == "--save-name" && i + 1 < argc) saveNameArg = argv[++i];
         else if (a == "--area" && i + 1 < argc) areaArg = std::atoi(argv[++i]);
         else if (a == "--address" && i + 1 < argc) addressArg = std::atoi(argv[++i]);
+        else if (a == "--ride") rideArg = true;
         // A HARNESS FLAG, not a port: put an object into the carried list so
         // a flow can be exercised from a save that does not carry it. VM
         // opcode 50 `inventory.add` is what the game uses; this writes the
@@ -2146,6 +2159,20 @@ int main(int argc, char** argv) {
                             session.playerPos()[2], session.playerYaw());
             else
                 std::printf("street start: address %d is not in area %d\n", addressArg, startArea);
+        }
+        // `--ride`: MOUNT him where he now stands. `MDSLIDIN`'s own gate is
+        // ACTOR_STATE 6 plus a slider standing OPEN (its mode 3), and neither
+        // exists here - this is the harness, and it says so.
+        if (rideArg) {
+            omk::SliderRide r;
+            r.x = session.playerPos()[0];
+            r.y = session.playerPos()[1];
+            r.z = session.playerPos()[2];
+            r.yaw = session.playerYaw();
+            ride = r;
+            std::printf("ride: mounted at %.0f %.0f %.0f facing %.0f - the "
+                        "harness, NOT `MDSLIDIN` (which wants ACTOR_STATE 6 "
+                        "and a slider in mode 3)\n", r.x, r.y, r.z, r.yaw);
         }
         // ...and the camera a hand-over ends on: `Camera Player` (0), the
         // follow preset, which the intro's scripts request and this has to.
@@ -4803,8 +4830,73 @@ int main(int argc, char** argv) {
                     // spent for ever and the SECOND press did nothing at all.
                     // Invisible until the latch was made to survive
                     // `SetPersoBankGroup` the way the engine's does.
-                    player->tick(static_cast<float>(frameSec * 30.0),
-                                 bits ? bits : omk::kIdleInput);
+                    // ...UNLESS HE IS RIDING. ACTOR_STATE 7 and 8 do not
+                    // walk - `Actors_TickAll`'s row for each has `walks`
+                    // false - and the ride owns the body: `sub_457F50` writes
+                    // his position outright every frame. Ticking the walker
+                    // as well made the two fight, and the walker won.
+                    if (!ride)
+                        player->tick(static_cast<float>(frameSec * 30.0),
+                                     bits ? bits : omk::kIdleInput);
+                }
+                // ---- THE RIDE ---------------------------------------
+                //
+                // `Slider_TickRide` (0x00458150), with the pool and the
+                // arrival left out: `--ride` mounts him where he stands, and
+                // what runs from there is the engine's own model.
+                //
+                // The delta is HALVED, because that function's first act is
+                // `flt_4C30D8 *= 0.5` for all three helpers - the whole ride
+                // advances at half a frame per frame - and the input word is
+                // the same one the walker takes, which is what
+                // `dword_8F5DE0 = dword_4E9718` hands the flight model.
+                //
+                // After the helpers the engine drops the player onto the
+                // surface under him and runs `Actor_ScanZones`, so riding
+                // still triggers zones; `setPlayerPosition` is what tells the
+                // Session, and the zone scan is its own.
+                if (ride) {
+                    const auto probe = [&](double px, double py, double pz,
+                                           double& drop, bool& braking) {
+                        braking = false;      // the "OP" surfaces are not
+                                              // identified here - step 3b
+                        if (const auto h = omk::surfaceUnder(playerSoup, px, py, pz)) {
+                            drop = h->y - py;
+                            return true;
+                        }
+                        return false;
+                    };
+                    const double dt = frameSec * 30.0 * 0.5;
+                    ride->fly(bits, dt, probe);
+                    ride->hover(dt, probe);
+                    if (ride->stopped) {
+                        // `sub_4570F0`: the ride ends, the slider is dropped
+                        // onto the ground and the camera hands back at mode
+                        // **17** with the PLAYER as both subjects - not mode
+                        // 0, which is why `sub_452570`'s arrive arm guards
+                        // its own `Camera_Request(0, ...)` on the mode not
+                        // already being 17.
+                        std::printf("ride: stopped at %.0f %.0f %.0f - "
+                                    "`sub_4570F0`, camera mode 17\n",
+                                    ride->x, ride->y, ride->z);
+                        const float at[3] = {static_cast<float>(ride->x),
+                                             static_cast<float>(ride->y
+                                                 + omk::SliderRide::kRiderUp),
+                                             static_cast<float>(ride->z)};
+                        session.setPlayerPosition(at, static_cast<float>(ride->yaw));
+                        if (player) player->placeAt(at, static_cast<float>(ride->yaw));
+                        ride.reset();
+                    } else {
+                        // `sub_457F50`: the rider takes the slider's x and z,
+                        // and the actor's own `+248` its y plus 10.
+                        double at[3];
+                        ride->riderAt(at);
+                        const float p3[3] = {static_cast<float>(at[0]),
+                                             static_cast<float>(at[1]),
+                                             static_cast<float>(at[2])};
+                        session.setPlayerPosition(p3, static_cast<float>(ride->yaw));
+                        if (player) player->placeAt(p3, static_cast<float>(ride->yaw));
+                    }
                 }
                 // STUCK BETWEEN WALLS. A move blocked for a whole second while a
                 // direction is being asked for is the sweep's own failure to
@@ -7099,6 +7191,37 @@ int main(int argc, char** argv) {
                 }
                 view.cam.hfovDeg = lastFov;
                 view.cam.rollDeg = lastRoll;
+                view.cam.w = dispW; view.cam.h = dispH;
+            } else if (!haveDlgCam && ride) {
+                // CAMERA MODE 8, the ride camera, and its subject is the
+                // SLIDER and not the player: `camera_presets.json`'s row 8 is
+                // eye (0, 118.1102, -275.5905), target (0, 78.7402, 0) with
+                // `eyeSubject` and `targetSubject` both **5**, `f42` 0 (so
+                // the target does not lag) and `f44`/`f46` 8. Those offsets
+                // are exact metres - 3.00 up, 7.00 back and 2.00 up - which
+                // is what says they were authored rather than tuned.
+                //
+                // Resolved the way every subject-relative camera is:
+                // `out = subject - rotateYaw(offset)`, with `out[1] =
+                // subject[1] - offset[1]` (`o3de/worldcam.cpp`).
+                const float t = static_cast<float>(ride->yaw) * 0.0174532925199433f;
+                const float cs = std::cos(t), sn = std::sin(t);
+                const float sub[3] = {static_cast<float>(ride->x),
+                                      static_cast<float>(ride->y),
+                                      static_cast<float>(ride->z)};
+                const auto place = [&](const float off[3], float out[3]) {
+                    const float rx = off[0] * cs - off[2] * sn;
+                    const float rz = off[0] * sn + off[2] * cs;
+                    out[0] = sub[0] - rx;
+                    out[1] = sub[1] - off[1];
+                    out[2] = sub[2] - rz;
+                };
+                static constexpr float kRideEye[3] = {0.0f, 118.1102f, -275.5905f};
+                static constexpr float kRideAt[3]  = {0.0f, 78.7402f, 0.0f};
+                place(kRideEye, view.cam.eye);
+                place(kRideAt,  view.cam.at);
+                view.cam.hfovDeg = 75.0f;
+                view.cam.rollDeg = 0.0f;
                 view.cam.w = dispW; view.cam.h = dispH;
             } else if (!haveDlgCam && takeCam && player) {
                 // THE TAKE CAMERA (omk-play 69): mode 1's preset resolved

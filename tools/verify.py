@@ -7013,6 +7013,70 @@ def c_engine_slider_fly():
         "the listing keeps"
 
 
+def c_engine_slider_ride():
+    r"""THE RIDE, FLOWN - `Slider_TickRide` in `omk-play`, over a real set.
+
+    `engine: slider fly` runs the model over a flat floor with no game data,
+    which is what checks the arithmetic. This checks the WIRING: the delta the
+    ride is ticked at, the input word it is given, that the WALKER does not run
+    beside it, and that camera mode 8 is what the frame is drawn through.
+
+    **`--ride` is a harness and says so in its own log line.** The engine's
+    way in is `MDSLIDIN`, which wants ACTOR_STATE 6 and a slider standing OPEN
+    in mode 3, and neither exists without the pool and the arrival
+    (`sub_452570`'s other arm) - `todo/slider.md` step 3b. What this mounts is
+    the model where the player stands.
+
+    Three things it asserts, and each is a line the port could have got wrong:
+
+    * **the walker does not tick.** ACTOR_STATE 7 and 8 have `walks` false in
+      `Actors_TickAll`'s own table, and the ride writes the body's position
+      outright every frame (`sub_457F50`). Ticking both made them fight, and
+      the walker won - the player walked 395 units under a held key while the
+      slider flew off without him;
+    * **the delta is HALVED**, because `Slider_TickRide`'s first act is
+      `flt_4C30D8 *= 0.5` for all three helpers;
+    * **the steer answers**, so the same word reaches the flight model that
+      reaches the walker: 120 frames of UP and then 20 of RIGHT leave him
+      turned about 49 degrees off the heading he started on.
+
+    Camera mode 8 is not asserted numerically here - `verify.py: slider ride`
+    already pins the preset's own offsets, and what the frame does with them
+    is a picture rather than a number.
+    """
+    import subprocess, re as _re
+    eng = os.path.join(ROOT, "engine")
+    fr, tb = omkpaths.data_root(), os.path.join(ROOT, "tables")
+    save = os.path.join(ROOT, "traces", "save-appart.bin")
+    if not os.path.isdir(eng) or not os.path.exists(save):
+        return ("skipped",), ("skipped",), "engine/ or the save absent"
+    mk = subprocess.run(["make", "-s", "play"], cwd=eng, capture_output=True, text=True)
+    play = os.path.join(eng, "build", "omk-play")
+    if mk.returncode != 0 or not os.path.exists(play):
+        return (True,) * 4, (True,) * 4, "no SDL - the frontend is optional (PORTING A8)"
+    env = dict(os.environ, SDL_VIDEODRIVER="dummy")
+    r = subprocess.run([play, fr, tb, "--software", "--res", "640x480", "--nofmv",
+                        "--no-crowd", "--save", save, "--area", "0", "--ride",
+                        "--frames", "200",
+                        "--hold", "0*20,k200*120,0*10,k205*20,0*30"],
+                       capture_output=True, text=True, env=env, errors="replace")
+    o = r.stdout
+    m = _re.search(r"player: \S+ at (-?[\d.]+) (-?[\d.]+) (-?[\d.]+) facing (-?[\d.]+).*"
+                   r"walked ([\d.]+) over (\d+) ticks", o)
+    if not m:
+        return ("no player line",), ("a player line",), o[-200:]
+    x, y, z = float(m.group(1)), float(m.group(2)), float(m.group(3))
+    facing, walked, ticks = float(m.group(4)), float(m.group(5)), int(m.group(6))
+    return ("ride: mounted at 4839 -103 -677" in o,
+            round(z), round(facing), walked, ticks), \
+           (True, -3238, 49, 0.0, 0), \
+        "mounted where the address put him and flown 120 frames of UP then " \
+        "20 of RIGHT: he ends 2561 units up the street at z -3238, turned 49 " \
+        "degrees, and the WALKER never ticked - 0 ticks and 0 walked, which " \
+        "is what ACTOR_STATE 7 and 8 mean by `walks` false. Ticking it beside " \
+        "the ride made the two fight and the walker win"
+
+
 def c_engine_used_object():
     r"""USING AN INVENTORY OBJECT ON THE WORLD - `Utiliser` reaching a zone.
 
@@ -26975,6 +27039,7 @@ CHECKS = [
     ("slider addresses",    c_slider_address_join, "docs/UI 3b"),
     ("engine: slider travel", c_engine_slider_travel, "todo/slider"),
     ("engine: slider fly", c_engine_slider_fly, "todo/slider"),
+    ("engine: slider ride", c_engine_slider_ride, "todo/slider"),
     ("ui open answer",     c_ui_open_answer,    "SCRIPT_VM 70"),
     ("ui confirm gate",    c_ui_confirm_gate,   "UI"),
     # The FAST set, unlike `engine: screen` and `engine: name field`: most of

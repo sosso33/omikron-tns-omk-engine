@@ -2116,6 +2116,27 @@ loaded by the screen's own open - which rotate to show selection. The UI layer
 has no 3D path, so they are not drawn; their LABELS and the two counts are,
 on the echo bar, which is where the engine puts them.
 
+**AND IT FLIES** (`todo/slider.md` step 3). `--ride` mounts the model where
+the player stands and drives it from the same input word the walker takes,
+placing him with `sub_457F50`'s rule and drawing the frame through **camera
+mode 8** - the ride camera, whose eye (3.00 m up, 7.00 m back) and target
+(2.00 m up) are exact metres and whose subject is the SLIDER, not the player.
+`sub_4570F0`'s stop hands back at **camera mode 17**, which is why
+`sub_452570`'s arrive arm guards its own `Camera_Request(0, ...)` on the mode
+not already being 17.
+
+**The walker does not tick beside it.** ACTOR_STATE 7 and 8 have `walks` false
+in `Actors_TickAll`'s own table and the ride writes the body's position
+outright every frame; ticking both made them fight, and the walker won - a
+held key walked him 395 units while the slider flew off without him.
+`engine: slider ride` asserts 0 walker ticks and is shown to fail by ticking
+it.
+
+`--ride` is a HARNESS and its own log line says so: the engine's way in is
+`MDSLIDIN` (ACTOR_STATE 6 plus a slider standing open in mode 3), and there is
+no vehicle model under him - he flies standing up. The pool, the reservation
+and the arrival are step 4.
+
 **THE SLIDER'S FLIGHT MODEL IS PORTED** (2026-09-07, `todo/slider.md` step
 2). `todo/standing-unknowns.md` §5 had measured the ride at ~600 undecompiled
 lines and recorded the decision not to port it; `engine/src/actor/slider.*` is
