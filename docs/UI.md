@@ -2090,10 +2090,34 @@ opcode closes a screen, the only other screen whose open closes this one is
 and the function has no direct caller because it is a dword in the screen
 table.
 
+**A call takes no interface input at all.** `Ui_ScreenInput` (0x0042A0F0),
+the one input callback all 32 live screens share, dispatches only when the
+PANEL's own `+72 & 8` is clear:
+
+    result = a1[7];                          /* the panel */
+    if (result && !(dword_4C3F74 & 1) && !(byte_4C3F9C & 1))
+        if ((result[18] & 8) == 0)           /* panel+72 */
+            Ui_DispatchInput(a1, result);
+
+and the videophone's panel **0x004DF128 ships `+72 = 0x20000008`** where the
+sneak's and the slider's ship `0x20000030`. So while a call is up every press
+goes past the device to the conversation running over it — which is what a
+reader met the port getting wrong ("the sneak continues to be interactable
+like it was opened normally").
+
 Ported into `omk-play` 2026-09-07: `ui.open 0` answers itself, the session
-keeps running under the screen, and the call closes when its conversation
-ends — that last part **labelled a reconstruction** for the reason above.
-`verify.py: sneak call` asserts the idiom, the arm's bytes and the speaker.
+keeps running under the screen, the panel takes no input, and the call closes
+when its conversation or voice-over ends — that last part **labelled a
+reconstruction** for the reason above. `verify.py: sneak call` asserts the
+idiom, the arm's bytes and the speaker; `omk-play --call N` fires the whole
+idiom as a harness, which is the only way the path can be looked at without
+playing a beat that contains one.
+
+**What the port still gets wrong is the PICTURE**, and `todo/omk-play.md` 83
+carries the measurements: the viewport comes out flat grey. The world is
+drawn, the camera resolves to the conversation's own 4159 at
+(2757, −751, −6570) — 20 units from the caller's head, which is the enormous
+face the original's capture shows — and nothing appears there.
 
 ### A CALLER IS A REAL ACTOR, PARKED OFF-STAGE
 

@@ -17,9 +17,49 @@ waiting on its evidence.
 
 ### 83. The SNEAK CALL was never played — the device opened and the call did not
 
-> **Ported 2026-09-07. NOT confirmed in play**, and this entry says so: no
-> headless run reaches a call, so the runtime path below is reasoned from the
-> script and the image, not watched.
+> **Ported 2026-09-07, and PLAYED — two faults reported and one fixed.** A
+> reader played the restaurant lunch: the call opens, both lines play in the
+> right order and the script goes on. But *the guard is not visible and the
+> sneak continues to be interactable like it was opened normally*. The second
+> is fixed below; **the first is OPEN**, and there is now a headless repro for
+> it: `--call 386`.
+>
+> **`--call N` is the repro** (a harness, labelled): it fires the whole idiom -
+> `ui.open 0` then `dialog.start N` - on the first adventure frame, so the
+> path can be looked at without playing the beat that contains one.
+>
+>     build/omk-play ../gamedata ../tables --save ../traces/games-resto.bin \
+>         --slot 2 --nofmv --call 386 --frames 80 --dump call.bin
+>
+> **What is still wrong: the viewport is a flat grey rectangle.** Measured on
+> that repro, and none of the obvious answers is it:
+>
+> * the world IS drawn - `drawWorld`, `haveDlgCam`, `anyWorld` and
+>   `worldReady` are all 1 through the call;
+> * the camera is the conversation's own and resolves correctly, to
+>   **(2757, -751, -6570)** with fov 98 - camera 4159, whose subjects are
+>   both 0xFFFF, so it is absolute in the set's space;
+> * the caller is NOT mis-staged. `speaker_positions`' ray solve reports
+>   `stands at 0 0 0` because a one-camera conversation has nothing to
+>   intersect, but that solve is only applied to a body nothing else places,
+>   and actor 95 is placed - the staged list has him at 2767 -737 -6577;
+> * and `pos[3..5]` is an AIM HANDLE, not the eye: it sits a fixed 768 raw
+>   units from `pos[0..2]` in 1615 of the shipped file's 1670 absolute
+>   cameras, so the port's eye/at reading is right and the "camera looks the
+>   wrong way" reading is not available.
+>
+> So the shot is the camera standing **20 units from the caller's head** -
+> which is exactly the enormous face the original's capture shows filling the
+> panel - and the port renders black there. The grey is the viewport item's
+> own fill (0x004DEA28, 500x280 at 105,85, flag 0x40000010, white at 21.6%)
+> over that black. Whether the body is not drawn, or is drawn and clipped by
+> the near plane at that distance, is the next thing to find out.
+>
+> Worth knowing for that: the viewport item carries `drawFn 0x004782B0`, which
+> ends `I2D_Submit3DView(rect, dword_93076C, flt_90E120, 0, layer)` - the
+> WORLD scene through the SAME camera struct the full-screen submit uses. So
+> the device is a clipped copy of the main view and nothing more, and a
+> full-frame render behind the artwork is the right shape for the port.
 
 A reader, with a capture of the original: the videophone comes up in the
 middle of the Telis restaurant lunch, a caller speaks inside it with the
@@ -45,7 +85,14 @@ assumption.**
    and this was the line that still held it for the SCRIPTS. A call cannot
    play through it, because the instruction after `ui.open` is the one that
    starts the conversation.
-3. **Nothing closed it.** Reconstructed: the call closes when the
+3. **The device stayed interactable.** `Ui_ScreenInput` (0x0042A0F0), the
+   one input callback every live screen shares, dispatches only when
+   `panel[+72] & 8` is clear - and the VIDEOPHONE's panel 0x004DF128 ships
+   **0x20000008** where the sneak's and the slider's ship 0x20000030. So a
+   call takes no interface input at all and every press goes to the
+   conversation over it. `UiPanel::takesInput()`, and the reader's report is
+   what sent me to that gate.
+4. **Nothing closed it.** Reconstructed: the call closes when the
    conversation opened over it ends. What the engine does is read only
    half-way - `Ui_CloseSneakFamily`'s param-2 arm refuses the first attempt
    (oscillator 5, 100 ms, a closing animation) and closes on the second - but

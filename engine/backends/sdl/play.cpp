@@ -1579,6 +1579,10 @@ int main(int argc, char** argv) {
     // generalising a camera-mode property to all rendering. `--letterbox`
     // brings it back for comparing against those captures, which is the one
     // job it is evidence for.
+    // `--call N`: the SNEAK CALL idiom - `ui.open 0` then `dialog.start N` -
+    // fired on the first adventure frame. A HARNESS: in the game it is a zone
+    // script that does this, and reaching one means playing the beat.
+    int  callDialog = -1;
     bool haveEye = false, haveAt = false, letterbox = false, startVulkan = false, noDelay = false;
     double speed = 1.0;                 // --speed: the frame delta's multiplier
     bool forceSoftware = false, showFps = false;
@@ -1587,6 +1591,7 @@ int main(int argc, char** argv) {
         if (a == "--scene" && i + 1 < argc) scene = argv[++i];
         else if (a == "--cam" && i + 1 < argc) camIndex = std::atoi(argv[++i]);
         else if (a == "--fov" && i + 1 < argc) fovA = static_cast<float>(std::atof(argv[++i]));
+        else if (a == "--call" && i + 1 < argc) callDialog = std::atoi(argv[++i]);
         else if (a == "--letterbox") letterbox = true;   // camera mode, for comparing with captures
         else if (a == "--full") letterbox = false;       // kept: it was the old spelling
         else if (a == "--vulkan") startVulkan = true;
@@ -2225,6 +2230,8 @@ int main(int argc, char** argv) {
     // cleared by the first close attempt.
     bool videophoneCall = false;
     bool videophoneSpoke = false;   // a line or a voice-over has played
+    bool callHarness = false;       // `--call` opened this one
+    int  callPending = -1;          // ...and the conversation it owes
     // THE LOADING SEQUENCE IS NOT WIRED HERE, and a first version of it
     // was. `Charger` answers **0**, and AREA 118's parked startup script
     // has an arm for exactly that: the Grid fly-through - cameras
@@ -4953,6 +4960,19 @@ int main(int argc, char** argv) {
                 // name, press again to bank it, another button to put it back
                 // - is these four rows and nothing else.
                 // `--sneak`: the same request the special move makes, once.
+                // `--call N`: the sneak-call idiom, fired once. The screen
+                // is requested the way a SCRIPT requests it (so it answers
+                // itself) and the conversation started right after, which is
+                // exactly `ui.open 0` / `dialog.start N`.
+                if (callDialog >= 0 && !walk && playerScreen < 0) {
+                    std::printf("--call: ui.open 0 + dialog.start %d (a "
+                                "harness for the sneak call, UI 3i)\n",
+                                callDialog);
+                    playerScreen = kScreenVideophone;
+                    callHarness  = true;
+                    callPending  = callDialog;
+                    callDialog   = -1;
+                }
                 if (openSneak && !walk && playerScreen < 0) {
                     openSneak = false;
                     inv.openList(0);
@@ -5898,13 +5918,18 @@ int main(int argc, char** argv) {
                 // screen. Without this the port waited for a person to close
                 // it and the call's own `dialog.start` never ran - the game
                 // showed an empty videophone.
-                if (fromScript && openScreen == kScreenVideophone) {
+                if ((fromScript || callHarness) && openScreen == kScreenVideophone) {
                     std::printf("screen %d VIDEOPHONE answers itself (-1, "
                                 "`UI_SendAnswer` in its own open callback) - "
                                 "the script runs on with the call up\n",
                                 openScreen);
                     session.answerUi(-1);
                     videophoneCall = true;
+                    callHarness = false;
+                    if (callPending >= 0) {
+                        session.harnessStartDialogue(callPending);
+                        callPending = -1;
+                    }
                 }
             }
         }
@@ -5939,6 +5964,12 @@ int main(int argc, char** argv) {
             } else {
                 screenOpenBits = 0;
             }
+            // ...AND A PANEL CAN OPT OUT OF INPUT ALTOGETHER. `panel+72 & 8`,
+            // which `Ui_ScreenInput` tests before it dispatches anything, and
+            // the VIDEOPHONE's panel is the one in the tree that sets it. So
+            // a sneak CALL swallows nothing: every press goes past the device
+            // to the conversation running over it.
+            if (!walk->takesInput()) uiBits = 0;
             if (uiBits) {
                 const int wasSel = walk->selection(), wasList = walk->currentList();
                 // THE SOUND IS NOT GATED ON IT, and that is read rather than

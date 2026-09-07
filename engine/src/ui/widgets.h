@@ -256,6 +256,24 @@ struct UiPanel {
     // `40002000h`, `40000800h`, `40004000h` in `sub_476040`.
     std::uint32_t flagsB = 0;
     // The three arms, named rather than tested at the call site.
+    // ...AND `panel+72 & 8` OPTS THE PANEL OUT OF INPUT ENTIRELY.
+    //
+    // `Ui_ScreenInput` (0x0042A0F0) is the one input callback every live
+    // screen shares, and its gate is the panel's:
+    //
+    //     result = a1[7];                       // the panel
+    //     if (result && !(dword_4C3F74 & 1) && !(byte_4C3F9C & 1)) {
+    //         if ((result[18] & 8) == 0) {      // panel+72
+    //             Ui_DispatchInput(a1, result);
+    //             ...
+    //
+    // One panel in the tree sets it: **0x004DF128, the VIDEOPHONE's**, which
+    // ships `+72 = 0x20000008` where the sneak's and the slider's ship
+    // 0x20000030. So a sneak CALL takes no interface input at all, and every
+    // press goes to the conversation running over it - which is what a reader
+    // reported the port getting wrong ("the sneak continues to be
+    // interactable like it was opened normally").
+    bool takesInput() const { return (flags & 8) == 0; }
     bool backNone()  const { return (flagsB & 0x2000) != 0; }
     bool backSheet() const { return (flagsB & 0x4000) != 0; }
     std::vector<UiList> lists;
@@ -587,6 +605,8 @@ public:
     }
     const UiItem* selected() const;
     bool closed() const { return panel_ == nullptr; }
+    // The live panel's own input gate - see `UiPanel::takesInput`.
+    bool takesInput() const { return panel_ == nullptr || panel_->takesInput(); }
 
     // `sub_42A370(screen, panel)` itself: run the OLD panel's leave hook
     // (`+8`), install the new one, run its build hook (`+4`) and settle the
