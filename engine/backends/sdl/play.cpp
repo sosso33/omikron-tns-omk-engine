@@ -2378,6 +2378,8 @@ int main(int argc, char** argv) {
     bool  playerProgramWas = false;   // ...and did last frame, for the hand-back
     bool  mirrorLive = false;         // the set's mirror is reflecting, said once
     bool  mirrorSeen = false;         // ...and has actually covered a pixel
+    float playerHeadAt[3] = {0, 0, 0};   // the player's `Tete`, for subject kinds 0/1
+    bool  playerHeadKnown = false;
     int   placementSeen = 0;      // Session::placementSeq() as last consumed
     long  heldFrames = 0;         // frames under player.anim.hold
     // The `media.play` SUBTITLE: `Subtitle_Show(unk_4E6268)` is step 13 of
@@ -2781,6 +2783,13 @@ int main(int argc, char** argv) {
         // hangs off him: `atan2` of the node matrix's forward, +90.
         float drawnYaw = 0.0f;
         bool  drawnYawKnown = false;
+        // WHERE THE HEAD WAS DRAWN. Subject kinds 1 and 3 anchor a camera on
+        // the actor's `Tete` node (`actor+16`, cached by `Actor_LoadModel`),
+        // not on the body - 176 of the 253 relative cameras in `IAM\DIALOG`
+        // ask for one of the two. Recorded as the body is posed and read a
+        // frame later by the camera block, which runs earlier in the frame.
+        float headAt[3] = {0, 0, 0};
+        bool  headKnown = false;
         // `Morph_Play` reads the node's world heading ONCE, when the line
         // starts, and `sub_42BE00` hands the morph that yaw for its whole
         // length - so the line's yaw is a LATCH, not a per-frame read.
@@ -4500,6 +4509,24 @@ int main(int argc, char** argv) {
                             player->pos()[0], player->pos()[1], player->pos()[2],
                             player->facing());
             }
+            // ...AND THE CHANNEL KEEPS TICKING THROUGH A CONVERSATION.
+            //
+            // `Game_Tick` runs `Actors_TickAll` whatever is on screen, and
+            // ACTOR_STATE 16/17 is in its dispatch - `Actor_TickDialogue`,
+            // whose last line is `return Actor_ScanZones(a1)`. So the
+            // player's channel goes on running while he talks, and that is
+            // what carries the gait he arrived on into the group-400 stance
+            // `Actor_EnterDialogueMode` selected.
+            //
+            // This viewer ticked him only in adventure mode, which a
+            // conversation turns off, so he froze on whatever frame the walk
+            // left him - a reader's shot of Kay'l standing mid-stride beside
+            // Telis for the length of the conversation, arms out, one leg
+            // lifted. It only became visible once he was drawn in
+            // conversations at all. Nothing pressed, exactly as the `walk`
+            // case below and `player.anim.hold` do it.
+            if (player && !adventure && session.dialogOpen())
+                player->tick(static_cast<float>(frameSec * 30.0), 0);
             if (adventure) {
                 // The follow camera is the world camera the script named -
                 // SCENE 55's camera 0 carries its own offsets and travels
@@ -6272,13 +6299,34 @@ int main(int argc, char** argv) {
                         for (const auto& up : staged) if (up->actor == sp) return up.get();
                         return nullptr;
                     };
-                    const auto playerAnchor = [&](float out[3], float& y) {
+                    // THE CODE IS THE RESOLVER KIND, not merely which actor.
+                    // `sub_415A10` switches on it - 0 -> `sub_414F30`,
+                    // 1 -> `sub_415050`, 2 -> `sub_4151E0`, 3 -> `sub_415320` -
+                    // and the four differ in WHERE on the actor they anchor:
+                    //
+                    //   0  the actor record's +244/+248/+252
+                    //   1  the `Tete` node (actor+16), `Actor_LoadModel`'s cache
+                    //   2  the body node's world origin
+                    //   3  the head node's world origin
+                    //
+                    // while `dialog_issue_camera` picks the actor: 0/1 the
+                    // first speaker, 2/3 the second, 6 both. Applying kind 2's
+                    // body anchor to all of them put camera 11 of dialog 401 -
+                    // `[1,1]`, on the player's HEAD - a foot in front of
+                    // Kay'l's chest, and 176 of the 253 relative cameras the
+                    // file ships are one of the two head kinds.
+                    const auto playerBody = [&](float out[3], float& y) {
                         const float lift = player ? player->cameraLift() : 0.0f;
                         const float* pp = session.playerPos();
                         out[0] = pp[0]; out[1] = pp[1] - lift; out[2] = pp[2];
                         y = session.playerYaw();
                     };
-                    const auto npcAnchor = [&](float out[3], float& y) -> bool {
+                    const auto playerHead = [&](float out[3], float& y) {
+                        if (!playerHeadKnown) { playerBody(out, y); return; }
+                        for (int k = 0; k < 3; ++k) out[k] = playerHeadAt[k];
+                        y = session.playerYaw();
+                    };
+                    const auto npcBody = [&](float out[3], float& y) -> bool {
                         const Staged* sb = speakerBody();
                         if (!sb) return false;
                         const float* at = sb->progRan ? sb->drawAt : sb->at;
@@ -6286,13 +6334,23 @@ int main(int argc, char** argv) {
                         y = sb->drawnYawKnown ? sb->drawnYaw : sb->facing;
                         return true;
                     };
+                    const auto npcHead = [&](float out[3], float& y) -> bool {
+                        const Staged* sb = speakerBody();
+                        if (!sb) return false;
+                        y = sb->drawnYawKnown ? sb->drawnYaw : sb->facing;
+                        if (!sb->headKnown) return npcBody(out, y);
+                        for (int k = 0; k < 3; ++k) out[k] = sb->headAt[k];
+                        return true;
+                    };
                     switch (code) {
-                        case 0: case 1: playerAnchor(pos, yaw); return true;
-                        case 2: case 3: return npcAnchor(pos, yaw);
+                        case 0: playerBody(pos, yaw); return true;
+                        case 1: playerHead(pos, yaw); return true;
+                        case 2: return npcBody(pos, yaw);
+                        case 3: return npcHead(pos, yaw);
                         case 6: {                                   // the two-shot: both
                             float a[3], b[3], ya, yb;
-                            playerAnchor(a, ya);
-                            if (!npcAnchor(b, yb)) return false;
+                            playerBody(a, ya);
+                            if (!npcBody(b, yb)) return false;
                             for (int k = 0; k < 3; ++k) pos[k] = 0.5f * (a[k] + b[k]);
                             yaw = ya;
                             return true;
@@ -7673,6 +7731,22 @@ int main(int argc, char** argv) {
                            : s.sceneTracks.valid() ? bodyYaw + rootYawNow
                            : aboutPelvis ? bodyYaw : s.facing;
                 s.drawnYawKnown = true;
+                if (const int hd = omk::headMeshOf(s.mo->meshes);
+                    hd >= 0 && static_cast<std::size_t>(hd) < pose.size()) {
+                    const float hp[3] = {pose[static_cast<std::size_t>(hd)].pos[0] - pelvis[0],
+                                         pose[static_cast<std::size_t>(hd)].pos[1] - pelvis[1],
+                                         pose[static_cast<std::size_t>(hd)].pos[2] - pelvis[2]};
+                    float r[3];
+                    const bool spins = std::fabs(bodyYaw) > 0.01f;
+                    omk::rotateYaw(spins && aboutPelvis ? bodyYaw : 0.0f, hp, r);
+                    for (int k = 0; k < 3; ++k) s.headAt[k] = r[k] + pelvis[k] + off[k];
+                    if (spins && !aboutPelvis) {
+                        const float in[3] = {s.headAt[0], s.headAt[1], s.headAt[2]};
+                        omk::rotateYaw(bodyYaw, in, r);
+                        for (int k = 0; k < 3; ++k) s.headAt[k] = r[k];
+                    }
+                    s.headKnown = true;
+                }
                 const bool turn = std::fabs(bodyYaw) > 0.01f;
                 for (auto& c : s.posed.corners) {
                     if (turn && !aboutPelvis) {
@@ -8112,6 +8186,18 @@ int main(int argc, char** argv) {
                     c.x = r[0] + pp[0];
                     c.y = r[1] + pp[1] - playerFeet + rootDrop;
                     c.z = r[2] + pp[2];
+                }
+                if (const int hd = omk::headMeshOf(playerMeshes);
+                    hd >= 0 && static_cast<std::size_t>(hd) < pose.size()) {
+                    const float in[3] = {pose[static_cast<std::size_t>(hd)].pos[0] - playerRootXZ[0],
+                                         pose[static_cast<std::size_t>(hd)].pos[1],
+                                         pose[static_cast<std::size_t>(hd)].pos[2] - playerRootXZ[1]};
+                    float r[3];
+                    omk::rotateYaw(yaw, in, r);
+                    playerHeadAt[0] = r[0] + pp[0];
+                    playerHeadAt[1] = r[1] + pp[1] - playerFeet + rootDrop;
+                    playerHeadAt[2] = r[2] + pp[2];
+                    playerHeadKnown = true;
                 }
                 lastRootDrop = rootDrop;
                 playerPosed.revision = ++worldGeoRev;

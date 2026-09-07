@@ -1863,6 +1863,46 @@ else places, and `speakerSolved` already carried that. Now `face: mesh 19,
 130 verts`, `frame 115 of 813`, and the eye settles 50 units from the
 hologram. `verify.py: dialogue camera subject`.
 
+### THE SUBJECT CODE IS THE RESOLVER KIND, AND TWO OF THEM ARE THE HEAD
+
+A dialogue camera's `+32`/`+34` do not merely say *which* actor a point hangs
+off. `Camera_LoadParams` puts them at `+88`/`+140`, and `sub_415A10` switches
+on the value to pick the resolver — 0 → `sub_414F30`, 1 → `sub_415050`,
+2 → `sub_4151E0`, 3 → `sub_415320` — and the four anchor in different places:
+
+| code | actor (`dialog_issue_camera`) | anchor |
+|---|---|---|
+| 0 | first speaker | the actor record's `+244/+248/+252` |
+| 1 | first speaker | the **`Tete` node**, `actor+16` |
+| 2 | second speaker | the body node's world origin |
+| 3 | second speaker | the **head node's** world origin |
+| 6 | both | the two-shot |
+
+`actor+16` is the head because `Actor_LoadModel` fills it from `"Tete"` — the
+same cache that puts `Maing` at `+44` and `Maind` at `+48`. The port applied
+kind 2's body anchor to every code, so dialog 401's camera 11 — `[1,1]`,
+authored 40 units in front of Kay'l's face — sat at chest height *inside* him,
+which is what a reader photographed. **176 of the 253 relative cameras in
+`IAM\DIALOG` are one of the two head kinds** (92 kind 1, 84 kind 3), against
+24 of kind 2, so the one kind that had been read was the rarest of the three.
+`Staged::headAt` and `playerHeadAt` record where the head was actually drawn,
+and the camera block reads them.
+
+### THE CHANNEL KEEPS TICKING THROUGH A CONVERSATION
+
+`Game_Tick` runs `Actors_TickAll` whatever is on screen and ACTOR_STATE 16/17
+is in its dispatch — `Actor_TickDialogue`, whose last line is `return
+Actor_ScanZones(a1)`. So the player's channel goes on running while he talks,
+and that is what carries the gait he arrived on into the group-400 stance
+`Actor_EnterDialogueMode` selected. The viewer ticked him only in adventure
+mode, which a conversation turns off, so he froze on whatever frame the walk
+left him: a reader's shot of Kay'l standing mid-stride beside Telis, arms out
+and one leg lifted, for the length of the conversation. The argument was
+already written down here for the UI-screen case — *the channel must keep
+ticking, it is what carries a gait to its stand state* — and the conversation
+case simply never got it. It only became visible once he was drawn in
+conversations at all.
+
 ### AN ACTOR IS DRIVEN BY ONE SCENE PROGRAM AT A TIME
 
 *Telis appears normally at the beginning before disappearing.*
