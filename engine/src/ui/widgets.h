@@ -327,6 +327,13 @@ public:
     // The screen's own `IAM\<name>` text file, from the 37-record table's
     // `+16`. Empty for the five screens that name none.
     const std::string& textFile(int screenId) const;
+    // Whether the WORLD is drawn behind this screen: the `0x40000` bit of the
+    // screen record's `+112`, which `UI_LoadScreen` tests before it turns the
+    // scene off. Exactly three of the 37 carry it - PAUSE GAME (31), SHOOT
+    // MECA (33) and SHOOT HUMAN (34) - and every other screen, the sneak
+    // included, hides the world while it is open.
+    bool worldBehind(int screenId) const;
+
     // The `.wav` stem for one of a screen's twelve sound slots, or empty when
     // the screen does not name that slot (the record ships -1).
     //
@@ -393,6 +400,7 @@ private:
     std::map<int, std::string> textFile_, bitmap_;
     std::map<int, std::string> soundName_;          // the 45, by id
     std::map<int, std::vector<int>> screenSounds_;  // each screen's 12 slots
+    std::map<int, std::uint32_t> screenFlags_;   // +112, for the 0x40000 bit
     std::uint32_t gridHook_ = 0, nameHook_ = 0, startHook_ = 0;
     std::uint32_t moveHook_ = 0;
     std::uint32_t startName_ = 0, startButtons_ = 0;

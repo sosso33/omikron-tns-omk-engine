@@ -6497,6 +6497,96 @@ def c_engine_row_window():
         "the walk stops at row 8 and the tenth carried object is unreachable"
 
 
+def c_engine_screen_world():
+    r"""WHICH SCREENS KEEP THE WORLD BEHIND THEM - `UI_LoadScreen`'s 0x40000.
+
+    A reader reported *the sneak background is transparent*: with the device
+    open, the city street showed through the middle of its page art. Two
+    facts had to be separated to answer it, and the first is not the bug.
+
+    **The colour key is right.** `Ui_DrawPanelBack` blits the page with
+    `I2D_BlitBitmap(&rect, surface, 1, 3)`, whose FOURTH argument is the layer
+    and whose third reaches `sub_4810D0` as `if ((v3 & 1) != 0) v1 =
+    16809984` - `DDBLT_WAIT | DDBLT_KEYSRC` - and
+    `I2D_CreateSurfaceFromBmp` sets `DDCOLORKEY{0,0}` on every bitmap it
+    makes. `sneak.bmp` is a 640x480 SHEET that screen 9's panel tiles 1:1,
+    31.8% of it is palette index 0, and **21 of its 80 cells are more than
+    90% key**: the hole in the middle of the device is authored, and what
+    belongs behind it is the device's own 3D view, which the interface
+    submits for itself through `I2D_Submit3DView` (`sub_428900`, seven call
+    sites, all in the `Ui_*` range). The 3D scene is a display-list NODE with
+    its own rectangle, not a full-screen backdrop.
+
+    **What was wrong is the world behind it.** `Game_Frame` submits the
+    game's own full-screen view through `sub_479C20`, gated on `byte_90E155`,
+    and `UI_LoadScreen` (0x00429BB0) turns that gate off for almost every
+    screen:
+
+        mov  eax, [ebx+70h]         ; the screen record's +112
+        and  eax, 40000h
+        test eax, eax
+        jnz  short keep             ; set -> the world stays live
+        call sub_466B30             ; else: byte_90E155 = 0, sub_46C290
+                                    ; suspends the sound bank, and the
+                                    ; player's +194 goes to ACTOR_STATE 9
+
+    `Ui_CloseScreenDefault` (0x0042A150) calls the partner `sub_466B60` and
+    undoes all three. So the bit reads "this screen shows the live world",
+    and the default is that a screen HIDES it.
+
+    Asserted here: over the 37 screens exactly **three** carry it - PAUSE GAME
+    (31), SHOOT MECA (33) and SHOOT HUMAN (34), the three that must show what
+    is happening - and 34 do not, the SNEAK (9) among them. The port had this
+    exactly inverted until 2026-09-07 and drew the street through the device.
+
+    Note how this squares with the pause screen's SOUND, which is the other
+    half of the same reader's report: screen 31 keeps the world, so
+    `sub_466B30` never runs for it and the sound suspend cannot come from
+    there - it comes from screen 31's OWN open/close callbacks (0x004ADDB0 /
+    0x004ADEB0), which call `sub_46C290` and three more suspend routines
+    directly. Two mechanisms, and the flag is what tells them apart.
+
+    Shown to fail by clearing the mask in `UiWidgets::worldBehind`: every
+    screen then keeps the world and the count goes 3/34 -> 37/0.
+    """
+    import subprocess, struct, tempfile, json
+    eng = os.path.join(ROOT, "engine")
+    tbl = os.path.join(ROOT, "tables")
+    if not (os.path.isdir(eng) and os.path.isdir(tbl)):
+        return ("skipped",), ("skipped",), "engine/ or tables/ absent"
+    b = subprocess.run(["make", "-s", "build/screen_world"], cwd=eng,
+                       capture_output=True, text=True)
+    binp = os.path.join(eng, "build", "screen_world")
+    if b.returncode != 0 or not os.path.exists(binp):
+        return ("build failed",), ("built",), "engine/ must build"
+    out = os.path.join(tempfile.gettempdir(), "omk_screen_world.bin")
+    r = subprocess.run([binp, os.path.join(tbl, "ui_widgets.json"),
+                        os.path.join(tbl, "ui.json"), out],
+                       capture_output=True, text=True, errors="replace")
+    if r.returncode != 0 or not os.path.exists(out):
+        return ("no output",), ("ran",), r.stderr[-200:]
+    with open(out, "rb") as f:
+        v = struct.unpack("<8i", f.read(32))
+    # and the table itself, independently of the port
+    ui = json.load(open(os.path.join(tbl, "ui.json")))
+    names = []
+    for sc in ui["rows"]["screens"]:
+        f = sc.get("flags") or []
+        w = 0
+        for x in (f if isinstance(f, list) else [f]):
+            w |= int(x)
+        if w & 0x40000:
+            names.append(sc["name"])
+    return (list(v), names), \
+           ([37, 3, 34, 0, 1, 1, 1, 1],
+            ["PAUSE GAME", "SHOOT MECA", "SHOOT HUMAN"]), \
+        "of the 37 screens exactly THREE carry `+112 & 0x40000` and keep " \
+        "the world drawn behind them - PAUSE GAME, SHOOT MECA, SHOOT " \
+        "HUMAN - while the other 34 turn it off, the SNEAK (9) included; " \
+        "a screen the table does not name defaults to keeping it, which " \
+        "is the harness's choice and not a fact about the game"
+
+
 def c_engine_used_object():
     r"""USING AN INVENTORY OBJECT ON THE WORLD - `Utiliser` reaching a zone.
 
@@ -7920,6 +8010,12 @@ def c_engine_screen_close():
            "and SDL was found"
 
 
+def _sneak_world(o):
+    """`world: N frames drawn` out of an omk-play run's summary."""
+    m = re.search(r"world: (\d+) frames drawn", o)
+    return int(m.group(1)) if m else -1
+
+
 def _sneak_ticks(o):
     """The player's tick count out of `omk-play`'s closing `player:` line."""
     import re as _re
@@ -7984,7 +8080,19 @@ def c_engine_sneak():
             "screen 9 opened by the player" in o,
             "sneak: object list 0 holds" in o,
             "260 frames presented" in o,
-            "world: 260 frames drawn" in o,
+            # ...and the world is drawn for the 221 frames the sneak is NOT
+            # up, and for none of the 39 it is. This asserted "all 260" until
+            # 2026-09-07, which generalised the TICK finding above onto the
+            # DRAW: `Game_Tick` really has no test for an open screen, but
+            # `UI_LoadScreen` clears `byte_90E155` for every screen without
+            # `+112 & 0x40000` and `Game_Frame` then stops submitting the
+            # full-screen 3D view (`engine: screen world`). Screen 9 opens on
+            # frame 61 and the use closes it on 99, so 39 is exactly its
+            # window - and the whole point of the reader's report is that
+            # what shows through the device's authored hole must not be the
+            # street.
+            _sneak_world(o) == 221,
+            260 - _sneak_world(o) == 39,
             # `sub_42B470` runs the use when event 35 answers 1, and the
             # arm that answers 1 is the one WITHOUT the usable bit: case 35's
             # `loc_407314` loads the object's own model and returns 1, and
@@ -8015,16 +8123,22 @@ def c_engine_sneak():
             # draw gate and the `adventure` gate are separate lines, and a
             # mutation of one alone left this check green.
             _sneak_ticks(o) > 200), \
-           (True,) * 10, \
+           (True,) * 11, \
            "TAB held in Anekbah: the special move fires and names its " \
            "tab_special_move row, it raises event 25 for object list 0 and " \
            "opens screen 9, the screen is attributed to the PLAYER rather " \
            "than to a script (so closing it answers nobody), the inventory " \
            "page is filled from the save's carried list, all 260 frames are " \
-           "presented - AND ALL 260 DREW THE WORLD, which this said in prose " \
-           "and did not check until 2026-09-04, when a player opened the " \
-           "sneak in Anekbah and watched the city freeze (19 world frames of " \
-           "1924). `Game_Tick` has no test for an open screen; the only " \
+           "presented - and the world is drawn for the 221 of them the " \
+           "device is NOT up and for none of the 39 it is, because " \
+           "`UI_LoadScreen` clears `byte_90E155` for every screen that does " \
+           "not carry `+112 & 0x40000` and `Game_Frame` then stops " \
+           "submitting the full-screen 3D view. The world still TICKS " \
+           "throughout, which is the separate half a player found on " \
+           "2026-09-04 by opening the sneak in Anekbah and watching the city " \
+           "freeze (19 world frames of 1924): `Game_Tick` has no test for an " \
+           "open screen. Asserting `all 260 drew` generalised that onto the " \
+           "draw and was wrong until 2026-09-07. The only " \
            "verb `Utiliser` then does both halves in the engine's order: it " \
            "POSTS MESSAGE 20 with the object as sender, which walks the " \
            "resident scene's subscription table then the area's then " \
@@ -25090,7 +25204,7 @@ def c_licence_headers():
                    if TAG in open(p, encoding="utf-8",
                                   errors="replace").read(600)]
     return (authored, sorted(missing), len(vendored), mislabelled), \
-           (375, [], 1, []), \
+           (376, [], 1, []), \
            "authored source files under tools/, engine/src, engine/tools, " \
            "engine/backends and scripts/; those MISSING the SPDX tag; " \
            "vendored files in engine/third_party; and vendored files wrongly " \
@@ -26429,6 +26543,7 @@ CHECKS = [
     ("ui sprites",         c_ui_sprites,        "UI"),
     ("ui text render",     c_ui_textrender,     "UI"),
     ("ui open flags",      c_ui_openflags,      "UI"),
+    ("engine: screen world", c_engine_screen_world, "UI"),
     ("ui open answer",     c_ui_open_answer,    "SCRIPT_VM 70"),
     ("ui confirm gate",    c_ui_confirm_gate,   "UI"),
     # The FAST set, unlike `engine: screen` and `engine: name field`: most of

@@ -17,6 +17,37 @@ waiting on its evidence.
 
 ### 82. The sneak's middle is transparent — the key is right, what is BEHIND it is not — A
 
+> **Fixed 2026-09-07 from the original's own flag, and the decision the entry
+> could not make turned out not to be a decision.** `UI_LoadScreen`
+> (0x00429BB0) tests the screen record's `+112 & 0x40000` and, when it is
+> CLEAR, calls `sub_466B30`: `byte_90E155 = 0`, so `Game_Frame` stops
+> submitting the game's full-screen 3D view through `sub_479C20`; `sub_46C290`,
+> so the sound bank is suspended; and the player's `+194` = ACTOR_STATE 9.
+> `Ui_CloseScreenDefault` (0x0042A150) calls the partner `sub_466B60`.
+> **Exactly three of the 37 screens carry the bit** — PAUSE GAME (31), SHOOT
+> MECA (33), SHOOT HUMAN (34) — the three that must show the live world. Every
+> other screen, the sneak included, turns it off, and the port had it exactly
+> inverted.
+>
+> The dilemma below dissolves because the two 3D views are not the same view.
+> The world's is `Game_Frame`'s full-screen one; the device's preview and the
+> videophone's caller are the INTERFACE'S own, submitted by
+> `I2D_Submit3DView` (`sub_428900`, seven call sites, all in the `Ui_*` range)
+> as a display-list node **with its own rectangle**. Suppressing the world is
+> right for both pages; what the videophone still needs is its own submission,
+> which is 83's work and not this one's.
+>
+> `verify.py: engine: screen world` (3 of 37, shown to fail by clearing the
+> mask) and `engine: sneak`, whose "all 260 frames drew the world" was itself
+> the over-generalisation that made this possible and now reads 221 drawn / 39
+> hidden, exactly screen 9's window. `docs/UI.md` §3b.
+> **Not yet CONFIRMED IN PLAY.**
+>
+> Two arms of `sub_466B30` are still unported and are named where they belong:
+> the sound-bank suspend (`Mixer` has no suspend API) and the player's
+> ACTOR_STATE 9 (`ActorState::UiHeld` is modelled; nothing drives it from a
+> screen open).
+
 Filed 2026-09-07 from a reader: *the sneak background is transparent*, and
 *the sneak issue is a recent regression*. It is: `8f5fd11` turned the colour
 key on for `Ui_DrawPanelBack`'s tile blit.
@@ -43,12 +74,12 @@ preview, the map, the videophone's caller.
 with `--sneak` in Anekbah, the frame decoration is right and the whole centre
 is the world, Kay'l included.
 
-**Not fixed here, deliberately.** The fix belongs in the sneak's own rendering,
-which is where the videophone work is live, and it needs a decision this entry
-cannot make alone: the object list wants the device's preview behind the hole
-and the videophone wants a real actor, so "suppress the world while the sneak
-is open" is right for one page and fatal for the other. What would settle it is
-a capture of the original with the sneak open.
+**What it was thought to need**, before the flag was found: a decision between
+"the object list wants the device's preview behind the hole" and "the
+videophone wants a real actor", since suppressing the world looked right for
+one page and fatal for the other. The engine does not choose — see the banner
+above; the interface submits its own 3D view, and the world's is a separate
+one it switches off wholesale.
 
 ### 84. Black stripes on for ever after entering or leaving a building — A
 

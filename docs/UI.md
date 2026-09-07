@@ -1169,11 +1169,66 @@ forcing the frame delta to 0.0, which is why `Slider_TickRide` sits behind
 not. The banner is `NAMED` — read and named from evidence, body left as
 generated — and nothing had tested it.
 
-`verify.py: engine: sneak` now asserts that all 260 frames drew the world
-**and** that the player ticked, which its prose had claimed since it was
-written without checking either. Both halves are needed: the draw gate and the
-`adventure` gate are separate lines, and mutating one alone left the check
+`verify.py: engine: sneak` now asserts both halves, because the draw gate and
+the `adventure` gate are separate lines and mutating one alone left the check
 green.
+
+#### ...but it DOES stop the world being DRAWN, and that is a different bit
+
+Corrected 2026-09-07, after a player reported *"the sneak background is
+transparent"*: with the device open, the city street showed through the middle
+of its page art. The paragraphs above are about the world **ticking**, and they
+stand. What they were then over-generalised into — "so the world is drawn
+behind every screen" — is wrong, and the flag that decides it was sitting in
+the screen table all along.
+
+`UI_LoadScreen` (0x00429BB0) reads the screen record's `+112`:
+
+```
+mov  eax, [ebx+70h]         ; +112, the screen's flag word
+and  eax, 40000h
+test eax, eax
+jnz  short keep             ; set  -> the world stays live
+call sub_466B30             ; clear -> turn it off
+```
+
+and `sub_466B30` does three things: `byte_90E155 = 0`, so `Game_Frame` stops
+submitting the game's own full-screen 3D view through `sub_479C20`;
+`sub_46C290`, which walks the sound bank and suspends every buffer; and the
+player's `+194` = **ACTOR_STATE 9** (`UiHeld` — an interface screen holds the
+body). `Ui_CloseScreenDefault` (0x0042A150) calls the partner `sub_466B60` and
+undoes all three.
+
+Exactly **three of the 37** screens carry the bit, and they are the three that
+must show what is happening: **PAUSE GAME (31), SHOOT MECA (33), SHOOT HUMAN
+(34)**. Every other screen — the sneak among them — hides the world while it is
+up. `verify.py: engine: screen world`.
+
+Note how that squares with the pause screen's sound, which was the same
+reader's other report. Screen 31 *keeps* the world, so `sub_466B30` never runs
+for it and the sound suspend cannot come from there — it comes from screen 31's
+**own** open and close callbacks (0x004ADDB0 / 0x004ADEB0), which call
+`sub_46C290` and three more suspend routines directly. Two mechanisms reaching
+the same routine, and the flag is what tells them apart.
+
+**Why the hole in the sneak is authored, not a decoding fault.** The colour key
+is right: `Ui_DrawPanelBack` blits the page with `I2D_BlitBitmap(&rect,
+surface, 1, 3)` — the fourth argument is the layer, and the third reaches
+`sub_4810D0` as `if ((v3 & 1) != 0) v1 = 16809984`, which is `DDBLT_WAIT |
+DDBLT_KEYSRC` — and `I2D_CreateSurfaceFromBmp` sets `DDCOLORKEY{0,0}` on every
+bitmap it makes. `sneak.bmp` is a 640×480 sheet that screen 9's panel tiles
+1:1; **31.8%** of it is palette index 0 and **21 of its 80 cells are more than
+90% key**, which is the middle of the device. What belongs behind that hole is
+the device's *own* 3D view — the object preview, the videophone caller — which
+the interface submits for itself through `I2D_Submit3DView` (`sub_428900`,
+seven call sites, all in the `Ui_*` range). The 3D scene is a display-list
+**node with its own rectangle**, not a full-screen backdrop, which is the
+sentence that makes the whole arrangement make sense.
+
+Two arms of `sub_466B30` are **not ported yet** and are filed as such: the
+sound-bank suspend (the mixer has no suspend API) and the player's ACTOR_STATE
+9 (the state machine models `UiHeld` but `omk-play` never drives it from a
+screen open).
 
 ### The device's nine rows are SHARED, and one global picks their source
 

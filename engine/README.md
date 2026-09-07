@@ -2116,6 +2116,38 @@ loaded by the screen's own open - which rotate to show selection. The UI layer
 has no 3D path, so they are not drawn; their LABELS and the two counts are,
 on the echo bar, which is where the engine puts them.
 
+**And a screen HIDES THE WORLD unless its own flag says otherwise**
+(2026-09-07). A reader: *the sneak background is transparent* — with the device
+open the city street showed through the middle of its page art. Two separate
+things had to be told apart, and the first is not the fault: the colour key
+`8f5fd11` added is right (`I2D_BlitBitmap(&rect, surface, 1, 3)`, the third
+argument reaching `sub_4810D0` as `DDBLT_WAIT | DDBLT_KEYSRC`, against the
+`DDCOLORKEY{0,0}` every bitmap carries), and `sneak.bmp` really does have a
+hole: 31.8% of the sheet is the key colour and 21 of its 80 cells are more than
+90% of it.
+
+What was wrong is what the port put behind it. `UI_LoadScreen` (0x00429BB0)
+reads the screen record's `+112`, masks `0x40000`, and on the CLEAR arm calls
+`sub_466B30` — `byte_90E155 = 0`, so `Game_Frame` stops submitting its
+full-screen 3D view through `sub_479C20`; `sub_46C290`, suspending the sound
+bank; and the player's `+194` to ACTOR_STATE 9. `Ui_CloseScreenDefault` calls
+the partner. **Three of the 37 screens carry the bit** — PAUSE GAME, SHOOT MECA
+and SHOOT HUMAN — and every other screen hides the world.
+`UiWidgets::worldBehind` is that mask, `omk-play`'s `drawWorld` consults it,
+and `verify.py: engine: screen world` counts 3 against 34.
+
+It also corrected a check of this repo's own. `engine: sneak` asserted that
+**all 260** frames drew the world, which came from a real finding — `Game_Tick`
+has no test for an open screen, so the world keeps TICKING — generalised onto
+the DRAW, where a different global decides. It now reads 221 drawn against 39
+hidden, which is exactly screen 9's window, with the tick assertion untouched.
+
+The device's own 3D is a different view and is still not drawn: the interface
+submits it for itself through `I2D_Submit3DView` (`sub_428900`, seven call
+sites, all `Ui_*`) as a display-list node with its own rectangle. Two arms of
+`sub_466B30` are also unported — the sound-bank suspend, and driving
+`ActorState::UiHeld` from a screen open.
+
 **`Ui_DrawItemCursor` IS PORTED** (2026-09-04), and it was a play report that
 made it worth the read: "the hovering effect is absent so it is very difficult
 to know where I am". `sub_479920` drives ONE global pool of SIXTEEN elements

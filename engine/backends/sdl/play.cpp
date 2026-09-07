@@ -6877,7 +6877,31 @@ int main(int argc, char** argv) {
         // to be behind it, frozen: `uiPause` above already stops it
         // advancing, and stopping the DRAW as well left a pause menu on
         // black.
-        const bool drawWorld = worldReady && anyWorld &&
+        //
+        // **AND THE RULE IS THE SCREEN'S OWN FLAG** (2026-09-07), which
+        // subsumes that: `UI_LoadScreen` (0x00429BB0) reads the screen
+        // record's `+112` and, if bit `0x40000` is CLEAR, calls `sub_466B30`
+        // - `byte_90E155 = 0`, so `Game_Frame` stops submitting the
+        // full-screen 3D view through `sub_479C20`; `sub_46C290`, so the
+        // sound bank is suspended; and the player's `+194` goes to
+        // ACTOR_STATE 9. `Ui_CloseScreenDefault` calls the partner
+        // `sub_466B60` to undo all three. Exactly THREE of the 37 screens
+        // carry the bit - PAUSE GAME, SHOOT MECA and SHOOT HUMAN - the three
+        // that must show the live world.
+        //
+        // Every other screen turns it off, and the sneak is one of them: the
+        // sentence above ("every sneak page's background is an opaque tile
+        // map") is not true of the shipped data. `sneak.bmp` is a SHEET the
+        // page tiles 1:1, 31.8% of it is the colour key, and 21 of the 80
+        // cells are more than 90% key - the middle of the device. That hole
+        // is deliberate, and what belongs behind it is the device's own 3D
+        // view, which the UI submits itself through `I2D_Submit3DView` (seven
+        // call sites, all in the `Ui_*` range). Drawing the street there is
+        // what a reader saw as *the sneak background is transparent*
+        // (todo/omk-play.md 82).
+        const bool screenKeepsWorld = !walk || openScreen < 0 ||
+                                      w.worldBehind(openScreen);
+        const bool drawWorld = screenKeepsWorld && worldReady && anyWorld &&
                                (haveDlgCam || haveEdit || holdEditCam ||
                                 (wc && (wc->absolute() || haveRelCam)));
         if (drawWorld) {

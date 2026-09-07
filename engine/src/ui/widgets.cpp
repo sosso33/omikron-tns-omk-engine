@@ -237,7 +237,36 @@ void UiWidgets::loadScreens(const std::string& uiTable) {
         for (std::size_t k = 0; k < sl.size(); ++k)
             slots.push_back(static_cast<int>(sl[k].i64(-1)));
         screenSounds_[id] = slots;
+        // ...AND THE SCREEN'S OWN FLAG WORD, for the one bit that decides
+        // whether the WORLD is drawn behind it. `UI_LoadScreen` (0x00429BB0):
+        //
+        //     mov eax, [ebx+70h]        ; the screen record's +112
+        //     and eax, 40000h
+        //     test eax, eax
+        //     jnz  skip                 ; set -> the world stays live
+        //     ...
+        //     call sub_466B30           ; else: world OFF, sounds suspended,
+        //                               ; and the player's +194 goes to 9
+        //
+        // and `Ui_CloseScreenDefault` (0x0042A150) calls the partner
+        // `sub_466B60` to bring it back. Exactly THREE screens carry the bit -
+        // PAUSE GAME, SHOOT MECA and SHOOT HUMAN - which are the three that
+        // must show the live world behind them; every other screen, the sneak
+        // included, turns it off (`docs/UI.md`).
+        const Json& fl = ss[i]["flags"];
+        std::uint32_t f = 0;
+        for (std::size_t k = 0; k < fl.size(); ++k)
+            f |= static_cast<std::uint32_t>(fl[k].i64(0));
+        screenFlags_[id] = f;
     }
+}
+
+// `UI_LoadScreen`'s `and eax, 40000h` - see loadScreens. A screen the table
+// does not know keeps the world, which is the safer default for a harness
+// that opens a screen by hand.
+bool UiWidgets::worldBehind(int screenId) const {
+    const auto it = screenFlags_.find(screenId);
+    return it == screenFlags_.end() || (it->second & 0x40000u) != 0;
 }
 
 const std::string& UiWidgets::soundName(int screenId, int slot) const {
