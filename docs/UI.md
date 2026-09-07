@@ -2043,6 +2043,75 @@ choosing") and not a missing decode.
 is the set of values each screen can write, not that any screen behaves
 correctly.
 
+### 3j. THE LETTERBOX — camera mode is "he has no control" (2026-09-07)
+
+The 1.818:1 strip, and what decides it. **64 rows top and bottom**, measured
+on the engine's own framebuffer in `traces/frames`:
+
+| capture | bands | what it is |
+|---|---|---|
+| `dlg402-32/35/38/41` | 64 / 64 | a conversation |
+| `dlg402-44/47` | 64 / **32** | the same, with the line's SUBTITLE lighting the bottom band |
+| `intro-75` | 64 / 65 | the intro CUTSCENE, on a scripted world camera |
+| `menu-*`, `loadpanel-*`, `intro-42/48/60` | none | 2D interface |
+
+**64 is the engine's own band height.** `Screen_Fade`'s ticker draws its two
+vignette quads `v3 = (HIWORD(g_ScreenSize) << 6) / 480` tall, which is 64 at
+480 and leaves 352 — the number the captures measure. So the letterbox and the
+fade vignette are the same two bands, and a script's `fade.to_black` darkens
+exactly the strip that is already there.
+
+**What turns it on is whether the player has control**, not the shape of the
+camera. `intro-75` is a cutscene on a scripted world camera and it is
+letterboxed; free roaming is not, whatever camera is installed — and a great
+many areas roam under a FIXED one. A reader met the difference as *black
+stripes entering/leaving a building*: leaving Kay'l's flat hands over to
+Hall 27, whose script leaves absolute camera 4353 up, and a port that
+letterboxed anything that was not the follow camera put the bars on three
+frames in and never took them off.
+
+**And "he has control" is `player.anim.hold`, plus the fade.** The scripts
+bracket a staged beat with both, in one idiom that appears three times —
+SCENE 53's restaurant lunch, `sub_452570`'s slider travel and `sub_4452A0`'s
+fight, the last two as `Screen_Fade(1)` beside `Actor_HoldAnimation(player,
+1)` and the mirror on the way out:
+
+    1089  fade.to_black        ; Screen_Fade(1) -> state 3
+    1090  player.anim.hold
+     ...  387, the sneak call, 388, and the talisman ZOOM
+    1220  player.anim.release
+    1221  fade.from_black      ; Screen_Fade(0) -> state 4
+
+Two things follow, and a reader met both. The zoom after the conversation is
+still inside the hold, so it is camera mode even though nothing is on screen
+and the player is "placed" — *the stripes were not displayed on the zoom on
+the talisman*. And the release comes **before** the fade, so a strip that ends
+with the hold ends one frame early — *there was fade to show the black stripes
+then they suddenly disappeared*. Mode 3 stays armed once set and only mode 4
+clears itself, so `blackFade().running()` is true for exactly the bracket and
+carries the strip to the end of the fade.
+
+**And the third term is `bandsDark`, not "a fade is armed".** AREA 118's
+startup script arms one at pc 1092 — `fade.to_black`, right after the start
+menu answers — and **never clears it**: there is no `fade.from_black` anywhere
+in that script, and mode 3 *holds* once its clock is spent rather than
+clearing, drawing no bands at all. So after any boot the fade is armed for
+ever. A reader met both halves of that: *the stripes of the loading screen are
+not removed when I can actually play*, and then — decisively — *they are
+removed when I launch then exit a dialog*, because a beat like SCENE 53's ends
+on `fade.from_black`, which is mode 4, the only mode that clears itself. What
+holds the strip is the bands being DARK this frame, not the fade being armed.
+
+**Confirmed in play 2026-09-07**, over three rounds and a 7029-frame session:
+none while roaming, on through a held beat and the talisman zoom, fading out
+at the end, and gone the moment a load finishes.
+
+`todo/next-tasks.md` 2; `verify.py: letterbox`, whose last pair is one street
+frame plain and the same frame with the hold set — the two differ by exactly
+the strip — and which asserts AREA 118's unmatched fade for the same reason.
+
+---
+
 ### 3i. THE SNEAK CALL — a screen that answers its own question
 
 The videophone call a reader named "the sneak cutscene", and it happens **ten

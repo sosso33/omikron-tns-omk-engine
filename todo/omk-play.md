@@ -15,6 +15,75 @@ waiting on its evidence.
 
 ## Open (batch 6, filed 2026-09-04)
 
+### 84. Black stripes on for ever after entering or leaving a building — A
+
+> **Fixed 2026-09-07 over three rounds, CONFIRMED IN PLAY** - a 7029-frame
+> session covering the load, two Anekbah round trips, the whole Telis lunch
+> (387, the sneak call, 388 and the talisman zoom) and free roaming, with 137
+> frames under `player.anim.hold`. Round one
+> keyed the strip on `adventure` and a reader confirmed the stripes were gone
+> at the door - and found two more: *the stripes were not displayed on the
+> zoom on the talisman* at the end of the Telis lunch, and *there was fade to
+> show the black stripes then they suddenly disappeared*. Both are the same
+> gap, and the script has them: SCENE 53 brackets the whole beat with
+> `fade.to_black` / `player.anim.hold` at 1089-1090 and
+> `player.anim.release` / `fade.from_black` at 1220-1221. The zoom is inside
+> the hold, so it is camera mode with nothing on screen; and the release comes
+> BEFORE the fade, so a strip that ends with the hold ends one frame early.
+> Round two keyed the third term on the fade being ARMED, and a reader found
+> that wrong within the hour: *the stripes of the loading screen are not
+> removed when I can actually play*, and then the tell - *they are removed
+> when I launch then exit a dialog*. AREA 118's startup arms one at pc 1092
+> (`fade.to_black`, right after the menu answers) and never clears it, and
+> mode 3 HOLDS once its clock is spent while drawing no bands at all, so
+> `running()` is true for ever after any boot; a beat that ends on
+> `fade.from_black` is mode 4, the only mode that clears itself, which is why
+> a dialogue released it. **Round three keys it on `bandsDark`** - is the fade
+> darkening the bands THIS frame - and that is the question the strip is
+> actually about, and the one that came back right.
+>
+> Worth recording: a `--slot` load does NOT reproduce it, because it skips
+> AREA 118's script entirely. Two rounds of headless testing came back clean
+> on a fault a boot has every time.
+
+A reader: *black stripes entering/leaving a building*. The letterbox, and the
+port had the wrong predicate for it.
+
+**What it did.** `view.vh` was full-frame only for `adventure && followCam` -
+`followCam` being the area's own camera 0, relative to actor 0. A great many
+areas roam under a FIXED camera instead, so the bars went on at the door and
+stayed on.
+
+**Measured on the walk out of Kay'l's flat.** Zone 24's activate script is
+`player.anim.hold` / `fade.to_black` / `camera.set 4418, 0, 2` /
+`scx.play.wait obj 0x8a` / `area.goto 229`, handing over to Hall 27, whose own
+script leaves absolute camera 4353 up. The bars go on at frame 3 and by frame
+400 `adventure` is 1 and `animHeld` is 0 - the player has control - while
+`followCam` is still 0. They never come off.
+
+**The captures decide the rule.** Every letterboxed frame in `traces/frames`
+is one the player does NOT control, and that includes a cutscene on a
+scripted world camera - `intro-75`, 64/65 - so the strip is neither "a
+conversation" nor "not the follow camera". It is camera mode, and camera mode
+is "he has no control". The fix is one term: `adventure` alone.
+
+Two things fell out. **64 rows is the engine's own band height**:
+`Screen_Fade`'s ticker draws its vignette quads
+`v3 = (HIWORD(g_ScreenSize) << 6) / 480` tall, 64 at 480, leaving the 352 the
+captures measure - the letterbox and the fade vignette are the same two bands,
+which is why the exit script's `fade.to_black` darkens exactly the strip.
+And `dlg402-44/47` measure 64/**32** not because the band differs but because
+the line's SUBTITLE is drawn inside the bottom one.
+
+`verify.py: letterbox` asserts the five captures, the port's walk at both
+ends, and - the pair that isolates the rule - one street frame plain against
+the same frame with `player.anim.hold` set, which must differ by exactly the
+strip. `--anim-hold` is the harness for that, in the same spirit as `--call`:
+reaching camera mode without playing a beat. Shown to fail twice: putting
+`followCam` back returns the walked frame to 64/64 (the reader's stripes, to
+the row), and dropping the hold and fade terms leaves the held street frame
+full-frame, which is the talisman zoom. `docs/UI.md` §3j.
+
 ### 83. The SNEAK CALL was never played — the device opened and the call did not
 
 > **Ported 2026-09-07, CONFIRMED IN PLAY over three rounds.** The first run

@@ -1583,6 +1583,10 @@ int main(int argc, char** argv) {
     // fired on the first adventure frame. A HARNESS: in the game it is a zone
     // script that does this, and reaching one means playing the beat.
     int  callDialog = -1;
+    // `--anim-hold`: hold the player on the first adventure frame, the way a
+    // staged beat's `player.anim.hold` does. A HARNESS, for reaching camera
+    // mode without playing a beat.
+    bool animHoldHarness = false;
     bool haveEye = false, haveAt = false, letterbox = false, startVulkan = false, noDelay = false;
     double speed = 1.0;                 // --speed: the frame delta's multiplier
     bool forceSoftware = false, showFps = false;
@@ -1592,6 +1596,7 @@ int main(int argc, char** argv) {
         else if (a == "--cam" && i + 1 < argc) camIndex = std::atoi(argv[++i]);
         else if (a == "--fov" && i + 1 < argc) fovA = static_cast<float>(std::atof(argv[++i]));
         else if (a == "--call" && i + 1 < argc) callDialog = std::atoi(argv[++i]);
+        else if (a == "--anim-hold") animHoldHarness = true;
         else if (a == "--letterbox") letterbox = true;   // camera mode, for comparing with captures
         else if (a == "--full") letterbox = false;       // kept: it was the old spelling
         else if (a == "--vulkan") startVulkan = true;
@@ -4964,6 +4969,12 @@ int main(int argc, char** argv) {
                 // is requested the way a SCRIPT requests it (so it answers
                 // itself) and the conversation started right after, which is
                 // exactly `ui.open 0` / `dialog.start N`.
+                if (animHoldHarness) {
+                    animHoldHarness = false;
+                    session.harnessHoldPlayer(true);
+                    std::printf("--anim-hold: the player is held (a harness "
+                                "for `player.anim.hold`)\n");
+                }
                 if (callDialog >= 0 && !walk && playerScreen < 0) {
                     std::printf("--call: ui.open 0 + dialog.start %d (a "
                                 "harness for the sneak call, UI 3i)\n",
@@ -6851,7 +6862,67 @@ int main(int argc, char** argv) {
             // walk is drawn full-frame.
             // (`|| uiPause`: a pause does not change the camera mode, so it
             // does not put bars on a walk either.)
-            if ((adventure || uiPause) && followCam && !holdEditCam)
+            //
+            // **AND IT IS THE PLAYER'S CONTROL THAT DECIDES, NOT THE SHAPE OF
+            // THE CAMERA** (next-tasks 2, "black stripes entering/leaving a
+            // building"). This also required `followCam` - the area's own
+            // camera 0, relative to actor 0 - and a great many areas roam
+            // under a FIXED camera instead: leaving Kay'l's flat runs
+            // `player.anim.hold` / `fade.to_black` / `camera.set 4418` and
+            // hands over to Hall 27, whose script leaves absolute camera 4353
+            // installed. Measured on that walk: by frame 400 `adventure` is 1
+            // and `animHeld` is 0 - the player has control - while `followCam`
+            // is still 0, so the bars went on at frame 3 and never came off
+            // again in 900 frames. That is the report.
+            //
+            // The captures say the same thing from the other side. Every
+            // letterboxed one is a frame the player does NOT control -
+            // `dlg402-32..41` at 64/64 rows, and `intro-75`, a CUTSCENE shot
+            // with a scripted world camera, at 64/65 - so the strip is not
+            // "a conversation" either, it is camera mode. Nothing establishes
+            // it for a frame he does control, whatever camera is up.
+            //
+            // ...AND "HE HAS CONTROL" IS THE HOLD, not `adventure` alone.
+            // A reader, on the end of the Telis lunch: *the stripes were not
+            // displayed on the zoom on the talisman*. SCENE 53's beat holds
+            // the player at pc 1090 and does not release him until 1220, so
+            // the whole of it - the conversation, `object.show 27` and the
+            // 4215/4216 zoom that follows - is camera mode; but a game
+            // resumed from the LOAD PANEL sets `forceAdventure`, whose
+            // `wantAdventure` asks only that he is placed with no dialogue
+            // and no screen up. Between the conversation closing and the
+            // release, that is true, and the bars came off over the zoom.
+            //
+            // `player.anim.hold` is the engine's own marker for it, and the
+            // two traced `Screen_Fade` sites pair with exactly that:
+            // `Screen_Fade(1)` with `Actor_HoldAnimation(player, 1)` on the
+            // way into a slider travel and a fight, `Screen_Fade(0)` with
+            // `Actor_HoldAnimation(player, 0)` on the way out.
+            //
+            // ...AND THE STRIP OUTLASTS THE RELEASE BY THE FADE. SCENE 53's
+            // beat brackets itself
+            //
+            //     1089  fade.to_black       ; Screen_Fade(1) -> state 3
+            //     1090  player.anim.hold
+            //      ...  387, the sneak call, 388, the talisman zoom
+            //     1220  player.anim.release
+            //     1221  fade.from_black     ; Screen_Fade(0) -> state 4
+            //
+            // - the release comes BEFORE the fade, so a strip that ends with
+            // the hold ends one frame early and vanishes instead of fading.
+            // A reader: *there was fade to show the black stripes then they
+            // suddenly disappeared*.
+            //
+            // **The test is `bandsDark`, not `running`**, and that is a
+            // second report: *the stripes of the loading screen are not
+            // removed when I can actually play*. Mode 3 HOLDS once its clock
+            // is spent - armed for ever, drawing no bands at all - so a strip
+            // keyed on the fade being armed never lifts after a load.
+            // `bandsDark` asks whether it is darkening the bands THIS frame,
+            // which is the engine's own two quads, `(h << 6) / 480` tall -
+            // the 64 the captures measure.
+            if ((adventure || uiPause) && !holdEditCam &&
+                !session.playerAnimHeld() && !session.blackFade().bandsDark())
                 view.vh = dispH;
             if (view.vh > dispH) view.vh = dispH;
             view.vx = 0;
