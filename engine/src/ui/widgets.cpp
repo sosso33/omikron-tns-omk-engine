@@ -297,8 +297,31 @@ const UiPanel* UiWidgets::screen(int id) const {
     return nullptr;
 }
 
+// THE ENGINE HAS ONE PANEL RECORD PER ADDRESS, and the lift can carry two.
+// A panel reached both as a screen's top panel and as some item's `+44` child
+// appears twice - the sneak's inventory page is 0x004DEE50 under screen 9 AND
+// under four sibling pages - and only the screen-keyed row carries the
+// `current` its open callback writes. Returning whichever came first meant
+// `installPanel(kPanelSneakInventory)` (the tail of a use, and of leaving the
+// examine page) landed on a record whose `current` is -1, so `settle` fell
+// back to the first usable list - the tab column - and the highlight left the
+// rows. Prefer the informative one.
 const UiPanel* UiWidgets::at(std::uint32_t addr) const {
-    for (const auto& p : panels_) if (p.addr == addr) return &p;
+    const UiPanel* first = nullptr;
+    for (const auto& p : panels_) {
+        if (p.addr != addr) continue;
+        if (p.current >= 0) return &p;
+        if (!first) first = &p;
+    }
+    return first;
+}
+
+// ...and one LIST by its record address, wherever in the tree it lives. The
+// sneak's row list is shared by five panels, and a caller on the verb or
+// examine page has to reach the widgets of a list its own panel does not own.
+const UiList* UiWidgets::listAt(std::uint32_t addr) const {
+    for (const auto& p : panels_)
+        for (const auto& l : p.lists) if (l.addr == addr) return &l;
     return nullptr;
 }
 
@@ -656,19 +679,38 @@ void UiWalk::settle() {
     // the sneak's panels write their current list from code rather than from
     // the lifted `current` (the verb panel 2, the examine page 2), so a
     // wholesale reset here would throw both away.
+    //
+    // ...and it has to win OUTRIGHT, which it did not until 2026-09-07: the
+    // value was assigned and then the move-rule fallback below overwrote it,
+    // because that branch was reached for every `cur_` other than 0. The
+    // verb panel survived by luck - its builder switches off all four of the
+    // other lists, so the first usable one IS the verb list - and the EXAMINE
+    // page did not: it switches off only the verbs, so the fallback landed on
+    // the tab column at index 0 and the page's own text list was never
+    // current. Nothing on that page then answered UP or DOWN, which is what a
+    // player reported as "the scrolling of long text does not work".
+    // `sub_49B950`'s own instruction is `mov dword_4DEF38, 2` - panel
+    // 0x004DEF20 `+24`, list index 2, the scrolling text box.
+    bool fromBuilder = false;
     if (curFromBuilder_ >= 0) {
         cur_ = curFromBuilder_;
         curFromBuilder_ = -1;
+        fromBuilder = true;
     } else {
         cur_ = 0;
     }
     if (!panel_) return;
-    if (cur_ == 0 && panel_->current >= 0 &&
-        static_cast<std::size_t>(panel_->current) < panel_->lists.size()) {
-        cur_ = panel_->current;
-    } else {
-        for (std::size_t k = 0; k < panel_->lists.size(); ++k)
-            if (usable(panel_->lists[k])) { cur_ = static_cast<int>(k); break; }
+    if (fromBuilder &&
+        static_cast<std::size_t>(cur_) >= panel_->lists.size())
+        fromBuilder = false;                  // a value the panel cannot hold
+    if (!fromBuilder) {
+        if (cur_ == 0 && panel_->current >= 0 &&
+            static_cast<std::size_t>(panel_->current) < panel_->lists.size()) {
+            cur_ = panel_->current;
+        } else {
+            for (std::size_t k = 0; k < panel_->lists.size(); ++k)
+                if (usable(panel_->lists[k])) { cur_ = static_cast<int>(k); break; }
+        }
     }
     for (const auto& l : panel_->lists) {
         int j = -1;
@@ -966,6 +1008,17 @@ const UiList* UiWalk::curList() const {
 int UiWalk::selectionOf(const UiList& l) const {
     const auto it = selMap().find(l.addr);
     return it == selMap().end() ? -1 : it->second;
+}
+
+// The verbs' own first four instructions - see the header. -1 when nothing is
+// selected, when the widget is past the end of the list (the binder writes -1
+// there) or when the rows have never been bound.
+int UiWalk::selectedRow(std::uint32_t listAddr) const {
+    const int sel = selectionOf(listAddr);
+    if (sel < 0) return -1;
+    const UiList* l = w_->listAt(listAddr);
+    if (!l || static_cast<std::size_t>(sel) >= l->items.size()) return -1;
+    return rowOf(l->items[static_cast<std::size_t>(sel)].addr);
 }
 
 int UiWalk::selection() const {
@@ -1358,6 +1411,10 @@ bool UiWalk::confirm() {
             if (const auto* kid = w_->at(to)) {
                 leavePage(*panel_);
                 panel_ = kid;
+                // `sub_49B950`'s first instruction is `mov dword_6A5090, 0` -
+                // a new object is read from the TOP, whatever the last one
+                // was scrolled to.
+                if (it->callback == kCbSneakExamine) state_->textScroll = 0;
                 buildPage(*panel_);
                 settle();
                 log_.push_back(it->callback == kCbSneakExamine
@@ -1462,6 +1519,37 @@ bool UiWalk::press(std::uint32_t bits) {
         }
         if (nameCursor_ != before) { log_.push_back("caret"); return true; }
         log_.push_back("name field: no bit response");
+        return false;
+    }
+    if (l->hook == kScrollTextBox) {
+        // `sub_42A9A0(list, a2)` - the long-text SCROLLER, and it is not a
+        // selection mover at all:
+        //
+        //     if (dword_4E9720) {              // the screen's repeat word,
+        //         dword_4E9720 = 0;            // set to 0x203F on open
+        //         sub_42B6A0(&unk_4C3F90, 500, list);   // arm a 500 ms timer
+        //         return 0;                    // ...and eat this frame
+        //     }
+        //     eax = list[+0x6C];               // the live input word
+        //     if (eax & 4) dword_6A5090 -= 8;  // UP
+        //     if (eax & 8) dword_6A5090 += 8;  // DOWN
+        //     return sub_42A750(list, a2);     // then the default
+        //
+        // The first arm is the one-shot on the frame a screen opens; it is
+        // not modelled, because the timer it arms has no consumer this port
+        // reaches and eating one frame of input is invisible. The step is
+        // what matters, and there is NO CLAMP here - `Ui_ItemTextStyle` does
+        // that, against a height only the draw knows.
+        int moved = 0;
+        if (bits & kUiUp)   { state_->textScroll -= 8; moved = 1; }
+        if (bits & kUiDown) { state_->textScroll += 8; moved = 1; }
+        if (moved) {
+            log_.push_back("text scroll: " + std::to_string(state_->textScroll));
+            return true;
+        }
+        // `sub_42A750` - the default, so a confirm or a back still works on
+        // a page whose only list is a text box.
+        if (bits & kUiConfirm) return confirm();
         return false;
     }
     if (l->hook == kMoveSelectionLR) {

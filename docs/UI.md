@@ -909,6 +909,71 @@ words on the right lines for the shipped strings and is **not** a claim about
 the engine's algorithm — the original fits about four more lines in the same
 box, so its line spacing is tighter than this one's guess.
 
+#### The description SCROLLS, and it is one global and one flag bit
+
+Reported in play 2026-09-07: *on "Examiner", the scrolling of long text does
+not work*. The MK400 notice is 23 lines in the port's wrap against a 260-pixel
+box that holds about 13, so most of it could not be read at all.
+
+**The offset is `dword_6A5090`, one global for the whole interface**, in
+pixels, and two functions touch it.
+
+`sub_42A9A0` is the LIST HOOK that ten lists name at `+4`, and it is not a
+selection mover:
+
+```
+if (dword_4E9720) {                       ; the repeat word, 0x203F on open
+    dword_4E9720 = 0;
+    sub_42B6A0(&unk_4C3F90, 500, list);   ; arm a 500 ms timer, eat the frame
+    return 0;
+}
+eax = list[+0x6C]                         ; the live input word
+if (eax & 4) dword_6A5090 -= 8            ; UP
+if (eax & 8) dword_6A5090 += 8            ; DOWN
+return sub_42A750(list, a2)               ; ...then the default
+```
+
+There is no clamp in it anywhere. The clamp is in **`Ui_ItemTextStyle`**, on
+any item carrying **bank C `0x2`**: it lays the block out through
+`Text_LayOutBlock`, takes `laidOutHeight − boxHeight` floored at 0, clamps the
+global into `[0, that]`, writes it back, and hands the result to the text run
+at `+0x10` (with run flag `0x80`). So the *bound is discovered by the draw* —
+which is why the port's composer takes a pointer to the offset rather than a
+copy. `sub_49B950`, the examine page's own open callback, starts
+`mov dword_6A5090, 0`, so each object is read from the top.
+
+**Which items scroll** the tree answers exactly: **10 lists name the hook and
+they hold all 11 of the items carrying bank C `0x2`** — the examine page's
+400×260 description box (0x004DE710), two terminal/shop pages and one more.
+Bank C `0x1` forces the colour to white; `0x2` is this.
+
+**And the page has to be standing in that list.** `sub_49B950`'s other
+instruction is `mov dword_4DEF38, 2` — panel 0x004DEF20 `+24`, the current
+list, index 2, the text box. That was the port's actual fault: `UiWalk::settle`
+assigned the builder's value and then overwrote it from the move rule, because
+the fallback ran for every current list except 0. The verb panel survived by
+luck — its builder switches off all four of the other lists, so the first
+usable one *is* the verb list — and the examine page did not, because it
+switches off only the verbs. The page came up on the tab column and nothing on
+it answered UP or DOWN. `verify.py: engine: text scroll`.
+
+Two smaller things fell out of the same read, and both are the engine's own:
+
+* **Every verb reads the widget's `+0x3C` tag, not the selection.** All three
+  open identically — `movsx eax, word_4DE6F2` (the row list's `+2`),
+  `mov edx, [ecx+eax*4]` (the selected widget), `mov esi, [edx+3Ch]` (its row
+  tag), refuse on −1. The selection is the widget 0..8; the tag is
+  `widget + window`. Reading the selection applies the verb to whatever was
+  under the cursor *before* the list scrolled, which is exactly what a player
+  reported alongside the scrolling. `sub_49BFF0` also latches it into
+  `dword_4DE74C`, which is what the examine page then shows.
+* **The examine drawer dispatches on the object's KIND, and it is a third
+  function.** 0x004780A0 (no `proc` label — nothing calls it, it is a `drawFn`
+  in the widget table) reads `[esi+3Ch]`, asks `sub_42B330` for the kind and
+  branches: **2** → `sub_42B2C0`/`sub_41CFF0`, the 3D model; **4** →
+  `sub_477F60`, the text block; **5** → the `IMAGES\<stem>.bmp` handle in
+  `dword_6A5094`; anything else draws nothing.
+
 ### The three 3D previews, and the interface's own 3D primitive
 
 A player: "the 3D items are not here". They are list 0x004DE420 — three 50×50

@@ -150,8 +150,15 @@ public:
     // and skipping zero is the same result with one buffer fewer, and it is
     // what makes the glyph pixels independent of whatever is behind them -
     // measured: identical across three captures of an animated screen.
+    //
+    // `clipTop` / `clipBottom` bound the rows a glyph may write, for a box
+    // that SCROLLS: `Text_LayOutBlock` is given the box rectangle and a
+    // scrolled block has a line straddling each edge, which must be cut
+    // rather than dropped or spilled. Default to the surface, which is what
+    // every non-scrolling caller wants.
     int drawRun(Surface& dst, int x, int y,
-                const std::vector<StyledChar>& run) const;
+                const std::vector<StyledChar>& run,
+                int clipTop = -(1 << 30), int clipBottom = 1 << 30) const;
 
 private:
     const FontTable* table_;

@@ -635,24 +635,24 @@ ScreenFrame ScreenComposer::draw(Surface& fb, int screenId,
                                                 static_cast<std::uint8_t>(rgb[0]),
                                                 static_cast<std::uint8_t>(rgb[1]),
                                                 static_cast<std::uint8_t>(rgb[2]));
+                //
+                // ---- AND IT SCROLLS -------------------------------------
+                //
+                // Bank C `0x2` on the item, which four items in the tree
+                // carry. `Ui_ItemTextStyle`'s arm for it lays the block out,
+                // takes `laidOutHeight - boxHeight` floored at 0, CLAMPS
+                // `dword_6A5090` into [0, that] and hands the result to the
+                // run at `+0x10`; `sub_42A9A0`, the list hook, steps the same
+                // global eight pixels per UP or DOWN and does no clamping at
+                // all. So the wrap has to happen BEFORE the draw here too -
+                // the bound is a property of the laid-out text, not of the
+                // record - which is why this collects the lines first and
+                // paints them second.
+                std::vector<std::vector<StyledChar>> lines;
                 std::vector<StyledChar> line;
-                int pen = by;
                 const bool oscHigh = blink;
-                const int bottom = by + scaleY(it.h);
-                const auto flush = [&]() {
-                    if (pen >= bottom) { line.clear(); return; }   // the box CLIPS
-                    if (!line.empty()) {
-                        if (oscHigh)
-                            for (auto& c : line)
-                                if (c.blink) { c.rgb[0] = 255; c.rgb[1] = 0; c.rgb[2] = 0; }
-                        lay_->drawRun(fb, bx, pen, line);
-                        pen += lay_->height(line) + 2;
-                        ++out.textLines;
-                    } else {
-                        pen += 12;                 // a blank line
-                    }
-                    line.clear();
-                };
+                const int boxH = scaleY(it.h);
+                const auto flush = [&]() { lines.push_back(line); line.clear(); };
                 std::vector<StyledChar> word;
                 for (const auto& c : parsed.run) {
                     if (c.ch == '\n') { for (auto& q2 : word) line.push_back(q2);
@@ -667,6 +667,41 @@ ScreenFrame ScreenComposer::draw(Surface& fb, int screenId,
                 }
                 for (const auto& q2 : word) line.push_back(q2);
                 flush();
+
+                // The advance is the same one the single-pass version used -
+                // a drawn line's own height plus 2, and 12 for a blank - so
+                // the total is what the old `pen` would have finished at.
+                const auto advance = [&](const std::vector<StyledChar>& ln) {
+                    return ln.empty() ? 12 : lay_->height(ln) + 2;
+                };
+                int total = 0;
+                for (const auto& ln : lines) total += advance(ln);
+                const int overflow = std::max(0, total - boxH);
+                if (scroll_) {
+                    if (*scroll_ > overflow) *scroll_ = overflow;
+                    else if (*scroll_ < 0)   *scroll_ = 0;
+                }
+                const int scroll = scroll_ ? *scroll_ : 0;
+                out.textOverflow = overflow;
+
+                int pen = by - scroll;
+                for (const auto& ln : lines) {
+                    const int h = advance(ln);
+                    // Clipped at BOTH ends, per PIXEL rather than per line: a
+                    // scrolled block has a line straddling each edge, and
+                    // dropping it makes the text jump while drawing it whole
+                    // spills over the page art above the box.
+                    if (pen >= by + boxH) break;
+                    if (pen + h > by && !ln.empty()) {
+                        auto copy = ln;
+                        if (oscHigh)
+                            for (auto& c : copy)
+                                if (c.blink) { c.rgb[0] = 255; c.rgb[1] = 0; c.rgb[2] = 0; }
+                        lay_->drawRun(fb, bx, pen, copy, by, by + boxH);
+                        ++out.textLines;
+                    }
+                    pen += h;
+                }
             }
 
             // ---- THE EXAMINE PAGE'S CONTENT ---------------------------

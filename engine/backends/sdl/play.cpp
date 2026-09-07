@@ -9318,7 +9318,12 @@ int main(int argc, char** argv) {
             if (const int verb = walk->takeVerb(); verb >= 0) {
                 const auto carried =
                     omk::objectList(state, omk::ObjectList::Carried);
-                const int row = walk->selectionOf(omk::kListSneakRows);
+                // THE ROW TAG, not the widget index. All three verb
+                // callbacks read `selected_widget[+0x3C]`, which is
+                // `widget + window`; the two agree only while the rows are
+                // unscrolled, and reading the selection applied the verb to
+                // whatever had been under the cursor before the scroll.
+                const int row = walk->selectedRow(omk::kListSneakRows);
                 const omk::ObjectRecord* rec = nullptr;
                 if (row >= 0 && static_cast<std::size_t>(row) < carried.size()) {
                     const int idx = carried[static_cast<std::size_t>(row)];
@@ -9438,7 +9443,10 @@ int main(int argc, char** argv) {
                 // BY ADDRESS: the examine page carries no row list of its
                 // own, and the selections are a static record keyed by list,
                 // so the row chosen two panels ago is still there.
-                const int row = walk->selectionOf(omk::kListSneakRows);
+                // ...and the TAG here too: `sub_49BFF0` latches
+                // `dword_4DE74C = selected_widget[+0x3C]` when Examiner is
+                // confirmed, and the page draws whatever that names.
+                const int row = walk->selectedRow(omk::kListSneakRows);
                 if (row >= 0 && static_cast<std::size_t>(row) < carried.size()) {
                     const int idx = carried[static_cast<std::size_t>(row)];
                     if (idx >= 0 &&
@@ -9460,6 +9468,11 @@ int main(int argc, char** argv) {
                             (rec.kind == 15) ? std::string() : rec.stem);
                         examineText = rec.description;
                         comp.setExamineText(&examineText);
+                        // ...and where it is scrolled to. The composer
+                        // CLAMPS this against the laid-out height, the way
+                        // `Ui_ItemTextStyle` clamps `dword_6A5090`, so it
+                        // takes the walk's own field rather than a copy.
+                        comp.setTextScroll(&walk->textScroll());
                         if (rec.stem != examineTold) {
                             examineTold = rec.stem;
                             std::printf("sneak: examine '%s' kind %d -> %s\n",

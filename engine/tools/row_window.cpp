@@ -54,6 +54,15 @@ int main(int argc, char** argv) {
         const int row = sel ? walk.rowOf(sel->addr) : -1;
         if (row > best) best = row;
     }
+    // ...and THE VERB'S OWN READ, which is the fault of 2026-09-07. All three
+    // sneak verbs take `selected_widget[+0x3C]` - the row TAG - and the port
+    // took the SELECTION, which is the widget 0..8. Scrolled to the end of a
+    // twelve-row list the two are 8 and 11, so "Utiliser" used the object
+    // three rows above the one the player was looking at.
+    std::printf("verb reads row %d, selection is %d\n",
+                walk.selectedRow(omk::kListSneakRows),
+                walk.selectionOf(omk::kListSneakRows));
+
     const std::uint32_t topMark = walk.rowArrows(rows->items.front().addr);
     const std::uint32_t botMark = walk.rowArrows(rows->items.back().addr);
     std::printf("walk down reached row %d of %d, window %d, top_mark %d bot_mark %d\n",

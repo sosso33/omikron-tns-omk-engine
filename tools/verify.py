@@ -6484,6 +6484,12 @@ def c_engine_row_window():
     got = [ln.split() for ln in r.stdout.strip().splitlines()]
     want = [
         "widgets 9 window 0 count 12".split(),
+        # THE VERB'S OWN READ. All three sneak verbs take the selected
+        # widget's `+0x3C` - the row TAG - and the port took the SELECTION,
+        # which is the widget index. Scrolled to the end of twelve rows the
+        # two are 11 and 8, so `Utiliser` used the object three rows above
+        # the one under the cursor (reported in play 2026-09-07).
+        "verb reads row 11, selection is 8".split(),
         "walk down reached row 11 of 11, window 3, top_mark 1 "
         "bot_mark 0".split(),
         "walk up returned to row 0, window 0".split(),
@@ -6494,7 +6500,11 @@ def c_engine_row_window():
         "top scroll mark set and the bottom one clear; and driving UP the " \
         "same number of times returns to row 0 with the window back at 0. " \
         "With the window hardcoded 0 - what the port did until 2026-09-04 - " \
-        "the walk stops at row 8 and the tenth carried object is unreachable"
+        "the walk stops at row 8 and the tenth carried object is unreachable. " \
+        "And the VERB'S read: `selectedRow` is the widget's `+0x3C` tag, 11, " \
+        "where the selection is the widget, 8 - the two agree only while the " \
+        "list is unscrolled, and reading the selection is what applied a verb " \
+        "to the object that had been under the cursor before the scroll"
 
 
 def c_engine_screen_world():
@@ -6585,6 +6595,89 @@ def c_engine_screen_world():
         "HUMAN - while the other 34 turn it off, the SNEAK (9) included; " \
         "a screen the table does not name defaults to keeping it, which " \
         "is the harness's choice and not a fact about the game"
+
+
+def c_engine_text_scroll():
+    r"""THE EXAMINE PAGE'S LONG TEXT SCROLLS - `sub_42A9A0` and bank C `0x2`.
+
+    A player: *on "Examiner" the scrolling of long text does not work*. It
+    never had: neither half of the mechanism was ported, and the second half
+    was a bug in this port's own list walker.
+
+    **The offset.** `dword_6A5090` is ONE global, in pixels, and two functions
+    touch it. `sub_42A9A0` is the hook ten lists name at `+4`, and it is not a
+    selection mover at all:
+
+        eax = list[+0x6C]                 ; the live input word
+        if (eax & 4) dword_6A5090 -= 8    ; UP
+        if (eax & 8) dword_6A5090 += 8    ; DOWN
+        return sub_42A750(list, a2)       ; then the default
+
+    with no clamp anywhere in it. The clamp is in `Ui_ItemTextStyle`, on any
+    item carrying bank C `0x2`: it lays the block out, takes
+    `laidOutHeight - boxHeight` floored at 0, clamps the global into
+    [0, that] and hands the result to the text run at `+0x10`. So the bound is
+    discovered by the DRAW, which is why the composer here takes a pointer and
+    writes the clamped value back. `sub_49B950`, the examine page's own open,
+    starts `mov dword_6A5090, 0` - a new object is read from the top.
+
+    **Which items scroll** is the flag, and the tree answers exactly: 10 lists
+    name the hook and they hold all 11 of the items carrying bank C `0x2` -
+    the examine page's 400x260 description box (0x004DE710) among them.
+
+    **And the page has to be STANDING in that list.** `sub_49B950`'s other
+    instruction is `mov dword_4DEF38, 2` - panel 0x004DEF20 `+24`, the current
+    list, index 2, the text box. `UiWalk::settle` assigned the builder's value
+    and then overwrote it from the move rule, because that fallback ran for
+    every `cur_` except 0. The verb panel survived by luck (its builder
+    switches off all four other lists, so the first usable one IS the verb
+    list); the examine page switches off only the verbs, so the fallback
+    landed on the tab column and nothing on the page answered UP or DOWN at
+    all. That is the reported fault, and the offset above would have been
+    invisible without it.
+
+    Asserted from the widget tree alone, no game data: the hook and flag
+    counts; that the walk reaches the examine page STANDING IN the scrolling
+    list; four DOWN presses give 32 and four UP give it back; that pressing
+    past the top reaches -24, because the hook does not clamp and the draw is
+    not involved; and that re-entering the page zeroes it.
+
+    Shown to fail by dropping the builder's current list (the page comes up on
+    the tab column and every press is swallowed, 0/0/0) and by restoring the
+    single-assignment `settle`.
+    """
+    import subprocess
+    eng = os.path.join(ROOT, "engine")
+    tbl = os.path.join(ROOT, "tables")
+    if not (os.path.isdir(eng) and os.path.isdir(tbl)):
+        return ("skipped",), ("skipped",), "engine/ or tables/ absent"
+    b = subprocess.run(["make", "-s", "build/text_scroll"], cwd=eng,
+                       capture_output=True, text=True)
+    binp = os.path.join(eng, "build", "text_scroll")
+    if b.returncode != 0 or not os.path.exists(binp):
+        return ("build failed",), ("built",), "engine/ must build"
+    r = subprocess.run([binp, tbl], capture_output=True, text=True,
+                       errors="replace")
+    got = [ln.split() for ln in r.stdout.strip().splitlines()]
+    want = [
+        "lists 10 items 11".split(),
+        "page examine list scroller".split(),
+        "down 4 offset 32".split(),
+        "up 4 offset 0".split(),
+        "past the top offset -24".split(),
+        "reopen offset 0 page examine".split(),
+    ]
+    return got, want, \
+        "ten lists name hook 0x0042A9A0 and hold all eleven items carrying " \
+        "bank C 0x2; the walk reaches the examine page STANDING IN the " \
+        "scrolling list (`mov dword_4DEF38, 2`, which `settle` used to " \
+        "overwrite from the move rule - the fault a player reported as the " \
+        "long text not scrolling); four DOWN presses move the offset 8 " \
+        "pixels each to 32 and four UP bring it back; pressing past the top " \
+        "reaches -24, because `sub_42A9A0` has NO clamp and the bound is " \
+        "`Ui_ItemTextStyle`'s, against a laid-out height only the draw " \
+        "knows; and re-entering the page zeroes it, which is `sub_49B950`'s " \
+        "own first instruction"
 
 
 def c_engine_used_object():
@@ -25204,7 +25297,7 @@ def c_licence_headers():
                    if TAG in open(p, encoding="utf-8",
                                   errors="replace").read(600)]
     return (authored, sorted(missing), len(vendored), mislabelled), \
-           (376, [], 1, []), \
+           (377, [], 1, []), \
            "authored source files under tools/, engine/src, engine/tools, " \
            "engine/backends and scripts/; those MISSING the SPDX tag; " \
            "vendored files in engine/third_party; and vendored files wrongly " \
@@ -26544,6 +26637,7 @@ CHECKS = [
     ("ui text render",     c_ui_textrender,     "UI"),
     ("ui open flags",      c_ui_openflags,      "UI"),
     ("engine: screen world", c_engine_screen_world, "UI"),
+    ("engine: text scroll", c_engine_text_scroll, "UI"),
     ("ui open answer",     c_ui_open_answer,    "SCRIPT_VM 70"),
     ("ui confirm gate",    c_ui_confirm_gate,   "UI"),
     # The FAST set, unlike `engine: screen` and `engine: name field`: most of

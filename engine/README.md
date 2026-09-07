@@ -2116,6 +2116,65 @@ loaded by the screen's own open - which rotate to show selection. The UI layer
 has no 3D path, so they are not drawn; their LABELS and the two counts are,
 on the echo bar, which is where the engine puts them.
 
+**Two more the SNEAK got wrong, both from one play report** (2026-09-07): the
+verb menu *"does not take the scrolling in account and will always apply the
+command on the object that was at the selected slot before the scrolling"*, and
+*"on the Examiner menu, the scrolling of long text does not work"*.
+
+**The verb read the SELECTION where the engine reads the TAG.** All three verb
+callbacks open with the same four instructions - `sub_49BEA0` (Utiliser),
+`sub_49BF30` (Utiliser sur) and `sub_49BFF0` (Examiner):
+
+```
+movsx eax, word_4DE6F2      ; the row list's +2, the SELECTION
+mov   ecx, off_4DE6FC       ; its widget array
+mov   edx, [ecx+eax*4]      ; the selected WIDGET
+mov   esi, [edx+3Ch]        ; ...and ITS ROW TAG
+cmp   esi, -1 / jz -> refuse
+```
+
+The selection is the widget, 0..8; the tag is `widget + window`, which
+`sub_42AAE0` writes. The two agree only while the list is unscrolled, and the
+port took the selection - so with twelve objects carried and the cursor on the
+last, `Utiliser` used the object three rows above it. `UiWalk::selectedRow` is
+those four instructions; `engine: row window` now measures both and they read
+11 and 8. The COMBINE path was already right, which is what made the
+disagreement visible: it reads `rowOf` and the verbs did not.
+
+**The long text never scrolled because the page was standing in the wrong
+list.** Two mechanisms, both unported. `dword_6A5090` is one global holding a
+pixel offset; `sub_42A9A0` - a LIST HOOK, not a selection mover - steps it by 8
+on UP or DOWN with no clamp at all, and `Ui_ItemTextStyle` does the clamping
+for any item carrying bank C `0x2`: lay the block out, take
+`laidOutHeight - boxHeight` floored at 0, clamp the global into it, hand it to
+the run at `+0x10`. The bound is a property of the DRAW, which is why
+`ScreenDraw::setTextScroll` takes a pointer and writes the clamped value back,
+exactly as the engine writes its global. The tree corroborates the pairing:
+**10 lists name the hook and hold all 11 of the items with that bit**.
+
+The fault underneath was this port's own. `sub_49B950` sets
+`dword_4DEF38 = 2` - the examine panel's `+24`, its current list, the text box
+- and `UiWalk::settle` assigned the builder's value and then overwrote it from
+the move-rule fallback, which ran for every current list except 0. The verb
+panel survived by luck (its builder switches off all four other lists, so the
+first usable one IS the verb list); the examine page switches off only the
+verbs, so the page came up on the tab column and nothing on it answered UP or
+DOWN. `engine: text scroll` asserts the whole chain from the widget tree alone
+and is shown to fail by restoring the single-assignment `settle` - which
+reproduces the report exactly, an offset that never moves.
+
+`TextLayout::drawRun` grew a row clip for it, because a scrolled block has a
+line straddling each edge of the box: dropping it makes the text jump eight
+pixels at a time, drawing it whole spills over the page art.
+
+And a third, found on the way and fixed with them: **the lift can carry two
+records for one panel**, since a page reached both as a screen's top panel and
+as an item's `+44` child appears twice, and only the screen-keyed row carries
+the `current` its open callback writes. `UiWidgets::at` returned whichever came
+first, so `installPanel(kPanelSneakInventory)` - the tail of a use, and of
+leaving the examine page - landed on the record with `current = -1` and the
+highlight left the rows for the tab column. It now prefers the informative one.
+
 **And a screen HIDES THE WORLD unless its own flag says otherwise**
 (2026-09-07, CONFIRMED IN PLAY). A reader: *the sneak background is transparent* — with the device
 open the city street showed through the middle of its page art. Two separate

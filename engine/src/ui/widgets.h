@@ -50,6 +50,20 @@ inline constexpr std::uint32_t kListNoWrap       = 0x80000;
 // lifted - this one is here so the sneak works with an older table too.
 inline constexpr std::uint32_t kMoveSelectionLR = 0x0042A930u;
 
+// `sub_42A9A0` (0x0042A9A0) - a LIST hook that SCROLLS A LONG TEXT BOX
+// instead of moving a selection, by stepping `dword_6A5090` eight pixels a
+// press. Ten lists in the tree name it, and between them they hold the four
+// items that carry bank C `0x2` - the examine page's 400x260 description box
+// (0x004DE710) among them. Same reason as `kMoveSelectionLR` for hard-coding
+// it: it is a list record's `+4`, not a table field.
+inline constexpr std::uint32_t kScrollTextBox = 0x0042A9A0u;
+
+// Bank C `0x2` on an ITEM: this text box SCROLLS, and `Ui_ItemTextStyle`
+// clamps the offset against its own laid-out height. Four distinct items
+// carry it (the examine page, two shop/terminal pages and one more), against
+// bank C `0x1`, which forces the colour to white.
+inline constexpr std::uint32_t kItemScrolls = 0x2u;
+
 // Declared here because `UiWalk` holds a pointer to one; defined below, with
 // the save directory it is built out of.
 struct LoadPanel;
@@ -363,6 +377,8 @@ public:
     // for all eleven, which is what lets the tile map serve every screen.
     const std::string& bitmap(int screenId) const;
     const UiPanel* at(std::uint32_t addr) const;
+    // A LIST by its record address, wherever in the tree it lives.
+    const UiList* listAt(std::uint32_t addr) const;
     const std::vector<UiPanel>& all() const { return panels_; }
     std::uint32_t gridHook() const { return gridHook_; }
     // `sub_42A710` - `Ui_MoveBetweenLists` on LEFT and RIGHT, a PANEL
@@ -487,6 +503,22 @@ struct UiListState {
     // The walk cannot do it - the recipe table and the object lists are the
     // Session's - so it records the decision the way `pendingVerb` does.
     int  readyA = -1, readyB = -1;
+    // `dword_6A5090` - THE SCROLL OFFSET OF A LONG TEXT BOX, in pixels, and
+    // ONE global for the whole interface the way every other field here is.
+    // Two functions touch it:
+    //
+    // * `sub_42A9A0(list, a2)`, the LIST HOOK the ten scrolling text lists
+    //   name at `+4`: UP (`0x4`) subtracts 8, DOWN (`0x8`) adds 8, and it
+    //   then falls through to the ordinary mover. No clamp here at all.
+    // * `Ui_ItemTextStyle`, on any item carrying bank C `0x2`: it lays the
+    //   text out, takes `laidOutHeight - boxHeight` (floored at 0), CLAMPS
+    //   the global into [0, that] and writes it back before handing it to
+    //   the run at `+0x10`. So the bound is discovered by the DRAW and the
+    //   hook is free to run past it.
+    //
+    // `sub_49B950`, the examine page's open, sets it to 0 - so a new object
+    // is read from the top.
+    int textScroll = 0;
 };
 
 // One open screen, driven by input words.
@@ -607,6 +639,28 @@ public:
     // `loc_49BE51`'s tail: whichever way it went, the inventory page comes
     // back and the mode closes.
     void endCombine();
+    // THE SELECTED WIDGET'S ROW TAG - `[edi+3Ch]`, and it is what every one
+    // of the sneak's three verbs reads. All three open identically:
+    //
+    //     movsx eax, word_4DE6F2      ; the row list's +2, the SELECTION
+    //     mov   ecx, off_4DE6FC       ; its widget array
+    //     mov   edx, [ecx+eax*4]      ; the selected WIDGET
+    //     mov   esi, [edx+3Ch]        ; ...and ITS ROW TAG
+    //     cmp   esi, -1 / jz -> refuse
+    //
+    // (`sub_49BEA0` Utiliser, `sub_49BF30` Utiliser sur, `sub_49BFF0`
+    // Examiner, which also latches it into `dword_4DE74C`.) The selection is
+    // the widget 0..8; the TAG is `widget + window`, so the two agree only
+    // while the list is unscrolled. Reading the selection instead applied
+    // every verb to the object that had been under the cursor before the
+    // scroll - reported in play 2026-09-07.
+    int  selectedRow(std::uint32_t listAddr) const;
+    // `dword_6A5090`, the long-text scroll offset in pixels. The hook moves
+    // it and the DRAW clamps it, which is why the composer takes a reference
+    // rather than a copy: `Ui_ItemTextStyle` writes the clamped value back
+    // into the same global it read.
+    int& textScroll() { return state_->textScroll; }
+    int  textScroll() const { return state_->textScroll; }
     int  selectionOf(std::uint32_t listAddr) const {
         const auto it = state_->sel.find(listAddr);
         return it == state_->sel.end() ? -1 : it->second;

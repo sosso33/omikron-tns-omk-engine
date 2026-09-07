@@ -15,6 +15,90 @@ waiting on its evidence.
 
 ## Open (batch 6, filed 2026-09-04)
 
+### 85. A sneak verb applies to the object that was there BEFORE the scroll — A
+
+> **Fixed 2026-09-07 from the engine's own four instructions.** Not yet
+> CONFIRMED IN PLAY.
+
+A reader: *the "Utiliser"/"Utiliser sur"/"Examiner" menu does not take the
+scrolling in account and will always apply the command on the object that was
+at the selected slot before the scrolling.*
+
+All three verb callbacks — `sub_49BEA0` (Utiliser), `sub_49BF30` (Utiliser
+sur), `sub_49BFF0` (Examiner) — open identically:
+
+```
+movsx eax, word_4DE6F2      ; the row list's +2, the SELECTION
+mov   ecx, off_4DE6FC       ; its widget array
+mov   edx, [ecx+eax*4]      ; the selected WIDGET
+mov   esi, [edx+3Ch]        ; ...and ITS ROW TAG
+cmp   esi, 0FFFFFFFFh
+jz    -> refuse
+```
+
+The selection is the **widget**, 0..8. The tag is `widget + window`, which
+`sub_42AAE0` writes into `item+0x3C`. They agree only while the rows are
+unscrolled, and `omk-play` read the selection — so with twelve objects carried
+and the cursor on the last row, `Utiliser` used the object three rows above it.
+`UiWalk::selectedRow` is those four instructions.
+
+The combine path was already right (it reads `rowOf`), which is what made the
+two readable side by side. `verify.py: engine: row window` now prints both and
+they are 11 and 8; shown to fail by returning the selection.
+
+`sub_49BFF0` also latches the tag into `dword_4DE74C`, which is what the
+examine page then shows — so the same fault picked the wrong object to examine.
+
+### 86. The examine page's long text does not scroll — A
+
+> **Fixed 2026-09-07, three parts.** Not yet CONFIRMED IN PLAY.
+
+A reader: *on "Examiner", the scrolling of long text does not work.* The MK400
+notice wraps to 23 lines against a box that holds about 13, so most of it could
+not be read.
+
+**The offset.** `dword_6A5090`, one global for the whole interface, in pixels.
+`sub_42A9A0` — the hook **ten** lists name at `+4`, and not a selection mover —
+steps it by 8 on UP (`0x4`) or DOWN (`0x8`) and falls through to the default,
+with no clamp anywhere in it. Its first arm is a one-shot on the frame the
+screen opens (`dword_4E9720`, the 0x203F repeat word) that arms a 500 ms timer
+and eats the frame; not modelled, because the timer has no consumer this port
+reaches.
+
+**The clamp.** `Ui_ItemTextStyle`, for any item carrying **bank C `0x2`**: lay
+the block out, take `laidOutHeight − boxHeight` floored at 0, clamp the global
+into `[0, that]`, write it back, hand it to the text run at `+0x10` with run
+flag `0x80`. The bound is a property of the DRAW, so `ScreenDraw` takes a
+pointer to the offset and writes the clamped value back. `sub_49B950` starts
+`mov dword_6A5090, 0`, so each object is read from the top.
+
+The tree corroborates the pairing exactly: **10 lists name the hook and hold
+all 11 of the items carrying that bit.**
+
+**And the fault underneath was this port's own**, which is why neither of the
+above would have shown. `sub_49B950` also does `mov dword_4DEF38, 2` — the
+examine panel's `+24`, its current list, the text box — and `UiWalk::settle`
+assigned the builder's value and then overwrote it from the move-rule fallback,
+which ran for every current list except 0. The verb panel survived by luck (its
+builder switches off all four other lists, so the first usable one *is* the
+verb list); the examine page switches off only the verbs, so it came up on the
+tab column and nothing on it answered UP or DOWN.
+
+`verify.py: engine: text scroll`, shown to fail by restoring the
+single-assignment `settle` — which reproduces the report exactly.
+
+Two smaller things landed with it. `TextLayout::drawRun` grew a row clip,
+because a scrolled block has a line straddling each edge of the box and
+dropping it makes the text jump. And `UiWidgets::at` now prefers a panel record
+carrying a `current`: the lift holds two records for a page reached both as a
+screen's top panel and as an item's child, and only the screen-keyed one has
+the open callback's value — so `installPanel(kPanelSneakInventory)`, the tail
+of a use, had been putting the highlight on the tab column.
+
+**Still a reconstruction**: the WRAP. `Text_LayOutBlock` is ~570 lines and
+unported, so the line breaks and the 12-pixel blank-line advance are this
+port's, and the overflow the clamp is measured against inherits that.
+
 ### 82. The sneak's middle is transparent — the key is right, what is BEHIND it is not — A
 
 > **Fixed 2026-09-07 from the original's own flag, and the decision the entry

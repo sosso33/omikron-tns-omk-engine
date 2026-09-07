@@ -60,6 +60,10 @@ struct ScreenFrame {
     int  modelsDrawn = 0;
     // Lines the examine page's description wrapped to.
     int  textLines = 0;
+    // How far the examine page's text runs PAST its box, in pixels - the
+    // bound `Ui_ItemTextStyle` clamps the scroll offset against. 0 when
+    // the description fits, and then the box cannot scroll at all.
+    int  textOverflow = 0;
     int  textAdvance = 0;     // summed pen advance of every row drawn
     int  centred = 0;         // rows the alignment ladder centred
     // FNV-1a of the whole framebuffer. The counts above say what was drawn;
@@ -113,6 +117,19 @@ public:
     // `{fSI226198101B}` for its signature line - so it goes through
     // `parseMarkup` like any other interface string.
     void setExamineText(const std::string* t) { examine_ = t; }
+    // ...AND WHERE IT IS SCROLLED TO. `dword_6A5090`, in pixels, and the
+    // composer takes a POINTER because it also CLAMPS it, exactly as
+    // `Ui_ItemTextStyle` does: the hook that moves it (`sub_42A9A0`, eight
+    // pixels a press) has no bound to clamp against, and the laid-out height
+    // is known only here.
+    //
+    //     overflow = max(0, laidOutHeight - boxHeight)
+    //     if (scroll > overflow) scroll = overflow;
+    //     else if (scroll < 0)   scroll = 0;
+    //
+    // Pass the walk's own `textScroll()`, so the clamp lands where the hook
+    // will read it next frame - the engine has one global and both write it.
+    void setTextScroll(int* s) { scroll_ = s; }
     // Milliseconds since the last composed frame, for the cursor's eases and
     // its oscillator. Separate from `setClockMs`, which is an absolute clock.
     void setDeltaMs(long ms) { deltaMs_ = ms; }
@@ -189,6 +206,7 @@ private:
     UiCursor*        cursor_ = nullptr;
     UiModels*        models_ = nullptr;
     const std::string* examine_ = nullptr;
+    int* scroll_ = nullptr;              // dword_6A5090, clamped here
     long             deltaMs_ = 33;
     const std::map<std::uint32_t, std::string>* rows_ = nullptr;
     const std::set<std::uint32_t>* hidden_ = nullptr;

@@ -175,7 +175,8 @@ void TextLayout::buildRamp(std::uint8_t r, std::uint8_t g, std::uint8_t b,
 }
 
 int TextLayout::drawRun(Surface& dst, int x, int y,
-                        const std::vector<StyledChar>& run) const {
+                        const std::vector<StyledChar>& run,
+                        int clipTop, int clipBottom) const {
     int pen = x;
     std::uint16_t ramp[32];
     std::uint8_t cur[3] = {0, 0, 0};
@@ -212,6 +213,7 @@ int TextLayout::drawRun(Surface& dst, int x, int y,
                 for (int gy = 0; gy < gl.height; ++gy) {
                     const int py = top + gy;
                     if (py < 0 || py >= dst.h) continue;
+                    if (py < clipTop || py >= clipBottom) continue;
                     for (int gx = 0; gx < gl.width; ++gx) {
                         const auto c = static_cast<std::uint8_t>(
                             cov[static_cast<std::size_t>(gy) * gl.width + gx]);
