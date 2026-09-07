@@ -1397,11 +1397,39 @@ bool UiWalk::confirm() {
             log_.push_back("combine: due");
             return true;
         }
+        // ---- THE SLIDER PAGE'S DESTINATION -----------------------
+        //
+        // `sub_49BC60`'s kind-4 arm, and it reads the ROW TAG like every
+        // other arm of this function:
+        //
+        //     tag = item[+0x3C]
+        //     if (screen[+4] == 1) { rec = sub_40E630(tag);
+        //                            point = rec[0], rec[4], rec[8]; }
+        //     else                 { point = player[+0xF4/F8/FC]; }
+        //     if (sub_452570(&point)) { screen[+8] = 3;
+        //                               dword_6A17CC = tag; }
+        //     else                    { show text 42 }
+        //
+        // `sub_40E630` is not a lookup - it counts ENABLED destinations to
+        // `tag`, loads the record's `+2` AREA if it is not the resident one,
+        // and returns the ADDRESS in that area whose `+14` is the record's
+        // own bit. So the walk records the tag and the caller does all three,
+        // exactly as it does for a verb: the area, the address and the fade
+        // are the Session's, not a widget walker's.
+        if (it->callback == kCbSneakRowConfirm && state_->rowKind == 4) {
+            const int row = rowOf(it->addr);
+            if (row < 0) { log_.push_back("slider: no destination there");
+                           return true; }
+            state_->pendingTravel = row;
+            state_->travelToDestination = true;
+            log_.push_back("slider: travel to destination row " +
+                           std::to_string(row));
+            panel_ = nullptr;                  // `screen[+8] = 3`
+            return true;
+        }
         if (it->callback == kCbSneakRowConfirm && state_->rowKind != 0) {
             approx_ = true;
-            log_.push_back(state_->rowKind == 4
-                           ? "slider destination: sub_452570 travel not modelled"
-                           : "memory row: its arm is not modelled");
+            log_.push_back("memory row: its arm is not modelled");
             return true;
         }
         if (it->callback == kCbSneakRowConfirm ||

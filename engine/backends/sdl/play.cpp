@@ -6076,6 +6076,60 @@ int main(int argc, char** argv) {
                     std::fprintf(stderr, "detruire: slot %d not cleared\n", slot);
                 }
             }
+            // ---- THE SLIDER'S TRAVEL --------------------------------
+            //
+            // `sub_40E630(row)` then `sub_452570(&point)`, and the pair is
+            // three things the walk cannot do. `sub_40E630` counts ENABLED
+            // destinations to the row, and when the record's `+2` AREA is not
+            // the resident one it frees both slots' contexts, `Area_Load`s
+            // that area, re-attaches the player, rebinds his facing matrix
+            // and raises event 9 - a SYNCHRONOUS load, the same shape the
+            // save path takes here, not the staged `area.goto` transition.
+            // Only then does it look for a position, and it looks in the
+            // newly resident chunk's ADDRESS table for the entry whose `+14`
+            // equals the record's own bit.
+            //
+            // `sub_452570`'s ARRIVE arm is what places him: the position,
+            // velocities zeroed, the facing rebuilt from his own Euler (so
+            // the address's heading is NOT used), `Walk_ProbeGround`,
+            // ACTOR_STATE 1, camera mode 0 and `Screen_Fade(0)` - which is
+            // `Screen_StartColorFade` mode 4 over 60 frames.
+            //
+            // Its OTHER arm, the one that runs when a slider POOL exists,
+            // reserves a real slider and fades the other way instead. That is
+            // the RIDE, and it is step 2 of `todo/slider.md`; what is here is
+            // the arm the engine itself takes wherever there is no circuit.
+            if (const int row = walk->takeTravel(); row >= 0) {
+                std::vector<const omk::Destination*> known;
+                for (const auto& d : destinations)
+                    if (state.bit(omk::StateArray::AddressEnabled, d.bit))
+                        known.push_back(&d);
+                if (row >= static_cast<int>(known.size())) {
+                    std::printf("slider: row %d is past the %zu enabled "
+                                "destinations\n", row, known.size());
+                } else {
+                    const auto* d = known[static_cast<std::size_t>(row)];
+                    const int wasArea = state.currentArea();
+                    if (d->area != wasArea) {
+                        state.setCurrentArea(static_cast<std::int16_t>(d->area));
+                        session.loadArea(d->area);
+                    }
+                    // The address whose `+14` is this record's own bit - the
+                    // one number that joins the two tables.
+                    const bool placed = session.placeActorAt(d->bit);
+                    session.requestCamera(0, 0);
+                    // `Screen_Fade(0)`: mode 4, 60 frames, black.
+                    session.startColourFade(4, 0u, 60.0f);
+                    playerReady = false; adventure = false;
+                    forceAdventure = true;
+                    std::printf("slider: '%s' - area %d -> %d, address %d %s"
+                                " at %.0f %.0f %.0f facing %.0f\n",
+                                d->name.c_str(), wasArea, d->area, d->bit,
+                                placed ? "placed him" : "IS NOT IN THAT AREA",
+                                session.playerPos()[0], session.playerPos()[1],
+                                session.playerPos()[2], session.playerYaw());
+                }
+            }
             if (const int slot = walk->takePendingSave(); slot >= 0) {
                 // ONE RING, through `Actor_GetProperty` / `Actor_SetProperty`
                 // (events 44 and 45, property 5) exactly as the callback

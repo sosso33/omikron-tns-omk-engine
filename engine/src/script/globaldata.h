@@ -65,8 +65,24 @@ std::int32_t globalSpellItem(std::span<const std::byte> d);
 // indices distinct. The names are the ones a player's capture shows -
 // "Anekbah - Appartement de Kay'l", "Anekbah - Sas vers Qalisar",
 // "Anekbah - Centre de securite".
+// ...AND THE RECORD'S `+2` IS THE AREA, which is where a destination's
+// POSITION comes from. `sub_40E630(row)` - the sneak's slider page's own
+// resolver, and the transport itself - counts enabled records to `row`, and
+// then, if the record's `+2` differs from the resident area, frees both slots'
+// contexts, `Area_Load`s that area, re-attaches the player and raises event 9.
+// Only THEN does it look for a position, and it looks in the newly resident
+// chunk's ADDRESS table (`AREA +60`, count `+82`, 16-byte records): the entry
+// whose `+14` equals this record's `+0`. Its `+0/+4/+8` are the coordinates it
+// returns.
+//
+// So a destination has no coordinates of its own - it is an ADDRESS in its own
+// area, keyed by the same bit that enables it, and the two tables are joined
+// by that number. The shipped data agrees exactly: **39 of 39 destinations
+// resolve**, over areas 0, 1, 64 and 101 (which declare 34, 34, 7 and 3
+// addresses). `verify.py: slider destinations`.
 struct Destination {
     int         bit = -1;      // index into StateArray::AddressEnabled
+    int         area = -1;     // the record's `+2`, and where its address lives
     std::string name;          // the record's `+4`, up to 32 bytes
 };
 std::vector<Destination> globalDestinations(std::span<const std::byte> d);

@@ -49,6 +49,7 @@ std::vector<Destination> globalDestinations(std::span<const std::byte> d) {
         if (o + 36 > d.size()) break;
         Destination e;
         e.bit = i16(d, o);
+        e.area = i16(d, o + 2);
         // `sub_40E540` returns `record + 4` as a `char *`, so the name is
         // inline and NUL-terminated - 32 bytes of room, and every one of the
         // 39 shipped records terminates inside them.

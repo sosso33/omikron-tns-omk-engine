@@ -2116,6 +2116,38 @@ loaded by the screen's own open - which rotate to show selection. The UI layer
 has no 3D path, so they are not drawn; their LABELS and the two counts are,
 on the echo bar, which is where the engine puts them.
 
+**THE SNEAK'S SLIDER TAKES THE PLAYER SOMEWHERE** (2026-09-07) - step 1 of
+`todo/slider.md`. The page had listed its destinations since the sneak landed
+and refused to act on one (`slider destination: sub_452570 travel not
+modelled`), and the reason was that a destination record carries no
+coordinates.
+
+It does not need to. `sub_40E630(row)` - which the page's row confirm calls -
+is not a lookup but the transport: it counts the ENABLED records of GLOBAL
+`+16` to the row tag, and when the record's **`+2`, its AREA**, is not the
+resident one it frees both slots' contexts, `Area_Load`s that area
+synchronously (the shape `--slot`'s load already takes here, not the staged
+`area.goto` transition), re-attaches the player and raises event 9. Only then
+does it look for a position, in the newly resident chunk's ADDRESS table, for
+the entry whose `+14` equals the record's own `+0`. **The bit that enables a
+destination is the id of the address that positions it**, and the shipped data
+agrees 39 of 39 across four areas. `readAddresses` was already here at 791/791;
+`+2` was the one field `globalDestinations` had not lifted.
+
+`sub_452570`'s arrive arm does the rest - position, velocities zeroed, the
+facing rebuilt from the actor's own Euler (so the address's heading is not
+used), `Walk_ProbeGround`, ACTOR_STATE 1, camera mode 0 and `Screen_Fade(0)`,
+which is `startColourFade(4, black, 60)`. Its OTHER arm, the one that runs
+where a slider POOL exists, reserves a real slider and fades the other way
+instead; that is the ride, and it is step 2.
+
+`verify.py: slider addresses` asserts the join and `engine: slider travel`
+walks a player to one - TAB, RIGHT, UP, confirm, DOWN, confirm - and lands him
+on the address. Worth recording how it was shown to fail, because the first
+attempt was not: placing him at the record's AREA rather than its BIT left the
+check green, since for the first destination both are 0. `bit + 1` separates
+them.
+
 **`Text_LayOutBlock` IS PORTED** (2026-09-07), and with it the last guess in
 the interface's text path. Everything around it had been ported and checked -
 the 13 fonts, the 2899 glyphs, the coverage ramp, the markup parse, the advance

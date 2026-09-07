@@ -503,6 +503,17 @@ struct UiListState {
     // The walk cannot do it - the recipe table and the object lists are the
     // Session's - so it records the decision the way `pendingVerb` does.
     int  readyA = -1, readyB = -1;
+    // THE SLIDER PAGE'S TRAVEL, recorded the way `pendingVerb` is because the
+    // walk cannot carry it out: `sub_49BC60`'s kind-4 arm ends in
+    // `sub_452570`, which loads an AREA and moves the player. The value is the
+    // ROW TAG - the index among the ENABLED destinations, which is what
+    // `sub_40E630` counts to.
+    int  pendingTravel = -1;
+    // ...and WHICH of the page's two modes it was. The screen record's `+4`
+    // decides: 1 takes the chosen destination's own position, anything else
+    // takes the PLAYER'S - "call one to where I am". Only the first is
+    // reachable here, and the second is recorded rather than invented.
+    bool travelToDestination = true;
     // `dword_6A5090` - THE SCROLL OFFSET OF A LONG TEXT BOX, in pixels, and
     // ONE global for the whole interface the way every other field here is.
     // Two functions touch it:
@@ -609,6 +620,10 @@ public:
     int  rowKind() const { return state_->rowKind; }
     // Which verb was confirmed, if any; reading it CLEARS it.
     int  takeVerb() { const int v = state_->pendingVerb; state_->pendingVerb = -1; return v; }
+    // The slider destination a confirm chose, as its ROW TAG among the enabled
+    // ones. Reading it CLEARS it, as `takeVerb` does. -1 when none is due.
+    int  takeTravel() { const int v = state_->pendingTravel;
+                        state_->pendingTravel = -1; return v; }
 
     // `sub_49BF30` (`Utiliser sur`, 0x0049BF30): open the combine mode with
     // the chosen object, and DISABLE THE VERB LIST so the next confirm goes

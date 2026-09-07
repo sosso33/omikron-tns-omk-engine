@@ -6785,6 +6785,154 @@ def c_engine_text_block():
         "box's TOP, 100, because `if (!*a1) return dword_907A18` does"
 
 
+def c_slider_address_join():
+    r"""A SNEAK DESTINATION'S POSITION IS AN ADDRESS IN ITS OWN AREA.
+
+    The slider page lists the places the game has given the player - GLOBAL
+    `+16`'s 36-byte records, filtered by the DB `+24` bit each one names - and
+    the port had lifted the bit and the name and stopped there. Confirming a
+    row needs a POSITION, and the record has none.
+
+    `sub_40E630(row)`, which the page's row confirm calls, is not a lookup at
+    all: it is the transport. It counts enabled records to `row`, and then, if
+    the record's **`+2`** differs from the resident area, frees both slots'
+    contexts, `Area_Load`s that area, re-attaches the player, rebinds his
+    facing matrix and raises event 9. Only then does it look for a position,
+    and it looks in the newly resident chunk's ADDRESS table - `AREA +60`,
+    count `+82`, 16-byte records - for the entry whose **`+14` equals this
+    record's `+0`**, returning it. Its `+0/+4/+8` are the coordinates.
+
+    So the two tables are joined by one number: the bit that ENABLES a
+    destination is also the id of the ADDRESS that positions it. That is a
+    claim the shipped data can refuse, and it does not - **39 of 39** resolve,
+    across areas 0, 1, 64 and 101, which declare 34, 34, 7 and 3 addresses.
+
+    The join is checked in the direction that can fail: every destination must
+    find its address. The reverse does not hold and should not - most addresses
+    are `actor.goto_address` targets with no destination behind them, which is
+    why the second count is here as a number rather than as an equality.
+    """
+    import struct
+    d = open(omkpaths.data("IAM", "GLOBAL"), "rb").read()
+    base = struct.unpack_from("<I", d, 16)[0]
+    n = struct.unpack_from("<h", d, 28)[0]
+    dest = [(struct.unpack_from("<h", d, base + 36 * k)[0],
+             struct.unpack_from("<h", d, base + 36 * k + 2)[0])
+            for k in range(n)]
+
+    # IAM\AREA's own directory, the same walk `omkdata` does
+    a = open(omkpaths.data("IAM", "AREA"), "rb").read()
+    chunks, first = {}, None
+    for i in range(len(a) // 8):
+        off, size = struct.unpack_from("<II", a, 8 * i)
+        if off and size and off + size <= len(a):
+            if first is None or off < first: first = off
+            chunks[i] = a[off:off + size]
+        if first is not None and 8 * (i + 1) > first: break
+
+    def addresses(area):
+        c = chunks.get(area)
+        if c is None: return {}
+        o = struct.unpack_from("<i", c, 60)[0]
+        m = struct.unpack_from("<h", c, 82)[0]
+        return {struct.unpack_from("<h", c, o + 16 * k + 14)[0]: k
+                for k in range(m) if o + 16 * (k + 1) <= len(c)}
+
+    cache, resolved = {}, 0
+    for bit, area in dest:
+        if area not in cache: cache[area] = addresses(area)
+        if bit in cache[area]: resolved += 1
+    areas = sorted(cache)
+    counts = [len(cache[k]) for k in areas]
+    return (n, resolved, areas, counts), \
+           (39, 39, [0, 1, 64, 101], [34, 34, 7, 3]), \
+        "the 39 sneak destinations, and all 39 resolving to an ADDRESS in " \
+        "their own area (the record's `+2`) keyed by the record's own DB bit " \
+        "against the address's `+14` - which is how `sub_40E630` finds a " \
+        "position for a record that carries none. The four areas they name " \
+        "declare 34, 34, 7 and 3 addresses between them; the join is asserted " \
+        "in the direction that can fail, since most addresses are " \
+        "`actor.goto_address` targets with no destination behind them"
+
+
+def c_engine_slider_travel():
+    r"""THE SNEAK'S SLIDER TAKES THE PLAYER SOMEWHERE - `sub_40E630` and
+    `sub_452570`, run.
+
+    The slider page listed its destinations and refused to act on one: the
+    port had `slider destination: sub_452570 travel not modelled`. What the
+    engine does with a confirmed row is three things, and none of them is a
+    widget walker's job:
+
+    1. **`sub_40E630(row)` is not a lookup, it is the transport.** It counts
+       ENABLED destinations to `row` - which is the ROW TAG, `item[+0x3C]`,
+       the same field every other arm of `sub_49BC60` reads - and when the
+       record's `+2` AREA is not the resident one it frees both slots'
+       contexts, `Area_Load`s that area, re-attaches the player, rebinds his
+       facing matrix and raises event 9. A SYNCHRONOUS load, the shape the
+       save path already takes here, not the staged `area.goto` transition.
+    2. **The position is an ADDRESS**, in the destination's own area, whose
+       `+14` is the record's own DB bit (`verify.py: slider addresses`, 39 of
+       39).
+    3. **`sub_452570`'s arrive arm places him**: position, velocities zeroed,
+       the facing rebuilt from his own Euler - so the address's heading is NOT
+       used by this path - `Walk_ProbeGround`, ACTOR_STATE 1, camera mode 0
+       and `Screen_Fade(0)`, which is `Screen_StartColorFade` mode 4 over 60
+       frames.
+
+    Walked here the way a player does: TAB opens the device on its inventory
+    page, RIGHT reaches the tab column, UP selects the slider tab, confirm
+    opens the page - which comes up on its two-state HEADER, not on the rows,
+    because `panel+24` says list 1 - DOWN moves to the rows, and confirm
+    travels. Asserted: the destination the first row names and the address it
+    resolves to, with the coordinates that address carries.
+
+    **Its other arm is not this**: when a slider POOL exists (`dword_8F5E3C`,
+    the `.OPT` circuit's 40 ride slots) `sub_452570` reserves a real slider
+    and fades the other way instead of arriving. That is the RIDE, step 2 of
+    `todo/slider.md`, and what runs here is the arm the engine itself takes
+    wherever there is no circuit.
+
+    **A note on how this was shown to fail**, because the first attempt did
+    not. Placing the player at the record's AREA instead of its BIT left the
+    check GREEN - for the first destination both are 0, so the wrong value and
+    the right one are the same number. That is CLAUDE.md 1's weak probe
+    exactly. `bit + 1` is the mutation that separates them, and it moves the
+    player to the next address, 6828 -279 -9503.
+    """
+    import subprocess
+    eng = os.path.join(ROOT, "engine")
+    fr, tb = omkpaths.data_root(), os.path.join(ROOT, "tables")
+    save = os.path.join(ROOT, "traces", "save-appart.bin")
+    if not os.path.isdir(eng) or not os.path.exists(save):
+        return ("skipped",), ("skipped",), "engine/ or the save absent"
+    mk = subprocess.run(["make", "-s", "play"], cwd=eng, capture_output=True, text=True)
+    play = os.path.join(eng, "build", "omk-play")
+    if mk.returncode != 0 or not os.path.exists(play):
+        return (True,) * 2, (True,) * 2, "no SDL - the frontend is optional (PORTING A8)"
+    env = dict(os.environ, SDL_VIDEODRIVER="dummy")
+    r = subprocess.run([play, fr, tb, "--software", "--res", "640x480", "--nofmv",
+                        "--no-crowd", "--save", save, "--area", "0",
+                        "--stand", "1804,0,-6890,336", "--frames", "320",
+                        "--hold", "0*40,k15*3,0*30,k205*4,0*10,k200*4,0*10,"
+                                  "k28*4,0*30,k208*4,0*10,k28*4,0*60"],
+                       capture_output=True, text=True, env=env, errors="replace")
+    o = r.stdout
+    line = ""
+    for ln in o.splitlines():
+        if ln.startswith("slider: '"): line = ln.strip()
+    return ("3 of 39 destinations enabled" in o, line), \
+           (True,
+            "slider: 'Anekbah - Appartement de Kay'l' - area 237 -> 0, "
+            "address 0 placed him at 4839 -103 -677 facing -1"), \
+        "three of the 39 destinations are enabled in this save, and " \
+        "confirming the first one travels: `sub_40E630` resolves it to AREA " \
+        "0 and `sub_452570` puts the player on the ADDRESS whose id is the " \
+        "record's own DB bit, at 4839 -103 -677. The area printed as the " \
+        "SOURCE is the save's 237 rather than the 0 the harness is standing " \
+        "in, which is `--area`'s own doing and not the travel's"
+
+
 def c_engine_used_object():
     r"""USING AN INVENTORY OBJECT ON THE WORLD - `Utiliser` reaching a zone.
 
@@ -26744,6 +26892,8 @@ CHECKS = [
     ("engine: screen world", c_engine_screen_world, "UI"),
     ("engine: text scroll", c_engine_text_scroll, "UI"),
     ("engine: text block", c_engine_text_block, "UI"),
+    ("slider addresses",    c_slider_address_join, "docs/UI 3b"),
+    ("engine: slider travel", c_engine_slider_travel, "todo/slider"),
     ("ui open answer",     c_ui_open_answer,    "SCRIPT_VM 70"),
     ("ui confirm gate",    c_ui_confirm_gate,   "UI"),
     # The FAST set, unlike `engine: screen` and `engine: name field`: most of

@@ -85,6 +85,7 @@ that only for a file you are about to actually open.
 | todo/engine-spec-1999.md | ~2k | the official 1999 engine spec sheet, audited line by line against what this repo can show. EXTERNAL evidence; two open leads (the .3DO light table, the claimed BSP) |
 | todo/mesh-lights.md | ~2k | the .3DO light table: 304-byte records, the count at desc+240 (NOT +232, which the loader overwrites). Four steps, one done |
 | todo/sweep-log.md | ~1k | the full-sweep counter: how many finished tasks since the last one, and the rule that it runs every 5-10 rather than per task |
+| todo/slider.md | ~5k | the SLIDER (next-tasks 16): what `sub_40E630` and `sub_452570` do, where a destination's coordinates live, and what `Slider_TickRide` needs. Three steps, one done |
 | todo/text-layout.md | ~4k | `Text_LayOutBlock` (0x0043F3E0): what the engine's own text layout does - the wrap, the 120% line pitch, the alignment, the vertical placement, the counted spans - and the three callers moved onto it. All three steps done |
 | todo/next-tasks.md | ~4k | the reader's list of what to do next, 19 items triaged: size, how much evidence the tree already holds, and a suggested order. Read it to pick up work |
 | todo/pending/*.md (E1, E2, T1..T17) | ~2–8k each | a specific past task's deliverable; each starts with an "Integrated" line — read only the one you need |

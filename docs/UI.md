@@ -1301,6 +1301,49 @@ sound-bank suspend (the mixer has no suspend API) and the player's ACTOR_STATE
 9 (the state machine models `UiHeld` but `omk-play` never drives it from a
 screen open).
 
+### The slider page's destination is an ADDRESS in another area
+
+A row on the slider page names a place, and the record that names it carries no
+coordinates at all. `sub_49BC60`'s kind-4 arm (`dword_670CB8 == 4`) reads the
+row TAG like every other arm, and then:
+
+```
+if (screen[+4] == 1) { rec = sub_40E630(tag); point = rec[0], rec[4], rec[8]; }
+else                 { point = player[+0xF4], [+0xF8], [+0xFC]; }
+if (sub_452570(&point)) { screen[+8] = 3; dword_6A17CC = tag; }
+else                    { show text 42 }
+```
+
+so the page has **two modes** — travel to the chosen destination, or call a
+slider to the player's own position — and the switch is the screen record's
+`+4`, the same word `sub_49D170`'s two-state header reads.
+
+**`sub_40E630(row)` is not a lookup; it is the transport.** It counts the
+ENABLED records of GLOBAL `+16` (36 bytes each) to `row`; if the record's
+**`+2`** — its AREA — is not the resident one it frees both slots' contexts,
+`Area_Load`s that area, re-attaches the player, rebinds his facing matrix and
+raises event 9; and only then does it look for a position, in the newly
+resident chunk's ADDRESS table (`AREA +60`, count `+82`, 16-byte records), for
+the entry whose **`+14` equals the record's own `+0`**.
+
+So the bit that ENABLES a destination is also the id of the ADDRESS that
+positions it, and the two tables are joined by that one number. **39 of 39
+shipped destinations resolve**, over areas 0, 1, 64 and 101, which declare 34,
+34, 7 and 3 addresses. `verify.py: slider addresses`, and `engine: slider
+travel` walks a player to one.
+
+`sub_452570` then has two arms, and which runs is whether a slider POOL exists
+(`dword_8F5E3C`, the `.OPT` circuit's 40 ride slots). Without one it ARRIVES —
+position, velocities zeroed, the facing rebuilt from the actor's own Euler (so
+the address's heading is not used), `Walk_ProbeGround`, ACTOR_STATE 1, camera
+mode 0 and `Screen_Fade(0)`. With one it instead reserves a slider, fades the
+other way and holds the player's animation while it comes; that is the ride,
+and `todo/slider.md` has the plan for it.
+
+**And the page opens on its HEADER, not on its rows.** Panel 0x004DEDE8's
+`+24` is 1, which is list 0x004DEA08, the two-state "Appel du slider" bar; the
+destinations are list 2. A player moves DOWN to them.
+
 ### The device's nine rows are SHARED, and one global picks their source
 
 A play report of 2026-09-04: the slider page came up with "a full list of
