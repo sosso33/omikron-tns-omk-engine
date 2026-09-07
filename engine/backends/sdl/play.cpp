@@ -9539,7 +9539,11 @@ int main(int argc, char** argv) {
             // no screen was ever opened from inside the world; the SAVE
             // screen the reader photographed would have had it too.
             comp.attachCloud(player ? nullptr : &cloud);
-            comp.draw(fb, openScreen, *walk);
+            // `OMK_NOUI=1` draws the frame WITHOUT the interface layer. An
+            // instrument, and the one that found the keyed-tile fault: with
+            // the device off, the caller was there all along, so the world
+            // was never the problem.
+            if (!std::getenv("OMK_NOUI")) comp.draw(fb, openScreen, *walk);
         }
 
         // A `media.play` line, while `Subtitle_Show`'s timer runs: inset 16,

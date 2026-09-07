@@ -2113,11 +2113,34 @@ idiom, the arm's bytes and the speaker; `omk-play --call N` fires the whole
 idiom as a harness, which is the only way the path can be looked at without
 playing a beat that contains one.
 
-**What the port still gets wrong is the PICTURE**, and `todo/omk-play.md` 83
-carries the measurements: the viewport comes out flat grey. The world is
-drawn, the camera resolves to the conversation's own 4159 at
-(2757, −751, −6570) — 20 units from the caller's head, which is the enormous
-face the original's capture shows — and nothing appears there.
+**The picture took a fifth attempt, and the answer was in the BLIT.** The
+viewport came out flat grey — a reader photographed it — and four reasonable
+diagnoses were all refuted by measurement: the world *is* drawn; the camera
+resolves correctly to the conversation's own 4159 at (2757, −751, −6570),
+20 units from the caller's head, which is the enormous face the original's
+capture shows; the caller is placed (the ray solve's `0 0 0` is what a
+ONE-camera conversation gives, and that solve is only applied to a body
+nothing else places); and the eye/at reading is right, because `pos[3..5]` is
+an aim handle a fixed 768 raw units from `pos[0..2]` in 1615 of the file's
+1670 absolute cameras.
+
+**`Ui_DrawPanelBack` keys BOTH its blits, and the composer keyed only one.**
+
+    00476122  6A 03 6A 01 …  E8 → 0x004287A0   ; the whole-sheet arm
+    00476266  6A 03 6A 01 …  E8 → 0x004287A0   ; each of the 80 tiles
+
+That `1` is DDBLT_KEYSRC against the flat **0** key of §1. `sneak.bmp`'s
+viewport is a black cell meant to be keyed out so the 3D shows through;
+painted solid, the item's own 21.6% white fill over it gives exactly
+**(48, 52, 48)** — the grey in the report, and what the check's mutation
+reproduces to the number. Invisible on every other page, because the sneak's
+and the slider's have no hole in them.
+
+Two consequences worth knowing: a tiled screen over the world now shows the
+world through its transparent cells (the LIFT has 49812 such pixels), which is
+what the engine does; and `run_screen` grew `OMK_NOCLOUD` because with the
+cells transparent every pixel of a composed frame is non-zero and `painted`
+stops measuring the artwork's own coverage.
 
 ### A CALLER IS A REAL ACTOR, PARKED OFF-STAGE
 

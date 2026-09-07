@@ -31,8 +31,20 @@ waiting on its evidence.
 >     build/omk-play ../gamedata ../tables --save ../traces/games-resto.bin \
 >         --slot 2 --nofmv --call 386 --frames 80 --dump call.bin
 >
-> **What is still wrong: the viewport is a flat grey rectangle.** Measured on
-> that repro, and none of the obvious answers is it:
+> **FIXED, and the answer was in the BLIT.** `Ui_DrawPanelBack` blits its 80
+> tiles with `I2D_BlitBitmap(&rect, sheet, 1, 3)` - the same DDBLT_KEYSRC the
+> whole-sheet arm above it uses - and `ScreenComposer::background` passed the
+> key on the sheet arm and `false, 0` on the tile arm. `sneak.bmp`'s viewport
+> is a black cell meant to be keyed out so the 3D shows through; painted
+> solid, the item's own 21.6% white fill over it gives exactly (48, 52, 48),
+> the grey in the report. Invisible on every page without a hole in it - the
+> sneak's and the slider's - and fatal on the one with one.
+>
+> **How it was found is the part worth keeping**: `OMK_NOUI=1`, which draws
+> the frame without the interface layer. With the device off the caller was
+> there in full, which put the fault on the composer's side in one command
+> after four wrong hypotheses. Cutting the frame in half beat reasoning about
+> it, and all four hypotheses below were reasonable and all four were wrong:
 >
 > * the world IS drawn - `drawWorld`, `haveDlgCam`, `anyWorld` and
 >   `worldReady` are all 1 through the call;
@@ -48,12 +60,16 @@ waiting on its evidence.
 >   cameras, so the port's eye/at reading is right and the "camera looks the
 >   wrong way" reading is not available.
 >
-> So the shot is the camera standing **20 units from the caller's head** -
-> which is exactly the enormous face the original's capture shows filling the
-> panel - and the port renders black there. The grey is the viewport item's
-> own fill (0x004DEA28, 500x280 at 105,85, flag 0x40000010, white at 21.6%)
-> over that black. Whether the body is not drawn, or is drawn and clipped by
-> the near plane at that distance, is the next thing to find out.
+> - and every one of them was true and none of them was the fault. The shot
+> really is the camera 20 units from the caller's head, which is exactly the
+> enormous face the original's capture shows filling the panel.
+>
+> Two consequences: a tiled screen over the world now shows the world through
+> its transparent cells (the LIFT has 49812 such pixels), which is what the
+> engine does; and `run_screen` grew `OMK_NOCLOUD`, because with the cells
+> transparent every pixel of a composed frame is non-zero and `painted` stops
+> measuring the artwork's own coverage - which is the whole quantity
+> `engine: screen scale` is built on.
 >
 > Worth knowing for that: the viewport item carries `drawFn 0x004782B0`, which
 > ends `I2D_Submit3DView(rect, dword_93076C, flt_90E120, 0, layer)` - the

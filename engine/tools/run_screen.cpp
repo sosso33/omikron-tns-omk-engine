@@ -38,8 +38,16 @@ int main(int argc, char** argv) {
     // back transparent - and worse, the reference and the live window would
     // then differ, which is the one thing `engine: screen` exists to deny.
     // Frame 0, so the composition stays deterministic.
+    //
+    // ...AND `OMK_NOCLOUD=1` LEAVES IT OFF, which two checks need. With the
+    // tile background colour-keyed the way `Ui_DrawPanelBack` keys it, the
+    // artwork's transparent cells show whatever is beneath - the cloud here,
+    // the world in the game - so every pixel of the frame is non-zero and
+    // `painted` stops measuring the ARTWORK's coverage, which is the whole
+    // quantity `engine: screen scale` is built on. Without the cloud it
+    // measures it again.
     omk::MenuCloud cloud;
-    if (cloud.load(fs)) comp.attachCloud(&cloud);
+    if (!std::getenv("OMK_NOCLOUD") && cloud.load(fs)) comp.attachCloud(&cloud);
     // The background ANIMATES, so a frame-for-frame comparison against the
     // live window has to name the same frame. `engine: screen` passes the one
     // the player's loop ends on; without it the two differ by a phase and the
