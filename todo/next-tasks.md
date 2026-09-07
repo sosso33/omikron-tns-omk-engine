@@ -22,7 +22,7 @@ items are research and can be done any time they are wanted.
 | # | task | size | evidence | why here |
 |---|---|---|---|---|
 | 1 | Enter held ≈ 0.5 s counts as several presses | **S** | strong | mechanism already documented; affects every screen and every conversation |
-| 2 | black stripes entering/leaving a building | **DONE** | strong | 2026-09-07: the strip is CAMERA MODE, and camera mode is "he has no control" - not "the camera is not the follow camera". Areas that roam under a FIXED camera had the bars on for ever |
+| 2 | black stripes entering/leaving a building | **DONE, WATCHED** | strong | 2026-09-07: the strip is CAMERA MODE, and camera mode is "he has no control" - not "the camera is not the follow camera". Areas that roam under a FIXED camera had the bars on for ever |
 | 3 | ESC quits instead of opening the pause menu | **DONE, WATCHED** | strong | 2026-09-07: ESC is `Game_RunLoop`'s own `GetAsyncKeyState(27)`, not a binding, and the four item callbacks are four instructions each. `Quitter le jeu` is `Game_NewGame`, not an exit |
 | 4 | tuto zone fires repeatedly, player not stopped | **M** | strong | zone lifecycle is read and there is already a check nearby |
 | 5 | black frames in the Impasse cutscene | **FIXED, WATCHED** | strong | the camera should HOLD at the end of an editing, and a shot is as long as its editing |
@@ -140,7 +140,7 @@ loop and a GoTo redirect and neither writes a latch id.
 of a conversation; the mutation that asserts the flag instead of restoring it
 takes `MDACTION after leaving` from 8 to 0.
 
-### 2. Black stripes entering/leaving a building — **DONE 2026-09-07**
+### 2. Black stripes entering/leaving a building — **DONE 2026-09-07, CONFIRMED IN PLAY**
 
 It was the letterbox, and the triage above was half right: the strip does
 belong to camera mode. What was wrong is what the port took camera mode to BE.

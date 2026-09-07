@@ -2102,6 +2102,10 @@ removed when I launch then exit a dialog*, because a beat like SCENE 53's ends
 on `fade.from_black`, which is mode 4, the only mode that clears itself. What
 holds the strip is the bands being DARK this frame, not the fade being armed.
 
+**Confirmed in play 2026-09-07**, over three rounds and a 7029-frame session:
+none while roaming, on through a held beat and the talisman zoom, fading out
+at the end, and gone the moment a load finishes.
+
 `todo/next-tasks.md` 2; `verify.py: letterbox`, whose last pair is one street
 frame plain and the same frame with the hold set — the two differ by exactly
 the strip — and which asserts AREA 118's unmatched fade for the same reason.

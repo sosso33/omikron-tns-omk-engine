@@ -17,7 +17,10 @@ waiting on its evidence.
 
 ### 84. Black stripes on for ever after entering or leaving a building — A
 
-> **Fixed 2026-09-07 in two rounds, the second from a play report.** Round one
+> **Fixed 2026-09-07 over three rounds, CONFIRMED IN PLAY** - a 7029-frame
+> session covering the load, two Anekbah round trips, the whole Telis lunch
+> (387, the sneak call, 388 and the talisman zoom) and free roaming, with 137
+> frames under `player.anim.hold`. Round one
 > keyed the strip on `adventure` and a reader confirmed the stripes were gone
 > at the door - and found two more: *the stripes were not displayed on the
 > zoom on the talisman* at the end of the Telis lunch, and *there was fade to
@@ -37,7 +40,7 @@ waiting on its evidence.
 > `fade.from_black` is mode 4, the only mode that clears itself, which is why
 > a dialogue released it. **Round three keys it on `bandsDark`** - is the fade
 > darkening the bands THIS frame - and that is the question the strip is
-> actually about.
+> actually about, and the one that came back right.
 >
 > Worth recording: a `--slot` load does NOT reproduce it, because it skips
 > AREA 118's script entirely. Two rounds of headless testing came back clean
