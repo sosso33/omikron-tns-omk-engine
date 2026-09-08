@@ -16,7 +16,7 @@ measures the enhancement's own property on the GPU, shown to fail.
 | 2 | mipmaps (trilinear) and anisotropic filtering, generated at upload; the alpha key averages correctly into the chain | `texturefiltering = trilinear`, `anisotropy = N` / `--filter trilinear --anisotropy N` | **done 2026-09-08**; `engine: mipmaps`; the stain judged by eye at 16x |
 | 3 | interface scaling: linear or integer instead of nearest for the 640x480 layer | `uiscaling = linear|integer` / `--ui-scaling` | todo |
 | 4 | unlimited draw distance: options row 3 is a CAP the port already runs the visible-set walk from; 0 lifts it. Authored risk: the sets end inside the fog | `clipdistance = 0` under `[Enhancements]` / `--clip 0` | todo |
-| 5 | **fitted shadows**: the same blobs, laid on the surface actually under them instead of on a flat quad at the probed height, and composited ONCE instead of ten stacking multiplies | `shadowquality = fitted` / `--shadow-quality fitted` | todo |
+| 5 | **fitted shadows**: the same blobs, laid on the surface actually under them instead of on a flat quad at the probed height | `shadowquality = fitted` / `--shadow-quality fitted` | **done 2026-09-09**; `engine: fitted shadows` |
 | 6 | **mapped shadows**: a real shadow map, cast by the set's own authored lights, characters only | `shadowquality = mapped` / `--shadow-quality mapped` | todo |
 
 ## Rows 5 and 6 - the shadows
@@ -27,24 +27,50 @@ shadows exist at all; `shadowquality` says how they are drawn. With the option
 off the enhancement draws nothing. `classic` is the default and must render
 byte-identical to what ships now - that is the first of the three checks.
 
-### 5, fitted - two faults that need no new pass
+### 5, fitted - DONE 2026-09-09
 
-Both are visible in what landed on 2026-09-08 (`docs/ASSETS.md` 4d).
+The blob follows the ground. `Shadow_EmitBoneBlob` lays the model quad at
+`floor - 1` with every corner sharing that y, so at a step the shadow is cut
+off dead at the lip; fitted subdivides it **4x4** and lays each of the 25
+vertices on the surface probed under IT. On the bank's entrance stairs the
+player's own blob spreads **10.7 units** vertically - one 30 cm riser - where
+classic spreads 0.00, and on the flat street both are 0.00.
 
-* **The actor blob is a flat quad at the probed floor height.** The crowd's
-  node is turned to the floor's normal and the actor's is not, because
-  `Shadow_EmitBoneBlob` does not turn it either - it lays the model quad at
-  `floor - 1` and every corner shares that y. On a kerb or a stair it clips
-  through or floats. Fitted projects each blob onto the triangles actually
-  under it, which `o3de/collision.h` already supplies.
-* **Ten blobs stack, and each MULTIPLIES.** Under `dst x (1 - src)` the pool
-  under a standing character goes nearly black by construction. Faithful, and
-  also the reason it reads as a hard dark circle. Fitted accumulates coverage
-  across a body's bones once and applies it once - the maximum rather than the
-  product.
+The cost is paid by gathering, not by probing: `soupInBox` takes the
+triangles under a body ONCE and the 25-vertex grids probe against those. That
+is fewer city-wide scans per body than the unfitted path already did.
 
-No boundary change, no new pass. The cheap half of the work and the half a
-player notices.
+Two things declared with it:
+
+* **This one is NOT backend-gated, which departs from the rule at the top of
+  this file.** The change is to the geometry the port generates, not to how a
+  backend rasterises it, and making the two backends build different geometry
+  would destroy the property the renderer boundary rests on - that they draw
+  the same picture from the same decisions, which `mirror pass` and
+  `engine silhouette` measure at 0.998 and 0.995. It is off by default, so the
+  software reference still draws what the original drew, which is what the
+  rule protects.
+* **A per-vertex drop is CLAMPED** to the blob's own half-width, so slopes up
+  to 45 degrees are followed exactly and a blob overhanging a ledge does not
+  stretch down the drop. This port's number, not the engine's.
+
+**The stacking is NOT fixed, and it turned out not to be geometry's to fix.**
+Ten blobs overlap under a standing character and each multiplies under
+`dst x (1 - src)`, so the pool goes nearly black. Taking the MAXIMUM instead
+of the product needs somewhere to accumulate coverage - a buffer or a stencil
+- which is a backend feature and not a shape. Culling the blobs that lie
+inside a larger one does not stand in for it either: the contained ones are
+the shins, which are the DARKEST because they are nearest the ground, so
+dropping them lightens exactly where a shadow should be strongest. Row 6 gets
+it for nothing, because a shadow map is a visibility test rather than an
+accumulation. A stencil pass on the Vulkan backend, blobs drawn darkest
+first so "first wins" is "max wins", would also do it and would be properly
+backend-gated - written down here rather than done.
+
+Remainder: the CROWD's blob is still `Slider_PlaceShadow`'s single node
+turned to the floor normal, under both qualities. It is already
+ground-aligned, which is the fault fitted fixes, so it gains least; on a
+stair it would still float.
 
 ### 6, mapped - and where the light comes from
 
@@ -72,9 +98,16 @@ reflected pass has to sample the same map or reflections lose their shadows.
 ### The three checks
 
 * `classic` renders byte-identical to the build before the option existed.
-* `fitted` and `classic` are IDENTICAL on flat ground and differ only where
-  the ground is not flat - which discriminates the fix from a general
-  darkening, and a check that only measured "more dark pixels" would not.
+* ~~`fitted` and `classic` are IDENTICAL on flat ground~~ - **this was the
+  wrong instrument and the first version of the check used it.** The classic
+  blob is a four-triangle FAN with a centre vertex carrying the average of the
+  four UV pairs and the fitted one is a grid with bilinear UVs, so the two
+  sample the same disc slightly differently and differ by ~1500 pixels on
+  perfectly flat ground. What is asserted instead is the geometric property
+  the enhancement exists for: the VERTICAL SPREAD inside one blob, 0 for every
+  classic blob by construction, and measured on the PLAYER's own blobs
+  because the global maximum is dominated by a fixed staged body elsewhere in
+  the city and would not move if his were wrong.
 * `mapped` must **MOVE**. A body between a known set light and a wall,
   rendered at two positions, and the dark region translates the way the light
   predicts. A shadow verified in one still frame is not verified (CLAUDE.md

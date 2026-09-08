@@ -1397,6 +1397,8 @@ int main(int argc, char** argv) {
 "  --density 0..4   how much crowd - the options menu\'s own row 6\n"
 "  --shadows 0|1    the character shadows - options row 5 (--no-shadows too)\n"
 "  --detail 0..2    how many bones cast one - options row 7\n"
+"  --shadow-quality classic|fitted   ENHANCEMENT: fitted lays each blob on the\n"
+"                   surface under it instead of on a flat quad (default classic)\n"
 "  --config <ini>   the game's own config file - [Preferences], and this\n"
 "                   port's [Options] for density and level of detail\n"
 "  --clip <metres>  options row 3, the clip distance (25/50/100/150/200);\n"
@@ -1613,6 +1615,7 @@ int main(int argc, char** argv) {
     int aaFlag = -1;       // --aa N, [Enhancements] antialiasing; -1 = the settings'
     int filterFlag = -1;   // --filter nearest|bilinear|trilinear, [Enhancements] texturefiltering
     int anisoFlag = -1;    // --anisotropy N, [Enhancements] anisotropy
+    int shadowQFlag = -1;  // --shadow-quality classic|fitted|mapped, [Enhancements] shadowquality
     // The fog is not an option row - it is always on in the engine - so this
     // is a diagnostic switch, not a setting. Default ON, because that is what
     // the game does.
@@ -1774,6 +1777,14 @@ int main(int argc, char** argv) {
         }
         else if (a == "--anisotropy" && i + 1 < argc)
             anisoFlag = std::max(1, std::min(16, std::atoi(argv[++i])));
+        else if (a == "--shadow-quality" && i + 1 < argc) {
+            shadowQFlag = omk::shadowQualityMode(argv[++i]);
+            if (shadowQFlag < 0) {
+                std::fprintf(stderr, "--shadow-quality %s: not a mode "
+                                     "(classic|fitted|mapped)\n", argv[i]);
+                return 2;
+            }
+        }
         else if (a == "--fog" && i + 1 < argc) drawFog = std::atoi(argv[++i]) != 0;
         else if (a == "--no-crowd-light") lightCrowd = false;
         else if (a == "--fog-colour" && i + 1 < argc) {
@@ -1982,6 +1993,9 @@ int main(int argc, char** argv) {
     const bool drawSky = skyFlag >= 0 ? skyFlag != 0 : settings.v.sky;
     // Options rows 5 and 7, with a flag beating the save the way --sky does.
     const bool drawShadows = shadowFlag >= 0 ? shadowFlag != 0 : settings.v.shadows;
+    // The ENHANCEMENT, and it is subordinate to the option above: with row 5
+    // off nothing draws whatever this says. Default 0 = what the engine draws.
+    const int shadowQuality = shadowQFlag >= 0 ? shadowQFlag : settings.shadowQuality;
     const int  shadowDetail = detailFlag >= 0 ? detailFlag : settings.v.levelOfDetail;
     // The enhancement: OFF unless --aa or [Enhancements] said otherwise.
     const int aaSamples = aaFlag >= 0 ? aaFlag : settings.antiAliasing;
@@ -3773,6 +3787,9 @@ int main(int argc, char** argv) {
     // The worst distance from a walker's foot-pair midpoint to his own body
     // point this frame - the orphan-shadow detector (see the ped loop).
     float shadowFootOffMax = 0.0f, pedFootOffMax = 0.0f;
+    // The worst vertical spread inside ONE blob - 0 for every classic blob by
+    // construction, nonzero for a fitted one wherever the ground is not flat.
+    float shadowSpreadMax = 0.0f, shadowSpreadPlayer = 0.0f;
     long shadowBlobsDrawn = 0;
     bool shadowTold = false;
     // `Area_LoadMiscModel`'s two constants.
@@ -10408,6 +10425,11 @@ int main(int argc, char** argv) {
                 // whole; every other actor gets it MINUS ONE, so an npc always
                 // casts one tier coarser.
                 const int detail = shadowDetail;
+                // FITTED gathers the triangles under a body ONCE and probes
+                // its grids against those - see `o3de/shadow.h`. Gathered per
+                // body inside `castBones`.
+                const bool fitted = shadowQuality >= 1;
+                shadowSpreadMax = 0.0f; shadowSpreadPlayer = 0.0f;
                 long blobs = 0, nPlayer = 0, nActor = 0, nCrowd = 0;
                 long nPedDrawn = 0, nPedFeet = 0;
                 // ...and the same detector over the BONE path: a bone taken
@@ -10429,7 +10451,31 @@ int main(int argc, char** argv) {
                         }
                         rx = (lo[0] + hi[0]) * 0.5f; rz = (lo[1] + hi[1]) * 0.5f;
                     }
-                    for (int bi : omk::shadowBonesFor(lvl)) {
+                    const auto bones = omk::shadowBonesFor(lvl);
+                    // THE BODY'S OWN PATCH OF GROUND, gathered once. Fitted
+                    // probes 25 vertices a blob; rescanning the whole set for
+                    // each would be thousands of city-wide scans a frame.
+                    omk::TriangleSoup local;
+                    if (fitted) {
+                        float lo[2] = {1e30f, 1e30f}, hi[2] = {-1e30f, -1e30f};
+                        bool any = false;
+                        for (int bi : bones) {
+                            const int mi = omk::findMeshContaining(
+                                meshes, omk::kShadowBones[static_cast<std::size_t>(bi)].bone, root);
+                            if (mi < 0 || static_cast<std::size_t>(mi) * 3 + 2 >= at.size()) continue;
+                            const float* q = &at[static_cast<std::size_t>(mi) * 3];
+                            lo[0] = std::min(lo[0], q[0]); hi[0] = std::max(hi[0], q[0]);
+                            lo[1] = std::min(lo[1], q[2]); hi[1] = std::max(hi[1], q[2]);
+                            any = true;
+                        }
+                        if (!any) return;
+                        // inflated by more than the widest blob's half-width
+                        // (275.59 x 0.07 x 1.5 = 28.9)
+                        local = omk::soupInBox(playerSoup, lo[0] - 40.0, hi[0] + 40.0,
+                                               lo[1] - 40.0, hi[1] + 40.0);
+                    }
+                    const omk::TriangleSoup& soup = fitted ? local : playerSoup;
+                    for (int bi : bones) {
                         const auto& sb = omk::kShadowBones[static_cast<std::size_t>(bi)];
                         const int mi = omk::findMeshContaining(meshes, sb.bone, root);
                         if (mi < 0 || static_cast<std::size_t>(mi) * 3 + 2 >= at.size()) continue;
@@ -10439,12 +10485,35 @@ int main(int argc, char** argv) {
                             const float d = std::sqrt(dx * dx + dz * dz);
                             if (d > shadowFootOffMax) shadowFootOffMax = d;
                         }
-                        const auto f = omk::floorUnder(playerSoup, p3[0], p3[1], p3[2]);
+                        const auto f = omk::floorUnder(soup, p3[0], p3[1], p3[2]);
                         if (!f) continue;
-                        if (omk::shadowBlob(shadowGeo, shadowModel, p3,
-                                            meshes[static_cast<std::size_t>(mi)].radius,
-                                            sb.divisor, sb.reach, static_cast<float>(*f)))
+                        const std::size_t was = shadowGeo.corners.size();
+                        const float rad = meshes[static_cast<std::size_t>(mi)].radius;
+                        const bool drew = fitted
+                            ? omk::shadowBlobFitted(shadowGeo, shadowModel, p3, rad,
+                                                    sb.divisor, sb.reach,
+                                                    static_cast<float>(*f), soup)
+                            : omk::shadowBlob(shadowGeo, shadowModel, p3, rad,
+                                              sb.divisor, sb.reach, static_cast<float>(*f));
+                        if (drew) {
                             ++blobs;
+                            // THE PROPERTY `fitted` EXISTS FOR: how far a
+                            // single blob's own vertices spread vertically.
+                            // A classic blob is a flat quad, so this is 0 for
+                            // every one of them at every camera and on every
+                            // surface; a fitted blob on a slope or a stair
+                            // follows the ground and it is not. That is the
+                            // measurement, and a pixel count is not - the fan
+                            // and the grid interpolate the disc's UVs
+                            // differently, so they differ a little even on
+                            // perfectly flat ground.
+                            float lo = 1e30f, hi = -1e30f;
+                            for (std::size_t ci = was; ci < shadowGeo.corners.size(); ++ci) {
+                                lo = std::min(lo, shadowGeo.corners[ci].y);
+                                hi = std::max(hi, shadowGeo.corners[ci].y);
+                            }
+                            if (hi - lo > shadowSpreadMax) shadowSpreadMax = hi - lo;
+                        }
                     }
                 };
                 // `Actors_TickAll` skips the shadow in ACTOR_STATE 7 and
@@ -10460,6 +10529,7 @@ int main(int argc, char** argv) {
                 if (drawPlayer && playerMeshAtKnown && player && castsIn(player->state()))
                     castBones(playerMeshes, playerMeshAt, detail, -1, nullptr);
                 nPlayer = blobs;
+                shadowSpreadPlayer = shadowSpreadMax;   // his alone, before the rest
                 for (const auto& up : staged)
                     if (up->drawn && up->mo)
                         castBones(up->mo->meshes, up->meshAt, detail - 1, up->shadowRoot,
@@ -10515,9 +10585,10 @@ int main(int argc, char** argv) {
                 shadowBlobsDrawn = blobs;
                 if (!shadowTold && blobs > 0) {
                     shadowTold = true;
-                    std::printf("frame %ld: shadows ON (row 7 detail %d) - %ld blobs, "
-                                "%zu corners, texture slot %zu\n",
-                                n, detail, blobs, shadowGeo.corners.size(), shadowTexBase);
+                    std::printf("frame %ld: shadows ON (row 7 detail %d, quality %s) - "
+                                "%ld blobs, %zu corners, texture slot %zu\n",
+                                n, detail, omk::shadowQualityName(shadowQuality),
+                                blobs, shadowGeo.corners.size(), shadowTexBase);
                 }
                 static const bool shadowLog = std::getenv("OMK_SHADOWLOG") != nullptr;
                 if (shadowLog && (n % 30) == 0)
@@ -10525,6 +10596,11 @@ int main(int argc, char** argv) {
                                 " = %ld blobs (%zu peds staged, %ld drawn, %ld with feet)\n",
                                 n, nPlayer, nActor, nCrowd, blobs, pedStaged.size(),
                                 nPedDrawn, nPedFeet);
+                if (shadowLog && (n % 30) == 0)
+                    std::printf("  [shadow] worst blob vertical spread %.2f units, "
+                                "the player's %.2f (a flat quad is 0 by construction)\n",
+                                static_cast<double>(shadowSpreadMax),
+                                static_cast<double>(shadowSpreadPlayer));
                 if (shadowLog && (n % 30) == 0)
                     std::printf("  [shadow] worst foot-to-body offset %.1f units "
                                 "(a bone off the wrong LOD skeleton is ~240)\n",

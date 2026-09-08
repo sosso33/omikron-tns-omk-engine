@@ -168,6 +168,23 @@ std::optional<double> floorUnder(const TriangleSoup& tris, double x, double y,
     return best;
 }
 
+TriangleSoup soupInBox(const TriangleSoup& tris, double minX, double maxX,
+                       double minZ, double maxZ) {
+    TriangleSoup out;
+    for (std::size_t t = 0; t + 9 <= tris.size(); t += 9) {
+        double lo[2] = {tris[t], tris[t + 2]}, hi[2] = {tris[t], tris[t + 2]};
+        for (int k = 1; k < 3; ++k) {
+            const double px = tris[t + 3 * k], pz = tris[t + 3 * k + 2];
+            lo[0] = std::min(lo[0], px); hi[0] = std::max(hi[0], px);
+            lo[1] = std::min(lo[1], pz); hi[1] = std::max(hi[1], pz);
+        }
+        if (hi[0] < minX || lo[0] > maxX || hi[1] < minZ || lo[1] > maxZ) continue;
+        out.insert(out.end(), tris.begin() + static_cast<long>(t),
+                   tris.begin() + static_cast<long>(t) + 9);
+    }
+    return out;
+}
+
 std::optional<GroundHit> surfaceUnder(const TriangleSoup& tris, double x,
                                       double y, double z) {
     std::optional<GroundHit> best;

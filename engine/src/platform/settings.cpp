@@ -72,6 +72,12 @@ Settings resolveSettings(const OptionsFile& ini,
                                       "(nearest|bilinear|trilinear) - ignored\n", w->c_str());
         }
         takeInt(kEnhancements, "anisotropy", s.anisotropy, s.anisotropySource);
+        if (const std::string* w = ini.find(kEnhancements, "shadowquality")) {
+            const int m = shadowQualityMode(*w);
+            if (m >= 0) { s.shadowQuality = m; s.shadowQualitySource = Settings::Source::Ini; }
+            else std::fprintf(stderr, "settings: shadowquality = %s is not a mode "
+                                      "(classic|fitted|mapped) - ignored\n", w->c_str());
+        }
     }
 
     // ---- 2. the save header, which is later and therefore wins -----------

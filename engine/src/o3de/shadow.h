@@ -36,6 +36,7 @@
 
 #include "formats/mesh3do.h"
 #include "formats/tex3dt.h"
+#include "o3de/collision.h"
 #include "o3de/geom3do.h"
 #include "platform/datafs.h"
 
@@ -160,5 +161,44 @@ bool shadowFootBlob(Geometry& g, const ShadowModel& m, const float left[3],
 
 // `Slider_PlaceShadow`'s own lift, and it is not the bone blob's.
 inline constexpr float kShadowFootLift = 2.0f;
+
+// ------------------------------------------------- FITTED (an ENHANCEMENT)
+//
+// `todo/enhancements.md` row 5, and OFF unless `shadowquality` says otherwise.
+// The engine lays each blob as a FLAT quad at the height probed under the
+// bone's own centre, so on a slope, a kerb or a stair it clips through the
+// ground or floats over it. Fitted subdivides the quad and lays every vertex
+// on the surface under IT.
+//
+// **This one is not backend-gated, and that is a departure from the file's
+// "only the Vulkan backend draws them" line.** The change is to the geometry
+// the port generates, not to how a backend rasterises it, and making the two
+// backends build different geometry would destroy the property the whole
+// renderer boundary rests on - that they draw the same picture from the same
+// decisions, which `mirror pass` and `engine silhouette` measure at 0.995 and
+// 0.998 agreement. Off by default, so the software reference still draws what
+// the original drew, which is what the rule is protecting.
+//
+// The grid is 4x4 cells. A cell is then a quarter of the blob, 5-8 units,
+// which resolves the 30 cm (11.8 unit) step the walker's own limit allows.
+inline constexpr int kShadowFitCells = 4;
+
+// A vertex whose probed surface is further than this fraction of the blob's
+// half-width from the CENTRE's takes the centre's height instead. LABELLED as
+// this port's: it keeps a blob overhanging a ledge from stretching down the
+// drop, and 1.0 means slopes up to 45 degrees are followed exactly.
+inline constexpr float kShadowFitDrop = 1.0f;
+
+// One bone's blob, laid on the surface. `local` is the triangles under the
+// body, gathered once by `soupInBox` - probing the whole set per vertex would
+// rescan the city thousands of times a frame.
+//
+// -> false for the same reasons `shadowBlob` does. On perfectly flat ground
+// this draws the same shape as `shadowBlob` in more triangles, which is what
+// `verify.py: engine: fitted shadows` asserts: identical on the flat, and
+// different only where the ground is not.
+bool shadowBlobFitted(Geometry& g, const ShadowModel& m, const float bone[3],
+                      float radius, float divisor, float reach, float floorY,
+                      const TriangleSoup& local);
 
 }  // namespace omk

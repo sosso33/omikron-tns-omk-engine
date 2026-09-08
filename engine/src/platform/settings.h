@@ -81,6 +81,13 @@ struct Settings {
     // `anisotropy = N` (1..16, 1 off): with trilinear only.
     int    anisotropy = 1;
     Source anisotropySource = Source::Default;
+    // `shadowquality = classic|fitted|mapped` (or 0|1|2), and it is
+    // SUBORDINATE to the game's own option row 5: `v.shadows` says whether a
+    // character casts one at all, this says how it is drawn. 0 is what the
+    // engine draws - a flat quad per bone laid at the height probed under the
+    // bone's own centre - so the default changes nothing.
+    int    shadowQuality = 0;
+    Source shadowQualitySource = Source::Default;
 
     // ---- what the clip distance DERIVES, all in world units (inches) ----
     //
@@ -122,6 +129,21 @@ inline int textureFilterMode(std::string w) {
 }
 inline const char* textureFilterName(int m) {
     return m <= 0 ? "nearest" : m == 1 ? "bilinear" : "trilinear";
+}
+
+// A shadow-quality word onto its mode: 0 classic, 1 fitted, 2 mapped; -1 for
+// a word that is none of them, so a typo does not silently become classic.
+inline int shadowQualityMode(std::string w) {
+    for (auto& c : w) c = static_cast<char>(c >= 'A' && c <= 'Z' ? c + 32 : c);
+    while (!w.empty() && (w.back() == ' ' || w.back() == '\t')) w.pop_back();
+    while (!w.empty() && (w.front() == ' ' || w.front() == '\t')) w.erase(w.begin());
+    if (w == "0" || w == "classic" || w == "off" || w == "original") return 0;
+    if (w == "1" || w == "fitted" || w == "ground") return 1;
+    if (w == "2" || w == "mapped" || w == "shadowmap") return 2;
+    return -1;
+}
+inline const char* shadowQualityName(int m) {
+    return m <= 0 ? "classic" : m == 1 ? "fitted" : "mapped";
 }
 
 // Resolve the three sources in order.  Either may be absent.

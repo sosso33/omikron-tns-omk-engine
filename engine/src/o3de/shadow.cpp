@@ -97,6 +97,83 @@ void widen(Geometry& g) {
 
 }  // namespace
 
+bool shadowBlobFitted(Geometry& g, const ShadowModel& m, const float bone[3],
+                      float radius, float divisor, float reach, float floorY,
+                      const TriangleSoup& local) {
+    if (!m.loaded || reach <= 0.0f || divisor <= 0.0f) return false;
+    float f = radius / divisor;
+    if (f > 1.5f) f = 1.5f;
+    const float dist = floorY - bone[1];
+    if (dist < 0.0f || dist > reach) return false;
+    const int shade = 255 - static_cast<int>(dist * 255.0f / reach);
+    const float sh = static_cast<float>(std::clamp(shade, 0, 255)) / 255.0f;
+    const float k = kShadowScale * f;
+    const float y0 = floorY - kShadowLift;
+    // The blob's half-width, which is also the drop a vertex may follow.
+    float half = 0.0f;
+    for (int i = 0; i < 4; ++i)
+        half = std::max(half, std::fabs(m.corner[i][0]) * k);
+    const float maxDrop = half * kShadowFitDrop;
+
+    // The quad's four corners are a perimeter loop, so a bilinear patch over
+    // (a, b) walks it: (0,0) is corner 0, (0,1) corner 1, (1,1) corner 2 and
+    // (1,0) corner 3.
+    const int N = kShadowFitCells;
+    const auto vertexAt = [&](int ia, int ib) {
+        const float a = static_cast<float>(ia) / static_cast<float>(N);
+        const float b = static_cast<float>(ib) / static_cast<float>(N);
+        Corner c{};
+        float p[3];
+        for (int ax = 0; ax < 3; ++ax) {
+            const float e0 = m.corner[0][ax] + (m.corner[1][ax] - m.corner[0][ax]) * b;
+            const float e1 = m.corner[3][ax] + (m.corner[2][ax] - m.corner[3][ax]) * b;
+            p[ax] = (e0 + (e1 - e0) * a) * k;
+        }
+        c.x = bone[0] + p[0];
+        c.z = bone[2] + p[2];
+        // ...and the height is the surface under THIS vertex, not under the
+        // bone. Y grows down, so a probe from well above finds it.
+        float y = y0 + p[1];
+        if (const auto hit = omk::floorUnder(local, c.x,
+                                             static_cast<double>(y0) - maxDrop - 2.0, c.z)) {
+            const float fy = static_cast<float>(*hit) - kShadowLift;
+            y = std::fabs(fy - y0) <= maxDrop ? fy : y0;
+        }
+        c.y = y;
+        for (int uv = 0; uv < 2; ++uv) {
+            const float e0 = static_cast<float>(m.uv[0][uv]) +
+                             (static_cast<float>(m.uv[1][uv]) -
+                              static_cast<float>(m.uv[0][uv])) * b;
+            const float e1 = static_cast<float>(m.uv[3][uv]) +
+                             (static_cast<float>(m.uv[2][uv]) -
+                              static_cast<float>(m.uv[3][uv])) * b;
+            (uv == 0 ? c.u : c.v) = e0 + (e1 - e0) * a;
+        }
+        c.r = m.r * sh; c.g = m.g * sh; c.b = m.b * sh;
+        c.nx = 0.0f; c.ny = -1.0f; c.nz = 0.0f;
+        c.phase = -1.0f;
+        return c;
+    };
+    std::vector<Corner> grid;
+    grid.reserve(static_cast<std::size_t>((N + 1) * (N + 1)));
+    for (int ia = 0; ia <= N; ++ia)
+        for (int ib = 0; ib <= N; ++ib) grid.push_back(vertexAt(ia, ib));
+    const auto at = [&](int ia, int ib) -> const Corner& {
+        return grid[static_cast<std::size_t>(ia * (N + 1) + ib)];
+    };
+    for (int ia = 0; ia < N; ++ia)
+        for (int ib = 0; ib < N; ++ib) {
+            g.corners.push_back(at(ia, ib));
+            g.corners.push_back(at(ia, ib + 1));
+            g.corners.push_back(at(ia + 1, ib + 1));
+            g.corners.push_back(at(ia, ib));
+            g.corners.push_back(at(ia + 1, ib + 1));
+            g.corners.push_back(at(ia + 1, ib));
+        }
+    widen(g);
+    return true;
+}
+
 bool shadowFootBlob(Geometry& g, const ShadowModel& m, const float left[3],
                     const float right[3], float floorY, const float normal[3]) {
     if (!m.loaded) return false;

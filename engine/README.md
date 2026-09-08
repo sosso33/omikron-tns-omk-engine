@@ -3138,6 +3138,22 @@ capture in this tree shows a shipped shadow, so the SIZE is data-constrained.
 Flags: `--shadows 0|1`, `--no-shadows`, `--detail 0..2`. Checks:
 `shadow model`, `engine: character shadow`.
 
+**And 2026-09-09, FITTED SHADOWS** (`todo/enhancements.md` 5) - the first
+enhancement that is not backend-gated, and the file says why: the change is to
+the geometry the port generates rather than to how a backend rasterises it,
+and two backends building different geometry would destroy the property the
+renderer boundary rests on. `shadowquality = classic|fitted|mapped` under
+`[Enhancements]`, `--shadow-quality`, default classic and subordinate to
+option row 5. Fitted subdivides the blob 4x4 and lays each of the 25 vertices
+on the surface probed under IT, with `soupInBox` gathering the triangles under
+a body once - fewer city-wide scans per body than the unfitted path already
+did. On the bank stairs the player's blob spreads 10.7 units vertically, one
+30 cm riser, where classic spreads 0.00 by construction. The STACKING is not
+fixed and is not geometry's to fix: taking the maximum of ten overlapping
+multiplies needs a buffer or a stencil, so row 6 inherits it. Check:
+`engine: fitted shadows` (shown to fail: drop the per-vertex probe and the
+stairs figure goes to 0).
+
 **And 2026-09-04, the ROAD TRAFFIC** (`docs/STREET_LIFE.md` §2b,
 `todo/road-traffic.md`) — the vehicle half of the same circuit:
 `actor/vehicles.cpp` is `Slider_Init`'s vehicle branch (the two model tables

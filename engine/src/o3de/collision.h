@@ -130,4 +130,15 @@ bool clampNormal(unsigned mask, bool high, const double n[3], double out[3]);
 std::optional<GroundHit> surfaceUnder(const TriangleSoup& tris, double x,
                                       double y, double z);
 
+// The triangles whose horizontal extent meets the box, as a soup of their own.
+//
+// `floorUnder` is a LINEAR SCAN of the whole set, which is fine when a caller
+// probes once per body and hopeless when it probes once per vertex - the
+// fitted shadow lays a 5x5 grid on the ground under every bone, so a naive
+// version would rescan the city 3750 times a frame. Gathering once per body
+// and probing the handful that comes back is the same answer for less work
+// than the unfitted path already does.
+TriangleSoup soupInBox(const TriangleSoup& tris, double minX, double maxX,
+                       double minZ, double maxZ);
+
 }  // namespace omk

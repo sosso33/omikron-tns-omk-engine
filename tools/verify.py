@@ -5892,6 +5892,78 @@ def c_engine_character_shadow():
                        "%.1f units" % (differ, off))
 
 
+
+def c_engine_fitted_shadows():
+    r"""`shadowquality = fitted` - the ENHANCEMENT of `todo/enhancements.md` 5.
+
+    The engine lays each blob as a FLAT quad at the height probed under the
+    bone's own centre (`Shadow_EmitBoneBlob`, every corner sharing one y), so
+    at a step the shadow is cut off dead at the lip. Fitted subdivides the
+    quad 4x4 and lays every vertex on the surface under IT, with the
+    triangles gathered once per body by `soupInBox` - probing the whole set
+    per vertex would rescan the city thousands of times a frame.
+
+    **A pixel count is the wrong instrument here** and the first version of
+    this check used one. The classic blob is a four-triangle FAN with a centre
+    vertex carrying the average of the four UV pairs; the fitted one is a
+    grid with bilinear UVs. The two therefore sample the same disc slightly
+    differently and differ by ~1500 pixels even on perfectly flat ground, so
+    "identical on the flat" cannot be asserted about pixels. What can be
+    asserted is the geometric property the enhancement exists for: **the
+    vertical spread inside one blob**, which is 0 for every classic blob by
+    construction and nonzero for a fitted one exactly where the ground is not
+    flat.
+
+    Four renders, the player's own blobs measured (the global maximum is
+    dominated by a fixed staged body somewhere in Anekbah and would not move
+    if his were wrong):
+
+      * the flat street, classic -> 0.00, and fitted -> 0.00, so the
+        enhancement changes NOTHING where there is nothing to change;
+      * the bank's entrance stairs, classic -> 0.00, and fitted -> ~10.7,
+        which is one 30 cm riser (11.81 units, `engine: stairs`).
+
+    Shown to fail: dropping the per-vertex probe from `shadowBlobFitted`
+    takes the stairs figure to 0.00.
+
+    And the default is pinned in the source, because an enhancement that is
+    on by default is not one.
+    """
+    eng = os.path.join(ROOT, "engine")
+    if not os.path.isdir(eng):
+        return ("skipped",), ("skipped",), "engine/ absent"
+    src = open(os.path.join(eng, "src", "platform", "settings.h"),
+               encoding="utf-8").read()
+    defaultOff = "int    shadowQuality = 0;" in src
+    mk = subprocess.run(["make", "-s", "play"], cwd=eng, capture_output=True, text=True)
+    play = os.path.join(eng, "build", "omk-play")
+    if mk.returncode != 0 or not os.path.exists(play):
+        return ("skipped",), ("skipped",), "no SDL - the frontend is optional (PORTING A8)"
+    save = os.path.join(ROOT, "traces", "save-appart.bin")
+    env = dict(os.environ, SDL_VIDEODRIVER="dummy", OMK_SHADOWLOG="1")
+
+    def spread(stand, quality):
+        r = subprocess.run([play, omkpaths.data_root(), os.path.join(ROOT, "tables"),
+                            "--save", save, "--area", "0", "--stand", stand,
+                            "--frames", "40", "--software", "--res", "640x480",
+                            "--nofmv", "--shadow-quality", quality,
+                            "--dump", os.path.join(eng, "build", "fitted.bin")],
+                           capture_output=True, text=True, env=env)
+        best = -1.0
+        for ln in r.stdout.splitlines():
+            if "the player's" in ln:
+                best = max(best, float(ln.split("the player's")[1].split()[0]))
+        return best
+
+    flat, stair = "1804,0,-6890,336", "4585,-81,-2577,270"
+    got = (defaultOff, spread(flat, "classic"), spread(flat, "fitted"),
+           spread(stair, "classic"), spread(stair, "fitted") > 5.0)
+    want = (True, 0.0, 0.0, 0.0, True)
+    return got, want, ("the default is classic in the source; on the flat street the "
+                       "player's blobs are flat under both; on the bank stairs classic "
+                       "is flat and fitted follows the riser")
+
+
 def c_engine_street_frame():
     r"""`omk-play` DRAWS the city crowd (docs/STREET_LIFE.md, step 4).
 
@@ -28445,6 +28517,7 @@ SLOW = [
     ("engine: road traffic", c_engine_road_traffic, "STREET_LIFE 2b; actor/vehicles.cpp"),
     ("engine: street frame", c_engine_street_frame, "STREET_LIFE; todo/street-life 4"),
     ("engine: character shadow", c_engine_character_shadow, "ASSETS 4d; o3de/shadow.h"),
+    ("engine: fitted shadows", c_engine_fitted_shadows, "todo/enhancements 5; o3de/shadow.h"),
     ("engine: traffic frame", c_engine_traffic_frame, "STREET_LIFE 2b; todo/road-traffic 3"),
     ("engine: crowd push", c_engine_crowd_push, "STREET_LIFE 3; actor/spatial.h"),
     ("engine: head look", c_engine_head_look, "STREET_LIFE; actor/pose.h"),
