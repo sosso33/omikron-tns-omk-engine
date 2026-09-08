@@ -6145,6 +6145,48 @@ def c_engine_perpixel_lighting():
                        "%d where per vertex varies by %d" % (delta, perPixel, perVertex))
 
 
+
+def c_play_usage():
+    r"""Every flag `omk-play` PARSES is a flag it LISTS.
+
+    A flag added to the argument loop and not to the usage text is one nobody
+    can find: it works, it is documented in a commit message, and it is
+    invisible to the person holding the program. `--lighting` shipped that way
+    on 2026-09-09 and a reader asked - which is the only way it was ever going
+    to be noticed, because nothing about it is red.
+
+    So: collect every `a == "--flag"` in the parser and require each to appear
+    in the usage block. Two are deliberately not listed on their own line and
+    are named here rather than silently skipped - `--no-shadows` and
+    `--no-crowd-light`, each mentioned in the prose of the flag it negates.
+
+    It also catches the other direction of drift by eye: this found an
+    orphaned continuation line left behind when the `--shadow-quality` text
+    was rewritten, still describing an older wording.
+    """
+    play = os.path.join(ROOT, "engine", "backends", "sdl", "play.cpp")
+    if not os.path.isfile(play):
+        return ("skipped",), ("skipped",), "engine/ absent"
+    text = open(play, encoding="utf-8").read()
+    parsed = set(re.findall(r'a == "(--[a-z0-9-]+)"', text))
+    # THE USAGE BLOCK ITSELF, not "anywhere the program prints". A flag's own
+    # error message ("--lighting %s: not a mode") mentions it too, and a first
+    # version of this counted that - so deleting the flag from the help left
+    # the check green, which is the mutation that found the hole. The block is
+    # the body of the `usage` lambda.
+    i = text.find("const auto usage = [](std::FILE* to) {")
+    if i < 0:
+        return ("no usage block",), ("a usage block",), "the help text moved"
+    block = text[i:text.find("\n    };", i)]
+    # ...and a flag documented inside another's prose counts, which is why this
+    # scans the whole block rather than the starts of lines.
+    listed = set(re.findall(r"(--[a-z0-9-]+)", block))
+    listed.add("--no-crowd-light")      # named in `--no-crowd`'s own prose
+    missing = sorted(f for f in parsed if f not in listed)
+    return (len(parsed) > 20, missing), (True, []), \
+           ("%d flags parsed; those the usage block never names" % len(parsed))
+
+
 def c_engine_street_frame():
     r"""`omk-play` DRAWS the city crowd (docs/STREET_LIFE.md, step 4).
 
@@ -28797,6 +28839,7 @@ CHECKS = [
     ("no #define renames", c_no_define_renames, "CLAUDE.md 3"),
     ("shadow model",       c_shadow_model,      "ASSETS 4d"),
     ("config template",    c_config_template,   "todo/options-config"),
+    ("play usage",         c_play_usage,        "engine/README"),
 ]
 
 SLOW = [
