@@ -18,6 +18,8 @@ measures the enhancement's own property on the GPU, shown to fail.
 | 4 | unlimited draw distance: options row 3 is a CAP the port already runs the visible-set walk from; 0 lifts it. Authored risk: the sets end inside the fog | `clipdistance = 0` under `[Enhancements]` / `--clip 0` | todo |
 | 5 | **fitted shadows**: the same blobs, laid on the surface actually under them instead of on a flat quad at the probed height | `shadowquality = fitted` / `--shadow-quality fitted` | **done 2026-09-09**; `engine: fitted shadows` |
 | 6 | **mapped shadows**: a real shadow map, cast by the set's own authored lights, characters only | `shadowquality = mapped` / `--shadow-quality mapped` | **done 2026-09-09**; `engine: mapped shadows` |
+| 7 | **per-pixel lighting**: the engine's OWN light law evaluated per fragment instead of per vertex, and received by every character rather than the crowd alone | `lighting = perpixel` / `--lighting perpixel` | todo |
+| 8 | **the SETS receive the lights too.** Held back deliberately - it overrides authored art; see below | `lighting = sets` | not recommended |
 
 ## Rows 5 and 6 - the shadows
 
@@ -159,6 +161,76 @@ reflected pass has to sample the same map or reflections lose their shadows.
   1, "some errors are invisible at rest") - and the shadows already shipped
   one fault of exactly that family, a blob six metres from its owner that two
   green checks could not see.
+
+## Row 7 - per-pixel lighting
+
+### What the engine's lighting IS, which bounds what "enhanced" can mean
+
+Three facts, and they are narrower than they look:
+
+* **a set has no dynamic light at all.** It is shaded by a colour baked into
+  every vertex, and 38.9% of set vertices are not grey (ASSETS 4c);
+* **the `.3DO` light table is real and authored** - 4179 records over 216
+  models, each with a position, a colour, an intensity, an inner and an outer
+  radius, and a direction the loader computes as `normalize(centre - pos)`;
+* **the receivers are narrow.** All EIGHT call sites of `sub_4380B0` are in
+  `18_d3d.c`, the street-life module, so the lights fall on the procedural
+  crowd and the traffic and on nothing else. The player and every staged actor
+  are lit by their baked vertex colour alone. The law is `-(N.L)` over a linear
+  falloff between the two radii, through the engine's `(t * c) >> 8` ramp.
+
+Two further paths are DEAD and not worth chasing: the per-object live light
+gated on mesh flag `0x8` is carried by **0 of 15720** shipped meshes, and the
+environment-map stage is never given a texture (ASSETS 4c).
+
+### The enhancement, and why it is the most defensible one left
+
+**Evaluate the same law per FRAGMENT, and let every character receive it.**
+
+Neither half invents anything. Today the falloff and the dot product are
+computed once per vertex and interpolated across the triangle; a character's
+thigh is one or two quads across, so a lamp's pool bends over his leg in flat
+facets and pops as a vertex crosses the falloff boundary. Per pixel is the
+same arithmetic sampled finely enough to stop showing the tessellation.
+
+Letting the player and the staged actors receive IS a deviation from the
+original and must be labelled as one - but it is the same lights under the
+same rules, and it settles the oddity that a passer-by is lit by a lamp the
+player standing beside them is not.
+
+Most of the machinery exists already. `Corner` carries the vertex normal
+through the pose (read for the crowd's lighting on 2026-09-05), and row 6 has
+just added set 1 - a per-frame descriptor set with a uniform buffer - which is
+where a small light list would go.
+
+Also to fix while there, and it is a FIDELITY item rather than an enhancement:
+the port applies the reach and the falloff per BODY where the engine does them
+per MESH, which is a declared deviation of `o3de/vertexlight.h`.
+
+### The check
+
+Sharper than a pixel count, and it writes itself: per pixel and per vertex must
+**agree AT the vertices** and **differ BETWEEN them**. Sample the fragment
+colour exactly at a vertex position and require it to match the per-vertex
+value; sample the middle of a long triangle spanning a falloff boundary and
+require it to differ. That measures "the same law, sampled finer" and fails on
+any change to the law itself.
+
+Then the motion test, as everywhere else here: a body walking out through a
+lamp's outer radius must dim CONTINUOUSLY rather than in steps.
+
+## Row 8 - lighting the sets, and why it is held back
+
+The obvious next thought, and the lamps are sitting in the set's own file. The
+problem is that the baked vertex colour **is** the artists' lighting and
+already contains those pools, so adding the lights on top does not enhance the
+picture, it doubles it - and there is no principled way to subtract what the
+painter put in. It would be a look, chosen here, replacing the one the game
+shipped. Kept as a row so nobody has to rediscover the reason; if it is ever
+built it must say plainly that it overrides authored art.
+
+Bloom on the neon and a coloured fog are the same shape: they would flatter
+the game and have no data behind them.
 
 Known limit of 1 and 2, to be judged by eye: the sets sample sub-rectangles
 of shared atlases (the Anekbah signs), and a filter reaches half a texel past

@@ -121,6 +121,12 @@
 ; Anisotropic filtering, 1 to 16; 1 is off. With trilinear only.
 ;anisotropy = 1
 
+; Lighting: not built yet (`todo/enhancements.md` row 7). It will evaluate the
+; engine's OWN light law per fragment instead of per vertex, and let every
+; character receive it rather than the procedural crowd alone. Named here so
+; the key is settled before anything writes it.
+;lighting = pervertex
+
 ; Character shadows: classic | fitted | mapped (or 0 | 1 | 2).
 ; SUBORDINATE to `displayshadows` above - with that off, nothing draws
 ; whatever this says.
