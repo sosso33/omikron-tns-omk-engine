@@ -20,7 +20,7 @@ adds **one**. Counting commits ran this number to 13 when about nine tasks had
 been finished, which would have called for a half-hour sweep long before the
 rule intends one.
 
-**tasks since the last full sweep: 15** (the fifteenth: mapped shadows, enhancements 6, 2026-09-09)
+**tasks since the last full sweep: 17** (13 the character shadows, 14 the Anekbah panel flicker, 15 the orphaned shadows, 16 fitted shadows, 17 mapped shadows - the last four on 2026-09-08/09)
 
 > **`engine: UI` is RED and was already red at `a5b1807`, on a clean tree.**
 > Measured 2026-09-07: `disagree` is 9, not 0 - the shops, screens 21..28 and

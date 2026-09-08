@@ -15,6 +15,26 @@ waiting on its evidence.
 
 ## Open (batch 6, filed 2026-09-04)
 
+### 88. The Anekbah panel FLICKER — B
+
+> **Fixed 2026-09-08**, from the reader's own spot. Not watched yet: the
+> evidence is 130 consecutive headless frames at 6219 0 -8490 facing 199 and
+> `tools/tie_probe.cpp`.
+
+The oldest open report in the tree (2026-08-28: *advert panels twinkling
+between two textures*), out of candidates since 2026-09-05. The reader
+played to a sign that flickers and closed the viewer; the log's final
+position and `--snap-every 1` (new: a framebuffer every frame) did the rest:
+the sign was covered in single-pixel dots of the OTHER advert, re-rolled
+every frame. The 18 coincident shop-sign pairs are the same four vertices in
+opposite winding - two-sided signs - and the engine's strict depth test on a
+quantised z-buffer shows the first drawn; the port's float compare let
+last-bit noise between the two triangulations choose per pixel. A 2^-16
+relative tie band in `raster.cpp`; `verify.py: engine: sign tie`;
+`docs/ASSETS.md` 4b; `todo/standing-unknowns.md` 4. What to watch: the
+pharmacy and supermarket signs on Anekbah's main street, standing still and
+walking past - clean adverts, no sparkle.
+
 ### 87. No sky after loading a save inside a building — A
 
 > **Fixed 2026-09-08.** Not watched yet: the evidence is a headless walk out

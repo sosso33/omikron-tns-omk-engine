@@ -2043,6 +2043,52 @@ transition this port's channel fails to take where the engine's does would
 look the same. A script that stops dead after a `player.move.wait` is the
 symptom.
 
+### The panel FLICKER was a depth TIE, and the signs are two-sided (2026-09-08)
+
+The oldest open report — Anekbah's advert panels twinkling between two
+textures — closed from a reader's spot: they walked to a flickering sign and
+quit, the log kept the position, and `--snap-every 1` (new) captured 130
+consecutive frames there. The sign was covered in single-pixel dots of the
+other advert, re-rolled every frame: 1300 of its 4000 pixels.
+
+The 18 coincident shop-sign pairs ASSETS 4b lists are each the SAME four
+vertices in OPPOSITE winding (`Abooks02`: (0,1,2,3) and (1,0,3,2)) — a
+two-sided sign, one advert a side. The engine submits both (`CULLMODE =
+NONE`) and its strict `ZFUNC = GREATER` keeps the first drawn, because on a
+quantised z-buffer the two depths are EQUAL. `raster.cpp` compared each
+triangle's own float `1/izp`; the two windings split on different diagonals,
+their depths differ by up to 2e-7 relative (`tools/tie_probe.cpp` draws them
+alone and measures it), and the later face won wherever the noise fell its
+way. Any sub-pixel camera move re-rolls it — the flicker.
+
+The fix is a tie band: a depth within 2^-16 of the buffer's is rejected.
+**RECONSTRUCTION in one respect**: the engine's z-buffer bit depth is the
+device's and is not stated in the binary, so the band is relative and chosen
+to swallow float noise while still resolving 0.4 mm at 25 m — not D3D's
+absolute quantum. `engine: raster`'s pinned counts moved by twelve pixels
+(twelve ties in Aapkayl) and were re-pinned. `verify.py: engine: sign tie`,
+shown to fail with the plain compare (220 pixels of the second face).
+
+**The Vulkan backend, the same day.** A GPU compare cannot read the buffer
+back, a quantised `gl_FragDepth` still straddles its grid on about one pixel
+in a hundred, and a per-draw depth bias through the non-linear projection is
+hundreds of inches at street distance — so the tie is settled where it is
+decidable exactly, at SUBMIT: a face whose position set an earlier
+depth-writing face of the same geometry already claimed, in draw order, is
+degenerated in the vertex buffer (its three vertices collapsed to one) and
+rasterises nothing. A quad is the consecutive pair `buildGeometry` emits.
+Measured with `run_vulkan` from the reader's spot: 248 of Anekbah's 46415
+triangles (the 18 sign pairs and the same-material doubles), and **without
+the pass the GPU had been giving the SECOND face the win over the whole
+sign** — a Fanta advert where the pharmacy cross belongs, with no dots at
+all — which is the old report's "panel 2 stably wrong". Hardware breaks an
+exact tie by its own plane setup, consistently one way; the engine's rule is
+the first drawn, and both backends now impose it. `OMK_NO_TIE=1` leaves the
+fight in for a before/after, `OMK_TIE_LOG=1` lists every loser with its mesh.
+A residual twinkle on the glyphs is point sampling under a creeping camera,
+which is the engine's own filtering (`render states`) and what
+`--filter trilinear` exists to soften.
+
 ### The MIRROR reflects in the GAME, not only in the scene viewer
 
 `drawWithMirror` has been on the renderer boundary since 2026-09-01, and until

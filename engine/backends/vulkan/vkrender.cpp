@@ -55,7 +55,10 @@
 #include "o3de/renderer.h"
 
 #include <algorithm>
+#include <array>
+#include <set>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <map>
 #include <string>
@@ -263,6 +266,31 @@ private:
     std::map<const omk::Geometry*, std::pair<VkBuffer, VkDeviceMemory>> vbo_;
     std::map<const omk::Geometry*, std::size_t> vboN_;
     std::map<const omk::Geometry*, std::uint64_t> vboRev_;
+    // THE DEPTH TIE, resolved at SUBMIT (raster.cpp `kDepthTie` has the
+    // reading). Two faces on the same four vertices in opposite winding - the
+    // two SIDES of a shop sign, 18 pairs in Anekbah - are both submitted
+    // (CULLMODE = NONE) and the engine's strict test on a quantised z-buffer
+    // keeps the FIRST drawn on every pixel. The software rasterizer rejects a
+    // depth within 2^-16 of the buffer's; a GPU compare cannot read the
+    // buffer, a quantised `gl_FragDepth` still straddles its grid on ~1% of
+    // pixels, and a per-draw depth bias through the non-linear projection is
+    // hundreds of inches at street distance. So the tie is settled where it
+    // is decidable exactly: a face whose position set an earlier DEPTH-WRITING
+    // face of the same geometry already claimed, in draw order, can never win
+    // a pixel from it, and is DEGENERATED in the vertex buffer (its three
+    // vertices collapsed to one) so it rasterises nothing. Faces are walked in
+    // the order the draws arrive, once per geometry revision; a quad is the
+    // consecutive pair `buildGeometry` emits, (0,1,2)(0,2,3).
+    struct TieState {
+        std::uint64_t revision = 0;
+        std::set<std::array<std::uint32_t, 12>> quads;   // 4 sorted positions
+        std::set<std::array<std::uint32_t, 9>>  tris;    // 3 sorted positions
+        std::vector<std::uint8_t> done;                  // per triangle
+        long faces = 0, dropped = 0;
+        bool logged = false, touched = false;
+    };
+    std::map<const omk::Geometry*, TieState> tie_;
+    void resolveTies(const omk::Draw& d);
 
     Push             push_{};
     // the fog, held between begin() and each submit()
@@ -1492,6 +1520,89 @@ bool VulkanRenderer::uploadGeometry(const omk::Geometry* g) {
     return true;
 }
 
+void VulkanRenderer::resolveTies(const omk::Draw& d) {
+    // `OMK_NO_TIE=1` leaves the fight in, for a before/after.
+    static const bool off = std::getenv("OMK_NO_TIE") != nullptr;
+    if (off) return;
+    const omk::Geometry* g = d.geo;
+    const std::size_t ntri = g->corners.size() / 3;
+    auto& t = tie_[g];
+    if (t.revision != g->revision || t.done.size() != ntri) {
+        const bool logged = t.logged;
+        t = TieState{};
+        t.revision = g->revision;
+        t.done.assign(ntri, 0);
+        t.logged = logged;
+    }
+    const auto bits = [](float f) { std::uint32_t u; std::memcpy(&u, &f, 4); return u; };
+    const auto samePos = [&](std::size_t a, std::size_t b) {
+        const auto& p = g->corners[a]; const auto& q = g->corners[b];
+        return bits(p.x) == bits(q.x) && bits(p.y) == bits(q.y) && bits(p.z) == bits(q.z);
+    };
+    using P = std::array<std::uint32_t, 3>;
+    const auto pos = [&](std::size_t c) {
+        const auto& p = g->corners[c]; return P{bits(p.x), bits(p.y), bits(p.z)};
+    };
+    const bool writes = d.blend == omk::Blend::Opaque;
+    std::vector<std::size_t> losers;
+    const std::size_t t0 = d.start / 3, t1 = std::min(ntri, (d.start + d.count) / 3);
+    for (std::size_t tri = t0; tri < t1; ++tri) {
+        if (t.done[tri]) continue;
+        const std::size_t c = 3 * tri;
+        const bool quad = tri + 1 < t1 && !t.done[tri + 1] &&
+                          samePos(c, c + 3) && samePos(c + 2, c + 4);
+        ++t.faces;
+        if (quad) {
+            std::array<P, 4> ps{pos(c), pos(c + 1), pos(c + 2), pos(c + 5)};
+            std::sort(ps.begin(), ps.end());
+            std::array<std::uint32_t, 12> key;
+            for (int k = 0; k < 4; ++k) for (int j = 0; j < 3; ++j) key[3 * k + j] = ps[k][j];
+            t.done[tri] = t.done[tri + 1] = 1;
+            if (t.quads.count(key)) { losers.push_back(tri); losers.push_back(tri + 1); }
+            else if (writes) t.quads.insert(key);
+            ++tri;
+        } else {
+            std::array<P, 3> ps{pos(c), pos(c + 1), pos(c + 2)};
+            std::sort(ps.begin(), ps.end());
+            std::array<std::uint32_t, 9> key;
+            for (int k = 0; k < 3; ++k) for (int j = 0; j < 3; ++j) key[3 * k + j] = ps[k][j];
+            t.done[tri] = 1;
+            if (t.tris.count(key)) losers.push_back(tri);
+            else if (writes) t.tris.insert(key);
+        }
+    }
+    if (losers.empty()) return;
+    // `OMK_TIE_LOG=1`: every loser, with the mesh it came from
+    static const bool tieLog = std::getenv("OMK_TIE_LOG") != nullptr;
+    if (tieLog)
+        for (const std::size_t tri : losers)
+            std::printf("[tie] triangle %zu mesh %d at %.1f %.1f %.1f (draw start %zu count %zu)\n",
+                        tri, 3 * tri < g->cornerMesh.size() ? g->cornerMesh[3 * tri] : -1,
+                        g->corners[3 * tri].x, g->corners[3 * tri].y, g->corners[3 * tri].z,
+                        d.start, d.count);
+    const auto vb = vbo_.find(g);
+    const auto vn = vboN_.find(g);
+    if (vb == vbo_.end() || vn == vboN_.end()) return;
+    void* p = nullptr;
+    const VkDeviceSize bytes = vn->second * sizeof(GpuVert);
+    if (vkMapMemory(dev_, vb->second.second, 0, bytes, 0, &p) != VK_SUCCESS) return;
+    auto* v = static_cast<GpuVert*>(p);
+    for (const std::size_t tri : losers) {
+        const std::size_t c = 3 * tri;
+        if (c + 2 >= vn->second) continue;
+        v[c + 1].x = v[c + 2].x = v[c].x;
+        v[c + 1].y = v[c + 2].y = v[c].y;
+        v[c + 1].z = v[c + 2].z = v[c].z;
+    }
+    vkUnmapMemory(dev_, vb->second.second);
+    t.dropped += static_cast<long>(losers.size());
+    // Reported at `end()`, once per geometry - a set's batches arrive over
+    // many submits, and a running total after the first read as the whole
+    // (it did: 30 for Anekbah's 248), while not every triangle is ever
+    // submitted, so "all walked" never comes.
+    t.touched = true;
+}
+
 void VulkanRenderer::setViewport(const omk::View& view) {
     const int vw = view.letterboxed() ? view.vw : w_;
     const int vh = view.letterboxed() ? view.vh : h_;
@@ -1668,6 +1779,7 @@ void VulkanRenderer::begin(const omk::View& view) {
 void VulkanRenderer::submit(const omk::Draw& d) {
     if (!recording_ || !d.geo || !d.count) return;
     if (!uploadGeometry(d.geo)) return;
+    resolveTies(d);
     st_.triangles += static_cast<long>(d.count / 3);
 
     const int k = d.blend == omk::Blend::Opaque ? 0
@@ -1768,6 +1880,14 @@ bool VulkanRenderer::drawMirrorScene(const omk::View& v, const omk::View& refl,
 }
 
 void VulkanRenderer::end() {
+    // The depth-tie pass's report, once per geometry with losers.
+    for (auto& [g, t] : tie_)
+        if (t.touched && !t.logged && t.dropped > 0 && g->corners.size() > 3000) {
+            t.logged = true;
+            std::printf("vulkan: depth tie - %ld of %ld triangles coincide with an earlier face "
+                        "and are degenerated so the first drawn wins, as the engine's strict test "
+                        "decides\n", t.dropped, static_cast<long>(g->corners.size() / 3));
+        }
     if (!recording_) return;
     vkCmdEndRenderPass(cb_);
     // The colour attachment ends in TRANSFER_SRC_OPTIMAL (the render pass says

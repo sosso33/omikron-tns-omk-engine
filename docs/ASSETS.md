@@ -1099,6 +1099,25 @@ frame driving the face, through the same data path the browser app uses:
   order within one load, so the pair member with the **lower material index**
   is drawn first and, under a strict depth test, wins.
 
+  **And the pairs are the two SIDES of a sign (2026-09-08).** Each is the
+  same four vertices walked the other way round — `Abank03`: (2,3,1,0) on
+  material 1 and (3,2,0,1) on material 9; `Abooks02`: (0,1,2,3) and
+  (1,0,3,2) — 18 of 18 reversed, which is why the UVs differ completely: one
+  advert a side, and with `CULLMODE = NONE` the engine submits both from
+  either side and the strict `GREATER` on a quantised z-buffer shows the
+  first drawn. **The panel FLICKER was the port's float compare breaking
+  that tie**: the two windings split the quad on different diagonals, their
+  interpolated depths differ by up to 2e-7 relative, and the later face won
+  wherever the noise fell — single-pixel dots of the other advert, re-rolled
+  by every sub-pixel camera move. Found from a reader's spot in Anekbah with
+  `--snap-every 1`, 1300 of a sign's 4000 pixels changing per frame; fixed by
+  a 2^-16 relative tie band in `raster.cpp`, which is a reconstruction of the
+  buffer's quantisation and not its bit depth. The Vulkan backend settles it
+  at submit instead — a face whose positions an earlier depth-writing face
+  already claimed is degenerated — because a GPU compare cannot read its
+  buffer; without that the GPU gave the SECOND face the whole sign, which is
+  the "stably wrong" panel of the same report. `verify.py: engine: sign tie`.
+
   That is why "material-id order looks right" — it was never an accident of
   numbering. It is the slot order, seen through the one case where the two
   coincide.

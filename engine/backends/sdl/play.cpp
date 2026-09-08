@@ -10834,6 +10834,17 @@ int main(int argc, char** argv) {
             static const bool noMirror = std::getenv("OMK_NO_MIRROR") != nullptr;
             const omk::MirrorPlane& wmp =
                 worldSlots[static_cast<std::size_t>(session.shownSlot() & 1)].mirror;
+            {
+                // `OMK_CAMLOG=1`: the frame's camera as DRAWN, every frame,
+                // after every writer above. A creep of a hundredth of a unit
+                // is invisible in any still and is what makes a point-sampled
+                // texture twinkle (todo/omk-play 88).
+                static const bool camLog = [] { const char* e = std::getenv("OMK_CAMLOG"); return e && *e == '1'; }();
+                if (camLog)
+                    std::fprintf(stderr, "[cam] frame %ld eye %.4f %.4f %.4f at %.4f %.4f %.4f fov %.3f\n",
+                                 n, view.cam.eye[0], view.cam.eye[1], view.cam.eye[2],
+                                 view.cam.at[0], view.cam.at[1], view.cam.at[2], view.cam.hfovDeg);
+            }
             const auto mst = omk::drawWithMirror(world, draws, view,
                                                  noMirror ? omk::MirrorPlane{} : wmp);
             if (mst.active != mirrorLive || (mst.maskPixels > 0 && !mirrorSeen)) {

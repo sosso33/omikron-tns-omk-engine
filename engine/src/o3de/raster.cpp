@@ -132,6 +132,9 @@ Projected project(const RCamera& c, const float p[3]) {
     return toScreen(b, c, v);
 }
 
+// The relative depth quantum of the tie rule in `drawGeometry` (see there).
+static constexpr float kDepthTie = 1.0f / 65536.0f;
+
 void clearDepth(std::vector<float>& depth, int w, int h) {
     depth.assign(static_cast<std::size_t>(w) * h,
                  std::numeric_limits<float>::infinity());
@@ -293,7 +296,26 @@ RasterStats drawGeometry(Surface& fb, std::vector<float>& depth,
                     if (izp <= 0) continue;
                     const float z = 1.0f / izp;
                     const std::size_t di = static_cast<std::size_t>(y) * fb.w + x;
-                    if (z >= depth[di]) { ++st.depthRejects; continue; }
+                    // THE TIE. `ZFUNC = GREATER` on `rhw` is STRICT (ASSETS
+                    // 4b): of two faces at the same depth the first drawn
+                    // keeps the pixel, and with `CULLMODE = NONE` that is how
+                    // a two-sided shop sign - two quads on the same four
+                    // vertices in opposite winding, one material a side
+                    // (`Abank03`: (2,3,1,0) mat 1 and (3,2,0,1) mat 9) -
+                    // shows ONE advert. In the engine the depths compare
+                    // equal because the z-buffer is quantised. Here the two
+                    // windings split on different diagonals, so their
+                    // `1/izp` differ in the last bits and the later face won
+                    // wherever the noise fell its way: dots of the other
+                    // advert, re-rolled every time the camera crept
+                    // (the Anekbah panel FLICKER, todo/standing-unknowns 4).
+                    // A depth within one part in 2^16 of the buffer's is a
+                    // tie and is rejected. RECONSTRUCTION in one respect: the
+                    // engine's z-buffer bit depth is the device's and was not
+                    // read out of the binary, so the quantum is a relative
+                    // 2^-16 chosen to swallow float noise (~2^-22) while
+                    // still resolving 0.4 mm at 25 m - not D3D's absolute one.
+                    if (z >= depth[di] * (1.0f - kDepthTie)) { ++st.depthRejects; continue; }
 
                     const float a0 = w0 * iz[0] / izp, a1 = w1 * iz[1] / izp,
                                 a2 = w2 * iz[2] / izp;

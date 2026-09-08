@@ -1,0 +1,139 @@
+; ---------------------------------------------------------------------------
+; omk.ini - the game's settings, and this port's.
+;
+;     build/omk-play <gamedata> <tables> --config omk.ini
+;
+; EVERY ROW IS COMMENTED OUT, and that is the point: with nothing set, the
+; port runs exactly as the game does. Uncomment only what you mean to change.
+;
+; Copy it somewhere and edit the copy - this file is the template and is not
+; read by anything.
+;
+; ---- WHERE A SETTING COMES FROM, and which source wins -------------------
+;
+; There are three, in order of increasing authority:
+;
+;   1. the DEFAULTS compiled into the engine (`sub_41F4C0`);
+;   2. this file - `[Preferences]` is the engine's OWN section and its key
+;      names are the binary's, not names invented here;
+;   3. the SAVE FILE's 3496-byte header, which carries all 74 option rows and
+;      is written on every slot save. It is later than the ini, so it WINS for
+;      anything a player has touched in the options menu.
+;
+; ...and a command-line flag beats all three, because it is the most recent
+; word of all. `docs/GAME_STATE.md` 8a, `todo/options-config.md`.
+;
+; So: with a save loaded, editing `[Preferences]` here may change nothing.
+; That is the engine's own precedence and not a fault.
+; ===========================================================================
+
+
+[Preferences]
+; The engine's own section. The 65 keys the binary reads are in
+; `verify.py: preferences keys`; the ones below are those this port acts on.
+
+; --- options menu, "Vidéo" -------------------------------------------------
+
+; Row 3, "Distance de clipping" - in METRES against an inch world unit, and it
+; sizes FOUR things at once: the visible-set radius, both render-bucket splits
+; (x0.25 and x0.95) and the fog's range. The menu offers five:
+;   25 Très proche | 50 Proche | 100 Intermédiaire | 150 Loin | 200 Très loin
+; A set's own clip distance is used unless it is 0 or exceeds this, so the
+; option can only ever REDUCE. Default 50.
+;clipdistance = 50
+
+; Row 4, "Affichage du ciel" - 0 Non, 1 Oui. The sky is a flat painted CEILING
+; (a 12x12 quad grid, not a dome) that follows the camera in x and z. Default 1.
+;displaysky = 1
+
+; Row 5, "Affichage des ombres" - 0 Non, 1 Oui. The character shadows: a soft
+; blob under each of a set of BONES, how many decided by row 7 below.
+; `docs/ASSETS.md` 4d. Default 1.
+;displayshadows = 1
+
+; --- the device rows -------------------------------------------------------
+
+; Row 2, "Résolution". The interface is authored at 640x480 and scaled.
+;screen_x = 640
+;screen_y = 480
+
+; --- options menu, "Audio" -------------------------------------------------
+;
+; ALL THREE ARE ATTENUATIONS, not volumes: 0 is full and 100 is silent. That
+; is the sense the ini, the save header and `Music_SetVolume` all use, and the
+; engine's default is 0 for each - so a larger number is quieter.
+
+; Row 10, "Volume des dialogues"
+;DialogAttenuation = 0
+; Row 11, "Volume des musiques"
+;music = 0
+; Row 12, "Volume des effets sonores"
+;FxAttenuation = 0
+
+; --- the mouse -------------------------------------------------------------
+;MouseSensX = 0
+;MouseSensY = 0
+
+
+[Options]
+; THIS PORT'S OWN SECTION, for the two option rows the engine has no ini key
+; for. They are not invented settings: both are real rows of the game's menu
+; and both persist in the save header. They simply have nowhere to live in the
+; engine's ini, so they live here.
+
+; Row 6, "Niveau d'activité dans les rues" - the CROWD DENSITY, and it is a
+; SPACING rather than a count: `Slider_Init` spawns a pedestrian every
+; `39 * (5 - level) * h[3]` units along a lane, so a HIGHER level is a BUSIER
+; street. The menu offers five:
+;   0 Très faible | 1 Faible | 2 Intermédiaire | 3 Important | 4 Très important
+; It thins the pedestrians only - the road traffic ignores it.
+; NO DEFAULT of the engine's: `sub_41F4C0` does not write this field, so the
+; docs' own table leaves it blank and the port declares 0. `docs/GAME_STATE.md`
+; 8a. Both shipped saves carry a value a player chose (4 and 3).
+;streetactivity = 0
+
+; Row 7, "Niveau de détail" - 0 Faible, 1 Intermédiaire, 2 Important.
+; It decides how many BONES cast a shadow: the chest always, plus the head and
+; the four leg bones from 1, plus the four arm bones at 2. An actor who is
+; neither the player nor his fight opponent always draws one level coarser.
+; No engine default either, for the same reason as row 6 above; the port
+; declares 0, which casts the chest alone.
+;levelofdetail = 0
+
+
+[Enhancements]
+; NOT THE GAME. Everything in this section is something the original never
+; did, and every one of them is OFF unless written here. Only the Vulkan
+; backend draws them - the software renderer stands where Direct3D stood and
+; draws what the game drew - with one stated exception, noted below.
+; `todo/enhancements.md` carries the list and the evidence.
+
+; MSAA samples per pixel: 0 off, else 2, 4 or 8 (the largest the device
+; supports at or below what is asked). The original sets ANTIALIAS off.
+;antialiasing = 0
+
+; Texture filtering: nearest | bilinear | trilinear (or 0 | 1 | 2).
+; The original samples POINT with no mip chain, so `nearest` is the game's
+; picture. `trilinear` generates a mip chain at upload. The colour key travels
+; in the texture's alpha so a filtered edge does not fringe.
+;texturefiltering = nearest
+
+; Anisotropic filtering, 1 to 16; 1 is off. With trilinear only.
+;anisotropy = 1
+
+; Character shadows: classic | fitted | mapped (or 0 | 1 | 2).
+; SUBORDINATE to `displayshadows` above - with that off, nothing draws
+; whatever this says.
+;   classic  what the engine draws: one flat blob per bone, laid at the height
+;            probed under the bone's own centre, so at a step it is cut off
+;            dead at the lip;
+;   fitted   the same blobs, subdivided and laid on the surface under them, so
+;            they follow a kerb, a slope and a stair. This one is NOT
+;            backend-gated - it changes the geometry the port generates rather
+;            than how a backend rasterises it, and two backends building
+;            different geometry would break the property the renderer boundary
+;            rests on;
+;   mapped   a real shadow map, cast by the set's OWN authored lights (153 of
+;            Anekbah's 155 are street lamps pointing straight down). Characters
+;            cast, the world receives. Vulkan only.
+;shadowquality = classic
