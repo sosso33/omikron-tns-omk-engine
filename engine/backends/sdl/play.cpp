@@ -10127,6 +10127,18 @@ int main(int argc, char** argv) {
                     // lower the body, a CONSTANT anchor is right and the
                     // float came from somewhere else; if it barely moves
                     // while the legs bend, the body never crouches at all.
+                    if (std::getenv("OMK_PLY") && (n % 4) == 0) {
+                        float lo = -1e9f, hi = 1e9f;
+                        for (const auto& c : playerPosed.corners) {
+                            if (c.y > lo) lo = c.y;
+                            if (c.y < hi) hi = c.y;
+                        }
+                        std::printf("DBG ply f%ld %-9s pf %2d  ground %+8.2f  lowest %+8.2f"
+                                    "  gap %+7.2f  head %+8.2f  rootDrop %+6.2f\n",
+                                    n, player->clipName().c_str(), player->poseFrame(),
+                                    player->pos()[1], lo, lo - player->pos()[1], hi,
+                                    rootDrop);
+                    }
                     if (player->variantCount() > 1) {
                         float lo = -1e9f;
                         for (const auto& c : playerPosed.corners)
