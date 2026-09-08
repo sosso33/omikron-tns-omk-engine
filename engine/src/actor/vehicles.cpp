@@ -570,6 +570,19 @@ void RideMachine::tick(float dt, float toTarget, float toPlayer, bool ahead) {
 // port's own read of `Slider_Init` already identified as slot 0, the player's
 // reserved slider; here the spawner picks the first dead slot, which is the
 // same thing for a pool that has one call out at a time.
+bool Sliders::arriveAt(const float target[3]) {
+    if (!callSlider(target)) return false;          // the plan, the slot, the reservation
+    const SliderCall c = planSliderCall(track_, target, counter_);
+    if (!c.ok()) return false;
+    // `sub_452CC0` puts the vehicle AT the lane point the search chose - not
+    // `c.place`, the set-back at the lane's origin that a called slider
+    // drives down from.
+    const float yaw = static_cast<float>(std::atan2(c.dir[0], c.dir[2]) * 57.29577951308232);
+    placeCalled(c.at.at, yaw);
+    mountCalled();                                   // aboard - he never got out
+    return sendCalledTo(target);                     // state 6
+}
+
 bool Sliders::callSlider(const float target[3]) {
     if (!loaded_ || !track_.valid) return false;
     if (called_ >= 0) return true;              // one call at a time
@@ -732,6 +745,11 @@ bool Sliders::calledFrame(float pos[3], float localX[3], float localZ[3]) const 
     // camera 9 all read row 0, all three moved to the far flank together and
     // stayed consistent with each other. Nothing self-consistent could see
     // it; a reader walking up to the slider and being refused could.
+    // A mirror stood here for an hour on 2026-09-08. The door clip's tracks,
+    // read by their +0 index, put the swing on the far door and the man
+    // looked mirrored; the track HEADERS carry the bone's NAME at +4, and
+    // the one that moves is `SlPorteZG` - on the file's -X, his side, the
+    // side these rows already gave. No mirror: row 0 as the engine stores it.
     localX[0] = -fz;  localX[1] = 0.0f; localX[2] =  fx;   // row 0
     localZ[0] = -fx;  localZ[1] = 0.0f; localZ[2] = -fz;   // row 2
     return true;

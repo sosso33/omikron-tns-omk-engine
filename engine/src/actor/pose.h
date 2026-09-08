@@ -53,6 +53,7 @@
 #include <cstdint>
 #include <array>
 #include <span>
+#include <string>
 #include <vector>
 
 namespace omk {
@@ -68,6 +69,7 @@ struct NodeTracks {
     int  frames = 0;
     int  rootTrack = 0;
     std::vector<std::int32_t> ids;         // mesh index per track
+    std::vector<std::string> names;        // the bone's name per track (+4), for a clip authored against another model's numbering
     std::vector<std::vector<Quatf>> quats; // [frame][track]
     std::vector<std::array<float, 3>> trans;   // [frame], accumulated
     bool valid() const { return count > 0 && frames > 0; }

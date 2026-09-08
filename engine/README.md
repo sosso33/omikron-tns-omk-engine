@@ -2339,10 +2339,53 @@ and the RELEASED line.
 
 **Found and deliberately left**: `Sliders::setPlayer` has no caller, so the
 class's player-aware arms have never run - the release takes its own
-`setRider`; and `sub_4521E0`'s model swap, now LOCATED: `dword_538E28` is the
-slider model TABLE (88-byte rows) and `dword_538E2C`/`dword_538E30` are row
-0's `+4`/`+8`, the two sub-object handles the pool knows as `v16[1]`/`v16[2]`
-- what the swap shows, given the clip already animates the door, is unread.
+`setRider`.
+
+**THE MODEL SWAP, read and ported** (the reader: *"the current model when
+Kay'l enters the slider has no modelised interior"*). `dword_538E28` is the
+slider model TABLE (88-byte rows); `sub_453A70` fills row `+4..+16` with the
+model's four root sub-objects SORTED heaviest first by vertices + faces -
+`SlBassin` 1527 corners, `slider_fl` 750, `SlBasA` 366, `SlBasB` 144 - and
+`dword_538E2C`/`dword_538E30` are row 0's `+4`/`+8`. The reserved slider is
+created on `+8`, `slider_fl`: a SHELL, no interior and - `mesh_list`'s ids -
+NO DOOR. `SlPorteZG` (the hinge) is `SlBassin`'s child and `SlPorteG` (the
+panel `SLF_112` turns) is the hinge's; the three shells carry none.
+`sub_4521E0` toggles the sub-node to `+4`, the cockpit, at `MDACTION`'s snap
+- before `H_SLDIN`, which is what puts a door under the clip - and
+`sub_4570F0` toggles it back before the exit clip. Ported as the staged root
+for the called vehicle while boarding or aboard; rendered, the red well opens
+along the flank and he sits in it. `engine: slider door` asserts the door
+parentage, shown to fail by shifting the parent ids.
+
+**A JOURNEY TO ANOTHER AREA, and the engine does not drive it either.**
+`sub_40E630` loads the area, then `sub_452570` runs against the NEW pool: the
+lane nearest the destination, a vehicle relinked THERE by `sub_452CC0` - at
+the lane point, not the lane's top a call drives down from - and state 6,
+which `sub_456530` case 6 finds within its 117 at once. So the arrival, the
+exit clip, camera 17 and the release all run in the new city under the
+load's fade; only the drive is skipped. `Sliders::arriveAt` is that arm. The
+port had dropped him at the address bare. Replayed from Jaunpur: loaded,
+relinked at the lane nearest address 0, out at 5445 -580, camera 17,
+`MDSLIDOU`, `RELEASED`. `engine: slider journey area`, `--slow`.
+
+**`--board`, a harness flag** (beside `--ride`): when the called slider goes
+OPEN it puts him at the door point the viewer already prints and presses the
+action button once; `MDACTION`'s side and reach then run for real on where he
+stands. It exists because a scripted walk has to find the door side of a
+vehicle whose park point moves with every call - the call parks at the lane
+point nearest the CALLER, so standing where the last door was moves the next
+one - and six runs went into that once the side was mirrored. Both journey
+checks use it.
+
+**The side, one more time - by the door's NAME.** The door clip's track
+headers carry the bone's name at `+4`, which the `.3DA` reader had never
+kept; the track that moves is `SlPorteZG`, the PARENT copy of the door on
+the file's -X, and its coincident child `SlPorteG` follows it, so the well
+opens and nothing stays over the hole. Read by index the swing landed on the
+child alone and the parent copy stayed shut over him; read by id it landed
+on `SlPorteD`, the far door, and the man looked mirrored - a mirror went
+into `calledFrame` on that reading and came out an hour later. `clipTracks`
+keeps the names now and the viewer binds the slider's clips by them.
 
 **Two closed the same evening.** The suspected 50 cm seat residual is NOT
 there: `build/slider_body` measures `SLI_FN.3DO`'s four root sub-objects as

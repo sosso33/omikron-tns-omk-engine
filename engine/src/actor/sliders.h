@@ -490,6 +490,11 @@ public:
     // the same 117-unit arrival test ends at state 4 and camera mode 10.
     // -> false when the target has no vehicle lane within reach.
     bool sendCalledTo(const float target[3]);
+    // `sub_452570` after `sub_40E630` has LOADED another area: the lane
+    // nearest `target` in the NEW pool, a vehicle relinked THERE
+    // (`sub_452CC0`, not at the top of the lane), the rider aboard and state
+    // 6 - which `sub_456530` case 6 then finds within its 117 at once.
+    bool arriveAt(const float target[3]);
     // ...and whether that journey has ARRIVED (state 6 -> 4 this tick or since).
     bool journeyArrived() const { return called_ >= 0 && callRide_.state == 4 && journeyDone_; }
     // Put the called vehicle where the ride is, so it is DRAWN under him.

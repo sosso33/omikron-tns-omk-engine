@@ -1515,6 +1515,13 @@ int main(int argc, char** argv) {
     // harness. The flight model is the engine's (`actor/slider.h`); what this
     // skips is how a slider gets to you, which is `sub_452570`'s other arm.
     bool rideArg = false;
+    // `--board`: HARNESS. When the called slider goes OPEN, put him at its
+    // door point and press the action button once, so a check can board
+    // without a scripted walk that has to find the door side of a vehicle
+    // whose park point moves with every call. The gate - `MDACTION`'s side
+    // and reach - still runs for real on where he is put.
+    bool boardArg = false;
+    bool boardPress = false;
     bool mountSpent = false;    // the action button is edged, not held
     bool calledOpenTold = false;
     bool boarded = false;           // aboard, `Slider_TickRide` not yet driving
@@ -1692,6 +1699,7 @@ int main(int argc, char** argv) {
         else if (a == "--area" && i + 1 < argc) areaArg = std::atoi(argv[++i]);
         else if (a == "--address" && i + 1 < argc) addressArg = std::atoi(argv[++i]);
         else if (a == "--ride") rideArg = true;
+        else if (a == "--board") boardArg = true;
         // A HARNESS FLAG, not a port: put an object into the carried list so
         // a flow can be exercised from a save that does not carry it. VM
         // opcode 50 `inventory.add` is what the game uses; this writes the
@@ -4043,7 +4051,8 @@ int main(int argc, char** argv) {
         // is the first screen opened from inside the world.
         if (walk) in.setRepeatMask(omk::kUiRepeatMask);
         else if (adventure) in.setRepeatMask(0);
-        const std::uint32_t bits = in.frame(st);
+        std::uint32_t bits = in.frame(st);
+        if (boardPress) { bits |= 0x10u; boardPress = false; }   // `--board`, one press
         // The EDGES, taken here rather than at each consumer so a frame that
         // never reaches one - a dialogue, a cutscene, a screen - cannot leave
         // the latch stale and manufacture a press on the way back. This is
@@ -4948,6 +4957,17 @@ int main(int argc, char** argv) {
                                         "within 4.00 m of that side (its -X, heading "
                                         "%.2f %.2f) and press the action button\n",
                                         door[0], door[1], door[2], az[0], az[2]);
+                            if (boardArg && !boarded && !boarding) {
+                                float feet[3] = {door[0], door[1] + player->cameraLift(), door[2]};
+                                const float yaw = static_cast<float>(
+                                    std::atan2(at[0] - door[0], -(at[2] - door[2])) * 57.29577951308232);
+                                player->placeAt(feet, yaw);
+                                session.setPlayerPosition(player->pos(), yaw);
+                                boardPress = true;
+                                std::printf("harness: --board put him at the door point %.0f %.0f %.0f "
+                                            "facing the slider, and presses the action button\n",
+                                            feet[0], feet[1], feet[2]);
+                            }
                         }
                         std::printf("slider: OPEN at %.0f %.0f %.0f - walk to "
                                     "it and press the action button\n",
@@ -5119,8 +5139,19 @@ int main(int argc, char** argv) {
                 if (boarded && !ride) {
                     float at[3];
                     if (session.sliders().calledAt(at)) {
+                        // `sub_457F50`: the rider's +248 = the RIDE's y + 10,
+                        // and the ride's y is the vehicle's HOVERING height -
+                        // `SliderRide` flies `kHover` (30.75) above the floor -
+                        // so his PELVIS sits 10 below the hovering node, 20.75
+                        // above the road: a seat. `calledAt` is the body point
+                        // at ROAD level (the node is drawn 30.75 above it), and
+                        // this class takes FEET, so: road - 30.75 + 10 + lift.
+                        // It read `at.y + 10` in feet-space until 2026-09-08,
+                        // which sat him 11 units (28 cm) too high.
                         const float seat[3] = {at[0],
-                                               at[1] + static_cast<float>(omk::SliderRide::kNodeUp),
+                                               at[1] - static_cast<float>(omk::SliderRide::kHover)
+                                                     + static_cast<float>(omk::SliderRide::kNodeUp)
+                                                     + (player ? player->cameraLift() : 0.0f),
                                                at[2]};
                         const float yaw = session.sliders().calledYaw();
                         session.setPlayerPosition(seat, yaw);
@@ -6728,21 +6759,42 @@ int main(int argc, char** argv) {
                     // which is the arrive arm, and says so.
                     const auto* d = known[static_cast<std::size_t>(row)];
                     const int wasArea = state.currentArea();
-                    if (boarded) {
-                        session.sliders().dismountCalled();
-                        boarded = false;
-                        std::printf("slider: journey to another area - the "
-                                    "drive across a circuit change is not "
-                                    "ported; loading and placing instead\n");
-                    }
+                    // ...FROM ABOARD, and it is not a bare placement: after
+                    // `sub_40E630`'s load, `sub_452570` runs against the NEW
+                    // pool - the lane nearest the destination, `sub_452CC0`
+                    // relinking a vehicle THERE (not at the top of the lane),
+                    // state 6 - so `sub_456530` case 6 finds it within its 117
+                    // at once and it ARRIVES: the stop, the exit clip, camera
+                    // 17, the release. This dropped him at the address bare.
+                    const bool wasAboard = boarded;
                     if (d->area != wasArea) {
                         state.setCurrentArea(static_cast<std::int16_t>(d->area));
                         session.loadArea(d->area);
                     }
+                    bool arrived = false;
+                    if (wasAboard) {
+                        const auto& rs2 = session.residentSlot(session.activeSlot());
+                        const omk::Address* ad2 = nullptr;
+                        for (const auto& x : rs2.addresses) if (x.id == d->bit) ad2 = &x;
+                        if (ad2 && session.sliders().arriveAt(ad2->pos)) {
+                            journeyTo = d->bit;
+                            arrived = true;
+                            std::printf("slider: JOURNEY to '%s' in area %d - loaded, "
+                                        "the slider relinked at the lane nearest address "
+                                        "%d with him aboard, state 6\n",
+                                        d->name.c_str(), d->area, d->bit);
+                        } else {
+                            session.sliders().dismountCalled();
+                            boarded = false;
+                            std::printf("slider: '%s' - area %d has no road within reach "
+                                        "of address %d; placing him instead\n",
+                                        d->name.c_str(), d->area, d->bit);
+                        }
+                    }
                     // The address whose `+14` is this record's own bit - the
                     // one number that joins the two tables.
                     const bool changed = d->area != wasArea;
-                    const bool placed = session.placeActorAt(d->bit);
+                    const bool placed = arrived ? true : session.placeActorAt(d->bit);
                     session.requestCamera(0, 0);
                     // `Screen_Fade(0)`: mode 4, 60 frames, black.
                     session.startColourFade(4, 0u, 60.0f);
@@ -6762,12 +6814,13 @@ int main(int argc, char** argv) {
                         playerReady = false; adventure = false;
                         forceAdventure = true;
                     }
-                    if (player) {
+                    if (player && !arrived) {
                         const float at[3] = {session.playerPos()[0],
                                              session.playerPos()[1],
                                              session.playerPos()[2]};
                         player->placeAt(at, session.playerYaw());
                     }
+                    if (!arrived)
                     std::printf("slider: '%s' - area %d -> %d, address %d %s"
                                 " at %.0f %.0f %.0f facing %.0f\n",
                                 d->name.c_str(), wasArea, d->area, d->bit,
@@ -9385,8 +9438,31 @@ int main(int argc, char** argv) {
                     if (vx * vx + vy * vy + vz * vz > vreach * vreach) continue;
                     if (!sv.mo) sv.mo = charModelFor(v.model);
                     if (!sv.mo || !sv.mo->ready) continue;
+                    // ---- `sub_4521E0`, THE MODEL SWAP ----------------------
+                    // The slider model TABLE (`dword_538E28`, 88-byte rows)
+                    // holds its four root sub-objects at +4..+16 sorted
+                    // heaviest first by `sub_453A70` (vertices + faces):
+                    // SlBassin 1527 corners, slider_fl 750, SlBasA 366, SlBasB
+                    // 144. The reserved slider is created on +8 (slider_fl -
+                    // `CharModel::root` here, a shell with no interior and NO
+                    // DOOR: both door meshes hang off SlBassin) and
+                    // `sub_4521E0` toggles the sub-node to +4, SlBassin, the
+                    // COCKPIT, at `MDACTION`'s snap - which is what puts a
+                    // door under the clip - and `sub_4570F0` toggles it back
+                    // before the exit clip. A reader saw the shell: *"the
+                    // current model when Kay'l enters the slider has no
+                    // modelised interior"*.
+                    const bool swapped = (boarding || boarded) && static_cast<int>(i) == pd.calledVehicle();
+                    const int wantRoot = swapped ? heaviestRootOf(*sv.mo)
+                                                 : (v.lodBase == 0 ? heaviestRootOf(*sv.mo) : sv.mo->root);
+                    if (sv.built && sv.lodRoot != wantRoot) sv.built = false;
                     if (!sv.built) {
-                        sv.lodRoot = v.lodBase == 0 ? heaviestRootOf(*sv.mo) : sv.mo->root;
+                        sv.lodRoot = wantRoot;
+                        if (static_cast<int>(i) == pd.calledVehicle() &&
+                            wantRoot >= 0 && static_cast<std::size_t>(wantRoot) < sv.mo->meshes.size())
+                            std::printf("slider: the called vehicle is staged on sub-object "
+                                        "'%s'%s\n", sv.mo->meshes[static_cast<std::size_t>(wantRoot)].name,
+                                        swapped ? " - the COCKPIT, sub_4521E0's swap" : "");
                         const omk::Geometry& rest = lodRestFor(v.model, *sv.mo, sv.lodRoot);
                         const auto pose = omk::composePose(sv.mo->meshes, omk::NodeTracks{}, 0, false);
                         omk::applyPose(sv.atRest, rest, sv.mo->meshes, pose);
@@ -9413,7 +9489,38 @@ int main(int argc, char** argv) {
                             if (!a.empty()) doorIn  = omk::clipTracks(a);
                             if (!b.empty()) doorOut = omk::clipTracks(b);
                         }
-                        const omk::NodeTracks& dt = boarding ? doorIn : doorOut;
+                        const omk::NodeTracks& dt0 = boarding ? doorIn : doorOut;
+                        // THE TRACKS ARE KEYED BY NODE ID, NOT MESH INDEX. The
+                        // clip names its five tracks with the bytes 0,3,1,4,2
+                        // and `SLI_FN.3DO`'s ids run SlBassin 0, SlPorteZG 1,
+                        // SlPorteG 2, SlPorteZD 3, SlPorteD 4 - the cockpit and
+                        // its four door parts, exactly a door clip's set. Read
+                        // as indices they land on two SHELLS, and the one
+                        // moving track fell on the wrong panel. `clipTracks`
+                        // fills `ids` as indices (right for the scene clips it
+                        // was written for); remapped through the model's ids.
+                        omk::NodeTracks dt = dt0;
+                        // BY NAME (+4 of the track header), not by id or index:
+                        // the mover is named `SlPorteZG`, the parent copy on the
+                        // G side; its child `SlPorteG` follows it, so the two
+                        // coincident copies swing together and nothing stays
+                        // over the hole. Read by index the swing landed on
+                        // `SlPorteG` alone; by id on `SlPorteD`, the far door.
+                        for (std::size_t ti = 0; ti < dt.ids.size(); ++ti) {
+                            int idx = -1;
+                            const std::string& nm = ti < dt.names.size() ? dt.names[ti] : std::string();
+                            for (std::size_t k = 0; k < sv.mo->meshes.size(); ++k)
+                                if (nm == sv.mo->meshes[k].name) { idx = static_cast<int>(k); break; }
+                            dt.ids[ti] = idx;
+                        }
+                        static bool doorTold = false;
+                        if (!doorTold && dt.valid()) {
+                            doorTold = true;
+                            std::printf("slider: the door clip's tracks by name ->");
+                            for (auto id : dt.ids)
+                                std::printf(" %s", id >= 0 ? sv.mo->meshes[static_cast<std::size_t>(id)].name : "?");
+                            std::printf("\n");
+                        }
                         if (dt.valid()) {
                             int f = player->poseFrame();
                             if (f < 0) f = 0;

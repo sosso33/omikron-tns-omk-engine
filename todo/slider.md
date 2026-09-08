@@ -464,6 +464,21 @@ different bug and several were the same kind of mistake.
 | **blocks the road** after he gets out | THREE causes in a row: (1) `RideMachine` went to 0 but `Vehicle::state` stayed 7 and `vehicleDrive` skips `state != 0`; (2) once written, the hand-back was undone one line later by the "stopped where it arrived" arm (`was != state`, 0 is neither 2 nor 6 → back to OPEN); (3) `callRide_.tick(dt, d, 0.0f, false)` — `toPlayer` and `ahead` were HARD-CODED, so `case 7`'s `> 300 && ahead` could never be true | tested first; `sub_456530` case 7's own test `dx·sin y − dz·cos y > 0`, fed by `setRider` |
 | ends **beside** the slider, not in it | the door snap is right and so is the rotated root delta (traced: per-tick direction `(−0.76, +1.10)` is the seat's) — but he moved `(+44.8, −4.7)` net, 25 units of it in the first five frames. **The crowd push**: `MDACTION` snaps him INSIDE the vehicle's body sphere and `Actor_TickNpc`'s push shoved him out every frame faster than the clip walked him in. ACTOR_STATE 6 and 8 never run `Actor_TickNpc` | no push while boarding or leaving |
 
+**And the side — settled by the door's NAME, after two wrong readings.**
+The door clip's five tracks carry a mesh index at `+0` (`0,3,1,4,2`) and,
+what the port's `.3DA` reader had never kept, **the bone's name at `+4`**:
+`SlBassin`, `SlPorteZD`, `SlPorteD`, `SlPorteZG`, `SlPorteG`. The one that
+moves is **`SlPorteZG`** — the parent copy of the door on the G side, the
+file's −X. Read by index it landed on `SlPorteG` alone (the child), so the
+parent copy stayed shut over the hole — the *"face of the slider hiding
+him"* — and read by id it landed on `SlPorteD`, the far door, which made the
+man look mirrored and cost an hour with a mirror in `calledFrame` that is
+gone again. Bound by name, the parent swings and its coincident child
+follows, the well opens, and the man is on the side these rows always gave:
+`-row0`, the file's −X. `clipTracks` now keeps the names. Each door is two
+coincident meshes (72 corners each, the pivot at the hinge); every track is
+identity again at the last frame — the door opens, he steps in, it shuts.
+
 **The seat, from the clips alone.** From the door (`−62.5, −8.8, +3.7`)
 `H_SLDIN`'s root travels `(+43.5, +12.5, −0.9)` and ends at
 `(−19.0, +3.7, +2.8)`; `H_SLDOUT` **starts** at `(−19.0, −8.8, +2.8)`. The
@@ -490,13 +505,21 @@ and the man placed from the clips lands where the drawn body's seat is. The
 generalised to a preset per request; `MDSLIDOU` sends it back the way the
 take's `MDPUTSNK` does.
 
-**Still open**: `sub_4521E0`'s model swap — now located: `dword_538E28` is
-the slider model TABLE (88-byte rows; the loop at 0x454360 frees `[row+0]`
-per set bit of the model mask), and `dword_538E2C`/`dword_538E30` are row
-0's `+4`/`+8`, the two sub-object handles the port knows as `v16[1]`/`v16[2]`.
-The swap toggles the sub-node between them and MDACTION calls it at the snap.
-Which of the four bodies each handle is (the sort in `sub_453A70`) and what
-the swap shows, given the clip already animates `SlPorteG`, is not read.
+**The model swap, read and PORTED** (the reader: *"the current model when
+Kay'l enters the slider has no modelised interior"*). `dword_538E28` is the
+slider model TABLE (88-byte rows); `sub_453A70` fills row `+4..+16` with the
+model's four root sub-objects SORTED heaviest first by vertices + faces -
+`SlBassin` 1527 corners, `slider_fl` 750, `SlBasA` 366, `SlBasB` 144 - and
+`dword_538E2C`/`dword_538E30` are row 0's `+4`/`+8`. The reserved slider is
+created on `+8`, `slider_fl`, a SHELL: no interior, and - `mesh_list`'s ids
+say - **no door**: `SlPorteZG` (id 1, the hinge) is `SlBassin`'s child and
+`SlPorteG` (id 2, the panel `SLF_112` turns) is the hinge's; the three shells
+carry none. `sub_4521E0` toggles the sub-node to `+4`, the COCKPIT, at
+`MDACTION`'s snap - before `H_SLDIN` - which is what puts a door under the
+clip, and `sub_4570F0` toggles it back before the exit clip. Ported as the
+staged root for the called vehicle while boarding or aboard; rendered, the
+red well opens along the flank and he sits in it. `engine: slider door`
+asserts the door parentage.
 
 ## What is left — 2026-09-08, after the journey landed
 
@@ -510,10 +533,20 @@ are yours. **`next-tasks` 16 stays OPEN until a person has played it.**
 
 What is still not there, so the labelling is not mistaken for done:
 
-* **a journey to a destination in ANOTHER area** loads the area and places
-  him — the arrive arm — instead of driving. `sub_40E630` loads the area
-  first and only then looks for a lane; the circuit changes under the
-  vehicle, and driving across that is not ported;
+* ~~a journey to a destination in ANOTHER area~~ — **done 2026-09-08**, and
+  the engine does not drive it either. `sub_40E630` loads the area, then
+  `sub_452570` runs against the NEW pool: the lane nearest the destination
+  (`sub_452A80`), a vehicle relinked THERE by `sub_452CC0` — at the lane
+  point, not at the lane's top the way a call is — and state 6, which
+  `sub_456530` case 6 finds within its 117 at once. So the arrival, the exit
+  clip, camera 17 and the release all run in the new city; only the drive is
+  skipped, under the load's fade. `Sliders::arriveAt` is that arm: the call's
+  plan and slot,   `placeCalled` at the lane point, `mountCalled`, `sendCalledTo`.
+  The port had dropped him at the address bare. **Run**: boarded in
+  Jaunpur at address 34's kerb, the Anekbah row from aboard - loaded,
+  relinked at the lane nearest address 0, out at 5445 -580, camera 17,
+  `MDSLIDOU`, `RELEASED`. `engine: slider journey area` (--slow, and both
+  journey checks board through the `--board` harness flag);
 * ~~the correct SIDE to board from~~ — **done 2026-09-08**: it is
   `MDACTION`'s, not `MDSLIDIN`'s, and it is a dot product against the slider's
   local +X plus a 4.00 m reach. See the section above;

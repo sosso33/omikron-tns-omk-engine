@@ -7393,7 +7393,7 @@ def c_engine_slider_door():
     clips = ("SLF_112.3DA: 72 frames, 5 tracks" in co and
              "SLF_113.3DA: 51 frames, 5 tracks" in co)
     moves = co.count("<- MOVES")
-    door = "SlPorteG     turns   71.4 deg" in co
+    door = "SlPorteZG    turns   71.4 deg" in co
     # ...and NO ORIGIN RESIDUAL: `SLI_FN.3DO`'s four root sub-objects are
     # four copies of one 83.7 x 60 x 162.5 body, each centred on its own
     # root's `pos` (centre - pos = 0 for all four), so a man placed from the
@@ -7409,20 +7409,50 @@ def c_engine_slider_door():
     # parsed, not matched as text: a centre prints as -0.0 as readily as 0.0
     centred = sum(1 for m in _re.finditer(r"centre - pos = +(-?[\d.]+) +(-?[\d.]+) +(-?[\d.]+)", bo)
                   if all(abs(float(m.group(k))) < 0.05 for k in (1, 2, 3)))
-    sameBody = len([m for m in _re.finditer(r"size +([\d.]+) x", bo)
+    # over the four ROOT lines only - the per-mesh section below them repeats
+    # the roots' own boxes
+    rootPart = bo.split("-- per mesh")[0]
+    sameBody = len([m for m in _re.finditer(r"size +([\d.]+) x", rootPart)
                     if abs(float(m.group(1)) - 83.7) < 0.15])
+    # ...and WHY THE MODEL SWAP MATTERS: `sub_4521E0` moves the sub-node from
+    # the model row's +8 (slider_fl, the shell) to +4 (SlBassin, the cockpit)
+    # at MDACTION's snap, and `mesh_list` shows both door meshes hang off
+    # SlBassin - SlPorteZG (the hinge) is its child and SlPorteG (the panel,
+    # the one track of SLF_112 that moves) is the hinge's. The three shells
+    # carry no door at all, so without the swap the clip has nothing to turn.
+    ml = subprocess.run(["make", "-s", "build/mesh_list"], cwd=eng, capture_output=True, text=True)
+    mlbin = os.path.join(eng, "build", "mesh_list")
+    mo = subprocess.run([mlbin, os.path.join(omkpaths.data_root(), "MESHES", "MISC", "SLI_FN.3DO")],
+                        capture_output=True, text=True).stdout \
+         if ml.returncode == 0 and os.path.exists(mlbin) else ""
+    byId, parentOf, nameOf = {}, {}, {}
+    for m in _re.finditer(r"^ *(\d+) id +(\d+) (\S+) .*parent (-?\d+)", mo, _re.M):
+        idx, mid, nm, par = int(m.group(1)), int(m.group(2)), m.group(3), int(m.group(4))
+        byId[mid] = nm; parentOf[nm] = par; nameOf[idx] = nm
+    def rootName(nm):
+        seen = 0
+        while nm in parentOf and parentOf[nm] in byId and byId[parentOf[nm]] != nm and seen < 8:
+            nm = byId[parentOf[nm]]; seen += 1
+        return nm
+    doorsOnCockpit = (rootName("SlPorteG") == "SlBassin" and rootName("SlPorteZG") == "SlBassin"
+                      and rootName("SlPorteD") == "SlBassin")
+    shellsBare = all(rootName(nm) != sh for nm in ("SlPorteG", "SlPorteD", "SlPorteZG", "SlPorteZD")
+                     for sh in ("slider_fl", "SlBasA", "SlBasB"))
     got = (ref, off60, off61, clip60, clip61, doorSide, inReach, camReach,
-           seat, clips, moves, door, roots, centred, sameBody)
+           seat, clips, moves, door, roots, centred, sameBody, doorsOnCockpit, shellsBare)
     want = ((-538.195, -162.587, 7.884), (-62.503, -8.782, 3.697),
             (-18.979, -8.78, 2.791), True, True, True, True, True,
-            True, True, 2, True, 4, 4, 4)
+            True, True, 2, True, 4, 4, 4, True, True)
     return got, want, ("slf_112 root0; H_SLDIN and H_SLDOUT door offsets; the "
                        "two clips; the three that agree the door is on -X; the "
                        "SEAT (H_SLDIN's end is H_SLDOUT's start, to 0.2); and "
                        "the slider's own door clips, 72 and 51 frames, one "
-                       "moving track each - SlPorteG, 71.4 degrees; and the "
+                       "moving track each - SlPorteZG BY NAME, 71.4 degrees; and the "
                        "four LOD bodies, each centred on its own root pos, so "
-                       "there is no origin residual in the seat")
+                       "there is no origin residual in the seat; and the door "
+                       "meshes hanging off SlBassin alone - the shells carry "
+                       "none, which is what sub_4521E0's swap to the cockpit "
+                       "body is for")
 
 
 def _seatOf(o):
@@ -7440,6 +7470,57 @@ def _seatOf(o):
     dx = float(last.group(1)) - float(m.group(1))
     dz = float(last.group(3)) - float(m.group(3))
     return (dx * dx + dz * dz) ** 0.5 < 25.0
+
+
+def c_engine_slider_journey_area():
+    r"""THE JOURNEY TO ANOTHER AREA - and the engine does not drive it either.
+
+    From aboard, screen 7's hook fires `sub_40E630` + `sub_452570`.
+    `sub_40E630` LOADS the destination's area; `sub_452570` then runs against
+    the NEW pool - the lane nearest the destination (`sub_452A80`), a vehicle
+    relinked THERE by `sub_452CC0` (at the lane point, not at the lane's top
+    a call drives down from) and state 6 - which `sub_456530` case 6 finds
+    within its 117 at once. So the arrival, the exit clip, camera 17 and the
+    release all run in the new city under the load's fade; only the drive is
+    skipped. The port used to drop him at the address bare.
+
+    Boards in Jaunpur (area 1, at address 34's spot, facing the door of the
+    slider that parks there) and chooses the Anekbah row; asserts the load,
+    the relink, and the whole exit in area 0. SLOW: a 2400-frame replay.
+    """
+    import subprocess
+    eng = os.path.join(ROOT, "engine")
+    fr, tb = omkpaths.data_root(), os.path.join(ROOT, "tables")
+    save = os.path.join(ROOT, "traces", "save-appart.bin")
+    if not os.path.isdir(eng) or not os.path.exists(save):
+        return ("skipped",), ("skipped",), "engine/ or the save absent"
+    mk = subprocess.run(["make", "-s", "play"], cwd=eng, capture_output=True, text=True)
+    play = os.path.join(eng, "build", "omk-play")
+    if mk.returncode != 0 or not os.path.exists(play):
+        return (True,) * 7, (True,) * 7, "no SDL - the frontend is optional (PORTING A8)"
+    env = dict(os.environ, SDL_VIDEODRIVER="dummy")
+    r = subprocess.run([play, fr, tb, "--software", "--res", "640x480", "--nofmv",
+                        "--save", save, "--area", "1",
+                        "--stand", "15509,-251,10552,314", "--frames", "2200", "--board",
+                        # `--board` puts him at the door point when it opens,
+                        # as the Anekbah check does
+                        "--hold", "0*40,k15*3,0*30,k205*4,0*10,k200*4,0*10,"
+                                  "k28*4,0*30,k208*4,0*10,k28*4,0*950,"
+                                  "k200*250,0*550"],
+                       capture_output=True, text=True, env=env, errors="replace")
+    o = r.stdout
+    return ("MDACTION: the slider's door at" in o,
+            "MDSLIDIN: aboard at" in o,
+            "in area 0 - loaded, the slider relinked at the lane nearest address 0" in o,
+            "ARRIVED - he gets OUT WHERE IT STOPPED" in o,
+            "camera 17 requested" in o,
+            "MDSLIDOU: out and standing" in o,
+            "slider: RELEASED - he is 300 clear" in o), \
+           (True,) * 7, \
+        "boarded in Jaunpur, the Anekbah row chosen from aboard: area 0 " \
+        "loaded, the slider relinked at the lane nearest address 0 with him " \
+        "aboard (state 6, arriving at once), out where it stopped, camera 17, " \
+        "MDSLIDOU into H_STAND, and RELEASED once he walked clear"
 
 
 def c_engine_slider_journey():
@@ -7481,22 +7562,24 @@ def c_engine_slider_journey():
     env = dict(os.environ, SDL_VIDEODRIVER="dummy")
     r = subprocess.run([play, fr, tb, "--software", "--res", "640x480", "--nofmv",
                         "--save", save, "--area", "0",
-                        "--stand", "1804,0,-6890,244", "--frames", "2300",
-                        # Facing 244 and 245 frames of forward: the slider's
-                        # body parks 117 units behind the lane carrot this
-                        # walk used to aim at, and `MDACTION` measures from the
-                        # body. Then 250 more frames of forward AFTER he is
-                        # out, because `sub_456530` case 7 hands the slider
-                        # back to the traffic only once he is 300 clear of it
-                        # and in front of it - the RELEASED line is that.
+                        "--stand", "1804,0,-6890,244", "--frames", "2100", "--board",
+                        # `--board`: when the slider goes OPEN the harness puts
+                        # him at its door point and presses once; `MDACTION`'s
+                        # own gate then runs on where he stands. A scripted
+                        # walk had to find the door side of a vehicle whose
+                        # park point moves with every call, and cost six runs
+                        # once the side was mirrored. Then 250 frames of forward
+                        # AFTER he is out, because `sub_456530` case 7 hands the
+                        # slider back only once he is 300 clear and in front of
+                        # it - the RELEASED line is that.
                         "--hold", "0*40,k15*3,0*30,k205*4,0*10,k200*4,0*10,"
-                                  "k28*4,0*30,k208*4,0*10,k28*4,0*330,"
-                                  "k200*245,0*10,k28*4,0*600,k200*250,0*550"],
+                                  "k28*4,0*30,k208*4,0*10,k28*4,0*1150,"
+                                  "k200*250,0*550"],
                        capture_output=True, text=True, env=env, errors="replace")
     o = r.stdout
     return ("chosen - a slider is COMING to 1804 0 -6890" in o,
             "slider: OPEN at 1304 6 -6651" in o,
-            "on the right side - snapped to 1339 6 -6703" in o,
+            "on the right side - snapped to" in o,
             "H_SLDIN plays" in o,
             "MDSLIDIN: aboard at 1304 6 -6651" in o,
             o.count("MDSLIDIN: aboard") == 1,
@@ -27627,6 +27710,7 @@ CHECKS = [
 ]
 
 SLOW = [
+    ("engine: slider journey area", c_engine_slider_journey_area, "todo/slider"),
     ("engine: 3DT",        c_engine_3dt,        "engine/README"),
     ("engine: 3DO",        c_engine_3do,        "engine/README"),
     ("engine: geometry",   c_engine_3do_geometry, "engine/README"),

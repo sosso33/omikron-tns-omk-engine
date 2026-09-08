@@ -971,9 +971,12 @@ all, so a scan code in that list cannot express them (`docs/UI.md` §3f).
 player stands and drives it with the same input word the walker takes - arrows
 to steer, up and down for the six-value thrust ladder, and the interface's
 `0x20` bit to stop. Camera mode 8, the ride camera, whose subject is the
-SLIDER and not the player. It is a HARNESS: the engine's way in is `MDSLIDIN`
-(ACTOR_STATE 6 plus a slider standing open in mode 3), and there is no vehicle
-model under him yet - see `todo/slider.md`.
+SLIDER and not the player. It is a HARNESS: the engine's way in is `MDACTION`'s
+slider arm (the door side and 4 m, then `H_SLDIN`), and `--board` is the
+harness for THAT: when the called slider goes OPEN it puts him at the door
+point the viewer prints and presses the action button once, so the gate runs
+for real without a scripted walk having to find the door side of a vehicle
+whose park point moves with every call - see `todo/slider.md`.
 
 **A STREET START** (STREET_LIFE, 2026-09-03) stands in a city in adventure
 mode with its crowd, no intro to replay:

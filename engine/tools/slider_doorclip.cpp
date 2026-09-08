@@ -53,10 +53,25 @@ int main(int argc, char** argv) {
                 if (a > worst) worst = a;
             }
             const int id = k < static_cast<int>(t.ids.size()) ? t.ids[static_cast<std::size_t>(k)] : -1;
-            const char* nm = (id >= 0 && id < static_cast<int>(names.size()))
-                                 ? names[static_cast<std::size_t>(id)].c_str() : "?";
-            std::printf("   track %d -> mesh %d %-12s turns %6.1f deg%s\n",
+            // the track's own NAME (+4) is the binding; +0 is the numbering of
+            // the model it was authored against, which is not this one's
+            const char* nm = k < static_cast<int>(t.names.size()) ? t.names[static_cast<std::size_t>(k)].c_str() : "?";
+            std::printf("   track %d (+0 %d) %-12s turns %6.1f deg%s\n",
                         k, id, nm, worst, worst > 5.0 ? "   <- MOVES" : "");
+        }
+        // ...and each track's ABSOLUTE pose at the first and last frame - a
+        // copy held folded away is a constant rotation the "turns" column
+        // above cannot see, and the track ids (0,3,1,4,2) are the cockpit's
+        // five nodes BY ID: SlBassin, SlPorteZD, SlPorteZG, SlPorteD, SlPorteG.
+        static const char* kById[5] = {"SlBassin", "SlPorteZG", "SlPorteG", "SlPorteZD", "SlPorteD"};
+        for (int k = 0; k < t.count; ++k) {
+            const int id = k < static_cast<int>(t.ids.size()) ? t.ids[static_cast<std::size_t>(k)] : -1;
+            const omk::Quatf& a0 = t.quats[0][static_cast<std::size_t>(k)];
+            const omk::Quatf& a1 = t.quats[static_cast<std::size_t>(t.frames - 1)][static_cast<std::size_t>(k)];
+            const double d0 = 2.0 * std::acos(std::min(1.0, std::fabs((double)a0.w))) * 57.29577951308232;
+            const double d1 = 2.0 * std::acos(std::min(1.0, std::fabs((double)a1.w))) * 57.29577951308232;
+            std::printf("   track %d id %d (by id: %-9s)  |rot| frame0 %6.1f  last %6.1f  axis0 (%.2f %.2f %.2f) axisLast (%.2f %.2f %.2f)\n",
+                        k, id, (id >= 0 && id < 5) ? kById[id] : "?", d0, d1, a0.x, a0.y, a0.z, a1.x, a1.y, a1.z);
         }
         const auto rm = omk::clipRootMotion(d);
         if (!rm.empty())

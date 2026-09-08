@@ -142,12 +142,17 @@ NodeTracks clipTracks(std::span<const std::byte> d) {
     if (frames < 0 || frames >= 20000 || n <= 0 || n >= 512) return t;
     if (8u + 40u * static_cast<std::size_t>(n) > d.size()) return t;
 
-    struct Track { std::int32_t node, rotKeys, rotOffset, posKeys, posOffset; };
+    struct Track { std::int32_t node, rotKeys, rotOffset, posKeys, posOffset; std::string name; };
     std::vector<Track> tr;
     tr.reserve(static_cast<std::size_t>(n));
     for (int i = 0; i < n; ++i) {
         const std::size_t o = 8u + 40u * static_cast<std::size_t>(i);
-        Track k{i32(o), i32(o + 32), i32(o + 36), i32(o + 24), i32(o + 28)};
+        // +4: the bone's NAME, char[20]. A clip is authored against a model's
+        // numbering, and when it is not this model's (the slider's door clips
+        // name `SlPorteZG` at +0 index 4, which is `SlPorteG` here) the name is
+        // the only binding that survives.
+        char nm[21] = {0}; std::memcpy(nm, d.data() + o + 4, 20);
+        Track k{i32(o), i32(o + 32), i32(o + 36), i32(o + 24), i32(o + 28), std::string(nm)};
         if (k.rotOffset &&
             (static_cast<std::size_t>(k.rotOffset) + 16u *
              static_cast<std::size_t>(k.rotKeys) > d.size())) return t;
@@ -161,7 +166,7 @@ NodeTracks clipTracks(std::span<const std::byte> d) {
     t.frames = frames;
     t.rootTrack = -1;              // a clip's root is the model's, not a track
     t.ids.reserve(tr.size());
-    for (const auto& k : tr) t.ids.push_back(k.node);
+    for (const auto& k : tr) { t.ids.push_back(k.node); t.names.push_back(k.name); }
     t.quats.assign(static_cast<std::size_t>(frames), {});
     t.trans.assign(static_cast<std::size_t>(frames), {0.0f, 0.0f, 0.0f});
 

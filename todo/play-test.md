@@ -120,12 +120,17 @@ off as ordinary traffic. **Say if he sits 50 cm too far forward or back**:
 the slider is drawn about `SlBasB`'s origin and the clips are authored about
 `SlBassin`'s, 19.7 apart along the length, and that residual is not settled.
 
-**Knowingly missing**: `sub_4521E0`'s model swap (the open-door meshes
-`SlPorteZD/ZG` exist beside the animated `SlPorteG`, and which the engine
-shows when is not read); camera 17 at the exit (the follow camera stands in);
-a journey to a destination in ANOTHER area loads the area and places you
-instead of driving; the optional cutscene of the slider on its road; and a
-called slider you never board does not yet give up after its 600 frames.
+**Also to judge, added later the same day**: the vehicle under you should
+be the COCKPIT body from the moment you press ENTER at the door - an open
+red well along the flank, the door on it - and the plain shell again once
+you are out (`sub_4521E0`'s swap; the shells have no door at all). And a
+destination in ANOTHER city (`--area 1 --address 34` in Jaunpur, then the
+Anekbah row): the load, then the slider is already at the destination's
+kerb with you aboard and you get out there - the engine skips the drive
+too. The camera should drop in behind you as you step out (camera 17).
+
+**Knowingly missing**: the optional cutscene of the slider on its road; and
+a called slider you never board does not yet give up after its 600 frames.
 
 ## 4b. The slider takes you somewhere — 1 minute
 
