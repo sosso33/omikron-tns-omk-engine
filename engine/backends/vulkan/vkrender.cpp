@@ -106,7 +106,10 @@ struct ShadowUbo {
     float strength;    // 0 = no shadow this frame, which is the default
     float texel;       // 1 / kShadowSide
     float bias;
-    float pad;
+    // THE SHIMMER's clock (`o3de/shimmer.h`), which is per FRAME like the rest
+    // of this block and had a spare float sitting here for the std140
+    // alignment. Not the shadow's business, but this is the frame's uniform.
+    float shimmer;
 };
 
 #define VKCHECK(x, what)                                                     \
@@ -130,6 +133,8 @@ struct GpuVert {
     // because a bone's rotation turns its normals with it - `applyPose` does
     // that already, for the crowd's per-vertex light.
     float nx, ny, nz;
+    // THE SHIMMER's phase (`o3de/shimmer.h`), -1 on a mesh that does not.
+    float phase;
 };
 
 // It MUST match `scene.frag`'s block byte for byte, and the ordering is what
@@ -275,6 +280,7 @@ private:
     bool            cbStarted_ = false;
     bool            shadowLive_ = false;   // a depth pass was recorded this frame
     int             litCount_ = 0;         // lights uploaded for this frame
+    float           shimmerClock_ = 0.0f;  // the View's, held for the uniform
 
     struct Tex {
         VkImage img = VK_NULL_HANDLE; VkDeviceMemory mem = VK_NULL_HANDLE;
@@ -800,15 +806,16 @@ bool VulkanRenderer::makePipelines() {
                  VK_SHADER_STAGE_FRAGMENT_BIT, fs, "main", nullptr};
 
     VkVertexInputBindingDescription vb{0, sizeof(GpuVert), VK_VERTEX_INPUT_RATE_VERTEX};
-    VkVertexInputAttributeDescription va[4] = {
+    VkVertexInputAttributeDescription va[5] = {
         {0, 0, VK_FORMAT_R32G32B32_SFLOAT, offsetof(GpuVert, x)},
         {1, 0, VK_FORMAT_R32G32_SFLOAT,    offsetof(GpuVert, u)},
         {2, 0, VK_FORMAT_R32G32B32_SFLOAT, offsetof(GpuVert, r)},
         {3, 0, VK_FORMAT_R32G32B32_SFLOAT, offsetof(GpuVert, nx)},
+        {4, 0, VK_FORMAT_R32_SFLOAT,       offsetof(GpuVert, phase)},
     };
     VkPipelineVertexInputStateCreateInfo vi{VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO};
     vi.vertexBindingDescriptionCount = 1; vi.pVertexBindingDescriptions = &vb;
-    vi.vertexAttributeDescriptionCount = 4; vi.pVertexAttributeDescriptions = va;
+    vi.vertexAttributeDescriptionCount = 5; vi.pVertexAttributeDescriptions = va;
 
     VkPipelineInputAssemblyStateCreateInfo ia{VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO};
     ia.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
@@ -1523,7 +1530,7 @@ bool VulkanRenderer::uploadGeometry(const omk::Geometry* g) {
                 for (std::size_t i = 0; i < g->corners.size(); ++i) {
                     const auto& c = g->corners[i];
                     dst[i] = {c.x, c.y, c.z, c.u, c.v, c.r, c.g, c.b,
-                              c.nx, c.ny, c.nz};
+                              c.nx, c.ny, c.nz, c.phase};
                 }
                 vkUnmapMemory(dev_, vbo_[g].second);
                 vboRev_[g] = g->revision;
@@ -1537,7 +1544,7 @@ bool VulkanRenderer::uploadGeometry(const omk::Geometry* g) {
     std::vector<GpuVert> v(g->corners.size());
     for (std::size_t i = 0; i < g->corners.size(); ++i) {
         const auto& c = g->corners[i];
-        v[i] = {c.x, c.y, c.z, c.u, c.v, c.r, c.g, c.b, c.nx, c.ny, c.nz};
+        v[i] = {c.x, c.y, c.z, c.u, c.v, c.r, c.g, c.b, c.nx, c.ny, c.nz, c.phase};
     }
     const VkDeviceSize bytes = v.size() * sizeof(GpuVert);
     if (!bytes) return false;
@@ -1768,6 +1775,7 @@ void VulkanRenderer::shadowPass(const omk::View& v, std::span<const omk::Draw> c
         // In the slab's own 0..1 depth, one map texel of slope at the worst
         // angle - enough to stop the ground shadowing itself.
         ub.bias = 0.0015f;
+        ub.shimmer = shimmerClock_;
         std::memcpy(shUboPtr_, &ub, sizeof ub);
     }
     shadowLive_ = true;
@@ -1782,6 +1790,7 @@ void VulkanRenderer::begin(const omk::View& view) {
         fogColour_[i] = static_cast<float>(view.fogColour[i]) / 255.0f;
     pushView(view);
     // ---- THE LIGHTS, per frame (`todo/enhancements.md` row 7) ------------
+    shimmerClock_ = view.shimmerClock;
     litCount_ = 0;
     if (litUboPtr_) {
         LightUbo ub{};
@@ -1817,6 +1826,7 @@ void VulkanRenderer::begin(const omk::View& view) {
     if (!shadowLive_ && shUboPtr_) {
         ShadowUbo ub{};
         ub.texel = 1.0f / static_cast<float>(kShadowSide);
+        ub.shimmer = shimmerClock_;   // the shimmer runs with or without a shadow
         std::memcpy(shUboPtr_, &ub, sizeof ub);
     }
     VkClearValue clear[2]{};

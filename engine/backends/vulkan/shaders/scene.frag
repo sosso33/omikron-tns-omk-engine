@@ -54,7 +54,7 @@ layout(set = 1, binding = 0) uniform Shadow {
     float strength;    // 0 = no shadow this frame
     float texel;       // 1 / the map's side, for the PCF tap spacing
     float bias;        // depth slop, in the map's own 0..1 units
-    float pad;
+    float shimmer;     // THE SHIMMER's clock - see the note below
 } sh;
 layout(set = 1, binding = 1) uniform sampler2D shadowMap;
 
@@ -103,6 +103,7 @@ layout(location = 1) in vec3 vCol;
 layout(location = 2) in float vDepth;
 layout(location = 3) in vec3 vWorld;
 layout(location = 4) in vec3 vNrm;
+layout(location = 5) in float vPhase;
 layout(location = 0) out vec4 outColour;
 
 // -> 1 fully lit, 0 fully shadowed. Outside the map's slab a fragment is LIT
@@ -141,9 +142,26 @@ void main() {
     // A LIT batch starts from black and takes its shading from the lights;
     // every other one keeps the colour baked into its vertices.
     // 1 from black, 2 added to the baked colour - see `renderer.h`'s Draw.
+    // THE SHIMMER - mesh flag 0x8000000, and it is the GAME's, not an
+    // enhancement. `sub_4947F0` adds one entry of a 32-byte signed table into
+    // all three colour bytes; 233 set meshes carry the flag, all of them
+    // distant scenery, and neighbouring vertices sit 1/16 of a cycle apart so
+    // the wave travels. The table is duplicated here from `o3de/shimmer.h`
+    // because a shader cannot include it, and `verify.py: shimmer table`
+    // asserts the two against the executable.
+    float wave = 0.0;
+    if (vPhase >= 0.0) {
+        int wi = ((int(sh.shimmer) >> 2) + int(vPhase)) & 31;
+        float tbl[32] = float[32](
+              0.0,  10.0,  13.0,  18.0,  28.0,  32.0,  48.0,  56.0,
+             64.0,  56.0,  48.0,  32.0,  28.0,  18.0,  13.0,  10.0,
+              0.0, -10.0, -13.0, -18.0, -28.0, -32.0, -48.0, -56.0,
+            -64.0, -56.0, -48.0, -32.0, -28.0, -18.0, -13.0, -10.0);
+        wave = tbl[wi] / 255.0;
+    }
     vec3 shade = pc.lit == 1 ? litColour(normalize(vNrm), vWorld)
                : pc.lit == 2 ? min(vCol + litColour(normalize(vNrm), vWorld), vec3(1.0))
-                             : vCol;
+                             : vCol + vec3(wave);
     vec3 c = clamp(t.rgb * shade * litness(), 0.0, 1.0);
     // THE FOG, and it is raster.cpp's line transcribed. Linear -
     // `FOGTABLEMODE` 3 at density 1.0, the only mode the engine sets - over

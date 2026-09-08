@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "o3de/raster.h"
+#include "o3de/shimmer.h"
 
 #include <algorithm>
 #include <cmath>
@@ -182,7 +183,8 @@ ClipVert lerp(const ClipVert& a, const ClipVert& b, float f) {
 
 RasterStats drawGeometry(Surface& fb, std::vector<float>& depth,
                          const RCamera& cam, const Geometry& g,
-                         std::span<const Texture> textures, const Fog& fog) {
+                         std::span<const Texture> textures, const Fog& fog,
+                         float shimmerClock) {
     RasterStats st;
     if (depth.size() != static_cast<std::size_t>(fb.w) * fb.h)
         clearDepth(depth, fb.w, fb.h);
@@ -231,7 +233,14 @@ RasterStats drawGeometry(Surface& fb, std::vector<float>& depth,
                     const float w[3] = {src[k]->x, src[k]->y, src[k]->z};
                     toView(basis, cam, w, in[k].v);
                     in[k].u = src[k]->u; in[k].t = src[k]->v;
-                    in[k].r = src[k]->r; in[k].g = src[k]->g; in[k].b = src[k]->b;
+                    // THE SHIMMER, before anything else touches the colour -
+                    // the engine adds it into the three bytes in its own
+                    // per-vertex loop, so it rides through the interpolation
+                    // and the fog exactly as the baked colour does.
+                    const float sh = omk::shimmerOffset(src[k]->phase, shimmerClock);
+                    in[k].r = src[k]->r + sh;
+                    in[k].g = src[k]->g + sh;
+                    in[k].b = src[k]->b + sh;
                     in3[k] = in[k].v[2];
                 }
                 for (int k = 0; k < 3 && nPoly < 4; ++k) {

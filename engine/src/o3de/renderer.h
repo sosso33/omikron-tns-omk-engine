@@ -175,6 +175,16 @@ struct View {
     // silently truncating in the middle of a street.
     static constexpr int kMaxGpuLights = 8;
     std::vector<GpuLight> lights;   // empty = light per vertex, as before
+
+    // ---------------------------------------------- THE SHIMMER's clock
+    //
+    // Mesh flag 0x8000000, and it is the GAME's - not an enhancement. 233 set
+    // meshes carry it, all distant scenery, and their vertex colour
+    // oscillates about zero on a 32-step cycle. `Game_Tick` advances this by
+    // `2 * frameDelta` and wraps it at 256; `o3de/shimmer.h` has the table and
+    // the index, and a backend that ignores this draws a static skyline where
+    // the original draws a moving one.
+    float shimmerClock = 0.0f;
 };
 
 // One submission. This is the whole vocabulary a backend gets, and every field

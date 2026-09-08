@@ -50,6 +50,7 @@
 #include "o3de/geom3do.h"
 #include "o3de/particles.h"
 #include "o3de/shadow.h"
+#include "o3de/shimmer.h"
 #include "audio/mixer.h"
 #include "audio/music.h"
 #include "audio/voiceover.h"
@@ -1026,6 +1027,7 @@ int sceneViewer(const std::string& fr, const std::string& setName,
     // path the GPU backend implements. `V` swaps them in place, which is the
     // most useful thing this window can do: the reference and the live one,
     // same camera, same frame, a keypress apart.
+    float sceneShimmer = 0.0f;   // `dword_907310` for the set viewer's own path
     omk::SoftwareRenderer sw;
     sw.init(PW, PH);
     omk::Renderer* live = nullptr;
@@ -1206,6 +1208,12 @@ int sceneViewer(const std::string& fr, const std::string& setName,
         // own (`Render_FlushBuckets` ascending), not this file's. A backend
         // receives them and never reorders.
         omk::View view; view.cam = cam;
+        // THE SHIMMER's clock, advanced here as well - the set viewer is
+        // exactly where a skyline gets looked at, and it draws through its own
+        // path rather than the frame loop's.
+        sceneShimmer += 2.0f;
+        if (sceneShimmer >= omk::kShimmerWrap) sceneShimmer -= omk::kShimmerWrap;
+        view.shimmerClock = sceneShimmer;
         // `drawWithMirror` submits in `buildGeometry`'s order - the engine's
         // own - and adds the reflection pass when the set has a mirror mesh
         // and the camera is in front of it. With no mirror it is one pass and
@@ -3875,6 +3883,7 @@ int main(int argc, char** argv) {
     float shadowSpreadMax = 0.0f, shadowSpreadPlayer = 0.0f;
     long shadowBlobsDrawn = 0;
     bool shadowTold = false, shadowLightTold = false, lightsTold = false;
+    float shimmerClock = 0.0f;   // `dword_907310`, wrapped at 256
     // `Area_LoadMiscModel`'s two constants.
     constexpr float kSkyScale = 12.5f;
     constexpr float kSkyLift  = 2250.0f;
@@ -10506,6 +10515,14 @@ int main(int argc, char** argv) {
             // backend instead of applied on the CPU. Nearest first and capped,
             // because a uniform block is finite and a body is reached by a
             // handful: Anekbah ships 155 and its lamps reach 700-900 units.
+            // THE SHIMMER's clock, advanced the way `Game_Tick` does it:
+            // `clock += 2 * frameDelta`, wrapping at 256, where one frame's
+            // delta is 1.0 at 30 Hz (`docs/BOOT.md` 4). 233 set meshes ride
+            // it - the far skyline of every city - and it is the GAME's, not
+            // an enhancement, so both backends draw it.
+            shimmerClock += 2.0f;
+            if (shimmerClock >= omk::kShimmerWrap) shimmerClock -= omk::kShimmerWrap;
+            view.shimmerClock = shimmerClock;
             const bool litPerPixel = lighting > 0;
             // TWO BASES, and the difference is a property of the models.
             //

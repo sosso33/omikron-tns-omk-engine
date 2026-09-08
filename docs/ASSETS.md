@@ -1940,7 +1940,24 @@ Two mesh flags animate the colour after it is read, and they are **not** the
   **233 set meshes carry it, 0 characters**, and the names put it on distant
   scenery rather than on lights: `berg*` (91), `fond*` (background, 52),
   `paro*`, `mont*`, `mafo*`. **Lahoreh** has 132 of them — 15% of its
-  vertices — where Anekbah has one.
+  vertices — then Jangir 37, Jaunpur 33, and Anekbah has one.
+
+  **DRAWN since 2026-09-09, by both backends, and it is not an enhancement.**
+  The port decoded the flag into `Corner::phase` when the geometry reader was
+  written and then read that phase NOWHERE — neither rasterizer, neither
+  shader — so the far skyline of every city stood still. That is a defect, so
+  it is on by default and the software reference has it too. `o3de/shimmer.h`
+  carries the table and the index; the clock is `Game_Tick`'s, advanced by
+  `2 × frameDelta` and wrapped at 256.
+
+  Every link was checked before it was built, because the environment-map flag
+  in the next bullet looks just as alive and is dead: the flag is carried by
+  233 meshes, the table at `0x004DDBB0` is real signed data read out of the
+  executable, the code reads it with `movsx` in a live `else if`, and the
+  clock advances every frame. `verify.py: shimmer table`, `engine: shimmer`
+  (Lahoreh's own camera 2 moves 33045 pixels in software and 33364 through
+  Vulkan between two clocks half a cycle apart, and its camera 0 moves 0
+  because no shimmering mesh is in that shot).
 * **`0x4000000` — a second UV set, generated.** `tu2/tv2` come out as
   `asin(normal · cameraAxis) * 2/π + scroll * 2.5 + 0.5` — a spherical
   environment map, and the reason the source vertex carries a normal at all.

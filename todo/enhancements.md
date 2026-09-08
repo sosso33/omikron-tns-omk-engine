@@ -22,6 +22,19 @@ measures the enhancement's own property on the GPU, shown to fail.
 | 7 | **per-pixel lighting**: the engine's OWN light law evaluated per fragment instead of per vertex, and received by every character rather than the crowd alone | `lighting = perpixel` / `--lighting perpixel` | **done 2026-09-09**; `engine: per-pixel lighting` |
 | 8 | **the SETS receive the lights too.** Held back deliberately - it overrides authored art; see below | `lighting = sets` | not recommended |
 
+## Not an enhancement, and it came out of this list: THE SHIMMER
+
+Written down here because it was found while looking for enhancements and is
+the opposite of one. Mesh flag `0x8000000` oscillates the vertex colour of
+**233 set meshes** — the far skyline of every city, 132 of them in Lahoreh —
+and the port decoded it into `Corner::phase` and then read that phase nowhere.
+A defect, not a missing feature: fixed on 2026-09-09, on by default, in both
+backends. `docs/ASSETS.md` 4c.
+
+**The lesson for this file**: before building an enhancement, check whether the
+game already does the thing and the port simply dropped it. That is cheaper
+than any enhancement and it is what the original looks like.
+
 ## Rows 5 and 6 - the shadows
 
 **One key with levels, and it is SUBORDINATE to the game's own option.**

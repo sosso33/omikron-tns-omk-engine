@@ -6335,6 +6335,123 @@ def c_effects_and_lights():
                        "light nothing")
 
 
+
+def c_shimmer_table():
+    r"""The SHIMMER's table, out of the executable - `docs/ASSETS.md` 4c.
+
+    Mesh flag `0x8000000` runs the vertex colour through a 32-entry table at
+    `0x004DDBB0`, and `o3de/shimmer.h` carries a copy because a header cannot
+    read the exe and a shader cannot include the header. Three copies of one
+    fact is two too many unless something compares them, so this does: the
+    header's, `scene.frag`'s, and the bytes in `gamedata/Runtime 2.exe`.
+
+    **Every link was checked before the port drew this**, because the
+    neighbouring environment-map flag looks just as alive and is DEAD - its
+    texture stage is given an index initialised to -1 and never assigned
+    (ASSETS 4c). Here the table is real data, the code reads it with `movsx`
+    so the entries are SIGNED, and `Game_Tick` advances the clock every frame.
+    The asserted shape is what makes it an oscillation rather than a pulse:
+    it runs 0 -> +64 -> 0 -> -64 -> 0 and sums to zero.
+    """
+    exe = omkpaths.exe_path()
+    if not exe or not os.path.isfile(exe):
+        return ("skipped",), ("skipped",), "the executable is not there"
+    b = open(exe, "rb").read()
+    pe = struct.unpack_from("<I", b, 0x3C)[0]
+    nsec = struct.unpack_from("<H", b, pe + 6)[0]
+    optSz = struct.unpack_from("<H", b, pe + 20)[0]
+    base = struct.unpack_from("<I", b, pe + 24 + 28)[0]
+    off = None
+    for i in range(nsec):
+        o = pe + 24 + optSz + 40 * i
+        va = struct.unpack_from("<I", b, o + 12)[0]
+        vs = struct.unpack_from("<I", b, o + 8)[0]
+        raw = struct.unpack_from("<I", b, o + 20)[0]
+        rs = struct.unpack_from("<I", b, o + 16)[0]
+        r = 0x004DDBB0 - base
+        if va <= r < va + max(vs, rs):
+            off = raw + (r - va)
+            break
+    if off is None:
+        return ("no mapping",), ("a mapping",), "0x004DDBB0 is in no section"
+    exeTbl = [struct.unpack_from("<b", b, off + i)[0] for i in range(32)]
+    hdr = open(os.path.join(ROOT, "engine", "src", "o3de", "shimmer.h"),
+               encoding="utf-8").read()
+    body = hdr[hdr.index("kShimmerWave[32]"):]
+    hdrTbl = [int(x) for x in re.findall(r"-?\d+", body[body.index("{"):body.index("};")])]
+    frag = open(os.path.join(ROOT, "engine", "backends", "vulkan", "shaders",
+                             "scene.frag"), encoding="utf-8").read()
+    fb = frag[frag.index("float tbl[32]"):]
+    fragTbl = [int(float(x)) for x in re.findall(r"-?\d+\.\d+", fb[:fb.index(");")])]
+    return (exeTbl == hdrTbl, exeTbl == fragTbl, len(exeTbl), sum(exeTbl),
+            max(exeTbl), min(exeTbl)), \
+           (True, True, 32, 0, 64, -64), \
+           ("the header and the shader against the 32 bytes at 0x004DDBB0; and that "
+            "the table is a full oscillation - 32 entries summing to zero, +64 to -64")
+
+
+
+def c_engine_shimmer():
+    r"""The SHIMMER is DRAWN, and by both backends - `docs/ASSETS.md` 4c.
+
+    233 set meshes carry mesh flag `0x8000000` and their vertex colour
+    oscillates on a 32-step cycle over 64 frames. The port decoded it into
+    `Corner::phase` when the geometry reader was written and then read that
+    phase NOWHERE - neither rasterizer, neither shader - so the far skyline of
+    every city stood still. That is a defect and not a missing enhancement,
+    which is why it is on by default and why the software reference has it
+    too: it is what the original draws.
+
+    Lahoreh carries 132 of the 233. Rendered through its own camera 2 at two
+    clocks half a cycle apart, the frame must MOVE - and through camera 0 it
+    must not, because no shimmering mesh is in that shot. The second half
+    matters as much as the first: a change that moved every frame would be
+    lighting drift or a clock leaking somewhere it should not.
+
+    Both backends are measured, and they must AGREE about which frames move,
+    because this is the game's own behaviour rather than a GPU-only
+    enhancement.
+
+    Shown to fail: `shimmerOffset` returning 0 leaves camera 2 still.
+    """
+    eng = os.path.join(ROOT, "engine")
+    if not os.path.isdir(eng):
+        return ("skipped",), ("skipped",), "engine/ absent"
+    mk = subprocess.run(["make", "-s", "play"], cwd=eng, capture_output=True, text=True)
+    play = os.path.join(eng, "build", "omk-play")
+    if mk.returncode != 0 or not os.path.exists(play):
+        return ("skipped",), ("skipped",), "no SDL - the frontend is optional (PORTING A8)"
+    env = dict(os.environ, SDL_VIDEODRIVER="dummy")
+
+    def frame(cam, n, extra):
+        out = os.path.join(eng, "build", "shim-%s-%d.bin" % (cam, n))
+        subprocess.run([play, omkpaths.data_root(), os.path.join(ROOT, "tables"),
+                        "--scene", "Lahoreh", "--cam", str(cam), "--frames", str(n),
+                        "--res", "640x480", "--nofmv", "--dump", out] + extra,
+                       capture_output=True, text=True, env=env)
+        return open(out, "rb").read() if os.path.exists(out) else b""
+
+    def moved(cam, extra):
+        a, b = frame(cam, 8, extra), frame(cam, 40, extra)
+        if not a or len(a) != len(b):
+            return -1
+        return sum(1 for i in range(0, len(a), 2) if a[i:i+2] != b[i:i+2])
+
+    sw2, sw0 = moved(2, ["--software"]), moved(0, ["--software"])
+    # `--vulkan`, NOT `--world-vulkan`: the latter only redirects the WORLD
+    # renderer and the set viewer has its own, so a first version of this
+    # measured SOFTWARE TWICE and reported "both backends agree" on one
+    # backend. The scene path's Vulkan renderer needs no surface, so `--vulkan`
+    # works headless here where it does not in the game path.
+    vk2 = moved(2, ["--vulkan"])
+    # no device is a skip, not a failure
+    vkOk = vk2 < 0 or vk2 > 1000
+    return (sw2 > 1000, sw0, vkOk), (True, 0, True), \
+           ("Lahoreh's camera 2 moves between two clocks half a cycle apart (software "
+            "%d pixels, Vulkan %d) and its camera 0 does not (%d), because no "
+            "shimmering mesh is in that shot" % (sw2, vk2, sw0))
+
+
 def c_engine_street_frame():
     r"""`omk-play` DRAWS the city crowd (docs/STREET_LIFE.md, step 4).
 
@@ -28987,6 +29104,7 @@ CHECKS = [
     ("no #define renames", c_no_define_renames, "CLAUDE.md 3"),
     ("shadow model",       c_shadow_model,      "ASSETS 4d"),
     ("effects and lights", c_effects_and_lights, "ASSETS 4c"),
+    ("shimmer table",     c_shimmer_table,     "ASSETS 4c"),
     ("config template",    c_config_template,   "todo/options-config"),
     ("play usage",         c_play_usage,        "engine/README"),
     ("enhance all",        c_enhance_all,       "todo/enhancements"),
@@ -29027,6 +29145,7 @@ SLOW = [
     ("engine: fitted shadows", c_engine_fitted_shadows, "todo/enhancements 5; o3de/shadow.h"),
     ("engine: mapped shadows", c_engine_mapped_shadows, "todo/enhancements 6; o3de/renderer.h"),
     ("engine: per-pixel lighting", c_engine_perpixel_lighting, "todo/enhancements 7; o3de/vertexlight.h"),
+    ("engine: shimmer", c_engine_shimmer, "ASSETS 4c; o3de/shimmer.h"),
     ("engine: traffic frame", c_engine_traffic_frame, "STREET_LIFE 2b; todo/road-traffic 3"),
     ("engine: crowd push", c_engine_crowd_push, "STREET_LIFE 3; actor/spatial.h"),
     ("engine: head look", c_engine_head_look, "STREET_LIFE; actor/pose.h"),

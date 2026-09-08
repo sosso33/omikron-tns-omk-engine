@@ -17,6 +17,7 @@ layout(location = 0) in vec3 inPos;    // world position
 layout(location = 1) in vec2 inUV;     // TEXEL units, as the shipped data stores them
 layout(location = 2) in vec3 inCol;    // the baked light - a COLOUR, not a brightness
 layout(location = 3) in vec3 inNrm;    // the vertex NORMAL, for row 7's lighting
+layout(location = 4) in float inPhase; // the SHIMMER's phase, -1 = none
 
 layout(location = 0) out vec2 vUV;
 layout(location = 1) out vec3 vCol;
@@ -29,12 +30,14 @@ layout(location = 2) out float vDepth;
 // separate transform and there is no inverse of `mvp` here.
 layout(location = 3) out vec3 vWorld;
 layout(location = 4) out vec3 vNrm;
+layout(location = 5) out float vPhase;
 
 void main() {
     vUV  = inUV;
     vCol = inCol;
     vWorld = inPos;
     vNrm = inNrm;
+    vPhase = inPhase;
     gl_Position = pc.mvp * vec4(inPos, 1.0);
     vDepth = gl_Position.w;
 }
