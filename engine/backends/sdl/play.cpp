@@ -946,7 +946,7 @@ int sceneViewer(const std::string& fr, const std::string& setName,
                 int camIndex, const float* eyeArg, const float* atArg,
                 float fovArg, bool letterbox, int frameBudget,
                 const std::string& dump, bool startVulkan, bool noDelay,
-                int aaSamples, int texFilter) {
+                int aaSamples, int texFilter, int texAniso) {
     // The set. A bare name is looked up in MESHES/DECORS, which is where the
     // decor sets live; anything with a slash is taken as given, so a character
     // model or another folder can be opened without a special case.
@@ -1032,6 +1032,7 @@ int sceneViewer(const std::string& fr, const std::string& setName,
     live = omk::makeVulkanRenderer();
     if (live && aaSamples > 1) live->setMultisample(aaSamples);   // the enhancements
     if (live && texFilter > 0) live->setTextureFilter(texFilter);
+    if (live && texAniso > 1) live->setAnisotropy(texAniso);
     if (live && !live->init(PW, PH)) { delete live; live = nullptr; }
     if (live) {
         live->setTextures(tex);
@@ -1046,8 +1047,9 @@ int sceneViewer(const std::string& fr, const std::string& setName,
                     live ? "the Vulkan backend has it, the software one does not"
                          : "no Vulkan device, so nothing here draws it");
     if (texFilter > 0)
-        std::printf("filter: bilinear asked - an ENHANCEMENT the original never had; "
-                    "%s\n",
+        std::printf("filter: %s%s asked - an ENHANCEMENT the original never had; "
+                    "%s\n", omk::textureFilterName(texFilter),
+                    texAniso > 1 ? " with anisotropy" : "",
                     live ? "the Vulkan backend has it, the software one does not"
                          : "no Vulkan device, so nothing here draws it");
 #else
@@ -1085,6 +1087,7 @@ int sceneViewer(const std::string& fr, const std::string& setName,
             omk::Renderer* vr = omk::makeVulkanRenderer();
             if (aaSamples > 1) vr->setMultisample(aaSamples);
             if (texFilter > 0) vr->setTextureFilter(texFilter);
+            if (texAniso > 1) vr->setAnisotropy(texAniso);
             omk::vulkanNeedExtensions(vr, ext.data(), n);
             void* inst = omk::vulkanCreateInstance(vr);
             // Value-initialised rather than VK_NULL_HANDLE: this file
@@ -1348,6 +1351,8 @@ int main(int argc, char** argv) {
 "                   out of different places because a reader saw the window\n"
 "                   appear and walked the player, quite reasonably\n"
 "  --snaps <dir>    write a framebuffer every 30 frames after the hand-over\n"
+"  --snap-every N   ...every N frames instead; 1 is how a FLICKER is caught,\n"
+"                   a fault no one-second snapshot can show\n"
 "  --flicker <dir>  CATCH A ONE-TO-FIVE-FRAME FAULT. Watches its own\n"
 "                   output and, when a frame is far darker than the median\n"
 "                   of the last 31 - a body drawn on a set that is not\n"
@@ -1433,8 +1438,11 @@ int main(int argc, char** argv) {
 "                   Vulkan backend only - the original has none; also\n"
 "                   [Enhancements] antialiasing=N in --config\n"
 "  --filter M       ENHANCEMENT, off by default: texture filtering, M =\n"
-"                   nearest (the original) or bilinear; Vulkan only; also\n"
+"                   nearest (the original), bilinear or trilinear (a mip\n"
+"                   chain generated at load); Vulkan only; also\n"
 "                   [Enhancements] texturefiltering=M in --config\n"
+"  --anisotropy N   ENHANCEMENT: N-tap anisotropic filtering (2..16), with\n"
+"                   trilinear only; [Enhancements] anisotropy=N\n"
 "  --software       force the software rasteriser\n"
 "  --letterbox      the 1.818:1 camera-mode bars, for laying a shot beside\n"
 "                   a capture; --full is the old spelling of the opposite\n"
@@ -1502,6 +1510,7 @@ int main(int argc, char** argv) {
     // RGB565 every 30 frames from the hand-over on (`snap-<frame>.bin`,
     // 640x480 after the display size), which is how the walk was LOOKED at.
     std::string holdStream, snapsDir, flickerDir;
+    int snapEvery = 30;            // `--snap-every N`: 1 catches a flicker
     // A STREET START (docs/STREET_LIFE.md, step 4): `--save FILE` takes the
     // game DB from a save's slot 0 - the player record lives there, and
     // Kay'l's actor record is in no city chunk - `--area N` loads that area
@@ -1597,7 +1606,8 @@ int main(int argc, char** argv) {
     int clipArg = 0;
     int skyFlag = -1;      // --sky 0|1, options row 4; -1 = take it from the settings
     int aaFlag = -1;       // --aa N, [Enhancements] antialiasing; -1 = the settings'
-    int filterFlag = -1;   // --filter nearest|bilinear, [Enhancements] texturefiltering
+    int filterFlag = -1;   // --filter nearest|bilinear|trilinear, [Enhancements] texturefiltering
+    int anisoFlag = -1;    // --anisotropy N, [Enhancements] anisotropy
     // The fog is not an option row - it is always on in the engine - so this
     // is a diagnostic switch, not a setting. Default ON, because that is what
     // the game does.
@@ -1704,6 +1714,7 @@ int main(int argc, char** argv) {
         else if (a == "--keydelay" && i + 1 < argc) keyEvery = std::atoi(argv[++i]);
         else if (a == "--hold" && i + 1 < argc) holdStream = argv[++i];
         else if (a == "--snaps" && i + 1 < argc) snapsDir = argv[++i];
+        else if (a == "--snap-every" && i + 1 < argc) snapEvery = std::max(1, std::atoi(argv[++i]));
         else if (a == "--flicker" && i + 1 < argc) flickerDir = argv[++i];
         else if (a == "--res" && i + 1 < argc)
             std::sscanf(argv[++i], "%dx%d", &dispW, &dispH);
@@ -1748,10 +1759,13 @@ int main(int argc, char** argv) {
         else if (a == "--filter" && i + 1 < argc) {
             filterFlag = omk::textureFilterMode(argv[++i]);
             if (filterFlag < 0) {
-                std::fprintf(stderr, "--filter %s: not a mode (nearest|bilinear)\n", argv[i]);
+                std::fprintf(stderr, "--filter %s: not a mode (nearest|bilinear|trilinear)\n",
+                             argv[i]);
                 return 2;
             }
         }
+        else if (a == "--anisotropy" && i + 1 < argc)
+            anisoFlag = std::max(1, std::min(16, std::atoi(argv[++i])));
         else if (a == "--fog" && i + 1 < argc) drawFog = std::atoi(argv[++i]) != 0;
         else if (a == "--no-crowd-light") lightCrowd = false;
         else if (a == "--fog-colour" && i + 1 < argc) {
@@ -1811,7 +1825,7 @@ int main(int argc, char** argv) {
         return sceneViewer(fr, scene, camIndex, haveEye ? eyeA : nullptr,
                            haveAt ? atA : nullptr, fovA, letterbox, frames, dump,
                            startVulkan, noDelay, aaFlag < 0 ? 0 : aaFlag,
-                           filterFlag < 0 ? 0 : filterFlag);
+                           filterFlag < 0 ? 0 : filterFlag, anisoFlag < 0 ? 1 : anisoFlag);
 
     const omk::DataFs fs(fr);
     auto w = omk::UiWidgets::loadJson(tb + "/ui_widgets.json");
@@ -1961,9 +1975,11 @@ int main(int argc, char** argv) {
     // The enhancement: OFF unless --aa or [Enhancements] said otherwise.
     const int aaSamples = aaFlag >= 0 ? aaFlag : settings.antiAliasing;
     const int texFilter = filterFlag >= 0 ? filterFlag : settings.textureFilter;
+    const int texAniso = anisoFlag >= 0 ? anisoFlag : settings.anisotropy;
     std::printf("settings: clip %d m (%s) = %.0f in, near/far split %.0f/%.0f;"
                 " crowd %d (%s); sky %d (%s), shadows %d (%s), detail %d (%s);"
-                " aa %d (%s, enhancement), filter %s (%s, enhancement)\n",
+                " aa %d (%s, enhancement), filter %s (%s, enhancement),"
+                " anisotropy %d (%s, enhancement)\n",
                 clipFlag ? clipArg : settings.v.clipDistance,
                 clipFlag ? "flag" : omk::sourceName(settings.clipDistance),
                 clipInches, clipInches * 0.25, clipInches * 0.95,
@@ -1972,8 +1988,9 @@ int main(int argc, char** argv) {
                 settings.v.shadows ? 1 : 0, omk::sourceName(settings.shadows),
                 settings.v.levelOfDetail, omk::sourceName(settings.levelOfDetail),
                 aaSamples, aaFlag >= 0 ? "flag" : omk::sourceName(settings.antiAliasingSource),
-                texFilter ? "bilinear" : "nearest",
-                filterFlag >= 0 ? "flag" : omk::sourceName(settings.textureFilterSource));
+                omk::textureFilterName(texFilter),
+                filterFlag >= 0 ? "flag" : omk::sourceName(settings.textureFilterSource),
+                texAniso, anisoFlag >= 0 ? "flag" : omk::sourceName(settings.anisotropySource));
     if (!ini.unknown.empty()) {
         std::printf("settings: %zu key(s) under [Preferences] the engine never reads:",
                     ini.unknown.size());
@@ -2769,6 +2786,7 @@ int main(int argc, char** argv) {
             omk::Renderer* vr = omk::makeVulkanRenderer();
             if (aaSamples > 1) vr->setMultisample(aaSamples);   // the enhancements
             if (texFilter > 0) vr->setTextureFilter(texFilter);
+            if (texAniso > 1) vr->setAnisotropy(texAniso);
             omk::vulkanNeedExtensions(vr, ext.data(), nx);
             void* inst = omk::vulkanCreateInstance(vr);
             VkSurfaceKHR surf{};
@@ -2797,7 +2815,8 @@ int main(int argc, char** argv) {
                     vkRen ? "drawn by the Vulkan backend"
                           : "the software reference has none, --vulkan for it");
     if (texFilter > 0)
-        std::printf("filter: bilinear - an ENHANCEMENT the original never had; %s\n",
+        std::printf("filter: %s%s - an ENHANCEMENT the original never had; %s\n",
+                    omk::textureFilterName(texFilter), texAniso > 1 ? " with anisotropy" : "",
                     vkRen ? "drawn by the Vulkan backend"
                           : "the software reference has none, --vulkan for it");
     // One place that decides where a finished framebuffer goes, so the movies,
@@ -11122,7 +11141,7 @@ int main(int argc, char** argv) {
             frameNote.clear();
         }
         present(fb);
-        if (!snapsDir.empty() && handoverFrame >= 0 && ((n - handoverFrame) % 30) == 0) {
+        if (!snapsDir.empty() && handoverFrame >= 0 && ((n - handoverFrame) % snapEvery) == 0) {
             const std::string path = snapsDir + "/snap-" + std::to_string(n) + ".bin";
             if (omk::safeOutputPath(path)) {
                 std::ofstream o(path, std::ios::binary);

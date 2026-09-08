@@ -132,10 +132,16 @@ public:
     int samples() const { return static_cast<int>(samples_); }
     bool setTextureFilter(int mode) override {
         if (dev_ != VK_NULL_HANDLE) return false;
-        filter_ = mode < 1 ? 0 : 1;
+        filter_ = mode < 1 ? 0 : mode < 2 ? 1 : 2;
+        return true;
+    }
+    bool setAnisotropy(int n) override {
+        if (dev_ != VK_NULL_HANDLE) return false;
+        aniso_ = n < 1 ? 1 : n > 16 ? 16 : n;
         return true;
     }
     int textureFilter() const { return filter_; }
+    int anisotropy() const { return anisoOn_ ? aniso_ : 1; }
     // The largest count the device's colour, depth and stencil limits all
     // allow - so a probe can tell "the device cannot" from "the backend did
     // not", which a check that skips on the former must be able to do.
@@ -177,7 +183,9 @@ private:
     // readback, the swapchain blit, the 2D upload. With MSAA on it becomes
     // the RESOLVE target and the pipelines rasterise into `msColour_`.
     int                   wantSamples_ = 1;
-    int                   filter_ = 0;        // 0 nearest (the original), 1 bilinear
+    int                   filter_ = 0;        // 0 nearest (the original), 1 bilinear, 2 trilinear
+    int                   aniso_ = 1;         // asked; 1 is off
+    bool                  anisoOn_ = false;   // the device feature was enabled for it
     VkSampleCountFlagBits samples_ = VK_SAMPLE_COUNT_1_BIT;
     VkImage        colour_ = VK_NULL_HANDLE;  VkDeviceMemory colourMem_ = VK_NULL_HANDLE;
     VkImageView    colourView_ = VK_NULL_HANDLE;
@@ -389,8 +397,22 @@ bool VulkanRenderer::pickDevice() {
     const float pri = 1.0f;
     VkDeviceQueueCreateInfo qi{VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO};
     qi.queueFamilyIndex = qfam_; qi.queueCount = 1; qi.pQueuePriorities = &pri;
+    // Anisotropic filtering is a device FEATURE, asked for at creation and
+    // only when the enhancement wants it AND the device has it; the base
+    // renderer enables no feature at all.
+    VkPhysicalDeviceFeatures have{};
+    vkGetPhysicalDeviceFeatures(phys_, &have);
+    VkPhysicalDeviceFeatures enable{};
+    if (aniso_ > 1 && filter_ >= 2 && have.samplerAnisotropy) {
+        enable.samplerAnisotropy = VK_TRUE; anisoOn_ = true;
+    } else if (aniso_ > 1) {
+        std::fprintf(stderr, "vulkan: anisotropy %d ignored - %s\n", aniso_,
+                     filter_ < 2 ? "it needs trilinear filtering (a mip chain)"
+                                 : "the device has no samplerAnisotropy feature");
+    }
     VkDeviceCreateInfo di{VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO};
     di.queueCreateInfoCount = 1; di.pQueueCreateInfos = &qi;
+    di.pEnabledFeatures = &enable;
     di.enabledExtensionCount = static_cast<uint32_t>(want.size());
     di.ppEnabledExtensionNames = want.empty() ? nullptr : want.data();
     VKCHECK(vkCreateDevice(phys_, &di, nullptr, &dev_), "vkCreateDevice");
@@ -787,6 +809,14 @@ bool VulkanRenderer::makePipelines() {
     si.addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT;
     si.addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT;
     si.mipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST;
+    // Trilinear: the mip chain `upload` generates, blended between levels.
+    // With one level (every mode below 2) maxLod 0 samples level 0 exactly
+    // as before.
+    if (filter_ >= 2) { si.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR; si.maxLod = VK_LOD_CLAMP_NONE; }
+    if (anisoOn_) {
+        si.anisotropyEnable = VK_TRUE;
+        si.maxAnisotropy = std::min(static_cast<float>(aniso_), props_.limits.maxSamplerAnisotropy);
+    }
     VKCHECK(vkCreateSampler(dev_, &si, nullptr, &sampler_), "vkCreateSampler");
 
     // 64 sets: the engine's texture pool is 58 slots, plus the white fallback.
@@ -1034,12 +1064,22 @@ void VulkanRenderer::setTextures(std::span<const omk::Texture> t) {
         }
         vkUnmapMemory(dev_, sm);
 
+        // THE MIP CHAIN - the trilinear enhancement's, generated here by a
+        // ladder of half-size linear blits, because the .3DT ships ONE level
+        // (MIPFILTER NONE in the original). Averaging RGBA with the key
+        // texels at (0,0,0,0) keeps every level premultiplied, so the
+        // shader's cutout rule holds down the chain; a non-cutout batch's
+        // black texels average as black, which is what they are.
+        uint32_t levels = 1;
+        if (filter_ >= 2)
+            for (int m = std::max(tw, th); m > 1; m >>= 1) ++levels;
         VkImageCreateInfo ii{VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO};
         ii.imageType = VK_IMAGE_TYPE_2D; ii.format = VK_FORMAT_R8G8B8A8_UNORM;
         ii.extent = {static_cast<uint32_t>(tw), static_cast<uint32_t>(th), 1};
-        ii.mipLevels = 1; ii.arrayLayers = 1;
+        ii.mipLevels = levels; ii.arrayLayers = 1;
         ii.samples = VK_SAMPLE_COUNT_1_BIT; ii.tiling = VK_IMAGE_TILING_OPTIMAL;
-        ii.usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
+        ii.usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT
+                 | (levels > 1 ? VK_IMAGE_USAGE_TRANSFER_SRC_BIT : 0);
         ii.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
         vkCreateImage(dev_, &ii, nullptr, &out.img);
         VkMemoryRequirements req; vkGetImageMemoryRequirements(dev_, out.img, &req);
@@ -1055,7 +1095,7 @@ void VulkanRenderer::setTextures(std::span<const omk::Texture> t) {
         bar.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
         bar.srcQueueFamilyIndex = bar.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
         bar.image = out.img;
-        bar.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+        bar.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, levels, 0, 1};
         bar.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
         vkCmdPipelineBarrier(cb, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
                              VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0, nullptr, 1, &bar);
@@ -1063,9 +1103,42 @@ void VulkanRenderer::setTextures(std::span<const omk::Texture> t) {
         cp.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
         cp.imageExtent = {static_cast<uint32_t>(tw), static_cast<uint32_t>(th), 1};
         vkCmdCopyBufferToImage(cb, sb, out.img, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &cp);
+        // The ladder: each level becomes a blit SOURCE once written, and the
+        // next is blitted from it at half size.
+        int pw = tw, ph = th;
+        for (uint32_t l = 1; l < levels; ++l) {
+            bar.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, l - 1, 1, 0, 1};
+            bar.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+            bar.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+            bar.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+            bar.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+            vkCmdPipelineBarrier(cb, VK_PIPELINE_STAGE_TRANSFER_BIT,
+                                 VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0, nullptr, 1, &bar);
+            const int nw = std::max(pw / 2, 1), nh = std::max(ph / 2, 1);
+            VkImageBlit bl{};
+            bl.srcSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, l - 1, 0, 1};
+            bl.srcOffsets[1] = {pw, ph, 1};
+            bl.dstSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, l, 0, 1};
+            bl.dstOffsets[1] = {nw, nh, 1};
+            vkCmdBlitImage(cb, out.img, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                           out.img, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &bl, VK_FILTER_LINEAR);
+            pw = nw; ph = nh;
+        }
+        // Level 0..levels-2 are now TRANSFER_SRC, the last TRANSFER_DST; the
+        // last level is moved to SRC too so ONE barrier can hand the whole
+        // image to the shader. With one level that is level 0 (DST -> SRC ->
+        // shader), a layout change and nothing else.
+        bar.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, levels - 1, 1, 0, 1};
         bar.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-        bar.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        bar.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
         bar.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+        bar.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+        vkCmdPipelineBarrier(cb, VK_PIPELINE_STAGE_TRANSFER_BIT,
+                             VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0, nullptr, 1, &bar);
+        bar.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, levels, 0, 1};
+        bar.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+        bar.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        bar.srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
         bar.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
         vkCmdPipelineBarrier(cb, VK_PIPELINE_STAGE_TRANSFER_BIT,
                              VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, nullptr, 0, nullptr, 1, &bar);
@@ -1076,7 +1149,7 @@ void VulkanRenderer::setTextures(std::span<const omk::Texture> t) {
         VkImageViewCreateInfo vi{VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO};
         vi.image = out.img; vi.viewType = VK_IMAGE_VIEW_TYPE_2D;
         vi.format = VK_FORMAT_R8G8B8A8_UNORM;
-        vi.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+        vi.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, levels, 0, 1};
         vkCreateImageView(dev_, &vi, nullptr, &out.view);
 
         VkDescriptorSetAllocateInfo dai{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO};
@@ -1471,6 +1544,9 @@ int vulkanMaxSamples(Renderer* r) {
 }
 int vulkanTextureFilter(Renderer* r) {
     return static_cast<VulkanRenderer*>(r)->textureFilter();
+}
+int vulkanAnisotropy(Renderer* r) {
+    return static_cast<VulkanRenderer*>(r)->anisotropy();
 }
 const char* vulkanDeviceName(Renderer* r) {
     auto* v = dynamic_cast<VulkanRenderer*>(r);

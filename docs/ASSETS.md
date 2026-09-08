@@ -1496,6 +1496,21 @@ limit, unclamped: the sets that sample sub-rectangles of a shared atlas
 edge, because nothing per draw says where it ends.
 `verify.py: engine: texture filter`.
 
+**Then mipmaps and anisotropy** (`--filter trilinear`, `--anisotropy N`;
+`texturefiltering = trilinear`, `anisotropy = N`; 2026-09-08). The `.3DT`
+ships ONE level and the original sets MIPFILTER NONE, so the chain is
+generated at upload by a ladder of half-size linear blits; averaging RGBA
+with the key texels at (0,0,0,0) keeps every level premultiplied, so the
+cutout rule holds at every distance. Anisotropy is a device FEATURE, asked
+for at device creation only when wanted and present, and only with
+trilinear. What a chain does is measurable as the frame's mean neighbour
+gradient over lit pixels — the frequencies the screen cannot hold, removed:
+through camera 4555 **nearest 6.70, bilinear 5.69, anisotropic 16x 5.05,
+trilinear 4.26**, the anisotropic mode sitting between the two because it
+samples along the footprint's long axis instead of blurring across it. The
+check asserts that ORDER, not the values, which are the driver's.
+`verify.py: engine: mipmaps`.
+
 **What *Niveau de détail* (options row 7, 0..2, `HIBYTE(dword_90E724)`)
 changes is content, not filtering.** Its readers: `sub_467E20(level, a)`
 builds a street model's LOD chain — level 2 all four sub-objects (with

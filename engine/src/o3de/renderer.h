@@ -212,10 +212,14 @@ public:
     virtual bool setMultisample(int /*samples*/) { return false; }
 
     // The second enhancement: texture filtering, `mode` 0 nearest (the
-    // original: MAG/MIN POINT, MIP NONE), 1 bilinear. Same contract as
-    // `setMultisample` - a request, before `init()`, that the software
-    // reference declines.
+    // original: MAG/MIN POINT, MIP NONE), 1 bilinear, 2 trilinear - a mip
+    // chain the backend generates at upload, the original shipping one level.
+    // Same contract as `setMultisample` - a request, before `init()`, that
+    // the software reference declines.
     virtual bool setTextureFilter(int /*mode*/) { return false; }
+    // And anisotropic filtering, `n` samples along the footprint's long axis
+    // (1 off, up to 16). Only meaningful with mode 2.
+    virtual bool setAnisotropy(int /*n*/) { return false; }
 };
 
 // The REFERENCE implementation: `drawGeometry` behind the boundary, with no

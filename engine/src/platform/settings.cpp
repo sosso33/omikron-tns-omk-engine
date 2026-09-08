@@ -69,8 +69,9 @@ Settings resolveSettings(const OptionsFile& ini,
             const int m = textureFilterMode(*w);
             if (m >= 0) { s.textureFilter = m; s.textureFilterSource = Settings::Source::Ini; }
             else std::fprintf(stderr, "settings: texturefiltering = %s is not a mode "
-                                      "(nearest|bilinear) - ignored\n", w->c_str());
+                                      "(nearest|bilinear|trilinear) - ignored\n", w->c_str());
         }
+        takeInt(kEnhancements, "anisotropy", s.anisotropy, s.anisotropySource);
     }
 
     // ---- 2. the save header, which is later and therefore wins -----------
@@ -108,6 +109,8 @@ Settings resolveSettings(const OptionsFile& ini,
     if (s.v.levelOfDetail  > 2) s.v.levelOfDetail  = 2;
     if (s.v.clipDistance   < 1) s.v.clipDistance   = 1;
     s.antiAliasing = msaaSamples(s.antiAliasing);
+    if (s.anisotropy < 1)  s.anisotropy = 1;
+    if (s.anisotropy > 16) s.anisotropy = 16;
     return s;
 }
 

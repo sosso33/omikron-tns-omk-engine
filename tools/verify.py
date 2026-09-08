@@ -19287,6 +19287,118 @@ def c_engine_texture_filter():
            "<= 16 levels, and coverage agreement with software stays >= 0.98"
 
 
+def c_engine_mipmaps():
+    r"""MIPMAPS and ANISOTROPY - the `[Enhancements]` trilinear mode, OFF by
+    default, and the property a mip chain owes.
+
+    The original ships one texture level and sets MIPFILTER NONE
+    (`docs/ASSETS.md` 4). The port's trilinear mode generates the chain at
+    upload by a ladder of half-size linear blits and samples it with a
+    LINEAR mipmap mode; `anisotropy = N` adds the device feature, asked for
+    at device creation only when wanted and present. Averaging RGBA down the
+    chain with the key texels at (0,0,0,0) keeps every level premultiplied,
+    so the cutout rule of `engine: texture filter` holds at every distance -
+    judged by eye on Aapden's floor stain under trilinear + 16x.
+
+    What a mip chain does to a minified surface is remove the frequencies
+    the screen cannot hold, and that is measurable as the frame's mean
+    NEIGHBOUR GRADIENT over lit pixels: trilinear must be SMOOTHER than
+    bilinear, and anisotropic filtering - which samples along the footprint's
+    long axis instead of blurring across it - must sit BETWEEN the two:
+    sharper than trilinear, still below bilinear. Through camera 4555 the
+    measured order is 4.26 < 5.05 < 5.69 (nearest 6.70); down Anekbah's
+    main street the same order holds. Asserted as the ORDER, not the values,
+    because the values are the driver's. Also: the nearest frame is still
+    byte-identical to the default (the ladder changes no level-0 texel), and
+    coverage agreement with the software reference is kept. In the source:
+    the default is 0 / 1, every call in omk-play is guarded, and the device
+    is created with no feature unless the enhancement asks.
+
+    Shown to fail (2026-09-08) with `upload` generating one level whatever
+    the mode: trilinear then equals bilinear and the order breaks.
+    """
+    import subprocess, tempfile, shutil, re
+    eng = os.path.join(ROOT, "engine")
+    fr  = omkpaths.data_root()
+    model = os.path.join(fr, "MESHES", "DECORS", "Aapkayl.3DO")
+    if not (os.path.isdir(eng) and os.path.exists(model)):
+        return ("skipped",), ("skipped",), "engine/ or Aapkayl.3DO absent"
+
+    sh = open(os.path.join(eng, "src", "platform", "settings.h")).read()
+    sc = open(os.path.join(eng, "src", "platform", "settings.cpp")).read()
+    pl = open(os.path.join(eng, "backends", "sdl", "play.cpp")).read()
+    vk = open(os.path.join(eng, "backends", "vulkan", "vkrender.cpp")).read()
+    ga = len(re.findall(r"if \((?:live && )?texAniso > 1\) [a-z]+->setAnisotropy\(texAniso\)", pl))
+    src_ok = (bool(re.search(r"int\s+anisotropy\s*=\s*1;", sh)),
+              '"anisotropy"' in sc and '"trilinear"' in sh,
+              ga == len(re.findall(r"->setAnisotropy\(", pl)) and ga >= 3,
+              "enable.samplerAnisotropy = VK_TRUE" in vk and "VK_SAMPLER_MIPMAP_MODE_LINEAR" in vk)
+
+    mk = subprocess.run(["make", "-s", "vulkan"], cwd=eng, capture_output=True, text=True)
+    vkbin = os.path.join(eng, "build", "run_vulkan")
+    gpu = ("no vulkan",)
+    if mk.returncode == 0 and os.path.exists(vkbin):
+        CAM = ["3526,1015,-905", "3412,1032,-882", "83"]
+        tmp = tempfile.mkdtemp()
+        try:
+            frames = {}
+            for tag, extra in (("default", []), ("nearest", ["0", "0", "1"]),
+                               ("bilinear", ["0", "1", "1"]), ("trilinear", ["0", "2", "1"]),
+                               ("aniso", ["0", "2", "16"])):
+                out = os.path.join(tmp, tag + ".bin")
+                r = subprocess.run([vkbin, fr, model] + CAM + [out, "640x352"] + extra,
+                                   capture_output=True, text=True)
+                if r.returncode == 0 and os.path.exists(out):
+                    raw = open(out, "rb").read()
+                    W, H, litSw, litVk = struct.unpack_from("<4i", raw, 0)
+                    N = W * H
+                    frames[tag] = (W, H, struct.unpack_from("<%dH" % N, raw, 16),
+                                   struct.unpack_from("<%dH" % N, raw, 16 + 2 * N))
+                    if tag == "aniso":
+                        m = re.search(r"aniso: (\d+)", r.stdout)
+                        frames["aniso_got"] = int(m.group(1)) if m else 0
+            if len(frames) == 6:
+                W, H, sw, d = frames["default"]
+                N = W * H
+                def rgb(v):
+                    return (((v >> 11) & 31) << 3, ((v >> 5) & 63) << 2, (v & 31) << 3)
+                def grad(px):
+                    t = 0; n = 0
+                    for i in range(N):
+                        if not px[i]:
+                            continue
+                        if i % W + 1 < W and px[i + 1]:
+                            a, b = rgb(px[i]), rgb(px[i + 1])
+                            t += abs(a[0] - b[0]) + abs(a[1] - b[1]) + abs(a[2] - b[2]); n += 3
+                        if i + W < N and px[i + W]:
+                            a, b = rgb(px[i]), rgb(px[i + W])
+                            t += abs(a[0] - b[0]) + abs(a[1] - b[1]) + abs(a[2] - b[2]); n += 3
+                    return t / n if n else 0.0
+                gb, gt, ga_ = (grad(frames[k][3]) for k in ("bilinear", "trilinear", "aniso"))
+                tri = frames["trilinear"][3]
+                both = sum(1 for i in range(N) if sw[i] and tri[i])
+                either = sum(1 for i in range(N) if sw[i] or tri[i])
+                aniso_on = frames["aniso_got"] > 1
+                gpu = (frames["nearest"][3] == d,
+                       gt < gb,                                  # trilinear smoother than bilinear
+                       (gt < ga_ < gb) if aniso_on else "no anisotropy on this device",
+                       round(both / either, 3) >= 0.98 if either else False)
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+
+    if gpu == ("no vulkan",):
+        want_gpu = gpu
+    else:
+        want_gpu = (True, True, gpu[2] if isinstance(gpu[2], str) else True, True)
+    return (src_ok, gpu), ((True, True, True, True), want_gpu), \
+           "the source: anisotropy defaults to 1, the keys are read, every " \
+           "`setAnisotropy` call in omk-play is guarded, and the device feature " \
+           "and the LINEAR mipmap mode exist only behind the request; the GPU " \
+           "(skipped without Vulkan): the nearest frame is byte-identical to the " \
+           "default, the mean neighbour gradient orders trilinear < anisotropic " \
+           "< bilinear, and coverage agreement with software stays >= 0.98"
+
+
 def c_mirror_pass():
     r"""The MIRRORS - a planar reflection pass, and a doc claim it refutes.
 
@@ -28254,6 +28366,7 @@ SLOW = [
     ("engine: renderer",   c_engine_renderer_boundary, "PORTING A2"),
     ("engine: anti-aliasing", c_engine_anti_aliasing, "ASSETS 4"),
     ("engine: texture filter", c_engine_texture_filter, "ASSETS 4"),
+    ("engine: mipmaps", c_engine_mipmaps, "ASSETS 4"),
     ("mirror pass",        c_mirror_pass,       "ASSETS 4c"),
     ("anekbah rendered",   c_anekbah_rendered,  "ASSETS 4b"),
     ("render back ends",   c_render_backends,   "ASSETS 4c"),
