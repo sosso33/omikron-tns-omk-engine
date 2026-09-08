@@ -7571,6 +7571,39 @@ def c_engine_slider_journey_qalisar():
         "model is never evicted - which is what made him vanish"
 
 
+def c_render_states():
+    r"""THE SHIPPED RENDERER HAS NO ANTI-ALIASING AND NO TEXTURE FILTERING.
+
+    `sub_4638C0`'s hardware arm sets the D3D7 render states once (docs/ASSETS.md
+    4): ANTIALIAS (2) = 0, TEXTUREPERSPECTIVE (4) = 1, SHADEMODE (9) = 2
+    (Gouraud), DITHERENABLE (26) = 1, SPECULARENABLE (29) = 1, and texture
+    stage 0's MAGFILTER (16) / MINFILTER (17) / MIPFILTER (18) all 1 - POINT,
+    POINT, NONE. EDGEANTIALIAS (40) is never set anywhere. Read out of the
+    decompilation, so skipped without it.
+    """
+    if not omkpaths.decomp_path():
+        return ("skipped",), ("skipped",), omkpaths.missing_for("decomp")
+    src = os.path.join(ROOT, "readable", "src", "21_d3d.c")
+    if not os.path.exists(src):
+        return ("skipped",), ("skipped",), "readable/src absent"
+    t = open(src, errors="replace").read()
+    import re as _re
+    i = t.find("@func 0x004638C0 ")
+    body = t[i:i + 20000] if i >= 0 else ""
+    def rs(state, value):
+        return bool(_re.search(r"SetRenderState\(\w+, %d, %d\)" % (state, value), body))
+    def tss(stage, state, value):
+        return bool(_re.search(r"SetTextureStageState\(\w+, %d, %d, %d\)" % (stage, state, value), body))
+    allsrc = "".join(open(os.path.join(ROOT, "readable", "src", f), errors="replace").read()
+                     for f in os.listdir(os.path.join(ROOT, "readable", "src")) if f.endswith(".c"))
+    edge = len(_re.findall(r"SetRenderState\(\w+, 40,", allsrc))
+    got = (i >= 0, rs(2, 0), rs(4, 1), rs(9, 2), rs(26, 1), rs(29, 1),
+           tss(0, 16, 1), tss(0, 17, 1), tss(0, 18, 1), edge)
+    return got, (True,) * 9 + (0,), \
+        "sub_4638C0 found; ANTIALIAS off, perspective-correct, Gouraud, dither on, " \
+        "specular on; mag/min/mip filters POINT/POINT/NONE; EDGEANTIALIAS never set"
+
+
 def c_engine_slider_journey():
     r"""THE WHOLE SLIDER, from the sneak to getting out at the destination.
 
@@ -27621,6 +27654,7 @@ CHECKS = [
     ("engine: slider call page", c_engine_slider_travel, "todo/slider"),
     ("engine: slider fly", c_engine_slider_fly, "todo/slider"),
     ("engine: slider door", c_engine_slider_door, "todo/slider"),
+    ("render states",      c_render_states,      "ASSETS 4"),
     ("engine: slider ride", c_engine_slider_ride, "todo/slider"),
     ("engine: slider call", c_engine_slider_call, "todo/slider"),
     ("engine: slider arrives", c_engine_slider_arrives, "todo/slider"),

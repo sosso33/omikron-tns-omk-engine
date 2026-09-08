@@ -1434,6 +1434,43 @@ the option wins. It can only ever reduce.
 > `verify.py: world unit`, which measures the models rather than quoting
 > either constant, and fails if the metre reading of a human body is accepted.
 
+**No anti-aliasing, no texture filtering: the shipped renderer is point-sampled
+and dithered** (read 2026-09-08, asked by a reader). The hardware arm of the
+device set-up, `sub_4638C0` (0x004638C0), guarded by `dword_53ADF0` — the
+*Accélération 3D* option's driver mode — writes the render states once:
+
+    SetRenderState(31, 0)   SUBPIXEL off        SetRenderState(7, 0)   ZENABLE off (here)
+    SetRenderState(23, 5)   ZFUNC, the reversed depth (above)
+    SetRenderState(22, 1)   CULLMODE = NONE
+    SetRenderState(2,  0)   ANTIALIAS = FALSE   -- explicitly OFF; EDGEANTIALIAS (40) is never set
+    SetRenderState(4,  1)   TEXTUREPERSPECTIVE  -- perspective-correct texturing
+    SetRenderState(16, 1)   LASTPIXEL
+    SetRenderState(9,  2)   SHADEMODE = GOURAUD
+    SetRenderState(26, 1)   DITHERENABLE        -- ON: the 16-bit target is dithered by the driver
+    SetRenderState(29, 1)   SPECULARENABLE
+    SetTextureStageState(0, 16, 1)   MAGFILTER = POINT
+    SetTextureStageState(0, 17, 1)   MINFILTER = POINT
+    SetTextureStageState(0, 18, 1)   MIPFILTER = NONE  -- no mipmaps; the .3DT ships one level
+    SetTextureStageState(0, 12, 1) / (1, 12, 1)         -- ADDRESSV = WRAP on both stages
+
+So the 1999 picture is Gouraud-shaded, perspective-correct, **nearest-sampled**
+textures with **no mipmaps and no anti-aliasing**, dithered into RGB565, with
+specular on and the linear black fog below. Filtering and dithering are the
+DRIVER's (PORTING B, "not about the low bits of a pixel"), which is why the
+port samples NEAREST in both backends and checks no pixel value; enabling
+bilinear or MSAA in a replica would be an enhancement the original never
+drew, and this note is here so it is not mistaken for fidelity.
+
+**What *Niveau de détail* (options row 7, 0..2, `HIBYTE(dword_90E724)`)
+changes is content, not filtering.** Its readers: `sub_467E20(level, a)`
+builds a street model's LOD chain — level 2 all four sub-objects (with
+`dword_4CB058 = 14.0`), level 1 fewer, 0 none; the texture loader
+(20_ddraw.c 1587/1607) loads a texture flagged `0x1000` only at level ≥ 1;
+25_sys.c 287 enables one more thing at level 2 and 11967 walks `1 - level`
+mesh links. Row 6 beside it is the crowd density (STREET_LIFE). The only
+anti-aliasing in the game is the FONTS' — greyscale coverage into a colour
+ramp (UI §5), which is authored, not rendered.
+
 **The fog is linear.** `20_ddraw.c` 1921-1936 sets `D3DRENDERSTATE_FOGENABLE`
 (28), `FOGTABLEMODE` (35) = **3 = `D3DFOG_LINEAR`**, `FOGDENSITY` (38) = 1.0,
 then `FOGSTART` and `FOGEND` from the two globals above. Its COLOUR is the
