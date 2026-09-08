@@ -110,15 +110,22 @@ What to judge: whether it takes a sensible route, whether it stops somewhere
 you can reach, whether boarding feels like boarding, and whether the journey's
 route and stop look right.
 
-**Knowingly missing**, updated 2026-09-08 after the boarding landed: the
-slider's **door does not visibly open**, because `sub_4521E0` swaps the model
-between two globals this repo has not identified; the **seated facing** may be
-mirrored (the vehicle pool's yaw convention is the opposite of the player's
-except along ±Z — say if he rides backwards, it is a known suspect and not a
-surprise); a journey to a destination in ANOTHER area loads the area and
-places you instead of driving (the circuit changes under the vehicle); the
-optional cutscene of the slider on its road is not found; and a called slider
-you never board does not yet give up after its 600 frames.
+**What to judge now** (2026-09-08, after a first pass found six faults):
+the door swings up as he steps in (`SLF_112.3DA`, 71.4 degrees) and down as
+he gets out; he ends the entry IN the seat, 48 cm off the centreline on the
+door side (the two clips agree on that point); he gets out where the slider
+STOPPED, not at the destination's address; and once you walk 300 units away
+and are in front of it the terminal prints `slider: RELEASED` and it drives
+off as ordinary traffic. **Say if he sits 50 cm too far forward or back**:
+the slider is drawn about `SlBasB`'s origin and the clips are authored about
+`SlBassin`'s, 19.7 apart along the length, and that residual is not settled.
+
+**Knowingly missing**: `sub_4521E0`'s model swap (the open-door meshes
+`SlPorteZD/ZG` exist beside the animated `SlPorteG`, and which the engine
+shows when is not read); camera 17 at the exit (the follow camera stands in);
+a journey to a destination in ANOTHER area loads the area and places you
+instead of driving; the optional cutscene of the slider on its road; and a
+called slider you never board does not yet give up after its 600 frames.
 
 ## 4b. The slider takes you somewhere — 1 minute
 

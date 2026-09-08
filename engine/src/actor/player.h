@@ -441,6 +441,12 @@ public:
     };
     const Frame& last() const { return last_; }
     const ActorRuntime& runtime() const { return rt_; }
+    // ...and the writable half, for the two slider states. `MDACTION` writes
+    // `+404 = 6` and `sub_468FA0` writes both `+404` and `+408` to 8; the
+    // port drove the `.CTL` group for both and left ACTOR_STATE at 1, so the
+    // table's own `kAny -> 6` and `6 -> 7` rows were never exercised by the
+    // path that is supposed to exercise them.
+    bool setActorState(ActorState to, const char* writer) { return rt_.setState(to, writer); }
     const Walker& walker() const { return walker_; }
     long ticks() const { return ticks_; }
     // How far the position has moved from the start, in the ground plane.

@@ -439,6 +439,52 @@ matrix's ROWS end to end (`calledFrame`, `setRootFrame`) and never as an
 angle. Whether the SEATED placement's `rideAt(seat, calledYaw())` should be
 negated is a separate question this did not touch, and is now listed below.
 
+### Played, and six things were wrong — 2026-09-08, the same day
+
+The reader played the boarding and reported, in order: *"I had to go to the
+front of the slider to enter it"*, *"the animation didn't work"*, *"I was
+teleported instead of just leaving the slider where it arrives"*, then *"the
+door has still no animation"* (with a screenshot of the original: a gull-wing
+door swung up, Kay'l beside it on the road), *"kay'l animation is played with
+the wrong transform"*, and *"the slider doesn't move once I leave it, it
+blocks all the vehicles on the road"* — with the standing instruction **"look
+carefully at the code, there are many approximations right now"**. Every one
+of them was a real fault, and only one was the sign question the previous
+section had flagged. Recorded here with the cause, because each looked like a
+different bug and several were the same kind of mistake.
+
+| the report | the cause | the fix |
+|---|---|---|
+| had to go to the **front** | `calledAt` returned the mover's `pos`, the lane **carrot**, which `spawnVehicle` puts `kCarrotBehind = 117` units (2.97 m) AHEAD of the vehicle. `sub_438310` reads the NODE's +36/+40/+44 — the drawn body. So 117 of `MDACTION`'s 157.48 reach was spent before he took a step and the only ground satisfying it was off the nose | `calledAt` → `m.body` |
+| ...and the sign, before that | `calledFrame` derived the door axis from `Matrix3x3_FromEulerAngles`; the vehicle's node matrix is `sub_4427D0(mover+24, 0, mover+32)` **transposed** by `sub_4423C0` (18_d3d.c 3938). On flat ground node+140 row 0 = `(−f.z, 0, +f.x)`, row 2 = `(−f.x, 0, −f.z)` — the exact negative of both derived rows. Gate, snap and camera 9 all read row 0, so all three moved to the far flank TOGETHER and every self-consistency check passed | rows transcribed from the builder |
+| Kay'l **floats** at the vehicle's waistline (the "wrong transform", half of it) | the engine writes +244..+252, his ORIGIN = the **pelvis**; `PlayerController`'s position is the walker's, at the **feet**. The pelvis-space y went straight to `rideAt`, one pelvis-height (41.9) too high. **Found by RENDERING the boarding beside the screenshot**, not by reading — the listing cannot say which convention a class uses | `+ cameraLift()` on both placements |
+| ...the other half | `sub_437140(node, M_slider)` installs the slider's matrix at node+156, and +156 is read as an ORIENTATION (21_d3d.c 2854); the port used it only for the root delta and drew him on his walk-up facing. The first fix wrote the yaw into `Session::setPlayerPosition` — the logical record — and moved NOTHING on screen; the model is posed from `player->facing()` at the draw | the draw's yaw, states 6/8 |
+| **teleported** at the destination | `sub_4570F0` writes only the actor's y and copies +244/+252 through UNCHANGED, then `sub_468FA0` places him from group 61's clip against `slf_113.3da` (`dword_9103D8`, NOT the entry's 112) and plays `H_SLDOUT`. `placeActorAt(address)` had no basis in the code | out where it stopped, `H_SLDOUT`, `MDSLIDOU` → `H_STAND` |
+| **no door animation** | not a model swap. `SLF_112.3DA` is **72 frames** = `H_SLDIN`, `SLF_113.3DA` **51** = `H_SLDOUT`: the slider's OWN clips, played on its sub-node by `Cef_TickChannel`'s ACTOR_STATE switch, cases 6 and 8 (19_dsound.c 4145-4200), on the SAME clock as the character's. Of five tracks one moves — **`SlPorteG`, 71.4°**, the gull-wing swing. `build/slider_doorclip` | the called vehicle composed from the clip at `poseFrame()` |
+| **blocks the road** after he gets out | THREE causes in a row: (1) `RideMachine` went to 0 but `Vehicle::state` stayed 7 and `vehicleDrive` skips `state != 0`; (2) once written, the hand-back was undone one line later by the "stopped where it arrived" arm (`was != state`, 0 is neither 2 nor 6 → back to OPEN); (3) `callRide_.tick(dt, d, 0.0f, false)` — `toPlayer` and `ahead` were HARD-CODED, so `case 7`'s `> 300 && ahead` could never be true | tested first; `sub_456530` case 7's own test `dx·sin y − dz·cos y > 0`, fed by `setRider` |
+| ends **beside** the slider, not in it | the door snap is right and so is the rotated root delta (traced: per-tick direction `(−0.76, +1.10)` is the seat's) — but he moved `(+44.8, −4.7)` net, 25 units of it in the first five frames. **The crowd push**: `MDACTION` snaps him INSIDE the vehicle's body sphere and `Actor_TickNpc`'s push shoved him out every frame faster than the clip walked him in. ACTOR_STATE 6 and 8 never run `Actor_TickNpc` | no push while boarding or leaving |
+
+**The seat, from the clips alone.** From the door (`−62.5, −8.8, +3.7`)
+`H_SLDIN`'s root travels `(+43.5, +12.5, −0.9)` and ends at
+`(−19.0, +3.7, +2.8)`; `H_SLDOUT` **starts** at `(−19.0, −8.8, +2.8)`. The
+entry ends where the exit begins, to 0.1: a driver's seat 48 cm off the
+centreline on the door side, stepped down into. `build/slider_door` prints
+both travels.
+
+**Also found, and deliberately left**: `Sliders::setPlayer` has NO CALLER in
+the tree, so `playerKnown_` is always false and the class's player-aware arms
+(the run-over latch, the on-road test) have never run. Waking it changes crowd
+behaviour outside this task; the release takes its own `setRider`. And
+`make -s build/omk-play` is a silent no-op (no rule, file exists) — the target
+is `play`; two eight-minute runs were evidence about the previous binary.
+
+**Still open**: the reserved slider is drawn re-centred on `SlBasB`'s origin
+while the clips are authored against `SlBassin`'s, and the two differ by 0.6
+in y and 19.7 in z (50 cm along the length) — a residual worth measuring
+against the mesh extents; `sub_4521E0`'s model swap (`SlBasA` carries the
+`SlPorteZD/ZG` open-door meshes, `SlBasB` the closed `SlPorteG` — the swap
+and the clip both exist); camera 17 at the exit.
+
 ## What is left — 2026-09-08, after the journey landed
 
 The reader, 2026-09-07: *"So, slider task is not finished if it is not usable,

@@ -2286,6 +2286,63 @@ geometry is carried as the matrix's rows end to end (`calledFrame`,
 `setRootFrame`) precisely so that question is not decided by accident; see
 `todo/slider.md`.
 
+**PLAYED THE SAME DAY, AND SIX THINGS WERE WRONG** - the reader's reports, in
+their words: *"I had to go to the front of the slider to enter it"*, *"the
+animation didn't work"*, *"I was teleported instead of just leaving the slider
+where it arrives"*, *"the door has still no animation"*, *"kay'l animation is
+played with the wrong transform"*, *"the slider doesn't move once I leave it,
+it blocks all the vehicles on the road"*, and *"are you sure he is sitting
+inside the slider and not 1 or 2 metres on the side?"* - with the standing
+instruction **"look carefully at the code, there are many approximations
+right now."** Every one was real and only one was the sign question the
+paragraph above had flagged. `todo/slider.md` has the table; the ones that
+are lessons rather than bugs:
+
+* **the wrong POINT, not the wrong sign.** `calledAt` returned the lane
+  carrot, which sits `kCarrotBehind = 117` units (2.97 m) AHEAD of the
+  vehicle; `sub_438310` reads the node's +36/+40/+44, the drawn body. A 4 m
+  gate centred 3 m off the nose accepts only the ground in front of it.
+* **a pelvis handed to a feet-space class.** The engine writes +244..+252, his
+  ORIGIN; `PlayerController`'s position is the walker's. He floated one
+  pelvis-height (41.9) above the road, and it was found by RENDERING the
+  boarding beside the reader's screenshot - the listing cannot tell you which
+  convention a class uses.
+* **an edit that changed the record and not the picture.** The first "wrong
+  transform" fix wrote the slider's yaw into `Session::setPlayerPosition` and
+  moved nothing on screen: the model is posed from `player->facing()` at the
+  draw. *"I don't see any change"* was exactly right.
+* **the door is a CLIP, not a swap.** `SLF_112.3DA` is 72 frames = `H_SLDIN`,
+  `SLF_113.3DA` 51 = `H_SLDOUT` - the slider's own animations, played on its
+  sub-node by `Cef_TickChannel`'s ACTOR_STATE cases 6 and 8 on the character's
+  clock. One track moves: `SlPorteG`, 71.4 degrees. This port had read them
+  for their root key only.
+* **three causes behind one symptom.** The slider blocking the road was (1)
+  the vehicle never returned to state 0, then (2) the hand-back undone one
+  line later by the "stopped where it arrived" arm, then (3) `toPlayer` and
+  `ahead` HARD-CODED `0.0f, false` at the `RideMachine::tick` call, so
+  `case 7`'s condition could never be true. Each fix was necessary; only the
+  third made it work.
+* **the crowd push on a man being animated into a seat.** `MDACTION` snaps
+  him inside the vehicle's body sphere and `Actor_TickNpc`'s push shoved him
+  out every frame faster than the clip walked him in - 25 units in the first
+  five frames, before the clip had moved him at all. States 6 and 8 never
+  run `Actor_TickNpc`. Found by tracing the carry-in frame by frame once a
+  render at the end of the clip showed him beside the vehicle.
+
+**The seat, from the clips alone**: from the door `H_SLDIN`'s root travels
+`(+43.5, +12.5, -0.9)` to `(-19.0, ., +2.8)`, and `H_SLDOUT` STARTS at
+`(-19.0, ., +2.8)` - the entry ends where the exit begins, to 0.1. A driver's
+seat 48 cm off the centreline. The traced carry-in now lands him 18.5 units
+from the centre. `engine: slider door` asserts the identity and the clips;
+`engine: slider journey` asserts the seat, the exit where the slider stopped,
+and the RELEASED line.
+
+**Found and deliberately left**: `Sliders::setPlayer` has no caller, so the
+class's player-aware arms have never run - the release takes its own
+`setRider`; the reserved slider is drawn re-centred on `SlBasB`'s origin
+while the clips are authored against `SlBassin`'s, 19.7 apart in z (50 cm
+along the length); `sub_4521E0`'s model swap; camera 17 at the exit.
+
 Two small additions to `PlayerController` carry the arm, and both are direct
 models of engine facts rather than conveniences: `setRootFrame` is
 `sub_437140(node, matrix)` - the `Anim_RootDelta` 3x3 CLAUDE.md 6 lists, whose

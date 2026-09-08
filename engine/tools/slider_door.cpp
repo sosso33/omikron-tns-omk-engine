@@ -42,12 +42,26 @@ int main(int argc, char** argv) {
     const auto data = fs.read("ANIMS/H1Avnt.CTL");
     if (data.empty()) { std::printf("H1Avnt.CTL MISSING\n"); return 1; }
     const auto f = omk::readCtl(data);
-    const auto ref = fs.read("ANIMS/slf_112.3da");
-    float r0[3] = {0, 0, 0};
-    const bool haveRef = !ref.empty() && omk::clipRootStart(ref, r0);
-    std::printf("slf_112.3da root0 %s %.3f %.3f %.3f\n", haveRef ? "ok" : "MISSING", r0[0], r0[1], r0[2]);
-    int fails = haveRef ? 0 : 1;
+    // TWO reference clips, and they are NOT interchangeable: `Game_Init`
+    // loads `anims\\slf_112.3da` into `dword_90EF28` and `anims\\slf_113.3da`
+    // into `dword_9103D8` (05_sys.c 1842-1844), the ENTRY (`MDACTION`) reads
+    // the first and the EXIT (`sub_468FA0`) reads the second. Measuring group
+    // 61 against 112, as this did until 2026-09-08, gives an offset that is
+    // wrong by the difference between the two references.
+    int fails = 0;
+    float r112[3] = {0, 0, 0}, r113[3] = {0, 0, 0};
+    const auto ref112 = fs.read("ANIMS/slf_112.3da");
+    const auto ref113 = fs.read("ANIMS/slf_113.3da");
+    const bool have112 = !ref112.empty() && omk::clipRootStart(ref112, r112);
+    const bool have113 = !ref113.empty() && omk::clipRootStart(ref113, r113);
+    std::printf("slf_112.3da root0 %s %.3f %.3f %.3f\n", have112 ? "ok" : "MISSING",
+                r112[0], r112[1], r112[2]);
+    std::printf("slf_113.3da root0 %s %.3f %.3f %.3f\n", have113 ? "ok" : "MISSING",
+                r113[0], r113[1], r113[2]);
+    if (!have112) ++fails;
+    if (!have113) ++fails;
     for (int gid : {60, 61}) {
+        const float* r0 = (gid == 60) ? r112 : r113;
         int g = -1;
         for (std::size_t i = 0; i < f.groupList.size(); ++i) if ((int)f.groupList[i].id == gid) g = (int)i;
         if (g < 0) { std::printf("group %d MISSING\n", gid); ++fails; continue; }
@@ -62,6 +76,27 @@ int main(int argc, char** argv) {
                     frames, ok ? "ok" : "MISSING", c0[0], c0[1], c0[2],
                     c0[0] - r0[0], c0[1] - r0[1], c0[2] - r0[2]);
         if (!ok) ++fails;
+        // the travel: sum of keys 1..k
+        if (s.clip >= 0) {
+            const auto d = omk::animDescriptor(data, f.clips[(std::size_t)s.clip].offset);
+            if (d) for (const auto& t : d->tracks) {
+                if (!t.posOffset || t.posKeys <= 0) continue;
+                float acc[3] = {0, 0, 0};
+                std::printf("   travel:");
+                for (int k = 1; k < t.posKeys && t.posOffset + 12u * (std::size_t)k + 12 <= data.size(); ++k) {
+                    float v[3]; std::memcpy(v, data.data() + t.posOffset + 12u * (std::size_t)k, 12);
+                    for (int c = 0; c < 3; ++c) acc[c] += v[c];
+                    if (k % 18 == 0 || k == t.posKeys - 1)
+                        std::printf("  f%d (%.1f %.1f %.1f)", k, acc[0], acc[1], acc[2]);
+                }
+                std::printf("\n");
+                break;
+            }
+        }
     }
     return fails ? 1 : 0;
 }
+// ---- appended 2026-09-08: the clips' own ROOT TRAVEL ---------------------
+// `Anim_RootDelta` sums position keys 1..N (key 0 is the rest). Printed at a
+// few frames so the carry-in can be checked against the door offset: from
+// the door, the entry clip should bring the root back onto the slider.

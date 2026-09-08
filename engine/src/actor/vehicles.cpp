@@ -235,7 +235,46 @@ void Sliders::tickVehicles(float dt) {
                 d = std::sqrt(dx * dx + dy * dy + dz * dz);
             }
             const int was = callRide_.state;
-            callRide_.tick(dt, d, 0.0f, false);
+            // ---- and case 7's two ARGUMENTS, which were never supplied ----
+            //
+            // `toPlayer` and `ahead` were hard-coded 0 and false here, so
+            // `case 7`'s `toPlayer > kLeave && ahead` could not be true on any
+            // frame and the slider could never be handed back to the traffic
+            // however far the player walked. The engine's own test, on
+            // `d = player - slider` and his Euler at +420:
+            //
+            //     sqrt(dx^2 + dz^2) > 300  &&  dx*sin(y) - dz*cos(y) > 0
+            //
+            // (`sub_456530` case 7, transcribed - the second is what "in front
+            // of him" means, since this engine's forward is (sin y, 0, -cos y)).
+            float toPlayer = 0.0f;
+            bool  ahead = false;
+            if (riderKnown_ && v.mover >= 0) {
+                const Pedestrian& m = movers_[static_cast<std::size_t>(v.mover)];
+                const float dx = riderPos_[0] - m.body[0];
+                const float dz = riderPos_[2] - m.body[2];
+                toPlayer = std::sqrt(dx * dx + dz * dz);
+                const float t = riderFacing_ * 0.0174532925199433f;
+                ahead = dx * std::sin(t) - dz * std::cos(t) > 0.0f;
+            }
+            callRide_.tick(dt, d, toPlayer, ahead);
+            // THE RELEASE IS TESTED FIRST, and that ordering is the whole bug.
+            // `case 7` ends `state = 0`, which also satisfies the "it stopped
+            // where it arrived" arm below (`was != state`, and 0 is neither 2
+            // nor 6) - so the slider was forced straight back to OPEN (3) the
+            // tick after it was released, every time, and never returned to
+            // the traffic. That is why a reader saw it *"blocked all the
+            // vehicles on the road"* even once the mode-0 hand-back was
+            // written: the hand-back ran and was immediately undone.
+            if (was == 7 && callRide_.released && callRide_.state == 0) {
+                v.state = 0;                  // `sub_438420(slider, 0)`
+                called_ = -1;                 // `sub_438250(0)`, dword_8F5E44
+                callRide_ = RideMachine{};
+                releasedTold_ = true;         // so the viewer can SAY it happened
+                vehicleDrive(vi, dt);
+                vehicleSound(vi);
+                continue;
+            }
             if (was == 6 && callRide_.state == 4) {
                 // The JOURNEY arrived: state 6 -> 4, camera mode 10. The
                 // vehicle stops here; the caller lets the rider out.
@@ -636,7 +675,21 @@ bool Sliders::calledAt(float out[3]) const {
     const Vehicle& v = vehicles_[static_cast<std::size_t>(called_)];
     if (!v.live || v.mover < 0) return false;
     const Pedestrian& m = movers_[static_cast<std::size_t>(v.mover)];
-    for (int k = 0; k < 3; ++k) out[k] = m.pos[k];
+    // THE BODY, not the lane carrot - and that was a 117-unit error. Every
+    // engine function that asks where a slider IS goes through
+    // `sub_438310(slider, v)`, which dereferences the slot to its NODE and
+    // reads the node's +36/+40/+44: the position the MODEL is drawn at. In
+    // this pool that is `m.body`, which `spawnVehicle` sets to
+    // `at - dir * kCarrotBehind` - the carrot `m.pos` runs 117 units (2.97 m)
+    // AHEAD of the vehicle, because it is the point the mover steers toward.
+    //
+    // Returning `m.pos` put the boarding gate's centre nearly three metres off
+    // the slider's nose, so 117 of `MDACTION`'s 157.48 reach was spent before
+    // a player took a step and the only ground satisfying it was in FRONT of
+    // the vehicle - which is exactly what a reader reported: *"I had to go to
+    // the front of the slider to enter it"*. The door point and camera 9 were
+    // measured from the same wrong centre.
+    for (int k = 0; k < 3; ++k) out[k] = m.body[k];
     return true;
 }
 
@@ -656,8 +709,31 @@ bool Sliders::calledFrame(float pos[3], float localX[3], float localZ[3]) const 
     const float n = std::sqrt(m.dir[0] * m.dir[0] + m.dir[2] * m.dir[2]);
     if (!(n > 0.0f)) return false;
     const float fx = m.dir[0] / n, fz = m.dir[2] / n;
-    localZ[0] = fx;   localZ[1] = 0.0f; localZ[2] = fz;    // row 2, the forward
-    localX[0] = fz;   localX[1] = 0.0f; localX[2] = -fx;   // row 0
+    // ...and these two rows are the ENGINE's, not a derivation from a yaw -
+    // which is what the first version of this was, and it had both of them
+    // backwards. `sub_453B40` builds a vehicle's node matrix as
+    //
+    //     sub_4427D0(mover+24, 0.0, mover+32, tmp);   // 18_d3d.c 3938
+    //     sub_4423C0(tmp, mover+140);                 // ...and TRANSPOSES it
+    //
+    // `sub_4427D0` writes row 0 = -(up x d), row 1 = the up projected off d,
+    // row 2 = (d.x, d.y, -d.z) - note the z NEGATED, this engine's usual
+    // reflection - and on flat ground the up degenerates to (0,1,0). So the
+    // BUILT matrix has row 0 = (-f.z, 0, -f.x) and row 2 = (f.x, 0, -f.z),
+    // and `sub_4423C0` transposes that into node+140, leaving
+    //
+    //     row 0 = (-f.z, 0,  f.x)      what `Matrix3x3_RotateVector(1,0,0)`
+    //                                  returns - the door axis
+    //     row 1 = ( 0,   1,  0  )
+    //     row 2 = (-f.x, 0, -f.z)
+    //
+    // Deriving them instead from `Matrix3x3_FromEulerAngles`, as this did,
+    // gives the NEGATIVE of both - and since the gate, the door snap and
+    // camera 9 all read row 0, all three moved to the far flank together and
+    // stayed consistent with each other. Nothing self-consistent could see
+    // it; a reader walking up to the slider and being refused could.
+    localX[0] = -fz;  localX[1] = 0.0f; localX[2] =  fx;   // row 0
+    localZ[0] = -fx;  localZ[1] = 0.0f; localZ[2] = -fz;   // row 2
     return true;
 }
 

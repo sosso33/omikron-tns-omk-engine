@@ -7305,11 +7305,14 @@ def c_engine_slider_arrives():
     for ln in o.splitlines():
         if ln.startswith("slider: OPEN at"): line = ln.strip()
     return (called, line), \
-           (True, "slider: OPEN at 1448 6 -6540 - walk to it and press the "
+           (True, "slider: OPEN at 1304 6 -6651 - walk to it and press the "
                   "action button"), \
         "confirming a destination ROW on the sneak's slider page calls one " \
         "to where the player stands; it spawns at the top of lane 237, drives twenty-one " \
-        "segments down the road and STOPS OPEN at 1448 6 -6540, within the " \
+        "segments down the road and STOPS OPEN with its BODY at 1304 6 -6651 - " \
+        "117 units behind the lane carrot at 1448 -6540, which is kCarrotBehind, " \
+        "and the body is what sub_438310 reads and what the gate measures from " \
+        "(2026-09-08: it had reported the carrot) - within the " \
         "117 units of the pickup point that `sub_456530`'s state 2 tests " \
         "against - and that point is the nearest LANE point, not the player, " \
         "who is 518 away and could never have been reached"
@@ -7359,7 +7362,7 @@ def c_engine_slider_door():
     def field(line_key, key, n):
         for ln in out.splitlines():
             if ln.startswith(line_key) and key in ln:
-                v = ln.split(key, 1)[1].split()
+                v = ln.split(key, 1)[1].replace(")", " ").split()
                 return tuple(round(float(x), 3) for x in v[:n])
         return None
     ref = field("slf_112.3da", "root0 ok", 3)
@@ -7375,11 +7378,49 @@ def c_engine_slider_door():
     doorSide = off60 is not None and off60[0] < 0.0
     inReach = off60 is not None and (sum(c * c for c in off60) ** 0.5) < 157.48032
     camReach = round(pre["eye"][0], 4) == 157.4803 and round(pre["eye"][1], 4) == 59.0551
-    got = (ref, off60, off61, clip60, clip61, doorSide, inReach, camReach)
+    # THE SEAT, from the clips alone: the entry's end is the exit's start.
+    tr60 = field("   travel:", "f72 (", 3)
+    tr61 = field("   travel:", "f51 (", 3)
+    seat = (off60 is not None and tr60 is not None and off61 is not None and
+            abs(off60[0] + tr60[0] - off61[0]) < 0.2 and
+            abs(off60[2] + tr60[2] - off61[2]) < 0.2)
+    # ...and the slider's OWN clips: 72 and 51 frames, and one mesh that moves
+    c = subprocess.run(["make", "-s", "build/slider_doorclip"], cwd=eng,
+                       capture_output=True, text=True)
+    cbin = os.path.join(eng, "build", "slider_doorclip")
+    co = subprocess.run([cbin, omkpaths.data_root()], capture_output=True, text=True).stdout \
+         if c.returncode == 0 and os.path.exists(cbin) else ""
+    clips = ("SLF_112.3DA: 72 frames, 5 tracks" in co and
+             "SLF_113.3DA: 51 frames, 5 tracks" in co)
+    moves = co.count("<- MOVES")
+    door = "SlPorteG     turns   71.4 deg" in co
+    got = (ref, off60, off61, clip60, clip61, doorSide, inReach, camReach,
+           seat, clips, moves, door)
     want = ((-538.195, -162.587, 7.884), (-62.503, -8.782, 3.697),
-            (-18.979, -8.78, 2.791), True, True, True, True, True)
+            (-18.979, -8.78, 2.791), True, True, True, True, True,
+            True, True, 2, True)
     return got, want, ("slf_112 root0; H_SLDIN and H_SLDOUT door offsets; the "
-                       "two clips; and the three that agree the door is on -X")
+                       "two clips; the three that agree the door is on -X; the "
+                       "SEAT (H_SLDIN's end is H_SLDOUT's start, to 0.2); and "
+                       "the slider's own door clips, 72 and 51 frames, one "
+                       "moving track each - SlPorteG, 71.4 degrees")
+
+
+def _seatOf(o):
+    """The carry-in LANDS HIM IN THE SEAT: the last `boarding:` line's position
+    is within 25 units of the slider's body in the ground plane. The two clips
+    put the seat 19 units off the centreline (`H_SLDIN` ends and `H_SLDOUT`
+    starts at (-19.0, ., +2.8)); the crowd push used to leave him 80 out."""
+    import re
+    m = re.search(r"MDACTION: the slider's door at (-?\d+) (-?\d+) (-?\d+)", o)
+    last = None
+    for mm in re.finditer(r"boarding: clip frame \d+ at (-?[\d.]+) (-?[\d.]+) (-?[\d.]+)", o):
+        last = mm
+    if not m or not last:
+        return False
+    dx = float(last.group(1)) - float(m.group(1))
+    dz = float(last.group(3)) - float(m.group(3))
+    return (dx * dx + dz * dz) ** 0.5 < 25.0
 
 
 def c_engine_slider_journey():
@@ -7421,34 +7462,43 @@ def c_engine_slider_journey():
     env = dict(os.environ, SDL_VIDEODRIVER="dummy")
     r = subprocess.run([play, fr, tb, "--software", "--res", "640x480", "--nofmv",
                         "--save", save, "--area", "0",
-                        "--stand", "1804,0,-6890,225", "--frames", "1900",
-                        # 225 frames of forward and not 120: the walk has to
-                        # carry him PAST the vehicle, because `MDACTION` wants
-                        # him on its -X and he approaches from the +X side.
-                        # At 120 he stopped 4.82 m short, on the wrong side,
-                        # and the viewer said so - which is the check working.
+                        "--stand", "1804,0,-6890,244", "--frames", "2300",
+                        # Facing 244 and 245 frames of forward: the slider's
+                        # body parks 117 units behind the lane carrot this
+                        # walk used to aim at, and `MDACTION` measures from the
+                        # body. Then 250 more frames of forward AFTER he is
+                        # out, because `sub_456530` case 7 hands the slider
+                        # back to the traffic only once he is 300 clear of it
+                        # and in front of it - the RELEASED line is that.
                         "--hold", "0*40,k15*3,0*30,k205*4,0*10,k200*4,0*10,"
                                   "k28*4,0*30,k208*4,0*10,k28*4,0*330,"
-                                  "k200*225,0*10,k28*4,0*1000"],
+                                  "k200*245,0*10,k28*4,0*600,k200*250,0*550"],
                        capture_output=True, text=True, env=env, errors="replace")
     o = r.stdout
     return ("chosen - a slider is COMING to 1804 0 -6890" in o,
-            "slider: OPEN at 1448 6 -6540" in o,
-            "on the right side - snapped to 1413 -36 -6488" in o,
+            "slider: OPEN at 1304 6 -6651" in o,
+            "on the right side - snapped to 1339 6 -6703" in o,
             "H_SLDIN plays" in o,
-            "MDSLIDIN: aboard at 1448 6 -6540" in o,
+            "MDSLIDIN: aboard at 1304 6 -6651" in o,
             o.count("MDSLIDIN: aboard") == 1,
             "a destination was remembered (row 0), the journey starts" in o,
             "JOURNEY to 'Anekbah - Appartement de Kay'l' - state 6" in o,
-            "slider: ARRIVED - out at address 0" in o), \
-           (True,) * 9, \
+            "ARRIVED - he gets OUT WHERE IT STOPPED" in o,
+            "MDSLIDOU: out and standing" in o,
+            "slider: ARRIVED - out at address" not in o,
+            "slider: RELEASED - he is 300 clear" in o,
+            _seatOf(o)), \
+           (True,) * 13, \
         "from the sneak's destination row: the call (he stays put), the " \
         "slider OPEN at the kerb, MDACTION's door snap and H_SLDIN, then " \
         "MDSLIDIN ONCE - it fired twice until the frontend stopped re-reading " \
         "a tick it had not run - and screen 7 opening, the " \
         "page's hook firing the journey for the remembered row, state 6 " \
-        "driving him to the lane nearest address 0, and the arrival putting " \
-        "him out there with the slider released"
+        "driving him to the lane nearest address 0, and the arrival playing " \
+        "H_SLDOUT and MDSLIDOU WHERE THE SLIDER STOPPED. The last field is " \
+        "the negative control: `sub_4570F0` copies the actor's +244 and +252 " \
+        "through UNCHANGED, so putting him at the destination's ADDRESS is a " \
+        "teleport with no basis in the code, and a reader reported it as one"
 
 
 def c_engine_used_object():
@@ -26075,7 +26125,7 @@ def c_licence_headers():
                    if TAG in open(p, encoding="utf-8",
                                   errors="replace").read(600)]
     return (authored, sorted(missing), len(vendored), mislabelled), \
-           (384, [], 1, []), \
+           (385, [], 1, []), \
            "authored source files under tools/, engine/src, engine/tools, " \
            "engine/backends and scripts/; those MISSING the SPDX tag; " \
            "vendored files in engine/third_party; and vendored files wrongly " \

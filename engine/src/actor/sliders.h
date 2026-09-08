@@ -449,6 +449,11 @@ public:
     // ...and which way it points, for the camera that watches it come.
     float calledYaw() const;
     bool calledIsOpen() const { return called_ >= 0 && callRide_.state == 3; }
+    // One-shot: the called slider has just been handed back to the ordinary
+    // traffic (`sub_456530` case 7's `sub_438420(slider, 0)`). Consumed by the
+    // viewer so a reader can see it happen rather than infer it from a slider
+    // that stopped blocking the lane.
+    bool takeReleasedNotice() { const bool r = releasedTold_; releasedTold_ = false; return r; }
     // The slider's own FRAME: where it is, and the rows of the 3x3 that
     // `sub_438450(slider)` hands `Matrix3x3_RotateVector` - the local +X and
     // the forward. `Matrix3x3_FromEulerAngles(0, y, 0)` is
@@ -495,6 +500,25 @@ public:
     // by `clear()`; a caller that never sets it gets traffic that neither
     // brakes nor bumps, and `bumped()` stays empty.
     void setPlayer(const float pos[3], bool onRoad);
+    // ...and his FACING, which `sub_456530` case 7 needs: the release tests
+    // that he is not merely 300 clear but IN FRONT of the slider, against his
+    // own Euler at +420. Defaulted rather than required, so a caller that
+    // never sets it simply never releases - which is what happened.
+    // NOTE `setPlayer` above is DEAD - nothing in the tree calls it, so
+    // `playerKnown_` is always false and every player-aware arm of this class
+    // (the run-over latch, the on-road test) has never run. Found while
+    // wiring the release, and deliberately NOT woken here: switching it on
+    // changes crowd behaviour that has nothing to do with the slider. The
+    // release therefore takes its own input.
+    //
+    // `sub_456530` case 7 needs the rider AFTER he is out: it releases the
+    // slider back to the traffic only once he is 300 clear AND in front of
+    // him, against his own Euler at +420.
+    void setRider(const float pos[3], float facingDeg) {
+        for (int k = 0; k < 3; ++k) riderPos_[k] = pos[k];
+        riderFacing_ = facingDeg;
+        riderKnown_ = true;
+    }
     // The vehicles that raised message 17 this tick (`Game_RaiseEvent(43,
     // {17, player, 0})`), for the Session to post. The 90-frame latch
     // (`dword_538E20` / `flt_536C28`) is inside.
@@ -509,6 +533,7 @@ public:
 private:
     // THE PLAYER'S SLIDER - the one `sub_452570` reserves out of the 40.
     int         called_ = -1;
+    bool        releasedTold_ = false;   // case 7 handed it back this tick
     RideMachine callRide_;
     float       callTarget_[3] = {0, 0, 0};
     bool        journeyDone_ = false;
@@ -586,6 +611,9 @@ private:
     int   crossWaitVeh_ = 0, crossWaitPed_ = 0;
     std::vector<int> bumped_;
     float playerPos_[3] = {0, 0, 0};
+    float riderPos_[3] = {0, 0, 0};  // the rider, for case 7's release test
+    float riderFacing_ = 0.0f;       // his +420
+    bool  riderKnown_ = false;
     bool  playerKnown_ = false, playerOnRoad_ = false;
     float bumpHold_ = 0.0f;                  // `flt_536C28`, 90 frames
     int   bumpLatch_ = -1;                   // `dword_538E20`

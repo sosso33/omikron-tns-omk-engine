@@ -1526,6 +1526,33 @@ int main(int argc, char** argv) {
     float doorOff[3] = {0, 0, 0};   // the placement, in the SLIDER's frame
     int   doorOffState = 0;         // 0 not read yet, 1 read, -1 unavailable
     int   boardCam = 0;             // frames left of `Camera_Request(9, ..)`
+    // ...and the EXIT, which is the same shape mirrored: `sub_468FA0` places
+    // him from group 61's clip against a DIFFERENT reference (slf_113.3da,
+    // `dword_9103D8`) and plays `H_SLDOUT`.
+    bool  leaving = false;
+    float exitOff[3] = {0, 0, 0};
+    int   exitOffState = 0;
+    // ---- THE SLIDER'S OWN DOOR CLIPS -------------------------------------
+    //
+    // `Cef_TickChannel`'s ACTOR_STATE switch (19_dsound.c, cases 6 and 8)
+    // plays a clip ON THE SLIDER while the character plays `H_SLDIN` /
+    // `H_SLDOUT`, driven by the SAME clock `a2`:
+    //
+    //     sub_437FC0(sub, dword_90EF28);              // bind
+    //     sub_437FE0(sub, dword_90EF28, 0.0, a2, &d); // sample
+    //     sub_438310(slider, &sp);
+    //     sub_437F80(sub, sp + d, sp.y - 33.149605 + d.y, sp.z + d.z);
+    //
+    // `dword_90EF28` is `ANIMS\slf_112.3da` and `dword_9103D8` is
+    // `slf_113.3da` (05_sys.c 1842-1844) - and the clips are **72 and 51
+    // frames**, exactly the lengths of `H_SLDIN` and `H_SLDOUT`. So the door
+    // is an ANIMATION, not the two-state model swap `sub_4521E0` does, and
+    // this port had read the clips only for their root key and never played
+    // them. `build/slider_doorclip` measures what each drives: of the five
+    // tracks, one moves - **`SlPorteG` turns 71.4 degrees**, the gull-wing
+    // swing - and the other four and the root hold still.
+    omk::NodeTracks doorIn, doorOut;
+    bool doorClipsRead = false;
     int  journeyTo = -1;            // the address the journey ends at
     // `dword_6A17CC` - which destination row the call was made for.
     int  calledDestination = -1;
@@ -4807,7 +4834,16 @@ int main(int argc, char** argv) {
                 // posts the bump message when a walker was touched.
                 {
                     float push[3];
-                    if (!playerSpheres.empty() &&
+                    // ...and NOT while he boards or leaves. ACTOR_STATE 6 and
+                    // 8 tick through `Actor_TickChannelOnly`, and the push is
+                    // `Actor_TickNpc`'s - it never runs for them. It ran here:
+                    // `MDACTION` snaps him INSIDE the vehicle's own body
+                    // sphere, so the pool shoved him out every frame faster
+                    // than `H_SLDIN` walked him in - 25 units in the first
+                    // five frames, before the clip had moved him at all - and
+                    // he finished the clip beside the slider with the door
+                    // open above him. Traced frame by frame 2026-09-08.
+                    if (!boarding && !leaving && !playerSpheres.empty() &&
                         session.crowdPush(playerSpheres, playerReach, player->pos(), player->facing(), push))
                         player->nudge(push);
                 }
@@ -4971,6 +5007,20 @@ int main(int argc, char** argv) {
                                 for (int k = 0; k < 3; ++k)
                                     door[k] += doorOff[0] * ax[k] + doorOff[2] * az[k];
                             if (doorOffState == 1) door[1] += doorOff[1];
+                            // ...AND THAT Y IS A PELVIS, THIS CLASS TAKES FEET.
+                            // The engine writes the actor's +244..+252, which
+                            // is his ORIGIN and is the PELVIS (`player.h`,
+                            // settled with the camera lift - 41.9 for
+                            // `HO1_FNM`), while `PlayerController`'s position
+                            // is the walker's, at the feet. Handing the
+                            // engine's number straight over left him standing
+                            // 0.8 m in the air with his feet at the slider's
+                            // waistline - which is what a render of the
+                            // boarding beside the original's screenshot shows
+                            // at once and no amount of reading the listing
+                            // was going to say. Y points down, so the feet are
+                            // BELOW the pelvis by the lift.
+                            door[1] += player->cameraLift();
                             const float dd = std::sqrt(
                                 (at[0] - me[0]) * (at[0] - me[0]) +
                                 (at[2] - me[2]) * (at[2] - me[2]));
@@ -4978,6 +5028,7 @@ int main(int argc, char** argv) {
                             // position and the root frame are - so he keeps
                             // the way he was facing and the clip turns him.
                             player->rideAt(door, player->facing());
+                            player->setActorState(omk::ActorState::ChannelOnly6, "MDACTION");
                             player->setRootFrame(ax, az);
                             player->setChannelOnly(true);
                             boarding = true;
@@ -5009,6 +5060,20 @@ int main(int argc, char** argv) {
                         player->tick(static_cast<float>(frameSec * 30.0),
                                      bits ? bits : omk::kIdleInput);
                         playerTicked = true;
+                        // While he BOARDS or LEAVES, say where the clip is
+                        // carrying him - the door snap is one number and the
+                        // carry-in is seventy-two more, and a render at the
+                        // end of the clip showed him beside the vehicle.
+                        if ((boarding || leaving) && player->ticks() % 12 == 0) {
+                            const auto& lf = player->last();
+                            std::printf("%s: clip frame %d at %.1f %.1f %.1f (root delta "
+                                        "%+.2f %+.2f %+.2f this tick, .CTL %s)\n",
+                                        boarding ? "boarding" : "leaving",
+                                        player->poseFrame(), player->pos()[0],
+                                        player->pos()[1], player->pos()[2],
+                                        lf.rootDelta[0], lf.rootDelta[1], lf.rootDelta[2],
+                                        player->clipName().c_str());
+                        }
                     }
                 }
                 // ---- SEATED, not driving ------------------------------
@@ -5017,6 +5082,20 @@ int main(int argc, char** argv) {
                 // of a journey: `sub_457F50` writes his position from the
                 // slider's every frame, and the slider is where the pool's
                 // drive put it.
+                // ...and SAY when the slider rejoins the traffic, which is
+                // `sub_456530` case 7's `sub_438420(slider, 0)`.
+                // `sub_456530` case 7 releases the slider only once he is
+                // 300 clear of it and in front of it, so it needs him.
+                {
+                    const float me[3] = {session.playerPos()[0], session.playerPos()[1],
+                                         session.playerPos()[2]};
+                    session.sliders().setRider(me, player ? player->facing()
+                                                          : session.playerYaw());
+                }
+                if (session.sliders().takeReleasedNotice())
+                    std::printf("slider: RELEASED - he is 300 clear and in front of it, "
+                                "so it goes back to mode 0 and drives as ordinary "
+                                "traffic again\n");
                 if (boarded && !ride) {
                     float at[3];
                     if (session.sliders().calledAt(at)) {
@@ -5031,19 +5110,67 @@ int main(int argc, char** argv) {
                     // gets out at the destination, the slider leaves
                     // (state 7, released once he is 300 clear and ahead).
                     if (session.sliders().journeyArrived() && journeyTo >= 0) {
-                        const bool placed = session.placeActorAt(journeyTo);
-                        if (player) {
-                            const float p3[3] = {session.playerPos()[0],
-                                                 session.playerPos()[1],
-                                                 session.playerPos()[2]};
-                            player->placeAt(p3, session.playerYaw());
+                        // ---- HE GETS OUT WHERE THE SLIDER STOPPED --------
+                        //
+                        // NOT at the destination's address, which is what this
+                        // did and what a reader reported as being *"teleported
+                        // instead of just leaving the slider where it
+                        // arrives"*. `sub_4570F0` (the stop) writes only the
+                        // actor's Y - `sliderY - 33.149605` - and copies +244
+                        // and +252 through UNCHANGED, then hands over to
+                        // `sub_468FA0`, which does the real placement and is
+                        // the exact mirror of `MDACTION`'s entry:
+                        //
+                        //   slider mode 4, its speed zeroed, then mode 5
+                        //   off = root0(group 61's clip) - root0(dword_9103D8)
+                        //   actor = slider + M . off, y -= 33.149605
+                        //   +260 = FLT_MAX, o3de_MoveNodeBy, sub_437140(M)
+                        //   ACTOR_STATE 8 (both +404 and +408)
+                        //   SetPersoBankGroup(group 61) - H_SLDOUT, 51 frames
+                        //
+                        // and back in `sub_4570F0`: `sub_438420(slider, 7)`,
+                        // the slider leaves, and `Camera_Request(17, ..., 60)`.
+                        // The reference clip is `slf_113.3da` and NOT the
+                        // entry's `slf_112.3da` - two different globals, and
+                        // measuring group 61 against 112 was wrong even though
+                        // the two clips' root keys turn out to be identical.
+                        float at[3], ax[3], az[3];
+                        bool out = false;
+                        if (player && session.sliders().calledFrame(at, ax, az)) {
+                            if (!exitOffState) {
+                                const auto ref = fs.read("ANIMS/slf_113.3da");
+                                exitOffState = (!ref.empty() &&
+                                                player->boardOffset(ref, 61, exitOff)) ? 1 : -1;
+                            }
+                            float o[3] = {at[0], at[1] - omk::kBoardSeatY, at[2]};
+                            if (exitOffState == 1) {
+                                for (int k = 0; k < 3; ++k)
+                                    o[k] += exitOff[0] * ax[k] + exitOff[2] * az[k];
+                                o[1] += exitOff[1];
+                            }
+                            o[1] += player->cameraLift();   // pelvis -> feet, as above
+                            player->rideAt(o, player->facing());
+                            player->setActorState(omk::ActorState::SliderRide, "sub_468FA0");
+                            player->setRootFrame(ax, az);
+                            player->setChannelOnly(true);
+                            session.setPlayerPosition(o, player->facing());
+                            out = player->enterGroupById(61);
+                            leaving = true;
+                            std::printf("slider: ARRIVED - he gets OUT WHERE IT "
+                                        "STOPPED, %.0f %.0f %.0f (offset %.1f %.1f "
+                                        "%.1f in its frame%s), ACTOR_STATE 8, %s\n",
+                                        o[0], o[1], o[2], exitOff[0], exitOff[1],
+                                        exitOff[2],
+                                        exitOffState == 1 ? "" : " - UNREAD",
+                                        out ? "H_SLDOUT plays" : "but the bank has "
+                                              "no group 61");
                         }
+                        // `Camera_Request(17, ..., 60.0f)` is NOT wired: preset
+                        // 17's subject is the PLAYER and the port's player-preset
+                        // path is the take camera's blend, not a request. The
+                        // follow camera stands in and this says so.
                         session.requestCamera(0, 0);
-                        session.startColourFade(4, 0u, 60.0f);
                         session.sliders().dismountCalled();
-                        std::printf("slider: ARRIVED - out at address %d %s, "
-                                    "the slider leaves (state 7)\n", journeyTo,
-                                    placed ? "" : "(NOT in this area)");
                         boarded = false;
                         journeyTo = -1;
                         calledDestination = -1;
@@ -5625,6 +5752,7 @@ int main(int argc, char** argv) {
                         boarding = false;
                         boarded = true;
                         boardCam = 0;
+                        player->setActorState(omk::ActorState::SliderMount, "MDSLIDIN");
                         player->setChannelOnly(false);
                         player->clearRootFrame();
                         session.sliders().mountCalled();
@@ -5635,6 +5763,19 @@ int main(int argc, char** argv) {
                                     "ended and the channel took its no-input child "
                                     "to H_SLIDER; ACTOR_STATE 7, screen 7 opens\n",
                                     at[0], at[1], at[2]);
+                    } else if (mv == "MDSLIDOU") {
+                        // 0x0046B890, the mirror of `MDSLIDIN`: group 61's
+                        // entry [162] is a child of `H_SLDOUT` with no input,
+                        // so it fires when that clip ends, and [163] gotos
+                        // `H_STAND`. The handler refuses from anything but
+                        // ACTOR_STATE 8 ("bad mode getting out of the slider
+                        // !") and leaves the actor at 1.
+                        leaving = false;
+                        player->setActorState(omk::ActorState::Normal, "MDSLIDOU");
+                        player->setChannelOnly(false);
+                        player->clearRootFrame();
+                        std::printf("MDSLIDOU: out and standing - H_SLDOUT ended, "
+                                    "the channel gotos H_STAND, ACTOR_STATE 1\n");
                     } else if (mv == omk::kMoveOpenSneak) {
                         // ROW 0, and the other end of the same table. TAB is
                         // the Aventure scheme's "Ouvrir sneak" (bit 0x2000);
@@ -5667,6 +5808,12 @@ int main(int argc, char** argv) {
                 // `Actor_TickNpc`: `Actor_ApplyMotion`, then `Actor_ScanZones`
                 // at the position it left - the Session's scan reads this on
                 // its next frame (wave B, T15). Facing in the +420 degrees.
+                // NOTE: his EULER is deliberately not touched while he boards.
+                // `MDACTION` and `sub_468FA0` write node+156 and never +420,
+                // so the zone scan and everything else that reads his facing
+                // keep the way he walked up; only the DRAWN orientation
+                // belongs to the vehicle, and that is applied where the model
+                // is posed - putting it here moved nothing on screen at all.
                 session.setPlayerPosition(player->pos(), player->facing());
                 // ---- THE ACTION BUTTON -------------------------------
                 //
@@ -9227,7 +9374,30 @@ int main(int argc, char** argv) {
                                 sv.origin[k] = sv.mo->meshes[static_cast<std::size_t>(sv.lodRoot)].pos[k];
                         sv.built = true;
                     }
-                    sv.posed = sv.atRest;
+                    // ...unless this is the slider he is CLIMBING INTO, in
+                    // which case its door is posed from the clip at the
+                    // character's own frame - the engine's shared clock.
+                    bool doorPosed = false;
+                    if ((boarding || leaving) && static_cast<int>(i) == pd.calledVehicle() && player) {
+                        if (!doorClipsRead) {
+                            doorClipsRead = true;
+                            const auto a = fs.read("ANIMS/SLF_112.3DA");
+                            const auto b = fs.read("ANIMS/SLF_113.3DA");
+                            if (!a.empty()) doorIn  = omk::clipTracks(a);
+                            if (!b.empty()) doorOut = omk::clipTracks(b);
+                        }
+                        const omk::NodeTracks& dt = boarding ? doorIn : doorOut;
+                        if (dt.valid()) {
+                            int f = player->poseFrame();
+                            if (f < 0) f = 0;
+                            if (f >= dt.frames) f = dt.frames - 1;
+                            const omk::Geometry& rest = lodRestFor(v.model, *sv.mo, sv.lodRoot);
+                            const auto dp = omk::composePose(sv.mo->meshes, dt, f, false);
+                            omk::applyPose(sv.posed, rest, sv.mo->meshes, dp);
+                            doorPosed = true;
+                        }
+                    }
+                    if (!doorPosed) sv.posed = sv.atRest;
                     // `sub_437F80(inst, x, y - 30.75, z)`: the instance sits
                     // 30.75 units ABOVE the body point (y is down), turned to
                     // the heading `sub_453330` built from the direction to its
@@ -9403,7 +9573,35 @@ int main(int argc, char** argv) {
                     }
                 }
                 const float* pp = player->pos();
-                const float yaw = player->facing();
+                float yaw = player->facing();
+                // ---- ...AND THE SLIDER OWNS HIM WHILE HE BOARDS ----------
+                //
+                // `MDACTION` and `sub_468FA0` both end with
+                // `sub_437140(node, M_slider)`, which writes the SLIDER's
+                // matrix into the actor node's `+156` - and `+156` is read as
+                // an ORIENTATION (21_d3d.c 2854 takes
+                // `Matrix3x3_RotateVector(0, 0, -1, node+156)` as the node's
+                // heading). So for the whole of ACTOR_STATE 6 and 8 the body
+                // is drawn in the vehicle's frame, which is what squares him
+                // to the door however he walked up to it.
+                //
+                // The engine's forward is `-row2`: `sub_456530` case 7 tests
+                // `(sin y, 0, -cos y)` against the player's own +420, and the
+                // vehicle matrix's row 2 is the negated travel direction. So
+                // the drawn yaw is `atan2(-row2.x, row2.z)`.
+                //
+                // THIS is the line that had to change. Writing the same yaw
+                // into `Session::setPlayerPosition` instead - which is what
+                // the first attempt did - updates the logical player record
+                // and NOTHING on screen, because the model is posed from
+                // `player->facing()` right here. A reader saw exactly that:
+                // *"I don't see any change"*.
+                if (boarding || leaving) {
+                    float bat[3], bx[3], bz[3];
+                    if (session.sliders().calledFrame(bat, bx, bz))
+                        yaw = static_cast<float>(
+                            std::atan2(-bz[0], bz[2]) * 57.29577951308232);
+                }
                 // ROTATE ABOUT THE PELVIS, not the model's origin. A `.3DO`'s
                 // meshes carry ABSOLUTE positions and the body is not built
                 // around (0,0,0): `HO1_FN`'s root `UBassin` sits at
