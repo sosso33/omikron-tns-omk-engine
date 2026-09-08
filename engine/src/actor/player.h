@@ -280,6 +280,23 @@ public:
     //
     // `Cef_FindGroupById` + `SetPersoBankGroup`, by the group's ID.
     bool enterGroupById(int id);
+    // `Player_GoToMove` (0x0041B6F0) - the whole of `player.move` (63) and the
+    // start of `player.move.wait` (89): `Cef_FindGroupById(actor+180, id)`,
+    // `SetPersoBankGroup(actor+396, group)` - the queue cleared and the
+    // machine put on the group's flag-0x20 entry THIS tick - then the pitch
+    // (+416) zeroed, the motion state cleared (+216..+224, +280/+284, byte
+    // +1304, `dword_6A52CC`) and the facing matrix at +288 rebuilt. Group 100
+    // is the locomotion group and its entry is the stand, so `player.move
+    // 100` - 60 of the 312 shipped sites, in front of every staged sequence
+    // - stops a walking player dead where he is: the walk clip is left, not
+    // played out, and no root motion follows. False when the bank has no such
+    // group ("SetPersoBank, error on GoToMove"), and the caller runs on.
+    bool goToMove(int groupId);
+    // `sub_45ABB0(channel)`: `[state + 56]`, the group the channel's current
+    // entry belongs to - what `Game_Tick` compares to the group a
+    // `player.move.wait` recorded, to release the script when it changes.
+    // -1 with no current entry.
+    int  ctlGroup() const;
 
     // `Actor_EnterDialogueMode` (0x00468DE0) and `Actor_LeaveDialogueMode`
     // (0x00468E80), which bracket every conversation. The runtime has carried

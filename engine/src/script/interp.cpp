@@ -499,8 +499,9 @@ RunResult Interpreter::resume(std::span<const std::byte> code, std::size_t at) {
             r.status = RunStatus::CameraWait; r.pc = pc; return r;
         }
 
-        // `player.move.wait` (89, 0x004043F0). One fetch - the ADDRESSES id -
-        // then `Player_GoToMove(address, byte [esi+1Eh])`, the caller's own
+        // `player.move.wait` (89, 0x004043F0). One fetch - the bank GROUP id,
+        // not an address (interp.h `moveGroup`) - then
+        // `Player_GoToMove(group, byte [esi+1Eh])`, the caller's own
         // context slot, and `mov word ptr [esi+16h], 4`. Op **63**
         // `player.move` (0x00403730) is byte for byte the same handler with
         // `push 0FFFFFFFFh` in place of the slot and NO status write: the pair
@@ -518,9 +519,20 @@ RunResult Interpreter::resume(std::span<const std::byte> code, std::size_t at) {
             const auto addr = fetch16(code, q);
             if (record_ && !recordAll_)
                 r.calls.push_back({op, {static_cast<std::int16_t>(addr)}});
-            r.moveAddress = addr;
-            // `pc` is past the operand: the resume continues after the walk.
+            r.moveGroup = addr;
+            // `pc` is past the operand: the resume continues after the move.
             r.status = RunStatus::MoveWait; r.pc = pc; return r;
+        }
+        // `player.move` (63, 0x00403730): the same fetch, `push 0FFFFFFFFh`
+        // for the slot, no status write - so no park, and the stub recorder
+        // below still records the call. Reported for the Session to START
+        // (`Player_GoToMove(group, -1)`), which the recorded call alone did
+        // not do: 312 sites ran through here as no-ops, and the `player.move
+        // 100` that stops the player in front of every staged sequence with
+        // them (interp.h `playerMove`).
+        if (op == 63) {
+            std::size_t q = start + 1;
+            r.playerMove = fetch16(code, q);
         }
 
         // `fight.begin` (62, 0x004035D0): the opponent, the fight, status 3,

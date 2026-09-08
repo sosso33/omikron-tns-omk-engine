@@ -24,7 +24,7 @@ items are research and can be done any time they are wanted.
 | 1 | Enter held ≈ 0.5 s counts as several presses | **S** | strong | mechanism already documented; affects every screen and every conversation |
 | 2 | black stripes entering/leaving a building | **DONE, WATCHED** | strong | 2026-09-07: the strip is CAMERA MODE, and camera mode is "he has no control" - not "the camera is not the follow camera". Areas that roam under a FIXED camera had the bars on for ever |
 | 3 | ESC quits instead of opening the pause menu | **DONE, WATCHED** | strong | 2026-09-07: ESC is `Game_RunLoop`'s own `GetAsyncKeyState(27)`, not a binding, and the four item callbacks are four instructions each. `Quitter le jeu` is `Game_NewGame`, not an exit |
-| 4 | tuto zone fires repeatedly, player not stopped | **M** | strong | zone lifecycle is read and there is already a check nearby |
+| 4 | tuto zone fires repeatedly, player not stopped | **DONE 2026-09-08** | strong | the re-fire was closed 2026-09-03 (`tutorial one-shot`); the stop is `player.move 100` - `Player_GoToMove` into the locomotion group's STAND entry - which the port dropped at all 312 sites. Ported with `player.move.wait`'s park and release; to be confirmed in play |
 | 5 | black frames in the Impasse cutscene | **FIXED, WATCHED** | strong | the camera should HOLD at the end of an editing, and a shot is as long as its editing |
 | 20 | stuck on the last step of the bank's stairs | **FIXED** | measured | the capsule swept from the feet, so a 10.8-unit riser blocked him a sphere-radius short of the step; the sweep now starts a step-height up |
 | 21 | a shop conversation's first camera is outside the shop | **M** | good | same family as item 5 and item 7 - what is resident when a script runs on ENTERING a building |
@@ -227,7 +227,7 @@ because nine of the eleven builders that write one of those fields write it
 inside a conditional arm, and taking them all put the start menu's confirm
 dialog on `Annuler`.
 
-### 4. Tuto zone fires repeatedly and does not stop the player — M, strong
+### 4. Tuto zone fires repeatedly and does not stop the player — **DONE 2026-09-08, to be confirmed in play**
 
 The zone lifecycle (enter / activate / leave, the 68-byte record, the save
 bit) is read and there is a `tuto camera` check already. Two symptoms in one
@@ -235,6 +235,21 @@ report: the trigger re-arms, and the player is not halted. **The save bit is
 the first thing to look at** — a zone that should fire once is normally made
 one-shot by state, and firing several sounds and fades is what an un-cleared
 bit looks like.
+
+**Resolved.** The re-arm was `zone.disable` not re-registering, closed and
+confirmed in play on 2026-09-03 (`verify.py: tutorial one-shot`). The stop
+was the reader's own reading - *the original instantly stops the player when
+a cutscene triggers* - and it is an instruction the port ignored:
+`player.move 100`, second line of the tutorial script and of every staged
+sequence (60 sites), is `Player_GoToMove` into group 100's default entry,
+the STAND, on that tick. The port recorded op 63 and did nothing, and
+`player.move.wait` (89) had no hook in the viewer, so under `player.anim.hold`
+alone the walk cycle played out - 6 units past a teleport that lands 19 units
+outside the zone, aimed back at it. Ported: `PlayerController::goToMove`, the
+viewer's move hook, `Game_Tick`'s release for 89. `verify.py: engine: player
+move`; `engine/README.md` "`player.move` IS THE STOP". The walk into the
+tutorial is what to play: Kay'l should freeze on the spot as the fade
+starts, not take two more steps.
 
 ### 5. Black frames in the Impasse cutscene — **FIXED 2026-09-07, CONFIRMED IN PLAY**
 

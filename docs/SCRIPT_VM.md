@@ -761,6 +761,35 @@ script's slot and writes status 4; 63 passes -1 and runs on. So `player.move`
 and `player.move.wait`, where a *move* is a clip in the player's animation
 bank.
 
+**The operand is a GROUP id in the player's `.CTL` bank, not an address**
+(settled 2026-09-08, when the port's field for it was still called
+`moveAddress` and described as a walk to an ADDRESSES record).
+`Player_GoToMove` is `Cef_FindGroupById(actor+180, id)` then
+`SetPersoBankGroup(actor+396, group)` - the input queue cleared and the
+machine put on the group's flag-`0x20` default entry on this tick - then the
+pitch (`+416`) and the motion state (`+216..+224`, `+280/+284`, byte `+1304`)
+zeroed and the facing matrix at `+288` rebuilt. For 89 the group goes into
+`dword_91068C` with the caller's slot in `dword_930744`, and **`Game_Tick`
+(0x004200F0) releases the script** after `Actors_TickAll`, on the frame
+`sub_45ABB0(channel)` - `[state + 56]`, the current entry's group - is no
+longer that group. A move ends when the machine LEAVES its group, not when a
+clip does.
+
+**And `player.move 100` is the STOP.** Group 100 is the locomotion group and
+its default entry is the stand (`H_STAND` in `H1Avnt.CTL`), so the
+instruction leaves the walk clip where it is: a walking player stops dead,
+with no root motion left to play out. The scripts put it in front of every
+staged sequence - **60 of the 312** `player.move` sites - as
+`actor.goto_address; player.move 100; player.anim.hold; fade…`, and it is why
+a cutscene trigger is never re-fired by the player's next step: AREA 222's
+tutorial teleports him to address 653, which is 19 units OUTSIDE its own
+zone 3795, and a walk that played out would carry him straight back in. The
+rest of the corpus: 63 passes 160/161/162 (83 sites), 175 (27), 62 (29),
+107/108 (40), 405 (16); 89 passes 58 (383, the hand-over), 62 (63), 57 (45)
+and 8 (30). Ported 2026-09-08 - `PlayerController::goToMove`, the viewer's
+move hook and the release rule - and the tutorial no longer drifts after its
+teleport; `verify.py: engine: player move`.
+
 ### 104 / 105 — `player.anim.hold` and `player.anim.release`
 
 Both call `Actor_HoldAnimation` on `Actor_Player()`, 104 with 1 and 105 with 0.

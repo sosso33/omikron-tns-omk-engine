@@ -126,6 +126,22 @@ bool PlayerController::enterGroupById(int id) {
     return rt_.channel().setBankGroup(g);
 }
 
+bool PlayerController::goToMove(int groupId) {
+    if (!enterGroupById(groupId)) return false;
+    euler_[0] = 0.0f;                          // +416, the pitch
+    // +216..+224, +280/+284, +1304 and dword_6A52CC are the engine's carried
+    // motion state; this controller derives its motion from the clip every
+    // tick and carries none between frames, so there is nothing to clear.
+    // The facing matrix is rebuilt from euler_ wherever it is read.
+    return true;
+}
+
+int PlayerController::ctlGroup() const {
+    const int s = rt_.channel().state();
+    if (s < 0 || s >= static_cast<int>(ctl_->states.size())) return -1;
+    return ctl_->states[static_cast<std::size_t>(s)].group;
+}
+
 void PlayerController::nudge(const float d[3]) {
     walker_.moveTo(walker_.pos()[0] + d[0], walker_.pos()[1] + d[1], walker_.pos()[2] + d[2]);
     for (int k = 0; k < 3; ++k) pos_[k] = static_cast<float>(walker_.pos()[k]);

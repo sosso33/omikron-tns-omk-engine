@@ -2557,6 +2557,41 @@ int main(int argc, char** argv) {
     // also what `Actor_TickScxDriven` keys on (the program's `IsBusy`).
     std::unique_ptr<omk::PlayerController> player;
     omk::CtlFile playerCtl;
+    // `Player_GoToMove` behind `player.move` (63) and `player.move.wait` (89)
+    // - `PlayerController::goToMove`. Neither reached the walker until
+    // 2026-09-08: op 63 was recorded and dropped, and 89 ran on because no
+    // hook was installed, so the `player.move 100` in front of every staged
+    // sequence never stopped him and he played his walk out under the
+    // cutscene camera. In AREA 222's tutorial that is 19 units short of the
+    // zone he had just been teleported out of.
+    //
+    // `moveWaitCtx` / `moveWaitGroup` are `dword_930744` / `dword_91068C`:
+    // the context a 89 must report to, and the group it entered. `Game_Tick`
+    // (0x004200F0) checks them after `Actors_TickAll` and raises event 3 the
+    // frame the channel's current entry is in some other group - the release
+    // below, before the next pump.
+    int moveWaitCtx = -1, moveWaitGroup = -1;
+    session.setMoveHook([&](int groupId, int ctx) -> bool {
+        if (!player) return false;
+        if (!player->goToMove(groupId)) {
+            std::printf("frame %ld: player.move%s %d - no group %d in the player's bank, "
+                        "the script runs on\n", session.frameNo(),
+                        ctx >= 0 ? ".wait" : "", groupId, groupId);
+            return false;
+        }
+        const int g = player->ctlGroup();
+        const int st = player->ctlState();
+        const char* nm = (st >= 0 && st < static_cast<int>(playerCtl.states.size()))
+                             ? playerCtl.states[static_cast<std::size_t>(st)].name.c_str()
+                             : "?";
+        if (ctx >= 0) { moveWaitCtx = ctx; moveWaitGroup = g; }
+        std::printf("frame %ld: player.move%s %d - the channel put on group %d (index %d)'s "
+                    "entry '%s' at %.1f %.1f %.1f%s\n", session.frameNo(),
+                    ctx >= 0 ? ".wait" : "", groupId, groupId, g, nm,
+                    player->pos()[0], player->pos()[1], player->pos()[2],
+                    ctx >= 0 ? ", the script parked until the channel leaves it" : "");
+        return true;
+    });
     std::vector<std::byte> playerCtlData;
     std::vector<omk::Mesh> playerMeshes;
     std::vector<omk::Texture> playerTex;
@@ -4176,6 +4211,16 @@ int main(int argc, char** argv) {
         // A script parked at `ui.open` does not run either way - its status
         // is 6 and only `answerUi` clears it - so what this releases is
         // everything ELSE: the scene programs, the crowd, the other slots.
+        //
+        // ...and before it, `Game_Tick`'s release of a `player.move.wait`:
+        // the channel's current group against the one the move entered.
+        if (moveWaitCtx >= 0 && player && player->ctlGroup() != moveWaitGroup) {
+            std::printf("frame %ld: player.move.wait ended - the channel left group %d "
+                        "for %d, context %d resumes\n", n, moveWaitGroup,
+                        player->ctlGroup(), moveWaitCtx);
+            session.playerMoveEnded(moveWaitCtx);
+            moveWaitCtx = -1; moveWaitGroup = -1;
+        }
         session.frame();
 
         // ---- SCRIPTED OBJECT MOTION - the crates, the doors, the lifts ---
@@ -11174,6 +11219,10 @@ int main(int argc, char** argv) {
                 "%ld frames under player.anim.hold\n",
                 worldFrames, worldSet.empty() ? "(none)" : worldSet.c_str(),
                 session.shownCount(), session.cameraId(), heldFrames);
+    if (player)
+        std::printf("player: ends at %.1f %.1f %.1f facing %.0f, channel entry %d group %d\n",
+                    player->pos()[0], player->pos()[1], player->pos()[2],
+                    player->facing(), player->ctlState(), player->ctlGroup());
     {
         std::string ids;
         for (std::size_t k = 0; k < stagedIds.size(); ++k)

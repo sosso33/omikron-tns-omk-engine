@@ -138,7 +138,7 @@ void line(const char* tag, const omk::RunResult& r, std::size_t endPc,
     std::printf("%s status=%s pc=%zu end=%zu cam=%d camop=%d camaddr=%d "
                 "travel=%d moveaddr=%d opp=%d fighttravel=%d calls=%s resume=%s\n",
                 tag, status(r.status), r.pc, endPc, r.camId, r.camWaitOp,
-                r.camAddress, r.camTravel, r.moveAddress, r.fightOpponent,
+                r.camAddress, r.camTravel, r.moveGroup, r.fightOpponent,
                 r.fightCamTravel, calls(r).c_str(), resume);
 }
 

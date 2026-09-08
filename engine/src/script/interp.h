@@ -52,13 +52,13 @@ enum class RunStatus {
                     // nothing, and 126 has no such guard at all - a 0-frame
                     // cut parks too. Both are released by the same event 4.
     MoveWait,       // stopped at `player.move.wait` (89, 0x004043F0): the
-                    // handler is `Player_GoToMove(address, ctx+30)` - the
+                    // handler is `Player_GoToMove(group, ctx+30)` - the
                     // caller's own slot where 63 passes -1 - and then
                     // `mov word ptr [esi+16h], 4`. So the same status 4 the
                     // waiting `scx.play*` variants write, released by the same
                     // `Game_HandleEvent` case 3, but on the PLAYER'S MOVE
                     // ending rather than a scene object's program.
-                    // `moveAddress` is where he is being sent.
+                    // `moveGroup` is the bank group the move is.
     FightWait,      // stopped at `fight.begin` (62, 0x004035D0): the handler
                     // resolves the opponent, puts both bodies into fight mode
                     // (`Fight_Begin` = sub_41A3B0), writes status **3** and
@@ -121,11 +121,27 @@ struct RunResult {
     // set when status is ObjectWait: which opcode parked it, so a caller can
     // start the right thing before parking.
     int objectWaitOp = 0;
-    // set when status is MoveWait: the ADDRESSES id `Player_GoToMove` is
-    // walking the player to. The Session has to START that move - the
+    // set when status is MoveWait: the operand of `player.move.wait`, which
+    // is a GROUP id in the player's `.CTL` bank and NOT an ADDRESSES id -
+    // `Player_GoToMove` (0x0041B6F0) resolves it with `Cef_FindGroupById`
+    // over the bank at the player record's [180] and hands the group to
+    // `SetPersoBankGroup`. The Session has to START that move - the
     // interpreter only reports the decision - and only its ending releases
-    // the context.
-    int moveAddress = -1;
+    // the context: `Game_Tick` (0x004200F0) raises event 3 once the
+    // channel's current entry is no longer in that group (`sub_45ABB0`,
+    // `[state + 56]`, compared against the group the move recorded).
+    int moveGroup = -1;
+    // `player.move` (63, 0x00403730): the SAME handler with `push -1` for the
+    // slot and no status write - `Player_GoToMove(group, -1)`, and the script
+    // runs on. The group id, or -1 when the run held no 63. The Session
+    // starts it the way it starts 89's, without the park; when one run holds
+    // two the last wins, as the engine's second `SetPersoBank` overrides the
+    // first. `player.move 100` is the one the scripts put in front of a
+    // staged sequence - 60 of the 312 sites, AREA 222's tutorial among them
+    // - and group 100 is the LOCOMOTION group, whose default entry is the
+    // stand: it is what stops a walking player dead on the frame a cutscene
+    // starts, before `player.anim.hold` cuts his input.
+    int playerMove = -1;
     // set when status is FightWait: the opponent's id (field 0, resolved
     // through the shared fetch) and the fight camera's travel, which is
     // `max(field 1, 0)` exactly as the handler's `jge` writes it.

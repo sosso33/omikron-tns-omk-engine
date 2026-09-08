@@ -2002,6 +2002,47 @@ node: the last frame `Anim_ApplyNodeFrame` wrote stays. A body nothing drives
 now keeps the last pose it was given — the pose half of "a body a program
 moved stays moved".
 
+### `player.move` IS THE STOP — next-tasks 4 (2026-09-08)
+
+The reader's report was *the tuto zone fires repeatedly and the player is not
+stopped*, and their reading of it: the original stops the player the instant
+a cutscene triggers, so his next step cannot re-trigger it. Both halves hold,
+and the second is an INSTRUCTION. AREA 222's tutorial opens
+`actor.goto_address 653; player.move 100; player.anim.hold`, and
+`Player_GoToMove` (0x0041B6F0) is `Cef_FindGroupById` + `SetPersoBankGroup`:
+the queue cleared and the machine put on group 100's default entry - the
+STAND - on this tick, then the pitch and the motion state zeroed. The walk
+clip is left, not played out. Sixty of the 312 `player.move` sites pass 100,
+each in front of a staged sequence (`docs/SCRIPT_VM.md` 63/89).
+
+**What the port did.** Op 63 was recorded and dropped ("63 needs no arm here
+at all"), and op 89 ran on because `omk-play` never installed the move hook -
+so 312 + 548 sites did nothing, and under `player.anim.hold` alone the channel
+walked its gait to the stand, playing the cycle out: 6 units past the
+teleport, headless. Address 653 is 19 units OUTSIDE zone 3795, so that walk
+is aimed back at the zone. (The re-fire itself was closed 2026-09-03 by
+`tutorial one-shot`; a headless walk cannot reproduce it either way, 6 units
+being short of 19.) The operand was also misnamed all the way down -
+`RunResult::moveAddress`, "walks the player to an ADDRESSES record" in
+`area.h` - and it is a `.CTL` GROUP id.
+
+**Now**: `RunResult::playerMove` carries op 63's group and the Session starts
+it inline (`startPlayerMove(group, -1)`); `PlayerController::goToMove` is the
+engine's call (the group switch, the pitch; the engine's carried motion state
+has no counterpart here, the controller derives motion from the clip each
+tick); and `omk-play` installs the hook and applies `Game_Tick`'s release for
+89 - the channel's current group (`sub_45ABB0`, `[state + 56]`) against the
+one the move entered, checked before each pump. Measured: he lands at 7196
+and ends 30 frames later at 7196.2 with the fix, 7202.2 without.
+`verify.py: engine: player move`.
+
+**Not yet played, and worth watching**: every `player.move.wait` site now
+PARKS in the viewer when the player's bank has the group. A group the machine
+never leaves parks the script for good - as it would in the engine - and a
+transition this port's channel fails to take where the engine's does would
+look the same. A script that stops dead after a `player.move.wait` is the
+symptom.
+
 ### The MIRROR reflects in the GAME, not only in the scene viewer
 
 `drawWithMirror` has been on the renderer boundary since 2026-09-01, and until

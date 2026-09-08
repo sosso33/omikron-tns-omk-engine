@@ -4974,7 +4974,7 @@ def c_engine_parking_ops():
       `r.pc = start` in the 89 arm
           -> 89.park pc 3 -> 0 AND resume end -> move-wait: the park re-runs
              itself, which the pc alone would not have caught.
-      `r.moveAddress = -1`      -> 89.park moveaddr 58 -> -1.
+      `r.moveGroup = -1`        -> 89.park moveaddr 58 -> -1.
       `r.fightOpponent = -1`    -> 62.park opp 25 -> -1.
       dropping 62's `travel > 0 ? travel : 0`
           -> 62.minus1 fighttravel 0 -> -1.
@@ -7426,8 +7426,8 @@ def c_engine_slider_door():
                         capture_output=True, text=True).stdout \
          if ml.returncode == 0 and os.path.exists(mlbin) else ""
     byId, parentOf, nameOf = {}, {}, {}
-    for m in _re.finditer(r"^ *(\d+) id +(\d+) (\S+) .*parent (-?\d+)", mo, _re.M):
-        idx, mid, nm, par = int(m.group(1)), int(m.group(2)), m.group(3), int(m.group(4))
+    for m in _re.finditer(r"^ *(\d+) (\S+) .*parent (-?\d+) +id (\d+)", mo, _re.M):
+        idx, nm, par, mid = int(m.group(1)), m.group(2), int(m.group(3)), int(m.group(4))
         byId[mid] = nm; parentOf[nm] = par; nameOf[idx] = nm
     def rootName(nm):
         seen = 0
@@ -26676,6 +26676,116 @@ def c_tutorial_one_shot():
            "then the two halves that make it immediate, op 64/65 raising " \
            "zonesDirty and the Session re-registering on it"
 
+def c_engine_player_move():
+    r"""`player.move` (63) IS THE STOP - `Player_GoToMove(group, -1)` - and the port dropped it.
+
+    `todo/next-tasks.md` 4: *the tuto zone fires repeatedly and the player is
+    not stopped*. The reader's reading of it (2026-09-08): the original stops
+    the player the instant a cutscene triggers, so his next step cannot
+    re-trigger it. It does, and it is an INSTRUCTION rather than a property
+    of the trigger. AREA 222's tutorial - zone 3795's enter script, @2354 -
+    opens
+
+        actor.goto_address 653   ; ADDRESSES 653 'Tutorial' = (7196, -79, 3019)
+        player.move        100
+        player.anim.hold
+
+    and `Player_GoToMove` (0x0041B6F0) is `Cef_FindGroupById(actor+180, id)`
+    then `SetPersoBankGroup(actor+396, group)` - the queue cleared and the
+    machine put on the group's flag-0x20 entry THIS tick - then the pitch
+    (+416) and the motion state (+216..+224, +280/+284, byte +1304) zeroed.
+    Group 100 is the LOCOMOTION group and its entry is `H_STAND`: the walk
+    clip is LEFT, not played out, and no root motion follows. 60 of the 312
+    `player.move` sites pass 100, each in front of a staged sequence.
+
+    The operand is a `.CTL` GROUP id, not an ADDRESSES id - `RunResult` called
+    it `moveAddress` and `area.h` described the move as a walk to an address
+    until this check was written. The port recorded op 63 and did nothing
+    with it (interp.cpp: "63 needs no arm here at all"), and
+    `player.move.wait` (89) ran on because no viewer installed the move hook.
+    Under `player.anim.hold` alone the channel is fed the idle word and walks
+    its gait to the stand, which plays the cycle out: 6 units past the
+    teleport point, headless. What makes that matter is the geometry, and it
+    is asserted below from the data: address 653 lies 19 units WEST of zone
+    3795's quad, OUTSIDE it, so the tutorial teleports him out of its own
+    zone and a walk that plays out heads straight back in. (The re-fire
+    itself was closed on 2026-09-03 by `tutorial one-shot`; this is the other
+    half of the report, and it is why the engine never needed the one-shot to
+    be quick.)
+
+    The row drives `omk-play` on a save crafted from `traces/save-appart.bin`
+    with `IAM\START`'s zone bitmap - the apartment save has the tutorial
+    SPENT, so 3795 would never arm from it - stands at x 7150 facing +x with
+    UP held, walks into 3795 and reads the position 30 frames after the
+    teleport. Release of 89 is not exercised here: no 89 site is on this
+    path, and the rule (`Game_Tick`: the channel's current group, `sub_45ABB0`
+    = `[state+56]`, no longer the one the move entered) is labelled in
+    `play.cpp` as read and not yet played.
+
+    SHOWN TO FAIL 2026-09-08 by dropping `startPlayerMove(r.playerMove, -1)`
+    from `area.cpp` (area.o and the binary deleted first): `player: ends at
+    7202.2` against 7196.2 with it - the walk cycle finishing after the
+    teleport. Asserted as a displacement under 1 unit, because the walker's
+    seat moves him 0.2 on landing either way.
+    """
+    import tempfile, shutil
+    import gamestate as G
+    eng = os.path.join(ROOT, "engine")
+    if not os.path.isdir(eng):
+        return ("skipped",), ("skipped",), "engine/ absent"
+    # the geometry, from the data: address 653 against zone 3795's quad
+    addr = O._address_table().get(653)
+    zx = None
+    b = T.archive(os.path.join(O.TAGDIR, "AREA"))[222]
+    lo, n = T.LAYOUT["AREA"](b)[:2]
+    conv = lambda v: int(v * 100 * 0.00390625 * 0.3937007874015748 - 1.0)
+    for i in range(n):
+        o = lo + 68 * i
+        if struct.unpack_from("<h", b, o + 64)[0] != 3795: continue
+        c = struct.unpack_from("<12i", b, o + 12)
+        zx = min(conv(c[3 * k]) for k in range(4))
+    geometry = (addr[0] if addr else None, zx, (zx - addr[0]) if (addr and zx) else None)
+    mk = subprocess.run(["make", "-s", "play"], cwd=eng, capture_output=True, text=True)
+    play = os.path.join(eng, "build", "omk-play")
+    if mk.returncode != 0 or not os.path.exists(play):
+        return ("skipped",), ("skipped",), "omk-play did not build (SDL absent?)"
+    st = G.load(omkpaths.data("IAM", "START"))
+    d = bytearray(open(os.path.join(ROOT, "traces", "save-appart.bin"), "rb").read())
+    o = G.SAVE_HEADER + G.SLOT_DB
+    db = G.GameState(bytes(d[o:o + G.DB_SIZE]))
+    off, cnt = db.offset(5), db.count(5)
+    d[o + off:o + off + (cnt + 7) // 8] = st.raw[st.offset(5):st.offset(5) + (cnt + 7) // 8]
+    tmp = tempfile.mkdtemp()
+    try:
+        sv = os.path.join(tmp, "save-tuto.bin")
+        open(sv, "wb").write(d)
+        env = dict(os.environ, SDL_VIDEODRIVER="dummy", OMK_CAMLOG="1")
+        r = subprocess.run([play, omkpaths.data_root(), os.path.join(ROOT, "tables"),
+                            "--save", sv, "--area", "222", "--stand", "7150,-79,3020,90",
+                            "--hold", "k200*500", "--frames", "60", "--nofmv"],
+                           capture_output=True, env=env)
+        # bytes, not text: the viewer echoes cp1252 names out of the save
+        out = (r.stdout + r.stderr).decode("utf-8", "replace")
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+    arms = out.count("ARM zone 3795 ->")
+    m = re.search(r"player\.move 100 - the channel put on group 100 \(index \d+\)'s entry '(\w+)'", out)
+    entry = m.group(1) if m else None
+    t = re.search(r"actor\.goto_address 653 - the player put down at (-?\d+) ", out)
+    e = re.search(r"player: ends at (-?[\d.]+) ", out)
+    disp = abs(float(e.group(1)) - float(t.group(1))) if (t and e) else None
+    still = disp is not None and disp < 1.0
+    src = open(os.path.join(eng, "src/script/area.cpp"), encoding="utf-8").read()
+    inline = "if (r.playerMove >= 0) startPlayerMove(r.playerMove, -1);" in src
+    return (geometry, arms, entry, still, inline), \
+           ((7196, 7215, 19), 1, "H_STAND", True, True), \
+           "address 653's x, zone 3795's west edge and the gap between them " \
+           "(the teleport lands OUTSIDE the zone); then omk-play walking into " \
+           "3795 from a crafted new-game save: the zone arms once, `player.move " \
+           "100` puts the channel on H_STAND, the player is within a unit of the " \
+           "teleport point 30 frames later, and the Session starts op 63 inline"
+
+
 def c_no_define_renames():
     """CLAUDE.md 3: renames go through tools/renames.json, never a #define.
 
@@ -27898,6 +28008,7 @@ CHECKS = [
     ("transcript index",   c_transcript_index,  "transcript/README"),
     ("held camera bracket",c_held_camera_bracket,"todo/omk-play 42"),
     ("tutorial one-shot",  c_tutorial_one_shot, "todo/omk-play 42"),
+    ("engine: player move", c_engine_player_move, "SCRIPT_VM 63/89"),
     ("no #define renames", c_no_define_renames, "CLAUDE.md 3"),
 ]
 

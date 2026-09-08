@@ -405,8 +405,11 @@ public:
     int otherArea() const { return slots_[1 - curSlot_].area; }
     // `Game_HandleEvent` case 9 - the player's feet are on `area`'s decor.
     void playerOnArea(int area);
-    // `Game_HandleEvent` case 3 (0x004067D0), the MOVE half: the player has
-    // reached where `player.move.wait` sent him. `a2` is a context INDEX -
+    // `Game_HandleEvent` case 3 (0x004067D0), the MOVE half: the player's
+    // channel has LEFT the bank group `player.move.wait` put it on - raised by
+    // `Game_Tick` (0x004200F0) after `Actors_TickAll`, when `sub_45ABB0`
+    // (`[state + 56]`, the current entry's group) no longer equals the group
+    // `Player_GoToMove` recorded in `dword_91068C`. `a2` is a context INDEX -
     // `dword_4E61E8[a2]`, no search - which is why the handler hands
     // `Player_GoToMove` the caller's own `ctx+30`: the resume id travels with
     // the move. Resumes that one context, only while it is still at 4.
@@ -418,12 +421,17 @@ public:
     void fightEnded();
     int  fightingWith() const;      // the running fight's opponent, or -1
     // The two boundaries to the actor runtime the parks need. `Player_GoToMove`
-    // (sub_41B6F0) walks the player to an ADDRESSES record and reports to the
-    // context when he arrives; `Fight_Begin` (sub_41A3B0) enters the fight.
+    // (sub_41B6F0) puts the player's channel on the bank GROUP the operand
+    // names - `Cef_FindGroupById`, then `SetPersoBankGroup`: the queue cleared,
+    // the machine on the group's default entry AT ONCE - and, with a context
+    // (89), reports to it when the channel leaves that group; with -1 (63) it
+    // is the same switch and no report. This was described here as walking
+    // him to an ADDRESSES record until 2026-09-08, and it is not: a move is a
+    // group in the `.CTL`. `Fight_Begin` (sub_41A3B0) enters the fight.
     // With no hook installed the opcode RUNS ON instead of parking: nothing
     // could ever release the park, and modelling the wait must never invent
     // a deadlock (the `ObjectWait` rule). Installing a hook arms the park.
-    void setMoveHook(std::function<bool(int addressId, int ctx)> h);
+    void setMoveHook(std::function<bool(int groupId, int ctx)> h);
     void setFightHook(std::function<bool(int opponentId)> h);
     // 126's SUBJECT: `Address_Find(field 1)` in both subject pointers where 96
     // puts `Actor_Player()` twice. -1 = the player. Read by whoever frames a
@@ -1453,7 +1461,7 @@ private:
     std::function<bool(int)>      fightHook_;
     int          fightCamTravel_ = 0;      // `dword_930818` for mode 14, recorded
     int          camSubjectAddress_ = -1;
-    bool startPlayerMove(int addressId, int ctx);
+    bool startPlayerMove(int groupId, int ctx);
     bool beginFight(int opponentId);
     bool         objWait_ = false;
     bool         haveCam_ = false;

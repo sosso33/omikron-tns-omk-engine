@@ -805,8 +805,8 @@ int Session::fightingWith() const {
     return -1;
 }
 
-bool Session::startPlayerMove(int addressId, int ctx) {
-    return moveHook_ && moveHook_(addressId, ctx);
+bool Session::startPlayerMove(int groupId, int ctx) {
+    return moveHook_ && moveHook_(groupId, ctx);
 }
 
 bool Session::beginFight(int opponentId) {
@@ -2592,6 +2592,10 @@ void Session::execute(int i) {
         // also prunes contexts whose zone has gone.
         if (r.zonesDirty) zonesRegisterAll();
         if (!ctxs_[static_cast<std::size_t>(i)]) return;   // pruned by that
+        // `player.move` (63): `Player_GoToMove(group, -1)` - the group switch
+        // 89 parks on, without the park, run inline by the handler. With no
+        // context to report to, nothing is armed for `playerMoveEnded`.
+        if (r.playerMove >= 0) startPlayerMove(r.playerMove, -1);
         record(r.calls);
         // `or byte ptr [ctx+28h], 10h` - the 24 visible handlers set it on
         // entry, before their dry-run test, and nothing ever clears it
@@ -2738,9 +2742,9 @@ void Session::execute(int i) {
             // halves of one instruction, and the port does both or neither.
             // No hook: nothing could raise case 3 either, so the script runs
             // on rather than parking for ever (the `ObjectWait` rule).
-            if (!startPlayerMove(r.moveAddress, i)) break;
+            if (!startPlayerMove(r.moveGroup, i)) break;
             c->status = 4;
-            c->waitingForMove = r.moveAddress;
+            c->waitingForMove = r.moveGroup;
             return;
         case RunStatus::FightWait:
             // status 3, then `Camera_Request(14)` with max(field 1, 0)
