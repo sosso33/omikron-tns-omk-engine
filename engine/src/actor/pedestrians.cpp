@@ -209,6 +209,14 @@ void Sliders::clear() {
     playerKnown_ = playerOnRoad_ = false; bumpHold_ = 0.0f; bumpLatch_ = -1;
     nSliderModels_ = nMotoModels_ = 0;
     talkTarget_ = -1; counter_ = 0; nameNext_[1] = nameNext_[2] = 0;
+    // ...and THE CALL. A load into another city rebuilds the whole pool, but
+    // `called_` survived it as the OLD city's slot number, so `callSlider`
+    // answered "one call at a time" and never spawned, relinked or rebound
+    // anything: the player's slider in the new city was whatever the new
+    // pool had put in that slot - in Qalisar a moto, which is why the reader
+    // watched it vanish at the kerb while the log said "relinked".
+    called_ = -1; callRide_ = RideMachine{}; journeyDone_ = false;
+    riderKnown_ = false; releasedTold_ = false; forCall_ = false;
     loaded_ = false;
 }
 

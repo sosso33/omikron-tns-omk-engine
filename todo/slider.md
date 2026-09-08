@@ -544,6 +544,17 @@ effect as the teleportation from earlier, with the character disappearing)"*.
   tick between `dismountCalled` and the first frame that re-read him; the
   engine's ride writes +244 before mode 7 is set. The exit placement now
   sets the release's rider itself.
+  **And the slider that vanished at Qalisar's kerb, for real this time**:
+  `Sliders::clear()` — what a load calls — rebuilt the whole pool but kept
+  `called_` as the OLD city's slot number, so `callSlider` in the new city
+  answered "one call at a time" and never spawned, relinked or rebound
+  anything: the player's slider there was whatever Qalisar's pool had put in
+  slot 0, a moto, and the log's *"relinked … with him aboard"* was printed
+  over nothing. Found by the staging line — *"the called vehicle (slot 0,
+  model 'moto') is NOT staged: its model did not load"* — in a run that two
+  earlier runs of the same code had not shown, which is the kind of thing a
+  player meets and a headless replay meets one time in three. `clear()`
+  forgets the call now (`called_`, the ride machine, the rider).
 
 **The seat, from the clips alone.** From the door (`−62.5, −8.8, +3.7`)
 `H_SLDIN`'s root travels `(+43.5, +12.5, −0.9)` and ends at

@@ -5147,10 +5147,32 @@ int main(int argc, char** argv) {
                                     session.playerPos()[0], session.playerPos()[1], session.playerPos()[2]);
                     }
                 }
-                if (session.sliders().takeReleasedNotice())
+                // ...and FOLLOW the released vehicle for ten seconds after,
+                // since a reader lost it at Qalisar's kerb: once it is
+                // traffic again the ambient drive owns it, and where that
+                // drive puts it on its first step is the question.
+                static int  releasedSlot = -1;
+                static long releasedAt = -1;
+                if (session.sliders().calledVehicle() >= 0) releasedSlot = session.sliders().calledVehicle();
+                if (session.sliders().takeReleasedNotice()) {
+                    releasedAt = n;
                     std::printf("slider: RELEASED - he is 300 clear and in front of it, "
                                 "so it goes back to mode 0 and drives as ordinary "
                                 "traffic again\n");
+                }
+                if (releasedAt >= 0 && n - releasedAt <= 300 && (n - releasedAt) % 30 == 0 &&
+                    releasedSlot >= 0 && static_cast<std::size_t>(releasedSlot) < session.sliders().vehicles().size()) {
+                    const auto& rv = session.sliders().vehicles()[static_cast<std::size_t>(releasedSlot)];
+                    if (rv.live && rv.mover >= 0) {
+                        const auto& rm = session.sliders().movers()[static_cast<std::size_t>(rv.mover)];
+                        std::printf("frame %ld: the released vehicle (slot %d, '%s', state %d) at %.0f %.0f %.0f, "
+                                    "lane %d seg %d remaining %.0f; he is at %.0f %.0f %.0f\n", n, releasedSlot,
+                                    rv.model.c_str(), rv.state, rm.body[0], rm.body[1], rm.body[2], rm.lane, rm.seg,
+                                    rm.remaining, session.playerPos()[0], session.playerPos()[1], session.playerPos()[2]);
+                    } else {
+                        std::printf("frame %ld: the released vehicle (slot %d) is DEAD\n", n, releasedSlot);
+                    }
+                }
                 if (boarded && !ride) {
                     float at[3];
                     if (session.sliders().calledAt(at)) {

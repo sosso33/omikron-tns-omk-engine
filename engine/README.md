@@ -2424,6 +2424,10 @@ and in front" read the rider's position from the OLD city for that one tick.
 The exit placement feeds the release test its rider now, as the engine's ride
 writes +244 before mode 7. The aboard path's sixty-frame fade is gone too:
 `Screen_Fade(0)` is `fade.from_black`, the exit clearing the load's black.
+And under all of it: `Sliders::clear()` kept `called_` across the load, so in
+the new city `callSlider` answered "one call at a time" and the player's
+slider was whatever slot 0 of the new pool held - a moto in Qalisar. The
+pool forgets the call on a load now.
 
 **Two closed the same evening.** The suspected 50 cm seat residual is NOT
 there: `build/slider_body` measures `SLI_FN.3DO`'s four root sub-objects as
