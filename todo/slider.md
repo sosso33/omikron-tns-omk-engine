@@ -598,7 +598,14 @@ staged root for the called vehicle while boarding or aboard; rendered, the
 red well opens along the flank and he sits in it. `engine: slider door`
 asserts the door parentage.
 
-## What is left — 2026-09-08, after the journey landed
+## What is left — 2026-09-08, evening: PLAYED AND CONFIRMED
+
+The reader played the whole thing three times over the day, reporting each
+round (the two "played" sections above), and the last word was *"ok, it
+works"*. `next-tasks` 16 is DONE. What remains is below, and none of it is
+needed to use the slider.
+
+### The list as it stood before the play rounds
 
 The reader, 2026-09-07: *"So, slider task is not finished if it is not usable,
 don't you think?"* — and they were right. Since then the whole flow they

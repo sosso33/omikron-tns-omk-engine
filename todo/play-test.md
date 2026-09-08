@@ -77,6 +77,8 @@ line pitch and I would rather chase it than leave it recorded as a mystery.
 
 ## 4. CALL a slider and be TAKEN — the one to try first
 
+**CONFIRMED IN PLAY, 2026-09-08** — three rounds of reports, each fixed and re-tested by the reader; the last: *"ok, it works"*. What follows is kept as the recipe.
+
 Two ways in, and they end differently, exactly as the original does:
 
 **A. Choose a destination.** `TAB`, `RIGHT`, `UP`, `ENTER` (the slider tab),
