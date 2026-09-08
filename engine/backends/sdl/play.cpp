@@ -2457,11 +2457,31 @@ int main(int argc, char** argv) {
     constexpr float kTakeCamAt[3]  = {0.0f, 4.7244f, 19.685f};
     constexpr float kTakeCamFov    = 75.0f;
     constexpr float kTakeCamTravel = 30.0f;
+    // ...and the same machinery serves any PLAYER-subject preset asked for
+    // with a travel: `Camera_Request(mode, block)` with `block+24` the
+    // frames. Preset 17 is what `sub_4570F0` asks for when the ride ends -
+    // eye (-39.3701, 78.7402, 0) = 1.00 m and 2.00 m, target the actor,
+    // subjects 0 and 0, over `dword_930818 = 60.0` frames. The take's
+    // preset 1 was the only one wired, as constants.
+    float takeCamEye[3] = {kTakeCamEye[0], kTakeCamEye[1], kTakeCamEye[2]};
+    float takeCamAt[3]  = {kTakeCamAt[0], kTakeCamAt[1], kTakeCamAt[2]};
+    float takeCamFov    = kTakeCamFov;
+    float takeCamTravel = kTakeCamTravel;
     auto takeCamRequest = [&](int phase) {
         takeCamPhase = phase;
         takeCamClock = 0.0f;
         for (int k = 0; k < 3; ++k) { takeCamFromEye[k] = lastEye[k]; takeCamFromAt[k] = lastAt[k]; }
         takeCamFromFov = lastFov;
+        if (phase == 1) {                       // the take: preset 1, 30 frames
+            for (int k = 0; k < 3; ++k) { takeCamEye[k] = kTakeCamEye[k]; takeCamAt[k] = kTakeCamAt[k]; }
+            takeCamFov = kTakeCamFov; takeCamTravel = kTakeCamTravel;
+        }
+    };
+    auto playerCamRequest = [&](const float eye[3], const float at[3], float fov, float frames) {
+        takeCamRequest(1);
+        for (int k = 0; k < 3; ++k) { takeCamEye[k] = eye[k]; takeCamAt[k] = at[k]; }
+        takeCamFov = fov; takeCamTravel = frames;
+        takeCam = true;
     };
     float lastRoll = 0.0f;              // the camera ROLL, blended like the fov
     // THE CAMERA HOLDS WHEN AN EDITING ENDS, and the fall-back this used to do
@@ -5165,11 +5185,17 @@ int main(int argc, char** argv) {
                                         out ? "H_SLDOUT plays" : "but the bank has "
                                               "no group 61");
                         }
-                        // `Camera_Request(17, ..., 60.0f)` is NOT wired: preset
-                        // 17's subject is the PLAYER and the port's player-preset
-                        // path is the take camera's blend, not a request. The
-                        // follow camera stands in and this says so.
-                        session.requestCamera(0, 0);
+                        // `Camera_Request(17, {player, player, 60.0f, 1, .., -1})`
+                        // - `sub_4570F0`'s last act. Preset 17: eye
+                        // (-39.3701, 78.7402, 0), target (0, 0, 0), fov 75,
+                        // subjects 0/0 - a metre behind and two up, on him, over
+                        // sixty frames. The same blend the take camera uses.
+                        {
+                            static constexpr float kExitEye[3] = {-39.3701f, 78.7402f, 0.0f};
+                            static constexpr float kExitAt[3]  = {0.0f, 0.0f, 0.0f};
+                            playerCamRequest(kExitEye, kExitAt, 75.0f, 60.0f);
+                            std::printf("slider: camera 17 requested - preset 17 on him over 60 frames\n");
+                        }
                         session.sliders().dismountCalled();
                         boarded = false;
                         journeyTo = -1;
@@ -5771,6 +5797,7 @@ int main(int argc, char** argv) {
                         // ACTOR_STATE 8 ("bad mode getting out of the slider
                         // !") and leaves the actor at 1.
                         leaving = false;
+                        if (takeCam) takeCamRequest(3);      // back to the follow camera
                         player->setActorState(omk::ActorState::Normal, "MDSLIDOU");
                         player->setChannelOnly(false);
                         player->clearRootFrame();
@@ -7846,13 +7873,13 @@ int main(int argc, char** argv) {
                 // same 30 frames back to the follow camera and hands over.
                 // Full-frame, not letterboxed: nothing read ties the strip
                 // to this mode, and the walk it interrupts is full-frame.
-                const omk::FollowCamera tc = player->resolveOffsets(kTakeCamEye, kTakeCamAt, kTakeCamFov);
+                const omk::FollowCamera tc = player->resolveOffsets(takeCamEye, takeCamAt, takeCamFov);
                 const omk::FollowCamera& fc = player->followCamera();
                 const omk::FollowCamera& to = takeCamPhase == 3 ? fc : tc;
                 float u = 1.0f;
                 if (takeCamPhase == 1 || takeCamPhase == 3) {
                     takeCamClock += static_cast<float>(frameSec * 30.0);
-                    u = haveLastDrawn ? std::min(1.0f, takeCamClock / kTakeCamTravel) : 1.0f;
+                    u = haveLastDrawn ? std::min(1.0f, takeCamClock / takeCamTravel) : 1.0f;
                 }
                 for (int k = 0; k < 3; ++k) {
                     view.cam.eye[k] = takeCamFromEye[k] + (to.eye[k] - takeCamFromEye[k]) * u;

@@ -7394,16 +7394,35 @@ def c_engine_slider_door():
              "SLF_113.3DA: 51 frames, 5 tracks" in co)
     moves = co.count("<- MOVES")
     door = "SlPorteG     turns   71.4 deg" in co
+    # ...and NO ORIGIN RESIDUAL: `SLI_FN.3DO`'s four root sub-objects are
+    # four copies of one 83.7 x 60 x 162.5 body, each centred on its own
+    # root's `pos` (centre - pos = 0 for all four), so a man placed from the
+    # clips' SlBassin-relative numbers on a body drawn about SlBasB's centre
+    # is placed correctly. `build/slider_body`.
+    b = subprocess.run(["make", "-s", "build/slider_body"], cwd=eng,
+                       capture_output=True, text=True)
+    bbin = os.path.join(eng, "build", "slider_body")
+    bo = subprocess.run([bbin, omkpaths.data_root()], capture_output=True, text=True).stdout \
+         if b.returncode == 0 and os.path.exists(bbin) else ""
+    import re as _re
+    roots = len(_re.findall(r"^root ", bo, _re.M))
+    # parsed, not matched as text: a centre prints as -0.0 as readily as 0.0
+    centred = sum(1 for m in _re.finditer(r"centre - pos = +(-?[\d.]+) +(-?[\d.]+) +(-?[\d.]+)", bo)
+                  if all(abs(float(m.group(k))) < 0.05 for k in (1, 2, 3)))
+    sameBody = len([m for m in _re.finditer(r"size +([\d.]+) x", bo)
+                    if abs(float(m.group(1)) - 83.7) < 0.15])
     got = (ref, off60, off61, clip60, clip61, doorSide, inReach, camReach,
-           seat, clips, moves, door)
+           seat, clips, moves, door, roots, centred, sameBody)
     want = ((-538.195, -162.587, 7.884), (-62.503, -8.782, 3.697),
             (-18.979, -8.78, 2.791), True, True, True, True, True,
-            True, True, 2, True)
+            True, True, 2, True, 4, 4, 4)
     return got, want, ("slf_112 root0; H_SLDIN and H_SLDOUT door offsets; the "
                        "two clips; the three that agree the door is on -X; the "
                        "SEAT (H_SLDIN's end is H_SLDOUT's start, to 0.2); and "
                        "the slider's own door clips, 72 and 51 frames, one "
-                       "moving track each - SlPorteG, 71.4 degrees")
+                       "moving track each - SlPorteG, 71.4 degrees; and the "
+                       "four LOD bodies, each centred on its own root pos, so "
+                       "there is no origin residual in the seat")
 
 
 def _seatOf(o):
@@ -26125,7 +26144,7 @@ def c_licence_headers():
                    if TAG in open(p, encoding="utf-8",
                                   errors="replace").read(600)]
     return (authored, sorted(missing), len(vendored), mislabelled), \
-           (385, [], 1, []), \
+           (386, [], 1, []), \
            "authored source files under tools/, engine/src, engine/tools, " \
            "engine/backends and scripts/; those MISSING the SPDX tag; " \
            "vendored files in engine/third_party; and vendored files wrongly " \

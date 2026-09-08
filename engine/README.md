@@ -2339,9 +2339,21 @@ and the RELEASED line.
 
 **Found and deliberately left**: `Sliders::setPlayer` has no caller, so the
 class's player-aware arms have never run - the release takes its own
-`setRider`; the reserved slider is drawn re-centred on `SlBasB`'s origin
-while the clips are authored against `SlBassin`'s, 19.7 apart in z (50 cm
-along the length); `sub_4521E0`'s model swap; camera 17 at the exit.
+`setRider`; and `sub_4521E0`'s model swap, now LOCATED: `dword_538E28` is the
+slider model TABLE (88-byte rows) and `dword_538E2C`/`dword_538E30` are row
+0's `+4`/`+8`, the two sub-object handles the pool knows as `v16[1]`/`v16[2]`
+- what the swap shows, given the clip already animates the door, is unread.
+
+**Two closed the same evening.** The suspected 50 cm seat residual is NOT
+there: `build/slider_body` measures `SLI_FN.3DO`'s four root sub-objects as
+four copies of one 83.7 x 60 x 162.5 body, each centred on its own root
+`pos` to 0.0 - the 19.7 in z was where the copies sit in the file, so
+bassin-relative is body-centre-relative and the clips' seat is the drawn
+body's seat. And camera 17 is wired: `sub_4570F0`'s `Camera_Request(17,
+{player, player, 60.0f, ...})`, preset 17 a metre behind and two up on him,
+through the take camera's blend generalised to a preset per request, sent
+back by `MDSLIDOU` the way the take's `MDPUTSNK` does. `engine: slider door`
+asserts the four centred bodies (shown to fail by moving one centre a unit).
 
 Two small additions to `PlayerController` carry the arm, and both are direct
 models of engine facts rather than conveniences: `setRootFrame` is

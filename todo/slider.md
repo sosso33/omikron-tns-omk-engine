@@ -478,12 +478,25 @@ behaviour outside this task; the release takes its own `setRider`. And
 `make -s build/omk-play` is a silent no-op (no rule, file exists) — the target
 is `play`; two eight-minute runs were evidence about the previous binary.
 
-**Still open**: the reserved slider is drawn re-centred on `SlBasB`'s origin
-while the clips are authored against `SlBassin`'s, and the two differ by 0.6
-in y and 19.7 in z (50 cm along the length) — a residual worth measuring
-against the mesh extents; `sub_4521E0`'s model swap (`SlBasA` carries the
-`SlPorteZD/ZG` open-door meshes, `SlBasB` the closed `SlPorteG` — the swap
-and the clip both exist); camera 17 at the exit.
+**The origin residual, measured and CLOSED** (`build/slider_body`): every
+one of `SLI_FN.3DO`'s four root sub-objects is centred on its own `pos` to
+0.0 — four copies of one 83.7 x 60 x 162.5 body (2.1 x 1.5 x 4.1 m) laid out
+at different places in the file. So bassin-relative IS body-centre-relative
+and the man placed from the clips lands where the drawn body's seat is. The
+19.7 in z was where the copies sit in the file, not an offset on the body.
+
+**Camera 17 wired**: `sub_4570F0`'s last act, preset 17 on the player (eye
+1.00 m behind and 2.00 m up) over 60 frames, through the take camera's blend
+generalised to a preset per request; `MDSLIDOU` sends it back the way the
+take's `MDPUTSNK` does.
+
+**Still open**: `sub_4521E0`'s model swap — now located: `dword_538E28` is
+the slider model TABLE (88-byte rows; the loop at 0x454360 frees `[row+0]`
+per set bit of the model mask), and `dword_538E2C`/`dword_538E30` are row
+0's `+4`/`+8`, the two sub-object handles the port knows as `v16[1]`/`v16[2]`.
+The swap toggles the sub-node between them and MDACTION calls it at the snap.
+Which of the four bodies each handle is (the sort in `sub_453A70`) and what
+the swap shows, given the clip already animates `SlPorteG`, is not read.
 
 ## What is left — 2026-09-08, after the journey landed
 
