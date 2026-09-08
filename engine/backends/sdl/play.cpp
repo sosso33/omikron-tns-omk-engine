@@ -3091,6 +3091,9 @@ int main(int argc, char** argv) {
         // ask for one of the two. Recorded as the body is posed and read a
         // frame later by the camera block, which runs earlier in the frame.
         float headAt[3] = {0, 0, 0};
+        // WHICH SKELETON was posed - a crowd model has four, side by side,
+        // and a bone name matches in all of them (see `o3de/shadow.h`).
+        int   shadowRoot = -1;
         // EVERY MESH'S WORLD POSITION, filled by the same transform that
         // places `headAt` - what the shadow needs, because
         // `Shadow_EmitBoneBlob` probes from the BONE NODE'S OWN ORIGIN
@@ -9221,6 +9224,7 @@ int main(int argc, char** argv) {
                 const omk::Geometry& restUsed = skel == s.mo->root && s.mo->root >= 0 &&
                                                  !hasSeveralSkeletons(*s.mo)
                                                  ? s.mo->rest : lodRestFor(s.model, *s.mo, skel);
+                s.shadowRoot = skel;
                 omk::applyPose(s.posed, restUsed, s.mo->meshes, pose, &s.mo->face, &fv);
                 // THE ROOT MOTION: `Anim_RootDelta`'s running sum, weighted by
                 // how much of the pose is the scene's, so a line stands where
@@ -9658,8 +9662,9 @@ int main(int argc, char** argv) {
                     // `Slider_PlaceShadow`'s two nodes, on the same transform.
                     p.footKnown = false;
                     {
-                        const int fi[2] = {omk::findMeshContaining(p.mo->meshes, "Piedg"),
-                                           omk::findMeshContaining(p.mo->meshes, "Piedd")};
+                        const int fi[2] = {
+                            omk::findMeshContaining(p.mo->meshes, "Piedg", lodRoot),
+                            omk::findMeshContaining(p.mo->meshes, "Piedd", lodRoot)};
                         if (fi[0] >= 0 && fi[1] >= 0 &&
                             static_cast<std::size_t>(fi[0]) < pose.size() &&
                             static_cast<std::size_t>(fi[1]) < pose.size()) {
@@ -10392,11 +10397,12 @@ int main(int argc, char** argv) {
                 long blobs = 0, nPlayer = 0, nActor = 0, nCrowd = 0;
                 long nPedDrawn = 0, nPedFeet = 0;
                 const auto castBones = [&](const std::vector<omk::Mesh>& meshes,
-                                           const std::vector<float>& at, int lvl) {
+                                           const std::vector<float>& at, int lvl,
+                                           int root) {
                     if (at.empty()) return;
                     for (int bi : omk::shadowBonesFor(lvl)) {
                         const auto& sb = omk::kShadowBones[static_cast<std::size_t>(bi)];
-                        const int mi = omk::findMeshContaining(meshes, sb.bone);
+                        const int mi = omk::findMeshContaining(meshes, sb.bone, root);
                         if (mi < 0 || static_cast<std::size_t>(mi) * 3 + 2 >= at.size()) continue;
                         const float* p3 = &at[static_cast<std::size_t>(mi) * 3];
                         const auto f = omk::floorUnder(playerSoup, p3[0], p3[1], p3[2]);
@@ -10415,11 +10421,13 @@ int main(int argc, char** argv) {
                     const int v = static_cast<int>(st);
                     return !(v == 7 || (v > 10 && v <= 14));
                 };
+                // The player's model has ONE skeleton, so -1 is the whole of it.
                 if (drawPlayer && playerMeshAtKnown && player && castsIn(player->state()))
-                    castBones(playerMeshes, playerMeshAt, detail);
+                    castBones(playerMeshes, playerMeshAt, detail, -1);
                 nPlayer = blobs;
                 for (const auto& up : staged)
-                    if (up->drawn && up->mo) castBones(up->mo->meshes, up->meshAt, detail - 1);
+                    if (up->drawn && up->mo)
+                        castBones(up->mo->meshes, up->meshAt, detail - 1, up->shadowRoot);
                 nActor = blobs - nPlayer;
                 // The crowd's, which is the other mechanism entirely.
                 for (const auto& up : pedStaged) {

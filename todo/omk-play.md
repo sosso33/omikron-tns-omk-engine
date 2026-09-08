@@ -15,6 +15,42 @@ waiting on its evidence.
 
 ## Open (batch 6, filed 2026-09-04)
 
+### 87. No sky after loading a save inside a building — A
+
+> **Fixed 2026-09-08.** Not watched yet: the evidence is a headless walk out
+> of the restaurant save.
+
+A reader asked whether a black sky was a bug, then narrowed it themselves:
+*it happens when I load a save located in a building*. That sentence is the
+whole diagnosis.
+
+**The sky is GLOBAL and either resident slot can bring it.**
+`Area_LoadMiscModel` keeps one model rather than one per slot, and
+`Area_TickLoad` case 4 calls it for whichever area is loading - so an area
+naming a sky replaces what is there and one naming none leaves it standing.
+`omk-play` asked **slot 0 only**. A load puts its own area in slot 0, so
+walking out of a building lands the city in slot 1 and its sky is never asked
+for; start in the street and the same area arrives in slot 0 and the sky is
+there, which is why it looked like a black sky "in some cases". Their own
+session log has the shape: `SHOW area 217 in slot 0`, then
+`SHOW area 0 in slot 1`.
+
+**Measured.** From the restaurant save, standing in AREA 217's exit zone
+(record 0, whose enter script runs `area.goto 0`), Anekbah arrives in slot 1
+at frame 21 and `sky: ASKY` loads - 1 against 0 over the same walk with the
+`slot == 0` test restored.
+
+**Not the same thing as a fogged sky, which is real and correct.** The fog is
+linear and BLACK (the scene's `+336` ships as 0) over the clip distance, and
+the sky's `0x800` bit doubles its range - so at the shipped 50 m default
+Anekbah's sky is black except nearly overhead, and at 200 m it is a full sky.
+That was measured and ruled out before the slot was found: 3783 of 9600 top-row
+pixels lit at 50 m against 9207 at 200 m, from the same spot.
+
+`verify.py: the sky` gains the port half - walked out of the restaurant so the
+city arrives in the OTHER slot, which must still load ASKY; shown to fail by
+restoring `slot == 0`.
+
 ### 85. A sneak verb applies to the object that was there BEFORE the scroll — A
 
 > **Fixed 2026-09-07 from the engine's own four instructions.** Not yet

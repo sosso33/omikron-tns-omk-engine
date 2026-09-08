@@ -46,10 +46,31 @@ std::vector<int> shadowBonesFor(int detail) {
     return out;
 }
 
-int findMeshContaining(const std::vector<Mesh>& meshes, const char* wanted) {
+namespace {
+
+// Is mesh `i` under `root`? Parents are named by ID, not by index - the same
+// walk `skeletonRootOf` does in the viewer.
+bool underSkeleton(const std::vector<Mesh>& meshes, int i, int root) {
+    if (root < 0) return true;
+    for (int guard = 0; guard < 64 && i >= 0; ++guard) {
+        if (i == root) return true;
+        const std::int32_t pid = meshes[static_cast<std::size_t>(i)].parent;
+        int next = -1;
+        for (std::size_t j = 0; j < meshes.size(); ++j)
+            if (meshes[j].id == pid) { next = static_cast<int>(j); break; }
+        i = next;
+    }
+    return false;
+}
+
+}  // namespace
+
+int findMeshContaining(const std::vector<Mesh>& meshes, const char* wanted,
+                       int underRoot) {
     int found = -1;
     for (std::size_t i = 0; i < meshes.size(); ++i)
-        if (std::string_view(meshes[i].name).find(wanted) != std::string_view::npos)
+        if (std::string_view(meshes[i].name).find(wanted) != std::string_view::npos &&
+            underSkeleton(meshes, static_cast<int>(i), underRoot))
             found = static_cast<int>(i);   // the LAST match, as the traverse leaves it
     return found;
 }

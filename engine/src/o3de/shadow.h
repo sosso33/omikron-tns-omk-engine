@@ -120,8 +120,24 @@ std::vector<int> shadowBonesFor(int detail);
 // every bone of every character model carries a `U` prefix (`UBuste`,
 // `UTete`, `UPiedg`), so an equality test finds NOTHING and the whole
 // mechanism silently draws nothing at all.
+//
+// **`underRoot` SCOPES it to one skeleton, and without that the shadows are
+// orphans.** A crowd model carries FOUR LOD skeletons - `Ph…` `Pi…` `Pm…`
+// `Pw…`, 19 meshes each - and they are authored SIDE BY SIDE: PSH_FN's four
+// `Buste` sit at x -12.6, -91.2, -170.3 and -248.7, FSH_FN's spread 247. So
+// every bone name matches four times and the engine's last-match rule lands
+// on the LOWEST-detail skeleton, six metres from the body being drawn. The
+// engine cannot meet this because `sub_453A70` splits the model into
+// sub-objects and only one is live; this port holds the whole file's meshes
+// in one array and poses the subtree the tracks name, so the search has to be
+// scoped the same way. A reader saw the result first: blobs sliding across
+// the street with nothing above them.
+//
+// `underRoot` is a mesh INDEX; -1 searches the whole model, which is right
+// for a model with one skeleton (every `PERSOS` hero, HO1_FNM included).
 // -> the mesh index, or -1.
-int findMeshContaining(const std::vector<Mesh>& meshes, const char* wanted);
+int findMeshContaining(const std::vector<Mesh>& meshes, const char* wanted,
+                       int underRoot = -1);
 
 // THE STREET CROWD's shadow, and it is a different mechanism -
 // `Slider_PlaceShadow` (0x00467F50). `Sliders_Tick`'s walkers get ONE whole
