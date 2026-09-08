@@ -195,6 +195,20 @@ Two other things worth keeping:
   crowd, whose shading IS the lights. Said here rather than implied by a
   screenshot.
 
+**What it looks like** (`renders/lighting-perpixel.png`, made 2026-09-09; the
+directory is gitignored, so regenerate it rather than expecting it in a
+checkout):
+
+    build/omk-play ../gamedata ../tables --save ../traces/save-appart.bin \
+        --area 0 --stand 2052,0,-1151,180 --density 4 --frames 150 \
+        --world-vulkan --lighting pervertex|perpixel --dump out.bin
+
+Measured on that frame: **5712 of 480000 pixels** move, 1196 of them by two or
+more luma steps - and **0 of them are on the player**. All of it is the crowd,
+which is the honest shape of the enhancement: their shading IS the lights, so
+sampling it finer changes them, while a body that already carries a
+near-saturated baked colour barely moves when lamps are added to it.
+
 Still open, and named in the row below as it was: the port applies reach and
 falloff per BODY where the engine does them per MESH. The GPU path is now per
 FRAGMENT, which is finer than either; the CPU path is unchanged.
