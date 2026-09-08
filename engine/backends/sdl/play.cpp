@@ -6810,7 +6810,17 @@ int main(int argc, char** argv) {
                     // is 237 and every destination is in 0, 1, 64 or 101.
                     // Travelling INSIDE the city you are standing in is the
                     // common case and was the untested one.
-                    if (changed) {
+                    // ONLY WHEN THERE IS NO CONTROLLER YET. The hand-over gate
+                    // that rebuilds him and sets `playerReady` runs on
+                    // `!player`; with a controller already alive an area
+                    // change keeps him ("he keeps walking", the walk-through
+                    // path above). Dropping `playerReady` here with `player`
+                    // alive left it false for ever, and the model eviction
+                    // keeps his model only while `playerReady` - so in a city
+                    // where no staged actor wears HO1_FN (Qalisar) Kay'l was
+                    // thrown away on the first frame. The reader, twice:
+                    // *"the character disappearing"*.
+                    if (changed && !player) {
                         playerReady = false; adventure = false;
                         forceAdventure = true;
                     }
@@ -7289,6 +7299,9 @@ int main(int argc, char** argv) {
                             if (v.live && v.model == it->first) { used = true; break; }
                 }
                 if (used) { ++it; continue; }
+                if (it->first == playerModel)
+                    std::printf("frame %ld: the PLAYER's model %s evicted - playerReady %d, "
+                                "nobody staged wears it\n", n, it->first.c_str(), playerReady ? 1 : 0);
                 it = charModels.erase(it);
                 ++poolComposition;
             }
@@ -9429,15 +9442,28 @@ int main(int argc, char** argv) {
                     const auto& v = vs[i];
                     VehStaged& sv = *vehStaged[i];
                     sv.drawn = false;
-                    if (!v.live || v.mover < 0) continue;
+                    // ...and SAY why the player's own slider is not staged, once
+                    // per reason: after a load into another city it vanished
+                    // from the picture with the log silent about it.
+                    const bool mine = static_cast<int>(i) == pd.calledVehicle();
+                    static int calledSkipTold = -1;
+                    auto skipMine = [&](int why, const char* what) {
+                        if (mine && calledSkipTold != why) {
+                            calledSkipTold = why;
+                            std::printf("frame %ld: the called vehicle (slot %zu, model '%s') is NOT staged: %s\n",
+                                        n, i, v.model.c_str(), what);
+                        }
+                    };
+                    if (!v.live || v.mover < 0) { skipMine(1, "not live / no mover"); continue; }
                     const auto& m = pd.movers()[static_cast<std::size_t>(v.mover)];
                     ++vehLive;
                     if (m.flags & 0x100u) ++vehStopped;
                     const float vx = m.body[0] - view.cam.eye[0], vy = m.body[1] - view.cam.eye[1],
                                 vz = m.body[2] - view.cam.eye[2];
-                    if (vx * vx + vy * vy + vz * vz > vreach * vreach) continue;
+                    if (vx * vx + vy * vy + vz * vz > vreach * vreach) { skipMine(2, "beyond the vehicle LOD reach"); continue; }
                     if (!sv.mo) sv.mo = charModelFor(v.model);
-                    if (!sv.mo || !sv.mo->ready) continue;
+                    if (!sv.mo || !sv.mo->ready) { skipMine(3, "its model did not load"); continue; }
+                    if (mine && calledSkipTold != 0) { calledSkipTold = 0; std::printf("frame %ld: the called vehicle (slot %zu, model '%s') is staged at %.0f %.0f %.0f\n", n, i, v.model.c_str(), m.body[0], m.body[1], m.body[2]); }
                     // ---- `sub_4521E0`, THE MODEL SWAP ----------------------
                     // The slider model TABLE (`dword_538E28`, 88-byte rows)
                     // holds its four root sub-objects at +4..+16 sorted

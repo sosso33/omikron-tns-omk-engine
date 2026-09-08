@@ -2395,6 +2395,17 @@ the destination lane's spawn point on top of the ambient one already there;
 Anekbah -> Qalisar broke because Qalisar's slider mask is row 0 alone and the
 ambient coin could not make a slider for the call; `sub_452CC0` binds row 0's
 model into the reserved slot whatever the mask, so a call spawns row 0 now.
+And when played it STILL vanished, for a viewer reason no log could show: the
+other-area arm dropped `playerReady` after the load with the controller
+alive, the hand-over gate that sets it back runs only on `!player`, and the
+model eviction keeps his model only while `playerReady` - in Qalisar nobody
+staged wears `HO1_FN`, so Kay'l's model went on the first frame while he
+walked on unseen. A live controller is kept across the load now, an eviction
+of the player's model is printed, and the Qalisar check asserts none.
+Under that, a third layer: Qalisar's pool is forty motos and full, the call's
+spawn found no slot, and the fallback relinked an ambient MOTO as the slider
+- unstaged, its model not even loading. `sub_452CC0` rebinds the occupant's
+model to row 0 (`sub_437F20(v7 + 20, dword_538E30)`); the fallback does now.
 
 **Two closed the same evening.** The suspected 50 cm seat residual is NOT
 there: `build/slider_body` measures `SLI_FN.3DO`'s four root sub-objects as

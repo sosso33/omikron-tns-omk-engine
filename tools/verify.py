@@ -7546,7 +7546,7 @@ def c_engine_slider_journey_qalisar():
     mk = subprocess.run(["make", "-s", "play"], cwd=eng, capture_output=True, text=True)
     play = os.path.join(eng, "build", "omk-play")
     if mk.returncode != 0 or not os.path.exists(play):
-        return (True,) * 6, (True,) * 6, "no SDL - the frontend is optional (PORTING A8)"
+        return (True,) * 7, (True,) * 7, "no SDL - the frontend is optional (PORTING A8)"
     env = dict(os.environ, SDL_VIDEODRIVER="dummy")
     r = subprocess.run([play, fr, tb, "--software", "--res", "640x480", "--nofmv",
                         "--save", save, "--area", "0",
@@ -7561,12 +7561,14 @@ def c_engine_slider_journey_qalisar():
             "JOURNEY to 'Qalisar - Sas vers Anekbah' in area 101 - loaded, the slider relinked" in o,
             "ARRIVED - he gets OUT WHERE IT STOPPED" in o,
             "MDSLIDOU: out and standing" in o,
-            "placing him instead" not in o), \
-           (True,) * 6, \
+            "placing him instead" not in o,
+            "PLAYER's model" not in o), \
+           (True,) * 7, \
         "Anekbah -> Qalisar from aboard: the sneak lists the Qalisar row, area " \
         "101 loads, the called slider (model row 0, a slider despite the mask) " \
         "is relinked at the lane nearest address 335 with him aboard, he gets " \
-        "out there and stands; the bare-placement fallback never runs"
+        "out there and stands; the bare-placement fallback never runs; and his "\
+        "model is never evicted - which is what made him vanish"
 
 
 def c_engine_slider_journey():

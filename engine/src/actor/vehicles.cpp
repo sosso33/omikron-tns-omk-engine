@@ -626,6 +626,20 @@ bool Sliders::callSlider(const float target[3]) {
             Vehicle& av = vehicles_[static_cast<std::size_t>(i)];
             if (!av.live || av.state != 0 || av.reserved || av.mover < 0) continue;
             placeOnLane(i, c);
+            // `sub_452CC0` takes the occupant's SLOT and REBINDS ITS MODEL to
+            // row 0 (`sub_437F20(v7 + 20, dword_538E30)`): the one in the way
+            // becomes the player's slider, body included. Relinked as it was,
+            // Qalisar's moto rode him to the kerb invisibly - "the called
+            // vehicle (slot 0, model 'moto') is NOT staged: its model did not
+            // load" - because every ambient vehicle there is a moto.
+            {
+                const auto& sliTab = vehModelTable(1);
+                if (!sliTab.empty()) {
+                    av.model = sliTab[0];
+                    av.kind = 1;
+                    movers_[static_cast<std::size_t>(av.mover)].model = sliTab[0];
+                }
+            }
             called_ = i;
             break;
         }

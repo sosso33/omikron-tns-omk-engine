@@ -506,6 +506,30 @@ effect as the teleportation from earlier, with the character disappearing)"*.
   its enabled rows now (name, area, address bit) — row 2 in this save is
   `Qalisar - Sas vers Anekbah`, area 101. `engine: slider journey qalisar`
   (--slow) replays it from aboard.
+  **And it was still broken when played**, for a viewer reason the headless
+  log could not see: the other-area arm dropped `playerReady` after the load
+  while the controller was alive, the hand-over gate that sets it back runs
+  only on `!player`, and the model eviction keeps Kay'l's model only while
+  `playerReady` — in a city where no staged actor wears `HO1_FN` he was
+  thrown away on the first frame. He was ticking and walking in the log and
+  invisible on screen. The arm now keeps a live controller across the load
+  (the walk-through path's own rule: "he keeps walking"), the viewer says so
+  when it ever evicts the player's model, and the Qalisar check asserts it
+  never does. Open beside it: whether an existing controller's collision
+  soup follows the new set — the walk-through path lives with the same
+  question.
+  **And a third layer under it**: with him drawn again the SLIDER was still
+  missing at Qalisar's kerb. Qalisar's pool is forty motos and full, so the
+  call's spawn found no slot and the fallback relinked an ambient vehicle -
+  a moto - as "the slider"; the viewer's new line said it: *"the called
+  vehicle (slot 0, model 'moto') is NOT staged: its model did not load"*.
+  `sub_452CC0` takes the occupant's slot AND REBINDS ITS MODEL to row 0
+  (`sub_437F20(v7 + 20, dword_538E30)`) - the one in the way becomes the
+  player's slider, body included - and the fallback does that now. Left
+  open, and found on the way: Qalisar's ambient motos report *"its model did
+  not load"* in this viewer (`charModelFor` resolves under `MESHES/PERSOS/`,
+  the moto ships in `MESHES/MISC/`), so that city's traffic may be drawn as
+  nothing at all - a street-life item, not a slider one.
 
 **The seat, from the clips alone.** From the door (`−62.5, −8.8, +3.7`)
 `H_SLDIN`'s root travels `(+43.5, +12.5, −0.9)` and ends at
