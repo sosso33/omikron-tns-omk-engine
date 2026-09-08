@@ -309,6 +309,8 @@ full-frame, which is the talisman zoom. `docs/UI.md` §3j.
 > depth, sets the D3D viewport to it (aspect w/h) and draws the ordinary
 > scene. `ScreenComposer::viewportItem` / `attachView3D`, the `View`'s
 > viewport in play.cpp; `docs/UI.md` 3i has the read.
+> **CONFIRMED IN PLAY, 2026-09-08**: the reader took the call and reported
+> it fixed.
 
 A reader, with a capture of the original: the videophone comes up in the
 middle of the Telis restaurant lunch, a caller speaks inside it with the
