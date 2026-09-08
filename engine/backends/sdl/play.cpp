@@ -5132,6 +5132,21 @@ int main(int argc, char** argv) {
                     session.sliders().setRider(me, player ? player->facing()
                                                           : session.playerYaw());
                 }
+                // WHERE THE SLIDER IS after he gets out - a reader lost it at
+                // Qalisar's kerb while the staging said "staged".
+                if (leaving || (session.sliders().calledVehicle() >= 0 && !boarded && !boarding)) {
+                    static long lastVehTold = -1000;
+                    if (n - lastVehTold >= 45) {
+                        lastVehTold = n;
+                        float vat[3] = {0, 0, 0};
+                        const bool have = session.sliders().calledAt(vat);
+                        std::printf("frame %ld: after the ride - the called vehicle %s at %.0f %.0f %.0f, "
+                                    "ride state %d; he is at %.0f %.0f %.0f\n", n,
+                                    have ? "is" : "is GONE", vat[0], vat[1], vat[2],
+                                    session.sliders().callMachine().state,
+                                    session.playerPos()[0], session.playerPos()[1], session.playerPos()[2]);
+                    }
+                }
                 if (session.sliders().takeReleasedNotice())
                     std::printf("slider: RELEASED - he is 300 clear and in front of it, "
                                 "so it goes back to mode 0 and drives as ordinary "
@@ -5205,6 +5220,17 @@ int main(int argc, char** argv) {
                             player->setRootFrame(ax, az);
                             player->setChannelOnly(true);
                             session.setPlayerPosition(o, player->facing());
+                            // ...and the RELEASE test's rider, NOW. `case 7` is
+                            // armed by `dismountCalled` below and tests "300
+                            // clear and in front" on the next tick; after a
+                            // load the rider it had was his position in the
+                            // OLD city, nine kilometres away, so the slider was
+                            // handed back to the traffic one frame after he
+                            // got out and was gone before he stood up (traced:
+                            // "the called vehicle is GONE at 0 0 0, ride state
+                            // 0" at ARRIVED+1). The engine's ride writes +244
+                            // before mode 7 is set; this is that write.
+                            session.sliders().setRider(o, player->facing());
                             out = player->enterGroupById(61);
                             leaving = true;
                             std::printf("slider: ARRIVED - he gets OUT WHERE IT "
@@ -6796,8 +6822,12 @@ int main(int argc, char** argv) {
                     const bool changed = d->area != wasArea;
                     const bool placed = arrived ? true : session.placeActorAt(d->bit);
                     session.requestCamera(0, 0);
-                    // `Screen_Fade(0)`: mode 4, 60 frames, black.
-                    session.startColourFade(4, 0u, 60.0f);
+                    // `Screen_Fade(0)` is `fade.from_black` - it CLEARS the
+                    // load's black at the exit (case 8 calls it every tick of
+                    // H_SLDOUT), not a sixty-frame dip. The dip was the old
+                    // bare placement's, and a reader saw it on the aboard
+                    // path: "a fade effect that shouldn't be here".
+                    if (!arrived) session.startColourFade(4, 0u, 60.0f);
                     // ONLY WHEN THE AREA ACTUALLY CHANGED. Dropping
                     // `playerReady` asks the hand-over gate to build the
                     // player again for a new area's set, which is right after
@@ -7115,6 +7145,29 @@ int main(int argc, char** argv) {
         {
             for (auto& up : staged) up->seen = false;
             const int playerId = session.playerActor();
+            // ---- REINCARNATION: `player.become` moves the player into ----
+            // another actor's body (`Session::becomePlayer`, the DB record's
+            // +144 naming the new `.3DO`). The controller was built once, for
+            // one model's meshes, `.CTL` bank and collision soup, and the
+            // hand-over gate that builds it runs only on `!player` - so a
+            // become mid-game kept the old body. The reader: *"different
+            // characters can be played in the game, not just Kay'l, so if you
+            // just force loading his model it will not work anymore when
+            // switching characters."* The rule is: rebuild the controller
+            // when the player ACTOR changes, keep it otherwise (an area load
+            // does not change him).
+            static int lastPlayerActor = -2;
+            if (lastPlayerActor == -2) lastPlayerActor = playerId;
+            if (playerId != lastPlayerActor) {
+                if (player) {
+                    std::printf("frame %ld: player.become - the player is actor %d now, was %d; "
+                                "the controller is rebuilt for the new body\n", n, playerId, lastPlayerActor);
+                    player.reset();
+                    playerReady = false; adventure = false;
+                    forceAdventure = true;
+                }
+                lastPlayerActor = playerId;
+            }
             for (const auto& sh : session.shown()) {
                 // In adventure mode the CONTROLLER owns the player's body; a
                 // second one here would draw him twice.

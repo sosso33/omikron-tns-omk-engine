@@ -134,6 +134,11 @@ Anekbah row): the load, then the slider is already at the destination's
 kerb with you aboard and you get out there - the engine skips the drive
 too. The camera should drop in behind you as you step out (camera 17).
 
+**And a REINCARNATION**: the viewer now rebuilds the player's controller when
+the player becomes another actor (`player.become`), and keeps it across an
+area load. If you have a save past a reincarnation, ride the slider in the
+other body: he must stay visible through the load and board as that body.
+
 **Knowingly missing**: the optional cutscene of the slider on its road; and
 a called slider you never board does not yet give up after its 600 frames.
 

@@ -2402,10 +2402,28 @@ model eviction keeps his model only while `playerReady` - in Qalisar nobody
 staged wears `HO1_FN`, so Kay'l's model went on the first frame while he
 walked on unseen. A live controller is kept across the load now, an eviction
 of the player's model is printed, and the Qalisar check asserts none.
+**And the rule is not "keep Kay'l"** - the reader: *"different characters
+can be played in the game, not just Kay'l"*. `player.become` moves the player
+into another body (`Session::becomePlayer`, the DB record's +144 naming the
+new `.3DO`), and the controller is built once for one model's meshes, bank
+and soup. The viewer now rebuilds it when `session.playerActor()` CHANGES and
+keeps it otherwise; an area load does not change him, a reincarnation does.
+NOT exercised headlessly yet: the only scripted reincarnations with a live
+controller sit past the start menu's name field (the Impasse's
+`player.become 49`), and the fixture saves are all Kay'l. The intro's
+`player.become 136` runs before the controller exists. A save taken after a
+reincarnation would make it a check; until then it is a rule read from the
+code and a thing for a player to try.
 Under that, a third layer: Qalisar's pool is forty motos and full, the call's
 spawn found no slot, and the fallback relinked an ambient MOTO as the slider
 - unstaged, its model not even loading. `sub_452CC0` rebinds the occupant's
 model to row 0 (`sub_437F20(v7 + 20, dword_538E30)`); the fallback does now.
+And then the slider still went missing at Qalisar's kerb, traced to the
+frame: RELEASED fired one tick after ARRIVED, because `case 7`'s "300 clear
+and in front" read the rider's position from the OLD city for that one tick.
+The exit placement feeds the release test its rider now, as the engine's ride
+writes +244 before mode 7. The aboard path's sixty-frame fade is gone too:
+`Screen_Fade(0)` is `fade.from_black`, the exit clearing the load's black.
 
 **Two closed the same evening.** The suspected 50 cm seat residual is NOT
 there: `build/slider_body` measures `SLI_FN.3DO`'s four root sub-objects as

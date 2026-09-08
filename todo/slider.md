@@ -530,6 +530,20 @@ effect as the teleportation from earlier, with the character disappearing)"*.
   not load"* in this viewer (`charModelFor` resolves under `MESHES/PERSOS/`,
   the moto ships in `MESHES/MISC/`), so that city's traffic may be drawn as
   nothing at all - a street-life item, not a slider one.
+  **Played (dd90c2b)**: Kay'l stays now; the reader saw no slider after the
+  travel, and *"a fade effect that shouldn't be here"*. The fade was the old
+  bare placement's sixty-frame `startColourFade(4, ...)`, still on the aboard
+  path; the engine's exit calls `Screen_Fade(0)` = `fade.from_black` every
+  tick of `H_SLDOUT`, which CLEARS the load's black and is not a dip. Gone
+  from the aboard path. The slider's whereabouts after the arrival are now
+  printed as numbers every 45 frames while he leaves.
+  **And the numbers said where the slider went**: one frame after ARRIVED,
+  *"the called vehicle is GONE at 0 0 0, ride state 0"* — RELEASED had
+  fired at once. `case 7`'s test ("300 clear and in front") was fed the
+  rider's position from the OLD city, nine kilometres away, for the one
+  tick between `dismountCalled` and the first frame that re-read him; the
+  engine's ride writes +244 before mode 7 is set. The exit placement now
+  sets the release's rider itself.
 
 **The seat, from the clips alone.** From the door (`−62.5, −8.8, +3.7`)
 `H_SLDIN`'s root travels `(+43.5, +12.5, −0.9)` and ends at
