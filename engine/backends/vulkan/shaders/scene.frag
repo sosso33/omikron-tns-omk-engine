@@ -31,6 +31,15 @@ layout(push_constant) uniform Push {
     // every character shadowed itself.
     int   caster;
     vec3  fogColour;
+    // Row 7: this batch is LIT per pixel, so its baked vertex colour is not
+    // its shading and the light starts from BLACK.
+    //
+    // **AFTER the vec3, and that is forced.** `fogColour` is 16-byte aligned,
+    // so it sits at offset 80 and anything put in front of it pushes it to
+    // 96 - which silently broke this the first time: `lit` was never 1 and the
+    // whole enhancement drew nothing. The scalars before it fill 64..80
+    // exactly; a new one goes here.
+    int   lit;          // 92
 } pc;
 
 layout(set = 0, binding = 0) uniform sampler2D tex;
@@ -49,10 +58,51 @@ layout(set = 1, binding = 0) uniform Shadow {
 } sh;
 layout(set = 1, binding = 1) uniform sampler2D shadowMap;
 
+// ---- PER-PIXEL LIGHTING, `todo/enhancements.md` row 7 ----------------------
+//
+// `sub_493E40` transcribed, evaluated per fragment. Not a new law: the same
+// squared-radius reach test, the same LINEAR falloff between the two radii,
+// the same `k = intensity * 256 * fall`, the same `-(N.L)` and the same
+// `(t * c) >> 8` ramp `o3de/vertexlight.cpp` runs per vertex.
+struct GpuLight {
+    vec4 posA;      // xyz position, w outer radius
+    vec4 dirB;      // xyz direction, w inner radius
+    vec4 colourI;   // rgb colour 0..1, a intensity
+};
+layout(set = 1, binding = 2) uniform Lights {
+    GpuLight l[8];
+    int  count;
+    int  pad0, pad1, pad2;
+} lg;
+
+vec3 litColour(vec3 n, vec3 w) {
+    vec3 c = vec3(0.0);
+    for (int i = 0; i < lg.count; ++i) {
+        vec3  p  = lg.l[i].posA.xyz;
+        float rA = lg.l[i].posA.w, rB = lg.l[i].dirB.w;
+        vec3  d  = w - p;
+        float d2 = dot(d, d);
+        if (d2 > rA * rA) continue;      // the engine's own reach test
+        if (rA <= rB) continue;          // a degenerate pair lights nothing
+        float fall = 1.0 - (sqrt(d2) - rB) / (rA - rB);
+        fall = min(fall, 1.0);
+        float k = lg.l[i].colourI.a * 256.0 * fall;
+        if (k <= 0.0) continue;
+        // `-(N.L)`, with the falloff folded into L exactly as the engine
+        // folds `v46` in before the dot.
+        float t = -dot(n, lg.l[i].dirB.xyz * k);
+        if (t <= 0.0) continue;
+        // ...and the ramp, `(t * c) >> 8` per channel, saturating.
+        c += min(t * lg.l[i].colourI.rgb / 256.0, vec3(1.0));
+    }
+    return min(c, vec3(1.0));
+}
+
 layout(location = 0) in vec2 vUV;
 layout(location = 1) in vec3 vCol;
 layout(location = 2) in float vDepth;
 layout(location = 3) in vec3 vWorld;
+layout(location = 4) in vec3 vNrm;
 layout(location = 0) out vec4 outColour;
 
 // -> 1 fully lit, 0 fully shadowed. Outside the map's slab a fragment is LIT
@@ -88,7 +138,13 @@ void main() {
         if (t.a < 0.5) discard;
         t.rgb /= t.a;
     }
-    vec3 c = clamp(t.rgb * vCol * litness(), 0.0, 1.0);
+    // A LIT batch starts from black and takes its shading from the lights;
+    // every other one keeps the colour baked into its vertices.
+    // 1 from black, 2 added to the baked colour - see `renderer.h`'s Draw.
+    vec3 shade = pc.lit == 1 ? litColour(normalize(vNrm), vWorld)
+               : pc.lit == 2 ? min(vCol + litColour(normalize(vNrm), vWorld), vec3(1.0))
+                             : vCol;
+    vec3 c = clamp(t.rgb * shade * litness(), 0.0, 1.0);
     // THE FOG, and it is raster.cpp's line transcribed. Linear -
     // `FOGTABLEMODE` 3 at density 1.0, the only mode the engine sets - over
     // the range the clip distance sizes. The CPU side has already applied the

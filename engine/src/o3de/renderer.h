@@ -147,6 +147,34 @@ struct View {
         float strength = 0.6f;        // how dark the shadow is, 0..1
     };
     ShadowLight shadow;
+
+    // ------------------------------------------- PER-PIXEL LIGHTING
+    //
+    // `todo/enhancements.md` row 7, and OFF unless `lighting = perpixel`.
+    // NOT a new law: `sub_493E40`'s own `-(N.L)` over a linear falloff between
+    // the two radii, through the engine's `(t * c) >> 8` ramp - the same
+    // arithmetic `o3de/vertexlight.cpp` does per VERTEX, evaluated per
+    // fragment instead. A character's thigh is one or two quads across, so
+    // per-vertex the lamp's pool bends over his leg in flat facets and pops
+    // as a vertex crosses the falloff boundary.
+    //
+    // The lights are the SET's own `.3DO` records, already read for the
+    // crowd. A backend without a shader ignores this and the caller lights
+    // per vertex on the CPU exactly as before, which is what the software
+    // reference does.
+    struct GpuLight {
+        float pos[3]  = {0, 0, 0};
+        float dir[3]  = {0, 0, 0};    // unit, `normalize(centre - pos)`
+        float radiusA = 0.0f;         // outer: past it the light does not reach
+        float radiusB = 0.0f;         // inner: inside it the falloff is clamped
+        float colour[3] = {0, 0, 0};  // 0..1
+        float intensity = 0.0f;       // the record's `+32`
+    };
+    // Up to this many, nearest first. Anekbah has 155 and a body is reached by
+    // a handful; the cap is the uniform block's, and it is stated rather than
+    // silently truncating in the middle of a street.
+    static constexpr int kMaxGpuLights = 8;
+    std::vector<GpuLight> lights;   // empty = light per vertex, as before
 };
 
 // One submission. This is the whole vocabulary a backend gets, and every field
@@ -170,6 +198,15 @@ struct Draw {
     std::size_t     count     = 0;
     Blend           blend     = Blend::Opaque;
     bool            cutout    = false;
+    // Row 7: this batch is LIT per pixel, so its baked vertex colour is not
+    // its shading. A lit instance starts from BLACK - `sub_494E80` writes
+    // `instance[+416]` into every runtime vertex's colour and every site that
+    // sets +416 sets it to 0 - and the crowd models ship pure white, so there
+    // is no baked light in them to keep.
+    // 0 not lit; 1 lit from BLACK (the engine's own rule, for the bodies it
+    // lights - their models ship white); 2 lit ADDED to the baked colour, for
+    // the bodies it does not, whose models carry real baked shading.
+    int             lit         = 0;
     // Row 6 again: whether this batch goes into the shadow map's depth pass.
     // Only characters do, and that is a constraint rather than a saving - a
     // set is shaded by a colour baked into every vertex which ALREADY contains

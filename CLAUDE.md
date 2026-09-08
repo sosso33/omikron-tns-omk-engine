@@ -383,6 +383,15 @@ stopped guarding the moment the name changed, and nothing would have said so.
   behaviour, read the handler, not the map.** A boolean argument is where this
   bites hardest, because a wrong name inverts it silently and both values look
   plausible at the call site.
+* **A POSITIONAL INITIALISER DOES NOT BREAK WHEN A STRUCT GAINS A FIELD - it
+  SHIFTS.** `omk::Draw` gained `lit` between `cutout` and `castsShadow` on
+  2026-09-09; `shadow_probe`'s two seven-field aggregates still compiled, put
+  the caster flag in `lit`, and left `castsShadow` default-false, so nothing
+  cast and `engine: mapped shadows` went red with 0 shadowed pixels at every
+  light direction. The check caught it, which is the system working - but the
+  compiler said nothing, because a shorter aggregate is legal and the types
+  agreed. When a boundary struct gains a field, grep for every positional
+  initialiser of it rather than trusting the build.
 * **`git checkout <file>` ON UNCOMMITTED WORK IS A DELETE, and a failed mutation makes it look harmless.** On 2026-09-08 a mutation script's anchor did not match, so `verify.py` was NOT mutated; the tidy-up `git checkout tools/verify.py` that followed then threw away two new checks that had never been committed. The revert did not undo a mutation - there was none - it undid the work. **Commit before mutating**, and revert a mutation by editing the line back rather than by reaching for git. Same family as the `str.replace` + `assert` trap below: the failure mode is an edit that did not apply while everything downstream behaves as though it did.
 * A regex over decompiler output must respect nesting.
   `List_PickRandomByType(u32(a2, 20), 11)` reads as type **20** with a naive

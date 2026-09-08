@@ -121,10 +121,15 @@
 ; Anisotropic filtering, 1 to 16; 1 is off. With trilinear only.
 ;anisotropy = 1
 
-; Lighting: not built yet (`todo/enhancements.md` row 7). It will evaluate the
-; engine's OWN light law per fragment instead of per vertex, and let every
-; character receive it rather than the procedural crowd alone. Named here so
-; the key is settled before anything writes it.
+; Lighting: pervertex | perpixel (or 0 | 1).
+;   pervertex  what the engine does - the `.3DO` lights applied per VERTEX and
+;              to the procedural crowd alone, which is where all eight of
+;              `sub_4380B0`'s call sites are;
+;   perpixel   the SAME law - the same reach test, the same linear falloff,
+;              the same `-(N.L)` - evaluated per fragment, and received by
+;              every character. A body the engine lights is shaded from BLACK
+;              (its model ships white); a body it does not gets the lights
+;              added to its baked colour. Vulkan only.
 ;lighting = pervertex
 
 ; Character shadows: classic | fitted | mapped (or 0 | 1 | 2).

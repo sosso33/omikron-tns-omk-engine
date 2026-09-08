@@ -1621,6 +1621,7 @@ int main(int argc, char** argv) {
     int filterFlag = -1;   // --filter nearest|bilinear|trilinear, [Enhancements] texturefiltering
     int anisoFlag = -1;    // --anisotropy N, [Enhancements] anisotropy
     int shadowQFlag = -1;  // --shadow-quality classic|fitted|mapped, [Enhancements] shadowquality
+    int lightingFlag = -1; // --lighting pervertex|perpixel, [Enhancements] lighting
     // The fog is not an option row - it is always on in the engine - so this
     // is a diagnostic switch, not a setting. Default ON, because that is what
     // the game does.
@@ -1789,6 +1790,14 @@ int main(int argc, char** argv) {
         }
         else if (a == "--anisotropy" && i + 1 < argc)
             anisoFlag = std::max(1, std::min(16, std::atoi(argv[++i])));
+        else if (a == "--lighting" && i + 1 < argc) {
+            lightingFlag = omk::lightingMode(argv[++i]);
+            if (lightingFlag < 0) {
+                std::fprintf(stderr, "--lighting %s: not a mode (pervertex|perpixel)\n",
+                             argv[i]);
+                return 2;
+            }
+        }
         else if (a == "--shadow-quality" && i + 1 < argc) {
             shadowQFlag = omk::shadowQualityMode(argv[++i]);
             if (shadowQFlag < 0) {
@@ -2009,6 +2018,12 @@ int main(int argc, char** argv) {
     // off nothing draws whatever this says. Default 0 = what the engine draws.
     const int shadowQuality = shadowQFlag >= 0 ? shadowQFlag : settings.shadowQuality;
     const int  shadowDetail = detailFlag >= 0 ? detailFlag : settings.v.levelOfDetail;
+    // Row 7. Per pixel ALSO widens who receives: the engine lights the
+    // procedural crowd and nothing else, and this lets every character.
+    const int  lighting = lightingFlag >= 0 ? lightingFlag : settings.lighting;
+    if (lighting > 0)
+        std::printf("lighting: per pixel - an ENHANCEMENT the original never had "
+                    "(it lights the crowd alone, per vertex); every character receives\n");
     // The enhancement: OFF unless --aa or [Enhancements] said otherwise.
     const int aaSamples = aaFlag >= 0 ? aaFlag : settings.antiAliasing;
     const int texFilter = filterFlag >= 0 ? filterFlag : settings.textureFilter;
@@ -3823,7 +3838,7 @@ int main(int argc, char** argv) {
     // construction, nonzero for a fitted one wherever the ground is not flat.
     float shadowSpreadMax = 0.0f, shadowSpreadPlayer = 0.0f;
     long shadowBlobsDrawn = 0;
-    bool shadowTold = false, shadowLightTold = false;
+    bool shadowTold = false, shadowLightTold = false, lightsTold = false;
     // `Area_LoadMiscModel`'s two constants.
     constexpr float kSkyScale = 12.5f;
     constexpr float kSkyLift  = 2250.0f;
@@ -9749,7 +9764,10 @@ int main(int argc, char** argv) {
                     // reaches it, per frame, before submitting. Both resident
                     // slots contribute, because during a transition two sets
                     // are drawn and the engine's structure holds both.
-                    if (lightCrowd) {
+                    // ...unless the GPU is going to do it per pixel, in which
+                    // case the corners keep their black base and `Draw::lit`
+                    // carries the decision to the shader.
+                    if (lightCrowd && lighting == 0) {
                         // THE BASE IS BLACK, and that is the part that had to
                         // be read rather than assumed. A lit instance does not
                         // start from the model's baked vertex colour: the lit
@@ -10434,6 +10452,68 @@ int main(int argc, char** argv) {
                     session.currentArea(), session.scene().file().c_str());
                 frameNote = buf;
             }
+            // ---- THE LIGHTS, per pixel (`todo/enhancements.md` 7) -------
+            //
+            // The same `.3DO` records the crowd is lit by, handed to the
+            // backend instead of applied on the CPU. Nearest first and capped,
+            // because a uniform block is finite and a body is reached by a
+            // handful: Anekbah ships 155 and its lamps reach 700-900 units.
+            const bool litPerPixel = lighting > 0;
+            // TWO BASES, and the difference is a property of the models.
+            //
+            // `1` starts from BLACK, which is the engine's own rule for the
+            // bodies it lights: `sub_494E80` writes `instance[+416]` into
+            // every runtime vertex colour and every site that sets +416 sets
+            // it to 0, and the crowd models ship pure white (all 446 of
+            // PSH_FN's vertices are 255,255,255), so there is no baked light
+            // in them to lose.
+            //
+            // `2` ADDS to the baked colour, and that is this port's decision
+            // for the bodies the engine never lights. HO1_FN is not a white
+            // model - it carries real baked shading - so black-plus-lamps
+            // throws away everything the artist put in and leaves him a
+            // silhouette wherever no lamp reaches. Stated here because it is
+            // the one place row 7 departs from transcription.
+            const int litCrowd  = litPerPixel ? 1 : 0;
+            const int litStaged = litPerPixel ? 2 : 0;
+            view.lights.clear();
+            if (litPerPixel) {
+                float at[3] = {view.cam.eye[0], view.cam.eye[1], view.cam.eye[2]};
+                if (drawPlayer && !playerPosed.corners.empty()) {
+                    at[0] = playerPosed.corners.front().x;
+                    at[1] = playerPosed.corners.front().y;
+                    at[2] = playerPosed.corners.front().z;
+                }
+                std::vector<std::pair<float, const omk::Light3do*>> near;
+                for (const WorldSlot& ws2 : worldSlots)
+                    for (const auto& l : ws2.lights) {
+                        const float dx = at[0] - l.pos[0], dy = at[1] - l.pos[1],
+                                    dz = at[2] - l.pos[2];
+                        const float d2 = dx * dx + dy * dy + dz * dz;
+                        if (d2 > l.radiusA * l.radiusA) continue;   // out of reach
+                        if (!(l.radiusA > l.radiusB)) continue;
+                        near.emplace_back(d2, &l);
+                    }
+                std::sort(near.begin(), near.end(),
+                          [](const auto& a, const auto& b) { return a.first < b.first; });
+                if (near.size() > static_cast<std::size_t>(omk::View::kMaxGpuLights))
+                    near.resize(static_cast<std::size_t>(omk::View::kMaxGpuLights));
+                for (const auto& [d2, l] : near) {
+                    omk::View::GpuLight g{};
+                    for (int k = 0; k < 3; ++k) { g.pos[k] = l->pos[k]; g.dir[k] = l->dir[k]; }
+                    g.radiusA = l->radiusA; g.radiusB = l->radiusB;
+                    g.colour[0] = static_cast<float>((l->colour >> 16) & 0xFF) / 255.0f;
+                    g.colour[1] = static_cast<float>((l->colour >> 8) & 0xFF) / 255.0f;
+                    g.colour[2] = static_cast<float>(l->colour & 0xFF) / 255.0f;
+                    g.intensity = l->f32;
+                    view.lights.push_back(g);
+                }
+                if (!lightsTold) {
+                    lightsTold = true;
+                    std::printf("frame %ld: per-pixel lighting - %zu of the set's lights "
+                                "reach the player, nearest first\n", n, view.lights.size());
+                }
+            }
             // ---- THE MAPPED SHADOW's LIGHT (`todo/enhancements.md` 6) --
             //
             // An ENHANCEMENT: nothing in the engine casts a real shadow. What
@@ -10766,7 +10846,7 @@ int main(int argc, char** argv) {
                     draws.push_back({keyOf(b.blend, b.cutout,
                                            static_cast<std::uint32_t>(b.material + base)),
                                      &up->posed, b.start, b.count, b.blend, b.cutout,
-                                     castShadows});
+                                     litStaged, castShadows});
             }
             for (const auto& up : pedStaged) {
                 if (!up->drawn || !up->mo) continue;
@@ -10775,7 +10855,7 @@ int main(int argc, char** argv) {
                     draws.push_back({keyOf(b.blend, b.cutout,
                                            static_cast<std::uint32_t>(b.material + base)),
                                      &up->posed, b.start, b.count, b.blend, b.cutout,
-                                     castShadows});
+                                     litCrowd, castShadows});
             }
             for (const auto& up : vehStaged) {
                 if (!up->drawn || !up->mo) continue;
@@ -10784,14 +10864,14 @@ int main(int argc, char** argv) {
                     draws.push_back({keyOf(b.blend, b.cutout,
                                            static_cast<std::uint32_t>(b.material + base)),
                                      &up->posed, b.start, b.count, b.blend, b.cutout,
-                                     castShadows});
+                                     litCrowd, castShadows});
             }
             if (drawPlayer)
                 for (const auto& b : playerPosed.batches)
                     draws.push_back({keyOf(b.blend, b.cutout, static_cast<std::uint32_t>(
                                                b.material + static_cast<int>(playerTexBase))),
                                      &playerPosed, b.start, b.count, b.blend, b.cutout,
-                                     castShadows});
+                                     litStaged, castShadows});
             // The props, each batch through its own model's pool section.
             for (std::size_t bi = 0; bi < propGeo.batches.size(); ++bi) {
                 const auto& b = propGeo.batches[bi];

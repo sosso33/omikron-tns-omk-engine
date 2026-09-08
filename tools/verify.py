@@ -6085,6 +6085,66 @@ def c_config_template():
             "uncommented lines (there must be none); and what it resolves to" % len(keys))
 
 
+
+def c_engine_perpixel_lighting():
+    r"""`lighting = perpixel` - the ENHANCEMENT of `todo/enhancements.md` 7.
+
+    The engine lights the procedural crowd and nothing else (all eight call
+    sites of `sub_4380B0` are street life), per VERTEX, with the reach and the
+    falloff taken once per body. This evaluates the SAME law per fragment and
+    lets every character receive it.
+
+    `build/perpixel_probe` renders one flat quad under one light twice through
+    the Vulkan backend offscreen - once with the light handed to the shader,
+    once with `applyLights` on the corners as today - and reports two things:
+
+      * **at the centre**, the point directly under the light where a pixel
+        maps back to the plane exactly, the shader is held to the law computed
+        from the same formula. Not to the port's other copy of it: the CPU
+        path takes reach and falloff at the BODY, a declared deviation of
+        `o3de/vertexlight.h`, so it cannot be the reference for a per-fragment
+        value. It agrees exactly, which is what says the law did not change.
+      * **the spread along a scanline**, which needs no mapping and is the
+        whole claim: per pixel follows the falloff and varies across the quad,
+        per vertex is four corner values interpolated over two triangles and
+        is flat.
+
+    And the default is pinned in the source, because an enhancement that is on
+    by default is not one.
+
+    Shown to fail: a `litColour` that returns a constant takes the centre off
+    the law and the spread to 0.
+
+    What this cannot see, and a person must: whether the finer sampling looks
+    better on a character. The gain is largest where a light's falloff bends
+    across a big triangle, which on a crowd model is a thigh.
+    """
+    eng = os.path.join(ROOT, "engine")
+    if not os.path.isdir(eng):
+        return ("skipped",), ("skipped",), "engine/ absent"
+    src = open(os.path.join(eng, "src", "platform", "settings.h"),
+               encoding="utf-8").read()
+    defaultOff = "int    lighting = 0;" in src
+    mk = subprocess.run(["make", "-s", "vulkan"], cwd=eng, capture_output=True, text=True)
+    probe = os.path.join(eng, "build", "perpixel_probe")
+    if mk.returncode != 0 or not os.path.exists(probe):
+        return ("skipped",), ("skipped",), "no Vulkan or no glslc - the GPU backend is optional"
+    r = subprocess.run([probe], capture_output=True, text=True)
+    if "no vulkan" in r.stdout:
+        return ("skipped",), ("skipped",), "no Vulkan device"
+    m = re.search(r"the law says (\d+), delta (\d+)", r.stdout)
+    sp = re.search(r"perpixel (\d+), pervertex (\d+)", r.stdout)
+    if not m or not sp:
+        return ("no reading",), ("a reading",), r.stdout.strip()[:120]
+    delta = int(m.group(2))
+    perPixel, perVertex = int(sp.group(1)), int(sp.group(2))
+    got = (defaultOff, delta, perPixel > 20, perVertex < 5)
+    want = (True, 0, True, True)
+    return got, want, ("the default is per vertex in the source; the shader matches the "
+                       "law at the centre to %d; and along a scanline per pixel varies by "
+                       "%d where per vertex varies by %d" % (delta, perPixel, perVertex))
+
+
 def c_engine_street_frame():
     r"""`omk-play` DRAWS the city crowd (docs/STREET_LIFE.md, step 4).
 
@@ -27011,7 +27071,7 @@ def c_licence_headers():
                    if TAG in open(p, encoding="utf-8",
                                   errors="replace").read(600)]
     return (authored, sorted(missing), len(vendored), mislabelled), \
-           (390, [], 1, []), \
+           (391, [], 1, []), \
            "authored source files under tools/, engine/src, engine/tools, " \
            "engine/backends and scripts/; those MISSING the SPDX tag; " \
            "vendored files in engine/third_party; and vendored files wrongly " \
@@ -28773,6 +28833,7 @@ SLOW = [
     ("engine: character shadow", c_engine_character_shadow, "ASSETS 4d; o3de/shadow.h"),
     ("engine: fitted shadows", c_engine_fitted_shadows, "todo/enhancements 5; o3de/shadow.h"),
     ("engine: mapped shadows", c_engine_mapped_shadows, "todo/enhancements 6; o3de/renderer.h"),
+    ("engine: per-pixel lighting", c_engine_perpixel_lighting, "todo/enhancements 7; o3de/vertexlight.h"),
     ("engine: traffic frame", c_engine_traffic_frame, "STREET_LIFE 2b; todo/road-traffic 3"),
     ("engine: crowd push", c_engine_crowd_push, "STREET_LIFE 3; actor/spatial.h"),
     ("engine: head look", c_engine_head_look, "STREET_LIFE; actor/pose.h"),

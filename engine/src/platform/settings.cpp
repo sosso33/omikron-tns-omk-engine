@@ -72,6 +72,12 @@ Settings resolveSettings(const OptionsFile& ini,
                                       "(nearest|bilinear|trilinear) - ignored\n", w->c_str());
         }
         takeInt(kEnhancements, "anisotropy", s.anisotropy, s.anisotropySource);
+        if (const std::string* w = ini.find(kEnhancements, "lighting")) {
+            const int m = lightingMode(*w);
+            if (m >= 0) { s.lighting = m; s.lightingSource = Settings::Source::Ini; }
+            else std::fprintf(stderr, "settings: lighting = %s is not a mode "
+                                      "(pervertex|perpixel) - ignored\n", w->c_str());
+        }
         if (const std::string* w = ini.find(kEnhancements, "shadowquality")) {
             const int m = shadowQualityMode(*w);
             if (m >= 0) { s.shadowQuality = m; s.shadowQualitySource = Settings::Source::Ini; }

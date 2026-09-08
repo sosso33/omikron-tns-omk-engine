@@ -18,7 +18,7 @@ measures the enhancement's own property on the GPU, shown to fail.
 | 4 | unlimited draw distance: options row 3 is a CAP the port already runs the visible-set walk from; 0 lifts it. Authored risk: the sets end inside the fog | `clipdistance = 0` under `[Enhancements]` / `--clip 0` | todo |
 | 5 | **fitted shadows**: the same blobs, laid on the surface actually under them instead of on a flat quad at the probed height | `shadowquality = fitted` / `--shadow-quality fitted` | **done 2026-09-09**; `engine: fitted shadows` |
 | 6 | **mapped shadows**: a real shadow map, cast by the set's own authored lights, characters only | `shadowquality = mapped` / `--shadow-quality mapped` | **done 2026-09-09**; `engine: mapped shadows` |
-| 7 | **per-pixel lighting**: the engine's OWN light law evaluated per fragment instead of per vertex, and received by every character rather than the crowd alone | `lighting = perpixel` / `--lighting perpixel` | todo |
+| 7 | **per-pixel lighting**: the engine's OWN light law evaluated per fragment instead of per vertex, and received by every character rather than the crowd alone | `lighting = perpixel` / `--lighting perpixel` | **done 2026-09-09**; `engine: per-pixel lighting` |
 | 8 | **the SETS receive the lights too.** Held back deliberately - it overrides authored art; see below | `lighting = sets` | not recommended |
 
 ## Rows 5 and 6 - the shadows
@@ -162,7 +162,43 @@ reflected pass has to sample the same map or reflections lose their shadows.
   one fault of exactly that family, a blob six metres from its owner that two
   green checks could not see.
 
-## Row 7 - per-pixel lighting
+## Row 7 - DONE 2026-09-09
+
+Built as designed. The vertex carries its normal to the GPU, the frame's
+nearest eight lights go into set 1 alongside the shadow map, and `scene.frag`
+runs the same reach test, the same linear falloff and the same `-(N.L)` per
+fragment. Measured: at the point directly under a light the shader matches the
+law computed from the formula EXACTLY, and along a scanline across a lit quad
+per pixel varies by 51 where per vertex varies by 0.
+
+**TWO BASES, and the split is the one place this departs from transcription.**
+A body the engine itself lights starts from BLACK - `sub_494E80` writes
+`instance[+416]` into every runtime vertex colour and every site that sets
++416 sets it to 0, and the crowd models ship pure white, so there is no baked
+light in them to lose. A body the engine never lights does NOT: HO1_FN carries
+real baked shading, and black-plus-lamps threw it away and left him a
+silhouette wherever no lamp reached, which is what the first version drew. So
+the crowd is lit from black and every other character has the lights ADDED to
+its baked colour.
+
+Two other things worth keeping:
+
+* **the push-constant alignment trap caught me a second time.** `lit` was put
+  in front of `fogColour`, which is 16-byte aligned - so the colour moved from
+  offset 80 to 96, the C++ struct and the GLSL block disagreed, `lit` was
+  never 1 and the whole enhancement drew nothing. Same fault as row 6's, one
+  field later, and the shaders now say out loud that a new scalar goes AFTER
+  the vec3.
+* **adding lamps to an already-bright body changes little.** The player's
+  baked colour is near-saturated, so the visible gain is almost all on the
+  crowd, whose shading IS the lights. Said here rather than implied by a
+  screenshot.
+
+Still open, and named in the row below as it was: the port applies reach and
+falloff per BODY where the engine does them per MESH. The GPU path is now per
+FRAGMENT, which is finer than either; the CPU path is unchanged.
+
+## Row 7, as designed - per-pixel lighting
 
 ### What the engine's lighting IS, which bounds what "enhanced" can mean
 

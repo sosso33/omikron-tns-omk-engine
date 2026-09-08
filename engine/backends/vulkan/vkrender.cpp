@@ -88,6 +88,19 @@ const uint32_t kShadowVert[] =
 constexpr uint32_t kShadowSide = 1024;
 
 // Set 1, binding 0 - per FRAME, and it must match `scene.frag`'s block.
+// Set 1, binding 2 - the LIGHTS, per frame. std140: an array of structs
+// aligns every member to 16 bytes, which three vec4s already are.
+struct GpuLightStd140 {
+    float posA[4];      // xyz position, w outer radius
+    float dirB[4];      // xyz direction, w inner radius
+    float colourI[4];   // rgb colour 0..1, a intensity
+};
+struct LightUbo {
+    GpuLightStd140 l[8];
+    int32_t count;
+    int32_t pad[3];
+};
+
 struct ShadowUbo {
     float lightMvp[16];
     float strength;    // 0 = no shadow this frame, which is the default
@@ -113,6 +126,10 @@ struct GpuVert {
     float x, y, z;
     float u, v;
     float r, g, b;
+    // THE NORMAL, for row 7's per-pixel lighting. It travels with the vertex
+    // because a bone's rotation turns its normals with it - `applyPose` does
+    // that already, for the crowd's per-vertex light.
+    float nx, ny, nz;
 };
 
 // It MUST match `scene.frag`'s block byte for byte, and the ordering is what
@@ -129,7 +146,7 @@ struct Push {
     float fogEnd;      // 72
     int32_t caster;    // 76  this batch CASTS, so it must not RECEIVE
     float fogColour[3];// 80
-    float pad;         // 92
+    int32_t lit;       // 92  this batch is LIT per pixel (row 7)
 };
 static_assert(sizeof(Push) == 96, "the push block is 96 bytes");
 
@@ -250,11 +267,14 @@ private:
     VkDescriptorSet       ds1_  = VK_NULL_HANDLE;
     VkBuffer        shUbo_ = VK_NULL_HANDLE;   VkDeviceMemory shUboMem_ = VK_NULL_HANDLE;
     void*           shUboPtr_ = nullptr;
+    VkBuffer        litUbo_ = VK_NULL_HANDLE;  VkDeviceMemory litUboMem_ = VK_NULL_HANDLE;
+    void*           litUboPtr_ = nullptr;
     // The command buffer is opened by whichever of `shadowPass` and `begin`
     // runs first, and only once - the depth pass has to be recorded BEFORE the
     // frame's own render pass begins.
     bool            cbStarted_ = false;
     bool            shadowLive_ = false;   // a depth pass was recorded this frame
+    int             litCount_ = 0;         // lights uploaded for this frame
 
     struct Tex {
         VkImage img = VK_NULL_HANDLE; VkDeviceMemory mem = VK_NULL_HANDLE;
@@ -715,6 +735,11 @@ bool VulkanRenderer::makeTarget() {
                        shUbo_, shUboMem_);
             vkMapMemory(dev_, shUboMem_, 0, sizeof(ShadowUbo), 0, &shUboPtr_);
             if (shUboPtr_) std::memset(shUboPtr_, 0, sizeof(ShadowUbo));
+            makeBuffer(sizeof(LightUbo), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+                       VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                       litUbo_, litUboMem_);
+            vkMapMemory(dev_, litUboMem_, 0, sizeof(LightUbo), 0, &litUboPtr_);
+            if (litUboPtr_) std::memset(litUboPtr_, 0, sizeof(LightUbo));
         }
     }
     if (shFbuf_ == VK_NULL_HANDLE)
@@ -735,15 +760,18 @@ bool VulkanRenderer::makePipelines() {
     // SET 1 is per FRAME - the shadow map and the light's transform. It exists
     // whether or not a shadow is drawn, because a pipeline layout is fixed at
     // creation and `strength = 0` is how a frame says it has no shadow.
-    VkDescriptorSetLayoutBinding b1[2]{};
+    VkDescriptorSetLayoutBinding b1[3]{};
     b1[0].binding = 0; b1[0].descriptorCount = 1;
     b1[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
     b1[0].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
     b1[1].binding = 1; b1[1].descriptorCount = 1;
     b1[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
     b1[1].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+    b1[2].binding = 2; b1[2].descriptorCount = 1;
+    b1[2].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    b1[2].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
     VkDescriptorSetLayoutCreateInfo dli1{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO};
-    dli1.bindingCount = 2; dli1.pBindings = b1;
+    dli1.bindingCount = 3; dli1.pBindings = b1;
     VKCHECK(vkCreateDescriptorSetLayout(dev_, &dli1, nullptr, &dsl1_), "descriptorSetLayout1");
 
     VkPushConstantRange pcr{VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
@@ -772,14 +800,15 @@ bool VulkanRenderer::makePipelines() {
                  VK_SHADER_STAGE_FRAGMENT_BIT, fs, "main", nullptr};
 
     VkVertexInputBindingDescription vb{0, sizeof(GpuVert), VK_VERTEX_INPUT_RATE_VERTEX};
-    VkVertexInputAttributeDescription va[3] = {
+    VkVertexInputAttributeDescription va[4] = {
         {0, 0, VK_FORMAT_R32G32B32_SFLOAT, offsetof(GpuVert, x)},
         {1, 0, VK_FORMAT_R32G32_SFLOAT,    offsetof(GpuVert, u)},
         {2, 0, VK_FORMAT_R32G32B32_SFLOAT, offsetof(GpuVert, r)},
+        {3, 0, VK_FORMAT_R32G32B32_SFLOAT, offsetof(GpuVert, nx)},
     };
     VkPipelineVertexInputStateCreateInfo vi{VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO};
     vi.vertexBindingDescriptionCount = 1; vi.pVertexBindingDescriptions = &vb;
-    vi.vertexAttributeDescriptionCount = 3; vi.pVertexAttributeDescriptions = va;
+    vi.vertexAttributeDescriptionCount = 4; vi.pVertexAttributeDescriptions = va;
 
     VkPipelineInputAssemblyStateCreateInfo ia{VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO};
     ia.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
@@ -998,7 +1027,7 @@ bool VulkanRenderer::makePipelines() {
     // 64 sets: the engine's texture pool is 58 slots, plus the white fallback.
     // Plus set 1, the per-frame shadow set, and its one uniform buffer.
     VkDescriptorPoolSize ps[2] = {{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 130},
-                                  {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 4}};
+                                  {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 8}};
     VkDescriptorPoolCreateInfo dpi{VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO};
     dpi.maxSets = 130; dpi.poolSizeCount = 2; dpi.pPoolSizes = ps;
     VKCHECK(vkCreateDescriptorPool(dev_, &dpi, nullptr, &dpool_), "descriptorPool");
@@ -1091,7 +1120,8 @@ void VulkanRenderer::makeShadowSet() {
     VkDescriptorBufferInfo bufi{shUbo_, 0, sizeof(ShadowUbo)};
     VkDescriptorImageInfo imgi{shSampler_, shView_,
                                VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
-    VkWriteDescriptorSet wr[2]{};
+    VkDescriptorBufferInfo lbufi{litUbo_, 0, sizeof(LightUbo)};
+    VkWriteDescriptorSet wr[3]{};
     wr[0] = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
     wr[0].dstSet = ds1_; wr[0].dstBinding = 0; wr[0].descriptorCount = 1;
     wr[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
@@ -1100,7 +1130,11 @@ void VulkanRenderer::makeShadowSet() {
     wr[1].dstSet = ds1_; wr[1].dstBinding = 1; wr[1].descriptorCount = 1;
     wr[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
     wr[1].pImageInfo = &imgi;
-    vkUpdateDescriptorSets(dev_, 2, wr, 0, nullptr);
+    wr[2] = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
+    wr[2].dstSet = ds1_; wr[2].dstBinding = 2; wr[2].descriptorCount = 1;
+    wr[2].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    wr[2].pBufferInfo = &lbufi;
+    vkUpdateDescriptorSets(dev_, 3, wr, 0, nullptr);
 }
 
 // The swapchain, and the presentation path.
@@ -1488,7 +1522,8 @@ bool VulkanRenderer::uploadGeometry(const omk::Geometry* g) {
                 auto* dst = static_cast<GpuVert*>(p);
                 for (std::size_t i = 0; i < g->corners.size(); ++i) {
                     const auto& c = g->corners[i];
-                    dst[i] = {c.x, c.y, c.z, c.u, c.v, c.r, c.g, c.b};
+                    dst[i] = {c.x, c.y, c.z, c.u, c.v, c.r, c.g, c.b,
+                              c.nx, c.ny, c.nz};
                 }
                 vkUnmapMemory(dev_, vbo_[g].second);
                 vboRev_[g] = g->revision;
@@ -1502,7 +1537,7 @@ bool VulkanRenderer::uploadGeometry(const omk::Geometry* g) {
     std::vector<GpuVert> v(g->corners.size());
     for (std::size_t i = 0; i < g->corners.size(); ++i) {
         const auto& c = g->corners[i];
-        v[i] = {c.x, c.y, c.z, c.u, c.v, c.r, c.g, c.b};
+        v[i] = {c.x, c.y, c.z, c.u, c.v, c.r, c.g, c.b, c.nx, c.ny, c.nz};
     }
     const VkDeviceSize bytes = v.size() * sizeof(GpuVert);
     if (!bytes) return false;
@@ -1657,7 +1692,6 @@ void VulkanRenderer::pushView(const omk::View& view) {
 // map and reads it, so whatever Vulkan's clip space does to the handedness
 // cancels between the two.
 void VulkanRenderer::shadowPass(const omk::View& v, std::span<const omk::Draw> casters) {
-    { static bool t=false; if(!t){t=true; std::fprintf(stderr,"[vk] shadowPass pipe=%d on=%d n=%zu\n", shPipe_!=VK_NULL_HANDLE, v.shadow.on?1:0, casters.size());} }
     if (shPipe_ == VK_NULL_HANDLE || !v.shadow.on || casters.empty()) return;
     const float R = v.shadow.radius > 1.0f ? v.shadow.radius : 1.0f;
 
@@ -1747,6 +1781,27 @@ void VulkanRenderer::begin(const omk::View& view) {
     for (int i = 0; i < 3; ++i)
         fogColour_[i] = static_cast<float>(view.fogColour[i]) / 255.0f;
     pushView(view);
+    // ---- THE LIGHTS, per frame (`todo/enhancements.md` row 7) ------------
+    litCount_ = 0;
+    if (litUboPtr_) {
+        LightUbo ub{};
+        const int n = static_cast<int>(std::min<std::size_t>(
+            view.lights.size(), static_cast<std::size_t>(omk::View::kMaxGpuLights)));
+        for (int i = 0; i < n; ++i) {
+            const auto& l = view.lights[static_cast<std::size_t>(i)];
+            for (int k = 0; k < 3; ++k) {
+                ub.l[i].posA[k] = l.pos[k];
+                ub.l[i].dirB[k] = l.dir[k];
+                ub.l[i].colourI[k] = l.colour[k];
+            }
+            ub.l[i].posA[3] = l.radiusA;
+            ub.l[i].dirB[3] = l.radiusB;
+            ub.l[i].colourI[3] = l.intensity;
+        }
+        ub.count = n;
+        litCount_ = n;
+        std::memcpy(litUboPtr_, &ub, sizeof ub);
+    }
 
     // The shadow pass may already have opened it; it must be opened ONCE, and
     // the depth pass has to be recorded before this render pass begins.
@@ -1805,6 +1860,7 @@ void VulkanRenderer::submit(const omk::Draw& d) {
 
     push_.cutout = d.cutout ? 1 : 0;
     push_.caster = d.castsShadow ? 1 : 0;
+    push_.lit = litCount_ > 0 ? d.lit : 0;
     // THE FOG's two exclusions, applied here because this is where the bucket
     // key is - the same rule `renderer.cpp` applies for the software loop, and
     // it MUST be the same rule or the two backends draw different pictures.

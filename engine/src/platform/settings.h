@@ -88,6 +88,12 @@ struct Settings {
     // bone's own centre - so the default changes nothing.
     int    shadowQuality = 0;
     Source shadowQualitySource = Source::Default;
+    // `lighting = pervertex|perpixel` (or 0|1). 0 is what the engine does -
+    // the `.3DO` lights applied per VERTEX and to the procedural crowd alone,
+    // which is where all eight of `sub_4380B0`'s call sites are. 1 evaluates
+    // the same law per fragment and lets every character receive it.
+    int    lighting = 0;
+    Source lightingSource = Source::Default;
 
     // ---- what the clip distance DERIVES, all in world units (inches) ----
     //
@@ -145,6 +151,18 @@ inline int shadowQualityMode(std::string w) {
 inline const char* shadowQualityName(int m) {
     return m <= 0 ? "classic" : m == 1 ? "fitted" : "mapped";
 }
+
+// A lighting word onto its mode: 0 per vertex (the engine's), 1 per pixel;
+// -1 for a word that is neither.
+inline int lightingMode(std::string w) {
+    for (auto& c : w) c = static_cast<char>(c >= 'A' && c <= 'Z' ? c + 32 : c);
+    while (!w.empty() && (w.back() == ' ' || w.back() == '\t')) w.pop_back();
+    while (!w.empty() && (w.front() == ' ' || w.front() == '\t')) w.erase(w.begin());
+    if (w == "0" || w == "pervertex" || w == "vertex" || w == "classic") return 0;
+    if (w == "1" || w == "perpixel" || w == "pixel") return 1;
+    return -1;
+}
+inline const char* lightingName(int m) { return m <= 0 ? "pervertex" : "perpixel"; }
 
 // Resolve the three sources in order.  Either may be absent.
 Settings resolveSettings(const OptionsFile& ini,

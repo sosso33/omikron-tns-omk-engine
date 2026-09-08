@@ -77,8 +77,12 @@ int main(int argc, char** argv) {
     v.shadow.strength = strength;
 
     std::vector<omk::Draw> draws;
-    draws.push_back({0, &ground, 0, ground.corners.size(), omk::Blend::Opaque, false, false});
-    draws.push_back({0, &caster, 0, caster.corners.size(), omk::Blend::Opaque, false, true});
+    // {key, geo, start, count, blend, cutout, LIT, castsShadow} - `lit` was
+    // added between the last two by row 7, and a positional initialiser that
+    // still had seven fields silently put `castsShadow` in `lit` and left
+    // nothing casting. The check went red and said so.
+    draws.push_back({0, &ground, 0, ground.corners.size(), omk::Blend::Opaque, false, 0, false});
+    draws.push_back({0, &caster, 0, caster.corners.size(), omk::Blend::Opaque, false, 0, true});
 
     omk::drawWithMirror(*r, draws, v, omk::MirrorPlane{});
     const omk::Surface& s = r->readback();
