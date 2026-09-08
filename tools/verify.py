@@ -6073,9 +6073,16 @@ def c_config_template():
     probe = os.path.join(eng, "build", "settings_probe")
     sources = "?"
     if mk.returncode == 0 and os.path.exists(probe):
-        r = subprocess.run([probe, tpl], capture_output=True, text=True)
+        # `--config`, NOT a bare path: the probe ignores a positional argument,
+        # so the first version of this read no file at all and "every source is
+        # a default" was true because nothing had been loaded. It would have
+        # passed just as happily on a template that set everything.
+        r = subprocess.run([probe, "--config", tpl], capture_output=True, text=True)
         # ...skipping the probe's own first line, which says which SOURCES
         # were supplied ("ini 0  header 0") rather than what a field resolved to
+        if " 1  header" not in r.stdout.splitlines()[0]:
+            return (True, [], [], "the probe did not load it"), \
+                   (True, [], [], "all default"), "the template did not load"
         body = "\n".join(r.stdout.splitlines()[1:])
         got = re.findall(r"\b(default|ini|save)\b", body)
         sources = "all default" if got and set(got) == {"default"} else ",".join(sorted(set(got)))
@@ -6185,6 +6192,65 @@ def c_play_usage():
     missing = sorted(f for f in parsed if f not in listed)
     return (len(parsed) > 20, missing), (True, []), \
            ("%d flags parsed; those the usage block never names" % len(parsed))
+
+
+
+def c_enhance_all():
+    r"""`all = max` and `--enhance-all` reach EVERY enhancement.
+
+    One switch that turns them all up is only useful if it keeps up with the
+    list, and nothing about a forgotten one is red: it simply stays off while
+    the report says everything is on. So this compares the two directly -
+    every key `settings.cpp` reads under `[Enhancements]`, except `all`
+    itself, must be driven by `applyMaxEnhancements`, and the run must show
+    each at its declared top.
+
+    Measured through `settings_probe --config`, which needs no window. The
+    `--config` matters: the probe ignores a bare positional path, and a first
+    version of the sibling `config template` check passed one - so it read no
+    file at all and "everything is a default" was true because nothing had
+    loaded.
+
+    The precedence is asserted too, in the direction that matters: a specific
+    key BEATS `all`, so `all = max` with `anisotropy = 4` gives 4. Without
+    that, "all" would be an override and a config would stop meaning what it
+    says.
+    """
+    eng = os.path.join(ROOT, "engine")
+    if not os.path.isdir(eng):
+        return ("skipped",), ("skipped",), "engine/ absent"
+    cpp = open(os.path.join(eng, "src", "platform", "settings.cpp"), encoding="utf-8").read()
+    hdr = open(os.path.join(eng, "src", "platform", "settings.h"), encoding="utf-8").read()
+    keys = set(re.findall(r'k(?:Enhancements),\s*"([^"]+)"', cpp)) - {"all"}
+    body = hdr[hdr.index("inline void applyMaxEnhancements"):]
+    body = body[:body.index("\n}")]
+    takes = len(re.findall(r"\btake\(", body))
+    mk = subprocess.run(["make", "-s", "build/settings_probe"], cwd=eng,
+                        capture_output=True, text=True)
+    probe = os.path.join(eng, "build", "settings_probe")
+    if mk.returncode != 0 or not os.path.exists(probe):
+        return ("skipped",), ("skipped",), "settings_probe did not build"
+    import tempfile
+    def run(text):
+        with tempfile.NamedTemporaryFile("w", suffix=".ini", delete=False) as f:
+            f.write(text); path = f.name
+        out = subprocess.run([probe, "--config", path], capture_output=True, text=True).stdout
+        os.unlink(path)
+        return dict((m[0], int(m[1])) for m in re.findall(r"^enh (\S+) (\d+)", out, re.M))
+    allMax = run("[Enhancements]\nall = max\n")
+    override = run("[Enhancements]\nall = max\nanisotropy = 4\n")
+    # the tops, read out of `settings.h` rather than repeated here, so raising
+    # one moves the assertion with it
+    tops = dict(re.findall(r"kMax(\w+)\s*=\s*(\d+)", hdr))
+    want = {"aa": int(tops["AntiAliasing"]), "filter": int(tops["TextureFilter"]),
+            "aniso": int(tops["Anisotropy"]), "shadowquality": int(tops["ShadowQuality"]),
+            "lighting": int(tops["Lighting"])}
+    atMax = all(allMax.get(k) == v for k, v in want.items())
+    got = (len(keys), takes, atMax, allMax.get("all"), override.get("aniso"))
+    return got, (len(keys), len(keys), True, 1, 4), \
+           ("the %d `[Enhancements]` keys besides `all`, the fields "
+            "`applyMaxEnhancements` sets, whether one `all = max` puts every one at "
+            "its top, and that a specific key still beats it (anisotropy 4)" % len(keys))
 
 
 def c_engine_street_frame():
@@ -28840,6 +28906,7 @@ CHECKS = [
     ("shadow model",       c_shadow_model,      "ASSETS 4d"),
     ("config template",    c_config_template,   "todo/options-config"),
     ("play usage",         c_play_usage,        "engine/README"),
+    ("enhance all",        c_enhance_all,       "todo/enhancements"),
 ]
 
 SLOW = [

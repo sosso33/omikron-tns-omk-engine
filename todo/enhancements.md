@@ -11,6 +11,7 @@ measures the enhancement's own property on the GPU, shown to fail.
 
 | # | enhancement | key / flag | status |
 |---|---|---|---|
+| — | **all of them at once**, each as high as it goes. A BASE: any specific key or flag beats it, whatever the order, and it touches nothing outside `[Enhancements]` | `all = max` / `--enhance-all` | **done 2026-09-09**; `enhance all` |
 | 0 | anti-aliasing (MSAA 2/4/8) | `antialiasing = N` / `--aa N` | **done 2026-09-08**, `ed349ca`; `engine: anti-aliasing` |
 | 1 | bilinear texture filtering. The colour key (flag 0x800, black) travels in the texture's ALPHA so a filtered sample is premultiplied: discard below 0.5, divide by alpha above - no dark fringe, and the nearest path is bit-identical to before | `texturefiltering = bilinear` / `--filter bilinear` | **done 2026-09-08**; `engine: texture filter`; judged by eye on Aapden's floor stain |
 | 2 | mipmaps (trilinear) and anisotropic filtering, generated at upload; the alpha key averages correctly into the chain | `texturefiltering = trilinear`, `anisotropy = N` / `--filter trilinear --anisotropy N` | **done 2026-09-08**; `engine: mipmaps`; the stain judged by eye at 16x |
@@ -267,6 +268,23 @@ built it must say plainly that it overrides authored art.
 
 Bloom on the neon and a coloured fog are the same shape: they would flatter
 the game and have no data behind them.
+
+## `all = max` / `--enhance-all`
+
+One switch for the whole section, so nobody has to know what the list
+currently is. The two the DEVICE caps - MSAA and anisotropy - are asked for at
+their largest defined value and the backend reduces what it cannot meet and
+says so, which is what "max available" means here; the rest have a fixed top.
+The tops live in `settings.h` (`kMaxAntiAliasing` and friends) so the flag and
+the ini key cannot drift apart from each other or from the parsers.
+
+`verify.py: enhance all` is the guard that matters, because **nothing about a
+forgotten enhancement is red**: it just stays off while the report says
+everything is on. So the check compares the two directly - every key
+`settings.cpp` reads under `[Enhancements]` except `all` itself must be driven
+by `applyMaxEnhancements` - and is shown to fail by adding a key that is not.
+It also asserts the precedence in the direction that matters: `all = max` with
+`anisotropy = 4` gives 4, so a config still means what it says.
 
 Known limit of 1 and 2, to be judged by eye: the sets sample sub-rectangles
 of shared atlases (the Anekbah signs), and a filter reaches half a texel past

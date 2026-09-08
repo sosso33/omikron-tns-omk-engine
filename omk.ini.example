@@ -108,6 +108,15 @@
 ; draws what the game drew - with one stated exception, noted below.
 ; `todo/enhancements.md` carries the list and the evidence.
 
+; EVERYTHING AT ONCE: `all = max` turns every enhancement below as high as it
+; goes, without your having to know what the list currently is. It is a BASE -
+; any specific key in this section beats it, whatever order they appear in -
+; and it touches nothing outside `[Enhancements]`, because the game's own
+; option rows are not enhancements. `off` (the default) leaves each alone.
+; The two the DEVICE caps (MSAA and anisotropy) are asked for at their largest
+; defined value; the backend reduces what it cannot meet and says so.
+;all = off
+
 ; MSAA samples per pixel: 0 off, else 2, 4 or 8 (the largest the device
 ; supports at or below what is asked). The original sets ANTIALIAS off.
 ;antialiasing = 0

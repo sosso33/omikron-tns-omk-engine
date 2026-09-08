@@ -95,6 +95,19 @@ struct Settings {
     int    lighting = 0;
     Source lightingSource = Source::Default;
 
+    // `all = max` under `[Enhancements]`: turn every enhancement up as far as
+    // it goes, in ONE key, without having to know what the list currently is.
+    //
+    // "as far as it goes" is asked for rather than computed: MSAA and
+    // anisotropy are capped by the DEVICE, and both backends already reduce a
+    // request they cannot meet and say so, so the maximum is expressed by
+    // asking for the largest defined value. The rest have a fixed top.
+    //
+    // It is a BASE, not an override: a specific key or flag beats it, whatever
+    // the order. And it touches nothing outside `[Enhancements]` - the game's
+    // own option rows are not enhancements and this must never move them.
+    bool   enhanceAll = false;
+
     // ---- what the clip distance DERIVES, all in world units (inches) ----
     //
     // `sub_440BE0(scene, D, 1)` writes three floats on the scene, and D is
@@ -163,6 +176,28 @@ inline int lightingMode(std::string w) {
     return -1;
 }
 inline const char* lightingName(int m) { return m <= 0 ? "pervertex" : "perpixel"; }
+
+// THE TOP OF EACH ENHANCEMENT, in one place, so `all = max` and
+// `--enhance-all` cannot drift apart from each other or from the parsers.
+// The two the DEVICE caps are asked for at their largest defined value; the
+// backend reduces what it cannot meet and reports it.
+inline constexpr int kMaxAntiAliasing  = 8;   // msaaSamples() clamps here
+inline constexpr int kMaxTextureFilter = 2;   // trilinear
+inline constexpr int kMaxAnisotropy    = 16;
+inline constexpr int kMaxShadowQuality = 2;   // mapped
+inline constexpr int kMaxLighting      = 1;   // per pixel
+
+// Apply them, leaving anything an explicit key already set alone.
+inline void applyMaxEnhancements(Settings& s) {
+    const auto take = [](int& v, int top, Settings::Source& src) {
+        if (src == Settings::Source::Default) { v = top; src = Settings::Source::Ini; }
+    };
+    take(s.antiAliasing,  kMaxAntiAliasing,  s.antiAliasingSource);
+    take(s.textureFilter, kMaxTextureFilter, s.textureFilterSource);
+    take(s.anisotropy,    kMaxAnisotropy,    s.anisotropySource);
+    take(s.shadowQuality, kMaxShadowQuality, s.shadowQualitySource);
+    take(s.lighting,      kMaxLighting,      s.lightingSource);
+}
 
 // Resolve the three sources in order.  Either may be absent.
 Settings resolveSettings(const OptionsFile& ini,

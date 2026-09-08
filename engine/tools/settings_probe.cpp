@@ -32,6 +32,15 @@ int main(int argc, char** argv) {
     std::printf("clip %d %s\n", v.clipDistance, omk::sourceName(s.clipDistance));
     std::printf("sky %d %s\n", v.sky ? 1 : 0, omk::sourceName(s.sky));
     std::printf("shadows %d %s\n", v.shadows ? 1 : 0, omk::sourceName(s.shadows));
+    // The ENHANCEMENTS, so a check can see what `all = max` did without
+    // needing a window - `omk-play` reports them too, but it needs SDL.
+    std::printf("enh aa %d %s\n", s.antiAliasing, omk::sourceName(s.antiAliasingSource));
+    std::printf("enh filter %d %s\n", s.textureFilter, omk::sourceName(s.textureFilterSource));
+    std::printf("enh aniso %d %s\n", s.anisotropy, omk::sourceName(s.anisotropySource));
+    std::printf("enh shadowquality %d %s\n", s.shadowQuality,
+                omk::sourceName(s.shadowQualitySource));
+    std::printf("enh lighting %d %s\n", s.lighting, omk::sourceName(s.lightingSource));
+    std::printf("enh all %d\n", s.enhanceAll ? 1 : 0);
     std::printf("screen %dx%d %s\n", v.screenX, v.screenY, omk::sourceName(s.screen));
     std::printf("density %d %s\n", v.streetActivity, omk::sourceName(s.streetActivity));
     std::printf("detail %d %s\n", v.levelOfDetail, omk::sourceName(s.levelOfDetail));

@@ -64,6 +64,18 @@ Settings resolveSettings(const OptionsFile& ini,
         takeInt(kOptions, "levelofdetail",  s.v.levelOfDetail,  s.levelOfDetail);
 
         // ---- [Enhancements], off unless written -------------------------
+        //
+        // `all` is read LAST but applied at the END of the section, so a
+        // specific key beats it whatever order the two appear in the file.
+        bool wantAll = false;
+        if (const std::string* w = ini.find(kEnhancements, "all")) {
+            std::string v = *w;
+            for (auto& c : v) c = static_cast<char>(c >= 'A' && c <= 'Z' ? c + 32 : c);
+            wantAll = v == "max" || v == "1" || v == "on" || v == "yes";
+            if (!wantAll && v != "0" && v != "off" && v != "no" && v != "none")
+                std::fprintf(stderr, "settings: all = %s is not max|off - ignored\n",
+                             w->c_str());
+        }
         takeInt(kEnhancements, "antialiasing", s.antiAliasing, s.antiAliasingSource);
         if (const std::string* w = ini.find(kEnhancements, "texturefiltering")) {
             const int m = textureFilterMode(*w);
@@ -84,6 +96,10 @@ Settings resolveSettings(const OptionsFile& ini,
             else std::fprintf(stderr, "settings: shadowquality = %s is not a mode "
                                       "(classic|fitted|mapped) - ignored\n", w->c_str());
         }
+        // ...applied LAST, so every specific key above has already claimed its
+        // field and `applyMaxEnhancements` leaves it alone. That is what makes
+        // `all` a base rather than an override, whatever order the file is in.
+        if (wantAll) { s.enhanceAll = true; applyMaxEnhancements(s); }
     }
 
     // ---- 2. the save header, which is later and therefore wins -----------

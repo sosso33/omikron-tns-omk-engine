@@ -1403,6 +1403,8 @@ int main(int argc, char** argv) {
 "  --shadow-quality classic|fitted|mapped  ENHANCEMENT: fitted lays each blob\n"
 "                   on the surface under it; mapped is a real shadow map, the\n"
 "                   Vulkan backend only (default classic)\n"
+"  --enhance-all    every ENHANCEMENT as high as it goes - none of them is what\n"
+"                   the original drew; a specific flag still wins\n"
 "  --lighting pervertex|perpixel  ENHANCEMENT: the engine's own light law per\n"
 "                   fragment, and every character receives it rather than the\n"
 "                   crowd alone; Vulkan only (default pervertex)\n"
@@ -1636,6 +1638,11 @@ int main(int argc, char** argv) {
     int anisoFlag = -1;    // --anisotropy N, [Enhancements] anisotropy
     int shadowQFlag = -1;  // --shadow-quality classic|fitted|mapped, [Enhancements] shadowquality
     int lightingFlag = -1; // --lighting pervertex|perpixel, [Enhancements] lighting
+    // --enhance-all: every enhancement as high as it goes, in one word. The
+    // two the DEVICE caps are asked for at their largest defined value and the
+    // backend reduces what it cannot meet, which is what "max available" means
+    // here. A specific flag still wins, whatever order they are typed.
+    bool enhanceAll = false;
     // The fog is not an option row - it is always on in the engine - so this
     // is a diagnostic switch, not a setting. Default ON, because that is what
     // the game does.
@@ -1804,6 +1811,7 @@ int main(int argc, char** argv) {
         }
         else if (a == "--anisotropy" && i + 1 < argc)
             anisoFlag = std::max(1, std::min(16, std::atoi(argv[++i])));
+        else if (a == "--enhance-all") enhanceAll = true;
         else if (a == "--lighting" && i + 1 < argc) {
             lightingFlag = omk::lightingMode(argv[++i]);
             if (lightingFlag < 0) {
@@ -2030,18 +2038,32 @@ int main(int argc, char** argv) {
     const bool drawShadows = shadowFlag >= 0 ? shadowFlag != 0 : settings.v.shadows;
     // The ENHANCEMENT, and it is subordinate to the option above: with row 5
     // off nothing draws whatever this says. Default 0 = what the engine draws.
-    const int shadowQuality = shadowQFlag >= 0 ? shadowQFlag : settings.shadowQuality;
+    // `--enhance-all` is a BASE: an explicit flag beats it, and so does a
+    // specific `[Enhancements]` key, because `resolveSettings` decided that
+    // half already.
+    const auto enh = [&](int flag, int fromSettings, int top) {
+        return flag >= 0 ? flag : enhanceAll ? top : fromSettings;
+    };
+    const int shadowQuality = enh(shadowQFlag, settings.shadowQuality,
+                                  omk::kMaxShadowQuality);
     const int  shadowDetail = detailFlag >= 0 ? detailFlag : settings.v.levelOfDetail;
     // Row 7. Per pixel ALSO widens who receives: the engine lights the
     // procedural crowd and nothing else, and this lets every character.
-    const int  lighting = lightingFlag >= 0 ? lightingFlag : settings.lighting;
+    const int  lighting = enh(lightingFlag, settings.lighting, omk::kMaxLighting);
     if (lighting > 0)
         std::printf("lighting: per pixel - an ENHANCEMENT the original never had "
                     "(it lights the crowd alone, per vertex); every character receives\n");
     // The enhancement: OFF unless --aa or [Enhancements] said otherwise.
-    const int aaSamples = aaFlag >= 0 ? aaFlag : settings.antiAliasing;
-    const int texFilter = filterFlag >= 0 ? filterFlag : settings.textureFilter;
-    const int texAniso = anisoFlag >= 0 ? anisoFlag : settings.anisotropy;
+    const int aaSamples = enh(aaFlag, settings.antiAliasing, omk::kMaxAntiAliasing);
+    const int texFilter = enh(filterFlag, settings.textureFilter, omk::kMaxTextureFilter);
+    const int texAniso  = enh(anisoFlag, settings.anisotropy, omk::kMaxAnisotropy);
+    if (enhanceAll || settings.enhanceAll)
+        std::printf("enhancements: all on - %dx MSAA, %s filtering, anisotropy %d, "
+                    "%s shadows, %s lighting. As high as each goes unless a specific "
+                    "setting said otherwise; none of it is what the original drew, and "
+                    "the device reduces what it cannot meet.\n",
+                    aaSamples, omk::textureFilterName(texFilter), texAniso,
+                    omk::shadowQualityName(shadowQuality), omk::lightingName(lighting));
     std::printf("settings: clip %d m (%s) = %.0f in, near/far split %.0f/%.0f;"
                 " crowd %d (%s); sky %d (%s), shadows %d (%s), detail %d (%s);"
                 " aa %d (%s, enhancement), filter %s (%s, enhancement),"
