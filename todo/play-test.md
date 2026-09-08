@@ -120,6 +120,11 @@ off as ordinary traffic. **Say if he sits 50 cm too far forward or back**:
 the slider is drawn about `SlBasB`'s origin and the clips are authored about
 `SlBassin`'s, 19.7 apart along the length, and that residual is not settled.
 
+**The reader's standing fact, 2026-09-08, from the original replayed on
+video**: Kay'l REALLY enters the slider - through the open door into a body
+that is not a flat shell at that moment - and never passes through a face.
+Any render or run where he crosses the hull is wrong, whatever the log says.
+
 **Also to judge, added later the same day**: the vehicle under you should
 be the COCKPIT body from the moment you press ENTER at the door - an open
 red well along the flank, the door on it - and the plain shell again once
