@@ -18760,7 +18760,7 @@ def c_engine_raster():
 
     return (v[0], v[1], v[2], v[3], v[4], v[5], v[6], v[7], v[8], v[10],
             len(verts), npro, ahead, agree, round(worst, 3)), \
-           (10257, 25, 21, 3419, 709, 2452, 278, 419457, 93102, 349998,
+           (10257, 25, 21, 3419, 709, 2452, 278, 419445, 93114, 349998,
             10257, 106, 32, 106, 0.002), \
            "the set's corners, batches and textures; then the raster - " \
            "triangles offered, drawn, rejected BEHIND the near cut and " \
@@ -26801,7 +26801,7 @@ def c_licence_headers():
                    if TAG in open(p, encoding="utf-8",
                                   errors="replace").read(600)]
     return (authored, sorted(missing), len(vendored), mislabelled), \
-           (386, [], 1, []), \
+           (389, [], 1, []), \
            "authored source files under tools/, engine/src, engine/tools, " \
            "engine/backends and scripts/; those MISSING the SPDX tag; " \
            "vendored files in engine/third_party; and vendored files wrongly " \
@@ -27167,6 +27167,94 @@ def c_engine_player_move():
            "3795 from a crafted new-game save: the zone arms once, `player.move " \
            "100` puts the channel on H_STAND, the player is within a unit of the " \
            "teleport point 30 frames later, and the Session starts op 63 inline"
+
+
+def c_engine_sign_tie():
+    r"""THE ANEKBAH PANEL FLICKER: a depth TIE the float compare broke, and the signs are TWO-SIDED.
+
+    `todo/standing-unknowns.md` 4, open since the first play report of
+    2026-08-28 and out of candidates since 2026-09-05. A reader stood in
+    front of a shop sign on 2026-09-08 and left the viewer's position in its
+    log; 130 consecutive headless frames there (`--snap-every 1`, added for
+    this) showed the sign covered in single-pixel dots of another texture,
+    re-rolled every frame - about 1300 of the sign's 4000 pixels changing
+    per frame.
+
+    **What the signs are.** The 18 coincident different-material pairs
+    ASSETS 4b lists are each the SAME four vertices in OPPOSITE winding -
+    `Abank03`: (2,3,1,0) mat 1 and (3,2,0,1) mat 9; `Abooks02`: (0,1,2,3)
+    and (1,0,3,2) - a two-sided sign with one advert a side, which is why
+    their UVs differ completely. Asserted below from the data: 18 pairs, 18
+    reversed.
+
+    **What the engine does.** `CULLMODE = NONE` (both faces submitted) and a
+    STRICT `ZFUNC = GREATER` on `rhw` - so at equal depth the first drawn
+    keeps the pixel, and the depths ARE equal, because a z-buffer is
+    quantised. **What the port did.** `raster.cpp` compared each triangle's
+    own `1/izp` as a float; the two windings split the quad on different
+    diagonals, their depths differ by up to 2e-7 relative (measured by the
+    probe, both faces drawn alone), and the later face won wherever the
+    noise fell its way. That is per-pixel and re-rolled by any sub-pixel
+    camera move: the flicker. The fix is a tie band of 2^-16 relative in the
+    depth compare, labelled in the code as a reconstruction of the buffer's
+    quantisation rather than its bit depth, which the binary does not state.
+
+    `tools/tie_probe.cpp` draws Abooks02's pair untextured, red then green,
+    from an oblique camera: green must be 0, and drawn alone the two faces
+    must cover the same pixels (a bow-tie in the probe's first draft covered
+    different ones and read as the rule failing).
+
+    SHOWN TO FAIL 2026-09-08 with the compare put back to `z >= depth`
+    (raster.o and the probe deleted first): `first-face 1024 second-face
+    220`, against 1244 / 0. `engine: raster`'s pinned counts moved by 12
+    pixels (419457 -> 419445 written, 93102 -> 93114 rejected) - twelve
+    ties in Aapkayl's 352000 - and were re-pinned in the same commit.
+    """
+    import struct as _st
+    # the data: every coincident different-material pair in ANEKBAH is a
+    # reversed cycle of the same four vertices
+    import mesh3do
+    p = omkpaths.data("MESHES/DECORS/ANEKBAH.3DO")
+    if not os.path.exists(p):
+        return ("skipped",), ("skipped",), "ANEKBAH.3DO absent"
+    d = open(p, "rb").read()
+    h, ms = mesh3do.meshes(p)
+    qo = 0; pairs = 0; reversed_ = 0
+    for m in ms:
+        qs = []
+        for k in range(m["quads"]):
+            o = h["quadOff"] + 32 * (qo + k)
+            qs.append((_st.unpack_from("<4h", d, o), _st.unpack_from("<i", d, o + 16)[0]))
+        for i in range(len(qs)):
+            for j in range(i + 1, len(qs)):
+                if set(qs[i][0]) == set(qs[j][0]) and qs[i][1] != qs[j][1]:
+                    pairs += 1
+                    a, b = qs[i][0], qs[j][0]
+                    same = tuple(b) in [tuple(a[k:] + a[:k]) for k in range(4)]
+                    if not same: reversed_ += 1
+        qo += m["quads"]
+    # the port: the probe
+    eng = os.path.join(ROOT, "engine")
+    if not os.path.isdir(eng):
+        return ("skipped",), ("skipped",), "engine/ absent"
+    b = subprocess.run(["make", "-s", "build/tie_probe"], cwd=eng, capture_output=True, text=True)
+    binp = os.path.join(eng, "build", "tie_probe")
+    if b.returncode != 0 or not os.path.exists(binp):
+        return ("build failed",), ("built",), "engine/ must build"
+    out = subprocess.run([binp], capture_output=True, text=True).stdout
+    m1 = re.search(r"alone: both (\d+) onlyA (\d+) onlyB (\d+)", out)
+    m2 = re.search(r"first-face (\d+) second-face (\d+)", out)
+    alone = tuple(int(x) for x in m1.groups()) if m1 else None
+    faces = tuple(int(x) for x in m2.groups()) if m2 else None
+    src = open(os.path.join(eng, "src/o3de/raster.cpp"), encoding="utf-8").read()
+    rule = "if (z >= depth[di] * (1.0f - kDepthTie))" in src
+    return (pairs, reversed_, alone, faces, rule), \
+           (18, 18, (1244, 0, 0), (1244, 0), True), \
+           "ANEKBAH's coincident different-material quad pairs and how many are " \
+           "the same four vertices in REVERSED order (two-sided signs); the " \
+           "probe's two faces drawn alone covering the same 1244 pixels and " \
+           "none apart; the first face keeping every pixel and the second " \
+           "drawing none; and the tie band in the depth compare"
 
 
 def c_no_define_renames():
@@ -28392,6 +28480,7 @@ CHECKS = [
     ("held camera bracket",c_held_camera_bracket,"todo/omk-play 42"),
     ("tutorial one-shot",  c_tutorial_one_shot, "todo/omk-play 42"),
     ("engine: player move", c_engine_player_move, "SCRIPT_VM 63/89"),
+    ("engine: sign tie",   c_engine_sign_tie,   "ASSETS 4b; todo/standing-unknowns 4"),
     ("no #define renames", c_no_define_renames, "CLAUDE.md 3"),
     ("shadow model",       c_shadow_model,      "ASSETS 4d"),
 ]

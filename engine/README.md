@@ -2043,6 +2043,38 @@ transition this port's channel fails to take where the engine's does would
 look the same. A script that stops dead after a `player.move.wait` is the
 symptom.
 
+### The panel FLICKER was a depth TIE, and the signs are two-sided (2026-09-08)
+
+The oldest open report — Anekbah's advert panels twinkling between two
+textures — closed from a reader's spot: they walked to a flickering sign and
+quit, the log kept the position, and `--snap-every 1` (new) captured 130
+consecutive frames there. The sign was covered in single-pixel dots of the
+other advert, re-rolled every frame: 1300 of its 4000 pixels.
+
+The 18 coincident shop-sign pairs ASSETS 4b lists are each the SAME four
+vertices in OPPOSITE winding (`Abooks02`: (0,1,2,3) and (1,0,3,2)) — a
+two-sided sign, one advert a side. The engine submits both (`CULLMODE =
+NONE`) and its strict `ZFUNC = GREATER` keeps the first drawn, because on a
+quantised z-buffer the two depths are EQUAL. `raster.cpp` compared each
+triangle's own float `1/izp`; the two windings split on different diagonals,
+their depths differ by up to 2e-7 relative (`tools/tie_probe.cpp` draws them
+alone and measures it), and the later face won wherever the noise fell its
+way. Any sub-pixel camera move re-rolls it — the flicker.
+
+The fix is a tie band: a depth within 2^-16 of the buffer's is rejected.
+**RECONSTRUCTION in one respect**: the engine's z-buffer bit depth is the
+device's and is not stated in the binary, so the band is relative and chosen
+to swallow float noise while still resolving 0.4 mm at 25 m — not D3D's
+absolute quantum. `engine: raster`'s pinned counts moved by twelve pixels
+(twelve ties in Aapkayl) and were re-pinned. `verify.py: engine: sign tie`,
+shown to fail with the plain compare (220 pixels of the second face).
+
+**Not covered**: the Vulkan backend, which compares on the GPU's own depth
+(`VK_COMPARE_OP_LESS`, D32 or D24) — whether it ties the same way is
+untested. And a residual twinkle on the glyphs is point sampling under a
+creeping camera, which is the engine's own filtering (`render states`) and
+what `--filter trilinear` exists to soften.
+
 ### The MIRROR reflects in the GAME, not only in the scene viewer
 
 `drawWithMirror` has been on the renderer boundary since 2026-09-01, and until

@@ -1507,8 +1507,16 @@ Listed with what has already been ruled out, so nobody repeats the search.
   `flags & 0x800043`, which replaces three viewer heuristics and disagrees with
   them in both directions (ASSETS 4).
 
-  Still unexplained: the **flicker** on panels 1 and 4 — and as of 2026-09-05
-  it has **no account at all**, because the standing one is refuted. The
+  ~~Still unexplained: the **flicker** on panels 1 and 4~~ — **FOUND
+  2026-09-08, and it was the port's, not the engine's.** The 18 coincident
+  shop-sign pairs are the two SIDES of a sign (the same four vertices in
+  opposite winding), the engine's strict depth test on a quantised z-buffer
+  shows the first drawn, and the port's float compare let last-bit noise
+  between the two triangulations pick the face per pixel — dots of the other
+  advert, re-rolled by every camera creep. A 2^-16 tie band in `raster.cpp`;
+  `verify.py: engine: sign tie`; ASSETS 4b. The paragraph below is the
+  history of the wrong candidates. As of 2026-09-05
+  it had **no account at all**, because the standing one is refuted. The
   `AApub*` billboard was described as "7 vertices, 3 quads of identical UVs"
   with D3DCULL_NONE and no depth bias, i.e. coincident faces z-fighting. The
   UVs half is right and the geometry half is not: over all **36** of Anekbah's

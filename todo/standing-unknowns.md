@@ -9,7 +9,7 @@ does not block the rest.
 | 1 | the camera pass's three unmodelled details | **DONE** 2026-09-05 |
 | 2 | the shoot AI's brains are not called | **DONE (as a decision)** 2026-09-05 |
 | 3 | `.3DM`'s `float[3]`, and node slots 0 and 1 | **NARROWED** 2026-09-05 |
-| 4 | the Anekbah panel FLICKER | **candidate REFUTED** 2026-09-05 |
+| 4 | the Anekbah panel FLICKER | **FOUND AND FIXED** 2026-09-08 - the port's depth tie |
 | 5 | the player's RIDE | **READ, not ported** 2026-09-05 |
 
 The reader cannot watch the screen, so anything that needs an eye is settled
@@ -140,6 +140,24 @@ half, which is solved.
 
 Result: a candidate removed rather than a fault fixed, which is worth more
 than leaving it to be built on. `verify.py: aapub prism`.
+
+> **FOUND AND FIXED 2026-09-08.** A reader stood in front of a flickering
+> sign and left the spot in the viewer's log (Anekbah, 6219 0 -8490 facing
+> 199); 130 consecutive headless frames there - `--snap-every 1`, added for
+> this - showed the sign covered in single-pixel dots of another texture,
+> ~1300 of its 4000 pixels changing every frame. The coincident shop-sign
+> pairs (18, all of them) are the SAME four vertices in OPPOSITE winding - a
+> two-sided sign, one advert a side. The engine draws both (`CULLMODE =
+> NONE`) and its strict `ZFUNC = GREATER` on a quantised z-buffer keeps the
+> first drawn on every pixel. The port compared each triangle's own float
+> depth, the two windings split the quad on different diagonals, and the
+> later face won wherever the last-bit noise (up to 2e-7 relative, measured)
+> fell its way - re-rolled by every sub-pixel camera move. A 2^-16 relative
+> tie band in `raster.cpp`'s compare; `tools/tie_probe.cpp`; `verify.py:
+> engine: sign tie`, shown to fail. So panels "1 and 4" flickered because
+> they were two-sided signs, and "2 stably wrong" is the texture-name cache,
+> as already found. The Vulkan backend compares on the GPU's own depth and
+> is not covered by this rule; whether it ties the same way is untested.
 
 ## 5. The player's RIDE
 
