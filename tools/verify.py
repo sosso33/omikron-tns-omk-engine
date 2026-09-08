@@ -5964,6 +5964,79 @@ def c_engine_fitted_shadows():
                        "is flat and fitted follows the riser")
 
 
+
+def c_engine_mapped_shadows():
+    r"""`shadowquality = mapped` - a real shadow map, `todo/enhancements.md` 6.
+
+    Nothing in the engine casts one, so this is an ENHANCEMENT: off by
+    default, Vulkan only, and the software reference ignores it entirely (its
+    `Renderer::shadowPass` is the base class's no-op), so the picture the
+    original drew is untouched.
+
+    Measured with `build/shadow_probe`, a synthetic scene - one ground quad,
+    one caster above it - rendered offscreen through the Vulkan backend. A
+    window cannot be opened in a check, and `omk-play`'s Vulkan path needs a
+    surface, so the GPU work is exercised where it can be: the same
+    `shadowPass`, the same depth pipeline, the same fragment lookup.
+
+    Three things:
+
+      * **strength 0 draws NOTHING.** That is the default pinned in the
+        source and measured on the GPU, both.
+      * a light straight down puts the shadow UNDER the caster - the centroid
+        lands at the middle of a 320-wide frame;
+      * and **it MOVES with the light.** Tilting the light along +x moves the
+        shadow's centroid to larger x and -x to smaller, by the same amount
+        either side. This is the assertion the whole row is written around: a
+        shadow verified in one still frame is not verified at all (CLAUDE.md
+        1, "some errors are invisible at rest"), and everything else here
+        would pass on a shadow painted at a fixed spot.
+
+    Shown to fail: dropping the `caster` field's 16-byte alignment in the push
+    block (the fault that actually shipped for an hour) puts the shadow on the
+    caster instead of the ground; forcing `litness()` to 1.0 gives 0 shadowed
+    pixels at every direction.
+    """
+    eng = os.path.join(ROOT, "engine")
+    if not os.path.isdir(eng):
+        return ("skipped",), ("skipped",), "engine/ absent"
+    src = open(os.path.join(eng, "src", "platform", "settings.h"),
+               encoding="utf-8").read()
+    defaultOff = "int    shadowQuality = 0;" in src
+    # the software reference must NOT implement it - that is the rule for an
+    # enhancement, and it is a property of the source, not of a frame
+    swSrc = open(os.path.join(eng, "src", "o3de", "raster.cpp"), encoding="utf-8").read()
+    swClean = "shadowPass" not in swSrc
+    mk = subprocess.run(["make", "-s", "vulkan"], cwd=eng, capture_output=True, text=True)
+    probe = os.path.join(eng, "build", "shadow_probe")
+    if mk.returncode != 0 or not os.path.exists(probe):
+        return ("skipped",), ("skipped",), "no Vulkan or no glslc - the GPU backend is optional"
+
+    def run(d, strength):
+        r = subprocess.run([probe, d, str(strength)], capture_output=True, text=True)
+        if "no vulkan" in r.stdout:
+            return None
+        m = re.search(r"shadowed (\d+)\s+centroid (-?\d+\.\d+) (-?\d+\.\d+)", r.stdout)
+        return (int(m.group(1)), float(m.group(2))) if m else (-1, -1.0)
+
+    off = run("0,1,0", 0.0)
+    if off is None:
+        return ("skipped",), ("skipped",), "no Vulkan device"
+    down = run("0,1,0", 0.6)
+    plus = run("0.5,1,0", 0.6)
+    minus = run("-0.5,1,0", 0.6)
+    # 320 wide, so the centre is 160
+    centred = down[0] > 200 and abs(down[1] - 160.0) < 6.0
+    moved = plus[1] > down[1] + 15.0 and minus[1] < down[1] - 15.0
+    symmetric = abs((plus[1] - down[1]) + (minus[1] - down[1])) < 6.0
+    got = (defaultOff, swClean, off[0], centred, moved, symmetric)
+    want = (True, True, 0, True, True, True)
+    return got, want, ("the default is classic and the software reference has no shadow "
+                       "pass; strength 0 shadows %d pixels; a light straight down centres "
+                       "the shadow at %.1f and tilting it moves the centroid to %.1f / %.1f"
+                       % (off[0], down[1], plus[1], minus[1]))
+
+
 def c_engine_street_frame():
     r"""`omk-play` DRAWS the city crowd (docs/STREET_LIFE.md, step 4).
 
@@ -26890,7 +26963,7 @@ def c_licence_headers():
                    if TAG in open(p, encoding="utf-8",
                                   errors="replace").read(600)]
     return (authored, sorted(missing), len(vendored), mislabelled), \
-           (388, [], 1, []), \
+           (389, [], 1, []), \
            "authored source files under tools/, engine/src, engine/tools, " \
            "engine/backends and scripts/; those MISSING the SPDX tag; " \
            "vendored files in engine/third_party; and vendored files wrongly " \
@@ -28518,6 +28591,7 @@ SLOW = [
     ("engine: street frame", c_engine_street_frame, "STREET_LIFE; todo/street-life 4"),
     ("engine: character shadow", c_engine_character_shadow, "ASSETS 4d; o3de/shadow.h"),
     ("engine: fitted shadows", c_engine_fitted_shadows, "todo/enhancements 5; o3de/shadow.h"),
+    ("engine: mapped shadows", c_engine_mapped_shadows, "todo/enhancements 6; o3de/renderer.h"),
     ("engine: traffic frame", c_engine_traffic_frame, "STREET_LIFE 2b; todo/road-traffic 3"),
     ("engine: crowd push", c_engine_crowd_push, "STREET_LIFE 3; actor/spatial.h"),
     ("engine: head look", c_engine_head_look, "STREET_LIFE; actor/pose.h"),

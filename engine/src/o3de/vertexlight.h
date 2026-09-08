@@ -62,4 +62,19 @@ inline std::uint8_t lightRamp(std::uint8_t colour, int t) {
 int applyLights(Geometry& g, std::size_t first, std::size_t count,
                 const float bodyPos[3], std::span<const Light3do> lights);
 
+// The light that reaches `p` most strongly, on exactly `applyLights`'s own
+// rules - the squared-radius reach test, the degenerate-pair refusal, and the
+// linear falloff from the inner radius to the outer, clamped. -> nullptr when
+// none reaches.
+//
+// This is what the MAPPED shadow (`todo/enhancements.md` 6) takes its
+// direction from, so that a real shadow is cast by a light the set's own
+// author placed rather than by a sun this port invented.
+// `k` receives the falloff-weighted strength the pick was made on, so a
+// caller comparing across two resident sets compares the same number. Doing
+// that on the raw intensity instead is what made a distant fill light beat the
+// street lamp the character was standing under.
+const Light3do* strongestLightAt(const float p[3], std::span<const Light3do> lights,
+                                 float* k = nullptr);
+
 }  // namespace omk

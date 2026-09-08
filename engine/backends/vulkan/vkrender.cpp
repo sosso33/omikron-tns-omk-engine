@@ -75,6 +75,23 @@ const uint32_t kFsqVert[] =
 const uint32_t kFsqFrag[] =
 #include "fsq.frag.inc"
 ;
+// The DEPTH-ONLY pass of the mapped shadow (`todo/enhancements.md` 6).
+const uint32_t kShadowVert[] =
+#include "shadow.vert.inc"
+;
+
+// The map's side. 1024 is a shadow of a handful of CHARACTERS over a slab a
+// few metres across, so a texel is centimetres.
+constexpr uint32_t kShadowSide = 1024;
+
+// Set 1, binding 0 - per FRAME, and it must match `scene.frag`'s block.
+struct ShadowUbo {
+    float lightMvp[16];
+    float strength;    // 0 = no shadow this frame, which is the default
+    float texel;       // 1 / kShadowSide
+    float bias;
+    float pad;
+};
 
 #define VKCHECK(x, what)                                                     \
     do {                                                                     \
@@ -95,22 +112,30 @@ struct GpuVert {
     float r, g, b;
 };
 
+// It MUST match `scene.frag`'s block byte for byte, and the ordering is what
+// makes it match: a `vec3` in a push-constant block is 16-byte aligned, so
+// `fogColour` sits at offset 80 and everything scalar has to come before it.
+// Packed the obvious way - mvp, cutout, fogStart, fogEnd, fogColour - the
+// colour arrived four bytes early and had done since the fog landed; it went
+// unseen because the shipped fog colour is BLACK, so the misplaced bytes were
+// zeros. See `scene.frag`.
 struct Push {
-    float mvp[16];
-    int32_t cutout;
-    // The fog, resolved the same way `renderer.cpp` resolves it for the
-    // software loop: the View's parameters with the bucket key's two
-    // exclusions already applied, so `fogEnd == 0` means "not fogged".
-    float fogStart;
-    float fogEnd;
-    float fogColour[3];
+    float mvp[16];     // 0
+    int32_t cutout;    // 64  flag 0x800: a colour key on black, never alpha
+    float fogStart;    // 68  0 = no fog for this batch; see renderer.h's View
+    float fogEnd;      // 72
+    int32_t caster;    // 76  this batch CASTS, so it must not RECEIVE
+    float fogColour[3];// 80
+    float pad;         // 92
 };
+static_assert(sizeof(Push) == 96, "the push block is 96 bytes");
 
 class VulkanRenderer : public omk::Renderer {
 public:
     bool init(int w, int h) override;
     void setTextures(std::span<const omk::Texture> t) override;
     void begin(const omk::View& v) override;
+    void shadowPass(const omk::View& v, std::span<const omk::Draw> casters) override;
     bool drawMirrorScene(const omk::View& v, const omk::View& refl,
                          std::span<const omk::Draw> scene,
                          std::span<const omk::Draw> sceneClipped,
@@ -160,6 +185,7 @@ private:
     bool pickDevice();
     bool makeTarget();
     bool makePipelines();
+    void makeShadowSet();
     uint32_t memType(uint32_t bits, VkMemoryPropertyFlags want) const;
     bool makeBuffer(VkDeviceSize n, VkBufferUsageFlags use,
                     VkMemoryPropertyFlags props, VkBuffer& b, VkDeviceMemory& m);
@@ -210,6 +236,22 @@ private:
     VkPipeline            pipeDepthReset_ = VK_NULL_HANDLE;
     VkPipeline            pipeRefl_[3] = {VK_NULL_HANDLE, VK_NULL_HANDLE, VK_NULL_HANDLE};
     VkSampler             sampler_ = VK_NULL_HANDLE;
+
+    // ---- the MAPPED shadow, `todo/enhancements.md` 6 (an ENHANCEMENT) -----
+    VkImage         shImg_ = VK_NULL_HANDLE;  VkDeviceMemory shMem_ = VK_NULL_HANDLE;
+    VkImageView     shView_ = VK_NULL_HANDLE; VkSampler      shSampler_ = VK_NULL_HANDLE;
+    VkFormat        shFmt_ = VK_FORMAT_UNDEFINED;
+    VkRenderPass    shPass_ = VK_NULL_HANDLE;  VkFramebuffer shFbuf_ = VK_NULL_HANDLE;
+    VkPipeline      shPipe_ = VK_NULL_HANDLE;  VkPipelineLayout shPlo_ = VK_NULL_HANDLE;
+    VkDescriptorSetLayout dsl1_ = VK_NULL_HANDLE;
+    VkDescriptorSet       ds1_  = VK_NULL_HANDLE;
+    VkBuffer        shUbo_ = VK_NULL_HANDLE;   VkDeviceMemory shUboMem_ = VK_NULL_HANDLE;
+    void*           shUboPtr_ = nullptr;
+    // The command buffer is opened by whichever of `shadowPass` and `begin`
+    // runs first, and only once - the depth pass has to be recorded BEFORE the
+    // frame's own render pass begins.
+    bool            cbStarted_ = false;
+    bool            shadowLive_ = false;   // a depth pass was recorded this frame
 
     struct Tex {
         VkImage img = VK_NULL_HANDLE; VkDeviceMemory mem = VK_NULL_HANDLE;
@@ -559,6 +601,97 @@ bool VulkanRenderer::makeTarget() {
                     VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
                     readBuf_, readMem_)) return false;
     fb_ = omk::Surface(w_, h_, 0);
+
+    // ---- THE SHADOW MAP's own target (`todo/enhancements.md` 6) ----------
+    //
+    // One depth image, its own render pass, and a sampler. It is sized once
+    // and reused: the light's slab is fitted to the CASTERS every frame, so
+    // the resolution follows them rather than the world.
+    shFmt_ = VK_FORMAT_UNDEFINED;
+    for (VkFormat f : {VK_FORMAT_D32_SFLOAT, VK_FORMAT_D16_UNORM}) {
+        VkFormatProperties fp{};
+        vkGetPhysicalDeviceFormatProperties(phys_, f, &fp);
+        if (fp.optimalTilingFeatures & VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT) {
+            shFmt_ = f; break;
+        }
+    }
+    if (shFmt_ != VK_FORMAT_UNDEFINED) {
+        VkImageCreateInfo ii{VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO};
+        ii.imageType = VK_IMAGE_TYPE_2D; ii.format = shFmt_;
+        ii.extent = {kShadowSide, kShadowSide, 1};
+        ii.mipLevels = 1; ii.arrayLayers = 1;
+        ii.samples = VK_SAMPLE_COUNT_1_BIT; ii.tiling = VK_IMAGE_TILING_OPTIMAL;
+        ii.usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
+        ii.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+        ii.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+        if (vkCreateImage(dev_, &ii, nullptr, &shImg_) == VK_SUCCESS) {
+            VkMemoryRequirements req; vkGetImageMemoryRequirements(dev_, shImg_, &req);
+            VkMemoryAllocateInfo ai{VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO};
+            ai.allocationSize = req.size;
+            ai.memoryTypeIndex = memType(req.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+            vkAllocateMemory(dev_, &ai, nullptr, &shMem_);
+            vkBindImageMemory(dev_, shImg_, shMem_, 0);
+            VkImageViewCreateInfo vi{VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO};
+            vi.image = shImg_; vi.viewType = VK_IMAGE_VIEW_TYPE_2D; vi.format = shFmt_;
+            vi.subresourceRange = {VK_IMAGE_ASPECT_DEPTH_BIT, 0, 1, 0, 1};
+            vkCreateImageView(dev_, &vi, nullptr, &shView_);
+
+            VkAttachmentDescription da{};
+            da.format = shFmt_; da.samples = VK_SAMPLE_COUNT_1_BIT;
+            da.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+            da.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+            da.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+            da.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+            da.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+            da.finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+            VkAttachmentReference dr{0, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL};
+            VkSubpassDescription sp{};
+            sp.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
+            sp.pDepthStencilAttachment = &dr;
+            // The frame's own pass READS what this one wrote, so the
+            // dependency out has to name the fragment stage.
+            VkSubpassDependency dep[2]{};
+            dep[0].srcSubpass = VK_SUBPASS_EXTERNAL; dep[0].dstSubpass = 0;
+            dep[0].srcStageMask = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+            dep[0].dstStageMask = VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
+            dep[0].srcAccessMask = VK_ACCESS_SHADER_READ_BIT;
+            dep[0].dstAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+            dep[1].srcSubpass = 0; dep[1].dstSubpass = VK_SUBPASS_EXTERNAL;
+            dep[1].srcStageMask = VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
+            dep[1].dstStageMask = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+            dep[1].srcAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+            dep[1].dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+            VkRenderPassCreateInfo rpi{VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO};
+            rpi.attachmentCount = 1; rpi.pAttachments = &da;
+            rpi.subpassCount = 1; rpi.pSubpasses = &sp;
+            rpi.dependencyCount = 2; rpi.pDependencies = dep;
+            vkCreateRenderPass(dev_, &rpi, nullptr, &shPass_);
+
+            VkFramebufferCreateInfo fi{VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO};
+            fi.renderPass = shPass_; fi.attachmentCount = 1; fi.pAttachments = &shView_;
+            fi.width = kShadowSide; fi.height = kShadowSide; fi.layers = 1;
+            vkCreateFramebuffer(dev_, &fi, nullptr, &shFbuf_);
+
+            // NEAREST, because the fragment shader compares depths itself and
+            // a linear filter would average DEPTHS rather than the comparison.
+            VkSamplerCreateInfo si{VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO};
+            si.magFilter = si.minFilter = VK_FILTER_NEAREST;
+            si.addressModeU = si.addressModeV = si.addressModeW =
+                VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+            si.borderColor = VK_BORDER_COLOR_FLOAT_OPAQUE_WHITE;
+            si.maxLod = 0.0f;
+            vkCreateSampler(dev_, &si, nullptr, &shSampler_);
+
+            makeBuffer(sizeof(ShadowUbo), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+                       VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                       shUbo_, shUboMem_);
+            vkMapMemory(dev_, shUboMem_, 0, sizeof(ShadowUbo), 0, &shUboPtr_);
+            if (shUboPtr_) std::memset(shUboPtr_, 0, sizeof(ShadowUbo));
+        }
+    }
+    if (shFbuf_ == VK_NULL_HANDLE)
+        std::fprintf(stderr, "vulkan: no shadow map here - `--shadow-quality mapped` "
+                             "will draw the fitted blobs instead\n");
     return true;
 }
 
@@ -571,10 +704,25 @@ bool VulkanRenderer::makePipelines() {
     dli.bindingCount = 1; dli.pBindings = &b;
     VKCHECK(vkCreateDescriptorSetLayout(dev_, &dli, nullptr, &dsl_), "descriptorSetLayout");
 
+    // SET 1 is per FRAME - the shadow map and the light's transform. It exists
+    // whether or not a shadow is drawn, because a pipeline layout is fixed at
+    // creation and `strength = 0` is how a frame says it has no shadow.
+    VkDescriptorSetLayoutBinding b1[2]{};
+    b1[0].binding = 0; b1[0].descriptorCount = 1;
+    b1[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    b1[0].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+    b1[1].binding = 1; b1[1].descriptorCount = 1;
+    b1[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    b1[1].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+    VkDescriptorSetLayoutCreateInfo dli1{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO};
+    dli1.bindingCount = 2; dli1.pBindings = b1;
+    VKCHECK(vkCreateDescriptorSetLayout(dev_, &dli1, nullptr, &dsl1_), "descriptorSetLayout1");
+
     VkPushConstantRange pcr{VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
                             0, sizeof(Push)};
+    const VkDescriptorSetLayout sets[2] = {dsl_, dsl1_};
     VkPipelineLayoutCreateInfo pli{VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};
-    pli.setLayoutCount = 1; pli.pSetLayouts = &dsl_;
+    pli.setLayoutCount = 2; pli.pSetLayouts = sets;
     pli.pushConstantRangeCount = 1; pli.pPushConstantRanges = &pcr;
     VKCHECK(vkCreatePipelineLayout(dev_, &pli, nullptr, &plo_), "pipelineLayout");
 
@@ -820,11 +968,111 @@ bool VulkanRenderer::makePipelines() {
     VKCHECK(vkCreateSampler(dev_, &si, nullptr, &sampler_), "vkCreateSampler");
 
     // 64 sets: the engine's texture pool is 58 slots, plus the white fallback.
-    VkDescriptorPoolSize ps{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 128};
+    // Plus set 1, the per-frame shadow set, and its one uniform buffer.
+    VkDescriptorPoolSize ps[2] = {{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 130},
+                                  {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 4}};
     VkDescriptorPoolCreateInfo dpi{VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO};
-    dpi.maxSets = 128; dpi.poolSizeCount = 1; dpi.pPoolSizes = &ps;
+    dpi.maxSets = 130; dpi.poolSizeCount = 2; dpi.pPoolSizes = ps;
     VKCHECK(vkCreateDescriptorPool(dev_, &dpi, nullptr, &dpool_), "descriptorPool");
+
+    // ---- the SHADOW pipeline and its one descriptor set -------------------
+    if (shFbuf_ != VK_NULL_HANDLE) {
+        makeShadowSet();
+
+        // A DEPTH-ONLY pipeline: one vertex stage, no colour attachment, and
+        // a depth bias, without which the ground shadows itself in stripes.
+        VkShaderModule svs = module(kShadowVert, sizeof(kShadowVert));
+        VkPushConstantRange spcr{VK_SHADER_STAGE_VERTEX_BIT, 0, 16 * sizeof(float)};
+        VkPipelineLayoutCreateInfo spli{VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};
+        spli.pushConstantRangeCount = 1; spli.pPushConstantRanges = &spcr;
+        VKCHECK(vkCreatePipelineLayout(dev_, &spli, nullptr, &shPlo_), "shadow pipelineLayout");
+        VkPipelineShaderStageCreateInfo sst{
+            VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, nullptr, 0,
+            VK_SHADER_STAGE_VERTEX_BIT, svs, "main", nullptr};
+        VkVertexInputBindingDescription svb{0, sizeof(GpuVert), VK_VERTEX_INPUT_RATE_VERTEX};
+        VkVertexInputAttributeDescription sva{0, 0, VK_FORMAT_R32G32B32_SFLOAT,
+                                              offsetof(GpuVert, x)};
+        VkPipelineVertexInputStateCreateInfo svi{
+            VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO};
+        svi.vertexBindingDescriptionCount = 1; svi.pVertexBindingDescriptions = &svb;
+        svi.vertexAttributeDescriptionCount = 1; svi.pVertexAttributeDescriptions = &sva;
+        VkPipelineInputAssemblyStateCreateInfo sia{
+            VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO};
+        sia.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+        VkViewport svp{0, 0, static_cast<float>(kShadowSide),
+                       static_cast<float>(kShadowSide), 0.0f, 1.0f};
+        VkRect2D ssc{{0, 0}, {kShadowSide, kShadowSide}};
+        VkPipelineViewportStateCreateInfo svs2{
+            VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO};
+        svs2.viewportCount = 1; svs2.pViewports = &svp;
+        svs2.scissorCount = 1; svs2.pScissors = &ssc;
+        VkPipelineRasterizationStateCreateInfo srs{
+            VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO};
+        srs.polygonMode = VK_POLYGON_MODE_FILL;
+        // NO culling: a character model is not a closed solid, and the engine
+        // draws it D3DCULL_NONE anyway (ASSETS 4).
+        srs.cullMode = VK_CULL_MODE_NONE;
+        srs.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
+        srs.lineWidth = 1.0f;
+        srs.depthBiasEnable = VK_TRUE;
+        srs.depthBiasConstantFactor = 1.5f;
+        srs.depthBiasSlopeFactor = 2.5f;
+        VkPipelineMultisampleStateCreateInfo sms{
+            VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO};
+        sms.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
+        VkPipelineDepthStencilStateCreateInfo sds{
+            VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO};
+        sds.depthTestEnable = VK_TRUE; sds.depthWriteEnable = VK_TRUE;
+        sds.depthCompareOp = VK_COMPARE_OP_LESS;
+        VkPipelineColorBlendStateCreateInfo scb{
+            VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO};
+        scb.attachmentCount = 0;
+        VkGraphicsPipelineCreateInfo sgp{VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO};
+        sgp.stageCount = 1; sgp.pStages = &sst;
+        sgp.pVertexInputState = &svi; sgp.pInputAssemblyState = &sia;
+        sgp.pViewportState = &svs2; sgp.pRasterizationState = &srs;
+        sgp.pMultisampleState = &sms; sgp.pDepthStencilState = &sds;
+        sgp.pColorBlendState = &scb; sgp.layout = shPlo_; sgp.renderPass = shPass_;
+        if (vkCreateGraphicsPipelines(dev_, VK_NULL_HANDLE, 1, &sgp, nullptr, &shPipe_)
+            != VK_SUCCESS) {
+            std::fprintf(stderr, "vulkan: no shadow pipeline - mapped shadows off\n");
+            shPipe_ = VK_NULL_HANDLE;
+        }
+        vkDestroyShaderModule(dev_, svs, nullptr);
+    }
     return true;
+}
+
+// SET 1, rebuilt. It has to be a function because `setTextures` RESETS the
+// descriptor pool, and a reset frees every set allocated from it - this one
+// included. The first version allocated it once in `makePipelines` and the
+// game's first `setTextures` quietly destroyed it, so the fragment shader read
+// a strength of 0 and no shadow was ever drawn. The synthetic probe passed an
+// EMPTY texture list, took the early-out and never reset, which is why it
+// worked while the game did not: the bug was in the difference between the two
+// callers, not in the shadow.
+void VulkanRenderer::makeShadowSet() {
+    if (shFbuf_ == VK_NULL_HANDLE || dpool_ == VK_NULL_HANDLE) return;
+    VkDescriptorSetAllocateInfo sai{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO};
+    sai.descriptorPool = dpool_; sai.descriptorSetCount = 1; sai.pSetLayouts = &dsl1_;
+    ds1_ = VK_NULL_HANDLE;
+    if (vkAllocateDescriptorSets(dev_, &sai, &ds1_) != VK_SUCCESS) {
+        std::fprintf(stderr, "vulkan: no shadow descriptor set\n");
+        ds1_ = VK_NULL_HANDLE; return;
+    }
+    VkDescriptorBufferInfo bufi{shUbo_, 0, sizeof(ShadowUbo)};
+    VkDescriptorImageInfo imgi{shSampler_, shView_,
+                               VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+    VkWriteDescriptorSet wr[2]{};
+    wr[0] = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
+    wr[0].dstSet = ds1_; wr[0].dstBinding = 0; wr[0].descriptorCount = 1;
+    wr[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    wr[0].pBufferInfo = &bufi;
+    wr[1] = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
+    wr[1].dstSet = ds1_; wr[1].dstBinding = 1; wr[1].descriptorCount = 1;
+    wr[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    wr[1].pImageInfo = &imgi;
+    vkUpdateDescriptorSets(dev_, 2, wr, 0, nullptr);
 }
 
 // The swapchain, and the presentation path.
@@ -1178,6 +1426,8 @@ void VulkanRenderer::setTextures(std::span<const omk::Texture> t) {
         tex_.clear();
         vkResetDescriptorPool(dev_, dpool_, 0);
         white_ = Tex{};
+        ds1_ = VK_NULL_HANDLE;      // the reset freed it too
+        makeShadowSet();
     }
 
     const unsigned char white[3] = {255, 255, 255};
@@ -1288,6 +1538,96 @@ void VulkanRenderer::pushView(const omk::View& view) {
             push_.mvp[c * 4 + r] = rows[r][c];
 }
 
+// THE DEPTH PASS FROM THE LIGHT - `todo/enhancements.md` row 6.
+//
+// An ORTHOGRAPHIC slab fitted to the casters, not to the scene: a fragment
+// outside it is lit by definition, which is what keeps a characters-only
+// shadow from darkening the far end of a street. The same matrix writes the
+// map and reads it, so whatever Vulkan's clip space does to the handedness
+// cancels between the two.
+void VulkanRenderer::shadowPass(const omk::View& v, std::span<const omk::Draw> casters) {
+    { static bool t=false; if(!t){t=true; std::fprintf(stderr,"[vk] shadowPass pipe=%d on=%d n=%zu\n", shPipe_!=VK_NULL_HANDLE, v.shadow.on?1:0, casters.size());} }
+    if (shPipe_ == VK_NULL_HANDLE || !v.shadow.on || casters.empty()) return;
+    const float R = v.shadow.radius > 1.0f ? v.shadow.radius : 1.0f;
+
+    // the light's basis: forward along its direction, any stable up
+    float f[3] = {v.shadow.dir[0], v.shadow.dir[1], v.shadow.dir[2]};
+    const float fl = std::sqrt(f[0] * f[0] + f[1] * f[1] + f[2] * f[2]);
+    if (fl < 1e-6f) return;
+    for (float& c : f) c /= fl;
+    float up[3] = {0.0f, -1.0f, 0.0f};
+    if (std::fabs(f[0] * up[0] + f[1] * up[1] + f[2] * up[2]) > 0.99f) {
+        up[0] = 1.0f; up[1] = 0.0f; up[2] = 0.0f;
+    }
+    float r[3] = {up[1] * f[2] - up[2] * f[1], up[2] * f[0] - up[0] * f[2],
+                  up[0] * f[1] - up[1] * f[0]};
+    const float rl = std::sqrt(r[0] * r[0] + r[1] * r[1] + r[2] * r[2]);
+    for (float& c : r) c /= rl;
+    float u[3] = {f[1] * r[2] - f[2] * r[1], f[2] * r[0] - f[0] * r[2],
+                  f[0] * r[1] - f[1] * r[0]};
+    // The eye sits a slab's depth behind the casters, so nothing is clipped
+    // by the near plane however the light is angled.
+    const float back = R * 2.0f;
+    float eye[3];
+    for (int k = 0; k < 3; ++k) eye[k] = v.shadow.centre[k] - f[k] * back;
+    const float far = back + R * 2.0f;
+
+    // column-major, the way `pushView` writes the scene's
+    float m[16] = {};
+    const float* ax[3] = {r, u, f};
+    const float sc[3] = {1.0f / R, 1.0f / R, 1.0f / far};
+    for (int row = 0; row < 3; ++row) {
+        float d = 0.0f;
+        for (int c = 0; c < 3; ++c) {
+            m[c * 4 + row] = ax[row][c] * sc[row];
+            d += ax[row][c] * eye[c];
+        }
+        m[12 + row] = -d * sc[row];
+    }
+    m[15] = 1.0f;
+
+    if (!cbStarted_) {
+        VkCommandBufferBeginInfo bi{VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
+        bi.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+        vkResetCommandBuffer(cb_, 0);
+        vkBeginCommandBuffer(cb_, &bi);
+        cbStarted_ = true;
+    }
+    for (const auto& d : casters) if (d.geo) uploadGeometry(d.geo);
+
+    VkClearValue clear{};
+    clear.depthStencil = {1.0f, 0};
+    VkRenderPassBeginInfo rp{VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO};
+    rp.renderPass = shPass_; rp.framebuffer = shFbuf_;
+    rp.renderArea = {{0, 0}, {kShadowSide, kShadowSide}};
+    rp.clearValueCount = 1; rp.pClearValues = &clear;
+    vkCmdBeginRenderPass(cb_, &rp, VK_SUBPASS_CONTENTS_INLINE);
+    vkCmdBindPipeline(cb_, VK_PIPELINE_BIND_POINT_GRAPHICS, shPipe_);
+    vkCmdPushConstants(cb_, shPlo_, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof m, m);
+    for (const auto& d : casters) {
+        if (!d.geo || !d.count) continue;
+        const auto it = vbo_.find(d.geo);
+        if (it == vbo_.end()) continue;
+        VkDeviceSize off = 0;
+        vkCmdBindVertexBuffers(cb_, 0, 1, &it->second.first, &off);
+        vkCmdDraw(cb_, static_cast<uint32_t>(d.count), 1,
+                  static_cast<uint32_t>(d.start), 0);
+    }
+    vkCmdEndRenderPass(cb_);
+
+    if (shUboPtr_) {
+        ShadowUbo ub{};
+        std::memcpy(ub.lightMvp, m, sizeof m);
+        ub.strength = v.shadow.strength;
+        ub.texel = 1.0f / static_cast<float>(kShadowSide);
+        // In the slab's own 0..1 depth, one map texel of slope at the worst
+        // angle - enough to stop the ground shadowing itself.
+        ub.bias = 0.0015f;
+        std::memcpy(shUboPtr_, &ub, sizeof ub);
+    }
+    shadowLive_ = true;
+}
+
 void VulkanRenderer::begin(const omk::View& view) {
     st_ = omk::RasterStats{};
     fog_ = view.fog;
@@ -1297,10 +1637,22 @@ void VulkanRenderer::begin(const omk::View& view) {
         fogColour_[i] = static_cast<float>(view.fogColour[i]) / 255.0f;
     pushView(view);
 
-    VkCommandBufferBeginInfo bi{VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
-    bi.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-    vkResetCommandBuffer(cb_, 0);
-    vkBeginCommandBuffer(cb_, &bi);
+    // The shadow pass may already have opened it; it must be opened ONCE, and
+    // the depth pass has to be recorded before this render pass begins.
+    if (!cbStarted_) {
+        VkCommandBufferBeginInfo bi{VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
+        bi.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+        vkResetCommandBuffer(cb_, 0);
+        vkBeginCommandBuffer(cb_, &bi);
+        cbStarted_ = true;
+    }
+    // A frame with no shadow pass says so through the uniform, because the
+    // descriptor set is bound either way.
+    if (!shadowLive_ && shUboPtr_) {
+        ShadowUbo ub{};
+        ub.texel = 1.0f / static_cast<float>(kShadowSide);
+        std::memcpy(shUboPtr_, &ub, sizeof ub);
+    }
     VkClearValue clear[2]{};
     clear[0].color = {{0.0f, 0.0f, 0.0f, 1.0f}};   // black, as the engine clears
     clear[1].depthStencil = {1.0f, 0};   // depth far, stencil 0
@@ -1335,8 +1687,12 @@ void VulkanRenderer::submit(const omk::Draw& d) {
         (slot < tex_.size() && tex_[slot].ds != VK_NULL_HANDLE) ? tex_[slot].ds
                                                                 : white_.ds;
     vkCmdBindDescriptorSets(cb_, VK_PIPELINE_BIND_POINT_GRAPHICS, plo_, 0, 1, &ds, 0, nullptr);
+    if (ds1_ != VK_NULL_HANDLE)
+        vkCmdBindDescriptorSets(cb_, VK_PIPELINE_BIND_POINT_GRAPHICS, plo_, 1, 1,
+                                &ds1_, 0, nullptr);
 
     push_.cutout = d.cutout ? 1 : 0;
+    push_.caster = d.castsShadow ? 1 : 0;
     // THE FOG's two exclusions, applied here because this is where the bucket
     // key is - the same rule `renderer.cpp` applies for the software loop, and
     // it MUST be the same rule or the two backends draw different pictures.
@@ -1429,6 +1785,8 @@ void VulkanRenderer::end() {
     vkQueueSubmit(queue_, 1, &si, fence_);
     vkWaitForFences(dev_, 1, &fence_, VK_TRUE, UINT64_MAX);
     recording_ = false;
+    cbStarted_ = false;
+    shadowLive_ = false;
     dirty_ = true;
 }
 

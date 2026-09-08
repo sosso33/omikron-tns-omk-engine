@@ -1397,7 +1397,12 @@ int main(int argc, char** argv) {
 "  --density 0..4   how much crowd - the options menu\'s own row 6\n"
 "  --shadows 0|1    the character shadows - options row 5 (--no-shadows too)\n"
 "  --detail 0..2    how many bones cast one - options row 7\n"
-"  --shadow-quality classic|fitted   ENHANCEMENT: fitted lays each blob on the\n"
+"  --world-vulkan   draw the WORLD through an offscreen Vulkan renderer (a\n"
+"                   harness: it needs no window, so the GPU-only enhancements\n"
+"                   can be measured headlessly)\n"
+"  --shadow-quality classic|fitted|mapped  ENHANCEMENT: fitted lays each blob\n"
+"                   on the surface under it; mapped is a real shadow map, the\n"
+"                   Vulkan backend only\n"
 "                   surface under it instead of on a flat quad (default classic)\n"
 "  --config <ini>   the game's own config file - [Preferences], and this\n"
 "                   port's [Options] for density and level of detail\n"
@@ -1680,6 +1685,12 @@ int main(int argc, char** argv) {
     bool haveEye = false, haveAt = false, letterbox = false, startVulkan = false, noDelay = false;
     double speed = 1.0;                 // --speed: the frame delta's multiplier
     bool forceSoftware = false, showFps = false;
+    // A HARNESS flag, not a mode: draw the 3D world through a SURFACELESS
+    // Vulkan renderer while the frame is still presented (or dumped) the
+    // ordinary way. `--vulkan` needs a real window and therefore a real
+    // display, so nothing that only the GPU backend does - the mapped shadow,
+    // the MSAA, the filters - can otherwise be measured headlessly.
+    bool worldVulkan = false;
     for (int i = 3; i < argc; ++i) {
         const std::string a = argv[i];
         if (a == "--scene" && i + 1 < argc) scene = argv[++i];
@@ -1693,6 +1704,7 @@ int main(int argc, char** argv) {
         // The game uses Vulkan when the machine has it; this forces the
         // software reference, which is what every check is written against.
         else if (a == "--software") forceSoftware = true;
+        else if (a == "--world-vulkan") worldVulkan = true;
         // The frame rate, reported once a second on stdout. Off by default:
         // it is a diagnostic, and a game that prints every second when nobody
         // asked is a game with a line of noise under it.
@@ -2798,8 +2810,9 @@ int main(int argc, char** argv) {
     // and it cannot be avoided while anything is composited on the CPU.
     SDL_Window* vkWin = nullptr;
     omk::Renderer* vkRen = nullptr;
+    omk::Renderer* worldVk = nullptr;   // --world-vulkan, the offscreen harness
 #if defined(OMK_VULKAN)
-    if (!forceSoftware) {
+    if (!forceSoftware && !worldVulkan) {
         if (SDL_Init(SDL_INIT_VIDEO) == 0) {
             vkWin = SDL_CreateWindow("OMK Engine (vulkan)",
                                      SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
@@ -2837,6 +2850,23 @@ int main(int argc, char** argv) {
         return 1;
     }
     if (!vkRen) std::printf("renderer: the software reference\n");
+#if defined(OMK_VULKAN)
+    // ...and the harness: a Vulkan renderer with no surface, for the WORLD
+    // alone. `run_vulkan` and `shadow_probe` already prove the backend comes
+    // up offscreen; this is the same thing inside the viewer.
+    if (!vkRen && worldVulkan) {
+        omk::Renderer* wv = omk::makeVulkanRenderer();
+        if (wv && aaSamples > 1) wv->setMultisample(aaSamples);
+        if (wv && texFilter > 0) wv->setTextureFilter(texFilter);
+        if (wv && texAniso > 1) wv->setAnisotropy(texAniso);
+        if (wv && wv->init(dispW, dispH)) {
+            worldVk = wv;
+            std::printf("renderer: the world through VULKAN offscreen - %s "
+                        "(a harness; the frame is still presented on the CPU)\n",
+                        omk::vulkanDeviceName(wv));
+        } else { delete wv; std::printf("--world-vulkan: no offscreen device\n"); }
+    }
+#endif
     if (aaSamples > 1)
         std::printf("aa: %dx MSAA - an ENHANCEMENT the original never had; %s\n", aaSamples,
                     vkRen ? "drawn by the Vulkan backend"
@@ -3694,7 +3724,9 @@ int main(int argc, char** argv) {
     };
 
     omk::SoftwareRenderer worldSw;
-    omk::Renderer& world = vkRen ? *vkRen : static_cast<omk::Renderer&>(worldSw);
+    omk::Renderer& world = vkRen ? *vkRen
+                         : worldVk ? *worldVk
+                                   : static_cast<omk::Renderer&>(worldSw);
     bool worldReady = false;
     // THE SHOWN DECORS - one per resident slot, because TWO are drawn while
     // the player walks between areas. `Area_Transition`'s completion arm puts
@@ -3791,7 +3823,7 @@ int main(int argc, char** argv) {
     // construction, nonzero for a fitted one wherever the ground is not flat.
     float shadowSpreadMax = 0.0f, shadowSpreadPlayer = 0.0f;
     long shadowBlobsDrawn = 0;
-    bool shadowTold = false;
+    bool shadowTold = false, shadowLightTold = false;
     // `Area_LoadMiscModel`'s two constants.
     constexpr float kSkyScale = 12.5f;
     constexpr float kSkyLift  = 2250.0f;
@@ -3912,7 +3944,7 @@ int main(int argc, char** argv) {
         // The Vulkan one is already initialised - its swapchain had to exist
         // before the window could be presented to at all.
         if (!worldReady) {
-            if (!vkRen) worldSw.init(dispW, dispH);
+            if (!vkRen && !worldVk) worldSw.init(dispW, dispH);
             worldReady = true;
         }
         std::printf("world: slot %d set %s (AREA %d) - %zu corners, %zu batches, "
@@ -10402,6 +10434,122 @@ int main(int argc, char** argv) {
                     session.currentArea(), session.scene().file().c_str());
                 frameNote = buf;
             }
+            // ---- THE MAPPED SHADOW's LIGHT (`todo/enhancements.md` 6) --
+            //
+            // An ENHANCEMENT: nothing in the engine casts a real shadow. What
+            // keeps it from being an invented sun is where the direction comes
+            // from - the strongest of the SET's own `.3DO` light records
+            // reaching the casters, the same table and the same reach and
+            // falloff rules `applyLights` uses to light the crowd. With no
+            // light in reach nothing is drawn, which is honest: the port does
+            // not know where the light is, so it does not guess.
+            //
+            // Only characters cast. A set is shaded by a colour baked into
+            // every vertex and that colour ALREADY contains the artists'
+            // shadows (ASSETS 4c), so a map that darkened the set from the set
+            // would paint a second shadow over the first.
+            const bool castShadows = drawShadows && shadowQuality >= 2;
+            view.shadow = omk::View::ShadowLight{};
+            if (castShadows) {
+                float lo[3] = {1e30f, 1e30f, 1e30f}, hi[3] = {-1e30f, -1e30f, -1e30f};
+                bool any = false;
+                int bodies = 0;
+                // ...and only the bodies NEAR THE CAMERA. The slab is one
+                // 1024-texel map, so its width is its resolution: bounding
+                // every staged body in the city made it 7484 units across -
+                // 15 units a texel, which is a shadow the size of a torso.
+                // 1200 units is 30 m, past which a character's shadow is
+                // sub-pixel anyway. LABELLED as this port's number.
+                constexpr float kShadowRange = 1200.0f;
+                const auto bound = [&](const omk::Geometry& g) {
+                    if (g.corners.empty()) return;
+                    const auto& c0 = g.corners.front();
+                    const float dx = c0.x - view.cam.eye[0], dy = c0.y - view.cam.eye[1],
+                                dz = c0.z - view.cam.eye[2];
+                    if (dx * dx + dy * dy + dz * dz > kShadowRange * kShadowRange) return;
+                    for (const auto& c : g.corners) {
+                        const float p3[3] = {c.x, c.y, c.z};
+                        for (int k = 0; k < 3; ++k) {
+                            lo[k] = std::min(lo[k], p3[k]);
+                            hi[k] = std::max(hi[k], p3[k]);
+                        }
+                    }
+                    ++bodies;
+                    any = true;
+                };
+                if (drawPlayer && !playerPosed.corners.empty()) bound(playerPosed);
+                for (const auto& up : staged) if (up->drawn && up->mo) bound(up->posed);
+                for (const auto& up : pedStaged) if (up->drawn && up->mo) bound(up->posed);
+                if (any) {
+                    // ...CENTRED ON THE PLAYER, not on the bodies' midpoint.
+                    // A street's lamps reach about 700 units and eleven
+                    // scattered bodies put their midpoint out in the road
+                    // beyond all of them, so the light picked there was the
+                    // one distant fill that reaches everywhere - and its
+                    // shadow lands off the frame. One map, centred on the
+                    // character you are looking at; a body outside the slab
+                    // casts nothing, which is stated rather than hidden.
+                    float centre[3];
+                    if (drawPlayer && !playerPosed.corners.empty()) {
+                        float plo[3] = {1e30f, 1e30f, 1e30f}, phi[3] = {-1e30f, -1e30f, -1e30f};
+                        for (const auto& c : playerPosed.corners) {
+                            const float q[3] = {c.x, c.y, c.z};
+                            for (int k = 0; k < 3; ++k) {
+                                plo[k] = std::min(plo[k], q[k]);
+                                phi[k] = std::max(phi[k], q[k]);
+                            }
+                        }
+                        for (int k = 0; k < 3; ++k) centre[k] = (plo[k] + phi[k]) * 0.5f;
+                    } else {
+                        for (int k = 0; k < 3; ++k) centre[k] = (lo[k] + hi[k]) * 0.5f;
+                    }
+                    // Enough for a body and the throw of its shadow under a
+                    // steep light; this port's number, and the resolution is
+                    // its width (1024 texels over the slab).
+                    float rad = 220.0f;
+                    const omk::Light3do* best = nullptr;
+                    float bestK = 0.0f;
+                    for (const WorldSlot& ws2 : worldSlots)
+                        if (!ws2.lights.empty()) {
+                            float k = 0.0f;
+                            const omk::Light3do* l =
+                                omk::strongestLightAt(centre, ws2.lights, &k);
+                            if (l && k > bestK) { bestK = k; best = l; }
+                        }
+                    if (best) {
+                        view.shadow.on = true;
+                        for (int k = 0; k < 3; ++k) {
+                            view.shadow.dir[k] = best->dir[k];
+                            view.shadow.centre[k] = centre[k];
+                        }
+                        view.shadow.radius = rad;
+                        view.shadow.strength = 0.6f;
+                        static const bool shLog = std::getenv("OMK_SHADOWLOG") != nullptr;
+                        if (!shadowLightTold || (shLog && (n % 30) == 0)) {
+                            shadowLightTold = true;
+                            std::printf("frame %ld: mapped shadows - light '%s' at "
+                                        "%.0f %.0f %.0f, direction %.2f %.2f %.2f, "
+                                        "slab radius %.0f over %d bodies, asked at "
+                                        "%.0f %.0f %.0f\n", n, best->name.c_str(),
+                                        static_cast<double>(best->pos[0]),
+                                        static_cast<double>(best->pos[1]),
+                                        static_cast<double>(best->pos[2]),
+                                        static_cast<double>(best->dir[0]),
+                                        static_cast<double>(best->dir[1]),
+                                        static_cast<double>(best->dir[2]),
+                                        static_cast<double>(rad), bodies,
+                                        static_cast<double>(centre[0]),
+                                        static_cast<double>(centre[1]),
+                                        static_cast<double>(centre[2]));
+                        }
+                    } else if (!shadowLightTold) {
+                        shadowLightTold = true;
+                        std::printf("frame %ld: mapped shadows asked for, but no set light "
+                                    "reaches the cast - nothing drawn (the port does not "
+                                    "invent a sun)\n", n);
+                    }
+                }
+            }
             // ---- THE SHADOWS ------------------------------------------
             //
             // `Actors_TickAll` calls `Actor_DrawShadow(detail, actor)` for
@@ -10420,7 +10568,9 @@ int main(int argc, char** argv) {
             shadowGeo.cornerMesh.clear();
             shadowGeo.cornerVertex.clear();
             shadowGeo.cornerDeclared.clear();
-            if (drawShadows && shadowModel.loaded && !playerSoup.empty()) {
+            // ...and only up to `fitted`: a MAPPED frame replaces the blobs
+            // with a real shadow rather than drawing both.
+            if (drawShadows && shadowQuality < 2 && shadowModel.loaded && !playerSoup.empty()) {
                 // Option row 7. The player and the fight opponent get it
                 // whole; every other actor gets it MINUS ONE, so an npc always
                 // casts one tier coarser.
@@ -10615,7 +10765,8 @@ int main(int argc, char** argv) {
                 for (const auto& b : up->posed.batches)
                     draws.push_back({keyOf(b.blend, b.cutout,
                                            static_cast<std::uint32_t>(b.material + base)),
-                                     &up->posed, b.start, b.count, b.blend, b.cutout});
+                                     &up->posed, b.start, b.count, b.blend, b.cutout,
+                                     castShadows});
             }
             for (const auto& up : pedStaged) {
                 if (!up->drawn || !up->mo) continue;
@@ -10623,7 +10774,8 @@ int main(int argc, char** argv) {
                 for (const auto& b : up->posed.batches)
                     draws.push_back({keyOf(b.blend, b.cutout,
                                            static_cast<std::uint32_t>(b.material + base)),
-                                     &up->posed, b.start, b.count, b.blend, b.cutout});
+                                     &up->posed, b.start, b.count, b.blend, b.cutout,
+                                     castShadows});
             }
             for (const auto& up : vehStaged) {
                 if (!up->drawn || !up->mo) continue;
@@ -10631,13 +10783,15 @@ int main(int argc, char** argv) {
                 for (const auto& b : up->posed.batches)
                     draws.push_back({keyOf(b.blend, b.cutout,
                                            static_cast<std::uint32_t>(b.material + base)),
-                                     &up->posed, b.start, b.count, b.blend, b.cutout});
+                                     &up->posed, b.start, b.count, b.blend, b.cutout,
+                                     castShadows});
             }
             if (drawPlayer)
                 for (const auto& b : playerPosed.batches)
                     draws.push_back({keyOf(b.blend, b.cutout, static_cast<std::uint32_t>(
                                                b.material + static_cast<int>(playerTexBase))),
-                                     &playerPosed, b.start, b.count, b.blend, b.cutout});
+                                     &playerPosed, b.start, b.count, b.blend, b.cutout,
+                                     castShadows});
             // The props, each batch through its own model's pool section.
             for (std::size_t bi = 0; bi < propGeo.batches.size(); ++bi) {
                 const auto& b = propGeo.batches[bi];

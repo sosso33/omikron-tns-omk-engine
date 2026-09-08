@@ -121,6 +121,32 @@ struct View {
     float fogStart = 0.0f;
     float fogEnd   = 0.0f;
     std::uint8_t fogColour[3] = {0, 0, 0};   // r, g, b
+
+    // ------------------------------------------- THE SHADOW MAP's LIGHT
+    //
+    // `todo/enhancements.md` row 6, and OFF unless `shadowquality = mapped`.
+    // Nothing in the engine casts a real shadow, so this is an ENHANCEMENT and
+    // not a ported decision - which is why it sits behind a flag and why a
+    // backend is free to ignore it. The software reference does, so its
+    // picture is still the one the original drew.
+    //
+    // The light is NOT invented: it is the strongest of the set's own `.3DO`
+    // light records reaching the casters (`o3de/vertexlight.h`), whose every
+    // engine call site is street life - the lights that light the crowd. With
+    // none in reach `on` stays false and nothing is drawn.
+    //
+    // `centre` and `radius` bound the CASTERS, not the scene: the depth map is
+    // an orthographic slab fitted to them, so a fragment outside it is lit by
+    // definition. That is what keeps a characters-only shadow from darkening
+    // the far end of a street.
+    struct ShadowLight {
+        bool  on = false;
+        float dir[3]  = {0, -1, 0};   // unit, pointing the way the light travels
+        float centre[3] = {0, 0, 0};  // the casters' centre
+        float radius  = 0.0f;         // ...and the sphere around them
+        float strength = 0.6f;        // how dark the shadow is, 0..1
+    };
+    ShadowLight shadow;
 };
 
 // One submission. This is the whole vocabulary a backend gets, and every field
@@ -144,6 +170,12 @@ struct Draw {
     std::size_t     count     = 0;
     Blend           blend     = Blend::Opaque;
     bool            cutout    = false;
+    // Row 6 again: whether this batch goes into the shadow map's depth pass.
+    // Only characters do, and that is a constraint rather than a saving - a
+    // set is shaded by a colour baked into every vertex which ALREADY contains
+    // the artists' shadows (ASSETS 4c), so a map that darkened the set from
+    // the set would double-darken every corner it painted once.
+    bool            castsShadow = false;
 };
 
 class Renderer {
@@ -194,6 +226,11 @@ public:
     // `0x100000`. What the backend chooses is only HOW to confine the
     // reflection to the mirror's area: a stencil, here. That split is A2's -
     // a backend turns decisions into API calls and makes none of its own.
+    // The DEPTH PASS from the light, recorded before the frame's own pass.
+    // Default: do nothing, which is what a backend without a shadow map
+    // answers and what the software reference answers on purpose.
+    virtual void shadowPass(const View& /*v*/, std::span<const Draw> /*casters*/) {}
+
     virtual bool drawMirrorScene(const View& /*v*/, const View& /*reflected*/,
                                  std::span<const Draw> /*scene*/,
                                  std::span<const Draw> /*sceneClipped*/,

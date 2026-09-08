@@ -178,6 +178,17 @@ std::vector<Draw> inFrontOf(const std::vector<Draw>& in,
 }
 
 void runPass(Renderer& r, const View& v, const std::vector<Draw>& ds) {
+    // THE SHADOW MAP's depth pass, before the frame's own - `todo/enhancements`
+    // row 6, and a no-op on every backend that does not implement it. Only the
+    // batches flagged `castsShadow` go in; see `renderer.h`'s View for why
+    // that is characters alone.
+    { static bool t=false; if(!t){t=true; long c=0; for(const auto&d:ds) if(d.castsShadow)++c;
+        std::fprintf(stderr,"[runPass] on=%d casters=%ld\n", v.shadow.on?1:0, c);} }
+    if (v.shadow.on) {
+        std::vector<Draw> casters;
+        for (const auto& d : ds) if (d.castsShadow) casters.push_back(d);
+        if (!casters.empty()) r.shadowPass(v, casters);
+    }
     r.begin(v);
     for (const auto& d : ds) r.submit(d);
     r.end();

@@ -8,7 +8,8 @@ layout(push_constant) uniform Push {
     int   cutout;      // flag 0x800: a colour key on black, never alpha
     float fogStart;    // 0 = no fog for this batch; see renderer.h's View
     float fogEnd;
-    vec3  fogColour;
+    int   caster;      // a caster does not receive; see scene.frag
+    vec3  fogColour;   // 16-BYTE ALIGNED, so it must come last - see scene.frag
 } pc;
 
 layout(location = 0) in vec3 inPos;    // world position
@@ -21,10 +22,15 @@ layout(location = 1) out vec3 vCol;
 // `f . (world - eye)` - the forward axis dotted with the offset from the eye -
 // so `gl_Position.w` is exactly the `z` raster.cpp's inner loop fogs on.
 layout(location = 2) out float vDepth;
+// The WORLD position, which the fragment stage needs to look itself up in the
+// shadow map. Carried rather than reconstructed: the map's matrix is a
+// separate transform and there is no inverse of `mvp` here.
+layout(location = 3) out vec3 vWorld;
 
 void main() {
     vUV  = inUV;
     vCol = inCol;
+    vWorld = inPos;
     gl_Position = pc.mvp * vec4(inPos, 1.0);
     vDepth = gl_Position.w;
 }

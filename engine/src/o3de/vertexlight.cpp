@@ -5,6 +5,24 @@
 
 namespace omk {
 
+const Light3do* strongestLightAt(const float p[3], std::span<const Light3do> lights,
+                                 float* kOut) {
+    const Light3do* best = nullptr;
+    float bestK = 0.0f;
+    for (const Light3do& l : lights) {
+        const float dx = p[0] - l.pos[0], dy = p[1] - l.pos[1], dz = p[2] - l.pos[2];
+        const float d2 = dx * dx + dy * dy + dz * dz;
+        if (!(d2 <= l.radiusA * l.radiusA)) continue;
+        if (!(l.radiusA > l.radiusB)) continue;
+        float fall = 1.0f - (std::sqrt(d2) - l.radiusB) / (l.radiusA - l.radiusB);
+        if (fall > 1.0f) fall = 1.0f;
+        const float k = l.f32 * 256.0f * fall;
+        if (k > bestK) { bestK = k; best = &l; }
+    }
+    if (kOut) *kOut = bestK;
+    return best;
+}
+
 int applyLights(Geometry& g, std::size_t first, std::size_t count,
                 const float bodyPos[3], std::span<const Light3do> lights) {
     if (count == 0 || first + count > g.corners.size()) return 0;

@@ -3154,6 +3154,25 @@ multiplies needs a buffer or a stencil, so row 6 inherits it. Check:
 `engine: fitted shadows` (shown to fail: drop the per-vertex probe and the
 stairs figure goes to 0).
 
+**And 2026-09-09, MAPPED SHADOWS** (`todo/enhancements.md` 6) - a real shadow
+map, and the first thing in this port that adds a render pass the original
+never had. The boundary grows by two fields and one virtual: an optional light
+on `View`, `castsShadow` on `Draw`, and `Renderer::shadowPass` whose default is
+a NO-OP - so the software reference ignores it and still draws what the
+original drew. The Vulkan backend renders the casters depth-only into a
+1024x1024 map from an ORTHOGRAPHIC slab fitted to them and samples it with 3x3
+PCF. The light is the set's own: 153 of Anekbah's 155 `.3DO` lights point
+within 30 degrees of straight down, and `strongestLightAt` picks by
+`applyLights`'s own reach and falloff at the player. Characters cast, the world
+receives, and a caster does not receive its own. Three faults found by
+measuring rather than reading: `setTextures` resets the descriptor pool and
+freed the shadow's set; a `vec3` in a push block is 16-byte aligned, which had
+`fogColour` four bytes out of place since the fog landed and went unseen only
+because the shipped fog is black; and the slab was centred on the cast's
+midpoint, which is out in the road beyond every lamp. `--world-vulkan` is the
+new harness that made any of this measurable without a window. Check:
+`engine: mapped shadows` (shown to fail).
+
 **And 2026-09-04, the ROAD TRAFFIC** (`docs/STREET_LIFE.md` §2b,
 `todo/road-traffic.md`) — the vehicle half of the same circuit:
 `actor/vehicles.cpp` is `Slider_Init`'s vehicle branch (the two model tables
