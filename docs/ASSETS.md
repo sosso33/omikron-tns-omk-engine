@@ -1957,6 +1957,101 @@ records at `scene[8]` (169 of them in ANEKBAH) decoded first. That decode is
 
 ---
 
+## 4d. The character SHADOWS — one soft blob per bone
+
+Option row 5 *Affichage des ombres* (`g_OptDisplayShadows`, save header `+17`,
+ini key `displayshadows`). There is no shadow pass and no projector. There is
+one shipped quad and a per-frame fan of copies of it.
+
+### The asset
+
+`MESHES\MISC\shadows.3DO` is **804 bytes**: one mesh named
+`Shadow Soustract`, four vertices, one quad, one material `SHOOT` on a 256×256
+`SHOOT.BMP`. Mesh flags **0x5000** = `0x1000|0x4000`, which §4b's table
+decodes as the **multiply** bucket — and §4b also establishes that the
+multiply is `dst × (1 − src)`, D3DBLEND 4 being `INVSRCCOLOR`. The quad's UVs
+name the 31×30 patch at (129..159, 225..254), and that patch is a **soft white
+disc on black**: bright at the centre, 0 at all four corners. Under that blend
+a bright source darkens the frame and a black one leaves it alone, which is
+why the disc is stored bright.
+
+`sub_419060` — the same game-start function that loads `aventure.scx` — loads
+it once, finds node 0 and gives it alpha 0.5 and a uniform scale of **0.07**.
+`Shadow_CloneNode` (0x0041D120) clones the subtree; `Actor_LoadModel` stores
+one clone per actor at `actor+80` and `sub_453ED0` stores one per pedestrian
+at the crowd record's `+60`.
+
+### The actor path — `Actor_DrawShadow` (0x00467E20)
+
+`Actors_TickAll` calls it once per live actor, passing option row 7 (the level
+of detail, `SBYTE3(dword_90E724)`) **whole** for the player and the fight
+opponent and **minus one** for everybody else. It is skipped in `ACTOR_STATE`
+7 and 11..14 — the slider mount and the water states — and the switch has no
+default arm, so a level of **3 or more draws nothing at all**.
+
+| level | bones | divisor | reach |
+|---|---|---|---|
+| 2 | `Brasd` `Brasg` `Avantd` `Avantg` | 14 | 70.87 (1.8 m) |
+| 1+ | `Tete` | 12 | 70.87 (1.8 m) |
+| 1+ | `Cuisseg` `Cuissed` `Jambeg` `Jambed` | 12 | 55.12 (1.4 m) |
+| 0+ | `Buste` | 10 | 141.73 (3.6 m) |
+
+The divisor global is installed once per **group** and the arms fall through
+into the head and legs and then into the chest, so one call at level 2 emits
+all ten. The three reaches are round **metres** against the inch world unit —
+the same 0.0254 `Sound_Init` tells DirectSound about. Hands and feet never
+cast.
+
+### The blob — `Shadow_EmitBoneBlob` (0x00467A00)
+
+Per bone, written straight into the frame's vertex and triangle pools:
+
+1. `f = min(mesh[+88] / divisor, 1.5)` — the bone's own **bounding-sphere
+   radius**, so a thicker bone casts a wider blob, up to a ceiling. For
+   HO1_FNM: `Buste` 9.74, `Jambed` 11.82, `Tete` 5.71.
+2. `World_ProbePoint(-1, …)` straight down from the bone's node position.
+   Further than the reach and **nothing is emitted** — which is why a
+   character who leaves the ground loses his shadow from the feet up.
+3. The colour is one grey byte in all three channels,
+   `255 − dist × 255 / reach` — white in contact, black at the limit. Under
+   `dst × (1 − src)` that is a solid shadow **fading to nothing as the bone
+   rises**, and the fade is the vertex colour and nothing else. No alpha is
+   read: §4b's blend note applies here too.
+4. Five vertices — the four corners at the bone's x/z plus the model quad
+   scaled by `0.07 × f`, and a **centre** at the bone's own x/z — all at the
+   probed floor minus **1.0** (`g_ShadowLift`; Y grows down, so that is one
+   unit up). Then **four triangles fanned to that centre**, each carrying two
+   of the quad's UV pairs and the average of the four for the centre.
+
+The five vertices are appended whether or not the probe hit; only the
+triangles are gated on it.
+
+Ten blobs overlap under a standing character and each multiplies, so the pool
+under his feet goes nearly black. That is the mechanism and not an artefact.
+
+### The crowd path — `Slider_PlaceShadow` (0x00467F50)
+
+`Sliders_Tick`'s walkers get a different one: **one whole node**, not a fan.
+It goes at the **midpoint of the walker's two feet** — `Piedg` and `Piedd`,
+bound into the pedestrian record's `+64`/`+68` at spawn by `sub_41E210` — at
+the probed floor **minus 2**, turned to lie along the floor's normal, and then
+drawn like any other mesh. So it is full strength at the clone's own scale,
+carries no radius factor and does not fade as the feet lift. Gated by
+`g_OptDisplayShadows` and by bit 0 of the mover's `+80`.
+
+### The trap: the bones are found by `strstr`
+
+`o3de_FindMeshByName` (0x00436D90) is not a comparison. `sub_436D60` is
+`strstr(mesh + 16, wanted)` and the traverse keeps the **last** match. Every
+bone of every character model carries a prefix — HO1_FNM's are `UBuste`,
+`UTete`, `UPiedg`, and a crowd model's are `Ph…`/`Pi…`/`Pm…`/`Pw…`, one set
+per LOD skeleton — so an equality test matches **0 of the ten** bone names and
+the whole mechanism silently draws nothing.
+
+`verify.py: shadow model`, `engine: character shadow`.
+
+---
+
 ## 5. Not established
 
 * The remaining `.3DO` sections — doors, cameras and lights are parsed by the

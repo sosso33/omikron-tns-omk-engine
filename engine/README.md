@@ -3106,6 +3106,30 @@ clamped to 1 where the engine has an undecoded guard. `--no-crowd-light` is
 the before/after. Check: `engine vertex light`; the reading is pinned by
 `mesh lights`, `light record` and `light consumers`.
 
+**And 2026-09-08, the CHARACTER SHADOWS** (`docs/ASSETS.md` §4d,
+`o3de/shadow.{h,cpp}`) — option row 5, which the settings layer had been
+carrying since 2026-09-05 and nothing drew. There is no shadow pass to port:
+the engine has ONE shipped quad, `MESHES\MISC\shadows.3DO`, mesh flags 0x5000
+(the multiply bucket, `dst × (1 − src)`) over a soft white disc on black, and
+`Actor_DrawShadow` writes copies of it into the frame's own pools under a
+fixed set of BONES each frame. Ported whole: the ten bones and which of them
+option row 7 reaches (the switch's fall-through, and its missing default arm
+that makes a level of 3 draw nothing), the divisor over the bone's own
+bounding-sphere radius clamped at 1.5, the three reaches in round metres, the
+`255 − dist × 255 / reach` grey that fades the blob out as the bone rises, the
+one-unit lift and the four-triangle fan to a centre vertex — and the crowd's
+separate `Slider_PlaceShadow` node at the midpoint of `Piedg` and `Piedd`.
+The one thing that had to be got right or nothing draws at all: the bones are
+found by `strstr` on the LAST match, not by comparison, and every character
+bone carries a prefix (`UBuste`, `PhPiedg`). Declared deviations: the crowd
+blob's alignment to the floor normal is the minimal rotation rather than the
+engine's two-angle solve (identical on flat ground, which is where a crowd
+walks), and the port has no `ACTOR_STATE` gate on the emission yet, so a
+character in the water or on a slider still casts. Not frame-verified: no
+capture in this tree shows a shipped shadow, so the SIZE is data-constrained.
+Flags: `--shadows 0|1`, `--no-shadows`, `--detail 0..2`. Checks:
+`shadow model`, `engine: character shadow`.
+
 **And 2026-09-04, the ROAD TRAFFIC** (`docs/STREET_LIFE.md` §2b,
 `todo/road-traffic.md`) — the vehicle half of the same circuit:
 `actor/vehicles.cpp` is `Slider_Init`'s vehicle branch (the two model tables

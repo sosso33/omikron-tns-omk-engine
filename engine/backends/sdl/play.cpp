@@ -49,6 +49,7 @@
 #include "o3de/collision.h"
 #include "o3de/geom3do.h"
 #include "o3de/particles.h"
+#include "o3de/shadow.h"
 #include "audio/mixer.h"
 #include "audio/music.h"
 #include "audio/voiceover.h"
@@ -1394,6 +1395,8 @@ int main(int argc, char** argv) {
 "                   harness: no pool, no reservation, no arrival)\n"
 "  --stand x,y,z[,facing]   an explicit spot instead of an address\n"
 "  --density 0..4   how much crowd - the options menu\'s own row 6\n"
+"  --shadows 0|1    the character shadows - options row 5 (--no-shadows too)\n"
+"  --detail 0..2    how many bones cast one - options row 7\n"
 "  --config <ini>   the game's own config file - [Preferences], and this\n"
 "                   port's [Options] for density and level of detail\n"
 "  --clip <metres>  options row 3, the clip distance (25/50/100/150/200);\n"
@@ -1605,6 +1608,8 @@ int main(int argc, char** argv) {
     bool densityFlag = false, clipFlag = false;
     int clipArg = 0;
     int skyFlag = -1;      // --sky 0|1, options row 4; -1 = take it from the settings
+    int shadowFlag = -1;   // --shadows 0|1, options row 5; -1 = the settings'
+    int detailFlag = -1;   // --detail 0..2, options row 7; -1 = the settings'
     int aaFlag = -1;       // --aa N, [Enhancements] antialiasing; -1 = the settings'
     int filterFlag = -1;   // --filter nearest|bilinear|trilinear, [Enhancements] texturefiltering
     int anisoFlag = -1;    // --anisotropy N, [Enhancements] anisotropy
@@ -1752,6 +1757,9 @@ int main(int argc, char** argv) {
         else if (a == "--newgame-world") newWorld = true;
         else if (a == "--scene-chunk" && i + 1 < argc) sceneChunk = std::atoi(argv[++i]);
         else if (a == "--density" && i + 1 < argc) { density = std::atoi(argv[++i]); densityFlag = true; }
+        else if (a == "--shadows" && i + 1 < argc) shadowFlag = std::atoi(argv[++i]);
+        else if (a == "--no-shadows") shadowFlag = 0;
+        else if (a == "--detail" && i + 1 < argc) detailFlag = std::atoi(argv[++i]);
         else if (a == "--config" && i + 1 < argc) configFile = argv[++i];
         else if (a == "--clip" && i + 1 < argc) { clipArg = std::atoi(argv[++i]); clipFlag = true; }
         else if (a == "--sky" && i + 1 < argc) skyFlag = std::atoi(argv[++i]);
@@ -1972,6 +1980,9 @@ int main(int argc, char** argv) {
     long flickEvent = -1, flickQuietUntil = -1;
     constexpr int kFlickPre = 3, kFlickPost = 3, kFlickWindow = 31;
     const bool drawSky = skyFlag >= 0 ? skyFlag != 0 : settings.v.sky;
+    // Options rows 5 and 7, with a flag beating the save the way --sky does.
+    const bool drawShadows = shadowFlag >= 0 ? shadowFlag != 0 : settings.v.shadows;
+    const int  shadowDetail = detailFlag >= 0 ? detailFlag : settings.v.levelOfDetail;
     // The enhancement: OFF unless --aa or [Enhancements] said otherwise.
     const int aaSamples = aaFlag >= 0 ? aaFlag : settings.antiAliasing;
     const int texFilter = filterFlag >= 0 ? filterFlag : settings.textureFilter;
@@ -2650,6 +2661,8 @@ int main(int argc, char** argv) {
     bool  mirrorSeen = false;         // ...and has actually covered a pixel
     float playerHeadAt[3] = {0, 0, 0};   // the player's `Tete`, for subject kinds 0/1
     bool  playerHeadKnown = false;
+    std::vector<float> playerMeshAt;     // ...and every mesh, for the shadow
+    bool  playerMeshAtKnown = false;
     int   placementSeen = 0;      // Session::placementSeq() as last consumed
     long  heldFrames = 0;         // frames under player.anim.hold
     // The `media.play` SUBTITLE: `Subtitle_Show(unk_4E6268)` is step 13 of
@@ -3078,6 +3091,12 @@ int main(int argc, char** argv) {
         // ask for one of the two. Recorded as the body is posed and read a
         // frame later by the camera block, which runs earlier in the frame.
         float headAt[3] = {0, 0, 0};
+        // EVERY MESH'S WORLD POSITION, filled by the same transform that
+        // places `headAt` - what the shadow needs, because
+        // `Shadow_EmitBoneBlob` probes from the BONE NODE'S OWN ORIGIN
+        // (`node+44/48/52`) rather than from anything in the drawn corners.
+        // Three floats a mesh, empty when the body was not placed this frame.
+        std::vector<float> meshAt;
         bool  headKnown = false;
         // `Morph_Play` reads the node's world heading ONCE, when the line
         // starts, and `sub_42BE00` hands the morph that yaw for its whole
@@ -3138,6 +3157,11 @@ int main(int argc, char** argv) {
         float feet = 0.0f;
         bool  feetKnown = false;
         bool  drawn = false;
+        // `Piedg` and `Piedd` in world space - `Slider_PlaceShadow`'s two
+        // nodes, bound into the pedestrian record at spawn by
+        // `sub_41E210(aPiedg, model, &ped[16])`.
+        float footAt[2][3] = {};
+        bool  footKnown = false;
     };
     std::vector<std::unique_ptr<PedStaged>> pedStaged;
     std::map<std::string, std::map<int, omk::Geometry>> pedLodRest;   // model -> root mesh -> its subtree's rest
@@ -3729,6 +3753,22 @@ int main(int argc, char** argv) {
         float origin[3] = {0, 0, 0};       // node 0's own position
     };
     Sky sky;
+    // ---------------------------------------------------- THE SHADOWS
+    //
+    // Option row 5 *Affichage des ombres*. `sub_419060` loads
+    // `MESHES\MISC\shadows.3DO` once at game start, `Actor_LoadModel` clones
+    // it under every character, and `Actors_TickAll` emits blobs under a
+    // fixed set of BONES each frame - see `o3de/shadow.h` for the whole
+    // mechanism. Loaded once here for the same reason the engine loads it
+    // once: it is not a set's asset and no area change touches it.
+    const omk::ShadowModel shadowModel = omk::loadShadowModel(fs);
+    // Rebuilt every frame into this one object, outside the loop so the
+    // revision accumulates - the same rule `fxGeo` above states, and for the
+    // same backend-side reason.
+    omk::Geometry shadowGeo;
+    std::size_t shadowTexBase = 0;
+    long shadowBlobsDrawn = 0;
+    bool shadowTold = false;
     // `Area_LoadMiscModel`'s two constants.
     constexpr float kSkyScale = 12.5f;
     constexpr float kSkyLift  = 2250.0f;
@@ -7512,12 +7552,25 @@ int main(int argc, char** argv) {
                     loadWorldSlot(slot, want, wantArea);
                     changed = true;
                 }
-                // THE SKY follows slot 0's area, because `Area_LoadMiscModel`
-                // keeps ONE model globally rather than one per slot - a second
-                // area naming a different sky replaces it, and one naming none
-                // (`*a1` false) leaves the previous standing rather than
-                // clearing it. Loaded here so it arrives with the set.
-                if (slot == 0) {
+                // THE SKY IS GLOBAL AND EITHER SLOT CAN BRING IT.
+                //
+                // `Area_LoadMiscModel` keeps ONE model rather than one per
+                // slot: `Area_TickLoad` case 4 calls it for the area being
+                // loaded, so an area naming a sky REPLACES whatever is there
+                // and one naming none (`*a1` false) leaves the previous
+                // standing rather than clearing it. Loaded here so it arrives
+                // with the set.
+                //
+                // **This asked slot 0 only, and that is a fault a reader
+                // met**: *it happens when I load a save located in a
+                // building*. A load puts its own area in slot 0, so walking
+                // out of it lands the city in SLOT 1 - their own session log
+                // has `SHOW area 217 in slot 0` and then `SHOW area 0 in slot
+                // 1` - and Anekbah's `ASKY` was never asked for. Load in the
+                // street instead and the same area arrives in slot 0 and the
+                // sky is there, which is why it looked like a black sky "in
+                // some cases".
+                {
                     const std::string wantSky = shown ? rs.sky : std::string();
                     if (!wantSky.empty() && wantSky != sky.stem) {
                         sky = Sky{};
@@ -8528,6 +8581,11 @@ int main(int argc, char** argv) {
                 // section: a batch's slot is its material plus its own base
                 sky.texBase = pool.size();
                 pool.insert(pool.end(), sky.tex.begin(), sky.tex.end());
+                // THE SHADOW's one texture, on the same rule. It is resident
+                // for the whole run rather than per set, because the engine
+                // loads the model once at game start and never frees it.
+                shadowTexBase = pool.size();
+                pool.insert(pool.end(), shadowModel.tex.begin(), shadowModel.tex.end());
                 playerTexBase = pool.size();
                 if (drawPlayer) pool.insert(pool.end(), playerTex.begin(), playerTex.end());
                 spriteTexBase = pool.size();
@@ -9381,6 +9439,22 @@ int main(int argc, char** argv) {
                     }
                     s.headKnown = true;
                 }
+                // ...and every mesh, on the same transform, for the shadow.
+                s.meshAt.assign(pose.size() * 3, 0.0f);
+                for (std::size_t mi = 0; mi < pose.size(); ++mi) {
+                    const float mp[3] = {pose[mi].pos[0] - pelvis[0],
+                                         pose[mi].pos[1] - pelvis[1],
+                                         pose[mi].pos[2] - pelvis[2]};
+                    float r[3];
+                    const bool spins = std::fabs(bodyYaw) > 0.01f;
+                    omk::rotateYaw(spins && aboutPelvis ? bodyYaw : 0.0f, mp, r);
+                    for (int k = 0; k < 3; ++k) r[k] += pelvis[k] + off[k];
+                    if (spins && !aboutPelvis) {
+                        const float in[3] = {r[0], r[1], r[2]};
+                        omk::rotateYaw(bodyYaw, in, r);
+                    }
+                    for (int k = 0; k < 3; ++k) s.meshAt[mi * 3 + static_cast<std::size_t>(k)] = r[k];
+                }
                 const bool turn = std::fabs(bodyYaw) > 0.01f;
                 for (auto& c : s.posed.corners) {
                     if (turn && !aboutPelvis) {
@@ -9580,6 +9654,26 @@ int main(int argc, char** argv) {
                         float rn[3];
                         omk::rotateYaw(w.facing, n, rn);
                         c.nx = rn[0]; c.ny = rn[1]; c.nz = rn[2];
+                    }
+                    // `Slider_PlaceShadow`'s two nodes, on the same transform.
+                    p.footKnown = false;
+                    {
+                        const int fi[2] = {omk::findMeshContaining(p.mo->meshes, "Piedg"),
+                                           omk::findMeshContaining(p.mo->meshes, "Piedd")};
+                        if (fi[0] >= 0 && fi[1] >= 0 &&
+                            static_cast<std::size_t>(fi[0]) < pose.size() &&
+                            static_cast<std::size_t>(fi[1]) < pose.size()) {
+                            for (int f = 0; f < 2; ++f) {
+                                const auto& mp = pose[static_cast<std::size_t>(fi[f])].pos;
+                                const float in[3] = {mp[0] - rootXZ[0], mp[1], mp[2] - rootXZ[1]};
+                                float r[3];
+                                omk::rotateYaw(w.facing, in, r);
+                                p.footAt[f][0] = r[0] + w.body[0];
+                                p.footAt[f][1] = r[1] + w.body[1] + w.footY - p.feet;
+                                p.footAt[f][2] = r[2] + w.body[2];
+                            }
+                            p.footKnown = true;
+                        }
                     }
                     // THE DYNAMIC LIGHTS (`o3de/vertexlight.h`). `sub_4380B0`
                     // registers a walker in the same structure the set's
@@ -9989,6 +10083,18 @@ int main(int argc, char** argv) {
                     playerHeadAt[2] = r[2] + pp[2];
                     playerHeadKnown = true;
                 }
+                playerMeshAt.assign(pose.size() * 3, 0.0f);
+                for (std::size_t mi = 0; mi < pose.size(); ++mi) {
+                    const float in[3] = {pose[mi].pos[0] - playerRootXZ[0],
+                                         pose[mi].pos[1],
+                                         pose[mi].pos[2] - playerRootXZ[1]};
+                    float r[3];
+                    omk::rotateYaw(yaw, in, r);
+                    playerMeshAt[mi * 3 + 0] = r[0] + pp[0];
+                    playerMeshAt[mi * 3 + 1] = r[1] + pp[1] - playerFeet + rootDrop;
+                    playerMeshAt[mi * 3 + 2] = r[2] + pp[2];
+                }
+                playerMeshAtKnown = true;
                 lastRootDrop = rootDrop;
                 playerPosed.revision = ++worldGeoRev;
                 for (int k = 0; k < 3; ++k) actorAt[k] = pp[k];
@@ -10259,6 +10365,122 @@ int main(int argc, char** argv) {
                     runsDrawn, runsCulled, litBodies,
                     session.currentArea(), session.scene().file().c_str());
                 frameNote = buf;
+            }
+            // ---- THE SHADOWS ------------------------------------------
+            //
+            // `Actors_TickAll` calls `Actor_DrawShadow(detail, actor)` for
+            // every live actor and `Sliders_Tick` places the crowd's, both
+            // behind option row 5. Built here, after every body has been
+            // placed and before the draw list is sorted, because the blobs
+            // are FRAME GEOMETRY - the engine writes them straight into the
+            // scene's vertex and triangle pools each frame, not into a node.
+            //
+            // The probe is the walkable soup, which is what the bodies are
+            // seated on; the engine's `World_ProbePoint(-1, ...)` runs on the
+            // same collision geometry.
+            shadowGeo.corners.clear();
+            shadowGeo.batches.clear();
+            shadowGeo.cornerMirror.clear();
+            shadowGeo.cornerMesh.clear();
+            shadowGeo.cornerVertex.clear();
+            shadowGeo.cornerDeclared.clear();
+            if (drawShadows && shadowModel.loaded && !playerSoup.empty()) {
+                // Option row 7. The player and the fight opponent get it
+                // whole; every other actor gets it MINUS ONE, so an npc always
+                // casts one tier coarser.
+                const int detail = shadowDetail;
+                long blobs = 0, nPlayer = 0, nActor = 0, nCrowd = 0;
+                long nPedDrawn = 0, nPedFeet = 0;
+                const auto castBones = [&](const std::vector<omk::Mesh>& meshes,
+                                           const std::vector<float>& at, int lvl) {
+                    if (at.empty()) return;
+                    for (int bi : omk::shadowBonesFor(lvl)) {
+                        const auto& sb = omk::kShadowBones[static_cast<std::size_t>(bi)];
+                        const int mi = omk::findMeshContaining(meshes, sb.bone);
+                        if (mi < 0 || static_cast<std::size_t>(mi) * 3 + 2 >= at.size()) continue;
+                        const float* p3 = &at[static_cast<std::size_t>(mi) * 3];
+                        const auto f = omk::floorUnder(playerSoup, p3[0], p3[1], p3[2]);
+                        if (!f) continue;
+                        if (omk::shadowBlob(shadowGeo, shadowModel, p3,
+                                            meshes[static_cast<std::size_t>(mi)].radius,
+                                            sb.divisor, sb.reach, static_cast<float>(*f)))
+                            ++blobs;
+                    }
+                };
+                // `Actors_TickAll` skips the shadow in ACTOR_STATE 7 and
+                // 11..14 - the slider mount, the ladder, the two scripted
+                // states and the water. Read off the same `if` the mark's
+                // enable/disable sits under.
+                const auto castsIn = [](omk::ActorState st) {
+                    const int v = static_cast<int>(st);
+                    return !(v == 7 || (v > 10 && v <= 14));
+                };
+                if (drawPlayer && playerMeshAtKnown && player && castsIn(player->state()))
+                    castBones(playerMeshes, playerMeshAt, detail);
+                nPlayer = blobs;
+                for (const auto& up : staged)
+                    if (up->drawn && up->mo) castBones(up->mo->meshes, up->meshAt, detail - 1);
+                nActor = blobs - nPlayer;
+                // The crowd's, which is the other mechanism entirely.
+                for (const auto& up : pedStaged) {
+                    if (up->drawn) ++nPedDrawn;
+                    if (up->drawn && up->footKnown) ++nPedFeet;
+                    if (!up->drawn || !up->footKnown) continue;
+                    const float mid[3] = {(up->footAt[0][0] + up->footAt[1][0]) * 0.5f,
+                                          (up->footAt[0][1] + up->footAt[1][1]) * 0.5f,
+                                          (up->footAt[0][2] + up->footAt[1][2]) * 0.5f};
+                    const auto h = omk::surfaceUnder(playerSoup, mid[0], mid[1], mid[2]);
+                    if (!h) continue;
+                    const float nrm[3] = {static_cast<float>(h->n[0]),
+                                          static_cast<float>(h->n[1]),
+                                          static_cast<float>(h->n[2])};
+                    const std::size_t before = shadowGeo.corners.size();
+                    if (omk::shadowFootBlob(shadowGeo, shadowModel, up->footAt[0],
+                                            up->footAt[1], static_cast<float>(h->y), nrm)) {
+                        ++blobs; ++nCrowd;
+                        static const bool pedLog = std::getenv("OMK_SHADOWLOG") != nullptr;
+                        if (pedLog && nCrowd == 1 && (n % 60) == 0)
+                            std::printf("  [shadow] crowd blob: feet %.0f %.0f %.0f / "
+                                        "%.0f %.0f %.0f  floor %.0f  corner0 %.0f %.0f %.0f "
+                                        "extent %.1f\n",
+                                        static_cast<double>(up->footAt[0][0]),
+                                        static_cast<double>(up->footAt[0][1]),
+                                        static_cast<double>(up->footAt[0][2]),
+                                        static_cast<double>(up->footAt[1][0]),
+                                        static_cast<double>(up->footAt[1][1]),
+                                        static_cast<double>(up->footAt[1][2]), h->y,
+                                        static_cast<double>(shadowGeo.corners[before].x),
+                                        static_cast<double>(shadowGeo.corners[before].y),
+                                        static_cast<double>(shadowGeo.corners[before].z),
+                                        static_cast<double>(
+                                            shadowGeo.corners[before].x - up->footAt[0][0]));
+                    }
+                }
+                if (!shadowGeo.corners.empty()) {
+                    // ONE batch: every blob goes through the same material and
+                    // the same mesh flags 0x5000, so the whole frame's shadow
+                    // is one submission.
+                    shadowGeo.batches.push_back({0, false, omk::Blend::Mul, 0,
+                                                 shadowGeo.corners.size()});
+                    shadowGeo.revision = ++worldGeoRev;
+                    draws.push_back({keyOf(omk::Blend::Mul, false,
+                                           static_cast<std::uint32_t>(shadowTexBase)),
+                                     &shadowGeo, 0, shadowGeo.corners.size(),
+                                     omk::Blend::Mul, false});
+                }
+                shadowBlobsDrawn = blobs;
+                if (!shadowTold && blobs > 0) {
+                    shadowTold = true;
+                    std::printf("frame %ld: shadows ON (row 7 detail %d) - %ld blobs, "
+                                "%zu corners, texture slot %zu\n",
+                                n, detail, blobs, shadowGeo.corners.size(), shadowTexBase);
+                }
+                static const bool shadowLog = std::getenv("OMK_SHADOWLOG") != nullptr;
+                if (shadowLog && (n % 30) == 0)
+                    std::printf("  [shadow] frame %ld: %ld player + %ld actor + %ld crowd"
+                                " = %ld blobs (%zu peds staged, %ld drawn, %ld with feet)\n",
+                                n, nPlayer, nActor, nCrowd, blobs, pedStaged.size(),
+                                nPedDrawn, nPedFeet);
             }
             // EVERY staged body, each with its own model's base - the change
             // issue 41 asks for. One geometry per actor, so two bodies wearing

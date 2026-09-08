@@ -24,7 +24,7 @@ The 65 are in `verify.py: preferences keys`. The ones this topic wants:
 |---|---|
 | `clipdistance` | option row 3, choices 25 / 50 / 100 / 150 / 200 |
 | `displaysky` | option row 4, Non/Oui |
-| `displayshadows` | option row 5, Non/Oui |
+| `displayshadows` | option row 5, Non/Oui - **read and drawn 2026-09-08**, `ASSETS` 4d |
 | `SoftwareMode`, `GFXCard`, `screen_x`, `screen_y`, `window` | the device rows 2 and 8 |
 | `music`, `DialogAttenuation`, `FxAttenuation`, `AmbientAttenuation` | the audio rows 10-12 |
 | `displayframerate`, `debug_zones`, `display_path`, `viewer`, ... | the debug set |
@@ -68,6 +68,7 @@ changed - clip distance 200 against 150, crowd density 4 against 3.
 | 2b | read the settings out of a save header too, and let it win | **DONE**, with step 2 |
 | 3 | the sky: establish whether one exists in the data at all | **DONE** 2026-09-05 - and drawn |
 | 4 | fog | **DONE** 2026-09-05 - drawn, both backends |
+| 5 | the SHADOWS, row 5 - and row 7's level of detail, which says how many | **DONE** 2026-09-08 - read (`Actor_DrawShadow` 0x00467E20) and drawn; `docs/ASSETS.md` 4d |
 
 Step 3 is research and may end in "narrowed": `PORTING` records that fog has
 **no reachable evidence tier**, because the captures cannot validate pixel

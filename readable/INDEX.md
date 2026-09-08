@@ -1,11 +1,11 @@
 # Processed functions
 
-557 of 2177 functions have been worked out, in three states:
+563 of 2177 functions have been worked out, in three states:
 
 | status | meaning | count |
 |---|---|---|
 | `CLEAN` | body rewritten by hand | 64 |
-| `NAMED` | read and named from evidence, body left as generated | 481 |
+| `NAMED` | read and named from evidence, body left as generated | 487 |
 | `READ` | read, then deliberately left alone - the banner says why | 12 |
 
 Everything else is `@status RAW`: untouched decompiler output. A RAW function
@@ -23,7 +23,7 @@ with the code.
 Renames are applied as **real renames across the whole tree** by
 `tools/rename.py`, not as `#define` aliases - a function renamed where it is
 defined reads the same at every call site in the other modules, in `decls.h`,
-and in its `@func` banner. `tools/renames.json` is the map (638 entries).
+and in its `@func` banner. `tools/renames.json` is the map (650 entries).
 
 `tools/rename.py` promotes RAW to NAMED automatically for anything in the map,
 so the trace cannot drift out of step with the renames.
@@ -147,6 +147,8 @@ Regenerate this file with `python3 tools/index.py`.
 | `0x0040D760` | `Scene_FindObjectIndexById` |  | 01_file.c | 1 | Resolve an object or character id to the index the engine addresses it by. |
 | `0x00436C40` | `o3de_FindNodeByName` | named | 10_dsound.c | 37 | name established, body still as generated |
 | `0x00436D90` | `o3de_FindMeshByName` | named | 10_dsound.c | 19 | name established, body still as generated |
+| `0x00436E70` | `o3de_DisableObject` | named | 10_dsound.c | 8 | name established, body still as generated |
+| `0x00436ED0` | `o3de_EnableObject` | named | 10_dsound.c | 10 | name established, body still as generated |
 | `0x004370A0` | `o3de_SetNodePos` | named | 10_dsound.c | 44 | name established, body still as generated |
 | `0x00437110` | `o3de_MoveNodeBy` | named | 10_dsound.c | 59 | name established, body still as generated |
 | `0x00437400` | `o3de_UnlinkObject` | named | 10_dsound.c | 48 | name established, body still as generated |
@@ -301,6 +303,7 @@ Regenerate this file with `python3 tools/index.py`.
 | `0x0041CE50` | `Hud_ShowValue` | named | 04_sys.c | 1 | name established, body still as generated |
 | `0x0041CED0` | `Actor_SetHidden` | named | 04_sys.c | 0 | name established, body still as generated |
 | `0x0041CF50` | `Object_SetPlacement` | named | 04_sys.c | 3 | name established, body still as generated |
+| `0x0041D120` | `Shadow_CloneNode` | named | 04_sys.c | 1 | name established, body still as generated |
 | `0x0041D1A0` | `Area_LoadMiscModel` | named | 05_sys.c | 1 | name established, body still as generated |
 | `0x0041D6B0` | `Random_NoRepeat` | named | 05_sys.c | 0 | A random integer in [lo, hi] that is never the one drawn last time. |
 | `0x0041D9C0` | `ScriptObject_HasCamEditing` | named | 05_sys.c | 0 | Does this scene script object have a camera editing linked to it? Returns 1 if any of the four bytes at +94..97 of the object record is non-zero. |
@@ -508,6 +511,9 @@ Regenerate this file with `python3 tools/index.py`.
 | `0x00467030` | `Walk_ProbeGround` | named | 21_d3d.c | 4 | name established, body still as generated |
 | `0x004672D0` | `Actor_ApplyMotion` |  | 21_d3d.c | 3 | Integrate one frame of an actor's motion and put him on the ground. |
 | `0x00467770` | `Actor_ScanZones` |  | 21_d3d.c | 9 | Test the actor against the trigger zones at his position and raise the game events - the ZONES.TAG runtime. |
+| `0x00467A00` | `Shadow_EmitBoneBlob` | named | 21_d3d.c | 10 | One bone's blob, emitted straight into the frame's vertex and triangle pools - the shadow is GEOMETRY BUILT PER FRAME, not a drawn node. |
+| `0x00467E20` | `Actor_DrawShadow` | named | 21_d3d.c | 2 | THE CHARACTER SHADOW - one soft blob per BONE, and the detail level says how many. |
+| `0x00467F50` | `Slider_PlaceShadow` | named | 21_d3d.c | 1 | The STREET CROWD's shadow, and it is a different mechanism from the actors' - Sliders_Tick's walkers get ONE whole node, not a per-bone fan. |
 | `0x004681C0` | `Actors_TickAll` |  | 21_d3d.c | 1 | The per-frame update of every live actor - the heart of the character system. |
 | `0x00468B50` | `Actor_SetHeadLook` | named | 21_d3d.c | 2 | name established, body still as generated |
 | `0x00468DA0` | `Actor_HoldAnimation` | named | 21_d3d.c | 5 | Hold an actor's animation at rest, or let it run again. |

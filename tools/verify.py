@@ -5738,6 +5738,143 @@ def c_engine_road_traffic():
                                      "the models' nose ratio (slider 1.94, moto 2.38)")
 
 
+
+def c_shadow_model():
+    r"""The CHARACTER SHADOW's shipped asset - `MESHES\MISC\shadows.3DO`.
+
+    The engine has no shadow pass. `sub_419060` loads this one 804-byte model
+    at game start, scales its root by 0.07, `Shadow_CloneNode` (0x0041D120)
+    clones it per actor, and `Shadow_EmitBoneBlob` (0x00467A00) writes copies
+    of its quad into the frame's pools under a fixed set of BONES. So every
+    property the mechanism leans on is a property of this file, and this is
+    what asserts them:
+
+      * ONE quad of FOUR vertices - the emitter walks exactly four (`v7 < 32`
+        at a 32-byte stride) and reads one face record;
+      * mesh flags **0x5000** = `0x1000|0x4000`, which `meshBlend` decodes as
+        MULTIPLY and which `docs/ASSETS.md` establishes is `dst x (1 - src)`.
+        That sign is the whole mechanism: the vertex colour runs 255 in
+        contact to 0 at the reach limit, so a BRIGHT source darkens and a dark
+        one leaves the frame alone;
+      * the quad is FLAT (every vertex y equal), so a blob laid at the probed
+        floor lies in the floor's plane;
+      * its material is `SHOOT` / `SHOOT.BMP`, 256x256, and the patch its UVs
+        name is a soft disc - bright at the centre, BLACK at all four corners.
+        Reversed, the same blend would paint a dark square with a bright hole.
+
+    And the trap that makes or breaks the port: the bones are found with
+    `strstr`, not a comparison. `sub_436D60` is `strstr(mesh + 16, wanted)`
+    and `o3de_FindMeshByName` keeps the LAST match. Every bone of every
+    character model carries a prefix - HO1_FNM's are `UBuste`, `UTete`,
+    `UPiedg` - so an equality test finds NOTHING and the whole mechanism
+    silently draws nothing at all. Asserted from the shipped model: 0 of the
+    ten bone names match exactly, 10 of 10 by substring.
+    """
+    import struct as _st
+    d = open(omkpaths.data("MESHES", "MISC", "shadows.3DO"), "rb").read()
+    u = lambda o: _st.unpack_from("<i", d, o)[0]
+    f = lambda o: _st.unpack_from("<f", d, o)[0]
+    desc, matOff, vtxOff, quadOff, meshOff = u(8), u(12), u(16), u(24), u(28)
+    nQuad, nVtx, nMat, nMesh = u(desc + 192), u(desc + 196), u(desc + 208), u(desc + 224)
+    flags = u(meshOff) & 0xFFFFFFFF
+    name = d[meshOff + 16:meshOff + 36].split(b"\0")[0].decode("latin1")
+    mat = d[matOff:matOff + 80]
+    matName = mat[:20].split(b"\0")[0].decode("latin1")
+    texName = mat[20:40].split(b"\0")[0].decode("latin1")
+    mw, mh = _st.unpack_from("<hh", mat, 76)
+    ys = {round(f(vtxOff + 32 * i + 4), 4) for i in range(nVtx)}
+    uv = list(d[quadOff + 8:quadOff + 16])
+    us = uv[0::2]
+    vs = uv[1::2]
+    sys.path.insert(0, os.path.join(ROOT, "tools"))
+    import tex3dt
+    tex = tex3dt.textures(omkpaths.data("MESHES", "MISC", "shadows.3DO"))[0]
+    rgb, W = tex["rgb"], tex["w"]
+    lum = lambda x, y: rgb[(y * W + x) * 3]
+    cx, cy = (min(us) + max(us)) // 2, (min(vs) + max(vs)) // 2
+    corners = [lum(x, y) for x in (min(us), max(us)) for y in (min(vs), max(vs))]
+    ho = open(omkpaths.data("MESHES", "PERSOS", "HO1_FNM.3DO"), "rb").read()
+    hu = lambda o: _st.unpack_from("<i", ho, o)[0]
+    hme, hn = hu(28), hu(hu(8) + 224)
+    hnames = [ho[hme + 140 * i + 16:hme + 140 * i + 36].split(b"\0")[0].decode("latin1")
+              for i in range(hn)]
+    bones = ["Brasd", "Brasg", "Avantd", "Avantg", "Tete",
+             "Cuisseg", "Cuissed", "Jambeg", "Jambed", "Buste"]
+    exact = sum(1 for b in bones if b in hnames)
+    sub = sum(1 for b in bones if any(b in x for x in hnames))
+    got = (nMesh, nQuad, nVtx, nMat, hex(flags), name, matName, texName, (mw, mh),
+           len(ys), lum(cx, cy) > 240, max(corners), exact, sub)
+    want = (1, 1, 4, 1, "0x5000", "Shadow Soustract", "SHOOT", "SHOOT.BMP", (256, 256),
+            1, True, 0, 0, 10)
+    return got, want, ("one flat quad, MULTIPLY (0x1000|0x4000), SHOOT.BMP 256x256, a "
+                       "bright-centred disc with black corners; the ten bone names match "
+                       "%d/10 exactly and %d/10 by substring" % (exact, sub))
+
+
+def c_engine_character_shadow():
+    r"""`omk-play` DRAWS the character shadows - option row 5.
+
+    `Actors_TickAll` calls `Actor_DrawShadow(detail, actor)` per actor and
+    `Sliders_Tick` places the crowd's, both behind `g_OptDisplayShadows`. The
+    port emits them as FRAME GEOMETRY into one MULTIPLY batch, which is what
+    the engine does - it writes into the scene's own vertex and triangle pools
+    each frame rather than drawing a node (the crowd's half is the exception,
+    and it is a node in the engine too).
+
+    A street start in Anekbah rendered headless three times - `--shadows 1`,
+    `--shadows 0`, and `--shadows 1 --detail 0` - asserts:
+
+      * the run with shadows draws blobs and the run without draws none;
+      * the two frames DIFFER, and by more than a stray edge;
+      * detail 0 casts the CHEST ALONE, so the player contributes exactly one
+        blob against ten at detail 2. That is the switch's fall-through read
+        back off the picture: 1, then +5 at level 1, then +4 at level 2.
+
+    Shown to fail: making `shadowBonesFor` ignore the level answers 10 where
+    it wants 1, and replacing the bone lookup's `strstr` with an equality
+    drives every count to 0.
+
+    What this cannot see, and a person must: whether the blob is the size the
+    original draws. The mechanism is transcribed - the 0.07 node scale, the
+    radius over 10/12/14 clamped at 1.5, the three reaches in round metres -
+    but no capture in this tree shows a shipped shadow, so the SIZE is
+    data-constrained and not frame-verified. `docs/ASSETS.md` 4d.
+    """
+    eng = os.path.join(ROOT, "engine")
+    if not os.path.isdir(eng):
+        return ("skipped",), ("skipped",), "engine/ absent"
+    mk = subprocess.run(["make", "-s", "play"], cwd=eng, capture_output=True, text=True)
+    play = os.path.join(eng, "build", "omk-play")
+    if mk.returncode != 0 or not os.path.exists(play):
+        return ("skipped",), ("skipped",), "no SDL - the frontend is optional (PORTING A8)"
+    save = os.path.join(ROOT, "traces", "save-appart.bin")
+    env = dict(os.environ, SDL_VIDEODRIVER="dummy", OMK_SHADOWLOG="1")
+    outs, dumps = [], []
+    for k, extra in enumerate((["--shadows", "1"], ["--shadows", "0"],
+                               ["--shadows", "1", "--detail", "0"])):
+        dump = os.path.join(eng, "build", "shadow-%d.bin" % k)
+        r = subprocess.run([play, omkpaths.data_root(), os.path.join(ROOT, "tables"),
+                            "--save", save, "--area", "0", "--stand", "1804,0,-6890,336",
+                            "--frames", "90", "--software", "--res", "640x480", "--nofmv",
+                            "--dump", dump] + extra, capture_output=True, text=True, env=env)
+        outs.append(r.stdout)
+        dumps.append(open(dump, "rb").read() if os.path.exists(dump) else b"")
+
+    def player_blobs(out):
+        for ln in out.splitlines():
+            if "[shadow] frame 60:" in ln:
+                return int(ln.split("[shadow] frame 60:")[1].split()[0])
+        return -1
+    differ = 0
+    if len(dumps[0]) == len(dumps[1]) and dumps[0]:
+        differ = sum(1 for i in range(0, len(dumps[0]), 2) if dumps[0][i:i+2] != dumps[1][i:i+2])
+    got = ("shadows ON" in outs[0], "shadows ON" in outs[1], differ > 500,
+           player_blobs(outs[0]), player_blobs(outs[2]))
+    want = (True, False, True, 10, 1)
+    return got, want, ("shadows on/off both render, %d pixels differ, the player casts 10 "
+                       "blobs at detail 2 and 1 at detail 0" % differ)
+
+
 def c_engine_street_frame():
     r"""`omk-play` DRAWS the city crowd (docs/STREET_LIFE.md, step 4).
 
@@ -11593,18 +11730,56 @@ def c_the_sky():
     meshes  = sorted({int(r[3]) for r in rows})
     ciel = all(r[12].lower().startswith("ciel") for r in rows)
     tex = sorted({(r[12].lower(), r[13]) for r in rows})
+    # ---- AND THE PORT LOADS IT FROM EITHER SLOT ------------------------
+    #
+    # `Area_LoadMiscModel` keeps ONE sky globally and `Area_TickLoad` case 4
+    # calls it for whichever area is loading, so either resident slot can
+    # bring one. `omk-play` asked slot 0 only, and a load puts its own area
+    # there - so walking out of a building landed the city in slot 1 and its
+    # sky was never asked for. A reader: *it happens when I load a save
+    # located in a building*.
+    #
+    # Walked here from the restaurant save, whose exit zone (AREA 217 record 0)
+    # runs `area.goto 0` - the log has `SHOW area 217 in slot 0` then
+    # `SHOW area 0 in slot 1`, which is exactly the shape.
+    loaded = "not run"
+    eng = os.path.join(ROOT, "engine")
+    save = os.path.join(ROOT, "traces", "games-resto.bin")
+    if os.path.isdir(eng) and os.path.exists(save):
+        mk = subprocess.run(["make", "-s", "play"], cwd=eng,
+                            capture_output=True, text=True)
+        play = os.path.join(eng, "build", "omk-play")
+        if mk.returncode != 0 or not os.path.exists(play):
+            loaded = "slot 1"                 # no SDL - the frontend is optional
+        else:
+            r = subprocess.run([play, omkpaths.data_root(),
+                                os.path.join(ROOT, "tables"),
+                                "--software", "--res", "640x480", "--nofmv",
+                                "--no-crowd", "--save", save, "--slot", "2",
+                                "--stand", "2859,-10,-6181,214",
+                                "--frames", "60"],
+                               capture_output=True, text=True,
+                               env=dict(os.environ, SDL_VIDEODRIVER="dummy"))
+            inSlot1 = "SHOW area 0 in slot 1" in r.stdout
+            gotSky  = "sky: ASKY" in r.stdout
+            loaded = ("slot 1" if (inSlot1 and gotSky) else
+                      "slot 1, NO SKY" if inSlot1 else "never reached slot 1")
+
     return (len(items), len(named), len(names), sorted(names), len(ships),
-            orphan, flat, oneY, corners, batches, meshes, ciel, tex), \
+            orphan, flat, oneY, corners, batches, meshes, ciel, tex, loaded), \
            (259, 17, 6, ["ASKY", "DOCKSKY", "LSKY", "MASKY", "SSKY", "TOITSKY"], 6,
             ["jansky"], True, ["401.09"], [864], [1], [1], True,
-            [("ciel1", "256"), ("ciel2", "256")]), \
+            [("ciel1", "256"), ("ciel2", "256")], "slot 1"), \
            "the AREA chunks naming a sky at +133 - 17 of 259, so the field is " \
            "read rather than noise, and 242 interiors name none; the six " \
            "distinct names, that all six ship as a .3DO AND a .3DT, and the " \
            "one that ships with nothing naming it (jansky); then the model " \
            "itself - one mesh, one batch, 864 corners, and a Y extent of " \
            "EXACTLY ZERO at 401.09, so it is a flat ceiling and not a dome; " \
-           "and that every texture is called `ciel`, the file naming itself"
+           "and that every texture is called `ciel`, the file naming " \
+           "itself; and last the PORT, walked out of the restaurant save so " \
+           "the city arrives in the OTHER resident slot - which must still " \
+           "load ASKY"
 
 
 def c_mesh_lights():
@@ -28218,6 +28393,7 @@ CHECKS = [
     ("tutorial one-shot",  c_tutorial_one_shot, "todo/omk-play 42"),
     ("engine: player move", c_engine_player_move, "SCRIPT_VM 63/89"),
     ("no #define renames", c_no_define_renames, "CLAUDE.md 3"),
+    ("shadow model",       c_shadow_model,      "ASSETS 4d"),
 ]
 
 SLOW = [
@@ -28251,6 +28427,7 @@ SLOW = [
     ("engine: pedestrians", c_engine_pedestrians, "STREET_LIFE 2; actor/sliders.h"),
     ("engine: road traffic", c_engine_road_traffic, "STREET_LIFE 2b; actor/vehicles.cpp"),
     ("engine: street frame", c_engine_street_frame, "STREET_LIFE; todo/street-life 4"),
+    ("engine: character shadow", c_engine_character_shadow, "ASSETS 4d; o3de/shadow.h"),
     ("engine: traffic frame", c_engine_traffic_frame, "STREET_LIFE 2b; todo/road-traffic 3"),
     ("engine: crowd push", c_engine_crowd_push, "STREET_LIFE 3; actor/spatial.h"),
     ("engine: head look", c_engine_head_look, "STREET_LIFE; actor/pose.h"),
