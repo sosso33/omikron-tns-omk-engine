@@ -539,10 +539,13 @@ private:
     // THE PLAYER'S SLIDER - the one `sub_452570` reserves out of the 40.
     int         called_ = -1;
     bool        releasedTold_ = false;   // case 7 handed it back this tick
+    bool        forCall_ = false;        // spawning the player's own slider: row 0, a slider whatever the mask
     RideMachine callRide_;
     float       callTarget_[3] = {0, 0, 0};
     bool        journeyDone_ = false;
     void placeOnLane(int vi, const SliderCall& c);
+    // `sub_452CC0`'s take-over of the occupant: ambient vehicles on `lane` within `radius` of `place` die.
+    void takeOverAt(int lane, const float place[3], float radius);
 
     struct ActionState {                      // one of `dword_539928`'s 48-byte records
         bool  used = false;

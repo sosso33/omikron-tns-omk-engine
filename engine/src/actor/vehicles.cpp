@@ -125,17 +125,24 @@ bool Sliders::spawnVehicle(int lane, const float at[3], const float dir[3],
     // either the callback returns the record's null mover, ending the walk.
     int kind = static_cast<int>(rnd() & 1u);
     if (!nMotoModels_) kind = 1;
-    if (nSliderModels_ - 1 <= 0) {
+    if (nSliderModels_ - 1 <= 0 && !forCall_) {
         kind = 0;
         if (!nMotoModels_) return false;
     }
     v.kind = kind;
+    // THE PLAYER'S OWN SLIDER IS ROW 0 - `sub_452CC0` binds `dword_538E28`
+    // row 0's model into the reserved slot whatever city this is, which is
+    // why Qalisar (slider mask 1: row 0 alone, every ambient vehicle a moto)
+    // can still send one. Spawned for a CALL, the vehicle takes row 0 and is
+    // a slider; the ambient coin above is for traffic.
+    if (forCall_) { kind = 1; }
     const auto& table = vehModelTable(kind);
     // `sub_453E80` never runs for the vehicle pools, so every entry keeps the
     // table's own weight of 1 as its quota: the first spawn of a kind spends
     // it and every later one falls through to the first entry (LABEL_29 /
     // LABEL_35). With one ambient row of each kind that is simply that row.
-    const std::size_t first = kind == 1 ? 1u : 0u;
+    const std::size_t first = (kind == 1 && !forCall_) ? 1u : 0u;
+    if (table.empty()) return false;
     v.model = table[std::min(first, table.size() - 1)];
     v.live = true;
     v.speedCap = kVehSpeedCap;                       // `u32i(v3, 3) = 5000.0`
@@ -578,6 +585,7 @@ bool Sliders::arriveAt(const float target[3]) {
     // `c.place`, the set-back at the lane's origin that a called slider
     // drives down from.
     const float yaw = static_cast<float>(std::atan2(c.dir[0], c.dir[2]) * 57.29577951308232);
+    takeOverAt(c.at.lane, c.at.at, 400.0f);
     placeCalled(c.at.at, yaw);
     mountCalled();                                   // aboard - he never got out
     return sendCalledTo(target);                     // state 6
@@ -603,7 +611,10 @@ bool Sliders::callSlider(const float target[3]) {
     // come to the same thing - a call always finds a vehicle where there are
     // roads - and taking an ambient one is the second of them.
     const int before = liveVehicles();
-    if (spawnVehicle(c.at.lane, c.place, c.dir, segLen, 0) &&
+    forCall_ = true;
+    const bool spawned = spawnVehicle(c.at.lane, c.place, c.dir, segLen, 0);
+    forCall_ = false;
+    if (spawned &&
         liveVehicles() != before) {
         for (int i = 0; i < static_cast<int>(vehicles_.size()); ++i)
             if (vehicles_[static_cast<std::size_t>(i)].live &&
@@ -671,10 +682,33 @@ void Sliders::placeOnLane(int vi, const SliderCall& c) {
 // then `u32(dword_8F5E44, 8) = 6` instead of 2 - FETCHING. The vehicle goes
 // to the lane nearest the destination and `sub_456530`'s state 6 drives it
 // in; the rider is on it the whole way (the caller seats him each frame).
+// `sub_452CC0`: the vehicle already ON the lane point the search chose does
+// not get a second vehicle put on top of it - its slot is TAKEN OVER, the
+// record copied into the static player's slot and its model rebound ("the
+// one in the way becomes the player's slider"). This port relinks the called
+// vehicle there instead, so the occupant has to go, or two bodies stand in
+// one place and their coincident faces flicker - which a reader saw at the
+// destination. Ambient vehicles within `radius` of the place, same lane, die.
+void Sliders::takeOverAt(int lane, const float place[3], float radius) {
+    for (int i = 0; i < static_cast<int>(vehicles_.size()); ++i) {
+        if (i == called_) continue;
+        Vehicle& av = vehicles_[static_cast<std::size_t>(i)];
+        if (!av.live || av.mover < 0 || av.state != 0) continue;
+        Pedestrian& m = movers_[static_cast<std::size_t>(av.mover)];
+        if (m.lane != lane) continue;
+        const float dx = m.pos[0] - place[0], dz = m.pos[2] - place[2];
+        if (dx * dx + dz * dz > radius * radius) continue;
+        removeFromLists(av.mover);
+        m.live = false;
+        av.live = false;
+    }
+}
+
 bool Sliders::sendCalledTo(const float target[3]) {
     if (called_ < 0 || !track_.valid) return false;
     const SliderCall c = planSliderCall(track_, target, counter_ + 1);
     if (!c.ok()) return false;
+    takeOverAt(c.at.lane, c.place, 400.0f);
     placeOnLane(called_, c);
     vehicles_[static_cast<std::size_t>(called_)].state = 6;
     callRide_.state = 6;

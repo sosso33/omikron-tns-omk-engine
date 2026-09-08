@@ -9684,6 +9684,13 @@ int main(int argc, char** argv) {
                     // live for ever. Back in the idle, the body is standing by
                     // definition, so the sum is released there.
                     if (player->clipName() == "H_STAND") rootAccum = 0.0f;
+                    // ...and NOT while the slider clips carry him. In ACTOR_STATE
+                    // 6 and 8 the clip's root y is applied to his POSITION
+                    // (`Actor_MoveBy`, the channel-only tick), so adding the
+                    // same travel here as a drop put him one clip's descent
+                    // (12.5) too low in the seat - the reader: *"he is just a
+                    // bit too low"*.
+                    if (boarding || leaving) rootAccum = 0.0f;
                     rootDrop = rootAccum;
                     // MEASURING, not fixing: how far does the model's own
                     // lowest point travel across a take? If the rotations
@@ -10199,9 +10206,11 @@ int main(int argc, char** argv) {
             const int rowKind = walk->rowKind();
             if (rowKind == 4) {
                 std::vector<std::string> known;
+                std::vector<const omk::Destination*> knownRecs;   // the same rows, for the listing
                 for (const auto& d : destinations)
-                    if (state.bit(omk::StateArray::AddressEnabled, d.bit))
-                        known.push_back(d.name);
+                    if (state.bit(omk::StateArray::AddressEnabled, d.bit)) {
+                        known.push_back(d.name); knownRecs.push_back(&d);
+                    }
                 const omk::UiPanel* rp = w.at(omk::kPanelSneakSlider);
                 for (const auto& l : (rp ? rp->lists : pn->lists)) {
                     if (l.addr != omk::kListSneakRows) continue;
@@ -10228,6 +10237,9 @@ int main(int argc, char** argv) {
                     std::printf("sneak: slider page - %zu of %zu destinations "
                                 "enabled (GLOBAL +16, DB +24)\n",
                                 known.size(), destinations.size());
+                    for (std::size_t r = 0; r < known.size(); ++r)
+                        std::printf("   row %zu: '%s' (area %d, address bit %d)\n", r,
+                                    knownRecs[r]->name.c_str(), knownRecs[r]->area, knownRecs[r]->bit);
                 }
             }
             // ---- THE EXAMINE PAGE'S CONTENT -------------------------

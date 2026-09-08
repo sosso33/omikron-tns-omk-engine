@@ -479,6 +479,34 @@ follows, the well opens, and the man is on the side these rows always gave:
 coincident meshes (72 corners each, the pivot at the hinge); every track is
 identity again at the last frame — the door opens, he steps in, it shuts.
 
+**Played again (the pushed `94aa317`), three more — 2026-09-08.** The
+reader: *"kay'l is really entering the slider, he is just a bit too low"*;
+*"when the slider arrives and kay'l gets off, it looks like two sliders are
+showing at the same place and at the same time (part of the model
+flickering)"*; *"transportation from anekbah to qalisar is broken (same
+effect as the teleportation from earlier, with the character disappearing)"*.
+
+* **too low**: the clip's root y (+12.5, the step down into the seat) was
+  applied TWICE — once to his position by the channel-only tick
+  (`Actor_MoveBy`), and again by the viewer's `rootDrop`, the drawn drop it
+  accumulates from the pose's root translation for the take. Zeroed while
+  he boards or leaves;
+* **two sliders**: the journey and the arrive arm put the called vehicle on
+  the destination lane's set-back point — where AMBIENT vehicles spawn — on
+  top of whatever already stood there, and the two bodies' coincident faces
+  flickered. `sub_452CC0` never adds a vehicle: it TAKES OVER the occupant
+  ("the one in the way becomes the player's slider"). `Sliders::takeOverAt`:
+  ambient vehicles on that lane within 400 of the place die first;
+* **Qalisar**: its slider mask is row 0 alone, so every ambient vehicle is a
+  moto and `spawnVehicle`'s ambient coin could not produce a slider for the
+  call — `arriveAt` failed and the old bare placement ran, dropping
+  `playerReady` on a fresh load. `sub_452CC0` binds `dword_538E28` ROW 0's
+  model into the reserved slot whatever the city: a call now spawns row 0,
+  a slider, regardless of the mask (`forCall_`). The sneak page also lists
+  its enabled rows now (name, area, address bit) — row 2 in this save is
+  `Qalisar - Sas vers Anekbah`, area 101. `engine: slider journey qalisar`
+  (--slow) replays it from aboard.
+
 **The seat, from the clips alone.** From the door (`−62.5, −8.8, +3.7`)
 `H_SLDIN`'s root travels `(+43.5, +12.5, −0.9)` and ends at
 `(−19.0, +3.7, +2.8)`; `H_SLDOUT` **starts** at `(−19.0, −8.8, +2.8)`. The

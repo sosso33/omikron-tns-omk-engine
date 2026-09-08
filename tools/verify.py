@@ -7523,6 +7523,52 @@ def c_engine_slider_journey_area():
         "MDSLIDOU into H_STAND, and RELEASED once he walked clear"
 
 
+def c_engine_slider_journey_qalisar():
+    r"""ANEKBAH -> QALISAR, the city with no ambient sliders.
+
+    Qalisar's slider mask is row 0 alone, so every ambient vehicle there is a
+    moto and `spawnVehicle`'s ambient coin cannot make a slider; the call's
+    `arriveAt` failed and the old bare placement ran, dropping `playerReady`
+    on a fresh load - the reader: *"transportation from anekbah to qalisar is
+    broken (same effect as the teleportation from earlier, with the character
+    disappearing)"*. `sub_452CC0` binds `dword_538E28` ROW 0's model into the
+    reserved slot whatever the city, so a call spawns row 0, a slider,
+    regardless of the mask. Boards in Anekbah through `--board`, chooses row 2
+    (`Qalisar - Sas vers Anekbah`, area 101), and asserts the load, the relink
+    with him aboard, the exit in Qalisar and the release. SLOW.
+    """
+    import subprocess
+    eng = os.path.join(ROOT, "engine")
+    fr, tb = omkpaths.data_root(), os.path.join(ROOT, "tables")
+    save = os.path.join(ROOT, "traces", "save-appart.bin")
+    if not os.path.isdir(eng) or not os.path.exists(save):
+        return ("skipped",), ("skipped",), "engine/ or the save absent"
+    mk = subprocess.run(["make", "-s", "play"], cwd=eng, capture_output=True, text=True)
+    play = os.path.join(eng, "build", "omk-play")
+    if mk.returncode != 0 or not os.path.exists(play):
+        return (True,) * 6, (True,) * 6, "no SDL - the frontend is optional (PORTING A8)"
+    env = dict(os.environ, SDL_VIDEODRIVER="dummy")
+    r = subprocess.run([play, fr, tb, "--software", "--res", "640x480", "--nofmv",
+                        "--save", save, "--area", "0",
+                        "--stand", "1804,0,-6890,244", "--frames", "1000", "--board",
+                        "--hold", "0*40,k15*3,0*30,k205*4,0*10,k200*4,0*10,"
+                                  "k28*4,0*30,k208*4,0*6,k208*4,0*6,k208*4,0*10,"
+                                  "k28*4,0*300,k200*250,0*300"],
+                       capture_output=True, text=True, env=env, errors="replace")
+    o = r.stdout
+    return ("row 2: 'Qalisar - Sas vers Anekbah' (area 101" in o,
+            "MDSLIDIN: aboard at" in o,
+            "JOURNEY to 'Qalisar - Sas vers Anekbah' in area 101 - loaded, the slider relinked" in o,
+            "ARRIVED - he gets OUT WHERE IT STOPPED" in o,
+            "MDSLIDOU: out and standing" in o,
+            "placing him instead" not in o), \
+           (True,) * 6, \
+        "Anekbah -> Qalisar from aboard: the sneak lists the Qalisar row, area " \
+        "101 loads, the called slider (model row 0, a slider despite the mask) " \
+        "is relinked at the lane nearest address 335 with him aboard, he gets " \
+        "out there and stands; the bare-placement fallback never runs"
+
+
 def c_engine_slider_journey():
     r"""THE WHOLE SLIDER, from the sneak to getting out at the destination.
 
@@ -27710,6 +27756,7 @@ CHECKS = [
 ]
 
 SLOW = [
+    ("engine: slider journey qalisar", c_engine_slider_journey_qalisar, "todo/slider"),
     ("engine: slider journey area", c_engine_slider_journey_area, "todo/slider"),
     ("engine: 3DT",        c_engine_3dt,        "engine/README"),
     ("engine: 3DO",        c_engine_3do,        "engine/README"),

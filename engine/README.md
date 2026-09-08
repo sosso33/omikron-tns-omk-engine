@@ -2387,6 +2387,15 @@ on `SlPorteD`, the far door, and the man looked mirrored - a mirror went
 into `calledFrame` on that reading and came out an hour later. `clipTracks`
 keeps the names now and the viewer binds the slider's clips by them.
 
+**Three more from the next play.** He sat 12.5 too low: the clip's descent
+was applied to his position by the channel-only tick AND drawn again as the
+take's `rootDrop`. Two sliders at the arrival: the called vehicle was put on
+the destination lane's spawn point on top of the ambient one already there;
+`sub_452CC0` TAKES OVER the occupant, and `Sliders::takeOverAt` now does.
+Anekbah -> Qalisar broke because Qalisar's slider mask is row 0 alone and the
+ambient coin could not make a slider for the call; `sub_452CC0` binds row 0's
+model into the reserved slot whatever the mask, so a call spawns row 0 now.
+
 **Two closed the same evening.** The suspected 50 cm seat residual is NOT
 there: `build/slider_body` measures `SLI_FN.3DO`'s four root sub-objects as
 four copies of one 83.7 x 60 x 162.5 body, each centred on its own root
