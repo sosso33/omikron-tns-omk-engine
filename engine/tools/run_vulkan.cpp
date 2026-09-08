@@ -1,7 +1,10 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // THE TWO RENDERERS, DIFFERENCED - `PORTING` A1's pair across A2's boundary.
 //
-//     run_vulkan <gamedata> <model.3DO> <eye> <at> <hfov> <out.bin> [WxH]
+//     run_vulkan <gamedata> <model.3DO> <eye> <at> <hfov> <out.bin> [WxH] [msaa]
+//
+// `msaa` (0/2/4/8, default 0) is the `[Enhancements]` anti-aliasing, asked of
+// the Vulkan side only - the software reference has none, like the original.
 //
 // The same set, the same camera, the same submissions in the same order, once
 // through the software reference and once through the GPU. Both come back as
@@ -27,7 +30,11 @@
 
 namespace fs = std::filesystem;
 
-namespace omk { Renderer* makeVulkanRenderer(); const char* vulkanDeviceName(Renderer*); }
+namespace omk {
+Renderer* makeVulkanRenderer(); const char* vulkanDeviceName(Renderer*);
+int vulkanSamples(Renderer*);      // what the frame was drawn with, 1 when off
+int vulkanMaxSamples(Renderer*);   // what the device could do at most
+}
 
 namespace {
 void triple(const char* s, float o[3]) { std::sscanf(s, "%f,%f,%f", &o[0], &o[1], &o[2]); }
@@ -42,7 +49,7 @@ void put(std::ofstream& o, const omk::Surface& s) {
 int main(int argc, char** argv) {
     if (argc < 7) {
         std::fprintf(stderr, "usage: run_vulkan <gamedata> <model.3DO> <eye> <at> <hfov> "
-                             "<out.bin> [WxH]\n");
+                             "<out.bin> [WxH] [msaa]\n");
         return 2;
     }
     const fs::path model = argv[2];
@@ -87,12 +94,15 @@ int main(int argc, char** argv) {
     const omk::Surface swFrame = *a;
 
     omk::Renderer* vk = omk::makeVulkanRenderer();
+    const int msaa = argc > 8 ? std::atoi(argv[8]) : 0;
+    if (msaa > 1) vk->setMultisample(msaa);
     const omk::Surface* b = run(*vk);
     if (!b) {
         std::fprintf(stderr, "vulkan renderer failed to come up\n");
         delete vk; return 1;
     }
-    std::printf("device: %s\n", omk::vulkanDeviceName(vk));
+    std::printf("device: %s  msaa: %d of %d\n", omk::vulkanDeviceName(vk),
+                omk::vulkanSamples(vk), omk::vulkanMaxSamples(vk));
 
     long lit_sw = 0, lit_vk = 0, both = 0, differ = 0;
     for (std::size_t i = 0; i < swFrame.px.size(); ++i) {

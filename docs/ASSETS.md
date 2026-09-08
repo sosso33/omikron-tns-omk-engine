@@ -1461,6 +1461,22 @@ port samples NEAREST in both backends and checks no pixel value; enabling
 bilinear or MSAA in a replica would be an enhancement the original never
 drew, and this note is here so it is not mistaken for fidelity.
 
+**The port carries exactly that enhancement, and it is OFF by default**
+(2026-09-08). `omk-play --aa N`, or `antialiasing = N` under an
+`[Enhancements]` section of the config file — a section reserved for what
+the original never had, separate from `[Preferences]` (the engine's own 65
+keys) and from this port's `[Options]` (stand-ins for real menu rows) —
+asks the Vulkan backend for N-sample MSAA (2/4/8, cut to what the device
+allows). It is resolved into the same single-sample image the readback and
+the swapchain blit read, so nothing downstream knows which way the frame was
+made; the software reference does not have it at all, because it stands
+where D3D stood and D3D was told not to. Through camera 4555, 4x changes
+**2.7%** of the frame's pixels, **99.7%** of them on an edge of the 1x frame,
+and the coverage agreement with the software reference stays **0.995** —
+geometry edges smoothed, texture interiors untouched, which is what separates
+multisampling from a blur. `verify.py: engine: anti-aliasing` asserts the
+default is off in the source and the edge property on the GPU.
+
 **What *Niveau de détail* (options row 7, 0..2, `HIBYTE(dword_90E724)`)
 changes is content, not filtering.** Its readers: `sub_467E20(level, a)`
 builds a street model's LOD chain — level 2 all four sub-objects (with

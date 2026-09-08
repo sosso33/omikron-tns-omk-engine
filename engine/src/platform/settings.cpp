@@ -8,6 +8,8 @@ namespace {
 constexpr const char* kPrefs = "preferences";
 // This port's own addition, for the two rows the ini cannot say.
 constexpr const char* kOptions = "options";
+// And its section for what the original never had (settings.h).
+constexpr const char* kEnhancements = "enhancements";
 
 }  // namespace
 
@@ -58,6 +60,9 @@ Settings resolveSettings(const OptionsFile& ini,
         // ---- this port's own [Options], for the two rows with no ini key --
         takeInt(kOptions, "streetactivity", s.v.streetActivity, s.streetActivity);
         takeInt(kOptions, "levelofdetail",  s.v.levelOfDetail,  s.levelOfDetail);
+
+        // ---- [Enhancements], off unless written -------------------------
+        takeInt(kEnhancements, "antialiasing", s.antiAliasing, s.antiAliasingSource);
     }
 
     // ---- 2. the save header, which is later and therefore wins -----------
@@ -94,6 +99,7 @@ Settings resolveSettings(const OptionsFile& ini,
     if (s.v.levelOfDetail  < 0) s.v.levelOfDetail  = 0;
     if (s.v.levelOfDetail  > 2) s.v.levelOfDetail  = 2;
     if (s.v.clipDistance   < 1) s.v.clipDistance   = 1;
+    s.antiAliasing = msaaSamples(s.antiAliasing);
     return s;
 }
 

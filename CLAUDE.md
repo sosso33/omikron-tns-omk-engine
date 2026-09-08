@@ -992,7 +992,13 @@ The save supplies the DB player record (Kay'l's actor record is in no city
 chunk); `--density 0..4` is options row 6, `--no-crowd` leaves the
 pedestrians out.
 `--vulkan` opens a Vulkan window and PRESENTS DIRECTLY - no readback, no
-texture upload - and does the mirror with a GPU stencil.
+texture upload - and does the mirror with a GPU stencil. `--aa N` (or
+`antialiasing = N` under `[Enhancements]` in the config file, the section
+for what the original never had) turns on N-sample MSAA on the Vulkan
+backend only. **OFF by default, and every enhancement that is not the
+game's stays that way** (the reader's rule, 2026-09-08): the original sets
+ANTIALIAS off (ASSETS 4), and a replica judged against it must draw what it
+drew unless told otherwise.
 
 **The view is NOT letterboxed by default, and that was a correction.** The
 1.818:1 letterbox is measured off DIALOGUE captures, so it is evidence about

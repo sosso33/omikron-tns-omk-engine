@@ -165,6 +165,14 @@ silently came from the wrong place shows up only as "the config file does
 nothing". The two rows with no ini key keep this port's own `[Options]`
 section, at the ini's precedence level, so a save still wins.
 
+**And a third section, `[Enhancements]`, for what the original never had**
+(2026-09-08, the reader's rule: anything not in the original stays optional,
+behind a launch flag or a config category of its own). Its first key is
+`antialiasing = N` — MSAA on the Vulkan backend, `--aa N` on the command
+line, OFF by default, which the software reference ignores because the
+original's ANTIALIAS state is explicitly off (`docs/ASSETS.md` 4). Nothing
+in the save header can carry it. `verify.py: engine: anti-aliasing`.
+
 Wired: **the crowd density** goes to `Session::setStreetActivity`, and **the
 clip distance** drives a real visible-set walk in `omk-play` - the distance
 half of `sub_48D3B0`, run per set mesh over runs of consecutive corners

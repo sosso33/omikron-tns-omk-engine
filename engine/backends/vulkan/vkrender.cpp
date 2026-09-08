@@ -122,6 +122,25 @@ public:
     omk::RasterStats stats() const override { return st_; }
     const char* name() const override { return "vulkan"; }
     ~VulkanRenderer() override;
+    // The enhancement (renderer.h). Recorded here and honoured in makeTarget,
+    // where the device's own limits get the last word.
+    bool setMultisample(int samples) override {
+        if (dev_ != VK_NULL_HANDLE) return false;   // too late: the target exists
+        wantSamples_ = samples < 2 ? 1 : samples < 4 ? 2 : samples < 8 ? 4 : 8;
+        return true;
+    }
+    int samples() const { return static_cast<int>(samples_); }
+    // The largest count the device's colour, depth and stencil limits all
+    // allow - so a probe can tell "the device cannot" from "the backend did
+    // not", which a check that skips on the former must be able to do.
+    int maxSamples() const {
+        const VkSampleCountFlags ok = props_.limits.framebufferColorSampleCounts
+                                    & props_.limits.framebufferDepthSampleCounts
+                                    & props_.limits.framebufferStencilSampleCounts;
+        for (int n = 64; n > 1; n >>= 1)
+            if (ok & static_cast<VkSampleCountFlags>(n)) return n;
+        return 1;
+    }
 
     const char* device() const { return props_.deviceName; }
 
@@ -148,8 +167,15 @@ private:
     VkFence           fence_ = VK_NULL_HANDLE;
 
     int w_ = 0, h_ = 0;
+    // `colour_` is the single-sample image every consumer reads - the
+    // readback, the swapchain blit, the 2D upload. With MSAA on it becomes
+    // the RESOLVE target and the pipelines rasterise into `msColour_`.
+    int                   wantSamples_ = 1;
+    VkSampleCountFlagBits samples_ = VK_SAMPLE_COUNT_1_BIT;
     VkImage        colour_ = VK_NULL_HANDLE;  VkDeviceMemory colourMem_ = VK_NULL_HANDLE;
     VkImageView    colourView_ = VK_NULL_HANDLE;
+    VkImage        msColour_ = VK_NULL_HANDLE; VkDeviceMemory msColourMem_ = VK_NULL_HANDLE;
+    VkImageView    msColourView_ = VK_NULL_HANDLE;
     VkImage        depth_ = VK_NULL_HANDLE;   VkDeviceMemory depthMem_ = VK_NULL_HANDLE;
     VkFormat       dsFmt_ = VK_FORMAT_UNDEFINED;
     VkImageView    depthView_ = VK_NULL_HANDLE;
@@ -381,13 +407,32 @@ bool VulkanRenderer::makeTarget() {
     // in software, which keeps the ONE 565 quantisation rule (`PORTING` A3 -
     // bring the other side into the framebuffer's space) in one place instead
     // of delegating it to a driver whose rounding is its own.
+    // THE SAMPLE COUNT - the enhancement `setMultisample` asked for, cut to
+    // what the device's colour, depth AND stencil limits all allow (the
+    // mirror pass needs the stencil at the same count). 1 unless asked.
+    samples_ = VK_SAMPLE_COUNT_1_BIT;
+    if (wantSamples_ > 1) {
+        const VkSampleCountFlags ok = props_.limits.framebufferColorSampleCounts
+                                    & props_.limits.framebufferDepthSampleCounts
+                                    & props_.limits.framebufferStencilSampleCounts;
+        for (int n = wantSamples_; n > 1; n >>= 1)
+            if (ok & static_cast<VkSampleCountFlags>(n)) {
+                samples_ = static_cast<VkSampleCountFlagBits>(n); break;
+            }
+        if (static_cast<int>(samples_) != wantSamples_)
+            std::fprintf(stderr, "vulkan: %dx MSAA is not supported here - using %dx\n",
+                         wantSamples_, static_cast<int>(samples_));
+    }
+    const bool msaa = samples_ != VK_SAMPLE_COUNT_1_BIT;
+
     auto image = [&](VkFormat f, VkImageUsageFlags use, VkImageAspectFlags asp,
+                     VkSampleCountFlagBits samples,
                      VkImage& img, VkDeviceMemory& mem, VkImageView& view) -> bool {
         VkImageCreateInfo ii{VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO};
         ii.imageType = VK_IMAGE_TYPE_2D; ii.format = f;
         ii.extent = {static_cast<uint32_t>(w_), static_cast<uint32_t>(h_), 1};
         ii.mipLevels = 1; ii.arrayLayers = 1;
-        ii.samples = VK_SAMPLE_COUNT_1_BIT; ii.tiling = VK_IMAGE_TILING_OPTIMAL;
+        ii.samples = samples; ii.tiling = VK_IMAGE_TILING_OPTIMAL;
         ii.usage = use; ii.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
         ii.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
         VKCHECK(vkCreateImage(dev_, &ii, nullptr, &img), "vkCreateImage");
@@ -405,7 +450,11 @@ bool VulkanRenderer::makeTarget() {
     };
     if (!image(VK_FORMAT_R8G8B8A8_UNORM,
                VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT,
-               VK_IMAGE_ASPECT_COLOR_BIT, colour_, colourMem_, colourView_)) return false;
+               VK_IMAGE_ASPECT_COLOR_BIT, VK_SAMPLE_COUNT_1_BIT,
+               colour_, colourMem_, colourView_)) return false;
+    if (msaa && !image(VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
+                       VK_IMAGE_ASPECT_COLOR_BIT, samples_,
+                       msColour_, msColourMem_, msColourView_)) return false;
     // A depth+STENCIL format, because the mirror pass confines its reflection
     // with a stencil. D32_SFLOAT_S8_UINT first, D24_UNORM_S8_UINT as the
     // fallback: which one a device supports is not a given, and MoltenVK's
@@ -422,40 +471,56 @@ bool VulkanRenderer::makeTarget() {
         std::fprintf(stderr, "vulkan: no depth+stencil format\n"); return false;
     }
     if (!image(dsFmt_, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,
-               VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT,
+               VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT, samples_,
                depth_, depthMem_, depthView_)) return false;
 
-    VkAttachmentDescription att[2]{};
+    // Attachment 0 is what the pipelines rasterise into: `colour_` itself
+    // without MSAA, `msColour_` with it - in which case it is not kept
+    // (DONT_CARE) and attachment 2 is the resolve into `colour_`, which then
+    // ends in the same TRANSFER_SRC layout the readback and the blit expect,
+    // so nothing downstream knows which way the frame was made.
+    VkAttachmentDescription att[3]{};
     att[0].format = VK_FORMAT_R8G8B8A8_UNORM;
-    att[0].samples = VK_SAMPLE_COUNT_1_BIT;
+    att[0].samples = samples_;
     att[0].loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-    att[0].storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+    att[0].storeOp = msaa ? VK_ATTACHMENT_STORE_OP_DONT_CARE : VK_ATTACHMENT_STORE_OP_STORE;
     att[0].stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
     att[0].stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
     att[0].initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-    att[0].finalLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+    att[0].finalLayout = msaa ? VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL
+                              : VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
     att[1].format = dsFmt_;
-    att[1].samples = VK_SAMPLE_COUNT_1_BIT;
+    att[1].samples = samples_;
     att[1].loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
     att[1].storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
     att[1].stencilLoadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
     att[1].stencilStoreOp = VK_ATTACHMENT_STORE_OP_STORE;
     att[1].initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
     att[1].finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+    att[2].format = VK_FORMAT_R8G8B8A8_UNORM;
+    att[2].samples = VK_SAMPLE_COUNT_1_BIT;
+    att[2].loadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+    att[2].storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+    att[2].stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+    att[2].stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+    att[2].initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    att[2].finalLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
     VkAttachmentReference cref{0, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL};
     VkAttachmentReference dref{1, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL};
+    VkAttachmentReference rref{2, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL};
     VkSubpassDescription sub{};
     sub.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
     sub.colorAttachmentCount = 1; sub.pColorAttachments = &cref;
+    sub.pResolveAttachments = msaa ? &rref : nullptr;
     sub.pDepthStencilAttachment = &dref;
     VkRenderPassCreateInfo rpi{VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO};
-    rpi.attachmentCount = 2; rpi.pAttachments = att;
+    rpi.attachmentCount = msaa ? 3 : 2; rpi.pAttachments = att;
     rpi.subpassCount = 1; rpi.pSubpasses = &sub;
     VKCHECK(vkCreateRenderPass(dev_, &rpi, nullptr, &pass_), "vkCreateRenderPass");
 
-    VkImageView views[2] = {colourView_, depthView_};
+    VkImageView views[3] = {msaa ? msColourView_ : colourView_, depthView_, colourView_};
     VkFramebufferCreateInfo fi{VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO};
-    fi.renderPass = pass_; fi.attachmentCount = 2; fi.pAttachments = views;
+    fi.renderPass = pass_; fi.attachmentCount = msaa ? 3 : 2; fi.pAttachments = views;
     fi.width = static_cast<uint32_t>(w_); fi.height = static_cast<uint32_t>(h_);
     fi.layers = 1;
     VKCHECK(vkCreateFramebuffer(dev_, &fi, nullptr, &fbuf_), "vkCreateFramebuffer");
@@ -534,7 +599,7 @@ bool VulkanRenderer::makePipelines() {
     rs.lineWidth = 1.0f;
 
     VkPipelineMultisampleStateCreateInfo ms{VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO};
-    ms.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
+    ms.rasterizationSamples = samples_;   // 1 unless the enhancement is on
 
     VkPipelineDepthStencilStateCreateInfo ds{VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO};
     ds.depthTestEnable = VK_TRUE;
@@ -1325,6 +1390,9 @@ VulkanRenderer::~VulkanRenderer() {
     if (colourView_) vkDestroyImageView(dev_, colourView_, nullptr);
     if (colour_) vkDestroyImage(dev_, colour_, nullptr);
     if (colourMem_) vkFreeMemory(dev_, colourMem_, nullptr);
+    if (msColourView_) vkDestroyImageView(dev_, msColourView_, nullptr);
+    if (msColour_) vkDestroyImage(dev_, msColour_, nullptr);
+    if (msColourMem_) vkFreeMemory(dev_, msColourMem_, nullptr);
     if (depthView_) vkDestroyImageView(dev_, depthView_, nullptr);
     if (depth_) vkDestroyImage(dev_, depth_, nullptr);
     if (depthMem_) vkFreeMemory(dev_, depthMem_, nullptr);
@@ -1376,6 +1444,12 @@ bool vulkanPresent(Renderer* r) {
 bool vulkanPresentSurface(Renderer* r, const Surface& s) {
     auto* v = dynamic_cast<VulkanRenderer*>(r);
     return v && v->presentSurface(s);
+}
+int vulkanSamples(Renderer* r) {
+    return static_cast<VulkanRenderer*>(r)->samples();
+}
+int vulkanMaxSamples(Renderer* r) {
+    return static_cast<VulkanRenderer*>(r)->maxSamples();
 }
 const char* vulkanDeviceName(Renderer* r) {
     auto* v = dynamic_cast<VulkanRenderer*>(r);

@@ -945,7 +945,8 @@ omk::Geometry relight(const omk::Geometry& src, Light mode) {
 int sceneViewer(const std::string& fr, const std::string& setName,
                 int camIndex, const float* eyeArg, const float* atArg,
                 float fovArg, bool letterbox, int frameBudget,
-                const std::string& dump, bool startVulkan, bool noDelay) {
+                const std::string& dump, bool startVulkan, bool noDelay,
+                int aaSamples) {
     // The set. A bare name is looked up in MESHES/DECORS, which is where the
     // decor sets live; anything with a slash is taken as given, so a character
     // model or another folder can be opened without a special case.
@@ -1029,6 +1030,7 @@ int sceneViewer(const std::string& fr, const std::string& setName,
     omk::Renderer* live = nullptr;
 #if defined(OMK_VULKAN)
     live = omk::makeVulkanRenderer();
+    if (live && aaSamples > 1) live->setMultisample(aaSamples);   // the enhancement
     if (live && !live->init(PW, PH)) { delete live; live = nullptr; }
     if (live) {
         live->setTextures(tex);
@@ -1037,6 +1039,11 @@ int sceneViewer(const std::string& fr, const std::string& setName,
     } else {
         std::printf("vulkan: no device - software only\n");
     }
+    if (aaSamples > 1)
+        std::printf("aa: %dx MSAA asked - an ENHANCEMENT the original never had; "
+                    "%s\n", aaSamples,
+                    live ? "the Vulkan backend has it, the software one does not"
+                         : "no Vulkan device, so nothing here draws it");
 #else
     std::printf("built without Vulkan - software only "
                 "(`make vulkan` needs pkg-config vulkan + glslc)\n");
@@ -1070,6 +1077,7 @@ int sceneViewer(const std::string& fr, const std::string& setName,
             std::vector<const char*> ext(n);
             SDL_Vulkan_GetInstanceExtensions(vkWin, &n, ext.data());
             omk::Renderer* vr = omk::makeVulkanRenderer();
+            if (aaSamples > 1) vr->setMultisample(aaSamples);
             omk::vulkanNeedExtensions(vr, ext.data(), n);
             void* inst = omk::vulkanCreateInstance(vr);
             // Value-initialised rather than VK_NULL_HANDLE: this file
@@ -1414,6 +1422,9 @@ int main(int argc, char** argv) {
 "  --res WxH        default 800x600; the interface is authored at 640x480\n"
 "                   and scaled, so a bigger display spreads the same layout\n"
 "  --vulkan         force the Vulkan backend (V toggles it live)\n"
+"  --aa N           ENHANCEMENT, off by default: N-sample MSAA (2/4/8) on the\n"
+"                   Vulkan backend only - the original has none; also\n"
+"                   [Enhancements] antialiasing=N in --config\n"
 "  --software       force the software rasteriser\n"
 "  --letterbox      the 1.818:1 camera-mode bars, for laying a shot beside\n"
 "                   a capture; --full is the old spelling of the opposite\n"
@@ -1575,6 +1586,7 @@ int main(int argc, char** argv) {
     bool densityFlag = false, clipFlag = false;
     int clipArg = 0;
     int skyFlag = -1;      // --sky 0|1, options row 4; -1 = take it from the settings
+    int aaFlag = -1;       // --aa N, [Enhancements] antialiasing; -1 = the settings'
     // The fog is not an option row - it is always on in the engine - so this
     // is a diagnostic switch, not a setting. Default ON, because that is what
     // the game does.
@@ -1721,6 +1733,7 @@ int main(int argc, char** argv) {
         else if (a == "--config" && i + 1 < argc) configFile = argv[++i];
         else if (a == "--clip" && i + 1 < argc) { clipArg = std::atoi(argv[++i]); clipFlag = true; }
         else if (a == "--sky" && i + 1 < argc) skyFlag = std::atoi(argv[++i]);
+        else if (a == "--aa" && i + 1 < argc) aaFlag = omk::msaaSamples(std::atoi(argv[++i]));
         else if (a == "--fog" && i + 1 < argc) drawFog = std::atoi(argv[++i]) != 0;
         else if (a == "--no-crowd-light") lightCrowd = false;
         else if (a == "--fog-colour" && i + 1 < argc) {
@@ -1779,7 +1792,7 @@ int main(int argc, char** argv) {
     if (!scene.empty())
         return sceneViewer(fr, scene, camIndex, haveEye ? eyeA : nullptr,
                            haveAt ? atA : nullptr, fovA, letterbox, frames, dump,
-                           startVulkan, noDelay);
+                           startVulkan, noDelay, aaFlag < 0 ? 0 : aaFlag);
 
     const omk::DataFs fs(fr);
     auto w = omk::UiWidgets::loadJson(tb + "/ui_widgets.json");
@@ -1926,15 +1939,19 @@ int main(int argc, char** argv) {
     long flickEvent = -1, flickQuietUntil = -1;
     constexpr int kFlickPre = 3, kFlickPost = 3, kFlickWindow = 31;
     const bool drawSky = skyFlag >= 0 ? skyFlag != 0 : settings.v.sky;
+    // The enhancement: OFF unless --aa or [Enhancements] said otherwise.
+    const int aaSamples = aaFlag >= 0 ? aaFlag : settings.antiAliasing;
     std::printf("settings: clip %d m (%s) = %.0f in, near/far split %.0f/%.0f;"
-                " crowd %d (%s); sky %d (%s), shadows %d (%s), detail %d (%s)\n",
+                " crowd %d (%s); sky %d (%s), shadows %d (%s), detail %d (%s);"
+                " aa %d (%s, enhancement)\n",
                 clipFlag ? clipArg : settings.v.clipDistance,
                 clipFlag ? "flag" : omk::sourceName(settings.clipDistance),
                 clipInches, clipInches * 0.25, clipInches * 0.95,
                 density, densityFlag ? "flag" : omk::sourceName(settings.streetActivity),
                 drawSky ? 1 : 0, skyFlag >= 0 ? "flag" : omk::sourceName(settings.sky),
                 settings.v.shadows ? 1 : 0, omk::sourceName(settings.shadows),
-                settings.v.levelOfDetail, omk::sourceName(settings.levelOfDetail));
+                settings.v.levelOfDetail, omk::sourceName(settings.levelOfDetail),
+                aaSamples, aaFlag >= 0 ? "flag" : omk::sourceName(settings.antiAliasingSource));
     if (!ini.unknown.empty()) {
         std::printf("settings: %zu key(s) under [Preferences] the engine never reads:",
                     ini.unknown.size());
@@ -2693,6 +2710,7 @@ int main(int argc, char** argv) {
             std::vector<const char*> ext(nx);
             SDL_Vulkan_GetInstanceExtensions(vkWin, &nx, ext.data());
             omk::Renderer* vr = omk::makeVulkanRenderer();
+            if (aaSamples > 1) vr->setMultisample(aaSamples);   // the enhancement
             omk::vulkanNeedExtensions(vr, ext.data(), nx);
             void* inst = omk::vulkanCreateInstance(vr);
             VkSurfaceKHR surf{};
@@ -2716,6 +2734,10 @@ int main(int argc, char** argv) {
         return 1;
     }
     if (!vkRen) std::printf("renderer: the software reference\n");
+    if (aaSamples > 1)
+        std::printf("aa: %dx MSAA - an ENHANCEMENT the original never had; %s\n", aaSamples,
+                    vkRen ? "drawn by the Vulkan backend"
+                          : "the software reference has none, --vulkan for it");
     // One place that decides where a finished framebuffer goes, so the movies,
     // the splash and the frame loop cannot drift apart about it.
     const auto present = [&](const omk::Surface& pic) {

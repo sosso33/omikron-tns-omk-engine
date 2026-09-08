@@ -200,6 +200,16 @@ public:
                                  std::span<const Draw> /*mirror*/) {
         return false;
     }
+
+    // AN ENHANCEMENT, NOT A DECISION: multisample anti-aliasing, `samples`
+    // per pixel (2/4/8; 0 or 1 is off). The original has none - `sub_4638C0`
+    // sets D3D's ANTIALIAS state to FALSE and never touches EDGEANTIALIAS
+    // (`docs/ASSETS.md` 4) - so this crosses the boundary as a request the
+    // backend may decline, and it is OFF unless `omk-play --aa` or the
+    // config's `[Enhancements]` section asks. Called BEFORE `init()`.
+    // -> false when the backend does not do it; the software reference never
+    // does, because it stands where D3D stood and D3D was told not to.
+    virtual bool setMultisample(int /*samples*/) { return false; }
 };
 
 // The REFERENCE implementation: `drawGeometry` behind the boundary, with no

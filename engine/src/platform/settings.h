@@ -28,6 +28,15 @@
 // This port adds an `[Options]` section of ITS OWN for those two, which is
 // marked as this port's addition wherever it appears; it sits at the ini's
 // precedence level, so a save still wins.
+//
+// AND A THIRD SECTION, `[Enhancements]`, FOR WHAT THE ORIGINAL NEVER HAD.
+// `[Options]` stands in for real menu rows; `[Enhancements]` is for options
+// the 1999 renderer has no state for at all - the first is anti-aliasing,
+// which `sub_4638C0` explicitly turns OFF (`docs/ASSETS.md` 4). Everything
+// in it defaults to OFF, because the replica is judged against the original
+// and an enhancement on by default would make every comparison a comparison
+// against something the game never drew. The save header cannot carry them,
+// so the ini and the command line are their only sources.
 #pragma once
 
 #include "platform/options.h"
@@ -58,6 +67,13 @@ struct Settings {
     Source volumes = Source::Default;
     Source bindings = Source::Default;
 
+    // ---- [Enhancements] - OFF unless the file or a flag says so ----------
+    // `antialiasing = N`: MSAA samples per pixel, 0 off, else 2/4/8. Only the
+    // Vulkan backend honours it; the software reference stands where D3D
+    // stood and draws what the original drew.
+    int    antiAliasing = 0;
+    Source antiAliasingSource = Source::Default;
+
     // ---- what the clip distance DERIVES, all in world units (inches) ----
     //
     // `sub_440BE0(scene, D, 1)` writes three floats on the scene, and D is
@@ -79,6 +95,10 @@ struct Settings {
     double fogStart()   const { return nearSplit(); }
     double fogEnd()     const { return clipInches(); }
 };
+
+// An anti-aliasing request folded onto what a backend can be asked for:
+// 0 (or 1) is off, anything else the largest of 2/4/8 not above it.
+inline int msaaSamples(int n) { return n < 2 ? 0 : n < 4 ? 2 : n < 8 ? 4 : 8; }
 
 // Resolve the three sources in order.  Either may be absent.
 Settings resolveSettings(const OptionsFile& ini,

@@ -19081,6 +19081,116 @@ def c_engine_renderer_boundary():
 
 
 
+def c_engine_anti_aliasing():
+    r"""ANTI-ALIASING - the port's first `[Enhancements]` option, and the two
+    properties an enhancement owes: it is OFF unless asked, and when on it
+    changes ONLY what it claims to.
+
+    The original has none: `sub_4638C0` sets D3D's ANTIALIAS render state to
+    FALSE and never sets EDGEANTIALIAS (`docs/ASSETS.md` 4). So the replica
+    must not draw it by default - a frame compared against the game would
+    otherwise be compared against something the game never drew - and the
+    reader's rule (2026-09-08) is that anything the original never had lives
+    behind a launch flag (`omk-play --aa N`) or a config section reserved for
+    such things (`[Enhancements]`), separate from the engine's `[Preferences]`
+    and from this port's `[Options]` stand-ins for real menu rows.
+
+    Three things are asserted. In the SOURCE: the setting's default is 0 and
+    `omk-play` only ever asks the backend when the count is above 1, so no
+    path can turn it on silently. On the GPU, through the same camera as
+    `engine: renderer`: the 4x frame differs from the 1x frame, and the pixels
+    that differ sit on an EDGE of the 1x frame (a 4-neighbour of a different
+    colour) - multisampling resolves geometry edges and must leave the
+    point-sampled texture interiors alone, which is what separates MSAA from
+    a blur - within a band of the frame, and the coverage agreement with the
+    software reference is kept. Skips the GPU half without Vulkan, as
+    `engine: renderer` does; and a device whose own limits allow no 4x is
+    skipped rather than failed.
+
+    **The skip arm must key on the DEVICE's limit, not on what the frame was
+    drawn with** - the first version of this check keyed on the latter, and
+    a mutation that made `setMultisample` ignore its argument fell back to
+    1x, read as "this device has no 4x", and PASSED. The probe now prints
+    `msaa: N of M`, M being the device's colour/depth/stencil limit, and only
+    M < 4 skips. Shown to fail (2026-09-08) with that mutation in place: the
+    achieved count reads 1 of 4 and the check goes red.
+    """
+    import subprocess, tempfile, shutil, re
+    eng = os.path.join(ROOT, "engine")
+    fr  = omkpaths.data_root()
+    model = os.path.join(fr, "MESHES", "DECORS", "Aapkayl.3DO")
+    if not (os.path.isdir(eng) and os.path.exists(model)):
+        return ("skipped",), ("skipped",), "engine/ or Aapkayl.3DO absent"
+
+    # ---- the source: off by default, and asked only when above 1
+    sh = open(os.path.join(eng, "src", "platform", "settings.h")).read()
+    sc = open(os.path.join(eng, "src", "platform", "settings.cpp")).read()
+    pl = open(os.path.join(eng, "backends", "sdl", "play.cpp")).read()
+    src = (bool(re.search(r"int\s+antiAliasing\s*=\s*0;", sh)),
+           '"enhancements"' in sc and '"antialiasing"' in sc,
+           len(re.findall(r"if \(aaSamples > 1\) [a-z]+->setMultisample\(aaSamples\)", pl))
+           + len(re.findall(r"if \(live && aaSamples > 1\) live->setMultisample", pl)),
+           len(re.findall(r"->setMultisample\(", pl)))
+    # every setMultisample call in omk-play is guarded by `> 1`
+    src_ok = (src[0], src[1], src[2] == src[3] and src[3] >= 3)
+
+    vk = subprocess.run(["make", "-s", "vulkan"], cwd=eng, capture_output=True, text=True)
+    vkbin = os.path.join(eng, "build", "run_vulkan")
+    gpu = ("no vulkan",)
+    if vk.returncode == 0 and os.path.exists(vkbin):
+        CAM = ["3526,1015,-905", "3412,1032,-882", "83"]
+        tmp = tempfile.mkdtemp()
+        try:
+            frames = {}
+            got = {}
+            for n in ("0", "4"):
+                out = os.path.join(tmp, "aa%s.bin" % n)
+                r = subprocess.run([vkbin, fr, model] + CAM + [out, "640x352", n],
+                                   capture_output=True, text=True)
+                m = re.search(r"msaa: (\d+) of (\d+)", r.stdout)
+                got[n] = int(m.group(1)) if m else -1
+                got["max"] = int(m.group(2)) if m else -1
+                if r.returncode == 0 and os.path.exists(out):
+                    raw = open(out, "rb").read()
+                    W, H, litSw, litVk = struct.unpack_from("<4i", raw, 0)
+                    N = W * H
+                    sw = struct.unpack_from("<%dH" % N, raw, 16)
+                    frames[n] = (W, H, sw, struct.unpack_from("<%dH" % N, raw, 16 + 2 * N))
+            if "0" in frames and "4" in frames:
+                W, H, sw, a = frames["0"]
+                _, _, _, b = frames["4"]
+                N = W * H
+                if got["max"] < 4:
+                    gpu = ("no 4x", got["max"])
+                else:
+                    changed = [i for i in range(N) if a[i] != b[i]]
+                    edge = 0
+                    for i in changed:
+                        x, y, c = i % W, i // W, a[i]
+                        if ((x > 0 and a[i - 1] != c) or (x < W - 1 and a[i + 1] != c) or
+                                (y > 0 and a[i - W] != c) or (y < H - 1 and a[i + W] != c)):
+                            edge += 1
+                    both = sum(1 for i in range(N) if sw[i] and b[i])
+                    either = sum(1 for i in range(N) if sw[i] or b[i])
+                    frac = len(changed) / N
+                    gpu = (got["0"], got["4"],
+                           0.005 <= frac <= 0.08,                     # 2.7% measured
+                           round(edge / len(changed), 2) >= 0.99 if changed else False,
+                           round(both / either, 3) >= 0.99 if either else False)
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+
+    want_gpu = gpu if gpu[0] in ("no vulkan", "no 4x") else (1, 4, True, True, True)
+    return (src_ok, gpu), ((True, True, True), want_gpu), \
+           "the source first: `Settings::antiAliasing` defaults to 0, the ini key " \
+           "is read from a section named `enhancements`, and every " \
+           "`setMultisample` call in omk-play is guarded by `> 1`; then the GPU " \
+           "(skipped without Vulkan, or on a device with no 4x): the achieved " \
+           "counts at 0 and 4, the changed fraction of the frame within " \
+           "[0.5%, 8%], at least 99% of the changed pixels on an edge of the 1x " \
+           "frame, and coverage agreement with the software reference >= 0.99"
+
+
 def c_mirror_pass():
     r"""The MIRRORS - a planar reflection pass, and a doc claim it refutes.
 
@@ -27935,6 +28045,7 @@ SLOW = [
     ("engine: silhouette", c_engine_silhouette, "PORTING B6"),
     ("engine: near clip",  c_engine_near_clip,  "PORTING B6"),
     ("engine: renderer",   c_engine_renderer_boundary, "PORTING A2"),
+    ("engine: anti-aliasing", c_engine_anti_aliasing, "ASSETS 4"),
     ("mirror pass",        c_mirror_pass,       "ASSETS 4c"),
     ("anekbah rendered",   c_anekbah_rendered,  "ASSETS 4b"),
     ("render back ends",   c_render_backends,   "ASSETS 4c"),
