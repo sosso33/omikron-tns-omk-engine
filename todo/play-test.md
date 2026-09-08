@@ -83,7 +83,19 @@ Two ways in, and they end differently, exactly as the original does:
 `DOWN`, `ENTER` on a row. **You should not move.** The camera should cut to a
 slider spawning at the top of the nearest road and driving down it toward
 you, behind and above it. It stops on the road within about 3 m of the kerb
-nearest you. Walk to it and press `ENTER`: you board, the slider page opens by
+nearest you. Now walk to **the door side** and press `ENTER`.
+
+The door side is real, and it is the engine's own test (`MDACTION`
+0x0046AEC0): you must be within **4.00 m** of the seat *and* on the slider's
+own **−X** side, or nothing happens. If nothing happens the viewer says which
+of the two failed — *"he is on the WRONG SIDE"* or *"too far away"*, with the
+distance — so walk around it and try again. **Whether that is the side a
+person would call the door is the thing to judge here**, because the reading
+was settled by three numbers agreeing and not by a picture.
+
+Press `ENTER` on the right side and he is snapped to the door, `H_SLDIN`
+plays (72 frames — the door, the step in, the door shut) with the camera over
+his shoulder from 4 m, and at the end of the clip the slider page opens by
 itself as screen 7 — and because you chose a destination, **it closes again at
 once and the slider drives you there**, you on it, the camera on the vehicle.
 At the destination you are put out and the slider leaves.
@@ -98,12 +110,15 @@ What to judge: whether it takes a sensible route, whether it stops somewhere
 you can reach, whether boarding feels like boarding, and whether the journey's
 route and stop look right.
 
-**Knowingly missing.** He keeps his walking pose aboard (ACTOR_STATE 7 is not
-written, and `A_SliderIn`/`A_SliderOut` are not played); the correct side to
-board from is not enforced; a journey to a destination in ANOTHER area loads
-the area and places you instead of driving (the circuit changes under the
-vehicle); the optional cutscene of the slider on its road is not found; and a
-called slider you never board does not yet give up after its 600 frames.
+**Knowingly missing**, updated 2026-09-08 after the boarding landed: the
+slider's **door does not visibly open**, because `sub_4521E0` swaps the model
+between two globals this repo has not identified; the **seated facing** may be
+mirrored (the vehicle pool's yaw convention is the opposite of the player's
+except along ±Z — say if he rides backwards, it is a known suspect and not a
+surprise); a journey to a destination in ANOTHER area loads the area and
+places you instead of driving (the circuit changes under the vehicle); the
+optional cutscene of the slider on its road is not found; and a called slider
+you never board does not yet give up after its 600 frames.
 
 ## 4b. The slider takes you somewhere — 1 minute
 

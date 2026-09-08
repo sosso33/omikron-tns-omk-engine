@@ -312,7 +312,40 @@ void PlayerController::rootDelta(const RootTrack& t, float prev, float cur,
 }
 
 void PlayerController::rotateByFacing(const float in[3], float out[3]) const {
+    // `Anim_RootDelta`'s 3x3 is node+156, which is actor+288 - the facing
+    // matrix - unless something installed another one. `MDACTION`'s slider
+    // arm installs the SLIDER's, so the door clip's authored step runs in the
+    // vehicle's frame; `Matrix3x3_RotateVector` in the row-vector convention
+    // is then `in.x * row0 + in.y * row1 + in.z * row2`, and row 1 is Y.
+    if (haveRootFrame_) {
+        for (int k = 0; k < 3; ++k)
+            out[k] = in[0] * rootFrameX_[k] + in[2] * rootFrameZ_[k];
+        out[1] += in[1];
+        return;
+    }
     rotateYaw(euler_[1], in, out);
+}
+
+void PlayerController::setRootFrame(const float localX[3], const float localZ[3]) {
+    for (int k = 0; k < 3; ++k) { rootFrameX_[k] = localX[k]; rootFrameZ_[k] = localZ[k]; }
+    haveRootFrame_ = true;
+}
+
+// `MDACTION`'s slider arm, the placement half - see the header.
+bool PlayerController::boardOffset(std::span<const std::byte> refClip, int groupId,
+                                   float out[3]) {
+    float ref[3];
+    if (!clipRootStart(refClip, ref)) return false;
+    const int g = rt_.channel().findGroupById(groupId);
+    if (g < 0) return false;
+    const int e = ctl_->groupList[static_cast<std::size_t>(g)].defaultEntry;
+    if (e < 0 || e >= static_cast<int>(ctl_->states.size())) return false;
+    const int clip = ctl_->states[static_cast<std::size_t>(e)].clip;
+    const RootTrack* t = rootTrackOf(clip);
+    if (!t) return false;
+    for (int k = 0; k < 3; ++k)
+        out[k] = f32at(data_, t->offset + 4u * static_cast<std::size_t>(k)) - ref[k];
+    return true;
 }
 
 void PlayerController::applyTurn(const float d[3]) {
@@ -517,7 +550,18 @@ void PlayerController::tick(float dt, std::uint32_t word) {
     // sliding.
     const double dx = static_cast<double>(world[0] + last_.shift[0]);
     const double dz = static_cast<double>(world[2] + last_.shift[2]);
-    if (std::fabs(dx) > 1e-6 || std::fabs(dz) > 1e-6) {
+    if (channelOnly_) {
+        // `Actor_TickChannelOnly` (0x00466B00) is `Cef_TickChannel` and
+        // nothing else: the root delta reaches the body through
+        // `Actor_MoveBy` - `o3de_MoveNodeBy` plus the outright write of
+        // +244..+252 - and no `Actor_ApplyMotion` runs at all, so there is no
+        // gravity, no ground probe and no collision slide. Ticking the walker
+        // here made it fight a body climbing into a vehicle that hovers.
+        const double* w = walker_.pos();
+        walker_.moveTo(w[0] + dx,
+                       w[1] + static_cast<double>(world[1] + last_.shift[1]),
+                       w[2] + dz);
+    } else if (std::fabs(dx) > 1e-6 || std::fabs(dz) > 1e-6) {
         last_.stepped = true;
         last_.step = walker_.step(dx, dz, dt);
     } else {

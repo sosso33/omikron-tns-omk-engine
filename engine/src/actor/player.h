@@ -204,6 +204,46 @@ public:
     // standing on anything. Going through `placeAt` instead dropped the rider
     // onto the pavement while his slider hovered 30 units over him.
     void rideAt(const float pos[3], float facing);
+
+    // ---- what `MDACTION`'s slider arm installs, and it is two facts -----
+    //
+    // **The root frame.** `Anim_RootDelta`'s optional 3x3 is node+156, and
+    // `sub_437140(node, matrix)` is what writes it. For an ordinary actor
+    // `Actor_LoadModel` points it at actor+288, his own facing matrix - which
+    // is why a walk clip walks the way he faces (see the header). The slider
+    // arm of `MDACTION` (0x0046AEC0) points it at the SLIDER'S matrix
+    // instead, `sub_438450(slider)` = slider node+140, so `H_SLDIN`'s
+    // authored step-through-the-door runs in the VEHICLE's frame however the
+    // man happens to be turned. Given as the matrix's own rows rather than an
+    // angle, because the pool's heading and this class's euler do not share a
+    // yaw convention and converting between them here would decide that
+    // question silently.
+    void setRootFrame(const float localX[3], const float localZ[3]);
+    void clearRootFrame() { haveRootFrame_ = false; }
+
+    // **No motion pass.** ACTOR_STATE 6 and 8 tick through
+    // `Actor_TickChannelOnly` (0x00466B00), whose whole body is
+    // `Cef_TickChannel` and an error trace - there is no `Actor_ApplyMotion`,
+    // so no gravity, no ground probe and no walker collision. The clip's root
+    // delta still moves him, through `Actor_MoveBy`. Ticking the walker as
+    // well makes the two fight over a body that is climbing into a vehicle
+    // hovering 30 units off the road.
+    void setChannelOnly(bool on) { channelOnly_ = on; }
+
+    // ...and where the arm PUTS him before the clip plays. The engine snaps
+    // the actor to
+    //
+    //     slider + M_slider . (root0(clip of group `groupId`) - root0(ref))
+    //
+    // where `root0` is `sub_471100` - the first position key of the first
+    // track that has any - and `ref` is `ANIMS\slf_112.3da`, which
+    // `Game_Init` loads into `dword_90EF28` (05_sys.c 1842) for exactly this.
+    // Both clips are authored around one slider, so the difference is where
+    // the man stands beside its door. This returns that offset, in the
+    // slider's own frame; the caller supplies the reference clip because it
+    // is a `.3DA` from the tree and not part of the bank.
+    bool boardOffset(std::span<const std::byte> refClip, int groupId,
+                     float out[3]);
     // The crowd push (`Actor_TickNpc`: `f32(actor,244) += push[0]` ... and
     // `o3de_MoveNodeBy`, before `Actor_ApplyMotion`): the position moved
     // outright, no floor probe - the next tick's motion probes the ground.
@@ -466,6 +506,10 @@ private:
     int   takeGen_ = 0;
     bool  adjust_ = false;
     float stepScale_ = 1.0f;           // `dword_6A5380`, 1.0 outside a step
+    bool  haveRootFrame_ = false;      // node+156 is not actor+288
+    float rootFrameX_[3] = {1, 0, 0};  // the matrix's row 0 and row 2
+    float rootFrameZ_[3] = {0, 0, 1};
+    bool  channelOnly_ = false;        // Actor_TickChannelOnly: no motion pass
     int matched_ = 0, total_ = 0;
 
     // the camera block's live state

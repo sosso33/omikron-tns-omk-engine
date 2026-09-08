@@ -649,15 +649,37 @@ float Sliders::calledYaw() const {
     return static_cast<float>(std::atan2(m.dir[0], m.dir[2]) * 57.29577951308232);
 }
 
-// `MDSLIDIN`'s two data conditions - "no active slider !" and "slider is not
-// in open mode !". The third, `player[+404] == 6`, belongs to the caller.
-bool Sliders::canMount(const float playerPos[3], float reach) const {
+bool Sliders::calledFrame(float pos[3], float localX[3], float localZ[3]) const {
+    if (!calledAt(pos)) return false;
+    const Vehicle& v = vehicles_[static_cast<std::size_t>(called_)];
+    const Pedestrian& m = movers_[static_cast<std::size_t>(v.mover)];
+    const float n = std::sqrt(m.dir[0] * m.dir[0] + m.dir[2] * m.dir[2]);
+    if (!(n > 0.0f)) return false;
+    const float fx = m.dir[0] / n, fz = m.dir[2] / n;
+    localZ[0] = fx;   localZ[1] = 0.0f; localZ[2] = fz;    // row 2, the forward
+    localX[0] = fz;   localX[1] = 0.0f; localX[2] = -fx;   // row 0
+    return true;
+}
+
+// `MDACTION`'s slider arm (0x0046AEC0, `loc_46AFF8`) - the side and the
+// reach. `sub_438240()` supplying a slider at all is `calledVehicle() >= 0`,
+// and its `+8` mode is not read here: the arm SETS it to 3 rather than
+// requiring it (`sub_438420(slider, 3)`), which is a correction - this port
+// had `MDSLIDIN`'s "slider is not in open mode !" standing in for a gate that
+// belongs to a different handler. The mode test kept anyway, because a slider
+// still driving toward him is not one he may climb into.
+bool Sliders::canMount(const float playerPos[3]) const {
     if (!calledIsOpen()) return false;
-    float at[3];
-    if (!calledAt(at)) return false;
-    const float dx = at[0] - playerPos[0], dy = at[1] - playerPos[1],
-                dz = at[2] - playerPos[2];
-    return std::sqrt(dx * dx + dy * dy + dz * dz) <= reach;
+    float at[3], ax[3], az[3];
+    if (!calledFrame(at, ax, az)) return false;
+    const float dx = at[0] - playerPos[0];
+    // `fld [slider y]; fsub flt_4BC91C; fsub [actor +248]` - the seat drop is
+    // ADDED (the constant is negative) before the actor's y comes off, so the
+    // test measures to the seat and not to the vehicle's origin.
+    const float dy = at[1] + kBoardSeatY - playerPos[1];
+    const float dz = at[2] - playerPos[2];
+    if (dx * ax[0] + dy * ax[1] + dz * ax[2] < 0.0f) return false;   // the SIDE
+    return std::sqrt(dx * dx + dy * dy + dz * dz) < kBoardReach;      // 4 m
 }
 
 void Sliders::mountCalled() {

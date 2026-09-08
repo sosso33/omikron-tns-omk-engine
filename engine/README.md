@@ -302,6 +302,19 @@ And one build rule: `make play` / `make vulkan` depend on `$(SRCOBJS)`, because
 they compile their own source fresh and link prebuilt objects - a struct that
 grows between the two halves links anyway, with no error.
 
+**And the target is `play`, NOT `build/omk-play`** - which matters because
+`make -s build/omk-play` **silently does nothing and exits 0**. There is no
+rule for that path (the `build/%` pattern makes a TOOL from `tools/%.cpp`, and
+`omk-play` is not one), and since the file already exists make calls it up to
+date and says so with nothing at all under `-s`. On 2026-09-08 that cost two
+full eight-minute scenario runs whose logs were evidence about the binary from
+before the change: the first read as "the port ignores the new arm", the
+second as "the edit did not land". Both were the build. This is CLAUDE.md §1's
+*"a check must build the binary it measures"* one level down - the check was
+right, the hand-run beside it was not - and the general form is the same:
+**after a build, assert the artefact, not the exit status.** `stat` the binary
+against the source, or `strings` it for a message the change adds.
+
 ### Later: performance, and none of it is urgent
 
 Measured 2026-09-01 over 300 frames of Aapkayl with `--nodelay`: software
@@ -2227,6 +2240,60 @@ two ride states and is silent about the gate.
 NOTHING CALLS THE MODEL YET. The mount in the world - the pool reservation,
 `sub_452570`'s arm arm, camera mode 8 with the slider as both subjects and
 `sub_457F50`'s placement of the rider - is step 3.
+
+**AND THE WAY IN IS `MDACTION`, NOT `MDSLIDIN`** (2026-09-08). The paragraph
+above is right about `MDSLIDIN`'s refusals and wrong about where boarding
+starts, which is why this port had no door animation and no side test: they
+are both in the OTHER handler. `MDACTION` (0x0046AEC0), the action button's
+own `tab_special_move[3]`, takes a slider arm at `loc_46AFF8` **before** the
+world-object take, and that arm is the whole of getting in - the two
+geometric gates, the snap to the door, the clip and the camera. `MDSLIDIN` is
+what the CHANNEL fires at the end of the clip.
+
+The two gates, on `d = slider - actor` with the seat drop folded into `d.y`
+(`flt_4BC91C` is -33.149605 and is subtracted):
+
+* `dot(d, row0(M_slider)) >= 0` - **the correct side**. `d` points from the
+  man to the slider, so he must stand on the slider's **-X**;
+* `|d| < 157.48032` - **4.000 m** exactly, at 0.0254 m to the unit.
+
+Then `sub_438420(slider, 3)` (the arm SETS the open mode rather than asking
+for it), the actor is snapped to `slider + M . (root0(group 60's clip) -
+root0(ANIMS\slf_112.3da))` with `y -= 33.149605`, `sub_437140(node, M)`
+installs the **slider's** matrix as the root frame so the clip's authored step
+runs in the vehicle's frame, ACTOR_STATE goes to **6**, `SetPersoBankGroup`
+plays group 60 - `H_SLDIN`, 72 frames, the door and the step in - and
+`Camera_Request(9, ...)` puts 60 frames of preset 9 on the slider. The channel
+finishes it: group 60's entry `[160]` is a child of `H_SLDIN` with **no input
+at all**, so it is taken when the clip ends, fires `MDSLIDIN` and gotos
+`H_SLIDER`, the riding pose.
+
+**Three things agree on which side the door is**, and that is what settles it
+without a picture: the gate wants -X, the placement offset is
+`(-62.503, -8.782, +3.697)` - 1.59 m along -X, measured off the shipped clips
+by `build/slider_door` - and preset 9's eye is `(157.4803, 59.0551, 0)` with
+the engine SUBTRACTING a preset's eye offset, so the camera stands 4.00 m
+along -X and 1.50 m up, at exactly the gate's own reach. `engine: slider door`
+asserts the agreement and not only the numbers.
+
+Two pieces of the arm are NOT ported and are labelled here rather than left to
+be discovered: `sub_4521E0`'s model swap (`dword_538E30` against
+`dword_538E2C` - the open-door mesh against the closed one; both globals
+unidentified), so the door does not visibly open; and the actor's SEATED
+facing, which still goes through `Sliders::calledYaw` - a yaw convention that
+is the MIRROR of `PlayerController`'s euler except along +-Z. The door
+geometry is carried as the matrix's rows end to end (`calledFrame`,
+`setRootFrame`) precisely so that question is not decided by accident; see
+`todo/slider.md`.
+
+Two small additions to `PlayerController` carry the arm, and both are direct
+models of engine facts rather than conveniences: `setRootFrame` is
+`sub_437140(node, matrix)` - the `Anim_RootDelta` 3x3 CLAUDE.md 6 lists, whose
+second confirmed writer this is - and `setChannelOnly` is
+`Actor_TickChannelOnly` (0x00466B00), the ACTOR_STATE 6 and 8 tick, whose
+whole body is `Cef_TickChannel` and an error trace: no `Actor_ApplyMotion`, so
+no gravity, no ground probe and no walker collision while he climbs into a
+vehicle that hovers.
 
 **THE SNEAK'S SLIDER TAKES THE PLAYER SOMEWHERE** (2026-09-07) - step 1 of
 `todo/slider.md`. The page had listed its destinations since the sneak landed

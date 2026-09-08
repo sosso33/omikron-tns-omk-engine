@@ -372,6 +372,73 @@ Each ends in a commit and a report.
    **8** while it comes, **0** when it arrives, **10** when it leaves with
    you, and **17** when you get off.
 
+### `MDACTION`'s SLIDER ARM — how you get in, read 2026-09-08
+
+This is the piece three of the "what is left" entries below were all really
+asking for, and it is one arm of one handler. **Boarding does not begin at
+`MDSLIDIN`.** It begins at `MDACTION` (0x0046AEC0), the action button's own
+`tab_special_move[3]` handler, whose *first* branch — `loc_46AFF8`, before the
+world-object take everything else in this port uses it for — is the slider.
+`MDSLIDIN` is at the far END of it.
+
+The arm, in order, with the constants as the listing has them:
+
+| step | the code | what it is |
+|---|---|---|
+| the slider | `edi = sub_438240()` — `dword_8F5E44` | the active slider; nothing → the ordinary take |
+| not shooting | `[esi+194h] == 3` refuses | ACTOR_STATE 3 |
+| a flag | `sub_438290(slider)` = node+180 & 4 | must be set |
+| its position | `sub_438310(slider, v)` = node +36/+40/+44 | |
+| the vector | `d = slider − actor`, and **`d.y = (sliderY + 33.149605) − actorY`** | `flt_4BC91C` is −33.149605 and is *subtracted*, so the seat drop is folded in before the test |
+| its matrix | `sub_438450(slider)` = node+140 | |
+| **the side** | `R = Matrix3x3_RotateVector(1,0,0, M)` — the matrix's row 0, the local **+X** — then `dot(d, R) < 0` **refuses** | THE CORRECT SIDE. `d` points from the man to the slider, so the man must stand on the slider's **−X** side |
+| **the reach** | `|d| >= 157.48032` refuses | **4.000 m** exactly, at 0.0254 m to the unit |
+| open it | `if (mode == 7) sub_438200(slider, 0); sub_438420(slider, 3)` | the arm **sets** mode 3; it does not require it |
+| the group | `ebx = Cef_FindGroupById(actor+0B4h, 60)` | **group 60**, `H_SLDIN` |
+| **the snap** | `off = root0(Cef_DefaultClip(g60)) − root0(dword_90EF28)`, rotated by M; `actor = slider + off`, `y −= 33.149605` | `root0` is `sub_471100` (the first position key of the first track with any) and `dword_90EF28` is `ANIMS\slf_112.3da`, which `Game_Init` loads for exactly this (05_sys.c 1842) |
+| the move | the delta written to +0E8..+0F0, `o3de_MoveNodeBy`, `+104h = FLT_MAX` | the fall clock reset |
+| **the root frame** | `sub_437140(actor+8, M)` | node+156 becomes the **SLIDER's** matrix, so `H_SLDIN`'s authored step runs in the vehicle's frame however the man is turned. This is the `Anim_RootDelta` 3x3 CLAUDE.md §6 lists — a second confirmed writer of it |
+| the model | `sub_4521E0(slider)` | swaps `dword_538E30` ↔ `dword_538E2C` — the open-door mesh against the closed one. **Not ported**; the two globals are unidentified |
+| the state | `[esi+194h] = 6` | ACTOR_STATE 6 |
+| the clip | `SetPersoBankGroup(actor[18Ch], g60)` | the door opens, he steps in, the door shuts |
+| the camera | `Camera_Request(9, {slider, slider, 60.0f, 1, …, −1})` | **preset 9**, 60 frames, on the slider |
+
+Then the **channel** finishes it. `H1Avnt.CTL` group 60 holds `[158] H_SLDIN`
+(clip 53, 72 frames), `[159] H_SLIDER` (clip 54, the riding pose) and `[160]`,
+a child of `H_SLDIN` with **no input at all**, flags 0x13, move `MDSLIDIN`,
+GoTo `H_SLIDER`. So when the door clip ends the channel takes [160] by itself,
+fires `MDSLIDIN` (0x0046B7F0 — `sub_438420(slider, 4)`, ACTOR_STATE 7,
+`UI_OpenScreen(7)`) and settles on the riding pose. Group 61 is the mirror on
+the way out: `[161] H_SLDOUT` (clip 55, 51 frames), `[162]` `MDSLIDOU`,
+`[163]` GoTo `H_STAND`.
+
+**Three independent things agree on which side the door is**, which is the
+self-check this needed and is why it can be believed without a screenshot:
+
+* the gate wants the man on the slider's **−X**;
+* the placement offset is `(−62.503, −8.782, +3.697)` — 1.59 m along **−X**,
+  22 cm and 9 cm — measured by `engine/tools/slider_door` off the shipped
+  clips (`slf_112.3da` root0 `(−538.195, −162.587, 7.884)`, `H_SLDIN` root0
+  `(−600.698, −171.369, 11.581)`);
+* camera preset 9's eye is `(157.4803, 59.0551, 0)` and the engine SUBTRACTS a
+  preset's eye offset, so the camera stands 4.00 m along **−X** and 1.50 m up
+  — over the man's shoulder, watching him get in.
+
+Two round metres (4.00 and 1.50) and the reach matching the camera distance
+exactly are the kind of agreement a wrong unit or a flipped sign does not
+produce.
+
+**One thing this arm does NOT do**, and it matters for the port: it never
+writes the actor's euler. He keeps whatever way he was facing and the clip
+turns him. It is also where the port's own yaw conventions had to be kept
+apart — `Sliders::calledYaw` returns `atan2(dir.x, dir.z)` (forward
+`(sin t, 0, cos t)`) while `PlayerController`'s euler runs the other way
+(`rotateYaw` makes forward `(−sin y, 0, cos y)`), so the two are **mirror
+conventions** except along ±Z. The door geometry is therefore carried as the
+matrix's ROWS end to end (`calledFrame`, `setRootFrame`) and never as an
+angle. Whether the SEATED placement's `rideAt(seat, calledYaw())` should be
+negated is a separate question this did not touch, and is now listed below.
+
 ## What is left — 2026-09-08, after the journey landed
 
 The reader, 2026-09-07: *"So, slider task is not finished if it is not usable,
@@ -388,12 +455,23 @@ What is still not there, so the labelling is not mistaken for done:
   him — the arrive arm — instead of driving. `sub_40E630` loads the area
   first and only then looks for a lane; the circuit changes under the
   vehicle, and driving across that is not ported;
-* **the correct SIDE to board from** — not in `MDSLIDIN`; unfound;
-* **the door animation** — `A_SliderIn` / `A_SliderOut` / `H_Slider` exist in
-  `H1Avnt.CTL` and `F1Avnt.CTL` and nothing plays them; he keeps his walking
-  pose aboard;
-* **ACTOR_STATE 7 on the mount** — the engine reaches it from 6 and nothing
-  in the port puts him in 6; the state table refuses `1 -> 7` correctly;
+* ~~the correct SIDE to board from~~ — **done 2026-09-08**: it is
+  `MDACTION`'s, not `MDSLIDIN`'s, and it is a dot product against the slider's
+  local +X plus a 4.00 m reach. See the section above;
+* ~~the door animation~~ — **done 2026-09-08**: group 60's `H_SLDIN`, 72
+  frames, entered by `MDACTION` with the man snapped to the door and the root
+  frame swapped to the slider's, and left by the channel's own no-input child
+  `[160]`, which is what fires `MDSLIDIN`. What is still missing from it is
+  `sub_4521E0`'s **model swap** — the open-door mesh against the closed one,
+  two unidentified globals — so the door does not visibly open;
+* ~~ACTOR_STATE 7 on the mount~~ — **done 2026-09-08**: `MDACTION` writes 6,
+  the channel's `MDSLIDIN` takes it to 7, and the state table's `6 -> 7` row
+  is exercised by that path rather than asserted on its own;
+* **the SEATED facing** — `rideAt(seat, calledYaw())` uses the pool's yaw
+  convention where the player's euler is the mirror of it, so the rider may
+  be turned the wrong way except along ±Z. Found while reading the door
+  geometry; not touched, because changing it without a picture is exactly the
+  sign guess CLAUDE.md warns about;
 * **the optional CUTSCENE** of the slider on its road — a longer thing than
   the camera cut, *not every time*; unfound. State 2's `+180 & 0x10` /
   `0x400` pair is the right shape and nothing read ties it to an editing;

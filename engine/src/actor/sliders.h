@@ -233,6 +233,15 @@ struct RideMachine {
 // The route `sub_452570` would take for that lane on the `counter`-th call.
 int laneRoute(const OptTrack& t, int lane, unsigned counter);
 
+// `MDACTION`'s slider arm, the two constants it tests against.
+// 157.48032 inches is 4.000 m and 59.0551 (camera preset 9's eye lift) is
+// 1.500 m, which is the kind of roundness a wrong unit does not produce.
+inline constexpr float kBoardReach = 157.48032f;   // flt_4BC924
+// ...and the seat drop the arm folds into d.y and into the placement:
+// `flt_4BC91C` is -33.149605 (subtracted, so added) and `flt_4BC928` is
+// +33.149605 (subtracted). The same number `sub_468FA0` seats a rider at.
+inline constexpr float kBoardSeatY = 33.149605f;
+
 struct Vehicle {
     bool  live = false;
     int   kind = 1;                 // 1 a slider, 0 a moto
@@ -440,9 +449,30 @@ public:
     // ...and which way it points, for the camera that watches it come.
     float calledYaw() const;
     bool calledIsOpen() const { return called_ >= 0 && callRide_.state == 3; }
-    // `MDSLIDIN`'s gate, minus the ACTOR_STATE half the caller owns: an
-    // active slider, standing OPEN, within reach.
-    bool canMount(const float playerPos[3], float reach = 200.0f) const;
+    // The slider's own FRAME: where it is, and the rows of the 3x3 that
+    // `sub_438450(slider)` hands `Matrix3x3_RotateVector` - the local +X and
+    // the forward. `Matrix3x3_FromEulerAngles(0, y, 0)` is
+    // `[[cy,0,sy],[0,1,0],[-sy,0,cy]]`, so with the mover's unit heading `f`
+    // as row 2 the local X is `(f.z, 0, -f.x)`. Taken as vectors and never as
+    // an angle: the pool's heading and the player's euler do NOT share a yaw
+    // convention (`calledYaw` inverts one against the other), and turning the
+    // door geometry into a yaw would decide that question by accident.
+    bool calledFrame(float pos[3], float localX[3], float localZ[3]) const;
+
+    // THE BOARDING GATE, and it is `MDACTION`'s (0x0046AEC0, `loc_46AFF8`),
+    // not `MDSLIDIN`'s. Two geometric tests on `d = slider - player`, with
+    // the seat drop folded into d.y:
+    //
+    //     dot(d, localX) >= 0      the CORRECT SIDE - the man must stand on
+    //                              the slider's -X side, which is where its
+    //                              door is and where camera preset 9 watches
+    //                              from
+    //     |d| < 157.48032          FOUR METRES exactly, at 0.0254 m an inch
+    //
+    // `MDSLIDIN` is the move at the far END of the door clip and carries no
+    // geometry at all; it was this port's gate because the animation between
+    // them had not been found.
+    bool canMount(const float playerPos[3]) const;
     // The player got on: the slot goes to 4 (aboard) and the vehicle stops
     // being driven, because `Slider_TickRide` owns the body from here.
     void mountCalled();
