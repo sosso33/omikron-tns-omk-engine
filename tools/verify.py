@@ -19191,6 +19191,102 @@ def c_engine_anti_aliasing():
            "frame, and coverage agreement with the software reference >= 0.99"
 
 
+def c_engine_texture_filter():
+    r"""TEXTURE FILTERING - the second `[Enhancements]` option (bilinear), OFF
+    by default, and the colour key surviving it.
+
+    The original point-samples: `sub_4638C0` sets MAG/MIN POINT and MIP NONE
+    (`docs/ASSETS.md` 4). The port's bilinear mode is a linear sampler on the
+    Vulkan side and nothing on the software side. Its one real difficulty is
+    the CUTOUT path - flag 0x800, a colour key on black - which under a
+    linear sampler would blend key texels into the edge as a dark fringe. So
+    the upload writes the key into ALPHA (0 on a black texel) and the shader
+    treats a filtered sample as PREMULTIPLIED: discard below 0.5, divide by
+    alpha above. Under the nearest sampler that is the same test on the same
+    texel, which is why the default frame must be BIT-IDENTICAL to the frame
+    before the shader carried alpha at all (asserted here as: nearest frame
+    == the probe's no-argument frame, and both == `engine: anti-aliasing`'s
+    1x frame through the same camera).
+
+    Asserted: in the source the default is 0 and every `setTextureFilter`
+    call in omk-play is guarded by `> 0`; on the GPU the nearest frame is
+    byte-identical to the default, the bilinear frame differs from it over
+    MOST of the textured area (a filter touches nearly every texel, unlike
+    MSAA's 2.7% of edges) by a SMALL mean amount (a blend of neighbours, not
+    a change of content), and the coverage agreement with the software
+    reference is kept - filtering moves no geometry. Measured 2026-09-08
+    through camera 4555: 55.6% of pixels changed, mean |d| 4.6 of 255,
+    coverage 0.991. The keyed edge was judged by eye on Aapden's floor
+    stain (the set's largest cutout batch, 1938 corners): no dark outline.
+
+    Shown to fail (2026-09-08) with `setTextureFilter` ignoring its argument:
+    the bilinear frame is byte-identical to the nearest one.
+    """
+    import subprocess, tempfile, shutil, re
+    eng = os.path.join(ROOT, "engine")
+    fr  = omkpaths.data_root()
+    model = os.path.join(fr, "MESHES", "DECORS", "Aapkayl.3DO")
+    if not (os.path.isdir(eng) and os.path.exists(model)):
+        return ("skipped",), ("skipped",), "engine/ or Aapkayl.3DO absent"
+
+    sh = open(os.path.join(eng, "src", "platform", "settings.h")).read()
+    sc = open(os.path.join(eng, "src", "platform", "settings.cpp")).read()
+    pl = open(os.path.join(eng, "backends", "sdl", "play.cpp")).read()
+    fs = open(os.path.join(eng, "backends", "vulkan", "shaders", "scene.frag")).read()
+    guarded = len(re.findall(r"if \((?:live && )?texFilter > 0\) [a-z]+->setTextureFilter\(texFilter\)", pl))
+    src_ok = (bool(re.search(r"int\s+textureFilter\s*=\s*0;", sh)),
+              '"texturefiltering"' in sc,
+              guarded == len(re.findall(r"->setTextureFilter\(", pl)) and guarded >= 3,
+              "t.a < 0.5" in fs and "t.rgb /= t.a" in fs)   # the premultiplied key
+
+    vk = subprocess.run(["make", "-s", "vulkan"], cwd=eng, capture_output=True, text=True)
+    vkbin = os.path.join(eng, "build", "run_vulkan")
+    gpu = ("no vulkan",)
+    if vk.returncode == 0 and os.path.exists(vkbin):
+        CAM = ["3526,1015,-905", "3412,1032,-882", "83"]
+        tmp = tempfile.mkdtemp()
+        try:
+            frames = {}
+            for tag, extra in (("default", []), ("nearest", ["0", "0"]), ("bilinear", ["0", "1"])):
+                out = os.path.join(tmp, tag + ".bin")
+                r = subprocess.run([vkbin, fr, model] + CAM + [out, "640x352"] + extra,
+                                   capture_output=True, text=True)
+                if r.returncode == 0 and os.path.exists(out):
+                    raw = open(out, "rb").read()
+                    W, H, litSw, litVk = struct.unpack_from("<4i", raw, 0)
+                    N = W * H
+                    frames[tag] = (W, H, struct.unpack_from("<%dH" % N, raw, 16),
+                                   struct.unpack_from("<%dH" % N, raw, 16 + 2 * N))
+            if len(frames) == 3:
+                W, H, sw, d = frames["default"]
+                n0, n1 = frames["nearest"][3], frames["bilinear"][3]
+                N = W * H
+                def rgb(v):
+                    return (((v >> 11) & 31) << 3, ((v >> 5) & 63) << 2, (v & 31) << 3)
+                changed = [i for i in range(N) if n0[i] != n1[i]]
+                tot = 0.0
+                for i in changed:
+                    a, b = rgb(n0[i]), rgb(n1[i])
+                    tot += (abs(a[0] - b[0]) + abs(a[1] - b[1]) + abs(a[2] - b[2])) / 3.0
+                both = sum(1 for i in range(N) if sw[i] and n1[i])
+                either = sum(1 for i in range(N) if sw[i] or n1[i])
+                gpu = (n0 == d,
+                       len(changed) / N >= 0.2,                       # 55.6% measured
+                       (tot / len(changed) <= 16.0) if changed else False,   # 4.6 measured
+                       round(both / either, 3) >= 0.98 if either else False)
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+
+    want_gpu = gpu if gpu == ("no vulkan",) else (True, True, True, True)
+    return (src_ok, gpu), ((True, True, True, True), want_gpu), \
+           "the source: `Settings::textureFilter` defaults to 0, the ini key " \
+           "`texturefiltering` is read, every `setTextureFilter` call in omk-play " \
+           "is guarded by `> 0`, and the shader carries the premultiplied key; " \
+           "the GPU (skipped without Vulkan): the nearest frame is byte-identical " \
+           "to the default, bilinear changes >= 20% of the pixels by a mean of " \
+           "<= 16 levels, and coverage agreement with software stays >= 0.98"
+
+
 def c_mirror_pass():
     r"""The MIRRORS - a planar reflection pass, and a doc claim it refutes.
 
@@ -28157,6 +28253,7 @@ SLOW = [
     ("engine: near clip",  c_engine_near_clip,  "PORTING B6"),
     ("engine: renderer",   c_engine_renderer_boundary, "PORTING A2"),
     ("engine: anti-aliasing", c_engine_anti_aliasing, "ASSETS 4"),
+    ("engine: texture filter", c_engine_texture_filter, "ASSETS 4"),
     ("mirror pass",        c_mirror_pass,       "ASSETS 4c"),
     ("anekbah rendered",   c_anekbah_rendered,  "ASSETS 4b"),
     ("render back ends",   c_render_backends,   "ASSETS 4c"),

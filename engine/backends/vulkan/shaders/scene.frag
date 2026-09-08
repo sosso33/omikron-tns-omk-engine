@@ -28,9 +28,18 @@ layout(location = 2) in float vDepth;
 layout(location = 0) out vec4 outColour;
 
 void main() {
-    vec3 t = texture(tex, vUV / vec2(textureSize(tex, 0))).rgb;
-    if (pc.cutout != 0 && t.r == 0.0 && t.g == 0.0 && t.b == 0.0) discard;
-    vec3 c = clamp(t * vCol, 0.0, 1.0);
+    // Alpha is the KEY, written at upload: 0 on a black texel, 1 elsewhere.
+    // Under the nearest sampler (the original's) this is exactly the old
+    // `rgb == 0` test on the same texel. Under the bilinear ENHANCEMENT the
+    // key texels are (0,0,0,0), so the sample is premultiplied: a fragment
+    // more than half key is discarded and the rest is un-premultiplied,
+    // which is what keeps the cutout edge free of a dark fringe.
+    vec4 t = texture(tex, vUV / vec2(textureSize(tex, 0)));
+    if (pc.cutout != 0) {
+        if (t.a < 0.5) discard;
+        t.rgb /= t.a;
+    }
+    vec3 c = clamp(t.rgb * vCol, 0.0, 1.0);
     // THE FOG, and it is raster.cpp's line transcribed. Linear -
     // `FOGTABLEMODE` 3 at density 1.0, the only mode the engine sets - over
     // the range the clip distance sizes. The CPU side has already applied the

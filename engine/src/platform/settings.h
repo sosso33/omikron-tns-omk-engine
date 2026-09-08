@@ -73,6 +73,10 @@ struct Settings {
     // stood and draws what the original drew.
     int    antiAliasing = 0;
     Source antiAliasingSource = Source::Default;
+    // `texturefiltering = nearest|bilinear` (or 0|1): the original is
+    // point-sampled (MAG/MIN POINT, MIP NONE), so 0 is the game's picture.
+    int    textureFilter = 0;
+    Source textureFilterSource = Source::Default;
 
     // ---- what the clip distance DERIVES, all in world units (inches) ----
     //
@@ -99,6 +103,18 @@ struct Settings {
 // An anti-aliasing request folded onto what a backend can be asked for:
 // 0 (or 1) is off, anything else the largest of 2/4/8 not above it.
 inline int msaaSamples(int n) { return n < 2 ? 0 : n < 4 ? 2 : n < 8 ? 4 : 8; }
+
+// A texture-filter word onto the mode a backend is asked for: 0 nearest,
+// 1 bilinear; -1 for a word that is neither, so a typo does not silently
+// become the default.
+inline int textureFilterMode(std::string w) {
+    for (auto& c : w) c = static_cast<char>(c >= 'A' && c <= 'Z' ? c + 32 : c);
+    while (!w.empty() && (w.back() == ' ' || w.back() == '\t')) w.pop_back();
+    while (!w.empty() && (w.front() == ' ' || w.front() == '\t')) w.erase(w.begin());
+    if (w == "0" || w == "nearest" || w == "point" || w == "off") return 0;
+    if (w == "1" || w == "bilinear" || w == "linear") return 1;
+    return -1;
+}
 
 // Resolve the three sources in order.  Either may be absent.
 Settings resolveSettings(const OptionsFile& ini,

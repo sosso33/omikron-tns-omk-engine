@@ -130,6 +130,12 @@ public:
         return true;
     }
     int samples() const { return static_cast<int>(samples_); }
+    bool setTextureFilter(int mode) override {
+        if (dev_ != VK_NULL_HANDLE) return false;
+        filter_ = mode < 1 ? 0 : 1;
+        return true;
+    }
+    int textureFilter() const { return filter_; }
     // The largest count the device's colour, depth and stencil limits all
     // allow - so a probe can tell "the device cannot" from "the backend did
     // not", which a check that skips on the former must be able to do.
@@ -171,6 +177,7 @@ private:
     // readback, the swapchain blit, the 2D upload. With MSAA on it becomes
     // the RESOLVE target and the pipelines rasterise into `msColour_`.
     int                   wantSamples_ = 1;
+    int                   filter_ = 0;        // 0 nearest (the original), 1 bilinear
     VkSampleCountFlagBits samples_ = VK_SAMPLE_COUNT_1_BIT;
     VkImage        colour_ = VK_NULL_HANDLE;  VkDeviceMemory colourMem_ = VK_NULL_HANDLE;
     VkImageView    colourView_ = VK_NULL_HANDLE;
@@ -772,6 +779,10 @@ bool VulkanRenderer::makePipelines() {
     // takes one texel with no filtering and the two are being differenced;
     // repeat because `% t.width` is what lets one atlas tile across a wall.
     si.magFilter = VK_FILTER_NEAREST; si.minFilter = VK_FILTER_NEAREST;
+    // ...unless the filtering ENHANCEMENT asked for bilinear (renderer.h).
+    // The colour key survives it because `upload` puts the key in ALPHA and
+    // the shader treats a filtered sample as premultiplied.
+    if (filter_ >= 1) { si.magFilter = VK_FILTER_LINEAR; si.minFilter = VK_FILTER_LINEAR; }
     si.addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT;
     si.addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT;
     si.addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT;
@@ -1008,11 +1019,18 @@ void VulkanRenderer::setTextures(std::span<const omk::Texture> t) {
         void* p = nullptr;
         vkMapMemory(dev_, sm, 0, bytes, 0, &p);
         auto* dst = static_cast<unsigned char*>(p);
+        // Alpha carries the COLOUR KEY: 0 where the texel is black, the key
+        // the cutout path (flag 0x800) discards on, 255 elsewhere. With the
+        // nearest sampler the shader's test on it is the same test on the
+        // same texel as before; with a linear one the (0,0,0,0) key texels
+        // make the sample PREMULTIPLIED, which is what lets the edge stay
+        // clean. A non-cutout batch never reads alpha, so a black texel
+        // still draws black.
         for (int i = 0; i < tw * th; ++i) {
             dst[4 * i + 0] = rgb[3 * i + 0];
             dst[4 * i + 1] = rgb[3 * i + 1];
             dst[4 * i + 2] = rgb[3 * i + 2];
-            dst[4 * i + 3] = 255;
+            dst[4 * i + 3] = (rgb[3 * i] | rgb[3 * i + 1] | rgb[3 * i + 2]) ? 255 : 0;
         }
         vkUnmapMemory(dev_, sm);
 
@@ -1450,6 +1468,9 @@ int vulkanSamples(Renderer* r) {
 }
 int vulkanMaxSamples(Renderer* r) {
     return static_cast<VulkanRenderer*>(r)->maxSamples();
+}
+int vulkanTextureFilter(Renderer* r) {
+    return static_cast<VulkanRenderer*>(r)->textureFilter();
 }
 const char* vulkanDeviceName(Renderer* r) {
     auto* v = dynamic_cast<VulkanRenderer*>(r);

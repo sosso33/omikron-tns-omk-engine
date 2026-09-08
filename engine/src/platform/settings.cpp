@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "platform/settings.h"
 
+#include <cstdio>
+
 namespace omk {
 namespace {
 
@@ -63,6 +65,12 @@ Settings resolveSettings(const OptionsFile& ini,
 
         // ---- [Enhancements], off unless written -------------------------
         takeInt(kEnhancements, "antialiasing", s.antiAliasing, s.antiAliasingSource);
+        if (const std::string* w = ini.find(kEnhancements, "texturefiltering")) {
+            const int m = textureFilterMode(*w);
+            if (m >= 0) { s.textureFilter = m; s.textureFilterSource = Settings::Source::Ini; }
+            else std::fprintf(stderr, "settings: texturefiltering = %s is not a mode "
+                                      "(nearest|bilinear) - ignored\n", w->c_str());
+        }
     }
 
     // ---- 2. the save header, which is later and therefore wins -----------

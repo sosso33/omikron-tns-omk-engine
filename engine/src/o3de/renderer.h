@@ -210,6 +210,12 @@ public:
     // -> false when the backend does not do it; the software reference never
     // does, because it stands where D3D stood and D3D was told not to.
     virtual bool setMultisample(int /*samples*/) { return false; }
+
+    // The second enhancement: texture filtering, `mode` 0 nearest (the
+    // original: MAG/MIN POINT, MIP NONE), 1 bilinear. Same contract as
+    // `setMultisample` - a request, before `init()`, that the software
+    // reference declines.
+    virtual bool setTextureFilter(int /*mode*/) { return false; }
 };
 
 // The REFERENCE implementation: `drawGeometry` behind the boundary, with no

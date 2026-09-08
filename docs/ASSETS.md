@@ -1477,6 +1477,25 @@ geometry edges smoothed, texture interiors untouched, which is what separates
 multisampling from a blur. `verify.py: engine: anti-aliasing` asserts the
 default is off in the source and the edge property on the GPU.
 
+**And bilinear texture filtering, the same way** (`--filter bilinear`,
+`texturefiltering = bilinear`; 2026-09-08). A linear sampler on the Vulkan
+side, nothing on the software side. The one thing it had to get right is
+the CUTOUT path above: under a linear sampler the black key texels would
+blend into every keyed edge as a dark fringe. So the texture upload writes
+the key into ALPHA — 0 on a black texel, 255 elsewhere — and the shader
+treats a filtered sample as premultiplied: discard below 0.5, divide by
+alpha above. Under the nearest sampler that is the same test on the same
+texel, and the default frame is bit-identical to the one before the shader
+carried alpha at all. Through camera 4555 bilinear changes **55.6%** of the
+pixels by a mean of **4.6** levels — nearly every texel, each by a little,
+which is a filter and not a change of content — and coverage agreement with
+the software reference stays 0.991. Aapden's floor stain, the largest
+cutout batch in the decor sets (1938 corners), keeps a clean edge. Known
+limit, unclamped: the sets that sample sub-rectangles of a shared atlas
+(the Anekbah signs) get half a texel of their neighbour at the rectangle's
+edge, because nothing per draw says where it ends.
+`verify.py: engine: texture filter`.
+
 **What *Niveau de détail* (options row 7, 0..2, `HIBYTE(dword_90E724)`)
 changes is content, not filtering.** Its readers: `sub_467E20(level, a)`
 builds a street model's LOD chain — level 2 all four sub-objects (with
