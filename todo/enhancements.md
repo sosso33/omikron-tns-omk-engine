@@ -209,6 +209,16 @@ which is the honest shape of the enhancement: their shading IS the lights, so
 sampling it finer changes them, while a body that already carries a
 near-saturated baked colour barely moves when lamps are added to it.
 
+**What it does NOT take account of, asked by a reader and measured**: the
+EFFECTS. A fire, a vent, a neon sign emits sprites and never light - nothing
+in `ASSETS` 3b's chain carries a light record and there is no dynamic light to
+attach one to. The street lamps and the signs ARE accounted for, because the
+`.3DO` light table was authored onto them; where a fire seems to light the
+street that is a record the artist placed beside it, and it varies by set (the
+Impasse's flame has one 17 units away, the temple's four have none nearer than
+93). So nothing flickers: a fire's light, where it has one, is static.
+`docs/ASSETS.md` 4c, `verify.py: effects and lights`.
+
 Still open, and named in the row below as it was: the port applies reach and
 falloff per BODY where the engine does them per MESH. The GPU path is now per
 FRAGMENT, which is finer than either; the CPU path is unchanged.

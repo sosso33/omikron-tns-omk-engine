@@ -6253,6 +6253,88 @@ def c_enhance_all():
             "its top, and that a specific key still beats it (anisotropy 4)" % len(keys))
 
 
+
+def c_effects_and_lights():
+    r"""An EFFECT emits sprites and NEVER light - `docs/ASSETS.md` 4c.
+
+    Asked by a reader of the per-pixel lighting: are the fires and the street
+    lights accounted for? Two answers, and this asserts both.
+
+    The `.3DO` light table IS the street lighting - of ANEKBAH's 155 records
+    the mesh nearest one is a `neon` 110 times, an `AApub` billboard 19 and a
+    `Lampe` 3, so they were authored onto the lamps and the signs.
+
+    Nothing in the effects chain carries a light, and there is no dynamic
+    light to attach one to. So where a fire appears to light the street it is
+    the author having placed a record beside it, which varies by set: the
+    Impasse's emitters have one 17-19 units away and the temple's flames'
+    nearest is 93. All 102 of ANEKBAH's `neon` meshes emit, and the records
+    sit NEAR rather than ON them - a median of 108 units.
+
+    The consequence is the part worth keeping: nothing flickers. A fire's
+    light, where it has one, is a static record at a constant intensity.
+    """
+    import math
+    def read(stem):
+        try:
+            path = omkpaths.data("MESHES", "DECORS", stem + ".3DO")
+        except Exception:
+            return None
+        if not os.path.isfile(path):
+            return None
+        b = open(path, "rb").read()
+        u = lambda o: struct.unpack_from("<i", b, o)[0]
+        f = lambda o: struct.unpack_from("<f", b, o)[0]
+        d = u(8)
+        meshOff, lightOff = u(28), u(40)
+        nMesh, nLight = u(d + 224), u(d + 240)
+        meshes, fx = [], []
+        for i in range(nMesh):
+            o = meshOff + 140 * i
+            nm = b[o + 16:o + 36].split(b"\0")[0].decode("latin1")
+            p3 = [f(o + 36 + 4 * k) for k in range(3)]
+            meshes.append((nm, p3))
+            if u(o) & 0x40000000:
+                fx.append((nm, p3))
+        lights = [[f(lightOff + 304 * i + 48 + 4 * k) for k in range(3)]
+                  for i in range(nLight)]
+        return meshes, fx, lights
+
+    an = read("Anekbah")
+    if not an:
+        return ("skipped",), ("skipped",), "gamedata absent"
+    meshes, fx, lights = an
+    # which mesh family each light was authored onto
+    fam = {}
+    for lp in lights:
+        nm = min(meshes, key=lambda m: math.dist(lp, m[1]))[0]
+        key = "".join(c for c in nm if not c.isdigit())
+        fam[key] = fam.get(key, 0) + 1
+    neonFx = [m for m in fx if m[0].lower().startswith("neon")]
+    dl = sorted(min(math.dist(lp, m[1]) for m in neonFx) for lp in lights)
+    medNeon = int(dl[len(dl) // 2])
+    within50 = sum(1 for x in dl if x <= 50)
+    # ...and the flames, which is where it varies
+    flame = {}
+    for stem in ("STEMPLE", "SBOZORDI", "AIMPASSE"):
+        r = read(stem)
+        if not r:
+            continue
+        _, sfx, slights = r
+        hot = [m for m in sfx if "flam" in m[0].lower()] or sfx
+        if not slights or not hot:
+            continue
+        flame[stem] = int(min(min(math.dist(p, l) for l in slights) for _, p in hot))
+    got = (len(lights), fam.get("neon"), fam.get("AApub"), fam.get("Lampe"),
+           len(neonFx), medNeon, within50, flame.get("AIMPASSE"),
+           flame.get("SBOZORDI"), flame.get("STEMPLE"))
+    want = (155, 110, 19, 3, 102, 108, 43, 17, 26, 93)
+    return got, want, ("ANEKBAH's light records and the mesh family each was authored "
+                       "onto; its emitting neon and how far the records sit from them; "
+                       "and the nearest record to a flame in three sets - the temple's "
+                       "light nothing")
+
+
 def c_engine_street_frame():
     r"""`omk-play` DRAWS the city crowd (docs/STREET_LIFE.md, step 4).
 
@@ -28904,6 +28986,7 @@ CHECKS = [
     ("engine: sign tie",   c_engine_sign_tie,   "ASSETS 4b; todo/standing-unknowns 4"),
     ("no #define renames", c_no_define_renames, "CLAUDE.md 3"),
     ("shadow model",       c_shadow_model,      "ASSETS 4d"),
+    ("effects and lights", c_effects_and_lights, "ASSETS 4c"),
     ("config template",    c_config_template,   "todo/options-config"),
     ("play usage",         c_play_usage,        "engine/README"),
     ("enhance all",        c_enhance_all,       "todo/enhancements"),

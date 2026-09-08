@@ -1974,6 +1974,51 @@ they are drawn unlit, and the dynamic pass would need the 304-byte light
 records at `scene[8]` (169 of them in ANEKBAH) decoded first. That decode is
 **not** done — the four fields above are what `sub_493E40` reads, nothing more.
 
+### An EFFECT emits sprites and NEVER light — the two systems only coincide
+
+A reader asked whether the fires and the street lights are accounted for by
+the per-pixel lighting. They are two different answers and the data settles
+both.
+
+**The light table IS the street lighting.** Of ANEKBAH's 155 records, 153
+point within 30° of straight down, sit 3.5–4.3 m up and reach 700–900 units,
+and the mesh nearest one is:
+
+| nearest mesh to a light record | of 155 |
+|---|---|
+| `neon` | 110 |
+| `AApub` (the billboards) | 19 |
+| `Lampe` | 3 |
+
+So the records were authored onto the lamps and the signs.
+
+**Nothing in the effects chain carries a light.** §3b's path — mesh flag
+`0x40000000` → the name → `.SFX` section D → section C → the emitter → the
+sprite particles — has no light record anywhere in it, and there is no
+dynamic light to attach one to (flag `0x8`, above, is carried by no shipped
+mesh). A fire brightens the frame by drawing bright additive quads and lights
+nothing at all.
+
+**Where a fire does seem to light the street, that is the author placing a
+record beside it, and it varies by set.** All 102 of ANEKBAH's `neon` meshes
+are effect emitters, and the light records sit next to them at a median of
+**108 units** with 43 within 50 — near, but not on. For actual flames:
+
+| set | `flam` emitters | nearest light record |
+|---|---|---|
+| `AIMPASSE` | 3 (all its emitters) | 17–19 units |
+| `SBOZORDI` | 2 | 26–53 |
+| `STEMPLE` | 4 | 93–184 |
+
+The temple's flames light nothing; the others stand in an authored pool.
+
+**And nothing flickers.** Where a fire has a light beside it, that light is a
+static record with a constant intensity: the flame animates and its light does
+not. Anything that looks like firelight moving on a wall is the sprite, and
+the wall's own shading is baked.
+
+`verify.py: effects and lights`.
+
 ---
 
 ## 4d. The character SHADOWS — one soft blob per bone
