@@ -1112,7 +1112,11 @@ frame driving the face, through the same data path the browser app uses:
   by every sub-pixel camera move. Found from a reader's spot in Anekbah with
   `--snap-every 1`, 1300 of a sign's 4000 pixels changing per frame; fixed by
   a 2^-16 relative tie band in `raster.cpp`, which is a reconstruction of the
-  buffer's quantisation and not its bit depth. `verify.py: engine: sign tie`.
+  buffer's quantisation and not its bit depth. The Vulkan backend settles it
+  at submit instead — a face whose positions an earlier depth-writing face
+  already claimed is degenerated — because a GPU compare cannot read its
+  buffer; without that the GPU gave the SECOND face the whole sign, which is
+  the "stably wrong" panel of the same report. `verify.py: engine: sign tie`.
 
   That is why "material-id order looks right" — it was never an accident of
   numbering. It is the slot order, seen through the one case where the two

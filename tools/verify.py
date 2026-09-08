@@ -27248,13 +27248,56 @@ def c_engine_sign_tie():
     faces = tuple(int(x) for x in m2.groups()) if m2 else None
     src = open(os.path.join(eng, "src/o3de/raster.cpp"), encoding="utf-8").read()
     rule = "if (z >= depth[di] * (1.0f - kDepthTie))" in src
-    return (pairs, reversed_, alone, faces, rule), \
-           (18, 18, (1244, 0, 0), (1244, 0), True), \
+    # THE VULKAN BACKEND, which cannot read its depth buffer back in a compare
+    # and settles the same tie at SUBMIT: a face whose position set an
+    # earlier depth-writing face already claimed is degenerated in the vertex
+    # buffer. `run_vulkan` renders ANEKBAH from the reader's spot with and
+    # without it (`OMK_NO_TIE=1`); the pass reports how many triangles it
+    # degenerated, and the two Vulkan frames must differ where the signs
+    # are. Without the pass the GPU had been giving the SECOND face the win
+    # on the whole sign - Fanta where the pharmacy cross belongs - which is
+    # the old report's "stably wrong" panel. Optional: Vulkan is not required
+    # to build (PORTING A1), so this half skips without it.
+    vk = ("skipped",)
+    mk = subprocess.run(["make", "-s", "vulkan"], cwd=eng, capture_output=True, text=True)
+    vkbin = os.path.join(eng, "build", "run_vulkan")
+    if mk.returncode == 0 and os.path.exists(vkbin):
+        import tempfile, shutil
+        tmp = tempfile.mkdtemp()
+        try:
+            model = omkpaths.data("MESHES/DECORS/ANEKBAH.3DO")
+            args = [vkbin, omkpaths.data_root(), model, "6256.77,-67.89,-8602.81",
+                    "6218.38,-55.89,-8491.26", "74.97", None, "800x600"]
+            frames = []; dropped = None
+            for k, env in enumerate((dict(os.environ, OMK_NO_TIE="1"), dict(os.environ))):
+                args[6] = os.path.join(tmp, "f%d.bin" % k)
+                r = subprocess.run(args, capture_output=True, text=True, env=env)
+                m = re.search(r"depth tie - (\d+) of (\d+) triangles", r.stdout)
+                if k == 1 and m: dropped = (int(m.group(1)), int(m.group(2)))
+                raw = open(args[6], "rb").read() if os.path.exists(args[6]) else b""
+                if len(raw) >= 16 + 2 * 2 * 800 * 600:
+                    W, H = 800, 600
+                    frames.append(struct.unpack_from("<%dH" % (W * H), raw, 16 + 2 * W * H))
+            if len(frames) == 2:
+                W = 800
+                sign = sum(1 for y in range(96, 136) for x in range(236, 336)
+                           if frames[0][y * W + x] != frames[1][y * W + x])
+                vk = (dropped, sign > 1000)
+            else:
+                vk = ("vulkan did not render",)
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+    return (pairs, reversed_, alone, faces, rule, vk), \
+           (18, 18, (1244, 0, 0), (1244, 0), True,
+            ("skipped",) if vk == ("skipped",) else ((248, 46415), True)), \
            "ANEKBAH's coincident different-material quad pairs and how many are " \
            "the same four vertices in REVERSED order (two-sided signs); the " \
            "probe's two faces drawn alone covering the same 1244 pixels and " \
            "none apart; the first face keeping every pixel and the second " \
-           "drawing none; and the tie band in the depth compare"
+           "drawing none; the tie band in the depth compare; and the VULKAN " \
+           "backend's submit-time pass over ANEKBAH - 248 of 46415 triangles " \
+           "degenerated (the 18 sign pairs and the same-material doubles) and " \
+           "the pharmacy sign's pixels changed by it"
 
 
 def c_no_define_renames():

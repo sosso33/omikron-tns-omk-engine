@@ -2069,11 +2069,25 @@ absolute quantum. `engine: raster`'s pinned counts moved by twelve pixels
 (twelve ties in Aapkayl) and were re-pinned. `verify.py: engine: sign tie`,
 shown to fail with the plain compare (220 pixels of the second face).
 
-**Not covered**: the Vulkan backend, which compares on the GPU's own depth
-(`VK_COMPARE_OP_LESS`, D32 or D24) — whether it ties the same way is
-untested. And a residual twinkle on the glyphs is point sampling under a
-creeping camera, which is the engine's own filtering (`render states`) and
-what `--filter trilinear` exists to soften.
+**The Vulkan backend, the same day.** A GPU compare cannot read the buffer
+back, a quantised `gl_FragDepth` still straddles its grid on about one pixel
+in a hundred, and a per-draw depth bias through the non-linear projection is
+hundreds of inches at street distance — so the tie is settled where it is
+decidable exactly, at SUBMIT: a face whose position set an earlier
+depth-writing face of the same geometry already claimed, in draw order, is
+degenerated in the vertex buffer (its three vertices collapsed to one) and
+rasterises nothing. A quad is the consecutive pair `buildGeometry` emits.
+Measured with `run_vulkan` from the reader's spot: 248 of Anekbah's 46415
+triangles (the 18 sign pairs and the same-material doubles), and **without
+the pass the GPU had been giving the SECOND face the win over the whole
+sign** — a Fanta advert where the pharmacy cross belongs, with no dots at
+all — which is the old report's "panel 2 stably wrong". Hardware breaks an
+exact tie by its own plane setup, consistently one way; the engine's rule is
+the first drawn, and both backends now impose it. `OMK_NO_TIE=1` leaves the
+fight in for a before/after, `OMK_TIE_LOG=1` lists every loser with its mesh.
+A residual twinkle on the glyphs is point sampling under a creeping camera,
+which is the engine's own filtering (`render states`) and what
+`--filter trilinear` exists to soften.
 
 ### The MIRROR reflects in the GAME, not only in the scene viewer
 

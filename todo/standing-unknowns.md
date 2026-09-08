@@ -156,8 +156,10 @@ than leaving it to be built on. `verify.py: aapub prism`.
 > tie band in `raster.cpp`'s compare; `tools/tie_probe.cpp`; `verify.py:
 > engine: sign tie`, shown to fail. So panels "1 and 4" flickered because
 > they were two-sided signs, and "2 stably wrong" is the texture-name cache,
-> as already found. The Vulkan backend compares on the GPU's own depth and
-> is not covered by this rule; whether it ties the same way is untested.
+> as already found. The Vulkan backend settles the same tie at submit -
+> a face coincident with an earlier depth-writing one is degenerated - and
+> measured from the reader's spot the GPU had been giving the SECOND face
+> the win over the whole sign, consistently: the "stably wrong" panel.
 
 ## 5. The player's RIDE
 
