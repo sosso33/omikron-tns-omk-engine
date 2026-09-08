@@ -3121,11 +3121,19 @@ one-unit lift and the four-triangle fan to a centre vertex — and the crowd's
 separate `Slider_PlaceShadow` node at the midpoint of `Piedg` and `Piedd`.
 The one thing that had to be got right or nothing draws at all: the bones are
 found by `strstr` on the LAST match, not by comparison, and every character
-bone carries a prefix (`UBuste`, `PhPiedg`). Declared deviations: the crowd
+bone carries a prefix (`UBuste`, `PhPiedg`). **And one fault that shipped for an hour, worth the room because the engine
+cannot have it**: a crowd model carries FOUR LOD skeletons authored SIDE BY
+SIDE (PSH_FN's four `Buste` at x −12.6, −91.2, −170.3, −248.7), so every bone
+name matches four times and the last-match rule lands on the lowest-detail one
+six metres away. The engine splits the model into sub-objects and keeps one
+live; this port holds them all in one array, so the lookup has to be scoped to
+the skeleton the tracks name. A reader saw it first - blobs sliding across the
+street with nothing above them - and `castBones` now measures the worst
+bone-to-body distance every frame: **252.7** units unscoped against **22.8**
+scoped, and the check asserts it. Declared deviations: the crowd
 blob's alignment to the floor normal is the minimal rotation rather than the
 engine's two-angle solve (identical on flat ground, which is where a crowd
-walks), and the port has no `ACTOR_STATE` gate on the emission yet, so a
-character in the water or on a slider still casts. Not frame-verified: no
+walks). Not frame-verified: no
 capture in this tree shows a shipped shadow, so the SIZE is data-constrained.
 Flags: `--shadows 0|1`, `--no-shadows`, `--detail 0..2`. Checks:
 `shadow model`, `engine: character shadow`.

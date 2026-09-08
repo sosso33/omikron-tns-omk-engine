@@ -5828,7 +5828,15 @@ def c_engine_character_shadow():
       * the two frames DIFFER, and by more than a stray edge;
       * detail 0 casts the CHEST ALONE, so the player contributes exactly one
         blob against ten at detail 2. That is the switch's fall-through read
-        back off the picture: 1, then +5 at level 1, then +4 at level 2.
+        back off the picture: 1, then +5 at level 1, then +4 at level 2;
+      * **every blob is under the body that casts it.** A crowd model carries
+        FOUR LOD skeletons authored SIDE BY SIDE - PSH_FN's four `Buste` at x
+        -12.6, -91.2, -170.3, -248.7 - so a bone name matches four times and
+        the engine's last-match rule lands on the lowest-detail one, six
+        metres away. That shipped: a reader saw blobs sliding across the
+        street with nothing above them. The viewer measures the worst
+        bone-to-body distance every frame and this asserts it stays small; the
+        unscoped lookup drives it past 200.
 
     Shown to fail: making `shadowBonesFor` ignore the level answers 10 where
     it wants 1, and replacing the bone lookup's `strstr` with an equality
@@ -5865,14 +5873,23 @@ def c_engine_character_shadow():
             if "[shadow] frame 60:" in ln:
                 return int(ln.split("[shadow] frame 60:")[1].split()[0])
         return -1
+
+    def worst_offset(out):
+        w = -1.0
+        for ln in out.splitlines():
+            if "worst foot-to-body offset" in ln:
+                w = max(w, float(ln.split("offset")[1].split()[0]))
+        return w
     differ = 0
     if len(dumps[0]) == len(dumps[1]) and dumps[0]:
         differ = sum(1 for i in range(0, len(dumps[0]), 2) if dumps[0][i:i+2] != dumps[1][i:i+2])
+    off = worst_offset(outs[0])
     got = ("shadows ON" in outs[0], "shadows ON" in outs[1], differ > 500,
-           player_blobs(outs[0]), player_blobs(outs[2]))
-    want = (True, False, True, 10, 1)
+           player_blobs(outs[0]), player_blobs(outs[2]), 0.0 <= off < 60.0)
+    want = (True, False, True, 10, 1, True)
     return got, want, ("shadows on/off both render, %d pixels differ, the player casts 10 "
-                       "blobs at detail 2 and 1 at detail 0" % differ)
+                       "blobs at detail 2 and 1 at detail 0, worst bone-to-body offset "
+                       "%.1f units" % (differ, off))
 
 
 def c_engine_street_frame():

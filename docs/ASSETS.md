@@ -2048,6 +2048,23 @@ bone of every character model carries a prefix — HO1_FNM's are `UBuste`,
 per LOD skeleton — so an equality test matches **0 of the ten** bone names and
 the whole mechanism silently draws nothing.
 
+### …and the trap behind that one: FOUR skeletons, side by side
+
+A crowd model carries four LOD skeletons of 19 meshes each, and they are
+authored **beside** one another rather than on top: PSH_FN's four `Buste` sit
+at x **−12.6, −91.2, −170.3, −248.7** and FSH_FN's spread **247**. So a bone
+name matches four times, and the last-match rule lands on the *lowest-detail*
+skeleton — six metres from the body being drawn.
+
+The engine never meets this: `sub_453A70` splits the model into sub-objects
+and `sub_453910` chains them by distance, so one is live and the search sees
+one skeleton. A replica that holds the whole file's meshes in one array and
+poses the subtree the tracks name has to scope the search the same way. It
+did not, and the result shipped: blobs sliding across the street with nothing
+above them, which is how a reader found it. Measured, the worst
+bone-to-body distance is **252.7** units unscoped and **22.8** scoped — the
+second being an outstretched arm.
+
 `verify.py: shadow model`, `engine: character shadow`.
 
 ---

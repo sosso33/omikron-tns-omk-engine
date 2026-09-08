@@ -3770,6 +3770,9 @@ int main(int argc, char** argv) {
     // same backend-side reason.
     omk::Geometry shadowGeo;
     std::size_t shadowTexBase = 0;
+    // The worst distance from a walker's foot-pair midpoint to his own body
+    // point this frame - the orphan-shadow detector (see the ped loop).
+    float shadowFootOffMax = 0.0f, pedFootOffMax = 0.0f;
     long shadowBlobsDrawn = 0;
     bool shadowTold = false;
     // `Area_LoadMiscModel`'s two constants.
@@ -9596,6 +9599,7 @@ int main(int argc, char** argv) {
                     pedTracks.clear();
                 }
                 const float reach = omk::kLodDistances[3];
+                pedFootOffMax = 0.0f;
                 for (std::size_t i = 0; i < ws.size(); ++i) {
                     const auto& w = ws[i];
                     PedStaged& p = *pedStaged[i];
@@ -9678,6 +9682,16 @@ int main(int argc, char** argv) {
                                 p.footAt[f][2] = r[2] + w.body[2];
                             }
                             p.footKnown = true;
+                            // THE INVARIANT THAT WOULD HAVE CAUGHT THE ORPHANS.
+                            // A walker's feet are within a stride of his own
+                            // body point; a bone taken off the wrong LOD
+                            // skeleton is 240 units away. Measured every frame
+                            // and reported, because "a shadow with no origin"
+                            // is only visible to a person and this is not.
+                            const float mx = (p.footAt[0][0] + p.footAt[1][0]) * 0.5f - w.body[0];
+                            const float mz = (p.footAt[0][2] + p.footAt[1][2]) * 0.5f - w.body[2];
+                            const float off = std::sqrt(mx * mx + mz * mz);
+                            if (off > pedFootOffMax) pedFootOffMax = off;
                         }
                     }
                     // THE DYNAMIC LIGHTS (`o3de/vertexlight.h`). `sub_4380B0`
@@ -10396,15 +10410,35 @@ int main(int argc, char** argv) {
                 const int detail = shadowDetail;
                 long blobs = 0, nPlayer = 0, nActor = 0, nCrowd = 0;
                 long nPedDrawn = 0, nPedFeet = 0;
+                // ...and the same detector over the BONE path: a bone taken
+                // off the wrong LOD skeleton is ~240 units from the body it
+                // belongs to, so measure every blob against where the body was
+                // actually drawn (its corners' horizontal centre) and report
+                // the worst. `ref` is null for the player, whose model has one
+                // skeleton and cannot meet this.
                 const auto castBones = [&](const std::vector<omk::Mesh>& meshes,
                                            const std::vector<float>& at, int lvl,
-                                           int root) {
+                                           int root, const omk::Geometry* ref) {
                     if (at.empty()) return;
+                    float rx = 0.0f, rz = 0.0f;
+                    if (ref && !ref->corners.empty()) {
+                        float lo[2] = {1e30f, 1e30f}, hi[2] = {-1e30f, -1e30f};
+                        for (const auto& c : ref->corners) {
+                            lo[0] = std::min(lo[0], c.x); hi[0] = std::max(hi[0], c.x);
+                            lo[1] = std::min(lo[1], c.z); hi[1] = std::max(hi[1], c.z);
+                        }
+                        rx = (lo[0] + hi[0]) * 0.5f; rz = (lo[1] + hi[1]) * 0.5f;
+                    }
                     for (int bi : omk::shadowBonesFor(lvl)) {
                         const auto& sb = omk::kShadowBones[static_cast<std::size_t>(bi)];
                         const int mi = omk::findMeshContaining(meshes, sb.bone, root);
                         if (mi < 0 || static_cast<std::size_t>(mi) * 3 + 2 >= at.size()) continue;
                         const float* p3 = &at[static_cast<std::size_t>(mi) * 3];
+                        if (ref && !ref->corners.empty()) {
+                            const float dx = p3[0] - rx, dz = p3[2] - rz;
+                            const float d = std::sqrt(dx * dx + dz * dz);
+                            if (d > shadowFootOffMax) shadowFootOffMax = d;
+                        }
                         const auto f = omk::floorUnder(playerSoup, p3[0], p3[1], p3[2]);
                         if (!f) continue;
                         if (omk::shadowBlob(shadowGeo, shadowModel, p3,
@@ -10422,12 +10456,14 @@ int main(int argc, char** argv) {
                     return !(v == 7 || (v > 10 && v <= 14));
                 };
                 // The player's model has ONE skeleton, so -1 is the whole of it.
+                shadowFootOffMax = pedFootOffMax;
                 if (drawPlayer && playerMeshAtKnown && player && castsIn(player->state()))
-                    castBones(playerMeshes, playerMeshAt, detail, -1);
+                    castBones(playerMeshes, playerMeshAt, detail, -1, nullptr);
                 nPlayer = blobs;
                 for (const auto& up : staged)
                     if (up->drawn && up->mo)
-                        castBones(up->mo->meshes, up->meshAt, detail - 1, up->shadowRoot);
+                        castBones(up->mo->meshes, up->meshAt, detail - 1, up->shadowRoot,
+                                  &up->posed);
                 nActor = blobs - nPlayer;
                 // The crowd's, which is the other mechanism entirely.
                 for (const auto& up : pedStaged) {
@@ -10489,6 +10525,10 @@ int main(int argc, char** argv) {
                                 " = %ld blobs (%zu peds staged, %ld drawn, %ld with feet)\n",
                                 n, nPlayer, nActor, nCrowd, blobs, pedStaged.size(),
                                 nPedDrawn, nPedFeet);
+                if (shadowLog && (n % 30) == 0)
+                    std::printf("  [shadow] worst foot-to-body offset %.1f units "
+                                "(a bone off the wrong LOD skeleton is ~240)\n",
+                                static_cast<double>(shadowFootOffMax));
             }
             // EVERY staged body, each with its own model's base - the change
             // issue 41 asks for. One geometry per actor, so two bodies wearing
