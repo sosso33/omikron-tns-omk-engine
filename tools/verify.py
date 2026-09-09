@@ -1177,6 +1177,17 @@ def c_engine_walk():
     * the ground ray starts a step-height **above** the feet, not at them.
       Probing from the feet exactly finds nothing - the probe wants a surface
       strictly below its origin - and every step then reads as a hole;
+    **The two soup sizes moved on 2026-09-07 and this is why.** They were 2875
+    and 1107 until `cf1a0c4` gave `collisionSoup` a degenerate-face guard -
+    `n2 <= 0` became `n2 <= 1.0`, dropping anything under half a square inch -
+    which is what unblocked the player on the last step of the bank's entrance
+    stairs. Putting the threshold back restores both numbers exactly, on this
+    check and on `engine: walker falls`, so the guard is the whole of the
+    difference and there is no second cause. **The VERDICTS did not move**:
+    287 moves and 113 reverts, the same as `tools/sim`, so nothing dropped
+    carried one. The reach is larger than that commit's own sentence suggests
+    and is now measured in `collision.cpp` beside the threshold.
+
     * the start comes from an authored position probed **downward**, not from
       -1e6 probed upward, which returns the nearest surface below *that* - the
       ceiling. The reference's first version started the walker on the roof of
@@ -1184,8 +1195,8 @@ def c_engine_walk():
 
     **Two soups, and the difference is stated rather than chosen.** The engine
     probes COLLISION geometry, keeping every mesh (CollisionOnly volumes
-    included) and only faces flatter than 30 degrees - 1107 triangles here.
-    `tools/sim`'s walker probes the RENDER soup instead - 2875 triangles,
+    included) and only faces flatter than 30 degrees - 1067 triangles here.
+    `tools/sim`'s walker probes the RENDER soup instead - 2815 triangles,
     CollisionOnly dropped, no slope test. The port builds both and this check
     runs both: they give **the same 287/113**, which is a fact about this room
     (its floor is in both soups) and not a general equivalence. Saying so
@@ -1228,7 +1239,7 @@ def c_engine_walk():
     ref = A.cross("ARESTO14", start)
     return (rend[0], coll[0], rend[1:5], coll[1:5], rend[5] < 100, rend[6],
             (ref["verdicts"].get("moved"), ref["verdicts"].get("reverted"))), \
-           (2875, 1107, (287, 113, 0, 0), (287, 113, 0, 0), True, 0,
+           (2815, 1067, (287, 113, 0, 0), (287, 113, 0, 0), True, 0,
             (287, 113)), \
            "triangles in the render and walkable-collision soups; the " \
            "verdicts on each (moved, reverted, blocked, refused); that the " \
@@ -11824,7 +11835,7 @@ def c_engine_walker_falls():
             got.append((ledge, down, strand))
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
-    return tuple(got), ((671, 318, 0), (36, 14, 0), (342, 126, 0)), \
+    return tuple(got), ((663, 310, 0), (36, 14, 0), (326, 116, 0)), \
         "per set (Aapkayl, AImpasse, Anekbah): spots standing beside a drop, " \
         "spots from which the walker actually goes down, and spots on a " \
         "ledge from which nothing moves at all - the last must be 0"

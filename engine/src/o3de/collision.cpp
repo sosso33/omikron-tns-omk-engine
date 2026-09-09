@@ -81,6 +81,18 @@ TriangleSoup collisionSoup(std::span<const std::byte> d, SoupKind kind,
         // vertices print identically to a decimal (`todo/next-tasks.md` 20).
         // 102 of the 143325 collision triangles over ten sets are like it.
         //
+        // **AND 102 IS THE MOTIVATING CASE, NOT THIS TEST'S REACH** - measured
+        // 2026-09-09, because the two were read as the same number. Those 102
+        // are the EXACTLY degenerate ones; the threshold below reaches every
+        // face under half a square inch, which in `ARESTO14` alone is **60 of
+        // 2875** render triangles and **40 of 1107** walkable ones, 2% and 4%.
+        // The walk is unchanged by it - the walker still moves 287 and reverts
+        // 113, the same as `tools/sim` - so the faces being dropped carry no
+        // verdict; but the reach is thirty times what the sentence above
+        // suggests, and a threshold nobody has measured is a threshold nobody
+        // can defend. `engine: walk` and `engine: walker falls` pin both soup
+        // sizes, and putting this back to `n2 <= 0` restores 2875 and 1107.
+        //
         // This is the port's own numerical hygiene and NOT a ported decision:
         // `Sweep_PolygonKernel` is 930 lines of x87 and whether it rejects a
         // degenerate face is unread. |n| is twice the area, so this drops
