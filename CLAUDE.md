@@ -411,6 +411,30 @@ stopped guarding the moment the name changed, and nothing would have said so.
   and nothing makes them.** Prefer a pattern over the invariant to a pattern
   over the current call sites — and when a whole family of checks goes red at
   once, suspect the family's shared assumption before the code.
+
+  **The same rule one level worse: a scan of ANOTHER TOOL'S OUTPUT, whose
+  non-match is indistinguishable from an answer.** `engine: slider door`
+  derived the slider's door hierarchy by regexing `build/mesh_list`'s stdout
+  for `^ *(\d+) (\S+) .*parent (-?\d+) +id (\d+)`. The tool prints
+  `2 id 0 SlBassin ... parent -1` — the literal `id` where the name is, and
+  `parent` *after* `id`, not before. The pattern matched **zero lines**, and
+  `fc2b8d0` both added the `id` field to the tool and wrote the pattern
+  against an order it has never printed, so the check was **committed red** and
+  nobody could tell, because a red check reads as a finding. Worse is what the
+  same empty dict did to its sibling: `rootName` returns its argument when the
+  maps are empty, so `doorsOnCockpit` compared `"SlPorteG"` to `"SlBassin"`
+  and was a plausible-looking **False**, while `shellsBare` compared a name to
+  three OTHER names and was **True for free** — one loud false failure and one
+  silent vacuous pass, and **the vacuous pass is the worse of the two**, since
+  chasing only the red would have left it asserting nothing. The finding was
+  right all along: all four doors root at `SlBassin` (the panel on the hinge,
+  the hinge on the cockpit). Fixed 2026-09-09 by asserting the **row count
+  before deriving anything from the rows**, so a parse that reads nothing fails
+  AS A PARSE, and by reporting the four roots **by name** instead of as a
+  boolean, so a wrong answer says what it found. Both new failure modes are now
+  distinguishable at a glance: break the tool's format and you get
+  `0, ('SlPorteG', ...)`; break the walk and you get `8, ('SlPorteZG', ...)`.
+  **A check whose input it cannot read must say so, not answer.**
 * **In zsh, `$var:path` is a MODIFIER, not a colon.** `git show
   "$c:engine/backends/sdl/play.cpp"` silently becomes `git show $c` plus
   `ngine/...`, because `:e` is the extension modifier — so a loop asking

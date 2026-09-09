@@ -8293,34 +8293,65 @@ def c_engine_slider_door():
     mo = subprocess.run([mlbin, os.path.join(omkpaths.data_root(), "MESHES", "MISC", "SLI_FN.3DO")],
                         capture_output=True, text=True).stdout \
          if ml.returncode == 0 and os.path.exists(mlbin) else ""
-    byId, parentOf, nameOf = {}, {}, {}
-    for m in _re.finditer(r"^ *(\d+) (\S+) .*parent (-?\d+) +id (\d+)", mo, _re.M):
-        idx, nm, par, mid = int(m.group(1)), m.group(2), int(m.group(3)), int(m.group(4))
-        byId[mid] = nm; parentOf[nm] = par; nameOf[idx] = nm
+    # THE PARSE MUST BE ABLE TO FAIL AS A PARSE. `mesh_list` prints
+    #
+    #     2 id   0 SlBassin   flags 00000000  pos ... parent -1
+    #
+    # and this matched `^ *(\d+) (\S+) .*parent (-?\d+) +id (\d+)` until
+    # 2026-09-09 - the literal `id` where the name is, and `parent` before `id`
+    # rather than after. It matched ZERO lines, and fc2b8d0 both added the `id`
+    # field to the tool and wrote the pattern against an order the tool has
+    # never printed, so this was committed RED and stayed that way.
+    #
+    # The shape is what matters, not the typo. Empty maps make `rootName`
+    # return its argument, so `doorsOnCockpit` compared "SlPorteG" to
+    # "SlBassin" and was False - a real-looking failure - while `shellsBare`
+    # compared a name to three OTHER names and was True **for free**. One
+    # empty dict, one loud false failure and one silent vacuous pass, and the
+    # vacuous one is the worse: a fix that only chased the red would have left
+    # it asserting nothing.
+    #
+    # So the row COUNT is asserted before anything is derived from the rows,
+    # and the four roots are reported BY NAME rather than as a boolean - a
+    # wrong answer now says what it found.
+    byId, parentOf = {}, {}
+    for m in _re.finditer(r"^ *(\d+) id +(\d+) (\S+) .*parent (-?\d+)", mo, _re.M):
+        mid, nm, par = int(m.group(2)), m.group(3), int(m.group(4))
+        byId[mid] = nm; parentOf[nm] = par
+    meshRows = len(byId)
     def rootName(nm):
         seen = 0
         while nm in parentOf and parentOf[nm] in byId and byId[parentOf[nm]] != nm and seen < 8:
             nm = byId[parentOf[nm]]; seen += 1
         return nm
-    doorsOnCockpit = (rootName("SlPorteG") == "SlBassin" and rootName("SlPorteZG") == "SlBassin"
-                      and rootName("SlPorteD") == "SlBassin")
-    shellsBare = all(rootName(nm) != sh for nm in ("SlPorteG", "SlPorteD", "SlPorteZG", "SlPorteZD")
-                     for sh in ("slider_fl", "SlBasA", "SlBasB"))
+    doors = ("SlPorteG", "SlPorteZG", "SlPorteD", "SlPorteZD")
+    roots4 = tuple(rootName(nm) for nm in doors)
+    # non-vacuous now: the shells must be present as roots of their own AND
+    # must not be what a door hangs off.
+    shellsBare = (all(r != sh for r in roots4 for sh in ("slider_fl", "SlBasA", "SlBasB"))
+                  and all(parentOf.get(sh, 0) == -1 for sh in ("slider_fl", "SlBasA", "SlBasB")))
     got = (ref, off60, off61, clip60, clip61, doorSide, inReach, camReach,
-           seat, clips, moves, door, roots, centred, sameBody, doorsOnCockpit, shellsBare)
+           seat, clips, moves, door, roots, centred, sameBody,
+           meshRows, roots4, shellsBare)
     want = ((-538.195, -162.587, 7.884), (-62.503, -8.782, 3.697),
             (-18.979, -8.78, 2.791), True, True, True, True, True,
-            True, True, 2, True, 4, 4, 4, True, True)
+            True, True, 2, True, 4, 4, 4,
+            8, ("SlBassin", "SlBassin", "SlBassin", "SlBassin"), True)
     return got, want, ("slf_112 root0; H_SLDIN and H_SLDOUT door offsets; the "
                        "two clips; the three that agree the door is on -X; the "
                        "SEAT (H_SLDIN's end is H_SLDOUT's start, to 0.2); and "
                        "the slider's own door clips, 72 and 51 frames, one "
                        "moving track each - SlPorteZG BY NAME, 71.4 degrees; and the "
                        "four LOD bodies, each centred on its own root pos, so "
-                       "there is no origin residual in the seat; and the door "
-                       "meshes hanging off SlBassin alone - the shells carry "
-                       "none, which is what sub_4521E0's swap to the cockpit "
-                       "body is for")
+                       "there is no origin residual in the seat; then "
+                       "SLI_FN's mesh COUNT (asserted before anything is "
+                       "derived from the rows, so a parse that reads nothing "
+                       "fails as a parse and not as a finding) and the four "
+                       "door meshes' roots BY NAME - the panel hangs off the "
+                       "hinge and the hinge off SlBassin, the cockpit, while "
+                       "the three shells are roots of their own and carry no "
+                       "door at all, which is what sub_4521E0's swap to the "
+                       "cockpit body is for")
 
 
 def _seatOf(o):
