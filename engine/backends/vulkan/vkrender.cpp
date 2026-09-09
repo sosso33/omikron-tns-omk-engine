@@ -298,6 +298,7 @@ private:
     bool            shadowLive_ = false;   // a depth pass was recorded this frame
     int             litCount_ = 0;         // lights uploaded for this frame
     float           shimmerClock_ = 0.0f;  // the View's, held for the uniform
+    bool            dither_ = true;        // the engine's DITHERENABLE, see surface.h
 
     struct Tex {
         VkImage img = VK_NULL_HANDLE; VkDeviceMemory mem = VK_NULL_HANDLE;
@@ -1814,6 +1815,7 @@ void VulkanRenderer::begin(const omk::View& view) {
     pushView(view);
     // ---- THE LIGHTS, per frame (`todo/enhancements.md` row 7) ------------
     shimmerClock_ = view.shimmerClock;
+    dither_ = view.dither;
     litCount_ = 0;
     if (litUboPtr_) {
         LightUbo ub{};
@@ -2026,7 +2028,9 @@ const omk::Surface& VulkanRenderer::readback() {
     if (ss_ <= 1) {
         for (int i = 0; i < w_ * h_; ++i)
             fb_.px[static_cast<std::size_t>(i)] =
-                omk::rgb565(src[4 * i], src[4 * i + 1], src[4 * i + 2]);
+                dither_ ? omk::quantise888Dither(src[4 * i], src[4 * i + 1],
+                                                 src[4 * i + 2], i % w_, i / w_)
+                        : omk::rgb565(src[4 * i], src[4 * i + 1], src[4 * i + 2]);
     } else {
         const int n = ss_ * ss_;
         for (int y = 0; y < h_; ++y)
@@ -2040,10 +2044,13 @@ const omk::Surface& VulkanRenderer::readback() {
                              static_cast<std::size_t>(x * ss_ + sx)) * 4;
                         acc[0] += src[o]; acc[1] += src[o + 1]; acc[2] += src[o + 2];
                     }
+                const int ar = (acc[0] + n / 2) / n, ag = (acc[1] + n / 2) / n,
+                          ab = (acc[2] + n / 2) / n;
                 fb_.px[static_cast<std::size_t>(y) * static_cast<std::size_t>(w_) + x] =
-                    omk::rgb565(static_cast<unsigned char>((acc[0] + n / 2) / n),
-                                static_cast<unsigned char>((acc[1] + n / 2) / n),
-                                static_cast<unsigned char>((acc[2] + n / 2) / n));
+                    dither_ ? omk::quantise888Dither(ar, ag, ab, x, y)
+                            : omk::rgb565(static_cast<unsigned char>(ar),
+                                          static_cast<unsigned char>(ag),
+                                          static_cast<unsigned char>(ab));
             }
     }
     vkUnmapMemory(dev_, readMem_);

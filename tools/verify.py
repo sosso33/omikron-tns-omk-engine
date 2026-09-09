@@ -6153,6 +6153,85 @@ def c_engine_perpixel_lighting():
 
 
 
+def c_engine_dither():
+    r"""The ordered dither on the 888 -> 565 conversion. NOT an enhancement.
+
+    `sub_4638C0` - the device setup, the same function that established that
+    the shipped renderer has no anti-aliasing and no texture filtering - sets
+    D3DRENDERSTATE 26, `DITHERENABLE`, to **1 on both of its device arms**. So
+    dithering is what the game does, and the port's job is to do it too: this
+    is on by default and `--no-dither` exists only so a dithered frame can be
+    laid beside an undithered one. `todo/enhancements.md` records it under
+    "not an enhancement" for exactly that reason.
+
+    What is ported is the DECISION. The matrix is a RECONSTRUCTION and is
+    labelled one in `src/ui/surface.h`: Direct3D dithers inside the driver's
+    conversion to the framebuffer format, so the pattern belonged to whatever
+    card the player had and nothing in this tree can reach it. A 4x4 ordered
+    Bayer is what a 16-bit-era driver used.
+
+    `build/dither_probe` measures it twice, because either half alone is
+    empty:
+
+      * **the law**, against an exact reference. Over all 256 input levels the
+        16 phases of a 4x4 block are averaged and compared with the input.
+        Plain rounding is flat, so a block's mean IS the rounded value and
+        carries the whole rounding error - 2.047 of 255, half a 5-bit step as
+        expected. The dither splits each block between the two neighbouring
+        levels in proportion, so its block mean tracks the input and the error
+        falls to 0.491. And the SIGNED bias stays near zero (-0.249), which is
+        the half that a first version failed: a threshold running 0..+7
+        instead of -8..+7 reconstructs just as well and lifts every pixel by
+        half a step, brightening the whole frame.
+      * **the wiring**, through `SoftwareRenderer`. One gradient quad drawn
+        twice with `View::dither` off and on. 2928 of 9216 pixels differ. If
+        the flag never reached the three blend sites in `raster.cpp` the two
+        frames would be identical and no amount of correct arithmetic in
+        `surface.h` would say so.
+
+    Shown to fail, three ways, and the third is why both halves are here:
+    dropping the `- 8` from the threshold takes the signed bias to +3.475 -
+    the dither now only brightens - and the block error with it, to 3.475,
+    WORSE than plain rounding; making `quantise888Dither` forward straight to
+    `quantise888` takes the block error back to 2.047 and the moving pixels to
+    0; and leaving the arithmetic alone while pinning the three `raster.cpp`
+    blend sites to the undithered call keeps the law PERFECT at 0.491 and
+    still moves 0 pixels. The last is the one a quantiser test cannot see.
+
+    What this cannot see, and a person must: whether the noise reads as
+    smoother than the band. Measured on Anekbah's camera 3, a real frame moves
+    132792 of 307200 pixels and its distinct colours go 103 -> 161.
+    """
+    eng = os.path.join(ROOT, "engine")
+    if not os.path.isdir(eng):
+        return ("skipped",), ("skipped",), "engine/ absent"
+    src = open(os.path.join(eng, "src", "o3de", "renderer.h"), encoding="utf-8").read()
+    defaultOn = "bool dither = true;" in src
+    mk = subprocess.run(["make", "-s", "build/dither_probe"], cwd=eng,
+                        capture_output=True, text=True)
+    probe = os.path.join(eng, "build", "dither_probe")
+    if mk.returncode != 0 or not os.path.exists(probe):
+        return ("no probe",), ("a probe",), (mk.stderr or mk.stdout).strip()[-160:]
+    r = subprocess.run([probe], capture_output=True, text=True)
+    perm = re.search(r"bayer permutation (\d+)", r.stdout)
+    err  = re.search(r"block error x1000: plain (\d+), dithered (\d+)", r.stdout)
+    bias = re.search(r"dither signed bias x1000: (-?\d+)", r.stdout)
+    fr   = re.search(r"frame: differ (\d+) of (\d+)", r.stdout)
+    if not (perm and err and bias and fr):
+        return ("no reading",), ("a reading",), r.stdout.strip()[:160]
+    plain, dith = int(err.group(1)), int(err.group(2))
+    b, differ = int(bias.group(1)), int(fr.group(1))
+    got = (defaultOn, perm.group(1) == "1", plain > 1800, dith < 800,
+           abs(b) < 500, differ > 1000)
+    want = (True, True, True, True, True, True)
+    return got, want, ("DITHERENABLE is 1 in the engine so the port defaults ON; the "
+                       "matrix is a permutation of 0..15; a 4x4 block reconstructs the "
+                       "input to %.3f of 255 against %.3f for plain rounding, at a "
+                       "signed bias of %.3f; and %d of %d frame pixels move"
+                       % (dith / 1000.0, plain / 1000.0, b / 1000.0,
+                          differ, int(fr.group(2))))
+
+
 def c_play_usage():
     r"""Every flag `omk-play` PARSES is a flag it LISTS.
 
@@ -11280,6 +11359,16 @@ def c_engine_frame_hold():
     same gap was 0 of 480000 pixels lit: a black frame after every beat
     (`next-tasks` 5, `docs/CUTSCENES.md` 2).
 
+    It renders UNDITHERED (2026-09-09). The dither landed the same day and is
+    ON by default because the engine's own `DITHERENABLE` is. It is
+    deterministic in (x, y), so it cannot move a held frame on its own - but
+    it exposes colour differences smaller than a 565 step that plain rounding
+    rounded away, and 24 pixels of 480000 duly moved. That is not a camera
+    cut, and this check is about the camera. `--no-dither` exists for exactly
+    this, laying two frames side by side, so the check uses it and keeps its
+    equality EXACT instead of softening to a threshold. The lit figure is
+    unchanged at 52.5 as a result; dithered it reads 52.2.
+
     The lit figure was **51.5** until 2026-09-07 and moved to 52.5 in the same
     session, which is this check seeing a DIFFERENT fix rather than drifting:
     the body used to snap back to its clip's authored start on a beat's last
@@ -11308,6 +11397,16 @@ def c_engine_frame_hold():
                 [play, fr, os.path.join(ROOT, "tables"),
                  "--save", os.path.join(ROOT, "traces", "save-appart.bin"),
                  "--area", "222", "--scene-chunk", "55", "--nofmv",
+                 # UNDITHERED, which is what `--no-dither` is for. The ordered
+                 # dither is deterministic in (x, y) and so cannot break a hold
+                 # by itself - but it makes the frame sensitive to colour
+                 # differences BELOW a 565 step, which plain rounding absorbed.
+                 # With it on, 24 pixels of 480000 move across the hold and the
+                 # lit figure reads 52.2. Neither is a camera cut, and this
+                 # check is about the camera, so it takes the dither out of the
+                 # question rather than trading byte-for-byte equality for a
+                 # threshold.
+                 "--no-dither",
                  "--frames", str(n), "--res", "800x600", "--dump", out],
                 capture_output=True, text=True, env=env)
             shots[n] = open(out, "rb").read() if os.path.exists(out) else b""
@@ -19955,8 +20054,13 @@ def c_engine_anti_aliasing():
     pl = open(os.path.join(eng, "backends", "sdl", "play.cpp")).read()
     src = (bool(re.search(r"int\s+antiAliasing\s*=\s*0;", sh)),
            '"enhancements"' in sc and '"antialiasing"' in sc,
-           len(re.findall(r"if \(aaSamples > 1\) [a-z]+->setMultisample\(aaSamples\)", pl))
-           + len(re.findall(r"if \(live && aaSamples > 1\) live->setMultisample", pl)),
+           # ANY renderer variable, not a list of the ones that existed when this
+           # was written. `--world-vulkan` added a third (`wv`) on 2026-09-09 and
+           # this check went red for three days against code that was correct,
+           # because the pattern enumerated `live` and a bare `vr`. A scan that
+           # names the callers has to be updated by whoever adds one, and nothing
+           # makes them; a scan that names the GUARD does not.
+           len(re.findall(r"if \((?:\w+ && )?aaSamples > 1\) \w+->setMultisample\(aaSamples\)", pl)),
            len(re.findall(r"->setMultisample\(", pl)))
     # every setMultisample call in omk-play is guarded by `> 1`
     src_ok = (src[0], src[1], src[2] == src[3] and src[3] >= 3)
@@ -20060,7 +20164,8 @@ def c_engine_texture_filter():
     sc = open(os.path.join(eng, "src", "platform", "settings.cpp")).read()
     pl = open(os.path.join(eng, "backends", "sdl", "play.cpp")).read()
     fs = open(os.path.join(eng, "backends", "vulkan", "shaders", "scene.frag")).read()
-    guarded = len(re.findall(r"if \((?:live && )?texFilter > 0\) [a-z]+->setTextureFilter\(texFilter\)", pl))
+    # any renderer variable, not an enumerated one - see `engine: anti-aliasing`
+    guarded = len(re.findall(r"if \((?:\w+ && )?texFilter > 0\) \w+->setTextureFilter\(texFilter\)", pl))
     src_ok = (bool(re.search(r"int\s+textureFilter\s*=\s*0;", sh)),
               '"texturefiltering"' in sc,
               guarded == len(re.findall(r"->setTextureFilter\(", pl)) and guarded >= 3,
@@ -20155,7 +20260,8 @@ def c_engine_mipmaps():
     sc = open(os.path.join(eng, "src", "platform", "settings.cpp")).read()
     pl = open(os.path.join(eng, "backends", "sdl", "play.cpp")).read()
     vk = open(os.path.join(eng, "backends", "vulkan", "vkrender.cpp")).read()
-    ga = len(re.findall(r"if \((?:live && )?texAniso > 1\) [a-z]+->setAnisotropy\(texAniso\)", pl))
+    # any renderer variable, not an enumerated one - see `engine: anti-aliasing`
+    ga = len(re.findall(r"if \((?:\w+ && )?texAniso > 1\) \w+->setAnisotropy\(texAniso\)", pl))
     src_ok = (bool(re.search(r"int\s+anisotropy\s*=\s*1;", sh)),
               '"anisotropy"' in sc and '"trilinear"' in sh,
               ga == len(re.findall(r"->setAnisotropy\(", pl)) and ga >= 3,
@@ -27453,7 +27559,7 @@ def c_licence_headers():
                    if TAG in open(p, encoding="utf-8",
                                   errors="replace").read(600)]
     return (authored, sorted(missing), len(vendored), mislabelled), \
-           (393, [], 1, []), \
+           (394, [], 1, []), \
            "authored source files under tools/, engine/src, engine/tools, " \
            "engine/backends and scripts/; those MISSING the SPDX tag; " \
            "vendored files in engine/third_party; and vendored files wrongly " \
@@ -29210,6 +29316,7 @@ def c_engine_player_jump():
            "0.7*g for N=14; that the arc is symmetric; and that he travels " \
            "the authored 2.5 m forward (98.43) less the landing frame"
 
+
 def c_engine_player_landing():
     r"""THE JUMP'S STATE - `todo/player-vertical.md` step 3: the take-off latch,
     `dword_6A52CC` and the landing phases.
@@ -29323,6 +29430,7 @@ def c_engine_player_landing():
            "MDJUMP03 gives it (2 = short, and it must NOT play the landing " \
            "reaction); that it said so; and that player.cpp carries the " \
            "listing's own three thresholds"
+
 
 
 CHECKS = [
@@ -29574,6 +29682,7 @@ SLOW = [
     ("engine: fitted shadows", c_engine_fitted_shadows, "todo/enhancements 5; o3de/shadow.h"),
     ("engine: mapped shadows", c_engine_mapped_shadows, "todo/enhancements 6; o3de/renderer.h"),
     ("engine: per-pixel lighting", c_engine_perpixel_lighting, "todo/enhancements 7; o3de/vertexlight.h"),
+    ("engine: dither", c_engine_dither, "engine/src/ui/surface.h; todo/enhancements"),
     ("engine: supersampling", c_engine_supersampling, "todo/enhancements 9; o3de/renderer.h"),
     ("engine: shimmer", c_engine_shimmer, "ASSETS 4c; o3de/shimmer.h"),
     ("engine: traffic frame", c_engine_traffic_frame, "STREET_LIFE 2b; todo/road-traffic 3"),

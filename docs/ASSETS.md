@@ -1480,6 +1480,27 @@ port samples NEAREST in both backends and checks no pixel value; enabling
 bilinear or MSAA in a replica would be an enhancement the original never
 drew, and this note is here so it is not mistaken for fidelity.
 
+**The dither is the exception in that sentence, and the port now does it**
+(2026-09-09). Filtering the original turned OFF and dithering it turned ON,
+so the two are not the same case: drawing hard 565 bands where the game drew
+dithered noise is a defect, and `--aa`/`--filter` are enhancements. A set is
+shaded by a colour baked into every vertex and the target is 16-bit, so a
+large smooth wall crosses a 5-bit step in one visible band; the dither trades
+that band for noise the eye integrates. It is ON by default in both backends,
+applied at the single 888 -> 565 quantisation point (`engine/src/ui/surface.h`),
+and `omk-play --no-dither` exists only to lay one frame beside the other.
+
+What is ported is the DECISION. The MATRIX is a **reconstruction** and is
+labelled one: Direct3D dithers inside the driver's own conversion to the
+framebuffer format, so the pattern belonged to the player's card and no part
+of it is reachable from this tree. A 4x4 ordered Bayer is what a 16-bit-era
+driver used. `verify.py: engine: dither` holds it to the two things that ARE
+checkable - that a 4x4 block reconstructs its input better than plain rounding
+does (0.491 of 255 against 2.047) and that it does so at a bias near zero
+(-0.249), so it cannot brighten the frame - plus the wiring, since a correct
+quantiser that no blend site calls changes nothing. On Anekbah's camera 3 a
+real frame moves 132792 of 307200 pixels, 103 distinct colours becoming 161.
+
 **The port carries exactly that enhancement, and it is OFF by default**
 (2026-09-08). `omk-play --aa N`, or `antialiasing = N` under an
 `[Enhancements]` section of the config file — a section reserved for what

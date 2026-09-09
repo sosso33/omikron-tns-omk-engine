@@ -77,7 +77,7 @@ void SoftwareRenderer::submit(const Draw& d) {
         fog.b = view_.fogColour[2];
     }
     const RasterStats s = drawGeometry(fb_, depth_, view_.cam, one, tex_, fog,
-                                       view_.shimmerClock);
+                                       view_.shimmerClock, view_.dither);
     st_.triangles += s.triangles;
     st_.drawn += s.drawn;
     st_.behind += s.behind;

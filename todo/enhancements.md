@@ -36,6 +36,42 @@ backends. `docs/ASSETS.md` 4c.
 game already does the thing and the port simply dropped it. That is cheaper
 than any enhancement and it is what the original looks like.
 
+## Not an enhancement either, and it is the second of the same shape: THE DITHER
+
+`sub_4638C0` sets D3DRENDERSTATE 26, `DITHERENABLE`, to **1 on both of its
+device arms** - the same function that established, in the line above it, that
+the shipped renderer has no anti-aliasing and samples POINT. So dithering is
+what the game does, and the port drawing hard 565 bands where the original
+drew dithered noise was a fidelity defect, not a missing feature. Fixed
+2026-09-09: on by default, both backends, one quantisation point
+(`src/ui/surface.h`). `--no-dither` exists only so two frames can be laid side
+by side; it is a comparison tool, not a setting.
+
+**What is ported is the DECISION, and the pattern cannot be.** Direct3D
+dithers inside the driver's conversion to the framebuffer format, so the
+matrix belonged to whatever card the player had in 1999 and nothing in this
+tree can reach it. The 4x4 ordered Bayer here is a RECONSTRUCTION, in the same
+sense as the mirror's plane normal and the audio attenuation law, and it is
+labelled one where it lives.
+
+Two numbers, from `engine: dither`. Over a 4x4 block the dithered output
+reconstructs its input to **0.491 of 255** where plain rounding carries the
+whole rounding error at **2.047**, and it does that at a signed bias of
+**-0.249** - the dither is centred, so it does not brighten the frame. On
+Anekbah's camera 3 a real frame moves **132792 of 307200** pixels and its
+distinct colours go **103 to 161**.
+
+**And the first version of it was wrong in the way this file should record.**
+The threshold ran 0..+7 rather than -8..+7. It still breaks the band - it
+still spreads a block across two levels, which is the visible half of the job
+- and it lifts every pixel by about half a step while doing it, so the whole
+frame brightens. `quantise888` ROUNDS rather than truncating, so the dither it
+wants is a signed perturbation ABOUT the rounding point, not a positive bias
+added before one. Measured, the uncentred version reconstructs a block to
+3.475 of 255 at a bias of +3.475 - worse than not dithering at all, and worse
+in the one direction a still frame does not show, because a picture that is
+uniformly slightly brighter looks like a picture.
+
 ## Rows 5 and 6 - the shadows
 
 **One key with levels, and it is SUBORDINATE to the game's own option.**

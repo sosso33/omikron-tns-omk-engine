@@ -169,7 +169,7 @@ struct Fog {
 RasterStats drawGeometry(Surface& fb, std::vector<float>& depth,
                          const RCamera& cam, const Geometry& g,
                          std::span<const Texture> textures, const Fog& fog = {},
-                         float shimmerClock = 0.0f);
+                         float shimmerClock = 0.0f, bool dither = false);
 
 // Clear a depth buffer to "nothing here yet".
 void clearDepth(std::vector<float>& depth, int w, int h);

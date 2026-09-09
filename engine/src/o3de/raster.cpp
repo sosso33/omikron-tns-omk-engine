@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "o3de/raster.h"
 #include "o3de/shimmer.h"
+#include "ui/surface.h"
 
 #include <algorithm>
 #include <cmath>
@@ -184,7 +185,7 @@ ClipVert lerp(const ClipVert& a, const ClipVert& b, float f) {
 RasterStats drawGeometry(Surface& fb, std::vector<float>& depth,
                          const RCamera& cam, const Geometry& g,
                          std::span<const Texture> textures, const Fog& fog,
-                         float shimmerClock) {
+                         float shimmerClock, bool dither) {
     RasterStats st;
     if (depth.size() != static_cast<std::size_t>(fb.w) * fb.h)
         clearDepth(depth, fb.w, fb.h);
@@ -377,8 +378,10 @@ RasterStats drawGeometry(Surface& fb, std::vector<float>& depth,
                         const int dr = ((dst >> 11) & 0x1F) * 255 / 31;
                         const int dg = ((dst >> 5) & 0x3F) * 255 / 63;
                         const int db = (dst & 0x1F) * 255 / 31;
-                        out = quantise888(std::min(255, r + dr), std::min(255, gg + dg),
-                                          std::min(255, b + db));
+                        const int ar = std::min(255, r + dr), ag = std::min(255, gg + dg),
+                                  ab = std::min(255, b + db);
+                        out = dither ? quantise888Dither(ar, ag, ab, x, y)
+                                     : quantise888(ar, ag, ab);
                     } else if (batch.blend == Blend::Mul) {
                         // multiply: 0x1000|0x4000, 6 meshes and the mode-6
                         // sprites. `Raster_DrawTriangles` sets SRCBLEND=ZERO
@@ -391,10 +394,13 @@ RasterStats drawGeometry(Surface& fb, std::vector<float>& depth,
                         const int dr = ((dst >> 11) & 0x1F) * 255 / 31;
                         const int dg = ((dst >> 5) & 0x3F) * 255 / 63;
                         const int db = (dst & 0x1F) * 255 / 31;
-                        out = quantise888(dr * (255 - r) / 255, dg * (255 - gg) / 255,
-                                          db * (255 - b) / 255);
+                        const int mr = dr * (255 - r) / 255, mg = dg * (255 - gg) / 255,
+                                  mb = db * (255 - b) / 255;
+                        out = dither ? quantise888Dither(mr, mg, mb, x, y)
+                                     : quantise888(mr, mg, mb);
                     } else {
-                        out = quantise888(r, gg, b);
+                        out = dither ? quantise888Dither(r, gg, b, x, y)
+                                     : quantise888(r, gg, b);
                     }
                     fb.set(x, y, out);
                     // Only an opaque pass owns the depth - a transparent one

@@ -52,6 +52,49 @@ inline std::uint16_t quantise888(int r, int g, int b) {
     return static_cast<std::uint16_t>((r5 << 11) | (g6 << 5) | b5);
 }
 
+// ---------------------------------------------------------------- DITHERING
+//
+// **The engine turns it ON**, and this is not an enhancement.
+// `sub_4638C0` - the device setup, the same function that says the shipped
+// renderer has no anti-aliasing and no texture filtering - sets
+// D3DRENDERSTATE 26, `DITHERENABLE`, to 1 on BOTH of its device arms. 26 sits
+// in the same enumeration `docs/ASSETS.md` already pins at 22 for the cull
+// mode, 23 for the depth function and 27 for alpha blending.
+//
+// So the DECISION is ported and the PATTERN cannot be: Direct3D dithers inside
+// the driver's conversion to the framebuffer format, so the matrix belongs to
+// whatever card the player had. This is a 4x4 ordered Bayer, which is what a
+// 16-bit-era driver used, and it is a RECONSTRUCTION in the same sense as the
+// mirror's plane normal and the audio attenuation law: the engine's choice is
+// known, the implementation of it is not reachable from anything in this tree.
+//
+// Why it matters at all: a set is shaded by a colour baked into every vertex
+// and the framebuffer is 16-bit, so a large smooth wall crosses a 5-bit step
+// in one visible band. The dither trades that band for noise the eye
+// integrates.
+inline constexpr int kBayer4[16] = {
+     0,  8,  2, 10,
+    12,  4, 14,  6,
+     3, 11,  1,  9,
+    15,  7, 13,  5,
+};
+
+// 888 -> 565 with the ordered dither. The offset is one output step per
+// channel - 8 levels of 255 for the two 5-bit channels, 4 for the 6-bit green
+// - so a value can only ever move to a neighbouring level.
+//
+// **CENTRED on zero**, which the first version was not: a threshold running
+// 0..+7 only ever brightens, and over a whole frame that is a systematic lift
+// of about half a step on every pixel. `quantise888` already ROUNDS rather
+// than truncating, so the dither it wants is a signed perturbation about the
+// rounding point, not a positive bias added before it.
+inline std::uint16_t quantise888Dither(int r, int g, int b, int x, int y) {
+    const int t = kBayer4[(y & 3) * 4 + (x & 3)] - 8;   // -8..+7
+    const int d5 = (t * 8) / 16, d6 = (t * 4) / 16;     // -4..+3, -2..+1
+    const auto cl = [](int v) { return v < 0 ? 0 : v > 255 ? 255 : v; };
+    return quantise888(cl(r + d5), cl(g + d6), cl(b + d5));
+}
+
 struct Rect { int left = 0, top = 0, right = 0, bottom = 0; };
 
 struct Surface {

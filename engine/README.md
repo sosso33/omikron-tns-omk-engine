@@ -1428,6 +1428,15 @@ not about the low bits of a pixel** — texture filtering, dithering and the fog
 table are the driver's, and Wine's are not a Voodoo's. Anything built on top
 should say which of the two it leans on.
 
+**That sentence is about EVIDENCE, and it did not stop the port dithering**
+(2026-09-09). `sub_4638C0` sets `DITHERENABLE` to 1 on both device arms, so
+dithering is a decision the engine makes and the port makes it too, on by
+default. What stays out of reach is the PATTERN: the driver chose it, so the
+4x4 ordered Bayer here is a reconstruction and no check asserts a pixel's
+value against a capture because of it. The two halves are `verify.py: engine:
+dither`, which measures the arithmetic against an exact reference and never
+against a frame from the game.
+
 **`verify.py: engine I2D`** — the 2D compositor's display list, its pools,
 its acceptance tests and its three flag banks.
 

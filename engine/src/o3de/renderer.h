@@ -185,6 +185,14 @@ struct View {
     // the index, and a backend that ignores this draws a static skyline where
     // the original draws a moving one.
     float shimmerClock = 0.0f;
+
+    // ---------------------------------------------------- THE DITHER
+    //
+    // `sub_4638C0` sets D3DRENDERSTATE 26 (`DITHERENABLE`) to 1 on both device
+    // arms, so this is the ENGINE's decision and defaults to on. The pattern
+    // is a reconstruction - see `ui/surface.h`. `--dither 0` turns it off,
+    // which is for laying two frames side by side, not for play.
+    bool dither = true;
 };
 
 // One submission. This is the whole vocabulary a backend gets, and every field

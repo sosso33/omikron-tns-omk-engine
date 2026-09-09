@@ -89,6 +89,12 @@ int main() {
     v.cam.at[0] = 0;  v.cam.at[1] = 0;  v.cam.at[2] = 0;
     v.cam.hfovDeg = 60.0f;
 
+    // NO DITHER. This probe holds the shader to an analytic value, and the
+    // 888->565 dither perturbs the green channel by up to one 6-bit step - so
+    // with it on the centre pixel misses the law by 1 and says nothing about
+    // the light. Dithering is measured by its own check; here it is noise.
+    v.dither = false;
+
     omk::Surface pix, vert;
     {   // ---- per PIXEL: the light goes to the shader
         omk::Geometry g = quad(half);
