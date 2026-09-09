@@ -18714,6 +18714,28 @@ def c_fill_colour():
     would report as a bug. The inverse blend is not a detail; it is the whole
     behaviour, and only a screen with a non-placeholder colour could show it.
 
+    **RED SINCE 2026-09-07, AND IT IS THE PORT THAT IS WRONG** (diagnosed
+    2026-09-09, not fixed). The measurement is (27, 38, 28) - the panel's
+    mottled sheet showing through where black tiles used to cover it - and
+    `8f5fd11` is the change: it gave the TILE arm of `Ui_DrawPanelBack` the
+    source colour key, which the engine does set (`I2D_BlitBitmap(&rect,
+    u32(a1, 56), 1, 3)`, the 3 being DDBLT_KEYSRC against the flat 0 key).
+    Turning that key back off makes this check green, so it is the whole of
+    the difference.
+
+    **The key is not the fault - it is right, and it fixed the VIDEOPHONE**,
+    whose viewport is a black rectangle in `sneak.bmp` meant to key out so the
+    3D view shows through. Three things say the LIFT should still be dark:
+    `I2D/bitmaps/ASCEN.BMP`, the screen's own artwork, is **(0, 0, 0) across
+    exactly the grid sampled here**; the player's screenshot measures
+    (15, 25, 25); and the blend rule over black predicts (17, 26, 25). So the
+    fault is what the port leaves UNDER the tiles - a sheet the engine does
+    not draw for this panel, or the wrong one of `Ui_DrawPanelBack`'s four
+    background arms (`docs/UI.md`: one of them paints nothing at all). The
+    next pass should read the arm the LIFT's panel takes rather than touch the
+    key. Left red deliberately: the expectation is the ORIGINAL's number and
+    moving it would enshrine the fault.
+
     Shown to fail: swapping the two weights moves this to (63, 96, 92);
     dropping the alpha to 255 (opaque) gives (80, 122, 118) flat.
     """
