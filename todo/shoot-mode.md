@@ -205,7 +205,7 @@ Each ends in a commit and a report.
 | 3 | **the mode** — ops 80/81 read and ported, the weapon slot, the HUD choice, the library swap, both exit arms | **done 2026-09-09**, §3b; `verify.py: engine: shoot mode`. The frontend half (camera mode 4, group 200, scheme 2 installed in `omk-play`, and a `--shoot` harness) is NOT done and moves to step 4 |
 | 4 | the FRONTEND half and the WEAPON tables | **DONE 2026-09-09** - §4b the frontend and the tables, §4c what a shot is, §4d the live arm, §4e the target scripts and the doors' refcount |
 | 5 | **the brains, decision revisited** — with the grid in hand, how much of the generic shooter's 16 states is now fact rather than geometry. Gandhar is already exact; Astaroth and the generic are state graphs. **Only what the grid settles gets wired**; the rest stays labelled | **DONE 2026-09-09** - §5b the weapon floats, §5c the range, the cone and the two line-of-sight tests. All three of `standing-unknowns` §2's unknowns are read and the decision there is SUPERSEDED |
-| 6 | docs, the checks, and a play test | |
+| 6 | docs, the checks, and a play test | **PART DONE 2026-09-09** - the sight predicate and the line walk PORTED (`Map2d::sightBlockedValue`, `Map2d::lineOfSight`), `verify.py: map2d sight` added and both its clauses shown to fail, and the reading written into `docs/ASSETS.md`, `docs/RECONSTRUCTION.md` and `engine/README.md`. **The PLAY TEST is owed** - nobody has watched shoot mode |
 
 ## 4b. The frontend, and the weapon tables — step 4 (part), 2026-09-09
 
@@ -625,5 +625,9 @@ what the reading shows is that the geometry is four calls — `sub_420C70`,
 `sub_420EB0`, `sub_4449E0`, `sub_4359A0` — and every one of them is now
 transcribed above. `sub_424DE0`'s 1500 lines are a state machine over those
 four, `Shoot_ActorAction` and `List_PickRandomByType` (11 and 12 calls), and
-the animation frame counts. That is step 6's work, not step 5's, and it is
-sized rather than guessed for the first time.
+the animation frame counts.
+
+**Wiring it is a NEW TASK, not the rest of step 6.** Step 6 is docs, checks
+and a play test; a 1500-line state machine is not that — it is the size of
+steps 1-5 over again. What has changed is only that it is now sized rather
+than guessed, and that nothing inside it is unread.

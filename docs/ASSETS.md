@@ -3284,6 +3284,81 @@ into record `+188` — except for Gandhar, who is hard-coded to node 1 — and
 The tables are in `tables/shoot_ai.json`; the port and its limits are
 `engine/src/actor/shoot.h` and `verify.py: engine shoot AI`.
 
+#### What a gunman can SEE and how far he can shoot — read 2026-09-09
+
+Both were recorded as unknown, and `todo/standing-unknowns.md` §2's decision
+not to wire the brains rested on them. Neither is where it was looked for.
+
+**The range is a CHARACTER PROPERTY, not a weapon field.** `sub_422540`
+(0x00422540), called once from `Shoot_ActorEnter`, builds the shoot record out
+of the character's own properties through **event 44** (`Actor_GetProperty` —
+the same event the ammunition uses), six reads chained so each gates the next:
+
+| property | shoot record | what it is |
+|---|---|---|
+| 1 | `+92` | health — a returned `0` is rewritten to **10** |
+| **26** | `+32` | `39 * v` — **the ACQUISITION RANGE, in METRES** |
+| 27 | `+28` | `39 * v` — an inner range, tested after acquisition |
+| 30 | `+36` | `39 * v` — a third |
+| **29** | `+40` | `cos(v * pi/180)` — **the SIGHT CONE's half-angle, in DEGREES** |
+| 37 | `+160` | five behaviour bits, fanned out of `0x10`, `4`, `8`, `2`, `0x20` |
+
+`39` is the inch-per-metre factor already used by the pedestrian spawn and the
+projectile speed, so a designer authors a gunman's reach and his field of view
+in metres and degrees, **per character**. `tables/shoot_weapons.json`'s two
+floats are not involved: `f0` is the fire RATE (the generic brain reloads a
+countdown at record `+172` with it) and `f1` has no reader anywhere.
+
+**The acquisition test** is `sub_420C70`, one line —
+`dot > f32(rec, 40) * dist3d && dist3d < f32(rec, 32)` — with the dot taken
+against the TARGET's own forward vector, so the cone is measured from the
+target outward. It leaves the distance, the forward dot and the **cross** in
+four globals that `sub_420EB0` reads rather than recomputing when it turns the
+body: that helper steps the Euler at `actor+420` by 5 or 10 frame-deltas, does
+nothing once the dot passes `0.99` of the distance, and returns `180` or
+`±90` off the cross's sign for the caller to play a turn animation instead.
+`sub_420D90` beside it is the same test with the range doubled — a wider
+"still interested" band, used where property 37's bit 4 is set.
+
+**The line of sight is two tests, and the floors' wall segments are not
+involved in either.**
+
+* `sub_4449E0` (0x004449E0) — a **ray cast against the set's own meshes**:
+  normalise the segment, build the endpoints' AABB, hand it to
+  `o3de_ForEachMeshInBox` with `sub_444460` as the visitor, keep the nearest
+  hit. `!hit && insideCone` is what acquires a target and latches
+  `rec+160 |= 0x20`, the bit that keeps a gunman engaged once he has seen you.
+* `sub_4359A0` (0x004359A0) — a **Bresenham walk over the `MAP2D` cells**,
+  used by the generic brain's state 15 and by `Shoot_ActorEnter`'s placement.
+  Its cell predicate is a function pointer, and the two candidates are
+  different tests: `sub_435310` refuses `{0, 2, 3}`, which is `sub_4353E0`'s
+  MOVEMENT refusal, while `sub_435210` refuses only a wall and a **closed
+  door** (`sub_44A0F0(scene, door+4, door+8) == 16` on the pair in
+  `dword_907EB4`). All three shipped call sites select the second, so
+  `sub_435310` is dead in this build — and cells `2` and `3` are things you
+  cannot walk on but can see and shoot across. Measured over the shipped
+  grids: **4336 of 71101 cells block a walk and pass a look, and 0 go the
+  other way.**
+
+> **The `case 128:` occupancy arms of all three predicates are DEAD, and only
+> the assembly says so.** The walk reads the cell with `movsx` (four sites),
+> so a runtime occupancy stamp arrives as `0xFFFFFF80`; both sight predicates
+> open `cmp eax, 80h` / **`ja`** — *unsigned* above — and send it to the
+> default arm, where `0x80 & 0x10 == 0` reads **clear**. The movement test
+> `sub_4353E0` is the one that gets it right, by a single instruction:
+> `add eax, 80h` before `cmp eax, 83h`, which is why IDA labels its jump table
+> "cases **-128**,0,2,3" and the other two's "case 128". So the walk returns
+> only clear-or-blocked, an occupied cell never blocks sight — you can see a
+> man standing there — and its four report globals are written by nothing else
+> and read by nothing at all. Reading the decompiled C alone would have put a
+> whole occupancy path into a port that the game does not have.
+
+The sight predicate and the walk are ported as `Map2d::sightBlockedValue` and
+`Map2d::lineOfSight` (`engine/src/formats/map2d.h`), asserted by
+`verify.py: map2d sight`. The brains themselves are still not wired —
+`sub_424DE0`'s 1500 lines are a state machine over the four calls above — but
+the geometry they need is no longer unread. `todo/shoot-mode.md` §5b/§5c.
+
 Then the bulk of the file — 95% of it — is the animations: one `int32 length`
 followed by a clip, per named entry, in entry order. Entries repeating an
 earlier name share that clip and consume nothing, so the chain only lines up if

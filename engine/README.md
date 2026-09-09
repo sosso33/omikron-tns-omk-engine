@@ -1595,6 +1595,29 @@ The only thing asserted about them is that the runtime never leaves the state
 set that was read: 0 of 2000 ticks. That catches a port that wanders and
 nothing else, and it is §3's "read and explained" rather than "verified".
 
+**The geometry those 1500 lines are made of IS ported, even though the states
+using it are not** (2026-09-09, `todo/shoot-mode.md` §5c). The generic brain
+reaches for four things, and they were the whole reason
+`todo/standing-unknowns.md` §2 refused to wire it:
+
+| what | where it lives | ported? |
+|---|---|---|
+| the RANGE and the sight CONE | **character properties 26 and 29**, read through event 44 into shoot record `+32` (metres × 39) and `+40` (`cos` degrees) — *not* the weapon table | read; `shootmode.h`'s constants |
+| the turn toward a target | `sub_420EB0`, stepping the Euler at `actor+420` | read |
+| the LINE OF SIGHT, geometric | `sub_4449E0` — a ray cast against the set's meshes via `o3de_ForEachMeshInBox` | the primitive exists (`sweepSphere` at radius 0 over `soupInBox`) |
+| the LINE OF SIGHT, grid | `sub_4359A0` — a Bresenham walk over the `MAP2D` cells | **`Map2d::lineOfSight`**, `verify.py: map2d sight` |
+
+The grid walk is transcribed arm for arm rather than replaced by a textbook
+Bresenham, because the order cells are visited in decides which one is
+reported and both arms test twice per step. Its predicate is **not** the
+movement one: `sightBlockedValue` refuses only a wall and a closed door, so
+the 4336 cells (of 71101) that are `2` or `3` block a walk and pass a look.
+The engine's `case 128:` occupancy arms are deliberately absent — `movsx` plus
+an unsigned `cmp`/`ja` makes them unreachable, so an occupied cell does not
+block sight, and `blockedValue` lists `0x80` while `sightBlockedValue` does
+not. That asymmetry between two neighbouring functions is a finding, not a
+port simplification.
+
 All three real checks were confirmed by breaking them: resuming instead of
 restarting on a band change moves the reset count to 0, dropping the Astaroth
 arm moves the record split 2/2 → 0/1030 and the site split 3/302 → 0/305, and
