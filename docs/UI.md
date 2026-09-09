@@ -727,6 +727,35 @@ one the walk falls back to the first usable list — the tab column — and the
 highlight jumps to the identity icon, which a player reported as "the
 selection goes to the character page button".
 
+### …and `panel+24` BELONGS TO THE SCREEN WHOSE CALLBACK WROTE IT
+
+`panel+24` is runtime state: an open callback writes it when **its** screen
+opens, and nothing else does. That matters because one panel address can be
+reached two ways, and the lifted tree then carries it twice — once keyed to
+the screen whose callback writes the field, and once as somebody's `+44`
+child, where the field is −1 because no callback has run.
+
+**0x004DEDE8 is the case that shows it.** It is the sneak's SLIDER PAGE,
+entered as a child of the tab column, *and* it is **screen 7's own top
+panel** — the journey screen `MDSLIDIN` opens once you are aboard. So the
+lift carries `screen -1, current -1` for the first and `screen 7, current 1`
+for the second, and they are not two readings of one fact: they are two
+different moments, and only one of them has had an open callback run.
+
+A resolver that prefers whichever record is "informative" without asking
+whose it is will hand a descent from the sneak the journey screen's entry
+list. The page then opens on its HEADER rather than its tab column, and
+because `sub_49D4D0`'s transitions all read *"→ N, if N is selectable"* **from
+the list you are on**, every step refuses and the column becomes a dead end —
+which is what a player met as not being able to reach the destinations.
+`verify.py: sneak page colour` asserts the three transitions.
+
+The same panel reached from its own screen must still take its `current`: the
+sneak's inventory page (0x004DEE50) appears under screen 9 and under four
+sibling pages, and only the screen-9 row carries what its callback wrote.
+So the rule is neither "prefer the informative one" nor "prefer the first" —
+it is **prefer the informative one for the screen you are on**.
+
 ### `list+2` is a STATIC record, so the interface remembers
 
 Nothing in the image ever writes the verb list's `+2`. Not the verb panel's

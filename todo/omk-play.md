@@ -15,6 +15,39 @@ waiting on its evidence.
 
 ## Open (batch 7, filed 2026-09-09)
 
+### 93. The sneak's SLIDER PAGE: the selection cannot leave the tab column — A
+
+> **FIXED 2026-09-09**, found by chasing a red check rather than by a report.
+> Not watched in play yet.
+
+Opening the sneak's slider page and trying to reach a destination did nothing:
+LEFT, RIGHT, UP and DOWN all kept the highlight on the five tab icons. It is
+the fault `a48593f` was written to fix in the first place, returned by another
+route.
+
+**`panel+24` belongs to the screen whose callback wrote it** (`docs/UI.md`).
+Address 0x004DEDE8 is two things — the sneak's slider page, entered as a child
+of the tab column, and **screen 7's own top panel**, the journey screen — so
+the lifted tree carries `screen -1, current -1` for the first and `screen 7,
+current 1` for the second. `UiWidgets::at` preferred whichever record was
+"informative" without asking whose it was, so a descent from the sneak adopted
+screen 7's entry list: the page opened on its HEADER, and `sub_49D4D0`'s
+transitions all read *"→ N, if N is selectable"* **from the list you are on**,
+so every step refused.
+
+`at` now takes the screen it is asked for. A record with `screen -1`, and a
+caller with no screen, are unchanged — it narrows the preference rather than
+removing it, so the inventory page it was added for still works.
+
+**And four of the five slider harnesses were GREEN on the broken entry.** Every
+one walks TAB → RIGHT/UP → ENTER into the page and then DOWN to the rows, which
+only worked because the walk was starting on the header; three of them were
+passing on that accident. All five now step LEFT to the header first, as
+`sneak_colour`'s own sequence always did. A check family that enters one page
+through one wrong door agrees with itself perfectly and asserts nothing.
+
+`verify.py: sneak page colour` 9..12.
+
 ### 92. "Je ne vois pas quoi faire avec ça" while the object is still taken — A
 
 > **FIXED 2026-09-09**, and the reader was right on every count. Driven
