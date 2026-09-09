@@ -6242,15 +6242,24 @@ def c_enhance_all():
     # the tops, read out of `settings.h` rather than repeated here, so raising
     # one moves the assertion with it
     tops = dict(re.findall(r"kMax(\w+)\s*=\s*(\d+)", hdr))
-    want = {"aa": int(tops["AntiAliasing"]), "filter": int(tops["TextureFilter"]),
-            "aniso": int(tops["Anisotropy"]), "shadowquality": int(tops["ShadowQuality"]),
-            "lighting": int(tops["Lighting"])}
-    atMax = all(allMax.get(k) == v for k, v in want.items())
-    got = (len(keys), takes, atMax, allMax.get("all"), override.get("aniso"))
-    return got, (len(keys), len(keys), True, 1, 4), \
+    # What the probe calls each enhancement, against what `settings.h` calls
+    # its top. Hand-written because the two vocabularies differ - and the
+    # COVERAGE test below is what stops that hand-writing going stale: the
+    # first version of this listed five and supersampling had just become the
+    # sixth, so the count halves passed while its VALUE was never asserted.
+    named = {"aa": "AntiAliasing", "filter": "TextureFilter", "aniso": "Anisotropy",
+             "shadowquality": "ShadowQuality", "lighting": "Lighting",
+             "supersampling": "Supersample"}
+    reported = {k for k in allMax if k != "all"}
+    covered = reported == set(named)
+    want = {k: int(tops[v]) for k, v in named.items() if v in tops}
+    atMax = bool(want) and all(allMax.get(k) == v for k, v in want.items())
+    got = (len(keys), takes, covered, atMax, allMax.get("all"), override.get("aniso"))
+    return got, (len(keys), len(keys), True, True, 1, 4), \
            ("the %d `[Enhancements]` keys besides `all`, the fields "
-            "`applyMaxEnhancements` sets, whether one `all = max` puts every one at "
-            "its top, and that a specific key still beats it (anisotropy 4)" % len(keys))
+            "`applyMaxEnhancements` sets, that every enhancement the probe reports is "
+            "one this check names, that one `all = max` puts every one at its top, and "
+            "that a specific key still beats it (anisotropy 4)" % len(keys))
 
 
 
