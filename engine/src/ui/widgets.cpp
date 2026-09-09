@@ -321,11 +321,29 @@ const UiPanel* UiWidgets::screen(int id) const {
 // examine page) landed on a record whose `current` is -1, so `settle` fell
 // back to the first usable list - the tab column - and the highlight left the
 // rows. Prefer the informative one.
-const UiPanel* UiWidgets::at(std::uint32_t addr) const {
+//
+// **BUT `current` BELONGS TO THE SCREEN WHOSE CALLBACK WROTE IT**, and taking
+// it anywhere else is how the sneak's SLIDER page lost its navigation.
+// `panel+24` is runtime state: an open callback writes it when ITS screen
+// opens, and nothing else does. 0x004DEDE8 is both the sneak's slider page,
+// entered as a child of the tab column, and **screen 7's own top panel**, the
+// journey screen - so the lift carries `screen -1, current -1` for the first
+// and `screen 7, current 1` for the second. Preferring "informative" without
+// asking whose it is made a descent from the sneak adopt screen 7's entry
+// list: the walk started on the HEADER instead of the tab column, and
+// `sub_49D4D0`'s transitions - which all read "-> N, if N is selectable" from
+// the list you are ON - then refused every step, so the player could not
+// leave the column at all (`verify.py: sneak page colour` 9..12, and the
+// fault `a48593f` was written to fix in the first place).
+//
+// So the screen-keyed row wins only for the screen it belongs to. A caller
+// with no screen in hand, and a record whose `screen` is -1, are unchanged:
+// this narrows the preference, it does not remove it.
+const UiPanel* UiWidgets::at(std::uint32_t addr, int screen) const {
     const UiPanel* first = nullptr;
     for (const auto& p : panels_) {
         if (p.addr != addr) continue;
-        if (p.current >= 0) return &p;
+        if (p.current >= 0 && (p.screen < 0 || p.screen == screen)) return &p;
         if (!first) first = &p;
     }
     return first;
@@ -460,7 +478,7 @@ int UiWalk::lastPickable(const UiList& l) const {
 }
 
 bool UiWalk::installPanel(std::uint32_t addr) {
-    const auto* kid = w_->at(addr);
+    const auto* kid = w_->at(addr, screen_);
     if (!kid) return false;
     if (panel_) leavePage(*panel_);
     panel_ = kid;
@@ -477,7 +495,7 @@ bool UiWalk::toParent() {
         log_.push_back("close");
         return true;
     }
-    const auto* up = w_->at(panel_->parent);
+    const auto* up = w_->at(panel_->parent, screen_);
     if (!up) {
         approx_ = true;
         log_.push_back("parent panel not in the table");
@@ -1507,7 +1525,7 @@ bool UiWalk::confirm() {
             it->callback == kCbSneakExamine) {
             const std::uint32_t to = it->callback == kCbSneakExamine
                                    ? kPanelSneakExamine : kPanelSneakVerbs;
-            if (const auto* kid = w_->at(to)) {
+            if (const auto* kid = w_->at(to, screen_)) {
                 leavePage(*panel_);
                 panel_ = kid;
                 // `sub_49B950`'s first instruction is `mov dword_6A5090, 0` -
@@ -1540,7 +1558,7 @@ bool UiWalk::confirm() {
         return true;
     }
     if (it->child) {
-        if (const auto* kid = w_->at(it->child)) {
+        if (const auto* kid = w_->at(it->child, screen_)) {
             leavePage(*panel_);
             panel_ = kid;
             buildPage(*panel_);

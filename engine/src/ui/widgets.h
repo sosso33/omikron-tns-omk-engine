@@ -403,7 +403,9 @@ public:
     // The screen's artwork, opened as `I2d\\bitmaps\\%s` - one 640x480 sheet
     // for all eleven, which is what lets the tile map serve every screen.
     const std::string& bitmap(int screenId) const;
-    const UiPanel* at(std::uint32_t addr) const;
+    // `screen` is the screen the caller is ON, and it decides which of two
+    // records for one address wins - see the definition.
+    const UiPanel* at(std::uint32_t addr, int screen = -1) const;
     // A LIST by its record address, wherever in the tree it lives.
     const UiList* listAt(std::uint32_t addr) const;
     const std::vector<UiPanel>& all() const { return panels_; }

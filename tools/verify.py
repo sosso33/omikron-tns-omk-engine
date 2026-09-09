@@ -7829,8 +7829,18 @@ def c_engine_slider_travel():
     r = subprocess.run([play, fr, tb, "--software", "--res", "640x480", "--nofmv",
                         "--save", save, "--area", "0",
                         "--stand", "1804,0,-6890,336", "--frames", "700",
+                        # TAB, then RIGHT/UP to the slider tab and ENTER to
+                        # descend. The page opens on its TAB COLUMN, so LEFT
+                        # (203) steps to the header and DOWN from there to the
+                        # destination rows before the second ENTER confirms
+                        # one - `sub_49D4D0`'s own transitions. That LEFT was
+                        # missing while `UiWidgets::at` had the walk entering
+                        # on the HEADER by mistake: all FOUR of the slider
+                        # streams reached the rows by accident, and three of
+                        # them were GREEN on that accident (`sneak page
+                        # colour` is the one that was not).
                         "--hold", "0*40,k15*3,0*30,k205*4,0*10,k200*4,0*10,"
-                                  "k28*4,0*30,k208*4,0*10,k28*4,0*500"],
+                                  "k28*4,0*30,k203*4,0*10,k208*4,0*10,k28*4,0*500"],
                        capture_output=True, text=True, env=env, errors="replace")
     o = r.stdout
     line = ""
@@ -8189,7 +8199,7 @@ def c_engine_slider_arrives():
                         "--save", save, "--area", "0",
                         "--stand", "1804,0,-6890,336", "--frames", "700",
                         "--hold", "0*40,k15*3,0*30,k205*4,0*10,k200*4,0*10,"
-                                  "k28*4,0*30,k208*4,0*10,k28*4,0*500"],
+                                  "k28*4,0*30,k203*4,0*10,k208*4,0*10,k28*4,0*500"],
                        capture_output=True, text=True, env=env, errors="replace")
     o = r.stdout
     called = "chosen - a slider is COMING to 1804 0 -6890" in o
@@ -8441,7 +8451,7 @@ def c_engine_slider_journey_area():
                         # `--board` puts him at the door point when it opens,
                         # as the Anekbah check does
                         "--hold", "0*40,k15*3,0*30,k205*4,0*10,k200*4,0*10,"
-                                  "k28*4,0*30,k208*4,0*10,k28*4,0*950,"
+                                  "k28*4,0*30,k203*4,0*10,k208*4,0*10,k28*4,0*950,"
                                   "k200*250,0*550"],
                        capture_output=True, text=True, env=env, errors="replace")
     o = r.stdout
@@ -8488,7 +8498,12 @@ def c_engine_slider_journey_qalisar():
                         "--save", save, "--area", "0",
                         "--stand", "1804,0,-6890,244", "--frames", "1000", "--board",
                         "--hold", "0*40,k15*3,0*30,k205*4,0*10,k200*4,0*10,"
-                                  "k28*4,0*30,k208*4,0*6,k208*4,0*6,k208*4,0*10,"
+                                  # LEFT to the header first - see the note on
+                                  # `engine: slider call page`; the three DOWNs
+                                  # then read the same as before, one into the
+                                  # rows and two within them.
+                                  "k28*4,0*30,k203*4,0*10,"
+                                  "k208*4,0*6,k208*4,0*6,k208*4,0*10,"
                                   "k28*4,0*300,k200*250,0*300"],
                        capture_output=True, text=True, env=env, errors="replace")
     o = r.stdout
@@ -8590,7 +8605,7 @@ def c_engine_slider_journey():
                         # slider back only once he is 300 clear and in front of
                         # it - the RELEASED line is that.
                         "--hold", "0*40,k15*3,0*30,k205*4,0*10,k200*4,0*10,"
-                                  "k28*4,0*30,k208*4,0*10,k28*4,0*1150,"
+                                  "k28*4,0*30,k203*4,0*10,k208*4,0*10,k28*4,0*1150,"
                                   "k200*250,0*550"],
                        capture_output=True, text=True, env=env, errors="replace")
     o = r.stdout
@@ -18827,35 +18842,38 @@ def c_sneak_page_colour():
     then blacken the clock item 0x004DEC08 with the single-item setter.
 
     **Confirmed against five captures of the original.** The inventory page
-    **ELEMENTS 9-12 ARE RED SINCE SOME COMMIT AFTER 2026-09-04, AND IT IS THE
-    PORT** (diagnosed 2026-09-09, not fixed). They are the slider page's list
-    navigation - the walk stepping tab column -> header -> rows - and the walk
-    never leaves the column, which is the fault `a48593f` was written to fix
-    and which a player hit. That commit added BOTH the mover and these
-    assertions, so they passed on the day; something later broke them.
+    **ELEMENTS 9-12 WERE RED FROM SOME COMMIT AFTER 2026-09-04 UNTIL
+    2026-09-09, AND IT WAS THE PORT.** They are the slider page's list
+    navigation - tab column -> header -> rows - and the walk could not leave
+    the column at all, which is the fault `a48593f` was written to fix and
+    which a player hit.
 
-    Pinned so far, by measurement rather than by reading:
+    **`current` BELONGS TO THE SCREEN WHOSE CALLBACK WROTE IT.** `panel+24` is
+    runtime state; an open callback writes it when ITS screen opens and
+    nothing else does. Address 0x004DEDE8 is two things - the sneak's slider
+    page, entered as a child of the tab column, and **screen 7's own top
+    panel**, the journey screen - so the lift carries `screen -1, current -1`
+    for the first and `screen 7, current 1` for the second. `UiWidgets::at`
+    preferred whichever record was "informative" without asking whose it was,
+    so a descent from the sneak adopted screen 7's entry list: the walk began
+    on the HEADER, and `sub_49D4D0`'s transitions all read "-> N, if N is
+    selectable" FROM THE LIST YOU ARE ON, so every step refused. `at` now
+    takes the screen it is being asked for; a record with `screen -1`, and a
+    caller with no screen, are unchanged.
 
-    * the mover is not being skipped - panel 0x4DEDE8's hook is still
-      `0x0049D4D0` in the lifted table, and all three list addresses
-      (0x4DE210 tabs, 0x4DEA08 header, 0x4DE6F0 rows) resolve, so
-      `moveListsSlider` runs and REFUSES;
-    * it refuses because the walk is on the wrong list to begin with. The
-      probe prints `entered panel 0x4dede8 list 1 (0x4dea08)` - the HEADER -
-      where the sequence expects the tab column, so the first `listAxis` takes
-      the header's edge transition back to the tabs and every later assertion
-      follows from that;
-    * `dedd3da`'s "a selection that is not pickable moves off it" is NOT the
-      cause: mutating it off leaves this red;
-    * nor is the widget table. Panel 0x4DEDE8 appears TWICE in it - index 2
-      with `screen -1, current -1` and index 13 with `screen 7, current 1` -
-      and both the order and the values are identical before and after the
-      table grew.
+    Two hypotheses were tested and eliminated first, and are recorded so they
+    are not tried again: `dedd3da`'s "a selection that is not pickable moves
+    off it" is not the cause (mutating it off leaves this red), and nor is the
+    widget table (the two records sit at the same indices with the same values
+    before and after it grew).
 
-    So the question is which of those two records the walk resolves the child
-    panel to, and whether `settle()` should be taking its `current` of 1 at
-    all. That is the next read; the entry list is the fault, not the mover.
-    Left RED deliberately - the assertions are the engine's behaviour.
+    **And the last of the four was a stale assertion, not a fault.**
+    Confirming a slider destination now CLOSES the device - `Appel du slider`
+    is `sub_49D400`, `sub_452570(the player's position)` then the screen
+    slot's `+8 = 3` - which the slider work ported on 2026-09-07/08, three
+    days after `ba1c335` asserted the walk stays on 0x004DEDE8. The arm's job
+    is to not descend into the VERB panel, and closing satisfies it; the probe
+    now says which of the two happened instead of printing an address or 0.
 
     draws amber, the slider page green, the identity page blue, matching the
     icon beside each. Fitted over 15 channel samples of 3 hues from 3 pages,
@@ -18923,7 +18941,13 @@ def c_sneak_page_colour():
             # destination as if it were a carried object - which a player saw
             # as "press enter on a line of the slider list redirects to the
             # inventory".
-            "slider row confirm lands on 0x4dede8" in o,
+            # ...and CALLING one closes the device: `Appel du slider` is
+            # `sub_49D400`, `sub_452570(the player's position)` then the
+            # screen slot's `+8 = 3` (`todo/slider.md`). This asserted
+            # "lands on 0x4dede8" from `ba1c335` (2026-09-04), three days
+            # before the call itself was ported - the arm's job is to not
+            # descend into the VERB panel, and closing satisfies that.
+            "slider row confirm CLOSES the screen" in o,
             "confirm row -> panel 0x4deeb8, list 2, tabs off 1 rows off 1" in o,
             "confirm Examiner -> panel 0x4def20, verbs off 1" in o,
             # ...and the COLOUR survives the descent. `+8/+9/+10` are fields

@@ -170,8 +170,17 @@ int main(int argc, char** argv) {
         sw2.press(omk::kUiLeft);                // its header
         sw2.press(omk::kUiUp);                  // ...and its rows
         sw2.press(omk::kUiConfirm);
-        std::printf("slider row confirm lands on %#x\n",
-                    sw2.panel() ? sw2.panel()->addr : 0);
+        // ...AND CALLING ONE CLOSES THE DEVICE. `Appel du slider` is
+        // `sub_49D400`: `sub_452570(the player's position)` and then the
+        // screen slot's `+8 = 3`, the closing state (`todo/slider.md`). So a
+        // confirm on a destination leaves NO panel, and that is the arm
+        // working - what it must not do is descend into the verb panel, which
+        // is what `ba1c335` was written about, three days before the call
+        // itself was ported.
+        if (sw2.panel())
+            std::printf("slider row confirm lands on %#x\n", sw2.panel()->addr);
+        else
+            std::printf("slider row confirm CLOSES the screen\n");
     }
 
     // ---- THE OBJECT FLOW: rows -> verbs -> examine --------------------
