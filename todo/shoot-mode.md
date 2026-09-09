@@ -439,11 +439,54 @@ Written down so step 5 cannot quietly assume it:
 
 * **line of sight.** The grid may or may not answer it — the wall segments in
   each floor are a candidate and nothing has been traced to them yet.
-* **the weapon's range.** `Shoot_InitWeapon` and event 48 are unread.
+* **the weapon's range.** `Shoot_InitWeapon` is READ (§4b, §5b) and its two
+  floats are now half settled: **`f0` is the RATE**, traced, and `f1` has no
+  reader anywhere in the shoot sources. The range is still unread.
 * ~~**what a shot is.**~~ **ANSWERED, §4c**: a projectile out of a 256-slot,
   60-byte pool, fired by `Actor_TickProjectiles` on a per-slot timer and paid
   for out of property 34. What is still unread there is the AIM
   (`sub_44D7F0`) and what starts the timer.
+
+## 5b. The two weapon floats — step 5's first reading, 2026-09-09
+
+`tables/shoot_weapons.json`'s lifter says of the two floats: *"they are a range
+and a rate in shape, and nothing traced says which"*. **One of them is now
+traced.**
+
+```c
+v134 = *(uint32_t **)(rec + 180);        /* the weapon row */
+if (!v134) goto LABEL_314;
+if (f32(rec, 172) <= 0.0)
+    u32(rec, 172) = *v134;               /* <- row[0], f0, reloads the timer */
+```
+
+(`05_sys.c` 6055-6057.) **So `f0` is the RATE** — the value a countdown at the
+shoot record's `+172` is reloaded with when it expires, the same shape as the
+per-slot fire timer at the actor's `+148` in §4c. The corpus reads that way
+too: the player's f0 is LOWER than the NPCs' for the four light weapons
+(10/8/2/2 against 15/10/4/4) and identical for the two heavy ones (20 and 25),
+which is the player shooting faster with a pistol and no faster with a cannon.
+
+**`f1` has no reader**, and that is a measurement rather than an impression:
+the weapon row is reachable only through the shoot record's `+180`, and the
+whole of `05_sys.c` reads that pointer exactly twice - `u16(row, 12)`, the KEY,
+in the property-35 handler at 4350, and `*row`, f0, at 6057. `i2` has none
+either. So `f1` is *probably* the range by elimination, and it is not written
+down as one.
+
+> **A TRAP WORTH THE LINE: `+180` is two different things.** On an ACTOR it is
+> the bank (`Cef_FindGroupById(u32(actor, 180), 200)`, four sites); on a SHOOT
+> RECORD it is the weapon row. Same offset, different structs, and a grep for
+> `, 180)` returns both mixed together.
+
+**What this does to the decision.** `standing-unknowns` §2 rested on three
+unknowns. The navigation node closed at step 2; the RATE closes here; the
+RANGE and the LINE OF SIGHT do not. So the grid answers where a gunman may
+stand and which doors he may cross (§4d, §4e) and it does not answer where he
+may aim - which is the half the generic brain's branch needs. **The decision
+stands**, on one and a half unknowns rather than three, and the next reading
+is `f1`'s consumer or `sub_44D7F0`'s aim from §4c, which are likely the same
+question from two ends.
 
 Until those three are read, the decision of `standing-unknowns` §2 stands for
 the generic arm. What has changed is that it is now a question with an
