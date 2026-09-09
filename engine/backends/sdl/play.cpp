@@ -4515,7 +4515,20 @@ int main(int argc, char** argv) {
         // screens came from `ui.open` during the boot, where `adventure` is
         // false and the mask is still the 0x203F set at start-up; the sneak
         // is the first screen opened from inside the world.
-        if (walk) in.setRepeatMask(omk::kUiRepeatMask);
+        // THE REPEAT MASK IS EXPRESSED IN *AVENTURE*'S SLOTS, and that is a
+        // second place the per-group slot numbering bites (`todo/omk-play.md`
+        // 97f). `Ui_BeginScreen` sets 0x203F - slots 0..5 and 13 - which in
+        // Aventure covers the turns, the moves, `Action / Utiliser` (slot 4),
+        // `Annuler` and the sneak. In *Tirer* `Action / Utiliser` has moved to
+        // slot 8, which 0x203F does NOT contain - so it is never
+        // edge-filtered and arrives as a LEVEL, every frame it is held.
+        //
+        // On its own that was harmless, because nothing read slot 8. Once the
+        // confirm was re-mapped onto it, holding ENTER confirmed on every
+        // frame: a reader pressed it on `Quitter le jeu` and came straight
+        // back to the menu, and said exactly what it was - "maybe the input
+        // is counted twice". So the mask has to follow the group too.
+        if (walk) in.setRepeatMask(omk::kUiRepeatMask | (shootMode ? 0x100u : 0u));
         else if (adventure) in.setRepeatMask(0);
         std::uint32_t bits = in.frame(st);
         if (boardPress) { bits |= 0x10u; boardPress = false; }   // `--board`, one press
@@ -5364,6 +5377,24 @@ int main(int argc, char** argv) {
                 // agree; pitch is the camera's alone, because nothing in the
                 // 14-slot input word carries a pitch - the scheme's
                 // `Regarder En-Haut/En-Bas` are two more bits, not an axis.
+                // Second half of the mouse diagnostic. The first line is at
+                // the top of the loop, before any gate; this one is INSIDE
+                // `if (adventure)`, so the two together say which link is
+                // broken: no MOUSE line at all means the frontend reports no
+                // motion; a MOUSE line with no AIM line means `adventure` is
+                // false and the block is never reached; both, with
+                // `cameraLive 0`, means something clears the shoot camera
+                // after entry.
+                if (shootMode) {
+                    static long aimTold = -1;
+                    if (aimTold < 0 || n - aimTold > 120) {
+                        aimTold = n;
+                        std::printf("frame %ld: AIM reached - cameraLive %d, "
+                                    "pitch %.1f, facing %.1f\n", n,
+                                    int(shootCameraLive), shootPitch,
+                                    player->facing());
+                    }
+                }
                 if (shootMode && shootCameraLive &&
                     (host.mouseDX != 0.0f || host.mouseDY != 0.0f)) {
                     player->aimYawBy(host.mouseDX * kMouseYawPerPixel);

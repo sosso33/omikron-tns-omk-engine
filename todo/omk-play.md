@@ -56,6 +56,17 @@ waiting on its evidence.
 > 0100 -> 0100`) where re-reading my own two lines had not. Read the action
 > first, clear the trigger, then set the confirm.
 >
+> **And then it fired EVERY FRAME, which is the same trap one layer down.**
+> The reader pressed ENTER on `Quitter le jeu` and came straight back to the
+> menu — *"maybe the input is counted twice"*, and that is exactly it. The
+> repeat mask `0x203F` that `Ui_BeginScreen` installs is expressed in
+> **Aventure's slots**: 0..5 and 13, which there covers `Action / Utiliser` at
+> slot 4. In *Tirer* the action is slot **8**, which `0x203F` does not
+> contain — so it is never edge-filtered and arrives as a LEVEL. Harmless
+> while nothing read slot 8; the moment the confirm was re-mapped onto it,
+> holding ENTER confirmed on every frame. The mask has to follow the group
+> too, and now does.
+>
 > Reproducing it headlessly needed the key order the obvious one gets
 > backwards: `--shoot --keys 0x1C,0x01,0x1C --keydelay 100`, so the pause
 > opens AFTER shoot mode rather than before it. With ESC first the screen
