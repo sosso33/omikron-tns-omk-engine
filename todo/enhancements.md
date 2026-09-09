@@ -15,13 +15,32 @@ measures the enhancement's own property on the GPU, shown to fail.
 | 0 | anti-aliasing (MSAA 2/4/8) | `antialiasing = N` / `--aa N` | **done 2026-09-08**, `ed349ca`; `engine: anti-aliasing` |
 | 1 | bilinear texture filtering. The colour key (flag 0x800, black) travels in the texture's ALPHA so a filtered sample is premultiplied: discard below 0.5, divide by alpha above - no dark fringe, and the nearest path is bit-identical to before | `texturefiltering = bilinear` / `--filter bilinear` | **done 2026-09-08**; `engine: texture filter`; judged by eye on Aapden's floor stain |
 | 2 | mipmaps (trilinear) and anisotropic filtering, generated at upload; the alpha key averages correctly into the chain | `texturefiltering = trilinear`, `anisotropy = N` / `--filter trilinear --anisotropy N` | **done 2026-09-08**; `engine: mipmaps`; the stain judged by eye at 16x |
-| 3 | interface scaling: linear or integer instead of nearest for the 640x480 layer | `uiscaling = linear|integer` / `--ui-scaling` | todo |
+| 3 | interface scaling: the 640x480 layer's stretch FILTERED instead of nearest. The key decides the silhouette and the blend decides the colour, so a keyed edge cannot fringe without an alpha channel to premultiply into. The one row that is NOT Vulkan-only. An INTEGER/centred mode is not done and is its own step - see below | `uiscaling = linear` / `--ui-scaling linear` | **done 2026-09-09**; `engine: ui scaling` |
 | 4 | unlimited draw distance: options row 3 is a CAP the port already runs the visible-set walk from; 0 lifts it. Authored risk: the sets end inside the fog | `clipdistance = 0` under `[Enhancements]` / `--clip 0` | todo |
 | 5 | **fitted shadows**: the same blobs, laid on the surface actually under them instead of on a flat quad at the probed height | `shadowquality = fitted` / `--shadow-quality fitted` | **done 2026-09-09**; `engine: fitted shadows` |
 | 6 | **mapped shadows**: a real shadow map, cast by the set's own authored lights, characters only | `shadowquality = mapped` / `--shadow-quality mapped` | **done 2026-09-09**; `engine: mapped shadows` |
 | 7 | **per-pixel lighting**: the engine's OWN light law evaluated per fragment instead of per vertex, and received by every character rather than the crowd alone | `lighting = perpixel` / `--lighting perpixel` | **done 2026-09-09**; `engine: per-pixel lighting` |
 | 8 | **the SETS receive the lights too.** Held back deliberately - it overrides authored art; see below | `lighting = sets` | not recommended |
 | 9 | **supersampling**: render N times larger each way and average down. Reaches the CUTOUT edges MSAA never looks at, and the texture aliasing it cannot touch either | `supersampling = N` / `--ssaa N` | **done 2026-09-09**; `engine: supersampling` |
+
+## Row 3's other half - the INTEGER interface mode is NOT done
+
+`uiscaling = linear` filters the stretch; it does not change WHERE the
+interface lands. A classic integer mode - scale by the largest whole number
+that fits and centre the result, so a 1280x960 window draws every interface
+pixel as an exact 2x2 - needs something this port does not have: an OFFSET.
+`ScreenComposer::scaleX(v) = v * dw / 640` is used for POSITIONS
+(`scaleX(f.x + q->offsetX)`), for SIZES (`scaleX(it.w)`) and for both at once
+(`col * scaleX(64)`, the tile map), across **43 call sites** in
+`src/ui/screendraw.cpp`. A centring offset may be added to the first kind and
+must not be added to the second, so the mode cannot be had by changing one
+function - every site has to be classified. That is a step of its own and it
+can break the interface a player uses, so it was not smuggled into this one.
+
+It also only half makes sense: an interface OVERLAY has to line up with the
+3D view underneath it, so centring the interface at a different scale from
+the world would separate the two. The mode is worth having for the
+full-screen menus and worth thinking about for the overlays.
 
 ## Not an enhancement, and it came out of this list: THE SHIMMER
 

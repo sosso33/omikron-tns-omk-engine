@@ -123,7 +123,7 @@ int ScreenComposer::background(Surface& fb, const UiPanel& p,
     if (p.backNone()) return 0;
     if (p.backSheet()) {
         blt(fb, {0, 0, fb.w, fb.h}, sheet, {0, 0, sheet.w, sheet.h},
-            kBltWait | kBltKeySrc, kI2dColourKey);
+            kBltWait | kBltKeySrc, kI2dColourKey, /*dstKey*/ 0, filter_);
         return 0;
     }
     if (p.tiles.empty()) return 0;
@@ -179,7 +179,7 @@ int ScreenComposer::background(Surface& fb, const UiPanel& p,
         // and the world was rendering correctly the whole time.
         blt(fb, {dx0, dy0, dx1, dy1},
             sheet, {sx, sy0, sx + 64, sy0 + sh}, kBltWait | kBltKeySrc,
-            kI2dColourKey);
+            kI2dColourKey, /*dstKey*/ 0, filter_);
         ++drawn;
     }
     return drawn;
@@ -215,7 +215,8 @@ ScreenFrame ScreenComposer::draw(Surface& fb, int screenId,
             // image, which is the same statement from the other side.
             Surface c(640, 480, 0);
             cloud_->draw(c, frame_);
-            blt(fb, {0, 0, fb.w, fb.h}, c, {0, 0, 640, 480}, kBltWait);
+            blt(fb, {0, 0, fb.w, fb.h}, c, {0, 0, 640, 480}, kBltWait,
+                /*srcKey*/ 0, /*dstKey*/ 0, filter_);
         }
         out.cloudDrawn = true;
     }
@@ -527,7 +528,8 @@ ScreenFrame ScreenComposer::draw(Surface& fb, int screenId,
                     const int y0 = scaleY(it.y + q->offsetY);
                     blt(fb, {x0, y0, scaleX(it.x + q->offsetX + it.w),
                              scaleY(it.y + q->offsetY + it.h)},
-                        *view3d_, {0, 0, view3d_->w, view3d_->h}, kBltWait);
+                        *view3d_, {0, 0, view3d_->w, view3d_->h}, kBltWait,
+                        /*srcKey*/ 0, /*dstKey*/ 0, filter_);
                     ++out.itemsDrawn;
                 }
                 continue;
@@ -774,7 +776,7 @@ ScreenFrame ScreenComposer::draw(Surface& fb, int screenId,
                 blt(fb, {scaleX(x0), scaleY(y0),
                          scaleX(x0 + it.w), scaleY(y0 + it.h)},
                     art, {src[0], src[1], src[0] + it.w, src[1] + it.h},
-                    kBltWait | kBltKeySrc, artKey);
+                    kBltWait | kBltKeySrc, artKey, /*dstKey*/ 0, filter_);
                 ++out.spritesDrawn;
             }
 

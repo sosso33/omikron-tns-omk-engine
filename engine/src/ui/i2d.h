@@ -171,6 +171,10 @@ public:
     // `zwriteToggles` counts the render-state calls, which the original caches
     // in `dword_8F56D8` so the pair costs one call each way.
     void flush();
+    // The interface-scaling ENHANCEMENT, handed to the blit back end
+    // (`ui/surface.h`): 0 nearest, as the original's DirectDraw `Blt`.
+    void setScalingFilter(int f) { filter_ = f; }
+    int  scalingFilter() const { return filter_; }
     int  zwriteToggles() const { return zwrite_; }
     int  nodes() const { return static_cast<int>(nodes_.size()); }
     int  used(I2dPrim p) const { return used_[static_cast<int>(p)]; }
@@ -185,6 +189,7 @@ private:
     int cache_[kI2dLayers] = {};   // the per-LAYER HEAD cache; -1 when unused
     int used_[static_cast<int>(I2dPrim::Count)] = {};
     int zwrite_ = 0;
+    int filter_ = 0;      // the scaling enhancement; 0 is the game's
     bool init_ = false;
     void ensure();
 };

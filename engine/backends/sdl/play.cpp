@@ -1486,6 +1486,10 @@ int main(int argc, char** argv) {
 "                   [Enhancements] texturefiltering=M in --config\n"
 "  --anisotropy N   ENHANCEMENT: N-tap anisotropic filtering (2..16), with\n"
 "                   trilinear only; [Enhancements] anisotropy=N\n"
+"  --ui-scaling M   ENHANCEMENT, off by default: how the 640x480 interface is\n"
+"                   stretched to the display, M = nearest (the original's\n"
+"                   Blt) or linear; BOTH backends, since the interface is\n"
+"                   composed on the CPU; [Enhancements] uiscaling=M\n"
 "  --software       force the software rasteriser\n"
 "  --letterbox      the 1.818:1 camera-mode bars, for laying a shot beside\n"
 "                   a capture; --full is the old spelling of the opposite\n"
@@ -1654,6 +1658,7 @@ int main(int argc, char** argv) {
     int filterFlag = -1;   // --filter nearest|bilinear|trilinear, [Enhancements] texturefiltering
     int anisoFlag = -1;    // --anisotropy N, [Enhancements] anisotropy
     int shadowQFlag = -1;  // --shadow-quality classic|fitted|mapped, [Enhancements] shadowquality
+    int uiScaleFlag = -1;  // --ui-scaling nearest|linear, [Enhancements] uiscaling
     int lightingFlag = -1; // --lighting pervertex|perpixel, [Enhancements] lighting
     int ssaaFlag = -1;     // --ssaa N, [Enhancements] supersampling
     // `--dither 0|1`. NOT an enhancement: `sub_4638C0` sets D3DRENDERSTATE 26
@@ -1841,6 +1846,14 @@ int main(int argc, char** argv) {
             lightingFlag = omk::lightingMode(argv[++i]);
             if (lightingFlag < 0) {
                 std::fprintf(stderr, "--lighting %s: not a mode (pervertex|perpixel)\n",
+                             argv[i]);
+                return 2;
+            }
+        }
+        else if (a == "--ui-scaling" && i + 1 < argc) {
+            uiScaleFlag = omk::uiScalingMode(argv[++i]);
+            if (uiScaleFlag < 0) {
+                std::fprintf(stderr, "--ui-scaling %s: not a mode (nearest|linear)\n",
                              argv[i]);
                 return 2;
             }
@@ -2086,18 +2099,28 @@ int main(int argc, char** argv) {
     const int texFilter = enh(filterFlag, settings.textureFilter, omk::kMaxTextureFilter);
     const int texAniso  = enh(anisoFlag, settings.anisotropy, omk::kMaxAnisotropy);
     const int ssaa      = enh(ssaaFlag, settings.supersample, omk::kMaxSupersample);
+    // The INTERFACE's own, and the one enhancement here that is not the
+    // Vulkan backend's: the 640x480 layer is composed on the CPU for both, so
+    // a filtered stretch reaches the software renderer too.
+    const int uiScaling = enh(uiScaleFlag, settings.uiScaling, omk::kMaxUiScaling);
+    comp.setScaling(uiScaling);
+    if (uiScaling > 0)
+        std::printf("ui scaling: linear - an ENHANCEMENT the original never had "
+                    "(DirectDraw's Blt takes one texel); it changes nothing at "
+                    "640x480, where nothing stretches\n");
     if (enhanceAll || settings.enhanceAll)
         std::printf("enhancements: all on - %dx MSAA, %s filtering, anisotropy %d, "
-                    "%s shadows, %s lighting, %dx supersampling. As high as each goes "
+                    "%s shadows, %s lighting, %dx supersampling, %s interface. As high as each goes "
                     "unless a specific "
                     "setting said otherwise; none of it is what the original drew, and "
                     "the device reduces what it cannot meet.\n",
                     aaSamples, omk::textureFilterName(texFilter), texAniso,
-                    omk::shadowQualityName(shadowQuality), omk::lightingName(lighting), ssaa);
+                    omk::shadowQualityName(shadowQuality), omk::lightingName(lighting), ssaa,
+                    omk::uiScalingName(uiScaling));
     std::printf("settings: clip %d m (%s) = %.0f in, near/far split %.0f/%.0f;"
                 " crowd %d (%s); sky %d (%s), shadows %d (%s), detail %d (%s);"
                 " aa %d (%s, enhancement), filter %s (%s, enhancement),"
-                " anisotropy %d (%s, enhancement)\n",
+                " anisotropy %d (%s, enhancement), interface %s (%s, enhancement)\n",
                 clipFlag ? clipArg : settings.v.clipDistance,
                 clipFlag ? "flag" : omk::sourceName(settings.clipDistance),
                 clipInches, clipInches * 0.25, clipInches * 0.95,
@@ -2108,7 +2131,9 @@ int main(int argc, char** argv) {
                 aaSamples, aaFlag >= 0 ? "flag" : omk::sourceName(settings.antiAliasingSource),
                 omk::textureFilterName(texFilter),
                 filterFlag >= 0 ? "flag" : omk::sourceName(settings.textureFilterSource),
-                texAniso, anisoFlag >= 0 ? "flag" : omk::sourceName(settings.anisotropySource));
+                texAniso, anisoFlag >= 0 ? "flag" : omk::sourceName(settings.anisotropySource),
+                omk::uiScalingName(uiScaling),
+                uiScaleFlag >= 0 ? "flag" : omk::sourceName(settings.uiScalingSource));
     if (!ini.unknown.empty()) {
         std::printf("settings: %zu key(s) under [Preferences] the engine never reads:",
                     ini.unknown.size());

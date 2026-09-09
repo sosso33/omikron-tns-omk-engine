@@ -174,8 +174,9 @@ line, OFF by default, which the software reference ignores because the
 original's ANTIALIAS state is explicitly off (`docs/ASSETS.md` 4). Nothing
 in the save header can carry it. `verify.py: engine: anti-aliasing`.
 The second key is `texturefiltering = nearest|bilinear|trilinear`
-(`--filter M`) with `anisotropy = N` (`--anisotropy N`), same rules;
-`todo/enhancements.md` carries the list.
+(`--filter M`) with `anisotropy = N` (`--anisotropy N`), and
+`uiscaling = nearest|linear` (`--ui-scaling M`) filters the interface's own
+stretch, same rules; `todo/enhancements.md` carries the list.
 
 Wired: **the crowd density** goes to `Session::setStreetActivity`, and **the
 clip distance** drives a real visible-set walk in `omk-play` - the distance

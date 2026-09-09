@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "ui/surface.h"
 
+#include <cmath>
+
 #include <algorithm>
 #include <cstring>
 
@@ -65,7 +67,8 @@ Surface surfaceFromBmp(std::span<const std::byte> d) {
 }
 
 bool blt(Surface& dst, Rect dr, const Surface& src, Rect sr,
-         std::uint32_t flags, std::uint16_t srcKey, std::uint16_t dstKey) {
+         std::uint32_t flags, std::uint16_t srcKey, std::uint16_t dstKey,
+         int filter) {
     if (!dst.valid() || !src.valid()) return false;
     const int dw = dr.right - dr.left, dh = dr.bottom - dr.top;
     const int sw = sr.right - sr.left, sh = sr.bottom - sr.top;
@@ -75,6 +78,79 @@ bool blt(Surface& dst, Rect dr, const Surface& src, Rect sr,
 
     const bool keySrc  = (flags & kBltKeySrc)  != 0;
     const bool keyDest = (flags & kBltKeyDest) != 0;
+
+    // ---- THE INTERFACE SCALING ENHANCEMENT (surface.h) -------------------
+    //
+    // Only when the rectangles differ in size: at 1:1 the loop below is a row
+    // copy and must stay bit-identical, which is what makes the authored
+    // 640x480 frame the same picture in both modes.
+    //
+    // **The colour key decides the SILHOUETTE and the blend decides the
+    // COLOUR, and they are kept apart.** Blending a key texel into its
+    // neighbours is what fringes a keyed edge - the same fault the texture
+    // filter met at the cutout path (`docs/ASSETS.md` 4) and solved with a
+    // premultiplied alpha this 565 surface does not have. So here: the
+    // NEAREST tap, the one the unfiltered path would have taken, says whether
+    // the pixel is drawn at all; the four taps around it are averaged with
+    // the key ones LEFT OUT and the weights renormalised over the rest. The
+    // set of pixels written is therefore identical to nearest, texel for
+    // texel, and only their colours move.
+    if (filter >= 1 && (sw != dw || sh != dh)) {
+        for (int y = 0; y < dh; ++y) {
+            // Pixel CENTRES, which is what puts the resampled grid where the
+            // nearest one is rather than half a texel off it.
+            const double fy = (y + 0.5) * sh / dh - 0.5;
+            int y0 = static_cast<int>(std::floor(fy));
+            const double wy = fy - y0;
+            int y1 = y0 + 1;
+            y0 = y0 < 0 ? 0 : y0 > sh - 1 ? sh - 1 : y0;
+            y1 = y1 < 0 ? 0 : y1 > sh - 1 ? sh - 1 : y1;
+            const int ny = sh == dh ? y : y * sh / dh;   // the nearest path's row
+            for (int x = 0; x < dw; ++x) {
+                const int nx = sw == dw ? x : x * sw / dw;
+                const std::uint16_t nearest = src.at(sr.left + nx, sr.top + ny);
+                if (keySrc && nearest == srcKey) continue;
+                if (keyDest && dst.at(dr.left + x, dr.top + y) != dstKey) continue;
+
+                const double fx = (x + 0.5) * sw / dw - 0.5;
+                int x0 = static_cast<int>(std::floor(fx));
+                const double wx = fx - x0;
+                int x1 = x0 + 1;
+                x0 = x0 < 0 ? 0 : x0 > sw - 1 ? sw - 1 : x0;
+                x1 = x1 < 0 ? 0 : x1 > sw - 1 ? sw - 1 : x1;
+
+                const std::uint16_t t[4] = {src.at(sr.left + x0, sr.top + y0),
+                                            src.at(sr.left + x1, sr.top + y0),
+                                            src.at(sr.left + x0, sr.top + y1),
+                                            src.at(sr.left + x1, sr.top + y1)};
+                const double w[4] = {(1 - wx) * (1 - wy), wx * (1 - wy),
+                                     (1 - wx) * wy,       wx * wy};
+                double r = 0, g = 0, b = 0, tot = 0;
+                for (int i = 0; i < 4; ++i) {
+                    if (keySrc && t[i] == srcKey) continue;   // never averaged in
+                    const int r5 = (t[i] >> 11) & 31, g6 = (t[i] >> 5) & 63, b5 = t[i] & 31;
+                    r += w[i] * ((r5 << 3) | (r5 >> 2));
+                    g += w[i] * ((g6 << 2) | (g6 >> 4));
+                    b += w[i] * ((b5 << 3) | (b5 >> 2));
+                    tot += w[i];
+                }
+                // `tot` is 0 only when every tap is the key, and the nearest
+                // tap is one of the four, so the test above has already
+                // continued - but a renormalisation must never divide by a
+                // number it has not looked at.
+                if (tot <= 0.0) { dst.set(dr.left + x, dr.top + y, nearest); continue; }
+                const auto q = [](double v) {
+                    const int i = static_cast<int>(v + 0.5);
+                    return i < 0 ? 0 : i > 255 ? 255 : i;
+                };
+                // ROUNDED, not dithered: the dither is for a 3D frame's
+                // gradients, and noise in a menu is noise in a menu.
+                dst.set(dr.left + x, dr.top + y,
+                        quantise888(q(r / tot), q(g / tot), q(b / tot)));
+            }
+        }
+        return true;
+    }
 
     for (int y = 0; y < dh; ++y) {
         // nearest-neighbour, which is what a 1999 blitter does; when the

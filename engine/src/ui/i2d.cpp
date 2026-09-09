@@ -189,7 +189,8 @@ void I2dList::present(Surface& fb, const std::vector<Surface>& bitmaps,
                               | ((b.flags & 2u) ? kBltKeyDest : 0u);
         blt(fb, {b.dst[0].x, b.dst[0].y, b.dst[1].x, b.dst[1].y},
             bitmaps[static_cast<std::size_t>(b.bitmap)],
-            {b.src[0].x, b.src[0].y, b.src[1].x, b.src[1].y}, f, srcKey, dstKey);
+            {b.src[0].x, b.src[0].y, b.src[1].x, b.src[1].y}, f, srcKey, dstKey,
+            filter_);
     }
 }
 

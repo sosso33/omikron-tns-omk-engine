@@ -102,6 +102,16 @@ struct Settings {
     int    supersample = 1;
     Source supersampleSource = Source::Default;
 
+    // `uiscaling = nearest|linear`: the interface is authored at 640x480 and
+    // `I2D_ScaleX/Y` scale its coordinates to whatever the display is, so any
+    // display but 640x480 STRETCHES every interface bitmap - and DirectDraw's
+    // `Blt`, which is what the original stretches with, takes one texel.
+    // `linear` filters that stretch. The only enhancement in this section
+    // that is not the Vulkan backend's: the interface is composed on the CPU
+    // for both backends, so this one reaches the software renderer too.
+    int    uiScaling = 0;
+    Source uiScalingSource = Source::Default;
+
     // `all = max` under `[Enhancements]`: turn every enhancement up as far as
     // it goes, in ONE key, without having to know what the list currently is.
     //
@@ -184,6 +194,19 @@ inline int lightingMode(std::string w) {
 }
 inline const char* lightingName(int m) { return m <= 0 ? "pervertex" : "perpixel"; }
 
+// The interface-scaling word: 0 nearest (the original's stretch), 1 linear;
+// -1 for a word that is neither, so a typo is reported rather than taken as
+// the default.
+inline int uiScalingMode(std::string w) {
+    for (auto& c : w) c = static_cast<char>(c >= 'A' && c <= 'Z' ? c + 32 : c);
+    while (!w.empty() && (w.back() == ' ' || w.back() == '\t')) w.pop_back();
+    while (!w.empty() && (w.front() == ' ' || w.front() == '\t')) w.erase(w.begin());
+    if (w == "0" || w == "nearest" || w == "point" || w == "off") return 0;
+    if (w == "1" || w == "linear" || w == "bilinear" || w == "filtered") return 1;
+    return -1;
+}
+inline const char* uiScalingName(int m) { return m <= 0 ? "nearest" : "linear"; }
+
 // THE TOP OF EACH ENHANCEMENT, in one place, so `all = max` and
 // `--enhance-all` cannot drift apart from each other or from the parsers.
 // The two the DEVICE caps are asked for at their largest defined value; the
@@ -197,6 +220,7 @@ inline constexpr int kMaxLighting      = 1;   // per pixel
 // `all = max` asks for, and the report line says so, because a reader who
 // turns everything up should be told what they turned up.
 inline constexpr int kMaxSupersample   = 4;
+inline constexpr int kMaxUiScaling     = 1;   // linear
 
 // Apply them, leaving anything an explicit key already set alone.
 inline void applyMaxEnhancements(Settings& s) {
@@ -209,6 +233,7 @@ inline void applyMaxEnhancements(Settings& s) {
     take(s.shadowQuality, kMaxShadowQuality, s.shadowQualitySource);
     take(s.lighting,      kMaxLighting,      s.lightingSource);
     take(s.supersample,   kMaxSupersample,   s.supersampleSource);
+    take(s.uiScaling,     kMaxUiScaling,     s.uiScalingSource);
 }
 
 // Resolve the three sources in order.  Either may be absent.

@@ -203,6 +203,11 @@ public:
     // sheets are 640x480 files and `Blt` stretches, and the cloud's own
     // surface is hard-coded 0x280 x 0x1E0 in `sub_4B19C0` and blitted out.
     void setDisplay(int w, int h) { dw_ = w; dh_ = h; }
+    // The interface-scaling ENHANCEMENT (`todo/enhancements.md` 3): 0 is the
+    // original's nearest stretch, 1 filters it. Consulted only where a blit
+    // actually stretches, so at the authored 640x480 it changes nothing.
+    void setScaling(int f) { filter_ = f; }
+    int  scaling() const { return filter_; }
     int  scaleX(int v) const { return v * dw_ / 640; }
     int  scaleY(int v) const { return v * dh_ / 480; }
 
@@ -234,6 +239,7 @@ private:
     long             frame_ = 0;
     long             clockMs_ = 0;
     int              dw_ = 640, dh_ = 480;
+    int              filter_ = 0;   // the scaling enhancement; 0 is the game's
 
     const DataFs*    fs_;
     const UiWidgets* w_;

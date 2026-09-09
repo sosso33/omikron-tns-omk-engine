@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // COMPOSE A SCREEN, HEADLESS - the same frame the window shows, with no window.
 //
-//     run_screen <gamedata> <tables/ui_widgets.json> <tables/ui.json> <out.bin>
+//     run_screen <gamedata> <ui_widgets.json> <ui.json> <out.bin> [frame] [WxH] [uiscaling]
 //
 // This is the reference half of `PORTING` A1's pair: the frontend is handed an
 // already-composed framebuffer, so everything that decides what a frame LOOKS
@@ -61,6 +61,10 @@ int main(int argc, char** argv) {
     int dw = 640, dh = 480;
     if (argc > 6) std::sscanf(argv[6], "%dx%d", &dw, &dh);
     comp.setDisplay(dw, dh);
+    // ...and the INTERFACE SCALING enhancement (`todo/enhancements.md` 3),
+    // 0 nearest as the original stretches. It can only matter where the
+    // display is not 640x480, which is the pair the check composes.
+    if (argc > 7) comp.setScaling(std::atoi(argv[7]));
 
     std::vector<std::int32_t> out;
     // Screen 29 is the start menu; 4 is the LIFT, whose seven slots are the

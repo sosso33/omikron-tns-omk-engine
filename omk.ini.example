@@ -148,6 +148,15 @@
 ; silhouette is a colour key inside a triangle. Vulkan only.
 ;supersampling = 1
 
+; Interface scaling: nearest | linear (or 0 | 1). The interface is authored at
+; 640x480 and its coordinates are scaled to the display, so on any other size
+; every interface bitmap is stretched - and DirectDraw's Blt, what the game
+; stretches with, takes one texel. `linear` filters that stretch. The colour
+; key still decides the silhouette, so a keyed edge cannot fringe. This is the
+; ONE key here that is not Vulkan-only: the interface is composed on the CPU
+; for both backends. At 640x480 it changes nothing, because nothing stretches.
+;uiscaling = nearest
+
 ; Character shadows: classic | fitted | mapped (or 0 | 1 | 2).
 ; SUBORDINATE to `displayshadows` above - with that off, nothing draws
 ; whatever this says.

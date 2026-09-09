@@ -1951,6 +1951,32 @@ through `I2D_ScaleX/Y`, sits somewhere else entirely.
 **A 640×480 test cannot see this**, because there `ScaleX(64) == 64`. It has
 to be composed at a second size, which `verify.py: engine screen scale` does.
 
+**And what stretches a bitmap is DirectDraw's `Blt`, which takes one texel.**
+So on any display but 640×480 every interface bitmap is nearest-neighbour
+scaled, which at 800×600 is a 1.25 factor and doubles pixels unevenly. The
+port carries a filtered stretch as an ENHANCEMENT — `--ui-scaling linear`, or
+`uiscaling = linear` under the config's `[Enhancements]` section — OFF by
+default like everything in that section, and it is the ONE enhancement that
+is not the Vulkan backend's, because the 640×480 layer is composed on the CPU
+for both backends.
+
+Its difficulty is the colour key. The texture path solved the same problem by
+premultiplying the key into an alpha channel (`docs/ASSETS.md` §4); a 565
+interface surface has none, so the two jobs are split instead: **the nearest
+tap decides whether the pixel is drawn and the four taps around it decide its
+colour**, the key ones left out of the average and the weights renormalised
+over the rest. The written-pixel set is therefore identical to nearest,
+texel for texel. Measured on the start menu at 800×600: 34.5% of the frame
+moves, the mean neighbour gradient falls from **4.00 to 3.27**, and the
+number of pixels that change between written and unwritten is **0**. At the
+authored 640×480 the two modes are byte-identical, because nothing stretches.
+The TEXT does not move at either size: glyphs are drawn as coverage into a
+colour ramp rather than blitted, so they carry their own antialiasing.
+`verify.py: engine: ui scaling`; `todo/enhancements.md` 3, which also records
+what is NOT done — an integer, centred mode, which needs an offset the
+composer's 43 `scaleX`/`scaleY` sites do not distinguish position from size
+for.
+
 Two more things the same function does before the tiles: with flag
 `0x40002000` it draws no background at all, and **without** `0x40001800` it
 CLEARS the whole display first.

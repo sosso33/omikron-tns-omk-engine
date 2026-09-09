@@ -20332,6 +20332,109 @@ def c_engine_mipmaps():
            "< bilinear, and coverage agreement with software stays >= 0.98"
 
 
+def c_engine_ui_scaling():
+    r"""INTERFACE SCALING - the `[Enhancements]` linear mode, OFF by default,
+    and the colour key surviving a filtered stretch without an alpha channel.
+
+    The interface is authored at 640x480 and `I2D_ScaleX/Y` scale its
+    coordinates to whatever the display is (`docs/UI.md`, "The background
+    scales its DESTINATION, not its source"), so on any other display every
+    interface bitmap is STRETCHED - and DirectDraw's `Blt`, which is what the
+    original stretches with, takes one texel. `uiscaling = linear` filters
+    that stretch. It is the one enhancement that is not the Vulkan backend's:
+    the 640x480 layer is composed on the CPU for both, so it reaches the
+    software renderer too.
+
+    **The key rule, and it is what this check is really for.** The textures'
+    fringe problem was solved with a premultiplied alpha (`engine: texture
+    filter`); a 565 interface surface has no alpha, so the two jobs are split
+    instead - the NEAREST tap, the one the unfiltered path would have taken,
+    decides whether the pixel is drawn at all, and the four taps around it are
+    averaged with the key ones left out and the weights renormalised. So the
+    SET of pixels written is identical to nearest and only their colours move.
+
+    Asserted, over the start menu composed by `run_screen`: at the authored
+    640x480 the two modes are BYTE-IDENTICAL, because nothing stretches there;
+    at 800x600 linear differs from nearest over a large part of the frame,
+    the frame's mean neighbour gradient goes DOWN (a filter smooths - measured
+    4.00 -> 3.27), and the number of pixels that change between written and
+    unwritten is ZERO, which is the key rule's own property. In the source the
+    default is 0, the flag is guarded, and both blit back ends - the screen
+    composer and the I2D display list - carry the mode.
+
+    Shown to fail (2026-09-09) with the filter ignored in `blt`: the 800x600
+    frames become identical and the gradient stops moving.
+    """
+    import subprocess, tempfile, shutil, re
+    eng = os.path.join(ROOT, "engine")
+    fr  = omkpaths.data_root()
+    widgets = os.path.join(ROOT, "tables", "ui_widgets.json")
+    if not (os.path.isdir(eng) and os.path.exists(widgets)):
+        return ("skipped",), ("skipped",), "engine/ or tables/ absent"
+
+    sh = open(os.path.join(eng, "src", "platform", "settings.h")).read()
+    sc = open(os.path.join(eng, "src", "platform", "settings.cpp")).read()
+    pl = open(os.path.join(eng, "backends", "sdl", "play.cpp")).read()
+    sd = open(os.path.join(eng, "src", "ui", "screendraw.cpp")).read()
+    i2 = open(os.path.join(eng, "src", "ui", "i2d.cpp")).read()
+    src_ok = (bool(re.search(r"int\s+uiScaling\s*=\s*0;", sh)),
+              '"uiscaling"' in sc,
+              "comp.setScaling(uiScaling)" in pl,
+              # every blit back end carries it: the composer's five and I2D's one
+              sd.count("filter_)") == 5 and "filter_)" in i2)
+
+    b = subprocess.run(["make", "-s", "build/run_screen"], cwd=eng,
+                       capture_output=True, text=True)
+    binp = os.path.join(eng, "build", "run_screen")
+    if b.returncode != 0 or not os.path.exists(binp):
+        return ("build failed",), ("built",), "engine/ must build run_screen"
+
+    ui = os.path.join(ROOT, "tables", "ui.json")
+    tmp = tempfile.mkdtemp()
+    try:
+        def frame(size, mode, w, h):
+            out = os.path.join(tmp, "s%s%d.bin" % (size, mode))
+            r = subprocess.run([binp, fr, widgets, ui, out, "0", size, str(mode)],
+                               capture_output=True, text=True)
+            if r.returncode != 0 or not os.path.exists(out):
+                return None
+            raw = open(out, "rb").read()
+            n = struct.unpack_from("<i", raw, 0)[0]
+            return struct.unpack_from("<%dH" % (w * h), raw, 4 + 4 * n)
+        a0, a1 = frame("640x480", 0, 640, 480), frame("640x480", 1, 640, 480)
+        b0, b1 = frame("800x600", 0, 800, 600), frame("800x600", 1, 800, 600)
+        if None in (a0, a1, b0, b1):
+            return ("probe failed",), ("ran",), "run_screen must compose four frames"
+        W, H = 800, 600
+        N = W * H
+        def rgb(v):
+            return (((v >> 11) & 31) << 3, ((v >> 5) & 63) << 2, (v & 31) << 3)
+        def grad(px):
+            t = 0; n = 0
+            for i in range(N):
+                if i % W + 1 < W:
+                    p, q = rgb(px[i]), rgb(px[i + 1])
+                    t += abs(p[0]-q[0]) + abs(p[1]-q[1]) + abs(p[2]-q[2]); n += 3
+                if i + W < N:
+                    p, q = rgb(px[i]), rgb(px[i + W])
+                    t += abs(p[0]-q[0]) + abs(p[1]-q[1]) + abs(p[2]-q[2]); n += 3
+            return t / n if n else 0.0
+        changed = sum(1 for i in range(N) if b0[i] != b1[i])
+        flips   = sum(1 for i in range(N) if (b0[i] != 0) != (b1[i] != 0))
+        out = (a0 == a1, changed / N >= 0.10, grad(b1) < grad(b0), flips)
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+    return (src_ok, out), ((True, True, True, True), (True, True, True, 0)), \
+           "the source: `Settings::uiScaling` defaults to 0, the ini key is " \
+           "read, omk-play hands the mode to the composer, and both blit back " \
+           "ends carry it; then the start menu composed four ways - at the " \
+           "authored 640x480 the two modes are byte-identical because nothing " \
+           "stretches, and at 800x600 linear moves at least 10% of the frame, " \
+           "lowers its mean neighbour gradient, and changes the written-pixel " \
+           "set by NOTHING, which is the colour key's rule"
+
+
 def c_mirror_pass():
     r"""The MIRRORS - a planar reflection pass, and a doc claim it refutes.
 
@@ -29822,6 +29925,7 @@ SLOW = [
     ("engine: anti-aliasing", c_engine_anti_aliasing, "ASSETS 4"),
     ("engine: texture filter", c_engine_texture_filter, "ASSETS 4"),
     ("engine: mipmaps", c_engine_mipmaps, "ASSETS 4"),
+    ("engine: ui scaling", c_engine_ui_scaling, "UI"),
     ("mirror pass",        c_mirror_pass,       "ASSETS 4c"),
     ("anekbah rendered",   c_anekbah_rendered,  "ASSETS 4b"),
     ("render back ends",   c_render_backends,   "ASSETS 4c"),

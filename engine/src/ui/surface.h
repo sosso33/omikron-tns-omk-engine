@@ -131,10 +131,17 @@ Surface surfaceFromBmp(std::span<const std::byte> d);
 // does), skips source pixels equal to `srcKey` under DDBLT_KEYSRC, and writes
 // only where the destination equals `dstKey` under DDBLT_KEYDEST.
 //
+// `filter` is the INTERFACE SCALING ENHANCEMENT (`todo/enhancements.md` 3):
+// 0 is the original's nearest stretch, 1 blends the four neighbouring source
+// texels. It is consulted ONLY when the rectangles differ in size - a 1:1
+// blit is a row copy either way and stays bit-identical - and the colour key
+// survives it by a rule stated at the implementation.
+//
 // -> false when either rectangle is degenerate or lands outside its surface,
 // which is the drawer's own `if (v4 < 0)` error path rather than a crash.
 bool blt(Surface& dst, Rect dr, const Surface& src, Rect sr,
-         std::uint32_t flags, std::uint16_t srcKey = 0, std::uint16_t dstKey = 0);
+         std::uint32_t flags, std::uint16_t srcKey = 0, std::uint16_t dstKey = 0,
+         int filter = 0);
 
 // ------------------------------------------------- the software rasterizer
 //

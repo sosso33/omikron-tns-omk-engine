@@ -83,6 +83,12 @@ Settings resolveSettings(const OptionsFile& ini,
             else std::fprintf(stderr, "settings: texturefiltering = %s is not a mode "
                                       "(nearest|bilinear|trilinear) - ignored\n", w->c_str());
         }
+        if (const std::string* w = ini.find(kEnhancements, "uiscaling")) {
+            const int m = uiScalingMode(*w);
+            if (m >= 0) { s.uiScaling = m; s.uiScalingSource = Settings::Source::Ini; }
+            else std::fprintf(stderr, "settings: uiscaling = %s is not a mode "
+                                      "(nearest|linear) - ignored\n", w->c_str());
+        }
         takeInt(kEnhancements, "anisotropy", s.anisotropy, s.anisotropySource);
         takeInt(kEnhancements, "supersampling", s.supersample, s.supersampleSource);
         if (const std::string* w = ini.find(kEnhancements, "lighting")) {
