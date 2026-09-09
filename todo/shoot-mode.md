@@ -471,7 +471,7 @@ that labelling one state at a time, and the label moves with the code.
 | 7a | **the record's geometry** — `sub_422540`'s six properties into the record (both ranges, the third, the cone's cosine, health, the flag fan-out), and the acquisition pair `sub_420C70` / `sub_420D90` with the four values they leave behind |**DONE 2026-09-09**, §7a below; `verify.py: shoot range` |
 | 7b | **the turn** — `sub_420EB0` on the Euler at `actor+420`, its three thresholds and its `180` / `±90` snap returns |**DONE 2026-09-09**, §7b below; `verify.py: shoot range` |
 | 7c | **the states** — `sub_424DE0` read arm by arm and ported, each one carrying what it was read from; the ones not reached stay declared |**DONE 2026-09-09** — the FRAME and **all 16** states, §7c below; `verify.py: shoot generic` |
-| 7d | **the frame loop** — the brain called from `Shoot_TickNpc`'s place, the occupancy stamp/restore pair around it, and `omk-play --shoot` driving it | |
+| 7d | **the frame loop** — the brain called from `Shoot_TickNpc`'s place, the occupancy stamp/restore pair around it, and `omk-play --shoot` driving it |**PART DONE 2026-09-09** — the brain TICKS on the gallery's own gunmen, §7d below; `verify.py: engine: shoot brain`. The occupancy pair and the walk are not wired: there is no path-finder on the grid yet |
 | 7e | checks, and a PLAY TEST — which is the one thing steps 1-6 never got | |
 
 Each step ends in a commit and a report, and 7e is not optional: the gunmen
@@ -756,6 +756,38 @@ untouched, and **mutating the default arm to invent a transition turns it
 red** (every one of them changed something). A machine that guessed the missing nine
 would be indistinguishable from one that had them right, and this is the only
 thing standing between the port and that.
+
+## 7d. The brain, ticking on real gunmen
+
+One `ShootRecord` per gunman, built the first frame he is staged out of his
+own six properties exactly as `sub_422540` does, then `shootEngage` and
+`shootGenericStep` every frame. The Shooting gallery's three `VIR_FN` say:
+
+```
+actor 237 VIR_FN - shoot brain: acquire 1950 engage 585 disengage 702
+                   cone 0.000 health 15
+```
+
+which at the engine's own 39 units to the metre is **50 m, 15 m, 18 m and a
+90° cone** — round numbers a person typed in 1999, arriving through the
+property reader and the `39 *` conversion with nothing in between. This is
+the first thing in the whole subsystem that is not a synthetic case.
+
+**And the ranges then do their jobs on the real layout.** From the player's
+spot two gunmen are 417 and 495 units off — 10.7 and 12.7 m, inside the 15 m
+engagement range — and reach outcome **1, fire**. The third is 660 units,
+16.9 m, outside it, and does not. Mutating the engagement range to the
+acquisition range makes all three fire and turns the check red, so that
+boundary is the difference between a machine that runs and one that runs on
+the right numbers.
+
+> **WHAT IS SUPPLIED RATHER THAN COMPUTED — the honest limit of this wiring.**
+> `sub_421020`, `sub_421CD0` and `sub_435900` are unread and arrive as false,
+> and no route or nav edge is handed over because the viewer has **no
+> path-finder on the grid** yet. So the machine acquires, turns, engages and
+> disengages on real distances, and it does not yet **walk**: a gunman aims
+> at the player and holds his ground. States 1, 2 and 4 are transcribed and
+> ported but nothing feeds them.
 
 ## 5b. The two weapon floats — step 5's first reading, 2026-09-09
 

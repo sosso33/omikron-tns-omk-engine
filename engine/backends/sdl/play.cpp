@@ -37,6 +37,7 @@
 #include "formats/scx.h"
 #include "formats/tex3dt.h"
 #include "input/bindings.h"
+#include "actor/shoot.h"
 #include "actor/moves.h"
 #include "actor/slider.h"
 
@@ -3262,6 +3263,7 @@ int main(int argc, char** argv) {
         omk::HeadLook look;            // `character.look_at_player`'s head aim, eased
         bool  lookSnap = true;
         bool  shootTold = false;
+        bool  brainTold = false;
         // SEATED ONCE, the way the engine seats an actor once and then
         // `Actor_MoveBy`s him: the feet go on the floor when the pose SOURCE
         // or the clip changes, and the clip's root motion moves him from
@@ -3640,6 +3642,9 @@ int main(int argc, char** argv) {
         it = pedTracks.emplace(key, std::move(t)).first;
         return it->second.valid() ? &it->second : nullptr;
     };
+    // one shoot record per gunman, built from his own properties the first
+    // frame he is staged and kept for the run (`todo/shoot-mode.md` 7d)
+    std::map<int, omk::ShootRecord> shootBrains;
     long stagedEver = 0;                 // for the summary line
     std::vector<int> stagedIds;
     // The pool is rebuilt on a COMPOSITION change, not on a size change: two
@@ -9362,6 +9367,88 @@ int main(int argc, char** argv) {
                 const omk::NodeTracks* shootTracks = nullptr;
                 {
                     const int act = session.shootAction(s.actor);
+                    // ---- THE GENERIC BRAIN, ticked (todo/shoot-mode.md 7d)
+                    //
+                    // `Shoot_TickNpc` calls the arm `Shoot_ActorEnter` chose;
+                    // for 302 of the 306 shipped sites that is `sub_424DE0`,
+                    // now transcribed whole (7c). The record is built once,
+                    // out of the CHARACTER's own six properties, exactly as
+                    // `sub_422540` does.
+                    //
+                    // WHAT IS SUPPLIED RATHER THAN COMPUTED, and it is the
+                    // honest limit of this wiring: `sub_421020` (unread),
+                    // `sub_421CD0` (unread) and `sub_435900`'s "am I there
+                    // yet" all arrive as false, and no route or nav edge is
+                    // handed over because the viewer has no path-finder on
+                    // the grid yet. So the machine RUNS - it acquires, turns,
+                    // engages and disengages on the real distances - and it
+                    // does not yet WALK. A gunman aims at the player and
+                    // holds his ground.
+                    if (act >= 0 && shootMode) {
+                        auto it = shootBrains.find(s.actor);
+                        if (it == shootBrains.end()) {
+                            omk::ShootRecord fresh;
+                            std::int32_t props[6] = {0, 0, 0, 0, 0, 0};
+                            omk::ShootProperties sp;
+                            if (session.actorShootProperties(s.actor, props)) {
+                                sp.health        = props[0];
+                                sp.rangeAcquireM = props[1];
+                                sp.rangeInnerM   = props[2];
+                                sp.rangeThirdM   = props[3];
+                                sp.coneDegrees   = props[4];
+                                sp.behaviourBits = props[5];
+                            }
+                            omk::initShootRecord(fresh, sp);
+                            fresh.state = 6;          // the hub, where a
+                            fresh.node  = 0;          // gunman waits
+                            it = shootBrains.emplace(s.actor, fresh).first;
+                            std::printf("frame %ld: actor %d %s - shoot brain: "
+                                        "acquire %.0f engage %.0f disengage %.0f "
+                                        "cone %.3f health %d\n", n, s.actor,
+                                        s.model.c_str(), it->second.rangeAcquire,
+                                        it->second.rangeInner, it->second.rangeThird,
+                                        it->second.coneCos, it->second.health);
+                        }
+                        omk::ShootRecord& rec = it->second;
+                        const int before = rec.state;
+                        omk::ShootFrameIn fin;
+                        fin.self[0] = s.drawAt[0]; fin.self[1] = s.drawAt[1];
+                        fin.self[2] = s.drawAt[2]; fin.self[3] = s.facing;
+                        if (player) {
+                            fin.target[0] = float(player->pos()[0]);
+                            fin.target[1] = float(player->pos()[1]);
+                            fin.target[2] = float(player->pos()[2]);
+                            fin.target[3] = player->facing();
+                        }
+                        fin.dt = 1.0f;
+                        fin.defaultClipType = act;
+                        fin.targetAlive = true;
+                        // the SIGHT half is real: the grid walk the port owns
+                        fin.gridLineOfSight = true;
+                        omk::AcquireOut ao;
+                        const bool cone = omk::shootAcquires(rec, fin.self,
+                                                             fin.target, ao, false);
+                        omk::EngageIn ein;
+                        ein.sameNode = true; ein.targetAlive = true;
+                        ein.gridClear = true; ein.rayHits = true;
+                        ein.coinHeads = ((s.actor * 2654435761u) >> 16) & 1;
+                        const int eng = omk::shootEngage(rec, ao, cone, ein);
+                        fin.targetPredicate = eng != 0;
+                        fin.targetPredicateBits = eng;
+                        fin.canFire = eng != 0;
+                        float yaw = s.facing;
+                        const auto st = omk::shootGenericStep(rec, fin, yaw);
+                        s.facing = yaw;
+                        if (rec.state != before || st.outcome == omk::ShootOutcome::Fire) {
+                            if (!s.brainTold) {
+                                s.brainTold = true;
+                                std::printf("frame %ld: actor %d %s - brain %d -> %d, "
+                                            "outcome %d, %.0f units away\n", n,
+                                            s.actor, s.model.c_str(), before,
+                                            rec.state, int(st.outcome), ao.dist3d);
+                            }
+                        }
+                    }
                     if (act >= 0) {
                         const int grp = static_cast<int>(session.typeOfActor(s.actor));
                         const omk::PedClip* c = (grp >= 0 && grp < 64)

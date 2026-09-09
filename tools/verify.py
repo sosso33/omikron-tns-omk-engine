@@ -25824,6 +25824,72 @@ def c_engine_shoot_mode():
             "and what `omk-play --shoot` installs in the Shooting gallery")
 
 
+def c_engine_shoot_brain():
+    r"""`engine/`: the generic brain WIRED, ticking on the Shooting gallery's
+    own gunmen with their own authored numbers.
+
+    `todo/shoot-mode.md` 7d. The record is built once per gunman out of the
+    CHARACTER's six properties, exactly as `sub_422540` does, and then
+    `shootEngage` and `shootGenericStep` run every frame. What comes out is
+    the first thing in this whole subsystem that is not a synthetic case:
+
+        actor 237 VIR_FN - shoot brain: acquire 1950 engage 585
+                           disengage 702 cone 0.000 health 15
+
+    which is **50 m, 15 m, 18 m and a 90 degree cone** at the engine's own 39
+    units to the metre - round numbers a person typed, arriving through the
+    property reader and the `39 *` conversion without anything in between.
+
+    And the ranges then do their jobs on the real layout. The gallery stages
+    three gunmen; from the player's spot two are 417 and 495 units off (10.7
+    and 12.7 m, inside the 15 m ENGAGEMENT range) and reach outcome **1**,
+    fire. The third is 660 units - 16.9 m, outside it - and does not. That
+    boundary is the assertion worth having: it is the difference between a
+    machine that runs and a machine that runs on the right numbers.
+
+    **What is supplied rather than computed, and it is the limit of this
+    wiring**: `sub_421020`, `sub_421CD0` and `sub_435900` are unread and
+    arrive as false, and no route or nav edge is handed over because the
+    viewer has no path-finder on the grid. So the machine acquires, turns,
+    engages and disengages on real distances, and it does not yet WALK.
+    """
+    import subprocess, re
+    fr = omkpaths.data_root()
+    if not os.path.isdir(fr):
+        return ("no data",), ("data",), "needs the shipped tree"
+    save = os.path.join(ROOT, "traces", "save-appart.bin")
+    if not os.path.exists(save):
+        return ("no save",), ("save",), "needs traces/save-appart.bin"
+    eng = os.path.join(ROOT, "engine")
+    b = subprocess.run(["make", "-s", "play"], cwd=eng, capture_output=True, text=True)
+    binp = os.path.join(eng, "build", "omk-play")
+    if b.returncode != 0 or not os.path.exists(binp):
+        return ("build failed",), ("built",), "engine/ must build omk-play"
+    env = dict(os.environ, SDL_VIDEODRIVER="dummy")
+    r = subprocess.run([binp, fr, os.path.join(ROOT, "tables"), "--save", save,
+                        "--area", "59", "--stand", "5000,0,-2900,180",
+                        "--shoot", "--frames", "120"],
+                       capture_output=True, text=True, env=env, timeout=600)
+    brains = re.findall(r"shoot brain: acquire (\d+) engage (\d+) disengage (\d+) "
+                        r"cone ([\d.]+) health (\d+)", r.stdout)
+    fires = re.findall(r"actor (\d+) \S+ - brain (\d+) -> (\d+), outcome (\d+), "
+                       r"(\d+) units away", r.stdout)
+    if not brains:
+        return ("no brain built",), ("3 brains",), "the viewer's own brain lines"
+    got = (len(brains), brains[0],
+           tuple(sorted((int(a), int(o), int(d)) for a, _, _, o, d in fires)))
+    want = (3, ("1950", "585", "702", "0.000", "15"),
+            ((237, 1, 417), (240, 1, 495)))
+    return got, want, ("the gunmen whose brain was built, the first one's "
+                       "record as CONVERTED from his own authored properties "
+                       "(50 m acquire, 15 m engage, 18 m disengage, a 90 "
+                       "degree cone, 15 health), and then which of the three "
+                       "actually reach outcome 1 - the two inside the 15 m "
+                       "ENGAGEMENT range and not the one at 16.9 m, which is "
+                       "the boundary that separates a machine that runs from "
+                       "one that runs on the right numbers")
+
+
 def c_shoot_generic():
     r"""`engine/`: the generic shoot brain's FRAME, and how much of it is
     actually transcribed.
@@ -31035,6 +31101,7 @@ CHECKS = [
     ("bone names",         c_bone_names,        "todo/omk-play 96; ASSETS"),
     ("shoot range",        c_shoot_range,       "todo/shoot-mode 5c, 7a; actor/shoot.h"),
     ("shoot generic",      c_shoot_generic,     "todo/shoot-mode 7c; actor/shoot.h"),
+    ("engine: shoot brain", c_engine_shoot_brain, "todo/shoot-mode 7d; actor/shoot.h"),
     ("engine: shoot mode", c_engine_shoot_mode,  "todo/shoot-mode; actor/shootmode.h"),
     ("wre wireframes",     c_wre_files,         "FILE_FORMATS 5b5"),
     ("morph face models",  c_morph_face_models, "FILE_FORMATS 5"),

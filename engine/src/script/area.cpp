@@ -1791,6 +1791,19 @@ std::string Session::bankOfActor(int actor) const {
 // `Shoot_ActorEnter` raises event 44 for and switches its four AI brains on,
 // and which is ALSO the group index of his clips in the area's `.ani`
 // library (`sub_434530`). 330 of the 1032 shipped records carry -1.
+bool Session::actorShootProperties(int actor, std::int32_t out[6]) const {
+    std::vector<std::byte> chunk;
+    std::size_t off = 0;
+    if (!actorRecord(actor, chunk, off)) return false;
+    const std::span<const std::byte> rec(chunk.data() + off, 276);
+    static const int kProps[6] = {1, 26, 27, 30, 29, 37};
+    for (int i = 0; i < 6; ++i) {
+        std::int32_t v = 0;
+        out[i] = readActorProperty(rec, kProps[i], v) ? v : 0;
+    }
+    return true;
+}
+
 std::uint32_t Session::typeOfActor(int actor) const {
     std::vector<std::byte> chunk;
     std::size_t o = 0;

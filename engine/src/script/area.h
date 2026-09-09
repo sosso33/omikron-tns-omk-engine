@@ -999,6 +999,13 @@ public:
     // The record's `+176`, `Type Spectre` - and the GROUP his clips sit in
     // inside the area's `.ani` library.
     std::uint32_t typeOfActor(int actor) const;
+
+    // The six properties `sub_422540` reads through event 44 to build a shoot
+    // record, in ITS order: 1 health, 26 acquire, 27 engage, 30 disengage,
+    // 29 cone degrees, 37 behaviour bits. Ranges are in METRES and the cone
+    // in degrees as authored; `omk::initShootRecord` converts.
+    // -> false when the actor has no record.
+    bool actorShootProperties(int actor, std::int32_t out[6]) const;
     // The spawned character with this id, or nullptr - the shown slot's
     // tables first, the same order `Scene_FindObjectRecord` searches.
     const Character* characterOf(int actor) const;
