@@ -1254,9 +1254,21 @@ def t_shoot_weapons(e):
 
     Two floats, an int, the key and that index - seven rows each, and the two
     tables differ ONLY in the floats, which is the check: same keys, same
-    third column, same index column, different numbers. What the floats MEAN
-    is not established here and is deliberately not named (`todo/shoot-mode.md`
-    5); they are a range and a rate in shape, and nothing traced says which.
+    third column, same index column, different numbers.
+
+    **`f0` is the RATE**, traced 2026-09-09 (`todo/shoot-mode.md` 5b): the
+    generic brain reloads a countdown at the shoot record's `+172` with
+    `*row` when it expires (`05_sys.c` 6055-6057). The corpus agrees - the
+    player's f0 is LOWER than the NPCs' for the four light weapons (10/8/2/2
+    against 15/10/4/4) and identical for the two heavy ones.
+
+    **`f1` and `i2` have NO reader**, which is a measurement and not an
+    impression: the row is reachable only through the shoot record's `+180`,
+    and the whole of `05_sys.c` reads that pointer exactly twice - the key at
+    `+12` in the property-35 handler, and `*row` above. And `f1` is NOT the
+    range: the range is character property 26, read through event 44 into the
+    shoot record's `+32` as `39 * metres` (5c), so the elimination that would
+    have named it is closed off. Its meaning is open.
     """
     def row(base, i):
         a, b, c, k, v = struct.unpack("<2f3i", e.read(base + 20 * i, 20))
