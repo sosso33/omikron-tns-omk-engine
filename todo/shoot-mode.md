@@ -201,7 +201,7 @@ Each ends in a commit and a report.
 | 1 | **the reading above** — what the mode does, and the grid finding | **done 2026-09-09**; `verify.py: shoot arenas` |
 | 2 | **the grid** — the cell byte, the floor box, the door table, a reader and a probe that DRAWS a floor | **done 2026-09-09**, §2b; `verify.py: map2d grid` |
 | 3 | **the mode** — ops 80/81 read and ported, the weapon slot, the HUD choice, the library swap, both exit arms | **done 2026-09-09**, §3b; `verify.py: engine: shoot mode`. The frontend half (camera mode 4, group 200, scheme 2 installed in `omk-play`, and a `--shoot` harness) is NOT done and moves to step 4 |
-| 4 | the FRONTEND half and the WEAPON tables | **part done 2026-09-09**, §4b: `--shoot`, the three installs, and `tables/shoot_weapons.json`. Left: `Shoot_StartTargetScripts`. The live arm is §4d and what a shot IS is §4c |
+| 4 | the FRONTEND half and the WEAPON tables | **DONE 2026-09-09** - §4b the frontend and the tables, §4c what a shot is, §4d the live arm, §4e the target scripts and the doors' refcount |
 | 5 | **the brains, decision revisited** — with the grid in hand, how much of the generic shooter's 16 states is now fact rather than geometry. Gandhar is already exact; Astaroth and the generic are state graphs. **Only what the grid settles gets wired**; the rest stays labelled | |
 | 6 | docs, the checks, and a play test | |
 
@@ -383,6 +383,55 @@ different fields, and only play can say whether a body really does block.
 **Not read**: `sub_436260` (re-run on a floor change), `sub_436350`,
 `sub_47C1B0` (which folds the cell's byte into `+160`'s flags) and `sub_47C230`
 beside the restore.
+
+## 4e. `Shoot_StartTargetScripts` — and the doors are REFERENCE COUNTED
+
+The third of step 4's debts, and it turns the bracket in §4d into a mechanism:
+what sits between the stamp and the restore is the whole arena's DOORS.
+
+```c
+for (slot = doorTable, n = 16 * floorCount; n; --n, slot += 3) {
+    open = slot[1]; close = slot[2]; arm = slot[0];
+    if (open == -1 || close == -1) continue;          /* not a door       */
+    state = sub_44A0F0(scene, open, close);
+    if (state == 64 || state == 192) continue;        /* already busy     */
+    if (arm  >  0) ScriptObject_Start(open,  scene, -1, 0);
+    if (arm == 0) ScriptObject_Start(close, scene, -1, 0);
+    /* arm < 0: nothing at all */
+}
+```
+
+so **the arm is a tri-state**: above zero starts the door's OPEN object, zero
+starts its CLOSE object, and below zero - the `-1` it ships as - does nothing.
+Every slot of every floor is visited each tick, not just the one being
+crossed, and `ScriptObject_Start(..., -1, 0)` runs them DETACHED, with no
+caller slot to park.
+
+**And the arm is a reference count of the actors standing on that door**, kept
+by the same two calls that bracket the 128:
+
+| | at the STAMP, `sub_47C1B0(floor, cell, flags)` | at the RESTORE, `sub_47C230(floor, cell)` |
+|---|---|---|
+| gate | the cell byte is a door (`& 0x10`) | the same |
+| slot | `doorTable + 12 * (16 * floor + (cell & 0xF))` | the same |
+| arm | `-1 -> 0` first, then **`++arm`** on both paths | **`--arm`** |
+| the actor's `+160` | bit 10 CLEARED when `sub_44A0F0` says 16, SET otherwise | — |
+
+So a door with somebody on its cell counts above zero and is told to open; the
+moment the last of them restores its cell the count reaches zero and the same
+pass tells it to close. The `64`/`192` states are what stops it being restarted
+while it is already moving, and the flag the stamp writes into the actor's own
+`+160` is how that actor knows the door is not ready yet.
+
+**That is why §4d's bracket exists.** The 128 and the door count are the same
+bracket: claim the cell, let the arena's doors react to who is standing where,
+release the cell.
+
+**Still not read**: `sub_44A0F0`'s state values beyond "16 is ready, 64 and 192
+are busy", and `sub_436260` / `sub_436350` from §4d.
+
+**Step 4 is now complete** - §4b the frontend and the weapon tables, §4c what a
+shot is, §4d the live arm, §4e the target scripts.
 
 ## 5. What is still NOT established
 
