@@ -568,34 +568,45 @@ box query.
 **The grid one**, `sub_4359A0` (0x004359A0), is a **Bresenham walk over the
 `MAP2D` cells** — both octants written out, stepping `base + row*stride + col`
 in `dword_907DE0[floor]` — and it is used by the brain's state 15 and by
-`Shoot_ActorEnter`'s placement. Three return values:
-
-| | |
-|---|---|
-| **1** | clear the whole way |
-| **0** | blocked, and the cell is left in `dword_52BA4C`/`dword_52BA54` |
-| **2** | crossed an OCCUPIED cell (`0x80`, a body), the first one left in `dword_52C404`/`dword_52C400` |
-
-Its cell predicate is a function pointer chosen by the fourth argument, and
-**the two are not the same test**:
+`Shoot_ActorEnter`'s placement. Its cell predicate is a function pointer
+chosen by the fourth argument, and the two candidates are **not** the same
+test:
 
 | cell | `sub_435210` (arg 1) | `sub_435310` (arg 0) |
 |---|---|---|
-| `0` | blocks | blocks |
+| `0` | **blocks** | **blocks** |
 | `1` | clear | clear |
 | `2`, `3` | **clear** | **blocks** |
-| `0x80` | 2 (occupied) | 2 (occupied) |
-| `0x10..0x1F` | the DOOR: clear only if `sub_44A0F0(scene, door+4, door+8) == 16` | clear |
+| `0x10..0x17` | the DOOR: clear only if `sub_44A0F0(scene, door+4, door+8) == 16` | clear |
+| `0x80`, `0xCD` | clear — see below | clear — see below |
 
-`sub_435310` is the MOVEMENT predicate — its refusal set `{0, 2, 3}` is
-exactly the one `sub_4353E0` carries and the port already implements — and
-`sub_435210` is the SIGHT predicate: only a true wall stops it, a **closed
-door** stops it, and cells `2` and `3` do not. So `2` and `3` are things you
-cannot walk on but can see and shoot across. **All three shipped call sites
-pass `1`**, so `sub_435310` is dead in this build and the live walk is the
-sight one — a negative result worth writing down, because the pair reads at
-first glance like "one for walking, one for looking" and only one half is
-wired.
+`sub_435310`'s refusal set `{0, 2, 3}` is the MOVEMENT one — exactly what
+`sub_4353E0` carries and the port already implements — and `sub_435210` is
+the SIGHT test: only a true wall stops it, a **closed door** stops it, and
+cells `2` and `3` do not. So `2` and `3` are things you cannot walk on but
+can see and shoot across. **All three shipped call sites pass `1`**, so
+`sub_435310` is dead in this build and the live walk is the sight one.
+
+> **THE `case 128:` ARMS ARE DEAD, and only the assembly says so.** All three
+> predicates are *written* with a `case 128` returning "occupied", and the
+> walk is *written* to record the first such cell and return **2**. It cannot
+> happen. The walk reads the cell with **`movsx`** (four sites, checked in the
+> listing), so `0x80` arrives as `0xFFFFFF80`; `sub_435210` and `sub_435310`
+> both open `cmp eax, 80h` / **`ja`** — *unsigned* above — so a stamped cell
+> takes the DEFAULT arm, where `0x80 & 0x10 == 0` returns **clear**. The
+> movement test `sub_4353E0` is the one that gets it right, and the difference
+> is one instruction: it does **`add eax, 80h`** before `cmp eax, 83h`, which
+> is why IDA labels its jump table "cases **-128**,0,2,3" and the other two's
+> "case 128". So **`sub_4359A0` returns only 1 or 0**, an occupied cell never
+> blocks or flags sight (which is the sensible behaviour — you can see a man
+> standing there), and its four report globals `dword_52BA4C`/`52BA54` and
+> `dword_52C400`/`52C404` are written by nothing else and **read by nothing at
+> all**: the walk's only live output is its return value.
+>
+> This is `CLAUDE.md` §1's rule paying for itself twice in one function. The
+> decompiler's `i8` was right and its `case 128:` was a faithful rendering of
+> unreachable source; reading the C alone would have put a whole occupancy
+> path into the port that the game does not have.
 
 ### What this does to the decision
 
