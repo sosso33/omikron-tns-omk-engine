@@ -99,6 +99,15 @@ int main(int argc, char** argv) {
     sw.init(cam.w, cam.h);
     sw.setTextures(tex);
     omk::View view; view.cam = cam;
+    // ...WITH THE DITHER OFF, because this comparison asserts the two frames
+    // are BYTE-IDENTICAL. `View::dither` defaults to true - the engine sets
+    // `DITHERENABLE` and the port follows - while the direct `drawGeometry`
+    // call above takes the overload that does not dither, so leaving it on
+    // compares a dithered frame with an undithered one and reports the 4x4
+    // pattern as the boundary "moving" 83629 of 225280 pixels. That is
+    // CLAUDE.md 5's own rule for this flag: it is a comparison tool, and a
+    // check asserting byte-identity has to use it.
+    view.dither = false;
     sw.begin(view);
     for (const auto& b : geo.batches) {
         omk::Draw dr;
