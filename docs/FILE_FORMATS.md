@@ -2358,6 +2358,51 @@ wrong readings turned on, and — because the census alone cannot see a fault in
 the port — the position the port's own `NodeMotion::placeOn` gives `Gunbl`
 when the beat is actually run.
 
+#### …and the file parameter is TRUNCATED TO 16 BITS — parameter 1
+
+A path is addressed in two parts, parameter 1 the chunk-0 `.3dp` record and
+parameter 2 the path inside it, and the handler reads the first through a
+cast:
+
+```c
+v4 = (uint16_t)Script_GetParamInt((int)a2, 1);      /* 0x0046F400 */
+v6 = sub_4A6500(v5, v4);
+if (!v6) { ... Log_Printf("Script_MoveObjectOnPath(): Path \"%s\" not loaded."); return 0; }
+```
+
+identically in `Script_Reinit_MoveObjectOnPath` (`readable/src/23_script.c`
+258). Those two are the only ones of `sub_4A6500`'s four callers that cast at
+all — `Script_Reinit_Display3DSpriteOnPath` and the relative body animation's
+param 7 pass the value whole, and since the lookup takes an **unsigned** index
+against the count, a negative there simply fails the bound.
+
+The cast is not defensive: **81 shipped calls over 11 scenes depend on it.**
+They carry a parameter 1 of `-65536`, `-65535` or `-65531` — 0xFFFF0000,
+0xFFFF0001 and 0xFFFF0005 — which the cast turns into files **0, 1 and 5**.
+Every one of the 81 is a door, a shutter, a trapdoor or a sliding stone in an
+INTERIOR:
+
+| scene | calls | what they move |
+|---|---|---|
+| `Shall09b.SCX` | 34 | the hall's doors |
+| `Apharma.SCX` | 8 | `Porte01dh`/`Porte01gh`, the drugstore's shopfront, and its two inner doors |
+| `SArmu01.SCX`, `SLibr01.SCX` | 8 each | the armoury's and the bookshop's |
+| `QTemple.SCX` | 7 | `PorteMonD`/`PorteMonG`, the temple doors; `Qtrappe`, the TRAPDOOR the reincarnation beat opens; `STpierre` |
+| `LBank.SCX` | 4 | the bank's |
+| `SRest02.SCX`, `ACSasl1.SCX`, `ASm49res.SCX`, `Lresto.SCX`, `MayeSoyi.SCX` | 2-4 | the same shape |
+
+Passed whole the lookup matches nothing, the handler logs and returns, and the
+leaves never move — which in a replica means their closed collision stays
+across the doorway. `verify.py: move path file` asserts the census and, in
+both directions, that all 81 resolve masked and none resolves raw;
+`engine: shop door` asserts the drugstore's and the temple's leaves actually
+travel.
+
+**How it presented**: you could walk INTO a shop and not out of it. The way in
+opens the CITY's copy of the door (`anekbah.SCX`'s own objects, whose
+parameter 1 is a plain 0), so nothing was wrong with it; the way out asks the
+interior's `.SCX` for its own pair. See `todo/omk-play.md` 94.
+
 #### …and the path is TURNED INTO THE SET first — parameters 12/13/14
 
 One lift is authored once and thirty-odd halls install it at their own angle,

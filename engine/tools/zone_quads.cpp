@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // A CHUNK'S TRIGGER ZONES as centres - where a door actually is.
 //
-//     zone_quads <gamedata>
+//     zone_quads <gamedata> [chunk] [area|scene]
 //
 // The 68-byte records of AREA 0, printed as the centre of each quad with its
 // facing arc, for finding the zone behind a script you have read: the bank's
@@ -12,11 +12,21 @@
 #include "formats/iam.h"
 #include "platform/datafs.h"
 #include <cstdio>
+#include <cstdlib>
+#include <string>
 int main(int argc, char** argv) {
-    const auto f = omk::DataFs::readPath(std::string(argv[1]) + "/IAM/AREA");
+    const bool scene = argc > 3 && std::string(argv[3]) == "scene";
+    const int chunkId = argc > 2 ? std::atoi(argv[2]) : 0;
+    const auto f = omk::DataFs::readPath(std::string(argv[1]) + "/IAM/"
+                                         + (scene ? "SCENE" : "AREA"));
     const auto a = omk::IamArchive::open(f);
-    const auto ch = a.chunk(0);
-    const auto zs = omk::zonesOf(ch, omk::ChunkKind::Area);
+    const auto ch = a.chunk(chunkId);
+    const auto zs = omk::zonesOf(ch, scene ? omk::ChunkKind::Scene
+                                           : omk::ChunkKind::Area);
+    // The row count FIRST, and the file size with it: a data root that did
+    // not resolve reads as "0 zones" otherwise, which looks like an answer.
+    std::printf("%s chunk %d - %zu zones (archive %zu bytes, chunk %zu)\n",
+                scene ? "SCENE" : "AREA", chunkId, zs.size(), f.size(), ch.size());
     for (std::size_t i = 0; i < zs.size(); ++i) {
         double cx = 0, cy = 0, cz = 0;
         for (int k = 0; k < 4; ++k) { cx += zs[i].quad[k][0]; cy += zs[i].quad[k][1]; cz += zs[i].quad[k][2]; }

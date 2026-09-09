@@ -14575,6 +14575,55 @@ def c_engine_tuto_camera():
            ("AREA 222's tutorial shots 4290/4291/4292, each raised by the pelvis "
             "lift when resolved against the subject the follow camera uses")
 
+def c_engine_shop_door():
+    r"""`engine/`: the interior's OWN door opens, so you can walk back out.
+
+    A reader, 2026-09-09: *"once I enter the drugstore near the security
+    center, i can not go outside, doors stay closed (this issue also happens
+    in other places like the temple in qalisar)"*. Walking IN works because
+    the leaves that move are the CITY's - `anekbah.SCX`'s objects 164 and 201.
+    Walking out asks the interior for its own pair, and every
+    `Script_MoveObjectOnPath` in those interiors carries param 1 = -65536,
+    which the engine reads as a `uint16_t` and the port passed whole
+    (`move path file`). No path matched, the leaves never moved, their closed
+    collision stayed across the doorway, and the walker slid along it: the
+    exit script RAN and the destination was shown, but the player's feet never
+    reached the other set, so the arrival object hid it again 167 frames later
+    and he was inside with the doors shut.
+
+    Asserted per mesh and BY NAME rather than as a boolean, so a wrong answer
+    says what it found: the drugstore's two leaves, and Qalisar's temple's -
+    the same fault, a different scene. Travel is in whole units from the first
+    sample to the last; unfixed every one of them is 0.
+    """
+    import subprocess, re
+    fr = omkpaths.data_root()
+    if not os.path.isdir(fr):
+        return ("no data",), ("data",), "needs the shipped tree"
+    eng = os.path.join(ROOT, "engine")
+    b = subprocess.run(["make", "-s", "build/shopdoor_probe"], cwd=eng,
+                       capture_output=True, text=True)
+    binp = os.path.join(eng, "build", "shopdoor_probe")
+    if b.returncode != 0 or not os.path.exists(binp):
+        return ("build failed",), ("built",), "engine/ must build"
+    got = []
+    for area, obj, want in ((248, 7, ("Porte01dh", "Porte01gh")),
+                            (117, 1, ("PorteMonD", "PorteMonG"))):
+        r = subprocess.run([binp, fr, os.path.join(ROOT, "tables"),
+                            str(area), str(obj)], capture_output=True, text=True)
+        # by LABEL, not by column: the row count is asserted before anything is
+        # derived from the rows, so a probe whose format moved fails AS A PARSE
+        rows = dict((m.group(1), float(m.group(2))) for m in
+                    re.finditer(r"^(\S+)\s+travel\s+([0-9.]+)", r.stdout, re.M))
+        got.append(len(rows))
+        for nm in want:
+            got.append("%s %d" % (nm, int(round(rows.get(nm, -1.0)))))
+    return tuple(got), \
+           (2, "Porte01dh 65", "Porte01gh 65",
+            3, "PorteMonD 83", "PorteMonG 82"), \
+           ("meshes moved and each leaf's travel: the drugstore's shopfront "
+            "(AREA 248, door object 7) and Qalisar's temple (AREA 117, object 1)")
+
 def c_engine_env_anim():
     r"""`engine/`: the ENVIRONMENT's own animations, and the fan that turns.
 
@@ -25416,6 +25465,98 @@ def c_path_durations():
 
 
 
+def c_move_path_file():
+    r"""FILE_FORMATS: `Script_MoveObjectOnPath`'s param 1 is TRUNCATED TO 16
+    BITS, and 81 shipped calls depend on it.
+
+    The handler addresses a path in two parts - param 1 the chunk-0 `.3dp`
+    record, param 2 the path inside it - and reads the first as a `uint16_t`:
+
+        v4 = (uint16_t)Script_GetParamInt((int)a2, 1);   ; 0x0046F400
+        v6 = sub_4A6500(v5, v4);
+
+    identically in `Script_Reinit_MoveObjectOnPath`. Those are the only two of
+    `sub_4A6500`'s four callers that cast, and the cast is not cosmetic: 81
+    calls over 11 scenes ship a param 1 of -65536, -65535 or -65531, which the
+    cast turns into files 0, 1 and 5. Passed whole, the lookup misses and the
+    mesh never moves - and every one of the 81 is a door, a shutter, a
+    trapdoor or a sliding stone in an interior, so the port kept their closed
+    leaves' collision across the doorway and a reader could not walk out of
+    the drugstore or the temple (`todo/omk-play.md` 94).
+
+    The two arms are asserted together, because a check that only counted the
+    resolved ones would pass on the unmasked reading in any scene with a
+    single `.3dp` file.
+    """
+    import glob, scene_scx
+    calls = odd = resolvedMasked = resolvedRaw = 0
+    scenes = set()
+    apharma = []
+    for f in sorted(glob.glob(omkpaths.data("SCPTDATA/*.SCX"))):
+        d = open(f, "rb").read()
+        blockSize = struct.unpack_from("<I", d, 12)[0]
+        block = d[16:16 + blockSize]
+        try:
+            objs, o = scene_scx.objects(block)
+        except Exception:
+            continue
+        # chunk order and counts, then the streamed payloads, so a path can be
+        # keyed the way the engine keys it: (chunk-0 record, index inside it)
+        order, counts = [], {}
+        while o + 4 <= len(block):
+            t = struct.unpack_from("<I", block, o)[0]
+            if t == 0xDEADFFFF: break
+            if (t >> 16) != 0xDEAD: o += 4; continue
+            ty = t & 0xFFFF; o += 4
+            order.append(ty)
+            if ty in scene_scx.STRIDE:
+                c = struct.unpack_from("<I", block, o)[0]
+                counts[ty] = c
+                o += 4 + scene_scx.STRIDE[ty] * c
+        paths, pos = {}, 16 + blockSize
+        for ty in order:
+            if ty == 0:
+                for i in range(counts.get(0, 0)):
+                    _, size = struct.unpack_from("<2I", d, pos)
+                    body = d[pos + 8: pos + 8 + size]
+                    if len(body) >= 4:
+                        n = struct.unpack_from("<I", body)[0]
+                        q = 4
+                        for k in range(n):
+                            if q + 28 > len(body): break
+                            nm = body[q:q + 20].split(b"\0")[0].decode("cp1252", "replace")
+                            keyc = struct.unpack_from("<I", body, q + 24)[0]
+                            if keyc > 10000: break
+                            paths[(i, k)] = nm
+                            q += 28 + 32 * keyc
+                    pos += 8 + size
+                break
+            if ty not in (1, 3, 4, 10): continue
+            hdr = 12 if ty == 4 else 8
+            for i in range(counts.get(ty, 0)):
+                _, size = struct.unpack_from("<2I", d, pos)
+                pos += hdr + size
+        stem = os.path.basename(f)
+        for ob in objs:
+            for fn in ob["functions"]:
+                if fn["id"] != 0x03000008 or len(fn["params"]) < 3: continue
+                calls += 1
+                raw, idx = fn["params"][1], fn["params"][2]
+                if raw == (raw & 0xFFFF): continue
+                odd += 1
+                scenes.add(stem)
+                if (raw & 0xFFFF, idx) in paths: resolvedMasked += 1
+                if (raw, idx) in paths: resolvedRaw += 1
+                if stem.lower() == "apharma.scx" and ob["name"] == "Porte01open":
+                    apharma.append(paths.get((raw & 0xFFFF, idx), "MISSING"))
+    return (calls, odd, len(scenes), resolvedMasked, resolvedRaw,
+            tuple(sorted(apharma))), \
+           (4841, 81, 11, 81, 0, ("Porte01dh", "Porte01gh")), \
+           ("MoveObjectOnPath calls; with param 1 outside 0..65535; scenes; "
+            "of those resolving MASKED; resolving RAW; and the two paths "
+            "Apharma's shopfront door names")
+
+
 def c_extension_case():
     r"""No shipped file may be invisible to a case-sensitive lookup.
 
@@ -28162,7 +28303,7 @@ def c_licence_headers():
                    if TAG in open(p, encoding="utf-8",
                                   errors="replace").read(600)]
     return (authored, sorted(missing), len(vendored), mislabelled), \
-           (395, [], 1, []), \
+           (396, [], 1, []), \
            "authored source files under tools/, engine/src, engine/tools, " \
            "engine/backends and scripts/; those MISSING the SPDX tag; " \
            "vendored files in engine/third_party; and vendored files wrongly " \
@@ -30177,6 +30318,8 @@ CHECKS = [
     ("zone records",       c_zone_records,      "FILE_FORMATS 5"),
     ("prop assets",        c_prop_assets,       "FILE_FORMATS 5c"),
     ("path durations",     c_path_durations,    "ASSETS"),
+    ("move path file",     c_move_path_file,    "FILE_FORMATS 5c"),
+    ("engine: shop door",  c_engine_shop_door,  "todo/omk-play 94"),
     ("sfx files",          c_sfx_files,         "FILE_FORMATS 5"),
     ("extension case",     c_extension_case,    "CLAUDE.md 1"),
     ("map2d",              c_map2d,             "FILE_FORMATS 5b5"),

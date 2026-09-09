@@ -12,7 +12,51 @@ usually a better predictor of cost than the size of the feature.
 
 ---
 
-## Suggested order
+## The order as of 2026-09-09
+
+The 2026-09-06 triage below still holds its principle; this is the same list
+re-sorted after three days of work closed 1, 2, 3, 4, 5, 7, 8, 16, 19, 20 and
+22. **Three rows in that table are stale rather than open**, and the reader
+caught all three:
+
+* **8 (save support) is DONE and PLAYED** - `todo/save-support.md`'s own DONE
+  section: load from the menu, save into a new slot, overwrite through
+  `Ecraser ce fichier ?`, delete through its confirm, an *anneau* charged on
+  every write. Nine faults were found by playing it and none by a check. The
+  "Still owed" table further down that file is older than the DONE section and
+  should be read as history: the character name at slot +108 landed, and so did
+  the panel and the route.
+* **19 (does the original filter?) is ANSWERED and RECORDED** - `bf68c75`,
+  2026-09-08, `docs/ASSETS.md` 4, `verify.py: render states`. `sub_4638C0`
+  sets ANTIALIAS off with EDGEANTIALIAS never set, samples stage 0
+  POINT/POINT/NONE, and sets DITHERENABLE 1. So filtering is an ENHANCEMENT
+  (off by default) and the dither was a port DEFECT (fixed). *Niveau de
+  detail* changes CONTENT, not filtering.
+* **21 is very probably closed as a side effect** - see below.
+
+| do | # | task | why now |
+|---|---|---|---|
+| 1 | 21 | a shop conversation's first camera is outside the shop | **20 minutes of PLAY, not a slice.** The camera-travel fix of 2026-09-06 (`d290331`) is this exact mechanism: a travel kept the OUTGOING camera's subjects, so an absolute camera arrived flagged relative to the player and the shot ended ~3000 units outside the building. That predicts "right the second time" precisely - the second travel starts from a camera that is already absolute. Walk into the drugstore from the street and talk to the seller once; if it is good, close the row |
+| 2 | 6 | street NPCs stop and T-pose | now the first open BUG, visible on every street, and the first step is attribution rather than code: `.OPT` walker or `scx.play.actor` extra decides the owner and the fix |
+| 3 | 9 | main menu completed | the widget tree and the answer sites are lifted, the start menu already answers for itself, and the save/load menus built for item 8 are most of the machinery. Pin what "new game is not correct" means in one run before building anything |
+| 4 | 10 | sneak: character / info / config pages | plus `todo/sneak.md` 2a, the ROW SCROLLING, which belongs with them: the row window is hardcoded 0, so a tenth carried object cannot be reached at all. That is the one that makes the device wrong rather than thin |
+| 5 | 11 | shop UI | seven screens through one jump table, and the buy/sell channel is already ported |
+| 6 | 12 | multiplan UI | the background is read, the panel is not |
+| 7 | 13 | the remaining UI | re-scope after 9-12; they build most of the machinery |
+| 8 | 14 | health: fall damage and vehicle hits | do the READING as its own step and re-estimate. Nothing in the DB doc mentions health, so this is the only item whose size is a guess |
+| 9 | 15 | jump / fall animation and physics | the jump's impulse and the landing bands are measured (`todo/player-vertical.md`), so this is nearer than the triage thought - but a fall that hurts wants 14 read first |
+| 10 | 17 | fight mode | large, and data-constrained by construction: `fight.begin` announces nothing, so no trace can ever be its oracle |
+| 11 | 18 | shoot mode | last, and the first move is not code: revisit the DECISION not to wire the brains (`todo/standing-unknowns.md` 2). It may need navigation data before it needs any port |
+
+Not on the list and worth naming: **item 4 is committed and not yet confirmed
+by a person**, `todo/play-test.md` 7 is a whole batch of render work nobody has
+judged by eye, and the slider's three remainders (the 600-frame give-up of an
+unboarded call, the road cutscene, a reincarnation ridden in another body) sit
+under `todo/slider.md` rather than here.
+
+---
+
+## The 2026-09-06 triage order
 
 The principle: **bugs with a known mechanism first** (they are cheap and each
 one removes a wrong impression of the port), then **UI that the lifted tables
@@ -30,7 +74,7 @@ items are research and can be done any time they are wanted.
 | 21 | a shop conversation's first camera is outside the shop | **M** | good | same family as item 5 and item 7 - what is resident when a script runs on ENTERING a building |
 | 6 | street NPCs stop and T-pose | **M** | good | same family as the scene-facing work of 2026-09-05 |
 | 7 | missing animations (lift doors, Kay'l's drawer) | **FIXED** | strong | the path is a DISPLACEMENT, not a position: `node = sample(t) - sample(t0) + anchor`. The flat's doors now slide 87.2 down, close behind you, and are AUDIBLE (gain 0.03 -> 1.00, the same fault reaching the 3D sound). The lift's were right by accident. Door COLLISION still to check |
-| 8 | save support (save, save menu, load menu) | **M** | very strong | the format is solved end to end; this is plumbing, not research |
+| 8 | save support (save, save menu, load menu) | **DONE, PLAYED 2026-09-06** | very strong | the writer, both menus, the overwrite and delete confirms, the *anneau* price - driven end to end in the running game by a reader. `todo/save-support.md` |
 | 9 | main menu completed (new game correct, the rest) | **M** | very strong | the widget tree and the answer sites are lifted |
 | 10 | sneak: character / info / config pages | **M** | very strong | the panels are already named constants in the port |
 | 11 | shop UI | **M** | strong | 7 screens and their jump table are read |
@@ -41,8 +85,8 @@ items are research and can be done any time they are wanted.
 | 16 | slider: call, ride, drive | **L** | good | **DONE - played and confirmed 2026-09-08.** Call from the sneak, the slider comes on camera, the door side and 4 m gate, `H_SLDIN`/`H_SLDOUT` with the door swinging on the cockpit body, the seat, the journey, out where it stops, camera 17, the release, and the journey to ANOTHER city (Qalisar) - each fixed against the reader's play reports, `todo/slider.md`. Open: the 600-frame give-up of an unboarded call, the optional cutscene on the road, a reincarnation ridden in another body |
 | 17 | fight mode | **L** | good | the AI profiles and combat block are read; nothing is wired |
 | 18 | shoot mode | **L** | good | read, and deliberately unwired - a DECISION to revisit, not a gap |
-| 19 | does the original filter (anti-aliasing, …)? | **research** | fair | cheap to answer, and the answer may be "no reachable tier" |
-| 22 | the Telis cutscene in Kay'l's flat — and the conversation machinery behind it | **M** | **DONE** | reported 2026-09-06/07 over four rounds of play, twelve faults closed. The last four are the ones a teleport-in repro could never show: a scene program per actor, the camera move's fov and roll, the subject code as a RESOLVER kind (two of the four anchor on the head), and the player's channel ticking through a conversation. The transcan: its advert's only camera hangs off the speaker (`[2,2]`) and the port drew only absolute dialogue cameras; and `speakerReady` was gated on a camera solve that conversation could not make, so the line's morph never loaded. The waver in Telis's hand: **FIXED** (a set mesh on an ABSOLUTE path; parameter 5 picks the arm). Kay'l invisible: **FIXED** (a `scx.play.player` program poses the PLAYER'S ACTOR, and the viewer drew him only in adventure mode). The transcan camera: **FIXED** (the travel dropped the subjects). Open: the Gun Waver in her hands is not drawn, she faces the wrong way before the idle, and the bedroom mirror renders transparent instead of reflecting |
+| 19 | does the original filter (anti-aliasing, …)? | **ANSWERED 2026-09-08** | measured | `sub_4638C0`: ANTIALIAS off, stage 0 POINT/POINT/NONE, DITHERENABLE 1. Filtering became an ENHANCEMENT and the dither a fixed DEFECT. `bf68c75`, ASSETS 4, `verify.py: render states` |
+| 22 | the Telis cutscene in Kay'l's flat — and the conversation machinery behind it | **M** | **DONE** | reported 2026-09-06/07 over four rounds of play, twelve faults closed. The last four are the ones a teleport-in repro could never show: a scene program per actor, the camera move's fov and roll, the subject code as a RESOLVER kind (two of the four anchor on the head), and the player's channel ticking through a conversation. The transcan: its advert's only camera hangs off the speaker (`[2,2]`) and the port drew only absolute dialogue cameras; and `speakerReady` was gated on a camera solve that conversation could not make, so the line's morph never loaded. The waver in Telis's hand: **FIXED** (a set mesh on an ABSOLUTE path; parameter 5 picks the arm). Kay'l invisible: **FIXED** (a `scx.play.player` program poses the PLAYER'S ACTOR, and the viewer drew him only in adventure mode). The transcan camera: **FIXED** (the travel dropped the subjects). All three of the remainders this row once listed - the Gun Waver in her hands, her facing before the idle, and the bedroom mirror - are CLOSED; see the item |
 
 The **#** column is the item's id, not its position: 20 and 21 were added on
 2026-09-06 and sit in the table where they belong rather than at the end.

@@ -19,8 +19,13 @@ int main(int argc, char** argv) {
     for (const auto& p : rt.paths()) {
         if (p.keys.empty()) { ++i; continue; }
         const auto& a = p.keys.front(); const auto& b = p.keys.back();
-        std::printf("%3d  %-20s dur %6.1f  keys %3zu  first %8.1f %8.1f %8.1f  last %8.1f %8.1f %8.1f\n",
-                    i++, p.name.c_str(), static_cast<double>(p.duration), p.keys.size(),
+        // file/index, NOT the flat position: `Script_MoveObjectOnPath` param
+        // 1 is the chunk-0 `.3dp` record and param 2 the path INSIDE it, so
+        // the flat counter is not a key anything in the data uses.
+        std::printf("%3d  file %2d idx %3d  %-20s dur %6.1f  keys %3zu"
+                    "  first %8.1f %8.1f %8.1f  last %8.1f %8.1f %8.1f\n",
+                    i++, p.file, p.index, p.name.c_str(),
+                    static_cast<double>(p.duration), p.keys.size(),
                     a.pos[0], a.pos[1], a.pos[2], b.pos[0], b.pos[1], b.pos[2]);
     }
     return 0;

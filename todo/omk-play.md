@@ -15,6 +15,72 @@ waiting on its evidence.
 
 ## Open (batch 7, filed 2026-09-09)
 
+### 94. You can enter a shop but not leave it: the interior's own doors never move — A
+
+> **FIXED 2026-09-09.** Not watched in play yet — the exit is reproduced
+> headlessly below, and a person still has to walk it.
+
+A reader: *"once I enter the drugstore near the security center, i can not go
+outside, doors stay closed (this issue also happens in other places like the
+temple in qalisar)"*.
+
+**Reproduced** — walk in from Anekbah's street, turn round, walk back at the
+door:
+
+```
+build/omk-play $OMK_DATA ../tables --save ../traces/save-appart.bin --area 0 \
+    --stand 3703,0,-9010,180 --hold 'k200*120,0*80,k203*40,0*20,k200*400' \
+    --frames 700 --nodelay
+```
+
+Before the fix the log tells the whole story and the player never leaves:
+
+```
+[tr]   frame 314  area.goto 0  doors 7/8            <- the exit script RAN
+[slot] frame 314  SHOW area 0 in slot 0             <- Anekbah is shown
+[tr]   frame 314  door object 7 -> program 2        <- the door program STARTED
+[tr]   frame 428  door object 8 -> program 3
+[slot] frame 481  HIDE area 0 in slot 0             <- ...and put away again
+player: ends at 3534.5 -0.0 -8854.5                 <- still inside, sliding
+```
+
+There is no `event 9: feet on area 0` between them: he walks at the doorway,
+stops dead at z −8854.5 and slides sideways along a plane (x 3705 → 3534),
+because `Porte01dh`/`Porte01gh` contribute 12 collision triangles each and
+never moved. When the arrival object ends, `transitionObjectEnded` hides the
+destination — so the doors shut and the shop keeps him.
+
+**The cause is one cast.** `Script_MoveObjectOnPath` addresses a path as
+(chunk-0 `.3dp` file, index within it) and the engine reads the file as a
+`uint16_t`:
+
+```c
+v4 = (uint16_t)Script_GetParamInt((int)a2, 1);      /* 0x0046F400 */
+```
+
+Every one of `Apharma.SCX`'s door motions carries parameter 1 = **-65536**,
+which is file **0** after the cast, and (0, 5) / (0, 3) there are exactly
+`Porte01gh` and `Porte01dh`. The port passed the value whole to `pathIn`,
+matched nothing, and dropped the motion silently. 81 calls over 11 scenes are
+in that state — `Shall09b` 34, `Apharma` 8, `SArmu01` 8, `SLibr01` 8,
+`QTemple` 7, `LBank` 4, and four more — every one of them a door, a shutter,
+a trapdoor or a sliding stone in an interior. Qalisar's temple is in the list
+with its own doors AND `Qtrappe`, the trapdoor of the reincarnation beat.
+
+**Why walking IN always worked**, which is what made it look like a transition
+bug rather than a scene-program one: the doors that open on the way in are the
+CITY's — `anekbah.SCX` objects 164 and 201, whose parameter 1 is a plain 0 —
+and a shop's interior copy is only ever asked for on the way out.
+
+**After**: `event 9: feet on area 0` at frame 336, the arrival door at 346,
+`HIDE area 248` at 400, and the player ends 742 units away in the street.
+
+`engine/src/script/program.cpp`; `verify.py: move path file`,
+`engine: shop door` (both shown to fail: the engine one reports every leaf's
+travel as -1 with the mask removed); `engine/tools/shopdoor_probe.cpp` (new);
+`docs/FILE_FORMATS.md`.
+
+
 ### 93. The sneak's SLIDER PAGE: the selection cannot leave the tab column — A
 
 > **FIXED 2026-09-09**, found by chasing a red check rather than by a report.

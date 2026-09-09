@@ -313,8 +313,27 @@ bool Program::tick(float dt) {
                 // is placed OUTRIGHT, so this reports a world position. `t`
                 // runs 0..duration across the function's own busy window, and
                 // `entryAt_` is where that window began.
+                // THE FILE PARAMETER IS TRUNCATED TO 16 BITS, and that is
+                // the engine's own cast, not a tolerance:
+                //
+                //     v4 = (uint16_t)Script_GetParamInt((int)a2, 1);
+                //     v6 = sub_4A6500(v5, v4);
+                //
+                // (`Script_MoveObjectOnPath` 0x0046F400, and identically in
+                // `Script_Reinit_MoveObjectOnPath` 23_script.c:258 - the only
+                // two of `sub_4A6500`'s four callers that cast at all.)
+                // 81 shipped calls over 11 scenes carry a param 1 outside
+                // 0..65535 - -65536, -65535 and -65531, which the cast turns
+                // into files 0, 1 and 5 - and every one of them is a DOOR or
+                // a shutter in an interior: Apharma's shopfront (the reader's
+                // "I enter the drugstore and cannot go outside"), QTemple's,
+                // LBank's, the two shops' and Shall09b's 34. Passed whole the
+                // lookup matches nothing, the mesh never moves, and its
+                // closed leaves keep their collision across the doorway.
+                const int pathFile = f.params.size() > 1
+                    ? (f.params[1] & 0xFFFF) : 0;
                 const ScxPath* pa = f.params.size() > 2
-                    ? rt_->pathIn(f.params[1], f.params[2]) : nullptr;
+                    ? rt_->pathIn(pathFile, f.params[2]) : nullptr;
                 if (pa && !pa->keys.empty()) {
                     const auto ea = entryAt_.find(k);
                     const float since = ea == entryAt_.end() ? 0.0f : clock_ - ea->second;
