@@ -20,9 +20,10 @@ int main(int argc, char** argv) {
     const std::string want = argc > 2 ? argv[2] : "";
     for (const auto& m : ms) {
         if (!want.empty() && !std::strstr(m.name, want.c_str())) continue;
-        std::printf("%4d id %3d %-22s flags %08x  pos %8.1f %8.1f %8.1f  local %7.1f %7.1f %7.1f  parent %d\n",
-                    m.index, static_cast<int>(m.id), m.name, static_cast<unsigned>(m.flags),
-                    m.pos[0], m.pos[1], m.pos[2], m.local[0], m.local[1], m.local[2], m.parent);
+        std::printf("%4d %-22s flags %08x  pos %8.1f %8.1f %8.1f  local %7.1f %7.1f %7.1f  parent %d  id %d\n",
+                    m.index, m.name, static_cast<unsigned>(m.flags),
+                    m.pos[0], m.pos[1], m.pos[2], m.local[0], m.local[1], m.local[2], m.parent,
+                    static_cast<int>(m.id));
     }
     return 0;
 }

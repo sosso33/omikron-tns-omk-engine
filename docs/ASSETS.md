@@ -2168,6 +2168,39 @@ bone of every character model carries a prefix — HO1_FNM's are `UBuste`,
 per LOD skeleton — so an equality test matches **0 of the ten** bone names and
 the whole mechanism silently draws nothing.
 
+### The same trap one level out: it is not only the shadows
+
+`strstr` is how **every** consumer finds a bone, the animation binding
+included, and the prefix's length is therefore never anybody's business. That
+matters because the prefixes are not a fixed width, and this section has said
+so since it was written — HO1_FNM's are `UBuste`, `UTete`, `UPiedg`, a **one**
+letter prefix, beside the crowd's two-letter `Ph…`/`Pi…`/`Pm…`/`Pw…`.
+
+Measured over the whole corpus — 11 libraries and 193 character models, 8923
+names, `verify.py: bone names`:
+
+| prefix | names |
+|---|---|
+| one letter (`U` 2376, `M` 525, `D` 400…) | **3362** |
+| two letters (`Ph` 437, `Fh` 190, `Sh` 190, `Zt` 126…) | 5083 |
+| three or more (`Ast`, `Shm`, `Sod`, `Plg`, `T1_`) | **478** |
+
+**148 distinct prefixes**, and 43% of the names are not two letters. A replica
+that recovers the bone by chopping a fixed two characters is therefore right
+only by luck, and the luck holds for exactly the four crowd libraries, which
+is where the rule was written. It broke where the corpus finally disagreed:
+the Shooting gallery's gunmen are the only characters posed from an area
+`.ani` instead of a `.CTL` bank, `braqueur.ani`'s tracks are `U`-prefixed and
+VIR_FN's meshes are `Vi`-prefixed, so `"assin"` was matched against
+`"bassin"` and **0 of 19** tracks bound. The bodies stood in their rest pose
+and nothing in the log said so (`todo/omk-play.md` 96).
+
+The port cannot hard-code the seventeen names the engine passes, because that
+silently drops every bone nobody has met, so it derives the same split: every
+prefix in the corpus is a capital followed by lower case and every bone starts
+with a capital, so **the bone begins at the second uppercase letter**. Under
+that rule the pairing resolves 19 of 19.
+
 ### …and the trap behind that one: FOUR skeletons, side by side
 
 A crowd model carries four LOD skeletons of 19 meshes each, and they are

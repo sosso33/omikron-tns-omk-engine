@@ -25824,6 +25824,76 @@ def c_engine_shoot_mode():
             "and what `omk-play --shoot` installs in the Shooting gallery")
 
 
+def c_bone_names():
+    r"""`engine/`: how an animation track finds its BONE, over the whole corpus.
+
+    Every character bone name is a PREFIX plus the bone - `ViBassin` on the
+    model VIR_FN, `UBassin` in `braqueur.ani`, `PhBassin` in `passantH.ani` -
+    and the port used to recover the bone by stripping a fixed **two**
+    characters. That is right only while every prefix is two letters, which is
+    true of the four crowd libraries and of nothing else: over 11 libraries and
+    193 character models, **3362 of the 8923 names carry a ONE-letter prefix**
+    (`U` alone accounts for 2376) and 478 carry three or more (`Ast`, `Shm`,
+    `Sod`, `T1_`). So 43% of the corpus was being cut in the wrong place.
+
+    Nothing noticed until the Shooting gallery was looked at, because the
+    gunmen are the only characters posed from an area `.ani` rather than
+    through a `.CTL` bank: `braqueur.ani`'s tracks are `U`-prefixed and
+    VIR_FN's meshes are `Vi`-prefixed, so `"assin"` was compared against
+    `"bassin"` and **not one of the nineteen tracks bound**. The bodies stood
+    in their rest pose and every line of the log read healthy
+    (`todo/omk-play.md` 96).
+
+    **The engine does not strip at all.** `o3de_FindMeshByName` (0x00436D90)
+    is `o3de_Traverse` running a `strstr` over the node names, keeping the LAST
+    match, and its callers pass the BARE bone - `Bassin`, `Tete`, `Buste`,
+    `Cuisseg`, `Piedd` and twelve more in a row at `04_sys.c` 5497-5513. So the
+    prefix's length never enters into it. The same `strstr`-on-the-last-match
+    is what finds the shadow bones (`docs/ASSETS.md`).
+
+    The port reproduces that without hard-coding the seventeen, because a
+    hard-coded list would silently drop every bone nobody has met: every
+    prefix in the corpus is a capital followed by lower case and every bone
+    starts with a capital, so **the bone begins at the second uppercase
+    letter**. This asserts the corpus shape that rule implies, and then the
+    pairing that failed - reported as two counts rather than a boolean, so a
+    wrong answer says what it found.
+    """
+    import subprocess, re
+    fr = omkpaths.data_root()
+    if not os.path.isdir(fr):
+        return ("no data",), ("data",), "needs the shipped tree"
+    eng = os.path.join(ROOT, "engine")
+    b = subprocess.run(["make", "-s", "build/bone_names"], cwd=eng,
+                       capture_output=True, text=True)
+    binp = os.path.join(eng, "build", "bone_names")
+    if b.returncode != 0 or not os.path.exists(binp):
+        return ("build failed",), ("built",), "engine/ must build"
+    r = subprocess.run([binp, fr], capture_output=True, text=True)
+    hm = re.search(r"^libraries (\d+)\s+models (\d+)\s+track names (\d+)\s+"
+                   r"mesh names (\d+)$", r.stdout, re.M)
+    pl = re.search(r"^names by prefix length: 1 (\d+), 2 (\d+), 3\+ (\d+)$",
+                   r.stdout, re.M)
+    pr = re.search(r"^prefixes (\d+):", r.stdout, re.M)
+    pa = re.search(r"^braqueur\.ani -> VIR_FN: (\d+) meshes, (\d+) tracks, "
+                   r"(\d+) resolve by bone, (\d+) by the old fixed strip$",
+                   r.stdout, re.M)
+    if not (hm and pl and pr and pa):
+        return ("unparsed",), ("parsed",), "the probe's own summary lines"
+    got = (tuple(int(x) for x in hm.groups()) + (int(pr.group(1)),)
+           + tuple(int(x) for x in pl.groups()) + tuple(int(x) for x in pa.groups()))
+    want = (11, 193, 5193, 3730, 148, 3362, 5083, 478, 19, 19, 19, 0)
+    return got, want, ("libraries, character models, track names and mesh "
+                       "names; the distinct PREFIXES; how many names carry a "
+                       "one-, two- and three-or-more-letter prefix (the "
+                       "one- and three-plus rows are what the old fixed "
+                       "`substr(2)` cut in the wrong place - 43% of the "
+                       "corpus); and then the pairing that failed, "
+                       "`braqueur.ani` against VIR_FN: tracks resolving by "
+                       "BONE against tracks resolving under the old rule, "
+                       "which is 0")
+
+
 def c_map2d_sight():
     r"""`engine/`: the shoot AI's LINE OF SIGHT over the grid - the predicate
     that is NOT the movement one, and the walk that uses it.
@@ -30664,6 +30734,7 @@ CHECKS = [
     ("shoot arenas",       c_shoot_arenas,      "todo/shoot-mode"),
     ("map2d grid",         c_map2d_grid,        "todo/shoot-mode; formats/map2d.h"),
     ("map2d sight",        c_map2d_sight,       "todo/shoot-mode 5c; formats/map2d.h"),
+    ("bone names",         c_bone_names,        "todo/omk-play 96; ASSETS"),
     ("engine: shoot mode", c_engine_shoot_mode,  "todo/shoot-mode; actor/shootmode.h"),
     ("wre wireframes",     c_wre_files,         "FILE_FORMATS 5b5"),
     ("morph face models",  c_morph_face_models, "FILE_FORMATS 5"),

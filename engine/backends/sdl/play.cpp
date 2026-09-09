@@ -1302,7 +1302,8 @@ int sceneViewer(const std::string& fr, const std::string& setName,
             const char b2[2] = {static_cast<char>(v & 0xFF), static_cast<char>(v >> 8)};
             o.write(b2, 2);
         }
-        std::printf("wrote %s (%dx%d RGB565)\n", dump.c_str(), 640, 480);
+        // the SIZE, not a literal: this said "640x480" whatever it wrote.
+        std::printf("wrote %s (%dx%d RGB565)\n", dump.c_str(), fb.w, fb.h);
     }
     if (!direct) front.close();
     // The teardown comes LAST, after the dump: `ren` points at `live`, and
@@ -3559,7 +3560,37 @@ int main(int argc, char** argv) {
             // (a reader's frame, 2026-09-03). The bone is the name after the
             // prefix, resolved inside the FIRST skeleton - the exact name is
             // tried first, for the one model whose prefix does agree.
-            const auto suffix = [&](const std::string& n) { return n.size() > 2 ? lower(n.substr(2)) : lower(n); };
+            // THE BONE IS THE NAME AFTER ITS PREFIX, AND THE PREFIX IS NOT
+            // TWO LETTERS - it is whatever the library and the model each
+            // chose. `braqueur.ani`'s tracks are `UBassin`, `UCuissed`,
+            // `UPiedd`; VIR_FN's meshes are `ViBassin`, `ViCuissed`,
+            // `ViPiedd`. Stripping a fixed 2 from both gives "assin" against
+            // "bassin" and NOT ONE of the nineteen tracks bound, which is why
+            // the Shooting gallery's gunmen stood in their rest pose
+            // (`todo/omk-play.md` 96). The crowd's four libraries all happen
+            // to use two-letter prefixes (`Ph`, `Sh`, `Kh`, `Fh`), so the
+            // fixed strip was right everywhere it had been looked at.
+            //
+            // The ENGINE does not strip at all: `o3de_FindMeshByName`
+            // (0x00436D90) is `o3de_Traverse` running a `strstr` over the
+            // node names and keeping the LAST match, and its callers pass the
+            // BARE bone - `Bassin`, `Tete`, `Buste`, `Cuisseg`, `Piedd`
+            // (04_sys.c 5497-5513, seventeen of them in a row). So the bone
+            // name is a substring and the prefix's length never enters into
+            // it. The same `strstr`-on-the-last-match is what finds the
+            // shadow bones (`docs/ASSETS.md`).
+            //
+            // Reproduced here without hard-coding the seventeen: every prefix
+            // in the corpus is a capitalised letter followed by lower case,
+            // and every bone starts with a capital, so THE BONE BEGINS AT THE
+            // SECOND UPPERCASE LETTER. `verify.py: bone names` measures that
+            // over every shipped library and character model rather than
+            // taking it on trust.
+            const auto suffix = [&](const std::string& n) {
+                for (std::size_t i = 1; i < n.size(); ++i)
+                    if (n[i] >= 'A' && n[i] <= 'Z') return lower(n.substr(i));
+                return n.size() > 2 ? lower(n.substr(2)) : lower(n);
+            };
             int firstRoot = -1;
             for (std::size_t j = 0; j < meshes.size() && firstRoot < 0; ++j) {
                 bool hasParent = false;
@@ -9336,6 +9367,41 @@ int main(int argc, char** argv) {
                         const omk::PedClip* c = (grp >= 0 && grp < 64)
                                               ? shootClipFor(grp, act) : nullptr;
                         if (c) shootTracks = pedTracksFor(grp, *c, s.mo->meshes);
+                        if (!s.shootTold && shootTracks) {
+                            // THE INSTRUMENT omk-play 96 asked for: a staged
+                            // actor never reported whether its clip resolved
+                            // against its own model, so a body could blow
+                            // apart while every line of the log read healthy.
+                            // The unit-quaternion count is the discriminator -
+                            // all 243362 quaternions in the shipped `.ani`
+                            // corpus are unit, so a non-unit one here means
+                            // the track offsets are being read against the
+                            // WRONG BLOB, not that the pose maths is wrong.
+                            int bound = 0;
+                            for (auto id : shootTracks->ids) if (id >= 0) ++bound;
+                            int nonUnit = 0;
+                            for (const auto& row : shootTracks->quats)
+                                for (const auto& q : row) {
+                                    const double m = double(q.x) * q.x + double(q.y) * q.y
+                                                   + double(q.z) * q.z + double(q.w) * q.w;
+                                    if (m < 0.98 || m > 1.02) ++nonUnit;
+                                }
+                            std::printf("frame %ld: actor %d %s - %d/%zu tracks resolve "
+                                        "against %zu meshes, %d frames, %d non-unit "
+                                        "quaternions\n", n, s.actor, s.model.c_str(),
+                                        bound, shootTracks->ids.size(),
+                                        s.mo->meshes.size(), shootTracks->frames, nonUnit);
+                            if (bound == 0) {
+                                const auto dd = omk::animDescriptor(pedAni, c->descriptor);
+                                std::printf("  clip tracks:");
+                                if (dd) for (std::size_t q = 0; q < dd->tracks.size() && q < 6; ++q)
+                                    std::printf(" %s", dd->tracks[q].name.c_str());
+                                std::printf("\n  model meshes:");
+                                for (std::size_t q = 0; q < s.mo->meshes.size() && q < 6; ++q)
+                                    std::printf(" %s", s.mo->meshes[q].name);
+                                std::printf("\n");
+                            }
+                        }
                         if (!s.shootTold) {
                             s.shootTold = true;
                             std::printf("frame %ld: actor %d %s - shoot mode, action %d, "
@@ -12184,6 +12250,13 @@ int main(int argc, char** argv) {
             const char b2[2] = {static_cast<char>(v & 0xFF), static_cast<char>(v >> 8)};
             o.write(b2, 2);
         }
+        // SAY THE SIZE. This wrote the bytes and no dimensions, and a reader
+        // of the file has nothing to go on but its length - 960000 bytes is
+        // 800x600, not the 640x480 that a `.bin` from this viewer is assumed
+        // to be, and one shot was decoded at the wrong stride and read as a
+        // broken renderer.
+        std::printf("wrote %s (%dx%d RGB565, %zu bytes)\n", dump.c_str(),
+                    fb.w, fb.h, fb.px.size() * 2);
     }
     // ------------------------------------------------- WRITING A SAVE
     //

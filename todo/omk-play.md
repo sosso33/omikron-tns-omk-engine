@@ -15,46 +15,69 @@ waiting on its evidence.
 
 ## Open (batch 7, filed 2026-09-09)
 
-### 96. Shoot mode's gunmen render as EXPLODED geometry — A
+### 96. The Shooting gallery's gunmen never bind a bone: 0 of 19 tracks — A
 
-Found in the first play test of shoot mode, 2026-09-09, at five metres:
+> **FIXED 2026-09-09.** And the title above is the second one: this was filed
+> as "the gunmen render as EXPLODED geometry" on the strength of a frame that
+> showed limb-like fragments and stretched shards. **That frame had no
+> character in it at all** — the run staged 0 characters and had 562 particles
+> alive, so what I photographed was sprite billboards. The real fault was the
+> opposite of dramatic: the bodies stood in their REST pose, because not one
+> animation track bound to a bone.
 
-    build/omk-play "$OMK_DATA" ../tables --save ../traces/save-appart.bin \
-        --area 59 --stand 5207,0,-2473,180 --shoot
+    frame 3: actor 237 VIR_FN - 0/19 tracks resolve against 19 meshes,
+             19 frames, 0 non-unit quaternions
+      clip tracks: UBassin UCuissed UJambed UPiedd UCuisseg UJambeg
+      model meshes: ViAvantd ViAvantg ViBassin ViBrasd ViBrasg ViBuste
 
-A `VIR_FN` gunman is not a posed body. Limb-shaped fragments, a cyan
-cylinder and long flat shards radiate from a point — the signature of bone
-transforms that are wrong rather than of a wrong clip. At seventeen metres the
-shards are thin and dark and the room simply looks empty, which is why the
-headless log has never caught it: the viewer says **"3 on screen at the end"**
-and it is telling the truth.
+**A one-letter prefix against a two-letter one.** The port recovered a bone by
+stripping a fixed **two** characters from both names, so `UBassin` became
+`"assin"` and `ViBassin` became `"bassin"`, and nothing ever matched. The four
+crowd libraries (`Ph`, `Sh`, `Kh`, `Fh`) all happen to use two-letter
+prefixes, which is why the rule had looked right everywhere it had been
+tried — and the gallery's gunmen are the only characters in the game posed
+from an area `.ani` rather than through a `.CTL` bank, so they are the only
+place it could show.
 
-What the log DOES say, and where to start:
+**The engine does not strip at all.** `o3de_FindMeshByName` (0x00436D90) is
+`o3de_Traverse` running a `strstr` over the node names and keeping the LAST
+match, and its callers pass the BARE bone — `Bassin`, `Tete`, `Buste`,
+`Cuisseg`, `Piedd` and twelve more, in a row at `04_sys.c` 5497-5513. The
+prefix's length never enters into it. (The same `strstr`-on-the-last-match is
+what finds the shadow bones.) The port reproduces the same partition without
+hard-coding seventeen names, which would silently drop every bone nobody has
+met: **the bone begins at the second uppercase letter.**
 
-    frame 3: staged actor 238 VIR_FN (bank none, 19 meshes, 1 textures)
-    frame 3: actor 238 VIR_FN - shoot mode, action 3, character type 3
-             -> a clip (BRAQUEUR, 42 clips in the group)
-    frame 3: actor 238 VIR_FN - pose source: shoot mode: the area's .ani,
-             by character type
-    staged 3 characters (ids 237, 238, 240), 3 on screen at the end,
-      1 models and 0 banks resident
+**It was never only a shoot-mode bug.** Over 11 libraries and 193 character
+models — 8923 names — **3362 carry a one-letter prefix** (`U` alone is 2376)
+and 478 carry three or more (`Ast`, `Shm`, `Sod`, `T1_`). The fixed strip was
+cutting **43% of the corpus** in the wrong place. `verify.py: bone names`
+asserts that shape and the pairing that failed: 19 of 19 resolve by bone, 0 by
+the old rule.
 
-**`bank none`, and 0 banks resident.** The clip comes from the AREA's own
-`.ani` picked by character type, not through a `.CTL` bank, so nothing has
-checked that `BRAQUEUR`'s track set matches `VIR_FN`'s skeleton. If the tracks
-are being mapped by INDEX onto a different bone list, an explosion is exactly
-what you get — and note the shape of the evidence: the same code poses the
-Shooting gallery's gunmen and nothing else in the game, so no other check
-exercises it.
+**The instrument gap is closed too**, and it is what found this. A staged
+actor now reports `N/M tracks resolve against K meshes, F frames, U non-unit
+quaternions`, and the unit-quaternion count is the discriminator: all 243362
+quaternions in the shipped corpus are unit, so a non-unit one would have meant
+the track offsets were being read against the wrong blob rather than that the
+matching was wrong. It read 0, which is what pointed at the names.
 
-**The instrument gap is half the issue.** The viewer prints
-`1539/1595 tracks resolve` and `pose tracks valid` **for the player only**. No
-staged actor reports whether its clip's tracks resolved against its model, so
-a body can blow apart while every line of the log reads healthy. Print the
-same two figures per staged actor before chasing the pose itself — the number
-may name the fault outright.
+> **STILL OWED: nobody has SEEN a gunman.** The fix is measured (0/19 → 19/19)
+> and not photographed. The gunmen stage only when the player stands at
+> `5000,0,-2900` — a trigger — and from there the three of them are 8-16 m off
+> behind set geometry; standing anywhere nearer stages nothing at all. A live
+> `--shoot` session that walks rather than teleports is what will confirm it.
 
-Not to be confused with 95 below, which was the camera; this is the bodies.
+> **And two instruments corrected on the way, one of which was not lying.**
+> The world `--dump` printed no dimensions at all, so its `.bin` carries
+> nothing but a length; 960000 bytes is 800x600 and I assumed the 640x480 such
+> a file is usually taken to be, decoded one at the wrong stride and read the
+> result as a broken renderer. That was my assumption, not the tool's claim -
+> it now prints its size, and so does the interface path, which really did
+> print `(640x480 RGB565)` as a literal whatever it wrote. The genuine lie is
+> the end-of-run `N on screen at the end`: it prints `staged.size()`, how many
+> are STAGED, with no visibility test in it. The per-actor `[not drawn]` flag
+> is the real one.
 
 ### 95. Shoot mode drew the PLAYER'S OWN BODY in a first-person view — A
 
