@@ -18827,6 +18827,36 @@ def c_sneak_page_colour():
     then blacken the clock item 0x004DEC08 with the single-item setter.
 
     **Confirmed against five captures of the original.** The inventory page
+    **ELEMENTS 9-12 ARE RED SINCE SOME COMMIT AFTER 2026-09-04, AND IT IS THE
+    PORT** (diagnosed 2026-09-09, not fixed). They are the slider page's list
+    navigation - the walk stepping tab column -> header -> rows - and the walk
+    never leaves the column, which is the fault `a48593f` was written to fix
+    and which a player hit. That commit added BOTH the mover and these
+    assertions, so they passed on the day; something later broke them.
+
+    Pinned so far, by measurement rather than by reading:
+
+    * the mover is not being skipped - panel 0x4DEDE8's hook is still
+      `0x0049D4D0` in the lifted table, and all three list addresses
+      (0x4DE210 tabs, 0x4DEA08 header, 0x4DE6F0 rows) resolve, so
+      `moveListsSlider` runs and REFUSES;
+    * it refuses because the walk is on the wrong list to begin with. The
+      probe prints `entered panel 0x4dede8 list 1 (0x4dea08)` - the HEADER -
+      where the sequence expects the tab column, so the first `listAxis` takes
+      the header's edge transition back to the tabs and every later assertion
+      follows from that;
+    * `dedd3da`'s "a selection that is not pickable moves off it" is NOT the
+      cause: mutating it off leaves this red;
+    * nor is the widget table. Panel 0x4DEDE8 appears TWICE in it - index 2
+      with `screen -1, current -1` and index 13 with `screen 7, current 1` -
+      and both the order and the values are identical before and after the
+      table grew.
+
+    So the question is which of those two records the walk resolves the child
+    panel to, and whether `settle()` should be taking its `current` of 1 at
+    all. That is the next read; the entry list is the fault, not the mover.
+    Left RED deliberately - the assertions are the engine's behaviour.
+
     draws amber, the slider page green, the identity page blue, matching the
     icon beside each. Fitted over 15 channel samples of 3 hues from 3 pages,
     `measured = 0.19 * source + 11` (the offset is the capture's lifted
