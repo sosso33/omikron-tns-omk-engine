@@ -47,6 +47,21 @@ waiting on its evidence.
 > reads: the group's own `Action / Utiliser` becomes the confirm, and the
 > trigger is taken out of the UI's word.
 >
+> **The first version of that was two lines and both were wrong together.**
+> It OR-ed the confirm in and then AND-ed the same bit straight back out on
+> the next line, so the word came through unchanged and NEITHER the click
+> nor ENTER did anything — which is what the reader hit next: *"mouse click
+> is no more detected in the pause menu, but the enter button neither"*. One
+> printf of the word before and after settled it in a single run (`ui word
+> 0100 -> 0100`) where re-reading my own two lines had not. Read the action
+> first, clear the trigger, then set the confirm.
+>
+> Reproducing it headlessly needed the key order the obvious one gets
+> backwards: `--shoot --keys 0x1C,0x01,0x1C --keydelay 100`, so the pause
+> opens AFTER shoot mode rather than before it. With ESC first the screen
+> comes up while the adventure scheme is still installed and the bug cannot
+> appear at all.
+>
 > **Why it is a reconstruction.** Nothing traced says the engine re-maps
 > anything — no screen open installs a scheme, and its UI reads the same raw
 > word — so on the face of it the original should collide the same way. The

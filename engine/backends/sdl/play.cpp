@@ -4380,6 +4380,24 @@ int main(int argc, char** argv) {
     for (;;) {
         const Uint32 frameStartMs = SDL_GetTicks();
         if (!front.pump(host)) break;
+        // ---- one line when the mouse first moves in shoot mode -----------
+        //
+        // Placed HERE, before any gate, so it can tell the three links apart:
+        // whether the frontend reports motion at all, whether the shoot
+        // camera is still live, and whether the aim's own block is reached.
+        // The first version of this sat inside `if (adventure)` and could not
+        // distinguish "no motion" from "never got there", which is exactly
+        // the ambiguity that makes a diagnostic worthless.
+        if (shootMode && (host.mouseDX != 0.0f || host.mouseDY != 0.0f)) {
+            static long mouseTold = -1;
+            if (mouseTold < 0 || n - mouseTold > 120) {
+                mouseTold = n;
+                std::printf("frame %ld: MOUSE dx %.1f dy %.1f - shootMode %d, "
+                            "cameraLive %d, pitch %.1f\n", n, host.mouseDX,
+                            host.mouseDY, int(shootMode), int(shootCameraLive),
+                            shootPitch);
+            }
+        }
         // ---- ESC OPENS THE PAUSE SCREEN (next-tasks 3) -------------------
         //
         // It is not a binding, and `Game_Frame` never sees it. `Game_RunLoop`
@@ -7280,8 +7298,14 @@ int main(int argc, char** argv) {
             // the game outranks a reading that only shows nobody has found
             // the mechanism yet.
             if (shootMode) {
-                if (uiBits & 0x100u) uiBits |= omk::kUiConfirm;   // slot 8
-                uiBits &= ~0x10u;                                 // slot 4: Tir
+                // ORDER MATTERS, and the first version of this got it wrong:
+                // it OR-ed the confirm in and then AND-ed the same bit back
+                // out on the next line, so `0100` came through as `0100` and
+                // NEITHER the click nor ENTER did anything. Read the action
+                // first, clear the trigger, then set the confirm.
+                const bool action = (uiBits & 0x100u) != 0;   // slot 8
+                uiBits &= ~0x10u;                             // slot 4: Tir
+                if (action) uiBits |= omk::kUiConfirm;
             }
             if (screenOpenBits & uiBits) {
                 screenOpenBits &= uiBits;    // still down: keep swallowing
