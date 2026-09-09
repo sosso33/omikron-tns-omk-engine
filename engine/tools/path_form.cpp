@@ -91,6 +91,27 @@ int main(int argc, char** argv) {
                             static_cast<float>(c[2])};
         for (int f = 0; f < 4; ++f) s.frame();
         s.setPlayerPosition(p, 181.0f);
+        // ...AND THE BEAT IS ASKED FOR DIRECTLY, which is a harness decision
+        // and is labelled as one. `Gunbl` is moved by `A_2_TelisKiss` (object
+        // 0x0103), and the zone's enter script reaches it through a chain -
+        // `scx.play.player.wait 0x00ff`, then 0x0101, then this - gated on
+        // `VARIABLES[649]`. Standing the player in zone 4116 does arm the
+        // zone and does run that script, but with `IAM\START`'s DB the chain
+        // starts its objects from the chunk's own `+4` startup script instead
+        // and the one that carries the waver never reaches its move step, so
+        // the ABSOLUTE arm went unmeasured and `Gunbl` fell out of this
+        // probe's output entirely. What a real game supplies and this
+        // harness cannot is the SAVE's player record (`omk-play` needs
+        // `--save` for the same beat), so the call the zone script would make
+        // is issued here instead - `scx.play.actor.wait 0, obj 0x0103`, op 60
+        // with the actor first. `Program::tick` and `NodeMotion::placeOn` are
+        // what this checks, and they are exercised either way.
+        {
+            omk::Call kiss;
+            kiss.op = 60;
+            kiss.fields = {0, 0x0103, 0};
+            s.sceneMutable().handle({kiss});
+        }
         for (int f = 0; f < 500; ++f) {
             s.frame();
             for (const omk::SceneRunner* sr : {&s.scene(), &s.sceneOut()}) {
