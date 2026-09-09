@@ -1303,6 +1303,68 @@ and one mutation the corpus cannot separate: 0 for "nothing held" passes,
 because `H1AVNT`'s stop edges open on it as on the idle word. Six others
 bite.
 
+**`verify.py: engine: player vertical`, `engine: player jump`,
+`engine: player landing`** - the player's VERTICAL, the three of
+`todo/player-vertical.md`. A reader, 2026-09-08: *"walking or running seems to
+rise its y position and stopping ... reset the y position to a normal one"* and
+*"jump is broken (animation play, but y position is too low so the jump become
+useless)"*.
+
+**The walk float was not the clips.** `H_WALK` frame 0 lifts HO1_FN's lowest
+corner 2.06 above the standing pose while the same frame's pelvis track drops
+2.09, so the authored pair CANCELS to 0.03 - the planted foot stays planted,
+which is the "authored motion netting out" `Walk_GroundResponse` relies on. It
+was a mismatch of ORIGINS in this port: `playerFeet` is a POSE's lowest corner,
+latched from `H_STAND` whose pelvis trans is +0.68 and not zero, while the drop
+came from an accumulator re-based to the entered clip's first frame - +2.09
+walking, +3.68 running. Two origins, so the body sat a CONSTANT offset off the
+floor for as long as the clip ran and snapped back when `H_STAND` released the
+sum. Drawn foot above the floor over idle -> walk -> idle: walk mean **+0.94**
+before, **-0.02** after, the idle +0.02 throughout.
+
+**The jump had no impulse at all.** The `.CTL` machine already ran the whole
+sequence and the walker already carried `vy_`, `airborne_`, `kGravity` and
+`kTerminal` for falling; nothing ever pushed into them. `MDJUMP0A`
+(0x0046BB50, no `proc` label, read from the image) computes the launch:
+`N = u32(entry, 12)`, then `SetITPNbFrames(entry, N/2)` - the binary's own
+error string, so N/2 IS a frame count - then
+`Matrix3x3_RotateVector(0, 0, -98.4252, actor+288)`, 2.5 m along -Z which is
+forward, stored as `X/N`, `-(g*(N/2)/30)` and `Z/N`. `MDJUMP01`'s six
+instructions copy those into `+216`, `+220` **times 30** and `+224`; the 30 and
+the 1/30 cancel, so the launch is exactly `-g * N/2`, the ballistic speed for N
+frames of hang. Only X and Z come from the rotated vector, so the 2.5 m is
+REACH and not height. Measured, matching the closed form to three figures: 14
+frames of hang, apex **9.00 units = 22.9 cm** (`0.7*kGravity`), reach 93.6 of
+the authored 98.43, arc symmetric to 0.01 - a flat running LEAP.
+
+**Most of the third step is NEGATIVE.** The take-off latch is nearly dead: of
+`dword_53AE40/44/48` only the Y is ever read back. Its one reader, `MDJUMP02`,
+integrates a descent to that Y and then counts nothing and returns nothing -
+its only surviving effect is re-setting `SetITPNbFrames`, so it is ported as a
+no-op. The steer suppression is already structural here. What `dword_6A52CC`
+really gates is `Walk_GroundResponse`'s snap-to-ground branch: **the jump works
+because the flag turns the ground probe's absorption OFF**, which is what the
+walk-float reading had described without knowing what disabled it. What was
+missing is `MDJUMP03`'s landing band - 5.00 m -> 4, 3.00 -> 3, 1.50 -> 1,
+otherwise 2 and return; then for 4/3/1 only, bank group 2 and **ACTOR_STATE
+18**. The order is 2, 1, 3, 4 with distance, so `+1304` is a CODE and not a
+severity rank, and these are NOT the walker's four bands (`land()` splits
+`fall_` at 20 cm / 1.50 / 3.00 m, the ordinary fall). Nothing had ever consumed
+`Walker::lastLandingTier()`.
+
+**Tier 5** for all three - no capture reaches a special-move handler. Three
+things are declared rather than claimed. **N is `entry+12`** and `ctl.h` reads
+that field's low half as a ROLE; it is 14 on exactly the five jump entries of
+`H1AVNT` and 0 on every other state that owns a clip, `SetITPNbFrames` takes
+its half, and the competing reading was tested and fails - those five clips run
+8, 8, 10, 10 and 19 frames and none is 14. **`actor+276` is still untraced**,
+so the landing bands this port's own descent where the engine bands the
+clearance `actor[264] - actor[276]`; for a jump the two coincide whenever he
+lands at or below the height he left. And **the reaction arm is unrun**: the
+band table is exercised at all four of its edges, but `enterGroupById(2)` and
+`ACTOR_STATE 18` need a real 1.50 m drop and every fixture stands on flat
+ground. `todo/play-test.md` §8 is what a person would settle in two minutes.
+
 **`verify.py: engine: player program`** - the same body, when a scene program
 owns it. Adventure mode is the viewer's construct, not the engine's: op 46
 (`scx.play.player.wait`) ends
