@@ -828,10 +828,39 @@ once: `0x534F48 − 0x531348 = 15360` is **256 × 60** exactly, where the 52
 first recorded gives 295.38. A stride that does not divide the pool is not a
 stride.
 
-**Not modelled**: the node clone, the direction `sub_44D7F0` sets (unread),
-and the packing of property 35's slot-and-count word. And **nothing calls
-this yet** — the pool exists and is asserted; connecting it to the trigger
-and to the brain's outcome 1 is the next step.
+**The aim is read too** (`sub_44D7F0`), and with it the 60 bytes account for
+**exactly**: fifteen fields, no gap and no overlap. The velocity is at
+`+16/+20/+24` — the slot's direction rotated into world and scaled by the
+speed — with three 1.0 scales after it. Its refusals are object-graph ones:
+no node, or `o3de_UnlinkObject` / `o3de_LinkObjectToParent` failing.
+
+Where the direction comes from is worth a line: `actor + 12·slot + 100`, a
+per-slot `float[3]`. Four slots of twelve bytes fill `+100..+148`, and `+148`
+is where the four fire timers begin — the two arrays butt exactly, which is
+what makes reading both per-slot safe.
+
+> **AND THE TRIGGER DOES NOT REACH THIS DIRECTLY — the shortcut is refused.**
+> Wiring the `Tir` bit straight to the pool was the obvious next move and it
+> would have been wrong. The engine's chain is:
+>
+> 1. the input word drives the `.CTL` channel into a firing state;
+> 2. something at `loc_45C4DD` sets the latch `dword_53AE3C` (the one write
+>    that is not a clear, and it is in a function with no `proc` label, so it
+>    is in the listing and not in `readable/src`);
+> 3. `sub_45C680`'s ACTOR_STATE cases 13, 14 and 16 see the latch, set the
+>    REQUEST `dword_4E9744`, and clear it;
+> 4. the frame loop calls `Actor_TickProjectiles(player)` **once** and clears
+>    the request.
+>
+> So the player's shot is a one-shot request raised by the STATE MACHINE, not
+> a level read off the trigger. A port that fired on the bit would look right
+> and would have no rate, no state gate and no channel behind it — the
+> approximation `no-approximation-read-original` is about. The pool is ported
+> and asserted; connecting it waits on the `.CTL` firing states.
+
+**Not modelled**: the node clone, the matrix the rotation uses (the caller
+hands in a world direction), and the packing of property 35's slot-and-count
+word.
 ## 5b. The two weapon floats — step 5's first reading, 2026-09-09
 
 `tables/shoot_weapons.json`'s lifter says of the two floats: *"they are a range

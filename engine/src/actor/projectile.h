@@ -12,15 +12,35 @@
 // bytes** exactly, where the 52 first recorded gives 295.38. A stride that
 // does not divide the pool is not a stride.
 //
+// THE 60 BYTES ACCOUNT FOR EXACTLY, once `sub_44D7F0` (the aim) is read
+// beside the allocator - which is the walk-lands-on-the-size test the ground
+// rules ask for, applied to a struct rather than a file:
+//
 //     +0   the NODE, a `sub_437850` clone - and NON-ZERO IS WHAT OCCUPIED
 //          MEANS: the allocator's free scan tests this and nothing else
+//     +4   zeroed by the aim
 //     +8   the speed, `property34.hi * 3.9`
+//     +12  zeroed by the aim
+//     +16  the VELOCITY - the direction rotated into world and scaled by the
+//     +20  speed. `Matrix3x3_RotateVector(dir, node+56, &e[4], &e[5], &e[6])`
+//     +24  then `e[4..6] *= speed`
+//     +28  a scale, set to 1.0
+//     +32  1.0
+//     +36  1.0
+//     +40  `sub_44F180(sprite)`
 //     +44  the firing actor
-//     +48  a value derived from the weapon's own node name (`sub_44EEB0`)
+//     +48  the sprite handle, from the weapon's own node name (`sub_44EEB0`)
+//     +52  `sub_44F1A0(sprite)`
 //     +56  `property34.lo`
+//                                                              = 60 exactly
 //
-// The node is placed at the WEAPON's `+44/+48/+52` - the muzzle - and
-// `sub_44D7F0` then sets its direction and MAY REFUSE, which drops the shot.
+// The node is placed at the WEAPON's `+44/+48/+52` - the muzzle - and the
+// DIRECTION comes from `actor + 12*slot + 100`, a per-slot float[3]. Note
+// where that lands: four slots of twelve bytes fill `+100..+148`, and `+148`
+// is where the four per-slot fire timers begin. The two arrays butt exactly.
+//
+// `sub_44D7F0` MAY REFUSE, and its refusals are object-graph ones: no node,
+// or `o3de_UnlinkObject` / `o3de_LinkObjectToParent` failing.
 //
 // A SHOT WITH THE POOL FULL IS SIMPLY NOT TAKEN: the scan returns -1 and the
 // function returns without firing, without spending the round's timer.
@@ -39,7 +59,10 @@ inline constexpr int kWeaponSlots      = 4;     // per actor
 struct Projectile {
     int   node   = 0;        // +0   0 = free. The allocator tests ONLY this
     float speed  = 0.0f;     // +8   property34.hi * 3.9
+    float vel[3] = {0, 0, 0};// +16  the direction, rotated and scaled by speed
+    float scale[3] = {1, 1, 1};   // +28 set to 1.0 by the aim
     int   owner  = -1;       // +44  the firing actor
+    int   sprite = 0;        // +48  from the weapon's node name
     int   kind   = 0;        // +56  property34.lo
     float pos[3] = {0, 0, 0};// where the node was placed: the weapon's muzzle
 };
@@ -50,6 +73,7 @@ struct WeaponSlot {
     float timer   = 0.0f;    // `actor+148 + 4*slot`, in frames
     int   ammo    = 0;       // property 35 for this slot
     float muzzle[3] = {0, 0, 0};   // the weapon object's +44/+48/+52
+    float dir[3]   = {0, 0, 1};    // `actor + 12*slot + 100`, already world
 };
 
 // What one shot needs that this port does not compute. `speedHi` and `kindLo`

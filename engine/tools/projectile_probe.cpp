@@ -21,6 +21,7 @@ int main() {
     std::array<omk::WeaponSlot, omk::kWeaponSlots> slots{};
     slots[0].present = true; slots[0].ammo = 3; slots[0].timer = 0.0f;
     slots[0].muzzle[0] = 10; slots[0].muzzle[1] = 20; slots[0].muzzle[2] = 30;
+    slots[0].dir[0] = 0; slots[0].dir[1] = 0; slots[0].dir[2] = -1;   // -Z
     omk::FireIn in; in.speedHi = 20; in.kindLo = 7; in.reload = 5.0f;
     int shots = 0;
     for (int f = 0; f < 30; ++f) shots += pool.tick(1, slots, in, 1.0f);
@@ -29,6 +30,20 @@ int main() {
                 pool.entries()[0].speed, pool.entries()[0].kind,
                 pool.entries()[0].pos[0], pool.entries()[0].pos[1],
                 pool.entries()[0].pos[2]);
+    std::printf("velocity: %.1f %.1f %.1f, scale %.1f\n",
+                pool.entries()[0].vel[0], pool.entries()[0].vel[1],
+                pool.entries()[0].vel[2], pool.entries()[0].scale[0]);
+    // THE 60 BYTES ACCOUNT FOR EXACTLY - the walk-lands-on-the-size test
+    // applied to a struct. Every offset the allocator or the aim writes,
+    // in order, with no gap and no overlap.
+    {
+        const int off[] = {0, 4, 8, 12, 16, 20, 24, 28, 32, 36, 40, 44, 48, 52, 56};
+        int claimed = 0, gaps = 0, prev = -4;
+        for (int o : off) { claimed += 4; if (o != prev + 4) ++gaps; prev = o; }
+        std::printf("entry: %d fields, %d bytes claimed of %d, %d gaps\n",
+                    int(sizeof(off)/sizeof(off[0])), claimed,
+                    omk::kProjectileStride, gaps);
+    }
 
     // A GAP IN THE SLOTS HIDES EVERYTHING BEHIND IT - the engine's walk
     // `if (!weapon) return` stops rather than skipping.

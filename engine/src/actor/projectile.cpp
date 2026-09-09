@@ -47,7 +47,15 @@ int ProjectilePool::tick(int actor, std::array<WeaponSlot, kWeaponSlots>& slots,
         // the engine `return 0`s with the entry already allocated and the
         // node already cloned. Reproduced: the round and the timer are spent
         // either way, and the walk stops.
+        // `sub_44D7F0`: zero two words, rotate the slot's direction into
+        // world and scale it by the speed, set the three scales to 1. The
+        // rotation itself needs the node's matrix, which this port does not
+        // hold, so the caller supplies a direction already in world.
         if (!in.aimAccepts) return fired;
+        p.vel[0] = w.dir[0] * p.speed;
+        p.vel[1] = w.dir[1] * p.speed;
+        p.vel[2] = w.dir[2] * p.speed;
+        p.scale[0] = p.scale[1] = p.scale[2] = 1.0f;
         ++fired;
     }
     return fired;

@@ -25854,8 +25854,22 @@ def c_projectile_pool():
       does not happen, the round is gone and the pool entry is occupied -
       which is the sort of asymmetry only transcription preserves.
 
-    NOT modelled: the node clone itself, the direction `sub_44D7F0` sets (it
-    is unread), and the packing of property 35's slot-and-count word.
+    **And the 60 bytes account for EXACTLY**, once `sub_44D7F0` - the aim - is
+    read beside the allocator. That is the walk-lands-on-the-size test the
+    ground rules ask for, applied to a struct instead of a file: fifteen
+    fields at `+0 +4 +8 +12`, the VELOCITY at `+16/+20/+24` (the slot's
+    direction rotated into world and scaled by the speed), three 1.0 scales at
+    `+28/+32/+36`, `+40`, the owner at `+44`, the sprite at `+48`, `+52`, and
+    `property34.lo` at `+56`. **60 claimed of 60, no gap and no overlap.**
+
+    Where the direction comes from is worth its line: `actor + 12*slot + 100`,
+    a per-slot `float[3]`. Four slots of twelve bytes fill `+100..+148`, and
+    `+148` is where the four per-slot fire timers begin - the two arrays butt
+    exactly, which is what makes the per-slot reading of both of them safe.
+
+    NOT modelled: the node clone itself, the matrix the rotation uses (so the
+    caller hands in a direction already in world), and the packing of property
+    35's slot-and-count word.
     """
     import subprocess, re
     eng = os.path.join(ROOT, "engine")
@@ -25873,16 +25887,22 @@ def c_projectile_pool():
     fl = re.search(r"^full: (\d+) taken, (\d+) live, (\d+) ammo left, free slot (-?\d+)$",
                    r.stdout, re.M)
     rf = re.search(r"^refused: (\d+) fired, (\d+) ammo left, (\d+) live$", r.stdout, re.M)
-    if not (g and m and gp and fl and rf):
+    vl = re.search(r"^velocity: (-?[\d.]+) (-?[\d.]+) (-?[\d.]+), scale ([\d.]+)$",
+                   r.stdout, re.M)
+    ent = re.search(r"^entry: (\d+) fields, (\d+) bytes claimed of (\d+), (\d+) gaps$",
+                    r.stdout, re.M)
+    if not (g and m and gp and fl and rf and vl and ent):
         return ("unparsed",), ("parsed",), "the probe's own lines"
     got = (tuple(int(x) for x in g.groups()),
            (int(m.group(1)), int(m.group(2)), int(m.group(3)), m.group(4),
             int(m.group(5)), int(m.group(6)), int(m.group(7)), int(m.group(8))),
            int(gp.group(1)), tuple(int(x) for x in fl.groups()),
-           tuple(int(x) for x in rf.groups()))
+           tuple(int(x) for x in rf.groups()),
+           tuple(vl.groups()), tuple(int(x) for x in ent.groups()))
     want = ((256, 60, 15360, 15360),
             (3, 0, 3, "78.0", 7, 10, 20, 30),
-            0, (256, 256, 244, -1), (0, 3, 1))
+            0, (256, 256, 244, -1), (0, 3, 1),
+            ("0.0", "0.0", "-78.0", "1.0"), (15, 60, 60, 0))
     return got, want, ("the pool's entries, stride, product and the ADDRESS "
                        "SPAN it has to equal - 60 bytes divides 15360 and 52 "
                        "does not; then a magazine emptying with the speed as "
@@ -25890,7 +25910,12 @@ def c_projectile_pool():
                        "muzzle; a weapon BEHIND an empty slot firing nothing, "
                        "because the walk returns rather than skipping; a full "
                        "pool taking no shot AND spending no round; and a "
-                       "refused aim spending the round and the entry anyway")
+                       "refused aim spending the round and the entry "
+                       "anyway; then the aim's velocity - the direction times "
+                       "the speed - and the ENTRY'S OWN BYTE ACCOUNTING, "
+                       "fifteen fields claiming 60 of 60 with no gap, which "
+                       "is the walk-lands-on-the-size test applied to a "
+                       "struct")
 
 
 def c_shoot_input():
