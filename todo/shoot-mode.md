@@ -146,6 +146,52 @@ the four Jaunpur Tetra towers, the CS Archives 03/04/05, Gandhar's cave, the
 Docks, the Supermarket, Mayerem Hamestagan, Ix Astaroth, Bar 56, the Toits
 antenna. `verify.py: shoot mode` already pins the opcode side.
 
+## 3b. The mode, ported — step 3, 2026-09-09
+
+`engine/src/actor/shootmode.{h,cpp}`, wired into the Session at ops 80 and 81
+(`area.cpp`), with `engine/tools/shootmode_probe.cpp` driving it through a
+SHIPPED script rather than a harness call.
+
+**`shoot.begin`'s operand is a WEAPON OBJECT**, which nothing here knew: the
+opcode table gives it no tag and the docs had no meaning for it. The handler
+(0x00403E80) hands it to `Weapon_SlotForObject` (0x0040EA50), which scans the
+ten int16s at `IAM\GLOBAL +42` — slots 5..14 — and the answer goes into
+`dword_4C0134` **only when that is still −1**, so a gun already in hand beats
+the script's choice. An object naming no weapon falls to slot **11**.
+
+The shipped table, and it is only seven deep:
+
+| slot | object | |
+|---|---|---|
+| 5..9 | 189, 190, 192, 17, 191 | Double-Waver, Octogun, Decagun, Megazooka, Hypra |
+| 10 | 40 | Bâton de pouvoir |
+| 11 | 42 | **Gun Waver** — the default |
+| 12..14 | −1 | unused |
+
+and the corpus lands on it exactly: **27 of the 30** `shoot.begin` sites pass
+−1, which `Weapon_SlotForObject` refuses on its first line, so they open with
+the Gun Waver; the other three pass object 40, slot 10. `shoot.end`'s operand
+is a CLEAR flag — 43 zeros, 30 ones and one −1, so 31 of the 74 drop the
+weapon and the rest leave it in hand for the next fight.
+
+**Ported**: the entry's eleven decisions as constants and state (records
+100×192, `ACTOR_STATE` 3 in and 1 out, `.CTL` group 200, camera mode 4, input
+scheme 2), the HUD screen from the player's character type (33 for a
+Mecagarde, else 34), and the library swap — `shoot2.scx` on the way in,
+`aventure.scx` on the way out. Ops 82/84 now feed the same object instead of
+the Session's own map.
+
+Driven through AREA 59's zone record 24 — the Shooting gallery's first
+épreuve, whose enter script at 0x34ea ends `shoot.begin -1` — the port reports
+`active 1, weapon 11, object 42, hud 34, library shoot2.scx`, and both exit
+arms behave: `end(0)` keeps slot 11, `end(1)` puts it back to −1.
+`verify.py: engine: shoot mode`, shown to fail by dropping the slot-11
+default.
+
+**Not done, and moved into step 4**: the frontend half. Nothing yet installs
+camera mode 4, group 200 or scheme 2 in `omk-play`, so the mode is a decision
+the Session makes and nobody draws.
+
 ## 4. The steps
 
 Each ends in a commit and a report.
@@ -154,8 +200,8 @@ Each ends in a commit and a report.
 |---|---|---|
 | 1 | **the reading above** — what the mode does, and the grid finding | **done 2026-09-09**; `verify.py: shoot arenas` |
 | 2 | **the grid** — the cell byte, the floor box, the door table, a reader and a probe that DRAWS a floor | **done 2026-09-09**, §2b; `verify.py: map2d grid` |
-| 3 | **the mode**: enter and leave ported into the Session — the records, `ACTOR_STATE` 3, group 200, camera mode 4, scheme 2, `shoot2.scx`, the 33/34 HUD choice — with ops 80/81 and suspend/resume wired, and an `omk-play --shoot` harness that stands in an arena in shoot mode | |
-| 4 | **the player's half**: `Shoot_TickPlayer`'s live arm on the grid, `Shoot_StartTargetScripts`, `Shoot_InitWeapon` and event 48, and what a shot actually IS | |
+| 3 | **the mode** — ops 80/81 read and ported, the weapon slot, the HUD choice, the library swap, both exit arms | **done 2026-09-09**, §3b; `verify.py: engine: shoot mode`. The frontend half (camera mode 4, group 200, scheme 2 installed in `omk-play`, and a `--shoot` harness) is NOT done and moves to step 4 |
+| 4 | **the player's half**: `Shoot_TickPlayer`'s live arm on the grid, `Shoot_StartTargetScripts`, `Shoot_InitWeapon` and event 48, what a shot actually IS — **and the frontend half step 3 left**: camera mode 4, group 200 and scheme 2 installed in `omk-play`, with a `--shoot` harness that stands in an arena | next |
 | 5 | **the brains, decision revisited** — with the grid in hand, how much of the generic shooter's 16 states is now fact rather than geometry. Gandhar is already exact; Astaroth and the generic are state graphs. **Only what the grid settles gets wired**; the rest stays labelled | |
 | 6 | docs, the checks, and a play test | |
 

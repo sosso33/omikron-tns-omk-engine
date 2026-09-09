@@ -25723,6 +25723,91 @@ def c_map2d():
 
 
 
+def c_engine_shoot_mode():
+    r"""`engine/`: shoot mode ENTERED BY A SHIPPED SCRIPT, and its weapon.
+
+    `shoot.begin`'s operand was recorded with no meaning (the opcode table
+    gives it no tag). It is a **weapon OBJECT**: the handler (0x00403E80)
+    passes it to `Weapon_SlotForObject` (0x0040EA50), which scans the ten
+    int16s at `IAM\GLOBAL +42` for slots 5..14, and stores the answer in
+    `dword_4C0134` **only when that is still -1** - so a gun already in hand
+    beats the script's choice - falling to slot **11** for an object that
+    names no weapon. `shoot.end`'s operand is a CLEAR flag: nonzero puts the
+    slot back to -1.
+
+    The shipped corpus decides it: **27 of the 30** `shoot.begin` sites pass
+    -1, which `Weapon_SlotForObject` refuses on its first line, so they all
+    open with slot 11 = object 42, the `Gun Waver`; the other three pass
+    object 40, the `Baton de pouvoir`, which is slot 10. The 74 `shoot.end`
+    sites are 43 zeros, 30 ones and one -1, so 31 of them drop the weapon.
+
+    The port is then driven THROUGH a shipped script - AREA 59's zone record
+    24, the Shooting gallery's first epreuve, whose enter script at 0x34ea
+    ends `shoot.begin -1` - and asked what the mode decided: the slot, the
+    object, the HUD screen (event 44 property 7 on the player: 33 for a
+    Mecagarde, else 34), the library `Game_Start` swaps to, and the entry's
+    own constants. Both exit arms are exercised, because keeping the gun and
+    dropping it are the two halves of one operand.
+    """
+    import subprocess, re, struct as st
+    import dialog_triggers as T2, dialog_disasm as D
+    # ---- the corpus: what the shipped operands are
+    begins, ends = {}, {}
+    def scan(arch, k, b, slots):
+        for rec, f, p in slots:
+            ops, status = D.disasm(b, p, len(b))
+            if status != "ok": continue
+            for pc, op, raw in ops:
+                if op == 80: begins[st.unpack_from("<h", raw, 0)[0]] = \
+                        begins.get(st.unpack_from("<h", raw, 0)[0], 0) + 1
+                elif op == 81: ends[st.unpack_from("<h", raw, 0)[0]] = \
+                        ends.get(st.unpack_from("<h", raw, 0)[0], 0) + 1
+    for name in ("AREA", "SCENE"):
+        for k, b in sorted(T2.archive(omkpaths.data("IAM", name)).items()):
+            r = T2.LAYOUT[name](b)
+            if r: scan(name, k, b, list(T2._scripts_from_records(b, r[0], r[1]))
+                       + T2._second_table(name, b))
+    b, slots = T2.global_file(omkpaths.data("IAM", "GLOBAL"))
+    scan("GLOBAL", 0, b, slots)
+    g = open(omkpaths.data("IAM", "GLOBAL"), "rb").read()
+    table = st.unpack_from("<10h", g, 42)
+
+    # ---- the port, driven by AREA 59's own script
+    fr = omkpaths.data_root()
+    eng = os.path.join(ROOT, "engine")
+    bld = subprocess.run(["make", "-s", "build/shootmode_probe"], cwd=eng,
+                         capture_output=True, text=True)
+    binp = os.path.join(eng, "build", "shootmode_probe")
+    if bld.returncode != 0 or not os.path.exists(binp):
+        return ("build failed",), ("built",), "engine/ must build"
+    r = subprocess.run([binp, fr, os.path.join(ROOT, "tables")],
+                       capture_output=True, text=True)
+    after = re.search(r"^after\s+active (\d+)\s+weapon (-?\d+)\s+object (-?\d+)"
+                      r"\s+hud (-?\d+)\s+library (\S+)", r.stdout, re.M)
+    consts = re.search(r"^constants\s+state (\d+)/(\d+)\s+group (\d+)\s+"
+                       r"camera (\d+)\s+scheme (\d+)\s+records (\d+)x(\d+)",
+                       r.stdout, re.M)
+    keep = re.search(r"^end\(0\)\s+active (\d+)\s+weapon (-?\d+)", r.stdout, re.M)
+    drop = re.search(r"^end\(1\)\s+active (\d+)\s+weapon (-?\d+)", r.stdout, re.M)
+    if not (after and consts and keep and drop):
+        return ("unparsed",), ("parsed",), "the probe's own lines"
+    return (sorted(begins.items()), sorted(ends.items()), table,
+            (int(after.group(1)), int(after.group(2)), int(after.group(3)),
+             int(after.group(4)), after.group(5)),
+            tuple(int(x) for x in consts.groups()),
+            (int(keep.group(1)), int(keep.group(2))),
+            (int(drop.group(1)), int(drop.group(2)))), \
+           ([(-1, 27), (40, 3)], [(-1, 1), (0, 43), (1, 30)],
+            (189, 190, 192, 17, 191, 40, 42, -1, -1, -1),
+            (1, 11, 42, 34, "shoot2.scx"),
+            (3, 1, 200, 4, 2, 100, 192),
+            (0, 11), (0, -1)), \
+           ("the shipped shoot.begin operands and shoot.end flags; the weapon "
+            "table at GLOBAL +42; what the port decided entering through AREA "
+            "59's own script (active, slot, object, HUD screen, library); the "
+            "entry's constants; and the two exit arms - keep the gun, drop it")
+
+
 def c_map2d_grid():
     r"""`engine/`: the navigation grid, read by the port and by this file
     independently, and the AI's refusal set MEASURED.
@@ -28459,7 +28544,7 @@ def c_licence_headers():
                    if TAG in open(p, encoding="utf-8",
                                   errors="replace").read(600)]
     return (authored, sorted(missing), len(vendored), mislabelled), \
-           (399, [], 1, []), \
+           (402, [], 1, []), \
            "authored source files under tools/, engine/src, engine/tools, " \
            "engine/backends and scripts/; those MISSING the SPDX tag; " \
            "vendored files in engine/third_party; and vendored files wrongly " \
@@ -30481,6 +30566,7 @@ CHECKS = [
     ("map2d",              c_map2d,             "FILE_FORMATS 5b5"),
     ("shoot arenas",       c_shoot_arenas,      "todo/shoot-mode"),
     ("map2d grid",         c_map2d_grid,        "todo/shoot-mode; formats/map2d.h"),
+    ("engine: shoot mode", c_engine_shoot_mode,  "todo/shoot-mode; actor/shootmode.h"),
     ("wre wireframes",     c_wre_files,         "FILE_FORMATS 5b5"),
     ("morph face models",  c_morph_face_models, "FILE_FORMATS 5"),
     ("shoot mode",         c_shoot_mode,        "SCRIPT_VM"),

@@ -41,6 +41,7 @@
 #include "script/gamestate.h"
 #include "script/scenerunner.h"
 #include "actor/sliders.h"
+#include "actor/shootmode.h"
 #include "actor/spatial.h"
 #include "ui/widgets.h"
 #include "script/hooks.h"
@@ -308,11 +309,15 @@ public:
     // the Session only keeps who is looking.
     bool looksAtPlayer(int actor) const { return lookAtPlayer_.count(actor) != 0; }
     // -> the last `shoot.actor.action` asked of him, or -1 if he is not in
-    // shoot mode at all.
-    int shootAction(int actor) const {
-        const auto it = shootActors_.find(actor);
-        return it == shootActors_.end() ? -1 : it->second;
-    }
+    // shoot mode at all. One store, `ShootMode`'s.
+    int shootAction(int actor) const { return shoot_.actorAction(actor); }
+    // SHOOT MODE itself - ops 80/81's decisions (`actor/shootmode.h`): the
+    // weapon slot, the HUD screen, which library is resident, and the
+    // constants the entry installs. The frontend reads it to install camera
+    // mode 4, `.CTL` group 200 and input scheme 2; the AI's brains are a
+    // different question (`todo/standing-unknowns.md` 2).
+    const ShootMode& shootMode() const { return shoot_; }
+    ShootMode& shootModeMutable() { return shoot_; }
     // A model's collision spheres (its first skeleton's mesh volumes) and
     // its reach (`+88`), read once from MESHES\PERSOS through the traffic
     // root; empty when the model or the root is missing.
@@ -1298,10 +1303,9 @@ private:
     std::map<std::string, float> modelReach_;
     std::vector<int> pedSlots_;              // walker -> its index slot, -1 none
     std::set<int> lookAtPlayer_;             // actors whose slot 100 is the player
-    // `shoot.actor.enter` / `.action`: actor -> the last action asked of him.
-    // These characters carry no `.CTL` in any of the three slots, so nothing
-    // else can pose them; see the handler for what is and is not modelled.
-    std::map<int, int> shootActors_;
+    // Shoot mode: the opcodes' decisions and the actor->action map.
+    ShootMode shoot_;
+    bool shootTableRead_ = false;    // GLOBAL +42, read on the first `shoot.begin`
     int   bumpCooldown_ = 0;                 // dword_538318, in frames
     void  refreshCrowdIndex();
     std::string dataRoot_;                   // the gamedata tree, from loadTraffic

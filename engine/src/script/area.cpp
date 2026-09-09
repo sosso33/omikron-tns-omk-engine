@@ -2415,8 +2415,34 @@ void Session::onCall(int i, const Call& call) {
         // characters. LABELLED as that, not as the shoot AI running.
         if (call.fields.empty()) break;
         const int who = call.fields[0];
-        if (call.op == 82) shootActors_[who] = 1;      // the enter's own default
-        else if (call.fields.size() >= 2) shootActors_[who] = call.fields[1];
+        if (call.op == 82) shoot_.actorEnter(who);     // the enter's own default
+        else if (call.fields.size() >= 2) shoot_.actorAction(who, call.fields[1]);
+        break;
+    }
+    case 80: case 81: {
+        // `shoot.begin` (0x00403E80) and `shoot.end` (0x00403F10). The first
+        // takes a WEAPON OBJECT and stores the slot `Weapon_SlotForObject`
+        // gives it in `dword_4C0134` - only if that is still -1, so a gun in
+        // hand beats the script - falling to slot 11, the `Gun Waver`, for an
+        // object that names none; then `Shoot_Enter`. The second passes its
+        // operand to `Shoot_Leave` and, when it is nonzero, puts the slot
+        // back to -1. 30 begins and 74 ends ship, over 21 chunks.
+        //
+        // The weapon table is `IAM\GLOBAL +42`, ten int16 object ids for
+        // slots 5..14; it is read once, here, because nothing else in the
+        // Session needs it.
+        if (!shootTableRead_) {
+            shootTableRead_ = true;
+            const auto g = readFile(iam_ + "/GLOBAL");
+            if (g.size() >= 42u + 2u * omk::kWeaponSlotCount) {
+                std::int16_t slots[omk::kWeaponSlotCount];
+                std::memcpy(slots, g.data() + 42, sizeof slots);
+                shoot_.setWeaponTable(slots, omk::kWeaponSlotCount);
+            }
+        }
+        const int operand = call.fields.empty() ? -1 : call.fields[0];
+        if (call.op == 80) shoot_.begin(operand);
+        else               shoot_.end(operand);
         break;
     }
     case 138: case 139: {
