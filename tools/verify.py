@@ -11887,6 +11887,80 @@ def c_engine_tunnel_doors():
          "door-carrying goto then resolves object 5 in it")
 
 
+def c_engine_path_turn():
+    r"""`engine/`: a moved object's path is TURNED INTO THE SET — params 12/13/14
+    of `Script_MoveObjectOnPath`, which the port dropped.
+
+    A reader, 2026-09-09: *some doors do not open correctly*, with Hall 27 on
+    screen. One lift is authored once and every hall installs it at its own
+    angle, so the handler carries three degrees and spends them **before**
+    either of its two placement arms:
+
+        v71,v69,v67 = Script_GetParamFloatC(a2, 12/13/14)
+        if (v71 || v69 || v67) {
+            if (v80) Path_Sample(path, duration, &pivot)   ; the end it starts from
+            else     Path_Sample(path, 0.0,      &pivot)
+            Matrix3x3_FromEulerAngles(v71 r, v69 r, v67 r, v96)
+            Matrix3x3_RotateVector(sample - pivot, v96, &sample)
+            sample += pivot
+        }
+
+    and the same for the arm's own reference sample, and again on the
+    finishing tick. The orientation half is the conjugation
+    `M(e) * sample3x3 * M(-e)`.
+
+    **854 of the corpus's 4841 calls carry an angle, across 40 files, and they
+    are the HALLS** — `Hall03` through `Hall65`, `Shall*b`, `ap02`, `shoot`,
+    `smarket1` — the lifts and their doors. 851 of the 854 turn about Y alone;
+    the other 3 have Y zero and a nonzero X or Z, and those two Euler orders
+    are NOT established here (`scenerunner.h` says so), so the port leaves them
+    and counts them (`Program::eulerXZ`) rather than guessing.
+
+    Hall 27's `levDOORopen` is `euler 0 230 0` and its two leaves stand in one
+    wall at x 4512, z −765 and −741. So the assertion is a SHAPE and not a
+    coordinate — a leaf may travel along its wall and must not leave it — and
+    it is measured on the DISPLACEMENT the arm contributes (`pos - from`),
+    which needs no set geometry and no anchor.
+
+    SHOWN TO FAIL: with the Y term disabled the same two leaves travel 17.9 in
+    x and 16.1 in z — the same 24 units, at 230 degrees to the wall, so each
+    leaf slides eighteen units out of it and into the room. That is the shot.
+    """
+    import subprocess
+    eng = os.path.join(ROOT, "engine")
+    fr = omkpaths.data_root()
+    if not os.path.isdir(fr):
+        return ("no data",), ("data",), "needs the shipped tree"
+    b = subprocess.run(["make", "-s", "build/path_turn"], cwd=eng,
+                       capture_output=True, text=True)
+    binp = os.path.join(eng, "build", "path_turn")
+    if b.returncode != 0 or not os.path.exists(binp):
+        return ("build failed",), ("built",), "engine/ must build"
+    r = subprocess.run([binp, fr, os.path.join(ROOT, "tables")],
+                       capture_output=True, text=True,
+                       env=dict(os.environ, SDL_VIDEODRIVER="dummy"))
+    corpus = re.search(r"corpus MoveObjectOnPath (\d+), turned (\d+) in (\d+) "
+                       r"files, X or Z (\d+)", r.stdout)
+    leaves = dict((m.group(1),
+                   (float(m.group(2)), float(m.group(3)), float(m.group(4))))
+                  for m in re.finditer(
+                      r"(HA27Door[LR])\s+samples\s+\d+\s+travel x\s+(\S+)"
+                      r"\s+y\s+(\S+)\s+z\s+(\S+)", r.stdout))
+    if not corpus or len(leaves) != 2:
+        return ("no output",), ("two leaves and a corpus line",), \
+               "the probe must report both"
+    inWall = all(t[0] <= 1.0 and t[1] <= 1.0 for t in leaves.values())
+    slides = all(23.0 <= t[2] <= 25.0 for t in leaves.values())
+    return (int(corpus.group(1)), int(corpus.group(2)), int(corpus.group(3)),
+            int(corpus.group(4)), len(leaves), inWall, slides), \
+           (4841, 854, 40, 3, 2, True, True), \
+           ("854 of the 4841 `Script_MoveObjectOnPath` calls turn their path "
+            "into the set, across 40 files - the halls - and only 3 of them "
+            "about X or Z; and Hall 27's two lift-door leaves then travel 24 "
+            "units ALONG their wall and at most 1 out of it, where dropping "
+            "the angle sends each one 18 units into the room")
+
+
 def c_engine_stop_sound():
     r"""`engine/`: `Script_StopSound` silences the sound `Script_PlaySound`
     started — the counterpart that was missing.
@@ -30029,6 +30103,7 @@ SLOW = [
     ("engine: special moves", c_engine_special_moves, "docs/ASSETS"),
     ("engine: crowd nan", c_engine_crowd_nan, "todo/omk-play"),
     ("engine: tunnel doors", c_engine_tunnel_doors, "todo/omk-play"),
+    ("engine: path turn",    c_engine_path_turn,    "todo/omk-play; FILE_FORMATS 5c"),
     ("engine: walker falls", c_engine_walker_falls, "todo/omk-play"),
     ("engine: props", c_engine_props, "todo/omk-play"),
     ("sprite ids scene-local", c_sprite_ids_are_scene_local, "docs/ASSETS"),

@@ -20,7 +20,7 @@ adds **one**. Counting commits ran this number to 13 when about nine tasks had
 been finished, which would have called for a half-hour sweep long before the
 rule intends one.
 
-**tasks since the last full sweep: 9** (the shadows' orphan fix, fitted, mapped, per-pixel lighting, the shimmer, supersampling, the dither, and the player's vertical - step 1 the walk float, step 2 the jump's impulse, step 3 its state - across two sessions), and the slider-door check's parse. **The counter had run to 19 and that was WRONG**: the reader ran a sweep more recently than this file recorded (their word, 2026-09-09). The lesson is this file's own - a counter only survives between sessions if everyone who runs a sweep writes it down, and a session that trusts a stale number spends half an hour proving nothing.
+**tasks since the last full sweep: 11** (the shadows' orphan fix, fitted, mapped, per-pixel lighting, the shimmer, supersampling, the dither, and the player's vertical - step 1 the walk float, step 2 the jump's impulse, step 3 its state - across two sessions), the slider-door check's parse, the door read as a cutscene (omk-play 89), and the turned lift paths (omk-play 90). **The counter had run to 19 and that was WRONG**: the reader ran a sweep more recently than this file recorded (their word, 2026-09-09). The lesson is this file's own - a counter only survives between sessions if everyone who runs a sweep writes it down, and a session that trusts a stale number spends half an hour proving nothing.
 
 > **`engine: UI` is RED and was already red at `a5b1807`, on a clean tree.**
 > Measured 2026-09-07: `disagree` is 9, not 0 - the shops, screens 21..28 and

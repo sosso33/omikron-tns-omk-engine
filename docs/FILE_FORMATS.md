@@ -2358,6 +2358,47 @@ wrong readings turned on, and — because the census alone cannot see a fault in
 the port — the position the port's own `NodeMotion::placeOn` gives `Gunbl`
 when the beat is actually run.
 
+#### …and the path is TURNED INTO THE SET first — parameters 12/13/14
+
+One lift is authored once and thirty-odd halls install it at their own angle,
+so before either arm above places anything the handler spends three more
+parameters:
+
+```c
+v71 = Script_GetParamFloatC(a2, 12);      /* degrees, X */
+v69 = Script_GetParamFloatC(a2, 13);      /*          Y */
+v67 = Script_GetParamFloatC(a2, 14);      /*          Z */
+if (v71 != 0.0 || v69 != 0.0 || v67 != 0.0) {
+    if (v80) Path_Sample(path, duration, &pivot);   /* running backwards */
+    else     Path_Sample(path, 0.0,      &pivot);
+    Matrix3x3_FromEulerAngles(v71 r, v69 r, v67 r, v96);
+    Matrix3x3_RotateVector(sample − pivot, v96, &sample);
+    sample += pivot;
+}
+```
+
+and does it again for the arm's own reference sample, and once more on the
+finishing tick. So a path is a **template**, turned about its own first key —
+its LAST key when parameter 4 runs the call backwards, which is what makes the
+opening and the closing retrace each other. The orientation half is the
+conjugation `M(e) · sample3x3 · M(−e)`, built from the Euler and from its
+negation rather than from an inverse.
+
+**854 of the 4841 calls carry an angle, across 40 files, and they are the
+HALLS** — `Hall03` … `Hall65`, `Shall07b` … `Shall18b`, plus `ACSvent`,
+`ap02`, `shoot`, `smarket1` and `ASMrk1ss`: the lifts and their doors.
+**851 of the 854 turn about Y alone**; the remaining 3 have Y zero and a
+nonzero X or Z. Hall 27's `levDOORopen` is `euler 0 230 0`, Hall 58's lifts
+140, Hall 64's 105, and the angles run in fives from −295 to +230.
+
+A replica that drops them slides every one of those objects along the
+**unturned** axis. Hall 27's two leaves stand in one wall at x 4512, z −765
+and −741, and each travels 24 units: turned, that is 24 along z and under 1
+out of the wall; unturned it is 17.9 in x and 16.1 in z, so each leaf leaves
+its wall by eighteen units and stands in the room. That was a reader's report
+of 2026-09-09 — *some doors do not open correctly* — with Hall 27 on screen.
+`verify.py: engine: path turn`.
+
 **Two sets hid the displacement arm from each other, which is why the first
 reading survived.** Among the paths that ask for it, some are authored on top
 of the mesh they move and some about another origin entirely:

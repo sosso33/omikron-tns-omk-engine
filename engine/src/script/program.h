@@ -342,6 +342,12 @@ public:
         }
     };
     const std::vector<NodeMotion>& motions() const { return motions_; }
+    // How many `Script_MoveObjectOnPath` calls this program has met that turn
+    // their path about X or Z. Those two Euler orders are not established here
+    // (`scenerunner.h`), so they are NOT applied - 3 calls in the whole corpus
+    // against 851 that turn about Y alone. Counted so the omission is visible
+    // rather than silent.
+    int eulerXZ() const { return eulerXZ_; }
 
     // THE SPRITE OPERATIONS this tick, in chain order - what the sprite
     // family (see the ids above) did to the SCENE's instances. The instance
@@ -423,7 +429,8 @@ private:
     std::map<int, float> busyUntil_;
     std::map<int, float> entryAt_;   // when the current run of k began
     std::set<int>        fired_;     // the sound functions' latch (+8 / +12)
-    std::vector<NodeMotion> motions_; // what moved this tick
+    std::vector<NodeMotion> motions_;   // what moved this tick
+    int eulerXZ_ = 0;                   // path turns this port leaves alone
     std::vector<SoundCue> sounds_;   // what this tick started
     std::vector<SpriteOp> spriteOps_; // what the sprite family wrote this tick
     std::vector<NodeScaleOp> scaleOps_; // what ScaleObjectX/Y/Z wrote this tick

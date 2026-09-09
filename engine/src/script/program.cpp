@@ -366,6 +366,77 @@ bool Program::tick(float dt) {
                             m.hasFrom = true;
                         }
                     }
+                    // ---- THE PATH IS TURNED INTO THE SET: params 12/13/14 --
+                    //
+                    // One authored lift, thirty-odd halls, each at its own
+                    // angle. The handler carries three degree parameters and
+                    // spends them BEFORE either arm above:
+                    //
+                    //     v71,v69,v67 = GetParamFloatC(a2, 12/13/14)
+                    //     if (v71 || v69 || v67) {
+                    //         if (v80) Path_Sample(path, duration, &pivot)
+                    //         else     Path_Sample(path, 0.0,      &pivot)
+                    //         Matrix3x3_FromEulerAngles(v71 r, v69 r, v67 r, v96)
+                    //         Matrix3x3_RotateVector(sample - pivot, v96, &sample)
+                    //         sample += pivot
+                    //     }
+                    //
+                    // and again for the arm's own reference sample. So the
+                    // path is a template, turned about its own first key (its
+                    // LAST key when the call runs backwards - the pivot has to
+                    // be the end the move starts from, or the two directions
+                    // do not retrace each other).
+                    //
+                    // The port dropped all three, so every one of these slid
+                    // its object along the UNTURNED axis: 854 of the corpus's
+                    // 4841 calls carry an angle, across 40 files, and they are
+                    // the HALLS - `Hall03` through `Hall65`, `Shall*b`, the
+                    // lifts and their doors. A reader, 2026-09-09: *some doors
+                    // do not open correctly*, with Hall 27 in the shot.
+                    //
+                    // **851 of the 854 turn about Y alone** (the other 3 have
+                    // Y zero and a nonzero X or Z). Y is the axis this port has
+                    // established - `Matrix3x3_FromEulerAngles(0, y, 0)` is
+                    // [[cy,0,sy],[0,1,0],[-sy,0,cy]] applied as a ROW vector
+                    // (`actor/player.cpp: rotateYaw`) - and the X/Z order is
+                    // not, `scenerunner.h` says so, so those three are left
+                    // alone rather than guessed at. They are counted, not
+                    // ignored: `eulerXZ` says how many were met.
+                    const float eul[3] = {
+                        f.params.size() > 12 ? asFloat(f.params[12]) : 0.0f,
+                        f.params.size() > 13 ? asFloat(f.params[13]) : 0.0f,
+                        f.params.size() > 14 ? asFloat(f.params[14]) : 0.0f};
+                    if (eul[0] != 0.0f || eul[2] != 0.0f) ++eulerXZ_;
+                    if (eul[1] != 0.0f) {
+                        // the pivot: the path's own sample at the end the move
+                        // begins from, with the last key as the fall-back the
+                        // handler's failed `Path_Sample` leaves behind
+                        float pivot[3], qp[4];
+                        const float t0 = back ? static_cast<float>(pa->duration) : 0.0f;
+                        if (!pathSampleQuat(*pa, t0, pivot, qp)) {
+                            const auto& kk = back ? pa->keys.back() : pa->keys.front();
+                            for (int c = 0; c < 3; ++c) pivot[c] = kk.pos[c];
+                        }
+                        const float th = eul[1] * 0.0174532925199433f;
+                        const float cs = std::cos(th), sn = std::sin(th);
+                        const auto turn = [&](float v[3]) {
+                            const float x = v[0] - pivot[0], z = v[2] - pivot[2];
+                            v[0] = pivot[0] + x * cs - z * sn;
+                            v[2] = pivot[2] + x * sn + z * cs;
+                        };
+                        turn(m.pos);
+                        if (m.hasFrom) turn(m.from);
+                        // ...and the ORIENTATION, which the handler conjugates:
+                        // `M(e) * sample * M(-e)`, and for a Y-only `e` that is
+                        // the same rotation with its AXIS turned by `e`. Its
+                        // angle - the quaternion's w - is untouched, so this
+                        // needs no quaternion convention of its own.
+                        if (m.rotated) {
+                            const float ax = m.quat[1], az = m.quat[3];
+                            m.quat[1] = ax * cs - az * sn;
+                            m.quat[3] = ax * sn + az * cs;
+                        }
+                    }
                     if (!m.name.empty()) motions_.push_back(std::move(m));
                 }
             }

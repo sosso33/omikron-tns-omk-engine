@@ -15,6 +15,42 @@ waiting on its evidence.
 
 ## Open (batch 7, filed 2026-09-09)
 
+### 90. The lift doors open sideways: a path is TURNED into the set — A
+
+> **Fixed 2026-09-09**, measured and RENDERED (Hall 27, before and after).
+> Not watched in play yet.
+
+A reader, minutes after 89: *some doors do not open correctly*, with Hall 27
+on screen and `HA27DoorL`/`HA27DoorR` in the log.
+
+`Script_MoveObjectOnPath` carries three degree parameters — **12, 13 and 14** —
+and spends them before either of its placement arms: it samples the path at the
+end the move starts from, builds `Matrix3x3_FromEulerAngles` and rotates every
+later sample about that pivot. One lift is authored once and each hall installs
+it at its own angle. The port read parameters 0..6 and dropped 12/13/14.
+
+**854 of the corpus's 4841 calls carry an angle, over 40 files, and they are the
+halls** — `Hall03` … `Hall65`, `Shall*b`, `ap02`, `shoot`, `smarket1`. 851 turn
+about Y alone; the other 3 have Y zero and a nonzero X or Z, and those orders
+are not established here (`scenerunner.h`), so they are left alone and counted
+(`Program::eulerXZ`).
+
+Hall 27's `levDOORopen` is `euler 0 230 0`. Its two leaves stand in one wall at
+x 4512, z −765 and −741, and each travels 24 units:
+
+| | travel x | travel z |
+|---|---|---|
+| before | 17.9 | 16.1 |
+| after | 0.8 | 24.1 |
+
+— so each leaf used to leave its wall by eighteen units and stand in the room,
+which is the slab in the reader's shot. Rendered both ways from
+`--area 229 --address 661 --scx-play 11`: before, the leaf blocks the doorway;
+after, it slides into the wall and the corridor beyond is open.
+
+`verify.py: engine: path turn` asserts the census and the travel shape (a leaf
+may move ALONG its wall and not out of it), and `path_turn.cpp` is the probe.
+
 ### 89. A DOOR read as a cutscene: black stripes and no player — A
 
 > **Fixed 2026-09-09**, measured headless. Not watched yet.
