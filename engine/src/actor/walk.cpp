@@ -26,6 +26,8 @@ void Walker::land(double y) {
           : fall_ < kFallShort ? 2
           : fall_ < kFallHurt  ? 3
           : 4;
+    drop_ = y - apex_;           // the descent from the apex, for MDJUMP03
+    if (drop_ < 0.0) drop_ = 0.0;
     fall_ = 0.0;
     vy_ = vx_ = vz_ = 0.0;
     airborne_ = sliding_ = false;
@@ -110,6 +112,7 @@ StepResult Walker::step(double dx, double dz, double dt) {
     }
     // Off the edge. The horizontal move stands and the actor leaves the
     // ground; `tick` carries him down and lands him.
+    apex_ = pos_[1];             // a plain fall's apex is where he stepped off
     airborne_ = true;
     sliding_  = false;
     return StepResult::Fell;
@@ -222,6 +225,7 @@ StepResult Walker::tick(double dt) {
     // the ground response WRITES the speed every frame it is on a steep face -
     // so only a free fall integrates.
     if (airborne_) vy_ = std::min(kTerminal, vy_ + kGravity * dt);
+    if (pos_[1] < apex_) apex_ = pos_[1];        // y grows down: smaller is higher
     const double dy = vy_ * (1.0 / 30.0) * dt;
 
     // THE HORIZONTAL FOLLOWS THE VELOCITY, NOT THE FLAG. Velocity is per

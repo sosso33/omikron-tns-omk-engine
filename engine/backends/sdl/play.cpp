@@ -5862,6 +5862,14 @@ int main(int argc, char** argv) {
                             std::printf("jump: armed on '%s'\n",
                                         player->ctlStateName().c_str());
                     }
+                    if (mv == "MDJUMP03") {
+                        const double d = player->walker().lastLandingDrop();
+                        const int band = player->jumpLand();
+                        std::printf("jump: landed, drop %.2f -> band %d%s\n",
+                                    d, band,
+                                    band == 2 ? " (short, no reaction)"
+                                              : " (ACTOR_STATE 18, bank group 2)");
+                    }
                     if (mv == "MDJUMP01") {
                         const bool went = player->jumpLaunch();
                         std::printf("jump: %s\n", went

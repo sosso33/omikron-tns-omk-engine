@@ -479,6 +479,10 @@ public:
     bool jumpPrepare();      // MDJUMP0A / MDJUMP0B
     bool jumpLaunch();       // MDJUMP01
     bool jumpArmed() const { return jumpArmed_; }
+    // MDJUMP03 (0x0046BE40) - the LANDING. Clears the airborne flag, bands the
+    // drop and, for anything but a short one, puts him into the landing
+    // reaction. -> the band it decided (2 ordinary, 1 / 3 / 4 a reaction).
+    int  jumpLand();
 
     const Walker& walker() const { return walker_; }
     long ticks() const { return ticks_; }

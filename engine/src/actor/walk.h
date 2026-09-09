@@ -179,6 +179,7 @@ public:
         airborne_ = true;
         fall_ = 0.0;
         tier_ = 0;
+        apex_ = pos_[1];
         return true;
     }
 
@@ -219,6 +220,17 @@ public:
     // asks for .CTL bank group 2, 4 or 5 and ACTOR_STATE 18 or 19.
     int lastLandingTier() const { return tier_; }
 
+    // HOW FAR THE LAST LANDING FELL, kept because `land()` zeroes `fall_` and
+    // `MDJUMP03` bands the drop on its OWN thresholds, not the walker's four.
+    //
+    // This is the DESCENT FROM THE APEX, not the net `fall_`. They differ only
+    // for a jump, and there the difference matters: `fall_` counts the rise
+    // negative, so a level leap nets to 0 - which gives the right band by
+    // accident - while a leap off a ledge would come out one apex-height short
+    // of the real drop. The descent is what the 1.50 / 3.00 / 5.00 m
+    // thresholds are about, and it is never negative.
+    double lastLandingDrop() const { return drop_; }
+
     // `g_IgnoreLedges` - the engine's own global, whose only writer is
     // `sub_41C260` (0x0041C260), a five-line setter with no caller in the
     // decompilation. With it on, both the ledge refusal and the fall are
@@ -246,6 +258,8 @@ private:
     bool   airborne_ = false;
     bool   sliding_  = false;
     int    tier_ = 0;
+    double drop_ = 0.0;          // the last landing's descent from its apex
+    double apex_ = 0.0;          // the highest y reached in this airborne stretch
 };
 
 // `Walk_ProbeGround`'s OTHER answer: which decor is under the point. The

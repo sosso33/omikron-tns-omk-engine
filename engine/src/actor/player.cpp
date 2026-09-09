@@ -186,6 +186,48 @@ bool PlayerController::jumpLaunch() {
     return walker_.jump(jumpV_[1], jumpV_[0], jumpV_[2]);
 }
 
+// ---- THE LANDING, `MDJUMP03` (0x0046BE40) --------------------------------
+//
+//     dword_6A52CC = 0                          -- the airborne flag
+//     d = actor[264] - actor[276]               -- the CLEARANCE, the same
+//                                                  pair `Walk_GroundResponse`
+//                                                  takes its `v67` from
+//     d >= 196.85039 (5.00 m)      -> +1304 = 4
+//     d >= 118.11024 (3.00 m)      -> +1304 = 3
+//     d >= dword_910350 (1.50 m)   -> +1304 = 1
+//     otherwise                    -> +1304 = 2 and RETURN
+//     then, for 4 / 3 / 1 only:
+//         sub_465340(actor, 2)                  -- bank group 2 by id, unless
+//                                                  ACTOR_STATE is 2, 3 or 15
+//         sub_414DE0(actor, 18, 1)              -- ACTOR_STATE 18
+//
+// So a short landing is silent and a long one plays the landing reaction. Note
+// the band order is 2, 1, 3, 4 with distance: `+1304` is a CODE, not a
+// severity rank, and 2 is the one that returns early.
+//
+// **THESE ARE NOT THE WALKER'S FOUR BANDS.** `land()` bands `fall_` at
+// 20 cm / 1.50 m / 3.00 m, which is `Walk_GroundResponse`'s ordinary fall;
+// MDJUMP03 bands at 1.50 / 3.00 / 5.00 m. Two different tables for two
+// different events, so this does not reuse `lastLandingTier()`.
+//
+// **ONE SUBSTITUTION, LABELLED**: the engine bands the CLEARANCE
+// `actor[264] - actor[276]` and `actor+276` is untraced (`todo/player-vertical.md`
+// §4). This bands the walker's own accumulated drop instead. For a jump the
+// two coincide whenever he lands at or below the height he left, which is
+// every case the thresholds are about - a flat leap on level ground falls
+// 9 units from the apex and lands in band 2, silent, which is right.
+int PlayerController::jumpLand() {
+    const double d = walker_.lastLandingDrop();
+    const int band = d >= 196.85039 ? 4
+                   : d >= 118.11024 ? 3
+                   : d >= 59.055118 ? 1
+                   : 2;
+    if (band == 2) return band;                 // short: no reaction
+    enterGroupById(2);                          // sub_465340(actor, 2)
+    setActorState(static_cast<ActorState>(18), "MDJUMP03");
+    return band;
+}
+
 bool PlayerController::goToMove(int groupId) {
     if (!enterGroupById(groupId)) return false;
     euler_[0] = 0.0f;                          // +416, the pitch

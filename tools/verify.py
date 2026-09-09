@@ -29210,6 +29210,119 @@ def c_engine_player_jump():
            "0.7*g for N=14; that the arc is symmetric; and that he travels " \
            "the authored 2.5 m forward (98.43) less the landing frame"
 
+def c_engine_player_landing():
+    r"""THE JUMP'S STATE - `todo/player-vertical.md` step 3: the take-off latch,
+    `dword_6A52CC` and the landing phases.
+
+    **Most of step 3 turned out to be NEGATIVE RESULTS**, and they are the
+    point of this row as much as the code is.
+
+    * **The take-off latch is nearly dead.** `MDJUMP0A` stores the take-off
+      position into `dword_53AE40/44/48`, and across the whole listing only
+      `53AE44` - the **Y** - is ever read back. X and Z are written and never
+      used.
+    * **And its one reader discards its own work.** `MDJUMP02` (0x0046BD90)
+      integrates a descent from the current y under gravity, clamped at
+      `flt_4BC950` = 1968.5039, until it reaches `dword_53AE44` - and then
+      **counts nothing and returns nothing**. There is no counter in the loop
+      and the value never leaves the frame. Its only effect is
+      `SetITPNbFrames(entry, N/2)`, re-setting what `MDJUMP0A` already set. So
+      MDJUMP02 is ported as a no-op, deliberately.
+    * **The steer suppression is already structural here.** `dword_6A52CC`
+      gates two things: `Actor_ApplyMotion`'s 1/8 steer toward the direction
+      the move actually went, and - the interesting one -
+      `Walk_GroundResponse`'s snap-to-ground branch, which is what would
+      otherwise pull a jumping actor straight back down. The port needs
+      neither guard: its steer is a no-op by construction (the delta is
+      already rotated by the facing, so the two headings coincide) and only
+      runs on a `Moved` step, which an airborne frame never returns; and its
+      ground response lands him only when the descent reaches the floor, so
+      there is no snap to suppress.
+
+    What IS ported is `MDJUMP03` (0x0046BE40), the landing:
+
+        dword_6A52CC = 0
+        d = actor[264] - actor[276]              -- the clearance
+        d >= 196.85039 (5.00 m)     -> +1304 = 4
+        d >= 118.11024 (3.00 m)     -> +1304 = 3
+        d >= 59.055118 (1.50 m)     -> +1304 = 1
+        otherwise                   -> +1304 = 2 and RETURN
+        then for 4 / 3 / 1 only:  sub_465340(actor, 2)   -- bank group 2 by id
+                                  sub_414DE0(actor, 18, 1) -- ACTOR_STATE 18
+
+    so a short landing is silent and a long one plays the landing reaction.
+    Note the band order is 2, 1, 3, 4 with distance: `+1304` is a CODE, not a
+    severity rank, and 2 is the one that returns early. These are **not** the
+    walker's four bands - `land()` splits `fall_` at 20 cm / 1.50 / 3.00 m,
+    which is the ordinary fall - so the two tables are kept separate.
+
+    Asserted from the same headless Anekbah run, and against the source:
+
+      * the level-ground leap ARMS, LAUNCHES and LANDS exactly once;
+      * its drop is **9.00 units** - the apex, since he lands where he left -
+        and it bands to **2**, silent, which is right: a flat leap must not
+        play a landing reaction;
+      * `player.cpp`'s three thresholds are the listing's own constants,
+        59.055118 / 118.11024 / 196.85039, read out of the file.
+
+    **TIER 5, data-constrained**, like the two rows it joins.
+
+    **Shown to fail** (PORTING B2): banding the walker's net `fall_` instead of
+    the descent from the apex - which is what a first version did - reports the
+    level leap's drop as **0.00** instead of 9.00. It reaches the same band by
+    luck (both are short) and would understate every leap off a ledge by one
+    apex height, so the check asserts the DISTANCE and not only the band.
+
+    **NOT covered, and this is a real gap rather than a limit of the data**:
+    the reaction arm. Bands 1, 3 and 4 need a drop of 1.50 m or more, and the
+    Anekbah stand this run uses is flat, so `enterGroupById(2)` and
+    `ACTOR_STATE 18` are transcribed and **never executed here**. The
+    thresholds are asserted against the listing so a typo cannot hide, but
+    somebody jumping off something is what would exercise the arm.
+
+    **ONE SUBSTITUTION, LABELLED**: the engine bands the CLEARANCE
+    `actor[264] - actor[276]` and `actor+276` is still untraced (§4). This
+    bands the walker's own descent instead. For a jump the two coincide
+    whenever he lands at or below the height he left.
+    """
+    import subprocess, tempfile, shutil, re as _re
+    eng = os.path.join(ROOT, "engine")
+    save = os.path.join(ROOT, "traces", "save-appart.bin")
+    src = os.path.join(eng, "src", "actor", "player.cpp")
+    if not os.path.isdir(eng) or not os.path.exists(save):
+        return ("skipped",), ("skipped",), "engine/ or the anchor save absent"
+    txt = open(src, encoding="utf-8").read()
+    thresh = tuple(t in txt for t in ("196.85039", "118.11024", "59.055118"))
+    mk = subprocess.run(["make", "-s", "play"], cwd=eng,
+                        capture_output=True, text=True)
+    play = os.path.join(eng, "build", "omk-play")
+    if mk.returncode != 0 or not os.path.exists(play):
+        return ("no sdl",), ("no sdl",), "omk-play needs SDL; skipped without it"
+    tmp = tempfile.mkdtemp()
+    try:
+        env = dict(os.environ, SDL_VIDEODRIVER="dummy", OMK_PLY="1")
+        r = subprocess.run(
+            [play, omkpaths.data_root(), os.path.join(ROOT, "tables"),
+             "--save", save, "--area", "0",
+             "--stand", "1804,0,-6890,336", "--no-crowd",
+             "--hold", "0*30,k200*60,k200+57*12,k200*70,0*40", "--frames", "220",
+             "--dump", os.path.join(tmp, "f.bin")],
+            capture_output=True, text=True, env=env)
+        out = r.stdout + r.stderr
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+    m = _re.search(r"jump: landed, drop ([\d.]+) -> band (\d)", out)
+    drop = float(m.group(1)) if m else -1.0
+    band = int(m.group(2)) if m else -1
+    return (out.count("jump: armed on"), out.count("jump: launched"),
+            out.count("jump: landed"), round(drop, 2), band,
+            "(short, no reaction)" in out, thresh), \
+           (1, 1, 1, 9.0, 2, True, (True, True, True)), \
+           "the leap armed, launched and landed once each; the landing's " \
+           "drop, which is the apex because he lands where he left; the band " \
+           "MDJUMP03 gives it (2 = short, and it must NOT play the landing " \
+           "reaction); that it said so; and that player.cpp carries the " \
+           "listing's own three thresholds"
 
 
 CHECKS = [
@@ -29594,6 +29707,7 @@ SLOW = [
     ("engine: boot",       c_engine_boot,       "engine/README"),
     ("engine: player vertical", c_engine_player_vertical, "engine/README; todo/player-vertical.md"),
     ("engine: player jump", c_engine_player_jump, "engine/README; todo/player-vertical.md"),
+    ("engine: player landing", c_engine_player_landing, "engine/README; todo/player-vertical.md"),
     ("dialog staging sweep", c_dialog_staging_sweep, "ASSETS"),
     ("cutscene actors",    c_cutscene_actors,   "CUTSCENES 4"),
     ("textures",           c_textures,          "ASSETS"),

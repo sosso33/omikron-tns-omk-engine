@@ -121,9 +121,10 @@ somewhere to go. Nothing ever pushes into it.
 2. ~~**The impulse.**~~ **DONE 2026-09-09**, and `dword_53AE54` did not stay
    unread - see §5. It needed no reconstruction: the magnitude comes out of the
    `.CTL` entry's own field and the actor's gravity.
-3. **The state.** `MDJUMP0A`'s latch and `dword_6A52CC`, so the landing can be
-   judged against the take-off and the steer suppressed while airborne, and
-   `MDJUMP02`/`03` for the landing phases.
+3. ~~**The state.**~~ **DONE 2026-09-09** - and most of it turned out to be
+   NEGATIVE results. See §6: the latch is nearly dead, `MDJUMP02` discards its
+   own work, the steer suppression is already structural in the port, and what
+   was actually missing is `MDJUMP03`'s landing band.
 
 Each step ends in a headless measurement of the drawn feet across a walk, a
 run and a jump, and a `verify.py` row that is shown to fail.
@@ -285,3 +286,84 @@ at the keyboard.
 **Step 3 is untouched**: `MDJUMP0A`'s take-off latch (`dword_53AE40/44/48`),
 `dword_6A52CC`'s suppression of the steer while airborne, and `MDJUMP02`/`03`
 for the landing phases.
+
+
+---
+
+## 6. Step 3, done - and three of its four parts are negative results
+
+**The take-off latch is nearly dead.** `MDJUMP0A` stores the take-off position
+into `dword_53AE40/44/48`, and across the whole listing only **`53AE44`, the
+Y**, is ever read back. X and Z are written and never used by anything.
+
+**And its one reader discards its own work.** `MDJUMP02` (0x0046BD90)
+integrates a descent from the current y under gravity - `t += g/30` a step,
+clamped at `flt_4BC950` = 1968.5039 - until y reaches `dword_53AE44`, and then
+**counts nothing and returns nothing**. There is no counter in the loop and
+neither `t` nor the final y leaves the stack frame. Its only surviving effect
+is `SetITPNbFrames(entry, N/2)`, which re-sets exactly what `MDJUMP0A` already
+set. It is ported as a no-op, deliberately.
+
+**The steer suppression is already structural in the port.** `dword_6A52CC`
+gates two things, and the second is the interesting one:
+
+* `Actor_ApplyMotion`'s 1/8 steer toward the direction the move actually went
+  (so a slide along a wall turns him) - the port's steer is a no-op by
+  construction, because the delta is already rotated by the facing so the two
+  headings coincide, and it only runs on a `Moved` step, which an airborne
+  frame never returns;
+* **`Walk_GroundResponse`'s snap-to-ground branch** (`if (!dword_6A52CC)` at
+  21_d3d.c:2729) - which is what would otherwise pull a jumping actor straight
+  back down. **This closes the loop from §4**: step 1 observed that the engine's
+  ground probe absorbs any vertical a clip authors, and the jump works
+  precisely because this flag turns that absorption OFF for its duration. The
+  port needs no guard because its ground response lands him only when the
+  descent reaches the floor - there is no snap to suppress.
+
+**What was actually missing is `MDJUMP03`** (0x0046BE40), the landing:
+
+    dword_6A52CC = 0
+    d = actor[264] - actor[276]              -- the CLEARANCE, the same pair
+                                                `Walk_GroundResponse` takes
+                                                its `v67` from
+    d >= 196.85039 (5.00 m)     -> +1304 = 4
+    d >= 118.11024 (3.00 m)     -> +1304 = 3
+    d >= dword_910350 (1.50 m)  -> +1304 = 1
+    otherwise                   -> +1304 = 2 and RETURN
+    then for 4 / 3 / 1 only:
+        sub_465340(actor, 2)        -- bank group 2 by id, unless ACTOR_STATE
+                                       is 2, 3 or 15
+        sub_414DE0(actor, 18, 1)    -- ACTOR_STATE 18
+
+so a short landing is silent and a long one plays the landing reaction. Note
+the band order is **2, 1, 3, 4** with distance: `+1304` is a CODE, not a
+severity rank, and 2 is the one that returns early. **These are not the
+walker's four bands** - `land()` splits `fall_` at 20 cm / 1.50 / 3.00 m,
+which is the ordinary fall - so the port keeps two tables.
+
+Nothing consumed `Walker::lastLandingTier()` before this; the walker had been
+banding every landing and no caller ever read it.
+
+**Measured**: the level-ground leap arms, launches and lands once each, its
+drop is **9.00 units** (the apex, since he lands where he left) and it bands to
+**2**, silent - a flat leap must not play a landing reaction.
+
+**One fault the measurement caught.** Banding the walker's net `fall_` reports
+that leap's drop as **0.00**, because `fall_` counts the rise negative and a
+symmetric arc nets out. It reaches the right band *by luck* and would
+understate every leap off a ledge by one apex height, so the drop is now the
+**descent from the apex** and the check asserts the distance, not only the
+band - the band is 2 either way.
+
+**A real gap, not a limit of the data**: the reaction arm. Bands 1, 3 and 4
+need a drop of 1.50 m or more and the Anekbah stand is flat, so
+`enterGroupById(2)` and `ACTOR_STATE 18` are transcribed and **never executed
+by any check**. The three thresholds are asserted against the listing so a typo
+cannot hide, but somebody jumping off something is what would exercise it.
+
+**And one substitution stays labelled**: the engine bands the CLEARANCE
+`actor[264] - actor[276]`, and **`actor+276` is still untraced** - the same
+hole §4 opened. The port bands its own descent instead; for a jump the two
+coincide whenever he lands at or below the height he left.
+
+`verify.py: engine player landing`, shown to fail.
