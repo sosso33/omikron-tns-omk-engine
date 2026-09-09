@@ -3995,13 +3995,15 @@ def c_engine_player_program():
     # frontend used to DROP because the conversation opened on the same pump
     # frame and it consumed placements only in adventure mode. Both happen now,
     # so the final x is the address's, not the hand-back's.
-    return got, ("HO1_FN", 4, "HOCINE07.3DA", 60, 64, 3099, 3085), \
+    return got, ("HO1_FN", 4, "HOCINE07.3DA", 61, 65, 3099, 3085), \
            "the flat's goodbye traced frame by frame: the player joins the " \
            "staged bodies as HO1_FN on frame 4, the program poses him from " \
-           "HOCINE07.3DA, he is traced for all 60 of its frames, and on " \
-           "frame 64 - when it ends - he is handed back at x 3099, where the " \
+           "HOCINE07.3DA, he is traced for all 61 of its frames - 60 until " \
+           "`74f6f8a` gave an object its editing's duration, which makes it " \
+           "outlive its own steps by a tick - and on " \
+           "frame 65 - when it ends - he is handed back at x 3099, where the " \
            "clip left him, not the 3054 the walker still held; and on frame " \
-           "65 the beat's own goto_address 691 puts him at 3085, a teleport " \
+           "66 the beat's own goto_address 691 puts him at 3085, a teleport " \
            "the frontend used to drop with the conversation opening on the " \
            "same frame. Before this, " \
            "`scx.play.player` posed nobody and Kay'l was absent from his own " \
@@ -4188,7 +4190,15 @@ def c_line_facing():
                         "--res", "640x480"], 66, 259)
     greeting = yaws(0, ["--save", saves, "--slot", "0",
                         "--stand", "3572,1071,-991,181", "--frames", "470",
-                        "--res", "640x480"], 409, 469)   # 408 is the frame TE_STD snaps in
+                        "--res", "640x480"], 410, 469)
+    # 408 was the frame `TE_STD` snaps in and 409 the first settled one, until
+    # `74f6f8a` gave an object its editing's duration: `Script_PlayScript`
+    # stops it only under `if (!(ediPlaying + busy))`, so it outlives its own
+    # steps by a tick and every boundary after it moves ONE frame. Her yaw is
+    # 71 through 409 and 73 from 410, so the old window straddled the
+    # transition and saw two values where the check wants the settled one.
+    # The ASSERTION is untouched - it is the window that was computed from the
+    # old end frame.
     return (len(goodbye), goodbye != [0], goodbye != [-80],
             len(greeting), greeting != [0]), \
            (1, True, True, 1, True), \
