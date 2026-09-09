@@ -367,7 +367,7 @@ int shootTurnToward(float& eulerY, const AcquireOut& a, bool allowSnap, float dt
 // THE GENERIC BRAIN, `sub_424DE0` (0x00424DE0) - `todo/shoot-mode.md` 7c
 // ---------------------------------------------------------------------
 //
-// NINE of its sixteen states are transcribed here; the other seven set
+// TEN of its sixteen states are transcribed here; the other six set
 // `unread` and change nothing. That is deliberate and it is the rule the port
 // follows: an arm nobody has read is not a branch to guess, and a machine
 // that invented the missing ten would be indistinguishable from one that had
@@ -381,7 +381,7 @@ int shootTurnToward(float& eulerY, const AcquireOut& a, bool allowSnap, float dt
 //   dropped. A state that wants `0x200` sets it back.
 namespace {
 
-const std::vector<int> kGenericRead = {1, 2, 3, 4, 5, 7, 8, 10, 11};
+const std::vector<int> kGenericRead = {1, 2, 3, 4, 5, 6, 7, 8, 10, 11};
 
 }  // namespace
 
@@ -490,10 +490,38 @@ ShootStep shootGenericStep(ShootRecord& r, const ShootFrameIn& in, float& eulerY
         // which is NOT READ - so the port leaves it None and says so rather
         // than picking a plausible value.
         if (out.nextState < 0) out.outcome = ShootOutcome::Outcome4;
-        else out.outcomeFromUnread = true;
         // and a route is RELEASED whenever the state left 4 and 5
         if (out.nextState >= 0 && out.nextState != 4 && out.nextState != 5)
             out.releaseRoute = true;
+        break;
+    }
+
+    case 6: {
+        // THE HUB - where 1->2 and 4->5 both hand over. Three arms, and all
+        // three turn WITH the snap and pick a turn clip from it; only the
+        // first also fires.
+        if (r.flags & 0x8000u) {
+            // finishing: either drop flag 0x20, or ask for the default action
+            if (in.scriptStep == 8) r.flags &= ~0x20u;
+            else if (!(r.flags & 0x4000u)) out.clipType = in.defaultClipType;
+            break;                       // straight to the epilogue - no timer
+        }
+        bool turned = false;
+        if (in.targetPredicate && in.canFire) {
+            out.outcome = ShootOutcome::Fire;
+            turned = true;
+        } else if (!(r.flags & 0x100u)) {
+            // `sub_421CD0` says hold, and then nothing happens at all
+            if (!in.holdStill) turned = true;
+        } else {
+            r.flags |= 0x200u;
+            turned = true;
+        }
+        if (turned) snapToClip(shootTurnToward(eulerY, a, true, in.dt));
+        // the tail all three arms share: a timer at `+168`, and on expiry the
+        // default action is asked for
+        r.timer -= in.dt;
+        if (r.timer <= 0.0f) out.clipType = in.defaultClipType;
         break;
     }
 
@@ -571,7 +599,16 @@ ShootStep shootGenericStep(ShootRecord& r, const ShootFrameIn& in, float& eulerY
     else if (eulerY < 0.0f) eulerY += 360.0f;
     r.flags &= ~0x80u;
 
-    if (out.nextState >= 0) r.state = out.nextState;
+    // LABEL_222 / LABEL_181 / LABEL_58, the tail states 1, 3, 6, 8, 10 and 11
+    // all reach: WHENEVER AN ARM CHANGED THE STATE the engine recomputes the
+    // outcome through `sub_4272B0`, which is not read. So a transition always
+    // leaves the outcome unknown rather than whatever the arm had set, and
+    // saying so is the honest port of it.
+    if (out.nextState >= 0) {
+        out.outcomeFromUnread = true;
+        out.outcome = ShootOutcome::None;
+        r.state = out.nextState;
+    }
     return out;
 }
 

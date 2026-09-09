@@ -470,7 +470,7 @@ that labelling one state at a time, and the label moves with the code.
 |---|---|---|
 | 7a | **the record's geometry** — `sub_422540`'s six properties into the record (both ranges, the third, the cone's cosine, health, the flag fan-out), and the acquisition pair `sub_420C70` / `sub_420D90` with the four values they leave behind |**DONE 2026-09-09**, §7a below; `verify.py: shoot range` |
 | 7b | **the turn** — `sub_420EB0` on the Euler at `actor+420`, its three thresholds and its `180` / `±90` snap returns |**DONE 2026-09-09**, §7b below; `verify.py: shoot range` |
-| 7c | **the states** — `sub_424DE0` read arm by arm and ported, each one carrying what it was read from; the ones not reached stay declared |**PART DONE 2026-09-09** — the FRAME and **9 of the 16** states, §7c below; `verify.py: shoot generic`. States 6, 9/28, 12, 13, 14, 15 are still unread |
+| 7c | **the states** — `sub_424DE0` read arm by arm and ported, each one carrying what it was read from; the ones not reached stay declared |**PART DONE 2026-09-09** — the FRAME and **10 of the 16** states, the HUB included, §7c below; `verify.py: shoot generic`. States 9/28, 12, 13, 14, 15 are still unread |
 | 7d | **the frame loop** — the brain called from `Shoot_TickNpc`'s place, the occupancy stamp/restore pair around it, and `omk-play --shoot` driving it | |
 | 7e | checks, and a PLAY TEST — which is the one thing steps 1-6 never got | |
 
@@ -582,7 +582,7 @@ happens — clears flag `0x80`, and dispatches on the outcome:
 Outcome 1 is where §5b's weapon-rate line lives, so the rate reading and the
 machine meet here.
 
-### The nine states transcribed
+### The ten states transcribed
 
 | state | what its arm does |
 |---|---|
@@ -595,6 +595,7 @@ machine meet here.
 | **1** | NAVIGATE — contact, or commit to an edge |
 | **2** | TRAVERSE that edge, climbing its slope |
 | **4** | PATROL a route |
+| **6** | the HUB — three arms, one of which fires |
 
 **The movement loop is 1 → 2 → 6.** State 1 tests whether the gunman stands on
 his target's own nav node, and commits to an edge otherwise; state 2 walks the
@@ -629,15 +630,37 @@ per frame (`total / Anim_Frames`). If the library has no such clip the body
 simply rotates at a fallback rate instead. (The 180 arm calls `rand()` and
 discards it — a quirk, recorded rather than reproduced.)
 
+
+### The hub, state 6 — and a rule that turned out to be general
+
+Both movement loops end here, and the arm is three branches that all turn
+**with** the snap and pick a turn clip from it; only the first also fires:
+
+1. `flags & 0x8000` — **finishing**. Either drop flag `0x20` (when `+144` is 8)
+   or ask for the default action, and then go **straight to the epilogue**.
+2. the predicate holds and the actor can fire — outcome **1**, and turn.
+3. otherwise turn, unless `sub_421CD0` says hold still.
+
+Arms 2 and 3 fall into a shared tail that counts the timer at `+168` down and
+asks for the default action when it expires. **Arm 1 does not**, and that
+asymmetry is asserted: mutating its early exit into a fall-through leaves the
+timer at −0.5 instead of 0.5 and turns the check red.
+
+> **THE TAIL IS GENERAL, and reading state 6 is what showed it.** States 1, 3,
+> 6, 8, 10 and 11 all reach `LABEL_222` / `LABEL_181` / `LABEL_58`, and every
+> one of them does the same thing: **if the arm changed the state, the outcome
+> is recomputed by `sub_4272B0`** — which is unread. So a transition always
+> leaves the outcome unknown, whatever the arm had set before it. The port now
+> applies that once, in the epilogue, and reports `outcomeFromUnread` rather
+> than letting a stale outcome ride out of a state change.
+
 ### What is NOT ported, and why that is the deliverable too
 
-Six states — **6, 9/28, 12, 13, 14, 15** — set `unread` and change nothing at
-all: no state, no Euler, no outcome. State 6 is the largest by far and carries
-its own five-way sub-switch; it is the hub that both 1→2 and 4→5 hand over
-to, so it is the next one worth reading.
+Five states — **9/28, 12, 13, 14, 15** — set `unread` and change nothing at
+all: no state, no Euler, no outcome.
 
 That refusal is asserted, not promised. `verify.py: shoot generic` drives
-every unread state and requires all seven to leave the record and the Euler
+every unread state and requires all five to leave the record and the Euler
 untouched, and **mutating the default arm to invent a transition turns it
 red** (every one of them changed something). A machine that guessed the missing nine
 would be indistinguishable from one that had them right, and this is the only

@@ -25833,8 +25833,8 @@ def c_shoot_generic():
     through one shared epilogue. The states decide; the epilogue acts. Ported
     in `todo/shoot-mode.md` 7c.
 
-    **The first row is the honest one: 9 of the 16 states are transcribed.**
-    The other seven set `unread` and change nothing, and that is asserted rather
+    **The first row is the honest one: 10 of the 16 states are transcribed.**
+    The other six set `unread` and change nothing, and that is asserted rather
     than promised - a machine that invented the missing ten would be
     indistinguishable from one that had them right, and this check is what
     stops the port drifting into that. `genericStatesRead()` is compared
@@ -25866,6 +25866,11 @@ def c_shoot_generic():
     * **2** TRAVERSES that edge, climbing its slope by
       `dy / horizontalLength * distanceMovedThisFrame` each frame and counting
       `+68` down; at zero it swaps the occupancy and goes to the hub;
+    * **6** is the HUB both `1 -> 2` and `4 -> 5` hand over to: three arms,
+      all of which turn WITH the snap, and only the first of which fires. Its
+      tail counts the timer at `+168` down and asks for the default action on
+      expiry - except on the FINISHING arm (flag `0x8000`), which skips the
+      tail altogether, so the timer does not move at all;
     * **4** PATROLS a route - with one and a step available it goes to **5**,
       and the tail gives outcome **4** when nothing changed the state. When
       something did, the engine takes the outcome from `sub_4272B0`, which is
@@ -25906,7 +25911,11 @@ def c_shoot_generic():
                     r"state (\d+), swap (\d)$", r.stdout, re.M)
     pt  = re.search(r"^generic: patrol noroute outcome (-?\d+) state (\d+); "
                     r"route state (\d+) outcome (-?\d+) unread (\d)$", r.stdout, re.M)
-    if not (cov and unr and tr and sn and wr and nv and tv and pt):
+    hb  = re.search(r"^generic: hub fire outcome (-?\d+) timer ([\d.]+); "
+                    r"hold outcome (-?\d+); expiry clip (-?\d+); "
+                    r"finishing clip (-?\d+) timer ([\d.]+) flag20 (\d)$",
+                    r.stdout, re.M)
+    if not (cov and unr and tr and sn and wr and nv and tv and pt and hb):
         return ("unparsed",), ("parsed",), "the probe's own generic: lines"
     got = (tuple(int(x) for x in cov.groups()), tuple(int(x) for x in unr.groups()),
            tuple(int(x) for x in tr.groups()), tuple(int(x) for x in sn.groups()),
@@ -25915,12 +25924,15 @@ def c_shoot_generic():
             int(nv.group(5)), int(nv.group(6)), int(nv.group(7)), int(nv.group(8))),
            (int(tv.group(1)), tv.group(2), int(tv.group(3)), int(tv.group(4)),
             int(tv.group(5))),
-           tuple(int(x) for x in pt.groups()))
-    want = ((16, 9, 9), (7, 0), (4, 11, 2, 3, 10),
+           tuple(int(x) for x in pt.groups()),
+           (int(hb.group(1)), hb.group(2), int(hb.group(3)), int(hb.group(4)),
+            int(hb.group(5)), hb.group(6), int(hb.group(7))))
+    want = ((16, 10, 10), (6, 0), (4, 11, 2, 3, 10),
             (32, -180, 30, -90, 31, 90), (10, 350),
             (1, "143.1", 500, 2, 0, 1, 2, 6),
             (5, "40.0", 1, 6, 1),
-            (4, 4, 5, -1, 1))
+            (4, 4, 5, -1, 1),
+            (1, "4.0", -1, 77, -1, "0.5", 0))
     return got, want, ("the machine's states, how many are TRANSCRIBED, and "
                        "that every transcribed one is in the state set; then "
                        "that the ten UNREAD arms change nothing at all - no "
@@ -25936,7 +25948,9 @@ def c_shoot_generic():
                        "the step branch; the TRAVERSE walking 500 units out "
                        "in 5 frames while climbing the edge's 40; and the "
                        "PATROL, including the flag that says its outcome came "
-                       "from a function nobody has read")
+                       "from a function nobody has read; and the HUB's "
+                       "three arms - firing, holding, and the FINISHING one "
+                       "that skips the shared timer tail entirely")
 
 
 def c_shoot_range():

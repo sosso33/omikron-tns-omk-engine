@@ -264,6 +264,12 @@ struct ShootFrameIn {
     bool  hasRoute = false;           // `u32(rec, 24)` - state 4 needs one
     bool  routeAdvanced = false;      // `sub_4356B0` found the next point
     float movedThisFrame = 0.0f;      // state 2: how far the body actually went
+    // the hub's own two: actor `+164` / `+84` gate its firing arm (both
+    // UNREAD, so they arrive as one bool), and `sub_421CD0` - also unread -
+    // decides whether its middle arm does anything at all.
+    bool  canFire = false;
+    bool  holdStill = false;          // `sub_421CD0(actor, rec, 1)` was true
+    int   scriptStep = 0;             // record `+144`, tested against 8
 };
 
 struct ShootStep {

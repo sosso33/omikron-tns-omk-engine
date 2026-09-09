@@ -304,6 +304,40 @@ int main(int argc, char** argv) {
                         int(s4b.outcomeFromUnread));
         }
 
+        // ---- THE HUB, state 6 -----------------------------------------
+        //
+        // Three arms, all of which turn with the snap; only the first fires.
+        // The finishing arm (flag 0x8000) short-circuits the timer entirely,
+        // which is the one branch that skips the shared tail.
+        {
+            omk::ShootFrameIn h = in;
+            h.targetPredicate = true; h.canFire = true; h.holdStill = false;
+            h.target[0] = 0; h.target[2] = -390;
+            auto q6a = fresh(6); float e6a = 0; q6a.timer = 5.0f;
+            const auto s6a = omk::shootGenericStep(q6a, h, e6a);
+
+            omk::ShootFrameIn h2 = h; h2.canFire = false; h2.holdStill = true;
+            auto q6b = fresh(6); float e6b = 0; q6b.timer = 5.0f;
+            const auto s6b = omk::shootGenericStep(q6b, h2, e6b);
+
+            // the timer running out asks for the default action
+            omk::ShootFrameIn h3 = h2; h3.defaultClipType = 77;
+            auto q6c = fresh(6); float e6c = 0; q6c.timer = 0.5f;
+            const auto s6c = omk::shootGenericStep(q6c, h3, e6c);
+
+            // the FINISHING arm skips the timer altogether
+            omk::ShootFrameIn h4 = h; h4.scriptStep = 8; h4.defaultClipType = 77;
+            auto q6d = fresh(6); float e6d = 0;
+            q6d.timer = 0.5f; q6d.flags |= 0x8000u; q6d.flags |= 0x20u;
+            const auto s6d = omk::shootGenericStep(q6d, h4, e6d);
+
+            std::printf("generic: hub fire outcome %d timer %.1f; hold outcome %d; "
+                        "expiry clip %d; finishing clip %d timer %.1f flag20 %d\n",
+                        int(s6a.outcome), q6a.timer, int(s6b.outcome),
+                        s6c.clipType, s6d.clipType, q6d.timer,
+                        int((q6d.flags & 0x20u) != 0));
+        }
+
         // the epilogue WRAPS the euler, and it is the only place that does
         auto qw = fresh(5); float hi = 370.0f, lo = -10.0f;
         omk::shootGenericStep(qw, in, hi);
