@@ -84,6 +84,7 @@ Settings resolveSettings(const OptionsFile& ini,
                                       "(nearest|bilinear|trilinear) - ignored\n", w->c_str());
         }
         takeInt(kEnhancements, "anisotropy", s.anisotropy, s.anisotropySource);
+        takeInt(kEnhancements, "supersampling", s.supersample, s.supersampleSource);
         if (const std::string* w = ini.find(kEnhancements, "lighting")) {
             const int m = lightingMode(*w);
             if (m >= 0) { s.lighting = m; s.lightingSource = Settings::Source::Ini; }

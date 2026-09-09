@@ -301,6 +301,19 @@ public:
     // Same contract as `setMultisample` - a request, before `init()`, that
     // the software reference declines.
     virtual bool setTextureFilter(int /*mode*/) { return false; }
+
+    // SUPERSAMPLING (`todo/enhancements.md` row 9): render the frame `n` times
+    // larger each way and average it down. `n` of 1 is off.
+    //
+    // It is NOT the same enhancement as MSAA, which is why both exist. MSAA
+    // samples geometry EDGES and does nothing for a texture, and this game's
+    // aliasing is mostly texture: 256x256 atlases sampled POINT, and cutout
+    // meshes - grilles, railings, signs - whose silhouette is a colour key
+    // inside the triangle rather than at its edge, where MSAA never looks.
+    //
+    // Same contract as the other two: a request, before `init()`, that the
+    // software reference declines.
+    virtual bool setSupersample(int /*n*/) { return false; }
     // And anisotropic filtering, `n` samples along the footprint's long axis
     // (1 off, up to 16). Only meaningful with mode 2.
     virtual bool setAnisotropy(int /*n*/) { return false; }

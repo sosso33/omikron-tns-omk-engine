@@ -190,6 +190,12 @@ public:
         aniso_ = n < 1 ? 1 : n > 16 ? 16 : n;
         return true;
     }
+    bool setSupersample(int n) override {
+        if (dev_ != VK_NULL_HANDLE) return false;   // too late: the target exists
+        ss_ = n < 2 ? 1 : n < 4 ? 2 : 4;
+        return true;
+    }
+    int supersample() const { return ss_; }
     int textureFilter() const { return filter_; }
     int anisotropy() const { return anisoOn_ ? aniso_ : 1; }
     // The largest count the device's colour, depth and stencil limits all
@@ -229,7 +235,18 @@ private:
     VkCommandBuffer   cb_   = VK_NULL_HANDLE;
     VkFence           fence_ = VK_NULL_HANDLE;
 
-    int w_ = 0, h_ = 0;
+    int w_ = 0, h_ = 0;      // the OUTPUT size - what `readback()` answers with
+    // ...and the RENDER size, `w_ * ss_` by `h_ * ss_`. Supersampling
+    // (`todo/enhancements.md` 9) draws the frame larger and averages it down,
+    // which is the only anti-aliasing that reaches a CUTOUT edge - MSAA looks
+    // at triangle edges and a cutout's silhouette is a colour key inside one.
+    int rw_ = 0, rh_ = 0;
+    int ss_ = 1;             // 1 off, else 2 or 4
+    // Which region of `colour_` the present blit should take. `end()` fills
+    // the whole render target; `presentSurface` uploads a finished picture at
+    // the OUTPUT size into its top-left, and blitting the whole thing then
+    // would stretch a quarter of the frame over the window.
+    int srcW_ = 0, srcH_ = 0;
     // `colour_` is the single-sample image every consumer reads - the
     // readback, the swapchain blit, the 2D upload. With MSAA on it becomes
     // the RESOLVE target and the pipelines rasterise into `msColour_`.
@@ -555,7 +572,7 @@ bool VulkanRenderer::makeTarget() {
                      VkImage& img, VkDeviceMemory& mem, VkImageView& view) -> bool {
         VkImageCreateInfo ii{VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO};
         ii.imageType = VK_IMAGE_TYPE_2D; ii.format = f;
-        ii.extent = {static_cast<uint32_t>(w_), static_cast<uint32_t>(h_), 1};
+        ii.extent = {static_cast<uint32_t>(rw_), static_cast<uint32_t>(rh_), 1};
         ii.mipLevels = 1; ii.arrayLayers = 1;
         ii.samples = samples; ii.tiling = VK_IMAGE_TILING_OPTIMAL;
         ii.usage = use; ii.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
@@ -646,11 +663,11 @@ bool VulkanRenderer::makeTarget() {
     VkImageView views[3] = {msaa ? msColourView_ : colourView_, depthView_, colourView_};
     VkFramebufferCreateInfo fi{VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO};
     fi.renderPass = pass_; fi.attachmentCount = msaa ? 3 : 2; fi.pAttachments = views;
-    fi.width = static_cast<uint32_t>(w_); fi.height = static_cast<uint32_t>(h_);
+    fi.width = static_cast<uint32_t>(rw_); fi.height = static_cast<uint32_t>(rh_);
     fi.layers = 1;
     VKCHECK(vkCreateFramebuffer(dev_, &fi, nullptr, &fbuf_), "vkCreateFramebuffer");
 
-    if (!makeBuffer(static_cast<VkDeviceSize>(w_) * h_ * 4,
+    if (!makeBuffer(static_cast<VkDeviceSize>(rw_) * rh_ * 4,
                     VK_BUFFER_USAGE_TRANSFER_DST_BIT,
                     VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
                     readBuf_, readMem_)) return false;
@@ -823,8 +840,8 @@ bool VulkanRenderer::makePipelines() {
     // DYNAMIC, because the letterbox is a viewport: camera mode draws into the
     // top-left 800x440 of a window-sized attachment and free roaming into all
     // of it, and baking either into the pipeline would need two of every one.
-    VkViewport vp{0, 0, static_cast<float>(w_), static_cast<float>(h_), 0.0f, 1.0f};
-    VkRect2D sc{{0, 0}, {static_cast<uint32_t>(w_), static_cast<uint32_t>(h_)}};
+    VkViewport vp{0, 0, static_cast<float>(rw_), static_cast<float>(rh_), 0.0f, 1.0f};
+    VkRect2D sc{{0, 0}, {static_cast<uint32_t>(rw_), static_cast<uint32_t>(rh_)}};
     VkPipelineViewportStateCreateInfo vps{VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO};
     vps.viewportCount = 1; vps.pViewports = &vp;
     vps.scissorCount = 1; vps.pScissors = &sc;
@@ -1258,13 +1275,15 @@ bool VulkanRenderer::presentDirect() {
     VkImageBlit blit{};
     blit.srcSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
     blit.srcOffsets[0] = {0, 0, 0};
-    blit.srcOffsets[1] = {w_, h_, 1};
+    blit.srcOffsets[1] = {srcW_ ? srcW_ : rw_, srcH_ ? srcH_ : rh_, 1};
     blit.dstSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
     blit.dstOffsets[0] = {0, y0, 0};
     blit.dstOffsets[1] = {static_cast<int>(swapExt_.width), y0 + h_, 1};
     vkCmdBlitImage(pcb_, colour_, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
                    swapImgs_[idx], VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-                   1, &blit, VK_FILTER_NEAREST);
+                   // LINEAR only when there is something to average: at ss 1
+                   // this must stay NEAREST or every existing frame changes.
+                   1, &blit, ss_ > 1 ? VK_FILTER_LINEAR : VK_FILTER_NEAREST);
 
     barrier(swapImgs_[idx], VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
             VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, VK_ACCESS_TRANSFER_WRITE_BIT, 0,
@@ -1333,6 +1352,7 @@ bool VulkanRenderer::presentSurface(const omk::Surface& s) {
     cp.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
     cp.imageExtent = {static_cast<uint32_t>(w_), static_cast<uint32_t>(h_), 1};
     vkCmdCopyBufferToImage(cb, upBuf_, colour_, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &cp);
+    srcW_ = w_; srcH_ = h_;   // only the top-left holds the uploaded picture
     b.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
     b.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
     b.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
@@ -1345,6 +1365,8 @@ bool VulkanRenderer::presentSurface(const omk::Surface& s) {
 
 bool VulkanRenderer::init(int w, int h) {
     w_ = w; h_ = h;
+    rw_ = w_ * ss_; rh_ = h_ * ss_;
+    srcW_ = rw_; srcH_ = rh_;
     if (!pickDevice()) return false;
     if (!makeTarget()) return false;
     if (!makePipelines()) return false;
@@ -1646,8 +1668,9 @@ void VulkanRenderer::resolveTies(const omk::Draw& d) {
 }
 
 void VulkanRenderer::setViewport(const omk::View& view) {
-    const int vw = view.letterboxed() ? view.vw : w_;
-    const int vh = view.letterboxed() ? view.vh : h_;
+    // ...in RENDER pixels, so the letterbox's strip scales with the frame.
+    const int vw = (view.letterboxed() ? view.vw : w_) * ss_;
+    const int vh = (view.letterboxed() ? view.vh : h_) * ss_;
     const VkViewport vp{0, 0, static_cast<float>(vw), static_cast<float>(vh),
                         0.0f, 1.0f};
     const VkRect2D sc{{0, 0}, {static_cast<uint32_t>(vw), static_cast<uint32_t>(vh)}};
@@ -1834,7 +1857,10 @@ void VulkanRenderer::begin(const omk::View& view) {
     clear[1].depthStencil = {1.0f, 0};   // depth far, stencil 0
     VkRenderPassBeginInfo rp{VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO};
     rp.renderPass = pass_; rp.framebuffer = fbuf_;
-    rp.renderArea = {{0, 0}, {static_cast<uint32_t>(w_), static_cast<uint32_t>(h_)}};
+    // the RENDER size, not the output one: a render area smaller than the
+    // attachment leaves the rest of it undefined, and with supersampling on
+    // the resolve then averages four blocks of uninitialised memory.
+    rp.renderArea = {{0, 0}, {static_cast<uint32_t>(rw_), static_cast<uint32_t>(rh_)}};
     rp.clearValueCount = 2; rp.pClearValues = clear;
     vkCmdBeginRenderPass(cb_, &rp, VK_SUBPASS_CONTENTS_INLINE);
     setViewport(view);
@@ -1960,9 +1986,10 @@ void VulkanRenderer::end() {
     // so), so the readback copy needs no further barrier.
     VkBufferImageCopy cp{};
     cp.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
-    cp.imageExtent = {static_cast<uint32_t>(w_), static_cast<uint32_t>(h_), 1};
+    cp.imageExtent = {static_cast<uint32_t>(rw_), static_cast<uint32_t>(rh_), 1};
     vkCmdCopyImageToBuffer(cb_, colour_, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
                            readBuf_, 1, &cp);
+    srcW_ = rw_; srcH_ = rh_;   // the whole render target is live
     vkEndCommandBuffer(cb_);
 
     VkSubmitInfo si{VK_STRUCTURE_TYPE_SUBMIT_INFO};
@@ -1992,9 +2019,33 @@ const omk::Surface& VulkanRenderer::readback() {
     // 888 -> 565 HERE, in software, and not by asking for a 565 attachment:
     // `PORTING` A3 keeps the one quantisation rule in one place rather than
     // delegating it to a driver whose rounding is its own.
-    for (int i = 0; i < w_ * h_; ++i)
-        fb_.px[static_cast<std::size_t>(i)] =
-            omk::rgb565(src[4 * i], src[4 * i + 1], src[4 * i + 2]);
+    //
+    // ...and the SUPERSAMPLE RESOLVE happens on the 8-bit side, BEFORE that
+    // one quantisation: averaging four 565 values would quantise four times
+    // and then average the error, which throws away most of the point.
+    if (ss_ <= 1) {
+        for (int i = 0; i < w_ * h_; ++i)
+            fb_.px[static_cast<std::size_t>(i)] =
+                omk::rgb565(src[4 * i], src[4 * i + 1], src[4 * i + 2]);
+    } else {
+        const int n = ss_ * ss_;
+        for (int y = 0; y < h_; ++y)
+            for (int x = 0; x < w_; ++x) {
+                int acc[3] = {0, 0, 0};
+                for (int sy = 0; sy < ss_; ++sy)
+                    for (int sx = 0; sx < ss_; ++sx) {
+                        const std::size_t o =
+                            (static_cast<std::size_t>(y * ss_ + sy) *
+                                 static_cast<std::size_t>(rw_) +
+                             static_cast<std::size_t>(x * ss_ + sx)) * 4;
+                        acc[0] += src[o]; acc[1] += src[o + 1]; acc[2] += src[o + 2];
+                    }
+                fb_.px[static_cast<std::size_t>(y) * static_cast<std::size_t>(w_) + x] =
+                    omk::rgb565(static_cast<unsigned char>((acc[0] + n / 2) / n),
+                                static_cast<unsigned char>((acc[1] + n / 2) / n),
+                                static_cast<unsigned char>((acc[2] + n / 2) / n));
+            }
+    }
     vkUnmapMemory(dev_, readMem_);
     return fb_;
 }

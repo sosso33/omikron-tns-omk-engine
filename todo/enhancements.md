@@ -21,6 +21,7 @@ measures the enhancement's own property on the GPU, shown to fail.
 | 6 | **mapped shadows**: a real shadow map, cast by the set's own authored lights, characters only | `shadowquality = mapped` / `--shadow-quality mapped` | **done 2026-09-09**; `engine: mapped shadows` |
 | 7 | **per-pixel lighting**: the engine's OWN light law evaluated per fragment instead of per vertex, and received by every character rather than the crowd alone | `lighting = perpixel` / `--lighting perpixel` | **done 2026-09-09**; `engine: per-pixel lighting` |
 | 8 | **the SETS receive the lights too.** Held back deliberately - it overrides authored art; see below | `lighting = sets` | not recommended |
+| 9 | **supersampling**: render N times larger each way and average down. Reaches the CUTOUT edges MSAA never looks at, and the texture aliasing it cannot touch either | `supersampling = N` / `--ssaa N` | **done 2026-09-09**; `engine: supersampling` |
 
 ## Not an enhancement, and it came out of this list: THE SHIMMER
 
@@ -322,6 +323,46 @@ everything is on. So the check compares the two directly - every key
 by `applyMaxEnhancements` - and is shown to fail by adding a key that is not.
 It also asserts the precedence in the direction that matters: `all = max` with
 `anisotropy = 4` gives 4, so a config still means what it says.
+
+## Row 9 - supersampling, DONE 2026-09-09
+
+`--ssaa 1|2|4`. The Vulkan attachments are made N times larger each way, the
+render area and the viewport with them, and `readback()` averages each NxN
+block down. **The resolve happens on the 8-bit side, before the one 565
+quantisation** - averaging four 565 values would quantise four times and then
+average the error, which is most of the point thrown away. The present blit
+takes `VK_FILTER_LINEAR` only above 1, so at 1 nothing changes.
+
+**Why it is not MSAA over again**, which is the question the row exists to
+answer: MSAA samples geometry EDGES. This game's aliasing is mostly texture -
+256x256 atlases sampled POINT - and CUTOUT, where the silhouette of a grille
+or a railing is a colour key INSIDE a triangle, which is a place MSAA never
+looks. Supersampling reaches both.
+
+Measured on Anekbah's own camera 3: `--ssaa 1` is BIT-IDENTICAL to no flag at
+all (0 pixels), 4x moves 26021, and the frame goes from **95 distinct colours
+to 138** - the signature of a resolve rather than a shift, since averaging
+makes values that were in neither sample.
+
+**Not asserted, and deliberately**: that it looks less aliased. Edge energy
+over a texture-heavy set falls about 1%, because most of the high-frequency
+content there is the artists' texture and this averages that too. The eye
+settles whether it looks better; the check settles that it resolves.
+
+Three faults on the way, all mine and all the same shape - a change applied in
+one place and not its partner:
+
+* the **render area** stayed at the output size inside a larger attachment, so
+  everything outside it was never cleared and the resolve averaged
+  uninitialised memory into magenta stripes;
+* the **readback's resolve never landed at all** - it was in an edit batch
+  whose other anchor failed, so the whole batch was refused while the rest of
+  the plumbing went in. The symptom was a black frame, because reading the
+  first `w*h` pixels of a 2x-wide buffer walks the top quarter of the picture,
+  which on that set is ceiling;
+* `presentSurface` uploads a finished picture at the OUTPUT size into the
+  top-left of the attachment, so the present blit had to be told which region
+  is live rather than assuming the whole target.
 
 Known limit of 1 and 2, to be judged by eye: the sets sample sub-rectangles
 of shared atlases (the Anekbah signs), and a filter reaches half a texel past

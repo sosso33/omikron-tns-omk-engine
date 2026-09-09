@@ -141,6 +141,13 @@
 ;              added to its baked colour. Vulkan only.
 ;lighting = pervertex
 
+; Supersampling: 1 off, 2 or 4. Renders the frame N times larger each way and
+; averages it down - N of 4 is SIXTEEN times the fill. Not the same as
+; antialiasing above: MSAA smooths geometry edges, this also reaches the
+; texture aliasing and the CUTOUT edges (grilles, railings, signs) whose
+; silhouette is a colour key inside a triangle. Vulkan only.
+;supersampling = 1
+
 ; Character shadows: classic | fitted | mapped (or 0 | 1 | 2).
 ; SUBORDINATE to `displayshadows` above - with that off, nothing draws
 ; whatever this says.

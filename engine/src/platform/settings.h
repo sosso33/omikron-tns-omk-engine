@@ -94,6 +94,13 @@ struct Settings {
     // the same law per fragment and lets every character receive it.
     int    lighting = 0;
     Source lightingSource = Source::Default;
+    // `supersampling = N` (1 off, 2, 4): render the frame N times larger each
+    // way and average it down. NOT the same as MSAA - that samples geometry
+    // edges, and this game's aliasing is mostly texture (256x256 atlases
+    // sampled POINT) and CUTOUT, whose silhouette is a colour key inside a
+    // triangle where MSAA never looks.
+    int    supersample = 1;
+    Source supersampleSource = Source::Default;
 
     // `all = max` under `[Enhancements]`: turn every enhancement up as far as
     // it goes, in ONE key, without having to know what the list currently is.
@@ -186,6 +193,10 @@ inline constexpr int kMaxTextureFilter = 2;   // trilinear
 inline constexpr int kMaxAnisotropy    = 16;
 inline constexpr int kMaxShadowQuality = 2;   // mapped
 inline constexpr int kMaxLighting      = 1;   // per pixel
+// 4 means SIXTEEN times the fill. It is the top the parser accepts and what
+// `all = max` asks for, and the report line says so, because a reader who
+// turns everything up should be told what they turned up.
+inline constexpr int kMaxSupersample   = 4;
 
 // Apply them, leaving anything an explicit key already set alone.
 inline void applyMaxEnhancements(Settings& s) {
@@ -197,6 +208,7 @@ inline void applyMaxEnhancements(Settings& s) {
     take(s.anisotropy,    kMaxAnisotropy,    s.anisotropySource);
     take(s.shadowQuality, kMaxShadowQuality, s.shadowQualitySource);
     take(s.lighting,      kMaxLighting,      s.lightingSource);
+    take(s.supersample,   kMaxSupersample,   s.supersampleSource);
 }
 
 // Resolve the three sources in order.  Either may be absent.

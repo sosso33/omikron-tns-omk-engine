@@ -40,6 +40,8 @@ int main(int argc, char** argv) {
     std::printf("enh shadowquality %d %s\n", s.shadowQuality,
                 omk::sourceName(s.shadowQualitySource));
     std::printf("enh lighting %d %s\n", s.lighting, omk::sourceName(s.lightingSource));
+    std::printf("enh supersampling %d %s\n", s.supersample,
+                omk::sourceName(s.supersampleSource));
     std::printf("enh all %d\n", s.enhanceAll ? 1 : 0);
     std::printf("screen %dx%d %s\n", v.screenX, v.screenY, omk::sourceName(s.screen));
     std::printf("density %d %s\n", v.streetActivity, omk::sourceName(s.streetActivity));

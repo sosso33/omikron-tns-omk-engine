@@ -948,7 +948,7 @@ int sceneViewer(const std::string& fr, const std::string& setName,
                 int camIndex, const float* eyeArg, const float* atArg,
                 float fovArg, bool letterbox, int frameBudget,
                 const std::string& dump, bool startVulkan, bool noDelay,
-                int aaSamples, int texFilter, int texAniso) {
+                int aaSamples, int texFilter, int texAniso, int ssaa) {
     // The set. A bare name is looked up in MESHES/DECORS, which is where the
     // decor sets live; anything with a slash is taken as given, so a character
     // model or another folder can be opened without a special case.
@@ -1036,6 +1036,7 @@ int sceneViewer(const std::string& fr, const std::string& setName,
     if (live && aaSamples > 1) live->setMultisample(aaSamples);   // the enhancements
     if (live && texFilter > 0) live->setTextureFilter(texFilter);
     if (live && texAniso > 1) live->setAnisotropy(texAniso);
+    if (live && ssaa > 1) live->setSupersample(ssaa);
     if (live && !live->init(PW, PH)) { delete live; live = nullptr; }
     if (live) {
         live->setTextures(tex);
@@ -1091,6 +1092,7 @@ int sceneViewer(const std::string& fr, const std::string& setName,
             if (aaSamples > 1) vr->setMultisample(aaSamples);
             if (texFilter > 0) vr->setTextureFilter(texFilter);
             if (texAniso > 1) vr->setAnisotropy(texAniso);
+            if (ssaa > 1) vr->setSupersample(ssaa);
             omk::vulkanNeedExtensions(vr, ext.data(), n);
             void* inst = omk::vulkanCreateInstance(vr);
             // Value-initialised rather than VK_NULL_HANDLE: this file
@@ -1411,6 +1413,9 @@ int main(int argc, char** argv) {
 "  --shadow-quality classic|fitted|mapped  ENHANCEMENT: fitted lays each blob\n"
 "                   on the surface under it; mapped is a real shadow map, the\n"
 "                   Vulkan backend only (default classic)\n"
+"  --ssaa N         ENHANCEMENT: render N times larger each way and average it\n"
+"                   down - 1 off, 2 or 4. Reaches the CUTOUT edges (grilles,\n"
+"                   railings, signs) that MSAA never looks at; Vulkan only\n"
 "  --enhance-all    every ENHANCEMENT as high as it goes - none of them is what\n"
 "                   the original drew; a specific flag still wins\n"
 "  --lighting pervertex|perpixel  ENHANCEMENT: the engine's own light law per\n"
@@ -1646,6 +1651,7 @@ int main(int argc, char** argv) {
     int anisoFlag = -1;    // --anisotropy N, [Enhancements] anisotropy
     int shadowQFlag = -1;  // --shadow-quality classic|fitted|mapped, [Enhancements] shadowquality
     int lightingFlag = -1; // --lighting pervertex|perpixel, [Enhancements] lighting
+    int ssaaFlag = -1;     // --ssaa N, [Enhancements] supersampling
     // --enhance-all: every enhancement as high as it goes, in one word. The
     // two the DEVICE caps are asked for at their largest defined value and the
     // backend reduces what it cannot meet, which is what "max available" means
@@ -1820,6 +1826,7 @@ int main(int argc, char** argv) {
         else if (a == "--anisotropy" && i + 1 < argc)
             anisoFlag = std::max(1, std::min(16, std::atoi(argv[++i])));
         else if (a == "--enhance-all") enhanceAll = true;
+        else if (a == "--ssaa" && i + 1 < argc) ssaaFlag = std::atoi(argv[++i]);
         else if (a == "--lighting" && i + 1 < argc) {
             lightingFlag = omk::lightingMode(argv[++i]);
             if (lightingFlag < 0) {
@@ -1895,7 +1902,10 @@ int main(int argc, char** argv) {
         return sceneViewer(fr, scene, camIndex, haveEye ? eyeA : nullptr,
                            haveAt ? atA : nullptr, fovA, letterbox, frames, dump,
                            startVulkan, noDelay, aaFlag < 0 ? 0 : aaFlag,
-                           filterFlag < 0 ? 0 : filterFlag, anisoFlag < 0 ? 1 : anisoFlag);
+                           filterFlag < 0 ? 0 : filterFlag, anisoFlag < 0 ? 1 : anisoFlag,
+                           // the scene viewer runs BEFORE settings resolve, so
+                           // it takes the flag alone; `--config` is the game's
+                           ssaaFlag < 0 ? 1 : ssaaFlag);
 
     const omk::DataFs fs(fr);
     auto w = omk::UiWidgets::loadJson(tb + "/ui_widgets.json");
@@ -2065,13 +2075,15 @@ int main(int argc, char** argv) {
     const int aaSamples = enh(aaFlag, settings.antiAliasing, omk::kMaxAntiAliasing);
     const int texFilter = enh(filterFlag, settings.textureFilter, omk::kMaxTextureFilter);
     const int texAniso  = enh(anisoFlag, settings.anisotropy, omk::kMaxAnisotropy);
+    const int ssaa      = enh(ssaaFlag, settings.supersample, omk::kMaxSupersample);
     if (enhanceAll || settings.enhanceAll)
         std::printf("enhancements: all on - %dx MSAA, %s filtering, anisotropy %d, "
-                    "%s shadows, %s lighting. As high as each goes unless a specific "
+                    "%s shadows, %s lighting, %dx supersampling. As high as each goes "
+                    "unless a specific "
                     "setting said otherwise; none of it is what the original drew, and "
                     "the device reduces what it cannot meet.\n",
                     aaSamples, omk::textureFilterName(texFilter), texAniso,
-                    omk::shadowQualityName(shadowQuality), omk::lightingName(lighting));
+                    omk::shadowQualityName(shadowQuality), omk::lightingName(lighting), ssaa);
     std::printf("settings: clip %d m (%s) = %.0f in, near/far split %.0f/%.0f;"
                 " crowd %d (%s); sky %d (%s), shadows %d (%s), detail %d (%s);"
                 " aa %d (%s, enhancement), filter %s (%s, enhancement),"
@@ -2775,6 +2787,13 @@ int main(int argc, char** argv) {
     omk::Surface mediaBmp;
     float playerFeet = 0.0f;
     bool  playerFeetKnown = false;
+    // ...AND THE PELVIS TRANS THE ANCHOR WAS LATCHED AT, which is the whole of
+    // `todo/player-vertical.md` step 1. `playerFeet` is a POSE's lowest corner
+    // and every pose carries its own pelvis translation, so an anchor latched
+    // without recording that translation has no shared origin with the drop
+    // measured below - see the long note at the latch.
+    float playerRootRef = 0.0f;
+    bool  playerStandLatched = false;   // the anchor came from H_STAND, not from whatever was up
     // The model-space x/z of the hierarchy root - the PELVIS - which is what
     // a turn must pivot about. `HO1_FN`'s is (2.87, 17.94); rotating about
     // (0,0) instead swings him around a point half a metre away.
@@ -2886,6 +2905,7 @@ int main(int argc, char** argv) {
             if (aaSamples > 1) vr->setMultisample(aaSamples);   // the enhancements
             if (texFilter > 0) vr->setTextureFilter(texFilter);
             if (texAniso > 1) vr->setAnisotropy(texAniso);
+            if (ssaa > 1) vr->setSupersample(ssaa);
             omk::vulkanNeedExtensions(vr, ext.data(), nx);
             void* inst = omk::vulkanCreateInstance(vr);
             VkSurfaceKHR surf{};
@@ -2918,6 +2938,7 @@ int main(int argc, char** argv) {
         if (wv && aaSamples > 1) wv->setMultisample(aaSamples);
         if (wv && texFilter > 0) wv->setTextureFilter(texFilter);
         if (wv && texAniso > 1) wv->setAnisotropy(texAniso);
+        if (wv && ssaa > 1) wv->setSupersample(ssaa);
         if (wv && wv->init(dispW, dispH)) {
             worldVk = wv;
             std::printf("renderer: the world through VULKAN offscreen - %s "
@@ -10039,10 +10060,59 @@ int main(int argc, char** argv) {
                 // port has no jump or fall state yet (omk-play 68), so nothing
                 // today can tell them apart; when one arrives, this is the
                 // line that has to become the real root-motion path.
-                if (!playerFeetKnown) {
+                // THE ANCHOR AND THE DROP MUST SHARE ONE ORIGIN
+                // (`todo/player-vertical.md` step 1, 2026-09-09).
+                //
+                // The reader: *"walking or running seems to rise its y
+                // position and stopping (and so returning to the idle
+                // position) reset the y position to a normal one"*. It is not
+                // the clips: measured with `tools/vertical_probe`, `H_WALK`
+                // f0 lifts the body's lowest corner 2.06 above the standing
+                // one while its pelvis track drops 2.09, so the authored pair
+                // CANCELS to 0.03 - the planted foot stays planted, which is
+                // the "authored motion netting out" the engine relies on.
+                //
+                // What floated was this port's bookkeeping. `playerFeet` is a
+                // POSE's lowest corner, latched from `H_STAND` - whose pelvis
+                // trans is +0.68, not zero - while `rootAccum` below re-bases
+                // to the ENTERED clip's first frame: +2.09 for `H_WALK`,
+                // +3.68 for `H_RUN`. The two halves therefore measured from
+                // different origins, and the body was drawn a CONSTANT
+                // 2.09-0.68 = 1.41 too high walking and 3.68-0.68 = 3.00 too
+                // high running, snapping back the moment `H_STAND` released
+                // the sum. That is the report exactly, running rising more.
+                //
+                // So the anchor records the pelvis trans it was taken at
+                // (`playerRootRef`) and the drop is measured from it.
+                //
+                // AND IT IS LATCHED FROM `H_STAND` SPECIFICALLY, not from
+                // whatever pose happened to be up on the first frame: the
+                // anchor is meant to be a model constant, and one taken off an
+                // arbitrary pose carries that pose's own vertical into every
+                // frame afterwards. A provisional latch draws until the idle
+                // first comes round, and is then replaced once.
+                //
+                // Cross-checked against the engine's own constant, which is a
+                // different quantity and does not substitute for this one:
+                // `Walk_ProbeGround` (0x00467030) seats by the model's
+                // COLLISION SPHERES - `Collision_BodySphere`'s largest radius
+                // (10.91) plus `sub_4443B0`'s second-lowest centre.y (14.98) -
+                // and HO1_FN's lowest sphere reaches 41.81 below the node
+                // against a standing visual foot at 38.76 + 0.68 = 39.44. The
+                // sphere hangs 2.37 BELOW the feet, and where the engine
+                // absorbs that is `actor+276`, the reference its clearance
+                // `actor[264] - actor[276]` is taken against - which is
+                // UNTRACED. So the sphere constant is not used as the seat
+                // here; it is quoted because it corroborates the scale.
+                const bool standing = player->clipName() == "H_STAND";
+                if (!playerFeetKnown || (standing && !playerStandLatched)) {
                     playerFeet = -1e9f;
                     for (const auto& c : playerPosed.corners)
                         if (c.y > playerFeet) playerFeet = c.y;
+                    playerRootRef = (pt && !pt->trans.empty())
+                                        ? pt->trans[static_cast<std::size_t>(
+                                              player->poseFrame() > 0 ? player->poseFrame() : 0)][1]
+                                        : 0.0f;
                     // the hierarchy root: the one mesh with no parent. A model
                     // constant, so this half stays latched.
                     playerRootXZ[0] = playerRootXZ[1] = 0.0f;
@@ -10053,6 +10123,7 @@ int main(int argc, char** argv) {
                             break;
                         }
                     playerFeetKnown = true;
+                    if (standing) playerStandLatched = true;
                 }
                 // THE ROOT TRANSLATION'S VERTICAL, which is the crouch.
                 //
@@ -10131,6 +10202,32 @@ int main(int argc, char** argv) {
                     // bit too low"*.
                     if (boarding || leaving) rootAccum = 0.0f;
                     rootDrop = rootAccum;
+                    // ...EXCEPT WHERE THE BODY IS ON THE GROUND BY DEFINITION,
+                    // which is every LOOPING clip - the idle, the walk, the
+                    // run (`todo/player-vertical.md` step 1).
+                    //
+                    // The accumulator above exists for the TAKE, whose clips
+                    // CHAIN: H_TAKL12 crouches +24.3 and H_TAKL22 carries that
+                    // crouch back up, so each reads as a delta on the last and
+                    // an absolute reading of either is meaningless (it is the
+                    // regression recorded in the note above - H_TAKL22 run as
+                    // an absolute goes 0 -> -24.6, from standing to 62 cm
+                    // ABOVE it). A locomotion clip is the opposite: it is one
+                    // self-contained cycle that begins and ends on the floor,
+                    // so its pelvis trans is an OFFSET FROM THE STANDING POSE
+                    // and must be read against the origin the anchor was
+                    // latched at, never against whatever the last state left
+                    // in the sum.
+                    //
+                    // The discriminator is structural, not a list of names:
+                    // `variantCount() > 1` is what marks the grid/take states
+                    // (it is what selects `gridTracks`, and what the crouch
+                    // trace below is gated on). Everything else loops.
+                    //
+                    // H_STAND lands on cur 0.68 - ref 0.68 = 0 by
+                    // construction, which is why the explicit release below it
+                    // was able to look correct while the walk was 1.41 out.
+                    if (player->variantCount() <= 1) rootDrop = cur - playerRootRef;
                     // MEASURING, not fixing: how far does the model's own
                     // lowest point travel across a take? If the rotations
                     // lower the body, a CONSTANT anchor is right and the
@@ -10142,11 +10239,21 @@ int main(int argc, char** argv) {
                             if (c.y > lo) lo = c.y;
                             if (c.y < hi) hi = c.y;
                         }
+                        // `foot` is the one that matters and the one this
+                        // print did NOT carry: `lo` is a MODEL-space corner
+                        // (this runs before the offset loop below), so its
+                        // `gap` against the ground is not a distance on
+                        // screen. The drawn foot sits at
+                        // `lo + pos.y - playerFeet + rootDrop`, so its height
+                        // above the floor is `lo - playerFeet + rootDrop` -
+                        // NEGATIVE is above, y growing down. That is the
+                        // number `verify.py: engine player vertical` asserts
+                        // and the one the walk float showed up in.
                         std::printf("DBG ply f%ld %-9s pf %2d  ground %+8.2f  lowest %+8.2f"
-                                    "  gap %+7.2f  head %+8.2f  rootDrop %+6.2f\n",
+                                    "  gap %+7.2f  head %+8.2f  rootDrop %+6.2f  foot %+7.2f\n",
                                     n, player->clipName().c_str(), player->poseFrame(),
                                     player->pos()[1], lo, lo - player->pos()[1], hi,
-                                    rootDrop);
+                                    rootDrop, lo - playerFeet + rootDrop);
                     }
                     if (player->variantCount() > 1) {
                         float lo = -1e9f;

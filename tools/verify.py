@@ -6452,6 +6452,72 @@ def c_engine_shimmer():
             "shimmering mesh is in that shot" % (sw2, vk2, sw0))
 
 
+
+def c_engine_supersampling():
+    r"""`--ssaa N` - the ENHANCEMENT of `todo/enhancements.md` 9.
+
+    Render the frame N times larger each way and average it down. NOT the same
+    enhancement as MSAA, which is why both exist: MSAA samples geometry EDGES,
+    and this game's aliasing is mostly texture (256x256 atlases sampled POINT)
+    and CUTOUT, whose silhouette is a colour key INSIDE a triangle where MSAA
+    never looks.
+
+    Three properties, and the first is the one that protects everything else:
+
+      * **`--ssaa 1` is BIT-IDENTICAL to no flag at all.** Every existing
+        frame check compares pixels, so an "off" that is not exactly off would
+        move all of them. Asserted at 0 pixels, not "few".
+      * 4x differs from 1x by a real amount, so it is doing something;
+      * and the frame gains DISTINCT COLOURS - 95 to 138 on this view. That is
+        the signature of a resolve rather than a shift: averaging four samples
+        makes values that were in neither. A count of changed pixels alone
+        would pass on a frame that merely moved.
+
+    Deliberately NOT asserted: that the picture looks less aliased. Edge energy
+    over a texture-heavy set falls about 1%, because most of the high-frequency
+    content there is the artists' texture and supersampling averages that too.
+    The eye settles whether it looks better; this settles that it resolves.
+
+    Shown to fail: dropping the resolve to the 1x branch takes the colour
+    count back to 95 and the difference to a squashed corner of the frame.
+    """
+    eng = os.path.join(ROOT, "engine")
+    if not os.path.isdir(eng):
+        return ("skipped",), ("skipped",), "engine/ absent"
+    src = open(os.path.join(eng, "src", "platform", "settings.h"),
+               encoding="utf-8").read()
+    defaultOff = "int    supersample = 1;" in src
+    mk = subprocess.run(["make", "-s", "play"], cwd=eng, capture_output=True, text=True)
+    play = os.path.join(eng, "build", "omk-play")
+    if mk.returncode != 0 or not os.path.exists(play):
+        return ("skipped",), ("skipped",), "no SDL - the frontend is optional (PORTING A8)"
+    env = dict(os.environ, SDL_VIDEODRIVER="dummy")
+
+    def shot(extra):
+        out = os.path.join(eng, "build", "ssaa-%s.bin" % ("-".join(extra) or "none"))
+        r = subprocess.run([play, omkpaths.data_root(), os.path.join(ROOT, "tables"),
+                            "--scene", "Anekbah", "--cam", "3", "--frames", "3",
+                            "--vulkan", "--dump", out] + extra,
+                           capture_output=True, text=True, env=env)
+        if "(vulkan)" not in r.stdout:
+            return None          # no device: the enhancement cannot be measured
+        return open(out, "rb").read() if os.path.exists(out) else b""
+
+    none = shot([])
+    if none is None:
+        return ("skipped",), ("skipped",), "no Vulkan device - the GPU backend is optional"
+    one, four = shot(["--ssaa", "1"]), shot(["--ssaa", "4"])
+    same = sum(1 for i in range(0, len(none), 2) if none[i:i+2] != one[i:i+2])
+    moved = sum(1 for i in range(0, len(none), 2) if four[i:i+2] != one[i:i+2])
+    colours = lambda d: len({d[i:i+2] for i in range(0, len(d), 2)})
+    c1, c4 = colours(one), colours(four)
+    return (defaultOff, same, moved > 5000, c4 > c1 + 20), (True, 0, True, True), \
+           ("the default is 1 in the source; `--ssaa 1` differs from no flag in %d "
+            "pixels; 4x moves %d; and the frame goes from %d distinct colours to %d, "
+            "which is the resolve making values that were in neither sample"
+            % (same, moved, c1, c4))
+
+
 def c_engine_street_frame():
     r"""`omk-play` DRAWS the city crowd (docs/STREET_LIFE.md, step 4).
 
@@ -27378,7 +27444,7 @@ def c_licence_headers():
                    if TAG in open(p, encoding="utf-8",
                                   errors="replace").read(600)]
     return (authored, sorted(missing), len(vendored), mislabelled), \
-           (391, [], 1, []), \
+           (393, [], 1, []), \
            "authored source files under tools/, engine/src, engine/tools, " \
            "engine/backends and scripts/; those MISSING the SPDX tag; " \
            "vendored files in engine/third_party; and vendored files wrongly " \
@@ -28895,6 +28961,114 @@ def c_vertex_shimmer():
            "flagged 0x8000000; and LAHOREH's shimmering vertices"
 
 
+def c_engine_player_vertical():
+    r"""THE PLAYER'S VERTICAL - what holds the drawn body on the floor while a
+    locomotion clip plays (`todo/player-vertical.md` step 1).
+
+    A reader, 2026-09-08: *"walking or running seems to rise its y position and
+    stopping (and so returning to the idle position) reset the y position to a
+    normal one"*. It is NOT the clips. Measured with `tools/vertical_probe`,
+    `H_WALK` frame 0 lifts HO1_FN's lowest corner 2.06 above the standing pose
+    while the same frame's pelvis track drops 2.09, so the authored pair
+    CANCELS to 0.03 - the planted foot stays planted, which is the "authored
+    motion netting out" `Walk_GroundResponse` relies on.
+
+    What moved was the port's bookkeeping, and it was a mismatch of ORIGINS.
+    `omk-play` latches its anchor from a POSE's lowest corner, and every pose
+    carries its own pelvis translation - `H_STAND`'s is +0.68, not zero - while
+    the drop was measured by an accumulator re-based to the ENTERED clip's
+    first frame: +2.09 for `H_WALK`, +3.68 for `H_RUN`. Two origins, so the
+    body was drawn a CONSTANT offset off the floor for as long as the clip ran
+    and snapped back the moment `H_STAND` released the sum.
+
+    Asserted from a 220-frame headless `omk-play` run in Anekbah - idle 40,
+    UP held 120, idle 60 - reading its own `OMK_PLY` trace. `foot` is the DRAWN
+    foot's height above the walker's floor point (`lowest - anchor + rootDrop`,
+    y growing down, so negative is above it):
+
+      * standing, 20 samples: |foot| <= 0.05, i.e. the idle stands ON the floor;
+      * walking, 28 samples: the MEAN is within 0.10 of zero - the cycle is
+        centred on the floor rather than displaced off it - while the spread
+        stays under 1.0, which is the authored cycle itself (the foot really
+        does lift and plant);
+      * and the walk's mean is no further from zero than the idle's, by 0.25,
+        which is the statement "walking does not move him vertically".
+
+    **TIER 5, data-constrained**, like the controller it sits on: no capture
+    reaches it (the trace rig sees only what a VM handler narrates, and none of
+    this narrates), so the oracle is the shipped clips' own arithmetic.
+
+    **Shown to fail** (PORTING B2). Mutating the one line that reads the drop
+    against the latched origin - `if (player->variantCount() <= 1) rootDrop =
+    cur - playerRootRef;` - to `if (false)`, which restores the accumulator the
+    port had before, moves the walk's mean foot from -0.02 to **+0.94** and its
+    worst sample from 0.63 to 1.53, while the idle stays at +0.02: exactly the
+    reported shape, a constant displacement for the length of the clip that
+    releases at the idle. The mutation was confirmed applied (the file's md5
+    changed and the binary relinked) before the run, and the run's OUTPUT
+    differed - not merely the check's verdict.
+
+    NOT covered, and labelled here and in `play.cpp`: the engine's own seat is
+    a CLEARANCE, not this offset - `Walk_ProbeGround` (0x00467030) writes
+    `actor[264] = lastSafeY - curY + groundY + rotY + radius` from the model's
+    COLLISION SPHERES (`Collision_BodySphere`'s largest radius 10.91,
+    `sub_4443B0`'s second-lowest centre.y 14.98) and `Walk_GroundResponse`
+    drives it to zero against `actor+276`, which is UNTRACED. HO1_FN's lowest
+    sphere reaches 41.81 below the node against a standing visual foot at
+    39.44, so the sphere hangs 2.37 BELOW the feet and the two constants are
+    not interchangeable. Nothing here asserts the engine's absolute seat; it
+    asserts that the port's two halves share one origin. The TAKE chain
+    (`variantCount() > 1`) keeps the accumulator and is covered by
+    `dialog staging`, not by this row.
+    """
+    import subprocess, tempfile, shutil, re as _re
+    eng = os.path.join(ROOT, "engine")
+    save = os.path.join(ROOT, "traces", "save-appart.bin")
+    if not os.path.isdir(eng) or not os.path.exists(save):
+        return ("skipped",), ("skipped",), "engine/ or the anchor save absent"
+    # THE CHECK MUST BUILD THE BINARY IT MEASURES (CLAUDE.md 1): `omk-play` is
+    # what carries the placement, so it is what `make` is asked for.
+    mk = subprocess.run(["make", "-s", "play"], cwd=eng,
+                        capture_output=True, text=True)
+    play = os.path.join(eng, "build", "omk-play")
+    if mk.returncode != 0 or not os.path.exists(play):
+        return ("no sdl",), ("no sdl",), "omk-play needs SDL; skipped without it"
+    tmp = tempfile.mkdtemp()
+    try:
+        env = dict(os.environ, SDL_VIDEODRIVER="dummy", OMK_PLY="1")
+        r = subprocess.run(
+            [play, omkpaths.data_root(), os.path.join(ROOT, "tables"),
+             "--save", save, "--area", "0",
+             "--stand", "1804,0,-6890,336", "--no-crowd",
+             "--hold", "0*40,k200*120,0*60", "--frames", "220",
+             "--dump", os.path.join(tmp, "f.bin")],
+            capture_output=True, text=True, env=env)
+        out = r.stdout + r.stderr
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+    rows = {}
+    for L in out.splitlines():
+        m = _re.search(r"DBG ply f\d+ (\S+).*foot\s+([-+][\d.]+)", L)
+        if m:
+            rows.setdefault(m.group(1), []).append(float(m.group(2)))
+    stand, walk = rows.get("H_STAND", []), rows.get("H_WALK", [])
+    if not stand or not walk:
+        return ("no trace",), ("sampled",), "the OMK_PLY trace carried no clip rows"
+    sMean = sum(stand) / len(stand)
+    wMean = sum(walk) / len(walk)
+    return (len(stand) >= 10, len(walk) >= 10,
+            max(abs(v) for v in stand) <= 0.05,
+            abs(wMean) <= 0.10,
+            max(abs(v) for v in walk) < 1.0,
+            abs(wMean) - abs(sMean) <= 0.25), \
+           (True, True, True, True, True, True), \
+           "the drawn foot against the walker's floor over idle -> walk -> " \
+           "idle: both clips sampled; the idle stands ON the floor; the " \
+           "walk's mean is centred on it (the pre-fix accumulator put it at " \
+           "+0.94); its spread is the authored cycle; and walking displaces " \
+           "him no more than standing does"
+
+
 
 CHECKS = [
     ("conversations",      c_conversations,     "FILE_FORMATS 2"),
@@ -29145,6 +29319,7 @@ SLOW = [
     ("engine: fitted shadows", c_engine_fitted_shadows, "todo/enhancements 5; o3de/shadow.h"),
     ("engine: mapped shadows", c_engine_mapped_shadows, "todo/enhancements 6; o3de/renderer.h"),
     ("engine: per-pixel lighting", c_engine_perpixel_lighting, "todo/enhancements 7; o3de/vertexlight.h"),
+    ("engine: supersampling", c_engine_supersampling, "todo/enhancements 9; o3de/renderer.h"),
     ("engine: shimmer", c_engine_shimmer, "ASSETS 4c; o3de/shimmer.h"),
     ("engine: traffic frame", c_engine_traffic_frame, "STREET_LIFE 2b; todo/road-traffic 3"),
     ("engine: crowd push", c_engine_crowd_push, "STREET_LIFE 3; actor/spatial.h"),
@@ -29275,6 +29450,7 @@ SLOW = [
     ("engine: inventory",  c_engine_inventory,  "engine/README"),
     ("engine: text",       c_engine_text,       "engine/README"),
     ("engine: boot",       c_engine_boot,       "engine/README"),
+    ("engine: player vertical", c_engine_player_vertical, "engine/README; todo/player-vertical.md"),
     ("dialog staging sweep", c_dialog_staging_sweep, "ASSETS"),
     ("cutscene actors",    c_cutscene_actors,   "CUTSCENES 4"),
     ("textures",           c_textures,          "ASSETS"),
