@@ -8,8 +8,10 @@ brains. That decision rests on one sentence —
 > the real branch needs the navigation node, the line of sight and the
 > weapon's range, **none of which this tree has**
 
-— and the first of the three turns out to be wrong. **The navigation data
-ships.**
+— and **all three turn out to be wrong**. The navigation data ships (§1-2),
+the weapon's rate is traced and the range is a character property (§5b-5c),
+and the line of sight is a ray cast the port already has the primitive for
+(§5c). The premise the decision rested on is gone.
 
 ---
 
@@ -202,7 +204,7 @@ Each ends in a commit and a report.
 | 2 | **the grid** — the cell byte, the floor box, the door table, a reader and a probe that DRAWS a floor | **done 2026-09-09**, §2b; `verify.py: map2d grid` |
 | 3 | **the mode** — ops 80/81 read and ported, the weapon slot, the HUD choice, the library swap, both exit arms | **done 2026-09-09**, §3b; `verify.py: engine: shoot mode`. The frontend half (camera mode 4, group 200, scheme 2 installed in `omk-play`, and a `--shoot` harness) is NOT done and moves to step 4 |
 | 4 | the FRONTEND half and the WEAPON tables | **DONE 2026-09-09** - §4b the frontend and the tables, §4c what a shot is, §4d the live arm, §4e the target scripts and the doors' refcount |
-| 5 | **the brains, decision revisited** — with the grid in hand, how much of the generic shooter's 16 states is now fact rather than geometry. Gandhar is already exact; Astaroth and the generic are state graphs. **Only what the grid settles gets wired**; the rest stays labelled | |
+| 5 | **the brains, decision revisited** — with the grid in hand, how much of the generic shooter's 16 states is now fact rather than geometry. Gandhar is already exact; Astaroth and the generic are state graphs. **Only what the grid settles gets wired**; the rest stays labelled | **DONE 2026-09-09** - §5b the weapon floats, §5c the range, the cone and the two line-of-sight tests. All three of `standing-unknowns` §2's unknowns are read and the decision there is SUPERSEDED |
 | 6 | docs, the checks, and a play test | |
 
 ## 4b. The frontend, and the weapon tables — step 4 (part), 2026-09-09
@@ -437,11 +439,14 @@ shot is, §4d the live arm, §4e the target scripts.
 
 Written down so step 5 cannot quietly assume it:
 
-* **line of sight.** The grid may or may not answer it — the wall segments in
-  each floor are a candidate and nothing has been traced to them yet.
-* **the weapon's range.** `Shoot_InitWeapon` is READ (§4b, §5b) and its two
-  floats are now half settled: **`f0` is the RATE**, traced, and `f1` has no
-  reader anywhere in the shoot sources. The range is still unread.
+* ~~**line of sight.**~~ **CLOSED, §5c**, and the grid is only half of it:
+  the acquisition casts `sub_4449E0` against the SET'S OWN MESHES through
+  `o3de_ForEachMeshInBox`, and the brain's state 15 walks the grid with
+  `sub_4359A0`'s Bresenham. The wall segments are not involved.
+* ~~**the weapon's range.**~~ **CLOSED, §5c** - and it is not in the weapon
+  table at all: the range is character **property 26**, in metres, read
+  through event 44 into the shoot record's `+32`. `Shoot_InitWeapon`'s two
+  floats are `f0` the RATE (§5b, traced) and `f1` with no reader at all.
 * ~~**what a shot is.**~~ **ANSWERED, §4c**: a projectile out of a 256-slot,
   60-byte pool, fired by `Actor_TickProjectiles` on a per-slot timer and paid
   for out of property 34. What is still unread there is the AIM
@@ -471,23 +476,143 @@ which is the player shooting faster with a pistol and no faster with a cannon.
 the weapon row is reachable only through the shoot record's `+180`, and the
 whole of `05_sys.c` reads that pointer exactly twice - `u16(row, 12)`, the KEY,
 in the property-35 handler at 4350, and `*row`, f0, at 6057. `i2` has none
-either. So `f1` is *probably* the range by elimination, and it is not written
-down as one.
+either. **And the elimination that would have made `f1` the range is closed
+off by §5c below**: the range is a per-character PROPERTY and never comes from
+this table at all, so `f1`'s meaning is simply open.
 
 > **A TRAP WORTH THE LINE: `+180` is two different things.** On an ACTOR it is
 > the bank (`Cef_FindGroupById(u32(actor, 180), 200)`, four sites); on a SHOOT
 > RECORD it is the weapon row. Same offset, different structs, and a grep for
 > `, 180)` returns both mixed together.
 
-**What this does to the decision.** `standing-unknowns` §2 rested on three
-unknowns. The navigation node closed at step 2; the RATE closes here; the
-RANGE and the LINE OF SIGHT do not. So the grid answers where a gunman may
-stand and which doors he may cross (§4d, §4e) and it does not answer where he
-may aim - which is the half the generic brain's branch needs. **The decision
-stands**, on one and a half unknowns rather than three, and the next reading
-is `f1`'s consumer or `sub_44D7F0`'s aim from §4c, which are likely the same
-question from two ends.
+## 5c. The line of sight and the range — step 5's second reading, 2026-09-09
 
-Until those three are read, the decision of `standing-unknowns` §2 stands for
-the generic arm. What has changed is that it is now a question with an
-answer in the tree rather than a gap outside it.
+Both of the remaining unknowns are closed, and neither answer was where the
+plan expected it.
+
+### The RANGE is a character PROPERTY, not a weapon field
+
+`sub_422540` (0x00422540), called once from `Shoot_ActorEnter`, builds the
+shoot record out of the character's own properties. It raises **event 44**,
+`Actor_GetProperty` — the same event §4c found the ammunition on — six times
+in a chain where each read gates the next:
+
+| property | field | what it is |
+|---|---|---|
+| 1 | `rec+92` | **health**, and `0` is rewritten to **10** |
+| 26 | `rec+32` | `39 * v` — **the ACQUISITION RANGE, in METRES** |
+| 27 | `rec+28` | `39 * v` — a second, inner range, in metres |
+| 30 | `rec+36` | `39 * v` — a third, in metres |
+| 29 | `rec+40` | `cos(v * pi/180)` — **the SIGHT CONE's half-angle, in DEGREES** |
+| 37 | `rec+160` | five behaviour bits (`0x10`, `4`, `8`, `2`, `0x20` fanned out to `0x4000000`, `0x800000`, `0x2000000`, `0x1000000`, `0x100000`) |
+
+`39` is the inch-per-metre factor this repo has met twice already — the
+pedestrian spawn's `39*(5-density)*h[3]` and the projectile speed's
+`property.hi * 3.9`. So a designer authors a gunman's reach and his field of
+view in **metres and degrees**, per character, and the weapon table has
+nothing to do with either. That is what shuts the door on `f1`.
+
+### The CONE, and the two globals `sub_420EB0` turns on
+
+`sub_420C70(rec, target[4], me[3])` is the acquisition test, and it is one
+line:
+
+```c
+return v4 > f32(rec, 40) * dist3d && dist3d < f32(rec, 32);
+```
+
+with `v4` the dot of (target - me) against the target's own forward vector,
+built by rotating `(0,0,1)` through the yaw in `target[3]` — so `a2` is
+`Actor_GetPosAndFacing`'s four floats and the cone is measured **from the
+target outward**. On the way it leaves four globals behind, and they are what
+the turn helper reads rather than recomputing:
+
+* `flt_90E118` the squared **2D** distance, `flt_90E108` the **3D** one;
+* `flt_90E0F0` the forward dot, `flt_90E114` its horizontal part;
+* `flt_90E0F4` the **cross** — the left/right sign.
+
+`sub_420EB0(actor, allowSnap)` then turns the body: it compares the dot
+against `0.99` of the distance (already facing — do nothing), `0.80`
+(one frame-step of creep), and otherwise steps the Euler at **actor+420** by
+`5` or `10` units of `flt_4C30D8`, the frame delta. With `allowSnap` set and
+the target behind the cone it returns `180`, or `+/-90` off the sign of
+`flt_90E0F4`, for the caller to play a turn animation instead. Hex-Rays loses
+the FPU compare flags here (`variable 'v3' is possibly undefined` three
+times), so the *thresholds* are read off the constants and the *sense* off
+the caller — worth saying out loud, because that is the one part of this
+section that is a reading rather than a transcription.
+
+`sub_420D90` beside it is the same function with the range **doubled**
+(`f32(rec,32) + f32(rec,32) > dist`) — a wider "still interested" test, used
+on the arm where `rec+160 & 0x800000` (property 37's bit 4) is set.
+
+### The LINE OF SIGHT is TWO tests, and one of them is a real ray cast
+
+**The geometric one**, `sub_4449E0` (0x004449E0, `16_o3de.c`), is the one the
+acquisition uses: normalise the segment from me to the target, build the AABB
+of the two endpoints, hand it to `o3de_ForEachMeshInBox` with `sub_444460` as
+the visitor, and keep the nearest hit — returning `1` with the distance, the
+hit point and two ids, or `0` when the segment reaches clear. The site reads
+
+```c
+if (!sub_4449E0(me, target, hit, -1, &dist, &id1, &id2) && insideCone)
+    /* acquire: state 3, latch rec+160 |= 0x20 */
+```
+
+so **nothing hit AND inside the cone** is what acquires, and `0x20` is the
+latch that keeps a gunman engaged once he has seen you. This is the answer to
+the plan's "the wall segments in each floor are a candidate": they are not
+involved, the AI casts against the **set's own meshes** through the renderer's
+box query.
+
+**The grid one**, `sub_4359A0` (0x004359A0), is a **Bresenham walk over the
+`MAP2D` cells** — both octants written out, stepping `base + row*stride + col`
+in `dword_907DE0[floor]` — and it is used by the brain's state 15 and by
+`Shoot_ActorEnter`'s placement. Three return values:
+
+| | |
+|---|---|
+| **1** | clear the whole way |
+| **0** | blocked, and the cell is left in `dword_52BA4C`/`dword_52BA54` |
+| **2** | crossed an OCCUPIED cell (`0x80`, a body), the first one left in `dword_52C404`/`dword_52C400` |
+
+Its cell predicate is a function pointer chosen by the fourth argument, and
+**the two are not the same test**:
+
+| cell | `sub_435210` (arg 1) | `sub_435310` (arg 0) |
+|---|---|---|
+| `0` | blocks | blocks |
+| `1` | clear | clear |
+| `2`, `3` | **clear** | **blocks** |
+| `0x80` | 2 (occupied) | 2 (occupied) |
+| `0x10..0x1F` | the DOOR: clear only if `sub_44A0F0(scene, door+4, door+8) == 16` | clear |
+
+`sub_435310` is the MOVEMENT predicate — its refusal set `{0, 2, 3}` is
+exactly the one `sub_4353E0` carries and the port already implements — and
+`sub_435210` is the SIGHT predicate: only a true wall stops it, a **closed
+door** stops it, and cells `2` and `3` do not. So `2` and `3` are things you
+cannot walk on but can see and shoot across. **All three shipped call sites
+pass `1`**, so `sub_435310` is dead in this build and the live walk is the
+sight one — a negative result worth writing down, because the pair reads at
+first glance like "one for walking, one for looking" and only one half is
+wired.
+
+### What this does to the decision
+
+`standing-unknowns` §2 rested on three unknowns and **all three are now
+read**: the navigation node closed at step 2, the rate at §5b, and the range,
+the cone and the line of sight here. The grid answers where a gunman may
+stand and which doors he may cross; the ray cast and the two character
+properties answer where he may aim; and the port already owns the primitive
+the ray needs (`sweepSphere` at zero radius, over `soupInBox` —
+`engine/src/o3de/collision.h`).
+
+**So the decision of `standing-unknowns` §2 can be revisited, and the answer
+is that the generic brain is worth wiring.** What made it look unaffordable
+was the belief that its sixteen states each hid an unread geometric rule;
+what the reading shows is that the geometry is four calls — `sub_420C70`,
+`sub_420EB0`, `sub_4449E0`, `sub_4359A0` — and every one of them is now
+transcribed above. `sub_424DE0`'s 1500 lines are a state machine over those
+four, `Shoot_ActorAction` and `List_PickRandomByType` (11 and 12 calls), and
+the animation frame counts. That is step 6's work, not step 5's, and it is
+sized rather than guessed for the first time.

@@ -64,15 +64,31 @@ actions; `actor/shoot.h` models them and nothing calls it. Today's pose work
 takes the SCRIPT's last action and holds it, so a gunman keeps one clip.
 Also `List_PickRandomByType` picks at RANDOM and this takes the first match.
 
-> **THE PREMISE IS PARTLY WRONG, 2026-09-09.** "None of which this tree has"
-> is false of the first of the three: the navigation node is `MAP2D/*.mpt`,
-> which ships and is already decoded — `Shoot_Think` picks a floor, converts
-> the actor's x/z into its cell and tests it, all through the globals
-> `Map2D_Load` fills, and the correspondence between the 16 maps and the 16
-> shoot arenas is exact both ways (`verify.py: shoot arenas`,
-> `todo/shoot-mode.md`). Line of sight and weapon range are still unread, so
-> the decision below STANDS for the generic arm — but it now rests on two
-> unknowns rather than three, and both are questions with answers in the tree.
+> **THE PREMISE IS WRONG — ALL THREE OF IT, 2026-09-09.** "None of which this
+> tree has" is false of every one of the three the paragraph below names, and
+> `todo/shoot-mode.md` carries each reading:
+>
+> * **the navigation node** is `MAP2D/*.mpt`, which ships and is decoded —
+>   `Shoot_Think` picks a floor, converts the actor's x/z into its cell and
+>   tests it, and the 16 maps match the 16 shoot arenas exactly both ways
+>   (§1-2; `verify.py: shoot arenas`, `map2d grid`).
+> * **the weapon's range** is not a weapon field at all: it is character
+>   **property 26**, in metres, read through event 44 (`Actor_GetProperty`)
+>   into the shoot record's `+32`, beside property 29's sight-cone half-angle
+>   in degrees at `+40` (§5c).
+> * **the line of sight** is two tests: `sub_4449E0`, a ray cast against the
+>   set's own meshes through `o3de_ForEachMeshInBox`, which is what the
+>   acquisition uses; and `sub_4359A0`, a Bresenham walk over the `MAP2D`
+>   cells that the brain's state 15 uses. The port already owns the
+>   primitive the first needs — `sweepSphere` at zero radius over
+>   `soupInBox` (§5c).
+>
+> **So the decision below is SUPERSEDED, not merely narrowed.** It was right
+> when it was made and it is no longer the state of the tree: wiring the
+> generic brain is now sized work over four transcribed geometric calls
+> rather than a guess dressed as behaviour. `todo/shoot-mode.md` step 6 is
+> where it happens; until it does, `shoot.cpp`'s first-edge walk stands and
+> the paragraph below still describes what the port DOES.
 
 **CLOSED as a decision, not as a port.** The brains stay unwired, and the
 reason is in `shoot.cpp` itself: the generic arm - **302 of the 306 shipped
