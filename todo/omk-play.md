@@ -17,8 +17,9 @@ waiting on its evidence.
 
 ### 94. You can enter a shop but not leave it: the interior's own doors never move — A
 
-> **FIXED 2026-09-09.** Not watched in play yet — the exit is reproduced
-> headlessly below, and a person still has to walk it.
+> **FIXED AND CONFIRMED IN PLAY 2026-09-09.** The reader walked it and
+> reported it good. The headless repro below is what found it; the walk is
+> what settles it.
 
 A reader: *"once I enter the drugstore near the security center, i can not go
 outside, doors stay closed (this issue also happens in other places like the
