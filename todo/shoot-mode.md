@@ -470,7 +470,7 @@ that labelling one state at a time, and the label moves with the code.
 |---|---|---|
 | 7a | **the record's geometry** — `sub_422540`'s six properties into the record (both ranges, the third, the cone's cosine, health, the flag fan-out), and the acquisition pair `sub_420C70` / `sub_420D90` with the four values they leave behind |**DONE 2026-09-09**, §7a below; `verify.py: shoot range` |
 | 7b | **the turn** — `sub_420EB0` on the Euler at `actor+420`, its three thresholds and its `180` / `±90` snap returns |**DONE 2026-09-09**, §7b below; `verify.py: shoot range` |
-| 7c | **the states** — `sub_424DE0` read arm by arm and ported, each one carrying what it was read from; the ones not reached stay declared |**PART DONE 2026-09-09** — the FRAME and **10 of the 16** states, the HUB included, §7c below; `verify.py: shoot generic`. States 9/28, 12, 13, 14, 15 are still unread |
+| 7c | **the states** — `sub_424DE0` read arm by arm and ported, each one carrying what it was read from; the ones not reached stay declared |**DONE 2026-09-09** — the FRAME and **all 16** states, §7c below; `verify.py: shoot generic` |
 | 7d | **the frame loop** — the brain called from `Shoot_TickNpc`'s place, the occupancy stamp/restore pair around it, and `omk-play --shoot` driving it | |
 | 7e | checks, and a PLAY TEST — which is the one thing steps 1-6 never got | |
 
@@ -582,7 +582,7 @@ happens — clears flag `0x80`, and dispatches on the outcome:
 Outcome 1 is where §5b's weapon-rate line lives, so the rate reading and the
 machine meet here.
 
-### The ten states transcribed
+### All sixteen states transcribed
 
 | state | what its arm does |
 |---|---|
@@ -596,6 +596,10 @@ machine meet here.
 | **2** | TRAVERSE that edge, climbing its slope |
 | **4** | PATROL a route |
 | **6** | the HUB — three arms, one of which fires |
+| **9**, **28**, **13** | state 8's arm; 13 adds a clip-end tail |
+| **12** | converts a position to a GRID CELL itself |
+| **14** | drops its route and falls back to **4** |
+| **15** | ACQUIRE — cone AND grid line of sight, and the 0x20 latch |
 
 **The movement loop is 1 → 2 → 6.** State 1 tests whether the gunman stands on
 his target's own nav node, and commits to an edge otherwise; state 2 walks the
@@ -654,10 +658,31 @@ timer at −0.5 instead of 0.5 and turns the check red.
 > applies that once, in the epilogue, and reports `outcomeFromUnread` rather
 > than letting a stale outcome ride out of a state change.
 
-### What is NOT ported, and why that is the deliverable too
 
-Five states — **9/28, 12, 13, 14, 15** — set `unread` and change nothing at
-all: no state, no Euler, no outcome.
+### State 15, and what the three authored distances are for
+
+15 is the ACQUIRE state and it is where §5c's reading pays off. It needs the
+cone-and-range test **and** the grid line of sight — `sub_4359A0`, which the
+port already has as `Map2d::lineOfSight` — or flag `0x20`, the latch it sets
+once it has seen you and which keeps a gunman engaged **through a wall**
+afterwards. And it fires on the **inner** range `+28`, not the acquisition
+range `+32`: that is the only place in the machine where two of the three
+authored distances are told apart, and mutating one into the other turns the
+check red.
+
+> **A CORRECTION READING THE LAST FIVE FORCED: the default outcome is 0, not
+> "none".** `sub_424DE0` opens with `v180 = 0.0` before its switch, so an arm
+> that sets nothing still leaves the epilogue asking to fire-if-ready. The
+> port had been defaulting to None, which quietly turned every silent arm
+> into "do nothing". `None` now means exactly one thing — the outcome was
+> recomputed by `sub_4272B0`, which nobody has read.
+
+### What is not ported, and the guard that is kept anyway
+
+**Nothing sets `unread` any more.** The assertion is kept rather than deleted:
+every state outside `genericStatesRead()` must still leave the record and the
+Euler untouched, so adding a state to the machine without reading its arm
+goes red instead of quietly inventing a branch.
 
 That refusal is asserted, not promised. `verify.py: shoot generic` drives
 every unread state and requires all five to leave the record and the Euler

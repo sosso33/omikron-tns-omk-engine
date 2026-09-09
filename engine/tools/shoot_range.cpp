@@ -338,6 +338,61 @@ int main(int argc, char** argv) {
                         int((q6d.flags & 0x20u) != 0));
         }
 
+        // ---- ACQUIRE, state 15, and the two ranges it tells apart -----
+        //
+        // 15 needs the cone AND the grid line of sight, or the 0x20 latch it
+        // sets once it has seen you. And it fires on the INNER range `+28`,
+        // not the acquisition range `+32` - which is what the second of the
+        // three authored distances is for, and the only place the difference
+        // shows.
+        {
+            omk::ShootFrameIn q = in;
+            q.gridLineOfSight = true; q.targetAlive = true;
+            q.target[0] = 0; q.target[2] = -390;          // 10 m ahead
+            auto qa = fresh(15); float ea = 0;
+            qa.rangeInner = 39.0f * 15;                    // 15 m
+            const auto sa = omk::shootGenericStep(qa, q, ea);   // inside 15 m
+
+            auto qb = fresh(15); float eb = 0;
+            qb.rangeInner = 39.0f * 5;                     // 5 m - too close in
+            const auto sb = omk::shootGenericStep(qb, q, eb);   // outside it
+
+            omk::ShootFrameIn nl = q; nl.gridLineOfSight = false;
+            auto qc = fresh(15); float ec = 0;
+            qc.rangeInner = 39.0f * 15;
+            const auto sc = omk::shootGenericStep(qc, nl, ec);   // wall in the way
+
+            // ...but once LATCHED he stays engaged with no line of sight
+            omk::ShootFrameIn nl2 = nl;
+            nl2.target[0] = -276; nl2.target[2] = -276;   // 45 deg off, so the
+            auto qd = fresh(15); float ed = 0;           // turn actually moves
+            qd.rangeInner = 39.0f * 15; qd.flags |= 0x20u;
+            const auto sd = omk::shootGenericStep(qd, nl2, ed);
+            (void)sd;
+
+            std::printf("generic: acquire inner %d outer %d blind %d latched-turn %d "
+                        "latch %d\n", int(sa.outcome), int(sb.outcome),
+                        int(sc.outcome), int(ed != 0.0f),
+                        int((qa.flags & 0x20u) != 0));
+        }
+
+        // 12 converts a world position into a cell itself; 14 drops its route
+        {
+            omk::ShootFrameIn m = in;
+            m.moveCode = 0; m.stepCellValue = 1; m.scriptStep = 55;
+            auto q12 = fresh(12); float e12 = 0;
+            const auto s12 = omk::shootGenericStep(q12, m, e12);   // walkable
+            omk::ShootFrameIn m2 = m; m2.stepCellValue = 0;        // a wall
+            auto q12b = fresh(12); float e12b = 0;
+            const auto s12b = omk::shootGenericStep(q12b, m2, e12b);
+            omk::ShootFrameIn m3 = m; m3.moveCode = 1;
+            auto q14 = fresh(14); float e14 = 0;
+            const auto s14 = omk::shootGenericStep(q14, m3, e14);
+            std::printf("generic: cell walkable clip %d, wall clip %d; "
+                        "14 -> state %d release %d\n",
+                        s12.clipType, s12b.clipType, q14.state, int(s14.releaseRoute));
+        }
+
         // the epilogue WRAPS the euler, and it is the only place that does
         auto qw = fresh(5); float hi = 370.0f, lo = -10.0f;
         omk::shootGenericStep(qw, in, hi);

@@ -367,8 +367,8 @@ int shootTurnToward(float& eulerY, const AcquireOut& a, bool allowSnap, float dt
 // THE GENERIC BRAIN, `sub_424DE0` (0x00424DE0) - `todo/shoot-mode.md` 7c
 // ---------------------------------------------------------------------
 //
-// TEN of its sixteen states are transcribed here; the other six set
-// `unread` and change nothing. That is deliberate and it is the rule the port
+// ALL SIXTEEN of its states are transcribed here; nothing sets
+// `unread` any more. The rule that got here is the one the port
 // follows: an arm nobody has read is not a branch to guess, and a machine
 // that invented the missing ten would be indistinguishable from one that had
 // them right. `genericStatesRead()` is the list, and `verify.py: shoot
@@ -381,7 +381,7 @@ int shootTurnToward(float& eulerY, const AcquireOut& a, bool allowSnap, float dt
 //   dropped. A state that wants `0x200` sets it back.
 namespace {
 
-const std::vector<int> kGenericRead = {1, 2, 3, 4, 5, 6, 7, 8, 10, 11};
+const std::vector<int> kGenericRead = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 28};
 
 }  // namespace
 
@@ -552,11 +552,61 @@ ShootStep shootGenericStep(ShootRecord& r, const ShootFrameIn& in, float& eulerY
         break;
     }
 
+    case 9:
+    case 28:
+    case 13:
     case 8: {
         // TURN, with the snap allowed - and the snap picks an ANIMATION.
         r.flags |= 0x200u;
         if (in.targetPredicate) out.outcome = ShootOutcome::Fire;
         snapToClip(shootTurnToward(eulerY, a, true, in.dt));
+        // 9 and 28 are state 8's arm CHARACTER FOR CHARACTER, and 13 is the
+        // same with one extra tail: when its clip has run out the outcome is
+        // recomputed unconditionally rather than only on a state change.
+        if (state == 13 && in.clipFrame + in.dt >= in.clipFrames)
+            out.outcomeFromUnread = true;
+        break;
+    }
+
+    case 12: {
+        // The only arm that converts a world position into a GRID CELL
+        // itself: `(self.x - bound[0]) / scale` and `(self.z - bound[4]) /
+        // scale`, which is `Map2d::cellAt`'s arithmetic inline. If the step
+        // is not available AND the cell is refused by the MOVEMENT test, it
+        // asks for the script's own action; then it turns. It reaches the
+        // epilogue directly, so its outcome is never recomputed.
+        r.flags &= ~0x10u;
+        int code = in.moveCode;
+        bool act = true;
+        if (code == 1) code = 0;
+        else if (!(in.stepCellValue == -128 || in.stepCellValue == 0 ||
+                   in.stepCellValue == 2 || in.stepCellValue == 3)) act = false;
+        if (act) out.clipType = in.scriptStep;
+        snapToClip(code);
+        break;
+    }
+
+    case 14: {
+        // Give up the route and fall back to patrolling from scratch.
+        int code = in.moveCode;
+        if (code == 1) { code = 0; out.nextState = 4; out.releaseRoute = true; }
+        snapToClip(code);
+        break;
+    }
+
+    case 15: {
+        // ACQUIRE. The cone and range test AND the grid line of sight must
+        // both hold - or flag 0x20, the latch that keeps a gunman engaged
+        // once he has seen you, must already be set.
+        if (r.flags & 0x8000u) break;
+        const bool seen = acquired && in.gridLineOfSight;
+        if (!(seen || (r.flags & 0x20u)) || !in.targetAlive) break;
+        r.flags |= 0x20u;
+        snapToClip(shootTurnToward(eulerY, a, true, in.dt));
+        // and the FIRE test is the INNER range `+28`, not the acquisition
+        // range `+32` - which is what the second of the three authored
+        // distances is for.
+        if (a.dist3d < r.rangeInner && seen) out.outcome = ShootOutcome::Fire;
         break;
     }
 
@@ -606,9 +656,11 @@ ShootStep shootGenericStep(ShootRecord& r, const ShootFrameIn& in, float& eulerY
     // saying so is the honest port of it.
     if (out.nextState >= 0) {
         out.outcomeFromUnread = true;
-        out.outcome = ShootOutcome::None;
         r.state = out.nextState;
     }
+    // and only once the transition has had its say: an outcome that came
+    // from `sub_4272B0` is UNKNOWN, which is not the same as the default 0.
+    if (out.outcomeFromUnread) out.outcome = ShootOutcome::None;
     return out;
 }
 

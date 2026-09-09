@@ -25833,13 +25833,17 @@ def c_shoot_generic():
     through one shared epilogue. The states decide; the epilogue acts. Ported
     in `todo/shoot-mode.md` 7c.
 
-    **The first row is the honest one: 10 of the 16 states are transcribed.**
-    The other six set `unread` and change nothing, and that is asserted rather
-    than promised - a machine that invented the missing ten would be
-    indistinguishable from one that had them right, and this check is what
-    stops the port drifting into that. `genericStatesRead()` is compared
-    against the machine's own `genericStates()`, so the coverage claim cannot
-    come apart from the state set it is a subset of.
+    **All 16 states are now transcribed** (2026-09-09), so the second row is
+    0 unread. It is kept, not deleted: `genericStatesRead()` is compared
+    against the machine's own `genericStates()` and every state outside the
+    read list must still leave the record and the Euler untouched, so adding
+    a state to the machine without reading its arm goes red rather than
+    quietly inventing a branch.
+
+    **The default outcome is 0, not "none".** `sub_424DE0` opens with
+    `v180 = 0.0` before its switch, so an arm that sets nothing still leaves
+    the epilogue asking to fire-if-ready. `None` in the port means exactly one
+    thing: the outcome was recomputed by `sub_4272B0`, which nobody has read.
 
     What the six do, each read from its arm:
 
@@ -25915,7 +25919,11 @@ def c_shoot_generic():
                     r"hold outcome (-?\d+); expiry clip (-?\d+); "
                     r"finishing clip (-?\d+) timer ([\d.]+) flag20 (\d)$",
                     r.stdout, re.M)
-    if not (cov and unr and tr and sn and wr and nv and tv and pt and hb):
+    aq  = re.search(r"^generic: acquire inner (\d) outer (\d) blind (\d) "
+                    r"latched-turn (\d) latch (\d)$", r.stdout, re.M)
+    cl  = re.search(r"^generic: cell walkable clip (-?\d+), wall clip (-?\d+); "
+                    r"14 -> state (\d+) release (\d)$", r.stdout, re.M)
+    if not (cov and unr and tr and sn and wr and nv and tv and pt and hb and aq and cl):
         return ("unparsed",), ("parsed",), "the probe's own generic: lines"
     got = (tuple(int(x) for x in cov.groups()), tuple(int(x) for x in unr.groups()),
            tuple(int(x) for x in tr.groups()), tuple(int(x) for x in sn.groups()),
@@ -25926,13 +25934,15 @@ def c_shoot_generic():
             int(tv.group(5))),
            tuple(int(x) for x in pt.groups()),
            (int(hb.group(1)), hb.group(2), int(hb.group(3)), int(hb.group(4)),
-            int(hb.group(5)), hb.group(6), int(hb.group(7))))
-    want = ((16, 10, 10), (6, 0), (4, 11, 2, 3, 10),
+            int(hb.group(5)), hb.group(6), int(hb.group(7))),
+           tuple(int(x) for x in aq.groups()), tuple(int(x) for x in cl.groups()))
+    want = ((16, 16, 16), (0, 0), (4, 11, 2, 3, 10),
             (32, -180, 30, -90, 31, 90), (10, 350),
             (1, "143.1", 500, 2, 0, 1, 2, 6),
             (5, "40.0", 1, 6, 1),
             (4, 4, 5, -1, 1),
-            (1, "4.0", -1, 77, -1, "0.5", 0))
+            (1, "4.0", 0, 77, -1, "0.5", 0),
+            (1, 0, 0, 1, 1), (-1, 55, 4, 1))
     return got, want, ("the machine's states, how many are TRANSCRIBED, and "
                        "that every transcribed one is in the state set; then "
                        "that the ten UNREAD arms change nothing at all - no "
@@ -25950,7 +25960,14 @@ def c_shoot_generic():
                        "PATROL, including the flag that says its outcome came "
                        "from a function nobody has read; and the HUB's "
                        "three arms - firing, holding, and the FINISHING one "
-                       "that skips the shared timer tail entirely")
+                       "that skips the shared timer tail entirely; and "
+                       "ACQUIRE (15), which needs the cone AND the grid line "
+                       "of sight, latches 0x20 once it has seen you, keeps "
+                       "tracking through a wall afterwards, and fires on the "
+                       "INNER range +28 rather than the acquisition range "
+                       "+32 - the only place the two authored distances are "
+                       "told apart; then 12 converting a position to a cell "
+                       "and 14 dropping its route")
 
 
 def c_shoot_range():

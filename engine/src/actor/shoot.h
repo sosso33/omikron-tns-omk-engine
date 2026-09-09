@@ -270,10 +270,18 @@ struct ShootFrameIn {
     bool  canFire = false;
     bool  holdStill = false;          // `sub_421CD0(actor, rec, 1)` was true
     int   scriptStep = 0;             // record `+144`, tested against 8
+    // state 15's two: the grid line of sight (`sub_4359A0`, which the port
+    // HAS - `Map2d::lineOfSight`) and whether the target is still alive.
+    bool  gridLineOfSight = false;
+    bool  targetAlive = true;
 };
 
 struct ShootStep {
-    ShootOutcome outcome = ShootOutcome::None;
+    // THE DEFAULT IS 0, NOT "NONE": `sub_424DE0` opens with `v180 = 0.0`
+    // before its switch, so an arm that sets nothing still leaves the
+    // epilogue asking to fire-if-ready. `None` here means only one thing -
+    // the outcome was recomputed by a function nobody has read.
+    ShootOutcome outcome = ShootOutcome::FireIfReady;
     int  nextState = -1;        // -1 = stay
     int  clipType  = -1;        // a clip to pick, or -1
     float turnTotal = 0.0f;     // degrees the picked clip must cover
