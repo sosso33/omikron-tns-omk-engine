@@ -25824,6 +25824,57 @@ def c_engine_shoot_mode():
             "and what `omk-play --shoot` installs in the Shooting gallery")
 
 
+def c_shoot_input():
+    r"""`engine/`: what the MOUSE does, per control scheme.
+
+    A reader played the supermarket shoot phase and it blocked; the diagnosis
+    was the camera - *"it is no more a 3rd person automatic camera, it becomes
+    a 1st person manual camera controlled by the mouse"* - and the port turned
+    out to read **no mouse input at all** (`todo/omk-play.md` 97b).
+
+    The engine's mouse codes come out of `Input_ReadOneControl` (0x0043E360),
+    whose mouse arm reads a DirectInput `DIMOUSESTATE` and tests the button
+    bytes in order: `& 0x80` -> **12**, `& 0x8000` -> **13**, `& 0x800000` ->
+    **14**. So 12 is the LEFT button, and the shipped shoot scheme binds
+    `Tir` - the trigger - to it, with `Sauter` on the right button.
+
+    The word each button produces per group is what settles a frontend
+    question: the mouse is fed **unconditionally**, because the binding tables
+    are what gate a device per context. Left button gives bit 16 (`Tir`) in
+    Tirer, bit 128 (slot 7, unlabelled) in Aventure and Nager, and nothing in
+    Combat - so a frontend that tried to decide for itself which groups get a
+    mouse would be inventing a control scheme the game does not have.
+
+    **Motion is not in here on purpose.** That same function maps motion to
+    codes 0 and 4 on the JOYSTICK arm only; the mouse arm reads buttons alone.
+    So mouse look never enters the 14-slot word - it aims the first-person
+    camera directly, and the sensitivity is this port's own number with no
+    shipped value behind it.
+    """
+    import subprocess, re
+    eng = os.path.join(ROOT, "engine")
+    b = subprocess.run(["make", "-s", "build/mousebit"], cwd=eng,
+                       capture_output=True, text=True)
+    binp = os.path.join(eng, "build", "mousebit")
+    if b.returncode != 0 or not os.path.exists(binp):
+        return ("build failed",), ("built",), "engine/ must build"
+    r = subprocess.run([binp, os.path.join(ROOT, "tables")],
+                       capture_output=True, text=True)
+    rows = re.findall(r"^button (\d+) group (\d+) \S+\s+word (\d+)$", r.stdout, re.M)
+    if len(rows) != 12:
+        return (len(rows),), (12,), "the probe's own twelve rows"
+    got = tuple((int(a), int(g), int(w)) for a, g, w in rows)
+    want = ((12, 0, 128), (12, 1, 128), (12, 2, 16), (12, 3, 0),
+            (13, 0, 0), (13, 1, 0), (13, 2, 32), (13, 3, 0),
+            (14, 0, 0), (14, 1, 0), (14, 2, 0), (14, 3, 0))
+    return got, want, ("the 14-slot input word each mouse button produces in "
+                       "each of the four control groups - the LEFT button "
+                       "(code 12) is `Tir` in Tirer and something else "
+                       "entirely in Aventure, which is why the frontend feeds "
+                       "the mouse unconditionally and lets the binding tables "
+                       "gate it")
+
+
 def c_engine_shoot_brain():
     r"""`engine/`: the generic brain WIRED, ticking on the Shooting gallery's
     own gunmen with their own authored numbers.
@@ -29075,7 +29126,7 @@ def c_licence_headers():
                    if TAG in open(p, encoding="utf-8",
                                   errors="replace").read(600)]
     return (authored, sorted(missing), len(vendored), mislabelled), \
-           (402, [], 1, []), \
+           (405, [], 1, []), \
            "authored source files under tools/, engine/src, engine/tools, " \
            "engine/backends and scripts/; those MISSING the SPDX tag; " \
            "vendored files in engine/third_party; and vendored files wrongly " \
@@ -31101,6 +31152,7 @@ CHECKS = [
     ("bone names",         c_bone_names,        "todo/omk-play 96; ASSETS"),
     ("shoot range",        c_shoot_range,       "todo/shoot-mode 5c, 7a; actor/shoot.h"),
     ("shoot generic",      c_shoot_generic,     "todo/shoot-mode 7c; actor/shoot.h"),
+    ("shoot input",        c_shoot_input,       "todo/omk-play 97b; input/bindings.h"),
     ("engine: shoot brain", c_engine_shoot_brain, "todo/shoot-mode 7d; actor/shoot.h"),
     ("engine: shoot mode", c_engine_shoot_mode,  "todo/shoot-mode; actor/shootmode.h"),
     ("wre wireframes",     c_wre_files,         "FILE_FORMATS 5b5"),

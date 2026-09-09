@@ -41,7 +41,9 @@ so he is hidden only while the shoot camera is genuinely the one in force.
 > this flag becomes wrong. Reading `Camera_Request`'s precedence is what
 > settles it.
 
-**(b) No mouse, at all — NOT FIXED.** The port reads no mouse input anywhere;
+**(b) No mouse, at all — FIXED 2026-09-09** (the reader: *"I remember playing
+the shoot phases with a mouse"*). Buttons now reach the input word and motion
+aims the first-person camera. Was: The port reads no mouse input anywhere;
 `omk-play` has one comment mentioning the word and no `SDL_MOUSEMOTION`
 handler. The shipped shoot scheme is an FPS layout and needs one:
 
@@ -56,10 +58,30 @@ handler. The shipped shoot scheme is an FPS layout and needs one:
 | Arme | 56 | — |
 
 So in the original: arrows STRAFE, the numpad turns, the numpad also looks up
-and down, and **fire is a mouse button**. The port installs this scheme
-(`Input_InstallScheme(2)`) and then cannot deliver two of its fourteen
-actions, one of which is the trigger. The reader's "controlled by the mouse"
-is the missing half.
+and down, and **fire is a mouse button**. The port installed this scheme
+(`Input_InstallScheme(2)`) and then could not deliver two of its fourteen
+actions, one of which is the trigger.
+
+**What was added.** `HostInput` gained `mouse` (the buttons, in the engine's
+own 12/13/14 space) and `mouseDX`/`mouseDY`; the SDL pump fills both and
+`Frontend::setRelativeMouse` grabs the pointer. The buttons are fed
+**unconditionally** and the binding tables gate them — `verify.py: shoot
+input` asserts that the left button is `Tir` (bit 16) in *Tirer*, something
+else entirely (bit 128) in *Aventure* and *Nager*, and nothing in *Combat*, so
+a frontend deciding for itself which contexts get a mouse would be inventing a
+control scheme the game does not have.
+
+**Motion is deliberately NOT a binding.** `Input_ReadOneControl` maps motion
+to codes 0 and 4 on the JOYSTICK arm only; its mouse arm reads buttons alone.
+So mouse look never enters the 14-slot word: it turns the body in yaw
+(`aimYawBy`, the same `euler_[1]` the walker writes, wrapped the way the AI's
+epilogue wraps its own) and pitches the camera's aim point about the eye,
+clamped to ±70°. **The sensitivity and that clamp are this port's numbers**,
+labelled as such — nothing shipped governs either, because the engine reads
+mouse motion nowhere in the binding path.
+
+The pointer is grabbed when the shoot CAMERA comes and released when shoot
+mode ends — the same distinction (a) turns on.
 
 **(c) The block itself — NOT DIAGNOSED.** It is consistent with (b): a phase
 that cannot be advanced because the player cannot aim or fire would look

@@ -324,6 +324,15 @@ public:
     // --- what the zone scan and the frontend take ---------------------
     const float* pos() const { return pos_; }
     float facing() const { return euler_[1]; }
+    // FIRST-PERSON AIM. Shoot mode turns the body with the mouse rather than
+    // with the walker's own turn keys, so the frontend needs a way in. It
+    // writes the same `euler_[1]` the walker does and wraps it the way
+    // `sub_424DE0`'s epilogue wraps the AI's - into (-360, 360).
+    void aimYawBy(float deg) {
+        euler_[1] += deg;
+        if (euler_[1] >= 360.0f) euler_[1] -= 360.0f;
+        else if (euler_[1] < 0.0f) euler_[1] += 360.0f;
+    }
     const float* euler() const { return euler_; }
     ActorState state() const { return rt_.state(); }
     int ctlState() const { return rt_.channel().state(); }

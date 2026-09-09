@@ -51,6 +51,17 @@ struct HostInput {
     // DIK codes would be inventing a layout. The frontend reports; the engine
     // decides what to do with it.
     std::string text;
+
+    // ---- the mouse -------------------------------------------------------
+    // Buttons in the ENGINE's own code space, which `Input_ReadOneControl`
+    // (0x0043E360) fixes by testing a `DIMOUSESTATE`'s button bytes in order:
+    // `& 0x80` -> 12 (left), `& 0x8000` -> 13 (right), `& 0x800000` -> 14
+    // (middle). The shoot scheme binds `Tir` to 12.
+    std::set<int> mouse;
+    // Relative motion since the last frame, in host pixels. NOT a binding:
+    // the engine's mouse arm reads buttons only, so motion never enters the
+    // 14-slot input word - it aims the first-person camera directly.
+    float mouseDX = 0.0f, mouseDY = 0.0f;
 };
 
 class Frontend {
@@ -60,6 +71,10 @@ public:
     virtual bool open(int w, int h, const std::string& title) = 0;
     // -> false once the host wants to stop.
     virtual bool pump(HostInput& out) = 0;
+
+    // Grab the pointer for first-person aiming (and hide it), or let it go.
+    // A frontend that cannot is free to do nothing.
+    virtual void setRelativeMouse(bool /*on*/) {}
     // Upload and show. The surface is RGB565 and 640x480; A3 fixes both, and
     // a frontend that presents anything else has changed the framebuffer the
     // captures are compared against.

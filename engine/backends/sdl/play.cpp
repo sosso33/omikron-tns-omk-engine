@@ -686,7 +686,50 @@ public:
 #endif
         for (const auto& [sc, dik] : keymap())
             if (sc < n && ks[sc]) out.held.insert(dik);
+
+        // ---- THE MOUSE (`todo/omk-play.md` 97b) --------------------------
+        //
+        // The engine's codes come straight out of `Input_ReadOneControl`
+        // (0x0043E360), whose mouse arm reads a DirectInput `DIMOUSESTATE`
+        // and tests the button bytes in order: `& 0x80` -> **12**,
+        // `& 0x8000` -> **13**, `& 0x800000` -> **14**. So 12 is the LEFT
+        // button, and the shoot scheme binds `Tir` - the trigger - to it.
+        //
+        // MOTION IS NOT A BINDING. That function maps motion to codes 0 and 4
+        // only on the JOYSTICK arm; the mouse arm reads buttons alone. So
+        // mouse look is not part of the 14-slot word at all - it aims the
+        // camera directly, which is what a reader who played these phases
+        // with a mouse describes.
+        out.mouse.clear();
+        out.mouseDX = 0; out.mouseDY = 0;
+#if defined(OMK_SDL3)
+        float mx = 0.0f, my = 0.0f;
+        const auto mb = SDL_GetRelativeMouseState(&mx, &my);
+        if (mb & SDL_BUTTON_MASK(SDL_BUTTON_LEFT))   out.mouse.insert(12);
+        if (mb & SDL_BUTTON_MASK(SDL_BUTTON_RIGHT))  out.mouse.insert(13);
+        if (mb & SDL_BUTTON_MASK(SDL_BUTTON_MIDDLE)) out.mouse.insert(14);
+        out.mouseDX = mx; out.mouseDY = my;
+#else
+        int mx = 0, my = 0;
+        const Uint32 mb = SDL_GetRelativeMouseState(&mx, &my);
+        if (mb & SDL_BUTTON(SDL_BUTTON_LEFT))   out.mouse.insert(12);
+        if (mb & SDL_BUTTON(SDL_BUTTON_RIGHT))  out.mouse.insert(13);
+        if (mb & SDL_BUTTON(SDL_BUTTON_MIDDLE)) out.mouse.insert(14);
+        out.mouseDX = static_cast<float>(mx);
+        out.mouseDY = static_cast<float>(my);
+#endif
         return !out.quit;
+    }
+
+    // Grab the pointer for first-person aiming, and let it go again. Called
+    // when shoot mode's own camera comes and goes, not when the mode does -
+    // the two are not the same thing (issue 97a).
+    void setRelativeMouse(bool on) override {
+#if defined(OMK_SDL3)
+        SDL_SetWindowRelativeMouseMode(win_, on);
+#else
+        SDL_SetRelativeMouseMode(on ? SDL_TRUE : SDL_FALSE);
+#endif
     }
 
     void present(const omk::Surface& fb) override {
@@ -3649,7 +3692,18 @@ int main(int argc, char** argv) {
     // end of the supermarket cutscene because the port hid him for "shoot
     // mode" while a script's own camera had taken the view back to third
     // person, leaving an empty room (`todo/omk-play.md` 97).
+// Mouse sensitivity. THIS PORT'S CHOICE, not the game's: the engine reads
+// mouse motion nowhere in the binding path, so no shipped number governs it.
+    constexpr float kMouseYawPerPixel   = 0.18f;
+    constexpr float kMousePitchPerPixel = 0.14f;
+
     bool shootCameraLive = false;
+    // The first-person AIM. Yaw is the player's own facing (the mouse turns
+    // the body, which is what the shoot scheme's `Tourner` keys do too);
+    // pitch is the camera's alone, since nothing in the 14-slot word carries
+    // it and the body has no bone for it here. Clamped to +/-70 degrees, a
+    // choice this port is making - the engine's own limit is untraced.
+    float shootPitch = 0.0f;
     std::map<int, omk::ShootRecord> shootBrains;
     long stagedEver = 0;                 // for the summary line
     std::vector<int> stagedIds;
@@ -4386,6 +4440,12 @@ int main(int argc, char** argv) {
         // that held them would send one word and see one move.
         omk::DeviceState st;
         for (int dik : host.held) st.keyboard.push_back(dik);
+        // The mouse BUTTONS are a device like any other - the scheme's own
+        // table decides what they do, and in shoot mode 12 is `Tir`. Fed
+        // unconditionally rather than only in shoot mode: the binding tables
+        // are what gate a device per group, and second-guessing them here is
+        // how a port ends up with its own control scheme.
+        for (int b : host.mouse) st.mouse.push_back(b);
         // the `--hold` stream: held, not tapped, and only once he can walk
         // ...and it keeps feeding while a SCREEN is up. Gated on `adventure`
         // alone it stopped the moment the sneak opened - opening a screen is
@@ -5278,6 +5338,29 @@ int main(int argc, char** argv) {
                                 hc->eye[0], hc->eye[1], hc->eye[2],
                                 hc->at[0], hc->at[1], hc->at[2], hc->fov);
                 }
+                // ---- FIRST-PERSON AIM, while the shoot camera holds ----
+                //
+                // The mouse turns the BODY in yaw and the CAMERA in pitch.
+                // Yaw goes through the player because the shoot scheme's own
+                // `Tourner a gauche/droite` do the same thing, so the two
+                // agree; pitch is the camera's alone, because nothing in the
+                // 14-slot input word carries a pitch - the scheme's
+                // `Regarder En-Haut/En-Bas` are two more bits, not an axis.
+                if (shootMode && shootCameraLive &&
+                    (host.mouseDX != 0.0f || host.mouseDY != 0.0f)) {
+                    player->aimYawBy(host.mouseDX * kMouseYawPerPixel);
+                    shootPitch -= host.mouseDY * kMousePitchPerPixel;
+                    if (shootPitch >  70.0f) shootPitch =  70.0f;
+                    if (shootPitch < -70.0f) shootPitch = -70.0f;
+                    // `camera_presets.json` row 4: eye (0,0,0) on the player,
+                    // target (0, 0, 787.4016) - 20.00 m in front. Pitching it
+                    // swings that target up and down about the eye.
+                    const float rad = shootPitch * 3.14159265f / 180.0f;
+                    const float eye[3] = {0.0f, 0.0f, 0.0f};
+                    const float at[3]  = {0.0f, 787.4016f * std::sin(rad),
+                                          787.4016f * std::cos(rad)};
+                    player->setCameraOffsets(eye, at, 75.0f);
+                }
                 // A TELEPORT under him: `actor.goto_address` wrote the
                 // Session's position outright (the airlock beat's 653,
                 // 'Tutorial'). Without this the next line writes the walker's
@@ -5966,6 +6049,8 @@ int main(int argc, char** argv) {
                     const float at[3]  = {0.0f, 0.0f, 787.4016f};
                     player->setCameraOffsets(eye, at, 75.0f);
                     shootCameraLive = true;
+                    shootPitch = 0.0f;
+                    front.setRelativeMouse(true);
                     std::printf("--shoot: shoot.begin -1 - camera mode %d, "
                                 "eye on the player, aim 20 m ahead\n",
                                 omk::ShootMode::kCameraMode);
@@ -6985,6 +7070,10 @@ int main(int argc, char** argv) {
                 else           player->leaveShootMode();
             }
             in.installScheme(shootMode ? omk::ShootMode::kInputScheme : 0);
+            if (!shootMode) {
+                shootCameraLive = false;
+                front.setRelativeMouse(false);
+            }
             std::printf("frame %ld: SHOOT MODE %s - weapon slot %d (object %d), "
                         "HUD screen %d, library %s, ACTOR_STATE %d, scheme %d\n",
                         n, shootMode ? "ENTER (Shoot_Enter)" : "LEAVE (Shoot_Leave)",
