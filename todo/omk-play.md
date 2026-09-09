@@ -17,6 +17,48 @@ waiting on its evidence.
 
 ### 97. The supermarket shoot phase blocks at the end of its cutscene, and Kay'l vanishes — A
 
+> **(e) THE EDITING HOLD OUTLIVED SHOOT MODE — FIXED.** The reader played it
+> after (d) and the camera was *still* not first person, with the pointer
+> captured and the view refusing to move. The camera install was landing; the
+> hold was drawing over it. When an editing ends, mode 13 stays installed with
+> no active camera and `holdEditCam` keeps the last frame — and the port's own
+> comment lists what ends it: *"a script's `camera.set`, a conversation, or
+> the hand-over to adventure mode, all of which are a real `Camera_Request`"*.
+> **Entering shoot mode is one too** (`Shoot_Enter`'s `Camera_Request(4, ...)`)
+> and it was missing from that list. One line, and it is the difference
+> between installing a camera and being seen through it.
+
+> **(f) THE TRIGGER VALIDATED MENUS AND ENTER DID NOTHING — FIXED, as a
+> labelled RECONSTRUCTION.** The reader: *"the click is to shoot, not to
+> validate in menu (like pause menu, where the button enter does not work once
+> the cutscene ends, but clicking replaces the enter button)"*.
+>
+> The cause is in the shipped table and is worth stating plainly, because it
+> is a trap for anything that hard-codes an input bit:
+>
+> | | Aventure | Tirer |
+> |---|---|---|
+> | slot 4 (`0x10`) | **Action / Utiliser** | **Tir** |
+> | slot 8 (`0x100`) | — | **Action / Utiliser** |
+>
+> `kUiConfirm` is `0x10`, which is right for Aventure and wrong for every
+> other group. So with the shoot scheme installed the interface confirmed on
+> the TRIGGER and ignored ENTER. Normalised at the one boundary the interface
+> reads: the group's own `Action / Utiliser` becomes the confirm, and the
+> trigger is taken out of the UI's word.
+>
+> **Why it is a reconstruction.** Nothing traced says the engine re-maps
+> anything — no screen open installs a scheme, and its UI reads the same raw
+> word — so on the face of it the original should collide the same way. The
+> reader says it does not. Their testimony about the game outranks a reading
+> that only shows nobody has found the mechanism yet, so the port does the
+> right THING and says the mechanism is unread.
+>
+> The world's action button needed nothing: it runs off `MDACTION`, queued by
+> the `.CTL` channel from the group's own transitions, so it was already
+> context-correct.
+
+
 > **(d) THE CAMERA WAS NEVER ASKED FOR — FIXED 2026-09-09, and it is the one
 > that kept the phase in third person.** The reader played it again and sent
 > the log, which says the mode DOES enter:

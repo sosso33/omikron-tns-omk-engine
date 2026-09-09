@@ -7257,6 +7257,32 @@ int main(int argc, char** argv) {
             // point I have directly this"). The bits are swallowed until they
             // are RELEASED.
             std::uint32_t uiBits = bits;
+            // ---- "ACTION / UTILISER" IS NOT THE SAME BIT IN EVERY GROUP ---
+            //
+            // The interface reads slot 4 (`kUiConfirm`, 0x10) as confirm, and
+            // in *Aventure* slot 4 IS `Action / Utiliser`. In *Tirer* it is
+            // **`Tir`**, and `Action / Utiliser` has moved to slot 8 (0x100).
+            // So while the shoot scheme is installed the raw word confirms a
+            // menu when you pull the TRIGGER and does nothing when you press
+            // ENTER - which is what a reader hit in the pause screen after
+            // the supermarket cutscene (`todo/omk-play.md` 97f).
+            //
+            // Normalised here, at the one boundary the interface reads,
+            // rather than in eleven call sites: the group's own
+            // `Action / Utiliser` becomes the confirm the UI expects, and the
+            // trigger is taken out of the UI's word entirely.
+            //
+            // A RECONSTRUCTION, and labelled as one. Nothing traced says the
+            // engine re-maps anything - no screen open installs a scheme, and
+            // its UI reads the same raw word - so on the face of it the
+            // original would collide the same way. The reader says it does
+            // not: the click shoots and ENTER validates. Their testimony about
+            // the game outranks a reading that only shows nobody has found
+            // the mechanism yet.
+            if (shootMode) {
+                if (uiBits & 0x100u) uiBits |= omk::kUiConfirm;   // slot 8
+                uiBits &= ~0x10u;                                 // slot 4: Tir
+            }
             if (screenOpenBits & uiBits) {
                 screenOpenBits &= uiBits;    // still down: keep swallowing
                 uiBits = 0;
@@ -8364,6 +8390,15 @@ int main(int argc, char** argv) {
         // the take is mode 1 out of `MDGETOBJ`. Either installs a mode that is
         // not 13, so the hold is over.
         if (holdEditCam && (haveDlgCam || takeCam)) holdEditCam = false;
+        // ...AND SO IS ENTERING SHOOT MODE, which is the one this list was
+        // missing. `Shoot_Enter` ends with `Camera_Request(4, ...)`, a real
+        // request like any other, so mode 13's hold is over the moment the
+        // mode begins. Without this the port installed the first-person
+        // camera and then drew the cutscene's held last frame over the top of
+        // it, which is what a reader saw at the supermarket: the mode on, the
+        // pointer captured, and the view refusing to move
+        // (`todo/omk-play.md` 97e).
+        if (holdEditCam && shootMode) holdEditCam = false;
         const bool anyWorld = !worldSlots[0].geo.corners.empty() ||
                               !worldSlots[1].geo.corners.empty();
         // ...and the same for DRAWING it: the screen composes over the
