@@ -22,6 +22,21 @@ rule intends one.
 
 **tasks since the last full sweep: 11** (the shadows' orphan fix, fitted, mapped, per-pixel lighting, the shimmer, supersampling, the dither, and the player's vertical - step 1 the walk float, step 2 the jump's impulse, step 3 its state - across two sessions), the slider-door check's parse, the door read as a cutscene (omk-play 89), and the turned lift paths (omk-play 90). **The counter had run to 19 and that was WRONG**: the reader ran a sweep more recently than this file recorded (their word, 2026-09-09). The lesson is this file's own - a counter only survives between sessions if everyone who runs a sweep writes it down, and a session that trusts a stale number spends half an hour proving nothing.
 
+> **A RECORDED SWEEP OF "187 checks, 0 failed" DOES NOT INCLUDE THE `--slow`
+> CHECKS, and that is how one stayed red for two days.** `engine: scene steps`
+> went red at `74f6f8a` (2026-09-07) - the editing-hold reading made a program
+> outlive its own steps, and this check's expectation was the stale half of a
+> pair that then contradicted each other - and the sweep recorded below as
+> `a5b1807`, "187 checks, 0 failed", ran straight past it: it is in `SLOW`, and
+> plain `python3 tools/verify.py` runs only the fast list. Pinned 2026-09-09 by
+> running the check at `74f6f8a` and `74f6f8a~1` in a throw-away worktree, and
+> fixed by moving the expectation onto the engine's own rule.
+>
+> **So the sweep this counter is counting down to is `--slow`.** A row below
+> that does not say `--slow` did not test any `engine:` check, and the count of
+> checks tells the two apart: the fast list is 207 checks and the whole thing
+> 383 (2026-09-09; both grow).
+
 > **`engine: UI` is RED and was already red at `a5b1807`, on a clean tree.**
 > Measured 2026-09-07: `disagree` is 9, not 0 - the shops, screens 21..28 and
 > 32, whose current list settles on row 0 in the port and row 1 in

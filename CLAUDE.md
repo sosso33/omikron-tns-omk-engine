@@ -940,6 +940,13 @@ python3 tools/verify.py --slow   # plus the whole-asset sweeps — MINUTES
 
 It exits with the number of failures, so it drops into a hook or a `&&` chain.
 
+**"THE FULL SWEEP" MEANS `--slow`.** Plain `verify.py` is the fast list (~187
+checks) and runs **no** `engine:` check at all, so a red one can survive a run
+recorded as "0 failed": `engine: scene steps` went red on 2026-09-07 and was
+found two days later, having passed through exactly such a record
+(`todo/sweep-log.md`). The count in a sweep row is what tells the two apart -
+the fast list is 207 checks and the whole thing 383 - so write which one ran.
+
 `--only <substring>...` runs just the checks whose names match, and implies
 `--slow` so an `engine:` check is reachable without the whole sweep. Reach for
 it every time. The full `--slow` run is **minutes**, most of them re-decoding

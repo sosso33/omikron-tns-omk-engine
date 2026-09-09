@@ -14598,6 +14598,28 @@ def c_engine_scene_steps():
     frame per step. The beat's second step started a frame late and the program
     outlived `sautdemon` by two frames, which is where the gap between beats
     came from.
+
+    **…and then the EDITING made both numbers one thing longer, which is right
+    and is why they moved.** `74f6f8a` read `Script_PlayScript`'s own ending
+    (17_script.c):
+
+        obj->clock += frame dt;
+        if (!(ediPlaying + busy)) { ...; obj->running = 0; }
+
+    `ediPlaying` is set earlier, before the chain is walked, whenever
+    `obj->clock < editing->+24`. So an object whose steps have run out **goes
+    on running while its editing plays**, and only the tick that finds the
+    clock past the duration stops it. The demon's 132 becomes **133** and the
+    crates' 111 becomes **186** - `boxblow` holds 185, the extra 39 being the
+    shot staying on them after they land, plus the tick that ends it.
+
+    That is the same fact `engine: editing hold` asserts from the other side
+    (boxblow to 185, not to the 110 its steps last), so the two checks now
+    agree; before this they contradicted, and THIS one was the stale half. It
+    went red at `74f6f8a` on 2026-09-07 and stayed red for two days, through a
+    sweep recorded in `todo/sweep-log.md` as "187 checks, 0 failed" - because
+    it is a `SLOW` check and the plain `verify.py` never runs it. Pinned by
+    running it at `74f6f8a` (red) and `74f6f8a~1` (green) in a worktree.
     """
     import subprocess, tempfile, shutil
     eng = os.path.join(ROOT, "engine")
@@ -14617,18 +14639,20 @@ def c_engine_scene_steps():
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
     v = struct.unpack_from("<15i", raw, 0)
-    return v, (15, 17, 91, 0, 132, 0, 0, 111, 185, 4, 4, 2, -104, -267, 273), \
+    return v, (15, 17, 91, 0, 133, 0, 0, 186, 185, 4, 4, 2, -104, -267, 273), \
            "A_2_DemonLook's first clip and the one the program counter " \
            "reaches, the frame it reaches it on and its own clock restarting " \
-           "at 0; how long the program runs - 132, exactly its editing's own " \
-           "duration; " \
+           "at 0; how long the program runs - 133, its editing's own 132 and " \
+           "the tick that finds the clock past it; " \
            "then the two gaps in the beat's authored chain of clips, which are " \
            "0 and 0; then the CRATES - `C_1_BoxMoves` is four " \
            "`Script_MoveObjectOnPath` on the paths `CaisseA`..`CaisseD`, and " \
-           "it runs 111 frames where a busy window of 0 gave 40: the busy " \
+           "it runs 186 frames where a busy window of 0 gave 40: the busy " \
            "window is PARAM 6, the playback length (110.01 here), not the " \
-           "path's own 146 frames, which the handler plays ACROSS it; its " \
-           "editing holds 185; then the MOTION itself - 4 nodes placed, all " \
+           "path's own 146 frames, which the handler plays ACROSS it - and " \
+           "the object then OUTLIVES its own steps, because the editing " \
+           "keeps it running; its editing holds 185; then the MOTION itself " \
+           "- 4 nodes placed, all " \
            "4 of them meshes of `AImpasse` by name, and 2 of the 4 FALL (Y " \
            "points down, so a fall ends at a larger y): `Caisse01` and " \
            "`Caisse 13` start about 80 units up and land, `Caisse1` and " \
