@@ -6039,21 +6039,13 @@ int main(int argc, char** argv) {
                     // sites pass, so the weapon is the Gun Waver.
                     startShoot = false;
                     session.shootBegin(-1);
-                    // camera mode 4: `camera_presets.json` row 4 is eye
-                    // (0,0,0) and target (0, 0, 787.4016) - the eye ON the
-                    // player and the aim 20.00 m in front of him - both
-                    // subject 0, fov 75, and every smoothing divisor ZERO, so
-                    // it does not lag him at all. A script that names its own
-                    // camera still wins, which is the follow block below.
-                    const float eye[3] = {0.0f, 0.0f, 0.0f};
-                    const float at[3]  = {0.0f, 0.0f, 787.4016f};
-                    player->setCameraOffsets(eye, at, 75.0f);
-                    shootCameraLive = true;
-                    shootPitch = 0.0f;
-                    front.setRelativeMouse(true);
-                    std::printf("--shoot: shoot.begin -1 - camera mode %d, "
-                                "eye on the player, aim 20 m ahead\n",
-                                omk::ShootMode::kCameraMode);
+                    // The camera is NOT installed here: entering shoot mode
+                    // installs it, wherever the entry came from. Having it
+                    // here as well is what let a script-driven entry go
+                    // without one for a whole session (`todo/omk-play.md`
+                    // 97d), because the harness was the only thing ever
+                    // tested.
+                    std::printf("--shoot: shoot.begin -1\n");
                 }
                 if (openSneak && !walk && playerScreen < 0) {
                     openSneak = false;
@@ -7070,6 +7062,39 @@ int main(int argc, char** argv) {
                 else           player->leaveShootMode();
             }
             in.installScheme(shootMode ? omk::ShootMode::kInputScheme : 0);
+            // ---- THE CAMERA, and it belongs HERE ------------------------
+            //
+            // `Shoot_Enter` ends with `Camera_Request(4, ...)` and both
+            // camera actors set to the player, so ENTERING SHOOT MODE
+            // installs the first-person camera full stop - it is not
+            // something the `--shoot` harness does.
+            //
+            // It used to live in that harness alone, and a reader found what
+            // that costs. Reaching the supermarket phase through the game's
+            // own script, the log read:
+            //
+            //   frame 3219: editing over - the camera HOLDS its last frame
+            //               (mode 13, no active camera, autocameraplayer 0)
+            //   frame 3221: SHOOT MODE ENTER - ACTOR_STATE 3, scheme 2
+            //
+            // - the mode on, the scheme installed, and the camera never asked
+            // for, so the view stayed on the cutscene's last framing with the
+            // player standing in it (`todo/omk-play.md` 97d).
+            //
+            // `camera_presets.json` row 4: eye (0,0,0) - ON the player - and
+            // target (0, 0, 787.4016), the aim 20.00 m ahead, fov 75, with
+            // every smoothing divisor ZERO so it does not lag him.
+            if (shootMode && player) {
+                const float eye[3] = {0.0f, 0.0f, 0.0f};
+                const float at[3]  = {0.0f, 0.0f, 787.4016f};
+                player->setCameraOffsets(eye, at, 75.0f);
+                shootCameraLive = true;
+                shootPitch = 0.0f;
+                front.setRelativeMouse(true);
+                std::printf("frame %ld: shoot camera - mode %d, eye ON the "
+                            "player, aim 20 m ahead\n", n,
+                            omk::ShootMode::kCameraMode);
+            }
             if (!shootMode) {
                 shootCameraLive = false;
                 front.setRelativeMouse(false);

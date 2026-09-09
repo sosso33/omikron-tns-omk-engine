@@ -17,6 +17,41 @@ waiting on its evidence.
 
 ### 97. The supermarket shoot phase blocks at the end of its cutscene, and Kay'l vanishes — A
 
+> **(d) THE CAMERA WAS NEVER ASKED FOR — FIXED 2026-09-09, and it is the one
+> that kept the phase in third person.** The reader played it again and sent
+> the log, which says the mode DOES enter:
+>
+> ```
+> frame 3219: editing over - the camera HOLDS its last frame
+>             (mode 13, no active camera, autocameraplayer 0)
+> frame 3220: the program ended - the player keeps the body's place
+> frame 3221: SHOOT MODE ENTER (Shoot_Enter) - ACTOR_STATE 3, scheme 2
+> ```
+>
+> The mode on, the scheme installed, and **no camera**: the view stayed on the
+> cutscene's last framing with the player standing in it, which is exactly the
+> screenshot. `Shoot_Enter` ends with `Camera_Request(4, ...)` and both camera
+> actors set to the player, so entering shoot mode installs the first-person
+> camera FULL STOP — but in the port that call lived **only inside the
+> `--shoot` harness**. Every test of shoot mode had gone through that harness,
+> so the one path a player actually takes had never installed a camera at all.
+> Moved onto the mode transition, where it belongs.
+>
+> **The lesson is about the harness, not the camera.** `--shoot` existed so a
+> person could stand in an arena and look at the mode; it quietly became the
+> only way the mode was ever entered, and it carried a step the real entry
+> needed. A harness that does something the thing it stands in for does not is
+> a harness that hides a missing feature.
+
+> **`MDSHOOT0` is the EQUIP, not the shot.** The same log shows
+> `special move: MDSHOOT0 (tab_special_move[8] = 0x0046b610)` three times,
+> which looked like the firing path arriving. It is not: `0x0046B610` calls
+> `sub_41C350`, then `sub_4083F0(0x30, ...)`, then **`sub_41C490`** — the same
+> equip call `Shoot_Enter` makes after event 48. So the channel is drawing the
+> weapon, and the firing move is still elsewhere. Recorded because it is
+> exactly the sort of near-miss that gets written up as a success.
+
+
 A reader played it, 2026-09-09: *"the game blocks at the end of the cutscene
 (with Kay'l disappearing)"*, and then the diagnosis that reframes it —
 *"it is no more a 3rd person automatic camera, it becomes a 1st person manual
