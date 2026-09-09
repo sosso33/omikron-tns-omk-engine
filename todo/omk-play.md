@@ -18,7 +18,7 @@ waiting on its evidence.
 ### 92. "Je ne vois pas quoi faire avec ça" while the object is still taken — A
 
 > **FIXED 2026-09-09**, and the reader was right on every count. Driven
-> headlessly both ways; not watched in play yet.
+> headlessly both ways, and **CONFIRMED IN PLAY** the same day.
 
 A reader, straight after 91: *it works, but it always says "Je ne sais pas quoi
 faire avec ça" like nothing is interactable, but the character still takes the
@@ -217,8 +217,8 @@ was read here, wrongly, as merely saying the handler is rare.
 
 ### 91. The kitchen cupboard opens onto objects that cannot be taken — A
 
-> **Fixed 2026-09-09**, driven headlessly: both props are taken in turn.
-> Not watched in play yet.
+> **Fixed 2026-09-09**, driven headlessly - both props are taken in turn -
+> and **CONFIRMED IN PLAY** the same day.
 
 A reader: *in kay'l kitchen, there are some cupboard that can be open by
 pressing enter. It is possible to open the cupboard, but not to take the
@@ -269,8 +269,8 @@ sum the same run takes nothing at all.
 
 ### 90. The lift doors open sideways: a path is TURNED into the set — A
 
-> **Fixed 2026-09-09**, measured and RENDERED (Hall 27, before and after).
-> Not watched in play yet.
+> **Fixed 2026-09-09**, measured and RENDERED (Hall 27, before and after),
+> and **CONFIRMED IN PLAY** the same day.
 
 A reader, minutes after 89: *some doors do not open correctly*, with Hall 27
 on screen and `HA27DoorL`/`HA27DoorR` in the log.
@@ -305,7 +305,7 @@ may move ALONG its wall and not out of it), and `path_turn.cpp` is the probe.
 
 ### 89. A DOOR read as a cutscene: black stripes and no player — A
 
-> **Fixed 2026-09-09**, measured headless. Not watched yet.
+> **Fixed 2026-09-09, CONFIRMED IN PLAY** the same day.
 
 A reader: *opening some doors (like the door of the kay'l's apartment
 kitchen) triggers a "cutscene mode": black stripes and player
