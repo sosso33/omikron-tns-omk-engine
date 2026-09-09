@@ -115,13 +115,9 @@ somewhere to go. Nothing ever pushes into it.
 
 ## 3. The steps
 
-1. **The anchor.** Seat the body on `ground + body-sphere radius` (the
-   engine's constant) instead of the standing pose's lowest corner, and let
-   `trans` carry the whole vertical. The port already reads the model's sphere
-   list (`Walker::setBlockers` takes the centres and radius 10.9 for HO1_FN);
-   `Collision_BodySphere`'s rule is "largest radius", which for four equal
-   spheres is the FIRST. Measure: the drawn feet over idle/walk/run must stop
-   floating, and the check is that same three-clip sweep.
+1. ~~**The anchor.**~~ **DONE 2026-09-09**, and the cause was not where §2
+   put it. See §4 - the clips are sound, and what displaced the body was the
+   port measuring its anchor and its drop from two different origins.
 2. **The impulse.** `Walker::jump(vy)` setting `vy_` and `airborne_`, and
    `MDJUMP01` in `play.cpp`'s special-move loop calling it. The magnitude is
    `dword_53AE54 * 30.0` and that global's derivation is step 2's reading; if
@@ -133,3 +129,81 @@ somewhere to go. Nothing ever pushes into it.
 
 Each step ends in a headless measurement of the drawn feet across a walk, a
 run and a jump, and a `verify.py` row that is shown to fail.
+
+
+---
+
+## 4. Step 1, done - and the clips were never the problem
+
+**The float was a mismatch of ORIGINS inside the port, not a missing engine
+mechanism.** `tools/vertical_probe` (new) reads the model's collision spheres
+and then poses each named `.CTL` clip frame by frame and reports the body's
+lowest corner. For HO1_FN:
+
+| clip | f0 lowest corner | vs standing | f0 pelvis `trans.y` |
+|---|---|---|---|
+| `H_STAND` | +38.76 | 0.00 | **+0.68** |
+| `H_WALK` | +36.71 | **-2.06** | **+2.09** |
+| `H_RUN` | +35.88 | **-2.88** | **+3.68** |
+
+Y grows down, so `H_WALK` f0 lifts the lowest corner 2.06 *while its pelvis
+track drops 2.09*. **The authored pair cancels to 0.03** - the planted foot
+stays planted. That is precisely the "authored motion netting out" that
+`Walk_GroundResponse` relies on, and it means no clip in the locomotion set
+needs correcting.
+
+What moved the body was this: `playerFeet` is a **pose's** lowest corner,
+latched from `H_STAND` - whose pelvis trans is **+0.68, not zero** - while the
+drop was `rootAccum`, an accumulator **re-based to the entered clip's first
+frame** (+2.09 walking, +3.68 running). Two origins, so the body was drawn a
+*constant* offset off the floor for as long as the clip ran, and snapped back
+the instant `H_STAND` reset the sum. Measured over a 220-frame headless run
+(idle 40, UP 120, idle 60), as the drawn foot's height above the walker's floor
+point:
+
+| | idle | walk mean | walk worst |
+|---|---|---|---|
+| before | +0.02 | **+0.94** | +1.53 |
+| after | +0.01 | **-0.02** | 0.63 (the authored cycle) |
+
+**The fix, in two halves that have to move together.** The anchor now records
+the pelvis trans it was taken at (`playerRootRef`) and is latched from
+`H_STAND` *specifically* rather than from whatever pose was up on the first
+frame; and for any clip that LOOPS - `variantCount() <= 1`, the structural
+marker that already selects `gridTracks`, not a list of names - the drop is
+read absolutely against that origin instead of through the accumulator. The
+accumulator stays for the TAKE chain, where `H_TAKL12`/`H_TAKL22` genuinely
+continue one another and an absolute reading is meaningless.
+
+`verify.py: engine player vertical`, shown to fail: mutating the one absolute
+line back to the accumulator moves the walk's mean foot from -0.02 to +0.94 and
+its worst from 0.63 to 1.53 while the idle stays at +0.02. The mutation was
+confirmed applied (md5 changed, binary relinked) and the run's OUTPUT compared,
+not just the check's verdict.
+
+**Two things this does NOT establish**, both labelled in `play.cpp` and in the
+check:
+
+* **The engine's absolute seat is still untraced.** `Walk_ProbeGround`
+  (0x00467030) does not seat the actor at a fixed height at all - it writes a
+  CLEARANCE, `actor[264] = lastSafeY - curY + groundY + rotY + radius`, and
+  `Walk_GroundResponse` (0x00465460) drives that to zero against **`actor+276`,
+  which nothing here has read**. So §1's "the seat is ground + sphere radius"
+  is the right constant in the wrong grammar: it is a term in a clearance, not
+  an offset. Read from the model, `Collision_BodySphere` gives radius 10.91 and
+  `sub_4443B0`'s second-lowest centre.y is 14.98, and HO1_FN's lowest sphere
+  reaches **41.81** below the node against a standing visual foot at
+  38.76 + 0.68 = **39.44** - the sphere hangs **2.37 below the feet**. The two
+  constants are not interchangeable, so the port does not use the sphere one as
+  a seat; it is quoted only because it corroborates the scale.
+* **The reader's word was "rise" and the measured pre-fix error is a SINK** of
+  about one unit through the walk. The magnitude, the constancy and the release
+  at the idle all match the report; the direction does not. Either the
+  description is of the apparent height (the head drops ~0.5 through the same
+  window) or there is a second effect this has not reached. Worth one look in
+  play before step 2 rather than assuming it is closed.
+
+**Still to do**, unchanged: steps 2 and 3 - the impulse and the state. And the
+engine's own answer to this whole class is the ground probe under the drawn
+body, which absorbs any vertical a clip authors and would retire the
+accumulator and its three guards altogether; that needs `actor+276` first.

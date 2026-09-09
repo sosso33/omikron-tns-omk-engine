@@ -20,7 +20,7 @@ adds **one**. Counting commits ran this number to 13 when about nine tasks had
 been finished, which would have called for a half-hour sweep long before the
 rule intends one.
 
-**tasks since the last full sweep: 18** (13 the character shadows, 14 the Anekbah panel flicker, 15 the orphaned shadows, 16 fitted shadows, 17 mapped shadows, 18 per-pixel lighting - the last five on 2026-09-08/09). **PAST THE 5-10 RULE: the next task should start with a full sweep.**
+**tasks since the last full sweep: 19** (13 the character shadows, 14 the Anekbah panel flicker, 15 the orphaned shadows, 16 fitted shadows, 17 mapped shadows, 18 per-pixel lighting, 19 the player's vertical step 1 - the last six on 2026-09-08/09). **PAST THE 5-10 RULE, and a full sweep is RUNNING** (2026-09-09, over supersampling and the player's vertical together); reset this to 0 and add its row when it reports.
 
 > **`engine: UI` is RED and was already red at `a5b1807`, on a clean tree.**
 > Measured 2026-09-07: `disagree` is 9, not 0 - the shops, screens 21..28 and
