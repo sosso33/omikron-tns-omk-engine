@@ -15,11 +15,21 @@ waiting on its evidence.
 
 ## Open (batch 7, filed 2026-09-09)
 
-### 92. "Je ne vois pas quoi faire avec ça" while the object is still taken — NOT A BUG (probably)
+### 92. "Je ne vois pas quoi faire avec ça" while the object is still taken — OPEN
 
-> **Investigated 2026-09-09, nothing changed.** Every step below is read out
-> of the binary; what is missing is a capture of the ORIGINAL doing it, and
-> that is the one thing that would overturn it.
+> **PARTIALLY RESOLVED, 2026-09-09.** The take works (91); the voice line does
+> not belong there. **The reader, who has played the original: *"It is an issue
+> of the port, the original doesn't do that — the original doesn't show the
+> 'non-interactable' message while taking the object in the cupboard."*** Left
+> as it is for now, by their instruction, and filed here so the next session
+> starts from the right end.
+>
+> This entry first said NOT A BUG, on the strength of the chain of readings
+> below and nothing else. That was the mistake: a chain of transcriptions is
+> evidence about the code I have read, not about the game, and one mis-read
+> link produces a chain that is internally consistent and wrong. **A reader who
+> has played the original is the authority on what the original does.** The
+> chain is kept because it says exactly which links have to be attacked.
 
 A reader, straight after 91: *it works, but it always says "Je ne sais pas
 quoi faire avec ça" like nothing is interactable, but the character still
@@ -74,13 +84,47 @@ is what the reader is seeing. Measured in the port: exactly one message 26 per
 press (frames 158 and 410 of a five-press run), not a repeat, so the port is
 not over-firing it either.
 
-**What would overturn this**: a golden capture of the original opening Kay'l's
-kitchen cupboard and pressing action again. GLOBAL script 10 opens with
-`var.set.random 1, 7, 119`, which announces `VARIABLES 119` — one line in the
-log settles it. **No shipped capture reaches the cupboard at all** (none of
-the five carries `ADDRESSES 685/686`, `OBJECTS 31/457` or `CAMERAS 4460`), and
-`VARIABLES 119` appears **0 times in 1345 events** of real play — which says
-the handler is rare, not that it never fires here.
+**So one of these five links is wrong, and the next pass should attack them in
+this order.** They are listed with what would settle each.
+
+1. **The one-shot ping-pong.** The whole thing rests on the spent slot never
+   freeing, which keeps `dword_4E6B24` non-zero and so keeps the press flag
+   being set at all. It comes from `case 4: state = 5`, `case 3/5: leave +
+   free + --dword_4E6B24`, and event 7's `if (state != 5) return; state = 4`,
+   with the pump at 05_sys.c:2107 running before `Actors_TickAll` at :2178.
+   If the slot in fact frees — or if event 7 stops arming once the player
+   turns toward the object and out of the zone's ARC — there is no press flag
+   and no message. **The leave script would then run and close the cupboard,
+   which is checkable in play: does the cupboard stay open in the original
+   while you take from it?**
+2. **`dword_4E6B24`'s meaning.** Read here as "slots in use". If it counts
+   only slots that can still ACTIVATE, a spent one-shot stops gating event 6
+   and the flag is never set. Its increment is in case 7's else-branch and its
+   decrement in case 3/5; nothing else was read.
+3. **The hand.** Step 2 posts only when `Actor_HeldObjectSlot(player) == -1`.
+   `sub_465D30` (0x00465D30, the take-group picker MDACTION calls on a hit)
+   was NOT read in full — if it reserves the object slot at the press rather
+   than at `MDGETOBJ`, the hand is full one frame later and step 2 takes its
+   other arm instead. **This is the cheapest one to check and it explains the
+   symptom exactly: the line would fire on a press that finds nothing and not
+   on a press that starts a take.**
+4. **`dword_4E66B8`.** The port drops it, on the argument that the arm which
+   clears it also increments `dword_4E61E0` and so skips the reader. Both are
+   reset at the top of `Script_Pump`, which makes the argument hold — unless
+   `Script_Pump(1)` is not called exactly once per frame.
+5. **The frame order.** Taken from `sub_408410(1)` at 05_sys.c:2107 against
+   `Actors_TickAll()` at :2178. If a second pump runs after the actor tick,
+   the press is consumed in the same frame it is raised and the accounting
+   changes.
+
+**And the one measurement that settles it without any of this**: a golden
+capture of the original opening Kay'l's kitchen cupboard and pressing action
+again. GLOBAL script 10 opens with `var.set.random 1, 7, 119`, so the handler
+announces `VARIABLES 119` — one line in the log. **No shipped capture reaches
+the cupboard at all** (none of the five carries `ADDRESSES 685/686`,
+`OBJECTS 31/457` or `CAMERAS 4460`), and `VARIABLES 119` appears **0 times in
+1345 events** of real play, which is consistent with the reader's report and
+was read here, wrongly, as merely saying the handler is rare.
 
 ### 91. The kitchen cupboard opens onto objects that cannot be taken — A
 
