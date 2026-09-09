@@ -5,6 +5,11 @@ of it has been confirmed by a person** except where it says so. Written
 2026-09-07, after four tasks: the sneak's two bugs, `Text_LayOutBlock`, and
 the slider.
 
+**Section 7 was added 2026-09-09** and is a second, later batch: the whole of
+that day's render work — the dither, the shimmer, three shadow qualities,
+per-pixel lighting and supersampling — none of it judged by a person. If you
+have five minutes and not thirty, do 7 and leave 1 to 6.
+
 The order is deliberate — **4 is the one to try first**, because it is the
 whole slider feature end to end and it is new. 1 to 3 are quick and
 independent, 5 needs a save with several objects, and 6 is the harness route
@@ -197,6 +202,62 @@ Item 4 is the real path now, and this is the quick way to the flight model.
 the harness has no vehicle. Come in through **item 4** instead and the slider
 you called is drawn under him, because the ride moves the vehicle with it the
 way `sub_457F50` moves the slider's node.
+
+---
+
+## 7. THE RENDER WORK OF 2026-09-09 — the whole of it needs eyes, 5 minutes
+
+Six things landed in one day and **not one has been judged by a person.**
+Every check behind them measures a number a metric can compute, and each says
+in its own docstring what it cannot see. This section is that list.
+
+```
+cd engine && make play
+build/omk-play ../gamedata ../tables --save ../traces/save-appart.bin \
+    --area 0 --stand 1804,0,-6890,336 --vulkan
+```
+
+Anekbah's main street, with the crowd and the neon, on the backend that has
+all of it. Add `--enhance-all` to see every enhancement at once, then take
+them away one at a time.
+
+**On by default, and the two that are FIDELITY rather than enhancement — look
+at these first, because if either is wrong the port is now further from the
+original than it was.**
+
+* **The dither.** Look at a large smooth wall or the sky and ask whether it
+  reads as a fine noise or as visible speckle. `--no-dither` for the contrast:
+  the bands it replaces are what the 16-bit target does without it. What no
+  check can see is whether the noise reads as *smoother* than the band — the
+  arithmetic is proved, the judgement is not. Also worth one look: the frame
+  must not appear brighter with the dither on than off. A centred dither is
+  what makes that true and the measurement says it is centred to 0.249 of 255,
+  but a systematic lift is exactly the kind of thing a number can pass and an
+  eye can catch.
+* **The shimmer.** The far skyline of any city — Lahoreh has 132 of the 233
+  meshes. It should breathe slowly, not strobe. It is on the frame clock at
+  2 a frame wrapping at 256, so the period is long; if it looks like a flicker
+  the clock is being advanced somewhere else as well.
+
+**Off by default — turn each on alone.**
+
+* `--shadow-quality fitted` then `mapped`. Fitted should lay the blob on the
+  step or the kerb the body stands on instead of on a flat plane; mapped
+  should put a real shadow at the player's feet under a street lamp. Walk him
+  between lamps: the direction should change and the shadow should not swim.
+* `--lighting perpixel`. The gain is almost all on the CROWD, whose models
+  ship white and whose shading IS the lights; on a lamp-lit thigh a falloff
+  that used to bend across one big triangle should now bend across the leg.
+  A body the engine never lights keeps its baked shading, so watch that Kay'l
+  does not become a silhouette away from the lamps.
+* `--ssaa 2` or `4`. The place to look is a GRILLE, a railing or a sign — the
+  cutout edges, whose silhouette is a colour key inside a triangle and which
+  MSAA never touches. `--aa 4` beside it should NOT fix those, which is the
+  whole reason both exist.
+
+Nothing here is a regression hunt; all six pass their checks. What is missing
+is the one judgement none of the checks makes, which is whether the picture
+is better.
 
 ---
 

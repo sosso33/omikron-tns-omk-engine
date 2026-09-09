@@ -3228,6 +3228,64 @@ midpoint, which is out in the road beyond every lamp. `--world-vulkan` is the
 new harness that made any of this measurable without a window. Check:
 `engine: mapped shadows` (shown to fail).
 
+**And 2026-09-09, PER-PIXEL LIGHTING** (`todo/enhancements.md` 7) - off by
+default, Vulkan only. Not a new law: the same squared-radius reach test, the
+same linear falloff between the two radii, the same `k = intensity * 256 *
+fall` and the same `-(N.L)` that `sub_493E40` runs per vertex, evaluated per
+fragment instead. The vertex carries its normal to the GPU and the frame's
+nearest eight lights ride in set 1 beside the shadow map. Held to the LAW
+rather than to the port's other copy of it: directly under a light the shader
+agrees exactly, and across a lit quad per pixel varies by 51 green levels
+where per vertex varies by 0, the CPU path taking reach and falloff once per
+BODY. The second half of the row - every character receives, not the
+procedural crowd alone - is a declared deviation, since all eight of
+`sub_4380B0`'s call sites are street life. TWO BASES, and that is the one real
+departure: a body the engine lights starts from BLACK, but a body it never
+lights does not, so `lit` is 0, 1 or 2 and HO1_FN keeps his baked shading.
+Check: `engine: per-pixel lighting` (shown to fail).
+
+**And 2026-09-09, SUPERSAMPLING** (`todo/enhancements.md` 9) - off by default,
+Vulkan only. The attachments, render area and viewport go N times larger each
+way and `readback()` averages each NxN block down. The resolve is on the
+8-bit side, BEFORE the one quantisation, because averaging four 565 values
+quantises four times and averages the error. It is not MSAA over again: MSAA
+samples geometry edges, and this game's aliasing is mostly TEXTURE (256x256
+atlases sampled point) and CUTOUT, whose silhouette is a colour key INSIDE a
+triangle where MSAA never looks. `--ssaa 1` is bit-identical to no flag, which
+is what protects every other frame check. Check: `engine: supersampling`.
+
+**And 2026-09-09, THE SHIMMER - a defect, not an enhancement.** Mesh flag
+`0x8000000` oscillates the vertex colour of 233 set meshes, the far skyline of
+every city and 132 of them in Lahoreh. The port had decoded the phase into
+`Corner::phase` when the geometry loader was written and read it NOWHERE. The
+table is 32 signed bytes indexed by `((clock >> 2) + phase) & 31`, added to
+each of r, g and b, on a clock that advances 2 a frame and wraps at 256. On by
+default in both backends. `verify.py: shimmer table` asserts all THREE copies
+- the header, the fragment shader's, and the reference - against the bytes in
+the exe, because a table duplicated for a shader is a table that drifts.
+Checks: `engine: shimmer`, `shimmer table`.
+
+**And 2026-09-09, THE DITHER - the second defect of that shape, and the last
+render state in `sub_4638C0` the port ignored.** That function sets
+D3DRENDERSTATE 26, `DITHERENABLE`, to 1 on BOTH device arms, so drawing hard
+565 bands where the original drew dithered noise was a fidelity gap. On by
+default, both backends, at the single 888 -> 565 quantisation point in
+`ui/surface.h`; `--no-dither` is for laying two frames side by side and is not
+a setting. What is ported is the DECISION - the MATRIX cannot be, and is
+labelled a reconstruction beside the mirror's plane normal and the audio
+attenuation law, because Direct3D dithers inside the driver's conversion to
+the framebuffer format. A 4x4 block reconstructs its input to 0.491 of 255
+against 2.047 for plain rounding, at a signed bias of -0.249; the first
+version ran the threshold 0..+7 instead of -8..+7, which still breaks the band
+and lifts every pixel half a step, and only that bias separates them.
+**A latent backend disagreement is RECORDED and not fixed**: undithered, the
+Vulkan readback quantises with `rgb565`, which truncates, while the software
+rasterizer uses `quantise888`, which rounds - so the boundary that is supposed
+to move 0 pixels has moved some since the Vulkan backend landed. The dithered
+arms call the same quantiser and agree. Check: `engine: dither` (shown to fail
+three ways, the third being the flag not reaching `raster.cpp`'s blend sites,
+which leaves the arithmetic perfect and moves 0 pixels).
+
 **And 2026-09-04, the ROAD TRAFFIC** (`docs/STREET_LIFE.md` §2b,
 `todo/road-traffic.md`) — the vehicle half of the same circuit:
 `actor/vehicles.cpp` is `Slider_Init`'s vehicle branch (the two model tables

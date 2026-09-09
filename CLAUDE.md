@@ -393,6 +393,32 @@ stopped guarding the moment the name changed, and nothing would have said so.
   agreed. When a boundary struct gains a field, grep for every positional
   initialiser of it rather than trusting the build.
 * **`git checkout <file>` ON UNCOMMITTED WORK IS A DELETE, and a failed mutation makes it look harmless.** On 2026-09-08 a mutation script's anchor did not match, so `verify.py` was NOT mutated; the tidy-up `git checkout tools/verify.py` that followed then threw away two new checks that had never been committed. The revert did not undo a mutation - there was none - it undid the work. **Commit before mutating**, and revert a mutation by editing the line back rather than by reaching for git. Same family as the `str.replace` + `assert` trap below: the failure mode is an edit that did not apply while everything downstream behaves as though it did.
+* **A SOURCE SCAN THAT ENUMERATES CALL SITES ROTS, and it fails GREEN-side
+  first: it goes red against code that is correct.** `engine: anti-aliasing`,
+  `engine: texture filter` and `engine: mipmaps` each prove every
+  `setMultisample` / `setTextureFilter` / `setAnisotropy` call in `play.cpp`
+  is guarded, by counting guarded sites and requiring the count to equal the
+  number of sites. Each pattern named the renderer variables that existed when
+  it was written — `live`, and a bare `vr`. `--world-vulkan` added a THIRD
+  renderer in `1073b5c` whose three call sites are guarded exactly like the
+  others and match none of the patterns, so all three checks went red and
+  **stayed red for three days**: the task that added the renderer ran `--only`
+  over the shadow checks, which is §4's cadence rule working as intended and
+  its cost showing. Fixed by naming the GUARD rather than the CALLER
+  (`if \((?:\w+ && )?aaSamples > 1\) \w+->setMultisample`). The general
+  form: **a scan that lists the callers has to be updated by whoever adds one,
+  and nothing makes them.** Prefer a pattern over the invariant to a pattern
+  over the current call sites — and when a whole family of checks goes red at
+  once, suspect the family's shared assumption before the code.
+* **In zsh, `$var:path` is a MODIFIER, not a colon.** `git show
+  "$c:engine/backends/sdl/play.cpp"` silently becomes `git show $c` plus
+  `ngine/...`, because `:e` is the extension modifier — so a loop asking
+  "which commit introduced this line" answered **0 for every commit**, which
+  reads exactly like "the line is not committed". Write `${c}:path`. Same
+  family as §5's word-splitting note and the same lesson: a command built from
+  a variable exits 0 with the wrong answer, so assert the effect and not the
+  status. This one was caught because the count contradicted a `git show HEAD`
+  done by hand a minute earlier.
 * A regex over decompiler output must respect nesting.
   `List_PickRandomByType(u32(a2, 20), 11)` reads as type **20** with a naive
   `[^,]+` pattern — which made type 20 look like the most-used in the game.
@@ -865,6 +891,7 @@ All of this is documented with its evidence in `docs/`. Headline verifications:
 
 | the **graphical options** and what they size | the settings resolve from three sources - defaults, the `[Preferences]` ini, and the SAVE FILE's 3496-byte header, which is the global `byte_90E180` and carries all 74 rows including the three binding tables verbatim, so saving a game saves the options. Row 3's clip distance is in METRES against an inch world unit and sizes FOUR things at once - the visible-set radius, both bucket splits and the fog range. Row 4's sky is the AREA chunk's `+133`: a flat painted CEILING, not a dome, following the camera in x and z. The fog is LINEAR and its colour is BLACK. All ported and drawn |
 | the **character SHADOWS** - option row 5 | there is no shadow pass: ONE shipped quad (`MESHES\MISC\shadows.3DO`, flags 0x5000 = the multiply bucket, `dst x (1 - src)`, over a soft white disc) whose copies `Actor_DrawShadow` writes into the frame's own pools under a fixed set of BONES each frame. Row 7's detail says how many (arms at 2, head and legs at 1, chest always; 3 or more draws nothing; an npc gets the level MINUS ONE), the reaches are 3.6 / 1.8 / 1.4 round METRES, the size is the bone's own bounding sphere over 10/12/14 clamped at 1.5, and the fade is the vertex colour `255 - dist*255/reach` and nothing else. The crowd's is a separate whole node at the midpoint of `Piedg` and `Piedd`. **The bones are found by `strstr` on the LAST match** - every character bone carries a prefix, so an equality test draws nothing at all. Ported and drawn |
+| the shipped **RENDER STATES** (`sub_4638C0`) | ANTIALIAS explicitly OFF, textures sampled POINT with no mipmaps, perspective-correct, Gouraud, specular on - **and `DITHERENABLE` 1 on both device arms**. The first two make `--aa` and `--filter` ENHANCEMENTS, off by default; the third makes the 4x4 ordered dither a FIDELITY fix, on by default, with the DECISION ported and the matrix a labelled reconstruction (the driver's, not the engine's). Beside it, mesh flag `0x8000000` - the **SHIMMER**, a 32-byte table oscillating 233 set meshes' vertex colour on the frame clock, decoded since the geometry loader and drawn since 2026-09-09. Both were defects the port had, not features it lacked |
 | the **`.3DO` light table** - the 1999 spec sheet's *Multilights* | 4179 records of 304 bytes across 216 models, counted from `desc+240` (the loader OVERWRITES `desc+232` from it); each names itself `LIGHT`, and holds two radii in round metres, an RGB colour, a position and a footprint. **A decor set supplies them and the street's moving population receives them** - `sub_4380B0`'s eight call sites are all street-life. Per-vertex `-(N.L)` over a linear falloff through a `(t*c)>>8` ramp; ported and drawn. It needed the vertex NORMAL at `.3DO` vertex `+12`, twelve bytes this repo had skipped since the format was decoded |
 
 **And it is not only read: `engine/` runs it.** 31 of the 41 rows above are
@@ -1013,6 +1040,24 @@ the game's stays that way** (the reader's rule, 2026-09-08): the original
 sets ANTIALIAS off and samples POINT (ASSETS 4), and a replica judged
 against it must draw what it drew unless told otherwise.
 `todo/enhancements.md` is the list.
+`--shadow-quality classic|fitted|mapped`, `--lighting perpixel` and
+`--ssaa N` are the rest of them, and `--enhance-all` (or `all = max`) turns
+every one to its top in one word.
+
+**But read the same function's OTHER two states before assuming the rule
+covers everything it turned on.** `sub_4638C0` sets ANTIALIAS off and samples
+POINT - and it sets `DITHERENABLE` to 1 on both device arms, while mesh flag
+`0x8000000` oscillates 233 meshes' vertex colour every frame. The port did
+neither, and both were fidelity DEFECTS rather than missing features: the
+dither and the SHIMMER are **on by default** and are not in
+`todo/enhancements.md`'s table at all, but in its "not an enhancement"
+sections. `--dither 0|1` / `--no-dither` exists only to lay a dithered frame
+beside an undithered one - it is a comparison tool, and a check that asserts
+two frames are byte-identical should use it, because the dither exposes
+colour differences below a 565 step that plain rounding absorbed.
+**Before building an enhancement, check whether the game already does the
+thing and the port dropped it.** That is cheaper than any enhancement and it
+is what the original looks like.
 
 **The view is NOT letterboxed by default, and that was a correction.** The
 1.818:1 letterbox is measured off DIALOGUE captures, so it is evidence about
