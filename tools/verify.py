@@ -25723,6 +25723,74 @@ def c_map2d():
 
 
 
+def c_shoot_arenas():
+    r"""SCRIPT_VM / FILE_FORMATS: every `MAP2D` map is a SHOOT-MODE ARENA, and
+    every arena has a map - 16 of 16 both ways.
+
+    `MAP2D/*.mpt` was decoded as "the in-game map screens" (FILE_FORMATS 5b5)
+    and that is at most half of what it is. `Shoot_TickPlayer` (0x00427AC0)
+    and `Shoot_Think` (0x00420AB0) run on exactly the table `Map2D_Load`
+    (0x00434E30) fills: `sub_435020` picks the FLOOR containing the actor and
+    stores it at shoot record +188, `sub_435770` converts his world x/z into
+    that floor's cell (`(x - origin) / flt_907EAC`, packed `x | z << 16`),
+    `sub_4353E0` tests the cell before the destination is written to +136/+140,
+    and `sub_4358D0`/`sub_435970` read and write the `W*H` cell bytes through
+    the row stride at `dword_907D00[floor] + 24`. The map file IS the shoot
+    AI's navigation grid.
+
+    The data agrees, which is what makes this more than a reading: the 14
+    AREAs whose scripts carry a shoot opcode ALL name a map at +106, and the
+    only two maps left over are named by AREA 230 and AREA 249 - over which
+    SCENE 56 ('1-10 Supermarche Shoot') and SCENE 62 ('2-16 Toits Jaunpur
+    Antenne') are loaded, and those two SCENE chunks are where their shoot
+    scripts live. No map belongs to a place with no gunfight, and no gunfight
+    happens in a place with no map.
+
+    Reported as NAMES, not as a count alone, so a wrong answer says which
+    place broke the correspondence.
+    """
+    import dialog_triggers as T2, dialog_disasm as D, glob
+    ar = T2.archive(omkpaths.data("IAM", "AREA"))
+    def mapname(b):
+        return b[106:126].split(b"\0")[0].decode("cp1252", "replace") if len(b) >= 126 else ""
+    def usesShoot(name, k, b):
+        r = T2.LAYOUT[name](b)
+        slots = (list(T2._scripts_from_records(b, r[0], r[1])) if r else []) \
+                + T2._second_table(name, b)
+        for rec, f, p in slots:
+            ops, st = D.disasm(b, p, len(b))
+            if st != "ok": continue
+            if any(op in (80, 82, 84) for _, op, _ in ops): return True
+        return False
+    shootAreas = {k for k, b in sorted(ar.items()) if usesShoot("AREA", k, b)}
+    named = {k for k, b in ar.items() if mapname(b)}
+    # the SCENE chunks that carry shoot scripts, and the AREA each is loaded over
+    scenes = T2.archive(omkpaths.data("IAM", "SCENE"))
+    shootScenes = {k for k, b in sorted(scenes.items()) if usesShoot("SCENE", k, b)}
+    over = {}
+    for name, arch in (("AREA", ar), ("SCENE", scenes)):
+        for k, b in sorted(arch.items()):
+            r = T2.LAYOUT[name](b)
+            slots = (list(T2._scripts_from_records(b, r[0], r[1])) if r else []) \
+                    + T2._second_table(name, b)
+            for rec, f, p in slots:
+                ops, st = D.disasm(b, p, len(b))
+                if st != "ok": continue
+                for pc, op, raw in ops:
+                    if op == 71 and len(raw) >= 4:
+                        a, sc = struct.unpack_from("<2h", raw, 0)
+                        if sc in shootScenes: over.setdefault(sc, set()).add(a)
+    covered = set(shootAreas)
+    for sc, areas in over.items(): covered |= areas
+    maps = len(glob.glob(omkpaths.data("MAP2D/*.mpt")))
+    return (maps, len(named), len(shootAreas), len(shootAreas - named),
+            tuple(sorted(mapname(ar[k]) for k in named - covered))), \
+           (16, 16, 14, 0, ()), \
+           ("shipped .mpt maps; areas naming one; areas whose own scripts use "
+            "a shoot opcode; those naming NO map; and the maps left over once "
+            "the shoot SCENE chunks' host areas are counted - none")
+
+
 def c_wre_files():
     """FILE_FORMATS: the RADAR .WRE wireframes."""
     import glob
@@ -30323,6 +30391,7 @@ CHECKS = [
     ("sfx files",          c_sfx_files,         "FILE_FORMATS 5"),
     ("extension case",     c_extension_case,    "CLAUDE.md 1"),
     ("map2d",              c_map2d,             "FILE_FORMATS 5b5"),
+    ("shoot arenas",       c_shoot_arenas,      "todo/shoot-mode"),
     ("wre wireframes",     c_wre_files,         "FILE_FORMATS 5b5"),
     ("morph face models",  c_morph_face_models, "FILE_FORMATS 5"),
     ("shoot mode",         c_shoot_mode,        "SCRIPT_VM"),

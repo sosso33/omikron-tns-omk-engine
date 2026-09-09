@@ -64,6 +64,16 @@ actions; `actor/shoot.h` models them and nothing calls it. Today's pose work
 takes the SCRIPT's last action and holds it, so a gunman keeps one clip.
 Also `List_PickRandomByType` picks at RANDOM and this takes the first match.
 
+> **THE PREMISE IS PARTLY WRONG, 2026-09-09.** "None of which this tree has"
+> is false of the first of the three: the navigation node is `MAP2D/*.mpt`,
+> which ships and is already decoded — `Shoot_Think` picks a floor, converts
+> the actor's x/z into its cell and tests it, all through the globals
+> `Map2D_Load` fills, and the correspondence between the 16 maps and the 16
+> shoot arenas is exact both ways (`verify.py: shoot arenas`,
+> `todo/shoot-mode.md`). Line of sight and weapon range are still unread, so
+> the decision below STANDS for the generic arm — but it now rests on two
+> unknowns rather than three, and both are questions with answers in the tree.
+
 **CLOSED as a decision, not as a port.** The brains stay unwired, and the
 reason is in `shoot.cpp` itself: the generic arm - **302 of the 306 shipped
 sites** - "takes the first edge and RECORDS the choice rather than pretending

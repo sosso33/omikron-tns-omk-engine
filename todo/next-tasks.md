@@ -46,7 +46,7 @@ caught all three:
 | 8 | 14 | health: fall damage and vehicle hits | do the READING as its own step and re-estimate. Nothing in the DB doc mentions health, so this is the only item whose size is a guess |
 | 9 | 15 | jump / fall animation and physics | the jump's impulse and the landing bands are measured (`todo/player-vertical.md`), so this is nearer than the triage thought - but a fall that hurts wants 14 read first |
 | 10 | 17 | fight mode | large, and data-constrained by construction: `fight.begin` announces nothing, so no trace can ever be its oracle |
-| 11 | 18 | shoot mode | last, and the first move is not code: revisit the DECISION not to wire the brains (`todo/standing-unknowns.md` 2). It may need navigation data before it needs any port |
+| 11 | 18 | shoot mode | **STARTED 2026-09-09**, `todo/shoot-mode.md`, and step 1 already moved it: the navigation data the decision said this tree has not got is `MAP2D/*.mpt`, which SHIPS - 16 maps, 16 arenas, correspondence exact both ways. Line of sight and weapon range are still unread, so the decision stands for the generic arm and is now a question with an answer in the tree |
 
 Not on the list and worth naming: **item 4 is committed and not yet confirmed
 by a person**, `todo/play-test.md` 7 is a whole batch of render work nobody has
