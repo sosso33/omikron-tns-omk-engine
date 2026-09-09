@@ -112,6 +112,25 @@ struct Settings {
     int    uiScaling = 0;
     Source uiScalingSource = Source::Default;
 
+    // `clipdistance = 0` under `[Enhancements]`: UNLIMITED DRAW DISTANCE.
+    //
+    // Row 3 is a CAP in metres and its five values stop at 200 (`clipInches`
+    // below); the engine has no unlimited setting, so this is genuinely new
+    // and, like the rest of this section, off unless asked. Note that the KEY
+    // NAME is deliberately the option's own - it is that option pushed past
+    // the range the menu offers - but it is read from `[Enhancements]` only:
+    // a 0 under `[Preferences]` is a bad value and is still clamped to 1.
+    //
+    // What it lifts, and what it does NOT: the visible-set walk's distance
+    // test and the FOG, because the fog's range IS the clip distance (start
+    // at a quarter of it, end at it), so an unlimited distance leaves the fog
+    // nothing to fade over and it goes off. It does not touch the bucket
+    // key's two depth splits - `bucketKey`'s 0x80 and 0x1000, which decide
+    // draw ORDER rather than draw distance, and which the world draw does not
+    // apply at all today.
+    bool   unlimitedDrawDistance = false;
+    Source unlimitedDrawSource = Source::Default;
+
     // `all = max` under `[Enhancements]`: turn every enhancement up as far as
     // it goes, in ONE key, without having to know what the list currently is.
     //
@@ -221,11 +240,23 @@ inline constexpr int kMaxLighting      = 1;   // per pixel
 // turns everything up should be told what they turned up.
 inline constexpr int kMaxSupersample   = 4;
 inline constexpr int kMaxUiScaling     = 1;   // linear
+inline constexpr int kMaxUnlimitedDraw = 1;   // the cap lifted
+// The top of row 3's five values, and the furthest the ENGINE ever puts the
+// clip distance. Kept as a named number because `all = max` has to say what
+// "unlimited" replaces, and because a check quotes it.
+inline constexpr int kMaxOptionClipMetres = 200;
 
 // Apply them, leaving anything an explicit key already set alone.
 inline void applyMaxEnhancements(Settings& s) {
     const auto take = [](int& v, int top, Settings::Source& src) {
         if (src == Settings::Source::Default) { v = top; src = Settings::Source::Ini; }
+    };
+    // The same for the one enhancement that is a switch rather than a level.
+    // It goes through a `take` of its own rather than an `if` so that every
+    // key in this section is covered by ONE shape - which is the invariant
+    // `verify.py: enhance all` counts.
+    const auto takeFlag = [](bool& v, int top, Settings::Source& src) {
+        if (src == Settings::Source::Default) { v = top != 0; src = Settings::Source::Ini; }
     };
     take(s.antiAliasing,  kMaxAntiAliasing,  s.antiAliasingSource);
     take(s.textureFilter, kMaxTextureFilter, s.textureFilterSource);
@@ -234,6 +265,7 @@ inline void applyMaxEnhancements(Settings& s) {
     take(s.lighting,      kMaxLighting,      s.lightingSource);
     take(s.supersample,   kMaxSupersample,   s.supersampleSource);
     take(s.uiScaling,     kMaxUiScaling,     s.uiScalingSource);
+    takeFlag(s.unlimitedDrawDistance, kMaxUnlimitedDraw, s.unlimitedDrawSource);
 }
 
 // Resolve the three sources in order.  Either may be absent.

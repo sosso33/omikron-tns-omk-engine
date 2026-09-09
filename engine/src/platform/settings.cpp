@@ -83,6 +83,28 @@ Settings resolveSettings(const OptionsFile& ini,
             else std::fprintf(stderr, "settings: texturefiltering = %s is not a mode "
                                       "(nearest|bilinear|trilinear) - ignored\n", w->c_str());
         }
+        // UNLIMITED DRAW DISTANCE (settings.h). The key is the option's own
+        // name under a different section: `clipdistance = 0` here means "no
+        // cap", which the menu's five values cannot say. Any other number is
+        // a metre distance and belongs under [Preferences], so it is reported
+        // rather than half-obeyed.
+        if (const std::string* w = ini.find(kEnhancements, "clipdistance")) {
+            std::string t = *w;
+            for (auto& c : t) c = static_cast<char>(c >= 'A' && c <= 'Z' ? c + 32 : c);
+            while (!t.empty() && (t.back() == ' ' || t.back() == '\t')) t.pop_back();
+            while (!t.empty() && (t.front() == ' ' || t.front() == '\t')) t.erase(t.begin());
+            if (t == "0" || t == "unlimited" || t == "none") {
+                s.unlimitedDrawDistance = true;
+                s.unlimitedDrawSource = Settings::Source::Ini;
+            } else if (t == "capped" || t == "off") {
+                s.unlimitedDrawDistance = false;
+                s.unlimitedDrawSource = Settings::Source::Ini;
+            } else {
+                std::fprintf(stderr, "settings: [Enhancements] clipdistance = %s "
+                                     "is not 0/unlimited - ignored (a metre distance "
+                                     "belongs under [Preferences])\n", w->c_str());
+            }
+        }
         if (const std::string* w = ini.find(kEnhancements, "uiscaling")) {
             const int m = uiScalingMode(*w);
             if (m >= 0) { s.uiScaling = m; s.uiScalingSource = Settings::Source::Ini; }

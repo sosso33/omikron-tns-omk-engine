@@ -157,6 +157,22 @@
 ; for both backends. At 640x480 it changes nothing, because nothing stretches.
 ;uiscaling = nearest
 
+; UNLIMITED DRAW DISTANCE: `clipdistance = 0` here means "no cap". This is the
+; option's own name under a different section, because it IS that option
+; pushed past the range the menu offers - the five values it allows stop at
+; 200 m. A 0 under [Preferences] is a bad value and stays clamped to 1; only
+; this section's means unlimited.
+;
+; The FOG goes with it. The fog's range is the clip distance (it starts at a
+; quarter of it and ends at it), so with no distance there is nothing to fade
+; over and the fog is off.
+;
+; Measured before you turn it on: at the option's 200 m maximum this changes
+; NO pixel in any of the four cities - the sets have no sightline that far -
+; while drawing 368 more mesh runs. It is worth having if you have turned the
+; option down, and it costs nothing when it is off. `todo/enhancements.md` 4.
+;clipdistance = capped
+
 ; Character shadows: classic | fitted | mapped (or 0 | 1 | 2).
 ; SUBORDINATE to `displayshadows` above - with that off, nothing draws
 ; whatever this says.

@@ -176,7 +176,10 @@ in the save header can carry it. `verify.py: engine: anti-aliasing`.
 The second key is `texturefiltering = nearest|bilinear|trilinear`
 (`--filter M`) with `anisotropy = N` (`--anisotropy N`), and
 `uiscaling = nearest|linear` (`--ui-scaling M`) filters the interface's own
-stretch, same rules; `todo/enhancements.md` carries the list.
+stretch, and `clipdistance = 0` lifts row 3's cap altogether (`--clip 0`),
+same rules; `todo/enhancements.md` carries the list. The last one is
+measured there and buys no pixel at the option's own 200 m maximum, in any
+of the four cities.
 
 Wired: **the crowd density** goes to `Session::setStreetActivity`, and **the
 clip distance** drives a real visible-set walk in `omk-play` - the distance

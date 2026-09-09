@@ -16,12 +16,36 @@ measures the enhancement's own property on the GPU, shown to fail.
 | 1 | bilinear texture filtering. The colour key (flag 0x800, black) travels in the texture's ALPHA so a filtered sample is premultiplied: discard below 0.5, divide by alpha above - no dark fringe, and the nearest path is bit-identical to before | `texturefiltering = bilinear` / `--filter bilinear` | **done 2026-09-08**; `engine: texture filter`; judged by eye on Aapden's floor stain |
 | 2 | mipmaps (trilinear) and anisotropic filtering, generated at upload; the alpha key averages correctly into the chain | `texturefiltering = trilinear`, `anisotropy = N` / `--filter trilinear --anisotropy N` | **done 2026-09-08**; `engine: mipmaps`; the stain judged by eye at 16x |
 | 3 | interface scaling: the 640x480 layer's stretch FILTERED instead of nearest. The key decides the silhouette and the blend decides the colour, so a keyed edge cannot fringe without an alpha channel to premultiply into. The one row that is NOT Vulkan-only. An INTEGER/centred mode is not done and is its own step - see below | `uiscaling = linear` / `--ui-scaling linear` | **done 2026-09-09**; `engine: ui scaling` |
-| 4 | unlimited draw distance: options row 3 is a CAP the port already runs the visible-set walk from; 0 lifts it. Authored risk: the sets end inside the fog | `clipdistance = 0` under `[Enhancements]` / `--clip 0` | todo |
+| 4 | unlimited draw distance: options row 3 is a CAP the port already runs the visible-set walk from; 0 lifts it, and the FOG with it, the fog's range being the clip's. **Measured, it buys nothing at 200 m**: the shipped sets have no sightline past the option's own maximum, in any of the four cities - see below | `clipdistance = 0` under `[Enhancements]` / `--clip 0` | **done 2026-09-09**; `engine: unlimited clip` |
 | 5 | **fitted shadows**: the same blobs, laid on the surface actually under them instead of on a flat quad at the probed height | `shadowquality = fitted` / `--shadow-quality fitted` | **done 2026-09-09**; `engine: fitted shadows` |
 | 6 | **mapped shadows**: a real shadow map, cast by the set's own authored lights, characters only | `shadowquality = mapped` / `--shadow-quality mapped` | **done 2026-09-09**; `engine: mapped shadows` |
 | 7 | **per-pixel lighting**: the engine's OWN light law evaluated per fragment instead of per vertex, and received by every character rather than the crowd alone | `lighting = perpixel` / `--lighting perpixel` | **done 2026-09-09**; `engine: per-pixel lighting` |
 | 8 | **the SETS receive the lights too.** Held back deliberately - it overrides authored art; see below | `lighting = sets` | not recommended |
 | 9 | **supersampling**: render N times larger each way and average down. Reaches the CUTOUT edges MSAA never looks at, and the texture aliasing it cannot touch either | `supersampling = N` / `--ssaa N` | **done 2026-09-09**; `engine: supersampling` |
+
+## Row 4 - what lifting the clip is actually worth
+
+Worth writing down because it is the opposite of what the row promised, and
+because it is the kind of claim this repo is supposed to measure rather than
+assume. On Anekbah's main street from the apartment save:
+
+| clip | mesh runs drawn | culled | frame vs unlimited, fog equalised |
+|---|---|---|---|
+| 25 m | 68 | 1564 | 16.78% of pixels differ |
+| 50 m | — | — | 11.66% |
+| 100 m | — | — | **0** |
+| 200 m (the option's maximum) | 1264 | 368 | **0** |
+| unlimited | 1632 | 0 | — |
+
+So the enhancement buys 368 extra mesh runs at 200 m and **not one pixel**,
+and the same is true at an address in each of the other three cities. The
+sets are built so the option's own maximum already reaches everything in
+them. What limits the view at 200 m is the FOG, which moves 17.7% of that
+frame - and that is why the two are lifted together: lifting the clip while
+leaving the fog would change nothing at all.
+
+The row is still worth having: it is what a player who has turned the option
+DOWN gets back, and it costs nothing when it is off.
 
 ## Row 3's other half - the INTEGER interface mode is NOT done
 

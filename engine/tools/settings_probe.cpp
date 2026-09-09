@@ -42,6 +42,10 @@ int main(int argc, char** argv) {
     std::printf("enh lighting %d %s\n", s.lighting, omk::sourceName(s.lightingSource));
     std::printf("enh supersampling %d %s\n", s.supersample,
                 omk::sourceName(s.supersampleSource));
+    std::printf("enh uiscaling %d %s\n", s.uiScaling,
+                omk::sourceName(s.uiScalingSource));
+    std::printf("enh clipdistance %d %s\n", s.unlimitedDrawDistance ? 1 : 0,
+                omk::sourceName(s.unlimitedDrawSource));
     std::printf("enh all %d\n", s.enhanceAll ? 1 : 0);
     std::printf("screen %dx%d %s\n", v.screenX, v.screenY, omk::sourceName(s.screen));
     std::printf("density %d %s\n", v.streetActivity, omk::sourceName(s.streetActivity));

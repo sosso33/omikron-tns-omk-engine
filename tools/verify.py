@@ -6303,7 +6303,9 @@ def c_enhance_all():
     keys = set(re.findall(r'k(?:Enhancements),\s*"([^"]+)"', cpp)) - {"all"}
     body = hdr[hdr.index("inline void applyMaxEnhancements"):]
     body = body[:body.index("\n}")]
-    takes = len(re.findall(r"\btake\(", body))
+    # `take(` and the bool arm `takeFlag(` - one enhancement is a switch
+    # rather than a level, and it must be covered by the applier all the same.
+    takes = len(re.findall(r"\btake(?:Flag)?\(", body))
     mk = subprocess.run(["make", "-s", "build/settings_probe"], cwd=eng,
                         capture_output=True, text=True)
     probe = os.path.join(eng, "build", "settings_probe")
@@ -6328,7 +6330,8 @@ def c_enhance_all():
     # sixth, so the count halves passed while its VALUE was never asserted.
     named = {"aa": "AntiAliasing", "filter": "TextureFilter", "aniso": "Anisotropy",
              "shadowquality": "ShadowQuality", "lighting": "Lighting",
-             "supersampling": "Supersample"}
+             "supersampling": "Supersample", "uiscaling": "UiScaling",
+             "clipdistance": "UnlimitedDraw"}
     reported = {k for k in allMax if k != "all"}
     covered = reported == set(named)
     want = {k: int(tops[v]) for k, v in named.items() if v in tops}
@@ -20466,6 +20469,101 @@ def c_engine_ui_scaling():
            "set by NOTHING, which is the colour key's rule"
 
 
+def c_engine_unlimited_clip():
+    r"""UNLIMITED DRAW DISTANCE - the `[Enhancements]` lift of options row 3,
+    off by default; and the MEASUREMENT that says what it is worth, which is
+    not what one would guess.
+
+    Row 3 is a CAP in metres and its five values stop at 200 (`docs/ASSETS.md`,
+    "Where the two splits come from"). The engine has no unlimited setting, so
+    `clipdistance = 0` under `[Enhancements]`, `--clip 0`, or `--enhance-all`
+    is new. It lifts the visible-set walk's distance test and the FOG - whose
+    range IS the clip distance, start at a quarter of it and end at it, so an
+    unlimited distance leaves nothing to fade over and the fog goes off. It
+    does NOT touch the bucket key's two depth bits: those decide draw ORDER
+    rather than draw distance, and the world draw does not apply them at all.
+
+    **What it is worth, measured on Anekbah's main street from the apartment
+    save.** The mesh runs drawn go 68 at 25 m, 1264 at 200 m and 1632 with
+    nothing culled unlimited - but with the fog equalised, unlimited draws the
+    IDENTICAL PICTURE to 200 m: 0 pixels differ. The same holds in all four
+    cities. The shipped sets have no sightline past the option's own maximum,
+    so at 200 m the enhancement buys 368 mesh runs and no pixel; it earns its
+    keep only where the option is lower (16.78% of the frame at 25 m, 11.66%
+    at 50 m, 0 from 100 m up). What actually limits the view at 200 m is the
+    FOG, which moves 17.7% of that frame - which is also why lifting the clip
+    without lifting the fog would change nothing at all.
+
+    Asserted: the source default is false and the fog is coupled to it; the
+    three run counts; unlimited equals 200 m unfogged EXACTLY; and unlimited
+    differs from 25 m unfogged over at least a tenth of the frame.
+
+    Shown to fail (2026-09-09) with the unlimited arm left at the option's
+    distance: the run count stops at 1264 and the 25 m comparison collapses.
+    """
+    import subprocess, tempfile, shutil, re
+    eng = os.path.join(ROOT, "engine")
+    fr  = omkpaths.data_root()
+    save = os.path.join(ROOT, "traces", "save-appart.bin")
+    binp = os.path.join(eng, "build", "omk-play")
+    if not (os.path.isdir(eng) and os.path.exists(save)):
+        return ("skipped",), ("skipped",), "engine/ or the apartment save absent"
+
+    pl = open(os.path.join(eng, "backends", "sdl", "play.cpp")).read()
+    sh = open(os.path.join(eng, "src", "platform", "settings.h")).read()
+    sc = open(os.path.join(eng, "src", "platform", "settings.cpp")).read()
+    src_ok = (bool(re.search(r"bool\s+unlimitedDrawDistance\s*=\s*false;", sh)),
+              '"clipdistance"' in sc and "kEnhancements" in sc,
+              "view.fog      = drawFog && !unlimitedClip;" in pl,
+              "std::numeric_limits<double>::infinity()" in pl)
+
+    b = subprocess.run(["make", "-s", "play"], cwd=eng, capture_output=True, text=True)
+    if not os.path.exists(binp):
+        return ("no omk-play",), ("built",), \
+               "omk-play must build (it needs SDL, so this SKIPS without it)"
+
+    tmp = tempfile.mkdtemp()
+    env = dict(os.environ, SDL_VIDEODRIVER="dummy")
+    try:
+        def run(flags, tag):
+            out = os.path.join(tmp, tag + ".bin")
+            r = subprocess.run([binp, fr, os.path.join(ROOT, "tables"),
+                                "--save", save, "--area", "0",
+                                "--stand", "1804,0,-6890,336", "--no-crowd",
+                                "--frames", "3", "--dump", out] + flags,
+                               capture_output=True, text=True, env=env)
+            m = re.search(r"clip: (?:unlimited|[\d.]+ in) - (\d+) mesh runs drawn, (\d+) culled",
+                          r.stdout)
+            if not m or not os.path.exists(out):
+                return None, None
+            raw = open(out, "rb").read()
+            return (int(m.group(1)), int(m.group(2))), \
+                   struct.unpack("<%dH" % (len(raw) // 2), raw)
+        c25,  f25  = run(["--clip", "25",  "--fog", "0"], "c25")
+        c200, f200 = run(["--clip", "200", "--fog", "0"], "c200")
+        cun,  fun  = run(["--clip", "0"], "un")
+        if None in (c25, c200, cun):
+            return ("run failed",), ("ran",), "omk-play must render three frames"
+        n = min(len(f200), len(fun), len(f25))
+        same200 = sum(1 for i in range(n) if f200[i] != fun[i])
+        diff25  = sum(1 for i in range(n) if f25[i] != fun[i])
+        out = (c25, c200, cun, same200, diff25 / n >= 0.10)
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+    return (src_ok, out), \
+           ((True, True, True, True), ((68, 1564), (1264, 368), (1632, 0), 0, True)), \
+           "the source: the setting defaults to false, the key is read from " \
+           "[Enhancements], the fog is coupled to it and the distance really " \
+           "does become infinite; then Anekbah's main street from the " \
+           "apartment save - the mesh runs drawn and culled at 25 m, at the " \
+           "option's 200 m maximum and unlimited, then the finding that " \
+           "unlimited draws the IDENTICAL frame to 200 m once the fog is " \
+           "equalised (0 pixels) while differing from 25 m over at least a " \
+           "tenth of it: the shipped sets have no sightline past the option's " \
+           "own maximum"
+
+
 def c_mirror_pass():
     r"""The MIRRORS - a planar reflection pass, and a doc claim it refutes.
 
@@ -29957,6 +30055,7 @@ SLOW = [
     ("engine: texture filter", c_engine_texture_filter, "ASSETS 4"),
     ("engine: mipmaps", c_engine_mipmaps, "ASSETS 4"),
     ("engine: ui scaling", c_engine_ui_scaling, "UI"),
+    ("engine: unlimited clip", c_engine_unlimited_clip, "ASSETS 4; todo/options-config"),
     ("mirror pass",        c_mirror_pass,       "ASSETS 4c"),
     ("anekbah rendered",   c_anekbah_rendered,  "ASSETS 4b"),
     ("render back ends",   c_render_backends,   "ASSETS 4c"),

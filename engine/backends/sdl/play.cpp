@@ -40,6 +40,7 @@
 #include "actor/moves.h"
 #include "actor/slider.h"
 
+#include <limits>
 #include <optional>
 #include "actor/pose.h"
 #include "actor/speaker.h"
@@ -1486,6 +1487,9 @@ int main(int argc, char** argv) {
 "                   [Enhancements] texturefiltering=M in --config\n"
 "  --anisotropy N   ENHANCEMENT: N-tap anisotropic filtering (2..16), with\n"
 "                   trilinear only; [Enhancements] anisotropy=N\n"
+"  --clip 0         ENHANCEMENT: UNLIMITED draw distance - the option's own\n"
+"                   values stop at 200 m. The fog goes with it, its range\n"
+"                   being the clip distance; [Enhancements] clipdistance=0\n"
 "  --ui-scaling M   ENHANCEMENT, off by default: how the 640x480 interface is\n"
 "                   stretched to the display, M = nearest (the original's\n"
 "                   Blt) or linear; BOTH backends, since the interface is\n"
@@ -1825,6 +1829,8 @@ int main(int argc, char** argv) {
         else if (a == "--no-shadows") shadowFlag = 0;
         else if (a == "--detail" && i + 1 < argc) detailFlag = std::atoi(argv[++i]);
         else if (a == "--config" && i + 1 < argc) configFile = argv[++i];
+        // `--clip 0` is the ENHANCEMENT, not a zero distance: the option's
+        // five values stop at 200 m and 0 is outside them, so it says "no cap".
         else if (a == "--clip" && i + 1 < argc) { clipArg = std::atoi(argv[++i]); clipFlag = true; }
         else if (a == "--sky" && i + 1 < argc) skyFlag = std::atoi(argv[++i]);
         else if (a == "--aa" && i + 1 < argc) aaFlag = omk::msaaSamples(std::atoi(argv[++i]));
@@ -2053,8 +2059,21 @@ int main(int argc, char** argv) {
     const omk::Settings settings = omk::resolveSettings(ini, saveSettings);
     // A flag typed on the command line is the most recent word of all.
     if (!densityFlag) density = settings.v.streetActivity;
+    // UNLIMITED DRAW DISTANCE (`todo/enhancements.md` 4). `--clip 0` says it
+    // on the command line, `[Enhancements] clipdistance = 0` in the file, and
+    // `--enhance-all` includes it. What it lifts is the visible-set walk's
+    // distance test and the fog, whose range IS the clip distance - so with
+    // no distance there is nothing to fade over and the fog goes off.
+    const bool unlimitedClip = (clipFlag && clipArg <= 0)
+                            || (!clipFlag && (enhanceAll || settings.unlimitedDrawDistance));
     const double clipInches =
-        clipFlag ? static_cast<double>(clipArg) * omk::kInchesPerMetre : settings.clipInches();
+        unlimitedClip ? std::numeric_limits<double>::infinity()
+                      : clipFlag ? static_cast<double>(clipArg) * omk::kInchesPerMetre
+                                 : settings.clipInches();
+    if (unlimitedClip)
+        std::printf("clip: UNLIMITED - an ENHANCEMENT the original never had "
+                    "(the option's five values stop at %d m); the fog goes with it, "
+                    "its range being the clip distance's own\n", omk::kMaxOptionClipMetres);
     // one line the first frame that draws, so a run says what the option did
     bool clipReport = true;
     // THE FLICKER CATCHER (--flicker <dir>). A fault a player sees for one to
@@ -2110,20 +2129,30 @@ int main(int argc, char** argv) {
                     "640x480, where nothing stretches\n");
     if (enhanceAll || settings.enhanceAll)
         std::printf("enhancements: all on - %dx MSAA, %s filtering, anisotropy %d, "
-                    "%s shadows, %s lighting, %dx supersampling, %s interface. As high as each goes "
+                    "%s shadows, %s lighting, %dx supersampling, %s interface, %s draw distance. As high as each goes "
                     "unless a specific "
                     "setting said otherwise; none of it is what the original drew, and "
                     "the device reduces what it cannot meet.\n",
                     aaSamples, omk::textureFilterName(texFilter), texAniso,
                     omk::shadowQualityName(shadowQuality), omk::lightingName(lighting), ssaa,
-                    omk::uiScalingName(uiScaling));
-    std::printf("settings: clip %d m (%s) = %.0f in, near/far split %.0f/%.0f;"
+                    omk::uiScalingName(uiScaling), unlimitedClip ? "unlimited" : "capped");
+    // The clip half of the line reads differently when it is unlimited:
+    // "0 m = inf in" is arithmetic rather than a report.
+    char clipText[128];
+    if (unlimitedClip)
+        std::snprintf(clipText, sizeof clipText,
+                      "clip UNLIMITED (enhancement), no fog, no distance cull");
+    else
+        std::snprintf(clipText, sizeof clipText,
+                      "clip %d m (%s) = %.0f in, near/far split %.0f/%.0f",
+                      clipFlag ? clipArg : settings.v.clipDistance,
+                      clipFlag ? "flag" : omk::sourceName(settings.clipDistance),
+                      clipInches, clipInches * 0.25, clipInches * 0.95);
+    std::printf("settings: %s;"
                 " crowd %d (%s); sky %d (%s), shadows %d (%s), detail %d (%s);"
                 " aa %d (%s, enhancement), filter %s (%s, enhancement),"
                 " anisotropy %d (%s, enhancement), interface %s (%s, enhancement)\n",
-                clipFlag ? clipArg : settings.v.clipDistance,
-                clipFlag ? "flag" : omk::sourceName(settings.clipDistance),
-                clipInches, clipInches * 0.25, clipInches * 0.95,
+                clipText,
                 density, densityFlag ? "flag" : omk::sourceName(settings.streetActivity),
                 drawSky ? 1 : 0, skyFlag >= 0 ? "flag" : omk::sourceName(settings.sky),
                 settings.v.shadows ? 1 : 0, omk::sourceName(settings.shadows),
@@ -8218,9 +8247,13 @@ int main(int argc, char** argv) {
             // at the clip distance. `--fog 0` turns it off, `--fog-colour
             // r,g,b` overrides it (the one mode that colours it uses
             // 40,80,64 with a 15 m clip - `docs/ASSETS.md`, "The fog").
-            view.fog      = drawFog;
-            view.fogStart = static_cast<float>(clipInches * 0.25);
-            view.fogEnd   = static_cast<float>(clipInches);
+            // With an unlimited clip there is no range to fade over, so the
+            // fog is OFF rather than infinite - an infinite start would reach
+            // the shader as a comparison against inf, a value no check could
+            // read back and no driver need agree about.
+            view.fog      = drawFog && !unlimitedClip;
+            view.fogStart = unlimitedClip ? 0.0f : static_cast<float>(clipInches * 0.25);
+            view.fogEnd   = unlimitedClip ? 0.0f : static_cast<float>(clipInches);
             for (int k = 0; k < 3; ++k) view.fogColour[k] = fogRGB[k];
             if (!haveDlgCam && haveEdit) {
                 // MODE 13: the editing's camera, at the object's own clock -
@@ -10656,8 +10689,12 @@ int main(int argc, char** argv) {
                 }
             }
             if (clipReport) {
-                std::printf("clip: %.0f in - %zu mesh runs drawn, %zu culled\n",
-                            clipInches, runsDrawn, runsCulled);
+                if (unlimitedClip)
+                    std::printf("clip: unlimited - %zu mesh runs drawn, %zu culled\n",
+                                runsDrawn, runsCulled);
+                else
+                    std::printf("clip: %.0f in - %zu mesh runs drawn, %zu culled\n",
+                                clipInches, runsDrawn, runsCulled);
                 clipReport = false;
             }
             // A FRAME WHERE THE SET IS CULLED AND THE BODIES ARE NOT draws a

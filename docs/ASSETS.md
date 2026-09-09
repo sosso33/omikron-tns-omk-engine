@@ -1392,6 +1392,24 @@ The option is a **cap** rather than a value: the per-set path (`05_sys.c`) takes
 a set's own clip distance unless it is 0 or exceeds the option, in which case
 the option wins. It can only ever reduce.
 
+**The port can lift the cap, as an ENHANCEMENT — and measuring it says what
+the shipped sets are built for** (2026-09-09). `--clip 0`, or
+`clipdistance = 0` under the config's `[Enhancements]` section, makes the
+distance unbounded; it is off by default like everything in that section, and
+the FOG goes with it, because the fog's range is the clip distance itself.
+Measured on Anekbah's main street from the apartment save, the mesh runs
+drawn go **68** at 25 m, **1264** at 200 m and **1632** with nothing culled
+unlimited — and yet, with the fog equalised, **unlimited draws the identical
+frame to 200 m: 0 pixels differ**, and the same holds in all four cities. The
+shipped sets have no sightline past the option's own maximum, so at 200 m the
+lift buys 368 mesh runs and no pixel. It earns its keep only below that
+(16.78% of the frame at 25 m, 11.66% at 50 m, nothing from 100 m up). What
+actually limits the view at 200 m is the **fog**, which moves 17.7% of that
+frame — which is also the reason the two are lifted together: lifting the
+clip alone would change nothing at all. The bucket key's two depth bits are
+NOT touched; they decide draw order rather than draw distance.
+`verify.py: engine: unlimited clip`.
+
 > ### Why inches, in a French game?
 >
 > A reader objected, and the objection is a good one: *Omikron*'s engine was
