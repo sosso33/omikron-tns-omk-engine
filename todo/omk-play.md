@@ -15,6 +15,78 @@ waiting on its evidence.
 
 ## Open (batch 7, filed 2026-09-09)
 
+### 96. Shoot mode's gunmen render as EXPLODED geometry — A
+
+Found in the first play test of shoot mode, 2026-09-09, at five metres:
+
+    build/omk-play "$OMK_DATA" ../tables --save ../traces/save-appart.bin \
+        --area 59 --stand 5207,0,-2473,180 --shoot
+
+A `VIR_FN` gunman is not a posed body. Limb-shaped fragments, a cyan
+cylinder and long flat shards radiate from a point — the signature of bone
+transforms that are wrong rather than of a wrong clip. At seventeen metres the
+shards are thin and dark and the room simply looks empty, which is why the
+headless log has never caught it: the viewer says **"3 on screen at the end"**
+and it is telling the truth.
+
+What the log DOES say, and where to start:
+
+    frame 3: staged actor 238 VIR_FN (bank none, 19 meshes, 1 textures)
+    frame 3: actor 238 VIR_FN - shoot mode, action 3, character type 3
+             -> a clip (BRAQUEUR, 42 clips in the group)
+    frame 3: actor 238 VIR_FN - pose source: shoot mode: the area's .ani,
+             by character type
+    staged 3 characters (ids 237, 238, 240), 3 on screen at the end,
+      1 models and 0 banks resident
+
+**`bank none`, and 0 banks resident.** The clip comes from the AREA's own
+`.ani` picked by character type, not through a `.CTL` bank, so nothing has
+checked that `BRAQUEUR`'s track set matches `VIR_FN`'s skeleton. If the tracks
+are being mapped by INDEX onto a different bone list, an explosion is exactly
+what you get — and note the shape of the evidence: the same code poses the
+Shooting gallery's gunmen and nothing else in the game, so no other check
+exercises it.
+
+**The instrument gap is half the issue.** The viewer prints
+`1539/1595 tracks resolve` and `pose tracks valid` **for the player only**. No
+staged actor reports whether its clip's tracks resolved against its model, so
+a body can blow apart while every line of the log reads healthy. Print the
+same two figures per staged actor before chasing the pose itself — the number
+may name the fault outright.
+
+Not to be confused with 95 below, which was the camera; this is the bodies.
+
+### 95. Shoot mode drew the PLAYER'S OWN BODY in a first-person view — A
+
+> **FIXED 2026-09-09**, and the reader settled it in four words: *"the shoot
+> mode is a fps"*.
+
+Camera preset row 4 — the mode `Shoot_Enter` requests — puts the eye at offset
+`(0, 0, 0)` on the player with the aim 20 m ahead and every smoothing divisor
+zero. That offset is the player's ORIGIN, which is the pelvis in all 181
+character models, so the camera sits inside his own torso. The port drew him
+anyway (`drawPlayer` was true whenever `adventure` was, and shoot mode stays
+in adventure), and from some facings the whole view was the inside of his own
+back — a pale folded close-up that **did not move when the player was moved
+700 units**, which is the tell for something drawn in camera space rather than
+world space.
+
+**The engine hides him, and the mechanism is one call.** `Shoot_Enter`
+(0x004222D0) does `sub_436CE0(*(uint32_t **)(g_PlayerActorRec + 8))` — the
+player's node — immediately before setting both camera actors to the player
+and `Camera_Request(4, ...)`. `sub_436CE0` is `o3de_Traverse` over the whole
+node tree running `sub_436D00`, which sets flag bit **2** on every node that
+does not carry `0x200000`; bit 2 is inside the not-drawable mask `0x800043`
+(`engine/src/o3de/render.h`). `sub_436D20` is its exact inverse — the same
+traverse running `& 0xFD` — and is what shows him again.
+
+**Not modelled, and labelled in the code rather than dropped**: the
+`0x200000` exemption, which leaves some nodes of the tree visible in first
+person. The port draws the player as one body with no per-node flags, so it
+can only take him out whole. The weapon in his hands is the obvious candidate
+for what the exemption is for.
+
+
 ### 94. You can enter a shop but not leave it: the interior's own doors never move — A
 
 > **FIXED AND CONFIRMED IN PLAY 2026-09-09.** The reader walked it and

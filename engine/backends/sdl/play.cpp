@@ -8687,7 +8687,28 @@ int main(int argc, char** argv) {
             // over the live scene, so without `uiPause` the menu came up on
             // a street with the player deleted from it. Same shape as the
             // conversation above.
-            const bool drawPlayer = playerReady && player &&
+            // SHOOT MODE IS FIRST PERSON, so the player's own body is not
+            // drawn - the reader's word, 2026-09-09, and the engine agrees:
+            // `Shoot_Enter` (0x004222D0) calls `sub_436CE0` on the player's
+            // node, which is `o3de_Traverse` setting flag bit 2 on every node
+            // that does not carry 0x200000, and bit 2 is inside the
+            // not-drawable mask 0x800043. `sub_436D20` is its exact inverse
+            // (`& 0xFD`) and is what shows him again on the way out.
+            //
+            // Without this the camera - preset row 4, eye offset (0,0,0),
+            // which is the PELVIS in all 181 character models - sits inside
+            // his own mesh, and from some facings the whole view is the
+            // inside of his back. That is what the first play-test render of
+            // shoot mode showed, and it did not move when the player moved,
+            // which is the tell for something drawn in camera space.
+            //
+            // NOT MODELLED, and labelled rather than dropped: the 0x200000
+            // exemption, which leaves some nodes of the tree visible. The
+            // port draws the player as one body with no per-node flags, so
+            // it can only take him out whole. Whatever the exemption is for
+            // in first person - the weapon in his hands is the obvious
+            // candidate - is not reproduced here.
+            const bool drawPlayer = playerReady && player && !session.shootMode().active() &&
                                     (adventure || uiPause ||
                                      (session.dialogOpen() && !playerProgram));
             // ---- THE WORLD'S PROPS -----------------------------------
