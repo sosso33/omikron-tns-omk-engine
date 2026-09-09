@@ -470,7 +470,7 @@ that labelling one state at a time, and the label moves with the code.
 |---|---|---|
 | 7a | **the record's geometry** — `sub_422540`'s six properties into the record (both ranges, the third, the cone's cosine, health, the flag fan-out), and the acquisition pair `sub_420C70` / `sub_420D90` with the four values they leave behind |**DONE 2026-09-09**, §7a below; `verify.py: shoot range` |
 | 7b | **the turn** — `sub_420EB0` on the Euler at `actor+420`, its three thresholds and its `180` / `±90` snap returns |**DONE 2026-09-09**, §7b below; `verify.py: shoot range` |
-| 7c | **the states** — `sub_424DE0` read arm by arm and ported, each one carrying what it was read from; the ones not reached stay declared | |
+| 7c | **the states** — `sub_424DE0` read arm by arm and ported, each one carrying what it was read from; the ones not reached stay declared |**PART DONE 2026-09-09** — the FRAME and **6 of the 16** states, §7c below; `verify.py: shoot generic`. States 1, 2, 4, 6, 9/28, 12, 13, 14, 15 are still unread |
 | 7d | **the frame loop** — the brain called from `Shoot_TickNpc`'s place, the occupancy stamp/restore pair around it, and `omk-play --shoot` driving it | |
 | 7e | checks, and a PLAY TEST — which is the one thing steps 1-6 never got | |
 
@@ -556,6 +556,63 @@ the same test. The five constants are `flt_4BC228` 0.99, `flt_4BC22C` 0.80,
 > moving"*, met head on: the check had to run the loop, and the invariant that
 > catches it is written over the transition (frames to aim, and frames spent
 > going the wrong way) rather than over any single state.
+
+## 7c. The generic brain's frame, and six of its sixteen states
+
+**The shape first, because it is the thing to hold on to.** `sub_424DE0` is an
+outer switch on the state at record `+156` — 1..15 and 28 — where each arm
+computes an **outcome** and every arm then funnels through one shared
+epilogue. The states decide; the epilogue acts.
+
+The prologue (05_sys.c 5572-5580) fetches the TARGET — record `+96` — and its
+position and facing once for the whole switch, clears flag bit `0x200`, and
+drops the current clip pointer at `+16`. An arm that wants `0x200` sets it
+back, which is how the epilogue knows who ran.
+
+The **epilogue** moves the body (`sub_421770` when flag 8 is set, otherwise
+`sub_421370`), **wraps the Euler into (−360, 360)** — the one place that
+happens — clears flag `0x80`, and dispatches on the outcome:
+
+| outcome | what it is |
+|---|---|
+| **0** | fire when the weapon countdown has expired |
+| **1** | the full firing arm: reload `+172` from the weapon row's `f0`, then `Actor_TickProjectiles` |
+| 2, 3, 4 | **NOT READ** |
+
+Outcome 1 is where §5b's weapon-rate line lives, so the rate reading and the
+machine meet here.
+
+### The six states transcribed
+
+| state | what its arm does |
+|---|---|
+| **3** | fires on bit 0 of `sub_426E00`, turns without the snap |
+| **5** | plays a clip out; at its end → **4** |
+| **7** | counts the timer at `+168` down; on expiry asks for action 0 |
+| **8** | turns WITH the snap — and the snap picks a turn ANIMATION |
+| **10** | aims while a clip runs; outcome **2** before halfway, **3** after; at the end → **11** |
+| **11** | the mirror: with the predicate and >5 frames run, back to **10** |
+
+**State 8 is the interesting one.** `sub_420EB0`'s `180` / `±90` returns are
+not a rotation, they are a request for a CLIP: type **30** for −90°, **31**
+for +90°, **32** for 180°, picked out of the library by
+`List_PickRandomByType`, with `+184` set to the degrees that clip must cover
+per frame (`total / Anim_Frames`). If the library has no such clip the body
+simply rotates at a fallback rate instead. (The 180 arm calls `rand()` and
+discards it — a quirk, recorded rather than reproduced.)
+
+### What is NOT ported, and why that is the deliverable too
+
+Nine states — **1, 2, 4, 6, 9/28, 12, 13, 14, 15** — set `unread` and change
+nothing at all: no state, no Euler, no outcome. State 6 is the largest by far
+and carries its own five-way sub-switch.
+
+That refusal is asserted, not promised. `verify.py: shoot generic` drives
+every unread state and requires all ten to leave the record and the Euler
+untouched, and **mutating the default arm to invent a transition turns it
+red** (10 of 10 changed something). A machine that guessed the missing nine
+would be indistinguishable from one that had them right, and this is the only
+thing standing between the port and that.
 
 ## 5b. The two weapon floats — step 5's first reading, 2026-09-09
 

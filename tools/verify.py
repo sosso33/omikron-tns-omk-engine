@@ -25824,6 +25824,82 @@ def c_engine_shoot_mode():
             "and what `omk-play --shoot` installs in the Shooting gallery")
 
 
+def c_shoot_generic():
+    r"""`engine/`: the generic shoot brain's FRAME, and how much of it is
+    actually transcribed.
+
+    `sub_424DE0` (0x00424DE0) is an outer switch on the state at record `+156`
+    - 1..15 and 28 - where each arm computes an OUTCOME and every arm funnels
+    through one shared epilogue. The states decide; the epilogue acts. Ported
+    in `todo/shoot-mode.md` 7c.
+
+    **The first row is the honest one: 6 of the 16 states are transcribed.**
+    The other ten set `unread` and change nothing, and that is asserted rather
+    than promised - a machine that invented the missing ten would be
+    indistinguishable from one that had them right, and this check is what
+    stops the port drifting into that. `genericStatesRead()` is compared
+    against the machine's own `genericStates()`, so the coverage claim cannot
+    come apart from the state set it is a subset of.
+
+    What the six do, each read from its arm:
+
+    * **5** plays a clip out and goes to **4** when it ends;
+    * **10** aims while a clip runs - outcome **2** before the halfway point,
+      **3** after it (unless flag 4 is set, which is a short-circuit `||`
+      with a side effect in the original) - and goes to **11** at the end;
+    * **11** is its mirror: with the target predicate and more than five
+      frames run, back to **10**;
+    * **3** fires on bit 0 of the predicate and turns without the snap;
+    * **8** turns WITH the snap, and the snap picks a turn ANIMATION -
+      **30** for -90 degrees, **31** for +90, **32** for 180 - with `+184`
+      carrying the degrees that clip must cover per frame. With no such clip
+      in the library the body just rotates at a fallback rate;
+    * **7** counts a timer at `+168` down.
+
+    And the epilogue's own job, which is easy to miss because it is three
+    lines: **it wraps the Euler**, into `(-360, 360)`, after every arm. That
+    is the one place the angle is normalised, and CLAUDE.md 1's wrap trap is
+    about exactly this value - so 370 -> 10 and -10 -> 350 are asserted here
+    rather than assumed anywhere else.
+    """
+    import subprocess, re
+    fr = omkpaths.data_root()
+    if not os.path.isdir(fr):
+        return ("no data",), ("data",), "needs the shipped tree"
+    eng = os.path.join(ROOT, "engine")
+    b = subprocess.run(["make", "-s", "build/shoot_range"], cwd=eng,
+                       capture_output=True, text=True)
+    binp = os.path.join(eng, "build", "shoot_range")
+    if b.returncode != 0 or not os.path.exists(binp):
+        return ("build failed",), ("built",), "engine/ must build"
+    r = subprocess.run([binp, fr], capture_output=True, text=True)
+    cov = re.search(r"^generic: (\d+) states, (\d+) transcribed, (\d+) of those "
+                    r"in the state set$", r.stdout, re.M)
+    unr = re.search(r"^generic: (\d+) unread states, (\d+) of them changed "
+                    r"something$", r.stdout, re.M)
+    tr  = re.search(r"^generic: 5->(\d+)\s+10\(end\)->(\d+)\s+10\(early\) outcome (\d+)\s+"
+                    r"10\(late\) outcome (\d+)\s+11->(\d+)$", r.stdout, re.M)
+    sn  = re.search(r"^generic: snap clips behind (-?\d+)/(-?\d+)\s+abeam-a (-?\d+)/(-?\d+)"
+                    r"\s+abeam-b (-?\d+)/(-?\d+)$", r.stdout, re.M)
+    wr  = re.search(r"^generic: wrap 370 -> (-?\d+), -10 -> (-?\d+)$", r.stdout, re.M)
+    if not (cov and unr and tr and sn and wr):
+        return ("unparsed",), ("parsed",), "the probe's own generic: lines"
+    got = (tuple(int(x) for x in cov.groups()), tuple(int(x) for x in unr.groups()),
+           tuple(int(x) for x in tr.groups()), tuple(int(x) for x in sn.groups()),
+           tuple(int(x) for x in wr.groups()))
+    want = ((16, 6, 6), (10, 0), (4, 11, 2, 3, 10),
+            (32, -180, 30, -90, 31, 90), (10, 350))
+    return got, want, ("the machine's states, how many are TRANSCRIBED, and "
+                       "that every transcribed one is in the state set; then "
+                       "that the ten UNREAD arms change nothing at all - no "
+                       "state, no Euler - which is what stops the port "
+                       "inventing the branches nobody has read; then the four "
+                       "transitions and two outcomes the read arms make; the "
+                       "three turn-animation clip types the snap picks with "
+                       "the degrees each must cover; and the epilogue's Euler "
+                       "WRAP, which is the only place the angle is normalised")
+
+
 def c_shoot_range():
     r"""`engine/`: a gunman's REACH and FIELD OF VIEW, read off the shipped
     character records, and the acquisition test run.
@@ -30866,6 +30942,7 @@ CHECKS = [
     ("map2d sight",        c_map2d_sight,       "todo/shoot-mode 5c; formats/map2d.h"),
     ("bone names",         c_bone_names,        "todo/omk-play 96; ASSETS"),
     ("shoot range",        c_shoot_range,       "todo/shoot-mode 5c, 7a; actor/shoot.h"),
+    ("shoot generic",      c_shoot_generic,     "todo/shoot-mode 7c; actor/shoot.h"),
     ("engine: shoot mode", c_engine_shoot_mode,  "todo/shoot-mode; actor/shootmode.h"),
     ("wre wireframes",     c_wre_files,         "FILE_FORMATS 5b5"),
     ("morph face models",  c_morph_face_models, "FILE_FORMATS 5"),

@@ -168,5 +168,84 @@ int main(int argc, char** argv) {
         std::printf("converge: %d frames from 135 deg, %d frames going the wrong way, "
                     "final yaw %.1f\n", frames, rose, yaw);
     }
+    // ---- THE GENERIC BRAIN's frame and the states that ARE read (7c) ----
+    {
+        // coverage first, and against the machine's own state list rather
+        // than a number typed here
+        const auto& all  = omk::genericStates();
+        const auto& read = omk::genericStatesRead();
+        int inRange = 0;
+        for (int st : read)
+            for (int a : all) if (a == st) { ++inRange; break; }
+        std::printf("generic: %zu states, %zu transcribed, %d of those in the state set\n",
+                    all.size(), read.size(), inRange);
+
+        auto fresh = [&](int st) {
+            omk::ShootRecord q; q.state = st;
+            omk::ShootProperties pp; pp.rangeAcquireM = 20; pp.coneDegrees = 45;
+            omk::initShootRecord(q, pp);
+            return q;
+        };
+        omk::ShootFrameIn in;
+        in.self[0] = 0; in.self[1] = 0; in.self[2] = 0; in.self[3] = 0;
+        in.target[0] = 0; in.target[1] = 0; in.target[2] = -390; in.target[3] = 0;
+        in.dt = 1.0f;
+
+        // every UNREAD state must change nothing at all
+        int unreadSeen = 0, unreadMoved = 0;
+        for (int st : all) {
+            bool isRead = false;
+            for (int k : read) if (k == st) { isRead = true; break; }
+            if (isRead) continue;
+            auto q = fresh(st);
+            float e = 12.0f;
+            const auto step = omk::shootGenericStep(q, in, e);
+            ++unreadSeen;
+            if (!step.unread || q.state != st || e != 12.0f) ++unreadMoved;
+        }
+        std::printf("generic: %d unread states, %d of them changed something\n",
+                    unreadSeen, unreadMoved);
+
+        // 5 ends into 4; 10 ends into 11; 11 goes back to 10
+        auto q5 = fresh(5);  float e5 = 0;
+        in.clipFrame = 30; in.clipFrames = 30;
+        omk::shootGenericStep(q5, in, e5);
+        auto q10 = fresh(10); float e10 = 0;
+        omk::shootGenericStep(q10, in, e10);
+        auto q10b = fresh(10); float e10b = 0;
+        in.clipFrame = 2; in.clipFrames = 30;          // early - before halfway
+        const auto s10b = omk::shootGenericStep(q10b, in, e10b);
+        auto q10c = fresh(10); float e10c = 0;
+        in.clipFrame = 20;                              // past halfway
+        const auto s10c = omk::shootGenericStep(q10c, in, e10c);
+        auto q11 = fresh(11); float e11 = 0;
+        in.clipFrame = 9; in.targetPredicate = true;
+        omk::shootGenericStep(q11, in, e11);
+        std::printf("generic: 5->%d  10(end)->%d  10(early) outcome %d  "
+                    "10(late) outcome %d  11->%d\n",
+                    q5.state, q10.state, int(s10b.outcome), int(s10c.outcome), q11.state);
+
+        // state 8's three snaps pick the three turn clips
+        auto turnClip = [&](float tz, float tx) {
+            auto q = fresh(8); float e = 0;
+            omk::ShootFrameIn t = in; t.targetPredicate = false;
+            t.target[0] = tx; t.target[2] = tz;
+            const auto st = omk::shootGenericStep(q, t, e);
+            return st;
+        };
+        const auto back  = turnClip(390, 0);      // hard behind -> 180 -> clip 32
+        const auto left  = turnClip(0, -390);     // abeam
+        const auto right = turnClip(0, 390);      // the other side
+        std::printf("generic: snap clips behind %d/%.0f  abeam-a %d/%.0f  abeam-b %d/%.0f\n",
+                    back.clipType, back.turnTotal, left.clipType, left.turnTotal,
+                    right.clipType, right.turnTotal);
+
+        // the epilogue WRAPS the euler, and it is the only place that does
+        auto qw = fresh(5); float hi = 370.0f, lo = -10.0f;
+        omk::shootGenericStep(qw, in, hi);
+        auto qw2 = fresh(5);
+        omk::shootGenericStep(qw2, in, lo);
+        std::printf("generic: wrap 370 -> %.0f, -10 -> %.0f\n", hi, lo);
+    }
     return 0;
 }

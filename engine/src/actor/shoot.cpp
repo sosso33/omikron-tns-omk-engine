@@ -363,4 +363,126 @@ int shootTurnToward(float& eulerY, const AcquireOut& a, bool allowSnap, float dt
     return 0;
 }
 
+// ---------------------------------------------------------------------
+// THE GENERIC BRAIN, `sub_424DE0` (0x00424DE0) - `todo/shoot-mode.md` 7c
+// ---------------------------------------------------------------------
+//
+// SIX of its sixteen states are transcribed here; the other ten set `unread`
+// and change nothing. That is deliberate and it is the rule the whole port
+// follows: an arm nobody has read is not a branch to guess, and a machine
+// that invented the missing ten would be indistinguishable from one that had
+// them right. `genericStatesRead()` is the list, and `verify.py: shoot
+// generic` asserts it against `genericStates()` so the coverage cannot drift
+// from the comment.
+//
+// THE PROLOGUE, shared by every arm (05_sys.c 5572-5580):
+//   the TARGET is record `+96`, its position and facing are fetched once,
+//   flag bit `0x200` is cleared, and the current clip pointer at `+16` is
+//   dropped. A state that wants `0x200` sets it back.
+namespace {
+
+const std::vector<int> kGenericRead = {3, 5, 7, 8, 10, 11};
+
+}  // namespace
+
+const std::vector<int>& genericStatesRead() { return kGenericRead; }
+
+ShootStep shootGenericStep(ShootRecord& r, const ShootFrameIn& in, float& eulerY) {
+    ShootStep out;
+    // ---- the prologue ------------------------------------------------
+    r.flags &= ~0x200u;                       // `BYTE1(v18) &= ~2u`
+    const int state = r.state;
+
+    AcquireOut a;
+    // every arm that turns or fires wants these, and the engine computes them
+    // once into its globals for the same reason
+    const bool acquired = shootAcquires(r, in.self, in.target, a, false);
+    (void)acquired;
+
+    switch (state) {
+    case 3:
+        // `sub_426E00` decides; its bit 0 asks to FIRE. The turn is taken
+        // either way, without the snap.
+        r.flags |= 0x200u;
+        if (in.targetPredicate) {
+            if (in.targetPredicateBits & 1) out.outcome = ShootOutcome::Fire;
+            shootTurnToward(eulerY, a, false, in.dt);
+        }
+        break;
+
+    case 5:
+        // play a clip out; when it ends, go to 4. Nothing else.
+        r.flags |= 0x200u;
+        if (in.clipFrame + in.dt >= in.clipFrames) out.nextState = 4;
+        break;
+
+    case 7: {
+        // a TIMER at `+168` counting down, and a nav-node comparison: when
+        // either says stop, ask for action 0 and - if flag `0x4000000` is
+        // set, which is property 37's bit 0x10 - raise event 43 with 19.
+        r.flags &= ~0x10u;
+        r.timer -= in.dt;
+        const bool done = r.timer <= 0.0f;
+        if (done) { out.clipType = 0; out.turnRate = 0.0f; }
+        break;
+    }
+
+    case 8: {
+        // TURN, with the snap allowed - and the snap picks an ANIMATION.
+        r.flags |= 0x200u;
+        if (in.targetPredicate) out.outcome = ShootOutcome::Fire;
+        const int snap = shootTurnToward(eulerY, a, true, in.dt);
+        // 30 / 31 / 32 are turn-left-90, turn-right-90 and turn-180, and
+        // `+184` becomes the degrees the clip must cover per frame. With no
+        // clip in the library the body simply rotates at the fallback rate.
+        if (snap == 90)        { out.clipType = 31; out.turnTotal =   90.0f; out.turnRate =  5.0f; }
+        else if (snap == 180)  { out.clipType = 32; out.turnTotal = -180.0f; out.turnRate = 10.0f; }
+        else if (snap == -90)  { out.clipType = 30; out.turnTotal =  -90.0f; out.turnRate = -5.0f; }
+        else if (snap != 0)    { out.clipType = in.defaultClipType; }
+        break;
+    }
+
+    case 10: {
+        // aim while a clip runs; past halfway (or with flag 4) the outcome
+        // changes from 3 to 2. When the clip ends, go to 11.
+        r.flags |= 0x200u;
+        shootTurnToward(eulerY, a, false, in.dt);
+        if (in.clipFrame + in.dt < in.clipFrames) {
+            out.outcome = ShootOutcome::Outcome3;
+            if (in.clipFrames * 0.5f > in.clipFrame || (r.flags & 4u))
+                out.outcome = ShootOutcome::Outcome2;
+        } else {
+            out.nextState = 11;
+        }
+        break;
+    }
+
+    case 11:
+        // the mirror of 10: when the predicate holds and the clip has run
+        // more than five frames, go back to 10 and clear the TARGET's 0x10.
+        r.flags |= 0x200u;
+        if (in.targetPredicate && in.clipFrame > 5.0f) out.nextState = 10;
+        shootTurnToward(eulerY, a, false, in.dt);
+        if (out.nextState < 0) out.outcome = ShootOutcome::Outcome2;
+        break;
+
+    default:
+        out.unread = true;
+        break;
+    }
+
+    // ---- the epilogue ------------------------------------------------
+    //
+    // The engine wraps the Euler HERE, after every arm, into (-360, 360):
+    // `if (>= 360) -= 360; else if (< 0) += 360`. It is the one place the
+    // angle is normalised, which matters because CLAUDE.md 1's wrap trap is
+    // about exactly this value.
+    if (eulerY >= 360.0f) eulerY -= 360.0f;
+    else if (eulerY < 0.0f) eulerY += 360.0f;
+    r.flags &= ~0x80u;
+
+    if (out.nextState >= 0) r.state = out.nextState;
+    return out;
+}
+
 }  // namespace omk

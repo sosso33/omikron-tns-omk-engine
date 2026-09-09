@@ -214,6 +214,57 @@ bool shootAcquires(const ShootRecord& r, const float self[4], const float target
 // because it is what runs.
 int shootTurnToward(float& eulerY, const AcquireOut& a, bool allowSnap, float dt);
 
+// ---- THE GENERIC BRAIN, `sub_424DE0` (`todo/shoot-mode.md` 7c) ---------
+//
+// The machine is an outer switch on the state at record `+156` - 1..15 and
+// 28 - where each arm computes an OUTCOME and every arm then funnels through
+// one shared epilogue. That shape is the thing to hold on to: the states
+// decide, the epilogue acts.
+//
+// The outcome (`v180` in the decompilation) is what the epilogue dispatches
+// on. Two of its five values are read and three are not, and they are named
+// that way rather than guessed at:
+enum class ShootOutcome {
+    FireIfReady = 0,   // fire when the weapon's countdown has expired
+    Fire        = 1,   // the full arm: reload from the row, `Actor_TickProjectiles`
+    Outcome2    = 2,   // NOT READ
+    Outcome3    = 3,   // NOT READ
+    Outcome4    = 4,   // NOT READ
+    None        = -1,  // the arm set none
+};
+
+// What one tick of the brain needs from the world, and what it wants done.
+// Passing them rather than reaching for globals is the same choice the
+// channel port made with its input word.
+struct ShootFrameIn {
+    float self[4]   = {0, 0, 0, 0};   // x, y, z, yaw - `Actor_GetPosAndFacing`
+    float target[4] = {0, 0, 0, 0};   // the target's, fetched once by the prologue
+    float clipFrame = 0.0f;           // actor `+188`, the animation's frame
+    float clipFrames = 0.0f;          // `Anim_Frames` of the running clip
+    float dt = 1.0f;                  // `flt_4C30D8`
+    bool  targetPredicate = false;    // `sub_426E00` - NOT READ, supplied
+    int   targetPredicateBits = 0;    // its bitfield, for the arms that test it
+    int   defaultClipType = 0;        // `a2`, the action the caller asked for
+};
+
+struct ShootStep {
+    ShootOutcome outcome = ShootOutcome::None;
+    int  nextState = -1;        // -1 = stay
+    int  clipType  = -1;        // a clip to pick, or -1
+    float turnTotal = 0.0f;     // degrees the picked clip must cover
+    float turnRate  = 0.0f;     // degrees per delta if there is NO clip
+    bool  unread = false;       // this state's arm has not been transcribed
+};
+
+// One tick of the generic arm. `eulerY` is the actor's `+420` and is written.
+// States whose arm has not been read set `unread` and change nothing - the
+// port refuses to invent a branch, which is the rule this whole file follows.
+ShootStep shootGenericStep(ShootRecord& r, const ShootFrameIn& in, float& eulerY);
+
+// The states of `sub_424DE0` whose arm IS transcribed, so a check can assert
+// the coverage rather than a comment claiming it.
+const std::vector<int>& genericStatesRead();
+
 // The behaviour-script walk, `sub_47FB40` (0x0047FB40). Returns the action to
 // play and advances the record; a `{0, n}` entry rewinds to the start.
 int shootScriptAdvance(ShootRecord& r, const std::vector<ShootScriptStep>& s);
