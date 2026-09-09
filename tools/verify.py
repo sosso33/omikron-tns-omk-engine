@@ -11887,6 +11887,85 @@ def c_engine_tunnel_doors():
          "door-carrying goto then resolves object 5 in it")
 
 
+def c_engine_cupboard_take():
+    r"""`engine/`: the world take's reach is measured ON THE FLOOR, and Y is
+    not in it at all.
+
+    A reader, 2026-09-09: *in kay'l kitchen, there are some cupboard that can
+    be open by pressing enter. It is possible to open the cupboard, but not to
+    take the objects inside (the engine acts like there was no objects)*.
+
+    `MDACTION` (`tab_special_move[3]`, 0x0046AEC0) finds what to take by
+    calling `sub_41C810` and comparing its answer against `flt_4BC918`, 150 cm.
+    That function reads the actor's node `+36` and `+44` — **x and z** — and,
+    per object,
+
+        v18 = f32(obj, 36) - v21;      /* dx */
+        v17 = f32(obj, 44) - v20;      /* dz */
+        v23 = v18 * v18 + v17 * v17;
+
+    `+40` appears nowhere in it. So the 150 cm is a HORIZONTAL radius: a thing
+    on a shelf is in reach if you are standing under it. The port summed the
+    height in too, which shrinks that radius by however high the shelf is.
+
+    AREA 237's `Cuisine Placard Droit` is where it shows. Its activate script
+    walks him to address 685, shows `Purée` (31) and `Nourriture Bière` (457)
+    and plays the cupboard open; the two land at y 1027.7 and 1025.7 over a
+    player standing at 1081.0. Flat they are ~36 away — inside the reach, and
+    the high take group `H_TAKH` is exactly what a shelf wants. In three
+    dimensions they are ~64, outside it, and the scan answers −1: a cupboard
+    that opens onto objects that cannot be picked up.
+
+    SHOWN TO FAIL: putting `dy * dy` back in `Session::scanTakeable` gives
+    0 takes and `object -1` on every press, which is the report.
+    """
+    import re as _re, subprocess, math
+    eng = os.path.join(ROOT, "engine")
+    fr = omkpaths.data_root()
+    save = os.path.join(ROOT, "traces", "save-appart.bin")
+    if not os.path.isdir(fr) or not os.path.exists(save):
+        return ("no data",), ("data",), "needs the shipped tree and the save"
+    mk = subprocess.run(["make", "-s", "play"], cwd=eng, capture_output=True, text=True)
+    play = os.path.join(eng, "build", "omk-play")
+    if mk.returncode != 0 or not os.path.exists(play):
+        return ("no sdl",), ("no sdl",), "needs SDL to run the viewer"
+    r = subprocess.run([play, fr, os.path.join(ROOT, "tables"), "--software",
+                        "--res", "640x480", "--nofmv", "--no-crowd",
+                        "--save", save, "--area", "237", "--scene-chunk", "57",
+                        "--address", "685",
+                        # open, then take twice: each take is a step, the
+                        # adjust, the grab and the bank
+                        "--hold", "0*30,k28*4,0*120,k28*4,0*40,k28*4,0*160,"
+                                  "k28*4,0*40,k28*4,0*160",
+                        "--frames", "700"],
+                       capture_output=True, text=True,
+                       env=dict(os.environ, SDL_VIDEODRIVER="dummy"),
+                       encoding="utf-8", errors="replace")
+    o = r.stdout
+    took = [int(m.group(1))
+            for m in _re.finditer(r"take: MDGETOBJ - holding (\d+)", o)]
+    shown = dict((int(m.group(1)),
+                  tuple(float(m.group(i)) for i in (2, 3, 4)))
+                 for m in _re.finditer(
+                     r"prop (\d+) SHOWN at (\S+) (\S+) (\S+)", o))
+    stand = _re.search(r"action: zone -28735 activated .* at (\S+) (\S+) (\S+)", o)
+    if 31 not in shown or 457 not in shown or not stand:
+        return ("no output",), ("the cupboard's two props",), \
+               "the activate script must show 31 and 457"
+    px, py, pz = (float(stand.group(i)) for i in (1, 2, 3))
+    ox, oy, oz = shown[31]
+    flat = math.hypot(ox - px, oz - pz)
+    solid = math.sqrt((ox - px) ** 2 + (oy - py) ** 2 + (oz - pz) ** 2)
+    return (took, round(flat, 1), round(solid, 1),
+            flat < 59.055119, solid < 59.055119), \
+           ([31, 457], 35.7, 64.2, True, False), \
+           ("the kitchen cupboard's two props are taken in turn - `Purée` "
+            "then `Nourriture Bière` - and the reason is the reach: 31 is "
+            "35.7 away ON THE FLOOR, inside `flt_4BC918`'s 150 cm, and 64.2 "
+            "away in three dimensions, outside it, because it sits 53 units "
+            "up on a shelf; `sub_41C810` never reads a Y")
+
+
 def c_engine_path_turn():
     r"""`engine/`: a moved object's path is TURNED INTO THE SET — params 12/13/14
     of `Script_MoveObjectOnPath`, which the port dropped.
@@ -30128,6 +30207,7 @@ SLOW = [
     ("engine: crowd nan", c_engine_crowd_nan, "todo/omk-play"),
     ("engine: tunnel doors", c_engine_tunnel_doors, "todo/omk-play"),
     ("engine: path turn",    c_engine_path_turn,    "todo/omk-play; FILE_FORMATS 5c"),
+    ("engine: cupboard take", c_engine_cupboard_take, "todo/omk-play; ASSETS"),
     ("engine: walker falls", c_engine_walker_falls, "todo/omk-play"),
     ("engine: props", c_engine_props, "todo/omk-play"),
     ("sprite ids scene-local", c_sprite_ids_are_scene_local, "docs/ASSETS"),

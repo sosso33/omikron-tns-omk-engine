@@ -15,6 +15,58 @@ waiting on its evidence.
 
 ## Open (batch 7, filed 2026-09-09)
 
+### 91. The kitchen cupboard opens onto objects that cannot be taken — A
+
+> **Fixed 2026-09-09**, driven headlessly: both props are taken in turn.
+> Not watched in play yet.
+
+A reader: *in kay'l kitchen, there are some cupboard that can be open by
+pressing enter. It is possible to open the cupboard, but not to take the
+objects inside (the engine acts like there was no objects)*.
+
+**The take's reach is measured ON THE FLOOR.** `MDACTION`
+(`tab_special_move[3]`, 0x0046AEC0) finds what to take through `sub_41C810`
+and compares its answer against `flt_4BC918`, 150 cm. That function takes the
+actor's node `+36` and `+44` — x and z — and per object computes
+
+```c
+v18 = f32(obj, 36) - v21;      /* dx */
+v17 = f32(obj, 44) - v20;      /* dz */
+v23 = v18 * v18 + v17 * v17;
+```
+
+`+40` appears nowhere in it, so the 150 cm is a **horizontal radius**: a thing
+on a shelf is in reach if you are standing under it. `Session::scanTakeable`
+summed the height in as well, which shrinks that radius by however high the
+shelf is — silently, and worse the higher the shelf.
+
+AREA 237's `Cuisine Placard Droit` (address 685) is where it shows. Its
+activate script shows `Purée` (31) and `Nourriture Bière` (457) and plays the
+cupboard open; the two land at y 1027.7 and 1025.7 over a player standing at
+1081.0, so they sit ~53 units up:
+
+| | to prop 31 |
+|---|---|
+| on the floor | **35.7** — inside the 59.055 reach |
+| in three dimensions | **64.2** — outside it |
+
+so the scan answered −1 on every press and the second ENTER just re-ran the
+zone's own script (`ZVO P014 Quoi` — *"Quoi ?"*). With the flat distance he
+steps in, plays the HIGH take group `H_TAKH`, grabs 31 and banks it, then
+takes 457.
+
+**Not modelled, and named rather than dropped**: the rest of `sub_41C810` is a
+CYCLE. It keeps two candidates — the nearest of all, and the nearest that is
+farther than the last pick (`dword_53B078`) and is not the last pick itself
+(`dword_6A50B0`, which `MDACTION` writes) — and prefers the second while it is
+inside 120 cm. So pressing action repeatedly walks outward through the objects
+in reach. This port always answers the nearest, which still reaches every
+object in a cupboard because taking one hides it; what it cannot do is offer a
+second object while the first is still there.
+
+`verify.py: engine: cupboard take`, SHOWN to fail: with `dy * dy` back in the
+sum the same run takes nothing at all.
+
 ### 90. The lift doors open sideways: a path is TURNED into the set — A
 
 > **Fixed 2026-09-09**, measured and RENDERED (Hall 27, before and after).

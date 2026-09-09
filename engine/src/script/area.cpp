@@ -2995,15 +2995,52 @@ int Session::scanTakeable(const float pos[3], float /*facing*/, float* dyOut) co
     float bestDy = 0.0f;
     for (const auto& p : props()) {
         if (!p.shown || p.id < 0) continue;
+        // **THE REACH IS MEASURED ON THE FLOOR, and Y is not in it at all.**
+        // `sub_41C810` (0x0041C810), the scan `MDACTION` calls, reads the
+        // actor's node `+36` and `+44` - x and z - into `v21`/`v20` and then,
+        // per object,
+        //
+        //     v18 = f32(obj, 36) - v21;      /* dx */
+        //     v17 = f32(obj, 44) - v20;      /* dz */
+        //     v23 = v18 * v18 + v17 * v17;
+        //
+        // with no `+40` anywhere in the function. `*a3 = sqrt(...)` is what
+        // `MDACTION` then compares against `flt_4BC918`, so the 150 cm is a
+        // HORIZONTAL radius: a thing on a shelf is in reach if you are
+        // standing under it.
+        //
+        // Including `dy` - which this did - is a quiet, height-dependent
+        // shrink of that radius, and the taller the shelf the smaller it
+        // gets. Kay'l's kitchen cupboard is where it shows: opening it shows
+        // `Purée` (31) and `Nourriture Bière` (457) at y 1027.7 and 1025.7
+        // over a player standing at 1081.0, so they sit 53 units up. Flat,
+        // they are 35.7 away and well inside the reach; with `dy` in the sum
+        // they are 64.1 and the scan returns -1, which is a cupboard that
+        // opens onto objects that cannot be taken (a reader, 2026-09-09:
+        // *it is possible to open the cupboard, but not to take the objects
+        // inside - the engine acts like there was no objects*).
+        //
+        // The height is still WANTED, just not here: `sub_465D30` picks the
+        // take group from it (the 70 cm split between the low and the high
+        // take), which is `dyOut` below.
         const float dx = p.pos[0] - pos[0];
         const float dy = p.pos[1] - pos[1];
         const float dz = p.pos[2] - pos[2];
-        const float d2 = dx * dx + dy * dy + dz * dz;
+        const float d2 = dx * dx + dz * dz;
         if (d2 > bestD2) continue;
         bestD2 = d2;
         bestDy = dy;
         best = p.id;
     }
+    // **NOT MODELLED, and it is the rest of `sub_41C810`**: the engine keeps
+    // TWO candidates - the nearest of all, and the nearest that is farther
+    // than the last pick (`*a4 = dword_53B078`) and is not the last pick
+    // itself (`dword_6A50B0`, which `MDACTION` writes) - and prefers the
+    // second while it is inside 120 cm (`47.244095`). That is a CYCLE: press
+    // action again and it walks outward through the objects in reach. This
+    // port always answers the nearest, which reaches every object in a
+    // cupboard anyway because taking one hides it; what it cannot do is
+    // offer a second object while the first is still there.
     // The winner's height difference, which `sub_465D30` needs to pick the
     // take group and which this loop has already computed (omk-play 69).
     if (dyOut) *dyOut = best >= 0 ? bestDy : 0.0f;
