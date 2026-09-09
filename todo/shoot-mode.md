@@ -201,7 +201,7 @@ Each ends in a commit and a report.
 | 1 | **the reading above** — what the mode does, and the grid finding | **done 2026-09-09**; `verify.py: shoot arenas` |
 | 2 | **the grid** — the cell byte, the floor box, the door table, a reader and a probe that DRAWS a floor | **done 2026-09-09**, §2b; `verify.py: map2d grid` |
 | 3 | **the mode** — ops 80/81 read and ported, the weapon slot, the HUD choice, the library swap, both exit arms | **done 2026-09-09**, §3b; `verify.py: engine: shoot mode`. The frontend half (camera mode 4, group 200, scheme 2 installed in `omk-play`, and a `--shoot` harness) is NOT done and moves to step 4 |
-| 4 | the FRONTEND half and the WEAPON tables | **part done 2026-09-09**, §4b: `--shoot`, the three installs, and `tables/shoot_weapons.json`. Left: `Shoot_TickPlayer`'s live arm on the grid, `Shoot_StartTargetScripts`, and what a shot IS |
+| 4 | the FRONTEND half and the WEAPON tables | **part done 2026-09-09**, §4b: `--shoot`, the three installs, and `tables/shoot_weapons.json`. Left: `Shoot_StartTargetScripts`. The live arm is §4d and what a shot IS is §4c |
 | 5 | **the brains, decision revisited** — with the grid in hand, how much of the generic shooter's 16 states is now fact rather than geometry. Gandhar is already exact; Astaroth and the generic are state graphs. **Only what the grid settles gets wired**; the rest stays labelled | |
 | 6 | docs, the checks, and a play test | |
 
@@ -314,6 +314,75 @@ the direction is the actor's facing, a target's position, or a spread),
 `sub_4246E0` beside it (a sound, on its argument shape), and what makes the
 timer at `+148` start counting in the first place - which is where
 `Shoot_InitWeapon`'s event 48 arm and the weapon's range should land.
+
+## 4d. `Shoot_TickPlayer`'s LIVE ARM — step 4 (rest), 2026-09-09
+
+The second of step 4's debts, and the handoff's own description of it needs
+one correction: **`+188` is the FLOOR index, not a node.** It is a signed byte
+(`-1` = not on the grid at all) and it is the first argument of the two grid
+accessors §2 already decoded, `sub_4358D0(f, x, z)` and
+`sub_435970(f, x, z, v)`. `+136` and `+140` are the CELL, column and row, as
+ints.
+
+The arm, in order:
+
+```c
+Actor_GetPosAndFacing(a2, pos);
+was   = i8(rec, 188);                       /* the floor last tick        */
+acted = Shoot_Think(a2, pos, 0, -1);        /* the brain                  */
+floor = i8(rec, 188);                       /* ...which may have moved him */
+rec[160] &= ~0x1000;
+
+if (floor != -1) {
+    if (acted) { col = rec[136]; row = rec[140]; }        /* the brain's cell */
+    else {                                               /* else derive it    */
+        sub_4368E0(floor, pos);
+        col = (pos.x - origin[floor].x) / flt_907EAC;    /* flt_907EAC is the */
+        row = (pos.z - origin[floor].z) / flt_907EAC;    /*   cell size       */
+    }
+    if (was != floor || dword_907DCC) { sub_436260(floor, col, row); dword_907DCC = 0; }
+    if (sub_436350())                  sub_436260(floor, col, row);
+}
+```
+
+so the cell is **the brain's when the brain decided one and the actor's own
+world position otherwise** - `Shoot_Think`'s return is the discriminator, not
+a flag on the record - and `sub_436260` is re-run on a floor CHANGE and
+whenever `sub_436350` asks.
+
+**Then the occupancy pair, and it brackets one call:**
+
+```c
+if (rec[156] != 2) {                        /* stamp   */
+    saved = sub_4358D0(floor, col, row);
+    rec[160] = sub_47C1B0(floor, saved, rec[160]);
+    if (saved == 1) { rec[72] = actor[244]; rec[76] = actor[252]; }
+    u8(rec, 189) = saved;
+    sub_435970(floor, col, row, 128);
+}
+Shoot_StartTargetScripts();
+if (rec[92] > 0 && (rec[156] != 2 || rec[92] < 0)) {    /* restore */
+    sub_47C230(floor, rec[189]);
+    sub_435970(floor, col, row, rec[189]);
+}
+```
+
+**The 128 is up only across `Shoot_StartTargetScripts`.** §2 read the pair as
+"stamps on arrival, restores when it leaves"; in this arm both happen in ONE
+tick, and what sits between them is the target scripts - so the mark exists so
+that whatever runs in there sees the cell as taken.
+
+**And a corpse keeps its cell.** The stamp is gated on `rec[156] != 2` and the
+restore on `rec[92] > 0` as well, where `+92` is what the respawn arm fills
+from event 44 - so an actor with `156 != 2` and `+92` spent stamps 128 and
+never puts the byte back. The `|| rec[92] < 0` in that condition is DEAD: the
+first conjunct is `> 0`, so it can never be reached. Worth recording as a
+reading of the code rather than a rule of the game - the two gates are
+different fields, and only play can say whether a body really does block.
+
+**Not read**: `sub_436260` (re-run on a floor change), `sub_436350`,
+`sub_47C1B0` (which folds the cell's byte into `+160`'s flags) and `sub_47C230`
+beside the restore.
 
 ## 5. What is still NOT established
 
