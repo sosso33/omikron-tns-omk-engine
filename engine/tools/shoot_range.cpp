@@ -240,6 +240,70 @@ int main(int argc, char** argv) {
                     back.clipType, back.turnTotal, left.clipType, left.turnTotal,
                     right.clipType, right.turnTotal);
 
+        // ---- the NAVIGATE -> TRAVERSE -> hub loop (states 1, 2) --------
+        //
+        // The three things state 1 computes, all transcribed formulas:
+        // the heading `atan2(dz, dx) * 180/pi + 90`, the step length, and the
+        // occupancy swap. Then state 2 walks it out, climbing the edge's
+        // slope, and lands in the hub - which is the loop a gunman actually
+        // moves on.
+        {
+            omk::ShootFrameIn nav = in;
+            nav.targetPredicate = false;
+            nav.moveCode = 1;
+            nav.myNode = 3; nav.targetNode = 7;
+            nav.hasEdge = true;
+            nav.edgeFrom[0] = 0;   nav.edgeFrom[1] = 0;   nav.edgeFrom[2] = 0;
+            nav.edgeTo[0]   = 300; nav.edgeTo[1]   = 40;  nav.edgeTo[2]   = 400;
+            nav.stepCellValue = 1;
+            auto q1 = fresh(1); float e1 = 0;
+            const auto s1 = omk::shootGenericStep(q1, nav, e1);
+            // the same step onto a cell the MOVEMENT test refuses (-128, the
+            // occupancy stamp read as a signed byte)
+            nav.stepCellValue = -128;
+            auto q1b = fresh(1); float e1b = 0;
+            const auto s1b = omk::shootGenericStep(q1b, nav, e1b);
+            // and standing on the target's own node is contact
+            nav.stepCellValue = 1; nav.myNode = 7;
+            auto q1c = fresh(1); float e1c = 0;
+            omk::shootGenericStep(q1c, nav, e1c);       // step ALSO available
+            omk::ShootFrameIn still = nav; still.moveCode = 0;
+            auto q1d = fresh(1); float e1d = 0;
+            omk::shootGenericStep(q1d, still, e1d);      // nothing to step to
+            std::printf("generic: nav take %d heading %.1f len %.0f state %d; "
+                        "blocked take %d state %d; samenode+step %d samenode %d\n",
+                        int(s1.takeStep), s1.headingDeg, s1.stepLength, q1.state,
+                        int(s1b.takeStep), q1b.state, q1c.state, q1d.state);
+
+            // state 2 walks the edge out: 500 units of it at 100 a frame
+            auto q2 = fresh(2); q2.stepRemaining = s1.stepLength; float e2 = 0;
+            omk::ShootFrameIn tr = nav;
+            tr.movedThisFrame = 100.0f;
+            int frames = 0; float climbed = 0;
+            omk::ShootStep st2;
+            for (; frames < 20; ++frames) {
+                st2 = omk::shootGenericStep(q2, tr, e2);
+                climbed += st2.climb;
+                if (st2.arrived) break;
+            }
+            std::printf("generic: traverse %d frames, climbed %.1f, arrived %d, "
+                        "state %d, swap %d\n",
+                        frames + 1, climbed, int(st2.arrived), q2.state,
+                        int(st2.swapOccupancy));
+
+            // state 4 with no route does nothing but the tail
+            auto q4 = fresh(4); float e4 = 0;
+            omk::ShootFrameIn pat = nav; pat.hasRoute = false;
+            const auto s4 = omk::shootGenericStep(q4, pat, e4);
+            auto q4b = fresh(4); float e4b = 0;
+            pat.hasRoute = true; pat.routeAdvanced = true;
+            const auto s4b = omk::shootGenericStep(q4b, pat, e4b);
+            std::printf("generic: patrol noroute outcome %d state %d; "
+                        "route state %d outcome %d unread %d\n",
+                        int(s4.outcome), q4.state, q4b.state, int(s4b.outcome),
+                        int(s4b.outcomeFromUnread));
+        }
+
         // the epilogue WRAPS the euler, and it is the only place that does
         auto qw = fresh(5); float hi = 370.0f, lo = -10.0f;
         omk::shootGenericStep(qw, in, hi);

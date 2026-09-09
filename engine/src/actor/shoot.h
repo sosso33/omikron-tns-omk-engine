@@ -134,6 +134,7 @@ struct ShootRecord {
     float rangeThird   = 0.0f;               // +36   property 30, 39 * metres
     float coneCos      = 0.0f;               // +40   cos(property 29 degrees)
     float weaponTimer  = 0.0f;               // +172  reloaded with the row's f0
+    float stepRemaining = 0.0f;              // +68   distance left on the edge
 };
 
 // The six properties `sub_422540` asks for, in the order it asks - each read
@@ -245,6 +246,24 @@ struct ShootFrameIn {
     bool  targetPredicate = false;    // `sub_426E00` - NOT READ, supplied
     int   targetPredicateBits = 0;    // its bitfield, for the arms that test it
     int   defaultClipType = 0;        // `a2`, the action the caller asked for
+
+    // `sub_426C20` - NOT READ. States 1 and 4 branch on it: 1 means "take the
+    // step", 0 means nothing, and 90 / 180 / -90 are the same turn-animation
+    // requests `sub_420EB0` makes. Supplied rather than invented.
+    int   moveCode = 0;
+    int   myNode = -1, targetNode = -1;   // record `+188` on each side
+    // the edge states 1 and 2 work along: `u32(rec, 4)`, its from/to points.
+    bool  hasEdge = false;
+    float edgeFrom[3] = {0, 0, 0};
+    float edgeTo[3]   = {0, 0, 0};
+    // the cell the step would land on, already read through `sub_4358D0`.
+    // Its REFUSAL set is `{-128, 0, 2, 3}` - and note the -128: this is the
+    // second site that reads the occupancy stamp as a SIGNED byte, which is
+    // the finding `todo/omk-play.md` 96's neighbour records from `movsx`.
+    int   stepCellValue = 1;
+    bool  hasRoute = false;           // `u32(rec, 24)` - state 4 needs one
+    bool  routeAdvanced = false;      // `sub_4356B0` found the next point
+    float movedThisFrame = 0.0f;      // state 2: how far the body actually went
 };
 
 struct ShootStep {
@@ -254,6 +273,21 @@ struct ShootStep {
     float turnTotal = 0.0f;     // degrees the picked clip must cover
     float turnRate  = 0.0f;     // degrees per delta if there is NO clip
     bool  unread = false;       // this state's arm has not been transcribed
+
+    // ---- what an arm asks the world to do -----------------------------
+    // The brain decides and the caller acts, so the machine stays testable
+    // without a live grid under it - the same split the renderer port uses.
+    bool  takeStep = false;     // state 1 committed to the edge
+    float headingDeg = 0.0f;    //   ...and this is the heading it set (`+420`)
+    float stepLength = 0.0f;    //   ...and the distance it must cover (`+68`)
+    bool  swapOccupancy = false;// restore the old cell, stamp the new one
+    float climb = 0.0f;         // state 2's vertical step for this frame
+    bool  arrived = false;      // state 2 ran `+68` out
+    bool  releaseRoute = false; // state 4 let its route go
+    // the arm reached a point where the engine reads an outcome out of a
+    // function nobody has transcribed (`sub_4272B0`), so `outcome` is None
+    // because it is UNKNOWN, not because the arm chose nothing.
+    bool  outcomeFromUnread = false;
 };
 
 // One tick of the generic arm. `eulerY` is the actor's `+420` and is written.

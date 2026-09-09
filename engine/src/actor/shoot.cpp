@@ -367,8 +367,8 @@ int shootTurnToward(float& eulerY, const AcquireOut& a, bool allowSnap, float dt
 // THE GENERIC BRAIN, `sub_424DE0` (0x00424DE0) - `todo/shoot-mode.md` 7c
 // ---------------------------------------------------------------------
 //
-// SIX of its sixteen states are transcribed here; the other ten set `unread`
-// and change nothing. That is deliberate and it is the rule the whole port
+// NINE of its sixteen states are transcribed here; the other seven set
+// `unread` and change nothing. That is deliberate and it is the rule the port
 // follows: an arm nobody has read is not a branch to guess, and a machine
 // that invented the missing ten would be indistinguishable from one that had
 // them right. `genericStatesRead()` is the list, and `verify.py: shoot
@@ -381,7 +381,7 @@ int shootTurnToward(float& eulerY, const AcquireOut& a, bool allowSnap, float dt
 //   dropped. A state that wants `0x200` sets it back.
 namespace {
 
-const std::vector<int> kGenericRead = {3, 5, 7, 8, 10, 11};
+const std::vector<int> kGenericRead = {1, 2, 3, 4, 5, 7, 8, 10, 11};
 
 }  // namespace
 
@@ -399,7 +399,104 @@ ShootStep shootGenericStep(ShootRecord& r, const ShootFrameIn& in, float& eulerY
     const bool acquired = shootAcquires(r, in.self, in.target, a, false);
     (void)acquired;
 
+    // The snap-to-turn-ANIMATION mapping, written out once: states 1, 4 and 8
+    // all do it, character for character. 30 / 31 / 32 are turn-left-90,
+    // turn-right-90 and turn-180, `turnTotal` is what the clip must cover and
+    // `turnRate` is the fallback when the library has none. The 180 arm calls
+    // `rand()` and discards it in all three - a quirk, recorded not copied.
+    auto snapToClip = [&](int snap) {
+        if (snap == 90)       { out.clipType = 31; out.turnTotal =   90.0f; out.turnRate =  5.0f; }
+        else if (snap == 180) { out.clipType = 32; out.turnTotal = -180.0f; out.turnRate = 10.0f; }
+        else if (snap == -90) { out.clipType = 30; out.turnTotal =  -90.0f; out.turnRate = -5.0f; }
+        else if (snap != 0)   { out.clipType = in.defaultClipType; }
+    };
+
     switch (state) {
+    case 1: {
+        // NAVIGATE. Standing on the target's own node means contact, and the
+        // hub state 6 takes over. Otherwise `sub_426C20` either hands back a
+        // turn to play or says "take the step".
+        r.flags &= ~0x10u;
+        // NOTE THE ORDER, because it is load-bearing: the engine writes
+        // `+156 = 6` here and the step branch below OVERWRITES it with 2. So
+        // a gunman standing on his target's node who can also take a step
+        // ends in 2, not 6 - the contact test loses. Transcribed as written.
+        if (in.myNode == in.targetNode) out.nextState = 6;
+        int code = in.moveCode;
+        if (code == 1) {
+            // The cell must be walkable, and the refusal set is the MOVEMENT
+            // one - `{-128, 0, 2, 3}`, the signed form, occupancy included.
+            const int c = in.stepCellValue;
+            if (!(c == -128 || c == 0 || c == 2 || c == 3) && in.hasEdge) {
+                const double dx = double(in.edgeTo[0]) - in.edgeFrom[0];
+                const double dz = double(in.edgeTo[2]) - in.edgeFrom[2];
+                out.takeStep = true;
+                out.swapOccupancy = true;
+                // `a1[105] = atan2(dz, dx) * 180/pi + 90` - the heading, in
+                // degrees, with the engine's own quarter-turn offset.
+                out.headingDeg = static_cast<float>(std::atan2(dz, dx) * 57.29577951308232 + 90.0);
+                out.stepLength = static_cast<float>(std::sqrt(dx * dx + dz * dz));
+                r.stepRemaining = out.stepLength;
+                eulerY = out.headingDeg;
+                out.nextState = 2;
+            }
+            code = 0;                       // `v20 = 0` - no turn this frame
+        }
+        snapToClip(code);
+        break;
+    }
+
+    case 2: {
+        // TRAVERSE the edge state 1 committed to, climbing its slope: the
+        // vertical step is `dy / horizontalLength * distanceMovedThisFrame`,
+        // and `+68` counts the remaining distance down. At zero the body is
+        // snapped onto the edge's end and the hub takes over.
+        r.flags &= ~0x10u;
+        if (in.hasEdge) {
+            const double dx = double(in.edgeTo[0]) - in.edgeFrom[0];
+            const double dy = double(in.edgeTo[1]) - in.edgeFrom[1];
+            const double dz = double(in.edgeTo[2]) - in.edgeFrom[2];
+            const double flat = std::sqrt(dx * dx + dz * dz);
+            if (flat > 0.0)
+                out.climb = static_cast<float>(dy / flat * in.movedThisFrame);
+        }
+        r.groundY += out.climb;
+        // `+68` counts the remaining distance down by however far the body
+        // actually travelled this frame; at zero the arm snaps him onto the
+        // edge's end, takes the new nav node from the edge, and hands over to
+        // the hub. The occupancy of the cell he LEFT is restored there.
+        r.stepRemaining -= in.movedThisFrame;
+        if (r.stepRemaining <= 0.0f) {
+            out.arrived = true;
+            out.swapOccupancy = true;
+            out.nextState = 6;
+        }
+        break;
+    }
+
+    case 4: {
+        // PATROL a route. Without one there is nothing to do but the tail.
+        if (in.hasRoute) {
+            r.flags |= 0x200u;
+            int code = in.moveCode;
+            if (code == 1) {
+                if (in.routeAdvanced) out.nextState = 5;
+                code = 0;
+            }
+            snapToClip(code);
+        }
+        // The tail: if nothing changed the state the outcome is 4. If
+        // something did, the engine takes the outcome from `sub_4272B0`,
+        // which is NOT READ - so the port leaves it None and says so rather
+        // than picking a plausible value.
+        if (out.nextState < 0) out.outcome = ShootOutcome::Outcome4;
+        else out.outcomeFromUnread = true;
+        // and a route is RELEASED whenever the state left 4 and 5
+        if (out.nextState >= 0 && out.nextState != 4 && out.nextState != 5)
+            out.releaseRoute = true;
+        break;
+    }
+
     case 3:
         // `sub_426E00` decides; its bit 0 asks to FIRE. The turn is taken
         // either way, without the snap.
@@ -431,14 +528,7 @@ ShootStep shootGenericStep(ShootRecord& r, const ShootFrameIn& in, float& eulerY
         // TURN, with the snap allowed - and the snap picks an ANIMATION.
         r.flags |= 0x200u;
         if (in.targetPredicate) out.outcome = ShootOutcome::Fire;
-        const int snap = shootTurnToward(eulerY, a, true, in.dt);
-        // 30 / 31 / 32 are turn-left-90, turn-right-90 and turn-180, and
-        // `+184` becomes the degrees the clip must cover per frame. With no
-        // clip in the library the body simply rotates at the fallback rate.
-        if (snap == 90)        { out.clipType = 31; out.turnTotal =   90.0f; out.turnRate =  5.0f; }
-        else if (snap == 180)  { out.clipType = 32; out.turnTotal = -180.0f; out.turnRate = 10.0f; }
-        else if (snap == -90)  { out.clipType = 30; out.turnTotal =  -90.0f; out.turnRate = -5.0f; }
-        else if (snap != 0)    { out.clipType = in.defaultClipType; }
+        snapToClip(shootTurnToward(eulerY, a, true, in.dt));
         break;
     }
 

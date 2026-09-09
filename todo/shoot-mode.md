@@ -470,7 +470,7 @@ that labelling one state at a time, and the label moves with the code.
 |---|---|---|
 | 7a | **the record's geometry** — `sub_422540`'s six properties into the record (both ranges, the third, the cone's cosine, health, the flag fan-out), and the acquisition pair `sub_420C70` / `sub_420D90` with the four values they leave behind |**DONE 2026-09-09**, §7a below; `verify.py: shoot range` |
 | 7b | **the turn** — `sub_420EB0` on the Euler at `actor+420`, its three thresholds and its `180` / `±90` snap returns |**DONE 2026-09-09**, §7b below; `verify.py: shoot range` |
-| 7c | **the states** — `sub_424DE0` read arm by arm and ported, each one carrying what it was read from; the ones not reached stay declared |**PART DONE 2026-09-09** — the FRAME and **6 of the 16** states, §7c below; `verify.py: shoot generic`. States 1, 2, 4, 6, 9/28, 12, 13, 14, 15 are still unread |
+| 7c | **the states** — `sub_424DE0` read arm by arm and ported, each one carrying what it was read from; the ones not reached stay declared |**PART DONE 2026-09-09** — the FRAME and **9 of the 16** states, §7c below; `verify.py: shoot generic`. States 6, 9/28, 12, 13, 14, 15 are still unread |
 | 7d | **the frame loop** — the brain called from `Shoot_TickNpc`'s place, the occupancy stamp/restore pair around it, and `omk-play --shoot` driving it | |
 | 7e | checks, and a PLAY TEST — which is the one thing steps 1-6 never got | |
 
@@ -582,7 +582,7 @@ happens — clears flag `0x80`, and dispatches on the outcome:
 Outcome 1 is where §5b's weapon-rate line lives, so the rate reading and the
 machine meet here.
 
-### The six states transcribed
+### The nine states transcribed
 
 | state | what its arm does |
 |---|---|
@@ -592,6 +592,34 @@ machine meet here.
 | **8** | turns WITH the snap — and the snap picks a turn ANIMATION |
 | **10** | aims while a clip runs; outcome **2** before halfway, **3** after; at the end → **11** |
 | **11** | the mirror: with the predicate and >5 frames run, back to **10** |
+| **1** | NAVIGATE — contact, or commit to an edge |
+| **2** | TRAVERSE that edge, climbing its slope |
+| **4** | PATROL a route |
+
+**The movement loop is 1 → 2 → 6.** State 1 tests whether the gunman stands on
+his target's own nav node, and commits to an edge otherwise; state 2 walks the
+edge out; the hub takes over on arrival. Three transcribed formulas come with
+it: the heading is `atan2(dz, dx) * 180/pi + 90`, `+68` is seeded with the
+edge's horizontal length, and state 2's vertical step is
+`dy / horizontalLength * distanceMovedThisFrame`, so a gunman climbs stairs.
+
+> **THE ORDER INSIDE STATE 1 IS LOAD-BEARING.** The engine writes `+156 = 6`
+> for the contact case and the step branch below then **overwrites** it with 2.
+> So a gunman standing on his target's node who can also take a step ends in 2,
+> and the contact test loses. Transcribed as written, and the check asserts
+> both halves so it cannot be tidied into the order that reads better.
+
+> **AND STATE 1 IS A SECOND, INDEPENDENT SITE READING THE OCCUPANCY STAMP AS
+> SIGNED.** Its cell test refuses `{-128, 0, 2, 3}` — note the **-128**, not
+> 128 — which confirms the `movsx` finding behind `todo/omk-play.md` 96's
+> neighbour from a different function, and is why `blockedValue` lists `0x80`
+> while the sight predicate does not.
+
+State 4's tail is the one place the port has to say **unknown** out loud: when
+something changed the state, the engine takes the outcome from `sub_4272B0`,
+which is unread. The step returns `outcomeFromUnread` rather than a plausible
+value, and the check asserts that flag — so *we do not know* stays visible
+instead of decaying into *nothing happened*.
 
 **State 8 is the interesting one.** `sub_420EB0`'s `180` / `±90` returns are
 not a rotation, they are a request for a CLIP: type **30** for −90°, **31**
@@ -603,14 +631,15 @@ discards it — a quirk, recorded rather than reproduced.)
 
 ### What is NOT ported, and why that is the deliverable too
 
-Nine states — **1, 2, 4, 6, 9/28, 12, 13, 14, 15** — set `unread` and change
-nothing at all: no state, no Euler, no outcome. State 6 is the largest by far
-and carries its own five-way sub-switch.
+Six states — **6, 9/28, 12, 13, 14, 15** — set `unread` and change nothing at
+all: no state, no Euler, no outcome. State 6 is the largest by far and carries
+its own five-way sub-switch; it is the hub that both 1→2 and 4→5 hand over
+to, so it is the next one worth reading.
 
 That refusal is asserted, not promised. `verify.py: shoot generic` drives
-every unread state and requires all ten to leave the record and the Euler
+every unread state and requires all seven to leave the record and the Euler
 untouched, and **mutating the default arm to invent a transition turns it
-red** (10 of 10 changed something). A machine that guessed the missing nine
+red** (every one of them changed something). A machine that guessed the missing nine
 would be indistinguishable from one that had them right, and this is the only
 thing standing between the port and that.
 

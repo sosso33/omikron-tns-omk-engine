@@ -25833,8 +25833,8 @@ def c_shoot_generic():
     through one shared epilogue. The states decide; the epilogue acts. Ported
     in `todo/shoot-mode.md` 7c.
 
-    **The first row is the honest one: 6 of the 16 states are transcribed.**
-    The other ten set `unread` and change nothing, and that is asserted rather
+    **The first row is the honest one: 9 of the 16 states are transcribed.**
+    The other seven set `unread` and change nothing, and that is asserted rather
     than promised - a machine that invented the missing ten would be
     indistinguishable from one that had them right, and this check is what
     stops the port drifting into that. `genericStatesRead()` is compared
@@ -25854,7 +25854,24 @@ def c_shoot_generic():
       **30** for -90 degrees, **31** for +90, **32** for 180 - with `+184`
       carrying the degrees that clip must cover per frame. With no such clip
       in the library the body just rotates at a fallback rate;
-    * **7** counts a timer at `+168` down.
+    * **7** counts a timer at `+168` down;
+    * **1** NAVIGATES: standing on the target's node is contact and hands to
+      the hub **6**, but note the ORDER - the engine writes `+156 = 6` and the
+      step branch below OVERWRITES it with **2**, so a gunman who can also
+      take a step ends in 2 and the contact test loses. Taking the step needs
+      the cell to pass the MOVEMENT refusal `{-128, 0, 2, 3}` (the signed
+      form, occupancy included - the second site that reads the stamp as
+      signed), and it sets the heading to `atan2(dz, dx) * 180/pi + 90` and
+      `+68` to the edge's length;
+    * **2** TRAVERSES that edge, climbing its slope by
+      `dy / horizontalLength * distanceMovedThisFrame` each frame and counting
+      `+68` down; at zero it swaps the occupancy and goes to the hub;
+    * **4** PATROLS a route - with one and a step available it goes to **5**,
+      and the tail gives outcome **4** when nothing changed the state. When
+      something did, the engine takes the outcome from `sub_4272B0`, which is
+      NOT read, so the port reports `outcomeFromUnread` rather than picking a
+      plausible value - and the check asserts that flag, so "we do not know"
+      stays visible instead of decaying into "nothing happened".
 
     And the epilogue's own job, which is easy to miss because it is three
     lines: **it wraps the Euler**, into `(-360, 360)`, after every arm. That
@@ -25882,13 +25899,28 @@ def c_shoot_generic():
     sn  = re.search(r"^generic: snap clips behind (-?\d+)/(-?\d+)\s+abeam-a (-?\d+)/(-?\d+)"
                     r"\s+abeam-b (-?\d+)/(-?\d+)$", r.stdout, re.M)
     wr  = re.search(r"^generic: wrap 370 -> (-?\d+), -10 -> (-?\d+)$", r.stdout, re.M)
-    if not (cov and unr and tr and sn and wr):
+    nv  = re.search(r"^generic: nav take (\d) heading ([\d.]+) len (\d+) state (\d+); "
+                    r"blocked take (\d) state (\d+); samenode\+step (\d+) samenode (\d+)$",
+                    r.stdout, re.M)
+    tv  = re.search(r"^generic: traverse (\d+) frames, climbed ([\d.]+), arrived (\d), "
+                    r"state (\d+), swap (\d)$", r.stdout, re.M)
+    pt  = re.search(r"^generic: patrol noroute outcome (-?\d+) state (\d+); "
+                    r"route state (\d+) outcome (-?\d+) unread (\d)$", r.stdout, re.M)
+    if not (cov and unr and tr and sn and wr and nv and tv and pt):
         return ("unparsed",), ("parsed",), "the probe's own generic: lines"
     got = (tuple(int(x) for x in cov.groups()), tuple(int(x) for x in unr.groups()),
            tuple(int(x) for x in tr.groups()), tuple(int(x) for x in sn.groups()),
-           tuple(int(x) for x in wr.groups()))
-    want = ((16, 6, 6), (10, 0), (4, 11, 2, 3, 10),
-            (32, -180, 30, -90, 31, 90), (10, 350))
+           tuple(int(x) for x in wr.groups()),
+           (int(nv.group(1)), nv.group(2), int(nv.group(3)), int(nv.group(4)),
+            int(nv.group(5)), int(nv.group(6)), int(nv.group(7)), int(nv.group(8))),
+           (int(tv.group(1)), tv.group(2), int(tv.group(3)), int(tv.group(4)),
+            int(tv.group(5))),
+           tuple(int(x) for x in pt.groups()))
+    want = ((16, 9, 9), (7, 0), (4, 11, 2, 3, 10),
+            (32, -180, 30, -90, 31, 90), (10, 350),
+            (1, "143.1", 500, 2, 0, 1, 2, 6),
+            (5, "40.0", 1, 6, 1),
+            (4, 4, 5, -1, 1))
     return got, want, ("the machine's states, how many are TRANSCRIBED, and "
                        "that every transcribed one is in the state set; then "
                        "that the ten UNREAD arms change nothing at all - no "
@@ -25897,7 +25929,14 @@ def c_shoot_generic():
                        "transitions and two outcomes the read arms make; the "
                        "three turn-animation clip types the snap picks with "
                        "the degrees each must cover; and the epilogue's Euler "
-                       "WRAP, which is the only place the angle is normalised")
+                       "WRAP, which is the only place the angle is "
+                       "normalised; then the NAVIGATE arm - the step taken, "
+                       "its heading and length, a step onto a -128 cell "
+                       "refused, and the same-node write being overwritten by "
+                       "the step branch; the TRAVERSE walking 500 units out "
+                       "in 5 frames while climbing the edge's 40; and the "
+                       "PATROL, including the flag that says its outcome came "
+                       "from a function nobody has read")
 
 
 def c_shoot_range():
