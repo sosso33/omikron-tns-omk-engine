@@ -122,7 +122,68 @@ struct ShootRecord {
     float timer      = 0.0f;                 // +168  a countdown in FRAMES
     int   node       = -1;                   // +188  Shoot_Think's nav node
     int   band       = 0;                    // +190  0 none, 1 wounded, 2 crit
+
+    // ---- THE GEOMETRY (`todo/shoot-mode.md` 5c, 7a) --------------------
+    // `sub_422540` writes these out of the CHARACTER's own properties, read
+    // through event 44 (`Actor_GetProperty`). They are the reach and the
+    // field of view a designer authored, in metres and degrees, and they are
+    // NOT in the weapon table - `tables/shoot_weapons.json`'s `f0` is the
+    // fire rate and its `f1` has no reader at all.
+    float rangeAcquire = 0.0f;               // +32   property 26, 39 * metres
+    float rangeInner   = 0.0f;               // +28   property 27, 39 * metres
+    float rangeThird   = 0.0f;               // +36   property 30, 39 * metres
+    float coneCos      = 0.0f;               // +40   cos(property 29 degrees)
+    float weaponTimer  = 0.0f;               // +172  reloaded with the row's f0
 };
+
+// The six properties `sub_422540` asks for, in the order it asks - each read
+// gating the next, so a character that answers none gets none of the rest.
+// Metres and degrees as authored; the record holds them converted.
+struct ShootProperties {
+    int health      = 0;    // property 1  - 0 is rewritten to 10
+    int rangeAcquireM = 0;  // property 26 - metres
+    int rangeInnerM   = 0;  // property 27 - metres
+    int rangeThirdM   = 0;  // property 30 - metres
+    int coneDegrees   = 0;  // property 29
+    int behaviourBits = 0;  // property 37 - fanned out into `flags`
+};
+
+// `sub_422540` (0x00422540). The inch-per-metre factor is the engine's own
+// 39 - the same one the pedestrian spawn and the projectile speed use.
+void initShootRecord(ShootRecord& r, const ShootProperties& p);
+
+// What `sub_420C70` leaves behind for `sub_420EB0` to read rather than
+// recompute. The engine keeps them in four globals; naming them is the whole
+// of the difference.
+struct AcquireOut {
+    float dist2d2 = 0.0f;   // flt_90E118  the SQUARED 2D distance
+    float dist3d  = 0.0f;   // flt_90E108
+    float dot     = 0.0f;   // flt_90E0F0  the full 3D forward dot
+    float dotFlat = 0.0f;   // flt_90E114  its horizontal part
+    float cross   = 0.0f;   // flt_90E0F4  the left/right sign
+};
+
+// `sub_420C70` (0x00420C70): is `targetPos` inside the shooter's cone AND
+// within his range?
+//
+// `self` is `Actor_GetPosAndFacing`'s four floats - x, y, z, yaw in degrees -
+// which is what identifies it as the SHOOTER: it is the end that has a
+// facing. `Shoot_ActorEnter` fills it with `Actor_GetPosAndFacing(self)`.
+//
+// The engine forms `self - targetPos` and dots it against `(0,0,1)` rotated
+// by the yaw. That reads backwards until you remember the heading convention:
+// a character faces **-Z** at yaw 0 (`docs/FILE_FORMATS.md`), so pointing
+// FROM the target TO the shooter and comparing against +Z is the same test as
+// pointing from the shooter to the target and comparing against his real
+// facing. Both signs cancel, and getting either one alone wrong gives a
+// machine that shoots at whatever is behind it - which is what the first
+// transcription of this did, caught by `shoot_range`'s own assertion rather
+// than by reading it again.
+//
+// `sub_420D90` is the same test with the range DOUBLED, the arm used where
+// property 37's bit 4 is set; `doubleRange` selects it.
+bool shootAcquires(const ShootRecord& r, const float self[4], const float targetPos[3],
+                   AcquireOut& out, bool doubleRange = false);
 
 // The behaviour-script walk, `sub_47FB40` (0x0047FB40). Returns the action to
 // play and advances the record; a `{0, n}` entry rewinds to the start.

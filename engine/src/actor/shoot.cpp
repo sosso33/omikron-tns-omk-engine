@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "actor/shoot.h"
 
+#include <cmath>
 #include <cstring>
 
 namespace omk {
@@ -252,5 +253,67 @@ const std::vector<int>& astarothStates() { return kAstarothStates; }
 const std::vector<int>& genericStates()  { return kGenericStates; }
 const std::vector<ShootEdge>& astarothEdges() { return kAstarothEdges; }
 const std::vector<ShootEdge>& genericEdges()  { return kGenericEdges; }
+
+// ---------------------------------------------------------------------
+// THE GEOMETRY (`todo/shoot-mode.md` 5c, 7a)
+// ---------------------------------------------------------------------
+
+// `sub_422540` (0x00422540), called once from `Shoot_ActorEnter`. Six reads
+// of event 44 (`Actor_GetProperty`) chained so each gates the next - a
+// character that fails to answer one gets none of the rest, which is why the
+// defaults here are zero rather than something plausible.
+//
+// `39` is the engine's own inch-per-metre factor, the same constant the
+// pedestrian spawn (`39 * (5 - density) * h[3]`) and the projectile speed
+// (`property.hi * 3.9`) use. The ranges are therefore authored in METRES and
+// the cone in DEGREES, per character - and NOT in the weapon table, whose two
+// floats are the fire rate and one nothing reads.
+void initShootRecord(ShootRecord& r, const ShootProperties& p) {
+    r.health = p.health ? p.health : 10;          // the engine's own default
+    r.rangeAcquire = static_cast<float>(39 * p.rangeAcquireM);
+    r.rangeInner   = static_cast<float>(39 * p.rangeInnerM);
+    r.rangeThird   = static_cast<float>(39 * p.rangeThirdM);
+    r.coneCos      = static_cast<float>(std::cos(p.coneDegrees * 3.14159265358979 / 180.0));
+    // property 37's five bits, fanned into `+160` exactly as the engine fans
+    // them - the values are not a contiguous field and the order is its own.
+    r.flags = 64;                                  // `u32(rec,160) = 64`
+    if (p.behaviourBits & 0x10) r.flags |= 0x4000000u;
+    if (p.behaviourBits & 0x04) r.flags |= 0x0800000u;
+    if (p.behaviourBits & 0x08) r.flags |= 0x2000000u;
+    if (p.behaviourBits & 0x02) r.flags |= 0x1000000u;
+    if (p.behaviourBits & 0x20) r.flags |= 0x0100000u;
+}
+
+// `sub_420C70` (0x00420C70) and its wider twin `sub_420D90`.
+//
+// `self` is the end carrying a yaw, so it is the SHOOTER. The engine forms
+// `self - targetPos` and dots it against `(0,0,1)` rotated by that yaw; the
+// two sign conventions cancel, because a character faces -Z at yaw 0. See the
+// header - the first version of this had the roles the other way round and
+// would have made every gunman shoot at whatever stood behind him.
+//
+// `dot > cos(half) * dist` is the cone with both sides scaled by the distance
+// instead of normalising, and the second clause is the range.
+bool shootAcquires(const ShootRecord& r, const float self[4], const float targetPos[3],
+                   AcquireOut& out, bool doubleRange) {
+    const double dx = double(self[0]) - targetPos[0];
+    const double dy = double(self[1]) - targetPos[1];
+    const double dz = double(self[2]) - targetPos[2];
+    out.dist2d2 = static_cast<float>(dx * dx + dz * dz);
+    out.dist3d  = static_cast<float>(std::sqrt(dy * dy + out.dist2d2));
+
+    const double yaw = self[3] * 3.14159265358979 / 180.0;
+    // `sub_442160(0, yaw, 0)` then `Matrix3x3_RotateVector(0,0,1, m)` - the
+    // row-vector convention this repo uses everywhere.
+    const double fx = std::sin(yaw), fy = 0.0, fz = std::cos(yaw);
+
+    out.dotFlat = static_cast<float>(dz * fz + dx * fx);
+    out.dot     = static_cast<float>(fy * dy + out.dotFlat);
+    out.cross   = static_cast<float>(dx * fz - dz * fx);
+
+    const double reach = doubleRange ? double(r.rangeAcquire) + r.rangeAcquire
+                                     : double(r.rangeAcquire);
+    return out.dot > double(r.coneCos) * out.dist3d && out.dist3d < reach;
+}
 
 }  // namespace omk

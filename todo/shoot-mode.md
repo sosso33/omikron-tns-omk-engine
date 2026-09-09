@@ -452,6 +452,69 @@ Written down so step 5 cannot quietly assume it:
   for out of property 34. What is still unread there is the AIM
   (`sub_44D7F0`) and what starts the timer.
 
+## 7. WIRING THE GENERIC BRAIN — the plan, opened 2026-09-09
+
+`standing-unknowns` §2 refused this while three things were unread. All three
+are read (§5b, §5c), so it is now sized work rather than a guess, and it gets
+its own step list because it is the size of steps 1-5 over again.
+
+**The rule that governs it, and it is the one the whole file has followed:
+only what is READ gets wired.** `sub_424DE0` is a state machine over four
+geometric calls plus `Shoot_ActorAction` and `List_PickRandomByType`. Where a
+state's arm has been transcribed it is ported; where it has not, the port must
+say so rather than invent a plausible branch. The existing arms are already
+"state graphs only" and labelled that way in `engine/README.md`; this replaces
+that labelling one state at a time, and the label moves with the code.
+
+| # | step | state |
+|---|---|---|
+| 7a | **the record's geometry** — `sub_422540`'s six properties into the record (both ranges, the third, the cone's cosine, health, the flag fan-out), and the acquisition pair `sub_420C70` / `sub_420D90` with the four values they leave behind |**DONE 2026-09-09**, §7a below; `verify.py: shoot range` |
+| 7b | **the turn** — `sub_420EB0` on the Euler at `actor+420`, its three thresholds and its `180` / `±90` snap returns | |
+| 7c | **the states** — `sub_424DE0` read arm by arm and ported, each one carrying what it was read from; the ones not reached stay declared | |
+| 7d | **the frame loop** — the brain called from `Shoot_TickNpc`'s place, the occupancy stamp/restore pair around it, and `omk-play --shoot` driving it | |
+| 7e | checks, and a PLAY TEST — which is the one thing steps 1-6 never got | |
+
+Each step ends in a commit and a report, and 7e is not optional: the gunmen
+have never been seen by a person, and `finished-means-usable` is the standard
+this repo is held to.
+
+## 7a. The record's geometry — done 2026-09-09
+
+`ShootRecord` gained the four authored numbers and the weapon countdown;
+`initShootRecord` is `sub_422540` and `shootAcquires` is `sub_420C70` with its
+wide twin `sub_420D90` behind a flag. The four values the engine leaves in
+globals for `sub_420EB0` to read are returned in an `AcquireOut` instead,
+which is the whole of the difference.
+
+**The shipped numbers are worth having on their own**, because they are the
+first direct evidence of how a gunman was TUNED rather than of how the code
+runs. Read off the 276-byte actor records (property 26 is `0x1A`, an int16 at
+`+180`), `verify.py: shoot range`:
+
+* **386 of 1032** records carry an acquisition range, 427 a cone;
+* the ranges are round metres and they cluster — **50 m on 100 characters**,
+  30 m on 86, 80 m on 54, 70 m on 49, 90 m on 28 — with nothing in between;
+* the cones are round degrees, **80° on 204** characters and 90° on 98.
+
+Three records answer **13944** to both, which nobody typed: their `+180` lands
+on something that is not a range. They are left in the histogram rather than
+filtered, so the count stays honest about what the walk found.
+
+> **THE FIRST TRANSCRIPTION HAD THE TWO ENDS SWAPPED**, and the probe caught
+> it rather than a re-reading. `sub_420C70`'s first argument is the one
+> carrying a YAW, so it is the SHOOTER, and the vector it forms is
+> `self - target` dotted against `(0,0,1)` rotated by that yaw. That reads
+> backwards until the heading convention is remembered — a character faces
+> **−Z** at yaw 0 — at which point the two sign conventions cancel. Written
+> with either one alone wrong it builds a gunman who shoots at whatever is
+> standing behind him, and both versions look equally reasonable in the
+> source. The check asserts the behaviour (front taken, back and abeam
+> refused, and turning him 180° swaps them) rather than the formula, which is
+> why it could catch this at all.
+
+Both halves shown to fail: swapping the ends flips front and back, and
+`39 → 1` puts a 20 m range at 20 units.
+
 ## 5b. The two weapon floats — step 5's first reading, 2026-09-09
 
 `tables/shoot_weapons.json`'s lifter says of the two floats: *"they are a range

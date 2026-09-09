@@ -25824,6 +25824,92 @@ def c_engine_shoot_mode():
             "and what `omk-play --shoot` installs in the Shooting gallery")
 
 
+def c_shoot_range():
+    r"""`engine/`: a gunman's REACH and FIELD OF VIEW, read off the shipped
+    character records, and the acquisition test run.
+
+    `sub_422540` builds the shoot record out of the CHARACTER's own properties
+    through event 44 (`Actor_GetProperty`), not out of the weapon table:
+    property 26 is the acquisition range and 27 and 30 two more, all `39 *
+    METRES` into the record, and 29 is the sight cone's half-angle in DEGREES,
+    stored as its cosine (`todo/shoot-mode.md` 5c). Those properties sit in
+    the 276-byte actor record - 26 is `0x1A`, an int16 at `+180` - so what a
+    designer authored can simply be read, and it reads like authored numbers:
+
+    * **386 of 1032** records carry a range and 427 a cone;
+    * the ranges are ROUND METRES and cluster - 50 m on 100 characters, 30 m
+      on 86, 80 m on 54, 70 m on 49 - with nothing between the round values;
+    * the cones are round degrees, **80 deg on 204** characters and 90 on 98.
+
+    Three records answer **13944** to both the range and the cone, which is
+    not a value anybody authored: they are records whose `+180` lands on
+    something else, and they are left in the histogram rather than filtered so
+    that the count stays honest about what the walk found.
+
+    Then the three properties of `sub_420C70` that a tally cannot reach, each
+    a thing that looks equally plausible with the sign the other way:
+
+    * **a character faces -Z at yaw 0**, so a gunman takes what is at negative
+      z and refuses what is at positive z, and turning him 180 degrees swaps
+      the two. The engine writes this as `self - target` dotted with `(0,0,1)`
+      rotated by his own yaw - two conventions that cancel - and the FIRST
+      transcription here had the two ends swapped, which would have built a
+      machine that shoots at whatever stands behind it. This assertion is what
+      caught it, not a re-reading.
+    * **the cone bites**: a target abeam at the same distance is refused where
+      one straight ahead is taken.
+    * **`sub_420D90` doubles the range**: 30 m is refused by the narrow arm
+      and taken by the wide one, on a 20 m record.
+    """
+    import subprocess, re
+    fr = omkpaths.data_root()
+    if not os.path.isdir(fr):
+        return ("no data",), ("data",), "needs the shipped tree"
+    eng = os.path.join(ROOT, "engine")
+    b = subprocess.run(["make", "-s", "build/shoot_range"], cwd=eng,
+                       capture_output=True, text=True)
+    binp = os.path.join(eng, "build", "shoot_range")
+    if b.returncode != 0 or not os.path.exists(binp):
+        return ("build failed",), ("built",), "engine/ must build"
+    r = subprocess.run([binp, fr], capture_output=True, text=True)
+    hm = re.search(r"^actor records (\d+), with an acquisition range (\d+), "
+                   r"with a cone (\d+)$", r.stdout, re.M)
+    rg = re.search(r"^ranges \(metres\):(.*)$", r.stdout, re.M)
+    cn = re.search(r"^cones \(degrees\):(.*)$", r.stdout, re.M)
+    rc = re.search(r"^record: range (\d+) inner (\d+) third (\d+) coneCos "
+                   r"([\d.]+) health (\d+) flags ([0-9a-f]+)$", r.stdout, re.M)
+    ac = re.search(r"^acquire: front (\d) back (\d) side (\d) far (\d) "
+                   r"far-wide (\d); turned front (\d) back (\d)$", r.stdout, re.M)
+    if not (hm and rg and cn and rc and ac):
+        return ("unparsed",), ("parsed",), "the probe's own summary lines"
+    ranges = tuple(sorted((int(a), int(c)) for a, c in
+                          (kv.split(":") for kv in rg.group(1).split())))
+    cones  = tuple(sorted((int(a), int(c)) for a, c in
+                          (kv.split(":") for kv in cn.group(1).split())))
+    got = (tuple(int(x) for x in hm.groups()), ranges, cones,
+           (int(rc.group(1)), int(rc.group(2)), int(rc.group(3)),
+            rc.group(4), int(rc.group(5)), rc.group(6)),
+           tuple(int(x) for x in ac.groups()))
+    want = ((1032, 386, 427),
+            ((10, 20), (12, 8), (15, 16), (16, 2), (20, 13), (25, 3), (30, 86),
+             (50, 100), (60, 3), (70, 49), (80, 54), (90, 28), (500, 1), (13944, 3)),
+            ((25, 10), (45, 43), (50, 1), (60, 47), (70, 20), (75, 1), (80, 204),
+             (90, 98), (13944, 3)),
+            (780, 0, 0, "0.7071", 10, "04800040"),
+            (1, 0, 0, 0, 1, 0, 1))
+    return got, want, ("actor records, those carrying an acquisition range "
+                       "and those carrying a cone; the two histograms, which "
+                       "are round metres and round degrees because a person "
+                       "typed them; then one record built from properties "
+                       "(20 m -> 780 units, 45 deg -> its cosine, health 0 "
+                       "-> the engine's default 10, and property 37's bits "
+                       "fanned into +160); and the acquisition itself - "
+                       "AHEAD is -Z, behind and abeam are refused, 30 m is "
+                       "out of a 20 m reach until the DOUBLED arm takes it, "
+                       "and turning the gunman 180 degrees swaps front for "
+                       "back")
+
+
 def c_bone_names():
     r"""`engine/`: how an animation track finds its BONE, over the whole corpus.
 
@@ -30735,6 +30821,7 @@ CHECKS = [
     ("map2d grid",         c_map2d_grid,        "todo/shoot-mode; formats/map2d.h"),
     ("map2d sight",        c_map2d_sight,       "todo/shoot-mode 5c; formats/map2d.h"),
     ("bone names",         c_bone_names,        "todo/omk-play 96; ASSETS"),
+    ("shoot range",        c_shoot_range,       "todo/shoot-mode 5c, 7a; actor/shoot.h"),
     ("engine: shoot mode", c_engine_shoot_mode,  "todo/shoot-mode; actor/shootmode.h"),
     ("wre wireframes",     c_wre_files,         "FILE_FORMATS 5b5"),
     ("morph face models",  c_morph_face_models, "FILE_FORMATS 5"),
