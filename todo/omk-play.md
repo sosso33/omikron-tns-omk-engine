@@ -15,21 +15,58 @@ waiting on its evidence.
 
 ## Open (batch 7, filed 2026-09-09)
 
-### 92. "Je ne vois pas quoi faire avec ça" while the object is still taken — OPEN
+### 92. "Je ne vois pas quoi faire avec ça" while the object is still taken — A
 
-> **PARTIALLY RESOLVED, 2026-09-09.** The take works (91); the voice line does
-> not belong there. **The reader, who has played the original: *"It is an issue
-> of the port, the original doesn't do that — the original doesn't show the
-> 'non-interactable' message while taking the object in the cupboard."*** Left
-> as it is for now, by their instruction, and filed here so the next session
-> starts from the right end.
->
-> This entry first said NOT A BUG, on the strength of the chain of readings
-> below and nothing else. That was the mistake: a chain of transcriptions is
-> evidence about the code I have read, not about the game, and one mis-read
-> link produces a chain that is internally consistent and wrong. **A reader who
-> has played the original is the authority on what the original does.** The
-> chain is kept because it says exactly which links have to be attacked.
+> **FIXED 2026-09-09**, and the reader was right on every count. Driven
+> headlessly both ways; not watched in play yet.
+
+A reader, straight after 91: *it works, but it always says "Je ne sais pas quoi
+faire avec ça" like nothing is interactable, but the character still takes the
+object* — *(only for the cupboard case)* — and, when this entry first closed as
+NOT A BUG on the strength of a chain of readings: ***"It is an issue of the
+port, the original doesn't do that."***
+
+**THE ANSWER: `Game_RaiseEvent(6, 4)` is raised from inside `MDACTION`, on the
+arm where the scan found NOTHING.** Not from the `.CTL`, which is what this
+port assumed and never checked. The handler's exits (0x0046AEC0):
+
+```
+scan hit, in reach  -> sub_465D30 ...          retn      the take
+sub_465D30 refused  -> loc_46AFB2 ...          retn
+something HELD      -> loc_46AFD0 ...          retn
+scan MISS / out of reach / ACTOR_STATE 3
+                    -> loc_46AFF8, the slider arm; no slider ->
+                       loc_46B281: sub_452280 (talk to a walker), else
+                       sub_467950 -> Game_RaiseEvent(6, 4)
+```
+
+So **a press that finds an object never becomes a zone press at all**, and
+`Script_Pump` step 2 — *a press was registered, no zone activated, the hand is
+empty* — cannot fire on it. The port called `Session::pressAction()` off the
+special-move list, so every take press went to the zone system too; and because
+the cupboard's zone is a spent ONE-SHOT (`-28735`: `oneShot 1`, scripts
+9688/9696/9716, arc 90° ± 48°), nothing could consume it and GLOBAL script 10
+played one of its seven lines every single time.
+
+Fixed by modelling the arm: `actionTookObject` is set from
+`scanTakeable`'s own answer — from the SCAN and not from whether the take
+succeeded, because a refusal returns at `loc_46AFB2` too — and gates the press.
+
+Measured over one five-press run in the kitchen: the cupboard opens
+(`ACTIVATE zone -28735` at frame 34), `Purée` and `Nourriture Bière` are both
+taken, and **no message 26 anywhere**. Press on with the shelf empty and the
+line comes back at frames 678 and 742 — `Quoi ?` then *"Je ne vois pas quoi
+faire avec ça."* — which is what it is for. Both halves are asserted, as an
+ORDER rather than a count, by `verify.py: engine: cupboard take`.
+
+**And the lesson is the shape of the search, not the fix.** Seven links were
+read and cleared — the one-shot ping-pong, `dword_4E6B24`, `sub_465D30`,
+`dword_4E66B8`, the subscription record, `byte_910309`, the pump/actor frame
+order — while the answer sat behind the one thing that was never written down
+as a link at all: *where the press comes from*. The chain below is kept for
+that reason. A chain of transcriptions is evidence about the code that was
+read; every step of it can be right while the conclusion is wrong, because the
+assumption you did not notice you were making is not in the chain.
 
 A reader, straight after 91: *it works, but it always says "Je ne sais pas
 quoi faire avec ça" like nothing is interactable, but the character still

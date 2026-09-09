@@ -5921,6 +5921,11 @@ int main(int argc, char** argv) {
                 // the engine can raise from here without the six-presses-per
                 // -press problem the raw LEVEL had.
                 bool actionFromMove = false;
+                // ...AND WHETHER MDACTION'S OWN OBJECT ARM CONSUMED THE PRESS.
+                // See the gate on `session.pressAction()` below: the press
+                // only reaches the zone system on the arm where the scan
+                // found NOTHING.
+                bool actionTookObject = false;
                 for (const auto& mv : (playerTicked ? player->specialMoves() : kNoMoves)) {
                     if (mv == "MDACTION") actionFromMove = true;
                     // THE JUMP'S IMPULSE (`todo/player-vertical.md` step 2).
@@ -6015,6 +6020,13 @@ int main(int argc, char** argv) {
                         float dyFeet = 0.0f;
                         const int obj = session.scanTakeable(player->pos(),
                                                              player->facing(), &dyFeet);
+                        // `sub_41C810` answered with something inside
+                        // `flt_4BC918`, so MDACTION takes its object arm and
+                        // RETURNS - see the `pressAction` gate below. Set from
+                        // the scan and not from whether the take succeeded,
+                        // because `sub_465D30` refusing lands at `loc_46AFB2`,
+                        // which returns too.
+                        if (obj >= 0) actionTookObject = true;
                         float op[3] = {0, 0, 0};
                         bool  ok = obj >= 0 && session.propPos(obj, op);
                         float D = 0.0f, angle = 0.0f, target = 0.0f, second = 0.0f;
@@ -6436,8 +6448,37 @@ int main(int argc, char** argv) {
                 // already installs 41/143/600 when it does. Its symptom was a
                 // reader finishing a shop seller's conversation and watching
                 // the whole take graph run on nothing: reach, wait, put back.
+                // ---- AND THE PRESS ONLY REACHES THE ZONES IF MDACTION
+                // ---- FOUND NOTHING TO TAKE.
+                //
+                // `Game_RaiseEvent(6, 4)` - the thing `Script_Pump` sees as
+                // `dword_4E6C90` - is raised from INSIDE `MDACTION`
+                // (0x0046AEC0), on one arm and one only. The handler's exits:
+                //
+                //     scan hit, in reach -> sub_465D30 ... retn   (the take)
+                //     sub_465D30 refused -> loc_46AFB2   ... retn
+                //     something HELD     -> loc_46AFD0   ... retn
+                //     scan MISS / out of reach / state 3 -> loc_46AFF8, the
+                //         slider arm; no slider -> loc_46B281:
+                //             sub_452280 (talk to a walker) ... else
+                //             sub_467950 -> Game_RaiseEvent(6, 4)
+                //
+                // So a press that finds an object never becomes a zone press
+                // at all, and `Script_Pump` step 2 - "a press was registered,
+                // no zone activated, the hand is empty" - cannot fire on it.
+                //
+                // THIS IS `todo/omk-play.md` 92, and it is the link that was
+                // never on the list: seven others were read and cleared while
+                // this one was assumed, because the port raised the press off
+                // the special-move list rather than off the arm. The symptom
+                // was a reader taking food out of Kay'l's kitchen cupboard and
+                // hearing *"Je ne vois pas quoi faire avec ca"* every time -
+                // one of GLOBAL script 10's seven, posted because the cupboard
+                // zone is a spent ONE-SHOT and nothing else could consume the
+                // press. With the arm modelled, the line goes back to what it
+                // is for: a press with nothing in front of you.
                 if (actionFromMove && stateAllowsAction && !session.dialogOpen() &&
-                    !actionSpent) {
+                    !actionSpent && !actionTookObject) {
                     const int armed = session.zones().armedCount();
                     const std::int16_t z = session.zones().armedZone();
                     // omk-play 66: EVERY press is reported, with where he

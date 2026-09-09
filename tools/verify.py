@@ -11948,15 +11948,39 @@ def c_engine_cupboard_take():
                         "--address", "685",
                         # open, then take twice: each take is a step, the
                         # adjust, the grab and the bank
-                        "--hold", "0*30,k28*4,0*120,k28*4,0*40,k28*4,0*160,"
-                                  "k28*4,0*40,k28*4,0*160",
-                        "--frames", "700"],
+                        "--hold", "0*30,k28*4,0*120,k28*4,0*40,k28*4,0*180,"
+                                  "k28*4,0*40,k28*4,0*180,k28*4,0*60,"
+                                  "k28*4,0*60,k28*4,0*60",
+                        "--frames", "1000"],
                        capture_output=True, text=True,
                        env=dict(os.environ, SDL_VIDEODRIVER="dummy"),
                        encoding="utf-8", errors="replace")
     o = r.stdout
     took = [int(m.group(1))
             for m in _re.finditer(r"take: MDGETOBJ - holding (\d+)", o)]
+    # ---- AND THE LINE, WHICH MUST NOT PLAY OVER A TAKE (omk-play 92) ----
+    #
+    # `Game_RaiseEvent(6, 4)` is raised INSIDE `MDACTION` and on one arm only:
+    # a scan hit returns through `sub_465D30`, a refusal returns at
+    # `loc_46AFB2` and a full hand at `loc_46AFD0`, while only the MISS falls
+    # to `loc_46AFF8` -> `loc_46B281` -> `sub_467950`. So a press that finds
+    # something never becomes a zone press, and `Script_Pump` step 2 cannot
+    # fire on it. The cupboard is where that shows, because its zone is a
+    # spent ONE-SHOT: nothing else can consume the press, so every take press
+    # used to post message 26 and GLOBAL script 10 played one of its seven
+    # ("Je ne vois pas quoi faire avec ca" and friends). A reader heard it on
+    # every take.
+    #
+    # Asserted as an ORDER rather than a count, which is the shape of the
+    # rule: none of the seven may sound before the last object is in hand, and
+    # pressing on with the shelf empty must still produce one - muting it
+    # everywhere would be a different bug.
+    chatter = [m.start() for m in _re.finditer(
+        r"media\.play (?:109|110|111|114|115|116|117) \(ZVO", o)]
+    lastTake = max((m.start() for m in
+                    _re.finditer(r"take: MDGETOBJ - holding \d+", o)), default=-1)
+    quietOverTakes = lastTake >= 0 and all(c > lastTake for c in chatter)
+    speaksWhenEmpty = len(chatter) > 0
     shown = dict((int(m.group(1)),
                   tuple(float(m.group(i)) for i in (2, 3, 4)))
                  for m in _re.finditer(
@@ -11970,13 +11994,17 @@ def c_engine_cupboard_take():
     flat = math.hypot(ox - px, oz - pz)
     solid = math.sqrt((ox - px) ** 2 + (oy - py) ** 2 + (oz - pz) ** 2)
     return (took, round(flat, 1), round(solid, 1),
-            flat < 59.055119, solid < 59.055119), \
-           ([31, 457], 35.7, 64.2, True, False), \
+            flat < 59.055119, solid < 59.055119,
+            quietOverTakes, speaksWhenEmpty), \
+           ([31, 457], 35.7, 64.2, True, False, True, True), \
            ("the kitchen cupboard's two props are taken in turn - `Purée` "
             "then `Nourriture Bière` - and the reason is the reach: 31 is "
             "35.7 away ON THE FLOOR, inside `flt_4BC918`'s 150 cm, and 64.2 "
             "away in three dimensions, outside it, because it sits 53 units "
-            "up on a shelf; `sub_41C810` never reads a Y")
+            "up on a shelf; `sub_41C810` never reads a Y - and NOT ONE of "
+            "GLOBAL script 10's seven 'nothing here' lines sounds before the "
+            "last of them is in hand, while pressing on with the shelf empty "
+            "still produces one")
 
 
 def c_engine_path_turn():
