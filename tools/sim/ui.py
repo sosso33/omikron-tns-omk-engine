@@ -936,6 +936,19 @@ class Ui:
         for lst in ls:
             its = self.items(lst)
             j = self._osel.get(lst, -1)
+            # **AND A SELECTION THAT IS NOT PICKABLE MOVES OFF IT.**
+            # `Ui_MoveSelection` steps over unselectable rows, so a selection
+            # can never REACH one by moving; the same rule applies to one
+            # arriving from somewhere else - an open callback's `+2`, or a
+            # selection left behind on another screen. The port grew this in
+            # `dedd3da` from a play report: a player who used the start menu
+            # and then opened a save point had the panel sitting on a hidden
+            # `Charger`, and confirming it LOADED instead of saving. It was
+            # never added here, and that is the nine screens `engine: UI`
+            # counts as disagreeing - the shops, 21..28 and 32, settling on
+            # row 0 in the port and row 1 in this reference.
+            if 0 <= j < len(its) and not self.selectable(its[j], lst):
+                j = -1
             self.sel[lst] = (j if 0 <= j < len(its) else
                              next((k for k, it in enumerate(its)
                                    if self.selectable(it, lst)), 0))

@@ -2004,7 +2004,7 @@ def c_engine_i2d():
     and the two panels no item points at). It counts the widget tree's flag
     CONSTANTS, and the tree grew: 99 constants became 115, the middle bank 75
     became 91, the set/test round trips 47 became 57, and the item flag words
-    the data actually uses went from (24, 357, 190) to (116, 544, 291).
+    the data actually uses went from (24, 357, 190) to (117, 549, 306).
 
     None of that is a fault - it is a census of a generated table, and the
     table legitimately gained records. What matters is that **the two
@@ -2117,9 +2117,9 @@ def c_engine_i2d():
              200, 200, 5032, 1407, 1407, 147,
              1, 1, 0, 24, 2, 1,
              2, 1, 2,
-             115, 115, 22, 91, 2,
+             117, 117, 22, 93, 2,
              57, 57,
-             116, 544, 291), True, True), \
+             117, 549, 306), True, True), \
            "the seven pools' total capacity, how many are live, how many are " \
            "UNREFERENCED, and whether the total equals the display list's own " \
            "node cap of 4862 - which is what makes that number derived rather " \
@@ -16764,7 +16764,7 @@ def c_engine_ui():
     known = tuple(sorted((a[0], a[4], b[4]) for a, b in zip(mine, ref)
                          if a != b and a[0] in bound))
     return (head, len(ref), disagree, known), \
-           ((46, 134, 611, 551, 52, 82, 46, 0), 31, 0, ((7, 0, 3), (9, 0, 4))), \
+           ((51, 145, 628, 567, 52, 93, 51, 0), 31, 0, ((7, 0, 3), (9, 0, 4))), \
            "panels (31 screens + 15 children - 13 reached through an item +44 and TWO named only from CODE, the verb panel 0x004DEEB8 and the examine page 0x004DEF20, which `sub_42A370` installs from a callback so nothing in the tree points at them), " \
            "lists, items, SELECTABLE items - which FELL by ten once the " \
            "shops' branch was resolved and each of them started hiding the " \
@@ -18495,7 +18495,7 @@ def c_ui_geometry():
     xy = [(it["x"], it["y"]) for l in lift[0]["lists"] for it in l["items"]][:7] if lift else []
     return (len(items), inb, sized, len(r["panels"]), len(maps), lens, clean,
             menuMap, xy), \
-           (611, 611, 610, 46, 34, [80], 34,
+           (628, 628, 627, 51, 34, [80], 34,
             False,
             [(278, 194), (321, 194), (370, 194),
              (284, 241), (325, 242), (371, 242), (325, 288)]), \
