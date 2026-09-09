@@ -25824,6 +25824,75 @@ def c_engine_shoot_mode():
             "and what `omk-play --shoot` installs in the Shooting gallery")
 
 
+def c_projectile_pool():
+    r"""`engine/`: what a SHOT is - the projectile pool and the fire gate.
+
+    `Actor_TickProjectiles` (0x0044D110) is the whole of firing, and it is a
+    pool allocator with a gate in front of it: four weapon SLOTS per actor,
+    each with its own weapon object at `actor+84 + 4*slot`, its own countdown
+    at `actor+148 + 4*slot`, and its own ammunition (property 35, indexed by
+    slot). `todo/shoot-mode.md` 4c, 7f.
+
+    **The pool's geometry is the check the data can fail**, and this tree got
+    it wrong once: `0x534F48 - 0x531348 = 15360`, which is 256 entries of
+    **60** bytes exactly, where the 52 first recorded gives 295.38. A stride
+    that does not divide the pool is not a stride.
+
+    Then four behaviours, three of which a tidier port would quietly lose:
+
+    * a magazine empties one round per shot, the entry carries
+      `property34.hi * 3.9` as its speed and is placed at the WEAPON's muzzle;
+    * **a gap in the slots hides everything behind it** - the engine's walk is
+      `if (!weapon) return`, not `continue`, so a weapon in slot 1 behind an
+      empty slot 0 never fires at all;
+    * **a full pool takes no shot and spends no round** - the free scan
+      returns -1 and the function returns outright, so the ammunition is still
+      there when a slot frees up;
+    * **a refused aim spends the round anyway.** `sub_44D7F0` sets the
+      direction and may REFUSE, and when it does the engine `return 0`s with
+      the entry already allocated and the node already cloned. So the shot
+      does not happen, the round is gone and the pool entry is occupied -
+      which is the sort of asymmetry only transcription preserves.
+
+    NOT modelled: the node clone itself, the direction `sub_44D7F0` sets (it
+    is unread), and the packing of property 35's slot-and-count word.
+    """
+    import subprocess, re
+    eng = os.path.join(ROOT, "engine")
+    b = subprocess.run(["make", "-s", "build/projectile_probe"], cwd=eng,
+                       capture_output=True, text=True)
+    binp = os.path.join(eng, "build", "projectile_probe")
+    if b.returncode != 0 or not os.path.exists(binp):
+        return ("build failed",), ("built",), "engine/ must build"
+    r = subprocess.run([binp], capture_output=True, text=True)
+    g = re.search(r"^pool (\d+) entries x (\d+) bytes = (\d+), span \S+ = (\d+)$",
+                  r.stdout, re.M)
+    m = re.search(r"^magazine: (\d+) shots, (\d+) ammo left, live (\d+), "
+                  r"speed ([\d.]+) kind (\d+) at (\d+) (\d+) (\d+)$", r.stdout, re.M)
+    gp = re.search(r"^gap: (\d+) shots", r.stdout, re.M)
+    fl = re.search(r"^full: (\d+) taken, (\d+) live, (\d+) ammo left, free slot (-?\d+)$",
+                   r.stdout, re.M)
+    rf = re.search(r"^refused: (\d+) fired, (\d+) ammo left, (\d+) live$", r.stdout, re.M)
+    if not (g and m and gp and fl and rf):
+        return ("unparsed",), ("parsed",), "the probe's own lines"
+    got = (tuple(int(x) for x in g.groups()),
+           (int(m.group(1)), int(m.group(2)), int(m.group(3)), m.group(4),
+            int(m.group(5)), int(m.group(6)), int(m.group(7)), int(m.group(8))),
+           int(gp.group(1)), tuple(int(x) for x in fl.groups()),
+           tuple(int(x) for x in rf.groups()))
+    want = ((256, 60, 15360, 15360),
+            (3, 0, 3, "78.0", 7, 10, 20, 30),
+            0, (256, 256, 244, -1), (0, 3, 1))
+    return got, want, ("the pool's entries, stride, product and the ADDRESS "
+                       "SPAN it has to equal - 60 bytes divides 15360 and 52 "
+                       "does not; then a magazine emptying with the speed as "
+                       "`property34.hi * 3.9` and the entry at the weapon's "
+                       "muzzle; a weapon BEHIND an empty slot firing nothing, "
+                       "because the walk returns rather than skipping; a full "
+                       "pool taking no shot AND spending no round; and a "
+                       "refused aim spending the round and the entry anyway")
+
+
 def c_shoot_input():
     r"""`engine/`: what the MOUSE does, per control scheme.
 
@@ -29126,7 +29195,7 @@ def c_licence_headers():
                    if TAG in open(p, encoding="utf-8",
                                   errors="replace").read(600)]
     return (authored, sorted(missing), len(vendored), mislabelled), \
-           (405, [], 1, []), \
+           (408, [], 1, []), \
            "authored source files under tools/, engine/src, engine/tools, " \
            "engine/backends and scripts/; those MISSING the SPDX tag; " \
            "vendored files in engine/third_party; and vendored files wrongly " \
@@ -31152,6 +31221,7 @@ CHECKS = [
     ("bone names",         c_bone_names,        "todo/omk-play 96; ASSETS"),
     ("shoot range",        c_shoot_range,       "todo/shoot-mode 5c, 7a; actor/shoot.h"),
     ("shoot generic",      c_shoot_generic,     "todo/shoot-mode 7c; actor/shoot.h"),
+    ("projectile pool",    c_projectile_pool,   "todo/shoot-mode 4c, 7f; actor/projectile.h"),
     ("shoot input",        c_shoot_input,       "todo/omk-play 97b; input/bindings.h"),
     ("engine: shoot brain", c_engine_shoot_brain, "todo/shoot-mode 7d; actor/shoot.h"),
     ("engine: shoot mode", c_engine_shoot_mode,  "todo/shoot-mode; actor/shootmode.h"),

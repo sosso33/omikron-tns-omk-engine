@@ -789,6 +789,49 @@ the right numbers.
 > at the player and holds his ground. States 1, 2 and 4 are transcribed and
 > ported but nothing feeds them.
 
+## 7f. The projectile pool, and what a shot IS
+
+`Actor_TickProjectiles` (0x0044D110) is the whole of firing, and it is a pool
+allocator with a gate in front of it: **four weapon slots per actor**, each
+with its own weapon object at `actor+84 + 4·slot`, its own countdown at
+`actor+148 + 4·slot`, and its own ammunition (property 35, indexed by slot).
+
+The entry, 60 bytes:
+
+| | |
+|---|---|
+| `+0` | the NODE — **non-zero is what OCCUPIED means**; the free scan tests this and nothing else |
+| `+8` | the speed, `property34.hi × 3.9` |
+| `+44` | the firing actor |
+| `+48` | derived from the weapon's own node name (`sub_44EEB0`) |
+| `+56` | `property34.lo` |
+
+The node is placed at the WEAPON's `+44/+48/+52` — the muzzle — and
+`sub_44D7F0` then sets its direction and may refuse.
+
+**Three behaviours a tidier port would quietly lose**, each asserted:
+
+* **a gap in the slots hides everything behind it.** The walk is
+  `if (!weapon) return`, not `continue`, so a weapon in slot 1 behind an
+  empty slot 0 never fires at all. Mutating `break` to `continue` turns the
+  check red.
+* **a full pool takes no shot and spends no round.** The free scan returns
+  −1 and the function returns outright, so the ammunition is still there
+  when a slot frees up.
+* **a refused aim spends the round anyway.** `sub_44D7F0` may refuse, and
+  when it does the engine returns with the entry already allocated and the
+  node already cloned — so the shot does not happen, the round is gone, and
+  the pool entry is occupied.
+
+And the pool's geometry is a test the data can fail, which this tree failed
+once: `0x534F48 − 0x531348 = 15360` is **256 × 60** exactly, where the 52
+first recorded gives 295.38. A stride that does not divide the pool is not a
+stride.
+
+**Not modelled**: the node clone, the direction `sub_44D7F0` sets (unread),
+and the packing of property 35's slot-and-count word. And **nothing calls
+this yet** — the pool exists and is asserted; connecting it to the trigger
+and to the brain's outcome 1 is the next step.
 ## 5b. The two weapon floats — step 5's first reading, 2026-09-09
 
 `tables/shoot_weapons.json`'s lifter says of the two floats: *"they are a range
