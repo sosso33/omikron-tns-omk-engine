@@ -15,6 +15,73 @@ waiting on its evidence.
 
 ## Open (batch 7, filed 2026-09-09)
 
+### 92. "Je ne vois pas quoi faire avec ça" while the object is still taken — NOT A BUG (probably)
+
+> **Investigated 2026-09-09, nothing changed.** Every step below is read out
+> of the binary; what is missing is a capture of the ORIGINAL doing it, and
+> that is the one thing that would overturn it.
+
+A reader, straight after 91: *it works, but it always says "Je ne sais pas
+quoi faire avec ça" like nothing is interactable, but the character still
+takes the object* — and, asked, *(only for the cupboard case)*.
+
+**The line is one of seven, picked at random.** It is `IAM\OBJECT` record
+115, `ZVOP012`, *"Je ne vois pas quoi faire avec ça."*, and GLOBAL **script
+10** is the whole handler:
+
+```
+5011  var.set.random   1, 7, 119        ; VARIABLES[119] = 'n° VO passant'
+5025  media.play       109  'ZVO P004 Rien Int'
+5035  media.play       110  'ZVO P005 Rien Signal'
+5045  media.play       111  'ZVO P006 Rien Partic'
+5055  media.play       114  'ZVO P011 Pas Ca'
+5065  media.play       115  'ZVO P012 Quoi Avec Ca'
+5075  media.play       116  'ZVO P013 Comprends Pas'
+5085  media.play       117  'ZVO P014 Quoi'
+```
+
+GLOBAL script 10 is the **message-26** handler, and `Script_Pump` step 2
+(01_file.c:2180) is the only thing that posts it:
+
+```c
+if (dword_4E6C90 && !dword_4E61E0) {              /* a press, no zone ran */
+    if (Actor_HeldObjectSlot(Actor_Player()) == -1) {
+        if (dword_4E66B8) { evArgs[0] = 26; Game_HandleEvent(43, evArgs); }
+    } ...
+}
+```
+
+**Why the cupboard reaches it, and only the cupboard.** `dword_4E6C90` is set
+by `Game_HandleEvent` case 6 and *only when a zone slot is in use*
+(`if (... || !dword_4E6B24) return 0`), which is why pressing action in an
+open room is silent. The cupboard's zone is `-28735`, and its id carries
+**bit 15**, which the pump reads as ONE-SHOT (`if (slot[11] < 0) state = 5`):
+it activates once — opening the cupboard — and after that
+`Game_HandleEvent` case 7 maps its state 5 back to 4 every frame the player
+stands there while the pump maps 4 back to 5, so the slot never frees and
+never re-enters state 2. Every later press is therefore a press with a slot
+in use and no activate: exactly step 2's condition.
+
+**And the take is unaffected by any of it.** `MDACTION` is `H1Avnt.CTL`
+**group 100, entry 24**, taken on input bit `0x10` from `H_STAND` — the
+default group, reached by the button and by nothing else. The three
+`Game_RaiseEvent(6, 4)` sites *do* short-circuit on a non-zero return, but
+what they skip is `Cef_FindGroupById(bank, 45)`, and **group 45 is
+`H_UNKNO0`** — the shrug. So a zone consumes the SHRUG, never the take.
+
+So the engine plays a random "nothing here" line AND takes the object, which
+is what the reader is seeing. Measured in the port: exactly one message 26 per
+press (frames 158 and 410 of a five-press run), not a repeat, so the port is
+not over-firing it either.
+
+**What would overturn this**: a golden capture of the original opening Kay'l's
+kitchen cupboard and pressing action again. GLOBAL script 10 opens with
+`var.set.random 1, 7, 119`, which announces `VARIABLES 119` — one line in the
+log settles it. **No shipped capture reaches the cupboard at all** (none of
+the five carries `ADDRESSES 685/686`, `OBJECTS 31/457` or `CAMERAS 4460`), and
+`VARIABLES 119` appears **0 times in 1345 events** of real play — which says
+the handler is rare, not that it never fires here.
+
 ### 91. The kitchen cupboard opens onto objects that cannot be taken — A
 
 > **Fixed 2026-09-09**, driven headlessly: both props are taken in turn.
