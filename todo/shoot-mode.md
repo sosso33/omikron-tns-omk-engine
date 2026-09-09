@@ -469,7 +469,7 @@ that labelling one state at a time, and the label moves with the code.
 | # | step | state |
 |---|---|---|
 | 7a | **the record's geometry** — `sub_422540`'s six properties into the record (both ranges, the third, the cone's cosine, health, the flag fan-out), and the acquisition pair `sub_420C70` / `sub_420D90` with the four values they leave behind |**DONE 2026-09-09**, §7a below; `verify.py: shoot range` |
-| 7b | **the turn** — `sub_420EB0` on the Euler at `actor+420`, its three thresholds and its `180` / `±90` snap returns | |
+| 7b | **the turn** — `sub_420EB0` on the Euler at `actor+420`, its three thresholds and its `180` / `±90` snap returns |**DONE 2026-09-09**, §7b below; `verify.py: shoot range` |
 | 7c | **the states** — `sub_424DE0` read arm by arm and ported, each one carrying what it was read from; the ones not reached stay declared | |
 | 7d | **the frame loop** — the brain called from `Shoot_TickNpc`'s place, the occupancy stamp/restore pair around it, and `omk-play --shoot` driving it | |
 | 7e | checks, and a PLAY TEST — which is the one thing steps 1-6 never got | |
@@ -514,6 +514,48 @@ filtered, so the count stays honest about what the walk found.
 
 Both halves shown to fail: swapping the ends flips front and back, and
 `39 → 1` puts a 20 m range at 20 units.
+
+## 7b. The turn — done 2026-09-09, and a sign that only MOVING could show
+
+`shootTurnToward` is `sub_420EB0`. It works on a **signed square** —
+`dotFlat * |dotFlat|` against the squared 2D distance — so its thresholds are
+cosines with no square root:
+
+| band | what it does |
+|---|---|
+| `> 0.99 * dist2d²` (≈5.7°) | already aimed: nothing |
+| `> 0.80 * dist2d²` (≈26.6°) | creep by **one** frame delta |
+| `> 0.2 * dist3d` | in front but wide: **5.0** per delta |
+| otherwise | behind: **10.0** per delta, or a SNAP |
+
+The snap returns `180` hard behind and `±90` otherwise, for the caller to play
+a turn animation rather than rotate. The third threshold really does compare a
+squared quantity against an unsquared distance; it is transcribed as written
+rather than "corrected", because it is what runs.
+
+**Hex-Rays loses three FPU compare flags here** and renders them as undefined
+variables — the decompiled body has three `if (v3)` / `if (v8)` / `if (v11)`
+on nothing. All three are recovered from the listing: each is a `fcomp`
+against `flt_4BC224`, which is **0.0**, on the cross, and the branches say
+`cross < 0` **adds** while `cross >= 0` **subtracts**, the snap splitting on
+the same test. The five constants are `flt_4BC228` 0.99, `flt_4BC22C` 0.80,
+`flt_4BC230` 0.2, `flt_4BC234` 10.0, `flt_4BC238` 5.0.
+
+> **THE ROW-VECTOR CONVENTION, AND WHY NO STILL FRAME COULD CATCH IT.** The
+> forward vector is `(0,0,1)` rotated by the yaw, and in this engine's
+> row-vector convention its x component is **−sin**, not +sin. The two
+> conventions **agree exactly on the cardinal axes** — so every acquisition
+> assertion of §7a passes under either, and the mutation proving it changes
+> not one of them. What separates them is TURNING: with `+sin` the direction
+> rule and the aim test disagree by construction, so the machine converges on
+> the heading that points the gunman exactly AWAY from his target and sits
+> there — 400 frames from 135° and never aimed. With `−sin` it converges in
+> **37 frames with 0 going the wrong way**.
+>
+> This is CLAUDE.md §1's *"a value verified standing still is not verified
+> moving"*, met head on: the check had to run the loop, and the invariant that
+> catches it is written over the transition (frames to aim, and frames spent
+> going the wrong way) rather than over any single state.
 
 ## 5b. The two weapon floats — step 5's first reading, 2026-09-09
 

@@ -185,6 +185,35 @@ struct AcquireOut {
 bool shootAcquires(const ShootRecord& r, const float self[4], const float targetPos[3],
                    AcquireOut& out, bool doubleRange = false);
 
+// `sub_420EB0` (0x00420EB0) - the TURN, and the only consumer of what
+// `shootAcquires` leaves behind: the engine keeps those four in globals
+// precisely so this can read them instead of recomputing the geometry.
+//
+// It works on a SIGNED SQUARE - `dotFlat * |dotFlat|` against the squared 2D
+// distance - so the three thresholds are cosines without a square root:
+//
+//   > 0.99 * dist2d^2   already aimed (about 5.7 deg): do nothing
+//   > 0.80 * dist2d^2   close (about 26.6 deg): creep by ONE frame delta
+//   > 0.2  * dist3d     in front but wide: 5.0 per frame delta
+//   otherwise           behind: 10.0 per frame delta, or a SNAP if allowed
+//
+// The snap returns `180` when the target is hard behind
+// (`signed < -0.80 * dist2d^2`) and otherwise `+/-90`, for the caller to play
+// a turn animation instead of rotating. Everything else returns 0.
+//
+// `eulerY` is the actor's `+420`, in degrees, and `dt` is `flt_4C30D8`, the
+// engine's frame delta (1.0 at 30 fps) - so the rates are degrees per frame.
+//
+// THE SIGNS ARE READ FROM THE LISTING, not guessed: Hex-Rays loses three FPU
+// compare flags here and renders them as undefined variables. Every one is a
+// `fcomp` against `flt_4BC224`, which is **0.0**, on `flt_90E0F4` - the cross
+// - and the branches say `cross < 0` ADDS while `cross >= 0` SUBTRACTS, with
+// the snap returning `+90` and `-90` on the same split. The third threshold
+// really does compare a squared quantity against an unsquared distance
+// (`flt_90E108 * 0.2`); it is transcribed as written rather than "corrected",
+// because it is what runs.
+int shootTurnToward(float& eulerY, const AcquireOut& a, bool allowSnap, float dt);
+
 // The behaviour-script walk, `sub_47FB40` (0x0047FB40). Returns the action to
 // play and advances the record; a `{0, n}` entry rewinds to the start.
 int shootScriptAdvance(ShootRecord& r, const std::vector<ShootScriptStep>& s);

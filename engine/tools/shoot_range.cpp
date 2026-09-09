@@ -111,5 +111,62 @@ int main(int argc, char** argv) {
                 int(okFront), int(okBack), int(okSide), int(okFar), int(okWide),
                 int(turnFront), int(turnBack));
     std::printf("cross: front %.1f side %.1f\n", crossFront, crossSide);
+
+    // ---- THE TURN (`sub_420EB0`, 7b) ---------------------------------
+    //
+    // Four bands and a snap, and then the thing a single frame cannot show:
+    // that the turn CONVERGES. A sign error here is invisible standing still
+    // - the actor rotates by the right amount in the wrong direction - and it
+    // is exactly the class CLAUDE.md 1 says has to be asserted over the
+    // transition rather than at rest.
+    auto bandOf = [&](float yaw, const float tgt[3], bool snap, float& moved) {
+        float self4[4] = {0, 0, 0, yaw};
+        omk::AcquireOut aa;
+        omk::shootAcquires(r, self4, tgt, aa, true);
+        float e = yaw;
+        const int snapped = omk::shootTurnToward(e, aa, snap, 1.0f);
+        moved = e - yaw;
+        return snapped;
+    };
+    float mv = 0.0f;
+    const float d0[3]   = {0, 0, -390};                 // dead ahead
+    const float d15[3]  = {-101, 0, -377};              // ~15 deg off
+    const float d45[3]  = {-276, 0, -276};              // 45 deg off
+    const float d135[3] = {-276, 0,  276};              // 135 deg - behind
+    const float d180[3] = {0, 0, 390};                  // hard behind
+    const float dR45[3] = {276, 0, -276};               // 45 deg the OTHER way
+    float m0, m15, m45, m135, m180s, mR45;
+    const int s0   = bandOf(0, d0,   false, m0);
+    const int s15  = bandOf(0, d15,  false, m15);
+    const int s45  = bandOf(0, d45,  false, m45);
+    const int s135 = bandOf(0, d135, false, m135);
+    const int sSnapAbeam = bandOf(0, d45, true, mv);
+    const int sSnapBack  = bandOf(0, d180, true, m180s);
+    const int sR45 = bandOf(0, dR45, false, mR45);
+    std::printf("turn: ahead %d/%.1f  15deg %d/%.1f  45deg %d/%.1f  "
+                "behind %d/%.1f  mirrored45 %.1f\n",
+                s0, m0, s15, m15, s45, m45, s135, m135, mR45);
+    std::printf("snap: abeam %d  hard-behind %d\n", sSnapAbeam, sSnapBack);
+
+    // convergence: start 135 degrees off and turn until aimed
+    {
+        float yaw = 0.0f;
+        const float* tgt = d135;
+        int frames = 0, rose = 0;
+        double worst = -1e9, prev = -1e9;
+        for (; frames < 400; ++frames) {
+            float self4[4] = {0, 0, 0, yaw};
+            omk::AcquireOut aa;
+            omk::shootAcquires(r, self4, tgt, aa, true);
+            const double signed2 = double(aa.dotFlat) * std::fabs(double(aa.dotFlat));
+            if (signed2 > double(aa.dist2d2) * 0.99000001) break;   // aimed
+            if (frames && signed2 < prev - 1e-3) ++rose;            // went BACKWARDS
+            prev = signed2; worst = signed2;
+            if (omk::shootTurnToward(yaw, aa, false, 1.0f) != 0) break;
+        }
+        (void)worst;
+        std::printf("converge: %d frames from 135 deg, %d frames going the wrong way, "
+                    "final yaw %.1f\n", frames, rose, yaw);
+    }
     return 0;
 }

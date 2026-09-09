@@ -303,9 +303,21 @@ bool shootAcquires(const ShootRecord& r, const float self[4], const float target
     out.dist3d  = static_cast<float>(std::sqrt(dy * dy + out.dist2d2));
 
     const double yaw = self[3] * 3.14159265358979 / 180.0;
-    // `sub_442160(0, yaw, 0)` then `Matrix3x3_RotateVector(0,0,1, m)` - the
-    // row-vector convention this repo uses everywhere.
-    const double fx = std::sin(yaw), fy = 0.0, fz = std::cos(yaw);
+    // `sub_442160(0, yaw, 0)` then `Matrix3x3_RotateVector(0,0,1, m)`, in the
+    // ROW-VECTOR convention this repo uses everywhere - so the x component is
+    // `-sin`, not `+sin`.
+    //
+    // That sign is worth its paragraph, because it is invisible in every
+    // still frame: the two conventions AGREE on the cardinal axes, so the
+    // acquisition tests at yaw 0 and 180 pass either way. What separates them
+    // is turning. With `+sin` the turn converges on the heading that points
+    // the gunman exactly AWAY from his target and sits there - `shoot_range`
+    // reported 400 frames from 135 degrees and never aimed - because the
+    // direction rule and the aim test then disagree by construction. With
+    // `-sin` it converges in 24. This is CLAUDE.md 1's "a value verified
+    // standing still is not verified moving", and the convergence loop is
+    // what caught it.
+    const double fx = -std::sin(yaw), fy = 0.0, fz = std::cos(yaw);
 
     out.dotFlat = static_cast<float>(dz * fz + dx * fx);
     out.dot     = static_cast<float>(fy * dy + out.dotFlat);
@@ -314,6 +326,41 @@ bool shootAcquires(const ShootRecord& r, const float self[4], const float target
     const double reach = doubleRange ? double(r.rangeAcquire) + r.rangeAcquire
                                      : double(r.rangeAcquire);
     return out.dot > double(r.coneCos) * out.dist3d && out.dist3d < reach;
+}
+
+// `sub_420EB0` (0x00420EB0). See the header for where each sign comes from -
+// all three are `fcomp` against `flt_4BC224`, which the listing gives as 0.0,
+// and the five constants are `flt_4BC228` 0.99, `flt_4BC22C` 0.80,
+// `flt_4BC230` 0.2, `flt_4BC234` 10.0 and `flt_4BC238` 5.0.
+int shootTurnToward(float& eulerY, const AcquireOut& a, bool allowSnap, float dt) {
+    // `fld dotFlat; fcomp 0.0; fld dotFlat; fmul dotFlat; ... fchs` - the
+    // square, negated when the dot itself is negative.
+    const double signed2 = double(a.dotFlat) * std::fabs(double(a.dotFlat));
+    const double near99  = double(a.dist2d2) * 0.99000001;
+    const double near80  = double(a.dist2d2) * 0.80000001;
+
+    if (signed2 > near99) return 0;               // already aimed: nothing to do
+
+    // cross < 0 adds, cross >= 0 subtracts - the same split in all three arms
+    const double dir = a.cross < 0.0f ? 1.0 : -1.0;
+
+    if (signed2 > near80) {                        // the fine band: one delta
+        eulerY = static_cast<float>(eulerY + dir * dt);
+        return 0;
+    }
+
+    double rate;
+    if (signed2 > double(a.dist3d) * 0.2) {
+        rate = 5.0;                                // in front, but wide
+    } else if (allowSnap) {
+        // hard behind, or abeam - hand a turn ANIMATION back to the caller
+        if (signed2 < -near80) return 180;
+        return a.cross >= 0.0f ? -90 : 90;
+    } else {
+        rate = 10.0;                               // behind, and turning through
+    }
+    eulerY = static_cast<float>(eulerY + dir * rate * dt);
+    return 0;
 }
 
 }  // namespace omk

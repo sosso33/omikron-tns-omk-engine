@@ -25860,6 +25860,34 @@ def c_shoot_range():
       one straight ahead is taken.
     * **`sub_420D90` doubles the range**: 30 m is refused by the narrow arm
       and taken by the wide one, on a 20 m record.
+
+    Then the TURN, `sub_420EB0` (7b), which is the only consumer of what the
+    acquisition leaves behind. It works on a SIGNED SQUARE - `dotFlat *
+    |dotFlat|` against the squared 2D distance - so its thresholds are cosines
+    with no square root, and the four bands are asserted by the amount the
+    Euler moves in one frame: **0** inside 0.99 (about 5.7 deg), **1.0** inside
+    0.80 (26.6 deg), **5.0** in front but wider, **10.0** behind. Mirroring
+    the target flips the sign. With `allowSnap` a hard-behind target returns
+    **180** for the caller to play a turn animation instead.
+
+    Every sign in that function is READ, not guessed: Hex-Rays loses three FPU
+    compare flags and renders them as undefined variables, and the listing
+    shows all three are `fcomp` against `flt_4BC224` = **0.0** on the cross,
+    with `cross < 0` adding and `cross >= 0` subtracting. The five constants
+    are `flt_4BC228` 0.99, `flt_4BC22C` 0.80, `flt_4BC230` 0.2, `flt_4BC234`
+    10.0, `flt_4BC238` 5.0.
+
+    **And the last row is a TRANSITION test, which is the only kind that could
+    have caught what it caught.** The forward vector is `(0,0,1)` rotated in
+    the ROW-VECTOR convention, so its x component is `-sin`, not `+sin` - and
+    the two conventions **agree on the cardinal axes**, so every acquisition
+    row above passes either way. What separates them is turning: with the
+    wrong sign the machine converges on the heading pointing exactly AWAY from
+    its target and sits there for ever (400 frames from 135 deg and never
+    aimed), because the direction rule and the aim test then disagree by
+    construction. With the right one it converges in **37 frames with 0 going
+    the wrong way**. This is CLAUDE.md 1's "a value verified standing still is
+    not verified moving", and it is why the check runs the loop.
     """
     import subprocess, re
     fr = omkpaths.data_root()
@@ -25880,7 +25908,13 @@ def c_shoot_range():
                    r"([\d.]+) health (\d+) flags ([0-9a-f]+)$", r.stdout, re.M)
     ac = re.search(r"^acquire: front (\d) back (\d) side (\d) far (\d) "
                    r"far-wide (\d); turned front (\d) back (\d)$", r.stdout, re.M)
-    if not (hm and rg and cn and rc and ac):
+    tn = re.search(r"^turn: ahead (-?\d+)/(-?[\d.]+)\s+15deg (-?\d+)/(-?[\d.]+)\s+"
+                   r"45deg (-?\d+)/(-?[\d.]+)\s+behind (-?\d+)/(-?[\d.]+)\s+"
+                   r"mirrored45 (-?[\d.]+)$", r.stdout, re.M)
+    sn = re.search(r"^snap: abeam (-?\d+)\s+hard-behind (-?\d+)$", r.stdout, re.M)
+    cv = re.search(r"^converge: (\d+) frames from 135 deg, (\d+) frames going "
+                   r"the wrong way, final yaw (-?[\d.]+)$", r.stdout, re.M)
+    if not (hm and rg and cn and rc and ac and tn and sn and cv):
         return ("unparsed",), ("parsed",), "the probe's own summary lines"
     ranges = tuple(sorted((int(a), int(c)) for a, c in
                           (kv.split(":") for kv in rg.group(1).split())))
@@ -25889,14 +25923,18 @@ def c_shoot_range():
     got = (tuple(int(x) for x in hm.groups()), ranges, cones,
            (int(rc.group(1)), int(rc.group(2)), int(rc.group(3)),
             rc.group(4), int(rc.group(5)), rc.group(6)),
-           tuple(int(x) for x in ac.groups()))
+           tuple(int(x) for x in ac.groups()),
+           tuple(tn.groups()), tuple(int(x) for x in sn.groups()),
+           (int(cv.group(1)), int(cv.group(2))))
     want = ((1032, 386, 427),
             ((10, 20), (12, 8), (15, 16), (16, 2), (20, 13), (25, 3), (30, 86),
              (50, 100), (60, 3), (70, 49), (80, 54), (90, 28), (500, 1), (13944, 3)),
             ((25, 10), (45, 43), (50, 1), (60, 47), (70, 20), (75, 1), (80, 204),
              (90, 98), (13944, 3)),
             (780, 0, 0, "0.7071", 10, "04800040"),
-            (1, 0, 0, 0, 1, 0, 1))
+            (1, 0, 0, 0, 1, 0, 1),
+            ("0", "0.0", "0", "-1.0", "0", "-5.0", "0", "-10.0", "5.0"),
+            (0, 180), (37, 0))
     return got, want, ("actor records, those carrying an acquisition range "
                        "and those carrying a cone; the two histograms, which "
                        "are round metres and round degrees because a person "
@@ -25907,7 +25945,13 @@ def c_shoot_range():
                        "AHEAD is -Z, behind and abeam are refused, 30 m is "
                        "out of a 20 m reach until the DOUBLED arm takes it, "
                        "and turning the gunman 180 degrees swaps front for "
-                       "back")
+                       "back; then the TURN's four bands as the degrees the "
+                       "Euler moves in one frame (0 / 1 / 5 / 10) with the "
+                       "sign mirroring, its 180 snap, and finally the "
+                       "CONVERGENCE - frames to aim from 135 degrees and how "
+                       "many of them went the wrong way, which is the only "
+                       "row that can see a forward vector built with the "
+                       "wrong rotation convention")
 
 
 def c_bone_names():
