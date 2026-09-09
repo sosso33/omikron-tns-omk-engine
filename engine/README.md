@@ -1749,6 +1749,61 @@ pose source changes hands rarely, and what happens BETWEEN two such changes is
 exactly what a per-change report cannot show — which is how "he stays where
 the program left him" could be printed and then not happen.
 
+### A SHOP'S OWN DOORS: the file parameter is TRUNCATED TO 16 BITS (2026-09-09)
+
+A reader could walk into the drugstore by Anekbah's security centre and not
+back out; the same in Qalisar's temple. Everything about the transition was
+right — the exit script ran, the destination was shown, the door program was
+started — and the player still stood inside:
+
+```
+[tr]   frame 314  area.goto 0  doors 7/8
+[slot] frame 314  SHOW area 0 in slot 0
+[tr]   frame 314  door object 7 -> program 2
+[slot] frame 481  HIDE area 0 in slot 0
+player: ends at 3534.5 -0.0 -8854.5
+```
+
+No `event 9: feet on area 0` between them. He walks at the doorway, stops at
+z −8854.5 and slides SIDEWAYS along a plane (x 3705 → 3534), which is a wall
+being followed, not a floor running out — and `soup_probe` says
+`Porte01dh`/`Porte01gh` put 12 collision triangles each into the narrow phase.
+The leaves had not moved. When the arrival object then ends,
+`transitionObjectEnded` hides the destination, and the shop keeps him.
+
+**`Script_MoveObjectOnPath` addresses a path in two parts and casts the
+first**:
+
+```c
+v4 = (uint16_t)Script_GetParamInt((int)a2, 1);      /* 0x0046F400 */
+v6 = sub_4A6500(v5, v4);                            /* the chunk-0 .3dp file */
+```
+
+identically in `Script_Reinit_MoveObjectOnPath`, and those two are the only
+ones of `sub_4A6500`'s four callers that cast at all — the other two hand the
+value to an **unsigned** bound test, where a negative simply fails. Every door
+motion in `Apharma.SCX` carries parameter 1 = **-65536**; masked it is file 0,
+and (0, 5) / (0, 3) there are exactly `Porte01gh` and `Porte01dh`. Passed
+whole, `pathIn` matched nothing and the motion was dropped silently.
+
+**81 calls over 11 scenes** depend on the cast, and every one is a door, a
+shutter, a trapdoor or a sliding stone in an interior: `Shall09b` 34,
+`Apharma` 8, `SArmu01` 8, `SLibr01` 8, `QTemple` 7 (its doors **and**
+`Qtrappe`, the trapdoor the reincarnation beat opens), `LBank` 4, and four
+more.
+
+**Why walking IN always worked**, which is what made this read as a transition
+fault for an hour: the doors that open on the way in are the CITY's —
+`anekbah.SCX` objects 164 and 201, whose parameter 1 is a plain 0. A shop's
+interior copy of the same doorway is only ever asked for on the way out, so
+one direction exercised the bug and the other could not.
+
+`verify.py: move path file` asserts the census in BOTH directions — 81 resolve
+masked, 0 resolve raw, which is what stops the check passing on the unmasked
+reading in any scene with a single `.3dp` file — and `engine: shop door` runs
+the two door programs and reports each leaf's travel BY NAME (65/65 at the
+drugstore, 83/82 at the temple; every one is −1 with the mask removed).
+
 ### A camera travel carries the SUBJECTS — the black screen at the flat's lift
 
 A `WorldCamera`'s `eyeSubject`/`atSubject` decide whether its `eye` and `at`

@@ -306,6 +306,33 @@ Two more things a check here cannot see:
 
 ---
 
+## 9. WALK OUT OF A SHOP — 2 minutes, added 2026-09-09
+
+The fix for `todo/omk-play.md` 94, reproduced headlessly and **not yet watched
+by a person**. From Anekbah's main street:
+
+```
+build/omk-play ../gamedata ../tables --save ../traces/save-appart.bin \
+    --area 0 --stand 3703,0,-9010,180
+```
+
+puts you outside the drugstore by the security centre, facing its door.
+
+* Walk in. The city's doors slide apart in front of you, as they always did.
+* Turn round and walk back at the doorway. **The shop's own doors should now
+  slide apart** — before the fix they stayed shut, you slid sideways along
+  them, and the street was put away again after a few seconds.
+* You should end up in the street, with the shop unloaded behind you.
+
+Wrong looks like: you reach the door and stop dead, drifting sideways along an
+invisible line while the world outside flickers in and out.
+
+The same fault was in ten other interiors, so the second half of the test is
+any of them — the bank, the armoury, the bookshop — and the one worth a look
+for its own sake is **Qalisar's temple**, where the same parameter drives
+`Qtrappe`, the trapdoor of the reincarnation beat. It has presumably never
+opened in this port.
+
 ## What is NOT worth testing yet
 
 * ~~the videophone's own picture inside the sneak~~ — **CONFIRMED IN PLAY
