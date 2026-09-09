@@ -313,6 +313,14 @@ public:
     bool enterDialogueMode() { return rt_.enterDialogue(); }
     bool leaveDialogueMode() { return rt_.leaveDialogue(); }
 
+    // SHOOT MODE's half of the same shape: `Shoot_Enter` puts the player in
+    // `ACTOR_STATE` 3 and installs `.CTL` group 200, `Shoot_Leave` puts him
+    // back to 1 - and, unlike the dialogue pair, nothing here blocks his
+    // input, because the whole point of the mode is that he still moves.
+    // `actor/shootmode.h` is the mode; this is the actor.
+    bool enterShootMode() { return rt_.shootEnter(); }
+    bool leaveShootMode() { return rt_.shootLeave(true); }
+
     // --- what the zone scan and the frontend take ---------------------
     const float* pos() const { return pos_; }
     float facing() const { return euler_[1]; }

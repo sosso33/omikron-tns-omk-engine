@@ -1,0 +1,285 @@
+{
+ "_": "Lifted from gamedata/Runtime 2.exe by tools/exetables.py - do not hand-edit; run the tool. These tables are compiled into the executable and are NOT in the shipped gamedata/ data, which is why a replica engine needs this file.",
+ "table": "shoot_weapons",
+ "documented_in": "docs/ASSETS.md",
+ "about": "The two WEAPON tables `Shoot_InitWeapon` (0x00421FB0) picks a row out\nof - one for the player at 0x004C3658, one for everybody else at\n0x004C36F8.\n\nA weapon's TYPE comes from the prop: `sub_41C370(actor+164)` then event 46\nproperty 3, with one hand-written exception - a type 1 whose model name\n(uppercased) carries a `B` eleven characters from its end becomes type\n**-2**. The type is then looked up in these tables by field `key`, and the\nrow found is stored in the shoot record's `+180`; a row whose key is -1\nends the table. For the PLAYER, the row's last field is handed to event 44\nproperty 35 as `value - 1` (0 meaning none), which is what `dword_90E11C`\nends up holding.\n\nTwo floats, an int, the key and that index - seven rows each, and the two\ntables differ ONLY in the floats, which is the check: same keys, same\nthird column, same index column, different numbers. What the floats MEAN\nis not established here and is deliberately not named (`todo/shoot-mode.md`\n5); they are a range and a rate in shape, and nothing traced says which.",
+ "checks": [
+  {
+   "what": "player rows",
+   "got": 8,
+   "want": 8
+  },
+  {
+   "what": "other rows",
+   "got": 8,
+   "want": 8
+  },
+  {
+   "what": "the keys, in order",
+   "got": [
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    -2,
+    -1
+   ],
+   "want": [
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    -2,
+    -1
+   ]
+  },
+  {
+   "what": "both tables key alike",
+   "got": [
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    -2,
+    -1
+   ],
+   "want": [
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    -2,
+    -1
+   ]
+  },
+  {
+   "what": "the third column",
+   "got": [
+    5,
+    7,
+    5,
+    7,
+    13,
+    20,
+    6,
+    0
+   ],
+   "want": [
+    5,
+    7,
+    5,
+    7,
+    13,
+    20,
+    6,
+    0
+   ]
+  },
+  {
+   "what": "both tables share it",
+   "got": [
+    5,
+    7,
+    5,
+    7,
+    13,
+    20,
+    6,
+    0
+   ],
+   "want": [
+    5,
+    7,
+    5,
+    7,
+    13,
+    20,
+    6,
+    0
+   ]
+  },
+  {
+   "what": "the index column",
+   "got": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    0,
+    6
+   ],
+   "want": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    0,
+    6
+   ]
+  },
+  {
+   "what": "both tables share it",
+   "got": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    0,
+    6
+   ],
+   "want": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    0,
+    6
+   ]
+  },
+  {
+   "what": "...and the floats DIFFER",
+   "got": true,
+   "want": true
+  }
+ ],
+ "rows": {
+  "player": {
+   "at": "0x004C3658",
+   "rows": [
+    {
+     "f0": 10.0,
+     "f1": 124.8,
+     "i2": 5,
+     "key": 1,
+     "index": 0
+    },
+    {
+     "f0": 8.0,
+     "f1": 124.8,
+     "i2": 7,
+     "key": 2,
+     "index": 1
+    },
+    {
+     "f0": 2.0,
+     "f1": 124.8,
+     "i2": 5,
+     "key": 3,
+     "index": 2
+    },
+    {
+     "f0": 2.0,
+     "f1": 124.8,
+     "i2": 7,
+     "key": 4,
+     "index": 3
+    },
+    {
+     "f0": 20.0,
+     "f1": 124.8,
+     "i2": 13,
+     "key": 5,
+     "index": 4
+    },
+    {
+     "f0": 25.0,
+     "f1": 124.8,
+     "i2": 20,
+     "key": 6,
+     "index": 5
+    },
+    {
+     "f0": 5.0,
+     "f1": 104.0,
+     "i2": 6,
+     "key": -2,
+     "index": 0
+    },
+    {
+     "f0": 0.0,
+     "f1": 0.0,
+     "i2": 0,
+     "key": -1,
+     "index": 6
+    }
+   ]
+  },
+  "other": {
+   "at": "0x004C36F8",
+   "rows": [
+    {
+     "f0": 15.0,
+     "f1": 124.8,
+     "i2": 5,
+     "key": 1,
+     "index": 0
+    },
+    {
+     "f0": 10.0,
+     "f1": 124.8,
+     "i2": 7,
+     "key": 2,
+     "index": 1
+    },
+    {
+     "f0": 4.0,
+     "f1": 124.8,
+     "i2": 5,
+     "key": 3,
+     "index": 2
+    },
+    {
+     "f0": 4.0,
+     "f1": 124.8,
+     "i2": 7,
+     "key": 4,
+     "index": 3
+    },
+    {
+     "f0": 20.0,
+     "f1": 124.8,
+     "i2": 13,
+     "key": 5,
+     "index": 4
+    },
+    {
+     "f0": 25.0,
+     "f1": 124.8,
+     "i2": 20,
+     "key": 6,
+     "index": 5
+    },
+    {
+     "f0": 10.0,
+     "f1": 31.2,
+     "i2": 6,
+     "key": -2,
+     "index": 0
+    },
+    {
+     "f0": 0.0,
+     "f1": 0.0,
+     "i2": 0,
+     "key": -1,
+     "index": 6
+    }
+   ]
+  }
+ }
+}

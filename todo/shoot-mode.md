@@ -201,9 +201,62 @@ Each ends in a commit and a report.
 | 1 | **the reading above** — what the mode does, and the grid finding | **done 2026-09-09**; `verify.py: shoot arenas` |
 | 2 | **the grid** — the cell byte, the floor box, the door table, a reader and a probe that DRAWS a floor | **done 2026-09-09**, §2b; `verify.py: map2d grid` |
 | 3 | **the mode** — ops 80/81 read and ported, the weapon slot, the HUD choice, the library swap, both exit arms | **done 2026-09-09**, §3b; `verify.py: engine: shoot mode`. The frontend half (camera mode 4, group 200, scheme 2 installed in `omk-play`, and a `--shoot` harness) is NOT done and moves to step 4 |
-| 4 | **the player's half**: `Shoot_TickPlayer`'s live arm on the grid, `Shoot_StartTargetScripts`, `Shoot_InitWeapon` and event 48, what a shot actually IS — **and the frontend half step 3 left**: camera mode 4, group 200 and scheme 2 installed in `omk-play`, with a `--shoot` harness that stands in an arena | next |
+| 4 | the FRONTEND half and the WEAPON tables | **part done 2026-09-09**, §4b: `--shoot`, the three installs, and `tables/shoot_weapons.json`. Left: `Shoot_TickPlayer`'s live arm on the grid, `Shoot_StartTargetScripts`, and what a shot IS |
 | 5 | **the brains, decision revisited** — with the grid in hand, how much of the generic shooter's 16 states is now fact rather than geometry. Gandhar is already exact; Astaroth and the generic are state graphs. **Only what the grid settles gets wired**; the rest stays labelled | |
 | 6 | docs, the checks, and a play test | |
+
+## 4b. The frontend, and the weapon tables — step 4 (part), 2026-09-09
+
+**The mode is enterable and visible.** `omk-play --shoot` stands the player in
+an arena in shoot mode, and the transition is watched every frame from the
+Session's own flag, so a script's `shoot.begin` reaches it too:
+
+```
+build/omk-play ../gamedata ../tables --save ../traces/save-appart.bin \
+    --area 59 --stand 5000,0,-2900,0 --shoot
+frame 1: SHOOT MODE ENTER (Shoot_Enter) - weapon slot 11 (object 42),
+         HUD screen 34, library shoot2.scx, ACTOR_STATE 3, scheme 2
+frame 3: actor 237 VIR_FN - shoot mode, action 3, character type 3 -> a clip
+```
+
+The three installs `Shoot_Enter` does are all there: the player's
+`ACTOR_STATE` 3 with `.CTL` group 200 (`ActorRuntime::shootEnter`, which has
+existed since the state machine was ported and which nothing called until
+now), input scheme 2, and camera mode 4 — `camera_presets.json` row 4 is eye
+(0,0,0) and target (0, 0, 787.4016) both on subject 0, fov 75, and **every
+smoothing divisor zero**: the eye ON the player, the aim 20.00 m ahead, no lag.
+That is an aiming camera, and it is the row the table has always carried.
+
+**Both entries go through one door.** `Session::shootBegin` reads the weapon
+table lazily and then calls the mode; the harness used to call `ShootMode`
+directly and entered with slot 11 and object −1 behind it — right slot, no gun.
+
+### The weapon tables — and I re-derived what the tree already knew
+
+`tables/shoot_weapons.json` now carries the two compiled tables, self-checked
+the way the others are (same keys, same C and index columns in both, floats
+that differ). Their contents and even the meaning of `shoot.begin`'s operand
+were **already recorded** — `docs/RECONSTRUCTION.md` 2026-08-27 ("opcode 80's
+operand is one of these ids") and 2026-08-28 (the two table addresses), and
+`docs/SCRIPT_VM.md` had a dump. Step 3's commit called the operand meaning
+unrecorded; that was wrong, and it was wrong because I read the handler before
+I grepped the docs, which is exactly the cost CLAUDE.md §0 is about. What was
+genuinely missing is the PORT, the lift, and the check.
+
+**And reading it again was not wasted, because the old table is shifted by one
+row.** `SCRIPT_VM`'s described the record as `{class, ammo slot, A, B,
+damage}` — that is the memory read starting at **+12**, so each printed row
+took its class and index from one record and its floats from the NEXT. Every
+number was real and the alignment was off by one, which nothing inside that
+table could catch. The memory order is `{A, B, C, class, index}`, established
+by the handler matching at +12 and reading +16, and the doc is corrected.
+
+**One check caught nothing until it was rewritten**, which is worth keeping:
+`engine: shoot mode` first read the viewer's own printf for the input scheme —
+and that printf recomputed `shootMode ? 2 : 0` instead of reporting what was
+installed, so deleting the `installScheme` call left the check GREEN. It now
+prints `in.group()`, the live table's own group, and the same mutation turns
+it red. A probe that recomputes the answer is not measuring the code.
 
 ## 5. What is still NOT established
 

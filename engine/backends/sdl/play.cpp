@@ -1708,6 +1708,7 @@ int main(int argc, char** argv) {
     // screen that otherwise costs a walk to reach; it sets the same
     // `playerScreen` the special move sets and nothing else.
     bool openSneak = false;
+    bool startShoot = false;   // --shoot: enter shoot mode at the hand-over
     float standAt[4] = {0, 0, 0, 0};
     bool haveStand = false;      // `--stand x,y,z,yaw`: put the player down there after the hand-over
     // ...and the save's OWN placement, which is `State_Apply`'s and not a
@@ -1895,6 +1896,7 @@ int main(int argc, char** argv) {
                 else cur.push_back(c);
             }
         }
+        else if (a == "--shoot") startShoot = true;
         else if (a == "--sneak") openSneak = true;
         else if (a == "--stand" && i + 1 < argc)
             haveStand = std::sscanf(argv[++i], "%f,%f,%f,%f", &standAt[0], &standAt[1], &standAt[2], &standAt[3]) >= 3;
@@ -3130,6 +3132,7 @@ int main(int argc, char** argv) {
     // `Actor_EnterDialogueMode` / `Actor_LeaveDialogueMode` are called once
     // each per conversation. See the transition below.
     bool  dialogMode = false;
+    bool  shootMode  = false;      // ops 80/81, `actor/shootmode.h`
 
     // ---- EVERY BODY THE SESSION SAYS IS ON SCREEN (issue 41) -----------
     //
@@ -5894,6 +5897,28 @@ int main(int argc, char** argv) {
                     callPending  = callDialog;
                     callDialog   = -1;
                 }
+                if (startShoot && !walk && player) {
+                    // The harness way in. The engine's own is a script's
+                    // `shoot.begin`, which is what `verify.py: engine: shoot
+                    // mode` drives; this exists so a PERSON can stand in an
+                    // arena and look at the mode, the way `--ride` does for
+                    // the slider. -1 is the operand 27 of the 30 shipped
+                    // sites pass, so the weapon is the Gun Waver.
+                    startShoot = false;
+                    session.shootBegin(-1);
+                    // camera mode 4: `camera_presets.json` row 4 is eye
+                    // (0,0,0) and target (0, 0, 787.4016) - the eye ON the
+                    // player and the aim 20.00 m in front of him - both
+                    // subject 0, fov 75, and every smoothing divisor ZERO, so
+                    // it does not lag him at all. A script that names its own
+                    // camera still wins, which is the follow block below.
+                    const float eye[3] = {0.0f, 0.0f, 0.0f};
+                    const float at[3]  = {0.0f, 0.0f, 787.4016f};
+                    player->setCameraOffsets(eye, at, 75.0f);
+                    std::printf("--shoot: shoot.begin -1 - camera mode %d, "
+                                "eye on the player, aim 20 m ahead\n",
+                                omk::ShootMode::kCameraMode);
+                }
                 if (openSneak && !walk && playerScreen < 0) {
                     openSneak = false;
                     inv.openList(0);
@@ -6893,6 +6918,33 @@ int main(int argc, char** argv) {
         // the conversation, so the leave lands on the SAME frame the dialogue
         // closes - one frame later would be one frame too late, because the
         // MDACTION gate above runs before this point in the next frame.
+        // ---- SHOOT MODE, the same shape one subsystem over ---------------
+        //
+        // `shoot.begin` / `shoot.end` (ops 80/81) are decisions the Session
+        // makes (`actor/shootmode.h`); what a frontend owes them is the three
+        // installs `Shoot_Enter` does and `Shoot_Leave` undoes: the player's
+        // `ACTOR_STATE` 3 with `.CTL` group 200, input scheme 2, and camera
+        // mode 4. Nothing here calls the AI - `actor/shoot.h`'s brains are
+        // still unwired for the generic arm (`todo/standing-unknowns.md` 2) -
+        // so what this draws is the MODE, not a gunfight.
+        if (session.shootMode().active() != shootMode) {
+            shootMode = session.shootMode().active();
+            if (player) {
+                if (shootMode) player->enterShootMode();
+                else           player->leaveShootMode();
+            }
+            in.installScheme(shootMode ? omk::ShootMode::kInputScheme : 0);
+            std::printf("frame %ld: SHOOT MODE %s - weapon slot %d (object %d), "
+                        "HUD screen %d, library %s, ACTOR_STATE %d, scheme %d\n",
+                        n, shootMode ? "ENTER (Shoot_Enter)" : "LEAVE (Shoot_Leave)",
+                        session.shootMode().weaponSlot(),
+                        session.shootMode().weaponObject(),
+                        session.shootMode().hudScreen(),
+                        session.shootMode().library(),
+                        player ? static_cast<int>(player->state()) : -1,
+                        in.group());
+        }
+
         if (session.dialogOpen() != dialogMode) {
             dialogMode = session.dialogOpen();
             if (player) {

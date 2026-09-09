@@ -318,6 +318,12 @@ public:
     // different question (`todo/standing-unknowns.md` 2).
     const ShootMode& shootMode() const { return shoot_; }
     ShootMode& shootModeMutable() { return shoot_; }
+    // ops 80 and 81, and the ONE door a harness may use as well: the weapon
+    // table at `IAM\GLOBAL +42` is read on the first call, so a caller that
+    // went straight to `ShootMode::begin` would enter with slot 11 and no
+    // object behind it - which is exactly what `--shoot` did before this.
+    bool shootBegin(int weaponObject);
+    bool shootEnd(int clear);
     // A model's collision spheres (its first skeleton's mesh volumes) and
     // its reach (`+88`), read once from MESHES\PERSOS through the traffic
     // root; empty when the model or the root is missing.

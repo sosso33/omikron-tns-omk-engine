@@ -1978,29 +1978,53 @@ that reduced failures were kept. The rest are left as they are.
 
 ## The shoot-mode weapon table
 
-**read from the binary** (`Shoot_InitWeapon`, 0x00421FB0). The held weapon
-(actor `+164`) is classed by object property 3 (event 46) and looked up in a
-compiled-in stats table — one for the player at `0x4C3658`, one for NPCs at
-`0x4C36F8`, rows of `{class, ammo slot, f32 A, f32 B, damage}`, `-1`-class
-terminated; a weapon whose name carries a `B` suffix maps to the special
-`-2` row. The ammo slot indexes the `IAM\GLOBAL +32` ammunition slots the
-docs already verify; the per-shot ammo count is queried through character
-property 35.
+**read from the binary** (`Shoot_InitWeapon`, 0x00421FB0) and **lifted since
+2026-09-09** into `tables/shoot_weapons.json`, which is what to trust: this
+section had the columns right and the ROWS shifted by one, and the lift is
+keyed on the field the handler itself matches.
 
-| class | ammo | A (player/npc) | B | damage (player/npc) |
+The held weapon (actor `+164`) is classed by object property 3 (event 46) and
+looked up in a compiled-in table — one for the player at `0x004C3658`, one for
+everybody else at `0x004C36F8`. The row is 20 bytes and its MEMORY order is
+
+```
++0  f32 A      +4  f32 B      +8  int C      +12 int class      +16 int index
+```
+
+which is established by the handler: it walks the rows comparing **+12**
+against the class and, on a match, reads **+16**. A row whose class is -1 ends
+the table. A weapon whose model name carries a `B` eleven characters from its
+end maps to the special class **-2**.
+
+| class | index | C | A player/other | B player/other |
 |---|---|---|---|---|
-| 1 | 0 | 8.0 / 10.0 | 123.46 | 7 / 7 |
-| 2 | 1 | 2.0 / 4.0 | 123.46 | 5 / 5 |
-| 3 | 2 | 2.0 / 4.0 | 123.46 | 7 / 7 |
-| 4 | 3 | 20.0 | 123.46 | 13 |
-| 5 | 4 | 25.0 | 123.46 | 20 |
-| 6 | 5 | 5.0 / 10.0 | 104.0 / 31.05 | 6 |
+| 1 | 0 | 5 | 10.00 / 15.00 | 124.80 / 124.80 |
+| 2 | 1 | 7 | 8.00 / 10.00 | 124.80 / 124.80 |
+| 3 | 2 | 5 | 2.00 / 4.00 | 124.80 / 124.80 |
+| 4 | 3 | 7 | 2.00 / 4.00 | 124.80 / 124.80 |
+| 5 | 4 | 13 | 20.00 / 20.00 | 124.80 / 124.80 |
+| 6 | 5 | 20 | 25.00 / 25.00 | 124.80 / 124.80 |
+| −2 | 0 | 6 | 5.00 / 10.00 | 104.00 / 31.20 |
+| −1 | 6 | 0 | — | terminator |
 
-What A and B are physically (rate of fire and range are the candidates) is
-not established — the table says only that the player's class-1/2/3 weapons
-fire "slower" numbers than the NPCs' and that class 6 is the outlier on B.
-Shoot-mode HP lives in the 192-byte shoot record at `+92`
-(`Shoot_SyncHudHealth` mirrors it into the HUD).
+**How the earlier table was wrong, because the shape of the mistake is worth
+keeping.** It described the row as `{class, ammo slot, f32 A, f32 B, damage}`
+— which is the memory read **starting at +12**, so each printed "row" took its
+class and index from one record and its A, B and C from the NEXT one. Every
+number in it was a real number from the file and the alignment was off by one
+record, which is a reading no self-check inside that table could catch. The
+lift is keyed on the class field itself, and `verify.py: exe tables` re-derives
+it.
+
+**The index column is the ammo slot for classes 1..5 only.** `IAM\GLOBAL +32`
+holds exactly five ammunition ids (slots 0..4), so index 5 — class 6 — and the
+terminator's 6 point past them. For the PLAYER the index is handed to event 44
+property 35 as `index - 1`, 0 meaning none, which is what `dword_90E11C` holds.
+
+What A, B and C are physically is **not established** — rate of fire, range and
+damage are the candidates, and nothing traced says which. What the numbers do
+say is that the player's classes 1, 2, 3 and −2 are weaker in A than everybody
+else's and classes 4, 5 are identical.
 
 ## Opcode 47 `area.goto` — a transition that carries two scene objects
 

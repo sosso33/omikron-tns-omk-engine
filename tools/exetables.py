@@ -1238,6 +1238,58 @@ def c_shoot_ai(rows, e):
     ]
 
 
+def t_shoot_weapons(e):
+    r"""The two WEAPON tables `Shoot_InitWeapon` (0x00421FB0) picks a row out
+    of - one for the player at 0x004C3658, one for everybody else at
+    0x004C36F8.
+
+    A weapon's TYPE comes from the prop: `sub_41C370(actor+164)` then event 46
+    property 3, with one hand-written exception - a type 1 whose model name
+    (uppercased) carries a `B` eleven characters from its end becomes type
+    **-2**. The type is then looked up in these tables by field `key`, and the
+    row found is stored in the shoot record's `+180`; a row whose key is -1
+    ends the table. For the PLAYER, the row's last field is handed to event 44
+    property 35 as `value - 1` (0 meaning none), which is what `dword_90E11C`
+    ends up holding.
+
+    Two floats, an int, the key and that index - seven rows each, and the two
+    tables differ ONLY in the floats, which is the check: same keys, same
+    third column, same index column, different numbers. What the floats MEAN
+    is not established here and is deliberately not named (`todo/shoot-mode.md`
+    5); they are a range and a rate in shape, and nothing traced says which.
+    """
+    def row(base, i):
+        a, b, c, k, v = struct.unpack("<2f3i", e.read(base + 20 * i, 20))
+        return {"f0": round(a, 4), "f1": round(b, 4), "i2": c, "key": k, "index": v}
+    out = {}
+    for name, base in (("player", 0x004C3658), ("other", 0x004C36F8)):
+        rows, i = [], 0
+        while i < 32:
+            r = row(base, i)
+            rows.append(r)
+            if r["key"] == -1: break
+            i += 1
+        out[name] = {"at": "0x%08X" % base, "rows": rows}
+    return out
+
+
+def c_shoot_weapons(rows, e):
+    """The two tables must agree on everything but the floats."""
+    p = rows["player"]["rows"]
+    o = rows["other"]["rows"]
+    return [
+        ("player rows", len(p), 8),
+        ("other rows", len(o), 8),
+        ("the keys, in order", [r["key"] for r in p], [1, 2, 3, 4, 5, 6, -2, -1]),
+        ("both tables key alike", [r["key"] for r in o], [r["key"] for r in p]),
+        ("the third column", [r["i2"] for r in p], [5, 7, 5, 7, 13, 20, 6, 0]),
+        ("both tables share it", [r["i2"] for r in o], [r["i2"] for r in p]),
+        ("the index column", [r["index"] for r in p], [0, 1, 2, 3, 4, 5, 0, 6]),
+        ("both tables share it", [r["index"] for r in o], [r["index"] for r in p]),
+        ("...and the floats DIFFER", [r["f0"] for r in o] != [r["f0"] for r in p], True),
+    ]
+
+
 _TABLES = [
     ("vm_opcodes",     t_vm_opcodes,     c_vm_opcodes,     "SCRIPT_VM"),
     ("special_moves",  t_special_moves,  c_special_moves,  "ASSETS"),
@@ -1248,6 +1300,7 @@ _TABLES = [
     ("ui_widgets",     t_ui_widgets,     c_ui_widgets,     "UI"),
     ("vm_announce",    t_vm_announce,    c_vm_announce,    "SCRIPT_VM"),
     ("shoot_ai",       t_shoot_ai,       c_shoot_ai,       "ASSETS"),
+    ("shoot_weapons",  t_shoot_weapons,  c_shoot_weapons,  "ASSETS"),
 ]
 
 

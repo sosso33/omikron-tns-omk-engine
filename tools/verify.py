@@ -25139,8 +25139,8 @@ def c_exe_tables():
     return (exetables.check(), sorted(exetables.OUT and
             [n for n, _, _, _ in exetables._TABLES])), \
            ([], ["adpcm", "camera_presets", "key_bindings", "shoot_ai",
-                 "special_moves", "ui", "ui_widgets", "vm_announce",
-                 "vm_opcodes"]), \
+                 "shoot_weapons", "special_moves", "ui", "ui_widgets",
+                 "vm_announce", "vm_opcodes"]), \
            "complaints from exetables --check (stale, missing or failing a " \
            "table's own check), and the tables that must be present"
 
@@ -25775,7 +25775,8 @@ def c_engine_shoot_mode():
     # ---- the port, driven by AREA 59's own script
     fr = omkpaths.data_root()
     eng = os.path.join(ROOT, "engine")
-    bld = subprocess.run(["make", "-s", "build/shootmode_probe"], cwd=eng,
+    # BOTH binaries, because a check must build what it measures
+    bld = subprocess.run(["make", "-s", "build/shootmode_probe", "play"], cwd=eng,
                          capture_output=True, text=True)
     binp = os.path.join(eng, "build", "shootmode_probe")
     if bld.returncode != 0 or not os.path.exists(binp):
@@ -25791,21 +25792,36 @@ def c_engine_shoot_mode():
     drop = re.search(r"^end\(1\)\s+active (\d+)\s+weapon (-?\d+)", r.stdout, re.M)
     if not (after and consts and keep and drop):
         return ("unparsed",), ("parsed",), "the probe's own lines"
+    # ...and the FRONTEND half: `--shoot` in the Shooting gallery, which is
+    # the mode a person can stand in. The line is the viewer's own.
+    play = subprocess.run(
+        [os.path.join(eng, "build", "omk-play"), fr, os.path.join(ROOT, "tables"),
+         "--save", os.path.join(ROOT, "traces", "save-appart.bin"),
+         "--area", "59", "--stand", "5000,0,-2900,0", "--shoot",
+         "--frames", "60", "--nodelay"],
+        capture_output=True, text=True,
+        env=dict(os.environ, SDL_VIDEODRIVER="dummy"))
+    view = re.search(r"SHOOT MODE ENTER \(Shoot_Enter\) - weapon slot (\d+) "
+                     r"\(object (-?\d+)\), HUD screen (\d+), library (\S+), "
+                     r"ACTOR_STATE (\d+), scheme (\d+)", play.stdout)
+    seen = (tuple(int(x) if i != 3 else x for i, x in enumerate(view.groups()))
+            if view else ("no transition",))
     return (sorted(begins.items()), sorted(ends.items()), table,
             (int(after.group(1)), int(after.group(2)), int(after.group(3)),
              int(after.group(4)), after.group(5)),
             tuple(int(x) for x in consts.groups()),
             (int(keep.group(1)), int(keep.group(2))),
-            (int(drop.group(1)), int(drop.group(2)))), \
+            (int(drop.group(1)), int(drop.group(2))), seen), \
            ([(-1, 27), (40, 3)], [(-1, 1), (0, 43), (1, 30)],
             (189, 190, 192, 17, 191, 40, 42, -1, -1, -1),
             (1, 11, 42, 34, "shoot2.scx"),
             (3, 1, 200, 4, 2, 100, 192),
-            (0, 11), (0, -1)), \
+            (0, 11), (0, -1), (11, 42, 34, "shoot2.scx", 3, 2)), \
            ("the shipped shoot.begin operands and shoot.end flags; the weapon "
             "table at GLOBAL +42; what the port decided entering through AREA "
             "59's own script (active, slot, object, HUD screen, library); the "
-            "entry's constants; and the two exit arms - keep the gun, drop it")
+            "entry's constants; the two exit arms - keep the gun, drop it; "
+            "and what `omk-play --shoot` installs in the Shooting gallery")
 
 
 def c_map2d_grid():

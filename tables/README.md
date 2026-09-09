@@ -29,6 +29,7 @@ instruction, and the no-original-assembly constraint is untouched.
 | `ui.json` | 37 screens, 45 sounds, 74 option rows, 13 pages, 8 oscillators | — |
 | `vm_announce.json` | which `.TAG` domain each handler narrates to, and which operand | 49 |
 | `shoot_ai.json` | the shoot AI at `0x004CFA30` — 14 character types, 3 behaviour scripts, 12 action rows | 14 + 37 + 12 |
+| `shoot_weapons.json` | the two WEAPON tables `Shoot_InitWeapon` picks a row out of — the player's at `0x004C3658`, everybody else's at `0x004C36F8` | 8 + 8 rows |
 | `ui_widgets.json` | the widget TREE a replica cannot read out of `gamedata/` — panels, lists, items, their bindings and flags, the option pages, the name-field switch, and the **answer layer** (`answerSites`: every write to `dword_930750`) | 35 panels, 93 lists, 411 items |
 
 **`vm_announce.json` has a different provenance from the rest.** The others

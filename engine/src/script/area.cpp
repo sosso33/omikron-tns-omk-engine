@@ -850,6 +850,25 @@ void Session::transitionObjectEnded() {
     c->status = 1;
 }
 
+// ops 80/81, and the weapon table behind them. `IAM\GLOBAL +42` is ten
+// int16 object ids for slots 5..14; `+32` is the parallel AMMUNITION list,
+// five ids that pair one for one with the first five guns by name. Read once,
+// lazily, because nothing else in the Session wants it.
+bool Session::shootBegin(int weaponObject) {
+    if (!shootTableRead_) {
+        shootTableRead_ = true;
+        const auto g = readFile(iam_ + "/GLOBAL");
+        if (g.size() >= 42u + 2u * static_cast<std::size_t>(omk::kWeaponSlotCount)) {
+            std::int16_t slots[omk::kWeaponSlotCount];
+            std::memcpy(slots, g.data() + 42, sizeof slots);
+            shoot_.setWeaponTable(slots, omk::kWeaponSlotCount);
+        }
+    }
+    return shoot_.begin(weaponObject);
+}
+
+bool Session::shootEnd(int clear) { return shoot_.end(clear); }
+
 // `Area_Transition` (0x00408530), the eight-dword block at `dword_6A0600`
 // walked by five callers (docs/SCRIPT_VM "The area transition"). Returns what
 // it returns: op 47 rewinds its pc by 7 on 0.
@@ -2431,18 +2450,9 @@ void Session::onCall(int i, const Call& call) {
         // The weapon table is `IAM\GLOBAL +42`, ten int16 object ids for
         // slots 5..14; it is read once, here, because nothing else in the
         // Session needs it.
-        if (!shootTableRead_) {
-            shootTableRead_ = true;
-            const auto g = readFile(iam_ + "/GLOBAL");
-            if (g.size() >= 42u + 2u * omk::kWeaponSlotCount) {
-                std::int16_t slots[omk::kWeaponSlotCount];
-                std::memcpy(slots, g.data() + 42, sizeof slots);
-                shoot_.setWeaponTable(slots, omk::kWeaponSlotCount);
-            }
-        }
         const int operand = call.fields.empty() ? -1 : call.fields[0];
-        if (call.op == 80) shoot_.begin(operand);
-        else               shoot_.end(operand);
+        if (call.op == 80) shootBegin(operand);
+        else               shootEnd(operand);
         break;
     }
     case 138: case 139: {
