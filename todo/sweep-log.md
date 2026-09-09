@@ -20,7 +20,33 @@ adds **one**. Counting commits ran this number to 13 when about nine tasks had
 been finished, which would have called for a half-hour sweep long before the
 rule intends one.
 
-**tasks since the last full sweep: 1** (the cupboard's stray voice line, omk-play 92, closed after the reset; reset 2026-09-09 by the `--slow` sweep recorded below; the fourteen it covered were the shadows' orphan fix, fitted, mapped, per-pixel lighting, the shimmer, supersampling, the dither, the player's vertical in three steps, the slider-door check's parse, the door read as a cutscene, the turned lift paths, the stale `engine: scene steps` expectation, and the cupboard take), the slider-door check's parse, the door read as a cutscene (omk-play 89), the turned lift paths (omk-play 90), the stale `engine: scene steps` expectation, the cupboard take's flat reach (omk-play 91), and the cupboard's stray voice line (omk-play 92, investigated and left open). **The counter had run to 19 and that was WRONG**: the reader ran a sweep more recently than this file recorded (their word, 2026-09-09). The lesson is this file's own - a counter only survives between sessions if everyone who runs a sweep writes it down, and a session that trusts a stale number spends half an hour proving nothing.
+**tasks since the last full sweep: 3** (the cupboard's stray voice line omk-play 92, the sweep's own triage, and the two red checks it left - all closed after the reset; reset 2026-09-09 by the `--slow` sweep recorded below; the fourteen it covered were the shadows' orphan fix, fitted, mapped, per-pixel lighting, the shimmer, supersampling, the dither, the player's vertical in three steps, the slider-door check's parse, the door read as a cutscene, the turned lift paths, the stale `engine: scene steps` expectation, and the cupboard take), the slider-door check's parse, the door read as a cutscene (omk-play 89), the turned lift paths (omk-play 90), the stale `engine: scene steps` expectation, the cupboard take's flat reach (omk-play 91), and the cupboard's stray voice line (omk-play 92, investigated and left open). **The counter had run to 19 and that was WRONG**: the reader ran a sweep more recently than this file recorded (their word, 2026-09-09). The lesson is this file's own - a counter only survives between sessions if everyone who runs a sweep writes it down, and a session that trusts a stale number spends half an hour proving nothing.
+
+> **ALL SIXTEEN CLOSED, 2026-09-09.** Three were genuine port faults and
+> thirteen were checks or probes that had drifted from correct code. The three:
+> the sneak SLIDER PAGE's navigation (`UiWidgets::at` took a `current` written
+> by another screen's open callback, so the player could not leave the tab
+> column), the nine-screen settle rule `tools/sim/ui.py` never got, and the
+> door/press work that started the day. **Two that were filed as port faults
+> were not**: `fill colour` was the probe composing the fill over the start
+> menu's animated cloud, and `engine: renderer`'s A2 violation - a boundary
+> apparently moving 83629 pixels - was the probe dithering one side of its own
+> comparison. Both were argued from facts that were individually true, which
+> is the caution worth keeping: *the port is wrong* is the expensive
+> conclusion and needs the same standard of evidence as any other.
+>
+> Six moved no expectation at all (the dither family, `fill colour`,
+> `path form`, `engine fog`, `engine: pose`, `engine: renderer`); five were
+> re-baselined against a deliberate change with the cause named; and one -
+> `line facing` - moved its WINDOW rather than its assertion, because
+> accepting the new value would have discarded what the check was written to
+> catch.
+>
+> **And a fix can turn passing checks red.** Repairing the slider page's entry
+> broke four slider harnesses that had been green on the broken navigation:
+> every one of them walked that page through the same wrong door, so the
+> family agreed with itself and asserted nothing. Only running the neighbours
+> caught it.
 
 > **THE 2026-09-09 SWEEP, ATTRIBUTED - and two ways a check can lie about being
 > green.** 16 failures, and the useful part is where they came from.
