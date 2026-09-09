@@ -3644,6 +3644,12 @@ int main(int argc, char** argv) {
     };
     // one shoot record per gunman, built from his own properties the first
     // frame he is staged and kept for the run (`todo/shoot-mode.md` 7d)
+    // Is the FIRST-PERSON shoot camera actually the one in force? Hiding the
+    // player is right only while it is: a reader found Kay'l missing at the
+    // end of the supermarket cutscene because the port hid him for "shoot
+    // mode" while a script's own camera had taken the view back to third
+    // person, leaving an empty room (`todo/omk-play.md` 97).
+    bool shootCameraLive = false;
     std::map<int, omk::ShootRecord> shootBrains;
     long stagedEver = 0;                 // for the summary line
     std::vector<int> stagedIds;
@@ -5257,6 +5263,14 @@ int main(int argc, char** argv) {
                 // `WorldCamera`; the preset's 3/8/8 stand in, labelled.
                 if (followCam && hc && hc->id != playerCamId) {
                     playerCamId = hc->id;
+                    // ...AND THAT TAKES THE SHOOT CAMERA AWAY. `Shoot_Enter`
+                    // does `Camera_Request(4, ...)` with both camera actors
+                    // set to the player; whether mode 4 outranks a script's
+                    // own camera is NOT read, so this port lets the script
+                    // win and simply records that the first-person camera is
+                    // no longer in force. The player's body follows that flag
+                    // rather than the shoot-mode flag - see `drawPlayer`.
+                    shootCameraLive = false;
                     player->setCameraOffsets(hc->eye, hc->at, hc->fov);
                     std::printf("frame %ld: follow camera %d - eye offset %.0f %.0f %.0f, "
                                 "target offset %.0f %.0f %.0f, fov %.0f (smoothing 3/8/8 "
@@ -5951,6 +5965,7 @@ int main(int argc, char** argv) {
                     const float eye[3] = {0.0f, 0.0f, 0.0f};
                     const float at[3]  = {0.0f, 0.0f, 787.4016f};
                     player->setCameraOffsets(eye, at, 75.0f);
+                    shootCameraLive = true;
                     std::printf("--shoot: shoot.begin -1 - camera mode %d, "
                                 "eye on the player, aim 20 m ahead\n",
                                 omk::ShootMode::kCameraMode);
@@ -8744,7 +8759,8 @@ int main(int argc, char** argv) {
             // it can only take him out whole. Whatever the exemption is for
             // in first person - the weapon in his hands is the obvious
             // candidate - is not reproduced here.
-            const bool drawPlayer = playerReady && player && !session.shootMode().active() &&
+            const bool drawPlayer = playerReady && player &&
+                                    !(session.shootMode().active() && shootCameraLive) &&
                                     (adventure || uiPause ||
                                      (session.dialogOpen() && !playerProgram));
             // ---- THE WORLD'S PROPS -----------------------------------

@@ -15,6 +15,64 @@ waiting on its evidence.
 
 ## Open (batch 7, filed 2026-09-09)
 
+### 97. The supermarket shoot phase blocks at the end of its cutscene, and Kay'l vanishes — A
+
+A reader played it, 2026-09-09: *"the game blocks at the end of the cutscene
+(with Kay'l disappearing)"*, and then the diagnosis that reframes it —
+*"it is no more a 3rd person automatic camera, it becomes a 1st person manual
+camera controlled by the mouse"*. AREA 68 / 230, set `ASMARKT1`, grid
+`SMARKET1`. **Three separate faults, and only the first is fixed.**
+
+**(a) Kay'l vanishing — FIXED.** Mine, from issue 95 the same day. That change
+hid the player whenever `shootMode` was active, which is right for a
+first-person view and wrong the moment the view is not first-person: the
+follow-camera block takes `player->setCameraOffsets` from **any world camera a
+script names**, so a cutscene camera puts the view back into third person
+while the body stays hidden — an empty room where Kay'l should be. The hide
+now follows a `shootCameraLive` flag that the script-camera override clears,
+so he is hidden only while the shoot camera is genuinely the one in force.
+
+> **And the question underneath it is NOT read.** `Shoot_Enter` does
+> `Camera_Request(4, ...)` with both camera actors set to the player. Whether
+> camera mode 4 **outranks** a script's own camera for as long as shoot mode
+> lasts is untraced, so the port lets the script win and records that the
+> first-person camera has gone. If mode 4 does outrank it, the right fix is
+> the other way round — keep the shoot camera and ignore the script — and
+> this flag becomes wrong. Reading `Camera_Request`'s precedence is what
+> settles it.
+
+**(b) No mouse, at all — NOT FIXED.** The port reads no mouse input anywhere;
+`omk-play` has one comment mentioning the word and no `SDL_MOUSEMOTION`
+handler. The shipped shoot scheme is an FPS layout and needs one:
+
+| action | key | mouse |
+|---|---|---|
+| Tir (fire) | 54 (right shift) | **12** |
+| Sauter | 57 (space) | 13 |
+| Tourner à gauche / droite | 75 / 77 (numpad 4/6) | — |
+| Glisser à gauche / droite | 203 / 205 (arrows) | — |
+| **Regarder En-Haut / En-Bas** | 72 / 80 (numpad 8/2) | — |
+| S'accroupir | 157 | — |
+| Arme | 56 | — |
+
+So in the original: arrows STRAFE, the numpad turns, the numpad also looks up
+and down, and **fire is a mouse button**. The port installs this scheme
+(`Input_InstallScheme(2)`) and then cannot deliver two of its fourteen
+actions, one of which is the trigger. The reader's "controlled by the mouse"
+is the missing half.
+
+**(c) The block itself — NOT DIAGNOSED.** It is consistent with (b): a phase
+that cannot be advanced because the player cannot aim or fire would look
+exactly like this. But that is a hypothesis and nothing here tests it, and the
+player's own firing is not wired either — the brain reaches outcome 1 for
+NPCs and `Actor_TickProjectiles` is called for nobody. **Do not close (c) on
+(b) being fixed**; it needs the reader to play it again.
+
+Reaching it headlessly: `--area 68`. The area loads and its startup script
+runs to completion in 400 frames with no hang, so whatever blocks is further
+in than a cold `--area` start reaches.
+
+
 ### 96. The Shooting gallery's gunmen never bind a bone: 0 of 19 tracks — A
 
 > **FIXED 2026-09-09.** And the title above is the second one: this was filed
