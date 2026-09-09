@@ -85,7 +85,9 @@ press (frames 158 and 410 of a five-press run), not a repeat, so the port is
 not over-firing it either.
 
 **So one of these five links is wrong, and the next pass should attack them in
-this order.** They are listed with what would settle each.
+this order.** They are listed with what would settle each. **Read on 2026-09-09,
+after the reader's correction: 2, 3 and 4 are now DEAD, and so are two more that
+were not on the list - see below the numbers.**
 
 1. **The one-shot ping-pong.** The whole thing rests on the spent slot never
    freeing, which keeps `dword_4E6B24` non-zero and so keeps the press flag
@@ -116,6 +118,56 @@ this order.** They are listed with what would settle each.
    `Actors_TickAll()` at :2178. If a second pump runs after the actor tick,
    the press is consumed in the same frame it is raised and the accounting
    changes.
+
+**`sub_465D30` read in full (0x00465D30, 21_d3d.c:2793), and it REFUTES link 3.**
+
+The signature is `(actor, objectNode, fromAdjust)`. It is pure geometry and
+animation selection:
+
+* the target point and the cone — `Matrix3x3_RotateVector(0,0,-1, node+156)`
+  for the facing, `acos` for the angle, sign from the cross product; the reach
+  is `23.622047 / cos` under 70 cm of height difference and `15.748032 / cos`
+  over it, refused past 50 degrees or 120 cm of error;
+* the step — `dword_6A5380 = |D - target| * 0.0508`, `Actor_Move` PROBED and
+  undone when it came from `MDACTION`, taken outright when it came from
+  `MDADJSTP`, and dropped when the probe moves under 25 cm;
+* the two angles it leaves on the actor, `+452` and `+456`;
+* the group it installs: **41** (high) or **143** (low) when it takes now,
+  **600** (`H_ADJSTP`, through `sub_466210`) when it steps first.
+
+It returns 0 refused, 1 the high take or the step, 2 the low take — and
+**it never writes `actor+0xA4`**. The hand is still empty when the pump runs,
+so link 3 is dead: the take cannot be what suppresses the message.
+
+Four more links died with it, all read out of the raw listing rather than the
+decompiler:
+
+* **link 2, `dword_4E6B24`** — every reference in the image is one purge, one
+  `++` in event 7's else-branch, one `--` in the pump's case 3/5, and the
+  event-6 gate itself (`test eax, eax; jz`). It is "slots in use", exactly as
+  the port has it.
+* **link 4, `dword_4E66B8`** — step 2 in the raw listing (`loc_40806F`) is
+  `cmp dword_4E66B8, ebx / jz`, and the only clear is at 11048, between a read
+  and a write of `dword_4E61E0`. The port's argument for dropping it holds.
+* **a sixth link, the subscription record**, checked because the router's
+  comment and the parser disagreed: `Message_RunHandlers` matches
+  `i16(rec, 4) == msg` and runs `u32(rec, 0)`, and `Subscription` is declared
+  `{script, message}` — so `{i32(b,o), i16(b,o+4)}` is right. Message 26 does
+  reach GLOBAL script 10.
+* **a seventh, `byte_910309`**, which gates the post in the raw listing and
+  which the port declares unmodelled: it is `[Preferences] viewer`, default
+  "0", and when set it skips the WHOLE pump (`if (!byte_910309) sub_408410(1)`).
+  A developer switch, 0 in play.
+
+**So the engine half of the chain is now airtight, and the divergence is
+almost certainly on the PORT's side — in when `Session::pressAction()` is
+called.** The engine raises event 6 from three `.CTL` transition sites, i.e.
+once when the channel ENTERS the action state. The port calls `pressAction()`
+off the special-move list. The arithmetic of one run says these are not the
+same: five presses gave **one activate and two messages**, where the chain
+predicts one activate and four messages. So the port's press is neither
+one-per-press nor one-per-transition, and the next pass should start by
+measuring event 6's rate against the engine's rather than re-reading the pump.
 
 **And the one measurement that settles it without any of this**: a golden
 capture of the original opening Kay'l's kitchen cupboard and pressing action
