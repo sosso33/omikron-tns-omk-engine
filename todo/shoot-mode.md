@@ -69,15 +69,73 @@ left over are AREA 230 (`SMARKET1`) and AREA 249 (`SOUKT`), and SCENE 56
 over exactly those two. No map belongs to a place with no gunfight, and no
 gunfight happens in a place with no map. `verify.py: shoot arenas`.
 
-So the file is one grid with two consumers: the map screen reveals cells as
-you walk (`sub_435970(node, x, z, 128)` is a WRITE, on the player's own cell,
-every tick), and the shoot AI tests them before it moves. Which bits are which
-is step 2.
+So the file is one grid with two consumers. **What the write is, I guessed
+wrong in this paragraph and step 2 settled it**: `sub_435970(node, x, z, 128)`
+is not a map reveal, it is an actor CLAIMING the cell — see §2b.
 
 **This is the §1 shape twice over.** A format was decoded, named for the
 consumer that happened to be found first, and the name then stood in for the
 fact; and a negative result — "this tree has no navigation data" — was a fact
 about where anyone had looked, not about the tree.
+
+## 2b. The grid, decoded — step 2, 2026-09-09
+
+`engine/src/formats/map2d.{h,cpp}` reads it and `engine/tools/map2d_probe.cpp`
+draws it. The reader refuses anything that does not land **exactly** on the
+file size, which is the walk's own self-check, and it holds for all 16.
+
+**The floor's `bound` is a BOX, not an origin**: `[minX, maxX, minY, maxY,
+minZ, maxZ]`. The loader only ever touches `+0`, `+12`, `+16`, `+24` and
+`+28`, so the order is established from the data instead — `W * scale` matches
+`maxX − minX` and `H * scale` matches `maxZ − minZ` to within one cell in
+**79 of 79** floors. And the scale is 39, 78 or 117 world units, which against
+the engine's own inch (`"Hauteur : %f meter"`, 39.37) is **1, 2 or 3 metres a
+cell**.
+
+**The cell byte.** `sub_4353E0` refuses exactly `{0, 2, 3, 0x80}`, plus
+anything outside `1 <= x < W`, `1 <= z < H` — note the low margin of ONE. The
+shipped census over 74987 cells:
+
+| value | cells | what it is |
+|---|---|---|
+| 0 | 46840 | outside the room — blocked |
+| 1 | 22698 | floor |
+| 2 | 4556 | an obstacle — blocked |
+| 3 | 0 | refused by the code, never shipped |
+| 8 | 36 | **passable, and nothing branches on it** |
+| 0x10..0x17 | 142 | a DOOR, low nibble = its slot |
+| 0xCD | 715 | **passable, and nothing branches on it** |
+| 0x80 | 0 on disk | an ACTOR, written at runtime |
+
+* **0x80 is occupancy, not reveal.** Every mover reads the cell it is about to
+  stand on into its own record `+189`, stamps 128 over it, and writes the
+  saved byte back when it leaves (`sub_435970` / `sub_420C10`, and the same
+  pair inside the shoot mover at `05_sys.c` 5599). So "blocked" means *wall or
+  somebody standing there*, and the AI's collision avoidance is this grid.
+* **0x10 is a door.** `sub_435270`'s default arm indexes
+  `doorTable[16 * floor + (c & 0xF)]` — the 192 bytes per floor that
+  `FILE_FORMATS` called runtime scratch are **16 slots of 12 bytes**, each
+  `{arm, openObject, closeObject}` naming SCENE OBJECTS that
+  `ScriptObject_Start` runs (24_sys.c 4569) — and asks the scene for that
+  object's state before letting the cell be crossed. The same door pairs this
+  repo was fixing an hour earlier in `omk-play` 94.
+* **8 and 0xCD are carried through unfolded.** Nothing in the binary
+  distinguishes them from floor, so to the AI they are floor; folding them
+  into "walkable" would destroy the evidence for whatever does read them.
+  (0xCD is also MSVC's uninitialised fill, which is a hypothesis and not a
+  finding.)
+
+**And it was LOOKED at before it was measured.** `map2d_probe <data> gallery
+0` draws AREA 59's floor as 71x40 characters and it is unmistakably a floor
+plan — rooms, corridors, doorways, pillars. A census cannot tell a navigation
+grid from noise; a picture settles it in five seconds.
+
+One incident worth keeping: restoring the mutation used to show
+`map2d grid` failing left `make` saying **"up to date"** with a stale object,
+because the header edit and the previous build landed in the SAME SECOND. The
+check then reported the mutated refusal set after the fix was back. That is
+CLAUDE.md §1's stale-object trap wearing a different hat, and `touch` on the
+header is the whole of the fix.
 
 ## 3. Where shoot mode happens
 
@@ -95,7 +153,7 @@ Each ends in a commit and a report.
 | # | step | state |
 |---|---|---|
 | 1 | **the reading above** — what the mode does, and the grid finding | **done 2026-09-09**; `verify.py: shoot arenas` |
-| 2 | **the grid**: what a cell BYTE means (walkable / blocked / revealed), the floor record's fields, the `nSegs × {kind, f32[6]}` wall segments and the per-floor `k × [len][dwords]` lists — which are the likeliest candidate for the node GRAPH the AI walks. A reader in `engine/src/formats/`, and a probe that draws one floor so it can be judged by eye against the set it belongs to | next |
+| 2 | **the grid** — the cell byte, the floor box, the door table, a reader and a probe that DRAWS a floor | **done 2026-09-09**, §2b; `verify.py: map2d grid` |
 | 3 | **the mode**: enter and leave ported into the Session — the records, `ACTOR_STATE` 3, group 200, camera mode 4, scheme 2, `shoot2.scx`, the 33/34 HUD choice — with ops 80/81 and suspend/resume wired, and an `omk-play --shoot` harness that stands in an arena in shoot mode | |
 | 4 | **the player's half**: `Shoot_TickPlayer`'s live arm on the grid, `Shoot_StartTargetScripts`, `Shoot_InitWeapon` and event 48, and what a shot actually IS | |
 | 5 | **the brains, decision revisited** — with the grid in hand, how much of the generic shooter's 16 states is now fact rather than geometry. Gandhar is already exact; Astaroth and the generic are state graphs. **Only what the grid settles gets wired**; the rest stays labelled | |

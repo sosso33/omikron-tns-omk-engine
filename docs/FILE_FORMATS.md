@@ -1302,10 +1302,23 @@ them in the player's frame. `engine/tools/dump_setpieces` prints every field.
   opcode all name a map, and the two maps left over belong to AREA 230 and
   AREA 249, over which SCENE 56 and SCENE 62 — the Supermarket and Toits
   gunfights — are loaded. No map without a gunfight, no gunfight without a
-  map (`verify.py: shoot arenas`). What each cell BYTE means is open;
-  `sub_435970(node, x, z, 128)` is written on the player's own cell every
-  tick, which is the reveal, and the AI's read is a different question.
-  `todo/shoot-mode.md`.
+  map (`verify.py: shoot arenas`).
+
+  **The cells, decoded** (`engine/src/formats/map2d.h`, `verify.py: map2d
+  grid`). `bound` is a BOX — `[minX, maxX, minY, maxY, minZ, maxZ]`, since
+  `W * scale` matches `maxX − minX` in 79 of 79 floors — and the scale is 39,
+  78 or 117 units, which is **1, 2 or 3 metres** a cell against the engine's
+  inch. `sub_4353E0` refuses exactly `{0, 2, 3, 0x80}` and anything outside
+  `1 <= x < W`, `1 <= z < H`: 0 is outside the room (46840 cells), 1 is floor
+  (22698), 2 an obstacle (4556), 3 never ships. **0x80 is an ACTOR, written
+  at runtime** — every mover saves the cell into its record `+189`, stamps 128
+  over it and writes the byte back on leaving (`sub_435970` / `sub_420C10`),
+  so the grid is the engine's occupancy map. **0x10 is a DOOR** whose low
+  nibble indexes the 192-byte trailing record, which is therefore not scratch
+  but **16 slots of 12 bytes**, `{arm, openObject, closeObject}` naming the
+  scene objects `ScriptObject_Start` runs — the cell is crossable only when
+  the scene says that door is open. 8 (36 cells) and 0xCD (715) are passable
+  and nothing branches on them. `todo/shoot-mode.md`.
 * **`RADAR/*.WRE`** — **solved**: the radar/ambience wireframes the
   `ambience.on/off` opcodes toggle. `{u32 nVerts, u32 nEdges,
   f32[3] × nVerts world positions, u16[2] × nEdges edge indices}` — 15

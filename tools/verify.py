@@ -25723,6 +25723,94 @@ def c_map2d():
 
 
 
+def c_map2d_grid():
+    r"""`engine/`: the navigation grid, read by the port and by this file
+    independently, and the AI's refusal set MEASURED.
+
+    `MAP2D/*.mpt` is the shoot AI's navigation grid (`shoot arenas`,
+    `todo/shoot-mode.md`). The container walk is `map2d`'s; this is about what
+    the cells MEAN, and it holds two readers to one answer - `engine/src/
+    formats/map2d.cpp`, whose `load` refuses anything that does not land
+    exactly on the file size, and the walk below.
+
+    Three things are asserted that a census alone would not catch:
+
+    * **`bound` is a BOX**, `[minX, maxX, minY, maxY, minZ, maxZ]` - the
+      loader only ever touches +0, +12, +16, +24 and +28, so the field order
+      comes from the data: `W * scale` matches `maxX - minX` within one cell
+      in 79 of 79 floors, and `H * scale` matches `maxZ - minZ`.
+    * **the refusal set**, taken by running every byte 0..255 through the
+      port's own `blockedValue` - 0, 2, 3 and 128, which is `sub_4353E0`'s
+      switch. 3 never occurs on disk and 128 never appears there at all: it is
+      the RUNTIME occupancy stamp an actor writes over the cell it stands on
+      and restores when it leaves (`sub_435970` / `sub_420C10`).
+    * **the door cells**: 142 of them carry `0x10`, whose low nibble indexes
+      the 16-slot table at the end of each floor.
+
+    Cell values 8 and 205 are carried through deliberately: nothing in the
+    binary branches on them, so to the AI they are floor, and folding them
+    into "walkable" would destroy the evidence for whatever does read them.
+    """
+    import subprocess, re, glob
+    fr = omkpaths.data_root()
+    if not os.path.isdir(fr):
+        return ("no data",), ("data",), "needs the shipped tree"
+    eng = os.path.join(ROOT, "engine")
+    b = subprocess.run(["make", "-s", "build/map2d_probe"], cwd=eng,
+                       capture_output=True, text=True)
+    binp = os.path.join(eng, "build", "map2d_probe")
+    if b.returncode != 0 or not os.path.exists(binp):
+        return ("build failed",), ("built",), "engine/ must build"
+    r = subprocess.run([binp, fr, "--all"], capture_output=True, text=True)
+    # by LABEL, and the per-floor rows are counted BEFORE anything is derived
+    rows = len(re.findall(r"^\S+\s+floor\s+\d+", r.stdout, re.M))
+    m = re.search(r"floors (\d+)\s+segments (\d+)\s+waypoints (\d+)\s+"
+                  r"door cells (\d+)\s+bound-fits-grid (\d+)/(\d+)", r.stdout)
+    refused = re.search(r"^refused((?: \d+)+)$", r.stdout, re.M)
+    hist = re.search(r"^cell histogram:(.*)$", r.stdout, re.M)
+    if not (m and refused and hist):
+        return ("unparsed", rows), ("parsed", 79), "the probe's own summary lines"
+    port = tuple(int(x) for x in m.groups())
+    portHist = tuple(sorted((int(a), int(c)) for a, c in
+                            (kv.split(":") for kv in hist.group(1).split())))
+    # ...and the same file walked here, so the two readers can disagree
+    floors = segs = wp = doors = 0
+    ours = {}
+    for p in sorted(glob.glob(omkpaths.data("MAP2D/*.mpt"))):
+        d = open(p, "rb").read()
+        scale, count = struct.unpack_from("<2I", d, 0)
+        o = 8
+        for i in range(count):
+            n = struct.unpack_from("<I", d, o)[0]
+            o += 4 + 28 * n
+            W, H = struct.unpack_from("<2I", d, o + 24)
+            o += 32
+            cells = d[o:o + W * H]
+            o += W * H
+            floors += 1; segs += n
+            for c in cells:
+                ours[c] = ours.get(c, 0) + 1
+                if (c & 0x10) and c not in (0, 2, 3, 0x80): doors += 1
+        for i in range(count):
+            k = struct.unpack_from("<I", d, o)[0]
+            o += 4
+            wp += k
+            for j in range(k):
+                ln = struct.unpack_from("<I", d, o)[0]
+                o += 4 * (ln + 3)
+    return (rows, port, portHist,
+            tuple(int(x) for x in refused.group(1).split()),
+            (floors, segs, wp, doors), portHist == tuple(sorted(ours.items()))), \
+           (79, (79, 36, 53, 142, 79, 79),
+            ((0, 46840), (1, 22698), (2, 4556), (8, 36), (16, 65), (17, 19),
+             (18, 11), (19, 17), (20, 10), (21, 4), (22, 12), (23, 4), (205, 715)),
+            (0, 2, 3, 128), (79, 36, 53, 142), True), \
+           ("floor rows the probe printed; its (floors, segments, waypoints, "
+            "door cells, bound-fits-grid); its cell histogram; the values its "
+            "own test REFUSES; this file's independent walk; and whether the "
+            "two histograms agree")
+
+
 def c_shoot_arenas():
     r"""SCRIPT_VM / FILE_FORMATS: every `MAP2D` map is a SHOOT-MODE ARENA, and
     every arena has a map - 16 of 16 both ways.
@@ -28371,7 +28459,7 @@ def c_licence_headers():
                    if TAG in open(p, encoding="utf-8",
                                   errors="replace").read(600)]
     return (authored, sorted(missing), len(vendored), mislabelled), \
-           (396, [], 1, []), \
+           (399, [], 1, []), \
            "authored source files under tools/, engine/src, engine/tools, " \
            "engine/backends and scripts/; those MISSING the SPDX tag; " \
            "vendored files in engine/third_party; and vendored files wrongly " \
@@ -30392,6 +30480,7 @@ CHECKS = [
     ("extension case",     c_extension_case,    "CLAUDE.md 1"),
     ("map2d",              c_map2d,             "FILE_FORMATS 5b5"),
     ("shoot arenas",       c_shoot_arenas,      "todo/shoot-mode"),
+    ("map2d grid",         c_map2d_grid,        "todo/shoot-mode; formats/map2d.h"),
     ("wre wireframes",     c_wre_files,         "FILE_FORMATS 5b5"),
     ("morph face models",  c_morph_face_models, "FILE_FORMATS 5"),
     ("shoot mode",         c_shoot_mode,        "SCRIPT_VM"),
