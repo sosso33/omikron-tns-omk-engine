@@ -19,6 +19,7 @@
 //
 // Y GROWS DOWN, so the larger y is the lower point and a SMALLER lowest-corner
 // number means the body is drawn HIGHER.
+#include "actor/player.h"
 #include "actor/pose.h"
 #include "actor/spatial.h"
 #include "formats/anim.h"
@@ -156,6 +157,22 @@ int main(int argc, char** argv) {
 
     std::vector<std::string> want;
     for (int i = 4; i < argc; ++i) want.push_back(lower(argv[i]));
+
+    // ---- `--bands`: MDJUMP03's landing table, over its own edges -----
+    //
+    // Printed either side of each threshold, so the check reads the BOUNDARY
+    // and not a value comfortably inside a band.
+    if (!want.empty() && want[0] == "--bands") {
+        const double edge[3] = {59.055118, 118.11024, 196.85039};   // 1.5, 3, 5 m
+        std::printf("BANDS");
+        std::printf(" 0:%d", omk::PlayerController::jumpBand(0.0));
+        for (double e : edge) {
+            std::printf(" %.4f-:%d %.4f:%d", e, omk::PlayerController::jumpBand(e - 0.001),
+                        e, omk::PlayerController::jumpBand(e));
+        }
+        std::printf(" 1e9:%d\n", omk::PlayerController::jumpBand(1e9));
+        return 0;
+    }
 
     // ---- `--jump`: WHERE THE JUMP'S HANG TIME COMES FROM -------------
     //

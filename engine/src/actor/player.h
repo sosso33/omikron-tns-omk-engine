@@ -484,6 +484,23 @@ public:
     // reaction. -> the band it decided (2 ordinary, 1 / 3 / 4 a reaction).
     int  jumpLand();
 
+    // MDJUMP03's band table on its own, so it can be TESTED without a drop to
+    // stand under. The reaction arm needs 1.50 m of fall and every fixture in
+    // the suite stands on flat ground, so asserting this through a jump would
+    // exercise band 2 and nothing else; a check that instead grepped the
+    // source for the three constants would go red the day somebody moved them,
+    // which is the failure shape a concurrent session hit three times over on
+    // 2026-09-09 with call-site scans of `play.cpp`.
+    //
+    // 5.00 m -> 4, 3.00 m -> 3, 1.50 m -> 1, otherwise 2. The order is 2, 1,
+    // 3, 4 with distance because `+1304` is a CODE, not a severity rank.
+    static int jumpBand(double drop) {
+        return drop >= 196.85039 ? 4
+             : drop >= 118.11024 ? 3
+             : drop >= 59.055118 ? 1
+             : 2;
+    }
+
     const Walker& walker() const { return walker_; }
     long ticks() const { return ticks_; }
     // How far the position has moved from the start, in the ground plane.

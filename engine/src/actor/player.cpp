@@ -218,10 +218,7 @@ bool PlayerController::jumpLaunch() {
 // 9 units from the apex and lands in band 2, silent, which is right.
 int PlayerController::jumpLand() {
     const double d = walker_.lastLandingDrop();
-    const int band = d >= 196.85039 ? 4
-                   : d >= 118.11024 ? 3
-                   : d >= 59.055118 ? 1
-                   : 2;
+    const int band = jumpBand(d);
     if (band == 2) return band;                 // short: no reaction
     enterGroupById(2);                          // sub_465340(actor, 2)
     setActorState(static_cast<ActorState>(18), "MDJUMP03");

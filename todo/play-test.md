@@ -261,6 +261,51 @@ is better.
 
 ---
 
+## 8. THE JUMP — the one thing here a check CANNOT settle, 2 minutes
+
+The same day, `todo/player-vertical.md` steps 1-3 landed: the walk no longer
+floats, and the jump has an impulse for the first time. The walk half is
+settled by measurement (the drawn foot is centred on the floor, and it was a
+constant offset off it before). **The jump half is not, and cannot be.**
+
+```
+cd engine && make play
+build/omk-play ../gamedata ../tables --save ../traces/save-appart.bin \
+    --area 0 --stand 1804,0,-6890,336
+```
+
+Walk with UP, then press SPACE (*Annuler / Sauter*, the Aventure scheme's
+bit 32).
+
+What the port now does, every number of it read out of the engine and none of
+it invented:
+
+* **14 frames of hang** (0.47 s), from the `.CTL` entry's own `+12`;
+* **22.9 cm of lift** — the apex, `-g * N/2` integrated;
+* **2.5 m of forward reach**, `dword_910348` rotated by his facing.
+
+**So it is a flat running LEAP, not a vertical hop, and that is the thing to
+judge.** Every check behind it is Tier 5 — no capture from the trace rig can
+reach a special-move handler, so the oracle is the shipped data's own
+arithmetic and *not* the original's behaviour. If 23 cm looks too low or 2.5 m
+too far, that is evidence about `N` (the reading this repo is least sure of,
+because `entry+12`'s low half is a ROLE code in the combat banks) and it is
+worth saying so — the alternative readings were tested and refuted, but a
+person watching it is a better instrument than any of them.
+
+Two more things a check here cannot see:
+
+* **the landing.** A flat leap lands in band 2 and must play NO landing
+  reaction. Jumping off something 1.5 m or higher should put him into
+  `ACTOR_STATE 18` with bank group 2 — that arm is transcribed from
+  `MDJUMP03` and **has never been executed**, by any check or by anyone. The
+  band table itself is run at all four of its edges; what it *does* is not.
+* **whether he goes through anything.** The leap is swept against the same
+  walls a walk is, so a jump into a wall should stop dead rather than pass
+  through.
+
+---
+
 ## What is NOT worth testing yet
 
 * ~~the videophone's own picture inside the sneak~~ — **CONFIRMED IN PLAY

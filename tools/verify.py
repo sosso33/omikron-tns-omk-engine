@@ -29380,12 +29380,13 @@ def c_engine_player_landing():
     luck (both are short) and would understate every leap off a ledge by one
     apex height, so the check asserts the DISTANCE and not only the band.
 
-    **NOT covered, and this is a real gap rather than a limit of the data**:
-    the reaction arm. Bands 1, 3 and 4 need a drop of 1.50 m or more, and the
-    Anekbah stand this run uses is flat, so `enterGroupById(2)` and
-    `ACTOR_STATE 18` are transcribed and **never executed here**. The
-    thresholds are asserted against the listing so a typo cannot hide, but
-    somebody jumping off something is what would exercise the arm.
+    **PARTLY covered, and the split matters.** The band TABLE is fully
+    exercised - `jumpBand` is run either side of all three thresholds, so every
+    band including 1, 3 and 4 is reached and the edges are pinned. What is
+    still not executed is what those bands DO: `enterGroupById(2)` and
+    `ACTOR_STATE 18` need a real drop of 1.50 m and every fixture here stands
+    on flat ground, so that arm is transcribed and unrun. Somebody jumping off
+    something is what would close it.
 
     **ONE SUBSTITUTION, LABELLED**: the engine bands the CLEARANCE
     `actor[264] - actor[276]` and `actor+276` is still untraced (§4). This
@@ -29395,11 +29396,28 @@ def c_engine_player_landing():
     import subprocess, tempfile, shutil, re as _re
     eng = os.path.join(ROOT, "engine")
     save = os.path.join(ROOT, "traces", "save-appart.bin")
-    src = os.path.join(eng, "src", "actor", "player.cpp")
     if not os.path.isdir(eng) or not os.path.exists(save):
         return ("skipped",), ("skipped",), "engine/ or the anchor save absent"
-    txt = open(src, encoding="utf-8").read()
-    thresh = tuple(t in txt for t in ("196.85039", "118.11024", "59.055118"))
+    # THE BAND TABLE, RUN AT ITS OWN EDGES rather than grepped for.
+    #
+    # This asked `player.cpp` whether it contained the three constants until
+    # 2026-09-09. That is the shape a concurrent session hit three times the
+    # same day with call-site scans of `play.cpp`: a source scan goes red
+    # against CORRECT code the moment somebody moves what it looks for, and
+    # nothing obliges them to update it. `jumpBand` is a pure function now and
+    # the probe runs it either side of each threshold, so the check reads the
+    # boundary and reaches all four bands - which the jump below cannot, its
+    # stand being flat.
+    bp = subprocess.run(["make", "-s", "build/vertical_probe"], cwd=eng,
+                        capture_output=True, text=True)
+    probe = os.path.join(eng, "build", "vertical_probe")
+    bands = "(not built)"
+    if bp.returncode == 0 and os.path.exists(probe):
+        br = subprocess.run([probe, omkpaths.data_root(), "HO1_FN", "H1AVNT", "--bands"],
+                            capture_output=True, text=True)
+        for L in (br.stdout + br.stderr).splitlines():
+            if L.startswith("BANDS "):
+                bands = L[6:].strip()
     mk = subprocess.run(["make", "-s", "play"], cwd=eng,
                         capture_output=True, text=True)
     play = os.path.join(eng, "build", "omk-play")
@@ -29423,13 +29441,16 @@ def c_engine_player_landing():
     band = int(m.group(2)) if m else -1
     return (out.count("jump: armed on"), out.count("jump: launched"),
             out.count("jump: landed"), round(drop, 2), band,
-            "(short, no reaction)" in out, thresh), \
-           (1, 1, 1, 9.0, 2, True, (True, True, True)), \
+            "(short, no reaction)" in out, bands), \
+           (1, 1, 1, 9.0, 2, True,
+            "0:2 59.0551-:2 59.0551:1 118.1102-:1 118.1102:3 "
+            "196.8504-:3 196.8504:4 1e9:4"), \
            "the leap armed, launched and landed once each; the landing's " \
            "drop, which is the apex because he lands where he left; the band " \
            "MDJUMP03 gives it (2 = short, and it must NOT play the landing " \
-           "reaction); that it said so; and that player.cpp carries the " \
-           "listing's own three thresholds"
+           "reaction); that it said so; and MDJUMP03's whole band table RUN " \
+           "either side of each threshold - all four bands, the edges " \
+           "inclusive upward as the listing's `fcom`/`jnz` pair reads"
 
 
 
