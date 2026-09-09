@@ -230,16 +230,21 @@ public:
     // came on and `drawPlayer` dropped him. A reader walking into the flat's
     // kitchen got *black stripes and the player disappearing* (2026-09-09).
     //
-    // A BEAT POSES A BODY AND A DOOR DOES NOT, and that is the whole of the
-    // difference. Measured over the flat's own scene: `PorteEnt1Open`,
-    // `PteSalle2B1Open`, `PorteWCOpen`, `TiroirCui1Open` and `ConsoleOpen`
-    // are all `clip -1` - no body animation at all - against the Impasse's
-    // beats at clip 16, 29 and 37. Reverting this one term puts `parked` back
-    // to 1 from frame 3 of standing in the entrance-door zone, with 64 black
-    // rows top and bottom; with it the same frames have none.
+    // A BEAT OWNS A BODY AND A DOOR DOES NOT, and that is the whole of the
+    // difference - read off the OPCODE that started the program, since 57/58
+    // start an object on the scene while 46/90 and 59/60 bind one to an actor
+    // record. Reverting this one term puts `parked` back to 1 from frame 3 of
+    // standing in the entrance-door zone, with 64 black rows top and bottom;
+    // with it the same frames have none.
+    //
+    // It was `clip >= 0` for one commit - "does the program pose a body" - and
+    // that is NOT the same question: a beat's clip is its FIRST body
+    // animation, so a chain sitting on a step that animates nothing dropped
+    // out of the test and the walker took the body back for a frame.
+    // `engine: player program` and `line facing` are what caught it.
     bool parkedOnProgram() const {
         for (const auto& c : ctxs_)
-            if (c && c->status == 4 && scene_.programPosesBody(c->waitingForProgram))
+            if (c && c->status == 4 && scene_.programDrivesBody(c->waitingForProgram))
                 return true;
         return false;
     }

@@ -8317,10 +8317,23 @@ def c_engine_slider_door():
     # So the row COUNT is asserted before anything is derived from the rows,
     # and the four roots are reported BY NAME rather than as a boolean - a
     # wrong answer now says what it found.
+    #
+    # ...AND IT MUST NOT BE COUPLED TO THE TOOL'S PRINTF ORDER, which is the
+    # third time this line has been the fault. `mesh_list` is a DEBUG tool and
+    # its columns get rearranged by whoever is reading them - `fc2b8d0` moved
+    # `id`, and a later edit moved it again to the end of the line - so a
+    # pattern that pins the order goes red against a tool that is working. The
+    # fields are found by their own LABELS instead, and the name is the token
+    # in front of `flags`, which both layouts share.
     byId, parentOf = {}, {}
-    for m in _re.finditer(r"^ *(\d+) id +(\d+) (\S+) .*parent (-?\d+)", mo, _re.M):
-        mid, nm, par = int(m.group(2)), m.group(3), int(m.group(4))
-        byId[mid] = nm; parentOf[nm] = par
+    for line in mo.splitlines():
+        nm = _re.search(r"^\s*\d+\s+(?:id\s+-?\d+\s+)?(\S+)\s+flags\b", line)
+        mid = _re.search(r"\bid\s+(-?\d+)", line)
+        par = _re.search(r"\bparent\s+(-?\d+)", line)
+        if not (nm and mid and par):
+            continue
+        byId[int(mid.group(1))] = nm.group(1)
+        parentOf[nm.group(1)] = int(par.group(1))
     meshRows = len(byId)
     def rootName(nm):
         seen = 0

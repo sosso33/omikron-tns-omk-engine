@@ -20,7 +20,52 @@ adds **one**. Counting commits ran this number to 13 when about nine tasks had
 been finished, which would have called for a half-hour sweep long before the
 rule intends one.
 
-**tasks since the last full sweep: 14** (the shadows' orphan fix, fitted, mapped, per-pixel lighting, the shimmer, supersampling, the dither, and the player's vertical - step 1 the walk float, step 2 the jump's impulse, step 3 its state - across two sessions), the slider-door check's parse, the door read as a cutscene (omk-play 89), the turned lift paths (omk-play 90), the stale `engine: scene steps` expectation, the cupboard take's flat reach (omk-play 91), and the cupboard's stray voice line (omk-play 92, investigated and left open). **The counter had run to 19 and that was WRONG**: the reader ran a sweep more recently than this file recorded (their word, 2026-09-09). The lesson is this file's own - a counter only survives between sessions if everyone who runs a sweep writes it down, and a session that trusts a stale number spends half an hour proving nothing.
+**tasks since the last full sweep: 0** (reset 2026-09-09 by the `--slow` sweep recorded below; the fourteen it covered were the shadows' orphan fix, fitted, mapped, per-pixel lighting, the shimmer, supersampling, the dither, the player's vertical in three steps, the slider-door check's parse, the door read as a cutscene, the turned lift paths, the stale `engine: scene steps` expectation, and the cupboard take), the slider-door check's parse, the door read as a cutscene (omk-play 89), the turned lift paths (omk-play 90), the stale `engine: scene steps` expectation, the cupboard take's flat reach (omk-play 91), and the cupboard's stray voice line (omk-play 92, investigated and left open). **The counter had run to 19 and that was WRONG**: the reader ran a sweep more recently than this file recorded (their word, 2026-09-09). The lesson is this file's own - a counter only survives between sessions if everyone who runs a sweep writes it down, and a session that trusts a stale number spends half an hour proving nothing.
+
+> **THE 2026-09-09 SWEEP, ATTRIBUTED - and two ways a check can lie about being
+> green.** 16 failures, and the useful part is where they came from.
+>
+> **13 were already red**, none of them ever run: they are all `SLOW`, and the
+> two sweeps recorded above were the fast list. `engine fog` (one colour level,
+> 24 against 32), `engine: pose`, `engine: walk`, `engine: walker falls`,
+> `engine: I2D`, `ui geometry`, `path form` (the flat's greeting beat does not
+> start at all, so `Gunbl` never moves), `fill colour`, `sneak page colour`,
+> `engine: renderer`, `engine: UI`, and - after the trap below - `engine:
+> player program` and `line facing`.
+>
+> **1 was an UNCOMMITTED local edit.** `engine/tools/mesh_list.cpp` in the
+> working tree moves the `id` column to the end of the line, and `engine:
+> slider door` parsed that tool's output BY POSITION: zero rows matched, so it
+> reported the four door meshes as their own roots instead of `SlBassin`. The
+> check's own comment records the same thing happening in the other direction
+> at `fc2b8d0`. Fixed by finding the fields by their LABELS - `\bid\s+`,
+> `\bparent\s+`, and the token in front of `flags` - so it holds under either
+> layout. **A check must not be coupled to a debug tool's printf order.**
+>
+> **2 were this session's**, both mechanical: `licence headers` (394 -> 395,
+> the new `path_turn.cpp`) and `INDEX.md fresh`.
+>
+> **TRAP 1: the obvious fix for `INDEX.md fresh` destroys information.**
+> Running `tools/index.py` would have committed the LOSS of six named
+> functions - `Shadow_EmitBoneBlob`, `Actor_DrawShadow`, `Slider_PlaceShadow`,
+> `Shadow_CloneNode`, `o3de_Enable/DisableObject` - and three hand-written
+> descriptions. `readable/src` is UNTRACKED, so this machine's copy had drifted
+> from `tools/renames.json`; the fix is `tools/rename.py` (6 promoted RAW ->
+> NAMED, 91 occurrences) and putting the three descriptions back into their
+> banners, after which the regenerated file is byte-identical to the committed
+> one. This check can go red on any machine whose `readable/src` has not had
+> the map applied, and the fast fix is the wrong one.
+>
+> **TRAP 2: A SKIPPED CHECK PRINTS `ok`.** The attribution above was done by
+> running the failures in a throw-away worktree at `dcf99d7` - and `engine:
+> player program` and `line facing` came back "ok" there, which read as "this
+> session broke them". They had SKIPPED: both need `omk-saves/GAMES`, which is
+> gitignored and so absent from a worktree, and their skip path returns
+> `("skipped",), ("skipped",)` - got equals want, so the row says ok. What
+> settled it was reverting all four of this session's engine changes one at a
+> time and getting byte-identical failures each time. **A worktree comparison
+> is only valid for checks whose inputs are committed**, and a row that says ok
+> may mean "did not run".
 
 > **A RECORDED SWEEP OF "187 checks, 0 failed" DOES NOT INCLUDE THE `--slow`
 > CHECKS, and that is how one stayed red for two days.** `engine: scene steps`
@@ -51,6 +96,7 @@ rule intends one.
 | 2026-09-07 | after 5 tasks: the beat hand-over, the frame-by-frame body pass, the city pool swap, the speaker's placement | 187 checks, 0 failed |
 | 2026-09-09 | the READER's own run, reported in conversation and not recorded here at the time | (not recorded) |
 | 2026-09-09 | a partial `--slow` over the shadows, the shimmer, supersampling and the player's vertical - stopped once the reader said a sweep was not owed | 192 ok, 1 failed (`engine: slider door`) |
+| 2026-09-09 | **`--slow`, the first real one since 2026-09-07** - asked for by the reader | **384 checks, 16 failed**, 1h27m. 13 were ALREADY RED before this session, 1 was an uncommitted local edit, and 2 were this session's (both mechanical). See the note below |
 
 The five tasks it covered were `4dffb70` (omk-play 78, the beat hand-over),
 `74ed743` (the frame-by-frame pass on the body), `a02930e` (omk-play 79, the

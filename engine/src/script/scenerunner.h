@@ -267,17 +267,23 @@ public:
         bool        animReached = false;
     };
     const std::vector<Started>& started() const { return started_; }
-    // DOES PROGRAM `idx` POSE A BODY AT ALL?
+    // DOES PROGRAM `idx` OWN A BODY?
     //
-    // `Started::clip` is pre-filled from the object's first body animation and
-    // stays -1 for an object that has none - a door, a drawer, an `fx*`. That
-    // is what separates a CUTSCENE BEAT from a PROP, and nothing else can:
-    // op 46 binds either to the player's actor record
-    // (`ScriptObject_StartOnActor(Actor_Player(), ...)`), so the binding alone
-    // does not say whether anything is going to move his body.
-    bool programPosesBody(int idx) const {
+    // The question `Session::parkedOnProgram` needs, and the answer is the
+    // OPCODE that started it, not what its current step happens to do. 57/58
+    // (`how` "scene") start an object on the SCENE - a door, a drawer, a lift,
+    // a prop - while 46/90 bind one to the player's actor record and 59/60 to
+    // a named actor, which is what a cutscene beat is made of.
+    //
+    // This was `clip >= 0` for one commit and that was too narrow: a beat's
+    // `Started::clip` is the object's FIRST body animation, so a chain whose
+    // current object animates nothing - a camera-only or sound-only step
+    // between two posed ones - stopped counting and handed the body back to
+    // the walker for a frame. `engine: player program` and `line facing` both
+    // caught it on the flat's goodbye, one frame out each.
+    bool programDrivesBody(int idx) const {
         return idx >= 0 && idx < static_cast<int>(started_.size()) &&
-               started_[static_cast<std::size_t>(idx)].clip >= 0;
+               started_[static_cast<std::size_t>(idx)].how != "scene";
     }
     const std::vector<int>&     missed()  const { return missed_; }
     std::size_t programCount() const { return programs_.size(); }
