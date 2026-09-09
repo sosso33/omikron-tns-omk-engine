@@ -77,6 +77,13 @@ int main(int argc, char** argv) {
     sw.init(w, h2);
     sw.setTextures(tex);
     omk::View v; v.cam = cam;
+    // ...WITH THE DITHER OFF. What this probe reports is a COUNT of differing
+    // pixels between two renders, and `View::dither` defaults to true, so the
+    // 4x4 ordered pattern adds noise to exactly the number under test - it is
+    // what moved this check's 9565 to 9421 when the dither landed. Same rule
+    // as `fog_probe` and `run_renderer` (CLAUDE.md 5): a check that measures
+    // pixels has to hold the backend's quantisation still.
+    v.dither = false;
     sw.begin(v);
     for (const auto& b : posed.batches)
         sw.submit({static_cast<std::uint32_t>(b.material), &posed,

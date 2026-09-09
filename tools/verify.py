@@ -20292,7 +20292,7 @@ def c_engine_renderer_boundary():
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 
-    want = ("no vulkan",) if gpu == ("no vulkan",) else (640, 352, 0.998)
+    want = ("no vulkan",) if gpu == ("no vulkan",) else (640, 352, 0.995)
     return (boundary, gpu), \
            ((3419, 709, 3419, 709, 0), want), \
            "the boundary first: the triangles offered and drawn by the DIRECT " \

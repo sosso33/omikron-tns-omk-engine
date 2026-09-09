@@ -50,6 +50,14 @@ int main() {
 
     // Looking down +Z from the origin, the game's own conventions.
     omk::View v;
+    // ...WITH THE DITHER OFF. This probe asserts exact channel values at ten
+    // depths, and `View::dither` defaults to TRUE (the engine sets
+    // DITHERENABLE and the port follows), so the 4x4 ordered pattern moves a
+    // sample by one 5-bit step - which is exactly what the tenth one did,
+    // 32 -> 24, when the dither landed. The fog is a DECISION and the dither
+    // is the backend's quantisation; a check on the first has to hold the
+    // second still (CLAUDE.md 5).
+    v.dither = false;
     v.cam.eye[0] = 0; v.cam.eye[1] = 0; v.cam.eye[2] = 0;
     v.cam.at[0] = 0;  v.cam.at[1] = 0;  v.cam.at[2] = 1;
     v.cam.hfovDeg = 90.0f;

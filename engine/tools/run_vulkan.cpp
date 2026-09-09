@@ -72,6 +72,13 @@ int main(int argc, char** argv) {
     if (argc > 7) std::sscanf(argv[7], "%dx%d", &W, &H);
     cam.w = W; cam.h = H;
     omk::View view; view.cam = cam;
+    // ...WITH THE DITHER OFF, to match `run_renderer`. `engine: renderer`
+    // compares this frame against that one, and BOTH backends dither
+    // (`vkrender.cpp` takes `view.dither` into `quantise888Dither` exactly as
+    // `raster.cpp` does), so leaving it on one side and off the other would
+    // measure the 4x4 pattern instead of the two backends. Off on both is the
+    // apples-to-apples comparison; the dither itself has its own check.
+    view.dither = false;
 
     // the submissions, in `buildGeometry`'s order, which is the engine's
     std::vector<omk::Draw> draws;
