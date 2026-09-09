@@ -258,6 +258,63 @@ installed, so deleting the `installScheme` call left the check GREEN. It now
 prints `in.group()`, the live table's own group, and the same mutation turns
 it red. A probe that recomputes the answer is not measuring the code.
 
+## 4c. WHAT A SHOT IS — step 4 (rest), 2026-09-09
+
+**A shot is a PROJECTILE**, and the pool it comes from is already in the tree:
+`Actor_TickProjectiles` (0x0044D110) fires them and `Projectiles_Tick`
+(0x0044D930) integrates them. The handoff listed this as unread and it is the
+first of step 4's three debts.
+
+**The firing arm**, from `Actor_TickProjectiles`:
+
+```c
+if (f32(actor + 4 * slot, 148) <= 0.0) {      /* the fire timer expired */
+    v64[0] = 34; Game_RaiseEvent(44, v64);    /* Actor_GetProperty 34 */
+    if (v65 > 0) {
+        Game_RaiseEvent(45, v64);             /* Actor_SetProperty - spend it */
+        ...
+        Game_RaiseEvent(44, v64);             /* read it back */
+        for (e = &unk_531348; *e; e += 15)    /* first FREE slot */
+            if (e >= &dword_534F48) return 0; /* pool full: no shot */
+        f32(actor + 4 * slot, 148) = reload;  /* the timer reloads */
+```
+
+so the rate of fire is a per-slot countdown at the actor's `+148`, the
+ammunition is **property 34** through events 44/45 (`Actor_GetProperty` /
+`Actor_SetProperty`), and a shot with the pool full is simply not taken.
+
+**The slot is 15 dwords, and the pool is 256 of them.** The allocator walks
+`e += 15` and addresses `60 * index`; the tick walks `v1 += 15` from
+`unk_53137C` — which is the pool base plus 52, so its pointer is aimed at a
+FIELD inside the entry — and stops at `flt_534F7C`. The span is the check:
+
+    0x534F48 - 0x531348 = 0x3C00 = 15360 bytes
+    15360 / 60 = 256 entries exactly;  15360 / 52 = 295.38
+
+**so the 2026-08-28 row's "13-dword projectile pool" is wrong** - 13 dwords
+does not divide the pool and 15 does, which is the walk-lands-exactly test
+this repo asks for.
+
+What the entry holds, from the writes around the allocation:
+
+| offset | what |
+|---|---|
+| `+0` | the NODE - `sub_437850(scene, model, 20)`, a clone; **non-zero is what "occupied" means**, and it is what the free scan tests |
+| `+8` | `property.hi * 3.9000001` - a speed |
+| `+44` | the firing ACTOR (`a1`) |
+| `+48` | `sub_44EEB0(model + 16)` |
+| `+56` | `property.lo` |
+
+and the node is placed at the actor's `+44/+48/+52` — the muzzle — before
+`sub_44D7F0(slot, ..., actor + 92, a1 + 12 * slot + 100)` sets its direction
+and can REFUSE, in which case the shot is dropped.
+
+**Not read yet, and named rather than assumed**: `sub_44D7F0`'s aim (whether
+the direction is the actor's facing, a target's position, or a spread),
+`sub_4246E0` beside it (a sound, on its argument shape), and what makes the
+timer at `+148` start counting in the first place - which is where
+`Shoot_InitWeapon`'s event 48 arm and the weapon's range should land.
+
 ## 5. What is still NOT established
 
 Written down so step 5 cannot quietly assume it:
@@ -265,8 +322,10 @@ Written down so step 5 cannot quietly assume it:
 * **line of sight.** The grid may or may not answer it — the wall segments in
   each floor are a candidate and nothing has been traced to them yet.
 * **the weapon's range.** `Shoot_InitWeapon` and event 48 are unread.
-* **what a shot is.** `Projectiles_Tick` exists in the frame loop; whether a
-  shot is a projectile, a ray, or a scripted event is unread.
+* ~~**what a shot is.**~~ **ANSWERED, §4c**: a projectile out of a 256-slot,
+  60-byte pool, fired by `Actor_TickProjectiles` on a per-slot timer and paid
+  for out of property 34. What is still unread there is the AIM
+  (`sub_44D7F0`) and what starts the timer.
 
 Until those three are read, the decision of `standing-unknowns` §2 stands for
 the generic arm. What has changed is that it is now a question with an
