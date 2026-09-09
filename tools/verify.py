@@ -25824,6 +25824,87 @@ def c_engine_shoot_mode():
             "and what `omk-play --shoot` installs in the Shooting gallery")
 
 
+def c_map2d_sight():
+    r"""`engine/`: the shoot AI's LINE OF SIGHT over the grid - the predicate
+    that is NOT the movement one, and the walk that uses it.
+
+    `sub_4359A0` (`todo/shoot-mode.md` 5c) is a Bresenham walk over the
+    `MAP2D` cells, and its cell test is a function pointer. Two candidates
+    exist and they are different tests: `sub_435310` refuses `{0, 2, 3}`,
+    which is `sub_4353E0`'s movement refusal, while `sub_435210` refuses only
+    a wall and a CLOSED DOOR. **All three shipped call sites select the
+    second**, so cells 2 and 3 - unwalkable - are see-through, and that is the
+    whole reason there are two tests.
+
+    Four things, and the last two are what a census cannot reach:
+
+    * **the predicate as a SET**, every byte 0..255 run through the port's own
+      `sightBlockedValue` in both door states. With the doors open it refuses
+      **only 0**; with them shut it refuses 0 and all 128 values carrying
+      `0x10`. Asserting the set rather than a count is what would catch a
+      predicate that happened to give the right totals on this corpus.
+    * **sight is strictly more permissive than movement**: 4336 of 71101
+      cells block a walk and pass a look, and **0** go the other way. A cell
+      that stopped sight while allowing movement would be a contradiction in
+      the two readings and there is none.
+    * **the walk RUNS**, over a fixed-stride sample of walkable cell pairs on
+      every floor of every map - the stride makes the sample identical on
+      every machine, since a random one would make the counts below
+      unassertable.
+    * **the door arm is exercised**: the same pairs walked with every door
+      open and then every door shut give DIFFERENT visibility counts. Equal
+      counts would mean the door branch never ran and the check was asserting
+      a walk with no doors in it.
+
+    The engine's own `case 128:` occupancy arms are NOT modelled, and that is
+    a finding rather than an omission: the walk reads the cell with `movsx`,
+    so a stamped `0x80` arrives as `0xFFFFFF80` and both sight predicates'
+    `cmp eax, 80h` / `ja` - unsigned above - send it to the default arm, where
+    `0x80 & 0x10 == 0` reads clear. `sub_4353E0` biases (`add eax, 80h`) and
+    so really does see it, which is why `blockedValue` lists `0x80` and
+    `sightBlockedValue` does not. An occupied cell does not block sight.
+    """
+    import subprocess, re
+    fr = omkpaths.data_root()
+    if not os.path.isdir(fr):
+        return ("no data",), ("data",), "needs the shipped tree"
+    eng = os.path.join(ROOT, "engine")
+    b = subprocess.run(["make", "-s", "build/map2d_probe"], cwd=eng,
+                       capture_output=True, text=True)
+    binp = os.path.join(eng, "build", "map2d_probe")
+    if b.returncode != 0 or not os.path.exists(binp):
+        return ("build failed",), ("built",), "engine/ must build"
+    r = subprocess.run([binp, fr, "--sight"], capture_output=True, text=True)
+    op = re.search(r"^sight refuses doors-open((?: \d+)*)$", r.stdout, re.M)
+    sh = re.search(r"^sight refuses doors-shut((?: \d+)*)$", r.stdout, re.M)
+    cm = re.search(r"^cells (\d+)\s+see-not-walk (\d+)\s+walk-not-see (\d+)$",
+                   r.stdout, re.M)
+    pm = re.search(r"^pairs (\d+)\s+visible doors-open (\d+)\s+"
+                   r"visible doors-shut (\d+)$", r.stdout, re.M)
+    if not (op and sh and cm and pm):
+        return ("unparsed",), ("parsed",), "the probe's own --sight lines"
+    openSet = tuple(int(x) for x in op.group(1).split())
+    shutSet = tuple(int(x) for x in sh.group(1).split())
+    cells, seeNotWalk, walkNotSee = (int(x) for x in cm.groups())
+    pairs, visOpen, visShut = (int(x) for x in pm.groups())
+
+    # the shut set re-derived here rather than transcribed: 0, plus every
+    # value with the door bit, which is what `sub_435210`'s default arm tests
+    wantShut = tuple([0] + [v for v in range(1, 256) if v & 0x10])
+
+    got = (openSet, shutSet, cells, seeNotWalk, walkNotSee,
+           pairs, visOpen, visShut, visOpen > visShut)
+    want = ((0,), wantShut, 71101, 4336, 0,
+            2399, 1330, 1305, True)
+    return got, want, ("the sight predicate as a SET in both door states; "
+                       "cells walked, those blocking a walk but not a look, "
+                       "and those doing the reverse (0 - sight is strictly "
+                       "more permissive); then the walk itself over a "
+                       "fixed-stride sample of walkable pairs, visible with "
+                       "the doors open and shut, and that the two DIFFER so "
+                       "the door arm is known to have run")
+
+
 def c_map2d_grid():
     r"""`engine/`: the navigation grid, read by the port and by this file
     independently, and the AI's refusal set MEASURED.
@@ -30582,6 +30663,7 @@ CHECKS = [
     ("map2d",              c_map2d,             "FILE_FORMATS 5b5"),
     ("shoot arenas",       c_shoot_arenas,      "todo/shoot-mode"),
     ("map2d grid",         c_map2d_grid,        "todo/shoot-mode; formats/map2d.h"),
+    ("map2d sight",        c_map2d_sight,       "todo/shoot-mode 5c; formats/map2d.h"),
     ("engine: shoot mode", c_engine_shoot_mode,  "todo/shoot-mode; actor/shootmode.h"),
     ("wre wireframes",     c_wre_files,         "FILE_FORMATS 5b5"),
     ("morph face models",  c_morph_face_models, "FILE_FORMATS 5"),

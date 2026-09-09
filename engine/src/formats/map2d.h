@@ -126,6 +126,40 @@ public:
     static constexpr std::uint8_t kOccupied = 0x80;
     static constexpr std::uint8_t kDoorBit  = 0x10;
 
+    // ---- the LINE OF SIGHT (`todo/shoot-mode.md` 5c) -------------------
+    //
+    // `sub_435210`, the predicate the three shipped `sub_4359A0` call sites
+    // all select.  It is NOT the movement test above: only a true wall (0)
+    // and a CLOSED DOOR stop it, so cells 2 and 3 - which `blockedValue`
+    // refuses - are things you cannot walk on but can see and shoot across.
+    //
+    // `doorOpenMask` is one bit per door slot, standing in for the engine's
+    // `sub_44A0F0(scene, door+4, door+8) == 16` on the object pair in
+    // `dword_907EB4`, which needs a live scene the reader has not got.
+    //
+    // NOTE the `case 128:` the engine SOURCE carries here is dead: the walk
+    // reads the cell with `movsx`, so a stamped 0x80 arrives as 0xFFFFFF80
+    // and the predicate's `cmp eax, 80h` / `ja` (UNSIGNED above) sends it to
+    // the default arm, where `0x80 & 0x10 == 0` reads clear.  An occupied
+    // cell does not block sight.  `sub_4353E0` is the one that biases
+    // (`add eax, 80h`) and so really does see it - hence `blockedValue`
+    // listing 0x80 and this not.
+    static bool sightBlockedValue(std::uint8_t v, std::uint16_t doorOpenMask) {
+        if (v == 0) return true;                       // case 0
+        if (v == 1 || v == 2 || v == 3) return false;  // cases 1-3
+        if ((v & kDoorBit) == 0) return false;          // default, no door bit
+        return (doorOpenMask >> (v & 0x0F) & 1) == 0;   // the door, if shut
+    }
+
+    // `sub_4359A0` with its fourth argument 1 - the only form the shipped
+    // build uses.  True when the segment from (x0,z0) to (x1,z1) reaches
+    // clear; the first refusing cell is left in `blockX`/`blockZ`.  The
+    // engine's own return value is tri-state, but its `2` arm is dead for
+    // the same reason as the `case 128:` above, so this is a bool.
+    bool lineOfSight(int floor, int x0, int z0, int x1, int z1,
+                     std::uint16_t doorOpenMask = 0xFFFF,
+                     int* blockX = nullptr, int* blockZ = nullptr) const;
+
 private:
     bool valid_ = false;
     std::uint32_t scale_ = 0;

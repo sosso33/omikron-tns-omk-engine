@@ -3,6 +3,7 @@
 //
 //     map2d_probe <gamedata> [map] [floor]      e.g. map2d_probe ../gamedata gallery 0
 //     map2d_probe <gamedata> --all              every map, one line per floor
+//     map2d_probe <gamedata> --sight            the LINE OF SIGHT, every map
 //
 // `MAP2D/*.mpt` is the map screen AND the grid `Shoot_Think` moves on
 // (`engine/src/formats/map2d.h`, `todo/shoot-mode.md`). A census is not enough
@@ -18,6 +19,7 @@
 #include <cstring>
 #include <map>
 #include <string>
+#include <utility>
 #include <vector>
 
 int main(int argc, char** argv) {
@@ -27,10 +29,76 @@ int main(int argc, char** argv) {
     }
     const std::string root = argv[1];
     const bool all = argc > 2 && std::string(argv[2]) == "--all";
+    const bool sight = argc > 2 && std::string(argv[2]) == "--sight";
     const std::vector<std::string> names = {
         "archiv03", "archiv05", "astaroth", "bar56", "CSlev-3", "gallery",
         "grotte", "hames", "smarket1", "soukdock", "soukt", "tetra2",
         "tetra3", "tetra4", "tetradou", "yrmali"};
+
+    if (sight) {
+        // `sub_4359A0`'s walk (todo/shoot-mode.md 5c), measured two ways.
+        //
+        // (1) the PREDICATES disagree, and by how much: sight refuses only a
+        //     wall and a shut door, movement refuses {0,2,3,0x80} - so cells
+        //     2 and 3 are see-through and unwalkable, which is the whole
+        //     point of there being two tests.
+        // (2) the WALK runs, over a deterministic sample of walkable cell
+        //     pairs, with every door open and then every door shut.  The two
+        //     counts must differ, or the door arm is not being exercised.
+        long seeNotWalk = 0, walkNotSee = 0, cells = 0;
+        long pairs = 0, visOpen = 0, visShut = 0;
+        int mapsWithDoors = 0;
+        for (const auto& n : names) {
+            omk::Map2d m;
+            if (!m.loadFile(root + "/MAP2D/" + n + ".mpt")) continue;
+            bool anyDoor = false;
+            for (std::size_t fi = 0; fi < m.floors().size(); ++fi) {
+                const auto& f = m.floors()[fi];
+                std::vector<std::pair<int, int>> walkable;
+                for (std::uint32_t z = 1; z < f.h; ++z)
+                    for (std::uint32_t x = 1; x < f.w; ++x) {
+                        const std::uint8_t c = f.cell(int(x), int(z));
+                        const bool mv = omk::Map2d::blockedValue(c);
+                        const bool sg = omk::Map2d::sightBlockedValue(c, 0xFFFF);
+                        ++cells;
+                        if (mv && !sg) ++seeNotWalk;
+                        if (sg && !mv) ++walkNotSee;
+                        if ((c & omk::Map2d::kDoorBit) && c != 0 && (c & 0xF0) == 0x10)
+                            anyDoor = true;
+                        if (!mv) walkable.push_back({int(x), int(z)});
+                    }
+                // a fixed stride through the walkable cells, so the sample is
+                // the same on every machine and every run
+                const std::size_t n2 = walkable.size();
+                if (n2 < 2) continue;
+                const std::size_t stride = n2 / 37 + 1;
+                for (std::size_t i = 0; i + stride < n2; i += stride) {
+                    const auto& a = walkable[i];
+                    const auto& b = walkable[n2 - 1 - i];
+                    ++pairs;
+                    if (m.lineOfSight(int(fi), a.first, a.second, b.first, b.second, 0xFFFF))
+                        ++visOpen;
+                    if (m.lineOfSight(int(fi), a.first, a.second, b.first, b.second, 0x0000))
+                        ++visShut;
+                }
+            }
+            if (anyDoor) ++mapsWithDoors;
+        }
+        // the predicate itself, every byte through it, both door states -
+        // so the check asserts the SET and not a count derived from it
+        for (int shut = 0; shut < 2; ++shut) {
+            std::printf("sight refuses doors-%s", shut ? "shut" : "open");
+            for (int v = 0; v < 256; ++v)
+                if (omk::Map2d::sightBlockedValue(std::uint8_t(v), shut ? 0x0000 : 0xFFFF))
+                    std::printf(" %d", v);
+            std::printf("\n");
+        }
+        std::printf("cells %ld  see-not-walk %ld  walk-not-see %ld\n", cells, seeNotWalk, walkNotSee);
+        std::printf("maps with door cells %d\n", mapsWithDoors);
+        std::printf("pairs %ld  visible doors-open %ld  visible doors-shut %ld\n",
+                    pairs, visOpen, visShut);
+        return 0;
+    }
 
     if (all) {
         int floors = 0, doors = 0, wp = 0, segs = 0, fits = 0;
