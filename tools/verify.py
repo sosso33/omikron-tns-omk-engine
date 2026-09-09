@@ -18739,27 +18739,32 @@ def c_fill_colour():
     would report as a bug. The inverse blend is not a detail; it is the whole
     behaviour, and only a screen with a non-placeholder colour could show it.
 
-    **RED SINCE 2026-09-07, AND IT IS THE PORT THAT IS WRONG** (diagnosed
-    2026-09-09, not fixed). The measurement is (27, 38, 28) - the panel's
-    mottled sheet showing through where black tiles used to cover it - and
-    `8f5fd11` is the change: it gave the TILE arm of `Ui_DrawPanelBack` the
-    source colour key, which the engine does set (`I2D_BlitBitmap(&rect,
-    u32(a1, 56), 1, 3)`, the 3 being DDBLT_KEYSRC against the flat 0 key).
-    Turning that key back off makes this check green, so it is the whole of
-    the difference.
+    **RED FROM 2026-09-07 TO 2026-09-09, AND IT WAS THE PROBE.** The
+    measurement was (27, 38, 28) where the rule and the original both say
+    (16, 24, 24), and `8f5fd11` moved it: it gave the TILE arm of
+    `Ui_DrawPanelBack` the source colour key, which the engine does set
+    (`I2D_BlitBitmap(&rect, u32(a1, 56), 1, 3)`, the 3 being DDBLT_KEYSRC
+    against the flat 0 key) and which fixed the VIDEOPHONE's viewport.
 
-    **The key is not the fault - it is right, and it fixed the VIDEOPHONE**,
-    whose viewport is a black rectangle in `sneak.bmp` meant to key out so the
-    3D view shows through. Three things say the LIFT should still be dark:
-    `I2D/bitmaps/ASCEN.BMP`, the screen's own artwork, is **(0, 0, 0) across
-    exactly the grid sampled here**; the player's screenshot measures
-    (15, 25, 25); and the blend rule over black predicts (17, 26, 25). So the
-    fault is what the port leaves UNDER the tiles - a sheet the engine does
-    not draw for this panel, or the wrong one of `Ui_DrawPanelBack`'s four
-    background arms (`docs/UI.md`: one of them paints nothing at all). The
-    next pass should read the arm the LIFT's panel takes rather than touch the
-    key. Left red deliberately: the expectation is the ORIGINAL's number and
-    moving it would enshrine the fault.
+    The key is right, and so is the port. `I2D/bitmaps/ASCEN.BMP` - the LIFT's
+    own artwork, and the sheet its tiles are cut from - is **(0, 0, 0) across
+    exactly the grid sampled here**, so with the key on those cells are
+    transparent and show whatever is beneath. In this composer that was the
+    START MENU'S ANIMATED CLOUD; in the game it is nothing, because `play.cpp`
+    attaches the cloud only while there is no player
+    (`comp.attachCloud(player ? nullptr : &cloud)`). `docs/UI.md` says the
+    same from the other side: the cloud shows on screen 29 precisely because
+    29's panels draw no sheet at all (`+76 & 0x2000`), so any screen that DOES
+    paint one covers it. `OMK_NOCLOUD=1` composes it over black and the
+    expectation is untouched.
+
+    **This entry said "it is the port that is wrong" for a day**, and named
+    `Ui_DrawPanelBack`'s four background arms as the next read. Its three
+    facts were all true - the artwork is black there, the screenshot measures
+    (15, 25, 25), the rule predicts (17, 26, 25) - and the conclusion drawn
+    from them was still wrong, because "something is under the tiles that
+    should not be" is a claim about the COMPOSITION, and the composition a
+    check builds is not the one the game builds.
 
     Shown to fail: swapping the two weights moves this to (63, 96, 92);
     dropping the alpha to 255 (opaque) gives (80, 122, 118) flat.
@@ -18775,10 +18780,22 @@ def c_fill_colour():
         return ("skipped",), ("skipped",), "run_screen did not build"
     tb = os.path.join(ROOT, "tables")
     out = os.path.join(ROOT, ".verify-fill.bin")
+    # ...WITH NO CLOUD BEHIND IT. `Ui_DrawPanelBack` keys the tile blit, and
+    # `ASCEN.BMP` is BLACK across exactly the grid sampled below, so those
+    # cells are transparent and show whatever is beneath. In the composer that
+    # is the menu's animated cloud; in the GAME it is nothing - `play.cpp`
+    # attaches the cloud only while there is no player
+    # (`comp.attachCloud(player ? nullptr : &cloud)`), and the start menu is
+    # the one screen it belongs to, which `docs/UI.md` settles from the other
+    # side: the cloud shows on screen 29 because 29's panels draw no sheet at
+    # all. Measuring the fill over the cloud is measuring the wrong thing -
+    # the rule under test is the blend, and the original's own screenshot
+    # (15, 25, 25) is the fill over BLACK.
     r = subprocess.run([tool, omkpaths.data_root(),
                         os.path.join(tb, "ui_widgets.json"),
                         os.path.join(tb, "ui.json"), out, "0", "640x480"],
-                       capture_output=True, text=True)
+                       capture_output=True, text=True,
+                       env=dict(os.environ, OMK_NOCLOUD="1"))
     if r.returncode != 0 or not os.path.exists(out):
         return ("skipped",), ("skipped",), "run_screen did not run"
     d = open(out, "rb").read()
