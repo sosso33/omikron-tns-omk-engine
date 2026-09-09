@@ -677,6 +677,42 @@ check red.
 > into "do nothing". `None` now means exactly one thing — the outcome was
 > recomputed by `sub_4272B0`, which nobody has read.
 
+
+### `sub_426C20`, the move decision — and a sign read the wrong way twice
+
+The fourth supplier is now read too (`shootMoveDecision`), leaving only
+`sub_435900`'s "am I there yet" as a parameter. It confirms 7b's rotation
+convention from a second, independent site: the vector it builds is
+`(-sin(yaw), cos(yaw))`, the same `-sin` that only the convergence loop could
+establish for `sub_420C70`.
+
+Its five bands:
+
+| | |
+|---|---|
+| arrived | **1** — take the step |
+| destination ahead or abeam | **0** — steer 10°/delta, clamped to the exact bearing |
+| behind, off to one side | **±90** |
+| directly behind | **180** |
+
+> **THE COMPONENT IT TESTS IS THE BACKWARD ONE.** `b = -sin(yaw)·dx +
+> cos(yaw)·dz` over `dest - self` is the **+Z** component, and a character
+> faces **−Z** at yaw 0 — so read as "forward" the whole table comes out
+> inverted, and this was written up that way first: *"180 when the
+> destination is straight ahead"*. The probe settled it in one line
+> (`move ahead 0 … behind 180`), which is the second time in this file that
+> a running test caught a sign a careful reading had gone past.
+
+**And that briefly cost the clip types their names, wrongly.** On the
+inverted reading, 180 selecting a clip for a destination *straight ahead*
+made "32 is a half-turn" impossible, so §7c's naming was struck out. With the
+sense the right way round the naming is **consistent** again — 180 is the
+directly-behind case. But consistent is not established, and
+`docs/ASSETS.md` deliberately leaves the behaviour types unnamed (30 of the
+34 have no clip at all), so the port now says the honest thing: the codes
+select clip **types** 30, 31 and 32, and what those animate is not
+established here.
+
 ### What is not ported, and the guard that is kept anyway
 
 **Nothing sets `unread` any more.** The assertion is kept rather than deleted:

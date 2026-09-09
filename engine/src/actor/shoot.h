@@ -215,6 +215,15 @@ bool shootAcquires(const ShootRecord& r, const float self[4], const float target
 // because it is what runs.
 int shootTurnToward(float& eulerY, const AcquireOut& a, bool allowSnap, float dt);
 
+// `sub_426C20` (0x00426C20) - the move decision. `arrived` is `sub_435900`,
+// which is the one piece still unread. Returns 1 (take the step), 0 (turned
+// in place this frame - `eulerY` is written) or a clip-type code: **180 when
+// the destination is directly BEHIND**, +/-90 when it is behind and off to
+// one side. The component it tests is the +Z one, which is BACKWARD for a
+// character facing -Z at yaw 0 - read as "forward" it comes out inverted.
+int shootMoveDecision(const ShootRecord& r, const float self[4],
+                      float& eulerY, float dt, bool arrived);
+
 // ---- THE GENERIC BRAIN, `sub_424DE0` (`todo/shoot-mode.md` 7c) ---------
 //
 // The machine is an outer switch on the state at record `+156` - 1..15 and
@@ -247,9 +256,10 @@ struct ShootFrameIn {
     int   targetPredicateBits = 0;    // its bitfield, for the arms that test it
     int   defaultClipType = 0;        // `a2`, the action the caller asked for
 
-    // `sub_426C20` - NOT READ. States 1 and 4 branch on it: 1 means "take the
-    // step", 0 means nothing, and 90 / 180 / -90 are the same turn-animation
-    // requests `sub_420EB0` makes. Supplied rather than invented.
+    // `sub_426C20`, now READ - see `shootMoveDecision`. States 1, 4, 12 and
+    // 14 branch on it: 1 means "take the step", 0 means "I turned in place",
+    // and 180 / +/-90 select a CLIP TYPE. Still passed in because the caller
+    // is the one that knows where the body actually is.
     int   moveCode = 0;
     int   myNode = -1, targetNode = -1;   // record `+188` on each side
     // the edge states 1 and 2 work along: `u32(rec, 4)`, its from/to points.

@@ -25923,7 +25923,10 @@ def c_shoot_generic():
                     r"latched-turn (\d) latch (\d)$", r.stdout, re.M)
     cl  = re.search(r"^generic: cell walkable clip (-?\d+), wall clip (-?\d+); "
                     r"14 -> state (\d+) release (\d)$", r.stdout, re.M)
-    if not (cov and unr and tr and sn and wr and nv and tv and pt and hb and aq and cl):
+    mv  = re.search(r"^generic: move ahead (-?\d+) abeam (-?\d+) quarter "
+                    r"(-?\d+)/(-?\d+) behind (-?\d+) \(yaw ([\d.]+)\) arrived (-?\d+)$",
+                    r.stdout, re.M)
+    if not (cov and unr and tr and sn and wr and nv and tv and pt and hb and aq and cl and mv):
         return ("unparsed",), ("parsed",), "the probe's own generic: lines"
     got = (tuple(int(x) for x in cov.groups()), tuple(int(x) for x in unr.groups()),
            tuple(int(x) for x in tr.groups()), tuple(int(x) for x in sn.groups()),
@@ -25935,14 +25938,17 @@ def c_shoot_generic():
            tuple(int(x) for x in pt.groups()),
            (int(hb.group(1)), hb.group(2), int(hb.group(3)), int(hb.group(4)),
             int(hb.group(5)), hb.group(6), int(hb.group(7))),
-           tuple(int(x) for x in aq.groups()), tuple(int(x) for x in cl.groups()))
+           tuple(int(x) for x in aq.groups()), tuple(int(x) for x in cl.groups()),
+           (int(mv.group(1)), int(mv.group(2)), int(mv.group(3)), int(mv.group(4)),
+            int(mv.group(5)), mv.group(6), int(mv.group(7))))
     want = ((16, 16, 16), (0, 0), (4, 11, 2, 3, 10),
             (32, -180, 30, -90, 31, 90), (10, 350),
             (1, "143.1", 500, 2, 0, 1, 2, 6),
             (5, "40.0", 1, 6, 1),
             (4, 4, 5, -1, 1),
             (1, "4.0", 0, 77, -1, "0.5", 0),
-            (1, 0, 0, 1, 1), (-1, 55, 4, 1))
+            (1, 0, 0, 1, 1), (-1, 55, 4, 1),
+            (0, 0, 90, -90, 180, "0.0", 1))
     return got, want, ("the machine's states, how many are TRANSCRIBED, and "
                        "that every transcribed one is in the state set; then "
                        "that the ten UNREAD arms change nothing at all - no "
@@ -25967,7 +25973,12 @@ def c_shoot_generic():
                        "INNER range +28 rather than the acquisition range "
                        "+32 - the only place the two authored distances are "
                        "told apart; then 12 converting a position to a cell "
-                       "and 14 dropping its route")
+                       "and 14 dropping its route; and finally the MOVE "
+                       "decision `sub_426C20`, whose five bands are the thing "
+                       "most easily read inverted - the component it tests is "
+                       "the +Z one, which is BACKWARD for a character facing "
+                       "-Z, so 180 is a destination directly behind and not "
+                       "one straight ahead")
 
 
 def c_shoot_range():

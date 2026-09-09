@@ -393,6 +393,32 @@ int main(int argc, char** argv) {
                         s12.clipType, s12b.clipType, q14.state, int(s14.releaseRoute));
         }
 
+        // ---- the MOVE decision, `sub_426C20` --------------------------
+        //
+        // Note which way round the codes are: 180 is the ALIGNED case and
+        // +/-90 the off-to-the-side ones, which is what refutes reading the
+        // clip types 30/31/32 as turns.
+        {
+            omk::ShootRecord q; q.destX = 0; q.destZ = -390;   // dead ahead
+            float self4[4] = {0, 0, 0, 0}, e = 0;
+            const int ahead = omk::shootMoveDecision(q, self4, e, 1.0f, false);
+            q.destX = -390; q.destZ = 0;                        // abeam
+            const int abeamA = omk::shootMoveDecision(q, self4, e, 1.0f, false);
+            // BEHIND and off to one side - the +/-90 band, which needs the
+            // backward component positive but under 0.8 of the distance
+            q.destX = 300;  q.destZ = 300;
+            const int quartA = omk::shootMoveDecision(q, self4, e, 1.0f, false);
+            q.destX = -300; q.destZ = 300;
+            const int quartB = omk::shootMoveDecision(q, self4, e, 1.0f, false);
+            q.destX = 0;    q.destZ = 390;                      // behind
+            float turned = 0;
+            const int back = omk::shootMoveDecision(q, self4, turned, 1.0f, false);
+            const int there = omk::shootMoveDecision(q, self4, e, 1.0f, true);
+            std::printf("generic: move ahead %d abeam %d quarter %d/%d behind %d "
+                        "(yaw %.1f) arrived %d\n",
+                        ahead, abeamA, quartA, quartB, back, turned, there);
+        }
+
         // the epilogue WRAPS the euler, and it is the only place that does
         auto qw = fresh(5); float hi = 370.0f, lo = -10.0f;
         omk::shootGenericStep(qw, in, hi);

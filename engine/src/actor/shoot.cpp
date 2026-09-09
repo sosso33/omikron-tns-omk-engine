@@ -399,11 +399,23 @@ ShootStep shootGenericStep(ShootRecord& r, const ShootFrameIn& in, float& eulerY
     const bool acquired = shootAcquires(r, in.self, in.target, a, false);
     (void)acquired;
 
-    // The snap-to-turn-ANIMATION mapping, written out once: states 1, 4 and 8
-    // all do it, character for character. 30 / 31 / 32 are turn-left-90,
-    // turn-right-90 and turn-180, `turnTotal` is what the clip must cover and
-    // `turnRate` is the fallback when the library has none. The 180 arm calls
-    // `rand()` and discards it in all three - a quirk, recorded not copied.
+    // The code-to-CLIP-TYPE mapping, written out once: states 1, 4, 6, 8, 9,
+    // 12, 13, 14 and 28 all do it, character for character.
+    //
+    // **WHAT TYPES 30, 31 AND 32 ANIMATE IS NOT ESTABLISHED.** Calling them
+    // turn-left-90, turn-right-90 and turn-180 is a reading of the `+/-90` /
+    // `180` codes that select them, and `docs/ASSETS.md` deliberately leaves
+    // the behaviour types unnamed - 30 of the 34 have no clip at all.
+    //
+    // The reading is CONSISTENT with `sub_426C20`, which hands back 180 when
+    // the destination is directly BEHIND and `+/-90` when it is behind and
+    // off to one side (see `shootMoveDecision`) - but consistent is not
+    // established, and nothing in the corpus says what a type-32 clip plays.
+    //
+    // So: the code selects a type, `turnTotal` is the degrees the chosen clip
+    // is made to cover (`+184 = total / Anim_Frames`), and `turnRate` is the
+    // fallback rotation when the library has no clip of that type. The 180
+    // arm calls `rand()` and discards it - a quirk, recorded not copied.
     auto snapToClip = [&](int snap) {
         if (snap == 90)       { out.clipType = 31; out.turnTotal =   90.0f; out.turnRate =  5.0f; }
         else if (snap == 180) { out.clipType = 32; out.turnTotal = -180.0f; out.turnRate = 10.0f; }
@@ -662,6 +674,73 @@ ShootStep shootGenericStep(ShootRecord& r, const ShootFrameIn& in, float& eulerY
     // from `sub_4272B0` is UNKNOWN, which is not the same as the default 0.
     if (out.outcomeFromUnread) out.outcome = ShootOutcome::None;
     return out;
+}
+
+// `sub_426C20` (0x00426C20) - the MOVE decision states 1, 4, 12 and 14 branch
+// on, and the last of the four suppliers `shootGenericStep` used to take as a
+// parameter.
+//
+// `dest` is the record's `+44`/`+48`. `sub_435900(self, destX, destZ)` -
+// "am I there yet" - is the one part still unread, so it stays an argument.
+//
+// It confirms 7b's rotation convention from a second, independent site: the
+// forward vector it builds is `(-sin(yaw), cos(yaw))`, the same `-sin` that
+// only the convergence loop could establish for `sub_420C70`.
+//
+// Returns: 1 arrived / take the step, 0 "I turned in place this frame", and
+// otherwise a clip-type code.
+//
+// MIND THE SENSE OF THE COMPONENT IT TESTS. It builds `b = -sin(yaw)*dx +
+// cos(yaw)*dz` over `dest - self`, and since a character faces **-Z** at yaw
+// 0 that is the BACKWARD component, not the forward one. So:
+//
+//     b <= 0                    the destination is ahead (or abeam): just
+//                               steer, 10 degrees per delta, and return 0
+//     0 < b <= 0.80 * distance  behind and off to one side: +/-90
+//     b > 0.80 * distance       directly behind: 180
+//
+// Read as "forward" it says 180 for a destination straight ahead, which is
+// how this was first written up and it was wrong; the probe's `move ahead 0
+// behind 180` is what settled it.
+int shootMoveDecision(const ShootRecord& r, const float self[4],
+                      float& eulerY, float dt, bool arrived) {
+    if (arrived) return 1;
+    const double yaw = double(self[3]) * 3.14159265358979 / 180.0;
+    const double sn = -std::sin(yaw), cs = std::cos(yaw);
+    const double dx = double(r.destX) - self[0];
+    const double dz = double(r.destZ) - self[2];
+    const double dist = std::sqrt(dx * dx + dz * dz);
+    const double lateral = cs * dx - sn * dz;
+    const double behind = sn * dx + cs * dz;   // +Z component: BACKWARD
+
+    if (behind <= 0.0) {
+        // ahead or abeam: steer 10 degrees per delta toward it, and CLAMP to
+        // bearing the moment the step would overshoot - the same
+        // `atan2(dz, dx) * 180/pi + 90` state 1 uses.
+        const double step = 10.0 * dt;
+        double y = self[3];
+        const auto bearing = [&] {
+            return std::atan2(dz, dx) * 57.29577951308232 + 90.0;
+        };
+        const auto lateralAt = [&](double deg) {
+            const double rr = deg * 3.14159265358979 / 180.0;
+            return std::cos(rr) * dx + std::sin(rr) * dz;
+        };
+        if (lateral > 0.0) {
+            y += step;
+            if (y >= 360.0) y -= 360.0;
+            if (lateralAt(y) < 0.0) y = bearing();
+        }
+        if (lateral < 0.0) {
+            y -= step;
+            if (y < 0.0) y += 360.0;
+            if (lateralAt(y) > 0.0) y = bearing();
+        }
+        eulerY = static_cast<float>(y);
+        return 0;
+    }
+    if (behind <= dist * 0.80000001) return lateral > 0.0 ? 90 : -90;
+    return 180;
 }
 
 }  // namespace omk
