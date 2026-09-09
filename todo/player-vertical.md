@@ -118,11 +118,9 @@ somewhere to go. Nothing ever pushes into it.
 1. ~~**The anchor.**~~ **DONE 2026-09-09**, and the cause was not where §2
    put it. See §4 - the clips are sound, and what displaced the body was the
    port measuring its anchor and its drop from two different origins.
-2. **The impulse.** `Walker::jump(vy)` setting `vy_` and `airborne_`, and
-   `MDJUMP01` in `play.cpp`'s special-move loop calling it. The magnitude is
-   `dword_53AE54 * 30.0` and that global's derivation is step 2's reading; if
-   it stays unread, the reconstruction is the clip's own root-Y delta at
-   take-off times 30, LABELLED.
+2. ~~**The impulse.**~~ **DONE 2026-09-09**, and `dword_53AE54` did not stay
+   unread - see §5. It needed no reconstruction: the magnitude comes out of the
+   `.CTL` entry's own field and the actor's gravity.
 3. **The state.** `MDJUMP0A`'s latch and `dword_6A52CC`, so the landing can be
    judged against the take-off and the steer suppressed while airborne, and
    `MDJUMP02`/`03` for the landing phases.
@@ -207,3 +205,83 @@ check:
 engine's own answer to this whole class is the ground probe under the drawn
 body, which absorbs any vertical a clip authors and would retire the
 accumulator and its three guards altogether; that needs `actor+276` first.
+
+
+---
+
+## 5. Step 2, done - the impulse, and where its magnitude comes from
+
+§1 left `dword_53AE50/54/58` unread and called them "the whole of the jump's
+magnitude". They are computed in `MDJUMP0A` (0x0046BB50), which has no `proc`
+label and was read from the image:
+
+    N   = u32(entry, 12)                     -- the LIVE `.CTL` entry
+    sub_47DF00(entry, N >> 1)                -- "SetITPNbFrames", the binary's
+                                                own error string: N/2 IS frames
+    Matrix3x3_RotateVector(0, 0, -dword_910348, actor+288, &X, &Y, &Z)
+                                             -- 98.4252 = 2.5 m along -Z, which
+                                                is forward
+    flt_53AE50 = X / N                       -- per frame
+    flt_53AE54 = -(actor[228] * (N/2) * (1/30))
+    flt_53AE58 = Z / N
+
+`MDJUMP01`'s six instructions then copy those into `+216`, `+220` (times 30.0)
+and `+224`. **The 30 and the 1/30 cancel**, so the launch is exactly
+
+    +220 = -g * N/2
+
+the ballistic speed for **N frames of hang** - zero at the apex on N/2, back on
+the floor at N. Note that the vertical is *not* taken from the rotated vector;
+only X and Z are. The 2.5 m is horizontal reach, not height.
+
+**N is `entry+12`, and that field has a second consumer** - this is the one
+part left labelled rather than settled. `ctl.h` reads its low half as a ROLE,
+because `Fight_Begin` caches six codes off it in the combat banks. Measured
+across `H1AVNT` with `tools/vertical_probe --jump`, it is **14 on exactly the
+five jump entries** - `H_SDJUMP`, `H_WKJUMPL`, `H_WKJUMPR`, `H_RLJUMP`,
+`H_RRJUMP` - and **0 on every other state that owns a clip**, with the high
+half 0 throughout. Two things corroborate a duration: `SetITPNbFrames` takes
+its half, and the engine has no other route to a length, since a clip's frame
+count lives on the clip and not on the entry. And the competing reading was
+tested and fails: "N is the clip's own frame count" cannot be right, because
+those five clips run **8, 8, 10, 10 and 19** frames and none of them is 14.
+
+**What it produces for Kay'l**, measured frame by frame in the port and
+matching the closed form to three figures:
+
+| | |
+|---|---|
+| hang | **14 frames** (13 airborne + the landing), 0.47 s |
+| apex | **9.00 units = 22.9 cm**, which is `0.7 * kGravity` exactly |
+| reach | **93.6 of the authored 98.43 units** (2.38 m of 2.5 m) |
+| arc | symmetric to 0.01 about the apex |
+
+So it is a flat running LEAP, not a vertical hop. Whether 22.9 cm of lift is
+what the original shows is **not** something this tree can answer - no capture
+reaches any of it (Tier 5) - so the numbers are recorded for a person to judge
+at the keyboard.
+
+**Two faults the measurement caught, both worth keeping.**
+
+* **The compute and the apply land on DIFFERENT entries.** A first version read
+  N inside `MDJUMP01` and every jump came back `refused`. The trace says why:
+  `MDJUMP0A` fires on `H_WKJUMPR`, whose `+12` is 14, and `MDJUMP01` fires some
+  frames later on `H_JUMPONR`, whose `+12` is 0. **That is what the three
+  globals are for** - the engine parks the launch between the two handlers -
+  and the port now has the same two stages (`jumpPrepare` / `jumpLaunch`).
+* **The horizontal must follow the VELOCITY, not the `sliding_` flag.**
+  `tick`'s gate was correct while the port had only two airborne cases: a slide
+  writes `+216/+224` every frame and a fall leaves them zero, which is the
+  reader's *"falling mainly on a single axis (just Y)"*. A jump is the third
+  case and breaks the gate, because `MDJUMP01` **writes** those fields. Driving
+  the horizontal off the velocity covers all three with no flag - a fall still
+  moves on Y alone because its velocity really is zero. With the old gate the
+  leap travels **2.37 units (6 cm)** instead of 93.6: a hop on the spot, with
+  the vertical arc completely unchanged, which is exactly the shape that would
+  have read as "the jump works" from the Y column alone.
+
+`verify.py: engine player jump`, shown to fail on that second one.
+
+**Step 3 is untouched**: `MDJUMP0A`'s take-off latch (`dword_53AE40/44/48`),
+`dword_6A52CC`'s suppression of the steer while airborne, and `MDJUMP02`/`03`
+for the landing phases.

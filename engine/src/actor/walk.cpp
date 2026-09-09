@@ -224,12 +224,30 @@ StepResult Walker::tick(double dt) {
     if (airborne_) vy_ = std::min(kTerminal, vy_ + kGravity * dt);
     const double dy = vy_ * (1.0 / 30.0) * dt;
 
-    if (sliding_) {
-        // the horizontal half of the slide: velocity is per FRAME here, where
-        // the vertical is per second over 30 (`dx = +216 * dt` against
-        // `dy = +220 * 0.0333 * dt` in Actor_ApplyMotion)
-        pos_[0] += vx_ * dt;
-        pos_[2] += vz_ * dt;
+    // THE HORIZONTAL FOLLOWS THE VELOCITY, NOT THE FLAG. Velocity is per
+    // FRAME here where the vertical is per second over 30 (`dx = +216 * dt`
+    // against `dy = +220 * 0.0333 * dt` in Actor_ApplyMotion), and
+    // Actor_ApplyMotion applies +216/+224 unconditionally - it does not ask
+    // whether the actor is sliding or falling.
+    //
+    // This used to be gated on `sliding_`, and that was right for the only two
+    // cases the port then had: a SLIDE writes +216/+224 every frame from the
+    // ground response, and a FALL leaves them zero, which is the reader's
+    // "falling mainly on a single axis (just Y)" and the reason the walk's
+    // delta must not be carried through the air. A JUMP is the third case and
+    // it breaks the gate: `MDJUMP01` WRITES +216/+224 at take-off, so the leap
+    // travels while airborne. Driving the horizontal off the velocity covers
+    // all three without a flag - a fall still moves on Y alone because its
+    // velocity really is zero.
+    //
+    // Swept, not added: `Actor_ApplyMotion` hands the horizontal to
+    // `Actor_Move` with Y zero, so a jump into a wall is stopped by the same
+    // collide-and-slide a walk is.
+    if (vx_ != 0.0 || vz_ != 0.0) {
+        double jx = vx_ * dt, jz = vz_ * dt, push[2] = {0.0, 0.0};
+        slide(jx, jz, push);
+        pos_[0] += jx;
+        pos_[2] += jz;
     }
 
     const double ny = pos_[1] + dy;              // Y grows downward

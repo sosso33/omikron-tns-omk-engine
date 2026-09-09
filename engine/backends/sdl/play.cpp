@@ -948,7 +948,8 @@ int sceneViewer(const std::string& fr, const std::string& setName,
                 int camIndex, const float* eyeArg, const float* atArg,
                 float fovArg, bool letterbox, int frameBudget,
                 const std::string& dump, bool startVulkan, bool noDelay,
-                int aaSamples, int texFilter, int texAniso, int ssaa) {
+                int aaSamples, int texFilter, int texAniso, int ssaa,
+                bool sceneDither) {
     // The set. A bare name is looked up in MESHES/DECORS, which is where the
     // decor sets live; anything with a slash is taken as given, so a character
     // model or another folder can be opened without a special case.
@@ -1216,6 +1217,7 @@ int sceneViewer(const std::string& fr, const std::string& setName,
         sceneShimmer += 2.0f;
         if (sceneShimmer >= omk::kShimmerWrap) sceneShimmer -= omk::kShimmerWrap;
         view.shimmerClock = sceneShimmer;
+        view.dither = sceneDither;
         // `drawWithMirror` submits in `buildGeometry`'s order - the engine's
         // own - and adds the reflection pass when the set has a mirror mesh
         // and the camera is in front of it. With no mirror it is one pass and
@@ -1413,6 +1415,8 @@ int main(int argc, char** argv) {
 "  --shadow-quality classic|fitted|mapped  ENHANCEMENT: fitted lays each blob\n"
 "                   on the surface under it; mapped is a real shadow map, the\n"
 "                   Vulkan backend only (default classic)\n"
+"  --dither 0|1     the engine's own DITHERENABLE, on by default - `--no-dither`\n"
+"                   is for comparing two frames, not for play\n"
 "  --ssaa N         ENHANCEMENT: render N times larger each way and average it\n"
 "                   down - 1 off, 2 or 4. Reaches the CUTOUT edges (grilles,\n"
 "                   railings, signs) that MSAA never looks at; Vulkan only\n"
@@ -1652,6 +1656,10 @@ int main(int argc, char** argv) {
     int shadowQFlag = -1;  // --shadow-quality classic|fitted|mapped, [Enhancements] shadowquality
     int lightingFlag = -1; // --lighting pervertex|perpixel, [Enhancements] lighting
     int ssaaFlag = -1;     // --ssaa N, [Enhancements] supersampling
+    // `--dither 0|1`. NOT an enhancement: `sub_4638C0` sets D3DRENDERSTATE 26
+    // (DITHERENABLE) to 1 on both device arms, so on is what the engine does.
+    // The flag exists to lay a dithered frame beside an undithered one.
+    bool dither = true;
     // --enhance-all: every enhancement as high as it goes, in one word. The
     // two the DEVICE caps are asked for at their largest defined value and the
     // backend reduces what it cannot meet, which is what "max available" means
@@ -1827,6 +1835,8 @@ int main(int argc, char** argv) {
             anisoFlag = std::max(1, std::min(16, std::atoi(argv[++i])));
         else if (a == "--enhance-all") enhanceAll = true;
         else if (a == "--ssaa" && i + 1 < argc) ssaaFlag = std::atoi(argv[++i]);
+        else if (a == "--dither" && i + 1 < argc) dither = std::atoi(argv[++i]) != 0;
+        else if (a == "--no-dither") dither = false;
         else if (a == "--lighting" && i + 1 < argc) {
             lightingFlag = omk::lightingMode(argv[++i]);
             if (lightingFlag < 0) {
@@ -1905,7 +1915,7 @@ int main(int argc, char** argv) {
                            filterFlag < 0 ? 0 : filterFlag, anisoFlag < 0 ? 1 : anisoFlag,
                            // the scene viewer runs BEFORE settings resolve, so
                            // it takes the flag alone; `--config` is the game's
-                           ssaaFlag < 0 ? 1 : ssaaFlag);
+                           ssaaFlag < 0 ? 1 : ssaaFlag, dither);
 
     const omk::DataFs fs(fr);
     auto w = omk::UiWidgets::loadJson(tb + "/ui_widgets.json");
@@ -5838,6 +5848,26 @@ int main(int argc, char** argv) {
                 bool actionFromMove = false;
                 for (const auto& mv : (playerTicked ? player->specialMoves() : kNoMoves)) {
                     if (mv == "MDACTION") actionFromMove = true;
+                    // THE JUMP'S IMPULSE (`todo/player-vertical.md` step 2).
+                    // `MDJUMP01` is the one that writes the three velocity
+                    // fields; `MDJUMP0A`/`0B` only prepare them, and the
+                    // controller does that arithmetic (`player.cpp`). Before
+                    // this the walker's `vy_`/`airborne_` existed for FALLING
+                    // and nothing ever pushed into them, which is the reader's
+                    // *"jump is broken (animation play, but y position is too
+                    // low so the jump become useless)"* - the clip played and
+                    // the body never left the floor.
+                    if (mv == "MDJUMP0A" || mv == "MDJUMP0B") {
+                        if (player->jumpPrepare())
+                            std::printf("jump: armed on '%s'\n",
+                                        player->ctlStateName().c_str());
+                    }
+                    if (mv == "MDJUMP01") {
+                        const bool went = player->jumpLaunch();
+                        std::printf("jump: %s\n", went
+                            ? "launched"
+                            : "refused (nothing armed, or already off the ground)");
+                    }
                     const omk::SpecialMoves::Row* row = specialMoves.find(mv);
                     if (row)
                         std::printf("special move: %s (tab_special_move[%d] = 0x%08x)\n",
@@ -10233,7 +10263,15 @@ int main(int argc, char** argv) {
                     // lower the body, a CONSTANT anchor is right and the
                     // float came from somewhere else; if it barely moves
                     // while the legs bend, the body never crouches at all.
-                    if (std::getenv("OMK_PLY") && (n % 4) == 0) {
+                    // OMK_PLY=N prints every Nth frame (1 for every frame, which is what a
+                    // jump needs - its whole arc is 14 frames and a stride of 4
+                    // steps straight over the apex).
+                    static const long plyEvery = [] {
+                        const char* e = std::getenv("OMK_PLY");
+                        const long v = e ? std::atol(e) : 0;
+                        return v > 1 ? v : 1;
+                    }();
+                    if (std::getenv("OMK_PLY") && (n % plyEvery) == 0) {
                         float lo = -1e9f, hi = 1e9f;
                         for (const auto& c : playerPosed.corners) {
                             if (c.y > lo) lo = c.y;
@@ -10250,10 +10288,13 @@ int main(int argc, char** argv) {
                         // number `verify.py: engine player vertical` asserts
                         // and the one the walk float showed up in.
                         std::printf("DBG ply f%ld %-9s pf %2d  ground %+8.2f  lowest %+8.2f"
-                                    "  gap %+7.2f  head %+8.2f  rootDrop %+6.2f  foot %+7.2f\n",
+                                    "  gap %+7.2f  head %+8.2f  rootDrop %+6.2f  foot %+7.2f"
+                                    "  at %+9.2f %+9.2f  air %d\n",
                                     n, player->clipName().c_str(), player->poseFrame(),
                                     player->pos()[1], lo, lo - player->pos()[1], hi,
-                                    rootDrop, lo - playerFeet + rootDrop);
+                                    rootDrop, lo - playerFeet + rootDrop,
+                                    player->pos()[0], player->pos()[2],
+                                    player->walker().airborne() ? 1 : 0);
                     }
                     if (player->variantCount() > 1) {
                         float lo = -1e9f;
@@ -10630,6 +10671,7 @@ int main(int argc, char** argv) {
             shimmerClock += 2.0f;
             if (shimmerClock >= omk::kShimmerWrap) shimmerClock -= omk::kShimmerWrap;
             view.shimmerClock = shimmerClock;
+            view.dither = dither;
             const bool litPerPixel = lighting > 0;
             // TWO BASES, and the difference is a property of the models.
             //

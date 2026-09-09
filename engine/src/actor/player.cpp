@@ -126,6 +126,66 @@ bool PlayerController::enterGroupById(int id) {
     return rt_.channel().setBankGroup(g);
 }
 
+// ---- THE JUMP -----------------------------------------------------------
+//
+// `MDJUMP0A` (0x0046BB50), read from the image - it has no `proc` label:
+//
+//     dword_6A52CC = 1                      -- the airborne flag
+//     dword_53AE40/44/48 = actor +244/+248/+252   -- the take-off, latched
+//     N = sub_45AC60(actor+396)             -- u32(entry, 12) on the LIVE
+//                                              `.CTL` entry
+//     sub_47DF00(entry, N >> 1)             -- "SetITPNbFrames", the binary's
+//                                              own name: N/2 IS a frame count
+//     Matrix3x3_RotateVector(0, 0, -dword_910348, actor+288, &X, &Y, &Z)
+//                                           -- dword_910348 = 98.4252 = 2.5 m,
+//                                              along -Z, which is forward
+//     flt_53AE50 = X / N                    -- per frame
+//     flt_53AE54 = -(actor[228] * (N/2) * (1/30))
+//     flt_53AE58 = Z / N
+//
+// then `MDJUMP01` (0x0046BD50) is six instructions that move those into the
+// actor: `+216 = flt_53AE50`, `+220 = flt_53AE54 * 30.0`, `+224 = flt_53AE58`.
+// The 30 and the 1/30 cancel, so the launch is exactly `-g * N/2` per second -
+// the ballistic speed for N frames of hang, zero at the apex on N/2.
+//
+// **N IS `entry+12` AND THAT FIELD HAS A SECOND CONSUMER**, which is why this
+// is labelled rather than called settled. `ctl.h` reads its low half as a ROLE
+// (`Fight_Begin` caches six codes off it in the combat banks). In `H1AVNT` it
+// is **14 on exactly the five jump entries** - H_SDJUMP, H_WKJUMPL, H_WKJUMPR,
+// H_RLJUMP, H_RRJUMP - and **0 on every other state that owns a clip**, and
+// its high half is 0 everywhere, so nothing here reads as a role. Two things
+// corroborate it as a duration: `SetITPNbFrames` takes its half, and the
+// engine has no other route to a length (a clip's frame count lives on the
+// clip, not the entry). The alternative that was tested and does NOT hold is
+// "N is the clip's own frame count": the five jump clips run 8, 8, 10, 10 and
+// 19 frames and none of them is 14.
+//
+// What it produces for Kay'l: 2.5 m forward and **12.0 units (0.30 m) up**
+// over 14 frames (0.47 s). That is a flat running LEAP, not a vertical hop -
+// and the 0.30 m is `dword_910340`, the step-up constant, to three figures.
+bool PlayerController::jumpPrepare() {
+    const int st = rt_.channel().state();
+    if (st < 0 || st >= static_cast<int>(ctl_->states.size())) return false;
+    const double n = static_cast<double>(ctl_->states[static_cast<std::size_t>(st)].flags12);
+    if (!(n > 0.0)) return false;             // no hang time authored: not a jump entry
+    const double yaw = euler_[1] * 3.14159265358979323846 / 180.0;
+    // `Matrix3x3_RotateVector(0, 0, -L)` by the facing: the engine's forward is
+    // -Z and maps to (sin y, 0, -cos y) (`sub_456530` case 7 tests exactly
+    // that against the actor's own +420).
+    const double L = 98.4252;                 // dword_910348, 2.5 m
+    jumpV_[0] = L * std::sin(yaw) / n;
+    jumpV_[2] = -L * std::cos(yaw) / n;
+    jumpV_[1] = -kGravity * n * 0.5;          // actor+228, by Actor_LoadModel
+    jumpArmed_ = true;
+    return true;
+}
+
+bool PlayerController::jumpLaunch() {
+    if (!jumpArmed_) return false;
+    jumpArmed_ = false;
+    return walker_.jump(jumpV_[1], jumpV_[0], jumpV_[2]);
+}
+
 bool PlayerController::goToMove(int groupId) {
     if (!enterGroupById(groupId)) return false;
     euler_[0] = 0.0f;                          // +416, the pitch

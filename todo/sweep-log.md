@@ -20,7 +20,7 @@ adds **one**. Counting commits ran this number to 13 when about nine tasks had
 been finished, which would have called for a half-hour sweep long before the
 rule intends one.
 
-**tasks since the last full sweep: 19** (13 the character shadows, 14 the Anekbah panel flicker, 15 the orphaned shadows, 16 fitted shadows, 17 mapped shadows, 18 per-pixel lighting, 19 the player's vertical step 1 - the last six on 2026-09-08/09). **PAST THE 5-10 RULE, and a full sweep is RUNNING** (2026-09-09, over supersampling and the player's vertical together); reset this to 0 and add its row when it reports.
+**tasks since the last full sweep: 6** (the shadows' orphan fix, fitted, mapped, per-pixel lighting, the shimmer, supersampling, the player's vertical step 1, and the jump's impulse step 2 - across two sessions). **The counter had run to 19 and that was WRONG**: the reader ran a sweep more recently than this file recorded (their word, 2026-09-09). The lesson is this file's own - a counter only survives between sessions if everyone who runs a sweep writes it down, and a session that trusts a stale number spends half an hour proving nothing.
 
 > **`engine: UI` is RED and was already red at `a5b1807`, on a clean tree.**
 > Measured 2026-09-07: `disagree` is 9, not 0 - the shops, screens 21..28 and
@@ -34,6 +34,8 @@ rule intends one.
 |---|---|---|
 | 2026-09-07 | the full sweep before `74f6f8a` (next-tasks 5) | 187 checks, 0 failed |
 | 2026-09-07 | after 5 tasks: the beat hand-over, the frame-by-frame body pass, the city pool swap, the speaker's placement | 187 checks, 0 failed |
+| 2026-09-09 | the READER's own run, reported in conversation and not recorded here at the time | (not recorded) |
+| 2026-09-09 | a partial `--slow` over the shadows, the shimmer, supersampling and the player's vertical - stopped once the reader said a sweep was not owed | 192 ok, 1 failed (`engine: slider door`) |
 
 The five tasks it covered were `4dffb70` (omk-play 78, the beat hand-over),
 `74ed743` (the frame-by-frame pass on the body), `a02930e` (omk-play 79, the

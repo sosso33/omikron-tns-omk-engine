@@ -149,6 +149,39 @@ public:
         airborne_ = false; sliding_ = false;
     }
 
+    // THE JUMP, `MDJUMP01` (0x0046BD50) - an IMPULSE into the same three
+    // velocity fields a fall and a slide already use.
+    //
+    // `MDJUMP0A` (0x0046BB50) prepares it and `MDJUMP01` writes it:
+    //
+    //     N   = u32(entry, 12)                 -- the .CTL entry's own field,
+    //                                             14 on all five jump entries
+    //                                             of H1AVNT and 0 elsewhere
+    //     (X, 0, Z) = M_facing . (0, 0, -98.4252)   -- 2.5 m FORWARD
+    //     +216 = X / N     +224 = Z / N        -- per FRAME
+    //     +220 = -g * N/2                      -- per second, y down so
+    //                                             negative is upward
+    //
+    // The vertical is the ballistic launch for N frames of hang: it reaches
+    // zero at the apex on frame N/2 and lands on frame N. It is NOT taken from
+    // the rotated vector - only X and Z are - and `MDJUMP0A` corroborates N as
+    // a frame count by handing N/2 to `SetITPNbFrames`, which is the binary's
+    // own name for it.
+    //
+    // `vy` is per second and `dx`/`dz` per frame, which is the split
+    // `Actor_ApplyMotion` uses (`dx = +216 * dt` against
+    // `dy = +220 * 0.0333 * dt`). Refused while already off the ground: the
+    // engine's own gate is `dword_6A52CC`, which `MDJUMP0A` sets and only a
+    // landing clears.
+    bool jump(double vy, double dx, double dz) {
+        if (airborne_ || sliding_) return false;
+        vy_ = vy; vx_ = dx; vz_ = dz;
+        airborne_ = true;
+        fall_ = 0.0;
+        tier_ = 0;
+        return true;
+    }
+
     // The steep faces of the same set - what the actor slides down. Optional:
     // with none installed a steep face is a hole, which is what the walker did
     // before it could see them.

@@ -29078,6 +29078,139 @@ def c_engine_player_vertical():
            "him no more than standing does"
 
 
+def c_engine_player_jump():
+    r"""THE JUMP'S IMPULSE - `todo/player-vertical.md` step 2.
+
+    A reader, 2026-09-08: *"jump is broken (animation play, but y position is
+    too low so the jump become useless)"*. The `.CTL` machine already ran the
+    whole sequence - `MDJUMP0A` -> `MDJUMP01` -> `MDJUMP02` -> `MDJUMP03` over
+    `H_WKJUMPR` -> `H_JUMPONR` -> `H_JUMPSDR` -> `H_LFL-WK` - and the walker
+    already carried `vy_`, `airborne_`, `kGravity` and `kTerminal` for FALLING.
+    Nothing ever pushed into them, so the clip played and the body never left
+    the floor.
+
+    **What the engine does**, read from the image (neither handler has a `proc`
+    label). `MDJUMP0A` (0x0046BB50) prepares:
+
+        N   = u32(entry, 12)                     -- the live `.CTL` entry
+        SetITPNbFrames(entry, N >> 1)            -- the binary's OWN name for
+                                                    it, so N/2 is a frame count
+        (X,Y,Z) = M_facing . (0, 0, -98.4252)    -- dword_910348, 2.5 m, along
+                                                    -Z, which is forward
+        flt_53AE50 = X / N                       -- per frame
+        flt_53AE54 = -(actor[228] * (N/2) / 30)
+        flt_53AE58 = Z / N
+
+    and `MDJUMP01` (0x0046BD50) is six instructions that copy those into
+    `+216`, `+220` (times 30.0) and `+224`. The 30 and the 1/30 cancel, so the
+    launch is exactly `-g * N/2` per second - the ballistic speed for N frames
+    of hang, zero at the apex on N/2 and back on the floor at N.
+
+    Asserted from the same 220-frame headless Anekbah run as
+    `engine: player vertical`, walking then pressing SAUTER (bit 32, scancode
+    57):
+
+      * the jump ARMS once on `H_WKJUMPR` and LAUNCHES once - two different
+        entries, which is why the engine parks the launch in three globals;
+      * **13 airborne frames** plus the landing frame = N = 14;
+      * the apex is **9.00 units** below zero (y grows down, so 9.00 UP), which
+        is the closed form `0.7 * kGravity` for N = 14 to three figures, and
+        the arc is SYMMETRIC - every rise sample has its fall twin;
+      * he travels **93.6 units** forward over the flight against the authored
+        98.43 (2.5 m); the shortfall is the landing frame, where `land()`
+        zeroes the horizontal velocity before the last step, and the engine's
+        own `Walk_GroundResponse` zeroes the same three fields there.
+
+    **TIER 5, data-constrained.** No capture reaches this: `fight.log` proved
+    the trace rig sees only what a VM handler narrates, and every one of
+    `Actor_ApplyMotion`, `Walk_GroundResponse` and `tab_special_move`'s
+    handlers is native. So the oracle is the shipped `.CTL` entry's own number
+    and the arithmetic on it, not the original's behaviour.
+
+    **Shown to fail** (PORTING B2). Restoring `tick`'s old `if (sliding_)` gate
+    on the horizontal - which was correct while the port had only a slide and a
+    fall - leaves the arc untouched and drops the forward travel from 93.6 to
+    **0.0**: the leap becomes a hop on the spot. Confirmed applied (md5 changed
+    and the object relinked) and the run's OUTPUT compared, not the verdict.
+
+    **DECLARED, and the reason this is not called settled.** N is `entry+12`,
+    and `ctl.h` reads that field's low half as a ROLE - `Fight_Begin` caches
+    six codes off it in the combat banks. Here it is **14 on exactly the five
+    jump entries of `H1AVNT`** (`H_SDJUMP`, `H_WKJUMPL`, `H_WKJUMPR`,
+    `H_RLJUMP`, `H_RRJUMP`) and **0 on every other state that owns a clip**,
+    with the high half 0 throughout, so nothing here reads as a role. Two
+    things corroborate a duration - `SetITPNbFrames` takes its half, and the
+    engine has no other route to a length, a clip's frame count living on the
+    clip and not the entry - and the competing reading was TESTED and does not
+    hold: "N is the clip's own frame count" fails because those five clips run
+    8, 8, 10, 10 and 19 frames and none is 14.
+
+    NOT covered: whether 22.9 cm of lift and 2.5 m of reach are what the
+    original shows. That is a question for a person at the keyboard, and the
+    numbers are recorded here so one can judge them. `MDJUMP0A`'s take-off
+    LATCH (`dword_53AE40/44/48`) and `dword_6A52CC`'s suppression of the steer
+    while airborne are step 3 and are not ported.
+    """
+    import subprocess, tempfile, shutil, re as _re, math
+    eng = os.path.join(ROOT, "engine")
+    save = os.path.join(ROOT, "traces", "save-appart.bin")
+    if not os.path.isdir(eng) or not os.path.exists(save):
+        return ("skipped",), ("skipped",), "engine/ or the anchor save absent"
+    mk = subprocess.run(["make", "-s", "play"], cwd=eng,
+                        capture_output=True, text=True)
+    play = os.path.join(eng, "build", "omk-play")
+    if mk.returncode != 0 or not os.path.exists(play):
+        return ("no sdl",), ("no sdl",), "omk-play needs SDL; skipped without it"
+    tmp = tempfile.mkdtemp()
+    try:
+        env = dict(os.environ, SDL_VIDEODRIVER="dummy", OMK_PLY="1")
+        r = subprocess.run(
+            [play, omkpaths.data_root(), os.path.join(ROOT, "tables"),
+             "--save", save, "--area", "0",
+             "--stand", "1804,0,-6890,336", "--no-crowd",
+             "--hold", "0*30,k200*60,k200+57*12,k200*70,0*40", "--frames", "220",
+             "--dump", os.path.join(tmp, "f.bin")],
+            capture_output=True, text=True, env=env)
+        out = r.stdout + r.stderr
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+    rows = []
+    for L in out.splitlines():
+        m = _re.search(r"DBG ply f(\d+) (\S+).*ground\s+([-+][\d.]+).*"
+                       r"at\s+([-+][\d.]+)\s+([-+][\d.]+)\s+air (\d)", L)
+        if m:
+            rows.append((int(m.group(1)), m.group(2), float(m.group(3)),
+                         float(m.group(4)), float(m.group(5)), int(m.group(6))))
+    air = [x for x in rows if x[5] == 1]
+    if not air:
+        return ("never left the floor",), ("a jump",), "no airborne frame in the trace"
+    first, last = air[0][0], air[-1][0]
+    apex = min(x[2] for x in air)
+    land = [x for x in rows if x[0] == last + 1]
+    a0 = air[0]
+    end = land[0] if land else air[-1]
+    fwd = math.hypot(end[3] - a0[3], end[4] - a0[4])
+    # The arc must be symmetric. THE LANDING FRAME IS PART OF IT: the launch
+    # sample is on the floor at 0 and its mirror is the landing, which is not
+    # in the airborne list - so measured over `air` alone the first sample has
+    # no partner and a perfectly symmetric parabola scores 2.57.
+    ys = [x[2] for x in air] + ([end[2]] if land else [])
+    sym = max(abs(ys[i] - ys[len(ys) - 1 - i]) for i in range(len(ys))) if ys else 99.0
+    return (out.count("jump: armed on 'H_WKJUMPR'"),
+            out.count("jump: launched"),
+            len(air),
+            round(apex, 2),
+            abs(apex - (-0.7 * 12.860892)) < 0.05,
+            sym < 0.01,
+            90.0 < fwd < 99.0), \
+           (1, 1, 13, -9.0, True, True, True), \
+           "the jump ARMED once and LAUNCHED once (on two different .CTL " \
+           "entries); airborne frames (plus the landing = N = 14); the apex " \
+           "in units, y down so this is UP; that it is the closed form " \
+           "0.7*g for N=14; that the arc is symmetric; and that he travels " \
+           "the authored 2.5 m forward (98.43) less the landing frame"
+
+
 
 CHECKS = [
     ("conversations",      c_conversations,     "FILE_FORMATS 2"),
@@ -29460,6 +29593,7 @@ SLOW = [
     ("engine: text",       c_engine_text,       "engine/README"),
     ("engine: boot",       c_engine_boot,       "engine/README"),
     ("engine: player vertical", c_engine_player_vertical, "engine/README; todo/player-vertical.md"),
+    ("engine: player jump", c_engine_player_jump, "engine/README; todo/player-vertical.md"),
     ("dialog staging sweep", c_dialog_staging_sweep, "ASSETS"),
     ("cutscene actors",    c_cutscene_actors,   "CUTSCENES 4"),
     ("textures",           c_textures,          "ASSETS"),

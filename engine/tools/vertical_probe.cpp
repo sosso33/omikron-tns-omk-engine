@@ -156,6 +156,35 @@ int main(int argc, char** argv) {
 
     std::vector<std::string> want;
     for (int i = 4; i < argc; ++i) want.push_back(lower(argv[i]));
+
+    // ---- `--jump`: WHERE THE JUMP'S HANG TIME COMES FROM -------------
+    //
+    // `MDJUMP0A` (0x0046BB50) divides the launch by `sub_45AC60(channel)`,
+    // which is `u32(entry, 12)` on the LIVE `.CTL` entry - the port keeps that
+    // whole dword as `flags12` and reads only its low half as the role. If the
+    // HIGH half is the clip's frame count, the launch is
+    // `forward * 2.5m / N` horizontally and `-g * N/2` vertically, which is
+    // the ballistic value for N frames of hang.
+    if (!want.empty() && want[0] == "--jump") {
+        std::printf("\n%-12s %-10s %6s %6s %8s %8s\n",
+                    "state", "clip", "role", "hi16", "frames", "hi==fr");
+        int agree = 0, seen = 0;
+        for (const auto& st : ctl.states) {
+            if (st.clip < 0 || st.clip >= static_cast<int>(ctl.clips.size())) continue;
+            const auto& cl = ctl.clips[static_cast<std::size_t>(st.clip)];
+            const std::uint32_t hi = (st.flags12 >> 16) & 0xFFFFu;
+            const bool eq = static_cast<std::int32_t>(hi) == cl.frames;
+            ++seen; agree += eq;
+            const std::string ln = lower(st.name);
+            if (ln.find("jump") != std::string::npos || ln.find("sd") != std::string::npos ||
+                lower(cl.name).find("jump") != std::string::npos)
+                std::printf("%-12s %-10s %6u %6u %8d %8s\n", st.name.c_str(),
+                            cl.name.c_str(), st.role, hi, cl.frames, eq ? "yes" : "NO");
+        }
+        std::printf("\nover every state that owns a clip: %d of %d have "
+                    "entry+12's high half == the clip's frame count\n", agree, seen);
+        return 0;
+    }
     if (want.empty()) { want = {"h_stand", "h_walk", "h_run"}; }
 
     float standLowest = 0.0f;

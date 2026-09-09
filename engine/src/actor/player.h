@@ -464,6 +464,22 @@ public:
     // table's own `kAny -> 6` and `6 -> 7` rows were never exercised by the
     // path that is supposed to exercise them.
     bool setActorState(ActorState to, const char* writer) { return rt_.setState(to, writer); }
+    // THE JUMP, `tab_special_move` rows 14/15/16 (`MDJUMP0A`, `MDJUMP0B`,
+    // `MDJUMP01`) - the arithmetic, so the frontend only has to name the move.
+    // Returns false when the entry carries no hang time or he is already off
+    // the ground. `walk.h`'s `jump` has the reading; this supplies its three
+    // numbers from the live entry and the facing.
+    // TWO STAGES, because the engine has two and they land on DIFFERENT
+    // entries. `MDJUMP0A` computes the launch and parks it in
+    // `flt_53AE50/54/58`; `MDJUMP01` copies those into the actor some frames
+    // later. Measured in `H1AVNT`, 0A fires on `H_WKJUMPR` (whose `+12` is 14)
+    // and 01 on `H_JUMPONR` (whose `+12` is 0), so reading N at the launch
+    // reads the wrong entry and gets nothing - which is exactly what a first
+    // version of this did, and the trace said `refused` on every jump.
+    bool jumpPrepare();      // MDJUMP0A / MDJUMP0B
+    bool jumpLaunch();       // MDJUMP01
+    bool jumpArmed() const { return jumpArmed_; }
+
     const Walker& walker() const { return walker_; }
     long ticks() const { return ticks_; }
     // How far the position has moved from the start, in the ground plane.
@@ -484,6 +500,10 @@ private:
     const std::vector<Mesh>*   meshes_;
     ActorRuntime rt_;
     Walker       walker_;
+    // the parked launch - `flt_53AE50` (x, per frame), `flt_53AE54 * 30`
+    // (y, per second) and `flt_53AE58` (z, per frame)
+    double       jumpV_[3] = {0.0, 0.0, 0.0};
+    bool         jumpArmed_ = false;
     std::vector<std::string> moves_;
     float pos_[3];
     float start_[3];
