@@ -5113,6 +5113,22 @@ int main(int argc, char** argv) {
             const bool beatsOver = playerDrivenSeen || !sc.loaded() || sc.programCount() == 0;
             const bool feetSetLoaded =
                 !worldSlots[static_cast<std::size_t>(session.activeSlot() & 1)].geo.corners.empty();
+            // ---- SHOOT MODE REPLACES THE CAMERA, it does not decorate it -
+            //
+            // `Shoot_Enter` sets **both camera actors to the player** and then
+            // `Camera_Request(4, ...)`. That is not a modifier on whatever the
+            // area was using - it installs a player-relative mode-4 camera
+            // over the top of it. The port kept the area's own camera, and in
+            // the supermarket that camera (4380) is ABSOLUTE, so `followCam`
+            // was false, the view resolved the fixed shot and ignored the
+            // player completely.
+            //
+            // A reader hit exactly that: the aim was running - the diagnostic
+            // reported `pitch -47.3, facing 303.1` and the player ended at
+            // `facing 283.5` - and the picture never moved, because the
+            // camera being aimed was not the camera being drawn
+            // (`todo/omk-play.md` 97g).
+            if (shootMode && shootCameraLive) followCam = true;
             if (forceAdventure && !hc) followCam = true;   // a street start: no camera asked, the follow one
             const bool wantAdventure = forceAdventure
                 ? (session.playerPlaced() && !session.dialogOpen() && !walk && feetSetLoaded)

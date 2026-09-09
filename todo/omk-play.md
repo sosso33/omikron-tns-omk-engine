@@ -17,6 +17,37 @@ waiting on its evidence.
 
 ### 97. The supermarket shoot phase blocks at the end of its cutscene, and Kay'l vanishes — A
 
+> **(g) THE AIM RAN AND THE CAMERA BEING AIMED WAS NOT THE CAMERA BEING
+> DRAWN.** The diagnostic settled it in one run of the reader's:
+>
+> ```
+> frame 2890: AIM reached - cameraLive 1, pitch 0.0, facing 0.0
+> frame 2937: MOUSE dx 36.0 dy -27.0 - shootMode 1, cameraLive 1
+> frame 3011: AIM reached - cameraLive 1, pitch -47.3, facing 5.2
+> frame 3132: AIM reached - cameraLive 1, pitch -28.1, facing 303.1
+> ```
+>
+> Everything worked: motion reported, camera live, pitch and facing moving,
+> the player ending at `facing 283.5`. And the picture never moved, because
+> `followCam` is only true when the CURRENT WORLD CAMERA is relative with the
+> player as both subjects — and the supermarket's camera (4380) is
+> **absolute**, so the view resolved that fixed shot and ignored the player
+> entirely.
+>
+> **`Shoot_Enter` REPLACES the camera; it does not decorate it.** It sets both
+> camera actors to the player and then `Camera_Request(4, ...)`, which
+> installs a player-relative mode-4 camera over whatever the area was using.
+> The port kept the area's. `followCam` is now forced while shoot mode holds
+> its own camera, beside the existing `forceAdventure` precedent.
+>
+> **NOT reproduced headlessly, and that is worth saying.** `--area 68 --shoot`
+> runs with the cutscene still PLAYING, so an editing owns the camera and a
+> different branch wins; `--stand` there resolves no camera at all and draws
+> black. The reader's state — an editing that has ENDED, its hold cleared,
+> shoot mode up — is one the harness cannot currently reach, which is the same
+> gap that let (d) hide for six steps.
+
+
 > **(e) THE EDITING HOLD OUTLIVED SHOOT MODE — FIXED.** The reader played it
 > after (d) and the camera was *still* not first person, with the pointer
 > captured and the view refusing to move. The camera install was landing; the
