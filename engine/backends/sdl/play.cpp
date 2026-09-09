@@ -4862,15 +4862,43 @@ int main(int argc, char** argv) {
         // ---- the hand-over, and the controller's frame ------------------
         {
             const auto& sc = session.scene();
-            bool playerDriven = false;
+            // ---- BOUND TO HIM, AND POSING HIM, ARE TWO QUESTIONS ---------
+            //
+            // Op 46 ends `ScriptObject_StartOnActor(Actor_Player(), object,
+            // scene, caller)`, and that function binds the object's program to
+            // the player's actor record and puts him in ACTOR_STATE 4:
+            //
+            //     v18 = u32i(v5, 101);        // +404, his ACTOR_STATE
+            //     if (v18 != 4) { u32i(v5, 102) = v18;   // saved at +408
+            //                     sub_436D20(node); u32i(v5, 101) = 4; }
+            //
+            // A CUTSCENE BEAT starts that way, and so can a PROP: nothing in
+            // op 46 asks whether the object animates a body. `Started::clip`
+            // does - it is -1 for an object with no body animation, which is
+            // what every door, drawer and console in Kay'l's flat is
+            // (`PorteEnt1Open`, `TiroirCui1Open`, `ConsoleOpen`...) against
+            // the Impasse's beats at clip 16, 29 and 37.
+            //
+            // So the binding says he is not at the keys - ACTOR_STATE 4 is
+            // `channelTicks false, walks false, marker true`, he stands
+            // through it and is still drawn - and it does NOT say a program
+            // is going to move his body. Reading the two as one thing takes
+            // the adventure gate false, which puts the letterbox bands on and
+            // drops him from the frame (`drawPlayer`). That is the shape of
+            // the door report of 2026-09-09; the flat's own doors reach it
+            // through `parkedOnProgram` (op 58, see `script/area.h`) rather
+            // than through this, and both terms had to be narrowed.
+            bool playerDriven = false;      // a program POSES him: a beat
+            bool playerBound  = false;      // one is BOUND to him: state 4
             if (sc.loaded()) {
                 const auto& started = sc.started();
                 for (std::size_t k = 0; k < started.size(); ++k) {
                     const auto& stt = started[k];
                     if (stt.how != "player" || !sc.programRunning(static_cast<int>(k)))
                         continue;
+                    playerBound = true;
+                    if (stt.clip < 0) continue;   // a door, not a beat
                     playerDriven = true;
-                    if (stt.clip < 0) continue;
                     const float t = sc.programClock(static_cast<int>(k));
                     // `Actor_SetEuler(param 4/5/6)` composes over the clip's
                     // root; the Impasse authors 0 there (Started::euler), so
@@ -4928,6 +4956,7 @@ int main(int argc, char** argv) {
                 const auto& so = session.sceneOut();
                 for (std::size_t k = 0; k < so.started().size(); ++k)
                     if (so.started()[k].how == "player" &&
+                        so.started()[k].clip >= 0 &&
                         so.programRunning(static_cast<int>(k)))
                         playerProgram = true;
             }
@@ -5449,7 +5478,16 @@ int main(int argc, char** argv) {
                     // `Actor_TickChannelOnly`, the channel and nothing else,
                     // which is what `setChannelOnly` models - so `H_SLDIN`
                     // plays and its root motion carries him in.
-                    if (!ride && !boarded) {
+                    // ...AND NOT WHILE A PROGRAM IS BOUND TO HIM.
+                    // `ScriptObject_StartOnActor` put him in ACTOR_STATE 4,
+                    // and that row of `Actors_TickAll` is `channelTicks
+                    // false, walks false, marker true` (`actor/state.cpp`):
+                    // no channel, no motion, and still DRAWN. So a door
+                    // freezes him exactly where he stands for the length of
+                    // its program - which is the whole of what the binding
+                    // means, and is not the same as taking him out of the
+                    // frame the way this used to.
+                    if (!ride && !boarded && !playerBound) {
                         player->tick(static_cast<float>(frameSec * 30.0),
                                      bits ? bits : omk::kIdleInput);
                         playerTicked = true;

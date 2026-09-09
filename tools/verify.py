@@ -9623,6 +9623,7 @@ def c_letterbox():
     save = os.path.join(ROOT, "traces", "games-resto.bin")
     walked, held = (0, 0), (64, 64)
     roam, heldRoam = (0, 0), (64, 64)
+    doorOpen = (0, 0)
     if os.path.isdir(eng) and os.path.exists(save):
         mk = subprocess.run(["make", "-s", "play"], cwd=eng,
                             capture_output=True, text=True)
@@ -9674,6 +9675,38 @@ def c_letterbox():
                 lit = [y for y in range(480)
                        if any(px[y * 640 + x] for x in range(0, 640, 4))]
                 return (lit[0], 479 - lit[-1]) if lit else (480, 480)
+            # ...and A DOOR, which is the third way in and was a regression.
+            # Standing in AREA 237's entrance-door zone runs its activate
+            # script, `scx.play.wait obj 0x008e` - op 58, a WAITING variant,
+            # so the context parks on the door's program for as long as the
+            # leaf slides. `Session::parkedOnProgram` asked only "is some
+            # context parked on some program", which is a cutscene beat chain
+            # mid-flight AND every door, drawer and console in the flat: the
+            # adventure gate went false, the bands came on and `drawPlayer`
+            # dropped him. A reader, 2026-09-09: *opening some doors triggers
+            # a "cutscene mode": black stripes and player disappearing*.
+            # A beat poses a body (`Started::clip` 16/29/37 in the Impasse)
+            # and a door does not (`clip -1`, all of them), which is the term
+            # that separates them.
+            def door(frames):
+                out = os.path.join(tmp, "d%d.bin" % frames)
+                subprocess.run([play, omkpaths.data_root(),
+                                os.path.join(ROOT, "tables"),
+                                "--software", "--res", "640x480", "--nofmv",
+                                "--no-crowd", "--save",
+                                os.path.join(ROOT, "traces", "save-appart.bin"),
+                                "--area", "237", "--scene-chunk", "57",
+                                "--stand", "3784,1071,-816,271",
+                                "--frames", str(frames), "--dump", out],
+                               capture_output=True, text=True,
+                               env=dict(os.environ, SDL_VIDEODRIVER="dummy"))
+                if not os.path.exists(out):
+                    return (-1, -1)
+                d = open(out, "rb").read()
+                px = struct.unpack("<%dH" % (len(d) // 2), d)
+                lit = [y for y in range(480)
+                       if any(px[y * 640 + x] for x in range(0, 640, 4))]
+                return (lit[0], 479 - lit[-1]) if lit else (480, 480)
             try:
                 # 200 frames in the player is HELD by the exit script and the
                 # black fade is armed, so the strip must be UP; by 900 he has
@@ -9683,14 +9716,18 @@ def c_letterbox():
                 walked = bandsAt(900)
                 roam   = street(None)
                 heldRoam = street("--anim-hold")
+                # frame 20 is mid-slide: the door's program is running and its
+                # caller is parked on it. Reverting the `programPosesBody`
+                # term puts 64/64 back here.
+                doorOpen = door(20)
             finally:
                 shutil.rmtree(tmp, ignore_errors=True)
 
     return (shots["dlg402-32"], shots["dlg402-44"], shots["intro-75"],
             shots["menu-18"], shots["intro-60"], held, walked,
-            roam, heldRoam, bootFades), \
+            roam, heldRoam, doorOpen, bootFades), \
            ((64, 64), (64, 32), (64, 65), (1, 1), (0, 1), (64, 64), (0, 0),
-            (0, 0), (64, 64), (1, 0)), \
+            (0, 0), (64, 64), (0, 0), (1, 0)), \
            "the top and bottom dark bands of five captures - the " \
            "conversation at 64/64, the same conversation with its SUBTITLE " \
            "lighting the bottom band, the intro CUTSCENE at 64/65 (a " \
@@ -9701,7 +9738,9 @@ def c_letterbox():
            "area leaves an absolute camera installed; and last the pair " \
            "that isolates the rule - one street frame plain and the same " \
            "frame with `player.anim.hold` set, which must differ by exactly " \
-           "the strip; and AREA 118's startup script, which arms the black " \
+           "the strip; then a DOOR mid-slide in Kay'l's flat, whose waiting " \
+           "`scx.play` parks its caller and must NOT read as a cutscene; " \
+           "and AREA 118's startup script, which arms the black " \
            "fade ONCE and never clears it - so `running()` is true for ever " \
            "after a boot and cannot be what holds the strip"
 

@@ -218,9 +218,29 @@ public:
     // position* (todo/omk-play.md 78), and only after the camera stopped
     // cutting away at the same moment (item 5) was there anything to see it
     // against.
+    //
+    // ...AND IT ASKS FOR A PROGRAM THAT POSES A BODY, which is not a detail.
+    // `scx.play.wait` (op 58) is how Kay'l's flat OPENS A DOOR: AREA 237's
+    // zone scripts are a pair of them per door, `scx.play.wait obj 0x008b, 0,
+    // 0` on the way in and its shutting twin on the way out, and the WAITING
+    // variants park their caller exactly as a beat chain does (the handler
+    // ends `mov [esi+16h], 4`). So "some context is parked on a program" was
+    // true for as long as a door slid, and the frontend read that as a
+    // cutscene in flight: the adventure gate went false, the letterbox bands
+    // came on and `drawPlayer` dropped him. A reader walking into the flat's
+    // kitchen got *black stripes and the player disappearing* (2026-09-09).
+    //
+    // A BEAT POSES A BODY AND A DOOR DOES NOT, and that is the whole of the
+    // difference. Measured over the flat's own scene: `PorteEnt1Open`,
+    // `PteSalle2B1Open`, `PorteWCOpen`, `TiroirCui1Open` and `ConsoleOpen`
+    // are all `clip -1` - no body animation at all - against the Impasse's
+    // beats at clip 16, 29 and 37. Reverting this one term puts `parked` back
+    // to 1 from frame 3 of standing in the entrance-door zone, with 64 black
+    // rows top and bottom; with it the same frames have none.
     bool parkedOnProgram() const {
         for (const auto& c : ctxs_)
-            if (c && c->status == 4 && c->waitingForProgram >= 0) return true;
+            if (c && c->status == 4 && scene_.programPosesBody(c->waitingForProgram))
+                return true;
         return false;
     }
     // The model a CHARACTERS id resolves to, through the resident chunks'

@@ -13,6 +13,54 @@ caught only by a person walking into the alley and looking. So an entry here say
 either CONFIRMED IN PLAY or it does not, and one that does not is a claim still
 waiting on its evidence.
 
+## Open (batch 7, filed 2026-09-09)
+
+### 89. A DOOR read as a cutscene: black stripes and no player — A
+
+> **Fixed 2026-09-09**, measured headless. Not watched yet.
+
+A reader: *opening some doors (like the door of the kay'l's apartment
+kitchen) triggers a "cutscene mode": black stripes and player
+disappearing*.
+
+Every door, drawer and console in the flat is a pair of scene objects, and
+AREA 237's zone scripts start them with `scx.play.wait obj 0x008b, 0, 0` —
+**op 58**, one of the three WAITING variants, whose handler passes the
+caller's own slot to `ScriptObject_Start` and leaves it parked (`mov
+[esi+16h], 4`). `Session::parkedOnProgram` asked only *is some context
+parked on some program*, which is a cutscene beat chain mid-flight and also
+a sliding door, so for the second or so the leaf moved:
+
+* `adventure` went false — the frontend's gate — and the 1.818:1 letterbox
+  went on (`play.cpp`, "THE LETTERBOX");
+* `drawPlayer` is `adventure || uiPause || (dialogOpen && !playerProgram)`,
+  so the player was dropped from the frame while nothing else drew him.
+
+Measured standing in the entrance-door zone (`--area 237 --scene-chunk 57
+--stand 3784,1071,-816,271`): `parked` is 1 from frame 3, `adventure` 0, and
+frames 10/20/30 carry 64 black rows top and bottom. With the fix all three
+have none and the player ticks every frame instead of 3 times in 40.
+
+**A beat poses a body and a door does not**, and that is the only thing that
+separates them at this level: `Started::clip` is pre-filled from the
+object's first body animation and stays −1 when it has none. The flat's
+`PorteEnt1Open`, `PteSalle2B1Open`, `PorteWCOpen`, `TiroirCui1Open` and
+`ConsoleOpen` are all −1; the Impasse's beats are 16, 29 and 37. So
+`parkedOnProgram` now asks `SceneRunner::programPosesBody`.
+
+The same conflation is one door along in the *other* start: op 46 / 90
+(`scx.play.player[.wait]`) end in `ScriptObject_StartOnActor(Actor_Player(),
+…)`, which binds the object to the player's actor record and puts him in
+ACTOR_STATE 4 — `channelTicks false, walks false, marker true`, so he stands
+through it and is **still drawn**. Nothing there asks whether the object
+animates a body either, so `playerDriven` is now two flags: `playerDriven`
+(a program POSES him → the old behaviour) and `playerBound` (one is bound →
+he stops ticking, and nothing else changes).
+
+`verify.py: letterbox` carries the door frame beside the two it already had,
+and `engine: beat handover`, `editing hold`, `scene facing` and `tunnel
+doors` stay green.
+
 ## Open (batch 6, filed 2026-09-04)
 
 ### 88. The Anekbah panel FLICKER — B

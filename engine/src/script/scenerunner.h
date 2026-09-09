@@ -267,6 +267,18 @@ public:
         bool        animReached = false;
     };
     const std::vector<Started>& started() const { return started_; }
+    // DOES PROGRAM `idx` POSE A BODY AT ALL?
+    //
+    // `Started::clip` is pre-filled from the object's first body animation and
+    // stays -1 for an object that has none - a door, a drawer, an `fx*`. That
+    // is what separates a CUTSCENE BEAT from a PROP, and nothing else can:
+    // op 46 binds either to the player's actor record
+    // (`ScriptObject_StartOnActor(Actor_Player(), ...)`), so the binding alone
+    // does not say whether anything is going to move his body.
+    bool programPosesBody(int idx) const {
+        return idx >= 0 && idx < static_cast<int>(started_.size()) &&
+               started_[static_cast<std::size_t>(idx)].clip >= 0;
+    }
     const std::vector<int>&     missed()  const { return missed_; }
     std::size_t programCount() const { return programs_.size(); }
     int programsRunning() const;
