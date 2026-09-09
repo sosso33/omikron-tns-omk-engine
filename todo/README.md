@@ -84,3 +84,10 @@ found, and what it cost), in the doc for its subsystem (the finding itself), in
 that would notice a regression). If a result is not in all four, it is not
 finished — and a count written in `docs/` that nothing asserts is a claim with
 no test behind it.
+
+---
+
+**`handoff.md`** is the session-to-session note: what to set up on a new
+machine, where the task in flight stands, what has not been watched by a
+person, and which traps cost time. It is rewritten by whoever hands off, not
+appended to — a stale handoff is worse than none.

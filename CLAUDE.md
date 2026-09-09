@@ -76,6 +76,7 @@ that only for a file you are about to actually open.
 | engine/README.md | ~31k | NEVER whole; §"Coverage" for what is/isn't ported, §"Building and proving it" for the check recipes; grep otherwise |
 | tables/README.md | small | what each tables/*.json is and how it is regenerated |
 | readable/README.md, readable/INDEX.md | small / index | finding a decompiled function by name or address |
+| todo/handoff.md | ~3k | **read FIRST on a new machine**: how to point `omk.conf` at the inputs, where the current task stands, what nobody has watched, and the traps that cost time in the session that wrote it |
 | todo/README.md | ~1k | the batch protocol (file ownership, deliver-don't-integrate) |
 | todo/iam-script-engine.md | ~11k | the script-engine issue list; all 39 filed issues are fixed, the labelled remainders are in its Fixed notes |
 | todo/iam-script-engine-plan.md | ~2k | who owned which files in batches 1 and 2; the T18 proposal |
