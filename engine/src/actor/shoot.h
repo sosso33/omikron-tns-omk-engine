@@ -224,6 +224,33 @@ int shootTurnToward(float& eulerY, const AcquireOut& a, bool allowSnap, float dt
 int shootMoveDecision(const ShootRecord& r, const float self[4],
                       float& eulerY, float dt, bool arrived);
 
+// `sub_426E00` (0x00426E00) - and it is NOT the predicate its callers make it
+// look like: it reads the geometry and then DRIVES THE MACHINE, writing
+// `+156` itself. Eight states branch on its return.
+//
+// It is also where the third of the three authored ranges finally gets a job:
+//
+//   `+32` (property 26)  the ACQUISITION range - inside it, with the line of
+//                        sight, the gunman engages and goes to the hub 6
+//   `+28` (property 27)  the ENGAGEMENT range - the return is non-zero only
+//                        inside it, and its HALF and QUARTER pick between
+//                        states 8 and 13
+//   `+36` (property 30)  the DISENGAGE range - beyond it, in state 6, he
+//                        flips a coin and goes back to 3 or to 4 (patrol),
+//                        clearing the 0x20 latch either way
+//
+// The unread pieces stay parameters: `sub_421020` (whatever it finds sends
+// him into the 10/11 pair) and the ray cast, which the port has as a sweep.
+struct EngageIn {
+    bool sameNode = false;        // target's `+188` equals mine
+    bool targetAlive = true;      // target record `+92` > 0
+    bool rayHits = false;         // `sub_4449E0` found geometry in the way
+    bool gridClear = false;       // `sub_4359A0` reached
+    int  found421020 = 0;         // `sub_421020` - UNREAD, non-zero on success
+    bool coinHeads = false;       // the disengage arm's own `rand() & 1`
+};
+int shootEngage(ShootRecord& r, const AcquireOut& a, bool inCone, const EngageIn& in);
+
 // ---- THE GENERIC BRAIN, `sub_424DE0` (`todo/shoot-mode.md` 7c) ---------
 //
 // The machine is an outer switch on the state at record `+156` - 1..15 and

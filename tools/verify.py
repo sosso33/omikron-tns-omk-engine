@@ -25926,7 +25926,10 @@ def c_shoot_generic():
     mv  = re.search(r"^generic: move ahead (-?\d+) abeam (-?\d+) quarter "
                     r"(-?\d+)/(-?\d+) behind (-?\d+) \(yaw ([\d.]+)\) arrived (-?\d+)$",
                     r.stdout, re.M)
-    if not (cov and unr and tr and sn and wr and nv and tv and pt and hb and aq and cl and mv):
+    en  = re.search(r"^generic: engage 10m (-?\d+)/state (\d+)\s+30m (-?\d+)/state (\d+)"
+                    r"\s+50m-heads (-?\d+)/state (\d+) latch (\d)\s+50m-tails state (\d+)"
+                    r"\s+dead (-?\d+)$", r.stdout, re.M)
+    if not (cov and unr and tr and sn and wr and nv and tv and pt and hb and aq and cl and mv and en):
         return ("unparsed",), ("parsed",), "the probe's own generic: lines"
     got = (tuple(int(x) for x in cov.groups()), tuple(int(x) for x in unr.groups()),
            tuple(int(x) for x in tr.groups()), tuple(int(x) for x in sn.groups()),
@@ -25940,7 +25943,8 @@ def c_shoot_generic():
             int(hb.group(5)), hb.group(6), int(hb.group(7))),
            tuple(int(x) for x in aq.groups()), tuple(int(x) for x in cl.groups()),
            (int(mv.group(1)), int(mv.group(2)), int(mv.group(3)), int(mv.group(4)),
-            int(mv.group(5)), mv.group(6), int(mv.group(7))))
+            int(mv.group(5)), mv.group(6), int(mv.group(7))),
+           tuple(int(x) for x in en.groups()))
     want = ((16, 16, 16), (0, 0), (4, 11, 2, 3, 10),
             (32, -180, 30, -90, 31, 90), (10, 350),
             (1, "143.1", 500, 2, 0, 1, 2, 6),
@@ -25948,7 +25952,8 @@ def c_shoot_generic():
             (4, 4, 5, -1, 1),
             (1, "4.0", 0, 77, -1, "0.5", 0),
             (1, 0, 0, 1, 1), (-1, 55, 4, 1),
-            (0, 0, 90, -90, 180, "0.0", 1))
+            (0, 0, 90, -90, 180, "0.0", 1),
+            (1, 6, 0, 6, 0, 3, 0, 4, 0))
     return got, want, ("the machine's states, how many are TRANSCRIBED, and "
                        "that every transcribed one is in the state set; then "
                        "that the ten UNREAD arms change nothing at all - no "
@@ -25978,7 +25983,13 @@ def c_shoot_generic():
                        "most easily read inverted - the component it tests is "
                        "the +Z one, which is BACKWARD for a character facing "
                        "-Z, so 180 is a destination directly behind and not "
-                       "one straight ahead")
+                       "one straight ahead; and finally ENGAGE "
+                       "(`sub_426E00`), where all THREE authored ranges are "
+                       "seen doing three different jobs at last - 26 "
+                       "acquires, 27 gates the non-zero return, and 30 "
+                       "DISENGAGES, flipping a coin between state 3 and "
+                       "patrolling in 4 and clearing the 0x20 latch either "
+                       "way")
 
 
 def c_shoot_range():

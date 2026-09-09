@@ -713,6 +713,36 @@ directly-behind case. But consistent is not established, and
 select clip **types** 30, 31 and 32, and what those animate is not
 established here.
 
+
+### `sub_426E00` — and the third range finally gets a job
+
+It is **not the predicate its eight callers make it look like**: it reads the
+geometry and then *drives the machine*, writing `+156` itself. And it is where
+§5c's three authored distances stop being two-and-a-spare:
+
+| field | property | what it does |
+|---|---|---|
+| `+32` | 26 | **acquire** — inside it, with the line of sight, engage and go to the hub **6** |
+| `+28` | 27 | **engage** — the return is non-zero only inside it, and its HALF and QUARTER pick between states **8** and **13** |
+| `+36` | 30 | **disengage** — beyond it, in state 6, flip a coin: **3** or back to patrolling in **4**, clearing the `0x20` latch either way |
+
+Until this function was read, property 30 had no consumer at all. The coin
+flip is the engine's own `rand() & 1`, and clearing the latch is what makes a
+gunman re-acquirable rather than permanently disengaged.
+
+`312.0` appears hardcoded in the state-8-versus-13 test — 8 metres at the
+engine's own 39 to the metre.
+
+> **A CORRECTION: `sub_4272B0` IS read.** The port had been labelling the
+> post-transition outcome "recomputed by a function nobody has read". Its
+> banner in `readable/src/05_sys.c` says `@status READ`: it is the 304-line
+> **behaviour selector**, which picks an animation by type and was
+> deliberately left un-renamed because its case labels are an enum with no
+> names anywhere in the binary. So the outcome after a transition is *a clip
+> chosen by the behaviour selector*, which this port does not model — not
+> *unknown in principle*. Two different things, and the comment now says
+> which.
+
 ### What is not ported, and the guard that is kept anyway
 
 **Nothing sets `unread` any more.** The assertion is kept rather than deleted:

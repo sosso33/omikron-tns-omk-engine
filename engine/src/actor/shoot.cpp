@@ -743,4 +743,70 @@ int shootMoveDecision(const ShootRecord& r, const float self[4],
     return 180;
 }
 
+// `sub_426E00` (0x00426E00). Transcribed in call order; the branches that
+// only differ in which local they use are folded, since all four copies of
+// the `sub_421020` block do the same three writes.
+int shootEngage(ShootRecord& r, const AcquireOut& a, bool inCone, const EngageIn& in) {
+    if (r.node == -1) return 0;
+    if (!in.targetAlive || (r.flags & 0x8000u)) return 0;
+
+    // `+108` and the 10/11 pair: whatever `sub_421020` finds, it latches 0x20
+    // and puts him in 10 - or leaves him in 11 if he is already there.
+    const auto goPair = [&] {
+        r.flags |= 0x20u;
+        r.state = (r.state == 11) ? 11 : 10;
+        return 0;
+    };
+
+    const bool coneOk = in.sameNode && inCone;
+    if (!in.sameNode) {
+        if (in.found421020) return goPair();
+        return 0;
+    }
+    if (!coneOk) {
+        if (in.found421020) return goPair();
+        return 0;
+    }
+
+    // the GRID line of sight, `sub_4359A0` - 1 clear, 0 blocked. (Its `2` can
+    // never happen; see `todo/omk-play.md` 96's neighbour.)
+    const int los = in.gridClear ? 1 : 0;
+    const bool halfInner = double(r.rangeInner) * 0.5 > a.dist3d;
+
+    bool engaged = false;
+    if (a.dist3d < r.rangeAcquire && los) {
+        r.flags |= 0x20u;
+        r.state = 6;
+        engaged = true;
+    }
+
+    if (los && halfInner) {
+        r.flags |= 0x10u;
+        if (in.found421020) { goPair(); }
+        else if ((r.flags & 0x1000000u) || in.rayHits) {
+            r.state = 6;
+        } else if (double(r.rangeInner) * 0.25 <= a.dist3d ||
+                   (r.flags & 0x100u) || a.dist3d >= 312.0f) {
+            // 312 units is 8 metres at the engine's own 39 to the metre
+            r.state = 13;
+        } else {
+            r.state = 8;
+        }
+    } else if (engaged) {
+        r.state = 6;
+    }
+
+    // THE DISENGAGE. Past the third range and still in the hub, he gives up:
+    // a coin flip sends him to 3 or back to patrolling in 4, and either way
+    // the 0x20 latch is cleared - which is what lets him be re-acquired.
+    if (a.dist3d >= r.rangeThird && r.state == 6) {
+        r.flags &= ~0x20u;
+        if (in.coinHeads) r.state = 3;
+        else { r.state = 4; }
+        return 0;
+    }
+    if (inCone && a.dist3d < r.rangeInner) return los;
+    return 0;
+}
+
 }  // namespace omk

@@ -20,6 +20,7 @@
 #include <cstring>
 #include <map>
 #include <string>
+#include <utility>
 #include <vector>
 
 int main(int argc, char** argv) {
@@ -417,6 +418,45 @@ int main(int argc, char** argv) {
             std::printf("generic: move ahead %d abeam %d quarter %d/%d behind %d "
                         "(yaw %.1f) arrived %d\n",
                         ahead, abeamA, quartA, quartB, back, turned, there);
+        }
+
+        // ---- ENGAGE, `sub_426E00`: the three ranges each doing a job ----
+        //
+        // This is the payoff of 5c. Property 26 acquires, 27 engages, 30
+        // disengages - and until this function was read, only 26 and 27 had
+        // any consumer at all.
+        {
+            auto mk = [&](float d3) {
+                omk::ShootRecord q; q.node = 2; q.state = 6;
+                q.rangeAcquire = 39.0f * 60;   // 60 m
+                q.rangeInner   = 39.0f * 20;   // 20 m
+                q.rangeThird   = 39.0f * 40;   // 40 m
+                omk::AcquireOut aa; aa.dist3d = d3;
+                return std::make_pair(q, aa);
+            };
+            omk::EngageIn e; e.sameNode = true; e.targetAlive = true;
+            e.gridClear = true; e.rayHits = true;   // rayHits keeps him in 6
+
+            auto in20 = mk(39.0f * 10);            // 10 m: inside everything
+            const int r20 = omk::shootEngage(in20.first, in20.second, true, e);
+            auto in30 = mk(39.0f * 30);            // 30 m: past 20, inside 40
+            const int r30 = omk::shootEngage(in30.first, in30.second, true, e);
+            auto in50 = mk(39.0f * 50);            // 50 m: past the third range
+            omk::EngageIn e2 = e; e2.coinHeads = true;
+            const int r50 = omk::shootEngage(in50.first, in50.second, true, e2);
+            auto in50b = mk(39.0f * 50);
+            omk::EngageIn e3 = e; e3.coinHeads = false;
+            const int r50b = omk::shootEngage(in50b.first, in50b.second, true, e3);
+            // dead target, and the 0x8000 gate
+            auto ind = mk(39.0f * 10);
+            omk::EngageIn e4 = e; e4.targetAlive = false;
+            const int rd = omk::shootEngage(ind.first, ind.second, true, e4);
+
+            std::printf("generic: engage 10m %d/state %d  30m %d/state %d  "
+                        "50m-heads %d/state %d latch %d  50m-tails state %d  dead %d\n",
+                        r20, in20.first.state, r30, in30.first.state,
+                        r50, in50.first.state, int((in50.first.flags & 0x20u) != 0),
+                        in50b.first.state, rd);
         }
 
         // the epilogue WRAPS the euler, and it is the only place that does
