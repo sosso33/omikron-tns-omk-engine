@@ -392,9 +392,10 @@ jerk to full speed on the first frame, a slide after release, moving in the
 wrong direction for the way you face, or walking through a crate. There is no
 head bob and no footstep sound yet - both are known.
 
-**Now expected (fixed 2026-09-10, after *"i can't finish the supermarket shoot
-sequence, even when every ennemies are killed, the end cutscene is not
-triggered"*): THE PHASE ENDS.** Each robber's death is now reported to the
+**CONFIRMED IN PLAY 2026-09-10 (*"The event is triggered, and the ending
+cutscene is triggered"*): THE PHASE ENDS**, fixed the same day after *"i
+can't finish the supermarket shoot sequence"*. The RETURN to adventure after
+the ending is reported broken - see `todo/shoot-mode.md` 8.5e. Each robber's death is now reported to the
 scene when his death animation finishes (the terminal says `death clip over:
 message 3 ... handler scene +0x433f`). The supermarket's ending is keyed to ONE
 of them - actor 84, the script's *Braqueur 15* - whose death plays a victory

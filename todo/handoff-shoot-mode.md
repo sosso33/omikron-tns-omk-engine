@@ -74,7 +74,7 @@ directly, scanning every chunk's zone slots **and** its startup script at `+4`.
 | **8.5b MOVING in first person**: shoot mode's own mover, `sub_47D4D0`, `actor/shootmove.h` | **done 2026-09-10** — forward, back, strafe, turn keys, crouch speed; `engine: shoot move`; **CONFIRMED IN PLAY** |
 | **8.2 the SHOT'S SOUNDS**: section A's muzzle and impact effects, resolved in `shoot2.scx` | **done 2026-09-10** — WAVER2.WAV per shot, WIMP1.WAV per impact; the sprites not drawn; heard in the supermarket session (113 shots), no verdict yet |
 | **8.5c ENEMY ENTRANCES ARE GAMEPLAY**: the adventure gate counts only the player's program in shoot mode | **fixed 2026-09-10** — found by the gate's own log line in play; `engine: shoot entrance`; **CONFIRMED IN PLAY** |
-| **8.5d THE PHASE ENDS**: message 3 at a gunman's death, SCENE 56's score, zone 3931 | **fixed 2026-09-10** — `session probe` asserts the handler, the two variables and the zone; not yet played |
+| **8.5d THE PHASE ENDS**: message 3 at a gunman's death, SCENE 56's score, zone 3931 | **fixed 2026-09-10** — `session probe` asserts the handler, the two variables and the zone; **CONFIRMED IN PLAY** |
 
 **17 checks** cover it (`engine: shoot hit` added with the hit): `shoot arenas`, `map2d grid`, `map2d sight`,
 `bone names`, `shoot range`, `shoot generic`, `projectile pool`,

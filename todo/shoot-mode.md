@@ -1343,7 +1343,9 @@ forget to plan it."* The session's own log agrees with the gate: 245 latches
    report went with it: the first-person camera is applied under the same
    gate.
 5d. **THE PHASE COULD NOT BE FINISHED — reported 2026-09-10, FIXED the same
-   day** (*"i can't finish the supermarket shoot sequence, even when every
+   day, CONFIRMED IN PLAY** (*"The event is triggered, and the ending
+   cutscene is triggered"*: nineteen deaths reported, actor 84's at 3357,
+   zone 3931's script two frames later) (*"i can't finish the supermarket shoot sequence, even when every
    ennemies are killed, the end cutscene is not triggered (look at how events
    are managed in shoot sequence)"*). How the supermarket ends, read out of
    SCENE 56 and the brain:
