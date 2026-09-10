@@ -1468,7 +1468,16 @@ forget to plan it."* The session's own log agrees with the gate: 245 latches
    other clips an arm or `Shoot_ActorAction` picks are not, and the action
    channel itself (363 lines) is still a stored integer; the clip's root
    motion and the `+460` interrupt; the pick among several clips of a type is
-   a fixed function, not `rand()`. Then step 2, the player's own damage
+   a fixed function, not `rand()`. **And a third fault, found in a reader's
+   session log the same day**: robber 519 restarted a turn clip every 14
+   frames with his facing stuck at 68.0, and 521 turned 7.2 of his 180. The
+   viewer's per-frame PLACEMENT put a placed actor's record facing back every
+   frame unless a program had moved him - so a turn kept only its last tick
+   (77 escaped it because his scene clip had run). A shoot brain now owns the
+   heading; the gallery's 238, out of his engage range and only turning to
+   aim, ends at 347 where he was pinned at 357. The same session shows every
+   robber firing - 111 gunman shots over the phase, 4 of their bolts meeting
+   bodies (three on the hostage, one on another robber, refused). Then step 2, the player's own damage
    path (§7j) - and note for it that the bolts aim at `pos()`, the FEET: robber
    77's first bolts stop on the world 57 units short of the player, descending
    toward his feet, which may be the feet-or-pelvis reading showing.

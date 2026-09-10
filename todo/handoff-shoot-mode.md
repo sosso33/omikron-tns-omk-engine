@@ -174,7 +174,10 @@ supermarket's robber 77 starts with the player behind him, and the hub's TURN
 CLIP (type 32) was both never played and overwritten every tick by the port's
 own timer tail; now it plays (`sub_421770`, the brain holding) and he turns
 0 -> 187.2 over frames 394-418 and fires every 15. Flag 8 means "a picked clip
-is playing" now, and dead is flag 8 with no health left.
+is playing" now, and dead is flag 8 with no health left. A reader's session
+then showed the other robbers stuck mid-turn: the viewer's per-frame placement
+was putting a placed actor's facing back every frame - fixed the same day, a
+shoot brain owns the heading.
 
 **Reported missing in play (2026-09-10, *"no fire sound effect, no UI"*): the
 FIRE SOUND and the shoot HUD.** Both are planned with their leads in

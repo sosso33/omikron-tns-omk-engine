@@ -408,7 +408,11 @@ In the supermarket the robber nearest the entrance (actor 77) starts with
 you behind him: he should turn round on his own clip over about a second as
 the phase begins, then fire at you every half-second. Wrong looks like: a
 robber spinning on the spot in a stiff pose, turning more than once for no
-reason, or firing with his back to you. The gallery harness shows two gunmen
+reason, or firing with his back to you. (Your session of 2026-09-11, from its
+log: 77 turned and fired, and every robber fired - but 519 and 521, placed by
+their records, stayed stuck mid-turn: 519 restarted a turn every half-second
+facing the same way. Fixed after: the placement was putting their facing back
+every frame. Not yet judged by eye.) The gallery harness shows two gunmen
 already facing you:
 
 ```

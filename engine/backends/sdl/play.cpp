@@ -8949,7 +8949,14 @@ int main(int argc, char** argv) {
                 // facing and the program's Euler alternating.
                 if (sh.fromTable && !s->progRan) {
                     for (int k = 0; k < 3; ++k) s->at[k] = sh.pos[k];
-                    s->facing = sh.facing;
+                    // ...and NOT the facing once a SHOOT BRAIN owns him: his
+                    // heading is then the record's `+420`, which the brain and
+                    // its turn clips write every tick. Put back from the
+                    // placement each frame, a turn kept only its last tick - a
+                    // reader's robber 519 restarted a turn clip every 14 frames
+                    // at 68.0 for the rest of the phase, and 521 turned 7.2 of
+                    // his 180. (77 escaped it: a program had moved him.)
+                    if (!shootBrains.count(sh.actor)) s->facing = sh.facing;
                     if (!s->placed) { s->placed = true; s->pelvis = false; }
                 }
             }

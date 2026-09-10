@@ -26701,10 +26701,13 @@ def c_engine_shoot_noise():
 
     The supermarket the game's own way, three taps of `Tir` once the mode is
     up: the area's `+106` loads `MAP2D\SMARKET1.MPT` (one floor, 39-inch
-    cells); the first shot, at frame 430, alerts actor 77 - hearing 20 cells,
-    on floor 0 - with action 2, his `+148` being -1; that is the only alert of
-    the run, because every noise after it finds him alerted already (and the
-    other gunmen have not entered yet).
+    cells). Until 2026-09-11 the first shot, at frame 430, alerted actor 77
+    (hearing 20 cells, action 2). Since the gunmen TURN, 77 comes round and
+    engages the player by SIGHT at 418 - `shootEngage` latches his 0x20 - so
+    that shot finds the one entered record alerted already and the route holds
+    no alert. The alert is asserted in the gallery instead, where it is a
+    gunman's own: 237's first shot, at frame 4, alerts 238 and 240 on his floor
+    (hearing 50 cells) with action 2, the maker passed over.
     """
     import subprocess, re
     fr = omkpaths.data_root()
@@ -26727,12 +26730,36 @@ def c_engine_shoot_noise():
     after = re.findall(r"^frame \d+: NOISE \(sub_4246E0\) - .+? \d+ records - \d+ dead, \d+ not "
                        r"entered, (\d+) already alerted, \d+ out of hearing .*?, (\d+) heard$",
                        out, re.M)
-    got = (m0.groups() if m0 else None, alerts[0] if alerts else None, len(alerts),
-           after[1] if len(after) > 1 else None)
-    want = (("SMARKET1", "1", "39"), ("430", "a shot", "0", "77", "20", "0", "2"), 1, ("1", "0"))
+    # 2026-09-11, once the gunmen TURN and FIRE: robber 77 comes round on his
+    # turn clip and engages the player by SIGHT at frame 418 - `shootEngage`
+    # latching his 0x20 - so the player's first shot, at 430, finds the one
+    # entered record alerted already, and the route has NO alert left in it.
+    # The alert itself is taken from the gallery, where it now happens the
+    # engine's other way: gunman 237's first shot, at frame 4, alerts 238 and
+    # 240 on his floor (hearing 50 cells) with action 2, the shooter himself
+    # passed over as the noise's maker.
+    shot430 = re.search(r"^frame 430: NOISE \(sub_4246E0\) - a shot at .*? (\d+) records - "
+                        r"\d+ dead, \d+ not entered, (\d+) already alerted, \d+ out of hearing "
+                        r".*?, (\d+) heard$", out, re.M)
+    seen = re.search(r"^frame (\d+): actor 77 BRA_FN - brain 6 -> 6, outcome 1", out, re.M)
+    gal = subprocess.run(
+        [exe, fr, os.path.join(ROOT, "tables"),
+         "--save", os.path.join(ROOT, "traces", "save-appart.bin"),
+         "--area", "59", "--stand", "5000,0,-2900,0", "--shoot", "--frames", "8", "--nodelay"],
+        capture_output=True, text=True, errors="replace",
+        env=dict(os.environ, SDL_VIDEODRIVER="dummy")).stdout
+    galert = re.findall(r"^frame (\d+): NOISE \(sub_4246E0\) - (a gunman's shot) at \S+ \S+ \S+, "
+                        r"floor (\d+): actor (\d+) ALERTED \(hearing (\d+) cells of \d+\), his "
+                        r"floor (\d+), action (-?\d+)$", gal, re.M)
+    got = (m0.groups() if m0 else None, len(alerts), seen.group(1) if seen else None,
+           shot430.groups() if shot430 else None, galert[:2])
+    want = (("SMARKET1", "1", "39"), 0, "418", ("1", "1", "0"),
+            [("4", "a gunman's shot", "0", "238", "50", "0", "2"),
+             ("4", "a gunman's shot", "0", "240", "50", "0", "2")])
     return got, want, (
-        "the supermarket's MAP2D grid; the first shot alerting actor 77 on its floor with "
-        "action 2; one alert in the run; the next noise finding him alerted already")
+        "the supermarket's MAP2D grid; no alert on the route, robber 77 having engaged the "
+        "player by sight at 418 before his first shot at 430 finds him alerted; in the "
+        "gallery, gunman 237's first shot alerting 238 and 240 on his floor with action 2")
 
 
 def c_engine_shoot_gunfire():
@@ -26781,6 +26808,11 @@ def c_engine_shoot_gunfire():
     first = re.search(r"^frame 4: GUNMAN SHOT 1 - actor 237 VIR_FN, .*?dir (\S+ \S+ \S+) "
                       r"\(yaw (\S+) pitch (\S+)\), from (the tir node) .*?jitter (\d+ \d+ \d+) ",
                       out, re.M)
+    # THE PLACEMENT NO LONGER PINS HIS HEADING: 238 stands out of his engage
+    # range (660 against 585) and only turns to aim - 358 to 347 in the fine
+    # band - and the per-frame placement used to put 358 back every frame, so
+    # he ended every run at 357, one tick's turn. His brain owns `+420` now
+    end238 = re.search(r"^  actor 238 VIR_FN \(bank none\) at \S+ \S+ \S+ facing (\d+)", out, re.M)
     world = len(re.findall(r"^frame \d+: GUNMAN BOLT \(actor \d+\) retired - entry \d+ "
                            r"hit the world", out, re.M))
     body = len(re.findall(r"^frame \d+: GUNMAN BOLT \(actor \d+\) retired - entry \d+ HIT ACTOR",
@@ -26809,13 +26841,14 @@ def c_engine_shoot_gunfire():
     s77 = tuple(int(f) for f in re.findall(r"^frame (\d+): GUNMAN SHOT \d+ - actor 77 ", sm, re.M))
     d77 = re.search(r"^frame \d+: GUNMAN SHOT 1 - actor 77 .*?dir (\S+ \S+ \S+) ", sm, re.M)
     got = (init, frames, first.groups() if first else None, world > 0, body,
+           end238.group(1) if end238 else None,
            turn.groups() if turn else None, over.groups() if over else None,
            w77.groups() if w77 else None, s77, d77.group(1) if d77 else None)
     want = ([("4", "237", "766", "DBWAVER", "2", "2", "10.0", "7"),
              ("4", "240", "772", "HEXAGUN", "3", "3", "4.0", "5")],
             {"237": (4, 14, 24, 34, 44), "240": tuple(range(4, 48, 4))},
             ("0.505 -0.004 -0.863", "30.3", "0.2", "the tir node", "41 67 34"),
-            True, 0,
+            True, 0, "347",
             ("394", "32", "25", "-7.20", "0.0"), ("418", "187.2"),
             ("WAVER", "1", "1", "15.0", "5"), (418, 433, 448, 463, 478),
             "-0.139 0.129 0.982")
