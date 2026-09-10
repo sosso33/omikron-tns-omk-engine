@@ -139,6 +139,7 @@ std::vector<Mesh> readMeshes(std::span<const std::byte> d, const Mesh3doHeader& 
         m.flags = i32(d, o);
         // o+4 is unread: no consumer for it has been traced
         m.id    = i32(d, o + 8);
+        m.slot  = i32(d, o + 12);
         name20(d, o + 16, m.name);
         m.pos[0] = f32(d, o + 36); m.pos[1] = f32(d, o + 40); m.pos[2] = f32(d, o + 44);
         m.parent = i32(d, o + 48);

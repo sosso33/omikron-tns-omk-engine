@@ -1189,11 +1189,29 @@ forget to plan it."* The session's own log agrees with the gate: 245 latches
    0x200000 (225 of HO1_FN's 1626 corners), and draws the held Waver on
    `Maing` without `tir`; the headless frame puts the gun low at the bottom
    right at 75-90% of the width, where the original's first frame has it at
-   72-87%. NOT yet: `S_AUTOLK` and `sub_471950` (the raise, and so the bolt
-   from the centre - it leaves the lowered gun for now), then the HUD the same
-   frames show - a health bar on the left, a
-   turning pentagon with a number (244) top left, the weapon's icon and name
-   bottom left.
+   72-87%. **THE RAISE, DONE 2026-09-10** (reported: *"The animation of the
+   arm when firing is missing"*) - `actor/shootaim.h`. **CONFIRMED IN PLAY
+   2026-09-10** in the supermarket (*"ok, good"*): 62 shots, the muzzle
+   rising 25 units as the look went from -22 to +33 degrees, gunman 77 hit
+   twice and killed. `sub_471950` read
+   whole: per bone the table marks (by the mesh's SLOT, `+12`), four of the
+   `S_AUTOLK` track's keys picked by the band of sin(yaw) (±0.707) and the
+   sign of sin(pitch), slerped by `|pitch| x 488.924` then `|yaw| x 366.693`
+   in 256ths - NOT clamped, so 45 degrees runs past its keys - then slerped
+   toward the stance's (group 200's default) KEY 1 by `lowered x 256`, and set
+   as the bone's local rotation. The angles slew 30 degrees a frame toward
+   their targets in the gate's PULLED arm only (yaw 0, pitch the look's).
+   Headless, the Gun Waver sits low at the right with the weapon down (frame
+   25) and at the centre as it fires (36); the bolt leaves it there (39). The
+   muzzle moved 5.8 toward the eye's line and 16.9 forward, which moved both
+   engine checks: `shoot fire`'s bolts now retire at z -3161 (was -3155), and
+   `shoot hit`'s fourth bolt meets the corpse (was a miss). **Shown to fail**:
+   with the layer forced off both go back to their old values, and the
+   muzzle back to 4990.6 / -2924.7. The AUTO-LOCK (`sub_47CEE0`, which aims
+   the arm's pitch at a target in the cone - the clip is named for it) is not
+   modelled. NOT yet: the HUD the same frames show - a health bar on the
+   left, a turning pentagon with a number (244) top left, the weapon's icon
+   and name bottom left.
 1. ~~**THE HIT (§7j) — step 2b, next.**~~ **PORTED 2026-09-10, §7j.** Still to do from it, the NOISE, read 2026-09-10:
    `sub_4246E0` is called at every shot (with the muzzle) and every impact,
    and it is not a sound - it ALERTS gunmen. Each one flagged 0x40, not yet
@@ -1229,6 +1247,14 @@ forget to plan it."* The session's own log agrees with the gate: 245 latches
    player - and then the player's own damage path (§7j).
 5. **THE MOUSE LOOK.** `sub_47D370`'s sensitivities and ±45 clamp, from the
    options header (§7h).
+5b. **MOVING IN FIRST PERSON — asked for 2026-09-10** (*"don't forget the
+   integration of moving while in fps mode"*). The supermarket session's log
+   ends with the player `walked 0.0 over 1246 ticks` in ACTOR_STATE 3: the
+   port never moves him in shoot mode. To read: what the *Tirer* scheme binds
+   to the move actions, which of `H1Avnt` group 200's entries take them (and
+   which clips they play), and what ACTOR_STATE 3's tick does with the
+   channel's root motion and turn - then wire it, with the first-person
+   camera riding the moved body.
 6. **THE SWEEP.** `--slow`, owed.
 
 ## 5b. The two weapon floats — step 5's first reading, 2026-09-09

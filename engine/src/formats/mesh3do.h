@@ -140,6 +140,11 @@ struct Mesh {
     // against a box running x -0.5..12.7, its thigh 7.58 down a -2.7..17.9
     // box; a ROOT's is 0.
     float centre[3] = {0, 0, 0};
+    // +12: the mesh's SLOT - what the shoot aim layer's bone table at
+    // 0x4C3798 is indexed by (`sub_471950`: `a7[u32(desc, 12)]`) and what
+    // `sub_471070` matches a clip's track against. In HO1_FN it equals the
+    // mesh's index (0..18); read rather than assumed.
+    std::int32_t slot = 0;
 };
 
 // ------------------------------------------------------------- the geometry

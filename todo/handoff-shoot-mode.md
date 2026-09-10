@@ -66,9 +66,12 @@ directly, scanning every chunk's zone slots **and** its startup script at `+4`.
 | 7d the brain TICKS on real gunmen | done |
 | 7f the projectile pool | done — and connected by 7h |
 | 7e the play test | done — see §3 |
-| **7h the SHOT**: `MDSHOOT0`'s latch, `sub_47C2A0`'s gate, the record path to the pool | **done 2026-09-10, `cc3d1f9`** — not yet played |
-| **7i the FLIGHT**: `Projectiles_Tick`, the world ray, the bolt drawn | **done 2026-09-10, `96fab56`** — not yet played |
+| **7h the SHOT**: `MDSHOOT0`'s latch, `sub_47C2A0`'s gate, the record path to the pool | **done 2026-09-10, `cc3d1f9`** — played, *"Ok"* |
+| **7i the FLIGHT**: `Projectiles_Tick`, the world ray, the bolt drawn | **done 2026-09-10, `96fab56`** — played, *"Ok"* |
 | **7j the HIT**: the actor sweep, damage, reactions, death | **done 2026-09-10** — three bolts kill a gallery gunman; not yet played |
+| **8.0 the FIRST-PERSON ARM and GUN**: the `0x200000` exemption, the Waver on `Maing` | **done 2026-09-10** — reported from the original's frames; **confirmed in play** with the raise |
+| **8.0 the RAISE**: `sub_471950`'s aim layer, `actor/shootaim.h` | **done 2026-09-10** — gun low at rest, at the centre to fire, the bolt from it there; **CONFIRMED IN PLAY** in the supermarket |
+| **8.5b MOVING in first person** | **not started** — the player never moves in ACTOR_STATE 3 (`walked 0.0`) |
 
 **17 checks** cover it (`engine: shoot hit` added with the hit): `shoot arenas`, `map2d grid`, `map2d sight`,
 `bone names`, `shoot range`, `shoot generic`, `projectile pool`,

@@ -25984,7 +25984,8 @@ def c_shoot_fire():
             "held from rest fires at", "lowered after", "rate 2 held fires at",
             "no row:", "aim:", "record shot:", "magazine:", "full:",
             "wall:", "range:", "wind-up 12:", "grow:",
-            "hit:", "bands:", "gates:", "shield:", "kill:", "type:")
+            "hit:", "bands:", "gates:", "shield:", "kill:", "raise:", "slew:",
+            "type:")
     got = []
     for k in keys:
         m = re.search(r"^" + re.escape(k) + r" (.*)$", out, re.M)
@@ -26037,6 +26038,18 @@ def c_shoot_fire():
             # threshold (12) each hit sends him to action 4; the last is along
             # his forward, band 3, so death clip type 8
             "10 5 0, actions 4 4, killed 1, death type 8, enemy drop 1, flags 0x1028",
+            # THE RAISE (`actor/shootaim.h`), on a track whose key k turns 10k
+            # degrees about one axis so every blend reads as an angle, each
+            # predicted by hand from `sub_471950`'s table: yaw 0 is the (2, 3)
+            # band, so up 15 is keys 1/2 halfway (15) and down 15 keys 1/7
+            # (40); up 45 weighs 384, and the slerp is NOT clamped, so it runs
+            # past key 2 (25); yaw 30 is the (2, 1) band, keys 11/3 at 70, and
+            # 192 of the way from 15 is 56.25; the lowering runs to the
+            # stance's 90 by 256ths; and the slew is 30 degrees a frame,
+            # stopping ON its target
+            "pitch +15 15.00, -15 40.00, +45 25.00; yaw 30 pitch 15 56.25; "
+            "lowered 1 90.00, 0.5 52.50, 0 15.00",
+            "toward 1.2 rad 0.5236 1.0472 1.2000 1.2000",
             "kind 1 BATPOUV -> -2, kind 1 WAVER -> 1, kind 3 BATPOUV -> 3"]
     if data:
         w = re.search(r"^weapons: (.*)$", out, re.M)
@@ -26112,6 +26125,17 @@ def c_engine_shoot_fire():
     # block measures, and before that they were never measured in shoot mode -
     # the bolt left 26 above the feet instead of from the gun as drawn, 65.7
     # above them at the raised arm of group 200's stance
+    #
+    # THE RAISE (2026-09-10, `actor/shootaim.h`): the muzzle is the gun as
+    # `sub_471950` bends the arm - raised to the centre, since the gate fires
+    # only once the weapon is fully up - and it is the SAME point for all eight
+    # shots, because the layer sets the upper body and the stance's bob no
+    # longer reaches it. With the layer forced off the muzzle is 4990.6 15143.4
+    # -2924.7 (the gun low at the right, as the lowered frame draws it) and the
+    # bolts retire at z -3155; with it, 5.8 nearer the eye's line and 16.9
+    # further forward, and they retire at -3161
+    muzzle = re.findall(r"^frame \d+: SHOT \d+ - .*?from the tir node (\S+) (\S+) (\S+),",
+                        o, re.M)
     gone = re.findall(r"^frame (\d+): SHOT retired - entry \d+ (hit the world|out of range) "
                       r"at \S+ \S+ (\S+) after ([\d.]+), (\d+) live$", o, re.M)
     got = (init.group(1) if init else None,
@@ -26121,7 +26145,8 @@ def c_engine_shoot_fire():
            sorted({(s[2], s[3], s[4], s[5], s[6], s[7]) for s in shots}),
            [int(s[8]) for s in shots],
            [int(g[0]) - int(s[0]) for g, s in zip(gone, shots)],
-           sorted({(g[1], round(float(g[2])), g[3], g[4]) for g in gone}))
+           sorted({(g[1], round(float(g[2])), g[3], g[4]) for g in gone}),
+           len(muzzle), sorted(set(muzzle)))
     want = ("object 42 kind 1 -> type 1: rate 10 frames, speed 124.8, damage 5, "
             "magazine 0",
             list(range(30, 241, 30)),
@@ -26130,14 +26155,15 @@ def c_engine_shoot_fire():
             [("124.8", "5", "0.000", "0.000", "-1.000", "the tir node")],
             [1] * 8,
             [2] * 8,
-            [("hit the world", -3155, "249.6", "0")])
+            [("hit the world", -3161, "249.6", "0")],
+            8, [("4996.4", "15144.7", "-2941.6")])
     return got, want, (
         "`Shoot_InitWeapon` giving the Gun Waver the key-1 row on the mode "
         "transition; eight latches armed by `MDSHOOT0` off the real channel; "
         "eight shots, each SEVEN frames after its latch (one for the queue "
         "drain, six for the weapon to come back up); all of them the row's "
         "speed and damage, straight down -Z from the Maing node; one pool "
-        "entry per shot")
+        "entry per shot; every bolt from the one RAISED muzzle")
 
 
 def c_engine_shoot_hit():
@@ -26184,21 +26210,24 @@ def c_engine_shoot_hit():
            hits,
            [tuple(int(v) for v in d) for d in dmg],
            [(int(t), bool(e)) for t, e in killed])
-    # Since the muzzle is the gun AS DRAWN (65.7 above the feet at group 200's
-    # raised stance, 2026-09-10 - it was 26 while the pose went unmeasured in
-    # shoot mode): the first bolt passes over his head, the next three kill
-    # him, and the fifth passes over him lying down. The bob of the stance
-    # (the muzzle alternates 15143.4 / 15141.4) is what separates the first
-    # from the second.
+    # Since THE RAISE (2026-09-10, `actor/shootaim.h`) the muzzle is the gun
+    # as `sub_471950` bends the arm up, and the same point for every shot -
+    # the layer sets the upper body, so the stance's bob (which alternated the
+    # muzzle 15143.4 / 15141.4 and sent the first bolt over his head) no longer
+    # reaches it. The first three bolts kill him; the fourth passes over him as
+    # he falls and meets the world; the fifth meets the corpse and does nothing
+    # (damage 0, band -1 - the entry retires whatever `sub_4240E0` decides).
+    # With the layer forced off this is the old three-hit list again.
     want = ([(237, 4758, -2560, "44.4"), (238, 5207, -2273, "44.4"),
              (240, 4516, -2797, "44.4")],
-            ["240"] * 3,
-            [(5, 15, 10, 2), (5, 10, 5, 2), (5, 5, 0, 2)],
+            ["240"] * 4,
+            [(5, 15, 10, 2), (5, 10, 5, 2), (5, 5, 0, 2), (0, 0, 0, -1)],
             [(5, True)])
     return got, want, (
         "the three gunmen's roots ON their placements with the body's 44.4 "
-        "sphere; five bolts meeting actor 240; 15 -> 10 -> 5 -> 0 at band 2, "
-        "then two on the corpse doing nothing; killed once, death clip type 5, "
+        "sphere; the first three bolts from the raised gun killing actor 240, "
+        "15 -> 10 -> 5 -> 0 at band 2; the fourth over him as he falls, the "
+        "fifth on the corpse doing nothing; killed once, death clip type 5, "
         "the enemy count dropping")
 
 
@@ -29514,7 +29543,7 @@ def c_licence_headers():
                    if TAG in open(p, encoding="utf-8",
                                   errors="replace").read(600)]
     return (authored, sorted(missing), len(vendored), mislabelled), \
-           (416, [], 1, []), \
+           (418, [], 1, []), \
            "authored source files under tools/, engine/src, engine/tools, " \
            "engine/backends and scripts/; those MISSING the SPDX tag; " \
            "vendored files in engine/third_party; and vendored files wrongly " \

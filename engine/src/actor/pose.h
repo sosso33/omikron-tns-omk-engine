@@ -213,6 +213,11 @@ std::vector<MeshPose> composePose(const std::vector<Mesh>& meshes,
 // than smoothing it. `tools/verify.py: engine pose blend` asserts the
 // arithmetic and the two lengths through `tools/blend_probe.cpp`.
 Quatf qslerp(const Quatf& a, const Quatf& b, float t);
+// `sub_4721F0` with the engine's own INTEGER weight: `v38 = k / 256`, and NOT
+// clamped - the shoot aim layer hands it `|pitch| * 488.924`, which passes
+// 256 beyond 30 degrees, and the formula then extrapolates past `b`. `qslerp`
+// above clamps at 255/256 because its callers never pass more.
+Quatf qslerpK(const Quatf& a, const Quatf& b, unsigned k);
 
 // ------------------------------------------------- THE HEAD LOOK
 //

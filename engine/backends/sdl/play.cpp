@@ -40,6 +40,7 @@
 #include "actor/shoot.h"
 #include "actor/shootfire.h"
 #include "actor/shoothit.h"
+#include "actor/shootaim.h"
 #include "actor/projectile.h"
 #include "actor/moves.h"
 #include "actor/slider.h"
@@ -3783,6 +3784,60 @@ int main(int argc, char** argv) {
     // projectile pool the request fills.
     omk::ShootRecord playerShootRec;
     omk::ShotLatch shotLatch;
+    // the arm's aim angles, `dword_6579A0/A4` (`actor/shootaim.h`)
+    omk::ShootAim shootAim;
+    // THE RAISE (`actor/shootaim.h`): the player's pose for this frame with the
+    // shoot aim layer over its upper body - every bone the table at 0x4C3798
+    // marks takes `S_AUTOLK`'s grid (group 202's default) at the aim angles,
+    // lowered toward the stance's key 1 (group 200's default) by the weapon's
+    // +176. Outside shoot mode it is the pose as it was. The arm, the gun and
+    // the muzzle all read it, so what fires is what is drawn.
+    const auto playerPoseNow = [&](omk::PlayerController* pl, bool aimLayer,
+                                   const omk::NodeTracks& pt, int frame)
+        -> std::vector<omk::MeshPose> {
+        if (!pl || !aimLayer || !pt.valid())
+            return omk::composePose(playerMeshes, pt, frame, false);
+        const omk::NodeTracks* aim = pl->clipTracks(pl->groupDefaultClip(202));
+        const omk::NodeTracks* stance = pl->clipTracks(pl->groupDefaultClip(200));
+        if (!aim || aim->frames < 15) return omk::composePose(playerMeshes, pt, frame, false);
+        const int f = frame < 0 ? 0 : (frame >= pt.frames ? pt.frames - 1 : frame);
+        omk::NodeTracks one;
+        one.count = pt.count;
+        one.frames = 1;
+        one.rootTrack = pt.rootTrack;
+        one.ids = pt.ids;
+        one.names = pt.names;
+        one.quats.push_back(pt.quats[static_cast<std::size_t>(f)]);
+        if (!pt.trans.empty())
+            one.trans.push_back(pt.trans[static_cast<std::size_t>(
+                f < static_cast<int>(pt.trans.size()) ? f : static_cast<int>(pt.trans.size()) - 1)]);
+        auto& row = one.quats[0];
+        for (std::size_t i = 0; i < one.ids.size() && i < row.size(); ++i) {
+            const std::int32_t mi = one.ids[i];
+            if (mi < 0 || static_cast<std::size_t>(mi) >= playerMeshes.size()) continue;
+            if (!omk::shootAimMarked(playerMeshes[static_cast<std::size_t>(mi)].slot)) continue;
+            // the bone's `S_AUTOLK` keys 1..15: the tracks' frame k is key k + 1
+            std::vector<omk::Quatf> keys;
+            for (std::size_t j = 0; j < aim->ids.size(); ++j) {
+                if (aim->ids[j] != mi) continue;
+                for (int k = 0; k < 15; ++k)
+                    keys.push_back(aim->quats[static_cast<std::size_t>(k)][j]);
+                break;
+            }
+            if (keys.size() < 15) continue;
+            omk::Quatf q = omk::shootAimBone(keys, shootAim.yaw, shootAim.pitch);
+            // the stance's key 1 for this bone - identity when the stance has
+            // no track for it, as `sub_471950`'s `v72 = 1.0` is
+            if (stance && !stance->quats.empty()) {
+                omk::Quatf key1{};
+                for (std::size_t j = 0; j < stance->ids.size(); ++j)
+                    if (stance->ids[j] == mi) { key1 = stance->quats[0][j]; break; }
+                q = omk::shootAimLower(q, key1, playerShootRec.weaponLowered);
+            }
+            row[i] = q;
+        }
+        return omk::composePose(playerMeshes, one, 0, false);
+    };
     omk::ProjectilePool projectiles;
     long shotsFired = 0;
     // `scptdata\shoot2.sfx`, which `Shoot_Enter` loads for its section A -
@@ -6439,8 +6494,14 @@ int main(int argc, char** argv) {
                 // press reaches the gate one frame after its state, and the
                 // gate fires only with the weapon fully UP.
                 if (playerTicked && shootMode && player->state() == omk::ActorState::Shoot) {
-                    omk::shootChannelTick(playerShootRec, shotLatch,
-                                          player->ctlEntryFlags12() == 0xFFFFFFFFu, true,
+                    const omk::FireGate gate = omk::shootChannelTick(
+                        playerShootRec, shotLatch, player->ctlEntryFlags12() == 0xFFFFFFFFu,
+                        true, static_cast<float>(frameSec * 30.0));
+                    // the arm's angles move only in the gate's PULLED arm: the
+                    // yaw toward 0 (the body turns with the look) and the pitch
+                    // toward the look's (`sub_47C260`, positive up)
+                    if (gate != omk::FireGate::Released)
+                        omk::shootAimSlew(shootAim, 0.0f, shootPitch * 0.017453279f,
                                           static_cast<float>(frameSec * 30.0));
                     const omk::ShootWeaponRow* row = playerShootRec.weapon;
                     if (shotLatch.request && row) {
@@ -6461,7 +6522,7 @@ int main(int argc, char** argv) {
                         const char* from = "his position (no pose)";
                         if (const omk::NodeTracks* pt = player->poseTracks()) {
                             const std::vector<omk::MeshPose> pose =
-                                omk::composePose(playerMeshes, *pt, player->poseFrame(), false);
+                                playerPoseNow(&*player, true, *pt, player->poseFrame());
                             int hand = -1;      // the LAST strstr hit, as o3de_Traverse leaves it
                             for (std::size_t i = 0; i < playerMeshes.size(); ++i)
                                 if (std::strstr(playerMeshes[i].name, "Maing"))
@@ -7572,6 +7633,7 @@ int main(int argc, char** argv) {
                 playerShootRec.node = -1;
                 playerShootRec.flags |= 2u;
                 shotLatch = omk::ShotLatch{};
+                shootAim = omk::ShootAim{};
                 const int obj = session.shootMode().weaponObject();
                 const auto& objs = voiceLib.objects();
                 const bool known = obj >= 0 && static_cast<std::size_t>(obj) < objs.size();
@@ -9701,7 +9763,8 @@ int main(int argc, char** argv) {
                 if (pm && pm->ready && pt &&
                     pm->rest.cornerMesh.size() == pm->rest.corners.size()) {
                     const std::vector<omk::MeshPose> pose =
-                        omk::composePose(playerMeshes, *pt, player->poseFrame(), false);
+                        playerPoseNow(&*player, player->state() == omk::ActorState::Shoot,
+                                      *pt, player->poseFrame());
                     int hand = -1;      // the LAST strstr hit, as o3de_Traverse leaves it
                     for (std::size_t i = 0; i < playerMeshes.size(); ++i)
                         if (std::strstr(playerMeshes[i].name, "Maing")) hand = static_cast<int>(i);
@@ -11296,7 +11359,9 @@ int main(int argc, char** argv) {
                 // T-pose; then a latched pose, which froze him mid-stride.
                 const omk::NodeTracks* pt = player->poseTracks();
                 std::vector<omk::MeshPose> pose = pt
-                    ? omk::composePose(playerMeshes, *pt, player->poseFrame(), false)
+                    ? playerPoseNow(&*player, session.shootMode().active() &&
+                                                  player->state() == omk::ActorState::Shoot,
+                                    *pt, player->poseFrame())
                     : omk::composePose(playerMeshes, omk::NodeTracks{}, 0, false);
                 omk::applyPose(playerPosed, playerRest, playerMeshes, pose);
                 // THE ANCHOR IS THE FLOOR, NOT THE HIPS (omk-play 69).

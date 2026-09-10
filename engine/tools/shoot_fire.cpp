@@ -13,6 +13,7 @@
 #include "actor/shoot.h"
 #include "actor/shootfire.h"
 #include "actor/shoothit.h"
+#include "actor/shootaim.h"
 #include "actor/state.h"
 #include "formats/sfx.h"
 #include "o3de/collision.h"
@@ -339,6 +340,42 @@ int main(int argc, char** argv) {
         std::printf("kill: %d %d %d, actions %d %d, killed %d, death type %d, enemy drop %d, "
                     "flags 0x%x\n", h1.health, h2.health, h3.health, h1.action, h2.action,
                     int(h3.killed), h3.deathType, int(h3.enemyCountDrop), v.flags);
+    }
+
+    // THE RAISE (`actor/shootaim.h`): `sub_471950`'s key choice and slerps on
+    // a synthetic track whose key k is a turn of 10k degrees about X, so every
+    // blend reads back as one angle.
+    {
+        std::vector<omk::Quatf> keys;
+        for (int k = 1; k <= 15; ++k) {
+            const double h = k * 10.0 * 3.14159265358979 / 360.0;
+            keys.push_back({static_cast<float>(std::cos(h)), static_cast<float>(std::sin(h)), 0, 0});
+        }
+        const auto deg = [](const omk::Quatf& q) {
+            return 2.0 * std::acos(std::fabs(double(q.w)) > 1.0 ? 1.0 : std::fabs(double(q.w)))
+                   * 180.0 / 3.14159265358979;
+        };
+        const float r15 = 15.0f * 0.0174532925f, r45 = 45.0f * 0.0174532925f,
+                    r30 = 30.0f * 0.0174532925f;
+        const omk::Quatf up15 = omk::shootAimBone(keys, 0.0f, r15);
+        const omk::Quatf dn15 = omk::shootAimBone(keys, 0.0f, -r15);
+        const omk::Quatf up45 = omk::shootAimBone(keys, 0.0f, r45);
+        const omk::Quatf side = omk::shootAimBone(keys, r30, r15);
+        const omk::Quatf stance = keys[8];                    // key 9, 90 degrees
+        std::printf("raise: pitch +15 %.2f, -15 %.2f, +45 %.2f; yaw 30 pitch 15 %.2f; "
+                    "lowered 1 %.2f, 0.5 %.2f, 0 %.2f\n", deg(up15), deg(dn15), deg(up45),
+                    deg(side), deg(omk::shootAimLower(up15, stance, 1.0f)),
+                    deg(omk::shootAimLower(up15, stance, 0.5f)),
+                    deg(omk::shootAimLower(up15, stance, 0.0f)));
+        omk::ShootAim a;
+        std::string steps;
+        for (int f = 0; f < 4; ++f) {
+            omk::shootAimSlew(a, 0.0f, 1.2f, 1.0f);
+            char b[16];
+            std::snprintf(b, sizeof b, "%s%.4f", f ? " " : "", double(a.pitch));
+            steps += b;
+        }
+        std::printf("slew: toward 1.2 rad %s\n", steps.c_str());
     }
 
     // THE TYPE: the object's kind, and the one hand-written exception.

@@ -911,14 +911,27 @@ void PlayerController::cameraCollide(float dt) {
 // ------------------------------------------------------------- posing
 
 const NodeTracks* PlayerController::poseTracks() {
-    const int c = clip();
-    if (c < 0 || !meshes_) return nullptr;
-    auto it = tracks_.find(c);
-    if (it != tracks_.end()) {
-        if (!it->second.valid()) return nullptr;
-        const int v = variantCount();
-        return v > 1 ? gridTracks(it->second, v) : &it->second;
+    const NodeTracks* raw = clipTracks(clip());
+    if (!raw) return nullptr;
+    const int v = variantCount();
+    return v > 1 ? gridTracks(*raw, v) : raw;
+}
+
+int PlayerController::groupDefaultClip(int groupId) const {
+    if (!ctl_) return -1;
+    for (const auto& g : ctl_->groupList) {
+        if (static_cast<int>(g.id) != groupId) continue;
+        const int e = g.defaultEntry;
+        if (e < 0 || e >= static_cast<int>(ctl_->states.size())) return -1;
+        return ctl_->states[static_cast<std::size_t>(e)].clip;
     }
+    return -1;
+}
+
+const NodeTracks* PlayerController::clipTracks(int c) {
+    if (c < 0 || !meshes_ || !ctl_ || c >= static_cast<int>(ctl_->clips.size())) return nullptr;
+    auto it = tracks_.find(c);
+    if (it != tracks_.end()) return it->second.valid() ? &it->second : nullptr;
     NodeTracks t;
     const auto d = animDescriptor(data_, ctl_->clips[static_cast<std::size_t>(c)].offset);
     if (d && d->frames > 0) {
@@ -975,12 +988,7 @@ const NodeTracks* PlayerController::poseTracks() {
         }
     }
     it = tracks_.emplace(c, std::move(t)).first;
-    if (!it->second.valid()) return nullptr;
-    {
-        const int v = variantCount();
-        if (v > 1) return gridTracks(it->second, v);
-    }
-    return &it->second;
+    return it->second.valid() ? &it->second : nullptr;
 }
 
 // The four cells and the two weights, `sub_466390` transcribed. `keys` is the

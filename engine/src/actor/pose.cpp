@@ -66,6 +66,27 @@ Quatf qslerp(const Quatf& a, const Quatf& b, float t) {
     return q;
 }
 
+Quatf qslerpK(const Quatf& a, const Quatf& b, unsigned k) {
+    const float w = static_cast<float>(k) * 0.00390625f;   // `v38`, unclamped
+    Quatf bb = b;
+    float dot = a.w * bb.w + a.x * bb.x + a.y * bb.y + a.z * bb.z;
+    if (dot < 0.0f) { bb.w = -bb.w; bb.x = -bb.x; bb.y = -bb.y; bb.z = -bb.z; dot = -dot; }
+    float wa, wb;
+    if (dot > 0.9995f) {
+        wa = 1.0f - w; wb = w;
+    } else {
+        const float th = std::acos(dot > 1.0f ? 1.0f : dot);
+        const float s = std::sin(th);
+        wa = std::sin((1.0f - w) * th) / s;
+        wb = std::sin(w * th) / s;
+    }
+    Quatf q{a.w * wa + bb.w * wb, a.x * wa + bb.x * wb,
+            a.y * wa + bb.y * wb, a.z * wa + bb.z * wb};
+    const float n = std::sqrt(q.w * q.w + q.x * q.x + q.y * q.y + q.z * q.z);
+    if (n > 1e-6f) { q.w /= n; q.x /= n; q.y /= n; q.z /= n; }
+    return q;
+}
+
 NodeTracks blendTracks(const NodeTracks& a, int frameA, bool cancelRootA,
                        const NodeTracks& b, int frameB, bool cancelRootB,
                        float t) {

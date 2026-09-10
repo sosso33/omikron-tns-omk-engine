@@ -367,6 +367,19 @@ and stay down, and later bolts should stop at his body. The hit test uses
 boxes, so a bolt skimming just over a shoulder can still count - that is
 the engine's own test (`todo/shoot-mode.md` §7j), not a fault.
 
+**CONFIRMED IN PLAY 2026-09-10 (the supermarket, *"ok, good"*): the ARM
+RAISE**, ported the same day after *"The animation of the arm when firing is
+missing"*. At rest the gun hangs low at the
+bottom right, mostly off screen. Press fire and the arm swings it up to the
+middle of the view over about six frames, the bolt leaves from it THERE, and
+a second after you let go it sinks back to the bottom right (0.1 a frame).
+Held, it stays up. Looking up and down with the mouse should tilt the raised
+arm with the view - it follows the look pitch at up to 30 degrees a frame,
+but only while the trigger is held. Wrong looks like: the gun jumping between
+the two places with nothing in between, a bolt leaving from the low gun, the
+arm staying up after release, or the arm twisted (a key picked from the wrong
+band - `todo/shoot-mode.md` §8.0).
+
 **And look at where people STAND, here and elsewhere.** Every body placed
 by its record and turned by its facing now turns about its pelvis instead
 of its model origin. For most characters that moves nothing you would see;

@@ -477,6 +477,13 @@ person. The port draws the player as one body with no per-node flags, so it
 can only take him out whole. The weapon in his hands is the obvious candidate
 for what the exemption is for.
 
+> **Superseded 2026-09-10**, after a reader's frames of the original showed
+> the arm and the gun: the exemption IS modelled now - the viewer poses him in
+> first person and draws the meshes flagged `0x200000` (the left forearm,
+> upper arm and hand) with the held weapon on `Maing` - and so is the RAISE
+> that swings them to the centre as he fires (`actor/shootaim.h`,
+> `todo/shoot-mode.md` §8.0).
+
 
 ### 94. You can enter a shop but not leave it: the interior's own doors never move — A
 

@@ -375,6 +375,13 @@ public:
     // which is what the engine does with it (the node moves; the pose is the
     // quaternions alone).
     const NodeTracks* poseTracks();
+    // Any clip's RAW tracks, cached and without the variant grid, by its
+    // index into `CtlFile::clips`. The shoot aim layer samples `S_AUTOLK`
+    // and the stance beside the running clip (`actor/shootaim.h`).
+    const NodeTracks* clipTracks(int clip);
+    // The clip of a `.CTL` group's default entry - `Cef_DefaultClip(
+    // Cef_FindGroupById(bank, id))` - or -1.
+    int groupDefaultClip(int groupId) const;
     int poseFrame() const;             // 0-based frame into the tracks
 
     // ---- THE VARIANT GRID (omk-play 69) --------------------------------
