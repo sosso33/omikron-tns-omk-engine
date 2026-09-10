@@ -1327,8 +1327,9 @@ forget to plan it."* The session's own log agrees with the gate: 245 latches
    The engine's `Actor_TickShoot` has neither gate. Instrumented 2026-09-10:
    in shoot mode the viewer prints `adventure ON/OFF in shoot mode - <terms>`
    whenever the gate flips, so a freeze met in play names its cause.
-   **FOUND AND FIXED the same day - the log line did its job.** The reader's
-   next supermarket session printed `adventure OFF in shoot mode -
+   **FOUND AND FIXED the same day - the log line did its job - and CONFIRMED
+   IN PLAY** (*"Ok, this event issue is fixed"*: twelve entrances, no stop).
+   The reader's next supermarket session printed `adventure OFF in shoot mode -
    parkedOnProgram` five times, 20-46 frames each, and every one was an
    ENTRANCE: actor 86's `BRA_05A2` (47 frames) at 717, actor 85's `BRA_04A1M`
    (26) at 929, and so on - their zone scripts parked on programs bound to a
