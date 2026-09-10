@@ -8852,7 +8852,25 @@ int main(int argc, char** argv) {
                                 through ? "THROUGH a solid face" : "clear",
                                 playerSteep.size() / 9, playerSoup.size() / 9);
                 }
-                const omk::FollowCamera& fc = player->followCamera();
+                // ---- MODE 4 HAS NO LAG, and the follow camera is all lag -
+                //
+                // `camera_presets.json` row 4's three smoothing divisors are
+                // ZERO. `followCamera()` is `cam_`, the SMOOTHED one - the
+                // mode-0 preset's 3/8/8 - so aiming through it drags the view
+                // behind the mouse, which is what a reader described as
+                // turning "but not correctly". `resolveOffsets` is the same
+                // resolve with NO lag, and the header says exactly what it is
+                // for: "what `Camera_Request(mode)` gives a preset whose
+                // three smoothing divisors are 0". The TAKE camera (mode 1)
+                // already uses it (`todo/omk-play.md` 69, 97i).
+                omk::FollowCamera fc = player->followCamera();
+                if (shootMode && shootCameraLive) {
+                    const float rad = shootPitch * 3.14159265f / 180.0f;
+                    const float eye[3] = {0.0f, 0.0f, 0.0f};
+                    const float at[3]  = {0.0f, 787.4016f * std::sin(rad),
+                                          787.4016f * std::cos(rad)};
+                    fc = player->resolveOffsets(eye, at, 75.0f);
+                }
                 for (int k = 0; k < 3; ++k) {
                     view.cam.eye[k] = fc.eye[k];
                     view.cam.at[k]  = fc.at[k];

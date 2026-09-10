@@ -17,6 +17,25 @@ waiting on its evidence.
 
 ### 97. The supermarket shoot phase blocks at the end of its cutscene, and Kay'l vanishes — A
 
+> **(i) IT TURNS — and mode 4 has NO LAG while the follow camera is all lag.**
+> With the harness above the reader finally saw the first-person camera
+> respond: *"it turns but not correctly (don't know if this is a pivot issue
+> or if the mouse just made me move rather than just rotate)"*. So 97d, 97e
+> and 97g are CONFIRMED; this is what is left.
+>
+> `camera_presets.json` row 4's three smoothing divisors are **zero**.
+> `followCamera()` returns `cam_`, the SMOOTHED one — the mode-0 preset's
+> 3/8/8 — so the view chases the mouse instead of following it, which reads
+> exactly as "turns but not correctly". `resolveOffsets` is the same resolve
+> with **no lag**, and `player.h` says what it is for in as many words:
+> *"what `Camera_Request(mode)` gives a preset whose three smoothing divisors
+> are 0. Mode 1, the TAKE camera, is one."* The shoot camera now uses it.
+>
+> The eye itself does not move when he turns — offset `(0,0,0)` resolves to
+> `pos - camLift` whatever the yaw — so a pivot translation was never the
+> mechanism; the lag was.
+
+
 > **(h) WHERE THE PHASE ACTUALLY IS, after testing three fixes against the
 > wrong room.** The reader: *"it was in adventure mode, run from the
 > cutscene"*, and *"no saves to test"*. `engine/tools/shoot_trigger.cpp`

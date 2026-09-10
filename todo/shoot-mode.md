@@ -478,6 +478,35 @@ Each step ends in a commit and a report, and 7e is not optional: the gunmen
 have never been seen by a person, and `finished-means-usable` is the standard
 this repo is held to.
 
+## 7g. HOW TO REACH A SHOOT PHASE — the harness that existed all along
+
+**One command, from a cold start, no save and no playthrough:**
+
+```
+build/omk-play "$OMK_DATA" ../tables --save ../traces/save-appart.bin \
+    --area 230 --scene-chunk 56 --vulkan
+```
+
+The cutscene plays, the editing ends at frame ~385, and `SHOOT MODE ENTER`
+follows two frames later. Thirteen seconds of game time.
+
+**Why every earlier attempt failed, and it was not the game.** The supermarket
+phase is **AREA 230 + SCENE 56 or 62** (both on set `ASM49`), and AREA 230
+carries **no `shoot.begin` of its own** — it is in a ZONE SLOT of the scene.
+`--save --area 230` is a street start, which *lands* the player in the room
+without running the scene chunk that would have been loaded on the way in, so
+the trigger never exists. `--scene-chunk N` does exactly that, and its own
+help says so: *"A street start jumps straight to an area, so the chunk that
+would have been loaded on the way in never is."*
+
+> **THIS COST THREE FIXES THEIR CONFIRMATION.** 97d, 97e and 97g all shipped
+> unverified, and a reader played the sequence three times to test them,
+> because I looked for the room by grepping set names — which found a
+> DIFFERENT supermarket, AREA 68 — and never read `omk-play`'s own options.
+> `engine/tools/shoot_trigger.cpp` now answers "which chunk starts a shoot
+> phase" directly, scanning zone slots *and* the startup script at `+4`, so
+> the question does not have to be guessed at again.
+
 ## 7a. The record's geometry — done 2026-09-09
 
 `ShootRecord` gained the four authored numbers and the weapon countdown;
