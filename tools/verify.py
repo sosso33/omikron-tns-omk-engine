@@ -26518,7 +26518,10 @@ def c_engine_shoot_hud():
         env=dict(os.environ, SDL_VIDEODRIVER="dummy"))
     m = re.search(r"^frame \d+: shoot HUD \(screen (\d+)\) - (.*)$", play.stdout, re.M)
     got = (m.group(1), m.group(2)) if m else None
+    # part 2: the ring and the weapon drawn into their boxes (their pixels
+    # are not asserted - the turntable runs on the wall clock)
     want = ("34", "rings 2, ammo -1, weapon 'Waver' - items drawn 2, fills 4; "
+                  "models ring 1 weapon 1; "
                   "crosshair at 400 300, pixel below centre 0xffff")
     return got, want, (
         "screen 34 over the shoot frame: the ring count (property 5), the Waver's "

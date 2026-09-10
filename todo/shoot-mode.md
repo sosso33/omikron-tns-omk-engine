@@ -1276,9 +1276,16 @@ forget to plan it."* The session's own log agrees with the gate: 245 latches
    screen 33's - the MECAGARDE's HUD - not this one.
    **Ported (part 1)**: the panel composed over the frame from a walk of its
    own (it takes no input), the three texts as row text by item address, the
-   items' fills, and the crosshair - `verify.py: engine: shoot hud`. **Not
-   yet**: the two turning models, `Hud_DrawBar`'s mode 0 (`sub_4480D0`, 464
-   lines, the `jauge*.bmp` bitmaps `Hud_LoadResources` loads), the minimap.
+   items' fills, and the crosshair - `verify.py: engine: shoot hud`.
+   **Ported (part 2)**: the two TURNING MODELS, through the sneak previews'
+   own path (`ui/models.h`) - `sub_478DE0`'s literal arm (a positive
+   distance, 10.0 for the ring, 25.0 for the weapon, no box fit) and
+   `sub_478EC0`'s turn, which is oscillator 4 exactly as the sneak's; the
+   weapon loaded by its stem with `tir` left out, reloaded when it changes
+   (the refresh flag is raised by `Shoot_Enter` 0x422500, the shot and
+   `MDGUN`). **Not yet**: `Hud_DrawBar`'s mode 0 (`sub_4480D0`, 464 lines,
+   the `jauge*.bmp` bitmaps, and `sub_446E20`'s 35 rising sparks), the
+   minimap.
    The first reading, kept: `Shoot_Enter` opens screen
    34 (33 for the Mecagarde) and calls `Hud_Refresh` (0x00448FA0, the
    player's properties 16/19/17/3/18/2 into `dword_530CB0..C4`).

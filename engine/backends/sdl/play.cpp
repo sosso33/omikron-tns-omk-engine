@@ -13297,6 +13297,31 @@ int main(int argc, char** argv) {
             comp.setRowText(&hudRows);
             comp.setHidden(nullptr);
             const omk::ScreenFrame hf = comp.draw(fb, session.shootMode().hudScreen(), *hudWalk);
+            // THE TWO TURNING MODELS, into their items' boxes: the ring
+            // (item 0x4C43D0 at 48,0, `sub_478DE0(node, 10.0)`) and the held
+            // weapon (0x4C4460 at 48,380, 25.0), both turned by oscillator 4
+            // (`sub_478EC0`), the sneak previews' turntable.
+            bool ringDrawn = false, weaponDrawn = false;
+            {
+                const float spin = omk::UiModels::spinDegrees(static_cast<long>(SDL_GetTicks()));
+                const auto box = [&](int x, int y, int bw, int bh, int out[4]) {
+                    out[0] = comp.scaleX(x); out[1] = comp.scaleY(y);
+                    out[2] = comp.scaleX(x + bw) - out[0]; out[3] = comp.scaleY(y + bh) - out[1];
+                };
+                int r[4];
+                for (int k = 0; k < uiModels.count(); ++k)
+                    if (uiModels.name(k).find("anneau") != std::string::npos) {
+                        box(48, 0, 100, 100, r);
+                        ringDrawn = uiModels.draw(fb, k, r[0], r[1], r[2], r[3], spin, 10.0f);
+                    }
+                const int obj = session.shootMode().weaponObject();
+                const auto& objs = voiceLib.objects();
+                if (obj >= 0 && static_cast<std::size_t>(obj) < objs.size() &&
+                    uiModels.loadWeapon(fs, objs[static_cast<std::size_t>(obj)].stem)) {
+                    box(48, 380, 100, 100, r);
+                    weaponDrawn = uiModels.drawWeapon(fb, r[0], r[1], r[2], r[3], spin, 25.0f);
+                }
+            }
             // the crosshair: {x0, y0, x1, y1} from the four records, relative
             // to the centre, filled white (0xFFFFFF -> RGB565 0xFFFF)
             const int cx = fb.w / 2, cy = fb.h / 2;
@@ -13311,9 +13336,10 @@ int main(int argc, char** argv) {
             char line[256];
             std::snprintf(line, sizeof line,
                           "rings %d, ammo %d, weapon '%s' - items drawn %d, fills %d; "
+                          "models ring %d weapon %d; "
                           "crosshair at %d %d, pixel below centre 0x%04x",
                           int(rings), hudAmmo, weaponName.c_str(), hf.itemsDrawn,
-                          hf.fillsDrawn, cx, cy,
+                          hf.fillsDrawn, int(ringDrawn), int(weaponDrawn), cx, cy,
                           unsigned(fb.px[static_cast<std::size_t>(cy + 8) *
                                              static_cast<std::size_t>(fb.w) +
                                          static_cast<std::size_t>(cx)]));

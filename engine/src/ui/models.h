@@ -72,8 +72,25 @@ public:
     int count() const { return static_cast<int>(m_.size()); }
     const std::string& name(int k) const { return m_[static_cast<std::size_t>(k)].name; }
 
-    // Draw model `k` into `dst`'s rect, turned `angleDeg` about Y.
-    bool draw(Surface& dst, int k, int x, int y, int w, int h, float angleDeg);
+    // Draw model `k` into `dst`'s rect, turned `angleDeg` about Y. `distance`
+    // picks `sub_478DE0`'s arm: 0 (what the previews pass) takes the box FIT,
+    // a POSITIVE one is the camera's literal distance from the centre - the
+    // shoot HUD passes 10.0 for its ring and 25.0 for the weapon
+    // (`todo/shoot-mode.md` 8.3).
+    bool draw(Surface& dst, int k, int x, int y, int w, int h, float angleDeg,
+              float distance = 0.0f);
+
+    // ---- THE SHOOT HUD'S WEAPON (`todo/shoot-mode.md` 8.3) --------------
+    //
+    // Screen 34's item 0x4C4460 (its draw callback 0x42EA10) reloads the HELD
+    // object's model whenever the refresh flag `dword_90E104` is up - the
+    // mode's entry, a shot, `MDGUN`'s swap - from its descriptor +48 path
+    // (`MESHES\OBJETS\<stem>.3DO`), finds its `tir` and UNLINKS it
+    // (`o3de_UnlinkObject`), so the muzzle mesh is not drawn. Reloaded here
+    // only when the stem changes; false when it will not load.
+    bool loadWeapon(const DataFs& fs, const std::string& stem);
+    bool drawWeapon(Surface& dst, int x, int y, int w, int h, float angleDeg,
+                    float distance);
 
     // ---- THE EXAMINE PAGE'S CONTENT, and there are TWO kinds ----------
     //
@@ -133,6 +150,10 @@ private:
     std::string exStem_;
     M           exModel_;
     Surface     exImage_;
+    // The shoot HUD's weapon, `tir` left out, and the stem it came from.
+    std::string weaponStem_;
+    M           weapon_;
+    bool        weaponOk_ = false;
 };
 
 }  // namespace omk

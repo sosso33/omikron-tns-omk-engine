@@ -1,8 +1,10 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "ui/models.h"
 
+#include "formats/mesh3do.h"
 #include "formats/tex3dt.h"
 
+#include <cctype>
 #include <cmath>
 
 namespace omk {
@@ -93,6 +95,83 @@ UiModels::Examine UiModels::examine(const DataFs& fs, int kind,
     return exKind_;
 }
 
+bool UiModels::loadWeapon(const DataFs& fs, const std::string& stem) {
+    if (stem == weaponStem_) return weaponOk_;
+    weaponStem_ = stem;
+    weaponOk_ = false;
+    weapon_ = M();
+    if (stem.empty()) return false;
+    const auto d = fs.read("MESHES/OBJETS/" + stem + ".3do");
+    if (d.empty()) return false;
+    Geometry g = buildGeometry(d, DrawFilter::Engine);
+    if (g.corners.empty()) return false;
+    // `tir`, by name as `sub_41E230(0x4C487C "tir", ...)` finds it, and
+    // every corner it poses dropped - the same test the gun in the hand uses
+    // (`cornerMesh` against its index).
+    int tir = -1;
+    if (const auto h = readHeader(d)) {
+        const auto ms = readMeshes(d, *h);
+        for (std::size_t i = 0; i < ms.size(); ++i) {
+            std::string nm = ms[i].name;
+            for (auto& ch : nm) ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
+            if (nm == "tir") tir = static_cast<int>(i);
+        }
+    }
+    if (tir >= 0 && g.cornerMesh.size() == g.corners.size()) {
+        Geometry f = g;
+        f.corners.clear(); f.batches.clear(); f.cornerMirror.clear();
+        f.cornerMesh.clear(); f.cornerVertex.clear(); f.cornerDeclared.clear();
+        for (const Batch& b : g.batches) {
+            Batch nb = b;
+            nb.start = f.corners.size();
+            // whole triangles: a triangle whose corners all belong to `tir`
+            // goes, any other stays
+            for (std::size_t c = b.start; c + 2 < b.start + b.count; c += 3) {
+                if (g.cornerMesh[c] == tir && g.cornerMesh[c + 1] == tir &&
+                    g.cornerMesh[c + 2] == tir) continue;
+                for (std::size_t j = c; j < c + 3; ++j) {
+                    f.corners.push_back(g.corners[j]);
+                    if (j < g.cornerMirror.size())   f.cornerMirror.push_back(g.cornerMirror[j]);
+                    f.cornerMesh.push_back(g.cornerMesh[j]);
+                    if (j < g.cornerVertex.size())   f.cornerVertex.push_back(g.cornerVertex[j]);
+                    if (j < g.cornerDeclared.size()) f.cornerDeclared.push_back(g.cornerDeclared[j]);
+                }
+            }
+            nb.count = f.corners.size() - nb.start;
+            if (nb.count) f.batches.push_back(nb);
+        }
+        g = std::move(f);
+    }
+    weapon_.name = stem;
+    weapon_.geo = std::move(g);
+    const auto t = fs.read("MESHES/OBJETS/" + stem + ".3dt");
+    if (!t.empty()) weapon_.tex = textures(d, t);
+    float lo[3] = {1e30f, 1e30f, 1e30f}, hi[3] = {-1e30f, -1e30f, -1e30f};
+    for (const auto& c : weapon_.geo.corners) {
+        const float v[3] = {c.x, c.y, c.z};
+        for (int j = 0; j < 3; ++j) {
+            if (v[j] < lo[j]) lo[j] = v[j];
+            if (v[j] > hi[j]) hi[j] = v[j];
+        }
+    }
+    for (int j = 0; j < 3; ++j) {
+        weapon_.centre[j] = (lo[j] + hi[j]) * 0.5f;
+        if (hi[j] - lo[j] > weapon_.extent) weapon_.extent = hi[j] - lo[j];
+    }
+    weaponOk_ = !weapon_.geo.corners.empty();
+    return weaponOk_;
+}
+
+bool UiModels::drawWeapon(Surface& dst, int x, int y, int w, int h, float angleDeg,
+                          float distance) {
+    if (!weaponOk_) return false;
+    m_.push_back(weapon_);
+    const bool ok = draw(dst, static_cast<int>(m_.size()) - 1, x, y, w, h, angleDeg,
+                         distance);
+    m_.pop_back();
+    return ok;
+}
+
 bool UiModels::drawExamine(Surface& dst, int x, int y, int w, int h,
                            float angleDeg) {
     if (exKind_ == Examine::Model) {
@@ -122,7 +201,7 @@ bool UiModels::drawExamine(Surface& dst, int x, int y, int w, int h,
 }
 
 bool UiModels::draw(Surface& dst, int k, int x, int y, int w, int h,
-                    float angleDeg) {
+                    float angleDeg, float distance) {
     if (k < 0 || k >= count() || w <= 0 || h <= 0 || !dst.valid()) return false;
     M& m = m_[static_cast<std::size_t>(k)];
 
@@ -151,7 +230,11 @@ bool UiModels::draw(Surface& dst, int k, int x, int y, int w, int h,
     // units away: two lit pixels of a fifty-pixel slot, where a capture of
     // the original shows them filling it. The picture is what separated the
     // two call sites.
-    const float dist = m.extent + m.extent / std::tan(kFovDeg * pi / 180.0f);
+    // ...and a POSITIVE distance is the other arm: the literal offset, no fit
+    // - what the shoot HUD passes (10.0 for the ring, 25.0 for the weapon).
+    const float dist = distance > 0.0f
+                           ? distance
+                           : m.extent + m.extent / std::tan(kFovDeg * pi / 180.0f);
     cam.at[0] = m.centre[0]; cam.at[1] = m.centre[1]; cam.at[2] = m.centre[2];
     cam.eye[0] = m.centre[0] + std::sin(a) * dist;
     cam.eye[1] = m.centre[1];
