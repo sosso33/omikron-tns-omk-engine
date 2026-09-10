@@ -1509,7 +1509,37 @@ forget to plan it."* The session's own log agrees with the gate: 245 latches
    never writes, so it adds to the last survivable health and `sub_423A40`
    hands the result to +92 and the gauge. In the engine the death comes first
    and there is no one left to pick it up. So `sub_423FC0` is step 4's first
-   job, before the shove. Shown to fail: the player's body left out of the
+   job, before the shove.
+   **STEP 4, THE DEATH - READ 2026-09-11, not ported.** It is not a game-over
+   screen: it is the scene's own failure path, in two halves.
+   * `sub_423FC0(him)` (05_sys.c 4618): every entered gunman still alive
+     (`+160 & 0x40`, not `& 0x4002`, `+92 > 0`) is stood down -
+     `Shoot_ActorAction(i, 0, 0)`, or his 0x20 cleared on script step 8; the
+     player's ACTOR_STATE `+404 = 15`; `sub_436D20` walks his node tree
+     clearing mesh flag 2 on every mesh WITHOUT 0x200000 - the whole body
+     shown again, not only the first-person arms; `sub_47CE70` releases the
+     actor at `dword_6579CC` (its +416/+424 zeroed - unread what it holds);
+     `Game_RaiseEvent(43, {9, him})` - MESSAGE 9; then his `.CTL` group 201 is
+     played and `dword_4E975C` = its default clip's length, a countdown.
+   * `Shoot_TickPlayer` (0x00427AC0, 05_sys.c 7456): in state 15 the countdown
+     runs down by the frame delta; at 0 - `+404 = 3`, `Game_RaiseEvent(43,
+     {1, him})` - MESSAGE 1, then property 1 re-read into `+92`,
+     `sub_436CE0` (the body hidden again), `Camera_Request(4)` with both
+     camera actors him, group 200's default played, the mover re-armed
+     (`sub_47CC70`), and his weapon re-initialised through event 48 if he
+     holds one; `dword_910358 = 1.0`.
+   * **What the supermarket does with them** (SCENE 56's subscription table,
+     4 records of 8 bytes: script +0, MESSAGE ID +4): message 9 is entry 2 -
+     `fade.to_color(0, 0, 80)` and `camera.set 31` ('cam Player Dead'); message
+     1 is entry 0, and it ENDS THE PHASE as lost - `shoot.end 1`, every robber
+     hidden, every zone and medikit disabled, 'Vie' set back through
+     `actor.stat.set -1, 1, 637`, then the MEDITEK sequence (`scx.play`,
+     `media.play 251` 'ZVO M011 Méditek Supermarché', the player carried
+     out), camera 0, zone 3903 enabled and `scene.unload 230`. (Message 3 is
+     entry 1, the robbers' deaths; message 0 entry 3, the hurt handler.)
+   So step 4 is the whole failure path, not a flag: the death clip, the dead
+   camera, the countdown, message 1, and the phase ending in the Méditek
+   scene. The shove `sub_47D1F0` is then step 5. Shown to fail: the player's body left out of the
    sweep, the killing hit writing the gauge, and the aim put back at the feet
    each turn `engine: shoot gunfire` red.
 5. ~~**THE MOUSE LOOK.**~~ **PORTED 2026-09-10, CONFIRMED IN PLAY** (*"Good"*). `sub_47D370` read whole:
