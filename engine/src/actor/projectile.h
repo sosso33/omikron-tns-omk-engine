@@ -86,6 +86,47 @@ struct FireIn {
     bool  aimAccepts = true;
 };
 
+struct ShootWeaponRow;
+
+// `Actor_TickProjectiles`' OTHER path - the one an actor holding a weapon
+// takes, and so the one shoot mode takes (`todo/shoot-mode.md` 7h). When
+// actor `+164` (the object in the hand, `sub_41C490`) carries a node at its
+// `+12`, the four-slot walk above is skipped entirely and the shot comes from
+// the SHOOT RECORD's weapon row:
+//
+//     free = the pool's first free entry; if (free < 0) return 0;
+//     if (row.index) { count = property 35[row.index - 1];
+//                      if (count <= 0 && player) event 48;  // change weapon
+//                      HUD = count - 1; property 35 = count - 1; }
+//     entry +8  = row.f1    - the SPEED, as it stands: no x3.9 on this path
+//     entry +56 = row.i2    - what the hit deals
+//     node at the held object's `+12` node - the MUZZLE
+//     matrix = sub_442160(0, yaw + 90, -pitch); velocity = (-1,0,0) through
+//     it, times the speed (`sub_44D7F0`)
+//
+// So `tables/shoot_weapons.json`'s "f1 and i2 have NO reader" was a scan of
+// `05_sys.c` alone: both are read here, in `17_script.c`.
+//
+// Note what the magazine does NOT do on this path: gate the shot. A count at
+// or below zero asks for a weapon change and the round is taken anyway -
+// transcribed, and asserted, rather than tidied.
+//
+// NOT modelled: event 48 (the change), the player's point-blank ray from his
+// shoulder to the muzzle (`sub_4449E0`, which hits at once when the gun is
+// through a wall), the node clone, the sprite, and a gunman's aim at the
+// player - this is the player's shot.
+struct RecordShot {
+    float muzzle[3] = {0, 0, 0};
+    float yawDeg = 0.0f;     // actor `+420`
+    float pitchDeg = 0.0f;   // `dword_657A10`
+    int*  ammo = nullptr;    // property 35's count for `row.ammoIndex - 1`
+};
+struct RecordShotOut {
+    int  entry = -1;         // -1: the pool was full and nothing was spent
+    bool ammoSpent = false;
+    int  hudAmmo = -1;       // `dword_90E11C`
+};
+
 class ProjectilePool {
 public:
     // `Actor_TickProjectiles`'s free scan: the first entry whose node is 0,
@@ -99,6 +140,10 @@ public:
     // were actually taken.
     int tick(int actor, std::array<WeaponSlot, kWeaponSlots>& slots,
              const FireIn& in, float dt);
+
+    // The record path, above.
+    RecordShotOut fireFromRecord(int actor, const ShootWeaponRow& row,
+                                 const RecordShot& in);
 
     const std::array<Projectile, kProjectileSlots>& entries() const { return pool_; }
     void clear() { pool_ = {}; }

@@ -44,8 +44,11 @@ int main(int argc, char** argv) {
         std::printf("GROUP %d (index %d) flags %08x default %d\n", G.id, g, G.flags, G.defaultEntry);
         for (int i = G.first; i < G.first + G.count; ++i) {
             const auto& s = f.states[(std::size_t)i];
-            std::printf("  [%d] id %u %-14s flags %08x input %08x role %u clip %d goto %s move %s\n",
-                        i, s.id, s.name.c_str(), s.flags, s.inputCode, s.role, s.clip,
+            // flags12 whole, not just its low half: `sub_45AB80` tests the
+            // current entry's +12 against -1, which is how the channel tick
+            // (`sub_45C680`) picks the shoot pose over the entry's own clip.
+            std::printf("  [%d] id %u %-14s flags %08x input %08x role %u f12 %08x clip %d goto %s move %s\n",
+                        i, s.id, s.name.c_str(), s.flags, s.inputCode, s.role, s.flags12, s.clip,
                         s.gotoId ? nameOf(s.gotoId).c_str() : "-",
                         s.moveName.empty() ? "-" : s.moveName.c_str());
             std::printf("       parents:");

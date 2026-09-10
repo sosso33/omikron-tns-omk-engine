@@ -161,6 +161,14 @@ bool writeActorProperty(std::span<std::byte> record, int property,
     return true;
 }
 
+bool readAmmoSlot(std::span<const std::byte> record, int slot, std::int32_t& out) {
+    if (record.size() < kActorRecordSize || slot < 0) return false;
+    const std::size_t off = 260 + 2 * static_cast<std::size_t>(slot);
+    if (off + 2 > kActorRecordSize) return false;
+    out = i16(record, off);                  // SIGNED, as the read is
+    return true;
+}
+
 int heldObjectOf(std::span<const std::byte> record) {
     if (record.size() < kActorRecordSize) return -1;
     return i16(record, 270);

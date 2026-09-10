@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "actor/projectile.h"
 
+#include "actor/shootfire.h"
+
 namespace omk {
 
 int ProjectilePool::freeSlot() const {
@@ -59,6 +61,35 @@ int ProjectilePool::tick(int actor, std::array<WeaponSlot, kWeaponSlots>& slots,
         ++fired;
     }
     return fired;
+}
+
+RecordShotOut ProjectilePool::fireFromRecord(int actor, const ShootWeaponRow& row,
+                                             const RecordShot& in) {
+    RecordShotOut out;
+    // the free scan comes FIRST on this path, before the magazine is read -
+    // so a full pool spends nothing
+    const int slot = freeSlot();
+    if (slot < 0) return out;
+    if (row.ammoIndex) {
+        const int count = in.ammo ? *in.ammo : 0;
+        // count <= 0 for the player raises event 48, the weapon change - not
+        // modelled - and the round below is taken regardless
+        out.hudAmmo = count - 1;
+        if (in.ammo) *in.ammo = count - 1;
+        out.ammoSpent = true;
+    }
+    Projectile& p = pool_[static_cast<std::size_t>(slot)];
+    p.node  = slot + 1;
+    p.speed = row.speed;
+    p.kind  = row.damage;
+    p.owner = actor;
+    for (int k = 0; k < 3; ++k) p.pos[k] = in.muzzle[k];
+    float dir[3];
+    shootShotDirection(in.yawDeg, in.pitchDeg, dir);
+    for (int k = 0; k < 3; ++k) p.vel[k] = dir[k] * p.speed;
+    p.scale[0] = p.scale[1] = p.scale[2] = 1.0f;
+    out.entry = slot;
+    return out;
 }
 
 }  // namespace omk

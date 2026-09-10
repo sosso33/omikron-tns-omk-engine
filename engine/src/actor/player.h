@@ -336,6 +336,14 @@ public:
     const float* euler() const { return euler_; }
     ActorState state() const { return rt_.state(); }
     int ctlState() const { return rt_.channel().state(); }
+    // The current entry's `+12` whole - `sub_45AB80` (0x0045AB80) is
+    // "channel +184 is set and its +12 is -1", which is how the channel tick
+    // chooses the SHOOT branch (`actor/shootfire.h`). 0 when no entry.
+    std::uint32_t ctlEntryFlags12() const {
+        const int s = rt_.channel().state();
+        if (!ctl_ || s < 0 || s >= static_cast<int>(ctl_->states.size())) return 0;
+        return ctl_->states[static_cast<std::size_t>(s)].flags12;
+    }
     // The channel's own frame (1..len) - the clock `Cef_TickEffects` reads.
     float channelFrame() const { return rt_.channel().frame(); }
     // The current entry's +28 effect records (`CtlEffect`), empty when none.

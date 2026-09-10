@@ -102,6 +102,8 @@ struct ShootAction {
 inline constexpr int kWoundedAt  = 100;   // hp <= 100
 inline constexpr int kCriticalAt = 50;    // hp <= 50
 
+struct ShootWeaponRow;   // actor/shootfire.h
+
 // The 192-byte shoot record, only the fields something below reads. Offsets
 // are kept in the comments because every cross-reference in `readable/` is by
 // offset, and several of these were established from more than one caller.
@@ -128,13 +130,21 @@ struct ShootRecord {
     // through event 44 (`Actor_GetProperty`). They are the reach and the
     // field of view a designer authored, in metres and degrees, and they are
     // NOT in the weapon table - `tables/shoot_weapons.json`'s `f0` is the
-    // fire rate and its `f1` has no reader at all.
+    // fire rate, `f1` the projectile's speed and `i2` its damage (the last
+    // two read by `Actor_TickProjectiles`' record path, `actor/projectile.h`).
     float rangeAcquire = 0.0f;               // +32   property 26, 39 * metres
     float rangeInner   = 0.0f;               // +28   property 27, 39 * metres
     float rangeThird   = 0.0f;               // +36   property 30, 39 * metres
     float coneCos      = 0.0f;               // +40   cos(property 29 degrees)
     float weaponTimer  = 0.0f;               // +172  reloaded with the row's f0
     float stepRemaining = 0.0f;              // +68   distance left on the edge
+
+    // ---- THE FIRING GATE (`actor/shootfire.h`, `todo/shoot-mode.md` 7h) --
+    // `sub_47C2A0` reads these with `+172` and three bits of `+160`. The
+    // record is ZEROED on entry (`Mem_Alloc(0x4B00)` then a memset), so a
+    // weapon starts UP: 0 lowered.
+    float weaponLowered = 0.0f;              // +176  0 aimed .. 1 lowered
+    const ShootWeaponRow* weapon = nullptr;  // +180  `Shoot_InitWeapon`'s row
 };
 
 // The six properties `sub_422540` asks for, in the order it asks - each read

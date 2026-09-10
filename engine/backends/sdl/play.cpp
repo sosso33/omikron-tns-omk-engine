@@ -38,6 +38,8 @@
 #include "formats/tex3dt.h"
 #include "input/bindings.h"
 #include "actor/shoot.h"
+#include "actor/shootfire.h"
+#include "actor/projectile.h"
 #include "actor/moves.h"
 #include "actor/slider.h"
 
@@ -65,6 +67,7 @@
 #include "platform/settings.h"
 #include "script/gamestate.h"
 #include "script/inventory.h"
+#include "script/props.h"
 #include "o3de/raster.h"
 #include "o3de/renderer.h"
 #include "platform/boot.h"
@@ -2674,6 +2677,13 @@ int main(int argc, char** argv) {
     if (!specialMoves.valid())
         std::printf("special moves: tables/special_moves.json not read - the take will "
                     "still work, but a fired move cannot name its row\n");
+    // THE WEAPON TABLES `Shoot_InitWeapon` picks a row from - the rate, the
+    // projectile's speed and what it deals (`actor/shootfire.h`).
+    const omk::ShootWeaponTable shootWeapons =
+        omk::ShootWeaponTable::loadJson(tb.empty() ? std::string() : tb + "/shoot_weapons.json");
+    if (!shootWeapons.loaded())
+        std::printf("shoot weapons: tables/shoot_weapons.json not read - shoot mode "
+                    "will aim and never fire\n");
     // the LOOPING scene voices, keyed the way `Script_StopSound` matches them:
     // by (wav, node). Only loops are kept - a one-shot ends by itself.
     std::map<std::pair<int,int>, int> sceneVoices;
@@ -3734,6 +3744,14 @@ int main(int argc, char** argv) {
     // choice this port is making - the engine's own limit is untraced.
     float shootPitch = 0.0f;
     std::map<int, omk::ShootRecord> shootBrains;
+    // THE PLAYER'S SHOT (`actor/shootfire.h`, todo/shoot-mode.md 7h): his own
+    // shoot record - the engine keeps one for him among the 100, and the
+    // gate's three numbers live on it - the two one-shot globals, and the
+    // projectile pool the request fills.
+    omk::ShootRecord playerShootRec;
+    omk::ShotLatch shotLatch;
+    omk::ProjectilePool projectiles;
+    long shotsFired = 0;
     long stagedEver = 0;                 // for the summary line
     std::vector<int> stagedIds;
     // The pool is rebuilt on a COMPOSITION change, not on a size change: two
@@ -6175,8 +6193,103 @@ int main(int argc, char** argv) {
                 // only reaches the zone system on the arm where the scan
                 // found NOTHING.
                 bool actionTookObject = false;
+                // ---- THE SHOT (`actor/shootfire.h`, todo/shoot-mode.md 7h) --
+                //
+                // The engine's order, and it is why this sits ABOVE the move
+                // loop: the channel tick - `sub_45C680` case 3, whose SHOOT
+                // branch runs whenever the current entry's +12 is -1, which
+                // every one of group 200's 24 entries is - consumes the latch
+                // LAST frame's `MDSHOOT0` set, and only after the state tick
+                // does `Actors_TickAll` drain this frame's queue, which is the
+                // loop below. Then the frame loop services the request. So a
+                // press reaches the gate one frame after its state, and the
+                // gate fires only with the weapon fully UP.
+                if (playerTicked && shootMode && player->state() == omk::ActorState::Shoot) {
+                    omk::shootChannelTick(playerShootRec, shotLatch,
+                                          player->ctlEntryFlags12() == 0xFFFFFFFFu, true,
+                                          static_cast<float>(frameSec * 30.0));
+                    const omk::ShootWeaponRow* row = playerShootRec.weapon;
+                    if (shotLatch.request && row) {
+                        shotLatch.request = false;          // dword_4E9744 = 0
+                        // `Actor_TickProjectiles(player)`, the record path.
+                        //
+                        // THE MUZZLE is a RECONSTRUCTION, labelled: the engine
+                        // places the shot at the held object's `+12` node,
+                        // which rides actor `+44` - `Maing`, the left hand.
+                        // No weapon model is loaded here, so the shot leaves
+                        // from the hand node itself, placed exactly the way
+                        // the held prop is (the render pass, "THE OBJECT IN
+                        // HIS HAND").
+                        const float* pp = player->pos();
+                        const float yaw = player->facing();
+                        omk::RecordShot rs;
+                        rs.muzzle[0] = pp[0]; rs.muzzle[1] = pp[1]; rs.muzzle[2] = pp[2];
+                        const char* from = "his position (no pose)";
+                        if (const omk::NodeTracks* pt = player->poseTracks()) {
+                            const std::vector<omk::MeshPose> pose =
+                                omk::composePose(playerMeshes, *pt, player->poseFrame(), false);
+                            int hand = -1;      // the LAST strstr hit, as o3de_Traverse leaves it
+                            for (std::size_t i = 0; i < playerMeshes.size(); ++i)
+                                if (std::strstr(playerMeshes[i].name, "Maing"))
+                                    hand = static_cast<int>(i);
+                            if (hand >= 0 && static_cast<std::size_t>(hand) < pose.size()) {
+                                const omk::MeshPose& hp = pose[static_cast<std::size_t>(hand)];
+                                const float hin[3] = {hp.pos[0] - playerRootXZ[0], hp.pos[1],
+                                                      hp.pos[2] - playerRootXZ[1]};
+                                float ho[3];
+                                omk::rotateYaw(yaw, hin, ho);
+                                rs.muzzle[0] = ho[0] + pp[0];
+                                rs.muzzle[1] = ho[1] + pp[1] - playerFeet + lastRootDrop;
+                                rs.muzzle[2] = ho[2] + pp[2];
+                                from = "the Maing node";
+                            }
+                        }
+                        rs.yawDeg = yaw;
+                        rs.pitchDeg = shootPitch;
+                        // THE MAGAZINE: property 35, slot `index - 1`, on the
+                        // DB player record. A row with index 0 has none.
+                        std::int32_t count = 0;
+                        const std::size_t recAt = static_cast<std::size_t>(omk::GameState::kPlayerRecord);
+                        const std::size_t recLen = static_cast<std::size_t>(omk::GameState::kPlayerRecordSize);
+                        const bool mag = row->ammoIndex &&
+                            omk::readAmmoSlot(state.raw().subspan(recAt, recLen),
+                                              row->ammoIndex - 1, count);
+                        int left = static_cast<int>(count);
+                        if (mag) rs.ammo = &left;
+                        const omk::RecordShotOut out = projectiles.fireFromRecord(-1, *row, rs);
+                        if (mag && out.ammoSpent)
+                            omk::writeActorProperty(state.rawMutable().subspan(recAt, recLen), 0x23,
+                                                    ((row->ammoIndex - 1) << 16) | (left & 0xFFFF));
+                        if (out.entry >= 0) {
+                            ++shotsFired;
+                            const omk::Projectile& e =
+                                projectiles.entries()[static_cast<std::size_t>(out.entry)];
+                            const float sp = e.speed != 0.0f ? e.speed : 1.0f;
+                            std::printf("frame %ld: SHOT %ld - Actor_TickProjectiles(player): "
+                                        "entry %d, speed %.1f, damage %d, dir %.3f %.3f %.3f "
+                                        "(yaw %.1f pitch %.1f), from %s %.1f %.1f %.1f, "
+                                        "magazine %s, %d live\n", n, shotsFired, out.entry,
+                                        double(e.speed), e.kind, double(e.vel[0] / sp),
+                                        double(e.vel[1] / sp), double(e.vel[2] / sp),
+                                        double(yaw), double(shootPitch), from,
+                                        double(rs.muzzle[0]), double(rs.muzzle[1]),
+                                        double(rs.muzzle[2]),
+                                        mag ? (std::to_string(count) + " -> " +
+                                               std::to_string(left)).c_str() : "none",
+                                        projectiles.live());
+                        } else {
+                            std::printf("frame %ld: SHOT refused - the pool is full (%d live), "
+                                        "nothing spent\n", n, projectiles.live());
+                        }
+                    }
+                }
                 for (const auto& mv : (playerTicked ? player->specialMoves() : kNoMoves)) {
                     if (mv == "MDACTION") actionFromMove = true;
+                    // `MDSHOOT0` (0x0046B610): the latch, in ACTOR_STATE 3
+                    // only - the next frame's channel tick hands it to the gate.
+                    if (mv == "MDSHOOT0" &&
+                        omk::mdShoot0(shotLatch, static_cast<int>(player->state())))
+                        std::printf("frame %ld: MDSHOOT0 - the latch (dword_53AE3C) armed\n", n);
                     // THE JUMP'S IMPULSE (`todo/player-vertical.md` step 2).
                     // `MDJUMP01` is the one that writes the three velocity
                     // fields; `MDJUMP0A`/`0B` only prepare them, and the
@@ -7197,6 +7310,44 @@ int main(int argc, char** argv) {
             if (!shootMode) {
                 shootCameraLive = false;
                 front.setRelativeMouse(false);
+            }
+            // ---- `Shoot_Enter` 1, 2 and 9, for the SHOT (`actor/shootfire.h`)
+            //
+            // The 100 records are ZEROED - so the weapon starts UP - the
+            // player's gets `+188 = -1` and `+160 |= 2`, and step 9 hands
+            // `Shoot_InitWeapon` the object in his hand: event 46 property 3
+            // is its KIND, and the kind is the key into the PLAYER's table.
+            if (shootMode) {
+                playerShootRec = omk::ShootRecord{};
+                playerShootRec.node = -1;
+                playerShootRec.flags |= 2u;
+                shotLatch = omk::ShotLatch{};
+                const int obj = session.shootMode().weaponObject();
+                const auto& objs = voiceLib.objects();
+                const bool known = obj >= 0 && static_cast<std::size_t>(obj) < objs.size();
+                const int kind = known ? objs[static_cast<std::size_t>(obj)].kind : -1;
+                // The -2 exception tests the MODEL NAME on the held node, and
+                // that is `Scene_Load3DO`'s own copy of its PATH at descriptor
+                // +48: `Object_Load` builds "MESHES\OBJETS\%s" around
+                // `Object_ModelPath(stem)`, which appends ".3DO" (the five
+                // bytes at 0x4C0D1C). So the character 11 from the end is the
+                // first of a SEVEN-letter stem - and `BATPOUV`, the Baton de
+                // pouvoir, is the one weapon it catches: type -2, its own row.
+                const int type = omk::shootWeaponType(
+                    kind, known ? "MESHES\\OBJETS\\" + objs[static_cast<std::size_t>(obj)].stem + ".3DO"
+                                : std::string());
+                playerShootRec.weapon = shootWeapons.find(type, true);
+                if (const omk::ShootWeaponRow* w = playerShootRec.weapon)
+                    std::printf("frame %ld: Shoot_InitWeapon - object %d kind %d -> type %d: "
+                                "rate %.0f frames, speed %.1f, damage %d, magazine %d\n", n,
+                                obj, kind, type, double(w->rate), double(w->speed),
+                                w->damage, w->ammoIndex);
+                else
+                    std::printf("frame %ld: Shoot_InitWeapon - object %d kind %d -> type %d: "
+                                "NO ROW, so the gate will never fire\n", n, obj, kind, type);
+            } else {
+                playerShootRec.weapon = nullptr;
+                shotLatch = omk::ShotLatch{};
             }
             std::printf("frame %ld: SHOOT MODE %s - weapon slot %d (object %d), "
                         "HUD screen %d, library %s, ACTOR_STATE %d, scheme %d\n",

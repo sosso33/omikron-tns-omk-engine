@@ -25918,6 +25918,174 @@ def c_projectile_pool():
                        "struct")
 
 
+def c_shoot_fire():
+    r"""`engine/`: the SHOT - from the trigger to the pool
+    (`todo/shoot-mode.md` 7h, `actor/shootfire.h`).
+
+    The engine does not fire off the trigger bit. `H1Avnt` group 200's entry
+    [132] takes the *Tirer* scheme's `Tir` (0x10) and queues `MDSHOOT0`, whose
+    whole body - read from the BYTES at 0x0046B610, because the address has
+    no `proc` label and `asmfn.py` returns its neighbour instead - arms the
+    latch `dword_53AE3C` in ACTOR_STATE 3 and nowhere else. The next channel
+    tick's SHOOT branch (`sub_45C680` case 3, taken whenever the entry's +12
+    is -1, which all 24 of group 200's are) reloads the record's `+172` and
+    hands the latch to `sub_47C2A0`, the GATE; outcome 2 raises
+    `dword_4E9744`, and the frame loop fires `Actor_TickProjectiles`.
+
+    What this steps. Every expected value below was produced FIRST by an
+    independent float32 model of the same decompiled lines, and the C++
+    matched it on every line:
+
+    * the latch is STATE-GATED, and only the shoot branch has a rate - the
+      other turns a latch straight into a request;
+    * the first tap of the mode fires AT ONCE: the record is zeroed, so the
+      weapon is up and the caller's reload makes the countdown equal `f0`;
+    * a tap from rest fires **6** frames later: the weapon rises at 0.2 a
+      frame and the gate fires only at EXACTLY 0, and five float steps of 0.2
+      from 1.0 leave a residue, so it takes a sixth. Held, the key-1 gun fires
+      every **10** frames, which is the row's `f0`; the key-3 row every 2;
+    * a pull is HELD until its shot (`+160` 0x40000), so a tap from rest fires
+      even though the latch lived for one tick;
+    * released, the weapon is down after 10 frames (0.1 a frame) and the
+      countdown rests on a FLOOR of 1.0 - which is why a lowered gun is never
+      reloaded by the caller's `<= 0` test;
+    * the aim is `sub_442160(0, yaw + 90, -pitch)` through (-1, 0, 0): exactly
+      the (0, 0, -1) forward over 25 yaws, and +30 degrees RISES (y is down);
+    * the record path's entry takes the row's `f1` as its SPEED and `i2` as
+      its DAMAGE - the "no reader" the table's own note recorded was a scan of
+      `05_sys.c` alone, and both are read in `17_script.c`;
+    * a magazine is spent but does NOT gate: 0 goes to -1 and the shot is
+      taken; a full pool spends nothing;
+    * the type is the held object's KIND, and the -2 exception is the Baton de
+      pouvoir: `Scene_Load3DO` keeps its PATH at descriptor +48, and
+      `Object_Load` builds it as `MESHES\OBJETS\` + stem + `.3DO`, so position
+      -11 is the first letter of a seven-letter stem.
+
+    With the game data: all 7 objects the ten `IAM\GLOBAL +42` slots name
+    resolve to a row, the baton to -2.
+    """
+    import subprocess, re
+    eng = os.path.join(ROOT, "engine")
+    b = subprocess.run(["make", "-s", "build/shoot_fire"], cwd=eng,
+                       capture_output=True, text=True)
+    binp = os.path.join(eng, "build", "shoot_fire")
+    if b.returncode != 0 or not os.path.exists(binp):
+        return ("build failed",), ("built",), "engine/ must build"
+    args = [binp, os.path.join(ROOT, "tables")]
+    fr = omkpaths.data_root()
+    data = bool(fr) and os.path.isdir(os.path.join(fr, "IAM"))
+    if data:
+        args.append(fr)
+    # the weapon lines carry OBJECT NAMES in the game's own cp1252
+    # ("Mégazooka", "Bâton"), and no asserted field depends on an accent
+    out = subprocess.run(args, capture_output=True, text=True,
+                         errors="replace").stdout
+    keys = ("latch:", "first tap:", "rested:", "tap from rest fires at",
+            "held from rest fires at", "lowered after", "rate 2 held fires at",
+            "no row:", "aim:", "record shot:", "magazine:", "full:", "type:")
+    got = []
+    for k in keys:
+        m = re.search(r"^" + re.escape(k) + r" (.*)$", out, re.M)
+        got.append(m.group(1) if m else None)
+    want = ["state 1 arms 0, state 3 arms 1; no shoot pose: request 1 latch 0",
+            "outcome 2",
+            "lowered 1.000000 timer 1.000000",
+            "6",
+            "6 16 26 36 46 56",
+            "10 frames, timer 1.0",
+            "0 2 4 6 8 10 12 14 16 18",
+            "0 shots",
+            "worst 0.000000 off the forward over 25 yaws; pitch +30 0.0000 "
+            "-0.5000 -0.8660; pitch -30 y 0.5000; yaw 135 0.7071 0.0000 0.7071",
+            "entry 0 speed 124.8 damage 5 owner 7 at 10 20 30 vel 0.0 0.0 "
+            "-124.8 spent 0",
+            "slot 0, 5 -> 4 (hud 4); 0 -> -1 and the shot IS taken",
+            "entry -1, magazine 9, live 256",
+            "kind 1 BATPOUV -> -2, kind 1 WAVER -> 1, kind 3 BATPOUV -> 3"]
+    if data:
+        w = re.search(r"^weapons: (.*)$", out, re.M)
+        baton = re.search(r"^weapon slot 10: .* type (-?\d+) -> (.*)$", out, re.M)
+        got.append((w.group(1) if w else None, baton.groups() if baton else None))
+        want.append(("7 of 10 slots name an object, 7 resolve to a row",
+                     ("-2", "row key -2")))
+    return tuple(got), tuple(want), (
+        "`MDSHOOT0` arms the latch in ACTOR_STATE 3 only; the first tap of the "
+        "mode fires at once; a tap from rest fires 6 frames on (a float "
+        "residue past five 0.2 steps); held, every f0 = 10 frames, and the "
+        "key-3 row every 2; released, down in 10 with the countdown on its 1.0 "
+        "floor; the aim equal to the forward and rising with the pitch; f1 the "
+        "speed and i2 the damage; a spent magazine not gating; a full pool "
+        "spending nothing; the baton the -2 type; and every shipped weapon "
+        "resolving to a row")
+
+
+def c_engine_shoot_fire():
+    r"""`engine/`: the shot WIRED - the trigger pressed headless in the
+    Shooting gallery and followed down the real `.CTL` channel to the pool
+    (`todo/shoot-mode.md` 7h).
+
+    Nine taps of scan code 54 - the *Tirer* scheme's `Tir` - thirty frames
+    apart. The first lands on frame 0, before the mode is on, and does
+    nothing; each of the other eight enters group 200's [132], queues
+    `MDSHOOT0`, arms the latch, and a shot follows **7** frames later: ONE
+    because `Actors_TickAll` drains the move queue after the channel tick, so
+    the gate sees the latch a frame late, and SIX because thirty frames is time
+    for the weapon to come fully down, and it must be fully up again before
+    the gate fires.
+
+    That +7 is the invariant, and it is written over the transition rather than
+    over one state: a port that fired on the bit, or on the latch without the
+    gate, lands every shot on its press frame.
+
+    What it cannot see, and says so: the shots are allocated and not yet
+    flown - `Projectiles_Tick` is the next step - and `--shoot` is the harness
+    way in. `Shoot_InitWeapon` runs on the MODE TRANSITION, the place a
+    script-driven entry also passes through, not in the harness.
+    """
+    import subprocess, re
+    fr = omkpaths.data_root()
+    eng = os.path.join(ROOT, "engine")
+    bld = subprocess.run(["make", "-s", "play"], cwd=eng,
+                         capture_output=True, text=True)
+    exe = os.path.join(eng, "build", "omk-play")
+    if bld.returncode != 0 or not os.path.exists(exe):
+        return ("build failed",), ("built",), "engine/ must build"
+    play = subprocess.run(
+        [exe, fr, os.path.join(ROOT, "tables"),
+         "--save", os.path.join(ROOT, "traces", "save-appart.bin"),
+         "--area", "59", "--stand", "5000,0,-2900,0", "--shoot",
+         "--frames", "300", "--nodelay",
+         "--keys", ",".join(["54"] * 9), "--keydelay", "30"],
+        capture_output=True, text=True,
+        env=dict(os.environ, SDL_VIDEODRIVER="dummy"))
+    o = play.stdout
+    init = re.search(r"Shoot_InitWeapon - (.*)$", o, re.M)
+    latches = [int(x) for x in re.findall(r"^frame (\d+): MDSHOOT0", o, re.M)]
+    shots = re.findall(r"^frame (\d+): SHOT (\d+) - .*?speed ([\d.]+), damage (\d+), "
+                       r"dir (\S+) (\S+) (\S+) .*?, from (the \w+ node|his position)"
+                       r".*?, (\d+) live$", o, re.M)
+    got = (init.group(1) if init else None,
+           latches,
+           [int(s[0]) for s in shots],
+           [int(s[0]) - l for s, l in zip(shots, latches)],
+           sorted({(s[2], s[3], s[4], s[5], s[6], s[7]) for s in shots}),
+           [int(s[8]) for s in shots])
+    want = ("object 42 kind 1 -> type 1: rate 10 frames, speed 124.8, damage 5, "
+            "magazine 0",
+            list(range(30, 241, 30)),
+            list(range(37, 248, 30)),
+            [7] * 8,
+            [("124.8", "5", "0.000", "0.000", "-1.000", "the Maing node")],
+            list(range(1, 9)))
+    return got, want, (
+        "`Shoot_InitWeapon` giving the Gun Waver the key-1 row on the mode "
+        "transition; eight latches armed by `MDSHOOT0` off the real channel; "
+        "eight shots, each SEVEN frames after its latch (one for the queue "
+        "drain, six for the weapon to come back up); all of them the row's "
+        "speed and damage, straight down -Z from the Maing node; one pool "
+        "entry per shot")
+
+
 def c_shoot_input():
     r"""`engine/`: what the MOUSE does, per control scheme.
 
@@ -29230,7 +29398,7 @@ def c_licence_headers():
                    if TAG in open(p, encoding="utf-8",
                                   errors="replace").read(600)]
     return (authored, sorted(missing), len(vendored), mislabelled), \
-           (410, [], 1, []), \
+           (413, [], 1, []), \
            "authored source files under tools/, engine/src, engine/tools, " \
            "engine/backends and scripts/; those MISSING the SPDX tag; " \
            "vendored files in engine/third_party; and vendored files wrongly " \
@@ -31257,6 +31425,7 @@ CHECKS = [
     ("shoot range",        c_shoot_range,       "todo/shoot-mode 5c, 7a; actor/shoot.h"),
     ("shoot generic",      c_shoot_generic,     "todo/shoot-mode 7c; actor/shoot.h"),
     ("projectile pool",    c_projectile_pool,   "todo/shoot-mode 4c, 7f; actor/projectile.h"),
+    ("shoot fire",         c_shoot_fire,        "todo/shoot-mode 7h; actor/shootfire.h"),
     ("shoot input",        c_shoot_input,       "todo/omk-play 97b; input/bindings.h"),
     ("engine: shoot brain", c_engine_shoot_brain, "todo/shoot-mode 7d; actor/shoot.h"),
     ("engine: shoot mode", c_engine_shoot_mode,  "todo/shoot-mode; actor/shootmode.h"),
@@ -31365,6 +31534,7 @@ SLOW = [
     ("engine: intro",      c_engine_intro,      "engine/README"),
     ("engine: walk",       c_engine_walk,       "engine/README"),
     ("engine: dialogue",   c_engine_dialogue,   "engine/README"),
+    ("engine: shoot fire", c_engine_shoot_fire, "todo/shoot-mode 7h; actor/shootfire.h"),
     ("engine: anims",      c_engine_anims,      "engine/README"),
     ("engine: CTL",        c_engine_ctl,        "engine/README"),
     ("engine: SCX",        c_engine_scx,        "engine/README"),

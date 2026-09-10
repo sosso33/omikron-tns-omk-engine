@@ -122,6 +122,14 @@ bool readActorProperty(std::span<const std::byte> record, int property,
 bool writeActorProperty(std::span<std::byte> record, int property,
                         std::int32_t value);
 
+// Property 35 READ BY SLOT - `Actor_GetProperty` case 0x23,
+// `u32(a1, 8) = i16(v2 + 2 * u32(a1, 8), 260)`: the argument's +8 is the
+// slot on the way in and the count on the way out. `readActorProperty` above
+// refuses it because through op 86 that slot is stack garbage; a caller that
+// knows the slot - the shot, `Actor_TickProjectiles` - asks here. -> false
+// when the slot runs off the record.
+bool readAmmoSlot(std::span<const std::byte> record, int slot, std::int32_t& out);
+
 // The record's `+270`: the OBJECTS id it holds, -1 for none.
 int  heldObjectOf(std::span<const std::byte> record);
 void setHeldObjectOf(std::span<std::byte> record, int objectId);
