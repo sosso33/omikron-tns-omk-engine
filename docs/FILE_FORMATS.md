@@ -723,6 +723,35 @@ written the obvious way passes it and reports 4179 of 4179 — which is what the
 first C++ probe did, caught only because an independently written Python pass
 said 4178. `verify.py: light record` tests finiteness first.
 
+### The BODY SPHERES — `desc+244` / `desc+248`
+
+A second table in the same descriptor, and one this repo had not read: the
+model's own sphere list, which is where a character's HEIGHT comes from.
+
+| | |
+|---|---|
+| `desc+244` | the count |
+| `desc+248` | the records, **16 bytes** each |
+| `+0`, `+4`, `+8` | the centre |
+| `+12` | the radius |
+
+`Actor_LoadModel` (0x0041A730) walks it taking `min(y − r)` into the actor's
+`+272` and **`max(y + r)` into `+276`** — the distance from the model's ORIGIN
+down to its lowest point. `Shoot_ActorEnter` walks the same table for the
+shoot record's `+64`.
+
+**It is not the per-mesh bounding radius at mesh `+88`** that the shadows use,
+and the difference matters: HO1_FN has **four** spheres of radius 10.91 here
+against **nineteen** meshes, and reading the per-mesh radii instead gives 42.6
+where the table gives 41.81.
+
+**What `+276` is for, and it is a lovely fit.** `sub_414520` case 4 — the
+camera mode `Shoot_Enter` requests — sets the eye offset's Y to
+`0.7 × actor[+276]`. For HO1_FN that is `0.7 × 41.81 = 29.27`, and the model's
+**crown** sits `29.02` above the origin: the two agree to **0.9%**. So the
+first-person eye is seated at the top of the head, and the 0.7 is what puts it
+there. `verify.py: shoot generic`; `todo/omk-play.md` 97k/97l.
+
 ### What the lights are FOR — the crowd
 
 A set is shaded by a colour **baked into every vertex**, so a static set needs

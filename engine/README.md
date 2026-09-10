@@ -1584,13 +1584,17 @@ same act**, because he is table-driven: all three scripts walked twice round,
 and the health band re-read every frame with a change **restarting** the
 routine rather than resuming it.
 
-**The standard here is lower than `engine: actor states`, and deliberately
-visible in the numbers.** Only the tables and the dispatch touch shipped data.
-Astaroth and the generic shooter are code with nothing behind them, so they
-are ported as their state **graphs** — Astaroth's 16..21 / 27 / 29 with his
-own 195/273/156/78 unit distances and 150/60 frame timers, the generic's
-1..15 / 28 with the five-way sub-switch inside state 6 — and **not** as the
-1500 lines of per-state geometry that decide where to stand and where to aim.
+**The standard here was lower than `engine: actor states` and is no longer.**
+Astaroth is still a state **graph** — 16..21 / 27 / 29 with his own
+195/273/156/78 unit distances and 150/60 frame timers. **The generic shooter
+is not**: `sub_424DE0`'s sixteen states are transcribed arm by arm
+(`verify.py: shoot generic`, `todo/shoot-mode.md` §7c), together with the four
+geometric calls they are made of — the cone-and-range test, the turn, the ray
+cast and the grid walk — and the three authored ranges that acquire, engage
+and disengage. What is left is named rather than glossed: `sub_421020`,
+`sub_421CD0` and `sub_435900` arrive as parameters, and the player's own
+firing is not connected because the engine raises it through a `.CTL` state
+this tree has not read.
 The only thing asserted about them is that the runtime never leaves the state
 set that was read: 0 of 2000 ticks. That catches a port that wanders and
 nothing else, and it is §3's "read and explained" rather than "verified".
@@ -3479,7 +3483,7 @@ decompilation at all:
 | the 37 screens | the definition table, the widget tree, the walk over it | the per-screen native callbacks |
 | the per-screen open/close | the flag broadcasts, **and now the item bindings** — 35 string ids and 22 tags the opens write into `+28`/`+60`, none of which is in the item record | the answers the callbacks write. `Ui_OpenShop`'s per-screen titles are **done** — the `+8` jump table at `0x004AE7AC`, which the linear scan bound wrongly (all ten shops to string 19) rather than missing |
 | the four control schemes | **the whole path** — `Input_InstallScheme`'s 4 x 14 x 3 copy into the live tables, `Input_Poll`'s slot-k-to-bit-`1 << k`, `Game_Frame`'s edge filter against `Ui_BeginScreen`'s 0x203F mask, and group-local rebinding with its 0/1/4 refusals. Tier **3, differential**: the start menu answered by SCANCODE reaches the answer `tools/sim` reaches from words | the joystick axes (codes 0 and 4) are carried but nothing steers with them yet |
-| the shoot AI | the compiled tables, the type dispatch, Gandhar exactly (he is table-driven), X-Tech (it does nothing) | Astaroth's and the generic shooter's per-state geometry — ported as state graphs only |
+| the shoot AI | the compiled tables, the type dispatch, Gandhar exactly (he is table-driven), X-Tech (it does nothing), **and the generic brain WHOLE** — all sixteen states of `sub_424DE0`, its four geometric calls, the engagement/disengagement ranges, and the projectile pool | the player's own FIRING (the `.CTL` state that raises the request is unread), and `sub_421020` / `sub_421CD0` / `sub_435900`, which arrive as parameters |
 | the 45 interface sounds | **the whole path the engine has**, at tier **2** for the loader / **3** for `Sound_LengthMs` and the mixer's transparency / **6** for the bookkeeping — `Wav_LoadToBuffer`'s acceptance run over all 61 shipped `.wav`, `Sound_LengthMs`, the 160-buffer bank, the 16-voice pool with its flag word, `Sound_FreeBuffer` killing what plays it, the listener and its guard, and the volume law. All 45 names resolve; the 32-slot cache means 13 cannot be resident | the twelve per-screen slots are not fired by the widget walk yet, and the attenuation and pan law is DirectSound's, with **no reachable tier at all** |
 | the I2D 2D layer | the display list and its ordering, the seven pools, every acceptance test, the three flag banks, **the software back end** — an RGB565 surface, the BMP loader and `Blt` with its colour keys, reproducing the engine's own framebuffer **66560/66560** over the menu's deterministic region — **and the mode-2 software rasterizer**: the clipped Bresenham `sub_48C4C0` (which is also the whole of the wireframe triangle) and `sub_48C060`'s four blend modes | the Vulkan back end |
 

@@ -1662,6 +1662,26 @@ every frame while held. `Ui_BeginScreen` sets the mask to **0x203F** — every
 button the interface uses — so menus are edge-triggered and holding a
 direction does not scroll. Closing the last screen sets it back to 0.
 
+> **AND `0x203F` IS EXPRESSED IN *AVENTURE*'S SLOTS, which is a trap for
+> anything that reads the word in another context.** The mask is slots 0..5
+> and 13, and in group 0 that covers the turns, the moves, `Action / Utiliser`
+> at **slot 4**, `Annuler` and the sneak. In group 2 (*Tirer*) slot 4 is
+> **`Tir`** and `Action / Utiliser` has moved to **slot 8**, which `0x203F`
+> does not contain — so in shoot mode the action arrives as a LEVEL, every
+> frame it is held, and the trigger arrives on the bit the interface treats as
+> CONFIRM.
+>
+> The port hit both halves in play: with the shoot scheme installed, clicking
+> the mouse validated menus and ENTER did nothing, and once the confirm was
+> re-mapped onto slot 8 it fired on every frame — a reader pressed it on
+> `Quitter le jeu` and came straight back to the menu. **A bit number is not a
+> meaning; the group decides.** `todo/omk-play.md` 97f.
+>
+> Nothing traced says the engine re-maps anything — no screen open installs a
+> scheme, and its UI reads the same raw word — so on the face of it the
+> original should collide the same way. A reader who played it says it does
+> not, and the port follows the behaviour with the mechanism marked unread.
+
 The bits themselves are the engine's **14 key-binding slots**, the same ones
 `.CTL` transitions match on ([`ASSETS.md`](ASSETS.md) — `Input_Poll` maps
 binding *k* to bit `1 << k`). **The defaults are not at `0x004C65B8`**,
@@ -1771,6 +1791,19 @@ So a **type-3 row's `+92` array is not the choice values it is for every other
 type**: it is three device bindings. All three ship zeroed and are filled at
 run time from a scheme, `Input_InstallScheme` pushing 14 slots at a time into
 the tables `Input_Poll` reads.
+
+**Which mouse button is which**, since the codes fix it: the mouse arm reads a
+DirectInput `DIMOUSESTATE` and tests the button bytes in order — `& 0x80` →
+**12**, `& 0x8000` → **13**, `& 0x800000` → **14** — so 12 is the LEFT button.
+The shipped *Tirer* scheme binds **`Tir` to 12** and `Sauter` to 13; *Aventure*
+binds 12 to **`Vue première personne`**. So the mouse has always been part of
+this game's controls, and the shoot phases were played with one.
+
+**MOTION IS NOT A BINDING.** That same function maps motion to codes 0 and 4
+on the **joystick** arm only; the mouse arm reads buttons alone. So mouse look
+never enters the 14-slot word at all — it aims the camera directly, and
+**nothing shipped governs its sensitivity or the sense of either axis**. A
+replica must choose those itself and say so.
 
 ---
 

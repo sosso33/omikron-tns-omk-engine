@@ -3388,9 +3388,68 @@ involved in either.**
 
 The sight predicate and the walk are ported as `Map2d::sightBlockedValue` and
 `Map2d::lineOfSight` (`engine/src/formats/map2d.h`), asserted by
-`verify.py: map2d sight`. The brains themselves are still not wired —
-`sub_424DE0`'s 1500 lines are a state machine over the four calls above — but
-the geometry they need is no longer unread. `todo/shoot-mode.md` §5b/§5c.
+`verify.py: map2d sight`.
+
+#### The generic brain, transcribed — all sixteen states
+
+`sub_424DE0` is now read whole (`todo/shoot-mode.md` §7c). Its shape is one
+outer switch on the state at record `+156` where **each arm computes an
+OUTCOME and every arm funnels through one shared epilogue** — the states
+decide, the epilogue acts. The prologue fetches the target (record `+96`) and
+its position once; the epilogue moves the body, **wraps the Euler into
+(−360, 360)** — the only place that happens — and dispatches on the outcome,
+of which 0 is *fire when the countdown has expired* and 1 the full arm that
+reloads `+172` from the weapon row's `f0` and calls `Actor_TickProjectiles`.
+
+**The movement loop is 1 → 2 → 6.** State 1 commits to an edge (heading
+`atan2(dz, dx) · 180/π + 90`, `+68` seeded with its length), state 2 walks it
+out climbing `dy / horizontalLength × distanceMoved` per frame, and the hub
+takes over. State 4 patrols a route into 5; state 8 turns with the snap; 15
+acquires.
+
+Two things only transcription preserves. **The order inside state 1 is
+load-bearing** — the engine writes `+156 = 6` for contact and the step branch
+then overwrites it with 2, so a gunman who can also step ends in 2. And
+**whenever an arm changes the state the outcome is recomputed** by
+`sub_4272B0`, the 304-line behaviour selector, so a transition never carries
+the arm's own outcome out with it.
+
+`sub_426E00` is not the predicate its eight callers make it look like: it
+reads the geometry and then DRIVES the machine, writing `+156` itself — and it
+is where the third authored range finally gets a job. **`+32` acquires, `+28`
+gates the engagement (its half and quarter choosing states 8 and 13), and
+`+36` DISENGAGES**: beyond it, in the hub, a `rand() & 1` sends him to 3 or
+back to patrolling in 4, clearing the `0x20` latch either way.
+
+#### What a shot IS — the projectile pool
+
+`Actor_TickProjectiles` (0x0044D110) is a pool allocator with a gate in front
+of it: **four weapon slots per actor**, each with its own weapon object at
+`actor+84 + 4·slot`, countdown at `actor+148 + 4·slot`, and ammunition
+(property 35, indexed by slot). The slot's aim direction is a `float[3]` at
+`actor + 12·slot + 100`, and those four fill `+100..+148` exactly, butting
+against the timers.
+
+The pool is `0x531348..0x534F48` = **256 entries of 60 bytes**, and the entry
+accounts for exactly once `sub_44D7F0` — the aim — is read beside the
+allocator: node at `+0` (**non-zero is what occupied means**; the free scan
+tests nothing else), speed `property34.hi × 3.9` at `+8`, the VELOCITY at
+`+16/+20/+24`, three 1.0 scales at `+28`, the owner at `+44`, the sprite at
+`+48` and `property34.lo` at `+56`. Fifteen fields, no gap.
+
+Three behaviours a tidier reading would lose: **a gap in the slots hides
+everything behind it** (the walk returns rather than skipping); **a full pool
+takes no shot and spends no round**; and **a refused aim spends the round
+anyway**, because `sub_44D7F0` refuses after the entry is allocated.
+
+**Firing is NOT wired to the player's trigger, deliberately.** The engine
+raises a shot through the `.CTL` firing state — a latch at `loc_45C4DD`, then
+`sub_45C680`'s ACTOR_STATE cases 13/14/16 setting the one-shot request
+`dword_4E9744` that the frame loop consumes — not off the input bit. A port
+that fired on the bit would have no rate, no state gate and no channel behind
+it. `todo/shoot-mode.md` §7f.
+
+`todo/shoot-mode.md` §5b/§5c/§7.
 
 Then the bulk of the file — 95% of it — is the animations: one `int32 length`
 followed by a clip, per named entry, in entry order. Entries repeating an
