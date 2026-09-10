@@ -12,9 +12,11 @@
 // its neighbours - so the values a designer authored can simply be read.
 #include "actor/shoot.h"
 #include "formats/iam.h"
+#include "formats/mesh3do.h"
 #include "platform/datafs.h"
 #include "script/props.h"
 
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include <cstring>
@@ -457,6 +459,29 @@ int main(int argc, char** argv) {
                         r20, in20.first.state, r30, in30.first.state,
                         r50, in50.first.state, int((in50.first.flags & 0x20u) != 0),
                         in50b.first.state, rd);
+        }
+
+        // ---- the SHOOT CAMERA's eye height (`todo/omk-play.md` 97k) ----
+        //
+        // `sub_414520` case 4 sets the camera's eye-offset Y to
+        // `0.7 * actor[+276]`, and `+276` is `max(centre.y + radius)` over the
+        // model's own sphere list (`Actor_LoadModel`). The check that the
+        // constant is UNDERSTOOD rather than copied is where it lands: 0.7 of
+        // the lower extent should equal the upper one, putting the eye at the
+        // crown.
+        {
+            const auto blob = fs.read("MESHES/PERSOS/HO1_FN.3DO");
+            const auto h = omk::readHeader(blob);
+            const auto sph = h ? omk::readBodySpheres(blob, *h)
+                               : std::vector<omk::BodySphere>{};
+            float lo = 1e30f, hi = -1e30f;
+            for (const auto& q : sph) {
+                lo = std::min(lo, q.y - q.radius);
+                hi = std::max(hi, q.y + q.radius);
+            }
+            std::printf("shoot eye: %zu spheres, extent below %.2f, crown %.2f, "
+                        "0.7x %.2f\n", sph.size(), double(hi), double(-lo),
+                        double(0.7f * hi));
         }
 
         // the epilogue WRAPS the euler, and it is the only place that does

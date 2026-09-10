@@ -8904,12 +8904,23 @@ int main(int argc, char** argv) {
                     // the same sign `cameraLift` uses. 0 is the preset's own
                     // value and the faithful one; `--shoot-eye` departs from
                     // it deliberately.
-                    // The lift: `--shoot-eye N` if given, otherwise the
-                    // MODEL'S OWN head-above-pelvis. Y grows down, so raising
-                    // the eye is a negative offset.
+                    // The lift: `--shoot-eye N` if given, otherwise
+                    // `sub_414520` case 4's `0.7 * the model's extent`.
+                    //
+                    // MIND THE SIGN, because it is the opposite of what "Y
+                    // grows down" suggests: `resolveOffsets` computes
+                    // `eye = subject - R(yaw) * offset`, so it SUBTRACTS, and
+                    // a POSITIVE y offset therefore raises the eye - the same
+                    // way `camLift_` is subtracted from `pos` to lift the
+                    // subject off the feet in the first place.
+                    //
+                    // Written as `-lift` this put the eye 29.8 BELOW the
+                    // pelvis, which is 6.6 above the feet: ankle height, and
+                    // exactly what a reader photographed when the view still
+                    // looked low after the height itself was read correctly.
                     const float lift = shootEyeSet ? shootEyeLift : player->headLift();
-                    const float eye[3] = {0.0f, -lift, 0.0f};
-                    const float at[3]  = {0.0f, -lift + 787.4016f * std::sin(rad),
+                    const float eye[3] = {0.0f, lift, 0.0f};
+                    const float at[3]  = {0.0f, lift + 787.4016f * std::sin(rad),
                                           787.4016f * std::cos(rad)};
                     fc = player->resolveOffsets(eye, at, 75.0f);
                 }

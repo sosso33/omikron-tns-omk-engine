@@ -323,13 +323,18 @@ PlayerController::PlayerController(const Setup& s)
         // (`case 4` falls into `case 5`, which recomputes the same value; and
         // the whole thing is gated on the actor's `+16`, which this port does
         // not model - so the lift is unconditional here.)
-        float lowest = 0.0f;
-        const float rootY = (*meshes_)[static_cast<std::size_t>(root)].pos[1];
-        for (const auto& m : *meshes_) {
-            const float below = m.pos[1] + m.radius - rootY;
-            if (below > lowest) lowest = below;
-        }
-        headLift_ = 0.7f * lowest;
+        // ...and `camLift_` IS that number: it is already "the root above the
+        // model's lowest extent", 41.9 for HO1_FNM against the sphere table's
+        // own 41.81. So the lift needs no new data.
+        headLift_ = 0.7f * camLift_;
+
+        // WHERE THAT PUTS THE EYE, and it is the check that the constant is
+        // understood rather than merely copied: HO1_FN's four body spheres
+        // (all radius 10.91) run from `y+r = 41.81` at the feet to
+        // `y-r = -29.02` at the crown, so 0.7 of the lower extent is **29.27**
+        // and the crown is **29.02** above the origin. They agree to 0.9%.
+        // The engine's rule puts the first-person eye AT THE TOP OF THE HEAD,
+        // which is what the 0.7 is for.
         if (!(headLift_ > 0.0f) || headLift_ > 200.0f) headLift_ = 0.0f;
     }
     // THE SWEPT BODY: the model's sphere list sits about the PELVIS (the

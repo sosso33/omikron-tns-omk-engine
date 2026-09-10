@@ -226,4 +226,33 @@ std::vector<Camera> readCameras(std::span<const std::byte> d, const Mesh3doHeade
     return out;
 }
 
+std::vector<BodySphere> readBodySpheres(std::span<const std::byte> d,
+                                        const Mesh3doHeader& h) {
+    std::vector<BodySphere> out;
+    const auto base = static_cast<std::size_t>(h.descOff);
+    if (base + 248 > d.size()) return out;
+    std::int32_t n = 0;
+    std::memcpy(&n, d.data() + base + 244, 4);
+    if (n <= 0 || n > 4096) return out;
+    if (base + 248 + 16u * static_cast<std::size_t>(n) > d.size()) return out;
+    out.reserve(static_cast<std::size_t>(n));
+    for (int i = 0; i < n; ++i) {
+        const std::size_t o = base + 248 + 16u * static_cast<std::size_t>(i);
+        BodySphere s;
+        std::memcpy(&s.x, d.data() + o, 4);
+        std::memcpy(&s.y, d.data() + o + 4, 4);
+        std::memcpy(&s.z, d.data() + o + 8, 4);
+        std::memcpy(&s.radius, d.data() + o + 12, 4);
+        out.push_back(s);
+    }
+    return out;
+}
+
+float bodyExtentBelow(std::span<const std::byte> d, const Mesh3doHeader& h) {
+    float lowest = 0.0f;
+    for (const auto& s : readBodySpheres(d, h))
+        if (s.y + s.radius > lowest) lowest = s.y + s.radius;
+    return lowest;
+}
+
 }  // namespace omk

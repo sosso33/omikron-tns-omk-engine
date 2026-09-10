@@ -17,6 +17,40 @@ waiting on its evidence.
 
 ### 97. The supermarket shoot phase blocks at the end of its cutscene, and Kay'l vanishes — A
 
+> **(l) AND THE SIGN — which two screenshots settled and the DATA then
+> explained.** The reader sent two frames still showing a low view. The pitch
+> in the log was only ±7°, so it was geometry, not aim: `resolveOffsets`
+> computes `eye = subject − R(yaw)·offset`, so it SUBTRACTS, and a **positive**
+> y offset raises the eye. Written `-lift` it put the eye 29 BELOW the pelvis —
+> ankle height — which is exactly what those frames show.
+>
+> **Then the model explained the constant.** HO1_FN's body-sphere list is four
+> spheres of radius 10.91:
+>
+> ```
+> bottom (max y+r) =  41.81      0.7 * bottom = 29.27   <- the engine's lift
+> top    (min y-r) = -29.02      the crown is 29.02 above the origin
+> ```
+>
+> **0.7 of the lower extent IS the upper extent, to 0.9%** — so the rule seats
+> the first-person eye at the TOP OF THE HEAD. That is what the constant is
+> for, and the agreement is the check that it is understood rather than
+> copied. `verify.py: shoot generic` asserts it.
+>
+> The port needed no new data in the end: `camLift_` is already "the root
+> above the model's lowest extent" (41.9 against the table's 41.81), so the
+> lift is `0.7 * camLift_`. The sphere table is read anyway
+> (`readBodySpheres`, count at `desc+244`, 16-byte records from `desc+248`)
+> because the check needs the crown, and because it is NOT the per-mesh radius
+> the shadows use — four spheres against nineteen meshes.
+>
+> **Three wrong heights preceded the right one**, and only the last came from
+> the original: 25 (a number I liked), 20.8 (the `...Tete` bone — real
+> arithmetic answering a question the engine never asks), and 29.8 (the right
+> rule on the wrong table). The reader's *"instead of guessing, look at the
+> original code"* is the whole lesson.
+
+
 > **(k) THE EYE HEIGHT IS `sub_414520` CASE 4, and I found it only after being
 > told to stop guessing.** The reader: *"instead of guessing, look at the
 > original code"* — a rule already written down here, and already broken

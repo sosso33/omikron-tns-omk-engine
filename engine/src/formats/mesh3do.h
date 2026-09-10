@@ -196,6 +196,24 @@ struct Camera {
 // Each returns as many whole records as `d` actually holds, stopping short
 // rather than reading past the end - a truncated file yields a short vector.
 std::vector<Mesh>     readMeshes(std::span<const std::byte> d, const Mesh3doHeader& h);
+
+// THE BODY SPHERES - the model's own collision/extent list, which the shoot
+// camera's eye height is a fraction of.
+//
+// `Actor_LoadModel` walks it to fill the actor's `+272`/`+276`: the count is
+// at **desc+244** and the records run from **desc+248**, 16 bytes each, with
+// the centre's y at `+4` and the radius at `+12`. The same walk fills the
+// shoot record's `+64` in `Shoot_ActorEnter`.
+//
+// It is NOT the per-mesh bounding radius at mesh `+88` that the shadows use:
+// HO1_FN has four spheres of radius 10.91 here against nineteen meshes, and
+// the two disagree by about 2%.
+struct BodySphere { float x = 0, y = 0, z = 0, radius = 0; };
+std::vector<BodySphere> readBodySpheres(std::span<const std::byte> d,
+                                        const Mesh3doHeader& h);
+// `max(centre.y + radius)` over that list - the actor's `+276`, the distance
+// from the model's ORIGIN down to its lowest point. 0 when there are none.
+float bodyExtentBelow(std::span<const std::byte> d, const Mesh3doHeader& h);
 std::vector<Vertex>   readVertices(std::span<const std::byte> d, const Mesh3doHeader& h);
 std::vector<Triangle> readTriangles(std::span<const std::byte> d, const Mesh3doHeader& h);
 std::vector<Quad>     readQuads(std::span<const std::byte> d, const Mesh3doHeader& h);

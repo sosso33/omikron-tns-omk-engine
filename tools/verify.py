@@ -26140,7 +26140,9 @@ def c_shoot_generic():
     en  = re.search(r"^generic: engage 10m (-?\d+)/state (\d+)\s+30m (-?\d+)/state (\d+)"
                     r"\s+50m-heads (-?\d+)/state (\d+) latch (\d)\s+50m-tails state (\d+)"
                     r"\s+dead (-?\d+)$", r.stdout, re.M)
-    if not (cov and unr and tr and sn and wr and nv and tv and pt and hb and aq and cl and mv and en):
+    ey  = re.search(r"^shoot eye: (\d+) spheres, extent below ([\d.]+), "
+                    r"crown ([\d.]+), 0\.7x ([\d.]+)$", r.stdout, re.M)
+    if not (cov and unr and tr and sn and wr and nv and tv and pt and hb and aq and cl and mv and en and ey):
         return ("unparsed",), ("parsed",), "the probe's own generic: lines"
     got = (tuple(int(x) for x in cov.groups()), tuple(int(x) for x in unr.groups()),
            tuple(int(x) for x in tr.groups()), tuple(int(x) for x in sn.groups()),
@@ -26155,7 +26157,8 @@ def c_shoot_generic():
            tuple(int(x) for x in aq.groups()), tuple(int(x) for x in cl.groups()),
            (int(mv.group(1)), int(mv.group(2)), int(mv.group(3)), int(mv.group(4)),
             int(mv.group(5)), mv.group(6), int(mv.group(7))),
-           tuple(int(x) for x in en.groups()))
+           tuple(int(x) for x in en.groups()),
+           (int(ey.group(1)), ey.group(2), ey.group(3), ey.group(4)))
     want = ((16, 16, 16), (0, 0), (4, 11, 2, 3, 10),
             (32, -180, 30, -90, 31, 90), (10, 350),
             (1, "143.1", 500, 2, 0, 1, 2, 6),
@@ -26164,7 +26167,8 @@ def c_shoot_generic():
             (1, "4.0", 0, 77, -1, "0.5", 0),
             (1, 0, 0, 1, 1), (-1, 55, 4, 1),
             (0, 0, 90, -90, 180, "0.0", 1),
-            (1, 6, 0, 6, 0, 3, 0, 4, 0))
+            (1, 6, 0, 6, 0, 3, 0, 4, 0),
+            (4, "41.81", "29.02", "29.27"))
     return got, want, ("the machine's states, how many are TRANSCRIBED, and "
                        "that every transcribed one is in the state set; then "
                        "that the ten UNREAD arms change nothing at all - no "
@@ -26200,7 +26204,13 @@ def c_shoot_generic():
                        "acquires, 27 gates the non-zero return, and 30 "
                        "DISENGAGES, flipping a coin between state 3 and "
                        "patrolling in 4 and clearing the 0x20 latch either "
-                       "way")
+                       "way; and finally where the SHOOT CAMERA'S EYE "
+                       "lands - `sub_414520` case 4 lifts it by 0.7 of the "
+                       "model's lower extent, and HO1_FN's four body spheres "
+                       "put that at 29.27 against a crown 29.02 above the "
+                       "origin, so the rule seats the first-person eye AT THE "
+                       "TOP OF THE HEAD. That agreement to 0.9% is what shows "
+                       "the constant is understood and not merely copied")
 
 
 def c_shoot_range():
