@@ -25982,7 +25982,8 @@ def c_shoot_fire():
                          errors="replace").stdout
     keys = ("latch:", "first tap:", "rested:", "tap from rest fires at",
             "held from rest fires at", "lowered after", "rate 2 held fires at",
-            "no row:", "aim:", "record shot:", "magazine:", "full:", "type:")
+            "no row:", "aim:", "record shot:", "magazine:", "full:",
+            "wall:", "range:", "wind-up 12:", "grow:", "type:")
     got = []
     for k in keys:
         m = re.search(r"^" + re.escape(k) + r" (.*)$", out, re.M)
@@ -26001,13 +26002,28 @@ def c_shoot_fire():
             "-124.8 spent 0",
             "slot 0, 5 -> 4 (hud 4); 0 -> -1 and the shot IS taken",
             "entry -1, magazine 9, live 256",
+            # THE FLIGHT, each predicted by hand before it was run: the
+            # segment's front edge is half a unit ahead, so a 124.8 bolt
+            # reaches a wall at z -499.5 on its FOURTH frame (4 x 124.8 =
+            # 499.2 falls short and the edge's +0.5 does not - without the
+            # edge it would be the fifth); with no wall 16 x 124.8 is the first
+            # past 1968.5; a 12-frame wind-up first moves on 13; and 8 frames
+            # of the Waver's step leave (1 + 8 x 5.9, 1 + 8 x 0.2, ...)
+            "retired on frame 4 by the world at z -499.5 after 499.2",
+            "retired on frame 16 by the range after 1996.8",
+            "first move on frame 13",
+            "scale after 12 frames 48.20 2.60 2.60",
             "kind 1 BATPOUV -> -2, kind 1 WAVER -> 1, kind 3 BATPOUV -> 3"]
     if data:
         w = re.search(r"^weapons: (.*)$", out, re.M)
         baton = re.search(r"^weapon slot 10: .* type (-?\d+) -> (.*)$", out, re.M)
-        got.append((w.group(1) if w else None, baton.groups() if baton else None))
+        sfx = re.search(r"^shot sprites: (.*)$", out, re.M)
+        got.append((w.group(1) if w else None, baton.groups() if baton else None,
+                    sfx.group(1) if sfx else None))
         want.append(("7 of 10 slots name an object, 7 resolve to a row",
-                     ("-2", "row key -2")))
+                     ("-2", "row key -2"),
+                     "14, walk exact 1; Waver grow 8 wind-up 0 step 5.9 0.2 0.2; "
+                     "Megazok wind-up 12; Gigazok wind-up 14"))
     return tuple(got), tuple(want), (
         "`MDSHOOT0` arms the latch in ACTOR_STATE 3 only; the first tap of the "
         "mode fires at once; a tap from rest fires 6 frames on (a float "
@@ -26064,19 +26080,28 @@ def c_engine_shoot_fire():
     shots = re.findall(r"^frame (\d+): SHOT (\d+) - .*?speed ([\d.]+), damage (\d+), "
                        r"dir (\S+) (\S+) (\S+) .*?, from (the \w+ node|his position)"
                        r".*?, (\d+) live$", o, re.M)
+    # THE FLIGHT (step 2a): every bolt retired by the gallery's back wall,
+    # three frames after it was fired, 374.4 flown - 3 x 124.8 - and at the
+    # same z each time, which is the wall and not the range
+    gone = re.findall(r"^frame (\d+): SHOT retired - entry \d+ (hit the world|out of range) "
+                      r"at \S+ \S+ (\S+) after ([\d.]+), (\d+) live$", o, re.M)
     got = (init.group(1) if init else None,
            latches,
            [int(s[0]) for s in shots],
            [int(s[0]) - l for s, l in zip(shots, latches)],
            sorted({(s[2], s[3], s[4], s[5], s[6], s[7]) for s in shots}),
-           [int(s[8]) for s in shots])
+           [int(s[8]) for s in shots],
+           [int(g[0]) - int(s[0]) for g, s in zip(gone, shots)],
+           sorted({(g[1], round(float(g[2])), g[3], g[4]) for g in gone}))
     want = ("object 42 kind 1 -> type 1: rate 10 frames, speed 124.8, damage 5, "
             "magazine 0",
             list(range(30, 241, 30)),
             list(range(37, 248, 30)),
             [7] * 8,
-            [("124.8", "5", "0.000", "0.000", "-1.000", "the Maing node")],
-            list(range(1, 9)))
+            [("124.8", "5", "0.000", "0.000", "-1.000", "the tir node")],
+            [1] * 8,
+            [3] * 8,
+            [("hit the world", -3158, "374.4", "0")])
     return got, want, (
         "`Shoot_InitWeapon` giving the Gun Waver the key-1 row on the mode "
         "transition; eight latches armed by `MDSHOOT0` off the real channel; "

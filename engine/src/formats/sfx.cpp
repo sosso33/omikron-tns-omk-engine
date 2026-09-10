@@ -31,6 +31,21 @@ SfxFile readSfx(std::span<const std::byte> d) {
     if (d.size() < 8 || std::memcmp(d.data(), "5.0V", 4) != 0) return s;
 
     const auto A = u32(d, 4);
+    for (std::uint32_t i = 0; i < A; ++i) {
+        const std::size_t r = 8u + 40u * i;
+        if (r + 40 > d.size()) break;
+        FxShotSprite sp;
+        for (std::size_t k = 0; k < 8; ++k) {
+            const char c = static_cast<char>(d[r + 12 + k]);
+            if (!c) break;
+            sp.name.push_back(c);
+        }
+        sp.grow   = f32(d, r + 20);
+        sp.windUp = f32(d, r + 24);
+        for (int k = 0; k < 3; ++k)
+            sp.growStep[k] = f32(d, r + 28 + 4u * static_cast<std::size_t>(k));
+        s.shotSprites.push_back(sp);
+    }
     std::size_t o = 8u + 40u * A;
     const auto B = u32(d, o); o += 4u + 44u * B;
     const auto C = u32(d, o); const std::size_t cb = o + 4; o = cb + 80u * C;

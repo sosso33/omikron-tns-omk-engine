@@ -145,14 +145,19 @@ void shootRotateRow(const float v[3], const float m[9], float out[3]) {
     out[2] = m[8] * v[2] + m[5] * v[1] + m[2] * v[0];
 }
 
-void shootShotDirection(float yawDeg, float pitchDeg, float dir[3]) {
+void shootShotMatrix(float yawDeg, float pitchDeg, float m[9]) {
     // `v54 = -sub_47D4C0() * 0.0174532925199433; v29 = f32(v1, 420);
     //  v52 = (v29 - -90.0) * 0.0174532925199433;
-    //  sub_442160(0.0, v52, v54, v57); v63 = {-1, 0, 0}`
+    //  sub_442160(0.0, v52, v54, v57)`
     const float pitch = static_cast<float>(-double(pitchDeg) * 0.0174532925199433);
     const float yaw = static_cast<float>((double(yawDeg) - -90.0) * 0.0174532925199433);
-    float m[9];
     shootEulerMatrix(0.0f, yaw, pitch, m);
+}
+
+void shootShotDirection(float yawDeg, float pitchDeg, float dir[3]) {
+    // `v63 = {-1, 0, 0}` through the node's matrix
+    float m[9];
+    shootShotMatrix(yawDeg, pitchDeg, m);
     const float v[3] = {-1.0f, 0.0f, 0.0f};
     shootRotateRow(v, m, dir);
 }

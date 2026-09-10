@@ -3752,6 +3752,50 @@ int main(int argc, char** argv) {
     omk::ShotLatch shotLatch;
     omk::ProjectilePool projectiles;
     long shotsFired = 0;
+    // `scptdata\shoot2.sfx`, which `Shoot_Enter` loads for its section A -
+    // the SHOT SPRITES, looked up by the held gun's root mesh name - and the
+    // gun's own model facts a shot needs: that name, and where its `tir` node
+    // sits. `Object_Load` unlinks `tir` from the gun at load (the name is the
+    // string at 0x4C2E4C) and `Actor_TickProjectiles` clones it for each shot,
+    // linked under the HAND with its own +128 local - so the muzzle is the
+    // hand's pose applied to `tir`'s local, and the bolt IS that mesh.
+    omk::SfxFile shootSfx;
+    struct GunFacts {
+        bool ok = false;
+        std::string root;             // `o3de_FindNodeByName(model, 0)`'s name
+        int   tirMesh = -1;           // its index, for the geometry's cornerMesh
+        float tirLocal[3] = {0, 0, 0};   // +128, relative to what it hangs from
+        float tirPos[3] = {0, 0, 0};     // +?? absolute - the origin of its corners
+    };
+    std::map<std::string, GunFacts> gunFacts;
+    std::string shotGunStem;          // the stem the player's bolts are cloned from
+    const auto gunFactsFor = [&](const std::string& stem) -> const GunFacts& {
+        auto it = gunFacts.find(stem);
+        if (it != gunFacts.end()) return it->second;
+        GunFacts g;
+        if (const auto mo = fs.resolve("MESHES/OBJETS/" + stem + ".3DO")) {
+            const auto md = omk::DataFs::readPath(*mo);
+            if (const auto mh = omk::readHeader(md)) {
+                const auto ms = omk::readMeshes(md, *mh);
+                // the model's FIRST node is what `FindNodeByName(v8, 0)` gives
+                // `Object_Load` as the slot's node, and `sub_44EEB0` reads the
+                // shot sprite's name off it
+                if (!ms.empty()) g.root = ms.front().name;
+                for (std::size_t i = 0; i < ms.size(); ++i) {
+                    std::string nm = ms[i].name;
+                    for (auto& ch : nm) ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
+                    if (nm != "tir") continue;
+                    g.tirMesh = static_cast<int>(i);
+                    for (int k = 0; k < 3; ++k) {
+                        g.tirLocal[k] = ms[i].local[k];
+                        g.tirPos[k] = ms[i].pos[k];
+                    }
+                }
+                g.ok = g.tirMesh >= 0;
+            }
+        }
+        return gunFacts.emplace(stem, g).first->second;
+    };
     long stagedEver = 0;                 // for the summary line
     std::vector<int> stagedIds;
     // The pool is rebuilt on a COMPOSITION change, not on a size change: two
@@ -4063,6 +4107,12 @@ int main(int argc, char** argv) {
         // position" - the sweep made rest-baked collision visible).
         std::vector<int>  soupMesh, steepMesh;
         omk::TriangleSoup baseSoup, baseSteep;
+        // THE SHOT'S WORLD RAY (`actor/projectile.h`). `sub_4449E0` tests
+        // every mesh `sub_444460` does not skip, and it skips exactly the
+        // ones flagged 0x800000 - the RENDER soup's own filter. Baked at rest:
+        // unlike the walker's soups above, a mesh a scene program moves is
+        // not followed, which is this port's and labelled.
+        omk::TriangleSoup shotSoup;
     };
     std::array<WorldSlot, 2> worldSlots;
     std::string worldSet;            // the ACTIVE slot's stem - the set under his feet
@@ -4221,6 +4271,7 @@ int main(int argc, char** argv) {
         }
         w.soup = omk::collisionSoup(d, omk::SoupKind::Walkable, &w.soupMesh);
         w.steep = omk::collisionSoup(d, omk::SoupKind::Steep, &w.steepMesh);
+        w.shotSoup = omk::collisionSoup(d, omk::SoupKind::Render);
         w.baseSoup.clear(); w.baseSteep.clear();
         if (const auto mh = omk::readHeader(d)) w.meshes = omk::readMeshes(d, *mh);
         // THE SET'S OWN EMITTERS - `Sfx_BindAmbientEffects`, the environment
@@ -5403,6 +5454,38 @@ int main(int argc, char** argv) {
             // journey's arrival landed on a body that had just been re-seated.
             // Every handler in those two loops is edge-shaped, so the guard
             // belongs on the read and not on each of them.
+            // ---- THE FLIGHT - `Projectiles_Tick`, BEFORE `Actors_TickAll` --
+            //
+            // (`actor/projectile.h`) The frame loop runs it ahead of the actor
+            // tick, so a shot fired this frame first moves on the next. The
+            // world ray is the ACTIVE set's shot soup - the resident but
+            // unlinked neighbour is not in the scene graph the engine's ray
+            // walks. The actor sweep (`sub_45E9C0`) is step 2b and not here,
+            // so a bolt passes through a gunman and stops at the wall behind.
+            if (projectiles.live()) {
+                const omk::TriangleSoup* shotSoup = nullptr;
+                for (const auto& ws : worldSlots)
+                    if (!ws.stem.empty() && ws.stem == worldSet) shotSoup = &ws.shotSoup;
+                const auto ray = [&](const float a[3], const float b[3], float hit[3]) {
+                    if (!shotSoup) return false;
+                    const double p0[3] = {a[0], a[1], a[2]};
+                    const double d[3] = {double(b[0]) - a[0], double(b[1]) - a[1],
+                                         double(b[2]) - a[2]};
+                    const auto h = omk::sweepSphere(*shotSoup, p0, d, 0.0);
+                    if (!h) return false;
+                    for (int k = 0; k < 3; ++k) hit[k] = static_cast<float>(p0[k] + h->t * d[k]);
+                    return true;
+                };
+                std::vector<omk::FlightEvent> flown;
+                projectiles.fly(static_cast<float>(frameSec * 30.0), ray, &flown);
+                for (const auto& ev : flown)
+                    std::printf("frame %ld: SHOT retired - entry %d %s at %.1f %.1f %.1f "
+                                "after %.1f, %d live\n", n, ev.entry,
+                                ev.why == omk::FlightEvent::Why::World ? "hit the world"
+                                                                     : "out of range",
+                                double(ev.at[0]), double(ev.at[1]), double(ev.at[2]),
+                                double(ev.travelled), projectiles.live());
+            }
             bool playerTicked = false;
             static const std::vector<std::string> kNoMoves;
             if (player && !adventure && session.dialogOpen()) {
@@ -6234,16 +6317,32 @@ int main(int argc, char** argv) {
                                     hand = static_cast<int>(i);
                             if (hand >= 0 && static_cast<std::size_t>(hand) < pose.size()) {
                                 const omk::MeshPose& hp = pose[static_cast<std::size_t>(hand)];
-                                const float hin[3] = {hp.pos[0] - playerRootXZ[0], hp.pos[1],
-                                                      hp.pos[2] - playerRootXZ[1]};
+                                // `tir`, linked under the hand with its own
+                                // +128 local: the hand's rotation applied to it
+                                float off[3] = {0.0f, 0.0f, 0.0f};
+                                const GunFacts* gf = shotGunStem.empty() ? nullptr
+                                                                         : &gunFactsFor(shotGunStem);
+                                if (gf && gf->ok) omk::qrot(hp.q, gf->tirLocal, off);
+                                const float hin[3] = {hp.pos[0] + off[0] - playerRootXZ[0],
+                                                      hp.pos[1] + off[1],
+                                                      hp.pos[2] + off[2] - playerRootXZ[1]};
                                 float ho[3];
                                 omk::rotateYaw(yaw, hin, ho);
                                 rs.muzzle[0] = ho[0] + pp[0];
                                 rs.muzzle[1] = ho[1] + pp[1] - playerFeet + lastRootDrop;
                                 rs.muzzle[2] = ho[2] + pp[2];
-                                from = "the Maing node";
+                                from = gf && gf->ok ? "the tir node" : "the Maing node";
                             }
                         }
+                        // the SHOT SPRITE: section A by the gun's root name
+                        if (!shotGunStem.empty())
+                            if (const omk::FxShotSprite* sp =
+                                    shootSfx.shotSprite(gunFactsFor(shotGunStem).root)) {
+                                rs.sprite = true;
+                                rs.windUp = sp->windUp;
+                                rs.grow = sp->grow;
+                                for (int k = 0; k < 3; ++k) rs.growStep[k] = sp->growStep[k];
+                            }
                         rs.yawDeg = yaw;
                         rs.pitchDeg = shootPitch;
                         // THE MAGAZINE: property 35, slot `index - 1`, on the
@@ -7337,6 +7436,22 @@ int main(int argc, char** argv) {
                     kind, known ? "MESHES\\OBJETS\\" + objs[static_cast<std::size_t>(obj)].stem + ".3DO"
                                 : std::string());
                 playerShootRec.weapon = shootWeapons.find(type, true);
+                // `Shoot_Enter` loads `scptdata\shoot2.sfx` and hands it to
+                // `sub_44EDF0`, whose section A is the shot sprites
+                if (!shootSfx.valid && shootSfx.shotSprites.empty())
+                    shootSfx = omk::readSfx(fs.read("SCPTDATA/shoot2.sfx"));
+                shotGunStem = known ? objs[static_cast<std::size_t>(obj)].stem : std::string();
+                if (!shotGunStem.empty()) {
+                    const GunFacts& gf = gunFactsFor(shotGunStem);
+                    const omk::FxShotSprite* sp = shootSfx.shotSprite(gf.root);
+                    std::printf("frame %ld: the gun %s - root '%s', tir %s (local %.1f %.1f "
+                                "%.1f), shot sprite %s (grow %.0f, wind-up %.0f), %zu in "
+                                "shoot2.sfx\n", n, shotGunStem.c_str(), gf.root.c_str(),
+                                gf.ok ? "found" : "MISSING", double(gf.tirLocal[0]),
+                                double(gf.tirLocal[1]), double(gf.tirLocal[2]),
+                                sp ? "found" : "none", sp ? double(sp->grow) : 0.0,
+                                sp ? double(sp->windUp) : 0.0, shootSfx.shotSprites.size());
+                }
                 if (const omk::ShootWeaponRow* w = playerShootRec.weapon)
                     std::printf("frame %ld: Shoot_InitWeapon - object %d kind %d -> type %d: "
                                 "rate %.0f frames, speed %.1f, damage %d, magazine %d\n", n,
@@ -9410,6 +9525,46 @@ int main(int argc, char** argv) {
             // let them go - while the CPU had them back on the floor (a reader's
             // before/after screenshots, 2026-09-05). A few hundred corners a
             // frame is nothing.
+            // ---- THE BOLTS (`actor/projectile.h`) ------------------------
+            //
+            // Each live entry is a clone of the held gun's `tir` node, drawn
+            // in the node's own matrix at its position and with its three
+            // scales - so the Waver's streak grows along its length for its
+            // first eight frames (shot sprite +20/+28). `tir` is flagged
+            // 0x3000, the ADDITIVE bucket, and the batch carries that from the
+            // model; its textures come through the gun's own pool section.
+            if (projectiles.live() && !shotGunStem.empty()) {
+                const GunFacts& gf = gunFactsFor(shotGunStem);
+                PropModel* pm = gf.ok ? propModelFor(shotGunStem) : nullptr;
+                if (pm && pm->ready && pm->rest.cornerMesh.size() == pm->rest.corners.size()) {
+                    for (const auto& e : projectiles.entries()) {
+                        if (!e.node) continue;
+                        for (const auto& b : pm->rest.batches) {
+                            const std::size_t base = propGeo.corners.size();
+                            for (std::size_t c = b.start; c < b.start + b.count; ++c) {
+                                if (pm->rest.cornerMesh[c] != gf.tirMesh) continue;
+                                omk::Corner w = pm->rest.corners[c];
+                                const float local[3] = {(w.x - gf.tirPos[0]) * e.scale[0],
+                                                        (w.y - gf.tirPos[1]) * e.scale[1],
+                                                        (w.z - gf.tirPos[2]) * e.scale[2]};
+                                float r[3];
+                                omk::shootRotateRow(local, e.rot, r);
+                                w.x = e.pos[0] + r[0];
+                                w.y = e.pos[1] + r[1];
+                                w.z = e.pos[2] + r[2];
+                                propGeo.corners.push_back(w);
+                            }
+                            const std::size_t cnt = propGeo.corners.size() - base;
+                            if (!cnt) continue;
+                            omk::Batch nb = b;
+                            nb.start = base;
+                            nb.count = cnt;
+                            propGeo.batches.push_back(nb);
+                            propBatchOwner.push_back(pm);
+                        }
+                    }
+                }
+            }
             propGeo.revision = ++worldGeoRev;
             refreshSprites();
             const bool wantSprites = (session.scene().effects().count() || !ctlSprites.empty()) &&

@@ -162,11 +162,32 @@ struct FxSetPiece {
     std::vector<FxPiecePart> parts;   // its section F block, resolved
 };
 
+// SECTION A, 40 bytes - the SHOT SPRITES (`todo/shoot-mode.md` 7h). Read by
+// `sub_44EDF0` out of `scptdata\shoot2.sfx`, which `Shoot_Enter` loads, and
+// looked up by `sub_44EEB0` with the held weapon's ROOT MESH NAME compared as
+// two dwords - so `Waver` finds `Waver`, `BATpouv` finds `BATpouv`. What a
+// projectile takes from its row (`sub_44D7F0`, `Projectiles_Tick`):
+//
+//     +0..+8   three ints - not read by the shot
+//     +12      char[8], the name
+//     +20      frames the bolt GROWS (entry +40), by +28..+36 a frame
+//     +24      frames it WAITS at the muzzle before it flies (entry +52):
+//              the Waver 0, the Megazooka 12, the Hypra 14
+//     +28..36  the per-frame SCALE step while growing - the Waver's
+//              (5.9, 0.2, 0.2), so its bolt stretches into a streak
+struct FxShotSprite {
+    std::string name;
+    float grow = 0.0f;
+    float windUp = 0.0f;
+    float growStep[3] = {0, 0, 0};
+};
+
 struct SfxFile {
     bool valid = false;
     bool exact = false;                 // the walk landed on the file size
     std::size_t size = 0, end = 0;
     std::uint32_t counts[6] = {};       // A..F
+    std::vector<FxShotSprite> shotSprites;   // section A
     std::vector<FxEffect>  effects;     // section C
     std::vector<FxBinding> bindings;    // section D
     std::vector<FxSetPiece> pieces;     // section E
@@ -174,6 +195,11 @@ struct SfxFile {
     // Section C by its `+0` ID rather than by index - the ids are 1-based.
     const FxEffect* byId(std::int32_t id) const {
         for (const auto& e : effects) if (e.id == id) return &e;
+        return nullptr;
+    }
+    // `sub_44EEB0`: section A by name, EXACTLY - it compares eight bytes.
+    const FxShotSprite* shotSprite(const std::string& name) const {
+        for (const auto& s : shotSprites) if (s.name == name) return &s;
         return nullptr;
     }
 };

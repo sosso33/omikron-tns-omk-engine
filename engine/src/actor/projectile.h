@@ -49,6 +49,8 @@
 
 #include <array>
 #include <cstdint>
+#include <functional>
+#include <vector>
 
 namespace omk {
 
@@ -59,13 +61,37 @@ inline constexpr int kWeaponSlots      = 4;     // per actor
 struct Projectile {
     int   node   = 0;        // +0   0 = free. The allocator tests ONLY this
     float speed  = 0.0f;     // +8   property34.hi * 3.9
+    float travelled = 0.0f;  // +12  `+= speed * dt` a frame; past 1968.5 it is retired
     float vel[3] = {0, 0, 0};// +16  the direction, rotated and scaled by speed
     float scale[3] = {1, 1, 1};   // +28 set to 1.0 by the aim
+    float grow   = 0.0f;     // +40  frames the bolt still grows (sprite +20)
     int   owner  = -1;       // +44  the firing actor
     int   sprite = 0;        // +48  from the weapon's node name
+    float windUp = 0.0f;     // +52  frames it waits before it flies (sprite +24)
     int   kind   = 0;        // +56  property34.lo
-    float pos[3] = {0, 0, 0};// where the node was placed: the weapon's muzzle
+    float pos[3] = {0, 0, 0};// the node's position: the muzzle, then the flight
+    // The node's own matrix (`sub_437160(node, v57)`), kept because the
+    // flight reads its axis back: `Matrix3x3_RotateVector(-1, 0, 0, node+56)`
+    // is the heading the segment is laid along, and the bolt is drawn in it.
+    float rot[9] = {1, 0, 0, 0, 1, 0, 0, 0, 1};
+    float growStep[3] = {0, 0, 0};   // the sprite's +28..+36
 };
+
+// What one frame of `Projectiles_Tick` did to an entry that it retired.
+struct FlightEvent {
+    enum class Why { World, Range };
+    int   entry = -1;
+    Why   why = Why::Range;
+    float at[3] = {0, 0, 0};   // the world hit, or where the range ran out
+    float travelled = 0.0f;
+};
+// The world ray `sub_4449E0` casts: the segment a..b against every set mesh
+// but those flagged 0x800000 (`sub_444460`'s own filter). true and the hit
+// point when it meets one.
+using WorldRay = std::function<bool(const float a[3], const float b[3], float hit[3])>;
+
+// The range, `if (v3[3] > 1968.5039 || v0)`: 50 metres in the engine's inch.
+inline constexpr float kProjectileRange = 1968.5039f;
 
 // One actor's four weapon slots, as `Actor_TickProjectiles` walks them.
 struct WeaponSlot {
@@ -120,6 +146,13 @@ struct RecordShot {
     float yawDeg = 0.0f;     // actor `+420`
     float pitchDeg = 0.0f;   // `dword_657A10`
     int*  ammo = nullptr;    // property 35's count for `row.ammoIndex - 1`
+    // The weapon's SHOT SPRITE, `shoot2.sfx` section A by the gun's root mesh
+    // name (`FxShotSprite`). With one, `sub_44D7F0` sets +40, +52 and the
+    // scales from it; without one the engine leaves them as the entry's last
+    // user did, which this does not reproduce - they are zeroed.
+    bool  sprite = false;
+    float windUp = 0.0f, grow = 0.0f;
+    float growStep[3] = {0, 0, 0};
 };
 struct RecordShotOut {
     int  entry = -1;         // -1: the pool was full and nothing was spent
@@ -144,6 +177,23 @@ public:
     // The record path, above.
     RecordShotOut fireFromRecord(int actor, const ShootWeaponRow& row,
                                  const RecordShot& in);
+
+    // `Projectiles_Tick` (0x0044D930), the flight - which the frame loop runs
+    // BEFORE `Actors_TickAll`, so a shot fired this frame first moves on the
+    // next. Per live entry:
+    //
+    //   +52 > 0   it waits at the muzzle: `+52 -= dt`, and nothing else
+    //   else      a = pos - 0.5 * heading;  pos += vel * dt
+    //             while +40 > 0 (and it has a sprite): +40 -= dt and the
+    //               three scales grow by the sprite's step * dt
+    //             b = pos + 0.5 * heading;  +12 += speed * dt
+    //             [the ACTOR sweep, `sub_45E9C0` - step 2b, not here]
+    //             the WORLD ray a..b (`sub_4449E0`)
+    //             retired when +12 passes 1968.5 or the ray met something
+    //
+    // where the heading is the node's own -X axis read back through its
+    // matrix, not the velocity. Returns how many it retired this frame.
+    int fly(float dt, const WorldRay& world, std::vector<FlightEvent>* out = nullptr);
 
     const std::array<Projectile, kProjectileSlots>& entries() const { return pool_; }
     void clear() { pool_ = {}; }

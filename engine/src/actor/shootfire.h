@@ -156,5 +156,8 @@ void shootRotateRow(const float v[3], const float m[9], float out[3]);
 // and a POSITIVE pitch rises (y grows down), which is `dword_657A10`'s sense
 // and this port's `shootPitch`'s.
 void shootShotDirection(float yawDeg, float pitchDeg, float dir[3]);
+// ...and the matrix itself, which the projectile's node keeps: the flight
+// reads its -X axis back as the heading, and the bolt is drawn in it.
+void shootShotMatrix(float yawDeg, float pitchDeg, float m[9]);
 
 }  // namespace omk

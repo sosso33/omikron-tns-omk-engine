@@ -13,6 +13,8 @@
 #include "actor/shoot.h"
 #include "actor/shootfire.h"
 #include "actor/state.h"
+#include "formats/sfx.h"
+#include "o3de/collision.h"
 #include "platform/datafs.h"
 #include "script/objects.h"
 
@@ -182,6 +184,77 @@ int main(int argc, char** argv) {
         std::printf("full: entry %d, magazine %d, live %d\n", o4.entry, count, full.live());
     }
 
+    // THE FLIGHT - `Projectiles_Tick`. A bolt from the origin at yaw 0 heads
+    // down -Z; the wall is a triangle across z = -499.5, and the world ray is
+    // the soup sweep at radius 0, which is a segment against each face. The
+    // -499.5 is chosen to SEPARATE the segment's half-unit front edge from
+    // none: 4 x 124.8 = 499.2 falls short of it and 499.2 + 0.5 does not, so
+    // the edge is what makes it frame 4 rather than 5.
+    {
+        const omk::TriangleSoup wall = {-1000.0f, -1000.0f, -499.5f,
+                                        1000.0f, -1000.0f, -499.5f,
+                                        0.0f, 1000.0f, -499.5f};
+        const auto rayOn = [](const omk::TriangleSoup& soup) {
+            return [&soup](const float a[3], const float b[3], float hit[3]) {
+                const double p0[3] = {a[0], a[1], a[2]};
+                const double d[3] = {double(b[0]) - a[0], double(b[1]) - a[1],
+                                     double(b[2]) - a[2]};
+                const auto h = omk::sweepSphere(soup, p0, d, 0.0);
+                if (!h) return false;
+                for (int k = 0; k < 3; ++k) hit[k] = static_cast<float>(p0[k] + h->t * d[k]);
+                return true;
+            };
+        };
+        const auto flyOut = [&](omk::ProjectilePool& pool, const omk::WorldRay& ray,
+                                std::vector<omk::FlightEvent>& ev) {
+            int f = 0;
+            while (pool.live() && f < 200) { ++f; pool.fly(1.0f, ray, &ev); }
+            return f;
+        };
+        omk::RecordShot rs;
+        {
+            omk::ProjectilePool pool;
+            pool.fireFromRecord(1, *gun, rs);
+            std::vector<omk::FlightEvent> ev;
+            const int f = flyOut(pool, rayOn(wall), ev);
+            std::printf("wall: retired on frame %d by the %s at z %.1f after %.1f\n", f,
+                        !ev.empty() && ev[0].why == omk::FlightEvent::Why::World ? "world" : "range",
+                        ev.empty() ? 0.0 : double(ev[0].at[2]),
+                        ev.empty() ? 0.0 : double(ev[0].travelled));
+        }
+        {
+            omk::ProjectilePool pool;
+            pool.fireFromRecord(1, *gun, rs);
+            std::vector<omk::FlightEvent> ev;
+            const omk::TriangleSoup none;
+            const int f = flyOut(pool, rayOn(none), ev);
+            std::printf("range: retired on frame %d by the %s after %.1f\n", f,
+                        !ev.empty() && ev[0].why == omk::FlightEvent::Why::World ? "world" : "range",
+                        ev.empty() ? 0.0 : double(ev[0].travelled));
+        }
+        {
+            omk::ProjectilePool pool;
+            omk::RecordShot w = rs; w.sprite = true; w.windUp = 12.0f;
+            pool.fireFromRecord(1, *gun, w);
+            int moved = 0;
+            for (int f = 1; f <= 40 && !moved; ++f) {
+                pool.fly(1.0f, nullptr);
+                if (pool.entries()[0].pos[2] != 0.0f) moved = f;
+            }
+            std::printf("wind-up 12: first move on frame %d\n", moved);
+        }
+        {
+            omk::ProjectilePool pool;
+            omk::RecordShot g = rs; g.sprite = true; g.grow = 8.0f;
+            g.growStep[0] = 5.9f; g.growStep[1] = 0.2f; g.growStep[2] = 0.2f;
+            pool.fireFromRecord(1, *gun, g);
+            for (int f = 0; f < 12; ++f) pool.fly(1.0f, nullptr);
+            const auto& e = pool.entries()[0];
+            std::printf("grow: scale after 12 frames %.2f %.2f %.2f\n", double(e.scale[0]),
+                        double(e.scale[1]), double(e.scale[2]));
+        }
+    }
+
     // THE TYPE: the object's kind, and the one hand-written exception.
     // The name is the node's +48, `Scene_Load3DO`'s copy of the path
     // `Object_Load` built: "MESHES\OBJETS\" + stem + ".3DO".
@@ -217,6 +290,18 @@ int main(int argc, char** argv) {
         }
         std::printf("weapons: %d of 10 slots name an object, %d resolve to a row\n",
                     named, resolved);
+        // `shoot2.sfx`, which `Shoot_Enter` loads: section A, the shot sprites
+        const auto sb = fs.read("SCPTDATA/shoot2.sfx");
+        const omk::SfxFile sf = omk::readSfx(sb);
+        const omk::FxShotSprite* wv = sf.shotSprite("Waver");
+        const omk::FxShotSprite* mz = sf.shotSprite("Megazok");
+        const omk::FxShotSprite* hy = sf.shotSprite("Gigazok");
+        std::printf("shot sprites: %zu, walk exact %d; Waver grow %.0f wind-up %.0f step "
+                    "%.1f %.1f %.1f; Megazok wind-up %.0f; Gigazok wind-up %.0f\n",
+                    sf.shotSprites.size(), int(sf.exact), wv ? double(wv->grow) : -1.0,
+                    wv ? double(wv->windUp) : -1.0, wv ? double(wv->growStep[0]) : 0.0,
+                    wv ? double(wv->growStep[1]) : 0.0, wv ? double(wv->growStep[2]) : 0.0,
+                    mz ? double(mz->windUp) : -1.0, hy ? double(hy->windUp) : -1.0);
     }
     return 0;
 }
