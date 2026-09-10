@@ -26255,8 +26255,10 @@ def c_engine_shoot_hit():
     the Waver's damage 5 takes his 15 health to 10, 5 and 0. Each hit is band
     2 - the bolt's heading against his forward - so the death clip TYPE is 5,
     and the enemy count drops. His property 24 is 0, so above it he never
-    reacts. The last bolts still STOP at the corpse and do nothing: a body met
-    retires the entry whatever `sub_4240E0` then does.
+    reacts. A bolt that meets the corpse still STOPS there and does nothing - a
+    body met retires the entry whatever `sub_4240E0` then does - but since his
+    heading is his brain's (2026-09-11), the fourth and fifth pass him as he
+    falls and meet the world.
 
     **And it asserts WHERE the bodies are**, because that was the bug this
     check was written against: turned about his MODEL origin, VIR_FN - authored
@@ -26302,10 +26304,18 @@ def c_engine_shoot_hit():
     # he falls and meets the world; the fifth meets the corpse and does nothing
     # (damage 0, band -1 - the entry retires whatever `sub_4240E0` decides).
     # With the layer forced off this is the old three-hit list again.
+    #
+    # AND SINCE 2026-09-11 THREE HITS AGAIN, for another reason: the per-frame
+    # placement stopped pinning a shoot brain's heading. 240 used to die at his
+    # placement's 89 (90 less one tick's turn, put back every frame); he now dies
+    # at the 83 his brain turned him to while aiming, so his death clip lays the
+    # corpse elsewhere and the fifth bolt passes it - four and five both meet the
+    # world. `8bf793d` changed it and this check was not run on it until the next
+    # step; the engine keeps the brain's +420, so 83 is the faithful heading.
     want = ([(237, 4758, -2560, "44.4"), (238, 5207, -2273, "44.4"),
              (240, 4516, -2797, "44.4")],
-            ["240"] * 4,
-            [(5, 15, 10, 2), (5, 10, 5, 2), (5, 5, 0, 2), (0, 0, 0, -1)],
+            ["240"] * 3,
+            [(5, 15, 10, 2), (5, 10, 5, 2), (5, 5, 0, 2)],
             [(5, True)],
             ["240"])
     return got, want, (
@@ -26782,8 +26792,8 @@ def c_engine_shoot_gunfire():
     tick his brain says 1, then once every RATE frames - the gate's exact
     `f0 == +172` compare after the countdown's reload; the first shot's
     direction out of the jitter the CRT's `rand()` gives from seed 1 (41 67
-    34, then 0 69 24); and the bolts stop on the world, since the player is
-    not a hit body yet (step 2). The jitter is the CRT's formula, not the
+    34, then 0 69 24); and - step 2 - the player a hit body at last, aimed at
+    his pelvis and damaged in `sub_4240E0`'s own order. The jitter is the CRT's formula, not the
     engine's place in its one shared stream; the arm's aim POSE is not ported.
     """
     import subprocess, re
@@ -26815,8 +26825,12 @@ def c_engine_shoot_gunfire():
     end238 = re.search(r"^  actor 238 VIR_FN \(bank none\) at \S+ \S+ \S+ facing (\d+)", out, re.M)
     world = len(re.findall(r"^frame \d+: GUNMAN BOLT \(actor \d+\) retired - entry \d+ "
                            r"hit the world", out, re.M))
-    body = len(re.findall(r"^frame \d+: GUNMAN BOLT \(actor \d+\) retired - entry \d+ HIT ACTOR",
-                          out, re.M))
+    # STEP 2: the player is a hit body (actor -1) - the only body their bolts
+    # meet in the gallery's first 48 frames
+    body = len(re.findall(r"^frame \d+: GUNMAN BOLT \(actor \d+\) retired - entry \d+ HIT ACTOR "
+                          r"\d+ at", out, re.M))
+    onPlayer = len(re.findall(r"^frame \d+: GUNMAN BOLT \(actor \d+\) retired - entry \d+ HIT "
+                              r"ACTOR -1 at", out, re.M))
     # STEP 1b, THE TURN (`sub_421A20` / `sub_421770`): the supermarket's robber
     # 77 starts the phase with the player dead behind him, so the hub's turn
     # toward him snaps to 180 and picks his group's type-32 clip - 25 frames,
@@ -26829,7 +26843,7 @@ def c_engine_shoot_gunfire():
     sm = subprocess.run(
         [exe, fr, os.path.join(ROOT, "tables"),
          "--save", os.path.join(ROOT, "traces", "save-appart.bin"),
-         "--area", "230", "--scene-chunk", "56", "--frames", "480", "--nodelay"],
+         "--area", "230", "--scene-chunk", "56", "--frames", "500", "--nodelay"],
         capture_output=True, text=True, errors="replace",
         env=dict(os.environ, SDL_VIDEODRIVER="dummy")).stdout
     turn = re.search(r"^frame (\d+): actor 77 BRA_FN - TURN CLIP \(sub_421A20\): type (\d+), "
@@ -26840,22 +26854,40 @@ def c_engine_shoot_gunfire():
                     r"-> type (\d+), row rate ([\d.]+) speed [\d.]+ damage (\d+)$", sm, re.M)
     s77 = tuple(int(f) for f in re.findall(r"^frame (\d+): GUNMAN SHOT \d+ - actor 77 ", sm, re.M))
     d77 = re.search(r"^frame \d+: GUNMAN SHOT 1 - actor 77 .*?dir (\S+ \S+ \S+) ", sm, re.M)
-    got = (init, frames, first.groups() if first else None, world > 0, body,
+    # STEP 2, `sub_4240E0`'s PLAYER ARM, in the engine's order: through his
+    # Body Shield (30: 5 + 5*30/-100 = 4, C's truncation); a hit he survives
+    # sets the gauge (`dword_90E100`), writes property 1 and posts message 0;
+    # the killing hit goes to the death `sub_423FC0` (not ported) BEFORE all
+    # three, so the gauge keeps its 2; and a bolt on a player already down does
+    # nothing at all
+    hits = re.findall(r"^frame (\d+): PLAYER HIT by actor 77's bolt - (.*)$", sm, re.M)
+    got = (init, frames, first.groups() if first else None, world > 0, body, onPlayer,
            end238.group(1) if end238 else None,
            turn.groups() if turn else None, over.groups() if over else None,
-           w77.groups() if w77 else None, s77, d77.group(1) if d77 else None)
+           w77.groups() if w77 else None, s77, d77.group(1) if d77 else None, hits)
+    # the bolts aim at his ROOT MESH, the pelvis - +244..+252 is the root
+    # node's position (`sub_4800C0`, the brain's edge walk) - so the first ones
+    # rise to him (pitch 6.3) where they fell toward his feet (pitch 0.2)
     want = ([("4", "237", "766", "DBWAVER", "2", "2", "10.0", "7"),
              ("4", "240", "772", "HEXAGUN", "3", "3", "4.0", "5")],
             {"237": (4, 14, 24, 34, 44), "240": tuple(range(4, 48, 4))},
-            ("0.505 -0.004 -0.863", "30.3", "0.2", "the tir node", "41 67 34"),
-            True, 0, "347",
+            ("0.502 -0.110 -0.858", "30.3", "6.3", "the tir node", "41 67 34"),
+            True, 0, 7, "347",
             ("394", "32", "25", "-7.20", "0.0"), ("418", "187.2"),
-            ("WAVER", "1", "1", "15.0", "5"), (418, 433, 448, 463, 478),
-            "-0.139 0.129 0.982")
+            ("WAVER", "1", "1", "15.0", "5"), (418, 433, 448, 463, 478, 493),
+            "-0.140 -0.094 0.986",
+            [("450", "damage 5, Body Shield 30 -> 4; health 10 -> 6, gauge 6 (property 1 "
+                     "stored 6); message 0 to the hurt handler"),
+             ("465", "damage 5, Body Shield 30 -> 4; health 6 -> 2, gauge 2 (property 1 "
+                     "stored 2); message 0 to the hurt handler"),
+             ("480", "damage 5, Body Shield 30 -> 4; health 2 -> -2 - KILLED: the death "
+                     "`sub_423FC0` is not ported, he plays on; the gauge stays at 2"),
+             ("495", "he is down already (health -2): nothing")])
     return got, want, (
         "the gallery's two gunmen resolve their held weapons through the others' table, fire "
         "on the brain's first outcome 1 and every RATE frames after, the first bolt aimed "
-        "from the tir node with the CRT's first jitter, and the bolts stop on the world; the "
+        "from the tir node with the CRT's first jitter, rising to the player's pelvis and "
+        "meeting his body; the "
         "supermarket's robber 77 turns round on his type-32 clip and then fires every 15")
 
 

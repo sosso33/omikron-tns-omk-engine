@@ -1477,10 +1477,32 @@ forget to plan it."* The session's own log agrees with the gate: 245 latches
    heading; the gallery's 238, out of his engage range and only turning to
    aim, ends at 347 where he was pinned at 357. The same session shows every
    robber firing - 111 gunman shots over the phase, 4 of their bolts meeting
-   bodies (three on the hostage, one on another robber, refused). Then step 2, the player's own damage
-   path (§7j) - and note for it that the bolts aim at `pos()`, the FEET: robber
-   77's first bolts stop on the world 57 units short of the player, descending
-   toward his feet, which may be the feet-or-pelvis reading showing.
+   bodies (three on the hostage, one on another robber, refused).
+   **STEP 2, THE PLAYER IS HIT - PORTED 2026-09-11.** First the AIM: the
+   player's `+244..+252` is his ROOT NODE's position, not his feet -
+   `sub_4800C0` copies `+248` from the root node's `+40` every tick, and the
+   generic brain's edge walk moves the two together (`o3de_MoveNodeBy(node, 0,
+   climb, 0)`, `+248 += climb`) - so the bolts aim at his root mesh (the
+   pelvis) as drawn, and robber 77's rise to him where they fell short toward
+   his feet. Then the BODY: he joins the sweep's list as actor -1, his meshes
+   as drawn with their world rotations (`playerMeshRot`, captured beside
+   `playerMeshAt`); his own bolts skip him, the sweep passing over a bolt's
+   owner. Then `sub_4240E0`'s PLAYER ARM, read line by line and ported in its
+   order: down already -> nothing; the Body Shield (property 17, 30 on the
+   save: 5 -> 4); `+92 -= dmg`; at `+92 <= 0` the death `sub_423FC0` and
+   RETURN - before the gauge, the property and the message; otherwise the shove
+   `sub_47D1F0`, `dword_90E100 = +92`, event 45 (property 1) and event 43 with
+   0 - MESSAGE 0, the scene's hurt handler, which uses a carried kit below 40.
+   The gauge is now its own value (`hudHealth`, `dword_90E100`), so a killing
+   hit leaves the bar at its last value as the engine's does. In the
+   supermarket 77 takes the player 10 -> 6 -> 2 and kills him at frame 480
+   (`engine: shoot gunfire`). **Corrected on the way**: a first cut wrote
+   property 1 and posted message 0 on EVERY hit, and so "stored 200" through
+   the property's unsigned clamp once he was below 0 - the engine never writes
+   a negative health there, because the death returns first. Not ported,
+   labelled: the death `sub_423FC0` (he plays on at -2) and the shove
+   `sub_47D1F0`. The save carries no kit, so the hurt handler's heal is not
+   yet seen on a route.
 5. ~~**THE MOUSE LOOK.**~~ **PORTED 2026-09-10, CONFIRMED IN PLAY** (*"Good"*). `sub_47D370` read whole:
    YAW `+420 -= row23 * 0.01 * dx`, no frame delta; PITCH `+= row24 * 0.01 *
    dy * delta`, dy negated unless row 25 ("Souris inversée") is set, clamped

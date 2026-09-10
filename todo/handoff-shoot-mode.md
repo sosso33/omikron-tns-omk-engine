@@ -177,7 +177,12 @@ own timer tail; now it plays (`sub_421770`, the brain holding) and he turns
 is playing" now, and dead is flag 8 with no health left. A reader's session
 then showed the other robbers stuck mid-turn: the viewer's per-frame placement
 was putting a placed actor's facing back every frame - fixed the same day, a
-shoot brain owns the heading.
+shoot brain owns the heading. **STEP 2, the player is hit** (same day): the
+bolts aim at his pelvis (the actor's `+244..+252` is the root node's
+position), he is a body in the sweep, and `sub_4240E0`'s player arm runs in
+its own order - the killing hit goes to the death before the gauge, property
+1 and message 0 are touched. The death `sub_423FC0` and the shove `sub_47D1F0`
+are NOT ported: he plays on below 0.
 
 **Reported missing in play (2026-09-10, *"no fire sound effect, no UI"*): the
 FIRE SOUND and the shoot HUD.** Both are planned with their leads in

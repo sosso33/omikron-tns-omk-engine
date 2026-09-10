@@ -422,9 +422,11 @@ build/omk-play ../gamedata ../tables --save ../traces/save-appart.bin \
 
 Both open fire at once: one bolt every 10 frames from the DBWAVER on the
 left, one every 4 from the HEXAGUN, each with its firing sound, flying at
-you with a small scatter. **Nothing can hit you yet** - the bolts pass through
-you and stop on the wall behind - and their arms do not come up to aim (the
-aim pose is not ported for them). Wrong looks like: bolts flying off at a
+you with a small scatter, **and now they hit you**: the gauge drops by 4 a hit
+(5 through your Body Shield), and a kit you carry should be used by itself
+once you are under 40. At 0 the game would kill you; that is not ported yet,
+so you play on with the gauge frozen at its last value. Their arms do not come
+up to aim (the aim pose is not ported for them). Wrong looks like: bolts flying off at a
 wide angle from you, or leaving from somewhere other than the gun in the
 hand.
 

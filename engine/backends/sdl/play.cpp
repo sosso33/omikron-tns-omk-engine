@@ -2946,6 +2946,9 @@ int main(int argc, char** argv) {
     float playerHeadAt[3] = {0, 0, 0};   // the player's `Tete`, for subject kinds 0/1
     bool  playerHeadKnown = false;
     std::vector<float> playerMeshAt;     // ...and every mesh, for the shadow
+    std::vector<float> playerMeshRot;    // ...and each one's world rotation, nine
+                                         // floats a mesh like `Staged::meshRot` -
+                                         // what the hit sweep turns his box by
     bool  playerMeshAtKnown = false;
     int   placementSeen = 0;      // Session::placementSeq() as last consumed
     long  heldFrames = 0;         // frames under player.anim.hold
@@ -3831,6 +3834,11 @@ int main(int argc, char** argv) {
     // turn it makes each frame. Type -1: none.
     struct GunClip { int type = -1; int frames = 0; float frame = 0.0f, turn = 0.0f; };
     std::map<int, GunClip> gunClips;
+    // THE GAUGE'S OWN VALUE, `dword_90E100` - what `Hud_DrawBar` draws. It is
+    // NOT his record's +92: `Shoot_Enter` seeds it, `sub_423A40` (a property 1
+    // write, the medikits) and a hit he survives copy +92 into it, and the
+    // killing hit returns before it is touched, so the bar keeps its last value.
+    int hudHealth = 0;
     std::uint32_t gunRandSeed = 1;
     // THE PLAYER'S SHOT (`actor/shootfire.h`, todo/shoot-mode.md 7h): his own
     // shoot record - the engine keeps one for him among the 100, and the
@@ -5806,6 +5814,35 @@ int main(int argc, char** argv) {
                     }
                     bodies.push_back(std::move(hb));
                 }
+                // THE PLAYER'S BODY (the gunmen's shots, step 2): the engine's
+                // list is every ATTACHED actor and the player is one, so a
+                // gunman's bolt meets him. His own pass him by - the sweep skips
+                // a bolt's owner, -1 for his. His meshes as drawn last frame,
+                // like everyone's; the first-person frame draws only a few of
+                // them, and all of them are posed.
+                if (shootMode && player && playerMeshAtKnown &&
+                    playerMeshAt.size() == playerMeshes.size() * 3 &&
+                    playerMeshRot.size() == playerMeshes.size() * 9) {
+                    omk::HitBody hb;
+                    hb.actor = -1;
+                    for (std::size_t i = 0; i < playerMeshes.size(); ++i)
+                        if (playerMeshes[i].parent < 0) { hb.root = static_cast<int>(i); break; }
+                    hb.meshes.resize(playerMeshes.size());
+                    for (std::size_t mi = 0; mi < playerMeshes.size(); ++mi) {
+                        const omk::Mesh& me = playerMeshes[mi];
+                        omk::HitMesh& hm = hb.meshes[mi];
+                        for (int k = 0; k < 3; ++k) {
+                            hm.pos[k] = playerMeshAt[mi * 3 + static_cast<std::size_t>(k)];
+                            hm.centre[k] = me.centre[k];
+                            hm.boxMin[k] = me.boxMin[k];
+                            hm.boxMax[k] = me.boxMax[k];
+                        }
+                        for (int k = 0; k < 9; ++k)
+                            hm.m[k] = playerMeshRot[mi * 9 + static_cast<std::size_t>(k)];
+                        hm.radius = me.radius;
+                    }
+                    bodies.push_back(std::move(hb));
+                }
                 // what the sweep is given, once per shoot mode - the first
                 // question when a bolt passes through somebody
                 static long bodiesTold = -1;
@@ -5881,6 +5918,68 @@ int main(int argc, char** argv) {
                     // the NOISE there, the VICTIM excluded - 0x44DD0E / 0x44DD40
                     // hand `sub_4246E0` the index `sub_4240E0` was given
                     shootNoise(n, ev.victim, ev.at, "a bolt on a body");
+                    // ---- `sub_4240E0`'s PLAYER ARM: a gunman's bolt on him ----
+                    //   the damage through his Body Shield (property 17), C's
+                    //   truncation and never 0; +92 -= it; `dword_90E100 = +92`,
+                    //   the gauge; `Game_RaiseEvent(45, {1, him, +92})` -
+                    //   property 1 through `Actor_SetProperty`'s UNSIGNED clamp
+                    //   at 200, so a health below 0 is STORED as 200; at +92 <= 0
+                    //   the death `sub_423FC0`; the hurt shove `sub_47D1F0`; then
+                    //   `Game_RaiseEvent(43, {0, him})` - MESSAGE 0, the scene's
+                    //   hurt handler (the supermarket's uses a carried kit below
+                    //   40, and its heal comes back through `shootStatSet`).
+                    // NOT PORTED, labelled: the death and the shove.
+                    if (ev.victim == -1) {
+                        const std::size_t recAt = static_cast<std::size_t>(omk::GameState::kPlayerRecord);
+                        const std::size_t recLen = static_cast<std::size_t>(omk::GameState::kPlayerRecordSize);
+                        omk::HitIn hin;
+                        hin.damage = ev.damage;
+                        hin.shooterIsPlayer = false;
+                        hin.victimIsPlayer = true;
+                        hin.victimInShoot = player && player->state() == omk::ActorState::Shoot;
+                        std::int32_t shield = 0;
+                        omk::readActorProperty(state.raw().subspan(recAt, recLen), 17, shield);
+                        hin.bodyShield = shield;
+                        hin.victimYaw = player ? player->facing() : 0.0f;
+                        for (int k = 0; k < 3; ++k) hin.boltVel[k] = ev.vel[k];
+                        const omk::HitOut ho = omk::shootApplyHit(playerShootRec, hin);
+                        if (ho.refused) {
+                            std::printf("  PLAYER hit REFUSED (`sub_4240E0` returns -1) - the bolt "
+                                        "stops anyway\n");
+                            continue;
+                        }
+                        if (ho.healthWas <= 0) {
+                            // `if (+92 <= 0) return v30;` - down already: nothing
+                            std::printf("frame %ld: PLAYER HIT by actor %d's bolt - he is down "
+                                        "already (health %d): nothing\n", n, ev.owner, ho.healthWas);
+                            continue;
+                        }
+                        if (ho.killed) {
+                            // `if (+92 <= 0) { sub_423FC0(him); return v30; }` - BEFORE
+                            // the gauge, the property and the message, so the killing
+                            // hit leaves the gauge at its last value and tells no one
+                            std::printf("frame %ld: PLAYER HIT by actor %d's bolt - damage %d, Body "
+                                        "Shield %d -> %d; health %d -> %d - KILLED: the death "
+                                        "`sub_423FC0` is not ported, he plays on; the gauge stays "
+                                        "at %d\n", n, ev.owner, ev.damage, int(shield), ho.damage,
+                                        ho.healthWas, ho.health, hudHealth);
+                            continue;
+                        }
+                        // the shove `sub_47D1F0` (not ported), then the gauge,
+                        // property 1 and message 0
+                        hudHealth = playerShootRec.health;                // `dword_90E100`
+                        omk::writeActorProperty(state.rawMutable().subspan(recAt, recLen), 1,
+                                                playerShootRec.health);
+                        std::int32_t stored = 0;
+                        omk::readActorProperty(state.raw().subspan(recAt, recLen), 1, stored);
+                        const bool ran = session.postMessage(0, session.playerActor());
+                        std::printf("frame %ld: PLAYER HIT by actor %d's bolt - damage %d, Body "
+                                    "Shield %d -> %d; health %d -> %d, gauge %d (property 1 stored "
+                                    "%d); message 0 %s\n", n, ev.owner, ev.damage, int(shield),
+                                    ho.damage, ho.healthWas, ho.health, hudHealth, int(stored),
+                                    ran ? "to the hurt handler" : "- NO handler subscribes");
+                        continue;
+                    }
                     // ---- `sub_4240E0`, the damage, on his shoot record ----
                     Staged* vs = nullptr;
                     for (auto& up : staged)
@@ -7982,6 +8081,7 @@ int main(int argc, char** argv) {
                             static_cast<std::size_t>(omk::GameState::kPlayerRecordSize)),
                         1, hp);
                     playerShootRec.health = hp != 0 ? static_cast<int>(hp) : 10;
+                    hudHealth = playerShootRec.health;   // `Shoot_SyncHudHealth`, `dword_90E100`
                     std::printf("frame %ld: SHOOT HEALTH (sub_422540) - property 1 = %d "
                                 "-> record +92 = %d\n", n, int(hp), playerShootRec.health);
                     hudBar.refresh(0, 22, fb.w);
@@ -10939,13 +11039,29 @@ int main(int argc, char** argv) {
                                 // (`shootGunmanAim`, actor/shootfire.h): at the
                                 // player's +244..+252, each axis jittered by his
                                 // root node's radius, the three `rand() % 100`
-                                // drawn x, y, z. That position is `pos()` here, the
-                                // FEET - player.h records the reading as unsettled
-                                // against the pelvis.
-                                const float* pp = player->pos();
+                                // drawn x, y, z. +244..+252 is the ROOT NODE's
+                                // position, not the feet: `sub_4800C0` copies +248
+                                // from the root node's +40 every tick, and the
+                                // brain's edge walk moves the two together
+                                // (`o3de_MoveNodeBy(node, 0, climb, 0)`, then
+                                // `+248 += climb`). The root is the pelvis, so the
+                                // target is his root mesh as DRAWN last frame, and
+                                // `pos()` - the feet - only until he has been.
+                                float pp[3] = {player->pos()[0], player->pos()[1], player->pos()[2]};
                                 float r = 0.0f;
-                                for (const auto& m : playerMeshes)
-                                    if (m.parent < 0) { r = m.radius; break; }
+                                int rootMesh = -1;
+                                for (std::size_t i = 0; i < playerMeshes.size(); ++i)
+                                    if (playerMeshes[i].parent < 0) {
+                                        r = playerMeshes[i].radius;
+                                        rootMesh = static_cast<int>(i);
+                                        break;
+                                    }
+                                const bool atRoot = playerMeshAtKnown && rootMesh >= 0 &&
+                                    playerMeshAt.size() >= static_cast<std::size_t>(rootMesh) * 3 + 3;
+                                if (atRoot)
+                                    for (int k = 0; k < 3; ++k)
+                                        pp[k] = playerMeshAt[static_cast<std::size_t>(rootMesh) * 3 +
+                                                             static_cast<std::size_t>(k)];
                                 int jit[3];
                                 for (int k = 0; k < 3; ++k) {
                                     gunRandSeed = gunRandSeed * 214013u + 2531011u;
@@ -10982,13 +11098,14 @@ int main(int argc, char** argv) {
                                     std::printf("frame %ld: GUNMAN SHOT %ld - actor %d %s, "
                                                 "Actor_TickProjectiles: entry %d, speed %.1f, damage %d, "
                                                 "dir %.3f %.3f %.3f (yaw %.1f pitch %.1f), from %s "
-                                                "%.1f %.1f %.1f, at the player %.0f away, jitter %d %d %d "
+                                                "%.1f %.1f %.1f, at the player's %s %.0f away, jitter %d %d %d "
                                                 "of r %.1f, %d live\n", n, k, s.actor, s.model.c_str(),
                                                 out.entry, double(e.speed), e.kind,
                                                 double(e.vel[0] / spd), double(e.vel[1] / spd),
                                                 double(e.vel[2] / spd), double(rs.yawDeg),
                                                 double(rs.pitchDeg), from, double(rs.muzzle[0]),
-                                                double(rs.muzzle[1]), double(rs.muzzle[2]), dist,
+                                                double(rs.muzzle[1]), double(rs.muzzle[2]),
+                                                atRoot ? "root mesh" : "feet", dist,
                                                 jit[0], jit[1], jit[2], double(r), projectiles.live());
                                 } else {
                                     std::printf("frame %ld: GUNMAN SHOT refused - actor %d, the pool "
@@ -12395,6 +12512,7 @@ int main(int argc, char** argv) {
                     playerHeadKnown = true;
                 }
                 playerMeshAt.assign(pose.size() * 3, 0.0f);
+                playerMeshRot.assign(pose.size() * 9, 0.0f);
                 for (std::size_t mi = 0; mi < pose.size(); ++mi) {
                     const float in[3] = {pose[mi].pos[0] - playerRootXZ[0],
                                          pose[mi].pos[1],
@@ -12404,6 +12522,17 @@ int main(int argc, char** argv) {
                     playerMeshAt[mi * 3 + 0] = r[0] + pp[0];
                     playerMeshAt[mi * 3 + 1] = r[1] + pp[1] - playerFeet + rootDrop;
                     playerMeshAt[mi * 3 + 2] = r[2] + pp[2];
+                    // its world rotation: the pose's own, then his yaw - the
+                    // same composition the corners get
+                    for (int ax = 0; ax < 3; ++ax) {
+                        const float e[3] = {ax == 0 ? 1.0f : 0.0f, ax == 1 ? 1.0f : 0.0f,
+                                            ax == 2 ? 1.0f : 0.0f};
+                        float qv[3], wv[3];
+                        omk::qrot(pose[mi].q, e, qv);
+                        omk::rotateYaw(yaw, qv, wv);
+                        for (int k = 0; k < 3; ++k)
+                            playerMeshRot[mi * 9 + static_cast<std::size_t>(ax * 3 + k)] = wv[k];
+                    }
                 }
                 playerMeshAtKnown = true;
                 lastRootDrop = rootDrop;
@@ -13724,6 +13853,7 @@ int main(int argc, char** argv) {
             if (w.property == 1) {
                 if (w.actor == -1) {
                     playerShootRec.health = static_cast<int>(w.value);
+                    hudHealth = playerShootRec.health;   // `dword_90E100 = value`
                     std::printf("frame %ld: SHOOT STAT (sub_423A40) - the player's health "
                                 "-> %d, and the gauge's\n", n, int(w.value));
                 } else if (const auto it = shootBrains.find(w.actor); it != shootBrains.end()) {
@@ -13821,7 +13951,9 @@ int main(int argc, char** argv) {
             // `Hud_DrawBar(dword_90E100, 200, 0, 0)` (`ui/hudbar.h`), the
             // value the player's record +92
             if (!hudBar.loaded()) hudBar.load(fs);
-            const omk::HudBarFrame bar = hudBar.draw(fb, playerShootRec.health, 200, 0, 0);
+            // (`dword_90E100`, `hudHealth` - not +92 itself, which a killing
+            // hit takes below 0 while the gauge keeps its last value)
+            const omk::HudBarFrame bar = hudBar.draw(fb, hudHealth, 200, 0, 0);
             // THE RADAR: item 0x4C4388's own callback 0x42F000 (`ui/radar.h`),
             // in the box its HUD's open callback set, through the shoot camera's fov
             // (preset row 4's 75). The gunmen go in with the position their
@@ -13905,7 +14037,7 @@ int main(int argc, char** argv) {
                           "frame pixel 0x%04x, empty-part pixel 0x%04x",
                           int(rings), hudAmmo, weaponLog.c_str(), hf.itemsDrawn,
                           hf.fillsDrawn, int(ringDrawn), int(weaponDrawn), cx, cy,
-                          pixel(cx, cy + 8), playerShootRec.health, bar.percent, bar.top,
+                          pixel(cx, cy + 8), hudHealth, bar.percent, bar.top,
                           bar.quads, bar.blits,
                           pixel(fb.w * 24 / 640 - fb.w * 5 / 640, fb.h * 300 / 480),
                           pixel(fb.w * 24 / 640, fb.h * 100 / 480));
