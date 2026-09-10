@@ -117,6 +117,12 @@ transforms for a staged gunman, captured at the draw.
 outcome 1 and `sub_47C2A0` would fire them directly, but the port's brain
 epilogue does not call it yet.
 
+**Reported missing in play (2026-09-10, *"no fire sound effect, no UI"*): the
+FIRE SOUND and the shoot HUD.** Both are planned with their leads in
+`todo/shoot-mode.md` §8 - the sound probably from `shoot2.sfx` section A's
+three effect ids (the Waver's effect 1 carries sound 687), the HUD from
+`Hud_Refresh` / `Hud_DrawBar` and the two globals the shot already writes.
+
 Still parameters rather than readings: `sub_421020` (its success sends a
 gunman into the 10/11 pair), `sub_421CD0`, `sub_435900`, and the gate
 `actor[+16]` that chooses between `0.7` and `0.0` for the camera lift.

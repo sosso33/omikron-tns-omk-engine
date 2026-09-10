@@ -337,6 +337,8 @@ beat that has presumably never opened in this port.
 
 ## 10. SHOOT MODE - FIRE, 2 minutes (committed 2026-09-10, `cc3d1f9` + `96fab56`)
 
+**PLAYED 2026-09-10 - *"Ok"***. Missing, and planned in `todo/shoot-mode.md` §8: the FIRE SOUND and the shoot HUD. Still unanswered: which side of the view the bolt leaves from.
+
 ```
 build/omk-play ../gamedata ../tables --save ../traces/save-appart.bin \
     --area 59 --stand 5000,0,-2900,180 --shoot

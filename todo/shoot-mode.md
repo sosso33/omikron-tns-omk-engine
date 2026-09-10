@@ -1095,6 +1095,50 @@ gunmen.
   meets each body as it stood at the end of the previous frame, which is
   exactly what a pose kept from the draw is.
 
+## 8. WHAT IS LEFT, IN ORDER — planned 2026-09-10, after the first firing play
+
+The reader played the gallery: *"Ok, note: no fire sound effect, no UI, don't
+forget to plan it."* The session's own log agrees with the gate: 245 latches
+(`MDSHOOT0` arms one on every held frame) gave 36 shots, never two closer than
+10 frames, seven frames from rest, and all 36 stopped by the world.
+
+1. **THE HIT (§7j) — step 2b, next.** With it goes the NOISE, read 2026-09-10:
+   `sub_4246E0` is called at every shot (with the muzzle) and every impact,
+   and it is not a sound - it ALERTS gunmen. Each one flagged 0x40, not yet
+   0x20, not type 14 and not the player, within `property 28 × flt_907EAC`
+   (a hearing range in grid cells) and on the same floor as the noise's cell
+   (`sub_435020`) gets `+160 |= 0x20` and `Shoot_ActorAction(+148, or 2)`.
+   It is the brain's input.
+2. **THE FIRE SOUND — reported missing in play.** Not `sub_4246E0`. The lead
+   is in the data: each `shoot2.sfx` section-A row opens with THREE ints -
+   the Waver's 1, 2, 3, the Megazooka's 7, 8, 9 - and those are section-C
+   EFFECT ids. Row 1 carries sound **687** (a 2-frame life), row 2 none (12
+   frames), row 3 sound **689** (6 frames); 7 carries 703 and 9 carries 683.
+   So a shot very likely spawns three effects - at the muzzle with the fire
+   sound, along the flight, at the impact with the hit sound - through
+   `sub_44EF80` (called while the entry waits at the muzzle and on the node),
+   `sub_44F030` (each step of the flight) and `sub_44F0D0` (an impact). To
+   confirm: read those three and how the row `sub_44EEB0` returns reaches
+   them. The sounds resolve in the resident library, `shoot2.scx`
+   (`Scene_FindSoundIndex`), which the port already loads for the mode.
+3. **THE SHOOT HUD — reported missing in play.** `Shoot_Enter` opens screen
+   34 (33 for the Mecagarde) and calls `Hud_Refresh` (0x00448FA0, the
+   player's properties 16/19/17/3/18/2 into `dword_530CB0..C4`).
+   `Hud_DrawBar(value, 200, slot, mode)` (0x00447B10) draws the bars - its
+   callers are `16_o3de.c` 3463/3464 (two bars), `24_sys.c` 7150/7657 (a
+   shoot record's `+92`, a gunman's health) and `21_d3d.c` 4669.
+   `Shoot_SyncHudHealth` copies the player's record `+92` into `dword_90E100`;
+   the shot writes the ammo counter `dword_90E11C` and sets the refresh flag
+   `dword_90E104`. None of it is drawn: the viewer prints the screen number
+   and stops.
+4. **THE GUNMEN'S SHOTS.** The brain reaches outcome 1; wire it through
+   `sub_47C2A0` with its target (the other arm, whose aim spreads by
+   `rand() % (radius / 2)`) and `Actor_TickProjectiles`' npc aim at the
+   player - and then the player's own damage path (§7j).
+5. **THE MOUSE LOOK.** `sub_47D370`'s sensitivities and ±45 clamp, from the
+   options header (§7h).
+6. **THE SWEEP.** `--slow`, owed.
+
 ## 5b. The two weapon floats — step 5's first reading, 2026-09-09
 
 `tables/shoot_weapons.json`'s lifter says of the two floats: *"they are a range

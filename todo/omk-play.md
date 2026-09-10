@@ -34,6 +34,13 @@ waiting on its evidence.
 > read and not ported (§7j), so the phase still cannot be completed. This note
 > used to name the latch's set as `loc_45C4DD` and the cases as 13/14/16 - the
 > first is a CLEAR and the list was short; see the corrected note below.
+>
+> **PLAYED 2026-09-10 — *"Ok"***, with two things missing: *"no fire sound
+> effect, no UI"*. The session's log agrees with the gate: 245 latches
+> (`MDSHOOT0` arms one on every held frame) gave 36 shots, never closer than
+> 10 frames, seven frames from rest, every bolt stopped by the world. Which
+> side of the view the bolt leaves from was not answered. The sound and the
+> HUD are planned with their leads (`todo/shoot-mode.md` §8).
 
 
 > **(l) AND THE SIGN — which two screenshots settled and the DATA then
