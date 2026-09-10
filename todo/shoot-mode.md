@@ -1342,6 +1342,35 @@ forget to plan it."* The session's own log agrees with the gate: 245 latches
    actor 86's entrance with the gate never dropping. The camera half of the
    report went with it: the first-person camera is applied under the same
    gate.
+5d. **THE PHASE COULD NOT BE FINISHED — reported 2026-09-10, FIXED the same
+   day** (*"i can't finish the supermarket shoot sequence, even when every
+   ennemies are killed, the end cutscene is not triggered (look at how events
+   are managed in shoot sequence)"*). How the supermarket ends, read out of
+   SCENE 56 and the brain:
+   * **the score is a MESSAGE.** `Shoot_TickNpc` calls a gunman's brain even
+     when he is dead, and the generic brain's first arm (`sub_424DE0`, flag 8
+     up) plays his reaction clip through `sub_421770`; the frame it has played
+     out, `sub_421770` clears flag 8 and returns 0, and with his health at 0
+     the brain posts `Game_RaiseEvent(43, {3, him})` - ONCE, since the next
+     tick takes the other dead arm (ACTOR_STATE 0, no post). The Gandhar and
+     Astaroth callbacks post the same message 3 from their own prologues;
+   * **SCENE 56 subscribes it** (table entry 1, offset 0x433F): `param[0]` -
+     the dead man's actor id, which `Message_RunHandlers` maps from his slot -
+     is matched against 37, 38, 39, 82 and 84, each setting its `Braqueur N
+     Dead` (VARIABLES 640..644), and for 84 - *Braqueur 15* - also `zone.enable
+     3931`, a random victory track (`music.play 65..70`);
+   * **zone 3931 ends it.** Its enter script (record 21) tests `Braqueur 15
+     Dead`, then `shoot.end 1`, releases and hides every gunman, and plays the
+     ending: `player.anim.hold`, cameras 4372 and 4373, `Supermarché Joué`.
+   The port stopped ticking a killed gunman's brain (`+160 & 8`), so message 3
+   was never posted and zone 3931 never opened. Now the viewer posts it once
+   when a gunman's death clip reaches its last frame. `verify.py: session
+   probe` loads AREA 230 + SCENE 56 and posts {3, 37} then {3, 84}: the handler
+   is the scene's at 17215, var 640 goes 0 -> 1, var 644 0 -> 1, zone 3931 from
+   not live to live. To finish the phase in play: kill actor 84, then walk into
+   zone 3931 - centre printed by `zone_quads <data> 56 scene`. NOT modelled:
+   the zone's enter script only matters once he is in it, and the gunmen still
+   do not walk or shoot, so 84 must be reached on foot.
 6. **THE SWEEP.** `--slow`, owed.
 
 ## 5b. The two weapon floats — step 5's first reading, 2026-09-09

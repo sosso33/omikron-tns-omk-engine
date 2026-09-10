@@ -5193,6 +5193,11 @@ def c_engine_session():
         g("scene_script", 3, 5),                 # announced after, SCENES
         g("message_area", 1, 3, 5, 7),
         g("return", 7, 9, 11, 13, 15, 17),       # created a, b, back, other_at_B, other_back, current
+        # the supermarket's score (`todo/shoot-mode.md` 8.5d): SCENE 56's
+        # subscription for message 3, where {3, 37} runs, var 640 before and
+        # after, var 644 before / after 37 / after 84, zone 3931 live the same
+        # three times, and whether {3, 84} found a handler
+        g("shoot_score", 1, 3, 5, 9, 11, 13, 15, 17, 19, 21, 23, 25),
     )
     want = (
         ("-1", "136", "KUM_FN"),
@@ -5207,13 +5212,18 @@ def c_engine_session():
         ("37", "1"),
         ("23", "1", "area", "2455"),
         ("1", "2", "2", "118", "222", "118"),
+        # message 3 is table entry 1 (0x433F): a robber's death sets his
+        # `Braqueur N Dead`, and actor 84's - `Braqueur 15 Dead` - also
+        # enables zone 3931, the end zone
+        ("17215", "1", "scene", "0", "1", "0", "0", "1", "0", "0", "1", "1"),
     )
     return got, want, \
         "player.become into the DB (id, model, bio); message 25 inline; a " \
         "second context runs in the dialog.start frame; the shown bit and " \
         "the player hidden by -1; a screen left resumes at -1; scene.load/" \
         "unload on the resident area; the resident table a message resolves " \
-        "through; A->B->A creates no startup context"
+        "through; A->B->A creates no startup context; the supermarket's " \
+        "message 3 setting Braqueur 1 / 15 Dead and opening zone 3931"
 
 
 def c_engine_area_transition():
@@ -26247,10 +26257,15 @@ def c_engine_shoot_hit():
     hits = re.findall(r"^frame \d+: SHOT retired - entry \d+ HIT ACTOR (\d+) at", o, re.M)
     dmg = re.findall(r"^  hit: damage (\d+), health (-?\d+) -> (-?\d+), band (-?\d+)", o, re.M)
     killed = re.findall(r"^  KILLED - death clip type (\d+)(, the enemy count drops)?", o, re.M)
+    # ...and his death REPORTED (8.5d): message 3, once, when the death clip
+    # has played out - `sub_424DE0`'s dead arm, which the supermarket's score
+    # hangs on. The gallery's scene has no handler for it; the post is the fact
+    reported = re.findall(r"^frame \d+: actor (\d+) \S+ - death clip over: message 3", o, re.M)
     got = (sorted((int(a), round(float(x)), round(float(z)), r) for a, x, z, r in roots),
            hits,
            [tuple(int(v) for v in d) for d in dmg],
-           [(int(t), bool(e)) for t, e in killed])
+           [(int(t), bool(e)) for t, e in killed],
+           reported)
     # Since THE RAISE (2026-09-10, `actor/shootaim.h`) the muzzle is the gun
     # as `sub_471950` bends the arm up, and the same point for every shot -
     # the layer sets the upper body, so the stance's bob (which alternated the
@@ -26263,7 +26278,8 @@ def c_engine_shoot_hit():
              (240, 4516, -2797, "44.4")],
             ["240"] * 4,
             [(5, 15, 10, 2), (5, 10, 5, 2), (5, 5, 0, 2), (0, 0, 0, -1)],
-            [(5, True)])
+            [(5, True)],
+            ["240"])
     return got, want, (
         "the three gunmen's roots ON their placements with the body's 44.4 "
         "sphere; the first three bolts from the raised gun killing actor 240, "

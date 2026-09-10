@@ -184,6 +184,43 @@ int main(int argc, char** argv) {
                     msg, found ? 1 : 0, m.table.c_str(), m.offset, subs.size());
     }
 
+    // ---- E: THE SUPERMARKET'S SCORE (`todo/shoot-mode.md` 8.5d). A gunman's
+    // death clip playing out posts message 3 with HIM as the sender
+    // (`sub_424DE0`'s dead arm); SCENE 56's subscription for it sets
+    // `Braqueur N Dead` per robber and, for actor 84, enables zone 3931, whose
+    // enter script runs `shoot.end` and the end cutscene. Nothing posted it
+    // until 2026-09-10, so the phase could not be finished.
+    {
+        auto state = omk::GameState::fromFile(iam + "/START");
+        omk::Session s(iam, state, table);
+        s.answerUiFromPerson(true);
+        s.loadArea(230);
+        s.sceneLoad(230, 56);
+        s.frame();
+        const auto live3931 = [&s]() {
+            for (const auto& lz : s.zones().registered())
+                if ((lz.zone.id & 0x7FFF) == 3931) return 1;
+            return 0;
+        };
+        const auto sceneFile = readFile(iam + "/SCENE");
+        const auto scenes = omk::IamArchive::open(sceneFile);
+        const auto subs = omk::chunkSubscriptions(scenes.chunk(56), omk::ChunkKind::Scene);
+        int sub3 = -1;
+        for (const auto& su : subs) if (su.message == 3) { sub3 = static_cast<int>(su.script); break; }
+        const int v640a = state.var(640), v644a = state.var(644), z0 = live3931();
+        const bool f37 = s.postMessage(3, 37);
+        const auto m37 = s.messagesRun().back();
+        s.frame();
+        const int v640b = state.var(640), v644b = state.var(644), z1 = live3931();
+        const bool f84 = s.postMessage(3, 84);
+        s.frame();
+        std::printf("shoot_score sub3 %d found37 %d table %s offset %zu var640 %d -> %d "
+                    "var644 %d -> %d -> %d zone3931 %d -> %d -> %d found84 %d subs %zu\n",
+                    sub3, f37 ? 1 : 0, m37.table.c_str(), m37.offset, v640a, v640b,
+                    v644a, v644b, state.var(644), z0, z1, live3931(), f84 ? 1 : 0,
+                    subs.size());
+    }
+
     // ---- D: A -> B -> A
     {
         auto state = omk::GameState::fromFile(iam + "/START");

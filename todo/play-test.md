@@ -392,6 +392,18 @@ jerk to full speed on the first frame, a slide after release, moving in the
 wrong direction for the way you face, or walking through a crate. There is no
 head bob and no footstep sound yet - both are known.
 
+**Now expected (fixed 2026-09-10, after *"i can't finish the supermarket shoot
+sequence, even when every ennemies are killed, the end cutscene is not
+triggered"*): THE PHASE ENDS.** Each robber's death is now reported to the
+scene when his death animation finishes (the terminal says `death clip over:
+message 3 ... handler scene +0x433f`). The supermarket's ending is keyed to ONE
+of them - actor 84, the script's *Braqueur 15* - whose death plays a victory
+track and opens the end zone at the back of the shop, around (13806, 1658),
+where the hostages and the doctor are. Walk into it and the end cutscene
+should run: the gunmen vanish, the camera takes two shots of the room, and
+you are handed back. Wrong looks like: no music when 84 falls, or nothing
+when you reach the back.
+
 **CONFIRMED IN PLAY 2026-09-10 (*"Ok, this event issue is fixed"*): ENEMY
 ENTRANCES ARE GAMEPLAY**, fixed the same day after *"some events (like some
 ennemie appearing with a special animation) are considered as cutscenes,

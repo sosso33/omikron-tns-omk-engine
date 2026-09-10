@@ -3360,6 +3360,9 @@ int main(int argc, char** argv) {
         // frame. -1 while alive.
         int   deathType = -1;
         long  deathStart = 0;
+        // message 3 posted for this death (`sub_424DE0`'s dead arm, once the
+        // death clip has played out) - see the post below
+        bool  deathPosted = false;
         // SEATED ONCE, the way the engine seats an actor once and then
         // `Actor_MoveBy`s him: the feet go on the floor when the pose SOURCE
         // or the clip changes, and the clip's root motion moves him from
@@ -10542,6 +10545,36 @@ int main(int argc, char** argv) {
                         if (s.deathType >= 0 && shootTracks && shootTracks->frames > 0)
                             shootFrame = static_cast<int>(std::min<long>(
                                 n - s.deathStart, static_cast<long>(shootTracks->frames) - 1));
+                        // HIS DEATH IS REPORTED - message 3. `Shoot_TickNpc`
+                        // calls the brain on a dead gunman too, and the generic
+                        // brain's first arm (`sub_424DE0`, flag 8 up) plays the
+                        // reaction clip through `sub_421770` and, once it has
+                        // played out with his health at 0, does
+                        // `Game_RaiseEvent(43, {3, him})` - which
+                        // `Message_RunHandlers` hands the resident scene's
+                        // subscriptions with his actor id as the sender. SCENE
+                        // 56's table entry 1 is where the supermarket keeps its
+                        // score: `Braqueur N Dead` per robber, and for actor 84
+                        // `zone.enable 3931` - the zone whose script runs
+                        // `shoot.end` and the end cutscene. Without this the
+                        // phase could not be finished (a reader, 2026-09-10).
+                        // ONCE, as the engine does: the frame the clip plays out,
+                        // `sub_421770` clears flag 8 as it returns 0, so the next
+                        // tick takes the other dead arm instead - the tidy one
+                        // that puts him in ACTOR_STATE 0 - and posts nothing.
+                        if (s.deathType >= 0 && !s.deathPosted && shootTracks &&
+                            shootTracks->frames > 0 &&
+                            n - s.deathStart >= static_cast<long>(shootTracks->frames) - 1) {
+                            s.deathPosted = true;
+                            const bool ran = session.postMessage(3, s.actor);
+                            const auto& mr = session.messagesRun();
+                            std::printf("frame %ld: actor %d %s - death clip over: message 3 "
+                                        "(Game_RaiseEvent 43) %s", n, s.actor, s.model.c_str(),
+                                        ran ? "- handler " : "- NO handler subscribes\n");
+                            if (ran && !mr.empty())
+                                std::printf("%s +0x%zx\n", mr.back().table.c_str(),
+                                            mr.back().offset);
+                        }
                         if (!s.shootTold && shootTracks) {
                             // THE INSTRUMENT omk-play 96 asked for: a staged
                             // actor never reported whether its clip resolved
