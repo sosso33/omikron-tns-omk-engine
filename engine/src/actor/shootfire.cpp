@@ -154,6 +154,26 @@ void shootShotMatrix(float yawDeg, float pitchDeg, float m[9]) {
     shootEulerMatrix(0.0f, yaw, pitch, m);
 }
 
+GunmanAim shootGunmanAim(const float target[3], const float muzzle[3], float radius,
+                         const int k[3]) {
+    GunmanAim a;
+    for (int i = 0; i < 3; ++i) {
+        // `v71 = f32(pl, 244) - v71;` then, in double and back to the float,
+        // `v71 = v71 - (r - (double)(rand() % 100) * r * 0.02) * -0.33333334`
+        const float base = target[i] - muzzle[i];
+        a.d[i] = static_cast<float>(double(base) -
+                 (double(radius) - double(k[i]) * double(radius) * 0.02) * -0.33333334);
+    }
+    a.dist = std::sqrt(double(a.d[0]) * a.d[0] + double(a.d[1]) * a.d[1] +
+                       double(a.d[2]) * a.d[2]);
+    // `v54 = asin(v70 / v32); v29 = atan2(v69, v71) * 57.29577951308232 - -90.0`
+    const double pitch = a.dist > 0.0 ? std::asin(double(a.d[1]) / a.dist) : 0.0;
+    a.yawDeg = static_cast<float>(std::atan2(double(a.d[2]), double(a.d[0])) *
+                                  57.29577951308232 - -90.0);
+    a.pitchDeg = static_cast<float>(-pitch * 57.29577951308232);
+    return a;
+}
+
 void shootShotDirection(float yawDeg, float pitchDeg, float dir[3]) {
     // `v63 = {-1, 0, 0}` through the node's matrix
     float m[9];

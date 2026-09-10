@@ -68,6 +68,16 @@ struct AnimClip {
 // -> the clips of one library, or empty when `d` is not a "3.0V" file.
 std::vector<AnimClip> animClips(std::span<const std::byte> d);
 
+// The group record's `+8` word, for the group whose `+0` is `index` - nullopt
+// when no group carries it (`sub_434530` then traces "Perso %d non existant
+// dans le .ani" and returns 0). `Anim_Load` relocates only `+4`, so the word
+// is the file's own. Its one read here is `sub_4348B0` (0x004348B0), `+8 &
+// 1`, the shoot brain's FIRE TEST (`sub_424DE0`'s outcomes 0 and 1): a
+// character whose group has the bit clear aims and never shoots. Measured over
+// the 11 shipped libraries it is set on ONE group, index 3, in braqueur.ani,
+// dock.ani and ztech.ani; five more groups hold 2, and every other is 0.
+std::optional<std::uint32_t> animGroupWord8(std::span<const std::byte> d, int index);
+
 // -> the descriptor at `off`, or nothing when it does not read as one.
 std::optional<AnimDescriptor> animDescriptor(std::span<const std::byte> d,
                                              std::size_t off);

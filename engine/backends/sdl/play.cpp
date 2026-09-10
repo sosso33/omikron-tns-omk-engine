@@ -3807,6 +3807,14 @@ int main(int argc, char** argv) {
     // choice this port is making - the engine's own limit is untraced.
     float shootPitch = 0.0f;
     std::map<int, omk::ShootRecord> shootBrains;
+    // A GUNMAN'S SHOTS (`sub_424DE0`'s fire epilogue, below): which of them
+    // has said how his weapon resolved, and how many bolts each has fired.
+    // The jitter's `rand()` is the CRT's own generator from its default seed
+    // - the engine's is one stream shared by every caller, so this is the
+    // formula and not the engine's place in the sequence.
+    std::map<int, long> gunShots;
+    std::set<int> gunTold;
+    std::uint32_t gunRandSeed = 1;
     // THE PLAYER'S SHOT (`actor/shootfire.h`, todo/shoot-mode.md 7h): his own
     // shoot record - the engine keeps one for him among the 100, and the
     // gate's three numbers live on it - the two one-shot globals, and the
@@ -5819,31 +5827,39 @@ int main(int argc, char** argv) {
                 std::vector<omk::FlightEvent> flown;
                 projectiles.fly(static_cast<float>(frameSec * 30.0), ray, &flown, sweep);
                 for (const auto& ev : flown) {
+                    // WHOSE BOLT: the player's lines keep their words and count
+                    // his own bolts; a gunman's say so, since both fire into
+                    // the one pool now (`Actor_TickProjectiles`' other arm)
+                    const bool hisBolt = ev.owner == -1;
+                    const std::string boltWho = hisBolt ? std::string("SHOT")
+                        : "GUNMAN BOLT (actor " + std::to_string(ev.owner) + ")";
+                    const int boltLive = hisBolt ? projectiles.liveOf(-1) : projectiles.live();
                     if (ev.why != omk::FlightEvent::Why::Actor) {
-                        std::printf("frame %ld: SHOT retired - entry %d %s at %.1f %.1f %.1f "
-                                    "after %.1f, %d live\n", n, ev.entry,
+                        std::printf("frame %ld: %s retired - entry %d %s at %.1f %.1f %.1f "
+                                    "after %.1f, %d live\n", n, boltWho.c_str(), ev.entry,
                                     ev.why == omk::FlightEvent::Why::World ? "hit the world"
                                                                          : "out of range",
                                     double(ev.at[0]), double(ev.at[1]), double(ev.at[2]),
-                                    double(ev.travelled), projectiles.live());
+                                    double(ev.travelled), boltLive);
                         // `sub_44F0D0`: the IMPACT effect where the world
                         // stopped it - the range running out calls nothing
                         if (ev.why == omk::FlightEvent::Why::World) {
                             shotSound(n, ev.impactEffect, ev.at,
-                                      player ? player->pos() : nullptr, "impact");
+                                      player ? player->pos() : nullptr,
+                                      hisBolt ? "impact" : "impact of a gunman's bolt");
                             // the NOISE where it stopped, the maker excluded
                             // (0x44DE15, after `sub_44F0D0`)
                             shootNoise(n, -1, ev.at, "a bolt on the world");
                         }
                         continue;
                     }
-                    std::printf("frame %ld: SHOT retired - entry %d HIT ACTOR %d at %.1f %.1f "
-                                "%.1f after %.1f, %d live\n", n, ev.entry, ev.victim,
-                                double(ev.at[0]), double(ev.at[1]), double(ev.at[2]),
-                                double(ev.travelled), projectiles.live());
+                    std::printf("frame %ld: %s retired - entry %d HIT ACTOR %d at %.1f %.1f "
+                                "%.1f after %.1f, %d live\n", n, boltWho.c_str(), ev.entry,
+                                ev.victim, double(ev.at[0]), double(ev.at[1]), double(ev.at[2]),
+                                double(ev.travelled), boltLive);
                     // ...and on a BODY, whatever `sub_4240E0` then decides
                     shotSound(n, ev.impactEffect, ev.at, player ? player->pos() : nullptr,
-                              "impact on a body");
+                              hisBolt ? "impact on a body" : "impact of a gunman's bolt on a body");
                     // the NOISE there, the VICTIM excluded - 0x44DD0E / 0x44DD40
                     // hand `sub_4246E0` the index `sub_4240E0` was given
                     shootNoise(n, ev.victim, ev.at, "a bolt on a body");
@@ -6847,7 +6863,7 @@ int main(int argc, char** argv) {
                                         double(rs.muzzle[2]),
                                         mag ? (std::to_string(count) + " -> " +
                                                std::to_string(left)).c_str() : "none",
-                                        projectiles.live());
+                                        projectiles.liveOf(-1));
                         } else {
                             std::printf("frame %ld: SHOT refused - the pool is full (%d live), "
                                         "nothing spent\n", n, projectiles.live());
@@ -10754,6 +10770,172 @@ int main(int argc, char** argv) {
                                             "outcome %d, %.0f units away\n", n,
                                             s.actor, s.model.c_str(), before,
                                             rec.state, int(st.outcome), ao.dist3d);
+                            }
+                        }
+                        // ---- THE FIRE EPILOGUE: `sub_424DE0`'s switch on the
+                        // outcome the brain just set (readable 05_sys.c 6031) ----
+                        //
+                        //   case 1: if (!(flags & 0x8000) && !(flags & 2)) {
+                        //             +164 -= dt;
+                        //             if (sub_4348B0(+20)) {           // the FIRE TEST
+                        //               if (!+180) Shoot_InitWeapon(him, rec);
+                        //               if (!+180) goto LABEL_314;     // a gate with no row
+                        //               if (+172 <= 0) +172 = row.f0;
+                        //               if (sub_47C2A0(him, target, 1, rec) == 2)
+                        //                 { flags |= 0x80; u8(+190)++; } } }
+                        //   case 0: if (!(flags & 2)) {
+                        //             if (!sub_4348B0(+20)) goto LABEL_315;   // aim pose alone
+                        //             if (+180 && +172 <= 0) +172 = row.f0;   // LABEL_353
+                        //             sub_47C2A0(him, target, 0, rec); }      // LABEL_314
+                        //
+                        // `sub_47C2A0` with a TARGET is the gate's other arm: on
+                        // the tick it returns 2 it calls `Actor_TickProjectiles`
+                        // (him) there and then - in either case, since a pull
+                        // left pending by case 1 carries through case 0's gate.
+                        // NOT PORTED, labelled: that arm's aim ANGLES (the
+                        // target's node minus his `Buste`, actor +20, jittered on
+                        // the fired tick by `r/4 - rand() % (r/2)`), which reach
+                        // only the aim POSE `sub_434C30` - so a gunman does not
+                        // raise his arm; the `+190` count, whose one reader is
+                        // LABEL_359's burst against property 18 (flag 0x2000000);
+                        // and case 1's other arm, the `+164` countdown of a
+                        // character whose fire test is clear.
+                        const bool fullArm = st.outcome == omk::ShootOutcome::Fire;
+                        if (((fullArm && !(rec.flags & 0x8000u)) ||
+                             st.outcome == omk::ShootOutcome::FireIfReady) &&
+                            !(rec.flags & 2u)) {
+                            const int grpT = static_cast<int>(session.typeOfActor(s.actor));
+                            const auto w8 = omk::animGroupWord8(pedAni, grpT);
+                            const bool fireTest = w8 && (*w8 & 1u);
+                            // the object in HIS hand (actor +164) - what
+                            // `Shoot_InitWeapon` asks event 46 about
+                            const int hs = session.heldSlotOf(s.actor);
+                            const int obj = hs >= 0 ? session.objectSlotId(hs) : -1;
+                            const auto& objs = voiceLib.objects();
+                            const bool known = obj >= 0 && static_cast<std::size_t>(obj) < objs.size();
+                            const std::string stem = known ? objs[static_cast<std::size_t>(obj)].stem
+                                                           : std::string();
+                            if (fullArm) rec.clipLen -= fin.dt;
+                            if (fullArm && fireTest && !rec.weapon) {
+                                // `Shoot_InitWeapon`: kind (property 3) and model,
+                                // through the OTHERS' table 0x4C36F8
+                                const int kind = known ? objs[static_cast<std::size_t>(obj)].kind : -1;
+                                const int type = omk::shootWeaponType(
+                                    kind, known ? "MESHES\\OBJETS\\" + stem + ".3DO" : std::string());
+                                rec.weapon = shootWeapons.find(type, false);
+                                if (gunTold.insert(s.actor).second) {
+                                    std::printf("frame %ld: actor %d %s - Shoot_InitWeapon: held slot %d, "
+                                                "object %d '%s' kind %d -> type %d, ", n, s.actor,
+                                                s.model.c_str(), hs, obj, stem.c_str(), kind, type);
+                                    if (rec.weapon)
+                                        std::printf("row rate %.1f speed %.1f damage %d\n",
+                                                    double(rec.weapon->rate), double(rec.weapon->speed),
+                                                    rec.weapon->damage);
+                                    else
+                                        std::printf("NO ROW - he cannot fire\n");
+                                }
+                            }
+                            if (!fireTest && gunTold.insert(s.actor).second)
+                                std::printf("frame %ld: actor %d %s - the fire test is clear "
+                                            "(sub_4348B0: ANIMS\\%s.ANI group %d, +8 %s) - he aims "
+                                            "and never shoots\n", n, s.actor, s.model.c_str(),
+                                            pedAniName.c_str(), grpT,
+                                            w8 ? std::to_string(*w8).c_str() : "absent");
+                            omk::FireGate gate = omk::FireGate::Released;
+                            if (fireTest) {
+                                // both arms reload an empty countdown (case 0's
+                                // LABEL_353, case 1's own test)
+                                if (rec.weapon && rec.weaponTimer <= 0.0f)
+                                    rec.weaponTimer = rec.weapon->rate;
+                                gate = omk::shootFireGate(rec, fullArm, fin.dt);
+                                if (fullArm && gate == omk::FireGate::Fired) rec.flags |= 0x80u;
+                            }
+                            if (gate == omk::FireGate::Fired && rec.weapon && player) {
+                                // ---- `Actor_TickProjectiles(him)`, the record
+                                // path's OTHER arm (readable 17_script.c 1375) ----
+                                omk::RecordShot rs;
+                                // THE MUZZLE: the held object's +12 node, `tir`,
+                                // which `o3de_LinkObjectToParent` hangs under his
+                                // `Maing` (actor +44) - here the hand as it was
+                                // DRAWN last frame, `tir`'s own +128 local turned
+                                // by the hand's world rotation.
+                                for (int k = 0; k < 3; ++k) rs.muzzle[k] = s.drawAt[k];
+                                const char* from = "his position (not drawn)";
+                                const std::size_t nm = s.mo ? s.mo->meshes.size() : 0;
+                                int hand = -1;      // the LAST strstr hit
+                                for (std::size_t i = 0; i < nm; ++i)
+                                    if (std::strstr(s.mo->meshes[i].name, "Maing")) hand = static_cast<int>(i);
+                                if (hand >= 0 && s.meshAt.size() == nm * 3 && s.meshRot.size() == nm * 9) {
+                                    const std::size_t h = static_cast<std::size_t>(hand);
+                                    const GunFacts* gf = stem.empty() ? nullptr : &gunFactsFor(stem);
+                                    for (int k = 0; k < 3; ++k) {
+                                        rs.muzzle[k] = s.meshAt[h * 3 + static_cast<std::size_t>(k)];
+                                        if (gf && gf->ok)
+                                            for (int ax = 0; ax < 3; ++ax)
+                                                rs.muzzle[k] += s.meshRot[h * 9 + static_cast<std::size_t>(ax * 3 + k)] *
+                                                                gf->tirLocal[ax];
+                                    }
+                                    from = gf && gf->ok ? "the tir node" : "the Maing node";
+                                }
+                                // THE AIM is this function's own, not the gate's
+                                // (`shootGunmanAim`, actor/shootfire.h): at the
+                                // player's +244..+252, each axis jittered by his
+                                // root node's radius, the three `rand() % 100`
+                                // drawn x, y, z. That position is `pos()` here, the
+                                // FEET - player.h records the reading as unsettled
+                                // against the pelvis.
+                                const float* pp = player->pos();
+                                float r = 0.0f;
+                                for (const auto& m : playerMeshes)
+                                    if (m.parent < 0) { r = m.radius; break; }
+                                int jit[3];
+                                for (int k = 0; k < 3; ++k) {
+                                    gunRandSeed = gunRandSeed * 214013u + 2531011u;
+                                    jit[k] = static_cast<int>((gunRandSeed >> 16) & 0x7FFFu) % 100;
+                                }
+                                const omk::GunmanAim aim = omk::shootGunmanAim(pp, rs.muzzle, r, jit);
+                                rs.yawDeg = aim.yawDeg;
+                                rs.pitchDeg = aim.pitchDeg;
+                                const double dist = aim.dist;
+                                // the SHOT SPRITE by his gun's root name, as his
+                                int muzzleFx = 0;
+                                if (!stem.empty())
+                                    if (const omk::FxShotSprite* sp =
+                                            shootSfx.shotSprite(gunFactsFor(stem).root)) {
+                                        muzzleFx = sp->muzzleEffect;
+                                        rs.impactEffect = sp->impactEffect;
+                                        rs.sprite = true;
+                                        rs.windUp = sp->windUp;
+                                        rs.grow = sp->grow;
+                                        for (int k = 0; k < 3; ++k) rs.growStep[k] = sp->growStep[k];
+                                    }
+                                // no magazine pointer: an npc's count never gates
+                                // the round (only the player's asks for event 48),
+                                // and the write-back of HIS property 35 is not kept
+                                const omk::RecordShotOut out = projectiles.fireFromRecord(s.actor, *rec.weapon, rs);
+                                if (out.entry >= 0) {
+                                    const long k = ++gunShots[s.actor];
+                                    shotSound(n, muzzleFx, rs.muzzle, player->pos(), "a gunman's fire");
+                                    // `sub_4246E0(him, the muzzle)` as the entry is made
+                                    shootNoise(n, s.actor, rs.muzzle, "a gunman's shot");
+                                    const omk::Projectile& e =
+                                        projectiles.entries()[static_cast<std::size_t>(out.entry)];
+                                    const float spd = e.speed != 0.0f ? e.speed : 1.0f;
+                                    std::printf("frame %ld: GUNMAN SHOT %ld - actor %d %s, "
+                                                "Actor_TickProjectiles: entry %d, speed %.1f, damage %d, "
+                                                "dir %.3f %.3f %.3f (yaw %.1f pitch %.1f), from %s "
+                                                "%.1f %.1f %.1f, at the player %.0f away, jitter %d %d %d "
+                                                "of r %.1f, %d live\n", n, k, s.actor, s.model.c_str(),
+                                                out.entry, double(e.speed), e.kind,
+                                                double(e.vel[0] / spd), double(e.vel[1] / spd),
+                                                double(e.vel[2] / spd), double(rs.yawDeg),
+                                                double(rs.pitchDeg), from, double(rs.muzzle[0]),
+                                                double(rs.muzzle[1]), double(rs.muzzle[2]), dist,
+                                                jit[0], jit[1], jit[2], double(r), projectiles.live());
+                                } else {
+                                    std::printf("frame %ld: GUNMAN SHOT refused - actor %d, the pool "
+                                                "is full (%d live)\n", n, s.actor, projectiles.live());
+                                }
                             }
                         }
                     }

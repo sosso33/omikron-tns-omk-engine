@@ -160,4 +160,26 @@ void shootShotDirection(float yawDeg, float pitchDeg, float dir[3]);
 // reads its -X axis back as the heading, and the bolt is drawn in it.
 void shootShotMatrix(float yawDeg, float pitchDeg, float m[9]);
 
+// `Actor_TickProjectiles`' record path, the OTHER arm - a shooter who is not
+// the player (readable 17_script.c 1375). It does not use the gate's aim
+// angles, which reach only the aim pose: it aims STRAIGHT AT THE PLAYER.
+//
+//     d = player +244..+252 - the muzzle (the `tir` node's +44..+52)
+//     r = the player's root node's +88 (`i32(**(player + 8), 88)`)
+//     x, y, z in turn: d -= (r - (rand() % 100) * r * 0.02) * -0.33333334
+//     pitch = asin(dy / |d|);  yaw = atan2(dz, dx) deg + 90
+//     sub_442160(0, (yaw + 90) deg, pitch)
+//
+// so each axis moves by between +r/3 and -0.327r. `k` is the three `rand() %
+// 100`; the angles come out in the form `shootShotMatrix` takes, the pitch
+// negated because it negates the player's (`v54 = -dword_657A10`) - through
+// it the bolt flies along `d / |d|` exactly. `dist` is `|d|`.
+struct GunmanAim {
+    float  yawDeg = 0.0f, pitchDeg = 0.0f;
+    float  d[3] = {0, 0, 0};
+    double dist = 0.0;
+};
+GunmanAim shootGunmanAim(const float target[3], const float muzzle[3], float radius,
+                         const int k[3]);
+
 }  // namespace omk

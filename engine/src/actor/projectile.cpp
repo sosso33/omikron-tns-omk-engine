@@ -17,6 +17,12 @@ int ProjectilePool::live() const {
     return n;
 }
 
+int ProjectilePool::liveOf(int owner) const {
+    int n = 0;
+    for (const auto& p : pool_) if (p.node && p.owner == owner) ++n;
+    return n;
+}
+
 int ProjectilePool::tick(int actor, std::array<WeaponSlot, kWeaponSlots>& slots,
                          const FireIn& in, float dt) {
     int fired = 0;

@@ -60,6 +60,18 @@ std::vector<AnimClip> animClips(std::span<const std::byte> d) {
     return out;
 }
 
+std::optional<std::uint32_t> animGroupWord8(std::span<const std::byte> d, int index) {
+    if (d.size() < 8 || std::memcmp(d.data(), "3.0V", 4) != 0) return std::nullopt;
+    const auto n = i32(d, 4);
+    // `sub_434530`: the FIRST group whose +0 matches, 24 bytes a record
+    for (int g = 0; g < n; ++g) {
+        const auto o = 8u + 24u * static_cast<std::size_t>(g);
+        if (o + 12 > d.size()) break;
+        if (i32(d, o) == index) return static_cast<std::uint32_t>(i32(d, o + 8));
+    }
+    return std::nullopt;
+}
+
 std::optional<AnimDescriptor> animDescriptor(std::span<const std::byte> d,
                                              std::size_t off) {
     if (off + 12 > d.size()) return std::nullopt;

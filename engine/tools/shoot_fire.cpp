@@ -499,6 +499,27 @@ int main(int argc, char** argv) {
                     int(st14), h4.action);
     }
 
+    // A GUNMAN'S AIM (`Actor_TickProjectiles`' other arm): the bolt must fly
+    // along the jittered offset exactly, whatever the offset's direction. A:
+    // straight along +x with no jitter. B: up and away with r 30 and k
+    // (0, 50, 99), which move x by +10, y by 0 and z by -9.8.
+    {
+        const float mz[3] = {0.0f, 0.0f, 0.0f};
+        const float ta[3] = {100.0f, 0.0f, 0.0f}, tb[3] = {0.0f, -50.0f, -100.0f};
+        const int k0[3] = {0, 0, 0}, kb[3] = {0, 50, 99};
+        const omk::GunmanAim a = omk::shootGunmanAim(ta, mz, 0.0f, k0);
+        const omk::GunmanAim b = omk::shootGunmanAim(tb, mz, 30.0f, kb);
+        float da[3], db[3];
+        omk::shootShotDirection(a.yawDeg, a.pitchDeg, da);
+        omk::shootShotDirection(b.yawDeg, b.pitchDeg, db);
+        std::printf("gunman aim: A yaw %.2f pitch %.2f dir %.3f %.3f %.3f; B d %.1f %.1f %.1f "
+                    "dist %.2f yaw %.2f pitch %.2f dir %.3f %.3f %.3f vs d/|d| %.3f %.3f %.3f\n",
+                    double(a.yawDeg), double(a.pitchDeg), double(da[0]), double(da[1]),
+                    double(da[2]), double(b.d[0]), double(b.d[1]), double(b.d[2]), b.dist,
+                    double(b.yawDeg), double(b.pitchDeg), double(db[0]), double(db[1]),
+                    double(db[2]), b.d[0] / b.dist, b.d[1] / b.dist, b.d[2] / b.dist);
+    }
+
     // THE TYPE: the object's kind, and the one hand-written exception.
     // The name is the node's +48, `Scene_Load3DO`'s copy of the path
     // `Object_Load` built: "MESHES\OBJETS\" + stem + ".3DO".

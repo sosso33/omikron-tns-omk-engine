@@ -26004,7 +26004,8 @@ def c_shoot_fire():
             "no row:", "aim:", "record shot:", "magazine:", "full:",
             "wall:", "range:", "wind-up 12:", "grow:",
             "hit:", "bands:", "gates:", "shield:", "kill:", "raise:", "slew:",
-            "mover rows:", "mover held:", "mover crouch:", "look:", "noise:", "type:")
+            "mover rows:", "mover held:", "mover crouch:", "look:", "noise:", "gunman aim:",
+            "type:")
     got = []
     for k in keys:
         m = re.search(r"^" + re.escape(k) + r" (.*)$", out, re.M)
@@ -26097,6 +26098,13 @@ def c_shoot_fire():
             "same floor alerted 1 flags 0x60 action 2; again 0; other floor alerted 0 act 1 "
             "action -1; out of range 0; step 8 alerted 1 act 0; not entered 0; state 14 0; "
             "+148 7 -> action 7",
+            # A GUNMAN'S AIM, `Actor_TickProjectiles`' other arm: straight
+            # along +x is yaw 90 pitch 0; the jittered offset B (+r/3 on x at
+            # k 0, 0 on y at k 50, -0.327r on z at k 99, r 30) comes out of
+            # the shot matrix as d/|d| to the third decimal - the bolt flies
+            # at the jittered point, whatever its direction
+            "A yaw 90.00 pitch -0.00 dir 1.000 0.000 0.000; B d 10.0 -50.0 -109.8 dist 121.06 "
+            "yaw 5.20 pitch 24.39 dir 0.083 -0.413 -0.907 vs d/|d| 0.083 -0.413 -0.907",
             "kind 1 BATPOUV -> -2, kind 1 WAVER -> 1, kind 3 BATPOUV -> 3"]
     if data:
         w = re.search(r"^weapons: (.*)$", out, re.M)
@@ -26725,6 +26733,68 @@ def c_engine_shoot_noise():
     return got, want, (
         "the supermarket's MAP2D grid; the first shot alerting actor 77 on its floor with "
         "action 2; one alert in the run; the next noise finding him alerted already")
+
+
+def c_engine_shoot_gunfire():
+    r"""`engine/`: A GUNMAN FIRES (`todo/shoot-mode.md` 8 item 4, step 1).
+
+    `sub_424DE0`'s epilogue on the brain's outcome: outcome 1 (the full arm)
+    runs `Shoot_InitWeapon` on the object in HIS hand through the others'
+    table 0x4C36F8, reloads an empty `+172` with the row's f0 and pulls the
+    gate `sub_47C2A0` with a target; outcome 0 pulls it released. Both are
+    behind the FIRE TEST `sub_4348B0` - bit 0 of his `.ani` group's `+8`. On
+    the tick the gate returns 2 it calls `Actor_TickProjectiles(him)`, whose
+    other arm aims at the player's `+244..+252` from the `tir` node on his
+    `Maing`, each axis jittered by `(r - (rand() % 100) * r * 0.02) / 3` with
+    r the player's root radius - `shootGunmanAim`, whose exactness is
+    `shoot fire`'s `gunman aim:` line.
+
+    Asserted in the gallery (AREA 59), where both VIR_FN gunmen face the
+    player at once: 237 holds DBWAVER (kind 2, type 2, rate 10, damage 7) and
+    240 HEXAGUN (kind 3, type 3, rate 4, damage 5); each fires on the first
+    tick his brain says 1, then once every RATE frames - the gate's exact
+    `f0 == +172` compare after the countdown's reload; the first shot's
+    direction out of the jitter the CRT's `rand()` gives from seed 1 (41 67
+    34, then 0 69 24); and the bolts stop on the world, since the player is
+    not a hit body yet (step 2). The jitter is the CRT's formula, not the
+    engine's place in its one shared stream; the arm's aim POSE is not ported.
+    """
+    import subprocess, re
+    fr = omkpaths.data_root()
+    eng = os.path.join(ROOT, "engine")
+    bld = subprocess.run(["make", "-s", "play"], cwd=eng, capture_output=True, text=True)
+    exe = os.path.join(eng, "build", "omk-play")
+    if bld.returncode != 0 or not os.path.exists(exe):
+        return ("build failed",), ("built",), "engine/ must build"
+    out = subprocess.run(
+        [exe, fr, os.path.join(ROOT, "tables"),
+         "--save", os.path.join(ROOT, "traces", "save-appart.bin"),
+         "--area", "59", "--stand", "5000,0,-2900,0", "--shoot",
+         "--frames", "48", "--nodelay"],
+        capture_output=True, text=True, errors="replace",
+        env=dict(os.environ, SDL_VIDEODRIVER="dummy")).stdout
+    init = re.findall(r"^frame (\d+): actor (\d+) VIR_FN - Shoot_InitWeapon: held slot \d+, "
+                      r"object (\d+) '(\w+)' kind (\d+) -> type (\d+), row rate ([\d.]+) "
+                      r"speed [\d.]+ damage (\d+)$", out, re.M)
+    shots = re.findall(r"^frame (\d+): GUNMAN SHOT \d+ - actor (\d+) ", out, re.M)
+    frames = {a: tuple(int(f) for f, b in shots if b == a) for a in ("237", "240")}
+    first = re.search(r"^frame 4: GUNMAN SHOT 1 - actor 237 VIR_FN, .*?dir (\S+ \S+ \S+) "
+                      r"\(yaw (\S+) pitch (\S+)\), from (the tir node) .*?jitter (\d+ \d+ \d+) ",
+                      out, re.M)
+    world = len(re.findall(r"^frame \d+: GUNMAN BOLT \(actor \d+\) retired - entry \d+ "
+                           r"hit the world", out, re.M))
+    body = len(re.findall(r"^frame \d+: GUNMAN BOLT \(actor \d+\) retired - entry \d+ HIT ACTOR",
+                          out, re.M))
+    got = (init, frames, first.groups() if first else None, world > 0, body)
+    want = ([("4", "237", "766", "DBWAVER", "2", "2", "10.0", "7"),
+             ("4", "240", "772", "HEXAGUN", "3", "3", "4.0", "5")],
+            {"237": (4, 14, 24, 34, 44), "240": tuple(range(4, 48, 4))},
+            ("0.505 -0.004 -0.863", "30.3", "0.2", "the tir node", "41 67 34"),
+            True, 0)
+    return got, want, (
+        "the gallery's two gunmen resolve their held weapons through the others' table, fire "
+        "on the brain's first outcome 1 and every RATE frames after, the first bolt aimed "
+        "from the tir node with the CRT's first jitter, and the bolts stop on the world")
 
 
 def c_shoot_input():
@@ -32184,6 +32254,7 @@ SLOW = [
     ("engine: shoot hud",  c_engine_shoot_hud,  "todo/shoot-mode 8.3; ui/screendraw.h"),
     ("engine: shoot radar", c_engine_shoot_radar, "todo/shoot-mode 8.3; ui/radar.h"),
     ("engine: shoot noise", c_engine_shoot_noise, "todo/shoot-mode 8.1; actor/shoot.h"),
+    ("engine: shoot gunfire", c_engine_shoot_gunfire, "todo/shoot-mode 8 item 4; actor/shootfire.h"),
     ("engine: anims",      c_engine_anims,      "engine/README"),
     ("engine: CTL",        c_engine_ctl,        "engine/README"),
     ("engine: SCX",        c_engine_scx,        "engine/README"),

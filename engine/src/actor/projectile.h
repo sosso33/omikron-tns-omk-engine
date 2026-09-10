@@ -182,6 +182,10 @@ public:
     // or -1 when the pool is full.
     int freeSlot() const;
     int live() const;
+    // ...and the ones one actor fired (`+44`, -1 the player) - not the
+    // engine's, which never asks; a log that is about one shooter's bolts
+    // counts his, now that the gunmen fire into the same pool
+    int liveOf(int owner) const;
 
     // One actor's tick. Walks his four slots in order and stops at the first
     // ABSENT weapon, exactly as the engine's `if (!weapon) return` does - so

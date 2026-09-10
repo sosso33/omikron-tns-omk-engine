@@ -1417,10 +1417,42 @@ forget to plan it."* The session's own log agrees with the gate: 245 latches
    at once (+50 / +100 / +16), and `Actor_SetProperty`'s tail `sub_423A40`
    is what carries that to the gauge - PORTED 2026-09-10, `script/hooks.h`
    `shootStatSet` (`todo/handoff-shoot-mode.md`). The carried kits are the
-   hurt handler's, below 40 health; that runs once the player can be hit.) The brain reaches outcome 1; wire it through
-   `sub_47C2A0` with its target (the other arm, whose aim spreads by
-   `rand() % (radius / 2)`) and `Actor_TickProjectiles`' npc aim at the
-   player - and then the player's own damage path (§7j).
+   hurt handler's, below 40 health; that runs once the player can be hit.)
+   **STEP 1, THE GUNMEN FIRE - PORTED 2026-09-11.** `sub_424DE0`'s epilogue
+   on the brain's outcome (readable 05_sys.c 6031): outcome 1 runs
+   `Shoot_InitWeapon` on the object in HIS hand through the others' table
+   0x4C36F8, reloads an empty `+172` with f0 and pulls the gate with a
+   target; outcome 0 pulls it released (a pending pull still fires). Both sit
+   behind the **FIRE TEST** `sub_4348B0` - bit 0 of his `.ani` group record's
+   `+8`, a word the port's reader had never decoded (`formats/anim.h`
+   `animGroupWord8`): over the 11 libraries it is set on ONE group, index 3,
+   in braqueur.ani, dock.ani and ztech.ani. **CORRECTION to the plan above**:
+   the gate's other arm with its `r/4 - rand() % (r/2)` spread aims only the
+   arm POSE (`sub_434C30`, not ported for gunmen); the BOLT is aimed by
+   `Actor_TickProjectiles`' own other arm (17_script.c 1375) - straight at the
+   player's `+244..+252` from the `tir` node on his `Maing`, each axis moved
+   by `(r - (rand() % 100) * r * 0.02) / 3`, r the player's root radius
+   (`actor/shootfire.h` `shootGunmanAim`). In the gallery both VIR_FN gunmen
+   fire from frame 4, every RATE frames (DBWAVER 10, HEXAGUN 4), and every
+   bolt stops on the world - the player is not a hit body yet (step 2).
+   `verify.py: engine: shoot gunfire`, `shoot fire` (`gunman aim:`).
+   Labelled: the jitter is the CRT's formula from seed 1, not the engine's
+   place in its one shared `rand()` stream; the player's `+244` is `pos()`,
+   the feet (player.h's open note); HIS property 35 is not written back; the
+   `+190` shot count and its LABEL_359 reader are not ported.
+   **WHY THE SUPERMARKET'S ROBBERS DO NOT FIRE YET** (measured, a brain trace
+   of actor 77): he stands 169 units from the player with the player dead
+   BEHIND him (dot/dist -0.971), so the cone refuses and he never engages. The
+   hub asks for a TURN - `shootTurnToward` returns 180, the brain picks clip
+   type 32 with `+184 = -180 / frames` - and the viewer never applies a
+   brain's picked clip: `sub_421A20` starts it (flag 8, `+16`), and
+   `sub_421770` turns `+420` by `+184 * dt` each tick until it has played
+   out, then clears flag 8. braqueur.ani's group 3 HAS the turn clips (type 32
+   25 frames, 30/31 15 - every node there is named `NULL`, so a clip's name
+   says nothing). And note the collision this exposes: the viewer reads flag 8
+   as DEAD, and the engine's flag 8 is "a picked clip is playing" - death is
+   one such clip. **That is step 1b, next.** Then step 2, the player's own
+   damage path (§7j).
 5. ~~**THE MOUSE LOOK.**~~ **PORTED 2026-09-10, CONFIRMED IN PLAY** (*"Good"*). `sub_47D370` read whole:
    YAW `+420 -= row23 * 0.01 * dx`, no frame delta; PITCH `+= row24 * 0.01 *
    dy * delta`, dy negated unless row 25 ("Souris inversée") is set, clamped
