@@ -392,7 +392,20 @@ jerk to full speed on the first frame, a slide after release, moving in the
 wrong direction for the way you face, or walking through a crate. There is no
 head bob and no footstep sound yet - both are known.
 
-**Now expected (ported 2026-09-10, part 1, after *"no UI"*): THE SHOOT HUD.**
+**Now expected (ported 2026-09-10): THE RADAR**, the top-right corner of the
+shoot HUD. In the supermarket - one of only nine places that have one; the
+Shooting gallery has none - a grey WIREFRAME of the shop seen from above,
+you a small BLUE square just below the middle of the box (the view sits 7 m
+behind you, so more of it is ahead), and each robber in the fight a RED
+square, brighter the higher he stands above you. Turning should turn the
+map with you, ahead always UP. Lines above your height draw lighter and
+over the ones below. A robber you kill leaves a faint dark-red mark where
+he fell. Wrong looks like: the map mirrored (a shelf on your left drawn on
+the right), ahead drawn down or sideways, or robbers' squares where nobody
+stands. There is no box behind it - the lines go straight over the view.
+
+**CONFIRMED IN PLAY 2026-09-10 (the supermarket, *"ok, good"*): THE SHOOT HUD,
+parts 1-3**, ported the same day after *"no UI"*.
 In shoot mode the screen should carry: at the top left a box with your ring
 count under it (the *anneaux* - 244 in your frames of the original, 2 with the
 test save), at the bottom left a box with the weapon's name over it (`Waver`)
@@ -406,9 +419,10 @@ and small green sparks drifting up and out from its top. NOT there yet,
 known: the radar at the top right (the supermarket is one of the nine places that have
 one). Say whether the boxes' grey matches the original.
 
-**Now expected (fixed 2026-09-10, after *"the return to adventure mode (after
-the cutscene) is buggy: invisble character, impossible to move, weird
-camera"*): THE RETURN.** After the supermarket's ending hands you back you
+**CONFIRMED IN PLAY 2026-09-10 (*"ok, good"*; the log walks him out through
+areas 60 and 245): THE RETURN**, fixed the same day after *"the return to
+adventure mode (after the cutscene) is buggy: invisble character, impossible
+to move, weird camera"*. After the supermarket's ending hands you back you
 should see Kay'l again from the ordinary follow camera, behind and above him,
 and walk with the adventure keys. The last hostage talking to you is part of
 the script; control comes back when it ends.
@@ -416,7 +430,8 @@ the script; control comes back when it ends.
 **CONFIRMED IN PLAY 2026-09-10 (*"The event is triggered, and the ending
 cutscene is triggered"*): THE PHASE ENDS**, fixed the same day after *"i
 can't finish the supermarket shoot sequence"*. The RETURN to adventure after
-the ending is reported broken - see `todo/shoot-mode.md` 8.5e. Each robber's death is now reported to the
+the ending was reported broken, and is fixed and confirmed - see the entry
+above and `todo/shoot-mode.md` 8.5e. Each robber's death is now reported to the
 scene when his death animation finishes (the terminal says `death clip over:
 message 3 ... handler scene +0x433f`). The supermarket's ending is keyed to ONE
 of them - actor 84, the script's *Braqueur 15* - whose death plays a victory

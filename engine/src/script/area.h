@@ -414,6 +414,9 @@ public:
         bool shown = false;
         int  areaCtx = -1, sceneCtx = -1;       // block +0: the startup contexts
         std::string set, scx;                   // AREA +88 / +97
+        // AREA +106, the MAP2D stem: `Area_TickLoad` appends ".MPT" and hands
+        // it to `Map2D_Load`, whose tail loads the RADAR from the same name
+        std::string map;
         // THE SKY, AREA +133 - `Area_TickLoad` case 4 hands it to
         // `Area_LoadMiscModel`, which loads `MESHES\MISC\<name>.3DO`, takes
         // its node 0, scales it 12.5x and lifts it 2250 units. 17 of the 259
@@ -1104,6 +1107,8 @@ public:
     // header picks the set, and this only resolves them.
     int currentArea() const { return slots_[curSlot_].area; }
     const std::string& setName() const { return slots_[curSlot_].set; }
+    // AREA +106 of the area in force - the MAP2D stem, and the radar's
+    const std::string& mapName() const { return slots_[curSlot_].map; }
     const std::string& scxName() const { return slots_[curSlot_].scx; }
     const WorldCameras& cameras() const { return slots_[curSlot_].cams; }
     // `Camera_FindWorld`: slot 0's area then scene table, slot 1's, GLOBAL.

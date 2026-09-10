@@ -26538,6 +26538,114 @@ def c_engine_shoot_hud():
         "quads at the centre")
 
 
+def c_shoot_radar_files():
+    r"""The shoot HUD's RADAR files, and which areas can load one
+    (`todo/shoot-mode.md` 8.3, `engine/src/ui/radar.h`).
+
+    `Area_TickLoad` copies an AREA's `+106` into a buffer and appends the five
+    bytes at 0x4C0D34 (".MPT"), and `Map2D_Load`'s tail 0x42EE70 rewrites the
+    last three characters to "WRE" and loads `RADAR\<name>` only when the
+    result is one of the nine literals at 0x4C4884 - an exact, case-sensitive
+    compare, and every shipped `+106` is upper case.
+
+    The `.WRE` layout is read off 0x42F000's walk: `u32 vertices, u32 edges,
+    float3[vertices], u16 pair[edges]`. It must land exactly on the file size
+    with every index naming a vertex, and it does for 11 of the 15 shipped
+    files - ALL nine a name can reach. The four that fall 4 bytes short are
+    among the six no name reaches, so the layout's failures are exactly where
+    nothing ever reads it. Of the 16 areas that name a map, 9 get a radar; the
+    supermarket's (AREA 230, `SMARKET1`) is 1111 vertices and 1789 edges.
+    """
+    import dialog_triggers as T2
+    lits = ("SOUKT.WRE", "SMARKET1.WRE", "SOUKDOCK.WRE", "HAMES.WRE", "ARCHIV03.WRE",
+            "ARCHIV05.WRE", "TETRADOU.WRE", "TETRA2.WRE", "TETRA3.WRE")
+    root = omkpaths.data_root()
+    rd = [d for d in os.listdir(root) if d.lower() == "radar"]
+    if not rd:
+        return ("no RADAR directory",), ("RADAR",), "the shipped RADAR directory"
+    files = {}
+    for fn in os.listdir(os.path.join(root, rd[0])):
+        b = open(os.path.join(root, rd[0], fn), "rb").read()
+        nv, ne = struct.unpack_from("<II", b, 0)
+        ok = 8 + 12 * nv + 4 * ne == len(b)
+        if ok:
+            ok = all(i < nv for i in struct.unpack_from("<%dH" % (2 * ne), b, 8 + 12 * nv))
+        files[fn.upper()] = (ok, nv, ne)
+    ar = T2.archive(omkpaths.data("IAM", "AREA"))
+    named, reach = [], set()
+    for k, c in sorted(ar.items()):
+        if len(c) < 115 or not c[106]:
+            continue
+        named.append(k)
+        wre = c[106:115].split(b"\0")[0].decode("latin-1") + ".WRE"
+        if wre in lits:
+            reach.add(wre)
+    exact = {f for f, (ok, _, _) in files.items() if ok}
+    short = sorted(f for f, (ok, _, _) in files.items() if not ok)
+    never = sorted(f for f in files if f not in reach)
+    sm = files.get("SMARKET1.WRE", (False, 0, 0))[1:]
+    return ((len(named), len(reach), len(files), len(exact), reach <= exact,
+             short, never, sm),
+            (16, 9, 15, 11, True,
+             ["ASTAROTH.WRE", "BAR56.WRE", "CSLEV-3.WRE", "GROTTE.WRE"],
+             ["ASTAROTH.WRE", "BAR56.WRE", "CSLEV-3.WRE", "GALLERY.WRE",
+              "GROTTE.WRE", "TETRA4.WRE"],
+             (1111, 1789)),
+            "areas naming a map at +106; of them, radars a name reaches; .WRE files "
+            "shipped; landing exactly; every reachable one exact; the short ones; "
+            "the ones no name reaches; the supermarket's counts")
+
+
+def c_engine_shoot_radar():
+    r"""`engine/`: the shoot HUD's RADAR drawn (`todo/shoot-mode.md` 8.3,
+    `engine/src/ui/radar.h`).
+
+    The supermarket reached the game's own way (`--area 230 --scene-chunk
+    56`: the cutscene, then SHOOT MODE ENTER at frame 394). The AREA's +106
+    `SMARKET1` resolves to SMARKET1.WRE at height 492.13 (12.5 m), and the
+    first frame draws it: every edge in front of the eye (the camera looks
+    straight down from 7 m behind him), 333 lines surviving `sub_42EC80`'s
+    clip into the box 0x42E3A0 moves the item to - (456, 8) 174x131, scaled
+    to 570,10-787,173 on the 800x600 frame - one gunman already in ACTOR_STATE
+    3, and the player's BLUE square (0x0000FF, 565 0x001F) centred at 678,146:
+    the box's centre column, below its middle, which is the 7 m.
+
+    And the Shooting gallery (AREA 59) names `GALLERY`, not one of the nine,
+    so nothing loads and the item stays hidden.
+    """
+    import subprocess, re
+    fr = omkpaths.data_root()
+    eng = os.path.join(ROOT, "engine")
+    bld = subprocess.run(["make", "-s", "play"], cwd=eng, capture_output=True, text=True)
+    exe = os.path.join(eng, "build", "omk-play")
+    if bld.returncode != 0 or not os.path.exists(exe):
+        return ("build failed",), ("built",), "engine/ must build"
+    env = dict(os.environ, SDL_VIDEODRIVER="dummy")
+    base = [exe, fr, os.path.join(ROOT, "tables"),
+            "--save", os.path.join(ROOT, "traces", "save-appart.bin")]
+    sm = subprocess.run(base + ["--area", "230", "--scene-chunk", "56",
+                                "--frames", "400", "--nodelay"],
+                        capture_output=True, text=True, errors="replace", env=env).stdout
+    ga = subprocess.run(base + ["--area", "59", "--stand", "5000,0,-2900,0", "--shoot",
+                                "--frames", "5", "--nodelay"],
+                        capture_output=True, text=True, errors="replace", env=env).stdout
+    m1 = re.search(r"RADAR - AREA \+106 '(\w+)' -> (\S+), height ([\d.]+), (\d+) vertices, "
+                   r"(\d+) edges", sm)
+    m2 = re.search(r"^frame (\d+): RADAR drawn - (\d+) of (\d+) edges in front, (\d+) lines "
+                   r"in the box (\S+), (\d+) gunmen, player square (\d) at (\S+) pixel (\S+)$",
+                   sm, re.M)
+    m3 = re.search(r"RADAR - AREA \+106 '(\w+)' -> none", ga)
+    got = (m1.groups() if m1 else None, m2.groups() if m2 else None,
+           m3.group(1) if m3 else None)
+    want = (("SMARKET1", "SMARKET1.WRE", "492.13", "1111", "1789"),
+            ("394", "1789", "1789", "333", "570,10-787,173", "1", "1", "678,146", "0x001f"),
+            "GALLERY")
+    return got, want, (
+        "the supermarket's radar loaded from its +106 and drawn on its first shoot "
+        "frame - the lines in the box, one gunman, the player's blue square - and "
+        "none in the gallery")
+
+
 def c_shoot_input():
     r"""`engine/`: what the MOUSE does, per control scheme.
 
@@ -29850,7 +29958,7 @@ def c_licence_headers():
                    if TAG in open(p, encoding="utf-8",
                                   errors="replace").read(600)]
     return (authored, sorted(missing), len(vendored), mislabelled), \
-           (422, [], 1, []), \
+           (424, [], 1, []), \
            "authored source files under tools/, engine/src, engine/tools, " \
            "engine/backends and scripts/; those MISSING the SPDX tag; " \
            "vendored files in engine/third_party; and vendored files wrongly " \
@@ -31871,6 +31979,7 @@ CHECKS = [
     ("extension case",     c_extension_case,    "CLAUDE.md 1"),
     ("map2d",              c_map2d,             "FILE_FORMATS 5b5"),
     ("shoot arenas",       c_shoot_arenas,      "todo/shoot-mode"),
+    ("shoot radar files",  c_shoot_radar_files, "todo/shoot-mode 8.3; ui/radar.h"),
     ("map2d grid",         c_map2d_grid,        "todo/shoot-mode; formats/map2d.h"),
     ("map2d sight",        c_map2d_sight,       "todo/shoot-mode 5c; formats/map2d.h"),
     ("bone names",         c_bone_names,        "todo/omk-play 96; ASSETS"),
@@ -31992,6 +32101,7 @@ SLOW = [
     ("engine: shoot entrance", c_engine_shoot_entrance, "todo/shoot-mode 8.5c; script/area.h"),
     ("engine: shoot leave", c_engine_shoot_leave, "todo/shoot-mode 8.5e; actor/player.h"),
     ("engine: shoot hud",  c_engine_shoot_hud,  "todo/shoot-mode 8.3; ui/screendraw.h"),
+    ("engine: shoot radar", c_engine_shoot_radar, "todo/shoot-mode 8.3; ui/radar.h"),
     ("engine: anims",      c_engine_anims,      "engine/README"),
     ("engine: CTL",        c_engine_ctl,        "engine/README"),
     ("engine: SCX",        c_engine_scx,        "engine/README"),

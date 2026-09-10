@@ -185,6 +185,8 @@ void Session::fillSlotTables(ResidentSlot& s) {
     // is the area's own music track, which event 9 plays on entering.
     s.set = headerName(s.areaChunk, 88, 9);
     s.scx = headerName(s.areaChunk, 97, 9);
+    // `+106`, the MAP2D stem: 16 of the 259 areas name one
+    s.map = headerName(s.areaChunk, 106, 9);
     // ...and `+133`, the sky model `Area_LoadMiscModel` loads out of
     // `MESHES\MISC\`. Empty in 242 of the 259 areas.
     s.sky = headerName(s.areaChunk, 133, 9);

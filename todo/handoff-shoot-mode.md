@@ -75,8 +75,9 @@ directly, scanning every chunk's zone slots **and** its startup script at `+4`.
 | **8.2 the SHOT'S SOUNDS**: section A's muzzle and impact effects, resolved in `shoot2.scx` | **done 2026-09-10** — WAVER2.WAV per shot, WIMP1.WAV per impact; the sprites not drawn; heard in the supermarket session (113 shots), no verdict yet |
 | **8.5c ENEMY ENTRANCES ARE GAMEPLAY**: the adventure gate counts only the player's program in shoot mode | **fixed 2026-09-10** — found by the gate's own log line in play; `engine: shoot entrance`; **CONFIRMED IN PLAY** |
 | **8.5d THE PHASE ENDS**: message 3 at a gunman's death, SCENE 56's score, zone 3931 | **fixed 2026-09-10** — `session probe` asserts the handler, the two variables and the zone; **CONFIRMED IN PLAY** |
-| **8.5e THE RETURN**: `Shoot_Leave`'s default group, and the follow camera's offsets | **fixed 2026-09-10** — `--shoot-end N` harness; `engine: shoot leave`; not yet played |
-| **8.3 THE HUD, parts 1-3**: screen 34 over the frame - ring count, weapon name, ammo, fills, crosshair, the turning ring and weapon, the health gauge (`ui/hudbar.h`) | **done 2026-09-10** — `engine: shoot hud`; the minimap not yet; not yet played |
+| **8.5e THE RETURN**: `Shoot_Leave`'s default group, and the follow camera's offsets | **fixed 2026-09-10** — `--shoot-end N` harness; `engine: shoot leave`; **CONFIRMED IN PLAY** |
+| **8.3 THE HUD, parts 1-3**: screen 34 over the frame - ring count, weapon name, ammo, fills, crosshair, the turning ring and weapon, the health gauge (`ui/hudbar.h`) | **done 2026-09-10** — `engine: shoot hud`; **CONFIRMED IN PLAY** |
+| **8.3 THE HUD, part 4 - THE RADAR**: the minimap, a wireframe of the arena with the player blue and the gunmen red (`ui/radar.h`) | **done 2026-09-10** — `shoot radar files`, `engine: shoot radar`; not yet played |
 
 **17 checks** cover it (`engine: shoot hit` added with the hit): `shoot arenas`, `map2d grid`, `map2d sight`,
 `bone names`, `shoot range`, `shoot generic`, `projectile pool`,
@@ -125,6 +126,13 @@ damage rules (gunmen cannot hurt each other; the baton's damage 6 reaches only
 and the reactions - on per-mesh world transforms the viewer captures at the
 draw, which is the engine's own order since the flight runs before the actors
 tick.
+
+**THE GUNMEN'S AI - the reader, 2026-09-10: *"don't forget the ennemies's AI
+at some point (not necessarily now)"*.** The brain's sixteen states tick on
+the real gunmen and they acquire, turn and engage, but they do not WALK -
+no route or nav edge is handed to them, because the viewer has no
+path-finder on the `MAP2D` grid - and they do not FIRE (below). Both are
+the AI's missing half and both are owed.
 
 **And the gunmen's own shots** are still not wired: the brain reaches
 outcome 1 and `sub_47C2A0` would fire them directly, but the port's brain

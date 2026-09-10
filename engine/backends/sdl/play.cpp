@@ -79,6 +79,7 @@
 #include "platform/frontend.h"
 #include "ui/hudbar.h"
 #include "ui/iamtext.h"
+#include "ui/radar.h"
 #include "ui/screendraw.h"
 #include "ui/text.h"
 #include "ui/widgets.h"
@@ -3803,6 +3804,7 @@ int main(int argc, char** argv) {
     // `dword_90E11C`, the ammo counter `Shoot_InitWeapon` and the shot write.
     std::unique_ptr<omk::UiWalk> hudWalk;
     omk::HudBar hudBar;                  // `Hud_DrawBar` mode 0, the health gauge
+    omk::Radar radar;                    // 0x42F000, screen 34's minimap
     std::map<std::uint32_t, std::string> hudRows;
     int  hudAmmo = -1;
     std::string hudTold;
@@ -7834,6 +7836,25 @@ int main(int argc, char** argv) {
                                 "-> record +92 = %d\n", n, int(hp), playerShootRec.health);
                     hudBar.refresh(0, 22, fb.w);
                     hudBar.refresh(1, 22, fb.w);
+                }
+                // THE RADAR (`ui/radar.h`): `Map2D_Load`'s tail ran when the
+                // area loaded - its +106 with ".MPT", rewritten to ".WRE" and
+                // matched against nine names - and screen 34's open callback
+                // 0x42E3A0 enables it. Loaded here, at the one place anything
+                // reads it; the engine's clears the flag on every area load.
+                {
+                    const std::string& mp = session.mapName();
+                    radar.load(fs, mp.empty() ? std::string() : mp + ".MPT");
+                    radar.open();
+                    if (radar.loaded())
+                        std::printf("frame %ld: RADAR - AREA +106 '%s' -> %s, height %.2f, "
+                                    "%d vertices, %d edges\n", n, mp.c_str(),
+                                    radar.file().c_str(), double(radar.height()),
+                                    radar.wire().vertices(), radar.wire().edges());
+                    else
+                        std::printf("frame %ld: RADAR - AREA +106 '%s' -> none: not one of "
+                                    "0x42EE70's nine names, so the item stays hidden\n",
+                                    n, mp.c_str());
                 }
                 shotLatch = omk::ShotLatch{};
                 shootAim = omk::ShootAim{};
@@ -13357,6 +13378,51 @@ int main(int argc, char** argv) {
             // value the player's record +92
             if (!hudBar.loaded()) hudBar.load(fs);
             const omk::HudBarFrame bar = hudBar.draw(fb, playerShootRec.health, 200, 0, 0);
+            // THE RADAR: item 0x4C4388's own callback 0x42F000 (`ui/radar.h`),
+            // in the box 0x42E3A0 moved it to, through the shoot camera's fov
+            // (preset row 4's 75). The gunmen go in with the position their
+            // brain takes as `self`; ACTOR_STATE 3 while the brain has health
+            // (`Shoot_ActorEnter` wrote it), 0 once it has none (the brain's
+            // `health <= 0` arm), and anything without a brain is neither.
+            if (radar.loaded() && player) {
+                omk::RadarView rv;
+                rv.left = fb.w * omk::Radar::kBoxX / 640;
+                rv.top = fb.h * omk::Radar::kBoxY / 480;
+                rv.right = rv.left + fb.w * omk::Radar::kBoxW / 640;
+                rv.bottom = rv.top + fb.h * omk::Radar::kBoxH / 480;
+                rv.screenW = fb.w;
+                rv.screenH = fb.h;
+                rv.fovDeg = 75.0f;
+                for (int k = 0; k < 3; ++k) rv.player[k] = player->pos()[k];
+                rv.facingDeg = player->facing();
+                std::vector<omk::RadarActor> ra;
+                for (const auto& sp : staged) {
+                    if (!sp) continue;
+                    omk::RadarActor a;
+                    a.id = sp->actor;
+                    for (int k = 0; k < 3; ++k) a.pos[k] = sp->drawAt[k];
+                    const auto br = shootBrains.find(sp->actor);
+                    a.state = br == shootBrains.end() ? 1 : (br->second.health > 0 ? 3 : 0);
+                    ra.push_back(a);
+                }
+                const omk::RadarFrame rf = radar.draw(fb, rv, ra);
+                static int radarBlipsTold = -1;
+                if (rf.blips != radarBlipsTold) {
+                    radarBlipsTold = rf.blips;
+                    const bool inFb = rf.playerX >= 0 && rf.playerY >= 0 &&
+                                      rf.playerX < fb.w && rf.playerY < fb.h;
+                    std::printf("frame %ld: RADAR drawn - %d of %d edges in front, %d lines "
+                                "in the box %d,%d-%d,%d, %d gunmen, player square %d at "
+                                "%d,%d pixel 0x%04x\n", n,
+                                rf.edgesInFront, radar.wire().edges(), rf.lines, rv.left,
+                                rv.top, rv.right, rv.bottom, rf.blips, int(rf.player),
+                                rf.playerX, rf.playerY,
+                                inFb ? unsigned(fb.px[static_cast<std::size_t>(rf.playerY) *
+                                                          static_cast<std::size_t>(fb.w) +
+                                                      static_cast<std::size_t>(rf.playerX)])
+                                     : 0u);
+                }
+            }
             const auto pixel = [&](int x, int y) {
                 return unsigned(fb.px[static_cast<std::size_t>(y) * static_cast<std::size_t>(fb.w) +
                                       static_cast<std::size_t>(x)]);

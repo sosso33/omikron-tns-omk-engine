@@ -1274,6 +1274,7 @@ forget to plan it."* The session's own log agrees with the gate: 245 latches
      scale (0x42EE70).
    The vertical bar at (12, 20) 12x434 that 0x42E670 resizes by health is
    screen 33's - the MECAGARDE's HUD - not this one.
+   **Parts 1-3 CONFIRMED IN PLAY 2026-09-10** (the supermarket, *"ok, good"*).
    **Ported (part 1)**: the panel composed over the frame from a walk of its
    own (it takes no input), the three texts as row text by item address, the
    items' fills, and the crosshair - `verify.py: engine: shoot hud`.
@@ -1308,47 +1309,49 @@ forget to plan it."* The session's own log agrees with the gate: 245 latches
    and mode 2's `sub_447000` are not ported - shoot mode asks for neither.
    And note `sub_446E20`'s `top == 458` test is a LITERAL: at any display
    but 640x480 an empty gauge still sparks, in the engine as here.
-   **Not yet: the MINIMAP (part 4) - READ, not ported.** It is as large as
-   parts 1-3 together, so it was stopped at the committed boundary; what is
-   read, so the slice starts here:
-   * **Enabling.** Screen 34's open callback 0x42E3A0 sets `dword_4EB8C8 = 1`,
-     MOVES item 0x4C4388 to (456, 8) 174x131 (the static 450,8 180x180 is
-     overwritten), stores its display-scaled box in `dword_90E0C4` (left),
-     `90E0BC` (top), `90E0C0` (right), `90E0B8` (bottom), and sets the float
-     `0x4C4134` to 275.59 (7 m; its static value is 236.22, 6 m). 0x405F00 /
-     0x405F20 set and clear the flag too, gated on `dword_6A05E0`. 0x42E870
-     shows the rectangle (the `push 0/1` after the gauge) only when both
-     `4EB8C8` and the file `4EB8C4` are set.
-   * **Loading.** 0x42EE70, called at 0x435002 from the SET loader with the
-     set's file name, rewrites its last three characters to `WRE`, compares
-     it against nine literals at 0x4C4884 and on a match sets the HEIGHT
-     `dword_90E0B4` - SOUKT 472.44 (12 m), SMARKET1 / SOUKDOCK / TETRADOU /
-     TETRA2 / TETRA3 492.13 (12.5 m), HAMES 452.76 (11.5 m), ARCHIV03 / 05
-     440.94 (11.2 m) - then `File_LoadWhole("RADAR\\%s")` into `4EB8C4` and
-     zeroes the 100 dwords at 0x4EB678 (the blips' seen flags). 0x42EFE0
-     frees it, from 0x434E21 / 0x434E8A (the set's unload). **Six shipped
-     files can never load**: GALLERY, ASTAROTH, BAR56, CSLEV-3, GROTTE,
-     TETRA4 - no literal names them (and TETRA4 has TETRA3's bounds).
-   * **The `.WRE` layout**, read off the draw: `u32 vertices, u32 edges,
-     float3[vertices], u16 pair[edges]`. It lands exactly on the file size
-     for 11 of the 15, every edge index in range - all nine loadable files
-     among them - and the four that fall 4 bytes short (ASTAROTH, BAR56,
-     CSLEV-3, GROTTE) are all unreachable. The supermarket's is 1111
-     vertices, 1789 edges.
-   * **The draw**, 0x42F000 - a small 3D WIREFRAME renderer, not a bitmap: a
-     camera on the player (`dword_930724`, position +0xF4/F8/FC, yaw +0x1A4
-     plus 180, degrees through 0x4BC2E8 = pi/180, pitch 90) set up by
-     `sub_442160` over the box, `0.7` of the box in `90E0B4`'s units; every
-     edge through `sub_442F00` (project, rejecting behind the eye against
-     1.44e17) and `sub_441E50` (clip), and drawn by `sub_42EC80` in a GREY
-     banded by height against the player's - `0x80 +- 0x60`, linear inside
-     +-118.11 (3 m) with slope 0x5F; then the player's own arrow
-     (`sub_42EBA0`, green 0x00FF00); then a BLIP per actor
-     (`sub_41C330` / `sub_41BDD0` type 2 / `sub_41C270` position), gated on
-     actor +0x194 == 3, banded against +-314.96 (8 m) by `0x80 +- 0x60`,
-     and remembered in 0x4EB678. **Unread**: `sub_442160`, `sub_442F00`,
-     `sub_441E50`, `sub_42EC80`, `sub_42EBA0`, and the blip tail past
-     0x42F835.
+   **Ported (part 4), 2026-09-10: the MINIMAP** - `ui/radar.h`, drawn by
+   item 0x4C4388's own callback; `verify.py: shoot radar files` (the data)
+   and `engine: shoot radar` (the draw). What it is:
+   * **Which areas.** `Area_TickLoad` copies the AREA's `+106` (the MAP2D
+     stem, now read into the resident slot) and appends ".MPT" (0x4C0D34);
+     `Map2D_Load`'s tail 0x42EE70 - which the decompilation calls
+     `Ambience_Load`, wrongly - rewrites the last three characters to "WRE",
+     clears the enable flag `4EB8C8` and the file `4EB8C4`, and on an exact
+     match with one of nine literals sets the height `90E0B4` and loads
+     `RADAR\<name>`. Of the 16 areas that name a map, **9** get a radar
+     (TETRADOU, ARCHIV03, ARCHIV05, SOUKDOCK, TETRA2, TETRA3, HAMES, SMARKET1,
+     SOUKT); the Shooting gallery names GALLERY and gets none. Six shipped
+     files can never load.
+   * **The file**: `u32 vertices, u32 edges, float3[vertices], u16
+     pair[edges]`, exact for 11 of 15 - all nine reachable - and the four
+     short ones unreachable. A vertex's Y is UP.
+   * **Enabling.** Screen 34's open callback 0x42E3A0: the flag, the box moved
+     to (456, 8) 174x131, the distance `0x4C4134` = 275.59 (7 m). 0x42E870
+     hides the item whenever the flag or the file is missing. The item has no
+     fill (bank B `0x44000000`, and the fill arm wants `0x10`), so the lines
+     go straight over the scene.
+   * **The draw, 0x42F000** - a small wireframe renderer: `sub_442160(pi/2,
+     facing + 180, 0)` (the third angle `0x4EB8CC` is never written), the
+     live camera's focal lengths (`sub_4943D0`) scaled to the box and by 0.7,
+     every point offset by `(D cos t - px, py - height, D sin t - pz)` with
+     `t = facing + 90`, `sub_442F00` and `sub_441E50`, and a depth of at least
+     10.0. An edge with both ends in front is clipped by `sub_42EC80` and
+     drawn as an opaque GOURAUD line between its ends' greys (`0x80 +- 0x60`
+     by height against the player's, linear inside 3 m), on layer 4 plus one
+     per end above him. The player is an 8x8 **BLUE** square (0x0000FF, layer
+     6 - not the green arrow this record guessed before the draw was read);
+     each actor attached to the scene (state byte `+1307` = 2, `Actor_Attach`)
+     in ACTOR_STATE 3 (`Shoot_ActorEnter`) is a RED square banded by height
+     inside 8 m and marked seen, and one seen and now in state 0 (the brain's
+     `health <= 0` arm) a dim 0x10 - so a killed gunman leaves a faint mark.
+     Layer 5. The I2D walk draws layers ascending and each in reverse
+     submission order.
+   * **Labelled**: the seen flags by actor id (the engine's by slot); the
+     line's pixel rule Bresenham without its last pixel; the min/max height
+     the draw tracks and never reads left out.
+   * In the supermarket's first shoot frame: all 1789 edges in front, 333
+     lines in the box, one gunman, his square at the box's centre column
+     below its middle - the 7 m behind him.
    The first reading, kept: `Shoot_Enter` opens screen
    34 (33 for the Mecagarde) and calls `Hud_Refresh` (0x00448FA0, the
    player's properties 16/19/17/3/18/2 into `dword_530CB0..C4`).
@@ -1475,7 +1478,8 @@ forget to plan it."* The session's own log agrees with the gate: 245 latches
    zone 3931 - centre printed by `zone_quads <data> 56 scene`. NOT modelled:
    the zone's enter script only matters once he is in it, and the gunmen still
    do not walk or shoot, so 84 must be reached on foot.
-5e. **THE RETURN FROM THE MODE — reported 2026-09-10, FIXED the same day**
+5e. **THE RETURN FROM THE MODE — reported 2026-09-10, FIXED the same day,
+   CONFIRMED IN PLAY** (*"ok, good"*)
    (*"the return to adventure mode (after the cutscene) is buggy: invisble
    character, impossible to move, weird camera"*). The session's own last line:
    ACTOR_STATE 1 on `.CTL` state 125 `S_STAND` - group 200, the shoot stance -
