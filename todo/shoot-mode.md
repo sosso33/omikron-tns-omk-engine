@@ -1373,6 +1373,32 @@ forget to plan it."* The session's own log agrees with the gate: 245 latches
    zone 3931 - centre printed by `zone_quads <data> 56 scene`. NOT modelled:
    the zone's enter script only matters once he is in it, and the gunmen still
    do not walk or shoot, so 84 must be reached on foot.
+5e. **THE RETURN FROM THE MODE — reported 2026-09-10, FIXED the same day**
+   (*"the return to adventure mode (after the cutscene) is buggy: invisble
+   character, impossible to move, weird camera"*). The session's own last line:
+   ACTOR_STATE 1 on `.CTL` state 125 `S_STAND` - group 200, the shoot stance -
+   and `walked 0.0`. `Shoot_Leave` (0x00422730), read to its end: library back
+   to `aventure.scx`; the player's +404 = 1 and `Anim_BindToHierarchy(node,
+   +168)`; every gunman in state 3 to 0; the records freed; `sub_436D20`
+   (SHOW him); **`SetPersoBankGroup(bank, Cef_DefaultGroup(+180))`**;
+   `sub_47CE70` (the mover off); `sub_41C540(player, 1)` when he holds
+   something; `Input_InstallScheme(0)` - and **no camera request**: the view
+   comes back through the script's next `camera.set`. The port missed two:
+   * the default group - `leaveShootMode` set the state and left the machine
+     on group 200, whose move keys queue the shoot mover's moves with no mover
+     to answer. Now it installs `defaultGroup()`, as the constructor does;
+   * the camera - the mode wrote preset row 4's offsets (the eye ON him) into
+     the controller, and the viewer re-applies a world camera's offsets only
+     when a DIFFERENT id is named; the ending names camera 0, already applied
+     before the phase, so the eye stayed inside him - the weird camera and the
+     body that looked gone. Leaving now forgets which one was applied.
+   A labelled difference: the viewer re-applies the current world camera the
+   frame after the leave even when no script names one (the gallery harness);
+   the engine would stay in mode 4 until a `camera.set`. The supermarket's
+   ending names its own cameras, so it plays the same. `--shoot-end N` is the
+   harness's way out (op 81's `shoot.end 1` at frame N); `verify.py: engine:
+   shoot leave` enters, leaves at 60 and walks: camera 0 on 61, `H_STAND` on
+   group 0 at the end, 160 units walked.
 6. **THE SWEEP.** `--slow`, owed.
 
 ## 5b. The two weapon floats — step 5's first reading, 2026-09-09

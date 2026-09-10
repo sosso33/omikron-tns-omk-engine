@@ -26421,6 +26421,61 @@ def c_engine_shoot_entrance():
         "the walk, and the adventure gate never dropping")
 
 
+def c_engine_shoot_leave():
+    r"""`engine/`: the RETURN from shoot mode - he walks again, and the follow
+    camera is his again (`todo/shoot-mode.md` 8.5e).
+
+    A reader, after the supermarket's ending: *"the return to adventure mode
+    (after the cutscene) is buggy: invisble character, impossible to move,
+    weird camera"*. The session's own last line had it: ACTOR_STATE 1 on
+    `.CTL` state 125 `S_STAND` - group 200, the shoot stance - and `walked
+    0.0`. Two things `Shoot_Leave` (0x00422730) does and the port did not:
+
+    * `SetPersoBankGroup(bank, Cef_DefaultGroup(+180))` - the machine back on
+      the bank's default group. Left on 200, his move keys queued the shoot
+      mover's moves with no mover to answer;
+    * no camera request at all - the script's next `camera.set` brings the
+      view back. But the mode had written preset row 4's offsets (the eye ON
+      him) into the controller, and the viewer re-applies a world camera's
+      offsets only when a DIFFERENT one is named: the ending names camera 0,
+      already applied before the phase, so the eye stayed inside him.
+
+    The harness enters in the gallery, `--shoot-end 60` leaves, and Up is held
+    80 frames on: the leave at 60, camera 0's offsets (-1, 26, -119) applied
+    on 61, and he ends on the default group's stand having walked.
+    """
+    import subprocess, re
+    fr = omkpaths.data_root()
+    eng = os.path.join(ROOT, "engine")
+    bld = subprocess.run(["make", "-s", "play"], cwd=eng,
+                         capture_output=True, text=True)
+    exe = os.path.join(eng, "build", "omk-play")
+    if bld.returncode != 0 or not os.path.exists(exe):
+        return ("build failed",), ("built",), "engine/ must build"
+    play = subprocess.run(
+        [exe, fr, os.path.join(ROOT, "tables"),
+         "--save", os.path.join(ROOT, "traces", "save-appart.bin"),
+         "--area", "59", "--stand", "5000,0,-2900,180", "--shoot",
+         "--shoot-end", "60", "--frames", "200", "--nodelay",
+         "--hold", "0*80,k200*60,0*60"],
+        capture_output=True, text=True, errors="replace",
+        env=dict(os.environ, SDL_VIDEODRIVER="dummy"))
+    o = play.stdout
+    leave = re.search(r"^frame (\d+): SHOOT MODE LEAVE", o, re.M)
+    cams = re.findall(r"^frame (\d+): follow camera (\d+) - eye offset (\S+) (\S+) (\S+),", o, re.M)
+    end = re.search(r"\.CTL state (\d+) '(\S+)' clip \S+ frame \S+, walked ([\d.]+)", o)
+    lv = int(leave.group(1)) if leave else None
+    after = [(int(f) - lv, c, (x, y, z)) for f, c, x, y, z in cams
+             if lv is not None and int(f) > lv]
+    got = (lv, after, (end.group(1), end.group(2)) if end else None,
+           float(end.group(3)) > 100.0 if end else None)
+    want = (60, [(1, "0", ("-1", "26", "-119"))], ("0", "H_STAND"), True)
+    return got, want, (
+        "`--shoot-end 60` leaving the mode; camera 0's offsets re-applied the "
+        "frame after; the bank's default group's stand at the end, and more "
+        "than 100 units walked on Up")
+
+
 def c_shoot_input():
     r"""`engine/`: what the MOUSE does, per control scheme.
 
@@ -31873,6 +31928,7 @@ SLOW = [
     ("engine: shoot hit",  c_engine_shoot_hit,  "todo/shoot-mode 7j; actor/shoothit.h"),
     ("engine: shoot move", c_engine_shoot_move, "todo/shoot-mode 8.5b; actor/shootmove.h"),
     ("engine: shoot entrance", c_engine_shoot_entrance, "todo/shoot-mode 8.5c; script/area.h"),
+    ("engine: shoot leave", c_engine_shoot_leave, "todo/shoot-mode 8.5e; actor/player.h"),
     ("engine: anims",      c_engine_anims,      "engine/README"),
     ("engine: CTL",        c_engine_ctl,        "engine/README"),
     ("engine: SCX",        c_engine_scx,        "engine/README"),

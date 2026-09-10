@@ -1502,6 +1502,7 @@ int main(int argc, char** argv) {
 "                   the same for Y. The engine reads mouse motion NOWHERE\n"
 "                   in the binding path, so no shipped value fixes either\n"
 "                   sense and the defaults are a reader's own.\n"
+"  --shoot-end N    shoot.end 1 at frame N - the harness's way OUT of the mode\n"
 "  --shoot-eye N    raise the shoot camera N inches. A DEPARTURE: camera\n"
 "                   preset row 4 puts the eye at (0,0,0) on the subject -\n"
 "                   the actor's origin, which is the pelvis - and nothing\n"
@@ -1792,6 +1793,7 @@ int main(int argc, char** argv) {
     // `playerScreen` the special move sets and nothing else.
     bool openSneak = false;
     bool startShoot = false;   // --shoot: enter shoot mode at the hand-over
+    long shootEndAt = -1;      // --shoot-end N: `shoot.end 1` at frame N
     float standAt[4] = {0, 0, 0, 0};
     bool haveStand = false;      // `--stand x,y,z,yaw`: put the player down there after the hand-over
     // ...and the save's OWN placement, which is `State_Apply`'s and not a
@@ -1983,6 +1985,7 @@ int main(int argc, char** argv) {
             }
         }
         else if (a == "--shoot") startShoot = true;
+        else if (a == "--shoot-end" && i + 1 < argc) shootEndAt = std::atol(argv[++i]);
         else if (a == "--sneak") openSneak = true;
         else if (a == "--stand" && i + 1 < argc)
             haveStand = std::sscanf(argv[++i], "%f,%f,%f,%f", &standAt[0], &standAt[1], &standAt[2], &standAt[3]) >= 3;
@@ -6574,6 +6577,14 @@ int main(int argc, char** argv) {
                     // tested.
                     std::printf("--shoot: shoot.begin -1\n");
                 }
+                // --shoot-end N: the harness's way OUT - `shoot.end 1` at frame
+                // N, what op 81 does for a script, so the RETURN to adventure
+                // mode (`todo/shoot-mode.md` 8.5e) can be driven headless.
+                if (shootEndAt >= 0 && n >= shootEndAt && session.shootMode().active()) {
+                    shootEndAt = -1;
+                    session.shootEnd(1);
+                    std::printf("--shoot-end: shoot.end 1\n");
+                }
                 if (openSneak && !walk && playerScreen < 0) {
                     openSneak = false;
                     inv.openList(0);
@@ -7773,6 +7784,17 @@ int main(int argc, char** argv) {
                 shootCameraLive = false;
                 front.setRelativeMouse(false);
                 omk::shootMoveLeave(shootMover);          // `sub_47CE70`
+                // THE FOLLOW CAMERA IS OWED ITS OFFSETS BACK. The mode wrote
+                // preset row 4's (the eye ON him) into the controller, and the
+                // follow camera re-applies a world camera's offsets only when
+                // the script names a DIFFERENT one - and the supermarket's
+                // ending names camera 0, the one already applied before the
+                // phase, so the eye stayed inside him: a weird camera and a
+                // body that looked gone (a reader, 2026-09-10). `Shoot_Leave`
+                // requests no camera; the script's next `camera.set` is what
+                // brings the view back, and forgetting which one was applied
+                // is what lets it.
+                playerCamId = -2;
             }
             // ---- `Shoot_Enter` 1, 2 and 9, for the SHOT (`actor/shootfire.h`)
             //

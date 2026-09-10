@@ -392,6 +392,13 @@ jerk to full speed on the first frame, a slide after release, moving in the
 wrong direction for the way you face, or walking through a crate. There is no
 head bob and no footstep sound yet - both are known.
 
+**Now expected (fixed 2026-09-10, after *"the return to adventure mode (after
+the cutscene) is buggy: invisble character, impossible to move, weird
+camera"*): THE RETURN.** After the supermarket's ending hands you back you
+should see Kay'l again from the ordinary follow camera, behind and above him,
+and walk with the adventure keys. The last hostage talking to you is part of
+the script; control comes back when it ends.
+
 **CONFIRMED IN PLAY 2026-09-10 (*"The event is triggered, and the ending
 cutscene is triggered"*): THE PHASE ENDS**, fixed the same day after *"i
 can't finish the supermarket shoot sequence"*. The RETURN to adventure after

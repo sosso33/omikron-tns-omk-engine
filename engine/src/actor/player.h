@@ -319,7 +319,18 @@ public:
     // input, because the whole point of the mode is that he still moves.
     // `actor/shootmode.h` is the mode; this is the actor.
     bool enterShootMode() { return rt_.shootEnter(); }
-    bool leaveShootMode() { return rt_.shootLeave(true); }
+    // `Shoot_Leave` (0x00422730) puts the player in state 1 AND ends with
+    // `SetPersoBankGroup(bank, Cef_DefaultGroup(+180))` - the machine back on
+    // the bank's default group, the locomotion one. Without it he stayed on
+    // group 200's shoot stance after a phase ended, whose movement entries
+    // queue the shoot mover's moves with no mover to answer them: he could
+    // not walk (a reader, 2026-09-10, after the supermarket's ending).
+    bool leaveShootMode() {
+        const bool ok = rt_.shootLeave(true);
+        const int g = rt_.channel().defaultGroup();
+        if (g >= 0) rt_.channel().setBankGroup(g);
+        return ok;
+    }
 
     // --- what the zone scan and the frontend take ---------------------
     const float* pos() const { return pos_; }
