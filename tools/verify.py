@@ -26476,6 +26476,56 @@ def c_engine_shoot_leave():
         "than 100 units walked on Up")
 
 
+def c_engine_shoot_hud():
+    r"""`engine/`: the SHOOT HUD, part 1 - screen 34 composed over the frame,
+    its three texts and the crosshair (`todo/shoot-mode.md` 8.3).
+
+    Reported missing in play (*"no UI"*). `Shoot_Enter` opens screen 34,
+    `SHOOT HUMAN`, one panel of six items whose callbacks are native and have
+    no `proc` label - read from the IMAGE with `objdump`:
+
+    * 0x4C4418's draw callback (0x42E9E0) prints `sub_42B1C0(5)` - player
+      property 5, ANNEAUX - into its buffer after `{C}`: the ring count;
+    * 0x4C44A8's text callback (0x42EB60) prints `dword_90E11C`, the ammo
+      counter, or a .bss string nothing writes by address (taken as empty);
+      `Shoot_InitWeapon` sets the counter to the magazine's count, or -1 for a
+      row with none - the Gun Waver's;
+    * 0x4C4460's text callback (0x42EB20) is the held object's name (event
+      46);
+    * 0x4C44F0's draw callback (0x42E870) submits the four quads at 0x4C4680
+      offset by half the display: the crosshair, 2 x 8 pixels at +-4..12.
+
+    In the gallery with the save's player: 2 rings, ammo -1 (so the ammo item
+    draws nothing), the weapon `Waver`; two text items drawn and the four
+    items' fills (bank B `0x10`); the crosshair centred on the 800x600 frame
+    with the pixel 8 below the centre white. Not asserted, not drawn yet: the
+    turning ring and weapon, the health bar, the minimap.
+    """
+    import subprocess, re
+    fr = omkpaths.data_root()
+    eng = os.path.join(ROOT, "engine")
+    bld = subprocess.run(["make", "-s", "play"], cwd=eng,
+                         capture_output=True, text=True)
+    exe = os.path.join(eng, "build", "omk-play")
+    if bld.returncode != 0 or not os.path.exists(exe):
+        return ("build failed",), ("built",), "engine/ must build"
+    play = subprocess.run(
+        [exe, fr, os.path.join(ROOT, "tables"),
+         "--save", os.path.join(ROOT, "traces", "save-appart.bin"),
+         "--area", "59", "--stand", "5000,0,-2900,0", "--shoot",
+         "--frames", "40", "--nodelay"],
+        capture_output=True, text=True, errors="replace",
+        env=dict(os.environ, SDL_VIDEODRIVER="dummy"))
+    m = re.search(r"^frame \d+: shoot HUD \(screen (\d+)\) - (.*)$", play.stdout, re.M)
+    got = (m.group(1), m.group(2)) if m else None
+    want = ("34", "rings 2, ammo -1, weapon 'Waver' - items drawn 2, fills 4; "
+                  "crosshair at 400 300, pixel below centre 0xffff")
+    return got, want, (
+        "screen 34 over the shoot frame: the ring count (property 5), the Waver's "
+        "empty ammo line, its name, the four fills, and the crosshair's white "
+        "quads at the centre")
+
+
 def c_shoot_input():
     r"""`engine/`: what the MOUSE does, per control scheme.
 
@@ -31929,6 +31979,7 @@ SLOW = [
     ("engine: shoot move", c_engine_shoot_move, "todo/shoot-mode 8.5b; actor/shootmove.h"),
     ("engine: shoot entrance", c_engine_shoot_entrance, "todo/shoot-mode 8.5c; script/area.h"),
     ("engine: shoot leave", c_engine_shoot_leave, "todo/shoot-mode 8.5e; actor/player.h"),
+    ("engine: shoot hud",  c_engine_shoot_hud,  "todo/shoot-mode 8.3; ui/screendraw.h"),
     ("engine: anims",      c_engine_anims,      "engine/README"),
     ("engine: CTL",        c_engine_ctl,        "engine/README"),
     ("engine: SCX",        c_engine_scx,        "engine/README"),

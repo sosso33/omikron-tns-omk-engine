@@ -1247,7 +1247,39 @@ forget to plan it."* The session's own log agrees with the gate: 245 latches
    confirm: read those three and how the row `sub_44EEB0` returns reaches
    them. The sounds resolve in the resident library, `shoot2.scx`
    (`Scene_FindSoundIndex`), which the port already loads for the mode.
-3. **THE SHOOT HUD — reported missing in play.** `Shoot_Enter` opens screen
+3. **THE SHOOT HUD — reported missing in play. PART 1 PORTED 2026-09-10.**
+   Screen 34 (`SHOOT HUMAN`) is ONE panel of six items (0x4C4618), and every
+   callback is native with no `proc` label - read from the IMAGE with the
+   system's `objdump` (llvm, i386 COFF), which settles the whole layout:
+   * 0x4C43D0 (48, 0) 100x100 - `meshes\objets\anneau.3do`, loaded by the
+     open (0x42E4A0), turned 10 degrees a frame and drawn in the box: the
+     RING, what a reader's frames show as a turning pentagon;
+   * 0x4C4418 (48, 100) - 0x42E9E0 prints `sub_42B1C0(5)` (player property
+     5, ANNEAUX) into its buffer after `{C}`: the ring count, 244 in the
+     frames;
+   * 0x4C4460 (48, 380) 100x100 - 0x42EA10 reloads the HELD object's model
+     (descriptor +48) on the shot's refresh flag, sets 0x200000, unlinks
+     `tir`, turns it 25 degrees a frame; its text (0x42EB20) is the object's
+     name, event 46;
+   * 0x4C44A8 (48, 360) - 0x42EB60 prints `dword_90E11C`, or a .bss string
+     nothing writes by address when it is -1; `Shoot_InitWeapon` sets it to
+     the magazine's count (property 35) or -1 for a row without one;
+   * 0x4C44F0 full-screen - 0x42E870 submits the four quads at 0x4C4680
+     offset by half the display (the CROSSHAIR, 2 x 8 at +-4..12), then
+     `Hud_DrawBar(health, 200, 0, 0)` - the health bar - and shows the
+     top-right rectangle only when a map is loaded;
+   * 0x4C4388 (450, 8) 180x180 - 0x42F000, the MINIMAP, drawn from
+     `RADAR\<level>.WRE` when one ships: SOUKT, SMARKET1 (the supermarket),
+     SOUKDOCK, HAMES, ARCHIV03/05, TETRADOU, TETRA2/3, each with its own
+     scale (0x42EE70).
+   The vertical bar at (12, 20) 12x434 that 0x42E670 resizes by health is
+   screen 33's - the MECAGARDE's HUD - not this one.
+   **Ported (part 1)**: the panel composed over the frame from a walk of its
+   own (it takes no input), the three texts as row text by item address, the
+   items' fills, and the crosshair - `verify.py: engine: shoot hud`. **Not
+   yet**: the two turning models, `Hud_DrawBar`'s mode 0 (`sub_4480D0`, 464
+   lines, the `jauge*.bmp` bitmaps `Hud_LoadResources` loads), the minimap.
+   The first reading, kept: `Shoot_Enter` opens screen
    34 (33 for the Mecagarde) and calls `Hud_Refresh` (0x00448FA0, the
    player's properties 16/19/17/3/18/2 into `dword_530CB0..C4`).
    `Hud_DrawBar(value, 200, slot, mode)` (0x00447B10) draws the bars - its

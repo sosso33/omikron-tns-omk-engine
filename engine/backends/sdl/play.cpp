@@ -3796,6 +3796,14 @@ int main(int argc, char** argv) {
     // the first-person MOVER's block at `dword_6579B0` (`actor/shootmove.h`),
     // and the run it is on, for the log: frames and distance since it started
     omk::ShootMover shootMover;
+    // THE SHOOT HUD (`todo/shoot-mode.md` 8.3): screen 34's panel composed over
+    // the frame while the mode runs - a walk of its own, so it takes no input -
+    // the runtime texts its items' native callbacks produce, and
+    // `dword_90E11C`, the ammo counter `Shoot_InitWeapon` and the shot write.
+    std::unique_ptr<omk::UiWalk> hudWalk;
+    std::map<std::uint32_t, std::string> hudRows;
+    int  hudAmmo = -1;
+    std::string hudTold;
     long  shootMoveFrames = 0;
     float shootMoveDist = 0.0f;
     float shootMoveFrom[3] = {0.0f, 0.0f, 0.0f};
@@ -6709,6 +6717,7 @@ int main(int argc, char** argv) {
                         if (mag && out.ammoSpent)
                             omk::writeActorProperty(state.rawMutable().subspan(recAt, recLen), 0x23,
                                                     ((row->ammoIndex - 1) << 16) | (left & 0xFFFF));
+                        if (mag && out.ammoSpent) hudAmmo = out.hudAmmo;   // `dword_90E11C`
                         if (out.entry >= 0) {
                             ++shotsFired;
                             // `sub_44EF80(row, node, ..., 0.0)` as the entry is
@@ -7784,6 +7793,7 @@ int main(int argc, char** argv) {
                 shootCameraLive = false;
                 front.setRelativeMouse(false);
                 omk::shootMoveLeave(shootMover);          // `sub_47CE70`
+                hudWalk.reset();                          // the HUD screen closes
                 // THE FOLLOW CAMERA IS OWED ITS OFFSETS BACK. The mode wrote
                 // preset row 4's (the eye ON him) into the controller, and the
                 // follow camera re-applies a world camera's offsets only when
@@ -7873,6 +7883,22 @@ int main(int argc, char** argv) {
                                 sp ? "found" : "none", sp ? double(sp->grow) : 0.0,
                                 sp ? double(sp->windUp) : 0.0, shootSfx.shotSprites.size());
                 }
+                // `dword_90E11C`, as `Shoot_InitWeapon` leaves it (0x004220A8 /
+                // 0x004220F6 / 0x00422107): the magazine's count - property
+                // 35, slot `index - 1` - when the row has one, else -1
+                hudAmmo = -1;
+                if (const omk::ShootWeaponRow* row = playerShootRec.weapon) {
+                    std::int32_t cnt = 0;
+                    if (row->ammoIndex &&
+                        omk::readAmmoSlot(state.raw().subspan(
+                                              static_cast<std::size_t>(omk::GameState::kPlayerRecord),
+                                              static_cast<std::size_t>(omk::GameState::kPlayerRecordSize)),
+                                          row->ammoIndex - 1, cnt))
+                        hudAmmo = static_cast<int>(cnt);
+                }
+                hudWalk = std::make_unique<omk::UiWalk>(w);
+                if (!hudWalk->open(session.shootMode().hudScreen())) hudWalk.reset();
+                hudTold.clear();
                 if (const omk::ShootWeaponRow* w = playerShootRec.weapon)
                     std::printf("frame %ld: Shoot_InitWeapon - object %d kind %d -> type %d: "
                                 "rate %.0f frames, speed %.1f, damage %d, magazine %d\n", n,
@@ -13225,6 +13251,76 @@ int main(int argc, char** argv) {
                 walk.reset();
                 openScreen = -1;
                 screenFromScript = true;
+            }
+        }
+        // ---- THE SHOOT HUD, screen 34 (`todo/shoot-mode.md` 8.3) --------
+        //
+        // `Shoot_Enter` opens it and it runs under the mode as any screen
+        // does, but it takes no input - so it is composed here from a walk of
+        // its own rather than opened as the interactive screen. Its items'
+        // callbacks are native (0x42E870.. - no `proc` label; read from the
+        // image with objdump) and three of them produce TEXT, supplied as row
+        // text by item address:
+        //
+        //   0x4C4418  `sub_42B1C0(5)` - player property 5, ANNEAUX - into
+        //             "{C}" + "%d", centred under the turning ring
+        //   0x4C44A8  `dword_90E11C`, "%d"; the -1 arm prints a .bss string
+        //             nothing writes by address, so it is taken as EMPTY
+        //   0x4C4460  the held object's NAME, `Game_RaiseEvent(46)`
+        //
+        // and the full-screen item 0x4C44F0 draws the CROSSHAIR: the four
+        // quads at 0x4C4680, offset by half the display (native pixels,
+        // not scaled). NOT drawn yet, labelled: the two turning models (the
+        // ring `anneau.3do` at 10 degrees a frame, the held weapon at 25),
+        // `Hud_DrawBar(health, 200, 0, 0)` - the health bar - and the
+        // top-right minimap `RADAR\<level>.WRE`.
+        if (shootMode && hudWalk && !walk && !std::getenv("OMK_NOUI")) {
+            hudRows.clear();
+            std::int32_t rings = 0;
+            omk::readActorProperty(state.raw().subspan(
+                                       static_cast<std::size_t>(omk::GameState::kPlayerRecord),
+                                       static_cast<std::size_t>(omk::GameState::kPlayerRecordSize)),
+                                   5, rings);
+            hudRows[0x4C4418u] = "{C}" + std::to_string(rings);
+            if (hudAmmo != -1) hudRows[0x4C44A8u] = std::to_string(hudAmmo);
+            std::string weaponName;
+            {
+                const int obj = session.shootMode().weaponObject();
+                const auto& objs = voiceLib.objects();
+                if (obj >= 0 && static_cast<std::size_t>(obj) < objs.size())
+                    weaponName = objs[static_cast<std::size_t>(obj)].name;
+                if (!weaponName.empty()) hudRows[0x4C4460u] = weaponName;
+            }
+            comp.attachCursor(nullptr);
+            comp.attachModels(nullptr);
+            comp.attachCloud(nullptr);
+            comp.setRowText(&hudRows);
+            comp.setHidden(nullptr);
+            const omk::ScreenFrame hf = comp.draw(fb, session.shootMode().hudScreen(), *hudWalk);
+            // the crosshair: {x0, y0, x1, y1} from the four records, relative
+            // to the centre, filled white (0xFFFFFF -> RGB565 0xFFFF)
+            const int cx = fb.w / 2, cy = fb.h / 2;
+            static const int kCross[4][4] = {{-1, 4, 1, 12}, {4, -1, 12, 1},
+                                             {-12, -1, -4, 1}, {-1, -12, 1, -4}};
+            for (const auto& q : kCross)
+                for (int y = cy + q[1]; y < cy + q[3]; ++y)
+                    for (int x = cx + q[0]; x < cx + q[2]; ++x)
+                        if (x >= 0 && y >= 0 && x < fb.w && y < fb.h)
+                            fb.px[static_cast<std::size_t>(y) * static_cast<std::size_t>(fb.w) +
+                                  static_cast<std::size_t>(x)] = 0xFFFF;
+            char line[256];
+            std::snprintf(line, sizeof line,
+                          "rings %d, ammo %d, weapon '%s' - items drawn %d, fills %d; "
+                          "crosshair at %d %d, pixel below centre 0x%04x",
+                          int(rings), hudAmmo, weaponName.c_str(), hf.itemsDrawn,
+                          hf.fillsDrawn, cx, cy,
+                          unsigned(fb.px[static_cast<std::size_t>(cy + 8) *
+                                             static_cast<std::size_t>(fb.w) +
+                                         static_cast<std::size_t>(cx)]));
+            if (hudTold != line) {
+                hudTold = line;
+                std::printf("frame %ld: shoot HUD (screen %d) - %s\n", n,
+                            session.shootMode().hudScreen(), line);
             }
         }
         if (walk) {

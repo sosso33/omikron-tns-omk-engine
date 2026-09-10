@@ -392,6 +392,16 @@ jerk to full speed on the first frame, a slide after release, moving in the
 wrong direction for the way you face, or walking through a crate. There is no
 head bob and no footstep sound yet - both are known.
 
+**Now expected (ported 2026-09-10, part 1, after *"no UI"*): THE SHOOT HUD.**
+In shoot mode the screen should carry: at the top left a box with your ring
+count under it (the *anneaux* - 244 in your frames of the original, 2 with the
+test save), at the bottom left a box with the weapon's name over it (`Waver`)
+and, for a weapon with a magazine, the rounds left just above, and a small
+white cross at the centre of the screen. NOT there yet, known: the turning
+ring and the turning weapon inside the two boxes, the health bar, and the
+radar at the top right (the supermarket is one of the nine places that have
+one). Say whether the boxes' grey matches the original.
+
 **Now expected (fixed 2026-09-10, after *"the return to adventure mode (after
 the cutscene) is buggy: invisble character, impossible to move, weird
 camera"*): THE RETURN.** After the supermarket's ending hands you back you
