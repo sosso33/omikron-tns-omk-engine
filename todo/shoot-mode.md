@@ -1327,6 +1327,20 @@ forget to plan it."* The session's own log agrees with the gate: 245 latches
    The engine's `Actor_TickShoot` has neither gate. Instrumented 2026-09-10:
    in shoot mode the viewer prints `adventure ON/OFF in shoot mode - <terms>`
    whenever the gate flips, so a freeze met in play names its cause.
+   **FOUND AND FIXED the same day - the log line did its job.** The reader's
+   next supermarket session printed `adventure OFF in shoot mode -
+   parkedOnProgram` five times, 20-46 frames each, and every one was an
+   ENTRANCE: actor 86's `BRA_05A2` (47 frames) at 717, actor 85's `BRA_04A1M`
+   (26) at 929, and so on - their zone scripts parked on programs bound to a
+   NAMED actor (ops 59/60, `how` "actor"). In shoot mode the gate now counts
+   only a program bound to the PLAYER (ops 46/90,
+   `Session::parkedOnPlayerProgram`); outside it the wider test stands,
+   labelled, since the hand-overs it was written for (omk-play 78) were not
+   re-read. `verify.py: engine: shoot entrance` walks the reader's own route
+   into zone 12 (id 3922, (13117, 1818)) and asserts the walk carries through
+   actor 86's entrance with the gate never dropping. The camera half of the
+   report went with it: the first-person camera is applied under the same
+   gate.
 6. **THE SWEEP.** `--slow`, owed.
 
 ## 5b. The two weapon floats — step 5's first reading, 2026-09-09

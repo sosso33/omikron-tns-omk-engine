@@ -5544,9 +5544,17 @@ int main(int argc, char** argv) {
             // on the object it started and will start the next when case 3
             // resumes it. See the accessor for why the engine cannot have
             // this fault at all (todo/omk-play.md 78).
+            // In SHOOT MODE only a program bound to the player's own body
+            // counts (`Session::parkedOnPlayerProgram` has why): an enemy's
+            // entrance is gameplay. Outside it the wider test stands - the
+            // engine's adventure tick does not gate on parked scripts either,
+            // but the cutscene hand-overs this was written for (omk-play 78)
+            // have not been re-read against that, so it is left as it was.
+            const bool shootLive = session.shootMode().active();
+            const bool parked = shootLive ? session.parkedOnPlayerProgram()
+                                          : session.parkedOnProgram();
             adventure = player && !playerDriven && !session.dialogOpen() &&
-                        !uiPause && !sc.activeEditing() &&
-                        !session.parkedOnProgram();
+                        !uiPause && !sc.activeEditing() && !parked;
             // GAMEPLAY EVENTS ARE NOT CUTSCENES (the reader, 2026-09-10: *"some
             // events (like some ennemie appearing with a special animation) are
             // considered as cutscenes, stops move and change camera, even
@@ -5555,7 +5563,7 @@ int main(int argc, char** argv) {
             // camera does not stop the shoot mover. So in shoot mode, say
             // whenever this gate flips and which term flipped it - a freeze a
             // reader meets in play then names its cause in the log.
-            if (shootMode) {
+            if (shootLive) {
                 static bool advTold = true;
                 if (adventure != advTold) {
                     advTold = adventure;
@@ -5565,7 +5573,7 @@ int main(int argc, char** argv) {
                                 session.dialogOpen() ? " dialog" : "",
                                 uiPause ? " uiPause" : "",
                                 sc.activeEditing() ? " editing" : "",
-                                session.parkedOnProgram() ? " parkedOnProgram" : "");
+                                parked ? " parked on the player's program" : "");
                 }
             }
             // A TELEPORT IS CONSUMED WHATEVER THE MODE. `sub_41BF50` writes the

@@ -26343,6 +26343,68 @@ def c_engine_shoot_move():
         "gone in full")
 
 
+def c_engine_shoot_entrance():
+    r"""`engine/`: an ENEMY'S ENTRANCE IS GAMEPLAY - the player keeps
+    moving through it (`todo/shoot-mode.md` 8.5c).
+
+    A reader: *"some events (like some ennemie appearing with a special
+    animation) are considered as cutscenes, stops move and change camera,
+    even though they are just gameplay events"*. Caught in play by the gate's
+    own log line: five `adventure OFF in shoot mode - parkedOnProgram`, each
+    the length of an entrance. SCENE 56's entrances are `scx.play.actor.wait
+    N` then `shoot.actor.enter N`, so the zone script PARKS on a program that
+    poses the ENEMY - and the viewer's adventure gate dropped for any parked
+    body-driving program. `Actor_TickShoot` ticks the player every frame
+    whatever a script is parked on; in shoot mode the gate now counts only a
+    program bound to the player's own body (ops 46/90).
+
+    The route is the reader's own, into SCENE 56's zone 12 (id 3922, centred
+    (13117, 1818)), whose enter script starts actor 86's `BRA_05A2`:
+
+    * turn to 270 (nine MDRD) and walk 25 frames - 0.39 x 325 and a brake of
+      18.2 put him 144.95 along -X, onto x 13117;
+    * turn to 180 (nine more) and walk 80 frames - the entrance starts on the
+      way, and the walk must carry THROUGH it: 84 frames and 719.29 along +Z,
+      every unit asked for.
+
+    With the old gate the walk is cut where the entrance starts and the log
+    says `adventure OFF ... parked`.
+    """
+    import subprocess, re
+    fr = omkpaths.data_root()
+    eng = os.path.join(ROOT, "engine")
+    bld = subprocess.run(["make", "-s", "play"], cwd=eng,
+                         capture_output=True, text=True)
+    exe = os.path.join(eng, "build", "omk-play")
+    if bld.returncode != 0 or not os.path.exists(exe):
+        return ("build failed",), ("built",), "engine/ must build"
+    play = subprocess.run(
+        [exe, fr, os.path.join(ROOT, "tables"),
+         "--save", os.path.join(ROOT, "traces", "save-appart.bin"),
+         "--area", "230", "--scene-chunk", "56", "--frames", "700", "--nodelay",
+         "--hold", "0*20,k77*9,0*5,k200*25,0*15,k77*9,0*5,k200*80,0*100"],
+        capture_output=True, text=True, errors="replace",
+        env=dict(os.environ, SDL_VIDEODRIVER="dummy"))
+    o = play.stdout
+    legs = re.findall(r"^frame (\d+): SHOOT MOVE stops after (\d+) frames - asked (\S+), "
+                      r"went (\S+) (\S+) (\S+)$", o, re.M)
+    starts = [int(f) for f in re.findall(r"^frame (\d+): SHOOT MOVE starts", o, re.M)]
+    entrance = re.search(r"^frame (\d+): actor 86 BRM_FN - pose source: a scene program", o, re.M)
+    offs = re.findall(r"^frame \d+: adventure OFF in shoot mode.*$", o, re.M)
+    ent = int(entrance.group(1)) if entrance else None
+    during = bool(ent is not None and len(starts) >= 2 and len(legs) >= 2 and
+                  starts[1] < ent < int(legs[1][0]))
+    got = ([(int(n), a, (x, y, z)) for f, n, a, x, y, z in legs],
+           ent is not None, during, offs)
+    want = ([(29, "144.95", ("-144.95", "0.00", "0.00")),
+             (84, "719.29", ("0.00", "-0.00", "719.29"))],
+            True, True, [])
+    return got, want, (
+        "the reader's route into SCENE 56's zone 12: 144.95 along -X, then 84 "
+        "frames and 719.29 along +Z with actor 86's entrance starting DURING "
+        "the walk, and the adventure gate never dropping")
+
+
 def c_shoot_input():
     r"""`engine/`: what the MOUSE does, per control scheme.
 
@@ -31794,6 +31856,7 @@ SLOW = [
     ("engine: shoot fire", c_engine_shoot_fire, "todo/shoot-mode 7h; actor/shootfire.h"),
     ("engine: shoot hit",  c_engine_shoot_hit,  "todo/shoot-mode 7j; actor/shoothit.h"),
     ("engine: shoot move", c_engine_shoot_move, "todo/shoot-mode 8.5b; actor/shootmove.h"),
+    ("engine: shoot entrance", c_engine_shoot_entrance, "todo/shoot-mode 8.5c; script/area.h"),
     ("engine: anims",      c_engine_anims,      "engine/README"),
     ("engine: CTL",        c_engine_ctl,        "engine/README"),
     ("engine: SCX",        c_engine_scx,        "engine/README"),

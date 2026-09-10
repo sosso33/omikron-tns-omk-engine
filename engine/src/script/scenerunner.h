@@ -285,6 +285,14 @@ public:
         return idx >= 0 && idx < static_cast<int>(started_.size()) &&
                started_[static_cast<std::size_t>(idx)].how != "scene";
     }
+    // ...and is that body the PLAYER'S? Ops 46/90 bind the object to his actor
+    // record (`ScriptObject_StartOnActor(Actor_Player(), ...)`, which puts him
+    // in ACTOR_STATE 4); 59/60 bind it to a NAMED actor - in a shoot phase,
+    // an enemy's entrance.
+    bool programDrivesPlayer(int idx) const {
+        return idx >= 0 && idx < static_cast<int>(started_.size()) &&
+               started_[static_cast<std::size_t>(idx)].how == "player";
+    }
     const std::vector<int>&     missed()  const { return missed_; }
     std::size_t programCount() const { return programs_.size(); }
     int programsRunning() const;

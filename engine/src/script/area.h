@@ -249,6 +249,23 @@ public:
                 return true;
         return false;
     }
+    // THE SAME, NARROWED TO THE PLAYER'S BODY - what shoot mode asks. An
+    // enemy's entrance in a shoot phase is `scx.play.actor.wait N` then
+    // `shoot.actor.enter N` (SCENE 56, fourteen of them): its script parks on a
+    // program that poses the ENEMY, and `parkedOnProgram` read that as a
+    // cutscene in flight - the player froze for the length of the entrance
+    // and the shoot camera went with him (a reader, 2026-09-10: *"some events
+    // (like some ennemie appearing with a special animation) are considered as
+    // cutscenes, stops move and change camera, even though they are just
+    // gameplay events"*). `Actor_TickShoot` ticks the player every frame
+    // whatever any script is parked on; only a program bound to HIM takes his
+    // body, and that one moves him into ACTOR_STATE 4 besides.
+    bool parkedOnPlayerProgram() const {
+        for (const auto& c : ctxs_)
+            if (c && c->status == 4 && scene_.programDrivesPlayer(c->waitingForProgram))
+                return true;
+        return false;
+    }
     // The model a CHARACTERS id resolves to, through the resident chunks'
     // 276-byte actor records (`sub_40B190`). Empty when it names none.
     std::string modelOfActor(int actor) const;

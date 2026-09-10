@@ -392,6 +392,14 @@ jerk to full speed on the first frame, a slide after release, moving in the
 wrong direction for the way you face, or walking through a crate. There is no
 head bob and no footstep sound yet - both are known.
 
+**Now expected (fixed 2026-09-10, after *"some events (like some ennemie
+appearing with a special animation) are considered as cutscenes, stops move
+and change camera"*): ENEMY ENTRANCES ARE GAMEPLAY.** When a gunman makes his
+entrance - vaulting in, stepping out from a shelf - you should keep walking,
+turning and shooting through it, and the first-person view should stay yours.
+If Kay'l still stops or the view jumps, the terminal says why on a line
+starting `adventure OFF in shoot mode`.
+
 **Now expected (ported 2026-09-10, after *"no fire sound effect"*): THE SHOT'S
 SOUNDS.** Every shot of the Gun Waver should play its fire sound (WAVER2.WAV)
 the moment the bolt leaves, and every bolt that stops - on a wall, a crate or
