@@ -17,6 +17,36 @@ waiting on its evidence.
 
 ### 97. The supermarket shoot phase blocks at the end of its cutscene, and Kay'l vanishes — A
 
+> **(h) WHERE THE PHASE ACTUALLY IS, after testing three fixes against the
+> wrong room.** The reader: *"it was in adventure mode, run from the
+> cutscene"*, and *"no saves to test"*. `engine/tools/shoot_trigger.cpp`
+> scans every chunk's zone slots AND its startup script at `+4` for
+> `shoot.begin`, and settles it:
+>
+> * the phase is **AREA 230 + SCENE 56 or 62** — both use set **ASM49**, which
+>   is what the reader's log said all along (`last set ASM49`);
+> * **AREA 230 itself carries no `shoot.begin` at all.** It is in a ZONE SLOT
+>   of the scene, so it fires when the player walks into a trigger — in
+>   adventure mode, exactly as described;
+> * the `SMARKET1` / `ASMARKT1` search that led to **AREA 68** was a different
+>   supermarket, and three fixes were tested against it.
+>
+> That is why `--save --area 230` leaves the player standing: a street start
+> lands him in the room without arriving through the trigger, and `omk-play`
+> has no way to load a chosen SCENE over an area at all.
+>
+> **The harness this needs**, and it is the thing to build before any further
+> fix: load a named scene over an area and put the player in the zone that
+> carries `shoot.begin`. Until then the state is reachable only by playing to
+> it, which has now cost three fixes their confirmation — the camera one
+> (97g) included.
+>
+> Two traps on the way, both this repo's own and both hit again: a tool given
+> a table path relative to the wrong directory answered **0 slots for 330
+> chunks** rather than failing, and `--scene-id` is not a flag, so passing it
+> was silently ignored and two different scenes "confirmed" the same set.
+
+
 > **(g) THE AIM RAN AND THE CAMERA BEING AIMED WAS NOT THE CAMERA BEING
 > DRAWN.** The diagnostic settled it in one run of the reader's:
 >
