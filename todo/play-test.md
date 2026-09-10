@@ -403,9 +403,9 @@ ever reacting until they see you. (Played 2026-09-10: *"Ok, good"*; 5
 robbers alerted in the session. Fixed after: robbers standing off the grid
 were never alerted - their floor was misread.)
 
-**Now expected (fixed 2026-09-10, after *"grabbing a health item does not
-restore your health"* and your correction that shoot mode uses them at
-once): HEALTH ITEMS IN A SHOOT PHASE.** Walking onto a medikit in the
+**CONFIRMED IN PLAY 2026-09-10 (*"yes, it was correct"*): HEALTH ITEMS IN A
+SHOOT PHASE**, fixed the same day after *"grabbing a health item does not
+restore your health"* and your correction that shoot mode uses them at once. Walking onto a medikit in the
 supermarket should now raise the gauge at once - +50 for a medium, +100 for a
 large, +16 for a small (its subtitle says +15) - with the pickup line. The kits
 you carry from adventure mode are used by themselves when a hit leaves you

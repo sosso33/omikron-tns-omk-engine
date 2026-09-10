@@ -152,6 +152,7 @@ the DB health rose, and the gauge stayed put. Ported as a hook
 (`script/hooks.h` `shootStatSet`), queued by the Session in shoot mode and
 applied by the viewer to its shoot records; `verify.py: engine: session`
 `shoot_stat` stands the player in zone 3935 and sees `[-1 1 49]` - -1 + 50.
+**CONFIRMED IN PLAY** (*"yes, it was correct"*: 10 -> 60 -> 76 -> 176).
 The damage half (a hit lowering `+92`, writing it back through event 45,
 then message 0 to the hurt handler) arrives with THE GUNMEN'S SHOTS.
 
