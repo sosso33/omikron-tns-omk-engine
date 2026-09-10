@@ -412,8 +412,15 @@ reason, or firing with his back to you. (Your session of 2026-09-11, from its
 log: 77 turned and fired, and every robber fired - but 519 and 521, placed by
 their records, stayed stuck mid-turn: 519 restarted a turn every half-second
 facing the same way. Fixed after: the placement was putting their facing back
-every frame. Not yet judged by eye.) The gallery harness shows two gunmen
-already facing you:
+every frame. Not yet judged by eye.) (Your second session the same day, from
+its log: the phase run to its end, 18 robbers killed and reported; 93 bolts
+on you, each through your Body Shield in the engine's order; 519 turned and
+fired. You were KILLED twice - the gauge froze at 4 each time, as it should -
+and each time a medikit on the floor BROUGHT YOU BACK, to 20 and then to 104.
+That is the unported death, not the game: the kit adds to the stored health
+property, which the killing hit never lowers. It goes when `sub_423FC0` is
+ported. Not yet judged by eye.) The gallery harness shows two gunmen already
+facing you:
 
 ```
 build/omk-play ../gamedata ../tables --save ../traces/save-appart.bin \

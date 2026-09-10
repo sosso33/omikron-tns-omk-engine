@@ -1502,7 +1502,16 @@ forget to plan it."* The session's own log agrees with the gate: 245 latches
    a negative health there, because the death returns first. Not ported,
    labelled: the death `sub_423FC0` (he plays on at -2) and the shove
    `sub_47D1F0`. The save carries no kit, so the hurt handler's heal is not
-   yet seen on a route.
+   yet seen on a route. **What the unported death costs, measured in a
+   reader's session (2026-09-11)**: killed at frames 1968 and 2887 - the gauge
+   frozen at 4 each time - he was each time REVIVED by a floor medikit, to 20
+   and to 104. The kit's zone script reads property 1, which the killing hit
+   never writes, so it adds to the last survivable health and `sub_423A40`
+   hands the result to +92 and the gauge. In the engine the death comes first
+   and there is no one left to pick it up. So `sub_423FC0` is step 4's first
+   job, before the shove. Shown to fail: the player's body left out of the
+   sweep, the killing hit writing the gauge, and the aim put back at the feet
+   each turn `engine: shoot gunfire` red.
 5. ~~**THE MOUSE LOOK.**~~ **PORTED 2026-09-10, CONFIRMED IN PLAY** (*"Good"*). `sub_47D370` read whole:
    YAW `+420 -= row23 * 0.01 * dx`, no frame delta; PITCH `+= row24 * 0.01 *
    dy * delta`, dy negated unless row 25 ("Souris inversée") is set, clamped
