@@ -125,6 +125,12 @@ Settings resolveSettings(const OptionsFile& ini,
             else std::fprintf(stderr, "settings: shadowquality = %s is not a mode "
                                       "(classic|fitted|mapped) - ignored\n", w->c_str());
         }
+        if (const std::string* w = ini.find(kEnhancements, "radar")) {
+            const int m = radarMode(*w);
+            if (m >= 0) { s.radarAlways = m > 0; s.radarSource = Settings::Source::Ini; }
+            else std::fprintf(stderr, "settings: radar = %s is not a mode "
+                                      "(game|always) - ignored\n", w->c_str());
+        }
         // ...applied LAST, so every specific key above has already claimed its
         // field and `applyMaxEnhancements` leaves it alone. That is what makes
         // `all` a base rather than an override, whatever order the file is in.

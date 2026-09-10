@@ -23,12 +23,24 @@
 // A vertex's Y is UP (the negated world Y): the draw adds the player's world Y
 // to it to get a relative height.
 //
-// **Enabling.** Screen 34's open callback 0x42E3A0 sets `4EB8C8 = 1`, moves
-// the item to (456, 8) 174x131, stores that box display-scaled
-// (`I2D_ScaleX/Y`) in `90E0C4` / `90E0BC` / `90E0C0` / `90E0B8` (left, top,
-// right, bottom) and sets the camera distance `0x4C4134` to 275.59 (7 m; the
-// static value is 236.22, 6 m). 0x42E870 hides the item (`0x40000001`)
-// whenever the flag or the file is missing.
+// **Enabling - and why a player of the original rarely saw it.** Nothing in
+// the HUMAN shoot HUD turns it on. Screen 34's open callback 0x42E4A0 puts
+// the item at (450, 8) 180x180 (its table rect), stores that box
+// display-scaled (`I2D_ScaleX/Y`) in `90E0C4` / `90E0BC` / `90E0C0` /
+// `90E0B8` (left, top, right, bottom), clears the item's `0x40000001` and
+// sets the camera distance `0x4C4134` to 354.33 (9 m) - and leaves the switch
+// `dword_4EB8C8` alone. The switch is the SCRIPTS': ops 146 and 147 set and
+// clear it (the opcode table calls them `ambience.on/off`, wrongly). 20
+// shipped sites, all in shoot phases: an `on` after `shoot.begin`, bare in
+// the Archives (AREA 63 and 67) and, in the seven other arenas, behind
+// `var.set.has_object 0, 980, 20` - object 980, "Radar activé", which no
+// script, conversation, native code, starting inventory or save gives. In
+// those seven it is effectively CUT. The ROBOT's HUD (screen 33) is the
+// exception: its open callback 0x42E3A0 sets the switch itself, moves the
+// item to (456, 8) 174x131 and sets 275.59 (7 m). The static 236.22 is
+// never used. 0x42E870 hides the item whenever the switch or the file is
+// missing. `radar = always`, an enhancement off by default, draws it in
+// every shoot phase that has a file.
 //
 // **The draw, 0x42F000.** A camera matrix from `sub_442160(pi/2, (facing +
 // 180) deg, 0)` - pitch 90, the third angle `0x4EB8CC` never written - with no
@@ -128,20 +140,28 @@ public:
     const std::string& file() const { return file_; }
     float height() const { return height_; }
     const RadarWire& wire() const { return wire_; }
-    // screen 34's open callback, 0x42E3A0
-    void open() { enabled_ = true; distance_ = 275.5905456542969f; }
-    bool enabled() const { return enabled_; }
+    // The two HUDs' open callbacks, as far as the radar goes: the box the
+    // item is put in and the camera distance. The SWITCH is not here - the
+    // human HUD's leaves it alone and the robot's sets it, and that is the
+    // Session's (`Session::setRadarOn`).
+    void openHuman() {                        // 0x42E4A0, screen 34
+        distance_ = 354.3307189941406f;
+        box_[0] = 450; box_[1] = 8; box_[2] = 180; box_[3] = 180;
+    }
+    void openMeca() {                         // 0x42E3A0, screen 33
+        distance_ = 275.5905456542969f;
+        box_[0] = 456; box_[1] = 8; box_[2] = 174; box_[3] = 131;
+    }
+    const int* box() const { return box_; }  // x, y, w, h in 640x480 units
+    float distance() const { return distance_; }
     RadarFrame draw(Surface& fb, const RadarView& v, const std::vector<RadarActor>& actors);
-
-    // The box 0x42E3A0 moves the item to, in 640x480 units.
-    static constexpr int kBoxX = 456, kBoxY = 8, kBoxW = 174, kBoxH = 131;
 
 private:
     RadarWire   wire_;
     std::string file_;
     float height_   = 0.0f;
     float distance_ = 236.22047424316406f;   // 0x4C4134's static value
-    bool  enabled_  = false;
+    int   box_[4]   = {450, 8, 180, 180};    // item 0x4C4388's rect
     std::map<int, bool> seen_;               // 0x4EB678, by actor id here
 };
 

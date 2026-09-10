@@ -6362,7 +6362,7 @@ def c_enhance_all():
     named = {"aa": "AntiAliasing", "filter": "TextureFilter", "aniso": "Anisotropy",
              "shadowquality": "ShadowQuality", "lighting": "Lighting",
              "supersampling": "Supersample", "uiscaling": "UiScaling",
-             "clipdistance": "UnlimitedDraw"}
+             "clipdistance": "UnlimitedDraw", "radar": "Radar"}
     reported = {k for k in allMax if k != "all"}
     covered = reported == set(named)
     want = {k: int(tops[v]) for k, v in named.items() if v in tops}
@@ -26597,21 +26597,27 @@ def c_shoot_radar_files():
 
 
 def c_engine_shoot_radar():
-    r"""`engine/`: the shoot HUD's RADAR drawn (`todo/shoot-mode.md` 8.3,
-    `engine/src/ui/radar.h`).
+    r"""`engine/`: the shoot HUD's RADAR and its SWITCH (`todo/shoot-mode.md`
+    8.3, `engine/src/ui/radar.h`).
 
     The supermarket reached the game's own way (`--area 230 --scene-chunk
     56`: the cutscene, then SHOOT MODE ENTER at frame 394). The AREA's +106
-    `SMARKET1` resolves to SMARKET1.WRE at height 492.13 (12.5 m), and the
-    first frame draws it: every edge in front of the eye (the camera looks
-    straight down from 7 m behind him), 333 lines surviving `sub_42EC80`'s
-    clip into the box 0x42E3A0 moves the item to - (456, 8) 174x131, scaled
-    to 570,10-787,173 on the 800x600 frame - one gunman already in ACTOR_STATE
-    3, and the player's BLUE square (0x0000FF, 565 0x001F) centred at 678,146:
-    the box's centre column, below its middle, which is the 7 m.
+    `SMARKET1` resolves to SMARKET1.WRE at height 492.13 (12.5 m) - but the
+    human HUD's open callback 0x42E4A0 does not turn the radar on: only a
+    script's op 146 does, and SCENE 56's runs behind `var.set.has_object 0,
+    980, 20`. So, three ways:
+
+    * as shipped: HIDDEN, the switch off - object 980 ("Radar activé") is
+      given by nothing in the game, which is why a player never saw it here;
+    * `--give 980`: the script's own test passes, op 146 turns the switch ON,
+      and it draws in the box 0x42E4A0 sets - (450, 8) 180x180, 562,10-787,235
+      on the 800x600 frame - through its 9 m camera: 252 lines, one gunman,
+      the player's blue square at 674,220;
+    * `--radar always` (the enhancement): SHOWN with the switch still off,
+      and the same frame drawn.
 
     And the Shooting gallery (AREA 59) names `GALLERY`, not one of the nine,
-    so nothing loads and the item stays hidden.
+    so nothing loads.
     """
     import subprocess, re
     fr = omkpaths.data_root()
@@ -26622,29 +26628,38 @@ def c_engine_shoot_radar():
         return ("build failed",), ("built",), "engine/ must build"
     env = dict(os.environ, SDL_VIDEODRIVER="dummy")
     base = [exe, fr, os.path.join(ROOT, "tables"),
-            "--save", os.path.join(ROOT, "traces", "save-appart.bin")]
-    sm = subprocess.run(base + ["--area", "230", "--scene-chunk", "56",
-                                "--frames", "400", "--nodelay"],
-                        capture_output=True, text=True, errors="replace", env=env).stdout
-    ga = subprocess.run(base + ["--area", "59", "--stand", "5000,0,-2900,0", "--shoot",
-                                "--frames", "5", "--nodelay"],
-                        capture_output=True, text=True, errors="replace", env=env).stdout
+            "--save", os.path.join(ROOT, "traces", "save-appart.bin"), "--nodelay"]
+    def run(args):
+        return subprocess.run(base + args, capture_output=True, text=True,
+                              errors="replace", env=env).stdout
+    sm = ["--area", "230", "--scene-chunk", "56", "--frames", "400"]
+    game, item, always = run(sm), run(sm + ["--give", "980"]), run(sm + ["--radar", "always"])
+    ga = run(["--area", "59", "--stand", "5000,0,-2900,0", "--shoot", "--frames", "5"])
+    def state(s):
+        m = re.search(r"^frame (\d+): RADAR (SHOWN|hidden) - the game's switch "
+                      r"\(ops 146/147\) is (\w+)", s, re.M)
+        return m.groups() if m else None
+    def drawn(s):
+        m = re.search(r"^frame (\d+): RADAR drawn - (\d+) of (\d+) edges in front, (\d+) "
+                      r"lines in the box (\S+), (\d+) gunmen, player square (\d) at (\S+) "
+                      r"pixel (\S+)$", s, re.M)
+        return m.groups() if m else None
     m1 = re.search(r"RADAR - AREA \+106 '(\w+)' -> (\S+), height ([\d.]+), (\d+) vertices, "
-                   r"(\d+) edges", sm)
-    m2 = re.search(r"^frame (\d+): RADAR drawn - (\d+) of (\d+) edges in front, (\d+) lines "
-                   r"in the box (\S+), (\d+) gunmen, player square (\d) at (\S+) pixel (\S+)$",
-                   sm, re.M)
+                   r"(\d+) edges", game)
     m3 = re.search(r"RADAR - AREA \+106 '(\w+)' -> none", ga)
-    got = (m1.groups() if m1 else None, m2.groups() if m2 else None,
-           m3.group(1) if m3 else None)
+    got = (m1.groups() if m1 else None, state(game), drawn(game), state(item), drawn(item),
+           state(always), drawn(always), m3.group(1) if m3 else None)
+    frame = ("394", "1789", "1789", "252", "562,10-787,235", "1", "1", "674,220", "0x001f")
     want = (("SMARKET1", "SMARKET1.WRE", "492.13", "1111", "1789"),
-            ("394", "1789", "1789", "333", "570,10-787,173", "1", "1", "678,146", "0x001f"),
+            ("394", "hidden", "off"), None,
+            ("394", "SHOWN", "ON"), frame,
+            ("394", "SHOWN", "off"), frame,
             "GALLERY")
     return got, want, (
-        "the supermarket's radar loaded from its +106 and drawn on its first shoot "
-        "frame - the lines in the box, one gunman, the player's blue square - and "
-        "none in the gallery")
-
+        "the supermarket's radar loaded from its +106; hidden as shipped (the "
+        "switch off), shown by the script's own op 146 when he carries object "
+        "980, shown by `radar = always` with the switch off - the same frame "
+        "both times; none in the gallery")
 
 def c_shoot_input():
     r"""`engine/`: what the MOUSE does, per control scheme.

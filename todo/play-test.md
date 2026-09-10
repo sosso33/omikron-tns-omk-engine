@@ -392,17 +392,15 @@ jerk to full speed on the first frame, a slide after release, moving in the
 wrong direction for the way you face, or walking through a crate. There is no
 head bob and no footstep sound yet - both are known.
 
-**Now expected (ported 2026-09-10): THE RADAR**, the top-right corner of the
-shoot HUD. In the supermarket - one of only nine places that have one; the
-Shooting gallery has none - a grey WIREFRAME of the shop seen from above,
-you a small BLUE square just below the middle of the box (the view sits 7 m
-behind you, so more of it is ahead), and each robber in the fight a RED
-square, brighter the higher he stands above you. Turning should turn the
-map with you, ahead always UP. Lines above your height draw lighter and
-over the ones below. A robber you kill leaves a faint dark-red mark where
-he fell. Wrong looks like: the map mirrored (a shelf on your left drawn on
-the right), ahead drawn down or sideways, or robbers' squares where nobody
-stands. There is no box behind it - the lines go straight over the view.
+**CONFIRMED IN PLAY 2026-09-10 (*"It looks good"*), then CORRECTED the same
+day: THE RADAR.** The reader did not remember it from the original, and the
+game agrees: in the supermarket and six other arenas a script turns it on only
+when Kay'l carries object 980, "Radar activé", which nothing in the game gives
+- so it is now HIDDEN there, as shipped. `radar = always` under
+`[Enhancements]` (or `--radar always`) brings it back, in the human HUD's own
+box (top right, 180x180) with the camera 9 m behind you. The Archives (AREA 63
+and 67) turn it on by themselves. What to judge: that the supermarket shows no
+radar by default, and that `radar = always` shows the same map you saw.
 
 **CONFIRMED IN PLAY 2026-09-10 (the supermarket, *"ok, good"*): THE SHOOT HUD,
 parts 1-3**, ported the same day after *"no UI"*.

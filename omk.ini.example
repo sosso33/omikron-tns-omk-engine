@@ -189,3 +189,13 @@
 ;            Anekbah's 155 are street lamps pointing straight down). Characters
 ;            cast, the world receives. Vulkan only.
 ;shadowquality = classic
+
+; Shoot mode's RADAR, the wireframe minimap at the top right: game | always.
+;   game     what the game does: a script turns it on - by itself in the
+;            Archives, and in the seven other arenas that have one (the
+;            supermarket among them) only when Kay'l carries object 980,
+;            "Radar activé", which nothing in the game ever gives. So in
+;            those seven it is cut content, and a player never saw it;
+;   always   draw it in every shoot phase whose area has a radar file.
+; `todo/enhancements.md` 10.
+;radar = game

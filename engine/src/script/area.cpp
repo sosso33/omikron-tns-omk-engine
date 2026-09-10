@@ -187,6 +187,9 @@ void Session::fillSlotTables(ResidentSlot& s) {
     s.scx = headerName(s.areaChunk, 97, 9);
     // `+106`, the MAP2D stem: 16 of the 259 areas name one
     s.map = headerName(s.areaChunk, 106, 9);
+    // ...and `Map2D_Load`'s tail 0x42EE70 clears the radar's switch first,
+    // whatever the name, on every area that names a map
+    if (!s.map.empty()) radarOn_ = false;
     // ...and `+133`, the sky model `Area_LoadMiscModel` loads out of
     // `MESHES\MISC\`. Empty in 242 of the 259 areas.
     s.sky = headerName(s.areaChunk, 133, 9);
@@ -2478,6 +2481,17 @@ void Session::onCall(int i, const Call& call) {
         else               shootEnd(operand);
         break;
     }
+    case 146: case 147:
+        // THE RADAR'S SWITCH (0x00405F00 / 0x00405F20): `dword_4EB8C8 = 1` and
+        // `= 0`, each only while `dword_6A05E0` is 0 - a mode flag written by
+        // three unlabelled functions past `game.restart`'s handler and not
+        // identified, taken as 0 in play. The opcode table calls these
+        // `ambience.on` / `ambience.off`, and that name is wrong. 20 shipped
+        // sites, every one in a shoot phase: an `on` after `shoot.begin` -
+        // behind `has_object 0, 980, 20` in seven arenas, bare in AREA 63 and
+        // 67 - and an `off` at `shoot.end` (`ui/radar.h`).
+        radarOn_ = call.op == 146;
+        break;
     case 138: case 139: {
         // `character.look_at_player` / `character.look_away`: the actor's
         // look-at slot (+400) written with the player's index / -1. The head

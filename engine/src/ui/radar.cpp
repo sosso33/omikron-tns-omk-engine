@@ -166,8 +166,8 @@ float radarHeightFor(const std::string& n) {
 }
 
 bool Radar::load(const DataFs& fs, const std::string& mapFile) {
-    // the flag and the file cleared first, whatever the name
-    enabled_ = false;
+    // the file cleared first, whatever the name (the switch it also clears
+    // is the Session's: `Session::fillSlotTables`)
     wire_ = RadarWire{};
     file_.clear();
     if (mapFile.size() < 3) return false;
@@ -184,7 +184,9 @@ bool Radar::load(const DataFs& fs, const std::string& mapFile) {
 
 RadarFrame Radar::draw(Surface& fb, const RadarView& v, const std::vector<RadarActor>& actors) {
     RadarFrame out;
-    if (!enabled_ || !wire_.valid()) return out;      // 0x42F000's own gate
+    // 0x42F000's own gate is the switch AND the file; the switch is the
+    // caller's to test (the Session holds it)
+    if (!wire_.valid()) return out;
 
     constexpr double kD2R = 0.017453292519943295;     // 0x4BC2E8
     const float yaw = static_cast<float>((double(v.facingDeg) + 180.0) * kD2R);

@@ -112,6 +112,16 @@ struct Settings {
     int    uiScaling = 0;
     Source uiScalingSource = Source::Default;
 
+    // `radar = game|always`: shoot mode's MINIMAP (`ui/radar.h`). The game
+    // shows it only when a script's op 146 turns it on - bare in the Archives
+    // (AREA 63 and 67), and in the seven other arenas only when the player
+    // carries object 980, "Radar activé", which nothing in the shipped game
+    // gives - or when the robot's HUD (screen 33) opens. `always` draws it in
+    // every shoot phase whose area has a radar file. Off by default, because
+    // it is not what the game shows.
+    bool   radarAlways = false;
+    Source radarSource = Source::Default;
+
     // `clipdistance = 0` under `[Enhancements]`: UNLIMITED DRAW DISTANCE.
     //
     // Row 3 is a CAP in metres and its five values stop at 200 (`clipInches`
@@ -226,6 +236,17 @@ inline int uiScalingMode(std::string w) {
 }
 inline const char* uiScalingName(int m) { return m <= 0 ? "nearest" : "linear"; }
 
+// The radar word: 0 the game's own switch, 1 always; -1 for neither.
+inline int radarMode(std::string w) {
+    for (auto& c : w) c = static_cast<char>(c >= 'A' && c <= 'Z' ? c + 32 : c);
+    while (!w.empty() && (w.back() == ' ' || w.back() == '\t')) w.pop_back();
+    while (!w.empty() && (w.front() == ' ' || w.front() == '\t')) w.erase(w.begin());
+    if (w == "0" || w == "game" || w == "original" || w == "off") return 0;
+    if (w == "1" || w == "always" || w == "on") return 1;
+    return -1;
+}
+inline const char* radarName(int m) { return m <= 0 ? "game" : "always"; }
+
 // THE TOP OF EACH ENHANCEMENT, in one place, so `all = max` and
 // `--enhance-all` cannot drift apart from each other or from the parsers.
 // The two the DEVICE caps are asked for at their largest defined value; the
@@ -241,6 +262,7 @@ inline constexpr int kMaxLighting      = 1;   // per pixel
 inline constexpr int kMaxSupersample   = 4;
 inline constexpr int kMaxUiScaling     = 1;   // linear
 inline constexpr int kMaxUnlimitedDraw = 1;   // the cap lifted
+inline constexpr int kMaxRadar         = 1;   // always
 // The top of row 3's five values, and the furthest the ENGINE ever puts the
 // clip distance. Kept as a named number because `all = max` has to say what
 // "unlimited" replaces, and because a check quotes it.
@@ -266,6 +288,7 @@ inline void applyMaxEnhancements(Settings& s) {
     take(s.supersample,   kMaxSupersample,   s.supersampleSource);
     take(s.uiScaling,     kMaxUiScaling,     s.uiScalingSource);
     takeFlag(s.unlimitedDrawDistance, kMaxUnlimitedDraw, s.unlimitedDrawSource);
+    takeFlag(s.radarAlways, kMaxRadar, s.radarSource);
 }
 
 // Resolve the three sources in order.  Either may be absent.

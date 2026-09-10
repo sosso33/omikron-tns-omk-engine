@@ -1558,6 +1558,9 @@ int main(int argc, char** argv) {
 "                   stretched to the display, M = nearest (the original's\n"
 "                   Blt) or linear; BOTH backends, since the interface is\n"
 "                   composed on the CPU; [Enhancements] uiscaling=M\n"
+"  --radar game|always  shoot mode's minimap: the game's own switch (default -\n"
+"                   a script turns it on, mostly only for an item nothing gives)\n"
+"                   or in every shoot phase with a radar file; [Enhancements] radar=M\n"
 "  --software       force the software rasteriser\n"
 "  --letterbox      the 1.818:1 camera-mode bars, for laying a shot beside\n"
 "                   a capture; --full is the old spelling of the opposite\n"
@@ -1729,6 +1732,7 @@ int main(int argc, char** argv) {
     int uiScaleFlag = -1;  // --ui-scaling nearest|linear, [Enhancements] uiscaling
     int lightingFlag = -1; // --lighting pervertex|perpixel, [Enhancements] lighting
     int ssaaFlag = -1;     // --ssaa N, [Enhancements] supersampling
+    int radarFlag = -1;    // --radar game|always, [Enhancements] radar
     // `--dither 0|1`. NOT an enhancement: `sub_4638C0` sets D3DRENDERSTATE 26
     // (DITHERENABLE) to 1 on both device arms, so on is what the engine does.
     // The flag exists to lay a dithered frame beside an undithered one.
@@ -1934,6 +1938,13 @@ int main(int argc, char** argv) {
             anisoFlag = std::max(1, std::min(16, std::atoi(argv[++i])));
         else if (a == "--enhance-all") enhanceAll = true;
         else if (a == "--ssaa" && i + 1 < argc) ssaaFlag = std::atoi(argv[++i]);
+        else if (a == "--radar" && i + 1 < argc) {
+            radarFlag = omk::radarMode(argv[++i]);
+            if (radarFlag < 0) {
+                std::fprintf(stderr, "--radar %s: not a mode (game|always)\n", argv[i]);
+                return 2;
+            }
+        }
         else if (a == "--dither" && i + 1 < argc) dither = std::atoi(argv[++i]) != 0;
         else if (a == "--invert-x") mouseInvertX = true;
         else if (a == "--invert-y") mouseInvertY = true;
@@ -2211,6 +2222,14 @@ int main(int argc, char** argv) {
     const int texFilter = enh(filterFlag, settings.textureFilter, omk::kMaxTextureFilter);
     const int texAniso  = enh(anisoFlag, settings.anisotropy, omk::kMaxAnisotropy);
     const int ssaa      = enh(ssaaFlag, settings.supersample, omk::kMaxSupersample);
+    // The RADAR (`ui/radar.h`): the game draws shoot mode's minimap only when
+    // a script's op 146 has turned it on; `always` draws it in every shoot
+    // phase whose area has a radar file.
+    const bool radarAlways = enh(radarFlag, settings.radarAlways ? 1 : 0, omk::kMaxRadar) > 0;
+    if (radarAlways)
+        std::printf("radar: always - an ENHANCEMENT: the game shows shoot mode's minimap "
+                    "only when a script turns it on, and in seven of its nine arenas only "
+                    "for object 980, which nothing in the shipped game gives\n");
     // The INTERFACE's own, and the one enhancement here that is not the
     // Vulkan backend's: the 640x480 layer is composed on the CPU for both, so
     // a filtered stretch reaches the software renderer too.
@@ -7845,7 +7864,15 @@ int main(int argc, char** argv) {
                 {
                     const std::string& mp = session.mapName();
                     radar.load(fs, mp.empty() ? std::string() : mp + ".MPT");
-                    radar.open();
+                    // ...and the HUD's open callback: the ROBOT's (0x42E3A0)
+                    // turns the switch on itself; the human's (0x42E4A0)
+                    // leaves it to the scripts' op 146
+                    if (session.shootMode().hudScreen() == 33) {
+                        session.setRadarOn(true);
+                        radar.openMeca();
+                    } else {
+                        radar.openHuman();
+                    }
                     if (radar.loaded())
                         std::printf("frame %ld: RADAR - AREA +106 '%s' -> %s, height %.2f, "
                                     "%d vertices, %d edges\n", n, mp.c_str(),
@@ -13379,17 +13406,32 @@ int main(int argc, char** argv) {
             if (!hudBar.loaded()) hudBar.load(fs);
             const omk::HudBarFrame bar = hudBar.draw(fb, playerShootRec.health, 200, 0, 0);
             // THE RADAR: item 0x4C4388's own callback 0x42F000 (`ui/radar.h`),
-            // in the box 0x42E3A0 moved it to, through the shoot camera's fov
+            // in the box its HUD's open callback set, through the shoot camera's fov
             // (preset row 4's 75). The gunmen go in with the position their
             // brain takes as `self`; ACTOR_STATE 3 while the brain has health
             // (`Shoot_ActorEnter` wrote it), 0 once it has none (the brain's
             // `health <= 0` arm), and anything without a brain is neither.
-            if (radar.loaded() && player) {
+            // Drawn only while the SWITCH is on - ops 146/147, or the robot
+            // HUD's open - or with the `radar = always` enhancement.
+            const bool radarShown = radar.loaded() && player &&
+                                    (session.radarOn() || radarAlways);
+            {
+                static int radarShownTold = -1;
+                if (radar.loaded() && int(radarShown) != radarShownTold) {
+                    radarShownTold = int(radarShown);
+                    std::printf("frame %ld: RADAR %s - the game's switch (ops 146/147) is %s%s\n",
+                                n, radarShown ? "SHOWN" : "hidden",
+                                session.radarOn() ? "ON" : "off",
+                                radarAlways ? ", radar = always" : "");
+                }
+            }
+            if (radarShown) {
                 omk::RadarView rv;
-                rv.left = fb.w * omk::Radar::kBoxX / 640;
-                rv.top = fb.h * omk::Radar::kBoxY / 480;
-                rv.right = rv.left + fb.w * omk::Radar::kBoxW / 640;
-                rv.bottom = rv.top + fb.h * omk::Radar::kBoxH / 480;
+                const int* bx = radar.box();
+                rv.left = fb.w * bx[0] / 640;
+                rv.top = fb.h * bx[1] / 480;
+                rv.right = rv.left + fb.w * bx[2] / 640;
+                rv.bottom = rv.top + fb.h * bx[3] / 480;
                 rv.screenW = fb.w;
                 rv.screenH = fb.h;
                 rv.fovDeg = 75.0f;

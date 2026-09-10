@@ -77,7 +77,7 @@ directly, scanning every chunk's zone slots **and** its startup script at `+4`.
 | **8.5d THE PHASE ENDS**: message 3 at a gunman's death, SCENE 56's score, zone 3931 | **fixed 2026-09-10** — `session probe` asserts the handler, the two variables and the zone; **CONFIRMED IN PLAY** |
 | **8.5e THE RETURN**: `Shoot_Leave`'s default group, and the follow camera's offsets | **fixed 2026-09-10** — `--shoot-end N` harness; `engine: shoot leave`; **CONFIRMED IN PLAY** |
 | **8.3 THE HUD, parts 1-3**: screen 34 over the frame - ring count, weapon name, ammo, fills, crosshair, the turning ring and weapon, the health gauge (`ui/hudbar.h`) | **done 2026-09-10** — `engine: shoot hud`; **CONFIRMED IN PLAY** |
-| **8.3 THE HUD, part 4 - THE RADAR**: the minimap, a wireframe of the arena with the player blue and the gunmen red (`ui/radar.h`) | **done 2026-09-10** — `shoot radar files`, `engine: shoot radar`; not yet played |
+| **8.3 THE HUD, part 4 - THE RADAR**: the minimap, a wireframe of the arena with the player blue and the gunmen red (`ui/radar.h`) | **done 2026-09-10** — `shoot radar files`, `engine: shoot radar`; played (*"It looks good"*), then corrected: the game's own SWITCH (ops 146/147) hides it in seven arenas - object 980 is given by nothing - and `radar = always` restores it |
 
 **17 checks** cover it (`engine: shoot hit` added with the hit): `shoot arenas`, `map2d grid`, `map2d sight`,
 `bone names`, `shoot range`, `shoot generic`, `projectile pool`,

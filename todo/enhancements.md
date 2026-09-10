@@ -22,6 +22,7 @@ measures the enhancement's own property on the GPU, shown to fail.
 | 7 | **per-pixel lighting**: the engine's OWN light law evaluated per fragment instead of per vertex, and received by every character rather than the crowd alone | `lighting = perpixel` / `--lighting perpixel` | **done 2026-09-09**; `engine: per-pixel lighting` |
 | 8 | **the SETS receive the lights too.** Held back deliberately - it overrides authored art; see below | `lighting = sets` | not recommended |
 | 9 | **supersampling**: render N times larger each way and average down. Reaches the CUTOUT edges MSAA never looks at, and the texture aliasing it cannot touch either | `supersampling = N` / `--ssaa N` | **done 2026-09-09**; `engine: supersampling` |
+| 10 | **the shoot radar in every arena**: shoot mode's minimap wherever the area ships a radar file. The game shows it only when a script's op 146 turns it on - bare in the Archives, and in the seven other arenas only for object 980, which nothing in the game gives (`ui/radar.h`, `todo/shoot-mode.md` 8.3) | `radar = always` / `--radar always` | **done 2026-09-10**; `engine: shoot radar` |
 
 ## Row 4 - what lifting the clip is actually worth
 

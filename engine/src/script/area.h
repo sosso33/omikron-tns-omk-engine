@@ -325,6 +325,11 @@ public:
     // `Actors_TickAll` aims his head at it every frame (`aimHead`, pose.h);
     // the Session only keeps who is looking.
     bool looksAtPlayer(int actor) const { return lookAtPlayer_.count(actor) != 0; }
+    // The RADAR's switch, `dword_4EB8C8` (`ui/radar.h`): ops 146/147 set and
+    // clear it, an area that names a map clears it on load (0x42EE70), and
+    // the robot HUD's open callback 0x42E3A0 sets it - the frontend's call.
+    bool radarOn() const { return radarOn_; }
+    void setRadarOn(bool on) { radarOn_ = on; }
     // -> the last `shoot.actor.action` asked of him, or -1 if he is not in
     // shoot mode at all. One store, `ShootMode`'s.
     int shootAction(int actor) const { return shoot_.actorAction(actor); }
@@ -1341,6 +1346,7 @@ private:
     std::map<std::string, float> modelReach_;
     std::vector<int> pedSlots_;              // walker -> its index slot, -1 none
     std::set<int> lookAtPlayer_;             // actors whose slot 100 is the player
+    bool radarOn_ = false;                   // dword_4EB8C8, the radar's switch
     // Shoot mode: the opcodes' decisions and the actor->action map.
     ShootMode shoot_;
     bool shootTableRead_ = false;    // GLOBAL +42, read on the first `shoot.begin`

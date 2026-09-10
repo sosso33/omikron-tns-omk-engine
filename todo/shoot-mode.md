@@ -1325,9 +1325,24 @@ forget to plan it."* The session's own log agrees with the gate: 245 latches
    * **The file**: `u32 vertices, u32 edges, float3[vertices], u16
      pair[edges]`, exact for 11 of 15 - all nine reachable - and the four
      short ones unreachable. A vertex's Y is UP.
-   * **Enabling.** Screen 34's open callback 0x42E3A0: the flag, the box moved
-     to (456, 8) 174x131, the distance `0x4C4134` = 275.59 (7 m). 0x42E870
-     hides the item whenever the flag or the file is missing. The item has no
+   * **Enabling - and it is effectively CUT in seven of the nine** (found
+     2026-09-10 on the reader's *"I don't remember having it in the original
+     game"*; this bullet first said screen 34's open turned it on, and that
+     was screen 33's). The switch `dword_4EB8C8` is the SCRIPTS': ops 146 and
+     147 set and clear it - the opcode table names them `ambience.on/off`,
+     and the name is wrong. 20 shipped sites, all in shoot phases: an `on`
+     after `shoot.begin`, BARE in the Archives (AREA 63, 67) and in the other
+     seven arenas behind `var.set.has_object 0, 980, 20` - object 980, "Radar
+     activé" (kind 0, stem `BATTERIE`, 100 seteks, "Le Radar est activé."),
+     which no script, conversation, native code, starting inventory, DB list
+     or save gives. The HUMAN HUD's open 0x42E4A0 leaves the switch alone and
+     puts the item at (450, 8) 180x180 with a 354.33 (9 m) camera; the
+     ROBOT's (screen 33, "SHOOT MECA") 0x42E3A0 sets the switch itself, moves
+     it to (456, 8) 174x131 and 275.59 (7 m). The static 236.22 is never
+     used. 0x42E870 hides the item whenever the switch or the file is
+     missing. **Ported as the game has it** - the supermarket's radar stays
+     hidden - with `radar = always` (`todo/enhancements.md` 10, off by
+     default, the reader's choice) to restore it in every arena. The item has no
      fill (bank B `0x44000000`, and the fill arm wants `0x10`), so the lines
      go straight over the scene.
    * **The draw, 0x42F000** - a small wireframe renderer: `sub_442160(pi/2,
@@ -1349,9 +1364,9 @@ forget to plan it."* The session's own log agrees with the gate: 245 latches
    * **Labelled**: the seen flags by actor id (the engine's by slot); the
      line's pixel rule Bresenham without its last pixel; the min/max height
      the draw tracks and never reads left out.
-   * In the supermarket's first shoot frame: all 1789 edges in front, 333
-     lines in the box, one gunman, his square at the box's centre column
-     below its middle - the 7 m behind him.
+   * In the supermarket's first shoot frame, with the item or `radar =
+     always`: all 1789 edges in front, 252 lines in the box, one gunman, his
+     square on the box's centre column low in it - the 9 m behind him.
    The first reading, kept: `Shoot_Enter` opens screen
    34 (33 for the Mecagarde) and calls `Hud_Refresh` (0x00448FA0, the
    player's properties 16/19/17/3/18/2 into `dword_530CB0..C4`).
