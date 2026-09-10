@@ -5509,16 +5509,22 @@ int main(int argc, char** argv) {
                     for (int k = 0; k < 3; ++k) hit[k] = static_cast<float>(p0[k] + h->t * d[k]);
                     return true;
                 };
-                // THE BODIES (`actor/shoothit.h`): every staged gunman in shoot
-                // mode as he was DRAWN last frame - which is the engine's own
+                // THE BODIES (`actor/shoothit.h`): every staged actor as he was
+                // DRAWN last frame, bystanders included - which is the engine's own
                 // order, since the flight runs before the actors tick. Each
                 // mesh at its `meshAt` in its `meshRot`, bounded by its own
                 // record's +76 centre, +88 radius and +92/+104 box. The
                 // player's body is not in the list yet: only his bolts fly.
                 std::vector<omk::HitBody> bodies;
                 for (const auto& up : staged) {
+                    // EVERY drawn actor, not only the gunmen: the engine's list
+                    // is every ATTACHED actor (`Actor_Attach` -> `sub_45DFF0`),
+                    // so a bolt that meets a bystander stops on him, and
+                    // `sub_4240E0` refuses the damage because he is not in
+                    // ACTOR_STATE 3. The supermarket's `V5H_FNM` stands beside
+                    // its gunman. (The street crowd and the vehicles are the
+                    // slider system's nodes, not attached actors - not here.)
                     if (!up || up->actor < 0 || !up->mo || !up->drawn) continue;
-                    if (session.shootAction(up->actor) < 0) continue;
                     const std::size_t nm = up->mo->meshes.size();
                     if (up->meshAt.size() != nm * 3 || up->meshRot.size() != nm * 9) continue;
                     omk::HitBody hb;

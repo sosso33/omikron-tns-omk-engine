@@ -1091,6 +1091,18 @@ unread), types 13/10 among 0x4000 victims, the player being hit (nothing
 fires at him yet), and the death clip's pick is a fixed function where the
 engine's is `rand()`.
 
+**And the bystanders** (found by the first supermarket play, 2026-09-10): the
+engine's sweep list is every ATTACHED actor, not the gunmen alone, so a bolt
+that meets a bystander stops on him and `sub_4240E0` refuses the damage (not
+ACTOR_STATE 3). The viewer had given the sweep only the shoot-mode gunmen;
+it gives it every drawn staged actor now - 9 bodies in the supermarket
+where it had 1, `V5H_FNM` beside the gunman among them. Labelled: the
+street crowd and the vehicles are the slider system's nodes and are not
+in it, and a crowd model's three unposed LOD skeletons are swept at rest.
+The play itself: 49 shots and no hit, because only one was aimed near the
+gunman - high (pitch +4.2, 46 units off his pelvis against a 45.8
+sphere) and stopped by the world at 127 of his 146.
+
 **Shown to fail** (`f1a58cc`), each reverted by writing the bytes back:
 
 | mutation | `shoot fire` (probe) | `engine: shoot hit` (gallery) |
