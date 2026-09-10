@@ -1247,7 +1247,9 @@ forget to plan it."* The session's own log agrees with the gate: 245 latches
    confirm: read those three and how the row `sub_44EEB0` returns reaches
    them. The sounds resolve in the resident library, `shoot2.scx`
    (`Scene_FindSoundIndex`), which the port already loads for the mode.
-3. **THE SHOOT HUD — reported missing in play. PART 1 PORTED 2026-09-10.**
+3. **THE SHOOT HUD — reported missing in play. ALL FOUR PARTS PORTED
+   2026-09-10 and CONFIRMED IN PLAY** (the radar as `radar = always`; the
+   game's own switch hides it in seven arenas, below).
    Screen 34 (`SHOOT HUMAN`) is ONE panel of six items (0x4C4618), and every
    callback is native with no `proc` label - read from the IMAGE with the
    system's `objdump` (llvm, i386 COFF), which settles the whole layout:
@@ -1381,8 +1383,23 @@ forget to plan it."* The session's own log agrees with the gate: 245 latches
    `sub_47C2A0` with its target (the other arm, whose aim spreads by
    `rand() % (radius / 2)`) and `Actor_TickProjectiles`' npc aim at the
    player - and then the player's own damage path (§7j).
-5. **THE MOUSE LOOK.** `sub_47D370`'s sensitivities and ±45 clamp, from the
-   options header (§7h).
+5. ~~**THE MOUSE LOOK.**~~ **PORTED 2026-09-10.** `sub_47D370` read whole:
+   YAW `+420 -= row23 * 0.01 * dx`, no frame delta; PITCH `+= row24 * 0.01 *
+   dy * delta`, dy negated unless row 25 ("Souris inversée") is set, clamped
+   at ±45 (0x4BCB34 / 0x4BCB38) and handed to the camera as radians by
+   `sub_47C260`. Its one caller is `sub_45D1D0`, reached by the mouse's own
+   arm - 0x4A8278, the cursor's offset from the window centre, re-centred
+   every frame, or 0x4A82AA, the DirectInput deltas - and by four special
+   moves: MDRG / MDRD (`dx` ∓50) and MDLUP / MDLDO (`dy` ∓25, *Regarder
+   En-Haut / En-Bas*, now wired). Rows 23-25 come from the save header
+   (defaults 20, 15, off) or the ini's MouseSensX / MouseSensY; the turn keys
+   share row 23. `actor/shootmove.h` `shootPitchStep`; `verify.py: shoot
+   fire` (`look:`). **Kept as the port's, labelled**: the pitch's absolute
+   SIGN - this viewer's camera, anchored on the reader's confirmed sense at
+   row 25 off - and `--invert-x`, since the engine has no yaw invert;
+   `--invert-y` now flips row 25. Not reached: the arm that zeroes the pitch
+   on mover flag 0x1000 (no traced writer) and the gate `dword_4E9728` (set
+   by 0x4ADE40, unread).
 5b. ~~**MOVING IN FIRST PERSON — asked for 2026-09-10**~~ (*"don't forget the
    integration of moving while in fps mode"*) **PORTED 2026-09-10,
    `actor/shootmove.h`, CONFIRMED IN PLAY the same day in the supermarket

@@ -392,6 +392,16 @@ jerk to full speed on the first frame, a slide after release, moving in the
 wrong direction for the way you face, or walking through a crate. There is no
 head bob and no footstep sound yet - both are known.
 
+**Now expected (ported 2026-09-10): THE MOUSE LOOK, the engine's own.** The
+mouse turns and tilts the first-person view with the game's own settings -
+your save's options 23 and 24, sensitivities 20 and 15 - so turning is a
+touch faster than before (0.20 degrees a pixel against 0.18) and the tilt now
+stops at 45 degrees up or down instead of 70. The tilt is 0.15 degrees a pixel
+at 30 frames a second, and the engine scales it by the frame time, so at a
+higher frame rate it tilts less per pixel. The DIRECTIONS are unchanged -
+yours. The shoot scheme's *Regarder En-Haut / En-Bas*, if bound, now tilt in
+steps. Wrong looks like: a direction reversed, or a tilt past 45 degrees.
+
 **CONFIRMED IN PLAY 2026-09-10 (*"It looks good"*), then CORRECTED the same
 day: THE RADAR.** The reader did not remember it from the original, and the
 game agrees: in the supermarket and six other arenas a script turns it on only
@@ -400,7 +410,9 @@ when Kay'l carries object 980, "Radar activé", which nothing in the game gives
 `[Enhancements]` (or `--radar always`) brings it back, in the human HUD's own
 box (top right, 180x180) with the camera 9 m behind you. The Archives (AREA 63
 and 67) turn it on by themselves. What to judge: that the supermarket shows no
-radar by default, and that `radar = always` shows the same map you saw.
+radar by default. **`radar = always` CONFIRMED IN PLAY 2026-09-10** (*"ok,
+good"*, the supermarket in the human HUD's own 180x180 box); the hidden
+default has not been looked at by a person.
 
 **CONFIRMED IN PLAY 2026-09-10 (the supermarket, *"ok, good"*): THE SHOOT HUD,
 parts 1-3**, ported the same day after *"no UI"*.

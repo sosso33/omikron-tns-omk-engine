@@ -63,6 +63,17 @@ float shootTurnDegrees(int a1, int sensitivity) {
                                static_cast<double>(a1));
 }
 
+float shootPitchStep(float pitchDeg, int dy, int sensitivity, bool inverted, float delta) {
+    // `fild sens; fmul 0.01; fild dy (fchs unless inverted); fmulp; fmul
+    // delta; fadd pitch`, then the two clamps
+    const double d = static_cast<double>(sensitivity) * 0.0099999998 *
+                     static_cast<double>(inverted ? dy : -dy) * static_cast<double>(delta);
+    float p = static_cast<float>(d + static_cast<double>(pitchDeg));
+    if (p > 45.0f) p = 45.0f;
+    if (p < -45.0f) p = -45.0f;
+    return p;
+}
+
 ShootMoveStep shootMoveTick(ShootMover& m, float facingDeg, float dt) {
     ShootMoveStep s;
     if (!m.active) return s;

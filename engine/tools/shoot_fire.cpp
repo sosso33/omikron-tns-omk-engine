@@ -461,6 +461,16 @@ int main(int argc, char** argv) {
                     double(s2.dx), double(s2.dz) + 0.0, int(blocked), int(falling),
                     double(omk::shootTurnDegrees(-50, 20)),
                     double(omk::shootTurnDegrees(50, 20)));
+        // THE LOOK (`sub_47D370`'s pitch half) at the default row 24, 15
+        std::printf("look: dy 10 -> %.2f, inverted %.2f, 60 fps %.2f; clamped %.2f %.2f; "
+                    "MDLUP %.2f MDLDO %.2f\n",
+                    double(omk::shootPitchStep(0.0f, 10, 15, false, 1.0f)),
+                    double(omk::shootPitchStep(0.0f, 10, 15, true, 1.0f)),
+                    double(omk::shootPitchStep(0.0f, 10, 15, false, 0.5f)),
+                    double(omk::shootPitchStep(0.0f, 400, 15, false, 1.0f)),
+                    double(omk::shootPitchStep(0.0f, -400, 15, false, 1.0f)),
+                    double(omk::shootPitchStep(0.0f, -25, 15, false, 1.0f)),
+                    double(omk::shootPitchStep(0.0f, 25, 15, false, 1.0f)));
     }
 
     // THE TYPE: the object's kind, and the one hand-written exception.

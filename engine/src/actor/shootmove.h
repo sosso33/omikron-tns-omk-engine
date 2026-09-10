@@ -115,6 +115,15 @@ void shootMoveCrouch(ShootMover& m, bool down);
 // sensitivity * 0.01 * a1`, the sensitivity being options row 23. MDRG hands
 // it -50 and MDRD +50.
 float shootTurnDegrees(int a1, int sensitivity);
+// `sub_47D370`'s PITCH half, what the mouse's dy and MDLUP / MDLDO (-/+25)
+// move: `pitch += sensitivity * 0.01 * (inverted ? dy : -dy) * delta`, the
+// sensitivity options row 24 and `inverted` row 25 ("Souris inversée"),
+// `delta` the frame's 30/fps (`flt_4C30D8`), then clamped to +-45 degrees
+// (0x4BCB34 / 0x4BCB38). The result is what `sub_47C260` hands the camera,
+// times pi/180, and it is in the ENGINE's sign - the caller owns how its own
+// camera reads it. (The arm that zeroes it instead, mover flag 0x1000, has no
+// traced writer.)
+float shootPitchStep(float pitchDeg, int dy, int sensitivity, bool inverted, float delta);
 
 // One frame of `sub_47D4D0`'s motion: the world step it hands
 // `o3de_MoveNodeBy` in x and z, and the `+248` fall of `flt_6579C0`.

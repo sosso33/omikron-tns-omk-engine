@@ -1748,7 +1748,10 @@ int main(int argc, char** argv) {
     // its sign from the invert byte at 0x90E1B0, clamped at +-45 degrees -
     // all three in the options header. So the senses, the sensitivities
     // below and the +-70 clamp are this port's and the original's are
-    // readable (`todo/shoot-mode.md` 7h). Found 2026-09-10, not yet acted on.
+    // readable (`todo/shoot-mode.md` 7h). Found 2026-09-10 and PORTED the same
+    // day (`todo/shoot-mode.md` 8.5): the sensitivities, row 25's invert and
+    // the +-45 clamp are the engine's now; the pitch's absolute sign and
+    // `--invert-x` stay this port's.
     bool mouseInvertX = false, mouseInvertY = false;
     // The shoot camera's EYE LIFT, in inches. THE DEFAULT IS THE ENGINE'S OWN
     // RULE, found where a reader told me to look: `Camera_Request` stores the
@@ -3793,10 +3796,7 @@ int main(int argc, char** argv) {
     // end of the supermarket cutscene because the port hid him for "shoot
     // mode" while a script's own camera had taken the view back to third
     // person, leaving an empty room (`todo/omk-play.md` 97).
-// Mouse sensitivity. THIS PORT'S CHOICE, not the game's: the engine reads
-// mouse motion nowhere in the binding path, so no shipped number governs it.
-    constexpr float kMouseYawPerPixel   = 0.18f;
-    constexpr float kMousePitchPerPixel = 0.14f;
+    // (the mouse's sensitivities are the engine's own now - `mouseSensX` below)
 
     bool shootCameraLive = false;
     // The first-person AIM. Yaw is the player's own facing (the mouse turns
@@ -3830,10 +3830,15 @@ int main(int argc, char** argv) {
     long  shootMoveFrames = 0;
     float shootMoveDist = 0.0f;
     float shootMoveFrom[3] = {0.0f, 0.0f, 0.0f};
-    // `sub_47D370`'s yaw sensitivity, options row 23 (`word_90E1AC`, GAME_STATE
-    // +44): its DEFAULT, 20. The options header is not read into this viewer,
-    // so a changed setting does not reach the keyboard turn.
-    constexpr int kShootTurnSensitivity = 20;
+    // `sub_47D370`'s sensitivities and its invert, options rows 23, 24 and 25
+    // (`word_90E1AC` / `word_90E1AE` / `byte_90E1B0`, the header's +44/+46/
+    // +48) out of the save header or the ini's MouseSensX / MouseSensY - the
+    // defaults 20, 15 and off. The mouse and the turn keys share row 23.
+    const int  mouseSensX = settings.v.mouseSensitivityX;
+    const int  mouseSensY = settings.v.mouseSensitivityY;
+    // `--invert-y` flips the row, as choosing it in the menu would
+    const bool mouseInverted = settings.v.mouseInverted != mouseInvertY;
+    bool shootPitchDirty = false;   // MDLUP / MDLDO moved the pitch this frame
     // THE RAISE (`actor/shootaim.h`): the player's pose for this frame with the
     // shoot aim layer over its upper body - every bone the table at 0x4C3798
     // marks takes `S_AUTOLK`'s grid (group 202's default) at the aim angles,
@@ -5872,13 +5877,28 @@ int main(int argc, char** argv) {
                     }
                 }
                 if (shootMode && shootCameraLive &&
-                    (host.mouseDX != 0.0f || host.mouseDY != 0.0f)) {
-                    player->aimYawBy(host.mouseDX * kMouseYawPerPixel *
-                                     (mouseInvertX ? 1.0f : -1.0f));
-                    shootPitch += host.mouseDY * kMousePitchPerPixel *
-                                  (mouseInvertY ? -1.0f : 1.0f);
-                    if (shootPitch >  70.0f) shootPitch =  70.0f;
-                    if (shootPitch < -70.0f) shootPitch = -70.0f;
+                    (host.mouseDX != 0.0f || host.mouseDY != 0.0f || shootPitchDirty)) {
+                    // `sub_47D370`, reached by `sub_45D1D0(player, dx, dy)` from
+                    // the mouse's own arm (0x4A8278: the cursor's offset from
+                    // the window centre, which it then re-centres; 0x4A82AA:
+                    // the DirectInput deltas). YAW `+420 -= row23 * 0.01 * dx`,
+                    // no frame delta; PITCH `+= row24 * 0.01 * dy * delta`, dy
+                    // negated unless row 25 is set, clamped at +-45
+                    // (`actor/shootmove.h`). The pitch's absolute SIGN is this
+                    // viewer's camera's, anchored on the reader's confirmed
+                    // sense at the default (row 25 off) - so `shootPitch` is the
+                    // engine's pitch negated. `--invert-x` is this port's own:
+                    // the engine has no yaw invert.
+                    const int dx = static_cast<int>(std::lround(host.mouseDX));
+                    const int dy = static_cast<int>(std::lround(host.mouseDY));
+                    if (dx != 0)
+                        player->aimYawBy(omk::shootTurnDegrees(dx, mouseSensX) *
+                                         (mouseInvertX ? -1.0f : 1.0f));
+                    if (dy != 0)
+                        shootPitch = -omk::shootPitchStep(-shootPitch, dy, mouseSensY,
+                                                          mouseInverted,
+                                                          static_cast<float>(frameSec * 30.0));
+                    shootPitchDirty = false;
                     // `camera_presets.json` row 4: eye (0,0,0) on the player,
                     // target (0, 0, 787.4016) - 20.00 m in front. Pitching it
                     // swings that target up and down about the eye.
@@ -6794,7 +6814,17 @@ int main(int argc, char** argv) {
                         omk::shootMoveCrouch(shootMover, mv == "MDDO");
                     if ((mv == "MDRG" || mv == "MDRD") && shootMover.active)
                         player->aimYawBy(omk::shootTurnDegrees(mv == "MDRG" ? -50 : 50,
-                                                               kShootTurnSensitivity));
+                                                               mouseSensX));
+                    // `Regarder En-Haut` / `En-Bas`: MDLUP and MDLDO are
+                    // `sub_45D1D0(0, 0, -/+25)` (0x0046B6E0 / 0x0046B6F0) - the
+                    // mouse's pitch, stepped 25 units; the camera takes it at
+                    // the aim block's next pass
+                    if ((mv == "MDLUP" || mv == "MDLDO") && shootMover.active) {
+                        shootPitch = -omk::shootPitchStep(-shootPitch, mv == "MDLUP" ? -25 : 25,
+                                                          mouseSensY, mouseInverted,
+                                                          static_cast<float>(frameSec * 30.0));
+                        shootPitchDirty = true;
+                    }
                     // THE JUMP'S IMPULSE (`todo/player-vertical.md` step 2).
                     // `MDJUMP01` is the one that writes the three velocity
                     // fields; `MDJUMP0A`/`0B` only prepare them, and the

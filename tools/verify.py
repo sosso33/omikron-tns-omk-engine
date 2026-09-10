@@ -25995,7 +25995,7 @@ def c_shoot_fire():
             "no row:", "aim:", "record shot:", "magazine:", "full:",
             "wall:", "range:", "wind-up 12:", "grow:",
             "hit:", "bands:", "gates:", "shield:", "kill:", "raise:", "slew:",
-            "mover rows:", "mover held:", "mover crouch:", "type:")
+            "mover rows:", "mover held:", "mover crouch:", "look:", "type:")
     got = []
     for k in keys:
         m = re.search(r"^" + re.escape(k) + r" (.*)$", out, re.M)
@@ -26077,6 +26077,10 @@ def c_shoot_fire():
             "-10.66 -9.62 -8.58 -7.54 -6.50 -5.46 -5.85 -5.85; reversed 0.5200; facing 90: "
             "step 0.00 -11.70 then 11.70 -0.00; refused 0x800 1, falling 1; turn MDRG 10.0 "
             "MDRD -10.0",
+            # THE LOOK, `sub_47D370`'s pitch half at row 24's default 15: dy
+            # negated unless row 25 is set, times the frame's 30/fps, +-45
+            "dy 10 -> -1.50, inverted 1.50, 60 fps -0.75; clamped -45.00 45.00; "
+            "MDLUP 3.75 MDLDO -3.75",
             "kind 1 BATPOUV -> -2, kind 1 WAVER -> 1, kind 3 BATPOUV -> 3"]
     if data:
         w = re.search(r"^weapons: (.*)$", out, re.M)
