@@ -410,7 +410,12 @@ supermarket should now raise the gauge at once - +50 for a medium, +100 for a
 large, +16 for a small (its subtitle says +15) - with the pickup line. The kits
 you carry from adventure mode are used by themselves when a hit leaves you
 under 40 health; nothing can hit you yet, so that part waits for the robbers'
-shots. Wrong looks like: the pickup line with no change on the gauge.
+shots. Wrong looks like: the pickup line with no change on the gauge. (The reader's
+session of 2026-09-10 logs all three: the medium kit 10 -> 60, the small 60 ->
+76, the large 76 -> 176, each through `sub_423A40` to the gauge. Not yet
+judged by eye. The HUD's own log line then printed every frame at 176 -
+its empty-part pixel probe sat in the gauge's scrolling fill - and no longer
+compares the probes.)
 
 **CONFIRMED IN PLAY 2026-09-10 (*"Good"*): THE MOUSE LOOK, the engine's own.** The
 mouse turns and tilts the first-person view with the game's own settings -

@@ -13629,8 +13629,15 @@ int main(int argc, char** argv) {
                           bar.quads, bar.blits,
                           pixel(fb.w * 24 / 640 - fb.w * 5 / 640, fb.h * 300 / 480),
                           pixel(fb.w * 24 / 640, fb.h * 100 / 480));
-            if (hudTold != line) {
-                hudTold = line;
+            // told when the line CHANGES - but not for the two pixel probes:
+            // once the gauge is full enough its fill covers the empty-part
+            // probe and the fill's column SCROLLS a frame, so that pixel
+            // changes every frame and the line was printed every frame (a
+            // reader's session at 176 of 200). They are printed, not compared.
+            const std::string told(line);
+            const std::string key = told.substr(0, told.find(", frame pixel"));
+            if (hudTold != key) {
+                hudTold = key;
                 std::printf("frame %ld: shoot HUD (screen %d) - %s\n", n,
                             session.shootMode().hudScreen(), line);
             }
