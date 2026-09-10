@@ -100,7 +100,8 @@ RecordShotOut ProjectilePool::fireFromRecord(int actor, const ShootWeaponRow& ro
     return out;
 }
 
-int ProjectilePool::fly(float dt, const WorldRay& world, std::vector<FlightEvent>* out) {
+int ProjectilePool::fly(float dt, const WorldRay& world, std::vector<FlightEvent>* out,
+                        const ActorSweep& actors) {
     int retired = 0;
     for (std::size_t i = 0; i < pool_.size(); ++i) {
         Projectile& e = pool_[i];
@@ -129,14 +130,22 @@ int ProjectilePool::fly(float dt, const WorldRay& world, std::vector<FlightEvent
             b[k] = static_cast<float>(double(e.pos[k]) - h[k] * -0.5);
         e.travelled = static_cast<float>(double(e.speed) * dt + e.travelled);
         float at[3] = {e.pos[0], e.pos[1], e.pos[2]};
-        const bool hit = world && world(a, b, at);
+        // the BODIES first (`sub_45E9C0`); the world only if none was met
+        int victim = -1;
+        const bool body = actors && actors(a, b, e.owner, at, victim);
+        const bool hit = body || (world && world(a, b, at));
         if (e.travelled > kProjectileRange || hit) {
             if (out) {
                 FlightEvent ev;
                 ev.entry = static_cast<int>(i);
-                ev.why = hit ? FlightEvent::Why::World : FlightEvent::Why::Range;
+                ev.why = body ? FlightEvent::Why::Actor
+                       : hit  ? FlightEvent::Why::World : FlightEvent::Why::Range;
                 for (int k = 0; k < 3; ++k) ev.at[k] = at[k];
                 ev.travelled = e.travelled;
+                ev.victim = body ? victim : -1;
+                ev.owner = e.owner;
+                ev.damage = e.kind;
+                for (int k = 0; k < 3; ++k) ev.vel[k] = e.vel[k];
                 out->push_back(ev);
             }
             // `o3de_UnlinkObject; ...; sub_437890(node); *v3 = 0`

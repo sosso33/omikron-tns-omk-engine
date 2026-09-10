@@ -79,12 +79,22 @@ struct Projectile {
 
 // What one frame of `Projectiles_Tick` did to an entry that it retired.
 struct FlightEvent {
-    enum class Why { World, Range };
+    enum class Why { World, Range, Actor };
     int   entry = -1;
     Why   why = Why::Range;
     float at[3] = {0, 0, 0};   // the world hit, or where the range ran out
     float travelled = 0.0f;
+    int   victim = -1;         // Why::Actor: the body the sweep met
+    int   owner = -1;          // the entry's +44
+    int   damage = 0;          // the entry's +56
+    float vel[3] = {0, 0, 0};  // its velocity, for the hit's direction
 };
+// The ACTOR sweep (`sub_45E9C0`, `actor/shoothit.h`): the segment a..b
+// against every body but the shooter's. true, the hit point and the victim's
+// actor id when it meets one. Tested BEFORE the world, and a body met stops
+// the bolt whatever the hit then does.
+using ActorSweep = std::function<bool(const float a[3], const float b[3], int owner,
+                                      float hit[3], int& victim)>;
 // The world ray `sub_4449E0` casts: the segment a..b against every set mesh
 // but those flagged 0x800000 (`sub_444460`'s own filter). true and the hit
 // point when it meets one.
@@ -193,7 +203,8 @@ public:
     //
     // where the heading is the node's own -X axis read back through its
     // matrix, not the velocity. Returns how many it retired this frame.
-    int fly(float dt, const WorldRay& world, std::vector<FlightEvent>* out = nullptr);
+    int fly(float dt, const WorldRay& world, std::vector<FlightEvent>* out = nullptr,
+            const ActorSweep& actors = nullptr);
 
     const std::array<Projectile, kProjectileSlots>& entries() const { return pool_; }
     void clear() { pool_ = {}; }

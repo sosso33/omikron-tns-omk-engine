@@ -361,9 +361,18 @@ Wrong looks like: a bolt on the press frame itself (the gate bypassed), one
 bolt per frame while held (no rate), a bolt from the eye rather than low in
 the view, or a bolt that goes through walls.
 
-**Not expected to work yet**: hitting a gunman. Bolts pass THROUGH bodies - the
-hit is read and not ported (`todo/shoot-mode.md` §7j) - so the phase still
-cannot be completed.
+**Now expected to work (ported after the play, 2026-09-10)**: hitting a
+gunman. Three Waver bolts should kill one; he should play a death clip
+and stay down, and later bolts should stop at his body. The hit test uses
+boxes, so a bolt skimming just over a shoulder can still count - that is
+the engine's own test (`todo/shoot-mode.md` §7j), not a fault.
+
+**And look at where people STAND, here and elsewhere.** Every body placed
+by its record and turned by its facing now turns about its pelvis instead
+of its model origin. For most characters that moves nothing you would see;
+for the gallery's gunmen it moved them up to 770 units, onto the spots
+their own AI thought they were on. Anyone suddenly standing somewhere odd
+- in a wall, off a ledge - after this change is the thing to report.
 
 ## What is NOT worth testing yet
 

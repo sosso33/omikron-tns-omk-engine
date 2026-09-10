@@ -133,6 +133,13 @@ struct Mesh {
     float radius = 0.0f;      // +88
     float boxMin[3] = {0, 0, 0};   // +92,  and symmetric about the origin
     float boxMax[3] = {0, 0, 0};   // +104
+    // +76..+84: the bounding sphere's CENTRE in the mesh's own frame - what
+    // the projectile sweep's `sub_45ECA0` turns by the mesh matrix and adds to
+    // the node's origin before testing +88 (`actor/shoothit.h`). Half a
+    // limb's length along it: VIR_FN's forearm carries (6.09, 0.04, 0.21)
+    // against a box running x -0.5..12.7, its thigh 7.58 down a -2.7..17.9
+    // box; a ROOT's is 0.
+    float centre[3] = {0, 0, 0};
 };
 
 // ------------------------------------------------------------- the geometry

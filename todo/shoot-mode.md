@@ -1054,10 +1054,44 @@ not followed); the resident but unlinked set is not tested (it is not in the
 scene graph); the entry's `+40/+52` without a sprite are zeroed where the
 engine leaves the last user's values.
 
-## 7j. THE HIT — read, NOT ported (step 2b)
+## 7j. THE HIT — ported 2026-09-10 (step 2b)
 
-Everything below is read and none of it is in the port: bolts pass through
-gunmen.
+**Ported** (`actor/shoothit.{h,cpp}`): the sweep, the damage, the reaction and
+the death clip. In the Shooting gallery three Waver bolts kill gunman 240 -
+15, 10, 5, 0, every hit band 2, death clip type 5 - and the bolts after them
+stop at the corpse doing nothing (`verify.py: engine: shoot hit`). Three
+things came out of porting it that the reading below did not say:
+
+* **The engine's box test omits a bound, and it is kept.** `sub_4986B0`
+  checks the non-chosen axes against ONE bound each: an axis whose start
+  lay above the box needs the hit at or above its minimum, one whose start
+  lay below needs it at or below its maximum, and an axis whose start lay
+  BETWEEN its planes is not checked at all. So a line 40 above a pelvis -
+  outside the head's sphere, inside the body's 44 - still counts on the
+  pelvis box. Read from the assembly (0x004986DC..0x00498852), not the
+  decompiler; the probe asserts it.
+* **`+76..+84` is each mesh's sphere CENTRE**, in its own frame - half a
+  limb's length along it - and the ROOT's radius is the whole body's (44.4
+  on VIR_FN, 42.5 on HO1_FN), which is what makes the node's sphere a
+  whole-body first test. `omk::Mesh::centre`, read now.
+* **A placement-only body was drawn turned about its MODEL ORIGIN.** VIR_FN
+  is authored at x 546, so at a facing of 89 its pelvis was drawn 770 units
+  from its placement - where its own brain did not think it was, and where
+  no bolt through the placement could meet it. The engine puts the node
+  (the pelvis) at the placement and hangs everything off it, so a body turns
+  about its pelvis; the viewer does that now. The per-mesh positions the
+  shadows read (`meshAt`, `headAt`) had a second fault of the same family -
+  offset first, turned after, about the WORLD origin - and are fixed with
+  it. **This moves every placement-turned body in the game**, not only in
+  shoot mode: it wants a person's eye.
+
+Still not ported, labelled: the noise alert (`sub_4246E0`), the explosion
+over damage 10 (`sub_424470`), the reactions' `+148` (its writer is
+unread), types 13/10 among 0x4000 victims, the player being hit (nothing
+fires at him yet), and the death clip's pick is a fixed function where the
+engine's is `rand()`.
+
+The reading it was built from:
 
 * **What can be hit** - `sub_45E9C0` sweeps two lists `sub_45DF50(1, 320)`
   sizes: 320 20-byte records that `Actor_Attach` fills with every attached
@@ -1102,7 +1136,7 @@ forget to plan it."* The session's own log agrees with the gate: 245 latches
 (`MDSHOOT0` arms one on every held frame) gave 36 shots, never two closer than
 10 frames, seven frames from rest, and all 36 stopped by the world.
 
-1. **THE HIT (§7j) — step 2b, next.** With it goes the NOISE, read 2026-09-10:
+1. ~~**THE HIT (§7j) — step 2b, next.**~~ **PORTED 2026-09-10, §7j.** Still to do from it, the NOISE, read 2026-09-10:
    `sub_4246E0` is called at every shot (with the muzzle) and every impact,
    and it is not a sound - it ALERTS gunmen. Each one flagged 0x40, not yet
    0x20, not type 14 and not the player, within `property 28 × flt_907EAC`

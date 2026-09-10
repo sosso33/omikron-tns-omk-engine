@@ -68,13 +68,13 @@ directly, scanning every chunk's zone slots **and** its startup script at `+4`.
 | 7e the play test | done — see §3 |
 | **7h the SHOT**: `MDSHOOT0`'s latch, `sub_47C2A0`'s gate, the record path to the pool | **done 2026-09-10, `cc3d1f9`** — not yet played |
 | **7i the FLIGHT**: `Projectiles_Tick`, the world ray, the bolt drawn | **done 2026-09-10, `96fab56`** — not yet played |
-| **7j the HIT**: the actor sweep, damage, reactions, death | **read, NOT ported** — `todo/shoot-mode.md` §7j is its reading |
+| **7j the HIT**: the actor sweep, damage, reactions, death | **done 2026-09-10** — three bolts kill a gallery gunman; not yet played |
 
-**16 checks** cover it: `shoot arenas`, `map2d grid`, `map2d sight`,
+**17 checks** cover it (`engine: shoot hit` added with the hit): `shoot arenas`, `map2d grid`, `map2d sight`,
 `bone names`, `shoot range`, `shoot generic`, `projectile pool`,
 `shoot input`, `shoot mode`, `engine: shoot mode`, `engine: shoot brain`,
-`engine: shoot AI`, `engine: shoot pose`, `weapon table`, **`shoot fire`**
-and **`engine: shoot fire`** (the last is `--slow`).
+`engine: shoot AI`, `engine: shoot pose`, `weapon table`, **`shoot fire`**,
+**`engine: shoot fire`** and **`engine: shoot hit`** (the last two `--slow`).
 
 ## 3. What a person has CONFIRMED, and what is only measured
 
@@ -105,13 +105,18 @@ the addresses it named before wiring anything:
    rate and the weapon's raise, and whose outcome 2 raises `dword_4E9744`;
 4. the frame loop fires `Actor_TickProjectiles(player)` once.
 
-**What is left is THE HIT (§7j, step 2b)**, read and not ported: bolts pass
-through gunmen, so the phase still cannot be completed. The reading is done -
-the two node lists the sweep walks, the per-mesh sphere and box tests, the
+**THE HIT IS PORTED (§7j, 2026-09-10)**: bolts meet gunmen, deal their damage
+and kill them, with the death clip their direction picks. ~~What is left is
+THE HIT, read and not ported: bolts pass through gunmen, so the phase still
+cannot be completed.~~ It also moved every placement-turned body to turn about
+its PELVIS instead of its model origin - see §7j, and look at it in play. What
+the hit is made of: the two node lists the sweep walks, the per-mesh sphere and
+box tests (the engine's box test omits a bound, and the port keeps it), the
 damage rules (gunmen cannot hurt each other; the baton's damage 6 reaches only
 0x4000 victims), the four hit-direction bands and the death clips they pick,
-the reactions - and the port's missing piece is named: per-mesh world
-transforms for a staged gunman, captured at the draw.
+and the reactions - on per-mesh world transforms the viewer captures at the
+draw, which is the engine's own order since the flight runs before the actors
+tick.
 
 **And the gunmen's own shots** are still not wired: the brain reaches
 outcome 1 and `sub_47C2A0` would fire them directly, but the port's brain

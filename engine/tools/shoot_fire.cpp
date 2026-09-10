@@ -12,6 +12,7 @@
 #include "actor/projectile.h"
 #include "actor/shoot.h"
 #include "actor/shootfire.h"
+#include "actor/shoothit.h"
 #include "actor/state.h"
 #include "formats/sfx.h"
 #include "o3de/collision.h"
@@ -253,6 +254,91 @@ int main(int argc, char** argv) {
             std::printf("grow: scale after 12 frames %.2f %.2f %.2f\n", double(e.scale[0]),
                         double(e.scale[1]), double(e.scale[2]));
         }
+    }
+
+    // THE HIT (`actor/shoothit.h`). One body, actor 9: a pelvis at z -300
+    // (radius 44, the whole body's) with a small box, and a head 25 above it.
+    {
+        omk::HitBody body;
+        body.actor = 9;
+        body.root = 0;
+        omk::HitMesh pelvis;
+        pelvis.pos[2] = -300.0f;
+        pelvis.radius = 44.0f;
+        pelvis.boxMin[0] = -7; pelvis.boxMin[1] = -5; pelvis.boxMin[2] = -8;
+        pelvis.boxMax[0] =  7; pelvis.boxMax[1] =  6; pelvis.boxMax[2] =  3;
+        omk::HitMesh head;
+        head.pos[1] = -25.0f; head.pos[2] = -300.0f;
+        head.centre[1] = -3.0f;
+        head.radius = 6.0f;
+        head.boxMin[0] = -4; head.boxMin[1] = -8; head.boxMin[2] = -6;
+        head.boxMax[0] =  4; head.boxMax[1] =  1; head.boxMax[2] =  3;
+        body.meshes = {pelvis, head};
+        const std::vector<omk::HitBody> bodies = {body};
+        const auto shoot = [&](float x, float y, int exclude) {
+            const float a[3] = {x, y, 0.0f}, b[3] = {x, y, -400.0f};
+            omk::BodyHit h;
+            const bool hit = omk::shootSweepBodies(a, b, bodies, exclude, h);
+            char buf[96];
+            if (hit)
+                std::snprintf(buf, sizeof buf, "actor %d mesh %d at %.1f %.1f %.1f dist %.1f",
+                              h.actor, h.mesh, double(h.at[0]), double(h.at[1]),
+                              double(h.at[2]), double(h.dist));
+            else
+                std::snprintf(buf, sizeof buf, "miss");
+            return std::string(buf);
+        };
+        // "over the head" is the engine's box test ON ITS OWN TERMS: 40 above
+        // the pelvis the line misses the head's sphere, passes inside the
+        // body's 44, and the pelvis box - whose start lies BELOW its minimum
+        // on y with no motion along y - has only its MAXIMUM checked, so it
+        // counts. Transcribed from 0x004987F0..0x00498852, not corrected.
+        std::printf("hit: straight %s; over the head %s; 60 aside %s; own body %s\n",
+                    shoot(0, 0, -1).c_str(), shoot(0, -40, -1).c_str(),
+                    shoot(60, 0, -1).c_str(), shoot(0, 0, 9).c_str());
+        const float vA[3] = {0, 0, -1}, vB[3] = {0, 0, 1}, vC[3] = {1, 0, 0},
+                    vD[3] = {0.9f, 0, -0.44f};
+        const int bands[4] = {omk::shootHitBand(0, vA), omk::shootHitBand(0, vB),
+                              omk::shootHitBand(0, vC), omk::shootHitBand(0, vD)};
+        std::printf("bands: along %d back %d side %d slant %d; death types %d %d %d %d\n",
+                    bands[0], bands[1], bands[2], bands[3],
+                    omk::shootDeathClipType(bands[0]), omk::shootDeathClipType(bands[1]),
+                    omk::shootDeathClipType(bands[2]), omk::shootDeathClipType(bands[3]));
+        // THE DAMAGE's gates and arithmetic
+        const auto hitWith = [](omk::ShootRecord r, omk::HitIn in) {
+            const auto o = omk::shootApplyHit(r, in);
+            return o.refused ? -1 : o.health;
+        };
+        omk::ShootRecord g; g.health = 15;
+        omk::HitIn fromPlayer; fromPlayer.damage = 5; fromPlayer.shooterIsPlayer = true;
+        fromPlayer.boltVel[2] = -1.0f;
+        omk::HitIn gunOnGun = fromPlayer; gunOnGun.shooterIsPlayer = false;
+        omk::HitIn notInShoot = fromPlayer; notInShoot.victimInShoot = false;
+        omk::ShootRecord inv = g; inv.flags = 0x800;
+        omk::HitIn baton = fromPlayer; baton.damage = 6;
+        omk::ShootRecord t11 = g; t11.type = 11;
+        omk::ShootRecord spectre = g; spectre.flags = 0x4000;
+        std::printf("gates: player hit %d, gunman on gunman %d, not in shoot %d, 0x800 %d, "
+                    "baton on type 0 %d, baton on type 11 %d, Waver on 0x4000 %d, "
+                    "baton on 0x4000 %d\n",
+                    hitWith(g, fromPlayer), hitWith(g, gunOnGun), hitWith(g, notInShoot),
+                    hitWith(inv, fromPlayer), hitWith(g, baton), hitWith(t11, baton),
+                    hitWith(spectre, fromPlayer), hitWith(spectre, baton));
+        omk::ShootRecord me; me.health = 100;
+        omk::HitIn atMe; atMe.damage = 5; atMe.victimIsPlayer = true; atMe.bodyShield = 30;
+        omk::ShootRecord me2 = me;
+        omk::HitIn atMe2 = atMe; atMe2.bodyShield = 100;
+        std::printf("shield: 5 through 30 -> %d, through 100 -> %d\n",
+                    100 - hitWith(me, atMe), 100 - hitWith(me2, atMe2));
+        // three Waver hits on a 15-health gunman, the third from behind him
+        omk::ShootRecord v; v.health = 15;
+        omk::HitIn react = fromPlayer; react.reactAt = 12;
+        const auto h1 = omk::shootApplyHit(v, react);
+        const auto h2 = omk::shootApplyHit(v, react);
+        const auto h3 = omk::shootApplyHit(v, react);
+        std::printf("kill: %d %d %d, actions %d %d, killed %d, death type %d, enemy drop %d, "
+                    "flags 0x%x\n", h1.health, h2.health, h3.health, h1.action, h2.action,
+                    int(h3.killed), h3.deathType, int(h3.enemyCountDrop), v.flags);
     }
 
     // THE TYPE: the object's kind, and the one hand-written exception.

@@ -39,6 +39,7 @@
 #include "input/bindings.h"
 #include "actor/shoot.h"
 #include "actor/shootfire.h"
+#include "actor/shoothit.h"
 #include "actor/projectile.h"
 #include "actor/moves.h"
 #include "actor/slider.h"
@@ -3352,6 +3353,11 @@ int main(int argc, char** argv) {
         bool  lookSnap = true;
         bool  shootTold = false;
         bool  brainTold = false;
+        // KILLED BY A BOLT (`sub_4240E0`): the death clip TYPE its band chose,
+        // and the frame it began - the clip plays once and holds its last
+        // frame. -1 while alive.
+        int   deathType = -1;
+        long  deathStart = 0;
         // SEATED ONCE, the way the engine seats an actor once and then
         // `Actor_MoveBy`s him: the feet go on the floor when the pose SOURCE
         // or the clip changes, and the clip's root motion moves him from
@@ -3382,6 +3388,11 @@ int main(int argc, char** argv) {
         // (`node+44/48/52`) rather than from anything in the drawn corners.
         // Three floats a mesh, empty when the body was not placed this frame.
         std::vector<float> meshAt;
+        // ...and each mesh's world ROTATION beside it, nine floats a mesh,
+        // column-major (the mesh's local X, Y, Z in the world) - what the
+        // projectile sweep turns a mesh's sphere centre and box by
+        // (`actor/shoothit.h`). The same frame `meshAt` is in.
+        std::vector<float> meshRot;
         bool  headKnown = false;
         // `Morph_Play` reads the node's world heading ONCE, when the line
         // starts, and `sub_42BE00` hands the morph that yaw for its whole
@@ -3623,6 +3634,22 @@ int main(int argc, char** argv) {
             return m[r % m.size()];
         }
         return &it->second.front();          // "anim non existante dans le .ANI"
+    };
+    // `List_PickRandomByType(list, type)` for a DEATH clip (`sub_4240E0`): a
+    // clip of that TYPE, and type 5 when the group has none. The engine's pick
+    // is `rand()`; this one is a fixed function of (group, type), labelled.
+    const auto shootClipOfType = [&](int group, int type) -> const omk::PedClip* {
+        if (pedAni.empty()) return nullptr;
+        auto it = shootClips.find(group);
+        if (it == shootClips.end())
+            it = shootClips.emplace(group, omk::animGroupClips(pedAni, group)).first;
+        for (int t : {type, 5}) {
+            std::vector<const omk::PedClip*> m;
+            for (const auto& c : it->second) if (c.type == t) m.push_back(&c);
+            if (!m.empty())
+                return m[static_cast<std::size_t>(group * 7 + t) % m.size()];
+        }
+        return nullptr;
     };
     const auto pedTracksFor = [&](int sex, const omk::PedClip& c, const std::vector<omk::Mesh>& meshes)
         -> const omk::NodeTracks* {
@@ -5482,15 +5509,127 @@ int main(int argc, char** argv) {
                     for (int k = 0; k < 3; ++k) hit[k] = static_cast<float>(p0[k] + h->t * d[k]);
                     return true;
                 };
+                // THE BODIES (`actor/shoothit.h`): every staged gunman in shoot
+                // mode as he was DRAWN last frame - which is the engine's own
+                // order, since the flight runs before the actors tick. Each
+                // mesh at its `meshAt` in its `meshRot`, bounded by its own
+                // record's +76 centre, +88 radius and +92/+104 box. The
+                // player's body is not in the list yet: only his bolts fly.
+                std::vector<omk::HitBody> bodies;
+                for (const auto& up : staged) {
+                    if (!up || up->actor < 0 || !up->mo || !up->drawn) continue;
+                    if (session.shootAction(up->actor) < 0) continue;
+                    const std::size_t nm = up->mo->meshes.size();
+                    if (up->meshAt.size() != nm * 3 || up->meshRot.size() != nm * 9) continue;
+                    omk::HitBody hb;
+                    hb.actor = up->actor;
+                    hb.root = up->mo->root;
+                    hb.meshes.resize(nm);
+                    for (std::size_t mi = 0; mi < nm; ++mi) {
+                        const omk::Mesh& me = up->mo->meshes[mi];
+                        omk::HitMesh& hm = hb.meshes[mi];
+                        for (int k = 0; k < 3; ++k) {
+                            hm.pos[k] = up->meshAt[mi * 3 + static_cast<std::size_t>(k)];
+                            hm.centre[k] = me.centre[k];
+                            hm.boxMin[k] = me.boxMin[k];
+                            hm.boxMax[k] = me.boxMax[k];
+                        }
+                        for (int k = 0; k < 9; ++k)
+                            hm.m[k] = up->meshRot[mi * 9 + static_cast<std::size_t>(k)];
+                        hm.radius = me.radius;
+                    }
+                    bodies.push_back(std::move(hb));
+                }
+                // what the sweep is given, once per shoot mode - the first
+                // question when a bolt passes through somebody
+                static long bodiesTold = -1;
+                if (bodiesTold < 0 || (!shootMode && bodiesTold >= 0)) {
+                    if (shootMode) {
+                        bodiesTold = n;
+                        std::printf("frame %ld: sweep - %zu bodies (staged %zu):", n,
+                                    bodies.size(), staged.size());
+                        for (const auto& hb : bodies) {
+                            const bool ok = hb.root >= 0 &&
+                                            static_cast<std::size_t>(hb.root) < hb.meshes.size();
+                            const omk::HitMesh& r0 = ok ? hb.meshes[static_cast<std::size_t>(hb.root)]
+                                                        : hb.meshes.front();
+                            std::printf(" [actor %d root %d at %.0f %.0f %.0f r %.1f, %zu meshes]",
+                                        hb.actor, hb.root, double(r0.pos[0]), double(r0.pos[1]),
+                                        double(r0.pos[2]), double(r0.radius), hb.meshes.size());
+                        }
+                        std::printf("\n");
+                        for (const auto& up : staged)
+                            if (up && session.shootAction(up->actor) >= 0 &&
+                                (!up->drawn || up->meshRot.empty()))
+                                std::printf("  actor %d left out: drawn %d, meshAt %zu, meshRot %zu\n",
+                                            up->actor, int(up->drawn), up->meshAt.size(),
+                                            up->meshRot.size());
+                    } else {
+                        bodiesTold = -1;
+                    }
+                }
+                const auto sweep = [&](const float a[3], const float b[3], int owner,
+                                       float hit[3], int& victim) {
+                    omk::BodyHit bh;
+                    if (!omk::shootSweepBodies(a, b, bodies, owner, bh)) return false;
+                    for (int k = 0; k < 3; ++k) hit[k] = bh.at[k];
+                    victim = bh.actor;
+                    return true;
+                };
                 std::vector<omk::FlightEvent> flown;
-                projectiles.fly(static_cast<float>(frameSec * 30.0), ray, &flown);
-                for (const auto& ev : flown)
-                    std::printf("frame %ld: SHOT retired - entry %d %s at %.1f %.1f %.1f "
-                                "after %.1f, %d live\n", n, ev.entry,
-                                ev.why == omk::FlightEvent::Why::World ? "hit the world"
-                                                                     : "out of range",
+                projectiles.fly(static_cast<float>(frameSec * 30.0), ray, &flown, sweep);
+                for (const auto& ev : flown) {
+                    if (ev.why != omk::FlightEvent::Why::Actor) {
+                        std::printf("frame %ld: SHOT retired - entry %d %s at %.1f %.1f %.1f "
+                                    "after %.1f, %d live\n", n, ev.entry,
+                                    ev.why == omk::FlightEvent::Why::World ? "hit the world"
+                                                                         : "out of range",
+                                    double(ev.at[0]), double(ev.at[1]), double(ev.at[2]),
+                                    double(ev.travelled), projectiles.live());
+                        continue;
+                    }
+                    std::printf("frame %ld: SHOT retired - entry %d HIT ACTOR %d at %.1f %.1f "
+                                "%.1f after %.1f, %d live\n", n, ev.entry, ev.victim,
                                 double(ev.at[0]), double(ev.at[1]), double(ev.at[2]),
                                 double(ev.travelled), projectiles.live());
+                    // ---- `sub_4240E0`, the damage, on his shoot record ----
+                    Staged* vs = nullptr;
+                    for (auto& up : staged)
+                        if (up && up->actor == ev.victim) { vs = up.get(); break; }
+                    const auto bit = shootBrains.find(ev.victim);
+                    if (!vs || bit == shootBrains.end()) {
+                        std::printf("  (no shoot record for actor %d: nothing to damage)\n",
+                                    ev.victim);
+                        continue;
+                    }
+                    omk::HitIn hin;
+                    hin.damage = ev.damage;
+                    hin.shooterIsPlayer = ev.owner == -1;
+                    hin.victimIsPlayer = false;
+                    hin.victimInShoot = session.shootAction(ev.victim) >= 0;
+                    std::int32_t p24 = 0;
+                    session.actorProperty(ev.victim, 24, p24);
+                    hin.reactAt = p24;
+                    hin.victimYaw = vs->facing;
+                    for (int k = 0; k < 3; ++k) hin.boltVel[k] = ev.vel[k];
+                    const omk::HitOut ho = omk::shootApplyHit(bit->second, hin);
+                    if (ho.refused) {
+                        std::printf("  hit REFUSED (`sub_4240E0` returns -1) - the bolt stops "
+                                    "anyway\n");
+                        continue;
+                    }
+                    std::printf("  hit: damage %d, health %d -> %d, band %d, reaction %d "
+                                "(threshold %d)\n", ho.damage, ho.healthWas, ho.health,
+                                ho.band, ho.action, int(p24));
+                    if (ho.action >= 0)
+                        session.shootModeMutable().actorAction(ev.victim, ho.action);
+                    if (ho.killed) {
+                        vs->deathType = ho.deathType;
+                        vs->deathStart = n;
+                        std::printf("  KILLED - death clip type %d%s\n", ho.deathType,
+                                    ho.enemyCountDrop ? ", the enemy count drops" : "");
+                    }
+                }
             }
             bool playerTicked = false;
             static const std::vector<std::string> kNoMoves;
@@ -9984,6 +10123,7 @@ int main(int argc, char** argv) {
                 // puts him in ACTOR_STATE 3 and his clips come from the area's
                 // `.ani`, not from a `.CTL` he does not have.
                 const omk::NodeTracks* shootTracks = nullptr;
+                int shootFrame = 0;    // a death clip plays through; the rest hold frame 0
                 {
                     const int act = session.shootAction(s.actor);
                     // ---- THE GENERIC BRAIN, ticked (todo/shoot-mode.md 7d)
@@ -10003,7 +10143,10 @@ int main(int argc, char** argv) {
                     // engages and disengages on the real distances - and it
                     // does not yet WALK. A gunman aims at the player and
                     // holds his ground.
-                    if (act >= 0 && shootMode) {
+                    // a gunman a bolt KILLED thinks no more (`+160 & 8`)
+                    const auto deadIt = shootBrains.find(s.actor);
+                    const bool shotDead = deadIt != shootBrains.end() && (deadIt->second.flags & 8u);
+                    if (act >= 0 && shootMode && !shotDead) {
                         auto it = shootBrains.find(s.actor);
                         if (it == shootBrains.end()) {
                             omk::ShootRecord fresh;
@@ -10018,6 +10161,9 @@ int main(int argc, char** argv) {
                                 sp.behaviourBits = props[5];
                             }
                             omk::initShootRecord(fresh, sp);
+                            // +80, the character type - the hit's gates test it
+                            // (type 11 takes the baton, 12 never reacts)
+                            fresh.type = session.typeOfActor(s.actor);
                             fresh.state = 6;          // the hub, where a
                             fresh.node  = 0;          // gunman waits
                             it = shootBrains.emplace(s.actor, fresh).first;
@@ -10072,7 +10218,14 @@ int main(int argc, char** argv) {
                         const int grp = static_cast<int>(session.typeOfActor(s.actor));
                         const omk::PedClip* c = (grp >= 0 && grp < 64)
                                               ? shootClipFor(grp, act) : nullptr;
+                        // KILLED: the death clip `sub_4240E0` picked by TYPE
+                        // from the hit's band, played once and then held
+                        if (s.deathType >= 0 && grp >= 0 && grp < 64)
+                            if (const omk::PedClip* dc = shootClipOfType(grp, s.deathType)) c = dc;
                         if (c) shootTracks = pedTracksFor(grp, *c, s.mo->meshes);
+                        if (s.deathType >= 0 && shootTracks && shootTracks->frames > 0)
+                            shootFrame = static_cast<int>(std::min<long>(
+                                n - s.deathStart, static_cast<long>(shootTracks->frames) - 1));
                         if (!s.shootTold && shootTracks) {
                             // THE INSTRUMENT omk-play 96 asked for: a staged
                             // actor never reported whether its clip resolved
@@ -10245,7 +10398,7 @@ int main(int argc, char** argv) {
                     rootW = 1.0f;
                     src = "a scene program's clip";
                 } else if (shootTracks && shootTracks->valid()) {
-                    pose = omk::composePose(s.mo->meshes, *shootTracks, 0, false);
+                    pose = omk::composePose(s.mo->meshes, *shootTracks, shootFrame, false);
                     src = "shoot mode: the area's .ani, by character type";
                 } else if (!s.lastPose.empty() && session.parkedOnProgram()) {
                     // BETWEEN TWO BEATS OF ONE CUTSCENE the body holds the
@@ -10550,7 +10703,20 @@ int main(int argc, char** argv) {
                     aboutPelvis = s.lastAboutPelvis;
                 }
                 else if (s.restYawKnown)          bodyYaw = s.restYaw;
-                else if (spin)                  { bodyYaw = s.facing; aboutPelvis = false; }
+                // A PLACEMENT-ONLY BODY TURNS ABOUT ITS PELVIS, not its model
+                // origin (corrected 2026-09-10). `0139205` wrote "spins by its
+                // record about the origin" with no function behind it, and the
+                // engine places a body the other way: the NODE - the hierarchy
+                // root, the pelvis - is put at the placement and every child
+                // hangs off it, so the facing turns the body about that point.
+                // For a model authored near the origin (HO1_FN's pelvis at x
+                // 2.9) the two differ by a few units; VIR_FN is authored at x
+                // 546, and turned about the origin its pelvis was drawn 770
+                // units from its placement at a facing of 89 - where its own
+                // shoot brain, which uses the placement, did not think it was,
+                // and where the projectile sweep, matching the drawing, could
+                // not be hit from the placement's side.
+                else if (spin)                  { bodyYaw = s.facing; aboutPelvis = true; }
                 // ...and the WORLD heading the body ends up drawn with, which
                 // is what a camera hanging off him reads back.
                 s.drawnYaw = poseHeld && s.lastYawKnown ? s.lastDrawnYaw
@@ -10570,30 +10736,56 @@ int main(int argc, char** argv) {
                                          pose[static_cast<std::size_t>(hd)].pos[2] - pelvis[2]};
                     float r[3];
                     const bool spins = std::fabs(bodyYaw) > 0.01f;
-                    omk::rotateYaw(spins && aboutPelvis ? bodyYaw : 0.0f, hp, r);
-                    for (int k = 0; k < 3; ++k) s.headAt[k] = r[k] + pelvis[k] + off[k];
                     if (spins && !aboutPelvis) {
-                        const float in[3] = {s.headAt[0], s.headAt[1], s.headAt[2]};
-                        omk::rotateYaw(bodyYaw, in, r);
-                        for (int k = 0; k < 3; ++k) s.headAt[k] = r[k];
+                        // the corners' transform, `R * pos + off` - see the
+                        // mesh loop below for what the old order did
+                        const float head[3] = {hp[0] + pelvis[0], hp[1] + pelvis[1],
+                                               hp[2] + pelvis[2]};
+                        omk::rotateYaw(bodyYaw, head, r);
+                        for (int k = 0; k < 3; ++k) s.headAt[k] = r[k] + off[k];
+                    } else {
+                        omk::rotateYaw(spins ? bodyYaw : 0.0f, hp, r);
+                        for (int k = 0; k < 3; ++k) s.headAt[k] = r[k] + pelvis[k] + off[k];
                     }
                     s.headKnown = true;
                 }
                 // ...and every mesh, on the same transform, for the shadow.
                 s.meshAt.assign(pose.size() * 3, 0.0f);
                 for (std::size_t mi = 0; mi < pose.size(); ++mi) {
-                    const float mp[3] = {pose[mi].pos[0] - pelvis[0],
-                                         pose[mi].pos[1] - pelvis[1],
-                                         pose[mi].pos[2] - pelvis[2]};
                     float r[3];
                     const bool spins = std::fabs(bodyYaw) > 0.01f;
-                    omk::rotateYaw(spins && aboutPelvis ? bodyYaw : 0.0f, mp, r);
-                    for (int k = 0; k < 3; ++k) r[k] += pelvis[k] + off[k];
                     if (spins && !aboutPelvis) {
-                        const float in[3] = {r[0], r[1], r[2]};
-                        omk::rotateYaw(bodyYaw, in, r);
+                        // ...ON THE CORNERS' OWN TRANSFORM: a body turned
+                        // about its MODEL origin is `R * pos + off` (the loop
+                        // below). This used to add `off` first and turn the
+                        // sum about the WORLD origin, which put every mesh of
+                        // such a body - a gunman facing by his record - its
+                        // own distance from the world origin away, rotated by
+                        // his facing: the projectile sweep found actor 240's
+                        // pelvis at (2875, 4466) with him drawn at (4516,
+                        // -2797), and his shadow's bones were there too.
+                        omk::rotateYaw(bodyYaw, pose[mi].pos, r);
+                        for (int k = 0; k < 3; ++k) r[k] += off[k];
+                    } else {
+                        const float mp[3] = {pose[mi].pos[0] - pelvis[0],
+                                             pose[mi].pos[1] - pelvis[1],
+                                             pose[mi].pos[2] - pelvis[2]};
+                        omk::rotateYaw(spins ? bodyYaw : 0.0f, mp, r);
+                        for (int k = 0; k < 3; ++k) r[k] += pelvis[k] + off[k];
                     }
                     for (int k = 0; k < 3; ++k) s.meshAt[mi * 3 + static_cast<std::size_t>(k)] = r[k];
+                    // its world rotation: the pose's own, then the body's yaw -
+                    // the same yaw whichever point it turns about
+                    if (s.meshRot.size() != pose.size() * 9) s.meshRot.assign(pose.size() * 9, 0.0f);
+                    for (int ax = 0; ax < 3; ++ax) {
+                        const float e[3] = {ax == 0 ? 1.0f : 0.0f, ax == 1 ? 1.0f : 0.0f,
+                                            ax == 2 ? 1.0f : 0.0f};
+                        float qv[3], wv[3];
+                        omk::qrot(pose[mi].q, e, qv);
+                        omk::rotateYaw(spins ? bodyYaw : 0.0f, qv, wv);
+                        for (int k = 0; k < 3; ++k)
+                            s.meshRot[mi * 9 + static_cast<std::size_t>(ax * 3 + k)] = wv[k];
+                    }
                 }
                 const bool turn = std::fabs(bodyYaw) > 0.01f;
                 for (auto& c : s.posed.corners) {

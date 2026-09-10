@@ -41,6 +41,13 @@ waiting on its evidence.
 > 10 frames, seven frames from rest, every bolt stopped by the world. Which
 > side of the view the bolt leaves from was not answered. The sound and the
 > HUD are planned with their leads (`todo/shoot-mode.md` §8).
+>
+> **THE HIT, ported the same day (§7j), NOT YET PLAYED**: bolts now meet
+> gunmen - three Waver hits kill one, and he plays a death clip chosen by the
+> direction of the last - so the phase can in principle be completed. Porting
+> it found gunman 240 drawn 770 units from where he stands (a body turned about
+> its model origin rather than its pelvis); every placement-turned body now
+> turns about its pelvis, which wants a look in play everywhere.
 
 
 > **(l) AND THE SIGN — which two screenshots settled and the DATA then

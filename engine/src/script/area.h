@@ -1006,6 +1006,9 @@ public:
     // in degrees as authored; `omk::initShootRecord` converts.
     // -> false when the actor has no record.
     bool actorShootProperties(int actor, std::int32_t out[6]) const;
+    // One property of an actor's record, `Actor_GetProperty`'s value cases -
+    // the hit's reaction threshold (24) and the Body Shield (17).
+    bool actorProperty(int actor, int property, std::int32_t& out) const;
     // The spawned character with this id, or nullptr - the shown slot's
     // tables first, the same order `Scene_FindObjectRecord` searches.
     const Character* characterOf(int actor) const;

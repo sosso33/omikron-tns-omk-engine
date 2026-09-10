@@ -145,6 +145,10 @@ struct ShootRecord {
     // weapon starts UP: 0 lowered.
     float weaponLowered = 0.0f;              // +176  0 aimed .. 1 lowered
     const ShootWeaponRow* weapon = nullptr;  // +180  `Shoot_InitWeapon`'s row
+    // The action a HIT sends him to while he is above his property-24
+    // threshold (`sub_423EF0`: `if (v3 = rec+148) != -1 ...`). Its writer is
+    // not read; -1, "no such action", until it is (`actor/shoothit.h`).
+    int   hitAction = -1;                    // +148
 };
 
 // The six properties `sub_422540` asks for, in the order it asks - each read

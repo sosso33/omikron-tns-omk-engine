@@ -25983,7 +25983,8 @@ def c_shoot_fire():
     keys = ("latch:", "first tap:", "rested:", "tap from rest fires at",
             "held from rest fires at", "lowered after", "rate 2 held fires at",
             "no row:", "aim:", "record shot:", "magazine:", "full:",
-            "wall:", "range:", "wind-up 12:", "grow:", "type:")
+            "wall:", "range:", "wind-up 12:", "grow:",
+            "hit:", "bands:", "gates:", "shield:", "kill:", "type:")
     got = []
     for k in keys:
         m = re.search(r"^" + re.escape(k) + r" (.*)$", out, re.M)
@@ -26013,6 +26014,29 @@ def c_shoot_fire():
             "retired on frame 16 by the range after 1996.8",
             "first move on frame 13",
             "scale after 12 frames 48.20 2.60 2.60",
+            # THE HIT (step 2b), each predicted by hand: a body 300 ahead with
+            # a pelvis box whose front face is at +3 is met at 297; the line
+            # 40 above the pelvis misses the head's sphere and STILL counts on
+            # the pelvis box, because the engine's box test checks only one
+            # bound on an axis the start lies outside of - the assembly's own
+            # omission, kept; 60 aside misses the body's 44-unit sphere; the
+            # shooter's own body is skipped
+            "straight actor 9 mesh 0 at 0.0 0.0 -297.0 dist 297.0; over the head "
+            "actor 9 mesh 0 at 0.0 -40.0 -297.0 dist 297.0; 60 aside miss; own body miss",
+            # the four bands over a victim facing -Z, and their clip types
+            "along 3 back 2 side 0 slant 1; death types 8 5 6 7",
+            # health after one hit from 15, -1 = refused: gunmen do not hurt
+            # each other; not in shoot mode, 0x800, the baton on type 0 and the
+            # Waver on a 0x4000 victim are refused; the baton takes type 11 and
+            # the 0x4000 victim
+            "player hit 10, gunman on gunman -1, not in shoot -1, 0x800 -1, baton on "
+            "type 0 -1, baton on type 11 9, Waver on 0x4000 -1, baton on 0x4000 9",
+            # the Body Shield: 5 + 5*30/-100 in C's truncation, and never 0
+            "5 through 30 -> 4, through 100 -> 1",
+            # three Waver hits kill a 15-health gunman; at or below his
+            # threshold (12) each hit sends him to action 4; the last is along
+            # his forward, band 3, so death clip type 8
+            "10 5 0, actions 4 4, killed 1, death type 8, enemy drop 1, flags 0x1028",
             "kind 1 BATPOUV -> -2, kind 1 WAVER -> 1, kind 3 BATPOUV -> 3"]
     if data:
         w = re.search(r"^weapons: (.*)$", out, re.M)
@@ -26109,6 +26133,62 @@ def c_engine_shoot_fire():
         "drain, six for the weapon to come back up); all of them the row's "
         "speed and damage, straight down -Z from the Maing node; one pool "
         "entry per shot")
+
+
+def c_engine_shoot_hit():
+    r"""`engine/`: the HIT - a bolt meeting a gunman and killing him
+    (`todo/shoot-mode.md` 7j, `actor/shoothit.h`).
+
+    In the Shooting gallery, facing gunman 240 (yaw 258 from 5000, -2900), six
+    taps of `Tir`. The sweep (`sub_45E9C0`) is given the three staged gunmen,
+    each mesh where it was DRAWN, and the first three bolts meet actor 240:
+    the Waver's damage 5 takes his 15 health to 10, 5 and 0. Each hit is band
+    2 - the bolt's heading against his forward - so the death clip TYPE is 5,
+    and the enemy count drops. His property 24 is 0, so above it he never
+    reacts. The last bolts still STOP at the corpse and do nothing: a body met
+    retires the entry whatever `sub_4240E0` then does.
+
+    **And it asserts WHERE the bodies are**, because that was the bug this
+    check was written against: turned about his MODEL origin, VIR_FN - authored
+    at x 546 - was drawn 770 units from his placement at a facing of 89, so a
+    bolt through his placement met nobody. The roots must sit on the
+    placements.
+    """
+    import subprocess, re
+    fr = omkpaths.data_root()
+    eng = os.path.join(ROOT, "engine")
+    bld = subprocess.run(["make", "-s", "play"], cwd=eng,
+                         capture_output=True, text=True)
+    exe = os.path.join(eng, "build", "omk-play")
+    if bld.returncode != 0 or not os.path.exists(exe):
+        return ("build failed",), ("built",), "engine/ must build"
+    play = subprocess.run(
+        [exe, fr, os.path.join(ROOT, "tables"),
+         "--save", os.path.join(ROOT, "traces", "save-appart.bin"),
+         "--area", "59", "--stand", "5000,0,-2900,258", "--shoot",
+         "--frames", "200", "--nodelay",
+         "--keys", ",".join(["54"] * 6), "--keydelay", "30"],
+        capture_output=True, text=True,
+        env=dict(os.environ, SDL_VIDEODRIVER="dummy"))
+    o = play.stdout
+    roots = re.findall(r"\[actor (\d+) root \d+ at (\S+) \S+ (\S+) r ([\d.]+),", o)
+    hits = re.findall(r"^frame \d+: SHOT retired - entry \d+ HIT ACTOR (\d+) at", o, re.M)
+    dmg = re.findall(r"^  hit: damage (\d+), health (-?\d+) -> (-?\d+), band (-?\d+)", o, re.M)
+    killed = re.findall(r"^  KILLED - death clip type (\d+)(, the enemy count drops)?", o, re.M)
+    got = (sorted((int(a), round(float(x)), round(float(z)), r) for a, x, z, r in roots),
+           hits,
+           [tuple(int(v) for v in d) for d in dmg],
+           [(int(t), bool(e)) for t, e in killed])
+    want = ([(237, 4758, -2560, "44.4"), (238, 5207, -2273, "44.4"),
+             (240, 4516, -2797, "44.4")],
+            ["240"] * 5,
+            [(5, 15, 10, 2), (5, 10, 5, 2), (5, 5, 0, 2), (0, 0, 0, -1), (0, 0, 0, -1)],
+            [(5, True)])
+    return got, want, (
+        "the three gunmen's roots ON their placements with the body's 44.4 "
+        "sphere; five bolts meeting actor 240; 15 -> 10 -> 5 -> 0 at band 2, "
+        "then two on the corpse doing nothing; killed once, death clip type 5, "
+        "the enemy count dropping")
 
 
 def c_shoot_input():
@@ -29423,7 +29503,7 @@ def c_licence_headers():
                    if TAG in open(p, encoding="utf-8",
                                   errors="replace").read(600)]
     return (authored, sorted(missing), len(vendored), mislabelled), \
-           (413, [], 1, []), \
+           (415, [], 1, []), \
            "authored source files under tools/, engine/src, engine/tools, " \
            "engine/backends and scripts/; those MISSING the SPDX tag; " \
            "vendored files in engine/third_party; and vendored files wrongly " \
@@ -31560,6 +31640,7 @@ SLOW = [
     ("engine: walk",       c_engine_walk,       "engine/README"),
     ("engine: dialogue",   c_engine_dialogue,   "engine/README"),
     ("engine: shoot fire", c_engine_shoot_fire, "todo/shoot-mode 7h; actor/shootfire.h"),
+    ("engine: shoot hit",  c_engine_shoot_hit,  "todo/shoot-mode 7j; actor/shoothit.h"),
     ("engine: anims",      c_engine_anims,      "engine/README"),
     ("engine: CTL",        c_engine_ctl,        "engine/README"),
     ("engine: SCX",        c_engine_scx,        "engine/README"),
