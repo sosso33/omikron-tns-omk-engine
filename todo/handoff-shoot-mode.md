@@ -163,9 +163,17 @@ no route or nav edge is handed to them, because the viewer has no
 path-finder on the `MAP2D` grid - and they do not FIRE (below). Both are
 the AI's missing half and both are owed.
 
-**And the gunmen's own shots** are still not wired: the brain reaches
-outcome 1 and `sub_47C2A0` would fire them directly, but the port's brain
-epilogue does not call it yet.
+**And the gunmen's own shots - STEP 1 PORTED 2026-09-11** (`todo/shoot-mode.md`
+§8 item 4): `sub_424DE0`'s epilogue now pulls the gate, behind the FIRE TEST
+(bit 0 of the `.ani` group's `+8`), and `Actor_TickProjectiles`' npc arm aims
+the bolt straight at the player with a radius jitter - NOT the gate's spread,
+which only bends the arm pose. In the gallery both gunmen fire from frame 4
+(`verify.py: engine: shoot gunfire`); the bolts stop on the world, since the
+player is not a hit body yet. **The supermarket's robbers do not fire yet**,
+and why was measured: the player stands behind robber 77, the hub asks for a
+TURN CLIP (type 32) and the viewer never plays a brain's picked clip - step 1b.
+And the viewer reads flag 8 as dead where the engine's flag 8 is "a picked clip
+is playing", which step 1b has to untangle.
 
 **Reported missing in play (2026-09-10, *"no fire sound effect, no UI"*): the
 FIRE SOUND and the shoot HUD.** Both are planned with their leads in

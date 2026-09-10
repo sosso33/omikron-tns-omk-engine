@@ -154,8 +154,9 @@ struct ShootWeaponRow;
 //
 // NOT modelled: event 48 (the change), the player's point-blank ray from his
 // shoulder to the muzzle (`sub_4449E0`, which hits at once when the gun is
-// through a wall), the node clone, the sprite, and a gunman's aim at the
-// player - this is the player's shot.
+// through a wall) and the node clone. A GUNMAN's shot comes through here too,
+// with the angles of the path's other arm - straight at the player, jittered
+// (`shootGunmanAim`, actor/shootfire.h) - and no magazine write-back.
 struct RecordShot {
     float muzzle[3] = {0, 0, 0};
     float yawDeg = 0.0f;     // actor `+420`

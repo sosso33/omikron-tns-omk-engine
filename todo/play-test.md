@@ -403,6 +403,23 @@ ever reacting until they see you. (Played 2026-09-10: *"Ok, good"*; 5
 robbers alerted in the session. Fixed after: robbers standing off the grid
 were never alerted - their floor was misread.)
 
+**NOT YET PLAYED (2026-09-11): THE GUNMEN FIRE.** Not in the supermarket
+yet - its robbers stand with you behind them and cannot turn round (the turn
+is the next step) - but in the gallery harness, where the two gunmen face you:
+
+```
+build/omk-play ../gamedata ../tables --save ../traces/save-appart.bin \
+    --area 59 --stand 5000,0,-2900,0 --shoot
+```
+
+Both open fire at once: one bolt every 10 frames from the DBWAVER on the
+left, one every 4 from the HEXAGUN, each with its firing sound, flying at
+you with a small scatter. **Nothing can hit you yet** - the bolts pass through
+you and stop on the wall behind - and their arms do not come up to aim (the
+aim pose is not ported for them). Wrong looks like: bolts flying off at a
+wide angle from you, or leaving from somewhere other than the gun in the
+hand.
+
 **CONFIRMED IN PLAY 2026-09-10 (*"yes, it was correct"*): HEALTH ITEMS IN A
 SHOOT PHASE**, fixed the same day after *"grabbing a health item does not
 restore your health"* and your correction that shoot mode uses them at once. Walking onto a medikit in the
