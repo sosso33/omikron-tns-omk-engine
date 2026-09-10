@@ -1492,6 +1492,16 @@ int main(int argc, char** argv) {
 "  --no-crowd-light  do not light the crowd from the set's .3DO lights\n"
 "  --fog-colour r,g,b   override the scene's +336, which ships as 0,0,0\n"
 "  --no-crowd       no pedestrians at all\n"
+"  --invert-x       invert the mouse's X axis in shoot mode; --invert-y\n"
+"                   the same for Y. The engine reads mouse motion NOWHERE\n"
+"                   in the binding path, so no shipped value fixes either\n"
+"                   sense and the defaults are a reader's own.\n"
+"  --shoot-eye N    raise the shoot camera N inches. A DEPARTURE: camera\n"
+"                   preset row 4 puts the eye at (0,0,0) on the subject -\n"
+"                   the actor's origin, which is the pelvis - and nothing\n"
+"                   found in the engine lifts it. Default 0, the faithful\n"
+"                   value.\n"
+
 "  --no-script-sprites  DEBUG: do not draw Script_Display3DSprite's sprites (a before/after)\n"
 "  --scx-play h,h   HARNESS: start scene objects by handle on the first adventure frame\n"
 "  --scene-chunk N  run SCENE chunk N's startup script over the area, the\n"
@@ -1714,6 +1724,22 @@ int main(int argc, char** argv) {
     // (DITHERENABLE) to 1 on both device arms, so on is what the engine does.
     // The flag exists to lay a dithered frame beside an undithered one.
     bool dither = true;
+    // WHICH WAY THE MOUSE TURNS HIM. A reader played the shoot phase and said
+    // both axes were inverted, so the defaults are THEIR sense: testimony
+    // about the original outranks a sign nothing in the data fixes - and
+    // nothing does, because the engine reads mouse motion nowhere in the
+    // binding path (`todo/omk-play.md` 97b). `--invert-x` / `--invert-y` put
+    // each one back.
+    bool mouseInvertX = false, mouseInvertY = false;
+    // The shoot camera's EYE LIFT, in inches, above the preset's own point.
+    // Row 4 puts the eye at offset (0,0,0) on the subject, which resolves to
+    // the actor's ORIGIN - the pelvis - and a reader finds that low for a
+    // first-person view. NOTHING FOUND IN THE ENGINE RAISES IT: the preset
+    // says (0,0,0), `Shoot_Enter` sets both camera actors to the player, and
+    // the block it passes carries one float which is an ANGLE (90.0 at its
+    // other site, 0 here). So this is a DEPARTURE with a faithful default of
+    // 0, and `--shoot-eye N` raises it until somebody finds the lift.
+    float shootEyeLift = 0.0f;
     // --enhance-all: every enhancement as high as it goes, in one word. The
     // two the DEVICE caps are asked for at their largest defined value and the
     // backend reduces what it cannot meet, which is what "max available" means
@@ -1893,6 +1919,9 @@ int main(int argc, char** argv) {
         else if (a == "--enhance-all") enhanceAll = true;
         else if (a == "--ssaa" && i + 1 < argc) ssaaFlag = std::atoi(argv[++i]);
         else if (a == "--dither" && i + 1 < argc) dither = std::atoi(argv[++i]) != 0;
+        else if (a == "--invert-x") mouseInvertX = true;
+        else if (a == "--invert-y") mouseInvertY = true;
+        else if (a == "--shoot-eye" && i + 1 < argc) shootEyeLift = float(std::atof(argv[++i]));
         else if (a == "--no-dither") dither = false;
         else if (a == "--lighting" && i + 1 < argc) {
             lightingFlag = omk::lightingMode(argv[++i]);
@@ -5413,8 +5442,10 @@ int main(int argc, char** argv) {
                 }
                 if (shootMode && shootCameraLive &&
                     (host.mouseDX != 0.0f || host.mouseDY != 0.0f)) {
-                    player->aimYawBy(host.mouseDX * kMouseYawPerPixel);
-                    shootPitch -= host.mouseDY * kMousePitchPerPixel;
+                    player->aimYawBy(host.mouseDX * kMouseYawPerPixel *
+                                     (mouseInvertX ? 1.0f : -1.0f));
+                    shootPitch += host.mouseDY * kMousePitchPerPixel *
+                                  (mouseInvertY ? -1.0f : 1.0f);
                     if (shootPitch >  70.0f) shootPitch =  70.0f;
                     if (shootPitch < -70.0f) shootPitch = -70.0f;
                     // `camera_presets.json` row 4: eye (0,0,0) on the player,
@@ -8866,8 +8897,12 @@ int main(int argc, char** argv) {
                 omk::FollowCamera fc = player->followCamera();
                 if (shootMode && shootCameraLive) {
                     const float rad = shootPitch * 3.14159265f / 180.0f;
-                    const float eye[3] = {0.0f, 0.0f, 0.0f};
-                    const float at[3]  = {0.0f, 787.4016f * std::sin(rad),
+                    // Y POINTS DOWN, so raising the eye is a NEGATIVE offset -
+                    // the same sign `cameraLift` uses. 0 is the preset's own
+                    // value and the faithful one; `--shoot-eye` departs from
+                    // it deliberately.
+                    const float eye[3] = {0.0f, -shootEyeLift, 0.0f};
+                    const float at[3]  = {0.0f, -shootEyeLift + 787.4016f * std::sin(rad),
                                           787.4016f * std::cos(rad)};
                     fc = player->resolveOffsets(eye, at, 75.0f);
                 }
