@@ -1283,9 +1283,32 @@ forget to plan it."* The session's own log agrees with the gate: 245 latches
    `sub_478EC0`'s turn, which is oscillator 4 exactly as the sneak's; the
    weapon loaded by its stem with `tir` left out, reloaded when it changes
    (the refresh flag is raised by `Shoot_Enter` 0x422500, the shot and
-   `MDGUN`). **Not yet**: `Hud_DrawBar`'s mode 0 (`sub_4480D0`, 464 lines,
-   the `jauge*.bmp` bitmaps, and `sub_446E20`'s 35 rising sparks), the
-   minimap.
+   `MDGUN`).
+   **Ported (part 3)**: the HEALTH GAUGE, `Hud_DrawBar(dword_90E100, 200,
+   0, 0)` - the call is 0x42E870's last, read from the image - in
+   `ui/hudbar.h`. `dword_90E100` is the player's record +92
+   (`Shoot_SyncHudHealth`), which `Shoot_Enter`'s own `sub_422540(player)`
+   fills from his property 1, a 0 rewritten to 10; the save's player has
+   10, so 5% of 200. `sub_4480D0` draws a vertical gauge at x = 24, y 22 to
+   458: layer 2 the black frame (a diamond of radius 17 at each end, the
+   14-wide column), layer 3 two key-source blits from `jauge1.bmp` into the
+   6-wide channel (the empty part from source columns 0..3, the full part
+   from a column that SCROLLS one a frame, `++dword_531050 % (W - 3)`),
+   layer 4 a 0xE0E0E0 flags-2 quad over the empty part; `sub_446E20` then
+   walks 35 sparks (x drifting out 0..2, y rising 0..3, age +0x04000000 a
+   frame, reborn at the fill's top), radius-2 diamonds of `age | 0x18AD8C`
+   on layer 5. **The D3D back end**, not the software one: `sub_480AC0`'s
+   blend pairs make flags 4 `src*(1-a) + dst*a` (the frame opaque, a spark
+   FADING as it ages) and flags 2 `dst*(1-src)`, and the diamonds are
+   rasterised as polygons, where mode 2 would fill their bounding box -
+   the same choice as `screendraw`'s item fill, which a player's
+   screenshot confirmed. Reconstruction, labelled: `rand()` on a seed of
+   its own, so the sparks' sequence cannot match the engine's; the
+   swim-state rescale left out. Mode 1 (the horizontal bar, `jaugeg.bmp`)
+   and mode 2's `sub_447000` are not ported - shoot mode asks for neither.
+   And note `sub_446E20`'s `top == 458` test is a LITERAL: at any display
+   but 640x480 an empty gauge still sparks, in the engine as here.
+   **Not yet**: the minimap.
    The first reading, kept: `Shoot_Enter` opens screen
    34 (33 for the Mecagarde) and calls `Hud_Refresh` (0x00448FA0, the
    player's properties 16/19/17/3/18/2 into `dword_530CB0..C4`).

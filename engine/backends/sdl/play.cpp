@@ -77,6 +77,7 @@
 #include "platform/movie.h"
 #include "platform/datafs.h"
 #include "platform/frontend.h"
+#include "ui/hudbar.h"
 #include "ui/iamtext.h"
 #include "ui/screendraw.h"
 #include "ui/text.h"
@@ -3801,6 +3802,7 @@ int main(int argc, char** argv) {
     // the runtime texts its items' native callbacks produce, and
     // `dword_90E11C`, the ammo counter `Shoot_InitWeapon` and the shot write.
     std::unique_ptr<omk::UiWalk> hudWalk;
+    omk::HudBar hudBar;                  // `Hud_DrawBar` mode 0, the health gauge
     std::map<std::uint32_t, std::string> hudRows;
     int  hudAmmo = -1;
     std::string hudTold;
@@ -7816,6 +7818,23 @@ int main(int argc, char** argv) {
                 playerShootRec = omk::ShootRecord{};
                 playerShootRec.node = -1;
                 playerShootRec.flags |= 2u;
+                // `sub_422540(player)`, `Shoot_Enter`'s own call: his property
+                // 1 into +92 - the health `Shoot_SyncHudHealth` hands the HUD,
+                // a 0 rewritten to 10 - and `Hud_Refresh`'s
+                // `sub_446C40(0, 22)` / `(1, 22)`, the gauge's sparks seeded
+                {
+                    std::int32_t hp = 0;
+                    omk::readActorProperty(
+                        state.raw().subspan(
+                            static_cast<std::size_t>(omk::GameState::kPlayerRecord),
+                            static_cast<std::size_t>(omk::GameState::kPlayerRecordSize)),
+                        1, hp);
+                    playerShootRec.health = hp != 0 ? static_cast<int>(hp) : 10;
+                    std::printf("frame %ld: SHOOT HEALTH (sub_422540) - property 1 = %d "
+                                "-> record +92 = %d\n", n, int(hp), playerShootRec.health);
+                    hudBar.refresh(0, 22, fb.w);
+                    hudBar.refresh(1, 22, fb.w);
+                }
                 shotLatch = omk::ShotLatch{};
                 shootAim = omk::ShootAim{};
                 // `sub_47CC70`, `Shoot_Enter`'s own call: the mover's block
@@ -13270,10 +13289,10 @@ int main(int argc, char** argv) {
         //
         // and the full-screen item 0x4C44F0 draws the CROSSHAIR: the four
         // quads at 0x4C4680, offset by half the display (native pixels,
-        // not scaled). NOT drawn yet, labelled: the two turning models (the
-        // ring `anneau.3do` at 10 degrees a frame, the held weapon at 25),
-        // `Hud_DrawBar(health, 200, 0, 0)` - the health bar - and the
-        // top-right minimap `RADAR\<level>.WRE`.
+        // not scaled), then `Hud_DrawBar(health, 200, 0, 0)` - the health
+        // GAUGE (`ui/hudbar.h`). The two turning models go into their boxes
+        // below. NOT drawn yet, labelled: the top-right minimap
+        // `RADAR\<level>.WRE`.
         if (shootMode && hudWalk && !walk && !std::getenv("OMK_NOUI")) {
             hudRows.clear();
             std::int32_t rings = 0;
@@ -13333,16 +13352,28 @@ int main(int argc, char** argv) {
                         if (x >= 0 && y >= 0 && x < fb.w && y < fb.h)
                             fb.px[static_cast<std::size_t>(y) * static_cast<std::size_t>(fb.w) +
                                   static_cast<std::size_t>(x)] = 0xFFFF;
-            char line[256];
+            // THE HEALTH GAUGE: the same callback's last call,
+            // `Hud_DrawBar(dword_90E100, 200, 0, 0)` (`ui/hudbar.h`), the
+            // value the player's record +92
+            if (!hudBar.loaded()) hudBar.load(fs);
+            const omk::HudBarFrame bar = hudBar.draw(fb, playerShootRec.health, 200, 0, 0);
+            const auto pixel = [&](int x, int y) {
+                return unsigned(fb.px[static_cast<std::size_t>(y) * static_cast<std::size_t>(fb.w) +
+                                      static_cast<std::size_t>(x)]);
+            };
+            char line[384];
             std::snprintf(line, sizeof line,
                           "rings %d, ammo %d, weapon '%s' - items drawn %d, fills %d; "
                           "models ring %d weapon %d; "
-                          "crosshair at %d %d, pixel below centre 0x%04x",
+                          "crosshair at %d %d, pixel below centre 0x%04x; "
+                          "gauge %d/200 = %d%%, top %d, quads %d, blits %d, "
+                          "frame pixel 0x%04x, empty-part pixel 0x%04x",
                           int(rings), hudAmmo, weaponName.c_str(), hf.itemsDrawn,
                           hf.fillsDrawn, int(ringDrawn), int(weaponDrawn), cx, cy,
-                          unsigned(fb.px[static_cast<std::size_t>(cy + 8) *
-                                             static_cast<std::size_t>(fb.w) +
-                                         static_cast<std::size_t>(cx)]));
+                          pixel(cx, cy + 8), playerShootRec.health, bar.percent, bar.top,
+                          bar.quads, bar.blits,
+                          pixel(fb.w * 24 / 640 - fb.w * 5 / 640, fb.h * 300 / 480),
+                          pixel(fb.w * 24 / 640, fb.h * 100 / 480));
             if (hudTold != line) {
                 hudTold = line;
                 std::printf("frame %ld: shoot HUD (screen %d) - %s\n", n,

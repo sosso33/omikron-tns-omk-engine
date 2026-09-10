@@ -26498,8 +26498,11 @@ def c_engine_shoot_hud():
     In the gallery with the save's player: 2 rings, ammo -1 (so the ammo item
     draws nothing), the weapon `Waver`; two text items drawn and the four
     items' fills (bank B `0x10`); the crosshair centred on the 800x600 frame
-    with the pixel 8 below the centre white. Not asserted, not drawn yet: the
-    turning ring and weapon, the health bar, the minimap.
+    with the pixel 8 below the centre white. Part 2 adds the turning ring and
+    weapon; part 3 the HEALTH GAUGE, `Hud_DrawBar(dword_90E100, 200, 0, 0)`
+    (`engine/src/ui/hudbar.h`): the player's record +92 from his property 1,
+    the black frame, the jauge blits, the darkened empty part. Not drawn yet:
+    the minimap.
     """
     import subprocess, re
     fr = omkpaths.data_root()
@@ -26522,7 +26525,13 @@ def c_engine_shoot_hud():
     # are not asserted - the turntable runs on the wall clock)
     want = ("34", "rings 2, ammo -1, weapon 'Waver' - items drawn 2, fills 4; "
                   "models ring 1 weapon 1; "
-                  "crosshair at 400 300, pixel below centre 0xffff")
+                  "crosshair at 400 300, pixel below centre 0xffff; "
+                  # part 3: the gauge - the save's player at 10 of 200, so 5%
+                  # and the fill's top at 22 + 95% of 436 (scaled to 544);
+                  # the black frame column and the empty part darkened by
+                  # the 0xE0E0E0 flags-2 quad
+                  "gauge 10/200 = 5%, top 544, quads 4, blits 2, "
+                  "frame pixel 0x0000, empty-part pixel 0x10c2")
     return got, want, (
         "screen 34 over the shoot frame: the ring count (property 5), the Waver's "
         "empty ammo line, its name, the four fills, and the crosshair's white "
@@ -29841,7 +29850,7 @@ def c_licence_headers():
                    if TAG in open(p, encoding="utf-8",
                                   errors="replace").read(600)]
     return (authored, sorted(missing), len(vendored), mislabelled), \
-           (420, [], 1, []), \
+           (422, [], 1, []), \
            "authored source files under tools/, engine/src, engine/tools, " \
            "engine/backends and scripts/; those MISSING the SPDX tag; " \
            "vendored files in engine/third_party; and vendored files wrongly " \

@@ -399,8 +399,11 @@ test save), at the bottom left a box with the weapon's name over it (`Waver`)
 and, for a weapon with a magazine, the rounds left just above, and a small
 white cross at the centre of the screen, and in the two boxes the RING and
 the WEAPON turning slowly (one turn every five seconds, the sneak's own
-turntable). NOT there yet, known: the health bar, and the radar at the top
-right (the supermarket is one of the nine places that have
+turntable), and down the LEFT EDGE the health gauge - a black column with a
+diamond at each end, the fill rising from the bottom (the save's player is
+at 10 of 200, so only a sliver) with a coloured column scrolling through it
+and small green sparks drifting up and out from its top. NOT there yet,
+known: the radar at the top right (the supermarket is one of the nine places that have
 one). Say whether the boxes' grey matches the original.
 
 **Now expected (fixed 2026-09-10, after *"the return to adventure mode (after

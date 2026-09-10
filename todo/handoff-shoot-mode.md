@@ -76,7 +76,7 @@ directly, scanning every chunk's zone slots **and** its startup script at `+4`.
 | **8.5c ENEMY ENTRANCES ARE GAMEPLAY**: the adventure gate counts only the player's program in shoot mode | **fixed 2026-09-10** — found by the gate's own log line in play; `engine: shoot entrance`; **CONFIRMED IN PLAY** |
 | **8.5d THE PHASE ENDS**: message 3 at a gunman's death, SCENE 56's score, zone 3931 | **fixed 2026-09-10** — `session probe` asserts the handler, the two variables and the zone; **CONFIRMED IN PLAY** |
 | **8.5e THE RETURN**: `Shoot_Leave`'s default group, and the follow camera's offsets | **fixed 2026-09-10** — `--shoot-end N` harness; `engine: shoot leave`; not yet played |
-| **8.3 THE HUD, parts 1-2**: screen 34 over the frame - ring count, weapon name, ammo, fills, crosshair, the turning ring and weapon | **done 2026-09-10** — `engine: shoot hud`; the health bar and minimap not yet; not yet played |
+| **8.3 THE HUD, parts 1-3**: screen 34 over the frame - ring count, weapon name, ammo, fills, crosshair, the turning ring and weapon, the health gauge (`ui/hudbar.h`) | **done 2026-09-10** — `engine: shoot hud`; the minimap not yet; not yet played |
 
 **17 checks** cover it (`engine: shoot hit` added with the hit): `shoot arenas`, `map2d grid`, `map2d sight`,
 `bone names`, `shoot range`, `shoot generic`, `projectile pool`,
