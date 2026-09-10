@@ -1308,7 +1308,47 @@ forget to plan it."* The session's own log agrees with the gate: 245 latches
    and mode 2's `sub_447000` are not ported - shoot mode asks for neither.
    And note `sub_446E20`'s `top == 458` test is a LITERAL: at any display
    but 640x480 an empty gauge still sparks, in the engine as here.
-   **Not yet**: the minimap.
+   **Not yet: the MINIMAP (part 4) - READ, not ported.** It is as large as
+   parts 1-3 together, so it was stopped at the committed boundary; what is
+   read, so the slice starts here:
+   * **Enabling.** Screen 34's open callback 0x42E3A0 sets `dword_4EB8C8 = 1`,
+     MOVES item 0x4C4388 to (456, 8) 174x131 (the static 450,8 180x180 is
+     overwritten), stores its display-scaled box in `dword_90E0C4` (left),
+     `90E0BC` (top), `90E0C0` (right), `90E0B8` (bottom), and sets the float
+     `0x4C4134` to 275.59 (7 m; its static value is 236.22, 6 m). 0x405F00 /
+     0x405F20 set and clear the flag too, gated on `dword_6A05E0`. 0x42E870
+     shows the rectangle (the `push 0/1` after the gauge) only when both
+     `4EB8C8` and the file `4EB8C4` are set.
+   * **Loading.** 0x42EE70, called at 0x435002 from the SET loader with the
+     set's file name, rewrites its last three characters to `WRE`, compares
+     it against nine literals at 0x4C4884 and on a match sets the HEIGHT
+     `dword_90E0B4` - SOUKT 472.44 (12 m), SMARKET1 / SOUKDOCK / TETRADOU /
+     TETRA2 / TETRA3 492.13 (12.5 m), HAMES 452.76 (11.5 m), ARCHIV03 / 05
+     440.94 (11.2 m) - then `File_LoadWhole("RADAR\\%s")` into `4EB8C4` and
+     zeroes the 100 dwords at 0x4EB678 (the blips' seen flags). 0x42EFE0
+     frees it, from 0x434E21 / 0x434E8A (the set's unload). **Six shipped
+     files can never load**: GALLERY, ASTAROTH, BAR56, CSLEV-3, GROTTE,
+     TETRA4 - no literal names them (and TETRA4 has TETRA3's bounds).
+   * **The `.WRE` layout**, read off the draw: `u32 vertices, u32 edges,
+     float3[vertices], u16 pair[edges]`. It lands exactly on the file size
+     for 11 of the 15, every edge index in range - all nine loadable files
+     among them - and the four that fall 4 bytes short (ASTAROTH, BAR56,
+     CSLEV-3, GROTTE) are all unreachable. The supermarket's is 1111
+     vertices, 1789 edges.
+   * **The draw**, 0x42F000 - a small 3D WIREFRAME renderer, not a bitmap: a
+     camera on the player (`dword_930724`, position +0xF4/F8/FC, yaw +0x1A4
+     plus 180, degrees through 0x4BC2E8 = pi/180, pitch 90) set up by
+     `sub_442160` over the box, `0.7` of the box in `90E0B4`'s units; every
+     edge through `sub_442F00` (project, rejecting behind the eye against
+     1.44e17) and `sub_441E50` (clip), and drawn by `sub_42EC80` in a GREY
+     banded by height against the player's - `0x80 +- 0x60`, linear inside
+     +-118.11 (3 m) with slope 0x5F; then the player's own arrow
+     (`sub_42EBA0`, green 0x00FF00); then a BLIP per actor
+     (`sub_41C330` / `sub_41BDD0` type 2 / `sub_41C270` position), gated on
+     actor +0x194 == 3, banded against +-314.96 (8 m) by `0x80 +- 0x60`,
+     and remembered in 0x4EB678. **Unread**: `sub_442160`, `sub_442F00`,
+     `sub_441E50`, `sub_42EC80`, `sub_42EBA0`, and the blip tail past
+     0x42F835.
    The first reading, kept: `Shoot_Enter` opens screen
    34 (33 for the Mecagarde) and calls `Hud_Refresh` (0x00448FA0, the
    player's properties 16/19/17/3/18/2 into `dword_530CB0..C4`).
