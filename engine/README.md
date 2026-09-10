@@ -1592,9 +1592,11 @@ is not**: `sub_424DE0`'s sixteen states are transcribed arm by arm
 geometric calls they are made of — the cone-and-range test, the turn, the ray
 cast and the grid walk — and the three authored ranges that acquire, engage
 and disengage. What is left is named rather than glossed: `sub_421020`,
-`sub_421CD0` and `sub_435900` arrive as parameters, and the player's own
-firing is not connected because the engine raises it through a `.CTL` state
-this tree has not read.
+`sub_421CD0` and `sub_435900` arrive as parameters. The player's own firing IS
+connected (2026-09-10, `todo/shoot-mode.md` §7h/§7i: `MDSHOOT0`'s latch,
+`sub_47C2A0`'s gate, `Projectiles_Tick`'s flight; `verify.py: shoot fire`,
+`engine: shoot fire`), while the HIT - the actor sweep and the damage - is
+read and not ported (§7j).
 The only thing asserted about them is that the runtime never leaves the state
 set that was read: 0 of 2000 ticks. That catches a port that wanders and
 nothing else, and it is §3's "read and explained" rather than "verified".

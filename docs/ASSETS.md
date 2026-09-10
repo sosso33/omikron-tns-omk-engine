@@ -3442,12 +3442,33 @@ everything behind it** (the walk returns rather than skipping); **a full pool
 takes no shot and spends no round**; and **a refused aim spends the round
 anyway**, because `sub_44D7F0` refuses after the entry is allocated.
 
-**Firing is NOT wired to the player's trigger, deliberately.** The engine
-raises a shot through the `.CTL` firing state — a latch at `loc_45C4DD`, then
-`sub_45C680`'s ACTOR_STATE cases 13/14/16 setting the one-shot request
-`dword_4E9744` that the frame loop consumes — not off the input bit. A port
-that fired on the bit would have no rate, no state gate and no channel behind
-it. `todo/shoot-mode.md` §7f.
+**Firing, connected 2026-09-10** (`todo/shoot-mode.md` §7h/§7i). The engine
+raises a shot through the `.CTL` channel and two one-shot globals, not off the
+input bit. `H1Avnt` group 200's entry [132] takes the *Tirer* scheme's `Tir`
+and queues `MDSHOOT0`, whose whole body at 0x0046B610 arms the latch
+`dword_53AE3C` in ACTOR_STATE 3 and nowhere else; the NEXT channel tick's shoot
+branch (`sub_45C680` case 3, taken while the current entry's `+12` is -1, as
+every one of group 200's 24 is) reloads the shoot record's `+172` from the
+weapon row and calls `sub_47C2A0`, the GATE; its outcome 2 raises
+`dword_4E9744`, and the frame loop fires `Actor_TickProjectiles` once. The
+gate is where the RATE lives: `+172` a countdown that must equal the row's
+`f0` on the firing tick, `+176` how far the weapon is lowered (it rises 0.2 a
+frame, falls 0.1, and fires only at exactly 0), and a `+160` bit that holds one
+pull until its shot. The shot takes the record path: the row's `f1` as its
+SPEED and `i2` as its DAMAGE, the gun's own `tir` node as the muzzle and the
+bolt. This paragraph used to name the latch's set as `loc_45C4DD` and the cases
+as 13/14/16: the first is its CLEAR inside `Actor_PlayClip`, and the list is
+1, 3, 11, 12, 13, 14 and 16.
+
+`Projectiles_Tick` flies them, BEFORE `Actors_TickAll`: a wind-up at `+52` (the
+shot sprite's `+24` from `shoot2.sfx` section A - the Waver 0, the Megazooka
+12), a segment half a unit either side of each move along the node's -X axis,
+growth at `+40` by the section's per-frame scale step (the Waver's streak),
+the ACTOR sweep (`sub_45E9C0`: every attached actor's node sphere, then each
+mesh's sphere and local box) and then the WORLD ray (`sub_4449E0`: every mesh
+but those flagged 0x800000). A hit or 1968.5 units (50 m) retires the entry.
+The actor sweep and what a hit does (`sub_4240E0`) are read and not yet ported
+(§7j).
 
 `todo/shoot-mode.md` §5b/§5c/§7.
 

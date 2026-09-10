@@ -25,12 +25,15 @@ waiting on its evidence.
 > (l) its sign. The mouse (b) and the confirm re-map (f) were confirmed
 > earlier in the same sequence.
 >
-> **STILL OPEN: (c), the block itself.** Firing is not connected. The pool is
-> ported and asserted, the trigger reaches the input word and the brain
-> reaches outcome 1 — and nothing joins them, because the engine raises the
-> shot through the `.CTL` firing state (`dword_53AE3C` at `loc_45C4DD`, then
-> `sub_45C680`'s ACTOR_STATE cases 13/14/16 setting `dword_4E9744`) rather
-> than off the trigger bit. Whether the phase can be completed is untested.
+> **(c), the block itself — FIRING CONNECTED 2026-09-10, NOT YET PLAYED.**
+> The trigger now reaches the pool the engine's way: `Tir` -> `H1Avnt` [132]
+> -> `MDSHOOT0` arms `dword_53AE3C` -> the next channel tick's shoot branch
+> -> `sub_47C2A0`'s gate -> `dword_4E9744` -> a bolt out of the gun's `tir`
+> node, which flies and stops at walls (`todo/shoot-mode.md` §7h/§7i,
+> `cc3d1f9` and `96fab56`). **Bolts still pass THROUGH gunmen**: the hit is
+> read and not ported (§7j), so the phase still cannot be completed. This note
+> used to name the latch's set as `loc_45C4DD` and the cases as 13/14/16 - the
+> first is a CLEAR and the list was short; see the corrected note below.
 
 
 > **(l) AND THE SIGN — which two screenshots settled and the DATA then
@@ -274,13 +277,18 @@ waiting on its evidence.
 > needed. A harness that does something the thing it stands in for does not is
 > a harness that hides a missing feature.
 
-> **`MDSHOOT0` is the EQUIP, not the shot.** The same log shows
-> `special move: MDSHOOT0 (tab_special_move[8] = 0x0046b610)` three times,
-> which looked like the firing path arriving. It is not: `0x0046B610` calls
-> `sub_41C350`, then `sub_4083F0(0x30, ...)`, then **`sub_41C490`** — the same
-> equip call `Shoot_Enter` makes after event 48. So the channel is drawing the
-> weapon, and the firing move is still elsewhere. Recorded because it is
-> exactly the sort of near-miss that gets written up as a success.
+> ~~**`MDSHOOT0` is the EQUIP, not the shot.**~~ **WRONG — corrected
+> 2026-09-10: it IS the shot.** The same log shows `special move: MDSHOOT0
+> (tab_special_move[8] = 0x0046b610)` three times, and that WAS the firing
+> path arriving. The code this note described - `sub_41C350`, `sub_4083F0(0x30,
+> ...)`, `sub_41C490` - is not at 0x0046B610: it is what `tools/asmfn.py`
+> returns for that address, because the address has no `proc` label and the
+> tool snaps to a neighbour. The BYTES at 0x0046B610 are `mov eax,[esp+4]; cmp
+> dword [eax+194h],3; jnz; mov dword_53AE3C,1; ret` - the latch, in ACTOR_STATE
+> 3 (`todo/shoot-mode.md` §7h). It was recorded "because it is exactly the sort
+> of near-miss that gets written up as a success", and it was the other half
+> of that sentence: a near-miss written up as a finding, through the very trap
+> CLAUDE.md §1 describes.
 
 
 A reader played it, 2026-09-09: *"the game blocks at the end of the cutscene

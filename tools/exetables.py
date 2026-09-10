@@ -1262,13 +1262,13 @@ def t_shoot_weapons(e):
     player's f0 is LOWER than the NPCs' for the four light weapons (10/8/2/2
     against 15/10/4/4) and identical for the two heavy ones.
 
-    **`f1` and `i2` have NO reader**, which is a measurement and not an
-    impression: the row is reachable only through the shoot record's `+180`,
-    and the whole of `05_sys.c` reads that pointer exactly twice - the key at
-    `+12` in the property-35 handler, and `*row` above. And `f1` is NOT the
-    range: the range is character property 26, read through event 44 into the
-    shoot record's `+32` as `39 * metres` (5c), so the elimination that would
-    have named it is closed off. Its meaning is open.
+    **`f1` is the projectile's SPEED and `i2` its DAMAGE**, read 2026-09-10 in
+    `Actor_TickProjectiles`' record path (`17_script.c`: entry `+8` and
+    `+56`; `todo/shoot-mode.md` 7h). This note said they had NO reader, from a
+    scan of `05_sys.c` that never reached the file the shot lives in - the
+    negative was the scan's, not the field's. `f1` is still not the RANGE:
+    that is character property 26, read through event 44 into the shoot
+    record's `+32` as `39 * metres` (5c).
     """
     def row(base, i):
         a, b, c, k, v = struct.unpack("<2f3i", e.read(base + 20 * i, 20))

@@ -446,7 +446,9 @@ Written down so step 5 cannot quietly assume it:
 * ~~**the weapon's range.**~~ **CLOSED, §5c** - and it is not in the weapon
   table at all: the range is character **property 26**, in metres, read
   through event 44 into the shoot record's `+32`. `Shoot_InitWeapon`'s two
-  floats are `f0` the RATE (§5b, traced) and `f1` with no reader at all.
+  floats are `f0` the RATE (§5b, traced) and `f1` the projectile's SPEED -
+  read by `Actor_TickProjectiles`' record path in `17_script.c`, which the
+  `05_sys.c` scan that called it unread never reached (§7h).
 * ~~**what a shot is.**~~ **ANSWERED, §4c**: a projectile out of a 256-slot,
   60-byte pool, fired by `Actor_TickProjectiles` on a per-slot timer and paid
   for out of property 34. What is still unread there is the AIM
@@ -873,23 +875,226 @@ what makes reading both per-slot safe.
 > would have been wrong. The engine's chain is:
 >
 > 1. the input word drives the `.CTL` channel into a firing state;
-> 2. something at `loc_45C4DD` sets the latch `dword_53AE3C` (the one write
->    that is not a clear, and it is in a function with no `proc` label, so it
->    is in the listing and not in `readable/src`);
-> 3. `sub_45C680`'s ACTOR_STATE cases 13, 14 and 16 see the latch, set the
->    REQUEST `dword_4E9744`, and clear it;
+> 2. ~~something at `loc_45C4DD` sets the latch `dword_53AE3C` (the one write
+>    that is not a clear, ...)~~ — **CORRECTED §7h**: `loc_45C4DD` is a CLEAR,
+>    `mov dword_53AE3C, ebp` right after `xor ebp, ebp`, inside
+>    `Actor_PlayClip`. The one SET is `MDSHOOT0` itself, 0x0046B610 - which
+>    is also a function with no `proc` label, and that is the only part of
+>    this line that was right;
+> 3. `sub_45C680`'s ACTOR_STATE cases ~~13, 14 and 16~~ **1, 3, 11, 12, 13, 14
+>    and 16** see the latch - and while the entry's `+12` is -1 (shoot mode)
+>    they do not raise the request themselves: they hand the latch to the
+>    GATE, `sub_47C2A0`, and only its outcome 2 raises `dword_4E9744`;
 > 4. the frame loop calls `Actor_TickProjectiles(player)` **once** and clears
 >    the request.
 >
 > So the player's shot is a one-shot request raised by the STATE MACHINE, not
 > a level read off the trigger. A port that fired on the bit would look right
 > and would have no rate, no state gate and no channel behind it — the
-> approximation `no-approximation-read-original` is about. The pool is ported
-> and asserted; connecting it waits on the `.CTL` firing states.
+> approximation `no-approximation-read-original` is about. ~~The pool is
+> ported and asserted; connecting it waits on the `.CTL` firing states.~~
+> **Connected 2026-09-10, §7h.**
 
 **Not modelled**: the node clone, the matrix the rotation uses (the caller
 hands in a world direction), and the packing of property 35's slot-and-count
 word.
+
+## 7h. THE SHOT, CONNECTED — 2026-09-10, `cc3d1f9`
+
+Read link by link before anything was wired, and the reading corrected the
+handoff twice (§7f above).
+
+**The chain.**
+
+1. `H1Avnt` group 200's entry **[132]** takes input `0x10` - the *Tirer*
+   scheme's slot 4, `Tir` (keyboard 54, mouse button 12) - with clip -1, no
+   GoTo and move name `MDSHOOT0`.
+2. `Cef_QueueSpecialMove` queues the handler; `Actors_TickAll` drains the
+   queue AFTER the actor's state tick. `MDSHOOT0` is `tab_special_move[8]`,
+   0x0046B610, and its whole body, from the BYTES:
+
+       8b 44 24 04 | 83 b8 94 01 00 00 03 | 75 0a | c7 05 3c ae 53 00 01 00 00 00 | c3
+       mov eax,[esp+4]; cmp dword [eax+194h],3; jnz done; mov dword_53AE3C,1; ret
+
+   So it arms the latch in ACTOR_STATE 3 and nowhere else.
+   **`tools/asmfn.py 0x0046B610` returns a different function** - the address
+   has no `proc` label, so it snaps to a neighbour whose code calls
+   `sub_41C350`, `sub_4083F0(0x30)` and `sub_41C490`. That is where
+   `todo/omk-play.md` 97's "MDSHOOT0 is the EQUIP, not the shot" came from:
+   CLAUDE.md §1's snapping trap, written up as a finding.
+3. The NEXT frame's channel tick reaches `sub_45C680` (and `sub_45CF50`, the
+   same code on a clip's roll-over). Cases 1, 3, 11, 12, 13, 14, 16 test
+   `sub_45AB80` - "channel `+184` (the current entry) is set and its `+12` is
+   -1" - and all 24 of group 200's entries carry `flags12 = 0xFFFFFFFF`
+   (`ctl_find` now prints it). That takes the SHOOT branch: reload the record's
+   `+172` from `*row` when it is `<= 0`, call `sub_47C2A0(actor, -1, latch &&
+   row, record)`, clear the latch. Outside it the latch is the request, with
+   no rate.
+4. `sub_47C2A0` is the GATE. Outcome 2 raises `dword_4E9744` for the player;
+   a gunman fires `Actor_TickProjectiles` there and then.
+5. The frame loop, after `Actors_TickAll`: `if (dword_4E9744)
+   Actor_TickProjectiles(player), dword_4E9744 = 0`.
+
+A press therefore reaches the gate ONE frame after its state.
+
+**The gate** reads the record's `+160/+172/+176/+180`:
+
+| field | what |
+|---|---|
+| `+172` | the rate countdown. The caller reloads it to `f0` when `<= 0`; a shot is taken only on a tick where it EQUALS `f0` - an exact float compare - and it then counts down by dt, floored at 0 while pulled and at **1.0** while released, so a lowered gun is never reloaded |
+| `+176` | how far the weapon is LOWERED, 0..1. Pulled: `-= 0.2*dt`, clamped at 0. Released: `+= 0.1*dt`, capped at 1. Fire only at exactly 0 |
+| `+160 0x40000` | a pull PENDING: set on the first pulled tick and held until a shot clears it, so one tap fires one round even though the weapon takes frames to come up |
+| `+160 0x80000` | the pull counted: stops a held trigger re-arming 0x40000 after each shot; cleared with it on release |
+| `+160 0x10000` | a shot this pull; cleared on the next pulled tick, or when fully lowered |
+| `+180` | the weapon row - null, and the gate returns at its first line |
+
+The steps are formed in double and stored back to float, which matters: from
+rest (1.0) five steps of 0.2 leave a residue, so a tap from rest fires on the
+SIXTH frame, not the fifth. Held, the key-1 gun fires every 10 frames (its
+`f0`); the key-3 row every 2. The first tap of the mode fires at once (the
+record is zeroed: weapon up, and the reload makes the countdown equal `f0`).
+
+**The weapon's TYPE** (`Shoot_InitWeapon`) is the held object's kind - event
+46 property 3 is the OBJECTS record's `+2` - with one exception: kind 1 with a
+`B` eleven characters from the end of the model name is -2. That name is
+descriptor `+48`, which `Scene_Load3DO` fills with its own PATH, built by
+`Object_Load` as `MESHES\OBJETS\` + `Object_ModelPath(stem)`, which appends
+`.3DO` (the five bytes at 0x4C0D1C). So position -11 is the first letter of a
+seven-letter stem, and of the seven shipped weapons only `BATPOUV`, the Baton
+de pouvoir, qualifies: the -2 row is the baton's. All seven objects the ten
+`GLOBAL +42` slots name resolve to a row.
+
+**The shot** takes `Actor_TickProjectiles`' RECORD path (actor `+164`, the
+held object, carries a node at its `+12`), not the four-slot walk §7f
+ported. Free scan first - a full pool spends nothing - then the magazine
+(property 35 slot `index - 1`, read here with `readAmmoSlot`; a count at or
+below 0 asks event 48 for a weapon change and the round is TAKEN anyway), then
+entry `+8` = the row's `f1` (the SPEED, no x3.9 on this path) and `+56` = `i2`
+(the DAMAGE). **So `tables/shoot_weapons.json`'s "f1 and i2 have NO reader"
+was a scan of `05_sys.c` alone** - both are read in `17_script.c`. The aim is
+`sub_442160(0, (yaw + 90) deg, -pitch deg)` through (-1, 0, 0): at pitch 0 it
+is exactly the (0, 0, -1) forward the brain aims with, and a positive pitch
+rises.
+
+**Checks**: `shoot fire` (the probe; every value produced FIRST by an
+independent float32 model of the same lines, then matched) and `engine: shoot
+fire` (--slow: nine taps of 54 in the gallery, eight latches, eight shots each
+SEVEN frames after its latch - one for the queue drain, six to raise the
+weapon). **Shown to fail**, each reverted by writing the bytes back: the raise
+step 0.2 -> 0.25 (both red: 4 and 5 for 6 and 7), the held pull removed (both
+red), the pitch sign (probe red; the gallery fires at pitch 0), the baton's
+`B` (probe red; the gallery holds the Waver), and `MDSHOOT0` unwired in the
+viewer (engine red, 0 shots).
+
+**And the mouse, found on the way and NOT acted on**: the engine does read
+mouse motion. `sub_47D370` (one caller, `19_dsound.c:4383`) turns `+420` by
+`-word_90E1AC * 0.01 * dx` and the pitch `dword_657A10` by `word_90E1AE * 0.01
+* dy * dt`, its sign by the invert byte `0x90E1B0`, clamped at **+-45**
+degrees - and those three sit in the options header (`byte_90E180` + 44/46/48).
+So the handoff's "nothing shipped governs them" is wrong: this port's 0.18/0.14
+degrees a pixel and its +-70 clamp are its own, and the original's are
+readable. The keyboard look, `sub_47CFC0`, is 2 degrees a frame on the same
+clamp.
+
+## 7i. THE FLIGHT — 2026-09-10, `96fab56` (step 2a)
+
+`Projectiles_Tick` (0x0044D930) runs BEFORE `Actors_TickAll`, so a shot fired
+this frame first moves on the next. Per live entry:
+
+* `+52 > 0` holds it at the muzzle - the WIND-UP - counted down by dt;
+* else the segment `a = pos - 0.5*h`, `pos += vel*dt`, `b = pos + 0.5*h`,
+  where `h` is the NODE's -X axis read back through its matrix, not the
+  velocity;
+* while `+40 > 0` (with a sprite) it GROWS: `+40 -= dt` and the three scales
+  by the sprite's step;
+* `+12 += speed*dt`;
+* the ACTOR sweep (§7j), then - only if no actor was hit - the WORLD ray
+  `sub_4449E0` over every mesh `sub_444460` does not skip, which is exactly
+  those flagged 0x800000: the port's RENDER soup, at radius 0;
+* retired when `+12 > 1968.5039` (50 m) or on a hit.
+
+`+40`, `+52` and the scale step come from **`shoot2.sfx` section A** - 14
+40-byte rows, which `Shoot_Enter` loads for them and `sub_44EEB0` looks up by
+the held gun's ROOT mesh name (`FindNodeByName(model, 0)`, the first node):
+
+| row | +20 grow | +24 wind-up | +28..36 step |
+|---|---|---|---|
+| `Waver` | 8 | 0 | 5.9 0.2 0.2 |
+| `BATpouv` | 9 | 0 | 4.7 0 0.1 |
+| `Dwaver` | 11 | 0 | 7.4 -0.1 4.1 |
+| `Megazok` | 0 | 12 | - |
+| `Gigazok` | 0 | 14 | - |
+
+so the Waver's bolt stretches into a streak over its first eight frames, and
+the two rocket launchers wait 12 and 14 frames at the muzzle.
+
+**The bolt IS the gun's `tir` mesh** (the string at 0x4C2E4C, flags 0x3000 -
+the additive bucket). `Object_Load` unlinks it from the gun; the shot clones
+it, links it under the HAND with its own `+128` local - so the muzzle is the
+hand's pose applied to `tir`'s local, which is also `tir.pos - root.pos +
+root.local` (-15.8, -3.2, -1.7 in the Waver) - and draws it in the node's
+matrix with its scales.
+
+In the gallery the eight bolts each hit the back wall at z -3158, three frames
+and 374.4 units out, and the pool empties between taps. Seen headless: a green
+streak from low in the view toward the crates - and it leaves slightly RIGHT
+of centre although `Maing` is the left hand, which is a handedness question
+only a person watching can settle.
+
+**Checks**: `shoot fire` gains the flight - a wall at z -499.5 met on frame 4
+(chosen so the half-unit front edge is what makes it 4 and not 5), the range
+on frame 16, a 12-frame wind-up first moving on 13, the Waver's growth ending
+at (48.2, 2.6, 2.6), and section A read by the port - and `engine: shoot fire`
+the eight retirements. **Shown to fail**: the range, the front edge, the
+wind-up (probe red each) and the viewer's ray (engine red: every bolt "out of
+range" on frame 16).
+
+**Labelled**: the shot soup is baked at rest (a mesh a scene program moves is
+not followed); the resident but unlinked set is not tested (it is not in the
+scene graph); the entry's `+40/+52` without a sprite are zeroed where the
+engine leaves the last user's values.
+
+## 7j. THE HIT — read, NOT ported (step 2b)
+
+Everything below is read and none of it is in the port: bolts pass through
+gunmen.
+
+* **What can be hit** - `sub_45E9C0` sweeps two lists `sub_45DF50(1, 320)`
+  sizes: 320 20-byte records that `Actor_Attach` fills with every attached
+  actor's node (`sub_45DFF0`), and one pointer `Player_SetActor` fills with
+  the player's (`sub_45E140`). The shooter's node is excluded. Props are not
+  in either - they stop a bolt only through the world ray.
+* **Per actor**: the node's sphere (descriptor `+36..44`, the transform
+  pass's world position, radius `+88`) against the segment (`sub_498860`),
+  then `o3de_Traverse` with `sub_45ECA0` per MESH: its sphere (centre
+  `+76..84` rotated by the mesh matrix, radius `+88`), then the segment
+  carried into the mesh's frame and slab-tested against its local box
+  `+92..+112` (`sub_4986B0`). Nearest hit wins. Boxes, not triangles.
+* **The damage**, `sub_4240E0(victim, i2, entry, segment)`: refused unless the
+  victim OR the shooter is the player (gunmen do not hurt each other), the
+  victim is in ACTOR_STATE 3, and its record `+160` lacks 0x800. Damage 6 -
+  the baton's `i2` - reaches ONLY victims flagged 0x4000 and everything else
+  is refused by them (types 13 and 10 go through `sub_47FD90` /
+  `sub_47DF60`). The player's Body Shield, property 17, takes up to 100% off,
+  leaving at least 1. `+160 |= 0x1020`; health `+92 -= damage`.
+* **The direction**, `sub_423E20`: the dot of the bolt's horizontal heading
+  with the victim's forward, in four bands - `|dot| <= 0.5` gives 0 (dot <=
+  0) or 1, else 2 (dot <= 0) or 3. The constants are 0.5 and 0.0, read from
+  0x4BC274 / 0x4BC224; the decompiler's version lost the x87 branches.
+* **A gunman hit and alive** (`sub_423EF0`): unless `+144` is 8, `+160` has 2
+  or 0x4000, or the type is 12 - property 24 is a health threshold: above it
+  `Shoot_ActorAction(+148)`, at or below it action 4. **Dead**: the enemy
+  count `dword_4E9764` drops (unless `+160` has 2), a death clip of type 6 /
+  7 / 5 / 8 by the four bands, `+160 |= 8`.
+* **The player hit**: alive, `sub_47D1F0` (the hurt camera and sound by
+  band) and property 1 written back; dead, `sub_423FC0` - every attacker's
+  action to 0, ACTOR_STATE 15, `.CTL` group 201.
+* **The port's missing piece** is per-mesh world transforms for a staged
+  gunman, which the viewer composes only into drawn corners. They should be
+  captured at the draw: the engine flies BEFORE the actors tick, so a bolt
+  meets each body as it stood at the end of the previous frame, which is
+  exactly what a pose kept from the draw is.
+
 ## 5b. The two weapon floats — step 5's first reading, 2026-09-09
 
 `tables/shoot_weapons.json`'s lifter says of the two floats: *"they are a range

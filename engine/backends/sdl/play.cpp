@@ -1728,11 +1728,17 @@ int main(int argc, char** argv) {
     // The flag exists to lay a dithered frame beside an undithered one.
     bool dither = true;
     // WHICH WAY THE MOUSE TURNS HIM. A reader played the shoot phase and said
-    // both axes were inverted, so the defaults are THEIR sense: testimony
-    // about the original outranks a sign nothing in the data fixes - and
-    // nothing does, because the engine reads mouse motion nowhere in the
-    // binding path (`todo/omk-play.md` 97b). `--invert-x` / `--invert-y` put
-    // each one back.
+    // both axes were inverted, so the defaults are THEIR sense (`todo/
+    // omk-play.md` 97b). `--invert-x` / `--invert-y` put each one back.
+    //
+    // This used to say nothing in the data fixes the sign because "the engine
+    // reads mouse motion nowhere in the binding path". The binding path, no -
+    // but it READS it: `sub_47D370` (one caller) turns `+420` by
+    // `-word_90E1AC * 0.01 * dx` and the pitch by `word_90E1AE * 0.01 * dy`,
+    // its sign from the invert byte at 0x90E1B0, clamped at +-45 degrees -
+    // all three in the options header. So the senses, the sensitivities
+    // below and the +-70 clamp are this port's and the original's are
+    // readable (`todo/shoot-mode.md` 7h). Found 2026-09-10, not yet acted on.
     bool mouseInvertX = false, mouseInvertY = false;
     // The shoot camera's EYE LIFT, in inches. THE DEFAULT IS THE ENGINE'S OWN
     // RULE, found where a reader told me to look: `Camera_Request` stores the

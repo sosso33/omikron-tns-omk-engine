@@ -335,6 +335,34 @@ of the reincarnation beat. The drugstore's confirmation covers the mechanism
 for all of them; the trapdoor is a different question, because it is a story
 beat that has presumably never opened in this port.
 
+## 10. SHOOT MODE - FIRE, 2 minutes (committed 2026-09-10, `cc3d1f9` + `96fab56`)
+
+```
+build/omk-play ../gamedata ../tables --save ../traces/save-appart.bin \
+    --area 59 --stand 5000,0,-2900,180 --shoot
+```
+
+(the Shooting gallery; the supermarket phase is `--area 230 --scene-chunk 56`).
+Fire with the LEFT MOUSE BUTTON or RIGHT SHIFT - the *Tirer* scheme's `Tir`.
+
+* **A tap fires ONE green bolt, a moment after the press** - about six frames
+  if you have not fired for a second, because the weapon has to come back up
+  first. That delay is the engine's (the shoot record's `+176`), not lag.
+* **Holding fires every 10 frames** with the Waver - three shots a second.
+* The bolt **stretches into a streak** over its first eight frames and
+  **stops at the first wall**: it should vanish where it meets the geometry.
+* **Which side it leaves from.** The gun hangs on `Maing`, the LEFT hand, and
+  a headless frame puts the bolt slightly RIGHT of centre. One still frame
+  cannot settle a handedness; watching can. Say which side it is.
+
+Wrong looks like: a bolt on the press frame itself (the gate bypassed), one
+bolt per frame while held (no rate), a bolt from the eye rather than low in
+the view, or a bolt that goes through walls.
+
+**Not expected to work yet**: hitting a gunman. Bolts pass THROUGH bodies - the
+hit is read and not ported (`todo/shoot-mode.md` §7j) - so the phase still
+cannot be completed.
+
 ## What is NOT worth testing yet
 
 * ~~the videophone's own picture inside the sneak~~ — **CONFIRMED IN PLAY
