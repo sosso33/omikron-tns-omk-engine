@@ -1163,6 +1163,33 @@ forget to plan it."* The session's own log agrees with the gate: 245 latches
 (`MDSHOOT0` arms one on every held frame) gave 36 shots, never two closer than
 10 frames, seven frames from rest, and all 36 stopped by the world.
 
+0. **THE FIRST-PERSON WEAPON VIEW — reported with two frames of the original,
+   2026-09-10.** The original draws the LEFT ARM and the GUN in first person:
+   low at bottom right at rest, raised to the centre when firing, and the bolt
+   leaves from the gun there. The port draws neither. Not a script failing to
+   load: the port finds the gun (`the gun WAVER ... tir found`) but never draws
+   it, and it hides the player whole (97a's guess). Read so far:
+   * **The hide rule has an EXEMPTION, and the data names it**: the player's
+     tree is hidden except nodes flagged `0x200000` - in HO1_FN exactly
+     `UAvantg`, `UBrasg`, `UMaing`, the LEFT forearm, upper arm and hand - and
+     `Object_Load` sets `0x200000` on every object node it loads (`04_sys.c`
+     6779), so the gun in that hand stays too. The tests are at `10_dsound.c`
+     1635/1655 (not yet read).
+   * **The arm's pose is a LAYER**: the shoot record's `+84` is the bone table
+     at 0x4C3798 (40 words by bone id, 1 = the upper body); `sub_471070` binds
+     those bones to H1Avnt group 202's default, `S_AUTOLK` (clip 49), over the
+     channel's clip; `sub_434C30` then hands the aim angles (`dword_6A4720/24`)
+     and the lowered amount (`+176` via `dword_6A4728`) to `sub_471950` - 430
+     lines, unread - which bends them. That is the raise.
+   * **The gun** rides `Maing` through `sub_41C490` with `tir` unlinked
+     (`Object_Load`), which the held-prop path already draws for a take - so it
+     is the same drawing with the weapon object and `tir`'s corners left out.
+   Order: the hide rule and the gun first (small: the lowered frame of the
+   original's first screenshot should appear with the pose the port already
+   has), then `S_AUTOLK` and `sub_471950` (the raise, and the bolt from the
+   centre), then the HUD the same frames show - a health bar on the left, a
+   turning pentagon with a number (244) top left, the weapon's icon and name
+   bottom left.
 1. ~~**THE HIT (§7j) — step 2b, next.**~~ **PORTED 2026-09-10, §7j.** Still to do from it, the NOISE, read 2026-09-10:
    `sub_4246E0` is called at every shot (with the muzzle) and every impact,
    and it is not a sound - it ALERTS gunmen. Each one flagged 0x40, not yet
