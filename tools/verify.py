@@ -13868,7 +13868,8 @@ def c_engine_shoot_pose():
         return subprocess.run([play, fr, tb, "--software", "--res", "640x480", "--nofmv",
                                "--no-crowd", "--save", save, "--area", "2",
                                "--stand", stand, "--frames", "120"],
-                              capture_output=True, text=True, env=env).stdout
+                              capture_output=True, text=True, errors="replace",
+                              env=env).stdout
     inZone = run("1812,-9,1217,270")
     # keyed on the POSE SOURCE, not on the diagnostic beside it: what is
     # asserted is that the body is actually posed from the library

@@ -122,7 +122,10 @@ struct ShootRecord {
     std::uint32_t flags = 0;                 // +160  bit 0 ticking, 8, 0x800
     float clipLen    = 0.0f;                 // +164  sub_434890(list)
     float timer      = 0.0f;                 // +168  a countdown in FRAMES
-    int   node       = -1;                   // +188  Shoot_Think's nav node
+    // +188 is his FLOOR, a signed byte (`sub_435020` of where `Shoot_Think`
+    // last put him; `sub_4246E0` and the death arm read it as one). -1 is the
+    // PLAYER's (`Shoot_Enter`); a gunman's record starts at 0, memset.
+    int   node       = -1;                   // +188  his floor (see above)
     int   band       = 0;                    // +190  0 none, 1 wounded, 2 crit
 
     // ---- THE GEOMETRY (`todo/shoot-mode.md` 5c, 7a) --------------------

@@ -129,6 +129,21 @@ and the reactions - on per-mesh world transforms the viewer captures at the
 draw, which is the engine's own order since the flight runs before the actors
 tick.
 
+**HEALTH ITEMS - the reader, 2026-09-10: *"grabbing a health item does not
+restore your health currently"*.** **READ 2026-09-10, and it is the
+original's behaviour, not a bug**: a medikit is an ordinary inventory item
+(kind 0, flags 0x3, effect 6 = property 1, +20 / +50 / +100), and grabbing
+one only stores it. The supermarket's SCENE 56 consumes it in its HURT
+handler (subscription 3, at 17388: a red fade, a camera shake, then - when
+`var.set.actor_stat(player, 1)` reads below 28 - `inventory.remove_all` of
+the large, medium or small kit, `+64` / `+32` / `+15`, `actor.stat.set`, a
+voice line). So a kit heals you automatically the moment a hit leaves you
+under 28. Nothing hurts the player in the port yet, so the handler never
+runs: it arrives with THE GUNMEN'S SHOTS and the player's damage path below
+- which must also make the hit reach that handler's message, and reconcile
+property 1 (what the handler reads and writes) with the shoot record's
+`+92` (what the gauge draws; `Actor_SetProperty` does not touch it).
+
 **THE GUNMEN'S AI - the reader, 2026-09-10: *"don't forget the ennemies's AI
 at some point (not necessarily now)"*.** The brain's sixteen states tick on
 the real gunmen and they acquire, turn and engage, but they do not WALK -

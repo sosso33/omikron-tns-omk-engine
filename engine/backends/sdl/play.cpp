@@ -3828,10 +3828,13 @@ int main(int argc, char** argv) {
     omk::Map2d shootMap;                 // MAP2D\<+106>.MPT - the noise's floors
     // THE NOISE (`sub_4246E0`, `actor/shoot.h`): at a shot's muzzle, and where
     // a bolt stops on the world or on a body. Every gunman with a brain is a
-    // record, tested in actor order (the engine's is slot order). Three things
-    // stand in, labelled: his FLOOR is `sub_435020` of where he stands, for
-    // the `+188` the engine's mover keeps and this viewer's gunmen - who do not
-    // walk the grid - never set; a record the port marks dead (`+160 & 8`) is
+    // record, tested in actor order (the engine's is slot order). His FLOOR
+    // is his record's `+188`, as the engine reads it - 0 for a gunman, the
+    // zeroed record's, since `Shoot_Think` (its writer) is not wired; this read
+    // `sub_435020` of where he stood at first, which found -1 for the two
+    // supermarket gunmen standing off the grid and called 22 of a reader's
+    // noises "another floor" on a one-floor map. Two things stand in,
+    // labelled: a record the port marks dead (`+160 & 8`) is
     // passed over, for the death arm's `& ~0x40` the port does not run; and
     // `Shoot_ActorAction` is RECORDED on the Session, as the hit's is - its own
     // arms are not ported, and an action of -1 (whose arm is case 0) is not
@@ -3857,7 +3860,9 @@ int main(int argc, char** argv) {
             std::int32_t cells = 0;
             session.actorProperty(actor, 28, cells);
             if (firstCells < 0) firstCells = static_cast<int>(cells);
-            const int sf = shootMap.floorAt(sp->drawAt[0], sp->drawAt[1], sp->drawAt[2], -1);
+            // his FLOOR is his record's `+188`, a signed byte - `movsx edx,
+            // byte [esi+1Ch]`
+            const int sf = static_cast<int>(static_cast<std::int8_t>(rec.node & 0xFF));
             const omk::NoiseHearing h = omk::shootHearNoise(
                 rec, sp->drawAt, at, static_cast<int>(cells),
                 static_cast<float>(shootMap.scale()), nf, sf);
@@ -10693,6 +10698,12 @@ int main(int argc, char** argv) {
                                 sp.behaviourBits = props[5];
                             }
                             omk::initShootRecord(fresh, sp);
+                            // +188, his FLOOR: `Shoot_Enter` memsets the 100
+                            // records, so a gunman's is 0 until `Shoot_Think`
+                            // (not wired - these gunmen do not walk the grid)
+                            // writes his `sub_435020`; only the PLAYER's is
+                            // set to -1. At -1 `shootEngage` refuses at once.
+                            fresh.node = 0;
                             // +80, the character type - the hit's gates test it
                             // (type 11 takes the baton, 12 never reacts)
                             fresh.type = session.typeOfActor(s.actor);
@@ -13567,6 +13578,16 @@ int main(int argc, char** argv) {
                 return unsigned(fb.px[static_cast<std::size_t>(y) * static_cast<std::size_t>(fb.w) +
                                       static_cast<std::size_t>(x)]);
             };
+            // the name is the game's cp1252 and the log is UTF-8: "Bâton de
+            // pouvoir" printed raw put a lone 0xE2 in the output, and a check
+            // reading it strictly stopped with a decode error. For letters
+            // cp1252 is Latin-1, so each high byte is two UTF-8 bytes.
+            std::string weaponLog;
+            for (const unsigned char ch : weaponName) {
+                if (ch < 0x80) { weaponLog.push_back(static_cast<char>(ch)); continue; }
+                weaponLog.push_back(static_cast<char>(0xC0 | (ch >> 6)));
+                weaponLog.push_back(static_cast<char>(0x80 | (ch & 0x3F)));
+            }
             char line[384];
             std::snprintf(line, sizeof line,
                           "rings %d, ammo %d, weapon '%s' - items drawn %d, fills %d; "
@@ -13574,7 +13595,7 @@ int main(int argc, char** argv) {
                           "crosshair at %d %d, pixel below centre 0x%04x; "
                           "gauge %d/200 = %d%%, top %d, quads %d, blits %d, "
                           "frame pixel 0x%04x, empty-part pixel 0x%04x",
-                          int(rings), hudAmmo, weaponName.c_str(), hf.itemsDrawn,
+                          int(rings), hudAmmo, weaponLog.c_str(), hf.itemsDrawn,
                           hf.fillsDrawn, int(ringDrawn), int(weaponDrawn), cx, cy,
                           pixel(cx, cy + 8), playerShootRec.health, bar.percent, bar.top,
                           bar.quads, bar.blits,

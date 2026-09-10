@@ -1399,7 +1399,15 @@ forget to plan it."* The session's own log agrees with the gate: 245 latches
    the shot writes the ammo counter `dword_90E11C` and sets the refresh flag
    `dword_90E104`. None of it is drawn: the viewer prints the screen number
    and stops.
-4. **THE GUNMEN'S SHOTS.** The brain reaches outcome 1; wire it through
+4. **THE GUNMEN'S SHOTS.** (First, found 2026-09-10 on the way: a gunman's
+   record started at `+188 = -1`, the player's value, so `shootEngage` -
+   `sub_426E00`, whose first test is exactly that - refused every gunman
+   before anything else; the engine's memset gives him 0. Fixed, and the
+   noise's floor reads the same byte. And the MEDIKITS: the reader's "grabbing
+   a health item does not restore your health" is the original's behaviour -
+   SCENE 56's hurt handler, subscription 3 at 17388, consumes a carried kit
+   when a hit leaves the player under 28 (`todo/handoff-shoot-mode.md`); it
+   runs once the player can be hit.) The brain reaches outcome 1; wire it through
    `sub_47C2A0` with its target (the other arm, whose aim spreads by
    `rand() % (radius / 2)`) and `Actor_TickProjectiles`' npc aim at the
    player - and then the player's own damage path (§7j).
