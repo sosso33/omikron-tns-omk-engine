@@ -26321,8 +26321,8 @@ def c_engine_shoot_hit():
     return got, want, (
         "the three gunmen's roots ON their placements with the body's 44.4 "
         "sphere; the first three bolts from the raised gun killing actor 240, "
-        "15 -> 10 -> 5 -> 0 at band 2; the fourth over him as he falls, the "
-        "fifth on the corpse doing nothing; killed once, death clip type 5, "
+        "15 -> 10 -> 5 -> 0 at band 2; the fourth and fifth passing him as he "
+        "falls, at the heading his brain gave him; killed once, death clip type 5, "
         "the enemy count dropping")
 
 
