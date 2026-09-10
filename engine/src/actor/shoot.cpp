@@ -421,6 +421,7 @@ ShootStep shootGenericStep(ShootRecord& r, const ShootFrameIn& in, float& eulerY
         else if (snap == 180) { out.clipType = 32; out.turnTotal = -180.0f; out.turnRate = 10.0f; }
         else if (snap == -90) { out.clipType = 30; out.turnTotal =  -90.0f; out.turnRate = -5.0f; }
         else if (snap != 0)   { out.clipType = in.defaultClipType; }
+        if (snap == 90 || snap == 180 || snap == -90) out.turnClip = out.clipType;
     };
 
     switch (state) {

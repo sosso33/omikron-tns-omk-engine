@@ -340,6 +340,12 @@ struct ShootStep {
     int  clipType  = -1;        // a clip to pick, or -1
     float turnTotal = 0.0f;     // degrees the picked clip must cover
     float turnRate  = 0.0f;     // degrees per delta if there is NO clip
+    // The TURN clip an arm picked (30 / 31 / 32), kept apart from `clipType`.
+    // The engine stores it at `+16` and then the hub's timer tail asks for the
+    // default ACTION (`Shoot_ActorAction(him, 0, 0)`), which leaves `+16`
+    // alone - so the turn still starts at LABEL_359. Here the tail writes
+    // `clipType`, and would have clobbered the turn. -1: no turn picked.
+    int   turnClip = -1;
     bool  unread = false;       // this state's arm has not been transcribed
 
     // ---- what an arm asks the world to do -----------------------------

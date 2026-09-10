@@ -169,11 +169,12 @@ the AI's missing half and both are owed.
 the bolt straight at the player with a radius jitter - NOT the gate's spread,
 which only bends the arm pose. In the gallery both gunmen fire from frame 4
 (`verify.py: engine: shoot gunfire`); the bolts stop on the world, since the
-player is not a hit body yet. **The supermarket's robbers do not fire yet**,
-and why was measured: the player stands behind robber 77, the hub asks for a
-TURN CLIP (type 32) and the viewer never plays a brain's picked clip - step 1b.
-And the viewer reads flag 8 as dead where the engine's flag 8 is "a picked clip
-is playing", which step 1b has to untangle.
+player is not a hit body yet. **STEP 1b, the turn, ported the same day**: the
+supermarket's robber 77 starts with the player behind him, and the hub's TURN
+CLIP (type 32) was both never played and overwritten every tick by the port's
+own timer tail; now it plays (`sub_421770`, the brain holding) and he turns
+0 -> 187.2 over frames 394-418 and fires every 15. Flag 8 means "a picked clip
+is playing" now, and dead is flag 8 with no health left.
 
 **Reported missing in play (2026-09-10, *"no fire sound effect, no UI"*): the
 FIRE SOUND and the shoot HUD.** Both are planned with their leads in

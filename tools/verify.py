@@ -26785,16 +26785,45 @@ def c_engine_shoot_gunfire():
                            r"hit the world", out, re.M))
     body = len(re.findall(r"^frame \d+: GUNMAN BOLT \(actor \d+\) retired - entry \d+ HIT ACTOR",
                           out, re.M))
-    got = (init, frames, first.groups() if first else None, world > 0, body)
+    # STEP 1b, THE TURN (`sub_421A20` / `sub_421770`): the supermarket's robber
+    # 77 starts the phase with the player dead behind him, so the hub's turn
+    # toward him snaps to 180 and picks his group's type-32 clip - 25 frames,
+    # -180/25 = -7.2 a frame. The brain holds while it plays, the clip starting
+    # at frame 1.0, so 24 ticks turn him to 187.2; on the tick it runs out he
+    # engages, resolves his WAVER through the others' table (rate 15, where the
+    # player's row is 10) and fires every 15 frames. Before the turn was
+    # played the hub's timer tail overwrote the picked clip every tick and he
+    # stood with his back to the player for the whole phase.
+    sm = subprocess.run(
+        [exe, fr, os.path.join(ROOT, "tables"),
+         "--save", os.path.join(ROOT, "traces", "save-appart.bin"),
+         "--area", "230", "--scene-chunk", "56", "--frames", "480", "--nodelay"],
+        capture_output=True, text=True, errors="replace",
+        env=dict(os.environ, SDL_VIDEODRIVER="dummy")).stdout
+    turn = re.search(r"^frame (\d+): actor 77 BRA_FN - TURN CLIP \(sub_421A20\): type (\d+), "
+                     r"(\d+) frames, (\S+) a frame, from facing (\S+)$", sm, re.M)
+    over = re.search(r"^frame (\d+): actor 77 BRA_FN - picked clip over \(sub_421770\): "
+                     r"type 32 after \d+ frames, facing (\S+)$", sm, re.M)
+    w77 = re.search(r"^frame \d+: actor 77 BRA_FN - Shoot_InitWeapon: .*? '(\w+)' kind (\d+) "
+                    r"-> type (\d+), row rate ([\d.]+) speed [\d.]+ damage (\d+)$", sm, re.M)
+    s77 = tuple(int(f) for f in re.findall(r"^frame (\d+): GUNMAN SHOT \d+ - actor 77 ", sm, re.M))
+    d77 = re.search(r"^frame \d+: GUNMAN SHOT 1 - actor 77 .*?dir (\S+ \S+ \S+) ", sm, re.M)
+    got = (init, frames, first.groups() if first else None, world > 0, body,
+           turn.groups() if turn else None, over.groups() if over else None,
+           w77.groups() if w77 else None, s77, d77.group(1) if d77 else None)
     want = ([("4", "237", "766", "DBWAVER", "2", "2", "10.0", "7"),
              ("4", "240", "772", "HEXAGUN", "3", "3", "4.0", "5")],
             {"237": (4, 14, 24, 34, 44), "240": tuple(range(4, 48, 4))},
             ("0.505 -0.004 -0.863", "30.3", "0.2", "the tir node", "41 67 34"),
-            True, 0)
+            True, 0,
+            ("394", "32", "25", "-7.20", "0.0"), ("418", "187.2"),
+            ("WAVER", "1", "1", "15.0", "5"), (418, 433, 448, 463, 478),
+            "-0.139 0.129 0.982")
     return got, want, (
         "the gallery's two gunmen resolve their held weapons through the others' table, fire "
         "on the brain's first outcome 1 and every RATE frames after, the first bolt aimed "
-        "from the tir node with the CRT's first jitter, and the bolts stop on the world")
+        "from the tir node with the CRT's first jitter, and the bolts stop on the world; the "
+        "supermarket's robber 77 turns round on his type-32 clip and then fires every 15")
 
 
 def c_shoot_input():

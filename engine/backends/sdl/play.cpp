@@ -3684,6 +3684,18 @@ int main(int argc, char** argv) {
         }
         return nullptr;
     };
+    // ...and `List_PickRandomByType` as the brain's LABEL_177 calls it: a clip
+    // of EXACTLY that type or none - no type-5 fallback, since the null return
+    // is what sends the arm to its fallback turn rate. The same fixed pick.
+    const auto shootClipExact = [&](int group, int type) -> const omk::PedClip* {
+        if (pedAni.empty()) return nullptr;
+        auto it = shootClips.find(group);
+        if (it == shootClips.end())
+            it = shootClips.emplace(group, omk::animGroupClips(pedAni, group)).first;
+        std::vector<const omk::PedClip*> m;
+        for (const auto& c : it->second) if (c.type == type) m.push_back(&c);
+        return m.empty() ? nullptr : m[static_cast<std::size_t>(group * 7 + type) % m.size()];
+    };
     const auto pedTracksFor = [&](int sex, const omk::PedClip& c, const std::vector<omk::Mesh>& meshes)
         -> const omk::NodeTracks* {
         // `PlayerController::poseTracks`'s recipe over the crowd library: the
@@ -3814,6 +3826,11 @@ int main(int argc, char** argv) {
     // formula and not the engine's place in the sequence.
     std::map<int, long> gunShots;
     std::set<int> gunTold;
+    // ...and the clip his brain PICKED and is playing (the record's `+8` and
+    // `+184`, the actor's frame `+188`): its type, length, the frame, and the
+    // turn it makes each frame. Type -1: none.
+    struct GunClip { int type = -1; int frames = 0; float frame = 0.0f, turn = 0.0f; };
+    std::map<int, GunClip> gunClips;
     std::uint32_t gunRandSeed = 1;
     // THE PLAYER'S SHOT (`actor/shootfire.h`, todo/shoot-mode.md 7h): his own
     // shoot record - the engine keeps one for him among the 100, and the
@@ -3858,7 +3875,8 @@ int main(int argc, char** argv) {
             if (nf == -1) break;
             if (actor == from) continue;
             ++tested;
-            if (rec.flags & 8u) { ++dead; continue; }
+            // dead: flag 8 with no health - flag 8 alone is a clip playing
+            if ((rec.flags & 8u) && rec.health <= 0) { ++dead; continue; }
             if (!(rec.flags & 0x40u)) { ++unentered; continue; }
             if (rec.flags & 0x20u) { ++alertedAlready; continue; }
             const Staged* sp = nullptr;
@@ -10697,9 +10715,42 @@ int main(int argc, char** argv) {
                     // does not yet WALK. A gunman aims at the player and
                     // holds his ground.
                     // a gunman a bolt KILLED thinks no more (`+160 & 8`)
+                    // - and DEAD is flag 8 WITH no health left. The engine's
+                    // flag 8 is "a picked clip is playing" (`sub_421A20` raises
+                    // it, `sub_421770` drops it at the clip's end); the death
+                    // clip is one such clip, and a gunman on a TURN clip carries
+                    // it alive.
                     const auto deadIt = shootBrains.find(s.actor);
-                    const bool shotDead = deadIt != shootBrains.end() && (deadIt->second.flags & 8u);
-                    if (act >= 0 && shootMode && !shotDead) {
+                    const bool shotDead = deadIt != shootBrains.end() &&
+                                          (deadIt->second.flags & 8u) && deadIt->second.health <= 0;
+                    // ---- THE PICKED CLIP'S TICK: `sub_424DE0`'s prologue ----
+                    //   if (flags & 8) { if (sub_421770(him, rec, ..)) return; ... }
+                    // `sub_421770` (0x00421770): his frame `+188 += dt`, and
+                    // `+420 += +184 * dt` wrapped into 0..360; while the frame is
+                    // short of the clip's length the WHOLE BRAIN returns there -
+                    // no arm, no fire. At the end it drops flag 8 and the brain
+                    // goes on the same tick, `sub_421A20(+12, 0)` putting his
+                    // previous clip back. Not ported: the clip's root motion and
+                    // the `+460` interrupt arm.
+                    bool clipHolds = false;
+                    if (act >= 0 && shootMode && !shotDead && deadIt != shootBrains.end() &&
+                        (deadIt->second.flags & 8u)) {
+                        GunClip& gc = gunClips[s.actor];
+                        gc.frame += 1.0f;                 // the brain's delta, `fin.dt` below
+                        s.facing += gc.turn * 1.0f;
+                        if (s.facing < 0.0f) s.facing += 360.0f;
+                        if (s.facing > 360.0f) s.facing -= 360.0f;
+                        if (gc.type >= 0 && gc.frame < static_cast<float>(gc.frames)) {
+                            clipHolds = true;
+                        } else {
+                            deadIt->second.flags &= ~8u;
+                            std::printf("frame %ld: actor %d %s - picked clip over (sub_421770): "
+                                        "type %d after %.0f frames, facing %.1f\n", n, s.actor,
+                                        s.model.c_str(), gc.type, double(gc.frame), double(s.facing));
+                            gc = GunClip{};
+                        }
+                    }
+                    if (act >= 0 && shootMode && !shotDead && !clipHolds) {
                         auto it = shootBrains.find(s.actor);
                         if (it == shootBrains.end()) {
                             omk::ShootRecord fresh;
@@ -10938,6 +10989,37 @@ int main(int argc, char** argv) {
                                 }
                             }
                         }
+                        // ---- LABEL_359: THE CLIP THE ARM PICKED (`+16`) ----
+                        // A turn code picks a clip of type 30 / 31 / 32 out of his
+                        // group (`List_PickRandomByType(+20, type)`, LABEL_177) with
+                        // `+184 = total / Anim_Frames(clip)`, and `sub_421A20(him,
+                        // rec, clip, 2)` starts it at frame 1.0, the previous clip
+                        // kept at `+12`, flag 8 up. With no clip of the type the arm
+                        // turns him at the fallback rate instead, `+420 += rate *
+                        // dt`. ONLY THE TURNS are played: the other clips an arm or
+                        // `Shoot_ActorAction` picks are not - he is still posed by
+                        // his action - labelled.
+                        if (st.turnClip >= 30 && st.turnClip <= 32) {
+                            const int grpT = static_cast<int>(session.typeOfActor(s.actor));
+                            const omk::PedClip* tc = (grpT >= 0 && grpT < 64)
+                                                   ? shootClipExact(grpT, st.turnClip) : nullptr;
+                            if (tc && tc->frames > 0) {
+                                GunClip& gc = gunClips[s.actor];
+                                gc.type = st.turnClip;
+                                gc.frames = tc->frames;
+                                gc.frame = 1.0f;
+                                gc.turn = st.turnTotal / static_cast<float>(tc->frames);
+                                rec.flags |= 8u;
+                                std::printf("frame %ld: actor %d %s - TURN CLIP (sub_421A20): type %d, "
+                                            "%d frames, %.2f a frame, from facing %.1f\n", n, s.actor,
+                                            s.model.c_str(), gc.type, gc.frames, double(gc.turn),
+                                            double(s.facing));
+                            } else {
+                                s.facing += st.turnRate * fin.dt;
+                                if (s.facing < 0.0f) s.facing += 360.0f;
+                                if (s.facing >= 360.0f) s.facing -= 360.0f;
+                            }
+                        }
                     }
                     if (act >= 0) {
                         const int grp = static_cast<int>(session.typeOfActor(s.actor));
@@ -10947,7 +11029,16 @@ int main(int argc, char** argv) {
                         // from the hit's band, played once and then held
                         if (s.deathType >= 0 && grp >= 0 && grp < 64)
                             if (const omk::PedClip* dc = shootClipOfType(grp, s.deathType)) c = dc;
+                        // ON A TURN CLIP: the picked clip, at his frame `+188`
+                        const auto gcIt = gunClips.find(s.actor);
+                        const bool onTurn = gcIt != gunClips.end() && gcIt->second.type >= 0 &&
+                                            s.deathType < 0 && grp >= 0 && grp < 64;
+                        if (onTurn)
+                            if (const omk::PedClip* tc = shootClipExact(grp, gcIt->second.type)) c = tc;
                         if (c) shootTracks = pedTracksFor(grp, *c, s.mo->meshes);
+                        if (onTurn && shootTracks && shootTracks->frames > 0)
+                            shootFrame = std::min(static_cast<int>(gcIt->second.frame),
+                                                  static_cast<int>(shootTracks->frames) - 1);
                         if (s.deathType >= 0 && shootTracks && shootTracks->frames > 0)
                             shootFrame = static_cast<int>(std::min<long>(
                                 n - s.deathStart, static_cast<long>(shootTracks->frames) - 1));

@@ -1451,8 +1451,27 @@ forget to plan it."* The session's own log agrees with the gate: 245 latches
    25 frames, 30/31 15 - every node there is named `NULL`, so a clip's name
    says nothing). And note the collision this exposes: the viewer reads flag 8
    as DEAD, and the engine's flag 8 is "a picked clip is playing" - death is
-   one such clip. **That is step 1b, next.** Then step 2, the player's own
-   damage path (§7j).
+   one such clip. **STEP 1b, THE TURN - PORTED 2026-09-11.** Two faults, not
+   one: the viewer never played a picked clip, AND the port's hub tail
+   (`+168 <= 0`, true every tick) wrote the default action into the same
+   `clipType` the turn had just set - the engine stores the turn at `+16`
+   and the tail's `Shoot_ActorAction(him, 0, 0)` leaves it alone. So
+   `ShootStep::turnClip` now carries the turn apart, and the viewer runs
+   `sub_424DE0`'s prologue: with flag 8 up, `sub_421770` advances his frame
+   and turns `+420` by `+184` a tick, the whole brain holding until the clip
+   runs out; LABEL_359 starts a picked turn clip at frame 1.0 (flag 8,
+   `+184 = total / frames`), or, with no clip of the type, turns him at the
+   fallback rate. He is posed on the clip while it plays. DEAD is now flag 8
+   WITH health at or below 0, in the viewer's brain gate and in the noise.
+   Robber 77 turns 0 -> 187.2 over frames 394-418 and fires every 15 from
+   418 (`engine: shoot gunfire`). Labelled: only the TURNS are played - the
+   other clips an arm or `Shoot_ActorAction` picks are not, and the action
+   channel itself (363 lines) is still a stored integer; the clip's root
+   motion and the `+460` interrupt; the pick among several clips of a type is
+   a fixed function, not `rand()`. Then step 2, the player's own damage
+   path (§7j) - and note for it that the bolts aim at `pos()`, the FEET: robber
+   77's first bolts stop on the world 57 units short of the player, descending
+   toward his feet, which may be the feet-or-pelvis reading showing.
 5. ~~**THE MOUSE LOOK.**~~ **PORTED 2026-09-10, CONFIRMED IN PLAY** (*"Good"*). `sub_47D370` read whole:
    YAW `+420 -= row23 * 0.01 * dx`, no frame delta; PITCH `+= row24 * 0.01 *
    dy * delta`, dy negated unless row 25 ("Souris inversée") is set, clamped

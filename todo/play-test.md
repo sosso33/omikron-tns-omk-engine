@@ -403,9 +403,13 @@ ever reacting until they see you. (Played 2026-09-10: *"Ok, good"*; 5
 robbers alerted in the session. Fixed after: robbers standing off the grid
 were never alerted - their floor was misread.)
 
-**NOT YET PLAYED (2026-09-11): THE GUNMEN FIRE.** Not in the supermarket
-yet - its robbers stand with you behind them and cannot turn round (the turn
-is the next step) - but in the gallery harness, where the two gunmen face you:
+**NOT YET PLAYED (2026-09-11): THE GUNMEN FIRE - and turn round to do it.**
+In the supermarket the robber nearest the entrance (actor 77) starts with
+you behind him: he should turn round on his own clip over about a second as
+the phase begins, then fire at you every half-second. Wrong looks like: a
+robber spinning on the spot in a stiff pose, turning more than once for no
+reason, or firing with his back to you. The gallery harness shows two gunmen
+already facing you:
 
 ```
 build/omk-play ../gamedata ../tables --save ../traces/save-appart.bin \
