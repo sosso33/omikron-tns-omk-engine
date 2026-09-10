@@ -392,6 +392,15 @@ jerk to full speed on the first frame, a slide after release, moving in the
 wrong direction for the way you face, or walking through a crate. There is no
 head bob and no footstep sound yet - both are known.
 
+**Now expected (ported 2026-09-10, after *"no fire sound effect"*): THE SHOT'S
+SOUNDS.** Every shot of the Gun Waver should play its fire sound (WAVER2.WAV)
+the moment the bolt leaves, and every bolt that stops - on a wall, a crate or
+a body - its impact sound (WIMP1.WAV), quieter the further away it lands.
+Wrong looks like: a sound on the press rather than on the shot (the shot
+comes a moment later while the gun comes up), a sound per frame while the
+bolt flies, or the impact sound for a bolt that went out of range. The muzzle
+flash and the impact sparks that go with them are not drawn yet.
+
 **And look at where people STAND, here and elsewhere.** Every body placed
 by its record and turned by its facing now turns about its pelvis instead
 of its model origin. For most characters that moves nothing you would see;

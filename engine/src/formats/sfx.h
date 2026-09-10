@@ -168,7 +168,12 @@ struct FxSetPiece {
 // two dwords - so `Waver` finds `Waver`, `BATpouv` finds `BATpouv`. What a
 // projectile takes from its row (`sub_44D7F0`, `Projectiles_Tick`):
 //
-//     +0..+8   three ints - not read by the shot
+//     +0..+8   three section C EFFECT ids, read by the projectile code
+//              (`todo/shoot-mode.md` 8.2): +0 at the MUZZLE (`sub_44EF80`,
+//              when the entry is made - its sound armed - and every frame of
+//              the wind-up - its sound not), +4 along the FLIGHT (`sub_44F030`,
+//              twice a frame), +8 at the IMPACT (`sub_44F0D0`, a body or the
+//              world). The Waver's are 1, 2, 3 - sounds 687, none, 689
 //     +12      char[8], the name
 //     +20      frames the bolt GROWS (entry +40), by +28..+36 a frame
 //     +24      frames it WAITS at the muzzle before it flies (entry +52):
@@ -176,6 +181,9 @@ struct FxSetPiece {
 //     +28..36  the per-frame SCALE step while growing - the Waver's
 //              (5.9, 0.2, 0.2), so its bolt stretches into a streak
 struct FxShotSprite {
+    std::int32_t muzzleEffect = 0;   // +0
+    std::int32_t flightEffect = 0;   // +4
+    std::int32_t impactEffect = 0;   // +8
     std::string name;
     float grow = 0.0f;
     float windUp = 0.0f;

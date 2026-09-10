@@ -15,6 +15,7 @@
 #include "actor/shoothit.h"
 #include "actor/shootaim.h"
 #include "actor/shootmove.h"
+#include "script/program.h"
 #include "actor/state.h"
 #include "formats/sfx.h"
 #include "o3de/collision.h"
@@ -509,6 +510,28 @@ int main(int argc, char** argv) {
                     wv ? double(wv->windUp) : -1.0, wv ? double(wv->growStep[0]) : 0.0,
                     wv ? double(wv->growStep[1]) : 0.0, wv ? double(wv->growStep[2]) : 0.0,
                     mz ? double(mz->windUp) : -1.0, hy ? double(hy->windUp) : -1.0);
+        // THE SHOT'S SOUNDS (`todo/shoot-mode.md` 8.2): the row's three
+        // effect ids, the section C sound each names, and whether the mode's
+        // library - `shoot2.scx`, what `Game_Start` puts in `stru_930780` -
+        // carries it (`Scene_FindSoundIndex`). 65535 is "no sound".
+        const omk::ScxRuntime lib(fs.read("SCPTDATA/shoot2.scx"));
+        std::string sounds;
+        for (const omk::FxShotSprite* s : {wv, mz}) {
+            if (!s) continue;
+            const int ids[3] = {s->muzzleEffect, s->flightEffect, s->impactEffect};
+            sounds += (sounds.empty() ? "" : "; ") + s->name;
+            for (int k = 0; k < 3; ++k) {
+                const omk::FxEffect* e = sf.byId(ids[k]);
+                const int snd = e ? e->sound : -1;
+                const int w = (snd > 0 && snd != 65535 && lib.valid()) ? lib.wavBydId(snd) : -1;
+                char b[96];
+                std::snprintf(b, sizeof b, " %d:%d%s%s", ids[k], snd,
+                              w >= 0 ? "=" : "", w >= 0 ? lib.wavName(w).c_str() : "");
+                sounds += b;
+            }
+        }
+        std::printf("shot sounds: library %d wavs;%s\n", lib.valid() ? lib.wavCount() : -1,
+                    (" " + sounds).c_str());
     }
     return 0;
 }

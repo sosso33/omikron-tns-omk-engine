@@ -96,6 +96,7 @@ RecordShotOut ProjectilePool::fireFromRecord(int actor, const ShootWeaponRow& ro
     p.grow   = in.sprite ? in.grow : 0.0f;
     p.windUp = in.sprite ? in.windUp : 0.0f;
     for (int k = 0; k < 3; ++k) p.growStep[k] = in.sprite ? in.growStep[k] : 0.0f;
+    p.impactEffect = in.sprite ? in.impactEffect : 0;
     out.entry = slot;
     return out;
 }
@@ -146,6 +147,7 @@ int ProjectilePool::fly(float dt, const WorldRay& world, std::vector<FlightEvent
                 ev.owner = e.owner;
                 ev.damage = e.kind;
                 for (int k = 0; k < 3; ++k) ev.vel[k] = e.vel[k];
+                ev.impactEffect = e.impactEffect;
                 out->push_back(ev);
             }
             // `o3de_UnlinkObject; ...; sub_437890(node); *v3 = 0`

@@ -72,6 +72,7 @@ directly, scanning every chunk's zone slots **and** its startup script at `+4`.
 | **8.0 the FIRST-PERSON ARM and GUN**: the `0x200000` exemption, the Waver on `Maing` | **done 2026-09-10** — reported from the original's frames; **confirmed in play** with the raise |
 | **8.0 the RAISE**: `sub_471950`'s aim layer, `actor/shootaim.h` | **done 2026-09-10** — gun low at rest, at the centre to fire, the bolt from it there; **CONFIRMED IN PLAY** in the supermarket |
 | **8.5b MOVING in first person**: shoot mode's own mover, `sub_47D4D0`, `actor/shootmove.h` | **done 2026-09-10** — forward, back, strafe, turn keys, crouch speed; `engine: shoot move`; **CONFIRMED IN PLAY** |
+| **8.2 the SHOT'S SOUNDS**: section A's muzzle and impact effects, resolved in `shoot2.scx` | **done 2026-09-10** — WAVER2.WAV per shot, WIMP1.WAV per impact; the sprites not drawn; not yet played |
 
 **17 checks** cover it (`engine: shoot hit` added with the hit): `shoot arenas`, `map2d grid`, `map2d sight`,
 `bone names`, `shoot range`, `shoot generic`, `projectile pool`,

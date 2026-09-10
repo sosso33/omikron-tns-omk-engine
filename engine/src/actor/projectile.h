@@ -75,6 +75,10 @@ struct Projectile {
     // is the heading the segment is laid along, and the bolt is drawn in it.
     float rot[9] = {1, 0, 0, 0, 1, 0, 0, 0, 1};
     float growStep[3] = {0, 0, 0};   // the sprite's +28..+36
+    // The sprite ROW's third effect id (`shoot2.sfx` section A +8), which
+    // `sub_44F0D0` registers where the bolt stops - the engine reaches it
+    // through +48, the row pointer; kept by value here. 0 = none.
+    int   impactEffect = 0;
 };
 
 // What one frame of `Projectiles_Tick` did to an entry that it retired.
@@ -88,6 +92,7 @@ struct FlightEvent {
     int   owner = -1;          // the entry's +44
     int   damage = 0;          // the entry's +56
     float vel[3] = {0, 0, 0};  // its velocity, for the hit's direction
+    int   impactEffect = 0;    // the entry's row's +8 (Why::World / Why::Actor)
 };
 // The ACTOR sweep (`sub_45E9C0`, `actor/shoothit.h`): the segment a..b
 // against every body but the shooter's. true, the hit point and the victim's
@@ -163,6 +168,7 @@ struct RecordShot {
     bool  sprite = false;
     float windUp = 0.0f, grow = 0.0f;
     float growStep[3] = {0, 0, 0};
+    int   impactEffect = 0;  // the row's +8, carried to the impact
 };
 struct RecordShotOut {
     int  entry = -1;         // -1: the pool was full and nothing was spent

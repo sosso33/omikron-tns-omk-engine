@@ -35,6 +35,9 @@ SfxFile readSfx(std::span<const std::byte> d) {
         const std::size_t r = 8u + 40u * i;
         if (r + 40 > d.size()) break;
         FxShotSprite sp;
+        sp.muzzleEffect = static_cast<std::int32_t>(u32(d, r + 0));
+        sp.flightEffect = static_cast<std::int32_t>(u32(d, r + 4));
+        sp.impactEffect = static_cast<std::int32_t>(u32(d, r + 8));
         for (std::size_t k = 0; k < 8; ++k) {
             const char c = static_cast<char>(d[r + 12 + k]);
             if (!c) break;

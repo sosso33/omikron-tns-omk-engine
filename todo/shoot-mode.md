@@ -1219,7 +1219,23 @@ forget to plan it."* The session's own log agrees with the gate: 245 latches
    (a hearing range in grid cells) and on the same floor as the noise's cell
    (`sub_435020`) gets `+160 |= 0x20` and `Shoot_ActorAction(+148, or 2)`.
    It is the brain's input.
-2. **THE FIRE SOUND — reported missing in play.** Not `sub_4246E0`. The lead
+2. ~~**THE FIRE SOUND — reported missing in play.**~~ **PORTED 2026-09-10**, and
+   the lead below held. Section A's three ints are EFFECT ids: +0 the MUZZLE
+   (`sub_44EF80` as the entry is made, with its last argument 0, and every
+   frame of the wind-up with 1), +4 the FLIGHT (`sub_44F030`, twice a frame),
+   +8 the IMPACT (`sub_44F0D0`, on a body or the world, not on the range
+   running out). `Sfx_RegisterEmitter` arms the effect's sound countdown
+   (+36) only when that last argument is 0, and `Sfx_TickAmbient` plays the
+   sound as the countdown goes negative - the same frame, +36 being 0.0 in all
+   42 rows - through `Scene_FindSoundIndex` in the RESIDENT library, which in
+   the mode is `shoot2.scx` (`Game_Start`), and `Sound_Play3D` with distances
+   78 and 584. `shoot2.scx` carries 66 sounds and the names corroborate the
+   ids: the Waver fires WAVER2.WAV (687) and hits WIMP1.WAV (689), the
+   Megazooka MEGAZ3.WAV (703) and IMPZ2.WAV (683). Ported as the fire and the
+   impact sounds (`verify.py: shoot fire`, `engine: shoot fire`); the curve
+   between 78 and 584 is DirectSound's and labelled. NOT yet: the effects'
+   SPRITES (the muzzle flash, the trail, the impact; effect 93 on an accepted
+   hit), which the port's particle field can draw. The original lead: Not `sub_4246E0`. The lead
    is in the data: each `shoot2.sfx` section-A row opens with THREE ints -
    the Waver's 1, 2, 3, the Megazooka's 7, 8, 9 - and those are section-C
    EFFECT ids. Row 1 carries sound **687** (a 2-frame life), row 2 none (12

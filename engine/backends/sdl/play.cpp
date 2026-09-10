@@ -3859,6 +3859,45 @@ int main(int argc, char** argv) {
     // linked under the HAND with its own +128 local - so the muzzle is the
     // hand's pose applied to `tir`'s local, and the bolt IS that mesh.
     omk::SfxFile shootSfx;
+    // ...and `Game_Start("shoot2.scx")`: the mode's LIBRARY, loaded into
+    // `stru_930780` over `aventure.scx`, which is the scene `Sfx_TickAmbient`
+    // resolves a shot effect's SOUND id in (`Scene_FindSoundIndex`) when the
+    // emitter names no scene of its own - and the shot's never does.
+    std::unique_ptr<omk::ScxRuntime> shootRt;
+    // A SHOT EFFECT'S SOUND (`todo/shoot-mode.md` 8.2). `Sfx_RegisterEmitter`
+    // arms the effect's `+36` countdown when its caller's last argument is 0 -
+    // the entry's creation and the impact; not the wind-up's per-frame muzzle
+    // calls, not the hit effect 93 - and `Sfx_TickAmbient` plays the effect's
+    // sound the tick that countdown goes negative, which with `+36` = 0.0 in
+    // all 42 of shoot2.sfx's rows is the same frame: `Scene_FindSoundIndex`
+    // in the resident library, then `Sound_Play3D` at the emitter with the
+    // distances 78 and 584 (inches). What DirectSound does between them is the
+    // device's and has no reachable tier (PORTING B5): this takes its default
+    // inverse-distance rolloff - full inside 78, 78/d out to 584, held there -
+    // measured from the player. The sprite half of the effects is not drawn.
+    const auto shotSound = [&](long frame, int effectId, const float at[3],
+                               const float* listener, const char* what) {
+        const omk::FxEffect* e = effectId ? shootSfx.byId(effectId) : nullptr;
+        if (!e || e->sound == 0xFFFF || e->sound == -1 || !shootRt) return;
+        const int w = shootRt->wavBydId(e->sound);
+        if (w < 0) {
+            std::printf("frame %ld: SHOT SOUND %s - effect %d's sound %d is not in shoot2.scx\n",
+                        frame, what, effectId, e->sound);
+            return;
+        }
+        float d = 0.0f;
+        if (listener) {
+            const float dx = at[0] - listener[0], dy = at[1] - listener[1],
+                        dz = at[2] - listener[2];
+            d = std::sqrt(dx * dx + dy * dy + dz * dz);
+        }
+        const float gain = d <= 78.0f ? 1.0f : 78.0f / std::min(d, 584.0f);
+        const auto pcm = wavToDevice(shootRt->wavData(w), 44100);
+        std::printf("frame %ld: SHOT SOUND %s - effect %d sound %d '%s', %.0f from him, "
+                    "gain %.2f\n", frame, what, effectId, e->sound,
+                    shootRt->wavName(w).c_str(), double(d), double(gain));
+        if (!pcm.empty()) front.playSound(pcm, false, gain);
+    };
     struct GunFacts {
         bool ok = false;
         std::string root;             // `o3de_FindNodeByName(model, 0)`'s name
@@ -5679,12 +5718,20 @@ int main(int argc, char** argv) {
                                                                          : "out of range",
                                     double(ev.at[0]), double(ev.at[1]), double(ev.at[2]),
                                     double(ev.travelled), projectiles.live());
+                        // `sub_44F0D0`: the IMPACT effect where the world
+                        // stopped it - the range running out calls nothing
+                        if (ev.why == omk::FlightEvent::Why::World)
+                            shotSound(n, ev.impactEffect, ev.at,
+                                      player ? player->pos() : nullptr, "impact");
                         continue;
                     }
                     std::printf("frame %ld: SHOT retired - entry %d HIT ACTOR %d at %.1f %.1f "
                                 "%.1f after %.1f, %d live\n", n, ev.entry, ev.victim,
                                 double(ev.at[0]), double(ev.at[1]), double(ev.at[2]),
                                 double(ev.travelled), projectiles.live());
+                    // ...and on a BODY, whatever `sub_4240E0` then decides
+                    shotSound(n, ev.impactEffect, ev.at, player ? player->pos() : nullptr,
+                              "impact on a body");
                     // ---- `sub_4240E0`, the damage, on his shoot record ----
                     Staged* vs = nullptr;
                     for (auto& up : staged)
@@ -6613,9 +6660,12 @@ int main(int argc, char** argv) {
                             }
                         }
                         // the SHOT SPRITE: section A by the gun's root name
+                        int muzzleFx = 0;
                         if (!shotGunStem.empty())
                             if (const omk::FxShotSprite* sp =
                                     shootSfx.shotSprite(gunFactsFor(shotGunStem).root)) {
+                                muzzleFx = sp->muzzleEffect;
+                                rs.impactEffect = sp->impactEffect;
                                 rs.sprite = true;
                                 rs.windUp = sp->windUp;
                                 rs.grow = sp->grow;
@@ -6639,6 +6689,9 @@ int main(int argc, char** argv) {
                                                     ((row->ammoIndex - 1) << 16) | (left & 0xFFFF));
                         if (out.entry >= 0) {
                             ++shotsFired;
+                            // `sub_44EF80(row, node, ..., 0.0)` as the entry is
+                            // made: the MUZZLE effect, its sound armed
+                            shotSound(n, muzzleFx, rs.muzzle, player->pos(), "fire");
                             const omk::Projectile& e =
                                 projectiles.entries()[static_cast<std::size_t>(out.entry)];
                             const float sp = e.speed != 0.0f ? e.speed : 1.0f;
@@ -7766,6 +7819,15 @@ int main(int argc, char** argv) {
                 // `sub_44EDF0`, whose section A is the shot sprites
                 if (!shootSfx.valid && shootSfx.shotSprites.empty())
                     shootSfx = omk::readSfx(fs.read("SCPTDATA/shoot2.sfx"));
+                // ...and `Game_Start("shoot2.scx")`, the library the shot's
+                // sounds resolve in. Kept once loaded: the engine reloads it
+                // on every entry and puts `aventure.scx` back on the way out,
+                // and the only reader here is the shot.
+                if (!shootRt)
+                    if (const auto gp = fs.resolve("SCPTDATA/shoot2.scx")) {
+                        shootRt = std::make_unique<omk::ScxRuntime>(omk::DataFs::readPath(*gp));
+                        if (!shootRt->valid()) shootRt.reset();
+                    }
                 shotGunStem = known ? objs[static_cast<std::size_t>(obj)].stem : std::string();
                 if (!shotGunStem.empty()) {
                     const GunFacts& gf = gunFactsFor(shotGunStem);

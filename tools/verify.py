@@ -26072,12 +26072,20 @@ def c_shoot_fire():
         w = re.search(r"^weapons: (.*)$", out, re.M)
         baton = re.search(r"^weapon slot 10: .* type (-?\d+) -> (.*)$", out, re.M)
         sfx = re.search(r"^shot sprites: (.*)$", out, re.M)
+        # THE SHOT'S SOUNDS (`todo/shoot-mode.md` 8.2): section A's three
+        # effect ids, the sound each section C row names (65535 = none), and
+        # the name `shoot2.scx` - the mode's library - carries it under. The
+        # names are the corroboration: WAVER2 fires the Waver, WIMP1 is its
+        # impact, MEGAZ3 and IMPZ2 the Megazooka's
+        snd = re.search(r"^shot sounds: (.*)$", out, re.M)
         got.append((w.group(1) if w else None, baton.groups() if baton else None,
-                    sfx.group(1) if sfx else None))
+                    sfx.group(1) if sfx else None, snd.group(1) if snd else None))
         want.append(("7 of 10 slots name an object, 7 resolve to a row",
                      ("-2", "row key -2"),
                      "14, walk exact 1; Waver grow 8 wind-up 0 step 5.9 0.2 0.2; "
-                     "Megazok wind-up 12; Gigazok wind-up 14"))
+                     "Megazok wind-up 12; Gigazok wind-up 14",
+                     "library 66 wavs; Waver 1:687=WAVER2.WAV 2:65535 3:689=WIMP1.WAV; "
+                     "Megazok 7:703=MEGAZ3.WAV 8:65535 9:683=IMPZ2.WAV"))
     return tuple(got), tuple(want), (
         "`MDSHOOT0` arms the latch in ACTOR_STATE 3 only; the first tap of the "
         "mode fires at once; a tap from rest fires 6 frames on (a float "
@@ -26153,6 +26161,14 @@ def c_engine_shoot_fire():
     # further forward, and they retire at -3161
     muzzle = re.findall(r"^frame \d+: SHOT \d+ - .*?from the tir node (\S+) (\S+) (\S+),",
                         o, re.M)
+    # THE SOUNDS (8.2): the row's MUZZLE effect as each entry is made - its
+    # sound armed - and its IMPACT effect where the world stops the bolt, both
+    # resolved in `shoot2.scx`. Full gain inside 78 inches (the muzzle sits 77
+    # from him), 78/d at the crates 269 away - that curve is DirectSound's
+    # default, labelled in the viewer; the ids, names and moments are the
+    # engine's
+    sounds = re.findall(r"^frame (\d+): SHOT SOUND (fire|impact) - effect (\d+) sound (\d+) "
+                        r"'(\S+)', \d+ from him, gain (\S+)$", o, re.M)
     gone = re.findall(r"^frame (\d+): SHOT retired - entry \d+ (hit the world|out of range) "
                       r"at \S+ \S+ (\S+) after ([\d.]+), (\d+) live$", o, re.M)
     got = (init.group(1) if init else None,
@@ -26163,7 +26179,10 @@ def c_engine_shoot_fire():
            [int(s[8]) for s in shots],
            [int(g[0]) - int(s[0]) for g, s in zip(gone, shots)],
            sorted({(g[1], round(float(g[2])), g[3], g[4]) for g in gone}),
-           len(muzzle), sorted(set(muzzle)))
+           len(muzzle), sorted(set(muzzle)),
+           [int(f) for f, w, *_ in sounds if w == "fire"],
+           [int(f) for f, w, *_ in sounds if w == "impact"],
+           sorted({(w, e, s, name, g) for f, w, e, s, name, g in sounds}))
     want = ("object 42 kind 1 -> type 1: rate 10 frames, speed 124.8, damage 5, "
             "magazine 0",
             list(range(30, 241, 30)),
@@ -26173,14 +26192,19 @@ def c_engine_shoot_fire():
             [1] * 8,
             [2] * 8,
             [("hit the world", -3161, "249.6", "0")],
-            8, [("4996.4", "15144.7", "-2941.6")])
+            8, [("4996.4", "15144.7", "-2941.6")],
+            list(range(37, 248, 30)),
+            list(range(39, 250, 30)),
+            [("fire", "1", "687", "WAVER2.WAV", "1.00"),
+             ("impact", "3", "689", "WIMP1.WAV", "0.29")])
     return got, want, (
         "`Shoot_InitWeapon` giving the Gun Waver the key-1 row on the mode "
         "transition; eight latches armed by `MDSHOOT0` off the real channel; "
         "eight shots, each SEVEN frames after its latch (one for the queue "
         "drain, six for the weapon to come back up); all of them the row's "
         "speed and damage, straight down -Z from the Maing node; one pool "
-        "entry per shot; every bolt from the one RAISED muzzle")
+        "entry per shot; every bolt from the one RAISED muzzle; WAVER2.WAV on "
+        "every shot's frame and WIMP1.WAV on every impact's")
 
 
 def c_engine_shoot_hit():
