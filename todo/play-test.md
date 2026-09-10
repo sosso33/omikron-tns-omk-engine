@@ -392,7 +392,16 @@ jerk to full speed on the first frame, a slide after release, moving in the
 wrong direction for the way you face, or walking through a crate. There is no
 head bob and no footstep sound yet - both are known.
 
-**Now expected (ported 2026-09-10): THE MOUSE LOOK, the engine's own.** The
+**Now expected (ported 2026-09-10): THE GUNFIRE NOISE.** A shot, and every
+bolt that lands on a wall or a body, now ALERTS the robbers who can hear it -
+each within his own hearing range (the first robber in the supermarket hears
+20 grid cells, about 20 m) and on the same floor - even ones who have not
+seen you. So a robber out of sight should come to life when you fire nearby,
+instead of waiting until he sees you. Their own shots are still not wired.
+Wrong looks like: robbers across the shop reacting to every shot, or none
+ever reacting until they see you.
+
+**CONFIRMED IN PLAY 2026-09-10 (*"Good"*): THE MOUSE LOOK, the engine's own.** The
 mouse turns and tilts the first-person view with the game's own settings -
 your save's options 23 and 24, sensitivities 20 and 15 - so turning is a
 touch faster than before (0.20 degrees a pixel against 0.18) and the tilt now

@@ -33,6 +33,7 @@
 
 #include "formats/anim.h"
 #include "formats/ctl.h"
+#include "formats/map2d.h"
 #include "formats/mesh3do.h"
 #include "formats/scx.h"
 #include "formats/tex3dt.h"
@@ -3824,6 +3825,58 @@ int main(int argc, char** argv) {
     std::unique_ptr<omk::UiWalk> hudWalk;
     omk::HudBar hudBar;                  // `Hud_DrawBar` mode 0, the health gauge
     omk::Radar radar;                    // 0x42F000, screen 34's minimap
+    omk::Map2d shootMap;                 // MAP2D\<+106>.MPT - the noise's floors
+    // THE NOISE (`sub_4246E0`, `actor/shoot.h`): at a shot's muzzle, and where
+    // a bolt stops on the world or on a body. Every gunman with a brain is a
+    // record, tested in actor order (the engine's is slot order). Three things
+    // stand in, labelled: his FLOOR is `sub_435020` of where he stands, for
+    // the `+188` the engine's mover keeps and this viewer's gunmen - who do not
+    // walk the grid - never set; a record the port marks dead (`+160 & 8`) is
+    // passed over, for the death arm's `& ~0x40` the port does not run; and
+    // `Shoot_ActorAction` is RECORDED on the Session, as the hit's is - its own
+    // arms are not ported, and an action of -1 (whose arm is case 0) is not
+    // recorded at all.
+    const auto shootNoise = [&](long frame, int from, const float at[3], const char* what) {
+        if (!shootMap.valid()) return;
+        const int nf = shootMap.floorAt(at[0], at[1], at[2], -1);
+        // one line per noise, so a silence says WHY: how many records were
+        // passed over for each of the tests, and the first one's hearing
+        int tested = 0, dead = 0, alertedAlready = 0, unentered = 0, far = 0, heard = 0;
+        int firstCells = -1;
+        for (auto& [actor, rec] : shootBrains) {
+            if (nf == -1) break;
+            if (actor == from) continue;
+            ++tested;
+            if (rec.flags & 8u) { ++dead; continue; }
+            if (!(rec.flags & 0x40u)) { ++unentered; continue; }
+            if (rec.flags & 0x20u) { ++alertedAlready; continue; }
+            const Staged* sp = nullptr;
+            for (const auto& up : staged)
+                if (up && up->actor == actor) { sp = up.get(); break; }
+            if (!sp) continue;
+            std::int32_t cells = 0;
+            session.actorProperty(actor, 28, cells);
+            if (firstCells < 0) firstCells = static_cast<int>(cells);
+            const int sf = shootMap.floorAt(sp->drawAt[0], sp->drawAt[1], sp->drawAt[2], -1);
+            const omk::NoiseHearing h = omk::shootHearNoise(
+                rec, sp->drawAt, at, static_cast<int>(cells),
+                static_cast<float>(shootMap.scale()), nf, sf);
+            if (!h.heard) { ++far; continue; }
+            ++heard;
+            if (h.act && h.action >= 0)
+                session.shootModeMutable().actorAction(actor, h.action);
+            std::printf("frame %ld: NOISE (sub_4246E0) - %s at %.0f %.0f %.0f, floor %d: "
+                        "actor %d %s (hearing %d cells of %u), his floor %d, action %d\n",
+                        frame, what, double(at[0]), double(at[1]), double(at[2]), nf, actor,
+                        h.alerted ? "ALERTED" : "heard it from another floor",
+                        int(cells), shootMap.scale(), sf, h.act ? h.action : -99);
+        }
+        std::printf("frame %ld: NOISE (sub_4246E0) - %s at %.0f %.0f %.0f, floor %d: %d "
+                    "records - %d dead, %d not entered, %d already alerted, %d out of "
+                    "hearing (the first hears %d cells), %d heard\n", frame, what,
+                    double(at[0]), double(at[1]), double(at[2]), nf, tested, dead,
+                    unentered, alertedAlready, far, firstCells, heard);
+    };
     std::map<std::uint32_t, std::string> hudRows;
     int  hudAmmo = -1;
     std::string hudTold;
@@ -5770,9 +5823,13 @@ int main(int argc, char** argv) {
                                     double(ev.travelled), projectiles.live());
                         // `sub_44F0D0`: the IMPACT effect where the world
                         // stopped it - the range running out calls nothing
-                        if (ev.why == omk::FlightEvent::Why::World)
+                        if (ev.why == omk::FlightEvent::Why::World) {
                             shotSound(n, ev.impactEffect, ev.at,
                                       player ? player->pos() : nullptr, "impact");
+                            // the NOISE where it stopped, the maker excluded
+                            // (0x44DE15, after `sub_44F0D0`)
+                            shootNoise(n, -1, ev.at, "a bolt on the world");
+                        }
                         continue;
                     }
                     std::printf("frame %ld: SHOT retired - entry %d HIT ACTOR %d at %.1f %.1f "
@@ -5782,6 +5839,9 @@ int main(int argc, char** argv) {
                     // ...and on a BODY, whatever `sub_4240E0` then decides
                     shotSound(n, ev.impactEffect, ev.at, player ? player->pos() : nullptr,
                               "impact on a body");
+                    // the NOISE there, the VICTIM excluded - 0x44DD0E / 0x44DD40
+                    // hand `sub_4246E0` the index `sub_4240E0` was given
+                    shootNoise(n, ev.victim, ev.at, "a bolt on a body");
                     // ---- `sub_4240E0`, the damage, on his shoot record ----
                     Staged* vs = nullptr;
                     for (auto& up : staged)
@@ -6766,6 +6826,8 @@ int main(int argc, char** argv) {
                             // `sub_44EF80(row, node, ..., 0.0)` as the entry is
                             // made: the MUZZLE effect, its sound armed
                             shotSound(n, muzzleFx, rs.muzzle, player->pos(), "fire");
+                            // ...and the NOISE at the muzzle (0x44D5CC / 0x44D7A5)
+                            shootNoise(n, -1, rs.muzzle, "a shot");
                             const omk::Projectile& e =
                                 projectiles.entries()[static_cast<std::size_t>(out.entry)];
                             const float sp = e.speed != 0.0f ? e.speed : 1.0f;
@@ -7903,6 +7965,12 @@ int main(int argc, char** argv) {
                     } else {
                         radar.openHuman();
                     }
+                    // ...and the MAP2D grid of the same name (`Map2D_Load`),
+                    // whose floors the NOISE reads (`sub_4246E0`)
+                    shootMap = omk::Map2d{};
+                    if (!mp.empty() && shootMap.load(fs.read("MAP2D/" + mp + ".MPT")))
+                        std::printf("frame %ld: MAP2D %s.MPT - %zu floors, cell %u\n", n,
+                                    mp.c_str(), shootMap.floors().size(), shootMap.scale());
                     if (radar.loaded())
                         std::printf("frame %ld: RADAR - AREA +106 '%s' -> %s, height %.2f, "
                                     "%d vertices, %d edges\n", n, mp.c_str(),

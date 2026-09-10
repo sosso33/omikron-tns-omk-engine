@@ -1212,13 +1212,33 @@ forget to plan it."* The session's own log agrees with the gate: 245 latches
    modelled. NOT yet: the HUD the same frames show - a health bar on the
    left, a turning pentagon with a number (244) top left, the weapon's icon
    and name bottom left.
-1. ~~**THE HIT (§7j) — step 2b, next.**~~ **PORTED 2026-09-10, §7j.** Still to do from it, the NOISE, read 2026-09-10:
+1. ~~**THE HIT (§7j) — step 2b, next.**~~ **PORTED 2026-09-10, §7j.** And the NOISE, read 2026-09-10 and **PORTED the same
+   day** (`actor/shoot.h` `shootHearNoise`; `verify.py: shoot fire` `noise:`,
+   `engine: shoot noise`):
    `sub_4246E0` is called at every shot (with the muzzle) and every impact,
    and it is not a sound - it ALERTS gunmen. Each one flagged 0x40, not yet
-   0x20, not type 14 and not the player, within `property 28 × flt_907EAC`
+   0x20, not in STATE 14 (`+156` - this said "type" until the loop was
+   read against its offsets) and not the player, within `property 28 × flt_907EAC`
    (a hearing range in grid cells) and on the same floor as the noise's cell
    (`sub_435020`) gets `+160 |= 0x20` and `Shoot_ActorAction(+148, or 2)`.
-   It is the brain's input.
+   It is the brain's input. Read to the end against the LISTING (the
+   decompiler hides one arm): on the noise's floor the gunman gets `|= 0x20`
+   and, unless his script step `+144` is 8, `Shoot_ActorAction(him, +148, 0)`
+   or action 2 when `+148` is -1; on ANOTHER floor no alert, only
+   `Shoot_ActorAction(him, +148, 0)`, -1 included. `+188` is his FLOOR (the
+   port's `ShootRecord::node` misnames it). The five call sites: the shot's
+   muzzle (0x44D5CC / 0x44D7A5, the shooter excluded), a bolt on a body
+   (0x44DD0E / 0x44DD40, the VICTIM excluded - `sub_4240E0`'s first argument)
+   and a bolt on the world (0x44DE15, after `sub_44F0D0`, the owner
+   excluded); a bolt running out of range makes none. The viewer now loads
+   `MAP2D\<+106>.MPT` beside the radar. Stand-ins, labelled: a gunman's
+   floor is `sub_435020` of where he stands (the viewer's gunmen never walk
+   the grid, so nothing keeps `+188`); a record the port marks dead (`& 8`)
+   is passed over for the death arm's `& ~0x40`; and `Shoot_ActorAction` is
+   RECORDED on the Session as the hit's is - its arms are not ported, and a
+   -1 action (case 0) is not recorded. In the supermarket the first shot
+   alerts actor 77 (hearing 20 cells of 39); in the gallery all three gunmen
+   are alerted already by sight.
 2. ~~**THE FIRE SOUND — reported missing in play.**~~ **PORTED 2026-09-10**, and
    the lead below held. Section A's three ints are EFFECT ids: +0 the MUZZLE
    (`sub_44EF80` as the entry is made, with its last argument 0, and every
@@ -1383,7 +1403,7 @@ forget to plan it."* The session's own log agrees with the gate: 245 latches
    `sub_47C2A0` with its target (the other arm, whose aim spreads by
    `rand() % (radius / 2)`) and `Actor_TickProjectiles`' npc aim at the
    player - and then the player's own damage path (§7j).
-5. ~~**THE MOUSE LOOK.**~~ **PORTED 2026-09-10.** `sub_47D370` read whole:
+5. ~~**THE MOUSE LOOK.**~~ **PORTED 2026-09-10, CONFIRMED IN PLAY** (*"Good"*). `sub_47D370` read whole:
    YAW `+420 -= row23 * 0.01 * dx`, no frame delta; PITCH `+= row24 * 0.01 *
    dy * delta`, dy negated unless row 25 ("Souris inversée") is set, clamped
    at ±45 (0x4BCB34 / 0x4BCB38) and handed to the camera as radians by

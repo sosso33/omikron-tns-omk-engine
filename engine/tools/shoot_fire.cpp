@@ -471,6 +471,32 @@ int main(int argc, char** argv) {
                     double(omk::shootPitchStep(0.0f, -400, 15, false, 1.0f)),
                     double(omk::shootPitchStep(0.0f, -25, 15, false, 1.0f)),
                     double(omk::shootPitchStep(0.0f, 25, 15, false, 1.0f)));
+        // THE NOISE (`sub_4246E0`'s test of one record): hearing 5 cells of
+        // 39, the point at the origin, him 100 away (in) or 1000 (out)
+        const float at[3] = {0.0f, 0.0f, 0.0f};
+        const float nearBy[3] = {100.0f, 0.0f, 0.0f}, farOff[3] = {1000.0f, 0.0f, 0.0f};
+        const auto rec = [](std::uint32_t flags, int state, int step, int action) {
+            omk::ShootRecord r;
+            r.flags = flags; r.state = state; r.scriptStep = step; r.hitAction = action;
+            return r;
+        };
+        omk::ShootRecord a = rec(0x40, 0, 0, -1), b = rec(0x40, 0, 0, -1), c = rec(0x40, 0, 0, -1),
+                         d = rec(0x40, 0, 8, -1), e = rec(0, 0, 0, -1), f = rec(0x40, 14, 0, -1),
+                         g = rec(0x40, 0, 0, 7);
+        const omk::NoiseHearing h1 = omk::shootHearNoise(a, nearBy, at, 5, 39.0f, 0, 0);
+        const bool again = omk::shootHearNoise(a, nearBy, at, 5, 39.0f, 0, 0).heard;
+        const omk::NoiseHearing h2 = omk::shootHearNoise(b, nearBy, at, 5, 39.0f, 0, 1);
+        const bool far1 = omk::shootHearNoise(c, farOff, at, 5, 39.0f, 0, 0).heard;
+        const omk::NoiseHearing h3 = omk::shootHearNoise(d, nearBy, at, 5, 39.0f, 0, 0);
+        const bool deaf = omk::shootHearNoise(e, nearBy, at, 5, 39.0f, 0, 0).heard;
+        const bool st14 = omk::shootHearNoise(f, nearBy, at, 5, 39.0f, 0, 0).heard;
+        const omk::NoiseHearing h4 = omk::shootHearNoise(g, nearBy, at, 5, 39.0f, 0, 0);
+        std::printf("noise: same floor alerted %d flags 0x%x action %d; again %d; other floor "
+                    "alerted %d act %d action %d; out of range %d; step 8 alerted %d act %d; "
+                    "not entered %d; state 14 %d; +148 7 -> action %d\n",
+                    int(h1.alerted), unsigned(a.flags), h1.action, int(again), int(h2.alerted),
+                    int(h2.act), h2.action, int(far1), int(h3.alerted), int(h3.act), int(deaf),
+                    int(st14), h4.action);
     }
 
     // THE TYPE: the object's kind, and the one hand-written exception.

@@ -809,4 +809,28 @@ int shootEngage(ShootRecord& r, const AcquireOut& a, bool inCone, const EngageIn
     return 0;
 }
 
+NoiseHearing shootHearNoise(ShootRecord& r, const float self[3], const float at[3],
+                            int hearingCells, float cellSize, int noiseFloor,
+                            int selfFloor) {
+    NoiseHearing h;
+    // `test cl, 40h` / `test cl, 20h` / `cmp [esi-4], 0Eh`
+    if (!(r.flags & 0x40u) || (r.flags & 0x20u) || r.state == 14) return h;
+    const float dx = self[0] - at[0], dy = self[1] - at[1], dz = self[2] - at[2];
+    const double reach = static_cast<double>(hearingCells) * static_cast<double>(cellSize);
+    if (double(dx) * dx + double(dy) * dy + double(dz) * dz >= reach * reach) return h;
+    h.heard = true;
+    if (selfFloor != noiseFloor) {             // `movsx edx, byte [esi+1Ch]`
+        h.act = true;
+        h.action = r.hitAction;
+        return h;
+    }
+    r.flags |= 0x20u;
+    h.alerted = true;
+    if (r.scriptStep != 8) {
+        h.act = true;
+        h.action = r.hitAction != -1 ? r.hitAction : 2;
+    }
+    return h;
+}
+
 }  // namespace omk

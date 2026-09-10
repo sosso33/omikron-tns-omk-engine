@@ -25995,7 +25995,7 @@ def c_shoot_fire():
             "no row:", "aim:", "record shot:", "magazine:", "full:",
             "wall:", "range:", "wind-up 12:", "grow:",
             "hit:", "bands:", "gates:", "shield:", "kill:", "raise:", "slew:",
-            "mover rows:", "mover held:", "mover crouch:", "look:", "type:")
+            "mover rows:", "mover held:", "mover crouch:", "look:", "noise:", "type:")
     got = []
     for k in keys:
         m = re.search(r"^" + re.escape(k) + r" (.*)$", out, re.M)
@@ -26081,6 +26081,13 @@ def c_shoot_fire():
             # negated unless row 25 is set, times the frame's 30/fps, +-45
             "dy 10 -> -1.50, inverted 1.50, 60 fps -0.75; clamped -45.00 45.00; "
             "MDLUP 3.75 MDLDO -3.75",
+            # THE NOISE, `sub_4246E0` per record: alerted on its floor with
+            # action 2 (+148 is -1), not twice; on another floor only the
+            # action, -1 and all; not past 5 x 39; script step 8 alerts with
+            # no action; not unentered (no 0x40), not in state 14; +148 wins
+            "same floor alerted 1 flags 0x60 action 2; again 0; other floor alerted 0 act 1 "
+            "action -1; out of range 0; step 8 alerted 1 act 0; not entered 0; state 14 0; "
+            "+148 7 -> action 7",
             "kind 1 BATPOUV -> -2, kind 1 WAVER -> 1, kind 3 BATPOUV -> 3"]
     if data:
         w = re.search(r"^weapons: (.*)$", out, re.M)
@@ -26664,6 +26671,52 @@ def c_engine_shoot_radar():
         "switch off), shown by the script's own op 146 when he carries object "
         "980, shown by `radar = always` with the switch off - the same frame "
         "both times; none in the gallery")
+
+def c_engine_shoot_noise():
+    r"""`engine/`: the GUNFIRE NOISE, `sub_4246E0` (`todo/shoot-mode.md` 8.1,
+    `engine/src/actor/shoot.h` `shootHearNoise`).
+
+    Not a sound: at every shot's muzzle and wherever a bolt stops on the world
+    or a body, every entered gunman (`+160 & 0x40`), not yet alerted (`&
+    0x20`), not in state 14 and not the noise's maker, whose property 28 - a
+    hearing range in MAP2D CELLS - reaches the point is ALERTED when he is on
+    its floor (`+160 |= 0x20`, and `Shoot_ActorAction(him, +148 or 2)`).
+
+    The supermarket the game's own way, three taps of `Tir` once the mode is
+    up: the area's `+106` loads `MAP2D\SMARKET1.MPT` (one floor, 39-inch
+    cells); the first shot, at frame 430, alerts actor 77 - hearing 20 cells,
+    on floor 0 - with action 2, his `+148` being -1; that is the only alert of
+    the run, because every noise after it finds him alerted already (and the
+    other gunmen have not entered yet).
+    """
+    import subprocess, re
+    fr = omkpaths.data_root()
+    eng = os.path.join(ROOT, "engine")
+    bld = subprocess.run(["make", "-s", "play"], cwd=eng, capture_output=True, text=True)
+    exe = os.path.join(eng, "build", "omk-play")
+    if bld.returncode != 0 or not os.path.exists(exe):
+        return ("build failed",), ("built",), "engine/ must build"
+    out = subprocess.run(
+        [exe, fr, os.path.join(ROOT, "tables"),
+         "--save", os.path.join(ROOT, "traces", "save-appart.bin"),
+         "--area", "230", "--scene-chunk", "56", "--frames", "560", "--nodelay",
+         "--hold", "0*30,k54*1,0*30,k54*1,0*30,k54*1,0*60"],
+        capture_output=True, text=True, errors="replace",
+        env=dict(os.environ, SDL_VIDEODRIVER="dummy")).stdout
+    m0 = re.search(r"MAP2D (\w+)\.MPT - (\d+) floors, cell (\d+)", out)
+    alerts = re.findall(r"^frame (\d+): NOISE \(sub_4246E0\) - (.+?) at \S+ \S+ \S+, floor "
+                        r"(\d+): actor (\d+) ALERTED \(hearing (\d+) cells of \d+\), his floor "
+                        r"(\d+), action (-?\d+)$", out, re.M)
+    after = re.findall(r"^frame \d+: NOISE \(sub_4246E0\) - .+? \d+ records - \d+ dead, \d+ not "
+                       r"entered, (\d+) already alerted, \d+ out of hearing .*?, (\d+) heard$",
+                       out, re.M)
+    got = (m0.groups() if m0 else None, alerts[0] if alerts else None, len(alerts),
+           after[1] if len(after) > 1 else None)
+    want = (("SMARKET1", "1", "39"), ("430", "a shot", "0", "77", "20", "0", "2"), 1, ("1", "0"))
+    return got, want, (
+        "the supermarket's MAP2D grid; the first shot alerting actor 77 on its floor with "
+        "action 2; one alert in the run; the next noise finding him alerted already")
+
 
 def c_shoot_input():
     r"""`engine/`: what the MOUSE does, per control scheme.
@@ -32121,6 +32174,7 @@ SLOW = [
     ("engine: shoot leave", c_engine_shoot_leave, "todo/shoot-mode 8.5e; actor/player.h"),
     ("engine: shoot hud",  c_engine_shoot_hud,  "todo/shoot-mode 8.3; ui/screendraw.h"),
     ("engine: shoot radar", c_engine_shoot_radar, "todo/shoot-mode 8.3; ui/radar.h"),
+    ("engine: shoot noise", c_engine_shoot_noise, "todo/shoot-mode 8.1; actor/shoot.h"),
     ("engine: anims",      c_engine_anims,      "engine/README"),
     ("engine: CTL",        c_engine_ctl,        "engine/README"),
     ("engine: SCX",        c_engine_scx,        "engine/README"),

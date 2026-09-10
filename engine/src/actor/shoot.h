@@ -433,4 +433,37 @@ struct ShootEdge { int from, to; const char* why; };
 const std::vector<ShootEdge>& astarothEdges();
 const std::vector<ShootEdge>& genericEdges();
 
+// ---- THE NOISE, `sub_4246E0` (0x004246E0) -----------------------------
+//
+// Called at every shot (the muzzle, from `Actor_TickProjectiles`) and every
+// bolt that stops on the world or on a body (`Projectiles_Tick`; one that runs
+// out of range makes none), with the actor that made it. It is not a sound: it
+// ALERTS. Nothing happens when the point is on no floor (`sub_435020` -1).
+// Otherwise every record is tested in slot order, and one is passed over when
+// it is the noise's own maker, not entered (`+160 & 0x40`, which `sub_422540`
+// sets and the death arm clears), already alerted (`& 0x20`), in STATE 14
+// (`+156`), or the player's. Then his property 28 is a hearing range in GRID
+// CELLS (`flt_907EAC`, the MAP2D cell size): the squared 3D distance from his
+// +244 to the point must be BELOW (property 28 x cell)^2. Heard on the noise's
+// own floor (the point's `sub_435020` against his `+188`) he is ALERTED -
+// `+160 |= 0x20` - and, unless his script step `+144` is 8, sent
+// `Shoot_ActorAction(him, +148, 0)`, or action 2 when `+148` is -1. Heard on
+// ANOTHER floor he is not alerted and gets `Shoot_ActorAction(him, +148, 0)`
+// whatever it holds, -1 included - read from the listing, since the
+// decompiler's control flow hides that arm.
+//
+// This is ONE record's test; the maker, the player and the floor -1 exit are
+// the caller's. (The first call of a phase also clears 0x8000 on every record
+// when `dword_4E9760` is set, a bit `sub_422540` gives records made while it
+// is; nothing in this port sets that flag, so that is not modelled.)
+struct NoiseHearing {
+    bool heard   = false;   // in range and able to hear
+    bool alerted = false;   // ...and on the noise's floor: +160 |= 0x20
+    bool act     = false;   // `Shoot_ActorAction` is called
+    int  action  = -1;      // ...with this
+};
+NoiseHearing shootHearNoise(ShootRecord& r, const float self[3], const float at[3],
+                            int hearingCells, float cellSize, int noiseFloor,
+                            int selfFloor);
+
 }  // namespace omk
