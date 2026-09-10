@@ -94,6 +94,16 @@ public:
     // (`sub_40A2C0`) the ADDRESSES record; `sub_41CF50(slot, pos)` moves
     // the node. World positioning, no DB write: output-class.
     virtual void placeObjectAt(int /*objectId*/, int /*address*/) {}
+
+    // ---- `sub_423A40` (0x00423A40), the TAIL of `Actor_SetProperty` ------
+    // Every property write ends `sub_423A40(index, property, value)` with the
+    // value just CLAMPED. It does nothing unless `g_ShootMode`; then property
+    // 1 goes into the actor's shoot record `+92` - and, for the player, into
+    // the gauge's `dword_90E100` - and property 35 into the HUD's ammo
+    // (`dword_90E11C`) when the held weapon's row matches the magazine. It is
+    // how a medikit a SHOOT zone applies (`actor.stat.set(player, 1, ...)`)
+    // reaches the gauge. `actor` is -1 for the player.
+    virtual void shootStatSet(int /*actor*/, int /*property*/, std::int32_t /*value*/) {}
 };
 
 }  // namespace omk

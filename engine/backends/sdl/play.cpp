@@ -13429,6 +13429,34 @@ int main(int argc, char** argv) {
                 screenFromScript = true;
             }
         }
+        // ---- `sub_423A40`, the tail of `Actor_SetProperty` (`script/hooks.h`)
+        //
+        // A script's property write in a shoot phase reaches the shoot
+        // records here: property 1 is the record's `+92` (for the player, the
+        // gauge's value too), property 35 the HUD's ammo when the held
+        // weapon's row matches - its TYPE at least 6 (the `>= 2 && >= 6`
+        // pair, transcribed as read) and equal to the magazine slot + 2. A
+        // SHOOT medikit is a zone script that does exactly this:
+        // `var.set.actor_stat(player, 1)`, `var.add`, `actor.stat.set` - so
+        // the kit is used the moment it is taken, not stored.
+        for (const auto& w : session.takeShootStatWrites()) {
+            if (!shootMode) continue;
+            if (w.property == 1) {
+                if (w.actor == -1) {
+                    playerShootRec.health = static_cast<int>(w.value);
+                    std::printf("frame %ld: SHOOT STAT (sub_423A40) - the player's health "
+                                "-> %d, and the gauge's\n", n, int(w.value));
+                } else if (const auto it = shootBrains.find(w.actor); it != shootBrains.end()) {
+                    it->second.health = static_cast<int>(w.value);
+                    std::printf("frame %ld: SHOOT STAT (sub_423A40) - actor %d's health -> %d\n",
+                                n, w.actor, int(w.value));
+                }
+            } else if (w.property == 35 && w.actor == -1) {
+                if (const omk::ShootWeaponRow* row = playerShootRec.weapon)
+                    if (row->key >= 2 && row->key >= 6 && row->key == (w.value >> 16) + 2)
+                        hudAmmo = static_cast<int>(w.value & 0xFFFF);
+            }
+        }
         // ---- THE SHOOT HUD, screen 34 (`todo/shoot-mode.md` 8.3) --------
         //
         // `Shoot_Enter` opens it and it runs under the mode as any screen

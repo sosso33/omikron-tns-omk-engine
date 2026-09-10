@@ -130,19 +130,30 @@ draw, which is the engine's own order since the flight runs before the actors
 tick.
 
 **HEALTH ITEMS - the reader, 2026-09-10: *"grabbing a health item does not
-restore your health currently"*.** **READ 2026-09-10, and it is the
-original's behaviour, not a bug**: a medikit is an ordinary inventory item
-(kind 0, flags 0x3, effect 6 = property 1, +20 / +50 / +100), and grabbing
-one only stores it. The supermarket's SCENE 56 consumes it in its HURT
-handler (subscription 3, at 17388: a red fade, a camera shake, then - when
-`var.set.actor_stat(player, 1)` reads below 28 - `inventory.remove_all` of
-the large, medium or small kit, `+64` / `+32` / `+15`, `actor.stat.set`, a
-voice line). So a kit heals you automatically the moment a hit leaves you
-under 28. Nothing hurts the player in the port yet, so the handler never
-runs: it arrives with THE GUNMEN'S SHOTS and the player's damage path below
-- which must also make the hit reach that handler's message, and reconcile
-property 1 (what the handler reads and writes) with the shoot record's
-`+92` (what the gauge draws; `Actor_SetProperty` does not touch it).
+restore your health currently"*.** **READ AND PORTED 2026-09-10 - after a first reading that mixed the two
+modes, which the reader corrected: *"On adventure mode, you grab an health
+item and it goes to your inventory, you have to explicitly use it. On shoot
+mode, the "use auto" is about health items you took on adventure mode ... The
+health item you find while in shoot mode are used immediately."*** Both hold,
+and both are scripts. A kit FOUND in a shoot phase is a ZONE (the
+supermarket's 3935/3936/3938/3947): `scx.play 278`, `zone.disable`,
+`object.hide` the kit, `var.set.actor_stat(player, 1, v)`, `var.add`
+**0x32 / 0x64 / 0x10** (50 medium, 100 large, 16 small - the subtitles say
++50, +100, +15), `actor.stat.set(player, 1, v)`, a voice line 600-602: used
+the moment it is taken. The kits CARRIED from adventure mode are the HURT
+handler's (SCENE 56 subscription 3, at 17388): on a hit, when health reads
+below **0x28 = 40**, it removes the large, medium or small kit and adds 100,
+50 or 15. (This paragraph first said 28, +64/+32 - hex bytes misread as
+decimal.) What was missing was the join: `Actor_SetProperty` ends in
+`sub_423A40`, which in shoot mode copies property 1 into the actor's shoot
+record `+92` and, for the player, the gauge's `dword_90E100` (and property 35
+into the HUD's ammo). The port's property write had no tail, so the zone ran,
+the DB health rose, and the gauge stayed put. Ported as a hook
+(`script/hooks.h` `shootStatSet`), queued by the Session in shoot mode and
+applied by the viewer to its shoot records; `verify.py: engine: session`
+`shoot_stat` stands the player in zone 3935 and sees `[-1 1 49]` - -1 + 50.
+The damage half (a hit lowering `+92`, writing it back through event 45,
+then message 0 to the hurt handler) arrives with THE GUNMEN'S SHOTS.
 
 **THE GUNMEN'S AI - the reader, 2026-09-10: *"don't forget the ennemies's AI
 at some point (not necessarily now)"*.** The brain's sixteen states tick on

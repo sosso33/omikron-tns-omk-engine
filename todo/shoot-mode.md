@@ -1412,11 +1412,12 @@ forget to plan it."* The session's own log agrees with the gate: 245 latches
    meant to prove the fix is what showed it: setting -1 changed nothing,
    because the older line overwrote it. The floor fix itself has no check:
    the headless route never brings an off-grid gunman into hearing range,
-   and the evidence is the reader's session log. And the MEDIKITS: the reader's "grabbing
-   a health item does not restore your health" is the original's behaviour -
-   SCENE 56's hurt handler, subscription 3 at 17388, consumes a carried kit
-   when a hit leaves the player under 28 (`todo/handoff-shoot-mode.md`); it
-   runs once the player can be hit.) The brain reaches outcome 1; wire it through
+   and the evidence is the reader's session log. And the MEDIKITS, after a reader's
+   correction: a kit found in a shoot phase is a ZONE script that applies it
+   at once (+50 / +100 / +16), and `Actor_SetProperty`'s tail `sub_423A40`
+   is what carries that to the gauge - PORTED 2026-09-10, `script/hooks.h`
+   `shootStatSet` (`todo/handoff-shoot-mode.md`). The carried kits are the
+   hurt handler's, below 40 health; that runs once the player can be hit.) The brain reaches outcome 1; wire it through
    `sub_47C2A0` with its target (the other arm, whose aim spreads by
    `rand() % (radius / 2)`) and `Actor_TickProjectiles`' npc aim at the
    player - and then the player's own damage path (§7j).

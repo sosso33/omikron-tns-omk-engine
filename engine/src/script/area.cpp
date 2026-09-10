@@ -3431,6 +3431,13 @@ bool Session::Hooks::setActorProperty(int actor, int property, std::int32_t valu
     return !r.empty() && writeActorProperty(r, property, value);
 }
 
+// `sub_423A40`: `if (!g_ShootMode) return 0` - so nothing is queued outside a
+// shoot phase - and only the two properties it acts on.
+void Session::Hooks::shootStatSet(int actor, int property, std::int32_t value) {
+    if (!s_->shoot_.active() || (property != 1 && property != 35)) return;
+    s_->shootStatWrites_.push_back({actor, property, value});
+}
+
 int Session::Hooks::heldObjectField(int actor) {
     const auto r = record(actor);
     return r.empty() ? -1 : heldObjectOf(r);

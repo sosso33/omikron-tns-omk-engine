@@ -340,6 +340,16 @@ public:
     // different question (`todo/standing-unknowns.md` 2).
     const ShootMode& shootMode() const { return shoot_; }
     ShootMode& shootModeMutable() { return shoot_; }
+    // `sub_423A40`'s writes (`script/hooks.h`), queued while shoot mode is on
+    // for the frontend, which holds the shoot records: property 1 is a shoot
+    // record's `+92` (and the player's gauge), 35 the HUD's ammo. `actor`
+    // -1 is the player. Taken once a frame.
+    struct ShootStatWrite { int actor = -1; int property = 0; std::int32_t value = 0; };
+    std::vector<ShootStatWrite> takeShootStatWrites() {
+        std::vector<ShootStatWrite> w;
+        w.swap(shootStatWrites_);
+        return w;
+    }
     // ops 80 and 81, and the ONE door a harness may use as well: the weapon
     // table at `IAM\GLOBAL +42` is read on the first call, so a caller that
     // went straight to `ShootMode::begin` would enter with slot 11 and no
@@ -1349,6 +1359,7 @@ private:
     bool radarOn_ = false;                   // dword_4EB8C8, the radar's switch
     // Shoot mode: the opcodes' decisions and the actor->action map.
     ShootMode shoot_;
+    std::vector<ShootStatWrite> shootStatWrites_;   // `sub_423A40`, for the frontend
     bool shootTableRead_ = false;    // GLOBAL +42, read on the first `shoot.begin`
     int   bumpCooldown_ = 0;                 // dword_538318, in frames
     void  refreshCrowdIndex();
@@ -1455,6 +1466,7 @@ private:
         bool propBySlot(int slot, PropRef& out) override;
         bool propById(int id, PropRef& out) override;
         void placeObjectAt(int objectId, int address) override;
+        void shootStatSet(int actor, int property, std::int32_t value) override;
     private:
         Session* s_;
         // `Actor_FindById` over the two slots' blocks (the DB's own record is

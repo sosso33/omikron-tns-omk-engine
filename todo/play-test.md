@@ -403,12 +403,14 @@ ever reacting until they see you. (Played 2026-09-10: *"Ok, good"*; 5
 robbers alerted in the session. Fixed after: robbers standing off the grid
 were never alerted - their floor was misread.)
 
-**HEALTH ITEMS, read 2026-09-10 after *"grabbing a health item does not
-restore your health"*: that is what the original does.** A medikit is only
-stored when you grab it; the supermarket's script uses it by itself when a
-hit leaves you under 28 health (+64, +32 or +15, with a voice line). Nothing
-can hit you in this build yet, so you will not see it until the robbers
-shoot back.
+**Now expected (fixed 2026-09-10, after *"grabbing a health item does not
+restore your health"* and your correction that shoot mode uses them at
+once): HEALTH ITEMS IN A SHOOT PHASE.** Walking onto a medikit in the
+supermarket should now raise the gauge at once - +50 for a medium, +100 for a
+large, +16 for a small (its subtitle says +15) - with the pickup line. The kits
+you carry from adventure mode are used by themselves when a hit leaves you
+under 40 health; nothing can hit you yet, so that part waits for the robbers'
+shots. Wrong looks like: the pickup line with no change on the gauge.
 
 **CONFIRMED IN PLAY 2026-09-10 (*"Good"*): THE MOUSE LOOK, the engine's own.** The
 mouse turns and tilts the first-person view with the game's own settings -

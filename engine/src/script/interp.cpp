@@ -136,10 +136,22 @@ bool Interpreter::getProperty(int actor, int property, std::int32_t& out) const 
 }
 
 bool Interpreter::setProperty(int actor, int property, std::int32_t value) {
-    if (isPlayer(actor))
-        return writeActorProperty(state_.rawMutable().subspan(
-            static_cast<std::size_t>(GameState::kPlayerRecord), kActorRecordSize), property, value);
-    return hooks_ && hooks_->setActorProperty(actor, property, value);
+    // ...and `Actor_SetProperty`'s tail, `sub_423A40`, handed the CLAMPED
+    // value - read back after the write, since `writeActorProperty` clamps
+    if (isPlayer(actor)) {
+        const auto rec = state_.rawMutable().subspan(
+            static_cast<std::size_t>(GameState::kPlayerRecord), kActorRecordSize);
+        if (!writeActorProperty(rec, property, value)) return false;
+        std::int32_t now = value;
+        readActorProperty(rec, property, now);
+        if (hooks_) hooks_->shootStatSet(-1, property, now);
+        return true;
+    }
+    if (!hooks_ || !hooks_->setActorProperty(actor, property, value)) return false;
+    std::int32_t now = value;
+    hooks_->getActorProperty(actor, property, now);
+    hooks_->shootStatSet(actor, property, now);
+    return true;
 }
 
 RunResult Interpreter::run(std::span<const std::byte> code, std::size_t at) {

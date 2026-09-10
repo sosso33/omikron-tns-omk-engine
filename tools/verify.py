@@ -5198,6 +5198,11 @@ def c_engine_session():
         # after, var 644 before / after 37 / after 84, zone 3931 live the same
         # three times, and whether {3, 84} found a handler
         g("shoot_score", 1, 3, 5, 9, 11, 13, 15, 17, 19, 21, 23, 25),
+        # a SHOOT medikit (`script/hooks.h` `shootStatSet`): shoot mode on,
+        # zone 3935 - the supermarket's medium kit - registered, the player's
+        # property 1 before and after its script, and what `sub_423A40`
+        # queued for the shoot record: one write, the player, property 1
+        g("shoot_stat", 1, 3, 5, 7, 9, 10, 11, 12),
     )
     want = (
         ("-1", "136", "KUM_FN"),
@@ -5216,6 +5221,9 @@ def c_engine_session():
         # `Braqueur N Dead`, and actor 84's - `Braqueur 15 Dead` - also
         # enables zone 3931, the end zone
         ("17215", "1", "scene", "0", "1", "0", "0", "1", "0", "0", "1", "1"),
+        # the kit's `var.add 0x32` over the new-game record's -1, and the one
+        # write it hands the shoot record
+        ("1", "1", "-1", "49", "1", "[-1", "1", "49]"),
     )
     return got, want, \
         "player.become into the DB (id, model, bio); message 25 inline; a " \

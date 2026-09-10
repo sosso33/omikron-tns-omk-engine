@@ -26,7 +26,9 @@
 #include "formats/iam.h"
 #include "script/area.h"
 #include "script/gamestate.h"
+#include "script/props.h"
 #include "script/script.h"
+#include "script/zones.h"
 
 #include <cstdio>
 #include <cstring>
@@ -219,6 +221,50 @@ int main(int argc, char** argv) {
                     sub3, f37 ? 1 : 0, m37.table.c_str(), m37.offset, v640a, v640b,
                     v644a, v644b, state.var(644), z0, z1, live3931(), f84 ? 1 : 0,
                     subs.size());
+    }
+
+    // ---- F: A SHOOT MEDIKIT (`script/hooks.h` `shootStatSet`). In a shoot
+    // phase a kit is a ZONE: its script hides the kit and writes the player's
+    // health (`var.set.actor_stat`, `var.add`, `actor.stat.set`), and
+    // `Actor_SetProperty`'s tail `sub_423A40` hands the clamped value to the
+    // shoot record - the gauge. Zone 3935 is the supermarket's medium kit,
+    // `+0x32`. Stand in it with shoot mode on and read what was queued.
+    {
+        auto state = omk::GameState::fromFile(iam + "/START");
+        omk::Session s(iam, state, table);
+        s.answerUiFromPerson(true);
+        s.loadArea(230);
+        s.sceneLoad(230, 56);
+        s.frame();
+        const bool began = s.shootBegin(-1);
+        const auto rec = [&state]() {
+            return state.raw().subspan(static_cast<std::size_t>(omk::GameState::kPlayerRecord),
+                                       static_cast<std::size_t>(omk::GameState::kPlayerRecordSize));
+        };
+        std::int32_t before = -1, after = -1;
+        omk::readActorProperty(rec(), 1, before);
+        const omk::LiveZone* kit = nullptr;
+        for (const auto& lz : s.zones().registered())
+            if ((lz.zone.id & 0x7FFF) == 3935) { kit = &lz; break; }
+        int facing = 0;
+        if (kit) {
+            double c[3];
+            kit->zone.centre(c);
+            for (int d = 0; d < 360; d += 5)
+                if (omk::zoneFacesDegrees(kit->zone, d)) { facing = d; break; }
+            const float at[3] = {static_cast<float>(c[0]), static_cast<float>(c[1]),
+                                 static_cast<float>(c[2])};
+            s.takeShootStatWrites();                 // nothing before the kit counts
+            s.setPlayerPosition(at, static_cast<float>(facing));
+            for (int f = 0; f < 4; ++f) s.frame();
+        }
+        omk::readActorProperty(rec(), 1, after);
+        const auto writes = s.takeShootStatWrites();
+        std::printf("shoot_stat began %d zone3935 %d before %d after %d writes %zu",
+                    began ? 1 : 0, kit ? 1 : 0, int(before), int(after), writes.size());
+        for (const auto& w : writes)
+            std::printf(" [%d %d %d]", w.actor, w.property, int(w.value));
+        std::printf("\n");
     }
 
     // ---- D: A -> B -> A
