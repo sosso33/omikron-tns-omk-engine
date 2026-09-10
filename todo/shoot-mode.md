@@ -1091,6 +1091,21 @@ unread), types 13/10 among 0x4000 victims, the player being hit (nothing
 fires at him yet), and the death clip's pick is a fixed function where the
 engine's is `rand()`.
 
+**Shown to fail** (`f1a58cc`), each reverted by writing the bytes back:
+
+| mutation | `shoot fire` (probe) | `engine: shoot hit` (gallery) |
+|---|---|---|
+| the box test given BOTH bounds, standard Woo | red | **red** |
+| the band threshold 0.5 -> 0.3 | red | green - head-on bolts are band 2 at either |
+| gunmen allowed to hurt each other | red | green - every gallery shot is the player's |
+| placement bodies turned about the model origin again | - | red: roots back at (3963, -2266), no hits |
+
+The first row is a finding and not only a proof: with the textbook two-bound
+test only the three killing bolts meet actor 240, and the two fired at his
+body after the death clip miss it. So the bound the engine leaves out is
+what decides real hits in this very scene - keeping it as transcribed is
+observable in play, not a curiosity of the listing.
+
 The reading it was built from:
 
 * **What can be hit** - `sub_45E9C0` sweeps two lists `sub_45DF50(1, 320)`
