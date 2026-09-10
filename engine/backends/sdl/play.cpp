@@ -1731,15 +1731,15 @@ int main(int argc, char** argv) {
     // binding path (`todo/omk-play.md` 97b). `--invert-x` / `--invert-y` put
     // each one back.
     bool mouseInvertX = false, mouseInvertY = false;
-    // The shoot camera's EYE LIFT, in inches, above the preset's own point.
-    // Row 4 puts the eye at offset (0,0,0) on the subject, which resolves to
-    // the actor's ORIGIN - the pelvis - and a reader finds that low for a
-    // first-person view. NOTHING FOUND IN THE ENGINE RAISES IT: the preset
-    // says (0,0,0), `Shoot_Enter` sets both camera actors to the player, and
-    // the block it passes carries one float which is an ANGLE (90.0 at its
-    // other site, 0 here). So this is a DEPARTURE with a faithful default of
-    // 0, and `--shoot-eye N` raises it until somebody finds the lift.
+    // The shoot camera's EYE LIFT, in inches. THE DEFAULT IS THE ENGINE'S OWN
+    // RULE, found where a reader told me to look: `Camera_Request` stores the
+    // subject and calls `sub_414520`, whose case 4 - the mode `Shoot_Enter`
+    // asks for - sets the camera's `+180`/`+128` to `0.7 * actor[+276]`, and
+    // `+276` is the model's own lowest sphere extent below its origin
+    // (`Actor_LoadModel`). `--shoot-eye N` overrides it; `--shoot-eye 0` is
+    // the preset's literal (0,0,0).
     float shootEyeLift = 0.0f;
+    bool  shootEyeSet = false;   // did --shoot-eye override the model's own?
     // --enhance-all: every enhancement as high as it goes, in one word. The
     // two the DEVICE caps are asked for at their largest defined value and the
     // backend reduces what it cannot meet, which is what "max available" means
@@ -1921,7 +1921,7 @@ int main(int argc, char** argv) {
         else if (a == "--dither" && i + 1 < argc) dither = std::atoi(argv[++i]) != 0;
         else if (a == "--invert-x") mouseInvertX = true;
         else if (a == "--invert-y") mouseInvertY = true;
-        else if (a == "--shoot-eye" && i + 1 < argc) shootEyeLift = float(std::atof(argv[++i]));
+        else if (a == "--shoot-eye" && i + 1 < argc) { shootEyeLift = float(std::atof(argv[++i])); shootEyeSet = true; }
         else if (a == "--no-dither") dither = false;
         else if (a == "--lighting" && i + 1 < argc) {
             lightingFlag = omk::lightingMode(argv[++i]);
@@ -7187,9 +7187,12 @@ int main(int argc, char** argv) {
                 shootCameraLive = true;
                 shootPitch = 0.0f;
                 front.setRelativeMouse(true);
-                std::printf("frame %ld: shoot camera - mode %d, eye ON the "
-                            "player, aim 20 m ahead\n", n,
-                            omk::ShootMode::kCameraMode);
+                std::printf("frame %ld: shoot camera - mode %d, eye %.1f above the "
+                            "pelvis (%s), aim 20 m ahead\n", n,
+                            omk::ShootMode::kCameraMode,
+                            double(shootEyeSet ? shootEyeLift : player->headLift()),
+                            shootEyeSet ? "--shoot-eye"
+                                        : "sub_414520 case 4: 0.7 * the model's extent");
             }
             if (!shootMode) {
                 shootCameraLive = false;
@@ -8901,8 +8904,12 @@ int main(int argc, char** argv) {
                     // the same sign `cameraLift` uses. 0 is the preset's own
                     // value and the faithful one; `--shoot-eye` departs from
                     // it deliberately.
-                    const float eye[3] = {0.0f, -shootEyeLift, 0.0f};
-                    const float at[3]  = {0.0f, -shootEyeLift + 787.4016f * std::sin(rad),
+                    // The lift: `--shoot-eye N` if given, otherwise the
+                    // MODEL'S OWN head-above-pelvis. Y grows down, so raising
+                    // the eye is a negative offset.
+                    const float lift = shootEyeSet ? shootEyeLift : player->headLift();
+                    const float eye[3] = {0.0f, -lift, 0.0f};
+                    const float at[3]  = {0.0f, -lift + 787.4016f * std::sin(rad),
                                           787.4016f * std::cos(rad)};
                     fc = player->resolveOffsets(eye, at, 75.0f);
                 }

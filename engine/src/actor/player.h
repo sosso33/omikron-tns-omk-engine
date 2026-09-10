@@ -441,6 +441,23 @@ public:
     // "whether the subject position +244..+252 is the FEET or the pelvis is
     // not settled by this read". It is the pelvis.
     float cameraLift() const { return camLift_; }
+    // THE SHOOT CAMERA'S EYE LIFT, and it is the ENGINE'S rule.
+    //
+    // `Camera_Request` stores the subject at `cam[23]` and calls
+    // `sub_414520`, whose **case 4** - the mode `Shoot_Enter` asks for - is:
+    //
+    //     v2 = actor[+16] ? 0.7 : 0.0;
+    //     f32(cam, 180) = f32(cam, 128) = v2 * actor[+276];
+    //
+    // and `+276` is written by `Actor_LoadModel` from the model's own SPHERE
+    // list, `max(centre.y + radius)` - the lowest point of the body below the
+    // actor's origin. So the eye sits **seven tenths of the way from the
+    // pelvis down to the feet**, which for HO1_FN is about 25 units.
+    //
+    // This replaced a reconstruction (the `...Tete` bone, 20.8) that was only
+    // ever a guess dressed as a measurement. The reader's instruction was the
+    // right one: look at the original code.
+    float headLift() const { return headLift_; }
     const FollowCamera& followCamera() const { return cam_; }
     // --- the camera's COLLISION pass ------------------------------------
     // `sub_413C00` sets the ordinary follow camera's flags to `0x1C` - 4 | 8 |
@@ -547,6 +564,7 @@ private:
     float start_[3];
     float euler_[3] = {0, 0, 0};       // +416, +420, +424
     float camLift_ = 0.0f;             // pelvis above the feet - see cameraLift()
+    float headLift_ = 0.0f;            // 0.7 * the model's extent - see headLift()
     // `sub_417070`'s state. `+328` is the distance it keeps between frames -
     // the camera snaps IN to a blocking hit and eases back OUT over `+320`
     // frames - and `+208` is 0 clear / 1 blocked / 2 recovering.

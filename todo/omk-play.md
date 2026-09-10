@@ -17,6 +17,39 @@ waiting on its evidence.
 
 ### 97. The supermarket shoot phase blocks at the end of its cutscene, and Kay'l vanishes — A
 
+> **(k) THE EYE HEIGHT IS `sub_414520` CASE 4, and I found it only after being
+> told to stop guessing.** The reader: *"instead of guessing, look at the
+> original code"* — a rule already written down here, and already broken
+> twice in this issue.
+>
+> `Camera_Request` stores the subject at `cam[23]` and calls `sub_414520`.
+> Its **case 4** — the mode `Shoot_Enter` asks for — is the whole answer:
+>
+> ```c
+> case 4:
+>     v1 = Actor_ByIndex(u32(a1, 144));       /* the subject */
+>     v2 = u32i(v1, 4) ? 0.69999999 : 0.0;
+>     v3 = v2 * f32i(v1, 69);                 /* 0.7 * actor[+276] */
+>     f32(a1, 180) = v3;
+>     f32(a1, 128) = v3;
+> ```
+>
+> and `+276` is written by `Actor_LoadModel`, which walks the model's own
+> SPHERE list taking `max(centre.y + radius)` — the lowest point of the body
+> below the actor's origin. **So the lift is seven tenths of the model's own
+> extent**, 29.8 units for HO1_FN, and it is per-model rather than a constant.
+>
+> Two wrong answers preceded it, and both looked like measurements:
+> `--shoot-eye 25`, a number I liked; and the `...Tete` bone's 20.8, which is
+> the model's own arithmetic but answers a question the engine never asks.
+> The engine does not care where the head is — it takes a fraction of the
+> whole body.
+>
+> Not modelled: the gate `actor[+16]`, which chooses between 0.7 and 0.0, so
+> the port lifts unconditionally. And `--shoot-eye N` still overrides, with
+> `--shoot-eye 0` giving the preset's literal `(0,0,0)`.
+
+
 > **(i) IT TURNS — and mode 4 has NO LAG while the follow camera is all lag.**
 > With the harness above the reader finally saw the first-person camera
 > respond: *"it turns but not correctly (don't know if this is a pivot issue

@@ -307,6 +307,30 @@ PlayerController::PlayerController(const Setup& s)
             if ((*meshes_)[i].parent < 0) { root = static_cast<int>(i); break; }
         camLift_ = feet - (*meshes_)[static_cast<std::size_t>(root)].pos[1];
         if (!(camLift_ > 0.0f) || camLift_ > 200.0f) camLift_ = 0.0f;  // refuse a wild one
+        // ...and THE SHOOT CAMERA'S LIFT, which is the engine's own rule and
+        // not a reconstruction. `sub_414520` case 4 - the mode `Shoot_Enter`
+        // requests - computes it as
+        //
+        //     lift = 0.7 * actor[+276]
+        //
+        // and `+276` is written by `Actor_LoadModel`, which walks the model's
+        // SPHERE list taking `max(centre.y + radius)`: the lowest point of
+        // the body below the actor's origin. So the eye rides seven tenths of
+        // the way from the pelvis down to the feet - measured with the
+        // spheres, not the bones, which is why it is a little more than the
+        // bone span alone.
+        //
+        // (`case 4` falls into `case 5`, which recomputes the same value; and
+        // the whole thing is gated on the actor's `+16`, which this port does
+        // not model - so the lift is unconditional here.)
+        float lowest = 0.0f;
+        const float rootY = (*meshes_)[static_cast<std::size_t>(root)].pos[1];
+        for (const auto& m : *meshes_) {
+            const float below = m.pos[1] + m.radius - rootY;
+            if (below > lowest) lowest = below;
+        }
+        headLift_ = 0.7f * lowest;
+        if (!(headLift_ > 0.0f) || headLift_ > 200.0f) headLift_ = 0.0f;
     }
     // THE SWEPT BODY: the model's sphere list sits about the PELVIS (the
     // actor's node), and the walker's origin is the feet, `camLift_` below it
