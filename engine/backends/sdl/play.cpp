@@ -5508,6 +5508,27 @@ int main(int argc, char** argv) {
             adventure = player && !playerDriven && !session.dialogOpen() &&
                         !uiPause && !sc.activeEditing() &&
                         !session.parkedOnProgram();
+            // GAMEPLAY EVENTS ARE NOT CUTSCENES (the reader, 2026-09-10: *"some
+            // events (like some ennemie appearing with a special animation) are
+            // considered as cutscenes, stops move and change camera, even
+            // though they are just gameplay events"*). In the engine only
+            // `player.anim.hold` blocks the player's input, and a script
+            // camera does not stop the shoot mover. So in shoot mode, say
+            // whenever this gate flips and which term flipped it - a freeze a
+            // reader meets in play then names its cause in the log.
+            if (shootMode) {
+                static bool advTold = true;
+                if (adventure != advTold) {
+                    advTold = adventure;
+                    std::printf("frame %ld: adventure %s in shoot mode -%s%s%s%s%s%s\n", n,
+                                adventure ? "ON" : "OFF", player ? "" : " no player",
+                                playerDriven ? " playerDriven" : "",
+                                session.dialogOpen() ? " dialog" : "",
+                                uiPause ? " uiPause" : "",
+                                sc.activeEditing() ? " editing" : "",
+                                session.parkedOnProgram() ? " parkedOnProgram" : "");
+                }
+            }
             // A TELEPORT IS CONSUMED WHATEVER THE MODE. `sub_41BF50` writes the
             // actor's position outright; nothing about it waits for adventure
             // mode. This sat inside `if (adventure)` below, and Kay'l's flat

@@ -1283,6 +1283,34 @@ forget to plan it."* The session's own log agrees with the gate: 245 latches
    the stance at frame 1 while he stands), the shove `sub_47D1F0`, the jump in
    shoot mode (MDJP), the HEAD mode's key; MDCO (run) and MDTR are ported and
    queued by no H1Avnt entry.
+5c. **GAMEPLAY EVENTS ARE NOT CUTSCENES — reported 2026-09-10** (*"be careful,
+   some events (like some ennemie appearing with a special animation) are
+   considered as cutscenes, stops move and change camera, even though they are
+   just gameplay events"*). What the engine does, read:
+   * **the input** - only `player.anim.hold` (op 104, `Actor_HoldAnimation`'s
+     0x81) blocks the player's input. `Actor_TickShoot` runs the mover
+     (`sub_47D4D0`), `Shoot_TickPlayer` and the channel for the player every
+     frame, gated on nothing but ACTOR_STATE 3 - no parked script, no running
+     program and no camera mode stops him;
+   * **the camera** - `camera.set` (op 95) is `Camera_Request(12)` with the
+     CAMERAS record (its second operand the travel, its third read and
+     DISCARDED), and every `scx.play*` requests mode 13 only when
+     `ScriptObject_HasCamEditing` says the object has a chunk-10 editing
+     linked (95 of 4511 objects). `Camera_RequestChanged` refuses a change in
+     ONE case: the player in ACTOR_STATE 2 (melee) and a mode other than 14.
+     Shoot mode is not protected, so a scripted `camera.set` does take the
+     view there - SCENE 62's ladders (`shoot.player.suspend`, `camera.set
+     .at_address`, `shoot.player.resume`) are built on that;
+   * **the data** - shoot.SCX has four editings: `e1` on `_1reSceneKayl` (the
+     opening, before the mode), `med2` on `5MeditekRoom1`, and two linked to
+     nothing. None is on a SCENE 56 entrance: each entrance is
+     `scx.play.actor.wait N` then `shoot.actor.enter N`, no camera, no hold.
+   **The port's divergence**: its adventure gate also drops on
+   `sc.activeEditing()` and on `session.parkedOnProgram()` - a script parked
+   on ANY body-driving program, which an enemy's `scx.play.actor.wait` is.
+   The engine's `Actor_TickShoot` has neither gate. Instrumented 2026-09-10:
+   in shoot mode the viewer prints `adventure ON/OFF in shoot mode - <terms>`
+   whenever the gate flips, so a freeze met in play names its cause.
 6. **THE SWEEP.** `--slow`, owed.
 
 ## 5b. The two weapon floats — step 5's first reading, 2026-09-09
