@@ -1184,10 +1184,14 @@ forget to plan it."* The session's own log agrees with the gate: 245 latches
    * **The gun** rides `Maing` through `sub_41C490` with `tir` unlinked
      (`Object_Load`), which the held-prop path already draws for a take - so it
      is the same drawing with the weapon object and `tir`'s corners left out.
-   Order: the hide rule and the gun first (small: the lowered frame of the
-   original's first screenshot should appear with the pose the port already
-   has), then `S_AUTOLK` and `sub_471950` (the raise, and the bolt from the
-   centre), then the HUD the same frames show - a health bar on the left, a
+   Order: ~~the hide rule and the gun first~~ **DONE 2026-09-10**: the viewer
+   keeps posing the player in first person and draws only the meshes flagged
+   0x200000 (225 of HO1_FN's 1626 corners), and draws the held Waver on
+   `Maing` without `tir`; the headless frame puts the gun low at the bottom
+   right at 75-90% of the width, where the original's first frame has it at
+   72-87%. NOT yet: `S_AUTOLK` and `sub_471950` (the raise, and so the bolt
+   from the centre - it leaves the lowered gun for now), then the HUD the same
+   frames show - a health bar on the left, a
    turning pentagon with a number (244) top left, the weapon's icon and name
    bottom left.
 1. ~~**THE HIT (§7j) — step 2b, next.**~~ **PORTED 2026-09-10, §7j.** Still to do from it, the NOISE, read 2026-09-10:

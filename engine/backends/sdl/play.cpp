@@ -9471,6 +9471,16 @@ int main(int argc, char** argv) {
                                     !(session.shootMode().active() && shootCameraLive) &&
                                     (adventure || uiPause ||
                                      (session.dialogOpen() && !playerProgram));
+            // ...AND THE EXEMPTION, ported 2026-09-10 (`todo/shoot-mode.md`
+            // 8.0). `Shoot_Enter` hides the player's tree with `sub_436CE0`,
+            // which sets the hidden bit on every node WITHOUT 0x200000 - and in
+            // HO1_FN exactly three carry it: `UAvantg`, `UBrasg`, `UMaing`, the
+            // LEFT forearm, upper arm and hand, the arm the gun hangs on. So in
+            // first person the engine draws that arm and nothing else of him;
+            // `Shoot_Leave` (`sub_436D20`) clears the bit. A reader's frames of
+            // the original show it: the arm and the gun, low at the right.
+            const bool drawArm = playerReady && player && !drawPlayer &&
+                                 session.shootMode().active() && shootCameraLive;
             // ---- THE WORLD'S PROPS -----------------------------------
             //
             // Every prop of the resident chunks whose DB state has bit 1 -
@@ -9676,6 +9686,60 @@ int main(int argc, char** argv) {
             // let them go - while the CPU had them back on the floor (a reader's
             // before/after screenshots, 2026-09-05). A few hundred corners a
             // frame is nothing.
+            // ---- THE GUN IN HIS HAND (`todo/shoot-mode.md` 8.0) -----------
+            //
+            // `Shoot_Enter`'s event 48 hands the weapon object to `sub_41C490`,
+            // which links its node under actor +44 - `Maing` - with the local
+            // transform cleared, exactly as a take does; `Object_Load` has
+            // already unlinked `tir` (the bolt) and set 0x200000 on the node,
+            // so the first-person hide spares it. Drawn here the way the held
+            // prop is ("THE OBJECT IN HIS HAND"), without `tir`'s corners.
+            if (session.shootMode().active() && player && !shotGunStem.empty()) {
+                const GunFacts& gf = gunFactsFor(shotGunStem);
+                PropModel* pm = propModelFor(shotGunStem);
+                const omk::NodeTracks* pt = player->poseTracks();
+                if (pm && pm->ready && pt &&
+                    pm->rest.cornerMesh.size() == pm->rest.corners.size()) {
+                    const std::vector<omk::MeshPose> pose =
+                        omk::composePose(playerMeshes, *pt, player->poseFrame(), false);
+                    int hand = -1;      // the LAST strstr hit, as o3de_Traverse leaves it
+                    for (std::size_t i = 0; i < playerMeshes.size(); ++i)
+                        if (std::strstr(playerMeshes[i].name, "Maing")) hand = static_cast<int>(i);
+                    if (hand >= 0 && static_cast<std::size_t>(hand) < pose.size()) {
+                        const omk::MeshPose& hp = pose[static_cast<std::size_t>(hand)];
+                        const float* pp = player->pos();
+                        const float yaw = player->facing();
+                        for (const auto& b : pm->rest.batches) {
+                            const std::size_t base = propGeo.corners.size();
+                            for (std::size_t c = b.start; c < b.start + b.count; ++c) {
+                                if (gf.ok && pm->rest.cornerMesh[c] == gf.tirMesh) continue;
+                                omk::Corner w = pm->rest.corners[c];
+                                const float local[3] = {w.x - pm->origin[0] + pm->localOff[0],
+                                                        w.y - pm->origin[1] + pm->localOff[1],
+                                                        w.z - pm->origin[2] + pm->localOff[2]};
+                                float r[3];
+                                omk::qrot(hp.q, local, r);
+                                const float in[3] = {hp.pos[0] + r[0] - playerRootXZ[0],
+                                                     hp.pos[1] + r[1],
+                                                     hp.pos[2] + r[2] - playerRootXZ[1]};
+                                float o[3];
+                                omk::rotateYaw(yaw, in, o);
+                                w.x = o[0] + pp[0];
+                                w.y = o[1] + pp[1] - playerFeet + lastRootDrop;
+                                w.z = o[2] + pp[2];
+                                propGeo.corners.push_back(w);
+                            }
+                            const std::size_t cnt = propGeo.corners.size() - base;
+                            if (!cnt) continue;
+                            omk::Batch nb = b;
+                            nb.start = base;
+                            nb.count = cnt;
+                            propGeo.batches.push_back(nb);
+                            propBatchOwner.push_back(pm);
+                        }
+                    }
+                }
+            }
             // ---- THE BOLTS (`actor/projectile.h`) ------------------------
             //
             // Each live entry is a clone of the held gun's `tir` node, drawn
@@ -9731,7 +9795,7 @@ int main(int argc, char** argv) {
                 spriteWanted.insert(pa.sprite);
             for (const auto& c : ctlSprites) spriteWanted.insert(c.sprite);
             if (poolBuiltFor != poolComposition || poolHasSprites != wantSprites ||
-                poolHasPlayer != drawPlayer || spritePooled != spriteWanted) {
+                poolHasPlayer != (drawPlayer || drawArm) || spritePooled != spriteWanted) {
                 pool = worldTex;
                 for (auto& cm : charModels) {
                     cm.second.texBase = pool.size();
@@ -9754,7 +9818,7 @@ int main(int argc, char** argv) {
                 shadowTexBase = pool.size();
                 pool.insert(pool.end(), shadowModel.tex.begin(), shadowModel.tex.end());
                 playerTexBase = pool.size();
-                if (drawPlayer) pool.insert(pool.end(), playerTex.begin(), playerTex.end());
+                if (drawPlayer || drawArm) pool.insert(pool.end(), playerTex.begin(), playerTex.end());
                 spriteTexBase = pool.size();
                 // THE SPRITES GO IN DENSELY, and that is the whole point.
                 // `spriteTex` is indexed BY SPRITE ID, because an effect names
@@ -9804,7 +9868,7 @@ int main(int argc, char** argv) {
                 poolSize = pool.size();
                 poolBuiltFor = poolComposition;
                 poolHasSprites = wantSprites;
-                poolHasPlayer = drawPlayer;
+                poolHasPlayer = drawPlayer || drawArm;   // the first-person arm needs them too
                 spritePooled = spriteWanted;
                 world.setTextures(pool);
                 // The sprite section comes and goes with the effects, several
@@ -11215,7 +11279,7 @@ int main(int argc, char** argv) {
                                 "%d stopped\n", n, vehLive, vehDrawn, vreach, vehStopped);
                 }
             }
-            if (drawPlayer) {
+            if (drawPlayer || drawArm) {
                 // THE PLAYER, posed by his channel's clip - the quaternions
                 // alone, since the root motion is the position the walker
                 // integrated - turned by his facing (the row-vector rotation
@@ -12261,6 +12325,48 @@ int main(int argc, char** argv) {
                                                b.material + static_cast<int>(playerTexBase))),
                                      &playerPosed, b.start, b.count, b.blend, b.cutout,
                                      litStaged, castShadows});
+            // FIRST PERSON: only the meshes the hide spared - flag 0x200000,
+            // the left arm - cut out of the posed body batch by batch.
+            static omk::Geometry playerArm;
+            if (drawArm) {
+                playerArm.corners.clear();
+                playerArm.batches.clear();
+                const std::vector<std::int32_t>& cm =
+                    playerPosed.cornerMesh.size() == playerPosed.corners.size()
+                        ? playerPosed.cornerMesh : playerRest.cornerMesh;
+                if (cm.size() == playerPosed.corners.size()) {
+                    for (const auto& b : playerPosed.batches) {
+                        const std::size_t base = playerArm.corners.size();
+                        for (std::size_t c = b.start; c < b.start + b.count; ++c) {
+                            const std::int32_t mi = cm[c];
+                            if (mi < 0 || static_cast<std::size_t>(mi) >= playerMeshes.size()) continue;
+                            if (!(static_cast<std::uint32_t>(playerMeshes[static_cast<std::size_t>(mi)].flags)
+                                  & 0x200000u)) continue;
+                            playerArm.corners.push_back(playerPosed.corners[c]);
+                        }
+                        const std::size_t cnt = playerArm.corners.size() - base;
+                        if (!cnt) continue;
+                        omk::Batch nb = b;
+                        nb.start = base;
+                        nb.count = cnt;
+                        playerArm.batches.push_back(nb);
+                    }
+                }
+                playerArm.revision = ++worldGeoRev;
+                for (const auto& b : playerArm.batches)
+                    draws.push_back({keyOf(b.blend, b.cutout, static_cast<std::uint32_t>(
+                                               b.material + static_cast<int>(playerTexBase))),
+                                     &playerArm, b.start, b.count, b.blend, b.cutout,
+                                     litStaged, false});
+                static long armTold = -1;
+                if (armTold < 0) {
+                    armTold = n;
+                    std::printf("frame %ld: first person - the arm the hide spares: %zu corners "
+                                "of %zu, %zu batches (meshes flagged 0x200000)\n", n,
+                                playerArm.corners.size(), playerPosed.corners.size(),
+                                playerArm.batches.size());
+                }
+            }
             // The props, each batch through its own model's pool section.
             for (std::size_t bi = 0; bi < propGeo.batches.size(); ++bi) {
                 const auto& b = propGeo.batches[bi];

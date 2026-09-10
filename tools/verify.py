@@ -26104,9 +26104,14 @@ def c_engine_shoot_fire():
     shots = re.findall(r"^frame (\d+): SHOT (\d+) - .*?speed ([\d.]+), damage (\d+), "
                        r"dir (\S+) (\S+) (\S+) .*?, from (the \w+ node|his position)"
                        r".*?, (\d+) live$", o, re.M)
-    # THE FLIGHT (step 2a): every bolt retired by the gallery's back wall,
-    # three frames after it was fired, 374.4 flown - 3 x 124.8 - and at the
-    # same z each time, which is the wall and not the range
+    # THE FLIGHT (step 2a): every bolt retired by the gallery's geometry TWO
+    # frames after it was fired, 249.6 flown, at the same z each time - the
+    # set and not the range. It was three frames and 374.4 until 2026-09-10,
+    # when the first-person arm (8.0) began posing the player in shoot mode:
+    # the muzzle is placed with `playerFeet` / `lastRootDrop`, which the pose
+    # block measures, and before that they were never measured in shoot mode -
+    # the bolt left 26 above the feet instead of from the gun as drawn, 65.7
+    # above them at the raised arm of group 200's stance
     gone = re.findall(r"^frame (\d+): SHOT retired - entry \d+ (hit the world|out of range) "
                       r"at \S+ \S+ (\S+) after ([\d.]+), (\d+) live$", o, re.M)
     got = (init.group(1) if init else None,
@@ -26124,8 +26129,8 @@ def c_engine_shoot_fire():
             [7] * 8,
             [("124.8", "5", "0.000", "0.000", "-1.000", "the tir node")],
             [1] * 8,
-            [3] * 8,
-            [("hit the world", -3158, "374.4", "0")])
+            [2] * 8,
+            [("hit the world", -3155, "249.6", "0")])
     return got, want, (
         "`Shoot_InitWeapon` giving the Gun Waver the key-1 row on the mode "
         "transition; eight latches armed by `MDSHOOT0` off the real channel; "
@@ -26179,10 +26184,16 @@ def c_engine_shoot_hit():
            hits,
            [tuple(int(v) for v in d) for d in dmg],
            [(int(t), bool(e)) for t, e in killed])
+    # Since the muzzle is the gun AS DRAWN (65.7 above the feet at group 200's
+    # raised stance, 2026-09-10 - it was 26 while the pose went unmeasured in
+    # shoot mode): the first bolt passes over his head, the next three kill
+    # him, and the fifth passes over him lying down. The bob of the stance
+    # (the muzzle alternates 15143.4 / 15141.4) is what separates the first
+    # from the second.
     want = ([(237, 4758, -2560, "44.4"), (238, 5207, -2273, "44.4"),
              (240, 4516, -2797, "44.4")],
-            ["240"] * 5,
-            [(5, 15, 10, 2), (5, 10, 5, 2), (5, 5, 0, 2), (0, 0, 0, -1), (0, 0, 0, -1)],
+            ["240"] * 3,
+            [(5, 15, 10, 2), (5, 10, 5, 2), (5, 5, 0, 2)],
             [(5, True)])
     return got, want, (
         "the three gunmen's roots ON their placements with the body's 44.4 "
