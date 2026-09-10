@@ -17,6 +17,22 @@ waiting on its evidence.
 
 ### 97. The supermarket shoot phase blocks at the end of its cutscene, and Kay'l vanishes — A
 
+> **CONFIRMED IN PLAY 2026-09-10: *"camera height is good now"*.** So the
+> whole camera thread closes — (a) the player hidden in first person, (d) the
+> camera installed on the real entry path, (e) the editing hold ended by
+> shoot mode, (g) `followCam` forced over the area's absolute camera, (i) the
+> unlagged `resolveOffsets`, (k) the eye height from `sub_414520` case 4 and
+> (l) its sign. The mouse (b) and the confirm re-map (f) were confirmed
+> earlier in the same sequence.
+>
+> **STILL OPEN: (c), the block itself.** Firing is not connected. The pool is
+> ported and asserted, the trigger reaches the input word and the brain
+> reaches outcome 1 — and nothing joins them, because the engine raises the
+> shot through the `.CTL` firing state (`dword_53AE3C` at `loc_45C4DD`, then
+> `sub_45C680`'s ACTOR_STATE cases 13/14/16 setting `dword_4E9744`) rather
+> than off the trigger bit. Whether the phase can be completed is untested.
+
+
 > **(l) AND THE SIGN — which two screenshots settled and the DATA then
 > explained.** The reader sent two frames still showing a low view. The pitch
 > in the log was only ±7°, so it was geometry, not aim: `resolveOffsets`
