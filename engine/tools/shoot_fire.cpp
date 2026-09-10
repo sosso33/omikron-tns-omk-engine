@@ -14,6 +14,7 @@
 #include "actor/shootfire.h"
 #include "actor/shoothit.h"
 #include "actor/shootaim.h"
+#include "actor/shootmove.h"
 #include "actor/state.h"
 #include "formats/sfx.h"
 #include "o3de/collision.h"
@@ -376,6 +377,89 @@ int main(int argc, char** argv) {
             steps += b;
         }
         std::printf("slew: toward 1.2 rad %s\n", steps.c_str());
+    }
+
+    // THE MOVER (`actor/shootmove.h`): `sub_47CC70`'s row and speeds, then
+    // `sub_47D4D0` stepped by hand, dt 1 - forward held to the top speed,
+    // released to a stop, a strafe, a crouch at speed, a reversal, the step
+    // turned by LAST frame's facing, and the refusals.
+    {
+        std::string rows;
+        for (int sp : {0, 50, 51, 100, 101, 110, 200}) {
+            char b[24];
+            std::snprintf(b, sizeof b, "%s%d->%d", rows.empty() ? "" : " ", sp,
+                          omk::shootSpeedRow(sp));
+            rows += b;
+        }
+        omk::ShootMover m;
+        omk::shootMoveInit(m, 100, 40.0f);
+        std::printf("mover rows: %s; Speed 100: top %.4f accel %.6f brake %.5f\n",
+                    rows.c_str(), double(m.top), double(m.accel), double(m.brake));
+        float pitch = 0.0f;
+        int toTop = 0;
+        for (int f = 1; f <= 40; ++f) {
+            omk::shootMoveForward(m, true, false, 1.0f, pitch);
+            omk::shootMoveTick(m, 0.0f, 1.0f);
+            if (!toTop && m.fwd <= -m.top) toTop = f;
+        }
+        const float held = m.fwd;
+        const unsigned flagsAfter = m.flags;
+        int stop = 0;
+        for (int f = 1; f <= 20 && !stop; ++f) {
+            omk::shootMoveTick(m, 0.0f, 1.0f);
+            if (m.fwd == 0.0f) stop = f;
+        }
+        int sideTop = 0;
+        for (int f = 1; f <= 40; ++f) {
+            omk::shootMoveStrafe(m, true, false);
+            omk::shootMoveTick(m, 0.0f, 1.0f);
+            if (!sideTop && m.side <= -m.top) sideTop = f;
+        }
+        std::printf("mover held: forward %.4f after %d frames, intents cleared 0x%x; "
+                    "released: 0 after %d; strafe right %.4f after %d\n",
+                    double(held), toTop, flagsAfter, stop, double(m.side), sideTop);
+        // a crouch at full speed: over the halved top it slows by twice the
+        // acceleration, then the ordinary clamp takes it
+        omk::shootMoveInit(m, 100, 40.0f);
+        for (int f = 0; f < 30; ++f) {
+            omk::shootMoveForward(m, true, false, 1.0f, pitch);
+            omk::shootMoveTick(m, 0.0f, 1.0f);
+        }
+        omk::shootMoveCrouch(m, true);
+        std::string crouch;
+        for (int f = 0; f < 8; ++f) {
+            omk::shootMoveForward(m, true, false, 1.0f, pitch);
+            omk::shootMoveTick(m, 0.0f, 1.0f);
+            char b[16];
+            std::snprintf(b, sizeof b, "%s%.2f", f ? " " : "", double(m.fwd));
+            crouch += b;
+        }
+        // a reversal zeroes the velocity before the new intent
+        omk::shootMoveCrouch(m, false);
+        omk::shootMoveForward(m, false, false, 1.0f, pitch);
+        omk::shootMoveTick(m, 0.0f, 1.0f);
+        const float reversed = m.fwd;
+        // turned: at full speed forward, facing 90 - the first step still
+        // turns by the facing of the frame before
+        omk::shootMoveInit(m, 100, 40.0f);
+        for (int f = 0; f < 30; ++f) {
+            omk::shootMoveForward(m, true, false, 1.0f, pitch);
+            omk::shootMoveTick(m, 0.0f, 1.0f);
+        }
+        omk::shootMoveForward(m, true, false, 1.0f, pitch);
+        const omk::ShootMoveStep s1 = omk::shootMoveTick(m, 90.0f, 1.0f);
+        omk::shootMoveForward(m, true, false, 1.0f, pitch);
+        const omk::ShootMoveStep s2 = omk::shootMoveTick(m, 90.0f, 1.0f);
+        m.flags |= omk::kShootMoveBlock;
+        const bool blocked = !omk::shootMoveForward(m, true, false, 1.0f, pitch);
+        m.flags = 0;
+        const bool falling = !omk::shootMoveStrafe(m, true, true);
+        std::printf("mover crouch: %s; reversed %.4f; facing 90: step %.2f %.2f then "
+                    "%.2f %.2f; refused 0x800 %d, falling %d; turn MDRG %.1f MDRD %.1f\n",
+                    crouch.c_str(), double(reversed), double(s1.dx), double(s1.dz),
+                    double(s2.dx), double(s2.dz) + 0.0, int(blocked), int(falling),
+                    double(omk::shootTurnDegrees(-50, 20)),
+                    double(omk::shootTurnDegrees(50, 20)));
     }
 
     // THE TYPE: the object's kind, and the one hand-written exception.

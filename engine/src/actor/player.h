@@ -333,6 +333,11 @@ public:
         if (euler_[1] >= 360.0f) euler_[1] -= 360.0f;
         else if (euler_[1] < 0.0f) euler_[1] += 360.0f;
     }
+    // SHOOT MODE'S MOVER (`actor/shootmove.h`): `sub_47D4D0`'s world step in
+    // x and z, added to THIS tick's motion before `Actor_ApplyMotion` tries it
+    // against the ground - the engine writes it into +244/+252 beside the
+    // clip's root delta, so the walls that stop a walk stop this too.
+    void addShootMotion(float dx, float dz) { shootMotion_[0] += dx; shootMotion_[1] += dz; }
     const float* euler() const { return euler_; }
     ActorState state() const { return rt_.state(); }
     int ctlState() const { return rt_.channel().state(); }
@@ -578,6 +583,7 @@ private:
     float pos_[3];
     float start_[3];
     float euler_[3] = {0, 0, 0};       // +416, +420, +424
+    float shootMotion_[2] = {0, 0};    // `addShootMotion`, spent by the next tick
     float camLift_ = 0.0f;             // pelvis above the feet - see cameraLift()
     float headLift_ = 0.0f;            // 0.7 * the model's extent - see headLift()
     // `sub_417070`'s state. `+328` is the distance it keeps between frames -

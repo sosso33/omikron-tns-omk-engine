@@ -692,8 +692,9 @@ void PlayerController::tick(float dt, std::uint32_t word) {
     // wall; a drop past it -> a ledge. Actor_Move's collide-and-slide is
     // not ported (README, `engine walk`), so a blocked step stops instead of
     // sliding.
-    const double dx = static_cast<double>(world[0] + last_.shift[0]);
-    const double dz = static_cast<double>(world[2] + last_.shift[2]);
+    const double dx = static_cast<double>(world[0] + last_.shift[0] + shootMotion_[0]);
+    const double dz = static_cast<double>(world[2] + last_.shift[2] + shootMotion_[1]);
+    shootMotion_[0] = shootMotion_[1] = 0.0f;
     if (channelOnly_) {
         // `Actor_TickChannelOnly` (0x00466B00) is `Cef_TickChannel` and
         // nothing else: the root delta reaches the body through

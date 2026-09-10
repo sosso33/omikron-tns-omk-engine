@@ -1247,14 +1247,42 @@ forget to plan it."* The session's own log agrees with the gate: 245 latches
    player - and then the player's own damage path (§7j).
 5. **THE MOUSE LOOK.** `sub_47D370`'s sensitivities and ±45 clamp, from the
    options header (§7h).
-5b. **MOVING IN FIRST PERSON — asked for 2026-09-10** (*"don't forget the
-   integration of moving while in fps mode"*). The supermarket session's log
-   ends with the player `walked 0.0 over 1246 ticks` in ACTOR_STATE 3: the
-   port never moves him in shoot mode. To read: what the *Tirer* scheme binds
-   to the move actions, which of `H1Avnt` group 200's entries take them (and
-   which clips they play), and what ACTOR_STATE 3's tick does with the
-   channel's root motion and turn - then wire it, with the first-person
-   camera riding the moved body.
+5b. ~~**MOVING IN FIRST PERSON — asked for 2026-09-10**~~ (*"don't forget the
+   integration of moving while in fps mode"*) **PORTED 2026-09-10,
+   `actor/shootmove.h`, CONFIRMED IN PLAY the same day in the supermarket
+   (*"ok, the move is good"*: 34 runs, 1555 units, walls and bodies
+   stopping the step).** The supermarket session's log ended `walked 0.0
+   over 1246 ticks` while its keys queued MDAV 20 times, MDDG 16, MDDD 13 and
+   MDAR 6: the moves arrived and nothing answered them. What was read:
+   * **group 200 has NO walk clip.** Every movement entry is `clip -1` and
+     queues a special move - Avancer MDAV, Reculer MDAR, the two *Glisser*
+     MDDG / MDDD, the two *Tourner* MDRG / MDRD, crouch MDDO / MDUP;
+   * **the handlers are 16-byte stubs** at 0x0046B630.. with no `proc` label,
+     read from the BYTES: MDAV / MDAR are `sub_47CFC0(1 / 0)`, MDDG / MDDD
+     `sub_47CF70(0 / 1)`, MDRG / MDRD `sub_45D1D0(0, -/+50, 0)` =
+     `sub_47D370`, the mouse's own turn; MDDO / MDUP set and clear flag 0x20
+     through `sub_47CF50` / `sub_47CF40`. They only raise INTENTS in the block
+     at `dword_6579B0`;
+   * **`sub_47D4D0` is the mover**, called by `Actor_TickShoot` before the
+     channel tick: a forward and a side velocity accelerate while their
+     intent is up and brake toward 0 when it is not (the side at twice the
+     rate), clamp at the top speed with their sign - the assembly's `fchs`,
+     which the decompiler lost - are turned by LAST frame's facing, and go to
+     `o3de_MoveNodeBy` and into +244/+252, the motion `Actor_ApplyMotion` tries.
+     The intents are one-shot (`flags &= 0x17F0`);
+   * **the speeds are the actor's SPEED** (property 3, record +158) through the
+     30-row table at 0x004CF7D0, with an INTEGER division in the top speed.
+     Kay'l's is 70: 10.4 a frame, 0.39 to get there, 2.08 to stop.
+   Ported as intents -> mover -> `PlayerController::addShootMotion`, which the
+   tick adds to the step the walker tries, so the walls and the bodies stop him.
+   Headless in the gallery (`verify.py: engine: shoot move`): 40 frames of
+   Avancer go 303.29 along +Z, 30 of *Glisser a droite* 256.10 along +X, nine
+   of *Tourner a gauche* turn him 90 degrees, and 20 more of Avancer go 92.82
+   along -X - every number summed by hand first, and every asked distance gone
+   in full. NOT modelled, labelled: the head bob and footsteps (which also hold
+   the stance at frame 1 while he stands), the shove `sub_47D1F0`, the jump in
+   shoot mode (MDJP), the HEAD mode's key; MDCO (run) and MDTR are ported and
+   queued by no H1Avnt entry.
 6. **THE SWEEP.** `--slow`, owed.
 
 ## 5b. The two weapon floats — step 5's first reading, 2026-09-09

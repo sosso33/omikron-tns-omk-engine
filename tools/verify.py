@@ -25985,7 +25985,7 @@ def c_shoot_fire():
             "no row:", "aim:", "record shot:", "magazine:", "full:",
             "wall:", "range:", "wind-up 12:", "grow:",
             "hit:", "bands:", "gates:", "shield:", "kill:", "raise:", "slew:",
-            "type:")
+            "mover rows:", "mover held:", "mover crouch:", "type:")
     got = []
     for k in keys:
         m = re.search(r"^" + re.escape(k) + r" (.*)$", out, re.M)
@@ -26050,6 +26050,23 @@ def c_shoot_fire():
             "pitch +15 15.00, -15 40.00, +45 25.00; yaw 30 pitch 15 56.25; "
             "lowered 1 90.00, 0.5 52.50, 0 15.00",
             "toward 1.2 rad 0.5236 1.0472 1.2000 1.2000",
+            # THE MOVER (`actor/shootmove.h`), each predicted by hand from
+            # `sub_47CC70` and `sub_47D4D0`: Speed 100 is row 10 (the walk stops
+            # on the first bound NOT below it), whose top is (30 * 14 / 100 + 5)
+            # * 1.3 with an INTEGER division - 11.7, not 11.96 - braking a fifth
+            # of it and accelerating 12 * 0.0433; 0.52 a frame reaches 11.7 on
+            # the 23rd (22 x 0.52 = 11.44), the brake stops it in 5, the strafe
+            # doubles the rate (12 frames); a crouch at speed sheds TWICE the
+            # acceleration a frame until under the halved top, then clamps; a
+            # reversal zeroes first; the step turns by LAST frame's facing; and
+            # MDRG / MDRD turn 20 x 0.01 x 50 = 10 degrees
+            "0->0 50->0 51->1 100->10 101->11 110->12 200->29; Speed 100: top 11.7000 "
+            "accel 0.520000 brake 2.34000",
+            "forward -11.7000 after 23 frames, intents cleared 0x0; released: 0 after 5; "
+            "strafe right -11.7000 after 12",
+            "-10.66 -9.62 -8.58 -7.54 -6.50 -5.46 -5.85 -5.85; reversed 0.5200; facing 90: "
+            "step 0.00 -11.70 then 11.70 -0.00; refused 0x800 1, falling 1; turn MDRG 10.0 "
+            "MDRD -10.0",
             "kind 1 BATPOUV -> -2, kind 1 WAVER -> 1, kind 3 BATPOUV -> 3"]
     if data:
         w = re.search(r"^weapons: (.*)$", out, re.M)
@@ -26229,6 +26246,77 @@ def c_engine_shoot_hit():
         "15 -> 10 -> 5 -> 0 at band 2; the fourth over him as he falls, the "
         "fifth on the corpse doing nothing; killed once, death clip type 5, "
         "the enemy count dropping")
+
+
+def c_engine_shoot_move():
+    r"""`engine/`: MOVING IN FIRST PERSON - shoot mode's own mover, driven
+    by held keys in the Shooting gallery (`todo/shoot-mode.md` 8.5b,
+    `actor/shootmove.h`).
+
+    `H1Avnt` group 200 has no walk clip: its movement entries queue MDAV, MDAR,
+    MDDG, MDDD, MDRG and MDRD, whose handlers raise one-shot INTENTS, and
+    `sub_47D4D0` - run by `Actor_TickShoot` before the channel tick - turns
+    them into a velocity and a world step that `Actor_ApplyMotion` tries
+    against the ground. Four legs, from (5000, -2900) facing 180, each
+    predicted by hand before it was run:
+
+    * the init: Kay'l's property 3, SPEED, is 70 - row 4, (70, 11, 9) - so
+      the top is (30 x 11 / 100 + 5) x 1.3 = 10.4 with the integer division,
+      the acceleration 9 x 0.0433 = 0.39, the brake 2.08;
+    * FORWARD held 40 frames: 0.39 a frame reaches 10.4 on the 27th, so the
+      40 steps sum 0.39 x 351 + 14 x 10.4, and the brake adds 8.32 + 6.24 +
+      4.16 + 2.08 - 303.29 over 44 frames, all of it along +Z (facing 180);
+    * STRAFE RIGHT held 30: twice the rate, top on the 14th, 0.78 x 91 + 17 x
+      10.4 and a brake of twice 2.08 - 256.10 over 32, along +X, which is his
+      RIGHT facing 180;
+    * the TURN key (numpad 4, `Tourner a gauche`) held 9 frames: MDRG is
+      `sub_47D370(-50, 0)`, `+420 -= 20 x 0.01 x -50` - 10 degrees a frame,
+      so 180 becomes 270;
+    * FORWARD held 20 at 270: 0.39 x 210 and a brake of 5.72 + 3.64 + 1.56 -
+      92.82 over 23, along -X.
+
+    Each leg's `went` equals its `asked`: the paths are clear of the set and
+    of the three gunmen. Going LEFT from the second leg's end is not, and is
+    not used - gunman 237 stands in it and the bodies' push stops him.
+
+    What it cannot see, and says so: the head bob and footsteps, the shove,
+    and the jump in shoot mode are not modelled; the fall byte that refuses
+    the intents is the walker's airborne flag.
+    """
+    import subprocess, re
+    fr = omkpaths.data_root()
+    eng = os.path.join(ROOT, "engine")
+    bld = subprocess.run(["make", "-s", "play"], cwd=eng,
+                         capture_output=True, text=True)
+    exe = os.path.join(eng, "build", "omk-play")
+    if bld.returncode != 0 or not os.path.exists(exe):
+        return ("build failed",), ("built",), "engine/ must build"
+    play = subprocess.run(
+        [exe, fr, os.path.join(ROOT, "tables"),
+         "--save", os.path.join(ROOT, "traces", "save-appart.bin"),
+         "--area", "59", "--stand", "5000,0,-2900,180", "--shoot",
+         "--frames", "230", "--nodelay",
+         "--hold", "k200*40,0*20,k205*30,0*20,k75*9,0*10,k200*20,0*30"],
+        capture_output=True, text=True,
+        env=dict(os.environ, SDL_VIDEODRIVER="dummy"))
+    o = play.stdout
+    init = re.search(r"SHOOT MOVER \(sub_47CC70\) - (.*?), period", o)
+    starts = re.findall(r"^frame \d+: SHOOT MOVE starts at \S+ \S+ \S+, facing (\S+)$", o, re.M)
+    legs = re.findall(r"^frame \d+: SHOOT MOVE stops after (\d+) frames - asked (\S+), "
+                      r"went (\S+) (\S+) (\S+)$", o, re.M)
+    got = (init.group(1) if init else None,
+           starts,
+           [(int(f), a, (x, y, z)) for f, a, x, y, z in legs])
+    want = ("Speed 70 -> row 4: top 10.400, accel 0.3900, brake 2.080 a frame",
+            ["180.0", "180.0", "270.0"],
+            [(44, "303.29", ("0.00", "0.00", "303.29")),
+             (32, "256.10", ("256.10", "0.00", "0.00")),
+             (23, "92.82", ("-92.82", "0.00", "0.00"))])
+    return got, want, (
+        "the mover's speeds from Speed 70 (row 4: 10.4, 0.39, 2.08); forward 40 "
+        "frames = 303.29 along +Z, strafe right 30 = 256.10 along +X, nine MDRG "
+        "turning 180 to 270, forward 20 = 92.82 along -X - each asked distance "
+        "gone in full")
 
 
 def c_shoot_input():
@@ -29543,7 +29631,7 @@ def c_licence_headers():
                    if TAG in open(p, encoding="utf-8",
                                   errors="replace").read(600)]
     return (authored, sorted(missing), len(vendored), mislabelled), \
-           (418, [], 1, []), \
+           (420, [], 1, []), \
            "authored source files under tools/, engine/src, engine/tools, " \
            "engine/backends and scripts/; those MISSING the SPDX tag; " \
            "vendored files in engine/third_party; and vendored files wrongly " \
@@ -31681,6 +31769,7 @@ SLOW = [
     ("engine: dialogue",   c_engine_dialogue,   "engine/README"),
     ("engine: shoot fire", c_engine_shoot_fire, "todo/shoot-mode 7h; actor/shootfire.h"),
     ("engine: shoot hit",  c_engine_shoot_hit,  "todo/shoot-mode 7j; actor/shoothit.h"),
+    ("engine: shoot move", c_engine_shoot_move, "todo/shoot-mode 8.5b; actor/shootmove.h"),
     ("engine: anims",      c_engine_anims,      "engine/README"),
     ("engine: CTL",        c_engine_ctl,        "engine/README"),
     ("engine: SCX",        c_engine_scx,        "engine/README"),

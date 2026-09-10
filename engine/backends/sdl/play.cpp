@@ -41,6 +41,7 @@
 #include "actor/shootfire.h"
 #include "actor/shoothit.h"
 #include "actor/shootaim.h"
+#include "actor/shootmove.h"
 #include "actor/projectile.h"
 #include "actor/moves.h"
 #include "actor/slider.h"
@@ -3786,6 +3787,16 @@ int main(int argc, char** argv) {
     omk::ShotLatch shotLatch;
     // the arm's aim angles, `dword_6579A0/A4` (`actor/shootaim.h`)
     omk::ShootAim shootAim;
+    // the first-person MOVER's block at `dword_6579B0` (`actor/shootmove.h`),
+    // and the run it is on, for the log: frames and distance since it started
+    omk::ShootMover shootMover;
+    long  shootMoveFrames = 0;
+    float shootMoveDist = 0.0f;
+    float shootMoveFrom[3] = {0.0f, 0.0f, 0.0f};
+    // `sub_47D370`'s yaw sensitivity, options row 23 (`word_90E1AC`, GAME_STATE
+    // +44): its DEFAULT, 20. The options header is not read into this viewer,
+    // so a changed setting does not reach the keyboard turn.
+    constexpr int kShootTurnSensitivity = 20;
     // THE RAISE (`actor/shootaim.h`): the player's pose for this frame with the
     // shoot aim layer over its upper body - every bone the table at 0x4C3798
     // marks takes `S_AUTOLK`'s grid (group 202's default) at the aim angles,
@@ -6010,6 +6021,40 @@ int main(int argc, char** argv) {
                     // which is what `setChannelOnly` models - so `H_SLDIN`
                     // plays and its root motion carries him in.
                     if (!ride && !boarded) {
+                        // `Actor_TickShoot` runs `sub_47D4D0` BEFORE the channel
+                        // tick: last frame's intents become this frame's step,
+                        // and the step meets the ground in the same try as a
+                        // clip's root motion (`actor/shootmove.h`). Logged once
+                        // when a run of movement starts and once when it ends.
+                        if (shootMode && shootMover.active &&
+                            player->state() == omk::ActorState::Shoot) {
+                            const omk::ShootMoveStep st = omk::shootMoveTick(
+                                shootMover, player->facing(),
+                                static_cast<float>(frameSec * 30.0));
+                            player->addShootMotion(st.dx, st.dz);
+                            const bool moving = st.dx != 0.0f || st.dz != 0.0f;
+                            if (moving && shootMoveFrames == 0) {
+                                for (int k = 0; k < 3; ++k) shootMoveFrom[k] = player->pos()[k];
+                                shootMoveDist = 0.0f;
+                                std::printf("frame %ld: SHOOT MOVE starts at %.1f %.1f %.1f, "
+                                            "facing %.1f\n", n, double(shootMoveFrom[0]),
+                                            double(shootMoveFrom[1]), double(shootMoveFrom[2]),
+                                            double(player->facing()));
+                            }
+                            if (moving) {
+                                ++shootMoveFrames;
+                                shootMoveDist += std::sqrt(st.dx * st.dx + st.dz * st.dz);
+                            } else if (shootMoveFrames > 0) {
+                                const float* p = player->pos();
+                                std::printf("frame %ld: SHOOT MOVE stops after %ld frames - "
+                                            "asked %.2f, went %.2f %.2f %.2f\n", n,
+                                            shootMoveFrames, double(shootMoveDist),
+                                            double(p[0] - shootMoveFrom[0]),
+                                            double(p[1] - shootMoveFrom[1]),
+                                            double(p[2] - shootMoveFrom[2]));
+                                shootMoveFrames = 0;
+                            }
+                        }
                         player->tick(static_cast<float>(frameSec * 30.0),
                                      bits ? bits : omk::kIdleInput);
                         playerTicked = true;
@@ -6601,6 +6646,27 @@ int main(int argc, char** argv) {
                     if (mv == "MDSHOOT0" &&
                         omk::mdShoot0(shotLatch, static_cast<int>(player->state())))
                         std::printf("frame %ld: MDSHOOT0 - the latch (dword_53AE3C) armed\n", n);
+                    // MOVING IN FIRST PERSON (`actor/shootmove.h`). Group 200's
+                    // movement entries play no clip: they queue these, and the
+                    // handlers only raise INTENTS for next frame's mover. What
+                    // refuses them is the actor's fall byte (+1304), which is
+                    // the walker's airborne flag here - the landing's codes are
+                    // not kept. Each is a no-op outside the mode, as the
+                    // engine's are with `dword_6579CC` null.
+                    if (mv == "MDAV" || mv == "MDAR") {
+                        float headPitch = 0.0f;   // HEAD mode: action 7 has no key
+                        omk::shootMoveForward(shootMover, mv == "MDAV",
+                                              player->walker().airborne(),
+                                              static_cast<float>(frameSec * 30.0), headPitch);
+                    }
+                    if (mv == "MDDG" || mv == "MDDD")
+                        omk::shootMoveStrafe(shootMover, mv == "MDDD",
+                                             player->walker().airborne());
+                    if (mv == "MDDO" || mv == "MDUP")
+                        omk::shootMoveCrouch(shootMover, mv == "MDDO");
+                    if ((mv == "MDRG" || mv == "MDRD") && shootMover.active)
+                        player->aimYawBy(omk::shootTurnDegrees(mv == "MDRG" ? -50 : 50,
+                                                               kShootTurnSensitivity));
                     // THE JUMP'S IMPULSE (`todo/player-vertical.md` step 2).
                     // `MDJUMP01` is the one that writes the three velocity
                     // fields; `MDJUMP0A`/`0B` only prepare them, and the
@@ -7621,6 +7687,7 @@ int main(int argc, char** argv) {
             if (!shootMode) {
                 shootCameraLive = false;
                 front.setRelativeMouse(false);
+                omk::shootMoveLeave(shootMover);          // `sub_47CE70`
             }
             // ---- `Shoot_Enter` 1, 2 and 9, for the SHOT (`actor/shootfire.h`)
             //
@@ -7634,6 +7701,31 @@ int main(int argc, char** argv) {
                 playerShootRec.flags |= 2u;
                 shotLatch = omk::ShotLatch{};
                 shootAim = omk::ShootAim{};
+                // `sub_47CC70`, `Shoot_Enter`'s own call: the mover's block
+                // zeroed and its three speeds from property 3 - SPEED, the
+                // player record's +158 - through the table at 0x004CF7D0; its
+                // period is `sub_45AC80` of group 200's default entry, the
+                // stance clip's length (only the bob reads it, not modelled)
+                {
+                    std::int32_t speed = 0;
+                    omk::readActorProperty(
+                        state.raw().subspan(
+                            static_cast<std::size_t>(omk::GameState::kPlayerRecord),
+                            static_cast<std::size_t>(omk::GameState::kPlayerRecordSize)),
+                        3, speed);
+                    float period = 0.0f;
+                    if (player)
+                        if (const omk::NodeTracks* st =
+                                player->clipTracks(player->groupDefaultClip(200)))
+                            period = static_cast<float>(st->frames);
+                    omk::shootMoveInit(shootMover, speed, period);
+                    shootMoveFrames = 0;
+                    std::printf("frame %ld: SHOOT MOVER (sub_47CC70) - Speed %d -> row %d: "
+                                "top %.3f, accel %.4f, brake %.3f a frame, period %.0f\n",
+                                n, int(speed), shootMover.row, double(shootMover.top),
+                                double(shootMover.accel), double(shootMover.brake),
+                                double(period));
+                }
                 const int obj = session.shootMode().weaponObject();
                 const auto& objs = voiceLib.objects();
                 const bool known = obj >= 0 && static_cast<std::size_t>(obj) < objs.size();

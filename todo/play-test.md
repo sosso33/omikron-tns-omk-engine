@@ -380,6 +380,18 @@ the two places with nothing in between, a bolt leaving from the low gun, the
 arm staying up after release, or the arm twisted (a key picked from the wrong
 band - `todo/shoot-mode.md` §8.0).
 
+**CONFIRMED IN PLAY 2026-09-10 (the supermarket, *"ok, the move is good"*):
+MOVING IN FIRST PERSON**, ported the same day after *"don't forget the
+integration of moving while in fps mode"*. The shoot scheme's
+keys: UP / DOWN walk forward and back, LEFT / RIGHT arrows SIDE-STEP, NUMPAD 4
+/ 6 turn (the mouse still turns too), RIGHT CTRL crouches. He should speed up
+over about a second (27 frames to full speed) and stop within a fifth of one
+when you let go; side-steps get going twice as fast; crouched he moves at half
+speed. Walls and the gunmen's bodies should stop him. Wrong looks like: a
+jerk to full speed on the first frame, a slide after release, moving in the
+wrong direction for the way you face, or walking through a crate. There is no
+head bob and no footstep sound yet - both are known.
+
 **And look at where people STAND, here and elsewhere.** Every body placed
 by its record and turned by its facing now turns about its pelvis instead
 of its model origin. For most characters that moves nothing you would see;
