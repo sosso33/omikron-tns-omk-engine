@@ -10698,17 +10698,17 @@ int main(int argc, char** argv) {
                                 sp.behaviourBits = props[5];
                             }
                             omk::initShootRecord(fresh, sp);
-                            // +188, his FLOOR: `Shoot_Enter` memsets the 100
-                            // records, so a gunman's is 0 until `Shoot_Think`
-                            // (not wired - these gunmen do not walk the grid)
-                            // writes his `sub_435020`; only the PLAYER's is
-                            // set to -1. At -1 `shootEngage` refuses at once.
-                            fresh.node = 0;
                             // +80, the character type - the hit's gates test it
                             // (type 11 takes the baton, 12 never reacts)
                             fresh.type = session.typeOfActor(s.actor);
                             fresh.state = 6;          // the hub, where a
                             fresh.node  = 0;          // gunman waits
+                            // (+188 is his FLOOR, a signed byte: `Shoot_Enter`
+                            // memsets the records, so a gunman's is 0 until
+                            // `Shoot_Think` - not wired - writes his
+                            // `sub_435020`; only the PLAYER's is -1, and at -1
+                            // `shootEngage` would refuse at once. The noise
+                            // reads it as his floor.)
                             it = shootBrains.emplace(s.actor, fresh).first;
                             std::printf("frame %ld: actor %d %s - shoot brain: "
                                         "acquire %.0f engage %.0f disengage %.0f "

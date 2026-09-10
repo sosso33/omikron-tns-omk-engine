@@ -1399,11 +1399,20 @@ forget to plan it."* The session's own log agrees with the gate: 245 latches
    the shot writes the ammo counter `dword_90E11C` and sets the refresh flag
    `dword_90E104`. None of it is drawn: the viewer prints the screen number
    and stops.
-4. **THE GUNMEN'S SHOTS.** (First, found 2026-09-10 on the way: a gunman's
-   record started at `+188 = -1`, the player's value, so `shootEngage` -
-   `sub_426E00`, whose first test is exactly that - refused every gunman
-   before anything else; the engine's memset gives him 0. Fixed, and the
-   noise's floor reads the same byte. And the MEDIKITS: the reader's "grabbing
+4. **THE GUNMEN'S SHOTS.** (First, found 2026-09-10 on the way: the NOISE's
+   floor for a gunman was `sub_435020` of where he stood, which is -1 for
+   the two supermarket gunmen standing off the grid, so 22 of a reader's
+   noises were heard "from another floor" on a one-floor map; it now reads
+   his record's `+188`, a signed byte, as the engine does - 0 for every
+   gunman here, the value the viewer already gave him (`fresh.node = 0`,
+   the memset's) since `Shoot_Think` is not wired. **Correction, same day**:
+   the commit that fixed it (`d74c35f`) also claimed gunmen started at -1
+   and that `shootEngage` therefore refused them all. That was false - a
+   grep missed `fresh.node  = 0` for its double space - and the mutation
+   meant to prove the fix is what showed it: setting -1 changed nothing,
+   because the older line overwrote it. The floor fix itself has no check:
+   the headless route never brings an off-grid gunman into hearing range,
+   and the evidence is the reader's session log. And the MEDIKITS: the reader's "grabbing
    a health item does not restore your health" is the original's behaviour -
    SCENE 56's hurt handler, subscription 3 at 17388, consumes a carried kit
    when a hit leaves the player under 28 (`todo/handoff-shoot-mode.md`); it
