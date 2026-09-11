@@ -26205,6 +26205,9 @@ def c_engine_shoot_fire():
         [exe, fr, os.path.join(ROOT, "tables"),
          "--save", os.path.join(ROOT, "traces", "save-appart.bin"),
          "--area", "59", "--stand", "5000,0,-2900,0", "--shoot",
+         # (his weapon, not his survival: the test harness outlives the gunmen
+         # now that the death is ported - see `engine: shoot death`)
+         "--shoot-health", "1000",
          "--frames", "300", "--nodelay",
          "--keys", ",".join(["54"] * 9), "--keydelay", "30"],
         capture_output=True, text=True,
@@ -26344,6 +26347,11 @@ def c_engine_shoot_hit():
         [exe, fr, os.path.join(ROOT, "tables"),
          "--save", os.path.join(ROOT, "traces", "save-appart.bin"),
          "--area", "59", "--stand", "5000,0,-2900,215", "--shoot",
+         # (THE PLAYER'S DEATH is ported, 2026-09-11, and the gallery's gunmen
+         # kill him in ~16 frames; this checks his bolts, so the test harness
+         # gives him health to outlive them - `engine: shoot death` holds the
+         # death itself)
+         "--shoot-health", "1000",
          "--frames", "1230", "--nodelay",
          "--keys", ",".join(["54"] * 40), "--keydelay", "30"],
         capture_output=True, text=True,
@@ -26497,6 +26505,9 @@ def c_engine_shoot_move():
         [exe, fr, os.path.join(ROOT, "tables"),
          "--save", os.path.join(ROOT, "traces", "save-appart.bin"),
          "--area", "59", "--stand", "5000,0,-2900,180", "--shoot",
+         # (his movement, not his survival: the test harness outlives the
+         # gunmen now that the death is ported - see `engine: shoot death`)
+         "--shoot-health", "1000",
          "--frames", "230", "--nodelay",
          "--hold", "k200*40,0*20,k205*30,0*20,k75*9,0*10,k200*20,0*30"],
         capture_output=True, text=True,
@@ -26632,6 +26643,10 @@ def c_engine_shoot_leave():
         [exe, fr, os.path.join(ROOT, "tables"),
          "--save", os.path.join(ROOT, "traces", "save-appart.bin"),
          "--area", "59", "--stand", "5000,0,-2900,180", "--shoot",
+         # (leaving the mode, not his survival: the test harness outlives the
+         # gallery's gunmen now that the death is ported - see `engine: shoot
+         # death`; dead, the scene's death camera would still be on at 60)
+         "--shoot-health", "1000",
          "--shoot-end", "60", "--frames", "200", "--nodelay",
          "--hold", "0*80,k200*60,0*60"],
         capture_output=True, text=True, errors="replace",
@@ -27065,7 +27080,10 @@ def c_engine_shoot_gunfire():
             # (since THE STEERING: 1 on each other, and 238 ends facing 0 - the
             # path's heading, not a wall slide's snap; 0x200 keeps those off)
             # (and with the actions: none on each other, 7 on the player)
-            True, 0, 7, "0",
+            # (and since THE PLAYER'S DEATH, 2026-09-11: this run keeps his real
+            # health, the gallery kills him at ~16 and every live gunman STANDS
+            # DOWN - 6 on him, and 238 ends facing 45 on his standing clip)
+            True, 0, 6, "45",
             # (from the 336.9 his ENTRANCE PROGRAM left him at - his brain's
             # heading is seeded from how he is drawn, and he is drawn at it)
             ("394", "32", "25", "-7.20", "336.9"), ("418", "164.1"),
@@ -27081,18 +27099,22 @@ def c_engine_shoot_gunfire():
                      "stored 6); message 0 to the hurt handler")],
             # (240 no longer loops a type-10 clip: his entry is the unported
             # patrol, and he stands on action 0's type 11 / 25)
-            [("21", "237", "10", "3", "19", "2.0"), ("21", "238", "10", "3", "19", "2.0")],
+            # (since the death: stood down to action 0 before their walk could
+            # loop, 237 loops his standing type 11 and 238 his crouch, type 25)
+            [("46", "237", "11", "1", "30", "2.0"), ("47", "238", "25", "5", "31", "2.0")],
             # (77's walk never runs a whole loop now - each turn restarts it)
             None,
             [("4", "237", "-0.418", "-0.001"), ("4", "240", "0.120", "0.006"),
              # (238 fires at 17 from facing along the PATH, the fire arm turning
              # him on the same tick: his aim layer's yaw is 0.954 rad)
-             ("17", "238", "0.944", "-0.013"), ("418", "77", "-0.112", "-0.024")],
+             ("17", "238", "0.968", "-0.000"), ("418", "77", "-0.112", "-0.024")],
             [("237", "766", "DBWAVER"), ("238", "769", "DECAGUN"), ("240", "772", "HEXAGUN"),
              ("77", "49", "WAVER")],
             # (and 238's second barrel is 44 degrees off the line: still turning
             # off the path when he fires - the bolt's own aim is the target's)
-            [("8", "240", "-0.3"), ("14", "237", "-4.2"), ("21", "238", "-44.0"),
+            # (238's second shot, whose barrel this was, never comes: he stood
+            # down when the player died)
+            [("8", "240", "-0.3"), ("14", "237", "-4.2"),
              ("459", "77", "-3.5")])
     # THE HEIGHT AT EVERY CLIP START (2026-09-11, a reader's robber climbing to
     # the ceiling): `sub_421A20` sets the node to (x, rec+60 + d(0->1).y, z) on
@@ -27109,6 +27131,60 @@ def c_engine_shoot_gunfire():
         "meeting his body, the third arming once his walk brings him in; the "
         "supermarket's robber 77 turns round on his type-32 clip, walks into a wall and is "
         "turned back between his shots (418, 459), and does not climb")
+
+
+def c_engine_shoot_death():
+    r"""`engine/`: THE PLAYER'S DEATH (`sub_423FC0`, readable 05_sys.c 4606) and
+    his recovery (`Shoot_TickPlayer`'s first arm, 7454), on the real path - no
+    harness.
+
+    In the supermarket, left where the scene leaves him, the player takes
+    robber 77's bolts: 10 -> 6 -> 2, and the third kills him at 689. The death
+    runs in the engine's order: every live gunman stands down (77, to action
+    0), ACTOR_STATE 15, MESSAGE 9 (SCENE 56's death camera), and .CTL group
+    201 on his channel with the countdown `dword_4E975C` = its default entry's
+    60 frames; the killing hit writes neither the gauge nor property 1, so the
+    gauge stays at 2. At 749 the countdown is spent: ACTOR_STATE 3, MESSAGE 1 -
+    SCENE 56's "phase lost" - property 1 read back into +92, and group 200;
+    the handler then leaves shoot mode and plays the Meditek voice-over
+    (`media.play 251`). Until 2026-09-11 the port printed "he plays on".
+    """
+    import subprocess, re
+    fr = omkpaths.data_root()
+    eng = os.path.join(ROOT, "engine")
+    bld = subprocess.run(["make", "-s", "play"], cwd=eng, capture_output=True, text=True)
+    exe = os.path.join(eng, "build", "omk-play")
+    if bld.returncode != 0 or not os.path.exists(exe):
+        return ("build failed",), ("built",), "engine/ must build"
+    o = subprocess.run(
+        [exe, fr, os.path.join(ROOT, "tables"),
+         "--save", os.path.join(ROOT, "traces", "save-appart.bin"),
+         "--area", "230", "--scene-chunk", "56", "--frames", "800", "--nodelay"],
+        capture_output=True, text=True, errors="replace",
+        env=dict(os.environ, SDL_VIDEODRIVER="dummy")).stdout
+    kill = re.search(r"^frame (\d+): PLAYER HIT by actor (\d+)'s bolt - .*?health (-?\d+) -> "
+                     r"(-?\d+) - KILLED \(sub_423FC0\): ACTOR_STATE (\d+), message 9 (to its "
+                     r"handler|- NO handler subscribes), \.CTL group 201 (on|NOT FOUND), (\d+) "
+                     r"frames to count down, (\d+) gunmen stand down; the gauge stays at (\d+)$",
+                     o, re.M)
+    stand = re.findall(r"^frame (\d+): actor (\d+) \S+ - ACTION 0 \(Shoot_ActorAction, the "
+                       r"player's death \(sub_423FC0\)\):\s+clip type (\d+), state (\d+)", o, re.M)
+    back = re.search(r"^frame (\d+): the player's death clip is over \(Shoot_TickPlayer\): "
+                     r"ACTOR_STATE (\d+), message 1 (to its handler|- NO handler subscribes), "
+                     r"health read back (-?\d+), \.CTL group 200 (on|NOT FOUND)$", o, re.M)
+    leave = re.search(r"^frame (\d+): SHOOT MODE LEAVE", o, re.M)
+    got = (kill.groups() if kill else None, stand, back.groups() if back else None,
+           leave.group(1) if leave else None, "media.play 251" in o)
+    want = (("689", "77", "2", "-2", "15", "to its handler", "on", "60", "1", "2"),
+            [("689", "77", "11", "3")],
+            ("749", "3", "to its handler", "2", "on"),
+            "750", True)
+    return got, want, (
+        "the supermarket's player killed by 77's third bolt at 689: every live gunman "
+        "standing down, ACTOR_STATE 15, message 9 to SCENE 56's handler, .CTL group 201 "
+        "with a 60-frame countdown and the gauge left at 2; at 749 ACTOR_STATE 3, message 1 "
+        "(the phase lost), property 1 read back, group 200 - and the scene leaving shoot "
+        "mode at 750 into the Meditek voice-over")
 
 
 def c_shoot_input():
@@ -27229,7 +27305,9 @@ def c_engine_shoot_brain():
             # `engine: shoot gunfire` shows. And a line is printed only once a
             # gunman stands on the grid, so 237's comes a few frames into his
             # walk: 388 where it was 417)
-            ((237, 1, 388), (238, 1, 583)))
+            # (582 since THE PLAYER'S DEATH: this run keeps his real health, the
+            # gunmen kill him early, and his fire stops - 238 comes a unit nearer)
+            ((237, 1, 388), (238, 1, 582)))
     return got, want, ("the gunmen whose brain was built, the first one's "
                        "record as CONVERTED from his own authored properties "
                        "(50 m acquire, 15 m engage, 18 m disengage, a 90 "
@@ -32582,6 +32660,7 @@ SLOW = [
     ("engine: shoot radar", c_engine_shoot_radar, "todo/shoot-mode 8.3; ui/radar.h"),
     ("engine: shoot noise", c_engine_shoot_noise, "todo/shoot-mode 8.1; actor/shoot.h"),
     ("engine: shoot gunfire", c_engine_shoot_gunfire, "todo/shoot-mode 8 item 4; actor/shootfire.h"),
+    ("engine: shoot death", c_engine_shoot_death, "todo/shoot-mode 8 item 4; sub_423FC0"),
     ("engine: anims",      c_engine_anims,      "engine/README"),
     ("engine: CTL",        c_engine_ctl,        "engine/README"),
     ("engine: SCX",        c_engine_scx,        "engine/README"),

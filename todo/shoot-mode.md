@@ -1824,6 +1824,29 @@ forget to plan it."* The session's own log agrees with the gate: 245 latches
      stands - shown to fail by mutation at `154139d`, CONFIRMED IN PLAY - and
      what re-establishes its check is a probe of `PlayerController::nudge`
      against a wall (a `--nudge` step in `player_probe`, say).
+   * **THE PLAYER'S DEATH - ported 2026-09-11** (a reader: *"continue with the
+     player's death, then commit and push"*). `sub_423FC0` (05_sys.c 4606)
+     read whole: every live gunman (+160 0x40, not 0x4002, +92 > 0) STANDS
+     DOWN - action 0, or on script step 8 his 0x20 cleared (applied on his
+     own next tick here); ACTOR_STATE 15; `sub_436D20` shows his body;
+     `sub_47CE70` (a global actor's +416/+424 zeroed and its channel handed
+     0 - its writer not traced, NOT PORTED); MESSAGE 9; .CTL group 201 and
+     `dword_4E975C` = its default entry's clip length. `Shoot_TickPlayer`'s
+     first arm (7454) runs the countdown by the frame delta and at 0 puts him
+     in 3, posts MESSAGE 1, reads property 1 back into +92, and puts group
+     200's default entry back. NOT PORTED, labelled: the body show / hide
+     (`sub_436D20` / `sub_436CE0` - this port draws the body throughout),
+     camera request 4, `sub_47CC70`, and the weapon's re-attach and
+     `Shoot_InitWeapon` at recovery. The first-person mover already stops -
+     it runs only in `ActorState::Shoot`. Measured, supermarket, real path:
+     77's third bolt kills him at 689 (2 -> -2), 77 stands down, 60 frames
+     of group 201, and at 749 message 1 - SCENE 56's "phase lost" - leaves
+     shoot mode at 750 and plays the Meditek voice-over (`media.play 251`).
+     `verify.py: engine: shoot death`. **A TEST HARNESS came with it**:
+     `omk-play --shoot-health N` writes property 1 = N at shoot entry,
+     because the gallery's gunmen kill him in ~16 frames and `engine: shoot
+     hit` / `fire` / `move` test his weapon, movement and bolts, not his
+     survival - under it all three land exactly on their previous wants.
      **THE PATH-FINDER, read 2026-09-11: a distance field toward the PLAYER.**
      `sub_436260(floor, x, z)` (10_dsound.c 1234) seeds a breadth-first search
      at a cell: two byte grids at `dword_52BA40[2]`, the back one cleared to

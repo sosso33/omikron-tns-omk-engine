@@ -461,6 +461,16 @@ looks like: walking through a robber, or still being trapped where there is
 visibly room. **CONFIRMED IN PLAY 2026-09-11** - *"Ok, good progress, I didn't
 get stuck anymore"*.)
 
+**NOT YET PLAYED (2026-09-11): DYING.** Let the robbers shoot you until your
+health runs out. You should drop - the death animation plays, your weapon
+stops, you cannot walk - and the scene's death camera takes over; about two
+seconds later the phase is LOST: shoot mode ends and the Meditek sequence
+begins (its voice-over plays). The robbers stop advancing the moment you die.
+Wrong looks like: fighting on at no health (the old behaviour), dying and
+never coming out of it, or the death animation not playing. NOT PORTED yet,
+so do not report: the camera change on the death itself if the scene does not
+make one, and your body showing or hiding.
+
 **NOT YET PLAYED (2026-09-11): THE ROBBERS STEER.** A robber who cannot shoot
 you - out of sight or out of range - now follows the floor's own path toward
 you, around shelves and walls and around the other robbers (each one's spot

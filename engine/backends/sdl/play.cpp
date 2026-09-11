@@ -1803,6 +1803,11 @@ int main(int argc, char** argv) {
     // `playerScreen` the special move sets and nothing else.
     bool openSneak = false;
     bool startShoot = false;   // --shoot: enter shoot mode at the hand-over
+    // --shoot-health N: a TEST HARNESS, not the game - property 1 written as N
+    // at shoot entry, so a check of the player's own weapon, movement and
+    // bolts can outlive the gallery's gunmen (they kill him in ~16 frames, and
+    // since the death is ported he then fights no more). -1: the save's value
+    int shootHealth = -1;
     long shootEndAt = -1;      // --shoot-end N: `shoot.end 1` at frame N
     float standAt[4] = {0, 0, 0, 0};
     bool haveStand = false;      // `--stand x,y,z,yaw`: put the player down there after the hand-over
@@ -2003,6 +2008,7 @@ int main(int argc, char** argv) {
         }
         else if (a == "--shoot") startShoot = true;
         else if (a == "--shoot-end" && i + 1 < argc) shootEndAt = std::atol(argv[++i]);
+        else if (a == "--shoot-health" && i + 1 < argc) shootHealth = std::atoi(argv[++i]);
         else if (a == "--sneak") openSneak = true;
         else if (a == "--stand" && i + 1 < argc)
             haveStand = std::sscanf(argv[++i], "%f,%f,%f,%f", &standAt[0], &standAt[1], &standAt[2], &standAt[3]) >= 3;
@@ -3857,6 +3863,10 @@ int main(int argc, char** argv) {
     struct GunAnim { const omk::PedClip* clip = nullptr; float frame = 1.0f; };
     std::map<int, GunAnim> gunAnims;
     std::map<int, int> gunCurType;       // the clip TYPE his last action started
+    // THE PLAYER'S DEATH (`sub_423FC0`): the countdown `dword_4E975C` his death
+    // clip runs for, and the gunmen told to stand down on their next tick
+    float playerDeathCountdown = 0.0f;
+    std::set<int> gunStandDown;
     std::set<int> gunLooped;          // who has said his clip looped
     // ...and his AIM: `dword_6A4720` / `dword_6A4724`, the angles `sub_47C2A0`'s
     // target arm hands `sub_434C30` - and so `sub_471950` - on every tick it
@@ -6054,12 +6064,39 @@ int main(int argc, char** argv) {
                         if (ho.killed) {
                             // `if (+92 <= 0) { sub_423FC0(him); return v30; }` - BEFORE
                             // the gauge, the property and the message, so the killing
-                            // hit leaves the gauge at its last value and tells no one
+                            // hit leaves the gauge at its last value and tells no one.
+                            // ---- THE DEATH, `sub_423FC0` (05_sys.c 4606, ported
+                            // 2026-09-11 - a reader: "continue with the player's death") -
+                            //  1. every live gunman (+160 0x40 up, 0x4002 clear, +92 > 0)
+                            //     STANDS DOWN: action 0, or on script step 8 his 0x20
+                            //     cleared - applied on his own next tick here, where the
+                            //     engine does it inside the hit;
+                            //  2. ACTOR_STATE 15; `sub_436D20` shows his body (this port
+                            //     draws it throughout - NOT PORTED as a switch); then
+                            //     `sub_47CE70` (a global actor's pitch and roll zeroed,
+                            //     its writer not traced - NOT PORTED); MESSAGE 9;
+                            //  3. .CTL group 201 on his channel, and the countdown
+                            //     `dword_4E975C` = its default entry's clip length
+                            int stood = 0;
+                            for (const auto& [ga, gr] : shootBrains)
+                                if ((gr.flags & 0x40u) && !(gr.flags & 0x4002u) && gr.health > 0) {
+                                    gunStandDown.insert(ga);
+                                    ++stood;
+                                }
+                            playerDeathCountdown = 0.0f;
+                            if (player) player->setActorState(omk::ActorState::Shoot15, "sub_423FC0");
+                            const bool ran9 = session.postMessage(9, session.playerActor());
+                            const bool g201 = player && player->enterGroupById(201);
+                            if (g201) playerDeathCountdown = static_cast<float>(player->clipFrames());
                             std::printf("frame %ld: PLAYER HIT by actor %d's bolt - damage %d, Body "
-                                        "Shield %d -> %d; health %d -> %d - KILLED: the death "
-                                        "`sub_423FC0` is not ported, he plays on; the gauge stays "
-                                        "at %d\n", n, ev.owner, ev.damage, int(shield), ho.damage,
-                                        ho.healthWas, ho.health, hudHealth);
+                                        "Shield %d -> %d; health %d -> %d - KILLED (sub_423FC0): "
+                                        "ACTOR_STATE 15, message 9 %s, .CTL group 201 %s, %.0f "
+                                        "frames to count down, %d gunmen stand down; the gauge "
+                                        "stays at %d\n", n, ev.owner, ev.damage, int(shield),
+                                        ho.damage, ho.healthWas, ho.health,
+                                        ran9 ? "to its handler" : "- NO handler subscribes",
+                                        g201 ? "on" : "NOT FOUND", double(playerDeathCountdown),
+                                        stood, hudHealth);
                             continue;
                         }
                         // the shove `sub_47D1F0` (not ported), then the gauge,
@@ -6262,6 +6299,33 @@ int main(int argc, char** argv) {
                                             double(gf.bound[4]), double(gf.bound[5]));
                             std::printf("\n");
                         }
+                    }
+                }
+                // THE DEATH'S COUNTDOWN - `Shoot_TickPlayer`'s first arm (05_sys.c
+                // 7454): in ACTOR_STATE 15 `dword_4E975C` runs down by the frame
+                // delta while his death clip plays; at 0 he is put back in 3,
+                // MESSAGE 1 goes out (SCENE 56's is the phase LOST), property 1 is
+                // read back into +92 (event 44), and .CTL group 200's default entry
+                // - the stance - is his again. NOT PORTED, labelled: his body hidden
+                // again (`sub_436CE0` - this port draws it throughout), camera 4
+                // requested (the shoot camera is this port's own in shoot mode),
+                // `sub_47CC70`, and the held weapon re-attached and re-inited.
+                if (shootMode && player && player->state() == omk::ActorState::Shoot15) {
+                    if (playerDeathCountdown > 0.0f) {
+                        playerDeathCountdown -= 1.0f;        // `flt_4C30D8`
+                    } else {
+                        player->setActorState(omk::ActorState::Shoot, "Shoot_TickPlayer");
+                        const bool ran1 = session.postMessage(1, session.playerActor());
+                        std::int32_t h = 0;
+                        const std::size_t recAt = static_cast<std::size_t>(omk::GameState::kPlayerRecord);
+                        const std::size_t recLen = static_cast<std::size_t>(omk::GameState::kPlayerRecordSize);
+                        omk::readActorProperty(state.raw().subspan(recAt, recLen), 1, h);
+                        playerShootRec.health = h;
+                        const bool g200 = player->enterGroupById(200);
+                        std::printf("frame %ld: the player's death clip is over (Shoot_TickPlayer): "
+                                    "ACTOR_STATE 3, message 1 %s, health read back %d, .CTL group "
+                                    "200 %s\n", n, ran1 ? "to its handler" : "- NO handler subscribes",
+                                    int(h), g200 ? "on" : "NOT FOUND");
                     }
                 }
                 // THE CROWD PUSH - `Actor_TickNpc`, before `Actor_ApplyMotion`:
@@ -8254,6 +8318,19 @@ int main(int argc, char** argv) {
                             static_cast<std::size_t>(omk::GameState::kPlayerRecord),
                             static_cast<std::size_t>(omk::GameState::kPlayerRecordSize)),
                         1, hp);
+                    // (the TEST HARNESS `--shoot-health N`: property 1 written as N
+                    // first, so the record, the gauge and the property agree as
+                    // a save carrying N would make them)
+                    if (shootHealth >= 0) {
+                        omk::writeActorProperty(
+                            state.rawMutable().subspan(
+                                static_cast<std::size_t>(omk::GameState::kPlayerRecord),
+                                static_cast<std::size_t>(omk::GameState::kPlayerRecordSize)),
+                            1, shootHealth);
+                        hp = shootHealth;
+                        std::printf("frame %ld: SHOOT HEALTH - the test harness --shoot-health "
+                                    "writes property 1 = %d\n", n, shootHealth);
+                    }
                     playerShootRec.health = hp != 0 ? static_cast<int>(hp) : 10;
                     hudHealth = playerShootRec.health;   // `Shoot_SyncHudHealth`, `dword_90E100`
                     std::printf("frame %ld: SHOOT HEALTH (sub_422540) - property 1 = %d "
@@ -11114,6 +11191,15 @@ int main(int argc, char** argv) {
                                         double(ar.timer));
                         }
                     };
+                    // THE STAND-DOWN (`sub_423FC0`, the player's death): action 0 -
+                    // or, on script step 8, his 0x20 latch cleared - told in the
+                    // hit and applied here, on his own tick
+                    if (deadIt != shootBrains.end() && gunStandDown.erase(s.actor)) {
+                        omk::ShootRecord& sr = deadIt->second;
+                        if (sr.scriptStep == 8) sr.flags &= ~0x20u;
+                        else if (!(sr.flags & 0x4000u))
+                            applyAction(sr, 0, 0, "the player's death (sub_423FC0)");
+                    }
                     // ---- THE PICKED CLIP'S TICK: `sub_424DE0`'s prologue ----
                     //   if (flags & 8) { if (sub_421770(him, rec, ..)) return; ... }
                     // `sub_421770` (0x00421770): his frame `+188 += dt`, and

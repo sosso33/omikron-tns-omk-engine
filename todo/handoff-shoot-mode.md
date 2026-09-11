@@ -132,6 +132,11 @@ action as the "default" (a misread: `a2` is the actor) and never applies
 `out.clipType`, so a robber never leaves his walking clip. ~~The next step.~~
 **PORTED (B4)**: `omk::shootActorAction`; robbers advance for property 31's
 seconds, then crouch or stand to fire. Not ported: action 1, the patrol.
+**THE PLAYER'S DEATH IS PORTED** (`sub_423FC0` and `Shoot_TickPlayer`'s
+countdown; `engine: shoot death`): the stand-down, ACTOR_STATE 15, message 9,
+group 201, then message 1 - the supermarket's phase lost. Checks of his
+weapon, movement and bolts in the gallery now run under `--shoot-health`, a
+labelled TEST HARNESS, because the gallery's gunmen kill him in ~16 frames.
 
 **FIRING IS CONNECTED (2026-09-10, `todo/shoot-mode.md` §7h/§7i)** — and the
 chain this section used to give was wrong in two places, both found by reading
