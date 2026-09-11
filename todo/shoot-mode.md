@@ -1793,7 +1793,8 @@ forget to plan it."* The session's own log agrees with the gate: 245 latches
      port runs `shootEngage` before every step where the engine calls it from
      inside the arms, so it bounces every tick where the engine bounces every
      other; either way he holds the stance and fires.
-   * **B5, THE PUSH'S OWN SPHERES - ported 2026-09-11** (played: *"the robbers
+   * **B5, THE PUSH'S OWN SPHERES - ported 2026-09-11, CONFIRMED IN PLAY the
+     same day** (*"I didn't get stuck anymore"*) (played before it: *"the robbers
      continue to push and can stuck me in places I can't get out (probably
      because of colliders being too close from each other), but they can't
      push me outside the env"* - the second half CONFIRMED IN PLAY). The push

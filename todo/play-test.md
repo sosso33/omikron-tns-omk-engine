@@ -458,7 +458,8 @@ own collision spheres, about a person wide, where they pushed like balls
 some 90 units across. Look for: robbers able to stand near you without
 boxing you in, and gaps between two robbers you can walk through. Wrong
 looks like: walking through a robber, or still being trapped where there is
-visibly room.)
+visibly room. **CONFIRMED IN PLAY 2026-09-11** - *"Ok, good progress, I didn't
+get stuck anymore"*.)
 
 **NOT YET PLAYED (2026-09-11): THE ROBBERS STEER.** A robber who cannot shoot
 you - out of sight or out of range - now follows the floor's own path toward
