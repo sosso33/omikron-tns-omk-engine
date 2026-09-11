@@ -421,6 +421,12 @@ and empty-handed: the robbers who come on through an entrance event were drawn
 at the heading their entrance left while their brains aimed from another, and
 their guns were never drawn. Both fixed: every robber now holds his gun on his
 left hand, and his body faces where his brain aims. Not yet judged by eye.)
+(Then, *"Ok, better"*, and *"when an ennemy die and its dying animation run,
+they float in the air"*: fixed - a robber's death clip now carries him down to
+the floor and slides him as it falls, the pelvis ending a few units above the
+ground. Wrong looks like: a corpse still lying at waist height, one sinking
+into the floor, or one sliding through a wall - that last is possible, since
+the engine's wall stop is not ported yet.)
 
 **NOT YET PLAYED (2026-09-11): THE GUNMEN FIRE - and turn round to do it.**
 In the supermarket the robber nearest the entrance (actor 77) starts with

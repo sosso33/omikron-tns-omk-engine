@@ -3391,6 +3391,10 @@ int main(int argc, char** argv) {
         // frame. -1 while alive.
         int   deathType = -1;
         long  deathStart = 0;
+        // ...and the death CLIP itself, whose root motion lays the body down
+        const omk::PedClip* deathClip = nullptr;
+        bool  deathFallTold = false;       // his fall has been logged
+        bool  deathFloorTold = false;      // ...and where it left his pelvis
         // message 3 posted for this death (`sub_424DE0`'s dead arm, once the
         // death clip has played out) - see the post below
         bool  deathPosted = false;
@@ -11421,7 +11425,10 @@ int main(int argc, char** argv) {
                         // KILLED: the death clip `sub_4240E0` picked by TYPE
                         // from the hit's band, played once and then held
                         if (s.deathType >= 0 && grp >= 0 && grp < 64)
-                            if (const omk::PedClip* dc = shootClipOfType(grp, s.deathType)) c = dc;
+                            if (const omk::PedClip* dc = shootClipOfType(grp, s.deathType)) {
+                                c = dc;
+                                s.deathClip = dc;
+                            }
                         // ON A TURN CLIP: the picked clip, at his frame `+188`
                         const auto gcIt = gunClips.find(s.actor);
                         const bool onTurn = gcIt != gunClips.end() && gcIt->second.type >= 0 &&
@@ -11819,6 +11826,36 @@ int main(int argc, char** argv) {
                         for (int k = 0; k < 3; ++k) rootMove[k] = r[k];
                     }
                 }
+                // A DEATH CLIP'S ROOT MOTION (a reader, 2026-09-11: the dead
+                // *"float in the air"*). `sub_421770` moves the node by the picked
+                // clip's root delta every tick - `o3de_MoveNodeBy(node, dx, dy,
+                // dz)`, the vertical included - and the robbers' death clips carry
+                // the FALL there: braqueur.ani's root keys sum 32.9 to 39.9 DOWN
+                // (a standing pelvis is ~42 above the feet) and slide 28 to 110
+                // across. The seat latched on the upright first frame and nothing
+                // added the drop, so the body lay flat at waist height. Summed from
+                // frame 1 as the clip starts there (`sub_421A20`), the horizontal
+                // part turned by his heading - the one he is drawn at - and held
+                // once it has played out. NOT PORTED, labelled: `sub_421140`'s wall
+                // test, which in the engine keeps only the vertical against a wall.
+                if (s.deathType >= 0 && s.deathClip && !s.deathClip->root.empty() &&
+                    s.deathClip->frames > 1) {
+                    const long el = std::max<long>(n - s.deathStart, 0);
+                    const float t1 = 1.0f + static_cast<float>(
+                        std::min<long>(el, static_cast<long>(s.deathClip->frames) - 1));
+                    float d[3] = {0.0f, 0.0f, 0.0f};
+                    omk::pedRootDelta(*s.deathClip, 1.0f, t1, nullptr, d);
+                    float r[3];
+                    omk::rotateYaw(s.facing, d, r);
+                    for (int k = 0; k < 3; ++k) rootMove[k] += r[k];
+                    if (!s.deathFallTold && el >= static_cast<long>(s.deathClip->frames) - 1) {
+                        s.deathFallTold = true;
+                        std::printf("frame %ld: actor %d %s - death clip's root motion (sub_421770): "
+                                    "%.1f %.1f %.1f over %d frames, down %.1f\n", n, s.actor,
+                                    s.model.c_str(), double(r[0]), double(r[1]), double(r[2]),
+                                    s.deathClip->frames, double(d[1]));
+                    }
+                }
                 // THE ANCHOR. An authored PATH names the pelvis - the
                 // hierarchy root, whose height is authored - so the model
                 // goes there as it is. A placement record and a camera solve
@@ -11868,6 +11905,22 @@ int main(int argc, char** argv) {
                                       (s.pelvis ? s.at[1] - pelvis[1] : ground - feet)
                                           + rootMove[1],
                                       s.at[2] - pelvis[2] + rootMove[2]};
+                // ...and WHERE THE FALL LEFT HIM: his pelvis over the floor under
+                // his placement, once the death clip has played out (a standing
+                // pelvis is ~42 above it; the reader's floating corpses were there)
+                if (s.deathFallTold && !s.deathFloorTold) {
+                    s.deathFloorTold = true;
+                    // a PELVIS-anchored body (a program's path placed him) has
+                    // `ground` = that authored pelvis, not a floor - so the floor
+                    // is probed under it here, for the report only
+                    float floorY = ground;
+                    if (s.pelvis && !playerSoup.empty())
+                        if (const auto g = omk::floorUnder(playerSoup, s.at[0], s.at[1] - 1.0, s.at[2]))
+                            floorY = static_cast<float>(*g);
+                    std::printf("frame %ld: actor %d %s - dead: his pelvis %.1f above the floor\n",
+                                n, s.actor, s.model.c_str(),
+                                double(floorY - (pelvis[1] + off[1])));
+                }
                 // THE FACING, for a body no scene clip is turning:
                 // `Actor_SetEuler` is what a placement authors, while a scene
                 // clip carries its own root orientation.

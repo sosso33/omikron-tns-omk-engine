@@ -1593,6 +1593,21 @@ forget to plan it."* The session's own log agrees with the gate: 245 latches
      shot; with the yaw negated, 12 to 13 off. Labelled: a gunman's FIRST bolt
      leaves an arm not yet bent - the port's `meshAt` is last frame's, where
      the engine bends the arm in the same gate call before the shot.
+   * **A4, THE FALL** - fixed 2026-09-11 after screenshots: a dead robber
+     *"float in the air"*, lying flat at waist height. `sub_421770` moves the
+     node by the picked clip's root delta every tick, the vertical included,
+     and the death clips carry the fall there - braqueur.ani's root keys sum
+     32.9 to 39.9 DOWN (a standing pelvis is ~42 above the feet) and slide 28
+     to 110 across. The viewer seated the body once on the upright first frame
+     and added no root motion for a shoot clip, so the body rotated flat about a
+     pelvis that stayed up. Now a death clip's root motion, summed from frame 1
+     (`pedRootDelta`) and turned by his heading, joins the placement and holds
+     at the clip's end: the gallery's 240 falls 35.6 and slides 101.7, his
+     pelvis left 6.3 above the floor. Labelled: `sub_421140`'s wall test (a
+     body may slide into a wall the engine would stop it at). And NOTE what the
+     same reading implies for the rest: `sub_421370` applies the CURRENT clip's
+     root motion the same way, and the fight clip (type 10) carries -139.7 per
+     19-frame loop - walking pace. That is part of item B.
    * **B, the MOVEMENT** - large, and mostly reading. The brain's walking
      states 1, 2 and 4 are ported, with `sub_426C20`'s move decision, but
      nothing FEEDS them: `Shoot_Think` (which floor and cell he is on) is read

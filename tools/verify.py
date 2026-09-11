@@ -26320,6 +26320,17 @@ def c_engine_shoot_hit():
             [(5, 15, 10, 2), (5, 10, 5, 2), (5, 5, 0, 2)],
             [(5, True)],
             ["240"])
+    # THE FALL (2026-09-11, a reader: the dead *"float in the air"*): his death
+    # clip's root motion - `sub_421770` moves the node by it every tick, the
+    # vertical included - summed from frame 1 and turned by his heading: 35.6
+    # DOWN and a slide of 101.7, which leaves his pelvis 6.3 above the floor
+    # where it stayed ~42 up, at standing height, before
+    fall = re.search(r"^frame \d+: actor 240 VIR_FN - death clip's root motion \(sub_421770\): "
+                     r"(\S+) (\S+) (\S+) over (\d+) frames", o, re.M)
+    floor = re.search(r"^frame \d+: actor 240 VIR_FN - dead: his pelvis (\S+) above the floor",
+                      o, re.M)
+    got = got + (fall.groups() if fall else None, floor.group(1) if floor else None)
+    want = want + (("-101.7", "35.6", "12.7", "39"), "6.3")
     return got, want, (
         "the three gunmen's roots ON their placements with the body's 44.4 "
         "sphere; the first three bolts from the raised gun killing actor 240, "
