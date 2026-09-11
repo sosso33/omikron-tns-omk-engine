@@ -440,12 +440,16 @@ wall, turns, and walks into it again, over and over; robbers walking through
 each other; and one walking right up to you. Say which of these you see.
 (PLAYED 2026-09-11, *"Ok, good progress"*: a robber CLIMBED a little at every
 loop until he hung from the ceiling - fixed, every clip start now puts his
-height back as the engine does; and robbers walked INTO you, *"like I had no
+height back as the engine does, **CONFIRMED IN PLAY 2026-09-11** (*"I didn't see
+a robber rising off the floor"*); and robbers walked INTO you, *"like I had no
 collider"* - the original pushes YOU out of their bodies, and now so does
 this. Look for: no robber rising off the floor however long he walks into a
 wall; a robber that reaches you shoving you back instead of standing inside
 you. EXPECTED, and the path-finder's to fix: two robbers can shove you a long
-way across the room. Wrong looks like: being thrown far in one frame, or
+way across the room. (Played: *"they kept pushing me to the point I finished
+outside the environnement"* - fixed: the push is now swept against the walls
+as the engine sweeps it, so they can pin you to a wall but not push you
+through one. Wrong looks like: ending outside the level again.) Wrong looks like: being thrown far in one frame, or
 pushed by an empty spot - a dead robber's body still pushes, since nothing
 the engine was read doing removes it.)
 

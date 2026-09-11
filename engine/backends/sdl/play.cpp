@@ -6219,7 +6219,19 @@ int main(int argc, char** argv) {
                     // open above him. Traced frame by frame 2026-09-08.
                     if (!boarding && !leaving && !playerSpheres.empty() &&
                         session.crowdPush(playerSpheres, playerReach, player->pos(), player->facing(), push)) {
+                        const float was[3] = {player->pos()[0], player->pos()[1], player->pos()[2]};
                         player->nudge(push);
+                        // once: a push the SWEEP cut short - a wall in the way
+                        // (`Actor_ApplyMotion` hands it to `Actor_Move`)
+                        static bool pushWallTold = false;
+                        const float gx = player->pos()[0] - was[0], gz = player->pos()[2] - was[2];
+                        const float asked = std::sqrt(push[0] * push[0] + push[2] * push[2]);
+                        if (!pushWallTold && asked - std::sqrt(gx * gx + gz * gz) > 0.5f) {
+                            pushWallTold = true;
+                            std::printf("frame %ld: the push %.2f %.2f met a wall - the sweep "
+                                        "(Actor_ApplyMotion -> Actor_Move) moved him %.2f %.2f\n",
+                                        n, double(push[0]), double(push[2]), double(gx), double(gz));
+                        }
                         // once per gunman: his body shoved the player
                         static std::set<int> bodyPushTold;
                         for (const int sl : session.spatial().lastTouched()) {

@@ -117,6 +117,10 @@ original pushes the PLAYER out of each gunman's body through the spatial
 index - `Actor_TickShoot`; the gunmen are registered now) are both fixed.
 The player's own reach still takes `meshes.front()` (7.1, his root is 42.5):
 labelled, because correcting it moves the street crowd's confirmed push.
+Played again: the push walked him OUT OF THE LEVEL - `nudge` placed it with a
+teleport, where the engine's `Actor_ApplyMotion` sweeps everything since the
+last safe position, push included, through `Actor_Move`. Swept now; robbers
+can pin him to a wall, not push him through one.
 
 **FIRING IS CONNECTED (2026-09-10, `todo/shoot-mode.md` §7h/§7i)** — and the
 chain this section used to give was wrong in two places, both found by reading

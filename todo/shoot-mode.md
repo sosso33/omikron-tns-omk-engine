@@ -1695,6 +1695,24 @@ forget to plan it."* The session's own log agrees with the gate: 245 latches
         which is the reading's consequence too. What keeps the original's
         robbers off the player is their steering (`sub_421CD0`'s hold and the
         path-finder), not the push.
+     3. **PLAYED again 2026-09-11**: the climb is gone (*"I didn't see a robber
+        rising off the floor"* - CONFIRMED), but *"they kept pushing me to the
+        point I finished outside the environnement"*. Half expected (the
+        steering), and half a PORT fault: `PlayerController::nudge` placed the
+        push with the walker's `moveTo`, a teleport that tests nothing, where
+        the engine's `Actor_ApplyMotion` - right after `Actor_TickNpc` adds the
+        push to +244..252 - takes everything since the last SAFE position
+        (+232..240), push included, undoes it and hands it to `Actor_Move`, the
+        collide-and-slide, and puts him back at the safe position if no floor
+        is under him. So a push never crosses a wall in the original. `nudge`
+        now sweeps it through `Walker::step` (LABELLED: the engine sweeps the
+        push and the frame's own motion as one delta, this sweeps the push
+        first). Measured: in the gallery at yaw 215 a push of -0.62 -7.83 meets
+        a wall at 104 and slides -0.59 -2.44; at yaw 258 the gunmen PIN him to
+        a wall at x 5290.8. Still seen and labelled: one push of 65.9 in a
+        single frame (240, frame 130 at yaw 258) - the per-mesh sphere list is
+        this port's reading of the model's `+244` list (docs/STREET_LIFE.md 3),
+        whose own four 10.9 spheres would overlap far less.
      **THE PATH-FINDER, read 2026-09-11: a distance field toward the PLAYER.**
      `sub_436260(floor, x, z)` (10_dsound.c 1234) seeds a breadth-first search
      at a cell: two byte grids at `dword_52BA40[2]`, the back one cleared to

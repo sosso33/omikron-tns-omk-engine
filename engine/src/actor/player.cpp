@@ -242,7 +242,17 @@ int PlayerController::ctlGroup() const {
 }
 
 void PlayerController::nudge(const float d[3]) {
-    walker_.moveTo(walker_.pos()[0] + d[0], walker_.pos()[1] + d[1], walker_.pos()[2] + d[2]);
+    // THE PUSH IS SWEPT, not placed (2026-09-11, a reader: robbers' bodies
+    // shoved him "outside the environnement"). `Actor_TickNpc` adds the
+    // spatial query's push to +244..252 outright, but `Actor_ApplyMotion`
+    // right after takes EVERYTHING since the last safe position (+232..240) -
+    // the push included - undoes it and hands it to `Actor_Move`, the
+    // collide-and-slide, then puts him back at the safe position if no floor
+    // is under him. So a push never crosses a wall. This walked him there
+    // with `moveTo`, which tests nothing. LABELLED: the engine sweeps push
+    // and the frame's own motion as ONE delta; this sweeps the push first.
+    // The push is horizontal (both per-entry tests write y = 0).
+    walker_.step(d[0], d[2], 1.0);
     for (int k = 0; k < 3; ++k) pos_[k] = static_cast<float>(walker_.pos()[k]);
 }
 

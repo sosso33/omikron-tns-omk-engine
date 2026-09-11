@@ -26242,15 +26242,17 @@ def c_engine_shoot_fire():
             # at him and their bodies PUSH him between shots, so the eight bolts
             # leave from four muzzle points - the first from the raised gun where
             # he stands - and meet what the push put in front of them: 237 after
-            # one frame, the world after 2, 4 and then 8 (998.4 flown) frames
-            [2, 1, 4, 8, 8, 8, 8, 8],
-            [("HIT ACTOR 237", -2909, "124.8", "0"), ("hit the world", -3571, "998.4", "0"),
+            # one frame, the world after 2, 4 and then 9 (1123.2 flown) frames -
+            # the push SWEPT against the walls (`Actor_ApplyMotion`) leaves him
+            # pinned where a teleport had carried him on
+            [2, 1, 4, 9, 9, 9, 9, 9],
+            [("HIT ACTOR 237", -2909, "124.8", "0"), ("hit the world", -3571, "1123.2", "0"),
              ("hit the world", -3161, "249.6", "0"), ("hit the world", -3145, "499.2", "0")],
-            8, [("4837.6", "15144.7", "-2603.5"), ("4980.7", "15144.7", "-2701.5"),
+            8, [("4842.1", "15144.7", "-2558.8"), ("4980.7", "15144.7", "-2701.5"),
                 ("4996.4", "15144.7", "-2941.6"), ("5050.8", "15144.7", "-2890.9")],
             list(range(37, 248, 30)),
             # (an impact sound for each bolt the WORLD stops, none for 237's)
-            [39, 101, 135, 165, 195, 225, 255],
+            [39, 101, 136, 166, 196, 226, 256],
             [("fire", "1", "687", "WAVER2.WAV", "1.00"),
              ("impact", "3", "689", "WIMP1.WAV", "0.13"),
              ("impact", "3", "689", "WIMP1.WAV", "0.16"),
@@ -26300,7 +26302,7 @@ def c_engine_shoot_hit():
     play = subprocess.run(
         [exe, fr, os.path.join(ROOT, "tables"),
          "--save", os.path.join(ROOT, "traces", "save-appart.bin"),
-         "--area", "59", "--stand", "5000,0,-2900,258", "--shoot",
+         "--area", "59", "--stand", "5000,0,-2900,215", "--shoot",
          "--frames", "630", "--nodelay",
          "--keys", ",".join(["54"] * 20), "--keydelay", "30"],
         capture_output=True, text=True,
@@ -26343,14 +26345,20 @@ def c_engine_shoot_hit():
     # Ten taps no longer killed anybody; twenty over 630 frames kill all three
     # - 237 at 338 (death type 6), 238 at 548 (5), 240 at 578 (7) - and the
     # roots at the first sweep frame are already 7 units into the walk.
+    #
+    # AND SINCE THE PUSH IS SWEPT (2026-09-11, a reader shoved "outside the
+    # environnement") the push can pin him to a wall, and at yaw 258 he ended
+    # pinned with his bolts meeting nobody for 1230 frames. He faces 215 now -
+    # straight at 237's approach - and the gunmen walk down his line of fire:
+    # nine hits, all three killed (death types 7, 6 and 7).
     want = ([(237, 4759, -2567, "44.4"), (238, 5207, -2280, "44.4"),
              (240, 4516, -2797, "44.4")],
-            ["237", "237", "240", "238", "237", "240", "238", "238", "240"],
-            [(5, 15, 10, 2), (5, 10, 5, 0), (5, 15, 10, 0), (5, 15, 10, 0), (5, 5, 0, 0),
-             (5, 10, 5, 1), (5, 10, 5, 0), (5, 5, 0, 2), (5, 5, 0, 1)],
-            [(6, True), (5, True), (7, True)],
-            # (240's type-7 clip is still playing at 630)
-            ["237", "238"])
+            ["237", "237", "240", "240", "237", "240", "238", "238", "238"],
+            [(5, 15, 10, 2), (5, 10, 5, 2), (5, 15, 10, 2), (5, 10, 5, 1), (5, 5, 0, 1),
+             (5, 5, 0, 0), (5, 15, 10, 1), (5, 10, 5, 1), (5, 5, 0, 1)],
+            [(7, True), (6, True), (7, True)],
+            # (238's clip is still playing at 630)
+            ["237", "240"])
     # THE FALL (2026-09-11, a reader: the dead *"float in the air"*): his death
     # clip's root motion - `sub_421770` moves the node by it every tick, the
     # vertical included - summed from frame 1 and turned by his heading: 35.6
@@ -26359,10 +26367,9 @@ def c_engine_shoot_hit():
     # ...ONE CLIP FRAME A TICK THROUGH THE WALL TEST (`sub_421140(rec, delta,
     # 1)`): three of his 39 ticks meet a wall byte and keep only their drop,
     # so the slide is -101.0 / 12.2 where the free sum was -101.7 / 12.7
-    # ...and since the walk the falls are 237's and 238's: 237's type-6 clip
-    # (84 frames) drops 29.2 and meets a wall on 37 ticks, slumping him 14.0
-    # above the floor; 238's type 5 is 240's old clip - 35.6 down, a 100-unit
-    # slide, no wall - and leaves his pelvis 7.5 up
+    # ...and the falls are 237's and 240's: two 84-frame clips (types 7 and
+    # 6) that drop 29.2 each and slide 74 across without meeting a wall, the
+    # pelvis ending 14.0 and 12.8 above the floor
     falls = re.findall(r"^frame \d+: actor (\d+) VIR_FN - death clip's root motion "
                        r"\(sub_421770\): (\S+) (\S+) (\S+) over (\d+) frames, down \S+, (\d+) "
                        r"ticks against a wall", o, re.M)
@@ -26370,21 +26377,26 @@ def c_engine_shoot_hit():
                         r"floor", o, re.M)
     # THE COLLIDER (2026-09-11, a reader: robbers walked into his spot *"like I
     # had no collider"*): each gunman's body is in the spatial index and the
-    # player's query pushes HIM out of it - first 237 at 57. 230 is the
-    # gallery's fourth brain; 240's push at 588 is his CORPSE, which nothing
-    # read removes from the index
+    # player's query pushes HIM out of it - 237 at 57, 240 at 109
     pushes = re.findall(r"^frame (\d+): the player is pushed out of actor (\d+)'s body", o, re.M)
-    got = got + (falls, floors, pushes)
-    want = want + ([("237", "14.4", "29.2", "0.3", "84", "37"),
-                    ("238", "-100.3", "35.6", "-21.1", "39", "0")],
-                   [("237", "14.0"), ("238", "7.5")],
-                   [("57", "237"), ("402", "230"), ("411", "238"), ("588", "240")])
+    # ...and THE PUSH IS SWEPT: `Actor_ApplyMotion` hands everything since
+    # the last safe position, the push included, to `Actor_Move`, so a push
+    # into a wall slides along it - here -0.62 -7.83 asked, -0.59 -2.44 gone.
+    # Placed with a bare teleport it walked him through the walls
+    wall = re.findall(r"^frame (\d+): the push (\S+) (\S+) met a wall - the sweep "
+                      r"\(Actor_ApplyMotion -> Actor_Move\) moved him (\S+) (\S+)$", o, re.M)
+    got = got + (falls, floors, pushes, wall)
+    want = want + ([("237", "23.3", "29.2", "70.5", "84", "0"),
+                    ("240", "74.3", "29.2", "1.7", "84", "0")],
+                   [("237", "14.0"), ("240", "12.8")],
+                   [("57", "237"), ("109", "240")],
+                   [("104", "-0.62", "-7.83", "-0.59", "-2.44")])
     return got, want, (
         "the three gunmen's roots, 7 units into their walk at the first sweep; "
-        "twenty bolts from the raised gun meeting whoever the walk and the push "
-        "put in front of them - nine hits, 237, 238 and 240 killed with death "
-        "types 6, 5 and 7; two falls through the wall test to the floor; and "
-        "the player pushed out of the gunmen's bodies")
+        "twenty bolts at yaw 215, down the line the gunmen walk in on - nine "
+        "hits, all three killed with death types 7, 6 and 7; two falls through "
+        "the wall test to the floor; the player pushed out of the gunmen's "
+        "bodies, and a push into a wall SWEPT along it rather than through it")
 
 
 def c_engine_shoot_move():
@@ -26454,7 +26466,8 @@ def c_engine_shoot_move():
              # so the strafe and the second walk end off their straight lines;
              # the distance the mover asked for is still gone in full)
              (32, "256.10", ("240.67", "0.00", "9.30")),
-             (23, "92.82", ("7.49", "0.00", "0.00"))])
+             # (the push swept, not placed: the last walk ends -82.32 -150.30)
+             (23, "92.82", ("-82.32", "0.00", "-150.30"))])
     return got, want, (
         "the mover's speeds from Speed 70 (row 4: 10.4, 0.39, 2.08); forward 40 "
         "frames = 303.29 along +Z, strafe right 30 = 256.10 along +X, nine MDRG "
@@ -26518,8 +26531,9 @@ def c_engine_shoot_entrance():
     want = ([(29, "144.95", ("-144.95", "0.00", "0.00")),
              # (THE COLLIDER, 2026-09-11: a robber's body in the spatial index
              # pushes him off the straight walk - the 719.29 is still walked,
-             # it ends 60.22 across and 535.05 along)
-             (84, "719.29", ("60.22", "-0.00", "535.05"))],
+             # it ends 70.85 across and 541.72 along, the push swept against
+             # the walls as `Actor_ApplyMotion` sweeps it)
+             (84, "719.29", ("70.85", "-0.00", "541.72"))],
             True, True, [])
     return got, want, (
         "the reader's route into SCENE 56's zone 12: 144.95 along -X, then 84 "
