@@ -410,6 +410,13 @@ aim stance, 19 frames in the supermarket's library) where he stood frozen on
 its first frame. Wrong looks like: a robber still rigid, or one twitching back
 to his first pose every second. He still does NOT WALK - that is the larger
 half, planned in `todo/shoot-mode.md` §8 item 6B.
+**And, after *"They shoot but without a shooting animation"*, THE AIM:** while
+he fights, a robber's arms come UP and turn toward you - his gun on you - and
+drop back when he stops. Wrong looks like: arms raised the wrong way (the gun
+pointing to his other side), arms snapping up and down every frame, or a
+robber twisted at the waist. They hit you a little less often in the gallery
+now: their bolts aim at your hips with a small scatter and your body's hit
+boxes are narrow.
 
 **NOT YET PLAYED (2026-09-11): THE GUNMEN FIRE - and turn round to do it.**
 In the supermarket the robber nearest the entrance (actor 77) starts with

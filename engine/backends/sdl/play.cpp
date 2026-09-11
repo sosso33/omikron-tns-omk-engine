@@ -3842,6 +3842,13 @@ int main(int argc, char** argv) {
     struct GunAnim { const omk::PedClip* clip = nullptr; float frame = 1.0f; };
     std::map<int, GunAnim> gunAnims;
     std::set<int> gunLooped;          // who has said his clip looped
+    // ...and his AIM: `dword_6A4720` / `dword_6A4724`, the angles `sub_47C2A0`'s
+    // target arm hands `sub_434C30` - and so `sub_471950` - on every tick it
+    // runs. `live` is "the gate ran him this tick": a tick it does not run (a
+    // turn clip holding the brain, a state that fires nothing) bends nothing.
+    struct GunAim { bool live = false; float yaw = 0.0f, pitch = 0.0f; };
+    std::map<int, GunAim> gunAims;
+    std::set<int> gunAimTold;         // who has said his first aim
     // THE GAUGE'S OWN VALUE, `dword_90E100` - what `Hud_DrawBar` draws. It is
     // NOT his record's +92: `Shoot_Enter` seeds it, `sub_423A40` (a property 1
     // write, the medikits) and a hit he survives copy +92 into it, and the
@@ -3990,6 +3997,63 @@ int main(int argc, char** argv) {
             row[i] = q;
         }
         return omk::composePose(playerMeshes, one, 0, false);
+    };
+    // A GUNMAN'S AIM LAYER - the same `sub_471950` bend, on HIS pieces. The
+    // fire gate's target arm binds his group's type-18 clip (`sub_434590(+20,
+    // 18)`, the S_AUTOLK of his library: 15 frames in braqueur.ani) over the
+    // bones his `+84` table marks (0x4C3798 for every type but 13, the
+    // player's own table), with the type-17 clip as the stance the lowering
+    // blends to (`dword_6A472C`), and bends them by his aim angles and his
+    // `+176`. Only while the gate ran him this tick (`gunAims`).
+    const auto gunmanPoseNow = [&](int actor, int deathType, const CharModel* mo,
+                                   const omk::NodeTracks& pt, int frame)
+        -> std::vector<omk::MeshPose> {
+        const auto aimIt = gunAims.find(actor);
+        const auto recIt = shootBrains.find(actor);
+        if (!mo || !pt.valid() || deathType >= 0 || aimIt == gunAims.end() ||
+            !aimIt->second.live || recIt == shootBrains.end() ||
+            session.typeOfActor(actor) == 13u)      // 0x4C37E8, not lifted
+            return omk::composePose(mo->meshes, pt, frame, false);
+        const int grp = static_cast<int>(session.typeOfActor(actor));
+        const omk::PedClip* c18 = (grp >= 0 && grp < 64) ? shootClipExact(grp, 18) : nullptr;
+        const omk::PedClip* c17 = (grp >= 0 && grp < 64) ? shootClipExact(grp, 17) : nullptr;
+        const omk::NodeTracks* aim = c18 ? pedTracksFor(grp, *c18, mo->meshes) : nullptr;
+        const omk::NodeTracks* stance = c17 ? pedTracksFor(grp, *c17, mo->meshes) : nullptr;
+        if (!aim || aim->frames < 15) return omk::composePose(mo->meshes, pt, frame, false);
+        const int f = frame < 0 ? 0 : (frame >= pt.frames ? pt.frames - 1 : frame);
+        omk::NodeTracks one;
+        one.count = pt.count;
+        one.frames = 1;
+        one.rootTrack = pt.rootTrack;
+        one.ids = pt.ids;
+        one.names = pt.names;
+        one.quats.push_back(pt.quats[static_cast<std::size_t>(f)]);
+        if (!pt.trans.empty())
+            one.trans.push_back(pt.trans[static_cast<std::size_t>(
+                f < static_cast<int>(pt.trans.size()) ? f : static_cast<int>(pt.trans.size()) - 1)]);
+        auto& row = one.quats[0];
+        for (std::size_t i = 0; i < one.ids.size() && i < row.size(); ++i) {
+            const std::int32_t mi = one.ids[i];
+            if (mi < 0 || static_cast<std::size_t>(mi) >= mo->meshes.size()) continue;
+            if (!omk::shootAimMarked(mo->meshes[static_cast<std::size_t>(mi)].slot)) continue;
+            std::vector<omk::Quatf> keys;
+            for (std::size_t j = 0; j < aim->ids.size(); ++j) {
+                if (aim->ids[j] != mi) continue;
+                for (int k = 0; k < 15; ++k)
+                    keys.push_back(aim->quats[static_cast<std::size_t>(k)][j]);
+                break;
+            }
+            if (keys.size() < 15) continue;
+            omk::Quatf q = omk::shootAimBone(keys, aimIt->second.yaw, aimIt->second.pitch);
+            if (stance && !stance->quats.empty()) {
+                omk::Quatf key1{};
+                for (std::size_t j = 0; j < stance->ids.size(); ++j)
+                    if (stance->ids[j] == mi) { key1 = stance->quats[0][j]; break; }
+                q = omk::shootAimLower(q, key1, recIt->second.weaponLowered);
+            }
+            row[i] = q;
+        }
+        return omk::composePose(mo->meshes, one, 0, false);
     };
     omk::ProjectilePool projectiles;
     long shotsFired = 0;
@@ -10847,6 +10911,8 @@ int main(int argc, char** argv) {
                     // goes on the same tick, `sub_421A20(+12, 0)` putting his
                     // previous clip back. Not ported: the clip's root motion and
                     // the `+460` interrupt arm.
+                    // no aim layer unless the fire gate runs him this tick
+                    if (auto gaL = gunAims.find(s.actor); gaL != gunAims.end()) gaL->second.live = false;
                     bool clipHolds = false;
                     if (act >= 0 && shootMode && !shotDead && deadIt != shootBrains.end() &&
                         (deadIt->second.flags & 8u)) {
@@ -11053,6 +11119,75 @@ int main(int argc, char** argv) {
                                     rec.weaponTimer = rec.weapon->rate;
                                 gate = omk::shootFireGate(rec, fullArm, fin.dt);
                                 if (fullArm && gate == omk::FireGate::Fired) rec.flags |= 0x80u;
+                            }
+                            // ---- the gate's TARGET ARM, the part that AIMS HIM ----
+                            // (0x0047C820 on): his target's node (+36..+44 - the
+                            // player's root mesh as drawn) minus HIS `Buste` (actor
+                            // +20), jittered ON THE FIRED TICK by `r/4 - rand() %
+                            // int(r/2)` per axis, r the target node's +88 - three
+                            // `rand()`s drawn BEFORE `Actor_TickProjectiles` draws its
+                            // own; the yaw is `acos` of the flat cosine against his
+                            // forward, `(0, 0, -1)` turned by +420, NEGATED when
+                            // `fx*dz - fz*dx > 0` (`fcomp flt_4BCAEC` - 0.0 - and
+                            // `test ah, 41h`); the pitch is `-atan2(dy, 2 * |d|)`.
+                            // Released, both are 0 and `sub_434C30` still bends him -
+                            // which is the arm LOWERING by +176. With no row the gate
+                            // returns before any of it (`if (!+180) return`), and a
+                            // clear fire test takes LABEL_315, whose `sub_434C30`
+                            // has no angles: no layer either way.
+                            {
+                                GunAim& gm = gunAims[s.actor];
+                                gm.live = fireTest && rec.weapon;
+                                gm.yaw = gm.pitch = 0.0f;
+                                if (gm.live && gate != omk::FireGate::Released && player &&
+                                    s.mo && s.meshAt.size() == s.mo->meshes.size() * 3) {
+                                    int buste = -1;     // the LAST strstr hit
+                                    for (std::size_t i = 0; i < s.mo->meshes.size(); ++i)
+                                        if (std::strstr(s.mo->meshes[i].name, "Buste"))
+                                            buste = static_cast<int>(i);
+                                    float tgt[3] = {player->pos()[0], player->pos()[1],
+                                                    player->pos()[2]};
+                                    float tr = 0.0f;
+                                    for (std::size_t i = 0; i < playerMeshes.size(); ++i)
+                                        if (playerMeshes[i].parent < 0) {
+                                            tr = playerMeshes[i].radius;
+                                            if (playerMeshAtKnown && playerMeshAt.size() >= i * 3 + 3)
+                                                for (int k = 0; k < 3; ++k)
+                                                    tgt[k] = playerMeshAt[i * 3 + static_cast<std::size_t>(k)];
+                                            break;
+                                        }
+                                    if (buste >= 0) {
+                                        const std::size_t b = static_cast<std::size_t>(buste);
+                                        double d[3];
+                                        for (int k = 0; k < 3; ++k)
+                                            d[k] = double(tgt[k]) - s.meshAt[b * 3 + static_cast<std::size_t>(k)];
+                                        if (gate == omk::FireGate::Fired) {
+                                            const double half = double(tr) * 0.5;
+                                            const int span = static_cast<int>(half);
+                                            for (int k = 0; k < 3 && span > 0; ++k) {
+                                                gunRandSeed = gunRandSeed * 214013u + 2531011u;
+                                                const int rr = static_cast<int>((gunRandSeed >> 16) & 0x7FFFu) % span;
+                                                d[k] = d[k] + half * 0.5 - rr;
+                                            }
+                                        }
+                                        const double yawR = double(s.facing) * 0.0174532925199433;
+                                        const double fx = std::sin(yawR), fz = -std::cos(yawR);
+                                        const double flat = std::sqrt(d[0] * d[0] + d[2] * d[2]);
+                                        double cosv = flat > 0.0 ? (fz * d[2] + fx * d[0]) / flat : 1.0;
+                                        cosv = cosv > 1.0 ? 1.0 : (cosv < -1.0 ? -1.0 : cosv);
+                                        const double cross = fx * d[2] - fz * d[0];
+                                        gm.yaw = static_cast<float>(cross > 0.0 ? -std::acos(cosv)
+                                                                                : std::acos(cosv));
+                                        const double dist = std::sqrt(flat * flat + d[1] * d[1]);
+                                        gm.pitch = static_cast<float>(-std::atan2(d[1], dist + dist));
+                                    }
+                                }
+                                if (gm.live && gate != omk::FireGate::Released &&
+                                    gunAimTold.insert(s.actor).second)
+                                    std::printf("frame %ld: actor %d %s - AIM LAYER (sub_434C30): yaw "
+                                                "%.3f pitch %.3f rad, lowered %.2f\n", n, s.actor,
+                                                s.model.c_str(), double(gm.yaw), double(gm.pitch),
+                                                double(rec.weaponLowered));
                             }
                             if (gate == omk::FireGate::Fired && rec.weapon && player) {
                                 // ---- `Actor_TickProjectiles(him)`, the record
@@ -11422,7 +11557,8 @@ int main(int argc, char** argv) {
                     rootW = 1.0f;
                     src = "a scene program's clip";
                 } else if (shootTracks && shootTracks->valid()) {
-                    pose = omk::composePose(s.mo->meshes, *shootTracks, shootFrame, false);
+                    // ...bent by his aim layer while the gate runs him
+                    pose = gunmanPoseNow(s.actor, s.deathType, s.mo, *shootTracks, shootFrame);
                     src = "shoot mode: the area's .ani, by character type";
                 } else if (!s.lastPose.empty() && session.parkedOnProgram()) {
                     // BETWEEN TWO BEATS OF ONE CUTSCENE the body holds the

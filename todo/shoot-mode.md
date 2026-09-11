@@ -1552,6 +1552,28 @@ forget to plan it."* The session's own log agrees with the gate: 245 latches
      advances it every brain tick that no picked clip plays - `+188 += dt`,
      wrapping to `dt + 1.0` at `Anim_Frames` - so idle and aim LOOP. The
      viewer already chose those clips (`shootClipFor`) and held frame 0.
+   * **A2, THE AIM POSE** - PORTED 2026-09-11 after *"They shoot but without
+     a shooting animation (their weapon is not aiming at me)"*. The fire
+     gate's TARGET arm (`sub_47C2A0`, 0x0047C820 on) computes his aim every
+     tick it runs: the target node minus his `Buste` (actor +20), jittered on
+     the fired tick by `r/4 - rand() % int(r/2)`; the yaw `acos` of the flat
+     cosine against `(0, 0, -1)` turned by +420, NEGATED when `fx*dz - fz*dx`
+     exceeds `flt_4BCAEC` (0.0 - the assembly's `test ah, 41h`, which the
+     decompiler lost); the pitch `-atan2(dy, 2|d|)`; released, both 0. They
+     reach `sub_471950` through `sub_434C30` exactly as the player's do, over
+     his group's type-18 clip (15 frames in braqueur.ani, `sub_434590` - a
+     random one of the type) with type 17 as the stance, on the bones his
+     `+84` table marks (0x4C3798 for all but type 13, whose 0x4C37E8 is not
+     lifted). The sign was checked against the data too: with it, 237's hand
+     settles 9 degrees off the line to the player; negated, 41 to 53.
+     **What it changed, and why that is faithful**: the bolts now miss more
+     in the gallery. A sweep trace showed every miss passing INSIDE the
+     body's root sphere (5.8 to 22.6 from the hip joint, r 42.5) and no box:
+     the boxes are small - HO1_FN's pelvis box ~14 x 11 x 9 around the joint
+     the gunmen aim at - and the ±14 jitter threads them; the gate's spread
+     also now draws its `rand()`s first, so each bolt gets different jitter.
+     The engine's `sub_45ECA0` has no hidden-mesh test and the port's frames
+     match its (joint origin, `+76` centre, `+92/+104` box).
    * **B, the MOVEMENT** - large, and mostly reading. The brain's walking
      states 1, 2 and 4 are ported, with `sub_426C20`'s move decision, but
      nothing FEEDS them: `Shoot_Think` (which floor and cell he is on) is read

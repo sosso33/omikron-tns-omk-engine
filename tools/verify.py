@@ -26249,8 +26249,10 @@ def c_engine_shoot_hit():
     r"""`engine/`: the HIT - a bolt meeting a gunman and killing him
     (`todo/shoot-mode.md` 7j, `actor/shoothit.h`).
 
-    In the Shooting gallery, facing gunman 240 (yaw 258 from 5000, -2900), six
-    taps of `Tir`. The sweep (`sub_45E9C0`) is given the three staged gunmen,
+    In the Shooting gallery, facing gunman 240 (yaw 258 from 5000, -2900), ten
+    taps of `Tir` (six until 2026-09-11 - with the gunmen's aim layer his
+    raised arms leave gaps between his boxes that a bolt threads, so three of
+    ten meet him where three of six did). The sweep (`sub_45E9C0`) is given the three staged gunmen,
     each mesh where it was DRAWN, and the first three bolts meet actor 240:
     the Waver's damage 5 takes his 15 health to 10, 5 and 0. Each hit is band
     2 - the bolt's heading against his forward - so the death clip TYPE is 5,
@@ -26278,8 +26280,8 @@ def c_engine_shoot_hit():
         [exe, fr, os.path.join(ROOT, "tables"),
          "--save", os.path.join(ROOT, "traces", "save-appart.bin"),
          "--area", "59", "--stand", "5000,0,-2900,258", "--shoot",
-         "--frames", "200", "--nodelay",
-         "--keys", ",".join(["54"] * 6), "--keydelay", "30"],
+         "--frames", "330", "--nodelay",
+         "--keys", ",".join(["54"] * 10), "--keydelay", "30"],
         capture_output=True, text=True,
         env=dict(os.environ, SDL_VIDEODRIVER="dummy"))
     o = play.stdout
@@ -26873,7 +26875,13 @@ def c_engine_shoot_gunfire():
                       r"type (\d+) slot (\d+), (\d+) frames, looped to (\S+)$", out, re.M),
            (lambda m: m.groups() if m else None)(
                re.search(r"^frame (\d+): actor 77 BRA_FN - current clip \(sub_421370\): "
-                         r"type (\d+) slot (\d+), (\d+) frames", sm, re.M)))
+                         r"type (\d+) slot (\d+), (\d+) frames", sm, re.M)),
+           # THE AIM LAYER: each gunman's first pulled tick - the yaw from `acos`
+           # of the flat cosine, negated when `fx*dz - fz*dx > 0`, the pitch
+           # `-atan2(dy, 2|d|)`, in radians; 77 aims almost dead ahead after his
+           # turn, 237 23 degrees to his left
+           re.findall(r"^frame (\d+): actor (\d+) \S+ - AIM LAYER \(sub_434C30\): yaw (\S+) "
+                      r"pitch (\S+) rad", out + sm, re.M))
     # the bolts aim at his ROOT MESH, the pelvis - +244..+252 is the root
     # node's position (`sub_4800C0`, the brain's edge walk) - so the first ones
     # rise to him (pitch 6.3) where they fell toward his feet (pitch 0.2)
@@ -26882,22 +26890,37 @@ def c_engine_shoot_gunfire():
             {"237": (4, 14, 24, 34, 44), "240": tuple(range(4, 48, 4))},
             # (with 6A the hand holding the gun ANIMATES, so the tir node rides
             # the clip's frame: -0.110 / 6.3 on its first frame held still)
-            ("0.502 -0.107 -0.858", "30.3", "6.2", "the tir node", "41 67 34"),
-            True, 0, 7, "347",
+            # (the gunmen's AIM LAYER, 2026-09-11: the gate's target arm now
+            # draws its three spread `rand()`s on the fired tick BEFORE the
+            # bolt draws its own, so the first bolt's jitter is the CRT's 4th to
+            # 6th values - 0 69 24, where it had 41 67 34 - and the muzzle rides
+            # his raised arm)
+            ("0.527 -0.108 -0.843", "32.0", "6.2", "the tir node", "0 69 24"),
+            # 2 on the player in the first 48 frames, where it was 7: the body's
+            # BOXES are small (HO1_FN's pelvis box ~14 x 11 x 9 around the hip
+            # joint the bolts aim at, inside a 42.5 sphere) and a +-14 jitter
+            # threads them - measured with a sweep trace: every miss passed 5.8
+            # to 22.6 from the root, inside every sphere, meeting no box
+            True, 0, 2, "347",
             ("394", "32", "25", "-7.20", "0.0"), ("418", "187.2"),
             ("WAVER", "1", "1", "15.0", "5"), (418, 433, 448, 463, 478, 493),
-            "-0.140 -0.094 0.986",
-            # (with 6A his muzzle rides his animated hand, and the bolt of 465
-            # passes the player: the kill comes one bolt later)
-            [("450", "damage 5, Body Shield 30 -> 4; health 10 -> 6, gauge 6 (property 1 "
+            "-0.077 -0.097 0.992",
+            # (with the aim layer his arm is up and turned to the player and
+            # the jitter comes later in the stream: he hits from 435, every
+            # bolt, and the kill is at 465)
+            [("435", "damage 5, Body Shield 30 -> 4; health 10 -> 6, gauge 6 (property 1 "
                      "stored 6); message 0 to the hurt handler"),
-             ("480", "damage 5, Body Shield 30 -> 4; health 6 -> 2, gauge 2 (property 1 "
+             ("450", "damage 5, Body Shield 30 -> 4; health 6 -> 2, gauge 2 (property 1 "
                      "stored 2); message 0 to the hurt handler"),
-             ("495", "damage 5, Body Shield 30 -> 4; health 2 -> -2 - KILLED: the death "
-                     "`sub_423FC0` is not ported, he plays on; the gauge stays at 2")],
+             ("465", "damage 5, Body Shield 30 -> 4; health 2 -> -2 - KILLED: the death "
+                     "`sub_423FC0` is not ported, he plays on; the gauge stays at 2"),
+             ("480", "he is down already (health -2): nothing"),
+             ("495", "he is down already (health -2): nothing")],
             [("21", "237", "10", "3", "19", "2.0"), ("21", "238", "10", "3", "19", "2.0"),
              ("22", "240", "10", "3", "19", "2.0")],
-            ("435", "10", "3", "19"))
+            ("435", "10", "3", "19"),
+            [("4", "237", "-0.403", "-0.011"), ("4", "240", "0.120", "-0.017"),
+             ("418", "77", "0.005", "-0.024")])
     return got, want, (
         "the gallery's two gunmen resolve their held weapons through the others' table, fire "
         "on the brain's first outcome 1 and every RATE frames after, the first bolt aimed "
