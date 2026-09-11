@@ -3834,6 +3834,14 @@ int main(int argc, char** argv) {
     // turn it makes each frame. Type -1: none.
     struct GunClip { int type = -1; int frames = 0; float frame = 0.0f, turn = 0.0f; };
     std::map<int, GunClip> gunClips;
+    // ...and his CURRENT clip, the one his action asked for (the record's `+8`,
+    // `Shoot_ActorAction` -> `sub_421A20`), with the actor's frame `+188` that
+    // `sub_421370` advances each tick no picked clip plays. Until 2026-09-11
+    // this port held frame 0, and a reader saw every robber standing frozen
+    // between his entrance and his death.
+    struct GunAnim { const omk::PedClip* clip = nullptr; float frame = 1.0f; };
+    std::map<int, GunAnim> gunAnims;
+    std::set<int> gunLooped;          // who has said his clip looped
     // THE GAUGE'S OWN VALUE, `dword_90E100` - what `Hud_DrawBar` draws. It is
     // NOT his record's +92: `Shoot_Enter` seeds it, `sub_423A40` (a property 1
     // write, the medikits) and a hit he survives copy +92 into it, and the
@@ -10855,6 +10863,8 @@ int main(int argc, char** argv) {
                                         "type %d after %.0f frames, facing %.1f\n", n, s.actor,
                                         s.model.c_str(), gc.type, double(gc.frame), double(s.facing));
                             gc = GunClip{};
+                            // `sub_421A20(+12, 0)`: his previous clip back, at 1.0
+                            gunAnims[s.actor].frame = 1.0f;
                         }
                     }
                     if (act >= 0 && shootMode && !shotDead && !clipHolds) {
@@ -10928,6 +10938,42 @@ int main(int argc, char** argv) {
                                             "outcome %d, %.0f units away\n", n,
                                             s.actor, s.model.c_str(), before,
                                             rec.state, int(st.outcome), ao.dist3d);
+                            }
+                        }
+                        // ---- LABEL_261: HIS CURRENT CLIP ADVANCES ----
+                        // `if (flags & 8) sub_421770(...) else sub_421370(...)`:
+                        // with no picked clip playing, `sub_421370` (0x00421370)
+                        // runs his current clip - unless `+160 & 2` - by the
+                        // frame delta: `+188 += dt`, and at the clip's length
+                        // (`Anim_Frames(+8)`) it wraps to `dt + 1.0`, key 0 being
+                        // the rest sentinel. The clip is his action's
+                        // (`shootClipFor`, the same type picks `Shoot_ActorAction`
+                        // makes); a change of clip restarts it at 1.0, which is
+                        // `sub_421A20`'s start. NOT PORTED, labelled: the clip's
+                        // root motion (`sub_434C30`'s delta through `sub_421140`'s
+                        // wall test - the body stays on its spot), the 0x400 grid
+                        // arm, and an action re-asked for the same clip, which the
+                        // engine restarts and this does not.
+                        if (!(rec.flags & 8u) && !(rec.flags & 2u)) {
+                            const int grpA = static_cast<int>(session.typeOfActor(s.actor));
+                            const omk::PedClip* ac = (grpA >= 0 && grpA < 64)
+                                                   ? shootClipFor(grpA, act) : nullptr;
+                            GunAnim& ga = gunAnims[s.actor];
+                            if (ac != ga.clip) {
+                                ga.clip = ac;
+                                ga.frame = 1.0f;
+                            } else if (ac && ac->frames > 0) {
+                                ga.frame += fin.dt;
+                                if (ga.frame >= static_cast<float>(ac->frames)) {
+                                    ga.frame = fin.dt + 1.0f;
+                                    // once per robber: his clip has run and looped
+                                    if (gunLooped.insert(s.actor).second)
+                                        std::printf("frame %ld: actor %d %s - current clip "
+                                                    "(sub_421370): type %d slot %d, %d frames, "
+                                                    "looped to %.1f\n", n, s.actor,
+                                                    s.model.c_str(), ac->type, ac->slot,
+                                                    ac->frames, double(ga.frame));
+                                }
                             }
                         }
                         // ---- THE FIRE EPILOGUE: `sub_424DE0`'s switch on the
@@ -11162,6 +11208,14 @@ int main(int argc, char** argv) {
                         if (c) shootTracks = pedTracksFor(grp, *c, s.mo->meshes);
                         if (onTurn && shootTracks && shootTracks->frames > 0)
                             shootFrame = std::min(static_cast<int>(gcIt->second.frame),
+                                                  static_cast<int>(shootTracks->frames) - 1);
+                        // ...and otherwise his CURRENT clip at the frame
+                        // `sub_421370` has advanced it to (above) - the same clip
+                        // `shootClipFor` just gave `c`, since both ask it alike
+                        const auto gaIt = gunAnims.find(s.actor);
+                        if (!onTurn && s.deathType < 0 && gaIt != gunAnims.end() &&
+                            gaIt->second.clip == c && shootTracks && shootTracks->frames > 0)
+                            shootFrame = std::min(static_cast<int>(gaIt->second.frame),
                                                   static_cast<int>(shootTracks->frames) - 1);
                         if (s.deathType >= 0 && shootTracks && shootTracks->frames > 0)
                             shootFrame = static_cast<int>(std::min<long>(

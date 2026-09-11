@@ -1495,7 +1495,8 @@ forget to plan it."* The session's own log agrees with the gate: 245 latches
    0 - MESSAGE 0, the scene's hurt handler, which uses a carried kit below 40.
    The gauge is now its own value (`hudHealth`, `dword_90E100`), so a killing
    hit leaves the bar at its last value as the engine's does. In the
-   supermarket 77 takes the player 10 -> 6 -> 2 and kills him at frame 480
+   supermarket 77 takes the player 10 -> 6 -> 2 and kills him at frame 480 -
+   495 since 6A animates his hand, the muzzle riding it -
    (`engine: shoot gunfire`). **Corrected on the way**: a first cut wrote
    property 1 and posted message 0 on EVERY hit, and so "stored 200" through
    the property's unsigned clamp once he was below 0 - the engine never writes
@@ -1539,7 +1540,29 @@ forget to plan it."* The session's own log agrees with the gate: 245 latches
      entry 1, the robbers' deaths; message 0 entry 3, the hurt handler.)
    So step 4 is the whole failure path, not a flag: the death clip, the dead
    camera, the countdown, message 1, and the phase ending in the Méditek
-   scene. The shove `sub_47D1F0` is then step 5. Shown to fail: the player's body left out of the
+   scene. The shove `sub_47D1F0` is then step 5.
+6. **THE ROBBERS ARE STILL - a reader, 2026-09-11: *"Outside the appearance
+   events, ennemies have no animation and do not move"*.** Two halves, and
+   they are very different sizes.
+   * **A, the ANIMATION** - PORTED 2026-09-11 (`engine: shoot gunfire`: the
+     gallery's three loop their type-10 clip, 19 frames, at frames 21-22;
+     77 his from the turn clip's hand-back, at 435). Every action
+     starts a clip (`Shoot_ActorAction` -> `sub_421A20`: action 0/5 type 11
+     or 25, action 1 type 9, the fight actions 10 or 9) and `sub_421370`
+     advances it every brain tick that no picked clip plays - `+188 += dt`,
+     wrapping to `dt + 1.0` at `Anim_Frames` - so idle and aim LOOP. The
+     viewer already chose those clips (`shootClipFor`) and held frame 0.
+   * **B, the MOVEMENT** - large, and mostly reading. The brain's walking
+     states 1, 2 and 4 are ported, with `sub_426C20`'s move decision, but
+     nothing FEEDS them: `Shoot_Think` (which floor and cell he is on) is read
+     and not wired; `sub_421020` and `sub_421CD0` - the second turns him to a
+     grid HEADING from `sub_435C40` / `sub_435E90` of his floor and his
+     `+136/+140` cell - and `sub_435900` ("am I there yet") are unread; and
+     no route or nav edge reaches the brain, so there is no path-finder. The
+     order: read those three and whatever fills the cell targets, then wire
+     `Shoot_Think` and the grid heading, then the edges states 1/2 walk -
+     with the clip root motion `sub_421370` applies (not ported in A) moving
+     the body while a walk clip plays. Shown to fail: the player's body left out of the
    sweep, the killing hit writing the gauge, and the aim put back at the feet
    each turn `engine: shoot gunfire` red.
 5. ~~**THE MOUSE LOOK.**~~ **PORTED 2026-09-10, CONFIRMED IN PLAY** (*"Good"*). `sub_47D370` read whole:

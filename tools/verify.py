@@ -26864,25 +26864,40 @@ def c_engine_shoot_gunfire():
     got = (init, frames, first.groups() if first else None, world > 0, body, onPlayer,
            end238.group(1) if end238 else None,
            turn.groups() if turn else None, over.groups() if over else None,
-           w77.groups() if w77 else None, s77, d77.group(1) if d77 else None, hits)
+           w77.groups() if w77 else None, s77, d77.group(1) if d77 else None, hits,
+           # 6A, THE ANIMATION (`sub_421370`): each gunman's current clip - his
+           # action's, type 10 for the gallery's three (action 3) - advanced by
+           # the frame delta from 1.0 and wrapped to dt + 1.0 at its 19 frames;
+           # 77's starts at 1.0 when his turn clip hands back (`sub_421A20(+12)`)
+           re.findall(r"^frame (\d+): actor (\d+) VIR_FN - current clip \(sub_421370\): "
+                      r"type (\d+) slot (\d+), (\d+) frames, looped to (\S+)$", out, re.M),
+           (lambda m: m.groups() if m else None)(
+               re.search(r"^frame (\d+): actor 77 BRA_FN - current clip \(sub_421370\): "
+                         r"type (\d+) slot (\d+), (\d+) frames", sm, re.M)))
     # the bolts aim at his ROOT MESH, the pelvis - +244..+252 is the root
     # node's position (`sub_4800C0`, the brain's edge walk) - so the first ones
     # rise to him (pitch 6.3) where they fell toward his feet (pitch 0.2)
     want = ([("4", "237", "766", "DBWAVER", "2", "2", "10.0", "7"),
              ("4", "240", "772", "HEXAGUN", "3", "3", "4.0", "5")],
             {"237": (4, 14, 24, 34, 44), "240": tuple(range(4, 48, 4))},
-            ("0.502 -0.110 -0.858", "30.3", "6.3", "the tir node", "41 67 34"),
+            # (with 6A the hand holding the gun ANIMATES, so the tir node rides
+            # the clip's frame: -0.110 / 6.3 on its first frame held still)
+            ("0.502 -0.107 -0.858", "30.3", "6.2", "the tir node", "41 67 34"),
             True, 0, 7, "347",
             ("394", "32", "25", "-7.20", "0.0"), ("418", "187.2"),
             ("WAVER", "1", "1", "15.0", "5"), (418, 433, 448, 463, 478, 493),
             "-0.140 -0.094 0.986",
+            # (with 6A his muzzle rides his animated hand, and the bolt of 465
+            # passes the player: the kill comes one bolt later)
             [("450", "damage 5, Body Shield 30 -> 4; health 10 -> 6, gauge 6 (property 1 "
                      "stored 6); message 0 to the hurt handler"),
-             ("465", "damage 5, Body Shield 30 -> 4; health 6 -> 2, gauge 2 (property 1 "
+             ("480", "damage 5, Body Shield 30 -> 4; health 6 -> 2, gauge 2 (property 1 "
                      "stored 2); message 0 to the hurt handler"),
-             ("480", "damage 5, Body Shield 30 -> 4; health 2 -> -2 - KILLED: the death "
-                     "`sub_423FC0` is not ported, he plays on; the gauge stays at 2"),
-             ("495", "he is down already (health -2): nothing")])
+             ("495", "damage 5, Body Shield 30 -> 4; health 2 -> -2 - KILLED: the death "
+                     "`sub_423FC0` is not ported, he plays on; the gauge stays at 2")],
+            [("21", "237", "10", "3", "19", "2.0"), ("21", "238", "10", "3", "19", "2.0"),
+             ("22", "240", "10", "3", "19", "2.0")],
+            ("435", "10", "3", "19"))
     return got, want, (
         "the gallery's two gunmen resolve their held weapons through the others' table, fire "
         "on the brain's first outcome 1 and every RATE frames after, the first bolt aimed "

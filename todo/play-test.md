@@ -403,6 +403,14 @@ ever reacting until they see you. (Played 2026-09-10: *"Ok, good"*; 5
 robbers alerted in the session. Fixed after: robbers standing off the grid
 were never alerted - their floor was misread.)
 
+**Reported in play 2026-09-11, *"Outside the appearance events, ennemies have
+no animation and do not move"* - the ANIMATION half is fixed:** between his
+entrance and his death a robber now plays his action's clip on a loop (the
+aim stance, 19 frames in the supermarket's library) where he stood frozen on
+its first frame. Wrong looks like: a robber still rigid, or one twitching back
+to his first pose every second. He still does NOT WALK - that is the larger
+half, planned in `todo/shoot-mode.md` §8 item 6B.
+
 **NOT YET PLAYED (2026-09-11): THE GUNMEN FIRE - and turn round to do it.**
 In the supermarket the robber nearest the entrance (actor 77) starts with
 you behind him: he should turn round on his own clip over about a second as
