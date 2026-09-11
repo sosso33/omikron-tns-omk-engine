@@ -1562,7 +1562,27 @@ forget to plan it."* The session's own log agrees with the gate: 245 latches
      order: read those three and whatever fills the cell targets, then wire
      `Shoot_Think` and the grid heading, then the edges states 1/2 walk -
      with the clip root motion `sub_421370` applies (not ported in A) moving
-     the body while a walk clip plays. Shown to fail: the player's body left out of the
+     the body while a walk clip plays.
+     **THE PATH-FINDER, read 2026-09-11: a distance field toward the PLAYER.**
+     `sub_436260(floor, x, z)` (10_dsound.c 1234) seeds a breadth-first search
+     at a cell: two byte grids at `dword_52BA40[2]`, the back one cleared to
+     0xFF with the seed cell 0, a ring-buffer queue of (x, z) byte pairs at
+     `byte_52BA60`, and `dword_52C3F0` flipped to the OTHER grid - the last
+     finished field, which is what everyone reads. `sub_436350` expands it: four
+     neighbours per popped cell, a neighbour entered only if its floor byte is
+     NOT in {0, 2, 3, -128} - the same refusal set the walking state tests -
+     and only to lower its distance; it returns true when the search is done.
+     `Shoot_TickPlayer` (05_sys.c 7519) restarts it at the PLAYER's cell when
+     his floor changes or `dword_907DCC` is set, runs a step every tick, and
+     restarts it again the moment one completes - so the field follows him
+     continuously. `sub_435C40(floor, x, z)` - behind `sub_421CD0` - reads it:
+     the neighbour with the smallest distance (ties by `rand() & 1`) as a
+     heading 0 / 90 / 180 / 270, -1 unreachable; `sub_435E90` is the 204-line
+     variant with an out-parameter (`rec+104`), unread. `sub_435900` is "am I
+     there": within one cell size of the node on x and z. `sub_421020` picks,
+     among up to four actor ids at `actor+112`, the nearest in property 21's
+     range - not yet placed. Still unread: the EDGE at the record's `+4` that
+     states 1/2 walk (`from`/`to` floats at +4..+24) and who hands it over. Shown to fail: the player's body left out of the
    sweep, the killing hit writing the gauge, and the aim put back at the feet
    each turn `engine: shoot gunfire` red.
 5. ~~**THE MOUSE LOOK.**~~ **PORTED 2026-09-10, CONFIRMED IN PLAY** (*"Good"*). `sub_47D370` read whole:
