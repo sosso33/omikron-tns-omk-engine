@@ -109,6 +109,17 @@ public:
 
     std::uint32_t scale() const { return scale_; }
     const std::vector<Map2dFloor>& floors() const { return floors_; }
+    // THE RUNTIME STAMP: the engine writes its own loaded grid - `sub_435970
+    // (floor, x, z, byte)`, 15 callers - most of them the 0x80 a gunman puts
+    // in his cell after he moves and the byte (record +189) put back before
+    // he thinks. Out of range is ignored.
+    void setCell(int floor, int x, int z, std::uint8_t v) {
+        if (floor < 0 || floor >= static_cast<int>(floors_.size())) return;
+        Map2dFloor& f = floors_[static_cast<std::size_t>(floor)];
+        if (x < 0 || z < 0 || static_cast<std::uint32_t>(x) >= f.w ||
+            static_cast<std::uint32_t>(z) >= f.h) return;
+        f.cells[static_cast<std::size_t>(z) * f.w + static_cast<std::size_t>(x)] = v;
+    }
 
     // `sub_435020`. -> the floor index, or -1. `exclude` skips one floor.
     int floorAt(float x, float y, float z, int exclude = -1) const;

@@ -121,6 +121,184 @@ int shootWallTest(ShootRecord& r, const Map2d& map, float x0, float z0, float dx
     return 0;
 }
 
+void ShootField::seed(const Map2d& map, int floor, int cx, int cz) {
+    // `if (a1 != -1)`
+    if (floor < 0 || floor >= static_cast<int>(map.floors().size())) return;
+    const Map2dFloor& f = map.floors()[static_cast<std::size_t>(floor)];
+    // `LOBYTE(dword_52BA48) = u8(v5, 24); LOBYTE(dword_52BA38) = u8(v5, 28)`
+    w_ = static_cast<int>(f.w & 0xFFu);
+    h_ = static_cast<int>(f.h & 0xFFu);
+    const std::size_t n = static_cast<std::size_t>(w_) * static_cast<std::size_t>(h_);
+    for (auto& g : grid_)
+        if (g.size() < n) g.resize(n, 0xFF);
+    // `v6 = dword_52BA40[v4]; memset(v6, 0xFF, w*h)` - the grid to build
+    build_ = next_;
+    std::fill(grid_[build_].begin(), grid_[build_].begin() + static_cast<std::ptrdiff_t>(n),
+              std::uint8_t{0xFF});
+    gridFloor_[build_] = floor;                 // `byte_52B968[v4] = a1`
+    next_ = (build_ - 1) & 1;                   // `dword_52BA58 = (v4 - 1) & 1`
+    read_ = next_;                              // `dword_52C3F0 = dword_52BA40[dword_52BA58]`
+    // the queue: the seed as its first pair, read at 0, written at 2
+    queue_.assign(2048, 0);
+    queue_[0] = static_cast<std::uint8_t>(cx);
+    queue_[1] = static_cast<std::uint8_t>(cz);
+    rd_ = 0;
+    wr_ = 2;
+    wrapped_ = false;
+    const std::size_t c = static_cast<std::size_t>(cx) + static_cast<std::size_t>(w_) *
+                          static_cast<std::size_t>(cz);
+    if (c < n) grid_[build_][c] = 0;
+    floor_ = floor;
+    seeded_ = true;
+}
+
+bool ShootField::expand(const Map2d& map) {
+    if (!seeded_ || floor_ < 0 || floor_ >= static_cast<int>(map.floors().size())) return false;
+    // `dword_52BA50 = dword_907DE0[a1]` - the floor's LIVE cells, stamps and all
+    const Map2dFloor& f = map.floors()[static_cast<std::size_t>(floor_)];
+    std::vector<std::uint8_t>& g = grid_[build_];
+    const int w = w_;
+    const std::size_t qEnd = queue_.size();
+    auto refused = [&](int idx) {
+        if (idx < 0 || static_cast<std::size_t>(idx) >= f.cells.size()) return true;
+        const auto b = static_cast<signed char>(f.cells[static_cast<std::size_t>(idx)]);
+        return b == 0 || b == 2 || b == 3 || b == -128;
+    };
+    std::size_t wr = wr_;
+    auto push = [&](int nx, int nz) {
+        queue_[wr] = static_cast<std::uint8_t>(nx);
+        queue_[wr + 1] = static_cast<std::uint8_t>(nz);
+        wr += 2;
+        if (wr == qEnd) { wr = 0; wrapped_ = true; }
+    };
+    int v27 = 0;
+    for (;;) {
+        const int x = queue_[rd_], z = queue_[rd_ + 1];
+        rd_ += 2;
+        if (rd_ == qEnd) { rd_ = 0; wrapped_ = false; }
+        const int c = w * z + x;
+        const std::uint8_t val = (c >= 0 && static_cast<std::size_t>(c) < g.size())
+                               ? g[static_cast<std::size_t>(c)] : std::uint8_t{0xFE};
+        const std::uint8_t v6 = static_cast<std::uint8_t>(val + 1);
+        if (val == 0xFE) break;                 // saturated: the search stops
+        auto enter = [&](int nx, int nz) {
+            const int idx = w * nz + nx;
+            if (refused(idx)) return;
+            if (static_cast<std::size_t>(idx) < g.size() && g[static_cast<std::size_t>(idx)] > v6) {
+                g[static_cast<std::size_t>(idx)] = v6;
+                push(nx, nz);
+            }
+        };
+        // the four in the engine's order: x-1, x+1 (z inside), then z+1, z-1
+        if (x - 1 >= 0 && x - 1 < w && z < h_) enter(x - 1, z);
+        if (x + 1 >= 0 && x + 1 < w && z < h_) enter(x + 1, z);
+        if (x < w && z + 1 >= 0 && z + 1 < h_) enter(x, z + 1);
+        if (x < w && z - 1 >= 0 && z - 1 < h_) enter(x, z - 1);
+        // the queue ran dry
+        if (wrapped_) { if (wr >= rd_) break; }
+        else if (wr <= rd_) break;
+        if (++v27 >= 100) break;
+    }
+    wr_ = wr;
+    return v27 != 100;
+}
+
+std::uint8_t ShootField::distance(int x, int z) const {
+    if (read_ < 0 || x < 0 || z < 0 || x >= w_ || z >= h_) return 0xFF;
+    const std::size_t i = static_cast<std::size_t>(x) + static_cast<std::size_t>(w_) *
+                          static_cast<std::size_t>(z);
+    const auto& g = grid_[read_];
+    return i < g.size() ? g[i] : std::uint8_t{0xFF};
+}
+
+int ShootField::heading(const Map2d& map, int floor, int x, int z,
+                        const std::function<int()>& rnd) const {
+    if (read_ < 0) return -1;                   // `if (!dword_52C3F0) return -1`
+    // (the engine indexes the floor table with whatever it is handed; off
+    // every floor there is nothing to index, so the port refuses)
+    if (floor < 0 || floor >= static_cast<int>(map.floors().size())) return -1;
+    const Map2dFloor& f = map.floors()[static_cast<std::size_t>(floor)];
+    // THE ROBBER'S FLOOR's dimensions against the read grid, whichever floor
+    // that was built for - the engine does not check, and neither does this
+    const int W = static_cast<int>(f.w), H = static_cast<int>(f.h);
+    const int S = static_cast<int>(f.w & 0xFFu);   // `v23 = u8(v4, 24)`, the stride
+    const auto& g = grid_[read_];
+    auto at = [&](int xx, int zz) -> std::uint8_t {
+        const long long i = static_cast<long long>(xx) + static_cast<long long>(zz) * S;
+        return (i >= 0 && static_cast<std::size_t>(i) < g.size()) ? g[static_cast<std::size_t>(i)]
+                                                                  : std::uint8_t{0xFF};
+    };
+    std::uint8_t v3 = 0xFF;
+    int dir = -1;
+    if (x - 1 >= 0 && x - 1 < W && z >= 0 && z < H && at(x - 1, z) != 0xFF) {
+        v3 = at(x - 1, z);
+        dir = 270;
+    }
+    if (x + 1 >= 0 && x + 1 < W && z >= 0 && z < H) {
+        const std::uint8_t v = at(x + 1, z);
+        // `(v == v3 && rand() & 1) || v < v3` - the draw only on a tie
+        if (v <= v3 && ((v == v3 && rnd && (rnd() & 1) != 0) || v < v3)) {
+            v3 = v;
+            dir = 90;
+        }
+    }
+    if (x >= 0 && x < W && z - 1 >= 0 && z - 1 < H && at(x, z - 1) < v3) { v3 = at(x, z - 1); dir = 0; }
+    if (x >= 0 && x < W && z + 1 >= 0 && z + 1 < H && at(x, z + 1) < v3) { v3 = at(x, z + 1); dir = 180; }
+    if (x - 1 >= 0 && x - 1 < W && z - 1 >= 0 && z - 1 < H && at(x - 1, z - 1) < v3) {
+        v3 = at(x - 1, z - 1);
+        dir = 315;
+    }
+    if (x + 1 >= 0) {
+        if (x + 1 < W && z - 1 >= 0 && z - 1 < H && at(x + 1, z - 1) < v3) {
+            v3 = at(x + 1, z - 1);
+            dir = 45;
+        }
+        if (x + 1 < W && z + 1 >= 0 && z + 1 < H && at(x + 1, z + 1) < v3) {
+            v3 = at(x + 1, z + 1);
+            dir = 135;
+        }
+    }
+    if (x - 1 >= 0 && x - 1 < W && z + 1 >= 0 && z + 1 < H && at(x - 1, z + 1) < v3) return 225;
+    return dir;
+}
+
+bool shootGridTurn(ShootRecord& r, int heading, float& eulerY, float dt,
+                   const std::function<int()>& rnd, ShootStep& out) {
+    if (heading == -1) return false;
+    r.flags |= 0x200u;                          // `BYTE1(v6) |= 2u`
+    const float v20 = static_cast<float>(heading);
+    double v7 = static_cast<double>(heading) - static_cast<double>(eulerY);
+    if (v7 < 180.0) { if (v7 <= -180.0) v7 = v7 - -360.0; }
+    else v7 = v7 - 360.0;
+    auto clip = [&](int type, float total, float rate) {
+        out.clipType = type;
+        out.turnClip = type;
+        out.turnTotal = total;
+        out.turnRate = rate;
+    };
+    if (v7 < 0.0) {
+        if (v7 > -5.0) { eulerY = v20; return true; }
+        if (v7 <= -90.0) {
+            if (v7 > -160.0) { clip(30, -90.0f, -5.0f); return true; }
+            if (rnd) rnd();                     // drawn and discarded
+            clip(32, -180.0f, 10.0f);
+            return true;
+        }
+        eulerY = static_cast<float>(v7 * 0.16666667 * dt + eulerY);   // LABEL_23
+        return true;
+    }
+    if (v7 <= 0.0) return true;
+    if (v7 < 5.0) { eulerY = v20; return true; }
+    if (v7 < 90.0) { eulerY = static_cast<float>(v7 * 0.16666667 * dt + eulerY); return true; }
+    if (v7 >= 160.0) {
+        if (rnd) rnd();                         // drawn and discarded
+        clip(32, -180.0f, 10.0f);
+        return true;
+    }
+    clip(31, 90.0f, 5.0f);
+    return true;
+}
+
 const char* charTypeName(int type) {
     return (type >= 0 && type < kCharTypeCount) ? kTypeNames[type] : "";
 }
@@ -587,8 +765,12 @@ ShootStep shootGenericStep(ShootRecord& r, const ShootFrameIn& in, float& eulerY
             out.outcome = ShootOutcome::Fire;
             turned = true;
         } else if (!(r.flags & 0x100u)) {
-            // `sub_421CD0` says hold, and then nothing happens at all
-            if (!in.holdStill) turned = true;
+            // `sub_421CD0` says hold, and then nothing happens at all - it
+            // has turned him along the path field itself (`shootGridTurn`)
+            const bool hold = in.gridHeading
+                ? shootGridTurn(r, in.gridHeading(), eulerY, in.dt, in.rand, out)
+                : in.holdStill;
+            if (!hold) turned = true;
         } else {
             r.flags |= 0x200u;
             turned = true;

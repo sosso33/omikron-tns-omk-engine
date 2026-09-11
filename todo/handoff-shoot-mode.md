@@ -121,6 +121,15 @@ Played again: the push walked him OUT OF THE LEVEL - `nudge` placed it with a
 teleport, where the engine's `Actor_ApplyMotion` sweeps everything since the
 last safe position, push included, through `Actor_Move`. Swept now; robbers
 can pin him to a wall, not push him through one.
+**THE STEERING IS PORTED** (B3): `sub_421CD0`'s grid turn over the path field
+(`sub_436260`/`sub_436350`/`sub_435C40`, seeded at the player's pelvis cell)
+and the gunmen's 0x80 cell stamps. It steers only a robber who cannot fire -
+the hub's first arm takes the others straight at the player. **What stops a
+robber with a clear shot is READ and not ported**: `sub_424DE0` asks
+`Shoot_ActorAction(him, 0, 0)` - ACTION 0 - on the hub's timer and on its fire
+arms (05_sys.c 5846, 5997, 6111, 6133, 6172). The port passes the scene's
+action as the "default" (a misread: `a2` is the actor) and never applies
+`out.clipType`, so a robber never leaves his walking clip. The next step.
 
 **FIRING IS CONNECTED (2026-09-10, `todo/shoot-mode.md` §7h/§7i)** — and the
 chain this section used to give was wrong in two places, both found by reading

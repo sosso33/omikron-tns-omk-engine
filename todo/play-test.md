@@ -449,7 +449,18 @@ you. EXPECTED, and the path-finder's to fix: two robbers can shove you a long
 way across the room. (Played: *"they kept pushing me to the point I finished
 outside the environnement"* - fixed: the push is now swept against the walls
 as the engine sweeps it, so they can pin you to a wall but not push you
-through one. Wrong looks like: ending outside the level again.) Wrong looks like: being thrown far in one frame, or
+through one. Wrong looks like: ending outside the level again.)
+
+**NOT YET PLAYED (2026-09-11): THE ROBBERS STEER.** A robber who cannot shoot
+you - out of sight or out of range - now follows the floor's own path toward
+you, around shelves and walls and around the other robbers (each one's spot
+is blocked to the others), turning smoothly or on a turn animation for a
+sharp corner. Hide behind a shelf and watch one come round it. EXPECTED and
+not a fault yet: a robber who CAN shoot you still walks straight at you while
+he fires - the original switches him to his action 0 when he fires, which
+this port does not do yet (read, and the next step). Wrong looks
+like: a robber spinning in place, walking away from you, or two robbers
+standing inside each other. Wrong looks like: being thrown far in one frame, or
 pushed by an empty spot - a dead robber's body still pushes, since nothing
 the engine was read doing removes it.)
 

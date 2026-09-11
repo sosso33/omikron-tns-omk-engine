@@ -61,6 +61,7 @@
 #pragma once
 
 #include <cstdint>
+#include <functional>
 #include <string>
 #include <vector>
 
@@ -126,6 +127,8 @@ struct ShootRecord {
     // last put him; `sub_4246E0` and the death arm read it as one). -1 is the
     // PLAYER's (`Shoot_Enter`); a gunman's record starts at 0, memset.
     int   node       = -1;                   // +188  his floor (see above)
+    std::uint8_t cellSaved = 0;              // +189  the byte his 0x80 stamp covers
+    bool  cellStamped = false;               // (this port's: whether the stamp is down)
     int   band       = 0;                    // +190  0 none, 1 wounded, 2 crit
 
     // ---- THE GEOMETRY (`todo/shoot-mode.md` 5c, 7a) --------------------
@@ -186,6 +189,58 @@ class Map2d;   // formats/map2d.h
 // `sub_421370` two (the current clip's).
 int shootWallTest(ShootRecord& r, const Map2d& map, float x0, float z0, float dx, float dz,
                   int steps, float snap[2]);
+
+// ---- THE PATH FIELD (2026-09-11, a reader: "continue to the robbers'
+// steering") -------------------------------------------------------------
+// `sub_436260` / `sub_436350` / `sub_435C40` (readable 10_dsound.c 1202 /
+// 1242 / 883): a breadth-first DISTANCE field over one floor's grid, seeded
+// at the PLAYER's cell by `Shoot_TickPlayer` (05_sys.c 7519) whenever his
+// floor changes, grown 100 cells a tick and reseeded the moment it runs dry -
+// so it follows him. Two grids: the one being built and the last one
+// finished, which is the one everybody reads. A cell is entered only if its
+// LIVE floor byte - the gunmen's 0x80 stamps included - is not in {0, 2, 3,
+// 0x80}, and only to lower its distance; distances saturate at 254 (a cell
+// at 0xFE stops the search). The queue is the engine's ring of 1024 byte
+// pairs, with its wrap flag, and so is its end test.
+class ShootField {
+public:
+    void seed(const Map2d& map, int floor, int cx, int cz);        // sub_436260
+    bool expand(const Map2d& map);                                 // sub_436350: true = ran dry
+    // sub_435C40: the heading downhill from cell (cx, cz), read with FLOOR's
+    // dimensions: 270 x-1, 90 x+1, 0 z-1, 180 z+1, then the diagonals 315,
+    // 45, 135, 225 - the first set unconditionally when not 0xFF, the x+1
+    // one on a TIE by `rand() & 1`, the rest only when strictly lower. -1 none
+    int  heading(const Map2d& map, int floor, int cx, int cz,
+                 const std::function<int()>& rnd) const;
+    bool seeded() const { return seeded_; }
+    int  floor() const { return floor_; }
+    // the READ grid's distance at (x, z) with this field's stride, 0xFF out
+    std::uint8_t distance(int x, int z) const;
+private:
+    std::vector<std::uint8_t> grid_[2];   // dword_52BA40[2] - 0xFF when allocated (LABELLED)
+    int gridFloor_[2] = {-1, -1};         // byte_52B968[2]
+    int next_  = 0;                       // dword_52BA58
+    int build_ = 0;                       // dword_52B96C: the grid being built
+    int read_  = -1;                      // dword_52C3F0: -1 before the first seed
+    int floor_ = -1;
+    int w_ = 0, h_ = 0;                   // dword_52BA48 / dword_52BA38, as BYTES
+    std::vector<std::uint8_t> queue_;     // byte_52BA60 .. dword_52C260
+    std::size_t rd_ = 0, wr_ = 0;         // dword_52C3FC / dword_52C3F4
+    bool wrapped_ = false;                // dword_52BA5C
+    bool seeded_ = false;
+};
+
+// `sub_421CD0(him, rec, 1)` (05_sys.c 3177): the hub's middle arm. With no
+// heading it returns false and the hub turns him toward the target as
+// before. With one it raises +160 0x200 - which also keeps the wall slides
+// off his facing - and TURNS HIM ALONG THE FIELD: within 5 degrees it snaps;
+// under 90 it closes a sixth of the gap per frame; 90..160 picks a type-31
+// (right) or type-30 (left) clip; 160 and over draws and discards a `rand()`
+// and picks type 32 - the clips through `out.turnClip`, with the fallback
+// rates snapToClip uses. -> true: the hub then does nothing else.
+struct ShootStep;
+bool shootGridTurn(ShootRecord& r, int heading, float& eulerY, float dt,
+                   const std::function<int()>& rnd, ShootStep& out);
 
 // What `sub_420C70` leaves behind for `sub_420EB0` to read rather than
 // recompute. The engine keeps them in four globals; naming them is the whole
@@ -340,6 +395,14 @@ struct ShootFrameIn {
     // decides whether its middle arm does anything at all.
     bool  canFire = false;
     bool  holdStill = false;          // `sub_421CD0(actor, rec, 1)` was true
+    // ...and now READ (2026-09-11): when this is set the hub's middle arm
+    // calls it for real, LAZILY, as the engine does - so the heading's
+    // tie-break `rand()` is drawn only on the ticks that reach the arm - and
+    // `holdStill` is ignored. It is `sub_435C40` over the path field at his
+    // floor and cell (`ShootField::heading`), -1 for none.
+    std::function<int()> gridHeading;
+    // the CRT's `rand()`, for the draws the brain makes itself
+    std::function<int()> rand;
     int   scriptStep = 0;             // record `+144`, tested against 8
     // state 15's two: the grid line of sight (`sub_4359A0`, which the port
     // HAS - `Map2d::lineOfSight`) and whether the target is still alive.

@@ -1713,6 +1713,54 @@ forget to plan it."* The session's own log agrees with the gate: 245 latches
         single frame (240, frame 130 at yaw 258) - the per-mesh sphere list is
         this port's reading of the model's `+244` list (docs/STREET_LIFE.md 3),
         whose own four 10.9 spheres would overlap far less.
+   * **B3, THE STEERING - ported 2026-09-11** (a reader: *"continue to the
+     robbers' steering"*). `sub_421CD0` (05_sys.c 3177) read whole: the hub's
+     middle arm asks `sub_435C40` for the path field's downhill heading at his
+     floor and cell; none (-1) -> false, and the hub turns him at the target as
+     before; one -> +160 |= 0x200 (which also keeps the wall slides off his
+     facing) and he is TURNED ALONG THE FIELD - within 5 degrees a snap, under
+     90 a sixth of the gap a frame, 90..160 a type-31 / type-30 clip, 160 and
+     over a discarded `rand()` and type 32 - and it returns true, the hub's
+     "hold". The field is `sub_436260` / `sub_436350` (the BFS already read,
+     ported exactly: two grids, the finished one read, 100 pops a tick over
+     the engine's 1024-pair ring, distances saturating at 254) seeded at the
+     PLAYER's cell by `Shoot_TickPlayer` - at his PELVIS (+244..252), since
+     at his feet the supermarket's player stands on its grid's upper bound
+     and `floorAt` finds nothing. The heading reads the field with the
+     ROBBER's floor's dimensions, as the engine does, and draws `rand() & 1`
+     only on the x+1 tie. The OCCUPANCY is ported with it: each gunman's cell
+     stamped 0x80 after his tick (`sub_420B80`, `sub_421770`'s tail) and the
+     saved byte (+189) put back at his prologue (`sub_424DE0` 5456), so the
+     field and every other gunman's wall test route around him.
+     `omk::ShootField`, `omk::shootGridTurn`, `Map2d::setCell`;
+     `verify.py: shoot fire` (`path field:`, `grid turn:`).
+     **Measured**: the gallery's field runs dry 5 ticks after its seed at the
+     player's cell (17,21); 238 steers from (22,36) at heading 45, 240 from
+     (25,31). **LABELLED**: the player's cell is `cellAt` on the floor
+     `floorAt` finds (the engine's `Shoot_Think`, and `sub_4368E0` when that
+     refuses - unread); a gunman's cell is taken the first tick his drawn
+     position lands on the grid, and until then he gets no heading (the
+     engine's is written at `Shoot_ActorEnter`); both grids start 0xFF; the
+     door arm `sub_47C1B0` and the byte-1 memo at rec+72/76 are not ported.
+     **WHAT IT DOES NOT CHANGE, and it is the next question**: a robber who
+     has the player in sight and in range never reaches the middle arm - the
+     hub's FIRST arm turns him at the target and fires - so he still walks
+     straight at the player on his action's clip (the supermarket's 77 never
+     steers). The grid steers only those who cannot shoot.
+     **WHAT STOPS A ROBBER WITH A CLEAR SHOT - read 2026-09-11, NOT PORTED,
+     the next step.** `sub_424DE0` puts him on ACTION 0: the hub's timer tail
+     (05_sys.c 5997: `+168 -= dt; if (<= 0) Shoot_ActorAction(him, 0, 0)`) and
+     the epilogue's fire / target arms (5846, 6111, 6133, 6172: `if (+144 ==
+     8) flags &= ~0x20; else if (!(flags & 0x4000)) Shoot_ActorAction(him, 0,
+     0)`) all ask for action 0 - so a robber who fires is taken off his walking
+     action. The port misread this twice: `ShootFrameIn::defaultClipType` is
+     documented as "`a2`, the action the caller asked for" and play.cpp passes
+     the scene's action (3, the walking fight clip) - but `sub_424DE0`'s `a2`
+     is the ACTOR and the action is the literal 0; and `out.clipType` is never
+     applied at all (`Shoot_ActorAction`, 05_sys.c 3938, 363 lines, unread past
+     its head: with flag 8 up it only PARKS the request at +152/+132 for when
+     the picked clip ends, `sub_424DE0` 5497). What action 0's clip is has not
+     been checked against the action rows.
      **THE PATH-FINDER, read 2026-09-11: a distance field toward the PLAYER.**
      `sub_436260(floor, x, z)` (10_dsound.c 1234) seeds a breadth-first search
      at a cell: two byte grids at `dword_52BA40[2]`, the back one cleared to

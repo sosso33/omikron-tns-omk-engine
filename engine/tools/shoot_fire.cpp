@@ -580,6 +580,60 @@ int main(int argc, char** argv) {
                 std::printf("wall test: SMARKET1.MPT not read\n");
             }
         }
+        // THE PATH FIELD (`sub_436260` / `sub_436350` / `sub_435C40`) on the
+        // same floor: seeded at the first free cell, grown 100 cells a call
+        // until it runs dry, then - once reseeded, which is what makes it the
+        // READ grid - the heading from a free cell two steps along +x back
+        // toward the seed; and the grid TURN (`sub_421CD0`) from facing 0
+        // across its bands.
+        {
+            omk::Map2d mp;
+            const auto raw = fs.read("MAP2D/SMARKET1.MPT");
+            if (!raw.empty() && mp.load(raw) && !mp.floors().empty()) {
+                const auto& f = mp.floors()[0];
+                int sx = -1, sz = -1;
+                for (int z = 1; z + 1 < static_cast<int>(f.h) && sx < 0; ++z)
+                    for (int x = 1; x + 3 < static_cast<int>(f.w); ++x)
+                        if (!omk::Map2d::blockedValue(f.cell(x, z)) &&
+                            !omk::Map2d::blockedValue(f.cell(x + 1, z)) &&
+                            !omk::Map2d::blockedValue(f.cell(x + 2, z))) { sx = x; sz = z; break; }
+                omk::ShootField fld;
+                fld.seed(mp, 0, sx, sz);
+                int calls = 1;
+                while (!fld.expand(mp) && calls < 1000) ++calls;
+                fld.seed(mp, 0, sx, sz);             // the finished grid becomes the read one
+                int reached = 0, far = 0;
+                for (int z = 0; z < static_cast<int>(f.h); ++z)
+                    for (int x = 0; x < static_cast<int>(f.w); ++x) {
+                        const int d = fld.distance(x, z);
+                        if (d != 0xFF) { ++reached; if (d > far) far = d; }
+                    }
+                int draws = 0;
+                const std::function<int()> rnd = [&]() { ++draws; return 1; };
+                const int back = fld.heading(mp, 0, sx + 2, sz, rnd);
+                const int drawsHeading = draws;
+                std::printf("path field: seeded at (%d,%d), dry after %d calls, %d cells reached, "
+                            "farthest %d; heading from (%d,%d) %d (distance %d there), %d draws\n",
+                            sx, sz, calls, reached, far, sx + 2, sz, back,
+                            int(fld.distance(sx + 2, sz)), drawsHeading);
+                std::string turns;
+                for (const int h : {3, 45, 90, 180, 270, -1}) {
+                    omk::ShootRecord r;
+                    omk::ShootStep st;
+                    float yaw = 0.0f;
+                    draws = 0;
+                    const bool hold = omk::shootGridTurn(r, h, yaw, 1.0f, rnd, st);
+                    char b[96];
+                    std::snprintf(b, sizeof b, "%s%d -> hold %d facing %.2f clip %d draws %d 0x200 %d",
+                                  turns.empty() ? "" : "; ", h, int(hold), double(yaw), st.turnClip,
+                                  draws, int((r.flags & 0x200u) != 0));
+                    turns += b;
+                }
+                std::printf("grid turn: %s\n", turns.c_str());
+            } else {
+                std::printf("path field: SMARKET1.MPT not read\n");
+            }
+        }
         const auto g = fs.read("IAM/GLOBAL");
         const auto objs = omk::loadObjects(fs);
         if (g.size() < 62 || objs.empty()) { std::printf("weapons: not read\n"); return 0; }

@@ -3891,6 +3891,8 @@ int main(int argc, char** argv) {
     omk::HudBar hudBar;                  // `Hud_DrawBar` mode 0, the health gauge
     omk::Radar radar;                    // 0x42F000, screen 34's minimap
     omk::Map2d shootMap;                 // MAP2D\<+106>.MPT - the noise's floors
+    omk::ShootField shootField;          // `sub_436260`'s distance field toward the player
+    std::set<int> gunCellSeeded;         // gunmen whose +136/+140 came off the grid
     // THE NOISE (`sub_4246E0`, `actor/shoot.h`): at a shot's muzzle, and where
     // a bolt stops on the world or on a body. Every gunman with a brain is a
     // record, tested in actor order (the engine's is slot order). His FLOOR
@@ -6202,6 +6204,60 @@ int main(int argc, char** argv) {
                 // old position straight back over it.
                 // (the placement itself is consumed above `if (adventure)`,
                 // whatever mode the frame is in - see there)
+                // THE PATH FIELD - `Shoot_TickPlayer` (05_sys.c 7519), which the
+                // player's tick runs before any gunman thinks: seeded at his cell
+                // when his floor changes, grown 100 cells a tick, and reseeded
+                // the moment it runs dry, so it follows him. LABELLED: his cell
+                // is `cellAt` on the floor `floorAt` finds under him; the engine
+                // takes `Shoot_Think`'s, and when that refuses the cell, one from
+                // `sub_4368E0` (unread).
+                if (shootMode && shootMap.valid()) {
+                    // his POSITION as the engine holds it, +244..252 - the root
+                    // node, the pelvis, as drawn last frame (the bolts' aim point
+                    // below) - and `pos()`, the feet, only until he has been. At
+                    // the feet the supermarket's player stands at y -89, exactly
+                    // on its grid's upper bound, and `floorAt` found no floor
+                    float pp[3] = {player->pos()[0], player->pos()[1], player->pos()[2]};
+                    for (std::size_t i = 0; i < playerMeshes.size(); ++i)
+                        if (playerMeshes[i].parent < 0) {
+                            if (playerMeshAtKnown && playerMeshAt.size() >= i * 3 + 3)
+                                for (int k = 0; k < 3; ++k) pp[k] = playerMeshAt[i * 3 + static_cast<std::size_t>(k)];
+                            break;
+                        }
+                    const int fl = shootMap.floorAt(pp[0], pp[1], pp[2], -1);
+                    int cx = 0, cz = 0;
+                    if (fl >= 0 && shootMap.cellAt(fl, pp[0], pp[2], cx, cz)) {
+                        static long fieldFrom = -1, fieldTold = -1;
+                        if (!shootField.seeded() || shootField.floor() != fl) {
+                            shootField.seed(shootMap, fl, cx, cz);
+                            if (fieldFrom < 0) fieldFrom = n;
+                        }
+                        if (shootField.expand(shootMap)) {
+                            if (fieldTold < 0) {
+                                fieldTold = n;
+                                std::printf("frame %ld: the path field (sub_436260 / sub_436350) ran "
+                                            "dry %ld ticks after it was seeded at the player's cell "
+                                            "(%d,%d) on floor %d\n", n, n - fieldFrom + 1, cx, cz, fl);
+                            }
+                            shootField.seed(shootMap, fl, cx, cz);
+                        }
+                    } else {
+                        // once: no floor of the grid under him, so no field
+                        static bool noFloorTold = false;
+                        if (!noFloorTold) {
+                            noFloorTold = true;
+                            std::printf("frame %ld: the path field has no floor under the player at "
+                                        "%.0f %.0f %.0f (floor %d); the grid's floors span y:", n,
+                                        double(pp[0]), double(pp[1]), double(pp[2]), fl);
+                            for (const auto& gf : shootMap.floors())
+                                std::printf(" [%.0f..%.0f x %.0f..%.0f z %.0f..%.0f]",
+                                            double(gf.bound[2]), double(gf.bound[3]),
+                                            double(gf.bound[0]), double(gf.bound[1]),
+                                            double(gf.bound[4]), double(gf.bound[5]));
+                            std::printf("\n");
+                        }
+                    }
+                }
                 // THE CROWD PUSH - `Actor_TickNpc`, before `Actor_ApplyMotion`:
                 // the spatial index's answer for his spheres, added to his
                 // position outright (docs/STREET_LIFE.md 3). The Session
@@ -8219,6 +8275,7 @@ int main(int argc, char** argv) {
                     // ...and the MAP2D grid of the same name (`Map2D_Load`),
                     // whose floors the NOISE reads (`sub_4246E0`)
                     shootMap = omk::Map2d{};
+                    shootField = omk::ShootField{};   // its field belongs to the old grid
                     if (!mp.empty() && shootMap.load(fs.read("MAP2D/" + mp + ".MPT")))
                         std::printf("frame %ld: MAP2D %s.MPT - %zu floors, cell %u\n", n,
                                     mp.c_str(), shootMap.floors().size(), shootMap.scale());
@@ -11002,6 +11059,16 @@ int main(int argc, char** argv) {
                     const auto deadIt = shootBrains.find(s.actor);
                     const bool shotDead = deadIt != shootBrains.end() &&
                                           (deadIt->second.flags & 8u) && deadIt->second.health <= 0;
+                    // THE OCCUPANCY, put back (`sub_424DE0`'s prologue, 05_sys.c
+                    // 5456): the byte his 0x80 stamp covered returns to his cell
+                    // before he thinks - so his own wall test and move see the
+                    // floor - and once he is dead nothing stamps it again
+                    if (deadIt != shootBrains.end() && deadIt->second.cellStamped && shootMap.valid()) {
+                        omk::ShootRecord& sr = deadIt->second;
+                        shootMap.setCell(static_cast<signed char>(sr.node & 0xFF), sr.destX, sr.destZ,
+                                         sr.cellSaved);
+                        sr.cellStamped = false;
+                    }
                     // ---- THE PICKED CLIP'S TICK: `sub_424DE0`'s prologue ----
                     //   if (flags & 8) { if (sub_421770(him, rec, ..)) return; ... }
                     // `sub_421770` (0x00421770): his frame `+188 += dt`, and
@@ -11088,6 +11155,21 @@ int main(int argc, char** argv) {
                                         it->second.coneCos, it->second.health);
                         }
                         omk::ShootRecord& rec = it->second;
+                        // ...and if he was not yet DRAWN when the record was made
+                        // (a brain built on the tick he is staged has no position
+                        // to find a cell from - 237 and 238 read cell (0,0)), the
+                        // cell is taken the first tick his position lands on the
+                        // grid. After that the wall test's free steps keep it.
+                        if (shootMap.valid() && gunCellSeeded.insert(s.actor).second) {
+                            const int fl = shootMap.floorAt(s.drawAt[0], s.drawAt[1], s.drawAt[2], -1);
+                            int cx = 0, cz = 0;
+                            if (fl >= 0 && shootMap.cellAt(fl, s.drawAt[0], s.drawAt[2], cx, cz)) {
+                                rec.destX = cx;
+                                rec.destZ = cz;
+                            } else {
+                                gunCellSeeded.erase(s.actor);   // try again next tick
+                            }
+                        }
                         const int before = rec.state;
                         omk::ShootFrameIn fin;
                         fin.self[0] = s.drawAt[0]; fin.self[1] = s.drawAt[1];
@@ -11100,6 +11182,34 @@ int main(int argc, char** argv) {
                         }
                         fin.dt = 1.0f;
                         fin.defaultClipType = act;
+                        // THE STEERING (`sub_421CD0`, read 2026-09-11): the hub's
+                        // middle arm turns him down the path field toward the
+                        // player. The heading, and the CRT draws the brain makes
+                        // itself, are handed in LAZILY - the engine reaches them
+                        // only on the ticks the arm runs, and the draws are the
+                        // same `rand()` the bolts' jitter comes from
+                        auto crt = [&]() {
+                            gunRandSeed = gunRandSeed * 214013u + 2531011u;
+                            return static_cast<int>((gunRandSeed >> 16) & 0x7FFFu);
+                        };
+                        fin.rand = crt;
+                        fin.gridHeading = [&]() {
+                            // (LABELLED: until his cell has come off the grid - see
+                            // above - he has no cell to read the field from, and
+                            // the port gives no heading; the engine's is written at
+                            // `Shoot_ActorEnter` and always there)
+                            if (!gunCellSeeded.count(s.actor)) return -1;
+                            const int h = shootField.heading(
+                                shootMap, static_cast<signed char>(rec.node & 0xFF), rec.destX,
+                                rec.destZ, crt);
+                            static std::set<int> steerTold;
+                            if (h >= 0 && steerTold.insert(s.actor).second)
+                                std::printf("frame %ld: actor %d %s - STEERS by the path field "
+                                            "(sub_421CD0 -> sub_435C40): heading %d from his cell "
+                                            "(%d,%d), facing %.1f\n", n, s.actor, s.model.c_str(), h,
+                                            rec.destX, rec.destZ, double(s.facing));
+                            return h;
+                        };
                         fin.targetAlive = true;
                         // the SIGHT half is real: the grid walk the port owns
                         fin.gridLineOfSight = true;
@@ -11595,6 +11705,24 @@ int main(int argc, char** argv) {
                                 if (s.facing < 0.0f) s.facing += 360.0f;
                                 if (s.facing >= 360.0f) s.facing -= 360.0f;
                             }
+                        }
+                    }
+                    // ...and after his tick his cell is STAMPED 0x80 (`sub_420B80`,
+                    // and `sub_421770`'s tail while a picked clip plays): every
+                    // other gunman's wall test and the path field refuse it, so
+                    // the gunmen walk around one another. NOT PORTED, labelled:
+                    // the door arm `sub_47C1B0` on a 0x10 cell and the byte-1
+                    // memo at rec+72/76.
+                    if (auto sb = shootBrains.find(s.actor);
+                        shootMode && !shotDead && sb != shootBrains.end() && shootMap.valid() &&
+                        sb->second.state != 2 && !sb->second.cellStamped) {
+                        omk::ShootRecord& sr = sb->second;
+                        const int fl = static_cast<signed char>(sr.node & 0xFF);
+                        if (fl >= 0 && fl < static_cast<int>(shootMap.floors().size())) {
+                            sr.cellSaved = shootMap.floors()[static_cast<std::size_t>(fl)]
+                                               .cell(sr.destX, sr.destZ);
+                            shootMap.setCell(fl, sr.destX, sr.destZ, omk::Map2d::kOccupied);
+                            sr.cellStamped = true;
                         }
                     }
                     if (act >= 0) {
