@@ -102,4 +102,17 @@ std::vector<CollisionSphere> collisionSpheresOf(const std::vector<Mesh>& meshes)
 // the count is not sane.
 std::vector<CollisionSphere> modelSweepSpheres(std::span<const std::byte> model);
 
+// THE PUSH'S SPHERES (2026-09-11, a reader: robbers "can stuck me in places I
+// can't get out"). `sub_45E390` and `sub_45E690` read the SAME list the sweep
+// does - `**(node + 40)`, count at +244, records at +248 - for the entry and
+// for the querying body alike (readable 19_dsound.c 5285): not the per-mesh
+// bounding spheres `collisionSpheresOf` gives, whose root sphere alone is
+// 42.5 (HO1_FN) to 44.4 (VIR_FN) across and jammed him between robbers. The
+// list is in the node's frame (the pelvis); this port keeps its push
+// positions as FLOOR points, so the list is HUNG FROM THE FEET - shifted so
+// its lowest sphere's bottom rests at y 0 - which is how the walker hangs the
+// same list for its sweep (for Kay'l that bottom, 41.81, is his pelvis-to-feet
+// height, 41.8). Empty when the model carries no list.
+std::vector<CollisionSphere> pushSpheresOf(std::span<const std::byte> model);
+
 }  // namespace omk

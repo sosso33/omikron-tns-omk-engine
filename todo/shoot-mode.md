@@ -1793,6 +1793,36 @@ forget to plan it."* The session's own log agrees with the gate: 245 latches
      port runs `shootEngage` before every step where the engine calls it from
      inside the arms, so it bounces every tick where the engine bounces every
      other; either way he holds the stance and fires.
+   * **B5, THE PUSH'S OWN SPHERES - ported 2026-09-11** (played: *"the robbers
+     continue to push and can stuck me in places I can't get out (probably
+     because of colliders being too close from each other), but they can't
+     push me outside the env"* - the second half CONFIRMED IN PLAY). The push
+     had used `collisionSpheresOf`, the per-mesh bounding spheres - a labelled
+     reading from the days when the model's list "was not traced back to a
+     writer" - and its root sphere alone is 42.5 (HO1_FN) to 44.4 (VIR_FN):
+     every body pushed like a ball ~90 units across. Read now: `sub_45E390`
+     takes its list through `**(node + 40)` - count at +244, records at +248 -
+     for the entry AND the querying body, and `sub_45E690` the same for an
+     instance (19_dsound.c 5285 / 5434): the very list `Actor_Move` sweeps
+     with and `modelSweepSpheres` already reads from the file. Four of radius
+     10.91 (HO1_FN, BRM_FN) / 11.56 (VIR_FN, BRA_FN) up the body, around the
+     node - and not off at the meshes' authored origin. `omk::pushSpheresOf`
+     hangs it from the feet, as the walker's sweep does (Kay'l's lowest bottom
+     41.81 against his pelvis-to-feet 41.8), so every push position stays the
+     floor point it was; `Session::modelSpheres` and the player's own list
+     take it, the per-mesh spheres only when a file has none. Measured: the
+     gallery's pushes fall to one, 4.60 3.87 from 237 at 61 where 237, 238 and
+     240 all pushed (8.72 -0.70 the first); `engine: crowd push` unchanged.
+     LABELLED: the feet-hung anchor stands in for the node's own height; the
+     reach box keeps the root radius (gunmen) and `meshes.front()` (the player
+     and the walkers). **A GUARD LOST, and owed**: the swept push (B2,
+     `154139d`) was asserted by `engine: shoot hit`'s route, where a push met a
+     wall at frame 104; with people-sized bodies no scripted fight here shoves
+     him into a wall (a stand against the gallery's east wall drew no robber
+     in 630 frames), so the assertion went with the route. The fix itself
+     stands - shown to fail by mutation at `154139d`, CONFIRMED IN PLAY - and
+     what re-establishes its check is a probe of `PlayerController::nudge`
+     against a wall (a `--nudge` step in `player_probe`, say).
      **THE PATH-FINDER, read 2026-09-11: a distance field toward the PLAYER.**
      `sub_436260(floor, x, z)` (10_dsound.c 1234) seeds a breadth-first search
      at a cell: two byte grids at `dword_52BA40[2]`, the back one cleared to

@@ -3630,7 +3630,11 @@ const std::vector<CollisionSphere>* Session::modelSpheres(const std::string& mod
         const auto d = fs.read("MESHES/PERSOS/" + model + ".3DO");
         if (const auto h = readHeader(d)) {
             const auto meshes = readMeshes(d, *h);
-            out = collisionSpheresOf(meshes);
+            // the model's OWN list, hung from the feet (`pushSpheresOf` -
+            // what `sub_45E390` / `sub_45E690` read); the per-mesh spheres
+            // only when the file carries none
+            out = pushSpheresOf(d);
+            if (out.empty()) out = collisionSpheresOf(meshes);
             if (!meshes.empty()) reach = meshes.front().radius;
         }
     }

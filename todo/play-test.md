@@ -449,7 +449,16 @@ you. EXPECTED, and the path-finder's to fix: two robbers can shove you a long
 way across the room. (Played: *"they kept pushing me to the point I finished
 outside the environnement"* - fixed: the push is now swept against the walls
 as the engine sweeps it, so they can pin you to a wall but not push you
-through one. Wrong looks like: ending outside the level again.)
+through one. Wrong looks like: ending outside the level again. **CONFIRMED IN
+PLAY 2026-09-11** - *"they can't push me outside the env"*. Still reported:
+*"the robbers continue to push and can stuck me in places I can't get out
+(probably because of colliders being too close from each other)"* - fixed
+the same day (todo/shoot-mode.md B5): the bodies now push with the model's
+own collision spheres, about a person wide, where they pushed like balls
+some 90 units across. Look for: robbers able to stand near you without
+boxing you in, and gaps between two robbers you can walk through. Wrong
+looks like: walking through a robber, or still being trapped where there is
+visibly room.)
 
 **NOT YET PLAYED (2026-09-11): THE ROBBERS STEER.** A robber who cannot shoot
 you - out of sight or out of range - now follows the floor's own path toward

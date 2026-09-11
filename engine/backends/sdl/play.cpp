@@ -5642,7 +5642,12 @@ int main(int argc, char** argv) {
                     playerRest.revision = ++worldGeoRev;
                     playerMeshes.clear();
                     if (const auto mh = omk::readHeader(md)) playerMeshes = omk::readMeshes(md, *mh);
-                    playerSpheres = omk::collisionSpheresOf(playerMeshes);
+                    // his PUSH spheres: the model's own list, hung from the feet
+                    // (`pushSpheresOf` - HO1_FN's four of 10.9), which is what
+                    // `sub_45E390` reads for the querying body too; the per-mesh
+                    // spheres (one 42.5 across the whole body) only if it has none
+                    playerSpheres = omk::pushSpheresOf(md);
+                    if (playerSpheres.empty()) playerSpheres = omk::collisionSpheresOf(playerMeshes);
                     playerReach = playerMeshes.empty() ? 0.0f : playerMeshes.front().radius;
                     playerTex = mt ? omk::textures(md, omk::DataFs::readPath(*mt))
                                    : std::vector<omk::Texture>{};
@@ -12554,7 +12559,11 @@ int main(int argc, char** argv) {
                 // VIR_FN is a 7-unit mesh and shut the box at 14 units.
                 if (shootMode && shootBrains.count(s.actor)) {
                     const float bodyAt[3] = {s.drawAt[0], off[1] + feet, s.drawAt[2]};
-                    const float bodyBase[3] = {pelvis[0], feet, pelvis[2]};
+                    // (since B5 his list is the model's own, already hung from
+                    // the feet by `Session::modelSpheres` - node-relative in x/z,
+                    // so nothing to re-hang: the base is the origin)
+                    const float bodyBase[3] = {0.0f, 0.0f, 0.0f};
+                    (void)pelvis;
                     const float bodyReach =
                         (s.mo->root >= 0 && static_cast<std::size_t>(s.mo->root) < s.mo->meshes.size())
                             ? s.mo->meshes[static_cast<std::size_t>(s.mo->root)].radius : 0.0f;

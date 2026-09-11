@@ -26277,23 +26277,26 @@ def c_engine_shoot_fire():
             # and stamp their cells, so the push walks him elsewhere: two bolts
             # meet 237, the rest the world after 1 and 6 frames, from eight
             # muzzle points)
-            # (and since THE ACTIONS the gunmen stop when their advance runs out
-            # and 240 never advances, so the pushes end sooner: one bolt meets
-            # 237, the rest the world after 2, 4 and 5 frames, from five points)
-            [2, 1, 4, 5, 5, 5, 5, 5],
-            [("HIT ACTOR 237", -2909, "124.8", "0"), ("hit the world", -3218, "624.0", "0"),
-             ("hit the world", -3217, "624.0", "0"), ("hit the world", -3161, "249.6", "0"),
-             ("hit the world", -3148, "499.2", "0")],
-            8, [("4853.6", "15143.6", "-2688.3"), ("4885.8", "15144.7", "-2674.9"),
-                ("4969.0", "15144.7", "-2707.4"), ("4996.4", "15144.7", "-2941.6"),
-                ("5050.8", "15144.7", "-2890.9")],
+            # (and since B5 the bodies push with the model's OWN spheres, four
+            # of ~11, so he is barely moved: his eight muzzle points stay within
+            # 45 units of where he stands; one bolt meets 237, the rest the world
+            # after 1 and 3 frames)
+            [2, 3, 3, 3, 1, 3, 3, 3],
+            [("HIT ACTOR 237", -2936, "124.8", "0"), ("hit the world", -3216, "374.4", "0"),
+             ("hit the world", -3188, "374.4", "0"), ("hit the world", -3186, "374.4", "0"),
+             ("hit the world", -3174, "374.4", "0"), ("hit the world", -3161, "249.6", "0")],
+            8, [("4996.4", "15144.7", "-2941.6"), ("5009.3", "15144.7", "-2921.5"),
+                ("5009.7", "15144.7", "-2922.6"), ("5021.3", "15144.7", "-2863.6"),
+                ("5021.8", "15144.7", "-2874.9"), ("5023.1", "15144.7", "-2898.8"),
+                ("5038.2", "15144.7", "-2875.2"), ("5040.1", "15144.7", "-2875.8")],
             list(range(37, 248, 30)),
             # (an impact sound for each bolt the WORLD stops, none for 237's)
-            [39, 101, 132, 162, 192, 222, 252],
+            [39, 70, 100, 130, 190, 220, 250],
             [("fire", "1", "687", "WAVER2.WAV", "1.00"),
-             ("impact", "3", "689", "WIMP1.WAV", "0.13"),
-             ("impact", "3", "689", "WIMP1.WAV", "0.14"),
-             ("impact", "3", "689", "WIMP1.WAV", "0.15"),
+             ("impact", "3", "689", "WIMP1.WAV", "0.20"),
+             ("impact", "3", "689", "WIMP1.WAV", "0.22"),
+             ("impact", "3", "689", "WIMP1.WAV", "0.23"),
+             ("impact", "3", "689", "WIMP1.WAV", "0.26"),
              ("impact", "3", "689", "WIMP1.WAV", "0.29")])
     return got, want, (
         "`Shoot_InitWeapon` giving the Gun Waver the key-1 row on the mode "
@@ -26341,8 +26344,8 @@ def c_engine_shoot_hit():
         [exe, fr, os.path.join(ROOT, "tables"),
          "--save", os.path.join(ROOT, "traces", "save-appart.bin"),
          "--area", "59", "--stand", "5000,0,-2900,215", "--shoot",
-         "--frames", "630", "--nodelay",
-         "--keys", ",".join(["54"] * 20), "--keydelay", "30"],
+         "--frames", "1230", "--nodelay",
+         "--keys", ",".join(["54"] * 40), "--keydelay", "30"],
         capture_output=True, text=True,
         env=dict(os.environ, SDL_VIDEODRIVER="dummy"))
     o = play.stdout
@@ -26398,10 +26401,13 @@ def c_engine_shoot_hit():
             # patrol - stands at his placement and never crosses this line: six
             # hits kill 237 and 238, death types 7 and 6, and 237's is the death
             # that plays out inside the 630 frames)
-            ["237", "237", "237", "238", "238", "238"],
-            [(5, 15, 10, 2), (5, 10, 5, 0), (5, 5, 0, 1), (5, 15, 10, 2), (5, 10, 5, 0),
-             (5, 5, 0, 0)],
-            [(7, True), (6, True)],
+            # (and since B5 - the bodies pushing with the model's own spheres,
+            # four of ~11 - he is hardly moved and the gunmen stop after their
+            # advance: forty bolts over 1230 frames, three meet 237 and kill
+            # him at band 2, death type 5, and his is the death that plays out)
+            ["237", "237", "237"],
+            [(5, 15, 10, 2), (5, 10, 5, 2), (5, 5, 0, 2)],
+            [(5, True)],
             ["237"])
     # THE FALL (2026-09-11, a reader: the dead *"float in the air"*): his death
     # clip's root motion - `sub_421770` moves the node by it every tick, the
@@ -26421,27 +26427,27 @@ def c_engine_shoot_hit():
                         r"floor", o, re.M)
     # THE COLLIDER (2026-09-11, a reader: robbers walked into his spot *"like I
     # had no collider"*): each gunman's body is in the spatial index and the
-    # player's query pushes HIM out of it - 237 at 57, 240 at 109
+    # player's query pushes HIM out of it - since B5 with the model's own
+    # spheres, four of ~11: once, 237 at 61
     pushes = re.findall(r"^frame (\d+): the player is pushed out of actor (\d+)'s body", o, re.M)
-    # ...and THE PUSH IS SWEPT: `Actor_ApplyMotion` hands everything since
-    # the last safe position, the push included, to `Actor_Move`, so a push
-    # into a wall slides along it - here -0.62 -7.83 asked, -0.59 -2.44 gone.
-    # Placed with a bare teleport it walked him through the walls
-    wall = re.findall(r"^frame (\d+): the push (\S+) (\S+) met a wall - the sweep "
-                      r"\(Actor_ApplyMotion -> Actor_Move\) moved him (\S+) (\S+)$", o, re.M)
-    got = got + (falls, floors, pushes, wall)
-    # (three falls since the steering: 237's slide meets a wall on 43 of 84
-    # ticks, 240's on 7, 238's on none)
-    want = want + ([("237", "24.5", "29.2", "70.1", "84", "0")],
-                   [("237", "14.0")],
-                   [("57", "237")],
-                   [("104", "-0.62", "-7.83", "-0.59", "-2.44")])
+    # ...THE PUSH IS SWEPT (`Actor_ApplyMotion` hands the push to `Actor_Move`,
+    # 154139d) was asserted here by a push that met a wall at 104 - and since
+    # B5 the bodies push like people, and this fight shoves him into no wall
+    # at all. That guard went with the route it rode on: the swept push, shown
+    # to fail by mutation at 154139d and confirmed in play, needs a probe of
+    # its own (`todo/shoot-mode.md` B5)
+    got = got + (falls, floors, pushes)
+    # (237's type-5 fall: 35.6 down, a slide of -36.9 / 95.6 meeting no wall,
+    # the pelvis left 7.5 above the floor)
+    want = want + ([("237", "-36.9", "35.6", "95.6", "39", "0")],
+                   [("237", "7.5")],
+                   [("61", "237")])
     return got, want, (
         "the three gunmen's roots, 7 units into their walk at the first sweep; "
-        "twenty bolts at yaw 215, down the line the gunmen walk in on - six "
-        "hits, 237 and 238 killed with death types 7 and 6; one fall through "
-        "the wall test to the floor; the player pushed out of the gunmen's "
-        "bodies, and a push into a wall SWEPT along it rather than through it")
+        "forty bolts at yaw 215, down the line the gunmen walk in on - three "
+        "hits, 237 killed with death type 5; his fall through the wall test to "
+        "the floor; and the player pushed out of a gunman's body by the model's "
+        "own collision spheres")
 
 
 def c_engine_shoot_move():
@@ -26510,11 +26516,11 @@ def c_engine_shoot_move():
              # and their bodies PUSH him - `Actor_TickShoot`'s spatial query -
              # so the strafe and the second walk end off their straight lines;
              # the distance the mover asked for is still gone in full)
-             (32, "256.10", ("240.67", "0.00", "9.30")),
-             # (the push swept, not placed: the last walk ends -82.32 -150.30)
-             # (and since the steering the gunmen who push him come by other routes)
-             # (and since the actions they stop when their advance runs out)
-             (23, "92.82", ("-120.51", "0.00", "-132.07"))])
+             # (and since B5 - the bodies pushing with the model's own spheres,
+             # four of ~11 - the strafe is not bent at all, 256.10 along +X as
+             # asked, and the last walk is pushed only 1.58 off its line)
+             (32, "256.10", ("256.10", "0.00", "0.00")),
+             (23, "92.82", ("-103.36", "0.00", "1.58"))])
     return got, want, (
         "the mover's speeds from Speed 70 (row 4: 10.4, 0.39, 2.08); forward 40 "
         "frames = 303.29 along +Z, strafe right 30 = 256.10 along +X, nine MDRG "
@@ -26580,7 +26586,10 @@ def c_engine_shoot_entrance():
              # pushes him off the straight walk - the 719.29 is still walked,
              # it ends 70.85 across and 541.72 along, the push swept against
              # the walls as `Actor_ApplyMotion` sweeps it)
-             (84, "719.29", ("70.85", "-0.00", "541.72"))],
+             # (and since B5 the robber's body pushes with the model's own
+             # spheres, four of ~11: the walk runs nearly straight again, 26.00
+             # across and 728.98 along)
+             (84, "719.29", ("26.00", "-0.00", "728.98"))],
             True, True, [])
     return got, want, (
         "the reader's route into SCENE 56's zone 12: 144.95 along -X, then 84 "

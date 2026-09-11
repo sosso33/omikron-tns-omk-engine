@@ -227,4 +227,14 @@ std::vector<CollisionSphere> modelSweepSpheres(std::span<const std::byte> model)
     return out;
 }
 
+std::vector<CollisionSphere> pushSpheresOf(std::span<const std::byte> model) {
+    std::vector<CollisionSphere> sph = modelSweepSpheres(model);
+    if (sph.empty()) return sph;
+    // the game's Y points DOWN, so the lowest point is the largest y + r
+    float bottom = sph.front().pos[1] + sph.front().radius;
+    for (const auto& c : sph) bottom = std::max(bottom, c.pos[1] + c.radius);
+    for (auto& c : sph) c.pos[1] -= bottom;
+    return sph;
+}
+
 }  // namespace omk
