@@ -1,9 +1,12 @@
 # Handoff — SHOOT MODE (`todo/next-tasks.md` 18)
 
-Written 2026-09-10, at the end of the session that read the mode and wired it.
-Everything below is **pushed** on `main`; nothing is left uncommitted.
-The plan and the full record are [`shoot-mode.md`](shoot-mode.md); the play
-reports are [`omk-play.md`](omk-play.md) 97.
+Rewritten 2026-09-11, at the end of the session that made the gunmen FIGHT:
+they fire, turn, aim, hold their guns, fall, walk, stop at walls, push, steer
+by the floor's path field, advance and then stand to fire - and the player can
+die. Everything below is **pushed** on `main` (`9d7182d`); nothing is left
+uncommitted. The plan and the full record are [`shoot-mode.md`](shoot-mode.md)
+(§8 items 4 and 6 are today's); what awaits a person is
+[`play-test.md`](play-test.md).
 
 ---
 
@@ -12,21 +15,23 @@ reports are [`omk-play.md`](omk-play.md) 97.
 ```
 cd engine && make play
 build/omk-play "$OMK_DATA" ../tables --save ../traces/save-appart.bin \
-    --area 230 --scene-chunk 56 --vulkan
+    --area 230 --scene-chunk 56 --vulkan --radar always
 ```
 
 The cutscene plays, the editing ends at frame ~385, and `SHOOT MODE ENTER`
-follows two frames later. **~390 frames from a cold start, no save of your
-own and no playthrough.**
+follows at 394. **~390 frames from a cold start, no save of your own and no
+playthrough.** Left standing, the player is shot by robber 77 and DIES at 689;
+at 749 message 1 loses the phase, shoot mode ends at 750 and the Meditek
+voice-over plays (`verify.py: engine: shoot death`).
 
 **`--scene-chunk` is the whole trick and it is easy to miss.** The supermarket
 phase is **AREA 230 + SCENE 56 or 62** (both on set `ASM49`), and AREA 230
 carries **no `shoot.begin` of its own** — it is in a ZONE SLOT of the scene.
-`--save --area 230` is a street start, which *lands* the player in the room
+`--save --area 230` is a street start, which lands the player in the room
 without running the chunk that would have been loaded on the way in, so the
 trigger never exists and he stands there for ever.
 
-The other arena, and the one every check uses, is the Shooting gallery:
+The other arena, and the one most checks use, is the Shooting gallery:
 
 ```
 build/omk-play "$OMK_DATA" ../tables --save ../traces/save-appart.bin \
@@ -34,281 +39,171 @@ build/omk-play "$OMK_DATA" ../tables --save ../traces/save-appart.bin \
 ```
 
 `--shoot` is a HARNESS — it calls `shootBegin(-1)` directly. It is not how the
-game enters the mode, which matters more than it sounds: see §5.
+game enters the mode, which matters more than it sounds: see §5 trap 1. **The
+gallery's gunmen kill the player in ~16 frames**, so a run that tests his own
+weapon, movement or bolts needs `--shoot-health 1000` (§6).
 
-**To FIRE headless** (2026-09-10): `Tir` is scan code **54** (right Shift) in
-the *Tirer* scheme, and `--keys` reaches the world's input word, so
+**To FIRE headless**: `Tir` is scan code **54** in the *Tirer* scheme:
 
 ```
 SDL_VIDEODRIVER=dummy build/omk-play "$OMK_DATA" ../tables \
     --save ../traces/save-appart.bin --area 59 --stand 5000,0,-2900,0 \
-    --shoot --frames 300 --nodelay --keys 54,54,54,54,54,54,54,54,54 --keydelay 30
+    --shoot --shoot-health 1000 --frames 300 --nodelay \
+    --keys 54,54,54,54,54,54,54,54,54 --keydelay 30
 ```
 
-gives eight `MDSHOOT0` latches, eight `SHOT` lines and eight `SHOT retired`
-lines - `verify.py: engine: shoot fire` is exactly this. (`--hold` feeds the
-same word, as `k54*N`.)
-
-`engine/tools/shoot_trigger.cpp` answers "which chunk starts a shoot phase"
-directly, scanning every chunk's zone slots **and** its startup script at `+4`.
+is `verify.py: engine: shoot fire`. `engine/tools/shoot_trigger.cpp` answers
+"which chunk starts a shoot phase", scanning zone slots **and** the `+4`
+startup scripts.
 
 ## 2. Where the work stands
 
 | step | state |
 |---|---|
-| 1 the mode read, `MAP2D` found to be the AI's grid | done |
-| 2 the grid decoded, ported, drawn | done |
-| 3 the mode ported — ops 80/81, weapon slot, HUD, library | done |
-| 4 the frontend, the weapon tables, what a shot is | done |
-| 5 the brains' decision revisited — range, cone, line of sight | done |
-| 6 the sight predicate and line walk ported, docs, checks | done |
-| 7a-c the geometry, the turn, **all 16 states of `sub_424DE0`** | done |
-| 7d the brain TICKS on real gunmen | done |
-| 7f the projectile pool | done — and connected by 7h |
-| 7e the play test | done — see §3 |
-| **7h the SHOT**: `MDSHOOT0`'s latch, `sub_47C2A0`'s gate, the record path to the pool | **done 2026-09-10, `cc3d1f9`** — played, *"Ok"* |
-| **7i the FLIGHT**: `Projectiles_Tick`, the world ray, the bolt drawn | **done 2026-09-10, `96fab56`** — played, *"Ok"* |
-| **7j the HIT**: the actor sweep, damage, reactions, death | **done 2026-09-10** — three bolts kill a gallery gunman; not yet played |
-| **8.0 the FIRST-PERSON ARM and GUN**: the `0x200000` exemption, the Waver on `Maing` | **done 2026-09-10** — reported from the original's frames; **confirmed in play** with the raise |
-| **8.0 the RAISE**: `sub_471950`'s aim layer, `actor/shootaim.h` | **done 2026-09-10** — gun low at rest, at the centre to fire, the bolt from it there; **CONFIRMED IN PLAY** in the supermarket |
-| **8.5b MOVING in first person**: shoot mode's own mover, `sub_47D4D0`, `actor/shootmove.h` | **done 2026-09-10** — forward, back, strafe, turn keys, crouch speed; `engine: shoot move`; **CONFIRMED IN PLAY** |
-| **8.2 the SHOT'S SOUNDS**: section A's muzzle and impact effects, resolved in `shoot2.scx` | **done 2026-09-10** — WAVER2.WAV per shot, WIMP1.WAV per impact; the sprites not drawn; heard in the supermarket session (113 shots), no verdict yet |
-| **8.5c ENEMY ENTRANCES ARE GAMEPLAY**: the adventure gate counts only the player's program in shoot mode | **fixed 2026-09-10** — found by the gate's own log line in play; `engine: shoot entrance`; **CONFIRMED IN PLAY** |
-| **8.5d THE PHASE ENDS**: message 3 at a gunman's death, SCENE 56's score, zone 3931 | **fixed 2026-09-10** — `session probe` asserts the handler, the two variables and the zone; **CONFIRMED IN PLAY** |
-| **8.5e THE RETURN**: `Shoot_Leave`'s default group, and the follow camera's offsets | **fixed 2026-09-10** — `--shoot-end N` harness; `engine: shoot leave`; **CONFIRMED IN PLAY** |
-| **8.3 THE HUD, parts 1-3**: screen 34 over the frame - ring count, weapon name, ammo, fills, crosshair, the turning ring and weapon, the health gauge (`ui/hudbar.h`) | **done 2026-09-10** — `engine: shoot hud`; **CONFIRMED IN PLAY** |
-| **8.3 THE HUD, part 4 - THE RADAR**: the minimap, a wireframe of the arena with the player blue and the gunmen red (`ui/radar.h`) | **done 2026-09-10** — `shoot radar files`, `engine: shoot radar`; played (*"It looks good"*), then corrected: the game's own SWITCH (ops 146/147) hides it in seven arenas - object 980 is given by nothing - and `radar = always` restores it; **that CONFIRMED IN PLAY** (*"ok, good"*) |
-| **8.5 THE MOUSE LOOK**: `sub_47D370` - rows 23-25, the ±45 clamp, MDLUP / MDLDO | **done 2026-09-10** — `shoot fire` (`look:`); the pitch's sign kept the reader's; **CONFIRMED IN PLAY** |
-| **8.1 THE NOISE**: `sub_4246E0` - shots and impacts alert gunmen in hearing range on the same floor | **done 2026-09-10** — `shoot fire` (`noise:`), `engine: shoot noise`; not yet played |
+| 1-6 the mode read, `MAP2D`, ops 80/81, weapon tables, the brains' ranges, sight | done |
+| 7a-f the geometry, the turn, all 16 states of `sub_424DE0`, the brain ticking, the pool | done |
+| 7h-j the player's SHOT, its FLIGHT, the HIT on gunmen | done 2026-09-10, played |
+| 8.0 the first-person ARM, GUN and RAISE | done, **CONFIRMED IN PLAY** |
+| 8.1 the NOISE, 8.2 the SOUNDS, 8.3 the HUD and RADAR | done; HUD, radar **CONFIRMED** |
+| 8.5 mouse look, first-person MOVE, entrances as gameplay, the phase's end, the return | done, **CONFIRMED IN PLAY** |
+| **item 4, THE GUNMEN'S SHOTS**: fire (`1456838`), the turn clip (`cc2b114`), the player hit (`6e7bb87`) | done 2026-09-11, played |
+| **item 6 A, the robbers ANIMATE, AIM, FACE, HOLD their guns** (`c5e17bb`, `31eb903`, `9f07ff5`) | done, played (*"Ok, better"*) |
+| **A4 the FALL** (`872ddd8`) | **CONFIRMED IN PLAY** (*"the bodies reach the floor"*) |
+| **A5 the WALL TEST** `sub_421140` (`9880055`) | done |
+| **B1 the WALK** `sub_421370` + the height at every clip start (`8ed9999`) | done; the height fix **CONFIRMED IN PLAY** |
+| **B1 the COLLIDER**: gunmen in the spatial index, the push on the player | done |
+| **B2 the push SWEPT** by `Actor_Move` (`154139d`) | **CONFIRMED IN PLAY** (*"they can't push me outside the env"*) |
+| **B3 the STEERING**: the path field, `sub_421CD0`'s grid turn, the 0x80 cell stamps (`046f0fe`) | done, not yet played |
+| **B4 the ACTIONS** `Shoot_ActorAction`: advance, then crouch / stand to fire (`324ef32`) | done, not yet played |
+| **B5 the push's OWN spheres** (`f368f07`) | **CONFIRMED IN PLAY** (*"I didn't get stuck anymore"*) |
+| **item 4 step 4, THE PLAYER'S DEATH** `sub_423FC0` + the countdown (`9d7182d`) | done, not yet played |
 
-**17 checks** cover it (`engine: shoot hit` added with the hit): `shoot arenas`, `map2d grid`, `map2d sight`,
-`bone names`, `shoot range`, `shoot generic`, `projectile pool`,
-`shoot input`, `shoot mode`, `engine: shoot mode`, `engine: shoot brain`,
-`engine: shoot AI`, `engine: shoot pose`, `weapon table`, **`shoot fire`**,
-**`engine: shoot fire`** and **`engine: shoot hit`** (the last two `--slow`).
+**The checks**: `python3 tools/verify.py --only "engine: shoot" "shoot fire"
+"crowd push"` - 17, all green at `9d7182d` (run in two or three groups: see §5
+trap 13). `shoot fire` carries the unit probes (`wall test:`, `path field:`,
+`grid turn:`, `actor action:`); `engine: shoot death` is the death on the real
+path.
 
 ## 3. What a person has CONFIRMED, and what is only measured
 
-**Confirmed in play** (a reader, 2026-09-09/10): the mode enters; the player's
-body is hidden; the first-person camera installs, survives the editing hold
-and wins over the area's absolute camera; the mouse turns the view directly;
-the eye height is right; ENTER confirms once in menus; the click no longer
-validates them.
+**Confirmed in play**: the mode's entry, camera, mouse look, eye height and
+first-person move; the arm, the gun and its raise; the HUD, the radar
+(`radar = always`), the health kits; the phase's end and the return; the
+robbers' fall to the floor, their height held while walking, the push that
+cannot carry you through a wall, and the people-sized bodies that no longer
+trap you.
 
-**Measured only** — every number in the brain: the sixteen states, the three
-ranges, the cone, the projectile entry. They come from transcription and
-checks, and **no gunman has been watched behaving**, because nothing drives
-them into a fight.
+**Played, no verdict yet**: the gunmen firing and turning round, the aim
+pose, the guns held, the walk.
 
-## 4. What is NOT done
+**Measured only - not yet played** (`play-test.md` NOT YET PLAYED): **DYING**,
+**THE ROBBERS STEER**, and the advance-then-stop of the actions. Play those
+three before building more on them.
 
-**THE WALK AND THE WALL TEST ARE PORTED (2026-09-11, `todo/shoot-mode.md` §8
-item 6 A4/B1)**: `sub_421140` as `omk::shootWallTest`, the death slide through
-it one step a tick, and `sub_421370`'s current-clip root motion through it two
-steps with the z/x slides and their facing snaps. **What is left is the
-STEERING**: the path-finder's distance field (`sub_436260`/`sub_436350`, read),
-`Shoot_Think` and the grid heading (`sub_421CD0`, `sub_435C40`), and the cell
-occupancy stamp/restore around the brain. Without them a robber walks at the
-player, meets a wall, has his facing snapped by the slide and is turned back
-into it - measured on the supermarket's 77, and expected, not a new fault.
-Played the same day: the climbing robber (the height is SET at every clip
-start, `sub_421A20`, not only at the wrap) and the missing collider (the
-original pushes the PLAYER out of each gunman's body through the spatial
-index - `Actor_TickShoot`; the gunmen are registered now) are both fixed.
-The player's own reach still takes `meshes.front()` (7.1, his root is 42.5):
-labelled, because correcting it moves the street crowd's confirmed push.
-Played again: the push walked him OUT OF THE LEVEL - `nudge` placed it with a
-teleport, where the engine's `Actor_ApplyMotion` sweeps everything since the
-last safe position, push included, through `Actor_Move`. Swept now; robbers
-can pin him to a wall, not push him through one.
-**THE STEERING IS PORTED** (B3): `sub_421CD0`'s grid turn over the path field
-(`sub_436260`/`sub_436350`/`sub_435C40`, seeded at the player's pelvis cell)
-and the gunmen's 0x80 cell stamps. It steers only a robber who cannot fire -
-the hub's first arm takes the others straight at the player. **What stops a
-robber with a clear shot is READ and not ported**: `sub_424DE0` asks
-`Shoot_ActorAction(him, 0, 0)` - ACTION 0 - on the hub's timer and on its fire
-arms (05_sys.c 5846, 5997, 6111, 6133, 6172). The port passes the scene's
-action as the "default" (a misread: `a2` is the actor) and never applies
-`out.clipType`, so a robber never leaves his walking clip. ~~The next step.~~
-**PORTED (B4)**: `omk::shootActorAction`; robbers advance for property 31's
-seconds, then crouch or stand to fire. Not ported: action 1, the patrol.
-**THE PLAYER'S DEATH IS PORTED** (`sub_423FC0` and `Shoot_TickPlayer`'s
-countdown; `engine: shoot death`): the stand-down, ACTOR_STATE 15, message 9,
-group 201, then message 1 - the supermarket's phase lost. Checks of his
-weapon, movement and bolts in the gallery now run under `--shoot-health`, a
-labelled TEST HARNESS, because the gallery's gunmen kill him in ~16 frames.
+## 4. What is left
 
-**FIRING IS CONNECTED (2026-09-10, `todo/shoot-mode.md` §7h/§7i)** — and the
-chain this section used to give was wrong in two places, both found by reading
-the addresses it named before wiring anything:
-
-1. the input word drives `H1Avnt` group 200's entry [132], which queues
-   `MDSHOOT0`;
-2. **`MDSHOOT0` (0x0046B610) sets the latch** `dword_53AE3C`, in ACTOR_STATE
-   3. `loc_45C4DD`, named here as the set, is a CLEAR (`mov dword_53AE3C, ebp`
-   after `xor ebp, ebp`, in `Actor_PlayClip`);
-3. `sub_45C680`'s cases **1, 3, 11, 12, 13, 14 and 16** (not 13/14/16) see
-   it - and in shoot mode hand it to the GATE `sub_47C2A0`, which holds the
-   rate and the weapon's raise, and whose outcome 2 raises `dword_4E9744`;
-4. the frame loop fires `Actor_TickProjectiles(player)` once.
-
-**THE HIT IS PORTED (§7j, 2026-09-10)**: bolts meet gunmen, deal their damage
-and kill them, with the death clip their direction picks. ~~What is left is
-THE HIT, read and not ported: bolts pass through gunmen, so the phase still
-cannot be completed.~~ It also moved every placement-turned body to turn about
-its PELVIS instead of its model origin - see §7j, and look at it in play. What
-the hit is made of: the two node lists the sweep walks, the per-mesh sphere and
-box tests (the engine's box test omits a bound, and the port keeps it), the
-damage rules (gunmen cannot hurt each other; the baton's damage 6 reaches only
-0x4000 victims), the four hit-direction bands and the death clips they pick,
-and the reactions - on per-mesh world transforms the viewer captures at the
-draw, which is the engine's own order since the flight runs before the actors
-tick.
-
-**HEALTH ITEMS - the reader, 2026-09-10: *"grabbing a health item does not
-restore your health currently"*.** **READ AND PORTED 2026-09-10 - after a first reading that mixed the two
-modes, which the reader corrected: *"On adventure mode, you grab an health
-item and it goes to your inventory, you have to explicitly use it. On shoot
-mode, the "use auto" is about health items you took on adventure mode ... The
-health item you find while in shoot mode are used immediately."*** Both hold,
-and both are scripts. A kit FOUND in a shoot phase is a ZONE (the
-supermarket's 3935/3936/3938/3947): `scx.play 278`, `zone.disable`,
-`object.hide` the kit, `var.set.actor_stat(player, 1, v)`, `var.add`
-**0x32 / 0x64 / 0x10** (50 medium, 100 large, 16 small - the subtitles say
-+50, +100, +15), `actor.stat.set(player, 1, v)`, a voice line 600-602: used
-the moment it is taken. The kits CARRIED from adventure mode are the HURT
-handler's (SCENE 56 subscription 3, at 17388): on a hit, when health reads
-below **0x28 = 40**, it removes the large, medium or small kit and adds 100,
-50 or 15. (This paragraph first said 28, +64/+32 - hex bytes misread as
-decimal.) What was missing was the join: `Actor_SetProperty` ends in
-`sub_423A40`, which in shoot mode copies property 1 into the actor's shoot
-record `+92` and, for the player, the gauge's `dword_90E100` (and property 35
-into the HUD's ammo). The port's property write had no tail, so the zone ran,
-the DB health rose, and the gauge stayed put. Ported as a hook
-(`script/hooks.h` `shootStatSet`), queued by the Session in shoot mode and
-applied by the viewer to its shoot records; `verify.py: engine: session`
-`shoot_stat` stands the player in zone 3935 and sees `[-1 1 49]` - -1 + 50.
-**CONFIRMED IN PLAY** (*"yes, it was correct"*: 10 -> 60 -> 76 -> 176).
-The damage half (a hit lowering `+92`, writing it back through event 45,
-then message 0 to the hurt handler) arrives with THE GUNMEN'S SHOTS.
-
-**THE GUNMEN'S AI - the reader, 2026-09-10: *"don't forget the ennemies's AI
-at some point (not necessarily now)"*.** The brain's sixteen states tick on
-the real gunmen and they acquire, turn and engage, but they do not WALK -
-no route or nav edge is handed to them, because the viewer has no
-path-finder on the `MAP2D` grid - and they do not FIRE (below). Both are
-the AI's missing half and both are owed.
-
-**And the gunmen's own shots - STEP 1 PORTED 2026-09-11** (`todo/shoot-mode.md`
-§8 item 4): `sub_424DE0`'s epilogue now pulls the gate, behind the FIRE TEST
-(bit 0 of the `.ani` group's `+8`), and `Actor_TickProjectiles`' npc arm aims
-the bolt straight at the player with a radius jitter - NOT the gate's spread,
-which only bends the arm pose. In the gallery both gunmen fire from frame 4
-(`verify.py: engine: shoot gunfire`); the bolts stop on the world, since the
-player is not a hit body yet. **STEP 1b, the turn, ported the same day**: the
-supermarket's robber 77 starts with the player behind him, and the hub's TURN
-CLIP (type 32) was both never played and overwritten every tick by the port's
-own timer tail; now it plays (`sub_421770`, the brain holding) and he turns
-0 -> 187.2 over frames 394-418 and fires every 15. Flag 8 means "a picked clip
-is playing" now, and dead is flag 8 with no health left. A reader's session
-then showed the other robbers stuck mid-turn: the viewer's per-frame placement
-was putting a placed actor's facing back every frame - fixed the same day, a
-shoot brain owns the heading. **STEP 2, the player is hit** (same day): the
-bolts aim at his pelvis (the actor's `+244..+252` is the root node's
-position), he is a body in the sweep, and `sub_4240E0`'s player arm runs in
-its own order - the killing hit goes to the death before the gauge, property
-1 and message 0 are touched. The death `sub_423FC0` and the shove `sub_47D1F0`
-are NOT ported: he plays on below 0.
-
-**Reported missing in play (2026-09-10, *"no fire sound effect, no UI"*): the
-FIRE SOUND and the shoot HUD.** Both are planned with their leads in
-`todo/shoot-mode.md` §8 - the sound probably from `shoot2.sfx` section A's
-three effect ids (the Waver's effect 1 carries sound 687), the HUD from
-`Hud_Refresh` / `Hud_DrawBar` and the two globals the shot already writes.
-
-Still parameters rather than readings: `sub_421020` (its success sends a
-gunman into the 10/11 pair), `sub_421CD0`, `sub_435900`, and the gate
-`actor[+16]` that chooses between `0.7` and `0.0` for the camera lift.
-
-**This port's own numbers, labelled as such** — mouse sensitivity
-(0.18°/px yaw, 0.14°/px pitch), the ±70° pitch clamp, and both axis senses.
-~~Nothing shipped governs them: the engine reads mouse motion nowhere in the
-binding path.~~ **Wrong (2026-09-10)**: `sub_47D370` IS the mouse look -
-`+420 -= word_90E1AC * 0.01 * dx`, pitch `+= word_90E1AE * 0.01 * dy * dt`,
-sign by the invert byte 0x90E1B0, clamped at **±45°**, all from the options
-header. The original's numbers are readable and the port's are not them; not
-yet acted on.
+1. **THE HURT REACTION `sub_47D1F0`** - the camera jolt and sound when a bolt
+   hits the player and he survives. Small, and visible on every hit; the
+   player-hit arm in play.cpp names where it goes. **The suggested next step.**
+2. **THE PATROL, action 1** - `Shoot_ActorAction` case 1 plays type 9 along a
+   ROUTE (`sub_4354E0`, `sub_4356B0`), and the brain's walking states 1, 2
+   and 4 need the nav EDGE at the record's `+4` and its handover, which are
+   unread; so is `Shoot_Think` for the gunmen's floors (their `+188` stays
+   the memset's 0). The gallery's 240 - whose scene action is 1 - never
+   moves. The largest item.
+3. **ROBBER 77'S TURN LOOP** - the supermarket's first robber, in sight of the
+   player, takes the hub's FIRE arm (turn at the target), meets a wall, has
+   his facing snapped by the slide (the fire arm does not raise 0x200), and is
+   turned back on a type-30 clip - every ~16 frames. His advance timer runs
+   only on hub ticks, so he never reaches his stop. Investigate before fixing:
+   it may be the reading's own consequence.
+4. **The death's remainder** - the body show / hide (`sub_436D20` /
+   `sub_436CE0`), camera request 4 at recovery, `sub_47CC70`, the weapon's
+   re-attach and `Shoot_InitWeapon`, and `sub_47CE70` (a global actor's
+   `+416/+424` zeroed - its writer not traced).
+5. **Labelled gaps** - the PLAYER's push reach still `meshes.front()` (7.1
+   against his root's 42.5; correcting it moves the street crowd's confirmed
+   push); only shoot gunmen are in the push index, and the dead stay in it;
+   the door cells (`sub_47C1B0`) and the byte-1 memo; `shootEngage` hoisted
+   before every step where the engine calls `sub_426E00` inside the arms (the
+   state-3 -> hub bounce is the engine's, every other tick there, every tick
+   here); the clip a type resolves to is not `List_PickRandomByType`'s random
+   pick.
+6. **A LOST GUARD** - the swept push's assertion rode on a fight that no
+   longer shoves him into a wall; the fix stands (mutation-shown at
+   `154139d`, confirmed in play) and needs a probe of
+   `PlayerController::nudge` against a wall.
+7. **THE SWEEP** - a full `--slow` run is owed (`todo/sweep-log.md`), not done
+   since 2026-09-09's; it waits for the reader's go.
 
 ## 5. Traps that cost time, in the order they bit
 
 1. **A HARNESS THAT DOES SOMETHING THE REAL PATH DOES NOT.** `--shoot`
-   installed the camera; the script-driven entry did not, and `--shoot` had
-   quietly become the only way the mode was ever entered — so every check,
-   render and measurement for six steps went through a path that carried a
-   step the game's own path was missing. **Ask what the harness does that the
-   thing it stands in for does not.**
+   installed the camera; the script-driven entry did not, and for six steps
+   every check went through the harness. **Ask what the harness does that the
+   thing it stands in for does not.** (`--shoot-health` is today's harness,
+   and it only writes property 1.)
 2. **A BIT NUMBER IS NOT A MEANING.** `Action / Utiliser` is slot 4 in
-   *Aventure* and slot **8** in *Tirer*, where slot 4 is `Tir`. Two separate
-   bugs came out of that, and the repeat mask `0x203F` is expressed in
-   Aventure's slots too.
-3. **THE ROOM WAS THE WRONG ROOM.** Grepping set names for `SMARKET1` found
-   AREA 68 — a *different* supermarket — and three fixes were tested against
-   it. The reader's own log said `last set ASM49` throughout.
-4. **A TOOL GIVEN A TABLE PATH RELATIVE TO THE WRONG DIRECTORY** answered
-   "0 slots for 330 chunks" rather than failing. Same family as the handoff's
-   own §1 warning about data roots.
-5. **`--scene-id` IS NOT A FLAG**, so passing it was silently ignored and two
-   different scenes "confirmed" the same set.
-6. **A SIGN THAT ONLY MOVING CAN SHOW.** `resolveOffsets` SUBTRACTS its
-   offset, so a positive Y raises the eye — the opposite of what "Y grows
-   down" suggests. And the acquisition's forward vector is `-sin`, not `+sin`:
-   the two conventions agree on the cardinal axes, so every still assertion
-   passes either way and only a convergence loop separates them.
-7. **THREE WRONG HEIGHTS BEFORE THE RIGHT ONE**, and only the last came from
-   the original. The reader's *"instead of guessing, look at the original
-   code"* is the lesson, and it was already written down here.
-8. **THIS HANDOFF'S OWN ADDRESS WAS A CLEAR** (2026-09-10). §4 named
-   `loc_45C4DD` as the latch's one set; the instruction there is `mov
-   dword_53AE3C, ebp` straight after `xor ebp, ebp`. A handoff is a reading
-   like any other - check the address before building on it.
-9. **`asmfn.py` SNAPPED, and a finding was written from the wrong function.**
-   `omk-play.md` 97's "MDSHOOT0 is the EQUIP" came from `asmfn.py 0x0046B610`,
-   which returns a neighbour because the address has no `proc` label. When an
-   address the DATA names (here, `tab_special_move`) has no function,
-   disassemble the BYTES - CLAUDE.md §1 says so, and it bit anyway.
-10. **`timeout` IS NOT A macOS COMMAND.** `timeout 300 build/omk-play ... | grep`
-    printed nothing, which read as "no shot" - the shell's "command not found"
-    went into the grep and was filtered out. Save the whole log to a file and
-    grep the file.
+   *Aventure* and slot **8** in *Tirer*, where slot 4 is `Tir`.
+3. **THE ROOM WAS THE WRONG ROOM.** `SMARKET1` grep found AREA 68, a different
+   supermarket; the reader's log said `last set ASM49` throughout.
+4. **A TOOL GIVEN A PATH RELATIVE TO THE WRONG DIRECTORY** answers "0 slots"
+   rather than failing.
+5. **`--scene-id` IS NOT A FLAG** - silently ignored.
+6. **A SIGN THAT ONLY MOVING CAN SHOW** - `resolveOffsets` subtracts; the
+   acquisition's forward is `-sin`.
+7. **THREE WRONG HEIGHTS BEFORE THE RIGHT ONE** - *"instead of guessing, look
+   at the original code"*.
+8. **A HANDOFF'S OWN ADDRESS WAS A CLEAR** - check the address before
+   building on it.
+9. **`asmfn.py` SNAPS** to a neighbour when an address has no `proc` label.
+10. **`timeout` IS NOT A macOS COMMAND** - save the log to a file and grep it.
+11. **A LABELLED READING OUTLIVES ITS REASON** (2026-09-11). The push used the
+    per-mesh bounding spheres because the model's list "was not traced back to
+    a writer" - long after `modelSweepSpheres` read that very list from the
+    file for the walker. Every body pushed like a 90-unit ball and trapped the
+    player. When a labelled stand-in has a real source elsewhere in the tree,
+    switch.
+12. **`a2` WAS THE ACTOR.** `ShootFrameIn::defaultClipType` was documented as
+    "the action the caller asked for"; `sub_424DE0`'s `a2` is the actor's
+    index and every `Shoot_ActorAction` it makes is the literal action 0. The
+    same name read as a clip TYPE in LABEL_177. Read what a parameter IS at
+    the call sites, not what it would be convenient for it to be.
+13. **A 15-CHECK RUN IS KILLED BY MEMORY** - `verify.py --only "engine:
+    shoot"` in the background was stopped for low memory on this machine; run
+    the family in groups of 3-12, one invocation at a time.
+14. **`--only` IS A SUBSTRING MATCH** - `"shoot fire"` also runs `engine: shoot
+    fire`; judge a mutation by the elements of the check it targets.
+15. **A LOG LINE BEFORE THE BODY IS DRAWN** - a gunman's brain is built on the
+    tick he is staged, when `drawAt` is still 0: his cell read (0,0) and his
+    first brain line gave a distance from the world origin. Both now wait for
+    his first position on the grid.
+16. **A BOLT FIRED WITH THE SAME `rand()`** - the brain's own draws (the action
+    coin, the grid turn's tie and discard) come from the CRT the bolts' jitter
+    uses; a new draw shifts every later jitter by a triple, and `engine: shoot
+    gunfire` shows it.
 
-## 6. New instruments, so they are not rebuilt
+## 6. Instruments, so they are not rebuilt
 
 | | |
 |---|---|
-| `engine/tools/shoot_trigger.cpp` | which chunk starts a shoot phase — zone slots AND the `+4` startup script |
-| `engine/tools/shoot_range.cpp` | the record's geometry, the turn, the brain's states, the engagement, the eye height |
-| `engine/tools/projectile_probe.cpp` | the pool, the fire gate, the entry's byte accounting |
-| `engine/tools/bone_names.cpp` | bone-name prefixes over every library and model |
-| `engine/tools/mousebit.cpp` | what each mouse button does per control group |
-| `engine/src/actor/projectile.{h,cpp}` | the pool and the four weapon slots |
-| `omk::readBodySpheres` | the `.3DO` sphere table at `desc+244`/`+248` |
-| `--invert-x` / `--invert-y` / `--shoot-eye N` | the mouse senses and the eye lift |
-| the viewer's own lines | `AIM reached`, `MOUSE dx`, `N/M tracks resolve`, `shoot brain` |
-| `engine/tools/shoot_fire.cpp` | the gate, the latch, the aim, the record path, the flight, the weapon types - and, with a data root, every shipped weapon and `shoot2.sfx`'s shot sprites |
-| `engine/src/actor/shootfire.{h,cpp}` | the weapon table, `MDSHOOT0`, `sub_47C2A0`'s timing half, the channel tick's shoot branch, `sub_442160` |
-| `ProjectilePool::fireFromRecord` / `fly` | `Actor_TickProjectiles`' record path and `Projectiles_Tick` |
-| `ctl_find`'s `f12` column | an entry's `+12` whole - what `sub_45AB80` tests |
-| the viewer's firing lines | `Shoot_InitWeapon`, `the gun ...`, `MDSHOOT0 - the latch armed`, `SHOT n`, `SHOT retired` |
+| `engine/tools/shoot_trigger.cpp` | which chunk starts a shoot phase |
+| `engine/tools/shoot_range.cpp` | the record's geometry, the turn, the brain's states, the engagement |
+| `engine/tools/projectile_probe.cpp` | the pool, the fire gate, the entry's bytes |
+| `engine/tools/shoot_fire.cpp` | the gate, the latch, the aim, the flight, the weapons - and today's unit probes: `wall test:`, `path field:`, `grid turn:`, `actor action:` |
+| `engine/tools/sphere_dump.cpp` | a model's own collision list, `desc+244/+248` |
+| `omk::shootWallTest` | `sub_421140` |
+| `omk::ShootField`, `omk::shootGridTurn` | the path field and `sub_421CD0` |
+| `omk::shootActorAction` | `Shoot_ActorAction` |
+| `omk::pushSpheresOf`, `Session::actorBody` | the push's spheres, the gunmen in the spatial index |
+| `Map2d::setCell` | the runtime 0x80 stamps |
+| `--shoot-health N` | TEST HARNESS: property 1 written as N at shoot entry |
+| `--shoot-end N`, `--invert-x/-y`, `--shoot-eye N` | leave the mode; the mouse senses; the eye lift |
+| the viewer's lines | `walks (sub_421370)`, `the wall test ... stops his walk`, `STEERS by the path field`, `ACTION n (Shoot_ActorAction, why)`, `clip type N starts`, `the player is pushed out of actor N's body`, `the push ... met a wall`, `the path field ... ran dry`, `KILLED (sub_423FC0)`, `the player's death clip is over`, `GUNMAN SHOT`, `PLAYER HIT`, `AIM LAYER`, `HIS BARREL points` |
 
 ## 7. The sweep
 
-**A full `--slow` run is OWED and has not been done since 2026-09-09's**, which
-measured `f92231a` — before any of this. `todo/sweep-log.md` says 3 tasks.
-
-The reader's rule is that the suite catches what nobody can see rather than
-measuring code mid-repair, so it waits for their go — but the subsystem has
-now settled and been confirmed in play, so the moment has arrived. Things it
-should be watched for: the **bone-name fix touched the crowd libraries**
-(`passantH.ani` carries 19 `U`-prefixed tracks), the camera changes move a
-path every `engine:` check exercises, and `licence headers` moved three times
-(402 → 410).
+**A full `--slow` run is OWED**, not done since 2026-09-09 (`f92231a`), which
+predates all of shoot mode's firing and fighting. `todo/sweep-log.md` still
+counts 3 tasks, shoot mode being one. It waits for the reader's go; run it in
+groups if memory is short (§5 trap 13).
