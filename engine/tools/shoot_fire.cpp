@@ -17,6 +17,7 @@
 #include "actor/shootmove.h"
 #include "script/program.h"
 #include "actor/state.h"
+#include "formats/map2d.h"
 #include "formats/sfx.h"
 #include "o3de/collision.h"
 #include "platform/datafs.h"
@@ -532,6 +533,53 @@ int main(int argc, char** argv) {
     // slots at `IAM\GLOBAL +42` name, through the table walk.
     if (argc >= 3) {
         const omk::DataFs fs(argv[2]);
+        // THE WALL TEST (`sub_421140`) on the supermarket's own floor map: the
+        // first free cell whose +x neighbour the AI refuses, a one-cell step
+        // into it from the cell's centre; the first free cell with a free +x
+        // neighbour, the same step; and a step off the floor. The cells are
+        // the map's, found here, so the probe checks itself.
+        {
+            omk::Map2d mp;
+            const auto raw = fs.read("MAP2D/SMARKET1.MPT");
+            if (!raw.empty() && mp.load(raw) && !mp.floors().empty()) {
+                const auto& f = mp.floors()[0];
+                const float sc = static_cast<float>(mp.scale());
+                int bx = -1, bz = -1, fx = -1, fz = -1;
+                for (int z = 1; z + 1 < static_cast<int>(f.h) && (bx < 0 || fx < 0); ++z)
+                    for (int x = 1; x + 2 < static_cast<int>(f.w); ++x) {
+                        const bool here = !omk::Map2d::blockedValue(f.cell(x, z));
+                        const bool next = !omk::Map2d::blockedValue(f.cell(x + 1, z));
+                        if (here && !next && bx < 0) { bx = x; bz = z; }
+                        if (here && next && fx < 0) { fx = x; fz = z; }
+                    }
+                const auto centre = [&](int cx, int cz, float o[2]) {
+                    o[0] = cx * sc + f.bound[0] + sc * 0.5f;
+                    o[1] = cz * sc + f.bound[4] + sc * 0.5f;
+                };
+                omk::ShootRecord w;
+                w.state = 6; w.node = 0;
+                float c[2], snap[2];
+                w.destX = bx; w.destZ = bz; centre(bx, bz, c);
+                const int blockedR = omk::shootWallTest(w, mp, c[0], c[1], sc, 0.0f, 1, snap);
+                const bool snapHere = std::fabs(snap[0] - c[0]) < 0.01f && std::fabs(snap[1] - c[1]) < 0.01f;
+                omk::ShootRecord w2;
+                w2.state = 6; w2.node = 0; w2.destX = fx; w2.destZ = fz; centre(fx, fz, c);
+                const int freeR = omk::shootWallTest(w2, mp, c[0], c[1], sc, 0.0f, 1, snap);
+                omk::ShootRecord w3;
+                w3.state = 6; w3.node = 0;
+                const int offR = omk::shootWallTest(w3, mp, f.bound[0] - 100.0f, f.bound[4], sc, 0.0f, 1, snap);
+                omk::ShootRecord w4 = w;
+                w4.state = 2;
+                const int edgeR = omk::shootWallTest(w4, mp, c[0], c[1], sc, 0.0f, 1, snap);
+                std::printf("wall test: into byte %u from (%d,%d) -> %d, snapped to his cell %d; free step "
+                            "(%d,%d) -> %d, cell now (%d,%d) flag 0x20000 %d; off the floor %d; "
+                            "state 2 %d\n", unsigned(f.cell(bx + 1, bz)), bx, bz, blockedR,
+                            int(snapHere), fx, fz, freeR, w2.destX, w2.destZ,
+                            int((w2.flags & 0x20000u) != 0), offR, edgeR);
+            } else {
+                std::printf("wall test: SMARKET1.MPT not read\n");
+            }
+        }
         const auto g = fs.read("IAM/GLOBAL");
         const auto objs = omk::loadObjects(fs);
         if (g.size() < 62 || objs.empty()) { std::printf("weapons: not read\n"); return 0; }

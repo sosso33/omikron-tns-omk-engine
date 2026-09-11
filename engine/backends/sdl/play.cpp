@@ -3394,6 +3394,12 @@ int main(int argc, char** argv) {
         // ...and the death CLIP itself, whose root motion lays the body down
         const omk::PedClip* deathClip = nullptr;
         bool  deathFallTold = false;       // his fall has been logged
+        // ...the fall as it has been APPLIED, one clip frame a tick through
+        // the wall test (`sub_421770`), the last frame taken, and how many
+        // ticks a wall held the slide back
+        float deathMove[3] = {0, 0, 0};
+        long  deathEl = 0;
+        int   deathWalls = 0;
         bool  deathFloorTold = false;      // ...and where it left his pelvis
         // message 3 posted for this death (`sub_424DE0`'s dead arm, once the
         // death clip has played out) - see the post below
@@ -11026,6 +11032,19 @@ int main(int argc, char** argv) {
                             // the engine's +420 IS that node's heading - so the
                             // brain starts there rather than at the placement's
                             if (s.restYawKnown) s.facing = s.restYaw;
+                            // `Shoot_Think`'s cell write, +136/+140: where he stands
+                            // on the floor map (`sub_435770`) - what the wall test
+                            // snaps a blocked move back to. (`Shoot_Think` itself is
+                            // not wired; its floor byte +188 stays the memset's 0.)
+                            if (shootMap.valid()) {
+                                const int fl = shootMap.floorAt(s.drawAt[0], s.drawAt[1],
+                                                                s.drawAt[2], -1);
+                                int cx = 0, cz = 0;
+                                if (fl >= 0 && shootMap.cellAt(fl, s.drawAt[0], s.drawAt[2], cx, cz)) {
+                                    fresh.destX = cx;
+                                    fresh.destZ = cz;
+                                }
+                            }
                             it = shootBrains.emplace(s.actor, fresh).first;
                             std::printf("frame %ld: actor %d %s - shoot brain: "
                                         "acquire %.0f engage %.0f disengage %.0f "
@@ -11836,24 +11855,46 @@ int main(int argc, char** argv) {
                 // added the drop, so the body lay flat at waist height. Summed from
                 // frame 1 as the clip starts there (`sub_421A20`), the horizontal
                 // part turned by his heading - the one he is drawn at - and held
-                // once it has played out. NOT PORTED, labelled: `sub_421140`'s wall
-                // test, which in the engine keeps only the vertical against a wall.
+                // once it has played out. ONE CLIP FRAME A TICK, as the engine
+                // steps it: each tick's delta goes through the WALL TEST
+                // (`sub_421140(rec, {pos, dx, dz}, 1)`), and against a wall only
+                // the vertical is kept - `o3de_MoveNodeBy(node, 0, dy, 0)`.
                 if (s.deathType >= 0 && s.deathClip && !s.deathClip->root.empty() &&
                     s.deathClip->frames > 1) {
                     const long el = std::max<long>(n - s.deathStart, 0);
-                    const float t1 = 1.0f + static_cast<float>(
-                        std::min<long>(el, static_cast<long>(s.deathClip->frames) - 1));
-                    float d[3] = {0.0f, 0.0f, 0.0f};
-                    omk::pedRootDelta(*s.deathClip, 1.0f, t1, nullptr, d);
-                    float r[3];
-                    omk::rotateYaw(s.facing, d, r);
-                    for (int k = 0; k < 3; ++k) rootMove[k] += r[k];
+                    const long upto = std::min<long>(el, static_cast<long>(s.deathClip->frames) - 1);
+                    const auto bi = shootBrains.find(s.actor);
+                    while (s.deathEl < upto) {
+                        const float ta = 1.0f + static_cast<float>(s.deathEl);
+                        float d[3] = {0.0f, 0.0f, 0.0f};
+                        omk::pedRootDelta(*s.deathClip, ta, ta + 1.0f, nullptr, d);
+                        float r[3];
+                        omk::rotateYaw(s.facing, d, r);
+                        bool wall = false;
+                        if (bi != shootBrains.end() && shootMap.valid()) {
+                            float snap[2];
+                            wall = omk::shootWallTest(bi->second, shootMap,
+                                                      s.at[0] + s.deathMove[0],
+                                                      s.at[2] + s.deathMove[2],
+                                                      r[0], r[2], 1, snap) != 0;
+                        }
+                        if (wall) {
+                            ++s.deathWalls;
+                        } else {
+                            s.deathMove[0] += r[0];
+                            s.deathMove[2] += r[2];
+                        }
+                        s.deathMove[1] += r[1];
+                        ++s.deathEl;
+                    }
+                    for (int k = 0; k < 3; ++k) rootMove[k] += s.deathMove[k];
                     if (!s.deathFallTold && el >= static_cast<long>(s.deathClip->frames) - 1) {
                         s.deathFallTold = true;
                         std::printf("frame %ld: actor %d %s - death clip's root motion (sub_421770): "
-                                    "%.1f %.1f %.1f over %d frames, down %.1f\n", n, s.actor,
-                                    s.model.c_str(), double(r[0]), double(r[1]), double(r[2]),
-                                    s.deathClip->frames, double(d[1]));
+                                    "%.1f %.1f %.1f over %d frames, down %.1f, %d ticks against a "
+                                    "wall\n", n, s.actor, s.model.c_str(), double(s.deathMove[0]),
+                                    double(s.deathMove[1]), double(s.deathMove[2]),
+                                    s.deathClip->frames, double(s.deathMove[1]), s.deathWalls);
                     }
                 }
                 // THE ANCHOR. An authored PATH names the pelvis - the

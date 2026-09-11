@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "actor/shoot.h"
 
+#include "formats/map2d.h"
+
 #include <cmath>
 #include <cstring>
 
@@ -57,6 +59,67 @@ const std::vector<ShootEdge> kGenericEdges = {
 const std::vector<int> kGenericStates = {1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,28};
 
 }  // namespace
+
+namespace {
+// `sub_435810` (0x00435810): world -> cell on one floor, -1 (false) off it.
+// The bounds carry half a cell of tolerance - `x < minX - (-0.5 * scale)` and
+// `(dx - (-0.5 * scale)) / scale >= W` refuse - while the cell itself is the
+// plain truncation of `dx / scale`.
+bool wallCellOf(const Map2dFloor& f, double scale, double x, double z, int& cx, int& cz) {
+    const double v8 = scale * -0.5;
+    const double v4 = x - f.bound[0], v5 = z - f.bound[4];
+    if (x < double(f.bound[0]) - v8) return false;
+    if (static_cast<long long>((v4 - v8) / scale) >= static_cast<long long>(f.w)) return false;
+    if (double(f.bound[4]) - v8 > z) return false;
+    if (static_cast<long long>((v5 - v8) / scale) >= static_cast<long long>(f.h)) return false;
+    cx = static_cast<int>(static_cast<long long>(v4 / scale));
+    cz = static_cast<int>(static_cast<long long>(v5 / scale));
+    return true;
+}
+// `sub_4357B0` (0x004357B0): the cell's CENTRE, `c * scale + min + scale/2`.
+void wallCentre(const Map2dFloor& f, double scale, int cx, int cz, float out[2]) {
+    const double v4 = scale * -0.5;
+    out[0] = static_cast<float>(double(cx) * scale + f.bound[0] - v4);
+    out[1] = static_cast<float>(double(cz) * scale + f.bound[4] - v4);
+}
+}  // namespace
+
+int shootWallTest(ShootRecord& r, const Map2d& map, float x0, float z0, float dx, float dz,
+                  int steps, float snap[2]) {
+    // `if (u32(rec, 156) == 2) return 0;` - the edge walk is not tested
+    if (r.state == 2) return 0;
+    const int fl = static_cast<int>(static_cast<std::int8_t>(r.node & 0xFF));
+    // (off every floor the engine would index its floor table at -1; there
+    // is nothing to test against, so the move is let through)
+    if (!map.valid() || fl < 0 || fl >= static_cast<int>(map.floors().size()) || steps <= 0)
+        return 0;
+    const Map2dFloor& f = map.floors()[static_cast<std::size_t>(fl)];
+    const double scale = map.scale();
+    // `v11 = v11 + f32(v4, 8)` - the walk accumulates in floats
+    float x = x0, z = z0;
+    int cx = 0, cz = 0;
+    for (int count = 0;;) {
+        x = x + dx;
+        z = z + dz;
+        if (!wallCellOf(f, scale, x, z, cx, cz)) return -1;
+        const auto v8 = static_cast<signed char>(f.cell(cx, cz));
+        if (v8 == static_cast<signed char>(0x80) || v8 == 0 || v8 == 2 || v8 == 3) {
+            wallCentre(f, scale, r.destX, r.destZ, snap);
+            return static_cast<int>(v8) + 1;
+        }
+        if (++count >= steps) break;
+    }
+    // LABEL_12: the landing is his cell now
+    if (r.destX == cx && r.destZ == cz) {
+        r.flags &= ~0x20000u;
+    } else {
+        r.destX = cx;
+        r.destZ = cz;
+        r.flags |= 0x20000u;
+    }
+    wallCentre(f, scale, cx, cz, snap);
+    return 0;
+}
 
 const char* charTypeName(int type) {
     return (type >= 0 && type < kCharTypeCount) ? kTypeNames[type] : "";

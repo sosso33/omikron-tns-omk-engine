@@ -26005,7 +26005,7 @@ def c_shoot_fire():
             "wall:", "range:", "wind-up 12:", "grow:",
             "hit:", "bands:", "gates:", "shield:", "kill:", "raise:", "slew:",
             "mover rows:", "mover held:", "mover crouch:", "look:", "noise:", "gunman aim:",
-            "type:")
+            "wall test:", "type:")
     got = []
     for k in keys:
         m = re.search(r"^" + re.escape(k) + r" (.*)$", out, re.M)
@@ -26105,6 +26105,13 @@ def c_shoot_fire():
             # at the jittered point, whatever its direction
             "A yaw 90.00 pitch -0.00 dir 1.000 0.000 0.000; B d 10.0 -50.0 -109.8 dist 121.06 "
             "yaw 5.20 pitch 24.39 dir 0.083 -0.413 -0.907 vs d/|d| 0.083 -0.413 -0.907",
+            # THE WALL TEST, `sub_421140`, on the supermarket's floor map (the
+            # data root's; the cells are found in the map itself): a step into
+            # a wall byte (0) returns the byte + 1 and snaps to the centre of
+            # HIS cell; a free step returns 0 and his cell becomes the landing,
+            # flag 0x20000 up; a step off the floor -1; state 2 is never tested
+            "into byte 0 from (10,1) -> 1, snapped to his cell 1; free step (2,1) -> 0, cell "
+            "now (3,1) flag 0x20000 1; off the floor -1; state 2 0",
             "kind 1 BATPOUV -> -2, kind 1 WAVER -> 1, kind 3 BATPOUV -> 3"]
     if data:
         w = re.search(r"^weapons: (.*)$", out, re.M)
@@ -26325,12 +26332,16 @@ def c_engine_shoot_hit():
     # vertical included - summed from frame 1 and turned by his heading: 35.6
     # DOWN and a slide of 101.7, which leaves his pelvis 6.3 above the floor
     # where it stayed ~42 up, at standing height, before
+    # ...ONE CLIP FRAME A TICK THROUGH THE WALL TEST (`sub_421140(rec, delta,
+    # 1)`): three of his 39 ticks meet a wall byte and keep only their drop,
+    # so the slide is -101.0 / 12.2 where the free sum was -101.7 / 12.7
     fall = re.search(r"^frame \d+: actor 240 VIR_FN - death clip's root motion \(sub_421770\): "
-                     r"(\S+) (\S+) (\S+) over (\d+) frames", o, re.M)
+                     r"(\S+) (\S+) (\S+) over (\d+) frames, down \S+, (\d+) ticks against a wall",
+                     o, re.M)
     floor = re.search(r"^frame \d+: actor 240 VIR_FN - dead: his pelvis (\S+) above the floor",
                       o, re.M)
     got = got + (fall.groups() if fall else None, floor.group(1) if floor else None)
-    want = want + (("-101.7", "35.6", "12.7", "39"), "6.3")
+    want = want + (("-101.0", "35.6", "12.2", "39", "3"), "6.3")
     return got, want, (
         "the three gunmen's roots ON their placements with the body's 44.4 "
         "sphere; the first three bolts from the raised gun killing actor 240, "

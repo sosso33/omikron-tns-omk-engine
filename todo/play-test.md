@@ -424,7 +424,8 @@ left hand, and his body faces where his brain aims. Not yet judged by eye.)
 (Then, *"Ok, better"*, and *"when an ennemy die and its dying animation run,
 they float in the air"*: fixed - a robber's death clip now carries him down to
 the floor and slides him as it falls, the pelvis ending a few units above the
-ground. Wrong looks like: a corpse still lying at waist height, one sinking
+ground. **CONFIRMED IN PLAY 2026-09-11** (*"Yes, it is fixed, the bodies reach
+the floor"*). Wrong looks like: a corpse still lying at waist height, one sinking
 into the floor, or one sliding through a wall - that last is possible, since
 the engine's wall stop is not ported yet.)
 

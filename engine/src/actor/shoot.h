@@ -170,6 +170,23 @@ struct ShootProperties {
 // 39 - the same one the pedestrian spawn and the projectile speed use.
 void initShootRecord(ShootRecord& r, const ShootProperties& p);
 
+class Map2d;   // formats/map2d.h
+
+// `sub_421140` (0x00421140), THE WALL TEST a gunman's root motion answers to.
+// From (x0, z0) it takes `steps` steps of (dx, dz) and reads the floor-map
+// byte under each landing (`sub_435810` - world to cell, off the floor with
+// half a cell's tolerance -> -1; `sub_4358D0` - the byte as a signed char):
+//   * 0, 2, 3 or 0x80 (a wall, or an actor's runtime stamp) -> BLOCKED: `snap`
+//     is the centre of his CURRENT cell (+136/+140, `sub_4357B0`) and the
+//     return is the byte + 1 - so -127 for 0x80, nonzero either way;
+//   * every step free -> 0: his cell becomes the last landing (flag 0x20000
+//     when it changed, cleared when it did not) and `snap` is its centre.
+// State 2 - the edge walk - is never tested (`return 0`). His floor is the
+// record's +188. `sub_421770` asks one step (a picked clip's root motion),
+// `sub_421370` two (the current clip's).
+int shootWallTest(ShootRecord& r, const Map2d& map, float x0, float z0, float dx, float dz,
+                  int steps, float snap[2]);
+
 // What `sub_420C70` leaves behind for `sub_420EB0` to read rather than
 // recompute. The engine keeps them in four globals; naming them is the whole
 // of the difference.
