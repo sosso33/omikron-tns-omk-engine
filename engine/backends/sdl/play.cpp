@@ -3400,6 +3400,11 @@ int main(int argc, char** argv) {
         float deathMove[3] = {0, 0, 0};
         long  deathEl = 0;
         int   deathWalls = 0;
+        // his CURRENT clip's root motion, `sub_421370`'s walk (a gunman's
+        // brain clip; zero for everyone else), and the instruments over it
+        float walkMove[3] = {0, 0, 0};
+        int   walkWalls = 0, walkSlides = 0;
+        bool  walkTold = false, walkWallTold = false;
         bool  deathFloorTold = false;      // ...and where it left his pelvis
         // message 3 posted for this death (`sub_424DE0`'s dead arm, once the
         // death clip has played out) - see the post below
@@ -6098,6 +6103,7 @@ int main(int argc, char** argv) {
                     if (ho.killed) {
                         vs->deathType = ho.deathType;
                         vs->deathStart = n;
+                        vs->walkMove[1] = 0.0f;   // `sub_421A20` sets the height
                         std::printf("  KILLED - death clip type %d%s\n", ho.deathType,
                                     ho.enemyCountDrop ? ", the enemy count drops" : "");
                     }
@@ -6212,8 +6218,18 @@ int main(int argc, char** argv) {
                     // he finished the clip beside the slider with the door
                     // open above him. Traced frame by frame 2026-09-08.
                     if (!boarding && !leaving && !playerSpheres.empty() &&
-                        session.crowdPush(playerSpheres, playerReach, player->pos(), player->facing(), push))
+                        session.crowdPush(playerSpheres, playerReach, player->pos(), player->facing(), push)) {
                         player->nudge(push);
+                        // once per gunman: his body shoved the player
+                        static std::set<int> bodyPushTold;
+                        for (const int sl : session.spatial().lastTouched()) {
+                            const int who = session.actorOfBodySlot(sl);
+                            if (who >= 0 && bodyPushTold.insert(who).second)
+                                std::printf("frame %ld: the player is pushed out of actor %d's "
+                                            "body (SpatialIndex_Query, sub_45E390): %.2f %.2f\n",
+                                            n, who, double(push[0]), double(push[2]));
+                        }
+                    }
                 }
                 // A SCREEN HAS THE INPUT, and the world still runs.
                 //
@@ -10830,6 +10846,7 @@ int main(int argc, char** argv) {
                             // Pitch and roll (params 4 and 6) are rarely non-zero
                             // (three beggars carry -7 of pitch) and are not applied.
                             for (int k = 0; k < 3; ++k) s.progBase[k] = s.at[k];
+                            for (float& w : s.walkMove) w = 0.0f;   // the program places him
                         }
                         std::printf("  pose: actor %d %s - clip %d '%s' (%d frames) on path "
                                     "%d '%s' at %.0f %.0f %.0f%s\n", s.actor, s.model.c_str(),
@@ -10863,6 +10880,7 @@ int main(int argc, char** argv) {
                             s.progPlaced = true; s.progPelvis = true;
                             s.progRan = true;
                             for (int k = 0; k < 3; ++k) s.progBase[k] = base[k];
+                            for (float& w : s.walkMove) w = 0.0f;   // the program places him
                             std::printf("  pose: actor %d %s - clip %d '%s' (%d frames), no "
                                         "path: snapped to its root key 0 at %.0f %.0f %.0f%s\n",
                                         s.actor, s.model.c_str(), sceneClip,
@@ -10895,8 +10913,10 @@ int main(int argc, char** argv) {
                         // (CLAUDE.md 6): he stays where the clip left him and
                         // falls back to the bank's idle there.
                         s.progPlaced = false;
-                        if (s.placed)   // drawAt is last frame's; `drawn` was just cleared
+                        if (s.placed) {  // drawAt is last frame's; `drawn` was just cleared
                             for (int k = 0; k < 3; ++k) s.at[k] = s.drawAt[k];
+                            for (float& w : s.walkMove) w = 0.0f;   // drawAt carries it
+                        }
                         std::printf("  pose: actor %d %s - its program ended; he stays where "
                                     "it left him (%.0f %.0f %.0f) and falls back to the "
                                     "bank's idle\n", s.actor, s.model.c_str(),
@@ -10998,7 +11018,9 @@ int main(int argc, char** argv) {
                                         s.model.c_str(), gc.type, double(gc.frame), double(s.facing));
                             gc = GunClip{};
                             // `sub_421A20(+12, 0)`: his previous clip back, at 1.0
+                            // - and the node's height SET again (below)
                             gunAnims[s.actor].frame = 1.0f;
+                            s.walkMove[1] = 0.0f;
                         }
                     }
                     if (act >= 0 && shootMode && !shotDead && !clipHolds) {
@@ -11101,22 +11123,83 @@ int main(int argc, char** argv) {
                         // the rest sentinel. The clip is his action's
                         // (`shootClipFor`, the same type picks `Shoot_ActorAction`
                         // makes); a change of clip restarts it at 1.0, which is
-                        // `sub_421A20`'s start. NOT PORTED, labelled: the clip's
-                        // root motion (`sub_434C30`'s delta through `sub_421140`'s
-                        // wall test - the body stays on its spot), the 0x400 grid
-                        // arm, and an action re-asked for the same clip, which the
-                        // engine restarts and this does not.
+                        // `sub_421A20`'s start.
+                        //
+                        // ...AND IT MOVES HIM (2026-09-11, a reader: "continue with
+                        // robbers walking and the wall detection"). After the frame
+                        // step `sub_421370` takes the clip's root delta between the
+                        // old frame and the new (`sub_434D30` -> `Anim_RootDelta(clip,
+                        // node matrix, +192, +188)`, turned by his facing), and puts
+                        // it through the WALL TEST, two steps (`sub_421140(rec,
+                        // {pos, dx, dz}, 2)`). Read off the asm at 0x421520..0x421756:
+                        //
+                        //   dx == 0 && dz == 0      -> nothing moves (the vertical
+                        //                              only under +460, a .3DM arm)
+                        //   free                    -> +244 += dx, +252 += dz,
+                        //                              MoveNodeBy(dx, dy, dz)
+                        //   blocked: len = |d|, try {0, dz > 0 ? len : -len}; +420 =
+                        //     dz > 0 ? 180 : 0 (not under +160 & 0x200)
+                        //     free  -> x SNAPS to the landing cell's centre (not
+                        //              under 0x200), z += dz - the ORIGINAL dz
+                        //     else  -> +160 |= 0x100; try {dx > 0 ? len : -len, 0};
+                        //              +420 = dx > 0 ? 90 : 270
+                        //       free -> z snaps, x += dx
+                        //       else -> +420 += 180 (no wrap), only dy
+                        //
+                        // and at the loop wrap (+192 = 0, +188 = dt + 1) the node is
+                        // SET to (x, rec+60, z) - the vertical drift of a loop goes.
+                        // Here the offset is `s.walkMove`, summed into the drawn
+                        // position with the program's own; the wrap zeroes its
+                        // vertical, which stands where rec+60 (not wired) would
+                        // put him only in so far as his placement is that height.
+                        // So does EVERY CLIP START: `sub_421A20` (41 callers) ends
+                        // both its arms in `o3de_SetNodePos(node, +244, rec+60 +
+                        // d(0->1).y, +252)` - the turn clip's start, the walk put
+                        // back when it ends (`sub_421A20(+12, 0)`), the death.
+                        // Without it a robber whose walk a turn kept interrupting
+                        // before the wrap kept each cycle's 0.38-a-frame rise and
+                        // climbed to the CEILING (a reader's screenshots,
+                        // 2026-09-11: "going higher each time the loop restart").
+                        //
+                        // NOT PORTED, labelled: the 0x400 grid arm (`sub_47C1B0` on
+                        // a cell byte with bit 0x10, which FREEZES the clip); the
+                        // cell OCCUPANCY - `sub_420B80` writes 0x80 into his cell
+                        // after the move and the brain's prologue puts the saved
+                        // byte (+189) back before it thinks, so each gunman is a
+                        // wall to the others and robbers here can walk through
+                        // one another; the facing the root delta turns by is this
+                        // tick's, where the node matrix holds last tick's; the
+                        // walk while a scene PROGRAM drives him (it places him
+                        // itself); and an action re-asked for the same clip,
+                        // which the engine restarts and this does not.
                         if (!(rec.flags & 8u) && !(rec.flags & 2u)) {
                             const int grpA = static_cast<int>(session.typeOfActor(s.actor));
                             const omk::PedClip* ac = (grpA >= 0 && grpA < 64)
                                                    ? shootClipFor(grpA, act) : nullptr;
                             GunAnim& ga = gunAnims[s.actor];
+                            // `if (u32(rec, 156) != 13) flags &= ~0x100`
+                            if (rec.state != 13) rec.flags &= ~0x100u;
                             if (ac != ga.clip) {
                                 ga.clip = ac;
                                 ga.frame = 1.0f;
+                                // `sub_421A20`'s last line, both arms: the node SET
+                                // to (x, rec+60 + the clip's frame-0->1 dy, z)
+                                s.walkMove[1] = 0.0f;
+                                if (ac && ac->root.size() >= 3) {
+                                    float d01[3] = {0.0f, 0.0f, 0.0f};
+                                    omk::pedRootDelta(*ac, 0.0f, 1.0f, nullptr, d01);
+                                    s.walkMove[1] = d01[1];
+                                }
                             } else if (ac && ac->frames > 0) {
+                                float t0 = ga.frame;
                                 ga.frame += fin.dt;
+                                bool wrapped = false;
                                 if (ga.frame >= static_cast<float>(ac->frames)) {
+                                    wrapped = true;
+                                    t0 = 0.0f;                  // `+192 = 0`
+                                    s.walkMove[1] = 0.0f;       // the node SET to rec+60
+                                }
+                                if (wrapped) {
                                     ga.frame = fin.dt + 1.0f;
                                     // once per robber: his clip has run and looped
                                     if (gunLooped.insert(s.actor).second)
@@ -11125,6 +11208,70 @@ int main(int argc, char** argv) {
                                                     "looped to %.1f\n", n, s.actor,
                                                     s.model.c_str(), ac->type, ac->slot,
                                                     ac->frames, double(ga.frame));
+                                }
+                                // THE ROOT MOTION, `sub_421370`'s walk (above)
+                                if (!s.progPlaced && ac->root.size() >= 3) {
+                                    float d[3] = {0.0f, 0.0f, 0.0f};
+                                    omk::pedRootDelta(*ac, t0, ga.frame, nullptr, d);
+                                    float r[3];
+                                    omk::rotateYaw(s.facing, d, r);
+                                    const float dx = r[0], dy = r[1], dz = r[2];
+                                    if (dx != 0.0f || dz != 0.0f) {
+                                        const float x0 = s.at[0] + s.walkMove[0];
+                                        const float z0 = s.at[2] + s.walkMove[2];
+                                        const bool keepFacing = (rec.flags & 0x200u) != 0;
+                                        float snap[2] = {0.0f, 0.0f};
+                                        const char* how = "free";
+                                        if (omk::shootWallTest(rec, shootMap, x0, z0, dx, dz, 2,
+                                                               snap) == 0) {
+                                            s.walkMove[0] += dx;
+                                            s.walkMove[2] += dz;
+                                        } else {
+                                            const float len = std::sqrt(dx * dx + dy * dy + dz * dz);
+                                            if (!keepFacing) s.facing = dz > 0.0f ? 180.0f : 0.0f;
+                                            if (omk::shootWallTest(rec, shootMap, x0, z0, 0.0f,
+                                                                   dz > 0.0f ? len : -len, 2,
+                                                                   snap) == 0) {
+                                                how = "slid along z";
+                                                if (!keepFacing) s.walkMove[0] = snap[0] - s.at[0];
+                                                s.walkMove[2] += dz;
+                                            } else {
+                                                if (!keepFacing) s.facing = dx > 0.0f ? 90.0f : 270.0f;
+                                                rec.flags |= 0x100u;
+                                                if (omk::shootWallTest(rec, shootMap, x0, z0,
+                                                                       dx > 0.0f ? len : -len, 0.0f,
+                                                                       2, snap) == 0) {
+                                                    how = "slid along x";
+                                                    if (!keepFacing) s.walkMove[2] = snap[1] - s.at[2];
+                                                    s.walkMove[0] += dx;
+                                                } else {
+                                                    how = "turned back";
+                                                    if (!keepFacing) s.facing += 180.0f;
+                                                }
+                                            }
+                                            ++s.walkWalls;
+                                        }
+                                        s.walkMove[1] += dy;
+                                        if (!s.walkTold) {
+                                            s.walkTold = true;
+                                            std::printf("frame %ld: actor %d %s - walks (sub_421370): "
+                                                        "clip type %d, root delta %.2f %.2f %.2f "
+                                                        "at facing %.1f from %.0f %.0f\n", n,
+                                                        s.actor, s.model.c_str(), ac->type,
+                                                        double(dx), double(dy), double(dz),
+                                                        double(s.facing), double(x0), double(z0));
+                                        }
+                                        if (std::strcmp(how, "free") != 0 && !s.walkWallTold) {
+                                            s.walkWallTold = true;
+                                            std::printf("frame %ld: actor %d %s - the wall test "
+                                                        "(sub_421140) stops his walk at %.0f %.0f: "
+                                                        "%s, facing %.1f, now %.0f %.0f\n", n,
+                                                        s.actor, s.model.c_str(), double(x0),
+                                                        double(z0), how, double(s.facing),
+                                                        double(s.at[0] + s.walkMove[0]),
+                                                        double(s.at[2] + s.walkMove[2]));
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -11422,6 +11569,7 @@ int main(int argc, char** argv) {
                             if (tc && tc->frames > 0) {
                                 GunClip& gc = gunClips[s.actor];
                                 gc.type = st.turnClip;
+                                s.walkMove[1] = 0.0f;   // `sub_421A20` sets the height
                                 gc.frames = tc->frames;
                                 gc.frame = 1.0f;
                                 gc.turn = st.turnTotal / static_cast<float>(tc->frames);
@@ -11859,6 +12007,9 @@ int main(int argc, char** argv) {
                 // steps it: each tick's delta goes through the WALL TEST
                 // (`sub_421140(rec, {pos, dx, dz}, 1)`), and against a wall only
                 // the vertical is kept - `o3de_MoveNodeBy(node, 0, dy, 0)`.
+                // ...and the WALK his current clip made while alive (`sub_421370`,
+                // in the brain above) - where he fell from
+                for (int k = 0; k < 3; ++k) rootMove[k] += s.walkMove[k];
                 if (s.deathType >= 0 && s.deathClip && !s.deathClip->root.empty() &&
                     s.deathClip->frames > 1) {
                     const long el = std::max<long>(n - s.deathStart, 0);
@@ -11874,8 +12025,8 @@ int main(int argc, char** argv) {
                         if (bi != shootBrains.end() && shootMap.valid()) {
                             float snap[2];
                             wall = omk::shootWallTest(bi->second, shootMap,
-                                                      s.at[0] + s.deathMove[0],
-                                                      s.at[2] + s.deathMove[2],
+                                                      s.at[0] + s.walkMove[0] + s.deathMove[0],
+                                                      s.at[2] + s.walkMove[2] + s.deathMove[2],
                                                       r[0], r[2], 1, snap) != 0;
                         }
                         if (wall) {
@@ -12160,6 +12311,36 @@ int main(int argc, char** argv) {
                 s.drawAt[0] = s.at[0] + rootMove[0];
                 s.drawAt[1] = (s.pelvis ? s.at[1] : ground) + rootMove[1];
                 s.drawAt[2] = s.at[2] + rootMove[2];
+                // HIS BODY IN THE SPATIAL INDEX: `Actor_TickShoot` ends a
+                // gunman's tick in `SpatialIndex_Update`, and the player's
+                // query (the crowd push above) shoves him out of it. At a FLOOR
+                // point, the convention the player's query is made in
+                // (`player->pos()`): his FEET, `off[1] + feet` - the lowest
+                // point of his standing pose carried where the vertices went,
+                // right for a pelvis-anchored robber and a floor-anchored one
+                // alike. At the model's origin (`off`) the entry sat ~40 above
+                // the floor and the reach box, `max(|dx|,|dy|,|dz|) <= the two
+                // root radii` (~28), refused every gunman on the height alone.
+                // NOT PORTED, labelled: every other actor, which `Actor_Attach`
+                // registers too; the dead stay registered, as nothing read
+                // removes them.
+                // His spheres are the model's meshes', which a scene actor's
+                // file authors far off its origin (VIR_FN's first at x 564.7),
+                // so they are RE-HUNG from the model-space point that stands
+                // there - his pelvis x/z, his feet y - once, on registration
+                // (the pelvis of that frame's pose; LABELLED: it moves a
+                // little with the clip and the spheres do not). The reach is
+                // his ROOT mesh's radius, the sweep's and the model's `+88`
+                // (docs/STREET_LIFE.md 3) - not `meshes.front()`, which for
+                // VIR_FN is a 7-unit mesh and shut the box at 14 units.
+                if (shootMode && shootBrains.count(s.actor)) {
+                    const float bodyAt[3] = {s.drawAt[0], off[1] + feet, s.drawAt[2]};
+                    const float bodyBase[3] = {pelvis[0], feet, pelvis[2]};
+                    const float bodyReach =
+                        (s.mo->root >= 0 && static_cast<std::size_t>(s.mo->root) < s.mo->meshes.size())
+                            ? s.mo->meshes[static_cast<std::size_t>(s.mo->root)].radius : 0.0f;
+                    session.actorBody(s.actor, s.model, bodyAt, s.facing, bodyBase, bodyReach);
+                }
                 s.posed.revision = ++worldGeoRev;
                 s.drawn = true;
                 // ---- A BODY THAT JUMPS, measured on the body and not on the

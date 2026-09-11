@@ -426,8 +426,28 @@ they float in the air"*: fixed - a robber's death clip now carries him down to
 the floor and slides him as it falls, the pelvis ending a few units above the
 ground. **CONFIRMED IN PLAY 2026-09-11** (*"Yes, it is fixed, the bodies reach
 the floor"*). Wrong looks like: a corpse still lying at waist height, one sinking
-into the floor, or one sliding through a wall - that last is possible, since
-the engine's wall stop is not ported yet.)
+into the floor, or one sliding through a wall - the engine's wall stop is
+ported now, so that last would be a fault.)
+
+**NOT YET PLAYED (2026-09-11): THE ROBBERS WALK, and walls stop them.** Once a
+robber's brain has him, his clip moves him: in the gallery the three gunmen
+come toward you at a walking pace while they shoot, and when one meets a wall
+he slides along it or turns. Wrong looks like: a robber gliding with his legs
+still (the walk and the clip out of step), walking THROUGH a wall or a shelf,
+sliding sideways at running speed, or sinking/rising as he goes. EXPECTED and
+not a fault yet (the path-finder is not ported): a robber that walks into a
+wall, turns, and walks into it again, over and over; robbers walking through
+each other; and one walking right up to you. Say which of these you see.
+(PLAYED 2026-09-11, *"Ok, good progress"*: a robber CLIMBED a little at every
+loop until he hung from the ceiling - fixed, every clip start now puts his
+height back as the engine does; and robbers walked INTO you, *"like I had no
+collider"* - the original pushes YOU out of their bodies, and now so does
+this. Look for: no robber rising off the floor however long he walks into a
+wall; a robber that reaches you shoving you back instead of standing inside
+you. EXPECTED, and the path-finder's to fix: two robbers can shove you a long
+way across the room. Wrong looks like: being thrown far in one frame, or
+pushed by an empty spot - a dead robber's body still pushes, since nothing
+the engine was read doing removes it.)
 
 **NOT YET PLAYED (2026-09-11): THE GUNMEN FIRE - and turn round to do it.**
 In the supermarket the robber nearest the entrance (actor 77) starts with

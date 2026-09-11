@@ -3643,6 +3643,31 @@ float Session::modelReach(const std::string& model) {
     return modelReach_[model];
 }
 
+int Session::actorBody(int actor, const std::string& model, const float origin[3], float facing,
+                       const float base[3], float reach) {
+    auto it = actorBodySlots_.find(actor);
+    if (it == actorBodySlots_.end()) {
+        // the model's spheres, re-hung from the point that stands at `origin`
+        std::vector<CollisionSphere> hung = *modelSpheres(model);
+        for (auto& c : hung)
+            for (int k = 0; k < 3; ++k) c.pos[k] -= base[k];
+        const auto& held = (actorBodySpheres_[actor] = std::move(hung));
+        // `sub_45DFF0(model, x, y, z)`: an ACTOR entry (kind 0), met by the
+        // sphere-against-sphere test `sub_45E390`
+        const int slot = spatial_.add(actor, 0, reach, &held);
+        if (slot < 0) return -1;
+        it = actorBodySlots_.emplace(actor, slot).first;
+    }
+    spatial_.update(it->second, origin, facing);    // `SpatialIndex_Update`
+    return it->second;
+}
+
+int Session::actorOfBodySlot(int slot) const {
+    for (const auto& [actor, s] : actorBodySlots_)
+        if (s == slot) return actor;
+    return -1;
+}
+
 bool Session::crowdPush(const std::vector<CollisionSphere>& mine, float myReach,
                         const float pos[3], float facing, float out[3]) {
     out[0] = out[1] = out[2] = 0.0f;

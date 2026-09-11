@@ -26214,8 +26214,11 @@ def c_engine_shoot_fire():
     # engine's
     sounds = re.findall(r"^frame (\d+): SHOT SOUND (fire|impact) - effect (\d+) sound (\d+) "
                         r"'(\S+)', \d+ from him, gain (\S+)$", o, re.M)
-    gone = re.findall(r"^frame (\d+): SHOT retired - entry \d+ (hit the world|out of range) "
-                      r"at \S+ \S+ (\S+) after ([\d.]+), (\d+) live$", o, re.M)
+    # (a bolt that meets a GUNMAN retires too - since the walk, 2026-09-11,
+    # they walk into the line of fire - and with one live at a time the
+    # retirements pair with the shots in order only if those are counted)
+    gone = re.findall(r"^frame (\d+): SHOT retired - entry \d+ (hit the world|out of range|"
+                      r"HIT ACTOR \d+) at \S+ \S+ (\S+) after ([\d.]+), (\d+) live$", o, re.M)
     got = (init.group(1) if init else None,
            latches,
            [int(s[0]) for s in shots],
@@ -26235,12 +26238,22 @@ def c_engine_shoot_fire():
             [7] * 8,
             [("124.8", "5", "0.000", "0.000", "-1.000", "the tir node")],
             [1] * 8,
-            [2] * 8,
-            [("hit the world", -3161, "249.6", "0")],
-            8, [("4996.4", "15144.7", "-2941.6")],
+            # THE WALK AND THE COLLIDER (2026-09-11): the gallery's gunmen walk
+            # at him and their bodies PUSH him between shots, so the eight bolts
+            # leave from four muzzle points - the first from the raised gun where
+            # he stands - and meet what the push put in front of them: 237 after
+            # one frame, the world after 2, 4 and then 8 (998.4 flown) frames
+            [2, 1, 4, 8, 8, 8, 8, 8],
+            [("HIT ACTOR 237", -2909, "124.8", "0"), ("hit the world", -3571, "998.4", "0"),
+             ("hit the world", -3161, "249.6", "0"), ("hit the world", -3145, "499.2", "0")],
+            8, [("4837.6", "15144.7", "-2603.5"), ("4980.7", "15144.7", "-2701.5"),
+                ("4996.4", "15144.7", "-2941.6"), ("5050.8", "15144.7", "-2890.9")],
             list(range(37, 248, 30)),
-            list(range(39, 250, 30)),
+            # (an impact sound for each bolt the WORLD stops, none for 237's)
+            [39, 101, 135, 165, 195, 225, 255],
             [("fire", "1", "687", "WAVER2.WAV", "1.00"),
+             ("impact", "3", "689", "WIMP1.WAV", "0.13"),
+             ("impact", "3", "689", "WIMP1.WAV", "0.16"),
              ("impact", "3", "689", "WIMP1.WAV", "0.29")])
     return got, want, (
         "`Shoot_InitWeapon` giving the Gun Waver the key-1 row on the mode "
@@ -26248,8 +26261,9 @@ def c_engine_shoot_fire():
         "eight shots, each SEVEN frames after its latch (one for the queue "
         "drain, six for the weapon to come back up); all of them the row's "
         "speed and damage, straight down -Z from the Maing node; one pool "
-        "entry per shot; every bolt from the one RAISED muzzle; WAVER2.WAV on "
-        "every shot's frame and WIMP1.WAV on every impact's")
+        "entry per shot; the bolts from the RAISED muzzle wherever the gunmen's "
+        "bodies have pushed him; WAVER2.WAV on every shot's frame and WIMP1.WAV "
+        "on every impact the world makes")
 
 
 def c_engine_shoot_hit():
@@ -26287,8 +26301,8 @@ def c_engine_shoot_hit():
         [exe, fr, os.path.join(ROOT, "tables"),
          "--save", os.path.join(ROOT, "traces", "save-appart.bin"),
          "--area", "59", "--stand", "5000,0,-2900,258", "--shoot",
-         "--frames", "330", "--nodelay",
-         "--keys", ",".join(["54"] * 10), "--keydelay", "30"],
+         "--frames", "630", "--nodelay",
+         "--keys", ",".join(["54"] * 20), "--keydelay", "30"],
         capture_output=True, text=True,
         env=dict(os.environ, SDL_VIDEODRIVER="dummy"))
     o = play.stdout
@@ -26321,12 +26335,22 @@ def c_engine_shoot_hit():
     # corpse elsewhere and the fifth bolt passes it - four and five both meet the
     # world. `8bf793d` changed it and this check was not run on it until the next
     # step; the engine keeps the brain's +420, so 83 is the faithful heading.
-    want = ([(237, 4758, -2560, "44.4"), (238, 5207, -2273, "44.4"),
+    #
+    # AND SINCE THE WALK (2026-09-11) a different fight altogether, on the
+    # real path: the gunmen walk their fight clip at the player, kill him by
+    # frame 16, and their BODIES shove him ~340 units east (the spatial push,
+    # `Actor_TickShoot`), so his fixed-yaw bolts meet whoever stands in them.
+    # Ten taps no longer killed anybody; twenty over 630 frames kill all three
+    # - 237 at 338 (death type 6), 238 at 548 (5), 240 at 578 (7) - and the
+    # roots at the first sweep frame are already 7 units into the walk.
+    want = ([(237, 4759, -2567, "44.4"), (238, 5207, -2280, "44.4"),
              (240, 4516, -2797, "44.4")],
-            ["240"] * 3,
-            [(5, 15, 10, 2), (5, 10, 5, 2), (5, 5, 0, 2)],
-            [(5, True)],
-            ["240"])
+            ["237", "237", "240", "238", "237", "240", "238", "238", "240"],
+            [(5, 15, 10, 2), (5, 10, 5, 0), (5, 15, 10, 0), (5, 15, 10, 0), (5, 5, 0, 0),
+             (5, 10, 5, 1), (5, 10, 5, 0), (5, 5, 0, 2), (5, 5, 0, 1)],
+            [(6, True), (5, True), (7, True)],
+            # (240's type-7 clip is still playing at 630)
+            ["237", "238"])
     # THE FALL (2026-09-11, a reader: the dead *"float in the air"*): his death
     # clip's root motion - `sub_421770` moves the node by it every tick, the
     # vertical included - summed from frame 1 and turned by his heading: 35.6
@@ -26335,19 +26359,32 @@ def c_engine_shoot_hit():
     # ...ONE CLIP FRAME A TICK THROUGH THE WALL TEST (`sub_421140(rec, delta,
     # 1)`): three of his 39 ticks meet a wall byte and keep only their drop,
     # so the slide is -101.0 / 12.2 where the free sum was -101.7 / 12.7
-    fall = re.search(r"^frame \d+: actor 240 VIR_FN - death clip's root motion \(sub_421770\): "
-                     r"(\S+) (\S+) (\S+) over (\d+) frames, down \S+, (\d+) ticks against a wall",
-                     o, re.M)
-    floor = re.search(r"^frame \d+: actor 240 VIR_FN - dead: his pelvis (\S+) above the floor",
-                      o, re.M)
-    got = got + (fall.groups() if fall else None, floor.group(1) if floor else None)
-    want = want + (("-101.0", "35.6", "12.2", "39", "3"), "6.3")
+    # ...and since the walk the falls are 237's and 238's: 237's type-6 clip
+    # (84 frames) drops 29.2 and meets a wall on 37 ticks, slumping him 14.0
+    # above the floor; 238's type 5 is 240's old clip - 35.6 down, a 100-unit
+    # slide, no wall - and leaves his pelvis 7.5 up
+    falls = re.findall(r"^frame \d+: actor (\d+) VIR_FN - death clip's root motion "
+                       r"\(sub_421770\): (\S+) (\S+) (\S+) over (\d+) frames, down \S+, (\d+) "
+                       r"ticks against a wall", o, re.M)
+    floors = re.findall(r"^frame \d+: actor (\d+) VIR_FN - dead: his pelvis (\S+) above the "
+                        r"floor", o, re.M)
+    # THE COLLIDER (2026-09-11, a reader: robbers walked into his spot *"like I
+    # had no collider"*): each gunman's body is in the spatial index and the
+    # player's query pushes HIM out of it - first 237 at 57. 230 is the
+    # gallery's fourth brain; 240's push at 588 is his CORPSE, which nothing
+    # read removes from the index
+    pushes = re.findall(r"^frame (\d+): the player is pushed out of actor (\d+)'s body", o, re.M)
+    got = got + (falls, floors, pushes)
+    want = want + ([("237", "14.4", "29.2", "0.3", "84", "37"),
+                    ("238", "-100.3", "35.6", "-21.1", "39", "0")],
+                   [("237", "14.0"), ("238", "7.5")],
+                   [("57", "237"), ("402", "230"), ("411", "238"), ("588", "240")])
     return got, want, (
-        "the three gunmen's roots ON their placements with the body's 44.4 "
-        "sphere; the first three bolts from the raised gun killing actor 240, "
-        "15 -> 10 -> 5 -> 0 at band 2; the fourth and fifth passing him as he "
-        "falls, at the heading his brain gave him; killed once, death clip type 5, "
-        "the enemy count dropping")
+        "the three gunmen's roots, 7 units into their walk at the first sweep; "
+        "twenty bolts from the raised gun meeting whoever the walk and the push "
+        "put in front of them - nine hits, 237, 238 and 240 killed with death "
+        "types 6, 5 and 7; two falls through the wall test to the floor; and "
+        "the player pushed out of the gunmen's bodies")
 
 
 def c_engine_shoot_move():
@@ -26412,8 +26449,12 @@ def c_engine_shoot_move():
     want = ("Speed 70 -> row 4: top 10.400, accel 0.3900, brake 2.080 a frame",
             ["180.0", "180.0", "270.0"],
             [(44, "303.29", ("0.00", "0.00", "303.29")),
-             (32, "256.10", ("256.10", "0.00", "0.00")),
-             (23, "92.82", ("-92.82", "0.00", "0.00"))])
+             # (THE COLLIDER, 2026-09-11: the gallery's gunmen now walk at him
+             # and their bodies PUSH him - `Actor_TickShoot`'s spatial query -
+             # so the strafe and the second walk end off their straight lines;
+             # the distance the mover asked for is still gone in full)
+             (32, "256.10", ("240.67", "0.00", "9.30")),
+             (23, "92.82", ("7.49", "0.00", "0.00"))])
     return got, want, (
         "the mover's speeds from Speed 70 (row 4: 10.4, 0.39, 2.08); forward 40 "
         "frames = 303.29 along +Z, strafe right 30 = 256.10 along +X, nine MDRG "
@@ -26475,7 +26516,10 @@ def c_engine_shoot_entrance():
     got = ([(int(n), a, (x, y, z)) for f, n, a, x, y, z in legs],
            ent is not None, during, offs)
     want = ([(29, "144.95", ("-144.95", "0.00", "0.00")),
-             (84, "719.29", ("0.00", "-0.00", "719.29"))],
+             # (THE COLLIDER, 2026-09-11: a robber's body in the spatial index
+             # pushes him off the straight walk - the 719.29 is still walked,
+             # it ends 60.22 across and 535.05 along)
+             (84, "719.29", ("60.22", "-0.00", "535.05"))],
             True, True, [])
     return got, want, (
         "the reader's route into SCENE 56's zone 12: 144.95 along -X, then 84 "
@@ -26916,7 +26960,9 @@ def c_engine_shoot_gunfire():
     # node's position (`sub_4800C0`, the brain's edge walk) - so the first ones
     # rise to him (pitch 6.3) where they fell toward his feet (pitch 0.2)
     want = ([("4", "237", "766", "DBWAVER", "2", "2", "10.0", "7"),
-             ("4", "240", "772", "HEXAGUN", "3", "3", "4.0", "5")],
+             ("4", "240", "772", "HEXAGUN", "3", "3", "4.0", "5"),
+             # (THE WALK, 2026-09-11: 238, 660 off, walks into his 585 and arms)
+             ("15", "238", "769", "DECAGUN", "4", "4", "4.0", "7")],
             {"237": (4, 14, 24, 34, 44), "240": tuple(range(4, 48, 4))},
             # (with 6A the hand holding the gun ANIMATES, so the tir node rides
             # the clip's frame: -0.110 / 6.3 on its first frame held still)
@@ -26925,41 +26971,56 @@ def c_engine_shoot_gunfire():
             # bolt draws its own, so the first bolt's jitter is the CRT's 4th to
             # 6th values - 0 69 24, where it had 41 67 34 - and the muzzle rides
             # his raised arm)
-            ("0.527 -0.108 -0.843", "32.0", "6.2", "the tir node", "0 69 24"),
+            # (and with the WALK the muzzle rides a moving body: 0.526 -0.117,
+            # pitch 6.7, where the gunman standing still gave 0.527 -0.108 / 6.2)
+            ("0.526 -0.117 -0.842", "32.0", "6.7", "the tir node", "0 69 24"),
             # 2 on the player in the first 48 frames, where it was 7: the body's
             # BOXES are small (HO1_FN's pelvis box ~14 x 11 x 9 around the hip
             # joint the bolts aim at, inside a 42.5 sphere) and a +-14 jitter
             # threads them - measured with a sweep trace: every miss passed 5.8
             # to 22.6 from the root, inside every sphere, meeting no box
-            True, 0, 2, "347",
+            # THE WALK (2026-09-11) closes them on him: 10 on the player in the
+            # 48 frames where it was 2, 2 on each other where it was 0, and 238
+            # ends facing 84 - his wall slide's 90/270 snaps and the turn back
+            True, 2, 10, "84",
             # (from the 336.9 his ENTRANCE PROGRAM left him at - his brain's
             # heading is seeded from how he is drawn, and he is drawn at it)
             ("394", "32", "25", "-7.20", "336.9"), ("418", "164.1"),
-            ("WAVER", "1", "1", "15.0", "5"), (418, 433, 448, 463, 478, 493),
+            # (THE WALK: blocked on his first step at 418, the slide snaps him to
+            # 270 and the hub turns him back on a type-30 clip every ~16 frames;
+            # the brain holds while each plays, so he fires at 418 and 459 only)
+            ("WAVER", "1", "1", "15.0", "5"), (418, 459),
             "0.164 -0.110 0.980",
             # (ending his turn at 164.1 he stands 21 degrees off the player -
             # his aim layer's yaw covers it - so his bolts come from a muzzle
             # turned that way: the kill is at 494)
-            [("434", "damage 5, Body Shield 30 -> 4; health 10 -> 6, gauge 6 (property 1 "
-                     "stored 6); message 0 to the hurt handler"),
-             ("449", "damage 5, Body Shield 30 -> 4; health 6 -> 2, gauge 2 (property 1 "
-                     "stored 2); message 0 to the hurt handler"),
-             ("494", "damage 5, Body Shield 30 -> 4; health 2 -> -2 - KILLED: the death "
-                     "`sub_423FC0` is not ported, he plays on; the gauge stays at 2")],
+            [("460", "damage 5, Body Shield 30 -> 4; health 10 -> 6, gauge 6 (property 1 "
+                     "stored 6); message 0 to the hurt handler")],
             [("21", "237", "10", "3", "19", "2.0"), ("21", "238", "10", "3", "19", "2.0"),
              ("22", "240", "10", "3", "19", "2.0")],
-            ("435", "10", "3", "19"),
-            [("4", "237", "-0.403", "-0.011"), ("4", "240", "0.120", "-0.017"),
-             ("418", "77", "-0.371", "-0.024")],
+            # (77's walk never runs a whole loop now - each turn restarts it)
+            None,
+            [("4", "237", "-0.403", "-0.007"), ("4", "240", "0.120", "-0.015"),
+             ("15", "238", "0.197", "-0.003"), ("418", "77", "-0.112", "-0.024")],
             [("237", "766", "DBWAVER"), ("238", "769", "DECAGUN"), ("240", "772", "HEXAGUN"),
              ("77", "49", "WAVER")],
-            [("8", "240", "-0.2"), ("14", "237", "-3.9"), ("433", "77", "-4.2")])
+            [("8", "240", "-0.3"), ("14", "237", "-4.2"), ("19", "238", "0.7"),
+             ("459", "77", "-3.5")])
+    # THE HEIGHT AT EVERY CLIP START (2026-09-11, a reader's robber climbing to
+    # the ceiling): `sub_421A20` sets the node to (x, rec+60 + d(0->1).y, z) on
+    # every clip it starts, so 77's walk - restarted by a turn clip every ~16
+    # frames - never keeps its 0.38-a-frame rise. Reset only at the loop wrap
+    # he ended these 500 frames at -140; he stands at -128
+    y77 = re.search(r"^  actor 77 BRA_FN \(bank none\) at \S+ (\S+) \S+ facing", sm, re.M)
+    got = got + (y77.group(1) if y77 else None,)
+    want = want + ("-128",)
     return got, want, (
         "the gallery's two gunmen resolve their held weapons through the others' table, fire "
         "on the brain's first outcome 1 and every RATE frames after, the first bolt aimed "
         "from the tir node with the CRT's first jitter, rising to the player's pelvis and "
-        "meeting his body; the "
-        "supermarket's robber 77 turns round on his type-32 clip and then fires every 15")
+        "meeting his body, the third arming once his walk brings him in; the "
+        "supermarket's robber 77 turns round on his type-32 clip, walks into a wall and is "
+        "turned back between his shots (418, 459), and does not climb")
 
 
 def c_shoot_input():
@@ -27067,16 +27128,19 @@ def c_engine_shoot_brain():
         return ("no brain built",), ("3 brains",), "the viewer's own brain lines"
     got = (len(brains), brains[0],
            tuple(sorted((int(a), int(o), int(d)) for a, _, _, o, d in fires)))
+    # (and since the WALK, 2026-09-11: 238 does not stay at 16.9 m - his
+    # action's clip walks him toward the player, and he engages at 579, inside
+    # the 585; the boundary still shows, as the distance he fires from)
     want = (3, ("1950", "585", "702", "0.000", "15"),
-            ((237, 1, 417), (240, 1, 495)))
+            ((237, 1, 417), (238, 1, 579), (240, 1, 495)))
     return got, want, ("the gunmen whose brain was built, the first one's "
                        "record as CONVERTED from his own authored properties "
                        "(50 m acquire, 15 m engage, 18 m disengage, a 90 "
                        "degree cone, 15 health), and then which of the three "
-                       "actually reach outcome 1 - the two inside the 15 m "
-                       "ENGAGEMENT range and not the one at 16.9 m, which is "
-                       "the boundary that separates a machine that runs from "
-                       "one that runs on the right numbers")
+                       "actually reach outcome 1 and from how far - the two "
+                       "inside the 15 m ENGAGEMENT range at once, and the one "
+                       "at 16.9 m only once his walk has brought him to 579, "
+                       "inside the 585")
 
 
 def c_shoot_generic():

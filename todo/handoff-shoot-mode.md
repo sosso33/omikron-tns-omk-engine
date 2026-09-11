@@ -102,6 +102,22 @@ them into a fight.
 
 ## 4. What is NOT done
 
+**THE WALK AND THE WALL TEST ARE PORTED (2026-09-11, `todo/shoot-mode.md` §8
+item 6 A4/B1)**: `sub_421140` as `omk::shootWallTest`, the death slide through
+it one step a tick, and `sub_421370`'s current-clip root motion through it two
+steps with the z/x slides and their facing snaps. **What is left is the
+STEERING**: the path-finder's distance field (`sub_436260`/`sub_436350`, read),
+`Shoot_Think` and the grid heading (`sub_421CD0`, `sub_435C40`), and the cell
+occupancy stamp/restore around the brain. Without them a robber walks at the
+player, meets a wall, has his facing snapped by the slide and is turned back
+into it - measured on the supermarket's 77, and expected, not a new fault.
+Played the same day: the climbing robber (the height is SET at every clip
+start, `sub_421A20`, not only at the wrap) and the missing collider (the
+original pushes the PLAYER out of each gunman's body through the spatial
+index - `Actor_TickShoot`; the gunmen are registered now) are both fixed.
+The player's own reach still takes `meshes.front()` (7.1, his root is 42.5):
+labelled, because correcting it moves the street crowd's confirmed push.
+
 **FIRING IS CONNECTED (2026-09-10, `todo/shoot-mode.md` §7h/§7i)** — and the
 chain this section used to give was wrong in two places, both found by reading
 the addresses it named before wiring anything:

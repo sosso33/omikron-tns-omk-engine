@@ -1603,8 +1603,11 @@ forget to plan it."* The session's own log agrees with the gate: 245 latches
      pelvis that stayed up. Now a death clip's root motion, summed from frame 1
      (`pedRootDelta`) and turned by his heading, joins the placement and holds
      at the clip's end: the gallery's 240 falls 35.6 and slides 101.7, his
-     pelvis left 6.3 above the floor. Labelled: `sub_421140`'s wall test (a
-     body may slide into a wall the engine would stop it at). And NOTE what the
+     pelvis left 6.3 above the floor. ~~Labelled: `sub_421140`'s wall test (a
+     body may slide into a wall the engine would stop it at).~~ **The wall test
+     is PORTED** (`9880055`, `omk::shootWallTest`): one clip frame a tick through
+     `sub_421140(rec, delta, 1)`, and 240's fall meets a wall on 3 of 39 ticks -
+     -101.0 / 12.2 where the free sum was -101.7 / 12.7. And NOTE what the
      same reading implies for the rest: `sub_421370` applies the CURRENT clip's
      root motion the same way, and the fight clip (type 10) carries -139.7 per
      19-frame loop - walking pace. That is part of item B.
@@ -1619,6 +1622,79 @@ forget to plan it."* The session's own log agrees with the gate: 245 latches
      `Shoot_Think` and the grid heading, then the edges states 1/2 walk -
      with the clip root motion `sub_421370` applies (not ported in A) moving
      the body while a walk clip plays.
+   * **B1, THE WALK - ported 2026-09-11** (a reader: *"continue with robbers
+     walking and the wall detection"*). `sub_421370` after its frame step takes
+     the current clip's root delta (`sub_434D30` -> `Anim_RootDelta(+192,
+     +188)`, turned by the facing) through the wall test with TWO steps, and the
+     asm at 0x421520..0x421756 gives the slides: free -> the whole delta;
+     blocked -> test `{0, dz > 0 ? |d| : -|d|}` with `+420 = dz > 0 ? 180 : 0`,
+     free -> x snaps to the landing cell's centre and z takes the ORIGINAL dz;
+     else `+160 |= 0x100`, test `{dx > 0 ? |d| : -|d|, 0}` with `+420 = dx > 0
+     ? 90 : 270`, free -> z snaps and x takes dx; else `+420 += 180` (no wrap)
+     and only the vertical. `dx == dz == 0` moves nothing at all. The facing
+     writes are skipped under `+160 & 0x200`. The loop wrap SETS the node to
+     `(x, rec+60, z)`; the port zeroes the walk's vertical there. In play.cpp
+     it is `s.walkMove`, summed into the drawn position (and the death slide
+     starts from it). Measured: the gallery's gunmen walk their type-10 fight
+     clip at ~7.3 a frame toward the player, 238 sliding along x at frame 23
+     and 237 along z at 25; the supermarket's 77 is blocked on his first step
+     at 418 and slides along z.
+     **WHAT IT EXPOSES, and it is the path-finder's to fix.** The hub turns
+     him toward the PLAYER (`shootAcquires`' bearing, as in the engine), his
+     action's clip walks him there, and a wall slide snaps his facing to 90 /
+     270 - which the hub then turns back on a type-30 clip, into the same
+     wall: 77 repeats turn -> blocked -> 270 every ~16 frames and closes to 65
+     units. The engine's answer is what is still missing: `sub_421CD0`'s HOLD
+     (`fin.holdStill`, always false here), the grid heading of `sub_435C40`
+     over the distance field, and the cell OCCUPANCY (`sub_420B80` stamps
+     0x80 into his cell after the move, the brain's prologue restores the
+     saved `+189` byte before it thinks - so each gunman is a wall to the
+     others; here they walk through one another). Labelled in play.cpp with
+     the 0x400 cell arm (`sub_47C1B0`, which freezes the clip on a bit-0x10
+     cell) and the one-tick lag of the facing matrix.
+     **PLAYED 2026-09-11** (*"Ok, good progress"*), two reports:
+     1. *"an ennemy had a buggy animation loop and was going higher each time
+        the loop restart"* - screenshots of a robber climbing to the ceiling.
+        The port reset the walk's vertical only at the loop WRAP, and
+        `sub_421A20` (the clip start, 41 callers) ends BOTH its arms in
+        `o3de_SetNodePos(node, +244, rec+60 + d(0->1).y, +252)`: every clip
+        start puts the height back. A robber whose walk a turn clip keeps
+        restarting before the wrap (77: turn -> blocked -> turn every ~16
+        frames) kept each cycle's 0.38-a-frame rise. Reset now at the change of
+        clip (to the clip's frame-0->1 dy), the turn clip's start, the picked
+        clip's end and the death; 77 ends 1200 frames at y -128, where 500
+        frames had him at -140.
+     2. *"the ennemies were going to the exact same position as me, like I had
+        no collider"* - asked how the original handles it. **It PUSHES THE
+        PLAYER, and nothing stops the robber.** In shoot mode
+        `Actor_TickShoot` (0x00466840) runs the player's tick as
+        `Shoot_TickPlayer` then `Actor_TickNpc`, whose `SpatialIndex_Query`
+        shoves him out of every body he overlaps (`sub_45E390`, sphere against
+        sphere - the street crowd's push, docs/STREET_LIFE.md 3), and a
+        gunman's as `Shoot_TickNpc` then `SpatialIndex_Update`. The grid does
+        not stop a robber at the player: `Shoot_TickPlayer` stamps the player's
+        cell 0x80 only around `Shoot_StartTargetScripts` (the DOOR scripts,
+        `sub_44A0F0` on the door table) and restores it in the same tick.
+        Gunmen are walls to EACH OTHER through their own stamps (not ported).
+        The port's index held only the street walkers; the gunmen are now
+        registered (`Session::actorBody`) and refreshed after their tick, and
+        the gallery's first push is at frame 57 (15.58 7.14 out of 237).
+        Two faults found on the way, both of the reading of the model: a scene
+        actor's meshes are authored hundreds of units off its origin (VIR_FN's
+        first sphere at x 564.7), so the spheres are RE-HUNG from the
+        model-space point that stands at the entry (pelvis x/z, feet y), the
+        body being drawn turned about the pelvis; and `modelReach` took
+        `meshes.front()` for the model's `+88` where the ROOT mesh is meant -
+        7.0 against 44.4 for VIR_FN, which shut the reach box at 14 units. The
+        gunmen take the root's now. **The PLAYER's reach has the same fault and
+        is LEFT, labelled**: `playerReach` is HO1_FN's mesh 0 (7.1) where his
+        root is 42.5, and correcting it moves the street crowd's confirmed
+        push.
+        **What it shows next**: robbers that walk at the player now SHOVE him -
+        two of them moved him ~380 units across the gallery in 140 frames -
+        which is the reading's consequence too. What keeps the original's
+        robbers off the player is their steering (`sub_421CD0`'s hold and the
+        path-finder), not the push.
      **THE PATH-FINDER, read 2026-09-11: a distance field toward the PLAYER.**
      `sub_436260(floor, x, z)` (10_dsound.c 1234) seeds a breadth-first search
      at a cell: two byte grids at `dword_52BA40[2]`, the back one cleared to

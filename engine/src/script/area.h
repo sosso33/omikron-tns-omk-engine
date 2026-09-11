@@ -320,6 +320,25 @@ public:
     // it with the tracked player position.
     bool talkToPedestrian(const float pos[3], float facing);
     const SpatialIndex& spatial() const { return spatial_; }
+    // THE SHOOT GUNMEN'S BODIES in the same index (2026-09-11, a reader:
+    // robbers walked into the player's own spot "like I had no collider").
+    // `Actor_Attach` (0x0041CCA0) registers EVERY actor, and in shoot mode
+    // `Actor_TickShoot` (0x00466840) ends a gunman's tick in
+    // `SpatialIndex_Update` and the player's in `Actor_TickNpc`, whose
+    // `SpatialIndex_Query` pushes HIM out of every body he overlaps - the
+    // player moves, not the robber. Registered on first call, refreshed on
+    // every call; `origin` is a FLOOR point under the body - the convention
+    // the player's own query uses (`PlayerController::pos()`) - and `base`
+    // the model-space point that stands there (his pelvis x/z, his feet y):
+    // the model's spheres are RE-HUNG from it on registration, since a scene
+    // actor's meshes are authored hundreds of units off the model origin
+    // (VIR_FN's first sphere sits at x 564.7) and the body is drawn turned
+    // about the pelvis. `reach` is the body's radius for the reach box.
+    // Keyed by actor id. -> the slot, -1 when full.
+    int actorBody(int actor, const std::string& model, const float origin[3], float facing,
+                  const float base[3], float reach);
+    // the actor a slot was registered for by `actorBody`, or -1
+    int actorOfBodySlot(int slot) const;
     // `character.look_at_player` (138) / `character.look_away` (139): the
     // actor's look-at slot (+400, slot 100) set to the player / cleared.
     // `Actors_TickAll` aims his head at it every frame (`aimHead`, pose.h);
@@ -1352,6 +1371,8 @@ private:
     int         sceneOutArea_ = -1;          // whose it is, -1 when empty
     Sliders sliders_;                       // empty unless loadTraffic ran
     SpatialIndex spatial_;
+    std::map<int, int> actorBodySlots_;    // actor id -> slot, `actorBody`
+    std::map<int, std::vector<CollisionSphere>> actorBodySpheres_;   // ...its re-hung spheres
     std::map<std::string, std::vector<CollisionSphere>> modelSpheres_;
     std::map<std::string, float> modelReach_;
     std::vector<int> pedSlots_;              // walker -> its index slot, -1 none
