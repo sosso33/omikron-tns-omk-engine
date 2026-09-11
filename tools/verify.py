@@ -26881,7 +26881,15 @@ def c_engine_shoot_gunfire():
            # `-atan2(dy, 2|d|)`, in radians; 77 aims almost dead ahead after his
            # turn, 237 23 degrees to his left
            re.findall(r"^frame (\d+): actor (\d+) \S+ - AIM LAYER \(sub_434C30\): yaw (\S+) "
-                      r"pitch (\S+) rad", out + sm, re.M))
+                      r"pitch (\S+) rad", out + sm, re.M),
+           # HIS GUN drawn on his `Maing` (`sub_41C490`'s link, `tir` left out),
+           # and WHERE IT POINTS at his second shot - the barrel, hand to `tir`,
+           # against the line from the muzzle to the player (a reader: *"their
+           # weapon is not aiming at me"*; negated, the yaw puts it 12-13 off)
+           re.findall(r"^frame \d+: actor (\d+) \S+ - HIS GUN drawn: object (\d+) '(\w+)'",
+                      out + sm, re.M),
+           re.findall(r"^frame (\d+): actor (\d+) \S+ - HIS BARREL points (\S+) degrees",
+                      out + sm, re.M))
     # the bolts aim at his ROOT MESH, the pelvis - +244..+252 is the root
     # node's position (`sub_4800C0`, the brain's edge walk) - so the first ones
     # rise to him (pitch 6.3) where they fell toward his feet (pitch 0.2)
@@ -26902,25 +26910,28 @@ def c_engine_shoot_gunfire():
             # threads them - measured with a sweep trace: every miss passed 5.8
             # to 22.6 from the root, inside every sphere, meeting no box
             True, 0, 2, "347",
-            ("394", "32", "25", "-7.20", "0.0"), ("418", "187.2"),
+            # (from the 336.9 his ENTRANCE PROGRAM left him at - his brain's
+            # heading is seeded from how he is drawn, and he is drawn at it)
+            ("394", "32", "25", "-7.20", "336.9"), ("418", "164.1"),
             ("WAVER", "1", "1", "15.0", "5"), (418, 433, 448, 463, 478, 493),
-            "-0.077 -0.097 0.992",
-            # (with the aim layer his arm is up and turned to the player and
-            # the jitter comes later in the stream: he hits from 435, every
-            # bolt, and the kill is at 465)
-            [("435", "damage 5, Body Shield 30 -> 4; health 10 -> 6, gauge 6 (property 1 "
+            "0.164 -0.110 0.980",
+            # (ending his turn at 164.1 he stands 21 degrees off the player -
+            # his aim layer's yaw covers it - so his bolts come from a muzzle
+            # turned that way: the kill is at 494)
+            [("434", "damage 5, Body Shield 30 -> 4; health 10 -> 6, gauge 6 (property 1 "
                      "stored 6); message 0 to the hurt handler"),
-             ("450", "damage 5, Body Shield 30 -> 4; health 6 -> 2, gauge 2 (property 1 "
+             ("449", "damage 5, Body Shield 30 -> 4; health 6 -> 2, gauge 2 (property 1 "
                      "stored 2); message 0 to the hurt handler"),
-             ("465", "damage 5, Body Shield 30 -> 4; health 2 -> -2 - KILLED: the death "
-                     "`sub_423FC0` is not ported, he plays on; the gauge stays at 2"),
-             ("480", "he is down already (health -2): nothing"),
-             ("495", "he is down already (health -2): nothing")],
+             ("494", "damage 5, Body Shield 30 -> 4; health 2 -> -2 - KILLED: the death "
+                     "`sub_423FC0` is not ported, he plays on; the gauge stays at 2")],
             [("21", "237", "10", "3", "19", "2.0"), ("21", "238", "10", "3", "19", "2.0"),
              ("22", "240", "10", "3", "19", "2.0")],
             ("435", "10", "3", "19"),
             [("4", "237", "-0.403", "-0.011"), ("4", "240", "0.120", "-0.017"),
-             ("418", "77", "0.005", "-0.024")])
+             ("418", "77", "-0.371", "-0.024")],
+            [("237", "766", "DBWAVER"), ("238", "769", "DECAGUN"), ("240", "772", "HEXAGUN"),
+             ("77", "49", "WAVER")],
+            [("8", "240", "-0.2"), ("14", "237", "-3.9"), ("433", "77", "-4.2")])
     return got, want, (
         "the gallery's two gunmen resolve their held weapons through the others' table, fire "
         "on the brain's first outcome 1 and every RATE frames after, the first bolt aimed "

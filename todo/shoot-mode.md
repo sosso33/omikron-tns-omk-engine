@@ -1574,6 +1574,25 @@ forget to plan it."* The session's own log agrees with the gate: 245 latches
      also now draws its `rand()`s first, so each bolt gets different jitter.
      The engine's `sub_45ECA0` has no hidden-mesh test and the port's frames
      match its (joint origin, `+76` centre, `+92/+104` box).
+   * **A3, THE FACING AND THE GUNS** - fixed 2026-09-11 after screenshots:
+     *"They are not always turned to the correct position and they don't have
+     any weapons in their hands"*. Neither was the aim. (1) A gunman who had
+     come on through an ENTRANCE PROGRAM was drawn at the program's rest yaw
+     for the whole phase, while his brain turned and aimed by its own heading
+     - the viewer's body-yaw chain took `restYaw` before the brain's `+420`.
+     The engine has one heading, the node's: now a gunman whose brain runs is
+     drawn at it, and the brain is seeded from the yaw he is drawn at, so he
+     does not snap at the mode's start (77 now turns 336.9 -> 164.1, and his
+     aim layer's -0.371 covers the rest). The gallery's gunmen, placed and not
+     scripted, were never affected - which is why they looked right. (2) His
+     GUN was never drawn: the port drew the player's only. Now each gunman's
+     held object rides his `Maing` as the player's does (`sub_41C490`'s link,
+     `tir` left out), from his hand as drawn last frame. And where the gun
+     points is measured, not assumed: the barrel (hand to `tir`) against the
+     line to the player, -0.2 / -3.9 / -4.2 degrees at each gunman's second
+     shot; with the yaw negated, 12 to 13 off. Labelled: a gunman's FIRST bolt
+     leaves an arm not yet bent - the port's `meshAt` is last frame's, where
+     the engine bends the arm in the same gate call before the shot.
    * **B, the MOVEMENT** - large, and mostly reading. The brain's walking
      states 1, 2 and 4 are ported, with `sub_426C20`'s move decision, but
      nothing FEEDS them: `Shoot_Think` (which floor and cell he is on) is read

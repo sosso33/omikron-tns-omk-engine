@@ -3849,6 +3849,8 @@ int main(int argc, char** argv) {
     struct GunAim { bool live = false; float yaw = 0.0f, pitch = 0.0f; };
     std::map<int, GunAim> gunAims;
     std::set<int> gunAimTold;         // who has said his first aim
+    std::set<int> gunDrawnTold;       // whose gun has been said drawn
+    std::set<int> gunBarrelTold;      // whose barrel direction has been said
     // THE GAUGE'S OWN VALUE, `dword_90E100` - what `Hud_DrawBar` draws. It is
     // NOT his record's +92: `Shoot_Enter` seeds it, `sub_423A40` (a property 1
     // write, the medikits) and a hit he survives copy +92 into it, and the
@@ -10420,6 +10422,62 @@ int main(int argc, char** argv) {
                     }
                 }
             }
+            // ---- EACH GUNMAN'S GUN (a reader, 2026-09-11: *"they don't have
+            // any weapons in their hands"*). The same `sub_41C490` link as the
+            // player's: the object in HIS hand (actor +164, his held slot), its
+            // node under his `Maing` (actor +44), `tir` left out. Placed from
+            // his hand as it was DRAWN last frame (`meshAt` / `meshRot`, which
+            // the staged pass below fills) - so it lags his arm by one frame.
+            if (session.shootMode().active()) {
+                const auto& objs = voiceLib.objects();
+                for (const auto& up : staged) {
+                    if (!up || up->actor < 0 || !up->mo || !up->drawn) continue;
+                    if (session.shootAction(up->actor) < 0) continue;
+                    const int hs = session.heldSlotOf(up->actor);
+                    const int obj = hs >= 0 ? session.objectSlotId(hs) : -1;
+                    if (obj < 0 || static_cast<std::size_t>(obj) >= objs.size()) continue;
+                    const std::string stem = objs[static_cast<std::size_t>(obj)].stem;
+                    if (stem.empty()) continue;
+                    const std::size_t nm = up->mo->meshes.size();
+                    if (up->meshAt.size() != nm * 3 || up->meshRot.size() != nm * 9) continue;
+                    int hand = -1;      // the LAST strstr hit
+                    for (std::size_t i = 0; i < nm; ++i)
+                        if (std::strstr(up->mo->meshes[i].name, "Maing")) hand = static_cast<int>(i);
+                    if (hand < 0) continue;
+                    const GunFacts& gf = gunFactsFor(stem);
+                    PropModel* pm = propModelFor(stem);
+                    if (!pm || !pm->ready || pm->rest.cornerMesh.size() != pm->rest.corners.size())
+                        continue;
+                    const std::size_t h = static_cast<std::size_t>(hand);
+                    const float* hp = &up->meshAt[h * 3];
+                    const float* hm = &up->meshRot[h * 9];   // column-major: local axes in the world
+                    for (const auto& b : pm->rest.batches) {
+                        const std::size_t base = propGeo.corners.size();
+                        for (std::size_t c = b.start; c < b.start + b.count; ++c) {
+                            if (gf.ok && pm->rest.cornerMesh[c] == gf.tirMesh) continue;
+                            omk::Corner w = pm->rest.corners[c];
+                            const float l[3] = {w.x - pm->origin[0] + pm->localOff[0],
+                                                w.y - pm->origin[1] + pm->localOff[1],
+                                                w.z - pm->origin[2] + pm->localOff[2]};
+                            w.x = hp[0] + hm[0] * l[0] + hm[3] * l[1] + hm[6] * l[2];
+                            w.y = hp[1] + hm[1] * l[0] + hm[4] * l[1] + hm[7] * l[2];
+                            w.z = hp[2] + hm[2] * l[0] + hm[5] * l[1] + hm[8] * l[2];
+                            propGeo.corners.push_back(w);
+                        }
+                        const std::size_t cnt = propGeo.corners.size() - base;
+                        if (!cnt) continue;
+                        omk::Batch nb = b;
+                        nb.start = base;
+                        nb.count = cnt;
+                        propGeo.batches.push_back(nb);
+                        propBatchOwner.push_back(pm);
+                    }
+                    if (gunDrawnTold.insert(up->actor).second)
+                        std::printf("frame %ld: actor %d %s - HIS GUN drawn: object %d '%s' on his "
+                                    "Maing (mesh %d), tir left out\n", n, up->actor,
+                                    up->model.c_str(), obj, stem.c_str(), hand);
+                }
+            }
             // ---- THE BOLTS (`actor/projectile.h`) ------------------------
             //
             // Each live entry is a clone of the held gun's `tir` node, drawn
@@ -10959,6 +11017,11 @@ int main(int argc, char** argv) {
                             // `sub_435020`; only the PLAYER's is -1, and at -1
                             // `shootEngage` would refuse at once. The noise
                             // reads it as his floor.)
+                            // his heading carries over from how he is DRAWN: an
+                            // entrance program left the node at its rest yaw, and
+                            // the engine's +420 IS that node's heading - so the
+                            // brain starts there rather than at the placement's
+                            if (s.restYawKnown) s.facing = s.restYaw;
                             it = shootBrains.emplace(s.actor, fresh).first;
                             std::printf("frame %ld: actor %d %s - shoot brain: "
                                         "acquire %.0f engage %.0f disengage %.0f "
@@ -11249,6 +11312,31 @@ int main(int argc, char** argv) {
                                     jit[k] = static_cast<int>((gunRandSeed >> 16) & 0x7FFFu) % 100;
                                 }
                                 const omk::GunmanAim aim = omk::shootGunmanAim(pp, rs.muzzle, r, jit);
+                                // WHERE HIS GUN POINTS (a reader, 2026-09-11: *"their
+                                // weapon is not aiming at me"*): the barrel - his
+                                // hand to the `tir` node, flat - against the line
+                                // from the muzzle to the player, once per gunman at
+                                // his SECOND shot. Measured over three gunmen at
+                                // medians -0.2 to -4.1 degrees with the aim as ported
+                                // and 12 to 13 off with its yaw negated. Not at the
+                                // first: `meshAt` is last frame's, drawn before his
+                                // aim layer first went live, so his first bolt leaves
+                                // an arm still at his side (-73 to -102 degrees) -
+                                // where the engine bends the arm (`sub_434C30`) in the
+                                // same gate call, before `Actor_TickProjectiles`. A
+                                // one-frame lag of this port's, labelled.
+                                if (hand >= 0 && s.meshAt.size() == nm * 3 &&
+                                    gunShots[s.actor] >= 1 && gunBarrelTold.insert(s.actor).second) {
+                                    const std::size_t hh = static_cast<std::size_t>(hand);
+                                    const double bx = rs.muzzle[0] - s.meshAt[hh * 3],
+                                                 bz = rs.muzzle[2] - s.meshAt[hh * 3 + 2];
+                                    const double tx = pp[0] - rs.muzzle[0], tz = pp[2] - rs.muzzle[2];
+                                    double dd = (std::atan2(bx, bz) - std::atan2(tx, tz)) * 57.29577951308232;
+                                    while (dd > 180.0) dd -= 360.0;
+                                    while (dd < -180.0) dd += 360.0;
+                                    std::printf("frame %ld: actor %d %s - HIS BARREL points %.1f degrees off "
+                                                "the line to the player\n", n, s.actor, s.model.c_str(), dd);
+                                }
                                 rs.yawDeg = aim.yawDeg;
                                 rs.pitchDeg = aim.pitchDeg;
                                 const double dist = aim.dist;
@@ -11858,6 +11946,16 @@ int main(int argc, char** argv) {
                 bool aboutPelvis = true;
                 if (useLine)                      bodyYaw = s.lineYaw;
                 else if (s.sceneTracks.valid())   bodyYaw = progSpin ? progYawSign * s.progYaw : 0.0f;
+                // A GUNMAN WHOSE SHOOT BRAIN RUNS is drawn at ITS heading, the
+                // +420 the brain and its turn clips write every tick - not at the
+                // rest heading his entrance program left, which is what this took
+                // until 2026-09-11 (a reader: robbers *"not always turned to the
+                // correct position"* - their brains faced and aimed at him while
+                // the body stayed where the program had parked it)
+                else if (shootTracks && shootTracks->valid() && shootBrains.count(s.actor)) {
+                    bodyYaw = s.facing;
+                    aboutPelvis = true;
+                }
                 else if (poseHeld && s.lastYawKnown) {
                     bodyYaw = s.lastBodyYaw;      // held whole, with its pose
                     aboutPelvis = s.lastAboutPelvis;

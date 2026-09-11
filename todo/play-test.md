@@ -416,7 +416,11 @@ drop back when he stops. Wrong looks like: arms raised the wrong way (the gun
 pointing to his other side), arms snapping up and down every frame, or a
 robber twisted at the waist. They hit you a little less often in the gallery
 now: their bolts aim at your hips with a small scatter and your body's hit
-boxes are narrow.
+boxes are narrow. (Your screenshots of 2026-09-11 showed robbers facing away
+and empty-handed: the robbers who come on through an entrance event were drawn
+at the heading their entrance left while their brains aimed from another, and
+their guns were never drawn. Both fixed: every robber now holds his gun on his
+left hand, and his body faces where his brain aims. Not yet judged by eye.)
 
 **NOT YET PLAYED (2026-09-11): THE GUNMEN FIRE - and turn round to do it.**
 In the supermarket the robber nearest the entrance (actor 77) starts with
