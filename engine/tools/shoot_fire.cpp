@@ -630,6 +630,35 @@ int main(int argc, char** argv) {
                     turns += b;
                 }
                 std::printf("grid turn: %s\n", turns.c_str());
+                // THE ACTIONS (`Shoot_ActorAction`): one record through a run of
+                // them with a group holding types 9, 10, 11 and 25 and a coin that
+                // alternates 0, 1 - the clip type each starts, the state, +144,
+                // the flags it touches, the property its timer reads, the turn -
+                // and one asked with a picked clip up (flag 8), which only PARKS
+                {
+                    const std::function<bool(int)> has = [](int t) {
+                        return t == 9 || t == 10 || t == 11 || t == 25;
+                    };
+                    int coin = 0;
+                    const std::function<int()> flip = [&]() { return coin++ & 1; };
+                    omk::ShootRecord ar;
+                    std::string acts;
+                    for (const int a : {3, 0, 0, 5, 8, 9, 10, 1, 4, 7}) {
+                        const auto o = omk::shootActorAction(ar, a, 0, has, flip);
+                        char b[128];
+                        std::snprintf(b, sizeof b, "%s%d -> %d st %d s%d f%x t%d%s", acts.empty() ? "" : "; ",
+                                      a, o.clipType, ar.state, ar.scriptStep,
+                                      unsigned(ar.flags & 0x602022u), o.timerProperty,
+                                      o.turnAround ? " turn" : "");
+                        acts += b;
+                    }
+                    omk::ShootRecord pr;
+                    pr.flags = 8u;
+                    const auto po = omk::shootActorAction(pr, 0, 0, has, flip);
+                    std::printf("actor action: %s; under flag 8 parked %d pending %d 0x8000000 %d\n",
+                                acts.c_str(), int(po.parked), pr.pendingAction,
+                                int((pr.flags & 0x8000000u) != 0));
+                }
             } else {
                 std::printf("path field: SMARKET1.MPT not read\n");
             }

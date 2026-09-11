@@ -26005,7 +26005,7 @@ def c_shoot_fire():
             "wall:", "range:", "wind-up 12:", "grow:",
             "hit:", "bands:", "gates:", "shield:", "kill:", "raise:", "slew:",
             "mover rows:", "mover held:", "mover crouch:", "look:", "noise:", "gunman aim:",
-            "wall test:", "path field:", "grid turn:", "type:")
+            "wall test:", "path field:", "grid turn:", "actor action:", "type:")
     got = []
     for k in keys:
         m = re.search(r"^" + re.escape(k) + r" (.*)$", out, re.M)
@@ -26127,6 +26127,19 @@ def c_shoot_fire():
             "draws 0 0x200 1; 90 -> hold 1 facing 0.00 clip 31 draws 0 0x200 1; 180 -> hold 1 "
             "facing 0.00 clip 32 draws 1 0x200 1; 270 -> hold 1 facing 0.00 clip 30 draws 0 "
             "0x200 1; -1 -> hold 0 facing 0.00 clip -1 draws 0 0x200 0",
+            # THE ACTIONS (`Shoot_ActorAction`, 2026-09-11), one record through a
+            # run of them, the coin alternating 0, 1: 3 the hub on type 10 with
+            # 0x20 and property 31's timer; 0 with +88 run out takes the coin
+            # (0 -> type 25, 0x600000) and restarts the count, the next 0 finds
+            # no 0x19 bit and takes 11; 5 type 11 with 2; 8 state 15 with 0x2000;
+            # 9 state 7 on property 25 and TURNED; 10 type 25 into 15; 1 (the
+            # patrol) starts nothing; 4 state 7 on property 23; 7 state 14 - and
+            # asked under flag 8 the request is only PARKED
+            "3 -> 10 st 6 s3 f20 t31; 0 -> 25 st 3 s0 f600000 t-1; 0 -> 11 st 3 s0 f0 t-1; "
+            "5 -> 11 st 3 s5 f2 t-1; 8 -> 11 st 15 s8 f2000 t-1; 9 -> 10 st 7 s9 f2000 t25 "
+            "turn; 10 -> 25 st 15 s8 f202000 t-1; 1 -> -1 st 15 s8 f2000 t-1; 4 -> 10 st 7 "
+            "s4 f2000 t23; 7 -> 10 st 14 s7 f2000 t-1; under flag 8 parked 1 pending 0 "
+            "0x8000000 1",
             "kind 1 BATPOUV -> -2, kind 1 WAVER -> 1, kind 3 BATPOUV -> 3"]
     if data:
         w = re.search(r"^weapons: (.*)$", out, re.M)
@@ -26264,18 +26277,23 @@ def c_engine_shoot_fire():
             # and stamp their cells, so the push walks him elsewhere: two bolts
             # meet 237, the rest the world after 1 and 6 frames, from eight
             # muzzle points)
-            [2, 1, 1, 6, 6, 6, 6, 6],
-            [("HIT ACTOR 237", -2909, "124.8", "0"), ("HIT ACTOR 237", -2777, "124.8", "0"),
-             ("hit the world", -3216, "748.8", "0"), ("hit the world", -3161, "249.6", "0")],
-            8, [("4996.4", "15144.7", "-2941.6"), ("5050.8", "15144.7", "-2890.9"),
-                ("5082.9", "15144.7", "-2671.5"), ("5112.8", "15144.7", "-2551.7"),
-                ("5113.0", "15144.7", "-2551.4"), ("5113.1", "15144.7", "-2551.0"),
-                ("5114.1", "15144.7", "-2551.8"), ("5114.3", "15144.7", "-2556.2")],
+            # (and since THE ACTIONS the gunmen stop when their advance runs out
+            # and 240 never advances, so the pushes end sooner: one bolt meets
+            # 237, the rest the world after 2, 4 and 5 frames, from five points)
+            [2, 1, 4, 5, 5, 5, 5, 5],
+            [("HIT ACTOR 237", -2909, "124.8", "0"), ("hit the world", -3218, "624.0", "0"),
+             ("hit the world", -3217, "624.0", "0"), ("hit the world", -3161, "249.6", "0"),
+             ("hit the world", -3148, "499.2", "0")],
+            8, [("4853.6", "15143.6", "-2688.3"), ("4885.8", "15144.7", "-2674.9"),
+                ("4969.0", "15144.7", "-2707.4"), ("4996.4", "15144.7", "-2941.6"),
+                ("5050.8", "15144.7", "-2890.9")],
             list(range(37, 248, 30)),
             # (an impact sound for each bolt the WORLD stops, none for 237's)
-            [39, 133, 163, 193, 223, 253],
+            [39, 101, 132, 162, 192, 222, 252],
             [("fire", "1", "687", "WAVER2.WAV", "1.00"),
              ("impact", "3", "689", "WIMP1.WAV", "0.13"),
+             ("impact", "3", "689", "WIMP1.WAV", "0.14"),
+             ("impact", "3", "689", "WIMP1.WAV", "0.15"),
              ("impact", "3", "689", "WIMP1.WAV", "0.29")])
     return got, want, (
         "`Shoot_InitWeapon` giving the Gun Waver the key-1 row on the mode "
@@ -26376,11 +26394,15 @@ def c_engine_shoot_hit():
             # (since THE STEERING - the gunmen coming by the path field, their
             # cells stamped - the same nine hits in another order, all three
             # killed with death types 6, 7 and 7, and all three reported)
-            ["237", "240", "237", "237", "240", "240", "238", "238", "238"],
-            [(5, 15, 10, 2), (5, 15, 10, 3), (5, 10, 5, 2), (5, 5, 0, 0), (5, 10, 5, 1),
-             (5, 5, 0, 1), (5, 15, 10, 0), (5, 10, 5, 2), (5, 5, 0, 1)],
-            [(6, True), (7, True), (7, True)],
-            ["237", "240", "238"])
+            # (and since THE ACTIONS 240 - whose entry action is the unported
+            # patrol - stands at his placement and never crosses this line: six
+            # hits kill 237 and 238, death types 7 and 6, and 237's is the death
+            # that plays out inside the 630 frames)
+            ["237", "237", "237", "238", "238", "238"],
+            [(5, 15, 10, 2), (5, 10, 5, 0), (5, 5, 0, 1), (5, 15, 10, 2), (5, 10, 5, 0),
+             (5, 5, 0, 0)],
+            [(7, True), (6, True)],
+            ["237"])
     # THE FALL (2026-09-11, a reader: the dead *"float in the air"*): his death
     # clip's root motion - `sub_421770` moves the node by it every tick, the
     # vertical included - summed from frame 1 and turned by his heading: 35.6
@@ -26410,16 +26432,14 @@ def c_engine_shoot_hit():
     got = got + (falls, floors, pushes, wall)
     # (three falls since the steering: 237's slide meets a wall on 43 of 84
     # ticks, 240's on 7, 238's on none)
-    want = want + ([("237", "56.1", "29.2", "-14.7", "84", "43"),
-                    ("240", "16.5", "29.2", "62.1", "84", "7"),
-                    ("238", "17.1", "29.2", "72.3", "84", "0")],
-                   [("237", "14.0"), ("240", "12.8"), ("238", "14.0")],
-                   [("57", "237"), ("117", "240")],
+    want = want + ([("237", "24.5", "29.2", "70.1", "84", "0")],
+                   [("237", "14.0")],
+                   [("57", "237")],
                    [("104", "-0.62", "-7.83", "-0.59", "-2.44")])
     return got, want, (
         "the three gunmen's roots, 7 units into their walk at the first sweep; "
-        "twenty bolts at yaw 215, down the line the gunmen walk in on - nine "
-        "hits, all three killed with death types 6, 7 and 7; three falls through "
+        "twenty bolts at yaw 215, down the line the gunmen walk in on - six "
+        "hits, 237 and 238 killed with death types 7 and 6; one fall through "
         "the wall test to the floor; the player pushed out of the gunmen's "
         "bodies, and a push into a wall SWEPT along it rather than through it")
 
@@ -26493,7 +26513,8 @@ def c_engine_shoot_move():
              (32, "256.10", ("240.67", "0.00", "9.30")),
              # (the push swept, not placed: the last walk ends -82.32 -150.30)
              # (and since the steering the gunmen who push him come by other routes)
-             (23, "92.82", ("-83.72", "0.00", "-140.33"))])
+             # (and since the actions they stop when their advance runs out)
+             (23, "92.82", ("-120.51", "0.00", "-132.07"))])
     return got, want, (
         "the mover's speeds from Speed 70 (row 4: 10.4, 0.39, 2.08); forward 40 "
         "frames = 303.29 along +Z, strafe right 30 = 256.10 along +X, nine MDRG "
@@ -26824,7 +26845,8 @@ def c_engine_shoot_noise():
     engages the player by SIGHT at 418 - `shootEngage` latches his 0x20 - so
     that shot finds the one entered record alerted already and the route holds
     no alert. The alert is asserted in the gallery instead, where it is a
-    gunman's own: 237's first shot, at frame 4, alerts 238 and 240 on his floor
+    gunman's own: 237's first shot, at frame 4, alerts 240 on his floor (238 too until his entry ACTION was applied, 2026-09-11 -
+    action 3 latches 0x20, and a latched gunman is passed over)
     (hearing 50 cells) with action 2, the maker passed over.
     """
     import subprocess, re
@@ -26872,12 +26894,17 @@ def c_engine_shoot_noise():
     got = (m0.groups() if m0 else None, len(alerts), seen.group(1) if seen else None,
            shot430.groups() if shot430 else None, galert[:2])
     want = (("SMARKET1", "1", "39"), 0, "418", ("1", "1", "0"),
-            [("4", "a gunman's shot", "0", "238", "50", "0", "2"),
+            # (238 no longer: since THE ACTIONS, 2026-09-11, his ENTRY action -
+            # 3, `Shoot_ActorAction` - raises the 0x20 latch, and
+            # `shootHearNoise` passes a latched gunman over; 240's entry action
+            # is 1, the patrol, which is not ported and latches nothing)
+            [
              ("4", "a gunman's shot", "0", "240", "50", "0", "2")])
     return got, want, (
         "the supermarket's MAP2D grid; no alert on the route, robber 77 having engaged the "
         "player by sight at 418 before his first shot at 430 finds him alerted; in the "
-        "gallery, gunman 237's first shot alerting 238 and 240 on his floor with action 2")
+        "gallery, gunman 237's first shot alerting 240 on his floor with action 2 - 238 "
+        "being latched already by his entry action")
 
 
 def c_engine_shoot_gunfire():
@@ -27014,7 +27041,10 @@ def c_engine_shoot_gunfire():
             # his raised arm)
             # (and with the WALK the muzzle rides a moving body: 0.526 -0.117,
             # pitch 6.7, where the gunman standing still gave 0.527 -0.108 / 6.2)
-            ("0.526 -0.117 -0.842", "32.0", "6.7", "the tir node", "0 69 24"),
+            # (THE ACTIONS, 2026-09-11: 240's entry falls to action 0, whose coin
+            # is a `rand()` - so the first bolt's jitter is the CRT's next triple,
+            # 69 24 78, and its muzzle rides 237's walk to 0.474 / 4.8)
+            ("0.474 -0.084 -0.876", "28.4", "4.8", "the tir node", "69 24 78"),
             # 2 on the player in the first 48 frames, where it was 7: the body's
             # BOXES are small (HO1_FN's pelvis box ~14 x 11 x 9 around the hip
             # joint the bolts aim at, inside a 42.5 sphere) and a +-14 jitter
@@ -27025,7 +27055,8 @@ def c_engine_shoot_gunfire():
             # ends facing 84 - his wall slide's 90/270 snaps and the turn back
             # (since THE STEERING: 1 on each other, and 238 ends facing 0 - the
             # path's heading, not a wall slide's snap; 0x200 keeps those off)
-            True, 1, 10, "0",
+            # (and with the actions: none on each other, 7 on the player)
+            True, 0, 7, "0",
             # (from the 336.9 his ENTRANCE PROGRAM left him at - his brain's
             # heading is seeded from how he is drawn, and he is drawn at it)
             ("394", "32", "25", "-7.20", "336.9"), ("418", "164.1"),
@@ -27039,14 +27070,15 @@ def c_engine_shoot_gunfire():
             # turned that way: the kill is at 494)
             [("460", "damage 5, Body Shield 30 -> 4; health 10 -> 6, gauge 6 (property 1 "
                      "stored 6); message 0 to the hurt handler")],
-            [("21", "237", "10", "3", "19", "2.0"), ("21", "238", "10", "3", "19", "2.0"),
-             ("22", "240", "10", "3", "19", "2.0")],
+            # (240 no longer loops a type-10 clip: his entry is the unported
+            # patrol, and he stands on action 0's type 11 / 25)
+            [("21", "237", "10", "3", "19", "2.0"), ("21", "238", "10", "3", "19", "2.0")],
             # (77's walk never runs a whole loop now - each turn restarts it)
             None,
-            [("4", "237", "-0.403", "-0.007"), ("4", "240", "0.120", "-0.015"),
+            [("4", "237", "-0.418", "-0.001"), ("4", "240", "0.120", "0.006"),
              # (238 fires at 17 from facing along the PATH, the fire arm turning
              # him on the same tick: his aim layer's yaw is 0.954 rad)
-             ("17", "238", "0.954", "-0.010"), ("418", "77", "-0.112", "-0.024")],
+             ("17", "238", "0.944", "-0.013"), ("418", "77", "-0.112", "-0.024")],
             [("237", "766", "DBWAVER"), ("238", "769", "DECAGUN"), ("240", "772", "HEXAGUN"),
              ("77", "49", "WAVER")],
             # (and 238's second barrel is 44 degrees off the line: still turning
@@ -27181,15 +27213,23 @@ def c_engine_shoot_brain():
     want = (3, ("1950", "585", "702", "0.000", "15"),
             # (583 since THE STEERING: out of his shot he now comes by the path
             # field's route, `sub_421CD0`, and reaches the range from there)
-            ((237, 1, 417), (238, 1, 583), (240, 1, 495)))
+            # (and since THE ACTIONS, 2026-09-11: 240's entry action is 1, the
+            # patrol, which is not ported - he falls to action 0 on his first
+            # tick and stands in state 3, so he never takes the hub's fire arm
+            # that outcome 1 is; he fires by the epilogue's fire-if-ready, as
+            # `engine: shoot gunfire` shows. And a line is printed only once a
+            # gunman stands on the grid, so 237's comes a few frames into his
+            # walk: 388 where it was 417)
+            ((237, 1, 388), (238, 1, 583)))
     return got, want, ("the gunmen whose brain was built, the first one's "
                        "record as CONVERTED from his own authored properties "
                        "(50 m acquire, 15 m engage, 18 m disengage, a 90 "
                        "degree cone, 15 health), and then which of the three "
-                       "actually reach outcome 1 and from how far - the two "
-                       "inside the 15 m ENGAGEMENT range at once, and the one "
-                       "at 16.9 m only once his walk has brought him to 579, "
-                       "inside the 585")
+                       "reach outcome 1 in the hub and from how far - 237 "
+                       "inside the 15 m ENGAGEMENT range, 238 from 16.9 m only "
+                       "once his walk has brought him to 583, inside the 585; "
+                       "240, put on action 0 by his unported patrol, never "
+                       "takes the hub's fire arm")
 
 
 def c_shoot_generic():

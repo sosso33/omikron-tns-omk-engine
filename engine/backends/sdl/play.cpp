@@ -3856,6 +3856,7 @@ int main(int argc, char** argv) {
     // between his entrance and his death.
     struct GunAnim { const omk::PedClip* clip = nullptr; float frame = 1.0f; };
     std::map<int, GunAnim> gunAnims;
+    std::map<int, int> gunCurType;       // the clip TYPE his last action started
     std::set<int> gunLooped;          // who has said his clip looped
     // ...and his AIM: `dword_6A4720` / `dword_6A4724`, the angles `sub_47C2A0`'s
     // target arm hands `sub_434C30` - and so `sub_471950` - on every tick it
@@ -11069,6 +11070,45 @@ int main(int argc, char** argv) {
                                          sr.cellSaved);
                         sr.cellStamped = false;
                     }
+                    // SHOOT_ACTORACTION (05_sys.c 3938, read 2026-09-11): an action -
+                    // his scene action at birth, what the brain asks for, or a
+                    // request parked under flag 8 - becomes his CURRENT clip's type,
+                    // a state, flags and a timer (`omk::shootActorAction`)
+                    const auto applyAction = [&](omk::ShootRecord& ar, int action, int a3,
+                                                 const char* why) {
+                        const int grpX = static_cast<int>(session.typeOfActor(s.actor));
+                        const auto o = omk::shootActorAction(
+                            ar, action, a3,
+                            [&](int t) {
+                                return grpX >= 0 && grpX < 64 && shootClipExact(grpX, t) != nullptr;
+                            },
+                            [&]() {
+                                gunRandSeed = gunRandSeed * 214013u + 2531011u;
+                                return static_cast<int>((gunRandSeed >> 16) & 0x7FFFu);
+                            });
+                        if (o.turnAround) s.facing += 180.0f;
+                        if (o.timerProperty >= 0) {
+                            std::int32_t v = 0;
+                            session.actorProperty(s.actor, o.timerProperty, v);
+                            ar.timer = static_cast<float>(30 * v);
+                        }
+                        if (o.clipType >= 0) {
+                            gunCurType[s.actor] = o.clipType;
+                            gunAnims[s.actor].clip = nullptr;   // `sub_421A20`: from 1.0, the same clip too
+                        }
+                        // logged when the action, the clip or the state CHANGES - a
+                        // request repeated every tick says nothing new
+                        static std::map<int, std::array<int, 3>> actionTold;
+                        const std::array<int, 3> key{action, o.clipType, ar.state};
+                        if (auto at = actionTold.find(s.actor); at == actionTold.end() || at->second != key) {
+                            actionTold[s.actor] = key;
+                            std::printf("frame %ld: actor %d %s - ACTION %d (Shoot_ActorAction, %s): %s "
+                                        "clip type %d, state %d, timer %.0f\n", n, s.actor,
+                                        s.model.c_str(), action, why,
+                                        o.parked ? "PARKED under flag 8 -" : "", o.clipType, ar.state,
+                                        double(ar.timer));
+                        }
+                    };
                     // ---- THE PICKED CLIP'S TICK: `sub_424DE0`'s prologue ----
                     //   if (flags & 8) { if (sub_421770(him, rec, ..)) return; ... }
                     // `sub_421770` (0x00421770): his frame `+188 += dt`, and
@@ -11097,8 +11137,16 @@ int main(int argc, char** argv) {
                                         s.model.c_str(), gc.type, double(gc.frame), double(s.facing));
                             gc = GunClip{};
                             // `sub_421A20(+12, 0)`: his previous clip back, at 1.0
-                            // - and the node's height SET again (below)
-                            gunAnims[s.actor].frame = 1.0f;
+                            // - and the node's height SET again (below) - unless an
+                            // action was PARKED meanwhile (05_sys.c 5497: `if (flags &
+                            // 0x8000000) Shoot_ActorAction(him, +152, +132)`)
+                            if (deadIt->second.flags & 0x8000000u) {
+                                deadIt->second.flags &= ~0x8000000u;
+                                applyAction(deadIt->second, deadIt->second.pendingAction,
+                                            deadIt->second.pendingArg, "parked, the picked clip over");
+                            } else {
+                                gunAnims[s.actor].frame = 1.0f;
+                            }
                             s.walkMove[1] = 0.0f;
                         }
                     }
@@ -11147,6 +11195,12 @@ int main(int argc, char** argv) {
                                 }
                             }
                             it = shootBrains.emplace(s.actor, fresh).first;
+                            // ...and put on his SCENE action, as `Shoot_ActorEnter`
+                            // does - for the robbers, action 3: the hub, the walking
+                            // clip, and +168 = 30 * property 31 frames of advance
+                            // (LABELLED: `Shoot_ActorEnter`'s own call is not re-read;
+                            // this passes the action with a3 = 0)
+                            applyAction(it->second, act, 0, "his scene action, at entry");
                             std::printf("frame %ld: actor %d %s - shoot brain: "
                                         "acquire %.0f engage %.0f disengage %.0f "
                                         "cone %.3f health %d\n", n, s.actor,
@@ -11227,8 +11281,14 @@ int main(int argc, char** argv) {
                         float yaw = s.facing;
                         const auto st = omk::shootGenericStep(rec, fin, yaw);
                         s.facing = yaw;
+                        // the ACTION it asked for (always 0 in the generic brain)
+                        if (st.actionRequest >= 0)
+                            applyAction(rec, st.actionRequest, 0, "the brain's request");
                         if (rec.state != before || st.outcome == omk::ShootOutcome::Fire) {
-                            if (!s.brainTold) {
+                            // (once he stands somewhere: his entry ACTION changes his
+                            // state on the tick he is born, before he is first drawn,
+                            // and a distance from the world origin says nothing)
+                            if (!s.brainTold && gunCellSeeded.count(s.actor)) {
                                 s.brainTold = true;
                                 std::printf("frame %ld: actor %d %s - brain %d -> %d, "
                                             "outcome %d, %.0f units away\n", n,
@@ -11296,8 +11356,13 @@ int main(int argc, char** argv) {
                         // which the engine restarts and this does not.
                         if (!(rec.flags & 8u) && !(rec.flags & 2u)) {
                             const int grpA = static_cast<int>(session.typeOfActor(s.actor));
+                            // his clip is the TYPE his last action started
+                            // (`Shoot_ActorAction`), the scene action's until one has
+                            const auto ctA = gunCurType.find(s.actor);
                             const omk::PedClip* ac = (grpA >= 0 && grpA < 64)
-                                                   ? shootClipFor(grpA, act) : nullptr;
+                                ? (ctA != gunCurType.end() ? shootClipExact(grpA, ctA->second)
+                                                           : shootClipFor(grpA, act))
+                                : nullptr;
                             GunAnim& ga = gunAnims[s.actor];
                             // `if (u32(rec, 156) != 13) flags &= ~0x100`
                             if (rec.state != 13) rec.flags &= ~0x100u;
@@ -11311,6 +11376,16 @@ int main(int argc, char** argv) {
                                     float d01[3] = {0.0f, 0.0f, 0.0f};
                                     omk::pedRootDelta(*ac, 0.0f, 1.0f, nullptr, d01);
                                     s.walkMove[1] = d01[1];
+                                    // once per gunman and clip type: the height the
+                                    // clip's start SETS him at, over his placement
+                                    static std::set<std::pair<int, int>> d01Told;
+                                    if (d01Told.insert({s.actor, ac->type}).second)
+                                        std::printf("frame %ld: actor %d %s - clip type %d starts "
+                                                    "(sub_421A20): frame 0->1 root %.2f %.2f %.2f, "
+                                                    "%d root keys\n", n, s.actor, s.model.c_str(),
+                                                    ac->type, double(d01[0]), double(d01[1]),
+                                                    double(d01[2]),
+                                                    static_cast<int>(ac->root.size() / 3));
                                 }
                             } else if (ac && ac->frames > 0) {
                                 float t0 = ga.frame;
@@ -11727,8 +11802,12 @@ int main(int argc, char** argv) {
                     }
                     if (act >= 0) {
                         const int grp = static_cast<int>(session.typeOfActor(s.actor));
+                        // the clip his last ACTION started, as the clock above uses
+                        const auto ctP = gunCurType.find(s.actor);
                         const omk::PedClip* c = (grp >= 0 && grp < 64)
-                                              ? shootClipFor(grp, act) : nullptr;
+                            ? (ctP != gunCurType.end() ? shootClipExact(grp, ctP->second)
+                                                       : shootClipFor(grp, act))
+                            : nullptr;
                         // KILLED: the death clip `sub_4240E0` picked by TYPE
                         // from the hit's band, played once and then held
                         if (s.deathType >= 0 && grp >= 0 && grp < 64)

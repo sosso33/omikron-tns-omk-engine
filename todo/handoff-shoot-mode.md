@@ -129,7 +129,9 @@ robber with a clear shot is READ and not ported**: `sub_424DE0` asks
 `Shoot_ActorAction(him, 0, 0)` - ACTION 0 - on the hub's timer and on its fire
 arms (05_sys.c 5846, 5997, 6111, 6133, 6172). The port passes the scene's
 action as the "default" (a misread: `a2` is the actor) and never applies
-`out.clipType`, so a robber never leaves his walking clip. The next step.
+`out.clipType`, so a robber never leaves his walking clip. ~~The next step.~~
+**PORTED (B4)**: `omk::shootActorAction`; robbers advance for property 31's
+seconds, then crouch or stand to fire. Not ported: action 1, the patrol.
 
 **FIRING IS CONNECTED (2026-09-10, `todo/shoot-mode.md` §7h/§7i)** — and the
 chain this section used to give was wrong in two places, both found by reading

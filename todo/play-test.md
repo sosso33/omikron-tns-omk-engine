@@ -457,8 +457,16 @@ you, around shelves and walls and around the other robbers (each one's spot
 is blocked to the others), turning smoothly or on a turn animation for a
 sharp corner. Hide behind a shelf and watch one come round it. EXPECTED and
 not a fault yet: a robber who CAN shoot you still walks straight at you while
-he fires - the original switches him to his action 0 when he fires, which
-this port does not do yet (read, and the next step). Wrong looks
+he fires - for a while. **And now they STOP (the actions, same day)**: each
+robber advances for the time his character gives him (15 seconds for the
+gallery's gunmen, 25 for the supermarket's first robber) and then crouches or
+stands where he is to shoot. So expect the rush first and the stand after.
+Wrong looks like: a robber sunk into the floor while crouching (his pelvis
+drops about 22 units, his legs must bend with it), one sliding while standing,
+or one flickering between standing and crouching every frame. EXPECTED: the
+gallery's third gunman never advances at all (his patrol is not ported), and
+the supermarket's first robber, caught turning against a wall, may not reach
+his stop. Wrong looks
 like: a robber spinning in place, walking away from you, or two robbers
 standing inside each other. Wrong looks like: being thrown far in one frame, or
 pushed by an empty spot - a dead robber's body still pushes, since nothing

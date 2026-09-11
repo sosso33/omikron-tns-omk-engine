@@ -155,6 +155,13 @@ struct ShootRecord {
     // threshold (`sub_423EF0`: `if (v3 = rec+148) != -1 ...`). Its writer is
     // not read; -1, "no such action", until it is (`actor/shoothit.h`).
     int   hitAction = -1;                    // +148
+    // `Shoot_ActorAction`'s own (05_sys.c 3938, read 2026-09-11) - and note it
+    // writes +148 too: the action it was asked for when a3 is set, -1 otherwise
+    int   actionCounter = 0;                 // +88   action 0/5's 11-or-25 counter
+    int   routeArg      = 0;                 // +128  its a3
+    int   pendingArg    = 0;                 // +132  a parked request's a3
+    int   pendingAction = -1;                // +152  a request parked under flag 8
+    int   edgeMark      = 0;                 // +104  zeroed by actions 4 and 9
 };
 
 // The six properties `sub_422540` asks for, in the order it asks - each read
@@ -241,6 +248,34 @@ private:
 struct ShootStep;
 bool shootGridTurn(ShootRecord& r, int heading, float& eulerY, float dt,
                    const std::function<int()>& rnd, ShootStep& out);
+
+// `Shoot_ActorAction(him, action, a3)` (05_sys.c 3938, read 2026-09-11): puts a
+// gunman on an ACTION - a clip TYPE started at frame 1.0 (`sub_421A20`), a
+// brain state, flags, and for some a timer. With a picked clip playing
+// (flag 8) the request is only PARKED at +152/+132 (flag 0x8000000) for when
+// it ends. The actions:
+//   0 / 5  type 11 or 25 (+88 counts down; at 0 `rand() & 1` picks, else
+//          flags 0x19 choose), state 3 - STAND AND FIRE; 0 clears 0x22, 5 sets 2
+//   2 / 3  type 10 (else 9), state 6 - the hub, flags |= 0x20, and the timer
+//          +168 = 30 * property 31
+//   4      type 10/9, state 7, +168 = 30 * property 23
+//   6      type 10/9, flags |= 2        7  type 10/9, state 14
+//   8      type 11, state 15, flags |= 0x2000
+//   9      type 10/9, state 7, +168 = 30 * property 25, and TURNED 180
+//   10     type 25, state 15
+// NOT PORTED, labelled: 1, the patrol (type 9 along a route, `sub_4354E0`) -
+// there are no routes here - and the route release at the top (+144 == 1).
+// `hasClip` says whether his group holds a clip of a type; the state and
+// flags are written only when one is found, as in the engine.
+struct ShootActionOut {
+    bool parked = false;      // flag 8 was up: the request waits at +152
+    int  clipType = -1;       // the clip type to start at 1.0; -1 none
+    int  timerProperty = -1;  // +168 = 30 * this property, -1 none
+    bool turnAround = false;  // action 9: +420 += 180
+};
+ShootActionOut shootActorAction(ShootRecord& r, int action, int a3,
+                                const std::function<bool(int)>& hasClip,
+                                const std::function<int()>& rnd);
 
 // What `sub_420C70` leaves behind for `sub_420EB0` to read rather than
 // recompute. The engine keeps them in four globals; naming them is the whole
@@ -370,7 +405,14 @@ struct ShootFrameIn {
     float dt = 1.0f;                  // `flt_4C30D8`
     bool  targetPredicate = false;    // `sub_426E00` - NOT READ, supplied
     int   targetPredicateBits = 0;    // its bitfield, for the arms that test it
-    int   defaultClipType = 0;        // `a2`, the action the caller asked for
+    // The clip TYPE the snap arms' default case picks - LABEL_177's
+    // `List_PickRandomByType(+20, a2)` - read as the decompiler gives it.
+    // CORRECTED 2026-09-11: this was documented as "`a2`, the action the caller
+    // asked for", and it is not - `sub_424DE0`'s a2 is the ACTOR's index (it
+    // is what `Shoot_ActorAction(a2, 0, 0)` and `Actor_GetPosAndFacing(a2)`
+    // take). The ACTIONS the brain asks for are `ShootStep::actionRequest`, and
+    // every one of them in `sub_424DE0` is the literal 0.
+    int   defaultClipType = 0;
 
     // `sub_426C20`, now READ - see `shootMoveDecision`. States 1, 4, 12 and
     // 14 branch on it: 1 means "take the step", 0 means "I turned in place",
@@ -418,6 +460,11 @@ struct ShootStep {
     ShootOutcome outcome = ShootOutcome::FireIfReady;
     int  nextState = -1;        // -1 = stay
     int  clipType  = -1;        // a clip to pick, or -1
+    // an ACTION the brain asks for - `Shoot_ActorAction(him, action, 0)`, see
+    // `shootActorAction` - or -1. In the generic brain it is always 0: the
+    // hub's finishing arm (05_sys.c 5846), its timer tail (5997) and state 7's
+    // "done" - `Shoot_ActorAction(a2, 0, 0)` with a2 the actor
+    int  actionRequest = -1;
     float turnTotal = 0.0f;     // degrees the picked clip must cover
     float turnRate  = 0.0f;     // degrees per delta if there is NO clip
     // The TURN clip an arm picked (30 / 31 / 32), kept apart from `clipType`.

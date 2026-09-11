@@ -299,6 +299,134 @@ bool shootGridTurn(ShootRecord& r, int heading, float& eulerY, float dt,
     return true;
 }
 
+ShootActionOut shootActorAction(ShootRecord& r, int action, int a3,
+                                const std::function<bool(int)>& hasClip,
+                                const std::function<int()>& rnd) {
+    ShootActionOut o;
+    // a picked clip playing: the request is PARKED for when it ends
+    if (r.flags & 8u) {
+        r.pendingAction = action;
+        r.flags |= 0x8000000u;
+        r.pendingArg = a3;
+        o.parked = true;
+        return o;
+    }
+    // (`if (+144 == 1) sub_435650(+24)` releases the patrol's route - there
+    // are no routes in this port)
+    int v9 = action;
+    if (a3) {
+        r.routeArg = a3;
+        r.hitAction = action;
+        if (a3 > 0) v9 = 1;
+        if (a3 == -1) v9 = 0;
+    } else {
+        r.hitAction = -1;
+        if (action == -1) v9 = 0;
+    }
+    const std::uint32_t v10 = r.flags & 0xFFDFFFFFu;
+    r.flags = v10;
+    auto has = [&](int t) { return hasClip && hasClip(t); };
+    auto walkClip = [&]() { return has(10) ? 10 : (has(9) ? 9 : -1); };
+    switch (v9) {
+    case 0:
+    case 5: {
+        // `+88 - 1`, and at 0 (or below) a coin picks 11 or 25 and the count
+        // restarts at 10; otherwise flags 0x19 choose 25 over 11
+        int t;
+        r.actionCounter -= 1;
+        if (r.actionCounter <= 0) {
+            if (rnd && (rnd() & 1) != 0) { t = 11; r.flags &= 0xFF9FFFFFu; }
+            else                         { t = 25; r.flags |= 0x600000u; }
+            r.actionCounter = 10;
+        } else if (v10 & 0x19u) {
+            t = 25; r.flags |= 0x600000u;
+        } else {
+            t = 11; r.flags &= 0xFF9FFFFFu;
+        }
+        if (!has(t)) {
+            t = 11;
+            r.flags &= 0xFF9FFFFFu;
+            if (!has(t)) return o;              // "anim non existante dans le .ANI"
+        }
+        r.state = 3;
+        if (v9 == 0) { r.scriptStep = 0; r.flags &= 0xFFFFFFDDu; }
+        else         { r.scriptStep = 5; r.flags |= 2u; }
+        o.clipType = t;
+        return o;
+    }
+    case 2:
+    case 3: {
+        const int t = walkClip();
+        if (t < 0) return o;
+        r.state = 6;
+        r.flags = (r.flags & 0xFFFFFFDDu) | 0x20u;
+        r.scriptStep = v9;
+        o.clipType = t;
+        o.timerProperty = 31;                   // `Game_RaiseEvent(44, {31, him})`
+        return o;
+    }
+    case 4: {
+        const int t = walkClip();
+        if (t < 0) return o;
+        r.flags &= ~2u;
+        r.scriptStep = 4;
+        r.state = 7;
+        r.edgeMark = 0;
+        o.clipType = t;
+        o.timerProperty = 23;
+        return o;
+    }
+    case 6: {
+        const int t = walkClip();
+        if (t < 0) return o;
+        r.scriptStep = 6;
+        r.flags |= 2u;
+        o.clipType = t;
+        return o;
+    }
+    case 7: {
+        const int t = walkClip();
+        if (t < 0) return o;
+        r.state = 14;
+        r.scriptStep = 7;
+        r.flags &= ~2u;
+        o.clipType = t;
+        return o;
+    }
+    case 8: {
+        if (!has(11)) return o;
+        r.state = 15;
+        r.flags &= ~2u;
+        r.scriptStep = 8;
+        r.flags |= 0x2000u;
+        o.clipType = 11;
+        return o;
+    }
+    case 9: {
+        const int t = walkClip();
+        if (t < 0) return o;
+        r.flags &= ~2u;
+        r.scriptStep = 9;
+        r.state = 7;
+        r.edgeMark = 0;
+        o.clipType = t;
+        o.timerProperty = 25;
+        o.turnAround = true;                    // `+420 - -180.0`
+        return o;
+    }
+    case 10: {
+        if (!has(25)) return o;
+        r.state = 15;
+        r.scriptStep = 8;
+        r.flags = (r.flags & 0xFFDFDFFDu) | 0x202000u;
+        o.clipType = 25;
+        return o;
+    }
+    default:
+        return o;                               // 1, the patrol - NOT PORTED
+    }
+}
+
 const char* charTypeName(int type) {
     return (type >= 0 && type < kCharTypeCount) ? kTypeNames[type] : "";
 }
@@ -757,7 +885,7 @@ ShootStep shootGenericStep(ShootRecord& r, const ShootFrameIn& in, float& eulerY
         if (r.flags & 0x8000u) {
             // finishing: either drop flag 0x20, or ask for the default action
             if (in.scriptStep == 8) r.flags &= ~0x20u;
-            else if (!(r.flags & 0x4000u)) out.clipType = in.defaultClipType;
+            else if (!(r.flags & 0x4000u)) out.actionRequest = 0;   // `Shoot_ActorAction(a2, 0, 0)`
             break;                       // straight to the epilogue - no timer
         }
         bool turned = false;
@@ -779,7 +907,9 @@ ShootStep shootGenericStep(ShootRecord& r, const ShootFrameIn& in, float& eulerY
         // the tail all three arms share: a timer at `+168`, and on expiry the
         // default action is asked for
         r.timer -= in.dt;
-        if (r.timer <= 0.0f) out.clipType = in.defaultClipType;
+        // (05_sys.c 5997: `+168 -= dt; if (<= 0) Shoot_ActorAction(a2, 0, 0)` -
+        // action 0, STAND AND FIRE, when his advance runs out)
+        if (r.timer <= 0.0f) out.actionRequest = 0;
         break;
     }
 
@@ -806,7 +936,7 @@ ShootStep shootGenericStep(ShootRecord& r, const ShootFrameIn& in, float& eulerY
         r.flags &= ~0x10u;
         r.timer -= in.dt;
         const bool done = r.timer <= 0.0f;
-        if (done) { out.clipType = 0; out.turnRate = 0.0f; }
+        if (done) { out.actionRequest = 0; out.turnRate = 0.0f; }
         break;
     }
 

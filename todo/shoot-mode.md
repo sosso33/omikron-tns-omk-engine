@@ -1761,6 +1761,38 @@ forget to plan it."* The session's own log agrees with the gate: 245 latches
      its head: with flag 8 up it only PARKS the request at +152/+132 for when
      the picked clip ends, `sub_424DE0` 5497). What action 0's clip is has not
      been checked against the action rows.
+   * **B4, THE ACTIONS - ported 2026-09-11** (a reader: *"ok, continue"*).
+     `Shoot_ActorAction` (05_sys.c 3938) read whole and ported as
+     `omk::shootActorAction`: under flag 8 the request is PARKED at +152/+132
+     (flag 0x8000000) and applied when the picked clip ends (`sub_424DE0`
+     5497); otherwise the a3 path, +148 written (the action, or -1), 0x200000
+     cleared, and the switch - 0 / 5 type 11 or 25 (+88 counts down; at 0 a
+     `rand() & 1`, else flags 0x19 pick the 25) into state 3; 2 / 3 type 10
+     (else 9) into the hub, +168 = 30 * property 31; 4 state 7 on property
+     23; 6, 7 (state 14), 8 (type 11, state 15), 9 (state 7, property 25, and
+     turned 180), 10 (type 25, state 15). NOT PORTED: 1, the patrol - no
+     routes - so the gallery's 240, whose scene action is 1, gets no clip and
+     goes straight to action 0. The brain's requests are now
+     `ShootStep::actionRequest` (hub finishing, hub timer, state 7), and the
+     misread `defaultClipType` is documented for what it is (LABEL_177's clip
+     pick with the ACTOR's index). A gunman's current clip is the type his
+     last action started - re-started at 1.0 on every request, the same clip
+     too. `verify.py: shoot fire` (`actor action:`).
+     **Measured**: the gallery's 237 and 238 enter on action 3 with 450
+     frames of advance (property 31 = 15 s) and switch to action 0 at 478 and
+     514 - the count runs only on hub ticks - after which nothing pushes the
+     player; they CROUCH mostly (type 25, whose first key drops the pelvis
+     22.23 - flag 0x10, close and in sight, picks it) and stand on the coin
+     every tenth request (type 11). The supermarket's 77 enters with 750
+     frames (25 s) and does not reach the switch in 1200: his turn -> blocked
+     -> turn loop keeps his brain on turn clips, and the count does not run
+     there. **NOTE THE LOOP**, which is the engine's own: `sub_426E00` (the
+     port's `shootEngage`) writes state 6 whenever the target is in range and
+     sight, so a state-3 gunman goes back to the hub, finds his timer spent
+     and asks for action 0 again - and each request restarts his clip. The
+     port runs `shootEngage` before every step where the engine calls it from
+     inside the arms, so it bounces every tick where the engine bounces every
+     other; either way he holds the stance and fires.
      **THE PATH-FINDER, read 2026-09-11: a distance field toward the PLAYER.**
      `sub_436260(floor, x, z)` (10_dsound.c 1234) seeds a breadth-first search
      at a cell: two byte grids at `dword_52BA40[2]`, the back one cleared to
