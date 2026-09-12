@@ -57,7 +57,7 @@ not a CPU figure). Against the original's 32 MB, both are the port's.
 | # | step | state |
 |---|---|---|
 | 1 | a clean BASELINE: the same street run on an idle machine, per-frame time and the sample, recorded here | open |
-| 2 | a SPATIAL GRID over the walkable soup (H1, H3): built once per resident set, `floorUnder` / `surfaceUnder` walk only the cells under the probe | open |
+| 2 | a SPATIAL GRID over the walkable soup (H1, H3): built once per resident set, `floorUnder` / `surfaceUnder` walk only the cells under the probe | **reading done 2026-09-12**: the engine culls per-MESH bounding spheres, ~20x on Anekbah; port not started |
 | 3 | the depth tie only where it can matter (H2) | open |
 | 4 | the interface composited on the GPU in adventure mode (H4) | open |
 | 5 | break down `main`'s own time (H5) and re-rank | open |
@@ -94,6 +94,58 @@ spatial/collision service layer beside the spatial index; how it reaches the
 triangles under a point has not been read. The grid should reproduce the
 engine's decision (the same surface chosen, the same tie-breaks between two
 floors under one point) - the ACCELERATION may be our own, the ANSWER may not.
+
+#### Read 2026-09-12: the engine does not scan triangles, it culls MESHES
+
+(`readable/src/16_o3de.c`; bodies still as generated, so these are readings of
+the control flow, not of every field.)
+
+* `World_ProbePoint` (0x004433B0, 34 callers) builds a DEGENERATE BOX - x..x,
+  y..FLT_MAX, z..z, the vertical line from the probe point downward - and
+  hands it to `o3de_ForEachMeshInBox` with the callback `sub_4434B0`.
+* `o3de_ForEachMeshInBox` (0x004430A0) walks each resident scene's FLAT node
+  array (46 dwords = 184 bytes a node, count at the model's `desc+224`) - no
+  hierarchy descent. Per node it takes a BOUNDING SPHERE: centre
+  `node[19..21]`, turned by the node's matrix at `node+14*4` when the mesh
+  carries `0x80000`, plus the node position `node[9..11]`; radius
+  `node[22]`. A node whose sphere's box meets the query box is passed on.
+* `sub_4434B0` skips meshes with `0x41`; a `0x80000` mesh goes to
+  `sub_444460` with the probe set up in the mesh's own frame; every other
+  mesh has only the node position subtracted and goes to `sub_498930`.
+* `sub_498930` classifies the mesh's VERTICES against the probe point first
+  (an outcode array sized by the mesh's vertex count, `mesh+64`) and then
+  walks its faces - trivial rejection per vertex, not per face.
+
+So **`0x80000` is a ROTATED mesh** as far as this path is concerned. The port's
+mesh reader already has the fields: position `+36`, centre `+76..+84`, radius
+`+88` (`formats/mesh3do.h`), and every soup already records which mesh each
+triangle came from (`soupMesh` / `steepMesh`, what `patchSoup` uses to move a
+door). A moving mesh therefore moves only its sphere.
+
+**Measured on Anekbah** (860 meshes, 15467 triangles + 15482 quads; none
+`0x80000`, none `0x41`): over 401 probe points (400 random walkable-triangle
+centroids and the street start), the meshes whose sphere reaches the vertical
+line number **median 6, max 14**, carrying **median 733 faces, p95 1235, max
+1736** - against **15161** walkable triangles the linear scan tests today, and
+those face counts include walls, so the real triangle tests are fewer. The
+street start is 3 meshes, 378 faces. Centre `+76..+84` is zero across the
+city, so position-only and position+centre agree here; the code must still
+add it. Radii: median 153, max 1871.
+
+**The design this points to, and it is the engine's own:** group each
+resident set's walkable and steep soups by mesh, keep one sphere per mesh
+(updated where `patchSoup` moves one), and give `floorUnder` /
+`surfaceUnder` / `soupInBox` a front that tests spheres first. That is a
+~20x cut from the broad phase alone. The 860 sphere tests per probe are then
+the remaining cost; a coarse XZ grid over the SPHERES (not the triangles)
+removes most of those and cannot change an answer, because it only skips
+meshes the sphere test would have rejected.
+
+**Not yet read, and needed before the rotated path is ported:** `sub_444460`
+(the `0x80000` narrow phase) and the tie-break between two floors under one
+point - the linear scan keeps the nearest hit below `y + 1`, and whether the
+engine's per-mesh walk agrees when two meshes offer the same height has to be
+checked, not assumed.
 
 Shape: a uniform XZ grid over each resident set's walkable soup (and the steep
 soup `surfaceUnder` reads), triangles bucketed by their XZ bounding box, built
