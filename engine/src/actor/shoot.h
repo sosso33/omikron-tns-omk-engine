@@ -134,6 +134,10 @@ struct ShootRecord {
     // +24, the patrol ROUTE: an index into his floor's `Map2d` waypoints, or
     // -1 for none. The engine keeps the pointer itself and tests it for null.
     int   route      = -1;                   // +24
+    // +4, THE NAV EDGE (`todo/shoot-navedge.md`): an index into his floor's
+    // `Map2d` links - a staircase to the floor the player is on - written by
+    // `sub_426E00` from `sub_436BB0`, and walked by states 1 and 2. -1 none.
+    int   link       = -1;                   // +4
     int   scriptStep = 0;                    // +144  index into the script
     int   state      = 0;                    // +156  the action / state code
     std::uint32_t flags = 0;                 // +160  bit 0 ticking, 8, 0x800
@@ -428,6 +432,15 @@ struct EngageIn {
     bool gridClear = false;       // `sub_4359A0` reached
     int  found421020 = 0;         // `sub_421020` - UNREAD, non-zero on success
     bool coinHeads = false;       // the disengage arm's own `rand() & 1`
+    // THE CROSS-FLOOR ARM (`sub_426E00` at 05_sys.c 6922,
+    // `todo/shoot-navedge.md`): when he has the 0x20 latch - he has SEEN the
+    // player - and `sameNode` is false, the engine asks
+    // `sub_436BB0(myFloor, targetFloor, myPos)` for the nearest STAIRCASE to
+    // the player's floor and, if there is one, sends him to STATE 1 with his
+    // goal set to that stair's near end. The lookup is the caller's, because
+    // this file does not know about `Map2d`: hand in the index and the point.
+    int   link = -1;              // `sub_436BB0`'s answer, -1 for none
+    float linkFrom[3] = {0, 0, 0};   // that link's `from` - the goal
 };
 int shootEngage(ShootRecord& r, const AcquireOut& a, bool inCone, const EngageIn& in);
 

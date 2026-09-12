@@ -25984,6 +25984,13 @@ def c_engine_shoot_patrol():
     point 9 of 10. No one reaches state 5, because that needs a waypoint
     carrying a clip and no shipped route has one.
 
+    **And the cross-floor arm keeps them on their beats.** The player is on
+    floor 0 and every spectre on another, so all ten reach `sub_426E00`'s
+    `!sameNode` branch - and none is LATCHED, because action 1 does not raise
+    0x20. The arm then takes `LABEL_24`, which writes STATE 4: the engine puts
+    an unlatched gunman on another floor back on his patrol, and two of the nine
+    close their rings here where one did before it.
+
     **And nobody falls out of the world.** A gunman's y is `+60` -
     `Shoot_ActorEnter`'s `floor.bound[3] - <how far his lowest collision sphere
     hangs below his origin>` - and `sub_421370` re-pins the node to it at every
@@ -26032,9 +26039,17 @@ def c_engine_shoot_patrol():
               ("601", "1025", "4", "4"), ("602", "1026", "4", "5"),
               ("604", "1795", "7", "27"), ("605", "1282", "5", "13"),
               ("606", "1281", "5", "10")],
-             31, [("483", "595")]),
+             # (and since the CROSS-FLOOR ARM, 2026-09-12: 38 advances and TWO
+             # rings closed, not one. The catacombs' player is on floor 0 and
+             # every spectre on another, so all ten reach `sub_426E00`'s
+             # `!sameNode` branch every tick - and none of them is LATCHED,
+             # because action 1 does not raise 0x20, so the arm takes its
+             # `LABEL_24` and writes STATE 4. The engine's own rule puts an
+             # unlatched gunman on another floor back on his beat, and it makes
+             # them patrol MORE rather than less.)
+             38, [("338", "589"), ("483", "595")]),
             "nine spectres taking a route each, every one of them on the floor "
-            "the operand's high byte names; 31 waypoint advances in 500 frames; "
+            "the operand's high byte names; 38 waypoint advances in 500 frames; "
             "and actor 595's nine-point ring closing - 8 back to 0 - at frame 483")
 
 

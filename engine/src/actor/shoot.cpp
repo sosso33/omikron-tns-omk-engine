@@ -1182,6 +1182,29 @@ int shootEngage(ShootRecord& r, const AcquireOut& a, bool inCone, const EngageIn
 
     const bool coneOk = in.sameNode && inCone;
     if (!in.sameNode) {
+        // ---- THE CROSS-FLOOR ARM (05_sys.c 6922, `todo/shoot-navedge.md`) --
+        // The engine splits this on the 0x20 LATCH, and the port collapsed both
+        // halves into the unlatched one until 2026-09-12 - so a gunman never
+        // went after a player on another floor at all.
+        //
+        // LATCHED - he has SEEN the player - and the two are on different
+        // floors: `sub_436BB0` for the nearest staircase to the player's floor,
+        // stored at `+4`, and his goal set to that stair's NEAR end, then STATE
+        // 1 to walk to it. No stair: `sub_421020` (unread), and failing that
+        // `LABEL_24`, which is **state 4, back to patrolling**.
+        if (r.flags & 0x20u) {
+            r.link = in.link;                       // `u32(rec, 4) = v16`
+            if (in.link >= 0) {
+                r.goalX = in.linkFrom[0];           // `+44 = link.from.x`
+                r.goalZ = in.linkFrom[2];           // `+48 = link.from.z`
+                r.state = 1;
+                return 0;
+            }
+            if (in.found421020) return goPair();
+            r.state = 4;
+            return 0;
+        }
+        // NOT latched: only `sub_421020` can do anything for him.
         if (in.found421020) return goPair();
         return 0;
     }

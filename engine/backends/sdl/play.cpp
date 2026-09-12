@@ -3430,6 +3430,10 @@ int main(int argc, char** argv) {
         // brain clip; zero for everyone else), and the instruments over it
         float walkMove[3] = {0, 0, 0};
         int   walkWalls = 0, walkSlides = 0;
+        // how far his walk actually carried him LAST tick: state 2 counts the
+        // edge down by it (`ShootFrameIn::movedThisFrame`), and the walk runs
+        // after the brain, so the brain reads the previous tick's
+        float walkDist = 0.0f;
         bool  walkTold = false, walkWallTold = false;
         bool  deathFloorTold = false;      // ...and where it left his pelvis
         // message 3 posted for this death (`sub_424DE0`'s dead arm, once the
@@ -11653,7 +11657,67 @@ int main(int argc, char** argv) {
                         const bool cone = omk::shootAcquires(rec, fin.self,
                                                              fin.target, ao, false);
                         omk::EngageIn ein;
-                        ein.sameNode = true; ein.targetAlive = true;
+                        // ---- WHICH FLOOR EACH OF THEM IS ON -----------------
+                        // `sub_426E00` compares the two records' `+188`, and
+                        // `sameNode` was hard-coded TRUE here - so the
+                        // cross-floor arm, the one that sends a gunman after a
+                        // player upstairs, had never run
+                        // (`todo/shoot-navedge.md`). The player's floor is
+                        // `floorAt` of his PELVIS, the same point the path field
+                        // is seeded from: at his feet the supermarket's player
+                        // stands on his grid's upper bound and `floorAt` finds
+                        // nothing (`todo/shoot-mode.md` 8 B3).
+                        int playerFloor = -1;
+                        if (shootMap.valid() && player) {
+                            const float* pp = player->pos();
+                            const float pelvis[3] = {pp[0], pp[1] - player->cameraLift(), pp[2]};
+                            playerFloor = shootMap.floorAt(pelvis[0], pelvis[1], pelvis[2], -1);
+                        }
+                        const int gunFloor = static_cast<signed char>(rec.node & 0xFF);
+                        ein.sameNode = playerFloor < 0 || gunFloor < 0 ||
+                                       playerFloor == gunFloor;
+                        // ...and, when they differ, the nearest STAIRCASE to
+                        // his floor: `sub_436BB0`, ported as `Map2d::linkTo`.
+                        // said when either side's floor CHANGES, not once: a
+                        // body staged this tick has no floor yet, so a one-shot
+                        // line only ever reports -1
+                        static std::map<int, std::pair<int, int>> floorsTold;
+                        if (auto ft = floorsTold.find(s.actor);
+                            ft == floorsTold.end() ||
+                            ft->second != std::make_pair(gunFloor, playerFloor)) {
+                            floorsTold[s.actor] = {gunFloor, playerFloor};
+                            std::printf("frame %ld: actor %d %s - FLOORS: he %d, the player %d, "
+                                        "same %d, latched %d\n", n, s.actor, s.model.c_str(),
+                                        gunFloor, playerFloor, int(ein.sameNode),
+                                        int((rec.flags & 0x20u) != 0));
+                        }
+                        static std::set<int> crossTold;
+                        if (!ein.sameNode && crossTold.insert(s.actor).second)
+                            std::printf("frame %ld: actor %d %s - the player is on ANOTHER FLOOR "
+                                        "(%d against his %d)%s\n", n, s.actor, s.model.c_str(),
+                                        playerFloor, gunFloor,
+                                        (rec.flags & 0x20u) ? " and he has seen him: looking for "
+                                                              "a staircase (sub_436BB0)"
+                                                            : " but he has not seen him");
+                        if (!ein.sameNode && shootMap.valid()) {
+                            ein.link = shootMap.linkTo(gunFloor, playerFloor, fin.self);
+                            if (ein.link >= 0) {
+                                const auto& L = shootMap.floors()[
+                                    static_cast<std::size_t>(gunFloor)]
+                                        .links[static_cast<std::size_t>(ein.link)];
+                                for (int k = 0; k < 3; ++k) ein.linkFrom[k] = L.from[k];
+                                static std::set<int> linkTold;
+                                if ((rec.flags & 0x20u) && linkTold.insert(s.actor).second)
+                                    std::printf("frame %ld: actor %d %s - takes the STAIR %d of "
+                                                "floor %d: its near end %.0f %.0f %.0f, its far "
+                                                "end %.0f %.0f %.0f on floor %u\n", n, s.actor,
+                                                s.model.c_str(), ein.link, gunFloor,
+                                                double(L.from[0]), double(L.from[1]),
+                                                double(L.from[2]), double(L.to[0]),
+                                                double(L.to[1]), double(L.to[2]), L.destFloor);
+                            }
+                        }
+                        ein.targetAlive = true;
                         ein.gridClear = true; ein.rayHits = true;
                         ein.coinHeads = ((s.actor * 2654435761u) >> 16) & 1;
                         const int eng = omk::shootEngage(rec, ao, cone, ein);
@@ -11676,6 +11740,26 @@ int main(int argc, char** argv) {
                         // index outlives it. Indexing `floors()` with that -1 is
                         // what crashed the catacombs at frame 63.)
                         const int patrolFloor = static_cast<signed char>(rec.node & 0xFF);
+                        fin.movedThisFrame = s.walkDist;
+                        // ---- STATE 1's move decision and its step cell -----
+                        // `sub_426C20` is called in states 1, 4, 12 and 14; the
+                        // patrol's is below. State 1 steers at the goal the
+                        // engage set - the staircase's near end - and takes the
+                        // step only if the cell it lands on is walkable.
+                        // LABELLED: the cell read here is the GOAL's, not a cell
+                        // one step along; which of the two `sub_424DE0` reads is
+                        // not established.
+                        if (rec.state == 1 && shootMap.valid() && gunFloor >= 0) {
+                            const float cell = static_cast<float>(shootMap.scale());
+                            const bool there = std::fabs(rec.goalX - fin.self[0]) < cell &&
+                                               std::fabs(rec.goalZ - fin.self[2]) < cell;
+                            fin.moveCode = omk::shootMoveDecision(rec, fin.self, yaw, fin.dt, there);
+                            int cx = 0, cz = 0;
+                            if (shootMap.cellAt(gunFloor, rec.goalX, rec.goalZ, cx, cz))
+                                fin.stepCellValue = static_cast<std::int8_t>(
+                                    shootMap.floors()[static_cast<std::size_t>(gunFloor)]
+                                        .cell(cx, cz));
+                        }
                         if (rec.state == 4 && rec.route >= 0 && shootMap.valid() &&
                             patrolFloor >= 0 &&
                             patrolFloor < static_cast<int>(shootMap.floors().size())) {
@@ -11704,6 +11788,28 @@ int main(int argc, char** argv) {
                                             clip > 0 ? " - it carries a CLIP: state 5" : "");
                             }
                         }
+                        // ---- THE EDGE states 1 and 2 WALK ------------------
+                        // `u32(rec, 4)`'s two points. State 1 steers at the
+                        // goal and, on its step, writes the heading and length
+                        // from these and hands over to state 2; state 2 walks
+                        // the edge itself, climbing `(to.y - from.y)/dist` and
+                        // at the far end taking the link's own destination
+                        // floor as his new `+188`.
+                        fin.myNode = gunFloor;
+                        fin.targetNode = playerFloor;
+                        if (rec.link >= 0 && shootMap.valid() && gunFloor >= 0 &&
+                            gunFloor < static_cast<int>(shootMap.floors().size())) {
+                            const auto& ls = shootMap.floors()[
+                                static_cast<std::size_t>(gunFloor)].links;
+                            if (rec.link < static_cast<int>(ls.size())) {
+                                const auto& L = ls[static_cast<std::size_t>(rec.link)];
+                                fin.hasEdge = true;
+                                for (int k = 0; k < 3; ++k) {
+                                    fin.edgeFrom[k] = L.from[k];
+                                    fin.edgeTo[k]   = L.to[k];
+                                }
+                            }
+                        }
                         // ...and state 5's clip clock, which is all that arm reads
                         if (rec.state == 5) {
                             if (const auto ga = gunAnims.find(s.actor);
@@ -11714,6 +11820,33 @@ int main(int argc, char** argv) {
                         }
                         const auto st = omk::shootGenericStep(rec, fin, yaw);
                         s.facing = yaw;
+                        // ---- STATE 2 ARRIVING at the edge's far end ---------
+                        // `o3de_SetNodePos(node, to.x, to.y - +64, to.z)`, then
+                        // `+188 = link.destFloor` and `+60 = that y`. This is
+                        // the one place a gunman changes floor.
+                        if (st.arrived && fin.hasEdge) {
+                            const int was = gunFloor;
+                            s.at[0] = fin.edgeTo[0];
+                            s.at[2] = fin.edgeTo[2];
+                            for (float& w : s.walkMove) w = 0.0f;
+                            rec.groundY = fin.edgeTo[1] - rec.height;
+                            s.at[1] = rec.groundY;
+                            s.drawAt[1] = rec.groundY;
+                            if (shootMap.valid() && was >= 0 &&
+                                was < static_cast<int>(shootMap.floors().size())) {
+                                const auto& ls = shootMap.floors()[
+                                    static_cast<std::size_t>(was)].links;
+                                if (rec.link >= 0 && rec.link < static_cast<int>(ls.size()))
+                                    rec.node = static_cast<std::int8_t>(
+                                        ls[static_cast<std::size_t>(rec.link)].destFloor);
+                            }
+                            rec.link = -1;
+                            std::printf("frame %ld: actor %d %s - CHANGED FLOOR %d -> %d at "
+                                        "%.0f %.0f %.0f (sub_424DE0 state 2's far end)\n",
+                                        n, s.actor, s.model.c_str(), was,
+                                        static_cast<signed char>(rec.node & 0xFF),
+                                        double(s.at[0]), double(rec.groundY), double(s.at[2]));
+                        }
                         // `sub_435650`: state 4 or 5 left behind gives the route up
                         if (st.releaseRoute && rec.route >= 0 && shootMap.valid()) {
                             shootMap.routeRelease(static_cast<signed char>(rec.node & 0xFF),
@@ -11888,6 +12021,7 @@ int main(int argc, char** argv) {
                                             ++s.walkWalls;
                                         }
                                         s.walkMove[1] += dy;
+                                        s.walkDist = std::sqrt(dx * dx + dz * dz);
                                         if (!s.walkTold) {
                                             s.walkTold = true;
                                             std::printf("frame %ld: actor %d %s - walks (sub_421370): "
