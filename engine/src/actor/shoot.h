@@ -116,8 +116,24 @@ struct ShootRecord {
     std::uint32_t type = 0;                  // +80   the character type
     int   health     = 0;                    // +92   Hud_DrawBar's value
     int   target     = -1;                   // +96   the actor being fought
-    int   repeats    = 0;                    // +100  ticks done in this step
+    // +100 is SHARED between the two brains, as it is in the engine: the
+    // table brain counts its script step's repeats here, and the generic one
+    // keeps its PATROL POINT INDEX here (`sub_424DE0` state 4, `sub_4272B0`
+    // case 4). They never collide in the shipped data - Gandhar's three
+    // behaviour scripts use actions 0 and 16..24 and never action 1, the only
+    // action that starts a patrol.
+    int   repeats    = 0;                    // +100  step repeats / route index
     int   destX = 0, destZ = 0;              // +136/+140  Shoot_Think's spot
+    // ...and the WORLD point he is steering at, which is NOT the cell above:
+    // `sub_426C20` reads `f32(rec, 44)` and `f32(rec, 48)`, and the patrol
+    // writes them from `sub_4356B0`. They were folded into `destX`/`destZ`
+    // until 2026-09-12, which nothing caught because the two consumers never
+    // ran together - the cell's readers are the wall test and the steering,
+    // and the move decision had no live caller at all.
+    float goalX = 0.0f, goalZ = 0.0f;        // +44/+48   sub_426C20's target
+    // +24, the patrol ROUTE: an index into his floor's `Map2d` waypoints, or
+    // -1 for none. The engine keeps the pointer itself and tests it for null.
+    int   route      = -1;                   // +24
     int   scriptStep = 0;                    // +144  index into the script
     int   state      = 0;                    // +156  the action / state code
     std::uint32_t flags = 0;                 // +160  bit 0 ticking, 8, 0x800
@@ -263,19 +279,34 @@ bool shootGridTurn(ShootRecord& r, int heading, float& eulerY, float dt,
 //   8      type 11, state 15, flags |= 0x2000
 //   9      type 10/9, state 7, +168 = 30 * property 25, and TURNED 180
 //   10     type 25, state 15
-// NOT PORTED, labelled: 1, the patrol (type 9 along a route, `sub_4354E0`) -
-// there are no routes here - and the route release at the top (+144 == 1).
+//   1      THE PATROL (`todo/shoot-patrol.md`): type 9, state 4, +144 = 1,
+//          and the route `acquire` gives for the action's third operand -
+//          index 0, and its first point into +44/+48. `sub_4356B0`'s return
+//          is DISCARDED here, so a waypoint clip cannot send him to state 5
+//          on the way in; only the advance in state 4 can.
 // `hasClip` says whether his group holds a clip of a type; the state and
 // flags are written only when one is found, as in the engine.
+// `acquire` is `sub_4354E0` + `sub_4356B0` on the caller's own map, because
+// this file knows nothing about `Map2d`: it takes `(uint8_t)a3` - the CAST IS
+// THE CALLER'S, and it matters, since the shipped operands carry a floor in
+// their high byte - and hands back the route and its first point. A route of
+// -1 is "none found", which the engine stores as a null pointer and state 4
+// then falls straight past.
+struct ShootRouteChoice {
+    int   route = -1;
+    float x = 0.0f, z = 0.0f;
+};
 struct ShootActionOut {
     bool parked = false;      // flag 8 was up: the request waits at +152
     int  clipType = -1;       // the clip type to start at 1.0; -1 none
     int  timerProperty = -1;  // +168 = 30 * this property, -1 none
     bool turnAround = false;  // action 9: +420 += 180
+    int  releasedRoute = -1;  // a PATROL was replaced: give this route back
 };
 ShootActionOut shootActorAction(ShootRecord& r, int action, int a3,
                                 const std::function<bool(int)>& hasClip,
-                                const std::function<int()>& rnd);
+                                const std::function<int()>& rnd,
+                                const std::function<ShootRouteChoice(int)>& acquire = {});
 
 // What `sub_420C70` leaves behind for `sub_420EB0` to read rather than
 // recompute. The engine keeps them in four globals; naming them is the whole

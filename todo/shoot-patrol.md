@@ -107,6 +107,32 @@ them.
 
 ---
 
+## 4b. Two defects the reading turned up on the way
+
+**`+44/+48` and `+136/+140` were one pair of fields.** `shootMoveDecision` -
+the port of `sub_426C20` - read `destX`/`destZ`, which the struct documents as
+`+136/+140`, the CELL; the engine reads `f32(rec, 44)` and `f32(rec, 48)`, a
+world point. Nothing caught it because the two consumers never ran together:
+the cell's readers are the wall test and the steering, and `shootMoveDecision`
+had **no live caller at all** - only a probe, which passed world values into
+the cell fields and so agreed with itself. Fixed by giving the record
+`goalX`/`goalZ`; the probe now sets those.
+
+**`verify.py: shoot generic` had been RED for a day.** `324ef32` (B4) corrected
+the hub's two expiry arms from `out.clipType = in.defaultClipType` to
+`out.actionRequest = 0` - the right fix, trap 12's - and its expectation still
+said the probe's sentinel `77`. The check went red at that commit and nothing
+ran it. The expectation now asserts the corrected behaviour and the probe
+reports the ACTION beside the clip, so the same slip cannot read as a hole.
+
+**And a stale object file made the diagnosis twice as long.** Comparing my tree
+against `HEAD` by stashing gave three differing numbers that my change could
+not possibly explain; `make` had relinked `shoot_range` against a
+`build/obj/src/actor/shoot.o` from the other tree. Deleting the object files by
+name and rebuilding showed the hub identical on every shared element. CLAUDE.md
+§1 already warns about this; the practical form is **delete the object files by
+name after switching trees, before believing any measurement**.
+
 ## 5. The steps
 
 Each ends in a commit and a report.
@@ -114,7 +140,7 @@ Each ends in a commit and a report.
 | # | step | state |
 |---|---|---|
 | 1 | **The route data**: `Map2dWaypoint` given real fields, the runtime reservation, and the four lookups (`routeNearest`, `routeById`, `routeNextIndex`, `routePoint`, `routeRelease`). A probe and a check over the 53-route corpus and the 24/24 floor operand | **next** |
-| 2 | **`Shoot_ActorAction` case 1** and the record's route fields, against the lookups | planned |
-| 3 | **`Shoot_Think`'s floor**: a gunman's `+188`, which the route lookup needs and which has been the memset's 0 since the brain was wired | planned |
+| 2 | **`Shoot_ActorAction` case 1** and the record's route fields, against the lookups | done |
+| 3 | **`Shoot_Think`'s floor**: a gunman's `+188`, which the route lookup needs and which has been the memset's 0 since the brain was wired | **next** |
 | 4 | **Wire it in `play.cpp`**: op 84's third operand carried, the route acquired, the target fed to `shootMoveDecision`, the advance, state 5, the release | planned |
 | 5 | **Play, docs, checks** | planned |

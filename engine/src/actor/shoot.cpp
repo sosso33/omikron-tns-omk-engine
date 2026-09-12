@@ -301,7 +301,8 @@ bool shootGridTurn(ShootRecord& r, int heading, float& eulerY, float dt,
 
 ShootActionOut shootActorAction(ShootRecord& r, int action, int a3,
                                 const std::function<bool(int)>& hasClip,
-                                const std::function<int()>& rnd) {
+                                const std::function<int()>& rnd,
+                                const std::function<ShootRouteChoice(int)>& acquire) {
     ShootActionOut o;
     // a picked clip playing: the request is PARKED for when it ends
     if (r.flags & 8u) {
@@ -311,8 +312,10 @@ ShootActionOut shootActorAction(ShootRecord& r, int action, int a3,
         o.parked = true;
         return o;
     }
-    // (`if (+144 == 1) sub_435650(+24)` releases the patrol's route - there
-    // are no routes in this port)
+    // `if (+144 == 1) sub_435650(+24)`: replacing a PATROL gives its route
+    // back. The release itself is the caller's (it owns the map); this only
+    // says so by forgetting the route.
+    if (r.scriptStep == 1 && r.route >= 0) { o.releasedRoute = r.route; r.route = -1; }
     int v9 = action;
     if (a3) {
         r.routeArg = a3;
@@ -352,6 +355,25 @@ ShootActionOut shootActorAction(ShootRecord& r, int action, int a3,
         if (v9 == 0) { r.scriptStep = 0; r.flags &= 0xFFFFFFDDu; }
         else         { r.scriptStep = 5; r.flags |= 2u; }
         o.clipType = t;
+        return o;
+    }
+    case 1: {
+        // THE PATROL (`05_sys.c` 4079). Type 9 only - no fallback to 10, unlike
+        // every walking action below - and nothing is written if there is none.
+        if (!has(9)) return o;                  // "anim non existante dans le .ANI"
+        r.flags &= ~2u;
+        r.scriptStep = 1;
+        r.state = 4;
+        // `sub_4354E0(+188, +136, +140, (uint8_t)a3)` then `sub_4356B0(route,
+        // +188, 0, out)`. The engine reads `+188` TWICE, once for each call,
+        // which matters not at all - nothing between them writes it.
+        const ShootRouteChoice c = acquire ? acquire(a3 & 0xFF) : ShootRouteChoice{};
+        r.route = c.route;
+        r.repeats = 0;                          // `+100 = 0`, the point index
+        if (c.route >= 0) { r.goalX = c.x; r.goalZ = c.z; }
+        // (with no route the engine leaves +44/+48 holding whatever its
+        // uninitialised stack slot held; state 4 never reads them without one)
+        o.clipType = 9;
         return o;
     }
     case 2:
@@ -1056,8 +1078,13 @@ ShootStep shootGenericStep(ShootRecord& r, const ShootFrameIn& in, float& eulerY
 // on, and the last of the four suppliers `shootGenericStep` used to take as a
 // parameter.
 //
-// `dest` is the record's `+44`/`+48`. `sub_435900(self, destX, destZ)` -
-// "am I there yet" - is the one part still unread, so it stays an argument.
+// `dest` is the record's `+44`/`+48` - `goalX`/`goalZ`, which the PATROL
+// writes from `sub_4356B0` and which are not the `+136/+140` cell.
+//
+// `arrived` is `sub_435900(self, goalX, goalZ)`, now read: `|goalX - self.x| <
+// scale && |goalZ - self.z| < scale`, the map's own CELL SIZE either side, so
+// "there" is one cell in each direction and never an exact point. It stays an
+// argument because only the caller has the map.
 //
 // It confirms 7b's rotation convention from a second, independent site: the
 // forward vector it builds is `(-sin(yaw), cos(yaw))`, the same `-sin` that
@@ -1083,8 +1110,10 @@ int shootMoveDecision(const ShootRecord& r, const float self[4],
     if (arrived) return 1;
     const double yaw = double(self[3]) * 3.14159265358979 / 180.0;
     const double sn = -std::sin(yaw), cs = std::cos(yaw);
-    const double dx = double(r.destX) - self[0];
-    const double dz = double(r.destZ) - self[2];
+    // +44/+48, the WORLD goal - NOT the +136/+140 cell. They shared one pair
+    // of fields until 2026-09-12 (`actor/shoot.h`).
+    const double dx = double(r.goalX) - self[0];
+    const double dz = double(r.goalZ) - self[2];
     const double dist = std::sqrt(dx * dx + dz * dz);
     const double lateral = cs * dx - sn * dz;
     const double behind = sn * dx + cs * dz;   // +Z component: BACKWARD

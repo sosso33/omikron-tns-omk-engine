@@ -659,6 +659,62 @@ int main(int argc, char** argv) {
                     std::printf("actor action: %s; under flag 8 parked %d pending %d 0x8000000 %d\n",
                                 acts.c_str(), int(po.parked), pr.pendingAction,
                                 int((pr.flags & 0x8000000u) != 0));
+                    // ---- THE PATROL, action 1 (`todo/shoot-patrol.md`) ----
+                    // Run on the supermarket's own routes, so the acquire is
+                    // the real `sub_4354E0` + `sub_4356B0` and not a stub.
+                    {
+                        omk::ShootRecord pat;
+                        pat.node = 0;                     // his floor, +188
+                        pat.destX = 19; pat.destZ = 38;   // his cell, +136/+140
+                        const auto acq = [&](int id) {
+                            omk::ShootRouteChoice c;
+                            c.route = mp.routeFor(pat.node, pat.destX, pat.destZ, id);
+                            if (c.route >= 0) mp.routePoint(pat.node, c.route, 0, c.x, c.z);
+                            return c;
+                        };
+                        const auto p1 = omk::shootActorAction(pat, 1, 0, has, flip, acq);
+                        // ...a SECOND gunman on the same floor: route 0 is
+                        // taken, so the nearest-free search must give him
+                        // another - and the high byte of a named operand is
+                        // ignored, so 0x0102 and 2 must land on the same route
+                        omk::ShootRecord pb;
+                        pb.node = 0; pb.destX = 19; pb.destZ = 38;
+                        const auto acqB = [&](int id) {
+                            omk::ShootRouteChoice c;
+                            c.route = mp.routeFor(pb.node, pb.destX, pb.destZ, id);
+                            if (c.route >= 0) mp.routePoint(pb.node, c.route, 0, c.x, c.z);
+                            return c;
+                        };
+                        omk::shootActorAction(pb, 1, 0, has, flip, acqB);
+                        omk::ShootRecord pc;
+                        pc.node = 0;
+                        const auto acqC = [&](int id) {
+                            omk::ShootRouteChoice c;
+                            c.route = mp.routeFor(pc.node, 0, 0, id);
+                            if (c.route >= 0) mp.routePoint(pc.node, c.route, 0, c.x, c.z);
+                            return c;
+                        };
+                        // the operand the SCRIPTS carry: `(floor << 8) | id`,
+                        // and the engine's `(uint8_t)` throws the floor away
+                        omk::shootActorAction(pc, 1, 0x0103, has, flip, acqC);
+                        const int byHighByte = pc.route;
+                        mp.routeRelease(0, pc.route);
+                        omk::shootActorAction(pc, 1, 3, has, flip, acqC);
+                        const int byBare = pc.route;
+                        // ...and replacing a patrol RELEASES its route
+                        const int was = pat.route;
+                        const float gx = pat.goalX, gz = pat.goalZ;
+                        const int st = pat.state, sc = pat.scriptStep, ix = pat.repeats;
+                        const auto p4 = omk::shootActorAction(pat, 0, 0, has, flip, acq);
+                        std::printf("patrol action: clip %d st %d s%d route %d at %.0f %.0f idx %d; "
+                                    "second gunman route %d; operand 0x103 route %d vs bare 3 route "
+                                    "%d; replaced, releasing route %d (his route now %d)\n",
+                                    p1.clipType, st, sc, was, double(gx), double(gz), ix,
+                                    pb.route, byHighByte, byBare, p4.releasedRoute, pat.route);
+                        mp.routeRelease(0, pb.route);
+                        mp.routeRelease(0, pc.route);
+                        if (p4.releasedRoute >= 0) mp.routeRelease(0, p4.releasedRoute);
+                    }
                 }
             } else {
                 std::printf("path field: SMARKET1.MPT not read\n");

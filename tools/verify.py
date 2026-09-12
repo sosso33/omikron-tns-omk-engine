@@ -26148,7 +26148,7 @@ def c_shoot_fire():
             "hit:", "bands:", "gates:", "shield:", "kill:", "raise:", "slew:",
             "mover rows:", "mover held:", "mover crouch:", "look:", "noise:", "gunman aim:",
             "wall test:", "path field:", "grid turn:", "actor action:",
-            "hurt shove:", "hurt sounds:", "shove camera:", "type:")
+            "patrol action:", "hurt shove:", "hurt sounds:", "shove camera:", "type:")
     got = []
     for k in keys:
         m = re.search(r"^" + re.escape(k) + r" (.*)$", out, re.M)
@@ -26280,9 +26280,21 @@ def c_shoot_fire():
             # asked under flag 8 the request is only PARKED
             "3 -> 10 st 6 s3 f20 t31; 0 -> 25 st 3 s0 f600000 t-1; 0 -> 11 st 3 s0 f0 t-1; "
             "5 -> 11 st 3 s5 f2 t-1; 8 -> 11 st 15 s8 f2000 t-1; 9 -> 10 st 7 s9 f2000 t25 "
-            "turn; 10 -> 25 st 15 s8 f202000 t-1; 1 -> -1 st 15 s8 f2000 t-1; 4 -> 10 st 7 "
+            "turn; 10 -> 25 st 15 s8 f202000 t-1; 1 -> 9 st 4 s1 f2000 t-1; 4 -> 10 st 7 "
             "s4 f2000 t23; 7 -> 10 st 14 s7 f2000 t-1; under flag 8 parked 1 pending 0 "
             "0x8000000 1",
+            # THE PATROL, action 1 (`todo/shoot-patrol.md`, 2026-09-12), run on
+            # the supermarket's OWN routes so the acquire is the real
+            # `sub_4354E0` + `sub_4356B0`: type 9, state 4, +144 = 1, the route
+            # nearest his cell (19,38) - id 1, whose first point (19,39) is the
+            # world point 13760 2301 - and the point index 0. A second gunman
+            # asking from the same cell gets the NEXT route, because the first
+            # is now reserved. The operand `0x103` and a bare `3` give the same
+            # route, which is the `(uint8_t)` cast throwing away the floor the
+            # shipped scripts carry in the high byte. And replacing a patrol
+            # with any other action hands the route back.
+            "clip 9 st 4 s1 route 0 at 13760 2301 idx 0; second gunman route 1; operand 0x103 "
+            "route 3 vs bare 3 route 3; replaced, releasing route 0 (his route now -1)",
             # THE HURT REACTION (`sub_47D1F0` + `sub_47D4D0`'s 0x400 arm,
             # 2026-09-12). Each band arms ONE angle and zeroes both first: 0/1
             # the ROLL (a bolt across him), 2/3 the PITCH (one along). The
@@ -27586,8 +27598,8 @@ def c_shoot_generic():
     pt  = re.search(r"^generic: patrol noroute outcome (-?\d+) state (\d+); "
                     r"route state (\d+) outcome (-?\d+) unread (\d)$", r.stdout, re.M)
     hb  = re.search(r"^generic: hub fire outcome (-?\d+) timer ([\d.]+); "
-                    r"hold outcome (-?\d+); expiry clip (-?\d+); "
-                    r"finishing clip (-?\d+) timer ([\d.]+) flag20 (\d)$",
+                    r"hold outcome (-?\d+); expiry clip (-?\d+) action (-?\d+); "
+                    r"finishing clip (-?\d+) action (-?\d+) timer ([\d.]+) flag20 (\d)$",
                     r.stdout, re.M)
     aq  = re.search(r"^generic: acquire inner (\d) outer (\d) blind (\d) "
                     r"latched-turn (\d) latch (\d)$", r.stdout, re.M)
@@ -27612,7 +27624,8 @@ def c_shoot_generic():
             int(tv.group(5))),
            tuple(int(x) for x in pt.groups()),
            (int(hb.group(1)), hb.group(2), int(hb.group(3)), int(hb.group(4)),
-            int(hb.group(5)), hb.group(6), int(hb.group(7))),
+            int(hb.group(5)), int(hb.group(6)), int(hb.group(7)),
+            hb.group(8), int(hb.group(9))),
            tuple(int(x) for x in aq.groups()), tuple(int(x) for x in cl.groups()),
            (int(mv.group(1)), int(mv.group(2)), int(mv.group(3)), int(mv.group(4)),
             int(mv.group(5)), mv.group(6), int(mv.group(7))),
@@ -27623,7 +27636,14 @@ def c_shoot_generic():
             (1, "143.1", 500, 2, 0, 1, 2, 6),
             (5, "40.0", 1, 6, 1),
             (4, 4, 5, -1, 1),
-            (1, "4.0", 0, 77, -1, "0.5", 0),
+            # THE EXPIRY ASKS FOR AN ACTION, NOT A CLIP. This row said `77` -
+            # the probe's sentinel `defaultClipType` - until 2026-09-12, and it
+            # had been stale since `324ef32` the day before: both expiry arms
+            # reach `Shoot_ActorAction(a2, 0, 0)`, where `a2` is the ACTOR's
+            # index and the action is the literal 0, so there is no clip in it
+            # at all (`todo/handoff-shoot-mode.md` trap 12). The check went red
+            # at that commit and nothing ran it for a day.
+            (1, "4.0", 0, -1, 0, -1, -1, "0.5", 0),
             (1, 0, 0, 1, 1), (-1, 55, 4, 1),
             (0, 0, 90, -90, 180, "0.0", 1),
             (1, 6, 0, 6, 0, 3, 0, 4, 0),

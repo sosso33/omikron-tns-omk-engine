@@ -334,10 +334,18 @@ int main(int argc, char** argv) {
             q6d.timer = 0.5f; q6d.flags |= 0x8000u; q6d.flags |= 0x20u;
             const auto s6d = omk::shootGenericStep(q6d, h4, e6d);
 
+            // NOTE what the two expiry arms report. Until `324ef32` they set
+            // `out.clipType = in.defaultClipType`, and that was the misreading
+            // trap 12 records: `sub_424DE0`'s `a2` is the ACTOR's index, and
+            // both arms ask for the literal ACTION 0. So the clip is -1 and
+            // the request is 0, and the probe prints both rather than only the
+            // hole the fix left.
             std::printf("generic: hub fire outcome %d timer %.1f; hold outcome %d; "
-                        "expiry clip %d; finishing clip %d timer %.1f flag20 %d\n",
+                        "expiry clip %d action %d; finishing clip %d action %d "
+                        "timer %.1f flag20 %d\n",
                         int(s6a.outcome), q6a.timer, int(s6b.outcome),
-                        s6c.clipType, s6d.clipType, q6d.timer,
+                        s6c.clipType, s6c.actionRequest,
+                        s6d.clipType, s6d.actionRequest, q6d.timer,
                         int((q6d.flags & 0x20u) != 0));
         }
 
@@ -402,18 +410,18 @@ int main(int argc, char** argv) {
         // +/-90 the off-to-the-side ones, which is what refutes reading the
         // clip types 30/31/32 as turns.
         {
-            omk::ShootRecord q; q.destX = 0; q.destZ = -390;   // dead ahead
+            omk::ShootRecord q; q.goalX = 0; q.goalZ = -390;   // dead ahead
             float self4[4] = {0, 0, 0, 0}, e = 0;
             const int ahead = omk::shootMoveDecision(q, self4, e, 1.0f, false);
-            q.destX = -390; q.destZ = 0;                        // abeam
+            q.goalX = -390; q.goalZ = 0;                        // abeam
             const int abeamA = omk::shootMoveDecision(q, self4, e, 1.0f, false);
             // BEHIND and off to one side - the +/-90 band, which needs the
             // backward component positive but under 0.8 of the distance
-            q.destX = 300;  q.destZ = 300;
+            q.goalX = 300;  q.goalZ = 300;
             const int quartA = omk::shootMoveDecision(q, self4, e, 1.0f, false);
-            q.destX = -300; q.destZ = 300;
+            q.goalX = -300; q.goalZ = 300;
             const int quartB = omk::shootMoveDecision(q, self4, e, 1.0f, false);
-            q.destX = 0;    q.destZ = 390;                      // behind
+            q.goalX = 0;    q.goalZ = 390;                      // behind
             float turned = 0;
             const int back = omk::shootMoveDecision(q, self4, turned, 1.0f, false);
             const int there = omk::shootMoveDecision(q, self4, e, 1.0f, true);
