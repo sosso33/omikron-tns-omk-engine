@@ -25905,6 +25905,15 @@ def c_engine_shoot_patrol():
     ping-pong bit, at frame 483 - and starts a second lap. Actor 591 reaches
     point 9 of 10. No one reaches state 5, because that needs a waypoint
     carrying a clip and no shipped route has one.
+
+    **And nobody falls out of the world.** A gunman's y is `+60` -
+    `Shoot_ActorEnter`'s `floor.bound[3] - <how far his lowest collision sphere
+    hangs below his origin>` - and `sub_421370` re-pins the node to it at every
+    clip wrap, because the walk applies no vertical at all. Fed the DRAWN y
+    instead, two of these nine sank three quarters of a metre through their own
+    floor by frame 72, lost it, and with it the wall test: one walked out
+    through a wall and a reader saw it. The advance count is the tell - 20 with
+    the drift, 31 without, because a gunman who keeps his floor keeps steering.
     """
     import subprocess, re
     fr = omkpaths.data_root()
@@ -25945,9 +25954,9 @@ def c_engine_shoot_patrol():
               ("601", "1025", "4", "4"), ("602", "1026", "4", "5"),
               ("604", "1795", "7", "27"), ("605", "1282", "5", "13"),
               ("606", "1281", "5", "10")],
-             20, [("483", "595")]),
+             31, [("483", "595")]),
             "nine spectres taking a route each, every one of them on the floor "
-            "the operand's high byte names; 20 waypoint advances in 500 frames; "
+            "the operand's high byte names; 31 waypoint advances in 500 frames; "
             "and actor 595's nine-point ring closing - 8 back to 0 - at frame 483")
 
 

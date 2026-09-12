@@ -3657,6 +3657,25 @@ float Session::modelReach(const std::string& model) {
     return modelReach_[model];
 }
 
+float Session::modelFeetDrop(const std::string& model) {
+    // `Shoot_ActorEnter`'s own loop (05_sys.c 3770): over the model's OWN
+    // collision spheres - the list at descriptor `+244`/`+248`, 16 bytes of
+    // `(x, y, z, r)` - the greatest `y + r`. Y points DOWN, so that is the
+    // LOWEST point of the body below its origin: his feet. The engine keeps it
+    // at the record's `+64` and subtracts it from the floor's own lower edge
+    // to get `+60`, the y a shoot gunman stands at and never leaves.
+    auto it = modelFeetDrop_.find(model);
+    if (it != modelFeetDrop_.end()) return it->second;
+    float drop = 0.0f;
+    if (!dataRoot_.empty()) {
+        const DataFs fs(dataRoot_);
+        const auto d = fs.read("MESHES/PERSOS/" + model + ".3DO");
+        for (const auto& c : modelSweepSpheres(d))
+            drop = std::max(drop, c.pos[1] + c.radius);
+    }
+    return modelFeetDrop_.emplace(model, drop).first->second;
+}
+
 int Session::actorBody(int actor, const std::string& model, const float origin[3], float facing,
                        const float base[3], float reach) {
     auto it = actorBodySlots_.find(actor);

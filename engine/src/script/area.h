@@ -363,6 +363,11 @@ public:
     // `shoot.begin` and the `shoot.actor.action` calls
     // (`todo/shoot-patrol.md` 5a).
     void enableZoneById(int id);
+
+    // `Shoot_ActorEnter`'s `+64`: how far the model's lowest collision sphere
+    // hangs below its origin. `+60`, the y a shoot gunman stands at, is his
+    // floor's `bound[3]` minus this (`area.cpp`).
+    float modelFeetDrop(const std::string& model);
     // SHOOT MODE itself - ops 80/81's decisions (`actor/shootmode.h`): the
     // weapon slot, the HUD screen, which library is resident, and the
     // constants the entry installs. The frontend reads it to install camera
@@ -1389,6 +1394,7 @@ private:
     std::map<int, std::vector<CollisionSphere>> actorBodySpheres_;   // ...its re-hung spheres
     std::map<std::string, std::vector<CollisionSphere>> modelSpheres_;
     std::map<std::string, float> modelReach_;
+    std::map<std::string, float> modelFeetDrop_;
     std::vector<int> pedSlots_;              // walker -> its index slot, -1 none
     std::set<int> lookAtPlayer_;             // actors whose slot 100 is the player
     bool radarOn_ = false;                   // dword_4EB8C8, the radar's switch

@@ -11491,11 +11491,53 @@ int main(int argc, char** argv) {
                         // properly means posing a staged body whether or not it
                         // is drawn, which is not this task's.
                         if (shootMap.valid()) {
-                            const float at[3] = {s.drawAt[0], s.drawAt[1], s.drawAt[2]};
+                            // his y is `+60` once he has one - the engine's node
+                            // y for a shoot walker, which nothing moves
+                            const float at[3] = {s.drawAt[0],
+                                                 rec.groundY != 0.0f ? rec.groundY : s.drawAt[1],
+                                                 s.drawAt[2]};
                             const bool onGrid =
                                 omk::shootThink(rec, shootMap, at,
                                                 static_cast<int>(rec.type), -1);
                             if (onGrid) gunCellSeeded.insert(s.actor);
+                            // ---- `Shoot_ActorEnter`'s +64 and +60 ------------
+                            // `+64` is how far his lowest collision sphere hangs
+                            // below his origin (`Session::modelFeetDrop`); `+60`
+                            // is his floor's own lower edge MINUS that, which
+                            // stands his feet on the floor plane.
+                            // `o3de_SetNodePos` puts him there and
+                            // `sub_421370`'s clip wrap re-pins the node's y to
+                            // it every loop, so a shoot gunman's y NEVER MOVES -
+                            // the walk applies no vertical at all (its two arms
+                            // pass {dx, 0, dz}, and the one that does move y
+                            // needs `a1+460`).
+                            //
+                            // The port had fed `Shoot_Think` the DRAWN y, which
+                            // drifts with the ground probe: two of the
+                            // catacombs' nine spectres sank three quarters of a
+                            // metre through their own floor by frame 72, lost
+                            // it, and with it the wall test - one walked out
+                            // through a wall, which a reader saw.
+                            //
+                            // It is done HERE and not at his entry because the
+                            // entry has no floor to subtract from: a body staged
+                            // this tick has not been drawn.
+                            const int fl0 = static_cast<signed char>(rec.node & 0xFF);
+                            if (onGrid && rec.groundY == 0.0f && fl0 >= 0 &&
+                                fl0 < static_cast<int>(shootMap.floors().size())) {
+                                rec.height = session.modelFeetDrop(s.model);
+                                rec.groundY = shootMap.floors()[
+                                    static_cast<std::size_t>(fl0)].bound[3] - rec.height;
+                                s.at[1] = rec.groundY;              // `o3de_SetNodePos`
+                                s.drawAt[1] = rec.groundY;
+                                std::printf("frame %ld: actor %d %s - stands at y %.0f "
+                                            "(Shoot_ActorEnter: floor %d's edge %.0f minus his "
+                                            "%.0f) and does not leave it\n", n, s.actor,
+                                            s.model.c_str(), double(rec.groundY), fl0,
+                                            double(shootMap.floors()[
+                                                static_cast<std::size_t>(fl0)].bound[3]),
+                                            double(rec.height));
+                            }
                             if (onGrid && gunEntryPending.erase(s.actor))
                                 applyAction(rec, act, session.shootActionArg(s.actor),
                                             "his scene action, held until he reached the grid");

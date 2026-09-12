@@ -253,9 +253,10 @@ carries a clip.
   now. The engine is not exposed to this because its lists are pointers, not
   indices - a null pointer is a test it already makes.
 
-### Owed at step 5: two checks left red on purpose
+### Owed at step 5: THREE checks left red on purpose
 
-`engine: shoot gunfire` and `engine: shoot hit` both replay a whole arena, so
+`engine: shoot gunfire`, `engine: shoot hit` and - since the y was pinned
+(§6) - `engine: shoot fire` all replay a whole arena, so
 every number in them moves when the gunmen move - and step 3 made them move for
 two right reasons (`sub_426E00`'s floor guard now works, and the gallery's 240
 patrols instead of standing). They are left RED rather than re-baselined twice,
@@ -273,3 +274,66 @@ One rot was fixed on the spot rather than deferred: the gunfire check's
 first-shot pattern had `^frame 4:` written into it, so when the shot moved the
 element went to **None** - "the line is gone" rather than "it moved". The frame
 is captured now.
+
+---
+
+## 6. `sub_421370`'s VERTICAL — why a spectre walked out through a wall
+
+A reader watching the catacombs: *"I see one go out of a wall."* Read
+2026-09-12, and the answer is that **a shoot gunman has no vertical at all.**
+
+`sub_421370` (05_sys.c 2704) moves him from the clip's root delta
+(`sub_434D30` into `v46`, `v47[0]`, `v47[1]` = dx, dy, dz), and the two arms
+that can move him both drop dy:
+
+* `dx == 0 && dz == 0` — nothing horizontal — moves ONLY the vertical, and only
+  when `a1+460` is set: `o3de_MoveNodeBy(node, 0, dy, 0)`;
+* otherwise the wall test `sub_421140` is given `{dx, 0, dz}` and its two
+  slides `{0, ±d}` and `{±d, 0}`. **dy never reaches the node.**
+
+His y comes from one place, the CLIP WRAP:
+
+```c
+if (frame + dt >= Anim_Frames(...) && !a1[460]) {
+    f32(a1, 188) = dt + 1.0;                       // the frame back to 1
+    o3de_SetNodePos(node, a3[0], f32(rec, 60), a3[2]);   // y PINNED to +60
+}
+```
+
+and `+60` is set once, at `Shoot_ActorEnter` (05_sys.c 3788):
+
+```c
+v24 = max over the model's OWN collision spheres of (sphere.y + sphere.r);
+f32(rec, 64) = v24;                                   // +64, his HEIGHT
+f32(rec, 60) = f32(dword_907D00[floor], 12) - v24;    // +60 = floor.bound[3] - it
+o3de_SetNodePos(node, x, f32(rec, 60), z);
+```
+
+The sphere list is the descriptor's `+244`/`+248`, 16 bytes of `(x, y, z, r)` —
+the same list `modelSweepSpheres` already reads. Y points DOWN, so
+`max(y + r)` is the LOWEST point of the body below its origin: his feet. `+60`
+is the floor's own lower edge minus that, which stands his feet on the plane.
+**So his y is a constant, chosen at entry and re-asserted every clip loop.**
+
+**What the port did instead, and what it cost.** `Shoot_Think` was handed
+`drawAt[1]`, the ground probe plus the clip's accumulated root motion. Two of
+the catacombs' nine spectres sank about three quarters of a metre by frame 72 —
+605 went from y 1025 to just past **1054**, which is floor 5's own `bound[3]` —
+dropped out of their floor's box, and `floorAt` then answered -1. With no floor
+there is no wall test and no steering, so the walk clip carried them in a
+straight line for ever: 605 ended 3000 units west and 2600 north of `hames`.
+Nothing in x or z was ever wrong — he was inside floor 5's footprint the whole
+time.
+
+Ported: `Session::modelFeetDrop` is `+64`, and `+60` is computed the first tick
+`Shoot_Think` finds him a floor (his ENTRY has none, because a body staged that
+tick has not been drawn), then used as his y from then on. **Measured**: off-grid
+gunmen 2 → **0**, and waypoint advances over 500 frames 20 → **31**, because a
+gunman who keeps his floor keeps steering.
+
+`sub_4368E0` was read on the way and is NOT needed for this: it is the engine's
+spiral search for the nearest cell that is not 0, 2, 3 or 0x80, out to four
+rings, which it writes back into the position — "put him where he can stand".
+`Shoot_ActorEnter` runs it once at entry and `Shoot_TickPlayer` every frame for
+the PLAYER; a gunman mid-walk never needs it, because with his y pinned the
+wall test never lets him leave.
