@@ -1598,6 +1598,30 @@ connected (2026-09-10, `todo/shoot-mode.md` §7h/§7i: `MDSHOOT0`'s latch,
 `engine: shoot fire`), while the HIT - the actor sweep and the damage - is
 read and not ported (§7j).
 
+**THE NAV EDGE is ported** (2026-09-12, `todo/shoot-navedge.md`), and the
+handoff's "path-finder" turned out not to be one. `sub_436BB0` is 37 lines: my
+floor's links, filtered to the ones arriving on the player's floor, nearest near
+end by squared XZ distance. **One hop, nearest door, no search.** And the table
+it reads is one this file already parsed and MISNAMED - the 28-byte per-floor
+records called "wall segments" are inter-floor LINKS, `{u32 destFloor; f32
+from[3]; f32 to[3]}`, settled three ways over 36 of 36: the destination a real
+floor, both points inside their own floors, and every link RECIPROCAL. Eleven
+of the sixteen maps carry none, which is why there are 36 across 79 floors.
+
+`sub_426E00`'s `!sameNode` arm now runs: latched and on another floor, he takes
+the nearest stair, walks to its near end in state 1, walks the edge in state 2
+climbing `(to.y - from.y)/dist`, and at the far end is placed at `to` minus his
+height with the link's own `destFloor` as his new `+188` - the one place a
+gunman changes floor. **THE LATCH IS THE GATE**: only actions 2 and 3, a noise
+on his own floor, or the same-floor arms raise `0x20`, and action 1 raises
+nothing - so a PATROLLING gunman never chases you upstairs, he waits on his
+beat. The arm's other outcome is `LABEL_24`, state 4, and wiring it took the
+catacombs from 31 waypoint advances in 500 frames to 38 and from one closed
+ring to two. Proved at unit level over `bar56`'s links
+(`verify.py: shoot links`, `shoot fire`'s `cross floor:`); NOT yet watched,
+because AREA 232's zones are on the ACTIVATE slot and its floor refuses the
+walker (`todo/shoot-navedge.md` §7).
+
 **THE PATROL is ported** (2026-09-12, `todo/shoot-patrol.md`), and it was the
 commonest thing a shoot script asks for: `shoot.actor.action 1` is **116 of the
 319 shipped sites**, ahead of action 3's 113, and `Shoot_ActorAction` case 1 was

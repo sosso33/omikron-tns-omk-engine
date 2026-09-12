@@ -80,7 +80,7 @@ the fallback instead. Both are named, not glossed.
 | 2 | **`sub_436BB0`** ported as `Map2d::linkTo(floor, destFloor, pos)`, with a probe | done |
 | 3 | **The engage's arm**: `+4`, the goal, state 1 - and the edge fed to states 1 and 2 | done |
 | 4 | **Play it**: AREA 232's seven latched gunmen over `bar56`'s ten links - and its zones are on the ACTIVATE slot, so it needs a button press (§6) | blocked, §7 |
-| 5 | **Docs and checks** | **next** |
+| 5 | **Docs and checks** | done |
 
 ---
 

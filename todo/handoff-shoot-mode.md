@@ -1,5 +1,8 @@
 # Handoff — SHOOT MODE (`todo/next-tasks.md` 18)
 
+**Read §3 first if you are the reader coming back to this: it is the ordered
+list of what needs your eyes, written 2026-09-12.**
+
 Rewritten 2026-09-11, at the end of the session that made the gunmen FIGHT:
 they fire, turn, aim, hold their guns, fall, walk, stop at walls, push, steer
 by the floor's path field, advance and then stand to fire - and the player can
@@ -78,6 +81,8 @@ startup scripts.
 | **B5 the push's OWN spheres** (`f368f07`) | **CONFIRMED IN PLAY** (*"I didn't get stuck anymore"*) |
 | **item 4 step 4, THE PLAYER'S DEATH** `sub_423FC0` + the countdown (`9d7182d`) | done, not yet played |
 | **THE HURT REACTION** `sub_47D1F0`: the flat sound, the band, the four-frame shove, the WHOLE-Euler camera rotation that makes it visible | done 2026-09-12, not yet played |
+| **THE PATROL**, `shoot.actor.action 1` - the commonest shoot action, 116 of 319 sites ([`shoot-patrol.md`](shoot-patrol.md)) | done 2026-09-12, **WATCHED** |
+| **THE NAV EDGE** - the links, `sub_436BB0`, the engage's cross-floor arm, states 1 and 2, the floor change ([`shoot-navedge.md`](shoot-navedge.md)) | done 2026-09-12, proved at unit level, NOT watched |
 
 **The checks**: `python3 tools/verify.py --only "engine: shoot" "shoot fire"
 "crowd push"` - 17, all green (run in two or three groups: see §5 trap 13).
@@ -86,7 +91,88 @@ startup scripts.
 `hurt shove:`, `hurt sounds:` and `shove camera:`; `engine: shoot death` is the
 death on the real path.
 
-## 3. What a person has CONFIRMED, and what is only measured
+## 3. WHAT TO TEST WHEN YOU ARE BACK — in this order
+
+Written 2026-09-12. Everything below is committed, green in its checks, and
+**not judged by a person**. The order is by how much a wrong answer would cost
+and how cheap the look is; 1 and 2 are one command each.
+
+### 1. The slow fall — THE OPEN REPORT (a minute)
+
+Your words: *"the character fall very slowly, in an not natural way."* The
+instrument is in and it distinguishes the two things that look alike:
+
+* `the player FALLS from y N` — accelerating, `+220 += kGravity` a frame;
+* `the player SLIDES (a face past the slope limit - a CONSTANT 11.8 a frame,
+  not gravity)` — a steady 0.3 m/s with no acceleration, which is what an
+  unnatural descent reads like.
+
+and on landing, `the player LANDS at y N - dropped D (M m), tier T`.
+
+**What to do**: get into shoot mode anywhere with a drop - the catacombs route
+below has plenty - walk off something, and tell me **which of the two words the
+log prints**. If it says SLIDES, the fall is not the bug and the slope test is.
+I could not reproduce one headlessly: walking forward for 600 frames in hames
+never took the player off a ledge.
+
+### 2. The patrol, WATCHED (two minutes)
+
+```
+build/omk-play "$OMK_DATA" ../tables --save ../traces/save-appart.bin \
+    --area 141 --zone-enable 2295 --stand 42786,854,-2380,0 --vulkan \
+    --hold "k200*180"
+```
+
+It walks itself in for six seconds. Ten spectres enter and nine take a patrol
+route. **Confirmed in play already**: they stay in the world (you saw one leave
+through a wall before the y was pinned; that is fixed) and their feet touch the
+floor. **Still to judge**:
+
+* do they look like they are **walking beats** rather than milling, now that
+  the cross-floor arm puts an unlatched one back on his route?
+* the two `CHD_FN` ones stand 5 units off the floor where the spectres' feet
+  sit exactly on it - their model's lowest collision sphere reads 5 against the
+  spectres' 40. Is that visible, or is it inside the noise?
+
+### 3. The hurt reaction (one minute)
+
+```
+build/omk-play "$OMK_DATA" ../tables --save ../traces/save-appart.bin \
+    --area 230 --scene-chunk 56 --vulkan
+```
+
+Stand still. Robber 77 hits you at frames **460** and **514**. Each should be a
+four-frame **downward tip of the view** with `IMPACT03.WAV` on it. A hit from
+the side would roll you and the first-person camera cannot show a roll - that is
+the engine's arithmetic, so do not expect one.
+
+### 4. Three things measured and never played
+
+All on the supermarket route above:
+
+* **DYING** - killed at 689, the phase lost at 749, then the Meditek
+  voice-over;
+* **the robbers STEERING** by the path field;
+* **the actions' advance-then-stop** - they should close on you and then stand
+  or crouch to fire.
+
+### 5. Two questions I could not answer from a log
+
+* **`engine: shoot hit` is RED on purpose** and needs a new aim so its kill
+  exists again. Notes in `todo/shoot-patrol.md`; do not baseline its empty
+  lists.
+* **AREA 232 cannot be reached** - its `shoot.begin` is on the ACTIVATE slot
+  (press scan code 28 inside the quad) and, worse, the player cannot walk
+  anywhere in that area at all: `walked 0.0 over 219 ticks`. If you can get in
+  there by playing, seven latched gunmen over ten stairs is what finally shows
+  the nav edge working in a room rather than in a probe.
+
+### 6. And the sweep
+
+A full `--slow` run is owed - **5 tasks**, not done since 2026-09-09. It waits
+for your go; I started one by misreading you on 2026-09-12 and stopped it.
+
+## 3b. What a person has CONFIRMED, and what is only measured
 
 **Confirmed in play**: the mode's entry, camera, mouse look, eye height and
 first-person move; the arm, the gun and its raise; the HUD, the radar
@@ -138,16 +224,21 @@ The hurt is the cheapest of the four to judge: stand still on the
    character type 12 has its own arm there that returns a spectre who cannot
    see you to state 4. **`engine: shoot hit` is RED on purpose**; read
    `shoot-patrol.md` before touching it.
-3. **THE NAV EDGE AND THE PATH-FINDER** - what is left of the old item 2, and
-   now the largest thing in shoot mode. The brain's walking states 1 and 2
-   need the EDGE at the record's `+4`, and 2026-09-12 found who writes it:
-   **`sub_436BB0(myFloor, targetFloor, pos)`, called from `sub_426E00`** - so
-   the path-finder is reached from the ENGAGE, not from the patrol. State 2 is
-   already ported and already climbs the edge's slope
-   (`sub_424DE0` case 2: `(to.y - from.y)/dist * moved`, with `+60` following
-   and the far end placing him and giving him the edge's floor); what is
-   missing is `sub_436BB0` itself and whatever graph it searches. Read that and
-   the gunmen can change level and follow the player through a building.
+3. ~~**THE NAV EDGE AND THE PATH-FINDER**~~ - **DONE 2026-09-12**, five steps,
+   its own plan file [`shoot-navedge.md`](shoot-navedge.md). **It was never a
+   path-finder**: `sub_436BB0` is 37 lines - my floor's links filtered to the
+   player's floor, nearest near end - one hop, nearest door, no search. And the
+   28-byte per-floor records this tree read as "wall segments" are inter-floor
+   LINKS, settled 36 of 36 three ways (a real destination, both points in their
+   own floors, and every link RECIPROCAL). The engage's `!sameNode` arm, states
+   1 and 2, and the floor change at the far end are all in. **THE LATCH IS THE
+   GATE** - action 1 raises no `0x20`, so a patrolling gunman never follows you
+   upstairs, which is the engine's rule and not a gap.
+   **Left open by it**: `sub_421020`, the fallback when no stair reaches the
+   player's floor; and it is NOT WATCHED, because AREA 232 - the one arena with
+   latched gunmen, ten links and no patrols - has its `shoot.begin` on the
+   ACTIVATE slot and a floor that refuses the walker outright
+   (`shoot-navedge.md` §7).
 4. **ROBBER 77'S TURN LOOP** - the supermarket's first robber, in sight of the
    player, takes the hub's FIRE arm (turn at the target), meets a wall, has
    his facing snapped by the slide (the fire arm does not raise 0x200), and is
@@ -170,7 +261,13 @@ The hurt is the cheapest of the four to judge: stand still on the
    longer shoves him into a wall; the fix stands (mutation-shown at
    `154139d`, confirmed in play) and needs a probe of
    `PlayerController::nudge` against a wall.
-8. **THE SWEEP** - a full `--slow` run is owed (`todo/sweep-log.md`), not done
+8. **`sub_421020`** - the fallback the engage takes when NO stair reaches the
+   player's floor, and the last unread function in the chase. Unread.
+9. **`sub_4449E0`** - `sub_426E00`'s real sight, a RAY against geometry. The
+   port hands the engage a hard-coded "clear", so a gunman engages through
+   walls; wiring the GRID walk instead is the wrong fix and was backed out
+   (`shoot-patrol.md` §7).
+10. **THE SWEEP** - a full `--slow` run is owed (`todo/sweep-log.md`), not done
    since 2026-09-09's; it waits for the reader's go.
 
 ## 5. Traps that cost time, in the order they bit
