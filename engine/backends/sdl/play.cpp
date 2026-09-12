@@ -6720,10 +6720,24 @@ int main(int argc, char** argv) {
                                             slide ? "SLIDES (a face past the slope limit - a "
                                                     "CONSTANT 11.8 a frame, not gravity)"
                                                   : "FALLS", player->pos()[1]);
-                            else if ((air || slide) && n % 10 == 0)
-                                std::printf("frame %ld:   %s: y %.1f, descended %.1f\n", n,
-                                            slide ? "sliding" : "falling",
-                                            player->pos()[1], player->walker().fall());
+                            else if ((air || slide) && n % 5 == 0) {
+                                // ...and what the GROUND PROBE sees under him,
+                                // because "he went through the ground" has two
+                                // very different causes: nothing in the soup
+                                // below him, or a surface the landing test
+                                // stepped over.
+                                const auto* w = &player->walker();
+                                const auto g = omk::floorUnder(w->soup(), w->pos()[0],
+                                                               w->pos()[1] - 12.81, w->pos()[2]);
+                                char gs[48];
+                                if (g) std::snprintf(gs, sizeof gs, "%.1f (%.1f below)",
+                                                     *g, *g - w->pos()[1]);
+                                else   std::snprintf(gs, sizeof gs, "NOTHING under him");
+                                std::printf("frame %ld:   %s: y %.1f, descended %.1f, at %.0f %.0f,"
+                                            " ground %s\n", n, slide ? "sliding" : "falling",
+                                            player->pos()[1], player->walker().fall(),
+                                            double(player->pos()[0]), double(player->pos()[2]), gs);
+                            }
                             else if (!air && !slide && (wasAir || wasSlide))
                                 std::printf("frame %ld: the player LANDS at y %.1f - dropped "
                                             "%.1f (%.2f m), tier %d\n", n, player->pos()[1],
