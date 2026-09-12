@@ -2320,3 +2320,32 @@ Not ported, labelled: the head bob and its two footstep sounds, which is where
 this port's hurt sound is a fire-and-forget PCM; and the explosion arm
 (`sub_424470`), whose own call passes a fixed band 2 — the shove is ready for
 it, the explosion is not read.
+
+## The PAUSE froze the player and not the gunfight — 2026-09-12
+
+A reader in the catacombs: *"the ennemies continue moving in the pause menu"*.
+
+The engine's pause is a **delta and nothing else**: screen 31's open callback
+sets `dword_4E9728`, which forces the frame delta `flt_4C30D8` to 0.0, and
+every subsystem goes on running on that zero. The viewer models exactly that
+(`uiPause` sets `frameSec = 0`), and every other per-frame tick in `play.cpp`
+reads it as `frameSec * 30.0` — the player, the mover, the projectiles.
+
+**The gunmen did not.** Their brain ran on a literal `fin.dt = 1.0f`, and a
+turn clip under flag 8 advanced `gc.frame += 1.0f` and turned
+`s.facing += gc.turn * 1.0f`. So behind the pause menu every brain, clip and
+walk step kept going. Both now read `frameSec * 30.0`, which is exactly 1.0 on
+a headless run's fixed 1/30 s frame, so no measured route changes.
+
+Measured on the supermarket route with ESC pressed at frame 440
+(`--keys 0,0x01 --keydelay 440 --frames 800`), after robber 77's first shot at
+418:
+
+| build | `GUNMAN SHOT` after the pause opens |
+|---|---|
+| the literal 1.0 (mutation) | **6** — at 459, 513, 580, 634, 688, 755 |
+| `frameSec * 30.0` | **0** |
+
+Neither run shows a `PLAYER HIT`, and that is why a hit is not the test: the
+bolts' flight already read the frame delta, so pre-fix they were fired and hung
+in the air. The shot count is what tells the two builds apart.

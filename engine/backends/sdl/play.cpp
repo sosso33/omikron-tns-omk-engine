@@ -11430,8 +11430,14 @@ int main(int argc, char** argv) {
                     if (act >= 0 && shootMode && !shotDead && deadIt != shootBrains.end() &&
                         (deadIt->second.flags & 8u)) {
                         GunClip& gc = gunClips[s.actor];
-                        gc.frame += 1.0f;                 // the brain's delta, `fin.dt` below
-                        s.facing += gc.turn * 1.0f;
+                        // THE FRAME DELTA, `flt_4C30D8` - which the pause screen
+                        // forces to 0.0 (screen 31's open callback, `dword_4E9728`).
+                        // This was a literal 1.0, so a turn clip went on playing
+                        // and turning behind the pause menu (a reader, 2026-09-12:
+                        // "the ennemies continue moving in the pause menu").
+                        const float gunDt = static_cast<float>(frameSec * 30.0);
+                        gc.frame += gunDt;
+                        s.facing += gc.turn * gunDt;
                         if (s.facing < 0.0f) s.facing += 360.0f;
                         if (s.facing > 360.0f) s.facing -= 360.0f;
                         if (gc.type >= 0 && gc.frame < static_cast<float>(gc.frames)) {
@@ -11651,7 +11657,12 @@ int main(int argc, char** argv) {
                             fin.target[2] = float(player->pos()[2]);
                             fin.target[3] = player->facing();
                         }
-                        fin.dt = 1.0f;
+                        // the engine's `flt_4C30D8`, as every other tick in this
+                        // file reads it - and 0 under the pause, which is the
+                        // whole of how the game freezes a gunfight (see
+                        // `uiPause` above). A literal 1.0 here kept every brain,
+                        // clip and walk step running behind the menu.
+                        fin.dt = static_cast<float>(frameSec * 30.0);
                         fin.defaultClipType = act;
                         // THE STEERING (`sub_421CD0`, read 2026-09-11): the hub's
                         // middle arm turns him down the path field toward the
