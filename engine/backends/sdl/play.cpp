@@ -1514,6 +1514,11 @@ int main(int argc, char** argv) {
 
 "  --no-script-sprites  DEBUG: do not draw Script_Display3DSprite's sprites (a before/after)\n"
 "  --scx-play h,h   HARNESS: start scene objects by handle on the first adventure frame\n"
+"  --zone-enable N  HARNESS: `zone.enable N`, the opcode and nothing else, on a\n"
+"                   zone the story would have enabled. Everything after is the\n"
+"                   game's path - walk in and the zone runs its own script.\n"
+"                   AREA 141's 2295 'Start Shoot' opens the catacombs' shoot\n"
+"                   phase, whose ten spectres PATROL (todo/shoot-patrol.md)\n"
 "  --scene-chunk N  run SCENE chunk N's startup script over the area, the\n"
 "                   way `scene.load` does. A street start jumps straight to\n"
 "                   an area, so the chunk that would have been loaded on the\n"
@@ -1792,6 +1797,7 @@ int main(int argc, char** argv) {
     // there is nothing in the world to take (`tools/prop_probe.cpp` does the
     // same call, and is where this shape comes from).
     int sceneChunk = -1;
+    std::vector<int> zoneEnable;   // `--zone-enable`, the harness below
     bool noCrowd = false;
     bool noScriptSprites = false;   // DEBUG: leave the scripted sprites undrawn, for a before/after
     std::vector<int> scxPlay;       // --scx-play: objects to start by handle, once
@@ -1925,6 +1931,7 @@ int main(int argc, char** argv) {
         // state without the intro. Also a harness flag, not a port.
         else if (a == "--newgame-world") newWorld = true;
         else if (a == "--scene-chunk" && i + 1 < argc) sceneChunk = std::atoi(argv[++i]);
+        else if (a == "--zone-enable" && i + 1 < argc) zoneEnable.push_back(std::atoi(argv[++i]));
         else if (a == "--density" && i + 1 < argc) { density = std::atoi(argv[++i]); densityFlag = true; }
         else if (a == "--shadows" && i + 1 < argc) shadowFlag = std::atoi(argv[++i]);
         else if (a == "--no-shadows") shadowFlag = 0;
@@ -2519,6 +2526,19 @@ int main(int argc, char** argv) {
     if (startArea < 0) { std::fprintf(stderr, "IAM/START names no area\n"); return 1; }
     session.loadArea(startArea);
     std::printf("session: area %d loaded, waiting for its script\n", startArea);
+    // A HARNESS, and the narrowest one in this viewer: `zone.enable N`, the
+    // opcode itself, on a zone the STORY would have enabled. Everything after
+    // it is the game's own path - the player walks in, the zone fires its own
+    // enter script, and that script is what runs `shoot.begin` and the
+    // `shoot.actor.enter` / `.action` calls. AREA 141's 'Start Shoot' (2295)
+    // is enabled by the Nout book cutscene, which a headless run cannot reach;
+    // with it enabled the catacombs' ten spectres enter on ACTION 1 and
+    // PATROL (`todo/shoot-patrol.md` 5a).
+    for (const int z : zoneEnable) {
+        session.enableZoneById(z);
+        std::printf("--zone-enable: ZONE %d enabled (the `zone.enable` opcode, nothing "
+                    "else) - walk into it and its own script runs\n", z);
+    }
     if (sceneChunk >= 0) {
         session.sceneLoad(startArea, sceneChunk);
         std::printf("--scene-chunk: SCENE %d over AREA %d - its startup script "
@@ -3903,7 +3923,8 @@ int main(int argc, char** argv) {
     omk::Radar radar;                    // 0x42F000, screen 34's minimap
     omk::Map2d shootMap;                 // MAP2D\<+106>.MPT - the noise's floors
     omk::ShootField shootField;          // `sub_436260`'s distance field toward the player
-    std::set<int> gunCellSeeded;         // gunmen whose +136/+140 came off the grid
+    std::set<int> gunCellSeeded;
+    std::set<int> gunEntryPending;   // his entry action, waiting for a floor         // gunmen whose +136/+140 came off the grid
     // THE NOISE (`sub_4246E0`, `actor/shoot.h`): at a shot's muzzle, and where
     // a bolt stops on the world or on a body. Every gunman with a brain is a
     // record, tested in actor order (the engine's is slot order). His FLOOR
@@ -11261,6 +11282,16 @@ int main(int argc, char** argv) {
                         if (o.releasedRoute >= 0 && shootMap.valid())
                             shootMap.routeRelease(static_cast<signed char>(ar.node & 0xFF),
                                                   o.releasedRoute);
+                        // how many points his route has, or 0 - guarded, because
+                        // his floor can be -1 and his route index cannot index it
+                        const auto routeLen = [&](const omk::ShootRecord& r) {
+                            if (r.route < 0 || !shootMap.valid()) return 0;
+                            const int f = static_cast<signed char>(r.node & 0xFF);
+                            if (f < 0 || f >= static_cast<int>(shootMap.floors().size())) return 0;
+                            const auto& wl = shootMap.floors()[static_cast<std::size_t>(f)].waypoints;
+                            if (r.route >= static_cast<int>(wl.size())) return 0;
+                            return static_cast<int>(wl[static_cast<std::size_t>(r.route)].len);
+                        };
                         if (o.clipType == 9 && ar.state == 4) {
                             static std::set<int> patrolTold;
                             if (patrolTold.insert(s.actor).second)
@@ -11269,10 +11300,7 @@ int main(int argc, char** argv) {
                                             "%d points%s\n", n, s.actor, s.model.c_str(), a3,
                                             ar.route, static_cast<signed char>(ar.node & 0xFF),
                                             double(ar.goalX), double(ar.goalZ),
-                                            ar.route >= 0 ? int(shootMap.floors()[
-                                                static_cast<std::size_t>(
-                                                    static_cast<signed char>(ar.node & 0xFF))]
-                                                .waypoints[static_cast<std::size_t>(ar.route)].len) : 0,
+                                            routeLen(ar),
                                             ar.route < 0 ? " - NO ROUTE on his floor" : "");
                         }
                         if (o.turnAround) s.facing += 180.0f;
@@ -11385,19 +11413,35 @@ int main(int argc, char** argv) {
                             // patrol needs both, since `sub_4354E0` is handed
                             // them - so an entry that skipped this would look up
                             // a route on floor -1 and never find one.
+                            bool onGridAtEntry = false;
                             if (shootMap.valid()) {
                                 const float at[3] = {s.drawAt[0], s.drawAt[1], s.drawAt[2]};
-                                omk::shootThink(fresh, shootMap, at,
-                                                static_cast<int>(fresh.type), -1);
+                                onGridAtEntry = omk::shootThink(fresh, shootMap, at,
+                                                                static_cast<int>(fresh.type), -1);
                             }
                             it = shootBrains.emplace(s.actor, fresh).first;
+                            // `Shoot_ActorEnter` thinks FIRST and acts second, and
+                            // the order is load-bearing for the patrol: the route
+                            // lookup takes his floor and cell. This port cannot
+                            // always honour it on the entry tick - a body staged
+                            // this frame has not been drawn, so it has no position
+                            // (`todo/shoot-patrol.md` 4b) - so the action WAITS for
+                            // the first tick he lands on the grid. One frame, and
+                            // the alternative is a patrol with a null route.
+                            if (!onGridAtEntry && shootMap.valid()) {
+                                gunEntryPending.insert(s.actor);
+                                std::printf("frame %ld: actor %d %s - entry action %d HELD: he is "
+                                            "not on the grid yet (Shoot_ActorEnter thinks first)\n",
+                                            n, s.actor, s.model.c_str(), act);
+                            }
                             // ...and put on his SCENE action, as `Shoot_ActorEnter`
                             // does - for the robbers, action 3: the hub, the walking
                             // clip, and +168 = 30 * property 31 frames of advance
                             // (LABELLED: `Shoot_ActorEnter`'s own call is not re-read;
                             // this passes the action with a3 = 0)
-                            applyAction(it->second, act, session.shootActionArg(s.actor),
-                                        "his scene action, at entry");
+                            if (onGridAtEntry || !shootMap.valid())
+                                applyAction(it->second, act, session.shootActionArg(s.actor),
+                                            "his scene action, at entry");
                             std::printf("frame %ld: actor %d %s - shoot brain: "
                                         "acquire %.0f engage %.0f disengage %.0f "
                                         "cone %.3f health %d\n", n, s.actor,
@@ -11452,6 +11496,9 @@ int main(int argc, char** argv) {
                                 omk::shootThink(rec, shootMap, at,
                                                 static_cast<int>(rec.type), -1);
                             if (onGrid) gunCellSeeded.insert(s.actor);
+                            if (onGrid && gunEntryPending.erase(s.actor))
+                                applyAction(rec, act, session.shootActionArg(s.actor),
+                                            "his scene action, held until he reached the grid");
                             static std::set<int> floorTold;
                             if (onGrid && floorTold.insert(s.actor).second)
                                 std::printf("frame %ld: actor %d %s - Shoot_Think: floor %d, cell "
@@ -11525,25 +11572,35 @@ int main(int argc, char** argv) {
                         // `sub_435900`, "am I there yet", is one CELL either
                         // way in x and z - not a point - so a waypoint is
                         // reached generously.
-                        if (rec.state == 4 && rec.route >= 0 && shootMap.valid()) {
+                        // (his FLOOR has to still be there: `Shoot_Think` writes
+                        // -1 the moment a walker leaves the grid, and a route
+                        // index outlives it. Indexing `floors()` with that -1 is
+                        // what crashed the catacombs at frame 63.)
+                        const int patrolFloor = static_cast<signed char>(rec.node & 0xFF);
+                        if (rec.state == 4 && rec.route >= 0 && shootMap.valid() &&
+                            patrolFloor >= 0 &&
+                            patrolFloor < static_cast<int>(shootMap.floors().size())) {
                             fin.hasRoute = true;
                             const float cell = static_cast<float>(shootMap.scale());
                             const bool there = std::fabs(rec.goalX - fin.self[0]) < cell &&
                                                std::fabs(rec.goalZ - fin.self[2]) < cell;
                             fin.moveCode = omk::shootMoveDecision(rec, fin.self, yaw, fin.dt, there);
                             if (fin.moveCode == 1) {
-                                const int fl = static_cast<signed char>(rec.node & 0xFF);
+                                const auto& wl = shootMap.floors()[
+                                    static_cast<std::size_t>(patrolFloor)].waypoints;
                                 const int was = rec.repeats;
-                                rec.repeats = shootMap.routeNextIndex(fl, rec.route, rec.repeats);
-                                const int clip = shootMap.routePoint(fl, rec.route, rec.repeats,
+                                rec.repeats = shootMap.routeNextIndex(patrolFloor, rec.route,
+                                                                      rec.repeats);
+                                const int clip = shootMap.routePoint(patrolFloor, rec.route,
+                                                                     rec.repeats,
                                                                      rec.goalX, rec.goalZ);
                                 fin.routePointHasClip = clip > 0;
                                 std::printf("frame %ld: actor %d %s - PATROL point %d -> %d of %d, "
                                             "now walking to %.0f %.0f%s\n", n, s.actor,
                                             s.model.c_str(), was, rec.repeats,
-                                            int(shootMap.floors()[static_cast<std::size_t>(fl)]
-                                                    .waypoints[static_cast<std::size_t>(rec.route)]
-                                                    .len),
+                                            rec.route < static_cast<int>(wl.size())
+                                                ? int(wl[static_cast<std::size_t>(rec.route)].len)
+                                                : -1,
                                             double(rec.goalX), double(rec.goalZ),
                                             clip > 0 ? " - it carries a CLIP: state 5" : "");
                             }

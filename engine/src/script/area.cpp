@@ -3033,6 +3033,12 @@ void Session::pumpZoneSlots() {
 
 // `Actor_ScanZones(actor)` for the player, from `Actors_TickAll`'s dispatch
 // on his ACTOR_STATE - and not at all while a scene program owns him.
+void Session::enableZoneById(int id) {
+    // the two lines `interp.cpp`'s op-64 arm runs, and nothing more
+    state_.setBit(StateArray::ZoneState, id & 0x7FFF, 1);
+    zonesRegisterAll();
+}
+
 void Session::scanZonesNow() {
     // **RECONSTRUCTION, labelled**: the scan is part of the ACTOR TICK, which
     // this Session does not run - so it runs only once something outside is

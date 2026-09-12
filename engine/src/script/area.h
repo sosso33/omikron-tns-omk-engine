@@ -354,6 +354,15 @@ public:
     int shootAction(int actor) const { return shoot_.actorAction(actor); }
     // ...and its third operand, the patrol's ROUTE
     int shootActionArg(int actor) const { return shoot_.actorActionArg(actor); }
+
+    // `zone.enable` (opcode 64) AS A CALL, for a harness that has to reach a
+    // phase the story gates. It does exactly what the handler does and nothing
+    // else - the state bit, then `Zones_RegisterAll`, because the live list is
+    // a snapshot filtered at registration - so everything downstream is the
+    // game's own path: the zone fires its own enter script, which is what runs
+    // `shoot.begin` and the `shoot.actor.action` calls
+    // (`todo/shoot-patrol.md` 5a).
+    void enableZoneById(int id);
     // SHOOT MODE itself - ops 80/81's decisions (`actor/shootmode.h`): the
     // weapon slot, the HUD screen, which library is resident, and the
     // constants the entry installs. The frontend reads it to install camera

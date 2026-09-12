@@ -25878,6 +25878,79 @@ def c_shoot_patrol():
         "every one of those 24 carrying a floor of its own area's map in the high byte"
 
 
+def c_engine_shoot_patrol():
+    r"""`engine/`: the PATROL RUNNING - the catacombs' spectres walking their
+    beats on the game's own path (`todo/shoot-patrol.md`).  --slow
+
+    **Reaching it took a harness, and the harness is one opcode.** No arena the
+    viewer could already start in stages a patrol: the Shooting gallery's map
+    carries no routes at all, and the supermarket stages only robber 77, whose
+    action is 3. The arenas that DO patrol carry their `shoot.begin` in zone
+    slots, and AREA 141's - `ZONES[2295]`, 'Start Shoot' - is enabled by the
+    Nout book cutscene, which a headless run cannot reach. `--zone-enable 2295`
+    is `zone.enable`, the opcode and nothing else; everything after it is the
+    game's: the player walks in, the zone runs ITS OWN script, and that script
+    is what calls `shoot.begin`, `shoot.actor.enter` and
+    `shoot.actor.action <who>, 1, <route>` ten times.
+
+    **What it asserts.** Nine spectres take a route. Each one's route is looked
+    up with the operand's LOW byte on the floor `Shoot_Think` found for him -
+    and the operand's HIGH byte is that same floor every time, which is the
+    24-of-24 corpus finding confirmed at runtime rather than in the data:
+    `0x201` on floor 2, `0x104` on floor 1, `0x401` on floor 4, `0x703` on
+    floor 7, `0x502` on floor 5.
+
+    Then they WALK it. Actor 595 takes a nine-point ring and goes round: 0 to
+    8 and then **8 -> 0**, the wrap `sub_435660` makes when a route has no
+    ping-pong bit, at frame 483 - and starts a second lap. Actor 591 reaches
+    point 9 of 10. No one reaches state 5, because that needs a waypoint
+    carrying a clip and no shipped route has one.
+    """
+    import subprocess, re
+    fr = omkpaths.data_root()
+    eng = os.path.join(ROOT, "engine")
+    bld = subprocess.run(["make", "-s", "play"], cwd=eng, capture_output=True, text=True)
+    exe = os.path.join(eng, "build", "omk-play")
+    if bld.returncode != 0 or not os.path.exists(exe):
+        return ("build failed",), ("built",), "engine/ must build"
+    out = subprocess.run(
+        [exe, fr, os.path.join(ROOT, "tables"),
+         "--save", os.path.join(ROOT, "traces", "save-appart.bin"),
+         "--area", "141", "--zone-enable", "2295",
+         "--stand", "42786,854,-2380,0", "--frames", "500", "--nodelay",
+         "--hold", "k200*180"],
+        capture_output=True, text=True, errors="replace",
+        env=dict(os.environ, SDL_VIDEODRIVER="dummy")).stdout
+    took = re.findall(r"^frame \d+: actor (\d+) \w+ - PATROLS \(Shoot_ActorAction 1\): "
+                      r"operand (\d+) -> route (\d+) on floor (\d+), point 0 at \S+ \S+, "
+                      r"(\d+) points$", out, re.M)
+    # ...and the floor `Shoot_Think` gives him, to put beside the operand's
+    # high byte: the two must agree, which is the runtime half of the finding
+    floors = dict(re.findall(r"^frame \d+: actor (\d+) \w+ - Shoot_Think: floor (\d+), cell", out, re.M))
+    agree = sum(1 for a, op, _r, fl, _n in took
+                if floors.get(a) == str((int(op) >> 8) & 0xFF) and floors.get(a) == fl)
+    steps = re.findall(r"^frame (\d+): actor (\d+) \w+ - PATROL point (\d+) -> (\d+) of (\d+),", out, re.M)
+    lap = [(f, a) for f, a, b, c, _n in steps if int(b) > 0 and c == "0"]
+    return ((len(took), agree,
+             sorted({(a, op, fl, n) for a, op, _r, fl, n in took}),
+             len(steps), lap),
+            (9, 9,
+             # (actor, the operand, the floor `Shoot_Think` gave him, how many
+             # points his route has). The operand's high byte is the floor in
+             # every row - 0x201 floor 2, 0x104 floor 1, 0x401 floor 4, 0x703
+             # floor 7, 0x502 floor 5 - which is the corpus finding seen at
+             # RUNTIME rather than in the data.
+             [("589", "513", "2", "5"), ("591", "516", "2", "10"),
+              ("595", "515", "2", "9"), ("598", "260", "1", "7"),
+              ("601", "1025", "4", "4"), ("602", "1026", "4", "5"),
+              ("604", "1795", "7", "27"), ("605", "1282", "5", "13"),
+              ("606", "1281", "5", "10")],
+             20, [("483", "595")]),
+            "nine spectres taking a route each, every one of them on the floor "
+            "the operand's high byte names; 20 waypoint advances in 500 frames; "
+            "and actor 595's nine-point ring closing - 8 back to 0 - at frame 483")
+
+
 def c_engine_shoot_mode():
     r"""`engine/`: shoot mode ENTERED BY A SHIPPED SCRIPT, and its weapon.
 
@@ -32908,6 +32981,7 @@ SLOW = [
     ("engine: shoot noise", c_engine_shoot_noise, "todo/shoot-mode 8.1; actor/shoot.h"),
     ("engine: shoot gunfire", c_engine_shoot_gunfire, "todo/shoot-mode 8 item 4; actor/shootfire.h"),
     ("engine: shoot death", c_engine_shoot_death, "todo/shoot-mode 8 item 4; sub_423FC0"),
+    ("engine: shoot patrol", c_engine_shoot_patrol, "todo/shoot-patrol"),
     ("engine: anims",      c_engine_anims,      "engine/README"),
     ("engine: CTL",        c_engine_ctl,        "engine/README"),
     ("engine: SCX",        c_engine_scx,        "engine/README"),

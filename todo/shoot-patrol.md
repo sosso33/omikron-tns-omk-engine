@@ -175,8 +175,9 @@ Each ends in a commit and a report.
 
 ### 5a. NO ARENA THIS PORT CAN REACH STAGES A PATROL — measured
 
-Step 4 wired the patrol into the frame loop and then could not show it running,
-and the reason is worth writing down rather than discovering twice.
+Step 4 wired the patrol into the frame loop and then could not show it running.
+**Section 5b reaches one**; this is what had to be got past, and it is worth
+writing down rather than discovering twice.
 
 * **The Shooting gallery has no routes at all.** `gallery.mpt` carries 0
   waypoints, and its 240 — the one gunman whose scene action is 1 — is also
@@ -202,6 +203,55 @@ gunmen get a null route and stand, exactly as the gallery's 240 does.
 So the walk is shown at unit level instead, over the supermarket's own route 1,
 in `verify.py: shoot fire`'s `patrol walk:` — the ring walked 0-1-2-3 and
 wrapped back to 0 in 54 ticks, the route held reserved throughout.
+
+### 5b. REACHED — the catacombs patrol, and the one-opcode harness that got there
+
+**`--zone-enable N` is `zone.enable`, the opcode and nothing else.** AREA 141's
+`ZONES[2295]` 'Start Shoot' is enabled by the Nout book cutscene, which a
+headless run cannot reach, and the zone is what holds the whole phase: with the
+bit set the player walks in and the zone runs **its own** enter script, which
+is what calls `shoot.begin`, ten `shoot.actor.enter` and ten
+`shoot.actor.action <who>, 1, <route>`. Nothing else is faked. (`Session::
+enableZoneById` does the two lines `interp.cpp`'s op-64 arm does: the state bit
+and `Zones_RegisterAll`, because the live zone list is a snapshot filtered at
+registration.)
+
+```
+build/omk-play "$OMK_DATA" ../tables --save ../traces/save-appart.bin \
+    --area 141 --zone-enable 2295 --stand 42786,854,-2380,0 --hold "k200*180"
+```
+
+**The zone quad needs the loader's unit conversion**, and reading it raw is how
+this went looking in the wrong place first: `(100 * v) * 0.00390625 * 0.3937 -
+1`, which `engine/src/script/world.h` already carries with a comment saying an
+actor once came out 43000 units from the zone he was standing in. Zone 2295's
+raw corners read 278217; converted they are 42786, which is where hames is.
+
+**What it shows.** Nine spectres take a route each, and **every operand's high
+byte is the floor `Shoot_Think` found for its actor** - `0x201` on floor 2,
+`0x104` on floor 1, `0x401` on floor 4, `0x703` on floor 7, `0x502` on floor
+5 - which is §2's corpus finding confirmed at runtime rather than in the data.
+Then they walk: 20 waypoint advances in 500 frames, and actor **595 closes his
+nine-point ring - 8 back to 0 - at frame 483** and starts a second lap. Actor
+591 reaches point 9 of 10. Nobody reaches state 5, because no shipped waypoint
+carries a clip.
+
+`verify.py: engine: shoot patrol` (--slow) holds all of it.
+
+**Two things the run cost, and both are worth the warning.**
+
+* **The entry action had to WAIT for the grid.** `Shoot_ActorEnter` thinks
+  first and acts second, and the port cannot always honour that: a body staged
+  this frame has not been drawn, so it has no position (§4b), and the ten
+  spectres were taking action 1 with floor -1 and getting no route at all. The
+  action is now held until the first tick `Shoot_Think` succeeds - one frame -
+  and the log says so.
+* **A floor index outlives the floor, and it SEGFAULTED.** `Shoot_Think` writes
+  `+188 = -1` the moment a walker leaves the grid, while his `+24` route index
+  stays as it was; a log line indexing `floors()[(size_t)-1]` killed the viewer
+  at frame 63 of the catacombs. Every read of a floor by that byte is guarded
+  now. The engine is not exposed to this because its lists are pointers, not
+  indices - a null pointer is a test it already makes.
 
 ### Owed at step 5: two checks left red on purpose
 
