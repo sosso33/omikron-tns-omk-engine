@@ -84,7 +84,13 @@ public:
     // (event 44 property 7). Type 5 is the Mecagarde.
     static int hudScreenFor(int characterType) { return characterType == 5 ? 33 : 34; }
     int hudScreen() const { return hud_; }
-    void setPlayerType(int t) { type_ = t; }
+    // ...and it RECOMPUTES the screen, because `Shoot_Enter` reads property 7
+    // at its step 6 and the entry may already have run `begin`.
+    void setPlayerType(int t) { type_ = t; hud_ = hudScreenFor(t); }
+    // ...and the type itself, because `sub_47CC70` tests it too: the same 5
+    // that opens screen 33 makes the mover's sounds mechanical and pins its
+    // pitch (`actor/shootmove.h`).
+    int playerType() const { return type_; }
 
     // The library the mode has resident - the one thing about it a person can
     // hear. `Game_Start` on the way in and out.

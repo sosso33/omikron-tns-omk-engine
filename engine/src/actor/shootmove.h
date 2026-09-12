@@ -38,10 +38,47 @@
 // The speeds come from `sub_47CC70`, the mode's init (`Shoot_Enter`): property
 // 3 - SPEED, record +158 - picks a row of the table at 0x004CF7D0.
 //
+// THE SHOVE, `sub_47D1F0` - the HURT REACTION, ported 2026-09-12 - is the one
+// thing in this block that is not the player's own doing. `sub_4240E0` calls
+// it on every bolt he SURVIVES (the death returns before it), and on the
+// explosion arm with a fixed band 2; it plays a sound, points the shove by the
+// hit's DIRECTION BAND and arms a four-frame timer that the mover below spends
+// on the actor's own Euler:
+//
+//   * the sound is `word_657A14` through `Scene_FindSoundIndex(&stru_930780)`,
+//     i.e. the resident library, which in shoot mode is `shoot2.scx`. Its `a3`
+//     is **0**, so `Sound_Play3D` takes the `v6[12] = 4` arm and the sound is
+//     NOT positional - it is his own hurt, played flat. The fourth argument is
+//     the block's address, an owner tag, not a position;
+//   * band 0/1 (`|dot| <= 0.5`, the bolt from the SIDE) sets `dword_657A08`,
+//     which moves +424 - the ROLL; band 2/3 (from the front or behind) sets
+//     `dword_657A0C`, which moves +416 - the PITCH. Each is +-1.0, and the two
+//     halves of the reading corroborate: a bolt ACROSS him rolls him, one
+//     ALONG him tips him;
+//   * `dword_6579F4 = 4.0` and flag 0x400. The mover then spends it: while the
+//     timer is at or above **2.0** it SUBTRACTS the pair times dt, below 2.0 it
+//     ADDS them back, and at 0 it clears the flag and zeroes both angles. At 30
+//     fps that is two frames out to 2 degrees and two frames back.
+//
+// It reaches the CAMERA because a subject-relative camera point is rotated by
+// the subject's whole Euler, not by its yaw: `sub_414F30` copies the actor's
+// +416/+420/+424 into the camera block's +112/+116/+120 and `sub_415D10` hands
+// all three to `Matrix3x3_FromEulerAngles`. (That closes `o3de/worldcam.h`'s
+// "written by something this read did not find" - the writer is the subject
+// resolver, one of `sub_414F30`..`sub_415460`, and it is the actor's Euler.)
+//
+// **Only the PITCH bands can show**, and that is the engine's arithmetic and
+// not a simplification here: the shoot preset's eye offset is (0,0,0) and its
+// target offset (0, 0, 787.4016), and a roll turns about that very axis - so
+// bands 0 and 1 move the first-person view by nothing at all, while 2 and 3
+// swing the target 27.5 inches, a 2-degree tip. Worth saying rather than
+// claiming a roll nobody can see.
+//
 // NOT modelled, each labelled where it would sit: the head bob and the
 // footsteps (+188/+192, the stance clip's frame over its length, which also
-// HOLDS the stance at frame 1 while he stands), the shove `sub_47D1F0` (flag
-// 0x400, a hit's knockback), the turn momentum (flag 8 - nothing writes it),
+// HOLDS the stance at frame 1 while he stands; `word_657A16`/`word_657A18` are
+// their two sounds and are carried below), the turn momentum (flag 8 - nothing
+// writes it),
 // the jump in shoot mode (MDJP -> `sub_47D2E0`, and the vertical `flt_6579C0`
 // it feeds, which is decayed here but never raised), and the HEAD mode's key
 // (action 7 has no keyboard binding in the shipped scheme). MDCO (run, flag 1)
@@ -77,6 +114,7 @@ enum : std::uint32_t {
     kShootMoveHead   = 0x200,   // MDHEAD01: the move keys pitch the look
     kShootMoveShove  = 0x400,   // `sub_47D1F0`'s knockback
     kShootMoveBlock  = 0x800,   // refuses the intents
+    kShootMoveMeca   = 0x1000,  // the shooter is a Mecagarde: he cannot PITCH
 };
 
 // The block at `dword_6579B0`, the fields the mover reads.
@@ -94,14 +132,38 @@ struct ShootMover {
     float brake      = 0.0f;        // `flt_6579E4`
     float lastFacing = 0.0f;        // `dword_6579FC`, the facing the step turns by
     int   row        = -1;          // which table row, for the log
+    // THE SHOVE (`sub_47D1F0`), the hurt reaction's own three.
+    float shoveRoll  = 0.0f;        // `dword_657A08`, what +424 moves by
+    float shovePitch = 0.0f;        // `dword_657A0C`, what +416 moves by
+    float shoveTimer = 0.0f;        // `dword_6579F4`, 4.0 at the hit
+    // The three sound ids `sub_47CC70` picks off the shooter's character type
+    // (property 7, the record's +80). Type 5 is the Mecagarde - the same test
+    // that gives him HUD screen 33 instead of 34 - and he is mechanical: his
+    // hurt is MVTMECA03.WAV and his steps 0041/0042.WAV, where flesh takes
+    // IMPACT03.WAV and STPL/STPR.WAV. Flag 0x1000 goes up for the Mecagarde -
+    // `BYTE1 |= 0x10` is bit TWELVE, which is the pitch lock below.
+    int hurtSound = 191;            // `word_657A14`  - IMPACT03.WAV
+    int stepLeft  = 161;            // `word_657A16`  - STPL.WAV, NOT MODELLED
+    int stepRight = 162;            // `word_657A18`  - STPR.WAV, NOT MODELLED
 };
 
 // The walk over the table: `for (i = &unk_4CF7D0; speed > *i; i += 3)`.
 int  shootSpeedRow(int speed);
 // `sub_47CC70`: the block zeroed, the shooter set, and the three speeds from
 // the row - `top = (30 * a / 100 + 5) * 1.3` with the division an INTEGER one,
-// `brake = top * 0.2`, `accel = b * 0.043333333`.
-void shootMoveInit(ShootMover& m, int speed, float periodFrames);
+// `brake = top * 0.2`, `accel = b * 0.043333333`. `charType` is property 7,
+// which picks the hurt and footstep sounds and flag 0x10.
+void shootMoveInit(ShootMover& m, int speed, float periodFrames, int charType = 0);
+
+// `sub_47D1F0`, the HURT REACTION - what `sub_4240E0` does with a bolt the
+// player SURVIVES. `band` is `sub_423E20`'s (`shootHitBand`), 0..3; the two
+// Euler angles are the actor's +416 and +424, which it zeroes before arming
+// the shove. False when no shooter is installed, in which case nothing is
+// touched. The SOUND is the caller's: play `m.hurtSound` flat (see above).
+bool shootHurt(ShootMover& m, int band, float& eulerPitch, float& eulerRoll);
+
+// `sub_47D370`'s own guard: false for a Mecagarde, whose pitch is pinned at 0.
+inline bool shootMovePitches(const ShootMover& m) { return !(m.flags & kShootMoveMeca); }
 // `sub_47CE70`, `Shoot_Leave`'s: the shooter cleared.
 void shootMoveLeave(ShootMover& m);
 // `sub_47CFC0` (MDAV = forward, MDAR = back). `falling` is the actor's fall
@@ -121,13 +183,23 @@ float shootTurnDegrees(int a1, int sensitivity);
 // `delta` the frame's 30/fps (`flt_4C30D8`), then clamped to +-45 degrees
 // (0x4BCB34 / 0x4BCB38). The result is what `sub_47C260` hands the camera,
 // times pi/180, and it is in the ENGINE's sign - the caller owns how its own
-// camera reads it. (The arm that zeroes it instead, mover flag 0x1000, has no
-// traced writer.)
+// camera reads it. **The arm that zeroes it instead is flag 0x1000, and its
+// writer is `sub_47CC70`** (found 2026-09-12, where this said "no traced
+// writer"): `BYTE1 |= 0x10` is bit TWELVE, not bit four, and it goes up for
+// exactly the character type that takes the mechanical sounds. So a Mecagarde
+// in shoot mode cannot look up or down at all - his pitch is pinned at 0 and
+// `sub_47C260` is not even called, so the aim keeps its last value - while his
+// yaw, written before the test, turns as anyone's does. Kay'l is not one, so
+// no route this port can reach exercises it; `shootMovePitches` is the test.
 float shootPitchStep(float pitchDeg, int dy, int sensitivity, bool inverted, float delta);
 
 // One frame of `sub_47D4D0`'s motion: the world step it hands
 // `o3de_MoveNodeBy` in x and z, and the `+248` fall of `flt_6579C0`.
 struct ShootMoveStep { float dx = 0.0f, dz = 0.0f, dy = 0.0f; };
-ShootMoveStep shootMoveTick(ShootMover& m, float facingDeg, float dt);
+// `eulerPitch` / `eulerRoll` are the actor's +416 and +424, which the SHOVE
+// arm spends and then zeroes. Pass neither and the arm is skipped - which is
+// what every probe that only wants the step does.
+ShootMoveStep shootMoveTick(ShootMover& m, float facingDeg, float dt,
+                            float* eulerPitch = nullptr, float* eulerRoll = nullptr);
 
 }  // namespace omk

@@ -2204,3 +2204,119 @@ the animation frame counts.
 and a play test; a 1500-line state machine is not that — it is the size of
 steps 1-5 over again. What has changed is only that it is now sized rather
 than guessed, and that nothing inside it is unread.
+
+---
+
+## 9. THE HURT REACTION — `sub_47D1F0`, read and ported 2026-09-12
+
+The step the handoff called "small, and visible on every hit". It is `§8`
+item 4's last arm: what `sub_4240E0` does with a bolt the player **survives**,
+after the death has returned for one that kills him.
+
+### 9a. What the function does
+
+`sub_47D1F0(band)` (0x0047D1F0, 47 lines) does nothing unless a shooter is
+installed (`dword_6579CC`, the mover's own actor), and then four things:
+
+1. **The sound.** `Scene_FindSoundIndex(&stru_930780, word_657A14)` then
+   `Sound_Play3D(i, 0, 0, &dword_6579B0)`. The scene is the RESIDENT LIBRARY,
+   which in shoot mode is `shoot2.scx`; the third argument is **0**, so
+   `Sound_Play3D` takes its `v6[12] = 4` arm and the sound carries **no
+   position at all** — it is the player's own hurt, played flat. The fourth
+   argument is the block's address, an owner tag for stopping the voice, not a
+   point in the world.
+2. **The direction.** `dword_657A08` and `dword_657A0C` are zeroed and then one
+   of them is set to ±1.0 by the band `sub_423E20` returned:
+
+   | band | how the bolt met him | field | which Euler |
+   |---|---|---|---|
+   | 0 | side, `dot ≤ 0` | `657A08` = +1 | `+424`, the ROLL |
+   | 1 | side, `dot > 0` | `657A08` = −1 | `+424`, the ROLL |
+   | 2 | front (`\|dot\| > 0.5`, `dot ≤ 0`) | `657A0C` = +1 | `+416`, the PITCH |
+   | 3 | behind | `657A0C` = −1 | `+416`, the PITCH |
+
+   The two halves corroborate each other: a bolt travelling **across** him
+   rolls him, one travelling **along** it tips him. Nothing else in the reading
+   forces that pairing, and it is what falls out. (What the CAMERA does with
+   each is §9c, and only one of the two shows.)
+3. **The timer.** `dword_6579F4 = 4.0` and mover flag **0x400**.
+4. **The reset.** The actor's `+416` and `+424` are zeroed, so a second hit
+   inside the first shove starts from level rather than from wherever it was.
+
+### 9b. What the mover does with it — `sub_47D4D0` at 0x0047D80F
+
+```
+test bh, 4                       ; flag 0x400
+fld 6579F4 / fsub dt / fst       ; the timer down by the frame's 30/fps
+fcomp 0.0 → at or below: and bh, 0FBh; +416 = +424 = 0     ; the flag DOWN
+fcomp 2.0 → C0 clear (timer ≥ 2.0): SUBTRACT   the pair × dt
+            C0 set   (timer < 2.0): ADD        the pair × dt
+```
+
+At 30 fps `dt` is 1.0, so it is **four frames**: out to 2 degrees on the
+second, back to 0 on the fourth, and the flag clears itself. The constants
+are `flt_4BCB28 = 0.0` and `flt_4BCB30 = 2.0`; the decompiler's `HIBYTE(v2)
+&= ~4` is wrong — the assembly's `and bh, 0FBh` clears bit 10, the same bit
+`BYTE1 |= 4` sets. Note that the end-of-tick mask `flags &= 0x17F0` **keeps**
+0x400, which is why a shove can outlive the tick that armed it.
+
+### 9c. How it reaches the CAMERA, and what a person actually sees
+
+A subject-relative camera point is rotated by the subject's **whole Euler**,
+not by his yaw. `sub_415A10`'s five subject resolvers copy the actor's
+`+416/+420/+424` into the camera block (`+112..+120` for the target,
+`+164..+172` for the eye, the latter smoothed toward it), and `sub_415D10`
+hands all three to `Matrix3x3_FromEulerAngles`. That closes the open note in
+`engine/src/o3de/worldcam.h`, which said the writer of those fields was not
+found; it is the resolver, and the value is the actor's own Euler.
+
+So on the shoot preset (row 4: eye offset `(0,0,0)`, target `(0, 0, 787.4016)`):
+
+* **the pitch bands SHOW** — 2 degrees swings the target 27.5 inches up over
+  787, a 2-degree tip of the whole view. Measured in the supermarket, a frame
+  at the peak differs from a settled one in **73.8%** of its pixels, against
+  **0.8%** between two settled frames eleven apart;
+* **the roll bands show NOTHING** — the roll turns about the very axis the
+  target offset lies along, and the eye offset is zero. This is the engine's
+  own arithmetic, not a simplification here, and it is worth stating plainly
+  rather than claiming a roll nobody can see. (In this port the eye offset is
+  lifted off the pelvis, a documented departure, so a roll slides the eye by
+  about an inch. That is the departure's artefact.)
+
+### 9d. `sub_47CC70`'s character-type split — and flag 0x1000's writer
+
+The three sound ids the mode uses are picked at ENTRY from the player's
+**property 7**, his character type, and the shipped names settle which is
+which:
+
+| type | hurt `word_657A14` | steps `+657A16`/`+657A18` | flag |
+|---|---|---|---|
+| 5, the Mecagarde | 68 `MVTMECA03.WAV` | 69/70 `0041`/`0042.WAV` | 0x1000 **set** |
+| anything else | 191 `IMPACT03.WAV` | 161/162 `STPL`/`STPR.WAV` | 0x1000 clear |
+
+All six are in `shoot2.scx`. `STPL`/`STPR` are the left and right footsteps,
+read by the head-bob arm this port does not model, which is the corroboration
+that `657A14` — the odd one out — is the hurt.
+
+**And that is flag 0x1000's writer**, which `actor/shootmove.h` recorded as
+untraced: `BYTE1(v7) |= 0x10` is bit **twelve**, not bit four. `sub_47D370`
+tests it and, when it is up, pins `dword_657A10` at 0 and never calls
+`sub_47C260` — **a Mecagarde in shoot mode cannot look up or down at all**,
+though his yaw, written before the test, turns as anyone's does. Nothing this
+port can reach exercises it: the player's property 7 is **9**, `Incarnable`,
+which is the value the port had been leaving at -1 and getting the right HUD
+screen for the wrong reason.
+
+### 9e. What is ported, and what is still labelled
+
+Ported: the sound, the band, the timer, the four frames, the Euler reset, the
+type split, the pitch lock, and the full-Euler camera rotation
+(`omk::shootHurt`, `shootMoveTick`'s 0x400 arm, `omk::rotateEuler`,
+`PlayerController::resolveOffsets`). `verify.py: shoot fire` carries
+`hurt shove:`, `hurt sounds:` and `shove camera:`.
+
+Not ported, labelled: the head bob and its two footstep sounds, which is where
+`657A16`/`657A18` are read; `Sound_Play3D`'s voice-stopping owner tag, since
+this port's hurt sound is a fire-and-forget PCM; and the explosion arm
+(`sub_424470`), whose own call passes a fixed band 2 — the shove is ready for
+it, the explosion is not read.

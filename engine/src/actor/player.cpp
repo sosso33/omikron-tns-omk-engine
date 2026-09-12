@@ -56,6 +56,27 @@ void rotateYaw(float yawDeg, const float in[3], float out[3]) {
     out[2] = x * sn + z * cs;
 }
 
+void rotateEuler(const float eulerDeg[3], const float in[3], float out[3]) {
+    // `Matrix3x3_FromEulerAngles` (0x00441EB0) WHOLE, not just its yaw, and
+    // `Matrix3x3_RotateVector`'s row-vector product. A camera point relative to
+    // an actor is rotated by all three of his Euler angles: `sub_414F30` copies
+    // the actor's +416/+420/+424 into the camera block's +112/+116/+120 and
+    // `sub_415D10` hands the three to this. With the pitch and the roll at zero
+    // it IS `rotateYaw` above, term for term. Two things write +416 and +424 and
+    // so can tell the two apart: `applyTurn` (`Cef_ApplyTurn`, a clip's own
+    // turn) and the hurt shove.
+    const double k = 0.0174532925199433;
+    const double sx = std::sin(eulerDeg[0] * k), cx = std::cos(eulerDeg[0] * k);
+    const double sy = std::sin(eulerDeg[1] * k), cy = std::cos(eulerDeg[1] * k);
+    const double sz = std::sin(eulerDeg[2] * k), cz = std::cos(eulerDeg[2] * k);
+    const double m[9] = {cz * cy,                -(sz * cy),              sy,
+                         sy * sx * cz + sz * cx, cz * cx - sx * sz * sy,  -(sx * cy),
+                         sz * sx - sy * cz * cx, cx * sz * sy + sx * cz,  cy * cx};
+    const double x = in[0], y = in[1], z = in[2];
+    for (int j = 0; j < 3; ++j)
+        out[j] = static_cast<float>(x * m[j] + y * m[3 + j] + z * m[6 + j]);
+}
+
 float headingFromClipRoot(std::span<const std::byte> clip, int frame) {
     // A `.3DA` clip: +0 frames, +4 tracks, 40-byte tracks at +8 with the
     // rotation keys at +32/+36 (pose.cpp, clipTracks). The root is the track
@@ -1219,9 +1240,13 @@ FollowCamera PlayerController::resolveOffsets(const float eyeOff[3], const float
     FollowCamera c;
     float r[3];
     const float sub[3] = {pos_[0], pos_[1] - camLift_, pos_[2]};
-    rotateYaw(euler_[1], eyeOff, r);
+    // The WHOLE Euler, which is what `sub_415D10` rotates a subject-relative
+    // point by - and it matters here because the hurt shove (`sub_47D1F0`)
+    // moves +416 and +424. With both at zero this is exactly
+    // `rotateYaw(euler_[1], ..)`, term for term.
+    rotateEuler(euler_, eyeOff, r);
     for (int k = 0; k < 3; ++k) c.eye[k] = sub[k] - r[k];
-    rotateYaw(euler_[1], atOff, r);
+    rotateEuler(euler_, atOff, r);
     for (int k = 0; k < 3; ++k) c.at[k] = sub[k] - r[k];
     c.fov = fov > 1.0f ? fov : kFollowFov;
     return c;

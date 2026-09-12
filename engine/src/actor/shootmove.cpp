@@ -11,10 +11,15 @@ int shootSpeedRow(int speed) {
     return r;
 }
 
-void shootMoveInit(ShootMover& m, int speed, float periodFrames) {
+void shootMoveInit(ShootMover& m, int speed, float periodFrames, int charType) {
     m = ShootMover{};                                 // `memset(&dword_6579B0, 0, 0x6C)`
     m.active = true;
     m.period = periodFrames;
+    // `if (v11 == 5) { 69, 70, 68; flags |= 0x10 } else { 161, 162, 191; &= ~0x10 }`
+    if (charType == 5) {
+        m.hurtSound = 68; m.stepLeft = 69; m.stepRight = 70;
+        m.flags |= kShootMoveMeca;                    // `BYTE1 |= 0x10` is bit 12
+    }
     m.row = shootSpeedRow(speed);
     const ShootSpeedRow& r = kShootSpeedTable[m.row];
     // `(double)(30 * dword_4CF7D4[v4] / 100 + 5) * 1.3` - the int division first
@@ -24,6 +29,22 @@ void shootMoveInit(ShootMover& m, int speed, float periodFrames) {
 }
 
 void shootMoveLeave(ShootMover& m) { m.active = false; }
+
+bool shootHurt(ShootMover& m, int band, float& eulerPitch, float& eulerRoll) {
+    if (!m.active) return false;                      // `if (dword_6579CC)`
+    m.shoveRoll = m.shovePitch = 0.0f;
+    switch (band) {                                   // 1.0f / -1.0f, the four cases
+        case 0: m.shoveRoll  =  1.0f; break;
+        case 1: m.shoveRoll  = -1.0f; break;
+        case 2: m.shovePitch =  1.0f; break;
+        case 3: m.shovePitch = -1.0f; break;
+        default: break;                               // the engine's `default: break`
+    }
+    m.shoveTimer = 4.0f;                              // `dword_6579F4 = 1082130432`
+    eulerPitch = eulerRoll = 0.0f;                    // `u32(+416) = 0; u32(+424) = 0`
+    m.flags |= kShootMoveShove;                       // `BYTE1 |= 4`
+    return true;
+}
 
 bool shootMoveForward(ShootMover& m, bool forward, bool falling, float dt, float& pitchDeg) {
     if (!m.active || (m.flags & kShootMoveBlock) || falling) return false;
@@ -74,10 +95,12 @@ float shootPitchStep(float pitchDeg, int dy, int sensitivity, bool inverted, flo
     return p;
 }
 
-ShootMoveStep shootMoveTick(ShootMover& m, float facingDeg, float dt) {
+ShootMoveStep shootMoveTick(ShootMover& m, float facingDeg, float dt,
+                            float* eulerPitch, float* eulerRoll) {
     ShootMoveStep s;
     if (!m.active) return s;
-    const std::uint32_t f = m.flags;
+    std::uint32_t f = m.flags;                        // the engine's `v2`, and the
+                                                      // shove arm CLEARS 0x400 in it
     const float accelStep = m.accel * dt;                        // v43
     const float top = (f & kShootMoveCrouch) ? m.top * 0.5f : m.top;   // v45
     const float turnBy = m.lastFacing;                           // v44, LAST frame's
@@ -126,7 +149,23 @@ ShootMoveStep shootMoveTick(ShootMover& m, float facingDeg, float dt) {
         }
         m.side = w;
     }
-    // (flag 0x400, the shove, would move +416/+424 here - `sub_47D1F0`)
+    // ---- THE SHOVE, `sub_47D1F0`'s four frames (0x0047D80F..0x0047D8B5) ----
+    // `fld 6579F4; fsub dt; fst 6579F4; fcomp 0.0` - at or below zero the flag
+    // goes down and both angles are zeroed; otherwise `fcomp 2.0` picks the
+    // sign, `jz` (C0 clear, i.e. timer >= 2.0) taking the SUBTRACT arm.
+    if ((f & kShootMoveShove) && eulerPitch && eulerRoll) {
+        m.shoveTimer -= dt;
+        if (m.shoveTimer <= 0.0f) {
+            f &= ~kShootMoveShove;
+            *eulerPitch = *eulerRoll = 0.0f;
+        } else if (m.shoveTimer < 2.0f) {
+            *eulerPitch += m.shovePitch * dt;
+            *eulerRoll  += m.shoveRoll * dt;
+        } else {
+            *eulerPitch -= m.shovePitch * dt;
+            *eulerRoll  -= m.shoveRoll * dt;
+        }
+    }
     const double t = static_cast<double>(turnBy) * 0.017453292519943295;
     const double c = std::cos(t), sn = std::sin(t);
     s.dx = static_cast<float>((c * m.side - sn * m.fwd) * dt);

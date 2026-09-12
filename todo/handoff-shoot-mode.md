@@ -77,12 +77,14 @@ startup scripts.
 | **B4 the ACTIONS** `Shoot_ActorAction`: advance, then crouch / stand to fire (`324ef32`) | done, not yet played |
 | **B5 the push's OWN spheres** (`f368f07`) | **CONFIRMED IN PLAY** (*"I didn't get stuck anymore"*) |
 | **item 4 step 4, THE PLAYER'S DEATH** `sub_423FC0` + the countdown (`9d7182d`) | done, not yet played |
+| **THE HURT REACTION** `sub_47D1F0`: the flat sound, the band, the four-frame shove, the WHOLE-Euler camera rotation that makes it visible | done 2026-09-12, not yet played |
 
 **The checks**: `python3 tools/verify.py --only "engine: shoot" "shoot fire"
-"crowd push"` - 17, all green at `9d7182d` (run in two or three groups: see §5
-trap 13). `shoot fire` carries the unit probes (`wall test:`, `path field:`,
-`grid turn:`, `actor action:`); `engine: shoot death` is the death on the real
-path.
+"crowd push"` - 17, all green (run in two or three groups: see §5 trap 13).
+`shoot fire` carries the unit probes - `wall test:`, `path field:`,
+`grid turn:`, `actor action:`, and since 2026-09-12 the hurt reaction's
+`hurt shove:`, `hurt sounds:` and `shove camera:`; `engine: shoot death` is the
+death on the real path.
 
 ## 3. What a person has CONFIRMED, and what is only measured
 
@@ -97,14 +99,29 @@ trap you.
 pose, the guns held, the walk.
 
 **Measured only - not yet played** (`play-test.md` NOT YET PLAYED): **DYING**,
-**THE ROBBERS STEER**, and the advance-then-stop of the actions. Play those
-three before building more on them.
+**THE ROBBERS STEER**, the advance-then-stop of the actions, and now **THE
+HURT REACTION** (2026-09-12). Play those four before building more on them.
+The hurt is the cheapest of the four to judge: stand still on the
+`--area 230 --scene-chunk 56` route and robber 77 hits you at frames 460 and
+514, each a four-frame downward tip of the view with `IMPACT03.WAV` on it.
 
 ## 4. What is left
 
-1. **THE HURT REACTION `sub_47D1F0`** - the camera jolt and sound when a bolt
-   hits the player and he survives. Small, and visible on every hit; the
-   player-hit arm in play.cpp names where it goes. **The suggested next step.**
+1. ~~**THE HURT REACTION `sub_47D1F0`**~~ - **DONE 2026-09-12**
+   (`todo/shoot-mode.md` §9). The sound is flat, not positional; the band picks
+   the angle (a bolt ACROSS him rolls, one ALONG him tips); the shove is four
+   frames out and back to 2 degrees. It is visible because a subject-relative
+   camera point is rotated by the subject's WHOLE Euler - which closed
+   `o3de/worldcam.h`'s note about who writes the camera block's `+112..+120`.
+   **Only the pitch bands show**: the roll turns about the target offset's own
+   axis, so a side hit moves the first-person view by nothing, and that is the
+   engine's. Two on the way: flag 0x1000's writer is `sub_47CC70` (the player
+   is a Mecagarde: no pitch at all), and property 7 is now read at the entry -
+   it is 9, `Incarnable`, where the port had been leaving -1.
+   **Not yet played**: what a person should judge is the tip on every surviving
+   hit and the `IMPACT03.WAV` that goes with it (supermarket frames 460 and
+   514). **The suggested next step is now the PATROL below**, or a play pass
+   over the four measured-only items in §3.
 2. **THE PATROL, action 1** - `Shoot_ActorAction` case 1 plays type 9 along a
    ROUTE (`sub_4354E0`, `sub_4356B0`), and the brain's walking states 1, 2
    and 4 need the nav EDGE at the record's `+4` and its handover, which are
@@ -195,11 +212,14 @@ three before building more on them.
 | `omk::shootWallTest` | `sub_421140` |
 | `omk::ShootField`, `omk::shootGridTurn` | the path field and `sub_421CD0` |
 | `omk::shootActorAction` | `Shoot_ActorAction` |
+| `omk::shootHurt`, `shootMoveTick`'s 0x400 arm | `sub_47D1F0` and the four frames that spend it |
+| `omk::rotateEuler` (`actor/player.h`) | `Matrix3x3_FromEulerAngles` WHOLE - what `resolveOffsets` rotates by |
+| `omk::shootMovePitches` | `sub_47D370`'s Mecagarde arm, mover flag 0x1000 |
 | `omk::pushSpheresOf`, `Session::actorBody` | the push's spheres, the gunmen in the spatial index |
 | `Map2d::setCell` | the runtime 0x80 stamps |
 | `--shoot-health N` | TEST HARNESS: property 1 written as N at shoot entry |
 | `--shoot-end N`, `--invert-x/-y`, `--shoot-eye N` | leave the mode; the mouse senses; the eye lift |
-| the viewer's lines | `walks (sub_421370)`, `the wall test ... stops his walk`, `STEERS by the path field`, `ACTION n (Shoot_ActorAction, why)`, `clip type N starts`, `the player is pushed out of actor N's body`, `the push ... met a wall`, `the path field ... ran dry`, `KILLED (sub_423FC0)`, `the player's death clip is over`, `GUNMAN SHOT`, `PLAYER HIT`, `AIM LAYER`, `HIS BARREL points` |
+| the viewer's lines | `SHOOT TYPE`, `THE SHOVE (sub_47D1F0)`, `walks (sub_421370)`, `the wall test ... stops his walk`, `STEERS by the path field`, `ACTION n (Shoot_ActorAction, why)`, `clip type N starts`, `the player is pushed out of actor N's body`, `the push ... met a wall`, `the path field ... ran dry`, `KILLED (sub_423FC0)`, `the player's death clip is over`, `GUNMAN SHOT`, `PLAYER HIT`, `AIM LAYER`, `HIS BARREL points` |
 
 ## 7. The sweep
 

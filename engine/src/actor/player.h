@@ -350,6 +350,13 @@ public:
     // clip's root delta, so the walls that stop a walk stop this too.
     void addShootMotion(float dx, float dz) { shootMotion_[0] += dx; shootMotion_[1] += dz; }
     const float* euler() const { return euler_; }
+    // +416 and +424, the PITCH and the ROLL. `applyTurn` (`Cef_ApplyTurn`)
+    // writes them from a clip's turn, and so does the HURT SHOVE - `sub_47D1F0`
+    // arms them and `sub_47D4D0` spends them over four frames
+    // (`actor/shootmove.h`), which is why the mover takes them by reference:
+    // the engine's mover writes the actor's own fields.
+    float& eulerPitch() { return euler_[0]; }
+    float& eulerRoll()  { return euler_[2]; }
     ActorState state() const { return rt_.state(); }
     int ctlState() const { return rt_.channel().state(); }
     // The current entry's `+12` whole - `sub_45AB80` (0x0045AB80) is
@@ -668,5 +675,8 @@ float headingFromClipRoot(std::span<const std::byte> clip, int frame);
 // applies: forward is (sin yaw, -cos yaw), the convention `ADDRESSES` and
 // `resolveCamera` use.
 void rotateYaw(float yawDeg, const float in[3], float out[3]);
+// ...and the same with all three angles: `Matrix3x3_FromEulerAngles` whole,
+// applied as a row vector. Reduces to `rotateYaw` when pitch and roll are 0.
+void rotateEuler(const float eulerDeg[3], const float in[3], float out[3]);
 
 }  // namespace omk

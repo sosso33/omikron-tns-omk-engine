@@ -122,16 +122,26 @@ struct WorldCamera {
 // which is above the floor (the set bottoms out at 399 and Y points DOWN),
 // while adding puts it at 423 - twenty-six units underground.
 //
-// **What is NOT established: the rotation.** The engine rotates the offset by
-// the SUBJECT's own Euler angles, which live on the live camera block at
-// `+164`/`+168`/`+172` (eye) and `+112`/`+116`/`+120` (target) and are
-// written by something this read did not find - no write to those offsets
-// appears in the decompilation at all, which is CLAUDE.md 1's missing-`proc`
-// trap. What is passed here is the subject's yaw, applied about Y in the
-// game's own facing convention, and for the one case that can be checked -
-// the intro's arrival - ADDRESSES[654] carries heading **0**, so the rotation
-// is the identity and that case cannot discriminate the convention. Treat a
-// non-zero heading as untested.
+// **The rotation is the subject's WHOLE Euler** - found 2026-09-12, where this
+// said "written by something this read did not find". The writer is
+// `sub_415A10`, the subject resolver both functions call FIRST: its five arms
+// (`sub_414F30`..`sub_415460`, one per subject kind) copy the actor's
+// `+416`/`+420`/`+424` into the camera block's `+112`/`+116`/`+120` for the
+// target and `+164`/`+168`/`+172` for the eye - `u32i(v2, 104/105/106)`, which
+// are those three by index - and `sub_415D10` then hands all three to
+// `Matrix3x3_FromEulerAngles`. (`sub_415E60`, the eye's, first SMOOTHS its copy
+// toward the subject's, wrapping each angle into (-180, 180] and snapping when
+// the gap is under 0.1 degrees, and keeps the frame's delta at `+272..+280` -
+// which is read as a "has the camera settled" test, not as a roll.)
+//
+// So the rotation is not a yaw: it is `rotateEuler` in `actor/player.h`, and it
+// reduces to the yaw exactly when the subject's pitch and roll are zero, which
+// they are unless a clip's own turn (`Cef_ApplyTurn`) or the hurt shove
+// (`sub_47D1F0`, `actor/shootmove.h`) has moved them. What stays untested is
+// only WHICH axis
+// the facing turns about - the one case with a non-zero heading has not been
+// checked - and `resolveCamera` below still takes a yaw, because nothing but
+// the shove has ever given it anything else to take.
 struct ResolvedCamera {
     float eye[3] = {0, 0, 0};
     float at[3]  = {0, 0, 0};

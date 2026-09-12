@@ -6099,8 +6099,27 @@ int main(int argc, char** argv) {
                                         stood, hudHealth);
                             continue;
                         }
-                        // the shove `sub_47D1F0` (not ported), then the gauge,
-                        // property 1 and message 0
+                        // ---- THE HURT REACTION, `sub_47D1F0` (ported 2026-09-12)
+                        // The SOUND first - `word_657A14` resolved in the
+                        // resident library, which in shoot mode is shoot2.scx,
+                        // and played FLAT: `Sound_Play3D`'s `a3` is 0, so it
+                        // takes the `v6[12] = 4` arm and carries no position.
+                        // Then the shove itself, pointed by the hit's own band
+                        // and spent over four frames by the mover above.
+                        if (shootRt) {
+                            const int w = shootRt->wavBydId(shootMover.hurtSound);
+                            if (w < 0)
+                                std::printf("  the hurt sound %d is not in shoot2.scx\n",
+                                            shootMover.hurtSound);
+                            else {
+                                const auto pcm = wavToDevice(shootRt->wavData(w), 44100);
+                                if (!pcm.empty()) front.playSound(pcm, false, 1.0f);
+                            }
+                        }
+                        const bool shoved = player &&
+                            omk::shootHurt(shootMover, ho.band, player->eulerPitch(),
+                                           player->eulerRoll());
+                        // then the gauge, property 1 and message 0
                         hudHealth = playerShootRec.health;                // `dword_90E100`
                         omk::writeActorProperty(state.rawMutable().subspan(recAt, recLen), 1,
                                                 playerShootRec.health);
@@ -6109,9 +6128,16 @@ int main(int argc, char** argv) {
                         const bool ran = session.postMessage(0, session.playerActor());
                         std::printf("frame %ld: PLAYER HIT by actor %d's bolt - damage %d, Body "
                                     "Shield %d -> %d; health %d -> %d, gauge %d (property 1 stored "
-                                    "%d); message 0 %s\n", n, ev.owner, ev.damage, int(shield),
+                                    "%d); message 0 %s; the shove (sub_47D1F0) band %d %s\n",
+                                    n, ev.owner, ev.damage, int(shield),
                                     ho.damage, ho.healthWas, ho.health, hudHealth, int(stored),
-                                    ran ? "to the hurt handler" : "- NO handler subscribes");
+                                    ran ? "to the hurt handler" : "- NO handler subscribes",
+                                    ho.band,
+                                    !shoved ? "- NO shooter installed"
+                                            : ho.band < 2
+                                                ? "rolls him - and the first-person preset "
+                                                  "CANNOT SHOW a roll"
+                                                : "TIPS the view 2 degrees");
                         continue;
                     }
                     // ---- `sub_4240E0`, the damage, on his shoot record ----
@@ -6227,10 +6253,15 @@ int main(int argc, char** argv) {
                     if (dx != 0)
                         player->aimYawBy(omk::shootTurnDegrees(dx, mouseSensX) *
                                          (mouseInvertX ? -1.0f : 1.0f));
-                    if (dy != 0)
+                    // `sub_47D370`'s own guard: a Mecagarde's pitch is PINNED
+                    // at 0 (mover flag 0x1000, written by `sub_47CC70`), and
+                    // `sub_47C260` is not called at all on that arm.
+                    if (dy != 0 && omk::shootMovePitches(shootMover))
                         shootPitch = -omk::shootPitchStep(-shootPitch, dy, mouseSensY,
                                                           mouseInverted,
                                                           static_cast<float>(frameSec * 30.0));
+                    else if (dy != 0)
+                        shootPitch = 0.0f;                // `dword_657A10 = 0.0`
                     shootPitchDirty = false;
                     // `camera_presets.json` row 4: eye (0,0,0) on the player,
                     // target (0, 0, 787.4016) - 20.00 m in front. Pitching it
@@ -6597,9 +6628,21 @@ int main(int argc, char** argv) {
                         // when a run of movement starts and once when it ends.
                         if (shootMode && shootMover.active &&
                             player->state() == omk::ActorState::Shoot) {
+                            // ...and the shove's four frames, which write the
+                            // actor's own +416 and +424 (`actor/shootmove.h`)
+                            const float shoveWas[2] = {player->eulerPitch(),
+                                                       player->eulerRoll()};
                             const omk::ShootMoveStep st = omk::shootMoveTick(
                                 shootMover, player->facing(),
-                                static_cast<float>(frameSec * 30.0));
+                                static_cast<float>(frameSec * 30.0),
+                                &player->eulerPitch(), &player->eulerRoll());
+                            if (shoveWas[0] != player->eulerPitch() ||
+                                shoveWas[1] != player->eulerRoll())
+                                std::printf("frame %ld: THE SHOVE (sub_47D1F0) - %.2f left, "
+                                            "pitch %+.2f roll %+.2f degrees\n", n,
+                                            double(shootMover.shoveTimer),
+                                            double(player->eulerPitch()),
+                                            double(player->eulerRoll()));
                             player->addShootMotion(st.dx, st.dz);
                             const bool moving = st.dx != 0.0f || st.dz != 0.0f;
                             if (moving && shootMoveFrames == 0) {
@@ -7258,9 +7301,13 @@ int main(int argc, char** argv) {
                     // mouse's pitch, stepped 25 units; the camera takes it at
                     // the aim block's next pass
                     if ((mv == "MDLUP" || mv == "MDLDO") && shootMover.active) {
-                        shootPitch = -omk::shootPitchStep(-shootPitch, mv == "MDLUP" ? -25 : 25,
-                                                          mouseSensY, mouseInverted,
-                                                          static_cast<float>(frameSec * 30.0));
+                        if (omk::shootMovePitches(shootMover))
+                            shootPitch = -omk::shootPitchStep(-shootPitch,
+                                                              mv == "MDLUP" ? -25 : 25,
+                                                              mouseSensY, mouseInverted,
+                                                              static_cast<float>(frameSec * 30.0));
+                        else
+                            shootPitch = 0.0f;            // the Mecagarde arm, as above
                         shootPitchDirty = true;
                     }
                     // THE JUMP'S IMPULSE (`todo/player-vertical.md` step 2).
@@ -8307,6 +8354,24 @@ int main(int argc, char** argv) {
                 playerShootRec = omk::ShootRecord{};
                 playerShootRec.node = -1;
                 playerShootRec.flags |= 2u;
+                // `Shoot_Enter` step 6's own read: event 44 property 7, the
+                // player's CHARACTER TYPE. It picks the HUD screen (33 for the
+                // Mecagarde, 34 for anyone else) and, in `sub_47CC70` below,
+                // the mover's three sounds and its pitch flag. The port left it
+                // at -1 until 2026-09-12, which gave the right screen for the
+                // wrong reason - every value but 5 gives 34.
+                {
+                    std::int32_t ctype = 0;
+                    omk::readActorProperty(
+                        state.raw().subspan(
+                            static_cast<std::size_t>(omk::GameState::kPlayerRecord),
+                            static_cast<std::size_t>(omk::GameState::kPlayerRecordSize)),
+                        7, ctype);
+                    session.shootModeMutable().setPlayerType(static_cast<int>(ctype));
+                    playerShootRec.type = static_cast<std::uint32_t>(ctype);
+                    std::printf("frame %ld: SHOOT TYPE - property 7 = %d -> HUD screen %d\n",
+                                n, int(ctype), session.shootMode().hudScreen());
+                }
                 // `sub_422540(player)`, `Shoot_Enter`'s own call: his property
                 // 1 into +92 - the health `Shoot_SyncHudHealth` hands the HUD,
                 // a 0 rewritten to 10 - and `Hud_Refresh`'s
@@ -8391,13 +8456,22 @@ int main(int argc, char** argv) {
                         if (const omk::NodeTracks* st =
                                 player->clipTracks(player->groupDefaultClip(200)))
                             period = static_cast<float>(st->frames);
-                    omk::shootMoveInit(shootMover, speed, period);
+                    // ...and its three SOUND ids and flag 0x1000 off the
+                    // player's character type (property 7), the same test that
+                    // picked the HUD screen above.
+                    omk::shootMoveInit(shootMover, speed, period,
+                                       session.shootMode().playerType());
                     shootMoveFrames = 0;
                     std::printf("frame %ld: SHOOT MOVER (sub_47CC70) - Speed %d -> row %d: "
-                                "top %.3f, accel %.4f, brake %.3f a frame, period %.0f\n",
+                                "top %.3f, accel %.4f, brake %.3f a frame, period %.0f; "
+                                "type %d -> hurt sound %d, steps %d/%d%s\n",
                                 n, int(speed), shootMover.row, double(shootMover.top),
                                 double(shootMover.accel), double(shootMover.brake),
-                                double(period));
+                                double(period), session.shootMode().playerType(),
+                                shootMover.hurtSound, shootMover.stepLeft,
+                                shootMover.stepRight,
+                                omk::shootMovePitches(shootMover)
+                                    ? "" : " - a Mecagarde: HE CANNOT PITCH");
                 }
                 const int obj = session.shootMode().weaponObject();
                 const auto& objs = voiceLib.objects();

@@ -25975,6 +25975,12 @@ def c_shoot_fire():
       `05_sys.c` alone, and both are read in `17_script.c`;
     * a magazine is spent but does NOT gate: 0 goes to -1 and the shot is
       taken; a full pool spends nothing;
+    * the HURT REACTION (`sub_47D1F0`, 2026-09-12): the band picks the angle -
+      a bolt across him rolls HIM and one along him TIPS THE VIEW - the mover
+      spends a 4.0 timer out and back over four frames, peaking at 2, and clears
+      its own flag; the sounds and the pitch lock split on character type 5;
+      and a 2-degree pitch swings the first-person target 27.5 inches while a
+      2-degree roll swings it nothing, because the roll turns about it;
     * the type is the held object's KIND, and the -2 exception is the Baton de
       pouvoir: `Scene_Load3DO` keeps its PATH at descriptor +48, and
       `Object_Load` builds it as `MESHES\OBJETS\` + stem + `.3DO`, so position
@@ -26005,7 +26011,8 @@ def c_shoot_fire():
             "wall:", "range:", "wind-up 12:", "grow:",
             "hit:", "bands:", "gates:", "shield:", "kill:", "raise:", "slew:",
             "mover rows:", "mover held:", "mover crouch:", "look:", "noise:", "gunman aim:",
-            "wall test:", "path field:", "grid turn:", "actor action:", "type:")
+            "wall test:", "path field:", "grid turn:", "actor action:",
+            "hurt shove:", "hurt sounds:", "shove camera:", "type:")
     got = []
     for k in keys:
         m = re.search(r"^" + re.escape(k) + r" (.*)$", out, re.M)
@@ -26140,6 +26147,33 @@ def c_shoot_fire():
             "turn; 10 -> 25 st 15 s8 f202000 t-1; 1 -> -1 st 15 s8 f2000 t-1; 4 -> 10 st 7 "
             "s4 f2000 t23; 7 -> 10 st 14 s7 f2000 t-1; under flag 8 parked 1 pending 0 "
             "0x8000000 1",
+            # THE HURT REACTION (`sub_47D1F0` + `sub_47D4D0`'s 0x400 arm,
+            # 2026-09-12). Each band arms ONE angle and zeroes both first: 0/1
+            # the ROLL (a bolt across him), 2/3 the PITCH (one along). The
+            # mover then spends a 4.0 timer by the frame's dt - at or above 2.0
+            # it SUBTRACTS, below it ADDS - so the angle runs out to 2 degrees
+            # on the second frame and is back at 0 on the fourth, where the
+            # flag goes down. The fifth frame proves it stays down
+            "band 0 armed 1 zeroed 1 +0/-1 +0/-2 +0/-1 +0/+0 +0/+0 flag 0; "
+            "band 1 armed 1 zeroed 1 +0/+1 +0/+2 +0/+1 +0/+0 +0/+0 flag 0; "
+            "band 2 armed 1 zeroed 1 -1/+0 -2/+0 -1/+0 +0/+0 +0/+0 flag 0; "
+            "band 3 armed 1 zeroed 1 +1/+0 +2/+0 +1/+0 +0/+0 +0/+0 flag 0",
+            # ...and `sub_47CC70`'s character-type split, whose two halves
+            # corroborate each other in the shipped data: the Mecagarde (type
+            # 5) takes MVTMECA03.WAV and 0041/0042.WAV and CANNOT PITCH (flag
+            # 0x1000, `sub_47D370`'s zeroing arm - whose writer this found),
+            # anyone else IMPACT03.WAV and STPL/STPR.WAV
+            "flesh 191 steps 161/162 pitches 1; meca 68 steps 69/70 pitches 0",
+            # ...and how it REACHES the camera: a subject-relative point is
+            # rotated by the subject's WHOLE Euler (`sub_414F30` copies the
+            # actor's +416/+420/+424 into the camera block's +112/+116/+120 and
+            # `sub_415D10` hands all three to `Matrix3x3_FromEulerAngles`), so
+            # 2 degrees of pitch swings the shoot preset's 787.4-inch target
+            # 27.5 up. The ROLL leaves a forward offset exactly where it was -
+            # it turns about that very axis - so a side hit moves the preset's
+            # (0,0,0) eye by nothing at all: in first person only the pitch
+            # bands show. That is the engine's, not a simplification here
+            "flat 0.0 0.0 787.4, roll 2 0.0 0.0 787.4, pitch 2 0.0 27.5 786.9",
             "kind 1 BATPOUV -> -2, kind 1 WAVER -> 1, kind 3 BATPOUV -> 3"]
     if data:
         w = re.search(r"^weapons: (.*)$", out, re.M)
@@ -27095,8 +27129,13 @@ def c_engine_shoot_gunfire():
             # (ending his turn at 164.1 he stands 21 degrees off the player -
             # his aim layer's yaw covers it - so his bolts come from a muzzle
             # turned that way: the kill is at 494)
+            # (and the HURT REACTION on the same line since 2026-09-12: band 2,
+            # the bolt along his forward, so the shove TIPS the view rather
+            # than rolling him - the roll bands move a first-person camera by
+            # nothing at all, `todo/shoot-mode.md` §9c)
             [("460", "damage 5, Body Shield 30 -> 4; health 10 -> 6, gauge 6 (property 1 "
-                     "stored 6); message 0 to the hurt handler")],
+                     "stored 6); message 0 to the hurt handler; the shove (sub_47D1F0) "
+                     "band 2 TIPS the view 2 degrees")],
             # (240 no longer loops a type-10 clip: his entry is the unported
             # patrol, and he stands on action 0's type 11 / 25)
             # (since the death: stood down to action 0 before their walk could

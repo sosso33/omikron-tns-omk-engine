@@ -358,6 +358,9 @@ public:
     // mode 4, `.CTL` group 200 and input scheme 2; the AI's brains are a
     // different question (`todo/standing-unknowns.md` 2).
     const ShootMode& shootMode() const { return shoot_; }
+    // ...and the writable half, which the frontend also uses for the one field
+    // the SCRIPT cannot supply: the player's character type, which
+    // `Shoot_Enter` reads off his record (property 7), not out of the opcode.
     ShootMode& shootModeMutable() { return shoot_; }
     // `sub_423A40`'s writes (`script/hooks.h`), queued while shoot mode is on
     // for the frontend, which holds the shoot records: property 1 is a shoot

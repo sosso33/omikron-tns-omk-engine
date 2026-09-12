@@ -15,6 +15,7 @@
 #include "actor/shoothit.h"
 #include "actor/shootaim.h"
 #include "actor/shootmove.h"
+#include "actor/player.h"
 #include "script/program.h"
 #include "actor/state.h"
 #include "formats/map2d.h"
@@ -662,6 +663,51 @@ int main(int argc, char** argv) {
             } else {
                 std::printf("path field: SMARKET1.MPT not read\n");
             }
+        }
+        // ---- THE HURT REACTION, `sub_47D1F0` + the mover's 0x400 arm ----
+        // The four bands, the four frames, and the two sound sets.
+        {
+            omk::ShootMover hm;
+            omk::shootMoveInit(hm, 100, 19.0f, 0);
+            omk::ShootMover mm;
+            omk::shootMoveInit(mm, 100, 19.0f, 5);
+            std::string spent;
+            for (int band = 0; band < 4; ++band) {
+                float pitch = 9.0f, roll = 9.0f;      // junk it must zero
+                const bool armed = omk::shootHurt(hm, band, pitch, roll);
+                char b[160];
+                std::snprintf(b, sizeof b, "%sband %d armed %d zeroed %d", band ? "; " : "",
+                              band, int(armed), int(pitch == 0.0f && roll == 0.0f));
+                spent += b;
+                // four frames of dt = 1.0, the mover's own arm
+                for (int f = 0; f < 5; ++f) {
+                    omk::shootMoveTick(hm, 0.0f, 1.0f, &pitch, &roll);
+                    std::snprintf(b, sizeof b, " %+.0f/%+.0f", double(pitch), double(roll));
+                    spent += b;
+                }
+                std::snprintf(b, sizeof b, " flag %d", int((hm.flags & omk::kShootMoveShove) != 0));
+                spent += b;
+            }
+            std::printf("hurt shove: %s\n", spent.c_str());
+            std::printf("hurt sounds: flesh %d steps %d/%d pitches %d; meca %d steps %d/%d "
+                        "pitches %d\n", hm.hurtSound, hm.stepLeft, hm.stepRight,
+                        int(omk::shootMovePitches(hm)), mm.hurtSound, mm.stepLeft, mm.stepRight,
+                        int(omk::shootMovePitches(mm)));
+            // ...and the camera, which is where a person sees it: the engine
+            // rotates a subject-relative point by the WHOLE Euler
+            // (`sub_414F30` -> `sub_415D10`), so a roll of 2 degrees moves the
+            // target of a 787-inch forward offset off the horizontal.
+            const float off[3] = {0.0f, 0.0f, 787.4016f};
+            const float flat[3] = {0.0f, 0.0f, 0.0f}, rolled[3] = {0.0f, 0.0f, 2.0f},
+                        tipped[3] = {2.0f, 0.0f, 0.0f};
+            float a[3], b2[3], c2[3];
+            omk::rotateEuler(flat, off, a);
+            omk::rotateEuler(rolled, off, b2);
+            omk::rotateEuler(tipped, off, c2);
+            std::printf("shove camera: flat %.1f %.1f %.1f, roll 2 %.1f %.1f %.1f, pitch 2 "
+                        "%.1f %.1f %.1f\n", double(a[0]), double(a[1]), double(a[2]),
+                        double(b2[0]), double(b2[1]), double(b2[2]),
+                        double(c2[0]), double(c2[1]), double(c2[2]));
         }
         const auto g = fs.read("IAM/GLOBAL");
         const auto objs = omk::loadObjects(fs);

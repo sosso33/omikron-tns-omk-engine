@@ -1597,6 +1597,20 @@ connected (2026-09-10, `todo/shoot-mode.md` §7h/§7i: `MDSHOOT0`'s latch,
 `sub_47C2A0`'s gate, `Projectiles_Tick`'s flight; `verify.py: shoot fire`,
 `engine: shoot fire`), while the HIT - the actor sweep and the damage - is
 read and not ported (§7j).
+
+**THE HURT REACTION is ported** (2026-09-12, `todo/shoot-mode.md` §9): a bolt
+the player survives runs `sub_47D1F0` - the flat hurt sound out of the resident
+`shoot2.scx`, then a four-frame shove of the actor's own Euler whose direction
+is the hit's band, out to 2 degrees and back, clearing its own flag. It is
+visible because a subject-relative camera point is rotated by the subject's
+**whole** Euler and not by his yaw (`sub_415A10`'s resolvers write the actor's
+`+416/+420/+424` into the camera block; `omk::rotateEuler`), which also closes
+`o3de/worldcam.h`'s standing note about who writes those fields. The bands that
+ROLL move nothing on the first-person preset - the roll turns about the target
+offset's own axis - so only the front and back bands show, which is the
+engine's arithmetic rather than a simplification. On the way: mover flag
+0x1000's writer is `sub_47CC70` (a Mecagarde cannot pitch at all), and the
+player's property 7 is now READ at the entry instead of left at -1.
 The only thing asserted about them is that the runtime never leaves the state
 set that was read: 0 of 2000 ticks. That catches a port that wanders and
 nothing else, and it is §3's "read and explained" rather than "verified".
