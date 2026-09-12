@@ -118,11 +118,17 @@ and he carries **`bank none`**, so the moment that clip runs out he has no idle
 to fall back to and draws in the model's REST pose — which is the T pose in the
 reader's screenshot, at a position no script ever asked for.
 
-The fallback was built for AREA 118's arrival, where "the shown list carries
-Kay'l as 310 and the program names another id". That case is the PLAYER; this
-one is not. Narrowing it to the player is the obvious first move, but the
-proper answer is to read how `ScriptObject_StartOnActor` / `Actor_FindById`
-resolve a CHARACTERS id to an actor slot and stop guessing at all.
+The fallback was built for AREA 118's arrival, on the reading that "the shown
+list carries Kay'l as 310 and the program names another id". **That reading
+does not survive being checked**: the beat is `character.show 310, 1` then
+`scx.play.actor.wait 310, 1`, so the program names the very body it stages and
+`drivenBy` matches it with no fallback at all - `engine: intro beat` and
+`engine: intro` are both green with the fallback narrowed to the player.
+
+Narrowed to the player it is, since `scx.play.player` names no actor and an id
+mismatch there is at least plausible. The proper answer is still to read how
+`ScriptObject_StartOnActor` / `Actor_FindById` resolve a CHARACTERS id to an
+actor slot, and stop guessing entirely.
 
 ## 3. The music
 
@@ -142,11 +148,12 @@ the exit works.
 
 ## 4. Steps
 
-1. **The `byLone` fallback** (symptom 2). Narrow it so it cannot hand a
-   program to a body the program does not name - the AREA 118 case it exists
-   for is the PLAYER - and prove the narrowing with both routes: the intro
-   arrival must keep its pose, and the supermarket death must leave actor 65
-   where his own program left him.
+1. ~~**The `byLone` fallback** (symptom 2)~~ - **DONE 2026-09-12.** Narrowed to
+   the PLAYER, which is the AREA 118 case it was written for. Measured on the
+   same 1400-frame death route: the "the program names another actor" line is
+   gone, and actor 65 ends at **13283 -92 996** - where his own program left
+   him at frame 182 - instead of 13046 -140 1149, holding the last pose that
+   program gave him rather than a stranger's clip.
 2. Walk the player to the exit zone after a death and watch `area.goto 231`.
    If it fades and stalls, that is symptom 3 on its own and has nothing to do
    with the variables.

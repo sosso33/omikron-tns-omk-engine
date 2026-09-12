@@ -11049,8 +11049,34 @@ int main(int argc, char** argv) {
                     }
                     if (prog >= 0) break;
                 }
+                // ...AND THE FALLBACK IS THE PLAYER'S ALONE.
+                //
+                // It used to fire for whoever the frame's one body was, on the
+                // reasoning quoted above that it "can never mis-assign once
+                // there is more than one". A reader dying in the supermarket
+                // found the case that reasoning misses: the loss branch hides
+                // twenty-five characters (`todo/shoot-phase-end.md`), so ONE
+                // is exactly what is left - actor 65, the cashier the intro
+                // cutscene stages - and the frame's one running program, clip
+                // 18 `BOIPATH2.3DA`, which names somebody else entirely, was
+                // handed to him. It teleported him from 13283 -92 996 to
+                // 13046 -140 1149 and posed him from a stranger's clip, and
+                // since V5H_FNM carries no bank he fell to the model's REST
+                // pose - a T-posed body standing in a corridor nothing put
+                // him in. It is in the reader's own session log three times.
+                //
+                // It is kept for the PLAYER alone, because that is the case
+                // it was written for and the one where an id mismatch is
+                // plausible - `scx.play.player` names no actor at all. Note
+                // what the measurement says about the case the comment above
+                // cites: AREA 118's beat is `character.show 310, 1` then
+                // `scx.play.actor.wait 310, 1`, so the program DOES name the
+                // body and `drivenBy` matches it without any fallback -
+                // `engine: intro beat` and `engine: intro` are both green with
+                // the narrowing in. Nobody but the player gets it.
                 bool byLone = false;
-                if (prog < 0 && loneProgs == 1 && staged.size() == 1) {
+                if (prog < 0 && loneProgs == 1 && staged.size() == 1 &&
+                    s.actor == playerId) {
                     prog = loneProg;
                     run = &sc;                 // the lone-program fallback is the ACTIVE pool's
                     byLone = true;
