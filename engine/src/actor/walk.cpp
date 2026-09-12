@@ -257,8 +257,28 @@ StepResult Walker::tick(double dt) {
     const double ny = pos_[1] + dy;              // Y grows downward
     const auto g = ground(pos_[0], pos_[1], pos_[2]);
     if (!g) {
-        // nothing under him at all: hold the horizontal, keep descending. The
-        // caller's own out-of-world handling owns this case.
+        // NOTHING UNDER HIM AT ALL - and a SLIDE ends here, which it did not
+        // until 2026-09-12. The slide speed is not a velocity he carries: the
+        // ground response WRITES `+220 = dword_910340` every frame it finds a
+        // face past the slope limit under him (see `kSlideSpeed` in the
+        // header). With no face there is nothing to write it, so
+        // `Actor_ApplyMotion`'s gravity is all that is left and he is falling.
+        //
+        // Left sliding instead, he glided at a dead-constant 11.8 a frame -
+        // 0.4 units, 0.3 m/s - for as long as the air lasted, because `tick`
+        // only integrates gravity `if (airborne_)`. A reader walking the
+        // catacombs: *"the character fall very slowly, in an not natural
+        // way"*, from "the ground then a small slope then in the air" - the
+        // small slope is what latched the slide and the air never cleared it.
+        //
+        // His horizontal keeps going, as it should: the face normal went into
+        // `vx_`/`vz_` when the slide started and `Actor_ApplyMotion` applies
+        // those unconditionally, so leaving a ramp throws him off it.
+        if (sliding_ && !airborne_) {
+            sliding_ = false;
+            airborne_ = true;
+            apex_ = pos_[1];        // the descent is measured from here
+        }
         pos_[1] = ny;
         fall_ += dy;
         return airborne_ ? StepResult::Fell : StepResult::Slid;
