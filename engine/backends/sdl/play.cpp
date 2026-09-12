@@ -11505,6 +11505,18 @@ int main(int argc, char** argv) {
                                             "(%d,%d)\n", n, s.actor, s.model.c_str(),
                                             static_cast<signed char>(rec.node & 0xFF),
                                             rec.destX, rec.destZ);
+                            // ...and when he LEAVES it, which is the state the
+                            // engine's `sub_4368E0` exists to undo: with no
+                            // floor there is no wall test and no steering, so a
+                            // walker just keeps going. Said once per actor.
+                            static std::set<int> offGridTold;
+                            if (static_cast<signed char>(rec.node & 0xFF) < 0 &&
+                                floorTold.count(s.actor) && offGridTold.insert(s.actor).second)
+                                std::printf("frame %ld: actor %d %s - OFF THE GRID at %.0f %.0f "
+                                            "%.0f: Shoot_Think finds no floor, so nothing walls "
+                                            "him in (sub_4368E0 is the engine's recovery and runs "
+                                            "only at his entry)\n", n, s.actor, s.model.c_str(),
+                                            double(at[0]), double(at[1]), double(at[2]));
                         }
                         const int before = rec.state;
                         omk::ShootFrameIn fin;
