@@ -337,3 +337,58 @@ rings, which it writes back into the position — "put him where he can stand".
 `Shoot_ActorEnter` runs it once at entry and `Shoot_TickPlayer` every frame for
 the PLAYER; a gunman mid-walk never needs it, because with his y pinned the
 wall test never lets him leave.
+
+---
+
+## 7. THE ENGAGE'S SIGHT IS A RAY, NOT THE GRID — a wrong turn, backed out
+
+A reader, after the y was pinned: *"Nobody hits me, is it normal?"* and, of the
+catacombs, *"No enemy moves."* The second was real and the diagnosis was half
+right; the fix was wrong and is **reverted**.
+
+**Why nothing moved.** `sub_426E00`'s first engage arm is
+`if (dist < acquireRange && los) { flags |= 0x20; state = 6; }`, and the port
+handed it `los` hard-coded TRUE. So every gunman within 30 m engaged on his
+first tick — through solid rock — went to the hub, found the timer 0 (a patrol
+sets none) and asked for action 0, *stand and fire*. The catacombs' 589 and 601
+did it at frames 39 and 43 and stood for the rest of the phase.
+
+**Why the fix was wrong.** Wiring `Map2d::lineOfSight` - the `sub_4359A0` walk
+the port already owns - into that gate did make the spectres patrol (advances
+65 -> 117, all nine travelling, 0 pulled off) and **stopped the Shooting
+gallery's gunmen firing at all**: its range really does have barriers between
+their placements and the player's, so the grid walk says BLOCKED at
+(11,29)->(17,21) and (22,37)->(17,21), and `engine: shoot fire`,
+`engine: shoot gunfire` and `engine: shoot hit` all went red together.
+
+**What `sub_426E00` actually reads**, gone back to after the regression:
+
+* its sight test is **`sub_4449E0`** - a RAY against geometry, the port's
+  `EngageIn::rayHits` - and NOT `sub_4359A0`. The grid walk answers a different
+  question and belongs to the noise and the path field;
+* **character type 12 has its own arm**, and type 12 is the SPECTRE: cone plus
+  `!sub_4449E0` sends him to state 3 with the 0x20 latch, and **anything else
+  sends him back to state 4, the patrol** (`LABEL_24`). So a spectre who cannot
+  see you returns to his beat by the engine's own rule, without the grid ever
+  being consulted;
+* `sub_436BB0(myFloor, targetFloor, pos)` writes the record's **`+4`** - the
+  NAV EDGE the handoff has been calling unread. That is the path-finder's front
+  door, and it is reached from the engage.
+
+So the sight is left as it was, loudly, and the three checks are back where they
+were. Closing it properly means porting `sub_4449E0` (the ray) and type 12's
+arm, which is its own task and wants a reader in front of it.
+
+### And the answer to "nobody hits me"
+
+**It is the engine's own rule for these enemies, and the port says so in its
+log.** The fire epilogue gates on `sub_4348B0(+20)`, which is the animation
+group's `+8 & 1`, and SPECTRE's group carries 0 - so a spectre takes the aim
+pose and never shoots. The port prints exactly that: *"the fire test is clear
+(sub_4348B0: ANIMS\SPECTRE.ANI group 12, +8 0) - he aims and never shoots"*.
+
+**And nothing else in shoot mode can hurt you**: `sub_4240E0`, the hit, has two
+callers and both are in `Actor_TickProjectiles`. There is no melee path in the
+mode at all. So in the port the catacombs' spectres are harmless, and whether
+the game means them to be - a stealth stretch - or hurts you through some other
+system is NOT settled by anything read here.

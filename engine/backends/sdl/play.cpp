@@ -6688,9 +6688,45 @@ int main(int argc, char** argv) {
                                 shootMoveFrames = 0;
                             }
                         }
+                        const bool wasAir = player->walker().airborne();
+                        const bool wasSlide = player->walker().sliding();
                         player->tick(static_cast<float>(frameSec * 30.0),
                                      bits ? bits : omk::kIdleInput);
                         playerTicked = true;
+                        // THE FALL, said as it happens - a reader in shoot mode:
+                        // "the character fall very slowly, in an not natural
+                        // way". `Actor_ApplyMotion` accelerates `+220` by
+                        // `kGravity` a frame and descends `+220/30 * dt`
+                        // (`actor/walk.h`); this prints the curve so a slow one
+                        // can be told from a wrong dt.
+                        //
+                        // A FALL and a SLIDE are the two ways down and they do
+                        // not look alike: a fall ACCELERATES (`+220 += kGravity`
+                        // a frame), a slide is a CONSTANT `kSlideSpeed` the
+                        // ground response writes every frame it is on a face
+                        // past the slope limit - 11.8 a frame, about 0.3 m/s,
+                        // which is what a slow unnatural descent reads like.
+                        // The two are told apart here so a report does not have
+                        // to guess which it saw.
+                        {
+                            const bool air = player->walker().airborne();
+                            const bool slide = player->walker().sliding();
+                            if ((air || slide) && !(wasAir || wasSlide))
+                                std::printf("frame %ld: the player %s from y %.1f\n", n,
+                                            slide ? "SLIDES (a face past the slope limit - a "
+                                                    "CONSTANT 11.8 a frame, not gravity)"
+                                                  : "FALLS", player->pos()[1]);
+                            else if ((air || slide) && n % 10 == 0)
+                                std::printf("frame %ld:   %s: y %.1f, descended %.1f\n", n,
+                                            slide ? "sliding" : "falling",
+                                            player->pos()[1], player->walker().fall());
+                            else if (!air && !slide && (wasAir || wasSlide))
+                                std::printf("frame %ld: the player LANDS at y %.1f - dropped "
+                                            "%.1f (%.2f m), tier %d\n", n, player->pos()[1],
+                                            player->walker().lastLandingDrop(),
+                                            player->walker().lastLandingDrop() / 39.37,
+                                            player->walker().lastLandingTier());
+                        }
                         // While he BOARDS or LEAVES, say where the clip is
                         // carrying him - the door snap is one number and the
                         // carry-in is seventy-two more, and a render at the
@@ -11602,7 +11638,16 @@ int main(int argc, char** argv) {
                             return h;
                         };
                         fin.targetAlive = true;
-                        // the SIGHT half is real: the grid walk the port owns
+                        // THE SIGHT the engage gates on is NOT the grid walk.
+                        // Wiring `Map2d::lineOfSight` in here on 2026-09-12
+                        // stopped the Shooting gallery's gunmen firing at all -
+                        // its range really does have barriers between their
+                        // placements and the player's - and reading
+                        // `sub_426E00` afterwards says why: its sight test is
+                        // `sub_4449E0`, a RAY against geometry, and the grid
+                        // walk `sub_4359A0` is a different question. Left as it
+                        // was until that function is read; see
+                        // `todo/shoot-patrol.md` 7.
                         fin.gridLineOfSight = true;
                         omk::AcquireOut ao;
                         const bool cone = omk::shootAcquires(rec, fin.self,

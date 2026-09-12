@@ -26573,21 +26573,26 @@ def c_engine_shoot_fire():
             # frames after its latch, the row's speed and damage, one pool
             # entry per shot, WAVER2.WAV on every shot's frame - and the hit on
             # a body has its own check, `engine: shoot hit`, which aims at one.)
-            [2, 3, 2, 2, 2, 3, 2, 2],
-            [("hit the world", -3174, "374.4", "0"), ("hit the world", -3161, "249.6", "0"),
-             ("hit the world", -3159, "374.4", "0"), ("hit the world", -3157, "249.6", "0"),
-             ("hit the world", -3143, "249.6", "0"), ("hit the world", -3142, "249.6", "0"),
-             ("hit the world", -3141, "249.6", "0")],
-            8, [("4958.6", "15144.7", "-2907.3"), ("4976.5", "15144.7", "-2910.7"),
-                ("4978.1", "15144.7", "-2911.5"), ("4978.9", "15144.7", "-2906.8"),
-                ("4992.8", "15144.7", "-2919.8"), ("4996.4", "15144.7", "-2941.6"),
-                ("5009.7", "15144.7", "-2922.6")],
+            # (and a bolt meets ACTOR 238 again now that the bodies stand at
+            # their own `+60`: seven of the eight stop on the world, one on him)
+            [2, 2, 3, 2, 3, 3, 1, 3],
+            [("HIT ACTOR 238", -2909, "124.8", "0"),
+             ("hit the world", -3187, "374.4", "0"), ("hit the world", -3183, "374.4", "0"),
+             ("hit the world", -3179, "374.4", "0"), ("hit the world", -3174, "374.4", "0"),
+             ("hit the world", -3161, "249.6", "0"), ("hit the world", -3154, "249.6", "0")],
+            # (and since the y was PINNED, 2026-09-12: a gunman stands at his
+            # floor's own edge minus his height rather than wherever the ground
+            # probe had drifted him, so the bodies that push the player are a
+            # few units from where they were and his muzzle points follow)
+            8, [("4929.7", "15144.7", "-2909.2"), ("4930.6", "15144.7", "-2917.3"),
+                ("4934.2", "15144.7", "-2912.4"), ("4938.3", "15144.7", "-2924.5"),
+                ("4989.5", "15144.7", "-2925.9"), ("4996.4", "15144.7", "-2941.6"),
+                ("5009.4", "15144.7", "-2921.8")],
             list(range(37, 248, 30)),
-            # (an impact sound for EVERY bolt now - all eight stop on the world)
-            [39, 70, 99, 129, 159, 190, 219, 249],
+            [39, 69, 100, 129, 160, 190, 250],
             [("fire", "1", "687", "WAVER2.WAV", "1.00"),
+             ("impact", "3", "689", "WIMP1.WAV", "0.25"),
              ("impact", "3", "689", "WIMP1.WAV", "0.26"),
-             ("impact", "3", "689", "WIMP1.WAV", "0.27"),
              ("impact", "3", "689", "WIMP1.WAV", "0.28"),
              ("impact", "3", "689", "WIMP1.WAV", "0.29")])
     return got, want, (
@@ -26597,8 +26602,8 @@ def c_engine_shoot_fire():
         "drain, six for the weapon to come back up); all of them the row's "
         "speed and damage, straight down -Z from the Maing node; one pool "
         "entry per shot; the bolts from the RAISED muzzle wherever the gunmen's "
-        "bodies have pushed him - and since `Shoot_Think` their cells follow "
-        "them, so they walk clear and all eight bolts stop on the world; "
+        "bodies have pushed him - and since their y is PINNED to `+60` one of "
+        "the eight meets actor 238 and seven stop on the world; "
         "WAVER2.WAV on every shot's frame and WIMP1.WAV on every impact")
 
 
