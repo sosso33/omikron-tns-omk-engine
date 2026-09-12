@@ -5,6 +5,7 @@
 //     map2d_probe <gamedata> --all              every map, one line per floor
 //     map2d_probe <gamedata> --sight            the LINE OF SIGHT, every map
 //     map2d_probe <gamedata> --routes           the PATROL ROUTES, every map
+//     map2d_probe <gamedata> --links            the INTER-FLOOR LINKS
 //
 // `MAP2D/*.mpt` is the map screen AND the grid `Shoot_Think` moves on
 // (`engine/src/formats/map2d.h`, `todo/shoot-mode.md`). A census is not enough
@@ -33,6 +34,7 @@ int main(int argc, char** argv) {
     const bool all = argc > 2 && std::string(argv[2]) == "--all";
     const bool sight = argc > 2 && std::string(argv[2]) == "--sight";
     const bool routes = argc > 2 && std::string(argv[2]) == "--routes";
+    const bool links = argc > 2 && std::string(argv[2]) == "--links";
     const std::vector<std::string> names = {
         "archiv03", "archiv05", "astaroth", "bar56", "CSlev-3", "gallery",
         "grotte", "hames", "smarket1", "soukdock", "soukt", "tetra2",
@@ -100,6 +102,59 @@ int main(int argc, char** argv) {
         std::printf("maps with door cells %d\n", mapsWithDoors);
         std::printf("pairs %ld  visible doors-open %ld  visible doors-shut %ld\n",
                     pairs, visOpen, visShut);
+        return 0;
+    }
+
+    if (links) {
+        // THE INTER-FLOOR LINKS (`todo/shoot-navedge.md`): what the loader's
+        // 28-byte per-floor records really are, and the three things that
+        // settle it - the destination in range, both points inside their own
+        // floors, and the RECIPROCITY that makes a stair a stair.
+        int tot = 0, inRange = 0, placed = 0, paired = 0;
+        for (const auto& n : names) {
+            omk::Map2d m;
+            if (!m.loadFile(root + "/MAP2D/" + n + ".mpt")) continue;
+            const auto& fl = m.floors();
+            bool any = false;
+            for (std::size_t i = 0; i < fl.size(); ++i) any = any || !fl[i].links.empty();
+            if (any) std::printf("%s: %zu floors\n", n.c_str(), fl.size());
+            for (std::size_t i = 0; i < fl.size(); ++i) {
+                for (const auto& L : fl[i].links) {
+                    ++tot;
+                    const bool ok = L.destFloor < fl.size();
+                    if (ok) ++inRange;
+                    // a point is "inside" its floor within one cell of the box
+                    const auto in = [&](const float p[3], const omk::Map2dFloor& g) {
+                        const float m2 = static_cast<float>(m.scale());
+                        return g.bound[0] - m2 <= p[0] && p[0] <= g.bound[1] + m2 &&
+                               g.bound[4] - m2 <= p[2] && p[2] <= g.bound[5] + m2;
+                    };
+                    const bool sited = ok && in(L.from, fl[i]) &&
+                                       in(L.to, fl[static_cast<std::size_t>(L.destFloor)]);
+                    if (sited) ++placed;
+                    // ...and the twin: a link back, whose ends are these swapped
+                    bool twin = false;
+                    if (ok)
+                        for (const auto& B : fl[static_cast<std::size_t>(L.destFloor)].links)
+                            if (B.destFloor == i) {
+                                float d = 0.0f;
+                                for (int k = 0; k < 3; ++k)
+                                    d += std::abs(B.from[k] - L.to[k]) +
+                                         std::abs(B.to[k] - L.from[k]);
+                                if (d < 1.0f) twin = true;
+                            }
+                    if (twin) ++paired;
+                    std::printf("  floor %zu -> %u  from %7.0f %6.0f %7.0f  to %7.0f %6.0f %7.0f"
+                                "  %s%s%s\n", i, L.destFloor,
+                                double(L.from[0]), double(L.from[1]), double(L.from[2]),
+                                double(L.to[0]), double(L.to[1]), double(L.to[2]),
+                                ok ? "" : "DEST OUT OF RANGE ", sited ? "" : "NOT IN ITS FLOORS ",
+                                twin ? "" : "NO TWIN");
+                }
+            }
+        }
+        std::printf("\nlinks %d; destination a real floor %d; both points inside their own "
+                    "floors %d; reciprocal %d\n", tot, inRange, placed, paired);
         return 0;
     }
 
@@ -199,7 +254,7 @@ int main(int argc, char** argv) {
             for (std::size_t i = 0; i < m.floors().size(); ++i) {
                 const auto& f = m.floors()[i];
                 ++floors;
-                segs += static_cast<int>(f.segments.size());
+                segs += static_cast<int>(f.links.size());
                 wp   += static_cast<int>(f.waypoints.size());
                 for (auto c : f.cells) ++hist[c];
                 for (auto c : f.cells)
@@ -210,7 +265,7 @@ int main(int argc, char** argv) {
                     std::abs(dz) <= static_cast<float>(m.scale())) ++fits;
                 std::printf("%-10s floor %2zu  %3ux%-3u cell %3u  y %8.0f  segs %2zu  wp %2zu\n",
                             n.c_str(), i, f.w, f.h, m.scale(), static_cast<double>(f.bound[3]),
-                            f.segments.size(), f.waypoints.size());
+                            f.links.size(), f.waypoints.size());
             }
         }
         std::printf("\nfloors %d  segments %d  waypoints %d  door cells %d"

@@ -11,7 +11,8 @@
 //                                   117 - and the world unit is an INCH, so a
 //                                   cell is 1, 2 or 3 METRES
 //     u32 floorCount
-//     per floor:  u32 nSegs + nSegs x { u32 kind, f32[6] }      wall segments
+//     per floor:  u32 nLinks + nLinks x { u32 destFloor, f32 from[3], f32 to[3] }
+//                                                           INTER-FLOOR LINKS
 //                 f32[6] bound + u32 W + u32 H + W*H byte cells
 //     per floor:  u32 k + k x [u32 len][(len+2) dwords]         waypoints
 //     per floor:  16 x 12 bytes                                 the DOOR table
@@ -65,9 +66,27 @@
 
 namespace omk {
 
-struct Map2dSegment {
-    std::uint32_t kind = 0;
-    float v[6] = {0, 0, 0, 0, 0, 0};
+// ONE INTER-FLOOR LINK - a staircase, a ramp, a ladder (`todo/shoot-navedge.md`).
+// The loader reads these per floor and this file called them "wall segments"
+// with every field but the count unread until 2026-09-12; `sub_436BB0` and
+// `sub_424DE0`'s state 2 between them name all seven dwords:
+//
+//     u32 destFloor    +0    the floor this link ARRIVES on
+//     f32 from[3]      +4    where you step ON, on this floor
+//     f32 to[3]       +16    where you step OFF, on destFloor
+//
+// **The data settles it, 36 of 36**: every `destFloor` is a real floor of its
+// own map, every `from` lies inside the SOURCE floor's bounds and every `to`
+// inside the DESTINATION's - and they come in RECIPROCAL PAIRS, `0 -> 1 from A
+// to B` always beside `1 -> 0 from B to A`, which is a stair described from
+// both ends and is not something a wall would do. Only five of the sixteen maps
+// carry any (`bar56` 5 pairs, `tetradou` 3, `hames` 4, `tetra3` 4, `tetra2` 1),
+// which is why there are 36 records across 79 floors - a count that never made
+// sense for walls.
+struct Map2dLink {
+    std::uint32_t destFloor = 0;           // +0
+    float from[3] = {0, 0, 0};             // +4    on this floor
+    float to[3]   = {0, 0, 0};             // +16   on destFloor
 };
 
 // ONE PATROL ROUTE (`todo/shoot-patrol.md`). The three header dwords are fixed
@@ -113,7 +132,7 @@ struct Map2dDoor {
 };
 
 struct Map2dFloor {
-    std::vector<Map2dSegment> segments;
+    std::vector<Map2dLink> links;          // the floor's EXITS, see above
     float bound[6] = {0, 0, 0, 0, 0, 0};    // minX maxX minY maxY minZ maxZ
     std::uint32_t w = 0, h = 0;
     std::vector<std::uint8_t> cells;        // w*h, row-major, row stride w

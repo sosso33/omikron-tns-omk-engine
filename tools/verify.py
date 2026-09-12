@@ -25742,6 +25742,52 @@ def c_map2d():
 
 
 
+def c_shoot_links():
+    r"""`engine/`: the MAP2D's 28-byte per-floor records are INTER-FLOOR LINKS
+    (`todo/shoot-navedge.md`).
+
+    `engine/src/formats/map2d.h` read them as `{ u32 kind; f32 v[6] }` and
+    called them **wall segments**, with every field but the count unread.
+    `sub_436BB0` and `sub_424DE0`'s state 2 between them name all seven dwords:
+    `u32 destFloor`, then `f32 from[3]` - where you step ON, on this floor -
+    and `f32 to[3]`, where you step OFF, on `destFloor`. A staircase, described
+    once per direction.
+
+    **Three things settle it and the corpus gives all three, 36 of 36.** Every
+    `destFloor` is a real floor of its own map; every `from` lies inside the
+    SOURCE floor's bounds and every `to` inside the DESTINATION's, to within a
+    cell; and every link has a TWIN - `0 -> 1 from A to B` always sits beside
+    `1 -> 0 from B to A`, matching to under a unit. A wall segment would do none
+    of that, and the count is the other tell: **36 records across 79 floors**,
+    with eleven of the sixteen maps carrying none at all, which is absurd for
+    walls and exactly right for stairs.
+
+    What uses them is `sub_436BB0`: my floor's list, filtered to the target's
+    floor, nearest `from` by squared XZ distance - one hop, nearest door, and no
+    graph search anywhere.
+    """
+    import subprocess, re
+    eng = os.path.join(ROOT, "engine")
+    b = subprocess.run(["make", "-s", "build/map2d_probe"], cwd=eng,
+                       capture_output=True, text=True)
+    binp = os.path.join(eng, "build", "map2d_probe")
+    if b.returncode != 0 or not os.path.exists(binp):
+        return ("build failed",), ("built",), "engine/ must build"
+    out = subprocess.run([binp, omkpaths.data_root(), "--links"],
+                         capture_output=True, text=True, errors="replace").stdout
+    m = re.search(r"^links (\d+); destination a real floor (\d+); both points inside their own "
+                  r"floors (\d+); reciprocal (\d+)$", out, re.M)
+    # ...and which maps carry any, since that is the count's other half
+    maps = sorted(set(re.findall(r"^(\w+): \d+ floors$", out, re.M)))
+    return ((m.groups() if m else None), maps), \
+           ((("36", "36", "36", "36")),
+            ["bar56", "hames", "tetra2", "tetra3", "tetradou"]), \
+           "36 inter-floor links, every one of them naming a real floor, sited " \
+           "in both of its floors and RECIPROCAL - and only five of the sixteen " \
+           "maps carrying any, which is what makes a count of 36 across 79 " \
+           "floors a staircase table rather than a wall one"
+
+
 def c_shoot_patrol():
     r"""`engine/`: the PATROL ROUTES - the `.mpt`'s third section, the four
     lookups over it, and what `shoot.actor.action 1`'s third operand names
@@ -32874,6 +32920,7 @@ CHECKS = [
     ("sfx files",          c_sfx_files,         "FILE_FORMATS 5"),
     ("extension case",     c_extension_case,    "CLAUDE.md 1"),
     ("map2d",              c_map2d,             "FILE_FORMATS 5b5"),
+    ("shoot links",        c_shoot_links,       "todo/shoot-navedge; formats/map2d.h"),
     ("shoot patrol",       c_shoot_patrol,      "todo/shoot-patrol; formats/map2d.h"),
     ("shoot arenas",       c_shoot_arenas,      "todo/shoot-mode"),
     ("shoot radar files",  c_shoot_radar_files, "todo/shoot-mode 8.3; ui/radar.h"),

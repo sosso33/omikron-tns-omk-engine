@@ -42,10 +42,15 @@ bool Map2d::load(std::span<const std::byte> b) {
         const std::uint32_t n = u32(b, o);
         o += 4;
         if (o + 28u * n > b.size()) return false;
-        f.segments.resize(n);
+        // the floor's INTER-FLOOR LINKS (`formats/map2d.h`): the destination
+        // floor, then the point on THIS floor and the point on that one
+        f.links.resize(n);
         for (std::uint32_t i = 0; i < n; ++i) {
-            f.segments[i].kind = u32(b, o);
-            for (int k = 0; k < 6; ++k) f.segments[i].v[k] = f32(b, o + 4 + 4u * static_cast<std::size_t>(k));
+            f.links[i].destFloor = u32(b, o);
+            for (int k = 0; k < 3; ++k) {
+                f.links[i].from[k] = f32(b, o + 4 + 4u * static_cast<std::size_t>(k));
+                f.links[i].to[k]   = f32(b, o + 16 + 4u * static_cast<std::size_t>(k));
+            }
             o += 28;
         }
         for (int k = 0; k < 6; ++k) f.bound[k] = f32(b, o + 4u * static_cast<std::size_t>(k));
