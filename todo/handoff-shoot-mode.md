@@ -154,11 +154,11 @@ The hurt is the cheapest of the four to judge: stand still on the
    turned back on a type-30 clip - every ~16 frames. His advance timer runs
    only on hub ticks, so he never reaches his stop. Investigate before fixing:
    it may be the reading's own consequence.
-4. **The death's remainder** - the body show / hide (`sub_436D20` /
+5. **The death's remainder** - the body show / hide (`sub_436D20` /
    `sub_436CE0`), camera request 4 at recovery, `sub_47CC70`, the weapon's
    re-attach and `Shoot_InitWeapon`, and `sub_47CE70` (a global actor's
    `+416/+424` zeroed - its writer not traced).
-5. **Labelled gaps** - the PLAYER's push reach still `meshes.front()` (7.1
+6. **Labelled gaps** - the PLAYER's push reach still `meshes.front()` (7.1
    against his root's 42.5; correcting it moves the street crowd's confirmed
    push); only shoot gunmen are in the push index, and the dead stay in it;
    the door cells (`sub_47C1B0`) and the byte-1 memo; `shootEngage` hoisted
@@ -166,11 +166,11 @@ The hurt is the cheapest of the four to judge: stand still on the
    state-3 -> hub bounce is the engine's, every other tick there, every tick
    here); the clip a type resolves to is not `List_PickRandomByType`'s random
    pick.
-6. **A LOST GUARD** - the swept push's assertion rode on a fight that no
+7. **A LOST GUARD** - the swept push's assertion rode on a fight that no
    longer shoves him into a wall; the fix stands (mutation-shown at
    `154139d`, confirmed in play) and needs a probe of
    `PlayerController::nudge` against a wall.
-7. **THE SWEEP** - a full `--slow` run is owed (`todo/sweep-log.md`), not done
+8. **THE SWEEP** - a full `--slow` run is owed (`todo/sweep-log.md`), not done
    since 2026-09-09's; it waits for the reader's go.
 
 ## 5. Traps that cost time, in the order they bit
