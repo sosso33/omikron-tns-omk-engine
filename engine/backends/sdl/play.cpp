@@ -11869,7 +11869,25 @@ int main(int argc, char** argv) {
                                 fin.clipFrames = static_cast<float>(ga->second.clip->frames);
                             }
                         }
-                        const auto st = omk::shootGenericStep(rec, fin, yaw);
+                        // A GUNMAN WHOSE ENTRY IS STILL PENDING HAS NO BRAIN TICK.
+                        // `Shoot_ActorEnter` (0x00422C10) thinks and the scene's
+                        // `shoot.actor.action` acts on the SAME tick, before any
+                        // `Shoot_TickNpc` - and when its think fails it tries
+                        // `sub_4368E0`'s spiral and a think off his floor, and
+                        // failing those returns without entering him at all. So
+                        // the engine never runs a brain between an entry and its
+                        // action. The port holds the action for a body it has not
+                        // drawn yet (`gunEntryPending`), and used to let the brain
+                        // tick anyway: at the gallery's frame 3 each gunman asked
+                        // for ACTION 0, a 30-frame clip under flag 8, which parks
+                        // the whole brain - so the tick that would have found him
+                        // on the grid came at frame 33, and every gunman stood a
+                        // second before acting instead of one frame. The step is
+                        // empty for him - and `ShootStep::outcome` defaults to
+                        // FireIfReady, so the fire arm below tests this too.
+                        const bool entryPending = gunEntryPending.count(s.actor) != 0;
+                        const auto st = entryPending ? omk::ShootStep{}
+                                                     : omk::shootGenericStep(rec, fin, yaw);
                         s.facing = yaw;
                         // ---- STATE 2 ARRIVING at the edge's far end ---------
                         // `o3de_SetNodePos(node, to.x, to.y - +64, to.z)`, then
@@ -12127,7 +12145,7 @@ int main(int argc, char** argv) {
                         const bool fullArm = st.outcome == omk::ShootOutcome::Fire;
                         if (((fullArm && !(rec.flags & 0x8000u)) ||
                              st.outcome == omk::ShootOutcome::FireIfReady) &&
-                            !(rec.flags & 2u)) {
+                            !(rec.flags & 2u) && !entryPending) {
                             const int grpT = static_cast<int>(session.typeOfActor(s.actor));
                             const auto w8 = omk::animGroupWord8(pedAni, grpT);
                             const bool fireTest = w8 && (*w8 & 1u);

@@ -423,3 +423,100 @@ callers and both are in `Actor_TickProjectiles`. There is no melee path in the
 mode at all. So in the port the catacombs' spectres are harmless, and whether
 the game means them to be - a stealth stretch - or hurts you through some other
 system is NOT settled by anything read here.
+
+## 8. Three checks the patrol turned red, and one defect behind two of them — 2026-09-12
+
+`engine: shoot brain`, `engine: shoot entrance` and `engine: shoot noise` were
+found red on 2026-09-12, identically with and without the pause fix of that
+day, and none of the patrol's commits had run them (`d8b17cd` re-baselined
+`shoot fire`, `gunfire` and `patrol` and listed nine checks green; these three
+were not among them). Bracketed commit by commit — `engine/` checked out in a
+scratch worktree, HEAD's `tools/` copied in so the expectations stayed fixed,
+a clean build per commit:
+
+| check | green at | red at |
+|---|---|---|
+| `shoot brain` | `575aa94` patrol 2 | **`5019db7` patrol 3** — gunmen get a real floor |
+| `shoot entrance` | `575aa94` patrol 2 | **`5019db7` patrol 3** |
+| `shoot noise` | `4a91603` patrol 4 | **`d8f9eb4` patrol 5a** — the entry action held |
+
+(A trap cost two passes of that search: stopping a runner with `pkill -f
+wt/tools/verify.py` matched nothing, because the runner starts `verify.py`
+by a RELATIVE path, so old runs kept checking out and building in the same
+worktree as new ones. Stop a background run by its harness task, and confirm
+by working directory that nothing is left before trusting a result.)
+
+### The defect: a pending gunman's brain ticked
+
+`d8f9eb4` holds a gunman's ENTRY ACTION until the first tick he stands on the
+grid, because a body staged this frame has not been drawn and so has no
+position. It was meant to be one frame. But his BRAIN still ticked while he
+waited: at the gallery's frame 3 each gunman asked for ACTION 0, a 30-frame
+clip under flag 8 - and flag 8 parks the whole brain, so the tick that would
+have found him on the grid came at frame 33. Every gallery gunman stood a
+second before acting.
+
+The original cannot do this. `Shoot_ActorEnter` (0x00422C10) runs `Shoot_Think`
+and the scene's `shoot.actor.action` acts on the SAME tick, before any
+`Shoot_TickNpc`; when the think fails it tries `sub_4368E0`'s spiral search and
+a think off his floor, and failing those it returns without entering him at
+all. No brain tick ever falls between an entry and its action.
+
+**Fixed:** while an entry is pending the gunman's brain step is EMPTY, and the
+fire arm tests the same flag - `ShootStep::outcome` defaults to `FireIfReady`,
+so an empty step alone would still have reached it. The gallery's first shot is
+back at frame 8.
+
+### What each check needed
+
+* **`shoot noise`** — the behaviour was intact, only late: gunman 240, whom the
+  camera never draws, is still refused as "heard it from another floor", his
+  floor -1. With the first shot back at frame 8, 238 shows beside him: his own
+  `Shoot_Think` lands that frame just AFTER 237's shot, so it finds him floorless
+  and unlatched too. The check asserts 240's refusal alone, which is what its
+  docstring says it is for.
+* **`shoot entrance`** — its route was written for a robber 77 who never fought.
+  Since `5019db7` gave the gunmen a floor, `sub_426E00`'s guard stops refusing
+  him: he hits the player at 447 and 462 and kills him at 490, eight frames into
+  the second leg, so actor 86's entrance was never reached. The route now runs
+  with `--shoot-health 1000` (property 1, the player's health, and nothing
+  else): both legs complete, the entrance starts at 540 inside a leg running
+  482..566, the gate never drops. The leg's end moved to 30.97 across and 734.83
+  along (was 26.00 / 728.98), the robbers' bodies standing elsewhere now they
+  fight.
+* **`shoot brain`** — 237 fires from 393 and 238 from 584 (were 388 / 582), both
+  still inside the 585 engagement range the check exists for. And 240 now
+  reaches the fire arm too, from 421. That was checked rather than assumed: AREA
+  59's record 15 gives 237 and 238 `shoot.actor.action 3` at once but 240 only
+  AFTER `scx.play.wait obj 9`, around frame 60 - after the player's death at 30,
+  so the engine gives it to him then as well. The old expectation left him out
+  because the patrol was unported. SHOWN TO FAIL: the build that let a pending
+  brain tick gave 420 / 583 / 494.
+
+### ...and the fix moved three checks that had been green
+
+Stopping a pending gunman's brain changes when every gunman first thinks, so
+the shoot family was re-run on it. `shoot death` and `shoot pose` held; three
+moved, and every difference was traced before it was re-baselined:
+
+* **`shoot patrol`** — the tenth spectre. Actor **590** logs, in both of the
+  reader's catacombs sessions before the fix, `entry action 1 HELD` and on the
+  SAME frame `ACTION 0 (the brain's request)`: his brain overwrote the patrol
+  before he ever had one, which is why the handoff always read "ten spectres
+  enter and nine take a patrol route". Now he takes route 514 on floor 2 (15
+  points): 10 of 10, 53 waypoint advances where there were 38, and a third ring
+  closing - his, at 499 (589's moves a frame, to 339).
+* **`shoot gunfire`** — its expectation was the stall written down: re-baselined
+  in `d8b17cd` with "the gunmen engage at 33 rather than 4". They act from
+  frame 8 now: 237 fires at 8, 18, 28 and 38 in the window and 238's weapon arms
+  at 18; the first bolt's jitter is `0 69 24` again, the CRT triple from before a
+  stalled 240's ACTION 0 drew its coin `rand()`; two bolts reach the player where
+  one did; 238 ends facing 320, engaging; 237 and 238 loop action 3's walking
+  clip (type 10) and 240 his patrol walk (type 9) instead of the stall's.
+* **`shoot fire`** — the PLAYER's gun in the gallery. 238 is already walking when
+  the third shot passes, so no bolt meets him and all eight stop on the world:
+  eight impact sounds where there were seven, every shot on pool entry 2 (the
+  gunmen's own bolts are live from frame 8), and the muzzle points follow the
+  bodies that push him. What the check is for - eight latches, each shot seven
+  frames after its latch, the row's speed and damage, WAVER2.WAV on every shot -
+  is unchanged. The body hit has its own check, `engine: shoot hit`.

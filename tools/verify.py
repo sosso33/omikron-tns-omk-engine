@@ -26051,13 +26051,20 @@ def c_engine_shoot_patrol():
     return ((len(took), agree,
              sorted({(a, op, fl, n) for a, op, _r, fl, n in took}),
              len(steps), lap),
-            (9, 9,
+            (10, 10,
              # (actor, the operand, the floor `Shoot_Think` gave him, how many
              # points his route has). The operand's high byte is the floor in
              # every row - 0x201 floor 2, 0x104 floor 1, 0x401 floor 4, 0x703
              # floor 7, 0x502 floor 5 - which is the corpus finding seen at
              # RUNTIME rather than in the data.
-             [("589", "513", "2", "5"), ("591", "516", "2", "10"),
+             # (and since THE ENTRY HOLD, 2026-09-12: 590 is the tenth. His
+             # entry action 1 was held for the grid and his brain ticked anyway,
+             # asking for ACTION 0 on that same frame - both pre-fix catacombs
+             # sessions log it - which overwrote the patrol before he ever had
+             # one. With no brain tick while an entry is pending he takes route
+             # 514 on floor 2 like the rest.)
+             [("589", "513", "2", "5"), ("590", "514", "2", "15"),
+              ("591", "516", "2", "10"),
               ("595", "515", "2", "9"), ("598", "260", "1", "7"),
               ("601", "1025", "4", "4"), ("602", "1026", "4", "5"),
               ("604", "1795", "7", "27"), ("605", "1282", "5", "13"),
@@ -26070,10 +26077,12 @@ def c_engine_shoot_patrol():
              # `LABEL_24` and writes STATE 4. The engine's own rule puts an
              # unlatched gunman on another floor back on his beat, and it makes
              # them patrol MORE rather than less.)
-             38, [("338", "589"), ("483", "595")]),
-            "nine spectres taking a route each, every one of them on the floor "
-            "the operand's high byte names; 38 waypoint advances in 500 frames; "
-            "and actor 595's nine-point ring closing - 8 back to 0 - at frame 483")
+             # (53 advances and THREE rings with 590 walking too - his closing at
+             # 499 - and 589's a frame later, at 339)
+             53, [("339", "589"), ("483", "595"), ("499", "590")]),
+            "ten spectres taking a route each, every one of them on the floor "
+            "the operand's high byte names; 53 waypoint advances in 500 frames; "
+            "and three rings closing - 589 at 339, 595 at 483, 590 at 499")
 
 
 def c_engine_shoot_mode():
@@ -26715,26 +26724,34 @@ def c_engine_shoot_fire():
             # a body has its own check, `engine: shoot hit`, which aims at one.)
             # (and a bolt meets ACTOR 238 again now that the bodies stand at
             # their own `+60`: seven of the eight stop on the world, one on him)
-            [2, 2, 3, 2, 3, 3, 1, 3],
-            [("HIT ACTOR 238", -2909, "124.8", "0"),
-             ("hit the world", -3187, "374.4", "0"), ("hit the world", -3183, "374.4", "0"),
-             ("hit the world", -3179, "374.4", "0"), ("hit the world", -3174, "374.4", "0"),
-             ("hit the world", -3161, "249.6", "0"), ("hit the world", -3154, "249.6", "0")],
+            # (and since THE ENTRY HOLD stopped stalling the gallery, 2026-09-12:
+            # a gunman's brain no longer ticks while his entry action waits for
+            # the grid, so 237 and 238 act from frame 8 rather than 33 - 238 is
+            # already walking when the third shot passes, and all eight bolts
+            # stop on the world again. The gunmen's own bolts are live from
+            # frame 8, so every shot takes pool entry 2. The body hit belongs to
+            # `engine: shoot hit`, which aims at one.)
+            [2, 2, 2, 2, 2, 2, 2, 2],
+            [("hit the world", -3175, "249.6", "0"), ("hit the world", -3171, "249.6", "0"),
+             ("hit the world", -3170, "249.6", "0"), ("hit the world", -3161, "249.6", "0"),
+             ("hit the world", -3150, "249.6", "0"), ("hit the world", -3148, "249.6", "0"),
+             ("hit the world", -3142, "249.6", "0")],
             # (and since the y was PINNED, 2026-09-12: a gunman stands at his
             # floor's own edge minus his height rather than wherever the ground
             # probe had drifted him, so the bodies that push the player are a
             # few units from where they were and his muzzle points follow)
-            8, [("4929.7", "15144.7", "-2909.2"), ("4930.6", "15144.7", "-2917.3"),
-                ("4934.2", "15144.7", "-2912.4"), ("4938.3", "15144.7", "-2924.5"),
-                ("4989.5", "15144.7", "-2925.9"), ("4996.4", "15144.7", "-2941.6"),
-                ("5009.4", "15144.7", "-2921.8")],
+            8, [("4956.3", "15144.7", "-2932.0"), ("4975.2", "15144.7", "-2964.5"),
+                ("4983.2", "15144.7", "-2960.6"), ("4985.3", "15144.7", "-2931.9"),
+                ("4996.4", "15144.7", "-2941.6"), ("5005.0", "15144.7", "-2939.5"),
+                ("5006.5", "15144.7", "-2924.1"), ("5010.3", "15144.7", "-2954.6")],
             list(range(37, 248, 30)),
-            [39, 69, 100, 129, 160, 190, 250],
+            [39, 69, 99, 129, 159, 189, 219, 249],
             [("fire", "1", "687", "WAVER2.WAV", "1.00"),
-             ("impact", "3", "689", "WIMP1.WAV", "0.25"),
              ("impact", "3", "689", "WIMP1.WAV", "0.26"),
              ("impact", "3", "689", "WIMP1.WAV", "0.28"),
-             ("impact", "3", "689", "WIMP1.WAV", "0.29")])
+             ("impact", "3", "689", "WIMP1.WAV", "0.29"),
+             ("impact", "3", "689", "WIMP1.WAV", "0.33"),
+             ("impact", "3", "689", "WIMP1.WAV", "0.34")])
     return got, want, (
         "`Shoot_InitWeapon` giving the Gun Waver the key-1 row on the mode "
         "transition; eight latches armed by `MDSHOOT0` off the real channel; "
@@ -26742,8 +26759,8 @@ def c_engine_shoot_fire():
         "drain, six for the weapon to come back up); all of them the row's "
         "speed and damage, straight down -Z from the Maing node; one pool "
         "entry per shot; the bolts from the RAISED muzzle wherever the gunmen's "
-        "bodies have pushed him - and since their y is PINNED to `+60` one of "
-        "the eight meets actor 238 and seven stop on the world; "
+        "bodies have pushed him - and since the gunmen act from frame 8 all "
+        "eight stop on the world; "
         "WAVER2.WAV on every shot's frame and WIMP1.WAV on every impact")
 
 
@@ -27013,6 +27030,14 @@ def c_engine_shoot_entrance():
         [exe, fr, os.path.join(ROOT, "tables"),
          "--save", os.path.join(ROOT, "traces", "save-appart.bin"),
          "--area", "230", "--scene-chunk", "56", "--frames", "700", "--nodelay",
+         # KEPT ALIVE (2026-09-12): since `Shoot_Think` gave the gunmen a real
+         # floor (`5019db7`), `sub_426E00`'s floor guard stops refusing robber
+         # 77 and he FIGHTS - on this route he hits the player at 447 and 462
+         # and kills him at 490, eight frames into the second leg, so actor
+         # 86's entrance is never reached and the check went red for a reason
+         # that had nothing to do with the gate it tests. Property 1 is the
+         # player's health and nothing else (`--shoot-health`).
+         "--shoot-health", "1000",
          "--hold", "0*20,k77*9,0*5,k200*25,0*15,k77*9,0*5,k200*80,0*100"],
         capture_output=True, text=True, errors="replace",
         env=dict(os.environ, SDL_VIDEODRIVER="dummy"))
@@ -27035,7 +27060,11 @@ def c_engine_shoot_entrance():
              # (and since B5 the robber's body pushes with the model's own
              # spheres, four of ~11: the walk runs nearly straight again, 26.00
              # across and 728.98 along)
-             (84, "719.29", ("26.00", "-0.00", "728.98"))],
+             # (and since the robbers FIGHT, 2026-09-12, they stand and move
+             # elsewhere when the player passes: 30.97 across and 734.83 along,
+             # every unit still walked, the entrance starting at frame 540 of a
+             # leg that runs 482..566)
+             (84, "719.29", ("30.97", "-0.00", "734.83"))],
             True, True, [])
     return got, want, (
         "the reader's route into SCENE 56's zone 12: 144.95 along -X, then 84 "
@@ -27358,8 +27387,16 @@ def c_engine_shoot_noise():
                         r"floor (\d+): actor (\d+) (ALERTED|heard it from another floor) "
                         r"\(hearing (\d+) cells of \d+\), his floor (-?\d+), action (-?\d+)$",
                         gal, re.M)
+    # ...240's lines ALONE (2026-09-12). The refusal this asserts is 240's, and
+    # 238 now shows up beside it: a gunman's entry action waits for the first
+    # tick he stands on the grid (`gunEntryPending`, since `d8f9eb4`), 238's
+    # `Shoot_Think` lands on frame 8 just AFTER 237's first shot, and so that
+    # shot finds him not yet latched and floorless too. In the engine he was
+    # entered at staging and is passed over - the port's one-frame hold, not a
+    # change in what the noise walk decides.
+    g240 = [g for g in galert if g[3] == "240"]
     got = (m0.groups() if m0 else None, len(alerts), seen.group(1) if seen else None,
-           shot430.groups() if shot430 else None, galert[:2])
+           shot430.groups() if shot430 else None, g240[:2])
     want = (("SMARKET1", "1", "39"), 0, "418", ("1", "1", "0"),
             # (238 no longer: since THE ACTIONS, 2026-09-11, his ENTRY action -
             # 3, `Shoot_ActorAction` - raises the 0x20 latch, and
@@ -27516,8 +27553,15 @@ def c_engine_shoot_gunfire():
     # frame 32 rather than 3 - so the engage, the weapon and the first shot all
     # move from 4 to 33. 240's scene action is 1, the PATROL, so he never
     # engages at all; 238 does not reach his weapon inside the window.)
-    want = ([("33", "237", "766", "DBWAVER", "2", "2", "10.0", "7")],
-            {"237": (33, 43), "240": ()},
+    want = (# (THE ENTRY HOLD, 2026-09-12: the 33 below was the STALL - a gunman's
+            # brain ticked while his entry action waited for the grid, asked for
+            # ACTION 0 and parked itself on that 30-frame clip. `Shoot_ActorEnter`
+            # never lets a brain tick in between; with the port matching it the
+            # gallery's gunmen act from frame 8, 237 fires at 8, 18, 28 and 38 in
+            # the 48 frames, and 238's weapon arms at 18 inside the window too)
+            [("8", "237", "766", "DBWAVER", "2", "2", "10.0", "7"),
+             ("18", "238", "769", "DECAGUN", "4", "4", "4.0", "7")],
+            {"237": (8, 18, 28, 38), "240": ()},
             # (with 6A the hand holding the gun ANIMATES, so the tir node rides
             # the clip's frame: -0.110 / 6.3 on its first frame held still)
             # (the gunmen's AIM LAYER, 2026-09-11: the gate's target arm now
@@ -27530,7 +27574,10 @@ def c_engine_shoot_gunfire():
             # (THE ACTIONS, 2026-09-11: 240's entry falls to action 0, whose coin
             # is a `rand()` - so the first bolt's jitter is the CRT's next triple,
             # 69 24 78, and its muzzle rides 237's walk to 0.474 / 4.8)
-            ("33", "0.472 -0.104 -0.876", "28.3", "6.0", "the tir node", "78 58 62"),
+            # (and the first bolt's jitter is 0 69 24 again - the CRT triple from
+            # before 240's stalled ACTION 0 drew its coin `rand()`; with no brain
+            # tick during the hold that draw is gone)
+            ("8", "0.564 -0.115 -0.817", "34.6", "6.6", "the tir node", "0 69 24"),
             # 2 on the player in the first 48 frames, where it was 7: the body's
             # BOXES are small (HO1_FN's pelvis box ~14 x 11 x 9 around the hip
             # joint the bolts aim at, inside a 42.5 sphere) and a +-14 jitter
@@ -27549,7 +27596,10 @@ def c_engine_shoot_gunfire():
             # so of 237's two shots only the pair at 33 and 43 falls in the 48
             # frames - one of them reaching the player's body, none reaching
             # another gunman, and 238 ending on the 31 his entrance left him at)
-            True, 0, 1, "31",
+            # (and with the stall gone: two of 237's bolts reach the player in
+            # the window, and 238 - engaging rather than standing on his
+            # entrance's heading - ends facing 320)
+            True, 0, 2, "320",
             # (from the 336.9 his ENTRANCE PROGRAM left him at - his brain's
             # heading is seeded from how he is drawn, and he is drawn at it)
             ("394", "32", "25", "-7.20", "336.9"), ("418", "164.1"),
@@ -27574,20 +27624,24 @@ def c_engine_shoot_gunfire():
             # loop, 237 loops his standing type 11 and 238 his crouch, type 25)
             # (and since the PINNED y all three are on their entry actions at
             # 32/33 - 237 and 238 standing on type 11, 240 crouching on 25)
-            [("32", "237", "11", "1", "30", "2.0"), ("32", "238", "11", "1", "30", "2.0"),
-             ("33", "240", "25", "5", "31", "2.0")],
+            # (and since the entry hold stopped stalling them: 237 and 238 loop
+            # action 3's walking clip, type 10, at 26 - and 240 his patrol walk,
+            # type 9, at 29, until record 15's delayed action 3 reaches him)
+            [("26", "237", "10", "3", "19", "2.0"), ("26", "238", "10", "3", "19", "2.0"),
+             ("29", "240", "9", "2", "27", "2.0")],
             # (77's walk never runs a whole loop now - each turn restarts it)
             None,
             # (237 at 33, not 4: `sub_426E00` refuses a gunman whose `+188` is
             # -1, and the gallery's bodies reach the grid at frame 32)
-            [("33", "237", "-0.399", "0.001"), ("418", "77", "-0.112", "-0.035")],
+            [("8", "237", "-0.461", "-0.013"), ("18", "238", "0.990", "-0.007"),
+             ("418", "77", "-0.112", "-0.035")],
             [("237", "766", "DBWAVER"), ("238", "769", "DECAGUN"), ("240", "772", "HEXAGUN"),
              ("77", "49", "WAVER")],
             # (and 238's second barrel is 44 degrees off the line: still turning
             # off the path when he fires - the bolt's own aim is the target's)
             # (238's second shot, whose barrel this was, never comes: he stood
             # down when the player died)
-            [("43", "237", "-4.0"), ("459", "77", "-3.5")])
+            [("18", "237", "-4.0"), ("22", "238", "-44.0"), ("459", "77", "-3.5")])
     # THE HEIGHT AT EVERY CLIP START (2026-09-11, a reader's robber climbing to
     # the ceiling): `sub_421A20` sets the node to (x, rec+60 + d(0->1).y, z) on
     # every clip it starts, so 77's walk - restarted by a turn clip every ~16
@@ -27779,16 +27833,27 @@ def c_engine_shoot_brain():
             # walk: 388 where it was 417)
             # (582 since THE PLAYER'S DEATH: this run keeps his real health, the
             # gunmen kill him early, and his fire stops - 238 comes a unit nearer)
-            ((237, 1, 388), (238, 1, 582)))
+            # (2026-09-12, THE ENTRY HOLD: a gunman's entry action waits for the
+            # first tick he stands on the grid, and his brain no longer ticks
+            # while it waits - `Shoot_ActorEnter` never lets one in between. The
+            # first think lands on frame 8, so 237 fires from 393 and 238 from
+            # 584, both still inside the 585. And 240 reaches the fire arm too,
+            # from 421: AREA 59's record 15 gives him `shoot.actor.action 240, 3`
+            # only AFTER `scx.play.wait obj 9`, about frame 60, which is after
+            # the player's death at 30 - the engine runs that script the same
+            # way. The "unported patrol" reason above no longer applies.)
+            # SHOWN TO FAIL: the build that let a pending gunman's brain tick
+            # gave 420 / 583 / 494.
+            ((237, 1, 393), (238, 1, 584), (240, 1, 421)))
     return got, want, ("the gunmen whose brain was built, the first one's "
                        "record as CONVERTED from his own authored properties "
                        "(50 m acquire, 15 m engage, 18 m disengage, a 90 "
                        "degree cone, 15 health), and then which of the three "
                        "reach outcome 1 in the hub and from how far - 237 "
                        "inside the 15 m ENGAGEMENT range, 238 from 16.9 m only "
-                       "once his walk has brought him to 583, inside the 585; "
-                       "240, put on action 0 by his unported patrol, never "
-                       "takes the hub's fire arm")
+                       "once his walk has brought him to 584, inside the 585; "
+                       "240 from 421 once record 15's delayed action 3 reaches "
+                       "him")
 
 
 def c_shoot_generic():
