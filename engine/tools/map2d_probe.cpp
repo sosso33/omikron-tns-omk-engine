@@ -155,6 +155,60 @@ int main(int argc, char** argv) {
         }
         std::printf("\nlinks %d; destination a real floor %d; both points inside their own "
                     "floors %d; reciprocal %d\n", tot, inRange, placed, paired);
+        // ...and `sub_436BB0` RUN, on bar56, the map with five links between one
+        // pair of floors - so the nearest-of-five is a real choice and not a
+        // lookup with one answer.
+        omk::Map2d bar;
+        if (bar.loadFile(root + "/MAP2D/bar56.mpt")) {
+            const auto& f0 = bar.floors()[0];
+            std::string picks;
+            // stand next to each of floor 0's own links in turn: each time the
+            // nearest to that point must be that link
+            int self = 0;
+            for (std::size_t i = 0; i < f0.links.size(); ++i) {
+                const float at[3] = {f0.links[i].from[0], f0.links[i].from[1],
+                                     f0.links[i].from[2]};
+                const int got = bar.linkTo(0, 1, at);
+                if (got == static_cast<int>(i)) ++self;
+                picks += std::to_string(got);
+                picks += " ";
+            }
+            // a point far to one side, and the two refusals: no such
+            // destination, and a floor off the end
+            const float west[3] = {11700.0f, 0.0f, -100.0f};
+            const int far = bar.linkTo(0, 1, west);
+            // A POINT THAT TELLS THE TWO ENDS APART - and it has to be chosen
+            // for it. Links 2, 3 and 4 all have their near end at x 11750, so
+            // only z decides between them: their `from` z are -379, -184 and
+            // -106 and their `to` z are -363, -168 and -90, each about sixteen
+            // units up the stair. At z = -274 the near ends favour link 3 (90
+            // against 105) and the far ends favour link 2 (89 against 106), so
+            // this is the one query whose answer changes if the distance is
+            // measured from the wrong end. Every other query here answers the
+            // same either way, because the stairs are short and far apart.
+            const float mid[3] = {11750.0f, 0.0f, -274.0f};
+            const int tell = bar.linkTo(0, 1, mid);
+            const int none = bar.linkTo(0, 2, west);
+            const int offEnd = bar.linkTo(-1, 1, west);
+            // ...and the PICKED LINK'S OWN ENDS, by value. Which index wins is
+            // a weak test on this corpus - the stairs are short and far apart,
+            // so measuring from the wrong end of one still ranks it first - and
+            // printing the two points is what pins the field meanings down.
+            char ends[128] = "none";
+            if (far >= 0)
+                std::snprintf(ends, sizeof ends, "from %.0f %.0f %.0f to %.0f %.0f %.0f",
+                              double(f0.links[static_cast<std::size_t>(far)].from[0]),
+                              double(f0.links[static_cast<std::size_t>(far)].from[1]),
+                              double(f0.links[static_cast<std::size_t>(far)].from[2]),
+                              double(f0.links[static_cast<std::size_t>(far)].to[0]),
+                              double(f0.links[static_cast<std::size_t>(far)].to[1]),
+                              double(f0.links[static_cast<std::size_t>(far)].to[2]));
+            std::printf("link lookup: bar56 floor 0 has %zu links to floor 1; standing on each "
+                        "picks %s(%d of %zu its own); from 11700,-100 picks %d (%s); from "
+                        "11750,-274 picks %d; to floor 2 %d; from floor -1 %d\n",
+                        f0.links.size(), picks.c_str(), self,
+                        f0.links.size(), far, ends, tell, none, offEnd);
+        }
         return 0;
     }
 

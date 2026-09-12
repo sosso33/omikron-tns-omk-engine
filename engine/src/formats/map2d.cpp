@@ -108,6 +108,24 @@ bool Map2d::loadFile(const std::string& path) {
     return raw.empty() ? false : load(raw);
 }
 
+// ---- THE INTER-FLOOR LINKS, `sub_436BB0` --------------------------------
+
+int Map2d::linkTo(int floor, int destFloor, const float pos[3]) const {
+    if (floor < 0 || static_cast<std::size_t>(floor) >= floors_.size()) return -1;
+    if (destFloor < 0) return -1;
+    const auto& ls = floors_[static_cast<std::size_t>(floor)].links;
+    double best = 10000000.0;                    // `v10 = 10000000.0`
+    int found = -1;
+    for (std::size_t i = 0; i < ls.size(); ++i) {
+        if (static_cast<int>(ls[i].destFloor) != destFloor) continue;
+        const double dz = double(ls[i].from[2]) - pos[2];
+        const double dx = double(ls[i].from[0]) - pos[0];
+        const double d2 = dx * dx + dz * dz;
+        if (best > d2) { best = d2; found = static_cast<int>(i); }
+    }
+    return found;
+}
+
 // ---- THE PATROL ROUTES, `sub_4354E0` .. `sub_435750` --------------------
 
 int Map2d::routeFor(int floor, int cellX, int cellZ, int id) const {

@@ -198,6 +198,24 @@ public:
     // Whether a route is currently reserved - for a probe, not the engine.
     bool routeTaken(int floor, int route) const;
 
+    // ---- THE INTER-FLOOR LINKS (`todo/shoot-navedge.md`) -----------------
+    //
+    // `sub_436BB0(myFloor, destFloor, pos)`: my floor's list, filtered to the
+    // links that ARRIVE on `destFloor`, and of those the one whose `from` is
+    // nearest `pos` in SQUARED XZ distance - the y is not in it. Strictly
+    // less-than, so the earliest of equals wins, as the engine's does.
+    // -> an index into that floor's `links`, or -1 for none.
+    //
+    // This is the whole of shoot mode's "path-finding": ONE HOP. A gunman whose
+    // floor has no link straight to the player's gets nothing back, and the
+    // engine then falls to `sub_421020`, which is unread. There is no chaining
+    // and no search.
+    //
+    // The engine indexes its per-floor arrays with a SIGNED BYTE straight out
+    // of the record's `+188` and would read off the front of them for -1; this
+    // refuses instead.
+    int linkTo(int floor, int destFloor, const float pos[3]) const;
+
     // `sub_435020`. -> the floor index, or -1. `exclude` skips one floor.
     int floorAt(float x, float y, float z, int exclude = -1) const;
     // `sub_435770`, split into its two halves rather than packed.

@@ -25764,7 +25764,10 @@ def c_shoot_links():
 
     What uses them is `sub_436BB0`: my floor's list, filtered to the target's
     floor, nearest `from` by squared XZ distance - one hop, nearest door, and no
-    graph search anywhere.
+    graph search anywhere. It is ported as `Map2d::linkTo` and run here over
+    `bar56`'s five links between one pair of floors, which is the only place in
+    the shipped data where "the nearest" is a decision rather than the only
+    answer.
     """
     import subprocess, re
     eng = os.path.join(ROOT, "engine")
@@ -25777,15 +25780,44 @@ def c_shoot_links():
                          capture_output=True, text=True, errors="replace").stdout
     m = re.search(r"^links (\d+); destination a real floor (\d+); both points inside their own "
                   r"floors (\d+); reciprocal (\d+)$", out, re.M)
+    # ...and `sub_436BB0` RUN (2026-09-12) on the one map where the choice is
+    # real: `bar56` has FIVE links between its floors 0 and 1, so "the nearest"
+    # is a decision rather than the only answer.
+    lk = re.search(r"^link lookup: (.*)$", out, re.M)
     # ...and which maps carry any, since that is the count's other half
     maps = sorted(set(re.findall(r"^(\w+): \d+ floors$", out, re.M)))
-    return ((m.groups() if m else None), maps), \
+    return ((m.groups() if m else None), maps, lk.group(1) if lk else None), \
            ((("36", "36", "36", "36")),
-            ["bar56", "hames", "tetra2", "tetra3", "tetradou"]), \
+            ["bar56", "hames", "tetra2", "tetra3", "tetradou"],
+            # standing ON each of the five picks that one - the tie-break is
+            # strictly less-than, so the earliest of equals would win and a
+            # distance of 0 cannot be beaten; from a point 6 units from link
+            # 4's near end and 84 from link 3's it picks 4; and the two
+            # refusals, a destination nothing reaches and a floor of -1, which
+            # is what a gunman's `+188` holds when he is off the grid
+            # ...and the picked link's two ENDS by value, because which index
+            # wins is a weak test on this corpus: the stairs are short and far
+            # apart, so measuring the distance from the wrong end of one still
+            # ranks it first, and a mutation that swapped `from` for `to` left
+            # every pick unchanged. The coordinates are what pin the fields.
+            "bar56 floor 0 has 5 links to floor 1; standing on each picks 0 1 2 3 4 "
+            # ...and ONE QUERY CHOSEN TO TELL THE TWO ENDS APART, because
+            # nothing else here can. Links 2, 3 and 4 share a near-end x of
+            # 11750, so only z decides between them: their `from` z are -379,
+            # -184 and -106 and their `to` z each about sixteen units up the
+            # stair. At z = -274 the NEAR ends favour link 3 (90 against 105)
+            # and the FAR ends favour link 2 (89 against 106). Measuring the
+            # distance from `to` instead of `from` turns this 3 into a 2 - and
+            # nothing else in the probe moves at all, which is why two earlier
+            # mutations of that very line passed.
+            "(5 of 5 its own); from 11700,-100 picks 4 (from 11750 -0 -106 to 11792 -16 -90); "
+            "from 11750,-274 picks 3; to floor 2 -1; from floor -1 -1"), \
            "36 inter-floor links, every one of them naming a real floor, sited " \
            "in both of its floors and RECIPROCAL - and only five of the sixteen " \
            "maps carrying any, which is what makes a count of 36 across 79 " \
-           "floors a staircase table rather than a wall one"
+           "floors a staircase table rather than a wall one; then `sub_436BB0` " \
+           "run over the five that share one pair of floors, picking the nearest " \
+           "near end and refusing a destination nothing reaches and a floor of -1"
 
 
 def c_shoot_patrol():

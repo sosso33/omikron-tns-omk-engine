@@ -77,7 +77,34 @@ the fallback instead. Both are named, not glossed.
 | # | step | state |
 |---|---|---|
 | 1 | **The link table named**: `Map2dSegment` becomes the link, its six floats given their meaning, and a check over the 36 records - the destination in range, both points inside their floors, and the reciprocity | done |
-| 2 | **`sub_436BB0`** ported as `Map2d::linkTo(floor, destFloor, pos)`, with a probe | **next** |
-| 3 | **The engage's arm**: `+4`, the goal, state 1 - and the edge fed to states 1 and 2 | planned |
+| 2 | **`sub_436BB0`** ported as `Map2d::linkTo(floor, destFloor, pos)`, with a probe | done |
+| 3 | **The engage's arm**: `+4`, the goal, state 1 - and the edge fed to states 1 and 2 | **next** |
 | 4 | **Play it**: a gunman following the player between two of hames' floors | planned |
 | 5 | **Docs and checks** | planned |
+
+---
+
+## 5. A weak check, twice, and what fixed it
+
+`verify.py: shoot links` asserts `sub_436BB0`'s pick, and the first two
+mutations of the very line it is about **passed**:
+
+* `>` to `>=` - the tie-break - changes nothing, because no two links share a
+  near end and a distance of 0 cannot be tied;
+* measuring the distance from the link's FAR end instead of its near one
+  changes nothing either, on any query the probe first had: the stairs are
+  short and far apart, so the wrong end of the right link still ranks first.
+  Printing the picked link's two points by value did not help, because those
+  come from the struct and not from the measurement.
+
+What fixed it was **choosing a query for the purpose**. Links 2, 3 and 4 of
+`bar56` floor 0 all have their near end at x 11750, so only z decides between
+them; their `from` z are -379, -184 and -106 and each `to` is about sixteen
+units up the stair. At **z = -274** the near ends favour link 3 (90 against 105)
+and the far ends favour link 2 (89 against 106) - so that one query turns 3 into
+2 the moment the wrong end is measured, and nothing else in the probe moves.
+
+The general form, and it is CLAUDE.md 1's rule from the other side: **a check
+over a corpus can be insensitive to the field it is named after.** Ranking tests
+are especially prone to it, because a wrong metric usually agrees with the right
+one everywhere except in a band you have to go looking for.
