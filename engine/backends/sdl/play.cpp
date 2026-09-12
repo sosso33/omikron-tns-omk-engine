@@ -11241,7 +11241,40 @@ int main(int argc, char** argv) {
                             [&]() {
                                 gunRandSeed = gunRandSeed * 214013u + 2531011u;
                                 return static_cast<int>((gunRandSeed >> 16) & 0x7FFFu);
+                            },
+                            // THE PATROL's route (`sub_4354E0` + `sub_4356B0`,
+                            // `todo/shoot-patrol.md`): his own floor's list, by
+                            // id or the nearest free one, and its first point as
+                            // a world point. The uint8_t cast is the ENGINE's
+                            // and is done in `shootActorAction`.
+                            [&](int id) {
+                                omk::ShootRouteChoice c;
+                                if (!shootMap.valid()) return c;
+                                const int fl = static_cast<signed char>(ar.node & 0xFF);
+                                if (fl < 0) return c;
+                                c.route = shootMap.routeFor(fl, ar.destX, ar.destZ, id);
+                                if (c.route >= 0)
+                                    shootMap.routePoint(fl, c.route, 0, c.x, c.z);
+                                return c;
                             });
+                        // `sub_435650`: a patrol replaced hands its route back
+                        if (o.releasedRoute >= 0 && shootMap.valid())
+                            shootMap.routeRelease(static_cast<signed char>(ar.node & 0xFF),
+                                                  o.releasedRoute);
+                        if (o.clipType == 9 && ar.state == 4) {
+                            static std::set<int> patrolTold;
+                            if (patrolTold.insert(s.actor).second)
+                                std::printf("frame %ld: actor %d %s - PATROLS (Shoot_ActorAction 1): "
+                                            "operand %d -> route %d on floor %d, point 0 at %.0f %.0f, "
+                                            "%d points%s\n", n, s.actor, s.model.c_str(), a3,
+                                            ar.route, static_cast<signed char>(ar.node & 0xFF),
+                                            double(ar.goalX), double(ar.goalZ),
+                                            ar.route >= 0 ? int(shootMap.floors()[
+                                                static_cast<std::size_t>(
+                                                    static_cast<signed char>(ar.node & 0xFF))]
+                                                .waypoints[static_cast<std::size_t>(ar.route)].len) : 0,
+                                            ar.route < 0 ? " - NO ROUTE on his floor" : "");
+                        }
                         if (o.turnAround) s.facing += 180.0f;
                         if (o.timerProperty >= 0) {
                             std::int32_t v = 0;
@@ -11346,18 +11379,16 @@ int main(int argc, char** argv) {
                             // the engine's +420 IS that node's heading - so the
                             // brain starts there rather than at the placement's
                             if (s.restYawKnown) s.facing = s.restYaw;
-                            // `Shoot_Think`'s cell write, +136/+140: where he stands
-                            // on the floor map (`sub_435770`) - what the wall test
-                            // snaps a blocked move back to. (`Shoot_Think` itself is
-                            // not wired; its floor byte +188 stays the memset's 0.)
+                            // `Shoot_Think` FIRST, exactly as `Shoot_ActorEnter`
+                            // runs it (05_sys.c 3741) before the scene action:
+                            // his floor at +188 and his cell at +136/+140. The
+                            // patrol needs both, since `sub_4354E0` is handed
+                            // them - so an entry that skipped this would look up
+                            // a route on floor -1 and never find one.
                             if (shootMap.valid()) {
-                                const int fl = shootMap.floorAt(s.drawAt[0], s.drawAt[1],
-                                                                s.drawAt[2], -1);
-                                int cx = 0, cz = 0;
-                                if (fl >= 0 && shootMap.cellAt(fl, s.drawAt[0], s.drawAt[2], cx, cz)) {
-                                    fresh.destX = cx;
-                                    fresh.destZ = cz;
-                                }
+                                const float at[3] = {s.drawAt[0], s.drawAt[1], s.drawAt[2]};
+                                omk::shootThink(fresh, shootMap, at,
+                                                static_cast<int>(fresh.type), -1);
                             }
                             it = shootBrains.emplace(s.actor, fresh).first;
                             // ...and put on his SCENE action, as `Shoot_ActorEnter`
@@ -11365,7 +11396,8 @@ int main(int argc, char** argv) {
                             // clip, and +168 = 30 * property 31 frames of advance
                             // (LABELLED: `Shoot_ActorEnter`'s own call is not re-read;
                             // this passes the action with a3 = 0)
-                            applyAction(it->second, act, 0, "his scene action, at entry");
+                            applyAction(it->second, act, session.shootActionArg(s.actor),
+                                        "his scene action, at entry");
                             std::printf("frame %ld: actor %d %s - shoot brain: "
                                         "acquire %.0f engage %.0f disengage %.0f "
                                         "cone %.3f health %d\n", n, s.actor,
@@ -11483,8 +11515,55 @@ int main(int argc, char** argv) {
                         fin.targetPredicateBits = eng;
                         fin.canFire = eng != 0;
                         float yaw = s.facing;
+                        // ---- THE PATROL, state 4 (`todo/shoot-patrol.md` 3) ----
+                        // `sub_426C20` decides, and on its 1 - ARRIVED - the
+                        // engine advances the point INSIDE the arm. The port's
+                        // arm takes the outcome, so the advance is here, in the
+                        // engine's own order: `sub_435660` for the next index,
+                        // then `sub_4356B0` for its world point AND its clip.
+                        //
+                        // `sub_435900`, "am I there yet", is one CELL either
+                        // way in x and z - not a point - so a waypoint is
+                        // reached generously.
+                        if (rec.state == 4 && rec.route >= 0 && shootMap.valid()) {
+                            fin.hasRoute = true;
+                            const float cell = static_cast<float>(shootMap.scale());
+                            const bool there = std::fabs(rec.goalX - fin.self[0]) < cell &&
+                                               std::fabs(rec.goalZ - fin.self[2]) < cell;
+                            fin.moveCode = omk::shootMoveDecision(rec, fin.self, yaw, fin.dt, there);
+                            if (fin.moveCode == 1) {
+                                const int fl = static_cast<signed char>(rec.node & 0xFF);
+                                const int was = rec.repeats;
+                                rec.repeats = shootMap.routeNextIndex(fl, rec.route, rec.repeats);
+                                const int clip = shootMap.routePoint(fl, rec.route, rec.repeats,
+                                                                     rec.goalX, rec.goalZ);
+                                fin.routePointHasClip = clip > 0;
+                                std::printf("frame %ld: actor %d %s - PATROL point %d -> %d of %d, "
+                                            "now walking to %.0f %.0f%s\n", n, s.actor,
+                                            s.model.c_str(), was, rec.repeats,
+                                            int(shootMap.floors()[static_cast<std::size_t>(fl)]
+                                                    .waypoints[static_cast<std::size_t>(rec.route)]
+                                                    .len),
+                                            double(rec.goalX), double(rec.goalZ),
+                                            clip > 0 ? " - it carries a CLIP: state 5" : "");
+                            }
+                        }
+                        // ...and state 5's clip clock, which is all that arm reads
+                        if (rec.state == 5) {
+                            if (const auto ga = gunAnims.find(s.actor);
+                                ga != gunAnims.end() && ga->second.clip) {
+                                fin.clipFrame = ga->second.frame;
+                                fin.clipFrames = static_cast<float>(ga->second.clip->frames);
+                            }
+                        }
                         const auto st = omk::shootGenericStep(rec, fin, yaw);
                         s.facing = yaw;
+                        // `sub_435650`: state 4 or 5 left behind gives the route up
+                        if (st.releaseRoute && rec.route >= 0 && shootMap.valid()) {
+                            shootMap.routeRelease(static_cast<signed char>(rec.node & 0xFF),
+                                                  rec.route);
+                            rec.route = -1;
+                        }
                         // the ACTION it asked for (always 0 in the generic brain)
                         if (st.actionRequest >= 0)
                             applyAction(rec, st.actionRequest, 0, "the brain's request");

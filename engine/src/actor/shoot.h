@@ -486,7 +486,13 @@ struct ShootFrameIn {
     // the finding `todo/omk-play.md` 96's neighbour records from `movsx`.
     int   stepCellValue = 1;
     bool  hasRoute = false;           // `u32(rec, 24)` - state 4 needs one
-    bool  routeAdvanced = false;      // `sub_4356B0` found the next point
+    // `sub_4356B0`'s RETURN at the point he has just advanced to: the point's
+    // own `clipId`, and a nonzero one sends him to state 5 to play it. The
+    // field was documented as "found the next point" until 2026-09-12, which
+    // would have put him in state 5 at EVERY waypoint; the engine tests the
+    // clip. It is false on every shipped route, all 53 of which carry 0 at
+    // every point (`todo/shoot-patrol.md` 1).
+    bool  routePointHasClip = false;
     float movedThisFrame = 0.0f;      // state 2: how far the body actually went
     // the hub's own two: actor `+164` / `+84` gate its firing arm (both
     // UNREAD, so they arrive as one bool), and `sub_421CD0` - also unread -

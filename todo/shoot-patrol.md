@@ -167,11 +167,41 @@ Each ends in a commit and a report.
 
 | # | step | state |
 |---|---|---|
-| 1 | **The route data**: `Map2dWaypoint` given real fields, the runtime reservation, and the four lookups (`routeNearest`, `routeById`, `routeNextIndex`, `routePoint`, `routeRelease`). A probe and a check over the 53-route corpus and the 24/24 floor operand | **next** |
+| 1 | **The route data**: `Map2dWaypoint` given real fields, the runtime reservation, and the four lookups (`routeNearest`, `routeById`, `routeNextIndex`, `routePoint`, `routeRelease`). A probe and a check over the 53-route corpus and the 24/24 floor operand | done |
 | 2 | **`Shoot_ActorAction` case 1** and the record's route fields, against the lookups | done |
 | 3 | **`Shoot_Think`'s floor**: a gunman's `+188`, which the route lookup needs and which has been the memset's 0 since the brain was wired - and with it the occupancy cycle's missing RESTORE | done |
-| 4 | **Wire it in `play.cpp`**: op 84's third operand carried, the route acquired, the target fed to `shootMoveDecision`, the advance, state 5, the release | **next** |
-| 5 | **Play, docs, checks** - including the two whole-run checks step 3 left RED (below) | planned |
+| 4 | **Wire it in `play.cpp`**: op 84's third operand carried, the route acquired, the target fed to `shootMoveDecision`, the advance, state 5, the release | done |
+| 5 | **Play, docs, checks** - including the two whole-run checks step 3 left RED (below), and REACHING an arena that patrols (5a) | **next** |
+
+### 5a. NO ARENA THIS PORT CAN REACH STAGES A PATROL — measured
+
+Step 4 wired the patrol into the frame loop and then could not show it running,
+and the reason is worth writing down rather than discovering twice.
+
+* **The Shooting gallery has no routes at all.** `gallery.mpt` carries 0
+  waypoints, and its 240 — the one gunman whose scene action is 1 — is also
+  never DRAWN (he stands behind the player at every yaw tried), so he has no
+  floor either. He logs `NO ROUTE on his floor` and stands, which is what the
+  engine would do with an empty list.
+* **The supermarket stages only robber 77**, whose action is 3. SCENE 56's two
+  action-1 sites name actors 516 and 518, and neither is staged on this route.
+* **The arenas that DO patrol need a zone the player must walk into.** AREA 141
+  (`hames`, 26 routes, 19 action-1 sites) is the richest; AREA 71 (`soukdock`,
+  11/12), AREA 2 (`grotte`, 9/10) and AREA 63 (`archiv03`, 3/3) follow. Each
+  carries its `shoot.begin` in zone slots, not in a `+4` startup script, and
+  standing at the centre of all five of AREA 141's shoot zones fires none of
+  them — so something else gates them, and finding it is the next step's.
+
+**And a third of the shipped patrols have nowhere to walk.** Of the 116
+`shoot.actor.action 1` sites, 44 are in areas whose map carries routes; **32
+are in areas whose map carries NONE** (`tetra2` 17, `archiv05` 9, `tetra3` 5,
+`tetradou` 1) and 10 more name `archiv04`, the one map that was cut and does
+not ship. That is the engine's own data, not a gap in the reading: those
+gunmen get a null route and stand, exactly as the gallery's 240 does.
+
+So the walk is shown at unit level instead, over the supermarket's own route 1,
+in `verify.py: shoot fire`'s `patrol walk:` — the ring walked 0-1-2-3 and
+wrapped back to 0 in 54 ticks, the route held reserved throughout.
 
 ### Owed at step 5: two checks left red on purpose
 

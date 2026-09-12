@@ -109,13 +109,25 @@ public:
     static constexpr int kRecordBytes   = 192;
 
     // `shoot.actor.enter` / `.action`, kept as the Session already kept them.
-    void actorEnter(int actor) { actors_[actor] = 1; }
-    void actorAction(int actor, int action) { actors_[actor] = action; }
+    void actorEnter(int actor) { actors_[actor] = 1; actorArgs_[actor] = 0; }
+    // `a3`, the opcode's THIRD operand, is kept beside the action: for the
+    // patrol (action 1) it names the ROUTE, and dropping it - which this did
+    // until 2026-09-12 - sent every patrolling gunman to the nearest free one
+    // whatever the designer asked for (`todo/shoot-patrol.md` 2).
+    void actorAction(int actor, int action, int a3 = 0) {
+        actors_[actor] = action;
+        actorArgs_[actor] = a3;
+    }
     int  actorAction(int actor) const {
         const auto it = actors_.find(actor);
         return it == actors_.end() ? -1 : it->second;
     }
+    int  actorActionArg(int actor) const {
+        const auto it = actorArgs_.find(actor);
+        return it == actorArgs_.end() ? 0 : it->second;
+    }
     const std::map<int, int>& actors() const { return actors_; }
+    const std::map<int, int>& actorArgs() const { return actorArgs_; }
     // `Shoot_Leave` walks the 100 records and puts every actor in state 3
     // back; the cell each had claimed is released by the grid's owner.
     std::vector<int> actorsInMode() const;
@@ -132,6 +144,7 @@ private:
     int  type_   = -1;                 // the player's character type
     std::vector<std::int16_t> table_;  // GLOBAL +42
     std::map<int, int> actors_;
+    std::map<int, int> actorArgs_;   // the same actors' a3
     std::vector<Event> log_;
 };
 

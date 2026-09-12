@@ -352,6 +352,8 @@ public:
     // -> the last `shoot.actor.action` asked of him, or -1 if he is not in
     // shoot mode at all. One store, `ShootMode`'s.
     int shootAction(int actor) const { return shoot_.actorAction(actor); }
+    // ...and its third operand, the patrol's ROUTE
+    int shootActionArg(int actor) const { return shoot_.actorActionArg(actor); }
     // SHOOT MODE itself - ops 80/81's decisions (`actor/shootmode.h`): the
     // weapon slot, the HUD screen, which library is resident, and the
     // constants the entry installs. The frontend reads it to install camera

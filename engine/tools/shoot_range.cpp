@@ -299,7 +299,7 @@ int main(int argc, char** argv) {
             omk::ShootFrameIn pat = nav; pat.hasRoute = false;
             const auto s4 = omk::shootGenericStep(q4, pat, e4);
             auto q4b = fresh(4); float e4b = 0;
-            pat.hasRoute = true; pat.routeAdvanced = true;
+            pat.hasRoute = true; pat.routePointHasClip = true;
             const auto s4b = omk::shootGenericStep(q4b, pat, e4b);
             std::printf("generic: patrol noroute outcome %d state %d; "
                         "route state %d outcome %d unread %d\n",

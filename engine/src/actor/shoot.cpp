@@ -901,7 +901,7 @@ ShootStep shootGenericStep(ShootRecord& r, const ShootFrameIn& in, float& eulerY
             r.flags |= 0x200u;
             int code = in.moveCode;
             if (code == 1) {
-                if (in.routeAdvanced) out.nextState = 5;
+                if (in.routePointHasClip) out.nextState = 5;
                 code = 0;
             }
             snapToClip(code);

@@ -750,6 +750,74 @@ int main(int argc, char** argv) {
                         mp.routeRelease(0, pb.route);
                         mp.routeRelease(0, pc.route);
                         if (p4.releasedRoute >= 0) mp.routeRelease(0, p4.releasedRoute);
+
+                        // ---- THE WALK, state 4 driven the way play.cpp drives
+                        // it: `sub_426C20` every tick, and on its 1 the advance
+                        // `sub_435660` + `sub_4356B0`. Route id 1 is the ring
+                        // (19,39) (19,34) (21,34) (21,39), so a walker who
+                        // starts on point 0 must visit 1, 2, 3 and come back to
+                        // 0 - the wrap - and the last tick must leave his goal
+                        // where it began. No arena this port can REACH stages a
+                        // patrolling gunman (`todo/shoot-patrol.md` 5a), so this
+                        // is where the cycle is shown to close.
+                        omk::ShootRecord w;
+                        w.node = 0;
+                        w.type = 3;
+                        const auto acqW = [&](int id) {
+                            omk::ShootRouteChoice c;
+                            c.route = mp.routeFor(w.node, w.destX, w.destZ, id);
+                            if (c.route >= 0) mp.routePoint(w.node, c.route, 0, c.x, c.z);
+                            return c;
+                        };
+                        omk::shootActorAction(w, 1, 1, has, flip, acqW);
+                        const auto& f0 = mp.floors()[0];
+                        float self[4] = {w.goalX, f0.bound[3] - 1.0f, w.goalZ, 0.0f};
+                        std::string visited = "0";
+                        int arrivals = 0, ticks = 0;
+                        const float cellSz = static_cast<float>(mp.scale());
+                        for (; ticks < 400 && arrivals < 5; ++ticks) {
+                            omk::ShootFrameIn in4;
+                            in4.dt = 1.0f;
+                            for (int k = 0; k < 3; ++k) in4.self[k] = self[k];
+                            in4.self[3] = self[3];
+                            in4.hasRoute = w.route >= 0;
+                            const bool there = std::fabs(w.goalX - self[0]) < cellSz &&
+                                               std::fabs(w.goalZ - self[2]) < cellSz;
+                            in4.moveCode = omk::shootMoveDecision(w, self, self[3], 1.0f, there);
+                            if (in4.moveCode == 1) {
+                                ++arrivals;
+                                w.repeats = mp.routeNextIndex(w.node, w.route, w.repeats);
+                                const int cl = mp.routePoint(w.node, w.route, w.repeats,
+                                                             w.goalX, w.goalZ);
+                                in4.routePointHasClip = cl > 0;
+                                visited += " ";
+                                visited += std::to_string(w.repeats);
+                            }
+                            float yaw = self[3];
+                            omk::shootGenericStep(w, in4, yaw);
+                            self[3] = yaw;
+                            // he walks toward the goal at a walk clip's pace
+                            const double dx = double(w.goalX) - self[0];
+                            const double dz = double(w.goalZ) - self[2];
+                            const double d = std::sqrt(dx * dx + dz * dz);
+                            if (d > 7.3) {
+                                self[0] += static_cast<float>(dx / d * 7.3);
+                                self[2] += static_cast<float>(dz / d * 7.3);
+                            } else {
+                                self[0] = w.goalX;
+                                self[2] = w.goalZ;
+                            }
+                        }
+                        // ...and while he walks it the route stays RESERVED,
+                        // so nobody else is given it; the way out is an action
+                        // replacing the patrol, which is the line above.
+                        const bool heldIt = mp.routeTaken(0, w.route);
+                        const int elsewhere = mp.routeFor(0, 19, 38, 0);
+                        mp.routeRelease(0, w.route);
+                        std::printf("patrol walk: route %d, %d ticks, points %s; still state %d; "
+                                    "held %d, so the same search gives %d; released -> %d\n",
+                                    w.route, ticks, visited.c_str(), w.state, int(heldIt),
+                                    elsewhere, mp.routeFor(0, 19, 38, 0));
                     }
                 }
             } else {

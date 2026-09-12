@@ -2461,7 +2461,11 @@ void Session::onCall(int i, const Call& call) {
         if (call.fields.empty()) break;
         const int who = call.fields[0];
         if (call.op == 82) shoot_.actorEnter(who);     // the enter's own default
-        else if (call.fields.size() >= 2) shoot_.actorAction(who, call.fields[1]);
+        // op 84 is SIX bytes, three int16 operands: the actor, the action and
+        // `a3` - which for the patrol names the route (`todo/shoot-patrol.md`).
+        else if (call.fields.size() >= 2)
+            shoot_.actorAction(who, call.fields[1],
+                               call.fields.size() >= 3 ? call.fields[2] : 0);
         break;
     }
     case 80: case 81: {
