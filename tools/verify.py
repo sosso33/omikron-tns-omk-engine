@@ -25742,6 +25742,142 @@ def c_map2d():
 
 
 
+def c_shoot_patrol():
+    r"""`engine/`: the PATROL ROUTES - the `.mpt`'s third section, the four
+    lookups over it, and what `shoot.actor.action 1`'s third operand names
+    (`todo/shoot-patrol.md`).
+
+    The section `formats/map2d.h` called "waypoints" is the shoot AI's patrol
+    routes: `u32 len`, `u32 id`, `u32 flags`, then `len` points of
+    `{ u8 cellX, u8 cellZ, i16 clipId }`. `sub_4354E0` picks one, `sub_435660`
+    steps its index, `sub_4356B0` turns a point into a world point and marks
+    the route TAKEN, `sub_435650` releases it.
+
+    **What the corpus settles, and it is the whole reading of the flags word.**
+    Bit `0x1` is PING-PONG - `sub_435660` turns round at the end instead of
+    wrapping to 0 - and exactly **2 of the 53** shipped routes carry it, **both
+    with exactly two points**, where the other 51 are closed rings of 4 to 27
+    cells. A two-point route that wrapped would be degenerate; one that turns
+    round is a sentry walking up and back. Nothing else in the assembly forces
+    that pairing.
+
+    Bit `0x2` is the RESERVATION and is never on disk, so the lookups are run
+    here rather than described: the nearest-free search from a cell beside
+    route 1's first point finds it, TAKING it makes the same search skip to the
+    next route and the by-id lookup refuse it, and releasing it puts it back.
+    `clipId` is 0 at every one of the 53 routes' points, which is why state 5 -
+    the pause that plays a waypoint's own clip - is ported and can never be
+    seen.
+
+    **The third operand carries the FLOOR in its high byte**, and the engine
+    ignores it: `Shoot_ActorAction` casts to `uint8_t` and takes the floor from
+    the actor's own `+188`. Of the 116 shipped `shoot.actor.action 1` sites -
+    the most common shoot action there is, ahead of action 3's 113 - 92 pass 0
+    ("the nearest free route") and 24 pass a number like 1795, which is
+    `(floor << 8) | id`: **all 24 name a floor of their own area's map that
+    really carries that route id**.
+    """
+    import subprocess, re, struct
+    eng = os.path.join(ROOT, "engine")
+    b = subprocess.run(["make", "-s", "build/map2d_probe"], cwd=eng,
+                       capture_output=True, text=True)
+    binp = os.path.join(eng, "build", "map2d_probe")
+    if b.returncode != 0 or not os.path.exists(binp):
+        return ("build failed",), ("built",), "engine/ must build"
+    out = subprocess.run([binp, omkpaths.data_root(), "--routes"],
+                         capture_output=True, text=True, errors="replace").stdout
+    got = []
+    for k in ("routes", "smarket1 nearest", "point 0 of route", "released:",
+              "route 0 (4 points) walks", "hames floor 3 route"):
+        m = re.search(r"^(" + re.escape(k) + r".*)$", out, re.M)
+        got.append(m.group(1) if m else None)
+
+    # ...and the SCRIPT side, which the probe cannot see: every action-1 site
+    # and what its third operand names, against the area's own map.
+    sys.path.insert(0, os.path.join(ROOT, "tools"))
+    import script_dump as SD, dialog_disasm as DD
+
+    def _routes(name):
+        for cand in (name, name.upper()):
+            p = omkpaths.data("MAP2D", cand + ".mpt")
+            if os.path.exists(p):
+                break
+        else:
+            return None
+        d = open(p, "rb").read()
+        u = lambda o: struct.unpack_from("<I", d, o)[0]
+        o = 4
+        nf = u(o)
+        o += 4
+        for _ in range(nf):
+            ns = u(o); o += 4 + 28 * ns + 24
+            w = u(o); h = u(o + 4); o += 8 + w * h
+        per = []
+        for _ in range(nf):
+            k = u(o); o += 4
+            ids = []
+            for _ in range(k):
+                ln = u(o); ids.append(u(o + 4)); o += 4 * (ln + 3)
+            per.append(ids)
+        return per
+
+    area_map = {}
+    for chunk, blk in sorted(T.archive(os.path.join(O.TAGDIR, "AREA")).items()):
+        if len(blk) < 126:
+            continue
+        nm = blk[106:126].split(b"\0")[0].decode("cp1252", "replace")
+        if nm:
+            area_map[chunk] = nm.lower()
+    acts, zero, named, ok = {}, 0, 0, 0
+    for arch in ("AREA", "SCENE"):
+        for ci in sorted(T.archive(os.path.join(O.TAGDIR, arch))):
+            try:
+                blk, scripts = SD.scripts_of(arch, ci)
+            except Exception:
+                continue
+            for _label, off in scripts:
+                try:
+                    ops, _st = DD.disasm(blk, off, len(blk))
+                except Exception:
+                    continue
+                for _pc, op, raw in ops:
+                    if op != 84 or len(raw) < 6:
+                        continue
+                    _who, act, a3 = struct.unpack("<hhh", raw[:6])
+                    acts[act] = acts.get(act, 0) + 1
+                    if act != 1:
+                        continue
+                    if not a3:
+                        zero += 1
+                        continue
+                    named += 1
+                    if arch != "AREA":
+                        continue           # a SCENE's map is its area's; not resolved here
+                    per = _routes(area_map.get(ci, ""))
+                    hi, lo = (a3 >> 8) & 0xFF, a3 & 0xFF
+                    if per and hi < len(per) and lo in per[hi]:
+                        ok += 1
+    got.append((tuple(sorted(acts.items())), zero, named, ok))
+    return tuple(got), (
+        "routes 53  ping-pong 2  rings 51  lengths 2..27  points with a clip 0",
+        "smarket1 nearest to (19,38): route 0 (id 1); by id 2: route 1 (id 2)",
+        "point 0 of route 0 is 13760 2301 (clip 0); taken 1, the same search now gives "
+        "route 1 (id 2); by id gives -1",
+        "released: taken 0, the search gives route 0",
+        # a 4-point ring: 0 1 2 3 and back to 0
+        "route 0 (4 points) walks 0 1 2 3 0 1 ",
+        # ...and the ping-pong, which DWELLS one step at each end: arriving at
+        # the last point, the "next" is that same point, so the turn costs a
+        # tick. That is `sub_435660`'s `return *a1 - 1` verbatim.
+        "hames floor 3 route 4 (id 6, ping-pong, 2 points) walks 0 1 1 0 0 1 1 ",
+        (((0, 56), (1, 116), (2, 10), (3, 113), (8, 24)), 92, 24, 24)), \
+        "the 53 shipped routes with their two ping-pong sentries and no waypoint " \
+        "clips; the nearest-free search, the reservation that makes it skip, the " \
+        "release, and both walks; and 116 action-1 sites - more than any other " \
+        "shoot action - of which 92 ask for the nearest free route and 24 name one, " \
+        "every one of those 24 carrying a floor of its own area's map in the high byte"
+
+
 def c_engine_shoot_mode():
     r"""`engine/`: shoot mode ENTERED BY A SHIPPED SCRIPT, and its weapon.
 
@@ -32573,6 +32709,7 @@ CHECKS = [
     ("sfx files",          c_sfx_files,         "FILE_FORMATS 5"),
     ("extension case",     c_extension_case,    "CLAUDE.md 1"),
     ("map2d",              c_map2d,             "FILE_FORMATS 5b5"),
+    ("shoot patrol",       c_shoot_patrol,      "todo/shoot-patrol; formats/map2d.h"),
     ("shoot arenas",       c_shoot_arenas,      "todo/shoot-mode"),
     ("shoot radar files",  c_shoot_radar_files, "todo/shoot-mode 8.3; ui/radar.h"),
     ("map2d grid",         c_map2d_grid,        "todo/shoot-mode; formats/map2d.h"),

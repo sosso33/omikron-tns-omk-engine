@@ -1,0 +1,6 @@
+            = 0x4u; return n - 2;= words > 1 ? w.body[1] : 0;
+    if (= 0x4u; return n - 2;& 0x1u) {                       // ping-pong
+        if (= 0x4u; return n - 2;& 0x4u) {                   // coming back
+            if (index - 1 < 0) { = 0x4u; return n - 2;&= ~0x4u; return 0; }
+        if (index + 1 == n) { = 0x4u; return n - 2;|= 0x4u; return n - 2; }
+    = 0x4u; return n - 2;|= 0x2u;                            // `u32(a1, 8) |= 2` - TAKEN

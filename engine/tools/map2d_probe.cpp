@@ -4,6 +4,7 @@
 //     map2d_probe <gamedata> [map] [floor]      e.g. map2d_probe ../gamedata gallery 0
 //     map2d_probe <gamedata> --all              every map, one line per floor
 //     map2d_probe <gamedata> --sight            the LINE OF SIGHT, every map
+//     map2d_probe <gamedata> --routes           the PATROL ROUTES, every map
 //
 // `MAP2D/*.mpt` is the map screen AND the grid `Shoot_Think` moves on
 // (`engine/src/formats/map2d.h`, `todo/shoot-mode.md`). A census is not enough
@@ -15,6 +16,7 @@
 #include "formats/map2d.h"
 #include "platform/datafs.h"
 
+#include <algorithm>
 #include <cstdio>
 #include <cstring>
 #include <map>
@@ -30,6 +32,7 @@ int main(int argc, char** argv) {
     const std::string root = argv[1];
     const bool all = argc > 2 && std::string(argv[2]) == "--all";
     const bool sight = argc > 2 && std::string(argv[2]) == "--sight";
+    const bool routes = argc > 2 && std::string(argv[2]) == "--routes";
     const std::vector<std::string> names = {
         "archiv03", "archiv05", "astaroth", "bar56", "CSlev-3", "gallery",
         "grotte", "hames", "smarket1", "soukdock", "soukt", "tetra2",
@@ -97,6 +100,90 @@ int main(int argc, char** argv) {
         std::printf("maps with door cells %d\n", mapsWithDoors);
         std::printf("pairs %ld  visible doors-open %ld  visible doors-shut %ld\n",
                     pairs, visOpen, visShut);
+        return 0;
+    }
+
+    if (routes) {
+        // THE PATROL ROUTES (`todo/shoot-patrol.md`): the corpus, and the four
+        // lookups RUN rather than described. The census is what a check holds
+        // on to; the per-route line is for a person deciding whether a ring of
+        // cells is the shape of a beat someone would walk.
+        int tot = 0, ping = 0, clips = 0, rings = 0, minLen = 1000, maxLen = 0;
+        for (const auto& n : names) {
+            omk::Map2d m;
+            if (!m.loadFile(root + "/MAP2D/" + n + ".mpt")) continue;
+            for (std::size_t fi = 0; fi < m.floors().size(); ++fi) {
+                const auto& f = m.floors()[fi];
+                for (std::size_t ri = 0; ri < f.waypoints.size(); ++ri) {
+                    const auto& w = f.waypoints[ri];
+                    ++tot;
+                    if (w.pingPong()) ++ping; else ++rings;
+                    minLen = std::min<int>(minLen, static_cast<int>(w.len));
+                    maxLen = std::max<int>(maxLen, static_cast<int>(w.len));
+                    std::string pts;
+                    for (const auto& p : w.points) {
+                        if (p.clipId) ++clips;
+                        char b[32];
+                        std::snprintf(b, sizeof b, "%s(%d,%d%s)", pts.empty() ? "" : " ",
+                                      p.cellX, p.cellZ,
+                                      p.clipId ? ("/c" + std::to_string(p.clipId)).c_str() : "");
+                        pts += b;
+                    }
+                    std::printf("%-10s floor %zu  id %-3u flags 0x%x%s  %2u pts  %s\n",
+                                n.c_str(), fi, w.id, w.flags,
+                                w.pingPong() ? " PING-PONG" : "", w.len, pts.c_str());
+                }
+            }
+        }
+        std::printf("\nroutes %d  ping-pong %d  rings %d  lengths %d..%d  points with a clip %d\n",
+                    tot, ping, rings, minLen, maxLen, clips);
+        // ...and the lookups, on the supermarket - the one arena this port can
+        // reach in play (`todo/handoff-shoot-mode.md` §1).
+        omk::Map2d sm;
+        if (sm.loadFile(root + "/MAP2D/smarket1.mpt")) {
+            // NEAREST-FREE from a cell beside route 1's first point (19,39)
+            const int a = sm.routeFor(0, 19, 38, 0);
+            const int byId = sm.routeFor(0, 0, 0, 2);
+            std::printf("smarket1 nearest to (19,38): route %d (id %u); by id 2: route %d (id %u)\n",
+                        a, a >= 0 ? sm.floors()[0].waypoints[static_cast<std::size_t>(a)].id : 0,
+                        byId, byId >= 0 ? sm.floors()[0].waypoints[static_cast<std::size_t>(byId)].id : 0);
+            // take it, and the SAME search must now skip it
+            float wx = 0, wz = 0;
+            const int clip = sm.routePoint(0, a, 0, wx, wz);
+            const int again = sm.routeFor(0, 19, 38, 0);
+            std::printf("point 0 of route %d is %.0f %.0f (clip %d); taken %d, the same search now "
+                        "gives route %d (id %u); by id gives %d\n", a, double(wx), double(wz), clip,
+                        int(sm.routeTaken(0, a)), again,
+                        again >= 0 ? sm.floors()[0].waypoints[static_cast<std::size_t>(again)].id : 0,
+                        sm.routeFor(0, 0, 0, static_cast<int>(
+                            sm.floors()[0].waypoints[static_cast<std::size_t>(a)].id)));
+            sm.routeRelease(0, a);
+            std::printf("released: taken %d, the search gives route %d\n",
+                        int(sm.routeTaken(0, a)), sm.routeFor(0, 19, 38, 0));
+            // the WALK round the ring, and then a ping-pong one
+            std::string ring;
+            int idx = 0;
+            for (int k = 0; k < 6; ++k) {
+                ring += std::to_string(idx);
+                ring += " ";
+                idx = sm.routeNextIndex(0, a, idx);
+            }
+            std::printf("route %d (4 points) walks %s\n", a, ring.c_str());
+        }
+        omk::Map2d hm;
+        if (hm.loadFile(root + "/MAP2D/hames.mpt")) {
+            // floor 3 id 6 is one of the two PING-PONG routes, 2 points
+            const int r = hm.routeFor(3, 0, 0, 6);
+            std::string walk;
+            int idx = 0;
+            for (int k = 0; k < 7; ++k) {
+                walk += std::to_string(idx);
+                walk += " ";
+                idx = hm.routeNextIndex(3, r, idx);
+            }
+            std::printf("hames floor 3 route %d (id 6, ping-pong, 2 points) walks %s\n",
+                        r, walk.c_str());
+        }
         return 0;
     }
 

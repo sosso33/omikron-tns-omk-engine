@@ -70,14 +70,40 @@ struct Map2dSegment {
     float v[6] = {0, 0, 0, 0, 0, 0};
 };
 
-// One of the k lists per floor. The engine walks them by squared distance from
-// a cell (`v7[2] & 2` skips some), so the two bytes at +12/+13 are a cell
-// coordinate; the rest is unread and is kept whole.
+// ONE PATROL ROUTE (`todo/shoot-patrol.md`). The three header dwords are fixed
+// by the loader's own walk, `v9 += *v9 + 3`, and the readers name the rest:
+// `sub_4354E0` compares `u8i(v7, 12)` and `u8i(v7, 13)` - the first point's two
+// cell bytes - and tests `v7[2] & 2`; `sub_4356B0` turns point `i` into a world
+// point and returns `i16i(v6, 1)`, the int16 in its upper half.
+//
+//     u32 len        how many points
+//     u32 id         what `shoot.actor.action 1`'s third operand names
+//     u32 flags      see below
+//     len x { u8 cellX, u8 cellZ, i16 clipId }
+//
+// **The flags, and the shipped data settles the first one.** Bit `0x1` is
+// PING-PONG: `sub_435660` walks a plain route forward and wraps to 0 at the
+// end, but a `0x1` route turns round instead, raising `0x4` while it comes
+// back. **Both of the two `0x1` routes have exactly TWO points** (`hames`
+// floor 3 id 6 and `soukdock` floor 0 id 7, each a straight line), where the
+// other 51 are closed rings of 4 to 27 cells - and a two-point route that
+// wrapped would be degenerate, while one that turns round is a sentry walking
+// up and back. Bit `0x2` is not authored at all: it is the RESERVATION a
+// walker takes (`sub_4356B0` sets it, `sub_435650` clears it), which is why
+// it lives in `Map2d`'s runtime overlay below and not in this struct.
+struct Map2dRoutePoint {
+    std::uint8_t cellX = 0, cellZ = 0;
+    std::int16_t clipId = 0;      // `sub_435750`; 0 in all 53 shipped routes
+};
 struct Map2dWaypoint {
     std::uint32_t len = 0;
-    std::vector<std::uint32_t> body;        // len + 2 dwords
-    int cellX() const { return body.size() > 2 ? static_cast<int>((body[2] >> 0) & 0xFF) : -1; }
-    int cellZ() const { return body.size() > 2 ? static_cast<int>((body[2] >> 8) & 0xFF) : -1; }
+    std::vector<std::uint32_t> body;        // len + 2 dwords, kept whole
+    std::uint32_t id = 0;                   // body[0]
+    std::uint32_t flags = 0;                // body[1]
+    std::vector<Map2dRoutePoint> points;    // body[2..]
+    bool pingPong() const { return (flags & 0x1u) != 0; }
+    int cellX() const { return points.empty() ? -1 : points[0].cellX; }
+    int cellZ() const { return points.empty() ? -1 : points[0].cellZ; }
 };
 
 // 12 bytes, 16 per floor: the door slot a `0x10 | n` cell names.
@@ -120,6 +146,38 @@ public:
             static_cast<std::uint32_t>(z) >= f.h) return;
         f.cells[static_cast<std::size_t>(z) * f.w + static_cast<std::size_t>(x)] = v;
     }
+
+    // ---- THE PATROL ROUTES (`todo/shoot-patrol.md`) ---------------------
+    //
+    // The reservation bit `0x2` is RUNTIME: the engine sets and clears it in
+    // the loaded words themselves, so these mutate `Map2dWaypoint::flags`.
+    // `body` keeps the file's dwords unchanged beside it, so the two can be
+    // compared and a check can assert what shipped.
+    //
+    // `sub_4354E0(floor, cellX, cellZ, id)`. `id` 0 (the engine's `a4 <= 0`)
+    // takes the NEAREST route whose first point is closest to the cell in
+    // squared distance and whose `0x2` is clear; `id` > 0 takes the one with
+    // that id, refusing it if `0x2` is up. NOTE the engine casts the operand
+    // to `uint8_t` first, and the caller here must do the same - the shipped
+    // operands carry the FLOOR in their high byte (`todo/shoot-patrol.md` §2).
+    // -> an index into the floor's `waypoints`, or -1.
+    int routeFor(int floor, int cellX, int cellZ, int id) const;
+    // `sub_435660(route, index)`: the next point. A plain route wraps to 0 at
+    // the end; a PING-PONG one (`0x1`) turns round instead, raising `0x4` on
+    // the way back and clearing it at the start. Mutates that bit.
+    int routeNextIndex(int floor, int route, int index);
+    // `sub_4356B0(route, floor, index, out)`: point `index` as a WORLD point -
+    // the cell's centre, `(cell + 0.5) * scale + bound` - and the route MARKED
+    // taken (`|= 2`). -> the point's `clipId`, which sends the walker into
+    // state 5 when it is not 0; -1 for a bad index.
+    int routePoint(int floor, int route, int index, float& x, float& z);
+    // `sub_435750(route, index)`: the same `clipId` without taking the route.
+    int routeClipId(int floor, int route, int index) const;
+    // `sub_435650(route)`: the reservation cleared. Five call sites, all of
+    // them a walker giving up a patrol (`todo/shoot-patrol.md` §3).
+    void routeRelease(int floor, int route);
+    // Whether a route is currently reserved - for a probe, not the engine.
+    bool routeTaken(int floor, int route) const;
 
     // `sub_435020`. -> the floor index, or -1. `exclude` skips one floor.
     int floorAt(float x, float y, float z, int exclude = -1) const;

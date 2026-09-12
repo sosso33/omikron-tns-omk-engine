@@ -68,6 +68,18 @@ bool Map2d::load(std::span<const std::byte> b) {
             if (o + 4 + 4 * words > b.size()) return false;
             w.body.resize(words);
             for (std::size_t i = 0; i < words; ++i) w.body[i] = u32(b, o + 4 + 4 * i);
+            // ...and the same dwords named (`formats/map2d.h`): id, flags, and
+            // `len` points of { u8 cellX, u8 cellZ, i16 clipId }. `body` is
+            // kept whole beside them so nothing is lost to the naming.
+            w.id    = words > 0 ? w.body[0] : 0;
+            w.flags = words > 1 ? w.body[1] : 0;
+            w.points.resize(w.len);
+            for (std::uint32_t i = 0; i < w.len; ++i) {
+                const std::uint32_t d = w.body[static_cast<std::size_t>(i) + 2];
+                w.points[i].cellX  = static_cast<std::uint8_t>(d & 0xFF);
+                w.points[i].cellZ  = static_cast<std::uint8_t>((d >> 8) & 0xFF);
+                w.points[i].clipId = static_cast<std::int16_t>((d >> 16) & 0xFFFF);
+            }
             o += 4 * (words + 1);
         }
     }
@@ -89,6 +101,88 @@ bool Map2d::load(std::span<const std::byte> b) {
 bool Map2d::loadFile(const std::string& path) {
     const auto raw = DataFs::readPath(path);
     return raw.empty() ? false : load(raw);
+}
+
+// ---- THE PATROL ROUTES, `sub_4354E0` .. `sub_435750` --------------------
+
+int Map2d::routeFor(int floor, int cellX, int cellZ, int id) const {
+    if (floor < 0 || static_cast<std::size_t>(floor) >= floors_.size()) return -1;
+    const auto& ws = floors_[static_cast<std::size_t>(floor)].waypoints;
+    if (ws.empty()) return -1;
+    if (id <= 0) {
+        // `v8 = 1000000` and the SQUARED cell distance of the first point,
+        // strictly less - so the earliest of equals wins
+        long best = 1000000;
+        int found = -1;
+        for (std::size_t i = 0; i < ws.size(); ++i) {
+            if (ws[i].points.empty()) continue;
+            const long dx = cellX - static_cast<long>(ws[i].points[0].cellX);
+            const long dz = cellZ - static_cast<long>(ws[i].points[0].cellZ);
+            const long d = dz * dz + dx * dx;
+            if (d < best && !(ws[i].flags & 0x2u)) { best = d; found = static_cast<int>(i); }
+        }
+        return found;
+    }
+    for (std::size_t i = 0; i < ws.size(); ++i)
+        if (static_cast<int>(ws[i].id) == id)
+            return (ws[i].flags & 0x2u) ? -1 : static_cast<int>(i);
+    return -1;                                  // `if (v4 >= v6) return 0`
+}
+
+int Map2d::routeNextIndex(int floor, int route, int index) {
+    if (floor < 0 || static_cast<std::size_t>(floor) >= floors_.size()) return -1;
+    auto& ws = floors_[static_cast<std::size_t>(floor)].waypoints;
+    if (route < 0 || static_cast<std::size_t>(route) >= ws.size()) return -1;
+    Map2dWaypoint& w = ws[static_cast<std::size_t>(route)];
+    const int n = static_cast<int>(w.len);
+    if (w.flags & 0x1u) {                       // ping-pong
+        if (w.flags & 0x4u) {                   // coming back
+            if (index - 1 < 0) { w.flags &= ~0x4u; return 0; }
+            return index - 1;
+        }
+        if (index + 1 == n) { w.flags |= 0x4u; return n - 1; }
+        return index + 1;
+    }
+    return index + 1 == n ? 0 : index + 1;      // plain: wrap to the start
+}
+
+int Map2d::routePoint(int floor, int route, int index, float& x, float& z) {
+    if (floor < 0 || static_cast<std::size_t>(floor) >= floors_.size()) return -1;
+    auto& f = floors_[static_cast<std::size_t>(floor)];
+    if (route < 0 || static_cast<std::size_t>(route) >= f.waypoints.size()) return -1;
+    Map2dWaypoint& w = f.waypoints[static_cast<std::size_t>(route)];
+    if (index < 0 || static_cast<std::size_t>(index) >= w.points.size()) return -1;
+    w.flags |= 0x2u;                            // `u32(a1, 8) |= 2` - TAKEN
+    const double cell = static_cast<double>(scale_);
+    x = static_cast<float>((static_cast<double>(w.points[static_cast<std::size_t>(index)].cellX)
+                            + 0.5) * cell + f.bound[0]);
+    z = static_cast<float>(f.bound[4] +
+                           (static_cast<double>(w.points[static_cast<std::size_t>(index)].cellZ)
+                            + 0.5) * cell);
+    return w.points[static_cast<std::size_t>(index)].clipId;
+}
+
+int Map2d::routeClipId(int floor, int route, int index) const {
+    if (floor < 0 || static_cast<std::size_t>(floor) >= floors_.size()) return 0;
+    const auto& ws = floors_[static_cast<std::size_t>(floor)].waypoints;
+    if (route < 0 || static_cast<std::size_t>(route) >= ws.size()) return 0;
+    const auto& pts = ws[static_cast<std::size_t>(route)].points;
+    if (index < 0 || static_cast<std::size_t>(index) >= pts.size()) return 0;
+    return pts[static_cast<std::size_t>(index)].clipId;
+}
+
+void Map2d::routeRelease(int floor, int route) {
+    if (floor < 0 || static_cast<std::size_t>(floor) >= floors_.size()) return;
+    auto& ws = floors_[static_cast<std::size_t>(floor)].waypoints;
+    if (route < 0 || static_cast<std::size_t>(route) >= ws.size()) return;
+    ws[static_cast<std::size_t>(route)].flags &= ~0x2u;     // `u32(a1, 8) &= ~2`
+}
+
+bool Map2d::routeTaken(int floor, int route) const {
+    if (floor < 0 || static_cast<std::size_t>(floor) >= floors_.size()) return false;
+    const auto& ws = floors_[static_cast<std::size_t>(floor)].waypoints;
+    if (route < 0 || static_cast<std::size_t>(route) >= ws.size()) return false;
+    return (ws[static_cast<std::size_t>(route)].flags & 0x2u) != 0;
 }
 
 int Map2d::floorAt(float x, float y, float z, int exclude) const {
