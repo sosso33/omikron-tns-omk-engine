@@ -11374,23 +11374,62 @@ int main(int argc, char** argv) {
                                         it->second.coneCos, it->second.health);
                         }
                         omk::ShootRecord& rec = it->second;
-                        // ...and if he was not yet DRAWN when the record was made
-                        // (a brain built on the tick he is staged has no position
-                        // to find a cell from - 237 and 238 read cell (0,0)), the
-                        // cell is taken the first tick his position lands on the
-                        // grid. After that the wall test's free steps keep it.
-                        if (shootMap.valid() && gunCellSeeded.insert(s.actor).second) {
-                            const int fl = shootMap.floorAt(s.drawAt[0], s.drawAt[1], s.drawAt[2], -1);
-                            int cx = 0, cz = 0;
-                            if (fl >= 0 && shootMap.cellAt(fl, s.drawAt[0], s.drawAt[2], cx, cz)) {
-                                rec.destX = cx;
-                                rec.destZ = cz;
-                            } else {
-                                gunCellSeeded.erase(s.actor);   // try again next tick
-                            }
+                        // ---- THE BRAIN'S PROLOGUE, `sub_424DE0` 5456 -------
+                        // His cell's own byte goes back before anything reads
+                        // the grid: `if (state != 2 || health < 0) { saved =
+                        // +189; sub_47C230(floor, saved); sub_435970(floor,
+                        // +136, +140, saved); }`. Without it a walker's 0x80
+                        // stays on the cell he left and blocks it for ever -
+                        // which is what this port did until 2026-09-12, and it
+                        // was invisible while no gunman moved. (`sub_47C230`,
+                        // the door arm, is still not ported.)
+                        if (shootMap.valid() && rec.cellStamped &&
+                            (rec.state != 2 || rec.health < 0)) {
+                            const int fl = static_cast<signed char>(rec.node & 0xFF);
+                            if (fl >= 0) shootMap.setCell(fl, rec.destX, rec.destZ, rec.cellSaved);
+                            rec.cellStamped = false;
+                        }
+                        // ---- `Shoot_Think` (`actor/shoot.h`) ---------------
+                        // His FLOOR at +188 and, unless he is traversing or
+                        // standing on a blocked cell, his CELL at +136/+140.
+                        // The floor was the memset's 0 until 2026-09-12, which
+                        // is right by luck on the two one-floor arenas this
+                        // port can reach and wrong on the other eleven.
+                        //
+                        // HIS POSITION IS `s.drawAt`, the same point the brain
+                        // below thinks from, and that is a LABELLED LIMIT OF
+                        // THIS PORT rather than the engine's rule: the engine
+                        // asks `Actor_GetPosAndFacing`, which is the node's
+                        // position and always answers, while `drawAt` is
+                        // written only where the body is DRAWN. So a gunman the
+                        // camera never sees - the gallery's 240 stands behind
+                        // the player - has no position, gets floor -1 from
+                        // `Shoot_Think`, and `sub_426E00`'s own first line
+                        // (`if (+188 == -1) return 0`) then keeps him from
+                        // engaging. Feeding him his PLACEMENT instead was tried
+                        // on 2026-09-12 and makes it worse, not better: he
+                        // engages and FIRES from a body that has no pose, so
+                        // the muzzle - the posed `tir` node - is the world
+                        // origin. The two have to agree, and agreeing on the
+                        // drawn point is the conservative half. Closing it
+                        // properly means posing a staged body whether or not it
+                        // is drawn, which is not this task's.
+                        if (shootMap.valid()) {
+                            const float at[3] = {s.drawAt[0], s.drawAt[1], s.drawAt[2]};
+                            const bool onGrid =
+                                omk::shootThink(rec, shootMap, at,
+                                                static_cast<int>(rec.type), -1);
+                            if (onGrid) gunCellSeeded.insert(s.actor);
+                            static std::set<int> floorTold;
+                            if (onGrid && floorTold.insert(s.actor).second)
+                                std::printf("frame %ld: actor %d %s - Shoot_Think: floor %d, cell "
+                                            "(%d,%d)\n", n, s.actor, s.model.c_str(),
+                                            static_cast<signed char>(rec.node & 0xFF),
+                                            rec.destX, rec.destZ);
                         }
                         const int before = rec.state;
                         omk::ShootFrameIn fin;
+                        // ...and the brain thinks from the SAME point (see above)
                         fin.self[0] = s.drawAt[0]; fin.self[1] = s.drawAt[1];
                         fin.self[2] = s.drawAt[2]; fin.self[3] = s.facing;
                         if (player) {
@@ -11953,6 +11992,11 @@ int main(int argc, char** argv) {
                     // the gunmen walk around one another. NOT PORTED, labelled:
                     // the door arm `sub_47C1B0` on a 0x10 cell and the byte-1
                     // memo at rec+72/76.
+                    // (the `!cellStamped` gate is gone with the prologue's
+                    // restore above: `sub_420B80` stamps EVERY tick, on the
+                    // cell `Shoot_Think` has just found, which is the half of
+                    // the cycle that makes a moving gunman's occupancy follow
+                    // him instead of staying where he started)
                     if (auto sb = shootBrains.find(s.actor);
                         shootMode && !shotDead && sb != shootBrains.end() && shootMap.valid() &&
                         sb->second.state != 2 && !sb->second.cellStamped) {

@@ -659,6 +659,42 @@ int main(int argc, char** argv) {
                     std::printf("actor action: %s; under flag 8 parked %d pending %d 0x8000000 %d\n",
                                 acts.c_str(), int(po.parked), pr.pendingAction,
                                 int((pr.flags & 0x8000000u) != 0));
+                    // ---- `Shoot_Think`, on the supermarket's own grid ----
+                    // His FLOOR and CELL from a world point; the state-2 arm
+                    // that keeps the cell it started with; a blocked cell
+                    // refused, with the floor written anyway; and the
+                    // character type 10 (Gandhar) pinned to floor 1 without
+                    // the map being asked at all.
+                    {
+                        const auto& fl0 = mp.floors()[0];
+                        // a point the map accepts: the middle of cell (19,38)
+                        const float ok[3] = {fl0.bound[0] + 19.5f * float(mp.scale()),
+                                             fl0.bound[3] - 1.0f,
+                                             fl0.bound[4] + 38.5f * float(mp.scale())};
+                        omk::ShootRecord t1;
+                        const bool g1 = omk::shootThink(t1, mp, ok, 3, -1);
+                        omk::ShootRecord t2; t2.state = 2; t2.destX = 7; t2.destZ = 7;
+                        const bool g2 = omk::shootThink(t2, mp, ok, 3, -1);
+                        // a WALL: cell (0,0) is outside the engine's own margin
+                        const float wall[3] = {fl0.bound[0] + 0.5f * float(mp.scale()),
+                                               fl0.bound[3] - 1.0f,
+                                               fl0.bound[4] + 0.5f * float(mp.scale())};
+                        omk::ShootRecord t3; t3.destX = 5; t3.destZ = 5;
+                        const bool g3 = omk::shootThink(t3, mp, wall, 3, -1);
+                        omk::ShootRecord t4;
+                        const bool g4 = omk::shootThink(t4, mp, wall, 10, -1);
+                        // off the map entirely: the floor is -1 and is STILL written
+                        const float away[3] = {-1.0e6f, 0.0f, -1.0e6f};
+                        omk::ShootRecord t5;
+                        const bool g5 = omk::shootThink(t5, mp, away, 3, -1);
+                        std::printf("shoot think: on %d floor %d cell (%d,%d); state 2 %d keeps "
+                                    "(%d,%d) floor %d; blocked %d keeps (%d,%d); type 10 %d floor "
+                                    "%d; off the map %d floor %d\n",
+                                    int(g1), t1.node, t1.destX, t1.destZ,
+                                    int(g2), t2.destX, t2.destZ, t2.node,
+                                    int(g3), t3.destX, t3.destZ,
+                                    int(g4), t4.node, int(g5), t5.node);
+                    }
                     // ---- THE PATROL, action 1 (`todo/shoot-patrol.md`) ----
                     // Run on the supermarket's own routes, so the acquire is
                     // the real `sub_4354E0` + `sub_4356B0` and not a stub.

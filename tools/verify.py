@@ -26111,6 +26111,9 @@ def c_shoot_fire():
       `05_sys.c` alone, and both are read in `17_script.c`;
     * a magazine is spent but does NOT gate: 0 goes to -1 and the shot is
       taken; a full pool spends nothing;
+    * `Shoot_Think` (2026-09-12): the floor at `+188` written even when it is
+      -1, the cell refused in state 2 and on a blocked cell, and the character
+      type 10 pinned to floor 1 without the map being consulted;
     * the HURT REACTION (`sub_47D1F0`, 2026-09-12): the band picks the angle -
       a bolt across him rolls HIM and one along him TIPS THE VIEW - the mover
       spends a 4.0 timer out and back over four frames, peaking at 2, and clears
@@ -26148,7 +26151,8 @@ def c_shoot_fire():
             "hit:", "bands:", "gates:", "shield:", "kill:", "raise:", "slew:",
             "mover rows:", "mover held:", "mover crouch:", "look:", "noise:", "gunman aim:",
             "wall test:", "path field:", "grid turn:", "actor action:",
-            "patrol action:", "hurt shove:", "hurt sounds:", "shove camera:", "type:")
+            "shoot think:", "patrol action:", "hurt shove:", "hurt sounds:",
+            "shove camera:", "type:")
     got = []
     for k in keys:
         m = re.search(r"^" + re.escape(k) + r" (.*)$", out, re.M)
@@ -26283,6 +26287,16 @@ def c_shoot_fire():
             "turn; 10 -> 25 st 15 s8 f202000 t-1; 1 -> 9 st 4 s1 f2000 t-1; 4 -> 10 st 7 "
             "s4 f2000 t23; 7 -> 10 st 14 s7 f2000 t-1; under flag 8 parked 1 pending 0 "
             "0x8000000 1",
+            # `Shoot_Think` (0x00420AB0, ported 2026-09-12) on the
+            # supermarket's own grid, all five of its arms. The FLOOR at +188 is
+            # written first and unconditionally - the off-the-map case keeps
+            # -1 - while the CELL is refused three ways: state 2 (the traverse
+            # keeps the cell it started with), a blocked cell, and no floor.
+            # And the character type 10, GANDHAR, is pinned to floor 1 outright
+            # without the map being asked, which is why he answers 1 on a map
+            # that has only floor 0.
+            "on 1 floor 0 cell (19,38); state 2 0 keeps (7,7) floor 0; blocked 0 keeps (5,5); "
+            "type 10 0 floor 1; off the map 0 floor -1",
             # THE PATROL, action 1 (`todo/shoot-patrol.md`, 2026-09-12), run on
             # the supermarket's OWN routes so the acquire is the real
             # `sub_4354E0` + `sub_4356B0`: type 9, state 4, +144 = 1, the route
@@ -26466,22 +26480,33 @@ def c_engine_shoot_fire():
             # of ~11, so he is barely moved: his eight muzzle points stay within
             # 45 units of where he stands; one bolt meets 237, the rest the world
             # after 1 and 3 frames)
-            [2, 3, 3, 3, 1, 3, 3, 3],
-            [("HIT ACTOR 237", -2936, "124.8", "0"), ("hit the world", -3216, "374.4", "0"),
-             ("hit the world", -3188, "374.4", "0"), ("hit the world", -3186, "374.4", "0"),
-             ("hit the world", -3174, "374.4", "0"), ("hit the world", -3161, "249.6", "0")],
-            8, [("4996.4", "15144.7", "-2941.6"), ("5009.3", "15144.7", "-2921.5"),
-                ("5009.7", "15144.7", "-2922.6"), ("5021.3", "15144.7", "-2863.6"),
-                ("5021.8", "15144.7", "-2874.9"), ("5023.1", "15144.7", "-2898.8"),
-                ("5038.2", "15144.7", "-2875.2"), ("5040.1", "15144.7", "-2875.8")],
+            # (and since `Shoot_Think`, 2026-09-12: a gunman's CELL now follows
+            # him instead of being seeded once - 237 reads (11,28) at frame 8
+            # and (17,21) by 85 - and his 0x80 is restored and re-stamped every
+            # tick instead of being left on the cell he started from. So the
+            # two walk elsewhere and NONE of the eight bolts meets 237: all
+            # eight stop on the world, which is why there are now eight impact
+            # sounds where there were seven. What the check is FOR is
+            # unchanged and still exact - eight latches, eight shots each SEVEN
+            # frames after its latch, the row's speed and damage, one pool
+            # entry per shot, WAVER2.WAV on every shot's frame - and the hit on
+            # a body has its own check, `engine: shoot hit`, which aims at one.)
+            [2, 3, 2, 2, 2, 3, 2, 2],
+            [("hit the world", -3174, "374.4", "0"), ("hit the world", -3161, "249.6", "0"),
+             ("hit the world", -3159, "374.4", "0"), ("hit the world", -3157, "249.6", "0"),
+             ("hit the world", -3143, "249.6", "0"), ("hit the world", -3142, "249.6", "0"),
+             ("hit the world", -3141, "249.6", "0")],
+            8, [("4958.6", "15144.7", "-2907.3"), ("4976.5", "15144.7", "-2910.7"),
+                ("4978.1", "15144.7", "-2911.5"), ("4978.9", "15144.7", "-2906.8"),
+                ("4992.8", "15144.7", "-2919.8"), ("4996.4", "15144.7", "-2941.6"),
+                ("5009.7", "15144.7", "-2922.6")],
             list(range(37, 248, 30)),
-            # (an impact sound for each bolt the WORLD stops, none for 237's)
-            [39, 70, 100, 130, 190, 220, 250],
+            # (an impact sound for EVERY bolt now - all eight stop on the world)
+            [39, 70, 99, 129, 159, 190, 219, 249],
             [("fire", "1", "687", "WAVER2.WAV", "1.00"),
-             ("impact", "3", "689", "WIMP1.WAV", "0.20"),
-             ("impact", "3", "689", "WIMP1.WAV", "0.22"),
-             ("impact", "3", "689", "WIMP1.WAV", "0.23"),
              ("impact", "3", "689", "WIMP1.WAV", "0.26"),
+             ("impact", "3", "689", "WIMP1.WAV", "0.27"),
+             ("impact", "3", "689", "WIMP1.WAV", "0.28"),
              ("impact", "3", "689", "WIMP1.WAV", "0.29")])
     return got, want, (
         "`Shoot_InitWeapon` giving the Gun Waver the key-1 row on the mode "
@@ -26490,8 +26515,9 @@ def c_engine_shoot_fire():
         "drain, six for the weapon to come back up); all of them the row's "
         "speed and damage, straight down -Z from the Maing node; one pool "
         "entry per shot; the bolts from the RAISED muzzle wherever the gunmen's "
-        "bodies have pushed him; WAVER2.WAV on every shot's frame and WIMP1.WAV "
-        "on every impact the world makes")
+        "bodies have pushed him - and since `Shoot_Think` their cells follow "
+        "them, so they walk clear and all eight bolts stop on the world; "
+        "WAVER2.WAV on every shot's frame and WIMP1.WAV on every impact")
 
 
 def c_engine_shoot_hit():
@@ -27091,21 +27117,40 @@ def c_engine_shoot_noise():
     gal = subprocess.run(
         [exe, fr, os.path.join(ROOT, "tables"),
          "--save", os.path.join(ROOT, "traces", "save-appart.bin"),
-         "--area", "59", "--stand", "5000,0,-2900,0", "--shoot", "--frames", "8", "--nodelay"],
+         # twelve frames, not eight: since `Shoot_Think` the gunmen do not
+         # engage until they are on the grid, and the gallery's first shot is
+         # at frame 8 rather than 4
+         "--area", "59", "--stand", "5000,0,-2900,0", "--shoot", "--frames", "12", "--nodelay"],
         capture_output=True, text=True, errors="replace",
         env=dict(os.environ, SDL_VIDEODRIVER="dummy")).stdout
-    galert = re.findall(r"^frame (\d+): NOISE \(sub_4246E0\) - (a gunman's shot) at \S+ \S+ \S+, "
-                        r"floor (\d+): actor (\d+) ALERTED \(hearing (\d+) cells of \d+\), his "
-                        r"floor (\d+), action (-?\d+)$", gal, re.M)
+    # ...and the gallery's per-actor line, whatever it SAYS - an alert or a
+    # refusal - so that a run in which nobody is alerted asserts the reason
+    # rather than an empty list.
+    galert = re.findall(r"^frame (\d+): NOISE \(sub_4246E0\) - (a gunman's shot|a bolt on "
+                        r"the world) at \S+ \S+ \S+, "
+                        r"floor (\d+): actor (\d+) (ALERTED|heard it from another floor) "
+                        r"\(hearing (\d+) cells of \d+\), his floor (-?\d+), action (-?\d+)$",
+                        gal, re.M)
     got = (m0.groups() if m0 else None, len(alerts), seen.group(1) if seen else None,
            shot430.groups() if shot430 else None, galert[:2])
     want = (("SMARKET1", "1", "39"), 0, "418", ("1", "1", "0"),
             # (238 no longer: since THE ACTIONS, 2026-09-11, his ENTRY action -
             # 3, `Shoot_ActorAction` - raises the 0x20 latch, and
-            # `shootHearNoise` passes a latched gunman over; 240's entry action
-            # is 1, the patrol, which is not ported and latches nothing)
-            [
-             ("4", "a gunman's shot", "0", "240", "50", "0", "2")])
+            # `shootHearNoise` passes a latched gunman over)
+            # (and since `Shoot_Think`, 2026-09-12, NOBODY is alerted in the
+            # gallery at all, for two reasons that are both the reading
+            # working. The two gunmen the camera sees now get a real floor, so
+            # `sub_426E00`'s first line stops refusing them and they engage on
+            # their own account - which latches 0x20 and makes them "already
+            # alerted". The third, 240, is never DRAWN - he stands behind the
+            # player at every yaw tried - so this port has no position for him,
+            # `Shoot_Think` leaves his `+188` at -1, and the noise walk puts him
+            # on "another floor". That last is a LABELLED LIMIT of the port and
+            # not the engine's behaviour; it is asserted here, rather than left
+            # as an empty list, so it cannot pass vacuously.)
+            [("8", "a gunman's shot", "0", "240", "heard it from another floor", "50", "-1", "-1"),
+             ("9", "a bolt on the world", "0", "240", "heard it from another floor",
+              "50", "-1", "-1")])
     return got, want, (
         "the supermarket's MAP2D grid; no alert on the route, robber 77 having engaged the "
         "player by sight at 418 before his first shot at 430 finds him alerted; in the "
@@ -27156,7 +27201,13 @@ def c_engine_shoot_gunfire():
                       r"speed [\d.]+ damage (\d+)$", out, re.M)
     shots = re.findall(r"^frame (\d+): GUNMAN SHOT \d+ - actor (\d+) ", out, re.M)
     frames = {a: tuple(int(f) for f, b in shots if b == a) for a in ("237", "240")}
-    first = re.search(r"^frame 4: GUNMAN SHOT 1 - actor 237 VIR_FN, .*?dir (\S+ \S+ \S+) "
+    # ...his FIRST shot, whatever frame it falls on. The frame was written into
+    # this pattern as `^frame 4:` until 2026-09-12, and `Shoot_Think` moved it
+    # to 8 - so the search stopped matching and the element went to None, which
+    # reads as "the line is gone" rather than "it moved". The frame is now
+    # CAPTURED instead of assumed, which is the same rule CLAUDE.md 1 states
+    # for a scan over another tool's output: assert the shape, then the value.
+    first = re.search(r"^frame (\d+): GUNMAN SHOT 1 - actor 237 VIR_FN, .*?dir (\S+ \S+ \S+) "
                       r"\(yaw (\S+) pitch (\S+)\), from (the tir node) .*?jitter (\d+ \d+ \d+) ",
                       out, re.M)
     # THE PLACEMENT NO LONGER PINS HIS HEADING: 238 stands out of his engage

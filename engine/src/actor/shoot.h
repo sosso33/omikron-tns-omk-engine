@@ -210,6 +210,31 @@ class Map2d;   // formats/map2d.h
 // State 2 - the edge walk - is never tested (`return 0`). His floor is the
 // record's +188. `sub_421770` asks one step (a picked clip's root motion),
 // `sub_421370` two (the current clip's).
+// `Shoot_Think` (0x00420AB0) - WHERE HE IS ON THE GRID, and the one thing that
+// has to run before a patrol can be handed a route, since `sub_4354E0` takes
+// his floor and his cell.
+//
+//   * `+188`, his FLOOR, is written FIRST and unconditionally - even the -1 -
+//     and it is a BYTE, which is why every reader of it here sign-extends;
+//   * `if (a3 == 10) v8 = 1` - **the character type Gandhar is pinned to floor
+//     1 outright**, without asking the map at all. `a3` is the type: the
+//     caller writes the same value into the record's `+80` two lines later;
+//   * `a4` is a floor to EXCLUDE, which is how `sub_4368E0`'s retry asks for
+//     "any floor but the one I am on" (that retry is still unread);
+//   * the CELL at `+136`/`+140` is written only if the floor is real, he is
+//     **not in state 2** - the traverse keeps the cell it started with - and
+//     the cell is not blocked. Returns whether it was written.
+//
+// It belongs to a THREE-STEP CYCLE, and the port ran only the last step until
+// 2026-09-12, which was harmless while no gunman moved: the brain's prologue
+// puts the saved byte `+189` back where he stood (`sub_424DE0` 5456), this
+// recomputes his cell, and `sub_420B80` saves the new cell's byte and stamps
+// 0x80 over it. Stamping without restoring leaves a walker's old cell blocked
+// for ever, which every other gunman's wall test and the path field then
+// route around.
+bool shootThink(ShootRecord& r, const Map2d& map, const float pos[3],
+                int characterType, int excludeFloor = -1);
+
 int shootWallTest(ShootRecord& r, const Map2d& map, float x0, float z0, float dx, float dz,
                   int steps, float snap[2]);
 

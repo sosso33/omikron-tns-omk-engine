@@ -125,7 +125,35 @@ said the probe's sentinel `77`. The check went red at that commit and nothing
 ran it. The expectation now asserts the corrected behaviour and the probe
 reports the ACTION beside the clip, so the same slip cannot read as a hole.
 
-**And a stale object file made the diagnosis twice as long.** Comparing my tree
+**The occupancy stamp was laid once and never lifted.** `sub_420B80` stamps a
+gunman's cell 0x80 after his tick and saves the byte it covered at `+189`; the
+brain's PROLOGUE puts that byte back (`sub_424DE0` 5456) before anything reads
+the grid again. The port had only the stamp, behind a `!cellStamped` gate, so a
+gunman who walked left a 0x80 on the cell he started from - for ever - and
+every other gunman's wall test and the path field routed around a ghost. It was
+invisible while no gunman's cell ever moved, which was true until `Shoot_Think`
+went in: 237 reads cell (11,28) at frame 8 and (17,21) by frame 85.
+
+**`sub_426E00`'s first line had never been able to fire.** `shootEngage` opens
+`if (r.node == -1) return 0` - a gunman not on a floor does not engage - and
+with `+188` stuck at the memset's 0 that guard was dead. It now works, and it
+moves the arenas visibly: the gallery's gunmen used to engage and shoot from
+frame 4, the frame after they are staged, and now do it at frame 8, the frame
+their bodies first land on the grid.
+
+**A LABELLED LIMIT of this port, found by the same change and left open.** The
+engine's `Shoot_Think` asks `Actor_GetPosAndFacing`, which is the node's
+position and always answers. This port's brain thinks from `drawAt`, which is
+written only where a body is DRAWN - so a gunman the camera never sees (the
+gallery's 240 stands behind the player at every yaw tried) has no position at
+all, gets floor -1, and the guard above then keeps him out of the fight.
+Feeding him his PLACEMENT instead was tried on 2026-09-12 and is worse: he
+engages and fires from a body with no pose, so the muzzle - the posed `tir`
+node - is the world origin. The two have to agree and agreeing on the drawn
+point is the conservative half. Closing it properly means posing a staged body
+whether or not it is drawn, which is a task of its own.
+
+**And a stale object file made one diagnosis twice as long.** Comparing my tree
 against `HEAD` by stashing gave three differing numbers that my change could
 not possibly explain; `make` had relinked `shoot_range` against a
 `build/obj/src/actor/shoot.o` from the other tree. Deleting the object files by
@@ -141,6 +169,27 @@ Each ends in a commit and a report.
 |---|---|---|
 | 1 | **The route data**: `Map2dWaypoint` given real fields, the runtime reservation, and the four lookups (`routeNearest`, `routeById`, `routeNextIndex`, `routePoint`, `routeRelease`). A probe and a check over the 53-route corpus and the 24/24 floor operand | **next** |
 | 2 | **`Shoot_ActorAction` case 1** and the record's route fields, against the lookups | done |
-| 3 | **`Shoot_Think`'s floor**: a gunman's `+188`, which the route lookup needs and which has been the memset's 0 since the brain was wired | **next** |
-| 4 | **Wire it in `play.cpp`**: op 84's third operand carried, the route acquired, the target fed to `shootMoveDecision`, the advance, state 5, the release | planned |
-| 5 | **Play, docs, checks** | planned |
+| 3 | **`Shoot_Think`'s floor**: a gunman's `+188`, which the route lookup needs and which has been the memset's 0 since the brain was wired - and with it the occupancy cycle's missing RESTORE | done |
+| 4 | **Wire it in `play.cpp`**: op 84's third operand carried, the route acquired, the target fed to `shootMoveDecision`, the advance, state 5, the release | **next** |
+| 5 | **Play, docs, checks** - including the two whole-run checks step 3 left RED (below) | planned |
+
+### Owed at step 5: two checks left red on purpose
+
+`engine: shoot gunfire` and `engine: shoot hit` both replay a whole arena, so
+every number in them moves when the gunmen move - and step 3 made them move for
+two right reasons (`sub_426E00`'s floor guard now works, and the gallery's 240
+patrols instead of standing). They are left RED rather than re-baselined twice,
+because step 4 wires the patrol into the frame loop and will move them again.
+What changed so far, so the re-baseline is a check and not a copy:
+
+* the gallery's 237 fires at frame **8**, not 4 - he engages when he reaches
+  the grid;
+* **240 never fires**: his scene action is 1, so he patrols;
+* the three gunmen's positions differ by tens of units, because they walk;
+* `engine: shoot hit`'s second kill is band 3 where it was band 2, the bolt
+  meeting a gunman who has turned.
+
+One rot was fixed on the spot rather than deferred: the gunfire check's
+first-shot pattern had `^frame 4:` written into it, so when the shot moved the
+element went to **None** - "the line is gone" rather than "it moved". The frame
+is captured now.

@@ -84,6 +84,23 @@ void wallCentre(const Map2dFloor& f, double scale, int cx, int cz, float out[2])
 }
 }  // namespace
 
+bool shootThink(ShootRecord& r, const Map2d& map, const float pos[3],
+                int characterType, int excludeFloor) {
+    // `if (a3 == 10) v8 = 1; else v8 = sub_435020(x, y, z, a4)`
+    const int f = characterType == 10
+                      ? 1
+                      : map.floorAt(pos[0], pos[1], pos[2], excludeFloor);
+    r.node = static_cast<std::int8_t>(f);        // `u8(v5, 188) = v8`, a BYTE
+    if (f < 0) return false;
+    int cx = 0, cz = 0;
+    if (!map.cellAt(f, pos[0], pos[2], cx, cz)) return false;
+    if (r.state == 2) return false;              // `if (u32(v5, 156) == 2) return 0`
+    if (map.blocked(f, cx, cz)) return false;    // `sub_4353E0`
+    r.destX = cx;
+    r.destZ = cz;
+    return true;
+}
+
 int shootWallTest(ShootRecord& r, const Map2d& map, float x0, float z0, float dx, float dz,
                   int steps, float snap[2]) {
     // `if (u32(rec, 156) == 2) return 0;` - the edge walk is not tested
