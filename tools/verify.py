@@ -11845,6 +11845,28 @@ def c_engine_walker_falls():
     That bound goes away when the sweep arrives, and until then it is the
     reason the deep-drop columns below stay refused.
 
+    2026-09-12: A SLIDE HAS AN END, and the fourth column is what asserts it.
+    `Walker::tick` read the WALKABLE soup alone, so every frame of a slide
+    answered "nothing under him" and the slide either sank THROUGH the ramp
+    (once `fc34909` made that arm end the slide) or glided across the room at
+    a dead-constant 11.8 (before it). The tick now probes the steep soup
+    beside the walkable one WHILE SLIDING, ends the slide when the FACE ends
+    rather than when the ground does, and absorbs a surface inside the 7.874
+    window the way `Walk_GroundResponse`'s below-the-feet branch does - gated,
+    as the engine gates the whole arm, on `+220 >= 0`, which is what keeps a
+    jump in the air. The three counts are UNCHANGED by all of it (310 / 14 /
+    116, which is what says the change is about slides and not about ledges);
+    what moves is the new column, and the probe also reports directions still
+    FALLING after ten seconds, which went 3 / 0 / 2 -> 0 / 0 / 1.
+
+    Consulting the steep soup while AIRBORNE too was tried and rejected with a
+    measurement: the soup is every face past 30 degrees, walls included, and a
+    downward ray rests on any wall that is not exactly vertical - 81 of
+    Aapkayl's ledge directions stopped resolving inside ten seconds because
+    they latched onto one and slid off the model. The engine cannot do that:
+    its ground probe is a swept SPHERE and `Actor_Move` has already stopped
+    the body at the wall. The narrowing is labelled in `walk.cpp`.
+
     2026-09-05: THE BOUND IS GONE. The swept capsule (step 1b of
     todo/collision-scenes-transitions.md) stops the body at a railing the way
     `Actor_Move` does, so the refusal it stood in for is retired and a drop is
@@ -11873,15 +11895,16 @@ def c_engine_walker_falls():
             out = os.path.join(tmp, stem + ".bin")
             subprocess.run([binp, model, "--max", str(cap), "--out", out],
                            capture_output=True)
-            _, _, ledge, down, strand, _ = struct.unpack_from(
-                "<6i", open(out, "rb").read(), 0)
-            got.append((ledge, down, strand))
+            _, _, ledge, down, strand, _, unslide = struct.unpack_from(
+                "<7i", open(out, "rb").read(), 0)
+            got.append((ledge, down, strand, unslide))
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
-    return tuple(got), ((663, 310, 0), (36, 14, 0), (326, 116, 0)), \
+    return tuple(got), ((663, 310, 0, 0), (36, 14, 0, 0), (326, 116, 0, 0)), \
         "per set (Aapkayl, AImpasse, Anekbah): spots standing beside a drop, " \
-        "spots from which the walker actually goes down, and spots on a " \
-        "ledge from which nothing moves at all - the last must be 0"
+        "spots from which the walker actually goes down, spots on a " \
+        "ledge from which nothing moves at all, and directions STILL SLIDING " \
+        "after ten seconds - the last two must be 0"
 
 def c_engine_tunnel_doors():
     r"""`engine/`: a transition's door resolves in the OUTGOING slot's object

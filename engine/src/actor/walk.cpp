@@ -256,7 +256,53 @@ StepResult Walker::tick(double dt) {
 
     const double ny = pos_[1] + dy;              // Y grows downward
     const auto g = ground(pos_[0], pos_[1], pos_[2]);
-    if (!g) {
+    // ...AND THE STEEP FACE HE IS ON, because `ground()` reads the WALKABLE
+    // soup ALONE. That split is this port's own: the engine casts ONE probe
+    // at the whole collision set and `Walk_GroundResponse` then asks
+    // `cos(30) > -normal.y` of whatever it hit, so a ramp past the limit is
+    // ground it stands the actor on and slides him down - never a hole.
+    //
+    // Splitting the soup in two and asking only the walkable half means every
+    // frame of a slide answers "nothing under him", and `fc34909` - which
+    // ends a slide when the ground runs out, and was right for its own case -
+    // then turned the slide into a free fall one frame in. Measured in the
+    // catacombs: HApyramb01's flank rises 157 units over 118 (53 degrees, in
+    // the steep soup), and the walker sank THROUGH it - on the face at y 914
+    // at frame 80, 41 units under it by frame 90 and 3900 under it by 270.
+    // That is a reader's *"then I just went through the ground"*.
+    //
+    // Probed from a step-height above the feet, exactly as `ground` and as
+    // `step`'s own steep arm are: `surfaceUnder` wants a surface strictly
+    // below its origin, so casting from the feet of an actor standing on the
+    // face finds the face he is standing on not at all.
+    //
+    // ...and ONLY WHILE HE IS ALREADY SLIDING. The steep soup is "every
+    // collision face past 30 degrees", which is the WALLS as well as the
+    // ramps, and a downward ray can rest on any wall that is not exactly
+    // vertical. The engine cannot: its ground probe is a swept SPHERE and
+    // `Actor_Move` has already stopped the body at the wall horizontally.
+    // Consulting it for a falling actor too costs 81 of Aapkayl's 663 ledge
+    // spots, which stop resolving inside ten seconds because they latch onto
+    // a wall and slide off the model; keeping a slide on its ramp needs none
+    // of that. LABELLED as the narrowing it is.
+    const auto sf = (steep_ && sliding_)
+                        ? surfaceUnder(*steep_, pos_[0], pos_[1] - kStepUp - 1.0, pos_[2])
+                        : std::optional<GroundHit>{};
+    // A SLIDE LASTS EXACTLY AS LONG AS THE FACE DOES, and that - not "the
+    // ground ran out" - is the engine's rule. `Walk_GroundResponse`'s slide
+    // arm (21_d3d.c 2587) writes `+220 = dword_910340` only on the frames its
+    // probe hits a face whose `-normal.y` is under `cos(30)`; a frame with no
+    // such face writes nothing, so `Actor_ApplyMotion`'s gravity is all that
+    // is left and he is falling. `fc34909` tested `!g` instead, which is the
+    // same thing ONLY where there is no walkable floor anywhere below - and
+    // in the catacombs there is one 117 units down, so leaving the ramp he
+    // went on gliding at a dead-constant 11.8 a frame across the whole room.
+    if (sliding_ && !(sf && sf->y - pos_[1] <= kSnapDrop)) {
+        sliding_ = false;
+        airborne_ = true;
+        apex_ = pos_[1];            // the descent is measured from here
+    }
+    if (!g && !sf) {
         // NOTHING UNDER HIM AT ALL - and a SLIDE ends here, which it did not
         // until 2026-09-12. The slide speed is not a velocity he carries: the
         // ground response WRITES `+220 = dword_910340` every frame it finds a
@@ -274,33 +320,41 @@ StepResult Walker::tick(double dt) {
         // His horizontal keeps going, as it should: the face normal went into
         // `vx_`/`vz_` when the slide started and `Actor_ApplyMotion` applies
         // those unconditionally, so leaving a ramp throws him off it.
-        if (sliding_ && !airborne_) {
-            sliding_ = false;
-            airborne_ = true;
-            apex_ = pos_[1];        // the descent is measured from here
-        }
         pos_[1] = ny;
         fall_ += dy;
         return airborne_ ? StepResult::Fell : StepResult::Slid;
     }
-    if (ny >= *g) {
-        fall_ += *g - pos_[1];
+    // Whichever of the two answered HIGHER is the one he meets first - and
+    // with Y growing downward, higher is the smaller number.
+    const bool onSteep = sf && (!g || sf->y < *g);
+    const double surf  = onSteep ? sf->y : *g;
+    // ...OR THE SURFACE IS INSIDE THE FRAME'S ABSORBED WINDOW. The engine's
+    // ground response runs on EVERY frame of a grounded actor, and its BELOW
+    // branch absorbs a drop under 7.874 units outright (`v68 < 7.8740158`,
+    // `kSnapDrop`) - it does not wait for him to pass through the face. On a
+    // ramp that matters: HApyramb01's flank falls 1.33 units for every unit
+    // of x, so a slider crossing it at 0.8 a frame sees the surface drop 1.06
+    // while the slide speed carries him only 0.39, and a landing test that
+    // asks `ny >= surf` alone never fires - he descends beside the face for
+    // ever instead of on it. Absorbing is what keeps him ON the ramp.
+    // ...and the absorb is gated the way the engine gates the whole arm:
+    // `if (f32(rec, 220) >= 0.0)` - it never runs on a RISING actor, which is
+    // what keeps `MDJUMP0A`'s leap in the air for its fourteen frames instead
+    // of landing on the floor it launched from.
+    if (ny >= surf || (vy_ >= 0.0 && surf - ny <= kSnapDrop)) {
+        fall_ += surf - pos_[1];
         // A steep landing is not a landing: the engine re-writes the slide
         // speed and keeps him moving down the face.
-        if (steep_) {
-            if (const auto s = surfaceUnder(*steep_, pos_[0], pos_[1] - 1.0, pos_[2])) {
-                if (std::fabs(s->y - *g) < 0.01) {
-                    pos_[1] = *g;
-                    vx_ += s->n[0];
-                    vz_ += s->n[2];
-                    vy_ = kSlideSpeed;
-                    sliding_ = true;
-                    airborne_ = false;
-                    return StepResult::Slid;
-                }
-            }
+        if (onSteep || (sf && std::fabs(sf->y - surf) < 0.01)) {
+            pos_[1] = surf;
+            vx_ += sf->n[0];
+            vz_ += sf->n[2];
+            vy_ = kSlideSpeed;
+            sliding_ = true;
+            airborne_ = false;
+            return StepResult::Slid;
         }
-        land(*g);
+        land(surf);
         return StepResult::Moved;
     }
     pos_[1] = ny;

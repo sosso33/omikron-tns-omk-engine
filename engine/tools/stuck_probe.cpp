@@ -91,6 +91,7 @@ int main(int argc, char** argv) {
     int    onLedge = 0;      // ... with a drop past the step limit beside them
     int    descended = 0;    // ... from which some direction actually goes down
     int    stranded = 0;     // ... on a ledge AND with no direction that moves
+    int    unresolvedSlide = 0, unresolvedFall = 0;   // still going after 300 frames
     double worstDrop = 0.0;
     // The drop histogram, in the engine's own fall tiers.
     int tierStep = 0, tierShort = 0, tierHurt = 0, tierKill = 0;
@@ -127,8 +128,14 @@ int main(int argc, char** argv) {
             // A fall is not resolved by the step - the controller owes the
             // walker a tick a frame, and this is that loop. 300 frames is ten
             // seconds, past terminal velocity and past any drop in the game.
-            for (int f = 0; f < 300 && (w.airborne() || w.sliding()); ++f)
+            int f = 0;
+            for (; f < 300 && (w.airborne() || w.sliding()); ++f)
                 r = noTick ? w.step(0.0, 0.0) : w.tick(1.0);
+            // ...and whether ten seconds was not enough. A vertical that
+            // never resolves is invisible in the three counts below - the
+            // direction simply stops being a descent - so it is counted here.
+            if (f >= 300 && w.sliding())  ++unresolvedSlide;
+            if (f >= 300 && w.airborne()) ++unresolvedFall;
             if (r == omk::StepResult::Moved) {
                 movedAnywhere = true;
                 if (w.pos()[1] - *g > omk::kStepDown) wentDown = true;
@@ -153,6 +160,8 @@ int main(int argc, char** argv) {
                 onLedge, spots ? 100.0 * onLedge / spots : 0.0, omk::kStepDown);
     std::printf("  DESCENDED   %d  (a direction the walker actually takes "
                 "down)\n", descended);
+    std::printf("  unresolved  %d sliding, %d falling after 300 frames (10 s)\n",
+                unresolvedSlide, unresolvedFall);
     std::printf("  stranded    %d  (on a ledge and no direction moves at all)\n",
                 stranded);
     std::printf("  worst drop  %.1f units (%.0f cm)\n", worstDrop,
@@ -174,6 +183,7 @@ int main(int argc, char** argv) {
         put32(descended);
         put32(stranded);
         put32(static_cast<std::int32_t>(std::lround(worstDrop * 100)));
+        put32(unresolvedSlide);
         if (!omk::safeOutputPath(out)) return 2;
         std::ofstream f(out, std::ios::binary);
         f.write(reinterpret_cast<const char*>(o.data()),

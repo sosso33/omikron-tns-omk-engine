@@ -367,3 +367,94 @@ hole §4 opened. The port bands its own descent instead; for a jump the two
 coincide whenever he lands at or below the height he left.
 
 `verify.py: engine player landing`, shown to fail.
+
+## 7. The SLIDE, 2026-09-12 — and the port's two-soup split is what broke it
+
+A reader in the catacombs: *"the character fall very slowly, in an not natural
+way"*, from **"the ground then a small slope then in the air"**; and after the
+first fix, *"Better fall speed, but then I just went through the ground."*
+Both reports are one bug with two faces, and the cause is a divergence this
+port introduced rather than anything in the game.
+
+**The engine has ONE ground probe over the whole collision set.**
+`Walk_GroundResponse` (0x00465460) is handed whatever that probe hit and asks
+`cos(30) > -normal.y` of it (21_d3d.c 2587):
+
+```c
+if (+220 >= 0.0) {                       // not rising
+    if (cos(limit) <= -normal.y) {       // flat enough - STOP DEAD
+        +216 = 0; +220 = 0; +224 = 0;
+    } else {                             // steep - SLIDE
+        +216 = normal.x + +216;          // the normal ACCUMULATES
+        +220 = dword_910340;             // the slide speed, written FLAT
+        +224 = normal.z + +224;
+    }
+}
+```
+
+So a face past the slope limit is ground the engine stands you on; it is never
+a hole, and the slide speed is re-written on **every frame the probe finds
+such a face** and on no other.
+
+**The port splits that one set into two soups** — `SoupKind::Walkable` and
+`SoupKind::Steep` — and `Walker::ground()` reads only the walkable half. Two
+consequences, and the walker had both:
+
+* **`tick` called a steep face "nothing under him".** Every frame of a slide
+  answered `!g`, so `fc34909`'s rule ("a slide ends when the ground runs out",
+  which is right for its own case) turned the slide into a free fall one frame
+  in and the walker sank **through** the ramp. Measured on `HApyramb01`, whose
+  flank rises 157 units over 118 (53 degrees, and in the steep soup): on the
+  face at y 914 at frame 80, 41 units under it by frame 90, 3900 under it by
+  270. That is the reader's second report exactly.
+* **...and where there WAS a walkable floor far below, the slide never ended
+  at all.** `!g` is false when a floor answers 117 units down, so leaving the
+  ramp the walker went on "sliding" through the air at a dead-constant 11.8 a
+  frame right across the room — the reader's first report.
+
+Three changes, all of them reproducing the function above:
+
+1. `tick` probes the **steep** soup beside the walkable one and takes whichever
+   answered higher (smaller y), which is what one probe over one set would
+   have returned - **but only while he is already SLIDING**, which is a
+   narrowing this port needs and the engine does not. The steep soup is every
+   face past 30 degrees, walls included, and a downward ray can rest on any
+   wall that is not exactly vertical; the engine's probe is a swept SPHERE and
+   `Actor_Move` has already stopped the body at the wall horizontally.
+   Measured: consulting it for a falling actor too costs **81 of Aapkayl's 663
+   ledge directions**, which stop resolving inside ten seconds because they
+   latch onto a wall and slide off the model;
+2. the slide ends when **the face** ends, not when the ground does —
+   `sliding_` survives only a frame whose steep hit is within the absorbed
+   window;
+3. the landing test absorbs a surface inside that window (`kSnapDrop`,
+   `v68 < 7.8740158`) instead of waiting to pass through it. On a ramp this is
+   the whole difference: `HApyramb01` falls 1.33 units for every unit of x, so
+   a slider crossing at 0.8 a frame sees the surface drop 1.06 while the slide
+   speed carries him 0.39 — a test that asks only "have I passed it" never
+   fires and he descends beside the face instead of on it.
+
+**Reproduced headlessly**, which the first report never was:
+
+```
+build/omk-play ../gamedata ../tables --save ../traces/save-appart.bin \
+    --area 141 --zone-enable 2295 --stand 42786,854,-2380,0 \
+    --hold "k200*40,k200+203*30,k200*250" --frames 320
+```
+
+Before: `frame 75 SLIDES ... frame 270 falling: y 4772, descended 3911` — no
+landing in 250 frames. After: he slides the flank, leaves it at x 42943,
+falls, and **LANDS at y 1065.5 - dropped 126.7 (3.22 m), tier 4** at frame 106,
+then does the same on a second ramp and lands at 1172.8 at frame 191.
+
+The falling log line now reports the ground probe's own answer beside the
+position, so the next report of this shape can be read rather than guessed at.
+
+**And the census is unmoved, which is the point.** `engine: walker falls`
+stands the walker on every walkable centroid of Aapkayl / AImpasse / Anekbah
+and looks in sixteen directions: **310 / 14 / 116** descents and **0** stranded
+before and after, so none of this is about ledges. What the change does move is
+a column that did not exist: `stuck_probe` now also counts the directions still
+sliding and still falling after ten seconds, and the falls went **3 / 0 / 2 ->
+0 / 0 / 1**. The still-sliding count is asserted at 0 in all three sets, which
+is the guard against this whole family coming back.
