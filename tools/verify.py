@@ -26326,7 +26326,8 @@ def c_shoot_fire():
             "hit:", "bands:", "gates:", "shield:", "kill:", "raise:", "slew:",
             "mover rows:", "mover held:", "mover crouch:", "look:", "noise:", "gunman aim:",
             "wall test:", "path field:", "grid turn:", "actor action:",
-            "shoot think:", "patrol action:", "hurt shove:", "hurt sounds:",
+            "shoot think:", "patrol action:", "patrol walk:", "cross floor:",
+            "hurt shove:", "hurt sounds:",
             "shove camera:", "type:")
     got = []
     for k in keys:
@@ -26484,6 +26485,29 @@ def c_shoot_fire():
             # with any other action hands the route back.
             "clip 9 st 4 s1 route 0 at 13760 2301 idx 0; second gunman route 1; operand 0x103 "
             "route 3 vs bare 3 route 3; replaced, releasing route 0 (his route now -1)",
+            # THE WALK, state 4 driven the way the frame loop drives it -
+            # `sub_426C20` every tick, and on its 1 the advance `sub_435660` +
+            # `sub_4356B0`. Route id 1 is the ring (19,39) (19,34) (21,34)
+            # (21,39): he starts ON point 0, so tick 0 arrives and sends him to
+            # 1, and he then walks 2, 3 and WRAPS back to 0. He never leaves
+            # state 4, because a point would have to carry a clip to send him
+            # to 5 and no shipped point does. The route stays RESERVED while he
+            # walks it, so the nearest-free search hands the next one out.
+            "route 0, 54 ticks, points 0 1 2 3 0 1; still state 4; held 1, so the same search "
+            "gives 1; released -> 0",
+            # THE CROSS-FLOOR CHASE end to end (`todo/shoot-navedge.md`), over
+            # `bar56`'s own links, because no arena this port can reach stages a
+            # LATCHED gunman on another floor. The engage takes link 4 - the
+            # nearest to where he stands - writes its NEAR end as his goal and
+            # sends him to state 1; state 1 turns to 111.8 degrees over the
+            # edge's 44.7 flat units and hands to state 2; state 2 climbs
+            # exactly HALF the edge's -16 rise by half way, then arrives, swaps
+            # the occupancy of the cell he left and hands to the hub. -16 over
+            # 45 is bar56's floor 0 at y 0 and its floor 1 at -16: Y points
+            # DOWN, so he goes up.
+            "engage 0 -> state 1 link 4, goal 11750 -106; state 1 heading 111.8 length 44.7 -> "
+            "state 2; state 2 half-way climb -7.88, then arrived 1 swap 1 -> state 6 "
+            "(edge rises -16 over 45)",
             # THE HURT REACTION (`sub_47D1F0` + `sub_47D4D0`'s 0x400 arm,
             # 2026-09-12). Each band arms ONE angle and zeroes both first: 0/1
             # the ROLL (a bolt across him), 2/3 the PITCH (one along). The

@@ -869,6 +869,88 @@ int main(int argc, char** argv) {
                         double(b2[0]), double(b2[1]), double(b2[2]),
                         double(c2[0]), double(c2[1]), double(c2[2]));
         }
+        // ---- THE CROSS-FLOOR CHASE, end to end (`todo/shoot-navedge.md`) --
+        // `sub_426E00`'s `!sameNode` arm -> state 1 -> state 2 -> the far end,
+        // over `bar56`'s own links. No arena this port can reach stages a
+        // LATCHED gunman on another floor (§6), so this is where the chain is
+        // shown to close.
+        {
+            omk::Map2d bar;
+            if (!bar.loadFile(std::string(fs.root()) + "/MAP2D/bar56.mpt")) {
+                std::printf("cross floor: bar56.mpt not read\n");
+            } else {
+                const auto& f0 = bar.floors()[0];
+                omk::ShootRecord r;
+                r.node = 0;                       // he is on floor 0
+                r.type = 3;
+                r.flags |= 0x20u;                 // LATCHED: he has seen the player
+                r.rangeAcquire = 1950.0f; r.rangeInner = 585.0f; r.rangeThird = 1950.0f;
+                r.coneCos = 0.0f;
+                r.height = 40.0f;
+                // he stands near the west end of floor 0
+                float self[4] = {11700.0f, 0.0f, -100.0f, 0.0f};
+                // THE ENGAGE, with the player on floor 1
+                omk::AcquireOut ao;
+                omk::EngageIn ein;
+                ein.sameNode = false;             // the two are on different floors
+                ein.targetAlive = true;
+                ein.link = bar.linkTo(0, 1, self);
+                if (ein.link >= 0)
+                    for (int k = 0; k < 3; ++k)
+                        ein.linkFrom[k] = f0.links[static_cast<std::size_t>(ein.link)].from[k];
+                const int eng = omk::shootEngage(r, ao, false, ein);
+                const int tookLink = r.link;
+                const int stateAfter = r.state;
+                const float goal[2] = {r.goalX, r.goalZ};
+                // STATE 1: walk to the stair's near end, then hand to 2
+                omk::ShootFrameIn in1;
+                in1.dt = 1.0f;
+                in1.myNode = 0; in1.targetNode = 1;
+                in1.hasEdge = tookLink >= 0;
+                if (in1.hasEdge)
+                    for (int k = 0; k < 3; ++k) {
+                        in1.edgeFrom[k] = f0.links[static_cast<std::size_t>(tookLink)].from[k];
+                        in1.edgeTo[k]   = f0.links[static_cast<std::size_t>(tookLink)].to[k];
+                    }
+                in1.stepCellValue = 1;            // a walkable landing
+                in1.moveCode = 1;                 // ARRIVED at the near end
+                float y1 = 0.0f;
+                const auto s1 = omk::shootGenericStep(r, in1, y1);
+                const int after1 = s1.nextState >= 0 ? s1.nextState : r.state;
+                const float len = r.stepRemaining;
+                // STATE 2: walk the edge. `+68` counts down by however far he
+                // went; feed it the whole length in one tick and he arrives.
+                r.state = 2;
+                omk::ShootFrameIn in2 = in1;
+                in2.moveCode = 0;
+                in2.movedThisFrame = len * 0.5f;   // half way
+                float y2 = y1;
+                const auto s2a = omk::shootGenericStep(r, in2, y2);
+                const float halfClimb = r.groundY;
+                in2.movedThisFrame = len;          // the rest, and past it
+                const auto s2b = omk::shootGenericStep(r, in2, y2);
+                std::printf("cross floor: engage %d -> state %d link %d, goal %.0f %.0f; state 1 "
+                            "heading %.1f length %.1f -> state %d; state 2 half-way climb %.2f, "
+                            "then arrived %d swap %d -> state %d (edge rises %.0f over %.0f)\n",
+                            eng, stateAfter, tookLink, double(goal[0]), double(goal[1]),
+                            double(s1.headingDeg), double(len), after1,
+                            double(halfClimb), int(s2b.arrived), int(s2b.swapOccupancy),
+                            s2b.nextState,
+                            double(in1.edgeTo[1] - in1.edgeFrom[1]), double(len));
+                // ...and the UNLATCHED gunman, whose arm is the other half:
+                // `LABEL_24`, state 4, back to patrolling
+                omk::ShootRecord u;
+                u.node = 0; u.type = 3;
+                omk::EngageIn ue; ue.sameNode = false; ue.targetAlive = true; ue.link = -1;
+                omk::shootEngage(u, ao, false, ue);
+                omk::ShootRecord q;
+                q.node = 0; q.type = 3; q.flags |= 0x20u;
+                omk::EngageIn qe; qe.sameNode = false; qe.targetAlive = true; qe.link = -1;
+                omk::shootEngage(q, ao, false, qe);
+                std::printf("cross floor: unlatched stays in state %d; latched with NO stair goes "
+                            "to state %d\n", u.state, q.state);
+            }
+        }
         const auto g = fs.read("IAM/GLOBAL");
         const auto objs = omk::loadObjects(fs);
         if (g.size() < 62 || objs.empty()) { std::printf("weapons: not read\n"); return 0; }

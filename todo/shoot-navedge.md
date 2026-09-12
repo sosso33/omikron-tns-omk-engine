@@ -79,8 +79,8 @@ the fallback instead. Both are named, not glossed.
 | 1 | **The link table named**: `Map2dSegment` becomes the link, its six floats given their meaning, and a check over the 36 records - the destination in range, both points inside their floors, and the reciprocity | done |
 | 2 | **`sub_436BB0`** ported as `Map2d::linkTo(floor, destFloor, pos)`, with a probe | done |
 | 3 | **The engage's arm**: `+4`, the goal, state 1 - and the edge fed to states 1 and 2 | done |
-| 4 | **Play it**: AREA 232's seven latched gunmen over `bar56`'s ten links - and its zones are on the ACTIVATE slot, so it needs a button press (§6) | **next** |
-| 5 | **Docs and checks** | planned |
+| 4 | **Play it**: AREA 232's seven latched gunmen over `bar56`'s ten links - and its zones are on the ACTIVATE slot, so it needs a button press (§6) | blocked, §7 |
+| 5 | **Docs and checks** | **next** |
 
 ---
 
@@ -160,3 +160,55 @@ enter. An activate needs the player to PRESS the action button inside the quad
 Also worth noting: hames has **8 action-2 gunmen** of its own, so the catacombs
 do contain latched ones - they are simply not the ten the 'Start Shoot' zone
 stages, and some other zone brings them.
+
+---
+
+## 7. THE CHAIN CLOSES — proved at unit level, not in an arena
+
+Step 4 was meant to be a play test and could not be: **AREA 232 cannot be
+reached from this viewer yet**, for two reasons that are both the harness's and
+not the reading's.
+
+* Its two `shoot.begin` zones are on slot **+4**, the ACTIVATE slot, so walking
+  in is not enough - the player must PRESS the action button (scan code **28**
+  in the *Aventure* scheme) inside the quad, `Script_Pump`'s press cycle.
+* And he cannot walk there at all: `--stand` anywhere in AREA 232 and
+  `--hold "k200*n"` leaves him at **walked 0.0 over 219 ticks**. Something under
+  him refuses the walker outright - no walkable face, most likely - and until
+  that is found the press cannot be delivered from inside the zone either.
+
+So the chain is shown the way the patrol's walk was, over `bar56`'s own links,
+in `verify.py: shoot fire`'s `cross floor:` line:
+
+```
+engage 0 -> state 1 link 4, goal 11750 -106;
+state 1 heading 111.8 length 44.7 -> state 2;
+state 2 half-way climb -7.88, then arrived 1 swap 1 -> state 6
+(edge rises -16 over 45)
+```
+
+The engage takes link **4** - the nearest to where he stands, which the lookup
+probe settles separately - writes its NEAR end as his goal and sends him to
+state 1; state 1 turns to 111.8 degrees over the edge's 44.7 flat units and
+hands to state 2; state 2 climbs exactly **half** the edge's -16 rise by half
+way, then arrives, swaps the occupancy of the cell he left, and hands to the
+hub. -16 over 45 is `bar56`'s floor 0 at y 0 and its floor 1 at -16 - Y points
+DOWN, so he goes **up**.
+
+And the arm's two other outcomes, which are the half that says the reading is
+not wishful: **unlatched he is not touched at all**, and **latched with no stair
+to the player's floor he takes `LABEL_24`** - state 4, back to patrolling.
+
+Mutation-shown: taking the goal's x from the link's z turns `goal 11750 -106`
+into `goal -106 -106`.
+
+### A check that was never wired, and it is the second time today
+
+Adding this found that **`patrol walk:` had never been in the check's key list**.
+The probe printed it, the expectation was written, and a failed multi-line
+`str.replace` meant neither reached `verify.py` - so patrol step 4's commit
+message claims an assertion that did not exist. Both are wired now, by LINE
+rather than by matching a block. This is the same trap CLAUDE.md 5 records for
+viewer edits, and the lesson for a check is sharper: a check that silently does
+not collect an element **passes**, so nothing tells you. Assert the edit, not
+the run.
