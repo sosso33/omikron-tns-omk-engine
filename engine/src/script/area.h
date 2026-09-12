@@ -363,6 +363,10 @@ public:
     // `shoot.begin` and the `shoot.actor.action` calls
     // (`todo/shoot-patrol.md` 5a).
     void enableZoneById(int id);
+    // ...and its mirror, the op-65 arm's two lines: the save bit cleared and
+    // the zones re-registered. A HARNESS for what a script the start skipped
+    // would have done - AREA 231's record 1 disables 3949 on the way in.
+    void disableZoneById(int id);
 
     // `Shoot_ActorEnter`'s `+64`: how far the model's lowest collision sphere
     // hangs below its origin. `+60`, the y a shoot gunman stands at, is his

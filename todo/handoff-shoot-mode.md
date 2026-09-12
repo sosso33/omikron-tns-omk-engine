@@ -18,8 +18,18 @@ uncommitted. The plan and the full record are [`shoot-mode.md`](shoot-mode.md)
 ```
 cd engine && make play
 build/omk-play "$OMK_DATA" ../tables --save ../traces/save-appart.bin \
-    --area 230 --scene-chunk 56 --vulkan --radar always
+    --area 230 --scene-chunk 56 --zone-disable 3949 --vulkan --radar always
 ```
+
+**`--zone-disable 3949` is what the harness skips, and without it the way out
+is broken.** On the real way in, AREA 231's record 1 - the airlock cutscene
+that walks Kay'l into the supermarket - disables its own zone 3949, and a
+zone's enabled state is a DB bit, so it stays off. `--scene-chunk` starts
+inside and never runs record 1, so 3949 keeps the bit from a save made before
+the supermarket; walking out after the phase crosses it and replays that
+cutscene - `player.anim.hold`, `area.goto 230`, a fade to black - with no scene
+left to release the hold. A reader reported exactly that as "the game goes in
+cutscene mode, fade out then nothing" (`todo/shoot-phase-end.md`).
 
 The cutscene plays, the editing ends at frame ~385, and `SHOOT MODE ENTER`
 follows at 394. **~390 frames from a cold start, no save of your own and no

@@ -154,9 +154,52 @@ the exit works.
    gone, and actor 65 ends at **13283 -92 996** - where his own program left
    him at frame 182 - instead of 13046 -140 1149, holding the last pose that
    program gave him rather than a stranger's clip.
-2. Walk the player to the exit zone after a death and watch `area.goto 231`.
-   If it fades and stalls, that is symptom 3 on its own and has nothing to do
-   with the variables.
-3. Only then re-judge the music.
+2. ~~**The exit** (symptom 3)~~ - **A HARNESS ARTEFACT, 2026-09-13.** The exit
+   works. Walking into AREA 230's exit zone 3903 runs `area.goto 231` (doors
+   64/65) and the airlock loads. What stalled was AREA 231's **record 1**, which
+   is the way IN, not out:
+
+   ```
+   544 player.move 100 / 547 player.anim.hold / 551 area.goto 230, -1, -1
+   558 zone.disable 3949 / 564 fade.to_black / camera 4378 / fade.to_color
+   camera.set.wait 4379 / camera 4380 / scx.play.wait obj 5, obj 6
+   615 actor.goto_address 665 'Depart Supermarche 2' / 618 area.arrive 231
+   ```
+
+   It never releases the hold - every `player.anim.release` near it is in
+   SCENE 56 or 62, the phase that follows - and its zone 3949 sits beside 3903
+   (x 12943 against 13061), so walking out crosses it at once. It disables
+   ITSELF, and a zone's enabled state is a DB bit (`StateArray::ZoneState`),
+   so on the real way in it fires once and stays off. `--area 230
+   --scene-chunk 56` starts inside and never runs it; 3949 keeps the bit from
+   `save-appart.bin`, made before the supermarket, and walking out after the
+   death replays that cutscene with no scene left to release it: the reader's
+   "cutscene mode, fade out then nothing". Measured in the post-death state
+   (area 230 with no scene, 3903 enabled as the loss branch leaves it): 448 of
+   500 frames under a hold never released. With `--zone-disable 3949` added -
+   a new harness, the exact mirror of `--zone-enable`, doing what record 1
+   does - the same walk goes through the doors into the airlock with **0
+   frames under a hold**. The handoff's recipe now carries the flag.
+
+   **And all the way out.** Walked on through the airlock and turned into its
+   zone 3948 (record 0), the same post-death state reaches the city: `area.goto
+   0` with doors 3/4 at frame 163, Anekbah shown at 180, two areas entered, still
+   0 frames under a hold. (Walking in adventure mode turns with the ARROW keys:
+   `k203*15` from heading 270 brought him to 313, onto the zone.)
+3. ~~**The music** (symptom 1)~~ - **downstream of 2.** Track 91 is AREA 230's
+   OWN music (`+142`), which the scene's `music.play 91, 1, 1` also names, so
+   staying in the supermarket after a death it plays on in the engine too.
+   Leaving changes it: the port's swap arm matches the engine's (`+142` of the
+   incoming active slot, only when it differs), and on the working exit the
+   track switches to the airlock's 18 the frame his feet land there. One gap
+   left unexplained and off the real path: on the artefact path, record 1
+   carrying him back into 230 logged no switch back to 91.
+4. **The T-posed character** (symptom 2) - fixed in the port by step 1
+   (`da000d3`), NOT yet confirmed by eye. What the reader saw was actor 65 at
+   ground level half inside a pillar, which is where the lone-program fallback
+   teleported him. Note what a plain area-230 start ALSO shows and is a
+   different thing: actors 65, 88 and 60 staged in the rest pose from frame 0,
+   shown by the save's DB bits with no bank and no program - but at y -1662,
+   far above the supermarket floor.
 
 Each step ends in a `--only` run over the shoot checks and a commit.

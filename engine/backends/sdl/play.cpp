@@ -1519,6 +1519,10 @@ int main(int argc, char** argv) {
 "                   game's path - walk in and the zone runs its own script.\n"
 "                   AREA 141's 2295 'Start Shoot' opens the catacombs' shoot\n"
 "                   phase, whose ten spectres PATROL (todo/shoot-patrol.md)\n"
+"  --zone-disable N HARNESS: `zone.disable N`, the mirror - for a start that\n"
+"                   skipped the script that would have disabled it. The\n"
+"                   supermarket harness needs 3949: AREA 231's record 1,\n"
+"                   the airlock cutscene in, disables it on the real path.\n"
 "  --scene-chunk N  run SCENE chunk N's startup script over the area, the\n"
 "                   way `scene.load` does. A street start jumps straight to\n"
 "                   an area, so the chunk that would have been loaded on the\n"
@@ -1798,6 +1802,7 @@ int main(int argc, char** argv) {
     // same call, and is where this shape comes from).
     int sceneChunk = -1;
     std::vector<int> zoneEnable;   // `--zone-enable`, the harness below
+    std::vector<int> zoneDisable;  // `--zone-disable`, its mirror
     bool noCrowd = false;
     bool noScriptSprites = false;   // DEBUG: leave the scripted sprites undrawn, for a before/after
     std::vector<int> scxPlay;       // --scx-play: objects to start by handle, once
@@ -1932,6 +1937,7 @@ int main(int argc, char** argv) {
         else if (a == "--newgame-world") newWorld = true;
         else if (a == "--scene-chunk" && i + 1 < argc) sceneChunk = std::atoi(argv[++i]);
         else if (a == "--zone-enable" && i + 1 < argc) zoneEnable.push_back(std::atoi(argv[++i]));
+        else if (a == "--zone-disable" && i + 1 < argc) zoneDisable.push_back(std::atoi(argv[++i]));
         else if (a == "--density" && i + 1 < argc) { density = std::atoi(argv[++i]); densityFlag = true; }
         else if (a == "--shadows" && i + 1 < argc) shadowFlag = std::atoi(argv[++i]);
         else if (a == "--no-shadows") shadowFlag = 0;
@@ -2534,6 +2540,15 @@ int main(int argc, char** argv) {
     // is enabled by the Nout book cutscene, which a headless run cannot reach;
     // with it enabled the catacombs' ten spectres enter on ACTION 1 and
     // PATROL (`todo/shoot-patrol.md` 5a).
+    // `--zone-disable N`: the mirror, for a start that skipped the script which
+    // would have disabled it - the supermarket harness never runs AREA 231's
+    // record 1, the airlock cutscene in, so its zone 3949 stays enabled from a
+    // save made before the supermarket and walking OUT re-fires that cutscene.
+    for (const int z : zoneDisable) {
+        session.disableZoneById(z);
+        std::printf("--zone-disable: ZONE %d disabled (the `zone.disable` opcode, nothing "
+                    "else)\n", z);
+    }
     for (const int z : zoneEnable) {
         session.enableZoneById(z);
         std::printf("--zone-enable: ZONE %d enabled (the `zone.enable` opcode, nothing "

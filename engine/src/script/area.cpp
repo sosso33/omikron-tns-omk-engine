@@ -3039,6 +3039,12 @@ void Session::enableZoneById(int id) {
     zonesRegisterAll();
 }
 
+void Session::disableZoneById(int id) {
+    // the two lines `interp.cpp`'s op-65 arm runs, and nothing more
+    state_.setBit(StateArray::ZoneState, id & 0x7FFF, 0);
+    zonesRegisterAll();
+}
+
 void Session::scanZonesNow() {
     // **RECONSTRUCTION, labelled**: the scan is part of the ACTOR TICK, which
     // this Session does not run - so it runs only once something outside is
