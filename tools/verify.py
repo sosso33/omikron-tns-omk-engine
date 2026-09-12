@@ -27370,12 +27370,14 @@ def c_engine_shoot_gunfire():
     # the bolts aim at his ROOT MESH, the pelvis - +244..+252 is the root
     # node's position (`sub_4800C0`, the brain's edge walk) - so the first ones
     # rise to him (pitch 6.3) where they fell toward his feet (pitch 0.2)
-    want = ([("4", "237", "766", "DBWAVER", "2", "2", "10.0", "7"),
-             ("4", "240", "772", "HEXAGUN", "3", "3", "4.0", "5"),
-             # (THE WALK, 2026-09-11: 238, 660 off, walks into his 585 and arms)
-             # (at 17 since THE STEERING: he comes by the path field's route)
-             ("17", "238", "769", "DECAGUN", "4", "4", "4.0", "7")],
-            {"237": (4, 14, 24, 34, 44), "240": tuple(range(4, 48, 4))},
+    # (and since `Shoot_Think` and the PINNED y, 2026-09-12: only 237 resolves a
+    # weapon inside the 48 frames. `sub_426E00`'s own first line refuses a
+    # gunman whose `+188` is -1, and the gallery's bodies reach the grid at
+    # frame 32 rather than 3 - so the engage, the weapon and the first shot all
+    # move from 4 to 33. 240's scene action is 1, the PATROL, so he never
+    # engages at all; 238 does not reach his weapon inside the window.)
+    want = ([("33", "237", "766", "DBWAVER", "2", "2", "10.0", "7")],
+            {"237": (33, 43), "240": ()},
             # (with 6A the hand holding the gun ANIMATES, so the tir node rides
             # the clip's frame: -0.110 / 6.3 on its first frame held still)
             # (the gunmen's AIM LAYER, 2026-09-11: the gate's target arm now
@@ -27388,7 +27390,7 @@ def c_engine_shoot_gunfire():
             # (THE ACTIONS, 2026-09-11: 240's entry falls to action 0, whose coin
             # is a `rand()` - so the first bolt's jitter is the CRT's next triple,
             # 69 24 78, and its muzzle rides 237's walk to 0.474 / 4.8)
-            ("0.474 -0.084 -0.876", "28.4", "4.8", "the tir node", "69 24 78"),
+            ("33", "0.472 -0.104 -0.876", "28.3", "6.0", "the tir node", "78 58 62"),
             # 2 on the player in the first 48 frames, where it was 7: the body's
             # BOXES are small (HO1_FN's pelvis box ~14 x 11 x 9 around the hip
             # joint the bolts aim at, inside a 42.5 sphere) and a +-14 jitter
@@ -27403,7 +27405,11 @@ def c_engine_shoot_gunfire():
             # (and since THE PLAYER'S DEATH, 2026-09-11: this run keeps his real
             # health, the gallery kills him at ~16 and every live gunman STANDS
             # DOWN - 6 on him, and 238 ends facing 45 on his standing clip)
-            True, 0, 6, "45",
+            # (and since the PINNED y: the gunmen engage at 33 rather than 4,
+            # so of 237's two shots only the pair at 33 and 43 falls in the 48
+            # frames - one of them reaching the player's body, none reaching
+            # another gunman, and 238 ending on the 31 his entrance left him at)
+            True, 0, 1, "31",
             # (from the 336.9 his ENTRANCE PROGRAM left him at - his brain's
             # heading is seeded from how he is drawn, and he is drawn at it)
             ("394", "32", "25", "-7.20", "336.9"), ("418", "164.1"),
@@ -27411,7 +27417,7 @@ def c_engine_shoot_gunfire():
             # 270 and the hub turns him back on a type-30 clip every ~16 frames;
             # the brain holds while each plays, so he fires at 418 and 459 only)
             ("WAVER", "1", "1", "15.0", "5"), (418, 459),
-            "0.164 -0.110 0.980",
+            "0.165 -0.088 0.982",
             # (ending his turn at 164.1 he stands 21 degrees off the player -
             # his aim layer's yaw covers it - so his bolts come from a muzzle
             # turned that way: the kill is at 494)
@@ -27426,21 +27432,22 @@ def c_engine_shoot_gunfire():
             # patrol, and he stands on action 0's type 11 / 25)
             # (since the death: stood down to action 0 before their walk could
             # loop, 237 loops his standing type 11 and 238 his crouch, type 25)
-            [("46", "237", "11", "1", "30", "2.0"), ("47", "238", "25", "5", "31", "2.0")],
+            # (and since the PINNED y all three are on their entry actions at
+            # 32/33 - 237 and 238 standing on type 11, 240 crouching on 25)
+            [("32", "237", "11", "1", "30", "2.0"), ("32", "238", "11", "1", "30", "2.0"),
+             ("33", "240", "25", "5", "31", "2.0")],
             # (77's walk never runs a whole loop now - each turn restarts it)
             None,
-            [("4", "237", "-0.418", "-0.001"), ("4", "240", "0.120", "0.006"),
-             # (238 fires at 17 from facing along the PATH, the fire arm turning
-             # him on the same tick: his aim layer's yaw is 0.954 rad)
-             ("17", "238", "0.968", "-0.000"), ("418", "77", "-0.112", "-0.024")],
+            # (237 at 33, not 4: `sub_426E00` refuses a gunman whose `+188` is
+            # -1, and the gallery's bodies reach the grid at frame 32)
+            [("33", "237", "-0.399", "0.001"), ("418", "77", "-0.112", "-0.035")],
             [("237", "766", "DBWAVER"), ("238", "769", "DECAGUN"), ("240", "772", "HEXAGUN"),
              ("77", "49", "WAVER")],
             # (and 238's second barrel is 44 degrees off the line: still turning
             # off the path when he fires - the bolt's own aim is the target's)
             # (238's second shot, whose barrel this was, never comes: he stood
             # down when the player died)
-            [("8", "240", "-0.3"), ("14", "237", "-4.2"),
-             ("459", "77", "-3.5")])
+            [("43", "237", "-4.0"), ("459", "77", "-3.5")])
     # THE HEIGHT AT EVERY CLIP START (2026-09-11, a reader's robber climbing to
     # the ceiling): `sub_421A20` sets the node to (x, rec+60 + d(0->1).y, z) on
     # every clip it starts, so 77's walk - restarted by a turn clip every ~16
@@ -27448,7 +27455,7 @@ def c_engine_shoot_gunfire():
     # he ended these 500 frames at -140; he stands at -128
     y77 = re.search(r"^  actor 77 BRA_FN \(bank none\) at \S+ (\S+) \S+ facing", sm, re.M)
     got = got + (y77.group(1) if y77 else None,)
-    want = want + ("-128",)
+    want = want + ("-132",)   # (his y pinned to `+60`, 2026-09-12)
     return got, want, (
         "the gallery's two gunmen resolve their held weapons through the others' table, fire "
         "on the brain's first outcome 1 and every RATE frames after, the first bolt aimed "

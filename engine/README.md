@@ -1598,6 +1598,37 @@ connected (2026-09-10, `todo/shoot-mode.md` §7h/§7i: `MDSHOOT0`'s latch,
 `engine: shoot fire`), while the HIT - the actor sweep and the damage - is
 read and not ported (§7j).
 
+**THE PATROL is ported** (2026-09-12, `todo/shoot-patrol.md`), and it was the
+commonest thing a shoot script asks for: `shoot.actor.action 1` is **116 of the
+319 shipped sites**, ahead of action 3's 113, and `Shoot_ActorAction` case 1 was
+the one arm the port never had. The routes were in the `.mpt` all along - the
+section `formats/map2d.h` walked and called "waypoints" - `len`, `id`, `flags`
+and `len` points of `{cellX, cellZ, clipId}`, with bit 0x1 PING-PONG (2 of 53,
+both of them two-point sentries) and bit 0x2 a runtime reservation so two
+gunmen never take one beat. The third operand carries the FLOOR in its high
+byte, which the engine throws away with a `(uint8_t)` cast. **Watched**: with
+`--zone-enable 2295` - `zone.enable`, the opcode and nothing else - AREA 141's
+catacombs run their own script, ten spectres enter on action 1, and one closes
+his nine-point ring at frame 483. `verify.py: shoot patrol`,
+`engine: shoot patrol`.
+
+Four defects fell out of it, each invisible until something else moved:
+`+44/+48` and `+136/+140` were one pair of fields; `Shoot_Think` was never
+wired, so `+188` sat at 0 and `sub_426E00`'s own `if (+188 == -1) return 0` had
+never been able to fire; the occupancy cycle had its stamp and not the
+prologue's restore, so a walker left a 0x80 behind for ever; and a shoot
+gunman's y is a CONSTANT - `sub_421370` applies no vertical at all and re-pins
+the node to `floor.bound[3] - height` at every clip wrap - where the port fed
+the drifting drawn y, which sank two spectres through their own floor and sent
+one out through a wall.
+
+**And one wrong turn, backed out and written down**: `sub_426E00`'s sight is
+`sub_4449E0`, a RAY, not the grid walk `sub_4359A0`. Wiring the grid in stopped
+the Shooting gallery's gunmen firing entirely. Character type 12's own arm in
+that function sends a spectre who cannot see you back to **state 4, the
+patrol**, and `sub_436BB0` there writes the nav edge at `+4` - the
+path-finder's front door, found at last.
+
 **THE HURT REACTION is ported** (2026-09-12, `todo/shoot-mode.md` §9): a bolt
 the player survives runs `sub_47D1F0` - the flat hurt sound out of the resident
 `shoot2.scx`, then a four-frame shove of the actor's own Euler whose direction

@@ -253,6 +253,37 @@ carries a clip.
   now. The engine is not exposed to this because its lists are pointers, not
   indices - a null pointer is a test it already makes.
 
+### `engine: shoot hit` IS STILL RED, and it must NOT be baselined as it stands
+
+`engine: shoot fire`, `engine: shoot gunfire` and `engine: shoot patrol` are
+re-baselined green. **`engine: shoot hit` is not, and the reason matters more
+than the red.**
+
+That check is the port's only proof that a gunman DIES from the player's fire:
+it stands at a fixed yaw, taps `Tir` forty times and asserts three bolts into
+actor 240 taking his 15 health to 10, 5 and 0, with the death clip's band and
+the enemy count. With the gunmen's y pinned and their cells now following them,
+240 is no longer where that aim points: the run hits 237 and 238 once each
+(15 -> 10 apiece) and **kills nobody**, so four of its elements come back as
+empty lists.
+
+**Baselining those empties would gut the check** - it would then assert that
+the player kills nothing, pass for ever, and never notice if the kill path
+broke. That is exactly the vacuous pass CLAUDE.md 1 warns about, and it is worth
+refusing.
+
+What it needs instead is a new AIM, so the kill exists again. Notes for whoever
+does it:
+
+* the check's own docstring already says **yaw 258** where its code passes
+  **215**, and 258 is what the port's own convention gives for 240's placement
+  from (5000, -2900): `atan2(103, -484) * 180/pi + 90`. The docstring was right
+  and the code drifted;
+* at 258 the gunmen do fire on him and his own bolts fly, but which body they
+  meet has not been pinned down - that is the remaining work;
+* alternatively aim at 237 or 238 deliberately and re-write the element as
+  "three bolts into <him>", since nothing about the check requires it to be 240.
+
 ### Owed at step 5: THREE checks left red on purpose
 
 `engine: shoot gunfire`, `engine: shoot hit` and - since the y was pinned

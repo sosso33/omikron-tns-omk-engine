@@ -122,13 +122,33 @@ The hurt is the cheapest of the four to judge: stand still on the
    hit and the `IMPACT03.WAV` that goes with it (supermarket frames 460 and
    514). **The suggested next step is now the PATROL below**, or a play pass
    over the four measured-only items in §3.
-2. **THE PATROL, action 1** - `Shoot_ActorAction` case 1 plays type 9 along a
-   ROUTE (`sub_4354E0`, `sub_4356B0`), and the brain's walking states 1, 2
-   and 4 need the nav EDGE at the record's `+4` and its handover, which are
-   unread; so is `Shoot_Think` for the gunmen's floors (their `+188` stays
-   the memset's 0). The gallery's 240 - whose scene action is 1 - never
-   moves. The largest item.
-3. **ROBBER 77'S TURN LOOP** - the supermarket's first robber, in sight of the
+2. ~~**THE PATROL, action 1**~~ - **DONE 2026-09-12**, seven steps, and it is
+   its own plan file: [`shoot-patrol.md`](shoot-patrol.md). It was the
+   COMMONEST shoot action (116 of 319 sites). The routes were already in the
+   `.mpt`; the flags' ping-pong bit is settled by the data; the third operand's
+   high byte is the FLOOR, which the engine discards. **WATCHED**:
+   `--zone-enable 2295` opens AREA 141's catacombs and ten spectres patrol, one
+   closing his nine-point ring at frame 483. Four defects fell out of it (the
+   `+44/+48` field collision, `Shoot_Think` never wired so
+   `sub_426E00`'s floor guard had never fired, the occupancy cycle's missing
+   restore, and a gunman's y drifting where the engine pins it), and one wrong
+   turn was backed out: **the engage's sight is `sub_4449E0`, a RAY, not the
+   grid walk**. On the way, `sub_436BB0` turned out to write the nav EDGE at
+   `+4` - **the path-finder's front door, reached from the engage** - and
+   character type 12 has its own arm there that returns a spectre who cannot
+   see you to state 4. **`engine: shoot hit` is RED on purpose**; read
+   `shoot-patrol.md` before touching it.
+3. **THE NAV EDGE AND THE PATH-FINDER** - what is left of the old item 2, and
+   now the largest thing in shoot mode. The brain's walking states 1 and 2
+   need the EDGE at the record's `+4`, and 2026-09-12 found who writes it:
+   **`sub_436BB0(myFloor, targetFloor, pos)`, called from `sub_426E00`** - so
+   the path-finder is reached from the ENGAGE, not from the patrol. State 2 is
+   already ported and already climbs the edge's slope
+   (`sub_424DE0` case 2: `(to.y - from.y)/dist * moved`, with `+60` following
+   and the far end placing him and giving him the edge's floor); what is
+   missing is `sub_436BB0` itself and whatever graph it searches. Read that and
+   the gunmen can change level and follow the player through a building.
+4. **ROBBER 77'S TURN LOOP** - the supermarket's first robber, in sight of the
    player, takes the hub's FIRE arm (turn at the target), meets a wall, has
    his facing snapped by the slide (the fire arm does not raise 0x200), and is
    turned back on a type-30 clip - every ~16 frames. His advance timer runs
