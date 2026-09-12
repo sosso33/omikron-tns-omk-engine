@@ -520,3 +520,12 @@ moved, and every difference was traced before it was re-baselined:
   bodies that push him. What the check is for - eight latches, each shot seven
   frames after its latch, the row's speed and damage, WAVER2.WAV on every shot -
   is unchanged. The body hit has its own check, `engine: shoot hit`.
+* **`shoot move`** (found 2026-09-13, in the first run of the whole shoot family
+  since the patrol) — the first-person mover's gallery route. Its last walk leg
+  was expected bent by a gunman's body (-103.36, 1.58); it now goes exactly the
+  92.82 asked, because the gunmen act from frame 8 and are elsewhere. SHOWN by
+  mutation on the same route: with the entry guard off a body pushes it again,
+  but to -96.94 / -12.94, not the old value - the expectation had already
+  drifted with the gunmen's floors and patrols, and no run had caught it. What
+  the check is for, every distance the mover asks for being covered, holds.
+  The family now: 28 checks, `engine: shoot hit` the one red, and on purpose.

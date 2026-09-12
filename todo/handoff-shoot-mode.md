@@ -37,6 +37,8 @@ playthrough.** Left standing, the player is shot by robber 77 and DIES at 689;
 at 749 message 1 loses the phase, shoot mode ends at 750 and the Meditek
 voice-over plays (`verify.py: engine: shoot death`).
 
+**And the REAL way in is `--area 231 --scene-load 230,56 --stand 12870,-98,1084,90 --hold "k200*40"`** - the airlock, SCENE 56 recorded over the supermarket as the story leaves it, and AREA 231's own entry cutscene. Use it before calling a phase-start fix done: the frozen camera of 2026-09-13 happened ONLY on this path (`todo/shoot-phase-end.md` 5).
+
 **`--scene-chunk` is the whole trick and it is easy to miss.** The supermarket
 phase is **AREA 230 + SCENE 56 or 62** (both on set `ASM49`), and AREA 230
 carries **no `shoot.begin` of its own** — it is in a ZONE SLOT of the scene.

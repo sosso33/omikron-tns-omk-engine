@@ -26983,7 +26983,15 @@ def c_engine_shoot_move():
              # four of ~11 - the strafe is not bent at all, 256.10 along +X as
              # asked, and the last walk is pushed only 1.58 off its line)
              (32, "256.10", ("256.10", "0.00", "0.00")),
-             (23, "92.82", ("-103.36", "0.00", "1.58"))])
+             # (and since THE ENTRY HOLD, 2026-09-13: no gunman's brain ticks
+             # while his entry action waits for the grid, so the gallery's
+             # gunmen act from frame 8 and are elsewhere when this leg runs -
+             # it goes exactly the 92.82 asked, unbent. SHOWN by mutation on
+             # the same route: with the guard off a body pushes it again,
+             # -96.94 and -12.94 off its line, which is not the -103.36 / 1.58
+             # below either - this expectation had already drifted with the
+             # gunmen's floors and patrols, and nothing had run it since)
+             (23, "92.82", ("-92.82", "0.00", "0.00"))])
     return got, want, (
         "the mover's speeds from Speed 70 (row 4: 10.4, 0.39, 2.08); forward 40 "
         "frames = 303.29 along +Z, strafe right 30 = 256.10 along +X, nine MDRG "

@@ -1530,6 +1530,8 @@ int main(int argc, char** argv) {
 "                   area's props. AREA 222 wants SCENE 55, whose script ends\n"
 "                   in `object.show 162`, the Impasse's rings: without it\n"
 "                   there is nothing in the world to take\n"
+"  --scene-load A,S HARNESS: `scene.load A S`, the opcode and nothing else - over an\n"
+"                   area not yet resident it is recorded and arrives with the area.\n"
 "  --bank-reject    DEBUG: every bank is REFUSED as a full list refuses it,\n"
 "                   the object staying in his hand. Without it, the original's\n"
 "                   Inventory_Insert: a row, a merge, or for money and rings\n"
@@ -1803,6 +1805,7 @@ int main(int argc, char** argv) {
     int sceneChunk = -1;
     std::vector<int> zoneEnable;   // `--zone-enable`, the harness below
     std::vector<int> zoneDisable;  // `--zone-disable`, its mirror
+    std::vector<std::pair<int, int>> sceneLoads;   // `--scene-load A,S`, the opcode
     bool noCrowd = false;
     bool noScriptSprites = false;   // DEBUG: leave the scripted sprites undrawn, for a before/after
     std::vector<int> scxPlay;       // --scx-play: objects to start by handle, once
@@ -1938,6 +1941,10 @@ int main(int argc, char** argv) {
         else if (a == "--scene-chunk" && i + 1 < argc) sceneChunk = std::atoi(argv[++i]);
         else if (a == "--zone-enable" && i + 1 < argc) zoneEnable.push_back(std::atoi(argv[++i]));
         else if (a == "--zone-disable" && i + 1 < argc) zoneDisable.push_back(std::atoi(argv[++i]));
+        else if (a == "--scene-load" && i + 1 < argc) {
+            int sa = -1, ss = -1;
+            if (std::sscanf(argv[++i], "%d,%d", &sa, &ss) == 2) sceneLoads.push_back({sa, ss});
+        }
         else if (a == "--density" && i + 1 < argc) { density = std::atoi(argv[++i]); densityFlag = true; }
         else if (a == "--shadows" && i + 1 < argc) shadowFlag = std::atoi(argv[++i]);
         else if (a == "--no-shadows") shadowFlag = 0;
@@ -2544,6 +2551,17 @@ int main(int argc, char** argv) {
     // would have disabled it - the supermarket harness never runs AREA 231's
     // record 1, the airlock cutscene in, so its zone 3949 stays enabled from a
     // save made before the supermarket and walking OUT re-fires that cutscene.
+    // `--scene-load A,S`: opcode 71, `scene.load`, and nothing else. Over an
+    // area that is not resident it only RECORDS the scene in the DB, and
+    // `Area_Load` brings it in when the area loads - which is how the story
+    // puts SCENE 56 over the supermarket before the player walks in from the
+    // airlock. `--scene-chunk` starts INSIDE the area instead, skipping the
+    // airlock cutscene (AREA 231 record 1) the real path plays.
+    for (const auto& [sa, ss] : sceneLoads) {
+        session.sceneLoad(sa, ss);
+        std::printf("--scene-load: SCENE %d recorded over AREA %d (the `scene.load` "
+                    "opcode, nothing else)\n", ss, sa);
+    }
     for (const int z : zoneDisable) {
         session.disableZoneById(z);
         std::printf("--zone-disable: ZONE %d disabled (the `zone.disable` opcode, nothing "
@@ -8409,6 +8427,23 @@ int main(int argc, char** argv) {
                 player->setCameraOffsets(eye, at, 75.0f);
                 shootCameraLive = true;
                 shootPitch = 0.0f;
+                // ...AND THE CAMERA ALREADY THERE IS NOT A NEW ONE. The follow
+                // arm below gives the view away whenever the script's camera
+                // id differs from the last one APPLIED - its labelled reading
+                // of a script camera outranking mode 4. But an ABSOLUTE camera
+                // is never applied as a follow camera, so its id can be resident
+                // and still "differ": the supermarket's airlock cutscene
+                // (AREA 231 record 1) ends on camera 4380, a fixed shot OUTSIDE
+                // the building, `playerCamId` still holds its 4379, and forcing
+                // `followCam` for the first-person camera made the next frame
+                // read 4380 as newly named - it cleared this flag and loaded
+                // 4380's absolute eye as offsets. A reader, from a real save:
+                // "the camera was still and outside the supermarket", the
+                // log's `AIM reached - cameraLive 0`. The harness never showed
+                // it: it names only camera 0, already applied. Only a camera a
+                // script names AFTER `shoot.begin` may take the view now.
+                if (const omk::WorldCamera* rc = session.cameraTarget())
+                    playerCamId = rc->id;
                 front.setRelativeMouse(true);
                 std::printf("frame %ld: shoot camera - mode %d, eye %.1f above the "
                             "pelvis (%s), aim 20 m ahead\n", n,

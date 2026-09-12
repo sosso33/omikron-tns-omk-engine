@@ -195,7 +195,7 @@ the exit works.
    left unexplained and off the real path: on the artefact path, record 1
    carrying him back into 230 logged no switch back to 91.
 4. **The T-posed character** (symptom 2) - fixed in the port by step 1
-   (`da000d3`), NOT yet confirmed by eye. What the reader saw was actor 65 at
+   (`da000d3`), and **CONFIRMED by the reader in play, 2026-09-13**. What the reader saw was actor 65 at
    ground level half inside a pillar, which is where the lone-program fallback
    teleported him. Note what a plain area-230 start ALSO shows and is a
    different thing: actors 65, 88 and 60 staged in the rest pose from frame 0,
@@ -203,3 +203,46 @@ the exit works.
    far above the supermarket floor.
 
 Each step ends in a `--only` run over the shoot checks and a commit.
+
+## 5. The camera that froze OUTSIDE the supermarket — 2026-09-13
+
+A reader, from a REAL save (the restaurant), walking in the game's own way:
+**"the camera was still and outside the supermarket"** at the start of the
+phase; their terminal printed `AIM reached - cameraLive 0`. Every harness run
+had shown a live first-person camera, because `--area 230 --scene-chunk 56`
+starts inside and never plays the airlock cutscene.
+
+**The real way in, reproduced.** A new harness, `--scene-load A,S`, is opcode
+71 and nothing else: over an area not yet resident it only RECORDS the scene,
+and `Area_Load` brings it in with the area (`Session::areaLoad`,
+`sceneOverArea`). So
+
+```
+omk-play ... --save ../traces/save-appart.bin --area 231 --scene-load 230,56 \
+    --stand 12870,-98,1084,90 --hold "k200*40"
+```
+
+stands in the airlock, walks into zone 3949, and plays the whole sequence:
+record 1 carries him into 230 at frame 8, SCENE 56's intro editing takes the
+camera at 74 and ends at 463, and shoot mode begins at 465.
+
+**The cause** is the viewer's follow-camera bookkeeping. It hands the view to a
+script camera whenever that camera's id differs from `playerCamId`, the last
+camera APPLIED - its labelled reading of a script camera outranking mode 4. But
+an ABSOLUTE camera is never applied as a follow camera, so its id can be
+resident and still differ. Record 1 ends on **camera 4380**, a fixed shot at
+(12748, -153, 960) outside the building, while `playerCamId` still held 4379.
+Shoot mode forces `followCam` for the first-person camera, and the very next
+frame read 4380 as newly named: it cleared the live flag and loaded 4380's
+absolute eye as OFFSETS.
+
+**Fixed:** entering shoot mode adopts the resident camera's id, so only a camera
+a script names AFTER `shoot.begin` can take the view. Same route, same frames:
+
+| build | frame 466 | `AIM reached` at 466 / 587 / 708 |
+|---|---|---|
+| without the fix (mutation) | `follow camera 4380 - eye offset 12748 -153 960` | cameraLive 0 / 0 / 0 |
+| with it | no hand-off | cameraLive 1 / 1 / 1 |
+
+The harness route is unchanged by it (live at 395 and 516). Confirmed by the
+reader in play.
