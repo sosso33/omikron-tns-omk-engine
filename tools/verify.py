@@ -11876,6 +11876,20 @@ def c_engine_tie_equivalence():
     sets that keep their buckets, and a non-writing draw with nothing claimed
     yet only marks its range handled.
 
+    2026-09-13, step 7b: a set's revision changes EVERY frame while its cargo
+    moves, so the whole city was still re-keyed every frame, and the hashed
+    sets allocated and freed a node per face at each reset. The claimed keys
+    are now stored FLAT - each face's positions copied into a reused array,
+    found through an open-addressed table on an order-free hash, reset by
+    bumping a generation - with no node and no sort per face (the positions are
+    sorted only on a hash match, and a 16-bit fingerprint in each cell keeps a
+    probe from comparing the unrelated keys a cluster holds). The same
+    equivalence holds: 0 mismatches over the six models, and the tool's own
+    timing on Anekbah is 119.8 ms for the original pass against 21.0 ms for the
+    flat one (40.0 for the hashed sets). SHOWN TO FAIL on the flat code too: a
+    key compare that always matches gives 367 / 426 / 76 mismatching draws, an
+    inverted fingerprint test 197 / 280 / 69.
+
     `engine/tools/tie_equiv.cpp` keeps the old pass verbatim as `Reference` and
     runs both over the same draws, comparing every draw's losers in content and
     order: one pass over the batches, the same revision again (the mirror),

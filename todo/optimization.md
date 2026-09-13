@@ -64,6 +64,7 @@ not a CPU figure). Against the original's 32 MB, both are the port's.
 | 6 | the memory pass: where 236 MB goes, against a 365 MB Vita budget that vitaGL's textures also come out of | **first cut DONE** 2026-09-13 (as "step 5" in the log below) - music at its own rate, the headless audio queue dropped: live heap 234 -> 140 MB, window footprint 243 -> 185 MB; the rest ranked |
 | 7 | re-measure everything, and decide whether the Vita is in reach | open |
 | 7a | the moving set meshes' per-frame patch (found by the step-4 re-profile) | **DONE** 2026-09-13 - a per-mesh index and an in-place merge; capped CPU 50 -> 34% of a core, `engine: patch index` |
+| 7b | the depth tie re-keying the whole set every frame (the cargo moves) | **DONE** 2026-09-13 - claimed keys stored flat with a fingerprint; back to back capped CPU 39 -> 36%, run CPU time -7.6% |
 
 Each step ends in a commit and a report, per the working rhythm; the full
 sweep follows the cadence in `todo/sweep-log.md`, not these steps.
@@ -475,6 +476,64 @@ tie's hash lookups 350 + 273, `quantise888DitherRow` 272. The obvious next ones
 all trace back to the moving cargo: a grid updated for the moved triangles
 alone, a vertex buffer updated for the moved corners alone, and a depth tie that
 does not re-key the whole set when only a mesh moved.
+
+### 7b. The depth tie stored flat - done 2026-09-13 (committed as "optimization 9")
+
+**Why it was back.** Step 3 made the tie pass cheap per face, but a set's
+REVISION changes on every frame its cargo moves (7a's patch bumps it), so the
+whole city - 46415 triangles - is re-keyed every frame, and the hashed sets
+allocated a node per claimed face and freed them all at the next reset. The 7a
+re-profile: hash lookups 350 + 273, key sorting 417, and most of `_xzm_free`'s
+725.
+
+**What changed** (`o3de/depthtie.*`). The same decisions in the same order; only
+the claimed keys' storage. Each claimed face's positions are copied into a flat
+array reused across revisions (so the key is the positions themselves, as the
+sorted array was, and nothing depends on the geometry not changing under it),
+found through an open-addressed table keyed by an ORDER-FREE hash of the
+positions (a sum and an xor of per-position mixes), and reset by bumping a
+generation instead of freeing. The exact multiset compare - sort both, compare -
+runs only on a hash match.
+
+**The first flat version needed a fix, measured.** It ran the exact compare on
+EVERY occupied cell a probe walked past, and linear probing clusters, so the key
+sort stayed in the profile (331) and a capped run read no better. Each cell now
+carries a 16-bit fingerprint of the hash beside a 16-bit generation and the key
+number, and a probe skips a cell whose fingerprint differs; only a fingerprint
+match goes on to the compare, which alone decides.
+
+**Same decisions, proved.** `tie_equiv` keeps the ORIGINAL ordered-set pass: 0
+mismatches over Anekbah, Aapkayl, Lahoreh, HO1_FN, PSH_FN, JEN_FNM (3056 draws).
+The tool's timing on Anekbah: original **119.8 ms**, step-3 hashed sets 40.0,
+first flat version 31.7, flat with fingerprint **21.0** - 5.7x the original.
+`engine: tie equivalence` (asserted totals unchanged), `engine: sign tie` and
+`mirror pass` pass. SHOWN TO FAIL, on the new code: a compare that always
+matches gives 367 / 426 / 76 mismatching draws; an inverted fingerprint test
+(skipping the matching key) gives 197 / 280 / 69; restored, green.
+
+**Measured back to back - the only fair way.** Capped CPU readings moved by
+several points between sessions for the SAME binary (the patch build read 34%
+one run and 39% the next, with other applications on the GPU), and the uncapped
+rate that sat at exactly 60 in two earlier sessions read ~105-111 in this one -
+so the display's pacing ceiling is not fixed either. So the two builds were run
+capped one after the other under the same load (~5):
+
+| capped, 45 s, back to back | patch index (`74f893a`) | + flat depth tie |
+|---|---|---|
+| fps median / slowest window | 30.0 / 29.6 | 30.0 / 29.8 |
+| worst frame, median of windows | 36 ms | 35 ms |
+| CPU, mean (100 = one core) | 39 | **36** |
+| CPU time over the run | 21.6 s | **20.0 s** (-7.6%) |
+| physical footprint | 174 MB | 170 MB |
+
+**The re-profile, uncapped:** `DepthTie::resolve` 713 (its own walk - the sort and
+the frees are gone from the list), `buildSoupGrid` 537, `main` 430, `floorUnder`
+362, `quantise888DitherRow` 321, `uploadGeometry` 297, `applyLights` 295,
+`sweepSphere` 263, `applyPose` 208. What is left of the tie's cost is walking
+46415 faces a frame because the revision says the whole set changed - removing
+THAT needs a revision that says WHICH corners moved, the same thing the grid
+rebuild (537) and the whole-set vertex upload (297) are waiting on. That is the
+next step, and it is one change serving three consumers.
 
 ### 5. `main`'s own time
 
