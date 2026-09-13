@@ -7,6 +7,8 @@
 //     map2d_probe <gamedata> --routes           the PATROL ROUTES, every map
 //     map2d_probe <gamedata> --links            the INTER-FLOOR LINKS
 //     map2d_probe <gamedata> --snap             `sub_4368E0`'s SPIRAL, every map
+//     map2d_probe <gamedata> --sight-pair MAP FLOOR X0 Z0 X1 Z1
+//                                               ONE `sub_4359A0` walk, both ways
 //
 // `MAP2D/*.mpt` is the map screen AND the grid `Shoot_Think` moves on
 // (`engine/src/formats/map2d.h`, `todo/shoot-mode.md`). A census is not enough
@@ -21,6 +23,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <map>
 #include <string>
@@ -38,11 +41,43 @@ int main(int argc, char** argv) {
     const bool routes = argc > 2 && std::string(argv[2]) == "--routes";
     const bool links = argc > 2 && std::string(argv[2]) == "--links";
     const bool snap = argc > 2 && std::string(argv[2]) == "--snap";
+    const bool sightPair = argc > 8 && std::string(argv[2]) == "--sight-pair";
     const std::vector<std::string> names = {
         "archiv03", "archiv05", "astaroth", "bar56", "CSlev-3", "gallery",
         "grotte", "hames", "smarket1", "soukdock", "soukt", "tetra2",
         "tetra3", "tetra4", "tetradou", "yrmali"};
 
+    if (sightPair) {
+        // ONE line of sight, walked both ways and in both door states - the
+        // engage's call is `sub_4359A0(floor, TARGET cell, OWN cell, 1)`, so
+        // "target -> self" is the engine's order; the reverse is printed beside
+        // it because a stepped line need not be symmetric.
+        omk::Map2d m;
+        if (!m.loadFile(root + "/MAP2D/" + argv[3] + ".mpt")) {
+            std::fprintf(stderr, "no map %s\n", argv[3]);
+            return 1;
+        }
+        const int fl = std::atoi(argv[4]);
+        const int x0 = std::atoi(argv[5]), z0 = std::atoi(argv[6]);
+        const int x1 = std::atoi(argv[7]), z1 = std::atoi(argv[8]);
+        const auto walk = [&](const char* label, int ax, int az, int bx, int bz, std::uint16_t mask) {
+            int kx = -1, kz = -1;
+            const bool clear = m.lineOfSight(fl, ax, az, bx, bz, mask, &kx, &kz);
+            std::printf("sight %s %s (%d,%d)->(%d,%d): %s", label,
+                        mask ? "doors-open" : "doors-shut", ax, az, bx, bz,
+                        clear ? "CLEAR" : "BLOCKED");
+            if (!clear) {
+                const auto& f = m.floors()[static_cast<std::size_t>(fl)];
+                std::printf(" at (%d,%d) byte %d", kx, kz, int(f.cell(kx, kz)));
+            }
+            std::printf("\n");
+        };
+        for (const std::uint16_t mask : {std::uint16_t(0xFFFF), std::uint16_t(0)}) {
+            walk("target->self", x0, z0, x1, z1, mask);
+            walk("self->target", x1, z1, x0, z0, mask);
+        }
+        return 0;
+    }
     if (snap) {
         // `sub_4368E0` (`Map2d::snapToStandable`), measured so it can FAIL:
         // from the centre of every third cell of every floor of every map,

@@ -28310,6 +28310,56 @@ def c_map2d_snap():
                        "supermarket player's standable cell (6,11) moved to the "
                        "(-1,-1) neighbour the spiral tries first")
 
+
+def c_map2d_gallery_sight():
+    r"""THE SHOOTING GALLERY'S GRID SIGHT, measured - `todo/shoot-sight.md` step 3.
+
+    `sub_426E00`'s general arm acquires on `sub_4359A0(floor, targetCell,
+    ownCell, 1)`. On 2026-09-12 wiring the port's walk in stopped the gallery's
+    gunmen firing, and the attempt was backed out without recording why. Step 2
+    kept the player's own shoot record, which puts him on cell (17,21); this
+    walks each gunman's line from there, target-to-self as the engine does and
+    back, doors open and shut (`map2d_probe --sight-pair`).
+
+    The answer is the map: 237 at (11,29) and 238 at (22,37) are BLOCKED by real
+    wall cells, (14,25) and (20,29), both bytes 0, in both directions and both
+    door states; 240 at (6,23) sees the player. So the grid, not a start cell or
+    a walk direction, is what kept two of the three from acquiring.
+    SHOWN TO FAIL: a wall that does not block sight turns every line CLEAR.
+    """
+    import subprocess, re
+    fr = omkpaths.data_root()
+    if not os.path.isdir(fr):
+        return ("no data",), ("data",), "needs the shipped tree"
+    eng = os.path.join(ROOT, "engine")
+    b = subprocess.run(["make", "-s", "build/map2d_probe"], cwd=eng,
+                       capture_output=True, text=True)
+    binp = os.path.join(eng, "build", "map2d_probe")
+    if b.returncode != 0 or not os.path.exists(binp):
+        return ("build failed",), ("built",), "engine/ must build"
+    got = []
+    for gx, gz in ((11, 29), (22, 37), (6, 23)):
+        r = subprocess.run([binp, fr, "--sight-pair", "gallery", "0", "17", "21",
+                            str(gx), str(gz)], capture_output=True, text=True)
+        lines = re.findall(r"^sight (target->self|self->target) (doors-open|doors-shut) "
+                           r"\(\S+\)->\(\S+\): (CLEAR|BLOCKED)(?: at \((\d+),(\d+)\) byte (\d+))?$",
+                           r.stdout, re.M)
+        if len(lines) != 4:
+            return ("unparsed",), ("parsed",), "the probe's own --sight-pair lines"
+        verdicts = {(d, m): (v, bx, bz, by) for d, m, v, bx, bz, by in lines}
+        eng_open = verdicts[("target->self", "doors-open")]
+        same = len(set(verdicts.values())) == 1
+        got.append((gx, gz, eng_open[0],
+                    (int(eng_open[1]), int(eng_open[2]), int(eng_open[3])) if eng_open[1] else None,
+                    same))
+    want = [(11, 29, "BLOCKED", (14, 25, 0), True),
+            (22, 37, "BLOCKED", (20, 29, 0), True),
+            (6, 23, "CLEAR", None, True)]
+    return tuple(got), tuple(want), (
+        "each gallery gunman's line to the player's cell (17,21), walked target-to-self "
+        "as `sub_426E00` walks it: the verdict, the first refusing cell and its byte, "
+        "and whether all four walks (both ways, doors open and shut) agree")
+
 def c_map2d_sight():
     r"""`engine/`: the shoot AI's LINE OF SIGHT over the grid - the predicate
     that is NOT the movement one, and the walk that uses it.
@@ -33154,6 +33204,7 @@ CHECKS = [
     ("map2d grid",         c_map2d_grid,        "todo/shoot-mode; formats/map2d.h"),
     ("map2d sight",        c_map2d_sight,       "todo/shoot-mode 5c; formats/map2d.h"),
     ("map2d snap",         c_map2d_snap,        "todo/shoot-sight; formats/map2d.h"),
+    ("map2d gallery sight", c_map2d_gallery_sight, "todo/shoot-sight 3; formats/map2d.h"),
     ("bone names",         c_bone_names,        "todo/omk-play 96; ASSETS"),
     ("shoot range",        c_shoot_range,       "todo/shoot-mode 5c, 7a; actor/shoot.h"),
     ("shoot generic",      c_shoot_generic,     "todo/shoot-mode 7c; actor/shoot.h"),

@@ -38,8 +38,11 @@ does no triangle test at all on meshes flagged `0x41`.
   touches the bolts too.
 * **The general arm's shape is ported** (`shootEngage`, shoot.cpp 1171): grid
   sight for the acquire, `rayHits` choosing 6 against 13/8. But the viewer hands
-  it `gridLineOfSight = true` and never casts the ray, so every gunman on your
-  floor "sees" you through anything.
+  it `gridLineOfSight = true`, `gridClear = true` and `rayHits = true` (play.cpp
+  11863) and never casts the ray - so every gunman on your floor "sees" you
+  through anything, and one inside half his engagement range always stays in
+  state 6, never closing to 13 or 8. (Corrected 2026-09-13: this said the ray
+  was left false.)
 * **The spectre arm and the cross-floor sight arm are NOT ported.** A spectre
   that loses sight of you never returns to his beat by this rule.
 * **The player's shoot record is never kept current.** `Shoot_TickPlayer` runs
@@ -89,11 +92,32 @@ does no triangle test at all on meshes flagged `0x41`.
    old viewer seeded the field from the refused cell itself. So 240 turns
    another way, and 237 ends in the player's fourth bolt. The rest of the shoot
    family held.
-3. **The grid sight, decided by measurement.** A point query in
-   `map2d_probe` for the gallery's pairs, from the player's true cell, walked
-   target-to-self as the engine does, doors open and shut. Clear: wire it into
-   the engage. Blocked: find what differs (the door mask the viewer cannot know,
-   the cells) before wiring anything.
+3. ~~**The grid sight, decided by measurement**~~ - **DONE 2026-09-13: the
+   walls are REAL.** `map2d_probe --sight-pair` walks one line both ways and in
+   both door states, and from the player's true cell (17,21):
+
+   | gunman | cell | target -> self | blocked at |
+   |---|---|---|---|
+   | 237 | (11,29), and (11,28) | BLOCKED | (14,25), byte 0 - a wall |
+   | 238 | (22,37), and (22,36) | BLOCKED | (20,29), byte 0 - a wall |
+   | 240 | (6,23) | CLEAR | - |
+   | (240 later) | (18,20) | CLEAR | - |
+
+   All four walks agree for every pair, so neither the walk's direction nor the
+   door mask the viewer cannot know is involved; the gallery's floor drawing
+   shows the wall blocks themselves (x 13-16 on rows 25-27; row 31 solid from
+   x 10 to 23). By the engine's own rule 237 and 238 cannot acquire the player
+   from where they stand, and 240 can. `verify.py: map2d gallery sight` holds
+   it; shown to fail by a wall that does not block sight.
+
+   So the backed-out attempt was right about the SIGHT. What it could not show
+   is the consequence, which is the next step's question: do 237 and 238 walk
+   out from behind the walls and acquire then, as a shooting gallery's gunmen
+   would - or does something keep them hidden?
+3b. **Wire the grid sight and watch the gallery.** `gridLineOfSight` and
+   `gridClear` from `Map2d::lineOfSight(floor, player record cell, own record
+   cell)`; then the gallery's first shots, per gunman, before and after, and
+   the shoot family's movements traced one by one.
 4. **The ray, cast.** `EngageIn::rayHits` from the ported `WorldRay` between the
    two actors' node positions.
 5. **The two missing arms** in `shootEngage`: the spectre (type 12) and the
