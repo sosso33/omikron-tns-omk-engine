@@ -81,10 +81,11 @@ int main(int argc, char** argv) {
     const std::string fr = argv[1], tb = argv[2];
     const int area = std::atoi(argv[3]);
     int frames = 600, level = omk::kDefaultStreetActivity;
-    bool listWalkers = false;
+    bool listWalkers = false, listActions = false;
     for (int i = 4; i < argc; ++i) {
         const std::string a = argv[i];
         if (a == "--walkers") listWalkers = true;
+        else if (a == "--actions") listActions = true;
         else if (i == 4) frames = std::atoi(argv[i]);
         else if (i == 5) level = std::atoi(argv[i]);
     }
@@ -113,7 +114,39 @@ int main(int argc, char** argv) {
                 spawned, models.empty() ? "-" : models.c_str());
     std::vector<std::array<float, 3>> start;
     for (const auto& w : peds.movers()) start.push_back({w.body[0], w.body[1], w.body[2]});
-    for (int f = 0; f < frames; ++f) s.frame();
+    // `--actions`: how long each walker holds an action point (flag 0x80)
+    // without a break, and where the longest holds stand - the phase and clip.
+    std::vector<int> hold(peds.movers().size(), 0), longest(peds.movers().size(), 0);
+    std::vector<int> longPhase(peds.movers().size(), -2);
+    std::vector<std::string> longClip(peds.movers().size());
+    for (int f = 0; f < frames; ++f) {
+        s.frame();
+        if (!listActions) continue;
+        const auto& ms = peds.movers();
+        for (std::size_t k = 0; k < ms.size(); ++k) {
+            if (ms[k].live && ms[k].vehicle < 0 && (ms[k].flags & 0x80u)) ++hold[k]; else hold[k] = 0;
+            if (hold[k] > longest[k]) {
+                longest[k] = hold[k];
+                longPhase[k] = peds.actionPhase(static_cast<int>(k));
+                longClip[k] = ms[k].clip ? ms[k].clip->name : "-";
+            }
+        }
+    }
+    if (listActions) {
+        int over[4] = {0, 0, 0, 0};                 // holds past 150, 300, 600, 1200 frames
+        for (std::size_t k = 0; k < longest.size(); ++k) {
+            const int L = longest[k];
+            if (L > 150) ++over[0];
+            if (L > 300) ++over[1];
+            if (L > 600) ++over[2];
+            if (L > 1200) ++over[3];
+            if (L > 300)
+                std::printf("hold walker %zu %s longest %d now %d phase %d clip %s clock %.1f/%d\n", k,
+                            peds.movers()[k].model.c_str(), L, hold[k], longPhase[k], longClip[k].c_str(),
+                            peds.movers()[k].clock, peds.movers()[k].frames);
+        }
+        std::printf("holds over150 %d over300 %d over600 %d over1200 %d\n", over[0], over[1], over[2], over[3]);
+    }
     const auto net = network(peds.track());
     int live = 0, moved = 0, laneChanges = 0, blocked = 0, overtakes = 0, actions = 0, idle = 0, inAction = 0, nan = 0;
     float maxLag = 0.0f, maxOff = 0.0f;

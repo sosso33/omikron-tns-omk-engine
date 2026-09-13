@@ -335,6 +335,35 @@ Worth checking whether these are procedural WALKERS (`.OPT` sliders) or
 authored extras (`scx.play.actor`) — the two have different owners and the
 answer changes the fix entirely.
 
+**Measured 2026-09-13 - the walkers are cleared, the owner is not yet found.**
+
+* **Why a walker STOPS is the engine's rule, not a fault.** Every action point
+  in `anekbah.opt` (84) and `souk.opt` (68) names slot **2** (`Assis`, with its
+  enter/exit trio) or slot **16** - the TYPE 11 IDLE, whose clip name is
+  `NULL`. `sub_434630` finds the main by slot and `sub_4346C0`/`sub_434730` the
+  enter and exit by `strcmp` on the name under types 14/16; no type 14/16 clip
+  is named `NULL`, so the idle goes straight to phase 2 and loops `count`
+  times (10-40 in the shipped points): 30-40 s standing on the spot.
+  `sub_456250`'s assembly matches `actionTransition` branch for branch (phase 1
+  -> main and return; phase 2 held while the player talks, exit if any, else
+  the walk; phase 3 -> the walk). `ped_probe <area> 3600 4 --actions` measures
+  it: 57 of Anekbah's 200 hold a point over 600 frames, 21 over 1200 (the
+  sitters: 30 loops of a 101-frame main).
+* **No crowd clip poses in rest.** Bound through the viewer's own
+  `pedTracksFor`, all 17 men's and 5 women's clips of `PASSANTH.ANI` resolve
+  **19 of 19** tracks on PSH/FSH (Anekbah) and KSH/KWH (Jaunpur) - the men's
+  idle included, whose bones alone carry the gunmen's `U` prefix.
+* **The extras remain.** 123 of `anekbah.SCX`'s 157 objects and 115 of
+  `Jaunpur.SCX`'s 190 run their program ONCE (loop 1). The engine keeps a
+  finished body's last pose (CUTSCENES "the BODY between two beats"), and the
+  viewer's fallback does too (`the last pose it was given`) - EXCEPT for a
+  `Staged` rebuilt after the actor drops out of `session.shown()` for a frame,
+  which starts with an empty `lastPose` and, wearing a crowd model with no
+  `.CTL` bank, draws the rest pose. Not yet reproduced: over 900 and 1800
+  frames at Anekbah 1804,0,-6890 and Jaunpur address 40 no crowd-model extra
+  reached its program's end, and no body drew "the rest pose (no bank clip)".
+  Needs WHERE the reader saw it.
+
 ### 7. Missing animations — **REOPENED 2026-09-06: the apartment doors DO NOT animate**
 
 Lift doors, the drawer in Kay'l's apartment.
