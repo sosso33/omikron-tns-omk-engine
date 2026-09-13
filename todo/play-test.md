@@ -628,6 +628,60 @@ for the gallery's gunmen it moved them up to 770 units, onto the spots
 their own AI thought they were on. Anyone suddenly standing somewhere odd
 - in a wall, off a ledge - after this change is the thing to report.
 
+## 11. THE GUNMEN'S SIGHT — walls, rays and cutouts (committed 2026-09-13, `1a31eb4`..`374db06`), 5 minutes
+
+**NOT YET PLAYED.** Until 2026-09-13 every gunman on your floor could see you
+through anything. Now each one sees the way the engine's `sub_426E00` does
+(`todo/shoot-sight.md`): an ordinary gunman needs the floor GRID clear between
+you, and inside half his range a clear RAY decides whether he holds or closes
+in; a SPECTRE needs you inside his cone AND a clear ray, and otherwise walks
+his beat; and a gunman's sight passes through CUTOUTS (fences, foliage, grilles
+- mesh flag 0x800) that still stop a bolt.
+
+**The supermarket** (`--area 230 --scene-chunk 56`, stand still):
+* robber 77 cannot see you from behind the counter at first. He walks round
+  it, sees you at about frame **441**, and **rushes** you;
+* he hits you at **442** from the side (the sound, no tip of the view) and at
+  **471 from the front - a four-frame downward tip of the view** with
+  `IMPACT03.WAV`; the third bolt kills you at **513**, the phase is lost at
+  **573**.
+
+Wrong looks like: a robber shooting you through the counter before he has come
+round it, or one that sees you and then stands still at close range.
+
+**The Shooting gallery** (`--area 59 --stand 5000,0,-2900,0 --shoot`):
+* the gunmen behind the walls do not fire at once: 237 steps out from behind
+  his wall and fires at about frame 43, walking toward you; 238 comes through
+  the gap in the far wall and fires from there;
+* close gunmen come right up to you - their bodies push you, and your own
+  bolts can hit them.
+
+Wrong looks like: a bolt leaving a gunman who is still behind a wall, or all
+three firing in the first half-second as they used to.
+
+**The catacombs** (`--area 141 --zone-enable 2295 --stand 42786,854,-2380,0`,
+then walk forward into the zone to start the phase): the ghostly SPECTRES
+patrol their beats, and they see only what is in front of them with nothing
+solid between.
+* with rock between you they **keep walking their beat**, even when they face
+  you - measured on two routes, every spectre stayed on patrol;
+* step into the open in front of one, within about **30 m** (1170 units): he
+  should **stop his patrol**, turn to you and aim - a spectre's group never
+  fires (`todo/shoot-patrol.md`: *"he aims and never shoots"*);
+* break the line again - behind rock, or out of his cone - and he should **go
+  back to his beat**.
+
+**The one thing no headless run has shown**, and so the one worth your eyes:
+a spectre actually SEEING you and then losing you. Neither route put a spectre
+facing you with a clear line. Wrong looks like: a spectre that leaves his
+patrol while rock is between you, one that never reacts when you stand in the
+open in front of him, or one that sees you and never goes back to his beat.
+
+**Also seen on the way, and not a sight fault:** walking west from the zone
+(`k77*9` then forward) drops you about 200 units onto a lower floor near
+x 42235, where you can barely move and the shoot grid finds no standable cell
+under you. Tell me if the original lets you walk out of there.
+
 ## What is NOT worth testing yet
 
 * ~~the videophone's own picture inside the sneak~~ — **CONFIRMED IN PLAY

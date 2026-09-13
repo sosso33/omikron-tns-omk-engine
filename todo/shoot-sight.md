@@ -294,7 +294,38 @@ does no triangle test at all on meshes flagged `0x41`.
    the sight soup 591's clears at 109-126 and 150-282 and 595's at 143-262 -
    through the cutouts - but the player is outside their cones each time, so
    no spectre changes state and every one keeps his patrol.
-7. **Measure in the arenas and hand it to a person**: the gallery's gunmen still
-   fight you, the catacombs' spectres go back to their beats when rock is
-   between you, the supermarket robbers - then the shoot family, re-baselines
-   traced one by one, and what to watch in play.
+7. ~~**Measure in the arenas and hand it to a person**~~ - **DONE 2026-09-13**,
+   handed to play as `todo/play-test.md` 11.
+
+   * **The gallery and the supermarket** are pinned by the shoot family's own
+     checks as re-baselined in steps 3b and 4 (`shoot brain`, `fire`, `move`,
+     `entrance`, `noise`, `gunfire`, `death`), and steps 5 and 6 moved none of
+     them: the gunmen come out of cover and close in, robber 77 walks round the
+     counter, rushes, hits at 442 and 471 and kills at 513.
+   * **The catacombs**, where the spectres live. The patrol check's own route
+     never brings the player inside a spectre's reach (acquire 1170, cone
+     cos 0.174 - the beats are ~1600 away), so two routes were walked: into
+     zone 2295, a 90-degree turn, and west. On both, from frame 232 to 506,
+     spectres 589, 590, 591 and 595 each have the player INSIDE their cone
+     several times with the set between (`HITS the set, inside his cone`), and
+     none leaves his patrol - the engine's rule for rock between. **Neither
+     route produced a clear-ray sighting**, so a spectre seeing the player and
+     going back to his beat when the line breaks is asserted by the probe
+     (`shoot generic`) and NOT yet seen in an arena: it is what play-test 11
+     asks a person to watch. (Standing still elsewhere is not a route: shoot
+     mode only begins when the player walks into zone 2295.)
+   * **Seen on the way, not a sight fault:** the west walk drops the player
+     ~204 units onto floor 3 near x 42235, where a 563-unit step moves 2.39 and
+     `Shoot_Think` finds no standable cell in reach - a walker or grid question
+     for later, filed in play-test 11 for the reader's eye.
+
+   **What stays open from this plan:**
+   * the viewer calls `sub_426E00` every tick in every state, where the engine
+     calls it from 3, 4, 6, 8, 11, 13, 14 and 28 (step 5) - the two new arms
+     are gated, the general arm is not;
+   * the doors: the grid sight counts every door OPEN (step 3b), because the
+     viewer cannot ask a door object's state;
+   * `engine: shoot hit` is still red on purpose - its expectations predate
+     the grid sight and it needs re-aiming at a gunman who can be reached;
+   * a scene program moving a set mesh is not followed by the baked shot and
+     sight soups (labelled since the bolts).

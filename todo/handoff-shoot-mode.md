@@ -203,7 +203,11 @@ pose, the guns held, the walk.
 
 **Measured only - not yet played** (`play-test.md` NOT YET PLAYED): **DYING**,
 **THE ROBBERS STEER**, the advance-then-stop of the actions, and now **THE
-HURT REACTION** (2026-09-12). Play those four before building more on them.
+HURT REACTION** (2026-09-12), and since 2026-09-13 **THE GUNMEN'S SIGHT**
+(`play-test.md` 11: gunmen out of cover before they fire, robber 77 walking
+round the counter and rushing, spectres that keep their beat with rock between
+- and the one thing no run has shown, a spectre seeing you in the open). Play
+those five before building more on them.
 The hurt is the cheapest of the four to judge: stand still on the
 `--area 230 --scene-chunk 56` route and robber 77 hits you at 442 (from the
 side: the sound, no tip) and at 471 (from the front: a four-frame downward tip
@@ -280,12 +284,17 @@ of the view with `IMPACT03.WAV` on it), and kills you at 513.
    `PlayerController::nudge` against a wall.
 8. **`sub_421020`** - the fallback the engage takes when NO stair reaches the
    player's floor, and the last unread function in the chase. Unread.
-9. **`sub_4449E0`** - `sub_426E00`'s real sight, a RAY against geometry. The
-   port hands the engage a hard-coded "clear", so a gunman engages through
-   walls; wiring the GRID walk instead is the wrong fix and was backed out
-   (`shoot-patrol.md` §7).
-10. **THE SWEEP** - a full `--slow` run is owed (`todo/sweep-log.md`), not done
-   since 2026-09-09's; it waits for the reader's go.
+9. ~~**`sub_4449E0`** - `sub_426E00`'s real sight~~ - **DONE 2026-09-13**,
+   seven steps, its own plan file: [`shoot-sight.md`](shoot-sight.md). The
+   reading this item held was wrong twice over: the general arm's sight IS the
+   grid walk (the ray only picks hold or close inside half the range), and the
+   ray belongs to the spectre and the cross-floor watcher. Ported: the grid
+   sight, the ray, both arms, and the rays' two mesh skips (0x41 for both
+   rays, 0x800 cutouts for the sight only). Left open there: the engage called
+   every tick, the doors counted open, `shoot hit` to re-aim.
+10. **THE SWEEP** - a full `--slow` run is owed (`todo/sweep-log.md`, the
+   counter at 11 on 2026-09-13), not done since 2026-09-09's; the reader runs
+   it.
 
 ## 5. Traps that cost time, in the order they bit
 
