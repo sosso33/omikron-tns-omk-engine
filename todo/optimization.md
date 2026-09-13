@@ -63,6 +63,7 @@ not a CPU figure). Against the original's 32 MB, both are the port's.
 | 5 | break down `main`'s own time (H5) and re-rank | open |
 | 6 | the memory pass: where 236 MB goes, against a 365 MB Vita budget that vitaGL's textures also come out of | **first cut DONE** 2026-09-13 (as "step 5" in the log below) - music at its own rate, the headless audio queue dropped: live heap 234 -> 140 MB, window footprint 243 -> 185 MB; the rest ranked |
 | 7 | re-measure everything, and decide whether the Vita is in reach | open |
+| 7a | the moving set meshes' per-frame patch (found by the step-4 re-profile) | **DONE** 2026-09-13 - a per-mesh index and an in-place merge; capped CPU 50 -> 34% of a core, `engine: patch index` |
 
 Each step ends in a commit and a report, per the working rhythm; the full
 sweep follows the cadence in `todo/sweep-log.md`, not these steps.
@@ -412,6 +413,68 @@ the interface into the same frame on the GPU (the I2D layer is 16 layers of
 7 primitives - quads and blits), or present the 3D view directly and draw the
 interface over it. Check: a `--dump` of an adventure frame is byte-identical
 before and after; `readback` disappears from the sample.
+
+### 7a. The moving set meshes' patch - done 2026-09-13 (committed as "optimization 8")
+
+**What moves, measured.** `OMK_TRACE_MOTION=1` over 30 frames of the street: 33
+set meshes are re-placed every frame, and **30 really move on every one** - the
+`Cargo` containers and their `CA0A`..`CA2C` parts riding the cranes; only the
+three `Mirador` watchtowers never change. So skipping unchanged patches would
+buy little: the cost was the WORK around each patch.
+
+**What each frame did, per resident slot.** Found each moving mesh by name
+through all 860 of the set's meshes; re-placed it by scanning **all 139245 render
+corners** for its own (33 x 139245 tests - most of `main`'s unexplained self
+time in the earlier profiles); scanned the whole walkable and steep soups for its
+triangles; then cleared and re-merged `playerSoup` / `playerSteep` (~46000
+triangles) and rebuilt the grid.
+
+**What changed** (`play.cpp`, the patch block). Each `WorldSlot` builds, on the
+first patch after a load - `loadWorldSlot`'s `w = WorldSlot{}` drops it - a
+lower-cased name -> FIRST index map (the replaced scan took the first mesh whose
+name matched ignoring case), and each mesh's own render corners and walkable /
+steep triangles in ascending order under the scans' exact bounds. A patch walks
+only those, with the same `place()`. The merge copies only the triangles that
+moved, at their slot's offset, while it is known to match the slots
+(`mergedValid`: set by a full merge, cleared by a slot load, with the sizes
+checked); anything else takes the full merge as before. The grid is still
+rebuilt from scratch when anything moved. `sameName`, used only by the old scan,
+is gone.
+
+**Same result, proved.** 20 headless street frames byte-identical before and
+after. `OMK_VERIFY_PATCH=1` does the full merge beside the in-place one on every
+moving frame: over 60 moving frames, **0 mismatched**, with **754 walkable +
+1976 steep** triangles re-placed a frame against ~46000 re-merged.
+`verify.py: engine: patch index`; SHOWN TO FAIL: skipping the steep copy
+mismatches every moving frame (30 of 30, 60 of 60). `engine: walker falls`,
+`crowd push`, `probe grid`, `character shadow` and `tunnel door walk` (a moving
+door) pass.
+
+| capped, 45 s | music + queue build (`4cfa444`, last capped window run) | + patch index |
+|---|---|---|
+| fps median / slowest window | 30.0 / 29.9 | 30.0 / 29.9 |
+| worst frame, median of windows | 35 ms | 35 ms |
+| CPU, mean (100 = one core) | 50 | **34** |
+
+(The texture and sprite steps changed memory, not CPU, and had no capped window
+run of their own; the footprint read 198 MB here against 185 MB then, within
+what live window runs vary by - not claimed either way.)
+
+**The uncapped measure has hit a ceiling.** Both this build and the step-4 one
+now hold ~60 fps uncapped: that is the display's vsync (the swapchain is FIFO),
+not the engine. From here the CAPPED CPU share is the number that shows a CPU
+change, which is also the one a slower target like the Vita cares about.
+
+**The re-profile, uncapped** (15 s at the vsync ceiling): the main thread's top is
+now `semaphore_timedwait_trap` 3561 - waiting on presentation, i.e. idle - then
+`_xzm_free` 725, the depth tie's key sort 417, **`buildSoupGrid` 412** (still
+every frame, since the cargo moves every frame), `main` **383** (was 3092),
+`sweepSphere` 341, `floorUnder` 332, `uploadGeometry` 312 (the whole set's vertex
+buffer re-uploaded every frame for the same reason), `applyLights` 295, the depth
+tie's hash lookups 350 + 273, `quantise888DitherRow` 272. The obvious next ones
+all trace back to the moving cargo: a grid updated for the moved triangles
+alone, a vertex buffer updated for the moved corners alone, and a depth tie that
+does not re-key the whole set when only a mesh moved.
 
 ### 5. `main`'s own time
 

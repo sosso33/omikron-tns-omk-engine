@@ -12200,6 +12200,62 @@ def c_engine_sprite_table():
         "frame-1 pool's sprites and slots; the particles alive after 20 frames"
 
 
+def c_engine_patch_index():
+    r"""A moving set mesh is re-placed through a per-mesh index, and the merged
+    collision soups are updated in place - identically to the full merge
+    (todo/optimization.md step 7).
+
+    Every frame each moving mesh of a resident set is re-placed from its base
+    corners, and on the Anekbah street 30 of 33 move on every frame (the Cargo
+    containers and their parts on the cranes). Each re-placement scanned ALL of
+    the set's render corners - 139245 - and both whole soups for its own, and
+    then `playerSoup` / `playerSteep` were cleared and re-merged, ~46000
+    triangles. The slot now keeps each mesh's own corners and soup triangles
+    (built on the first patch after a load) and a lower-cased name -> first
+    index map (`sameName`'s first match), and the merge copies only the
+    triangles that moved, at their slot's offset, while it is known to match
+    the slots.
+
+    `OMK_VERIFY_PATCH=1` does the old full merge beside the in-place one on
+    every moving frame and compares them bit for bit. The check runs the
+    Anekbah street start headless for 65 frames with it: 60 moving frames
+    compared, 0 mismatched, 754 walkable + 1976 steep triangles re-placed a
+    frame (against ~46000 re-merged). From outside it, 2026-09-13: 20 headless
+    frames byte-identical before and after.
+
+    SHOWN TO FAIL: an in-place copy that skips the STEEP triangles leaves
+    `playerSteep` behind the slots, and the check goes red with every moving
+    frame mismatched - 30 of 30, 60 of 60 - while the re-placed counts do not
+    move.
+    """
+    import subprocess
+    eng = os.path.join(ROOT, "engine")
+    if not os.path.isdir(eng):
+        return ("skipped",), ("skipped",), "engine/ absent"
+    b = subprocess.run(["make", "-s", "play"], cwd=eng, capture_output=True, text=True)
+    binp = os.path.join(eng, "build", "omk-play")
+    if b.returncode != 0 or not os.path.exists(binp):
+        return ("skipped",), ("skipped",), "omk-play needs SDL (make play)"
+    save = os.path.join(ROOT, "traces", "save-appart.bin")
+    if not os.path.exists(save):
+        return ("skipped",), ("skipped",), "traces/save-appart.bin absent"
+    env = dict(os.environ, SDL_VIDEODRIVER="dummy", OMK_VERIFY_PATCH="1")
+    r = subprocess.run([binp, omkpaths.data_root(), os.path.join(ROOT, "tables"),
+                        "--save", save, "--area", "0", "--stand", "1804,0,-6890,336",
+                        "--software", "--nofmv", "--frames", "65"],
+                       cwd=eng, env=env, capture_output=True, text=True)
+    rows = re.findall(r"^patch verify: (\d+) moving frames compared, (\d+) mismatched, "
+                      r"(\d+) \+ (\d+) triangles re-placed this frame", r.stdout, re.M)
+    # a parse that reads nothing must fail AS A PARSE, not answer
+    if len(rows) != 2:
+        return (len(rows),), (2,), "patch verify lines - the viewer's log changed " \
+            "or the street no longer moves"
+    return tuple(tuple(int(x) for x in row) for row in rows), \
+        ((30, 0, 754, 1976), (60, 0, 754, 1976)), \
+        "per summary: moving frames compared, frames whose in-place merged soups " \
+        "differ from the full merge, and the walkable + steep triangles re-placed"
+
+
 def c_engine_walker_falls():
     r"""`engine/`'s walker takes a drop instead of refusing it - and the
     measurement that says why it had to.
@@ -34133,6 +34189,7 @@ SLOW = [
     ("engine: audio queue bound", c_engine_audio_queue_bound, "todo/optimization.md 5; backends/sdl/play.cpp"),
     ("engine: pixel sharing", c_engine_pixel_sharing, "todo/optimization.md 6; formats/tex3dt.h"),
     ("engine: sprite table", c_engine_sprite_table, "todo/optimization.md 6; backends/sdl/play.cpp"),
+    ("engine: patch index", c_engine_patch_index, "todo/optimization.md 7; backends/sdl/play.cpp"),
     ("engine: props", c_engine_props, "todo/omk-play"),
     ("sprite ids scene-local", c_sprite_ids_are_scene_local, "docs/ASSETS"),
     ("engine: scene sounds", c_engine_scene_sounds, "engine/README"),

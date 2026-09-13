@@ -47,6 +47,7 @@
 #include "actor/moves.h"
 #include "actor/slider.h"
 
+#include <cctype>
 #include <unordered_map>
 #include <limits>
 #include <optional>
@@ -140,16 +141,6 @@ constexpr int kCharMarker = -2;
 // step on - `Sound_Init` hands a DirectSound primary buffer to the driver and
 // DirectSound sums into it, so the summing never had a portable half
 // (`src/audio/mixer.h`).
-// A case-insensitive name compare - a scene function names a set mesh and the
-// two spellings need not match in case.
-bool sameName(const std::string& a, const std::string& b) {
-    if (a.size() != b.size()) return false;
-    for (std::size_t i = 0; i < a.size(); ++i)
-        if (std::tolower(static_cast<unsigned char>(a[i])) !=
-            std::tolower(static_cast<unsigned char>(b[i]))) return false;
-    return true;
-}
-
 // An angle difference on the SHORT arc, wrapped to (-180, 180]. A camera roll
 // is stored 4096-per-turn and a small negative one reads as ~+359; the two are
 // the same rotation standing still and a full turn apart once interpolated
@@ -3016,6 +3007,10 @@ int main(int argc, char** argv) {
     // shadows and the crowd's feet probe it every frame, and a linear scan of
     // the city per bone was most of the frame (todo/optimization.md step 2)
     omk::SoupGrid playerGrid;
+    // True while `playerSoup` / `playerSteep` are exactly the shown slots' soups
+    // concatenated - set by a full merge, cleared by a slot load - so a moving
+    // mesh can be copied in at its offset instead of re-merging everything.
+    bool mergedValid = false;
     // the same merge for the STEEP faces, so the controller can stand on a
     // slope and slide off it instead of finding no floor (omk-play 67)
     omk::TriangleSoup playerSteep;
@@ -4596,6 +4591,19 @@ int main(int argc, char** argv) {
         // moment. It looks like their colliders stay at their initial
         // position" - the sweep made rest-baked collision visible).
         std::vector<int>  soupMesh, steepMesh;
+        // THE PATCH'S INDEX (todo/optimization.md step 7). A set's moving meshes
+        // are re-placed every frame - on the Anekbah street 30 of them move on
+        // every one - and each re-placement scanned ALL of the set's render
+        // corners (139245 in Anekbah) and both whole soups for its own. Built on
+        // the first patch after a load (`w = WorldSlot{}` drops it): mesh name,
+        // lower-cased, -> its FIRST index - a scene function names a set mesh in
+        // whatever case, and the scan this replaced took the first mesh whose
+        // name matched letter for letter ignoring case; and each
+        // mesh's own corners and soup triangles in ascending order under the
+        // bounds the scans used.
+        bool patchIndexReady = false;
+        std::unordered_map<std::string, int> meshByLowerName;
+        std::vector<std::vector<std::uint32_t>> cornersOfMesh, soupTrisOfMesh, steepTrisOfMesh;
         omk::TriangleSoup baseSoup, baseSteep;
         // THE TWO WORLD RAYS (`actor/projectile.h`). Both walk the linked
         // set's meshes through `sub_444460`, which skips CollisionOnly
@@ -4728,6 +4736,7 @@ int main(int argc, char** argv) {
     const auto loadWorldSlot = [&](int slot, const std::string& stem, int area) {
         WorldSlot& w = worldSlots[static_cast<std::size_t>(slot & 1)];
         w = WorldSlot{};
+        mergedValid = false;
         w.geo.revision = ++worldGeoRev;
         if (stem.empty()) return;
         const auto o = fs.resolve("MESHES/DECORS/" + stem + ".3DO");
@@ -4810,6 +4819,7 @@ int main(int argc, char** argv) {
             playerSteep.insert(playerSteep.end(), w.steep.begin(), w.steep.end());
         }
         playerGrid = omk::buildSoupGrid(playerSoup);
+        mergedValid = true;
         world.setTextures(worldTex);
         poolSize = worldTex.size();
         ++poolComposition;   // the character and sprite sections re-append over this
@@ -5341,6 +5351,7 @@ int main(int argc, char** argv) {
         // patch is applied to the ORIGINAL each frame rather than accumulated.
         // Bumping `revision` is what tells a caching backend the buffer moved.
         bool soupsMoved = false;
+        std::vector<std::uint32_t> movedSoup[2], movedSteep[2];   // triangles re-placed, per slot
         // ...AND ITS SCALE. `Script_ScaleObjectX/Y/Z` (program.h) writes the
         // node's `+128..+136`, and `sub_494E80` multiplies each row of the
         // node's 3x3 by its axis's scale before the vertices go through it:
@@ -5389,10 +5400,36 @@ int main(int argc, char** argv) {
             for (int sl = 0; sl < 2; ++sl) {
                 WorldSlot& w = worldSlots[static_cast<std::size_t>(sl)];
                 if (w.geo.corners.empty() || w.meshes.empty()) continue;
+                const auto lowerName = [](const std::string& n) {
+                    std::string l(n);
+                    for (auto& ch : l) ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
+                    return l;
+                };
+                if (!w.patchIndexReady) {
+                    w.patchIndexReady = true;
+                    const std::size_t nm = w.meshes.size();
+                    for (std::size_t k = 0; k < nm; ++k)
+                        w.meshByLowerName.emplace(lowerName(w.meshes[k].name), static_cast<int>(k));
+                    w.cornersOfMesh.assign(nm, {});
+                    const std::size_t nc = std::min(w.geo.corners.size(), w.geo.cornerMesh.size());
+                    for (std::size_t c = 0; c < nc; ++c) {
+                        const std::int32_t mi = w.geo.cornerMesh[c];
+                        if (mi >= 0 && static_cast<std::size_t>(mi) < nm)
+                            w.cornersOfMesh[static_cast<std::size_t>(mi)].push_back(static_cast<std::uint32_t>(c));
+                    }
+                    const auto trisOf = [&](const std::vector<int>& meshOf, std::size_t floats) {
+                        std::vector<std::vector<std::uint32_t>> out(nm);
+                        for (std::size_t t = 0; t < meshOf.size() && 9 * t + 9 <= floats; ++t)
+                            if (meshOf[t] >= 0 && static_cast<std::size_t>(meshOf[t]) < nm)
+                                out[static_cast<std::size_t>(meshOf[t])].push_back(static_cast<std::uint32_t>(t));
+                        return out;
+                    };
+                    w.soupTrisOfMesh = trisOf(w.soupMesh, w.soup.size());
+                    w.steepTrisOfMesh = trisOf(w.steepMesh, w.steep.size());
+                }
                 const auto meshIndex = [&](const std::string& name) {
-                    for (std::size_t k = 0; k < w.meshes.size(); ++k)
-                        if (sameName(w.meshes[k].name, name)) return static_cast<int>(k);
-                    return -1;
+                    const auto it = w.meshByLowerName.find(lowerName(name));
+                    return it == w.meshByLowerName.end() ? -1 : it->second;
                 };
                 std::map<int, Patch> patches;
                 for (const auto& ns : allScales) {
@@ -5456,8 +5493,7 @@ int main(int argc, char** argv) {
                         if (pa.rotated) omk::qrot(pa.q, local, r);
                         out[0] = r[0] + at[0]; out[1] = r[1] + at[1]; out[2] = r[2] + at[2];
                     };
-                    for (std::size_t c = 0; c < w.geo.corners.size(); ++c) {
-                        if (c >= w.geo.cornerMesh.size() || w.geo.cornerMesh[c] != mi) continue;
+                    for (const std::uint32_t c : w.cornersOfMesh[static_cast<std::size_t>(mi)]) {
                         const float in[3] = {w.baseCorners[c].x, w.baseCorners[c].y, w.baseCorners[c].z};
                         float o[3];
                         place(in, o);
@@ -5467,9 +5503,10 @@ int main(int argc, char** argv) {
                     // render corners above (`Sweep_MeshTest` collides
                     // against the mesh's CURRENT matrix)
                     const auto patchSoup = [&](omk::TriangleSoup& soup, const omk::TriangleSoup& base,
-                                               const std::vector<int>& meshOf) {
-                        for (std::size_t t = 0; t < meshOf.size() && 9 * t + 9 <= base.size(); ++t) {
-                            if (meshOf[t] != mi) continue;
+                                               const std::vector<std::uint32_t>& tris,
+                                               std::vector<std::uint32_t>& movedOut) {
+                        movedOut.insert(movedOut.end(), tris.begin(), tris.end());
+                        for (const std::uint32_t t : tris) {
                             for (int v = 0; v < 3; ++v) {
                                 const std::size_t o = 9 * t + 3 * static_cast<std::size_t>(v);
                                 float out[3];
@@ -5478,8 +5515,8 @@ int main(int argc, char** argv) {
                             }
                         }
                     };
-                    patchSoup(w.soup, w.baseSoup, w.soupMesh);
-                    patchSoup(w.steep, w.baseSteep, w.steepMesh);
+                    patchSoup(w.soup, w.baseSoup, w.soupTrisOfMesh[static_cast<std::size_t>(mi)], movedSoup[sl]);
+                    patchSoup(w.steep, w.baseSteep, w.steepTrisOfMesh[static_cast<std::size_t>(mi)], movedSteep[sl]);
                     soupsMoved = true;
                     moved = true;
                 }
@@ -5489,12 +5526,61 @@ int main(int argc, char** argv) {
         if (soupsMoved) {
             // the walker holds REFERENCES to the merged copies, so they are
             // refilled in place rather than rebuilt (rebuildWorld's merge)
-            playerSoup.clear(); playerSteep.clear();
+            //
+            // ...and only the triangles that moved are copied in, at their
+            // slot's offset, while the merge is known to match the slots
+            // (todo/optimization.md step 7). The full merge stays for anything
+            // else: a slot loaded since, or sizes that no longer add up.
+            std::size_t wantSoup = 0, wantSteep = 0;
             for (int sl = 0; sl < 2; ++sl) {
                 const WorldSlot& w = worldSlots[static_cast<std::size_t>(sl)];
                 if (w.stem.empty()) continue;
-                playerSoup.insert(playerSoup.end(), w.soup.begin(), w.soup.end());
-                playerSteep.insert(playerSteep.end(), w.steep.begin(), w.steep.end());
+                wantSoup += w.soup.size(); wantSteep += w.steep.size();
+            }
+            if (mergedValid && playerSoup.size() == wantSoup && playerSteep.size() == wantSteep) {
+                std::size_t offSoup = 0, offSteep = 0;
+                for (int sl = 0; sl < 2; ++sl) {
+                    const WorldSlot& w = worldSlots[static_cast<std::size_t>(sl)];
+                    if (w.stem.empty()) continue;
+                    for (const std::uint32_t t : movedSoup[sl])
+                        std::copy_n(w.soup.data() + 9 * static_cast<std::size_t>(t), 9,
+                                    playerSoup.data() + offSoup + 9 * static_cast<std::size_t>(t));
+                    for (const std::uint32_t t : movedSteep[sl])
+                        std::copy_n(w.steep.data() + 9 * static_cast<std::size_t>(t), 9,
+                                    playerSteep.data() + offSteep + 9 * static_cast<std::size_t>(t));
+                    offSoup += w.soup.size(); offSteep += w.steep.size();
+                }
+            } else {
+                playerSoup.clear(); playerSteep.clear();
+                for (int sl = 0; sl < 2; ++sl) {
+                    const WorldSlot& w = worldSlots[static_cast<std::size_t>(sl)];
+                    if (w.stem.empty()) continue;
+                    playerSoup.insert(playerSoup.end(), w.soup.begin(), w.soup.end());
+                    playerSteep.insert(playerSteep.end(), w.steep.begin(), w.steep.end());
+                }
+                mergedValid = true;
+            }
+            // `OMK_VERIFY_PATCH=1`: the full merge beside the in-place one, every
+            // moving frame, compared bit for bit (`verify.py: engine: patch index`).
+            static const bool verifyPatch = std::getenv("OMK_VERIFY_PATCH") != nullptr;
+            if (verifyPatch) {
+                static long compared = 0, mismatched = 0;
+                omk::TriangleSoup refSoup, refSteep;
+                for (int sl = 0; sl < 2; ++sl) {
+                    const WorldSlot& w = worldSlots[static_cast<std::size_t>(sl)];
+                    if (w.stem.empty()) continue;
+                    refSoup.insert(refSoup.end(), w.soup.begin(), w.soup.end());
+                    refSteep.insert(refSteep.end(), w.steep.begin(), w.steep.end());
+                }
+                ++compared;
+                const bool same = refSoup.size() == playerSoup.size() && refSteep.size() == playerSteep.size() &&
+                    (refSoup.empty() || std::memcmp(refSoup.data(), playerSoup.data(), refSoup.size() * sizeof(float)) == 0) &&
+                    (refSteep.empty() || std::memcmp(refSteep.data(), playerSteep.data(), refSteep.size() * sizeof(float)) == 0);
+                if (!same) ++mismatched;
+                if (compared % 30 == 0)
+                    std::printf("patch verify: %ld moving frames compared, %ld mismatched, %zu + %zu triangles re-placed this frame\n",
+                                compared, mismatched,
+                                movedSoup[0].size() + movedSoup[1].size(), movedSteep[0].size() + movedSteep[1].size());
             }
             playerGrid = omk::buildSoupGrid(playerSoup);
         }
