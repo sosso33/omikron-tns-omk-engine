@@ -6,6 +6,7 @@
 //     map2d_probe <gamedata> --sight            the LINE OF SIGHT, every map
 //     map2d_probe <gamedata> --routes           the PATROL ROUTES, every map
 //     map2d_probe <gamedata> --links            the INTER-FLOOR LINKS
+//     map2d_probe <gamedata> --snap             `sub_4368E0`'s SPIRAL, every map
 //
 // `MAP2D/*.mpt` is the map screen AND the grid `Shoot_Think` moves on
 // (`engine/src/formats/map2d.h`, `todo/shoot-mode.md`). A census is not enough
@@ -18,6 +19,7 @@
 #include "platform/datafs.h"
 
 #include <algorithm>
+#include <cmath>
 #include <cstdio>
 #include <cstring>
 #include <map>
@@ -35,11 +37,64 @@ int main(int argc, char** argv) {
     const bool sight = argc > 2 && std::string(argv[2]) == "--sight";
     const bool routes = argc > 2 && std::string(argv[2]) == "--routes";
     const bool links = argc > 2 && std::string(argv[2]) == "--links";
+    const bool snap = argc > 2 && std::string(argv[2]) == "--snap";
     const std::vector<std::string> names = {
         "archiv03", "archiv05", "astaroth", "bar56", "CSlev-3", "gallery",
         "grotte", "hames", "smarket1", "soukdock", "soukt", "tetra2",
         "tetra3", "tetra4", "tetradou", "yrmali"};
 
+    if (snap) {
+        // `sub_4368E0` (`Map2d::snapToStandable`), measured so it can FAIL:
+        // from the centre of every third cell of every floor of every map,
+        // where does the spiral land? It never tests the start itself - its
+        // first candidate is the (-1,-1) neighbour - so even a standable start
+        // moves, and which neighbour it reaches is the ring order. Counted:
+        // found / none, how far each moved in cells (the ring, 1..5), and any
+        // landing that is NOT standable (must be 0, by the byte and bounds the
+        // spiral itself tests).
+        long tested = 0, found = 0, none = 0, bad = 0;
+        long rings[7] = {0, 0, 0, 0, 0, 0, 0};
+        for (const auto& n : names) {
+            omk::Map2d m;
+            if (!m.loadFile(root + "/MAP2D/" + n + ".mpt")) continue;
+            const float S = static_cast<float>(m.scale());
+            for (std::size_t fi = 0; fi < m.floors().size(); ++fi) {
+                const auto& f = m.floors()[fi];
+                for (std::uint32_t z = 0; z < f.h; z += 3)
+                    for (std::uint32_t x = 0; x < f.w; x += 3) {
+                        const float px = f.bound[0] + (float(x) + 0.5f) * S;
+                        const float pz = f.bound[4] + (float(z) + 0.5f) * S;
+                        float sx = px, sz = pz;
+                        ++tested;
+                        if (!m.snapToStandable(int(fi), sx, f.bound[3], sz)) { ++none; continue; }
+                        ++found;
+                        const long dx = std::lround((sx - px) / S), dz = std::lround((sz - pz) / S);
+                        const long ring = std::max(std::labs(dx), std::labs(dz));
+                        ++rings[ring < 6 ? ring : 6];
+                        const long cx = long(x) + dx, cz = long(z) + dz;
+                        if (cx < 1 || cz < 1 || cx >= long(f.w) || cz >= long(f.h) ||
+                            omk::Map2d::blockedValue(f.cell(int(cx), int(cz))))
+                            ++bad;
+                    }
+            }
+        }
+        std::printf("snap tested %ld found %ld none %ld bad %ld\n", tested, found, none, bad);
+        std::printf("snap rings 0..6+: %ld %ld %ld %ld %ld %ld %ld\n", rings[0], rings[1],
+                    rings[2], rings[3], rings[4], rings[5], rings[6]);
+        // ...and one worked case, the supermarket player's own cell (6,11)
+        omk::Map2d sm;
+        if (sm.loadFile(root + "/MAP2D/smarket1.mpt") && !sm.floors().empty()) {
+            const auto& f = sm.floors()[0];
+            const float S = static_cast<float>(sm.scale());
+            const float px = f.bound[0] + 6.5f * S, pz = f.bound[4] + 11.5f * S;
+            float sx = px, sz = pz;
+            const bool ok = sm.snapToStandable(0, sx, f.bound[3], sz);
+            std::printf("snap smarket1 floor 0 from (6,11) byte %d -> %s (%ld,%ld)\n",
+                        int(f.cell(6, 11)), ok ? "found" : "none",
+                        6 + std::lround((sx - px) / S), 11 + std::lround((sz - pz) / S));
+        }
+        return 0;
+    }
     if (sight) {
         // `sub_4359A0`'s walk (todo/shoot-mode.md 5c), measured two ways.
         //

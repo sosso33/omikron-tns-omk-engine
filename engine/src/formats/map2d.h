@@ -220,6 +220,19 @@ public:
     int floorAt(float x, float y, float z, int exclude = -1) const;
     // `sub_435770`, split into its two halves rather than packed.
     bool cellAt(int floor, float x, float z, int& cx, int& cz) const;
+    // `sub_4368E0` (0x004368E0): the nearest STANDABLE point to (x, z), found by
+    // a square spiral of one-cell steps - the ring of half-size one cell first,
+    // then grown a cell at a time, and given up after the fourth growth. Each
+    // candidate's cell is the plain truncation `(v - min) / scale`, its x cut
+    // to a BYTE, and it is taken only inside `1 <= x < w`, `1 <= z < h` and on
+    // a byte outside {0, 2, 3, 0x80}. `floor` -1 resolves each candidate's floor
+    // with `floorAt(x, y, z, -1)`. y is left alone. -> true and (x, z) moved to
+    // the point found; false and untouched after the last ring.
+    //
+    // `Shoot_TickPlayer` runs it when the player's `Shoot_Think` refuses his
+    // cell; `sub_47E5F0`, a gunman's move, runs it with floor 1 when he stands
+    // somewhere the wall test refuses.
+    bool snapToStandable(int floor, float& x, float y, float& z) const;
     // `sub_4353E0`: true when the AI refuses the cell. `occupied` stands in
     // for the runtime 0x80 a caller may have stamped itself.
     bool blocked(int floor, int cx, int cz) const;

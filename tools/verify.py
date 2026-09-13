@@ -26731,27 +26731,33 @@ def c_engine_shoot_fire():
             # stop on the world again. The gunmen's own bolts are live from
             # frame 8, so every shot takes pool entry 2. The body hit belongs to
             # `engine: shoot hit`, which aims at one.)
-            [2, 2, 2, 2, 2, 2, 2, 2],
-            [("hit the world", -3175, "249.6", "0"), ("hit the world", -3171, "249.6", "0"),
-             ("hit the world", -3170, "249.6", "0"), ("hit the world", -3161, "249.6", "0"),
-             ("hit the world", -3150, "249.6", "0"), ("hit the world", -3148, "249.6", "0"),
-             ("hit the world", -3142, "249.6", "0")],
+            # (and since THE PLAYER'S RECORD is kept, 2026-09-13: `Shoot_TickPlayer`
+            # thinks on him every frame and seeds the path field from HIS
+            # record's cell - and the gunmen push him onto a refused cell twice,
+            # at frames 84 and 94, where `sub_4368E0` snaps him to (16,20). The
+            # field reseeded there turns 240 at frame 102 onto heading 270 where
+            # the old seed gave 225, and 237 ends in the fourth bolt: one meets
+            # 237, seven stop on the world, that shot on pool entry 1)
+            [2, 2, 2, 1, 2, 2, 2, 2],
+            [("HIT ACTOR 237", -3046, "124.8", "0"),
+             ("hit the world", -3171, "249.6", "0"), ("hit the world", -3170, "249.6", "0"),
+             ("hit the world", -3166, "249.6", "0"), ("hit the world", -3161, "249.6", "0"),
+             ("hit the world", -3156, "249.6", "0"), ("hit the world", -3152, "249.6", "0"),
+             ("hit the world", -3143, "249.6", "0")],
             # (and since the y was PINNED, 2026-09-12: a gunman stands at his
             # floor's own edge minus his height rather than wherever the ground
             # probe had drifted him, so the bodies that push the player are a
             # few units from where they were and his muzzle points follow)
-            8, [("4956.3", "15144.7", "-2932.0"), ("4975.2", "15144.7", "-2964.5"),
-                ("4983.2", "15144.7", "-2960.6"), ("4985.3", "15144.7", "-2931.9"),
-                ("4996.4", "15144.7", "-2941.6"), ("5005.0", "15144.7", "-2939.5"),
-                ("5006.5", "15144.7", "-2924.1"), ("5010.3", "15144.7", "-2954.6")],
+            8, [("4965.2", "15144.7", "-2930.9"), ("4978.6", "15144.7", "-2937.0"),
+                ("4991.6", "15144.7", "-2939.0"), ("4996.4", "15144.7", "-2941.6"),
+                ("5001.7", "15144.7", "-2945.9"), ("5005.0", "15144.7", "-2939.5"),
+                ("5006.5", "15144.7", "-2924.1")],
             list(range(37, 248, 30)),
-            [39, 69, 99, 129, 159, 189, 219, 249],
+            [39, 69, 99, 159, 189, 219, 249],
             [("fire", "1", "687", "WAVER2.WAV", "1.00"),
              ("impact", "3", "689", "WIMP1.WAV", "0.26"),
-             ("impact", "3", "689", "WIMP1.WAV", "0.28"),
              ("impact", "3", "689", "WIMP1.WAV", "0.29"),
-             ("impact", "3", "689", "WIMP1.WAV", "0.33"),
-             ("impact", "3", "689", "WIMP1.WAV", "0.34")])
+             ("impact", "3", "689", "WIMP1.WAV", "0.31")])
     return got, want, (
         "`Shoot_InitWeapon` giving the Gun Waver the key-1 row on the mode "
         "transition; eight latches armed by `MDSHOOT0` off the real channel; "
@@ -26759,8 +26765,8 @@ def c_engine_shoot_fire():
         "drain, six for the weapon to come back up); all of them the row's "
         "speed and damage, straight down -Z from the Maing node; one pool "
         "entry per shot; the bolts from the RAISED muzzle wherever the gunmen's "
-        "bodies have pushed him - and since the gunmen act from frame 8 all "
-        "eight stop on the world; "
+        "bodies have pushed him - one meets actor 237 and seven stop on the "
+        "world; "
         "WAVER2.WAV on every shot's frame and WIMP1.WAV on every impact")
 
 
@@ -28249,6 +28255,60 @@ def c_bone_names():
                        "BONE against tracks resolving under the old rule, "
                        "which is 0")
 
+
+
+def c_map2d_snap():
+    r"""`sub_4368E0` (0x004368E0), THE SPIRAL - the nearest standable point, as
+    `Map2d::snapToStandable` (`todo/shoot-sight.md` step 2).
+
+    `Shoot_TickPlayer` runs it on the PLAYER when his `Shoot_Think` refuses his
+    cell, so the cell the path field is seeded from - and the target cell the
+    engage's grid sight starts at - is a standable one. `sub_47E5F0` runs it on
+    a gunman standing where the wall test refuses.
+
+    Read out of the function: a square spiral of one-cell steps from the (-1,-1)
+    neighbour - the start itself is NEVER tested - round the ring of half-size
+    one cell, then grown a cell at a time and given up after the FOURTH growth;
+    each candidate's cell the truncation `(v - min) / scale` with x cut to a
+    BYTE, taken only inside `1 <= x < w`, `1 <= z < h` on a byte outside
+    {0, 2, 3, 0x80}. `map2d_probe --snap` runs it from the centre of every third
+    cell of every floor of every map.
+
+    What can fail: the ring histogram - nothing at 0 (the start is never
+    taken), nothing past 5 (four growths) - and the worked case, the
+    supermarket player's own standable cell (6,11), which the spiral's ORDER
+    sends to (5,10). A landing that is not standable is counted and must be 0.
+    SHOWN TO FAIL: three growths instead of four empties ring 5.
+    """
+    import subprocess, re
+    fr = omkpaths.data_root()
+    if not os.path.isdir(fr):
+        return ("no data",), ("data",), "needs the shipped tree"
+    eng = os.path.join(ROOT, "engine")
+    b = subprocess.run(["make", "-s", "build/map2d_probe"], cwd=eng,
+                       capture_output=True, text=True)
+    binp = os.path.join(eng, "build", "map2d_probe")
+    if b.returncode != 0 or not os.path.exists(binp):
+        return ("build failed",), ("built",), "engine/ must build"
+    r = subprocess.run([binp, fr, "--snap"], capture_output=True, text=True)
+    t = re.search(r"^snap tested (\d+) found (\d+) none (\d+) bad (\d+)$", r.stdout, re.M)
+    g = re.search(r"^snap rings 0\.\.6\+:((?: \d+){7})$", r.stdout, re.M)
+    w = re.search(r"^snap smarket1 floor 0 from \((\d+),(\d+)\) byte (\d+) -> (\w+) "
+                  r"\((-?\d+),(-?\d+)\)$", r.stdout, re.M)
+    if not (t and g and w):
+        return ("unparsed",), ("parsed",), "the probe's own --snap lines"
+    got = (tuple(int(x) for x in t.groups()),
+           tuple(int(x) for x in g.group(1).split()),
+           (int(w.group(1)), int(w.group(2)), int(w.group(3)), w.group(4),
+            int(w.group(5)), int(w.group(6))))
+    want = ((8753, 6528, 2225, 0),
+            (0, 3983, 896, 707, 599, 343, 0),
+            (6, 11, 1, "found", 5, 10))
+    return got, want, ("cells snapped from, landings found, none in reach, and "
+                       "landings that are not standable (0); how far each moved "
+                       "in rings 0..6+ - none at 0, none past 5; and the "
+                       "supermarket player's standable cell (6,11) moved to the "
+                       "(-1,-1) neighbour the spiral tries first")
 
 def c_map2d_sight():
     r"""`engine/`: the shoot AI's LINE OF SIGHT over the grid - the predicate
@@ -33093,6 +33153,7 @@ CHECKS = [
     ("shoot radar files",  c_shoot_radar_files, "todo/shoot-mode 8.3; ui/radar.h"),
     ("map2d grid",         c_map2d_grid,        "todo/shoot-mode; formats/map2d.h"),
     ("map2d sight",        c_map2d_sight,       "todo/shoot-mode 5c; formats/map2d.h"),
+    ("map2d snap",         c_map2d_snap,        "todo/shoot-sight; formats/map2d.h"),
     ("bone names",         c_bone_names,        "todo/omk-play 96; ASSETS"),
     ("shoot range",        c_shoot_range,       "todo/shoot-mode 5c, 7a; actor/shoot.h"),
     ("shoot generic",      c_shoot_generic,     "todo/shoot-mode 7c; actor/shoot.h"),

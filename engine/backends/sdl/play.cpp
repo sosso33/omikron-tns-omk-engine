@@ -6356,9 +6356,50 @@ int main(int argc, char** argv) {
                                 for (int k = 0; k < 3; ++k) pp[k] = playerMeshAt[i * 3 + static_cast<std::size_t>(k)];
                             break;
                         }
-                    const int fl = shootMap.floorAt(pp[0], pp[1], pp[2], -1);
+                    // THE PLAYER'S OWN SHOOT RECORD, kept as `Shoot_TickPlayer`
+                    // keeps it (05_sys.c 7498): `Shoot_Think` on HIM every
+                    // frame - his floor `+188` always, his cell `+136/+140` when
+                    // the cell is standable - and when it refuses, `sub_4368E0`
+                    // walks the point to the nearest standable cell and the cell
+                    // is that point's. Until 2026-09-13 the viewer seeded the
+                    // path field from a cell of its own and left the record at
+                    // `node = -1`, so the engage's GRID sight - which walks from
+                    // the TARGET record's cell - had no start (`todo/shoot-sight.md`).
+                    const int oldFloor = static_cast<signed char>(playerShootRec.node & 0xFF);
+                    const bool thought = omk::shootThink(playerShootRec, shootMap, pp, 0, -1);
+                    playerShootRec.flags &= ~0x1000u;          // `BYTE1(v11) &= ~0x10`
+                    const int fl = static_cast<signed char>(playerShootRec.node & 0xFF);
                     int cx = 0, cz = 0;
-                    if (fl >= 0 && shootMap.cellAt(fl, pp[0], pp[2], cx, cz)) {
+                    bool haveCell = false;
+                    float snapX = pp[0], snapZ = pp[2];
+                    bool snapped = false;
+                    if (fl >= 0) {
+                        if (thought) {
+                            cx = playerShootRec.destX;
+                            cz = playerShootRec.destZ;
+                        } else {
+                            snapped = shootMap.snapToStandable(fl, snapX, pp[1], snapZ);
+                            shootMap.cellAt(fl, snapX, snapZ, cx, cz);
+                        }
+                        haveCell = true;
+                    }
+                    {
+                        static std::array<int, 4> recTold{-9, -9, -9, -9};
+                        const std::array<int, 4> key{fl, cx, cz, thought ? 1 : (snapped ? 2 : 3)};
+                        if (key != recTold) {
+                            recTold = key;
+                            std::printf("frame %ld: the player's shoot record (Shoot_TickPlayer): "
+                                        "floor %d (was %d), cell (%d,%d) - %s at %.0f %.0f\n", n, fl,
+                                        oldFloor, cx, cz,
+                                        thought ? "Shoot_Think took it"
+                                                : (snapped ? "Shoot_Think refused, sub_4368E0 snapped"
+                                                           : (fl >= 0 ? "Shoot_Think refused, no "
+                                                                        "standable cell in reach"
+                                                                      : "no floor")),
+                                        double(snapX), double(snapZ));
+                        }
+                    }
+                    if (haveCell) {
                         static long fieldFrom = -1, fieldTold = -1;
                         if (!shootField.seeded() || shootField.floor() != fl) {
                             shootField.seed(shootMap, fl, cx, cz);
@@ -11768,12 +11809,12 @@ int main(int argc, char** argv) {
                         // is seeded from: at his feet the supermarket's player
                         // stands on his grid's upper bound and `floorAt` finds
                         // nothing (`todo/shoot-mode.md` 8 B3).
-                        int playerFloor = -1;
-                        if (shootMap.valid() && player) {
-                            const float* pp = player->pos();
-                            const float pelvis[3] = {pp[0], pp[1] - player->cameraLift(), pp[2]};
-                            playerFloor = shootMap.floorAt(pelvis[0], pelvis[1], pelvis[2], -1);
-                        }
+                        // ...and since 2026-09-13 it is the PLAYER'S RECORD's `+188`,
+                        // which the player's tick has just written with his own
+                        // `Shoot_Think`, the engine's own comparison - not a
+                        // `floorAt` taken here from a second point.
+                        const int playerFloor = shootMap.valid()
+                            ? static_cast<signed char>(playerShootRec.node & 0xFF) : -1;
                         const int gunFloor = static_cast<signed char>(rec.node & 0xFF);
                         ein.sameNode = playerFloor < 0 || gunFloor < 0 ||
                                        playerFloor == gunFloor;

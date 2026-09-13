@@ -235,6 +235,61 @@ bool Map2d::cellAt(int floor, float x, float z, int& cx, int& cz) const {
     return true;
 }
 
+bool Map2d::snapToStandable(int floor, float& x, float y, float& z) const {
+    if (!scale_ || floors_.empty()) return false;
+    const float S = static_cast<float>(scale_);          // `flt_907EAC`
+    // the ring: `v15` its max, `v18` its min; `v16`/`v17` the offset; `v19`/`i`
+    // the step in x / z; `v21` the growths left
+    float ringMax = S, ringMin = -S;
+    float ox = -S, oz = -S;
+    float stepX = S, stepZ = 0.0f;
+    int growths = 4;
+    int fl = floor;
+    for (;;) {
+        float px = 0.0f, pz = 0.0f;
+        do {
+            if (ox > ringMax) { stepX = 0.0f; stepZ = S;  ox = ringMax; }
+            if (oz > ringMax) { stepZ = 0.0f; stepX = -S; oz = ringMax; }
+            if (ox < ringMin) { stepX = 0.0f; stepZ = -S; ox = ringMin; }
+            if (oz < ringMin) {
+                // `v4 = v21 - 1 < 0` is taken BEFORE the decrement: four growths
+                const bool spent = growths - 1 < 0;
+                const float grown = ringMax + S;
+                stepZ = 0.0f; stepX = S;
+                ringMax = grown; ringMin = -grown;
+                --growths;
+                ox = ringMin; oz = ringMin;
+                if (spent) return false;
+            }
+            px = ox + x;
+            pz = oz + z;
+            if (fl != -1) break;
+            fl = floorAt(px, y, pz, -1);
+        } while (fl == -1);
+        if (fl >= 0 && static_cast<std::size_t>(fl) < floors_.size()) {
+            const Map2dFloor& f = floors_[static_cast<std::size_t>(fl)];
+            // `(uint)(int64)((z - minZ) / S) << 16` plus `(int64)((x - minX) / S)`,
+            // then the low BYTE for x and the arithmetic `>> 16` for z
+            const auto czT = static_cast<std::uint32_t>(static_cast<std::int64_t>((pz - f.bound[4]) / S)) << 16;
+            const auto cxT = static_cast<std::int64_t>((px - f.bound[0]) / S);
+            const auto packed = static_cast<std::int32_t>(cxT + czT);
+            const int bx = static_cast<std::uint8_t>(packed);
+            const int bz = packed >> 16;
+            if (bx >= 1 && bx < static_cast<int>(f.w) && bz >= 1 && bz < static_cast<int>(f.h)) {
+                const std::uint8_t c = f.cells[static_cast<std::size_t>(bz) * f.w +
+                                               static_cast<std::size_t>(bx)];
+                if (!(c == 0x80 || c == 0 || c == 2 || c == 3)) {
+                    x = px;
+                    z = pz;
+                    return true;
+                }
+            }
+        }
+        ox += stepX;              // LABEL_17
+        oz += stepZ;              // the loop's own `v17 = v17 + i`
+    }
+}
+
 bool Map2d::blocked(int floor, int cx, int cz) const {
     if (floor < 0 || static_cast<std::size_t>(floor) >= floors_.size()) return true;
     const Map2dFloor& f = floors_[static_cast<std::size_t>(floor)];

@@ -55,10 +55,40 @@ does no triangle test at all on meshes flagged `0x41`.
 ## 3. The steps
 
 1. ~~**Read**~~ - DONE (§1, §2).
-2. **The player's record.** Run `Shoot_Think` on the player every frame, as
-   `Shoot_TickPlayer` does, so his `+188` and `+136/+140` are what the engage
-   reads. Measure his cell in the gallery against the (17,21) of the backed-out
-   attempt.
+2. ~~**The player's record**~~ - **DONE 2026-09-13.** The viewer now runs
+   `Shoot_Think` on the player's own record every frame from his pelvis (the
+   point the path field always used), clears flag `0x1000`, and takes the
+   record's cell - or, when the think refuses it, the cell of the point
+   `sub_4368E0` snaps to. The path field is seeded from that cell, and the
+   engage reads the player's floor from the record's `+188`, which is the
+   engine's own comparison. `sub_4368E0` is transcribed as
+   `Map2d::snapToStandable`.
+
+   **Measured in the three arenas.** Gallery: floor 0, cell **(17,21)** from
+   frame 2 - exactly the cell the backed-out grid attempt used, so its BLOCKED
+   was not a wrong start cell. Supermarket: floor 0, cell (6,11) at 395, robber
+   77's hits at 460 and 514 unchanged. Catacombs: the cell follows the player
+   step by step, (15,15) to (15,6); the patrols unchanged.
+
+   **The snap, checked** (`verify.py: map2d snap`, `map2d_probe --snap`): from
+   the centre of every third cell of every map, 8753 starts, 6528 landings, 2225
+   with nothing in reach and 0 landings unstandable; by ring 0 / 3983 / 896 /
+   707 / 599 / 343 / 0 - nothing stays put (the start is never tested) and
+   nothing goes past 5 (four growths). The supermarket player's standable cell
+   (6,11) goes to (5,10), the (-1,-1) neighbour tried first. SHOWN TO FAIL:
+   three growths empties ring 5 and drops the landings to 6185. (The restore
+   after that mutation first came back RED with the mutated numbers - a stale
+   `map2d.o` inside the timestamp granularity - and passed only once the object
+   was deleted by name: CLAUDE.md's trap, met again.)
+
+   **What moved: `engine: shoot fire`**, and it was traced rather than
+   re-baselined blind. The same route run with and without step 2 is identical
+   until frame 102, where gunman 240 at cell (18,20) steers on heading 270
+   instead of 225. Before that, at frames 84 and 94, the gunmen push the player
+   onto a cell `Shoot_Think` refuses and `sub_4368E0` snaps him to (16,20); the
+   old viewer seeded the field from the refused cell itself. So 240 turns
+   another way, and 237 ends in the player's fourth bolt. The rest of the shoot
+   family held.
 3. **The grid sight, decided by measurement.** A point query in
    `map2d_probe` for the gallery's pairs, from the player's true cell, walked
    target-to-self as the engine does, doors open and shut. Clear: wire it into
