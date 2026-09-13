@@ -286,19 +286,29 @@ inline int cellAxis(double v, double lo, double hi, double cell, int n) {
 
 }  // namespace
 
-SoupGrid buildSoupGrid(const TriangleSoup& tris, double cell) {
+namespace {
+
+// THE ONE BUILD BODY. `forEach(f)` calls `f(t)` for every triangle to include,
+// in ASCENDING order - the mask builder walks the whole soup testing its mask,
+// the id builder walks its list - so a grid over the same triangles comes out
+// the same from either.
+template <class ForEach>
+SoupGrid buildOver(const TriangleSoup& tris, double cell, ForEach forEach) {
     SoupGrid g;
     g.data = tris.data();
     g.size = tris.size();
-    const std::size_t n = tris.size() / 9;
-    if (n == 0) return g;
+    g.built = true;
+    bool any = false;
     double lo[2] = {1e300, 1e300}, hi[2] = {-1e300, -1e300};
-    for (std::size_t t = 0; t < n; ++t)
+    forEach([&](std::size_t t) {
+        any = true;
         for (int k = 0; k < 3; ++k) {
             const double x = tris[9 * t + 3 * k], z = tris[9 * t + 3 * k + 2];
             lo[0] = std::min(lo[0], x); hi[0] = std::max(hi[0], x);
             lo[1] = std::min(lo[1], z); hi[1] = std::max(hi[1], z);
         }
+    });
+    if (!any) return g;                       // built, and over nothing: nx == 0
     g.minX = lo[0]; g.maxX = hi[0]; g.minZ = lo[1]; g.maxZ = hi[1];
     const double span = std::max(hi[0] - lo[0], hi[1] - lo[1]);
     g.cell = std::max({cell, span / 512.0, 1.0});
@@ -320,31 +330,52 @@ SoupGrid buildSoupGrid(const TriangleSoup& tris, double cell) {
     };
     const std::size_t cells = static_cast<std::size_t>(g.nx) * static_cast<std::size_t>(g.nz);
     g.start.assign(cells + 1, 0);
-    for (std::size_t t = 0; t < n; ++t) {
+    forEach([&](std::size_t t) {
         int i0, i1, k0, k1;
         range(t, i0, i1, k0, k1);
         for (int k = k0; k <= k1; ++k)
             for (int i = i0; i <= i1; ++i)
                 ++g.start[static_cast<std::size_t>(k) * g.nx + i + 1];
-    }
+    });
     for (std::size_t c = 0; c < cells; ++c) g.start[c + 1] += g.start[c];
     g.index.resize(g.start[cells]);
     std::vector<std::uint32_t> cursor(g.start.begin(), g.start.end() - 1);
-    for (std::size_t t = 0; t < n; ++t) {   // ascending, so each cell's list is too
+    forEach([&](std::size_t t) {   // ascending, so each cell's list is too
         int i0, i1, k0, k1;
         range(t, i0, i1, k0, k1);
         for (int k = k0; k <= k1; ++k)
             for (int i = i0; i <= i1; ++i)
                 g.index[cursor[static_cast<std::size_t>(k) * g.nx + i]++] =
                     static_cast<std::uint32_t>(t);
-    }
+    });
     return g;
+}
+
+}  // namespace
+
+SoupGrid buildSoupGrid(const TriangleSoup& tris, double cell,
+                       const std::vector<std::uint8_t>* include) {
+    const std::size_t n = tris.size() / 9;
+    return buildOver(tris, cell, [&](auto&& f) {
+        for (std::size_t t = 0; t < n; ++t)
+            if (!include || (t < include->size() && (*include)[t])) f(t);
+    });
+}
+
+SoupGrid buildSoupGrid(const TriangleSoup& tris, double cell,
+                       std::span<const std::uint32_t> ids) {
+    const std::size_t n = tris.size() / 9;
+    return buildOver(tris, cell, [&](auto&& f) {
+        for (const std::uint32_t t : ids)
+            if (t < n) f(t);
+    });
 }
 
 std::optional<double> floorUnder(const TriangleSoup& tris, const SoupGrid& g,
                                  double x, double y, double z) {
     if (!g.matches(tris)) return floorUnder(tris, x, y, z);
     std::optional<double> best;
+    if (g.nx <= 0) return best;
     const int i = cellAxis(x, g.minX, g.maxX, g.cell, g.nx);
     const int k = cellAxis(z, g.minZ, g.maxZ, g.cell, g.nz);
     if (i < 0 || k < 0) return best;
@@ -362,6 +393,7 @@ std::optional<GroundHit> surfaceUnder(const TriangleSoup& tris, const SoupGrid& 
                                       double x, double y, double z) {
     if (!g.matches(tris)) return surfaceUnder(tris, x, y, z);
     std::optional<GroundHit> best;
+    if (g.nx <= 0) return best;
     const int i = cellAxis(x, g.minX, g.maxX, g.cell, g.nx);
     const int k = cellAxis(z, g.minZ, g.maxZ, g.cell, g.nz);
     if (i < 0 || k < 0) return best;
@@ -386,6 +418,7 @@ TriangleSoup soupInBox(const TriangleSoup& tris, const SoupGrid& g, double minX,
         std::isnan(minZ) || std::isnan(maxZ))
         return soupInBox(tris, minX, maxX, minZ, maxZ);
     TriangleSoup out;
+    if (g.nx <= 0) return out;
     if (maxX < g.minX - kGridEps || minX > g.maxX + kGridEps ||
         maxZ < g.minZ - kGridEps || minZ > g.maxZ + kGridEps || minX > maxX || minZ > maxZ)
         return out;
@@ -406,6 +439,114 @@ TriangleSoup soupInBox(const TriangleSoup& tris, const SoupGrid& g, double minX,
     std::sort(cand.begin(), cand.end());
     cand.erase(std::unique(cand.begin(), cand.end()), cand.end());
     for (std::uint32_t tri : cand) {
+        const std::size_t t = 9 * static_cast<std::size_t>(tri);
+        double lo[2] = {tris[t], tris[t + 2]}, hi[2] = {tris[t], tris[t + 2]};
+        for (int k = 1; k < 3; ++k) {
+            const double px = tris[t + 3 * k], pz = tris[t + 3 * k + 2];
+            lo[0] = std::min(lo[0], px); hi[0] = std::max(hi[0], px);
+            lo[1] = std::min(lo[1], pz); hi[1] = std::max(hi[1], pz);
+        }
+        if (hi[0] < minX || lo[0] > maxX || hi[1] < minZ || lo[1] > maxZ) continue;
+        out.insert(out.end(), tris.begin() + static_cast<long>(t),
+                   tris.begin() + static_cast<long>(t) + 9);
+    }
+    return out;
+}
+
+// ---------------------------------------------------------- THE TWO-LAYER GRID
+
+namespace {
+
+// The candidate list of one layer's cell under (x, z): [begin, end) into its
+// index, empty when the point is outside that layer's extent or it holds none.
+inline std::pair<const std::uint32_t*, const std::uint32_t*> cellList(const SoupGrid& g,
+                                                                     double x, double z) {
+    if (g.nx <= 0) return {nullptr, nullptr};
+    const int i = cellAxis(x, g.minX, g.maxX, g.cell, g.nx);
+    const int k = cellAxis(z, g.minZ, g.maxZ, g.cell, g.nz);
+    if (i < 0 || k < 0) return {nullptr, nullptr};
+    const std::size_t c = static_cast<std::size_t>(k) * g.nx + i;
+    return {g.index.data() + g.start[c], g.index.data() + g.start[c + 1]};
+}
+
+// Visit the two ascending lists as one ascending sequence. A triangle is in one
+// layer only, so there is nothing to de-duplicate.
+template <class F>
+inline void mergedWalk(std::pair<const std::uint32_t*, const std::uint32_t*> a,
+                       std::pair<const std::uint32_t*, const std::uint32_t*> b, F&& visit) {
+    const std::uint32_t* pa = a.first, *ea = a.second, *pb = b.first, *eb = b.second;
+    while (pa != ea || pb != eb) {
+        if (pb == eb || (pa != ea && *pa < *pb)) visit(*pa++);
+        else visit(*pb++);
+    }
+}
+
+}  // namespace
+
+std::optional<double> floorUnder(const TriangleSoup& tris, const SplitSoupGrid& g,
+                                 double x, double y, double z) {
+    if (!g.matches(tris)) return floorUnder(tris, x, y, z);
+    std::optional<double> best;
+    mergedWalk(cellList(g.fixed, x, z), cellList(g.moving, x, z), [&](std::uint32_t tri) {
+        double hit;
+        if (!underKernel(tris, 9 * static_cast<std::size_t>(tri), x, z, hit)) return;
+        // "below" is a LARGER y, and strictly below the origin
+        if (hit > y + 1.0 && (!best || hit < *best)) best = hit;
+    });
+    return best;
+}
+
+std::optional<GroundHit> surfaceUnder(const TriangleSoup& tris, const SplitSoupGrid& g,
+                                      double x, double y, double z) {
+    if (!g.matches(tris)) return surfaceUnder(tris, x, y, z);
+    std::optional<GroundHit> best;
+    mergedWalk(cellList(g.fixed, x, z), cellList(g.moving, x, z), [&](std::uint32_t tri) {
+        const std::size_t t = 9 * static_cast<std::size_t>(tri);
+        double hit;
+        if (!underKernel(tris, t, x, z, hit)) return;
+        if (!(hit > y + 1.0) || (best && hit >= best->y)) return;
+        double n[3];
+        if (!upNormal(tris, t, n)) return;
+        best = GroundHit{hit, {n[0], n[1], n[2]}};
+    });
+    return best;
+}
+
+TriangleSoup soupInBox(const TriangleSoup& tris, const SplitSoupGrid& g, double minX,
+                       double maxX, double minZ, double maxZ) {
+    if (!g.matches(tris) || std::isnan(minX) || std::isnan(maxX) ||
+        std::isnan(minZ) || std::isnan(maxZ))
+        return soupInBox(tris, minX, maxX, minZ, maxZ);
+    // Both layers' candidates under the box, as triangle numbers, sorted into
+    // ascending order - the order a single grid over all of them visits - and
+    // then the linear test on each, exactly as the single-grid gather does.
+    std::vector<std::uint32_t> ids;
+    const auto gather = [&](const SoupGrid& layer) {
+        if (layer.nx <= 0) return;
+        if (maxX < layer.minX - kGridEps || minX > layer.maxX + kGridEps ||
+            maxZ < layer.minZ - kGridEps || minZ > layer.maxZ + kGridEps || minX > maxX || minZ > maxZ)
+            return;
+        const auto axis = [&](double v, double base, int cells) {
+            const double f = std::floor((v - base) / layer.cell);
+            if (f < 0) return 0;
+            if (f >= cells - 1) return cells - 1;
+            return static_cast<int>(f);
+        };
+        const int i0 = axis(minX, layer.minX, layer.nx), i1 = axis(maxX, layer.minX, layer.nx);
+        const int k0 = axis(minZ, layer.minZ, layer.nz), k1 = axis(maxZ, layer.minZ, layer.nz);
+        for (int k = k0; k <= k1; ++k)
+            for (int i = i0; i <= i1; ++i) {
+                const std::size_t c = static_cast<std::size_t>(k) * layer.nx + i;
+                ids.insert(ids.end(), layer.index.begin() + layer.start[c],
+                           layer.index.begin() + layer.start[c + 1]);
+            }
+    };
+    gather(g.fixed);
+    gather(g.moving);
+    std::sort(ids.begin(), ids.end());
+    ids.erase(std::unique(ids.begin(), ids.end()), ids.end());
+    TriangleSoup out;
+    for (std::uint32_t tri : ids) {
         const std::size_t t = 9 * static_cast<std::size_t>(tri);
         double lo[2] = {tris[t], tris[t + 2]}, hi[2] = {tris[t], tris[t + 2]};
         for (int k = 1; k < 3; ++k) {

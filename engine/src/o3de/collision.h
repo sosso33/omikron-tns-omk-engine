@@ -180,14 +180,23 @@ struct SoupGrid {
     std::vector<std::uint32_t> index;   // triangle numbers, ascending per cell
     const float* data = nullptr;        // the soup it was built from...
     std::size_t size = 0;               // ...and its length in floats
+    bool built = false;                 // a grid over NO triangles is built and answers nothing
     bool matches(const TriangleSoup& tris) const {
-        return nx > 0 && data == tris.data() && size == tris.size();
+        return built && data == tris.data() && size == tris.size();
     }
 };
 
 // Build a grid over `tris` with cells of about `cell` inches (widened so no axis
-// has more than 512 cells).
-SoupGrid buildSoupGrid(const TriangleSoup& tris, double cell = 256.0);
+// has more than 512 cells). With `include`, only the triangles whose entry is
+// nonzero go in - they keep their numbers in `tris` - and the extent is theirs.
+SoupGrid buildSoupGrid(const TriangleSoup& tris, double cell = 256.0,
+                       const std::vector<std::uint8_t>* include = nullptr);
+// The same grid over exactly the triangles in `ids` (ascending, no repeats),
+// WITHOUT visiting any other triangle of the soup - what a two-layer grid's
+// moving layer is rebuilt from every frame. Both builders run one shared body,
+// so the same triangles give the same grid either way.
+SoupGrid buildSoupGrid(const TriangleSoup& tris, double cell,
+                       std::span<const std::uint32_t> ids);
 
 // The same answers as the linear versions above, visiting only the candidates.
 std::optional<double> floorUnder(const TriangleSoup& tris, const SoupGrid& grid,
@@ -195,6 +204,31 @@ std::optional<double> floorUnder(const TriangleSoup& tris, const SoupGrid& grid,
 std::optional<GroundHit> surfaceUnder(const TriangleSoup& tris, const SoupGrid& grid,
                                       double x, double y, double z);
 TriangleSoup soupInBox(const TriangleSoup& tris, const SoupGrid& grid,
+                       double minX, double maxX, double minZ, double maxZ);
+
+// ---- A GRID IN TWO LAYERS (todo/optimization.md step 7c) --------------------
+//
+// A set whose meshes move every frame - the Anekbah street's cargo, 754 of its
+// walkable triangles - made the grid a full rebuild every frame, and keeping it
+// when "nothing crossed a cell" never happened (0 of 120 frames: with that many
+// moving triangles one crosses on nearly every frame). So the soup is split by
+// triangle: `fixed` over those that do not move, built when the set changes,
+// and `moving` over those that do, rebuilt every frame from a few hundred
+// triangles. Each triangle is in exactly ONE layer, and a probe walks the two
+// cells' lists as ONE ascending merge - the same candidates in the same order as
+// a single grid over all of them, so the same answer, bit for bit
+// (`engine/tools/probe_grid.cpp`'s split rows).
+struct SplitSoupGrid {
+    SoupGrid fixed, moving;
+    bool matches(const TriangleSoup& tris) const {
+        return fixed.matches(tris) && moving.matches(tris);
+    }
+};
+std::optional<double> floorUnder(const TriangleSoup& tris, const SplitSoupGrid& grid,
+                                 double x, double y, double z);
+std::optional<GroundHit> surfaceUnder(const TriangleSoup& tris, const SplitSoupGrid& grid,
+                                      double x, double y, double z);
+TriangleSoup soupInBox(const TriangleSoup& tris, const SplitSoupGrid& grid,
                        double minX, double maxX, double minZ, double maxZ);
 
 }  // namespace omk

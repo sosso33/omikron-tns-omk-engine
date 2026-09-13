@@ -22,6 +22,7 @@
 #include "o3de/collision.h"
 
 #include <chrono>
+#include <cstdint>
 #include <cstdio>
 #include <cstring>
 #include <fstream>
@@ -151,6 +152,51 @@ void runSoup(const std::string& stem, const char* kind, const omk::TriangleSoup&
             (!lin.empty() && std::memcmp(lin.data(), grd.data(), lin.size() * sizeof(float)) != 0))
             ++bMis;
     }
+
+    // THE TWO-LAYER GRID (collision.h, step 7c): the same probes and boxes
+    // through a split into a `fixed` and a `moving` layer by a pseudo-random
+    // mask (~1 in 16 moving), then through its complement, against the linear
+    // answers above.
+    long spMis = 0, spMoving = 0;
+    for (int flip = 0; flip < 2; ++flip) {
+        std::vector<std::uint8_t> moving(n), fixed(n);
+        for (std::size_t t = 0; t < n; ++t) {
+            const bool mv = (((static_cast<std::uint64_t>(t) + 17) * 2654435761ULL) >> 12) % 16 == 0;
+            moving[t] = static_cast<std::uint8_t>(mv != (flip == 1));
+            fixed[t] = static_cast<std::uint8_t>(!moving[t]);
+            if (flip == 0) spMoving += moving[t];
+        }
+        omk::SplitSoupGrid split;
+        split.fixed = omk::buildSoupGrid(soup, 256.0, &fixed);
+        split.moving = omk::buildSoupGrid(soup, 256.0, &moving);
+        // the id-list builder over the same triangles must give the same grid
+        std::vector<std::uint32_t> ids;
+        for (std::size_t t = 0; t < n; ++t) if (moving[t]) ids.push_back(static_cast<std::uint32_t>(t));
+        const omk::SoupGrid byIds = omk::buildSoupGrid(soup, 256.0, std::span<const std::uint32_t>(ids));
+        if (!(byIds.minX == split.moving.minX && byIds.maxX == split.moving.maxX &&
+              byIds.minZ == split.moving.minZ && byIds.maxZ == split.moving.maxZ &&
+              byIds.cell == split.moving.cell && byIds.nx == split.moving.nx &&
+              byIds.nz == split.moving.nz && byIds.start == split.moving.start &&
+              byIds.index == split.moving.index)) ++spMis;
+        for (std::size_t i = 0; i < probes.size(); ++i) {
+            const auto f = omk::floorUnder(soup, split, probes[i].x, probes[i].y, probes[i].z);
+            if (f.has_value() != fl[i].has_value() || (f && !sameD(*f, *fl[i]))) ++spMis;
+            const auto h = omk::surfaceUnder(soup, split, probes[i].x, probes[i].y, probes[i].z);
+            if (h.has_value() != sl[i].has_value() ||
+                (h && !(sameD(h->y, sl[i]->y) && sameD(h->n[0], sl[i]->n[0]) &&
+                        sameD(h->n[1], sl[i]->n[1]) && sameD(h->n[2], sl[i]->n[2])))) ++spMis;
+        }
+        for (const auto& b : boxes) {
+            const auto lin = omk::soupInBox(soup, b.x0, b.x1, b.z0, b.z1);
+            const auto grd = omk::soupInBox(soup, split, b.x0, b.x1, b.z0, b.z1);
+            if (lin.size() != grd.size() ||
+                (!lin.empty() && std::memcmp(lin.data(), grd.data(), lin.size() * sizeof(float)) != 0))
+                ++spMis;
+        }
+    }
+    std::printf("split %s %s moving %ld | probes %zu boxes %zu (each twice) mismatches %ld\n",
+                stem.c_str(), kind, spMoving, probes.size(), boxes.size(), spMis);
+    totalMismatch += spMis;
 
     std::printf("%s %s tris %zu grid %dx%d cell %.0f entries %zu build_ms %.2f | "
                 "floor probes %zu hits %ld mismatches %ld lin_ms %.1f grid_ms %.2f | "

@@ -3006,7 +3006,24 @@ int main(int argc, char** argv) {
     // ...and its probe GRID, rebuilt wherever `playerSoup` is refilled: the
     // shadows and the crowd's feet probe it every frame, and a linear scan of
     // the city per bone was most of the frame (todo/optimization.md step 2)
-    omk::SoupGrid playerGrid;
+    omk::SplitSoupGrid playerGrid;
+    // Which of `playerSoup`'s triangles belong to a mesh that has moved since the
+    // sets last changed: those go in `playerGrid.moving`, rebuilt every moving
+    // frame, the rest in `playerGrid.fixed`, rebuilt only when this changes
+    // (todo/optimization.md step 7c).
+    std::vector<std::uint8_t> playerMovingTri, playerFixedTri;
+    std::vector<std::uint32_t> playerMovingIds;   // the same set, ascending: the moving layer's build list
+    const auto rebuildFixedGrid = [&]() {
+        playerFixedTri.assign(playerMovingTri.size(), 0);
+        for (std::size_t t = 0; t < playerMovingTri.size(); ++t) playerFixedTri[t] = !playerMovingTri[t];
+        playerGrid.fixed = omk::buildSoupGrid(playerSoup, 256.0, &playerFixedTri);
+    };
+    const auto rebuildMovingGrid = [&]() {
+        // from the id list, NOT the mask: the mask build walks all of the soup
+        // (15137 triangles in Anekbah) to find the ~750 that move
+        playerGrid.moving = omk::buildSoupGrid(playerSoup, 256.0,
+                                               std::span<const std::uint32_t>(playerMovingIds));
+    };
     // True while `playerSoup` / `playerSteep` are exactly the shown slots' soups
     // concatenated - set by a full merge, cleared by a slot load - so a moving
     // mesh can be copied in at its offset instead of re-merging everything.
@@ -4818,7 +4835,10 @@ int main(int argc, char** argv) {
             playerSoup.insert(playerSoup.end(), w.soup.begin(), w.soup.end());
             playerSteep.insert(playerSteep.end(), w.steep.begin(), w.steep.end());
         }
-        playerGrid = omk::buildSoupGrid(playerSoup);
+        playerMovingTri.assign(playerSoup.size() / 9, 0);   // new sets: nothing has moved yet
+        playerMovingIds.clear();
+        rebuildFixedGrid();
+        rebuildMovingGrid();
         mergedValid = true;
         world.setTextures(worldTex);
         poolSize = worldTex.size();
@@ -5537,14 +5557,23 @@ int main(int argc, char** argv) {
                 if (w.stem.empty()) continue;
                 wantSoup += w.soup.size(); wantSteep += w.steep.size();
             }
-            if (mergedValid && playerSoup.size() == wantSoup && playerSteep.size() == wantSteep) {
+            bool newlyMoving = false;
+            const bool inPlace = mergedValid && playerSoup.size() == wantSoup && playerSteep.size() == wantSteep;
+            if (inPlace) {
                 std::size_t offSoup = 0, offSteep = 0;
                 for (int sl = 0; sl < 2; ++sl) {
                     const WorldSlot& w = worldSlots[static_cast<std::size_t>(sl)];
                     if (w.stem.empty()) continue;
-                    for (const std::uint32_t t : movedSoup[sl])
+                    for (const std::uint32_t t : movedSoup[sl]) {
                         std::copy_n(w.soup.data() + 9 * static_cast<std::size_t>(t), 9,
                                     playerSoup.data() + offSoup + 9 * static_cast<std::size_t>(t));
+                        const std::size_t gt = offSoup / 9 + t;
+                        if (gt < playerMovingTri.size() && !playerMovingTri[gt]) {
+                            playerMovingTri[gt] = 1;
+                            playerMovingIds.push_back(static_cast<std::uint32_t>(gt));
+                            newlyMoving = true;
+                        }
+                    }
                     for (const std::uint32_t t : movedSteep[sl])
                         std::copy_n(w.steep.data() + 9 * static_cast<std::size_t>(t), 9,
                                     playerSteep.data() + offSteep + 9 * static_cast<std::size_t>(t));
@@ -5559,6 +5588,21 @@ int main(int argc, char** argv) {
                     playerSteep.insert(playerSteep.end(), w.steep.begin(), w.steep.end());
                 }
                 mergedValid = true;
+                // a full merge: the sets' layout may have changed, so every moved
+                // triangle is re-marked against the new offsets
+                playerMovingTri.assign(playerSoup.size() / 9, 0);
+                std::size_t off = 0;
+                for (int sl = 0; sl < 2; ++sl) {
+                    const WorldSlot& w = worldSlots[static_cast<std::size_t>(sl)];
+                    if (w.stem.empty()) continue;
+                    for (const std::uint32_t t : movedSoup[sl])
+                        if (off / 9 + t < playerMovingTri.size()) playerMovingTri[off / 9 + t] = 1;
+                    off += w.soup.size();
+                }
+                playerMovingIds.clear();
+                for (std::size_t t = 0; t < playerMovingTri.size(); ++t)
+                    if (playerMovingTri[t]) playerMovingIds.push_back(static_cast<std::uint32_t>(t));
+                newlyMoving = true;
             }
             // `OMK_VERIFY_PATCH=1`: the full merge beside the in-place one, every
             // moving frame, compared bit for bit (`verify.py: engine: patch index`).
@@ -5582,7 +5626,50 @@ int main(int argc, char** argv) {
                                 compared, mismatched,
                                 movedSoup[0].size() + movedSoup[1].size(), movedSteep[0].size() + movedSteep[1].size());
             }
-            playerGrid = omk::buildSoupGrid(playerSoup);
+            // THE TWO LAYERS: the fixed one only when the moving set changed, the
+            // moving one - a few hundred triangles - every moving frame.
+            if (newlyMoving) std::sort(playerMovingIds.begin(), playerMovingIds.end());
+            if (newlyMoving || !playerGrid.fixed.matches(playerSoup)) rebuildFixedGrid();
+            rebuildMovingGrid();
+            // `OMK_VERIFY_SPLIT=1`: the moved triangles' centres from above and a
+            // fixed lattice over the street, probed through the two-layer grid and
+            // through the linear scan, every moving frame
+            // (`verify.py: engine: split grid`).
+            static const bool verifySplit = std::getenv("OMK_VERIFY_SPLIT") != nullptr;
+            if (verifySplit) {
+                static long frames = 0, probes = 0, mismatched = 0;
+                ++frames;
+                const auto check = [&](double x, double y, double z) {
+                    ++probes;
+                    const auto a = omk::floorUnder(playerSoup, playerGrid, x, y, z);
+                    const auto b = omk::floorUnder(playerSoup, x, y, z);
+                    if (a.has_value() != b.has_value() || (a && std::memcmp(&*a, &*b, sizeof(double)) != 0))
+                        ++mismatched;
+                    const auto c = omk::surfaceUnder(playerSoup, playerGrid, x, y, z);
+                    const auto d = omk::surfaceUnder(playerSoup, x, y, z);
+                    if (c.has_value() != d.has_value() ||
+                        (c && std::memcmp(&*c, &*d, sizeof(omk::GroundHit)) != 0)) ++mismatched;
+                };
+                std::size_t off = 0;
+                for (int sl = 0; sl < 2; ++sl) {
+                    const WorldSlot& w = worldSlots[static_cast<std::size_t>(sl)];
+                    if (w.stem.empty()) continue;
+                    for (std::size_t k = 0; k < movedSoup[sl].size(); k += 7) {
+                        const std::size_t o = off + 9 * static_cast<std::size_t>(movedSoup[sl][k]);
+                        check((double(playerSoup[o]) + playerSoup[o + 3] + playerSoup[o + 6]) / 3.0,
+                              (double(playerSoup[o + 1]) + playerSoup[o + 4] + playerSoup[o + 7]) / 3.0 - 200.0,
+                              (double(playerSoup[o + 2]) + playerSoup[o + 5] + playerSoup[o + 8]) / 3.0);
+                    }
+                    off += w.soup.size();
+                }
+                for (int gx = -4; gx <= 4; ++gx)
+                    for (int gz = -4; gz <= 4; ++gz)
+                        check(1804.0 + gx * 900.0, -2000.0, -6890.0 + gz * 900.0);
+                if (frames % 30 == 0)
+                    std::printf("split verify: %ld moving frames, %ld probes, %ld mismatched, fixed %d x %d, moving %zu entries\n",
+                                frames, probes, mismatched, playerGrid.fixed.nx, playerGrid.fixed.nz,
+                                playerGrid.moving.index.size());
+            }
         }
 
         // ---- ADVENTURE MODE'S SOUND EFFECTS -----------------------------

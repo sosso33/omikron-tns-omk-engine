@@ -65,6 +65,7 @@ not a CPU figure). Against the original's 32 MB, both are the port's.
 | 7 | re-measure everything, and decide whether the Vita is in reach | open |
 | 7a | the moving set meshes' per-frame patch (found by the step-4 re-profile) | **DONE** 2026-09-13 - a per-mesh index and an in-place merge; capped CPU 50 -> 34% of a core, `engine: patch index` |
 | 7b | the depth tie re-keying the whole set every frame (the cargo moves) | **DONE** 2026-09-13 - claimed keys stored flat with a fingerprint; back to back capped CPU 39 -> 36%, run CPU time -7.6% |
+| 7c | the ground probe grid rebuilt from scratch every frame (the cargo moves) | **DONE** 2026-09-14 - two layers, fixed and moving; the per-frame rebuild 0.528 -> 0.016 ms, probes no slower; `engine: split grid` |
 
 Each step ends in a commit and a report, per the working rhythm; the full
 sweep follows the cadence in `todo/sweep-log.md`, not these steps.
@@ -534,6 +535,56 @@ the frees are gone from the list), `buildSoupGrid` 537, `main` 430, `floorUnder`
 THAT needs a revision that says WHICH corners moved, the same thing the grid
 rebuild (537) and the whole-set vertex upload (297) are waiting on. That is the
 next step, and it is one change serving three consumers.
+
+### 7c. The ground probe grid in two layers - done 2026-09-14 (committed as "optimization 10")
+
+**Why.** On the Anekbah street 754 walkable triangles move every frame (the
+cargo on the cranes), and `playerGrid` - step 2's grid - was rebuilt from
+scratch for them every frame: `buildSoupGrid` 537 in the 7b re-profile.
+
+**Tried first and measured useless: keep the grid when no moved triangle
+crossed a cell.** 0 of 120 frames kept it - with that many moving triangles one
+crosses on nearly every frame. Reverted.
+
+**What changed** (`o3de/collision.*`, `play.cpp`). `SplitSoupGrid`: a `fixed`
+layer over the triangles that have not moved since the sets changed, rebuilt
+only when that set grows, and a `moving` layer over the rest, rebuilt every
+frame from an ascending id list. Each triangle is in exactly one layer, and
+`floorUnder` / `surfaceUnder` walk the two cells' lists as one ascending merge -
+the same candidates in the same order as a single grid, so the first-hit rule
+and the answer are unchanged. `soupInBox` gathers both layers' ids, sorts them
+and runs the same linear test.
+
+**Same answers, proved.** `probe_grid`'s split rows: every probe and box of
+the single-grid test through a split by a 1-in-16 mask and its complement,
+against the linear scan - 0 mismatches in 14 rows over seven sets (Anekbah
+walkable 946 / steep 1945 moving, AImpasse 7 / 25, Sprison 111 / 173 in the
+three the check asserts). In play, `OMK_VERIFY_SPLIT=1` on the street: 0 of
+22680 probes over 120 moving frames. Headless frames byte-identical.
+`engine: split grid`, `engine: probe grid`, `engine: patch index` pass.
+SHOWN TO FAIL, on the committed code: a merge that skips the moving layer
+(`else ++pb`) gives 2637 - 29451 mismatches per tool row and 6526 / 13006 in
+game; `play.cpp` not adding a newly moving triangle to the id list leaves the
+tool rows at 0 and gives 6526 / 13006 in game - each half fails on its own
+side. Restored by editing back, green.
+
+**Measured - and the capped A/B could not see it.** Old / new / old at 30 fps,
+load ~3: CPU 27 / 36 / 35%, CPU time 15.8 / 19.9 / 19.7 s. The two runs of
+the SAME old build disagree by 8 points, more than this step can move, so the
+comparison says nothing either way. Timed directly instead (a scratch
+microbenchmark over Anekbah's walkable soup, 15137 triangles with 754 moving,
+400 builds each):
+
+| | per build / probe |
+|---|---|
+| the whole grid, what every moving frame did | 0.528 ms |
+| the moving layer from the id list, what it does now | **0.016 ms** |
+| the moving layer from a mask (the first version) | 0.056 ms |
+| `floorUnder`, one grid vs two layers | 0.3 µs both |
+
+So ~0.51 ms a moving frame, ~1.5% of a 33 ms frame here - below a capped
+run's noise, but real, and several times larger on a Vita-class CPU.
+`buildSoupGrid` is gone from the profile.
 
 ### 5. `main`'s own time
 

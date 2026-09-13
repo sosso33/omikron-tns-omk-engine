@@ -12270,6 +12270,83 @@ def c_engine_patch_index():
         "differ from the full merge, and the walkable + steep triangles re-placed"
 
 
+def c_engine_split_grid():
+    r"""The ground probe's grid in two layers - fixed triangles and moving ones -
+    answers as one grid over all of them (todo/optimization.md step 7c).
+
+    On the Anekbah street 754 walkable triangles move every frame (the cargo on
+    the cranes), and `playerGrid` was rebuilt from scratch every frame for them -
+    ~35000 entries. Keeping the grid when no moved triangle crossed a cell was
+    tried first and measured useless: 0 of 120 frames kept it, since with that
+    many moving triangles one crosses on nearly every frame. So the soup is split
+    by triangle: `SplitSoupGrid::fixed` over the triangles that have not moved
+    since the sets changed, rebuilt only when that set grows, and `moving` over
+    the rest, rebuilt every frame from ~1500 entries. Each triangle is in one
+    layer, and a probe walks the two cells' lists as one ascending merge - the
+    same candidates in the same order as a single grid, so the same answer.
+
+    Two halves. `probe_grid`'s SPLIT rows: every probe and box of the single-grid
+    test again, through a split by a pseudo-random 1-in-16 mask and through its
+    complement, against the linear scan. And in play: the Anekbah street start
+    headless with `OMK_VERIFY_SPLIT=1`, where every moving frame probes the moved
+    triangles' centres and a lattice over the street through both. Measured
+    2026-09-13: 0 mismatches in all 14 split rows over seven sets, and 0 of 22680
+    in-game probes over 120 moving frames; 20 headless frames byte-identical
+    before and after.
+
+    SHOWN TO FAIL, 2026-09-14 (todo/optimization.md step 7c): a merge that skips
+    the moving layer gives 2637-29451 mismatches per tool row and 6526 / 13006 in
+    game; play.cpp not adding a newly moving triangle to the id list leaves the
+    tool rows at 0 and gives 6526 / 13006 in game.
+    """
+    import subprocess
+    eng = os.path.join(ROOT, "engine")
+    if not os.path.isdir(eng):
+        return ("skipped",), ("skipped",), "engine/ absent"
+    b = subprocess.run(["make", "-s", "build/probe_grid"], cwd=eng, capture_output=True, text=True)
+    binp = os.path.join(eng, "build", "probe_grid")
+    if b.returncode != 0 or not os.path.exists(binp):
+        return ("build failed",), ("built",), "engine/ must build"
+    models = []
+    for stem in ("Anekbah", "AImpasse", "Sprison"):
+        path = omkpaths.data("MESHES/DECORS/%s.3DO" % stem)
+        if not os.path.exists(path):
+            return ("skipped",), ("skipped",), "%s absent" % stem
+        models.append(path)
+    r = subprocess.run([binp] + models, capture_output=True, text=True)
+    rows = re.findall(r"^split (\S+)\.3DO (walkable|steep) moving (\d+) \| probes \d+ boxes \d+ "
+                      r"\(each twice\) mismatches (\d+)", r.stdout, re.M)
+    if len(rows) != 6:
+        return (len(rows),), (6,), "probe_grid split rows parsed - the tool's output " \
+            "format no longer matches this check"
+    tool = tuple((st, kind, int(mv), int(mm)) for st, kind, mv, mm in rows)
+    mk = subprocess.run(["make", "-s", "play"], cwd=eng, capture_output=True, text=True)
+    play = os.path.join(eng, "build", "omk-play")
+    save = os.path.join(ROOT, "traces", "save-appart.bin")
+    if mk.returncode != 0 or not os.path.exists(play) or not os.path.exists(save):
+        game = ("skipped",)
+    else:
+        env = dict(os.environ, SDL_VIDEODRIVER="dummy", OMK_VERIFY_SPLIT="1")
+        g = subprocess.run([play, omkpaths.data_root(), os.path.join(ROOT, "tables"),
+                            "--save", save, "--area", "0", "--stand", "1804,0,-6890,336",
+                            "--software", "--nofmv", "--frames", "65"],
+                           cwd=eng, env=env, capture_output=True, text=True)
+        lines = re.findall(r"^split verify: (\d+) moving frames, (\d+) probes, (\d+) mismatched",
+                           g.stdout, re.M)
+        if len(lines) != 2:
+            return (len(lines),), (2,), "split verify lines - the viewer's log changed " \
+                "or the street no longer moves"
+        game = tuple((int(f), int(p), int(m)) for f, p, m in lines)
+    return (tool, game), \
+        ((("Anekbah", "walkable", 946, 0), ("Anekbah", "steep", 1945, 0),
+          ("AImpasse", "walkable", 7, 0), ("AImpasse", "steep", 25, 0),
+          ("Sprison", "walkable", 111, 0), ("Sprison", "steep", 173, 0)),
+         ((30, 5670, 0), (60, 11340, 0))), \
+        "probe_grid's split rows (set, soup, triangles in the moving layer, " \
+        "probes and boxes differing from the linear scan), then the in-game " \
+        "verify: moving frames, probes, mismatched"
+
+
 def c_engine_walker_falls():
     r"""`engine/`'s walker takes a drop instead of refusing it - and the
     measurement that says why it had to.
@@ -34204,6 +34281,7 @@ SLOW = [
     ("engine: pixel sharing", c_engine_pixel_sharing, "todo/optimization.md 6; formats/tex3dt.h"),
     ("engine: sprite table", c_engine_sprite_table, "todo/optimization.md 6; backends/sdl/play.cpp"),
     ("engine: patch index", c_engine_patch_index, "todo/optimization.md 7; backends/sdl/play.cpp"),
+    ("engine: split grid", c_engine_split_grid, "todo/optimization.md 7c; o3de/collision.h"),
     ("engine: props", c_engine_props, "todo/omk-play"),
     ("sprite ids scene-local", c_sprite_ids_are_scene_local, "docs/ASSETS"),
     ("engine: scene sounds", c_engine_scene_sounds, "engine/README"),
