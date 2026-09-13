@@ -282,6 +282,12 @@ does no triangle test at all on meshes flagged `0x41`.
    | `A_shootg` (the gallery) | 4000 | 4000 | 4000 | - |
    | `ASm49` (the supermarket) | 4178 | 4178 | 4178 | - |
 
+   SHOWN TO FAIL, each restored by editing the line back, `collision.o`
+   deleted by name and the probe's output compared byte for byte with the
+   committed one: `Sight` keeping the 0x800 cutouts (hamestag's sight back to
+   5510, a segment through `HAliane02` meeting it, `shoot ray soups` red); and
+   both ray soups keeping 0x41 (AResto14's shot back to 2815, red).
+
    So neither skip can move the gallery or the supermarket; the catacombs'
    spectres are the only arena sight it touches. **Replayed** on the patrol
    check's route: with the render soup every spectre ray stayed blocked; with
