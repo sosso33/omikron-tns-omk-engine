@@ -11,6 +11,7 @@
 // 276-byte actor record - 26 is `0x1A`, an int16 at `+180`, and the rest are
 // its neighbours - so the values a designer authored can simply be read.
 #include "actor/shoot.h"
+#include "actor/shoothit.h"
 #include "formats/iam.h"
 #include "formats/mesh3do.h"
 #include "platform/datafs.h"
@@ -480,6 +481,42 @@ int main(int argc, char** argv) {
                         r20, in20.first.state, r30, in30.first.state,
                         r50, in50.first.state, int((in50.first.flags & 0x20u) != 0),
                         in50b.first.state, rd);
+        }
+
+        // ---- THE ATTACK: `sub_421020`'s pick and `sub_423B10`'s damage ----
+        // (`todo/released-spectres.md` step 5). The pick keeps the SHORTEST
+        // range that still reaches the flat squared distance; a tie with a pick
+        // made keeps the new one when `rand() & 2` is 0, and draws `rand()` only
+        // then. The strike's player arm puts the DIFFICULTY before the Body
+        // Shield: 10 at difficulty 1 through shield 30 is 7, at 0 it is 8 then 6,
+        // at 2 12 then 9; never 0; and -1 is the crusher, the death at once.
+        {
+            omk::ShootRecord q;
+            q.attacks[0] = 19; q.attacks[1] = 20;
+            const auto rm = [](int slot) { return slot == 19 ? 4 : 2; };   // 156 and 78
+            int rolls = 0;
+            const auto rnd = [&]() { ++rolls; return 0; };
+            const int near = omk::shootPickAttack(q, 60.0f * 60.0f, rm, rnd);    // both reach: 20
+            const int far = omk::shootPickAttack(q, 100.0f * 100.0f, rm, rnd);   // only 19
+            const int none = omk::shootPickAttack(q, 200.0f * 200.0f, rm, rnd); // neither
+            const int rollsBefore = rolls;
+            omk::ShootRecord t; t.attacks[0] = 19; t.attacks[1] = 21;
+            const auto rt = [](int) { return 3; };
+            const int tie0 = omk::shootPickAttack(t, 50.0f * 50.0f, rt, [&]() { ++rolls; return 0; });
+            const int tie2 = omk::shootPickAttack(t, 50.0f * 50.0f, rt, [&]() { ++rolls; return 2; });
+            auto strike = [](int dmg, int diff, int health) {
+                omk::ShootRecord v; v.health = health;
+                omk::StrikeIn in; in.damage = dmg; in.victimIsPlayer = true; in.bodyShield = 30;
+                in.difficulty = diff; in.dir[2] = -1.0f;
+                return omk::shootApplyStrike(v, in);
+            };
+            const auto d1 = strike(10, 1, 50), d0 = strike(10, 0, 50), d2 = strike(10, 2, 50);
+            const auto one = strike(1, 1, 50), kill = strike(4, 1, 3), crush = strike(-1, 1, 50);
+            std::printf("attack arms: pick near %d far %d none %d rolls %d; tie %d/%d rolls %d; "
+                        "strike d1 %d d0 %d d2 %d min %d kill %d->%d %d crush %d\n",
+                        near, far, none, rollsBefore, tie0, tie2, rolls - rollsBefore,
+                        d1.damage, d0.damage, d2.damage, one.damage, kill.healthWas, kill.health,
+                        int(kill.killed), int(crush.killed));
         }
 
         // ---- THE OTHER TWO SIGHTS of `sub_426E00` (`todo/shoot-sight.md` 5) ----

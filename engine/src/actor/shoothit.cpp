@@ -200,4 +200,57 @@ HitOut shootApplyHit(ShootRecord& r, const HitIn& in) {
     return o;
 }
 
+HitOut shootApplyStrike(ShootRecord& r, const StrikeIn& in) {
+    HitOut o;
+    // `if (a2 == -1) { sub_423FC0(a1); return -1; }` - the crusher, before
+    // every other test
+    if (in.damage == -1) {
+        o.refused = false;
+        o.healthWas = o.health = r.health;
+        o.killed = true;
+        return o;
+    }
+    // `if (u32i(v10, 101) != 3) return -1;`
+    if (!in.victimInShoot) return o;
+    // `if ((v11 & 0x800) != 0) return -1;`
+    if (r.flags & 0x800u) return o;
+    o.refused = false;
+    o.healthWas = o.health = r.health;
+    if (r.health <= 0) return o;
+    int dmg = in.damage;
+    if (dmg > 0 && in.victimIsPlayer) {
+        const int p = std::min(in.bodyShield, 100);
+        if (in.difficulty == 0) dmg += dmg / -4;
+        else if (in.difficulty == 2) dmg += dmg / 4;
+        dmg += dmg * p / -100;
+        if (!dmg) dmg = 1;
+    }
+    r.flags |= 0x1020u;
+    o.band = shootHitBand(in.victimYaw, in.dir);
+    r.health -= dmg;
+    o.damage = dmg;
+    o.health = r.health;
+    if (in.victimIsPlayer) {
+        o.killed = r.health <= 0;
+        return o;
+    }
+    if (r.health > 0) {
+        // `sub_423EF0`, as `shootApplyHit` has it
+        if (r.scriptStep != 8 && !(r.flags & 2u) && !(r.flags & 0x4000u) && r.type != 12u) {
+            if (r.health > in.reactAt) {
+                if (r.hitAction != -1) { r.scriptStep = r.hitAction; o.action = r.hitAction; }
+            } else {
+                r.scriptStep = 4;
+                o.action = 4;
+            }
+        }
+        return o;
+    }
+    o.killed = true;
+    if (!(r.flags & 2u)) o.enemyCountDrop = true;
+    o.deathType = shootDeathClipType(o.band);
+    r.flags |= 8u;
+    return o;
+}
+
 }  // namespace omk

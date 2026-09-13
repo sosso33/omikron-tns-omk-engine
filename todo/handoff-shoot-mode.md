@@ -292,6 +292,17 @@ of the view with `IMPACT03.WAV` on it), and kills you at 513.
    sight, the ray, both arms, and the rays' two mesh skips (0x41 for both
    rays, 0x800 cutouts for the sight only). Left open there: the engage called
    every tick, the doors counted open, `shoot hit` to re-aim.
+11. **UNRESOLVED: HOW THE RELEASED SPECTRES ATTACK** (2026-09-13,
+   [`released-spectres.md`](released-spectres.md)). The reader, from a video:
+   the catacombs' patrolling spectres do not shoot, but the spectres a WRONG
+   tomb releases do. Every data-side path this tree can read says a spectre
+   cannot hurt the player - the fire test (group 12's `+8` is 0 in all 11
+   `.ani`), the brain's attack-clip strike (`spectre.ani` group 12 holds no
+   type-12 clip), no script arms them, the real route loads no scene, dialog
+   100 has no script, and spectres have no `.CTL`. What would move it: what
+   the attack LOOKS like in the original (a projectile, contact, an effect) and
+   how much health one takes. Parked; the dogs' bite and the landing damage
+   found on the way are being ported.
 10. **THE SWEEP** - a full `--slow` run is owed (`todo/sweep-log.md`, the
    counter at 11 on 2026-09-13), not done since 2026-09-09's; the reader runs
    it.

@@ -1175,6 +1175,7 @@ int shootEngage(ShootRecord& r, const AcquireOut& a, bool inCone, const EngageIn
     // `+108` and the 10/11 pair: whatever `sub_421020` finds, it latches 0x20
     // and puts him in 10 - or leaves him in 11 if he is already there.
     const auto goPair = [&] {
+        r.attackSlot = in.found421020;          // `u32(rec, 108) = v36`
         r.flags |= 0x20u;
         r.state = (r.state == 11) ? 11 : 10;
         return 0;
@@ -1283,6 +1284,25 @@ int shootEngage(ShootRecord& r, const AcquireOut& a, bool inCone, const EngageIn
     }
     if (inCone && a.dist3d < r.rangeInner) return los;
     return 0;
+}
+
+int shootPickAttack(const ShootRecord& r, float dist2d2,
+                    const std::function<int(int)>& rangeMetres,
+                    const std::function<int()>& rnd) {
+    int found = 0;
+    float best = 1000000.0f;                  // `v7 = 1000000.0`
+    for (int i = 0; i < 4; ++i) {
+        const int slot = r.attacks[i];
+        if (!slot) break;
+        const double v5 = double(39 * rangeMetres(slot));
+        const float v11 = static_cast<float>(v5);
+        if (v5 * v11 >= dist2d2 && v11 <= best &&
+            (v11 != best || !found || (rnd() & 2) == 0)) {
+            found = slot;
+            best = static_cast<float>(v5);
+        }
+    }
+    return found;
 }
 
 NoiseHearing shootHearNoise(ShootRecord& r, const float self[3], const float at[3],

@@ -135,4 +135,23 @@ struct HitOut {
 };
 HitOut shootApplyHit(ShootRecord& victim, const HitIn& in);
 
+// `sub_423B10` (0x00423B10), the DIRECT damage - the brain's outcome-3 strike
+// (a dog's bite), the type-13 brain, and a crusher's -1. The victim's arm is
+// `sub_4240E0`'s without the bolt's refusals (the damage-6 rules) and WITH
+// the shoot DIFFICULTY (options row 17, `word_90E1A8`, default 1): at 0 the
+// player takes `v + v / -4`, at 2 `v + v / 4`, C's truncation, before the
+// Body Shield. `dir` is the band's vector - for the strike, target minus
+// striker with y 0. A damage of -1 is the crusher: the death at once.
+struct StrikeIn {
+    int   damage = 0;
+    bool  victimIsPlayer = false;
+    bool  victimInShoot = true;    // ACTOR_STATE 3
+    int   bodyShield = 0;          // property 17, the player's
+    int   difficulty = 1;          // `word_90E1A8`
+    int   reactAt = 0;             // property 24, a gunman's
+    float victimYaw = 0.0f;
+    float dir[3] = {0, 0, 0};
+};
+HitOut shootApplyStrike(ShootRecord& victim, const StrikeIn& in);
+
 }  // namespace omk

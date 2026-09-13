@@ -1086,6 +1086,10 @@ public:
     // One property of an actor's record, `Actor_GetProperty`'s value cases -
     // the hit's reaction threshold (24) and the Body Shield (17).
     bool actorProperty(int actor, int property, std::int32_t& out) const;
+    // One of an actor's four attacks by clip slot - properties 21 (range in
+    // metres) and 22 (damage), `omk::readActorAttack`. -> false with no record.
+    bool actorAttack(int actor, int slot, std::int32_t& rangeMetres,
+                     std::int32_t& damage) const;
     // The spawned character with this id, or nullptr - the shown slot's
     // tables first, the same order `Scene_FindObjectRecord` searches.
     const Character* characterOf(int actor) const;

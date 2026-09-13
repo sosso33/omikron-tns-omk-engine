@@ -1817,6 +1817,15 @@ bool Session::actorProperty(int actor, int property, std::int32_t& out) const {
     return readActorProperty(rec, property, out);
 }
 
+bool Session::actorAttack(int actor, int slot, std::int32_t& rangeMetres,
+                          std::int32_t& damage) const {
+    std::vector<std::byte> chunk;
+    std::size_t off = 0;
+    if (!actorRecord(actor, chunk, off)) return false;
+    const std::span<const std::byte> rec(chunk.data() + off, 276);
+    return readActorAttack(rec, slot, rangeMetres, damage);
+}
+
 std::uint32_t Session::typeOfActor(int actor) const {
     std::vector<std::byte> chunk;
     std::size_t o = 0;

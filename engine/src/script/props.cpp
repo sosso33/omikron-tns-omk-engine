@@ -127,6 +127,20 @@ bool readActorProperty(std::span<const std::byte> record, int property,
     }
 }
 
+bool readActorAttack(std::span<const std::byte> record, int slot,
+                     std::int32_t& rangeMetres, std::int32_t& damage) {
+    if (record.size() < kActorRecordSize) return false;
+    rangeMetres = 2;                           // `u32(a1, 8) = 2` - no id matched
+    damage = 1;                                // `u32(a1, 8) = 1`
+    for (int i = 0; i < 4; ++i) {
+        if (i16(record, 226u + 2u * static_cast<std::size_t>(i)) != slot) continue;
+        rangeMetres = i16(record, 234u + 2u * static_cast<std::size_t>(i));
+        damage = i16(record, 242u + 2u * static_cast<std::size_t>(i));
+        break;
+    }
+    return true;
+}
+
 bool writeActorProperty(std::span<std::byte> record, int property,
                         std::int32_t value) {
     if (record.size() < kActorRecordSize) return false;

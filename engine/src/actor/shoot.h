@@ -116,6 +116,11 @@ struct ShootRecord {
     std::uint32_t type = 0;                  // +80   the character type
     int   health     = 0;                    // +92   Hud_DrawBar's value
     int   target     = -1;                   // +96   the actor being fought
+    // THE ATTACKS (`todo/released-spectres.md` step 5): `Shoot_ActorEnter`
+    // fills +112..+124 with the SLOTS of his `.ani` group's type-12 clips, in
+    // list order, and `sub_421020` picks one into +108 for the 10/11 pair
+    int   attackSlot = 0;                      // +108  the attack being made
+    int   attacks[4] = {0, 0, 0, 0};           // +112  0 ends the list
     // +100 is SHARED between the two brains, as it is in the engine: the
     // table brain counts its script step's repeats here, and the generic one
     // keeps its PATROL POINT INDEX here (`sub_424DE0` state 4, `sub_4272B0`
@@ -447,6 +452,17 @@ struct EngageIn {
     float linkFrom[3] = {0, 0, 0};   // that link's `from` - the goal
 };
 int shootEngage(ShootRecord& r, const AcquireOut& a, bool inCone, const EngageIn& in);
+
+// `sub_421020` (0x00421020): of his attacks (+112, up to four, 0 ends them),
+// the one whose range - property 21 of the slot, `39 *` metres - still
+// reaches the target (`range * range >= flt_90E118`, the flat squared
+// distance of the last cone test) and is the SHORTEST; on an exact tie with a
+// pick already made, `rand() & 2` keeps the new one when 0 - and `rand()` is
+// drawn only then. -> the slot, 0 for none. `rangeMetres(slot)` is event 44's
+// property 21, `rnd` the CRT's `rand()`.
+int shootPickAttack(const ShootRecord& r, float dist2d2,
+                    const std::function<int(int)>& rangeMetres,
+                    const std::function<int()>& rnd);
 
 // ---- THE GENERIC BRAIN, `sub_424DE0` (`todo/shoot-mode.md` 7c) ---------
 //

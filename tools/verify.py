@@ -26752,28 +26752,22 @@ def c_engine_shoot_fire():
             # (23,21) or beside it, where the bolts meet THEM after one frame;
             # the other six stop on the world. Pool entries follow the gunmen's
             # own live bolts)
-            [2, 3, 3, 2, 2, 1, 1, 2],
-            [("HIT ACTOR 237", -3143, "124.8", "0"), ("HIT ACTOR 240", -2939, "124.8", "0"),
-             ("hit the world", -3216, "249.6", "0"), ("hit the world", -3196, "374.4", "0"),
-             ("hit the world", -3182, "374.4", "0"), ("hit the world", -3161, "249.6", "0"),
-             ("hit the world", -3159, "249.6", "0"), ("hit the world", -3126, "249.6", "0")],
+            # (and since THE STRIKE, 2026-09-13 - `todo/released-spectres.md`
+            # step 5: the gunmen take their attack clips BESIDE the player -
+            # 237 from 52, 240 from 89, 238 from 94, striking from 50-67 units -
+            # instead of walking into him, so nothing pushes him: all eight bolts
+            # leave the one muzzle point and stop on the same wall two frames out)
+            [2, 2, 2, 2, 2, 2, 2, 2],
+            [("hit the world", -3161, "249.6", "0")],
             # (and since the y was PINNED, 2026-09-12: a gunman stands at his
             # floor's own edge minus his height rather than wherever the ground
             # probe had drifted him, so the bodies that push the player are a
             # few units from where they were and his muzzle points follow)
-            8, [("4994.8", "15144.7", "-3024.0"), ("4996.4", "15144.7", "-2941.6"),
-                ("5017.2", "15144.7", "-2918.7"), ("5031.4", "15144.7", "-2927.5"),
-                ("5087.1", "15144.7", "-3020.4"), ("5206.5", "15144.7", "-3022.7"),
-                ("5220.2", "15144.7", "-2935.7"), ("5243.2", "15144.7", "-2946.3")],
+            8, [("4996.4", "15144.7", "-2941.6")],
             list(range(37, 248, 30)),
-            [39, 70, 100, 129, 159, 249],
+            [39, 69, 99, 129, 159, 189, 219, 249],
             [("fire", "1", "687", "WAVER2.WAV", "1.00"),
-             ("impact", "3", "689", "WIMP1.WAV", "0.25"),
-             ("impact", "3", "689", "WIMP1.WAV", "0.26"),
-             ("impact", "3", "689", "WIMP1.WAV", "0.29"),
-             ("impact", "3", "689", "WIMP1.WAV", "0.32"),
-             ("impact", "3", "689", "WIMP1.WAV", "0.34"),
-             ("impact", "3", "689", "WIMP1.WAV", "0.41")])
+             ("impact", "3", "689", "WIMP1.WAV", "0.29")])
     return got, want, (
         "`Shoot_InitWeapon` giving the Gun Waver the key-1 row on the mode "
         "transition; eight latches armed by `MDSHOOT0` off the real channel; "
@@ -26781,8 +26775,8 @@ def c_engine_shoot_fire():
         "drain, six for the weapon to come back up); all of them the row's "
         "speed and damage, straight down -Z from the Maing node; one pool "
         "entry per shot; the bolts from the RAISED muzzle wherever the gunmen's "
-        "bodies have pushed him - and since the gunmen close in on a clear "
-        "ray, the sixth and seventh meet 237 and 240 and the rest the world; "
+        "bodies have pushed him - and since the gunmen strike from beside him "
+        "instead of walking into him, all eight from one muzzle point onto the world; "
         "WAVER2.WAV on every shot's frame and WIMP1.WAV on every impact")
 
 
@@ -27023,7 +27017,12 @@ def c_engine_shoot_move():
              # 49, 237 at 55, 240's ray clears at 99 - and on this leg two of
              # them are at him: 240 pushes at 134 and 237 at 146, his push
              # mostly along +Z, so the leg goes -84.23 across and 38.93 up)
-             (23, "92.82", ("-84.23", "0.00", "38.93"))])
+             # (and since THE STRIKE, 2026-09-13 - `todo/released-spectres.md`
+             # step 5: a gunman in reach takes his attack clip instead of
+             # walking on - 237 at 67 and 238 at 73, 240 striking from 138 -
+             # so nobody walks into the player on this leg and it runs
+             # straight, the 92.82 asked all along -X)
+             (23, "92.82", ("-92.82", "0.00", "0.00"))])
     return got, want, (
         "the mover's speeds from Speed 70 (row 4: 10.4, 0.39, 2.08); forward 40 "
         "frames = 303.29 along +Z, strafe right 30 = 256.10 along +X, nine MDRG "
@@ -27100,7 +27099,12 @@ def c_engine_shoot_entrance():
              # units from the player - every one of that leg's 15.95 sideways
              # units is spent there (OMK_PLY against OMK_TRACE_ACTOR=77), after
              # which he falls behind and the leg runs straight)
-             (29, "144.95", ("-142.74", "0.00", "24.20")),
+             # (and since THE STRIKE, 2026-09-13 - `todo/released-spectres.md`
+             # step 5: at 440, 76 units away, 77 is inside his attack's 2 m, so
+             # the engage sends him to his attack clip (6 -> 10) where it sent
+             # him rushing onto the player's cell (6 -> 8): he never reaches the
+             # walk, nothing pushes it, and both legs run straight)
+             (29, "144.95", ("-144.95", "0.00", "0.00")),
              # (THE COLLIDER, 2026-09-11: a robber's body in the spatial index
              # pushes him off the straight walk - the 719.29 is still walked,
              # it ends 70.85 across and 541.72 along, the push swept against
@@ -27118,7 +27122,7 @@ def c_engine_shoot_entrance():
              # turn clips, 477-506) as this leg starts at 482: his body pushes
              # the player from x 13098.7 to 13109 by 496, all 10.28 of the
              # leg's sideways units, and the rest runs straight up column 2)
-             (84, "719.29", ("10.28", "-0.00", "714.61"))],
+             (84, "719.29", ("0.00", "-0.00", "719.29"))],
             True, True, [])
     return got, want, (
         "the reader's route into SCENE 56's zone 12: 144.95 along -X, then 84 "
@@ -27690,7 +27694,9 @@ def c_engine_shoot_gunfire():
             ("WAVER", "1", "1", "15.0", "5"),
             # (and robber 77 walks round the counter first: his sight clears at
             # 441, where he fires his one shot of the 500 frames, from (4,10))
-            (441, 470),
+            # (441 alone since THE STRIKE, 2026-09-13: in reach at 443 he takes
+            # his attack clip, and his second blow is a strike at 459, not a bolt)
+            (441,),
             "0.941 -0.132 0.312",
             # (ending his turn at 164.1 he stands 21 degrees off the player -
             # his aim layer's yaw covers it - so his bolts come from a muzzle
@@ -27703,10 +27709,7 @@ def c_engine_shoot_gunfire():
             # first-person preset cannot show - where the old frontal hit tipped)
             [("442", "damage 5, Body Shield 30 -> 4; health 10 -> 6, gauge 6 (property 1 "
                      "stored 6); message 0 to the hurt handler; the shove (sub_47D1F0) "
-                     "band 0 rolls him - and the first-person preset CANNOT SHOW a roll"),
-             ("471", "damage 5, Body Shield 30 -> 4; health 6 -> 2, gauge 2 (property 1 "
-                     "stored 2); message 0 to the hurt handler; the shove (sub_47D1F0) "
-                     "band 2 TIPS the view 2 degrees")],
+                     "band 0 rolls him - and the first-person preset CANNOT SHOW a roll")],
             # (240 no longer loops a type-10 clip: his entry is the unported
             # patrol, and he stands on action 0's type 11 / 25)
             # (since the death: stood down to action 0 before their walk could
@@ -27732,7 +27735,9 @@ def c_engine_shoot_gunfire():
             # off the path when he fires - the bolt's own aim is the target's)
             # (238's second shot, whose barrel this was, never comes: he stood
             # down when the player died)
-            [("470", "77", "-177.1")])
+            # (none since THE STRIKE: the barrel line is his SECOND shot's, and
+            # he strikes instead of firing it)
+            [])
     # THE HEIGHT AT EVERY CLIP START (2026-09-11, a reader's robber climbing to
     # the ceiling): `sub_421A20` sets the node to (x, rec+60 + d(0->1).y, z) on
     # every clip it starts, so 77's walk - restarted by a turn clip every ~16
@@ -27740,7 +27745,9 @@ def c_engine_shoot_gunfire():
     # he ended these 500 frames at -140; he stands at -128
     y77 = re.search(r"^  actor 77 BRA_FN \(bank none\) at \S+ (\S+) \S+ facing", sm, re.M)
     got = got + (y77.group(1) if y77 else None,)
-    want = want + ("-132",)   # (his y pinned to `+60`, 2026-09-12)
+    # (his y pinned to `+60`, 2026-09-12 - and -125 since THE STRIKE: the run
+    # ends with him on his attack and stand clips, whose root lifts him 7)
+    want = want + ("-125",)
     return got, want, (
         "the gallery's two gunmen resolve their held weapons through the others' table, fire "
         "on the brain's first outcome 1 and every RATE frames after, the first bolt aimed "
@@ -27779,7 +27786,7 @@ def c_engine_shoot_death():
          "--area", "230", "--scene-chunk", "56", "--frames", "800", "--nodelay"],
         capture_output=True, text=True, errors="replace",
         env=dict(os.environ, SDL_VIDEODRIVER="dummy")).stdout
-    kill = re.search(r"^frame (\d+): PLAYER HIT by actor (\d+)'s bolt - .*?health (-?\d+) -> "
+    kill = re.search(r"^frame (\d+): PLAYER HIT by actor (\d+)'s (?:bolt|strike) - .*?health (-?\d+) -> "
                      r"(-?\d+) - KILLED \(sub_423FC0\): ACTOR_STATE (\d+), message 9 (to its "
                      r"handler|- NO handler subscribes), \.CTL group 201 (on|NOT FOUND), (\d+) "
                      r"frames to count down, (\d+) gunmen stand down; the gauge stays at (\d+)$",
@@ -27805,16 +27812,24 @@ def c_engine_shoot_death():
     # picked clip is over - clip type 11, state 3 - under that reason rather
     # than the death's, so the list below is empty; the recovery follows 60
     # frames on, at 573, and the phase is left at 574)
-    want = (("513", "77", "2", "-2", "15", "to its handler", "on", "60", "1", "2"),
-            [],
-            ("573", "3", "to its handler", "2", "on"),
-            "574", True)
+    # (and since THE STRIKE, 2026-09-13 - `todo/released-spectres.md` step 5:
+    # 77's group holds two type-12 attack clips, slots 19 and 20, which his
+    # record gives 2 m and 4 / 3 damage, so the rush ends in the 10/11 pair:
+    # the bolt at 442, his attack clip at 443, a STRIKE at 459 (6 -> 3) and the
+    # killing one at 491 - `sub_423B10`, the kill line naming a strike. In state
+    # 10 flag 8 is down, so his stand-down applies at once at 492, clip type 11
+    # and state 3; the recovery reads back the 3 the last hurt stored, at 552,
+    # and the phase is left at 553)
+    want = (("491", "77", "3", "0", "15", "to its handler", "on", "60", "1", "3"),
+            [("492", "77", "11", "3")],
+            ("552", "3", "to its handler", "3", "on"),
+            "553", True)
     return got, want, (
-        "the supermarket's player killed by 77's third bolt at 513: every live gunman "
-        "told to stand down (77, rushing under flag 8, parks it), ACTOR_STATE 15, message 9 "
-        "to SCENE 56's handler, .CTL group 201 with a 60-frame countdown and the gauge left "
-        "at 2; at 573 ACTOR_STATE 3, message 1 (the phase lost), property 1 read back, "
-        "group 200 - and the scene leaving shoot mode at 574 into the Meditek voice-over")
+        "the supermarket's player killed by 77's second STRIKE at 491 (after a bolt and a "
+        "strike): every live gunman standing down (77 to action 0 at once), ACTOR_STATE 15, "
+        "message 9 to SCENE 56's handler, .CTL group 201 with a 60-frame countdown and the "
+        "gauge left at 3; at 552 ACTOR_STATE 3, message 1 (the phase lost), property 1 read "
+        "back, group 200 - and the scene leaving shoot mode at 553 into the Meditek voice-over")
 
 
 def c_shoot_input():
@@ -28090,7 +28105,12 @@ def c_shoot_generic():
                     r"other floor (-?\d+)/state (\d+); watcher sees (-?\d+)/state (\d+) "
                     r"latch (\d)\s+blocked (-?\d+)/state (\d+)\s+latched-blocked "
                     r"(-?\d+)/state (\d+)\s+same floor (-?\d+)/state (\d+)$", r.stdout, re.M)
-    if not (cov and unr and tr and sn and wr and nv and tv and pt and hb and aq and cl and mv and en and ey and sa):
+    # THE ATTACK (`todo/released-spectres.md` step 5): `sub_421020`'s pick and
+    # `sub_423B10`'s damage, the dogs' bite and the robbers' close strike
+    aa  = re.search(r"^attack arms: pick near (-?\d+) far (-?\d+) none (-?\d+) rolls (\d+); "
+                    r"tie (-?\d+)/(-?\d+) rolls (\d+); strike d1 (-?\d+) d0 (-?\d+) d2 (-?\d+) "
+                    r"min (-?\d+) kill (-?\d+)->(-?\d+) (\d) crush (\d)$", r.stdout, re.M)
+    if not (cov and unr and tr and sn and wr and nv and tv and pt and hb and aq and cl and mv and en and ey and sa and aa):
         return ("unparsed",), ("parsed",), "the probe's own generic: lines"
     got = (tuple(int(x) for x in cov.groups()), tuple(int(x) for x in unr.groups()),
            tuple(int(x) for x in tr.groups()), tuple(int(x) for x in sn.groups()),
@@ -28108,7 +28128,8 @@ def c_shoot_generic():
             int(mv.group(5)), mv.group(6), int(mv.group(7))),
            tuple(int(x) for x in en.groups()),
            (int(ey.group(1)), ey.group(2), ey.group(3), ey.group(4)),
-           tuple(int(x) for x in sa.groups()))
+           tuple(int(x) for x in sa.groups()),
+           tuple(int(x) for x in aa.groups()))
     want = ((16, 16, 16), (0, 0), (4, 11, 2, 3, 10),
             (32, -180, 30, -90, 31, 90), (10, 350),
             (1, "143.1", 500, 2, 0, 1, 2, 6),
@@ -28132,7 +28153,14 @@ def c_shoot_generic():
             # WATCHER: seen by the doubled cone -> 1, 3, latched; blocked ->
             # 0 and his state untouched; blocked but latched -> 2 and 3; on the
             # player's own floor the general arm, whose grid is blocked here
-            (1, 3, 1, 0, 4, 0, 4, 1, 3, 1, 3, 1, 0, 6, 2, 3, 0, 6))
+            (1, 3, 1, 0, 4, 0, 4, 1, 3, 1, 3, 1, 0, 6, 2, 3, 0, 6),
+            # THE ATTACK: of 156 and 78, 60 away takes the SHORTER (slot 20),
+            # 100 away the only one that reaches (19), 200 neither - no rand()
+            # drawn; an exact tie keeps the new one on `rand() & 2 == 0` (21)
+            # and the first on 2 (19), two draws. The strike: 10 through shield
+            # 30 is 7 at difficulty 1, 6 at 0 (10 + 10/-4 = 8 first), 9 at 2
+            # (12 first); 1 stays 1; 4 on 3 health kills; -1 is the crusher
+            (20, 19, 0, 0, 21, 19, 2, 7, 6, 9, 1, 3, 0, 1, 1))
     return got, want, ("the machine's states, how many are TRANSCRIBED, and "
                        "that every transcribed one is in the state set; then "
                        "that the ten UNREAD arms change nothing at all - no "

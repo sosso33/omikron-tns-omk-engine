@@ -3777,6 +3777,16 @@ int main(int argc, char** argv) {
         for (const auto& c : it->second) if (c.type == type) m.push_back(&c);
         return m.empty() ? nullptr : m[static_cast<std::size_t>(group * 7 + type) % m.size()];
     };
+    // ...and `sub_434630(list, slot)`: the clip whose +4 SLOT is that, or none
+    // - how `sub_4272B0` case 9 finds the attack at +108
+    const auto shootClipBySlot = [&](int group, int slot) -> const omk::PedClip* {
+        if (pedAni.empty() || !slot) return nullptr;
+        auto it = shootClips.find(group);
+        if (it == shootClips.end())
+            it = shootClips.emplace(group, omk::animGroupClips(pedAni, group)).first;
+        for (const auto& c : it->second) if (c.slot == slot) return &c;
+        return nullptr;
+    };
     const auto pedTracksFor = [&](int sex, const omk::PedClip& c, const std::vector<omk::Mesh>& meshes)
         -> const omk::NodeTracks* {
         // `PlayerController::poseTracks`'s recipe over the crowd library: the
@@ -3920,6 +3930,9 @@ int main(int argc, char** argv) {
     struct GunAnim { const omk::PedClip* clip = nullptr; float frame = 1.0f; };
     std::map<int, GunAnim> gunAnims;
     std::map<int, int> gunCurType;       // the clip TYPE his last action started
+    // ...or the clip SLOT the brain started (`sub_4272B0` case 9, the attack by
+    // +108) - when set it wins over the type, and an action's type clears it
+    std::map<int, int> gunCurSlot;
     // THE PLAYER'S DEATH (`sub_423FC0`): the countdown `dword_4E975C` his death
     // clip runs for, and the gunmen told to stand down on their next tick
     float playerDeathCountdown = 0.0f;
@@ -4910,6 +4923,93 @@ int main(int argc, char** argv) {
     float spriteAnchor[3] = {0.0f, 0.0f, 0.0f};
     bool  spriteAnchorSet = false;
     std::map<int, long> spriteLogged;     // row -> the link tick already reported
+    // ---- THE PLAYER'S DAMAGE, from the HIT onward ----
+    // `sub_4240E0`'s (a bolt) and `sub_423B10`'s (a strike - the dogs' bite,
+    // `todo/released-spectres.md` step 5) player arms are the SAME from the
+    // damage on: the death `sub_423FC0` before the gauge, or the hurt shove,
+    // the gauge, property 1 and message 0. `what` names the source in the log.
+    const auto applyPlayerDamage = [&](long n, int owner, const char* what, int dmgIn,
+                                       int shield, const omk::HitOut& ho) {
+                        const std::size_t recAt = static_cast<std::size_t>(omk::GameState::kPlayerRecord);
+                        const std::size_t recLen = static_cast<std::size_t>(omk::GameState::kPlayerRecordSize);
+                        if (ho.killed) {
+                            // `if (+92 <= 0) { sub_423FC0(him); return v30; }` - BEFORE
+                            // the gauge, the property and the message, so the killing
+                            // hit leaves the gauge at its last value and tells no one.
+                            // ---- THE DEATH, `sub_423FC0` (05_sys.c 4606, ported
+                            // 2026-09-11 - a reader: "continue with the player's death") -
+                            //  1. every live gunman (+160 0x40 up, 0x4002 clear, +92 > 0)
+                            //     STANDS DOWN: action 0, or on script step 8 his 0x20
+                            //     cleared - applied on his own next tick here, where the
+                            //     engine does it inside the hit;
+                            //  2. ACTOR_STATE 15; `sub_436D20` shows his body (this port
+                            //     draws it throughout - NOT PORTED as a switch); then
+                            //     `sub_47CE70` (a global actor's pitch and roll zeroed,
+                            //     its writer not traced - NOT PORTED); MESSAGE 9;
+                            //  3. .CTL group 201 on his channel, and the countdown
+                            //     `dword_4E975C` = its default entry's clip length
+                            int stood = 0;
+                            for (const auto& [ga, gr] : shootBrains)
+                                if ((gr.flags & 0x40u) && !(gr.flags & 0x4002u) && gr.health > 0) {
+                                    gunStandDown.insert(ga);
+                                    ++stood;
+                                }
+                            playerDeathCountdown = 0.0f;
+                            if (player) player->setActorState(omk::ActorState::Shoot15, "sub_423FC0");
+                            const bool ran9 = session.postMessage(9, session.playerActor());
+                            const bool g201 = player && player->enterGroupById(201);
+                            if (g201) playerDeathCountdown = static_cast<float>(player->clipFrames());
+                            std::printf("frame %ld: PLAYER HIT by actor %d's %s - damage %d, Body "
+                                        "Shield %d -> %d; health %d -> %d - KILLED (sub_423FC0): "
+                                        "ACTOR_STATE 15, message 9 %s, .CTL group 201 %s, %.0f "
+                                        "frames to count down, %d gunmen stand down; the gauge "
+                                        "stays at %d\n", n, owner, what, dmgIn, shield,
+                                        ho.damage, ho.healthWas, ho.health,
+                                        ran9 ? "to its handler" : "- NO handler subscribes",
+                                        g201 ? "on" : "NOT FOUND", double(playerDeathCountdown),
+                                        stood, hudHealth);
+                            return;
+                        }
+                        // ---- THE HURT REACTION, `sub_47D1F0` (ported 2026-09-12)
+                        // The SOUND first - `word_657A14` resolved in the
+                        // resident library, which in shoot mode is shoot2.scx,
+                        // and played FLAT: `Sound_Play3D`'s `a3` is 0, so it
+                        // takes the `v6[12] = 4` arm and carries no position.
+                        // Then the shove itself, pointed by the hit's own band
+                        // and spent over four frames by the mover above.
+                        if (shootRt) {
+                            const int w = shootRt->wavBydId(shootMover.hurtSound);
+                            if (w < 0)
+                                std::printf("  the hurt sound %d is not in shoot2.scx\n",
+                                            shootMover.hurtSound);
+                            else {
+                                const auto pcm = wavToDevice(shootRt->wavData(w), 44100);
+                                if (!pcm.empty()) front.playSound(pcm, false, 1.0f);
+                            }
+                        }
+                        const bool shoved = player &&
+                            omk::shootHurt(shootMover, ho.band, player->eulerPitch(),
+                                           player->eulerRoll());
+                        // then the gauge, property 1 and message 0
+                        hudHealth = playerShootRec.health;                // `dword_90E100`
+                        omk::writeActorProperty(state.rawMutable().subspan(recAt, recLen), 1,
+                                                playerShootRec.health);
+                        std::int32_t stored = 0;
+                        omk::readActorProperty(state.raw().subspan(recAt, recLen), 1, stored);
+                        const bool ran = session.postMessage(0, session.playerActor());
+                        std::printf("frame %ld: PLAYER HIT by actor %d's %s - damage %d, Body "
+                                    "Shield %d -> %d; health %d -> %d, gauge %d (property 1 stored "
+                                    "%d); message 0 %s; the shove (sub_47D1F0) band %d %s\n",
+                                    n, owner, what, dmgIn, shield,
+                                    ho.damage, ho.healthWas, ho.health, hudHealth, int(stored),
+                                    ran ? "to the hurt handler" : "- NO handler subscribes",
+                                    ho.band,
+                                    !shoved ? "- NO shooter installed"
+                                            : ho.band < 2
+                                                ? "rolls him - and the first-person preset "
+                                                  "CANNOT SHOW a roll"
+                                                : "TIPS the view 2 degrees");
+    };
     std::set<std::string> motionLogged;   // mesh/pool pairs already reported
     for (;;) {
         const Uint32 frameStartMs = SDL_GetTicks();
@@ -6123,83 +6223,7 @@ int main(int argc, char** argv) {
                                         "already (health %d): nothing\n", n, ev.owner, ho.healthWas);
                             continue;
                         }
-                        if (ho.killed) {
-                            // `if (+92 <= 0) { sub_423FC0(him); return v30; }` - BEFORE
-                            // the gauge, the property and the message, so the killing
-                            // hit leaves the gauge at its last value and tells no one.
-                            // ---- THE DEATH, `sub_423FC0` (05_sys.c 4606, ported
-                            // 2026-09-11 - a reader: "continue with the player's death") -
-                            //  1. every live gunman (+160 0x40 up, 0x4002 clear, +92 > 0)
-                            //     STANDS DOWN: action 0, or on script step 8 his 0x20
-                            //     cleared - applied on his own next tick here, where the
-                            //     engine does it inside the hit;
-                            //  2. ACTOR_STATE 15; `sub_436D20` shows his body (this port
-                            //     draws it throughout - NOT PORTED as a switch); then
-                            //     `sub_47CE70` (a global actor's pitch and roll zeroed,
-                            //     its writer not traced - NOT PORTED); MESSAGE 9;
-                            //  3. .CTL group 201 on his channel, and the countdown
-                            //     `dword_4E975C` = its default entry's clip length
-                            int stood = 0;
-                            for (const auto& [ga, gr] : shootBrains)
-                                if ((gr.flags & 0x40u) && !(gr.flags & 0x4002u) && gr.health > 0) {
-                                    gunStandDown.insert(ga);
-                                    ++stood;
-                                }
-                            playerDeathCountdown = 0.0f;
-                            if (player) player->setActorState(omk::ActorState::Shoot15, "sub_423FC0");
-                            const bool ran9 = session.postMessage(9, session.playerActor());
-                            const bool g201 = player && player->enterGroupById(201);
-                            if (g201) playerDeathCountdown = static_cast<float>(player->clipFrames());
-                            std::printf("frame %ld: PLAYER HIT by actor %d's bolt - damage %d, Body "
-                                        "Shield %d -> %d; health %d -> %d - KILLED (sub_423FC0): "
-                                        "ACTOR_STATE 15, message 9 %s, .CTL group 201 %s, %.0f "
-                                        "frames to count down, %d gunmen stand down; the gauge "
-                                        "stays at %d\n", n, ev.owner, ev.damage, int(shield),
-                                        ho.damage, ho.healthWas, ho.health,
-                                        ran9 ? "to its handler" : "- NO handler subscribes",
-                                        g201 ? "on" : "NOT FOUND", double(playerDeathCountdown),
-                                        stood, hudHealth);
-                            continue;
-                        }
-                        // ---- THE HURT REACTION, `sub_47D1F0` (ported 2026-09-12)
-                        // The SOUND first - `word_657A14` resolved in the
-                        // resident library, which in shoot mode is shoot2.scx,
-                        // and played FLAT: `Sound_Play3D`'s `a3` is 0, so it
-                        // takes the `v6[12] = 4` arm and carries no position.
-                        // Then the shove itself, pointed by the hit's own band
-                        // and spent over four frames by the mover above.
-                        if (shootRt) {
-                            const int w = shootRt->wavBydId(shootMover.hurtSound);
-                            if (w < 0)
-                                std::printf("  the hurt sound %d is not in shoot2.scx\n",
-                                            shootMover.hurtSound);
-                            else {
-                                const auto pcm = wavToDevice(shootRt->wavData(w), 44100);
-                                if (!pcm.empty()) front.playSound(pcm, false, 1.0f);
-                            }
-                        }
-                        const bool shoved = player &&
-                            omk::shootHurt(shootMover, ho.band, player->eulerPitch(),
-                                           player->eulerRoll());
-                        // then the gauge, property 1 and message 0
-                        hudHealth = playerShootRec.health;                // `dword_90E100`
-                        omk::writeActorProperty(state.rawMutable().subspan(recAt, recLen), 1,
-                                                playerShootRec.health);
-                        std::int32_t stored = 0;
-                        omk::readActorProperty(state.raw().subspan(recAt, recLen), 1, stored);
-                        const bool ran = session.postMessage(0, session.playerActor());
-                        std::printf("frame %ld: PLAYER HIT by actor %d's bolt - damage %d, Body "
-                                    "Shield %d -> %d; health %d -> %d, gauge %d (property 1 stored "
-                                    "%d); message 0 %s; the shove (sub_47D1F0) band %d %s\n",
-                                    n, ev.owner, ev.damage, int(shield),
-                                    ho.damage, ho.healthWas, ho.health, hudHealth, int(stored),
-                                    ran ? "to the hurt handler" : "- NO handler subscribes",
-                                    ho.band,
-                                    !shoved ? "- NO shooter installed"
-                                            : ho.band < 2
-                                                ? "rolls him - and the first-person preset "
-                                                  "CANNOT SHOW a roll"
-                                                : "TIPS the view 2 degrees");
+                        applyPlayerDamage(n, ev.owner, "bolt", ev.damage, int(shield), ho);
                         continue;
                     }
                     // ---- `sub_4240E0`, the damage, on his shoot record ----
@@ -11519,6 +11543,7 @@ int main(int argc, char** argv) {
                         }
                         if (o.clipType >= 0) {
                             gunCurType[s.actor] = o.clipType;
+                            gunCurSlot.erase(s.actor);
                             gunAnims[s.actor].clip = nullptr;   // `sub_421A20`: from 1.0, the same clip too
                         }
                         // logged when the action, the clip or the state CHANGES - a
@@ -11608,6 +11633,19 @@ int main(int argc, char** argv) {
                             // +80, the character type - the hit's gates test it
                             // (type 11 takes the baton, 12 never reacts)
                             fresh.type = session.typeOfActor(s.actor);
+                            // +112..+124: the slots of his group's TYPE-12 clips,
+                            // in list order (`sub_4347A0` / `sub_434860`), up to four
+                            if (!pedAni.empty() && fresh.type < 64u) {
+                                int k = 0;
+                                for (const auto& c : omk::animGroupClips(pedAni, static_cast<int>(fresh.type))) {
+                                    if (!c.slot) break;
+                                    if (c.type == 12 && k < 4) fresh.attacks[k++] = c.slot;
+                                }
+                                if (k)
+                                    std::printf("frame %ld: actor %d %s - ATTACKS (Shoot_ActorEnter +112): "
+                                                "%d type-12 clip%s, first slot %d\n", n, s.actor,
+                                                s.model.c_str(), k, k == 1 ? "" : "s", fresh.attacks[0]);
+                            }
                             fresh.state = 6;          // the hub, where a
                             fresh.node  = 0;          // gunman waits
                             // (+188 is his FLOOR, a signed byte: `Shoot_Enter`
@@ -12029,8 +12067,37 @@ int main(int argc, char** argv) {
                         const bool engineCalls = rec.state == 3 || rec.state == 4 ||
                             rec.state == 6 || rec.state == 8 || rec.state == 11 ||
                             rec.state == 13 || rec.state == 14 || rec.state == 28;
-                        const int eng = ((spectreArm || watchArm) && !engineCalls)
+                        // `sub_421020`: an attack that reaches sends the engage to
+                        // the 10/11 pair (`goPair`) - range by property 21 of the slot
+                        ein.found421020 = omk::shootPickAttack(
+                            rec, ao.dist2d2,
+                            [&](int slot) {
+                                std::int32_t rm = 2, dm = 1;
+                                session.actorAttack(s.actor, slot, rm, dm);
+                                return static_cast<int>(rm);
+                            },
+                            [&]() {
+                                gunRandSeed = gunRandSeed * 214013u + 2531011u;
+                                return static_cast<int>((gunRandSeed >> 16) & 0x7FFFu);
+                            });
+                        const int preEngageState = rec.state;
+                        // (and never from STATE 10: `sub_424DE0` has no engage call
+                        // in that arm, and one here would rewrite a striking gunman's
+                        // state mid-clip)
+                        const int eng = (((spectreArm || watchArm) && !engineCalls) ||
+                                         rec.state == 10)
                                             ? 0 : omk::shootEngage(rec, ao, cone, ein);
+                        // THE ENGAGE IS CALLED INSIDE AN ARM in the engine, so a
+                        // gunman it sends to the 10/11 pair (`goPair`) does not run
+                        // state 10 until the NEXT tick - by which `sub_4272B0` has
+                        // started his attack clip. This viewer runs the engage BEFORE
+                        // the step (the hoist `todo/handoff-shoot-mode.md` §4 item 6
+                        // labels), and running state 10 on the same tick read the OLD
+                        // clip's frames as spent and sent him on to 11 at once - robber
+                        // 77 and dog 598 both did (2026-09-13). So the tick the pair is
+                        // entered has no step: outcome None, and nothing else.
+                        const bool pairEntered = (rec.state == 10 || rec.state == 11) &&
+                                                 preEngageState != rec.state;
                         fin.targetPredicate = eng != 0;
                         fin.targetPredicateBits = eng;
                         fin.canFire = eng != 0;
@@ -12120,8 +12187,12 @@ int main(int argc, char** argv) {
                                 }
                             }
                         }
-                        // ...and state 5's clip clock, which is all that arm reads
-                        if (rec.state == 5) {
+                        // ...and the clip clock, which state 5 reads - and the 10/11
+                        // pair (the attack clip's first half is outcome 3, its end
+                        // hands 10 to 11; 11 goes back to 10 past five frames). Until
+                        // 2026-09-13 only state 5 had it, and state 10 read 0 of 0 as
+                        // a clip already spent.
+                        if (rec.state == 5 || rec.state == 10 || rec.state == 11) {
                             if (const auto ga = gunAnims.find(s.actor);
                                 ga != gunAnims.end() && ga->second.clip) {
                                 fin.clipFrame = ga->second.frame;
@@ -12146,8 +12217,46 @@ int main(int argc, char** argv) {
                         // FireIfReady, so the fire arm below tests this too.
                         const bool entryPending = gunEntryPending.count(s.actor) != 0;
                         const auto st = entryPending ? omk::ShootStep{}
-                                                     : omk::shootGenericStep(rec, fin, yaw);
+                                      : pairEntered ? [] {
+                                                          omk::ShootStep k;
+                                                          k.outcome = omk::ShootOutcome::None;
+                                                          return k;
+                                                      }()
+                                                    : omk::shootGenericStep(rec, fin, yaw);
                         s.facing = yaw;
+                        // ---- `sub_4272B0`, THE STATE'S CLIP, on a state change ----
+                        // (`if (v187 != +156) sub_4272B0(him, rec, ...)`). Its first
+                        // line clears flag 4 - the strike's once-a-clip latch - for
+                        // every state; PORTED only for the 10/11 pair (the strike,
+                        // `todo/released-spectres.md` step 5): case 9 starts the
+                        // attack at +108 by SLOT (`sub_434630`), "anim ATTAQUE PROCHE
+                        // non existante" when the group has none; case 10 starts a
+                        // type-23 clip, else 11. The other states' clips stay unported.
+                        if (!entryPending && rec.state != before) {
+                            rec.flags &= ~4u;
+                            const int grpS = static_cast<int>(session.typeOfActor(s.actor));
+                            if (rec.state == 10 && grpS >= 0 && grpS < 64) {
+                                const omk::PedClip* atk = shootClipBySlot(grpS, rec.attackSlot);
+                                static std::map<int, int> atkTold;
+                                if (atk) {
+                                    gunCurSlot[s.actor] = atk->slot;
+                                    gunAnims[s.actor].clip = nullptr;
+                                    if (atkTold[s.actor]++ < 3)
+                                        std::printf("frame %ld: actor %d %s - ATTACK CLIP (sub_4272B0 case 9): "
+                                                    "slot %d '%s', %d frames\n", n, s.actor, s.model.c_str(),
+                                                    atk->slot, atk->name.c_str(), atk->frames);
+                                } else if (atkTold[s.actor]++ < 3) {
+                                    std::printf("frame %ld: actor %d %s - anim ATTAQUE PROCHE non existante "
+                                                "dans le .ANI (slot %d)\n", n, s.actor, s.model.c_str(),
+                                                rec.attackSlot);
+                                }
+                            } else if (rec.state == 11 && grpS >= 0 && grpS < 64) {
+                                const int t = shootClipExact(grpS, 23) ? 23 : 11;
+                                gunCurType[s.actor] = t;
+                                gunCurSlot.erase(s.actor);
+                                gunAnims[s.actor].clip = nullptr;
+                            }
+                        }
                         // ---- STATE 2 ARRIVING at the edge's far end ---------
                         // `o3de_SetNodePos(node, to.x, to.y - +64, to.z)`, then
                         // `+188 = link.destFloor` and `+60 = that y`. This is
@@ -12259,9 +12368,11 @@ int main(int argc, char** argv) {
                             // his clip is the TYPE his last action started
                             // (`Shoot_ActorAction`), the scene action's until one has
                             const auto ctA = gunCurType.find(s.actor);
+                            const auto csA = gunCurSlot.find(s.actor);
                             const omk::PedClip* ac = (grpA >= 0 && grpA < 64)
-                                ? (ctA != gunCurType.end() ? shootClipExact(grpA, ctA->second)
-                                                           : shootClipFor(grpA, act))
+                                ? (csA != gunCurSlot.end() ? shootClipBySlot(grpA, csA->second)
+                                   : ctA != gunCurType.end() ? shootClipExact(grpA, ctA->second)
+                                                             : shootClipFor(grpA, act))
                                 : nullptr;
                             GunAnim& ga = gunAnims[s.actor];
                             // `if (u32(rec, 156) != 13) flags &= ~0x100`
@@ -12401,6 +12512,69 @@ int main(int argc, char** argv) {
                         // LABEL_359's burst against property 18 (flag 0x2000000);
                         // and case 1's other arm, the `+164` countdown of a
                         // character whose fire test is clear.
+                        // ---- THE STRIKE, the epilogue's OUTCOME 3 (05_sys.c 6187) ----
+                        // State 10, the first half of the attack clip. NOT PORTED,
+                        // labelled: the `actor+460 && flags < 0` arm before it (the
+                        // +460 interrupt), the aim pose `sub_434C30`, and `++u8(+190)`
+                        // (this port's +190 is the wound band). With `0x8000` clear
+                        // and flag 4 not yet up: property 21 of +108 as a range,
+                        // `39 *` metres, against the 3D distance between the two
+                        // ROOT nodes; inside it flag 4 goes up, property 22 is the
+                        // damage, and `sub_423B10(+96, damage, (dx, 0, dz))`.
+                        if (st.outcome == omk::ShootOutcome::Outcome3 && !(rec.flags & 0x8000u) &&
+                            !(rec.flags & 4u) && player && s.mo && !entryPending) {
+                            std::int32_t rangeM = 2, dmgA = 1;
+                            session.actorAttack(s.actor, rec.attackSlot, rangeM, dmgA);
+                            float pt[3] = {player->pos()[0], player->pos()[1] - player->cameraLift(),
+                                           player->pos()[2]};
+                            for (std::size_t i = 0; i < playerMeshes.size(); ++i)
+                                if (playerMeshes[i].parent < 0) {
+                                    if (playerMeshAtKnown && playerMeshAt.size() >= i * 3 + 3)
+                                        for (int k = 0; k < 3; ++k)
+                                            pt[k] = playerMeshAt[i * 3 + static_cast<std::size_t>(k)];
+                                    break;
+                                }
+                            float me[3] = {s.drawAt[0], s.drawAt[1], s.drawAt[2]};
+                            for (std::size_t i = 0; i < s.mo->meshes.size(); ++i)
+                                if (s.mo->meshes[i].parent < 0) {
+                                    if (s.meshAt.size() >= i * 3 + 3)
+                                        for (int k = 0; k < 3; ++k)
+                                            me[k] = s.meshAt[i * 3 + static_cast<std::size_t>(k)];
+                                    break;
+                                }
+                            const double sdx = double(pt[0]) - me[0], sdy = double(pt[1]) - me[1],
+                                         sdz = double(pt[2]) - me[2];
+                            const double sd = std::sqrt(sdx * sdx + sdy * sdy + sdz * sdz);
+                            if (sd < double(39 * rangeM)) {
+                                rec.flags |= 4u;
+                                const std::size_t recAtS = static_cast<std::size_t>(omk::GameState::kPlayerRecord);
+                                const std::size_t recLenS = static_cast<std::size_t>(omk::GameState::kPlayerRecordSize);
+                                omk::StrikeIn sin;
+                                sin.damage = dmgA;
+                                sin.victimIsPlayer = true;
+                                sin.victimInShoot = player->state() == omk::ActorState::Shoot;
+                                std::int32_t shieldS = 0;
+                                omk::readActorProperty(state.raw().subspan(recAtS, recLenS), 17, shieldS);
+                                sin.bodyShield = shieldS;
+                                sin.difficulty = settings.v.shootDifficulty;
+                                sin.victimYaw = player->facing();
+                                sin.dir[0] = static_cast<float>(sdx);
+                                sin.dir[2] = static_cast<float>(sdz);
+                                const omk::HitOut sho = omk::shootApplyStrike(playerShootRec, sin);
+                                std::printf("frame %ld: actor %d %s - STRIKE (outcome 3, sub_423B10): "
+                                            "attack slot %d, range %d m (%d), %.1f away, damage %d, "
+                                            "difficulty %d\n", n, s.actor, s.model.c_str(),
+                                            rec.attackSlot, int(rangeM), 39 * int(rangeM), sd,
+                                            int(dmgA), sin.difficulty);
+                                if (sho.refused)
+                                    std::printf("  PLAYER strike REFUSED (`sub_423B10` returns -1)\n");
+                                else if (sho.healthWas <= 0)
+                                    std::printf("frame %ld: PLAYER HIT by actor %d's strike - he is down "
+                                                "already (health %d): nothing\n", n, s.actor, sho.healthWas);
+                                else
+                                    applyPlayerDamage(n, s.actor, "strike", int(dmgA), int(shieldS), sho);
+                            }
+                        }
                         const bool fullArm = st.outcome == omk::ShootOutcome::Fire;
                         if (((fullArm && !(rec.flags & 0x8000u)) ||
                              st.outcome == omk::ShootOutcome::FireIfReady) &&

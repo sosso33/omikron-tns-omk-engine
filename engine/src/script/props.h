@@ -111,6 +111,15 @@ std::optional<std::size_t> findActorRecord(std::span<const std::byte> chunk,
 bool readActorProperty(std::span<const std::byte> record, int property,
                        std::int32_t& out);
 
+// `Actor_GetProperty`'s two INPUT-INDEXED cases, 0x15 and 0x16: a character's
+// four ATTACKS, as int16 ids at +226..+232 with a range in METRES at
+// +234 + 2i (property 21) and a damage at +242 + 2i (property 22). The input
+// is a clip SLOT of his `.ani` group - `sub_421020` passes the slots of his
+// type-12 clips - and an id that matches none gives the handler's own
+// defaults, 2 m and 1. -> false only when the record is too short.
+bool readActorAttack(std::span<const std::byte> record, int slot,
+                     std::int32_t& rangeMetres, std::int32_t& damage);
+
 // `Actor_SetProperty`'s cases, clamps included, on a record of 276 bytes:
 //   1, 2, 3, 16..20  `cmp esi, 0C8h ; jbe` - UNSIGNED, so a negative value
 //                    becomes 200 too - then a u16 store
