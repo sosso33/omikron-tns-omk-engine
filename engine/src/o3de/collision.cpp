@@ -113,6 +113,10 @@ TriangleSoup collisionSoup(std::span<const std::byte> d, SoupKind kind,
         // the render soup drops CollisionOnly, the two collision soups keep it
         if (kind == SoupKind::Render &&
             (static_cast<std::uint32_t>(m.flags) & 0x800000u)) continue;
+        // the two world rays' soups (`sub_444460`, see `SoupKind`)
+        if ((kind == SoupKind::Shot || kind == SoupKind::Sight) &&
+            (static_cast<std::uint32_t>(m.flags) & (0x800000u | 0x41u))) continue;
+        if (kind == SoupKind::Sight && (static_cast<std::uint32_t>(m.flags) & 0x800u)) continue;
         // ...AND THE ENGINE'S OWN MESH EXCLUSIONS, which are two different
         // tests read out of two different functions (2026-09-07):
         //

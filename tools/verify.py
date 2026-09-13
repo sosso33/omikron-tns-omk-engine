@@ -28177,6 +28177,66 @@ def c_shoot_generic():
                        "the constant is understood and not merely copied")
 
 
+def c_shoot_ray_soups():
+    r"""`engine/`: THE TWO WORLD RAYS' SOUPS (`todo/shoot-sight.md` step 6).
+
+    Both world rays walk the linked set's meshes through `sub_444460`, which
+    skips CollisionOnly (0x800000) and gives a mesh with either bit of 0x41 no
+    triangle test at all: that is `SoupKind::Shot`, the bolts' `sub_444810`,
+    whose context +444 is 0. The engage's sight `sub_4449E0` sets +444 to 1,
+    and `sub_444460` then also skips the 0x800 CUTOUTS: `SoupKind::Sight`. So a
+    gunman sees through a cutout a bolt still stops on.
+
+    `shot_ray --kinds` gives each soup's triangles and, for every mesh a ray
+    soup drops, a 100-unit segment straight through its first triangle cast in
+    all three. In the catacombs' `hamestag` the three cutouts stop a bolt and
+    not a sight; in `AResto14` the six foliage cutouts let the sight through
+    to the planters behind, and the three lone-triangle markers flagged 0x5
+    (bit 0, "do not draw") are gone from both ray soups. The gallery's and the
+    supermarket's sets carry neither bit.
+    """
+    import subprocess, re
+    fr = omkpaths.data_root()
+    eng = os.path.join(ROOT, "engine")
+    b = subprocess.run(["make", "-s", "build/shot_ray"], cwd=eng, capture_output=True, text=True)
+    binp = os.path.join(eng, "build", "shot_ray")
+    if b.returncode != 0 or not os.path.exists(binp):
+        return ("build failed",), ("built",), "engine/ must build shot_ray"
+    got = []
+    for s_ in ("hamestag", "AResto14", "A_shootg", "ASm49"):
+        o = subprocess.run([binp, "--kinds", os.path.join(fr, "MESHES", "DECORS", s_ + ".3DO")],
+                           capture_output=True, text=True, errors="replace").stdout
+        k = re.search(r"^kinds: render (\d+), shot (\d+), sight (\d+) triangles$", o, re.M)
+        if not k:
+            return ("unparsed " + s_,), ("parsed",), "the probe's own kinds line"
+        dropped = re.findall(r"^dropped: mesh \d+ '(\S+)' flags 0x([0-9a-f]+), (\d+) triangles, "
+                             r"from (sight|shot and sight) - through it: render (\S+), shot (\S+), "
+                             r"sight (\S+)$", o, re.M)
+        got.append((s_, tuple(int(x) for x in k.groups()),
+                    tuple((n, f, int(t), w, rr, sh, si) for n, f, t, w, rr, sh, si in dropped)))
+    want = [("hamestag", (5510, 5510, 5402),
+             (("HAliane02", "00008804", 40, "sight", "HAliane02", "HAliane02", "miss"),
+              ("HAopacite", "00000804", 48, "sight", "HAopacite", "HAopacite", "miss"),
+              ("HAtete", "00000804", 20, "sight", "HAtete", "HAtete", "miss"))),
+            ("AResto14", (2815, 2812, 2524),
+             (("RE14feui01", "00000804", 48, "sight", "RE14bac01", "RE14bac01", "RE14bac01"),
+              ("RE14feui02", "00000800", 48, "sight", "RE14feui02", "RE14feui02", "RE14bac02"),
+              ("RE14feui03", "00000800", 48, "sight", "RE14feui03", "RE14feui03", "RE14bac03"),
+              ("RE14feui04", "00000800", 48, "sight", "RE14feui04", "RE14feui04", "RE14bac04"),
+              ("RE14feui06", "00000800", 48, "sight", "RE14feui06", "RE14feui06", "RE14bac05"),
+              ("RE14feui07", "00000804", 48, "sight", "RE14feui07", "RE14feui07", "RE14bac07"),
+              ("G1Epauled", "00000005", 1, "shot and sight", "G1Epauled", "GEM", "GEM"),
+              ("G1Epauleg", "00000005", 1, "shot and sight", "G1Epauleg", "GEM", "GEM"),
+              ("G1Ventre", "00000005", 1, "shot and sight", "G1Ventre", "miss", "miss"))),
+            ("A_shootg", (4000, 4000, 4000), ()),
+            ("ASm49", (4178, 4178, 4178), ())]
+    return got, want, ("per set, the render / shot / sight soups' triangles and every mesh a ray "
+                       "soup drops, with what a segment through it meets in each: the catacombs' "
+                       "three cutouts stopping a bolt and not a sight, the restaurant's foliage "
+                       "letting the sight through to the planters, its three 0x5 markers gone from "
+                       "both, and the gallery and supermarket unchanged")
+
+
 def c_shoot_range():
     r"""`engine/`: a gunman's REACH and FIELD OF VIEW, read off the shipped
     character records, and the acquisition test run.
@@ -33342,6 +33402,7 @@ CHECKS = [
     ("map2d gallery sight", c_map2d_gallery_sight, "todo/shoot-sight 3; formats/map2d.h"),
     ("bone names",         c_bone_names,        "todo/omk-play 96; ASSETS"),
     ("shoot range",        c_shoot_range,       "todo/shoot-mode 5c, 7a; actor/shoot.h"),
+    ("shoot ray soups",    c_shoot_ray_soups,   "todo/shoot-sight.md 6; o3de/collision.h"),
     ("shoot generic",      c_shoot_generic,     "todo/shoot-mode 7c; actor/shoot.h"),
     ("projectile pool",    c_projectile_pool,   "todo/shoot-mode 4c, 7f; actor/projectile.h"),
     ("shoot fire",         c_shoot_fire,        "todo/shoot-mode 7h; actor/shootfire.h"),

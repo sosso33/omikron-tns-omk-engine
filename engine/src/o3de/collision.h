@@ -45,6 +45,15 @@ enum class SoupKind {
                 // hole, and a walker that cannot see it has nowhere to put a
                 // player who reaches one.
     All,        // every collision face, for the narrow phase
+    // THE ENGINE'S RAY (`sub_444460`, the per-mesh test both world rays hand
+    // to `o3de_ForEachMeshInBox`): CollisionOnly skipped, and a mesh with
+    // either bit of 0x41 gets no triangle test at all. `Shot` is that - the
+    // bolts' world (`sub_444810`, which zeroes the context's +444). `Sight`
+    // also drops 0x800 (the cutouts): `sub_4449E0`, the engage's sight, sets
+    // +444 to 1, and `sub_444460` then skips `(flags & 0x800) && ctx+444` - so
+    // a gunman sees through what a bolt would still hit.
+    Shot,
+    Sight,
     Render,     // what the RENDER pass draws: CollisionOnly dropped, no slope
                 // test. Not what the engine probes - it is here because
                 // tools/sim's stage-5 walker uses it, so porting the walker

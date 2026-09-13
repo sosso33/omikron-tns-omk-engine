@@ -255,8 +255,39 @@ does no triangle test at all on meshes flagged `0x41`.
    route. (A first-tick line reads 42863 units: the spectres are not yet
    DRAWN on the tick they are staged, and `drawAt` is still zero - the port's
    one-frame staging, not a sight.)
-6. **The ray's `0x41` skip** (`sub_444460`), measured on the shot soups before
-   and after, bolts included.
+6. ~~**The ray's `0x41` skip**~~ - **DONE 2026-09-13, and it was TWO skips.**
+   Both world rays walk the linked set through `sub_444460` - the bolts'
+   `sub_444810` (16 callers) as much as the engage's `sub_4449E0` - and it
+   skips a mesh flagged 0x800000, gives one with either bit of 0x41 NO
+   triangle test, and skips 0x800 when its context's +444 is set. Read in the
+   assembly: `sub_444810` zeroes +440 and +444 (`var_38`/`var_34`, the context
+   `var_1F0`); **`sub_4449E0` writes +444 = 1**. So the bolts test the 0x800
+   CUTOUTS and the engage's sight does not: a gunman sees through what a bolt
+   still stops on.
+
+   Ported as two soup kinds beside `Render` (which the walker's comparison
+   with `tools/sim` keeps): **`Shot`** drops 0x800000 and 0x41 - the bolts'
+   world - and **`Sight`** drops 0x800 as well - the engage's.
+
+   **Measured** (`shot_ray --kinds`, `verify.py: shoot ray soups`), over all
+   220 decor models: **0x41 is on 3 meshes, all in `AResto14`** - the
+   lone-triangle markers `G1Epauled`, `G1Epauleg`, `G1Ventre`, flagged 0x5,
+   whose bit 0 is also "do not draw" - and **0x800 on 363 meshes in 39
+   models**. Per set:
+
+   | set | render | shot | sight | what a segment through a dropped mesh meets |
+   |---|---|---|---|---|
+   | `hamestag` (the catacombs) | 5510 | 5510 | 5402 | the three cutouts `HAliane02`, `HAopacite`, `HAtete` stop a bolt and **not** a sight |
+   | `AResto14` | 2815 | 2812 | 2524 | the six foliage cutouts `RE14feui*` let the sight through to the planters `RE14bac*`; the three 0x5 markers are gone from both |
+   | `A_shootg` (the gallery) | 4000 | 4000 | 4000 | - |
+   | `ASm49` (the supermarket) | 4178 | 4178 | 4178 | - |
+
+   So neither skip can move the gallery or the supermarket; the catacombs'
+   spectres are the only arena sight it touches. **Replayed** on the patrol
+   check's route: with the render soup every spectre ray stayed blocked; with
+   the sight soup 591's clears at 109-126 and 150-282 and 595's at 143-262 -
+   through the cutouts - but the player is outside their cones each time, so
+   no spectre changes state and every one keeps his patrol.
 7. **Measure in the arenas and hand it to a person**: the gallery's gunmen still
    fight you, the catacombs' spectres go back to their beats when rock is
    between you, the supermarket robbers - then the shoot family, re-baselines

@@ -4539,12 +4539,15 @@ int main(int argc, char** argv) {
         // position" - the sweep made rest-baked collision visible).
         std::vector<int>  soupMesh, steepMesh;
         omk::TriangleSoup baseSoup, baseSteep;
-        // THE SHOT'S WORLD RAY (`actor/projectile.h`). `sub_4449E0` tests
-        // every mesh `sub_444460` does not skip, and it skips exactly the
-        // ones flagged 0x800000 - the RENDER soup's own filter. Baked at rest:
-        // unlike the walker's soups above, a mesh a scene program moves is
-        // not followed, which is this port's and labelled.
-        omk::TriangleSoup shotSoup;
+        // THE TWO WORLD RAYS (`actor/projectile.h`). Both walk the linked
+        // set's meshes through `sub_444460`, which skips CollisionOnly
+        // (0x800000) and gives a mesh with either bit of 0x41 no triangle
+        // test: the bolts' `sub_444810` tests the rest (`shotSoup`), and the
+        // engage's sight `sub_4449E0` also skips the 0x800 cutouts
+        // (`sightSoup`, its context +444 set to 1). Baked at rest: unlike the
+        // walker's soups above, a mesh a scene program moves is not followed,
+        // which is this port's and labelled.
+        omk::TriangleSoup shotSoup, sightSoup;
     };
     std::array<WorldSlot, 2> worldSlots;
     std::string worldSet;            // the ACTIVE slot's stem - the set under his feet
@@ -4703,7 +4706,8 @@ int main(int argc, char** argv) {
         }
         w.soup = omk::collisionSoup(d, omk::SoupKind::Walkable, &w.soupMesh);
         w.steep = omk::collisionSoup(d, omk::SoupKind::Steep, &w.steepMesh);
-        w.shotSoup = omk::collisionSoup(d, omk::SoupKind::Render);
+        w.shotSoup = omk::collisionSoup(d, omk::SoupKind::Shot);
+        w.sightSoup = omk::collisionSoup(d, omk::SoupKind::Sight);
         w.baseSoup.clear(); w.baseSteep.clear();
         if (const auto mh = omk::readHeader(d)) w.meshes = omk::readMeshes(d, *mh);
         // THE SET'S OWN EMITTERS - `Sfx_BindAmbientEffects`, the environment
@@ -11974,7 +11978,7 @@ int main(int argc, char** argv) {
                                 }
                             const omk::TriangleSoup* soup = nullptr;
                             for (const auto& ws : worldSlots)
-                                if (!ws.stem.empty() && ws.stem == worldSet) soup = &ws.shotSoup;
+                                if (!ws.stem.empty() && ws.stem == worldSet) soup = &ws.sightSoup;
                             double hitT = -1.0;
                             if (soup) {
                                 const double p0[3] = {from[0], from[1], from[2]};

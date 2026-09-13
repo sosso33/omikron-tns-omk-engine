@@ -100,9 +100,11 @@ struct FlightEvent {
 // the bolt whatever the hit then does.
 using ActorSweep = std::function<bool(const float a[3], const float b[3], int owner,
                                       float hit[3], int& victim)>;
-// The world ray `sub_4449E0` casts: the segment a..b against every set mesh
-// but those flagged 0x800000 (`sub_444460`'s own filter). true and the hit
-// point when it meets one.
+// The bolts' world ray, `sub_444810`: the segment a..b against the linked
+// set's meshes through `sub_444460`, which skips those flagged 0x800000 and
+// gives a mesh with either bit of 0x41 no triangle test (`SoupKind::Shot`).
+// The engage's sight `sub_4449E0` is the same walk with the 0x800 cutouts
+// skipped too (`SoupKind::Sight`). true and the hit point when it meets one.
 using WorldRay = std::function<bool(const float a[3], const float b[3], float hit[3])>;
 
 // The range, `if (v3[3] > 1968.5039 || v0)`: 50 metres in the engine's inch.
