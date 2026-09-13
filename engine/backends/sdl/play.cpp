@@ -47,6 +47,7 @@
 #include "actor/moves.h"
 #include "actor/slider.h"
 
+#include <unordered_map>
 #include <limits>
 #include <optional>
 #include "actor/pose.h"
@@ -4273,7 +4274,7 @@ int main(int argc, char** argv) {
     bool poolHasSprites = false, poolHasPlayer = false;
     std::size_t playerTexBase = 0, spriteTexBase = 0;
     // sprite id -> its slot within the pool's sprite section, or -1
-    std::vector<int> spriteSlot;
+    std::unordered_map<int, int> spriteSlot;   // absent = -1, as an unassigned slot was
     // The sprite ids the resident scene can actually name - what goes in the
     // pool, as opposed to everything that decoded.
     std::set<int> spriteWanted, spritePooled;
@@ -4440,8 +4441,33 @@ int main(int argc, char** argv) {
     //
     // The GLOBAL library loads first and the SCENE's over it, since the tick
     // resolves through the scene when there is one.
-    std::vector<omk::Texture> spriteTex;
-    std::vector<omk::SpriteFrames> spriteFr;
+    // THE SPRITE TABLES, SPARSE (todo/optimization.md step 6). Indexed by sprite
+    // ID, which is scene-local and runs to 49591 in Anekbah, so the two vectors
+    // this replaces were ~50000 slots with a few dozen in use - a snapshot found
+    // them as one 6.4 MB and one 5.5 MB allocation of empty placeholders. An id
+    // with nothing registered answers exactly as an empty slot did: `texOf` /
+    // `framesOf` give null, and `idCount` is the old vectors' size - the highest
+    // id seen plus one, grown even for a record whose data was bad, because the
+    // resize ran before that test - so `empty()` and the log's "0..N" read the
+    // same as before.
+    struct SpriteTable {
+        std::unordered_map<int, omk::Texture> tex;
+        std::unordered_map<int, omk::SpriteFrames> frames;
+        std::size_t idCount = 0;
+        const omk::Texture* texOf(int id) const {
+            const auto it = tex.find(id);
+            return it == tex.end() ? nullptr : &it->second;
+        }
+        // null for an id with no frames too - the old `>= size || frames.empty()`
+        const omk::SpriteFrames* framesOf(int id) const {
+            const auto it = frames.find(id);
+            return it == frames.end() || it->second.frames.empty() ? nullptr : &it->second;
+        }
+        bool empty() const { return idCount == 0; }
+        void clear() { tex.clear(); frames.clear(); idCount = 0; }
+    };
+    SpriteTable spriteTab;
+    const omk::SpriteLookup spriteLookup = [&spriteTab](int id) { return spriteTab.framesOf(id); };
     const auto loadSprites = [&](const std::string& scx) {
         const auto ap = fs.resolve("SCPTDATA/" + scx);
         if (!ap) return 0;
@@ -4451,18 +4477,15 @@ int main(int argc, char** argv) {
         for (const auto& sp : st.sprites) {
             if (sp.id < 0) continue;
             const auto slot = static_cast<std::size_t>(sp.id);
-            if (spriteTex.size() <= slot) {
-                spriteTex.resize(slot + 1);
-                spriteFr.resize(slot + 1);
-            }
+            if (spriteTab.idCount <= slot) spriteTab.idCount = slot + 1;
             if (!sp.model || !sp.texture ||
                 sp.offset + sp.model + sp.texture > ad.size()) continue;
             const std::span<const std::byte> mo(ad.data() + sp.offset, sp.model);
             const std::span<const std::byte> te(ad.data() + sp.offset + sp.model,
                                                 sp.texture);
             auto t = omk::textures(mo, te);
-            if (!t.empty()) spriteTex[slot] = t.front();
-            spriteFr[slot] = omk::spriteFrames(mo);
+            if (!t.empty()) spriteTab.tex[sp.id] = t.front();
+            spriteTab.frames[sp.id] = omk::spriteFrames(mo);
             ++n;
         }
         return n;
@@ -4500,12 +4523,12 @@ int main(int argc, char** argv) {
         const int local = session.scene().file().empty()
                             ? 0 : loadSprites(session.scene().file());
         int okTex = 0; std::size_t frames = 0;
-        for (const auto& t : spriteTex) if (t.width) ++okTex;
-        for (const auto& fr : spriteFr) frames += fr.frames.size();
+        for (const auto& kv : spriteTab.tex) if (kv.second.width) ++okTex;
+        for (const auto& kv : spriteTab.frames) frames += kv.second.frames.size();
         std::printf("sprites: %d global + %d from %s, %d decoded over ids "
                     "0..%zu, %zu frames in all\n", glob, local,
                     session.scene().file().c_str(), okTex,
-                    spriteTex.empty() ? 0 : spriteTex.size() - 1, frames);
+                    spriteTab.idCount == 0 ? 0 : spriteTab.idCount - 1, frames);
         spriteScx = session.scene().file();
     }
     // Re-run that whenever the resident scene changes. The global library is
@@ -4514,12 +4537,11 @@ int main(int argc, char** argv) {
     const auto refreshSprites = [&]() {
         if (session.scene().file() == spriteScx) return;
         spriteScx = session.scene().file();
-        spriteTex.clear();
-        spriteFr.clear();
+        spriteTab.clear();
         const int glob = loadSprites("aventure.SCX");
         const int local = spriteScx.empty() ? 0 : loadSprites(spriteScx);
         int okTex = 0;
-        for (const auto& t : spriteTex) if (t.width) ++okTex;
+        for (const auto& kv : spriteTab.tex) if (kv.second.width) ++okTex;
         std::printf("sprites: reloaded for %s - %d global + %d local, %d decoded\n",
                     spriteScx.empty() ? "<none>" : spriteScx.c_str(), glob, local, okTex);
         ++poolComposition;          // the sprite section of the pool changed
@@ -5502,8 +5524,7 @@ int main(int argc, char** argv) {
                     if (!e.sprite || (e.flags & 2)) continue;
                     ctlSprites.push_back({e.sprite, e.duration, e.from, e.to, e.scale,
                                           e.flags, e.attach, st});
-                    if (static_cast<std::size_t>(e.sprite) >= spriteTex.size() ||
-                        spriteTex[static_cast<std::size_t>(e.sprite)].rgb.empty())
+                    if (!spriteTab.texOf(e.sprite) || spriteTab.texOf(e.sprite)->rgb.empty())
                         std::printf("ctl-effect: sprite %d is not registered by the library or the "
                                     "scene - nothing will draw\n", e.sprite);
                     std::printf("ctl-effect: state %d '%s' spawns sprite %d on attach %d "
@@ -11066,7 +11087,7 @@ int main(int argc, char** argv) {
             propGeo.revision = ++worldGeoRev;
             refreshSprites();
             const bool wantSprites = (session.scene().effects().count() || !ctlSprites.empty()) &&
-                                     !spriteTex.empty();
+                                     !spriteTab.empty();
             // Which sprite ids the resident scene can name. Computed BEFORE the
             // rebuild test and compared, because a scene that starts asking for
             // an id it was not asking for before needs a slot for it - a
@@ -11136,14 +11157,14 @@ int main(int argc, char** argv) {
                 // THREE sprites (49589 smoke, 49590 glow, 49591 explo). So
                 // take the ids its own `.sfx` names, plus any a live particle
                 // is already carrying, and pool those alone.
-                spriteSlot.assign(spriteTex.size(), -1);
+                spriteSlot.clear();
                 if (wantSprites)
                     for (int id : spriteWanted) {
-                        if (id < 0 || static_cast<std::size_t>(id) >= spriteTex.size()) continue;
-                        const auto i = static_cast<std::size_t>(id);
-                        if (spriteTex[i].rgb.empty()) continue;   // an id nothing decoded
-                        spriteSlot[i] = static_cast<int>(pool.size() - spriteTexBase);
-                        pool.push_back(spriteTex[i]);
+                        if (id < 0 || static_cast<std::size_t>(id) >= spriteTab.idCount) continue;
+                        const omk::Texture* st = spriteTab.texOf(id);
+                        if (!st || st->rgb.empty()) continue;   // an id nothing decoded
+                        spriteSlot[id] = static_cast<int>(pool.size() - spriteTexBase);
+                        pool.push_back(*st);
                     }
                 if (pool.size() > 64)
                     std::printf("WARNING: texture pool is %zu, past the 64 a bucket key "
@@ -14487,9 +14508,9 @@ int main(int argc, char** argv) {
             for (int k = 0; k < 3; ++k) spriteAnchor[k] = view.cam.at[k];
             spriteAnchorSet = true;
             const bool scriptSprites = !noScriptSprites && session.scene().loaded() && !session.scene().sprites().empty();
-            if ((session.scene().effects().count() || !ctlSprites.empty() || scriptSprites) && !spriteTex.empty()) {
+            if ((session.scene().effects().count() || !ctlSprites.empty() || scriptSprites) && !spriteTab.empty()) {
                 omk::particleGeometry(fxGeo, session.scene().effects(),
-                                      view.cam.eye, view.cam.at, spriteFr);
+                                      view.cam.eye, view.cam.at, spriteLookup);
                 // The `.CTL` sprites, each on its bone THIS frame (flag 1,
                 // "follow the bone every frame" - all shipped records here
                 // carry it; the others are placed once and this moves them
@@ -14531,7 +14552,7 @@ int main(int argc, char** argv) {
                         if (fr < c.from) continue;         // not in its window yet
                         ctlField.addParticle(p);
                     }
-                    omk::particleGeometry(ctlGeo, ctlField, view.cam.eye, view.cam.at, spriteFr);
+                    omk::particleGeometry(ctlGeo, ctlField, view.cam.eye, view.cam.at, spriteLookup);
                     const std::size_t base = fxGeo.corners.size();
                     for (omk::Batch b : ctlGeo.batches) { b.start += base; fxGeo.batches.push_back(b); }
                     fxGeo.corners.insert(fxGeo.corners.end(), ctlGeo.corners.begin(), ctlGeo.corners.end());
@@ -14553,10 +14574,9 @@ int main(int argc, char** argv) {
                     omk::ParticleField scField;
                     for (const auto& kv : session.scene().sprites()) {
                         const auto& sp = kv.second;
-                        if (!sp.linked || sp.id < 0 ||
-                            static_cast<std::size_t>(sp.id) >= spriteFr.size() ||
-                            spriteFr[static_cast<std::size_t>(sp.id)].frames.empty()) continue;
-                        const int n = static_cast<int>(spriteFr[static_cast<std::size_t>(sp.id)].frames.size());
+                        const omk::SpriteFrames* spf = sp.id < 0 ? nullptr : spriteTab.framesOf(sp.id);
+                        if (!sp.linked || !spf) continue;
+                        const int n = static_cast<int>(spf->frames.size());
                         if (sp.frame < 0 || sp.frame >= n) continue;   // 0xFFFF: not drawn
                         if (spriteLogged[sp.row] != sp.linkedAt + 1) {
                             spriteLogged[sp.row] = sp.linkedAt + 1;
@@ -14576,7 +14596,7 @@ int main(int argc, char** argv) {
                         scField.addParticle(p);
                     }
                     omk::Geometry scGeo;
-                    omk::particleGeometry(scGeo, scField, view.cam.eye, view.cam.at, spriteFr);
+                    omk::particleGeometry(scGeo, scField, view.cam.eye, view.cam.at, spriteLookup);
                     const std::size_t base = fxGeo.corners.size();
                     for (omk::Batch b : scGeo.batches) { b.start += base; fxGeo.batches.push_back(b); }
                     fxGeo.corners.insert(fxGeo.corners.end(), scGeo.corners.begin(), scGeo.corners.end());
@@ -15229,9 +15249,8 @@ int main(int argc, char** argv) {
                 for (const auto& b : fxGeo.batches) {
                     // `b.material` is the sprite's ID; the pool is packed, so
                     // it has to be looked up rather than added to the base
-                    const int sl = (b.material >= 0 &&
-                                    b.material < static_cast<int>(spriteSlot.size()))
-                                   ? spriteSlot[static_cast<std::size_t>(b.material)] : -1;
+                    const auto slIt = spriteSlot.find(b.material);
+                    const int sl = slIt == spriteSlot.end() ? -1 : slIt->second;
                     if (sl < 0) continue;      // a sprite with no texture: not drawn
                     draws.push_back({keyOf(b.blend, b.cutout,
                                            static_cast<std::uint32_t>(spriteBase + sl)),

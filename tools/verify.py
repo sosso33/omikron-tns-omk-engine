@@ -12143,6 +12143,63 @@ def c_engine_pixel_sharing():
         "rules that failed, by name"
 
 
+def c_engine_sprite_table():
+    r"""The viewer's sprite tables are sparse by id and answer as the dense ones
+    did (todo/optimization.md step 6).
+
+    An effect names its sprite by ID, and the ids are scene-local and run to
+    49591 in Anekbah, so `spriteTex` and `spriteFr` - vectors indexed by id -
+    were ~50000 slots with 23 in use: a live-allocation snapshot found them as
+    one 6.4 MB and one 5.5 MB allocation of empty placeholders. They are now
+    `SpriteTable`, hashed by id, answering null for an id with nothing where the
+    old code tested `>= size() || empty()`, and keeping the old size (the
+    highest id seen plus one, grown even for a record with bad data) for the
+    "any sprites?" test and the log's range.
+
+    The check runs the Anekbah street start headless for 20 frames and pins
+    what the tables decide: the load line (23 decoded over ids 0..49591, 133
+    frames), the FRAME-1 texture pool with the scene's 3 effect sprites in it,
+    and the 952 particles alive at the end. From outside it, 2026-09-13: the 20
+    frames byte-identical before and after, with the fire and smoke drawn, and
+    60 headless frames peaking at 132 MB RSS / 123 MB footprint against 138 /
+    129 before.
+
+    SHOWN TO FAIL: a `texOf` that never finds a texture turns it red on the
+    frame-1 pool - 0 sprites and 36 slots for 3 and 39 - while the load line and
+    the 952 particles stay as they are: the lookup is what the pool line
+    measures, and the load line alone would not have caught it.
+    """
+    import subprocess
+    eng = os.path.join(ROOT, "engine")
+    if not os.path.isdir(eng):
+        return ("skipped",), ("skipped",), "engine/ absent"
+    b = subprocess.run(["make", "-s", "play"], cwd=eng, capture_output=True, text=True)
+    binp = os.path.join(eng, "build", "omk-play")
+    if b.returncode != 0 or not os.path.exists(binp):
+        return ("skipped",), ("skipped",), "omk-play needs SDL (make play)"
+    save = os.path.join(ROOT, "traces", "save-appart.bin")
+    if not os.path.exists(save):
+        return ("skipped",), ("skipped",), "traces/save-appart.bin absent"
+    env = dict(os.environ, SDL_VIDEODRIVER="dummy")
+    r = subprocess.run([binp, omkpaths.data_root(), os.path.join(ROOT, "tables"),
+                        "--save", save, "--area", "0", "--stand", "1804,0,-6890,336",
+                        "--software", "--nofmv", "--frames", "20"],
+                       cwd=eng, env=env, capture_output=True, text=True)
+    load = re.search(r"^sprites: (\d+) global \+ (\d+) from (\S+), (\d+) decoded over ids "
+                     r"0\.\.(\d+), (\d+) frames in all", r.stdout, re.M)
+    pool = re.search(r"^frame 1: texture pool - .* \+ (\d+) sprite = (\d+) slots", r.stdout, re.M)
+    alive = re.findall(r"^effects: .*, (\d+) particles alive", r.stdout, re.M)
+    # a parse that reads nothing must fail AS A PARSE, not answer
+    if not (load and pool and alive):
+        return (bool(load), bool(pool), bool(alive)), (True, True, True), \
+            "the sprite load line, the frame-1 pool line and the particle line " \
+            "- one is missing, so the viewer's log changed"
+    return (tuple(load.groups()), tuple(int(x) for x in pool.groups()), int(alive[-1])), \
+        (("20", "3", "anekbah.SCX", "23", "49591", "133"), (3, 39), 952), \
+        "the sprite load (global, local, scene, decoded, highest id, frames); the " \
+        "frame-1 pool's sprites and slots; the particles alive after 20 frames"
+
+
 def c_engine_walker_falls():
     r"""`engine/`'s walker takes a drop instead of refusing it - and the
     measurement that says why it had to.
@@ -34075,6 +34132,7 @@ SLOW = [
     ("engine: music storage", c_engine_music_storage, "todo/optimization.md 5; audio/music.h"),
     ("engine: audio queue bound", c_engine_audio_queue_bound, "todo/optimization.md 5; backends/sdl/play.cpp"),
     ("engine: pixel sharing", c_engine_pixel_sharing, "todo/optimization.md 6; formats/tex3dt.h"),
+    ("engine: sprite table", c_engine_sprite_table, "todo/optimization.md 6; backends/sdl/play.cpp"),
     ("engine: props", c_engine_props, "todo/omk-play"),
     ("sprite ids scene-local", c_sprite_ids_are_scene_local, "docs/ASSETS"),
     ("engine: scene sounds", c_engine_scene_sounds, "engine/README"),

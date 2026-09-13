@@ -260,6 +260,14 @@ int spriteModeBits(std::uint8_t m) {
 void particleGeometry(Geometry& g, const ParticleField& f, const float eye[3],
                       const float at[3],
                       const std::vector<SpriteFrames>& sprites) {
+    particleGeometry(g, f, eye, at, [&sprites](int id) -> const SpriteFrames* {
+        const auto si = static_cast<std::size_t>(id);
+        return si < sprites.size() && !sprites[si].frames.empty() ? &sprites[si] : nullptr;
+    });
+}
+
+void particleGeometry(Geometry& g, const ParticleField& f, const float eye[3],
+                      const float at[3], const SpriteLookup& sprites) {
     g.corners.clear();
     g.batches.clear();
     g.cornerMirror.clear();
@@ -288,9 +296,7 @@ void particleGeometry(Geometry& g, const ParticleField& f, const float eye[3],
     // maps it to a slot, which is the key's low six bits.
     std::map<std::pair<int, int>, std::vector<Corner>> groups;
     for (const auto& p : f.particles()) {
-        const auto si = static_cast<std::size_t>(p.sprite);
-        const SpriteFrames* sf =
-            si < sprites.size() && !sprites[si].frames.empty() ? &sprites[si] : nullptr;
+        const SpriteFrames* sf = sprites(p.sprite);
         // `(frames - 1) * age / life` - the sprite's quads played across the
         // particle's own lifetime, not at a fixed rate - from the age BEFORE
         // this tick's increment, which is the value the engine reads.

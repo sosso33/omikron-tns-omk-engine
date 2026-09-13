@@ -550,6 +550,53 @@ is indexed BY SPRITE ID (an effect names its sprite by id), and Anekbah's ids ru
 to 49591, so both arrays are ~50000 slots of which a few dozen hold anything:
 about 12 MB of placeholders, and the cheapest next cut.
 
+#### Third cut, done 2026-09-13 (committed as "optimization 7") - the sprite tables sparse
+
+**What it was.** `play.cpp` kept `spriteTex` (`std::vector<Texture>`) and
+`spriteFr` (`std::vector<SpriteFrames>`) indexed BY SPRITE ID, resized to the
+highest id plus one, and Anekbah's ids run to **49591** for **23** sprites that
+decode - so ~50000 slots each of default-constructed placeholders, and a third
+array of ints (`spriteSlot`) the same length.
+
+**What it is.** `SpriteTable`: textures and frames in hash maps by id, and
+`idCount` - the old vectors' size, grown even for a record whose data was bad,
+because the resize ran BEFORE that test. Every consumer already treated "past
+the end" and "empty slot" alike (`particleGeometry`'s `si < size && !empty`,
+the scripted sprites' and the `.CTL` effects' `>= size || empty`, the pool's
+`>= size` then `rgb.empty()`), so an absent id answers null wherever an empty
+slot answered empty; a texture is stored only when one decodes (a previous
+id's texture survives a later record that fails, as the resize-then-assign
+did); frames are always stored. `spriteSlot` is a map where absent is -1.
+`particleGeometry` gained a `SpriteLookup` overload - the loop body unchanged
+but for asking the lookup - and the vector overload forwards to it with the
+old test, so `particle_probe` is untouched.
+
+**Same decisions, proved.** 20 headless software frames of the street, with
+the fire and smoke drawn, byte-identical before and after; the viewer's own
+lines identical (`23 decoded over ids 0..49591, 133 frames`, the frame-1 pool
+`+ 3 sprite = 39 slots`, `952 particles alive`). `verify.py: engine: sprite
+table` pins those three; SHOWN TO FAIL: a `texOf` that never finds a texture
+gives a pool of 0 sprites / 36 slots while the load line and particles do not
+move. `engine: particles`, `engine: FX`, `engine: impasse fx`, `engine: scene
+sprites`, `sprite ids scene-local`, `ctl effects` and `effect sprites` pass.
+
+| | shared texture pixels (`900ea07`) | + sparse sprite tables |
+|---|---|---|
+| live heap, snapshot at 45 s | 126.5 MB | **114.1 MB** |
+| headless, 60 street frames: peak RSS / footprint | 138 / 129 MB | **132 / 123 MB** |
+
+The two measures disagree by design: the live heap lost both placeholder
+allocations (6.4 + 5.5 MB), but the process's PEAK is reached at a moment the
+sprite tables do not dominate, so it moves by half that. Quote the live heap
+for what a change frees; quote the peak for what the machine must provide.
+
+**What is left at 114.1 MB live:** render corners 18.2 MB; the music 16.1 MB;
+the sound buffers copied per play 13.4 MB; the shared texture pixels 12.6 MB;
+the collision soups 11.6 MB; `main` 10.4 MB; the two resident scene files
+7.3 MB; geometry copies 5.9 MB. Since the snapshot that started this pass
+(233.7 MB), **119.6 MB** have gone, with every frame, sample and decision
+checked unchanged.
+
 Measure, then cut, in the order the measurement says. Suspects from the
 reading, none measured yet: scene files read whole (up to 7.8 MB,
 `Sconcert.SCX`) with two areas resident, textures kept decoded at 32 bits,

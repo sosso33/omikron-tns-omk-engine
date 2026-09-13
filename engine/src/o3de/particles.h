@@ -126,6 +126,7 @@
 #include "formats/sfx.h"
 #include "o3de/geom3do.h"
 
+#include <functional>
 #include <array>
 #include <cstdint>
 #include <span>
@@ -269,5 +270,15 @@ int spriteModeBits(std::uint8_t mode);
 void particleGeometry(Geometry& g, const ParticleField& f, const float eye[3],
                       const float at[3],
                       const std::vector<SpriteFrames>& sprites);
+
+// The same, with the sprites behind a LOOKUP: an id -> its frames, or null for
+// an id with none (never registered, or registered with no frames). The
+// viewer's sprite ids are SCENE-LOCAL and run to 49591 in Anekbah, so a vector
+// indexed by id was ~50000 slots with a few dozen in use - ~12 MB of empty
+// placeholders (todo/optimization.md step 6). The vector overload above is
+// this with the old test: in range and not empty.
+using SpriteLookup = std::function<const SpriteFrames*(int)>;
+void particleGeometry(Geometry& g, const ParticleField& f, const float eye[3],
+                      const float at[3], const SpriteLookup& sprites);
 
 }  // namespace omk
