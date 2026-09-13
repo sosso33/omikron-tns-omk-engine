@@ -407,7 +407,9 @@ their placements and the player's, so the grid walk says BLOCKED at
   door, and it is reached from the engage.
 
 So the sight is left as it was, loudly, and the three checks are back where they
-were. Closing it properly means porting `sub_4449E0` (the ray) and type 12's
+were.
+
+**CORRECTION, 2026-09-13** (`todo/shoot-sight.md` §1): read in full, `sub_426E00`'s GENERAL arm - every gunman but spectres and cross-floor watchers - acquires on `sub_4359A0`, the GRID walk, called from the target's cell to his own. `sub_4449E0` is the sight of the spectre arm (type 12) and the `0x800000` arm, and in the general arm only chooses state 6 against 13/8 at close range. So the backed-out wiring was the engine's rule, and why it stopped the gallery firing is an open measurement - the player's record cell is never kept current, and the walk's direction was not recorded. Closing it properly means porting `sub_4449E0` (the ray) and type 12's
 arm, which is its own task and wants a reader in front of it.
 
 ### And the answer to "nobody hits me"
