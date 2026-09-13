@@ -233,6 +233,12 @@ does no triangle test at all on meshes flagged `0x41`.
    behind him 0 / 4; seen from another floor 1 / 3. A watcher seen by the wide
    cone 1 / 3 / latched; blocked 0 and his state left at 6; blocked but
    latched 2 / 3; on the player's own floor the general arm (0 / 6).
+   SHOWN TO FAIL, each restored by editing the line back, the object deleted by
+   name and the probe's output compared with the committed one: the spectre's
+   fallback written as 3 instead of 4 (blocked and behind read 0 / 3,
+   `shoot generic` red); the watcher on the NARROW cone (his sighting reads
+   0 / 6 unlatched, red); and the corpus reading the type four bytes early,
+   at +172 (type 12 0, both 0, `shoot range` red).
 
    **Who reaches them** (`verify.py: shoot range`), over the 1032 shipped
    actor records: **24 are type 12, and every one of them also carries bit
