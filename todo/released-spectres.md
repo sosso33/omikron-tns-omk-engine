@@ -238,3 +238,21 @@ until the mechanism is found and reported.**
    back (200 because `--shoot-health 1000` is stored through the property's
    unsigned clamp at 200). This is next-tasks 14's FALL DAMAGE for this area:
    the engine only POSTS the landing; each area's script decides what it costs.
+
+   **Who answers, read to the end.** `Message_RunHandlers` searches the loaded
+   SCENE's table, then the AREA's, then IAM\GLOBAL's, and the FIRST match wins
+   (the port's `Session::postMessage` transcribes exactly that). **GLOBAL
+   subscribes to both** - its script 1 for message 11 and script 2 for 10 - so
+   every landing costs health somewhere:
+   * GLOBAL 11: red flash, `camera.shake 15, 40`, `Vie -= 45` if `Vie >= 50`,
+     otherwise `Vie = 5` - it never kills;
+   * GLOBAL 10: red flash, `camera.shake 20, 20`, `Vie -= 10` if `Vie >= 16`,
+     otherwise `Vie = 5`;
+   * AREA 141 SHADOWS GLOBAL's 11 with its own - `Vie -= 45` with no floor - and
+     leaves 10 to GLOBAL. The other subscribers (AREAs 2, 41, 61, 168 and SCENE
+     62) shadow both; their costs are not yet read.
+
+   **Shown to fail**: the hard landing moved to 6 m - the 5.06 m fall posts 10,
+   GLOBAL's handler takes 10 (200 -> 190), `engine: shoot landing` red; restored
+   by editing the line back, the object deleted by name, green again, the tree
+   clean.

@@ -491,11 +491,14 @@ done because they will have built most of the machinery.
 
 ### 14. Health: fall damage and vehicle hits — M/L, **weak evidence**
 
-**FALL DAMAGE, partly answered 2026-09-13** (`todo/released-spectres.md` step 6):
+**FALL DAMAGE, mostly answered 2026-09-13** (`todo/released-spectres.md` step 6):
 the engine does not subtract anything itself. `Walk_GroundResponse` posts
 MESSAGE 10 for a landing from 3 m and MESSAGE 11 from 5 m (the accumulated fall
-`+280`), and each area's SCRIPT decides the cost - the catacombs' handler for 11
-takes 45 health with a red flash and a shake. Ported and checked
+`+280`), and a SCRIPT decides the cost - first match of the scene's, the area's
+and IAM\GLOBAL's subscriptions. **GLOBAL answers both everywhere**: 11 takes 45
+(or leaves 5 below 50), 10 takes 10 (or leaves 5 below 16), each with a red
+flash and a shake, and neither kills. The catacombs' own 11 takes 45 with no
+floor. Ported and checked
 (`engine: shoot landing`). Which areas pay for a landing, from every AREA
 chunk's subscription table (`+68`, count `+86`): **message 10 in AREAs 2, 41, 61
 and 168; message 11 in the same four and 141** (the catacombs) - read their
