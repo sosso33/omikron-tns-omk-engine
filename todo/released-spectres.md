@@ -112,6 +112,16 @@ until the mechanism is found and reported.**
    read for them - their `.CTL` (`SPV_FNM`'s channel: a special move or an
    effect record that damages on contact) - and the reader's video.
 
+   **The `.CTL`, read on the reader's request the same day - there is none.**
+   Every one of AREA 141's 52 actor records leaves `+72`, the `.CTL` name,
+   EMPTY - all 24 `SPV_FNM` included - and only seven `.CTL` files ship at all
+   (`Meca`, `H1Cmbt`, `H1Avnt`, `D1Cmbt`, `Sham`, `f1cmbt`, `F1Avnt`), none a
+   spectre's. So a spectre runs on the area's `.ani` clips alone (the viewer's
+   `bank none`), with no channel, no special move and no effect record that
+   could damage on contact. **Every data-side lead this tree can read is now
+   closed**; the one source left is what the attack LOOKS like in the
+   original (the reader's video).
+
    Original step text: the route the game takes into the catacombs
    (AREA 140's `area.goto 141`, and any SCENE loaded over AREA 141), zone 2309
    "Start Shoot Dogs Entrée" (record 29, the dogs), the checkpoint dialog 100
