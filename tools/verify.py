@@ -11860,6 +11860,71 @@ def c_engine_probe_grid():
         "answer differs from the linear scan's in any bit (floor + surface + box)"
 
 
+def c_engine_tie_equivalence():
+    r"""`DepthTie` - the Vulkan backend's submit-time depth tie, moved out and
+    made cheaper - decides exactly what the in-backend pass decided, draw for
+    draw (todo/optimization.md step 3).
+
+    The pass degenerates a face whose position set an earlier depth-writing
+    face of the same geometry already claimed (`engine: sign tie` has the
+    reading and the pharmacy sign). It kept ordered `std::set`s rebuilt from
+    nothing at every REVISION, and a revision changes every frame for every
+    posed body, the shadow quads, the effects and the sky - and for the WHOLE
+    decor set whenever any mesh in it moves, which on the Anekbah street is
+    every frame. A profile put it first on the uncapped street, ~4 ms a frame.
+    `o3de/depthtie.*` keeps the same decisions in the same order on hashed
+    sets that keep their buckets, and a non-writing draw with nothing claimed
+    yet only marks its range handled.
+
+    `engine/tools/tie_equiv.cpp` keeps the old pass verbatim as `Reference` and
+    runs both over the same draws, comparing every draw's losers in content and
+    order: one pass over the batches, the same revision again (the mirror),
+    then 40 revisions with a mesh moved, triangles SNAPPED onto others' positions
+    to force ties, a shuffled subset of batches, and non-writing draws first.
+    Measured 2026-09-13 over Anekbah, Aapkayl, Lahoreh, HO1_FN, PSH_FN and
+    JEN_FNM: 0 mismatches in 3056 draws and 18097 losers; Anekbah's single pass
+    drops 248, the number `engine: sign tie` pins in the Vulkan render.
+
+    SHOWN TO FAIL: letting the shortcut return WITHOUT marking its range
+    handled (so a later writing draw of the same revision re-walks faces the
+    old pass had already settled) turns it red with 63 / 86 / 22 mismatching
+    draws in Anekbah / Lahoreh / PSH_FN, the loser totals unchanged - it is
+    the per-draw comparison, not a count, that catches it.
+    """
+    import subprocess
+    eng = os.path.join(ROOT, "engine")
+    if not os.path.isdir(eng):
+        return ("skipped",), ("skipped",), "engine/ absent"
+    b = subprocess.run(["make", "-s", "build/tie_equiv"], cwd=eng,
+                       capture_output=True, text=True)
+    binp = os.path.join(eng, "build", "tie_equiv")
+    if b.returncode != 0 or not os.path.exists(binp):
+        return ("build failed",), ("built",), "engine/ must build"
+    models = []
+    for rel in ("MESHES/DECORS/Anekbah.3DO", "MESHES/DECORS/Lahoreh.3DO",
+                "MESHES/PERSOS/PSH_FN.3DO"):
+        path = omkpaths.data(rel)
+        if not os.path.exists(path):
+            return ("skipped",), ("skipped",), "%s absent" % rel
+        models.append(path)
+    r = subprocess.run([binp] + models, capture_output=True, text=True)
+    rows = re.findall(
+        r"^(\S+)\.3DO triangles (\d+) batches \d+ \| static losers (\d+) \| "
+        r"draws (\d+) losers (\d+) mismatches (\d+)", r.stdout, re.M)
+    # a parse that reads nothing must fail AS A PARSE, not answer
+    if len(rows) != 3:
+        return (len(rows),), (3,), "tie_equiv rows parsed - the tool's output " \
+            "format no longer matches this check"
+    got = tuple((st, int(t), int(sl), int(dr), int(lo), int(mm))
+                for st, t, sl, dr, lo, mm in rows)
+    return got, (("Anekbah", 46415, 248, 792, 4646, 0),
+                 ("Lahoreh", 37457, 532, 896, 10073, 0),
+                 ("PSH_FN", 790, 3, 158, 479, 0)), \
+        "per model: triangles, losers of one pass in batch order (Anekbah's is " \
+        "sign tie's 248), draws replayed, losers over all of them, and draws " \
+        "whose losers differ from the pre-2026-09-13 pass in content or order"
+
+
 def c_engine_walker_falls():
     r"""`engine/`'s walker takes a drop instead of refusing it - and the
     measurement that says why it had to.
@@ -33787,6 +33852,7 @@ SLOW = [
     ("engine: cupboard take", c_engine_cupboard_take, "todo/omk-play; ASSETS"),
     ("engine: walker falls", c_engine_walker_falls, "todo/omk-play"),
     ("engine: probe grid", c_engine_probe_grid, "todo/optimization.md 2; o3de/collision.h"),
+    ("engine: tie equivalence", c_engine_tie_equivalence, "todo/optimization.md 3; o3de/depthtie.h"),
     ("engine: props", c_engine_props, "todo/omk-play"),
     ("sprite ids scene-local", c_sprite_ids_are_scene_local, "docs/ASSETS"),
     ("engine: scene sounds", c_engine_scene_sounds, "engine/README"),

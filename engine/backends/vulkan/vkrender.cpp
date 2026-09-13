@@ -53,6 +53,7 @@
 #include <vulkan/vulkan.h>
 
 #include "o3de/renderer.h"
+#include "o3de/depthtie.h"
 
 #include <algorithm>
 #include <array>
@@ -325,15 +326,10 @@ private:
     // vertices collapsed to one) so it rasterises nothing. Faces are walked in
     // the order the draws arrive, once per geometry revision; a quad is the
     // consecutive pair `buildGeometry` emits, (0,1,2)(0,2,3).
-    struct TieState {
-        std::uint64_t revision = 0;
-        std::set<std::array<std::uint32_t, 12>> quads;   // 4 sorted positions
-        std::set<std::array<std::uint32_t, 9>>  tris;    // 3 sorted positions
-        std::vector<std::uint8_t> done;                  // per triangle
-        long faces = 0, dropped = 0;
-        bool logged = false, touched = false;
-    };
-    std::map<const omk::Geometry*, TieState> tie_;
+    // The DECISION lives in `o3de/depthtie.h` (2026-09-13, todo/optimization.md
+    // step 3), so it can be tested without a GPU; this backend keeps the vertex
+    // buffer half below.
+    std::map<const omk::Geometry*, omk::DepthTie> tie_;
     void resolveTies(const omk::Draw& d);
 
     Push             push_{};
@@ -1590,52 +1586,9 @@ void VulkanRenderer::resolveTies(const omk::Draw& d) {
     static const bool off = std::getenv("OMK_NO_TIE") != nullptr;
     if (off) return;
     const omk::Geometry* g = d.geo;
-    const std::size_t ntri = g->corners.size() / 3;
     auto& t = tie_[g];
-    if (t.revision != g->revision || t.done.size() != ntri) {
-        const bool logged = t.logged;
-        t = TieState{};
-        t.revision = g->revision;
-        t.done.assign(ntri, 0);
-        t.logged = logged;
-    }
-    const auto bits = [](float f) { std::uint32_t u; std::memcpy(&u, &f, 4); return u; };
-    const auto samePos = [&](std::size_t a, std::size_t b) {
-        const auto& p = g->corners[a]; const auto& q = g->corners[b];
-        return bits(p.x) == bits(q.x) && bits(p.y) == bits(q.y) && bits(p.z) == bits(q.z);
-    };
-    using P = std::array<std::uint32_t, 3>;
-    const auto pos = [&](std::size_t c) {
-        const auto& p = g->corners[c]; return P{bits(p.x), bits(p.y), bits(p.z)};
-    };
-    const bool writes = d.blend == omk::Blend::Opaque;
     std::vector<std::size_t> losers;
-    const std::size_t t0 = d.start / 3, t1 = std::min(ntri, (d.start + d.count) / 3);
-    for (std::size_t tri = t0; tri < t1; ++tri) {
-        if (t.done[tri]) continue;
-        const std::size_t c = 3 * tri;
-        const bool quad = tri + 1 < t1 && !t.done[tri + 1] &&
-                          samePos(c, c + 3) && samePos(c + 2, c + 4);
-        ++t.faces;
-        if (quad) {
-            std::array<P, 4> ps{pos(c), pos(c + 1), pos(c + 2), pos(c + 5)};
-            std::sort(ps.begin(), ps.end());
-            std::array<std::uint32_t, 12> key;
-            for (int k = 0; k < 4; ++k) for (int j = 0; j < 3; ++j) key[3 * k + j] = ps[k][j];
-            t.done[tri] = t.done[tri + 1] = 1;
-            if (t.quads.count(key)) { losers.push_back(tri); losers.push_back(tri + 1); }
-            else if (writes) t.quads.insert(key);
-            ++tri;
-        } else {
-            std::array<P, 3> ps{pos(c), pos(c + 1), pos(c + 2)};
-            std::sort(ps.begin(), ps.end());
-            std::array<std::uint32_t, 9> key;
-            for (int k = 0; k < 3; ++k) for (int j = 0; j < 3; ++j) key[3 * k + j] = ps[k][j];
-            t.done[tri] = 1;
-            if (t.tris.count(key)) losers.push_back(tri);
-            else if (writes) t.tris.insert(key);
-        }
-    }
+    t.resolve(*g, d.start, d.count, d.blend == omk::Blend::Opaque, losers);
     if (losers.empty()) return;
     // `OMK_TIE_LOG=1`: every loser, with the mesh it came from
     static const bool tieLog = std::getenv("OMK_TIE_LOG") != nullptr;

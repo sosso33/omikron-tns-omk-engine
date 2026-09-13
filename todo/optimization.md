@@ -58,7 +58,7 @@ not a CPU figure). Against the original's 32 MB, both are the port's.
 |---|---|---|
 | 1 | a clean BASELINE: the same street run on an idle machine, per-frame time and the sample, recorded here | **DONE** 2026-09-13 - see "Before and after" below |
 | 2 | a SPATIAL GRID over the walkable soup (H1, H3): built once per resident set, `floorUnder` / `surfaceUnder` walk only the cells under the probe | **DONE** 2026-09-13 - the street from 24.2 to 45.2 fps, frames byte-identical, `engine: probe grid` |
-| 3 | the depth tie only where it can matter (H2) | open |
+| 3 | the depth tie only where it can matter (H2) | **DONE** 2026-09-13 - same decisions on hashed sets; uncapped 42.7 -> ~51.5 fps, capped CPU 72 -> 57; `engine: tie equivalence` |
 | 4 | the interface composited on the GPU in adventure mode (H4) | open |
 | 5 | break down `main`'s own time (H5) and re-rank | open |
 | 6 | the memory pass: where 236 MB goes, against a 365 MB Vita budget that vitaGL's textures also come out of | open |
@@ -265,6 +265,69 @@ recorded probe list, not a render. Then re-sample: H1 and H3 should fall to
 well under a millisecond together.
 
 ### 3. The depth tie
+
+#### Done 2026-09-13
+
+**Why it cost so much.** The Vulkan backend's submit-time tie pass kept two
+ordered `std::set`s of sorted vertex positions per geometry and rebuilt them
+from nothing at every REVISION. A revision changes every frame for every posed
+body (`s.posed`, `p.posed`, `sv.posed`, `playerPosed`), the shadow quads, the
+effects and the sky - and for the WHOLE decor set whenever any mesh in it moves
+(`play.cpp`, `w.geo.revision = ++worldGeoRev` beside the corner patch), which
+on the Anekbah street is every frame, so all 46415 of the city's triangles
+were re-keyed every frame. The re-profile after step 2 ranked it FIRST
+uncapped: ~2640 samples in 15 s at 42.7 fps, about 4 ms a frame.
+
+**What changed.** The decision moved to `o3de/depthtie.*` (`DepthTie`), the
+backend keeping only the vertex-buffer write, the log and its counters. Same
+decisions in the same order - the revision/size reset, the quad pairing, "a
+claimed key loses, else a writing draw claims" - on hashed sets that keep
+their buckets across revisions, plus one shortcut that cannot change a
+decision: a draw that writes no depth while nothing is claimed yet only marks
+its range handled. The unused face counter is gone.
+
+**Same decisions, proved.** `engine/tools/tie_equiv.cpp` keeps the old pass
+verbatim as `Reference` and compares every draw's losers, in content and
+order, over one pass, the same revision again (the mirror), and 40 revisions
+with a mesh moved, triangles snapped onto others to force ties, a shuffled
+subset of batches and non-writing draws first. Anekbah, Aapkayl, Lahoreh,
+HO1_FN, PSH_FN, JEN_FNM: **0 mismatches in 3056 draws, 18097 losers**;
+Anekbah's single pass drops **248**, the number `engine: sign tie` pins in its
+Vulkan render, which still passes, as does `mirror pass`. The tool's own
+timing puts the new pass at about 2.7x the old's speed on the same draws.
+`verify.py: engine: tie equivalence`. SHOWN TO FAIL: the shortcut returning
+without marking its range gives 63 / 86 / 22 mismatching draws (Anekbah /
+Lahoreh / PSH_FN) with the loser totals unchanged; restored, green.
+
+**Before and after** (same street, same method as step 2):
+
+| | grid + pacer (`1070a4b`) | + the tie on hashed sets |
+|---|---|---|
+| uncapped, typical 1 s window | ~42.7 fps | **~51.5 fps** |
+| capped: fps median / slowest window | 30.0 / 29.3 | 30.0 / **29.8** |
+| capped: worst frame, median of windows | 39 ms | **35 ms** |
+| capped: CPU, mean (100 = one core) | 72 | **57** |
+| capped: physical footprint / peak RSS | 241 / 275 MB | 245 / 273 MB |
+
+GPU utilisation is again not comparable (an idle reading of 20% against 78%
+before, other applications). The tie pass now costs ~600 samples in 15 s
+(key sorting and hash lookups), about 1 ms a frame.
+
+**The re-profile, uncapped, after step 3** (15 s): `main`'s own time 2755,
+`VulkanRenderer::readback` 1320 (H4), the per-frame collision-soup patch of a
+moving mesh (`main::$_41`, the `patchSoup` lambda) 805, `_xzm_free` 698, 
+`buildSoupGrid` 329, key sorting 299, `uploadGeometry` 277. Two of those are
+costs these steps brought or exposed and are the obvious next small ones:
+
+* **the frees** are mostly the hashed sets' NODES being released at every
+  revision reset (`std::unordered_set::clear` keeps buckets, not nodes) - a
+  flat open-addressed table would keep them;
+* **`buildSoupGrid` every frame** is step 2's grid rebuilt because the soup is
+  refilled whenever a mesh moves, which is every frame on this street - the
+  moved mesh's triangles could be re-bucketed alone instead;
+* and **the patch itself** (`patchSoup` walks every triangle's mesh index to
+  find one mesh's) and **why something on the street moves every frame** are
+  worth a look before either.
 
 The tie exists for the two SIDES of a shop sign (18 pairs in Anekbah,
 `verify.py: engine: sign tie`), which are static set geometry. Options, to be
