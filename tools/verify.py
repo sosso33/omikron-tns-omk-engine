@@ -11794,6 +11794,72 @@ def c_engine_airlock_walk():
            "arm hides it); and the walker is past the corridor's middle"
 
 
+def c_engine_probe_grid():
+    r"""`SoupGrid` - the ground probe's broad phase - gives the linear scan's
+    answers bit for bit (todo/optimization.md step 2).
+
+    A profile of the Anekbah street start (25 characters, Vulkan) put the
+    classic character shadows' `floorUnder` at most of the frame: a linear scan
+    of all 15137 walkable triangles for each of the ~133 shadow blobs a frame,
+    plus one `surfaceUnder` scan per pedestrian's foot shadow. The ENGINE never
+    scans triangles - `World_ProbePoint` (0x004433B0) hands a vertical box to
+    `o3de_ForEachMeshInBox` (0x004430A0), which culls per mesh bounding sphere -
+    so the cost was the port's. The grid is this port's own acceleration (a
+    uniform XZ grid, each cell's triangles in ascending order) and it is held
+    to one rule: it may skip work, never change an answer.
+
+    `engine/tools/probe_grid.cpp` asks `floorUnder`, `surfaceUnder` and
+    `soupInBox` of both the linear scan and the grid, over the walkable soup and
+    the steep one, and counts any probe whose answers differ in any bit. The
+    probes are chosen to break a wrong grid: sampled triangles' centroids, their
+    VERTICES and EDGE MIDPOINTS (boundaries two faces share, where the first-hit
+    rule decides), random points past the soup's extent, points EXACTLY on cell
+    boundaries, and 500 boxes. Measured 2026-09-13 over seven sets (Anekbah,
+    Aapkayl, AImpasse, Lahoreh, jaunpur, Qalisar, Sprison), both soups: 0
+    mismatches in about 250000 probes, the grid 250-700x faster on the city
+    sets (Anekbah walkable, 18098 floor probes: 2165 ms linear, 4.6 ms grid).
+
+    SHOWN TO FAIL: shrinking the grid's margin (`kGridEps = -1.0`, so a cell
+    misses the triangles that only graze it) turns it red with 65 / 96
+    mismatches in Anekbah's walkable / steep soups, 236 / 1143 in AImpasse and
+    154 / 193 in Sprison - the edge and cell-boundary probes are what catch it.
+    """
+    import subprocess
+    eng = os.path.join(ROOT, "engine")
+    if not os.path.isdir(eng):
+        return ("skipped",), ("skipped",), "engine/ absent"
+    b = subprocess.run(["make", "-s", "build/probe_grid"], cwd=eng,
+                       capture_output=True, text=True)
+    binp = os.path.join(eng, "build", "probe_grid")
+    if b.returncode != 0 or not os.path.exists(binp):
+        return ("build failed",), ("built",), "engine/ must build"
+    models = []
+    for stem in ("Anekbah", "AImpasse", "Sprison"):
+        path = omkpaths.data("MESHES/DECORS/%s.3DO" % stem)
+        if not os.path.exists(path):
+            return ("skipped",), ("skipped",), "%s absent" % stem
+        models.append(path)
+    r = subprocess.run([binp] + models, capture_output=True, text=True)
+    rows = re.findall(
+        r"^(\S+)\.3DO (walkable|steep) tris (\d+) .*?floor probes (\d+) hits \d+ "
+        r"mismatches (\d+) .*?surface mismatches (\d+) .*?box boxes \d+ mismatches (\d+)",
+        r.stdout, re.M)
+    # a parse that reads nothing must fail AS A PARSE, not answer
+    if len(rows) != 6:
+        return (len(rows),), (6,), "probe_grid rows parsed - the tool's output " \
+            "format no longer matches this check"
+    got = tuple((st, kind, int(t), int(fp), int(fm) + int(sm) + int(bm))
+                for st, kind, t, fp, fm, sm, bm in rows)
+    return got, (("Anekbah", "walkable", 15137, 18098, 0),
+                 ("Anekbah", "steep", 31141, 18406, 0),
+                 ("AImpasse", "walkable", 105, 8235, 0),
+                 ("AImpasse", "steep", 388, 10216, 0),
+                 ("Sprison", "walkable", 1788, 20016, 0),
+                 ("Sprison", "steep", 2742, 26694, 0)), \
+        "per set and soup: triangles, probes asked, and probes whose grid " \
+        "answer differs from the linear scan's in any bit (floor + surface + box)"
+
+
 def c_engine_walker_falls():
     r"""`engine/`'s walker takes a drop instead of refusing it - and the
     measurement that says why it had to.
@@ -33720,6 +33786,7 @@ SLOW = [
     ("engine: path turn",    c_engine_path_turn,    "todo/omk-play; FILE_FORMATS 5c"),
     ("engine: cupboard take", c_engine_cupboard_take, "todo/omk-play; ASSETS"),
     ("engine: walker falls", c_engine_walker_falls, "todo/omk-play"),
+    ("engine: probe grid", c_engine_probe_grid, "todo/optimization.md 2; o3de/collision.h"),
     ("engine: props", c_engine_props, "todo/omk-play"),
     ("sprite ids scene-local", c_sprite_ids_are_scene_local, "docs/ASSETS"),
     ("engine: scene sounds", c_engine_scene_sounds, "engine/README"),

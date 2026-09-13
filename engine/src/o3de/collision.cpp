@@ -232,6 +232,194 @@ std::optional<GroundHit> surfaceUnder(const TriangleSoup& tris, double x,
     return best;
 }
 
+// ---------------------------------------------------- THE PROBE'S BROAD PHASE
+//
+// See `SoupGrid` in collision.h. The two per-triangle kernels below are the
+// loop bodies of `floorUnder` and `surfaceUnder` above, copied statement for
+// statement rather than shared, so the linear scans stay byte-identical to what
+// they were and `probe_grid` compares the grid against the code as it stood.
+
+namespace {
+
+// `floorUnder`'s loop body: the XZ barycentric test and the interpolated height.
+inline bool underKernel(const TriangleSoup& tris, std::size_t t, double x, double z,
+                        double& hit) {
+    const double ax = tris[t],     ay = tris[t + 1], az = tris[t + 2];
+    const double bx = tris[t + 3], by = tris[t + 4], bz = tris[t + 5];
+    const double cx = tris[t + 6], cy = tris[t + 7], cz = tris[t + 8];
+    const double d = (bz - cz) * (ax - cx) + (cx - bx) * (az - cz);
+    if (std::fabs(d) < 1e-9) return false;
+    const double w0 = ((bz - cz) * (x - cx) + (cx - bx) * (z - cz)) / d;
+    const double w1 = ((cz - az) * (x - cx) + (ax - cx) * (z - cz)) / d;
+    const double w2 = 1.0 - w0 - w1;
+    if (w0 < 0 || w1 < 0 || w2 < 0) return false;
+    hit = w0 * ay + w1 * by + w2 * cy;
+    return true;
+}
+
+// `surfaceUnder`'s normal, pointed up.
+inline bool upNormal(const TriangleSoup& tris, std::size_t t, double n[3]) {
+    const double ax = tris[t],     ay = tris[t + 1], az = tris[t + 2];
+    const double bx = tris[t + 3], by = tris[t + 4], bz = tris[t + 5];
+    const double cx = tris[t + 6], cy = tris[t + 7], cz = tris[t + 8];
+    const double ux = bx - ax, uy = by - ay, uz = bz - az;
+    const double vx = cx - ax, vy = cy - ay, vz = cz - az;
+    double nx = uy * vz - uz * vy;
+    double ny = uz * vx - ux * vz;
+    double nz = ux * vy - uy * vx;
+    const double len = std::sqrt(nx * nx + ny * ny + nz * nz);
+    if (len <= 0) return false;
+    nx /= len; ny /= len; nz /= len;
+    if (ny > 0) { nx = -nx; ny = -ny; nz = -nz; }
+    n[0] = nx; n[1] = ny; n[2] = nz;
+    return true;
+}
+
+// The cell column/row a coordinate falls in, clamped to the grid; -1 when the
+// coordinate is outside the grid's inflated extent (or NaN), where no triangle
+// can contain it.
+inline int cellAxis(double v, double lo, double hi, double cell, int n) {
+    if (!(v >= lo - kGridEps && v <= hi + kGridEps)) return -1;
+    int i = static_cast<int>(std::floor((v - lo) / cell));
+    return std::clamp(i, 0, n - 1);
+}
+
+}  // namespace
+
+SoupGrid buildSoupGrid(const TriangleSoup& tris, double cell) {
+    SoupGrid g;
+    g.data = tris.data();
+    g.size = tris.size();
+    const std::size_t n = tris.size() / 9;
+    if (n == 0) return g;
+    double lo[2] = {1e300, 1e300}, hi[2] = {-1e300, -1e300};
+    for (std::size_t t = 0; t < n; ++t)
+        for (int k = 0; k < 3; ++k) {
+            const double x = tris[9 * t + 3 * k], z = tris[9 * t + 3 * k + 2];
+            lo[0] = std::min(lo[0], x); hi[0] = std::max(hi[0], x);
+            lo[1] = std::min(lo[1], z); hi[1] = std::max(hi[1], z);
+        }
+    g.minX = lo[0]; g.maxX = hi[0]; g.minZ = lo[1]; g.maxZ = hi[1];
+    const double span = std::max(hi[0] - lo[0], hi[1] - lo[1]);
+    g.cell = std::max({cell, span / 512.0, 1.0});
+    g.nx = static_cast<int>((hi[0] - lo[0]) / g.cell) + 1;
+    g.nz = static_cast<int>((hi[1] - lo[1]) / g.cell) + 1;
+    const auto range = [&](std::size_t t, int& i0, int& i1, int& k0, int& k1) {
+        double a[2] = {tris[9 * t], tris[9 * t + 2]}, b[2] = {a[0], a[1]};
+        for (int k = 1; k < 3; ++k) {
+            a[0] = std::min<double>(a[0], tris[9 * t + 3 * k]);
+            b[0] = std::max<double>(b[0], tris[9 * t + 3 * k]);
+            a[1] = std::min<double>(a[1], tris[9 * t + 3 * k + 2]);
+            b[1] = std::max<double>(b[1], tris[9 * t + 3 * k + 2]);
+        }
+        const auto axis = [&](double v, double base, int cells) {
+            return std::clamp(static_cast<int>(std::floor((v - base) / g.cell)), 0, cells - 1);
+        };
+        i0 = axis(a[0] - kGridEps, g.minX, g.nx); i1 = axis(b[0] + kGridEps, g.minX, g.nx);
+        k0 = axis(a[1] - kGridEps, g.minZ, g.nz); k1 = axis(b[1] + kGridEps, g.minZ, g.nz);
+    };
+    const std::size_t cells = static_cast<std::size_t>(g.nx) * static_cast<std::size_t>(g.nz);
+    g.start.assign(cells + 1, 0);
+    for (std::size_t t = 0; t < n; ++t) {
+        int i0, i1, k0, k1;
+        range(t, i0, i1, k0, k1);
+        for (int k = k0; k <= k1; ++k)
+            for (int i = i0; i <= i1; ++i)
+                ++g.start[static_cast<std::size_t>(k) * g.nx + i + 1];
+    }
+    for (std::size_t c = 0; c < cells; ++c) g.start[c + 1] += g.start[c];
+    g.index.resize(g.start[cells]);
+    std::vector<std::uint32_t> cursor(g.start.begin(), g.start.end() - 1);
+    for (std::size_t t = 0; t < n; ++t) {   // ascending, so each cell's list is too
+        int i0, i1, k0, k1;
+        range(t, i0, i1, k0, k1);
+        for (int k = k0; k <= k1; ++k)
+            for (int i = i0; i <= i1; ++i)
+                g.index[cursor[static_cast<std::size_t>(k) * g.nx + i]++] =
+                    static_cast<std::uint32_t>(t);
+    }
+    return g;
+}
+
+std::optional<double> floorUnder(const TriangleSoup& tris, const SoupGrid& g,
+                                 double x, double y, double z) {
+    if (!g.matches(tris)) return floorUnder(tris, x, y, z);
+    std::optional<double> best;
+    const int i = cellAxis(x, g.minX, g.maxX, g.cell, g.nx);
+    const int k = cellAxis(z, g.minZ, g.maxZ, g.cell, g.nz);
+    if (i < 0 || k < 0) return best;
+    const std::size_t c = static_cast<std::size_t>(k) * g.nx + i;
+    for (std::uint32_t e = g.start[c]; e < g.start[c + 1]; ++e) {
+        double hit;
+        if (!underKernel(tris, 9 * static_cast<std::size_t>(g.index[e]), x, z, hit)) continue;
+        // "below" is a LARGER y, and strictly below the origin
+        if (hit > y + 1.0 && (!best || hit < *best)) best = hit;
+    }
+    return best;
+}
+
+std::optional<GroundHit> surfaceUnder(const TriangleSoup& tris, const SoupGrid& g,
+                                      double x, double y, double z) {
+    if (!g.matches(tris)) return surfaceUnder(tris, x, y, z);
+    std::optional<GroundHit> best;
+    const int i = cellAxis(x, g.minX, g.maxX, g.cell, g.nx);
+    const int k = cellAxis(z, g.minZ, g.maxZ, g.cell, g.nz);
+    if (i < 0 || k < 0) return best;
+    const std::size_t c = static_cast<std::size_t>(k) * g.nx + i;
+    for (std::uint32_t e = g.start[c]; e < g.start[c + 1]; ++e) {
+        const std::size_t t = 9 * static_cast<std::size_t>(g.index[e]);
+        double hit;
+        if (!underKernel(tris, t, x, z, hit)) continue;
+        if (!(hit > y + 1.0) || (best && hit >= best->y)) continue;
+        double n[3];
+        if (!upNormal(tris, t, n)) continue;
+        best = GroundHit{hit, {n[0], n[1], n[2]}};
+    }
+    return best;
+}
+
+TriangleSoup soupInBox(const TriangleSoup& tris, const SoupGrid& g, double minX,
+                       double maxX, double minZ, double maxZ) {
+    // A NaN bound makes every rejection test in the linear version false, so it
+    // returns the whole soup; that and a mismatched grid go to the linear scan.
+    if (!g.matches(tris) || std::isnan(minX) || std::isnan(maxX) ||
+        std::isnan(minZ) || std::isnan(maxZ))
+        return soupInBox(tris, minX, maxX, minZ, maxZ);
+    TriangleSoup out;
+    if (maxX < g.minX - kGridEps || minX > g.maxX + kGridEps ||
+        maxZ < g.minZ - kGridEps || minZ > g.maxZ + kGridEps || minX > maxX || minZ > maxZ)
+        return out;
+    const auto axis = [&](double v, double base, int cells) {
+        const double f = std::floor((v - base) / g.cell);
+        if (f < 0) return 0;
+        if (f >= cells - 1) return cells - 1;
+        return static_cast<int>(f);
+    };
+    const int i0 = axis(minX, g.minX, g.nx), i1 = axis(maxX, g.minX, g.nx);
+    const int k0 = axis(minZ, g.minZ, g.nz), k1 = axis(maxZ, g.minZ, g.nz);
+    std::vector<std::uint32_t> cand;
+    for (int k = k0; k <= k1; ++k)
+        for (int i = i0; i <= i1; ++i) {
+            const std::size_t c = static_cast<std::size_t>(k) * g.nx + i;
+            cand.insert(cand.end(), g.index.begin() + g.start[c], g.index.begin() + g.start[c + 1]);
+        }
+    std::sort(cand.begin(), cand.end());
+    cand.erase(std::unique(cand.begin(), cand.end()), cand.end());
+    for (std::uint32_t tri : cand) {
+        const std::size_t t = 9 * static_cast<std::size_t>(tri);
+        double lo[2] = {tris[t], tris[t + 2]}, hi[2] = {tris[t], tris[t + 2]};
+        for (int k = 1; k < 3; ++k) {
+            const double px = tris[t + 3 * k], pz = tris[t + 3 * k + 2];
+            lo[0] = std::min(lo[0], px); hi[0] = std::max(hi[0], px);
+            lo[1] = std::min(lo[1], pz); hi[1] = std::max(hi[1], pz);
+        }
+        if (hi[0] < minX || lo[0] > maxX || hi[1] < minZ || lo[1] > maxZ) continue;
+        out.insert(out.end(), tris.begin() + static_cast<long>(t),
+                   tris.begin() + static_cast<long>(t) + 9);
+    }
+    return out;
+}
+
 }  // namespace omk
 
 // ---------------------------------------------------------- THE NARROW PHASE

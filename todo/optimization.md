@@ -56,8 +56,8 @@ not a CPU figure). Against the original's 32 MB, both are the port's.
 
 | # | step | state |
 |---|---|---|
-| 1 | a clean BASELINE: the same street run on an idle machine, per-frame time and the sample, recorded here | open |
-| 2 | a SPATIAL GRID over the walkable soup (H1, H3): built once per resident set, `floorUnder` / `surfaceUnder` walk only the cells under the probe | **reading done 2026-09-12**: the engine culls per-MESH bounding spheres, ~20x on Anekbah; port not started |
+| 1 | a clean BASELINE: the same street run on an idle machine, per-frame time and the sample, recorded here | **DONE** 2026-09-13 - see "Before and after" below |
+| 2 | a SPATIAL GRID over the walkable soup (H1, H3): built once per resident set, `floorUnder` / `surfaceUnder` walk only the cells under the probe | **DONE** 2026-09-13 - the street from 24.2 to 45.2 fps, frames byte-identical, `engine: probe grid` |
 | 3 | the depth tie only where it can matter (H2) | open |
 | 4 | the interface composited on the GPU in adventure mode (H4) | open |
 | 5 | break down `main`'s own time (H5) and re-rank | open |
@@ -66,6 +66,77 @@ not a CPU figure). Against the original's 32 MB, both are the port's.
 
 Each step ends in a commit and a report, per the working rhythm; the full
 sweep follows the cadence in `todo/sweep-log.md`, not these steps.
+
+## Before and after - step 2 (2026-09-13)
+
+**How it is measured now** (scratch scripts, not committed): the street start
+above on Vulkan with `--fps --frames 1500`, the viewer's own once-a-second
+rate and worst frame, and every 2 s the process's CPU and RSS (`ps`), the
+GPU's device / renderer utilisation and in-use memory (`ioreg -c
+IOAccelerator` - on the M1 the GPU's memory IS system memory, so "VRAM" is
+that figure), plus one `footprint` snapshot. The GPU figures are system-wide,
+so an idle reading is taken first and subtracted. Load average 5-7 during
+both runs (other applications), the same for both.
+
+**Two measurement traps, both of which gave a plausible wrong reading:**
+* `--frames N` switches OFF the 30 Hz cap (`if (!frames)` around the pacing
+  sleep) AND fixes the step at 1/30 s a frame for determinism - so a
+  measured run is uncapped and its WORLD runs at fps/30 times real speed. The
+  rate it reports is the cost; what a person sees in that window is not the
+  game's speed. A run to look at must omit `--frames`.
+* peak RSS of two WINDOW runs is not comparable: the faster run reached the
+  same frame count in half the time and was sampled at a different moment of
+  play (540 -> 914 MB, which looked like a regression). On an identical
+  headless workload (`--software --frames 60`) the two binaries peak at
+  **234 / 232 MB** RSS and **226 / 227 MB** footprint - no change.
+
+| | before (`db1f548`) | after (grid) |
+|---|---|---|
+| fps, median of 1 s windows | **24.2** | **45.2** |
+| fps, slowest window | 11.1 | 31.7 |
+| worst frame, median of windows | 44 ms | 25 ms |
+| CPU, mean (100 = one core) | 96 | 92 |
+| GPU device / renderer utilisation (idle 12-13) | 12 / 12 | 19 / 17 |
+| GPU in-use memory above idle | +56 MB | +111 MB |
+| peak RSS, identical headless 60 frames | 234 MB | 232 MB |
+
+Reading it: the main thread is still one saturated core, as an uncapped run
+must be, but it now makes nearly twice the frames; the GPU, idle before, does
+more because it draws more. The game's cap is 30 fps, so the street now holds
+it with room (the slowest second is 31.7) where it could not before.
+
+**Same output:** 20 headless software frames of the street start are
+byte-identical before and after (960000 bytes, 133 shadow blobs in each).
+
+**The grid itself** (`engine/tools/probe_grid.cpp`, both soups, 7 sets:
+Anekbah, Aapkayl, AImpasse, Lahoreh, jaunpur, Qalisar, Sprison): **0
+mismatches** in about 250000 probes and 7000 boxes - centroids, vertices, edge
+midpoints, random points past the extent, points exactly on cell boundaries.
+Anekbah's walkable soup: 15137 triangles, a 78x71 grid of 256-inch cells,
+35465 entries, built in 0.56 ms; 18098 floor probes take **2165 ms** linear
+and **4.6 ms** on the grid. The city sets gain 250-700x; the two smallest
+sets gain little and `soupInBox` there is marginally slower, which costs
+nothing that matters.
+
+**What changed:** `SoupGrid` / `buildSoupGrid` and grid overloads of
+`floorUnder`, `surfaceUnder` and `soupInBox` in `o3de/collision.*` - the
+linear versions untouched, the per-triangle arithmetic copied statement for
+statement, candidates in ascending order, a grid that does not match its soup
+falling back to the scan. `omk-play` keeps `playerGrid` beside `playerSoup`,
+rebuilt at both refills (area change, a moved door), and hands it to the
+classic shadow probe, the fitted shadow's `soupInBox` and the crowd's foot
+probe. The walker, the staging and the ride still scan linearly: once a
+frame or less, not worth the change yet.
+
+**Check:** `verify.py: engine: probe grid` (Anekbah, AImpasse, Sprison, both
+soups). SHOWN TO FAIL: `kGridEps = -1.0` gives 65 / 96 / 236 / 1143 / 154 /
+193 mismatches; restored by editing the line back, green again. The other
+checks this could touch all pass: `engine: character shadow`, `fitted
+shadows`, `city crowd`, `crowd push`, `walker falls`, `shoot ray soups`.
+
+**Next, re-ranked:** the step-2 sample is not retaken yet; from the first one,
+H2 (the depth tie rebuilt each frame, ~3 ms) and H4 (the readback, ~2 ms) are
+now the largest known costs, and `main`'s own time (H5) is unexplained.
 
 ### 1. The baseline
 

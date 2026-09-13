@@ -2146,6 +2146,30 @@ Per bone, written straight into the frame's vertex and triangle pools:
 The five vertices are appended whether or not the probe hit; only the
 triangles are gated on it.
 
+**How step 2's probe finds the floor, and what the port does instead** (read
+2026-09-13 from bodies still as generated, so the control flow and not every
+field; `todo/optimization.md` step 2). `World_ProbePoint` (0x004433B0) builds a
+degenerate box - the vertical line under the point - and hands it to
+`o3de_ForEachMeshInBox` (0x004430A0), which walks each resident scene's FLAT
+node array (184 bytes a node) and passes on only the meshes whose bounding
+sphere reaches it: centre `node[19..21]`, turned by the node's matrix for a
+`0x80000` mesh, plus the node position `node[9..11]`, radius `node[22]`. The
+callback skips `0x41`, sends a rotated `0x80000` mesh to `sub_444460` and every
+other to `sub_498930`, which classifies the mesh's VERTICES against the probe
+before walking its faces. Both face tests (`sub_498D00`, `sub_444BB0`) keep a
+hit only if it is STRICTLY nearer, so the first of equal floors wins - scenes in
+registration order, nodes in array order, triangles before quads - and the
+ordinary one accepts only an upward face (normal y < -0.0001), where the rotated
+one accepts either side. The port does not walk meshes: it probes the merged
+walkable soup, and since 2026-09-13 does so through its own XZ grid
+(`SoupGrid`, `o3de/collision.h`), which returns the linear scan's answers bit
+for bit (`verify.py: engine: probe grid`) and took the Anekbah street from 24 to
+45 fps uncapped. Three places where the port's ANSWER still differs from the
+engine's are recorded here and not changed by that: it accepts a downward face,
+it probes only faces flatter than 30 degrees where the engine takes any upward
+face, and it wants the floor more than one unit below the start where the engine
+takes the plane itself.
+
 Ten blobs overlap under a standing character and each multiplies, so the pool
 under his feet goes nearly black. That is the mechanism and not an artefact.
 

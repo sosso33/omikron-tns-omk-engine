@@ -2992,6 +2992,10 @@ int main(int argc, char** argv) {
     std::vector<omk::CollisionSphere> playerSpheres;   // the crowd push tests these
     float playerReach = 0.0f;                           // his model's +88
     omk::TriangleSoup playerSoup;
+    // ...and its probe GRID, rebuilt wherever `playerSoup` is refilled: the
+    // shadows and the crowd's feet probe it every frame, and a linear scan of
+    // the city per bone was most of the frame (todo/optimization.md step 2)
+    omk::SoupGrid playerGrid;
     // the same merge for the STEEP faces, so the controller can stand on a
     // slope and slide off it instead of finding no floor (omk-play 67)
     omk::TriangleSoup playerSteep;
@@ -4764,6 +4768,7 @@ int main(int argc, char** argv) {
             playerSoup.insert(playerSoup.end(), w.soup.begin(), w.soup.end());
             playerSteep.insert(playerSteep.end(), w.steep.begin(), w.steep.end());
         }
+        playerGrid = omk::buildSoupGrid(playerSoup);
         world.setTextures(worldTex);
         poolSize = worldTex.size();
         ++poolComposition;   // the character and sprite sections re-append over this
@@ -5448,6 +5453,7 @@ int main(int argc, char** argv) {
                 playerSoup.insert(playerSoup.end(), w.soup.begin(), w.soup.end());
                 playerSteep.insert(playerSteep.end(), w.steep.begin(), w.steep.end());
             }
+            playerGrid = omk::buildSoupGrid(playerSoup);
         }
 
         // ---- ADVENTURE MODE'S SOUND EFFECTS -----------------------------
@@ -14973,7 +14979,7 @@ int main(int argc, char** argv) {
                         if (!any) return;
                         // inflated by more than the widest blob's half-width
                         // (275.59 x 0.07 x 1.5 = 28.9)
-                        local = omk::soupInBox(playerSoup, lo[0] - 40.0, hi[0] + 40.0,
+                        local = omk::soupInBox(playerSoup, playerGrid, lo[0] - 40.0, hi[0] + 40.0,
                                                lo[1] - 40.0, hi[1] + 40.0);
                     }
                     const omk::TriangleSoup& soup = fitted ? local : playerSoup;
@@ -14987,7 +14993,9 @@ int main(int argc, char** argv) {
                             const float d = std::sqrt(dx * dx + dz * dz);
                             if (d > shadowFootOffMax) shadowFootOffMax = d;
                         }
-                        const auto f = omk::floorUnder(soup, p3[0], p3[1], p3[2]);
+                        const auto f = fitted
+                            ? omk::floorUnder(soup, p3[0], p3[1], p3[2])
+                            : omk::floorUnder(playerSoup, playerGrid, p3[0], p3[1], p3[2]);
                         if (!f) continue;
                         const std::size_t was = shadowGeo.corners.size();
                         const float rad = meshes[static_cast<std::size_t>(mi)].radius;
@@ -15045,7 +15053,7 @@ int main(int argc, char** argv) {
                     const float mid[3] = {(up->footAt[0][0] + up->footAt[1][0]) * 0.5f,
                                           (up->footAt[0][1] + up->footAt[1][1]) * 0.5f,
                                           (up->footAt[0][2] + up->footAt[1][2]) * 0.5f};
-                    const auto h = omk::surfaceUnder(playerSoup, mid[0], mid[1], mid[2]);
+                    const auto h = omk::surfaceUnder(playerSoup, playerGrid, mid[0], mid[1], mid[2]);
                     if (!h) continue;
                     const float nrm[3] = {static_cast<float>(h->n[0]),
                                           static_cast<float>(h->n[1]),

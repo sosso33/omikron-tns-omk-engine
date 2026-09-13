@@ -20,6 +20,7 @@
 #include "formats/mesh3do.h"
 
 #include <cstddef>
+#include <cstdint>
 #include <optional>
 #include <span>
 #include <vector>
@@ -149,5 +150,51 @@ std::optional<GroundHit> surfaceUnder(const TriangleSoup& tris, double x,
 // than the unfitted path already does.
 TriangleSoup soupInBox(const TriangleSoup& tris, double minX, double maxX,
                        double minZ, double maxZ);
+
+// ---- THE GROUND PROBE'S BROAD PHASE (todo/optimization.md step 2) --------
+//
+// A uniform XZ grid over one soup: each cell lists, in ASCENDING order, every
+// triangle whose horizontal extent (inflated by `kGridEps`) meets it. This is
+// this port's own acceleration, NOT a ported structure - the engine culls per
+// mesh bounding sphere (`o3de_ForEachMeshInBox`, 0x004430A0) - and it is held
+// to one rule: it may skip work, never change an answer.
+//
+//   * a triangle that contains the probe point in XZ lies in that point's cell,
+//     so every triangle the linear scan could accept is visited;
+//   * the cell's list is ascending, so "the first of equal hits wins" picks the
+//     same triangle the scan picks;
+//   * the per-triangle arithmetic below is the linear scan's, statement for
+//     statement, so the same triangle yields the same bits.
+//
+// `engine/tools/probe_grid.cpp` compares the two bit for bit (`verify.py:
+// engine: probe grid`). A grid is tied to the soup it was built from by data
+// pointer and size; a soup refilled or reallocated since needs a rebuild, and
+// a grid that does not match falls back to the linear scan rather than answer.
+inline constexpr double kGridEps = 0.01;   // inches, far above rounding error
+
+struct SoupGrid {
+    double minX = 0.0, maxX = 0.0, minZ = 0.0, maxZ = 0.0;
+    double cell = 0.0;
+    int nx = 0, nz = 0;
+    std::vector<std::uint32_t> start;   // nx*nz + 1 offsets into `index`
+    std::vector<std::uint32_t> index;   // triangle numbers, ascending per cell
+    const float* data = nullptr;        // the soup it was built from...
+    std::size_t size = 0;               // ...and its length in floats
+    bool matches(const TriangleSoup& tris) const {
+        return nx > 0 && data == tris.data() && size == tris.size();
+    }
+};
+
+// Build a grid over `tris` with cells of about `cell` inches (widened so no axis
+// has more than 512 cells).
+SoupGrid buildSoupGrid(const TriangleSoup& tris, double cell = 256.0);
+
+// The same answers as the linear versions above, visiting only the candidates.
+std::optional<double> floorUnder(const TriangleSoup& tris, const SoupGrid& grid,
+                                 double x, double y, double z);
+std::optional<GroundHit> surfaceUnder(const TriangleSoup& tris, const SoupGrid& grid,
+                                      double x, double y, double z);
+TriangleSoup soupInBox(const TriangleSoup& tris, const SoupGrid& grid,
+                       double minX, double maxX, double minZ, double maxZ);
 
 }  // namespace omk
