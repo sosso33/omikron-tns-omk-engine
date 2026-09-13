@@ -125,12 +125,13 @@ std::vector<Texture> textures(std::span<const std::byte> d,
         }
 
         tx.rgb.assign(want * 3u, 0);
+        std::uint8_t* const px = tx.rgb.mutableData();   // one detach check, not one a texel
         for (std::size_t k = 0; k < want && k < idx.size(); ++k) {
             const std::size_t c = static_cast<std::size_t>(idx[k]) * 3u;
             if (c + 2 < pal.size()) {
-                tx.rgb[k * 3    ] = static_cast<std::uint8_t>(pal[c    ]);
-                tx.rgb[k * 3 + 1] = static_cast<std::uint8_t>(pal[c + 1]);
-                tx.rgb[k * 3 + 2] = static_cast<std::uint8_t>(pal[c + 2]);
+                px[k * 3    ] = static_cast<std::uint8_t>(pal[c    ]);
+                px[k * 3 + 1] = static_cast<std::uint8_t>(pal[c + 1]);
+                px[k * 3 + 2] = static_cast<std::uint8_t>(pal[c + 2]);
             }
         }
         out.push_back(std::move(tx));

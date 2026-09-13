@@ -12081,6 +12081,68 @@ def c_engine_audio_queue_bound():
         "(%.0f MB this run)" % peak_mb
 
 
+def c_engine_pixel_sharing():
+    r"""A texture's pixels are shared by its copies, and only an explicit write
+    detaches (todo/optimization.md step 6).
+
+    A `Texture` is copied into every list that holds it - a decor set's own
+    list, the viewer's world list, the renderer's pool, a character's - and
+    with its pixels in a `std::vector` each copy held all of them again: a
+    live-allocation snapshot of the Anekbah street found the world's textures
+    three times over. `Texture::rgb` is now a `PixelBuffer` - one reference-
+    counted buffer the copies share, detaching only on `mutableData()`, so a
+    copy still behaves as an independent value.
+
+    The trap met building it is pinned too: the first version had a non-const
+    `operator[]` that detached, and C++ picks it for every `[]` on a non-const
+    Texture - reads included - so a sampler reading a non-const reference
+    would have copied the whole texture on its first texel. There is no such
+    overload now, and the tool asserts that reading a non-const copy leaves
+    every copy sharing.
+
+    `engine/tools/pixel_sharing.cpp`: share, read without detaching, write
+    detaches without touching the source or another copy, fresh storage from
+    `=` and `assign`, and Anekbah's 20 textures pooled three times over all
+    sharing their source and reading byte-identical. From outside the tool,
+    2026-09-13: 20 headless software frames and the Vulkan frame of Anekbah
+    byte-identical before and after, and 60 headless street frames peaking at
+    138 MB RSS / 129 MB footprint against 149 / 141 before.
+
+    SHOWN TO FAIL: a `detach()` that never detaches (a write through one copy
+    lands in the shared bytes) turns it red, naming the two rules it breaks:
+    "a write detaches the copy" and "the source and another copy are
+    unchanged". The pooled-copy counts stay 60 - it is the ownership rules, not
+    a count, that catch it.
+    """
+    import subprocess
+    eng = os.path.join(ROOT, "engine")
+    if not os.path.isdir(eng):
+        return ("skipped",), ("skipped",), "engine/ absent"
+    b = subprocess.run(["make", "-s", "build/pixel_sharing"], cwd=eng,
+                       capture_output=True, text=True)
+    binp = os.path.join(eng, "build", "pixel_sharing")
+    if b.returncode != 0 or not os.path.exists(binp):
+        return ("build failed",), ("built",), "engine/ must build"
+    model = omkpaths.data("MESHES/DECORS/Anekbah.3DO")
+    tex = omkpaths.data("MESHES/DECORS/Anekbah.3DT")
+    if not (os.path.exists(model) and os.path.exists(tex)):
+        return ("skipped",), ("skipped",), "Anekbah absent"
+    r = subprocess.run([binp, model, tex], capture_output=True, text=True)
+    m = re.search(r"set textures (\d+) pooled copies (\d+) sharing (\d+) identical (\d+) "
+                  r"pixel bytes (\d+)", r.stdout)
+    f = re.search(r"^failures (\d+)", r.stdout, re.M)
+    # a parse that reads nothing must fail AS A PARSE, not answer
+    if not (m and f):
+        return ("no parse",), ("parsed",), "pixel_sharing output - the tool's " \
+            "format no longer matches this check"
+    failed = tuple(ln[len("FAILED: "):] for ln in r.stdout.splitlines() if ln.startswith("FAILED: "))
+    return tuple(int(x) for x in m.groups()) + (int(f.group(1)), failed), \
+        (20, 60, 60, 60, 3932160, 0, ()), \
+        "Anekbah's textures, their pooled copies, those sharing their source's " \
+        "storage and reading byte-identical, the pixel bytes; then the ownership " \
+        "rules that failed, by name"
+
+
 def c_engine_walker_falls():
     r"""`engine/`'s walker takes a drop instead of refusing it - and the
     measurement that says why it had to.
@@ -34012,6 +34074,7 @@ SLOW = [
     ("engine: pixel tables", c_engine_pixel_tables, "todo/optimization.md 4; ui/surface.h"),
     ("engine: music storage", c_engine_music_storage, "todo/optimization.md 5; audio/music.h"),
     ("engine: audio queue bound", c_engine_audio_queue_bound, "todo/optimization.md 5; backends/sdl/play.cpp"),
+    ("engine: pixel sharing", c_engine_pixel_sharing, "todo/optimization.md 6; formats/tex3dt.h"),
     ("engine: props", c_engine_props, "todo/omk-play"),
     ("sprite ids scene-local", c_sprite_ids_are_scene_local, "docs/ASSETS"),
     ("engine: scene sounds", c_engine_scene_sounds, "engine/README"),

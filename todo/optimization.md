@@ -495,6 +495,61 @@ next ones: the **texture list held several times** (one copy, shared), the
 Against the 32 MB the original shipped for, the shipped DATA is not what
 forces any of this.
 
+#### Second cut, done 2026-09-13 (committed as "optimization 6") - texture pixels shared
+
+**What was copied where.** `Texture::rgb` was a `std::vector<std::uint8_t>`, so
+copying a `Texture` copied its pixels, and the viewer copies textures between
+lists as a matter of course: each decor set keeps its own (`w.tex`),
+`rebuildWorld` concatenates both sets into `worldTex`, and every composition
+change rebuilds the renderer's `pool` as `pool = worldTex` plus each character
+model's, each prop's, the sky's, the shadow's, the player's and the sprites'.
+The world's textures were in memory three times. The software rasterizer keeps
+only a `span` of the pool and Vulkan re-uploads from it at each rebuild, so the
+pool's pixels must stay alive - the copies had to become cheap, not go.
+
+**What changed.** `Texture::rgb` is a `PixelBuffer` (`formats/tex3dt.h`): one
+reference-counted buffer shared by copies, with every read the vector served
+(`data`, `size`, `empty`, `operator[]`, iteration). Writing is EXPLICIT -
+`mutableData()` detaches from any other copy first - so a copy still behaves as
+an independent value. The decoder takes its write pointer once; `run_anekbah`
+(the only other texel writer) paints through one; two probes' `= {255, 255,
+255}` get fresh storage.
+
+**The trap the test caught.** The first version also had a non-const
+`operator[]` that detached. C++ chooses it for EVERY `[]` on a non-const
+Texture, reads included - so any sampler reading through a non-const reference
+would have copied the whole texture on its first texel, silently undoing the
+saving with a full copy mid-frame. `pixel_sharing` failed on it ("the untouched
+copy still shares") because its own reads detached. There is no non-const
+`operator[]` now, and the tool asserts that reading a non-const copy leaves
+every copy sharing.
+
+**Same pixels, proved.** `engine/tools/pixel_sharing.cpp`: a copy shares and
+reads the same bytes; reading a non-const copy does not detach; a write detaches
+without touching the source or another copy; `=` and `assign` give fresh
+storage; Anekbah's 20 textures pooled three times over all share their source
+and read byte-identical. From outside the tool: 20 headless software frames of
+the street and the Vulkan offscreen frame of Anekbah byte-identical before and
+after. `verify.py: engine: pixel sharing`; SHOWN TO FAIL: a `detach()` that
+never detaches breaks "a write detaches the copy" and "the source and another
+copy are unchanged". `engine: 3DT`, `textures`, `texture name cache`,
+`engine: scene sprites`, `engine: texture filter` and `engine: sign tie` pass.
+
+| | music + queue (`4cfa444`) | + shared texture pixels |
+|---|---|---|
+| headless, 60 street frames: peak RSS / footprint | 149 / 141 MB | **138 / 129 MB** |
+| live heap, snapshot at 45 s | 140.2 MB | **126.5 MB** |
+| texture pixel allocations | several sites, ~27 MB with the lists | **one site: 62 buffers, 12.6 MB** |
+
+**What the new snapshot puts next** (126.5 MB live): render corners 18.2 MB; the
+music 16.1 MB; the sound buffers copied per play 13.7 MB; the shared texture
+pixels 12.6 MB; the collision soups 11.6 MB; `main` 10.6 MB; the scene files
+7.3 MB; and two single allocations that are almost all EMPTY -
+`std::vector<Texture>` 6.4 MB and `std::vector<SpriteFrames>` 5.5 MB. `spriteTex`
+is indexed BY SPRITE ID (an effect names its sprite by id), and Anekbah's ids run
+to 49591, so both arrays are ~50000 slots of which a few dozen hold anything:
+about 12 MB of placeholders, and the cheapest next cut.
+
 Measure, then cut, in the order the measurement says. Suspects from the
 reading, none measured yet: scene files read whole (up to 7.8 MB,
 `Sconcert.SCX`) with two areas resident, textures kept decoded at 32 bits,
