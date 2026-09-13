@@ -298,7 +298,9 @@ of the view with `IMPACT03.WAV` on it), and kills you at 513.
    frame. And the GALLERY HARNESS needs `--var 342=1` (`Level 3`) for its
    death to restart the trial - `--shoot` skips trial 3's start script
    (AREA 59 record 26), and without the variable the phase-lost handler only
-   ends the mode, leaving the gunmen frozen. `verify.py: engine: shoot restart`.
+   ends the mode, leaving the gunmen frozen. `verify.py: engine: shoot restart`,
+   SHOWN TO FAIL with the clear disabled: 238's bolt kills again at 112 and the
+   mode is left into ACTOR_STATE 15; restored by editing the line back, green.
 11. **UNRESOLVED: HOW THE RELEASED SPECTRES ATTACK** (2026-09-13,
    [`released-spectres.md`](released-spectres.md)). The reader, from a video:
    the catacombs' patrolling spectres do not shoot, but the spectres a WRONG
