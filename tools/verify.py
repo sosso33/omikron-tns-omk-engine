@@ -11925,6 +11925,58 @@ def c_engine_tie_equivalence():
         "whose losers differ from the pre-2026-09-13 pass in content or order"
 
 
+def c_engine_pixel_tables():
+    r"""The frame's two pixel conversions by table give the functions' bits,
+    checked exhaustively (todo/optimization.md step 4).
+
+    On Vulkan the adventure frame is drawn on the GPU, read back to the CPU as
+    dithered 565 (`readback`), composited with the interface and sent back out
+    as RGBA8 (`presentSurface`), each a pixel at a time - and the readback's
+    per-pixel `quantise888Dither` with a division and a modulo for its matrix
+    cell was ~2 ms a frame. `quantise888` works on each channel alone and the
+    dither's offset is per channel, so `ui/surface.*` turns both conversions into
+    tables: 16 cells x 3 channels x 256 values ORed into the 565 word, and one
+    65536-entry table for 565 -> RGBA8.
+
+    `engine/tools/pixel_tables.cpp` checks every colour at every cell (2^24 x
+    16), whole rows at widths 1 / 3 / 640 / 641 / 800 over rows 0..7, and every
+    565 value. And from outside the tool: 30 DITHERED Vulkan frames of the
+    Anekbah street through the real readback, the build before (per pixel) and
+    after (tables), are byte-identical (960000 bytes).
+
+    One trap met building it, kept in the tool: calling `quantise888Dither`
+    INLINE as the reference in a row loop let Apple clang -O2 auto-vectorise it,
+    and the vectorised evaluation returned different values (its outputs summed
+    to 578065495 where the scalar function and the tables give 542859991), so
+    the check reported thousands of mismatches whose count changed with the
+    link. The reference is a never-inlined wrapper for that reason.
+
+    SHOWN TO FAIL: giving the GREEN table the 5-bit channels' dither offset
+    (`d5` for `d6`) turns it red with 74252288 of the 268435456 colours and 4570
+    of the 16680 row pixels wrong - the expansion table, untouched, stays 0.
+    """
+    import subprocess
+    eng = os.path.join(ROOT, "engine")
+    if not os.path.isdir(eng):
+        return ("skipped",), ("skipped",), "engine/ absent"
+    b = subprocess.run(["make", "-s", "build/pixel_tables"], cwd=eng,
+                       capture_output=True, text=True)
+    binp = os.path.join(eng, "build", "pixel_tables")
+    if b.returncode != 0 or not os.path.exists(binp):
+        return ("build failed",), ("built",), "engine/ must build"
+    r = subprocess.run([binp], capture_output=True, text=True)
+    m = re.search(r"colours (\d+) mismatches (\d+) \| rows (\d+) mismatches (\d+) \| "
+                  r"expand (\d+) mismatches (\d+)", r.stdout)
+    # a parse that reads nothing must fail AS A PARSE, not answer
+    if not m:
+        return ("no parse",), ("parsed",), "pixel_tables output - the tool's " \
+            "format no longer matches this check"
+    return tuple(int(x) for x in m.groups()), \
+        (268435456, 0, 16680, 0, 65536, 0), \
+        "every colour at every dither cell, whole rows, and every 565 value: " \
+        "checked, and those whose table answer differs from the function's"
+
+
 def c_engine_walker_falls():
     r"""`engine/`'s walker takes a drop instead of refusing it - and the
     measurement that says why it had to.
@@ -33853,6 +33905,7 @@ SLOW = [
     ("engine: walker falls", c_engine_walker_falls, "todo/omk-play"),
     ("engine: probe grid", c_engine_probe_grid, "todo/optimization.md 2; o3de/collision.h"),
     ("engine: tie equivalence", c_engine_tie_equivalence, "todo/optimization.md 3; o3de/depthtie.h"),
+    ("engine: pixel tables", c_engine_pixel_tables, "todo/optimization.md 4; ui/surface.h"),
     ("engine: props", c_engine_props, "todo/omk-play"),
     ("sprite ids scene-local", c_sprite_ids_are_scene_local, "docs/ASSETS"),
     ("engine: scene sounds", c_engine_scene_sounds, "engine/README"),

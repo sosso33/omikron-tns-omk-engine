@@ -369,3 +369,59 @@ long fillQuad(Surface& dst, const int x[4], const int y[4],
 }
 
 }  // namespace omk
+
+namespace omk {
+
+namespace {
+
+// One channel of `quantise888Dither` for every value and every matrix cell:
+// the same offset, clamp and rounding, shifted into its place in the 565 word.
+struct DitherTables {
+    std::uint16_t r[16][256], g[16][256], b[16][256];
+    DitherTables() {
+        const auto cl = [](int v) { return v < 0 ? 0 : v > 255 ? 255 : v; };
+        for (int cell = 0; cell < 16; ++cell) {
+            const int t = kBayer4[cell] - 8;
+            const int d5 = (t * 8) / 16, d6 = (t * 4) / 16;
+            for (int v = 0; v < 256; ++v) {
+                r[cell][v] = static_cast<std::uint16_t>(((cl(v + d5) * 31 + 127) / 255) << 11);
+                g[cell][v] = static_cast<std::uint16_t>(((cl(v + d6) * 63 + 127) / 255) << 5);
+                b[cell][v] = static_cast<std::uint16_t>((cl(v + d5) * 31 + 127) / 255);
+            }
+        }
+    }
+};
+
+const DitherTables& ditherTables() {
+    static const DitherTables t;
+    return t;
+}
+
+}  // namespace
+
+void quantise888DitherRow(const unsigned char* rgba, int w, int y, std::uint16_t* out) {
+    const DitherTables& t = ditherTables();
+    const int row = (y & 3) * 4;
+    for (int x = 0; x < w; ++x) {
+        const int cell = row + (x & 3);
+        const unsigned char* s = rgba + 4 * static_cast<std::size_t>(x);
+        out[x] = static_cast<std::uint16_t>(t.r[cell][s[0]] | t.g[cell][s[1]] | t.b[cell][s[2]]);
+    }
+}
+
+const unsigned char* expand565Rgba() {
+    static const std::vector<unsigned char> table = [] {
+        std::vector<unsigned char> e(65536u * 4u);
+        for (unsigned v = 0; v < 65536u; ++v) {
+            const int r = (v >> 11) & 0x1F, g = (v >> 5) & 0x3F, b = v & 0x1F;
+            e[4 * v + 0] = static_cast<unsigned char>((r << 3) | (r >> 2));
+            e[4 * v + 1] = static_cast<unsigned char>((g << 2) | (g >> 4));
+            e[4 * v + 2] = static_cast<unsigned char>((b << 3) | (b >> 3));
+            e[4 * v + 3] = 255;
+        }
+        return e;
+    }();
+    return table.data();
+}
+
+}  // namespace omk

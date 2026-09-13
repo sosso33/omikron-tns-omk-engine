@@ -95,6 +95,22 @@ inline std::uint16_t quantise888Dither(int r, int g, int b, int x, int y) {
     return quantise888(cl(r + d5), cl(g + d6), cl(b + d5));
 }
 
+// ---- THE SAME CONVERSIONS, BY TABLE (todo/optimization.md step 4) ----------
+//
+// `quantise888` works on each channel alone and the dither's offset is per
+// channel too, so for each of the 16 matrix cells the 565 value is three table
+// lookups ORed together - bit for bit `quantise888Dither`, over a whole row
+// without a division or a modulo per pixel. And the inverse a presented frame
+// needs, 565 -> the replicated 8-bit RGBA bytes, is one 65536-entry table.
+// `engine/tools/pixel_tables.cpp` checks both exhaustively (every colour at
+// every cell, every 565 value) - `verify.py: engine: pixel tables`.
+//
+// A row of `w` RGBA8 pixels (4 bytes each, alpha ignored) at framebuffer row
+// `y`, into `w` 565 pixels, dithered: out[x] == quantise888Dither(r, g, b, x, y).
+void quantise888DitherRow(const unsigned char* rgba, int w, int y, std::uint16_t* out);
+// 565 -> {r, g, b, 255} with bit replication, 4 bytes an entry, 65536 entries.
+const unsigned char* expand565Rgba();
+
 struct Rect { int left = 0, top = 0, right = 0, bottom = 0; };
 
 struct Surface {

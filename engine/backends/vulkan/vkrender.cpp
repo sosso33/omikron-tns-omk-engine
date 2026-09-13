@@ -1325,14 +1325,12 @@ bool VulkanRenderer::presentSurface(const omk::Surface& s) {
     vkMapMemory(dev_, upMem_, 0, bytes, 0, &p);
     auto* dst = static_cast<unsigned char*>(p);
     const int n = std::min<int>(w_ * h_, static_cast<int>(s.px.size()));
-    for (int i = 0; i < n; ++i) {
-        const std::uint16_t v = s.px[static_cast<std::size_t>(i)];
-        const int r = (v >> 11) & 0x1F, g = (v >> 5) & 0x3F, b = v & 0x1F;
-        dst[4 * i + 0] = static_cast<unsigned char>((r << 3) | (r >> 2));
-        dst[4 * i + 1] = static_cast<unsigned char>((g << 2) | (g >> 4));
-        dst[4 * i + 2] = static_cast<unsigned char>((b << 3) | (b >> 3));
-        dst[4 * i + 3] = 255;
-    }
+    // 565 -> replicated RGBA8 through the 65536-entry table, the same bytes
+    // the per-channel shifts gave (todo/optimization.md step 4).
+    const unsigned char* lut = omk::expand565Rgba();
+    for (int i = 0; i < n; ++i)
+        std::memcpy(dst + 4 * static_cast<std::size_t>(i),
+                    lut + 4 * static_cast<std::size_t>(s.px[static_cast<std::size_t>(i)]), 4);
     vkUnmapMemory(dev_, upMem_);
 
     VkCommandBuffer cb = oneShotBegin();
@@ -1978,12 +1976,17 @@ const omk::Surface& VulkanRenderer::readback() {
     // ...and the SUPERSAMPLE RESOLVE happens on the 8-bit side, BEFORE that
     // one quantisation: averaging four 565 values would quantise four times
     // and then average the error, which throws away most of the point.
-    if (ss_ <= 1) {
+    if (ss_ <= 1 && dither_) {
+        // Row by row through the channel tables - the same bits as
+        // `quantise888Dither` a pixel, without a division and a modulo for
+        // every one of them (todo/optimization.md step 4).
+        for (int y = 0; y < h_; ++y)
+            omk::quantise888DitherRow(src + 4 * static_cast<std::size_t>(y) * static_cast<std::size_t>(w_),
+                                      w_, y, fb_.px.data() + static_cast<std::size_t>(y) * static_cast<std::size_t>(w_));
+    } else if (ss_ <= 1) {
         for (int i = 0; i < w_ * h_; ++i)
             fb_.px[static_cast<std::size_t>(i)] =
-                dither_ ? omk::quantise888Dither(src[4 * i], src[4 * i + 1],
-                                                 src[4 * i + 2], i % w_, i / w_)
-                        : omk::rgb565(src[4 * i], src[4 * i + 1], src[4 * i + 2]);
+                omk::rgb565(src[4 * i], src[4 * i + 1], src[4 * i + 2]);
     } else {
         const int n = ss_ * ss_;
         for (int y = 0; y < h_; ++y)

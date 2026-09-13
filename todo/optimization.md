@@ -59,7 +59,7 @@ not a CPU figure). Against the original's 32 MB, both are the port's.
 | 1 | a clean BASELINE: the same street run on an idle machine, per-frame time and the sample, recorded here | **DONE** 2026-09-13 - see "Before and after" below |
 | 2 | a SPATIAL GRID over the walkable soup (H1, H3): built once per resident set, `floorUnder` / `surfaceUnder` walk only the cells under the probe | **DONE** 2026-09-13 - the street from 24.2 to 45.2 fps, frames byte-identical, `engine: probe grid` |
 | 3 | the depth tie only where it can matter (H2) | **DONE** 2026-09-13 - same decisions on hashed sets; uncapped 42.7 -> ~51.5 fps, capped CPU 72 -> 57; `engine: tie equivalence` |
-| 4 | the interface composited on the GPU in adventure mode (H4) | open |
+| 4 | the interface composited on the GPU in adventure mode (H4) | **the conversions DONE** 2026-09-13 - readback and upload by table, uncapped ~51.5 -> ~59.5 fps, capped CPU 57 -> 49, `engine: pixel tables`; composing on the GPU itself still open |
 | 5 | break down `main`'s own time (H5) and re-rank | open |
 | 6 | the memory pass: where 236 MB goes, against a 365 MB Vita budget that vitaGL's textures also come out of | open |
 | 7 | re-measure everything, and decide whether the Vita is in reach | open |
@@ -338,6 +338,74 @@ Check: `engine: sign tie` stays green and the per-frame dropped count is
 unchanged on the street run; the `std::set` samples disappear.
 
 ### 4. The interface on the GPU
+
+#### The conversions, done 2026-09-13 - composing on the GPU is still open
+
+**Where the time was.** The adventure frame on Vulkan makes a round trip: the
+GPU draws the 3D view, `VulkanRenderer::readback` brings it to the CPU as the
+engine's RGB565, the interface is composited over it on the CPU, and
+`presentSurface` sends the result back out. The 1320 samples `readback` had
+after step 3 were its OWN loop, not the transfer: 888 -> dithered 565 a pixel at
+a time, each pixel paying a division and a modulo for its matrix cell
+(`i % w_`, `i / w_`) and a call to `quantise888Dither`. `presentSurface`'s
+565 -> RGBA8 was the same shape.
+
+**What changed.** `quantise888` works on each channel alone and the dither's
+offset is per channel, so for each of the 16 matrix cells the 565 word is three
+table lookups ORed together: `quantise888DitherRow` in `ui/surface.*` converts a
+whole row that way, and `expand565Rgba` is one 65536-entry table for the
+upload. `readback`'s dithered, non-supersampled path and `presentSurface` use
+them; the undithered and supersampled paths are unchanged. Composing the
+interface on the GPU - which would remove the round trip itself - is NOT done,
+and stays the larger half of this step.
+
+**Same bits, proved two ways.** `engine/tools/pixel_tables.cpp` checks every
+colour at every cell (2^24 x 16 = 268435456), whole rows at widths 1 / 3 / 640 /
+641 / 800 over rows 0..7, and all 65536 565 values: 0 mismatches. And from
+outside the tool, 30 DITHERED Vulkan frames of the street through the real
+readback - the step-3 build (per pixel) against this one (tables) - are
+byte-identical, 960000 bytes. (`run_vulkan` renders with the dither OFF, so its
+identical frames said nothing about this path; the dithered comparison is the
+one that counts.) `verify.py: engine: pixel tables`. SHOWN TO FAIL: the green
+table given the 5-bit channels' offset gives 74252288 colours and 4570 row
+pixels wrong; restored, green. `engine: dither`, `engine: sign tie` and
+`engine: tie equivalence` pass.
+
+**A LEAD, not chased: `quantise888Dither` is not stable under
+auto-vectorisation.** The first version of the tool called it INLINE as the
+reference inside the row loop, and reported ~8000 row "mismatches" whose count
+changed with the link (8615 against every engine object, 8308 against
+`surface.o` alone) and vanished with a `printf` in the loop, under ASan/UBSan
+at -O1, or with `-fno-vectorize -fno-slp-vectorize`. Summing each side's output
+over the same pixels: the row tables give **542859991** in every build; the
+inline function gives **542859991** unvectorised and **578065495** vectorised.
+So Apple clang's vectorised evaluation of `quantise888Dither` returns different
+values - a compiler fault or undefined behaviour the vectoriser exposes, not
+settled. The tool now calls a never-inlined wrapper. It matters beyond the tool
+because `raster.cpp`, the software reference, calls the same function in its
+per-pixel loops; the Vulkan readback it replaced was evidently not affected
+(the real frames match the tables).
+
+**Before and after** (same street, same method; load average 8-9 during these
+runs, higher than before):
+
+| | depth tie on hashed sets (`cb00577`) | + pixel tables |
+|---|---|---|
+| uncapped, typical 1 s window | ~51.5 fps | **~59.5 fps** |
+| capped: fps median / slowest window | 30.0 / 29.8 | 30.0 / 29.7 |
+| capped: worst frame, median of windows | 35 ms | 36 ms |
+| capped: CPU, mean (100 = one core) | 57 | **49** |
+| capped: physical footprint | 245 MB | 243 MB |
+
+(Peak RSS read 147 MB in the second run against 273 before while the
+footprint did not move - a sampling artefact, not a saving.)
+
+**The re-profile, uncapped, after step 4** (15 s): `main`'s own time 3092,
+the moving mesh's soup patch (`main::$_41`) 872, `_xzm_free` 724,
+`_platform_memmove` 451, the tie pass's key sorting 403, `buildSoupGrid` 390,
+`floorUnder` 312, `quantise888DitherRow` 274, the tie pass's hash lookups
+268 + 240, `uploadGeometry` 259, `applyLights` 244. `readback` itself is gone
+from the list.
 
 The viewport item's picture reaches the composer through `readback()`. Draw
 the interface into the same frame on the GPU (the I2D layer is 16 layers of
