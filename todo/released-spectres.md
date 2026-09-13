@@ -196,5 +196,19 @@ until the mechanism is found and reported.**
      where he used to rush onto the player's cell (6 -> 8): both legs straight;
    * `shoot hit` stays red for the reason it was red before, its numbers moved
      (240 also struck and killed on its route).
+
+   **Shown to fail** (each restored by editing the line back, the object
+   deleted by name, the probe's output compared with the committed one):
+   * the pick keeping the LONGEST reaching range - `pick near 19`, `shoot
+     generic` red;
+   * the difficulty's sign flipped - difficulty 0 gives 9 where it gives 6,
+     `shoot generic` red;
+   * **NOT shown**: giving the pair-entry tick its step back left `shoot death`
+     GREEN. With the clip clock fed to states 10 and 11, running state 10 on the
+     tick it is entered only matters when the OLD clip has less than a frame
+     left, and on the supermarket's route it has more - 77 still strikes at 459
+     and kills at 491. The skip stays because it is the engine's ORDER (the
+     engage runs inside an arm, state 10 first runs on the next tick), and it is
+     LABELLED as undistinguished by any route measured.
 6. **Port the LANDING messages** - `Walk_GroundResponse`'s 10 and 11 - shown on
    AREA 141's -45.
