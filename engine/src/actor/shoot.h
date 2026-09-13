@@ -430,6 +430,10 @@ struct EngageIn {
     bool targetAlive = true;      // target record `+92` > 0
     bool rayHits = false;         // `sub_4449E0` found geometry in the way
     bool gridClear = false;       // `sub_4359A0` reached
+    // `sub_420D90`, the cone with the acquisition range DOUBLED - the sight of
+    // the cross-floor watcher (record flag 0x800000, property 37 bit 4).
+    // `inCone` is `sub_420C70`, which is also the spectre's (type 12) sight.
+    bool inWideCone = false;
     int  found421020 = 0;         // `sub_421020` - UNREAD, non-zero on success
     bool coinHeads = false;       // the disengage arm's own `rand() & 1`
     // THE CROSS-FLOOR ARM (`sub_426E00` at 05_sys.c 6922,

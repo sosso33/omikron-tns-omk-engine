@@ -203,8 +203,52 @@ does no triangle test at all on meshes flagged `0x41`.
    complete: the log holds a byte that makes `grep` treat it as binary and
    print nothing (and `cut` refuse it), and "182 ticks" is the adventure
    walker's count, not the frame count. `grep -a` and `LC_ALL=C cut` read it.
-5. **The two missing arms** in `shootEngage`: the spectre (type 12) and the
-   cross-floor sight (`0x800000`), with a probe element that exercises each.
+5. ~~**The two missing arms**~~ - **DONE 2026-09-13.** In `shootEngage`, in
+   the engine's order - after the dead/`0x8000` gate, BEFORE the floor split:
+
+   * **the spectre**, type 12: `sub_420C70`'s cone and a clear `sub_4449E0`
+     -> state 3, latch 0x20, return 1; otherwise **state 4**, return 0. His arm
+     never asks which floor either of them is on.
+   * **the cross-floor watcher**, `0x800000` with the target on ANOTHER floor:
+     `sub_420D90` (the doubled cone) and a clear ray -> 3, latch, 1; not seen
+     and latched -> 3 and 2; unlatched -> 0, nothing written. It returns before
+     the stair search, so a watcher never goes looking for a staircase.
+
+   Both cones were ported long ago (`shootAcquires`, `doubleRange`) and the
+   0x800000 fan-out of property 37 bit 4 was already in `initShootRecord`; the
+   viewer now computes the wide cone, and casts the ray for these two arms at
+   ANY range (the general arm casts it only inside half its inner range).
+
+   **Where the engage is called, corrected.** `sub_424DE0` calls `sub_426E00`
+   from brain states **3, 4, 6, 8, 11, 13, 14 and 28** (05_sys.c 5747..6664:
+   3/4/6 under the `sub_4358D0` switch, the rest under `v180`) - §1 said "3, 8,
+   9/28, 11, 13", missing the patrol (4) and 14. The viewer calls it EVERY
+   tick in every state, a superset that has not mattered for the general arm
+   and stays OPEN; but the two new arms write the state (3 or 4) on every
+   call, so they run only in the engine's calling states. Outside them nothing
+   reads the result (the port's consumers are 3, 6, 8 and 11).
+
+   **The probe** (`shoot_range`, `verify.py: shoot generic`): a spectre in his
+   cone with a clear ray 1 / state 3 / latched; the set in the way 0 / 4;
+   behind him 0 / 4; seen from another floor 1 / 3. A watcher seen by the wide
+   cone 1 / 3 / latched; blocked 0 and his state left at 6; blocked but
+   latched 2 / 3; on the player's own floor the general arm (0 / 6).
+
+   **Who reaches them** (`verify.py: shoot range`), over the 1032 shipped
+   actor records: **24 are type 12, and every one of them also carries bit
+   4** - harmless, since the spectre arm is tested first and returns; **275
+   carry bit 4**, in 49 AREA and 9 SCENE chunks - 28 in the catacombs (AREA
+   141), 2 in the supermarket's SCENE 56.
+
+   **The catacombs** (the patrol check's route, 500 frames): the four staged
+   spectres take the arm from their first tick. 589's ray is blocked by the set
+   while he is IN his cone at 1078 units (frame 40), and outside it again by
+   71; the others never see the player; none of them leaves his patrol. The
+   six CHD_FN gunmen stand on floors 1, 4, 5 and 7 against the player's 0 and
+   log no watcher sight, so they do not carry bit 4 - no watcher is on this
+   route. (A first-tick line reads 42863 units: the spectres are not yet
+   DRAWN on the tick they are staged, and `drawAt` is still zero - the port's
+   one-frame staging, not a sight.)
 6. **The ray's `0x41` skip** (`sub_444460`), measured on the shot soups before
    and after, bolts included.
 7. **Measure in the arenas and hand it to a person**: the gallery's gunmen still

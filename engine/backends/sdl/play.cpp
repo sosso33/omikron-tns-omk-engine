@@ -11862,6 +11862,11 @@ int main(int argc, char** argv) {
                         omk::AcquireOut ao;
                         const bool cone = omk::shootAcquires(rec, fin.self,
                                                              fin.target, ao, false);
+                        // ...and `sub_420D90`, the same cone with the range
+                        // doubled: the cross-floor watcher's sight
+                        omk::AcquireOut aoWide;
+                        const bool wideCone = omk::shootAcquires(rec, fin.self,
+                                                                 fin.target, aoWide, true);
                         omk::EngageIn ein;
                         // ---- WHICH FLOOR EACH OF THEM IS ON -----------------
                         // `sub_426E00` compares the two records' `+188`, and
@@ -11938,8 +11943,17 @@ int main(int argc, char** argv) {
                         // Until 2026-09-13 this was forced TRUE, which kept every
                         // close gunman in state 6 and never let him close to 13/8.
                         ein.rayHits = false;
-                        if (gridSees && player && s.mo &&
-                            double(rec.rangeInner) * 0.5 > ao.dist3d) {
+                        ein.inWideCone = wideCone;
+                        // THE TWO OTHER SIGHTS (`todo/shoot-sight.md` step 5): a
+                        // spectre (type 12) and a cross-floor watcher (0x800000,
+                        // the player on another floor) see by cone AND ray at
+                        // ANY range, so for them the ray is cast every time
+                        const bool spectreArm = rec.type == 12;
+                        const bool watchArm = !spectreArm && !ein.sameNode &&
+                                              (rec.flags & 0x800000u) != 0;
+                        if (player && s.mo &&
+                            (spectreArm || watchArm ||
+                             (gridSees && double(rec.rangeInner) * 0.5 > ao.dist3d))) {
                             float from[3] = {player->pos()[0],
                                              player->pos()[1] - player->cameraLift(),
                                              player->pos()[2]};
@@ -11970,9 +11984,24 @@ int main(int argc, char** argv) {
                             }
                             ein.rayHits = hitT >= 0.0;
                             static std::map<int, int> rayTold;
+                            // said when the verdict changes - for the two other
+                            // sights the cone's half of it too
+                            const int rayKey = int(ein.rayHits) +
+                                ((spectreArm || watchArm) && (spectreArm ? cone : wideCone) ? 2 : 0);
                             if (auto rt = rayTold.find(s.actor);
-                                rt == rayTold.end() || rt->second != int(ein.rayHits)) {
-                                rayTold[s.actor] = int(ein.rayHits);
+                                rt == rayTold.end() || rt->second != rayKey) {
+                                rayTold[s.actor] = rayKey;
+                                if (spectreArm || watchArm)
+                                    std::printf("frame %ld: actor %d %s - RAY (sub_4449E0) at %.1f, "
+                                                "%s: %s, %s cone\n", n, s.actor, s.model.c_str(),
+                                                double(ao.dist3d),
+                                                spectreArm ? "the SPECTRE's sight (type 12)"
+                                                           : "the CROSS-FLOOR watcher's sight (0x800000)",
+                                                !soup ? "no set to cast over"
+                                                : ein.rayHits ? "HITS the set" : "CLEAR",
+                                                (spectreArm ? cone : wideCone) ? "inside his"
+                                                                               : "outside his");
+                                else
                                 std::printf("frame %ld: actor %d %s - RAY (sub_4449E0) at %.1f, inside "
                                             "half his inner range %.1f: %s\n", n, s.actor,
                                             s.model.c_str(), double(ao.dist3d),
@@ -11985,7 +12014,19 @@ int main(int argc, char** argv) {
                             }
                         }
                         ein.coinHeads = ((s.actor * 2654435761u) >> 16) & 1;
-                        const int eng = omk::shootEngage(rec, ao, cone, ein);
+                        // `sub_424DE0` calls `sub_426E00` from states 3, 4, 6, 8,
+                        // 11, 13, 14 and 28 only (05_sys.c 5747..6664). This
+                        // viewer calls it every tick in every state - a
+                        // superset that is still OPEN for the general arm - but
+                        // the spectre's and the watcher's arms WRITE his state
+                        // (3 or 4) on every call, so they run only where the
+                        // engine would call them; elsewhere nothing reads the
+                        // result (the port's consumers are 3, 6, 8 and 11).
+                        const bool engineCalls = rec.state == 3 || rec.state == 4 ||
+                            rec.state == 6 || rec.state == 8 || rec.state == 11 ||
+                            rec.state == 13 || rec.state == 14 || rec.state == 28;
+                        const int eng = ((spectreArm || watchArm) && !engineCalls)
+                                            ? 0 : omk::shootEngage(rec, ao, cone, ein);
                         fin.targetPredicate = eng != 0;
                         fin.targetPredicateBits = eng;
                         fin.canFire = eng != 0;

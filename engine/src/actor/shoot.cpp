@@ -1180,6 +1180,37 @@ int shootEngage(ShootRecord& r, const AcquireOut& a, bool inCone, const EngageIn
         return 0;
     };
 
+    // ---- THE SPECTRE, character type 12 (05_sys.c 6894) ----------------
+    // His sight is NOT the grid: `sub_420C70`'s cone and a clear
+    // `sub_4449E0`, whatever floor either of them is on - seen, state 3 with
+    // the 0x20 latch and 1; otherwise `LABEL_24`, STATE 4, back to his patrol.
+    if (r.type == 12) {
+        if (!in.rayHits && inCone) {
+            r.state = 3;
+            r.flags |= 0x20u;
+            return 1;
+        }
+        r.state = 4;
+        return 0;
+    }
+    // ---- THE CROSS-FLOOR WATCHER, flag 0x800000 on ANOTHER floor (6911) --
+    // `sub_420D90`, the doubled cone, and a clear ray: seen, `LABEL_15` as
+    // above. Not seen: latched, state 3 and 2; unlatched, 0 and nothing
+    // written. This arm comes BEFORE the stair search below, so a watcher
+    // never goes looking for a staircase.
+    if (!in.sameNode && (r.flags & 0x800000u)) {
+        if (!in.rayHits && in.inWideCone) {
+            r.state = 3;
+            r.flags |= 0x20u;
+            return 1;
+        }
+        if (r.flags & 0x20u) {
+            r.state = 3;
+            return 2;
+        }
+        return 0;
+    }
+
     const bool coneOk = in.sameNode && inCone;
     if (!in.sameNode) {
         // ---- THE CROSS-FLOOR ARM (05_sys.c 6922, `todo/shoot-navedge.md`) --

@@ -30,6 +30,8 @@ int main(int argc, char** argv) {
     omk::DataFs fs(argv[1]);
 
     long records = 0, withRange = 0, withCone = 0;
+    long spectres = 0, watchers = 0, spectreWatchers = 0;   // `sub_426E00`'s other two sights
+    std::map<std::string, long> watcherChunks;
     std::map<int, long> rangeM, coneDeg;
     for (const char* arch : {"AREA", "SCENE"}) {
         const auto raw = fs.read(std::string("IAM/") + arch);
@@ -57,6 +59,13 @@ int main(int argc, char** argv) {
                 if (omk::readActorProperty(rec, 30, v)) p.rangeThirdM   = v;
                 if (omk::readActorProperty(rec, 29, v)) p.coneDegrees   = v;
                 if (omk::readActorProperty(rec, 37, v)) p.behaviourBits = v;
+                // +176 is the character type (`Session::typeOfActor`), +80 in
+                // the shoot record; property 37 bit 4 is the record's 0x800000
+                std::uint32_t ty = 0;
+                std::memcpy(&ty, rec.data() + 176, 4);
+                const bool sp = ty == 12, wa = (p.behaviourBits & 0x04) != 0;
+                spectres += sp; watchers += wa; spectreWatchers += sp && wa;
+                if (wa) ++watcherChunks[std::string(arch) + " " + std::to_string(ci)];
                 if (p.rangeAcquireM > 0) { ++withRange; ++rangeM[p.rangeAcquireM]; }
                 if (p.coneDegrees   > 0) { ++withCone;  ++coneDeg[p.coneDegrees]; }
             }
@@ -64,6 +73,10 @@ int main(int argc, char** argv) {
     }
     std::printf("actor records %ld, with an acquisition range %ld, with a cone %ld\n",
                 records, withRange, withCone);
+    std::printf("sight arms corpus: type 12 %ld, property 37 bit 4 %ld, both %ld; watchers in",
+                spectres, watchers, spectreWatchers);
+    for (const auto& kv : watcherChunks) std::printf(" [%s]:%ld", kv.first.c_str(), kv.second);
+    std::printf("\n");
     std::printf("ranges (metres):");
     for (const auto& kv : rangeM) std::printf(" %d:%ld", kv.first, kv.second);
     std::printf("\ncones (degrees):");
@@ -467,6 +480,42 @@ int main(int argc, char** argv) {
                         r20, in20.first.state, r30, in30.first.state,
                         r50, in50.first.state, int((in50.first.flags & 0x20u) != 0),
                         in50b.first.state, rd);
+        }
+
+        // ---- THE OTHER TWO SIGHTS of `sub_426E00` (`todo/shoot-sight.md` 5) ----
+        //
+        // A SPECTRE (type 12) sees by `sub_420C70`'s cone and a clear ray on ANY
+        // floor, and otherwise goes back to his patrol; a CROSS-FLOOR WATCHER
+        // (0x800000, the target on another floor) by the doubled cone and a
+        // clear ray, and otherwise stays put - in 3 with 2 if he has seen you.
+        {
+            struct Out { int ret, state, latch; };
+            omk::AcquireOut aa; aa.dist3d = 39.0f * 10;
+            auto run = [&](std::uint32_t type, std::uint32_t flags, bool sameNode, bool cone,
+                           bool wide, bool ray, int state) {
+                omk::ShootRecord q; q.node = 2; q.state = state; q.type = type;
+                q.flags |= flags;
+                q.rangeAcquire = 39.0f * 60; q.rangeInner = 39.0f * 20; q.rangeThird = 39.0f * 40;
+                omk::EngageIn e; e.sameNode = sameNode; e.targetAlive = true;
+                e.rayHits = ray; e.inWideCone = wide; e.gridClear = false;
+                const int r = omk::shootEngage(q, aa, cone, e);
+                return Out{r, q.state, int((q.flags & 0x20u) != 0)};
+            };
+            const Out s1 = run(12, 0, true, true, false, false, 4);    // cone, clear
+            const Out s2 = run(12, 0, true, true, false, true, 3);     // cone, the set in the way
+            const Out s3 = run(12, 0, true, false, false, false, 3);   // behind him
+            const Out s4 = run(12, 0, false, true, false, false, 4);   // another floor, seen
+            const Out w1 = run(3, 0x800000u, false, false, true, false, 6);     // wide cone, clear
+            const Out w2 = run(3, 0x800000u, false, false, true, true, 6);      // ray hits, unlatched
+            const Out w3 = run(3, 0x800000u | 0x20u, false, false, true, true, 6);  // ...latched
+            const Out w4 = run(3, 0x800000u, true, false, true, false, 6);      // same floor: general arm
+            std::printf("sight arms: spectre sees %d/state %d latch %d  blocked %d/state %d  "
+                        "behind %d/state %d  other floor %d/state %d; watcher sees %d/state %d "
+                        "latch %d  blocked %d/state %d  latched-blocked %d/state %d  "
+                        "same floor %d/state %d\n",
+                        s1.ret, s1.state, s1.latch, s2.ret, s2.state, s3.ret, s3.state,
+                        s4.ret, s4.state, w1.ret, w1.state, w1.latch, w2.ret, w2.state,
+                        w3.ret, w3.state, w4.ret, w4.state);
         }
 
         // ---- the SHOOT CAMERA's eye height (`todo/omk-play.md` 97k) ----

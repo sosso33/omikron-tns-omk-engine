@@ -28083,7 +28083,14 @@ def c_shoot_generic():
                     r"\s+dead (-?\d+)$", r.stdout, re.M)
     ey  = re.search(r"^shoot eye: (\d+) spheres, extent below ([\d.]+), "
                     r"crown ([\d.]+), 0\.7x ([\d.]+)$", r.stdout, re.M)
-    if not (cov and unr and tr and sn and wr and nv and tv and pt and hb and aq and cl and mv and en and ey):
+    # THE OTHER TWO SIGHTS of `sub_426E00` (`todo/shoot-sight.md` step 5): the
+    # spectre (type 12) and the cross-floor watcher (0x800000), each outcome
+    sa  = re.search(r"^sight arms: spectre sees (-?\d+)/state (\d+) latch (\d)\s+"
+                    r"blocked (-?\d+)/state (\d+)\s+behind (-?\d+)/state (\d+)\s+"
+                    r"other floor (-?\d+)/state (\d+); watcher sees (-?\d+)/state (\d+) "
+                    r"latch (\d)\s+blocked (-?\d+)/state (\d+)\s+latched-blocked "
+                    r"(-?\d+)/state (\d+)\s+same floor (-?\d+)/state (\d+)$", r.stdout, re.M)
+    if not (cov and unr and tr and sn and wr and nv and tv and pt and hb and aq and cl and mv and en and ey and sa):
         return ("unparsed",), ("parsed",), "the probe's own generic: lines"
     got = (tuple(int(x) for x in cov.groups()), tuple(int(x) for x in unr.groups()),
            tuple(int(x) for x in tr.groups()), tuple(int(x) for x in sn.groups()),
@@ -28100,7 +28107,8 @@ def c_shoot_generic():
            (int(mv.group(1)), int(mv.group(2)), int(mv.group(3)), int(mv.group(4)),
             int(mv.group(5)), mv.group(6), int(mv.group(7))),
            tuple(int(x) for x in en.groups()),
-           (int(ey.group(1)), ey.group(2), ey.group(3), ey.group(4)))
+           (int(ey.group(1)), ey.group(2), ey.group(3), ey.group(4)),
+           tuple(int(x) for x in sa.groups()))
     want = ((16, 16, 16), (0, 0), (4, 11, 2, 3, 10),
             (32, -180, 30, -90, 31, 90), (10, 350),
             (1, "143.1", 500, 2, 0, 1, 2, 6),
@@ -28117,7 +28125,14 @@ def c_shoot_generic():
             (1, 0, 0, 1, 1), (-1, 55, 4, 1),
             (0, 0, 90, -90, 180, "0.0", 1),
             (1, 6, 0, 6, 0, 3, 0, 4, 0),
-            (4, "41.81", "29.02", "29.27"))
+            (4, "41.81", "29.02", "29.27"),
+            # the SPECTRE: seen -> 1, state 3, latched; the set in the way or
+            # the player behind him -> 0 and STATE 4, back to his patrol; and
+            # seen from ANOTHER floor all the same (his arm never asks). The
+            # WATCHER: seen by the doubled cone -> 1, 3, latched; blocked ->
+            # 0 and his state untouched; blocked but latched -> 2 and 3; on the
+            # player's own floor the general arm, whose grid is blocked here
+            (1, 3, 1, 0, 4, 0, 4, 1, 3, 1, 3, 1, 0, 6, 2, 3, 0, 6))
     return got, want, ("the machine's states, how many are TRANSCRIBED, and "
                        "that every transcribed one is in the state set; then "
                        "that the ten UNREAD arms change nothing at all - no "
@@ -28252,7 +28267,12 @@ def c_shoot_range():
     sn = re.search(r"^snap: abeam (-?\d+)\s+hard-behind (-?\d+)$", r.stdout, re.M)
     cv = re.search(r"^converge: (\d+) frames from 135 deg, (\d+) frames going "
                    r"the wrong way, final yaw (-?[\d.]+)$", r.stdout, re.M)
-    if not (hm and rg and cn and rc and ac and tn and sn and cv):
+    # WHO REACHES `sub_426E00`'s OTHER TWO SIGHTS (`todo/shoot-sight.md` 5):
+    # character type 12 (the SPECTRE's arm) at record +176, property 37 bit 4
+    # (the record's 0x800000, the CROSS-FLOOR watcher's), and both
+    sc = re.search(r"^sight arms corpus: type 12 (\d+), property 37 bit 4 (\d+), "
+                   r"both (\d+); watchers in", r.stdout, re.M)
+    if not (hm and rg and cn and rc and ac and tn and sn and cv and sc):
         return ("unparsed",), ("parsed",), "the probe's own summary lines"
     ranges = tuple(sorted((int(a), int(c)) for a, c in
                           (kv.split(":") for kv in rg.group(1).split())))
@@ -28263,7 +28283,8 @@ def c_shoot_range():
             rc.group(4), int(rc.group(5)), rc.group(6)),
            tuple(int(x) for x in ac.groups()),
            tuple(tn.groups()), tuple(int(x) for x in sn.groups()),
-           (int(cv.group(1)), int(cv.group(2))))
+           (int(cv.group(1)), int(cv.group(2))),
+           tuple(int(x) for x in sc.groups()))
     want = ((1032, 386, 427),
             ((10, 20), (12, 8), (15, 16), (16, 2), (20, 13), (25, 3), (30, 86),
              (50, 100), (60, 3), (70, 49), (80, 54), (90, 28), (500, 1), (13944, 3)),
@@ -28272,7 +28293,12 @@ def c_shoot_range():
             (780, 0, 0, "0.7071", 10, "04800040"),
             (1, 0, 0, 0, 1, 0, 1),
             ("0", "0.0", "0", "-1.0", "0", "-5.0", "0", "-10.0", "5.0"),
-            (0, 180), (37, 0))
+            (0, 180), (37, 0),
+            # 24 spectres, and EVERY one of them carries bit 4 too - which
+            # changes nothing, because the spectre's arm is tested first and
+            # returns; 275 records carry the watcher's bit, 28 of them in the
+            # catacombs (AREA 141) and 2 in the supermarket's SCENE 56
+            (24, 275, 24))
     return got, want, ("actor records, those carrying an acquisition range "
                        "and those carrying a cone; the two histograms, which "
                        "are round metres and round degrees because a person "
@@ -28289,7 +28315,10 @@ def c_shoot_range():
                        "CONVERGENCE - frames to aim from 135 degrees and how "
                        "many of them went the wrong way, which is the only "
                        "row that can see a forward vector built with the "
-                       "wrong rotation convention")
+                       "wrong rotation convention; and who reaches the "
+                       "engage's other two sights - the spectres (type 12), "
+                       "the cross-floor watchers (property 37 bit 4), and "
+                       "how many are both")
 
 
 def c_bone_names():
