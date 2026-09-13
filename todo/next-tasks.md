@@ -36,7 +36,7 @@ caught all three:
 
 | do | # | task | why now |
 |---|---|---|---|
-| 1 | 21 | a shop conversation's first camera is outside the shop | **20 minutes of PLAY, not a slice.** The camera-travel fix of 2026-09-06 (`d290331`) is this exact mechanism: a travel kept the OUTGOING camera's subjects, so an absolute camera arrived flagged relative to the player and the shot ended ~3000 units outside the building. That predicts "right the second time" precisely - the second travel starts from a camera that is already absolute. Walk into the drugstore from the street and talk to the seller once; if it is good, close the row |
+| ~~1~~ | ~~21~~ | ~~a shop conversation's first camera is outside the shop~~ **FIXED, confirmed by the reader 2026-09-13** | **20 minutes of PLAY, not a slice.** The camera-travel fix of 2026-09-06 (`d290331`) is this exact mechanism: a travel kept the OUTGOING camera's subjects, so an absolute camera arrived flagged relative to the player and the shot ended ~3000 units outside the building. That predicts "right the second time" precisely - the second travel starts from a camera that is already absolute. Walk into the drugstore from the street and talk to the seller once; if it is good, close the row |
 | 2 | 6 | street NPCs stop and T-pose | now the first open BUG, visible on every street, and the first step is attribution rather than code: `.OPT` walker or `scx.play.actor` extra decides the owner and the fix |
 | 3 | 9 | main menu completed | the widget tree and the answer sites are lifted, the start menu already answers for itself, and the save/load menus built for item 8 are most of the machinery. Pin what "new game is not correct" means in one run before building anything |
 | 4 | 10 | sneak: character / info / config pages | plus `todo/sneak.md` 2a, the ROW SCROLLING, which belongs with them: the row window is hardcoded 0, so a tenth carried object cannot be reached at all. That is the one that makes the device wrong rather than thin |
@@ -47,6 +47,8 @@ caught all three:
 | 9 | 15 | jump / fall animation and physics | the jump's impulse and the landing bands are measured (`todo/player-vertical.md`), so this is nearer than the triage thought - but a fall that hurts wants 14 read first |
 | 10 | 17 | fight mode | large, and data-constrained by construction: `fight.begin` announces nothing, so no trace can ever be its oracle |
 | 11 | 18 | shoot mode | **STARTED 2026-09-09**, `todo/shoot-mode.md`, and step 1 already moved it: the navigation data the decision said this tree has not got is `MAP2D/*.mpt`, which SHIPS - 16 maps, 16 arenas, correspondence exact both ways. Line of sight and weapon range are still unread, so the decision stands for the generic arm and is now a question with an answer in the tree |
+
+**2026-09-13: item 4 (the tutorial zone), item 21, `todo/play-test.md` 7 (the render work) and 8 (the jump) are all CONFIRMED by the reader** - the paragraph below is history.
 
 Not on the list and worth naming: **item 4 is committed and not yet confirmed
 by a person**, `todo/play-test.md` 7 is a whole batch of render work nobody has
@@ -271,7 +273,7 @@ because nine of the eleven builders that write one of those fields write it
 inside a conditional arm, and taking them all put the start menu's confirm
 dialog on `Annuler`.
 
-### 4. Tuto zone fires repeatedly and does not stop the player — **DONE 2026-09-08, to be confirmed in play**
+### 4. Tuto zone fires repeatedly and does not stop the player — **DONE 2026-09-08, CONFIRMED IN PLAY 2026-09-13**
 
 The zone lifecycle (enter / activate / leave, the 68-byte record, the save
 bit) is read and there is a `tuto camera` check already. Two symptoms in one
@@ -613,7 +615,7 @@ triangles.
 **Still open**: the third refusal above, which needs the flag carried per
 triangle into the step test.
 
-### 21. A shop conversation's first camera is placed outside the shop — M, good evidence
+### 21. A shop conversation's first camera is placed outside the shop — **FIXED, CONFIRMED BY THE READER 2026-09-13** (*"item #21 is already fixed too"*)
 
 Reported 2026-09-06, and the shape of the report is the useful part: in many
 shops (the drugstore is the reader's example) the **first** attempt to talk to

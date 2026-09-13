@@ -205,7 +205,9 @@ way `sub_457F50` moves the slider's node.
 
 ---
 
-## 7. THE RENDER WORK OF 2026-09-09 — the whole of it needs eyes, 5 minutes
+## 7. THE RENDER WORK OF 2026-09-09 — **CONFIRMED IN PLAY 2026-09-13**
+
+**Confirmed by the reader, 2026-09-13** (*"section 7 and jump are confirmed"*). What follows is kept as the recipe.
 
 Six things landed in one day and **not one has been judged by a person.**
 Every check behind them measures a number a metric can compute, and each says
@@ -261,7 +263,9 @@ is better.
 
 ---
 
-## 8. THE JUMP — the one thing here a check CANNOT settle, 2 minutes
+## 8. THE JUMP — **CONFIRMED IN PLAY 2026-09-13**
+
+**Confirmed by the reader, 2026-09-13**, with section 7. What follows is kept as the recipe.
 
 The same day, `todo/player-vertical.md` steps 1-3 landed: the walk no longer
 floats, and the jump has an impulse for the first time. The walk half is
