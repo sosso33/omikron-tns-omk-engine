@@ -292,6 +292,13 @@ of the view with `IMPACT03.WAV` on it), and kills you at 513.
    sight, the ray, both arms, and the rays' two mesh skips (0x41 for both
    rays, 0x800 cutouts for the sight only). Left open there: the engage called
    every tick, the doors counted open, `shoot hit` to re-aim.
+12. ~~**A BOLT OUTLIVED THE MODE**~~ - FIXED 2026-09-13. `Shoot_Leave`'s first
+   call `sub_44CDB0(0)` empties the projectile pool; the port did not, and a
+   gunman's bolt in flight killed the player again on the gallery's restart
+   frame. And the GALLERY HARNESS needs `--var 342=1` (`Level 3`) for its
+   death to restart the trial - `--shoot` skips trial 3's start script
+   (AREA 59 record 26), and without the variable the phase-lost handler only
+   ends the mode, leaving the gunmen frozen. `verify.py: engine: shoot restart`.
 11. **UNRESOLVED: HOW THE RELEASED SPECTRES ATTACK** (2026-09-13,
    [`released-spectres.md`](released-spectres.md)). The reader, from a video:
    the catacombs' patrolling spectres do not shoot, but the spectres a WRONG

@@ -27798,6 +27798,51 @@ def c_engine_shoot_landing():
                        "and the 45 it takes from the health property the next frame")
 
 
+def c_engine_shoot_restart():
+    r"""`engine/`: THE GALLERY'S RESTART, and `Shoot_Leave` EMPTYING THE POOL.
+
+    AREA 59's phase-lost handler (message 1) ends the mode and restarts the
+    trial `Level 3` names: health back to 100, the trial's gunmen released and
+    hidden, the player put back at "Début Level 3" - whose start zone then
+    re-enters the mode. `--var 342=1` stands for trial 3's own start script,
+    which `--shoot` skips (without it the handler only ends the mode and the
+    gunmen stand frozen - a reader's report, 2026-09-13).
+
+    `Shoot_Leave`'s first call is `sub_44CDB0(0)`, which frees every entry of
+    the projectile pool at 0x531348. Until 2026-09-13 the port never emptied
+    it, and a gunman's bolt still in the air killed the player a SECOND time on
+    the restart frame. Shown: one kill, the pool emptied on the leave, the
+    mode left into ACTOR_STATE 1 (not 15), and re-entered with health 100.
+    """
+    import subprocess, re
+    fr = omkpaths.data_root()
+    eng = os.path.join(ROOT, "engine")
+    bld = subprocess.run(["make", "-s", "play"], cwd=eng, capture_output=True, text=True)
+    exe = os.path.join(eng, "build", "omk-play")
+    if bld.returncode != 0 or not os.path.exists(exe):
+        return ("build failed",), ("built",), "engine/ must build"
+    o = subprocess.run(
+        [exe, fr, os.path.join(ROOT, "tables"),
+         "--save", os.path.join(ROOT, "traces", "save-appart.bin"),
+         "--area", "59", "--stand", "5000,0,-2900,0", "--shoot", "--var", "342=1",
+         "--frames", "130", "--nodelay"],
+        capture_output=True, text=True, errors="replace",
+        env=dict(os.environ, SDL_VIDEODRIVER="dummy")).stdout
+    kills = re.findall(r"^frame (\d+): PLAYER HIT by actor (\d+)'s (?:bolt|strike) - .*KILLED", o, re.M)
+    back = re.findall(r"^frame (\d+): actor\.goto_address (\d+) - the player put down", o, re.M)
+    emptied = re.findall(r"^frame (\d+): the projectile pool emptied \(Shoot_Leave's sub_44CDB0\(0\)\) "
+                         r"- (\d+) bolts? in flight$", o, re.M)
+    modes = re.findall(r"^frame (\d+): SHOOT MODE (ENTER|LEAVE) \(Shoot_\w+\) - .*ACTOR_STATE (\d+)", o, re.M)
+    stat = re.findall(r"^frame (\d+): SHOOT STAT \(sub_423A40\) - the player's health -> (-?\d+)", o, re.M)
+    got = (kills, back, emptied, modes, stat[:1])
+    want = ([("51", "238")], [("112", "195")], [("112", "1")],
+            [("1", "ENTER", "3"), ("112", "LEAVE", "1"), ("113", "ENTER", "3")], [("113", "100")])
+    return got, want, ("the gallery harness with Level 3 set: one kill at 51, the restart putting "
+                       "the player at Début Level 3 (address 195) at 112, the projectile pool "
+                       "emptied as the mode ends - its one bolt in flight - the mode left into "
+                       "ACTOR_STATE 1 and re-entered at 113 with health 100")
+
+
 def c_engine_shoot_death():
     r"""`engine/`: THE PLAYER'S DEATH (`sub_423FC0`, readable 05_sys.c 4606) and
     his recovery (`Shoot_TickPlayer`'s first arm, 7454), on the real path - no
@@ -33473,6 +33518,7 @@ CHECKS = [
     ("shoot range",        c_shoot_range,       "todo/shoot-mode 5c, 7a; actor/shoot.h"),
     ("shoot ray soups",    c_shoot_ray_soups,   "todo/shoot-sight.md 6; o3de/collision.h"),
     ("engine: shoot landing", c_engine_shoot_landing, "todo/released-spectres.md 6; actor/walk.h"),
+    ("engine: shoot restart", c_engine_shoot_restart, "todo/play-test.md 11; actor/projectile.h"),
     ("shoot generic",      c_shoot_generic,     "todo/shoot-mode 7c; actor/shoot.h"),
     ("projectile pool",    c_projectile_pool,   "todo/shoot-mode 4c, 7f; actor/projectile.h"),
     ("shoot fire",         c_shoot_fire,        "todo/shoot-mode 7h; actor/shootfire.h"),

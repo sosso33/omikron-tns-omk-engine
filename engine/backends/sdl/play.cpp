@@ -6032,6 +6032,22 @@ int main(int argc, char** argv) {
             // unlinked neighbour is not in the scene graph the engine's ray
             // walks. The actor sweep (`sub_45E9C0`) is step 2b and not here,
             // so a bolt passes through a gunman and stops at the wall behind.
+            // ---- `Shoot_Leave` EMPTIES THE POOL: its first call is
+            // `sub_44CDB0(0)`, which frees every live entry of `0x531348`, the
+            // 256 x 60 projectile pool - so no bolt outlives the mode. The
+            // script pass that ran `shoot.end` comes BEFORE this flight, while
+            // the frame's `shootMode` copy is refreshed only further down, so
+            // the mode's end is seen here as "was on, is off". Until 2026-09-13
+            // the pool was never emptied, and in the gallery a gunman's bolt
+            // still in the air killed the player a SECOND time on the restart
+            // frame. LABELLED: a player shot fired later on the leaving frame
+            // is not caught by this.
+            if (projectiles.live() && shootMode && !session.shootMode().active()) {
+                std::printf("frame %ld: the projectile pool emptied (Shoot_Leave's "
+                            "sub_44CDB0(0)) - %d bolt%s in flight\n", n, projectiles.live(),
+                            projectiles.live() == 1 ? "" : "s");
+                projectiles.clear();
+            }
             if (projectiles.live()) {
                 const omk::TriangleSoup* shotSoup = nullptr;
                 for (const auto& ws : worldSlots)

@@ -660,10 +660,12 @@ round it, or one that sees you and then stands still at close range.
 > the variable the handler only ends the mode, and the reader saw exactly that:
 > *"when I die, I just switch to adventure mode with frozen gunmen"*. **With it,
 > CONFIRMED IN PLAY 2026-09-13**: *"I was sent to the begining then I leave the
-> training zone"*. Seen in that session's log and NOT yet explained: a bolt
-> still in flight killed the player a SECOND time on the restart frame (111),
-> after the handler had ended the mode - the hit `sub_4240E0` refuses while
-> `dword_90E0FC` is set, so the port may end the mode a frame late.
+> training zone"*. Seen in that session's log, and **FIXED the same day**: a
+> bolt still in flight killed the player a SECOND time on the restart frame
+> (111). It was the port's: `Shoot_Leave` opens with `sub_44CDB0(0)`, which
+> frees every entry of the projectile pool at 0x531348, and the port never
+> emptied its pool. (`dword_90E0FC`, suspected first, is never written - the
+> refusal it gates never fires.) `verify.py: engine: shoot restart`.
 
 * the gunmen behind the walls do not fire at once: 237 steps out from behind
   his wall and fires at about frame 43, walking toward you; 238 comes through
