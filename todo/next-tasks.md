@@ -363,6 +363,25 @@ answer changes the fix entirely.
   frames at Anekbah 1804,0,-6890 and Jaunpur address 40 no crowd-model extra
   reached its program's end, and no body drew "the rest pose (no bank clip)".
   Needs WHERE the reader saw it.
+* **The reader's theory, "when they finish their pattern", tested 2026-09-13 in
+  Anekbah - no fault found.** `ped_probe 0 9000 3 --programs` loads the
+  area's `.SCX` the way omk-play's street start does and logs every actor
+  program's step. The 26 street programs it starts (`Chemin01..04F/M`,
+  `Kiss01..03F/M`, `Gym01/02`, `Mendiant01..04`, `Meca01..05`, `Anneaux`)
+  are ALL loop -1, so none ever ends; a "pattern end" is a step change, e.g.
+  `Chemin01F` clip 21 `A02C1` (26 frames) <-> clip 12 `A02C2` (136). Over 9000
+  frames every change goes straight clip to clip, `animReached` never drops,
+  and `OMK_TRACE_ACTOR=50` in omk-play keeps `a scene program's clip` as the
+  pose source on all 400 frames, across the changes at 25/161/187/323. Every
+  clip 11-22 binds 19 tracks by node number, which all four crowd models
+  (PSH/PSH1/FSH/FSH1) share, and a frame rendered beside her at frame 26 shows
+  no rest pose. Two data facts found on the way, neither a port fault: the
+  `Chemin` clips carry **zero pelvis travel** and path 133 `FhBassinC1` is three
+  keys on one spot, so those extras stand and play in place - which is what
+  `Script_SelectRelativeBodyAnimation` does too (placement once, then only
+  `Anim_SetFrame`'s delta into `Actor_MoveBy`); and the `Chemin*F` objects play
+  clips authored on the men's `Ph` skeleton while `Chemin*M` play the women's
+  `Fh` ones (`Kiss` is the right way round).
 
 ### 7. Missing animations — **REOPENED 2026-09-06: the apartment doors DO NOT animate**
 
