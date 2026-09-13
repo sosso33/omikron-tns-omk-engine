@@ -836,6 +836,24 @@ public:
     void queueAudio(std::span<const float> s) override {
         if (s.empty()) return;
         std::lock_guard<std::mutex> lk(amx_);
+        // NO DEVICE, NOTHING QUEUED (todo/optimization.md step 5). With no
+        // device the callback that consumes the stream never runs and
+        // `queuedSeconds` answers 0 for ever, so the music's "keep a second
+        // queued" asked for another second EVERY frame and a headless run grew
+        // this vector by ~1 MB a frame - 45 MB after 117 frames. Nothing could
+        // ever have played it; with a device open this changes nothing.
+#if defined(OMK_SDL3)
+        const bool open = astream_ != nullptr;
+#else
+        const bool open = adev_ != 0;
+#endif
+        if (!open) {
+            if (!droppedToldOnce_) {
+                droppedToldOnce_ = true;
+                std::printf("audio: no device - the stream is dropped, not queued\n");
+            }
+            return;
+        }
         stream_.insert(stream_.end(), s.begin(), s.end());
     }
 
@@ -890,6 +908,7 @@ private:
 #endif
     int w_ = 0, h_ = 0;
     int arate_ = 0, achan_ = 2;
+    bool droppedToldOnce_ = false;   // queueAudio's one line with no device
 
     // omk-play 72: a LOOPING shot wraps instead of ending. `Script_PlaySound`
     // carries a loop flag the port recorded and never honoured, so an ambience

@@ -43,23 +43,33 @@ public:
 
     int  track() const { return track_; }
     bool looping() const { return loop_; }
-    bool playing() const { return !pcm_.empty(); }
+    bool playing() const { return outFrames_ > 0; }
     // Seconds of the track, for a caller that wants to report it.
-    double seconds() const { return pcm_.empty() ? 0.0
-                                                 : pcm_.size() / 2.0 / rate_; }
+    double seconds() const { return outFrames_ == 0 ? 0.0
+                                                    : (2.0 * outFrames_) / 2.0 / rate_; }
 
     // Take the next `frames` stereo frames, wrapping when the track loops and
     // going silent when it does not. Appends to `out` interleaved.
     void pull(std::vector<float>& out, std::size_t frames);
 
-    void stop() { pcm_.clear(); pos_ = 0; track_ = -1; }
+    void stop() { src_.clear(); outFrames_ = 0; outPos_ = 0; track_ = -1; }
 
 private:
     int    rate_;
     int    track_ = -1;
     bool   loop_ = false;
-    std::size_t pos_ = 0;                 // in SAMPLES, not frames
-    std::vector<float> pcm_;              // interleaved stereo at `rate_`
+    // THE TRACK AT ITS OWN RATE (todo/optimization.md step 5). It used to be
+    // resampled to the device's rate as interleaved floats when it started - a
+    // three-minute track was 64 MB, the largest single allocation in the
+    // process. It is kept as the decoder's 16-bit stereo at 22050 Hz, a quarter
+    // of that, and `pull` resamples on the way out with the same nearest index
+    // (`size_t(i * step)`) and the same scaling, so the samples that leave are
+    // the ones that left before (`verify.py: engine: music storage`).
+    std::vector<std::int16_t> src_;       // interleaved stereo at kAdpcmRate
+    std::size_t srcFrames_ = 0;
+    double      step_ = 0.0;              // kAdpcmRate / rate_
+    std::size_t outFrames_ = 0;           // the resampled track's length, in frames
+    std::size_t outPos_ = 0;              // the next output FRAME
 };
 
 }  // namespace omk

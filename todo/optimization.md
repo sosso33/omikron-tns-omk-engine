@@ -61,7 +61,7 @@ not a CPU figure). Against the original's 32 MB, both are the port's.
 | 3 | the depth tie only where it can matter (H2) | **DONE** 2026-09-13 - same decisions on hashed sets; uncapped 42.7 -> ~51.5 fps, capped CPU 72 -> 57; `engine: tie equivalence` |
 | 4 | the interface composited on the GPU in adventure mode (H4) | **the conversions DONE** 2026-09-13 - readback and upload by table, uncapped ~51.5 -> ~59.5 fps, capped CPU 57 -> 49, `engine: pixel tables`; composing on the GPU itself still open |
 | 5 | break down `main`'s own time (H5) and re-rank | open |
-| 6 | the memory pass: where 236 MB goes, against a 365 MB Vita budget that vitaGL's textures also come out of | open |
+| 6 | the memory pass: where 236 MB goes, against a 365 MB Vita budget that vitaGL's textures also come out of | **first cut DONE** 2026-09-13 (as "step 5" in the log below) - music at its own rate, the headless audio queue dropped: live heap 234 -> 140 MB, window footprint 243 -> 185 MB; the rest ranked |
 | 7 | re-measure everything, and decide whether the Vita is in reach | open |
 
 Each step ends in a commit and a report, per the working rhythm; the full
@@ -420,6 +420,80 @@ once with `-fno-inline` (or mark the suspects `noinline`) for a profiling run
 only, re-rank, and add rows to the table above.
 
 ### 6. Memory
+
+#### First cut, done 2026-09-13 (committed as "optimization 5")
+
+**Where it goes, measured, not guessed.** A headless street run (the same
+Anekbah start, `--software`, which leaves the CPU-side memory the same as
+Vulkan: 234 MB headless against a 243 MB window footprint) under
+`MallocStackLogging=1`, snapshotted after 45 s with `heap -s` (live allocations
+grouped by the call that made them), `footprint` and `vmmap --summary`. 233.7 MB
+live in 12786 allocations; the top of it:
+
+| live | allocations | made in | what |
+|---|---|---|---|
+| **64.4 MB** | 1 | `MusicPlayer::play` | the whole track resampled to 44100 Hz interleaved floats |
+| **45.2 MB** | 1 | `SdlFrontend::queueAudio` | the device stream, with NO device - see below |
+| 18.2 MB | 14 | `std::vector<Corner>` inserts | render geometry, its base copies for moved meshes, posed bodies |
+| 14.1 MB | 7 | `SdlFrontend::playSound` | each playing sound copied whole into its own float buffer |
+| 11.6 MB | 6 | `collisionSoup` | the collision soups and their copies |
+| 10.6 MB | 421 | `main` | assorted |
+| ~27 MB | ~100 | `omk::textures`, `std::vector<Texture>` copies | the texture list, held several times |
+| 7.3 MB | 2 | `ScxRuntime` | the two resident scene files, kept whole |
+| 5.5 MB | 1 | `std::vector<SpriteFrames>` | the sprite library |
+
+Audio was **124 MB of 234**.
+
+**The audio queue with no device.** The world opens the audio device only when
+the run is not bounded by `--frames` (`play.cpp`, `if (!frames)` before
+`openAudio`) - so every check, every headless render and every uncapped
+benchmark in this file ran with none. With no device the callback that
+consumes the stream never runs and `queuedSeconds` answers 0 for ever, so the
+music's "keep about a second queued" pulled ANOTHER second every frame into a
+vector nothing drained. `queueAudio` now drops the block while no device is
+open and says so once (`audio: no device - the stream is dropped, not
+queued`); with a device open nothing changes. It also means the uncapped
+`--frames` numbers earlier in this file carried that growth in their RSS.
+
+**The music at its own rate.** The decoder's output is 16-bit stereo at
+22050 Hz; the player resampled all of it to the device's 44100 as floats when
+a track started - four times the size. It now keeps the decoder's samples and
+resamples in `pull` with the same nearest index (`size_t(i * step)`), the same
+scaling, the same loop and end rules, and the same `playing()` / `seconds()`.
+The longest tracks (79 and 80, 344 s) were **118.6 MB** each and are **29.6 MB**;
+the street's track 2 went 62.9 -> 15.7 MB.
+
+**Same samples, proved.** `engine/tools/music_equiv.cpp` keeps the old player
+verbatim and plays each track through both, looped and not, in irregular pulls
+(1, 3, 777, 44100, 100000, 132300 frames) through two wraps or to the end:
+tracks 2, 15, 29, 79, 80, 86 - **0 mismatches over 425 million samples**.
+`verify.py: engine: music storage` (tracks 2, 15, 29); SHOWN TO FAIL: wrapping
+one frame early gives 251 / 47 / 183 mismatching pulls. `verify.py: engine:
+audio queue bound` runs 60 headless frames and reads that process's own peak
+from `os.wait4`: the drop announced once, peak under 180 MB. SHOWN TO FAIL -
+and honestly: disabling the guard is caught by the ANNOUNCEMENT (0 for 1), not
+by the bound (that run peaked at 142 MB); the bound catches the music going
+back to floats. `engine: audio`, `voice over`, `stop sound`, `scene sounds`,
+`actor sounds` and `movies` all pass.
+
+**Before and after:**
+
+| | before (`bc41c1d`) | after |
+|---|---|---|
+| headless, 60 street frames: peak RSS / peak footprint | 215 / 203 MB | **149 / 141 MB** |
+| live heap, snapshot at 45 s | 233.7 MB | **140.2 MB** |
+| capped window, 45 s: physical footprint | 243 MB | **185 MB** |
+| capped window: fps / slowest window / CPU | 30.0 / 29.7 / 49% | 30.0 / 29.9 / 50% |
+
+**What is left, from the new snapshot** (140.2 MB live): render corners 18.2 MB,
+the music 16.1 MB, the copied sound buffers 14.1 MB, the collision soups
+11.6 MB, `main` 10.6 MB, the texture-list copies ~27 MB together, the scene
+files 7.3 MB, geometry copies 5.9 MB, the sprite library 5.5 MB. The obvious
+next ones: the **texture list held several times** (one copy, shared), the
+**sound buffers copied per play** (play from the bank's own buffer), and the
+**music kept as ADPCM** and decoded as it plays (another ~4x: 16 -> ~4 MB).
+Against the 32 MB the original shipped for, the shipped DATA is not what
+forces any of this.
 
 Measure, then cut, in the order the measurement says. Suspects from the
 reading, none measured yet: scene files read whole (up to 7.8 MB,

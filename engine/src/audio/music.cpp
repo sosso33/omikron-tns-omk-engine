@@ -25,31 +25,33 @@ bool MusicPlayer::play(const DataFs& fs, const AdpcmTables& tables,
     // reachable tier (`PORTING` B5's argument, one level down).
     const double step = static_cast<double>(kAdpcmRate) / rate_;
     const std::size_t frames = raw.size() / 2;
-    pcm_.clear();
-    pcm_.reserve(static_cast<std::size_t>(frames / step) * 2);
-    for (std::size_t i = 0;; ++i) {
-        const std::size_t sf = static_cast<std::size_t>(i * step);
-        if (sf >= frames) break;
-        pcm_.push_back(raw[sf * 2] / 32768.0f);
-        pcm_.push_back(raw[sf * 2 + 1] / 32768.0f);
-    }
-    pos_ = 0;
+    // The resampled length, counted the way the resampling loop counted it:
+    // output frame i exists while `size_t(i * step)` is still inside the track.
+    std::size_t n = 0;
+    while (static_cast<std::size_t>(n * step) < frames) ++n;
+    src_ = std::move(raw);
+    srcFrames_ = frames;
+    step_ = step;
+    outFrames_ = n;
+    outPos_ = 0;
     track_ = track;
     loop_ = loop;
     return true;
 }
 
 void MusicPlayer::pull(std::vector<float>& out, std::size_t frames) {
-    if (pcm_.empty()) return;
+    if (outFrames_ == 0) return;
     for (std::size_t f = 0; f < frames; ++f) {
-        if (pos_ + 1 >= pcm_.size()) {
+        if (outPos_ >= outFrames_) {
             // THE LOOP, and it is field 1 of `music.play` - the script's
             // decision, honoured here rather than by whoever owns the device.
-            if (!loop_) { pcm_.clear(); pos_ = 0; return; }
-            pos_ = 0;
+            if (!loop_) { src_.clear(); outFrames_ = 0; outPos_ = 0; return; }
+            outPos_ = 0;
         }
-        out.push_back(pcm_[pos_++]);
-        out.push_back(pcm_[pos_++]);
+        const std::size_t sf = static_cast<std::size_t>(outPos_ * step_);
+        out.push_back(src_[sf * 2] / 32768.0f);
+        out.push_back(src_[sf * 2 + 1] / 32768.0f);
+        ++outPos_;
     }
 }
 

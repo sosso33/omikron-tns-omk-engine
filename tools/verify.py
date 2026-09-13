@@ -11977,6 +11977,110 @@ def c_engine_pixel_tables():
         "checked, and those whose table answer differs from the function's"
 
 
+def c_engine_music_storage():
+    r"""`MusicPlayer` keeps a track at its own rate and plays the same samples,
+    bit for bit (todo/optimization.md step 5).
+
+    A live-allocation snapshot of the Anekbah street start put the music first:
+    one 64.4 MB block, the whole track resampled to the device's 44100 Hz as
+    interleaved floats when it started. The decoder's own output is 16-bit
+    stereo at 22050 Hz - a quarter of that - so the player now keeps it and
+    resamples in `pull`, with the same nearest index (`size_t(i * step)`), the
+    same scaling, and the same loop and end rules. Tracks 79 and 80, the
+    longest at 344 s, were 118.6 MB each and are 29.6 MB.
+
+    `engine/tools/music_equiv.cpp` keeps the old player verbatim and plays each
+    track through both, looped and not, pulling irregular chunks (1, 3, 777,
+    44100, 100000, 132300 frames) until a looped track has wrapped twice or an
+    unlooped one ended, and compares every sample and `play` / `playing` /
+    `seconds`. Measured 2026-09-13 on tracks 2, 15, 29, 79, 80 and 86: 0
+    mismatches over 425 million samples.
+
+    SHOWN TO FAIL: wrapping one frame early (`outPos_ + 1 >= outFrames_`) turns
+    it red with 251 / 47 / 183 mismatching pulls on tracks 2 / 15 / 29.
+    """
+    import subprocess
+    eng = os.path.join(ROOT, "engine")
+    if not os.path.isdir(eng):
+        return ("skipped",), ("skipped",), "engine/ absent"
+    b = subprocess.run(["make", "-s", "build/music_equiv"], cwd=eng,
+                       capture_output=True, text=True)
+    binp = os.path.join(eng, "build", "music_equiv")
+    if b.returncode != 0 or not os.path.exists(binp):
+        return ("build failed",), ("built",), "engine/ must build"
+    if not os.path.exists(omkpaths.data("TRACKS/2.ADP")):
+        return ("skipped",), ("skipped",), "TRACKS absent"
+    r = subprocess.run([binp, omkpaths.data_root(), os.path.join(ROOT, "tables"),
+                        "2", "15", "29"], capture_output=True, text=True)
+    rows = re.findall(r"^track (\d+) seconds ([\d.]+) \|.*\| pulls (\d+) samples (\d+) "
+                      r"mismatches (\d+)", r.stdout, re.M)
+    # a parse that reads nothing must fail AS A PARSE, not answer
+    if len(rows) != 3:
+        return (len(rows),), (3,), "music_equiv rows parsed - the tool's output " \
+            "format no longer matches this check"
+    got = tuple((int(t), sec, int(n), int(mm)) for t, sec, _p, n, mm in rows)
+    return got, ((2, "182.52", 56566522, 0), (15, "31.51", 9985846, 0),
+                 (29, "136.34", 42250352, 0)), \
+        "per track: its length, the samples compared looped and unlooped, and " \
+        "pulls whose samples or state differ from the pre-2026-09-13 player"
+
+
+def c_engine_audio_queue_bound():
+    r"""With no audio device the stream is DROPPED, not queued - a headless run's
+    memory stays bounded (todo/optimization.md step 5).
+
+    `omk-play` opens the device only when it is not bounded by `--frames`, and
+    with no device the callback that consumes the stream never runs and
+    `queuedSeconds` answers 0 for ever, so the music's "keep a second queued"
+    asked for another second of samples EVERY frame. A live-allocation snapshot
+    of a headless street run found that queue as one 45 MB block after 117
+    frames - every check and every headless render carried it, growing ~3.5 MB
+    a frame. `queueAudio` now drops a block while no device is open and says
+    so once; with a device open nothing changes.
+
+    The check runs the Anekbah street start headless for 60 frames and reads
+    THAT process's peak resident size from `os.wait4` (so no other child of this
+    script can inflate it): the drop must be announced exactly once, and the
+    peak must stay under 180 MB. Measured 2026-09-13: 149 MB after the step
+    (with the music kept at its own rate as well), 215 MB before it.
+
+    SHOWN TO FAIL: disabling the guard (`if (false && !open)`) turns it red on
+    the ANNOUNCEMENT - 0 instead of 1 - and NOT on the memory bound: that run
+    peaked at 142 MB, so sixty frames of queue growth alone stay under 180. The
+    bound is what catches the music going back to its resampled floats (215 MB
+    before this step); the announcement is what catches the guard. Recorded so
+    nobody reads the bound as a test of the queue.
+    """
+    import subprocess, sys as _sys
+    eng = os.path.join(ROOT, "engine")
+    if not os.path.isdir(eng):
+        return ("skipped",), ("skipped",), "engine/ absent"
+    b = subprocess.run(["make", "-s", "play"], cwd=eng, capture_output=True, text=True)
+    binp = os.path.join(eng, "build", "omk-play")
+    if b.returncode != 0 or not os.path.exists(binp):
+        return ("skipped",), ("skipped",), "omk-play needs SDL (make play)"
+    save = os.path.join(ROOT, "traces", "save-appart.bin")
+    if not os.path.exists(save):
+        return ("skipped",), ("skipped",), "traces/save-appart.bin absent"
+    env = dict(os.environ, SDL_VIDEODRIVER="dummy")
+    proc = subprocess.Popen([binp, omkpaths.data_root(), os.path.join(ROOT, "tables"),
+                             "--save", save, "--area", "0", "--stand", "1804,0,-6890,336",
+                             "--software", "--nofmv", "--frames", "60"],
+                            cwd=eng, env=env, stdout=subprocess.PIPE,
+                            stderr=subprocess.DEVNULL, text=True)
+    out = proc.stdout.read()
+    _pid, _status, usage = os.wait4(proc.pid, 0)
+    proc.returncode = _status
+    # ru_maxrss is BYTES on macOS and KILOBYTES on Linux
+    peak_mb = usage.ru_maxrss / (1048576.0 if _sys.platform == "darwin" else 1024.0)
+    told = out.count("audio: no device - the stream is dropped, not queued")
+    frames = "60 frames presented" in out
+    return (frames, told, peak_mb < 180.0), (True, 1, True), \
+        "the headless street run finished its 60 frames; the no-device drop " \
+        "announced exactly once; and its own peak resident size under 180 MB " \
+        "(%.0f MB this run)" % peak_mb
+
+
 def c_engine_walker_falls():
     r"""`engine/`'s walker takes a drop instead of refusing it - and the
     measurement that says why it had to.
@@ -33906,6 +34010,8 @@ SLOW = [
     ("engine: probe grid", c_engine_probe_grid, "todo/optimization.md 2; o3de/collision.h"),
     ("engine: tie equivalence", c_engine_tie_equivalence, "todo/optimization.md 3; o3de/depthtie.h"),
     ("engine: pixel tables", c_engine_pixel_tables, "todo/optimization.md 4; ui/surface.h"),
+    ("engine: music storage", c_engine_music_storage, "todo/optimization.md 5; audio/music.h"),
+    ("engine: audio queue bound", c_engine_audio_queue_bound, "todo/optimization.md 5; backends/sdl/play.cpp"),
     ("engine: props", c_engine_props, "todo/omk-play"),
     ("sprite ids scene-local", c_sprite_ids_are_scene_local, "docs/ASSETS"),
     ("engine: scene sounds", c_engine_scene_sounds, "engine/README"),
