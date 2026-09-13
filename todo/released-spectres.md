@@ -210,5 +210,31 @@ until the mechanism is found and reported.**
      and kills at 491. The skip stays because it is the engine's ORDER (the
      engage runs inside an arm, state 10 first runs on the next tick), and it is
      LABELLED as undistinguished by any route measured.
-6. **Port the LANDING messages** - `Walk_GroundResponse`'s 10 and 11 - shown on
-   AREA 141's -45.
+6. **Port the LANDING messages** - PORTED 2026-09-13 (commit pending the shoot
+   family's run). `Walk_GroundResponse`'s landing reads the accumulated fall
+   `+280` and bands it:
+
+   | fall | group | message | camera |
+   |---|---|---|---|
+   | < 59.06 (1.5 m) | 100, only from group 2 | - | - |
+   | < 118.11 (3 m) | 4 | - | - |
+   | < 196.85 (5 m) | 4 | **10** | `sub_414DE0(him, 16)` |
+   | 196.85 and over | 5 | **11** | `sub_414DE0(him, 19)` |
+
+   The group changes skip ACTOR_STATEs 2, 3 and 15; the MESSAGE is posted for
+   the player whatever his state; `sub_414DE0` returns at once in state 3.
+   The walker's own tiers merge the last two bands (3 m and over), so
+   `Walker::land` now keeps the fall it landed with (`lastLandingFall`, the
+   `+280` LABEL_83 clears) and the viewer posts 10 or 11 on the landing tick by
+   the engine's two limits. NOT PORTED, labelled: the group changes and the
+   landing camera requests the walker's tiers stand for, and the short band's
+   second test on `+284`.
+
+   **Measured** (`verify.py: engine: shoot landing`): the catacombs' west walk
+   drops the player onto floor 3 - a fall of **199.3 (5.06 m)** at frame 171
+   (the walker's drop from the apex reads 169.3; the engine's `+280` is the
+   accumulated fall) - **message 11 to AREA 141's handler**, and the next frame
+   the health property goes from 200 to **155**: `Vie` read, 45 taken, written
+   back (200 because `--shoot-health 1000` is stored through the property's
+   unsigned clamp at 200). This is next-tasks 14's FALL DAMAGE for this area:
+   the engine only POSTS the landing; each area's script decides what it costs.

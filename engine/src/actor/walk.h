@@ -219,6 +219,11 @@ public:
     // 3 hurt, 4 killed. The engine reads the same four bands off the drop and
     // asks for .CTL bank group 2, 4 or 5 and ACTOR_STATE 18 or 19.
     int lastLandingTier() const { return tier_; }
+    // ...and the FALL DISTANCE it landed with - `+280`, which LABEL_83 zeroes
+    // after `Walk_GroundResponse` has read it. The tiers above merge two of the
+    // engine's bands (3 m and over); the landing MESSAGES are told apart at 5 m
+    // by this, so it is kept rather than recomputed.
+    double lastLandingFall() const { return landFall_; }
 
     // HOW FAR THE LAST LANDING FELL, kept because `land()` zeroes `fall_` and
     // `MDJUMP03` bands the drop on its OWN thresholds, not the walker's four.
@@ -258,6 +263,7 @@ private:
     bool   airborne_ = false;
     bool   sliding_  = false;
     int    tier_ = 0;
+    double landFall_ = 0.0;
     double drop_ = 0.0;          // the last landing's descent from its apex
     double apex_ = 0.0;          // the highest y reached in this airborne stretch
 };

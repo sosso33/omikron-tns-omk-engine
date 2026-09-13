@@ -6840,12 +6840,35 @@ int main(int argc, char** argv) {
                                             player->pos()[1], player->walker().fall(),
                                             double(player->pos()[0]), double(player->pos()[2]), gs);
                             }
-                            else if (!air && !slide && (wasAir || wasSlide))
+                            else if (!air && !slide && (wasAir || wasSlide)) {
                                 std::printf("frame %ld: the player LANDS at y %.1f - dropped "
                                             "%.1f (%.2f m), tier %d\n", n, player->pos()[1],
                                             player->walker().lastLandingDrop(),
                                             player->walker().lastLandingDrop() / 39.37,
                                             player->walker().lastLandingTier());
+                                // ---- THE LANDING MESSAGES, `Walk_GroundResponse` ----
+                                // (`todo/released-spectres.md` step 6). On the landing
+                                // tick, by the accumulated fall `+280`: at 196.85 (5 m)
+                                // and over MESSAGE 11, group 5 and `sub_414DE0(him, 19)`;
+                                // from 118.11 (3 m) MESSAGE 10, group 4 and
+                                // `sub_414DE0(him, 16)`; below, no message. Both are
+                                // posted for the PLAYER whatever his ACTOR_STATE - only
+                                // the group changes skip states 2, 3 and 15, and
+                                // `sub_414DE0` returns at once in 3. NOT PORTED here,
+                                // labelled: the group changes and the landing camera
+                                // requests, which the walker's own tiers stand for; and
+                                // the short band's second test on `+284`. The catacombs'
+                                // handler for 11 costs 45 health with a red flash.
+                                const double lf = player->walker().lastLandingFall();
+                                const int msg = lf >= 196.85039 ? 11 : lf >= 118.11024 ? 10 : -1;
+                                if (msg >= 0) {
+                                    const bool ran = session.postMessage(msg, session.playerActor());
+                                    std::printf("frame %ld: the landing (Walk_GroundResponse) - fall "
+                                                "%.1f (%.2f m): MESSAGE %d %s\n", n, lf, lf / 39.37,
+                                                msg, ran ? "to its handler"
+                                                         : "- NO handler subscribes");
+                                }
+                            }
                         }
                         // While he BOARDS or LEAVES, say where the clip is
                         // carrying him - the door snap is one number and the

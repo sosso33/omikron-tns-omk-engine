@@ -27757,6 +27757,47 @@ def c_engine_shoot_gunfire():
         "turned back between his shots (418, 459), and does not climb")
 
 
+def c_engine_shoot_landing():
+    r"""`engine/`: THE LANDING MESSAGES (`todo/released-spectres.md` step 6).
+
+    `Walk_GroundResponse` posts, for the PLAYER and whatever his ACTOR_STATE,
+    MESSAGE 11 when the accumulated fall `+280` is 196.85 (5 m) or more and
+    MESSAGE 10 from 118.11 (3 m); below, none. The catacombs (AREA 141)
+    subscribe to 11: a red flash, a camera shake, and `Vie` read, 45 taken,
+    written back through `actor.stat.set -1, 1`.
+
+    On the patrol route into zone 2295, a turn and a walk west, the player
+    drops onto floor 3 near x 42235: a fall of 199.3 (5.06 m) at frame 171,
+    message 11 to the area's handler, and the health property from 200 (the
+    `--shoot-health 1000` the store clamps at 200) to 155.
+    """
+    import subprocess, re
+    fr = omkpaths.data_root()
+    eng = os.path.join(ROOT, "engine")
+    bld = subprocess.run(["make", "-s", "play"], cwd=eng, capture_output=True, text=True)
+    exe = os.path.join(eng, "build", "omk-play")
+    if bld.returncode != 0 or not os.path.exists(exe):
+        return ("build failed",), ("built",), "engine/ must build"
+    o = subprocess.run(
+        [exe, fr, os.path.join(ROOT, "tables"),
+         "--save", os.path.join(ROOT, "traces", "save-appart.bin"),
+         "--area", "141", "--zone-enable", "2295", "--stand", "42786,854,-2380,0",
+         "--shoot-health", "1000", "--frames", "240", "--nodelay",
+         "--hold", "k200*60,0*10,k77*9,0*5,k200*150"],
+        capture_output=True, text=True, errors="replace",
+        env=dict(os.environ, SDL_VIDEODRIVER="dummy")).stdout
+    lands = re.findall(r"^frame (\d+): the landing \(Walk_GroundResponse\) - fall ([\d.]+) "
+                       r"\(([\d.]+) m\): MESSAGE (\d+) (to its handler|- NO handler subscribes)$",
+                       o, re.M)
+    stat = re.findall(r"^frame (\d+): SHOOT STAT \(sub_423A40\) - the player's health -> (-?\d+)",
+                      o, re.M)
+    got = (lands, stat[:1])
+    want = ([("171", "199.3", "5.06", "11", "to its handler")], [("172", "155")])
+    return got, want, ("the catacombs' drop onto floor 3: the landing's fall and the message it "
+                       "posts (11 at 5 m and over, 10 from 3 m), the area's handler running, "
+                       "and the 45 it takes from the health property the next frame")
+
+
 def c_engine_shoot_death():
     r"""`engine/`: THE PLAYER'S DEATH (`sub_423FC0`, readable 05_sys.c 4606) and
     his recovery (`Shoot_TickPlayer`'s first arm, 7454), on the real path - no
@@ -33431,6 +33472,7 @@ CHECKS = [
     ("bone names",         c_bone_names,        "todo/omk-play 96; ASSETS"),
     ("shoot range",        c_shoot_range,       "todo/shoot-mode 5c, 7a; actor/shoot.h"),
     ("shoot ray soups",    c_shoot_ray_soups,   "todo/shoot-sight.md 6; o3de/collision.h"),
+    ("engine: shoot landing", c_engine_shoot_landing, "todo/released-spectres.md 6; actor/walk.h"),
     ("shoot generic",      c_shoot_generic,     "todo/shoot-mode 7c; actor/shoot.h"),
     ("projectile pool",    c_projectile_pool,   "todo/shoot-mode 4c, 7f; actor/projectile.h"),
     ("shoot fire",         c_shoot_fire,        "todo/shoot-mode 7h; actor/shootfire.h"),

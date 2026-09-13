@@ -491,6 +491,18 @@ done because they will have built most of the machinery.
 
 ### 14. Health: fall damage and vehicle hits — M/L, **weak evidence**
 
+**FALL DAMAGE, partly answered 2026-09-13** (`todo/released-spectres.md` step 6):
+the engine does not subtract anything itself. `Walk_GroundResponse` posts
+MESSAGE 10 for a landing from 3 m and MESSAGE 11 from 5 m (the accumulated fall
+`+280`), and each area's SCRIPT decides the cost - the catacombs' handler for 11
+takes 45 health with a red flash and a shake. Ported and checked
+(`engine: shoot landing`). Which areas pay for a landing, from every AREA
+chunk's subscription table (`+68`, count `+86`): **message 10 in AREAs 2, 41, 61
+and 168; message 11 in the same four and 141** (the catacombs) - read their
+handlers before assuming they all cost health. Of the SCENE chunks (table `+36`,
+count `+54`; only three carry one) **SCENE 62** subscribes to both. Still open
+under this item: what those handlers cost, and the VEHICLE hits.
+
 The honest one: **nothing in `docs/GAME_STATE.md` or `gamestate.h` mentions
 health at all**, so this is the item on the list whose size I trust least. The
 reader is right that it needs careful reading first — where the value lives

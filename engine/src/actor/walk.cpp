@@ -28,6 +28,7 @@ void Walker::land(double y) {
           : 4;
     drop_ = y - apex_;           // the descent from the apex, for MDJUMP03
     if (drop_ < 0.0) drop_ = 0.0;
+    landFall_ = fall_;           // `+280`, read before LABEL_83 clears it
     fall_ = 0.0;
     vy_ = vx_ = vz_ = 0.0;
     airborne_ = sliding_ = false;
