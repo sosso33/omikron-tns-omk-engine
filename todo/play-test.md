@@ -660,7 +660,10 @@ Wrong looks like: a bolt leaving a gunman who is still behind a wall, or all
 three firing in the first half-second as they used to.
 
 **The catacombs** (`--area 141 --zone-enable 2295 --stand 42786,854,-2380,0`,
-then walk forward into the zone to start the phase): the ghostly SPECTRES
+then walk forward into the zone to start the phase - **A HARNESS, not the phase's
+real start**: the reader, 2026-09-13, *"this point is not the actual start of
+this shoot phase, it start elsewhere, then a dialog start when you arrive at
+your checkpoint then the shoot phase continue"*): the ghostly SPECTRES
 patrol their beats, and they see only what is in front of them with nothing
 solid between.
 * with rock between you they **keep walking their beat**, even when they face
@@ -669,7 +672,14 @@ solid between.
   should **stop his patrol**, turn to you and aim - a spectre's group never
   fires (`todo/shoot-patrol.md`: *"he aims and never shoots"*);
 * break the line again - behind rock, or out of his cone - and he should **go
-  back to his beat**.
+  back to his beat**. **CONFIRMED IN PLAY 2026-09-13** (*"they did continue
+  their patrol when they didn't see me anymore"*): all four spectres saw the
+  player on the harness route and all four went back to patrolling. Asked in
+  the same breath: *"aren't spectres to shoot on me?"* - see
+  `todo/shoot-patrol.md` on the fire test. **Answered by the reader**: the
+  patrolling spectres do NOT shoot in the original - doors release other
+  spectres, and the wrong ones shoot at you. Not ported yet (the doors and
+  the release).
 
 **The one thing no headless run has shown**, and so the one worth your eyes:
 a spectre actually SEEING you and then losing you. Neither route put a spectre

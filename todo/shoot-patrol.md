@@ -420,6 +420,31 @@ group's `+8 & 1`, and SPECTRE's group carries 0 - so a spectre takes the aim
 pose and never shoots. The port prints exactly that: *"the fire test is clear
 (sub_4348B0: ANIMS\SPECTRE.ANI group 12, +8 0) - he aims and never shoots"*.
 
+**RE-CHECKED 2026-09-13**, after the reader asked *"aren't spectres to shoot on
+me?"* while playing the catacombs. Each link of the chain, read again:
+`Shoot_ActorEnter` fills record `+20` with `sub_434530(v31)`, where `v31` is
+event 44 (`Actor_GetProperty`) of **property 7** - which is the actor record's
+`+176`, the character type (`script/props.cpp`), so the port's
+`typeOfActor` lookup is the same group; `sub_434530` returns the FIRST 24-byte
+group whose `+0` is that value; `Anim_Load` relocates only a group's `+4` and
+its clips' `+8`, never the group's own `+8`, and no caller of `sub_434530`
+writes it either; `sub_4348B0` is `return u32(a1, 8) & 1`. Over all **11
+shipped `.ani` files**, group 12's `+8` is **0 in every one**, and the fire bit
+is set in exactly **one group anywhere: type 3, in `braqueur.ani` and
+`dock.ani`**. So by the data, only a type-3 character ever passes the generic
+brain's fire test - a strong enough consequence (no other generic gunman in
+the game fires) that the reader's memory of the original outranks it: if
+spectres hurt the player there, the mechanism is somewhere this reading has not
+looked, not in the fire test.
+
+**The reader, 2026-09-13, on what the original does** (from a video, stated as
+their best recollection): *"patroling spectre does not [shoot], but you are
+supposed to interact with some doors to release some spectres, and if you
+released the wrong ones, they shoot on you"*. The patrolling spectres' silence
+is therefore RIGHT; what is owed is the RELEASED spectres - which, since only
+type 3's group carries the fire bit, are expected to be other characters (or
+to change type or `.ani`) rather than type-12 spectres that start firing.
+
 **And nothing else in shoot mode can hurt you**: `sub_4240E0`, the hit, has two
 callers and both are in `Actor_TickProjectiles`. There is no melee path in the
 mode at all. So in the port the catacombs' spectres are harmless, and whether
