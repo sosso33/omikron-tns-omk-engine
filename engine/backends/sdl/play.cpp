@@ -5016,8 +5016,10 @@ int main(int argc, char** argv) {
                                                 : "TIPS the view 2 degrees");
     };
     std::set<std::string> motionLogged;   // mesh/pool pairs already reported
+    // The 30 Hz pacer's next deadline, in seconds on the performance counter
+    // (see the cap at the bottom of this loop).
+    double paceNext = 0.0;
     for (;;) {
-        const Uint32 frameStartMs = SDL_GetTicks();
         if (!front.pump(host)) break;
         // ---- one line when the mouse first moves in shoot mode -----------
         //
@@ -16287,9 +16289,33 @@ int main(int argc, char** argv) {
         // the frame took, so a 30 ms software frame ran the loop at ~16 fps
         // and halved the apparent speed of everything. Sleep only what is left
         // of the budget, and nothing at all when the frame overran it.
+        //
+        // ...and it is a DEADLINE on a 1/30 s grid, not a sleep of whole
+        // milliseconds (todo/optimization.md, "Capped at 30"). The first cap
+        // slept `33 - spent` ms: a 33 ms budget in integer ms, plus whatever
+        // `SDL_Delay` oversleeps, so a frame with time to spare still averaged
+        // ~34.7 ms and the street held a flat 28.8 fps with every 1 s window's
+        // worst frame at 36-40 ms. Now each frame ends at the next multiple of
+        // 1/30 s on the performance counter: sleep in whole milliseconds to
+        // 1.5 ms short of it, then yield the rest. A frame that ran a little
+        // late shortens the next budget, so the AVERAGE stays 30; one that
+        // fell more than a whole frame behind resynchronises instead of
+        // bursting to catch up. The simulation is untouched - it steps on the
+        // measured delta above - and `--frames` runs never reach here.
         if (!frames) {
-            const Uint32 spent = SDL_GetTicks() - frameStartMs;
-            if (spent < 33) SDL_Delay(33 - spent);
+            static const double perfHz = static_cast<double>(SDL_GetPerformanceFrequency());
+            constexpr double kPeriod = 1.0 / 30.0;
+            const auto nowSec = [] {
+                return static_cast<double>(SDL_GetPerformanceCounter()) / perfHz;
+            };
+            double now = nowSec();
+            if (paceNext <= 0.0 || now > paceNext + kPeriod) paceNext = now;
+            while (now < paceNext) {
+                const double left = paceNext - now;
+                SDL_Delay(left > 0.002 ? static_cast<Uint32>((left - 0.0015) * 1000.0) : 0);
+                now = nowSec();
+            }
+            paceNext += kPeriod;
         }
     }
     std::printf("%ld frames presented\n", n);

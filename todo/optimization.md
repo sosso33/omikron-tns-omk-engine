@@ -134,6 +134,41 @@ soups). SHOWN TO FAIL: `kGridEps = -1.0` gives 65 / 96 / 236 / 1143 / 154 /
 checks this could touch all pass: `engine: character shadow`, `fitted
 shadows`, `city crowd`, `crowd push`, `walker falls`, `shoot ray soups`.
 
+### Capped at 30 - the rate that matters (2026-09-13)
+
+The game's animations are 30 Hz and the port interpolates nothing, so a frame
+past 30 shows nothing new: the reader asked for the comparison CAPPED. That
+means launching WITHOUT `--frames` (so the viewer's 30 Hz cap and its real
+clock apply) and closing the window after a fixed time - 45 s of play past a
+12 s start-up, same street, same sampling. With the cap on, CPU is headroom.
+
+| capped, 45 s | before (`db1f548`) | grid (`86c82ea`) | grid + deadline pacer |
+|---|---|---|---|
+| fps, median of 1 s windows | 23.9 | 28.8 | **30.0** |
+| fps, slowest window | 15.4 | 28.6 | 29.3 |
+| worst frame, median of windows | 44 ms (windows up to 145) | 37 ms | 39 ms |
+| CPU, mean (100 = one core) | 96 - saturated | **62** | 72 |
+| CPU time over the run | 50.6 s | 34.5 s | 38.2 s |
+| physical footprint | 260 MB | 243 MB | 241 MB |
+| frames presented | 1212 | 1541 | 1545 |
+
+* **Before**, the street could not reach the cap at all and hitched.
+* **With the grid** it was pinned against the cap with a third of a core
+  spare - but at a FLAT 28.8 in every window, which was the cap's own fault:
+  it slept `33 - spent` whole milliseconds, a 33 ms budget plus
+  `SDL_Delay`'s oversleep, ~34.7 ms a frame.
+* **The deadline pacer** (`play.cpp`, the bottom of the adventure loop) ends
+  each frame on a 1/30 s grid of the performance counter - whole-ms sleeps to
+  1.5 ms short, then yields; a late frame shortens the next, a stall of more
+  than a frame resynchronises. It holds **30.0**. The yield costs about ten
+  points of one core, and the worst frame widens a little (37 -> 39 ms)
+  because a late frame is now followed by a short one to keep the average.
+  The simulation is untouched (it steps on the measured delta) and
+  `--frames` runs never reach the pacer.
+* GPU utilisation is not comparable across these three: the idle reading
+  before the pacer run was already 78% (another application), against 11-12%
+  for the other two.
+
 **Next, re-ranked:** the step-2 sample is not retaken yet; from the first one,
 H2 (the depth tie rebuilt each frame, ~3 ms) and H4 (the readback, ~2 ms) are
 now the largest known costs, and `main`'s own time (H5) is unexplained.
