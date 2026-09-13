@@ -1540,14 +1540,33 @@ bool VulkanRenderer::uploadGeometry(const omk::Geometry* g) {
         // not in flight and can be refilled in place when it still fits.
         const auto it = vboN_.find(g);
         if (it != vboN_.end() && it->second == g->corners.size()) {
+            // ...and when the geometry says which corners moved since the
+            // revision this buffer holds, only those are written
+            // (`Geometry::dirtyCorners`, todo/optimization.md step 8): a moving
+            // crate is a few hundred of Anekbah's 139245 corners. The triangles
+            // the depth tie degenerated stay degenerated; `resolveTies` puts
+            // back the ones that are no longer losers.
+            static const bool noDirty = std::getenv("OMK_NO_DIRTY") != nullptr;
+            const bool partial = !noDirty && seen != vboRev_.end() && g->dirtyTo != 0 &&
+                                 g->dirtyTo == g->revision && seen->second == g->dirtyFrom;
             void* p = nullptr;
             const VkDeviceSize bytes = g->corners.size() * sizeof(GpuVert);
             if (vkMapMemory(dev_, vbo_[g].second, 0, bytes, 0, &p) == VK_SUCCESS) {
                 auto* dst = static_cast<GpuVert*>(p);
-                for (std::size_t i = 0; i < g->corners.size(); ++i) {
-                    const auto& c = g->corners[i];
-                    dst[i] = {c.x, c.y, c.z, c.u, c.v, c.r, c.g, c.b,
-                              c.nx, c.ny, c.nz, c.phase};
+                if (partial) {
+                    for (const std::uint32_t i : g->dirtyCorners) {
+                        if (i >= g->corners.size()) continue;
+                        const auto& c = g->corners[i];
+                        dst[i] = {c.x, c.y, c.z, c.u, c.v, c.r, c.g, c.b,
+                                  c.nx, c.ny, c.nz, c.phase};
+                    }
+                } else {
+                    for (std::size_t i = 0; i < g->corners.size(); ++i) {
+                        const auto& c = g->corners[i];
+                        dst[i] = {c.x, c.y, c.z, c.u, c.v, c.r, c.g, c.b,
+                                  c.nx, c.ny, c.nz, c.phase};
+                    }
+                    tie_[g].vboReplaced();
                 }
                 vkUnmapMemory(dev_, vbo_[g].second);
                 vboRev_[g] = g->revision;
@@ -1576,6 +1595,7 @@ bool VulkanRenderer::uploadGeometry(const omk::Geometry* g) {
     vbo_[g] = {b, m};
     vboN_[g] = v.size();
     vboRev_[g] = g->revision;
+    tie_[g].vboReplaced();
     return true;
 }
 
@@ -1585,9 +1605,9 @@ void VulkanRenderer::resolveTies(const omk::Draw& d) {
     if (off) return;
     const omk::Geometry* g = d.geo;
     auto& t = tie_[g];
-    std::vector<std::size_t> losers;
-    t.resolve(*g, d.start, d.count, d.blend == omk::Blend::Opaque, losers);
-    if (losers.empty()) return;
+    std::vector<std::size_t> losers, restore;
+    t.resolve(*g, d.start, d.count, d.blend == omk::Blend::Opaque, losers, restore);
+    if (losers.empty() && restore.empty()) return;
     // `OMK_TIE_LOG=1`: every loser, with the mesh it came from
     static const bool tieLog = std::getenv("OMK_TIE_LOG") != nullptr;
     if (tieLog)
@@ -1603,6 +1623,16 @@ void VulkanRenderer::resolveTies(const omk::Draw& d) {
     const VkDeviceSize bytes = vn->second * sizeof(GpuVert);
     if (vkMapMemory(dev_, vb->second.second, 0, bytes, 0, &p) != VK_SUCCESS) return;
     auto* v = static_cast<GpuVert*>(p);
+    // first the triangles degenerated earlier that are losers no more - a
+    // partial upload left them as they were - then this draw's losers
+    for (const std::size_t tri : restore) {
+        const std::size_t c = 3 * tri;
+        if (c + 2 >= vn->second || c + 2 >= g->corners.size()) continue;
+        for (std::size_t k = c; k < c + 3; ++k) {
+            const auto& s = g->corners[k];
+            v[k] = {s.x, s.y, s.z, s.u, s.v, s.r, s.g, s.b, s.nx, s.ny, s.nz, s.phase};
+        }
+    }
     for (const std::size_t tri : losers) {
         const std::size_t c = 3 * tri;
         if (c + 2 >= vn->second) continue;
@@ -1925,6 +1955,16 @@ bool VulkanRenderer::drawMirrorScene(const omk::View& v, const omk::View& refl,
 }
 
 void VulkanRenderer::end() {
+    // `OMK_TIE_STATS=1`: every 30 frames, how each large geometry's revisions
+    // were answered - replayed from the dirty corners, walked, or a replay
+    // abandoned part way (`engine: dirty corners`).
+    static const bool tieStats = std::getenv("OMK_TIE_STATS") != nullptr;
+    static long frameNo = 0;
+    if (tieStats && ++frameNo % 30 == 0)
+        for (const auto& [g, t] : tie_)
+            if (g->corners.size() > 30000)
+                std::printf("tie stats: frame %ld, %zu triangles - replayed %ld walked %ld fallbacks %ld\n",
+                            frameNo, g->corners.size() / 3, t.replays, t.walks, t.fallbacks);
     // The depth-tie pass's report, once per geometry with losers.
     for (auto& [g, t] : tie_)
         if (t.touched && !t.logged && t.dropped > 0 && g->corners.size() > 3000) {

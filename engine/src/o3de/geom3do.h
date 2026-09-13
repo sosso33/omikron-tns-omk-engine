@@ -116,6 +116,19 @@ struct Geometry {
     // after a backend may have seen it must bump this, and a backend must
     // re-upload when it changes. `applyPose` does.
     std::uint64_t revision = 0;
+
+    // WHICH CORNERS a revision changed - optional, and only ever a shortcut.
+    //
+    // When `revision == dirtyTo`, the corners listed in `dirtyCorners` are the
+    // only ones that may differ from revision `dirtyFrom`; every other corner
+    // is bit for bit what it was then. A backend that last saw `dirtyFrom` may
+    // then touch just those (todo/optimization.md step 8). Anything that bumps
+    // `revision` without setting these leaves `dirtyTo` stale, which a backend
+    // must read as "everything changed" - so a writer that does not know about
+    // this field is still correct. The set motion patch fills it: a moving
+    // crate changes a few hundred of Anekbah's 139245 corners a frame.
+    std::uint64_t dirtyFrom = 0, dirtyTo = 0;
+    std::vector<std::uint32_t> dirtyCorners;
 };
 
 // THE MIRROR PLANE - mesh flag 0x100000, and the engine reflects through it.

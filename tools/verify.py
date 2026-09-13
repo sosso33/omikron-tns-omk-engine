@@ -11924,19 +11924,24 @@ def c_engine_tie_equivalence():
     r = subprocess.run([binp] + models, capture_output=True, text=True)
     rows = re.findall(
         r"^(\S+)\.3DO triangles (\d+) batches \d+ \| static losers (\d+) \| "
-        r"draws (\d+) losers (\d+) mismatches (\d+)", r.stdout, re.M)
+        r"draws (\d+) losers (\d+) mismatches (\d+) \| ref_ms \S+ new_ms \S+ \| "
+        r"replay frames: draws (\d+) losers (\d+) mismatches (\d+) \| "
+        r"vbo frames (\d+) bad triangles (\d+) \| "
+        r"revisions: replayed (\d+) walked (\d+) fallbacks (\d+)", r.stdout, re.M)
     # a parse that reads nothing must fail AS A PARSE, not answer
     if len(rows) != 3:
         return (len(rows),), (3,), "tie_equiv rows parsed - the tool's output " \
             "format no longer matches this check"
-    got = tuple((st, int(t), int(sl), int(dr), int(lo), int(mm))
-                for st, t, sl, dr, lo, mm in rows)
-    return got, (("Anekbah", 46415, 248, 792, 4646, 0),
-                 ("Lahoreh", 37457, 532, 896, 10073, 0),
-                 ("PSH_FN", 790, 3, 158, 479, 0)), \
+    got = tuple((row[0],) + tuple(int(x) for x in row[1:]) for row in rows)
+    return got, (("Anekbah", 46415, 248, 792, 4646, 0, 1145, 14613, 0, 101, 0, 64, 31, 29),
+                 ("Lahoreh", 37457, 532, 896, 10073, 0, 1273, 31776, 0, 101, 0, 59, 36, 24),
+                 ("PSH_FN", 790, 3, 158, 479, 0, 249, 2337, 0, 101, 0, 80, 15, 41)), \
         "per model: triangles, losers of one pass in batch order (Anekbah's is " \
         "sign tie's 248), draws replayed, losers over all of them, and draws " \
-        "whose losers differ from the pre-2026-09-13 pass in content or order"
+        "whose losers differ from the pre-2026-09-13 pass in content or order; " \
+        "then step 8's fixed-sequence frames (draws, losers, mismatching draws), " \
+        "the simulated vertex buffer (frames, drawn triangles wrong), and how " \
+        "the revisions were answered (replayed, walked, replays abandoned)"
 
 
 def c_engine_pixel_tables():
@@ -12268,6 +12273,74 @@ def c_engine_patch_index():
         ((30, 0, 754, 1976), (60, 0, 754, 1976)), \
         "per summary: moving frames compared, frames whose in-place merged soups " \
         "differ from the full merge, and the walkable + steep triangles re-placed"
+
+
+def c_engine_dirty_corners():
+    r"""A revision that says WHICH corners moved changes nothing on screen
+    (todo/optimization.md step 8).
+
+    On the Anekbah street the set's cargo moves every frame, so the whole set
+    got a new revision every frame, and the Vulkan backend re-uploaded all
+    139245 corners and re-walked the depth tie over all 46415 triangles for the
+    few hundred that moved. The motion patch now fills `Geometry::dirtyCorners`
+    with the corners it rewrote; `uploadGeometry` writes only those, and
+    `DepthTie` REPLAYS its previous walk - the moved faces re-keyed, only the
+    chains they touch re-decided - as long as the draws arrive exactly as
+    logged and no moved face pairs differently, and walks afresh otherwise.
+
+    `engine: tie equivalence` holds the decisions and a simulated vertex buffer
+    to the original pass over fixed-sequence frames with moving meshes, snapped
+    ties, an invalid list, a missing draw and a doubled pass. This is the game
+    half: the street start headless through `--world-vulkan` for 90 frames with
+    `OMK_TIE_STATS=1`, how the set's revisions were answered, and the last
+    frame against the same run with `OMK_NO_DIRTY=1` (no list, so everything is
+    re-done as before). Measured 2026-09-14: 88 replayed, 1 walked (the first
+    moving frame, which has no log yet), 0 fallbacks; 0 pixels differ.
+
+    SHOWN TO FAIL, 2026-09-14 (todo/optimization.md step 8): the motion patch
+    listing no corners keeps the revisions replaying (88 / 1 / 0) and leaves 334
+    pixels different from the run without the list - the cargo frozen in the GPU
+    buffer. The depth tie's own mutations (chains not re-decided, a face that
+    stops losing not restored) turn `engine: tie equivalence` red instead.
+    """
+    import subprocess
+    eng = os.path.join(ROOT, "engine")
+    if not os.path.isdir(eng):
+        return ("skipped",), ("skipped",), "engine/ absent"
+    mk = subprocess.run(["make", "-s", "play"], cwd=eng, capture_output=True, text=True)
+    play = os.path.join(eng, "build", "omk-play")
+    save = os.path.join(ROOT, "traces", "save-appart.bin")
+    if mk.returncode != 0 or not os.path.exists(play):
+        return ("skipped",), ("skipped",), "no SDL - the frontend is optional (PORTING A8)"
+    if not os.path.exists(save):
+        return ("skipped",), ("skipped",), "traces/save-appart.bin absent"
+
+    def run(extra_env, tag):
+        out = os.path.join(eng, "build", "dirty-corners-%s.bin" % tag)
+        if os.path.exists(out):
+            os.remove(out)
+        env = dict(os.environ, SDL_VIDEODRIVER="dummy", OMK_TIE_STATS="1", **extra_env)
+        r = subprocess.run([play, omkpaths.data_root(), os.path.join(ROOT, "tables"),
+                            "--save", save, "--area", "0", "--stand", "1804,0,-6890,336",
+                            "--nofmv", "--world-vulkan", "--frames", "90", "--dump", out],
+                           cwd=eng, env=env, capture_output=True, text=True)
+        stats = re.findall(r"^tie stats: frame 90, 46415 triangles - replayed (\d+) "
+                           r"walked (\d+) fallbacks (\d+)", r.stdout, re.M)
+        frame = open(out, "rb").read() if os.path.exists(out) else b""
+        return "through VULKAN offscreen" in r.stdout, stats, frame
+
+    vk, stats, frame = run({}, "dirty")
+    if not vk:
+        return ("skipped",), ("skipped",), "no Vulkan device - the GPU backend is optional"
+    _, stats0, frame0 = run({"OMK_NO_DIRTY": "1"}, "nodirty")
+    if len(frame) != 960000 or len(frame0) != 960000:
+        return (len(frame), len(frame0)), (960000, 960000), "both frames dumped"
+    differ = sum(1 for i in range(0, len(frame), 2) if frame[i:i+2] != frame0[i:i+2])
+    got = (tuple(tuple(int(x) for x in s) for s in stats),
+           tuple(tuple(int(x) for x in s) for s in stats0), differ)
+    return got, (((88, 1, 0),), ((0, 0, 0),), 0), \
+        "the set's revisions at frame 90 with the dirty list (replayed, walked, " \
+        "replays abandoned) and without it, then 565 pixels differing between the two frames"
 
 
 def c_engine_split_grid():
@@ -34282,6 +34355,7 @@ SLOW = [
     ("engine: sprite table", c_engine_sprite_table, "todo/optimization.md 6; backends/sdl/play.cpp"),
     ("engine: patch index", c_engine_patch_index, "todo/optimization.md 7; backends/sdl/play.cpp"),
     ("engine: split grid", c_engine_split_grid, "todo/optimization.md 7c; o3de/collision.h"),
+    ("engine: dirty corners", c_engine_dirty_corners, "todo/optimization.md 8; o3de/geom3do.h, o3de/depthtie.h"),
     ("engine: props", c_engine_props, "todo/omk-play"),
     ("sprite ids scene-local", c_sprite_ids_are_scene_local, "docs/ASSETS"),
     ("engine: scene sounds", c_engine_scene_sounds, "engine/README"),

@@ -66,6 +66,7 @@ not a CPU figure). Against the original's 32 MB, both are the port's.
 | 7a | the moving set meshes' per-frame patch (found by the step-4 re-profile) | **DONE** 2026-09-13 - a per-mesh index and an in-place merge; capped CPU 50 -> 34% of a core, `engine: patch index` |
 | 7b | the depth tie re-keying the whole set every frame (the cargo moves) | **DONE** 2026-09-13 - claimed keys stored flat with a fingerprint; back to back capped CPU 39 -> 36%, run CPU time -7.6% |
 | 7c | the ground probe grid rebuilt from scratch every frame (the cargo moves) | **DONE** 2026-09-14 - two layers, fixed and moving; the per-frame rebuild 0.528 -> 0.016 ms, probes no slower; `engine: split grid` |
+| 8 | a revision that says WHICH corners moved: the set's vertex upload and depth tie take only those | **DONE** 2026-09-14 - exact (tool and game); back to back capped CPU 28 -> 25%, run CPU time -11%; `engine: dirty corners` |
 
 Each step ends in a commit and a report, per the working rhythm; the full
 sweep follows the cadence in `todo/sweep-log.md`, not these steps.
@@ -585,6 +586,102 @@ microbenchmark over Anekbah's walkable soup, 15137 triangles with 754 moving,
 So ~0.51 ms a moving frame, ~1.5% of a 33 ms frame here - below a capped
 run's noise, but real, and several times larger on a Vita-class CPU.
 `buildSoupGrid` is gone from the profile.
+
+### 8. A revision that says which corners moved - 2026-09-14
+
+**Why.** 7b's re-profile left two costs that exist only because a set's
+revision says "everything changed" when its cargo moves: `DepthTie::resolve`
+walking all 46415 of Anekbah's triangles (667 in the 7c profile) and
+`uploadGeometry` re-writing all 139245 corners (284). 7c had already taken the
+third consumer, the ground grid, off the per-frame path.
+
+**The boundary** (`o3de/geom3do.h`). `Geometry` gains `dirtyFrom`, `dirtyTo`
+and `dirtyCorners`: while `revision == dirtyTo`, only the listed corners may
+differ from revision `dirtyFrom`. It is only ever a shortcut - a writer that
+bumps `revision` without it leaves `dirtyTo` stale, which reads as "everything
+changed" - and the set motion patch in `play.cpp` is its one writer: the
+corners of the meshes it re-placed that frame. `OMK_NO_DIRTY=1` leaves it
+unset.
+
+**The vertex upload** (`vkrender.cpp`). When the buffer holds `dirtyFrom`, only
+the listed corners are written. What that leaves behind is the depth tie's
+degenerated triangles, which a full upload used to wipe; so `DepthTie` now keeps
+which triangles it has told the backend to degenerate, names in `restore` those
+that are no longer losers (written back before the draw's losers are
+degenerated), and is told by `vboReplaced()` when a full upload put everything
+back.
+
+**The depth tie REPLAYS its walk** (`o3de/depthtie.*`). For a geometry that
+carries the list, the walk is logged: every face visited (a triangle or a
+quad) in order, with its draw, and the faces sharing each key chained in walk
+order. A face's decision depends only on whether an EARLIER face of its chain
+writes depth, so the next revision takes the moved faces out of their chains
+(by identity, no positions compared while other moved faces still sit under
+their old keys), puts them into the chains of their new keys, re-decides only
+those chains, and updates each draw's loser list from the net changes. Then
+each draw that arrives as logged gets its losers read back. It is abandoned
+for a full walk when it cannot be the same answer:
+
+* the first draw that differs from the log (start, count, writes) - a mesh
+  crossing the clip distance - throws the replay away; the draws already
+  answered are walked afresh (their losers are what the replay gave) and what
+  is degenerated but no longer a loser of them is restored;
+* a moved face that would now pair into a quad differently, or a single before
+  it that could pair with it - the pairing is positional - makes the revision
+  a full walk before anything changes;
+* the previous revision's log must be complete and `dirtyFrom` its revision.
+
+Geometries without the list (posed bodies, the sky, effects) keep 7b's flat
+walk unchanged.
+
+**Same answers, proved.** `tie_equiv` gained 60 fixed-sequence frames - three
+meshes moving every frame, ties snapped onto and from a moving face, an
+invalid list, a missing draw, a doubled pass, a frame with nothing moving -
+and a SIMULATED VERTEX BUFFER driven the backend's way (partial upload,
+restores, degenerations) compared every frame, on every drawn triangle, with a
+full upload plus the reference's losers. Over Anekbah, Lahoreh, PSH_FN,
+Aapkayl, HO1_FN and JEN_FNM: 0 mismatching draws, 0 wrong buffer triangles in
+101 frames each, and every path taken (Anekbah: 64 revisions replayed, 31
+walked, 29 replays abandoned). The earlier columns did not move (Anekbah 792
+draws, 4646 losers). In the game, the street start through `--world-vulkan`,
+90 frames: 88 revisions replayed, 1 walked (the first moving frame has no log),
+0 abandoned, and frames 65 and 90 byte-identical to `OMK_NO_DIRTY=1`.
+`engine: tie equivalence` (extended), `engine: dirty corners` (new),
+`engine: sign tie`, `mirror pass` and `engine: split grid` pass.
+
+SHOWN TO FAIL, each on the committed code and restored by editing back:
+
+* the replay never re-deciding the chains the moved faces joined: 9 / 10 / 24
+  mismatching draws in Anekbah / Lahoreh / PSH_FN and 9 / 9 / 26 wrong buffer
+  triangles, every older column unchanged;
+* a face that stops losing not RESTORED: every loser list still right (0
+  mismatches) and 17 / 5 / 155 wrong buffer triangles - only the simulated
+  buffer sees it, which is why it is there;
+* the motion patch listing no corners (`play.cpp`): the revisions still
+  replay (88 / 1 / 0) and the frame differs from `OMK_NO_DIRTY=1` in 334
+  pixels - the cargo frozen in the GPU buffer.
+
+**Measured back to back, capped, old / new / old** (load ~3.7-4.8, and this
+time the two old runs agree):
+
+| capped, 45 s | 7c (`210037a`) | + dirty corners | 7c again |
+|---|---|---|---|
+| fps median / slowest window | 30.0 / 29.6 | 30.0 / 29.9 | 30.0 / 29.9 |
+| worst frame, median of windows | 37 ms | 36 ms | 35 ms |
+| CPU, mean (100 = one core) | 28 | **25** | 28 |
+| CPU time over the run | 16.7 s | **14.6 s** | 16.2 s |
+| GPU device utilisation | 28% | 20% | 20% |
+| physical footprint | 179 MB | 175 MB | 199 MB |
+
+So ~11-13% of the viewer's CPU time on the street. The footprint moves by
+more between the two old runs than between old and new; the log costs about
+3 MB for Anekbah, counted from the structures (24 bytes a face and 8 of hash,
+a 131072-cell table of 8, and a few per-triangle arrays).
+
+**What this leaves.** The step replays only while the draw sequence repeats;
+walking the street changes the visible set whenever a mesh crosses the clip
+distance, and each such frame is a full walk plus the replayed prefix again.
+Not measured walking yet.
 
 ### 5. `main`'s own time
 

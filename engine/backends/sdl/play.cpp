@@ -5490,6 +5490,7 @@ int main(int argc, char** argv) {
                     p.rotated = mo.rotated;
                 }
                 bool moved = false;
+                std::vector<std::uint32_t> dirty;   // the corners this frame's patch rewrote
                 for (const auto& kv : patches) {
                     const int mi = kv.first;
                     const Patch& pa = kv.second;
@@ -5513,7 +5514,9 @@ int main(int argc, char** argv) {
                         if (pa.rotated) omk::qrot(pa.q, local, r);
                         out[0] = r[0] + at[0]; out[1] = r[1] + at[1]; out[2] = r[2] + at[2];
                     };
-                    for (const std::uint32_t c : w.cornersOfMesh[static_cast<std::size_t>(mi)]) {
+                    const auto& meshCorners = w.cornersOfMesh[static_cast<std::size_t>(mi)];
+                    dirty.insert(dirty.end(), meshCorners.begin(), meshCorners.end());
+                    for (const std::uint32_t c : meshCorners) {
                         const float in[3] = {w.baseCorners[c].x, w.baseCorners[c].y, w.baseCorners[c].z};
                         float o[3];
                         place(in, o);
@@ -5540,7 +5543,19 @@ int main(int argc, char** argv) {
                     soupsMoved = true;
                     moved = true;
                 }
-                if (moved) w.geo.revision = ++worldGeoRev;
+                if (moved) {
+                    // only the patched meshes' corners changed since the last
+                    // revision - the backend's vertex upload and depth tie take
+                    // just those (Geometry::dirtyCorners). `OMK_NO_DIRTY=1`
+                    // leaves the list unset, so everything is re-done as before.
+                    static const bool noDirty = std::getenv("OMK_NO_DIRTY") != nullptr;
+                    if (!noDirty) w.geo.dirtyFrom = w.geo.revision;
+                    w.geo.revision = ++worldGeoRev;
+                    if (!noDirty) {
+                        w.geo.dirtyTo = w.geo.revision;
+                        w.geo.dirtyCorners.swap(dirty);
+                    }
+                }
             }
         }
         if (soupsMoved) {
