@@ -149,8 +149,60 @@ does no triangle test at all on meshes flagged `0x41`.
    counter cell. The hand-back at the program's end had already moved the
    CONTROLLER to the body's place, so the entry thinks from the controller at
    pelvis height: record (6,11) at entry, 77's first sight BLOCKED at (6,9).
-4. **The ray, cast.** `EngageIn::rayHits` from the ported `WorldRay` between the
-   two actors' node positions.
+4. ~~**The ray, cast**~~ - **DONE 2026-09-13.** `sub_426E00` casts
+   `sub_4449E0(target +244, self +244)` only once the grid sees him and he is
+   inside HALF his inner range, and the viewer now does the same: from the
+   player's root mesh to the gunman's, both as drawn last frame (the player's
+   pelvis `pos - cameraLift` until he has been drawn), over the active set's
+   shot soup at radius 0. `sub_444BB0` tests a face only when the segment's two
+   ends straddle its plane, so the ray stops at the gunman, as `sweepSphere`'s
+   `t <= 1` does. It logs each gunman's verdict when it changes.
+
+   **What the ray walks, read to the end.** `o3de_ForEachMeshInBox` walks the
+   models in `dword_530C10`, and the only writer is `sub_443300`, called from
+   `sub_4195C0` for a slot of `g_DecorSlots` (removed by `Area_LoadSet` and
+   `sub_419890` when a set goes). **The list is the linked decor set, and no
+   body is in it** - so a pelvis-to-pelvis ray cannot hit either end's own body,
+   and the set's shot soup is the right world. The old forced `true` was not
+   an accidental match for a ray that starts inside a body; it was wrong.
+
+   **The Shooting gallery** (the brain check's run, the player's real health):
+   237's ray from 231 is CLEAR, so instead of the hub's fire arm he goes
+   **6 -> 13 at 31** and closes, firing at 43 (it was 31). The player lives
+   until **51**, which gives 238 time to clear the row-29 gap and reach outcome
+   1 from 447 at 44; 240's late action 3 now arrives after the death. With the
+   fire check's 1000 health, 237 and 240 close to the player's cell (23,21) or
+   beside it by frames 217-218, and the player's sixth and seventh bolts meet
+   THEM after one frame.
+
+   **The supermarket:** robber 77's grid sight clears at 441 as before, and his
+   ray from **95** units is clear, so he RUSHES - **6 -> 8** - onto the player's
+   cell. He hits at 442 (from the side, band 0) and at **471 from the front,
+   band 2: the tip of the view** that the handoff asks a person to judge - and
+   kills at **513** (was 595). Under flag 8 his stand-down is PARKED, as
+   `Shoot_ActorAction` parks any request, and applied at 526 when his picked
+   clip is over; the recovery is at 573 and the phase is left at 574. Two runs
+   agree frame for frame.
+
+   **Re-baselined, each traced first:** `engine: shoot brain` (238 from 447,
+   alone), `shoot fire` (two bolts on 237 and 240, six impacts), `shoot death`
+   (513 / 573 / 574, the parked stand-down), `shoot move` (240 and 237, closed
+   in, push the last leg to -84.23 / 38.93) and `shoot entrance` (77, rushed
+   onto the player's cell (2,11) by 475 and turning in place, pushes the second
+   leg's first 14 frames 10.28 sideways), `shoot gunfire` (237's first shot at
+   43, 238 arming at 44 inside the 48 frames and turning to 344, 77's second
+   shot at 470 and the frontal hit at 471 inside the 500) and `shoot noise`
+   (77's engage at 441 read as ANY state out of 6 with outcome 1 - he now
+   leaves it for 8 - and the gallery window 48 frames, 240 hearing the shots at
+   43 and 44). `shoot hit` stays red for the reason it was red before this
+   step; the rest of the family - map2d, projectile pool, mode, leave, hud,
+   radar, patrol, pose, AI - held.
+
+   **A trap met on the way.** Two supermarket runs looked EMPTY - no frame
+   lines, no hits - and read like a run cut short at 182 ticks. They were
+   complete: the log holds a byte that makes `grep` treat it as binary and
+   print nothing (and `cut` refuse it), and "182 ticks" is the adventure
+   walker's count, not the frame count. `grep -a` and `LC_ALL=C cut` read it.
 5. **The two missing arms** in `shootEngage`: the spectre (type 12) and the
    cross-floor sight (`0x800000`), with a probe element that exercises each.
 6. **The ray's `0x41` skip** (`sub_444460`), measured on the shot soups before

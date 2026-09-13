@@ -11925,7 +11925,65 @@ int main(int argc, char** argv) {
                         }
                         ein.targetAlive = true;
                         ein.gridClear = gridSees;
-                        ein.rayHits = true;   // `sub_4449E0` is not cast yet - step 4
+                        // THE RAY, `sub_4449E0`, cast where `sub_426E00` casts it:
+                        // only once the grid sees him and he is inside HALF his
+                        // inner range. From the target's `+244..+252` to his own -
+                        // both ROOT nodes, the pelvises as drawn last frame - over
+                        // the meshes `o3de_ForEachMeshInBox` walks, which are the
+                        // linked DECOR SET's alone (`dword_530C10`, filled by
+                        // `sub_4195C0` from `g_DecorSlots`): no body is in it, so
+                        // neither end's own body can stop the ray. Here the active
+                        // set's shot soup, the bolts' world - still without
+                        // `sub_444460`'s 0x41 skip (`todo/shoot-sight.md` step 6).
+                        // Until 2026-09-13 this was forced TRUE, which kept every
+                        // close gunman in state 6 and never let him close to 13/8.
+                        ein.rayHits = false;
+                        if (gridSees && player && s.mo &&
+                            double(rec.rangeInner) * 0.5 > ao.dist3d) {
+                            float from[3] = {player->pos()[0],
+                                             player->pos()[1] - player->cameraLift(),
+                                             player->pos()[2]};
+                            for (std::size_t i = 0; i < playerMeshes.size(); ++i)
+                                if (playerMeshes[i].parent < 0) {
+                                    if (playerMeshAtKnown && playerMeshAt.size() >= i * 3 + 3)
+                                        for (int k = 0; k < 3; ++k)
+                                            from[k] = playerMeshAt[i * 3 + static_cast<std::size_t>(k)];
+                                    break;
+                                }
+                            float to[3] = {s.drawAt[0], s.drawAt[1], s.drawAt[2]};
+                            for (std::size_t i = 0; i < s.mo->meshes.size(); ++i)
+                                if (s.mo->meshes[i].parent < 0) {
+                                    if (s.meshAt.size() >= i * 3 + 3)
+                                        for (int k = 0; k < 3; ++k)
+                                            to[k] = s.meshAt[i * 3 + static_cast<std::size_t>(k)];
+                                    break;
+                                }
+                            const omk::TriangleSoup* soup = nullptr;
+                            for (const auto& ws : worldSlots)
+                                if (!ws.stem.empty() && ws.stem == worldSet) soup = &ws.shotSoup;
+                            double hitT = -1.0;
+                            if (soup) {
+                                const double p0[3] = {from[0], from[1], from[2]};
+                                const double d[3] = {double(to[0]) - from[0], double(to[1]) - from[1],
+                                                     double(to[2]) - from[2]};
+                                if (const auto h = omk::sweepSphere(*soup, p0, d, 0.0)) hitT = h->t;
+                            }
+                            ein.rayHits = hitT >= 0.0;
+                            static std::map<int, int> rayTold;
+                            if (auto rt = rayTold.find(s.actor);
+                                rt == rayTold.end() || rt->second != int(ein.rayHits)) {
+                                rayTold[s.actor] = int(ein.rayHits);
+                                std::printf("frame %ld: actor %d %s - RAY (sub_4449E0) at %.1f, inside "
+                                            "half his inner range %.1f: %s\n", n, s.actor,
+                                            s.model.c_str(), double(ao.dist3d),
+                                            double(rec.rangeInner) * 0.5,
+                                            !soup ? "no set to cast over"
+                                            : ein.rayHits ? "HITS the set - he holds in state 6"
+                                                          : "CLEAR - he may close (13 or 8)");
+                                if (ein.rayHits)
+                                    std::printf("    the set stops it %.2f of the way\n", hitT);
+                            }
+                        }
                         ein.coinHeads = ((s.actor * 2654435761u) >> 16) & 1;
                         const int eng = omk::shootEngage(rec, ao, cone, ein);
                         fin.targetPredicate = eng != 0;
