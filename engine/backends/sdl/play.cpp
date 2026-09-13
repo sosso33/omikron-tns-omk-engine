@@ -8593,6 +8593,39 @@ int main(int argc, char** argv) {
                     if (!mp.empty() && shootMap.load(fs.read("MAP2D/" + mp + ".MPT")))
                         std::printf("frame %ld: MAP2D %s.MPT - %zu floors, cell %u\n", n,
                                     mp.c_str(), shootMap.floors().size(), shootMap.scale());
+                    // ...AND `Shoot_Enter`'S LAST CALL, `Shoot_TickPlayer(player)`:
+                    // the player's record thinks ONCE, here, before any gunman's
+                    // brain runs. The per-frame think above ran before this frame's
+                    // entry and found shoot mode still off, and the record was just
+                    // zeroed - so without this the gunmen's first grid sight walked
+                    // from cell (0,0): the supermarket's robber 77 read CLEAR at frame
+                    // 394 from a cell the player was never on.
+                    //
+                    // NOT the per-frame think's point. That one reads the root
+                    // mesh as the CONTROLLER last drew it (`playerMeshAt`), and a
+                    // phase begun at the end of a scene program has not been drawn
+                    // by the controller since before the program: the intro drew
+                    // his body as a staged actor, so on this frame `playerMeshAt`
+                    // still held his street-start spot (13058, 1089) - a counter
+                    // cell `Shoot_Think` refuses - and the record stayed (0,0).
+                    // The hand-back at the program's end has already put the
+                    // CONTROLLER where the body stood, so its x and z are the true
+                    // ones; the height is the pelvis, `pos - cameraLift`, because
+                    // at the feet the supermarket's player stands on his grid's
+                    // upper bound and `floorAt` finds nothing. LABELLED: the engine
+                    // has one body and reads its node.
+                    if (shootMap.valid() && player) {
+                        const float ep[3] = {player->pos()[0],
+                                             player->pos()[1] - player->cameraLift(),
+                                             player->pos()[2]};
+                        const bool took = omk::shootThink(playerShootRec, shootMap, ep, 0, -1);
+                        playerShootRec.flags &= ~0x1000u;
+                        std::printf("frame %ld: Shoot_Enter's own Shoot_TickPlayer - the player's "
+                                    "record at entry: floor %d, cell (%d,%d)%s\n", n,
+                                    static_cast<signed char>(playerShootRec.node & 0xFF),
+                                    playerShootRec.destX, playerShootRec.destZ,
+                                    took ? "" : " (Shoot_Think refused the cell)");
+                    }
                     if (radar.loaded())
                         std::printf("frame %ld: RADAR - AREA +106 '%s' -> %s, height %.2f, "
                                     "%d vertices, %d edges\n", n, mp.c_str(),
@@ -11784,17 +11817,48 @@ int main(int argc, char** argv) {
                             return h;
                         };
                         fin.targetAlive = true;
-                        // THE SIGHT the engage gates on is NOT the grid walk.
-                        // Wiring `Map2d::lineOfSight` in here on 2026-09-12
-                        // stopped the Shooting gallery's gunmen firing at all -
-                        // its range really does have barriers between their
-                        // placements and the player's - and reading
-                        // `sub_426E00` afterwards says why: its sight test is
-                        // `sub_4449E0`, a RAY against geometry, and the grid
-                        // walk `sub_4359A0` is a different question. Left as it
-                        // was until that function is read; see
-                        // `todo/shoot-patrol.md` 7.
-                        fin.gridLineOfSight = true;
+                        // THE GRID SIGHT, `sub_4359A0(floor, targetCell, ownCell, 1)`
+                        // - what `sub_426E00`'s GENERAL arm acquires on
+                        // (`todo/shoot-sight.md` 1; the 2026-09-12 note that called
+                        // the ray this arm's sight was wrong). His floor `+188`, -1
+                        // seeing nothing; from the PLAYER RECORD's cell - kept by
+                        // `Shoot_TickPlayer` since step 2 - to his own. LABELLED:
+                        // every door counts as open, because the engine's
+                        // `sub_44A0F0` asks the door OBJECTS' state and the viewer
+                        // cannot. The gallery's walls block two of its three
+                        // gunmen from their placements (`map2d gallery sight`).
+                        bool gridSees = false;
+                        {
+                            const int gfl = static_cast<signed char>(rec.node & 0xFF);
+                            int bx = -1, bz = -1;
+                            if (shootMap.valid() && gfl >= 0)
+                                gridSees = shootMap.lineOfSight(gfl, playerShootRec.destX,
+                                                                playerShootRec.destZ,
+                                                                rec.destX, rec.destZ, 0xFFFF,
+                                                                &bx, &bz);
+                            static std::map<int, std::array<int, 6>> sightTold;
+                            const std::array<int, 6> key{gfl, rec.destX, rec.destZ,
+                                                         playerShootRec.destX,
+                                                         gridSees ? -1 : bx, gridSees ? -1 : bz};
+                            if (auto st = sightTold.find(s.actor); st == sightTold.end() ||
+                                                                   st->second != key) {
+                                sightTold[s.actor] = key;
+                                if (gfl < 0)
+                                    std::printf("frame %ld: actor %d %s - GRID SIGHT (sub_4359A0): "
+                                                "none - he is on no floor\n", n, s.actor,
+                                                s.model.c_str());
+                                else
+                                    std::printf("frame %ld: actor %d %s - GRID SIGHT (sub_4359A0, "
+                                                "target->self) from the player's (%d,%d) to his "
+                                                "(%d,%d) on floor %d: %s", n, s.actor,
+                                                s.model.c_str(), playerShootRec.destX,
+                                                playerShootRec.destZ, rec.destX, rec.destZ, gfl,
+                                                gridSees ? "CLEAR\n" : "BLOCKED");
+                                if (gfl >= 0 && !gridSees)
+                                    std::printf(" at (%d,%d)\n", bx, bz);
+                            }
+                        }
+                        fin.gridLineOfSight = gridSees;
                         omk::AcquireOut ao;
                         const bool cone = omk::shootAcquires(rec, fin.self,
                                                              fin.target, ao, false);
@@ -11860,7 +11924,8 @@ int main(int argc, char** argv) {
                             }
                         }
                         ein.targetAlive = true;
-                        ein.gridClear = true; ein.rayHits = true;
+                        ein.gridClear = gridSees;
+                        ein.rayHits = true;   // `sub_4449E0` is not cast yet - step 4
                         ein.coinHeads = ((s.actor * 2654435761u) >> 16) & 1;
                         const int eng = omk::shootEngage(rec, ao, cone, ein);
                         fin.targetPredicate = eng != 0;

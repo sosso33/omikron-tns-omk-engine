@@ -114,10 +114,41 @@ does no triangle test at all on meshes flagged `0x41`.
    is the consequence, which is the next step's question: do 237 and 238 walk
    out from behind the walls and acquire then, as a shooting gallery's gunmen
    would - or does something keep them hidden?
-3b. **Wire the grid sight and watch the gallery.** `gridLineOfSight` and
-   `gridClear` from `Map2d::lineOfSight(floor, player record cell, own record
-   cell)`; then the gallery's first shots, per gunman, before and after, and
-   the shoot family's movements traced one by one.
+3b. ~~**Wire the grid sight and watch the gallery**~~ - **WIRED 2026-09-13.**
+   `fin.gridLineOfSight` and `ein.gridClear` now come from
+   `Map2d::lineOfSight(his floor, the player record's cell, his own)` - his
+   floor -1 seeing nothing, every door counted open (the viewer cannot ask a
+   door object's state; labelled). `rayHits` stays forced until step 4. A log
+   line reports each gunman's sight, and its first refusing cell, when it
+   changes.
+
+   **The Shooting gallery, the same 300 frames before and after:**
+
+   | gunman | before (sight forced clear) | after (the grid) |
+   |---|---|---|
+   | 237 | first shot 8, 10 shots | blocked by the wall at (13-14,25) while he walks (11,28) -> (12,24); sight CLEAR at **31**, first shot 31, 8 shots |
+   | 238 | first shot 18, 21 shots | walks (22,36) -> (24,30) toward the gap in row 29, still blocked when the player dies at **42** (237's two hits of 7) and stands down: **no shots** |
+   | 240 | none | first shot 72 - the player outlives the first seconds now, so 240's delayed action 3 (record 15, after `scx.play.wait obj 9`) gets to fire |
+
+   Gunmen coming out of cover before they shoot - what a gallery's should do,
+   and the engine's own rule. 238 is not stuck: his blocking cell slides along
+   the wall, (20,29) -> (23,29), as his angle opens.
+
+   **The supermarket:** robber 77's sight is BLOCKED at (6,9) by the counter
+   from (6,6); he walks round, (5,8), (4,10), and it clears at **441** - he
+   fires at once and hits at 442. Before, he engaged at 418 and hit at 460.
+
+   **And a bug the wiring exposed at the phase's first frame.** The record was
+   zeroed by the mode's entry AFTER that frame's player think, so the gunmen's
+   first grid sight walked from cell (0,0) - 77 read CLEAR through the counter
+   at 394. `Shoot_Enter` ends with its own `Shoot_TickPlayer`, so the entry now
+   thinks once. The first try thought from `playerMeshAt` and was REFUSED: a
+   phase begun at the end of a scene program has not been drawn by the player
+   controller since before the program (the intro drew his body as a staged
+   actor), so `playerMeshAt` still held his street-start spot (13058, 1089), a
+   counter cell. The hand-back at the program's end had already moved the
+   CONTROLLER to the body's place, so the entry thinks from the controller at
+   pelvis height: record (6,11) at entry, 77's first sight BLOCKED at (6,9).
 4. **The ray, cast.** `EngageIn::rayHits` from the ported `WorldRay` between the
    two actors' node positions.
 5. **The two missing arms** in `shootEngage`: the spectre (type 12) and the

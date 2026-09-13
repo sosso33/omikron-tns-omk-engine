@@ -33,9 +33,10 @@ cutscene mode, fade out then nothing" (`todo/shoot-phase-end.md`).
 
 The cutscene plays, the editing ends at frame ~385, and `SHOOT MODE ENTER`
 follows at 394. **~390 frames from a cold start, no save of your own and no
-playthrough.** Left standing, the player is shot by robber 77 and DIES at 689;
-at 749 message 1 loses the phase, shoot mode ends at 750 and the Meditek
-voice-over plays (`verify.py: engine: shoot death`).
+playthrough.** Left standing, the player is shot by robber 77 and DIES at 595
+(since the grid sight, 2026-09-13: 77 walks round the counter first and his
+sight clears at 441); at 655 message 1 loses the phase, shoot mode ends at 656
+and the Meditek voice-over plays (`verify.py: engine: shoot death`).
 
 **And the REAL way in is `--area 231 --scene-load 230,56 --stand 12870,-98,1084,90 --hold "k200*40"`** - the airlock, SCENE 56 recorded over the supermarket as the story leaves it, and AREA 231's own entry cutscene. Use it before calling a phase-start fix done: the frozen camera of 2026-09-13 happened ONLY on this path (`todo/shoot-phase-end.md` 5).
 
@@ -153,8 +154,10 @@ build/omk-play "$OMK_DATA" ../tables --save ../traces/save-appart.bin \
     --area 230 --scene-chunk 56 --vulkan
 ```
 
-Stand still. Robber 77 hits you at frames **460** and **514**. Each should be a
-four-frame **downward tip of the view** with `IMPACT03.WAV` on it. A hit from
+Stand still. Robber 77 first hits you at frame **442** and kills you with his
+third bolt at **595** (the grid sight, 2026-09-13). A hit from the FRONT should be
+a four-frame **downward tip of the view** with `IMPACT03.WAV` on it; the one at
+442 now comes from the side, so it is the sound alone. A hit from
 the side would roll you and the first-person camera cannot show a roll - that is
 the engine's arithmetic, so do not expect one.
 
@@ -162,7 +165,7 @@ the engine's arithmetic, so do not expect one.
 
 All on the supermarket route above:
 
-* **DYING** - killed at 689, the phase lost at 749, then the Meditek
+* **DYING** - killed at 595, the phase lost at 655, then the Meditek
   voice-over;
 * **the robbers STEERING** by the path field;
 * **the actions' advance-then-stop** - they should close on you and then stand
@@ -200,8 +203,9 @@ pose, the guns held, the walk.
 **THE ROBBERS STEER**, the advance-then-stop of the actions, and now **THE
 HURT REACTION** (2026-09-12). Play those four before building more on them.
 The hurt is the cheapest of the four to judge: stand still on the
-`--area 230 --scene-chunk 56` route and robber 77 hits you at frames 460 and
-514, each a four-frame downward tip of the view with `IMPACT03.WAV` on it.
+`--area 230 --scene-chunk 56` route and robber 77 first hits you at 442 (from
+the side since the grid sight: the sound, no tip) and kills you at 595; a
+frontal hit is a four-frame downward tip of the view with `IMPACT03.WAV` on it.
 
 ## 4. What is left
 
@@ -217,8 +221,7 @@ The hurt is the cheapest of the four to judge: stand still on the
    is a Mecagarde: no pitch at all), and property 7 is now read at the entry -
    it is 9, `Incarnable`, where the port had been leaving -1.
    **Not yet played**: what a person should judge is the tip on every surviving
-   hit and the `IMPACT03.WAV` that goes with it (supermarket frames 460 and
-   514). **The suggested next step is now the PATROL below**, or a play pass
+   hit and the `IMPACT03.WAV` that goes with it (supermarket, from frame 442). **The suggested next step is now the PATROL below**, or a play pass
    over the four measured-only items in §3.
 2. ~~**THE PATROL, action 1**~~ - **DONE 2026-09-12**, seven steps, and it is
    its own plan file: [`shoot-patrol.md`](shoot-patrol.md). It was the
