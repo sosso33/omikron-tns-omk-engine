@@ -87,5 +87,38 @@ until the mechanism is found and reported.**
    elsewhere, then a dialog start when you arrive at your checkpoint"*), which
    may load a SCENE chunk with its own handlers and programs over AREA 141 -
    and the reader's video, which would say what the attack looks like.
-3. **Report the mechanism** (or the negative result, with the enumeration it
-   rests on) and propose the port.
+3. ~~**Report**~~ - DONE 2026-09-13: the negative result above, reported. The
+   reader chose **C**: first the phase's real start, then port what was found.
+4. ~~**The phase's REAL start**~~ - **DONE 2026-09-13, NEGATIVE as well.**
+   * **The way in** is AREA 140's `area.goto 141, 5, 7` - no scene: `omkdata`'s
+     scene map, built from every `scene.load` site in AREA and SCENE, names no
+     SCENE for AREA 141, and AREA 141's own 45 scripts load none.
+   * **The route inside**: zone 2309 "Start Shoot Dogs Entrée" (record 29 -
+     the dogs shown and entered on their routes, `shoot.begin`, the
+     "Apparition spectre" zones enabled); zone 2294 "Matamboukous Anneaux"
+     (record 14 - Matamboukous, actor 23, appears on scene programs and speaks
+     **dialog 100**); zone 2295 "Start Shoot" (record 15 - reads 589's type into
+     `Type Spectre`, enables the tombs, the medikits and the appearance zones,
+     and enters the patrolling spectres).
+   * **Dialog 100 carries no script**: `IAM\DIALOG` chunk 100 is 198 bytes,
+     speaker 23, one node-less line - *"Accepte ce modeste présent. Trois
+     Anneaux entrelacés : les deux premiers sauveront ta vie, le troisième te
+     ramènera ici."* - the three rings the phase's death spends (message 1).
+   * **No script outside AREA 141 names a released spectre**: every AREA,
+     SCENE and GLOBAL script listed, 0 references to 410 or 425-432.
+
+   So the real route adds nothing that could arm them. The mechanism is not in
+   the data this tree reads as scripts; what is left is the NATIVE side not yet
+   read for them - their `.CTL` (`SPV_FNM`'s channel: a special move or an
+   effect record that damages on contact) - and the reader's video.
+
+   Original step text: the route the game takes into the catacombs
+   (AREA 140's `area.goto 141`, and any SCENE loaded over AREA 141), zone 2309
+   "Start Shoot Dogs Entrée" (record 29, the dogs), the checkpoint dialog 100
+   at zone 2294 (record 14, Matamboukous), then zone 2295 "Start Shoot"
+   (record 15, where the harness began). Read what that route loads - scene
+   programs and message handlers - for anything that hurts the player.
+5. **Port the dogs' BITE** - `sub_421020`, the brain's outcome 3 and its
+   epilogue arm, `sub_423B10` - shown on the catacombs' dogs.
+6. **Port the LANDING messages** - `Walk_GroundResponse`'s 10 and 11 - shown on
+   AREA 141's -45.
