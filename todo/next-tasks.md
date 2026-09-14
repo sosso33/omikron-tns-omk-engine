@@ -518,7 +518,7 @@ status lists and the page builders. The inventory page works. These three are
 the same shape with different builders, so the second one should be much
 cheaper than the first.
 
-### 11. Shop UI — M, strong evidence — **STARTED 2026-09-14, `todo/shops.md`**
+### 11. Shop UI — **DONE, CONFIRMED IN PLAY 2026-09-15**, `todo/shops.md`
 
 `docs/UI.md`: TEN screens (20..28 and 32) through one open, `Ui_OpenShop`,
 whose jump table picks the title, and the titles naming their own screens 8 of

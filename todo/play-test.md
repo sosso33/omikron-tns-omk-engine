@@ -709,7 +709,7 @@ open in front of him, or one that sees you and never goes back to his beat.
 x 42235, where you can barely move and the shoot grid finds no standable cell
 under you. Tell me if the original lets you walk out of there.
 
-## 12. THE SHOPS — buy, sell, scroll, close (committed 2026-09-14, `50d9c97`..`90eaf44`), 10 minutes
+## 12. THE SHOPS — buy, sell, scroll, close — **CONFIRMED IN PLAY 2026-09-15** (*"I tested it, all good"*, after the icons, the dim, Analyser and the child-page fixes, `2a1ac71`..`c30b6e4`)
 
 Steps 1-5 of `todo/shops.md`, played headless only. Every shop is a zone you
 press ENTER in: the seller talks, you pick *Je voudrais acheter quelque
