@@ -528,15 +528,12 @@ std::optional<GroundHit> surfaceUnder(const TriangleSoup& tris, const SplitSoupG
     return best;
 }
 
-TriangleSoup soupInBox(const TriangleSoup& tris, const SplitSoupGrid& g, double minX,
-                       double maxX, double minZ, double maxZ) {
-    if (!g.matches(tris) || std::isnan(minX) || std::isnan(maxX) ||
-        std::isnan(minZ) || std::isnan(maxZ))
-        return soupInBox(tris, minX, maxX, minZ, maxZ);
-    // Both layers' candidates under the box, as triangle numbers, sorted into
-    // ascending order - the order a single grid over all of them visits - and
-    // then the linear test on each, exactly as the single-grid gather does.
-    std::vector<std::uint32_t> ids;
+namespace {
+// Both layers' candidates under the box, as triangle numbers, sorted into
+// ascending order - the order a single grid over all of them visits. Shared by
+// `soupInBox` and `sweepSphere`'s grid overload, so both gather the same way.
+void gatherSplitIds(const SplitSoupGrid& g, double minX, double maxX, double minZ, double maxZ,
+                    std::vector<std::uint32_t>& ids) {
     const auto gather = [&](const SoupGrid& layer) {
         if (layer.nx <= 0) return;
         if (maxX < layer.minX - kGridEps || minX > layer.maxX + kGridEps ||
@@ -561,6 +558,17 @@ TriangleSoup soupInBox(const TriangleSoup& tris, const SplitSoupGrid& g, double 
     gather(g.moving);
     std::sort(ids.begin(), ids.end());
     ids.erase(std::unique(ids.begin(), ids.end()), ids.end());
+}
+}  // namespace
+
+TriangleSoup soupInBox(const TriangleSoup& tris, const SplitSoupGrid& g, double minX,
+                       double maxX, double minZ, double maxZ) {
+    if (!g.matches(tris) || std::isnan(minX) || std::isnan(maxX) ||
+        std::isnan(minZ) || std::isnan(maxZ))
+        return soupInBox(tris, minX, maxX, minZ, maxZ);
+    // then the linear test on each, exactly as the single-grid gather does
+    std::vector<std::uint32_t> ids;
+    gatherSplitIds(g, minX, maxX, minZ, maxZ, ids);
     TriangleSoup out;
     for (std::uint32_t tri : ids) {
         const std::size_t t = 9 * static_cast<std::size_t>(tri);
@@ -610,44 +618,75 @@ bool insideTri(const float* a, const float* b, const float* c, const double n[3]
 }
 }  // namespace
 
-std::optional<SweepHit> sweepSphere(const TriangleSoup& tris, const double p0[3],
-                                    const double d[3], double radius) {
-    std::optional<SweepHit> best;
-    double lo[3], hi[3];
+namespace {
+// ONE triangle of the sweep - the linear scan and the grid overload both call
+// this, so they run the same arithmetic on the same face (step 11).
+inline void sweepOne(const float* a, const float* b, const float* c, const double p0[3],
+                     const double d[3], double radius, const double lo[3], const double hi[3],
+                     std::optional<SweepHit>& best) {
+    // the broad phase: the face's own box against the swept box
+    for (int k = 0; k < 3; ++k) {
+        const double mn = std::min({a[k], b[k], c[k]}), mx = std::max({a[k], b[k], c[k]});
+        if (mx < lo[k] || mn > hi[k]) return;
+    }
+    double n[3];
+    if (!triNormal(a, b, c, n)) return;
+    double s0 = n[0] * (p0[0] - a[0]) + n[1] * (p0[1] - a[1]) + n[2] * (p0[2] - a[2]);
+    if (s0 < 0.0) { n[0] = -n[0]; n[1] = -n[1]; n[2] = -n[2]; s0 = -s0; }   // two-sided
+    const double dn = n[0] * d[0] + n[1] * d[1] + n[2] * d[2];
+    if (dn >= -kSweepEps) return;                   // not closing on this face
+    double t = (s0 - radius) / -dn;
+    if (t > 1.0) return;
+    if (t < 0.0) {
+        if (s0 > radius) return;                    // behind, not penetrating
+        t = 0.0;
+    }
+    const double hit[3] = {p0[0] + t * d[0] - n[0] * radius,
+                           p0[1] + t * d[1] - n[1] * radius,
+                           p0[2] + t * d[2] - n[2] * radius};
+    if (!insideTri(a, b, c, n, hit)) return;
+    if (!best || t < best->t) {
+        SweepHit h; h.t = t;
+        for (int k = 0; k < 3; ++k) h.n[k] = n[k];
+        best = h;
+    }
+}
+
+inline void sweptBox(const double p0[3], const double d[3], double radius, double lo[3], double hi[3]) {
     for (int k = 0; k < 3; ++k) {
         lo[k] = std::min(p0[k], p0[k] + d[k]) - radius;
         hi[k] = std::max(p0[k], p0[k] + d[k]) + radius;
     }
-    for (std::size_t i = 0; i + 9 <= tris.size(); i += 9) {
-        const float* a = &tris[i]; const float* b = &tris[i + 3]; const float* c = &tris[i + 6];
-        // the broad phase: the face's own box against the swept box
-        bool out = false;
-        for (int k = 0; k < 3 && !out; ++k) {
-            const double mn = std::min({a[k], b[k], c[k]}), mx = std::max({a[k], b[k], c[k]});
-            if (mx < lo[k] || mn > hi[k]) out = true;
-        }
-        if (out) continue;
-        double n[3];
-        if (!triNormal(a, b, c, n)) continue;
-        double s0 = n[0] * (p0[0] - a[0]) + n[1] * (p0[1] - a[1]) + n[2] * (p0[2] - a[2]);
-        if (s0 < 0.0) { n[0] = -n[0]; n[1] = -n[1]; n[2] = -n[2]; s0 = -s0; }   // two-sided
-        const double dn = n[0] * d[0] + n[1] * d[1] + n[2] * d[2];
-        if (dn >= -kSweepEps) continue;                 // not closing on this face
-        double t = (s0 - radius) / -dn;
-        if (t > 1.0) continue;
-        if (t < 0.0) {
-            if (s0 > radius) continue;                  // behind, not penetrating
-            t = 0.0;
-        }
-        const double hit[3] = {p0[0] + t * d[0] - n[0] * radius,
-                               p0[1] + t * d[1] - n[1] * radius,
-                               p0[2] + t * d[2] - n[2] * radius};
-        if (!insideTri(a, b, c, n, hit)) continue;
-        if (!best || t < best->t) {
-            SweepHit h; h.t = t;
-            for (int k = 0; k < 3; ++k) h.n[k] = n[k];
-            best = h;
-        }
+}
+}  // namespace
+
+std::optional<SweepHit> sweepSphere(const TriangleSoup& tris, const double p0[3],
+                                    const double d[3], double radius) {
+    std::optional<SweepHit> best;
+    double lo[3], hi[3];
+    sweptBox(p0, d, radius, lo, hi);
+    for (std::size_t i = 0; i + 9 <= tris.size(); i += 9)
+        sweepOne(&tris[i], &tris[i + 3], &tris[i + 6], p0, d, radius, lo, hi, best);
+    return best;
+}
+
+std::optional<SweepHit> sweepSphere(const TriangleSoup& tris, const SplitSoupGrid& g,
+                                    const double p0[3], const double d[3], double radius) {
+    double lo[3], hi[3];
+    sweptBox(p0, d, radius, lo, hi);
+    if (!g.matches(tris) || std::isnan(lo[0]) || std::isnan(hi[0]) ||
+        std::isnan(lo[2]) || std::isnan(hi[2]))
+        return sweepSphere(tris, p0, d, radius);
+    // A face the gather leaves out has a horizontal box that misses the swept
+    // box, which is a face the linear broad phase rejects too; the ones it
+    // keeps are visited in ascending order, so a tie keeps the same face.
+    thread_local std::vector<std::uint32_t> ids;
+    ids.clear();
+    gatherSplitIds(g, lo[0], hi[0], lo[2], hi[2], ids);
+    std::optional<SweepHit> best;
+    for (const std::uint32_t tri : ids) {
+        const std::size_t i = 9 * static_cast<std::size_t>(tri);
+        sweepOne(&tris[i], &tris[i + 3], &tris[i + 6], p0, d, radius, lo, hi, best);
     }
     return best;
 }

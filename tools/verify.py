@@ -12275,6 +12275,77 @@ def c_engine_patch_index():
         "differ from the full merge, and the walkable + steep triangles re-placed"
 
 
+def c_engine_sweep_grid():
+    r"""`sweepSphere` through the two-layer grid gives the linear scan's earliest
+    hit, bit for bit (todo/optimization.md step 11).
+
+    The player's body sweep (`Walker::bodyHit`, against the steep soup) and the
+    follow camera's two rays (`PlayerController::cameraCollide`, against the
+    steep and the walkable soups) scanned every triangle of the set on every
+    call - the top cost of the walking profile. The steep soup now has its own
+    two-layer grid in the viewer, kept exactly as `playerGrid` is, and a sweep
+    gathers the candidates under its horizontal box as `soupInBox` does and
+    puts each, in ascending order, through the SAME per-triangle function the
+    linear scan calls - so the same face on a tie.
+
+    Two halves. `probe_grid`'s sweep rows: random segments over the extent
+    (vertical, horizontal, zero-length, oblique) and segments aimed across each
+    sampled triangle, at radius 0 / 12 / 40, through a split by a 1-in-16 mask
+    and its complement, against the scan - Anekbah, AImpasse and Sprison,
+    walkable and steep. Then the street start walking forward through
+    `--world-vulkan` with `OMK_VERIFY_GROUND=1`, which re-runs every body and
+    camera sweep linearly and compares. Measured 2026-09-14: 0 mismatches in
+    all six rows (5193 hits); by frame 120, 692 sweeps in play, 0 mismatched;
+    frame 90 byte-identical to the step-10 build standing and walking.
+
+    SHOWN TO FAIL, 2026-09-14 (todo/optimization.md step 11): the grid overload
+    gathering on the swept box's Y extent instead of its Z gives 2474 / 1490 /
+    360 / 558 / 2360 / ... mismatching sweeps in the six rows.
+    """
+    import subprocess
+    eng = os.path.join(ROOT, "engine")
+    if not os.path.isdir(eng):
+        return ("skipped",), ("skipped",), "engine/ absent"
+    b = subprocess.run(["make", "-s", "build/probe_grid", "play"], cwd=eng, capture_output=True, text=True)
+    binp = os.path.join(eng, "build", "probe_grid")
+    play = os.path.join(eng, "build", "omk-play")
+    if b.returncode != 0 or not os.path.exists(binp):
+        return ("build failed",), ("built",), "engine/ must build"
+    models = []
+    for stem in ("Anekbah", "AImpasse", "Sprison"):
+        path = omkpaths.data("MESHES/DECORS/%s.3DO" % stem)
+        if not os.path.exists(path):
+            return ("skipped",), ("skipped",), "%s absent" % stem
+        models.append(path)
+    r = subprocess.run([binp] + models, capture_output=True, text=True)
+    rows = re.findall(r"^sweep (\S+)\.3DO (walkable|steep) \| sweeps (\d+) hits (\d+) "
+                      r"\(each twice\) mismatches (\d+)", r.stdout, re.M)
+    if len(rows) != 6:
+        return (len(rows),), (6,), "probe_grid sweep rows parsed - the tool's output changed"
+    tool = tuple((st, kind, int(n), int(h), int(m)) for st, kind, n, h, m in rows)
+    save = os.path.join(ROOT, "traces", "save-appart.bin")
+    if not os.path.exists(play) or not os.path.exists(save):
+        return ("skipped",), ("skipped",), "no SDL build or save - the frontend is optional"
+    env = dict(os.environ, SDL_VIDEODRIVER="dummy", OMK_VERIFY_GROUND="1")
+    g = subprocess.run([play, omkpaths.data_root(), os.path.join(ROOT, "tables"),
+                        "--save", save, "--area", "0", "--stand", "1804,0,-6890,336",
+                        "--nofmv", "--world-vulkan", "--frames", "150", "--hold", "k200*150"],
+                       cwd=eng, env=env, capture_output=True, text=True)
+    if "through VULKAN offscreen" not in g.stdout:
+        return ("skipped",), ("skipped",), "no Vulkan device - the GPU backend is optional"
+    line = re.findall(r"^ground verify: frame 120, .*sweep (\d+) sweeps (\d+) mismatched", g.stdout, re.M)
+    if len(line) != 1:
+        return (len(line),), (1,), "the ground verify line at frame 120 - the viewer's log changed"
+    return (tool, tuple(int(x) for x in line[0])), \
+        ((("Anekbah", "walkable", 3014, 1301, 0), ("Anekbah", "steep", 3058, 772, 0),
+          ("AImpasse", "walkable", 1605, 180, 0), ("AImpasse", "steep", 1888, 279, 0),
+          ("Sprison", "walkable", 3288, 1180, 0), ("Sprison", "steep", 4242, 1481, 0)),
+         (692, 0)), \
+        "probe_grid's sweep rows (set, soup, sweeps, hits, sweeps whose grid answer differs " \
+        "from the scan in any bit), then the walk: body and camera sweeps by frame 120 and " \
+        "how many differed from the scan"
+
+
 def c_engine_pose_equivalence():
     r"""`applyPose` posing IN PLACE gives exactly what copying the rest geometry
     first gave, every field of every call (todo/optimization.md step 10).
@@ -34604,6 +34675,7 @@ SLOW = [
     ("engine: ground grid", c_engine_ground_grid, "todo/optimization.md 9; actor/walk.h"),
     ("engine: gpu present", c_engine_gpu_present, "todo/optimization.md 4; backends/vulkan/shaders/present.frag"),
     ("engine: pose equivalence", c_engine_pose_equivalence, "todo/optimization.md 10; actor/pose.h"),
+    ("engine: sweep grid", c_engine_sweep_grid, "todo/optimization.md 11; o3de/collision.h"),
     ("engine: props", c_engine_props, "todo/omk-play"),
     ("sprite ids scene-local", c_sprite_ids_are_scene_local, "docs/ASSETS"),
     ("engine: scene sounds", c_engine_scene_sounds, "engine/README"),

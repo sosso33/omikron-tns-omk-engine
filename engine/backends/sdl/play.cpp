@@ -3040,6 +3040,22 @@ int main(int argc, char** argv) {
     // the same merge for the STEEP faces, so the controller can stand on a
     // slope and slide off it instead of finding no floor (omk-play 67)
     omk::TriangleSoup playerSteep;
+    // ...and ITS two-layer grid, kept exactly as `playerGrid` is kept over
+    // `playerSoup` - rebuilt wherever `playerSteep` is refilled, the moving
+    // layer from the steep triangles the motion patch re-places. The player's
+    // body sweep and the camera's sweep walk it (todo/optimization.md step 11).
+    omk::SplitSoupGrid playerSteepGrid;
+    std::vector<std::uint8_t> steepMovingTri, steepFixedTri;
+    std::vector<std::uint32_t> steepMovingIds;
+    const auto rebuildSteepFixedGrid = [&]() {
+        steepFixedTri.assign(steepMovingTri.size(), 0);
+        for (std::size_t t = 0; t < steepMovingTri.size(); ++t) steepFixedTri[t] = !steepMovingTri[t];
+        playerSteepGrid.fixed = omk::buildSoupGrid(playerSteep, 256.0, &steepFixedTri);
+    };
+    const auto rebuildSteepMovingGrid = [&]() {
+        playerSteepGrid.moving = omk::buildSoupGrid(playerSteep, 256.0,
+                                                    std::span<const std::uint32_t>(steepMovingIds));
+    };
     std::string playerModel, playerCtlName;
     bool  playerReady = false, adventure = false, followCam = false;
     // A `scx.play.player` program owns his body right now (op 46/90).
@@ -4848,6 +4864,10 @@ int main(int argc, char** argv) {
         playerMovingIds.clear();
         rebuildFixedGrid();
         rebuildMovingGrid();
+        steepMovingTri.assign(playerSteep.size() / 9, 0);
+        steepMovingIds.clear();
+        rebuildSteepFixedGrid();
+        rebuildSteepMovingGrid();
         mergedValid = true;
         world.setTextures(worldTex);
         poolSize = worldTex.size();
@@ -5582,6 +5602,7 @@ int main(int argc, char** argv) {
                 wantSoup += w.soup.size(); wantSteep += w.steep.size();
             }
             bool newlyMoving = false;
+            bool newlySteep = false;
             const bool inPlace = mergedValid && playerSoup.size() == wantSoup && playerSteep.size() == wantSteep;
             if (inPlace) {
                 std::size_t offSoup = 0, offSteep = 0;
@@ -5598,9 +5619,16 @@ int main(int argc, char** argv) {
                             newlyMoving = true;
                         }
                     }
-                    for (const std::uint32_t t : movedSteep[sl])
+                    for (const std::uint32_t t : movedSteep[sl]) {
                         std::copy_n(w.steep.data() + 9 * static_cast<std::size_t>(t), 9,
                                     playerSteep.data() + offSteep + 9 * static_cast<std::size_t>(t));
+                        const std::size_t gt = offSteep / 9 + t;
+                        if (gt < steepMovingTri.size() && !steepMovingTri[gt]) {
+                            steepMovingTri[gt] = 1;
+                            steepMovingIds.push_back(static_cast<std::uint32_t>(gt));
+                            newlySteep = true;
+                        }
+                    }
                     offSoup += w.soup.size(); offSteep += w.steep.size();
                 }
             } else {
@@ -5627,6 +5655,20 @@ int main(int argc, char** argv) {
                 for (std::size_t t = 0; t < playerMovingTri.size(); ++t)
                     if (playerMovingTri[t]) playerMovingIds.push_back(static_cast<std::uint32_t>(t));
                 newlyMoving = true;
+                // ...and the steep faces the same way
+                steepMovingTri.assign(playerSteep.size() / 9, 0);
+                std::size_t offS = 0;
+                for (int sl = 0; sl < 2; ++sl) {
+                    const WorldSlot& w = worldSlots[static_cast<std::size_t>(sl)];
+                    if (w.stem.empty()) continue;
+                    for (const std::uint32_t t : movedSteep[sl])
+                        if (offS / 9 + t < steepMovingTri.size()) steepMovingTri[offS / 9 + t] = 1;
+                    offS += w.steep.size();
+                }
+                steepMovingIds.clear();
+                for (std::size_t t = 0; t < steepMovingTri.size(); ++t)
+                    if (steepMovingTri[t]) steepMovingIds.push_back(static_cast<std::uint32_t>(t));
+                newlySteep = true;
             }
             // `OMK_VERIFY_PATCH=1`: the full merge beside the in-place one, every
             // moving frame, compared bit for bit (`verify.py: engine: patch index`).
@@ -5655,6 +5697,9 @@ int main(int argc, char** argv) {
             if (newlyMoving) std::sort(playerMovingIds.begin(), playerMovingIds.end());
             if (newlyMoving || !playerGrid.fixed.matches(playerSoup)) rebuildFixedGrid();
             rebuildMovingGrid();
+            if (newlySteep) std::sort(steepMovingIds.begin(), steepMovingIds.end());
+            if (newlySteep || !playerSteepGrid.fixed.matches(playerSteep)) rebuildSteepFixedGrid();
+            rebuildSteepMovingGrid();
             // `OMK_VERIFY_SPLIT=1`: the moved triangles' centres from above and a
             // fixed lattice over the street, probed through the two-layer grid and
             // through the linear scan, every moving frame
@@ -6125,6 +6170,12 @@ int main(int argc, char** argv) {
                         static const bool noGroundGrid = std::getenv("OMK_NO_GROUND_GRID") != nullptr;
                         omk::setGroundVerify(std::getenv("OMK_VERIFY_GROUND") != nullptr);
                         player->setGroundGrid(noGroundGrid ? nullptr : &playerGrid);
+                        // the body and camera sweeps through the steep and
+                        // walkable grids (step 11); `OMK_NO_SWEEP_GRID=1` scans
+                        static const bool noSweepGrid = std::getenv("OMK_NO_SWEEP_GRID") != nullptr;
+                        player->setBlockerGrid(noSweepGrid ? nullptr : &playerSteepGrid);
+                        player->setCameraGrids(noSweepGrid ? nullptr : &playerSteepGrid,
+                                               noSweepGrid ? nullptr : &playerGrid);
                         // `Walk_ProbeGround` raises event 9 when the decor
                         // under his feet changes to a slot in state 2 - and
                         // from here on the feet are probed every tick
@@ -8405,8 +8456,9 @@ int main(int argc, char** argv) {
                     if (verifyGround && n % 30 == 0) {
                         const auto& gv = omk::groundVerify();
                         std::printf("ground verify: frame %ld, walker %ld probes %ld mismatched, "
-                                    "decor %ld probes %ld mismatched\n",
-                                    static_cast<long>(n), gv.walker, gv.walkerBad, gv.decor, gv.decorBad);
+                                    "decor %ld probes %ld mismatched, sweep %ld sweeps %ld mismatched\n",
+                                    static_cast<long>(n), gv.walker, gv.walkerBad, gv.decor, gv.decorBad,
+                                    gv.sweep, gv.sweepBad);
                     }
                     if (under >= 0 && under != session.activeArea()) {
                         session.playerOnArea(under);

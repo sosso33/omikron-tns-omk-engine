@@ -202,6 +202,9 @@ public:
     // (`Actor_Move` builds a capsule from the model's own list at descriptor
     // +244/+248 - HO1_FN: four of radius 10.9 from the feet to the head);
     // empty means one sphere sitting on the feet, the simulator's shape.
+    // A grid over the blockers soup for the body sweep (step 11); null keeps
+    // the linear scan, and a grid that no longer matches the soup scans too.
+    void setBlockerGrid(const SplitSoupGrid* grid) { blockerGrid_ = grid; }
     void setBlockers(const TriangleSoup* blockers, double radius,
                      std::vector<std::array<double, 3>> centres = {}) {
         blockers_ = blockers; radius_ = radius; centres_ = std::move(centres);
@@ -257,6 +260,7 @@ private:
     const SplitSoupGrid* grid_ = nullptr;
     const TriangleSoup* steep_ = nullptr;
     const TriangleSoup* blockers_ = nullptr;
+    const SplitSoupGrid* blockerGrid_ = nullptr;
     double radius_ = 0.0;
     std::vector<std::array<double, 3>> centres_;
     int    slides_ = 0;
@@ -303,8 +307,14 @@ int decorUnder(std::span<const DecorSoup> decors, const TriangleSoup& merged,
 
 // `OMK_VERIFY_GROUND`: every grid answer above also computed the linear way
 // and compared, bit for bit. Off by default; the counts are cumulative.
-struct GroundVerify { long walker = 0, walkerBad = 0, decor = 0, decorBad = 0; };
+struct GroundVerify { long walker = 0, walkerBad = 0, decor = 0, decorBad = 0,
+                      sweep = 0, sweepBad = 0; };
 void setGroundVerify(bool on);
 const GroundVerify& groundVerify();
+
+// `sweepSphere` through `grid` when there is one - the body and camera sweeps
+// (step 11) - counted against the linear scan under `OMK_VERIFY_GROUND`.
+std::optional<SweepHit> sweepThrough(const TriangleSoup& tris, const SplitSoupGrid* grid,
+                                     const double p0[3], const double d[3], double radius);
 
 }  // namespace omk

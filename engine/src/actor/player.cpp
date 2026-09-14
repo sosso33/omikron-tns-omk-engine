@@ -858,9 +858,12 @@ void PlayerController::cameraCollide(float dt) {
     // the over-reach ray, target -> 1.2x the eye distance
     double ray[3] = {D[0] * kOver, D[1] * kOver, D[2] * kOver};
     double best = 2.0;
-    for (const TriangleSoup* s : {camSolidA_, camSolidB_}) {
+    const TriangleSoup* const solids[2] = {camSolidA_, camSolidB_};
+    const SplitSoupGrid* const grids[2] = {camGridA_, camGridB_};
+    for (int k = 0; k < 2; ++k) {
+        const TriangleSoup* s = solids[k];
         if (!s || s->empty()) continue;
-        if (const auto h = sweepSphere(*s, at, ray, 0.0))
+        if (const auto h = sweepThrough(*s, grids[k], at, ray, 0.0))
             if (h->t < best) best = h->t;
     }
     double r = d;
@@ -890,9 +893,10 @@ void PlayerController::cameraCollide(float dt) {
         double best2 = 2.0;
         if (d2 > 1e-3) {
             const double ray2[3] = {D2[0] * kOver, D2[1] * kOver, D2[2] * kOver};
-            for (const TriangleSoup* sp : {camSolidA_, camSolidB_}) {
+            for (int k = 0; k < 2; ++k) {
+                const TriangleSoup* sp = solids[k];
                 if (!sp || sp->empty()) continue;
-                if (const auto h = sweepSphere(*sp, at2, ray2, 0.0))
+                if (const auto h = sweepThrough(*sp, grids[k], at2, ray2, 0.0))
                     if (h->t < best2) best2 = h->t;
             }
         }

@@ -511,6 +511,12 @@ public:
     }
     // The walker's ground probe through a grid over its soup (Walker::setGrid).
     void setGroundGrid(const SplitSoupGrid* g) { walker_.setGrid(g); }
+    // ...and the sweeps' grids (step 11): the body sweep's over the blockers,
+    // and one for each camera solid, in `setCameraSolids`'s order.
+    void setBlockerGrid(const SplitSoupGrid* g) { walker_.setBlockerGrid(g); }
+    void setCameraGrids(const SplitSoupGrid* a, const SplitSoupGrid* b) {
+        camGridA_ = a; camGridB_ = b;
+    }
 
     // Where it settles for the current position and facing - the resolve
     // with no lag, which is what a check can pin.
@@ -611,6 +617,8 @@ private:
     // frames - and `+208` is 0 clear / 1 blocked / 2 recovering.
     const TriangleSoup* camSolidA_ = nullptr;
     const TriangleSoup* camSolidB_ = nullptr;
+    const SplitSoupGrid* camGridA_ = nullptr;
+    const SplitSoupGrid* camGridB_ = nullptr;
     float camDist_ = 0.0f;             // +328
     int   camBlock_ = 0;               // +208
     // FLAG 1, the "just changed" bit: `Camera_LoadParams` sets it, the tick

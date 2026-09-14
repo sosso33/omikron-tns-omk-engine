@@ -155,6 +155,51 @@ void runSoup(const std::string& stem, const char* kind, const omk::TriangleSoup&
             ++bMis;
     }
 
+    // THE SWEEPS (collision.h, step 11): `sweepSphere` through the two-layer
+    // grids below against the linear scan. Random segments over and past the
+    // extent - some vertical, some horizontal, some of zero length - at radius
+    // 0, 12 and 40, and segments aimed from above each sampled triangle's centre
+    // down and across it, so a good share of them HIT and the earliest-hit and
+    // tie rules are exercised rather than a stream of misses.
+    struct Sw { double p0[3], d[3], radius; };
+    std::vector<Sw> sweeps;
+    const double radii[3] = {0.0, 12.0, 40.0};
+    for (int i = 0; i < 1500; ++i) {
+        Sw s{};
+        s.p0[0] = grid.minX - 0.05 * wx + 1.1 * wx * r.next();
+        s.p0[1] = ylo - 300.0 + (yhi - ylo + 350.0) * r.next();
+        s.p0[2] = grid.minZ - 0.05 * wz + 1.1 * wz * r.next();
+        const int kind = i % 4;
+        const double len = 600.0 * r.next();
+        if (kind == 0) { s.d[1] = len; }                                   // straight down
+        else if (kind == 1) { s.d[0] = len * (r.next() - 0.5); s.d[2] = len * (r.next() - 0.5); }
+        else if (kind == 2) { /* zero length */ }
+        else { s.d[0] = len * (r.next() - 0.5); s.d[1] = len * (r.next() - 0.5); s.d[2] = len * (r.next() - 0.5); }
+        s.radius = radii[i % 3];
+        sweeps.push_back(s);
+    }
+    for (std::size_t t = 0; t < n; t += step) {
+        const float* v = &soup[9 * t];
+        Sw s{};
+        s.p0[0] = (v[0] + v[3] + v[6]) / 3.0 - 30.0;
+        s.p0[1] = (v[1] + v[4] + v[7]) / 3.0 - 80.0;
+        s.p0[2] = (v[2] + v[5] + v[8]) / 3.0 - 30.0;
+        s.d[0] = 60.0; s.d[1] = 160.0; s.d[2] = 60.0;
+        s.radius = radii[t % 3];
+        sweeps.push_back(s);
+    }
+    std::vector<std::optional<omk::SweepHit>> sweepLin(sweeps.size());
+    long sweepHits = 0, sweepMis = 0;
+    double sweepLinMs = 0.0, sweepGridMs = 0.0;
+    {
+        const auto s0 = clk::now();
+        for (std::size_t i = 0; i < sweeps.size(); ++i) {
+            sweepLin[i] = omk::sweepSphere(soup, sweeps[i].p0, sweeps[i].d, sweeps[i].radius);
+            sweepHits += sweepLin[i].has_value();
+        }
+        sweepLinMs = ms(s0, clk::now());
+    }
+
     // THE TWO-LAYER GRID (collision.h, step 7c): the same probes and boxes
     // through a split into a `fixed` and a `moving` layer by a pseudo-random
     // mask (~1 in 16 moving), then through its complement, against the linear
@@ -195,10 +240,20 @@ void runSoup(const std::string& stem, const char* kind, const omk::TriangleSoup&
                 (!lin.empty() && std::memcmp(lin.data(), grd.data(), lin.size() * sizeof(float)) != 0))
                 ++spMis;
         }
+        const auto g0 = clk::now();
+        for (std::size_t i = 0; i < sweeps.size(); ++i) {
+            const auto h = omk::sweepSphere(soup, split, sweeps[i].p0, sweeps[i].d, sweeps[i].radius);
+            if (h.has_value() != sweepLin[i].has_value() ||
+                (h && std::memcmp(&*h, &*sweepLin[i], sizeof(omk::SweepHit)) != 0))
+                ++sweepMis;
+        }
+        if (flip == 0) sweepGridMs = ms(g0, clk::now());
     }
     std::printf("split %s %s moving %ld | probes %zu boxes %zu (each twice) mismatches %ld\n",
                 stem.c_str(), kind, spMoving, probes.size(), boxes.size(), spMis);
-    totalMismatch += spMis;
+    std::printf("sweep %s %s | sweeps %zu hits %ld (each twice) mismatches %ld | lin_ms %.1f grid_ms %.2f\n",
+                stem.c_str(), kind, sweeps.size(), sweepHits, sweepMis, sweepLinMs, sweepGridMs);
+    totalMismatch += spMis + sweepMis;
 
     std::printf("%s %s tris %zu grid %dx%d cell %.0f entries %zu build_ms %.2f | "
                 "floor probes %zu hits %ld mismatches %ld lin_ms %.1f grid_ms %.2f | "

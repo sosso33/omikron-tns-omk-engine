@@ -18,6 +18,19 @@ inline bool sameAnswer(const std::optional<double>& a, const std::optional<doubl
 void setGroundVerify(bool on) { gVerifyOn = on; }
 const GroundVerify& groundVerify() { return gVerify; }
 
+std::optional<SweepHit> sweepThrough(const TriangleSoup& tris, const SplitSoupGrid* grid,
+                                     const double p0[3], const double d[3], double radius) {
+    if (!grid) return sweepSphere(tris, p0, d, radius);
+    const auto h = sweepSphere(tris, *grid, p0, d, radius);
+    if (gVerifyOn) {
+        ++gVerify.sweep;
+        const auto l = sweepSphere(tris, p0, d, radius);
+        if (h.has_value() != l.has_value() || (h && std::memcmp(&*h, &*l, sizeof(SweepHit)) != 0))
+            ++gVerify.sweepBad;
+    }
+    return h;
+}
+
 std::optional<double> Walker::ground(double x, double y, double z) const {
     if (!grid_) return floorUnder(soup_, x, y - kStepUp - 1.0, z);
     const auto g = floorUnder(soup_, *grid_, x, y - kStepUp - 1.0, z);
@@ -172,11 +185,11 @@ std::optional<SweepHit> Walker::bodyHit(const double p[3], const double d[3]) co
     std::optional<SweepHit> best;
     if (centres_.empty()) {
         const double c[3] = {p[0], p[1] - radius_, p[2]};      // one sphere on the feet
-        return sweepSphere(*blockers_, c, d, radius_);
+        return sweepThrough(*blockers_, blockerGrid_, c, d, radius_);
     }
     for (const auto& off : centres_) {
         const double c[3] = {p[0] + off[0], p[1] + off[1], p[2] + off[2]};
-        const auto h = sweepSphere(*blockers_, c, d, radius_);
+        const auto h = sweepThrough(*blockers_, blockerGrid_, c, d, radius_);
         if (h && (!best || h->t < best->t)) best = h;
     }
     return best;

@@ -67,6 +67,7 @@ not a CPU figure). Against the original's 32 MB, both are the port's.
 | 7b | the depth tie re-keying the whole set every frame (the cargo moves) | **DONE** 2026-09-13 - claimed keys stored flat with a fingerprint; back to back capped CPU 39 -> 36%, run CPU time -7.6% |
 | 7c | the ground probe grid rebuilt from scratch every frame (the cargo moves) | **DONE** 2026-09-14 - two layers, fixed and moving; the per-frame rebuild 0.528 -> 0.016 ms, probes no slower; `engine: split grid` |
 | 8 | a revision that says WHICH corners moved: the set's vertex upload and depth tie take only those | **DONE** 2026-09-14 - exact (tool and game); back to back capped CPU 28 -> 25%, run CPU time -11%; `engine: dirty corners` |
+| 11 | the player's body and camera sweeps through grids - a steep-soup grid beside `playerGrid` | **DONE** 2026-09-14 - exact (tool, play, frames); `engine: sweep grid` |
 | 10 | the posed bodies: `applyPose` in place instead of copying the rest geometry first | **in progress** 2026-09-14 - exact (tool, frames); 2000 poses 62 -> 19-25 ms; capped A/B owed; `engine: pose equivalence` |
 | 9 | the walker's ground probe and `decorUnder` through the grid (step 2's grid never reached them) | **DONE** 2026-09-14 - exact (tool and game); ~0.5 ms a frame timed directly (0.17 ms a linear probe, ~3 a frame); the capped A/B was spoiled by load and is owed; `engine: ground grid` |
 
@@ -899,6 +900,67 @@ each gives **229 of 241** calls differing on all three checked models. Only the
 edits between calls can expose either: a posed geometry nobody wrote to since
 the last call still holds the rest's `phase` and `cornerVertex`, so a test that
 only posed would have passed both.
+
+### 10b. The bodies' depth tie - looked at, NOT changed (2026-09-14)
+
+The step-10 re-profile still put the posed bodies' flat tie walk first (~490
+samples standing). Two routes were weighed and neither taken:
+
+* **An exact one, measured too small.** The flat walk's table is sized
+  1.25x the triangles, so it runs to 80% full; a scratch build with the table
+  2.5x and 5x (a bigger table changes probing only, never a decision): per face
+  PSH_FN 28.3 -> 24.0 -> 21.8 ns, HO1_FN 24.0 -> 21.3 -> 19.8, and the
+  Anekbah set 18.6 -> 22.3 -> 22.3 (slower). For 45 bodies that is ~0.08 ms a
+  frame, and the set gets worse. Left as it is.
+* **A large one, not provable.** Reusing a body's walk across poses rests on
+  "which faces coincide does not change", and it can: faces of different bones
+  can meet or part, and the float rounding of placing a body at street
+  coordinates can make two different positions equal to the bit.
+
+### 11. The player's sweeps through grids - 2026-09-14
+
+**Why.** The step-10 profile: `sweepSphere` 256 samples standing (the body
+sweep 150, the camera 106), the top entry of the walking profile - every call a
+linear scan of the steep soup (31141 triangles in Anekbah), the camera's
+second ray of the walkable one too.
+
+**What changed.** `o3de/collision.*`: the per-triangle sweep test moved into
+one function the linear scan and a new grid overload both call, and the
+two-layer grid's box gathering into one function `soupInBox` and the sweep
+both call - so the grid overload is the linear scan restricted to the
+triangles whose horizontal box meets the swept box, visited in the same
+ascending order. It scans while the grid does not match the soup or a
+coordinate is NaN. `play.cpp`: `playerSteepGrid` over `playerSteep`, fixed and
+moving layers kept exactly like `playerGrid` (rebuilt in `rebuildWorld`, the
+moving steep triangles marked in both merges, the moving layer rebuilt every
+moving frame). `Walker::setBlockerGrid` and `PlayerController::setCameraGrids`
+take them; `OMK_NO_SWEEP_GRID=1` keeps the scans; `OMK_VERIFY_GROUND=1` now
+also compares every body and camera sweep with the scan.
+
+**Same answers, proved.** `probe_grid` sweep rows - random and aimed segments,
+radius 0 / 12 / 40, both mask splits, walkable and steep: 0 mismatches over
+17095 sweeps on Anekbah / AImpasse / Sprison, 5193 of them hits. In play,
+walking forward 150 frames: 692 body and camera sweeps by frame 120, 0
+mismatched; frame 90 byte-identical to the step-10 build standing and walking.
+`engine: sweep grid` (new); `probe grid`, `split grid`, `ground grid`,
+`engine: walk`, `walker falls`, `player walk`, `airlock walk`, `player
+vertical`, `player jump`, `crowd push` pass.
+
+**Timed directly** (`probe_grid`, the same sweeps, scan against one split):
+
+| set, soup | sweeps | scan | grid |
+|---|---|---|---|
+| Anekbah walkable | 3014 | 99.7 ms | **1.94 ms** (51x) |
+| Anekbah steep | 3058 | 195.3 ms | **4.37 ms** (45x) |
+| AImpasse walkable / steep | 1605 / 1888 | 0.6 / 2.6 ms | 0.49 / 2.28 ms |
+| Sprison walkable / steep | 3288 / 4242 | 18.3 / 34.7 ms | 8.08 / 21.57 ms |
+
+On the street a sweep goes from ~64 to ~1.4 microseconds; a small set gains
+little, as the grid's cells hold most of it. A capped A/B in play is owed.
+
+**SHOWN TO FAIL**: the grid overload gathering on the swept box's Y extent
+instead of its Z - 2474 / 1490 / 360 / 558 / 2360 / ... mismatching sweeps in
+the six rows; restored by editing back, green.
 
 ### 5. `main`'s own time
 

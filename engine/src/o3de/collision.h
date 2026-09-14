@@ -235,5 +235,12 @@ std::optional<GroundHit> surfaceUnder(const TriangleSoup& tris, const SplitSoupG
                                       double x, double y, double z);
 TriangleSoup soupInBox(const TriangleSoup& tris, const SplitSoupGrid& grid,
                        double minX, double maxX, double minZ, double maxZ);
+// `sweepSphere` through the grid (todo/optimization.md step 11): the candidates
+// under the sweep's horizontal box, gathered as `soupInBox` gathers them, in
+// ascending order, each put through the SAME per-triangle test the linear scan
+// runs - so the same earliest hit, and the same face on a tie. The linear scan
+// while the grid does not match the soup or a coordinate is NaN.
+std::optional<SweepHit> sweepSphere(const TriangleSoup& tris, const SplitSoupGrid& grid,
+                                    const double p0[3], const double d[3], double radius);
 
 }  // namespace omk
