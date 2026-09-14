@@ -62,7 +62,7 @@ not a CPU figure). Against the original's 32 MB, both are the port's.
 | 4 | the interface composited on the GPU in adventure mode (H4) | **the conversions DONE** 2026-09-13 - readback and upload by table, uncapped ~51.5 -> ~59.5 fps, capped CPU 57 -> 49, `engine: pixel tables`. **4b DONE** 2026-09-14 - a frame nothing is drawn over is dithered and presented on the GPU: same binary on/off/on, capped CPU time 12.9 / 15.1 / 14.0 s, `engine: gpu present`; frames WITH interface still round-trip |
 | 5 | break down `main`'s own time (H5) and re-rank | open |
 | 6 | the memory pass: where 236 MB goes, against a 365 MB Vita budget that vitaGL's textures also come out of | **first cut DONE** 2026-09-13 (as "step 5" in the log below) - music at its own rate, the headless audio queue dropped: live heap 234 -> 140 MB, window footprint 243 -> 185 MB; the rest ranked |
-| 7 | re-measure everything, and decide whether the Vita is in reach | open |
+| 7 | re-measure everything, and decide whether the Vita is in reach | **DONE** 2026-09-14 - main thread 6.0 ms a frame capped (11.1 with `--enhance-all`, 6.9 of it the supersample resolve), live heap 137 MB; break-even ~5.5x slower than the M1; NOT in reach at 30 fps on one core without GPU skinning / lighting - see below |
 | 7a | the moving set meshes' per-frame patch (found by the step-4 re-profile) | **DONE** 2026-09-13 - a per-mesh index and an in-place merge; capped CPU 50 -> 34% of a core, `engine: patch index` |
 | 7b | the depth tie re-keying the whole set every frame (the cargo moves) | **DONE** 2026-09-13 - claimed keys stored flat with a fingerprint; back to back capped CPU 39 -> 36%, run CPU time -7.6% |
 | 7c | the ground probe grid rebuilt from scratch every frame (the cargo moves) | **DONE** 2026-09-14 - two layers, fixed and moving; the per-frame rebuild 0.528 -> 0.016 ms, probes no slower; `engine: split grid` |
@@ -1202,6 +1202,91 @@ The shipped data fitted a 32 MB machine, so nothing in it forces the current
 figure.
 
 ### 7. The Vita decision
+
+#### Measured 2026-09-14, after steps 2-11
+
+**CPU, the main thread, capped at 30 on the M1** (`sample` 20 s, the street
+start standing, windowed Vulkan, load ~3; waits separated from work by the
+leaf frame of each stack):
+
+| | main thread working | work a frame | largest leaves, ms a frame |
+|---|---|---|---|
+| defaults (the game's own settings, crowd 4 from the save) | 18.0% | **6.0 ms** | depth tie 0.79, crowd lights 0.65, `main` 0.57, `applyPose` 0.45, `composePose` 0.24, sin/cos 0.24 |
+| `--enhance-all --density 4` | 33.3% | 11.1 ms | **`readback` 6.9** - the 4x supersample's CPU resolve, and supersampling also takes the frame off step 4b's GPU present - then depth tie 0.51, `main` 0.40, `applyPose` 0.30 |
+
+**At the Vita's own resolution** (`--res 960x544`, defaults, same method):
+main thread 18.9% working = **6.3 ms** a frame, largest leaves depth tie 0.77,
+crowd lights 0.70, `main` 0.56, `applyPose` 0.54 - the same work within the
+run-to-run spread - with 900 of 900 frames on step 4b's GPU present path and
+30.0 fps (worst frame 35 ms). Resolution moves the GPU's work, not this
+thread's: nothing measured here changes with the pixel count.
+
+Both held 30.0 fps (worst frame 41 / 35 ms). The enhancements' extra 5 ms is
+almost all the supersample resolve, which a Vita build would not ship; the
+number that matters for the decision is the default **6.0 ms**. The other
+threads (Metal's command queues ~0.3 ms a frame, the audio IO thread) belong to
+this Mac's drivers and would be replaced on a Vita.
+
+**Memory** (headless street run under `MallocStackLogging`, snapshot at 40 s):
+**136.8 MB live heap** in 44876 allocations; physical footprint 206 MB, of
+which ~41 MB is the GPU driver's (IOAccelerator 21 MB + unmapped graphics
+20 MB) and 4 MB the profiler's. Largest sites: render corners 18.2 MB, posed
+bodies' geometries 16.4 MB (921 allocations), the music 16.1 MB, shared
+texture pixels 12.6 MB, collision soups 11.6 MB, `main` 11.5 MB, playing
+sounds 9.4 MB, the two scene files 7.3 MB, the depth tie's tables ~9.7 MB.
+
+**The CPU factor - the part that is not measured.** A Vita core is a Cortex-A9
+at 444 MHz (333 by default, 444 with Wi-Fi off). The one sourced figure: the
+Cortex-A9 is 2.5 DMIPS/MHz, so ~**1,110 DMIPS a core** at 444 MHz. No source
+found gives the M1's performance core in DMIPS or CoreMark, and the Geekbench 5
+single-core figure the M1 has (~1700) has no Cortex-A9 counterpart (Geekbench 5
+does not run on those devices). So the factor stays a question, and the
+decision is framed by the BREAK-EVEN instead:
+
+* 6.0 ms of main-thread work at 30 Hz fits a 33.3 ms frame on a core up to
+  **~5.5x slower** than the M1's, with nothing left for the GL driver, audio
+  or the interface;
+* the break-even corresponds to an M1 core of only ~6,100 DMIPS against the
+  A9's ~1,110 - and the M1's performance core is a 2020 desktop-class core,
+  where DMIPS/MHz alone for recent designs is several times the A9's at seven
+  times the clock. That last clause is a reading of the gap, not a measurement.
+
+#### The decision
+
+**A 30 fps Vita build of this port, doing this CPU work on one core, is NOT in
+reach** - by an estimated factor of several, not a few percent. What the port
+now spends is no longer the port's overhead in the sense this file started
+from (linear scans, whole-set copies, a GPU round trip): it is PER-VERTEX and
+PER-FACE work - posing ~20 bodies, lighting the crowd per vertex, the depth
+tie over every posed face - that the 1999 engine did on a Pentium II at a
+fraction of this detail, and that the Dreamcast port presumably did with
+fewer, simpler bodies.
+
+What would change the answer, in order of how much it would move:
+
+1. **GPU skinning and GPU lighting** - the posed bodies and the crowd's
+   per-vertex light as vertex-shader work behind `renderer.h`. That removes
+   `applyPose`, `composePose`'s matrix work, `applyLights` and most of the
+   uploads from the CPU, and vitaGL has shaders. It changes WHERE the answer is
+   computed, which this file's rule allows, but it needs its own exactness
+   story (GPU float against CPU float) - PORTING's tiers, not this file's.
+2. **The depth tie on a GL backend** decided differently: it exists because a
+   Vulkan depth compare cannot reproduce the engine's quantised strict test;
+   a backend that owns its depth format and compare may settle coincident
+   faces without walking them.
+3. **Using the other three cores**: posing and lighting are per body and
+   independent, so they parallelise; the script VM and the session do not
+   need to.
+4. **Measuring on the device** before any of the above - one vitaGL spike
+   running `composePose` + `applyPose` + `applyLights` over a street's bodies
+   gives the factor this section could only frame.
+
+The memory side is closer: 137 MB of live heap against the 365 MB budget
+leaves room, but vitaGL keeps its own texture copies and a Vita build would
+want the music streamed rather than held (16 MB) and the posed geometries
+shared or on the GPU (16 MB).
+
+Nothing in this decision starts the port; it closes step 7.
 
 Re-run step 1. The Vita's CPU is several times slower per core than the M1
 (order of magnitude, not measured here), so the question is whether the
