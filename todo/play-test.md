@@ -709,6 +709,72 @@ open in front of him, or one that sees you and never goes back to his beat.
 x 42235, where you can barely move and the shoot grid finds no standable cell
 under you. Tell me if the original lets you walk out of there.
 
+## 12. THE SHOPS — buy, sell, scroll, close (committed 2026-09-14, `50d9c97`..`90eaf44`), 10 minutes
+
+Steps 1-5 of `todo/shops.md`, played headless only. Every shop is a zone you
+press ENTER in: the seller talks, you pick *Je voudrais acheter quelque
+chose*, and the shop screen opens; closing it plays the goodbye.
+
+**Keys in a shop**: the four buttons down the right (Acheter / Vente,
+Examiner, Quitter) start focused - UP/DOWN move among them; LEFT crosses into
+the item rows (and ENTER on a button does the same); UP/DOWN walk the rows;
+ENTER on a row does what the selected BUTTON says; TAB or *Quitter* leaves.
+
+**(a) The pharmacy - a purchase.** Already open if you launched it:
+
+```
+build/omk-play ../gamedata ../tables --save ../traces/save-appart.bin \
+    --area 39 --money 300 --nofmv --no-crowd
+```
+
+`--money` is a harness write (the save has no seteks). Right looks like: the
+rows and header in pale blue, *Grand médikit* and *Petit médikit* in the rows,
+*Acheter* on the second header line, *Seteks en votre possession : 300* and a
+price that follows the cursor (200, 50). ENTER on the large medikit: money
+drops to 100 and the second line reads *Objet acheté !* for five seconds;
+ENTER again: *Pas assez de seteks ! !*.
+
+**(b) The bank - a sale.**
+
+```
+build/omk-play ../gamedata ../tables --save ../traces/save-appart.bin \
+    --area 83 --stand 13875,-6,20441,321 --give 191 --nofmv --no-crowd
+```
+
+The bank shows what YOU carry, in a deeper blue, titled *Banque - vente*,
+with *Vente* on the second line. The price is HALF: the Hypra reads 2500.
+ENTER on it: *Voulez-vous vraiment vendre cet objet ?*, its name, and *Oui* /
+*Non* (LEFT/RIGHT). *Oui*: money 2500, the Hypra gone, back on the rows. On
+*Notice MK400* (price 0) the sale is refused: *Vente non autorisée !*.
+Known and kept: a weapon's name reads *Hypra - 0* (an unidentified count).
+
+**(c) The Lahoreh library - sixteen rows through nine.**
+
+```
+build/omk-play ../gamedata ../tables --save ../traces/save-appart.bin \
+    --area 86 --stand 12784,80,24673,138 --nofmv --no-crowd
+```
+
+No conversation here: ENTER at a shelf opens it. LEFT into the books, then
+DOWN: the cursor stops at the middle row and the list scrolls under it to the
+sixteenth book.
+
+**(d) Examiner.** In any shop, select *Examiner*, cross into the rows and
+press ENTER: a box with **nothing in it**, and ENTER takes you back. That is
+what the code does - the examined row is stored and never read - so **tell me
+if the original shows the object here**, because that would mean a path this
+reading missed.
+
+**(e) Leaving.** TAB and *Quitter* both close a shop into the seller's
+goodbye. **Changed on the way, on other screens:** SPACE no longer backs out
+of the start menu, the pause screen or OPTIONS, because the engine's input
+routine only lets a screen close when its data says so. Tell me if the
+original lets SPACE leave any of those.
+
+Wrong looks like: rows in dark red (the placeholder), a cursor that cannot
+leave the four buttons, a price that stays 0, money that does not move, a
+confirm that opens on the buttons, or TAB doing nothing.
+
 ## What is NOT worth testing yet
 
 * ~~the videophone's own picture inside the sneak~~ — **CONFIRMED IN PLAY
