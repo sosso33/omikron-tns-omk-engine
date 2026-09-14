@@ -25,11 +25,26 @@
 namespace omk {
 
 // The three lists `State_Apply` hands to `ObjectList_SetCapacity`. A fourth -
-// list 3, a shop's stock - is sized to 16 and `ObjectList_Load`ed per area
-// when case 25 opens it, and is never stored in the DB.
+// list 3, a shop's stock - is never stored in the DB: see `shopStock`.
 enum class ObjectList { Carried = 0, Second = 1, Memos = 2 };
 
 std::vector<int> objectList(const GameState& s, ObjectList which);
+
+// LIST 3, A SHOP'S STOCK, is the ACTIVE AREA BLOCK's `+8`: sixteen int16
+// object ids ending at 0xFFFF. `Game_HandleEvent` case 9 - the player's feet
+// on the other resident area - re-points it and loads it,
+//
+//     dword_69BD88 = dword_69BC40[4 * dword_69BC60] + 8;   // the id array
+//     ObjectList_SetCapacity(3, 16);                        // count to 0xFFFF
+//     ObjectList_Load(3);                                   // IAM\OBJECT by id
+//
+// and case 25 does the same three when list 3 is opened. Nothing else writes
+// it: case 38 (buy) inserts into list 0 and never removes from the stock, so
+// reading the block whenever a shop is up is the same list the engine holds.
+// The shipped stock is what the shop says it is - the pharmacy's two
+// medikits, a restaurant's ten dishes, the Lahoreh library's sixteen books,
+// and nothing at the bank, which sells.
+std::vector<int> shopStock(std::span<const std::byte> areaBlock);
 
 // The result the event writes back at `+4`.
 enum class InvResult { Refused = 0, Ok = 1, Two = 2, Three = 3 };

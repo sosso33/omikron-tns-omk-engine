@@ -1977,6 +1977,43 @@ Lahoreh library through one shared list store — so a colour one open failed to
 write would survive from the last — and asserts the selection, the hidden
 button, both lists' colour and the composed row bar.
 
+#### ...its rows are the AREA's STOCK, and two hooks reach them (2026-09-14)
+
+**The stock is the active AREA block's `+8`** — sixteen int16 object ids ending
+at 0xFFFF. `Game_HandleEvent` case 9, the player's feet landing on the other
+resident area, points list 3 at it and loads it:
+
+```
+dword_69BD88 = dword_69BC40[4 * dword_69BC60] + 8;   // list 3's id array
+ObjectList_SetCapacity(3, 16);                        // count up to 0xFFFF
+ObjectList_Load(3);                                   // each id's IAM\OBJECT record
+```
+
+and case 25 repeats the three when list 3 is opened. Nothing else writes it:
+case 38, the purchase, inserts into list 0 and takes the price from the player
+record's `+172`, and never removes from the stock. Every shop site is
+`ui.open <shop>, 3, var`, and `ui.open`'s handler stores that 3 in
+`dword_4C0B64`, the open list. The shipped data reads the way the shops are
+named: the pharmacy (AREA 39) two medikits, a restaurant (30) ten dishes, the
+Lahoreh library (86) sixteen books at 5, an armoury (85) its guns and
+ammunition — and **the bank (83) nothing**, because `Ui_OpenShop`'s bind is
+`sub_42ADD0(rows, 0, bank ? 0 : -1)`, and a list argument other than -1 raises
+event 25 on it: the bank opens **list 0, the player's own inventory**, which is
+what a bank buys.
+
+**Two hooks, and neither was modelled.** The panel's input hook `0x004AEE00` is
+
+```
+if (panel+24 == 0 && word_4E3372 == 3) return 0;   // on the buttons, at Back
+return sub_42A710(screen, panel);                   // LEFT/RIGHT between lists
+```
+
+so LEFT crosses from the buttons into the rows unless "Back" is chosen. And the
+rows' own list hook is `sub_42AFF0` **itself** — the centred window the sneak's
+rows reach through their wrapper — so sixteen books walk through nine widgets.
+Without either, a shop's cursor could not leave its four buttons.
+`verify.py: engine: shop open` walks both and reads the stock of four areas.
+
 **Not a fault, and worth saying because it looks like one:** the blurred
 square beside the rows in a shop render is `Ui_DrawItemCursor`'s sixteen
 orbiting quads on the focused "Acheter" button, and the shop panel draws no

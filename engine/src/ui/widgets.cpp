@@ -1625,6 +1625,26 @@ bool UiWalk::press(std::uint32_t bits) {
                 if (bits & kUiLeft)  { if (moveLists(-1)) return true; }
                 if (bits & kUiRight) { if (moveLists(1))  return true; }
             }
+        } else if (panel_->hook == kHookShopPanel) {
+            // THE SHOPS' panel hook (0x004AEE00), and the only way from the
+            // buttons to the stock rows:
+            //
+            //     if (panel+24 == 0 && word_4E3372 == 3) return 0;
+            //     return sub_42A710(screen, panel);
+            //
+            // `panel+24` 0 is the BUTTON list and `word_4E3372` its
+            // selection, so with "Back" (button 3) chosen the hook declines
+            // and LEFT/RIGHT fall through to the buttons' own mover;
+            // anywhere else they step between lists like any `sub_42A710`
+            // panel. Unmodelled, the walk could never leave the buttons and
+            // no row of a shop could be chosen.
+            bool declines = false;
+            if (cur_ == 0 && !panel_->lists.empty())
+                declines = selectionOf(panel_->lists.front()) == 3;
+            if (!declines) {
+                if (bits & kUiLeft)  { if (moveLists(-1)) return true; }
+                if (bits & kUiRight) { if (moveLists(1))  return true; }
+            }
         } else if (panel_->hook == w_->moveListsHook()) {
             // `sub_42A710(screen, panel) = sub_42A5C0(screen, panel, 1, 2)` -
             // `Ui_MoveBetweenLists` with LEFT stepping back and RIGHT
@@ -1743,6 +1763,22 @@ bool UiWalk::press(std::uint32_t bits) {
         // dead: "I can't use Utiliser, Utiliser sur or Examiner when I
         // select an item". `engine: sneak` was red on main for the same
         // reason.
+        if (bits & kUiConfirm) return confirm();
+        return false;
+    }
+    if (l->hook == kHookRowWindow) {
+        // A list whose hook is `sub_42AFF0` DIRECTLY - the shops' nine stock
+        // rows (0x004E3640). The same centred window the sneak's rows reach
+        // through `sub_49C050`, without that wrapper's memory-page tail: move
+        // the selection, scroll once it passes the middle widget, raise
+        // event 30 on a move. Unmodelled, the walk reached the first row of
+        // a shop and no further, and a library of sixteen books showed nine.
+        if (moveRowWindow(*l, bits)) {
+            log_.push_back("row move: event 30 for the selected row");
+            return true;
+        }
+        // ...and a confirm is still the ROW's own callback (the shop's
+        // `0x004AEAA0`, buy or sell), not the mover's.
         if (bits & kUiConfirm) return confirm();
         return false;
     }

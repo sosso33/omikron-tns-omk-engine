@@ -12,7 +12,10 @@
 // hidden, the colour written onto both lists, and the pixel a stock row's bar
 // then composes to - so `verify.py: engine: shop open` can tell a per-screen
 // value from one left over by the screen opened before it.
+#include "formats/iam.h"
 #include "platform/datafs.h"
+#include "script/inventory.h"
+#include "script/objects.h"
 #include "ui/screendraw.h"
 #include "ui/text.h"
 #include "ui/widgets.h"
@@ -83,6 +86,70 @@ int main(int argc, char** argv) {
                     rc ? rc[0] : -1, rc ? rc[1] : -1, rc ? rc[2] : -1,
                     hc ? hc[0] : -1, hc ? hc[1] : -1, hc ? hc[2] : -1,
                     px[0], px[1], px[2]);
+    }
+
+    // ---- THE TWO HOOKS: the panel's `0x004AEE00` and the rows' `0x0042AFF0`
+    //
+    // The shop opens on its BUTTON list. LEFT crosses into the rows through
+    // the panel hook - `sub_42A710` unless the buttons are current AND "Back"
+    // (button 3) is selected, where it declines - and DOWN then walks the
+    // sixteen books through the nine widgets with the centred window.
+    {
+        omk::UiWalk lib(w);
+        lib.open(32);
+        lib.bindRows(omk::kListShopRows, 16);
+        const auto rowSel = [&](omk::UiWalk& wk) {
+            for (const auto& l : wk.panel()->lists)
+                if (l.addr == omk::kListShopRows) return wk.selectionOf(l);
+            return -1;
+        };
+        const int opened = lib.currentList();
+        lib.press(omk::kUiLeft);
+        const int crossed = lib.currentList();
+        for (int k = 0; k < 10; ++k) lib.press(omk::kUiDown);
+        std::printf("walk 32: opens on list %d, LEFT -> list %d, ten DOWNs -> widget %d "
+                    "window %d (book %d)%s\n", opened, crossed, rowSel(lib),
+                    lib.rowWindow(omk::kListShopRows),
+                    rowSel(lib) + lib.rowWindow(omk::kListShopRows),
+                    lib.approximate() ? " approximate" : "");
+        omk::UiWalk ph(w);
+        ph.open(21);
+        const auto btnSel = [&]() {
+            for (const auto& l : ph.panel()->lists)
+                if (l.addr == omk::kListShopButtons) return ph.selectionOf(l);
+            return -1;
+        };
+        std::printf("walk 21: opens on list %d button %d; DOWN ->", ph.currentList(), btnSel());
+        // Acheter -> preview -> Back: TWO presses, because the hidden Vente
+        // is skipped - a third wraps round to Acheter
+        for (int k = 0; k < 2; ++k) {
+            ph.press(omk::kUiDown);
+            std::printf(" %d(l%d)", btnSel(), ph.currentList());
+        }
+        std::printf("; log:");
+        for (const auto& e : ph.log()) std::printf(" [%s]", e.c_str());
+        const int btn = btnSel();
+        ph.press(omk::kUiLeft);
+        std::printf("\nwalk 21: button %d, LEFT there -> list %d\n", btn, ph.currentList());
+    }
+
+    // ---- THE STOCK: list 3 is the active AREA block's `+8` ----------------
+    //
+    // Sixteen int16 ids ending at 0xFFFF, which `Game_HandleEvent` case 9
+    // points list 3 at on entering an area. Printed by name for the pharmacy,
+    // a restaurant, the bank (which sells, and ships none) and the Lahoreh
+    // library (all sixteen), so a wrong offset or a wrong terminator reads as
+    // the wrong goods rather than as a plausible count.
+    const auto objects = omk::loadObjects(fs);
+    const std::vector<omk::Recipe> noRecipes;
+    const omk::Inventory inv(objects, noRecipes);
+    const auto areaFile = fs.read("IAM/AREA");
+    const auto arch = omk::IamArchive::open(areaFile);
+    for (int area : {39, 30, 83, 86}) {
+        const auto ids = omk::shopStock(arch.chunk(static_cast<std::size_t>(area)));
+        std::printf("stock area %d: %zu", area, ids.size());
+        for (int id : ids) std::printf(" | %d %s", id, inv.displayName(id, 0).c_str());
+        std::printf("\n");
     }
     return 0;
 }

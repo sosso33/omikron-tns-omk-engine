@@ -9205,6 +9205,12 @@ int main(int argc, char** argv) {
                 walk = std::move(fresh);
                 openScreen = want;
                 screenFromScript = fromScript;
+                // `ui.open`'s own `dword_4C0B64 = param` when it is not -1
+                // (SCRIPT_VM 70) - the inventory channel's OPEN LIST, which
+                // every shop site sets to 3, its stock. The bank's binder then
+                // overrides it with event 25 on list 0 (`sub_42ADD0`).
+                if (fromScript && session.pendingUiParam() != -1)
+                    inv.openList(session.pendingUiParam());
                 // THE SLIDER PAGE'S HOOK, 0x0049D4D0, on the frame screen 7
                 // opens: `if (dword_6A17CC != -1)` resolve it with
                 // `sub_40E630` and call `sub_452570` at once - the journey
@@ -16107,6 +16113,48 @@ int main(int argc, char** argv) {
                 walk.reset();
                 openScreen = -1;
                 screenFromScript = true;
+            }
+        }
+        // ---- THE SHOP'S STOCK ROWS (todo/shops.md step 2) ----------------
+        //
+        // `Ui_OpenShop` binds the nine rows with `sub_42ADD0(rows, 0, arm)`,
+        // where the arm is 0 at the bank and -1 in the other nine. A list
+        // argument that is not -1 raises event 25 on it, so the BANK opens
+        // list 0 - the player's own inventory, which is what a bank buys -
+        // and the nine keep the list `ui.open` named: 3, the stock, which is
+        // the active area block's `+8` (`omk::shopStock`). Then case 29 for
+        // the count and case 33 for each name, through the same window and
+        // past-the-end rule as the sneak's rows (`sub_42AAE0`).
+        if (walk && walk->panel() && walk->panel()->addr == omk::kPanelShop) {
+            sneakRows.clear();
+            sneakHidden.clear();
+            if (w.screenParam(openScreen) == 0 && inv.openedList() != 0)
+                inv.openList(0);                        // Game_RaiseEvent(25, 0)
+            std::vector<int> ids;
+            if (inv.openedList() == 3)
+                ids = omk::shopStock(session.residentSlot(session.activeSlot()).areaChunk);
+            else if (inv.openedList() == 0)
+                ids = omk::objectList(state, omk::ObjectList::Carried);
+            const int window = walk->rowWindow(omk::kListShopRows);
+            for (const auto& l : walk->panel()->lists) {
+                if (l.addr != omk::kListShopRows) continue;
+                for (std::size_t k = 0; k < l.items.size(); ++k) {
+                    const std::size_t row = k + static_cast<std::size_t>(std::max(0, window));
+                    if (row >= ids.size()) {
+                        sneakHidden.insert(l.items[k].addr);   // not drawn, not selectable
+                        continue;
+                    }
+                    sneakRows[l.items[k].addr] = inv.displayName(ids[row], 0);
+                }
+            }
+            walk->bindRows(omk::kListShopRows, static_cast<int>(ids.size()), window);
+            static int shopTold = -1;
+            if (shopTold != openScreen * 100 + static_cast<int>(ids.size())) {
+                shopTold = openScreen * 100 + static_cast<int>(ids.size());
+                std::printf("shop: screen %d, object list %d, %zu rows:", openScreen,
+                            inv.openedList(), ids.size());
+                for (int id : ids) std::printf(" %d", id);
+                std::printf("\n");
             }
         }
         // ---- `sub_423A40`, the tail of `Actor_SetProperty` (`script/hooks.h`)

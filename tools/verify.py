@@ -19891,16 +19891,40 @@ def c_engine_shop_open():
     r = subprocess.run([tool, omkpaths.data_root(),
                         os.path.join(tb, "ui_widgets.json"),
                         os.path.join(tb, "ui.json")],
-                       capture_output=True, text=True)
-    lines = [ln for ln in r.stdout.splitlines() if ln.startswith("screen ")]
-    return (len(lines), lines), \
+                       capture_output=True)
+    # the names are the object records' own cp1252 bytes
+    out = r.stdout.decode("cp1252", "replace")
+    lines = [ln for ln in out.splitlines() if ln.startswith("screen ")]
+    # STEP 2, THE STOCK: list 3 is the active AREA block's `+8`
+    stock = {}
+    for ln in out.splitlines():
+        m = re.match(r"stock area (\d+): (\d+)", ln)
+        if m:
+            parts = ln.split(" | ")[1:]
+            stock[int(m.group(1))] = (int(m.group(2)),
+                                      [int(p.split(" ", 1)[0]) for p in parts],
+                                      parts[0].split(" ", 1)[1] if parts else "")
+    # ...and the two hooks that reach the rows: the panel's 0x004AEE00 and
+    # the rows' bare sub_42AFF0
+    walks = [ln for ln in out.splitlines() if ln.startswith("walk ")]
+    return (len(lines), lines, len(stock), stock.get(39), stock.get(83),
+            stock.get(30, (0, [], ""))[:1] + (stock.get(30, (0, [], ""))[2],),
+            stock.get(86, (0, [], ""))[0], stock.get(86, (0, [], ""))[1][:3],
+            walks), \
            (3, [
             "screen 21 param 1: buttons select 0, hidden acheter 0 vente 1, "
             "rows 150 215 250, header 150 215 250, row bar paints 24 44 49",
             "screen 20 param 0: buttons select 1, hidden acheter 1 vente 0, "
             "rows 20 165 250, header 20 165 250, row bar paints 0 32 49",
             "screen 32 param 9: buttons select 0, hidden acheter 0 vente 1, "
-            "rows 150 215 250, header 150 215 250, row bar paints 24 44 49"]), \
+            "rows 150 215 250, header 150 215 250, row bar paints 24 44 49"],
+            4, (2, [15, 16], "Grand médikit"), (0, [], ""),
+            (10, "Barre de Chokovat"), 16, [237, 264, 265],
+            ["walk 32: opens on list 0, LEFT -> list 1, ten DOWNs -> widget 4 "
+             "window 6 (book 10)",
+             "walk 21: opens on list 0 button 0; DOWN -> 2(l0) 3(l0); log: "
+             "[open] [move] [move]",
+             "walk 21: button 3, LEFT there -> list 0"]), \
            "shop screens the probe opened (a parse that reads none fails AS a " \
            "parse); then per screen - the pharmacy, the bank, the Lahoreh " \
            "library, through one shared store - the button selection " \

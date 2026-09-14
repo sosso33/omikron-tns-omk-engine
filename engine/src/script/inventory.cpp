@@ -5,6 +5,22 @@
 
 namespace omk {
 
+// `ObjectList_SetCapacity(3, 16)` over the id array case 9 points at the
+// block's `+8`: count up to the first 0xFFFF, stopping at the capacity.
+std::vector<int> shopStock(std::span<const std::byte> block) {
+    std::vector<int> out;
+    for (std::size_t k = 0; k < 16; ++k) {
+        const std::size_t o = 8 + 2 * k;
+        if (o + 2 > block.size()) break;
+        const auto v = static_cast<std::uint16_t>(
+            static_cast<std::uint16_t>(block[o]) |
+            (static_cast<std::uint16_t>(block[o + 1]) << 8));
+        if (v == 0xFFFF) break;
+        out.push_back(v);
+    }
+    return out;
+}
+
 std::vector<int> objectList(const GameState& s, ObjectList which) {
     const int k = static_cast<int>(which);
     const int off = GameState::kListOffset[k];
