@@ -12275,6 +12275,64 @@ def c_engine_patch_index():
         "differ from the full merge, and the walkable + steep triangles re-placed"
 
 
+def c_engine_pose_equivalence():
+    r"""`applyPose` posing IN PLACE gives exactly what copying the rest geometry
+    first gave, every field of every call (todo/optimization.md step 10).
+
+    Every body the viewer draws is posed every frame, and `applyPose` began
+    with `g = rest` - a whole-geometry copy per body per frame - before it
+    overwrote each corner's position and normal. It now assigns the per-corner
+    metadata (reusing the vectors) and refreshes the corners inside its pose
+    loop, copying from the rest corner only the fields the pose does not write.
+
+    `engine/tools/pose_equiv.cpp` keeps the copying version verbatim and drives
+    both identically over 240 calls a model: random bone poses; the face morph
+    off, on, and with a wrong-sized frame; the posed geometry EDITED between
+    calls (positions, colours, texels, shimmer phases, metadata, revision, dirty
+    list) as the viewer's placement and lighting passes do; a switch to a cut
+    rest geometry and back; and one body posed from itself. Every field is
+    compared after every call. It also prints `sizeof(Geometry)`: the in-place
+    path copies the fields it names, so a field added to `Geometry` later would
+    be left behind - pinned here at 192 so that shows as a failure to update
+    `applyPose`, not as a silent difference.
+
+    Measured 2026-09-14: 0 mismatches over HO1_FN, PSH_FN and JEN_FNM (JEN has
+    a 132-vertex face); 2000 poses 62.1 -> 18.8 ms for HO1_FN.
+
+    SHOWN TO FAIL, 2026-09-14 (todo/optimization.md step 10): the in-place loop
+    not refreshing `phase`, and the in-place path not assigning `cornerVertex`,
+    each give 229 of 241 calls differing on all three models - caught only
+    because the posed geometry is edited between calls, as the viewer does.
+    """
+    import subprocess
+    eng = os.path.join(ROOT, "engine")
+    if not os.path.isdir(eng):
+        return ("skipped",), ("skipped",), "engine/ absent"
+    b = subprocess.run(["make", "-s", "build/pose_equiv"], cwd=eng, capture_output=True, text=True)
+    binp = os.path.join(eng, "build", "pose_equiv")
+    if b.returncode != 0 or not os.path.exists(binp):
+        return ("build failed",), ("built",), "engine/ must build"
+    models = []
+    for stem in ("HO1_FN", "PSH_FN", "JEN_FNM"):
+        path = omkpaths.data("MESHES/PERSOS/%s.3DO" % stem)
+        if not os.path.exists(path):
+            return ("skipped",), ("skipped",), "%s absent" % stem
+        models.append(path)
+    r = subprocess.run([binp] + models, capture_output=True, text=True)
+    size = re.findall(r"^geometry size (\d+)$", r.stdout, re.M)
+    rows = re.findall(r"^(\S+)\.3DO corners (\d+) cut (\d+) meshes \d+ face (\d+) \| calls (\d+) "
+                      r"mismatches (\d+)", r.stdout, re.M)
+    if len(size) != 1 or len(rows) != 3:
+        return (len(size), len(rows)), (1, 3), "pose_equiv output parsed - the tool's format changed"
+    return (int(size[0]), tuple((st, int(c), int(cut), int(fc), int(calls), int(mm))
+                                for st, c, cut, fc, calls, mm in rows)), \
+        (192, (("HO1_FN", 1626, 624, 0, 241, 0), ("PSH_FN", 2370, 1074, 0, 241, 0),
+               ("JEN_FNM", 2388, 561, 132, 241, 0))), \
+        "sizeof(Geometry) - the fields applyPose's in-place path must copy; then per model: " \
+        "corners, the cut rest's corners, face vertices, calls compared and calls whose " \
+        "geometry differs in any field from the copying version"
+
+
 def c_engine_gpu_present():
     r"""An adventure frame nothing is drawn over is dithered and presented on the
     GPU, and gives the bytes the CPU round trip gave (todo/optimization.md 4b).
@@ -34545,6 +34603,7 @@ SLOW = [
     ("engine: dirty corners", c_engine_dirty_corners, "todo/optimization.md 8; o3de/geom3do.h, o3de/depthtie.h"),
     ("engine: ground grid", c_engine_ground_grid, "todo/optimization.md 9; actor/walk.h"),
     ("engine: gpu present", c_engine_gpu_present, "todo/optimization.md 4; backends/vulkan/shaders/present.frag"),
+    ("engine: pose equivalence", c_engine_pose_equivalence, "todo/optimization.md 10; actor/pose.h"),
     ("engine: props", c_engine_props, "todo/omk-play"),
     ("sprite ids scene-local", c_sprite_ids_are_scene_local, "docs/ASSETS"),
     ("engine: scene sounds", c_engine_scene_sounds, "engine/README"),

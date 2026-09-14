@@ -67,6 +67,7 @@ not a CPU figure). Against the original's 32 MB, both are the port's.
 | 7b | the depth tie re-keying the whole set every frame (the cargo moves) | **DONE** 2026-09-13 - claimed keys stored flat with a fingerprint; back to back capped CPU 39 -> 36%, run CPU time -7.6% |
 | 7c | the ground probe grid rebuilt from scratch every frame (the cargo moves) | **DONE** 2026-09-14 - two layers, fixed and moving; the per-frame rebuild 0.528 -> 0.016 ms, probes no slower; `engine: split grid` |
 | 8 | a revision that says WHICH corners moved: the set's vertex upload and depth tie take only those | **DONE** 2026-09-14 - exact (tool and game); back to back capped CPU 28 -> 25%, run CPU time -11%; `engine: dirty corners` |
+| 10 | the posed bodies: `applyPose` in place instead of copying the rest geometry first | **in progress** 2026-09-14 - exact (tool, frames); 2000 poses 62 -> 19-25 ms; capped A/B owed; `engine: pose equivalence` |
 | 9 | the walker's ground probe and `decorUnder` through the grid (step 2's grid never reached them) | **DONE** 2026-09-14 - exact (tool and game); ~0.5 ms a frame timed directly (0.17 ms a linear probe, ~3 a frame); the capped A/B was spoiled by load and is owed; `engine: ground grid` |
 
 Each step ends in a commit and a report, per the working rhythm; the full
@@ -852,6 +853,52 @@ frame (233 walker probes and 121 decor probes in 120 frames) - ~0.5 ms a
 frame, ~1.5% of a core at 30 Hz, matching the profile's 458 samples in 20 s
 at 60 Hz. A same-binary A/B (`OMK_NO_GROUND_GRID=1` on and off) on a quiet
 machine is owed.
+
+### 10. The posed bodies: `applyPose` in place - 2026-09-14
+
+**Why.** The standing street's profile after steps 8/9 put the posed bodies
+together at the top: the depth tie re-walking all 45 of them (~600 samples),
+`applyPose` (189 of its own) and the `Geometry` copies it began with (~260 in
+`Geometry::operator=` and its memmoves), their vertex uploads (~150). This
+step is the copy.
+
+**What changed** (`actor/pose.cpp`). `applyPose` began with `g = rest` and then
+overwrote every corner's position and normal. When the posed geometry already
+has the rest's corner count it now assigns the per-corner metadata vectors
+(which keep their memory) and refreshes each corner inside the pose loop:
+`u`, `v`, `r`, `g`, `b` and `phase` copied from the rest corner, the position
+and normal computed as before, an unposed corner copied whole. A different
+count - the first call, a crowd model's LOD switch - keeps `g = rest`.
+Nothing may be assumed to survive from the previous frame: the viewer rewrites
+the posed corners' positions (placement) and colours (the crowd's lights)
+after every pose, so every field is refreshed every call.
+
+**Same geometry, proved.** `engine/tools/pose_equiv.cpp` keeps the copying
+version verbatim and drives both over 240 calls a model - random poses, the
+face morph off / on / wrong-sized, the geometry edited between calls in every
+field the viewer's passes touch and some they do not, a switch to a cut rest
+and back, a body posed from itself - comparing every field after every call:
+0 mismatches on HO1_FN, PSH_FN, JEN_FNM, DOC_FNM, V5H_FNM (three with a face
+mesh). It prints `sizeof(Geometry)` (192), which the check pins: the in-place
+path copies the fields it names, so a field added later must be added there
+too, and the pin makes forgetting it a failure rather than a silent
+difference. In play, the street start through `--world-vulkan`, standing and
+walking, crowd on: frame 90 byte-identical to the step-9 build.
+`engine: pose equivalence` (new); `engine: pose`, `pose blend`, `city crowd`,
+`pedestrians`, `street frame`, `mapped shadows`, `crowd push`, `head look`,
+`crowd nan`, `player vertical`, `player jump` pass.
+
+**Timed directly** (the tool, 2000 poses of the same model): HO1_FN 62.1 ->
+18.8 ms, PSH_FN 62.9 -> 24.8, JEN_FNM 62.8 -> 24.9, DOC_FNM 54.9 -> 20.6,
+V5H_FNM 57.8 -> 21.0 - about 30 -> 10 microseconds a body pose. A capped A/B
+in play is owed (load 4.9 when this was committed).
+
+**SHOWN TO FAIL**, each restored by editing back: the in-place loop not
+refreshing `phase`, and the in-place path not assigning `cornerVertex` -
+each gives **229 of 241** calls differing on all three checked models. Only the
+edits between calls can expose either: a posed geometry nobody wrote to since
+the last call still holds the rest's `phase` and `cornerVertex`, so a test that
+only posed would have passed both.
 
 ### 5. `main`'s own time
 

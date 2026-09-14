@@ -469,7 +469,33 @@ void applyPose(Geometry& g, const Geometry& rest,
                const FaceMesh* face, const std::vector<float>* faceVerts) {
     if (rest.cornerMesh.size() != rest.corners.size()) return;
     const std::uint64_t was = g.revision;
-    g = rest;
+    // IN PLACE when the posed geometry already has the rest's corner count
+    // (todo/optimization.md step 10). This used to be `g = rest` on every call
+    // - a whole-geometry copy per body per frame, ~260 samples of the standing
+    // street's profile for its 45 bodies - and then overwrote every corner's
+    // position and normal anyway. Now the per-corner metadata is assigned (the
+    // vectors keep their memory) and the corners are refreshed in the pose
+    // loop itself: the fields the pose does not write are copied from the rest
+    // corner there, the ones it does are computed. Every field ends as
+    // `g = rest` followed by the pose would leave it - later code rewrites the
+    // posed corners' positions and colours, so nothing may be assumed to have
+    // survived from the previous frame - and `engine/tools/pose_equiv.cpp`
+    // keeps the copying version verbatim and compares every field of every
+    // call. IF `Geometry` GAINS A FIELD, it must be copied here too; the tool
+    // prints `sizeof(Geometry)` and `engine: pose equivalence` pins it.
+    const bool inPlace = &g != &rest && g.corners.size() == rest.corners.size();
+    if (inPlace) {
+        g.batches = rest.batches;
+        g.cornerMirror = rest.cornerMirror;
+        g.cornerMesh = rest.cornerMesh;
+        g.cornerVertex = rest.cornerVertex;
+        g.cornerDeclared = rest.cornerDeclared;
+        g.dirtyFrom = rest.dirtyFrom;
+        g.dirtyTo = rest.dirtyTo;
+        g.dirtyCorners = rest.dirtyCorners;
+    } else {
+        g = rest;
+    }
     // These corners are new even though the object is not - see
     // `Geometry::revision`.
     g.revision = was + 1;
@@ -483,9 +509,19 @@ void applyPose(Geometry& g, const Geometry& rest,
         rest.cornerVertex.size() == rest.corners.size();
 
     for (std::size_t i = 0; i < g.corners.size(); ++i) {
+        const Corner& rc = rest.corners[i];
         const std::int32_t mi = rest.cornerMesh[i];
         if (mi < 0 || static_cast<std::size_t>(mi) >= meshes.size() ||
-            static_cast<std::size_t>(mi) >= pose.size()) continue;
+            static_cast<std::size_t>(mi) >= pose.size()) {
+            if (inPlace) g.corners[i] = rc;      // an unposed corner stays the rest's
+            continue;
+        }
+        if (inPlace) {                            // the fields the pose does not write
+            Corner& gc = g.corners[i];
+            gc.u = rc.u; gc.v = rc.v;
+            gc.r = rc.r; gc.g = rc.g; gc.b = rc.b;
+            gc.phase = rc.phase;
+        }
         const Mesh& m = meshes[static_cast<std::size_t>(mi)];
         const MeshPose& mp = pose[static_cast<std::size_t>(mi)];
 
