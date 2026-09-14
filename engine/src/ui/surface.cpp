@@ -37,11 +37,34 @@ Surface surfaceFromBmp(std::span<const std::byte> d) {
     const auto hRaw   = i32(d, 22);
     const auto bpp    = u16(d, 28);
     const auto comp   = u32(d, 30);
-    if (hdr < 40 || w <= 0 || hRaw == 0 || bpp != 8 || comp != 0) return s;
+    if (hdr < 40 || w <= 0 || hRaw == 0 || (bpp != 8 && bpp != 24) || comp != 0) return s;
     // A negative height is a top-down BMP. The shipped ones are bottom-up, but
     // the sign is the format's own and costs one line to honour.
     const bool topDown = hRaw < 0;
     const int h = topDown ? -hRaw : hRaw;
+
+    // ...AND ONE SHEET IS 24-BIT. Ten of the eleven `I2D\bitmaps` are 8-bit
+    // palettes; `boutiq.BMP`, the ten shops' button atlas, is BGR at 24 bits,
+    // and `I2D_CreateSurfaceFromBmp` hands both to DirectDraw alike. Taking
+    // only 8 left the shops' sheet invalid, so every one of their button
+    // sprites was skipped - a reader: "icons on the right are missing". The
+    // key stays pure black (`SetColorKey {0,0}`), which is 0 in 565 too.
+    if (bpp == 24) {
+        const std::size_t stride24 = (static_cast<std::size_t>(w) * 3u + 3u) / 4u * 4u;
+        if (bits + stride24 * static_cast<std::size_t>(h) > d.size()) return s;
+        s = Surface(w, h);
+        for (int y = 0; y < h; ++y) {
+            const std::size_t row = bits + stride24 *
+                static_cast<std::size_t>(topDown ? y : h - 1 - y);
+            for (int x = 0; x < w; ++x) {
+                const std::size_t o = row + 3u * static_cast<std::size_t>(x);
+                s.set(x, y, rgb565(static_cast<int>(d[o + 2]),
+                                   static_cast<int>(d[o + 1]),
+                                   static_cast<int>(d[o])));
+            }
+        }
+        return s;
+    }
 
     // the palette sits between the header and the pixels
     std::uint16_t pal[256] = {};

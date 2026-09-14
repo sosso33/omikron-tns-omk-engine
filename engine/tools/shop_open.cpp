@@ -143,6 +143,25 @@ int main(int argc, char** argv) {
         }
     }
 
+    // ---- THE READER'S TWO FAULTS (2026-09-14): the icons and the dim -----
+    //
+    // `boutiq.BMP` is the one 24-bit sheet, and a loader taking only 8 left
+    // every shop button sprite undrawn. And `Ui_DrawPanelDim`: bank B 0x1000
+    // puts a full-screen mode-4 quad of 0x64000000 over what is behind (the
+    // world, drawn again because of 0x800). Measured over a flat grey
+    // backdrop so the dim reads as a ratio, away from every item.
+    {
+        omk::UiWalk dw(w);
+        dw.open(21);
+        omk::Surface grey(640, 480, 0);
+        for (auto& px : grey.px) px = static_cast<std::uint16_t>((25 << 11) | (50 << 5) | 25);
+        const auto f = comp.draw(grey, 21, dw);
+        const std::uint16_t v = grey.px[static_cast<std::size_t>(460) * 640 + 620];
+        std::printf("dim 21: sprites drawn %d, backdrop 205 -> %d %d %d\n",
+                    f.spritesDrawn, ((v >> 11) & 31) * 255 / 31,
+                    ((v >> 5) & 63) * 255 / 63, (v & 31) * 255 / 31);
+    }
+
     // ---- STEP 4: THE ROW'S THREE ARMS AND THE SALE'S CONFIRM -------------
     //
     // The row callback 0x004AEAA0 switches on the button selection: Acheter

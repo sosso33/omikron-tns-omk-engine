@@ -490,7 +490,7 @@ B word at `+76`**, tested through `Ui_TestPanelFlag`:
 | bit | what happens |
 |---|---|
 | `0x2000` | return at once — **no background** |
-| `0x0800` clear | a full-screen quad goes down first |
+| `0x0800` clear | a full-screen quad (colour 0, mode 0) goes down first. **And `0x0800` SET does more, in the next function**: `Ui_DrawPanelDim` (0x00476290), which `Ui_DrawScreen` runs straight after this one, sets `byte_90E155 = 1` - the world's full-screen 3D view is drawn again whatever the screen record said - and picks the dim colour `0x64000000` over `0x28000000`; with bank B `0x1000` it then submits a full-screen mode-4 quad of that colour (layer 12 on PAUSE, 2 elsewhere), leaving the world at 100/255. The ten shops, SAVE GAME, PAUSE GAME and HIGH-SCORE carry both bits, SHOOT HUMAN `0x800` alone. A reader saw a shop over black and said the background is not supposed to be opaque (2026-09-14); measured after the port, the world behind the pharmacy composes at 0.347 of its brightness |
 | `0x4000` | blit the WHOLE sheet over the display |
 | none of them | walk `panel+20`'s 80 tile ids |
 

@@ -19932,7 +19932,7 @@ def c_engine_shop_open():
                                       parts[0].split(" ", 1)[1] if parts else "")
     # ...and the two hooks that reach the rows: the panel's 0x004AEE00 and
     # the rows' bare sub_42AFF0
-    walks = [ln for ln in out.splitlines() if ln.startswith(("walk ", "step4 "))]
+    walks = [ln for ln in out.splitlines() if ln.startswith(("walk ", "dim ", "step4 "))]
     # STEP 3, THE HEADER: composed in omk-play, so run it - the pharmacy
     # (ENTER on Acheter, then DOWN to the small medikit) and the bank with a
     # 200-seteks medikit given to it (ENTER on Vente, DOWN onto the medikit)
@@ -19987,6 +19987,7 @@ def c_engine_shop_open():
              "walk 21: button 3, LEFT there -> list 0",
              "walk 21: 2 rows bound, ENTER on Acheter -> list 1",
              "walk 21: 0 rows bound, ENTER on Acheter -> list 0",
+             "dim 21: sprites drawn 3, backdrop 205 -> 74 76 74",
              "step4 buy: panel 0x4e3970 list 1 sel 0, request 0 row 0",
              "step4 sell confirm: panel 0x4e3a40 list 1 sel 2",
              "step4 sell oui: panel 0x4e3970 list 1 sel 0, request 1 row 1",

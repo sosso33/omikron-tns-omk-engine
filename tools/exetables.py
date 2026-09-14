@@ -572,7 +572,9 @@ def t_ui_widgets(e):
                # of its bits and nothing else:
                #
                #     0x2000  draw no background at all, return
-               #     0x0800  clear: without it a full-screen quad goes down
+               #     0x0800  without it a full-screen quad goes down; WITH it
+               #             `Ui_DrawPanelDim` turns the world back on and dims
+               #             it (docs/UI.md 3b, the background table)
                #     0x4000  blit the WHOLE 640x480 sheet over the display
                #
                # and failing 0x4000 it reads `panel+20`'s 80 tile ids, of

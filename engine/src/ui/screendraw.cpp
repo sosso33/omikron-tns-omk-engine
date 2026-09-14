@@ -120,6 +120,7 @@ int ScreenComposer::background(Surface& fb, const UiPanel& p,
     // cloud, so whatever layer that quad lands on is below the cloud's blit.
     // The composer clears its framebuffer to 0 and draws the cloud first,
     // which is the same picture; the quad is left out rather than guessed at.
+    // The bit SET is modelled, in `draw`: `Ui_DrawPanelDim`'s world and dim.
     if (p.backNone()) return 0;
     if (p.backSheet()) {
         blt(fb, {0, 0, fb.w, fb.h}, sheet, {0, 0, sheet.w, sheet.h},
@@ -308,12 +309,39 @@ ScreenFrame ScreenComposer::draw(Surface& fb, int screenId,
             if (!l.drawn()) continue;
             for (const auto& it : l.items) layers.push_back(it.layer);
         }
+    // ---- `Ui_DrawPanelDim` (0x00476290), the full-screen DIM ------------
+    //
+    // `Ui_DrawScreen` runs it right after `Ui_DrawPanelBack`, for the
+    // CURRENT panel only:
+    //
+    //     colour = (panel bank B 0x800) ? 0x64000000 : 0x28000000;
+    //     if (0x800) byte_90E155 = 1;                // the world is drawn again
+    //     if (panel bank B 0x1000)
+    //         I2D_SubmitQuad(full screen, mode 4, screen == 31 ? 12 : 2);
+    //
+    // Mode 4 is the fill's inverse blend (`src*(1-a) + dst*a`), so a black
+    // quad at alpha 100 leaves what is behind at 100/255. The ten shops,
+    // SAVE GAME, PAUSE GAME and HIGH-SCORE carry it; a reader saw the shop
+    // over black and said the background is not supposed to be opaque.
+    // Within one layer the composer keeps submission order (above), so on
+    // PAUSE - whose items share layer 12 with the quad - the dim lands under
+    // them; the engine's head cache would draw it after them. Recorded, not
+    // resolved.
+    const bool dimQuad = (p->flagsB & 0x1000u) != 0;
+    const int  dimLayer = screenId == 31 ? 12 : 2;
+    const int  dimAlpha = (p->flagsB & 0x800u) ? 0x64 : 0x28;
+    bool dimDone = !dimQuad;
+    if (dimQuad) layers.push_back(dimLayer);
     std::sort(layers.begin(), layers.end());
     layers.erase(std::unique(layers.begin(), layers.end()), layers.end());
 
     for (const int layer : layers)
     for (const UiPanel* q : chain)
     for (const auto& l : q->lists) {
+        if (!dimDone && layer >= dimLayer) {
+            fillQuad(fb, 0, 0, fb.w, fb.h, 0, 0, 0, dimAlpha);
+            dimDone = true;
+        }
         // THE DRAW GATE IS NOT THE WALK'S. `Ui_DrawPanel` skips a list on
         // bank B `0x40000001` (`sub_429080(list, 1073741825)`);
         // `Ui_MoveBetweenLists` skips it on `+16 & 4`. This used the walk's

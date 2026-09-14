@@ -307,7 +307,9 @@ struct UiPanel {
     // `Ui_DrawPanelBack` (0x00476040) tests three of its bits, in this order:
     //
     //     0x2000  return at once - NO background
-    //     0x0800  clear: without it a full-screen quad goes down first
+    //     0x0800  without it a full-screen quad goes down first; WITH it
+    //             `Ui_DrawPanelDim` draws the world again and dims it
+    //             (`screendraw.cpp`, omk-play's `panelShowsWorld`)
     //     0x4000  blit the WHOLE sheet over the display
     //
     // and failing 0x4000 it walks `panel+20`'s 80 tile ids - of which there

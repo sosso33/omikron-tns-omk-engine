@@ -10500,8 +10500,17 @@ int main(int argc, char** argv) {
         // call sites, all in the `Ui_*` range). Drawing the street there is
         // what a reader saw as *the sneak background is transparent*
         // (todo/omk-play.md 82).
+        // ...AND A PANEL CAN TURN IT BACK ON. `Ui_DrawPanelDim` (0x00476290),
+        // run every frame for the current panel, sets `byte_90E155 = 1` when
+        // the panel carries bank B `0x800` - the ten shops, SAVE GAME, PAUSE
+        // GAME, SHOOT HUMAN, HIGH-SCORE - and the composer then dims it. So
+        // the world shows behind a shop even though its screen record says
+        // hide, which is what a reader expected: "the background is not
+        // supposed to be opaque". The sneak's panels do not carry the bit.
+        const bool panelShowsWorld =
+            walk && walk->panel() && (walk->panel()->flagsB & 0x800u) != 0;
         const bool screenKeepsWorld = !walk || openScreen < 0 ||
-                                      w.worldBehind(openScreen);
+                                      w.worldBehind(openScreen) || panelShowsWorld;
         // ...UNLESS THE PANEL CARRIES A 3D VIEWPORT ITEM. `byte_90E155` only
         // guards `Game_Frame`'s full-screen submit; a UI item whose draw
         // callback is `sub_4782B0` submits the SAME world through the SAME
