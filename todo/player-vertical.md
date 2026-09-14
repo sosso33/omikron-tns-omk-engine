@@ -458,3 +458,50 @@ a column that did not exist: `stuck_probe` now also counts the directions still
 sliding and still falling after ten seconds, and the falls went **3 / 0 / 2 ->
 0 / 0 / 1**. The still-sliding count is asserted at 0 in all three sets, which
 is the guard against this whole family coming back.
+
+## 8. The JUMP FLAG, 2026-09-14 — `d589d30` gated the absorb on the wrong arm
+
+`engine: player jump` went red after §7 and stayed red through the next sweep:
+**9** airborne frames instead of 13, the arc no longer symmetric, the forward
+travel short, the apex still -9.00. It was found by the 2026-09-14 `--slow`
+sweep and shown to predate that week's optimization work (a worktree build of
+`46b43b2` fails identically).
+
+**What §7's third change read, and what the function says.**
+`Walk_GroundResponse` (21_d3d.c) has two arms after the frame's move, split on
+the clearance `v68`:
+
+* `v68 <= 0` — he has passed through the surface: stand him on it, and
+  `if (+220 >= 0.0)` (line 2587) decide whether that face slides him;
+* otherwise — he is still above it — `if (!dword_6A52CC)` (line 2729): absorb
+  a drop under 7.8740158 outright, or band the fall tiers.
+
+§7 put the absorb behind `vy_ >= 0`, the FIRST arm's test, and never ported
+the second arm's own gate. A velocity gate keeps a RISING leap off the floor,
+but a DESCENDING one is snapped down as soon as it is within 7.874 of it - and
+the leap's apex is 9 units, so the landing came four frames early.
+`dword_6A52CC` is set by `MDJUMP0A` and cleared by the landing (`MDJUMP03`) and
+by the state resets, so it holds for the whole flight.
+
+**Fixed** (`actor/walk.*`): `Walker::jumping_`, set by `jump()`, cleared by
+`land()` and `moveTo()`; the absorb runs only while it is clear. Still not
+ported from that arm: its `+1304` fall-tier test and `sub_47CF00()`.
+
+**Measured.** `engine: player jump` back to 13 airborne frames, apex -9.00,
+symmetric, forward travel in band; `engine: player landing`, `player vertical`,
+`engine: player walk`, `engine: walker falls` (the census), `engine: walk` and
+`engine: airlock walk` pass. And §7's own repro, the catacombs slide above,
+logs the same twelve slide / fall / landing lines before and after - only a
+jump sets the flag.
+
+**Bracketed, not assumed.** `git bisect` in a throw-away worktree between the
+last green sweep (`f92231a`, good) and `46b43b2` (bad), running the check at
+each step - its inputs are all committed, so no step was a skipped check
+printing `ok` (sweep-log's TRAP 2): **`d589d30` is the first bad commit**, the
+commit before it passes.
+
+**Shown to fail** (PORTING B2), on the fixed code: the absorb with NO gate at
+all takes the leap at take-off - **1** airborne frame, apex **0.0** - and
+`engine: player jump` goes red; restored, green. Together with the sweep's
+red (the velocity gate, 9 frames) that is both wrong readings of the gate
+caught by the same check.

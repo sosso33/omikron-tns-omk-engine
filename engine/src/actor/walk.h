@@ -151,7 +151,7 @@ public:
     void moveTo(double x, double y, double z) {
         pos_[0] = x; pos_[1] = y; pos_[2] = z;
         fall_ = 0.0; vy_ = 0.0; vx_ = 0.0; vz_ = 0.0;
-        airborne_ = false; sliding_ = false;
+        airborne_ = false; sliding_ = false; jumping_ = false;
     }
 
     // THE JUMP, `MDJUMP01` (0x0046BD50) - an IMPULSE into the same three
@@ -182,6 +182,7 @@ public:
         if (airborne_ || sliding_) return false;
         vy_ = vy; vx_ = dx; vz_ = dz;
         airborne_ = true;
+        jumping_ = true;             // dword_6A52CC = 1
         fall_ = 0.0;
         tier_ = 0;
         apex_ = pos_[1];
@@ -268,6 +269,11 @@ private:
     double vz_   = 0.0;
     bool   airborne_ = false;
     bool   sliding_  = false;
+    // `dword_6A52CC` - set by `MDJUMP0A` and cleared by the landing
+    // (`MDJUMP03`). `Walk_GroundResponse` runs its above-the-surface arm - the
+    // 7.874 absorb and the fall tiers - only `if (!dword_6A52CC)`, so while it
+    // is set a leap is never snapped back onto the floor it is still above.
+    bool   jumping_  = false;
     int    tier_ = 0;
     double landFall_ = 0.0;
     double drop_ = 0.0;          // the last landing's descent from its apex

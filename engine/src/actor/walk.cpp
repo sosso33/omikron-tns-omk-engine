@@ -80,6 +80,7 @@ void Walker::land(double y) {
     fall_ = 0.0;
     vy_ = vx_ = vz_ = 0.0;
     airborne_ = sliding_ = false;
+    jumping_ = false;            // MDJUMP03: dword_6A52CC = 0
 }
 
 StepResult Walker::step(double dx, double dz, double dt) {
@@ -386,11 +387,18 @@ StepResult Walker::tick(double dt) {
     // while the slide speed carries him only 0.39, and a landing test that
     // asks `ny >= surf` alone never fires - he descends beside the face for
     // ever instead of on it. Absorbing is what keeps him ON the ramp.
-    // ...and the absorb is gated the way the engine gates the whole arm:
-    // `if (f32(rec, 220) >= 0.0)` - it never runs on a RISING actor, which is
-    // what keeps `MDJUMP0A`'s leap in the air for its fourteen frames instead
-    // of landing on the floor it launched from.
-    if (ny >= surf || (vy_ >= 0.0 && surf - ny <= kSnapDrop)) {
+    // ...and the absorb is gated by the JUMP FLAG, `if (!dword_6A52CC)`
+    // (21_d3d.c 2729), which is the whole above-the-surface arm. It was gated
+    // on `vy_ >= 0` until 2026-09-14, which was a misreading: `+220 >= 0` gates
+    // the OTHER arm, the one for a body that has passed through the surface
+    // (`v68 <= 0`, 21_d3d.c 2587). A velocity gate keeps a RISING leap up but
+    // snaps a DESCENDING one onto the floor as soon as it is within 7.874 -
+    // and the jump's apex is only 9 units up, so it landed after 9 airborne
+    // frames of its 13 (`engine: player jump`, red since `d589d30`). The flag
+    // holds for the whole flight, as `MDJUMP0A` sets it and only the landing
+    // clears it. NOT ported from the same arm: its `+1304` fall-tier test and
+    // `sub_47CF00()`.
+    if (ny >= surf || (!jumping_ && surf - ny <= kSnapDrop)) {
         fall_ += surf - pos_[1];
         // A steep landing is not a landing: the engine re-writes the slide
         // speed and keeps him moving down the face.
