@@ -12275,6 +12275,98 @@ def c_engine_patch_index():
         "differ from the full merge, and the walkable + steep triangles re-placed"
 
 
+def c_engine_gpu_present():
+    r"""An adventure frame nothing is drawn over is dithered and presented on the
+    GPU, and gives the bytes the CPU round trip gave (todo/optimization.md 4b).
+
+    The Vulkan adventure frame went GPU -> `readback` (888 -> dithered 565 on the
+    CPU) -> placed at the letterbox row -> `presentSurface` (565 -> RGBA8 on the
+    CPU) -> GPU. `present.frag` does the dither, the placement and the
+    expansion where the frame already is, and `play.cpp` takes that path only
+    on a frame where no later block draws over the picture or reads `fb` - a
+    screen, the shoot HUD, a media bitmap or line, a conversation, a screen
+    fade, the flicker and clip logs, the snapshots, the final `--dump`.
+
+    Three parts. `present_probe` (built by `make vulkan`) loads a 4096x4102
+    picture holding every 24-bit colour into the colour attachment and runs the
+    pass with the picture 3 rows down - not a multiple of 4, or the picture's
+    dither row and the window's would share a cell and a shader using the wrong
+    one would pass - sixteen times with the colours shifted so
+    each meets all 16 dither cells, and once with the dither off, comparing every
+    byte - bands included - with `quantise888DitherRow` / `rgb565` and
+    `expand565Rgba`. Then the street start headless through `--world-vulkan`
+    with `OMK_VERIFY_GPU_PRESENT=1`, which composes the CPU frame as well on
+    every frame that took the GPU path and compares all 307200 pixels. Measured
+    2026-09-14: 17 runs, 0 mismatched pixels; 60 of 60 frames compared equal by
+    frame 60, and all 90 frames on the GPU (this run has no `--dump`, which
+    would keep its last frame on the CPU path). And the shoot phase start
+    (`--area 230 --scene-chunk 56`), the one scenario here that exercises the
+    GATES - but not the HUD's: in its first 240 frames the stats line counts 226
+    frames held by the BLACK fade and 11 by the colour fade, and the 3 that take
+    the GPU path compare equal. A fade gate taken out moves those counts or
+    sends a faded frame to the GPU, and either shows here. The HUD gate is NOT
+    exercised by anything in this check (the phase's HUD comes later).
+
+    SHOWN TO FAIL, 2026-09-14 (todo/optimization.md step 4b): the shader taking
+    the dither cell from the window row, 173169326 probe pixels (and nothing in
+    play, where the offsets are multiples of 4); red's rounding `+ 128`,
+    1048576 probe pixels, all 60 street frames and all 3 shoot-phase GPU frames
+    differing; the black fade's gate removed, 229 of 240 shoot-phase frames on
+    the GPU and its count gone, with 0 differing - caught by the count. Green's
+    rounding `+ 128` is EQUIVALENT (63 v mod 255 is never 127) and stays green.
+    """
+    import subprocess
+    eng = os.path.join(ROOT, "engine")
+    if not os.path.isdir(eng):
+        return ("skipped",), ("skipped",), "engine/ absent"
+    mk = subprocess.run(["make", "-s", "vulkan", "play"], cwd=eng, capture_output=True, text=True)
+    probe = os.path.join(eng, "build", "present_probe")
+    play = os.path.join(eng, "build", "omk-play")
+    if mk.returncode != 0 or not os.path.exists(probe) or not os.path.exists(play):
+        return ("skipped",), ("skipped",), "no Vulkan / SDL build - the GPU backend is optional"
+    p = subprocess.run([probe], capture_output=True, text=True)
+    if "skipped" in p.stdout:
+        return ("skipped",), ("skipped",), "no Vulkan device - the GPU backend is optional"
+    runs = re.findall(r"^run k (\d) j (\d) dither (\d): (\d+) pixels mismatched \((\d+) in the bands\)",
+                      p.stdout, re.M)
+    if len(runs) != 17:
+        return (len(runs),), (17,), "present_probe runs parsed - the tool's output changed"
+    probeBad = sum(int(r[3]) for r in runs)
+    save = os.path.join(ROOT, "traces", "save-appart.bin")
+    if not os.path.exists(save):
+        return ("skipped",), ("skipped",), "traces/save-appart.bin absent"
+    env = dict(os.environ, SDL_VIDEODRIVER="dummy", OMK_VERIFY_GPU_PRESENT="1",
+               OMK_GPU_PRESENT_STATS="1")
+    g = subprocess.run([play, omkpaths.data_root(), os.path.join(ROOT, "tables"),
+                        "--save", save, "--area", "0", "--stand", "1804,0,-6890,336",
+                        "--nofmv", "--world-vulkan", "--frames", "90"],
+                       cwd=eng, env=env, capture_output=True, text=True)
+    ver = re.findall(r"^gpu present verify: frame 59, (\d+) frames compared, (\d+) differ \((\d+) pixels\)",
+                     g.stdout, re.M)
+    stats = re.findall(r"^gpu present: frame 89, (\d+) of (\d+) frames stayed on the GPU", g.stdout, re.M)
+    if len(ver) != 1 or len(stats) != 1:
+        return (len(ver), len(stats)), (1, 1), "the viewer's gpu present lines - its log changed"
+    s = subprocess.run([play, omkpaths.data_root(), os.path.join(ROOT, "tables"),
+                        "--save", save, "--area", "230", "--scene-chunk", "56",
+                        "--nofmv", "--world-vulkan", "--frames", "240"],
+                       cwd=eng, env=env, capture_output=True, text=True)
+    shootStats = re.findall(r"^gpu present: frame 239, (\d+) of (\d+) frames stayed on the GPU; "
+                            r"on the CPU:(.*)$", s.stdout, re.M)
+    shootDiffers = len(re.findall(r"^gpu present verify: frame \d+ DIFFERS", s.stdout, re.M))
+    if len(shootStats) != 1:
+        return (len(shootStats),), (1,), "the shoot phase's gpu present line - its log changed"
+    keptBy = tuple((why.strip(), int(cnt)) for why, cnt in
+                   re.findall(r" ([a-z ]+?) (\d+),", shootStats[0][2]))
+    return (len(runs), probeBad, tuple(int(x) for x in ver[0]), tuple(int(x) for x in stats[0]),
+            (int(shootStats[0][0]), int(shootStats[0][1])), keptBy, shootDiffers), \
+        (17, 0, (60, 0, 0), (90, 90), (3, 240), (("black fade", 226), ("colour fade", 11)), 0), \
+        "present_probe runs and their mismatched pixels (every colour x 16 dither cells, " \
+        "and the dither off); then the street: frames compared by frame 60 and how many " \
+        "differ from the CPU composite (and in how many pixels), and frames that stayed " \
+        "on the GPU of 90; then the shoot phase: frames on the GPU of 240, the gates that " \
+        "held the rest with their counts, and how many GPU frames differed"
+
+
 def c_engine_ground_grid():
     r"""The player's ground probe and the decor-under-the-feet probe answer
     through the grid exactly as they did by scanning (todo/optimization.md step 9).
@@ -34452,6 +34544,7 @@ SLOW = [
     ("engine: split grid", c_engine_split_grid, "todo/optimization.md 7c; o3de/collision.h"),
     ("engine: dirty corners", c_engine_dirty_corners, "todo/optimization.md 8; o3de/geom3do.h, o3de/depthtie.h"),
     ("engine: ground grid", c_engine_ground_grid, "todo/optimization.md 9; actor/walk.h"),
+    ("engine: gpu present", c_engine_gpu_present, "todo/optimization.md 4; backends/vulkan/shaders/present.frag"),
     ("engine: props", c_engine_props, "todo/omk-play"),
     ("sprite ids scene-local", c_sprite_ids_are_scene_local, "docs/ASSETS"),
     ("engine: scene sounds", c_engine_scene_sounds, "engine/README"),

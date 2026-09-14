@@ -59,7 +59,7 @@ not a CPU figure). Against the original's 32 MB, both are the port's.
 | 1 | a clean BASELINE: the same street run on an idle machine, per-frame time and the sample, recorded here | **DONE** 2026-09-13 - see "Before and after" below |
 | 2 | a SPATIAL GRID over the walkable soup (H1, H3): built once per resident set, `floorUnder` / `surfaceUnder` walk only the cells under the probe | **DONE** 2026-09-13 - the street from 24.2 to 45.2 fps, frames byte-identical, `engine: probe grid` |
 | 3 | the depth tie only where it can matter (H2) | **DONE** 2026-09-13 - same decisions on hashed sets; uncapped 42.7 -> ~51.5 fps, capped CPU 72 -> 57; `engine: tie equivalence` |
-| 4 | the interface composited on the GPU in adventure mode (H4) | **the conversions DONE** 2026-09-13 - readback and upload by table, uncapped ~51.5 -> ~59.5 fps, capped CPU 57 -> 49, `engine: pixel tables`; composing on the GPU itself still open |
+| 4 | the interface composited on the GPU in adventure mode (H4) | **the conversions DONE** 2026-09-13 - readback and upload by table, uncapped ~51.5 -> ~59.5 fps, capped CPU 57 -> 49, `engine: pixel tables`. **4b DONE** 2026-09-14 - a frame nothing is drawn over is dithered and presented on the GPU: same binary on/off/on, capped CPU time 12.9 / 15.1 / 14.0 s, `engine: gpu present`; frames WITH interface still round-trip |
 | 5 | break down `main`'s own time (H5) and re-rank | open |
 | 6 | the memory pass: where 236 MB goes, against a 365 MB Vita budget that vitaGL's textures also come out of | **first cut DONE** 2026-09-13 (as "step 5" in the log below) - music at its own rate, the headless audio queue dropped: live heap 234 -> 140 MB, window footprint 243 -> 185 MB; the rest ranked |
 | 7 | re-measure everything, and decide whether the Vita is in reach | open |
@@ -343,6 +343,101 @@ Check: `engine: sign tie` stays green and the per-frame dropped count is
 unchanged on the street run; the `std::set` samples disappear.
 
 ### 4. The interface on the GPU
+
+#### 4b. The frame nothing is drawn over stays on the GPU - 2026-09-14
+
+**What the round trip was for.** On Vulkan the adventure frame was drawn on
+the GPU, read back (`readback`: 888 -> dithered 565), copied into the 640x480
+framebuffer at the letterbox row, drawn over by the interface, and uploaded
+again (`presentSurface`: 565 -> RGBA8). Of the blocks that draw over the
+picture, several also READ it - the radar samples `fb` pixels, both screen
+fades rewrite every pixel from its value - so composing the interface on the
+GPU in general would mean porting those reads too. But on most adventure
+frames none of them runs, and then the round trip only reproduces the
+attachment's own pixels.
+
+**What changed.**
+
+* `backends/vulkan/shaders/present.frag`: the same bytes per pixel, from the
+  same attachment - `quantise888Dither` with its truncating division written
+  out, the cell taken from the WORLD picture's row (the readback dithers
+  before placement), black bands outside `[vy, vy + vh)`, `rgb565` when the
+  dither is off, then the bit replication `expand565Rgba` does, written as
+  k/255 into a UNORM8 target.
+* `VulkanRenderer`: the pass into its own image (own descriptor pool, so a
+  texture reload cannot free it), `presentImage` - the swapchain blit that
+  `presentDirect` was, now for any image - and `worldPicture` / `probeUpload`
+  for the checks. `colour_` gained SAMPLED usage.
+* `play.cpp` decides per frame where the world is placed into `fb`: the GPU
+  path only when no screen, no shoot HUD, no media bitmap or line, no
+  conversation, neither screen fade, no flicker or clip log, no snapshot and
+  not the final `--dump` - each the test that gates the block further down -
+  and only at `ss 1`. `OMK_NO_GPU_PRESENT=1` turns it off,
+  `OMK_GPU_PRESENT_STATS=1` counts the frames, `OMK_VERIFY_GPU_PRESENT=1`
+  composes the CPU frame as well and compares every pixel (and runs in the
+  offscreen `--world-vulkan` harness too, which is how it is checked
+  headless).
+
+**Same bytes, proved two ways.** `engine/tools/present_probe.cpp` (built by
+`make vulkan`) loads a 4096x4102 picture holding every 24-bit colour into the
+attachment and runs the pass 3 rows down, sixteen times with the colours
+shifted so each meets all 16 dither cells and once with the dither off: 0
+mismatched pixels in all 17 runs, bands included. In play, the street start
+through `--world-vulkan`, standing and walking, 90 frames each: 89 of 90 frames
+took the GPU path (the last is the `--dump`), all compared equal to the CPU
+composite, and the dumped last frame is byte-identical to the step-9 build's.
+The shoot phase start (`--area 230 --scene-chunk 56`, 240 frames) keeps 237 on
+the CPU path - and `OMK_GPU_PRESENT_STATS` names the gates: the BLACK fade 226,
+the colour fade 11. That corrects a first reading that the HUD gate was
+holding them; the phase's HUD never comes up in those frames, so nothing here
+exercises it. (A 600-frame run of the same start took another path - no
+renderer line, no stats - and was not chased.) `engine: gpu present` (new); `dither`,
+`pixel tables`, `sign tie`, `mirror pass`, `shimmer`, `supersampling`,
+`anti-aliasing`, `texture filter`, `mipmaps`, `dirty corners` and
+`ground grid` pass.
+
+**SHOWN TO FAIL, and two lessons in it.**
+
+* The shader taking the dither cell from the WINDOW row instead of the
+  picture's: 173169326 mismatched probe pixels. It needed the probe's picture
+  3 rows down: the first version placed it 4 rows down, and 4 - like the
+  street's 0 and the letterbox's 64 - puts both rows in the same cell, so
+  that mutation would have passed every test here.
+* Green's rounding `+ 127` made `+ 128` stays green, and cannot do otherwise:
+  the two differ only where `63 v mod 255 = 127`, and 3 divides 63 and 255
+  but not 127. An equivalent mutation, not a blind check; red and blue's
+  `31 v` has solutions and is the one to mutate - and red's `+ 128` gives
+  1048576 mismatched probe pixels, all 60 compared street frames differing
+  (272723 pixels) and all 3 of the shoot phase's.
+* The black fade's gate taken out: 229 of 240 shoot-phase frames go to the
+  GPU and the count moves (`black fade 226` gone) - and 0 of them differ. So
+  the check caught it by the COUNT alone, and it says something about the
+  gate: for those 226 frames the fade is running but draws nothing (the block
+  only touches pixels while a band grey is under 255), so the gate is
+  conservative there. A LEAD, not taken: gating on the block's own draw
+  condition would put a cutscene's opening frames on the GPU too.
+
+**Measured - the same binary, the path switched by `OMK_NO_GPU_PRESENT`**
+(capped at 30, 45 s each, on / off / on, load 2.2-3.5 throughout - a quiet run):
+
+| capped, street start | GPU present | off | GPU present again |
+|---|---|---|---|
+| fps median / slowest window | 30.0 / 29.9 | 30.0 / 29.9 | 30.0 / 29.9 |
+| worst frame, median of windows | 37 ms | 36 ms | 37 ms |
+| CPU, mean (100 = one core) | **22** | 26 | **24** |
+| CPU time over the run | **12.9 s** | 15.1 s | **14.0 s** |
+| physical footprint | 180 MB | 180 MB | 183 MB |
+| GPU renderer utilisation | 13% | 6% | 6% |
+
+So ~7-15% of the viewer's CPU time on the street (2.2 and 1.1 s of 15.1),
+the two "on" runs bracketing the "off" one. The GPU's own utilisation reads
+the same in the last two runs; the first run's 13% came with an idle reading of
+14% before it started, so it is the machine, not the pass.
+
+**What this does NOT cover.** A frame with any interface on it still makes the
+round trip; the gates were exercised on the street (none) and the shoot phase
+(HUD), not on a conversation, a media line or a fade, where only the verify
+mode's comparison would show a missing gate.
 
 #### The conversions, done 2026-09-13 - composing on the GPU is still open
 

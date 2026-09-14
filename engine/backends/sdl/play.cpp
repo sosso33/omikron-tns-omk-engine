@@ -114,6 +114,9 @@ void* vulkanCreateInstance(Renderer*);
 bool  vulkanAttachSurface(Renderer*, unsigned long long);
 bool  vulkanPresent(Renderer*);
 bool  vulkanPresentSurface(Renderer*, const Surface&);
+bool  vulkanCanPresentWorld(Renderer*);
+bool  vulkanPresentWorld(Renderer*, int vy, int vh);
+bool  vulkanWorldPicture(Renderer*, int vy, int vh, std::vector<unsigned char>&);
 }
 #endif
 
@@ -10432,6 +10435,12 @@ int main(int argc, char** argv) {
                                                               : w.screen(openScreen))
             : nullptr;
         comp.attachView3D(nullptr);
+        // THE PRESENT PASS (todo/optimization.md step 4b): set where the world
+        // is placed into `fb`, read where the frame is presented.
+        bool gpuFrame = false;
+        int gpuVy = 0, gpuVh = 0;
+        const char* gpuKeep = "no world";   // the first gate that kept the frame on the CPU path
+        static const bool verifyGpuPresent = std::getenv("OMK_VERIFY_GPU_PRESENT") != nullptr;
         const bool drawWorld = (screenKeepsWorld || vpItem) &&
                                worldReady && anyWorld &&
                                (haveDlgCam || haveEdit || holdEditCam ||
@@ -15509,6 +15518,47 @@ int main(int argc, char** argv) {
             }
             // The backend drew the picture into the top-left `vw x vh`; place
             // it, leaving the bands as the black `fb` was cleared to.
+            // THE PRESENT PASS (todo/optimization.md step 4b). On a frame that
+            // draws NOTHING over the 3D, the readback below, its dither and the
+            // upload in `present` only reproduce the attachment's own pixels,
+            // so the frame is dithered and presented on the GPU instead
+            // (`present.frag`). Everything that draws over the picture or reads
+            // `fb` afterwards is excluded here by the test that gates it further
+            // down: a screen, the shoot HUD, a media bitmap or line, a
+            // conversation, either screen fade, the flicker and clip logs, the
+            // snapshots and the final `--dump`. `OMK_NO_GPU_PRESENT=1` turns it
+            // off; `OMK_VERIFY_GPU_PRESENT=1` composes the CPU frame as well and
+            // compares the two - which is also how a gate missing from this list
+            // would show.
+#if defined(OMK_VULKAN)
+            {
+                static const bool noGpuPresent = std::getenv("OMK_NO_GPU_PRESENT") != nullptr;
+                const bool lastDumped = !dump.empty() && frames && n + 1 >= frames;
+                const bool onVulkan = (vkRen && &world == vkRen) ||
+                                      (verifyGpuPresent && worldVk && &world == worldVk);
+                // the gates in order; the first that holds names why the frame
+                // stays on the CPU path (`OMK_GPU_PRESENT_STATS` counts them)
+                const char* keep = nullptr;
+                if (noGpuPresent) keep = "off";
+                else if (!onVulkan) keep = "not vulkan";
+                else if (vpItem || walk) keep = "screen";
+                else if (!omk::vulkanCanPresentWorld(&world)) keep = "supersampling";
+                else if (mst.active && !mst.native) keep = "cpu mirror";
+                else if (shootMode && hudWalk) keep = "shoot hud";
+                else if (mediaBmp.w > 0 && mediaBmp.h > 0) keep = "media bitmap";
+                else if (mediaTextFrames > 0) keep = "media line";
+                else if (session.dialogOpen()) keep = "conversation";
+                else if (session.colourFade().running()) keep = "colour fade";
+                else if (session.blackFade().running()) keep = "black fade";
+                else if (!flickerDir.empty() || !snapsDir.empty() || std::getenv("OMK_CLIPLOG")) keep = "instrument";
+                else if (lastDumped) keep = "dump";
+                gpuFrame = keep == nullptr;
+                gpuKeep = keep ? keep : "";
+                gpuVy = view.vy;
+                gpuVh = view.vh;
+            }
+#endif
+            if (!gpuFrame || verifyGpuPresent) {
             const omk::Surface& pic = world.readback();
             if (vpItem && pic.w == fb.w) {
                 // The picture is the viewport item's; the composer places it
@@ -15528,6 +15578,7 @@ int main(int argc, char** argv) {
                               fb.px.begin() + static_cast<long>(dy) * fb.w);
                 }
             }
+            }   // the CPU composite
             ++worldFrames;
         }
         // ---- THE SNEAK'S INVENTORY ROWS ------------------------------
@@ -16518,6 +16569,46 @@ int main(int argc, char** argv) {
             }
             frameNote.clear();
         }
+#if defined(OMK_VULKAN)
+        if (gpuFrame && verifyGpuPresent) {
+            // the GPU's picture against the CPU frame, as the upload would
+            // expand it - every byte of every pixel
+            static std::vector<unsigned char> gpuPic;
+            static long compared = 0, differing = 0, badPixels = 0;
+            if (omk::vulkanWorldPicture(&world, gpuVy, gpuVh, gpuPic) &&
+                gpuPic.size() == fb.px.size() * 4) {
+                const unsigned char* lut = omk::expand565Rgba();
+                long diff = 0;
+                for (std::size_t i = 0; i < fb.px.size(); ++i)
+                    if (std::memcmp(lut + 4 * static_cast<std::size_t>(fb.px[i]), &gpuPic[4 * i], 4) != 0) ++diff;
+                ++compared;
+                if (diff) {
+                    ++differing; badPixels += diff;
+                    // at once, so a run with only a few GPU frames still says so
+                    std::printf("gpu present verify: frame %ld DIFFERS in %ld pixels\n", n, diff);
+                }
+            }
+            if (compared > 0 && compared % 30 == 0)
+                std::printf("gpu present verify: frame %ld, %ld frames compared, %ld differ (%ld pixels)\n",
+                            n, compared, differing, badPixels);
+        }
+        {
+            static long gpuPresented = 0, framesSeen = 0;
+            static std::map<std::string, long> keptBy;
+            ++framesSeen;
+            if (gpuFrame) ++gpuPresented;
+            else ++keptBy[gpuKeep];
+            if (std::getenv("OMK_GPU_PRESENT_STATS") && framesSeen % 30 == 0) {
+                std::printf("gpu present: frame %ld, %ld of %ld frames stayed on the GPU; on the CPU:",
+                            n, gpuPresented, framesSeen);
+                for (const auto& [why, count] : keptBy) std::printf(" %s %ld,", why.c_str(), count);
+                std::printf("\n");
+            }
+        }
+        if (gpuFrame && !verifyGpuPresent) {
+            if (!omk::vulkanPresentWorld(vkRen, gpuVy, gpuVh)) present(fb);
+        } else
+#endif
         present(fb);
         if (!snapsDir.empty() && handoverFrame >= 0 && ((n - handoverFrame) % snapEvery) == 0) {
             const std::string path = snapsDir + "/snap-" + std::to_string(n) + ".bin";

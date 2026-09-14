@@ -79,6 +79,12 @@ const uint32_t kFsqVert[] =
 const uint32_t kFsqFrag[] =
 #include "fsq.frag.inc"
 ;
+// The present pass: the adventure frame's dither and 565 expansion on the GPU
+// (todo/optimization.md step 4b).
+const uint32_t kPresentFrag[] =
+#include "present.frag.inc"
+;
+struct PresentPush { int32_t vy, vh, w, dither; };
 // The DEPTH-ONLY pass of the mapped shadow (`todo/enhancements.md` 6).
 const uint32_t kShadowVert[] =
 #include "shadow.vert.inc"
@@ -363,6 +369,23 @@ private:
     VkFence        pfence_ = VK_NULL_HANDLE;
     uint32_t       presentFam_ = 0;
 
+    // ---- THE PRESENT PASS (todo/optimization.md step 4b) ----------------------
+    // `colour_` dithered to 565 and expanded back to RGBA8 at the letterbox's
+    // offset into `presImg_`, which the swapchain blit then takes - the bytes
+    // `readback` + `presentSurface` produce for a frame nothing is drawn over,
+    // without either. Made on first use.
+    VkImage          presImg_ = VK_NULL_HANDLE;  VkDeviceMemory presMem_ = VK_NULL_HANDLE;
+    VkImageView      presView_ = VK_NULL_HANDLE;
+    VkRenderPass     presPass_ = VK_NULL_HANDLE; VkFramebuffer presFbuf_ = VK_NULL_HANDLE;
+    VkDescriptorSetLayout presDsl_ = VK_NULL_HANDLE;
+    VkDescriptorPool presPool_ = VK_NULL_HANDLE; VkDescriptorSet presDs_ = VK_NULL_HANDLE;
+    VkPipelineLayout presPlo_ = VK_NULL_HANDLE;  VkPipeline presPipe_ = VK_NULL_HANDLE;
+    VkSampler        presSampler_ = VK_NULL_HANDLE;
+    VkBuffer         presRead_ = VK_NULL_HANDLE; VkDeviceMemory presReadMem_ = VK_NULL_HANDLE;
+    bool makePresentPass();
+    bool runPresentPass(int vy, int vh);
+    bool presentImage(VkImage src, int sw, int sh);
+
 public:
     void needExtensions(const char* const* names, unsigned n) {
         wantInstExts_.assign(names, names + n);
@@ -373,6 +396,15 @@ public:
     bool presentDirect();
     bool presentSurface(const omk::Surface& s);
     void setViewport(const omk::View& view);
+    // The present pass's three uses: present the frame (a window only), read
+    // the pass's output back (the verification), and load `colour_` with a
+    // picture of the caller's (the exhaustive probe). All take the letterbox
+    // as the picture's first row `vy` and height `vh` in a `w_ x h_` window.
+    bool canPresentWorld() const { return ss_ == 1; }
+    bool presentWorld(int vy, int vh);
+    bool worldPicture(int vy, int vh, std::vector<unsigned char>& rgba);
+    bool probeUpload(const unsigned char* rgba);
+    void setDitherForProbe(bool on) { dither_ = on; }
 };
 
 uint32_t VulkanRenderer::memType(uint32_t bits, VkMemoryPropertyFlags want) const {
@@ -588,7 +620,9 @@ bool VulkanRenderer::makeTarget() {
         return true;
     };
     if (!image(VK_FORMAT_R8G8B8A8_UNORM,
-               VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT,
+               // SAMPLED for the present pass, which reads the frame where it is
+               VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
+                   VK_IMAGE_USAGE_SAMPLED_BIT,
                VK_IMAGE_ASPECT_COLOR_BIT, VK_SAMPLE_COUNT_1_BIT,
                colour_, colourMem_, colourView_)) return false;
     if (msaa && !image(VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
@@ -1232,6 +1266,12 @@ bool VulkanRenderer::makeSwapchain(int w, int h) {
 }
 
 bool VulkanRenderer::presentDirect() {
+    return presentImage(colour_, srcW_ ? srcW_ : rw_, srcH_ ? srcH_ : rh_);
+}
+
+// The swapchain half of every present: `src`'s top-left `sw x sh`, in
+// TRANSFER_SRC layout, blitted into the window's middle rows.
+bool VulkanRenderer::presentImage(VkImage src, int sw, int sh) {
     if (swap_ == VK_NULL_HANDLE) return false;
     uint32_t idx = 0;
     VkResult r = vkAcquireNextImageKHR(dev_, swap_, UINT64_MAX, acquired_,
@@ -1272,11 +1312,11 @@ bool VulkanRenderer::presentDirect() {
     VkImageBlit blit{};
     blit.srcSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
     blit.srcOffsets[0] = {0, 0, 0};
-    blit.srcOffsets[1] = {srcW_ ? srcW_ : rw_, srcH_ ? srcH_ : rh_, 1};
+    blit.srcOffsets[1] = {sw, sh, 1};
     blit.dstSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
     blit.dstOffsets[0] = {0, y0, 0};
     blit.dstOffsets[1] = {static_cast<int>(swapExt_.width), y0 + h_, 1};
-    vkCmdBlitImage(pcb_, colour_, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+    vkCmdBlitImage(pcb_, src, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
                    swapImgs_[idx], VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
                    // LINEAR only when there is something to average: at ss 1
                    // this must stay NEAREST or every existing frame changes.
@@ -1356,6 +1396,225 @@ bool VulkanRenderer::presentSurface(const omk::Surface& s) {
                          VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0, nullptr, 1, &b);
     oneShotEnd(cb);
     return presentDirect();
+}
+
+// ---- THE PRESENT PASS (todo/optimization.md step 4b) --------------------------
+
+bool VulkanRenderer::makePresentPass() {
+    if (presPipe_ != VK_NULL_HANDLE) return true;
+    const VkFormat fmt = VK_FORMAT_R8G8B8A8_UNORM;
+    {
+        VkImageCreateInfo ii{VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO};
+        ii.imageType = VK_IMAGE_TYPE_2D; ii.format = fmt;
+        ii.extent = {static_cast<uint32_t>(w_), static_cast<uint32_t>(h_), 1};
+        ii.mipLevels = 1; ii.arrayLayers = 1;
+        ii.samples = VK_SAMPLE_COUNT_1_BIT; ii.tiling = VK_IMAGE_TILING_OPTIMAL;
+        ii.usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
+        ii.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+        ii.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+        VKCHECK(vkCreateImage(dev_, &ii, nullptr, &presImg_), "present image");
+        VkMemoryRequirements req; vkGetImageMemoryRequirements(dev_, presImg_, &req);
+        VkMemoryAllocateInfo ai{VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO};
+        ai.allocationSize = req.size;
+        ai.memoryTypeIndex = memType(req.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+        VKCHECK(vkAllocateMemory(dev_, &ai, nullptr, &presMem_), "present image memory");
+        VKCHECK(vkBindImageMemory(dev_, presImg_, presMem_, 0), "present image bind");
+        VkImageViewCreateInfo vi{VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO};
+        vi.image = presImg_; vi.viewType = VK_IMAGE_VIEW_TYPE_2D; vi.format = fmt;
+        vi.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+        VKCHECK(vkCreateImageView(dev_, &vi, nullptr, &presView_), "present image view");
+    }
+    {
+        // every pixel is written, so nothing is loaded; it ends where the
+        // swapchain blit and the verification copy both read from
+        VkAttachmentDescription a{};
+        a.format = fmt; a.samples = VK_SAMPLE_COUNT_1_BIT;
+        a.loadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE; a.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+        a.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+        a.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+        a.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+        a.finalLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+        VkAttachmentReference ref{0, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL};
+        VkSubpassDescription sub{};
+        sub.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
+        sub.colorAttachmentCount = 1; sub.pColorAttachments = &ref;
+        VkRenderPassCreateInfo rpi{VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO};
+        rpi.attachmentCount = 1; rpi.pAttachments = &a;
+        rpi.subpassCount = 1; rpi.pSubpasses = &sub;
+        VKCHECK(vkCreateRenderPass(dev_, &rpi, nullptr, &presPass_), "present render pass");
+        VkFramebufferCreateInfo fi{VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO};
+        fi.renderPass = presPass_; fi.attachmentCount = 1; fi.pAttachments = &presView_;
+        fi.width = static_cast<uint32_t>(w_); fi.height = static_cast<uint32_t>(h_); fi.layers = 1;
+        VKCHECK(vkCreateFramebuffer(dev_, &fi, nullptr, &presFbuf_), "present framebuffer");
+    }
+    {
+        VkDescriptorSetLayoutBinding b{};
+        b.binding = 0; b.descriptorCount = 1;
+        b.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        b.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+        VkDescriptorSetLayoutCreateInfo dli{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO};
+        dli.bindingCount = 1; dli.pBindings = &b;
+        VKCHECK(vkCreateDescriptorSetLayout(dev_, &dli, nullptr, &presDsl_), "present set layout");
+        // its OWN pool: `setTextures` resets the scene's, and this set must
+        // survive a texture reload
+        VkDescriptorPoolSize ps{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1};
+        VkDescriptorPoolCreateInfo pi{VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO};
+        pi.maxSets = 1; pi.poolSizeCount = 1; pi.pPoolSizes = &ps;
+        VKCHECK(vkCreateDescriptorPool(dev_, &pi, nullptr, &presPool_), "present pool");
+        VkDescriptorSetAllocateInfo ai{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO};
+        ai.descriptorPool = presPool_; ai.descriptorSetCount = 1; ai.pSetLayouts = &presDsl_;
+        VKCHECK(vkAllocateDescriptorSets(dev_, &ai, &presDs_), "present set");
+        VkSamplerCreateInfo si{VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO};
+        si.magFilter = VK_FILTER_NEAREST; si.minFilter = VK_FILTER_NEAREST;
+        si.addressModeU = si.addressModeV = si.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+        VKCHECK(vkCreateSampler(dev_, &si, nullptr, &presSampler_), "present sampler");
+        VkDescriptorImageInfo ii{presSampler_, colourView_, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+        VkWriteDescriptorSet wr{VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
+        wr.dstSet = presDs_; wr.dstBinding = 0; wr.descriptorCount = 1;
+        wr.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER; wr.pImageInfo = &ii;
+        vkUpdateDescriptorSets(dev_, 1, &wr, 0, nullptr);
+    }
+    {
+        VkPushConstantRange pcr{VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(PresentPush)};
+        VkPipelineLayoutCreateInfo pli{VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};
+        pli.setLayoutCount = 1; pli.pSetLayouts = &presDsl_;
+        pli.pushConstantRangeCount = 1; pli.pPushConstantRanges = &pcr;
+        VKCHECK(vkCreatePipelineLayout(dev_, &pli, nullptr, &presPlo_), "present pipeline layout");
+        const auto module = [&](const uint32_t* code, size_t bytes) {
+            VkShaderModuleCreateInfo si{VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO};
+            si.codeSize = bytes; si.pCode = code;
+            VkShaderModule m = VK_NULL_HANDLE;
+            vkCreateShaderModule(dev_, &si, nullptr, &m);
+            return m;
+        };
+        VkShaderModule qv = module(kFsqVert, sizeof(kFsqVert));
+        VkShaderModule qf = module(kPresentFrag, sizeof(kPresentFrag));
+        if (!qv || !qf) { std::fprintf(stderr, "vulkan: present shader module\n"); return false; }
+        VkPipelineShaderStageCreateInfo st[2]{};
+        st[0] = {VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, nullptr, 0,
+                 VK_SHADER_STAGE_VERTEX_BIT, qv, "main", nullptr};
+        st[1] = {VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, nullptr, 0,
+                 VK_SHADER_STAGE_FRAGMENT_BIT, qf, "main", nullptr};
+        VkPipelineVertexInputStateCreateInfo vi{VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO};
+        VkPipelineInputAssemblyStateCreateInfo ia{VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO};
+        ia.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+        VkViewport vp{0, 0, static_cast<float>(w_), static_cast<float>(h_), 0.0f, 1.0f};
+        VkRect2D sc{{0, 0}, {static_cast<uint32_t>(w_), static_cast<uint32_t>(h_)}};
+        VkPipelineViewportStateCreateInfo vps{VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO};
+        vps.viewportCount = 1; vps.pViewports = &vp; vps.scissorCount = 1; vps.pScissors = &sc;
+        VkPipelineRasterizationStateCreateInfo rs{VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO};
+        rs.polygonMode = VK_POLYGON_MODE_FILL; rs.cullMode = VK_CULL_MODE_NONE;
+        rs.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE; rs.lineWidth = 1.0f;
+        VkPipelineMultisampleStateCreateInfo ms{VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO};
+        ms.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
+        VkPipelineColorBlendAttachmentState cba{};
+        cba.blendEnable = VK_FALSE; cba.colorWriteMask = 0xF;
+        VkPipelineColorBlendStateCreateInfo cb{VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO};
+        cb.attachmentCount = 1; cb.pAttachments = &cba;
+        VkGraphicsPipelineCreateInfo gp{VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO};
+        gp.stageCount = 2; gp.pStages = st;
+        gp.pVertexInputState = &vi; gp.pInputAssemblyState = &ia;
+        gp.pViewportState = &vps; gp.pRasterizationState = &rs;
+        gp.pMultisampleState = &ms; gp.pColorBlendState = &cb;
+        gp.layout = presPlo_; gp.renderPass = presPass_;
+        const VkResult pr = vkCreateGraphicsPipelines(dev_, VK_NULL_HANDLE, 1, &gp, nullptr, &presPipe_);
+        vkDestroyShaderModule(dev_, qv, nullptr);
+        vkDestroyShaderModule(dev_, qf, nullptr);
+        if (pr != VK_SUCCESS) { std::fprintf(stderr, "vulkan: present pipeline\n"); return false; }
+    }
+    return makeBuffer(static_cast<VkDeviceSize>(w_) * h_ * 4, VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+                      VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                      presRead_, presReadMem_);
+}
+
+// `colour_` (TRANSFER_SRC, as `end()` and `presentSurface` leave it) through the
+// present shader into `presImg_`, and back to TRANSFER_SRC.
+bool VulkanRenderer::runPresentPass(int vy, int vh) {
+    if (!makePresentPass()) return false;
+    VkCommandBuffer cb = oneShotBegin();
+    const auto layout = [&](VkImageLayout from, VkImageLayout to) {
+        VkImageMemoryBarrier b{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER};
+        b.oldLayout = from; b.newLayout = to;
+        b.srcQueueFamilyIndex = b.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        b.image = colour_;
+        b.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+        b.srcAccessMask = 0; b.dstAccessMask = 0;
+        vkCmdPipelineBarrier(cb, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+                             VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, nullptr, 0, nullptr, 1, &b);
+    };
+    layout(VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+    VkRenderPassBeginInfo rp{VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO};
+    rp.renderPass = presPass_; rp.framebuffer = presFbuf_;
+    rp.renderArea = {{0, 0}, {static_cast<uint32_t>(w_), static_cast<uint32_t>(h_)}};
+    vkCmdBeginRenderPass(cb, &rp, VK_SUBPASS_CONTENTS_INLINE);
+    vkCmdBindPipeline(cb, VK_PIPELINE_BIND_POINT_GRAPHICS, presPipe_);
+    vkCmdBindDescriptorSets(cb, VK_PIPELINE_BIND_POINT_GRAPHICS, presPlo_, 0, 1, &presDs_, 0, nullptr);
+    const PresentPush pp{vy, vh, w_, dither_ ? 1 : 0};
+    vkCmdPushConstants(cb, presPlo_, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof pp, &pp);
+    vkCmdDraw(cb, 3, 1, 0, 0);
+    vkCmdEndRenderPass(cb);
+    layout(VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
+    oneShotEnd(cb);
+    return true;
+}
+
+bool VulkanRenderer::presentWorld(int vy, int vh) {
+    if (swap_ == VK_NULL_HANDLE || ss_ != 1) return false;
+    if (!runPresentPass(vy, vh)) return false;
+    return presentImage(presImg_, w_, h_);
+}
+
+bool VulkanRenderer::worldPicture(int vy, int vh, std::vector<unsigned char>& rgba) {
+    if (ss_ != 1 || !runPresentPass(vy, vh)) return false;
+    VkCommandBuffer cb = oneShotBegin();
+    VkBufferImageCopy cp{};
+    cp.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
+    cp.imageExtent = {static_cast<uint32_t>(w_), static_cast<uint32_t>(h_), 1};
+    vkCmdCopyImageToBuffer(cb, presImg_, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, presRead_, 1, &cp);
+    oneShotEnd(cb);
+    const std::size_t bytes = static_cast<std::size_t>(w_) * static_cast<std::size_t>(h_) * 4;
+    rgba.resize(bytes);
+    void* p = nullptr;
+    if (vkMapMemory(dev_, presReadMem_, 0, bytes, 0, &p) != VK_SUCCESS) return false;
+    std::memcpy(rgba.data(), p, bytes);
+    vkUnmapMemory(dev_, presReadMem_);
+    return true;
+}
+
+// Load `colour_` with a `w_ x h_` RGBA8 picture - the probe's way of asking the
+// pass about colours no scene is guaranteed to contain.
+bool VulkanRenderer::probeUpload(const unsigned char* rgba) {
+    const VkDeviceSize bytes = static_cast<VkDeviceSize>(w_) * h_ * 4;
+    if (upBuf_ == VK_NULL_HANDLE &&
+        !makeBuffer(bytes, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+                    VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                    upBuf_, upMem_)) return false;
+    void* p = nullptr;
+    if (vkMapMemory(dev_, upMem_, 0, bytes, 0, &p) != VK_SUCCESS) return false;
+    std::memcpy(p, rgba, static_cast<std::size_t>(bytes));
+    vkUnmapMemory(dev_, upMem_);
+    VkCommandBuffer cb = oneShotBegin();
+    VkImageMemoryBarrier b{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER};
+    b.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    b.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+    b.srcQueueFamilyIndex = b.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    b.image = colour_;
+    b.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+    b.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+    vkCmdPipelineBarrier(cb, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT,
+                         0, 0, nullptr, 0, nullptr, 1, &b);
+    VkBufferImageCopy cp{};
+    cp.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
+    cp.imageExtent = {static_cast<uint32_t>(w_), static_cast<uint32_t>(h_), 1};
+    vkCmdCopyBufferToImage(cb, upBuf_, colour_, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &cp);
+    b.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+    b.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+    b.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+    b.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+    vkCmdPipelineBarrier(cb, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT,
+                         0, 0, nullptr, 0, nullptr, 1, &b);
+    oneShotEnd(cb);
+    return true;
 }
 
 bool VulkanRenderer::init(int w, int h) {
@@ -2100,6 +2359,18 @@ VulkanRenderer::~VulkanRenderer() {
     if (depthView_) vkDestroyImageView(dev_, depthView_, nullptr);
     if (depth_) vkDestroyImage(dev_, depth_, nullptr);
     if (depthMem_) vkFreeMemory(dev_, depthMem_, nullptr);
+    if (presPipe_) vkDestroyPipeline(dev_, presPipe_, nullptr);
+    if (presPlo_) vkDestroyPipelineLayout(dev_, presPlo_, nullptr);
+    if (presSampler_) vkDestroySampler(dev_, presSampler_, nullptr);
+    if (presPool_) vkDestroyDescriptorPool(dev_, presPool_, nullptr);
+    if (presDsl_) vkDestroyDescriptorSetLayout(dev_, presDsl_, nullptr);
+    if (presFbuf_) vkDestroyFramebuffer(dev_, presFbuf_, nullptr);
+    if (presPass_) vkDestroyRenderPass(dev_, presPass_, nullptr);
+    if (presView_) vkDestroyImageView(dev_, presView_, nullptr);
+    if (presImg_) vkDestroyImage(dev_, presImg_, nullptr);
+    if (presMem_) vkFreeMemory(dev_, presMem_, nullptr);
+    if (presRead_) vkDestroyBuffer(dev_, presRead_, nullptr);
+    if (presReadMem_) vkFreeMemory(dev_, presReadMem_, nullptr);
     if (upBuf_) vkDestroyBuffer(dev_, upBuf_, nullptr);
     if (upMem_) vkFreeMemory(dev_, upMem_, nullptr);
     if (pipeStencil_) vkDestroyPipeline(dev_, pipeStencil_, nullptr);
@@ -2148,6 +2419,25 @@ bool vulkanPresent(Renderer* r) {
 bool vulkanPresentSurface(Renderer* r, const Surface& s) {
     auto* v = dynamic_cast<VulkanRenderer*>(r);
     return v && v->presentSurface(s);
+}
+// The present pass (todo/optimization.md step 4b).
+bool vulkanCanPresentWorld(Renderer* r) {
+    auto* v = dynamic_cast<VulkanRenderer*>(r);
+    return v && v->canPresentWorld();
+}
+bool vulkanPresentWorld(Renderer* r, int vy, int vh) {
+    auto* v = dynamic_cast<VulkanRenderer*>(r);
+    return v && v->presentWorld(vy, vh);
+}
+bool vulkanWorldPicture(Renderer* r, int vy, int vh, std::vector<unsigned char>& rgba) {
+    auto* v = dynamic_cast<VulkanRenderer*>(r);
+    return v && v->worldPicture(vy, vh, rgba);
+}
+bool vulkanProbeUpload(Renderer* r, const unsigned char* rgba, bool dither) {
+    auto* v = dynamic_cast<VulkanRenderer*>(r);
+    if (!v) return false;
+    v->setDitherForProbe(dither);
+    return v->probeUpload(rgba);
 }
 int vulkanSamples(Renderer* r) {
     return static_cast<VulkanRenderer*>(r)->samples();

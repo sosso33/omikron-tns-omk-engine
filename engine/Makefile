@@ -44,7 +44,7 @@ SRC   := $(wildcard src/*/*.cpp)
 # nothing installed must build every tool and pass the suite. It is built by
 # the `vulkan` target instead. Sweeping it in here broke exactly that property
 # the first time, with an undefined-symbol link error on a clean build.
-TOOLS := $(filter-out tools/run_vulkan.cpp tools/shadow_probe.cpp tools/perpixel_probe.cpp,$(wildcard tools/*.cpp))
+TOOLS := $(filter-out tools/run_vulkan.cpp tools/shadow_probe.cpp tools/perpixel_probe.cpp tools/present_probe.cpp,$(wildcard tools/*.cpp))
 BINS  := $(patsubst tools/%.cpp,build/%,$(TOOLS))
 
 OBJDIR   := build/obj
@@ -103,7 +103,8 @@ VK_LIBS   := $(if $(VK_PKG),$(shell pkg-config --libs vulkan))
 GLSLC     := $(shell command -v glslc 2>/dev/null)
 VK_SHADERS := build/shaders/scene.vert.inc build/shaders/scene.frag.inc \
               build/shaders/fsq.vert.inc build/shaders/fsq.frag.inc \
-              build/shaders/shadow.vert.inc
+              build/shaders/shadow.vert.inc \
+              build/shaders/present.frag.inc
 
 build/shaders/%.inc: backends/vulkan/shaders/%
 	@mkdir -p build/shaders
@@ -131,6 +132,8 @@ else
 	    tools/shadow_probe.cpp backends/vulkan/vkrender.cpp $(SRCOBJS) $(VK_LIBS)
 	$(CXX) $(CXXFLAGS) $(VK_CFLAGS) -Ibuild/shaders -o build/perpixel_probe \
 	    tools/perpixel_probe.cpp backends/vulkan/vkrender.cpp $(SRCOBJS) $(VK_LIBS)
+	$(CXX) $(CXXFLAGS) $(VK_CFLAGS) -Ibuild/shaders -o build/present_probe \
+	    tools/present_probe.cpp backends/vulkan/vkrender.cpp $(SRCOBJS) $(VK_LIBS)
 	@echo "built build/run_vulkan and build/shadow_probe against $(VK_PKG)"
 endif
 
