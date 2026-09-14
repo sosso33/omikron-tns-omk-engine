@@ -1556,6 +1556,8 @@ int main(int argc, char** argv) {
 "                   the object staying in his hand. Without it, the original's\n"
 "                   Inventory_Insert: a row, a merge, or for money and rings\n"
 "                   Object_ApplyEffect - the count goes up, no row\n"
+"  --money N        the player record's +172, the seteks - a HARNESS write, so\n"
+"                   a shop purchase can be driven from a save that has none\n"
 "  --give a,b,c     object ids into the carried list - a HARNESS write, not\n"
 "                   `inventory.add`. A list, because a new game ships two\n"
 "                   objects and the flows worth driving want a bagful: row\n"
@@ -1813,6 +1815,7 @@ int main(int argc, char** argv) {
     // scrolling wants more than the nine row widgets, and `Utiliser sur`
     // wants a recipe PAIR, and a new game ships exactly two objects.
     std::string giveList;
+    int moneyArg = -1;              // --money: a harness write of record +172
     std::string varList;
     bool newWorld = false; // --newgame-world: START's world, the save's player
     // --scene-chunk N: run a SCENE chunk's startup script over the area, the
@@ -1947,6 +1950,7 @@ int main(int argc, char** argv) {
         // opcode 50 `inventory.add` is what the game uses; this writes the
         // slot and runs none of its bookkeeping.
         else if (a == "--give" && i + 1 < argc) giveList = argv[++i];
+        else if (a == "--money" && i + 1 < argc) moneyArg = std::atoi(argv[++i]);
         // A HARNESS FLAG, not a port: `--var 652=1,657=1` writes the game DB
         // directly. A flow can sit behind state no flag can otherwise reach -
         // the flat's lift gate tests `Porte Asc Fermee` and `Rencontre Telis`
@@ -2457,6 +2461,15 @@ int main(int argc, char** argv) {
     // `IAM\GLOBAL +12`'s eleven combination recipes. `script/inventory.h` was
     // written, checked and never consumed by anything that runs - the sneak
     // is what the channel exists for, so this is where it is loaded.
+    // `--money N`: the player record's `+172`, the seteks, written before the
+    // first frame so a purchase can be driven from a save that has none (the
+    // shipped fixture reads 0). A HARNESS write like `--give`, not anything
+    // the game does.
+    if (moneyArg >= 0) {
+        state.setMoney(std::min(moneyArg, 0xFFFF));
+        std::printf("--money: the player record's +172 set to %d (a harness write)\n",
+                    state.money());
+    }
     if (!giveList.empty()) {
         int placed = 0, refused = 0;
         std::string cur;
@@ -16125,16 +16138,111 @@ int main(int argc, char** argv) {
         // the active area block's `+8` (`omk::shopStock`). Then case 29 for
         // the count and case 33 for each name, through the same window and
         // past-the-end rule as the sneak's rows (`sub_42AAE0`).
-        if (walk && walk->panel() && walk->panel()->addr == omk::kPanelShop) {
+        // All THREE of the shop's panels share the header, so all three are
+        // served here: the shop, the Vente confirm and the Examiner page.
+        const std::uint32_t shopPanel =
+            walk && walk->panel() ? walk->panel()->addr : 0u;
+        if (shopPanel == omk::kPanelShop || shopPanel == omk::kPanelShopSellConfirm ||
+            shopPanel == omk::kPanelShopExamine) {
             sneakRows.clear();
             sneakHidden.clear();
             if (w.screenParam(openScreen) == 0 && inv.openedList() != 0)
                 inv.openList(0);                        // Game_RaiseEvent(25, 0)
             std::vector<int> ids;
-            if (inv.openedList() == 3)
-                ids = omk::shopStock(session.residentSlot(session.activeSlot()).areaChunk);
-            else if (inv.openedList() == 0)
-                ids = omk::objectList(state, omk::ObjectList::Carried);
+            const auto readIds = [&]() {
+                ids.clear();
+                if (inv.openedList() == 3)
+                    ids = omk::shopStock(session.residentSlot(session.activeSlot()).areaChunk);
+                else if (inv.openedList() == 0)
+                    ids = omk::objectList(state, omk::ObjectList::Carried);
+            };
+            readIds();
+            // ---- STEP 4: THE PURCHASE AND THE SALE ------------------------
+            //
+            // The walk recorded which (`takeShop`); the channel carries it
+            // out, as `Game_HandleEvent` does in the engine. A message goes
+            // through `sub_42B820(0, -1, text)` into `byte_6A4CA0` and runs for
+            // oscillator 0's 5000 ms, shown in place of line two (below).
+            static std::string shopMessage;
+            static long shopMessageMs = -1000000;
+            const long shopNowMs = static_cast<long>(SDL_GetTicks());
+            const auto buyText = omk::iamStrings(fs, "IAM/Buy");
+            const auto str = [&](int id) {
+                return id >= 0 && id < static_cast<int>(buyText.size())
+                    ? buyText[static_cast<std::size_t>(id)] : std::string();
+            };
+            static std::map<int, std::vector<float>> shopSounds;
+            const auto playId = [&](int id) {       // `Ui_PlaySound` (0x00482D90)
+                auto it = shopSounds.find(id);
+                if (it == shopSounds.end()) {
+                    std::vector<float> pcm;
+                    const std::string& nm = w.soundNameById(id);
+                    if (!nm.empty())
+                        if (const auto path = fs.resolve("I2D/sounds/" + nm + ".wav"))
+                            pcm = wavToDevice(omk::DataFs::readPath(*path), 44100);
+                    it = shopSounds.emplace(id, std::move(pcm)).first;
+                }
+                if (!it->second.empty()) blip(it->second);
+            };
+            const auto post = [&](int stringId) {
+                shopMessage = str(stringId);
+                shopMessageMs = shopNowMs;
+            };
+            if (int kind = -1, row = -1; walk->takeShop(kind, row)) {
+                const int id = row >= 0 && row < static_cast<int>(ids.size())
+                    ? ids[static_cast<std::size_t>(row)] : -1;
+                const auto carried = omk::objectList(state, omk::ObjectList::Carried);
+                const int money = state.money();
+                const int price = id > 0 ? inv.price(id) : 0;
+                if (kind == 0 && id > 0) {
+                    // the row's Acheter arm: `sub_42B3E0(tag)` - event 41 -
+                    // refused is sound 18 and nothing else
+                    if (inv.shopAllows(id, carried) != omk::InvResult::Ok) {
+                        playId(18);
+                        std::printf("shop: buy %d refused by event 41 (a gun already held)\n", id);
+                    } else if (static_cast<int>(carried.size()) >=
+                                   omk::GameState::kListCapacity[0] || price > money) {
+                        // case 38's result 2: `sub_42B300(tag) > sub_42B1C0(4)`
+                        // picks 9 "Pas assez de seteks ! !", else 8 "Sneak plein !"
+                        post(price > money ? 9 : 8);
+                        playId(18);
+                        std::printf("shop: buy %d refused by event 38 (price %d, money %d, "
+                                    "carried %zu) - message %d\n", id, price, money,
+                                    carried.size(), price > money ? 9 : 8);
+                    } else {
+                        // case 38: `Inventory_Insert` + `ObjectList_InsertFront(0, ...)`,
+                        // then `u16(+172) -= price`. Inventory_Insert's merge of
+                        // ammunition and money into an existing slot is not
+                        // modelled (`GameState::listAdd` says so).
+                        state.listAdd(0, id);
+                        state.setMoney(money - price);
+                        post(21);                        // "Objet achete !"
+                        playId(16);
+                        std::printf("shop: bought %d for %d, money %d -> %d\n",
+                                    id, price, money, state.money());
+                    }
+                } else if (kind == 1 && id > 0) {
+                    // `Oui` (0x004AEC00): event 36 request 10 - the record's flag
+                    // 0x2 - and `sub_42B300(tag) > 0`, then event 39
+                    const auto* rec = inv.record(id);
+                    const bool sellable = rec && (rec->flags & 0x2) != 0 && price > 0;
+                    if (!sellable) {
+                        post(7);                         // "Vente non autorisee !"
+                        std::printf("shop: sale of %d refused (flags %#x, price %d) - message 7\n",
+                                    id, rec ? rec->flags : 0, price);
+                    } else {
+                        state.setMoney(std::min(money + price / 2, 0xFFFF));
+                        state.listRemove(0, id);         // `ObjectList_RemoveAt(0, tag)`
+                        playId(17);
+                        std::printf("shop: sold %d for %d, money %d -> %d\n",
+                                    id, price / 2, money, state.money());
+                    }
+                }
+                readIds();
+                // `if (!dword_4E3658) dword_4E3988 = 0` - an emptied list hands
+                // the focus back to the buttons
+                if (ids.empty()) walk->focusList(omk::kListShopButtons);
+            }
             const int window = walk->rowWindow(omk::kListShopRows);
             for (const auto& l : walk->panel()->lists) {
                 if (l.addr != omk::kListShopRows) continue;
@@ -16165,33 +16273,38 @@ int main(int argc, char** argv) {
             //               it pays; "%s %d". A row with no object is tag -1
             //               and `sub_42B300` returns 0 for it.
             {
-                const auto buyText = omk::iamStrings(fs, "IAM/Buy");
-                const auto str = [&](int id) {
-                    return id >= 0 && id < static_cast<int>(buyText.size())
-                        ? buyText[static_cast<std::size_t>(id)] : std::string();
-                };
-                const omk::UiList* buttons = nullptr;
-                const omk::UiList* rows = nullptr;
-                for (const auto& l : walk->panel()->lists) {
-                    if (l.addr == omk::kListShopButtons) buttons = &l;
-                    if (l.addr == omk::kListShopRows) rows = &l;
-                }
+                // The hooks name the lists by ADDRESS (`0x004E3640`,
+                // `off_4E337C`), not through the installed panel - which on the
+                // Vente confirm and the Examiner page carries no stock rows.
+                const omk::UiList* buttons = w.listAt(omk::kListShopButtons);
+                const omk::UiList* rows = w.listAt(omk::kListShopRows);
                 int price = 0;
+                int rowId = -1;                 // the selected row's object
                 if (rows) {
                     const int sel = walk->selectionOf(*rows);
                     const int row = sel >= 0 ? sel + std::max(0, window) : -1;
                     if (row >= 0 && row < static_cast<int>(ids.size())) {
-                        price = inv.price(ids[static_cast<std::size_t>(row)]);
+                        rowId = ids[static_cast<std::size_t>(row)];
+                        price = inv.price(rowId);
                         if (w.screenParam(openScreen) == 0) price /= 2;
                     }
                 }
+                // oscillator 0: `sub_42B6D0` adds the frame's ms to `+4` and at
+                // `+8` = 5000 `sub_42B7B0` clears the flag line two tests
+                const bool messageUp = shopNowMs - shopMessageMs < 5000;
                 for (const auto& l : walk->panel()->lists) {
                     for (const auto& e : l.items) {
-                        if (e.textFn == 0x004AEE30u && buttons) {
+                        if (e.textFn == 0x004AEE30u && messageUp) {
+                            sneakRows[e.addr] = shopMessage;     // `sub_478D60`
+                        } else if (e.textFn == 0x004AEE30u && buttons) {
                             const int b = walk->selectionOf(*buttons);
                             if (b >= 0 && b < static_cast<int>(buttons->items.size()))
                                 sneakRows[e.addr] =
                                     str(buttons->items[static_cast<std::size_t>(b)].label());
+                        } else if (e.textFn == 0x004AEFD0u) {
+                            // the Vente confirm's second line: `sub_42AA00` on
+                            // the selected stock row - case 33, its name
+                            if (rowId > 0) sneakRows[e.addr] = inv.displayName(rowId, 0);
                         } else if (e.textFn == 0x004AEF10u) {
                             sneakRows[e.addr] = str(e.label()) + " " +
                                                 std::to_string(state.money());

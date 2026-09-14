@@ -17811,8 +17811,12 @@ def c_engine_ui():
                + abs(len(mine) - len(ref))
     known = tuple(sorted((a[0], a[4], b[4]) for a, b in zip(mine, ref)
                          if a != b and a[0] in bound))
+    # 51/145/628/567/52/93/51 -> 54/154/666/600/54/100/54 on 2026-09-14: the
+    # shops' two CODE_NAMED children (the Vente confirm, the Examiner page)
+    # and the shop panel again as that page's `+44` child. The 31-screen
+    # comparison and its two named cases did not move.
     return (head, len(ref), disagree, known), \
-           ((51, 145, 628, 567, 52, 93, 51, 0), 31, 0, ((7, 0, 3), (9, 0, 4))), \
+           ((54, 154, 666, 600, 54, 100, 54, 0), 31, 0, ((7, 0, 3), (9, 0, 4))), \
            "panels (31 screens + 15 children - 13 reached through an item +44 and TWO named only from CODE, the verb panel 0x004DEEB8 and the examine page 0x004DEF20, which `sub_42A370` installs from a callback so nothing in the tree points at them), " \
            "lists, items, SELECTABLE items - which FELL by ten once the " \
            "shops' branch was resolved and each of them started hiding the " \
@@ -19906,7 +19910,7 @@ def c_engine_shop_open():
                                       parts[0].split(" ", 1)[1] if parts else "")
     # ...and the two hooks that reach the rows: the panel's 0x004AEE00 and
     # the rows' bare sub_42AFF0
-    walks = [ln for ln in out.splitlines() if ln.startswith("walk ")]
+    walks = [ln for ln in out.splitlines() if ln.startswith(("walk ", "step4 "))]
     # STEP 3, THE HEADER: composed in omk-play, so run it - the pharmacy
     # (ENTER on Acheter, then DOWN to the small medikit) and the bank with a
     # 200-seteks medikit given to it (ENTER on Vente, DOWN onto the medikit)
@@ -19926,10 +19930,25 @@ def c_engine_shop_open():
                 if ln.startswith("shop header:")]
     heads = (header(["--area", "39"]) +
              header(["--area", "83", "--stand", "13875,-6,20441,321", "--give", "15"]))
+    # STEP 4, THE MONEY: a purchase that lands and then one refused for want
+    # of seteks (the pharmacy, 300 given by --money), and a sale through the
+    # Vente confirm's Oui (the bank, a Hypra given by --give)
+    def trade(extra, keys, frames):
+        p = subprocess.run([play, omkpaths.data_root(), tb, "--save", save,
+                            "--nofmv", "--no-crowd", "--software",
+                            "--keys", keys, "--keydelay", "60",
+                            "--frames", frames] + extra,
+                           capture_output=True, env=env, timeout=600)
+        return [ln for ln in p.stdout.decode("cp1252", "replace").splitlines()
+                if ln.startswith(("shop: bought", "shop: sold", "shop: buy ",
+                                  "shop: sale "))]
+    trades = (trade(["--area", "39", "--money", "300"], "28,28,28,28,28,28,28", "460") +
+              trade(["--area", "83", "--stand", "13875,-6,20441,321", "--give", "191"],
+                    "28,28,28,28,28,208,28,28", "560"))
     return (len(lines), lines, len(stock), stock.get(39), stock.get(83),
             stock.get(30, (0, [], ""))[:1] + (stock.get(30, (0, [], ""))[2],),
             stock.get(86, (0, [], ""))[0], stock.get(86, (0, [], ""))[1][:3],
-            walks, heads), \
+            walks, heads, trades), \
            (3, [
             "screen 21 param 1: buttons select 0, hidden acheter 0 vente 1, "
             "rows 150 215 250, header 150 215 250, row bar paints 24 44 49",
@@ -19945,7 +19964,13 @@ def c_engine_shop_open():
              "[open] [move] [move]",
              "walk 21: button 3, LEFT there -> list 0",
              "walk 21: 2 rows bound, ENTER on Acheter -> list 1",
-             "walk 21: 0 rows bound, ENTER on Acheter -> list 0"],
+             "walk 21: 0 rows bound, ENTER on Acheter -> list 0",
+             "step4 buy: panel 0x4e3970 list 1 sel 0, request 0 row 0",
+             "step4 sell confirm: panel 0x4e3a40 list 1 sel 2",
+             "step4 sell oui: panel 0x4e3970 list 1 sel 0, request 1 row 1",
+             "step4 sell non: panel 0x4e3970 list 1 sel 0, request -1 row -1",
+             "step4 examine: panel 0x4e39d8 list 1 sel 0 -> ENTER -> panel "
+             "0x4e3970 list 1 sel 0"],
             ["shop header: screen 21 | 'Acheter' | 'Seteks en votre possession :  0' "
              "| 'Prix de l'article :  200'",
              "shop header: screen 21 | 'Acheter' | 'Seteks en votre possession :  0' "
@@ -19953,7 +19978,10 @@ def c_engine_shop_open():
              "shop header: screen 20 | 'Vente' | 'Seteks en votre possession :  0' "
              "| 'Prix de l'article :  0'",
              "shop header: screen 20 | 'Vente' | 'Seteks en votre possession :  0' "
-             "| 'Prix de l'article :  100'"]), \
+             "| 'Prix de l'article :  100'"],
+            ["shop: bought 15 for 200, money 300 -> 100",
+             "shop: buy 15 refused by event 38 (price 200, money 100, carried 2) - message 9",
+             "shop: sold 191 for 2500, money 0 -> 2500"]), \
            "shop screens the probe opened (a parse that reads none fails AS a " \
            "parse); then per screen - the pharmacy, the bank, the Lahoreh " \
            "library, through one shared store - the button selection " \

@@ -143,6 +143,69 @@ int main(int argc, char** argv) {
         }
     }
 
+    // ---- STEP 4: THE ROW'S THREE ARMS AND THE SALE'S CONFIRM -------------
+    //
+    // The row callback 0x004AEAA0 switches on the button selection: Acheter
+    // records a purchase and stays, Vente installs the confirm 0x004E3A40,
+    // Examiner the page 0x004E39D8. `Oui` records the sale; both answers go
+    // back to the shop panel.
+    {
+        const auto where = [](omk::UiWalk& wk) {
+            const omk::UiPanel* p = wk.panel();
+            int sel = -1;
+            if (p && wk.currentList() >= 0 &&
+                wk.currentList() < static_cast<int>(p->lists.size()))
+                sel = wk.selectionOf(p->lists[static_cast<std::size_t>(wk.currentList())]);
+            char buf[96];
+            std::snprintf(buf, sizeof buf, "panel %#x list %d sel %d",
+                          p ? p->addr : 0u, wk.currentList(), sel);
+            return std::string(buf);
+        };
+        const auto shop = [](omk::UiWalk& wk) {
+            int kind = -1, row = -1;
+            wk.takeShop(kind, row);
+            char buf[48];
+            std::snprintf(buf, sizeof buf, "request %d row %d", kind, row);
+            return std::string(buf);
+        };
+        omk::UiWalk buy(w);                         // the pharmacy, Acheter
+        buy.open(21);
+        buy.bindRows(omk::kListShopRows, 2);
+        buy.press(omk::kUiLeft);
+        buy.press(omk::kUiConfirm);
+        std::printf("step4 buy: %s, %s\n", where(buy).c_str(), shop(buy).c_str());
+
+        omk::UiWalk sell(w);                        // the bank, Vente
+        sell.open(20);
+        sell.bindRows(omk::kListShopRows, 2);
+        sell.press(omk::kUiLeft);
+        sell.press(omk::kUiDown);                   // the second row
+        sell.press(omk::kUiConfirm);
+        std::printf("step4 sell confirm: %s\n", where(sell).c_str());
+        sell.press(omk::kUiConfirm);                // Oui
+        std::printf("step4 sell oui: %s, %s\n", where(sell).c_str(), shop(sell).c_str());
+
+        omk::UiWalk no(w);                          // ...and Non
+        no.open(20);
+        no.bindRows(omk::kListShopRows, 2);
+        no.press(omk::kUiLeft);
+        no.press(omk::kUiConfirm);
+        no.press(omk::kUiRight);                    // Oui -> Non
+        no.press(omk::kUiConfirm);
+        std::printf("step4 sell non: %s, %s\n", where(no).c_str(), shop(no).c_str());
+
+        omk::UiWalk ex(w);                          // Examiner, and back
+        ex.open(21);
+        ex.bindRows(omk::kListShopRows, 2);
+        ex.press(omk::kUiDown);                     // Acheter -> Examiner (Vente hidden)
+        ex.press(omk::kUiLeft);
+        ex.press(omk::kUiConfirm);
+        std::printf("step4 examine: %s", where(ex).c_str());
+        ex.press(omk::kUiConfirm);
+        std::printf(" -> ENTER -> %s%s\n", where(ex).c_str(),
+                    ex.approximate() ? " approximate" : "");
+    }
+
     // ---- THE STOCK: list 3 is the active AREA block's `+8` ----------------
     //
     // Sixteen int16 ids ending at 0xFFFF, which `Game_HandleEvent` case 9

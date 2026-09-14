@@ -123,6 +123,17 @@ inline constexpr std::uint32_t kHookRowWindow   = 0x0042AFF0u;
 inline constexpr std::uint32_t kCbShopBuy     = 0x004AED00u;
 inline constexpr std::uint32_t kCbShopSell    = 0x004AED30u;
 inline constexpr std::uint32_t kCbShopExamine = 0x004AED60u;
+// The STOCK ROW's callback, the one thing all nine rows name. It switches on
+// `word_4E3372`, the button list's selection:
+//     0 Acheter  - events 41 and 38, a message and a sound; stays on the rows
+//     1 Vente    - `sub_42A370(screen, 0x004E3A40)`, the confirm
+//     2 Examiner - `sub_42A370(screen, 0x004E39D8)`, `dword_4E393C = tag`
+inline constexpr std::uint32_t kCbShopRow            = 0x004AEAA0u;
+inline constexpr std::uint32_t kPanelShopSellConfirm = 0x004E3A40u;
+inline constexpr std::uint32_t kPanelShopExamine     = 0x004E39D8u;
+// The confirm's two answers, and both end on the shop panel again.
+inline constexpr std::uint32_t kCbShopSellYes = 0x004AEC00u;   // "Oui": the sale
+inline constexpr std::uint32_t kCbShopSellNo  = 0x004AECE0u;   // "Non"
 
 // The six PAGES, each a panel named by a tab item's `child`.
 inline constexpr std::uint32_t kPanelSneakIdentity  = 0x004DED80u;
@@ -413,6 +424,10 @@ public:
     // opening sound at all. Corrected 2026-09-01 after a player said the menu
     // played its validation sound when the selection MOVED.
     const std::string& soundName(int screenId, int slot) const;
+    // One of the 45 by its GLOBAL id - what `Ui_PlaySound` (0x00482D90) takes
+    // when a callback names a sound directly rather than through a screen
+    // slot: the shop's 16 (bought), 17 (sold) and 18 (refused).
+    const std::string& soundNameById(int id) const;
     static constexpr int kSoundConfirm = 0, kSoundBack = 1,
                          kSoundMove    = 2, kSoundClose = 3;
     // Slot 4 is the SCREEN'S OWN sound, and only two screens carry one:
@@ -546,6 +561,12 @@ struct UiListState {
     // in `Game_HandleEvent` - so it records which was chosen and the caller
     // does the rest.
     int pendingVerb = -1;
+    // THE SHOP's two money actions, for a caller to carry out through the
+    // inventory channel: kind 0 a PURCHASE (the stock row's confirm with
+    // "Acheter" selected - events 41 then 38), kind 1 a SALE (`Oui` on the
+    // Vente confirm, 0x004AEC00 - event 36 request 10, the price, event 39).
+    // `row` is the widget's tag, the index into the open list. -1 none.
+    int pendingShopKind = -1, pendingShopRow = -1;
     // `Utiliser sur`'s COMBINE MODE - `dword_670BE0` and the three slots
     // `670BE4` / `670BE8` / `670BEC`, which are globals like everything else
     // in this device. `sub_49BF30` opens it and `sub_49BC60`'s `loc_49BDD6`
@@ -698,6 +719,23 @@ public:
                                   panel_ = nullptr; }
     bool takeManual()   { const bool v = state_->pendingManual;
                           state_->pendingManual = false; return v; }
+    // The shop's pending purchase or sale - kind 0 buy, 1 sell - and the row
+    // it names. Reading it CLEARS it, as `takeVerb` does. -> false when none.
+    // Put the focus on the list at `addr` in the installed panel - a callback
+    // writing `panel+24` from code, as the shop's `Oui` does with
+    // `dword_4E3988 = 0` when a sale leaves the rows empty. -> false when the
+    // panel carries no such list.
+    bool focusList(std::uint32_t addr) {
+        if (!panel_) return false;
+        for (std::size_t k = 0; k < panel_->lists.size(); ++k)
+            if (panel_->lists[k].addr == addr) { cur_ = static_cast<int>(k); return true; }
+        return false;
+    }
+    bool takeShop(int& kind, int& row) {
+        kind = state_->pendingShopKind; row = state_->pendingShopRow;
+        state_->pendingShopKind = state_->pendingShopRow = -1;
+        return kind >= 0;
+    }
 
     // `sub_49BF30` (`Utiliser sur`, 0x0049BF30): open the combine mode with
     // the chosen object, and DISABLE THE VERB LIST so the next confirm goes

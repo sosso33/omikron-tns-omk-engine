@@ -759,11 +759,24 @@ def t_ui_widgets(e):
     #               which is the only way out - the panel's `+0` parent is
     #               0, so the back bit CLOSES the screen rather than
     #               returning to the pause page.
+    # THE SHOPS' TWO, added 2026-09-14 (todo/shops.md step 4). The stock row's
+    # callback 0x004AEAA0 switches on the button list's selection:
+    #
+    #   0x004E3A40  "Voulez-vous vraiment vendre cet objet ?" - VENTE's arm
+    #               is `sub_42A370(screen, off_4E3A40)`. Its `Oui`
+    #               (0x004AEC00) sells and `Non` (0x004AECE0) reinstalls the
+    #               shop panel; both end on 0x004E3970.
+    #
+    #   0x004E39D8  the EXAMINER page - `sub_42A370(screen, off_4E39D8)` with
+    #               the row's tag stored in `dword_4E393C`, which NOTHING in
+    #               the image reads: one 400x260 box whose `+44` child is the
+    #               shop panel, so confirming it goes back.
     CODE_NAMED = {0x004DEE50: [0x004DEEB8],
                   0x004DEEB8: [0x004DEF20],
                   0x004CF2E8: [0x004CF3B8, 0x004CF350],
                   0x004E2ED8: [0x004E2FB0],
-                  0x004E26C8: [0x004E2730]}
+                  0x004E26C8: [0x004E2730],
+                  0x004E3970: [0x004E3A40, 0x004E39D8]}
     out, skipped, seen = [], [], set()   # `seen` tracks CHILD panels only
     for sid in sorted(u.screens):
         try:
@@ -955,9 +968,12 @@ def c_ui_widgets(rows, e):
             # item's `+44` names at all - `CODE_NAMED` above - the VERB
             # panel 0x004DEEB8 and the EXAMINE page 0x004DEF20, both
             # installed by `sub_42A370` from a callback.
-            ("child panels", len(kids), 20),
-            ("lists", len(lists), 145),
-            ("items", len(items), 628),
+            # 20/145/628 -> 23/154/666 on 2026-09-14: the SHOPS' two CODE_NAMED
+            # children (the Vente confirm 0x004E3A40, the Examiner page
+            # 0x004E39D8) and the shop panel again as that page's `+44` child.
+            ("child panels", len(kids), 23),
+            ("lists", len(lists), 154),
+            ("items", len(items), 666),
             ("item records inside the image",
              sum(1 for i in items if mapped(i["addr"])), len(items)),
             # 75 across the whole tree but only 16 distinct item RECORDS
@@ -965,10 +981,10 @@ def c_ui_widgets(rows, e):
             # 0x004DE210 is one list carried by nine of the panels, so each
             # of its child-naming items is counted once per panel.
             ("items naming a child panel",
-             sum(1 for i in items if i["child"]), 94),
+             sum(1 for i in items if i["child"]), 95),
             ("...of which distinct item records",
-             len({i["addr"] for i in items if i["child"]}), 21),
-            ("lists with a non-default input hook", len(hooks), 52),
+             len({i["addr"] for i in items if i["child"]}), 22),
+            ("lists with a non-default input hook", len(hooks), 54),
             # The two RUNTIME fields, and only where the open callback writes
             # them. Neither was in this table before 2026-09-04, because the
             # scan had no reason to look: `panel+24` is the CURRENT LIST and
@@ -998,9 +1014,9 @@ def c_ui_widgets(rows, e):
             # list `0x004E2638 + 2`, so its page comes up on `Non`. Without
             # it a confirm settles on the first selectable row, `Oui`.
             ("panels whose open callback or builder sets the current list",
-             sum(1 for p in ps if p.get("current", -1) >= 0), 15),
+             sum(1 for p in ps if p.get("current", -1) >= 0), 16),
             ("lists whose open callback or builder sets the selection",
-             sum(1 for l in lists if l.get("select", -1) >= 0), 30),
+             sum(1 for l in lists if l.get("select", -1) >= 0), 34),
             ("...distinct list records among them",
              len({l["addr"] for l in lists if l.get("select", -1) >= 0}), 10),
             # SNEAK opens on its INVENTORY page with the tab column already on
@@ -1023,7 +1039,7 @@ def c_ui_widgets(rows, e):
             # 4 "Options", 5 "Quitter". Without them the confirm dialog comes
             # up with no heading, which is what the port drew.
             ("items with a bound string",
-             sum(1 for i in items if "string" in (i.get("bind") or {})), 42),
+             sum(1 for i in items if "string" in (i.get("bind") or {})), 45),
             ("items with a bound tag",
              sum(1 for i in items if "tag" in (i.get("bind") or {})), 24),
             ("TERMINAL's bound strings",
@@ -1045,13 +1061,13 @@ def c_ui_widgets(rows, e):
               sum(1 for p in ps if not p["flagsB"] & 0x6000 and p["tilesAt"]),
               sum(1 for p in ps if not p["flagsB"] & 0x6000
                   and not p["tilesAt"])],
-             [18, 1, 24, 8]),
+             [21, 1, 24, 8]),
             ("the one panel that blits its sheet whole",
              [p["screen"] for p in ps
               if not p["flagsB"] & 0x2000 and p["flagsB"] & 0x4000], [36]),
             ("distinct hooks among them", len(set(hooks)), 13),
             ("lists taking Ui_MoveSelection, the default walk",
-             sum(1 for l in lists if not l["hook"]), 93),
+             sum(1 for l in lists if not l["hook"]), 100),
             ("the LIFT grid hook is present", rows["gridHook"] in hooks, True),
             # It is here only because the walk follows `+44`: the name field
             # is in the start menu's confirm dialog, a CHILD panel. A lift

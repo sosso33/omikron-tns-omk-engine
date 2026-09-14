@@ -295,6 +295,12 @@ const std::string& UiWidgets::soundName(int screenId, int slot) const {
     return n2 == soundName_.end() ? none : n2->second;
 }
 
+const std::string& UiWidgets::soundNameById(int id) const {
+    static const std::string none;
+    const auto n2 = soundName_.find(id);
+    return n2 == soundName_.end() ? none : n2->second;
+}
+
 const std::string& UiWidgets::bitmap(int screenId) const {
     static const std::string none;
     const auto it = bitmap_.find(screenId);
@@ -1029,6 +1035,18 @@ void UiWalk::buildPage(const UiPanel& p) {
     // other nine - so a shop wears "Acheter"'s (150, 215, 250) and the bank
     // "Vente"'s (20, 165, 250). The ten screens share these ADDRESSES and
     // carry their own lifted `select`, so it is read off this panel's copy.
+    // THE SHOP'S TWO CHILDREN come up on the list their RECORD names.
+    // `sub_42A370` (the installer) saves the old panel, runs its leave hook,
+    // makes the new one current and runs the new one's `+4` builder - and
+    // never writes the new panel's `+24`. Neither child has a builder and
+    // nothing moves between their lists, so the shipped `+24` stands on every
+    // visit: 1, the Oui/Non row on the Vente confirm and the box on the
+    // Examiner page. The walk's move-rule fallback would put both on the
+    // buttons, where ENTER reaches a callback that answers nothing.
+    if (p.addr == kPanelShopSellConfirm || p.addr == kPanelShopExamine) {
+        curFromBuilder_ = 1;
+        return;
+    }
     if (p.addr == kPanelShop) {
         for (const auto& l : p.lists) {
             if (l.addr != kListShopButtons) continue;
@@ -1228,6 +1246,70 @@ bool UiWalk::confirm() {
                 if (panel_->lists[k].addr == kListShopRows) { cur_ = static_cast<int>(k); break; }
             log_.push_back("shop button: the rows take the focus");
             return true;
+        }
+        // THE STOCK ROW (0x004AEAA0) - one callback for the nine rows, and it
+        // switches on the BUTTON list's selection `word_4E3372`:
+        //
+        //     0 Acheter:  tag = row+0x3C; if (tag == -1) return 0;
+        //                 sub_42B3E0(tag) (event 41) refused -> sound 18;
+        //                 else event 38 -> message 8/9 + sound 18, or rebind,
+        //                 message 21 "Objet achete !" + sound 16. Stays here.
+        //     1 Vente:    sub_42A370(screen, 0x004E3A40)   the confirm
+        //     2 Examiner: tag == -1 -> 0; sub_42A370(screen, 0x004E39D8);
+        //                 dword_4E393C = tag - which nothing in the image reads
+        //
+        // The purchase ends in `Game_HandleEvent`, which the walk does not
+        // own, so it is RECORDED for the caller (`takeShop`) as the verbs are.
+        if (it->callback == kCbShopRow) {
+            const int tag = rowOf(it->addr);
+            int button = -1;
+            if (const UiList* b = w_->listAt(kListShopButtons)) button = selectionOf(*b);
+            if (button == 1) {
+                log_.push_back("shop row: Vente -> the confirm");
+                return installPanel(kPanelShopSellConfirm);
+            }
+            if (tag < 0) return false;
+            if (button == 0) {
+                state_->pendingShopKind = 0;
+                state_->pendingShopRow  = tag;
+                log_.push_back("shop row: Acheter -> events 41, 38");
+                return true;
+            }
+            if (button == 2) {
+                log_.push_back("shop row: Examiner -> the page");
+                return installPanel(kPanelShopExamine);
+            }
+            return false;
+        }
+        // `Oui` on the Vente confirm (0x004AEC00): the SELECTED STOCK ROW's tag
+        // (`sub_428EF0(0x004E3640)+0x3C`), the sale through event 36 request
+        // 10, the price and event 39 - recorded for the caller - and then the
+        // shop panel again, whatever the channel answered.
+        if (it->callback == kCbShopSellYes || it->callback == kCbShopSellNo) {
+            if (it->callback == kCbShopSellYes) {
+                int tag = -1;
+                if (const UiList* r = w_->listAt(kListShopRows)) {
+                    const int s = selectionOf(*r);
+                    if (s >= 0 && static_cast<std::size_t>(s) < r->items.size())
+                        tag = rowOf(r->items[static_cast<std::size_t>(s)].addr);
+                }
+                if (tag >= 0) {
+                    state_->pendingShopKind = 1;
+                    state_->pendingShopRow  = tag;
+                }
+                log_.push_back("shop confirm: Oui -> events 36, 39");
+            } else {
+                log_.push_back("shop confirm: Non");
+            }
+            // ...and the shop panel comes back on the ROWS. `sub_42A370` never
+            // writes the incoming panel's `+24`, which still holds the 1 the
+            // button's confirm wrote before Vente was chosen; only the sale
+            // clears it, and only when the list is left empty (the caller's
+            // `focusList`). `installPanel` re-settles on the lifted `current`,
+            // the open callback's 0, so the rows are put back here.
+            const bool back = installPanel(kPanelShop);
+            if (back) focusList(kListShopRows);
+            return back;
         }
         // `Charger une partie` (0x0047AC90).  It does NOT load: it resolves
         // the row to a slot, refuses an empty one, stores the index in
@@ -1612,6 +1694,12 @@ bool UiWalk::confirm() {
             panel_ = kid;
             buildPage(*panel_);
             settle();
+            // The Examiner page's box (0x004E3900) names the SHOP panel as its
+            // `+44`, and the descent installs it without writing its `+24` -
+            // which still holds the rows the button's confirm chose. The
+            // lifted `current` is the open callback's 0, so put the rows back.
+            if (it->addr == 0x004E3900u && kid->addr == kPanelShop)
+                focusList(kListShopRows);
             log_.push_back("enter child panel");
             return true;
         }

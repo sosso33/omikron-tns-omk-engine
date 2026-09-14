@@ -2052,6 +2052,58 @@ Played headless: the pharmacy reads *Acheter* and 200 then 50 as the cursor
 moves from the large medikit to the small; the bank reads *Vente*, and a
 200-seteks medikit carried there quotes 100.
 
+#### ...and a row BUYS, SELLS or EXAMINES, by which button is selected (2026-09-14)
+
+All nine stock rows name one callback, `0x004AEAA0`, and it switches on
+`word_4E3372`, the button list's selection:
+
+| button | the arm |
+|---|---|
+| 0 Acheter | the row's tag; `sub_42B3E0` (event 41, *may it be bought*) refused -> sound 18; else event 38, the purchase. Result 2 posts message **9** *Pas assez de seteks ! !* when the price exceeds the money and **8** *Sneak plein !* otherwise, sound 18; result 1 re-binds the rows, posts **21** *Objet acheté !*, sound 16. The focus stays on the rows |
+| 1 Vente | `sub_42A370(screen, 0x004E3A40)` - the confirm |
+| 2 Examiner | `sub_42A370(screen, 0x004E39D8)` and `dword_4E393C = tag` |
+
+**The Vente confirm, `0x004E3A40`**, carries the buttons, the header and a
+four-item list: *Voulez-vous vraiment vendre cet objet ?* (string 24), the
+selected row's name (`0x004AEFD0` - `sub_42AA00`, case 33), and *Oui* (23,
+`0x004AEC00`) and *Non* (22, `0x004AECE0`) side by side under `sub_42A930`, the
+LEFT/RIGHT mover. `Oui` sells only through two gates - `sub_42B360`, event 36
+request **10**, which answers for the record's flag **`0x2`**, and a price
+above 0 - then event 39: half the price credited to `+172`, clamped at 0xFFFF,
+the row removed, the rows re-bound, `dword_4E3988 = 0` when none remain, sound
+17. Refused, it posts **7** *Vente non autorisée !*. Either answer then installs
+the shop panel again. 189 records carry `0x2` and 133 of them a price; the
+shipped save's one carried object (171, flags `0x12`, price 0) is refused.
+
+**The Examiner page shows nothing.** `0x004E39D8` is one 400x260 box whose
+`+44` child is the shop panel, and `dword_4E393C`, where the arm stores the
+examined row, is **written twice and read nowhere** in the image - no dword,
+no instruction. Confirming the box goes back. It is the same shape as the
+sneak's memory page: built, reachable, and never filled.
+
+**The message is oscillator 0.** `sub_42B820(0, -1, text)` calls the record at
+`0x004C3EA0`'s post handler `sub_42B660`, which zeroes the timer at `+4`, sets
+bit 1 at `+0xC` and copies the text into `byte_6A4CA0`; its tick `sub_42B6D0`
+adds the frame's milliseconds and at `+8` = **5000** calls `sub_42B7B0`, which
+clears the bit. Line two's hook tests that bit, so the message stands in for
+the button's label for five seconds.
+
+**Two panels come up on the list their record ships.** `sub_42A370` saves the
+old panel, runs its leave hook, makes the new one current and runs its `+4`
+builder - and never writes the new panel's `+24`. The confirm and the page ship
+1 and have no builder, so they open on Oui/Non and on the box; and the shop
+panel comes BACK on the rows the button's confirm chose, until a sale empties
+them. A walk that re-settles on the lifted `current` would put all three on the
+buttons, where ENTER reaches a callback that answers nothing.
+
+**Four of the shop's functions are dead**: `0x004AE8A0` (a second copy of the
+purchase), `0x004AE990` (a second copy of the sale), `0x004AEA70` (the Examiner
+install) and `0x004AED90` (a list hook that re-colours the rows by button) -
+no dword in the image holds their addresses and no `call` or `jmp` reaches
+them. Played headless: 300 seteks buy the large medikit (100 left, *Objet
+acheté !*), a second is refused (*Pas assez de seteks ! !*); at the bank a
+Hypra sells for 2500.
+
 **Not a fault, and worth saying because it looks like one:** the blurred
 square beside the rows in a shop render is `Ui_DrawItemCursor`'s sixteen
 orbiting quads on the focused "Acheter" button, and the shop panel draws no

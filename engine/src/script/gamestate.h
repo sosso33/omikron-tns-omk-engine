@@ -312,6 +312,11 @@ public:
     // `Actor_SetProperty`'s case 5: `u16(record + 174) = v`. What a save
     // costs - the panel decrements it by one on confirm (GAME_STATE 8c).
     void setRings(int n);
+    // The player record's `+172`, the SETEKS, written by the inventory
+    // channel's purchase and sale: case 38 `u16(+172) -= price` and case 39
+    // `u16(+172) = min(+172 + price/2, 0xFFFF)`. Stored as the engine's
+    // unsigned 16 bits; the clamp at 0xFFFF is the caller's, as in case 39.
+    void setMoney(int n);
 
     // How many BYTES the k'th array occupies, from its own count and the
     // entry width - which is what makes the walk a test: the segments have to
