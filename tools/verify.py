@@ -10111,14 +10111,36 @@ def c_engine_screen_close():
         return (True, True, True, False), (True, True, True, False), \
                "no SDL - the frontend is optional (PORTING A8)"
     env = dict(os.environ, SDL_VIDEODRIVER="dummy")
+    # THE START MENU CANNOT BE LEFT WITH SPACE, and this check asserted the
+    # opposite until 2026-09-14 - on the evidence of the port's own `press`,
+    # which popped a root panel on the back bit unconditionally.
+    # `Ui_DispatchInput` (0x0042A430; readable 06_sys.c) closes a top panel on
+    # BACK only when its flags carry 0x10, and on TAB only with 0x20; the
+    # start menu's panel 0x004CF218 carries neither (flags 0). The only other
+    # posts of event 5 are the actor's UI-hold release (`sub_466B60`,
+    # `Actor_TickUiHeld`), which close nothing. So SPACE there posts NO answer.
     r = subprocess.run([play, fr, tb, "--software", "--res", "640x480", "--nofmv",
                         "--frames", "200", "--keys", "0,0x39", "--keydelay", "4"],
                        capture_output=True, text=True, env=env)
     o = r.stdout
-    return ("closed without an answer -> -1" in o, "200 frames presented" in o,
-            "1 ui answers" in o, True), (True, True, True, True), \
-           "SPACE on the start menu: the -1 answer is posted, all 200 frames " \
-           "are presented (the loop did not break), one UI answer is recorded, " \
+    # ...and a screen that CAN be left answers -1 and the game runs on: TAB on
+    # the pharmacy's shop (flags 0x20000030) after its conversation, the zone
+    # script resuming into the goodbye.
+    save = os.path.join(ROOT, "traces", "save-appart.bin")
+    s = subprocess.run([play, fr, tb, "--save", save, "--area", "39", "--nofmv",
+                        "--no-crowd", "--software", "--keys", "28,28,28,28,15",
+                        "--keydelay", "60", "--frames", "420"],
+                       capture_output=True, env=env, timeout=600)
+    so = s.stdout.decode("cp1252", "replace")
+    return ("closed without an answer" in o, "200 frames presented" in o,
+            "0 ui answers" in o,
+            "screen 21 closed without an answer -> -1" in so,
+            "Au revoir." in so, "1 ui answers" in so, True), \
+           (False, True, True, True, True, True, True), \
+           "SPACE on the start menu: NO answer is posted (its panel carries " \
+           "neither 0x10 nor 0x20), all 200 frames are presented, no UI answer " \
+           "is recorded; then TAB on the pharmacy's shop: it closes with -1, the " \
+           "zone script resumes into 'Au revoir.', one UI answer is recorded; " \
            "and SDL was found"
 
 

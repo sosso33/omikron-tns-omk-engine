@@ -983,8 +983,22 @@ class Ui:
         """One frame of `Ui_DispatchInput`. -> True if the frame was consumed."""
         if self.panel is None:
             return False
+        # the dispatch's HEAD, before any hook (engine/src/ui/widgets.cpp has
+        # the listing): TAB closes a panel carrying 0x20 at `+72`; BACK pops a
+        # child unless it carries 0x80, and closes a top panel only with 0x10.
+        # A refused BACK falls through to the hooks. Both halves were
+        # unconditional-or-absent here until 2026-09-14.
+        flags = self._u32(self.panel + 72)
+        if bits & CLOSE and flags & 0x20:
+            self.panel = None
+            self.log.append(("close",))
+            return True
         if bits & BACK:
-            return self._to_parent()
+            if self._u32(self.panel):
+                if not flags & 0x80:
+                    return self._to_parent()
+            elif flags & 0x10:
+                return self._to_parent()
         hook = self._u32(self.panel + 16)
         if hook:
             fn = PANEL_HOOKS.get(hook)

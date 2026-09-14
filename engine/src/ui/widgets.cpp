@@ -1712,7 +1712,35 @@ bool UiWalk::confirm() {
 
 bool UiWalk::press(std::uint32_t bits) {
     if (!panel_) return false;
-    if (bits & kUiBack) return toParent();
+    // `Ui_DispatchInput` (0x0042A430), its head, on the latched word:
+    //
+    //     if (panel+24 == -1) return 0;
+    //     if ((input & 0x2000) && (panel+72 & 0x20))  screen+8 = 3;  // TAB CLOSES
+    //     if (input & 0x20) {                                         // BACK
+    //         if (panel+0) { if (!(panel+72 & 0x80)) sub_42A370(screen, parent); }
+    //         else if (panel+72 & 0x10) screen+8 = 3;
+    //     }
+    //
+    // and only a frame nothing above consumed reaches the hooks. So TAB closes
+    // a screen whose panel carries 0x20 - 26 of the 31 top screens, every
+    // shop among them, and none of the start menu, SAVE GAME, PAUSE GAME,
+    // OPTIONS or the two input-less panels - and BACK is gated too: a child
+    // carrying 0x80 (the start menu's confirm) refuses it, and a top panel
+    // closes on it only with 0x10. This took BACK unconditionally, and TAB
+    // not at all, until 2026-09-14, when a shop would not close on TAB.
+    if ((bits & kUiClose) && (panel_->flags & 0x20u)) {
+        panel_ = nullptr;
+        log_.push_back("close (TAB)");
+        return true;
+    }
+    if (bits & kUiBack) {
+        if (panel_->parent) {
+            if (!(panel_->flags & 0x80u)) return toParent();
+        } else if (panel_->flags & 0x10u) {
+            return toParent();                       // the top panel: it closes
+        }
+        // refused: nothing above consumed the frame, so the hooks see it
+    }
     if (panel_->hook) {
         if (panel_->hook == w_->startConfirmHook()) {
             if (startConfirm(bits)) return true;

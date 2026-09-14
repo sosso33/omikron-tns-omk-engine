@@ -214,7 +214,7 @@ side, and fills in the two rows that carried no name string of their own —
 | +8 | a **fixed parameter** that overrides the caller's, or -1 |
 | +12 | the artwork, opened as `I2d\bitmaps\%s` |
 | +16 | the text file, opened as `IAM\%s` by `UI_LoadScreenText` |
-| +20 / +24 / +28 / +32 | open / tick / input / close callbacks |
+| +20 / +24 / +28 / +32 | open / input / close / draw callbacks - the instance copies the first three to `+12/+16/+20`, which the state machine below calls as *opening* / *running* / *closing*; `+32` is `Ui_DrawScreen` (0x00475A50) for 34 screens. (This row said "open / tick / input / close" until 2026-09-14, off by one against the instance; the shops' `+28` is `Ui_CloseShop` 0x004AE7E0 - event 26, then the generic close `sub_42A150`) |
 | +36 | **twelve sound ids** (§3), copied to the instance by `UI_BindScreenSounds` |
 | +84 / +88 | the two flag banks |
 
@@ -1722,6 +1722,31 @@ the panel's own hook           panel+16
 the CURRENT list's hook        list+4      (panel+32 indexed by panel+24)
 Ui_MoveSelection               the default
 ```
+
+**The back and close bits are GATED ON THE PANEL'S FLAGS** (2026-09-14, read
+from `Ui_DispatchInput` 0x0042A430 and matched against its decompilation in
+`readable/src/06_sys.c`):
+
+```
+if ((input & 0x2000) && (panel+72 & 0x20))     screen+8 = 3        // TAB closes
+if (input & 0x20) {                                                // BACK
+    if (panel+0)  { if (!(panel+72 & 0x80)) sub_42A370(screen, parent); }
+    else if (panel+72 & 0x10)                  screen+8 = 3;
+}
+```
+
+TAB leaves 26 of the 31 top screens - every shop, the sneak family, the
+terminal family, MULTIPLAN, the LIFT, DEN, GANDHAR DOOR, HIGH-SCORE - and none
+of the start menu, SAVE GAME, PAUSE GAME, OPTIONS, the VIDEOPHONE or SHOOT
+HUMAN. BACK closes a top panel only on those same 26 plus SAVE GAME (`0x10`
+alone), so **SPACE does not leave the start menu, the pause screen or
+OPTIONS**; and a child carrying `0x80` - the start menu's confirm `0x004CF280`
+- refuses it. A refused bit falls through to the hooks. The port took BACK
+unconditionally and TAB not at all until a shop would not close on TAB; both
+the walk and `tools/sim/ui.py` now carry the gates, and `verify.py: engine:
+screen close` asserts the start menu refusing SPACE where it used to assert
+the opposite. No other close path exists: the remaining posts of event 5 are
+the actor's UI-hold release (`sub_466B60`, `Actor_TickUiHeld`).
 
 **A list with its own `+4` hook therefore never CONFIRMS**, because the hook
 *replaces* `Ui_MoveSelection` — and `Ui_ConfirmSelection` is only reached by

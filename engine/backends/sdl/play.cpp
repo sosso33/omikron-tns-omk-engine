@@ -9719,6 +9719,11 @@ int main(int argc, char** argv) {
                 // counterpart for.
                 std::printf("screen %d closed without an answer -> -1, "
                             "the script resumes\n", openScreen);
+                // A SHOP's close callback is `Ui_CloseShop` (0x004AE7E0):
+                // `Game_RaiseEvent(26, 0)` and then the generic close. Case 26
+                // clears the open list only when it is list 0 - the bank's.
+                if ((openScreen >= 20 && openScreen <= 28) || openScreen == 32)
+                    inv.closeList();          // Game_RaiseEvent(26, 0)
                 session.answerUi(-1);
                 walk.reset();
                 openScreen = -1;
