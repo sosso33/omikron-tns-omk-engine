@@ -68,8 +68,8 @@ not a CPU figure). Against the original's 32 MB, both are the port's.
 | 7c | the ground probe grid rebuilt from scratch every frame (the cargo moves) | **DONE** 2026-09-14 - two layers, fixed and moving; the per-frame rebuild 0.528 -> 0.016 ms, probes no slower; `engine: split grid` |
 | 8 | a revision that says WHICH corners moved: the set's vertex upload and depth tie take only those | **DONE** 2026-09-14 - exact (tool and game); back to back capped CPU 28 -> 25%, run CPU time -11%; `engine: dirty corners` |
 | 11 | the player's body and camera sweeps through grids - a steep-soup grid beside `playerGrid` | **DONE** 2026-09-14 - exact (tool, play, frames); `engine: sweep grid` |
-| 10 | the posed bodies: `applyPose` in place instead of copying the rest geometry first | **in progress** 2026-09-14 - exact (tool, frames); 2000 poses 62 -> 19-25 ms; capped A/B owed; `engine: pose equivalence` |
-| 9 | the walker's ground probe and `decorUnder` through the grid (step 2's grid never reached them) | **DONE** 2026-09-14 - exact (tool and game); ~0.5 ms a frame timed directly (0.17 ms a linear probe, ~3 a frame); the capped A/B was spoiled by load and is owed; `engine: ground grid` |
+| 10 | the posed bodies: `applyPose` in place instead of copying the rest geometry first | **in progress** 2026-09-14 - exact (tool, frames); 2000 poses 62 -> 19-25 ms; capped with steps 9 and 11: ~1-3% standing; `engine: pose equivalence` |
+| 9 | the walker's ground probe and `decorUnder` through the grid (step 2's grid never reached them) | **DONE** 2026-09-14 - exact (tool and game); ~0.5 ms a frame timed directly (0.17 ms a linear probe, ~3 a frame); capped with steps 10-11 standing: 18.6 -> 18.1-18.4 s CPU, at the edge of the noise (see below); `engine: ground grid` |
 
 Each step ends in a commit and a report, per the working rhythm; the full
 sweep follows the cadence in `todo/sweep-log.md`, not these steps.
@@ -979,6 +979,36 @@ with random base colours and synthetic lights at colour bytes 0 / 255 and
 `t` past 255. And **no gain**: 35.9 -> 39.0 ms and 19.9 -> 20.5 ms. The
 divisions were not what the loop costs. Reverted; nothing committed but this
 note.
+
+### Steps 9, 10 and 11 measured together, capped - 2026-09-14
+
+Owed since each was timed only in its own tool. Four capped 45 s runs of the
+street start, standing, one after the other on a quiet machine (load 1.4-3.1):
+the build at `ed81d9b` (steps 9-11), the step-4b build `004d28f` (none of them;
+the jump fix between them only acts on a jump, and this run does not jump), the
+new build again, and the new build with `OMK_NO_GROUND_GRID=1` and
+`OMK_NO_SWEEP_GRID=1` (steps 9 and 11 off, step 10 still on):
+
+| capped, 45 s, standing | new | old (`004d28f`) | new again | new, grids off |
+|---|---|---|---|---|
+| fps median / slowest window | 30.0 / 29.8 | 30.0 / 29.8 | 30.0 / 29.8 | 30.0 / 29.9 |
+| worst frame, median of windows | 36 ms | 37 ms | 37 ms | 36 ms |
+| CPU, mean (100 = one core) | 32 | 33 | 32 | 34 |
+| CPU time over the run | **18.07 s** | 18.57 s | **18.41 s** | 18.94 s |
+| physical footprint | 206 MB | 206 MB | 206 MB | 205 MB |
+
+**Small, at the edge of the noise, and that is the finding.** The new build
+used 0.2-0.5 s less CPU than the old one (1-3%), while its own two runs differ
+by 0.34 s. Standing is the case these steps help least: the player barely
+probes or sweeps when he does not move (steps 9 and 11 were about the walker
+and its camera), and step 10 saves ~20 microseconds a body over ~17 drawn
+bodies. The tool timings stand - 45-51x per sweep, 3x per pose - but at 30 Hz
+standing they are about a percent of the frame. A WALKING capped run is where
+steps 9 and 11 would show, and was not taken.
+
+Note the absolute level: every run here reads ~32% where the same `004d28f`
+build read 22-28% this morning - the machine's own state, not the code - which
+is why only back-to-back columns are compared.
 
 ### 5. `main`'s own time
 
