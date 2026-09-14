@@ -12283,20 +12283,30 @@ def c_engine_ground_grid():
     body probes in `play.cpp` ever used it: `Walker::ground` - every step and
     every tick of the player controller - and `decorUnder` - event 9's "which
     decor is under his feet", every frame over both shown sets - still scanned
-    all 46415 of Anekbah's walkable triangles, and together they were the top
+    every walkable triangle (15137 in Anekbah's soup), and together they were the top
     CPU cost of the standing street profile (458 samples). The walker now takes
     `playerGrid` (`Walker::setGrid`), and `decorUnder` answers from the merged
     soup through it - the floor's first triangle names the decor, which keeps
     the loop's tie rule (the earliest decor with the nearest floor) - falling
     back to the loop unless the merged soup is exactly the decors in order.
 
-    The street start headless through `--world-vulkan`, walking forward for 150
-    frames, with `OMK_VERIFY_GROUND=1`: every grid answer is also computed the
-    linear way and compared bit for bit; and the last frame against the same
-    walk with `OMK_NO_GROUND_GRID=1`. Measured 2026-09-14: by frame 120, 233
-    walker probes and 121 decor probes, 0 mismatched; frames identical.
+    Two halves. `probe_grid --decor`: two decors' walkable soups merged in order
+    and asked both ways over every sampled triangle's centre, vertices and edge
+    midpoints and random points - Anekbah + AImpasse (the decor must be NAMED
+    right), Anekbah twice (every floor TIES, and the earlier decor must win), and
+    a decor with no area (the fallback). Measured 2026-09-14: 21785 / 153
+    answers, 21785 / 0, 0 / 153, and 0 mismatches in each. Then the street
+    start headless through `--world-vulkan`, walking forward for 150 frames,
+    with `OMK_VERIFY_GROUND=1`: every grid answer is also computed the linear
+    way and compared bit for bit; and the last frame against the same walk with
+    `OMK_NO_GROUND_GRID=1`. By frame 120, 233 walker probes and 121 decor
+    probes, 0 mismatched; frames identical.
 
-    SHOWN TO FAIL: see todo/optimization.md step 9.
+    SHOWN TO FAIL, 2026-09-14 (todo/optimization.md step 9): the walker's grid
+    probe with x and z swapped, 237 of 237 probes mismatched and 460091 pixels
+    different; the merged probe keeping the last triangle of a tie, 21785
+    mismatches in the Anekbah-twice row only; the merged answer always naming the
+    first decor, 153 mismatches in the Anekbah + AImpasse row only.
     """
     import subprocess
     eng = os.path.join(ROOT, "engine")
@@ -12325,6 +12335,22 @@ def c_engine_ground_grid():
         frame = open(out, "rb").read() if os.path.exists(out) else b""
         return "through VULKAN offscreen" in r.stdout, lines, frame
 
+    # the tool half: `decorUnder` over TWO decors, which the street start (one
+    # shown set) cannot exercise
+    pb = subprocess.run(["make", "-s", "build/probe_grid"], cwd=eng, capture_output=True, text=True)
+    pbin = os.path.join(eng, "build", "probe_grid")
+    sets = [omkpaths.data("MESHES/DECORS/%s.3DO" % s) for s in ("Anekbah", "AImpasse")]
+    if pb.returncode != 0 or not os.path.exists(pbin):
+        return ("build failed",), ("built",), "engine/ must build"
+    if not all(os.path.exists(p) for p in sets):
+        return ("skipped",), ("skipped",), "Anekbah / AImpasse absent"
+    t = subprocess.run([pbin, "--decor"] + sets, capture_output=True, text=True)
+    decor = re.findall(r"^decor (\S+) \| probes (\d+) first (\d+) second (\d+) none (\d+) "
+                       r"mismatches (\d+)", t.stdout, re.M)
+    if len(decor) != 3:
+        return (len(decor),), (3,), "probe_grid decor rows parsed - the tool's output changed"
+    tool = tuple((name, int(f), int(s), int(m)) for name, _, f, s, _, m in decor)
+
     vk, lines, frame = run({"OMK_VERIFY_GROUND": "1"}, "grid")
     if not vk:
         return ("skipped",), ("skipped",), "no Vulkan device - the GPU backend is optional"
@@ -12334,10 +12360,14 @@ def c_engine_ground_grid():
     if len(frame) != 960000 or len(frame0) != 960000:
         return (len(frame), len(frame0)), (960000, 960000), "both frames dumped"
     differ = sum(1 for i in range(0, len(frame), 2) if frame[i:i+2] != frame0[i:i+2])
-    return (tuple(int(x) for x in lines[0]), differ), ((233, 0, 121, 0), 0), \
-        "by frame 120 of a walk: walker probes through the grid and how many differ " \
-        "from the scan, the same for decorUnder, then 565 pixels differing from the " \
-        "walk without the grid"
+    return (tool, tuple(int(x) for x in lines[0]), differ), \
+        ((("Anekbah+AImpasse", 21785, 153, 0), ("Anekbah+Anekbah", 21785, 0, 0),
+          ("Anekbah+AImpasse-noarea", 0, 153, 0)), (233, 0, 121, 0), 0), \
+        "decorUnder through a merged grid over two decors (pair, answers naming the first " \
+        "and the second decor, mismatches against the loop; the same set twice, where " \
+        "every floor ties; a decor with no area); then by frame 120 of a walk: walker " \
+        "probes through the grid and how many differ from the scan, the same for " \
+        "decorUnder, then 565 pixels differing from the walk without the grid"
 
 
 def c_engine_dirty_corners():

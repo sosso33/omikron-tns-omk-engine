@@ -19,8 +19,10 @@
 // It also times both over the same probes, which is the point of the grid.
 //
 // One line a set a soup, then `mismatches <total>`. Prints only; writes nothing.
+#include "actor/walk.h"
 #include "o3de/collision.h"
 
+#include <algorithm>
 #include <chrono>
 #include <cstdint>
 #include <cstdio>
@@ -208,15 +210,77 @@ void runSoup(const std::string& stem, const char* kind, const omk::TriangleSoup&
     totalMismatch += fMis + sMis + bMis;
 }
 
+// THE DECOR UNDER THE FEET THROUGH A MERGED SOUP (actor/walk.h, step 9): two
+// decors' walkable soups concatenated in order, as the viewer builds the
+// player's, asked `decorUnder` through the merged two-layer grid and by the
+// per-decor loop, over every sampled triangle's centre of both from above
+// (with its vertices and edge midpoints) and random points over the union.
+// Three cases: two different sets (the decor must be NAMED right), the same set
+// twice (every floor TIES, and the earliest decor must win), and a decor with
+// no area (the fallback). One `decor` row each.
+void runDecors(const std::string& name, const omk::TriangleSoup& a, int areaA,
+               const omk::TriangleSoup& b, int areaB, long& totalMismatch) {
+    omk::TriangleSoup merged(a);
+    merged.insert(merged.end(), b.begin(), b.end());
+    const std::size_t n = merged.size() / 9;
+    if (n == 0) { std::printf("decor %s empty\n", name.c_str()); return; }
+    const std::vector<omk::DecorSoup> decors = {{areaA, &a}, {areaB, &b}};
+    std::vector<std::uint8_t> moving(n), fixed(n);
+    for (std::size_t t = 0; t < n; ++t) {
+        moving[t] = (((static_cast<std::uint64_t>(t) + 17) * 2654435761ULL) >> 12) % 16 == 0;
+        fixed[t] = !moving[t];
+    }
+    omk::SplitSoupGrid grid;
+    grid.fixed = omk::buildSoupGrid(merged, 256.0, &fixed);
+    grid.moving = omk::buildSoupGrid(merged, 256.0, &moving);
+
+    struct P { double x, y, z; };
+    std::vector<P> probes;
+    const std::size_t step = std::max<std::size_t>(1, n / 3000);
+    for (std::size_t t = 0; t < n; t += step) {
+        const float* v = &merged[9 * t];
+        probes.push_back({(v[0] + v[3] + v[6]) / 3.0, (v[1] + v[4] + v[7]) / 3.0 - 100.0,
+                          (v[2] + v[5] + v[8]) / 3.0});
+        for (int k = 0; k < 3; ++k) {
+            const float* p = &v[3 * k];
+            const float* q = &v[3 * ((k + 1) % 3)];
+            probes.push_back({p[0], p[1] - 60.0, p[2]});
+            probes.push_back({(double(p[0]) + q[0]) * 0.5, (double(p[1]) + q[1]) * 0.5 - 60.0,
+                              (double(p[2]) + q[2]) * 0.5});
+        }
+    }
+    const omk::SoupGrid& fx = grid.fixed;
+    Lcg r;
+    for (int i = 0; i < 4000; ++i)
+        probes.push_back({fx.minX + (fx.maxX - fx.minX) * r.next(), -3000.0 + 6000.0 * r.next(),
+                          fx.minZ + (fx.maxZ - fx.minZ) * r.next()});
+    long first = 0, second = 0, none = 0, mis = 0;
+    for (const auto& p : probes) {
+        const int lin = omk::decorUnder(decors, p.x, p.y, p.z);
+        const int grd = omk::decorUnder(decors, merged, grid, p.x, p.y, p.z);
+        if (lin != grd) ++mis;
+        if (lin < 0) ++none;
+        else if (lin == areaA) ++first;
+        else ++second;
+    }
+    std::printf("decor %s | probes %zu first %ld second %ld none %ld mismatches %ld\n",
+                name.c_str(), probes.size(), first, second, none, mis);
+    totalMismatch += mis;
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
     if (argc < 2) {
-        std::fprintf(stderr, "usage: probe_grid <set.3DO>...\n");
+        std::fprintf(stderr, "usage: probe_grid [--decor] <set.3DO>...\n");
         return 2;
     }
+    // `--decor`: only the decor rows, over the first two sets
+    const bool decorOnly = std::strcmp(argv[1], "--decor") == 0;
     long total = 0;
-    for (int a = 1; a < argc; ++a) {
+    std::vector<omk::TriangleSoup> walkable;
+    std::vector<std::string> stems;
+    for (int a = decorOnly ? 2 : 1; a < argc; ++a) {
         std::ifstream f(argv[a], std::ios::binary);
         const std::vector<char> raw((std::istreambuf_iterator<char>(f)),
                                      std::istreambuf_iterator<char>());
@@ -224,8 +288,17 @@ int main(int argc, char** argv) {
         const std::span<const std::byte> d(reinterpret_cast<const std::byte*>(raw.data()), raw.size());
         std::string stem = argv[a];
         if (const auto s = stem.find_last_of("/\\"); s != std::string::npos) stem = stem.substr(s + 1);
-        runSoup(stem, "walkable", omk::collisionSoup(d, omk::SoupKind::Walkable), total);
-        runSoup(stem, "steep", omk::collisionSoup(d, omk::SoupKind::Steep), total);
+        if (const auto s = stem.find('.'); s != std::string::npos) stem = stem.substr(0, s);
+        walkable.push_back(omk::collisionSoup(d, omk::SoupKind::Walkable));
+        stems.push_back(stem);
+        if (decorOnly) continue;
+        runSoup(stem + ".3DO", "walkable", walkable.back(), total);
+        runSoup(stem + ".3DO", "steep", omk::collisionSoup(d, omk::SoupKind::Steep), total);
+    }
+    if (walkable.size() >= 2) {
+        runDecors(stems[0] + "+" + stems[1], walkable[0], 1, walkable[1], 2, total);
+        runDecors(stems[0] + "+" + stems[0], walkable[0], 1, walkable[0], 2, total);
+        runDecors(stems[0] + "+" + stems[1] + "-noarea", walkable[0], -1, walkable[1], 2, total);
     }
     std::printf("mismatches %ld\n", total);
     return total == 0 ? 0 : 3;

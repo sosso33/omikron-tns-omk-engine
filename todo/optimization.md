@@ -67,6 +67,7 @@ not a CPU figure). Against the original's 32 MB, both are the port's.
 | 7b | the depth tie re-keying the whole set every frame (the cargo moves) | **DONE** 2026-09-13 - claimed keys stored flat with a fingerprint; back to back capped CPU 39 -> 36%, run CPU time -7.6% |
 | 7c | the ground probe grid rebuilt from scratch every frame (the cargo moves) | **DONE** 2026-09-14 - two layers, fixed and moving; the per-frame rebuild 0.528 -> 0.016 ms, probes no slower; `engine: split grid` |
 | 8 | a revision that says WHICH corners moved: the set's vertex upload and depth tie take only those | **DONE** 2026-09-14 - exact (tool and game); back to back capped CPU 28 -> 25%, run CPU time -11%; `engine: dirty corners` |
+| 9 | the walker's ground probe and `decorUnder` through the grid (step 2's grid never reached them) | **DONE** 2026-09-14 - exact (tool and game); ~0.5 ms a frame timed directly (0.17 ms a linear probe, ~3 a frame); the capped A/B was spoiled by load and is owed; `engine: ground grid` |
 
 Each step ends in a commit and a report, per the working rhythm; the full
 sweep follows the cadence in `todo/sweep-log.md`, not these steps.
@@ -678,10 +679,84 @@ more between the two old runs than between old and new; the log costs about
 3 MB for Anekbah, counted from the structures (24 bytes a face and 8 of hash,
 a 131072-cell table of 8, and a few per-triangle arrays).
 
+**Walking, measured afterwards** (2026-09-14, uncapped, holding forward for
+1500 frames): 185 of the 1500 revisions abandoned a replay part way - a mesh
+crossing the clip distance - so the replay holds for ~88% of a walk. And the
+`OMK_TIE_STATS` per-geometry counter added then says where the remaining full
+walks go: 45 posed bodies of 386-542 triangles, ~17300 faces a frame between
+them; the set itself is replayed.
+
 **What this leaves.** The step replays only while the draw sequence repeats;
 walking the street changes the visible set whenever a mesh crosses the clip
 distance, and each such frame is a full walk plus the replayed prefix again.
 Not measured walking yet.
+
+### 9. The walker and the decor probe through the grid - 2026-09-14
+
+**Found by the step-8 re-profile.** Standing on the street (uncapped, 20 s),
+the single largest CPU cost was `floorUnder` - the LINEAR scan, 458 samples:
+`decorUnder` 183, `PlayerController::tick` 139, `Walker::step` 136. Step 2 had
+built `playerGrid` over exactly that soup, but only `play.cpp`'s shadow and
+body probes ever used it; `Walker::ground` (every step, every controller tick)
+and `decorUnder` (event 9's "which decor is under his feet", every frame over
+both shown sets) still scanned every walkable triangle - 15137 in Anekbah's
+soup (46415 is its RENDER triangle count, a different number).
+
+**What changed.**
+
+* `Walker::setGrid` (actor/walk.h): `ground` walks the two-layer grid. The grid
+  overload already scans when the grid does not match the soup, so a stale
+  pointer costs time, not correctness - and in the viewer every write to
+  `playerSoup` (`rebuildWorld`, the motion patch) rebuilds the grid in the same
+  block, with no probe in between. `PlayerController::setGroundGrid` forwards.
+* `decorUnder(decors, merged, grid, ...)`: the viewer's `playerSoup` IS the
+  shown decors' soups concatenated in order (`rebuildWorld` builds both lists in
+  one loop), so the nearest floor over the merged soup, through the grid, names
+  the decor by the offset its triangle falls at. A new `floorUnder` overload
+  returns that triangle: the first in soup order to reach the answer, which is
+  what the linear scan's strict `<` keeps - so a floor shared by two decors
+  goes to the EARLIER one, exactly as the per-decor loop keeps the first
+  strictly nearer. It falls back to the loop unless every decor has an area and
+  the sizes add up.
+* `OMK_NO_GROUND_GRID=1` keeps the scans; `OMK_VERIFY_GROUND=1` computes every
+  grid answer the linear way too and prints the counts every 30 frames.
+
+**Same answers, proved.** `probe_grid --decor` merges two walkable soups with
+a 1-in-16 split and asks both `decorUnder`s over every sampled triangle's centre,
+vertices and edge midpoints and 4000 random points: Anekbah + AImpasse 25343
+probes (21785 answered Anekbah, 153 AImpasse), 0 mismatches; Anekbah twice -
+every floor a tie - 21785 to the first decor, 0 to the second, 0 mismatches;
+a decor with no area, the fallback, 0. In the game, the street start walking
+forward 150 frames through `--world-vulkan`: by frame 120, 233 walker probes
+and 121 decor probes, 0 differing from the scan; the last frame byte-identical
+to the same walk with `OMK_NO_GROUND_GRID=1` (and 96% of its pixels differ from
+a standing run's, so the walk walked). `engine: ground grid` (new), and
+`engine: walk`, `walker falls`, `player vertical`, `airlock walk`,
+`probe grid`, `split grid` pass.
+
+SHOWN TO FAIL, on the committed code: the walker's grid probe with x and z
+swapped gives 237 of 237 probes mismatched and 460091 pixels different. And
+worth recording: moving its window by one unit did NOT go red - a flat street
+has no surface inside that unit, so it is a mutation too weak to see, not a
+blind check. The decor half, each restored by editing back:
+
+* the merged probe keeping the LAST triangle of a tie (`<=`): 21785
+  mismatches in the Anekbah-twice row and 0 in the other two - only the tie
+  case can see the tie rule, which is why it is there;
+* the merged answer always naming the first decor: 153 mismatches in the
+  Anekbah + AImpasse row, exactly its AImpasse answers, and 0 in the others.
+
+**Measured - and the capped A/B did NOT measure it.** Old / new / old at 30 fps:
+CPU 23 / 31 / 23%, CPU time 13.5 / 17.4 / 13.6 s. The two old runs agree, but
+the load average was 5.6 when the new run started against 3.5-3.8 for the old
+ones (another application at ~60% of a core, Finder at 40%), and the change
+cannot cost that: timed directly, the linear `floorUnder` over Anekbah's walkable
+soup is 3002 ms for 18098 probes (0.17 ms each, itself measured under load
+~8) against 5.4 ms through the grid, and the walk makes ~3 such probes a
+frame (233 walker probes and 121 decor probes in 120 frames) - ~0.5 ms a
+frame, ~1.5% of a core at 30 Hz, matching the profile's 458 samples in 20 s
+at 60 Hz. A same-binary A/B (`OMK_NO_GROUND_GRID=1` on and off) on a quiet
+machine is owed.
 
 ### 5. `main`'s own time
 
