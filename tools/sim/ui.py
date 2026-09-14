@@ -686,6 +686,14 @@ class Ui:
             return {}, {}
         panels, lists = set(panels), set(lists)
         windows = [(fn, 1400, True, False, False)]
+        # `Ui_OpenShop` writes the BUTTON list's selection, `word_4E3372`
+        # (list 0x004E3370 + 2), in BOTH arms - 0 in the nine shops' and 1 in
+        # the bank's - so a straight walk keeps the bank's 1 for all ten and
+        # nine shops open on "Vente". The same skip `open_flags` takes.
+        skips = []
+        if fn == self.SHOP_OPEN:
+            skips.append((self.SHOP_TEST, self.SHOP_BANK) if s["param"] == 0
+                         else (self.SHOP_BANK, self.SHOP_JOIN))
         if fn == self.SNEAK_OPEN and s["param"] in self.SNEAK_ARM:
             lo, hi = self.SNEAK_ARM[s["param"]]
             windows = [(fn, self.SNEAK_BODY - fn, False, True, False),
@@ -725,6 +733,8 @@ class Ui:
             d = self.e.read(base, size)
             i = 0
             while i < len(d) - 10:
+                if any(lo <= base + i < hi for lo, hi in skips):
+                    i += 1; continue
                 if d[i] == 0x66 and d[i + 1] == 0xC7 and d[i + 2] == 0x05:
                     store(struct.unpack_from("<I", d, i + 3)[0],
                           struct.unpack_from("<H", d, i + 7)[0])

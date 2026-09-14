@@ -55,7 +55,7 @@ No stock, no buy, no sell: the screen is a title over empty boxes.
   `0x0042A0F0` (generic), input `0x004AE7E0`, close `0x00475A50` (generic).
 * `tables/ui_widgets.json`: the panel `0x004E3A70` (hook `0x004AEE00`) and its
   three lists —
-  * `0x004E3470` the four BUTTONS: string 0 (callback `0x004AED00`), string 1
+  * `0x004E3370` the four BUTTONS: string 0 (callback `0x004AED00`), string 1
     (`0x004AED30`), string 2 at (563,286) (`0x004AED60`), string 3 the back
     button (`0x0042A990`, generic);
   * `0x004E3640` the NINE STOCK ROWS, 400x20 from (90,140) at 30 px, font 74,

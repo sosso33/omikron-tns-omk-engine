@@ -101,6 +101,14 @@ struct LoadPanel;
 inline constexpr std::uint32_t kPanelStartConfirm = 0x004CF280u;
 inline constexpr std::uint32_t kCbStartCancel     = 0x0047A370u;
 
+// THE SHOPS - screens 20..28 and 32 share ONE panel and its three lists, and
+// differ only in the screen table's `+8` (todo/shops.md). `Ui_OpenShop`
+// (0x004AE540) paints the rows and the header in the selected button's colour.
+inline constexpr std::uint32_t kPanelShop       = 0x004E3970u;
+inline constexpr std::uint32_t kListShopButtons = 0x004E3370u;  // Acheter, Vente, the preview, back
+inline constexpr std::uint32_t kListShopRows    = 0x004E3640u;  // the nine stock rows
+inline constexpr std::uint32_t kListShopHeader  = 0x004E38E0u;  // title, item, money, price
+
 // The six PAGES, each a panel named by a tab item's `child`.
 inline constexpr std::uint32_t kPanelSneakIdentity  = 0x004DED80u;
 inline constexpr std::uint32_t kPanelSneakSlider    = 0x004DEDE8u;

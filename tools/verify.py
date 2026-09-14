@@ -19853,6 +19853,63 @@ def c_fill_colour():
            "round it would be (63, 96, 92)"
 
 
+def c_engine_shop_open():
+    r"""engine: what a SHOP is the moment it opens - `Ui_OpenShop` (0x004AE540).
+
+    Ten screens (20..28 and 32) share one panel and differ only in the screen
+    table's `+8`. After the title and the flag arms the open writes the BUTTON
+    list's selection, `word_4E3372` (list 0x004E3370 + 2) - **1 at the bank,
+    0 in the other nine** - and then hands `sub_4296D0` the colour of the
+    button that selection names, `off_4E337C[word_4E3372] +8/+9/+10`, for the
+    nine stock rows and the header. Until this check the rows drew in the
+    record's (255, 0, 0) placeholder.
+
+    **And the selection was lifted WRONG for nine of the ten.** Both arms store
+    `word_4E3372`, and `sim/ui.py: open_state` walked straight through them, so
+    the bank arm's `mov word_4E3372, 1` came last and every shop opened on
+    "Vente" - the same fault the flag arms had until 2026-09-01, one field
+    over. `open_state` now takes `open_flags`' skip, and the table moved 1 -> 0
+    on screens 21..28 and 32 and nowhere else.
+
+    `shop_open` opens the pharmacy, the bank and the Lahoreh library through
+    ONE shared list store, as the data segment is, so a colour the bank failed
+    to write would survive from the pharmacy and a per-screen value cannot be
+    faked by a leftover. Asserted per screen: the selection, which of
+    Acheter/Vente is hidden, the colour on both lists, and the pixel a row's
+    bar composes to under the fill's inverse blend.
+    """
+    import subprocess
+    eng = os.path.join(ROOT, "engine")
+    if not os.path.isdir(eng):
+        return ("skipped",), ("skipped",), "engine/ absent"
+    mk = subprocess.run(["make", "-s", "build/shop_open"], cwd=eng,
+                        capture_output=True, text=True)
+    tool = os.path.join(eng, "build", "shop_open")
+    if mk.returncode != 0 or not os.path.exists(tool):
+        return ("skipped",), ("skipped",), "shop_open did not build"
+    tb = os.path.join(ROOT, "tables")
+    r = subprocess.run([tool, omkpaths.data_root(),
+                        os.path.join(tb, "ui_widgets.json"),
+                        os.path.join(tb, "ui.json")],
+                       capture_output=True, text=True)
+    lines = [ln for ln in r.stdout.splitlines() if ln.startswith("screen ")]
+    return (len(lines), lines), \
+           (3, [
+            "screen 21 param 1: buttons select 0, hidden acheter 0 vente 1, "
+            "rows 150 215 250, header 150 215 250, row bar paints 24 44 49",
+            "screen 20 param 0: buttons select 1, hidden acheter 1 vente 0, "
+            "rows 20 165 250, header 20 165 250, row bar paints 0 32 49",
+            "screen 32 param 9: buttons select 0, hidden acheter 0 vente 1, "
+            "rows 150 215 250, header 150 215 250, row bar paints 24 44 49"]), \
+           "shop screens the probe opened (a parse that reads none fails AS a " \
+           "parse); then per screen - the pharmacy, the bank, the Lahoreh " \
+           "library, through one shared store - the button selection " \
+           "`Ui_OpenShop` writes (1 only at the bank), which of Acheter/Vente " \
+           "its arm hides, the selected button's colour written onto the nine " \
+           "rows and the header in place of the (255, 0, 0) placeholder, and " \
+           "the pixel a row's bar composes to"
+
+
 def c_sneak_page_colour():
     r"""WHAT THE (255, 0, 0) PLACEHOLDER MEANS - closed 2026-09-04.
 
@@ -34727,6 +34784,7 @@ SLOW = [
     ("player counters",   c_player_counters,   "UI 3g; GAME_STATE"),
     ("fill colour",       c_fill_colour,       "UI 3b"),
     ("sneak page colour", c_sneak_page_colour,  "UI 3b"),
+    ("engine: shop open", c_engine_shop_open,   "UI 3d; todo/shops.md"),
     ("cursor highlight",  c_cursor_highlight,   "UI 3b"),
     ("slider destinations", c_slider_destinations, "UI 3g"),
     ("sneak previews",   c_sneak_previews,     "UI 3g"),

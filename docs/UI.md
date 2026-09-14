@@ -1944,6 +1944,45 @@ are **distinct** (a linear scan gives one id ten times), and the eight that
 name their own screen. Shifted one place, that last count goes 8 → **0**: every
 shop takes its neighbour's title and not one of them lands.
 
+#### ...and it paints the shop in the SELECTED BUTTON's colour (2026-09-14)
+
+Past the two flag arms, `Ui_OpenShop` finishes in one straight run:
+
+```
+sub_4290D0(0x004E3640, 0x2000C000, bank)       the rows' list flags, mirrored
+sub_4290D0(0x004E3640, 0x20020000, !bank)
+sub_42ADD0(0x004E3640, 0, bank ? 0 : -1)       bind the rows
+colour = off_4E337C[word_4E3372]               the SELECTED button's +8/+9/+10
+sub_4296D0(0x004E3640, colour)                 the nine stock rows
+sub_4296D0(0x004E38E0, colour)                 the header
+sub_429140(rows, 0x40000010 / 0x40000200 / 0x40000008, 1), (0x40300000, 0)
+sub_42A050(screen)                             the generic open
+```
+
+`0x004E3370` is the BUTTON list — Acheter, Vente, the preview, back — so
+`word_4E3372` is its `+2` selection and `off_4E337C` its item array, and each
+arm writes that selection before anything reads it: **1 at the bank, 0 in the
+other nine**. A shop therefore wears "Acheter"'s (150, 215, 250) and the bank
+"Vente"'s (20, 165, 250) — the same trick the sneak's pages play with their tab
+icons (§3b), with a button standing in for the icon. The records ship the
+(255, 0, 0) placeholder, which is what the port drew until this was read.
+
+**The selection had been lifted wrong for nine of the ten**, and it is the flag
+arms' fault again, one field over: `sim/ui.py: open_state` walked straight
+through both `mov word_4E3372` stores and kept the bank's, so every shop opened
+with "Vente" selected. It now takes the skip `open_flags` already took, and
+`tables/ui_widgets.json` moved 1 → 0 on screens 21..28 and 32 and nowhere
+else. `verify.py: engine: shop open` opens the pharmacy, the bank and the
+Lahoreh library through one shared list store — so a colour one open failed to
+write would survive from the last — and asserts the selection, the hidden
+button, both lists' colour and the composed row bar.
+
+**Not a fault, and worth saying because it looks like one:** the blurred
+square beside the rows in a shop render is `Ui_DrawItemCursor`'s sixteen
+orbiting quads on the focused "Acheter" button, and the shop panel draws no
+background at all (bank B `0x40003800` carries the `0x2000` arm) — `boutiq.bmp`
+is an icon atlas on black, not a backdrop.
+
 ### What OPENS the sneak — a key, an animation and a table
 
 Screen 9 is not opened by `ui.open`. **No script opens it**: the chain runs

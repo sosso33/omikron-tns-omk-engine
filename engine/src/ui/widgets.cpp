@@ -1015,6 +1015,32 @@ void UiWalk::buildPage(const UiPanel& p) {
     }
     // The page's own tab: the column item whose `child` is this panel.
     const UiItem* icon = nullptr;
+    // `Ui_OpenShop` (0x004AE540), THE TEN SHOPS' ONE OPEN. After the title
+    // and the buy/sell flag arms it paints the rows and the header in the
+    // colour of the SELECTED BUTTON:
+    //
+    //     movsx eax, word_4E3372          // list 0x004E3370 +2, the selection
+    //     mov   ecx, off_4E337C           // ...that list's item array
+    //     mov   eax, [ecx+eax*4]          // the selected button
+    //     sub_4296D0(0x004E3640, [eax+8], [eax+9], [eax+10])   the nine rows
+    //     sub_4296D0(0x004E38E0, ...)                          the header
+    //
+    // and each arm writes that selection first - 1 at the bank, 0 in the
+    // other nine - so a shop wears "Acheter"'s (150, 215, 250) and the bank
+    // "Vente"'s (20, 165, 250). The ten screens share these ADDRESSES and
+    // carry their own lifted `select`, so it is read off this panel's copy.
+    if (p.addr == kPanelShop) {
+        for (const auto& l : p.lists) {
+            if (l.addr != kListShopButtons) continue;
+            if (l.select >= 0 && static_cast<std::size_t>(l.select) < l.items.size()) {
+                const UiItem& b = l.items[static_cast<std::size_t>(l.select)];
+                colourList(kListShopRows,   b.rgb[0], b.rgb[1], b.rgb[2]);
+                colourList(kListShopHeader, b.rgb[0], b.rgb[1], b.rgb[2]);
+            }
+            break;
+        }
+        return;
+    }
     for (const auto& l : p.lists) {
         if (l.addr != kListSneakTabs) continue;
         for (const auto& it : l.items)
