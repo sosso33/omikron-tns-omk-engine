@@ -16148,6 +16148,75 @@ int main(int argc, char** argv) {
                 }
             }
             walk->bindRows(omk::kListShopRows, static_cast<int>(ids.size()), window);
+            // ---- THE HEADER's three text hooks (step 3) ------------------
+            //
+            //   0x004AEE30  the SELECTED BUTTON's label - `sub_476860` on
+            //               `off_4E337C[word_4E3372]`, printed "%s". It also
+            //               fetches the selected row's name into a buffer
+            //               nothing reads (dead in the original), and while
+            //               oscillator 0's flag runs it shows the flashing
+            //               message `byte_6A4CA0` instead - step 4's, not
+            //               modelled here.
+            //   0x004AEF10  string 4 and `sub_42B1C0(4)`, the player's money,
+            //               "%s %d".
+            //   0x004AEF60  string 5 and `sub_42B300(tag)` - case 34, the
+            //               price of the selected row's object - HALVED when
+            //               the screen's parameter is 0, the bank quoting what
+            //               it pays; "%s %d". A row with no object is tag -1
+            //               and `sub_42B300` returns 0 for it.
+            {
+                const auto buyText = omk::iamStrings(fs, "IAM/Buy");
+                const auto str = [&](int id) {
+                    return id >= 0 && id < static_cast<int>(buyText.size())
+                        ? buyText[static_cast<std::size_t>(id)] : std::string();
+                };
+                const omk::UiList* buttons = nullptr;
+                const omk::UiList* rows = nullptr;
+                for (const auto& l : walk->panel()->lists) {
+                    if (l.addr == omk::kListShopButtons) buttons = &l;
+                    if (l.addr == omk::kListShopRows) rows = &l;
+                }
+                int price = 0;
+                if (rows) {
+                    const int sel = walk->selectionOf(*rows);
+                    const int row = sel >= 0 ? sel + std::max(0, window) : -1;
+                    if (row >= 0 && row < static_cast<int>(ids.size())) {
+                        price = inv.price(ids[static_cast<std::size_t>(row)]);
+                        if (w.screenParam(openScreen) == 0) price /= 2;
+                    }
+                }
+                for (const auto& l : walk->panel()->lists) {
+                    for (const auto& e : l.items) {
+                        if (e.textFn == 0x004AEE30u && buttons) {
+                            const int b = walk->selectionOf(*buttons);
+                            if (b >= 0 && b < static_cast<int>(buttons->items.size()))
+                                sneakRows[e.addr] =
+                                    str(buttons->items[static_cast<std::size_t>(b)].label());
+                        } else if (e.textFn == 0x004AEF10u) {
+                            sneakRows[e.addr] = str(e.label()) + " " +
+                                                std::to_string(state.money());
+                        } else if (e.textFn == 0x004AEF60u) {
+                            sneakRows[e.addr] = str(e.label()) + " " +
+                                                std::to_string(price);
+                        }
+                    }
+                }
+                // One line whenever the header changes, so a headless run can
+                // be held to what the three hooks composed.
+                std::string said;
+                for (const auto& l : walk->panel()->lists) {
+                    if (l.addr != omk::kListShopHeader) continue;
+                    for (const auto& e : l.items) {
+                        const auto t = sneakRows.find(e.addr);
+                        if (t != sneakRows.end()) said += " | '" + t->second + "'";
+                    }
+                }
+                static std::string headerTold;
+                if (said != headerTold) {
+                    headerTold = said;
+                    std::printf("shop header: screen %d%s\n", openScreen, said.c_str());
+                }
+            }
             static int shopTold = -1;
             if (shopTold != openScreen * 100 + static_cast<int>(ids.size())) {
                 shopTold = openScreen * 100 + static_cast<int>(ids.size());

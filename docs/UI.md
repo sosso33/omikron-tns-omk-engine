@@ -2014,6 +2014,44 @@ rows reach through their wrapper — so sixteen books walk through nine widgets.
 Without either, a shop's cursor could not leave its four buttons.
 `verify.py: engine: shop open` walks both and reads the stock of four areas.
 
+#### ...and the header says which button, what you hold and what it costs (2026-09-14)
+
+The header list `0x004E38E0` is four text items, and three of their `+32`
+hooks are the shop's own (none has a `proc` label; read from the image):
+
+| item | hook | shows |
+|---|---|---|
+| (90, 30) | `0x00476860` | the title, the item's own string - the one the open's jump table wrote |
+| (90, 60) | `0x004AEE30` | the **selected button's label** - Acheter, Vente, Examiner or Quitter - `"%s"` |
+| (30, 440) | `0x004AEF10` | string 4, *Seteks en votre possession :*, and `sub_42B1C0(4)` - the player record's `+172` - `"%s %d"` |
+| (340, 440) | `0x004AEF60` | string 5, *Prix de l'article :*, and `sub_42B300(tag)` - case 34, the selected row's price - `"%s %d"`, **halved when the screen's parameter is 0**: the bank quotes what it pays |
+
+Two things in `0x004AEE30` look like more than they are. It also fetches the
+selected ROW's name, `sub_42AA00` into a 256-byte buffer - and then prints the
+BUTTON's label from a second buffer; the first is never read, so the line is
+the button and the row name is dead code in the original. And while
+`Ui_OscillatorFlags(Ui_Oscillator(0), 1)` is set it shows `byte_6A4CA0`
+instead, a message posted by the buy and sell arms (*Pas assez de seteks !*,
+*Objet acheté !*) - step 4's. Both formats put two spaces before the number,
+because strings 4 and 5 end in one and `"%s %d"` adds another.
+
+**The first three buttons share one callback body**, `0x004AED00` /
+`0x004AED30` / `0x004AED60`:
+
+```
+if (screen->panel == 0x004E3970 && dword_4E3658 > 0) { panel+24 = 1; return 1; }
+return 0;
+```
+
+`dword_4E3658` is the rows list's `+24`, the count `sub_42ADD0` wrote, so ENTER
+on a button hands the focus to the stock and does nothing over an empty one.
+The button stays selected, which is how the row's own callback knows whether
+it is buying, selling or examining. **There is no 3D preview in the shop**: the
+third button is *Examiner*, and no header item carries a model or a draw hook.
+Played headless: the pharmacy reads *Acheter* and 200 then 50 as the cursor
+moves from the large medikit to the small; the bank reads *Vente*, and a
+200-seteks medikit carried there quotes 100.
+
 **Not a fault, and worth saying because it looks like one:** the blurred
 square beside the rows in a shop render is `Ui_DrawItemCursor`'s sixteen
 orbiting quads on the focused "Acheter" button, and the shop panel draws no

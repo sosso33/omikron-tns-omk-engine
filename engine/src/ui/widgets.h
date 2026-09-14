@@ -115,6 +115,14 @@ inline constexpr std::uint32_t kHookShopPanel   = 0x004AEE00u;
 // The stock rows' list hook is `sub_42AFF0` ITSELF - the centred row-window
 // mover the sneak's rows reach through their wrapper `sub_49C050`.
 inline constexpr std::uint32_t kHookRowWindow   = 0x0042AFF0u;
+// The three BUTTONS' callbacks - Acheter, Vente, Examiner - and all three are
+// the same eight instructions:
+//     if (screen->panel == 0x004E3970 && dword_4E3658 > 0)   // rows list +24
+//         { panel+24 = 1; return 1; }                        // focus the rows
+//     return 0;
+inline constexpr std::uint32_t kCbShopBuy     = 0x004AED00u;
+inline constexpr std::uint32_t kCbShopSell    = 0x004AED30u;
+inline constexpr std::uint32_t kCbShopExamine = 0x004AED60u;
 
 // The six PAGES, each a panel named by a tab item's `child`.
 inline constexpr std::uint32_t kPanelSneakIdentity  = 0x004DED80u;

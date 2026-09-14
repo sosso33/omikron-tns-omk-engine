@@ -1206,6 +1206,29 @@ bool UiWalk::confirm() {
         // that body (`verify.py: start cancel`), so it is named by address
         // and not pattern-matched at run time.
         if (it->callback == kCbStartCancel) return toParent();
+        // THE SHOP'S THREE BUTTONS - Acheter, Vente, Examiner (0x004AED00,
+        // 0x004AED30, 0x004AED60), one body each:
+        //
+        //     if (screen->panel == 0x004E3970 && dword_4E3658 > 0)
+        //         { panel+24 = 1; return 1; }
+        //     return 0;
+        //
+        // `dword_4E3658` is the rows list's `+24`, the count the binder
+        // wrote, so confirming a button moves the focus into the stock - and
+        // does nothing over an empty one (a bank visited with nothing to
+        // sell). Which arm a row then takes is `word_4E3372`, the button
+        // list's selection, which the confirm leaves where it is.
+        if (it->callback == kCbShopBuy || it->callback == kCbShopSell ||
+            it->callback == kCbShopExamine) {
+            if (panel_->addr != kPanelShop || boundCount(kListShopRows) <= 0) {
+                log_.push_back("shop button: nothing to choose");
+                return false;                     // the callback's own `return 0`
+            }
+            for (std::size_t k = 0; k < panel_->lists.size(); ++k)
+                if (panel_->lists[k].addr == kListShopRows) { cur_ = static_cast<int>(k); break; }
+            log_.push_back("shop button: the rows take the focus");
+            return true;
+        }
         // `Charger une partie` (0x0047AC90).  It does NOT load: it resolves
         // the row to a slot, refuses an empty one, stores the index in
         // `dword_4C09B4` and closes the screen (`screen[+8] = 3`).  The load

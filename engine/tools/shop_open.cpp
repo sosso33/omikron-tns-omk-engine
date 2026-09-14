@@ -131,6 +131,16 @@ int main(int argc, char** argv) {
         const int btn = btnSel();
         ph.press(omk::kUiLeft);
         std::printf("\nwalk 21: button %d, LEFT there -> list %d\n", btn, ph.currentList());
+        // ...and a BUTTON's own confirm (0x004AED00): the focus goes to the
+        // rows when the binder counted any, and nowhere when it counted none.
+        for (int count : {2, 0}) {
+            omk::UiWalk cb(w);
+            cb.open(21);
+            cb.bindRows(omk::kListShopRows, count);
+            cb.press(omk::kUiConfirm);
+            std::printf("walk 21: %d rows bound, ENTER on Acheter -> list %d\n",
+                        count, cb.currentList());
+        }
     }
 
     // ---- THE STOCK: list 3 is the active AREA block's `+8` ----------------

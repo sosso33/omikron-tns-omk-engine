@@ -19907,10 +19907,29 @@ def c_engine_shop_open():
     # ...and the two hooks that reach the rows: the panel's 0x004AEE00 and
     # the rows' bare sub_42AFF0
     walks = [ln for ln in out.splitlines() if ln.startswith("walk ")]
+    # STEP 3, THE HEADER: composed in omk-play, so run it - the pharmacy
+    # (ENTER on Acheter, then DOWN to the small medikit) and the bank with a
+    # 200-seteks medikit given to it (ENTER on Vente, DOWN onto the medikit)
+    mk2 = subprocess.run(["make", "-s", "play"], cwd=eng, capture_output=True, text=True)
+    play = os.path.join(eng, "build", "omk-play")
+    if mk2.returncode != 0 or not os.path.exists(play):
+        return ("skipped",), ("skipped",), "omk-play did not build"
+    env = dict(os.environ, SDL_VIDEODRIVER="dummy")
+    save = os.path.join(ROOT, "traces", "save-appart.bin")
+    def header(extra):
+        p = subprocess.run([play, omkpaths.data_root(), tb, "--save", save,
+                            "--nofmv", "--no-crowd", "--software",
+                            "--keys", "28,28,28,28,28,208", "--keydelay", "60",
+                            "--frames", "330"] + extra,
+                           capture_output=True, env=env, timeout=600)
+        return [ln for ln in p.stdout.decode("cp1252", "replace").splitlines()
+                if ln.startswith("shop header:")]
+    heads = (header(["--area", "39"]) +
+             header(["--area", "83", "--stand", "13875,-6,20441,321", "--give", "15"]))
     return (len(lines), lines, len(stock), stock.get(39), stock.get(83),
             stock.get(30, (0, [], ""))[:1] + (stock.get(30, (0, [], ""))[2],),
             stock.get(86, (0, [], ""))[0], stock.get(86, (0, [], ""))[1][:3],
-            walks), \
+            walks, heads), \
            (3, [
             "screen 21 param 1: buttons select 0, hidden acheter 0 vente 1, "
             "rows 150 215 250, header 150 215 250, row bar paints 24 44 49",
@@ -19924,7 +19943,17 @@ def c_engine_shop_open():
              "window 6 (book 10)",
              "walk 21: opens on list 0 button 0; DOWN -> 2(l0) 3(l0); log: "
              "[open] [move] [move]",
-             "walk 21: button 3, LEFT there -> list 0"]), \
+             "walk 21: button 3, LEFT there -> list 0",
+             "walk 21: 2 rows bound, ENTER on Acheter -> list 1",
+             "walk 21: 0 rows bound, ENTER on Acheter -> list 0"],
+            ["shop header: screen 21 | 'Acheter' | 'Seteks en votre possession :  0' "
+             "| 'Prix de l'article :  200'",
+             "shop header: screen 21 | 'Acheter' | 'Seteks en votre possession :  0' "
+             "| 'Prix de l'article :  50'",
+             "shop header: screen 20 | 'Vente' | 'Seteks en votre possession :  0' "
+             "| 'Prix de l'article :  0'",
+             "shop header: screen 20 | 'Vente' | 'Seteks en votre possession :  0' "
+             "| 'Prix de l'article :  100'"]), \
            "shop screens the probe opened (a parse that reads none fails AS a " \
            "parse); then per screen - the pharmacy, the bank, the Lahoreh " \
            "library, through one shared store - the button selection " \
