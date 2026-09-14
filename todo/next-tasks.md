@@ -529,7 +529,7 @@ second `Ui_OpenShop`, not the shops.) The shops are **83 of the world's 242
 AREA 39 opens screen 21 after its conversation, and today it draws the title
 over empty placeholder boxes. The plan and the reading are in the file.
 
-### 12. Multiplan UI — M, fair evidence
+### 12. Multiplan UI — M, **STARTED 2026-09-15, `todo/multiplan.md`** - it is a STORAGE LOCKER (sneak <-> kiosk, event 36 requests 7/8), not a map
 
 The tile-map background is read (and `ui page` asserts that MULTIPLAN's
 lit-copy strip is black in the composed background, which is a real detail).
