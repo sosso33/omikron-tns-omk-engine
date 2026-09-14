@@ -518,12 +518,16 @@ status lists and the page builders. The inventory page works. These three are
 the same shape with different builders, so the second one should be much
 cheaper than the first.
 
-### 11. Shop UI — M, strong evidence
+### 11. Shop UI — M, strong evidence — **STARTED 2026-09-14, `todo/shops.md`**
 
-`docs/UI.md`: seven screens through one jump table (`Ui_OpenShop`, with case 4
-falling through into 6), the titles naming their own screens 8 of 10, and the
-inventory channel's buy/sell at half price already read. The data channel is
-ported; the screens are not.
+`docs/UI.md`: TEN screens (20..28 and 32) through one open, `Ui_OpenShop`,
+whose jump table picks the title, and the titles naming their own screens 8 of
+10; the inventory channel's buy/sell at half price already read. (This row said
+"seven screens, case 4 falling through into 6" - that is the TERMINAL family's
+second `Ui_OpenShop`, not the shops.) The shops are **83 of the world's 242
+`ui.open` sites**. Step 0 found the headless route in: the pharmacy's zone in
+AREA 39 opens screen 21 after its conversation, and today it draws the title
+over empty placeholder boxes. The plan and the reading are in the file.
 
 ### 12. Multiplan UI — M, fair evidence
 
