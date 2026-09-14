@@ -2100,11 +2100,27 @@ the row removed, the rows re-bound, `dword_4E3988 = 0` when none remain, sound
 the shop panel again. 189 records carry `0x2` and 133 of them a price; the
 shipped save's one carried object (171, flags `0x12`, price 0) is refused.
 
-**The Examiner page shows nothing.** `0x004E39D8` is one 400x260 box whose
-`+44` child is the shop panel, and `dword_4E393C`, where the arm stores the
-examined row, is **written twice and read nowhere** in the image - no dword,
-no instruction. Confirming the box goes back. It is the same shape as the
-sneak's memory page: built, reachable, and never filled.
+**The Examiner ("Analyser") page shows the object in 3D** - and this said it
+showed nothing until a reader who knows the game corrected it. `0x004E39D8`
+is one 400x260 box, item `0x004E3900`, whose `+44` child is the shop panel
+and whose **`+20` draw hook is `0x00477AD0`**. `dword_4E393C`, where the arm
+stores the examined row, is exactly that item's `+0x3C` TAG - so no
+instruction names the address: the hook reads its own item's tag, asks
+`sub_42B2C0` (EVENT 30, the preview load) for the object's slot, frames the
+model with `sub_478DE0` (the previews' bounding-box camera), spins it on
+oscillator 4 and submits it through `I2D_Submit3DView` into the box; no text
+follows. The scan that "proved" the page empty searched for the ADDRESS and
+not for the FIELD - the same shape as the shop children's panels, which no
+instruction names either. Confirming the box goes back.
+
+**A child is shown with its screen's lists.** The Vente confirm and the
+Analyser page are lifted once, as `screen -1`, carrying the open edits of the
+first screen that reached them - screen 20, the bank - so installing either
+from a pharmacy re-titled the screen *Banque - vente* and lit Vente. The engine
+has one record per list address, written by `Ui_OpenShop` and left alone by
+`sub_42A370`; `UiWidgets::at` now hands a child the current screen's own
+records for the lists they share, and `settle` leaves a shared list's
+selection where the player put it.
 
 **The message is oscillator 0.** `sub_42B820(0, -1, text)` calls the record at
 `0x004C3EA0`'s post handler `sub_42B660`, which zeroes the timer at `+4`, sets

@@ -19963,10 +19963,17 @@ def c_engine_shop_open():
                            capture_output=True, env=env, timeout=600)
         return [ln for ln in p.stdout.decode("cp1252", "replace").splitlines()
                 if ln.startswith(("shop: bought", "shop: sold", "shop: buy ",
-                                  "shop: sale "))]
-    trades = (trade(["--area", "39", "--money", "300"], "28,28,28,28,28,28,28", "460") +
-              trade(["--area", "83", "--stand", "13875,-6,20441,321", "--give", "191"],
-                    "28,28,28,28,28,208,28,28", "560"))
+                                  "shop: sale ", "shop: Analyser", "shop header"))]
+    # ...and ANALYSER (the reader: it "shows a 3D view of an item"): Examiner,
+    # into the rows, ENTER on the large medikit - the page loads its model
+    # and keeps THIS shop's header, not the bank's the child was lifted with
+    trades = ([ln for ln in trade(["--area", "39", "--money", "300"],
+                                  "28,28,28,28,28,28,28", "460")
+               if not ln.startswith("shop header")] +
+              [ln for ln in trade(["--area", "83", "--stand", "13875,-6,20441,321",
+                                   "--give", "191"], "28,28,28,28,28,208,28,28", "560")
+               if not ln.startswith("shop header")] +
+              trade(["--area", "39"], "28,28,28,28,208,28,28", "420"))
     return (len(lines), lines, len(stock), stock.get(39), stock.get(83),
             stock.get(30, (0, [], ""))[:1] + (stock.get(30, (0, [], ""))[2],),
             stock.get(86, (0, [], ""))[0], stock.get(86, (0, [], ""))[1][:3],
@@ -19993,7 +20000,8 @@ def c_engine_shop_open():
              "step4 sell oui: panel 0x4e3970 list 1 sel 0, request 1 row 1",
              "step4 sell non: panel 0x4e3970 list 1 sel 0, request -1 row -1",
              "step4 examine: panel 0x4e39d8 list 1 sel 0 -> ENTER -> panel "
-             "0x4e3970 list 1 sel 0"],
+             "0x4e3970 list 1 sel 0",
+             "step4 examine page: acheter hidden 0 vente hidden 1, title string 18"],
             ["shop header: screen 21 | 'Acheter' | 'Seteks en votre possession :  0' "
              "| 'Prix de l'article :  200'",
              "shop header: screen 21 | 'Acheter' | 'Seteks en votre possession :  0' "
@@ -20004,7 +20012,12 @@ def c_engine_shop_open():
              "| 'Prix de l'article :  100'"],
             ["shop: bought 15 for 200, money 300 -> 100",
              "shop: buy 15 refused by event 38 (price 200, money 100, carried 2) - message 9",
-             "shop: sold 191 for 2500, money 0 -> 2500"]), \
+             "shop: sold 191 for 2500, money 0 -> 2500",
+             "shop header: screen 21 | 'Acheter' | 'Seteks en votre possession :  0' "
+             "| 'Prix de l'article :  200'",
+             "shop header: screen 21 | 'Examiner' | 'Seteks en votre possession :  0' "
+             "| 'Prix de l'article :  200'",
+             "shop: Analyser - object 15 'MEDIKITG', model loaded"]), \
            "shop screens the probe opened (a parse that reads none fails AS a " \
            "parse); then per screen - the pharmacy, the bank, the Lahoreh " \
            "library, through one shared store - the button selection " \

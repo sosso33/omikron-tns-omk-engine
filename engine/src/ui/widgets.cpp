@@ -345,14 +345,49 @@ const UiPanel* UiWidgets::screen(int id) const {
 // So the screen-keyed row wins only for the screen it belongs to. A caller
 // with no screen in hand, and a record whose `screen` is -1, are unchanged:
 // this narrows the preference, it does not remove it.
+//
+// **AND A CHILD IS SHOWN WITH ITS SCREEN'S LISTS** (2026-09-14). A child is
+// lifted once, as `screen -1`, carrying the open-callback edits of whichever
+// screen reached it first - for the shops' Vente confirm and Analyser page
+// that is screen 20, the BANK, so opening either from the pharmacy re-titled
+// the whole screen "Banque - vente", lit Vente and hid Acheter. The engine
+// has ONE record per list address: `Ui_OpenShop` writes it when a shop
+// opens, and `sub_42A370` installing a child rewrites nothing. So a child
+// that shares list addresses with the current screen's own top panel takes
+// those lists from THAT screen's record, as a cached merged copy; and the
+// screen's own record for an address wins outright, which the shop panel's
+// own `-1` duplicate (reached through the Analyser box's `+44`) had been
+// shadowing on the way back.
 const UiPanel* UiWidgets::at(std::uint32_t addr, int screen) const {
+    const UiPanel* own = nullptr;
+    const UiPanel* preferred = nullptr;
     const UiPanel* first = nullptr;
     for (const auto& p : panels_) {
         if (p.addr != addr) continue;
-        if (p.current >= 0 && (p.screen < 0 || p.screen == screen)) return &p;
+        if (screen >= 0 && p.screen == screen) { own = &p; break; }
+        if (!preferred && p.current >= 0 && p.screen < 0) preferred = &p;
         if (!first) first = &p;
     }
-    return first;
+    if (own) return own;
+    const UiPanel* base = preferred ? preferred : first;
+    if (!base || base->screen >= 0 || screen < 0) return base;
+    const UiPanel* top = this->screen(screen);
+    if (!top || top->addr == addr) return base;
+    bool shares = false;
+    for (const auto& l : base->lists)
+        for (const auto& t : top->lists)
+            if (l.addr == t.addr) shares = true;
+    if (!shares) return base;
+    const auto key = std::make_pair(addr, screen);
+    auto it = merged_.find(key);
+    if (it == merged_.end()) {
+        UiPanel m = *base;
+        for (auto& l : m.lists)
+            for (const auto& t : top->lists)
+                if (l.addr == t.addr) l = t;
+        it = merged_.emplace(key, std::move(m)).first;
+    }
+    return &it->second;
 }
 
 // ...and one LIST by its record address, wherever in the tree it lives. The
@@ -763,7 +798,18 @@ void UiWalk::settle() {
         // An open callback's write WINS - that is the engine overwriting the
         // record. Anything else only seeds a list this walk has not met, so a
         // selection the player left behind survives.
-        if (l.select >= 0 && static_cast<std::size_t>(l.select) < l.items.size())
+        // ...EXCEPT on a CHILD, for a list it shares with its screen's own top
+        // panel: `sub_42A370` installing a child rewrites no record, so the
+        // shared list's `+2` is whatever the player left there. Re-seeding it
+        // put a shop's buttons back on the lifted value the moment its
+        // Analyser page opened (the header then read *Vente* in a pharmacy).
+        bool sharedWithTop = false;
+        if (panel_->screen < 0)
+            if (const UiPanel* top = w_->screen(screen_))
+                for (const auto& t : top->lists)
+                    if (t.addr == l.addr) sharedWithTop = true;
+        if (!sharedWithTop && l.select >= 0 &&
+            static_cast<std::size_t>(l.select) < l.items.size())
             selMap()[l.addr] = j;
         else
             selMap().emplace(l.addr, j);

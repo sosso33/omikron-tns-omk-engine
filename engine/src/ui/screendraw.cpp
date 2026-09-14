@@ -744,6 +744,29 @@ ScreenFrame ScreenComposer::draw(Surface& fb, int screenId,
                     ++out.modelsDrawn;
             }
 
+            // ---- THE SHOP'S "ANALYSER" BOX: draw hook 0x00477AD0 -----------
+            //
+            // Item 0x004E3900 on the Examiner page (0x004E39D8), 400x260. Its
+            // `+20` draw hook takes the item's own tag `+0x3C` - which is the
+            // `dword_4E393C` the row callback writes, reached through the
+            // field rather than the address, which is why no instruction in the
+            // image names it - asks `sub_42B2C0` (EVENT 30, the preview load)
+            // for the object slot, frames the model with `sub_478DE0` (the
+            // previews' bounding-box camera), spins it on oscillator 4 and
+            // submits it through `I2D_Submit3DView` into the item's own
+            // rectangle. No text follows. A reader said it plainly: the button
+            // "shows a 3D view of an item when selecting it in the list" - the
+            // page was drawn empty here after a reading that missed the field.
+            constexpr std::uint32_t kDrawShopPreview = 0x00477AD0u;
+            if (models_ && it.drawFn == kDrawShopPreview) {
+                if (models_->drawExamine(fb,
+                                         scaleX(it.x + q->offsetX),
+                                         scaleY(it.y + q->offsetY),
+                                         scaleX(it.w), scaleY(it.h),
+                                         UiModels::spinDegrees(clockMs_)))
+                    ++out.modelsDrawn;
+            }
+
             // ---- THE CURSOR: `Ui_DrawItemCursor` (`sub_479920`) -------
             //
             // Drawn BEFORE the fill and the sprite, because `sub_4795F0`

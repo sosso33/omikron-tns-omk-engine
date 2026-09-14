@@ -759,11 +759,11 @@ No conversation here: ENTER at a shelf opens it. LEFT into the books, then
 DOWN: the cursor stops at the middle row and the list scrolls under it to the
 sixteenth book.
 
-**(d) Examiner.** In any shop, select *Examiner*, cross into the rows and
-press ENTER: a box with **nothing in it**, and ENTER takes you back. That is
-what the code does - the examined row is stored and never read - so **tell me
-if the original shows the object here**, because that would mean a path this
-reading missed.
+**(d) Examiner / Analyser.** In any shop, select *Examiner*, cross into the
+rows and press ENTER: the item turns in 3D in the middle of the screen, over
+the dimmed shop, with this shop's title still on top; ENTER takes you back.
+(This said "a box with nothing in it" until you corrected it - the draw hook
+reads the box's own tag field, which the first reading missed.)
 
 **(e) Leaving.** TAB and *Quitter* both close a shop into the seller's
 goodbye. **Changed on the way, on other screens:** SPACE no longer backs out

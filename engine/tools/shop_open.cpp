@@ -220,9 +220,26 @@ int main(int argc, char** argv) {
         ex.press(omk::kUiLeft);
         ex.press(omk::kUiConfirm);
         std::printf("step4 examine: %s", where(ex).c_str());
+        // ON THE PAGE, the shared lists must be THIS shop's, not the bank's
+        // the child record was lifted with: Vente hidden, the pharmacy title.
+        int pageHid[2] = {-1, -1}, pageTitle = -1;
+        if (const omk::UiPanel* pg = ex.panel()) {
+            for (const auto& l : pg->lists) {
+                if (l.addr == omk::kListShopButtons && l.items.size() >= 2)
+                    for (int k = 0; k < 2; ++k) {
+                        std::uint32_t eff[3];
+                        l.items[static_cast<std::size_t>(k)].effective(l.broadcast, eff);
+                        pageHid[k] = (eff[1] & 1) ? 1 : 0;
+                    }
+                if (l.addr == omk::kListShopHeader && !l.items.empty())
+                    pageTitle = l.items.front().label();
+            }
+        }
         ex.press(omk::kUiConfirm);
         std::printf(" -> ENTER -> %s%s\n", where(ex).c_str(),
                     ex.approximate() ? " approximate" : "");
+        std::printf("step4 examine page: acheter hidden %d vente hidden %d, title string %d\n",
+                    pageHid[0], pageHid[1], pageTitle);
     }
 
     // ---- THE STOCK: list 3 is the active AREA block's `+8` ----------------

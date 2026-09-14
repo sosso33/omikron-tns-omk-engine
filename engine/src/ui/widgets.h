@@ -482,6 +482,9 @@ public:
 private:
     friend void applyLoadPanelLayout(UiWidgets&, int);
     std::vector<UiPanel> panels_;
+    // A CHILD record merged with the screen it is shown on - see `at`. Keyed
+    // (child address, screen); std::map so the pointers `at` returns stay put.
+    mutable std::map<std::pair<std::uint32_t, int>, UiPanel> merged_;
     std::map<int, std::string> textFile_, bitmap_;
     std::map<int, std::string> soundName_;          // the 45, by id
     std::map<int, std::vector<int>> screenSounds_;  // each screen's 12 slots

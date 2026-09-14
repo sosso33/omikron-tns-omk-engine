@@ -16257,6 +16257,28 @@ int main(int argc, char** argv) {
                 // the focus back to the buttons
                 if (ids.empty()) walk->focusList(omk::kListShopButtons);
             }
+            // ---- THE ANALYSER PAGE'S MODEL: event 30 on the chosen row -----
+            //
+            // The Examiner arm stores the row's tag and installs 0x004E39D8,
+            // whose box draws `sub_42B2C0(tag)` - case 30, the preview load,
+            // which loads the SELECTED object's model whatever its kind and
+            // refuses list 2 (no models). The rows' selection is a static
+            // record, so the row chosen on the shop panel is still selected.
+            if (shopPanel == omk::kPanelShopExamine && inv.openedList() != 2) {
+                const int row = walk->selectedRow(omk::kListShopRows);
+                const int id = row >= 0 && row < static_cast<int>(ids.size())
+                    ? ids[static_cast<std::size_t>(row)] : -1;
+                static int shopExamined = -1;
+                if (id > 0 && id != shopExamined &&
+                    static_cast<std::size_t>(id) < objectRecords.size()) {
+                    shopExamined = id;
+                    const auto& rec = objectRecords[static_cast<std::size_t>(id)];
+                    const auto k = uiModels.examine(fs, 15, rec.stem);
+                    std::printf("shop: Analyser - object %d '%s', model %s\n", id,
+                                rec.stem.c_str(),
+                                k == omk::UiModels::Examine::Model ? "loaded" : "none");
+                }
+            }
             const int window = walk->rowWindow(omk::kListShopRows);
             for (const auto& l : walk->panel()->lists) {
                 if (l.addr != omk::kListShopRows) continue;
