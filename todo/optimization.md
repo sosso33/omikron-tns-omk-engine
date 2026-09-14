@@ -962,6 +962,24 @@ little, as the grid's cells hold most of it. A capped A/B in play is owed.
 instead of its Z - 2474 / 1490 / 360 / 558 / 2360 / ... mismatching sweeps in
 the six rows; restored by editing back, green.
 
+### 12. The crowd lighting - looked at, NOT changed (2026-09-14)
+
+`applyLights` was 316 samples of the step-10 standing profile. Measured first:
+at frame 300 of the street start 17 bodies are drawn and the lights reach them
+86 times - about 5 lights a body out of Anekbah's 155 - so the reach test
+(155 x 17 distance checks) is nothing and the cost is the per-corner loop, run
+once per reaching light over a body's ~2400 corners.
+
+The exact candidate was that loop's three `lightRamp(c, t) / 255.0f` a lit
+corner - an int-to-float and a division each - read instead from a 256 x 256
+float table built once from the same expression. `light_equiv` (kept in the
+session's scratch, not committed) held it to the old loop verbatim: **0
+mismatches** over 600 calls each for PSH_FN and JEN_FNM under Anekbah's lights,
+with random base colours and synthetic lights at colour bytes 0 / 255 and
+`t` past 255. And **no gain**: 35.9 -> 39.0 ms and 19.9 -> 20.5 ms. The
+divisions were not what the loop costs. Reverted; nothing committed but this
+note.
+
 ### 5. `main`'s own time
 
 `main` is 16k lines; a sample's self time there is every inlined helper. Build
