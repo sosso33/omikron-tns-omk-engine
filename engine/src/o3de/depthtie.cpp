@@ -226,6 +226,7 @@ void DepthTie::walkFlat(const Geometry& g, std::size_t start, std::size_t count,
                   std::uint8_t{1});
         return;
     }
+    facesWalked += static_cast<long>(t1 - t0);
     // Found -> true. Not found -> false, and a writing draw claims it.
     const auto claimedOrClaim = [&](Claimed& s, const P* ps) {
         const int n = s.corners;
@@ -358,6 +359,7 @@ void DepthTie::walkTracked(const Geometry& g, std::size_t start, std::size_t cou
                   std::uint8_t{1});
         return;
     }
+    facesWalked += static_cast<long>(t1 - t0);
     for (std::size_t tri = t0; tri < t1; ++tri) {
         if (done_[tri]) continue;
         const bool open = tri + 1 < t1 && !done_[tri + 1];

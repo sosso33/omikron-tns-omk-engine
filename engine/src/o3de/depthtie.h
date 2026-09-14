@@ -88,6 +88,9 @@ public:
     // Revisions answered by a replay, by a full walk of a tracked geometry, and
     // replays abandoned part way through a revision.
     long replays = 0, walks = 0, fallbacks = 0;
+    // Faces a full walk visited since the backend last read and cleared it -
+    // the per-geometry cost `OMK_TIE_STATS` ranks.
+    long facesWalked = 0;
 
 private:
     using P = std::array<std::uint32_t, 3>;

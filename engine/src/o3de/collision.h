@@ -226,6 +226,11 @@ struct SplitSoupGrid {
 };
 std::optional<double> floorUnder(const TriangleSoup& tris, const SplitSoupGrid& grid,
                                  double x, double y, double z);
+// ...and which triangle gave it: the FIRST in soup order to reach the answer,
+// the one the linear scan's strict `<` keeps (`decorUnder` needs it to say
+// which decor a merged soup's floor belongs to). `tri` is untouched on a miss.
+std::optional<double> floorUnder(const TriangleSoup& tris, const SplitSoupGrid& grid,
+                                 double x, double y, double z, std::uint32_t& tri);
 std::optional<GroundHit> surfaceUnder(const TriangleSoup& tris, const SplitSoupGrid& grid,
                                       double x, double y, double z);
 TriangleSoup soupInBox(const TriangleSoup& tris, const SplitSoupGrid& grid,

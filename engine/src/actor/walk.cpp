@@ -2,8 +2,31 @@
 #include "actor/walk.h"
 
 #include <algorithm>
+#include <cstring>
 
 namespace omk {
+
+namespace {
+bool gVerifyOn = false;
+GroundVerify gVerify;
+
+inline bool sameAnswer(const std::optional<double>& a, const std::optional<double>& b) {
+    return a.has_value() == b.has_value() && (!a || std::memcmp(&*a, &*b, sizeof(double)) == 0);
+}
+}  // namespace
+
+void setGroundVerify(bool on) { gVerifyOn = on; }
+const GroundVerify& groundVerify() { return gVerify; }
+
+std::optional<double> Walker::ground(double x, double y, double z) const {
+    if (!grid_) return floorUnder(soup_, x, y - kStepUp - 1.0, z);
+    const auto g = floorUnder(soup_, *grid_, x, y - kStepUp - 1.0, z);
+    if (gVerifyOn) {
+        ++gVerify.walker;
+        if (!sameAnswer(g, floorUnder(soup_, x, y - kStepUp - 1.0, z))) ++gVerify.walkerBad;
+    }
+    return g;
+}
 
 int decorUnder(std::span<const DecorSoup> decors, double x, double y, double z) {
     int best = -1;
@@ -13,6 +36,31 @@ int decorUnder(std::span<const DecorSoup> decors, double x, double y, double z) 
         const auto g = floorUnder(*d.soup, x, y - kStepUp - 1.0, z);
         if (!g) continue;
         if (best < 0 || *g < bestY) { best = d.area; bestY = *g; }
+    }
+    return best;
+}
+
+int decorUnder(std::span<const DecorSoup> decors, const TriangleSoup& merged,
+               const SplitSoupGrid& grid, double x, double y, double z) {
+    std::size_t total = 0;
+    bool usable = true;
+    for (const auto& d : decors) {
+        if (!d.soup || d.area < 0) { usable = false; break; }
+        total += d.soup->size();
+    }
+    if (!usable || total != merged.size()) return decorUnder(decors, x, y, z);
+    std::uint32_t tri = 0;
+    int best = -1;
+    if (floorUnder(merged, grid, x, y - kStepUp - 1.0, z, tri)) {
+        std::size_t off = 0;
+        for (const auto& d : decors) {
+            off += d.soup->size();
+            if (9 * static_cast<std::size_t>(tri) < off) { best = d.area; break; }
+        }
+    }
+    if (gVerifyOn) {
+        ++gVerify.decor;
+        if (best != decorUnder(decors, x, y, z)) ++gVerify.decorBad;
     }
     return best;
 }

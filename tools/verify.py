@@ -12275,6 +12275,71 @@ def c_engine_patch_index():
         "differ from the full merge, and the walkable + steep triangles re-placed"
 
 
+def c_engine_ground_grid():
+    r"""The player's ground probe and the decor-under-the-feet probe answer
+    through the grid exactly as they did by scanning (todo/optimization.md step 9).
+
+    Step 2 built a grid over the player's walkable soup, but only the shadow and
+    body probes in `play.cpp` ever used it: `Walker::ground` - every step and
+    every tick of the player controller - and `decorUnder` - event 9's "which
+    decor is under his feet", every frame over both shown sets - still scanned
+    all 46415 of Anekbah's walkable triangles, and together they were the top
+    CPU cost of the standing street profile (458 samples). The walker now takes
+    `playerGrid` (`Walker::setGrid`), and `decorUnder` answers from the merged
+    soup through it - the floor's first triangle names the decor, which keeps
+    the loop's tie rule (the earliest decor with the nearest floor) - falling
+    back to the loop unless the merged soup is exactly the decors in order.
+
+    The street start headless through `--world-vulkan`, walking forward for 150
+    frames, with `OMK_VERIFY_GROUND=1`: every grid answer is also computed the
+    linear way and compared bit for bit; and the last frame against the same
+    walk with `OMK_NO_GROUND_GRID=1`. Measured 2026-09-14: by frame 120, 233
+    walker probes and 121 decor probes, 0 mismatched; frames identical.
+
+    SHOWN TO FAIL: see todo/optimization.md step 9.
+    """
+    import subprocess
+    eng = os.path.join(ROOT, "engine")
+    if not os.path.isdir(eng):
+        return ("skipped",), ("skipped",), "engine/ absent"
+    mk = subprocess.run(["make", "-s", "play"], cwd=eng, capture_output=True, text=True)
+    play = os.path.join(eng, "build", "omk-play")
+    save = os.path.join(ROOT, "traces", "save-appart.bin")
+    if mk.returncode != 0 or not os.path.exists(play):
+        return ("skipped",), ("skipped",), "no SDL - the frontend is optional (PORTING A8)"
+    if not os.path.exists(save):
+        return ("skipped",), ("skipped",), "traces/save-appart.bin absent"
+
+    def run(extra_env, tag):
+        out = os.path.join(eng, "build", "ground-grid-%s.bin" % tag)
+        if os.path.exists(out):
+            os.remove(out)
+        env = dict(os.environ, SDL_VIDEODRIVER="dummy", **extra_env)
+        r = subprocess.run([play, omkpaths.data_root(), os.path.join(ROOT, "tables"),
+                            "--save", save, "--area", "0", "--stand", "1804,0,-6890,336",
+                            "--nofmv", "--world-vulkan", "--frames", "150",
+                            "--hold", "k200*150", "--dump", out],
+                           cwd=eng, env=env, capture_output=True, text=True)
+        lines = re.findall(r"^ground verify: frame 120, walker (\d+) probes (\d+) mismatched, "
+                           r"decor (\d+) probes (\d+) mismatched", r.stdout, re.M)
+        frame = open(out, "rb").read() if os.path.exists(out) else b""
+        return "through VULKAN offscreen" in r.stdout, lines, frame
+
+    vk, lines, frame = run({"OMK_VERIFY_GROUND": "1"}, "grid")
+    if not vk:
+        return ("skipped",), ("skipped",), "no Vulkan device - the GPU backend is optional"
+    _, _, frame0 = run({"OMK_NO_GROUND_GRID": "1"}, "nogrid")
+    if len(lines) != 1:
+        return (len(lines),), (1,), "the ground verify line at frame 120 - the viewer's log changed"
+    if len(frame) != 960000 or len(frame0) != 960000:
+        return (len(frame), len(frame0)), (960000, 960000), "both frames dumped"
+    differ = sum(1 for i in range(0, len(frame), 2) if frame[i:i+2] != frame0[i:i+2])
+    return (tuple(int(x) for x in lines[0]), differ), ((233, 0, 121, 0), 0), \
+        "by frame 120 of a walk: walker probes through the grid and how many differ " \
+        "from the scan, the same for decorUnder, then 565 pixels differing from the " \
+        "walk without the grid"
+
+
 def c_engine_dirty_corners():
     r"""A revision that says WHICH corners moved changes nothing on screen
     (todo/optimization.md step 8).
@@ -34356,6 +34421,7 @@ SLOW = [
     ("engine: patch index", c_engine_patch_index, "todo/optimization.md 7; backends/sdl/play.cpp"),
     ("engine: split grid", c_engine_split_grid, "todo/optimization.md 7c; o3de/collision.h"),
     ("engine: dirty corners", c_engine_dirty_corners, "todo/optimization.md 8; o3de/geom3do.h, o3de/depthtie.h"),
+    ("engine: ground grid", c_engine_ground_grid, "todo/optimization.md 9; actor/walk.h"),
     ("engine: props", c_engine_props, "todo/omk-play"),
     ("sprite ids scene-local", c_sprite_ids_are_scene_local, "docs/ASSETS"),
     ("engine: scene sounds", c_engine_scene_sounds, "engine/README"),

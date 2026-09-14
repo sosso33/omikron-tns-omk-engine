@@ -496,6 +496,22 @@ std::optional<double> floorUnder(const TriangleSoup& tris, const SplitSoupGrid& 
     return best;
 }
 
+std::optional<double> floorUnder(const TriangleSoup& tris, const SplitSoupGrid& g,
+                                 double x, double y, double z, std::uint32_t& tri) {
+    std::optional<double> best;
+    const auto visit = [&](std::uint32_t t) {
+        double hit;
+        if (!underKernel(tris, 9 * static_cast<std::size_t>(t), x, z, hit)) return;
+        if (hit > y + 1.0 && (!best || hit < *best)) { best = hit; tri = t; }
+    };
+    if (!g.matches(tris)) {
+        for (std::size_t t = 0; t + 9 <= tris.size(); t += 9) visit(static_cast<std::uint32_t>(t / 9));
+        return best;
+    }
+    mergedWalk(cellList(g.fixed, x, z), cellList(g.moving, x, z), visit);
+    return best;
+}
+
 std::optional<GroundHit> surfaceUnder(const TriangleSoup& tris, const SplitSoupGrid& g,
                                       double x, double y, double z) {
     if (!g.matches(tris)) return surfaceUnder(tris, x, y, z);

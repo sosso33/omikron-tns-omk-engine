@@ -1960,11 +1960,26 @@ void VulkanRenderer::end() {
     // abandoned part way (`engine: dirty corners`).
     static const bool tieStats = std::getenv("OMK_TIE_STATS") != nullptr;
     static long frameNo = 0;
-    if (tieStats && ++frameNo % 30 == 0)
+    if (tieStats && ++frameNo % 30 == 0) {
         for (const auto& [g, t] : tie_)
             if (g->corners.size() > 30000)
                 std::printf("tie stats: frame %ld, %zu triangles - replayed %ld walked %ld fallbacks %ld\n",
                             frameNo, g->corners.size() / 3, t.replays, t.walks, t.fallbacks);
+        // ...and where the full walks went: every geometry, largest cost first
+        std::vector<std::pair<long, std::size_t>> cost;
+        long faces = 0;
+        for (auto& [g, t] : tie_) {
+            if (t.facesWalked > 0) cost.push_back({t.facesWalked, g->corners.size() / 3});
+            faces += t.facesWalked;
+            t.facesWalked = 0;
+        }
+        std::sort(cost.begin(), cost.end(), std::greater<>());
+        std::printf("tie walk: frames %ld-%ld, %zu geometries walked %ld faces;", frameNo - 29, frameNo,
+                    cost.size(), faces);
+        for (std::size_t k = 0; k < cost.size() && k < 8; ++k)
+            std::printf(" %ld over %zu tris%s", cost[k].first, cost[k].second, k + 1 < cost.size() && k < 7 ? "," : "");
+        std::printf("\n");
+    }
     // The depth-tie pass's report, once per geometry with losers.
     for (auto& [g, t] : tie_)
         if (t.touched && !t.logged && t.dropped > 0 && g->corners.size() > 3000) {

@@ -509,6 +509,8 @@ public:
     void setCameraSolids(const TriangleSoup* a, const TriangleSoup* b) {
         camSolidA_ = a; camSolidB_ = b;
     }
+    // The walker's ground probe through a grid over its soup (Walker::setGrid).
+    void setGroundGrid(const SplitSoupGrid* g) { walker_.setGrid(g); }
 
     // Where it settles for the current position and facing - the resolve
     // with no lag, which is what a check can pin.

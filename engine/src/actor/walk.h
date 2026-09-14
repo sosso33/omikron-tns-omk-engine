@@ -120,9 +120,14 @@ public:
     // below its origin - and every step then reads as a hole; casting from a
     // step above also picks up a rise the actor is allowed to climb, which is
     // the same window the step limit describes.
-    std::optional<double> ground(double x, double y, double z) const {
-        return floorUnder(soup_, x, y - kStepUp - 1.0, z);
-    }
+    std::optional<double> ground(double x, double y, double z) const;
+
+    // THE GROUND GRID (todo/optimization.md step 9): a grid over `soup()` that
+    // `ground` walks instead of scanning every triangle - the same answer
+    // (`engine: probe grid`, `engine: ground grid`). The grid overload scans
+    // anyway while the grid does not match the soup, so a stale pointer costs
+    // time, not correctness. Null (the default) is the linear scan.
+    void setGrid(const SplitSoupGrid* grid) { grid_ = grid; }
 
     // The horizontal half. `dt` is the engine's own frame delta (30/fps, so
     // 1.0 at 30 Hz) and is only used to carry an ALREADY-FALLING actor down
@@ -248,6 +253,7 @@ private:
     void land(double y);
 
     const TriangleSoup& soup_;
+    const SplitSoupGrid* grid_ = nullptr;
     const TriangleSoup* steep_ = nullptr;
     const TriangleSoup* blockers_ = nullptr;
     double radius_ = 0.0;
@@ -281,5 +287,18 @@ struct DecorSoup {
 // -> the area of the nearest floor under (x, y, z), or -1 when no shown decor
 // has one there. Game Y grows downward, so the nearest is the SMALLEST y.
 int decorUnder(std::span<const DecorSoup> decors, double x, double y, double z);
+// The same answer from `merged` - the decors' soups concatenated in the same
+// order, which is how the viewer builds the player's soup - through its grid:
+// the floor's first triangle names the decor, and the earliest decor wins a
+// tie exactly as the loop above keeps the first strictly nearer. Falls back to
+// the loop unless every decor has an area and the sizes add up to `merged`.
+int decorUnder(std::span<const DecorSoup> decors, const TriangleSoup& merged,
+               const SplitSoupGrid& grid, double x, double y, double z);
+
+// `OMK_VERIFY_GROUND`: every grid answer above also computed the linear way
+// and compared, bit for bit. Off by default; the counts are cumulative.
+struct GroundVerify { long walker = 0, walkerBad = 0, decor = 0, decorBad = 0; };
+void setGroundVerify(bool on);
+const GroundVerify& groundVerify();
 
 }  // namespace omk

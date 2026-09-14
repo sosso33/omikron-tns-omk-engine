@@ -6108,6 +6108,14 @@ int main(int argc, char** argv) {
                             std::getenv("OMK_NO_CAM_COLLIDE") != nullptr;
                         if (!noCamCollide)
                             player->setCameraSolids(&playerSteep, &playerSoup);
+                        // THE GROUND GRID (todo/optimization.md step 9): the
+                        // walker's floor probe through `playerGrid`, which is
+                        // rebuilt wherever `playerSoup` is written.
+                        // `OMK_NO_GROUND_GRID=1` keeps the linear scan;
+                        // `OMK_VERIFY_GROUND=1` runs both and counts.
+                        static const bool noGroundGrid = std::getenv("OMK_NO_GROUND_GRID") != nullptr;
+                        omk::setGroundVerify(std::getenv("OMK_VERIFY_GROUND") != nullptr);
+                        player->setGroundGrid(noGroundGrid ? nullptr : &playerGrid);
                         // `Walk_ProbeGround` raises event 9 when the decor
                         // under his feet changes to a slot in state 2 - and
                         // from here on the feet are probed every tick
@@ -6116,7 +6124,9 @@ int main(int argc, char** argv) {
                         // raise in `placeActorAt` stays the other source.
                         {
                             const float* pp = player->pos();
-                            const int under = omk::decorUnder(worldDecors, pp[0], pp[1], pp[2]);
+                            const int under = noGroundGrid
+                                ? omk::decorUnder(worldDecors, pp[0], pp[1], pp[2])
+                                : omk::decorUnder(worldDecors, playerSoup, playerGrid, pp[0], pp[1], pp[2]);
                             if (under >= 0) session.playerOnArea(under);
                         }
                         if (haveStand) {
@@ -8377,7 +8387,18 @@ int main(int argc, char** argv) {
                 // load (T11 finding 2).
                 {
                     const float* pp = player->pos();
-                    const int under = omk::decorUnder(worldDecors, pp[0], pp[1], pp[2]);
+                    // through the merged soup's grid unless `OMK_NO_GROUND_GRID`
+                    static const bool noGroundGridHere = std::getenv("OMK_NO_GROUND_GRID") != nullptr;
+                    const int under = noGroundGridHere
+                        ? omk::decorUnder(worldDecors, pp[0], pp[1], pp[2])
+                        : omk::decorUnder(worldDecors, playerSoup, playerGrid, pp[0], pp[1], pp[2]);
+                    static const bool verifyGround = std::getenv("OMK_VERIFY_GROUND") != nullptr;
+                    if (verifyGround && n % 30 == 0) {
+                        const auto& gv = omk::groundVerify();
+                        std::printf("ground verify: frame %ld, walker %ld probes %ld mismatched, "
+                                    "decor %ld probes %ld mismatched\n",
+                                    static_cast<long>(n), gv.walker, gv.walkerBad, gv.decor, gv.decorBad);
+                    }
                     if (under >= 0 && under != session.activeArea()) {
                         session.playerOnArea(under);
                         std::printf("frame %ld: event 9 - his feet are on AREA %d's decor; "
