@@ -32299,7 +32299,7 @@ def c_licence_headers():
                    if TAG in open(p, encoding="utf-8",
                                   errors="replace").read(600)]
     return (authored, sorted(missing), len(vendored), mislabelled), \
-           (424, [], 1, []), \
+           (432, [], 1, []), \
            "authored source files under tools/, engine/src, engine/tools, " \
            "engine/backends and scripts/; those MISSING the SPDX tag; " \
            "vendored files in engine/third_party; and vendored files wrongly " \
@@ -34634,6 +34634,45 @@ SLOW = [
 ]
 
 
+def _run_isolated(fn):
+    """Run one check in a FORKED child and return what the loop prints for it:
+    (status, detail, note) with status "ok", "FAIL" or "ERROR".
+
+    Why: a check's decoders, soups, frames and caches were kept alive by this
+    process until the sweep ended, so memory only ever grew, and on 2026-09-14
+    the `--slow` sweep was killed by the system for low memory twice - after
+    ~222 checks, then after 139 more. A child that exits hands all of it back
+    before the next check starts. The child sees the parent's state as it was
+    at the fork, and the parent never runs a check, so every check starts from
+    the same state; the module-level lazy caches (`_TRIG`, `_CORPUS`, `_PROPS`)
+    are simply rebuilt by the checks that use them."""
+    import pickle
+    r, w = os.pipe()
+    sys.stdout.flush(); sys.stderr.flush()
+    pid = os.fork()
+    if pid == 0:
+        os.close(r)
+        try:
+            got, want, note = fn()
+            ok = got == want
+            payload = ("ok" if ok else "FAIL", "" if ok else "%r != %r" % (got, want), note)
+        except BaseException as e:
+            payload = ("ERROR", str(e), None)
+        try:
+            with os.fdopen(w, "wb") as f:
+                f.write(pickle.dumps(payload))
+        finally:
+            sys.stdout.flush(); sys.stderr.flush()
+            os._exit(0)
+    os.close(w)
+    with os.fdopen(r, "rb") as f:
+        data = f.read()
+    _, status = os.waitpid(pid, 0)
+    if not data:
+        return ("ERROR", "the check's process died without a result (wait status %d)" % status, None)
+    return pickle.loads(data)
+
+
 def main():
     slow = "--slow" in sys.argv
     todo = CHECKS + (SLOW if slow else [])
@@ -34657,7 +34696,20 @@ def main():
                                     "   (--slow)" if (name, fn, where) in SLOW else ""))
         return 0
     bad = 0
+    # Each check in its own forked process, so its memory is freed when it
+    # ends (`_run_isolated`). `--no-isolate` runs them all in this process, as
+    # before - for a debugger, or a platform without fork.
+    isolate = hasattr(os, "fork") and "--no-isolate" not in sys.argv
     for name, fn, where in todo:
+        if isolate:
+            status, detail, note = _run_isolated(fn)
+            if status == "ERROR":
+                print("%-20s ERROR  %s" % (name, detail)); bad += 1
+            else:
+                print("%-20s %-4s %-26s %s" % (name, status, detail, note))
+                bad += status != "ok"
+            sys.stdout.flush()
+            continue
         try:
             got, want, note = fn()
         except Exception as e:
