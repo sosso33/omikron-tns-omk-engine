@@ -816,6 +816,53 @@ open another kiosk (AREA 178 has five) and it should be there; and whether the
 original shows a message when a destroy succeeds (this build shows none,
 which is what the code reads).
 
+## 14. THE SNEAK'S IDENTITY PAGE, and its QUIT tab (committed 2026-09-15/16, `837eca5`..`a3aa792`), 5 minutes
+
+**NOT YET PLAYED.** `todo/sneak.md` §5, next-tasks 10 - the device's first new
+pages since it was built. From Anekbah's main street:
+
+```
+build/omk-play ../gamedata ../tables --save ../traces/save-appart.bin \
+    --area 0 --stand 1804,0,-6890,336
+```
+
+`TAB` opens the sneak; `RIGHT` crosses to the tab column down the left,
+`UP`/`DOWN` walk it, `ENTER` opens a page. The IDENTITY tab is the blue one at
+the top.
+
+* **(a) The two tabs.** The page opens on *Identité* with *Caractéristiques*
+  greyed beside it. `RIGHT` switches between them and the content changes with
+  the tab; `LEFT` off the first tab (or `RIGHT` off the second) goes back to
+  the tab column. **Worth an eye**: coming back onto the row with `LEFT` lands
+  on *Caractéristiques*, the FAR tab, which is what the original's code says.
+* **(b) Identité.** Nom *KAY'L 669*, Age 30, Sexe M, Groupe sanguin K-, Taille
+  178, Poids 80, Yeux Vert, Profession *Agent-Enquêteur*, then two wrapping
+  lines - *Signes particuliers* (the police training) and *Centres d'intérêt*
+  (*Néant.*). Labels white, values in the page's blue.
+* **(c) Caractéristiques.** Energie 10, Attaque 70, Résistance corporelle 30,
+  Vitesse 70, Esquive 60, Mana 10, each as a number over a thin grey bar filled
+  to the value - and *Maîtrise du combat* as a WORD, *Initié*, with no bar.
+  **Say whether the number should sit ON the bar**: that is where the original's
+  code puts it, and no capture here settles it.
+* **(d) The character.** Kay'l stands at the left of the page, turning slowly,
+  with the text over his right side. He is a STILL pose - the original sets it
+  once and never animates it - and the animation is the female bank `F1AVNT`
+  whoever the player is, because the code names that file outright. **Say if he
+  is posed oddly**: the pose binds by bone name across a prefix change, and a
+  wrong bone would show as a twisted limb.
+* **(e) Quitter le jeu**, the icon at the bottom right of the tab column.
+  `ENTER` on it should show NOTHING and move the highlight into the page you
+  are on. That is not a port fault: the confirm shows a Oui/Non list that
+  belongs to a page the game never installs (`docs/UI.md`, "a page built out of
+  reach"). **This is the one to check against the original** - if the real game
+  shows *Oui / Non* there, the reading is wrong and I want to know.
+* **(f) Options**, the tab above it, does nothing yet: it hosts the real
+  options menu (screen 35), which this port has never drawn (next-tasks 9).
+
+Wrong looks like: the tab row not switching, values from another character,
+labels without values, a T-posed or floating body, or the identity text drawn
+over the character rather than beside him.
+
 ## What is NOT worth testing yet
 
 * ~~the videophone's own picture inside the sneak~~ — **CONFIRMED IN PLAY
