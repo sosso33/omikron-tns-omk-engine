@@ -1845,6 +1845,8 @@ bool UiWalk::confirm() {
                 // a new object is read from the TOP, whatever the last one
                 // was scrolled to.
                 if (it->callback == kCbSneakExamine) state_->textScroll = 0;
+                // ...and its last call, `sub_42B420(tag, 4)`: message 4.
+                if (it->callback == kCbSneakExamine) state_->pendingExamineMessage = true;
                 buildPage(*panel_);
                 settle();
                 log_.push_back(it->callback == kCbSneakExamine

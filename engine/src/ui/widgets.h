@@ -606,6 +606,11 @@ struct UiListState {
     // request 7 (sneak -> storage), with button 1 request 8 (storage ->
     // sneak). `row` is the widget's tag. -1 none.
     int pendingMultiplanRequest = -1, pendingMultiplanRow = -1;
+    // THE SNEAK's Examiner (`sub_49BFF0`) ends in `sub_42B420(tag, 4)`: event
+    // 30, then 43 - world MESSAGE 4 with the examined object. Set when the
+    // page is entered, for a caller to post. (`0x0049BBF0`, a second body of
+    // the same shape, is unreferenced in the image.)
+    bool pendingExamineMessage = false;
     // `Utiliser sur`'s COMBINE MODE - `dword_670BE0` and the three slots
     // `670BE4` / `670BE8` / `670BEC`, which are globals like everything else
     // in this device. `sub_49BF30` opens it and `sub_49BC60`'s `loc_49BDD6`
@@ -772,6 +777,11 @@ public:
     }
     // MULTIPLAN's source list, `dword_68A610`: 0 the sneak, 1 the kiosk.
     int  multiplanSource() const { return state_->multiplanSource; }
+    bool takeExamineMessage() {
+        const bool was = state_->pendingExamineMessage;
+        state_->pendingExamineMessage = false;
+        return was;
+    }
     bool takeMultiplan(int& request, int& row) {
         request = state_->pendingMultiplanRequest; row = state_->pendingMultiplanRow;
         state_->pendingMultiplanRequest = state_->pendingMultiplanRow = -1;

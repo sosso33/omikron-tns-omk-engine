@@ -3056,8 +3056,13 @@ installs `0x004E5998` and calls `sub_42B420(tag, 4)`: event 30 loads the
 preview and answers the object's slot, and event 43 runs
 `Message_RunHandlers(4, player, slot)`, the sender resolved to the object id
 (`ObjectSlot_Id`). **Examining posts world message 4**, and in the pharmacy
-the GLOBAL table handles it. The sneak's Examiner (`0x0049C034`) makes the
-same call. The page's box is draw hook `0x004780A0`, the same hook as the
+the GLOBAL table handles it. The sneak's Examiner (`0x0049BFF0`, the call at
+`0x0049C034`) makes the same call - and the port had never posted it there,
+so the global handler never ran from the sneak; ported 2026-09-15
+(`verify.py: engine: sneak examine message`). Two more bodies of the same
+shape, `0x0049BBF0` (the sneak's page) and `0x004B0410` (MULTIPLAN's), have
+no call, jump, pushed address or table dword anywhere in the image: they are
+unreachable, and are not ported. The page's box is draw hook `0x004780A0`, the same hook as the
 sneak's examine box: event 40 answers 4 for kind 15, 5 for kind 16, 2
 otherwise, and the hook draws the model (2) or the `IMAGES` bitmap the builder
 `0x004B0510` loaded (5) before `sub_477F60`, which every arm reaches and which

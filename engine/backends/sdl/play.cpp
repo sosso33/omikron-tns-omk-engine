@@ -15960,6 +15960,21 @@ int main(int argc, char** argv) {
                 // `dword_4DE74C = selected_widget[+0x3C]` when Examiner is
                 // confirmed, and the page draws whatever that names.
                 const int row = walk->selectedRow(omk::kListSneakRows);
+                // `sub_49BFF0`'s last call, `sub_42B420(tag, 4)`: event 30
+                // answers the object's slot and event 43 runs
+                // `Message_RunHandlers(4, player, slot)`, whose sender is
+                // `ObjectSlot_Id(slot)` - the object. The port never posted
+                // it, so the GLOBAL table's handler never ran from here.
+                if (walk->takeExamineMessage()) {
+                    const int eid = row >= 0 && static_cast<std::size_t>(row) < carried.size()
+                        ? carried[static_cast<std::size_t>(row)] : -1;
+                    const bool ran = eid >= 0 && session.postMessage(4, eid);
+                    const auto& runs = session.messagesRun();
+                    std::printf("sneak: Examiner row %d id %d -> message 4 %s\n", row, eid,
+                                ran && !runs.empty()
+                                    ? ("handled by the " + runs.back().table + " table").c_str()
+                                    : "(no resident chunk subscribes)");
+                }
                 if (row >= 0 && static_cast<std::size_t>(row) < carried.size()) {
                     const int idx = carried[static_cast<std::size_t>(row)];
                     if (idx >= 0 &&

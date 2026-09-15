@@ -20140,6 +20140,49 @@ def c_engine_multiplan_examine():
            "the rows rebound; a protected one refused with message 4"
 
 
+def c_engine_sneak_examine_message():
+    r"""engine: the SNEAK's Examiner posts world message 4 (`sub_49BFF0`).
+
+    The sneak's Examiner callback `0x0049BFF0` stores the selected row's tag,
+    installs the examine page `0x004DEF20` and ends in `sub_42B420(tag, 4)` -
+    event 30 (the object's slot) then event 43, `Message_RunHandlers(4,
+    player, slot)` with the sender resolved to the object id. MULTIPLAN's
+    Examiner makes the same call, and porting it there showed the port had
+    never posted it here: the GLOBAL table subscribes to message 4, so every
+    examine in the original runs a global script that this one skipped.
+    `0x0049BBF0` and `0x004B0410` are two more bodies of the same shape with
+    no call, jump, pushed address or table dword anywhere in the image -
+    unreachable, and not ported.
+
+    Anekbah from `save-appart.bin`: TAB held opens the sneak, ENTER on the
+    Notice MK400 descends into the verbs, RIGHT twice reaches Examiner, ENTER.
+    Asserted: the message line, exactly once for one entry.
+    """
+    import subprocess
+    eng = os.path.join(ROOT, "engine")
+    save = os.path.join(ROOT, "traces", "save-appart.bin")
+    if not (os.path.isdir(eng) and os.path.exists(save)):
+        return ("skipped",), ("skipped",), "engine/ or the save absent"
+    mk = subprocess.run(["make", "-s", "play"], cwd=eng, capture_output=True, text=True)
+    play = os.path.join(eng, "build", "omk-play")
+    if mk.returncode != 0 or not os.path.exists(play):
+        return ("skipped",), ("skipped",), "omk-play did not build"
+    env = dict(os.environ, SDL_VIDEODRIVER="dummy")
+    r = subprocess.run([play, omkpaths.data_root(), os.path.join(ROOT, "tables"),
+                        "--software", "--res", "640x480", "--nofmv", "--no-crowd",
+                        "--save", save, "--area", "0", "--stand", "1804,0,-6890,336",
+                        "--frames", "260", "--hold",
+                        "0*40,k15*3,0*30,k28*4,0*20,k205*4,0*10,k205*4,0*10,k28*4,0*40"],
+                       capture_output=True, env=env)
+    text = r.stdout.decode("cp1252", "replace")
+    got = tuple(ln.strip() for ln in text.splitlines() if ln.startswith("sneak: Examiner"))
+    return got, \
+           ("sneak: Examiner row 0 id 171 -> message 4 handled by the global table",), \
+           "the viewer's message-4 lines after the sneak's Examiner is confirmed " \
+           "once on the Notice MK400: one post, its object, and the table whose " \
+           "subscription ran"
+
+
 def c_engine_multiplan_close():
     r"""engine: MULTIPLAN's CLOSE and its answer (todo/multiplan.md 5).
 
@@ -35205,6 +35248,7 @@ SLOW = [
     ("engine: multiplan transfers", c_engine_multiplan_transfers, "UI 3d; todo/multiplan.md"),
     ("engine: multiplan examine", c_engine_multiplan_examine, "UI 3d; todo/multiplan.md"),
     ("engine: multiplan close", c_engine_multiplan_close, "UI 3d; todo/multiplan.md"),
+    ("engine: sneak examine message", c_engine_sneak_examine_message, "UI 3d; todo/multiplan.md"),
     ("cursor highlight",  c_cursor_highlight,   "UI 3b"),
     ("slider destinations", c_slider_destinations, "UI 3g"),
     ("sneak previews",   c_sneak_previews,     "UI 3g"),
