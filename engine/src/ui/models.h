@@ -120,6 +120,21 @@ public:
     // previews use.
     bool drawExamine(Surface& dst, int x, int y, int w, int h, float angleDeg);
 
+    // ---- THE IDENTITY PAGE'S CHARACTER (todo/sneak.md §5e step 4) -------
+    //
+    // `sub_4778E0`, run by the sneak's open with "F1AVNT.CTL": the PLAYER'S
+    // own model (`sub_41E200` on the player node's `+0x30` name) under
+    // `ANIMS\F1AVNT.CTL` (`LoadBankList`), `Cef_DefaultGroup` -> the first
+    // group flagged 1, `Cef_DefaultClip` -> its flag-0x20 entry's clip,
+    // `Anim_BindToHierarchy`, and `Anim_SetFrame(node, clip, 0.0, 1.0)` - one
+    // STILL pose at frame 1, which nothing advances. The caller poses it;
+    // this holds the posed geometry. `0x004779C0` draws it: `sub_478DE0` at
+    // `kCharacterDistance`, the node turned about Y by oscillator 4, and
+    // `I2D_Submit3DView` into the item's rect ONE LAYER BELOW the item.
+    void setCharacter(Geometry posed, std::vector<Texture> tex, const std::string& name);
+    const std::string& characterName() const { return character_.name; }
+    bool drawCharacter(Surface& dst, int x, int y, int w, int h, float angleDeg);
+
     // `sub_42B5E0(4)` - oscillator 4, period 5000, and this is its angle in
     // degrees. The oscillator's own ramp is `sub_42B700`'s triangle over
     // lo..hi; row 4 ships lo/hi of -1, so what it carries is the raw phase.
@@ -150,6 +165,9 @@ private:
     std::string exStem_;
     M           exModel_;
     Surface     exImage_;
+    // The identity page's posed player, and whether one is set.
+    M           character_;
+    bool        characterOk_ = false;
     // The shoot HUD's weapon, `tir` left out, and the stem it came from.
     std::string weaponStem_;
     M           weapon_;

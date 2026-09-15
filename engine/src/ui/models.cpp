@@ -162,6 +162,41 @@ bool UiModels::loadWeapon(const DataFs& fs, const std::string& stem) {
     return weaponOk_;
 }
 
+void UiModels::setCharacter(Geometry posed, std::vector<Texture> tex, const std::string& name) {
+    character_ = M();
+    characterOk_ = false;
+    character_.name = name;
+    character_.geo = std::move(posed);
+    character_.tex = std::move(tex);
+    if (character_.geo.corners.empty()) return;
+    // The centre of the POSED corners, the stand-in for the model record's
+    // `+0x24..0x2C` the previews already take (header of this file).
+    float lo[3] = {1e30f, 1e30f, 1e30f}, hi[3] = {-1e30f, -1e30f, -1e30f};
+    for (const auto& c : character_.geo.corners) {
+        const float v[3] = {c.x, c.y, c.z};
+        for (int j = 0; j < 3; ++j) {
+            if (v[j] < lo[j]) lo[j] = v[j];
+            if (v[j] > hi[j]) hi[j] = v[j];
+        }
+    }
+    for (int j = 0; j < 3; ++j) {
+        character_.centre[j] = (lo[j] + hi[j]) * 0.5f;
+        if (hi[j] - lo[j] > character_.extent) character_.extent = hi[j] - lo[j];
+    }
+    characterOk_ = true;
+}
+
+// `0x004779C0`: `sub_478DE0` with the POSITIVE 118.11 - the literal three
+// metres, no box fit - and the oscillator-4 turn.
+bool UiModels::drawCharacter(Surface& dst, int x, int y, int w, int h, float angleDeg) {
+    if (!characterOk_) return false;
+    m_.push_back(character_);
+    const bool ok = draw(dst, static_cast<int>(m_.size()) - 1, x, y, w, h, angleDeg,
+                         kCharacterDistance);
+    m_.pop_back();
+    return ok;
+}
+
 bool UiModels::drawWeapon(Surface& dst, int x, int y, int w, int h, float angleDeg,
                           float distance) {
     if (!weaponOk_) return false;

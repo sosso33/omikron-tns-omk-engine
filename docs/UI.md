@@ -1220,6 +1220,20 @@ the player record's int16s at `+170`, `+160`, `+166`, `+162`, `+158`,
 `+164`, `+156` (properties 1, 16, 19, 17, 3, 18, 2). `verify.py: engine: sneak
 characteristics`.
 
+**The character beside the text is the player, posed ONCE.** The sneak's open
+calls `sub_4778E0("F1AVNT.CTL")`: it loads the PLAYER node's own model, the
+literal bank `ANIMS\F1AVNT.CTL` (whoever the player is), picks
+`Cef_DefaultGroup` - the first group flagged 1 - and `Cef_DefaultClip` - that
+group's flag-0x20 entry's clip, with no goto followed - binds it
+(`Anim_BindToHierarchy`) and applies `Anim_SetFrame(node, clip, 0.0, 1.0)`:
+frame 1, once. Nothing advances it, so it is a still pose. The draw hook
+`0x004779C0` frames it with `sub_478DE0` at 118.11 (three metres), turns the
+node by oscillator 4, and submits it with `I2D_Submit3DView` at the item's
+layer MINUS ONE, so the Identité text is drawn over its right-hand side. For
+Kay'l that is `H_STAND` - and its tracks are `Sh`-prefixed against his `U`
+meshes, so the bind is by BONE (the engine's `strstr`; the port's
+second-uppercase rule), 19 of 19. `verify.py: engine: sneak character`.
+
 ### The slider page has its OWN list mover
 
 The inventory page's `panel+16` is `sub_42A710`, which is only

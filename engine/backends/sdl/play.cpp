@@ -16025,6 +16025,99 @@ int main(int argc, char** argv) {
                         for (int c = 0; c < 3; ++c)
                             playerSheet.icon[c] = static_cast<std::uint8_t>(tabs->items.front().rgb[c]);
                 comp.setPlayerSheet(&playerSheet);
+                // ---- THE CHARACTER VIEW (`sub_4778E0`, step 4) ---------------
+                //
+                // Built once per player model - the engine builds it in the
+                // sneak's open; only this page shows it. The bank is the
+                // LITERAL "F1AVNT.CTL" the open pushes (0x004DF5EC), whatever
+                // the player's own; `Cef_DefaultGroup` is the first group with
+                // flag 1 and `Cef_DefaultClip` that group's flag-0x20 entry's
+                // clip, NOT followed through a goto; `Anim_SetFrame(node, clip,
+                // 0.0, 1.0)` applies frame 1 - key 2, key 0 being the rest
+                // sentinel - to every node, the root's rotation included.
+                // `Anim_RootDelta`'s 0 -> 1 step moves the node, which the
+                // camera does not follow (it targets the model's centre), so
+                // it is not applied here.
+                static std::string characterBuiltFor;
+                if (characterBuiltFor != playerModel) {
+                    characterBuiltFor = playerModel;
+                    CharModel* cm = charModelFor(playerModel);
+                    CharBank* cb = charBankFor("F1AVNT");
+                    int entry = -1, clip = -1;
+                    if (cb && cb->ready)
+                        for (const auto& g : cb->ctl.groupList)
+                            if (g.flags & 1u) { entry = g.defaultEntry; break; }
+                    if (cb && entry >= 0 && entry < static_cast<int>(cb->ctl.states.size()))
+                        clip = cb->ctl.states[static_cast<std::size_t>(entry)].clip;
+                    int bound = 0;
+                    if (cm && cm->ready && clip >= 0 &&
+                        clip < static_cast<int>(cb->ctl.clips.size())) {
+                        omk::NodeTracks t;
+                        const auto d = omk::animDescriptor(
+                            cb->data, cb->ctl.clips[static_cast<std::size_t>(clip)].offset);
+                        if (d && d->frames > 0 && !d->tracks.empty()) {
+                            const auto lower = [](std::string v) {
+                                for (auto& c : v) if (c >= 'A' && c <= 'Z') c = static_cast<char>(c - 'A' + 'a');
+                                return v;
+                            };
+                            t.count = static_cast<int>(d->tracks.size());
+                            t.frames = 1;
+                            t.rootTrack = -1;
+                            // THE BINDING IS BY BONE, NOT BY NAME. F1AVNT's
+                            // tracks are `Sh`-prefixed (`ShBassin`) and Kay'l's
+                            // meshes `U`-prefixed (`UBassin`), so an equality
+                            // test binds 0 of 19 and he stands in his T-pose -
+                            // which is what this drew first. The engine finds a
+                            // bone by `strstr` on the node names
+                            // (`docs/ASSETS.md`, "the bones are found by
+                            // strstr"), and the port's rule for the same
+                            // pairing is the crowd's and the gunmen's: the bone
+                            // begins at the SECOND UPPERCASE LETTER
+                            // (`verify.py: bone names`). Exact first, as there.
+                            const auto boneOf = [&](const std::string& n) {
+                                for (std::size_t i = 1; i < n.size(); ++i)
+                                    if (n[i] >= 'A' && n[i] <= 'Z') return lower(n.substr(i));
+                                return n.size() > 2 ? lower(n.substr(2)) : lower(n);
+                            };
+                            for (const auto& tr : d->tracks) {
+                                std::int32_t mi = -1;
+                                const std::string want = lower(tr.name);
+                                for (const auto& m : cm->meshes)
+                                    if (lower(m.name) == want) { mi = m.index; break; }
+                                if (mi < 0) {
+                                    const std::string bone = boneOf(tr.name);
+                                    for (const auto& m : cm->meshes)
+                                        if (boneOf(m.name) == bone) { mi = m.index; break; }
+                                }
+                                if (mi >= 0) ++bound;
+                                t.ids.push_back(mi);
+                            }
+                            t.quats.assign(1, {});
+                            t.trans.assign(1, {0.0f, 0.0f, 0.0f});
+                            t.quats[0].resize(d->tracks.size());
+                            for (std::size_t i = 0; i < d->tracks.size(); ++i) {
+                                const omk::AnimTrack& tr = d->tracks[i];
+                                if (!tr.rotOffset || tr.rotKeys <= 0) continue;
+                                const int key = tr.rotKeys > 2 ? 2 : tr.rotKeys - 1;   // frame 1
+                                const std::size_t o = tr.rotOffset + 16u * static_cast<std::size_t>(key);
+                                if (o + 16 > cb->data.size()) continue;
+                                float qv[4];
+                                std::memcpy(qv, cb->data.data() + o, 16);
+                                t.quats[0][i] = {qv[0], qv[1], qv[2], qv[3]};
+                            }
+                            const auto pose = omk::composePose(cm->meshes, t, 0, false);
+                            omk::Geometry posed = cm->rest;
+                            omk::applyPose(posed, cm->rest, cm->meshes, pose);
+                            uiModels.setCharacter(std::move(posed), cm->tex, playerModel);
+                        }
+                    }
+                    std::printf("sneak: identity character '%s' - bank F1AVNT, default entry %d "
+                                "'%s', clip %d, %d tracks bound, frame 1\n", playerModel.c_str(),
+                                entry,
+                                cb && entry >= 0 && entry < static_cast<int>(cb->ctl.states.size())
+                                    ? cb->ctl.states[static_cast<std::size_t>(entry)].name.c_str() : "",
+                                clip, bound);
+                }
                 static std::string identityTold;
                 std::string said;
                 for (int p : {6, 8, 0, 13, 9, 10, 12, 11, 15, 14})

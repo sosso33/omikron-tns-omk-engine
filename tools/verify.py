@@ -20228,7 +20228,11 @@ def c_engine_sneak_identity_sheet():
                         "--hold", "0*40,k15*3,0*30,k205*3,0*15,k200*3,0*15,k200*3,0*15,k28*3,0*60"],
                        capture_output=True, env=env)
     text = r.stdout.decode("cp1252", "replace")
-    got = tuple(ln.strip() for ln in text.splitlines() if ln.startswith("sneak: identity"))
+    # Its OWN two lines: the page also prints `sneak: identity character`
+    # (step 4), which is `engine: sneak character`'s to hold.
+    got = tuple(ln.strip() for ln in text.splitlines()
+                if ln.startswith("sneak: identity bio pointers") or
+                   ln.startswith("sneak: identity sheet"))
     return got, \
            ("sneak: identity bio pointers as stored +0 0x37240d0 +4 0x37241d0 "
             "(State_Apply plants 336 / 592)",
@@ -20283,6 +20287,55 @@ def c_engine_sneak_characteristics():
            "the viewer's characteristics line after opening the identity page and " \
            "moving onto its second tab: the seven integer properties by id in the " \
            "hook's order, and the rank string the Maitrise value selects"
+
+
+def c_engine_sneak_character():
+    r"""engine: the identity page's CHARACTER VIEW (todo/sneak.md §5e step 4).
+
+    `sub_4778E0`, which the sneak's open calls with the literal "F1AVNT.CTL"
+    (0x004DF5EC): the player's own model, the bank `ANIMS\F1AVNT.CTL`,
+    `Cef_DefaultGroup` (the first group flagged 1) and `Cef_DefaultClip` (its
+    flag-0x20 entry's clip, no goto followed), `Anim_BindToHierarchy`, and
+    `Anim_SetFrame(node, clip, 0.0, 1.0)` - one still pose at frame 1. The draw
+    hook `0x004779C0` puts it through `sub_478DE0` at 118.11 and
+    `I2D_Submit3DView` into item 0x004DE8A0's rect one layer below the item.
+
+    **The binding is by BONE**: F1AVNT's tracks are `Sh`-prefixed and Kay'l's
+    `HO1_FN` meshes `U`-prefixed, so an equality match binds 0 of 19 and the
+    first render of this page was a T-pose. The engine finds a bone by
+    `strstr`; the port's rule for that pairing (the crowd's, the gunmen's) is
+    that the bone begins at the second uppercase letter.
+
+    Anekbah from `save-appart.bin`, into the identity page. Asserted: the
+    viewer's character line - the model, the bank, the default entry and its
+    name, the clip, how many tracks bound, the frame. The picture itself is
+    seen in a render, not asserted.
+    """
+    import subprocess
+    eng = os.path.join(ROOT, "engine")
+    save = os.path.join(ROOT, "traces", "save-appart.bin")
+    if not (os.path.isdir(eng) and os.path.exists(save)):
+        return ("skipped",), ("skipped",), "engine/ or the save absent"
+    mk = subprocess.run(["make", "-s", "play"], cwd=eng, capture_output=True, text=True)
+    play = os.path.join(eng, "build", "omk-play")
+    if mk.returncode != 0 or not os.path.exists(play):
+        return ("skipped",), ("skipped",), "omk-play did not build"
+    env = dict(os.environ, SDL_VIDEODRIVER="dummy")
+    r = subprocess.run([play, omkpaths.data_root(), os.path.join(ROOT, "tables"),
+                        "--software", "--nofmv", "--no-crowd", "--save", save,
+                        "--area", "0", "--stand", "1804,0,-6890,336", "--frames", "240",
+                        "--hold", "0*40,k15*3,0*30,k205*3,0*15,k200*3,0*15,k200*3,0*15,k28*3,0*60"],
+                       capture_output=True, env=env)
+    text = r.stdout.decode("cp1252", "replace")
+    got = tuple(ln.strip() for ln in text.splitlines()
+                if ln.startswith("sneak: identity character"))
+    return got, \
+           ("sneak: identity character 'HO1_FN' - bank F1AVNT, default entry 0 "
+            "'H_STAND', clip 0, 19 tracks bound, frame 1",), \
+           "the viewer's character line after opening the identity page: the " \
+           "player's model, the literal bank the sneak's open names, the default " \
+           "entry Cef_DefaultClip picks and its clip, the tracks bound by bone, " \
+           "and the frame Anim_SetFrame applies"
 
 
 def c_engine_sneak_examine_message():
@@ -35397,6 +35450,7 @@ SLOW = [
     ("engine: sneak identity", c_engine_sneak_identity, "UI; todo/sneak.md 5"),
     ("engine: sneak identity sheet", c_engine_sneak_identity_sheet, "UI; todo/sneak.md 5"),
     ("engine: sneak characteristics", c_engine_sneak_characteristics, "UI; todo/sneak.md 5"),
+    ("engine: sneak character", c_engine_sneak_character, "UI; todo/sneak.md 5"),
     ("cursor highlight",  c_cursor_highlight,   "UI 3b"),
     ("slider destinations", c_slider_destinations, "UI 3g"),
     ("sneak previews",   c_sneak_previews,     "UI 3g"),

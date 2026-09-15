@@ -44,6 +44,8 @@ constexpr std::uint16_t kI2dColourKey = 0;
 // string, no text pointer and no text callback, so nothing else in the item
 // says what the box shows.
 constexpr std::uint32_t kDrawNameField = 0x0047A510;
+// The identity page's CHARACTER VIEW (`0x004779C0`, item 0x004DE8A0).
+constexpr std::uint32_t kDrawSneakCharacter = 0x004779C0;
 // The LOAD PANEL's row list (item 0x004CEB70, 370 x 300 at 20,140). Its own
 // `+20` draw hook - the table's `drawFn` - and what it composes is the
 // `Joueur :` heading and the save rows, neither of which is a string in any
@@ -307,7 +309,13 @@ ScreenFrame ScreenComposer::draw(Surface& fb, int screenId,
     for (const UiPanel* q : chain)
         for (const auto& l : q->lists) {
             if (!l.drawn()) continue;
-            for (const auto& it : l.items) layers.push_back(it.layer);
+            for (const auto& it : l.items) {
+                layers.push_back(it.layer);
+                // The identity page's character view submits ONE LAYER DOWN
+                // (`I2D_Submit3DView(..., item+0xB - 1)`), under its own
+                // page's text - so that layer has to be walked too.
+                if (it.drawFn == kDrawSneakCharacter) layers.push_back(it.layer - 1);
+            }
         }
     // ---- `Ui_DrawPanelDim` (0x00476290), the full-screen DIM ------------
     //
@@ -526,6 +534,19 @@ ScreenFrame ScreenComposer::draw(Surface& fb, int screenId,
             }
         }
         for (const auto& it : l.items) {
+            // THE IDENTITY PAGE'S CHARACTER: `0x004779C0` - `sub_478DE0` at
+            // 118.11, the node turned by oscillator 4, `I2D_Submit3DView` into
+            // the item's scaled rect at `item+0xB - 1`. Drawn when the walk
+            // reaches THAT layer, so the page's text at the item's own layer
+            // lands over it (the box overlaps the text column by 110 pixels).
+            if (it.drawFn == kDrawSneakCharacter && layer == static_cast<int>(it.layer) - 1) {
+                if (models_ && models_->drawCharacter(fb, scaleX(it.x + q->offsetX),
+                                                      scaleY(it.y + q->offsetY),
+                                                      scaleX(it.w), scaleY(it.h),
+                                                      UiModels::spinDegrees(clockMs_)))
+                    ++out.modelsDrawn;
+                continue;
+            }
             if (it.layer != layer) continue;
             std::uint32_t eff0[3];
             it.effective(l.broadcast, eff0);
