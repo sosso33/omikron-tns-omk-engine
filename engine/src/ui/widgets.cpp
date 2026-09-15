@@ -1408,7 +1408,60 @@ bool UiWalk::confirm() {
                                            : "multiplan row: event 36 request 8");
                 return true;
             }
+            // 2: `dword_4E581C = tag` (the page's box item's own +0x3C),
+            // `sub_42A370(screen, 0x004E5998)`, `sub_42B420(tag, 4)` - event
+            // 30 then 43, which posts world MESSAGE 4 with the object. The
+            // message is the caller's (`takeMultiplan`, request 4).
+            if (button == 2 && tag >= 0) {
+                state_->pendingMultiplanRequest = 4;
+                state_->pendingMultiplanRow = tag;
+                // the page's builder `0x004B0510` opens `mov dword_6A5090, 0`:
+                // a new object is read from the top
+                state_->textScroll = 0;
+                log_.push_back("multiplan row: Examiner -> the page, message 4");
+                return installPanel(kPanelMultiplanExamine);
+            }
+            // 3: `sub_42A370(screen, 0x004E5A00)` - no tag test on this arm.
+            if (button == 3) {
+                log_.push_back("multiplan row: Detruire -> the confirm");
+                return installPanel(kPanelMultiplanDestroy);
+            }
             return false;
+        }
+        // THE DESTROY CONFIRM's two answers (0x004B08C0 / 0x004B0980):
+        //
+        //     Oui: tag = sub_428EF0(0x004E5670)+0x3C   the SELECTED row's tag
+        //          if (dword_68A610 != 1)  message 4             (only from the kiosk)
+        //          else if (tag != -1) {
+        //              event 36 request 6;
+        //              1 -> sub_42ADD0(rows, -1, -1); if (!dword_4E5688) panel+24 = 0
+        //              else message 4 "Impossible de detruire cet objet"
+        //          }
+        //          sub_42A370(screen, 0x004E5930); return 0
+        //     Non: sub_42A370(screen, 0x004E5930); return 1
+        //
+        // Request 6 ends in `Game_HandleEvent`, so Oui is RECORDED for the
+        // caller (request 6, the tag - or -1, which the caller still has to
+        // see because the source test comes first). As on the shop's
+        // confirm, `sub_42A370` leaves the parent's +24 alone, so the kiosk
+        // comes back on its rows.
+        if (it->callback == kCbMultiplanDestroyYes || it->callback == kCbMultiplanDestroyNo) {
+            if (it->callback == kCbMultiplanDestroyYes) {
+                int tag = -1;
+                if (const UiList* r = w_->listAt(kListMultiplanRows)) {
+                    const int s = selectionOf(*r);
+                    if (s >= 0 && static_cast<std::size_t>(s) < r->items.size())
+                        tag = rowOf(r->items[static_cast<std::size_t>(s)].addr);
+                }
+                state_->pendingMultiplanRequest = 6;
+                state_->pendingMultiplanRow = tag;
+                log_.push_back("multiplan confirm: Oui -> event 36 request 6");
+            } else {
+                log_.push_back("multiplan confirm: Non");
+            }
+            const bool back = installPanel(kPanelMultiplan);
+            if (back) focusList(kListMultiplanRows);
+            return back;
         }
         // `Oui` on the Vente confirm (0x004AEC00): the SELECTED STOCK ROW's tag
         // (`sub_428EF0(0x004E3640)+0x3C`), the sale through event 36 request

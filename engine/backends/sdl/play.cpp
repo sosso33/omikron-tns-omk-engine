@@ -16420,7 +16420,40 @@ int main(int argc, char** argv) {
                     ? from[static_cast<std::size_t>(row)] : -1;
                 int result = request;          // case 36 leaves +4 alone past the count
                 std::string arm;
-                if (id >= 0 && request == 7) {
+                const auto postText = [&](int m) {
+                    mpMessage = m < static_cast<int>(mpText.size())
+                        ? mpText[static_cast<std::size_t>(m)] : std::string();
+                    mpMessageMs = mpNowMs;
+                };
+                if (request == 4) {
+                    // `sub_42B420(tag, 4)`: event 30 loads the preview and
+                    // answers the object's SLOT, event 43 runs
+                    // `Message_RunHandlers(4, player, slot)`, whose block
+                    // carries `ObjectSlot_Id(slot)` - the object id.
+                    const bool ran = id >= 0 && session.postMessage(4, id);
+                    const auto& runs = session.messagesRun();
+                    std::printf("multiplan: examine row %d id %d -> message 4 %s\n", row, id,
+                                ran && !runs.empty()
+                                    ? ("handled by the " + runs.back().table + " table").c_str()
+                                    : "(no resident chunk subscribes)");
+                } else if (request == 6) {
+                    // Oui: the SOURCE test comes before the tag's; case 36
+                    // request 6 is `(flags & 2) ? RemoveAt(1, tag), 1 : 2`,
+                    // and success posts nothing.
+                    int msg = -1;
+                    if (src != 1) { msg = 4; arm = "not the kiosk's list"; }
+                    else if (id >= 0) {
+                        const auto* rec = inv.record(id);
+                        if (rec && (rec->flags & 0x2)) {
+                            state.listRemove(1, id); result = 1; arm = "destroyed";
+                        } else { result = 2; msg = 4; arm = "flag 0x2 clear"; }
+                    } else { arm = "no row"; }
+                    if (msg >= 0) postText(msg);
+                    std::printf("multiplan: destroy row %d id %d -> %d (%s)%s\n", row, id,
+                                result, arm.c_str(), msg >= 0 ? ", message 4" : "");
+                    const auto after = omk::objectList(state, omk::ObjectList::Second);
+                    if (result == 1 && after.empty()) walk->focusList(omk::kListMultiplanButtons);
+                } else if (id >= 0 && request == 7) {
                     const auto* rec = inv.record(id);
                     if (rec && rec->kind == 1) { result = 2; arm = "kind 1"; }
                     else if (!state.listAdd(1, id)) { result = 2; arm = "storage full"; }
@@ -16438,16 +16471,16 @@ int main(int argc, char** argv) {
                         result = 1;
                     }
                 }
-                const int msg = result == 1 ? 8 : request == 7 ? 7 : 6;
-                mpMessage = msg < static_cast<int>(mpText.size())
-                    ? mpText[static_cast<std::size_t>(msg)] : std::string();
-                mpMessageMs = mpNowMs;
-                std::printf("multiplan: request %d row %d id %d -> %d (%s), message %d, "
-                            "rings %d\n", request, row, id, result, arm.c_str(), msg,
-                            state.rings());
-                const auto after = omk::objectList(state, src == 0 ? omk::ObjectList::Carried
-                                                                    : omk::ObjectList::Second);
-                if (result == 1 && after.empty()) walk->focusList(omk::kListMultiplanButtons);
+                if (request == 7 || request == 8) {
+                    const int msg = result == 1 ? 8 : request == 7 ? 7 : 6;
+                    postText(msg);
+                    std::printf("multiplan: request %d row %d id %d -> %d (%s), message %d, "
+                                "rings %d\n", request, row, id, result, arm.c_str(), msg,
+                                state.rings());
+                    const auto after = omk::objectList(state, src == 0 ? omk::ObjectList::Carried
+                                                                        : omk::ObjectList::Second);
+                    if (result == 1 && after.empty()) walk->focusList(omk::kListMultiplanButtons);
+                }
             }
             const auto ids = omk::objectList(state, src == 0 ? omk::ObjectList::Carried
                                                              : omk::ObjectList::Second);
@@ -16463,6 +16496,46 @@ int main(int argc, char** argv) {
                 }
             }
             walk->bindRows(omk::kListMultiplanRows, static_cast<int>(ids.size()), window);
+            // ---- THE EXAMINER PAGE and THE DESTROY CONFIRM (step 4) ---------
+            //
+            // Both name the object through the rows' SELECTION, a static
+            // record, so the row chosen on the kiosk is still there. The page's
+            // box is draw hook `0x004780A0`, the sneak's examine box again:
+            // case 40 answers 4 for kind 15 (text only), 5 for kind 16 (the
+            // `IMAGES` bitmap the builder `0x004B0510` loads, then the text),
+            // 2 otherwise (case 30's model on oscillator 4, then the text) -
+            // `uiModels.examine` as the sneak page calls it. The confirm's
+            // second line `0x004B0C30` is `sub_42AA00` on the selected row.
+            {
+                const int sel = walk->selectedRow(omk::kListMultiplanRows);
+                const int selId = sel >= 0 && sel < static_cast<int>(ids.size())
+                    ? ids[static_cast<std::size_t>(sel)] : -1;
+                const std::uint32_t pa = walk->panel()->addr;
+                if (pa == omk::kPanelMultiplanExamine && selId >= 0 &&
+                    static_cast<std::size_t>(selId) < objectRecords.size()) {
+                    const auto& rec = objectRecords[static_cast<std::size_t>(selId)];
+                    static int mpExamined = -1;
+                    const auto k = uiModels.examine(
+                        fs, (rec.kind == 15 || rec.kind == 16) ? rec.kind : 15,
+                        (rec.kind == 15) ? std::string() : rec.stem);
+                    examineText = rec.description;
+                    comp.setExamineText(&examineText);
+                    comp.setTextScroll(&walk->textScroll());
+                    if (selId != mpExamined) {
+                        mpExamined = selId;
+                        std::printf("multiplan: Examiner '%s' kind %d -> %s\n", rec.name.c_str(),
+                                    rec.kind,
+                                    k == omk::UiModels::Examine::Model ? "3D model"
+                                    : k == omk::UiModels::Examine::Document ? "document bitmap"
+                                    : "text only");
+                    }
+                }
+                if (pa == omk::kPanelMultiplanDestroy && selId >= 0)
+                    if (const omk::UiList* c = w.listAt(omk::kListMultiplanDestroy))
+                        for (const auto& e : c->items)
+                            if (e.textFn == omk::kTextMultiplanRowName)
+                                sneakRows[e.addr] = inv.displayName(selId, 0);
+            }
             // `0x004B0B60`: the posted message while oscillator 0 runs
             // (`sub_478D60`); otherwise `sprintf(out, "%s", label)` of the
             // selected button (`sub_476860`). On the Examiner page, or with

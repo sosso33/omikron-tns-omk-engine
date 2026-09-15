@@ -20087,6 +20087,59 @@ def c_engine_multiplan_transfers():
            "sneak refused"
 
 
+def c_engine_multiplan_examine():
+    r"""engine: MULTIPLAN's EXAMINER page and DESTROY confirm (todo/multiplan.md 4).
+
+    The row callback's arm 2 installs the page `0x004E5998` and calls
+    `sub_42B420(tag, 4)` - event 30 (the preview, answering the object's
+    SLOT) then event 43, `Message_RunHandlers(4, player, slot)` with the
+    sender resolved to the object id. The page's box is draw hook
+    `0x004780A0`, the sneak's examine box: kind 15 text only, 16 the bitmap
+    and the text, anything else the model and the text. Arm 3 installs the
+    confirm `0x004E5A00`; its Oui `0x004B08C0` refuses anything but the
+    kiosk's list with message 4, and otherwise raises event 36 request 6 -
+    `(flags & 2) ? RemoveAt(1, tag), 1 : 2` - posting message 4 on refusal and
+    NOTHING on success.
+
+    Three runs from the pharmacy's kiosk in `save-appart.bin`: Examiner on
+    176 ("Documentation multiplan", kind 15), whose message 4 IS subscribed -
+    by the GLOBAL table; Detruire on 176 (flags 0x12, destroyed); Detruire on
+    163 (the rings, flags 0x20, refused).
+    """
+    import subprocess
+    eng = os.path.join(ROOT, "engine")
+    save = os.path.join(ROOT, "traces", "save-appart.bin")
+    if not (os.path.isdir(eng) and os.path.exists(save)):
+        return ("skipped",), ("skipped",), "engine/ or the save absent"
+    mk = subprocess.run(["make", "-s", "play"], cwd=eng, capture_output=True, text=True)
+    play = os.path.join(eng, "build", "omk-play")
+    if mk.returncode != 0 or not os.path.exists(play):
+        return ("skipped",), ("skipped",), "omk-play did not build"
+    env = dict(os.environ, SDL_VIDEODRIVER="dummy")
+    got = []
+    for keys in ("28,28,0xD0,0xD0,0x1C,0x1C",
+                 "28,28,0xD0,0xD0,0xD0,0x1C,0x1C,0x1C",
+                 "28,28,0xD0,0xD0,0xD0,0x1C,0xD0,0x1C,0x1C"):
+        r = subprocess.run([play, omkpaths.data_root(), os.path.join(ROOT, "tables"),
+                            "--save", save, "--area", "39", "--stand", "14591,-251,11771,0",
+                            "--nofmv", "--no-crowd", "--software", "--keys", keys,
+                            "--keydelay", "60", "--frames", "560"],
+                           capture_output=True, env=env)
+        text = r.stdout.decode("cp1252", "replace")
+        lines = [ln.strip() for ln in text.splitlines() if ln.startswith("multiplan:")]
+        got.append(tuple(lines[2:]))
+    return tuple(got), \
+           (("multiplan: examine row 0 id 176 -> message 4 handled by the global table",
+             "multiplan: Examiner 'Documentation multiplan' kind 15 -> text only"),
+            ("multiplan: destroy row 0 id 176 -> 1 (destroyed)",
+             "multiplan: source 1, 1 rows: 163"),
+            ("multiplan: destroy row 1 id 163 -> 2 (flag 0x2 clear), message 4",)), \
+           "per run, the viewer's multiplan lines after the kiosk has opened and " \
+           "switched to the storage: the Examiner's message 4 and which table " \
+           "handled it, and what the page shows; a destroyable object gone and " \
+           "the rows rebound; a protected one refused with message 4"
+
+
 def c_engine_shop_open():
     r"""engine: what a SHOP is the moment it opens - `Ui_OpenShop` (0x004AE540).
 
@@ -35114,6 +35167,7 @@ SLOW = [
     ("engine: interference", c_engine_interference, "UI 3d; todo/multiplan.md"),
     ("engine: multiplan rows", c_engine_multiplan_rows, "UI 3d; todo/multiplan.md"),
     ("engine: multiplan transfers", c_engine_multiplan_transfers, "UI 3d; todo/multiplan.md"),
+    ("engine: multiplan examine", c_engine_multiplan_examine, "UI 3d; todo/multiplan.md"),
     ("cursor highlight",  c_cursor_highlight,   "UI 3b"),
     ("slider destinations", c_slider_destinations, "UI 3g"),
     ("sneak previews",   c_sneak_previews,     "UI 3g"),

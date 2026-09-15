@@ -691,8 +691,11 @@ ScreenFrame ScreenComposer::draw(Surface& fb, int screenId,
             // original two seconds apart settled it before it could be read:
             // the MK400 notice's Khonsu line, `{fSI226198101B}`, is gold in
             // one and red in the other, (181, 180, 131) against (150, 33, 42).
+            // Keyed on the item's DRAW HOOK, `0x004780A0`, which both examine
+            // pages' boxes carry - the sneak's (0x004DE710) and MULTIPLAN's
+            // (0x004E57E0). Every arm of it ends in `sub_477F60`, this text.
             if (examine_ && !examine_->empty() &&
-                l.addr == kListSneakExamineContent) {
+                (l.addr == kListSneakExamineContent || it.drawFn == 0x004780A0u)) {
                 TextBlock blk;
                 blk.left   = scaleX(it.x + q->offsetX);
                 blk.top    = scaleY(it.y + q->offsetY);
@@ -735,7 +738,7 @@ ScreenFrame ScreenComposer::draw(Surface& fb, int screenId,
             // it shows is whichever arm of `Game_HandleEvent` case 40 the
             // object's kind takes - a 3D model for kind 15, an
             // `IMAGES\<stem>.bmp` for kind 16, nothing otherwise.
-            if (models_ && l.addr == kListSneakExamineContent) {
+            if (models_ && (l.addr == kListSneakExamineContent || it.drawFn == 0x004780A0u)) {
                 if (models_->drawExamine(fb,
                                          scaleX(it.x + q->offsetX),
                                          scaleY(it.y + q->offsetY),

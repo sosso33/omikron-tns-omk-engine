@@ -3050,6 +3050,27 @@ non autorisé* or 6 *sneak plein* on refusal, rebinds the rows, and clears the
 panel's `+24` - the focus goes back to the buttons - when the list is left
 empty. `verify.py: engine: multiplan transfers`.
 
+**Examiner and Détruire** (step 4). The row callback's arm 2 writes the tag
+into the page's box item (`dword_4E581C` is item `0x004E57E0 + 0x3C`),
+installs `0x004E5998` and calls `sub_42B420(tag, 4)`: event 30 loads the
+preview and answers the object's slot, and event 43 runs
+`Message_RunHandlers(4, player, slot)`, the sender resolved to the object id
+(`ObjectSlot_Id`). **Examining posts world message 4**, and in the pharmacy
+the GLOBAL table handles it. The sneak's Examiner (`0x0049C034`) makes the
+same call. The page's box is draw hook `0x004780A0`, the same hook as the
+sneak's examine box: event 40 answers 4 for kind 15, 5 for kind 16, 2
+otherwise, and the hook draws the model (2) or the `IMAGES` bitmap the builder
+`0x004B0510` loaded (5) before `sub_477F60`, which every arm reaches and which
+lays out the description. The builder also disables the button list (bank A
+`0x20000004`) and resets the text scroll; its leave hook `0x004B0570` undoes
+both. Arm 3 installs the confirm `0x004E5A00` with no tag test: its lines are
+the "Détruire" label and the selected row's name (`0x004B0C30`), then Oui and
+Non. Oui refuses with message 4 *Impossible de détruire cet objet* unless the
+source is the storage, and otherwise raises event 36 request **6**, which
+destroys an object whose record carries flag `0x2` (`RemoveAt(1, tag)`,
+result 1, no message) and refuses any other with message 4. Both answers
+return to the kiosk on its rows. `verify.py: engine: multiplan examine`.
+
 ### The LIFT — the one bespoke widget
 
 `UI_GridMenuInput` is the only list-level input hook the game has, and it is
