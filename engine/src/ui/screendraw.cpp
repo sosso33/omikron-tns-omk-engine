@@ -767,6 +767,22 @@ ScreenFrame ScreenComposer::draw(Surface& fb, int screenId,
                     ++out.modelsDrawn;
             }
 
+            // ---- THE INTERFERENCE BOX: draw hook 0x00477ED0 -----------------
+            //
+            // `I2D_ScaleX/Y` of the item's position and of its SIZE (not of its
+            // far corner - the thumbnail's hook 0x00477E00 adds the two first,
+            // this one does not), submitted by `sub_4286F0` at the item's layer
+            // and drawn by `sub_432940` on the back buffer as it stands. The
+            // walk runs layer by layer, so everything at 0..6 is already here
+            // and the cursor at 8 is not: the same pixels the flush would hand
+            // it. `ui/interference.h` has the rule.
+            constexpr std::uint32_t kDrawInterference = 0x00477ED0u;
+            if (it.drawFn == kDrawInterference) {
+                noise_.apply(fb, scaleX(it.x + q->offsetX), scaleY(it.y + q->offsetY),
+                             scaleX(it.w), scaleY(it.h));
+                ++out.noiseBoxes;
+            }
+
             // ---- THE CURSOR: `Ui_DrawItemCursor` (`sub_479920`) -------
             //
             // Drawn BEFORE the fill and the sprite, because `sub_4795F0`

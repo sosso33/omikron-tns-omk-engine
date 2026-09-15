@@ -23,6 +23,7 @@
 #include "platform/datafs.h"
 #include "ui/cloud.h"
 #include "ui/cursor.h"
+#include "ui/interference.h"
 #include "ui/models.h"
 #include "ui/surface.h"
 #include "ui/text.h"
@@ -58,6 +59,8 @@ struct ScreenFrame {
     int  cursorQuads = 0;
     // 3D previews drawn - `I2D_Submit3DView`, 0 with no models attached.
     int  modelsDrawn = 0;
+    // Interference boxes applied - draw hook 0x00477ED0 (`ui/interference.h`).
+    int  noiseBoxes = 0;
     // Lines the examine page's description wrapped to.
     int  textLines = 0;
     // How far the examine page's text runs PAST its box, in pixels - the
@@ -240,6 +243,8 @@ private:
     long             clockMs_ = 0;
     int              dw_ = 640, dh_ = 480;
     int              filter_ = 0;   // the scaling enhancement; 0 is the game's
+    // `sub_432940`'s three globals, shared by every interference box drawn.
+    mutable UiInterference noise_;
 
     const DataFs*    fs_;
     const UiWidgets* w_;

@@ -16375,6 +16375,58 @@ int main(int argc, char** argv) {
                 std::printf("\n");
             }
         }
+        // ---- MULTIPLAN's ROWS and HEADER (todo/multiplan.md step 2) --------
+        //
+        // The rows list the SOURCE (`dword_68A610`, the walk's
+        // `multiplanSource`): 0 the sneak, 1 the storage every terminal
+        // shares. `sub_42ADD0(rows, 0, src)` raises event 25 on it, then case
+        // 29 for the count and case 33 for each name, through the window.
+        // The header's hook `0x004B0B60` is the shops' `0x004AEE30` again:
+        // the posted message while oscillator 0 runs, else the SELECTED
+        // BUTTON's label (`IAM\Multip` 0..3).
+        if (walk && walk->panel() &&
+            (walk->panel()->addr == omk::kPanelMultiplan ||
+             walk->panel()->addr == omk::kPanelMultiplanExamine ||
+             walk->panel()->addr == omk::kPanelMultiplanDestroy)) {
+            sneakRows.clear();
+            sneakHidden.clear();
+            const int src = walk->multiplanSource();
+            if (inv.openedList() != src) inv.openList(src);   // Game_RaiseEvent(25, src)
+            const auto ids = omk::objectList(state, src == 0 ? omk::ObjectList::Carried
+                                                             : omk::ObjectList::Second);
+            const int window = walk->rowWindow(omk::kListMultiplanRows);
+            if (const omk::UiList* rows = w.listAt(omk::kListMultiplanRows)) {
+                for (std::size_t k = 0; k < rows->items.size(); ++k) {
+                    const std::size_t row = k + static_cast<std::size_t>(std::max(0, window));
+                    if (row >= ids.size()) {
+                        sneakHidden.insert(rows->items[k].addr);   // sub_42AAE0
+                        continue;
+                    }
+                    sneakRows[rows->items[k].addr] = inv.displayName(ids[row], 0);
+                }
+            }
+            walk->bindRows(omk::kListMultiplanRows, static_cast<int>(ids.size()), window);
+            const auto mpText = omk::iamStrings(fs, "IAM/Multip");
+            if (const omk::UiList* buttons = w.listAt(omk::kListMultiplanButtons)) {
+                const int b = walk->selectionOf(*buttons);
+                if (b >= 0 && b < static_cast<int>(buttons->items.size())) {
+                    const int id = buttons->items[static_cast<std::size_t>(b)].label();
+                    if (const omk::UiList* head = w.listAt(omk::kListMultiplanHeader))
+                        for (const auto& e : head->items)
+                            if (e.textFn == 0x004B0B60u && id >= 0 &&
+                                id < static_cast<int>(mpText.size()))
+                                sneakRows[e.addr] = mpText[static_cast<std::size_t>(id)];
+                }
+            }
+            static std::string multiplanTold;
+            std::string said = "source " + std::to_string(src) + ", " +
+                               std::to_string(ids.size()) + " rows:";
+            for (int id : ids) said += " " + std::to_string(id);
+            if (said != multiplanTold) {
+                multiplanTold = said;
+                std::printf("multiplan: %s\n", said.c_str());
+            }
+        }
         // ---- `sub_423A40`, the tail of `Actor_SetProperty` (`script/hooks.h`)
         //
         // A script's property write in a shoot phase reaches the shoot

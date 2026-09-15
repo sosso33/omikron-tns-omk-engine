@@ -58,8 +58,10 @@ inline constexpr int kI2dLayers = 16;
 // the display list's own limit, and it is **exactly the sum of the seven** -
 // 4096 + 200 + 100 + 220 + 220 + 16 + 10 - so the list can never fill before
 // the pools do, and the 4862 the docs quote is derived rather than arbitrary.
-// Reaching that identity needs the dead pool in the count, which is how the
-// two unreferenced primitives below were found.
+// Reaching that identity needs the 24-byte pool in the count, which is how its
+// two submitters were found - and they were recorded as having no callers
+// until 2026-09-15: each is called from a widget draw hook that is only a
+// table dword (`i2d.cpp` has both call sites).
 inline constexpr int kI2dNodeCap = 4862;
 
 enum class I2dPrim {
@@ -69,7 +71,7 @@ enum class I2dPrim {
     BlitSurface,     // I2D_BlitSurface    0x00428850  -> sub_480F60
     BlitBitmap,      // I2D_BlitBitmap     0x004287A0  -> sub_4810D0
     View3d,          // I2D_Submit3DView   0x00428900  -> sub_4812E0
-    Rect24,          // sub_428660         0x00428660  -> sub_481000   DEAD
+    Rect24,          // sub_428660         0x00428660  -> sub_481000   (and sub_4286F0 -> sub_481090)
     FullScreen,      // I2D_BlitFullScreen 0x00428780  -> sub_481170   no pool
     Count
 };

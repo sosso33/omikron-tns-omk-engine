@@ -1520,10 +1520,14 @@ of them found the ordering below, but not evidence about the original.
 **The 4862 is derived.** The docs quoted the display list's node cap as a bare
 number; it is **exactly the sum of the seven pools** — 4096 + 200 + 100 + 220
 + 220 + 16 + 10 — so the list can never fill before the pools do. That
-identity only closes if the **dead** pool is counted: `sub_428660` (cap 10)
-and `sub_4286F0` have no callers, and the second carries a latent overflow —
-it checks the bitmap counter (cap 220) and writes into the 10-entry pool. It
-never fires, and the port keeps it rather than quietly correcting it.
+identity only closes if the 24-byte pool is counted, which `sub_428660` (cap
+10) and `sub_4286F0` share. They were recorded here as having no callers;
+**both have one** (2026-09-15), inside table-dword draw hooks - `0x00477E00`
+the save thumbnail, `0x00477ED0` the INTERFERENCE box of the sneak, the
+terminal pages and MULTIPLAN, now ported as `src/ui/interference.*`. The
+second carries a mismatched bounds check - it tests the bitmap counter (cap
+220) and writes into the 10-entry pool. No screen submits more than two a
+frame, so it never fires, and the port keeps it rather than correcting it.
 
 **The ordering, which the docs had wrong, and which no screenshot could
 settle.** `docs/UI.md` called `dword_4E97B8` a per-layer *tail* cache. It is a
@@ -3771,7 +3775,7 @@ them only if they are non-zero** — a trick for the 18-byte extended form, whic
 reads the `da` of the next chunk id as "not a `cbSize`" and rewinds. All 61
 take the rewind; **0 take the other arm and 0 chunks are skipped**, so two of
 the loader's branches are dead against the shipped corpus. Recorded, not
-trimmed — the same treatment the two I2D primitives nothing calls got.
+trimmed.
 
 **`Sound_LengthMs`**, `bytes * 1000 / ((bits/8) * frequency * channels)`,
 truncating — re-derived in Python from the same 61 files, so the two

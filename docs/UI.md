@@ -62,7 +62,7 @@ O(1) once a layer has been used. **16 layers, 4862 nodes.**
 **And the 4862 is derived, not arbitrary**: it is exactly the sum of the seven
 pool capacities below — 4096 + 200 + 100 + 220 + 220 + 16 + **10** — so the
 list can never fill before the pools do. Reaching that identity needs the last
-one, which belongs to a primitive nothing calls (see below).
+one, whose two submitters were recorded as uncalled and are not (see below).
 
 Each primitive pushes its payload into its own fixed pool and enqueues the
 matching drawer. A point is three ints, so a line is 2 of them, a triangle 3, a
@@ -79,12 +79,40 @@ readers take a1[0], a1[1], a1[3], a1[4] and step over [2] and [5]:
 | `I2D_Submit3DView` 0x00428900 | 84 B — rect + scene + camera | **16** | sub_4812E0 |
 | `I2D_BlitFullScreen` 0x00428780 | none | — | sub_481170 |
 
-**Two more primitives ship and nothing calls them**: `sub_428660`
-(0x00428660, a 24-byte payload, pool cap **10**, drawer `sub_481000`) and
-`sub_4286F0`. The second carries a latent overflow — it checks the *bitmap*
-counter (`dword_4E97B0`, cap 220) and then writes into the 10-entry pool at
-`dword_4E9784`, incrementing that instead. It has no callers, so the bug never
-fires; the port keeps it rather than quietly correcting it.
+**Two more primitives ship, and they are NOT uncalled** — this said "nothing
+calls them" until 2026-09-15, when MULTIPLAN's box led to one. Each has
+exactly ONE direct caller, and each caller is an item DRAW HOOK - a `+20`
+dword with no `proc` label, which is why a search for named callers found
+none:
+
+* `sub_428660` (0x00428660, a 24-byte payload, pool cap **10**, drawer
+  `sub_481000`) is called at `0x00477EB9` by draw hook `0x00477E00` - the
+  load panel's 128x96 item at (460, 140). Its drawer `Blt`s a 127x95 source
+  from the surface at `dword_52B944`: it is the **save thumbnail**.
+* `sub_4286F0` is called at `0x00477F44` by draw hook `0x00477ED0`, which
+  **14 item records** carry: the sneak family's 500x280 at (105, 85), MULTIPLAN's
+  450x260 at (60, 130) and the terminal family's 430x320 at (40, 80), all on
+  layer 7. Its drawer `sub_481090` hands the rectangle to `sub_432940`
+  (`readable/src/09_ddraw.c`), which LOCKS the back buffer and draws
+  **interference** straight into it: row pairs displaced 1 frame in 25,
+  scattered grey pixels while a density counts down from 8 (restarting 1 in
+  30), and an eight-row band OR-ed with greys that walks down 4 pixels a frame
+  and re-arms 1 in 3 as it wraps. So the screens that look like monitors
+  flicker like monitors.
+
+`sub_4286F0` still carries the latent overflow this recorded: it checks the
+*bitmap* counter (`dword_4E97B0`, cap 220) and writes into the 10-entry pool
+at `dword_4E9784`, incrementing that instead. No shipped screen submits more
+than two in a frame (the sneak's page lists its box in two lists), so it
+cannot fire, and the port keeps it as found.
+
+**Ported 2026-09-15** as `engine/src/ui/interference.{h,cpp}`, applied by the
+composer at the item's place in its layer walk - after layers 0..6, before
+the cursor's 8, which are the pixels the flush would hand it. The rule is
+exact and the dice are not: the CRT `rand` is the whole process's in the
+original, so the stream (seeded 1, advanced only by the box) is a
+reconstruction. `engine: I2D` counts no unreferenced pool now (1 -> 0);
+`engine: interference` holds the invariants over 3000 frames.
 
 Each blit submitter rejects a degenerate rectangle before enqueuing, so a
 mis-built payload is dropped rather than drawn — but it is **three** tests, not
@@ -2993,6 +3021,17 @@ request 7 (sneak -> kiosk) or 8 (kiosk -> sneak) with messages 8 / 7 / 6,
 the examine page `0x004E5998`, or the destroy confirm `0x004E5A00` (request 6,
 message 4). Both children are lifted as `CODE_NAMED` and come up on their
 record's list 1. `verify.py: engine: multiplan open`; `todo/multiplan.md`.
+
+**The rows, the header and the box** (step 2). The rows are the case-33 names
+of the source list through the nine-row window (`sub_42ADD0(rows, 0, src)`
+raises event 25 on it first, so switching the source reopens the channel on
+the other list); rows past the count are hidden. The header's text hook
+`0x004B0B60` is the shops' `0x004AEE30` again: a posted message while
+oscillator 0 runs, otherwise the SELECTED BUTTON's own label. The 450x260 box
+at (60, 130) has no fill and no text: it is the interference primitive above,
+scrambling the rows it sits over. In `save-appart.bin` the sneak holds object
+171 and the shared storage 176 and 163 ("Documentation multiplan", "5 Anneaux
+magiques"). `verify.py: engine: multiplan rows`, `engine: interference`.
 
 ### The LIFT — the one bespoke widget
 

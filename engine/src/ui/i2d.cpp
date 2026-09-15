@@ -4,17 +4,25 @@
 namespace omk {
 namespace {
 
-// The seven pools, from the bounds check each submitter opens with. The two
-// marked unreferenced are real functions with real pools and **no callers**:
-// `sub_428660` (cap 10) and `sub_4286F0`. They are kept because the node cap
-// only adds up with them - 4096+200+100+220+220+16+10 = 4862 - so leaving
-// them out would make the list's own limit look arbitrary.
+// The seven pools, from the bounds check each submitter opens with. The
+// 10-entry pool at `dword_4E9784` is filled by TWO submitters sharing its
+// counter `dword_4E97A4`: `sub_428660` (drawer `sub_481000`, a Blt of the
+// 128x96 save thumbnail) and `sub_4286F0` (drawer `sub_481090`, the
+// interference effect `sub_432940`, `ui/interference.h`). The node cap only
+// adds up with that pool - 4096+200+100+220+220+16+10 = 4862.
 //
-// `sub_4286F0` also carries a **latent overflow**: it checks the BITMAP
-// counter (`dword_4E97B0`, cap 220) and then writes into the 10-entry pool at
-// `dword_4E9784` indexed by `dword_4E97A4`, incrementing that instead. Nothing
-// calls it, so the bug never fires; it is recorded rather than fixed, because
-// a replica that quietly corrected it would stop being a replica.
+// **Both have callers, and this said they had none until 2026-09-15.** Each
+// has exactly one, inside a widget DRAW HOOK - `0x00477EB9` in `0x00477E00`
+// (the load panel's picture item) and `0x00477F44` in `0x00477ED0` (three
+// "monitor" boxes: the sneak, the terminal pages, MULTIPLAN) - and those hooks
+// are table dwords with no `proc` label, so a search of the decompilation
+// found nothing. The same trap as CLAUDE.md §1's table callbacks.
+//
+// `sub_4286F0` carries a **mismatched bounds check**: it tests the BITMAP
+// counter (`dword_4E97B0`, cap 220) and then writes into the 10-entry pool,
+// incrementing `dword_4E97A4`. It is reachable, but no shipped screen draws
+// more than two interference boxes in a frame (the sneak's page, listed twice),
+// so it never overflows; recorded rather than fixed.
 const I2dPoolInfo kPools[static_cast<int>(I2dPrim::Count)] = {
     {"line",        4096, 28, 0x00428430, 0x004822F0, true },
     {"triangle",     200, 40, 0x00428560, 0x004806C0, true },
@@ -22,7 +30,7 @@ const I2dPoolInfo kPools[static_cast<int>(I2dPrim::Count)] = {
     {"blitSurface",  220, 52, 0x00428850, 0x00480F60, true },
     {"blitBitmap",   220, 56, 0x004287A0, 0x004810D0, true },
     {"view3d",        16, 84, 0x00428900, 0x004812E0, true },
-    {"rect24",        10, 24, 0x00428660, 0x00481000, false},
+    {"rect24",        10, 24, 0x00428660, 0x00481000, true },
     {"fullScreen",     0,  0, 0x00428780, 0x00481170, true },
 };
 

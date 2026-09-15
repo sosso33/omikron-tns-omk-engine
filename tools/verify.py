@@ -2048,10 +2048,15 @@ def c_engine_i2d():
     **THE 4862.** The docs quoted the display list's node cap as a bare number.
     It is **exactly the sum of the seven pools** - 4096 + 200 + 100 + 220 + 220
     + 16 + 10 - so the list can never fill before the pools do. Reaching that
-    identity needs the **dead** pool in the count: `sub_428660` (cap 10) and
-    `sub_4286F0` have no callers, and `sub_4286F0` carries a latent overflow -
-    it checks the BITMAP counter (cap 220) and writes into the 10-entry pool.
-    Unreachable, so it never fires; recorded rather than fixed.
+    identity needs the 24-byte pool in the count, whose two submitters
+    `sub_428660` (cap 10) and `sub_4286F0` share one counter. **They were
+    recorded here as having no callers, and both have one** (2026-09-15): each
+    is called from a widget DRAW HOOK that is only a table dword -
+    `0x00477E00`, the load panel's picture, and `0x00477ED0`, the interference
+    box on the sneak, the terminal pages and MULTIPLAN - so the unreferenced
+    count went 1 -> 0. `sub_4286F0` checks the BITMAP counter (cap 220) and
+    writes into the 10-entry pool; reachable now, but no shipped screen draws
+    more than two such boxes a frame, so it never overflows.
 
     **THE ORDERING, WHICH THE DOCS HAD WRONG.** `docs/UI.md` called
     `dword_4E97B8` "a per-layer tail cache". It is a per-layer **head** cache.
@@ -2113,13 +2118,13 @@ def c_engine_i2d():
     allResolve = v[19] == v[20]
     allRoundTripsCorrect = v[24] == v[25]
     return (v, allResolve, allRoundTripsCorrect), \
-           ((4862, 7, 1, 1,
+           ((4862, 7, 0, 1,
              200, 200, 5032, 1407, 1407, 147,
              1, 1, 0, 24, 2, 1,
              2, 1, 2,
-             117, 117, 22, 93, 2,
-             57, 57,
-             117, 549, 306), True, True), \
+             133, 133, 28, 103, 2,
+             69, 69,
+             124, 616, 348), True, True), \
            "the seven pools' total capacity, how many are live, how many are " \
            "UNREFERENCED, and whether the total equals the display list's own " \
            "node cap of 4862 - which is what makes that number derived rather " \
@@ -19929,6 +19934,94 @@ def c_engine_multiplan_open():
            "the header"
 
 
+def c_engine_interference():
+    r"""engine: the INTERFERENCE box - `sub_432940`, draw hook 0x00477ED0.
+
+    Three "monitor" boxes carry the hook - the sneak's page, the terminal
+    pages, MULTIPLAN's - and it draws nothing of its own: `sub_4286F0` submits
+    the scaled rectangle at the item's layer 7 and the drawer locks the back
+    buffer and scrambles what layers 0..6 left there. A row-pair shift on
+    `rand() % 25`, a grey scatter while a density counts down from 8 (restarted
+    on `rand() % 30`), and a band of eight rows two apart sweeping down 4 a
+    frame, shifted and ORed with a grey ramp, re-armed each sweep on
+    `rand() % 3`. `ui/interference.h` has the reading.
+
+    `interference_probe` runs MULTIPLAN's 450x260 box over 3000 fresh BLACK
+    frames, so every write shows. The rule is exact and the dice are not: the
+    CRT `rand` is shared by the whole process in the original, so the stream
+    here (seed 1, advanced only by the box) is a reconstruction and the counts
+    are its census - what the check holds to the reading are the INVARIANTS
+    beside them: nothing written outside the box, the band only ever on its
+    eight even rows, every other lit pixel one of the four scatter greys (and
+    040404 is 0x0020 in 565, not black - the probe's first version forgot it
+    and counted 24843 "bad" pixels), the band never past the bottom.
+
+    **The primitive was recorded as dead** (`engine: I2D`), and that is what
+    this check follows from: the hooks are table dwords with no `proc` label.
+    """
+    import subprocess
+    eng = os.path.join(ROOT, "engine")
+    if not os.path.isdir(eng):
+        return ("skipped",), ("skipped",), "engine/ absent"
+    mk = subprocess.run(["make", "-s", "build/interference_probe"], cwd=eng,
+                        capture_output=True, text=True)
+    tool = os.path.join(eng, "build", "interference_probe")
+    if mk.returncode != 0 or not os.path.exists(tool):
+        return ("skipped",), ("skipped",), "interference_probe did not build"
+    out = subprocess.run([tool], capture_output=True, text=True).stdout
+    lines = [" ".join(ln.split()) for ln in out.splitlines()]
+    return (len(lines), lines), \
+           (3, ["frames 3000 shifted 117 scatter 696 band 806 restarts 88",
+                "pixels scattered 102306 ored 1163333",
+                "outside 0 offgrid 0 badscatter 0 bandbottom-inside 1"]), \
+           "reports read; then over 3000 frames how many shifted row pairs, " \
+           "scattered, carried the band and restarted the density at 8 (the " \
+           "seed-1 stream's census); the pixels scattered and ORed; and the " \
+           "invariants - writes outside the box, a band off its rows, a lit " \
+           "pixel that is neither band nor one of the four greys, the band's " \
+           "last row inside the box"
+
+
+def c_engine_multiplan_rows():
+    r"""engine: MULTIPLAN's ROWS in the running viewer (todo/multiplan.md 2).
+
+    The pharmacy's kiosk (AREA 39, zone 884) from `save-appart.bin`, opened by
+    the zone's own ACTIVATE slot. The rows list the SOURCE the walk carries:
+    on open, "vers le multiplan" is selected and the source is 0, the sneak,
+    which in this save holds one object (171, "Notice MK400"); DOWN to "vers le
+    sneak" makes it 1, the storage every kiosk shares, which holds 176 and 163.
+    Each change of source raises event 25 on that list (`inv.openList`), and
+    the viewer prints the source and the ids its rows were bound to - so a
+    walk that never switched, or a branch that read list 0 for both, prints
+    the same line twice.
+    """
+    import subprocess
+    eng = os.path.join(ROOT, "engine")
+    save = os.path.join(ROOT, "traces", "save-appart.bin")
+    if not (os.path.isdir(eng) and os.path.exists(save)):
+        return ("skipped",), ("skipped",), "engine/ or the save absent"
+    mk = subprocess.run(["make", "-s", "play"], cwd=eng, capture_output=True, text=True)
+    play = os.path.join(eng, "build", "omk-play")
+    if mk.returncode != 0 or not os.path.exists(play):
+        return ("skipped",), ("skipped",), "omk-play did not build"
+    env = dict(os.environ, SDL_VIDEODRIVER="dummy")
+    got = []
+    for keys in ("28,28", "28,28,0xD0"):
+        r = subprocess.run([play, omkpaths.data_root(), os.path.join(ROOT, "tables"),
+                            "--save", save, "--area", "39", "--stand", "14591,-251,11771,0",
+                            "--nofmv", "--no-crowd", "--software", "--keys", keys,
+                            "--keydelay", "60", "--frames", "240"],
+                           capture_output=True, env=env)
+        text = r.stdout.decode("cp1252", "replace")
+        got.append(tuple(ln.strip() for ln in text.splitlines() if ln.startswith("multiplan:")))
+    return tuple(got), \
+           (("multiplan: source 0, 1 rows: 171",),
+            ("multiplan: source 0, 1 rows: 171", "multiplan: source 1, 2 rows: 176 163")), \
+           "the viewer's multiplan lines after opening the pharmacy's kiosk, " \
+           "then after opening it and pressing DOWN once: the source and the " \
+           "object ids the nine rows were bound to"
+
+
 def c_engine_shop_open():
     r"""engine: what a SHOP is the moment it opens - `Ui_OpenShop` (0x004AE540).
 
@@ -34953,6 +35046,8 @@ SLOW = [
     ("sneak page colour", c_sneak_page_colour,  "UI 3b"),
     ("engine: shop open", c_engine_shop_open,   "UI 3d; todo/shops.md"),
     ("engine: multiplan open", c_engine_multiplan_open, "UI 3d; todo/multiplan.md"),
+    ("engine: interference", c_engine_interference, "UI 3d; todo/multiplan.md"),
+    ("engine: multiplan rows", c_engine_multiplan_rows, "UI 3d; todo/multiplan.md"),
     ("cursor highlight",  c_cursor_highlight,   "UI 3b"),
     ("slider destinations", c_slider_destinations, "UI 3g"),
     ("sneak previews",   c_sneak_previews,     "UI 3g"),
