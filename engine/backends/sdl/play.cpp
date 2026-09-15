@@ -16042,8 +16042,11 @@ int main(int argc, char** argv) {
                 if (characterBuiltFor != playerModel) {
                     characterBuiltFor = playerModel;
                     CharModel* cm = charModelFor(playerModel);
-                    CharBank* cb = charBankFor("F1AVNT");
+                    const std::string characterBank = "F1AVNT";   // 0x004DF5EC, literal
+                    CharBank* cb = charBankFor(characterBank);
                     int entry = -1, clip = -1;
+                    int clipFrames = 0;
+                    std::string firstTrack;
                     if (cb && cb->ready)
                         for (const auto& g : cb->ctl.groupList)
                             if (g.flags & 1u) { entry = g.defaultEntry; break; }
@@ -16056,6 +16059,8 @@ int main(int argc, char** argv) {
                         const auto d = omk::animDescriptor(
                             cb->data, cb->ctl.clips[static_cast<std::size_t>(clip)].offset);
                         if (d && d->frames > 0 && !d->tracks.empty()) {
+                            clipFrames = d->frames;
+                            firstTrack = d->tracks.front().name;
                             const auto lower = [](std::string v) {
                                 for (auto& c : v) if (c >= 'A' && c <= 'Z') c = static_cast<char>(c - 'A' + 'a');
                                 return v;
@@ -16111,12 +16116,17 @@ int main(int argc, char** argv) {
                             uiModels.setCharacter(std::move(posed), cm->tex, playerModel);
                         }
                     }
-                    std::printf("sneak: identity character '%s' - bank F1AVNT, default entry %d "
-                                "'%s', clip %d, %d tracks bound, frame 1\n", playerModel.c_str(),
+                    // The bank from the variable it was loaded under, and the
+                    // clip's own length and first track: H1AVNT also opens on
+                    // entry 0 'H_STAND', clip 0, and binds 19 by exact name, so
+                    // only these tell the literal F1AVNT from the player's bank.
+                    std::printf("sneak: identity character '%s' - bank %s, default entry %d "
+                                "'%s', clip %d (%d frames, first track '%s'), %d tracks bound, "
+                                "frame 1\n", playerModel.c_str(), characterBank.c_str(),
                                 entry,
                                 cb && entry >= 0 && entry < static_cast<int>(cb->ctl.states.size())
                                     ? cb->ctl.states[static_cast<std::size_t>(entry)].name.c_str() : "",
-                                clip, bound);
+                                clip, clipFrames, firstTrack.c_str(), bound);
                 }
                 static std::string identityTold;
                 std::string said;

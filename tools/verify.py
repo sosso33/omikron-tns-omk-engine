@@ -20331,7 +20331,8 @@ def c_engine_sneak_character():
                 if ln.startswith("sneak: identity character"))
     return got, \
            ("sneak: identity character 'HO1_FN' - bank F1AVNT, default entry 0 "
-            "'H_STAND', clip 0, 19 tracks bound, frame 1",), \
+            "'H_STAND', clip 0 (31 frames, first track 'ShAvantd'), 19 tracks bound, "
+            "frame 1",), \
            "the viewer's character line after opening the identity page: the " \
            "player's model, the literal bank the sneak's open names, the default " \
            "entry Cef_DefaultClip picks and its clip, the tracks bound by bone, " \
