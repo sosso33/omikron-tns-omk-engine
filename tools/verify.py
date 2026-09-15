@@ -20140,6 +20140,42 @@ def c_engine_multiplan_examine():
            "the rows rebound; a protected one refused with message 4"
 
 
+def c_engine_multiplan_close():
+    r"""engine: MULTIPLAN's CLOSE and its answer (todo/multiplan.md 5).
+
+    The close `0x004B02D0` is two calls: `Game_RaiseEvent(26, 0)` - case 26
+    clears the open object list when it is list 0 - and the generic close. No
+    instruction on screen 2 writes the answer `dword_930750` (its 17 writers
+    are other screens'), so the script parked at `ui.open 2` resumes with the
+    -1 `UI_OpenScreen` preset, whether it keeps it or not. Opened from the
+    pharmacy's kiosk and closed with TAB at once: the viewer's close line,
+    the event and the open list before and after it.
+    """
+    import subprocess
+    eng = os.path.join(ROOT, "engine")
+    save = os.path.join(ROOT, "traces", "save-appart.bin")
+    if not (os.path.isdir(eng) and os.path.exists(save)):
+        return ("skipped",), ("skipped",), "engine/ or the save absent"
+    mk = subprocess.run(["make", "-s", "play"], cwd=eng, capture_output=True, text=True)
+    play = os.path.join(eng, "build", "omk-play")
+    if mk.returncode != 0 or not os.path.exists(play):
+        return ("skipped",), ("skipped",), "omk-play did not build"
+    env = dict(os.environ, SDL_VIDEODRIVER="dummy")
+    r = subprocess.run([play, omkpaths.data_root(), os.path.join(ROOT, "tables"),
+                        "--save", save, "--area", "39", "--stand", "14591,-251,11771,0",
+                        "--nofmv", "--no-crowd", "--software", "--keys", "28,28,0x0F",
+                        "--keydelay", "60", "--frames", "300"],
+                       capture_output=True, env=env)
+    text = r.stdout.decode("cp1252", "replace")
+    got = tuple(ln.strip() for ln in text.splitlines() if ln.startswith("screen 2 close"))
+    return got, \
+           ("screen 2 closed without an answer -> -1, the script resumes",
+            "screen 2 close: event 26, open list 0 -> -1"), \
+           "the viewer's close lines for screen 2 after opening the pharmacy's " \
+           "kiosk and pressing TAB: the answer the parked script resumes with, " \
+           "then event 26 and the open object list before and after it"
+
+
 def c_engine_shop_open():
     r"""engine: what a SHOP is the moment it opens - `Ui_OpenShop` (0x004AE540).
 
@@ -35168,6 +35204,7 @@ SLOW = [
     ("engine: multiplan rows", c_engine_multiplan_rows, "UI 3d; todo/multiplan.md"),
     ("engine: multiplan transfers", c_engine_multiplan_transfers, "UI 3d; todo/multiplan.md"),
     ("engine: multiplan examine", c_engine_multiplan_examine, "UI 3d; todo/multiplan.md"),
+    ("engine: multiplan close", c_engine_multiplan_close, "UI 3d; todo/multiplan.md"),
     ("cursor highlight",  c_cursor_highlight,   "UI 3b"),
     ("slider destinations", c_slider_destinations, "UI 3g"),
     ("sneak previews",   c_sneak_previews,     "UI 3g"),

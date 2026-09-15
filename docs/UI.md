@@ -3071,6 +3071,15 @@ destroys an object whose record carries flag `0x2` (`RemoveAt(1, tag)`,
 result 1, no message) and refuses any other with message 4. Both answers
 return to the kiosk on its rows. `verify.py: engine: multiplan examine`.
 
+**The close and the answer** (step 5). The close `0x004B02D0` is
+`Game_RaiseEvent(26, 0)` and the generic close, the shops' shape. Nothing on
+screen 2 writes the answer, so the parked script always resumes with −1 - and
+it makes no difference: of the **13** sites that keep it in variable 19
+(AREA 178 five times, 179 five times, 237, 253 and SCENE 51), **none reads
+it**, each running on into `camera.set`, `fade.from_color` or `end`. The kiosk
+is a place to put things, not a question. `verify.py: engine: multiplan
+close`.
+
 ### The LIFT — the one bespoke widget
 
 `UI_GridMenuInput` is the only list-level input hook the game has, and it is

@@ -9723,8 +9723,16 @@ int main(int argc, char** argv) {
                 // A SHOP's close callback is `Ui_CloseShop` (0x004AE7E0):
                 // `Game_RaiseEvent(26, 0)` and then the generic close. Case 26
                 // clears the open list only when it is list 0 - the bank's.
-                if ((openScreen >= 20 && openScreen <= 28) || openScreen == 32)
+                // MULTIPLAN's close `0x004B02D0` is the same two calls - and
+                // nothing on screen 2 writes `dword_930750`, so its thirteen
+                // answer-keeping sites always read back this -1.
+                if ((openScreen >= 20 && openScreen <= 28) || openScreen == 32 ||
+                    openScreen == 2) {
+                    const int was = inv.openedList();
                     inv.closeList();          // Game_RaiseEvent(26, 0)
+                    std::printf("screen %d close: event 26, open list %d -> %d\n",
+                                openScreen, was, inv.openedList());
+                }
                 session.answerUi(-1);
                 walk.reset();
                 openScreen = -1;
