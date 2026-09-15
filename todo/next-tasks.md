@@ -41,7 +41,7 @@ caught all three:
 | 3 | 9 | main menu completed | the widget tree and the answer sites are lifted, the start menu already answers for itself, and the save/load menus built for item 8 are most of the machinery. Pin what "new game is not correct" means in one run before building anything |
 | 4 | 10 | sneak: character / info / config pages | plus `todo/sneak.md` 2a, the ROW SCROLLING, which belongs with them: the row window is hardcoded 0, so a tenth carried object cannot be reached at all. That is the one that makes the device wrong rather than thin |
 | 5 | 11 | shop UI | seven screens through one jump table, and the buy/sell channel is already ported |
-| 6 | 12 | multiplan UI | the background is read, the panel is not |
+| 6 | 12 | multiplan UI | **DONE 2026-09-15**, confirmed in play |
 | 7 | 13 | the remaining UI | re-scope after 9-12; they build most of the machinery |
 | 8 | 14 | health: fall damage and vehicle hits | do the READING as its own step and re-estimate. Nothing in the DB doc mentions health, so this is the only item whose size is a guess |
 | 9 | 15 | jump / fall animation and physics | the jump's impulse and the landing bands are measured (`todo/player-vertical.md`), so this is nearer than the triage thought - but a fall that hurts wants 14 read first |
@@ -80,7 +80,7 @@ items are research and can be done any time they are wanted.
 | 9 | main menu completed (new game correct, the rest) - **scoped by the reader 2026-09-13: only OPTIONS and QUIT are missing, low priority** | **M** | very strong | the widget tree and the answer sites are lifted |
 | 10 | sneak: character / info / config pages | **M** | very strong | the panels are already named constants in the port |
 | 11 | shop UI | **M** | strong | 7 screens and their jump table are read |
-| 12 | multiplan UI | **M** | fair | the tile background is read; the panel is not |
+| 12 | multiplan UI | **DONE 2026-09-15** | strong | `todo/multiplan.md`, six steps (`42e06a9`..`921fa83`): the storage kiosk's source list, rows, header, the monitors' interference, the transfers, Examiner, Détruire and the close; confirmed in play by the reader (*"no issues"*) |
 | 13 | any remaining UI screens | **M** | fair | 37 screens are enumerated; what is left is the tail |
 | 14 | health: fall damage and vehicle hits | **M/L** | **weak** | nothing in the DB doc or the port; needs reading before estimating |
 | 15 | jump / fall animation and physics | **L** | fair | the walker's slope and step rules are ported; the fall tiers are not |

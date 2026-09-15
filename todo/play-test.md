@@ -775,9 +775,9 @@ Wrong looks like: rows in dark red (the placeholder), a cursor that cannot
 leave the four buttons, a price that stays 0, money that does not move, a
 confirm that opens on the buttons, or TAB doing nothing.
 
-## 13. MULTIPLAN — the storage kiosk (committed 2026-09-15, `e9bedfd`..`6175cdb`), 5 minutes
+## 13. MULTIPLAN — the storage kiosk — **CONFIRMED IN PLAY 2026-09-15** (*"Ok, i tested it, no issues"*, `e9bedfd`..`921fa83`)
 
-**NOT YET PLAYED.** Steps 1-5 of `todo/multiplan.md`, all played headless only.
+Kept as the recipe. Steps 1-5 of `todo/multiplan.md`.
 The pharmacy has a kiosk; stand at it and press ENTER:
 
 ```
