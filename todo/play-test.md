@@ -775,6 +775,47 @@ Wrong looks like: rows in dark red (the placeholder), a cursor that cannot
 leave the four buttons, a price that stays 0, money that does not move, a
 confirm that opens on the buttons, or TAB doing nothing.
 
+## 13. MULTIPLAN — the storage kiosk (committed 2026-09-15, `e9bedfd`..`6175cdb`), 5 minutes
+
+**NOT YET PLAYED.** Steps 1-5 of `todo/multiplan.md`, all played headless only.
+The pharmacy has a kiosk; stand at it and press ENTER:
+
+```
+build/omk-play ../gamedata ../tables --save ../traces/save-appart.bin \
+    --area 39 --stand 14591,-251,11771,0 --nofmv --no-crowd
+```
+
+**Keys**: the four icons down the right start focused (UP/DOWN); ENTER on an
+icon (or LEFT) crosses into the rows; UP/DOWN walk them; ENTER on a row does
+what the selected ICON says; TAB leaves.
+
+* **(a) The rows follow the icon.** On *vers le multiplan* (yellow) the rows are
+  your sneak - *Notice MK400*; on the other three they are the shared storage -
+  *Documentation multiplan* and *5 Anneaux magiques - 5*. The header names the
+  icon.
+* **(b) The box flickers like a monitor**: every so often the rows jolt
+  sideways, grey dots burst for a moment, and a band of bright lines sweeps
+  down. It is the original's own effect, and the one thing here only an eye
+  can judge - say if it is too busy, too rare, or missing.
+* **(c) Deposit and withdraw.** *vers le multiplan*, ENTER, ENTER on the notice:
+  the header reads *Objet transféré !* for five seconds and the focus goes back
+  to the icons (the sneak is empty). *vers le sneak*, ENTER, ENTER on the rings:
+  they leave the storage and count on YOU (2 -> 7 anneaux) instead of taking a
+  row. Refusals: a Waver (`--give 12`) cannot be deposited (*Transfert non
+  autorisé*); a full sneak refuses a withdrawal (*sneak plein*).
+* **(d) Examiner.** The eye icon, ENTER, ENTER on *Documentation multiplan*: its
+  text in the box, scrollable with UP/DOWN. An ordinary object shows its model
+  turning, then the text.
+* **(e) Détruire.** The green icon, ENTER, ENTER on the documentation: *Détruire
+  définitivement cet objet*, its name, *Oui* / *Non*. *Oui* removes it silently;
+  on the rings *Oui* refuses with *Impossible de détruire cet objet*.
+* **(f) Leaving**: TAB closes the kiosk.
+
+**Say especially**: whether the storage really is shared - deposit here and
+open another kiosk (AREA 178 has five) and it should be there; and whether the
+original shows a message when a destroy succeeds (this build shows none,
+which is what the code reads).
+
 ## What is NOT worth testing yet
 
 * ~~the videophone's own picture inside the sneak~~ — **CONFIRMED IN PLAY
