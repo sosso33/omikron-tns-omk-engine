@@ -510,7 +510,7 @@ The start menu already ANSWERS FOR ITSELF in both the simulator and the port
 carries the panels, items and answer sites. New game works but is "not
 correct" per the reader — worth pinning what differs before building the rest.
 
-### 10. Sneak: character / info / config pages — M, very strong evidence
+### 10. Sneak: character / info / config pages — M, very strong evidence — **STARTED 2026-09-15, `todo/sneak.md` §5**
 
 `engine/src/ui/widgets.h` already names `kPanelSneakIdentity`,
 `kPanelSneakMemory`, `kPanelSneakOptions`, the tab column, the shared row and

@@ -175,7 +175,10 @@ mover, which the port already has) followed by a two-case swap of that same
 `0x40000001` flag on the two content items. Nothing harder than the slider
 page's mover.
 
-**What is NOT established is where the text comes from.** Both content items
+**Where the text comes from - SETTLED 2026-09-15, see §5b: three draw hooks
+on the items, reading the player's properties through event 44.** What
+follows is the reasoning as it stood. **What is NOT established is where the
+text comes from.** Both content items
 ship `string -1`, `text 0` (item `+24`) and `textFn 0` (item `+32`) — no
 string id, no pointer, no callback — so something outside the item draws into
 that 300x270 box, and the per-character bio has to be found in the data
@@ -250,11 +253,119 @@ Each ends in a commit and a `verify.py` check SHOWN to fail first.
 | 1 | **row scrolling**: read `sub_42AFF0` properly, model the window in the binder, make `sub_49C050` move it. Check: a carried list of >9 reaching its last row, which today is unreachable | **done 2026-09-04** — a CENTRED window (the cursor moves to the middle widget, then the window moves under it); `bindRows`'s second argument is the WINDOW, the tag lives in widget 0's `+0x3C`, and the two end marks are `0x100000`/`0x200000`. `verify.py: engine row window` drives 12 rows through 9 widgets, reaching row 11 of 11; shown to fail at row 8 with the window pinned. **The event-30 raise is RECORDED, not raised** — the walk has no channel, so a caller must ask for the preview off `rowOf(selected())` |
 | 2 | `Utiliser sur`: read `sub_42B520`, port the combine mode, the two slots and the second selection onto the already-ported `Inventory::combine`. Until then, refuse it rather than run `Utiliser`'s arm | **done 2026-09-04** — the mode, the two slots, the disabled verb list and the second row confirm; the slots hold ROW INDICES (`item+0x3C`), which the caller resolves. `verify.py: engine combine` asserts the gate histogram (5 at 0, 6 at 8, **0 at 1**), a real recipe through the mode (18 + 7 -> 33) and the spell arm answering -1; shown to fail with the gate ignored |
 | 3 | which list the bio / statistics / memo pages ask for, and fill them | **done 2026-09-04 — NOTHING TO FILL.** Only slider/inventory/memory carry the row list; identity and options carry none. And the memory page's count `dword_4DE708` has seven reads and ZERO writes in the image, so that page is built and permanently empty — the port is already right. `verify.py: sneak memory page`, with a positive control so the zero means something |
-| 4 | `Text_LayOutBlock` — the real wrap, against a caption that today wraps wrong | |
+| 4 | `Text_LayOutBlock` — the real wrap, against a caption that today wraps wrong | **done** — `todo/text-layout.md` (all three steps) |
 | 5 | the hand attach, so a used object is visible for the frames it is held | |
 | 6 | `Object_ApplyEffect` and its context gate | |
 | 7 | the identity page: the two-tab switch (small - `sub_42A930` plus a flag swap, both already ported in pieces), then the character view, then the per-character TEXT, whose source is not yet found | |
 | 8 | the other four page builders, each bounded before it is shipped | |
+
+## 5. next-tasks 10 — the IDENTITY, OPTIONS and QUIT pages (opened 2026-09-15)
+
+Picked up after MULTIPLAN (`todo/multiplan.md`), on the reader's go. The
+MEMORY page is not in scope: it is empty by the code (§2c, `sneak memory
+page`). Every address below was read from the raw image; none of these
+functions has a `proc` label.
+
+### 5a. What the port shows today
+
+The headless route (Anekbah, TAB held, RIGHT onto the tab column, UP twice to
+the blue identity icon, ENTER):
+
+```
+SDL_VIDEODRIVER=dummy build/omk-play ../gamedata ../tables --software --nofmv --no-crowd \
+    --save ../traces/save-appart.bin --area 0 --stand 1804,0,-6890,336 --frames 240 \
+    --hold "0*40,k15*3,0*30,k205*3,0*15,k200*3,0*15,k200*3,0*15,k28*3,0*60"
+```
+
+The identity page opens with its two tab labels, *Identité* and
+*Caractéristiques*, and the caption bar - and an EMPTY 300x270 box: no text,
+no character. Options and Quit have no page behaviour at all.
+
+### 5b. The identity page (panel `0x004DED80`)
+
+* **Builder `0x0049C100`**: the Identity content `0x004DE810` drawn, the
+  Characteristics content `0x004DE858` hidden (flag `0x40000001`), the tab
+  list's selection `word_4DE902 = 0`, the echo bar in the page's blue.
+* **The tab list's hook `0x0049C160`**: `sub_42A930` (LEFT/RIGHT, already
+  ported), then the two content items swap the same flag by the new
+  selection.
+* **The panel hook `0x0049C1D0`**: while the tab row is current, LEFT/RIGHT
+  move `word_4DE902` by the input's `0x1`/`0x2` bits and swap the contents;
+  otherwise `sub_42A710`, the generic list mover.
+* **The content is three DRAW HOOKS** on the items, which is why §2d found no
+  string on them:
+
+  | item | draw hook | what |
+  |---|---|---|
+  | `0x004DE810` | `0x0049C2B0` | **Identité**: ten lines of label + value |
+  | `0x004DE858` | `0x0049CA30` | **Caractéristiques**: seven labels, values, BARS (`sub_49CE60`) |
+  | `0x004DE8A0` | `0x004779C0` | the **character**: `sub_4778E0`'s model on a 3 m camera, `I2D_Submit3DView` |
+
+* **Where the text comes from - SETTLED.** Every value is `Game_RaiseEvent(44)`
+  (`Actor_GetProperty`) on `Actor_Player()`, through `sub_42B1C0` (an int) or
+  `sub_42B1F0` (a pointer); every label is `sub_4767E0` on the screen's own
+  `IAM\Sneak`. The pairs, in the hook's order:
+
+  | label (`IAM\Sneak`) | property | record field |
+  |---|---|---|
+  | 15 Nom | 6 | the string at `+8` |
+  | 16 Age | 8 | int16 `+154` |
+  | 17 Sexe | 0 | the string at `+108` |
+  | 18 Groupe sanguin | 13 | the string at `+124` |
+  | 19 Taille | 9 | the string at `+128` |
+  | 20 Poids | 10 | the string at `+136` |
+  | 21 Yeux | 12 | the string at `+116` |
+  | 22 Profession | 11 | the string at `+40` |
+  | 23 Signes particuliers | 15 | the string POINTED TO by `+0` |
+  | 24 Centres d'intérêt | 14 | the string pointed to by `+4` |
+  | 25 Energie | 1 | int16 `+170` |
+  | 26 Attaque | 16 | `+160` |
+  | 27 Maîtrise du combat | 19 | `+166` - drawn as a RANK WORD, strings 36-39 *Novice* ... |
+  | 28 Résistance corporelle | 17 | `+162` |
+  | 29 Vitesse | 3 | `+158` |
+  | 30 Esquive | 18 | `+164` |
+  | 31 Mana | 2 | `+156` |
+
+  The label/property pairing is read off the call order and has to be
+  confirmed line by line when each hook is ported (the first label's push is
+  not a literal). The port's `readActorProperty` covers every INT here and
+  none of the string slots (`props.cpp`'s "pointer slot").
+
+### 5c. The options page (panel `0x004DF058`)
+
+The page has no content list of its own: it HOSTS screen 35, `OPTIONS`, which
+the sneak's open loaded hidden underneath (`docs/UI.md`, `sneak chain`).
+Builder `0x0049D8F0`: the echo bar's colour, the clock black, and
+`UI_SetScreenFlag(UI_FindScreen(35), 0x40000001, 0)` - screen 35 SHOWN; its
+leave hook `0x0049D940` sets the flag back. The panel hook `0x0049D960`: on
+the input's `0x3` bits, `UI_FocusScreen(35)` - the options menu takes the
+keys. The port already walks screen 35's page tree (`sim: options`).
+
+### 5d. The quit page (panel `0x004DF0C0`)
+
+The quit icon `0x004DE118` (string 32 *Quitter le jeu*, bottom right) has its
+own callback `0x0049DBF0`: show the Oui/Non list `0x004DEBA0`, select *Non*
+(`word_4DEBA2 = 1`), make it the current list. *Non* `0x0049DBC0` hides it and
+returns the focus to the tabs. *Oui* `0x0049DBA0` is `sub_409090` - `mov
+dword_4E6C9C, 1`, the QUIT REQUEST the pause screen's *Oui* already sets in the
+port (a new game at the next pump, not an exit) - and `screen+8 = 3`, the close.
+The builder `0x0049D980` hides the pair and resets the list's selection and
+the panel's `+24`.
+
+### 5e. Steps
+
+Each ends in a commit, a `verify.py` check shown to fail, and a report.
+
+| # | step | status |
+|---|---|---|
+| 0 | this section: the survey, the headless route, the steps | **done 2026-09-15** |
+| 1 | **the identity page's WALK**: the builder's flag and selection, the tab hook's swap, the panel hook. Check: LEFT/RIGHT on the tab row flips which content is drawn | |
+| 2 | **Identité**: `0x0049C2B0` - read it whole, the string property slots in the port, the ten lines laid out through `Text_LayOutBlock`. Check: the lines for Kay'l from `save-appart.bin` | |
+| 3 | **Caractéristiques**: `0x0049CA30` and `sub_49CE60`'s bars, the rank word. Check: the seven values and their bar lengths | |
+| 4 | **the character view** `0x004779C0` / `sub_4778E0`: the player's model and clip in the item's rect. Check: a 3D view is submitted with the player's model; a render to look at | |
+| 5 | **Options**: screen 35 shown under the page and focused by the hook. Check: the options page tree reachable from the sneak's Options tab | |
+| 6 | **Quit**: the icon's callback, Oui/Non, the quit request. Check: *Non* returns to the tabs, *Oui* raises the request | |
+| 7 | **PLAY** - a reader's pass; `todo/play-test.md` gets the recipe | |
 
 ## 3b. Notes worth not rediscovering
 
