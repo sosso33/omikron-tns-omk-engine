@@ -166,6 +166,15 @@ inline constexpr std::uint32_t kPanelSneakInventory = 0x004DEE50u;
 inline constexpr std::uint32_t kPanelSneakMemory    = 0x004DEF88u;
 inline constexpr std::uint32_t kPanelSneakOptions   = 0x004DF058u;
 inline constexpr std::uint32_t kPanelSneakQuit      = 0x004DF0C0u;
+// THE IDENTITY PAGE (todo/sneak.md §5b): its tab row - Identite /
+// Caracteristiques plus the two alternative contents and the character view -
+// the row's hook, the panel's hook, and the two content items the builder and
+// both hooks switch with `0x40000001`.
+inline constexpr std::uint32_t kListSneakIdentity        = 0x004DE900u;
+inline constexpr std::uint32_t kHookSneakIdentityTabs    = 0x0049C160u;
+inline constexpr std::uint32_t kHookSneakIdentityPanel   = 0x0049C1D0u;
+inline constexpr std::uint32_t kItemSneakIdentityText    = 0x004DE810u;   // draw hook 0x0049C2B0
+inline constexpr std::uint32_t kItemSneakCharacteristics = 0x004DE858u;   // draw hook 0x0049CA30
 // The TAB COLUMN, carried by all six, and the amber icon the port opens on.
 inline constexpr std::uint32_t kListSneakTabs       = 0x004DE210u;
 inline constexpr std::uint32_t kIconSneakInventory  = 0x004DE040u;  // amber
@@ -996,6 +1005,10 @@ private:
     // window back to 0.
     void multiplanColour(const UiPanel& p);
     void multiplanSetSource(int src);
+    // The identity page's content swap, shared by its builder and both hooks:
+    // selection 0 draws `0x004DE810` and switches `0x004DE858` off, 1 the
+    // other way round (`sub_428FF0(item, 0x40000001, on)`).
+    void identitySwap(int sel);
     void buildPage(const UiPanel& p);
     // The panel's `+8`, run on the way OUT - `sub_42A370` calls the old
     // panel's before the new panel's `+4`.

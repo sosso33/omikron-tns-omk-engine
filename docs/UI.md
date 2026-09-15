@@ -1173,6 +1173,20 @@ wrong on its own:
 
 `verify.py: sneak page colour` asserts the whole cycle those three produce.
 
+### The identity page's two tabs
+
+Panel 0x004DED80 carries a row of its own, list 0x004DE900: the *Identité*
+and *Caractéristiques* tabs, the two content boxes (same 300x270 rectangle,
+so alternatives) and the character view. Its builder `0x0049C100` selects the
+first tab and switches the Characteristics box off (`0x40000001`); the row's
+hook `0x0049C160` is the LEFT/RIGHT mover followed by the same swap by the new
+selection; and the panel hook `0x0049C1D0` decides when the row is left and
+entered - LEFT off the first tab or RIGHT off the second goes to the list
+mover, and arriving on the row with a LEFT lands on the FAR tab, with a RIGHT
+on the near one. Each box's content is its own draw hook (`0x0049C2B0` and
+`0x0049CA30`) over the player's properties through event 44; see
+`todo/sneak.md` §5b. `verify.py: engine: sneak identity`.
+
 ### The slider page has its OWN list mover
 
 The inventory page's `panel+16` is `sub_42A710`, which is only

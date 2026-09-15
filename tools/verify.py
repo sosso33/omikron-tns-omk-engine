@@ -20140,6 +20140,58 @@ def c_engine_multiplan_examine():
            "the rows rebound; a protected one refused with message 4"
 
 
+def c_engine_sneak_identity():
+    r"""engine: the sneak's IDENTITY page - its walk (todo/sneak.md §5e step 1).
+
+    Three pieces, all read from the raw image (none has a `proc` label):
+
+    * the builder `0x0049C100` puts the tab row `0x004DE900` on its first tab
+      (`word_4DE902 = 0`) and switches the Characteristics content
+      `0x004DE858` off and the Identity content `0x004DE810` on;
+    * the row's hook `0x0049C160` is `sub_42A930` (LEFT/RIGHT) and then the
+      same swap by the new selection;
+    * the panel hook `0x0049C1D0` - on the tab row, LEFT off the first tab or
+      RIGHT off the second goes to `sub_42A710`, the list mover, and anything
+      else falls to the row's hook; off it, `sub_42A710` runs, and ARRIVING on
+      the row with a LEFT picks the far tab (1), with a RIGHT the near one (0).
+
+    `sneak_identity` opens screen 9, goes RIGHT onto the tab column, UP twice,
+    ENTER, then walks the row RIGHT three times and LEFT three times; per key,
+    the panel, current list, the row's selection and which content is off.
+    The walk before this port declined the two hooks, so the row could not be
+    walked and both contents stayed on together.
+    """
+    import subprocess
+    eng = os.path.join(ROOT, "engine")
+    if not os.path.isdir(eng):
+        return ("skipped",), ("skipped",), "engine/ absent"
+    mk = subprocess.run(["make", "-s", "build/sneak_identity"], cwd=eng,
+                        capture_output=True, text=True)
+    tool = os.path.join(eng, "build", "sneak_identity")
+    if mk.returncode != 0 or not os.path.exists(tool):
+        return ("skipped",), ("skipped",), "sneak_identity did not build"
+    tb = os.path.join(ROOT, "tables")
+    r = subprocess.run([tool, os.path.join(tb, "ui_widgets.json"), os.path.join(tb, "ui.json")],
+                       capture_output=True, text=True)
+    lines = [" ".join(ln.split()) for ln in r.stdout.splitlines() if " panel 0x" in ln]
+    return (len(lines), lines), \
+           (10, [
+            "RIGHT panel 0x4dee50 list 0x4de210 tab -1 identity on characteristics on",
+            "UP panel 0x4dee50 list 0x4de210 tab -1 identity on characteristics on",
+            "UP panel 0x4dee50 list 0x4de210 tab -1 identity on characteristics on",
+            "ENTER panel 0x4ded80 list 0x4de210 tab 0 identity on characteristics off",
+            "RIGHT panel 0x4ded80 list 0x4de900 tab 0 identity on characteristics off",
+            "RIGHT panel 0x4ded80 list 0x4de900 tab 1 identity off characteristics on",
+            "RIGHT panel 0x4ded80 list 0x4de210 tab 1 identity off characteristics on",
+            "LEFT panel 0x4ded80 list 0x4de900 tab 1 identity off characteristics on",
+            "LEFT panel 0x4ded80 list 0x4de900 tab 0 identity on characteristics off",
+            "LEFT panel 0x4ded80 list 0x4de210 tab 0 identity on characteristics off"]), \
+           "reports read (a parse that reads none fails AS a parse); then after " \
+           "each key - into the page, along the tab row and off both ends - the " \
+           "panel, the current list, the tab row's selection, and which of the " \
+           "two contents a hook switched off"
+
+
 def c_engine_sneak_examine_message():
     r"""engine: the SNEAK's Examiner posts world message 4 (`sub_49BFF0`).
 
@@ -35249,6 +35301,7 @@ SLOW = [
     ("engine: multiplan examine", c_engine_multiplan_examine, "UI 3d; todo/multiplan.md"),
     ("engine: multiplan close", c_engine_multiplan_close, "UI 3d; todo/multiplan.md"),
     ("engine: sneak examine message", c_engine_sneak_examine_message, "UI 3d; todo/multiplan.md"),
+    ("engine: sneak identity", c_engine_sneak_identity, "UI; todo/sneak.md 5"),
     ("cursor highlight",  c_cursor_highlight,   "UI 3b"),
     ("slider destinations", c_slider_destinations, "UI 3g"),
     ("sneak previews",   c_sneak_previews,     "UI 3g"),

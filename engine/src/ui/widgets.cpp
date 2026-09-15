@@ -864,6 +864,16 @@ void UiWalk::multiplanColour(const UiPanel& p) {
     }
 }
 
+void UiWalk::identitySwap(int sel) {
+    if (sel == 0) {
+        state_->itemOff.erase(kItemSneakIdentityText);
+        state_->itemOff.insert(kItemSneakCharacteristics);
+    } else if (sel == 1) {
+        state_->itemOff.insert(kItemSneakIdentityText);
+        state_->itemOff.erase(kItemSneakCharacteristics);
+    }
+}
+
 void UiWalk::multiplanSetSource(int src) {
     state_->multiplanSource = src;                  // dword_68A610
     selMap()[kListMultiplanRows] = 0;               // sub_42ADD0's a2 = 0
@@ -1016,6 +1026,15 @@ void UiWalk::buildPage(const UiPanel& p) {
     // The memory page's builder writes `mov dword_670CB8, 2`; its rows come
     // from the channel with list id 2, which this port does not fill.
     if (p.addr == kPanelSneakMemory) state_->rowKind = 2;
+    // The IDENTITY page's builder `0x0049C100`:
+    //     sub_428FF0(0x004DE810, 0x40000001, 0);   word_4DE902 = 0;
+    //     sub_428FF0(0x004DE858, 0x40000001, 1);   the echo bar's colour
+    // - Identite drawn, Caracteristiques off, and the tab row back on its
+    // first tab every time the page is entered. It does not write `+24`.
+    if (p.addr == kPanelSneakIdentity) {
+        selMap()[kListSneakIdentity] = 0;
+        identitySwap(0);
+    }
     if (p.addr == kPanelSneakVerbs) {
         setListOff(kListSneakVerbs, false);
         setListOff(kListSneakTabs, true);
@@ -1992,6 +2011,52 @@ bool UiWalk::press(std::uint32_t bits) {
                     return true;
                 }
             }
+        } else if (panel_->hook == kHookSneakIdentityPanel) {
+            // THE IDENTITY PAGE's panel hook (0x0049C1D0), whole:
+            //
+            //     old = word_4DE902;                          // the tab row's selection
+            //     if (panel+24 == 1) {                        // ON the tab row
+            //         if (old == 0 && (input & 1)) return sub_42A710(screen, panel);
+            //         if (old == 1 && (input & 2)) return sub_42A710(screen, panel);
+            //         return 0;                               // the row's own hook moves
+            //     }
+            //     if (sub_42A710(screen, panel) != 1) return 0;
+            //     if (panel+24 == 1) {                        // ARRIVED on the tab row
+            //         if (input & 1) word_4DE902 = 1; else if (input & 2) word_4DE902 = 0;
+            //         if (word_4DE902 != old) swap the two contents;
+            //     }
+            //     return 1;
+            //
+            // So LEFT off Identite or RIGHT off Caracteristiques leaves the row,
+            // and arriving from the RIGHT (a LEFT press) lands on the far tab.
+            const auto moveLR = [&]() -> bool {
+                if (bits & kUiLeft)  return moveLists(-1);
+                if (bits & kUiRight) return moveLists(1);
+                return false;
+            };
+            const UiList* cl = curList();
+            if (cl && cl->addr == kListSneakIdentity) {
+                const int old = selectionOf(*cl);
+                if ((old == 0 && (bits & kUiLeft)) || (old == 1 && (bits & kUiRight))) {
+                    if (moveLR()) return true;
+                }
+            } else if (bits & (kUiLeft | kUiRight)) {
+                const UiList* before = cl;
+                const int old = [&] {
+                    const auto s = selMap().find(kListSneakIdentity);
+                    return s != selMap().end() ? s->second : 0;
+                }();
+                if (moveLR()) {
+                    const UiList* now = curList();
+                    if (now && now != before && now->addr == kListSneakIdentity) {
+                        int sel = old;
+                        if (bits & kUiLeft) sel = 1; else if (bits & kUiRight) sel = 0;
+                        selMap()[kListSneakIdentity] = sel;
+                        if (sel != old) identitySwap(sel);
+                    }
+                    return true;
+                }
+            }
         } else if (panel_->hook == w_->moveListsHook()) {
             // `sub_42A710(screen, panel) = sub_42A5C0(screen, panel, 1, 2)` -
             // `Ui_MoveBetweenLists` with LEFT stepping back and RIGHT
@@ -2081,6 +2146,15 @@ bool UiWalk::press(std::uint32_t bits) {
             (sel >= 0 && static_cast<std::size_t>(sel) < l->items.size())
                 ? l->items[static_cast<std::size_t>(sel)].addr : 0u;
         multiplanSetSource(chosen == kItemMultiplanToKiosk ? 0 : 1);
+        return true;
+    }
+    if (l->hook == kHookSneakIdentityTabs) {
+        // THE IDENTITY PAGE's tab row (0x0049C160):
+        //     if (sub_42A930(screen, list) != 1) return 0;
+        //     switch (list+2) { case 0: 810 on, 858 off; case 1: 810 off, 858 on; }
+        //     return 1;
+        if (!move(*l, bits, kUiLeft, kUiRight)) return false;
+        identitySwap(selectionOf(*l));
         return true;
     }
     if (l->hook == kMoveSelectionLR) {
