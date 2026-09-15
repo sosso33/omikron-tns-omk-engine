@@ -170,6 +170,17 @@ inline constexpr std::uint32_t kPanelSneakQuit      = 0x004DF0C0u;
 // Caracteristiques plus the two alternative contents and the character view -
 // the row's hook, the panel's hook, and the two content items the builder and
 // both hooks switch with `0x40000001`.
+// THE QUIT TAB (todo/sneak.md §5d). The tab column's last icon carries BOTH a
+// callback and a child page - and `Ui_ConfirmSelection` prefers the callback,
+// so the page `0x004DF0C0` is never installed: its address appears exactly
+// once in the image, as this item's `+44`, and the only two `sub_42A370` sites
+// that install an item's `+44` are the load panel's. The page is BUILT AND
+// UNREACHABLE, the shape options page 12 already has - and its Oui/Non list
+// belongs to it alone, so what the callback shows is drawn by nothing.
+inline constexpr std::uint32_t kCbSneakQuitShow          = 0x0049DBF0u;
+inline constexpr std::uint32_t kCbSneakQuitNo            = 0x0049DBC0u;
+inline constexpr std::uint32_t kCbSneakQuitYes           = 0x0049DBA0u;
+inline constexpr std::uint32_t kListSneakQuit            = 0x004DEBA0u;
 inline constexpr std::uint32_t kListSneakIdentity        = 0x004DE900u;
 inline constexpr std::uint32_t kHookSneakIdentityTabs    = 0x0049C160u;
 inline constexpr std::uint32_t kHookSneakIdentityPanel   = 0x0049C1D0u;

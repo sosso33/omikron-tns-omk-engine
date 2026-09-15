@@ -1234,6 +1234,27 @@ Kay'l that is `H_STAND` - and its tracks are `Sh`-prefixed against his `U`
 meshes, so the bind is by BONE (the engine's `strstr`; the port's
 second-uppercase rule), 19 of 19. `verify.py: engine: sneak character`.
 
+### The sneak's QUIT tab — and a page built out of reach
+
+The tab column's last icon (0x004DE118, `IAM\Sneak` 32 *Quitter le jeu*)
+carries **both** a callback and a `+44` child page, and `Ui_ConfirmSelection`
+takes the callback when an item has one — so the page **0x004DF0C0 is never
+installed**. Nor by anything else: the value appears exactly once in the whole
+image, as that item's `+44`, and the only two `sub_42A370` sites that install
+an item's `+44` are the load panel's (0x0047B83B, 0x0047BB24). Its Oui/Non
+list 0x004DEBA0 belongs to that page alone, and `Ui_DrawScreen` draws the
+CURRENT panel's lists — so the list the callback shows is drawn by nothing.
+It is the shape the options menu's **page 12** already has: built, and
+unreachable.
+
+What the three callbacks do, ported as they are: `0x0049DBF0` shows the list,
+selects *Non* (`word_4DEBA2 = 1`) and writes 1 into whatever panel is current
+(on the inventory page, its own list 1 — the previews); `0x0049DBC0` hides it
+and puts that back to 0; `0x0049DBA0` is `sub_409090` — `dword_4E6C9C = 1`,
+the same quit REQUEST the pause screen's *Oui* sets, served between script
+pumps as a new game rather than an exit — and then the close.
+`verify.py: engine: sneak quit`.
+
 ### The slider page has its OWN list mover
 
 The inventory page's `panel+16` is `sub_42A710`, which is only

@@ -1627,6 +1627,40 @@ bool UiWalk::confirm() {
             panel_ = nullptr;                  // `mov [screen+8], 3`
             return true;
         }
+        // THE SNEAK'S QUIT TAB (todo/sneak.md §5d), three callbacks:
+        //
+        //     0x0049DBF0  sub_428FF0(0x004DEBA0, 0x40000001, 0)  show Oui/Non
+        //                 word_4DEBA2 = 1                        on "Non"
+        //                 screen->panel[+24] = 1                 its list 1
+        //     0x0049DBC0  sub_428FF0(0x004DEBA0, 0x40000001, 1)  hide it
+        //                 screen->panel[+24] = 0
+        //     0x0049DBA0  sub_409090() then screen[+8] = 3       the request
+        //
+        // `+24` is written on WHATEVER PANEL IS CURRENT - the icon's own page
+        // `0x004DF0C0` is never installed (`Ui_ConfirmSelection` prefers a
+        // callback over a `+44` child, and nothing else installs it), and the
+        // Oui/Non list belongs to that page alone, so on the inventory page
+        // this shows a list nothing draws and moves the focus to the page's
+        // own list 1. Transcribed as it is, including that.
+        if (it->callback == kCbSneakQuitShow) {
+            setListOff(kListSneakQuit, false);
+            selMap()[kListSneakQuit] = 1;                  // `Non`
+            if (panel_ && panel_->lists.size() > 1) cur_ = 1;
+            log_.push_back("sneak quit: Oui/Non shown, Non selected");
+            return true;
+        }
+        if (it->callback == kCbSneakQuitNo) {
+            setListOff(kListSneakQuit, true);
+            cur_ = 0;
+            log_.push_back("sneak quit: Non - the pair hidden");
+            return true;
+        }
+        if (it->callback == kCbSneakQuitYes) {
+            quitRequest_ = true;
+            log_.push_back("sneak quit: Oui -> quit requested (dword_4E6C9C)");
+            panel_ = nullptr;                  // `mov [screen+8], 3`
+            return true;
+        }
         // `Sauvegarde` on the slot panel (0x0047ADB0), read whole:
         //
         //     if (row < dword_657968) { sub_42A370(screen, off_4CF3B8); return; }

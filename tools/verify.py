@@ -20339,6 +20339,62 @@ def c_engine_sneak_character():
            "and the frame Anim_SetFrame applies"
 
 
+def c_engine_sneak_quit():
+    r"""engine: the sneak's QUIT tab, and a page that is built and unreachable.
+
+    The tab column's last icon `0x004DE118` (`IAM\Sneak` 32 *Quitter le jeu*)
+    carries BOTH a callback and a `+44` child page - and `Ui_ConfirmSelection`
+    takes the callback when there is one, so the page `0x004DF0C0` is never
+    installed. Nothing else installs it either: the value `0x004DF0C0` appears
+    exactly ONCE in the image, as that item's `+44`, and the only two
+    `sub_42A370` sites that install an item's `+44` are the load panel's
+    (`0x0047B83B`, `0x0047BB24`). Its Oui/Non list `0x004DEBA0` belongs to
+    that page alone and `Ui_DrawScreen` draws the CURRENT panel's lists, so
+    what the callback shows is drawn by nothing. The same shape as the options
+    menu's page 12: built, and out of reach.
+
+    What the three callbacks do, transcribed as they are:
+
+    * `0x0049DBF0` (the icon): show `0x004DEBA0`, `word_4DEBA2 = 1` (*Non*),
+      and `1` into whatever panel is CURRENT - on the inventory page that is
+      its own list 1, the previews;
+    * `0x0049DBC0` (*Non*): hide it again, `+24` back to 0;
+    * `0x0049DBA0` (*Oui*): `sub_409090` - `dword_4E6C9C = 1`, the quit
+      request the pause screen's *Oui* already sets in this port - and
+      `screen+8 = 3`, the close.
+
+    `sneak_quit` walks screen 9 to the icon and confirms. Asserted per key: the
+    panel (UNCHANGED - the page is not entered), the current list INDEX, the
+    tab's selection, whether the Oui/Non list is hidden, its own selection,
+    whether the walk went approximate (it did before this was modelled), and
+    the quit request.
+    """
+    import subprocess
+    eng = os.path.join(ROOT, "engine")
+    if not os.path.isdir(eng):
+        return ("skipped",), ("skipped",), "engine/ absent"
+    mk = subprocess.run(["make", "-s", "build/sneak_quit"], cwd=eng,
+                        capture_output=True, text=True)
+    tool = os.path.join(eng, "build", "sneak_quit")
+    if mk.returncode != 0 or not os.path.exists(tool):
+        return ("skipped",), ("skipped",), "sneak_quit did not build"
+    tb = os.path.join(ROOT, "tables")
+    r = subprocess.run([tool, os.path.join(tb, "ui_widgets.json"), os.path.join(tb, "ui.json")],
+                       capture_output=True, text=True)
+    lines = [" ".join(ln.split()) for ln in r.stdout.splitlines() if " panel 0x" in ln]
+    return (len(lines), lines), \
+           (5, ["RIGHT panel 0x4dee50 list 0 tab 2 quitlist shown sel -1 approx 0 quit 0",
+                "DOWN panel 0x4dee50 list 0 tab 3 quitlist shown sel -1 approx 0 quit 0",
+                "DOWN panel 0x4dee50 list 0 tab 4 quitlist shown sel -1 approx 0 quit 0",
+                "DOWN panel 0x4dee50 list 0 tab 5 quitlist shown sel -1 approx 0 quit 0",
+                "ENTER panel 0x4dee50 list 1 tab 5 quitlist shown sel 1 approx 0 quit 0"]), \
+           "reports read (a parse that reads none fails AS a parse); then after " \
+           "each key - onto the tab column, down to 'Quitter le jeu', and the " \
+           "confirm - the panel, the current list index, the tab's selection, the " \
+           "Oui/Non list's state and selection, whether the walk went approximate, " \
+           "and the quit request"
+
+
 def c_engine_sneak_examine_message():
     r"""engine: the SNEAK's Examiner posts world message 4 (`sub_49BFF0`).
 
@@ -35452,6 +35508,7 @@ SLOW = [
     ("engine: sneak identity sheet", c_engine_sneak_identity_sheet, "UI; todo/sneak.md 5"),
     ("engine: sneak characteristics", c_engine_sneak_characteristics, "UI; todo/sneak.md 5"),
     ("engine: sneak character", c_engine_sneak_character, "UI; todo/sneak.md 5"),
+    ("engine: sneak quit", c_engine_sneak_quit, "UI; todo/sneak.md 5"),
     ("cursor highlight",  c_cursor_highlight,   "UI 3b"),
     ("slider destinations", c_slider_destinations, "UI 3g"),
     ("sneak previews",   c_sneak_previews,     "UI 3g"),
