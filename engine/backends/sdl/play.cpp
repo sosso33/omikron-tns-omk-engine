@@ -2565,6 +2565,7 @@ int main(int argc, char** argv) {
     // STREET LIFE: the pedestrians of an area naming a circuit spawn at its
     // load, at the density the options menu will one day hand in.
     session.setStreetActivity(density);
+    session.setDataRoot(fr);   // IAM\OBJECT for the kind ladder, crowd or not
     if (!noCrowd) session.loadTraffic(fr);
     // A movie chain is the intro's; a street start skips it.
     if (forceAdventure) playMovies = false;
@@ -16392,6 +16393,62 @@ int main(int argc, char** argv) {
             sneakHidden.clear();
             const int src = walk->multiplanSource();
             if (inv.openedList() != src) inv.openList(src);   // Game_RaiseEvent(25, src)
+            const auto mpText = omk::iamStrings(fs, "IAM/Multip");
+            // ---- THE TRANSFERS (step 3): `Game_HandleEvent` case 36 ---------
+            //
+            // The walk recorded the row callback's request (`takeMultiplan`).
+            // Case 36 reads the OPEN list's slot at the tag, then:
+            //   7: kind 1 (a hand weapon) -> 2; `ObjectList_IsFull(1)` -> 2;
+            //      else `ObjectList_InsertFront(1, ...)`, `RemoveAt(0, tag)`, 1
+            //   8: `ObjectList_IsFull(0)` -> 2; else `Inventory_Insert(rec, 0,
+            //      player)` and, when it answers 1, `InsertFront(0, ...)`;
+            //      then `RemoveAt(1, tag)` whatever it answered, 1
+            // So a kind 12/13 object (seteks, rings) leaves the storage as a
+            // COUNT on the player and takes no sneak slot - the session's
+            // `insertArm` / `applyObjectEffect` are that ladder. The callback
+            // then posts message 8 on 1 and 7 / 6 otherwise through
+            // `sub_42B820(0, -1, text)`, oscillator 0, 5000 ms, and rebinds
+            // the rows (`sub_42ADD0(rows, -1, -1)`), handing the focus back
+            // to the buttons when they are left empty.
+            static std::string mpMessage;
+            static long mpMessageMs = -1000000;
+            const long mpNowMs = static_cast<long>(SDL_GetTicks());
+            if (int request = -1, row = -1; walk->takeMultiplan(request, row)) {
+                const auto from = omk::objectList(state, src == 0 ? omk::ObjectList::Carried
+                                                                   : omk::ObjectList::Second);
+                const int id = row >= 0 && row < static_cast<int>(from.size())
+                    ? from[static_cast<std::size_t>(row)] : -1;
+                int result = request;          // case 36 leaves +4 alone past the count
+                std::string arm;
+                if (id >= 0 && request == 7) {
+                    const auto* rec = inv.record(id);
+                    if (rec && rec->kind == 1) { result = 2; arm = "kind 1"; }
+                    else if (!state.listAdd(1, id)) { result = 2; arm = "storage full"; }
+                    else { state.listRemove(0, id); result = 1; arm = "row"; }
+                } else if (id >= 0 && request == 8) {
+                    const auto carried = omk::objectList(state, omk::ObjectList::Carried);
+                    if (static_cast<int>(carried.size()) >= omk::GameState::kListCapacity[0]) {
+                        result = 2; arm = "sneak full";
+                    } else {
+                        const auto a = session.insertArm(id);
+                        if (a == omk::Session::Banked::Row) { state.listAdd(0, id); arm = "row"; }
+                        else { session.applyObjectEffect(id);
+                               arm = a == omk::Session::Banked::Consumed ? "consumed" : "merged"; }
+                        state.listRemove(1, id);
+                        result = 1;
+                    }
+                }
+                const int msg = result == 1 ? 8 : request == 7 ? 7 : 6;
+                mpMessage = msg < static_cast<int>(mpText.size())
+                    ? mpText[static_cast<std::size_t>(msg)] : std::string();
+                mpMessageMs = mpNowMs;
+                std::printf("multiplan: request %d row %d id %d -> %d (%s), message %d, "
+                            "rings %d\n", request, row, id, result, arm.c_str(), msg,
+                            state.rings());
+                const auto after = omk::objectList(state, src == 0 ? omk::ObjectList::Carried
+                                                                    : omk::ObjectList::Second);
+                if (result == 1 && after.empty()) walk->focusList(omk::kListMultiplanButtons);
+            }
             const auto ids = omk::objectList(state, src == 0 ? omk::ObjectList::Carried
                                                              : omk::ObjectList::Second);
             const int window = walk->rowWindow(omk::kListMultiplanRows);
@@ -16406,16 +16463,25 @@ int main(int argc, char** argv) {
                 }
             }
             walk->bindRows(omk::kListMultiplanRows, static_cast<int>(ids.size()), window);
-            const auto mpText = omk::iamStrings(fs, "IAM/Multip");
+            // `0x004B0B60`: the posted message while oscillator 0 runs
+            // (`sub_478D60`); otherwise `sprintf(out, "%s", label)` of the
+            // selected button (`sub_476860`). On the Examiner page, or with
+            // the rows focused, it ALSO fetches the selected row's name into a
+            // second buffer (`sub_42AA00`) - and never prints it: the format
+            // at 0x004E5AF8 is "%s" with the label as its only argument.
+            const bool mpMessageUp = mpNowMs - mpMessageMs < 5000;
             if (const omk::UiList* buttons = w.listAt(omk::kListMultiplanButtons)) {
                 const int b = walk->selectionOf(*buttons);
                 if (b >= 0 && b < static_cast<int>(buttons->items.size())) {
                     const int id = buttons->items[static_cast<std::size_t>(b)].label();
                     if (const omk::UiList* head = w.listAt(omk::kListMultiplanHeader))
-                        for (const auto& e : head->items)
-                            if (e.textFn == 0x004B0B60u && id >= 0 &&
-                                id < static_cast<int>(mpText.size()))
+                        for (const auto& e : head->items) {
+                            if (e.textFn != 0x004B0B60u) continue;
+                            if (mpMessageUp)
+                                sneakRows[e.addr] = mpMessage;
+                            else if (id >= 0 && id < static_cast<int>(mpText.size()))
                                 sneakRows[e.addr] = mpText[static_cast<std::size_t>(id)];
+                        }
                 }
             }
             static std::string multiplanTold;

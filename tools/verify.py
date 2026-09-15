@@ -20022,6 +20022,71 @@ def c_engine_multiplan_rows():
            "object ids the nine rows were bound to"
 
 
+def c_engine_multiplan_transfers():
+    r"""engine: MULTIPLAN's TRANSFERS - event 36 requests 7 and 8 (todo/multiplan.md 3).
+
+    The row callback `0x004B05C0` raises event 36 with request 7 under "vers
+    le multiplan" and 8 under "vers le sneak", and `Game_HandleEvent` answers:
+
+    * 7 refuses KIND 1 (a hand weapon) and a full storage (256), else moves
+      the slot to the FRONT of list 1 and removes it from list 0;
+    * 8 refuses a full sneak (18), else runs `Inventory_Insert(rec, 0,
+      player)` - which for kinds 12/13 applies the object's effect (seteks,
+      rings) and answers 0, so no sneak row - and removes the slot from list 1
+      whatever it answered.
+
+    The callback then posts message 8 on success, 7 / 6 on refusal, and
+    rebinds the rows; an emptied list hands the focus back to the buttons.
+
+    Three runs from the pharmacy's kiosk in `save-appart.bin`:
+    deposit 171 and withdraw the "5 Anneaux magiques" (163, kind 13 - rings
+    2 -> 7 and no row); a Waver (12, kind 1) given and refused; the sneak
+    filled to 18 and a withdrawal refused. **The fill needed a fix first**: the
+    Session learned the gamedata root only from `loadTraffic`, which
+    `--no-crowd` skips, so every object kind read -1 and the rings took a
+    sneak row - `Session::setDataRoot` is now called unconditionally.
+    """
+    import subprocess
+    eng = os.path.join(ROOT, "engine")
+    save = os.path.join(ROOT, "traces", "save-appart.bin")
+    if not (os.path.isdir(eng) and os.path.exists(save)):
+        return ("skipped",), ("skipped",), "engine/ or the save absent"
+    mk = subprocess.run(["make", "-s", "play"], cwd=eng, capture_output=True, text=True)
+    play = os.path.join(eng, "build", "omk-play")
+    if mk.returncode != 0 or not os.path.exists(play):
+        return ("skipped",), ("skipped",), "omk-play did not build"
+    env = dict(os.environ, SDL_VIDEODRIVER="dummy")
+    runs = [
+        ([], "28,28,0x1C,0x1C,0xD0,0x1C,0xD0,0xD0,0x1C"),
+        (["--give", "12"], "28,28,0x1C,0xD0,0x1C"),
+        (["--give", "10,41,88,90,91,93,95,96,97,100,102,172,173,226,236,237,238"],
+         "28,28,0xD0,0x1C,0x1C"),
+    ]
+    got = []
+    for extra, keys in runs:
+        r = subprocess.run([play, omkpaths.data_root(), os.path.join(ROOT, "tables"),
+                            "--save", save, "--area", "39", "--stand", "14591,-251,11771,0",
+                            "--nofmv", "--no-crowd", "--software"] + extra +
+                           ["--keys", keys, "--keydelay", "60", "--frames", "560"],
+                           capture_output=True, env=env)
+        text = r.stdout.decode("cp1252", "replace")
+        lines = [ln.strip() for ln in text.splitlines() if ln.startswith("multiplan:")]
+        got.append((tuple(ln for ln in lines if "request" in ln), lines[-1] if lines else ""))
+    return tuple(got), \
+           ((("multiplan: request 7 row 0 id 171 -> 1 (row), message 8, rings 2",
+              "multiplan: request 8 row 2 id 163 -> 1 (consumed), message 8, rings 7"),
+             "multiplan: source 1, 2 rows: 171 176"),
+            (("multiplan: request 7 row 1 id 12 -> 2 (kind 1), message 7, rings 2",),
+             "multiplan: request 7 row 1 id 12 -> 2 (kind 1), message 7, rings 2"),
+            (("multiplan: request 8 row 0 id 176 -> 2 (sneak full), message 6, rings 2",),
+             "multiplan: request 8 row 0 id 176 -> 2 (sneak full), message 6, rings 2")), \
+           "per run, the transfer lines (request, row, object, case 36's result and " \
+           "the arm it took, the message posted, the player's rings) and the " \
+           "viewer's last multiplan line: a deposit and a kind-13 withdrawal that " \
+           "counts rings instead of taking a row; a hand weapon refused; a full " \
+           "sneak refused"
+
+
 def c_engine_shop_open():
     r"""engine: what a SHOP is the moment it opens - `Ui_OpenShop` (0x004AE540).
 
@@ -35048,6 +35113,7 @@ SLOW = [
     ("engine: multiplan open", c_engine_multiplan_open, "UI 3d; todo/multiplan.md"),
     ("engine: interference", c_engine_interference, "UI 3d; todo/multiplan.md"),
     ("engine: multiplan rows", c_engine_multiplan_rows, "UI 3d; todo/multiplan.md"),
+    ("engine: multiplan transfers", c_engine_multiplan_transfers, "UI 3d; todo/multiplan.md"),
     ("cursor highlight",  c_cursor_highlight,   "UI 3b"),
     ("slider destinations", c_slider_destinations, "UI 3g"),
     ("sneak previews",   c_sneak_previews,     "UI 3g"),

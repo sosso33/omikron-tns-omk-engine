@@ -3033,6 +3033,23 @@ scrambling the rows it sits over. In `save-appart.bin` the sneak holds object
 171 and the shared storage 176 and 163 ("Documentation multiplan", "5 Anneaux
 magiques"). `verify.py: engine: multiplan rows`, `engine: interference`.
 
+**The header prints only the label.** `0x004B0B60` does fetch the selected
+row's name (`sub_42AA00`) on the Examiner page or with the rows focused - and
+then `sprintf(out, "%s", label)`, the format at `0x004E5AF8` taking one
+argument. The row name is computed and discarded.
+
+**The transfers** (step 3). The row callback's two transfer arms raise event
+36: request **7** refuses kind 1 (the hand weapons) and a full storage, else
+`ObjectList_InsertFront(1, ...)` and `RemoveAt(0, tag)`; request **8** refuses
+a full sneak, else `Inventory_Insert(rec, 0, player)` - inserting a row only
+when it answers 1 - and `RemoveAt(1, tag)` **whatever it answered**. So seteks
+and rings (kinds 12/13) come out of the storage as a COUNT on the player, not
+as a row: the pharmacy's "5 Anneaux magiques" takes the player's rings from 2
+to 7. The callback posts message 8 *Objet Transféré !* on success, 7 *Transfert
+non autorisé* or 6 *sneak plein* on refusal, rebinds the rows, and clears the
+panel's `+24` - the focus goes back to the buttons - when the list is left
+empty. `verify.py: engine: multiplan transfers`.
+
 ### The LIFT — the one bespoke widget
 
 `UI_GridMenuInput` is the only list-level input hook the game has, and it is

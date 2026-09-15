@@ -149,6 +149,7 @@ inline constexpr std::uint32_t kCbMultiplanToKiosk     = 0x004B0760u;   // sourc
 inline constexpr std::uint32_t kCbMultiplanToSneak     = 0x004B07E0u;   // source 1, focus rows
 inline constexpr std::uint32_t kCbMultiplanExamine     = 0x004B0860u;   // focus rows
 inline constexpr std::uint32_t kCbMultiplanDestroy     = 0x004B0890u;   // focus rows
+inline constexpr std::uint32_t kCbMultiplanRow         = 0x004B05C0u;   // the nine rows
 inline constexpr std::uint32_t kPanelMultiplanExamine  = 0x004E5998u;
 inline constexpr std::uint32_t kPanelMultiplanDestroy  = 0x004E5A00u;
 inline constexpr std::uint32_t kCbShopSellYes = 0x004AEC00u;   // "Oui": the sale
@@ -596,6 +597,11 @@ struct UiListState {
     // storage (what the other three buttons act on). The open writes 0; the
     // button list's hook and the two transfer buttons switch it.
     int multiplanSource = 0;
+    // MULTIPLAN's TRANSFER, for a caller to carry out through the inventory
+    // channel: the row callback 0x004B05C0 with button 0 raises event 36
+    // request 7 (sneak -> storage), with button 1 request 8 (storage ->
+    // sneak). `row` is the widget's tag. -1 none.
+    int pendingMultiplanRequest = -1, pendingMultiplanRow = -1;
     // `Utiliser sur`'s COMBINE MODE - `dword_670BE0` and the three slots
     // `670BE4` / `670BE8` / `670BEC`, which are globals like everything else
     // in this device. `sub_49BF30` opens it and `sub_49BC60`'s `loc_49BDD6`
@@ -762,6 +768,11 @@ public:
     }
     // MULTIPLAN's source list, `dword_68A610`: 0 the sneak, 1 the kiosk.
     int  multiplanSource() const { return state_->multiplanSource; }
+    bool takeMultiplan(int& request, int& row) {
+        request = state_->pendingMultiplanRequest; row = state_->pendingMultiplanRow;
+        state_->pendingMultiplanRequest = state_->pendingMultiplanRow = -1;
+        return request >= 0;
+    }
     bool takeShop(int& kind, int& row) {
         kind = state_->pendingShopKind; row = state_->pendingShopRow;
         state_->pendingShopKind = state_->pendingShopRow = -1;

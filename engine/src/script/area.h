@@ -288,6 +288,12 @@ public:
     // this call no pedestrians exist, with it every later area load spawns
     // its circuit's - and a slot already loaded when it is called spawns now.
     void loadTraffic(const std::string& gamedataRoot);
+    // The gamedata tree `objectKind` / `objectName` / `applyObjectEffect` read
+    // `IAM\OBJECT` from. `loadTraffic` sets it too; this exists because a run
+    // with no crowd never calls that, and every kind then read -1 - a ring
+    // withdrawn from MULTIPLAN (or picked up) took a sneak row instead of
+    // counting on the player.
+    void setDataRoot(const std::string& gamedataRoot) { dataRoot_ = gamedataRoot; }
     const Sliders& sliders() const { return sliders_; }
     // ...and writable, for the player's own slider: a CALL puts a vehicle on
     // the circuit and the ride moves it (`todo/slider.md`).

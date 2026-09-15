@@ -1386,6 +1386,30 @@ bool UiWalk::confirm() {
             }
             return false;
         }
+        // MULTIPLAN's ROW (0x004B05C0) - a jump table on the BUTTON list's
+        // selection `word_4E53A2`:
+        //
+        //     0 vers le multiplan: tag = row+0x3C; if (tag == -1) return 0;
+        //         event 36 request 7; 1 -> sub_42ADD0(rows, -1, -1), and
+        //         `if (!dword_4E5688) panel+24 = 0`, message 8; else message 7
+        //     1 vers le sneak:     the same with request 8; refusal message 6
+        //     2 Examiner / 3 Detruire: the child pages (step 4)
+        //
+        // Both transfers end in `Game_HandleEvent`, so they are RECORDED for
+        // the caller (`takeMultiplan`), as the shop's purchase is.
+        if (it->callback == kCbMultiplanRow) {
+            const int tag = rowOf(it->addr);
+            int button = -1;
+            if (const UiList* b = w_->listAt(kListMultiplanButtons)) button = selectionOf(*b);
+            if ((button == 0 || button == 1) && tag >= 0) {
+                state_->pendingMultiplanRequest = button == 0 ? 7 : 8;
+                state_->pendingMultiplanRow = tag;
+                log_.push_back(button == 0 ? "multiplan row: event 36 request 7"
+                                           : "multiplan row: event 36 request 8");
+                return true;
+            }
+            return false;
+        }
         // `Oui` on the Vente confirm (0x004AEC00): the SELECTED STOCK ROW's tag
         // (`sub_428EF0(0x004E3640)+0x3C`), the sale through event 36 request
         // 10, the price and event 39 - recorded for the caller - and then the
