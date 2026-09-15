@@ -20241,6 +20241,50 @@ def c_engine_sneak_identity_sheet():
            "Identite hook reads, by property id in the hook's order"
 
 
+def c_engine_sneak_characteristics():
+    r"""engine: the identity page's CARACTERISTIQUES (todo/sneak.md §5e step 3).
+
+    Draw hook `0x0049CA30` on item `0x004DE858`: seven labels (`IAM\Sneak`
+    25..31) and, for six of them, a BAR through `sub_49CE60` - the value "%d",
+    a grey outline 200 wide, a knob and a fill as wide as the value - over the
+    player's integer properties through event 44: 1 Energie (`+170`), 16
+    Attaque (`+160`), 17 Resistance (`+162`), 3 Vitesse (`+158`), 18 Esquive
+    (`+164`), 2 Mana (`+156`). The third row, 19 Maitrise du combat (`+166`),
+    is a RANK WORD instead: `value / 41` (the listing's `imul 0x63E7063F; sar
+    4`) picks strings 36..40, *Novice* .. *Grand Maitre Taar*, none past 204.
+
+    Anekbah from `save-appart.bin`, into the identity page and RIGHT twice onto
+    the Characteristics tab. Asserted: the sheet line - the seven values in
+    the hook's order and the rank string Kay'l's 50 selects (37, *Initie*).
+    The bars' geometry is seen in a render, not asserted.
+    """
+    import subprocess
+    eng = os.path.join(ROOT, "engine")
+    save = os.path.join(ROOT, "traces", "save-appart.bin")
+    if not (os.path.isdir(eng) and os.path.exists(save)):
+        return ("skipped",), ("skipped",), "engine/ or the save absent"
+    mk = subprocess.run(["make", "-s", "play"], cwd=eng, capture_output=True, text=True)
+    play = os.path.join(eng, "build", "omk-play")
+    if mk.returncode != 0 or not os.path.exists(play):
+        return ("skipped",), ("skipped",), "omk-play did not build"
+    env = dict(os.environ, SDL_VIDEODRIVER="dummy")
+    r = subprocess.run([play, omkpaths.data_root(), os.path.join(ROOT, "tables"),
+                        "--software", "--nofmv", "--no-crowd", "--save", save,
+                        "--area", "0", "--stand", "1804,0,-6890,336", "--frames", "300",
+                        "--hold", "0*40,k15*3,0*30,k205*3,0*15,k200*3,0*15,k200*3,0*15,"
+                                  "k28*3,0*20,k205*3,0*15,k205*3,0*60"],
+                       capture_output=True, env=env)
+    text = r.stdout.decode("cp1252", "replace")
+    got = tuple(ln.strip() for ln in text.splitlines()
+                if ln.startswith("sneak: characteristics"))
+    return got, \
+           ("sneak: characteristics sheet | 1=10 | 16=70 | 19=50 | 17=30 | 3=70 | "
+            "18=60 | 2=10 (rank string 37)",), \
+           "the viewer's characteristics line after opening the identity page and " \
+           "moving onto its second tab: the seven integer properties by id in the " \
+           "hook's order, and the rank string the Maitrise value selects"
+
+
 def c_engine_sneak_examine_message():
     r"""engine: the SNEAK's Examiner posts world message 4 (`sub_49BFF0`).
 
@@ -35352,6 +35396,7 @@ SLOW = [
     ("engine: sneak examine message", c_engine_sneak_examine_message, "UI 3d; todo/multiplan.md"),
     ("engine: sneak identity", c_engine_sneak_identity, "UI; todo/sneak.md 5"),
     ("engine: sneak identity sheet", c_engine_sneak_identity_sheet, "UI; todo/sneak.md 5"),
+    ("engine: sneak characteristics", c_engine_sneak_characteristics, "UI; todo/sneak.md 5"),
     ("cursor highlight",  c_cursor_highlight,   "UI 3b"),
     ("slider destinations", c_slider_destinations, "UI 3g"),
     ("sneak previews",   c_sneak_previews,     "UI 3g"),

@@ -1204,6 +1204,22 @@ record points at from `+0` and `+4` - which `State_Apply` plants at the image's
 336 and 592, replacing the absolute addresses a save file carries.
 `verify.py: engine: sneak identity sheet`.
 
+**Caractéristiques is labels and BARS.** `0x0049CA30` sets the item's text
+style once and never rewrites its colour, so its text is the item's own
+(white, lit). Seven labels (`IAM\Sneak` 25..31) step `I2D_ScaleY(30)`; beside
+each, at half the box's width, `sub_49CE60(x, y, PackColour(100, item colour),
+value, I2D_ScaleY(20), layer)` draws the value "%d" in face 'J' 5 pixels in,
+then a 200-wide outline as four `I2D_DrawLine`s in grey (50, 50, 50), then a
+5-wide KNOB quad (flags 0xC) at the value and the FILL quad (flags 4) from the
+left edge to it, both in the item's colour - on the mode-2 back end a line
+takes its colour from the first point's third dword and a quad is its
+bounding box in vertex 0's, flags 4 and 0xC both the 50% blend. The third row,
+*Maîtrise du combat*, has no bar: `value / 41` picks a RANK WORD, strings
+36..40 (*Novice* to *Grand Maître Taar*), and nothing past 204. The values are
+the player record's int16s at `+170`, `+160`, `+166`, `+162`, `+158`,
+`+164`, `+156` (properties 1, 16, 19, 17, 3, 18, 2). `verify.py: engine: sneak
+characteristics`.
+
 ### The slider page has its OWN list mover
 
 The inventory page's `panel+16` is `sub_42A710`, which is only

@@ -65,6 +65,8 @@ struct ScreenFrame {
     // (0x0049C2B0 makes 17: ten labels, six values and the two prose lines
     // as one block).
     int  identityBlocks = 0;
+    // Bars the Caracteristiques hook (0x0049CA30 -> `sub_49CE60`) drew: six.
+    int  characteristicBars = 0;
     // Lines the examine page's description wrapped to.
     int  textLines = 0;
     // How far the examine page's text runs PAST its box, in pixels - the

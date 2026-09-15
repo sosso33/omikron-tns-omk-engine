@@ -16003,7 +16003,23 @@ int main(int argc, char** argv) {
                         static_cast<std::uint16_t>(raw[at]) |
                         static_cast<std::uint16_t>(static_cast<std::uint16_t>(raw[at + 1]) << 8)));
                 };
-                playerSheet.num = {{8, i16at(rec + 154)}};
+                // The integers event 44 answers from the same record, for both
+                // contents: 8 the age, and the Caracteristiques - 1 Energie
+                // `+170`, 16 Attaque `+160`, 19 Maitrise `+166`, 17 Resistance
+                // `+162`, 3 Vitesse `+158`, 18 Esquive `+164`, 2 Mana `+156`.
+                playerSheet.num = {{8, i16at(rec + 154)}, {1, i16at(rec + 170)},
+                                   {16, i16at(rec + 160)}, {19, i16at(rec + 166)},
+                                   {17, i16at(rec + 162)}, {3, i16at(rec + 158)},
+                                   {18, i16at(rec + 164)}, {2, i16at(rec + 156)}};
+                static std::string characteristicsTold;
+                std::string cs;
+                for (int p : {1, 16, 19, 17, 3, 18, 2})
+                    cs += " | " + std::to_string(p) + "=" + std::to_string(playerSheet.num[p]);
+                if (cs != characteristicsTold) {
+                    characteristicsTold = cs;
+                    std::printf("sneak: characteristics sheet%s (rank string %d)\n", cs.c_str(),
+                                playerSheet.num[19] / 41 <= 4 ? 36 + playerSheet.num[19] / 41 : -1);
+                }
                 if (const omk::UiList* tabs = w.listAt(omk::kListSneakTabs))
                     if (!tabs->items.empty())
                         for (int c = 0; c < 3; ++c)

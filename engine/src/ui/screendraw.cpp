@@ -883,6 +883,121 @@ ScreenFrame ScreenComposer::draw(Surface& fb, int screenId,
                 block(both, false);
             }
 
+            // ---- THE IDENTITY PAGE'S "CARACTERISTIQUES": draw hook 0x0049CA30
+            //
+            // Transcribed from the listing. `Ui_ItemTextStyle` fills the style
+            // once and, unlike 0x0049C2B0, NOTHING rewrites its colour - so
+            // every text here is the item's own text colour (bank C
+            // `0x80000001` forces white, bank B `0x8` keeps it lit). The
+            // colour handed to the bars is `I2D_PackColour(100, item +8/+9/+10)`.
+            // Seven rows, `I2D_ScaleY(30)` apart; each a label (`IAM\Sneak`
+            // 25..31) in the item's box, then the pen moves `I2D_ScaleX(w/2)`
+            // and the row takes a BAR - `sub_49CE60(x, y, colour, value,
+            // I2D_ScaleY(20), layer)` - except "Maitrise du combat", whose
+            // value is a RANK WORD: `value / 41` -> strings 36..40, none past
+            // 204.
+            //
+            // THE BAR (`sub_49CE60`), in its own order:
+            //   * the value "%d" in face 'J' (style +8 = 0x4A), box
+            //     (x + 5, y) .. (x + ScaleX(100), y + h); the face back to 'C'
+            //   * four `I2D_DrawLine`s, flags 0x14, layer 6, colour
+            //     `PackColour(100, 50, 50, 50)` in the FIRST point's third
+            //     dword - the grey outline (x .. x + ScaleX(200)) x
+            //     (yc - ScaleY(2) - 1 .. yc + ScaleY(2) + 1), yc = y + h / 2
+            //   * `I2D_SubmitQuad` flags 0xC: the KNOB, x + ScaleX(v) - 1 ..
+            //     x + ScaleX(v) + 4, yc - ScaleY(2) .. yc + ScaleY(2)
+            //   * `I2D_SubmitQuad` flags 4: the FILL, x + 1 .. x + ScaleX(v) - 1
+            //     over the same rows, both in the item's colour
+            //
+            // Drawn as the mode-2 software back end draws them, which is what
+            // `surface.h` ports: a line takes its colour from point 0's third
+            // dword and is opaque; a quad is its points' bounding box in
+            // vertex 0's colour, and flags 4 and 0xC are both mode 1. Drawn in
+            // SUBMISSION order; the I2D head cache's within-layer order is not
+            // modelled here, as nowhere else in this composer.
+            constexpr std::uint32_t kDrawSneakCharacteristics = 0x0049CA30u;
+            if (sheet_ && it.drawFn == kDrawSneakCharacteristics) {
+                std::uint8_t tr = 255, tg = 255, tb = 255;
+                if (!(eff0[2] & 1)) {
+                    tr = static_cast<std::uint8_t>(rgb[0]);
+                    tg = static_cast<std::uint8_t>(rgb[1]);
+                    tb = static_cast<std::uint8_t>(rgb[2]);
+                }
+                if (!litText) { tr >>= 1; tg >>= 1; tb >>= 1; }
+                const int halfW = scaleX(it.w / 2);
+                const int rowH = scaleY(20);
+                const int boxW = scaleX(it.w);
+                const int boxH = scaleX(it.h);
+                const std::uint16_t fillColour = rgb565(rgb[0], rgb[1], rgb[2]);
+                const std::uint16_t grey = rgb565(50, 50, 50);
+                int px = scaleX(it.x + q->offsetX);
+                int py = scaleY(it.y + q->offsetY);
+                const auto text = [&](const std::string& s, int l, int t, int r, int b, char face) {
+                    TextBlock blk;
+                    blk.left = l; blk.top = t; blk.right = r; blk.bottom = b;
+                    blk.font = face;
+                    blk.style = (eff0[2] & 0x10) ? 8 : (eff0[2] & 0x08) ? 4 : 2;
+                    blk.rgb[0] = tr; blk.rgb[1] = tg; blk.rgb[2] = tb;
+                    blk.blinkOn = blink;
+                    blk.screenW = fb.w; blk.screenH = fb.h;
+                    lay_->layOutBlock(&fb, s, blk);
+                };
+                const auto label = [&](int id) -> std::string {
+                    return id >= 0 && id < static_cast<int>(sheet_->text.size())
+                        ? sheet_->text[static_cast<std::size_t>(id)] : std::string();
+                };
+                const auto num = [&](int id) {
+                    const auto n = sheet_->num.find(id);
+                    return n != sheet_->num.end() ? n->second : 0;
+                };
+                const auto bar = [&](int x, int y, int value, int h) {
+                    text(std::to_string(value), x + 5, y, x + scaleX(100), y + h, 'J');
+                    const int yc = y + h / 2;
+                    const int top = yc - scaleY(2) - 1;
+                    const int bot = yc + scaleY(2) + 1;
+                    const int right = x + scaleX(200);
+                    const int L = 0, R = fb.w - 1, T = 0, B = fb.h - 1;
+                    drawLine(fb, x, top, right, top, grey, L, R, T, B);
+                    drawLine(fb, right, bot, right, top, grey, L, R, T, B);
+                    drawLine(fb, right, bot, x, bot, grey, L, R, T, B);
+                    drawLine(fb, x, top, x, bot, grey, L, R, T, B);
+                    const int v = scaleX(value);
+                    const int kx[4] = {x + v - 1, x + v - 1, x + v + 4, x + v + 4};
+                    const int ky[4] = {yc - scaleY(2), yc + scaleY(2), yc + scaleY(2), yc - scaleY(2)};
+                    fillQuad(fb, kx, ky, fillColour, quadMode(0xC));
+                    const int fx[4] = {x + 1, x + v - 1, x + v - 1, x + 1};
+                    const int fy[4] = {yc - scaleY(2), yc - scaleY(2), yc + scaleY(2), yc + scaleY(2)};
+                    fillQuad(fb, fx, fy, fillColour, quadMode(4));
+                    ++out.characteristicBars;
+                };
+                // six bar rows and the rank row, in the hook's order
+                const auto barRow = [&](int labelId, int prop) {
+                    text(label(labelId), px, py, px + boxW, py + boxH, it.face('J'));
+                    px += halfW;
+                    bar(px, py, num(prop), rowH);
+                    px -= halfW;
+                    py += scaleY(30);
+                };
+                barRow(25, 1);
+                barRow(26, 16);
+                {   // 27 "Maitrise du combat": the rank word
+                    text(label(27), px, py, px + boxW, py + boxH, it.face('J'));
+                    px += halfW;
+                    const int v = num(19);
+                    const int q41 = v / 41;
+                    const int id = (q41 >= 0 && q41 <= 4) ? 36 + q41 : -1;
+                    text(label(id), px, py, px + boxW, py + boxH, 'C');
+                    px -= halfW;
+                    py += scaleY(30);
+                }
+                barRow(28, 17);
+                barRow(29, 3);
+                barRow(30, 18);
+                // 31 "Mana" - the last, `ebp + esi` without the step back
+                text(label(31), px, py, px + boxW, py + boxH, it.face('J'));
+                bar(px + halfW, py, num(2), rowH);
+            }
+
             // ---- THE CURSOR: `Ui_DrawItemCursor` (`sub_479920`) -------
             //
             // Drawn BEFORE the fill and the sprite, because `sub_4795F0`
