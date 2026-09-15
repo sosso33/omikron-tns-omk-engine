@@ -20192,6 +20192,55 @@ def c_engine_sneak_identity():
            "two contents a hook switched off"
 
 
+def c_engine_sneak_identity_sheet():
+    r"""engine: the identity page's IDENTITE text (todo/sneak.md §5e step 2).
+
+    Draw hook `0x0049C2B0` on item `0x004DE810` lays out ten labels from the
+    screen's own `IAM\Sneak` (15..24) beside the player's properties through
+    event 44 - pointers into the character record for 6 (`+8`, the name), 0
+    (`+108`), 13 (`+124`), 9 (`+128`), 10 (`+136`), 12 (`+116`), 11 (`+40`),
+    the integer 8 (`+154`) printed "%d", and the two BIO strings 15 and 14,
+    which dereference the record's `+0` and `+4`. `State_Apply` plants those
+    as the image's 336 and 592; the viewer's copy still holds the original
+    process's absolute addresses the save stored (0x37240D0 / 0x37241D0 in
+    `save-appart.bin`, 256 apart like the blocks), so the blocks are read
+    directly.
+
+    Anekbah, TAB held, RIGHT onto the tab column, UP twice, ENTER. Asserted:
+    the stored pointers line, the sheet line (every value, in the hook's
+    order), and the 17 `Text_DrawBlock` calls the hook makes is NOT asserted
+    here - the viewer prints the sheet, the composer draws it, and the render
+    is the thing to look at.
+    """
+    import subprocess
+    eng = os.path.join(ROOT, "engine")
+    save = os.path.join(ROOT, "traces", "save-appart.bin")
+    if not (os.path.isdir(eng) and os.path.exists(save)):
+        return ("skipped",), ("skipped",), "engine/ or the save absent"
+    mk = subprocess.run(["make", "-s", "play"], cwd=eng, capture_output=True, text=True)
+    play = os.path.join(eng, "build", "omk-play")
+    if mk.returncode != 0 or not os.path.exists(play):
+        return ("skipped",), ("skipped",), "omk-play did not build"
+    env = dict(os.environ, SDL_VIDEODRIVER="dummy")
+    r = subprocess.run([play, omkpaths.data_root(), os.path.join(ROOT, "tables"),
+                        "--software", "--nofmv", "--no-crowd", "--save", save,
+                        "--area", "0", "--stand", "1804,0,-6890,336", "--frames", "240",
+                        "--hold", "0*40,k15*3,0*30,k205*3,0*15,k200*3,0*15,k200*3,0*15,k28*3,0*60"],
+                       capture_output=True, env=env)
+    text = r.stdout.decode("cp1252", "replace")
+    got = tuple(ln.strip() for ln in text.splitlines() if ln.startswith("sneak: identity"))
+    return got, \
+           ("sneak: identity bio pointers as stored +0 0x37240d0 +4 0x37241d0 "
+            "(State_Apply plants 336 / 592)",
+            "sneak: identity sheet | 6=KAY'L 669 | 8=30 | 0=M | 13=K- | 9=178 | 10=80 | "
+            "12=Vert | 11=Agent-Enquêteur | 15=A reçu l'entraînement de base "
+            "des policiers d'Omikron au maniement des armes Waver et aux techniques de "
+            "combat. | 14=Néant."), \
+           "the viewer's identity lines after opening the page from save-appart.bin: " \
+           "the two bio pointers as the save stored them, then every property the " \
+           "Identite hook reads, by property id in the hook's order"
+
+
 def c_engine_sneak_examine_message():
     r"""engine: the SNEAK's Examiner posts world message 4 (`sub_49BFF0`).
 
@@ -35302,6 +35351,7 @@ SLOW = [
     ("engine: multiplan close", c_engine_multiplan_close, "UI 3d; todo/multiplan.md"),
     ("engine: sneak examine message", c_engine_sneak_examine_message, "UI 3d; todo/multiplan.md"),
     ("engine: sneak identity", c_engine_sneak_identity, "UI; todo/sneak.md 5"),
+    ("engine: sneak identity sheet", c_engine_sneak_identity_sheet, "UI; todo/sneak.md 5"),
     ("cursor highlight",  c_cursor_highlight,   "UI 3b"),
     ("slider destinations", c_slider_destinations, "UI 3g"),
     ("sneak previews",   c_sneak_previews,     "UI 3g"),

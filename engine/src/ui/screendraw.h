@@ -61,6 +61,10 @@ struct ScreenFrame {
     int  modelsDrawn = 0;
     // Interference boxes applied - draw hook 0x00477ED0 (`ui/interference.h`).
     int  noiseBoxes = 0;
+    // `Text_DrawBlock` calls the identity page's Identite hook made
+    // (0x0049C2B0 makes 17: ten labels, six values and the two prose lines
+    // as one block).
+    int  identityBlocks = 0;
     // Lines the examine page's description wrapped to.
     int  textLines = 0;
     // How far the examine page's text runs PAST its box, in pixels - the
@@ -129,6 +133,19 @@ public:
     // `{fSI226198101B}` for its signature line - so it goes through
     // `parseMarkup` like any other interface string.
     void setExamineText(const std::string* t) { examine_ = t; }
+    // THE SNEAK'S IDENTITY SHEET - what the identity page's draw hooks ask
+    // for (todo/sneak.md §5b). `text` is the screen's own `IAM\Sneak`
+    // (`Ui_ScreenString`), `str` the player's pointer properties through event
+    // 44 (`sub_42B1F0`: 0, 6, 9..15) and `num` the integer ones (`sub_42B1C0`),
+    // `icon` the identity tab icon's colour, `byte_4DDFB8..BA`, which the
+    // values are drawn in.
+    struct PlayerSheet {
+        std::vector<std::string> text;
+        std::map<int, std::string> str;
+        std::map<int, int> num;
+        std::uint8_t icon[3] = {255, 255, 255};
+    };
+    void setPlayerSheet(const PlayerSheet* s) { sheet_ = s; }
     // ...AND WHERE IT IS SCROLLED TO. `dword_6A5090`, in pixels, and the
     // composer takes a POINTER because it also CLAMPS it, exactly as
     // `Ui_ItemTextStyle` does: the hook that moves it (`sub_42A9A0`, eight
@@ -234,6 +251,7 @@ private:
     UiCursor*        cursor_ = nullptr;
     UiModels*        models_ = nullptr;
     const std::string* examine_ = nullptr;
+    const PlayerSheet* sheet_ = nullptr;
     int* scroll_ = nullptr;              // dword_6A5090, clamped here
     long             deltaMs_ = 33;
     const std::map<std::uint32_t, std::string>* rows_ = nullptr;

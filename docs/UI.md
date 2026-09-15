@@ -1187,6 +1187,23 @@ on the near one. Each box's content is its own draw hook (`0x0049C2B0` and
 `0x0049CA30`) over the player's properties through event 44; see
 `todo/sneak.md` §5b. `verify.py: engine: sneak identity`.
 
+**The Identité text is laid out by its hook, not by the widget tree.**
+`0x0049C2B0` takes the item's text style once, then makes seventeen
+`Text_DrawBlock` calls: each label (`IAM\Sneak` 15..24) white, each value in
+the identity icon's own colour, the pen moved by individually scaled literals
+- 100 for the name, then 60 / 40 / 70 / 30 / 130 across the second row, 60 /
+40 / 70 / 30 / 80 across the third, 100 for the job, rows 20 apart - and the
+two prose lines built into one block with the listing's formats
+`%s : {I%03d%03d%03d} %s` and `%s\n{I255255255}%s : {I%03d%03d%03d} %s`, so
+each value's colour switch is MARKUP. Every block's box runs from its own
+left to left + the item's width, so a value near the right edge is cut by the
+box, not by the page. The box height is `I2D_ScaleX(h)` - X, as the listing
+has it. The values are `Actor_GetProperty` on the player: seven strings
+inside the character record, the age as an int16, and the two bio strings the
+record points at from `+0` and `+4` - which `State_Apply` plants at the image's
+336 and 592, replacing the absolute addresses a save file carries.
+`verify.py: engine: sneak identity sheet`.
+
 ### The slider page has its OWN list mover
 
 The inventory page's `panel+16` is `sub_42A710`, which is only

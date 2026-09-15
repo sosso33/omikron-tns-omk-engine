@@ -786,6 +786,103 @@ ScreenFrame ScreenComposer::draw(Surface& fb, int screenId,
                 ++out.noiseBoxes;
             }
 
+            // ---- THE IDENTITY PAGE'S "IDENTITE": draw hook 0x0049C2B0 ------
+            //
+            // Transcribed call by call from the listing. The box is the
+            // item's scaled position; its WIDTH is `I2D_ScaleX(w)` and its
+            // HEIGHT `I2D_ScaleX(h)` - X, not Y, which is the listing's and
+            // identical at 640x480. `Ui_ItemTextStyle` fills the style block
+            // once (the face, the alignment); every `Text_DrawBlock` after it
+            // is handed that block with its colour bytes rewritten: WHITE for
+            // a label (`Ui_ScreenString`), the identity icon's colour for a
+            // value (`byte_4DDFB8..BA`). Every block spans from its own left
+            // to left + width, and from the row's top to top + height. The
+            // pen moves by individually scaled literals:
+            //
+            //   row 1  Nom 15 | +100 prop 6
+            //   row 2  Age 16 | +60 "%d" prop 8 | +40 Sexe 17 | +70 prop 0
+            //          | +30 Groupe sanguin 18 | +130 prop 13      (back 330)
+            //   row 3  Taille 19 | +60 prop 9 | +40 Poids 20 | +70 prop 10
+            //          | +30 Yeux 21 | +80 prop 12                 (back 280)
+            //   row 4  Profession 22 | +100 prop 11
+            //   row 5  one WHITE block: sprintf("%s : {I%03d%03d%03d} %s",
+            //          label 23, icon, prop 15) then
+            //          sprintf("%s\n{I255255255}%s : {I%03d%03d%03d} %s",
+            //          that, label 24, icon, prop 14)
+            //
+            // rows stepping `I2D_ScaleY(20)`.
+            constexpr std::uint32_t kDrawSneakIdentity = 0x0049C2B0u;
+            if (sheet_ && it.drawFn == kDrawSneakIdentity) {
+                const int width = scaleX(it.w);
+                const int height = scaleX(it.h);
+                int px = scaleX(it.x + q->offsetX);
+                int py = scaleY(it.y + q->offsetY);
+                const auto label = [&](int id) -> std::string {
+                    return id >= 0 && id < static_cast<int>(sheet_->text.size())
+                        ? sheet_->text[static_cast<std::size_t>(id)] : std::string();
+                };
+                const auto prop = [&](int id) -> std::string {
+                    const auto s = sheet_->str.find(id);
+                    return s != sheet_->str.end() ? s->second : std::string();
+                };
+                const auto block = [&](const std::string& s, bool value) {
+                    TextBlock b;
+                    b.left = px;
+                    b.top = py;
+                    b.right = px + width;
+                    b.bottom = py + height;
+                    b.font = it.face('J');
+                    b.style = (eff0[2] & 0x10) ? 8 : (eff0[2] & 0x08) ? 4 : 2;
+                    for (int c = 0; c < 3; ++c)
+                        b.rgb[c] = value ? sheet_->icon[c] : std::uint8_t{255};
+                    b.blinkOn = blink;
+                    b.screenW = fb.w;
+                    b.screenH = fb.h;
+                    lay_->layOutBlock(&fb, s, b);
+                    ++out.identityBlocks;
+                };
+                const auto num = [&](int id) {
+                    const auto n = sheet_->num.find(id);
+                    return n != sheet_->num.end() ? n->second : 0;
+                };
+                const auto rgbTag = [&]() {
+                    char t[16];
+                    std::snprintf(t, sizeof t, "%03d%03d%03d", sheet_->icon[0],
+                                  sheet_->icon[1], sheet_->icon[2]);
+                    return std::string(t);
+                };
+                // row 1
+                block(label(15), false);
+                px += scaleX(100);  block(prop(6), true);
+                px -= scaleX(100);  py += scaleY(20);
+                // row 2
+                block(label(16), false);
+                px += scaleX(60);   block(std::to_string(num(8)), true);   // "%d"
+                px += scaleX(40);   block(label(17), false);
+                px += scaleX(70);   block(prop(0), true);
+                px += scaleX(30);   block(label(18), false);
+                px += scaleX(130);  block(prop(13), true);
+                px -= scaleX(330);  py += scaleY(20);
+                // row 3
+                block(label(19), false);
+                px += scaleX(60);   block(prop(9), true);
+                px += scaleX(40);   block(label(20), false);
+                px += scaleX(70);   block(prop(10), true);
+                px += scaleX(30);   block(label(21), false);
+                px += scaleX(80);   block(prop(12), true);
+                px -= scaleX(280);  py += scaleY(20);
+                // row 4
+                block(label(22), false);
+                px += scaleX(100);  block(prop(11), true);
+                px -= scaleX(100);  py += scaleY(20);
+                // row 5: the two prose lines, one block
+                const std::string first =
+                    label(23) + " : {I" + rgbTag() + "} " + prop(15);
+                const std::string both = first + "\n{I255255255}" + label(24) +
+                                         " : {I" + rgbTag() + "} " + prop(14);
+                block(both, false);
+            }
+
             // ---- THE CURSOR: `Ui_DrawItemCursor` (`sub_479920`) -------
             //
             // Drawn BEFORE the fill and the sprite, because `sub_4795F0`

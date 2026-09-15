@@ -15950,6 +15950,75 @@ int main(int argc, char** argv) {
                 }
             }
             comp.setExamineText(nullptr);
+            // ---- THE IDENTITY PAGE'S SHEET (todo/sneak.md §5e step 2) -------
+            //
+            // What `Actor_GetProperty` (event 44) hands the identity hooks for
+            // the player, read where it reads it - the character record, which
+            // for the player is the DB's at `+60`. Cases 0/6/9..13 return a
+            // POINTER into the record (`+108`, `+8`, `+128`, `+136`, `+40`,
+            // `+116`, `+124`), 14 and 15 the two pointers the record itself
+            // holds at `+4` and `+0` - the bio strings `State_Apply` plants.
+            // All are C strings: read up to their NUL.
+            static omk::ScreenComposer::PlayerSheet playerSheet;
+            comp.setPlayerSheet(nullptr);
+            if (pn && pn->addr == omk::kPanelSneakIdentity) {
+                static const auto sneakText = omk::iamStrings(fs, "IAM/Sneak");
+                playerSheet.text = sneakText;
+                const auto raw = state.raw();
+                const auto cstr = [&](std::size_t at) {
+                    std::string s;
+                    for (std::size_t i = at; i < raw.size() && raw[i] != std::byte{0}; ++i)
+                        s.push_back(static_cast<char>(raw[i]));
+                    return s;
+                };
+                const std::size_t rec = static_cast<std::size_t>(omk::GameState::kPlayerRecord);
+                const auto u32at = [&](std::size_t at) {
+                    std::uint32_t v = 0;
+                    for (int k = 0; k < 4; ++k)
+                        v |= static_cast<std::uint32_t>(raw[at + k]) << (8 * k);
+                    return v;
+                };
+                playerSheet.str = {
+                    {0, cstr(rec + 108)}, {6, cstr(rec + 8)},   {9, cstr(rec + 128)},
+                    {10, cstr(rec + 136)}, {11, cstr(rec + 40)}, {12, cstr(rec + 116)},
+                    {13, cstr(rec + 124)},
+                    // 14 and 15 dereference the record's `+4` and `+0`, which
+                    // `State_Apply` plants as the two bio blocks at image 592
+                    // and 336 (`GameState::relocate`). The viewer's copy is not
+                    // relocated - its `+0`/`+4` still hold what the save
+                    // stored - so the blocks those pointers always designate
+                    // are read directly.
+                    {14, cstr(static_cast<std::size_t>(omk::GameState::kBio[1]))},
+                    {15, cstr(static_cast<std::size_t>(omk::GameState::kBio[0]))},
+                };
+                static bool bioTold = false;
+                if (!bioTold) {
+                    bioTold = true;
+                    std::printf("sneak: identity bio pointers as stored +0 %#x +4 %#x "
+                                "(State_Apply plants %d / %d)\n", u32at(rec + 0), u32at(rec + 4),
+                                omk::GameState::kBio[0], omk::GameState::kBio[1]);
+                }
+                const auto i16at = [&](std::size_t at) {
+                    return static_cast<int>(static_cast<std::int16_t>(
+                        static_cast<std::uint16_t>(raw[at]) |
+                        static_cast<std::uint16_t>(static_cast<std::uint16_t>(raw[at + 1]) << 8)));
+                };
+                playerSheet.num = {{8, i16at(rec + 154)}};
+                if (const omk::UiList* tabs = w.listAt(omk::kListSneakTabs))
+                    if (!tabs->items.empty())
+                        for (int c = 0; c < 3; ++c)
+                            playerSheet.icon[c] = static_cast<std::uint8_t>(tabs->items.front().rgb[c]);
+                comp.setPlayerSheet(&playerSheet);
+                static std::string identityTold;
+                std::string said;
+                for (int p : {6, 8, 0, 13, 9, 10, 12, 11, 15, 14})
+                    said += " | " + std::to_string(p) + "=" +
+                            (p == 8 ? std::to_string(playerSheet.num[8]) : playerSheet.str[p]);
+                if (said != identityTold) {
+                    identityTold = said;
+                    std::printf("sneak: identity sheet%s\n", said.c_str());
+                }
+            }
             if (pn && pn->addr == omk::kPanelSneakExamine) {
                 const auto carried =
                     omk::objectList(state, omk::ObjectList::Carried);
