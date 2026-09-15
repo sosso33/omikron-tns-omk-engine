@@ -17837,8 +17837,10 @@ def c_engine_ui():
     # shops' two CODE_NAMED children (the Vente confirm, the Examiner page)
     # and the shop panel again as that page's `+44` child. The 31-screen
     # comparison and its two named cases did not move.
+    # ...and -> 57/166/698/627/60/106/57 on 2026-09-15, MULTIPLAN's two
+    # CODE_NAMED children and its panel again as the examine box's `+44`.
     return (head, len(ref), disagree, known), \
-           ((54, 154, 666, 600, 54, 100, 54, 0), 31, 0, ((7, 0, 3), (9, 0, 4))), \
+           ((57, 166, 698, 627, 60, 106, 57, 0), 31, 0, ((7, 0, 3), (9, 0, 4))), \
            "panels (31 screens + 15 children - 13 reached through an item +44 and TWO named only from CODE, the verb panel 0x004DEEB8 and the examine page 0x004DEF20, which `sub_42A370` installs from a callback so nothing in the tree points at them), " \
            "lists, items, SELECTABLE items - which FELL by ten once the " \
            "shops' branch was resolved and each of them started hiding the " \
@@ -19877,6 +19879,54 @@ def c_fill_colour():
            "screenshot of the ORIGINAL measures (15, 25, 25) and this is " \
            "the RGB565 quantisation of the same answer. Drawn the usual way " \
            "round it would be (63, 96, 92)"
+
+
+def c_engine_multiplan_open():
+    r"""engine: MULTIPLAN, screen 2 - the storage kiosk's walk (todo/multiplan.md 1).
+
+    The kiosk moves objects between the sneak (object list 0) and a storage
+    shared by every terminal (list 1). Which list its rows show is
+    `dword_68A610`, the SOURCE: `sub_4B01F0` (the open) writes 0 and paints
+    the rows and header in the selected button's colour; the button list's
+    hook `0x004B09A0` moves the selection, repaints, and sets the source to 0
+    on "vers le multiplan" (a deposit acts on the sneak) and 1 on the other
+    three; the panel hook `0x004B0B00` hands LEFT/RIGHT between the buttons
+    and the rows (the rows only when they hold something); a button's
+    callback hands the focus to the rows.
+
+    `multiplan_open` opens screen 2 with two rows bound and prints, after
+    each key, the panel, current list, selected button, source and the two
+    lists' colour.
+    """
+    import subprocess
+    eng = os.path.join(ROOT, "engine")
+    if not os.path.isdir(eng):
+        return ("skipped",), ("skipped",), "engine/ absent"
+    mk = subprocess.run(["make", "-s", "build/multiplan_open"], cwd=eng,
+                        capture_output=True, text=True)
+    tool = os.path.join(eng, "build", "multiplan_open")
+    if mk.returncode != 0 or not os.path.exists(tool):
+        return ("skipped",), ("skipped",), "multiplan_open did not build"
+    tb = os.path.join(ROOT, "tables")
+    r = subprocess.run([tool, omkpaths.data_root(), os.path.join(tb, "ui_widgets.json"),
+                        os.path.join(tb, "ui.json")], capture_output=True, text=True)
+    lines = [" ".join(ln.split()) for ln in r.stdout.splitlines() if "panel 0x" in ln]
+    return (len(lines), lines), \
+           (8, [
+            "open panel 0x4e5930 list 0 button 0 source 0 rows 255 240 0 header 255 240 0",
+            "DOWN panel 0x4e5930 list 0 button 1 source 1 rows 255 100 70 header 255 100 70",
+            "DOWN panel 0x4e5930 list 0 button 2 source 1 rows 20 165 250 header 20 165 250",
+            "DOWN panel 0x4e5930 list 0 button 3 source 1 rows 25 240 115 header 25 240 115",
+            "DOWN wraps panel 0x4e5930 list 0 button 0 source 0 rows 255 240 0 header 255 240 0",
+            "LEFT panel 0x4e5930 list 1 button 0 source 0 rows 255 240 0 header 255 240 0",
+            "RIGHT panel 0x4e5930 list 0 button 0 source 0 rows 255 240 0 header 255 240 0",
+            "ENTER panel 0x4e5930 list 1 button 0 source 0 rows 255 240 0 header 255 240 0"]), \
+           "reports read (a parse that reads none fails AS a parse); then after " \
+           "each key - open, DOWN three times and once more to wrap, LEFT, RIGHT, " \
+           "ENTER on the button - the panel, current list, selected button, the " \
+           "SOURCE list (0 the sneak on 'vers le multiplan', 1 the kiosk on the " \
+           "other three) and the colour the selected button paints the rows and " \
+           "the header"
 
 
 def c_engine_shop_open():
@@ -34902,6 +34952,7 @@ SLOW = [
     ("fill colour",       c_fill_colour,       "UI 3b"),
     ("sneak page colour", c_sneak_page_colour,  "UI 3b"),
     ("engine: shop open", c_engine_shop_open,   "UI 3d; todo/shops.md"),
+    ("engine: multiplan open", c_engine_multiplan_open, "UI 3d; todo/multiplan.md"),
     ("cursor highlight",  c_cursor_highlight,   "UI 3b"),
     ("slider destinations", c_slider_destinations, "UI 3g"),
     ("sneak previews",   c_sneak_previews,     "UI 3g"),

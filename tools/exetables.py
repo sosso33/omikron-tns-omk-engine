@@ -778,7 +778,11 @@ def t_ui_widgets(e):
                   0x004CF2E8: [0x004CF3B8, 0x004CF350],
                   0x004E2ED8: [0x004E2FB0],
                   0x004E26C8: [0x004E2730],
-                  0x004E3970: [0x004E3A40, 0x004E39D8]}
+                  0x004E3970: [0x004E3A40, 0x004E39D8],
+                  # MULTIPLAN's two (todo/multiplan.md): the row callback
+                  # 0x004B05C0 installs the EXAMINE page 0x004E5998 on
+                  # "Examiner" and the DESTROY confirm 0x004E5A00 on "Detruire"
+                  0x004E5930: [0x004E5998, 0x004E5A00]}
     out, skipped, seen = [], [], set()   # `seen` tracks CHILD panels only
     for sid in sorted(u.screens):
         try:
@@ -973,9 +977,12 @@ def c_ui_widgets(rows, e):
             # 20/145/628 -> 23/154/666 on 2026-09-14: the SHOPS' two CODE_NAMED
             # children (the Vente confirm 0x004E3A40, the Examiner page
             # 0x004E39D8) and the shop panel again as that page's `+44` child.
-            ("child panels", len(kids), 23),
-            ("lists", len(lists), 154),
-            ("items", len(items), 666),
+            # 23/154/666 -> 26/166/698 on 2026-09-15: MULTIPLAN's two CODE_NAMED
+            # children (the examine page 0x004E5998, the destroy confirm
+            # 0x004E5A00) and its own panel again as the examine box's `+44`.
+            ("child panels", len(kids), 26),
+            ("lists", len(lists), 166),
+            ("items", len(items), 698),
             ("item records inside the image",
              sum(1 for i in items if mapped(i["addr"])), len(items)),
             # 75 across the whole tree but only 16 distinct item RECORDS
@@ -983,10 +990,10 @@ def c_ui_widgets(rows, e):
             # 0x004DE210 is one list carried by nine of the panels, so each
             # of its child-naming items is counted once per panel.
             ("items naming a child panel",
-             sum(1 for i in items if i["child"]), 95),
+             sum(1 for i in items if i["child"]), 96),
             ("...of which distinct item records",
-             len({i["addr"] for i in items if i["child"]}), 22),
-            ("lists with a non-default input hook", len(hooks), 54),
+             len({i["addr"] for i in items if i["child"]}), 23),
+            ("lists with a non-default input hook", len(hooks), 60),
             # The two RUNTIME fields, and only where the open callback writes
             # them. Neither was in this table before 2026-09-04, because the
             # scan had no reason to look: `panel+24` is the CURRENT LIST and
@@ -1043,7 +1050,7 @@ def c_ui_widgets(rows, e):
             ("items with a bound string",
              sum(1 for i in items if "string" in (i.get("bind") or {})), 45),
             ("items with a bound tag",
-             sum(1 for i in items if "tag" in (i.get("bind") or {})), 24),
+             sum(1 for i in items if "tag" in (i.get("bind") or {})), 25),
             ("TERMINAL's bound strings",
              sorted(i["bind"]["string"] for p in ps if p["screen"] == 5
                     for l in p["lists"] for i in l["items"]
@@ -1063,13 +1070,13 @@ def c_ui_widgets(rows, e):
               sum(1 for p in ps if not p["flagsB"] & 0x6000 and p["tilesAt"]),
               sum(1 for p in ps if not p["flagsB"] & 0x6000
                   and not p["tilesAt"])],
-             [21, 1, 24, 8]),
+             [21, 1, 27, 8]),
             ("the one panel that blits its sheet whole",
              [p["screen"] for p in ps
               if not p["flagsB"] & 0x2000 and p["flagsB"] & 0x4000], [36]),
             ("distinct hooks among them", len(set(hooks)), 13),
             ("lists taking Ui_MoveSelection, the default walk",
-             sum(1 for l in lists if not l["hook"]), 100),
+             sum(1 for l in lists if not l["hook"]), 106),
             ("the LIFT grid hook is present", rows["gridHook"] in hooks, True),
             # It is here only because the walk follows `+44`: the name field
             # is in the start menu's confirm dialog, a CHILD panel. A lift

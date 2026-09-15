@@ -2965,6 +2965,35 @@ navigation hooks are native and cannot be walked.
 > the first thing a reader noticed about `/ui`. Composed, that region is black.
 > `verify.py: ui page` asserts it.
 
+### MULTIPLAN — the storage kiosk every terminal shares (2026-09-15)
+
+Screen 2, opened by **82** zone activate scripts, every one named `Multiplan`
+- one per building almost everywhere. It is a LOCKER, not a map: it moves
+objects between the player's sneak (object list 0) and a storage every
+terminal shares (list 1), which is what a reader describes as a "cloud" you
+can fill anywhere and empty anywhere. `IAM\Multip` names the four buttons
+*Transférer vers le multiplan*, *Transférer vers le sneak*, *Examiner cet
+objet* and *Détruire définitivement cet objet*, and its refusals.
+
+**The rows list what the chosen button acts ON.** `dword_68A610` is the
+SOURCE: `sub_4B01F0`, the open, writes 0 and paints the rows and header in
+the selected button's colour (`off_4E53AC[word_4E53A2]`, the shops' trick);
+the button list's own hook `0x004B09A0` runs `sub_42A910` (UP/DOWN, falling
+into the confirm) and then repaints and sets the source - **0 on "vers le
+multiplan"**, the sneak a deposit draws from, **1 on the other three**, the
+kiosk - re-binding the rows at 0. The panel hook `0x004B0B00` hands LEFT/RIGHT
+from the buttons to the rows (only when the rows hold something) and back;
+each button's callback (`0x004B0760`/`07E0`/`0860`/`0890`) hands the focus to
+the rows, the two transfer buttons switching the source first. Each button
+has its own colour: yellow for a deposit, (255, 100, 70) back to the sneak,
+blue Examiner, green Détruire.
+
+The stock row's callback `0x004B05C0` then acts by the button: event 36
+request 7 (sneak -> kiosk) or 8 (kiosk -> sneak) with messages 8 / 7 / 6,
+the examine page `0x004E5998`, or the destroy confirm `0x004E5A00` (request 6,
+message 4). Both children are lifted as `CODE_NAMED` and come up on their
+record's list 1. `verify.py: engine: multiplan open`; `todo/multiplan.md`.
+
 ### The LIFT — the one bespoke widget
 
 `UI_GridMenuInput` is the only list-level input hook the game has, and it is

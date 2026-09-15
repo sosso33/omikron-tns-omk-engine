@@ -132,6 +132,25 @@ inline constexpr std::uint32_t kCbShopRow            = 0x004AEAA0u;
 inline constexpr std::uint32_t kPanelShopSellConfirm = 0x004E3A40u;
 inline constexpr std::uint32_t kPanelShopExamine     = 0x004E39D8u;
 // The confirm's two answers, and both end on the shop panel again.
+// ---- MULTIPLAN, screen 2 - the storage kiosk (todo/multiplan.md) ---------
+inline constexpr std::uint32_t kPanelMultiplan         = 0x004E5930u;
+inline constexpr std::uint32_t kListMultiplanButtons   = 0x004E53A0u;
+inline constexpr std::uint32_t kListMultiplanRows      = 0x004E5670u;
+inline constexpr std::uint32_t kListMultiplanHeader    = 0x004E5910u;
+inline constexpr std::uint32_t kItemMultiplanToKiosk   = 0x004E5270u;   // "Transferer vers le multiplan"
+inline constexpr std::uint32_t kItemMultiplanDestroy   = 0x004E5348u;   // "Detruire definitivement"
+// The panel's input hook: LEFT/RIGHT hand the focus buttons -> rows (only
+// when the rows hold something) and rows -> buttons.
+inline constexpr std::uint32_t kHookMultiplanPanel     = 0x004B0B00u;
+// The button list's hook: `sub_42A910` (UP/DOWN, falling into the confirm),
+// then re-colour the rows and header and choose the SOURCE list.
+inline constexpr std::uint32_t kHookMultiplanButtons   = 0x004B09A0u;
+inline constexpr std::uint32_t kCbMultiplanToKiosk     = 0x004B0760u;   // source 0, focus rows
+inline constexpr std::uint32_t kCbMultiplanToSneak     = 0x004B07E0u;   // source 1, focus rows
+inline constexpr std::uint32_t kCbMultiplanExamine     = 0x004B0860u;   // focus rows
+inline constexpr std::uint32_t kCbMultiplanDestroy     = 0x004B0890u;   // focus rows
+inline constexpr std::uint32_t kPanelMultiplanExamine  = 0x004E5998u;
+inline constexpr std::uint32_t kPanelMultiplanDestroy  = 0x004E5A00u;
 inline constexpr std::uint32_t kCbShopSellYes = 0x004AEC00u;   // "Oui": the sale
 inline constexpr std::uint32_t kCbShopSellNo  = 0x004AECE0u;   // "Non"
 
@@ -572,6 +591,11 @@ struct UiListState {
     // Vente confirm, 0x004AEC00 - event 36 request 10, the price, event 39).
     // `row` is the widget's tag, the index into the open list. -1 none.
     int pendingShopKind = -1, pendingShopRow = -1;
+    // MULTIPLAN's SOURCE LIST, `dword_68A610`: which object list the kiosk's
+    // rows show - 0 the sneak (what a deposit acts on), 1 the kiosk's shared
+    // storage (what the other three buttons act on). The open writes 0; the
+    // button list's hook and the two transfer buttons switch it.
+    int multiplanSource = 0;
     // `Utiliser sur`'s COMBINE MODE - `dword_670BE0` and the three slots
     // `670BE4` / `670BE8` / `670BEC`, which are globals like everything else
     // in this device. `sub_49BF30` opens it and `sub_49BC60`'s `loc_49BDD6`
@@ -736,6 +760,8 @@ public:
             if (panel_->lists[k].addr == addr) { cur_ = static_cast<int>(k); return true; }
         return false;
     }
+    // MULTIPLAN's source list, `dword_68A610`: 0 the sneak, 1 the kiosk.
+    int  multiplanSource() const { return state_->multiplanSource; }
     bool takeShop(int& kind, int& row) {
         kind = state_->pendingShopKind; row = state_->pendingShopRow;
         state_->pendingShopKind = state_->pendingShopRow = -1;
@@ -939,6 +965,12 @@ private:
     int  lastPickable(const UiList& l) const;    // sub_429590
     void colourItem(std::uint32_t item, int r, int g, int b);
     void colourList(std::uint32_t list, int r, int g, int b);
+    // MULTIPLAN (todo/multiplan.md): paint the rows and the header in the
+    // selected button's colour, and switch the SOURCE list the rows show -
+    // `sub_42ADD0(rows, 0, src)`, which also puts the rows' selection and
+    // window back to 0.
+    void multiplanColour(const UiPanel& p);
+    void multiplanSetSource(int src);
     void buildPage(const UiPanel& p);
     // The panel's `+8`, run on the way OUT - `sub_42A370` calls the old
     // panel's before the new panel's `+4`.

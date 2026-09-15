@@ -7,7 +7,11 @@ and the status; findings go into `docs/UI.md` as each step lands.
 
 **It is not a map: it is a LOCKER.** The kiosk moves objects between the
 player's sneak (object list 0) and the kiosk's own storage (list 1) - which is
-why `docs/GAME_STATE.md`'s list 1 holds "Notice Multiplan". Its strings,
+why `docs/GAME_STATE.md`'s list 1 holds "Notice Multiplan". **Confirmed by the
+reader, 2026-09-15**: *"it allows the player to transfer objects to some
+virtual 'cloud' and get them back from any terminal in the game"* - one
+storage shared by every kiosk, which is what a single DB list 1 opened by all
+82 sites means. Its strings,
 `IAM\Multip`:
 
 | id | string |
@@ -115,7 +119,7 @@ Each ends in a commit, a `verify.py` check shown to fail first, and a report.
 | # | step | status |
 |---|---|---|
 | 0 | this file, the survey and the headless route | **done 2026-09-15** |
-| 1 | **the OPEN and the SOURCE**: the colour push, `dword_68A610`, the rows' flags; the button list's hook re-colouring and switching the source; the four button callbacks; lift the two child panels. Check: opening shows the sneak's objects in the button's colour, and moving to "vers le sneak" switches to list 1 | |
+| 1 | **the OPEN and the SOURCE**: the colour push, `dword_68A610`, the rows' flags; the button list's hook re-colouring and switching the source; the four button callbacks; lift the two child panels. Check: opening shows the sneak's objects in the button's colour, and moving to "vers le sneak" switches to list 1 | **done 2026-09-15** — the walk carries the source (`UiListState::multiplanSource`), the open's reset and colour push, the button list's hook (move, repaint, source 0 on "vers le multiplan" / 1 on the rest, rows rebound at 0), the panel hook's LEFT/RIGHT between buttons and rows, and the four button callbacks; the two children are `CODE_NAMED` (57 panels, nine self-check counts moved, no existing record) and come up on their record's list 1. The button colours: yellow (255,240,0) for a deposit, (255,100,70) "vers le sneak", blue Examiner, green Détruire. The rows' list flags `0x20008000`/`0x20010000` the hook toggles are **recorded, not modelled** - their drawing effect is unread. Rows are still EMPTY: filling them is step 2. `verify.py: engine: multiplan open` |
 | 2 | **the ROWS and the HEADER**: case 33 names over the window from the chosen list; the header hook `0x004B0B60`; the panel hook `0x004B0B00`; the box `0x00477ED0` / `sub_4286F0`. Check: both lists' names, the header text | |
 | 3 | **the TRANSFERS**: case 36 requests 7 and 8 in the channel (read them whole first), messages 6/7/8, the re-bind and the focus rule. Check: an object crosses each way and the refusals post their message | |
 | 4 | **EXAMINER and DÉTRUIRE**: the examine page `0x004E5998` (`sub_42B420`, and what it draws), the destroy confirm `0x004E5A00` (request 6, message 4). Check: the page shows the object, a destroyable object goes, a protected one refuses | |

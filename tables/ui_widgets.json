@@ -21,48 +21,48 @@
   },
   {
    "what": "child panels",
-   "got": 23,
-   "want": 20
+   "got": 26,
+   "want": 23
   },
   {
    "what": "lists",
-   "got": 154,
-   "want": 145
+   "got": 166,
+   "want": 154
   },
   {
    "what": "items",
-   "got": 666,
-   "want": 628
-  },
-  {
-   "what": "item records inside the image",
-   "got": 666,
+   "got": 698,
    "want": 666
   },
   {
+   "what": "item records inside the image",
+   "got": 698,
+   "want": 698
+  },
+  {
    "what": "items naming a child panel",
-   "got": 95,
-   "want": 94
+   "got": 96,
+   "want": 95
   },
   {
    "what": "...of which distinct item records",
-   "got": 22,
-   "want": 21
+   "got": 23,
+   "want": 22
   },
   {
    "what": "lists with a non-default input hook",
-   "got": 54,
-   "want": 52
+   "got": 60,
+   "want": 54
   },
   {
    "what": "panels whose open callback or builder sets the current list",
    "got": 16,
-   "want": 15
+   "want": 16
   },
   {
    "what": "lists whose open callback or builder sets the selection",
    "got": 34,
-   "want": 30
+   "want": 34
   },
   {
    "what": "...distinct list records among them",
@@ -91,11 +91,11 @@
   {
    "what": "items with a bound string",
    "got": 45,
-   "want": 42
+   "want": 45
   },
   {
    "what": "items with a bound tag",
-   "got": 24,
+   "got": 25,
    "want": 24
   },
   {
@@ -122,11 +122,11 @@
    "got": [
     21,
     1,
-    24,
+    27,
     8
    ],
    "want": [
-    18,
+    21,
     1,
     24,
     8
@@ -148,8 +148,8 @@
   },
   {
    "what": "lists taking Ui_MoveSelection, the default walk",
-   "got": 100,
-   "want": 93
+   "got": 106,
+   "want": 100
   },
   {
    "what": "the LIFT grid hook is present",
@@ -7218,6 +7218,1624 @@
    },
    {
     "screen": 2,
+    "panel": 5134640,
+    "parent": 0,
+    "hook": 4918016,
+    "offset": [
+     0,
+     0
+    ],
+    "slide": [
+     0,
+     0,
+     0,
+     0,
+     0
+    ],
+    "tilesAt": 5132832,
+    "tiles": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7,
+     8,
+     9,
+     10,
+     11,
+     12,
+     13,
+     14,
+     15,
+     16,
+     17,
+     18,
+     19,
+     20,
+     21,
+     22,
+     23,
+     24,
+     25,
+     26,
+     27,
+     28,
+     29,
+     30,
+     51,
+     51,
+     51,
+     51,
+     35,
+     36,
+     37,
+     38,
+     39,
+     40,
+     41,
+     42,
+     43,
+     44,
+     45,
+     46,
+     47,
+     48,
+     49,
+     50,
+     51,
+     52,
+     53,
+     54,
+     55,
+     56,
+     57,
+     58,
+     59,
+     60,
+     61,
+     62,
+     63,
+     64,
+     65,
+     66,
+     67,
+     68,
+     69,
+     70,
+     71,
+     72,
+     73,
+     74,
+     75,
+     76,
+     77,
+     78,
+     79
+    ],
+    "current": -1,
+    "flags": 536870960,
+    "flagsB": 0,
+    "lists": [
+     {
+      "addr": 5133216,
+      "hook": 4917664,
+      "flags": 0,
+      "flagsB": 0,
+      "select": -1,
+      "broadcast": [],
+      "listflag": [],
+      "layout": {},
+      "items": [
+       {
+        "addr": 5132912,
+        "string": 1,
+        "x": 554,
+        "y": 140,
+        "w": 63,
+        "h": 63,
+        "rgb": [
+         255,
+         240,
+         0
+        ],
+        "layer": 6,
+        "font": 255,
+        "text": 0,
+        "textFn": 0,
+        "drawFn": 0,
+        "textArg": 0,
+        "lit": [
+         64,
+         192
+        ],
+        "unlit": [
+         554,
+         140
+        ],
+        "callback": 4917088,
+        "child": 0,
+        "flags": [
+         0,
+         1073742594,
+         0
+        ],
+        "setflag": [],
+        "bind": {}
+       },
+       {
+        "addr": 5132984,
+        "string": 0,
+        "x": 554,
+        "y": 210,
+        "w": 63,
+        "h": 63,
+        "rgb": [
+         255,
+         100,
+         70
+        ],
+        "layer": 6,
+        "font": 255,
+        "text": 0,
+        "textFn": 0,
+        "drawFn": 0,
+        "textArg": 0,
+        "lit": [
+         128,
+         192
+        ],
+        "unlit": [
+         554,
+         210
+        ],
+        "callback": 4917216,
+        "child": 0,
+        "flags": [
+         0,
+         1073742594,
+         0
+        ],
+        "setflag": [],
+        "bind": {}
+       },
+       {
+        "addr": 5133056,
+        "string": 2,
+        "x": 563,
+        "y": 286,
+        "w": 63,
+        "h": 63,
+        "rgb": [
+         20,
+         165,
+         250
+        ],
+        "layer": 6,
+        "font": 255,
+        "text": 0,
+        "textFn": 0,
+        "drawFn": 0,
+        "textArg": 0,
+        "lit": [
+         192,
+         192
+        ],
+        "unlit": [
+         563,
+         286
+        ],
+        "callback": 4917344,
+        "child": 0,
+        "flags": [
+         0,
+         1073742594,
+         0
+        ],
+        "setflag": [],
+        "bind": {}
+       },
+       {
+        "addr": 5133128,
+        "string": 3,
+        "x": 563,
+        "y": 366,
+        "w": 63,
+        "h": 63,
+        "rgb": [
+         25,
+         240,
+         115
+        ],
+        "layer": 6,
+        "font": 255,
+        "text": 0,
+        "textFn": 0,
+        "drawFn": 0,
+        "textArg": 0,
+        "lit": [
+         256,
+         192
+        ],
+        "unlit": [
+         563,
+         366
+        ],
+        "callback": 4917392,
+        "child": 0,
+        "flags": [
+         0,
+         1073742594,
+         0
+        ],
+        "setflag": [],
+        "bind": {}
+       }
+      ]
+     },
+     {
+      "addr": 5133936,
+      "hook": 4370416,
+      "flags": 0,
+      "flagsB": 0,
+      "select": -1,
+      "broadcast": [],
+      "listflag": [
+       [
+        536936448,
+        true
+       ]
+      ],
+      "layout": {},
+      "items": [
+       {
+        "addr": 5133248,
+        "string": -1,
+        "x": 90,
+        "y": 140,
+        "w": 400,
+        "h": 20,
+        "rgb": [
+         255,
+         0,
+         0
+        ],
+        "layer": 6,
+        "font": 74,
+        "text": 0,
+        "textFn": 4368896,
+        "drawFn": 0,
+        "textArg": -1,
+        "lit": [
+         0,
+         0
+        ],
+        "unlit": [
+         0,
+         0
+        ],
+        "callback": 4916672,
+        "child": 0,
+        "flags": [
+         0,
+         1073742352,
+         2147483649
+        ],
+        "setflag": [],
+        "bind": {
+         "tag": 4294967295
+        }
+       },
+       {
+        "addr": 5133320,
+        "string": -1,
+        "x": 90,
+        "y": 170,
+        "w": 400,
+        "h": 20,
+        "rgb": [
+         255,
+         0,
+         0
+        ],
+        "layer": 6,
+        "font": 74,
+        "text": 0,
+        "textFn": 4368896,
+        "drawFn": 0,
+        "textArg": -1,
+        "lit": [
+         0,
+         0
+        ],
+        "unlit": [
+         0,
+         0
+        ],
+        "callback": 4916672,
+        "child": 0,
+        "flags": [
+         0,
+         1073742352,
+         2147483649
+        ],
+        "setflag": [],
+        "bind": {}
+       },
+       {
+        "addr": 5133392,
+        "string": -1,
+        "x": 90,
+        "y": 200,
+        "w": 400,
+        "h": 20,
+        "rgb": [
+         255,
+         0,
+         0
+        ],
+        "layer": 6,
+        "font": 74,
+        "text": 0,
+        "textFn": 4368896,
+        "drawFn": 0,
+        "textArg": -1,
+        "lit": [
+         0,
+         0
+        ],
+        "unlit": [
+         0,
+         0
+        ],
+        "callback": 4916672,
+        "child": 0,
+        "flags": [
+         0,
+         1073742352,
+         2147483649
+        ],
+        "setflag": [],
+        "bind": {}
+       },
+       {
+        "addr": 5133464,
+        "string": -1,
+        "x": 90,
+        "y": 230,
+        "w": 400,
+        "h": 20,
+        "rgb": [
+         255,
+         0,
+         0
+        ],
+        "layer": 6,
+        "font": 74,
+        "text": 0,
+        "textFn": 4368896,
+        "drawFn": 0,
+        "textArg": -1,
+        "lit": [
+         0,
+         0
+        ],
+        "unlit": [
+         0,
+         0
+        ],
+        "callback": 4916672,
+        "child": 0,
+        "flags": [
+         0,
+         1073742352,
+         2147483649
+        ],
+        "setflag": [],
+        "bind": {}
+       },
+       {
+        "addr": 5133536,
+        "string": -1,
+        "x": 90,
+        "y": 260,
+        "w": 400,
+        "h": 20,
+        "rgb": [
+         255,
+         0,
+         0
+        ],
+        "layer": 6,
+        "font": 74,
+        "text": 0,
+        "textFn": 4368896,
+        "drawFn": 0,
+        "textArg": -1,
+        "lit": [
+         0,
+         0
+        ],
+        "unlit": [
+         0,
+         0
+        ],
+        "callback": 4916672,
+        "child": 0,
+        "flags": [
+         0,
+         1073742352,
+         2147483649
+        ],
+        "setflag": [],
+        "bind": {}
+       },
+       {
+        "addr": 5133608,
+        "string": -1,
+        "x": 90,
+        "y": 290,
+        "w": 400,
+        "h": 20,
+        "rgb": [
+         255,
+         0,
+         0
+        ],
+        "layer": 6,
+        "font": 74,
+        "text": 0,
+        "textFn": 4368896,
+        "drawFn": 0,
+        "textArg": -1,
+        "lit": [
+         0,
+         0
+        ],
+        "unlit": [
+         0,
+         0
+        ],
+        "callback": 4916672,
+        "child": 0,
+        "flags": [
+         0,
+         1073742352,
+         2147483649
+        ],
+        "setflag": [],
+        "bind": {}
+       },
+       {
+        "addr": 5133680,
+        "string": -1,
+        "x": 90,
+        "y": 320,
+        "w": 400,
+        "h": 20,
+        "rgb": [
+         255,
+         0,
+         0
+        ],
+        "layer": 6,
+        "font": 74,
+        "text": 0,
+        "textFn": 4368896,
+        "drawFn": 0,
+        "textArg": -1,
+        "lit": [
+         0,
+         0
+        ],
+        "unlit": [
+         0,
+         0
+        ],
+        "callback": 4916672,
+        "child": 0,
+        "flags": [
+         0,
+         1073742352,
+         2147483649
+        ],
+        "setflag": [],
+        "bind": {}
+       },
+       {
+        "addr": 5133752,
+        "string": -1,
+        "x": 90,
+        "y": 350,
+        "w": 400,
+        "h": 20,
+        "rgb": [
+         255,
+         0,
+         0
+        ],
+        "layer": 6,
+        "font": 74,
+        "text": 0,
+        "textFn": 4368896,
+        "drawFn": 0,
+        "textArg": -1,
+        "lit": [
+         0,
+         0
+        ],
+        "unlit": [
+         0,
+         0
+        ],
+        "callback": 4916672,
+        "child": 0,
+        "flags": [
+         0,
+         1073742352,
+         2147483649
+        ],
+        "setflag": [],
+        "bind": {}
+       },
+       {
+        "addr": 5133824,
+        "string": -1,
+        "x": 90,
+        "y": 380,
+        "w": 400,
+        "h": 20,
+        "rgb": [
+         255,
+         0,
+         0
+        ],
+        "layer": 6,
+        "font": 74,
+        "text": 0,
+        "textFn": 4368896,
+        "drawFn": 0,
+        "textArg": -1,
+        "lit": [
+         0,
+         0
+        ],
+        "unlit": [
+         0,
+         0
+        ],
+        "callback": 4916672,
+        "child": 0,
+        "flags": [
+         0,
+         1073742352,
+         2147483649
+        ],
+        "setflag": [],
+        "bind": {}
+       }
+      ]
+     },
+     {
+      "addr": 5134608,
+      "hook": 0,
+      "flags": 536870916,
+      "flagsB": 0,
+      "select": -1,
+      "broadcast": [],
+      "listflag": [],
+      "layout": {},
+      "items": [
+       {
+        "addr": 5134528,
+        "string": -1,
+        "x": 60,
+        "y": 60,
+        "w": 400,
+        "h": 20,
+        "rgb": [
+         255,
+         0,
+         0
+        ],
+        "layer": 6,
+        "font": 83,
+        "text": 0,
+        "textFn": 4918112,
+        "drawFn": 0,
+        "textArg": -1,
+        "lit": [
+         0,
+         0
+        ],
+        "unlit": [
+         0,
+         0
+        ],
+        "callback": 0,
+        "child": 0,
+        "flags": [
+         0,
+         1073741848,
+         2147483649
+        ],
+        "setflag": [],
+        "bind": {}
+       }
+      ]
+     },
+     {
+      "addr": 5134496,
+      "hook": 0,
+      "flags": 0,
+      "flagsB": 0,
+      "select": -1,
+      "broadcast": [],
+      "listflag": [],
+      "layout": {},
+      "items": [
+       {
+        "addr": 5134416,
+        "string": -1,
+        "x": 60,
+        "y": 130,
+        "w": 450,
+        "h": 260,
+        "rgb": [
+         0,
+         60,
+         120
+        ],
+        "layer": 7,
+        "font": 67,
+        "text": 0,
+        "textFn": 0,
+        "drawFn": 4685520,
+        "textArg": 0,
+        "lit": [
+         0,
+         0
+        ],
+        "unlit": [
+         0,
+         0
+        ],
+        "callback": 0,
+        "child": 0,
+        "flags": [
+         536870916,
+         0,
+         0
+        ],
+        "setflag": [],
+        "bind": {}
+       }
+      ]
+     }
+    ]
+   },
+   {
+    "screen": -1,
+    "panel": 5134744,
+    "parent": 5134640,
+    "hook": 0,
+    "offset": [
+     0,
+     0
+    ],
+    "slide": [
+     0,
+     0,
+     0,
+     0,
+     0
+    ],
+    "tilesAt": 5132832,
+    "tiles": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7,
+     8,
+     9,
+     10,
+     11,
+     12,
+     13,
+     14,
+     15,
+     16,
+     17,
+     18,
+     19,
+     20,
+     21,
+     22,
+     23,
+     24,
+     25,
+     26,
+     27,
+     28,
+     29,
+     30,
+     51,
+     51,
+     51,
+     51,
+     35,
+     36,
+     37,
+     38,
+     39,
+     40,
+     41,
+     42,
+     43,
+     44,
+     45,
+     46,
+     47,
+     48,
+     49,
+     50,
+     51,
+     52,
+     53,
+     54,
+     55,
+     56,
+     57,
+     58,
+     59,
+     60,
+     61,
+     62,
+     63,
+     64,
+     65,
+     66,
+     67,
+     68,
+     69,
+     70,
+     71,
+     72,
+     73,
+     74,
+     75,
+     76,
+     77,
+     78,
+     79
+    ],
+    "current": -1,
+    "flags": 536870944,
+    "flagsB": 0,
+    "lists": [
+     {
+      "addr": 5133216,
+      "hook": 4917664,
+      "flags": 0,
+      "flagsB": 0,
+      "select": -1,
+      "broadcast": [],
+      "listflag": [],
+      "layout": {},
+      "items": [
+       {
+        "addr": 5132912,
+        "string": 1,
+        "x": 554,
+        "y": 140,
+        "w": 63,
+        "h": 63,
+        "rgb": [
+         255,
+         240,
+         0
+        ],
+        "layer": 6,
+        "font": 255,
+        "text": 0,
+        "textFn": 0,
+        "drawFn": 0,
+        "textArg": 0,
+        "lit": [
+         64,
+         192
+        ],
+        "unlit": [
+         554,
+         140
+        ],
+        "callback": 4917088,
+        "child": 0,
+        "flags": [
+         0,
+         1073742594,
+         0
+        ],
+        "setflag": [],
+        "bind": {}
+       },
+       {
+        "addr": 5132984,
+        "string": 0,
+        "x": 554,
+        "y": 210,
+        "w": 63,
+        "h": 63,
+        "rgb": [
+         255,
+         100,
+         70
+        ],
+        "layer": 6,
+        "font": 255,
+        "text": 0,
+        "textFn": 0,
+        "drawFn": 0,
+        "textArg": 0,
+        "lit": [
+         128,
+         192
+        ],
+        "unlit": [
+         554,
+         210
+        ],
+        "callback": 4917216,
+        "child": 0,
+        "flags": [
+         0,
+         1073742594,
+         0
+        ],
+        "setflag": [],
+        "bind": {}
+       },
+       {
+        "addr": 5133056,
+        "string": 2,
+        "x": 563,
+        "y": 286,
+        "w": 63,
+        "h": 63,
+        "rgb": [
+         20,
+         165,
+         250
+        ],
+        "layer": 6,
+        "font": 255,
+        "text": 0,
+        "textFn": 0,
+        "drawFn": 0,
+        "textArg": 0,
+        "lit": [
+         192,
+         192
+        ],
+        "unlit": [
+         563,
+         286
+        ],
+        "callback": 4917344,
+        "child": 0,
+        "flags": [
+         0,
+         1073742594,
+         0
+        ],
+        "setflag": [],
+        "bind": {}
+       },
+       {
+        "addr": 5133128,
+        "string": 3,
+        "x": 563,
+        "y": 366,
+        "w": 63,
+        "h": 63,
+        "rgb": [
+         25,
+         240,
+         115
+        ],
+        "layer": 6,
+        "font": 255,
+        "text": 0,
+        "textFn": 0,
+        "drawFn": 0,
+        "textArg": 0,
+        "lit": [
+         256,
+         192
+        ],
+        "unlit": [
+         563,
+         366
+        ],
+        "callback": 4917392,
+        "child": 0,
+        "flags": [
+         0,
+         1073742594,
+         0
+        ],
+        "setflag": [],
+        "bind": {}
+       }
+      ]
+     },
+     {
+      "addr": 5134384,
+      "hook": 4368800,
+      "flags": 0,
+      "flagsB": 0,
+      "select": -1,
+      "broadcast": [],
+      "listflag": [],
+      "layout": {},
+      "items": [
+       {
+        "addr": 5134304,
+        "string": -1,
+        "x": 90,
+        "y": 140,
+        "w": 400,
+        "h": 260,
+        "rgb": [
+         255,
+         255,
+         255
+        ],
+        "layer": 6,
+        "font": 74,
+        "text": 0,
+        "textFn": 0,
+        "drawFn": 4685984,
+        "textArg": -1,
+        "lit": [
+         0,
+         0
+        ],
+        "unlit": [
+         0,
+         0
+        ],
+        "callback": 0,
+        "child": 5134640,
+        "flags": [
+         0,
+         1073741832,
+         2147483650
+        ],
+        "setflag": [],
+        "bind": {}
+       }
+      ]
+     },
+     {
+      "addr": 5134608,
+      "hook": 0,
+      "flags": 536870916,
+      "flagsB": 0,
+      "select": -1,
+      "broadcast": [],
+      "listflag": [],
+      "layout": {},
+      "items": [
+       {
+        "addr": 5134528,
+        "string": -1,
+        "x": 60,
+        "y": 60,
+        "w": 400,
+        "h": 20,
+        "rgb": [
+         255,
+         0,
+         0
+        ],
+        "layer": 6,
+        "font": 83,
+        "text": 0,
+        "textFn": 4918112,
+        "drawFn": 0,
+        "textArg": -1,
+        "lit": [
+         0,
+         0
+        ],
+        "unlit": [
+         0,
+         0
+        ],
+        "callback": 0,
+        "child": 0,
+        "flags": [
+         0,
+         1073741848,
+         2147483649
+        ],
+        "setflag": [],
+        "bind": {}
+       }
+      ]
+     },
+     {
+      "addr": 5134496,
+      "hook": 0,
+      "flags": 0,
+      "flagsB": 0,
+      "select": -1,
+      "broadcast": [],
+      "listflag": [],
+      "layout": {},
+      "items": [
+       {
+        "addr": 5134416,
+        "string": -1,
+        "x": 60,
+        "y": 130,
+        "w": 450,
+        "h": 260,
+        "rgb": [
+         0,
+         60,
+         120
+        ],
+        "layer": 7,
+        "font": 67,
+        "text": 0,
+        "textFn": 0,
+        "drawFn": 4685520,
+        "textArg": 0,
+        "lit": [
+         0,
+         0
+        ],
+        "unlit": [
+         0,
+         0
+        ],
+        "callback": 0,
+        "child": 0,
+        "flags": [
+         536870916,
+         0,
+         0
+        ],
+        "setflag": [],
+        "bind": {}
+       }
+      ]
+     }
+    ]
+   },
+   {
+    "screen": -1,
+    "panel": 5134848,
+    "parent": 5134640,
+    "hook": 0,
+    "offset": [
+     0,
+     0
+    ],
+    "slide": [
+     0,
+     0,
+     0,
+     0,
+     0
+    ],
+    "tilesAt": 5132832,
+    "tiles": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7,
+     8,
+     9,
+     10,
+     11,
+     12,
+     13,
+     14,
+     15,
+     16,
+     17,
+     18,
+     19,
+     20,
+     21,
+     22,
+     23,
+     24,
+     25,
+     26,
+     27,
+     28,
+     29,
+     30,
+     51,
+     51,
+     51,
+     51,
+     35,
+     36,
+     37,
+     38,
+     39,
+     40,
+     41,
+     42,
+     43,
+     44,
+     45,
+     46,
+     47,
+     48,
+     49,
+     50,
+     51,
+     52,
+     53,
+     54,
+     55,
+     56,
+     57,
+     58,
+     59,
+     60,
+     61,
+     62,
+     63,
+     64,
+     65,
+     66,
+     67,
+     68,
+     69,
+     70,
+     71,
+     72,
+     73,
+     74,
+     75,
+     76,
+     77,
+     78,
+     79
+    ],
+    "current": -1,
+    "flags": 536870944,
+    "flagsB": 0,
+    "lists": [
+     {
+      "addr": 5133216,
+      "hook": 4917664,
+      "flags": 0,
+      "flagsB": 0,
+      "select": -1,
+      "broadcast": [],
+      "listflag": [],
+      "layout": {},
+      "items": [
+       {
+        "addr": 5132912,
+        "string": 1,
+        "x": 554,
+        "y": 140,
+        "w": 63,
+        "h": 63,
+        "rgb": [
+         255,
+         240,
+         0
+        ],
+        "layer": 6,
+        "font": 255,
+        "text": 0,
+        "textFn": 0,
+        "drawFn": 0,
+        "textArg": 0,
+        "lit": [
+         64,
+         192
+        ],
+        "unlit": [
+         554,
+         140
+        ],
+        "callback": 4917088,
+        "child": 0,
+        "flags": [
+         0,
+         1073742594,
+         0
+        ],
+        "setflag": [],
+        "bind": {}
+       },
+       {
+        "addr": 5132984,
+        "string": 0,
+        "x": 554,
+        "y": 210,
+        "w": 63,
+        "h": 63,
+        "rgb": [
+         255,
+         100,
+         70
+        ],
+        "layer": 6,
+        "font": 255,
+        "text": 0,
+        "textFn": 0,
+        "drawFn": 0,
+        "textArg": 0,
+        "lit": [
+         128,
+         192
+        ],
+        "unlit": [
+         554,
+         210
+        ],
+        "callback": 4917216,
+        "child": 0,
+        "flags": [
+         0,
+         1073742594,
+         0
+        ],
+        "setflag": [],
+        "bind": {}
+       },
+       {
+        "addr": 5133056,
+        "string": 2,
+        "x": 563,
+        "y": 286,
+        "w": 63,
+        "h": 63,
+        "rgb": [
+         20,
+         165,
+         250
+        ],
+        "layer": 6,
+        "font": 255,
+        "text": 0,
+        "textFn": 0,
+        "drawFn": 0,
+        "textArg": 0,
+        "lit": [
+         192,
+         192
+        ],
+        "unlit": [
+         563,
+         286
+        ],
+        "callback": 4917344,
+        "child": 0,
+        "flags": [
+         0,
+         1073742594,
+         0
+        ],
+        "setflag": [],
+        "bind": {}
+       },
+       {
+        "addr": 5133128,
+        "string": 3,
+        "x": 563,
+        "y": 366,
+        "w": 63,
+        "h": 63,
+        "rgb": [
+         25,
+         240,
+         115
+        ],
+        "layer": 6,
+        "font": 255,
+        "text": 0,
+        "textFn": 0,
+        "drawFn": 0,
+        "textArg": 0,
+        "lit": [
+         256,
+         192
+        ],
+        "unlit": [
+         563,
+         366
+        ],
+        "callback": 4917392,
+        "child": 0,
+        "flags": [
+         0,
+         1073742594,
+         0
+        ],
+        "setflag": [],
+        "bind": {}
+       }
+      ]
+     },
+     {
+      "addr": 5134272,
+      "hook": 4368688,
+      "flags": 0,
+      "flagsB": 0,
+      "select": -1,
+      "broadcast": [],
+      "listflag": [],
+      "layout": {},
+      "items": [
+       {
+        "addr": 5133968,
+        "string": 3,
+        "x": 90,
+        "y": 160,
+        "w": 400,
+        "h": 30,
+        "rgb": [
+         25,
+         240,
+         115
+        ],
+        "layer": 6,
+        "font": 83,
+        "text": 0,
+        "textFn": 4679776,
+        "drawFn": 0,
+        "textArg": -1,
+        "lit": [
+         0,
+         0
+        ],
+        "unlit": [
+         0,
+         0
+        ],
+        "callback": 0,
+        "child": 0,
+        "flags": [
+         536870916,
+         1073741848,
+         2147483665
+        ],
+        "setflag": [],
+        "bind": {}
+       },
+       {
+        "addr": 5134040,
+        "string": -1,
+        "x": 90,
+        "y": 190,
+        "w": 400,
+        "h": 30,
+        "rgb": [
+         25,
+         240,
+         115
+        ],
+        "layer": 6,
+        "font": 83,
+        "text": 0,
+        "textFn": 4918320,
+        "drawFn": 0,
+        "textArg": -1,
+        "lit": [
+         0,
+         0
+        ],
+        "unlit": [
+         0,
+         0
+        ],
+        "callback": 0,
+        "child": 0,
+        "flags": [
+         536870916,
+         1073741848,
+         2147483665
+        ],
+        "setflag": [],
+        "bind": {}
+       },
+       {
+        "addr": 5134112,
+        "string": 9,
+        "x": 200,
+        "y": 240,
+        "w": 40,
+        "h": 20,
+        "rgb": [
+         25,
+         240,
+         115
+        ],
+        "layer": 6,
+        "font": 83,
+        "text": 0,
+        "textFn": 4679776,
+        "drawFn": 0,
+        "textArg": -1,
+        "lit": [
+         0,
+         0
+        ],
+        "unlit": [
+         0,
+         0
+        ],
+        "callback": 4917440,
+        "child": 0,
+        "flags": [
+         0,
+         1073742344,
+         2147483665
+        ],
+        "setflag": [],
+        "bind": {}
+       },
+       {
+        "addr": 5134184,
+        "string": 10,
+        "x": 360,
+        "y": 240,
+        "w": 40,
+        "h": 20,
+        "rgb": [
+         25,
+         240,
+         115
+        ],
+        "layer": 6,
+        "font": 83,
+        "text": 0,
+        "textFn": 4679776,
+        "drawFn": 0,
+        "textArg": -1,
+        "lit": [
+         0,
+         0
+        ],
+        "unlit": [
+         0,
+         0
+        ],
+        "callback": 4917632,
+        "child": 0,
+        "flags": [
+         0,
+         1073742344,
+         2147483665
+        ],
+        "setflag": [],
+        "bind": {}
+       }
+      ]
+     },
+     {
+      "addr": 5134608,
+      "hook": 0,
+      "flags": 536870916,
+      "flagsB": 0,
+      "select": -1,
+      "broadcast": [],
+      "listflag": [],
+      "layout": {},
+      "items": [
+       {
+        "addr": 5134528,
+        "string": -1,
+        "x": 60,
+        "y": 60,
+        "w": 400,
+        "h": 20,
+        "rgb": [
+         255,
+         0,
+         0
+        ],
+        "layer": 6,
+        "font": 83,
+        "text": 0,
+        "textFn": 4918112,
+        "drawFn": 0,
+        "textArg": -1,
+        "lit": [
+         0,
+         0
+        ],
+        "unlit": [
+         0,
+         0
+        ],
+        "callback": 0,
+        "child": 0,
+        "flags": [
+         0,
+         1073741848,
+         2147483649
+        ],
+        "setflag": [],
+        "bind": {}
+       }
+      ]
+     },
+     {
+      "addr": 5134496,
+      "hook": 0,
+      "flags": 0,
+      "flagsB": 0,
+      "select": -1,
+      "broadcast": [],
+      "listflag": [],
+      "layout": {},
+      "items": [
+       {
+        "addr": 5134416,
+        "string": -1,
+        "x": 60,
+        "y": 130,
+        "w": 450,
+        "h": 260,
+        "rgb": [
+         0,
+         60,
+         120
+        ],
+        "layer": 7,
+        "font": 67,
+        "text": 0,
+        "textFn": 0,
+        "drawFn": 4685520,
+        "textArg": 0,
+        "lit": [
+         0,
+         0
+        ],
+        "unlit": [
+         0,
+         0
+        ],
+        "callback": 0,
+        "child": 0,
+        "flags": [
+         536870916,
+         0,
+         0
+        ],
+        "setflag": [],
+        "bind": {}
+       }
+      ]
+     }
+    ]
+   },
+   {
+    "screen": -1,
     "panel": 5134640,
     "parent": 0,
     "hook": 4918016,

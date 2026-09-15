@@ -851,6 +851,27 @@ void UiWalk::colourItem(std::uint32_t item, int r, int g, int b) {
 // The count is the list's own `+0` and the item array its `+12`, which is the
 // same pair `sub_42AAE0` walks; the loop is `jnz` on a decremented count, so a
 // list of zero writes nothing.
+void UiWalk::multiplanColour(const UiPanel& p) {
+    for (const auto& l : p.lists) {
+        if (l.addr != kListMultiplanButtons || l.items.empty()) continue;
+        const auto it = selMap().find(l.addr);
+        int sel = it != selMap().end() ? it->second : 0;
+        if (sel < 0 || static_cast<std::size_t>(sel) >= l.items.size()) sel = 0;
+        const UiItem& b = l.items[static_cast<std::size_t>(sel)];
+        colourList(kListMultiplanRows,   b.rgb[0], b.rgb[1], b.rgb[2]);
+        colourList(kListMultiplanHeader, b.rgb[0], b.rgb[1], b.rgb[2]);
+        break;
+    }
+}
+
+void UiWalk::multiplanSetSource(int src) {
+    state_->multiplanSource = src;                  // dword_68A610
+    selMap()[kListMultiplanRows] = 0;               // sub_42ADD0's a2 = 0
+    bindRows(kListMultiplanRows, boundCount(kListMultiplanRows), 0);
+    log_.push_back(src ? "multiplan: source = the kiosk (list 1)"
+                       : "multiplan: source = the sneak (list 0)");
+}
+
 void UiWalk::colourList(std::uint32_t list, int r, int g, int b) {
     if (!panel_) return;
     for (const auto& l : panel_->lists) {
@@ -1093,6 +1114,21 @@ void UiWalk::buildPage(const UiPanel& p) {
         curFromBuilder_ = 1;
         return;
     }
+    // MULTIPLAN's two children the same way: both records ship `+24` = 1
+    // (the examine page's box, the destroy confirm's Oui/Non row), and
+    // `sub_42A370` does not write it.
+    if (p.addr == kPanelMultiplanExamine || p.addr == kPanelMultiplanDestroy) {
+        curFromBuilder_ = 1;
+        return;
+    }
+    // `sub_4B01F0`, MULTIPLAN's open, paints the rows and the header in the
+    // SELECTED BUTTON's colour (`off_4E53AC[word_4E53A2] +8/+9/+10`) - the
+    // shops' trick on another screen - and the button list's hook repaints
+    // them on every move (`multiplanColour`).
+    if (p.addr == kPanelMultiplan) {
+        multiplanColour(p);
+        return;
+    }
     if (p.addr == kPanelShop) {
         for (const auto& l : p.lists) {
             if (l.addr != kListShopButtons) continue;
@@ -1131,6 +1167,9 @@ bool UiWalk::open(int screenId) {
     log_.clear();
     if (!panel_) { log_.push_back("no panel for this screen"); return false; }
     log_.push_back("open");
+    // MULTIPLAN's open (`sub_4B01F0`) writes the source list, `dword_68A610 =
+    // 0`, before it binds the rows: every visit starts on the sneak.
+    if (panel_->addr == kPanelMultiplan) state_->multiplanSource = 0;
     buildPage(*panel_);
     settle();
     return true;
@@ -1291,6 +1330,26 @@ bool UiWalk::confirm() {
             for (std::size_t k = 0; k < panel_->lists.size(); ++k)
                 if (panel_->lists[k].addr == kListShopRows) { cur_ = static_cast<int>(k); break; }
             log_.push_back("shop button: the rows take the focus");
+            return true;
+        }
+        // MULTIPLAN's four buttons (0x004B0760 / 07E0 / 0860 / 0890). The two
+        // transfer buttons first switch the source when it differs -
+        //     "vers le multiplan": if (dword_68A610) { = 0; rebind }
+        //     "vers le sneak":     if (dword_68A610 != 1) { = 1; rebind }
+        // - and all four then
+        //     if (screen->panel == 0x004E5930 && dword_4E5688 > 0)
+        //         { panel+24 = 1; return 1; }
+        //     return 0;
+        if (it->callback == kCbMultiplanToKiosk || it->callback == kCbMultiplanToSneak ||
+            it->callback == kCbMultiplanExamine || it->callback == kCbMultiplanDestroy) {
+            if (panel_->addr != kPanelMultiplan) return false;
+            if (it->callback == kCbMultiplanToKiosk && state_->multiplanSource != 0)
+                multiplanSetSource(0);
+            if (it->callback == kCbMultiplanToSneak && state_->multiplanSource != 1)
+                multiplanSetSource(1);
+            if (boundCount(kListMultiplanRows) <= 0) return false;
+            focusList(kListMultiplanRows);
+            log_.push_back("multiplan button: the rows take the focus");
             return true;
         }
         // THE STOCK ROW (0x004AEAA0) - one callback for the nine rows, and it
@@ -1830,6 +1889,30 @@ bool UiWalk::press(std::uint32_t bits) {
                 if (bits & kUiLeft)  { if (moveLists(-1)) return true; }
                 if (bits & kUiRight) { if (moveLists(1))  return true; }
             }
+        } else if (panel_->hook == kHookMultiplanPanel) {
+            // MULTIPLAN's panel hook (0x004B0B00), whole:
+            //
+            //     if (!(input & 0x3)) return 0;                    // LEFT/RIGHT
+            //     if (current == 0x004E53A0 && dword_4E5688) { panel+24 = 1; return 1; }
+            //     if (current == 0x004E5670)                 { panel+24 = 0; return 1; }
+            //     return 0;
+            //
+            // `dword_4E5688` is the rows' bound count, so the focus reaches an
+            // empty list only by the rows' own absence of anything to pick.
+            if (bits & (kUiLeft | kUiRight)) {
+                const UiList* cl = curList();
+                if (cl && cl->addr == kListMultiplanButtons &&
+                    boundCount(kListMultiplanRows) != 0) {
+                    focusList(kListMultiplanRows);
+                    log_.push_back("multiplan: the rows take the focus");
+                    return true;
+                }
+                if (cl && cl->addr == kListMultiplanRows) {
+                    focusList(kListMultiplanButtons);
+                    log_.push_back("multiplan: the buttons take the focus");
+                    return true;
+                }
+            }
         } else if (panel_->hook == w_->moveListsHook()) {
             // `sub_42A710(screen, panel) = sub_42A5C0(screen, panel, 1, 2)` -
             // `Ui_MoveBetweenLists` with LEFT stepping back and RIGHT
@@ -1899,6 +1982,27 @@ bool UiWalk::press(std::uint32_t bits) {
         // a page whose only list is a text box.
         if (bits & kUiConfirm) return confirm();
         return false;
+    }
+    if (l->hook == kHookMultiplanButtons) {
+        // MULTIPLAN's button list (0x004B09A0):
+        //
+        //     if (sub_42A910(screen, list) != 1) return 0;   // UP/DOWN, or the confirm
+        //     sub_4296D0(rows / header, the selected button's colour);
+        //     if (selected == "vers le multiplan") dword_68A610 = 0;   // the sneak
+        //     else                                 dword_68A610 = 1;   // the kiosk
+        //     sub_42ADD0(rows, 0, dword_68A610);                       // rebind at 0
+        //
+        // So the rows always list what the chosen button acts ON.
+        if (!move(*l, bits)) return false;
+        if (!panel_ || panel_->addr != kPanelMultiplan) return true;   // a confirm left
+        multiplanColour(*panel_);
+        const auto s = selMap().find(l->addr);
+        const int sel = s != selMap().end() ? s->second : 0;
+        const std::uint32_t chosen =
+            (sel >= 0 && static_cast<std::size_t>(sel) < l->items.size())
+                ? l->items[static_cast<std::size_t>(sel)].addr : 0u;
+        multiplanSetSource(chosen == kItemMultiplanToKiosk ? 0 : 1);
+        return true;
     }
     if (l->hook == kMoveSelectionLR) {
         // `sub_42A930(screen, list) = sub_42A7E0(screen, list, 1, 2)` - the
