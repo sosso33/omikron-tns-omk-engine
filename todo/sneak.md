@@ -194,6 +194,15 @@ than run `Utiliser`'s arm under its name.
 > fails it. **NOT covered**: the five widgets - two memos bind the same two
 > rows at 5 or at 9.
 >
+> Both mutations red with their own output (`9bf0faf`), and each reproduces one
+> of the two faults exactly: with the hook arm dead
+> (`false && panel_->hook == kHookSneakMemoryPanel`) the body line DISAPPEARS -
+> the list is unreachable, which is the reader's report, and the check as it
+> stood this morning would have passed it because it never walked in; with the
+> builder showing the box (`memoBodyShown = true`) an EARLIER line appears,
+> `row 0 id 913 'Moi :', 308 chars, 8 lines drawn`, the body drawn at open that
+> the engine does not draw.
+>
 > **WHERE MEMOS COME FROM** (2026-09-16, the reader asked whether they are
 > unlocked only by dialogue or also by reading a document - the answer is
 > BOTH). Three routes fill list 2: **76** `inventory.add` sites in the world
