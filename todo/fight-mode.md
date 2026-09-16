@@ -612,6 +612,57 @@ honouring it. Start by logging `blackFade().running()` and both `bandGrey`
 values per frame across 1148 -> 1175 -> 1236; the port logs no fade line at
 all today, which is why the played log could not attribute this.
 
+### 15.6 "the fight animation stays" — the LOSER's body freezes at the teardown
+
+The reader's second played fight, 2026-09-16, and this one is **located
+exactly**. He won: `frame 1006: FIGHT ENDS after 626 frames - the player won,
+Vie 10 vs 0`, KO counter 1 then 2, and `OMK_KOTRACE=1` shows the loser walking
+his knock-out properly —
+
+```
+  koTrace 33: entry 127 'GROUND' clipOwner 127 frame 52.0 state 21
+  koTrace 34: entry 110 'GROUND' clipOwner 110 frame  1.0 state 6
+```
+
+— so he ends lying in `GROUND`, role state 6, which is right. **Then the
+teardown takes his body away from him:**
+
+```
+frame  380: actor 48 BBC_FN - pose source: the fight channel's own clip
+frame 1006: actor 48 BBC_FN - pose source: the bank's default entry, frame 0
+```
+
+and there is **no third line** for the remaining 148 frames of the run. At the
+end he is still `actor 48 BBC_FN (bank H1AVNT) ... the bank's default entry,
+frame 0`. `sub_445AC0` restores the adventure bank, the port loses the fight
+channel that was posing him, and falls back to the adventure bank's default
+entry held at **frame 0** for ever - one frozen pose on a body that should be
+lying knocked out where he fell.
+
+The PLAYER is fine, which is what narrows it: `player: HO1_FN/H1AVNT ...
+ACTOR_STATE 1, .CTL state 0 'H_STAND' clip H_STAND frame 28.0, walked 249.1
+over 654 ticks`. So the restore works for the fighter who keeps walking and
+strands the one who does not.
+
+`sub_445AC0` writes the result to **both actors' `+404`**, the tick-tail
+selector (section 5), and that is the field to read first: a defeated actor
+almost certainly gets a different tail from a standing one, and the port's
+`fightEnd` is where the loser's down-state has to survive the bank swap.
+
+### 15.7 What the same run CONFIRMED
+
+Worth keeping so nobody re-opens them:
+
+* **The win branch runs end to end**, and nothing had ever reached it: the
+  reward fires (`prop 163 SHOWN`, `Anneaux 5`, bytecode 1579), the potion prop
+  follows (474), and the script reaches its tail.
+* **The camera comes back on the win branch too** - `last camera 0`, the
+  follow preset - so 15.4's fix holds on both arms of the `Vie == 0` test.
+* **15.1 did NOT reproduce.** This fight ended correctly, through the
+  `knockdown` branch (`want entry 158 -> ok`). So the stall is INTERMITTENT,
+  not a deterministic `koEntry == -1`, and the `fight LOSER:` line stays in
+  the port until it is caught with an instrument attached.
+
 ### 15.5 "no UI" — this is step 5, already planned
 
 The reader's own note: *"I think this is the next step"*, and it is. Step 5 is
