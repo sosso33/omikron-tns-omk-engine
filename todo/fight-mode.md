@@ -440,6 +440,108 @@ the opposite. And **a subsystem can be correct and invisible**: the fight
 camera, the walker, the script and the Session's own camera were all healthy
 and moving; only the thing drawing over them was wrong.
 
+## 15. THE SECOND PLAY TEST, 2026-09-16 — six issues, triaged
+
+The reader played `--fight-supermarket` after the camera fix and reported it
+*"better"*, with six things wrong. What follows is each one with whatever
+evidence the played log already carries, so the next session does not start
+from the sentence. **The order below is the proposed one**, and items 1 and 2
+are first because 1 blocks every fight from finishing and 2 is a single fault
+wearing two faces.
+
+### 15.1 "AI stopping responding after some time" — the KO never lands
+
+Not the AI. **The fight does not END when the PLAYER WINS.** From the played
+log, 18 s in:
+
+```
+fight +540: Vie 5 vs 0, states 32/1, entries 63 'C7' / 0 'HGUARD', hits 12
+   fight state: KO counter 0, over 0, player won 1
+```
+
+`applyDamage` took its decisive branch — `decided_`, `loser_ = opponent`,
+`playerWon_` — and the opponent is on 0 hit points. But `koCounter_` stays 0
+and he is in entry **0 `HGUARD`**, his guard idle, not a knock-out. The next
+**44 seconds** are both fighters standing 1.10 m apart with the AI's move
+counter frozen at 383 and `over 0` throughout, which is exactly what an
+unresponsive AI looks like from the outside.
+
+The chain is `applyDamage` → `forceEntry(def, def.koEntry)` → the loser's
+state becomes 6 or 7 → `koCounter_` → the two replay passes → `sub_445AC0`.
+It breaks at the first link: `koEntry` is `entryByRole(c, 5)`, and at +510 he
+was in entry 116 `FRAISE`, at +540 in entry 0 `HGUARD`. So either role 5
+resolves to nothing in his bank (`H1AVNT`) and `forceEntry` is a no-op, or the
+channel left the forced entry on its next transition. **Check
+`entryByRole(H1AVNT, 5)` first, and print what `forceEntry` was handed.**
+
+**Why no check caught it.** A headless run presses no keys, so the player can
+never attack: the only fight a probe can reach ends with *Kay'l* dying, which
+is the branch that works and the branch `engine: hold release` replays.
+`engine: melee`'s 6-of-9 KOs are AI against AI on the `CMBT` banks, a
+different bank from an opponent taking a player's hits. **The
+opponent-loses path has no headless route at all** — the first job is
+probably a harness that gives it one, or `engine: melee` will keep passing
+over it.
+
+### 15.2 "no sound fx" and "no visual effect" — ONE fault: the ids resolve
+### against the wrong library
+
+The `.CTL` effect records DO fire. 68 `ctl-effect` lines in the played log,
+and every one of them fails to resolve:
+
+```
+  20 x  ctl-effect: sound id 419 is not in the global library
+  19 x  ctl-effect: sound id 408 is not in the global library
+  17 x  ctl-effect: sound id 417 is not in the global library
+   2 x  ctl-effect: state 135 'IM_FRONT' spawns sprite 11 on attach 5 ('Bassin')
+          for 10 frames from 0, scale 0.50, flags 0x01
+   2 x  ctl-effect: sprite 11 is not registered by the library or the scene
+   3 x  ctl-effect: sprite 8 is not registered by the library or the scene
+```
+
+So the timing, the attach point, the duration and the scale are all being
+computed correctly and then thrown away for want of a lookup. Two leads:
+
+* **The sound half is looking in the wrong place, and the port's own comment
+  says so.** `channel.h` ~325: *"the engine resolves it with
+  `Scene_FindSoundIndex` against the RESIDENT scene's chunk-3 records, so the
+  caller does that"* — and the caller (`play.cpp` ~6022) passes only
+  `globalRt`, the GLOBAL library out of `aventure.scx`. `Scene_FindSoundIndex`
+  (0x0048CC80) walks the scene at `+48`, 26-byte records, count `+24`, and
+  returns `+22`. The same id names different sounds in different scenes, so
+  the global-only lookup is not a near miss: it is the wrong table.
+* **The sprite half checks both and still misses**, so it is a different
+  question — and note what record 0 does on its first instruction:
+  `scene.unload 230`. The fight runs with `ASm49res.SCX` resident, which
+  reports **0 effects, 0 set pieces**. Where a combat bank's sprites are
+  registered is the thing to find.
+
+### 15.3 "characters colliders issue"
+
+Not yet reproduced, and the handoff already lists two unported pieces that
+could be it: the fight camera's collision solve (`sub_413450` /
+`sub_416570` / `sub_413440`, a different family from the follow camera's
+`sub_417070`), and `sub_45ACF0`, the throw swing's length, which has no port
+at all. `Fight_KeepSeparation` is ported. **Needs the reader to say what it
+looked like** — bodies interpenetrating, a body passing through the set, or
+the camera going through a wall are three different faults.
+
+### 15.4 "black stripes"
+
+Not reproduced and not yet attributable. The letterbox is OFF by default
+(`--letterbox` is opt-in and is a camera-mode property measured off dialogue
+captures), so the 1.818:1 bars are not the default explanation. **Needs a
+screenshot or a description**: bars top and bottom, thin horizontal bands
+across the picture, and stripes tied to one camera angle are three different
+causes.
+
+### 15.5 "no UI" — this is step 5, already planned
+
+The reader's own note: *"I think this is the next step"*, and it is. Step 5 is
+both gauges (`Hud_DrawBar(player, 200, 0, 2)` and `(opponent, 200, 1, 0)`)
+and mode 2's four-second overlay `sub_447000`, 306 lines and unread.
+`ui/hudbar.h` has mode 0 already.
+
 ## 14. OPEN, same play test: the shoot scheme needs a KEYPAD
 
 *"I don't have a keypad."* The shipped `Tirer` scheme turns with keypad 4/6 and
