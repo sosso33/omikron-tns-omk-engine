@@ -449,99 +449,61 @@ from the sentence. **The order below is the proposed one**, and items 1 and 2
 are first because 1 blocks every fight from finishing and 2 is a single fault
 wearing two faces.
 
-### 15.1 "AI stopping responding after some time" — the KO never lands
+### 15.1 FIXED — the KNOCKDOWN LATCH was never cleared
 
-Not the AI. **The fight does not END when the PLAYER WINS.** From the played
-log, 18 s in:
-
-```
-fight +540: Vie 5 vs 0, states 32/1, entries 63 'C7' / 0 'HGUARD', hits 12
-   fight state: KO counter 0, over 0, player won 1
-```
-
-`applyDamage` took its decisive branch — `decided_`, `loser_ = opponent`,
-`playerWon_` — and the opponent is on 0 hit points. But `koCounter_` stays 0
-and he is in entry **0 `HGUARD`**, his guard idle, not a knock-out. The next
-**44 seconds** are both fighters standing 1.10 m apart with the AI's move
-counter frozen at 383 and `over 0` throughout, which is exactly what an
-unresponsive AI looks like from the outside.
-
-The chain is `applyDamage` → `forceEntry(def, def.koEntry)` → the loser's
-state becomes 6 or 7 → `koCounter_` → the two replay passes → `sub_445AC0`.
-It breaks at the first link: `koEntry` is `entryByRole(c, 5)`, and at +510 he
-was in entry 116 `FRAISE`, at +540 in entry 0 `HGUARD`. So either role 5
-resolves to nothing in his bank (`H1AVNT`) and `forceEntry` is a no-op, or the
-channel left the forced entry on its next transition. **Check
-`entryByRole(H1AVNT, 5)` first, and print what `forceEntry` was handed.**
-
-**Why no check caught it.** A headless run presses no keys, so the player can
-never attack: the only fight a probe can reach ends with *Kay'l* dying, which
-is the branch that works and the branch `engine: hold release` replays.
-`engine: melee`'s 6-of-9 KOs are AI against AI on the `CMBT` banks, a
-different bank from an opponent taking a player's hits. **The
-opponent-loses path has no headless route at all** — the first job is
-probably a harness that gives it one, or `engine: melee` will keep passing
-over it.
-
-**INVESTIGATED 2026-09-16, and NOT REPRODUCED — read this before starting.**
-The obvious readings were all tested and all refuted, so do not repeat them:
-
-* **A headless route now exists.** `--keys` pushes scan codes unconditionally
-  (`play.cpp` ~5458), so the player can be made to attack and the
-  opponent-losing branch is reachable without a person:
-
-  ```
-  K=$(python3 -c "print(','.join(['0x11','0x1F']*200))")     # W and S, kicks
-  SDL_VIDEODRIVER=dummy build/omk-play ../gamedata ../tables \
-      --save ../traces/save-appart.bin --fight-supermarket \
-      --frames 1000 --keys "$K" --keydelay 3
-  ```
-
-  Scheme 3: `0x10`/`0x11` punches, `0x1E`/`0x1F` kicks.
-
-* **Both branches of `applyDamage` work, and so does entry 144.** Four key
-  patterns were run; every one ENDED the fight. `0x10` alone produces a
-  natural `koEntry` kill — `want entry 144 (flags 0x80009020, w12 0x5) -> ok`,
-  and the loser walks 144 -> `I_DEATH`(145) -> `I_DEATHLOOP`(146, state 7),
-  the KO counter reaches 3 and `sub_445AC0` runs. Forcing the `koEntry` branch
-  from the reader's own `from` entry (116 `FRAISE`) works too.
-* **The pass-through chase is faithful.** `GoToMove`'s `0x8000` skip really is
-  only in the no-`from` arm (0x004A7B80), and every KO call site in
-  `Fight_ResolveHit` passes `SetPersoBank(..., a4 = 0)`, so `from` is non-null
-  in the engine as well. The arm that resolves it is the THIRD one: when `to`
-  is a pass-through, the engine blends into the clip owner behind its
-  `0x8002` chain while `+184` stays on `to`. `CefChannel::clipOwner()` already
-  walks exactly that chain.
-* **`sub_45ABD0` is not a chase**: it is `chan[+184]`, the raw current entry.
-* **`forceEntry` did not fail in the reader's run** — the played log carries
-  `badLanding 0, chainAborted 0` throughout, and `transitions` climbed 116 ->
-  119 across the killing blow.
-
-**What is left, and it is one fact.** The reader's opponent went from entry
-116 `FRAISE` to entry **0 `HGUARD`** — and `FRAISE`'s own GoTo *is* `HGUARD`,
-so what that looks like is a forced entry that never happened, leaving FRAISE
-to run to its clip end and fall through. The only path that does that while
-touching no counter is `forceEntry`'s `entry < 0` early return, i.e.
-`def.koEntry == -1`. That cannot be checked from the log the reader has,
-because no line printed it.
-
-So the port now PRINTS it, on stdout beside the other fight lines:
+Reproduced at last on 2026-09-17, with the instrument in place, and the
+`fight LOSER:` line answers it in one line:
 
 ```
-fight LOSER: from entry N 'NAME' (goto N), branch koEntry|knockdown|crouched,
-             want entry N (flags 0x…, w12 0x…) -> ok|FAILED; landed entry N …
+fight LOSER: from entry 161 'KOH_TOP' (goto 127), branch knockdown,
+             want entry 132 (flags 0x00008000, w12 0x0) -> ok;
+             landed 132 clipOwner 133 'IH_RIGH' state 0
 ```
 
-and `OMK_KOTRACE=1` adds 90 frames of the loser's channel afterwards — the
-entry, its clip owner and the state the fight reads. **A fight that will not
-end is a loser who never reaches state 6 or 7**, and these two together say
-which link broke. Note that `landed` on the call frame can legitimately still
-be the `from` entry: a blended transition parks the pending state and `+184`
-only moves when the blend lands, which is why the trace matters.
+`OMK_KOTRACE=1` then shows `IH_RIGH` playing out over 85 frames and falling
+back to `HGUARD`. State 0 throughout: the loser never reaches role state 6 or
+7, so the KO never fires and the fight runs on - 46 seconds with the opponent
+on 0 hit points, which from outside looks exactly like an AI that has stopped
+responding.
 
-**Next: one more played fight with the log kept.** Nothing else will separate
-`koEntry == -1` from a timing-dependent path that a fixed-step run cannot
-produce.
+**The arm was wrong.** `Fight_ResolveHit`'s three arms for a killing blow are
+
+```c
+    if (u32(def, 68) == 6 || u32(def, 68) == 21)  SetPersoBank(..., def+48);  /* crouched */
+    else if (u32(def, 128))                       SetPersoBank(..., reaction);
+    else                                          SetPersoBank(..., def+44);  /* koEntry  */
+```
+
+and `+128` is set, a few lines above, only by
+`if (u32(reaction, 12) & 0x10000000) u32(def, 128) = 1;`. Reaction 132's `+12`
+is **0**, so the latch should have been down and the blow should have taken
+the `koEntry` arm - role 5, `I_DEATH`, `I_DEATHLOOP`, state 7, the KO.
+
+**It was up because nothing ever put it down.** The latch is cleared by
+`sub_4463C0` - the HIT SHAKE - which past its guard does two things before any
+shake maths:
+
+```c
+    Game_RaiseEvent(45, ...);    /* the life back onto the record */
+    u32(a1, 128) = 0;            /* the knockdown latch           */
+```
+
+The port had transcribed the guard faithfully (`c.frameBefore < c.stateF ||
+cam_.shake > 20.0f`) and the sine, and neither of those two lines. So once ANY
+knock-down landed, every later killing blow took the `reaction` arm. That is
+RIGHT when the final reaction is itself a knock-down (`KOH_FRONT`, `KOL_LEFT`
+- they lead to the ground) and wrong when it is a flinch, which is exactly why
+it was intermittent and why four headless input patterns never reproduced it.
+
+Fixed by clearing the latch where the engine does. Event 45 stays the
+caller's, since `play.cpp`'s teardown owns the DB span.
+
+**The probe had been hiding the same fault in plain sight.** `engine: melee`
+recorded **6 of 9** fights ending in a KO and that was baselined as normal;
+with the latch cleared it is **9 of 9**. Three of the probe's own fights had
+been hanging on this. The check now also carries the runtime's own invariant -
+a killing blow taking the knockdown arm with a reaction that does not carry
+`0x10000000`, which must be 0 and reads **3** without the clear.
 
 ### 15.2 FIXED — one cause: a fight loads `fight.scx` and the port did not
 

@@ -11056,6 +11056,22 @@ def c_engine_melee():
       events the mismatch count would be 0 and the check would pass
       VACUOUSLY, so the count of comparisons is asserted too;
     * every reaction resolves in the low-16 id space (0 unresolved);
+    * **the killing blow's ARM agrees with its reaction** (added 2026-09-17,
+      the tuple gaining a column rather than moving one). `Fight_ResolveHit`
+      picks between `crouched`, `reaction` and `koEntry` on the `+128`
+      knockdown latch, and that latch is set only by a reaction whose `+12`
+      carries `0x10000000` - so taking the `reaction` arm with anything else
+      is a contradiction. It happened because `sub_4463C0`, the hit shake,
+      also CLEARS the latch (`u32(a1, 128) = 0` right after its guard) and the
+      port had the shake without the clear: once any knock-down landed, every
+      later killing blow took the `reaction` arm, and when that reaction was
+      an ordinary flinch the loser never reached role state 6 or 7 and the
+      fight ran on for ever with a fighter on 0 hit points. The probe reaches
+      it: **3** violations without the clear, 0 with - and **`ended` moved
+      6 -> 9 in the same change**, which is the same fault seen from the other
+      side: three of the probe's nine fights had been hanging on it, a fighter
+      on 0 hit points who never went down. That is a re-baseline onto a better
+      number, not a drift;
     * hit points never rise and are clamped at 0;
     * every input word the AI presses is inside the profiles' own 0xCFF union
       - the same matcher the player's keys go through;
@@ -11115,17 +11131,19 @@ def c_engine_melee():
         shutil.rmtree(tmp, ignore_errors=True)
     (files, profiles, fights, frames, hits, blocks, grazes, kos, ended,
      aiMoves, aiWords, outside, checked, mismatch, unresolved, hpUp,
-     tooClose, replays) = struct.unpack_from("<18i", raw, 0)
+     tooClose, replays, badArm) = struct.unpack_from("<19i", raw, 0)
     return (files, profiles, fights, ended, blocks, outside, mismatch,
-            unresolved, hpUp, tooClose, checked, hits > 0, aiMoves > 0), \
-           (3, 9, 9, 6, 0, 0, 0, 0, 0, 0, 204, True, True), \
+            unresolved, hpUp, tooClose, badArm, checked, hits > 0, aiMoves > 0), \
+           (3, 9, 9, 9, 0, 0, 0, 0, 0, 0, 0, 204, True, True), \
            "combat banks, AI profiles exercised, fights, fights ending in a " \
-           "KO; then the five invariants that must all be 0 - blocks (the " \
+           "KO; then the SIX invariants that must all be 0 - blocks (the " \
            "defensive arm is not transcribed), AI words outside the 0xCFF " \
            "union, damage disagreeing with the independent re-derivation, " \
-           "reactions that do not resolve, hit points rising, and pairs left " \
-           "inside the separation radius; then how many damage figures were " \
-           "actually re-derived, so the row cannot pass by measuring nothing"
+           "reactions that do not resolve, hit points rising, pairs left " \
+           "inside the separation radius, and a killing blow taking the " \
+           "KNOCKDOWN arm with a reaction that is not one; then how many " \
+           "damage figures were actually re-derived, so the row cannot pass " \
+           "by measuring nothing"
 
 
 def c_engine_programs():

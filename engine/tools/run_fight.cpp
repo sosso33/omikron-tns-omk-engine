@@ -58,6 +58,7 @@ struct Totals {
     long reactionUnresolved = 0, hpWentUp = 0, tooCloseAfterPush = 0;
     long endedInKo = 0, replayPasses = 0;
     long profilesUsed = 0;
+    long knockdownArmWithoutBit = 0;   // the runtime's own invariant, must be 0
 };
 
 // The engine's damage formula, transcribed a SECOND time from
@@ -197,6 +198,7 @@ int main(int argc, char** argv) {
             const auto& s = fight.stats();
             T.aiWordsOutsideUnion += s.aiWordsOutsideUnion;
             T.reactionUnresolved  += s.reactionUnresolved;
+            T.knockdownArmWithoutBit += s.knockdownArmWithoutBit;
             T.tooCloseAfterPush   += s.tooCloseAfterPush;
             T.replayPasses        += s.replayPasses;
             T.knockdowns          += 0;      // counted from the events above
@@ -210,7 +212,7 @@ int main(int argc, char** argv) {
         T.files, T.profilesUsed, T.fights, T.frames, T.hits, T.blocks, T.grazes,
         T.kos, T.endedInKo, T.aiMoves, T.aiWords, T.aiWordsOutsideUnion,
         T.damageChecked, T.damageMismatch, T.reactionUnresolved, T.hpWentUp,
-        T.tooCloseAfterPush, T.replayPasses,
+        T.tooCloseAfterPush, T.replayPasses, T.knockdownArmWithoutBit,
     };
     for (const long v : vals) {
         const std::int32_t w = static_cast<std::int32_t>(v);
@@ -227,5 +229,7 @@ int main(int argc, char** argv) {
                 "%ld; hp went up %ld; too close after push %ld\n",
                 T.damageChecked, T.damageMismatch, T.reactionUnresolved,
                 T.hpWentUp, T.tooCloseAfterPush);
+    std::printf("  knockdown arm taken without the 0x10000000 reaction: %ld\n",
+                T.knockdownArmWithoutBit);
     return 0;
 }

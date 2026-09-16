@@ -249,6 +249,14 @@ struct FightEvent {
 struct FightStatsCounters {
     long frames = 0;
     long hits = 0, blocks = 0, grazes = 0, throws = 0;
+    // THE KNOCKDOWN ARM TAKEN WITH A REACTION THAT IS NOT ONE. A killing blow
+    // chooses between `crouched`, `reaction` and `koEntry` on the `+128`
+    // latch, and the latch is set only by a reaction whose `+12` carries
+    // `0x10000000`. So the arm and the reaction must agree; they stopped
+    // agreeing when the latch was never cleared, and the loser was sent into
+    // an ordinary flinch that never reaches role state 6 or 7 - the fight then
+    // runs for ever with a fighter on 0 hit points. MUST BE 0.
+    long knockdownArmWithoutBit = 0;
     long knockdowns = 0, kos = 0;
     long aiMoves = 0, aiWords = 0, aiWordsOutsideUnion = 0;
     long damageDealt = 0;
@@ -342,7 +350,7 @@ private:
     bool camTransition(float dt);                                          // sub_445E30
     void camPlace(float radius, float headingDeg, float height,            // sub_445C20
                   float atLift, bool moveTarget);
-    void camShake(float dt, const FightContext& c);                        // sub_4463C0
+    void camShake(float dt, FightContext& c);                        // sub_4463C0
     void camMidpoint(float out[3]) const;
     void recordFrame();                   // 0x0049B220
     bool replayStep();                    // sub_49B2E0, the KO replay

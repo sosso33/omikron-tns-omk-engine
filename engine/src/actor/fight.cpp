@@ -259,8 +259,32 @@ void Fight::camPlace(float radius, float headingDeg, float height,
 // height - 7.8740158 (0.2 m) of amplitude, 80 degrees of phase a frame, the
 // amplitude dropping 0.39370081 each time - armed by a fighter's `+80` bit 0
 // and refused once the shake has run 20 frames.
-void Fight::camShake(float dt, const FightContext& c) {
+void Fight::camShake(float dt, FightContext& c) {
     if (c.frameBefore < c.stateF || cam_.shake > 20.0f) return;
+    // ...AND THIS IS WHERE THE KNOCKDOWN LATCH IS CLEARED. Past the guard the
+    // engine does two things before any shake maths:
+    //
+    //     Game_RaiseEvent(45, ...);    /* the life back onto the record */
+    //     u32(a1, 128) = 0;            /* the knockdown latch           */
+    //
+    // The port had the shake and neither of those, so `knockdown` - set by any
+    // reaction whose `+12` carries `0x10000000` - was a latch that never
+    // cleared. `Fight_ResolveHit`'s three arms for a killing blow are
+    // `crouched` / `reaction` / `koEntry`, chosen on `u32(def, 128)`, so once
+    // ANY knock-down landed, every later killing blow took the `reaction` arm.
+    // That is right when the final reaction is itself a knock-down
+    // (`KOH_FRONT`, `KOL_LEFT` - they lead to the ground and role state 6/7)
+    // and wrong when it is an ordinary flinch: a reader's fight ended with
+    // `want entry 132 -> clipOwner 133 'IH_RIGH'`, state 0, which played out
+    // over 85 frames and fell back to `HGUARD`. The loser never reached state
+    // 6 or 7, the KO never fired, and the fight ran on for 46 seconds with the
+    // opponent on 0 hit points (`todo/fight-mode.md` 15.1). Cleared here, that
+    // blow takes the `koEntry` arm instead - role 5, `I_DEATH`,
+    // `I_DEATHLOOP`, state 7 - and the fight ends.
+    //
+    // Event 45 is still the caller's: the life goes onto the record in
+    // `play.cpp`'s teardown, which owns the DB span.
+    c.knockdown = 0;
     if (cam_.shake == 0.0f) {
         cam_.shakeFrom[0] = cam_.eye[1];
         cam_.shakeFrom[1] = cam_.at[1];
@@ -669,6 +693,12 @@ void Fight::applyDamage(FightContext& def, const FightContext& att,
         const int want = (def.state == 6 || def.state == 21) ? def.crouched
                        : def.knockdown                       ? reaction
                                                              : def.koEntry;
+        // The arm and the reaction must agree - see `knockdownArmWithoutBit`.
+        if (def.knockdown && !(def.state == 6 || def.state == 21)) {
+            const CtlState* rs = stateAt(def, reaction);
+            if (!rs || !(rs->flags12 & 0x10000000u))
+                ++stats_.knockdownArmWithoutBit;
+        }
         const int fromE = def.body && def.body->channel
                               ? def.body->channel->state() : -1;
         const bool okF = forceEntry(def, want);
