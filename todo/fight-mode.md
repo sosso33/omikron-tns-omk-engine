@@ -377,6 +377,60 @@ own numbers are correct can still be invisible, because something upstream owns
 the thing it writes into. The camera trace, the pose source line and the
 channel counters all read healthy throughout.
 
+## 13. OPEN, from the reader's play test: the camera never comes back
+
+*"The engine didn't switch back to adventure mode after the end of the
+fight."* The log reads as though it did — `FIGHT ENDS`, the script resumes,
+the Meditek voice-over plays, a doctor is staged, the medical `scx.play.player`
+beat runs, and at frame 1171 the program ends. Then frame 1172: **"editing over
+— the camera HOLDS its last frame (mode 13, no active camera)"**, and after
+that only `MDSTAND` / `MDHEAD00` special moves. The body ticks; the view is
+parked on the medical scene's last shot.
+
+**What the engine does that this port does not.** `Game_Tick`
+(0x004200F0, `05_sys.c` 2144) runs this every frame for the active scene:
+
+```
+    if (Scene_GetActiveCamera(scene))        -> install it
+    else if (mode == 13 && byte_910322 && g_PlayerActorRec) {
+        g_CamActorA = g_CamActorB = Actor_Player();
+        Camera_Request(0, ...);              // back to the follow camera
+    }
+```
+
+`Dialog_ClearSubjectActor` (0x0041B390) carries the same arm. The port models
+the HOLD (`holdEditCam`) and never models the RELEASE: its clear-list covers a
+new editing, a camera-id change, a dialogue, a take and shoot mode — and
+nothing for "the player has control again".
+
+**But it cannot simply be added**, which is why this is an open question and
+not a fix: `byte_910322` is the `[Preferences]` key `autocameraplayer`,
+initialised to **0** (`05_sys.c` 1635), so on the shipped default that arm does
+not fire in the engine either. AREA 245's script requests no camera after the
+fight (only `media.play`), so nothing in the data releases it. Either the
+release is the `Scene_GetActiveCamera` branch above it — a scene's own active
+camera reappearing once its editing is over — or the original leaves the shot
+parked too and what the reader saw differs for another reason, most likely the
+player's body still being program-owned (`adventure` also needs
+`!playerDriven` and `!parked`). Read `Scene_GetActiveCamera`'s writers before
+touching `holdEditCam`.
+
+## 14. OPEN, same play test: the shoot scheme needs a KEYPAD
+
+*"I don't have a keypad."* The shipped `Tirer` scheme turns with keypad 4/6 and
+looks with keypad 8/2 (`tables/key_bindings.json`, the engine's own table), so
+a laptop cannot play a shoot phase at all. The fight itself is unaffected —
+arrows plus Q/W/A/S.
+
+The original's answer is its options menu: the keyboard pages rebind, and the
+result is written into the save header, which is why `SettingsBlock` carries
+the three binding tables verbatim. **`omk-play` ignores them**: it builds its
+`Input` once from `tables/key_bindings.json` (play.cpp 2163) and never consults
+`settings.v.keyboard`, although `resolveSettings` reads it (settings.cpp 163).
+So the faithful fix is to feed the save's tables into `ControlSchemes` rather
+than to invent a remap flag — and a player who rebinds in the real game would
+already have their keys honoured.
+
 ## 8. Open questions
 
 * ~~**`dword_6A05E0`**~~ — **closed the same day, and it was never a fight
