@@ -24952,12 +24952,19 @@ def c_fight_and_player():
     switches both parties to slot 2; every one of its targets and of
     player.become's is a real character record.
     """
-    import dialog_triggers as T2, dialog_disasm as D
+    import dialog_triggers as T2, dialog_disasm as D, collections
     ids = {i for a in _object_ids().values() for v in a.values() for i in v}
     become = [struct.unpack_from("<h", r, 0)[0] for r in _world_ops()[56]]
-    # op 62 is 6 bytes since its 2026-09-02 correction (the third operand is
-    # the parking probe's); the two ids are still the first two
-    fight = [struct.unpack_from("<2h", r, 0) for r in _world_ops()[62]]
+    # op 62 is 6 bytes since its 2026-09-02 correction, and the THIRD field is
+    # the AI level: the handler pushes it as Fight_Engage's second argument and
+    # Fight_SelectAiProfile takes level + 1. Every site is a `case` on
+    # VARIABLES[175] 'Niveau Combat', which the scripts raise when the last
+    # fight cost under 30 life and lower at 70 or more - so the shipped corpus
+    # must carry all three levels and never a 3, which is what makes profile 4
+    # (the sparring partner) unreachable. ASSETS had this as "NOT established"
+    # until 2026-09-16; see todo/fight-mode.md 2.
+    fight = [struct.unpack_from("<3h", r, 0) for r in _world_ops()[62]]
+    lvl = collections.Counter(c for _, _, c in fight)
     suf = {0: set(), 1: set(), 2: set()}
     for name, po, co in (("AREA", 56, 80), ("SCENE", 24, 48)):
         for k, b in sorted(T2.archive(omkpaths.data("IAM", name)).items()):
@@ -24970,12 +24977,15 @@ def c_fight_and_player():
                     if v and v not in (b"MECA", b"SHAM"): suf[sl].add(v[-4:])
     slots_named = (suf[0] == {b"AVNT"} and suf[1] == {b"SHOT"} and suf[2] == {b"CMBT"})
     return (len(become), sum(v in ids for v in become),
-            len(fight), sum(a in ids for a, _ in fight),
-            sum(b == 0 for _, b in fight), slots_named), \
-           (43, 43, 108, 108, 108, True), \
+            len(fight), sum(a in ids for a, _, _ in fight),
+            sum(b == 0 for _, b, _ in fight),
+            lvl[0], lvl[1], lvl[2], max(lvl), slots_named), \
+           (43, 43, 108, 108, 108, 36, 36, 36, 2, True), \
            "player.become sites, of which name a character record; " \
-           "fight.begin sites, of which do, and field 1 is 0; the .CTL " \
-           "slots are AVNT / SHOT / CMBT"
+           "fight.begin sites, of which do, and field 1 is 0; the AI level " \
+           "(field 2) at each of 0/1/2 and its maximum - never 3, which is " \
+           "what makes profile 4 unreachable; the .CTL slots are " \
+           "AVNT / SHOT / CMBT"
 
 
 def c_engine_clip_root():

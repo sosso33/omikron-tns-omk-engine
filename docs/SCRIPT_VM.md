@@ -1466,6 +1466,21 @@ already set — the script suspends with status **3**, and camera mode **14** is
 requested. Field 0 names a character record at **108 / 108** sites; field 1 is
 0 at all of them.
 
+**The THIRD field is the AI level** (read from the handler 2026-09-16, once the
+operand length had been corrected to 6). It is pushed as `Fight_Engage`'s
+second argument, and `Fight_SelectAiProfile` selects the `.CTL` fight-AI
+profile whose `+0` is `level + 1`. Every site is a `case` on `VARIABLES[175]
+'Niveau Combat'` with three copies of the call, and the corpus is **36 / 36 /
+36** over {0, 1, 2} — never 3, so profiles 1..3 are used and profile 4 is
+unreachable. The scripts move that variable by what the last fight cost the
+player, which is the game's adaptive difficulty; see `docs/ASSETS.md` and
+`todo/fight-mode.md` §2.
+
+**And the whole handler is gated on a global.** It opens
+`mov eax, dword_6A05E0; test eax, eax; jnz` over its own body, so a nonzero
+`dword_6A05E0` makes `fight.begin` a no-op. The listing reads that global in
+twenty places and writes it in none that the decompilation carries — open.
+
 ### 46 / 90 — `scx.play` on the player
 
 **verified.** The sixth and seventh members of the `scx.play` family:

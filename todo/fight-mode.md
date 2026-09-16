@@ -1,0 +1,244 @@
+# Fight mode — the plan, and the two questions the reading closed
+
+`todo/next-tasks.md` item 17. Started 2026-09-16 with a reading pass (step 0),
+on the reader's instruction to plan before porting anything.
+
+**Melee is the one runtime in this tree that can never have a behavioural
+oracle.** `traces/fight.log` was captured on 2026-08-31 to give the actor
+runtime one and settled it the other way round: the golden-trace logger sees
+only what a VM handler narrates through `Dbg_LogTagged`, combat is two opcodes,
+and `fight.begin` announces **nothing**. The capture reached combat — 32 of its
+anchored scripts carry `fight.begin` — and is silent about all of it. So the
+standard here is `docs/PORTING.md`'s **data-constrained**, as it is for the
+`.CTL` channel, plus what a person sees when they play it.
+
+---
+
+## 1. How a fight is ENTERED — op 62, read from the assembly
+
+`tools/asmfn.py --op 62` prints the handler at `0x004035D0`. It makes three
+2-byte operand fetches (the table's length was corrected 4 → 6 on 2026-09-02),
+and then, in order:
+
+| what the handler does | the call |
+|---|---|
+| looks the opponent up by character id | `sub_40D760(field0, dword_69BC48[…])` |
+| takes the player | `sub_419E00` = `Actor_Player` |
+| switches **both** to `.CTL` slot 2 | `sub_40B2B0(actor, 2)` = `Actor_CtlSlotName`, then `sub_419CB0` = `Actor_LoadBankList` |
+| enters the fight | `sub_41A3B0(opponent, field2)` = `Fight_Engage` |
+| parks the script | `mov word ptr [esi+16h], 3` |
+| asks for the fight camera | `Camera_Request(14, …)` with `dword_930818` = field 1, floored at 0 by the `jge` |
+
+**So field 2 is `Fight_Engage`'s second argument, which is the AI LEVEL.** The
+operand stack makes it unambiguous: field 1 is stored at `[esp+18h]` and field
+2 at `[esp+10h]`, and the `mov edx, [esp+18h]` that feeds the `Fight_Engage`
+push happens while `esp` is 8 lower, so it reads field 2. The travel is read
+back the same way for `Camera_Request`.
+
+**A guard nobody has explained.** The handler opens with
+`mov eax, dword_6A05E0; test eax, eax; jnz` over the whole body: when that
+global is nonzero, `fight.begin` does nothing at all. The listing reads it in
+twenty places and **no write to it appears in `readable/src`**. Open — see §8.
+
+## 2. The difficulty is ADAPTIVE — and that answers ASSETS' open question
+
+`docs/ASSETS.md` recorded which AI profile the shipped scripts select as **not
+established**, because deciding it meant trusting the disputed operand length.
+The length has been settled since 2026-09-02 and the corpus now answers:
+
+* every one of the **108** `fight.begin` sites sits in a `case` on
+  `VARIABLES[175] 'Niveau Combat'`, as three copies of the call;
+* over the whole corpus field 2 is **36 / 36 / 36** across {0, 1, 2} and is
+  **never 3**; field 1 is 0 at all 108;
+* `Fight_FindAiProfile` matches the profile's `+0` against **level + 1**, so
+  the shipped fights use profiles **1, 2 and 3** only.
+
+**Profile 4 — the sparring partner, one attack and four walk directions — is
+therefore unreachable.** It is in `H1Cmbt` and `f1cmbt` and no shipped call can
+select it, which is this repo's usual shape for cut content
+(`memory: omikron-cut-content`).
+
+The level moves with how the last fight went. Around the call, from AREA 245:
+
+```
+var.set.actor_stat -1, 1, 168      ; 'Vie Combat Avant'   <- life before
+   if 'Vie Combat Perte' >= 70 and 'Niveau Combat' > 0:  Niveau -= 1
+   if 'Vie Combat Perte' <  30 and 'Niveau Combat' < 2:  Niveau += 1
+case 'Niveau Combat' -> fight.begin opp, 0, 0 | 1 | 2
+var.set.actor_stat -1, 1, 169      ; 'Vie Combat Après'   <- life after
+'Vie Combat Perte' = 'Vie Combat Après' - 'Vie Combat Avant'
+```
+
+So the game measures what a fight cost you and picks the next opponent's AI
+accordingly. Note the two hooks the port must honour for this to work at all:
+the fight has to write the player's life back onto his record (the script reads
+it with `var.set.actor_stat`), and the script has to resume where it parked.
+
+*(The `Difficulté des combats` option is a different thing and stays as
+documented: `word_90E1A6` becomes a flat +0.5 / +0.25 / +0 on the player's
+dodge multiplier inside `Fight_Begin`. It does not choose a profile.)*
+
+## 3. What a fight IS
+
+`Fight_Engage` (`0x0041A3B0`, 102 lines) tears down any previous opponent,
+registers the new one, writes ACTOR_STATE **2** to **both** fighters through
+the `dword_910834` alias — it is the only writer of that state in the game —
+drops whatever scene object drove either body, then calls `Fight_Begin` and
+`Fight_SelectAiProfile`.
+
+`Fight_Begin` (`0x004455B0`, 125 lines) builds the two combat contexts
+`dword_906F60` (the player) and `dword_907000` (the opponent), 140 bytes each:
+
+* **stats through event 44**: property 1 *Vie* into the hit points, 16 *Carac
+  Attack* ×0.005 into `+132`, 18 *Carac Dodge* ×0.005×0.25 into `+136`, 19
+  *Carac Fight Experience* ×0.024390243 into the channel rate — an experienced
+  fighter literally animates faster;
+* the difficulty bonus on the player's `+136`;
+* the **separation radius** `flt_906F2C`: the larger of the two models'
+  bounding radii at node `+88`;
+* the six reaction entries per fighter, cached by role code (3, 4, 5, 9, 18,
+  20) through `Cef_FindEntryByCodeGlobal`;
+* `Game_Start("fight.SCX")` — melee has its own sprite and sound library, the
+  way `shoot2.scx` is shoot mode's, and it ships;
+* `Input_InstallScheme(3)` — control group **3 Combat**, already ported;
+* both fighters turned to face each other, with flag `0x2` set across the two
+  `Fight_FaceOpponent` calls so the turn is unconditional.
+
+**Per frame**, `Actor_TickPlayerAndOpponent` (`0x00466710`, ACTOR_STATE 2's
+tick) runs for each fighter: `sub_4451F0`, then the channel tick, then
+`sub_4452A0`; the opponent additionally runs `Fight_TickAI` before his channel
+and refreshes his spatial-index slot afterwards. `byte_91031F` gates the AI and
+`dword_906F40` (the KO counter) freezes both.
+
+Then `Actors_TickAll`'s tail, under the player's `+404 == 2`:
+
+```
+Fight_ResolveBoth()        -> Fight_ResolveHit both ways
+Fight_FaceOpponent  x2
+Fight_RecordFrame   x2     -> the 60-frame replay ring
+Fight_UpdateHealthBars()   -> Hud_DrawBar(player, 200, 0, 2) and (opp, 200, 1, 0)
+```
+
+The pieces, with what each is:
+
+| function | lines | what it decides |
+|---|---|---|
+| `Fight_ResolveHit` 0x0049A960 | 339, **CLEAN** | whether the attacker's move lands: the attack line against the defender's stance, guard and block, the hit window in clip frames, the damage (doubled against the player, scaled by attack, reduced by dodge, floored at 1), the reaction and knockback, the winner/loser globals |
+| `Fight_TickAI` 0x00464830 | 407 | picks a move for the opponent and **presses it**: `Perso_InjectInput` into the same queue the player's keys feed. Closes distance past 78.740158 (2 m), else rolls the profile's weights, 25% of the time a special |
+| `sub_4452A0` 0x004452A0 | 142 | the per-fighter step after the channel: the current entry and its combat block, the transition mask `sub_49A830`, the fighter's state id, **the KO trigger** (state 6 or 7 → `Screen_Fade(1)`, `++dword_906F40`), and two distance-gated bank switches at 118.11024 (3 m) and 59.055119 (1.5 m) |
+| `sub_4451F0` 0x004451F0 | 37 | the step before the channel: writes the life back through event 45, and picks the replay's camera per KO pass |
+| `Fight_KeepSeparation` 0x0049A610 | 75 | pushes the fighters apart to the radius, through `Actor_Move` so walls still hold |
+| `Fight_FaceOpponent` 0x0049A550 | 17 | writes the facing Euler directly, refused in nine states and under two flags |
+| `Fight_TickCamera` 0x00446500 | 211 + ~300 in six helpers | camera mode 14: a small state machine (1 normal, 2 a fighter in state 11, 4 a transition, 7 the KO, 8 close) |
+
+## 4. The KO is a REPLAY, and it plays twice
+
+`Fight_RecordFrame` keeps the last **60** frames of both bodies — position,
+entry, clip frame and rate — in the ring at `unk_6A17E0`, sliding when it is
+full. When a fighter lands in role state 6 or 7, `sub_4452A0` clears the
+effects, fades the screen and raises `dword_906F40`; from then on
+`sub_49B2E0` plays the ring back instead of ticking the channel, and
+`sub_4451F0` selects a different camera setting for each pass (`dword_906F48`
+2, 3, 4). Each playback increments the counter, and once it passes
+`dword_9070AC` — set to **2** in `Fight_Begin` — the screen fades and
+`Fight_Engage(-1, 1)` tears the fight down. So a knock-out is shown twice, from
+two further angles.
+
+## 5. How a fight ENDS
+
+`sub_445AC0` (`0x00445AC0`, 56 lines) restores both channels, reloads
+`aventure.scx`, writes the result to the two actors' `+404` (the tick-tail
+selector), raises **event 2** with 0 / 1 / 2, clears both contexts and installs
+control scheme 0.
+
+`Game_HandleEvent` case 2 (`readable/src/01_file.c`) walks the context table for
+the **first** context parked at status 3, returns it to 1 — and reloads the
+**player's** slot-0 (`AVNT`) bank list. It ignores the result code it is
+handed; the scripts learn what happened by re-reading the player's life.
+
+## 6. What the port already has, and what it has not
+
+Ported: the `.CTL` combat block and the fight-AI profiles as data
+(`formats/ctl.h`), the channel and `injectInput`, `ActorRuntime::fightEngage` /
+`fightEnd`, control scheme 3, `Session::setFightHook` / `fightEnded` /
+`fightingWith` with op 62's park behind it, and `Hud_DrawBar` mode 0
+(`ui/hudbar.h`).
+
+Not ported: the two combat contexts, `Fight_Begin`/`Fight_ResolveHit`/
+`Fight_TickAI`, both per-fighter steps, the separation, the replay, camera mode
+14, `Hud_DrawBar` mode 2, and any wiring in `omk-play` — **no fight hook is
+installed**, so today every `fight.begin` runs on instead of parking (the
+`ObjectWait` rule: a missing subsystem must not deadlock a script).
+
+Two stale comments found on the way, both fixed in step 0: `interp.cpp` still
+said op 62's table length was uncorrected and its third field unreachable, and
+`docs/ASSETS.md` still called the profile choice unestablished.
+
+## 7. The steps
+
+Each step ends in a commit and a report, then waits for the reader
+(`memory: stepwise-checkpoints`).
+
+| step | what | state |
+|---|---|---|
+| **0** | this file, the two doc corrections, the corpus facts in `verify.py: fight & become` | **DONE 2026-09-16** |
+| **1** | `engine/src/actor/fight.{h,cpp}`: the contexts, `Fight_Begin`, `Engage`/teardown, `SelectAiProfile`, both per-fighter steps, `ResolveHit`, `FaceOpponent`, `KeepSeparation`, `TickAI`. A probe fights profile against profile on all three `CMBT` files | |
+| **2** | Session and viewer: install the fight hook, slot 2 on both bodies, state 2, scheme 3, the park; the end through event 2, the player's slot-0 reload and his life written back so `Vie Combat Perte` is right. Carry field 2 | |
+| **3** | the KO: the 60-frame ring, the two playbacks, the fade | |
+| **4** | camera mode 14 | |
+| **5** | the HUD: both bars, and mode 2's four-second overlay | |
+| **6** | play test with the reader | |
+
+**What step 1's check can assert** (it must be SHOWN to fail, PORTING B2):
+damage only ever from a combat block times the two multipliers and floored at
+1; every reaction landing on one of the six cached roles; the gap never left
+below the radius after the push; hit points monotone down and clamped at 0; and
+every run ending in a KO with a winner. None of that is a behavioural oracle —
+it is what the shipped data can falsify.
+
+## 8. Open questions
+
+* **`dword_6A05E0`** — the global that makes `fight.begin` a no-op. Twenty
+  reads in the listing, no write in `readable/src`. Find the writer before
+  step 2 decides whether the port needs it at all.
+* **What happens when the player's life reaches 0.** `Fight_ResolveHit` clamps
+  it at 0, records winner and loser, and freezes both channels; it does not
+  kill anybody, and event 2's result code is dropped by its own handler. Where
+  a lost fight leads is unread — and in this game death is a reincarnation
+  (`memory: playable-characters-not-only-kayl`), so this wants reading before
+  step 2 and not guessing.
+* **`sub_447000`** (306 lines) — what `Hud_DrawBar` mode 2 puts on screen for
+  four seconds after `dword_531030` is stamped. It draws text blocks and a
+  bitmap; nobody has read it.
+* **AREA 149, the Qalisar arena.** `docs/SCRIPT_VM.md` says the arena "uses
+  **none** of these — it is `scx.play.actor` and `actor.stat.set`", yet the
+  chunk carries **15** `fight.begin` sites over five opponents, the most of any
+  chunk. Both can be true (the staging is scripted, the fights are op 62), but
+  the sentence should be re-read when step 2 reaches it.
+
+## 9. Where the fights ARE
+
+17 distinct opponents over 11 AREA and 6 SCENE chunks; the counts below are
+sites, so three per fight (one per difficulty). Chunk names from `AREAS.TAG` /
+`SCENES.TAG`; the opponent ids are the CHARACTERS domain, which ships no
+`.TAG`.
+
+| chunk | name | sites | opponent(s) |
+|---|---|---|---|
+| AREA 5 / 10 / 186 / 202 / 209 | Jaunpur Hall 03 / 08, Anekbah Hall 03 / 46 / 63 | 3 each | 572 |
+| AREA 61 | Jaunpur Tetra 1 | 12 | 315, 127 and two more |
+| AREA 140 | Mayerem Sas Hamest | 3 | 415 |
+| AREA 149 | **Qalisar Arene** | 15 | 612, 613 and three more |
+| AREA 168 | Anekbah CS Lev 1 | 3 | 57 |
+| AREA 237 | Anekbah Appart Kayl | 3 | 331 |
+| AREA 245 | Anekbah Sup2 Res | 3 | 48 |
+| SCENE 10 | 1-15B Telis Demon Toits | 12 | 14 |
+| SCENE 25 / 26 / 27 | 2-14 Yob Retour Pont, 2-01B Yob Base, 2-23 Yob Retour Toits | 9 / 6 / 9 | 25 |
+| SCENE 28 | 2-34 BE Yob Retour Prison | 15 | 333 |
+| SCENE 43 | 1-16 Appart Den | 3 | 393 |
+
+**The route to try first is AREA 245, Anekbah Sup2 Res**: its fight sits in the
+chunk's own record 0, and it is the room the supermarket shoot phase leads to —
+a phase `todo/handoff-shoot-mode.md` already reaches in one command
+(`--area 230 --scene-chunk 56`). AREA 168 and 237 are the other Anekbah ones,
+and AREA 149 is the stress case.

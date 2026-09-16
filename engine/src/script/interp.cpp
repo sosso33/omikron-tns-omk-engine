@@ -563,21 +563,27 @@ RunResult Interpreter::resume(std::span<const std::byte> code, std::size_t at) {
         // Only `Game_HandleEvent` case 2 - raised by the fight code when the
         // fight ends - returns the FIRST context at status 3 to 1.
         //
-        // **The handler makes THREE 2-byte fetches and the VM table gives this
-        // opcode 4.** `tools/vm_oplen.py` has flagged `62: 4 -> 6` all along
-        // and the corpus adjudicates for 6 exactly the way it did for op 103
-        // (CLAUDE.md 1): decoding the 5785-slot corpus at 4 leaves **216
-        // phantom instructions** - 144 `dbg.dump_ctx`, 36 `dbg.dump_code`, 36
-        // `nop`, two per site over 108 sites - which vanish at 6, with the
-        // same 108 sites and the same 5785/5785 clean decode either way. They
-        // are all inert, which is *why* nothing has failed: the two surplus
-        // bytes decode as zero-operand no-ops and the stream resynchronises on
-        // the next instruction, so the port's pc is 2 bytes short of the
-        // engine's for two harmless steps. Correcting the table is a change to
-        // `tables/vm_opcodes.json` and `dialog_disasm.LEN_FIX` together and is
-        // NOT made here; until it is, `raw` carries two fields and the third -
-        // `Fight_Begin`'s own second argument - is unreachable. Field 1 (the
+        // **The handler makes THREE 2-byte fetches, and the table now gives
+        // this opcode 6** - corrected on 2026-09-02 in `tables/vm_opcodes.json`
+        // and `dialog_disasm.LEN_FIX` together, after `tools/vm_oplen.py` had
+        // flagged `62: 4 -> 6` all along and the corpus adjudicated for 6 the
+        // way it did for op 103 (CLAUDE.md 1): at 4 the 5785-slot corpus
+        // carried 216 phantom instructions, two per site over 108 sites, all
+        // inert, which is why nothing ever failed.
+        //
+        // **The third field is the AI LEVEL** (read from the assembly
+        // 2026-09-16): the handler pushes it as `Fight_Engage`'s second
+        // argument, and `Fight_SelectAiProfile` selects the `.CTL` fight-AI
+        // profile whose `+0` is `level + 1`. Every site is a `case` on
+        // `VARIABLES[175] 'Niveau Combat'` and the corpus is 36/36/36 over
+        // {0, 1, 2} - the game's adaptive difficulty (`todo/fight-mode.md` 2).
+        // This port does not carry it yet, because nothing consumes it until a
+        // fight runtime exists; that is step 2 of the plan file. Field 1 (the
         // camera travel) is 0 at all 108 shipped sites.
+        //
+        // Not modelled either: the handler is gated on `dword_6A05E0`, which
+        // makes `fight.begin` a no-op while it is nonzero. No writer of that
+        // global appears in the decompilation - see the plan file's §8.
         if (op == 62 && fightWaitSuspends_) {
             std::size_t q = start + 1;
             const auto opponent = fetch16(code, q);

@@ -3227,23 +3227,39 @@ the three profile sets. The same trap as the `.3DM` sweep in CLAUDE.md §4.)
 a **shorter wait**, not a better move — the delay ladder is identical across
 the files while the move counts differ. Id 4 is the outlier by an order of
 magnitude and has no combos at all: a sparring partner, and only the two
-Kay'l/female files have one.
+Kay'l/female files have one — and since `Niveau Combat` is clamped to 0..2 it
+selects ids 1..3, so **nothing in the shipped game can reach profile 4**. Cut
+content the format still carries, like the six spell recipes the combination
+table can never fire.
 
 The 30 distinct input words are all real bindings (`w & ~0x40000000` inside
 the 14 bits), and their **union is `0xCFF`**: the AI presses ten of the
 fourteen and never `CTRL`, `SPACE`, `SHIFT` or `TAB` — the four non-combat
 ones. `verify.py: fight ai`.
 
-> **Which profile the shipped scripts select is NOT established.**
-> `Fight_SelectAiProfile` takes the level from `Fight_Engage`'s second
-> argument; two of its three call sites pass a literal 1 (→ profile 2) and the
-> third is inside opcode **62 `fight.begin`**, whose operand length the VM
-> table gives as 4 and `tools/vm_oplen.py` reads from the handler as **6**.
-> Decoding its fields under the disputed length would decide the answer and
-> could as easily be wrong, so it is left open rather than counted.
+> **Which profile the shipped scripts select — ANSWERED 2026-09-16, and it is
+> the game's ADAPTIVE difficulty.** This said "NOT established", because
+> deciding it meant decoding op 62's fields under an operand length the VM
+> table and `tools/vm_oplen.py` disagreed about. That length was settled at
+> **6** on 2026-09-02, and with it the assembly is unambiguous:
+> `fight.begin`'s **third field** is what the handler pushes as
+> `Fight_Engage`'s second argument, which `Fight_SelectAiProfile` turns into
+> `level + 1`. (The other two `Fight_Engage` call sites pass a literal 1 with
+> an opponent of **−1**, which is the teardown arm — it never reaches the
+> selection, so op 62 is the only thing that ever picks a profile.)
+>
+> Every one of the **108** sites sits in a `case` on `VARIABLES[175]
+> 'Niveau Combat'`, as three copies of the call, and over the corpus the field
+> is **36 / 36 / 36** across {0, 1, 2} and **never 3**. The scripts raise that
+> variable when the last fight cost under 30 life and lower it when it cost 70
+> or more, both clamped to 0..2 — so the opponents' AI follows how well you
+> have been fighting. **Profiles 1, 2 and 3 are the shipped ones, and profile
+> 4 cannot be selected at all.**
+>
 > (The `Difficulté des combats` option is a separate thing: it sets
 > `word_90E1A6`, which `Fight_Begin` turns into a flat **+0.5 / +0.25 / +0**
 > bonus on one player stat — it does not choose the AI profile.)
+> `verify.py: fight & become`; `todo/fight-mode.md` §2.
 
 ### The shoot AI — four callbacks, and the data that was said not to exist
 
