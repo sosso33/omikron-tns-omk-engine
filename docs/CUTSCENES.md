@@ -204,6 +204,46 @@ cutscene", entire.
 
 `verify.py: engine: editing hold`.
 
+#### What ENDS the hold — the mode, not the camera's id
+
+The sentence above says "until something else issues a `Camera_Request`", and
+the second half of that is what a replica gets wrong: **any request ends the
+hold, including a request for the camera that is already installed.** Every
+caller of `Camera_Request` goes through `Camera_RequestChanged` (0x004147F0)
+first, and its first comparison is the MODE —
+
+```c
+if (*mode != u32(C, 12))  return 1;        /* different mode  -> it changes */
+if (request[0] && u32(C, 8) != *(uint32_t *)request[0]) return 1;
+...
+```
+
+— so a `camera.set`'s mode 12 arriving under an editing's mode 13 always
+changes the camera, and the id comparison two lines below is never reached.
+
+`engine/` decided the hold was over by watching the Session's camera **id**
+instead, and AREA 245's supermarket fight is the case that separates the two:
+record 0 asks for camera 0 (`Camera Player`) three times in the fight's
+aftermath — at bytecode 1480, 1559 and 1572, and the potion block's
+`jmp_if_false 175` lands exactly **on** 1480, so none of them is skipped — but
+the medical editing had been entered under camera 0 from the same script. The
+id never moved, the hold was never released, and the view stayed on the
+editing's last frame for the rest of the game while the fight camera, the
+walker and the script all went on reading healthy. A reader watching is what
+found it: *"the engine didn't switch back to adventure mode after the end of
+the fight."*
+
+`Session::cameraRequests()` counts the event itself — every `applyCamera` past
+its `Camera_FindWorld` test, which is `camera.set`, the camera-wait resume, a
+touched zone carrying a camera, and the frontend's own `requestCamera`. It
+strictly subsumes the id test, since `cameraId()` is `camTo_.id` and only
+`applyCamera` writes it, so the frontend's clear-list got one case shorter
+rather than one longer. The three that remain are requests the frontend issues
+without the Session — a conversation's `Dialog_ApplyLineCameras`, the take's
+mode 1 out of `MDGETOBJ`, and `Shoot_Enter`'s `Camera_Request(4, ...)`.
+
+`verify.py: engine: hold release`.
+
 ### And the BODY between two beats
 
 The same gap, one level out, and it is worth stating because a replica with a

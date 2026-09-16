@@ -65,42 +65,22 @@ both fighters move and animate from their own `.CTL` channels, blows land and
 are re-derived, the loser goes down, the KO replay runs twice, `sub_445AC0`
 restores the adventure bank and scheme 0, and the parked script resumes.
 
-## 3. THE OPEN FAULT — the camera never comes back (§13 of the plan file)
+## 3. FIXED 2026-09-16 — the camera comes back (§13 of the plan file)
 
-The reader's words: *"The engine didn't switch back to adventure mode after the
-end of the fight."* This is the thing to fix first, and the investigation was
-left mid-air. **What is established:**
+The reader's *"the engine didn't switch back to adventure mode after the end
+of the fight"* is closed. The script **does** request a camera afterwards —
+AREA 245 record 0 has three `camera.set 0` at bytecode 1480/1559/1572, and the
+potion block's `jmp_if_false 175` lands exactly on 1480 — and the port's
+frontend ended the mode-13 hold on the Session's camera **id** changing, which
+cannot see a request for the camera already installed. The engine compares the
+MODE first (`Camera_RequestChanged`, 0x004147F0), so mode 12 under an
+editing's mode 13 always takes the camera. `Session::cameraRequests()` now
+counts the request and the frontend watches that; it subsumes the id test, so
+the clear-list got shorter. `verify.py: engine: hold release` (SLOW).
 
-* the fight ends correctly and the script DOES resume — the Meditek voice-over
-  plays, a doctor is staged, the medical `scx.play.player` beat runs, and at
-  frame 1171 its program ends;
-* at 1172 the port logs *"editing over — the camera HOLDS its last frame"* and
-  the view never moves again, while the body ticks (`MDSTAND`, `MDHEAD00`);
-* the script is still running after that: at 1172 a prop appears
-  (`POTMANA`, prop 474), which is an `object.show` from record 0's own tail,
-  past the potion block. **So it is NOT a stalled script** — that theory was
-  tested and refuted;
-* AREA 245 record 0 contains **three `camera.set 0`** ("Camera Player") calls,
-  at bytecode offsets 1480, 1559 and 1572, i.e. after the fight — and the run
-  logged **no camera request at all** after frame 806.
-
-**The next step**, and it is small: dump record 0's listing at offsets
-1440–1600 and work out which branch guards those three `camera.set 0` calls
-(the potion block's `jmp_if_false 175` may jump clean over them), and check
-whether `Session::applyCamera` logs at all — "no log line" and "never called"
-have not been told apart. If the script legitimately skips them, then the
-engine holds too and the fault is elsewhere; if it should have reached one,
-find why the port's branch differs.
-
-**Do not "fix" `holdEditCam` blind.** The hold is faithful:
-`docs/CUTSCENES.md` §2 quotes the engine — with no camera request the mode
-stays 13, the mode-13 arm copies nothing from a null active camera, and the
-view freezes until a real `Camera_Request`. The fallback that would auto-return
-to the player is gated on `autocameraplayer`, which **ships off**. The port's
-`holdEditCam` clear-list (a new editing, a camera-id change, dialogue, take,
-shoot mode) is an accreting list of special cases, but removing it is not free:
-`holdEditCam` is also a term in `drawWorld` (play.cpp ~11052), so deleting it
-can turn a frozen frame into a black one.
+**The earlier note that "the run logged no camera request at all after frame
+806" was an artefact**: `OMK_CAMLOG=1` had not been set. With it on the
+requests print at frames 0, 665 and 1031, two frames after the hold begins.
 
 ## 4. Also open
 

@@ -1180,6 +1180,9 @@ void Session::applyCamera(int id, int travel) {
     // `Game_HandleEvent` case 8 then does nothing. A script naming a camera
     // that belongs to somewhere else is not a decode failure.
     if (!c) return;
+    // Past the `Camera_FindWorld` test this IS a `Camera_Request`, so it
+    // counts as one whatever it goes on to do with the camera.
+    ++camRequests_;
     if (const char* e = std::getenv("OMK_CAMLOG"))
         if (*e == '1')
             std::fprintf(stderr, "[cam] frame %ld  camera %d  travel %d  %s\n",

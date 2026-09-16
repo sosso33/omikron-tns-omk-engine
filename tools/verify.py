@@ -11747,6 +11747,107 @@ def c_engine_editing_hold():
            ("every Impasse editing drives until its program clock reaches its "
             "own duration - boxblow to 185, not to the 110 its steps last")
 
+def c_engine_hold_release():
+    r"""`omk-play`: a `camera.set` ENDS the mode-13 hold - even for the camera
+    that is already installed.
+
+    The other half of `engine: frame hold`, which asserts that the view
+    freezes when an editing ends with nothing requesting a camera. It does,
+    and faithfully - but the port then had no way back, because it decided the
+    hold was over by watching the Session's camera ID:
+
+        if (holdEditCam && session.cameraId() != heldUnderCamera) ...
+
+    A reader played the supermarket fight and reported *"the engine didn't
+    switch back to adventure mode after the end of the fight"*. AREA 245's
+    record 0 asks for camera 0 ('Camera Player') three times in the fight's
+    aftermath - at bytecode 1480, 1559 and 1572 - and the potion block's
+    `jmp_if_false 175` lands exactly ON 1480, so none of them is skipped. But
+    the medical editing had been entered under camera 0 from the same script,
+    so the id never moved and the test never fired: the held frame stayed on
+    screen for the rest of the game while every number in the port read
+    healthy.
+
+    The engine keys on the MODE, not the id. `Camera_RequestChanged`
+    (0x004147F0) runs `if (*mode != u32(C, 12)) return 1` before it compares
+    anything else, so a `camera.set`'s mode 12 arriving under an editing's
+    mode 13 always changes the camera. `Session::cameraRequests()` counts the
+    event itself - every `applyCamera` past its `Camera_FindWorld` test - and
+    `cameraId()` is `camTo_.id`, which only `applyCamera` writes, so counting
+    the request strictly subsumes the id test rather than adding to the
+    frontend's clear-list.
+
+    1080 frames of `--fight-supermarket`, which is AREA 245's own script and
+    no harness: three editings run and end in a hold (150, 377, 1029), the
+    script requests camera 0 at 0, 665 and 1031, and the last of those is the
+    one that has to be seen. Asserted: how many frames the log reports, the
+    three holds, that exactly one request follows the last hold, that NO frame
+    after it still draws the held eye, that the eye has travelled at least 50
+    units by the end, and that the drawn fov is back to the adventure
+    preset's 75.0 from the editing camera's 74.0.
+
+    The eye line is printed from `view.cam`, the struct handed to
+    `drawWithMirror` - the value the render consumes, not one handed over
+    somewhere upstream.
+
+    SHOWN TO FAIL: restore the id test in `play.cpp` and the tuple reads
+    `(1080, 3, 1, 49, False, 74.0)` - the camera never moves again.
+
+    SLOW: it replays a whole fight and its three cutscenes, about 30 s.
+    """
+    import subprocess
+    eng = os.path.join(ROOT, "engine")
+    fr = omkpaths.data_root()
+    if not (os.path.isdir(eng) and os.path.isdir(os.path.join(fr, "SCPTDATA"))):
+        return ("skipped",), ("skipped",), "engine/ or gamedata/ absent"
+    mk = subprocess.run(["make", "-s", "play"], cwd=eng, capture_output=True, text=True)
+    play = os.path.join(eng, "build", "omk-play")
+    if mk.returncode != 0 or not os.path.exists(play):
+        return ("no sdl",), ("no sdl",), "needs SDL to render"
+    env = dict(os.environ, SDL_VIDEODRIVER="dummy", OMK_CAMLOG="1")
+    r = subprocess.run(
+        [play, fr, os.path.join(ROOT, "tables"),
+         "--save", os.path.join(ROOT, "traces", "save-appart.bin"),
+         "--fight-supermarket", "--frames", "1080"],
+        capture_output=True, text=True, env=env, errors="replace")
+    out = r.stdout + r.stderr
+
+    # Parse first, and assert what was parsed: a pattern that reads nothing
+    # must fail AS A PARSE rather than answer. `holds` and `eyes` are counted
+    # before anything is derived from them.
+    eyes, holds, reqs = {}, [], []
+    for ln in out.splitlines():
+        m = re.match(r"\[cam\] frame (\d+) eye (\S+) (\S+) (\S+) at \S+ \S+ \S+ fov (\S+)", ln)
+        if m:
+            eyes[int(m.group(1))] = (float(m.group(2)), float(m.group(3)),
+                                     float(m.group(4)), float(m.group(5)))
+            continue
+        m = re.match(r"\[cam\] frame (\d+)\s+camera (-?\d+)\s+travel", ln)
+        if m:
+            reqs.append(int(m.group(1)))
+            continue
+        m = re.match(r"frame (\d+): editing over - the camera HOLDS", ln)
+        if m:
+            holds.append(int(m.group(1)))
+    if not eyes or not holds:
+        return (len(eyes), len(holds)), (1080, 3), \
+               "the run must print its camera log at all"
+
+    lastHold = holds[-1]
+    after = [f for f in reqs if f > lastHold]
+    heldEye = eyes[lastHold][:3]
+    end = max(eyes)
+    tail = [f for f in eyes if f > (after[0] if after else lastHold)]
+    frozen = sum(1 for f in tail if eyes[f][:3] == heldEye)
+    moved = math.dist(eyes[end][:3], heldEye)
+    return (len(eyes), len(holds), len(after), frozen, moved >= 50.0,
+            round(eyes[end][3], 1)), \
+           (1080, 3, 1, 0, True, 75.0), \
+           ("the supermarket fight's aftermath asks for camera 0, the camera "
+            "it was already on, and that ends the editing's hold: no frame "
+            "after it draws the held eye and the fov is the adventure "
+            "preset's again")
+
 
 def c_engine_impasse_fx():
     r"""`engine/`: the Impasse cutscene actually PRODUCES effects.
@@ -35639,6 +35740,7 @@ CHECKS = [
 ]
 
 SLOW = [
+    ("engine: hold release", c_engine_hold_release, "todo/fight-mode 13; docs/CUTSCENES.md 2"),
     ("engine: slider journey qalisar", c_engine_slider_journey_qalisar, "todo/slider"),
     ("engine: slider journey area", c_engine_slider_journey_area, "todo/slider"),
     ("engine: 3DT",        c_engine_3dt,        "engine/README"),

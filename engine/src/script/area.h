@@ -1268,6 +1268,17 @@ public:
     // and the actor runtime is not driven from here, so a caller has to check.
     const WorldCamera* camera() const { return haveCam_ ? &camNow_ : nullptr; }
     int  cameraId() const { return haveCam_ ? camTo_.id : -1; }
+    // How many `Camera_Request`s this Session has made - every `camera.set`,
+    // every camera-wait resume, every touched zone carrying a camera, and
+    // every `requestCamera` from the frontend. It counts the EVENT rather
+    // than describing its result, because a request for the camera that is
+    // already installed changes nothing observable and is still a request:
+    // `Camera_RequestChanged` (0x004147F0) compares the request's MODE first
+    // (`if (*mode != u32(C, 12)) return 1`), so a `camera.set` arriving under
+    // an editing's mode 13 always changes the camera even when it names the
+    // same id. A caller that has to know a request happened - the frontend's
+    // mode-13 hold - must watch this and not the id.
+    unsigned long cameraRequests() const { return camRequests_; }
     // What `camera.set` does, for a frontend starting in a street with no
     // script to ask for one: `Camera_Request` on a world camera by id - 0 is
     // `Camera Player`, the follow preset every hand-over ends on.
@@ -1621,6 +1632,7 @@ private:
     bool         haveCam_ = false;
     WorldCamera  camFrom_, camTo_, camNow_;
     int          camTravel_ = 0, camElapsed_ = 0;
+    unsigned long camRequests_ = 0;   // every resolved `Camera_Request`
     long         frameNo_ = 0;
     mutable DialogPlayer dialog_{state_, table_};
     std::string  morphDir_;              // "" = conversations end at once

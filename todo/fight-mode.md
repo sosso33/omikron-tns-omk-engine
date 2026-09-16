@@ -377,43 +377,68 @@ own numbers are correct can still be invisible, because something upstream owns
 the thing it writes into. The camera trace, the pose source line and the
 channel counters all read healthy throughout.
 
-## 13. OPEN, from the reader's play test: the camera never comes back
+## 13. CLOSED 2026-09-16: the camera never came back — the hold read the ID
 
 *"The engine didn't switch back to adventure mode after the end of the
-fight."* The log reads as though it did — `FIGHT ENDS`, the script resumes,
-the Meditek voice-over plays, a doctor is staged, the medical `scx.play.player`
-beat runs, and at frame 1171 the program ends. Then frame 1172: **"editing over
-— the camera HOLDS its last frame (mode 13, no active camera)"**, and after
-that only `MDSTAND` / `MDHEAD00` special moves. The body ticks; the view is
-parked on the medical scene's last shot.
+fight."* The log read as though it did — `FIGHT ENDS`, the script resumes, the
+Meditek voice-over plays, a doctor is staged, the medical `scx.play.player`
+beat runs, the program ends. Then **"editing over — the camera HOLDS its last
+frame (mode 13, no active camera)"**, and the view never moved again while the
+body went on ticking `MDSTAND` / `MDHEAD00`.
 
-**What the engine does that this port does not.** `Game_Tick`
-(0x004200F0, `05_sys.c` 2144) runs this every frame for the active scene:
+**The premise this section was written on was wrong.** It said *"AREA 245's
+script requests no camera after the fight (only `media.play`)"*, and from
+there went looking for a release mechanism that did not need one — the
+`Scene_GetActiveCamera` branch, or the `autocameraplayer` arm that ships off.
+Record 0 asks for camera **0** (`Camera Player`) three times in the fight's
+aftermath:
 
 ```
-    if (Scene_GetActiveCamera(scene))        -> install it
-    else if (mode == 13 && byte_910322 && g_PlayerActorRec) {
-        g_CamActorA = g_CamActorB = Actor_Player();
-        Camera_Request(0, ...);              // back to the follow camera
-    }
+    1480  camera.set   0, 0, 2        ; after the potion block
+    1559  camera.set   0, 0, 2        ; the death branch, after the medical beat
+    1572  camera.set   0, 0, 2        ; the win branch
 ```
 
-`Dialog_ClearSubjectActor` (0x0041B390) carries the same arm. The port models
-the HOLD (`holdEditCam`) and never models the RELEASE: its clear-list covers a
-new editing, a camera-id change, a dialogue, a take and shoot mode — and
-nothing for "the player has control again".
+and the potion block's `jmp_if_false 175` at 1302 lands **exactly on 1480**
+(1305 + 175), so the block being skipped skips nothing. `--fight-supermarket`
+with `OMK_CAMLOG=1` prints the requests at frames 0, 665 and **1031** — two
+frames after the hold began. The earlier reading, *"no camera request at all
+after frame 806"*, came from a log the camera log was not enabled on.
 
-**But it cannot simply be added**, which is why this is an open question and
-not a fix: `byte_910322` is the `[Preferences]` key `autocameraplayer`,
-initialised to **0** (`05_sys.c` 1635), so on the shipped default that arm does
-not fire in the engine either. AREA 245's script requests no camera after the
-fight (only `media.play`), so nothing in the data releases it. Either the
-release is the `Scene_GetActiveCamera` branch above it — a scene's own active
-camera reappearing once its editing is over — or the original leaves the shot
-parked too and what the reader saw differs for another reason, most likely the
-player's body still being program-owned (`adventure` also needs
-`!playerDriven` and `!parked`). Read `Scene_GetActiveCamera`'s writers before
-touching `holdEditCam`.
+**The fault was in the frontend, and it was the id test.** `play.cpp` ended
+the hold on
+
+```c
+    if (holdEditCam && session.cameraId() != heldUnderCamera) holdEditCam = false;
+```
+
+The medical editing had been entered under camera 0 from the same script, so
+the request for camera 0 moved no id and released nothing. The engine keys on
+the MODE instead: `Camera_RequestChanged` (0x004147F0) opens with
+`if (*mode != u32(C, 12)) return 1`, so a `camera.set`'s mode 12 arriving
+under an editing's mode 13 **always** changes the camera, and the id
+comparison further down is never reached.
+
+The fix counts the event. `Session::cameraRequests()` increments in
+`applyCamera` past its `Camera_FindWorld` test — every `camera.set`, every
+camera-wait resume, every touched zone carrying a camera, every frontend
+`requestCamera` — and the frontend watches that instead of the id. It
+**subsumes** the id test (`cameraId()` is `camTo_.id`, written nowhere else),
+so the clear-list got one case shorter rather than one longer; the three left
+are requests that never reach the Session — a conversation, the take, and
+`Shoot_Enter`.
+
+`verify.py: engine: hold release` (SLOW) replays the whole fight and asserts
+that no frame after the request still draws the held eye and that the drawn
+fov is back to the adventure preset's 75.0 from the editing camera's 74.0.
+Shown to fail: restore the id test and it reads `(1080, 3, 1, 49, False,
+74.0)`. `docs/CUTSCENES.md` §2 carries the finding.
+
+Two lessons worth keeping. **"The script requests no camera" was a claim about
+a log, not about the script** — the listing was there to be dumped and says
+the opposite. And **a subsystem can be correct and invisible**: the fight
+camera, the walker, the script and the Session's own camera were all healthy
+and moving; only the thing drawing over them was wrong.
 
 ## 14. OPEN, same play test: the shoot scheme needs a KEYPAD
 

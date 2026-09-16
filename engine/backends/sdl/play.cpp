@@ -3000,7 +3000,7 @@ int main(int argc, char** argv) {
     // (next-tasks 5).
     bool  musicPaused = false;          // the pause screen suspends the sound
     bool  holdEditCam = false;          // mode 13 with no active camera: hold
-    int   heldUnderCamera = -1;         // the Session camera the hold began under
+    unsigned long heldUnderRequests = 0;  // the Session's request count when the hold began
     bool  editFromKnown = false;              // ...and it was captured for the travel
     float editFromEye[3] = {0, 0, 0}, editFromAt[3] = {0, 0, 0}, editFromFov = 75.0f;
     float editFromRoll = 0.0f;
@@ -10953,16 +10953,29 @@ int main(int argc, char** argv) {
             // conversation, or the hand-over to adventure mode, all of which
             // are a real `Camera_Request` in the engine.
             holdEditCam = haveLastDrawn;
-            heldUnderCamera = session.cameraId();
+            heldUnderRequests = session.cameraRequests();
             std::printf("frame %ld: editing over - the camera HOLDS its last frame "
                         "(mode 13, no active camera, autocameraplayer 0)%s\n", n,
                         holdEditCam ? "" : " - nothing drawn yet, so the world camera stands");
         }
         if (edit) holdEditCam = false;      // a new editing takes it back
-        // ...and any other `Camera_Request` ends mode 13. The Session's target
-        // id changing IS one: `camera.set` is mode 12 and the hand-over asks
-        // for the follow preset.
-        if (holdEditCam && session.cameraId() != heldUnderCamera) holdEditCam = false;
+        // ...and any other `Camera_Request` ends mode 13, because mode 13 is
+        // what it replaces: `Camera_RequestChanged` (0x004147F0) tests the
+        // MODE before anything else (`if (*mode != u32(C, 12)) return 1`), so
+        // a `camera.set`'s mode 12 arriving under an editing always takes the
+        // camera - even when it names the id that is already installed.
+        //
+        // This used to compare `session.cameraId()` against the id the hold
+        // began under, which cannot see that case, and AREA 245's supermarket
+        // fight is exactly it: the fight's aftermath asks for camera 0
+        // ('Camera Player') three times over, the medical editing had already
+        // been entered under camera 0 from the same script, so the id never
+        // moved and the held last frame stayed on screen for the rest of the
+        // game. Counting the REQUEST subsumes the id test - `cameraId()` is
+        // `camTo_.id` and only `applyCamera` writes it - and it costs no new
+        // special case (`todo/fight-mode.md` §13).
+        if (holdEditCam && session.cameraRequests() != heldUnderRequests)
+            holdEditCam = false;
         // ...and so are the other two the frontend issues itself: a
         // conversation is `Camera_Request(12)` (`Dialog_ApplyLineCameras`) and
         // the take is mode 1 out of `MDGETOBJ`. Either installs a mode that is
