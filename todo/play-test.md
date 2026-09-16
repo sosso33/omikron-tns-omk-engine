@@ -821,10 +821,36 @@ which is what the code reads).
 **(a)-(d) CONFIRMED IN PLAY 2026-09-16** - the reader: *"the identity page is
 good"*. **(e) the QUIT tab is still unjudged** - they did not say whether they
 pressed it - and **(f) Options is expected empty** (step 5, blocked: the port
-has never drawn screen 35). The reader also reported *"there is nothing on info
-and option pages"*; the MEMORY page is empty by the code (`todo/sneak.md` §2c)
-and they are being asked whether the original's shows anything. The recipe
-stays here.
+has never drawn screen 35).
+
+> **THE MEMORY (Mémoire) PAGE WAS NOT EMPTY, and this file said it was.** The
+> reader played it, then played the ORIGINAL beside it, and three separate
+> faults came out of that comparison - all now fixed (`7e56033`..`1093e9c`,
+> `todo/sneak.md` §2c). The paragraph that used to stand here, saying the page
+> is "empty by the code", was wrong in the same way the docs were.
+>
+> **(g) THE MEMORY PAGE - the one to judge next**, and it needs memos, which
+> `save-appart.bin` has none of. Either load `traces/games-resto.bin` slot 2
+> (three memos - *Kay'l :*, *Capitaine Lea :*, *Telis :*), or add
+> `--give 2:913,2:915,2:336` to the street command above.
+>
+> * **the list is REACHABLE**: on the Mémoire tab, `LEFT`/`RIGHT` moves the
+>   highlight from the tab column INTO the memo list. That was dead before -
+>   *"I can't select anything in the memo list (I can just select the page)"*.
+> * **the preview appears ON SELECTION**, not a press later: the moment the
+>   line is selected its text shows in the box below. `UP`/`DOWN` then walks
+>   the memos and the text follows.
+> * **no clue text.** Each memo's record holds the memo AND a clue - the kind
+>   sold at the save screen - in one field, and the port used to draw both:
+>   *"you added some texts to the memo ... which are not in the original"*.
+>   Only the memo should show now.
+> * **`ENTER` opens the READER**, which is where the text SCROLLS: the page
+>   comes up standing in the text box, `UP`/`DOWN` scroll it, and BACK leaves.
+>   A short memo will not scroll at all - that is the draw's clamp, not a dead
+>   key - so try it on a long one (*Kay'l :*, seven lines).
+>
+> Nothing here is confirmed by a person yet; the headless runs and the checks
+> only say the lines and offsets move.
 
 `todo/sneak.md` §5, next-tasks 10 - the device's first new
 pages since it was built. From Anekbah's main street:

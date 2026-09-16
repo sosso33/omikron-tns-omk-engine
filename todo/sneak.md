@@ -246,6 +246,17 @@ than run `Utiliser`'s arm under its name.
 > laid-out height, not a lost press. **Not modelled**: the `0x40400080` the
 > builder sets and the leave clears, whose two sites in the image are those.
 >
+> Both mutations red with their own output (`1093e9c`), and each kills a
+> different half: refusing the kind-2 arm again
+> (`false && ... rowKind == 2`) makes BOTH `memo reader` lines vanish while
+> the four memory-page lines stand - the confirm turns away and the page never
+> opens; dropping `curFromBuilder_ = 2` leaves the page open but reports
+> `list 0, scroll 0` with the second line gone - it settles onto the TAB
+> COLUMN by the move rule, and a scroll that is not standing in the box can
+> never move. That second one is the whole reason the shipped `+24` has to be
+> supplied by hand: the lift records `current` only where a callback writes
+> it, and nothing writes this one.
+>
 > Both mutations red with their own output (`9bf0faf`), and each reproduces one
 > of the two faults exactly: with the hook arm dead
 > (`false && panel_->hook == kHookSneakMemoryPanel`) the body line DISAPPEARS -
