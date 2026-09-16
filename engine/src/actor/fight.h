@@ -369,6 +369,11 @@ private:
     bool  over_ = false, playerWon_ = false;
     bool  decided_ = false;       // dword_906F30 != 0: a loser is recorded
     FightContext* loser_ = nullptr;   // dword_906F30 itself
+    // `OMK_KOTRACE=1`: 90 frames of the loser's channel after the killing
+    // blow - the entry, its clip owner and the state the fight reads from it.
+    // A fight that does not end is a loser who never reaches state 6 or 7.
+    int   koTraceLeft_ = 0;
+    const FightContext* koTraceWho_ = nullptr;
     FightCamera cam_;
     int   combatCamera_ = 1;      // byte_906F20, options row 18
     int   camPrevState_ = 1;      // the state the last tick ran, for 2 -> 4

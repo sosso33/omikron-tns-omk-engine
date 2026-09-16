@@ -23,6 +23,8 @@
 //     case" this repo has a rule about.
 //   * the screen fade, the camera and the gauges: steps 3, 4 and 5.
 #include "actor/fight.h"
+#include <cstdio>
+#include <cstdlib>
 
 #include <algorithm>
 #include <cmath>
@@ -556,6 +558,22 @@ void Fight::postStep(FightContext& c) {
         c.entry = cur;
     }
 
+    static const bool koTrace = [] {
+        const char* e = std::getenv("OMK_KOTRACE"); return e && *e == '1';
+    }();
+    if (koTrace && koTraceLeft_ > 0 && koTraceWho_ == &c) {
+        const auto& S = c.body->channel->ctl().states;
+        std::printf("  koTrace %2d: entry %d '%s' clipOwner %d "
+                             "frame %.1f state %d\n",
+                     90 - koTraceLeft_, cur,
+                     cur >= 0 && cur < (int)S.size()
+                         ? S[(std::size_t)cur].name.c_str() : "?",
+                     ch.clipOwner(), (double)ch.frame(),
+                     cur >= 0 && cur < (int)S.size()
+                         ? (int)(S[(std::size_t)cur].flags12 & 0xFFu) : -1);
+        --koTraceLeft_;
+    }
+
     const CtlState* st = stateAt(c, cur);
     if (!st) return;
 
@@ -624,9 +642,42 @@ void Fight::applyDamage(FightContext& def, const FightContext& att,
         if (b_.body && b_.body->channel) b_.body->channel->resetInputQueue();
         // Which entry the corpse falls into: the crouched one when he was
         // already down, the reaction when it knocked him down, else the KO.
-        if (def.state == 6 || def.state == 21) forceEntry(def, def.crouched);
-        else if (def.knockdown)                forceEntry(def, reaction);
-        else                                   forceEntry(def, def.koEntry);
+        // THE LOSER'S FORCED ENTRY, always printed. Read from the CHANNEL
+        // after the call, not from the argument, so it reports the OUTCOME
+        // and not the intention - and `forceEntry` has one silent failure
+        // (`entry < 0`) that touches no counter at all, so `FAILED` here is
+        // the only thing that can ever show it. A fight that will not end is
+        // diagnosed from this line plus `OMK_KOTRACE=1`
+        // (`todo/fight-mode.md` 15.1).
+        const int want = (def.state == 6 || def.state == 21) ? def.crouched
+                       : def.knockdown                       ? reaction
+                                                             : def.koEntry;
+        const int fromE = def.body && def.body->channel
+                              ? def.body->channel->state() : -1;
+        const bool okF = forceEntry(def, want);
+        if (def.body && def.body->channel) {
+            auto& dch = *def.body->channel;
+            const int land = dch.state(), own = dch.clipOwner();
+            const auto& S = dch.ctl().states;
+            auto w12 = [&](int i) { return i >= 0 && i < (int)S.size()
+                                           ? S[(std::size_t)i].flags12 : 0u; };
+            auto fl = [&](int i) { return i >= 0 && i < (int)S.size()
+                                          ? S[(std::size_t)i].flags : 0u; };
+            std::printf(
+                "fight LOSER: from entry %d '%s' (goto %d), branch %s, want "
+                "entry %d (flags 0x%08x, w12 0x%x) -> %s; landed entry %d "
+                "(flags 0x%08x, w12 0x%x) clipOwner %d (w12 0x%x) state %d\n",
+                fromE, fromE >= 0 && fromE < (int)S.size()
+                           ? S[(std::size_t)fromE].name.c_str() : "?",
+                fromE >= 0 && fromE < (int)S.size()
+                           ? S[(std::size_t)fromE].gotoIdx : -1,
+                (def.state == 6 || def.state == 21) ? "crouched"
+                    : def.knockdown ? "knockdown" : "koEntry",
+                want, fl(want), w12(want), okF ? "ok" : "FAILED",
+                land, fl(land), w12(land), own, w12(own),
+                (int)(w12(land) & 0xFFu));
+            koTraceLeft_ = 90; koTraceWho_ = &def;
+        }
     } else if (reaction >= 0) {
         forceEntry(def, reaction);
     }

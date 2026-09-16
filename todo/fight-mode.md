@@ -483,6 +483,66 @@ opponent-loses path has no headless route at all** — the first job is
 probably a harness that gives it one, or `engine: melee` will keep passing
 over it.
 
+**INVESTIGATED 2026-09-16, and NOT REPRODUCED — read this before starting.**
+The obvious readings were all tested and all refuted, so do not repeat them:
+
+* **A headless route now exists.** `--keys` pushes scan codes unconditionally
+  (`play.cpp` ~5458), so the player can be made to attack and the
+  opponent-losing branch is reachable without a person:
+
+  ```
+  K=$(python3 -c "print(','.join(['0x11','0x1F']*200))")     # W and S, kicks
+  SDL_VIDEODRIVER=dummy build/omk-play ../gamedata ../tables \
+      --save ../traces/save-appart.bin --fight-supermarket \
+      --frames 1000 --keys "$K" --keydelay 3
+  ```
+
+  Scheme 3: `0x10`/`0x11` punches, `0x1E`/`0x1F` kicks.
+
+* **Both branches of `applyDamage` work, and so does entry 144.** Four key
+  patterns were run; every one ENDED the fight. `0x10` alone produces a
+  natural `koEntry` kill — `want entry 144 (flags 0x80009020, w12 0x5) -> ok`,
+  and the loser walks 144 -> `I_DEATH`(145) -> `I_DEATHLOOP`(146, state 7),
+  the KO counter reaches 3 and `sub_445AC0` runs. Forcing the `koEntry` branch
+  from the reader's own `from` entry (116 `FRAISE`) works too.
+* **The pass-through chase is faithful.** `GoToMove`'s `0x8000` skip really is
+  only in the no-`from` arm (0x004A7B80), and every KO call site in
+  `Fight_ResolveHit` passes `SetPersoBank(..., a4 = 0)`, so `from` is non-null
+  in the engine as well. The arm that resolves it is the THIRD one: when `to`
+  is a pass-through, the engine blends into the clip owner behind its
+  `0x8002` chain while `+184` stays on `to`. `CefChannel::clipOwner()` already
+  walks exactly that chain.
+* **`sub_45ABD0` is not a chase**: it is `chan[+184]`, the raw current entry.
+* **`forceEntry` did not fail in the reader's run** — the played log carries
+  `badLanding 0, chainAborted 0` throughout, and `transitions` climbed 116 ->
+  119 across the killing blow.
+
+**What is left, and it is one fact.** The reader's opponent went from entry
+116 `FRAISE` to entry **0 `HGUARD`** — and `FRAISE`'s own GoTo *is* `HGUARD`,
+so what that looks like is a forced entry that never happened, leaving FRAISE
+to run to its clip end and fall through. The only path that does that while
+touching no counter is `forceEntry`'s `entry < 0` early return, i.e.
+`def.koEntry == -1`. That cannot be checked from the log the reader has,
+because no line printed it.
+
+So the port now PRINTS it, on stdout beside the other fight lines:
+
+```
+fight LOSER: from entry N 'NAME' (goto N), branch koEntry|knockdown|crouched,
+             want entry N (flags 0x…, w12 0x…) -> ok|FAILED; landed entry N …
+```
+
+and `OMK_KOTRACE=1` adds 90 frames of the loser's channel afterwards — the
+entry, its clip owner and the state the fight reads. **A fight that will not
+end is a loser who never reaches state 6 or 7**, and these two together say
+which link broke. Note that `landed` on the call frame can legitimately still
+be the `from` entry: a blended transition parks the pending state and `+184`
+only moves when the blend lands, which is why the trace matters.
+
+**Next: one more played fight with the log kept.** Nothing else will separate
+`koEntry == -1` from a timing-dependent path that a fixed-step run cannot
+produce.
+
 ### 15.2 "no sound fx" and "no visual effect" — ONE fault: the ids resolve
 ### against the wrong library
 
