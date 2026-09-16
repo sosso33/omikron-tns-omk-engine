@@ -431,8 +431,8 @@ are requests that never reach the Session — a conversation, the take, and
 `verify.py: engine: hold release` (SLOW) replays the whole fight and asserts
 that no frame after the request still draws the held eye and that the drawn
 fov is back to the adventure preset's 75.0 from the editing camera's 74.0.
-Shown to fail: restore the id test and it reads `(1080, 3, 1, 49, False,
-74.0)`. `docs/CUTSCENES.md` §2 carries the finding.
+Shown to fail: restore the id test and it reads `(1080, 3, 1, 48, False,
+74.0)` - the held eye for all 48 frames after the request. `docs/CUTSCENES.md` §2 carries the finding.
 
 Two lessons worth keeping. **"The script requests no camera" was a claim about
 a log, not about the script** — the listing was there to be dumped and says

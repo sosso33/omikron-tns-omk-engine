@@ -11791,7 +11791,8 @@ def c_engine_hold_release():
     somewhere upstream.
 
     SHOWN TO FAIL: restore the id test in `play.cpp` and the tuple reads
-    `(1080, 3, 1, 49, False, 74.0)` - the camera never moves again.
+    `(1080, 3, 1, 48, False, 74.0)` - the camera is still on the held eye for
+    all 48 frames that follow the request - the camera never moves again.
 
     SLOW: it replays a whole fight and its three cutscenes, about 30 s.
     """
