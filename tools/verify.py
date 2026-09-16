@@ -20360,12 +20360,15 @@ def c_engine_sneak_memos():
                        capture_output=True, env=env)
     text = r.stdout.decode("cp1252", "replace")
     got = tuple(ln.strip() for ln in text.splitlines()
-                if ln.startswith("sneak: memory page"))
+                if ln.startswith("sneak: memory page") or ln.startswith("sneak: memo body"))
     return got, \
-           ("sneak: memory page - object list 2, 2 rows: 913 915",), \
-           "the viewer's line for the sneak's memory page after two memos are " \
+           ("sneak: memo body - row 0 id 913 'Moi :', 308 chars",
+            "sneak: memory page - object list 2, 2 rows: 913 915"), \
+           "the viewer's lines for the sneak's memory page after two memos are " \
            "given into object list 2 and the page is opened: which list the " \
-           "rows bound to, how many, and their ids"
+           "rows bound to, how many and their ids - and the BODY the page's own " \
+           "box shows, which is the selected memo's description through the " \
+           "tag the row hook writes into that item's `+0x3C`"
 
 
 def c_engine_sneak_quit():

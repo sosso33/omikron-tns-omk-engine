@@ -715,8 +715,19 @@ ScreenFrame ScreenComposer::draw(Surface& fb, int screenId,
             // Keyed on the item's DRAW HOOK, `0x004780A0`, which both examine
             // pages' boxes carry - the sneak's (0x004DE710) and MULTIPLAN's
             // (0x004E57E0). Every arm of it ends in `sub_477F60`, this text.
+            // ...and the MEMORY page's body box, item 0x004DEA98 (400x110 at
+            // (190, 250), draw hook `0x00477F60`), which is the same text
+            // drawer the examine page's every arm ends in. The row hook writes
+            // the selected row's tag into `dword_4DEAD4` - which IS that
+            // item's own `+0x3C` (0x004DEA98 + 60) - and the drawer raises
+            // event 40 on it, so what it shows is the SELECTED MEMO's
+            // description. The page's panel hook `0x0049D8B0` clears the item's
+            // `0x40000001` while the rows are current and sets it elsewhere,
+            // and the reader page `0x004DEFF0` is the same lists with the BOX
+            // as the current list - which is why it needs no artwork of its own.
             if (examine_ && !examine_->empty() &&
-                (l.addr == kListSneakExamineContent || it.drawFn == 0x004780A0u)) {
+                (l.addr == kListSneakExamineContent || it.drawFn == 0x004780A0u ||
+                 it.drawFn == 0x00477F60u)) {
                 TextBlock blk;
                 blk.left   = scaleX(it.x + q->offsetX);
                 blk.top    = scaleY(it.y + q->offsetY);

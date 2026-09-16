@@ -16275,6 +16275,36 @@ int main(int argc, char** argv) {
                                walk->rowWindow(omk::kListSneakRows));
                 // One line per change, so a headless run can be held to the
                 // rows the page bound - and to WHICH list they came from.
+                // ---- THE MEMO'S BODY, in the page's own box ----------------
+                //
+                // Item 0x004DEA98's draw hook `0x00477F60` raises event 40 on
+                // the item's `+0x3C` and lays out what it answers - and that
+                // tag field IS `dword_4DEAD4`, which the row hook writes with
+                // the SELECTED row's tag whenever the row kind is 2. Case 40
+                // hands back the object record's description on every arm, so
+                // the box shows the selected memo's text. The composer draws it
+                // through the same path as the examine page's.
+                if (rowKind == 2) {
+                    const int sel = walk->selectedRow(omk::kListSneakRows);
+                    const int memo = sel >= 0 && sel < static_cast<int>(carried.size())
+                        ? carried[static_cast<std::size_t>(sel)] : -1;
+                    if (const omk::ObjectRecord* mr = memo > 0 ? inv.record(memo) : nullptr) {
+                        examineText = mr->description;
+                        comp.setExamineText(&examineText);
+                        comp.setTextScroll(&walk->textScroll());
+                        // The body, named from the memo the rows selected and
+                        // measured rather than described, so a check can hold
+                        // it: the id, its heading, and how long the text is.
+                        static std::string memoBodyTold;
+                        std::string said = "row " + std::to_string(sel) + " id " +
+                                           std::to_string(memo) + " '" + mr->name + "', " +
+                                           std::to_string(examineText.size()) + " chars";
+                        if (said != memoBodyTold) {
+                            memoBodyTold = said;
+                            std::printf("sneak: memo body - %s\n", said.c_str());
+                        }
+                    }
+                }
                 if (rowKind == 2) {
                     // The list is named from the SOURCE the rows were read
                     // from, not from a literal: a mutation that made this page

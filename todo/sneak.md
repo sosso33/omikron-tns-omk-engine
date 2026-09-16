@@ -154,11 +154,20 @@ than run `Utiliser`'s arm under its name.
 > and the port already posts that message. `docs/GAME_STATE.md`'s list-2 row
 > carries the same three counts.
 >
-> Still open: the memo READER page `0x004DEFF0` behind the row confirm
-> (`sub_49BC60`'s kind-2 arm pushes it), which is not lifted at all - so the
-> body of a memo, which is the object record's DESCRIPTION, cannot be shown
-> yet. The empty panel at the bottom right of the page in a render is where
-> that text belongs.
+> **THE BODY, and the reader page needs no lift after all** (2026-09-16). The
+> empty panel at the bottom right of the page is item `0x004DEA98` (400x110 at
+> (190, 250), list `0x004DEAE8`), and it is on the MEMORY PAGE itself. Its
+> draw hook is `0x00477F60` - the same text drawer every arm of the examine
+> page ends in - and it raises event 40 on its own `+0x3C`, which is
+> `0x004DEA98 + 60 = 0x004DEAD4`, the very global the row hook writes with the
+> selected row's tag when the kind is 2. So the box shows the SELECTED MEMO's
+> description, and the reader page `0x004DEFF0` turns out to be the same four
+> lists with the BOX as the current one (record `+24 = 2`): its builder
+> `0x0049D870` sets `0x40400080` on the box and zeroes the scroll, its leave
+> `0x0049D890` clears that, and the memory page's own panel hook `0x0049D8B0`
+> flips the box's `0x40000001` by which list is current. Nothing to lift: the
+> composer now draws that hook's text and the ported scroller already moves
+> it. Rendered: *Moi :* selected, its text wrapping in the box.
 
 
 
