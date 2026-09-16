@@ -581,9 +581,13 @@ RunResult Interpreter::resume(std::span<const std::byte> code, std::size_t at) {
         // fight runtime exists; that is step 2 of the plan file. Field 1 (the
         // camera travel) is 0 at all 108 shipped sites.
         //
-        // Not modelled either: the handler is gated on `dword_6A05E0`, which
-        // makes `fight.begin` a no-op while it is nonzero. No writer of that
-        // global appears in the decompilation - see the plan file's §8.
+        // The handler's `mov eax, dword_6A05E0; test eax, eax; jnz` over its
+        // own body is the DRY RUN, not a fight gate: `Script_RunToOpcode75`
+        // (sub_406120) sets that global to 1 and `Script_Execute` clears it,
+        // so a dry run fetches the operands, skips the effects and skips the
+        // `Dbg_LogTagged` announce. This interpreter never sets it - see the
+        // note on `StoppedAtOpcode` in interp.h - so there is nothing to
+        // model here.
         if (op == 62 && fightWaitSuspends_) {
             std::size_t q = start + 1;
             const auto opponent = fetch16(code, q);

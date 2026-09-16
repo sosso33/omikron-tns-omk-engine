@@ -35,10 +35,14 @@ operand stack makes it unambiguous: field 1 is stored at `[esp+18h]` and field
 push happens while `esp` is 8 lower, so it reads field 2. The travel is read
 back the same way for `Camera_Request`.
 
-**A guard nobody has explained.** The handler opens with
-`mov eax, dword_6A05E0; test eax, eax; jnz` over the whole body: when that
-global is nonzero, `fight.begin` does nothing at all. The listing reads it in
-twenty places and **no write to it appears in `readable/src`**. Open — see §8.
+**The `dword_6A05E0` test over the whole body is the DRY RUN, not a gate on
+fighting** — and it is worth recording how it looked, because for an hour this
+file called it an unexplained guard. `sub_40EC70` is `Dbg_LogTagged`, the
+global is set to 1 in three places inside `Script_RunToOpcode75` (`sub_406120`)
+and cleared in `Script_Execute`, and it has 111 references: a dry run fetches
+its operands, skips its effects and skips the announce. The port already knows
+this — `interp.cpp` says so a few lines below its own op-62 block, and never
+sets the flag. Nothing to model.
 
 ## 2. The difficulty is ADAPTIVE — and that answers ASSETS' open question
 
@@ -107,8 +111,9 @@ drops whatever scene object drove either body, then calls `Fight_Begin` and
 **Per frame**, `Actor_TickPlayerAndOpponent` (`0x00466710`, ACTOR_STATE 2's
 tick) runs for each fighter: `sub_4451F0`, then the channel tick, then
 `sub_4452A0`; the opponent additionally runs `Fight_TickAI` before his channel
-and refreshes his spatial-index slot afterwards. `byte_91031F` gates the AI and
-`dword_906F40` (the KO counter) freezes both.
+and refreshes his spatial-index slot afterwards. `byte_91031F` gates the AI —
+and that is the `[Preferences]` key `disable_fight_ai`, a DEBUG switch rather
+than a game rule (§8) — while `dword_906F40`, the KO counter, freezes both.
 
 Then `Actors_TickAll`'s tail, under the player's `+404 == 2`:
 
@@ -198,9 +203,24 @@ it is what the shipped data can falsify.
 
 ## 8. Open questions
 
-* **`dword_6A05E0`** — the global that makes `fight.begin` a no-op. Twenty
-  reads in the listing, no write in `readable/src`. Find the writer before
-  step 2 decides whether the port needs it at all.
+* ~~**`dword_6A05E0`**~~ — **closed the same day, and it was never a fight
+  question**: it is the VM's dry-run flag (`Script_RunToOpcode75` sets it,
+  `Script_Execute` clears it), so a dry run skips op 62's effects the way it
+  skips every other handler's. The lesson is the repo's own — a global read
+  inside one handler says nothing about that handler; find its writer before
+  writing it down as a property of the opcode. **And the tree already held the
+  answer twice over**: `docs/ASSETS.md` records the same gate as "ordinary
+  execution state, not an off switch" (22 of the 153 handlers open with those
+  five instructions, asserted by `verify.py: render backends`), and
+  `engine/src/script/interp.cpp` names it the dry-run flag a few lines below
+  the very block this task annotated. Grepping the global before describing it
+  would have cost one command.
+* **The three fight DEBUG switches**, found in the `[Preferences]` reader at
+  listing line 23255 and not previously recorded: `disable_fight_damages` →
+  `byte_91031E`, `disable_fight_ai` → **`byte_91031F`** — which is the global
+  gating `Fight_TickAI` in the melee tick, so that gate is a debug switch and
+  not a game rule — and `no_fight_guard` → `byte_910321`. All three default to
+  0 and are cleared again at `05_sys.c` 1636.
 * **What happens when the player's life reaches 0.** `Fight_ResolveHit` clamps
   it at 0, records winner and loser, and freezes both channels; it does not
   kill anybody, and event 2's result code is dropped by its own handler. Where

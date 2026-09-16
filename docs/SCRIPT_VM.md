@@ -1476,10 +1476,22 @@ unreachable. The scripts move that variable by what the last fight cost the
 player, which is the game's adaptive difficulty; see `docs/ASSETS.md` and
 `todo/fight-mode.md` §2.
 
-**And the whole handler is gated on a global.** It opens
-`mov eax, dword_6A05E0; test eax, eax; jnz` over its own body, so a nonzero
-`dword_6A05E0` makes `fight.begin` a no-op. The listing reads that global in
-twenty places and writes it in none that the decompilation carries — open.
+**And the `dword_6A05E0` test over the handler's body is the DRY RUN**, which
+is worth stating because it reads at first like a fight-specific gate. It is
+the flag `Script_RunToOpcode75` (`sub_406120`) sets to 1 and `Script_Execute`
+(0x00406460) clears, and **111 references across the listing** carry it: under
+it a handler fetches its operands, skips its effects, and skips the
+`Dbg_LogTagged` announce — which is exactly what a run that answers a question
+and leaves no trace must do. Nothing fight-specific, and nothing for a port to
+model that does not set it.
+
+This repo had already reached the same conclusion from the other side and it
+is worth reading the two together: **22 of the 153 handlers open with the
+identical five instructions**, `fade.to_black`, `fade.from_black` and
+`game.restart` among them, which `docs/ASSETS.md` records as "ordinary
+execution state, not a switch that keeps this bank off" and
+`verify.py: render backends` asserts. What the fight-mode reading adds is the
+state's IDENTITY — it is the dry run — and the writer that proves it.
 
 ### 46 / 90 — `scx.play` on the player
 
