@@ -859,6 +859,39 @@ not a radius or a centre convention - all three shapes block identically.
 Something in `playerSteep` stands between them that the engine's `Actor_Move`
 evidently does not stop him on.
 
+**FOURTH ATTEMPT, 2026-09-17, and the block is FAITHFUL.** Seating the foe's
+walker on his FEET with his own derived lift - his `y` is the pelvis and the
+floor under him is his feet, so `lift = floorY - y`, the player's own recipe
+with the opponent's numbers - leaves him stuck at **9.2 m**, the fourth
+configuration to do so within a tenth of a metre. It is not the sphere setup.
+
+**What stops him is a real box, and the engine would stop him too.**
+`mesh_list` puts `SMbox45` at (15111, 1554) and he halts at (15110, 1506) -
+his 8.7 radius short of it. The box's mesh flags are `0x00000000`, and the
+tempting idea that bit `0x4` marks a collidable mesh (23 of this set's 36
+carry it) is **refuted by work already in this tree**: `Sweep_MeshTest`
+(0x004AD460) opens `if ((flags & 0x20000000) == 0 && (flags & 0x41) == 0)`,
+an EXCLUSION, and `collision.cpp`'s own note records that a filter admitting
+only those bits "would keep 0-4% of a set's meshes and let the player walk
+through the world". A flag-0 mesh is solid. So the port's blocker soup is
+right and the walker is right to stop him.
+
+**The real question is therefore upstream: why must he cross a box at all?**
+The two approach beats leave the fighters **11.9 m apart** - opponent at
+(15134, 1408), player at (14995, 1856) - and `SMbox45` sits between them, so
+`Fight_TickAI`'s approach walks him straight into it. A brawl has no
+pathfinding, so the engine's robber would walk into it as well *if the
+geometry there were the same at that moment*. The next thing to establish is
+whether it is: the port's blocker soup is baked from the `.3DO` AT REST, while
+the engine sweeps each mesh through its CURRENT matrix (`Sweep_MeshTest` moves
+the sweep into it), and `collision.cpp` already carries `meshOf` for exactly
+that patching. Whether `ASM49RES`'s boxes are where the rest pose puts them
+once record 0 has run - it opens with `scene.unload 230` - is unread.
+
+Both attempts are saved as patches outside the tree. Nothing is committed: the
+opponent still has no collision, and adding it as it stands would trade
+"walks through crates" for "never reaches the player", which is worse.
+
 **The tail arguments are now READ, and they are NOT a face filter.** That was
 the obvious hypothesis - "which faces this actor is allowed through" - and it
 is wrong, so it is recorded here rather than left to be found again.
