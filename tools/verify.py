@@ -20374,12 +20374,31 @@ def c_engine_sneak_memos():
       inside the list, because the panel hook runs on every press and sets the
       flag from the list that is current BEFORE the mover moves.
 
+    **The preview appears ON SELECTION**, which corrected a reading of mine.
+    The reader, from the original: *"when selecting a line (going to the right
+    when on the memo item in the left sidebar): a preview text is displayed
+    below"*. So a panel hook is the panel's PER-FRAME TICK, not an input
+    handler - given an input word matching neither of the mover's bits it
+    returns 0 - and the box's flag is therefore re-evaluated every frame
+    against the current list. This port stored it on a press, from the list
+    current BEFORE the move, and lit the box one press late; it is derived from
+    the current list now.
+
     Anekbah, two memos given into list 2, TAB, RIGHT onto the tab column, DOWN
     to the memory tab, ENTER - then RIGHT into the rows and DOWN. Asserted: the
     viewer's line for the page (which LIST the rows came from and the ids
-    bound) and the body line, which appears ONLY after the move and names row
-    1. The body line prints on change, so a body drawn at open would show as an
-    earlier `row 0` line: the ordered pair pins both halves.
+    bound), then the body appearing at row 0 the moment the RIGHT selects a
+    line, then following the DOWN to row 1.
+
+    **The FRAME is on the line because the content stopped being able to say
+    WHEN.** The selection starts on row 0, so a body wrongly drawn while the
+    page merely sits open would print the same `row 0 id 913` as the correct
+    one: only the frame separates them, and a legitimate line cannot appear
+    before the press that selects. 301 and 361 are the two presses at
+    `--keydelay 60`, so they are a property of THIS HARNESS and not of the
+    engine - change the delay or the frame budget and they move. Measured
+    alongside: the same run without the RIGHT prints the page line and NO body
+    line at all, which is the "nothing is shown until you enter the list" half.
 
     **And the body is ONE SECTION of the description, not the field**
     (2026-09-16, the same reader, playing the ORIGINAL side by side: *"you
@@ -20428,8 +20447,10 @@ def c_engine_sneak_memos():
                 if ln.startswith("sneak: memory page") or ln.startswith("sneak: memo body"))
     return got, \
            ("sneak: memory page - object list 2, 2 rows: 913 915",
+            "sneak: memo body - row 0 id 913 'Moi :', "
+            "185 chars, 4 lines drawn at frame 301",
             "sneak: memo body - row 1 id 915 'Panneau Bibliothèque :', "
-            "102 chars, 2 lines drawn"), \
+            "102 chars, 2 lines drawn at frame 361"), \
            "the viewer's lines for the sneak's memory page after two memos are " \
            "given into object list 2 and the page is opened: which list the " \
            "rows bound to, how many and their ids - and the BODY the page's own " \
@@ -20439,7 +20460,15 @@ def c_engine_sneak_memos():
            "count the composer laid out - its first version printed beside the " \
            "FILL instead and stayed green under a mutation that cut the text " \
            "off from the composer entirely (`setExamineText(nullptr)`), because " \
-           "a line reporting what it INTENDED cannot see a box that drew nothing"
+           "a line reporting what it INTENDED cannot see a box that drew " \
+           "nothing. The body is ONE SECTION of the description - the item's " \
+           "`+30` (`textArg`) is 0, so `sub_43FEA0` cuts the memo out and " \
+           "leaves the CLUE that shares the field unshown, which is 192 bytes " \
+           "against 102 for memo 915 - and it appears the moment the RIGHT " \
+           "SELECTS a line, not a press later: the frame stamp is what " \
+           "separates that from a body drawn while the page merely sits open, " \
+           "since both would say `row 0`. 301 and 361 are this harness's two " \
+           "presses at --keydelay 60, not a fact about the engine"
 
 
 def c_engine_sneak_quit():

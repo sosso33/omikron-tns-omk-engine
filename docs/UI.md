@@ -1580,13 +1580,16 @@ the wrong page.
 > the composer for both the measure and the draw, since the scroll bound must
 > be measured from what is actually laid out.
 >
-> **Still wrong in the port at the time of writing**: the reader also reports
-> that in the original *the preview appears as soon as the line is selected*,
-> where this port shows it one press later. That means the panel hook is the
-> panel's PER-FRAME tick — called with an input word of 0 it simply declines to
-> move — and not an input-only handler, so the box's flag tracks the current
-> list continuously. The paragraph above describing a one-press lag is the
-> port's defect, not the engine's.
+> **AND THE PREVIEW APPEARS ON SELECTION, not a press later** — the reader
+> again, from the original: *"when selecting a line (going to the right when on
+> the memo item in the left sidebar): a preview text is displayed below"*. So a
+> panel hook is the panel's **per-frame tick**, not an input handler: given an
+> input word matching neither of the mover's two bits it simply returns 0, and
+> the flag is therefore re-evaluated every frame against the current list. The
+> port stored it on a press, from the list current BEFORE the move, and so lit
+> the box one press late. Derived now (`UiWalk::memoBodyShown()` asks whether
+> the current list is the rows), which is what makes the box follow the
+> selection into the list the way the original does.
 
 `sub_42ADD0` branches on it too. For 0 and 2 it raises the channel's **event
 25** with that number as the list id; for **4** it raises nothing and instead

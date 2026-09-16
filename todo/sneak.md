@@ -217,11 +217,19 @@ than run `Utiliser`'s arm under its name.
 > 4 lines drawn` from `102 chars, 2 lines` - the clue returned to the box,
 > which is precisely what the reader saw in the port and not in the original.
 >
-> **STILL OPEN from the same play report**: the original shows the preview as
-> soon as the line is SELECTED, where this port shows it a press later - so the
-> panel hook is the panel's per-frame tick, not an input-only handler - and
-> ENTER on a memo enters the text zone and gives it a scroll bar, which is the
-> reader page `0x004DEFF0` and is not ported.
+> **THE PREVIEW NOW APPEARS ON SELECTION** (done): the original shows it as
+> soon as the line is selected, so a panel hook is the panel's PER-FRAME TICK
+> and not an input handler - given an input word matching neither of the
+> mover's bits it returns 0, and the flag is re-evaluated every frame. The port
+> stored it on a press, from the list current BEFORE the move, and lit the box
+> a press late. `UiWalk::memoBodyShown()` derives it from the current list now.
+> Played headlessly on both saves: RIGHT onto the list draws memo 913 (185
+> chars) / 342 (74), and DOWN follows to 915 (102) / 338 (229).
+>
+> **STILL OPEN from the same play report**: ENTER on a memo enters the text
+> zone and gives it a scroll bar, which is the reader page `0x004DEFF0` - a
+> CHILD of this panel, with builder `sub_49D870` and leave `sub_49D890`, both
+> of which just show and hide `0x004DEA98` with bank `0x40400080`. Not ported.
 >
 > Both mutations red with their own output (`9bf0faf`), and each reproduces one
 > of the two faults exactly: with the hook arm dead

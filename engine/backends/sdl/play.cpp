@@ -17118,12 +17118,26 @@ int main(int argc, char** argv) {
                 // nothing says 0 lines instead of repeating what it was handed.
                 if (!memoBodyPending.empty()) {
                     static std::string memoBodyTold;
+                    // ...and WHEN, because the content alone stopped being
+                    // able to say it. The box is lit as soon as the selection
+                    // enters the list, and the selection starts on row 0 - so
+                    // a body wrongly drawn while the page merely SITS OPEN
+                    // prints the same `row 0 id 913` as the right one does.
+                    // The frame separates them: the legitimate line cannot
+                    // appear before the press that selects the line. It is a
+                    // property of this harness (fixed `--frames` and
+                    // `--keydelay`), not of the engine.
                     const std::string said = memoBodyPending + ", " +
                                              std::to_string(sf.textChars) + " chars, " +
                                              std::to_string(sf.textLines) + " lines drawn";
                     if (said != memoBodyTold) {
                         memoBodyTold = said;
-                        std::printf("sneak: memo body - %s\n", said.c_str());
+                        // The frame is stamped on the line but kept OUT of the
+                        // change test: inside it, every frame differed and the
+                        // same body printed on all 360 of them.
+                        std::printf("sneak: memo body - %s at frame %ld\n",
+                                    said.c_str(),
+                                    static_cast<long>(session.frameNo()));
                     }
                     memoBodyPending.clear();
                 }

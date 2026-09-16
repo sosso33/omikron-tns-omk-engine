@@ -1049,7 +1049,10 @@ void UiWalk::buildPage(const UiPanel& p) {
     if (p.addr == kPanelSneakMemory) {
         state_->rowKind = 2;
         state_->rowWidgets = 5;
-        state_->memoBodyShown = false;
+        // The builder's closing `sub_428FF0(0x004DEA98, 0x40000001, 1)` needs
+        // nothing here: `memoBodyShown()` derives the flag from the current
+        // list, and the builder has just put that back on the tab column, so
+        // the box is hidden exactly as the instruction leaves it.
     }
     // The IDENTITY page's builder `0x0049C100`:
     //     sub_428FF0(0x004DE810, 0x40000001, 0);   word_4DE902 = 0;
@@ -2125,15 +2128,12 @@ bool UiWalk::press(std::uint32_t bits) {
             //     return sub_42A710(screen, panel);
             //
             // - the body box is shown when the CURRENT list is the rows and
-            // hidden otherwise, and then the generic mover runs. Note the
-            // ORDER: the flag is set from the list that is current BEFORE the
-            // move, so it lags one press behind. That is not a bug to tidy
-            // up - the panel hook runs on EVERY press, and UP/DOWN inside the
-            // rows do not match the mover's bits 1/2, so the box lights on
-            // the first UP or DOWN the player makes in the list and the row
-            // hook then moves the selection under it.
-            state_->memoBodyShown =
-                curList() != nullptr && curList()->addr == kListSneakRows;
+            // hidden otherwise, and then the generic mover runs. The flag is
+            // NOT written here: a panel hook is the panel's per-frame tick,
+            // so it re-evaluates that test every frame, and `memoBodyShown()`
+            // derives it from the current list instead. Writing it here, from
+            // the list current BEFORE the move, made the preview appear one
+            // press late - which is what a reader saw the original not do.
             if (bits & kUiLeft)  { if (moveLists(-1)) return true; }
             if (bits & kUiRight) { if (moveLists(1))  return true; }
         } else if (panel_->hook == w_->moveListsHook()) {

@@ -618,10 +618,6 @@ struct UiListState {
     // page. Three sites in the image write it and they are those three
     // builders, so it is per-page state and not a property of the list.
     int rowWidgets = 9;
-    // `0x004DEA98`'s `0x40000001` - the memo body box, hidden by the memory
-    // page's builder and shown by its panel hook only while the rows are the
-    // current list.
-    bool memoBodyShown = false;
     // `sub_428FF0(item, flag, 1)` - bank-B bits a builder SET at run time,
     // over and above the record's. `sub_49B950` sets `0x40000002` on
     // "Examiner" itself, which is what makes it flash while its page is up:
@@ -787,7 +783,23 @@ public:
     // whether the memo body box is drawn. A caller filling the body follows
     // the second: the engine does not show it when the page opens.
     int  rowWidgets() const { return state_->rowWidgets; }
-    bool memoBodyShown() const { return state_->memoBodyShown; }
+    // `0x004DEA98`'s `0x40000001`, DERIVED rather than stored: the memory
+    // page's hook `0x0049D8B0` sets it from `sub_428F30(panel) ==
+    // &word_4DE6F0` - is the CURRENT LIST the rows - and the panel hook is the
+    // panel's per-frame tick, not an input handler (given an input word that
+    // matches neither of the mover's two bits it simply returns 0). So the
+    // flag tracks the current list continuously, and the box is lit for as
+    // long as the selection is in the memo list.
+    //
+    // Storing it on a press instead made the preview appear one press LATE,
+    // which a reader caught against the original: "when selecting a line
+    // (going to the right when on the memo item in the left sidebar): a
+    // preview text is displayed below". Selecting the line is enough.
+    bool memoBodyShown() const {
+        if (!panel_ || panel_->addr != kPanelSneakMemory) return false;
+        const UiList* l = curList();
+        return l != nullptr && l->addr == kListSneakRows;
+    }
     // Which verb was confirmed, if any; reading it CLEARS it.
     int  takeVerb() { const int v = state_->pendingVerb; state_->pendingVerb = -1; return v; }
     // The slider destination a confirm chose, as its ROW TAG among the enabled
