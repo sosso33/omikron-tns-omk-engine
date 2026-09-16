@@ -11932,7 +11932,12 @@ def c_engine_fight_letterbox():
     everything would pass the first and fail the second.
 
     Row 240 is quoted too, so a render that produced a black frame cannot pass
-    by having no bars.
+    by having no bars. It read **635** until 2026-09-17 and moved to 640 when
+    the fighters stopped standing inside each other (`todo/fight-mode.md`
+    15.8d): five pixels of that row were the opponent's body seen through the
+    player's, and with the pair properly separated the row is set end to end.
+    The figure is a black-frame guard, not a framing assertion, so a move of
+    five pixels changes nothing it is there to catch.
 
     SHOWN TO FAIL: drop `if (holdEditCam && fightRun.active)` from the
     clear-list and frame 500 reads 0 lit on both edge rows.
@@ -11970,7 +11975,7 @@ def c_engine_fight_letterbox():
     if rows.get(300) is None or rows.get(500) is None:
         return ("no render",), ("2 frames",), "both frames must render"
     return (rows[300][0], rows[300][2], rows[500][0], rows[500][1], rows[500][2]), \
-           (0, 0, 640, 635, 640), \
+           (0, 0, 640, 640, 640), \
            ("the approach cutscene keeps its bars and the FIGHT does not - "
             "the middle row is quoted so a black frame cannot pass by "
             "having no bars either")
