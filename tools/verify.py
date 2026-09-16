@@ -12101,7 +12101,15 @@ def c_engine_fight_library():
         return ("skipped",), ("skipped",), "engine/ or gamedata/ absent"
     mk = subprocess.run(["make", "-s", "play"], cwd=eng, capture_output=True, text=True)
     play = os.path.join(eng, "build", "omk-play")
-    if mk.returncode != 0 or not os.path.exists(play):
+    # A BUILD FAILURE MUST NOT READ AS A SKIP. The usual idiom here returns
+    # `("no sdl",), ("no sdl",)` for both a missing SDL and a broken build, and
+    # got == want prints **ok** - which is how a mutation of this very check
+    # came back green while `play.cpp` did not compile at all (the same family
+    # as `todo/sweep-log.md`'s "A SKIPPED CHECK PRINTS ok"). Missing SDL is a
+    # legitimate skip; a compiler error is a failure and says so.
+    if mk.returncode != 0:
+        return ("build failed",), ("built",), "engine/ must build"
+    if not os.path.exists(play):
         return ("no sdl",), ("no sdl",), "needs SDL to render"
     keys = ",".join(["0x11", "0x1F"] * 200)     # W and S: kicks
     r = subprocess.run(
