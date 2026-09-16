@@ -685,23 +685,62 @@ in §4 of the handoff as unported: the camera tail's collision solve is
 follow camera's `sub_417070`, and none of them has a port. So the camera has
 no reason not to sit inside a crate, and in a room made of crates it will.
 
-**15.8c The camera cuts across the pair.** Its heading over the played fight,
-sampled once a second:
+**15.8c PARTLY FIXED — the throw swing was divided by a constant.**
 
-```
-17 17 23 -37 -40 90 81 81 259 253 251 251 110 103 118 101 85 175 238 235
+First, a correction to this section's own evidence. The headings quoted above
+were sampled **once a second**, and at 6 degrees a frame a smooth orbit covers
+180 degrees in that time - so most of what looked like cutting was the
+sampling rate. Measured per frame over a whole fight (`OMK_CAMLOG=1`, 498
+frames): **494 turn less than 5 degrees**, one turns 15-45, one 5-15, and
+exactly **one turns 134 degrees** - at the frame the fight ENDS, which is the
+legitimate hand-back to the follow camera. The orbit itself is smooth.
+
+What is NOT smooth is the THROW. `sub_446240` swings the camera deliberately
+around the pair:
+
+```c
+    v2 = (double)(rand() % 0x5Au) - -180.0;   /* the arc: 180..269 degrees */
+    flt_530C84 = v2 / v12;                    /* per frame = arc / v12     */
+    flt_530C20 = v10 + flt_530C20;            /* and the whole arc AT ONCE */
 ```
 
-Between two samples it goes 81 -> 259 and 251 -> 110: swings of ~170 degrees,
-which is the camera changing WHICH SIDE of the pair it films from. State is 1
-throughout (7 only at the KO), so this is not the rig changing; it is the side
-choice inside one rig. A real side flip should be rare and deliberate - the
-reader could not follow the fight. `Fight_TickCamera` (0x00446500) and its
-helpers are transcribed in `actor/fight.cpp`; what has NOT been checked is
-whether the engine gates the flip - a hysteresis band, a minimum dwell, or a
-cut only while nobody is attacking. Read the helpers before adding damping,
-because a damping constant invented here is exactly the approximation
-CLAUDE.md warns about.
+and `v12` is `sub_45ACF0(chan)` of **whichever fighter is in state 11**
+(`if (dword_906FA4 == 11)` picks A's channel, else B's). The port divided by a
+hard-coded **30**, labelled as a stand-in on a reading that called
+`sub_45ACF0` "the channel's remaining time".
+
+**It is not.** `sub_45ACF0(a1)` is `return dword_8F5928[57 * a1]` - the channel
+base plus **8**, which `GoToMove`'s own docstring names the current clip's
+LENGTH, written from `Actor_ClipFrames`. So the swing is spread over exactly
+the clip the throw is playing: a short throw swung a third of the way round
+and stopped, a long one crawled. `CefChannel::clipLength()` now exposes it and
+`camThrow` uses it.
+
+**MEASURED, NOT YET CHECKED, and that gap is deliberate.** Adding the `CATCH`
+input to `run_fight`'s press cycle (entries 18/19/20 of `H1Cmbt`, role 10,
+codes 0x410/0x420/0x440, all inside the 0xCFF union) does reach a throw - **2
+placements, and `swing * clipLength` inside the 180..270 band both times**,
+which is the fix measuring correct. It was NOT adopted, because the same press
+surfaces **two damage re-derivations that disagree** (want 1, got 14 and 20),
+and they are the probe's fault rather than the runtime's: the throw's base is
+`reactE->combat.damage()`, the block of the entry the **attacker** is put into
+(`reactIdx`), while the event records the attacker's `CATCH` entry as
+`fromEntry` and `followIdx` - the VICTIM's entry - as `reaction`. **The event
+does not carry the number the probe would need.** Re-deriving from
+`e.reaction` makes the row green by making those two skip as "no combat
+block", which is a vacuous pass and worse than the red one.
+
+So the next step is small and named: carry the throw's damage SOURCE on the
+event, then adopt the `CATCH` press and assert `swing * clipLength` in
+180..270 with a non-zero placement count. Until then `engine: melee` is left
+exactly as it was - 204 figures re-derived, 0 mismatches - rather than
+baselined around a hole.
+
+**Still open in 15.8c**: whether the engine damps the orbit at all. Both
+`case 3` and `case 8` of `Fight_TickCamera` are DEAD in the shipped engine -
+`dword_906F50` is only ever written 1, 2, 4 or 7 - so case 8's `flt_530C60 =
+0.01` (against the default 0.5) and its divider of 3 never run, and the port
+is faithful in not reaching them.
 
 **Order.** 15.8a first: it is a gameplay fault, not a framing one, and it is
 the one that can put an opponent somewhere the fight cannot continue.

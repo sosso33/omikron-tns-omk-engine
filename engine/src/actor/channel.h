@@ -320,6 +320,14 @@ public:
         return -1;
     }
     float frame() const { return frame_; }
+    // THE CURRENT CLIP'S LENGTH IN FRAMES - the channel's `+8`, which
+    // `gotoMove` writes from `Actor_ClipFrames` (or from the blend length
+    // while a blend runs). `sub_45ACF0` (0x0045ACF0) is exactly this read -
+    // `return dword_8F5928[57 * chan]`, and `dword_8F5928` is the channel
+    // base plus 8 - and the fight's THROW camera divides its swing by it, so
+    // a caller that has to know how long a move lasts asks here rather than
+    // assuming a second.
+    float clipLength() const { return clipLen_; }
 
     // THE SOUNDS THIS TICK STARTED - `Cef_TickEffects` (0x0045ADF0), which is
     // what makes adventure mode audible: an effect record fires its `+22` once

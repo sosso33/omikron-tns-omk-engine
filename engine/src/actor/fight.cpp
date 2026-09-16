@@ -155,11 +155,28 @@ void Fight::camOrbit(bool ease, float angleOff, float height, float atLift) {
 // pair while the throw plays.
 void Fight::camThrow(float height) {
     if (!cam_.placed) {
-        // `sub_45ACF0` is the channel's remaining time; the swing is the
-        // random arc divided by it.
-        const float remain = 30.0f;          // LABELLED: the port has no
-                                             // `sub_45ACF0`, so the arc is
-                                             // spread over a second.
+        // THE SWING IS SPREAD OVER THE THROWN FIGHTER'S CLIP, and this used to
+        // be a hard-coded 30 frames labelled as a stand-in for `sub_45ACF0`,
+        // on a reading that called it "the channel's remaining time". It is
+        // not: `sub_45ACF0(chan)` is `dword_8F5928[57 * chan]`, the channel's
+        // `+8`, which is the current clip's LENGTH (`CefChannel::clipLength`).
+        //
+        // `sub_446240` picks whose: `if (dword_906FA4 == 11)` - fighter A's
+        // channel when A is the one in the throw, else B's - so the arc is
+        // divided by the length of the clip the throw is actually playing.
+        // With a constant instead, a short throw swung the camera a third of
+        // the way round the pair and stopped, and a long one crawled; a
+        // reader watching it: *"Camera switched side quickly at some point,
+        // making it difficult to understand what happens"*
+        // (`todo/fight-mode.md` 15.8c).
+        const FightContext& thrown = (a_.state == 11) ? a_ : b_;
+        const float remain =
+            (thrown.body && thrown.body->channel)
+                ? thrown.body->channel->clipLength() : 30.0f;
+        // 0x5A = 90: the arc is 180..269 degrees, a deliberate half-turn
+        // about the pair, and the heading takes the WHOLE of it at once
+        // (`flt_530C20 = v10 + flt_530C20`) before swinging on by
+        // `arc / length` a frame.
         const float arc = static_cast<float>(rand_() % 90) + 180.0f;
         cam_.swing = arc / (remain > 0.0f ? remain : 1.0f);
         cam_.placed = true;
