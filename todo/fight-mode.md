@@ -526,14 +526,31 @@ at all. `Fight_KeepSeparation` is ported. **Needs the reader to say what it
 looked like** — bodies interpenetrating, a body passing through the set, or
 the camera going through a wall are three different faults.
 
-### 15.4 "black stripes"
+### 15.4 "black stripes" — ATTRIBUTED: the fade's two bands are stuck dark
 
-Not reproduced and not yet attributable. The letterbox is OFF by default
-(`--letterbox` is opt-in and is a camera-mode property measured off dialogue
-captures), so the 1.818:1 bars are not the default explanation. **Needs a
-screenshot or a description**: bars top and bottom, thin horizontal bands
-across the picture, and stripes tied to one camera angle are three different
-causes.
+The reader's answer was *bars top and bottom*, and a render settles it. Frame
+500 of `--fight-supermarket` at 640x480, well inside the fight:
+
+```
+row   0 lit    0 / 640      row 416 lit    0 / 640
+row  63 lit    0 / 640      row 479 lit    0 / 640
+row  64 lit  640 / 640      row 409 lit  640 / 640
+```
+
+Rows 0..63 and 416..479 are pure black and everything between is lit. **That
+is not the letterbox** (which is opt-in, is 352 rows of 480, and would give
+64-row bars only by coincidence): it is `Session::blackFade`'s two bands, whose
+height is exactly `(fb.h * 64) / 480` = 64, drawn at `play.cpp` ~17880 with
+`bandGrey` at 0.
+
+So the engine's black fade — which is NOT a full-screen quad but two shaded
+letterbox bands, the reading behind `todo/omk-play.md` 56 — is running with
+its bands fully dark during the fight. AREA 245 record 0 does
+`fade.to_black` at bytecode 1148 and `fade.from_black` at **1175**, long
+before `fight.begin` at 1236, so the clear is scripted and something is not
+honouring it. Start by logging `blackFade().running()` and both `bandGrey`
+values per frame across 1148 -> 1175 -> 1236; the port logs no fade line at
+all today, which is why the played log could not attribute this.
 
 ### 15.5 "no UI" — this is step 5, already planned
 
