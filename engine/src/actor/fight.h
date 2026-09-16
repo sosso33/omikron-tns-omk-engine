@@ -179,6 +179,52 @@ struct FightAiTables {
     static FightAiTables shipped();
 };
 
+// CAMERA MODE 14, `Fight_TickCamera` (0x00446500) and its six helpers.
+//
+// The preset table says this camera is COMPUTED, not authored: row 14 is all
+// zeros with `fov` 0 and both subjects 8, so there is no offset to resolve -
+// the function places the eye and the target itself every frame, around the
+// MIDPOINT of the two fighters.
+//
+// The state machine (`dword_906F50`), chosen each tick:
+//
+//   1  the orbit          `sub_446000`, the ordinary fight view
+//   2  the THROW swing    `sub_446240`, while either fighter is in state 11
+//   3  a steady orbit     `sub_445D30`, 3.5 degrees a frame
+//   4  a TRANSITION       `sub_445E30`, ten frames lerping 2 -> 1
+//   7  the KO             `sub_445C20`, placed once per replay pass
+//   8  close              `sub_446000` with the eye ease at 0.01 and the
+//                         camera recomputed every third frame
+//
+// and the shared tail eases the eye 9.8425198 (0.25 m) a frame toward the
+// target, then clamps its height above the midpoint.
+//
+// **Options row 18 `Caméra de combat` is what `byte_906F20` holds** - "Vue de
+// dos" (0) against "Vue de côté" (1), the save header's `+42` - and the two
+// really are two rigs: at 0 the heading offset is forced to -70 degrees, the
+// extra height term is dropped and 59.055119 (1.5 m) comes off the eye, and
+// the tail clamps the eye 1.5 m above the midpoint instead of 2.5 m.
+struct FightCamera {
+    float eye[3] = {0, 0, 0};
+    float at[3]  = {0, 0, 0};
+    int   state = 1;              // dword_906F50
+    bool  placed = false;         // byte_530C80, the once-per-state latch
+    float heading = 0.0f;         // flt_530C20, the orbit's angle in degrees
+    float radius = 0.0f;          // dword_530C1C
+    float height = 0.0f;          // dword_530C2C
+    float swing = 0.0f;           // flt_530C84, the throw's degrees a frame
+    float shake = 0.0f;           // flt_530C28 / flt_530C78, the hit shake
+    float shakePhase = 0.0f;      // dword_530C68
+    float shakeFrom[2] = {0, 0};  // dword_530C88 / dword_530C8C
+    // the ten-frame transition (`sub_445E30`): where it started, the per-frame
+    // deltas it walks, its length in frames and its clock
+    float fromEye[3] = {0, 0, 0}, fromAt[3] = {0, 0, 0};
+    float stepEye[3] = {0, 0, 0}, stepAt[3] = {0, 0, 0};
+    float travel = 10.0f, clock = 0.0f;
+    long  frames = 0;             // dword_906F24, the divider's counter
+    int   divider = 1;            // dword_906F28
+};
+
 // One decision, recorded rather than drawn - the same idea as ChannelEvent.
 struct FightEvent {
     enum class Kind {
@@ -233,9 +279,17 @@ public:
     // selects the profile whose id is level + 1. `difficulty` is options row
     // 16 `word_90E1A6`, which adds a flat 0.5 / 0.25 / 0 to the PLAYER's dodge
     // multiplier and nothing else.
+    // `combatCamera` is options row 18 (`byte_90E1AA` -> `byte_906F20`):
+    // 0 "Vue de dos", 1 "Vue de côté". It changes the camera's rig, not a
+    // detail of it - see `FightCamera`.
     bool begin(FightBody& player, const FightStats& playerStats,
                FightBody& opponent, const FightStats& opponentStats,
-               int level, int difficulty);
+               int level, int difficulty, int combatCamera = 1);
+
+    // The fight camera as of this frame - `Fight_TickCamera`'s own eye and
+    // target. Stepped inside `step()`, because the engine ticks it from the
+    // camera pass with the two combat contexts in hand.
+    const FightCamera& camera() const { return cam_; }
 
     // One frame, in the engine's own order. Returns false once the fight is
     // over - `dword_906F40` past `dword_9070AC`, which is `sub_445AC0`.
@@ -280,6 +334,16 @@ private:
     // sub_465160 (slots 4/5/6) and sub_465210 (slots 1/2/3) are one function
     // with a different base: roll once, walk the three cumulative weights.
     void pickFromFamily(FightContext& c, int base);
+    // `Fight_TickCamera` (0x00446500) and the helpers each arm calls.
+    void tickCamera(float dt);
+    void camOrbit(bool ease, float angleOff, float height, float atLift);  // sub_446000
+    void camThrow(float height);                                           // sub_446240
+    void camSteady(float degPerFrame, float eyeUp, float atUp);            // sub_445D30
+    bool camTransition(float dt);                                          // sub_445E30
+    void camPlace(float radius, float headingDeg, float height,            // sub_445C20
+                  float atLift, bool moveTarget);
+    void camShake(float dt, const FightContext& c);                        // sub_4463C0
+    void camMidpoint(float out[3]) const;
     void recordFrame();                   // 0x0049B220
     bool replayStep();                    // sub_49B2E0, the KO replay
     void measureSeparation();             // sub_49A4F0
@@ -305,6 +369,12 @@ private:
     bool  over_ = false, playerWon_ = false;
     bool  decided_ = false;       // dword_906F30 != 0: a loser is recorded
     FightContext* loser_ = nullptr;   // dword_906F30 itself
+    FightCamera cam_;
+    int   combatCamera_ = 1;      // byte_906F20, options row 18
+    int   camPrevState_ = 1;      // the state the last tick ran, for 2 -> 4
+    // `dword_530C24`: which REPLAY PASS the KO camera was last placed for.
+    // The +-45 / +-135 nudges fire once when this changes, not every tick.
+    int   camPass_ = 0;
     // `dword_53AE14`: the modifier the AI ORs into every word it injects
     // while an approach (2) or a move family (8) is running.
     std::uint32_t aiOr_ = 0;

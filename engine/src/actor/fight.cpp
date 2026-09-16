@@ -26,6 +26,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstring>
 
 namespace omk {
 
@@ -87,9 +88,284 @@ int Fight::entryByLow16(const FightContext& c, int id) const {
 }
 
 // ---- Fight_Begin 0x004455B0 + Fight_SelectAiProfile 0x004652B0 -----------
+// ---- camera mode 14: `Fight_TickCamera` 0x00446500 and its helpers -------
+//
+// Every distance here is an exact metre in the engine's inches, which is the
+// usual sign a reading is right: 157.48032 = 4 m, 118.11024 = 3 m, 98.425201
+// = 2.5 m, 59.055119 = 1.5 m, 39.370079 = 1 m, 19.68504 = 0.5 m, 9.8425198 =
+// 0.25 m, 7.8740158 = 0.2 m.
+namespace {
+constexpr float kDegToRad = 0.0174532925199433f;
+// The two float constants the decompilation prints as integer bit patterns.
+float bits(std::int32_t v) { float f = 0.0f; std::memcpy(&f, &v, 4); return f; }
+}  // namespace
+
+void Fight::camMidpoint(float out[3]) const {
+    out[0] = out[1] = out[2] = 0.0f;
+    if (!a_.body || !b_.body) return;
+    out[0] = (a_.body->x + b_.body->x) * 0.5f;
+    out[1] = (a_.body->y + b_.body->y) * 0.5f;
+    out[2] = (a_.body->z + b_.body->z) * 0.5f;
+}
+
+// `sub_446000`: the orbit. The eye sits on a circle about the fighters'
+// midpoint whose radius grows with their separation, at a heading taken from
+// the line between them; `ease` blends toward it instead of cutting.
+void Fight::camOrbit(bool ease, float angleOff, float height, float atLift) {
+    // "Vue de dos" forces the rig: the heading offset, no extra target lift,
+    // and the eye a metre and a half lower.
+    if (!combatCamera_) { angleOff = -70.0f; atLift = 0.0f; height -= 59.055119f; }
+    // `++dword_906F24 % dword_906F28` - the camera is recomputed every Nth
+    // frame, and N is 3 in the close state.
+    if (cam_.divider > 1 && (++cam_.frames % cam_.divider) != 0) return;
+    if (cam_.divider <= 1) ++cam_.frames;
+    if (!a_.body || !b_.body) return;
+
+    measureSeparation();
+    const float radius = (separation_ + 157.48032f) * 0.65161264f;
+    float mid[3]; camMidpoint(mid);
+    const float lift = 5.9055123f + (a_.body->y + b_.body->y) * 0.5f;
+    const float deg = std::atan2(b_.body->z - a_.body->z,
+                                 b_.body->x - a_.body->x) * kDegPerRad
+                      + 90.0f + angleOff;
+    const float rad = deg * kDegToRad;
+    const float ex = mid[0] - std::cos(rad) * radius;
+    const float ez = mid[2] - std::sin(rad) * radius;
+    const float eyeK = 0.5f, atK = 0.1f;        // flt_530C60 / flt_530C6C
+    if (ease) {
+        cam_.eye[0] = cam_.eye[0] * (1.0f - eyeK) + ex * eyeK;
+        cam_.eye[2] = cam_.eye[2] * (1.0f - eyeK) + ez * eyeK;
+        cam_.at[0]  = cam_.at[0]  * (1.0f - atK)  + mid[0] * atK;
+        cam_.at[2]  = cam_.at[2]  * (1.0f - atK)  + mid[2] * atK;
+    } else {
+        cam_.eye[0] = ex; cam_.eye[2] = ez;
+        cam_.at[0]  = mid[0]; cam_.at[2] = mid[2];
+    }
+    const float base = lift + 9.8425198f;
+    cam_.at[1]  = base + atLift;
+    cam_.eye[1] = height + base;
+    cam_.heading = deg;
+    cam_.radius = radius;
+}
+
+// `sub_446240`: the THROW. One random swing of up to 90 degrees, spread over
+// what is left of the thrown fighter's clip, so the camera sweeps around the
+// pair while the throw plays.
+void Fight::camThrow(float height) {
+    if (!cam_.placed) {
+        // `sub_45ACF0` is the channel's remaining time; the swing is the
+        // random arc divided by it.
+        const float remain = 30.0f;          // LABELLED: the port has no
+                                             // `sub_45ACF0`, so the arc is
+                                             // spread over a second.
+        const float arc = static_cast<float>(rand_() % 90) + 180.0f;
+        cam_.swing = arc / (remain > 0.0f ? remain : 1.0f);
+        cam_.placed = true;
+        cam_.heading += arc;
+    }
+    float mid[3]; camMidpoint(mid);
+    const float radius = cam_.radius + 39.370079f;
+    cam_.heading += cam_.swing;
+    const float rad = cam_.heading * kDegToRad;
+    cam_.eye[0] = mid[0] - std::cos(rad) * radius;
+    cam_.eye[2] = mid[2] - std::sin(rad) * radius;
+    cam_.at[0]  = mid[0];
+    cam_.at[2]  = mid[2];
+    cam_.at[1]  = mid[1] + 9.8425198f;
+    cam_.eye[1] = height + cam_.at[1];
+}
+
+// `sub_445D30`: a steady orbit, the heading advancing by `degPerFrame`.
+void Fight::camSteady(float degPerFrame, float eyeUp, float atUp) {
+    if (!a_.body || !b_.body) return;
+    measureSeparation();
+    const float radius = (separation_ + 157.48032f) * 0.65161264f;
+    float mid[3]; camMidpoint(mid);
+    cam_.heading += degPerFrame;
+    const float rad = cam_.heading * kDegToRad;
+    cam_.eye[0] = mid[0] - std::cos(rad) * radius;
+    cam_.eye[2] = mid[2] - std::sin(rad) * radius;
+    cam_.eye[1] = b_.body->y + eyeUp;
+    cam_.at[0]  = mid[0];
+    cam_.at[2]  = mid[2];
+    cam_.at[1]  = (b_.body->y + a_.body->y) * 0.5f + atUp;
+    cam_.radius = radius;
+}
+
+// `sub_445E30`: the ten-frame hand-over. Where the camera IS, against where
+// `camOrbit` would put it, walked linearly and reporting false when it ends.
+bool Fight::camTransition(float dt) {
+    const float wasEye[3] = {cam_.eye[0], cam_.eye[1], cam_.eye[2]};
+    const float wasAt[3]  = {cam_.at[0],  cam_.at[1],  cam_.at[2]};
+    camOrbit(true, -70.0f, -39.370079f, 0.0f);
+    if (!cam_.placed) {
+        for (int k = 0; k < 3; ++k) {
+            cam_.fromEye[k] = wasEye[k];
+            cam_.fromAt[k]  = wasAt[k];
+            cam_.stepEye[k] = (cam_.eye[k] - wasEye[k]) / cam_.travel;
+            cam_.stepAt[k]  = (cam_.at[k]  - wasAt[k])  / cam_.travel;
+        }
+        cam_.clock = 0.0f;
+        cam_.placed = true;
+    }
+    for (int k = 0; k < 3; ++k) {
+        cam_.eye[k] = cam_.fromEye[k] + cam_.stepEye[k] * cam_.clock;
+        cam_.at[k]  = cam_.fromAt[k]  + cam_.stepAt[k]  * cam_.clock;
+    }
+    cam_.clock += dt;
+    return cam_.clock <= cam_.travel;
+}
+
+// `sub_445C20`: placed ONCE - the latch is what makes the KO camera hold
+// still while the replay plays.
+void Fight::camPlace(float radius, float headingDeg, float height,
+                     float atLift, bool moveTarget) {
+    if (cam_.placed) return;
+    float mid[3]; camMidpoint(mid);
+    const float rad = headingDeg * kDegToRad;
+    cam_.eye[0] = mid[0] - std::cos(rad) * radius;
+    cam_.eye[2] = mid[2] - std::sin(rad) * radius;
+    cam_.eye[1] = mid[1] + height;
+    if (moveTarget) {
+        cam_.at[0] = mid[0];
+        cam_.at[2] = mid[2];
+        cam_.at[1] = mid[1] + atLift;
+    }
+    cam_.heading = headingDeg;
+    cam_.radius = radius;
+    cam_.placed = true;
+}
+
+// `sub_4463C0`: the HIT SHAKE. A decaying sine on the eye's and the target's
+// height - 7.8740158 (0.2 m) of amplitude, 80 degrees of phase a frame, the
+// amplitude dropping 0.39370081 each time - armed by a fighter's `+80` bit 0
+// and refused once the shake has run 20 frames.
+void Fight::camShake(float dt, const FightContext& c) {
+    if (c.frameBefore < c.stateF || cam_.shake > 20.0f) return;
+    if (cam_.shake == 0.0f) {
+        cam_.shakeFrom[0] = cam_.eye[1];
+        cam_.shakeFrom[1] = cam_.at[1];
+        cam_.shakePhase = 0.0f;
+        cam_.shake = 7.8740158f;
+    }
+    cam_.shake -= 0.39370081f;
+    if (cam_.shake < 0.0f) return;
+    cam_.shakePhase += dt * 80.0f;
+    const float d = std::sin(cam_.shakePhase * kDegToRad) * 7.8740158f;
+    cam_.eye[1] = cam_.shakeFrom[0] - d;
+    cam_.at[1]  = cam_.shakeFrom[1] - d;
+}
+
+void Fight::tickCamera(float dt) {
+    if (!a_.body || !b_.body) return;
+    // The head's guard: a fighter carrying `0x200` suspends the camera unless
+    // both do.
+    const bool pa = (a_.flags & 0x200u) != 0, pb = (b_.flags & 0x200u) != 0;
+    if (pa != pb) return;
+
+    cam_.divider = 1;
+    int state = cam_.state;
+    const int was = state;
+    if (state != 4) state = 1;
+    if (a_.state == 11 || b_.state == 11) state = 2;      // the throw
+    if (was == 2 && state == 1) {                          // 2 -> 1 hands over
+        state = 4;
+        cam_.travel = 10.0f;
+        cam_.placed = false;
+    }
+    if (koCounter_) state = 7;
+    if (state != cam_.state) cam_.placed = (state == 4) ? cam_.placed : false;
+    cam_.state = state;
+
+    switch (state) {
+    case 1: camOrbit(true, 0.0f, -9.8425198f, bits(-1050904334)); break;
+    case 2: camThrow(cam_.height); break;
+    case 3: cam_.height = 19.68504f; camSteady(3.5f, 19.68504f, 0.0f); break;
+    case 4: if (!camTransition(dt)) { cam_.state = 1; cam_.placed = false; } break;
+    case 7: {
+        // The KO. The framing changes ONCE PER REPLAY PASS, not per tick:
+        // `dword_530C24` remembers which pass the camera was placed for, the
+        // two nudges are guarded on it changing, and `byte_530C80 = 0`
+        // re-arms `sub_445C20`'s latch for that single frame. Applying them
+        // every tick ran the heading to -534, then -1884, then +2796 degrees.
+        const int pass = koCounter_;
+        if (camPass_ != pass) camOrbit(false, 0.0f, cam_.height, 0.0f);
+        if (pass == 1) {
+            if (camPass_ == 1) cam_.heading += 3.0f * dt;   // the slow drift
+            else { cam_.heading -= 45.0f; cam_.radius = 118.11024f;
+                   cam_.height = 19.68504f; }
+        }
+        if (pass == 2 && camPass_ != 2) {
+            cam_.radius = 157.48032f;
+            cam_.height = -59.055119f;
+            cam_.heading += 135.0f;
+        }
+        // `dword_530C24 = dword_9070AC != v4 ? v4 : 0` - the last pass is
+        // remembered unless it is the final one, which re-arms the placement.
+        camPass_ = (replayPasses_ != pass) ? pass : 0;
+        cam_.placed = false;
+        camPlace(cam_.radius, cam_.heading, cam_.height, 0.0f, true);
+        break;
+    }
+    case 8: cam_.divider = 3; camOrbit(true, 0.0f, 0.0f, 0.0f); break;
+    default: camOrbit(false, 0.0f, 0.0f, 0.0f); break;
+    }
+
+    // ---- the shared tail --------------------------------------------------
+    //
+    // **The collision solve is NOT modelled and is labelled rather than
+    // approximated**: the engine runs the eye through `sub_413450` /
+    // `sub_416570` / `sub_413440` - a different family from the follow
+    // camera's `sub_417070`, which is the only obstruction rule this tree has
+    // read - so a fight camera here can pass through a wall where the engine's
+    // would be pushed in. What the tail DOES do is transcribed: ease the eye
+    // 0.25 m a frame toward the target, then clamp its height.
+    float mid[3]; camMidpoint(mid);
+    {
+        const float dx = mid[0] - cam_.eye[0], dy = mid[1] - cam_.eye[1],
+                    dz = mid[2] - cam_.eye[2];
+        const float d = std::sqrt(dx * dx + dy * dy + dz * dz);
+        if (d > 0.0f) {
+            cam_.eye[0] += (cam_.at[0] - cam_.eye[0]) / d * 9.8425198f;
+            cam_.eye[2] += (cam_.at[2] - cam_.eye[2]) / d * 9.8425198f;
+        }
+    }
+    {
+        // The height clamp, transcribed from the tail: the distance is taken
+        // from the eye AS IT NOW STANDS to the midpoint, the drop applies only
+        // inside 3 m, and the limit is 2.5 m under "Vue de côté" against 1.5 m
+        // under "Vue de dos".
+        //
+        // **The engine runs this only when its collision solve returned a
+        // point** (`v8`), and that solve - `sub_413450`/`sub_416570`/
+        // `sub_413440` - is NOT modelled here, so the clamp is applied
+        // unconditionally and said so rather than skipped. Computing `d`
+        // against a stale midpoint, as the first version did, dropped the eye
+        // 127 units BELOW the fighters, which with Y pointing down is the
+        // clamp pushing the wrong way.
+        const float dx = mid[0] - cam_.eye[0], dy = mid[1] - cam_.eye[1],
+                    dz = mid[2] - cam_.eye[2];
+        const float d = std::sqrt(dx * dx + dy * dy + dz * dz);
+        float h = cam_.eye[1];
+        if (d < 118.11024f) {
+            const float inner = 13950.028f - d * d;      // 3 m squared
+            h = cam_.eye[1] - std::sqrt(inner > 0.0f ? inner : 0.0f);
+        }
+        const float limit = combatCamera_ ? 98.425201f : 59.055119f;
+        if (cam_.eye[1] - h > limit) h = cam_.eye[1] - limit;
+        cam_.eye[1] = h;
+    }
+    // ...and the hit shake, which the engine runs only outside a KO.
+    if (!koCounter_) {
+        if (a_.stateD & 1) camShake(dt, a_);
+        else if (b_.stateD & 1) camShake(dt, b_);
+        else cam_.shake = 0.0f;
+    }
+}
+
 bool Fight::begin(FightBody& player, const FightStats& ps,
                   FightBody& opponent, const FightStats& os,
-                  int level, int difficulty) {
+                  int level, int difficulty, int combatCamera) {
     a_ = FightContext{};
     b_ = FightContext{};
     a_.body = &player;
@@ -101,6 +377,9 @@ bool Fight::begin(FightBody& player, const FightStats& ps,
     koCounter_ = 0;
     replayPasses_ = 2;            // dword_9070AC
     over_ = false; playerWon_ = false; decided_ = false;
+    combatCamera_ = combatCamera;            // byte_906F20, options row 18
+    cam_ = FightCamera{};
+    camPrevState_ = 1;
 
     // The stats, through the six `Game_RaiseEvent(44, …)` calls.
     a_.hp = ps.vie;               // +124, and the gauge's maximum
@@ -186,6 +465,13 @@ bool Fight::begin(FightBody& player, const FightStats& ps,
     const int jitter = span > 0 ? rand_() % span : 0;
     b_.aiMoveDeadline = b_.aiMoveStart + jitter +
                         (b_.ai ? b_.ai->enterDelay[0] : 0);
+
+    // AND THE CAMERA IS SEEDED HERE, which the first version of this missed:
+    // `Fight_Begin`'s own tail calls `sub_446000(0.0, 0, 0.0, 0)` - the
+    // UNEASED variant, which places the eye and the target outright. Without
+    // it the first eased frame blends from a zero camera and the eye starts
+    // two thousand units from the fighters, walking in over the next second.
+    camOrbit(false, 0.0f, 0.0f, 0.0f);
     return b_.ai != nullptr;
 }
 
@@ -712,8 +998,12 @@ bool Fight::step(float dt, std::uint32_t playerInput) {
     ++stats_.frames;
 
     if (koCounter_) {
-        // Frozen: the replay owns both bodies until the passes run out.
-        if (!replayStep()) { over_ = true; return false; }
+        // Frozen: the replay owns both bodies until the passes run out - and
+        // the camera still ticks, which is what makes the KO camera swing
+        // round the fallen fighter while the replay plays.
+        const bool more = replayStep();
+        tickCamera(dt);
+        if (!more) { over_ = true; return false; }
         return true;
     }
 
@@ -743,6 +1033,10 @@ bool Fight::step(float dt, std::uint32_t playerInput) {
         faceOpponent(b_, a_, false);
         recordFrame();
     }
+    // The camera pass, which the engine runs from `Camera_Tick` with the two
+    // contexts in hand - after the fighters have moved, so it frames where
+    // they ARE rather than where they were.
+    tickCamera(dt);
     return true;
 }
 

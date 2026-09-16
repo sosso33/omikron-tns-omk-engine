@@ -4488,6 +4488,7 @@ int main(int argc, char** argv) {
         long  startedAt = 0;
     };
     FightRun fightRun;
+    bool fightCamTold = false;        // one line when mode 14 takes the view
     const auto playerRecordSpan = [&]() {
         return state.raw().subspan(
             static_cast<std::size_t>(omk::GameState::kPlayerRecord),
@@ -4598,7 +4599,8 @@ int main(int argc, char** argv) {
             if (player) player->tick(dt, word);
         });
         fightRun.fight->begin(fightRun.player, ps, fightRun.foe, os, level,
-                              settings.v.fightDifficulty);
+                              settings.v.fightDifficulty,
+                              settings.v.combatCamera);
         in.installScheme(3);          // `Input_InstallScheme(3)`, group Combat
         fightRun.active = true;
         fightRun.opponent = opponentId;
@@ -7474,6 +7476,19 @@ int main(int argc, char** argv) {
                             // expires (the ms clock not advancing the way the
                             // profile's millisecond delays expect) and an
                             // intent no branch re-arms.
+                            // THE CAMERA's own state machine, so a run shows
+                            // it working rather than merely existing: 1 the
+                            // orbit, 2 the throw swing, 4 the ten-frame hand
+                            // over, 7 the KO, 8 close.
+                            {
+                                const omk::FightCamera& fc = fightRun.fight->camera();
+                                std::printf("    fight camera: state %d, eye %.0f %.0f %.0f, "
+                                            "at %.0f %.0f %.0f, heading %.0f, radius %.0f\n",
+                                            fc.state, double(fc.eye[0]), double(fc.eye[1]),
+                                            double(fc.eye[2]), double(fc.at[0]),
+                                            double(fc.at[1]), double(fc.at[2]),
+                                            double(fc.heading), double(fc.radius));
+                            }
                             // The KO counter, because "he is down and nothing
                             // happens" has two causes that look the same from
                             // outside: the trigger in `sub_4452A0` never
@@ -11276,6 +11291,37 @@ int main(int argc, char** argv) {
                 if (u >= 1.0f) {
                     if (takeCamPhase == 1) takeCamPhase = 2;
                     else if (takeCamPhase == 3) { takeCam = false; takeCamPhase = 0; }
+                }
+            } else if (!haveDlgCam && fightRun.active && fightRun.fight) {
+                // CAMERA MODE 14, the fight camera. `fight.begin` asks for it
+                // (`Camera_Request(0Eh, …)` in op 62's own handler) and the
+                // preset table has nothing to resolve - row 14 is all zeros
+                // with fov 0 and both subjects 8 - because
+                // `Fight_TickCamera` computes the eye and the target itself,
+                // around the MIDPOINT of the two fighters. `actor/fight.cpp`
+                // is the state machine; this only spends its answer.
+                //
+                // Ahead of the follow camera and behind the dialogue and
+                // editing holds, which is the engine's own precedence: a
+                // scripted shot outranks a mode request, and a mode request
+                // outranks the controller's own camera.
+                const omk::FightCamera& fc = fightRun.fight->camera();
+                for (int k = 0; k < 3; ++k) {
+                    view.cam.eye[k] = fc.eye[k];
+                    view.cam.at[k]  = fc.at[k];
+                }
+                // The preset's fov is 0 - it names none - so the port's own
+                // default stands, the same 75 the ride and boarding cameras
+                // take.
+                view.cam.hfovDeg = 75.0f;
+                view.cam.rollDeg = 0.0f;
+                view.cam.w = dispW; view.cam.h = dispH;
+                if (!fightCamTold) {
+                    fightCamTold = true;
+                    std::printf("frame %ld: the FIGHT CAMERA (mode 14) has the view - "
+                                "state %d, options row 18 'Caméra de combat' = %d (%s)\n",
+                                n, fc.state, settings.v.combatCamera,
+                                settings.v.combatCamera ? "Vue de côté" : "Vue de dos");
                 }
             } else if (!haveDlgCam && (adventure || uiPause) && followCam &&
                        player) {
