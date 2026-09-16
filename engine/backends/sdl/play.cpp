@@ -10990,6 +10990,20 @@ int main(int argc, char** argv) {
         // pointer captured, and the view refusing to move
         // (`todo/omk-play.md` 97e).
         if (holdEditCam && shootMode) holdEditCam = false;
+        // ...AND SO IS A FIGHT, for exactly the same reason and found the same
+        // way. `fight.begin` ends with `Camera_Request(0Eh, ...)` - mode 14,
+        // the fight camera (see the mode-14 block below) - so mode 13's hold
+        // ends the moment the fight does.
+        //
+        // The symptom was NOT a frozen view this time, because the fight
+        // camera writes `view.cam` itself: it was the LETTERBOX. The bars are
+        // suppressed only when the player has control, and `holdEditCam` is
+        // one of that test's terms, so a hold left standing from the approach
+        // cutscene put 64-row black bars across every fight. A reader reported
+        // them as "black stripes" and they were mis-attributed once to the
+        // screen fade, which by then is mode 0 and draws nothing
+        // (`todo/fight-mode.md` 15.4).
+        if (holdEditCam && fightRun.active) holdEditCam = false;
         const bool anyWorld = !worldSlots[0].geo.corners.empty() ||
                               !worldSlots[1].geo.corners.empty();
         // ...and the same for DRAWING it: the screen composes over the
@@ -11143,6 +11157,31 @@ int main(int argc, char** argv) {
             if ((adventure || uiPause) && !holdEditCam &&
                 !session.playerAnimHeld() && !session.blackFade().bandsDark())
                 view.vh = dispH;
+            {
+                // `OMK_LBLOG=1`: the letterbox decision and EVERY term of it,
+                // printed when any of them changes. The bars are the report a
+                // reader files as "black stripes", and the useful question is
+                // never whether they are there but WHICH term is holding them
+                // on - a stale `holdEditCam` and a running fade look identical
+                // on screen (`todo/fight-mode.md` 15.4).
+                static const bool lbLog = [] {
+                    const char* e = std::getenv("OMK_LBLOG"); return e && *e == '1';
+                }();
+                static std::string told;
+                if (lbLog) {
+                    char buf[200];
+                    std::snprintf(buf, sizeof buf,
+                        "vh %d/%d adventure %d uiPause %d holdEditCam %d "
+                        "animHeld %d bandsDark %d parked %d editing %d",
+                        view.vh, dispH, adventure ? 1 : 0, uiPause ? 1 : 0,
+                        holdEditCam ? 1 : 0, session.playerAnimHeld() ? 1 : 0,
+                        session.blackFade().bandsDark() ? 1 : 0,
+                        session.parkedOnProgram() ? 1 : 0,
+                        session.scene().activeEditing() ? 1 : 0);
+                    if (told != buf) { told = buf;
+                        std::printf("frame %ld: letterbox %s\n", n, buf); }
+                }
+            }
             if (view.vh > dispH) view.vh = dispH;
             view.vx = 0;
             view.vy = (dispH - view.vh) / 2;
@@ -17878,6 +17917,27 @@ int main(int argc, char** argv) {
         // which is `todo/omk-play.md` 56.
         {
             const omk::Session::ScreenFade& bf = session.blackFade();
+            {
+                // `OMK_FADELOG=1`: the black fade's mode, clock and both
+                // band greys. It exists to tell the fade's own two bands apart
+                // from the LETTERBOX, which occupies the same 64 rows at 480
+                // and is what one report turned out to be.
+                static const bool fadeLog = [] {
+                    const char* e = std::getenv("OMK_FADELOG"); return e && *e == '1';
+                }();
+                static std::string told;
+                if (fadeLog) {
+                    char buf[160];
+                    std::snprintf(buf, sizeof buf,
+                        "mode %d clock %.1f/%.1f inner %d outer %d running %d",
+                        bf.mode, (double)bf.clock, (double)bf.duration,
+                        bf.bandGrey(false), bf.bandGrey(true), bf.running() ? 1 : 0);
+                    if (told != buf) {
+                        told = buf;
+                        std::printf("frame %ld: blackFade %s\n", n, buf);
+                    }
+                }
+            }
             if (bf.running() && fb.h > 0) {
                 const int band = (fb.h * 64) / 480;
                 const int inner = bf.bandGrey(false), outer = bf.bandGrey(true);

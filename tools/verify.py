@@ -11906,6 +11906,75 @@ def c_engine_bank_swap():
             "collides; the swap must reach the poser and the swap back must "
             "restore exactly what was there")
 
+def c_engine_fight_letterbox():
+    r"""`omk-play`: a FIGHT is full-frame, and the approach cutscene is not.
+
+    The bars are suppressed only when the player has control, and
+    `holdEditCam` is one of that test's terms. AREA 245's approach cutscene
+    ends at frame 377 with `editing over - the camera HOLDS`, and nothing
+    requested a camera afterwards, so the hold stood for the whole fight and
+    put 64-row black bars across it. A reader reported *"black stripes"*.
+
+    `fight.begin` ends with `Camera_Request(0Eh, ...)` - mode 14, the fight
+    camera - so mode 13's hold ends when the fight begins, exactly as it does
+    for `Shoot_Enter`'s `Camera_Request(4, ...)`. Same family as `engine: hold
+    release`, a different consumer: there the stale hold froze the view, here
+    it letterboxed a frame the player controls.
+
+    **This was mis-attributed once**, and the check is shaped by that. The
+    engine's own black fade draws TWO BANDS of `(h << 6) / 480` rows - 64 at
+    480 - in the same rows the letterbox occupies, so "black bars top and
+    bottom" does not say which of the two is drawing them. It was recorded as
+    the fade until `OMK_FADELOG=1` showed the fade is **mode 0** by frame 439,
+    drawing nothing at all. So this asserts BOTH frames: at 500, mid-fight,
+    the top and bottom rows must be fully lit; at 300, inside the approach
+    editing, they must be dark. A fix that simply stopped letterboxing
+    everything would pass the first and fail the second.
+
+    Row 240 is quoted too, so a render that produced a black frame cannot pass
+    by having no bars.
+
+    SHOWN TO FAIL: drop `if (holdEditCam && fightRun.active)` from the
+    clear-list and frame 500 reads 0 lit on both edge rows.
+    """
+    import subprocess, tempfile, shutil
+    eng = os.path.join(ROOT, "engine")
+    fr = omkpaths.data_root()
+    if not (os.path.isdir(eng) and os.path.isdir(os.path.join(fr, "SCPTDATA"))):
+        return ("skipped",), ("skipped",), "engine/ or gamedata/ absent"
+    mk = subprocess.run(["make", "-s", "play"], cwd=eng, capture_output=True, text=True)
+    play = os.path.join(eng, "build", "omk-play")
+    if mk.returncode != 0 or not os.path.exists(play):
+        return ("no sdl",), ("no sdl",), "needs SDL to render"
+    W, H = 640, 480
+    tmp = tempfile.mkdtemp()
+    rows = {}
+    try:
+        for n in (300, 500):
+            out = os.path.join(tmp, "f%d.bin" % n)
+            subprocess.run(
+                [play, fr, os.path.join(ROOT, "tables"),
+                 "--save", os.path.join(ROOT, "traces", "save-appart.bin"),
+                 "--fight-supermarket", "--frames", str(n),
+                 "--res", "%dx%d" % (W, H), "--dump", out],
+                capture_output=True, text=True,
+                env=dict(os.environ, SDL_VIDEODRIVER="dummy"))
+            if not os.path.exists(out):
+                rows[n] = None
+                continue
+            px = struct.unpack("<%dH" % (W * H), open(out, "rb").read())
+            rows[n] = tuple(sum(1 for x in range(W) if px[y * W + x])
+                            for y in (0, 240, H - 1))
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+    if rows.get(300) is None or rows.get(500) is None:
+        return ("no render",), ("2 frames",), "both frames must render"
+    return (rows[300][0], rows[300][2], rows[500][0], rows[500][1], rows[500][2]), \
+           (0, 0, 640, 635, 640), \
+           ("the approach cutscene keeps its bars and the FIGHT does not - "
+            "the middle row is quoted so a black frame cannot pass by "
+            "having no bars either")
+
 def c_engine_impasse_fx():
     r"""`engine/`: the Impasse cutscene actually PRODUCES effects.
 
@@ -35874,6 +35943,7 @@ SLOW = [
     ("engine: fight AI",   c_engine_fight_ai,   "engine/README"),
     ("engine: melee",      c_engine_melee,      "engine/README"),
     ("engine: bank swap",  c_engine_bank_swap,  "todo/fight-mode 15.6; actor/player.h"),
+    ("engine: fight letterbox", c_engine_fight_letterbox, "todo/fight-mode 15.4"),
     ("engine: programs",   c_engine_programs,   "engine/README"),
     ("engine: scene steps", c_engine_scene_steps, "engine/README"),
     ("engine: scene survive", c_engine_scene_survive, "todo/omk-play"),

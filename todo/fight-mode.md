@@ -586,89 +586,69 @@ at all. `Fight_KeepSeparation` is ported. **Needs the reader to say what it
 looked like** — bodies interpenetrating, a body passing through the set, or
 the camera going through a wall are three different faults.
 
-### 15.4 "black stripes" — ATTRIBUTED: the fade's two bands are stuck dark
+### 15.4 FIXED — "black stripes": the LETTERBOX, not the fade
 
-The reader's answer was *bars top and bottom*, and a render settles it. Frame
-500 of `--fight-supermarket` at 640x480, well inside the fight:
+**This section said the fade, and the fade was innocent.** The correction is
+worth keeping because the two are genuinely indistinguishable on screen: the
+engine's black fade is not a full-screen quad but **two bands of
+`(h << 6) / 480` rows** - 64 at 480 - and the letterbox occupies *exactly the
+same rows*. A render at frame 500 showed rows 0..63 and 416..479 pure black
+and everything between lit, and that was written up as the fade's bands stuck
+dark. It was not.
+
+`OMK_FADELOG=1` settles it in one line. The fade runs its whole course early:
 
 ```
-row   0 lit    0 / 640      row 416 lit    0 / 640
-row  63 lit    0 / 640      row 479 lit    0 / 640
-row  64 lit  640 / 640      row 409 lit  640 / 640
+frame   1: blackFade mode 3 clock  0.0/60.0 inner   0 outer   0   <- script 1148
+frame 378: blackFade mode 4 clock  0.0/60.0 inner 127 outer 255   <- script 1175
+frame 438: blackFade mode 4 clock 60.0/60.0 inner   0 outer   0
+frame 439: blackFade mode 0                 inner 255 outer 255   <- cleared
 ```
 
-Rows 0..63 and 416..479 are pure black and everything between is lit. **That
-is not the letterbox** (which is opt-in, is 352 rows of 480, and would give
-64-row bars only by coincidence): it is `Session::blackFade`'s two bands, whose
-height is exactly `(fb.h * 64) / 480` = 64, drawn at `play.cpp` ~17880 with
-`bandGrey` at 0.
+By frame 439 it is **mode 0**, `bandGrey` returns 255 both sides and the band
+loop is not entered at all. The bars at frame 500 cannot be the fade.
 
-So the engine's black fade — which is NOT a full-screen quad but two shaded
-letterbox bands, the reading behind `todo/omk-play.md` 56 — is running with
-its bands fully dark during the fight. AREA 245 record 0 does
-`fade.to_black` at bytecode 1148 and `fade.from_black` at **1175**, long
-before `fight.begin` at 1236, so the clear is scripted and something is not
-honouring it. Start by logging `blackFade().running()` and both `bandGrey`
-values per frame across 1148 -> 1175 -> 1236; the port logs no fade line at
-all today, which is why the played log could not attribute this.
+**They are the letterbox, held on by `holdEditCam`.** The bars are suppressed
+only when the player has control, and that test reads
 
-### 15.6 FIXED — "the fight animation stays": KAY'L, and a stale pose cache
+```c
+if ((adventure || uiPause) && !holdEditCam &&
+    !session.playerAnimHeld() && !session.blackFade().bandsDark())
+    view.vh = dispH;
+```
 
-**The reader's correction is the whole finding.** This section first blamed
-the OPPONENT, on the strength of one end-of-run summary line that said the
-player was in `H_STAND`. The reader: *"No, it was Kay'l who stay in fight
-animation."* He was right, and two things had to be unpicked before the cause
-showed.
+`OMK_LBLOG=1` prints every term. From frame 439 to the end of the fight:
+`adventure 1, animHeld 0, bandsDark 0` - and `holdEditCam 1`. The approach
+cutscene's editing ended at 377 with the camera HOLDING, nothing requested a
+camera afterwards, and the hold stood through the whole fight.
 
-**The log was lying about the state's name.** `play.cpp` ~3053 resolves an
-entry's name through `playerCtl.states[...]` - the ADVENTURE bank - whatever
-bank the channel is actually on. So `state 0` printed as `'H_STAND'` when
-entry 0 of the combat bank is `HGUARD`. CLAUDE.md 1's rule about a log line
-derived from the wrong source, one more time.
+So this is **the same fault as §13, in a second consumer**. There the stale
+hold froze the view; here it letterboxed a frame the player controls. And the
+fix is the same one line the clear-list already has for shoot mode:
+`fight.begin` ends with `Camera_Request(0Eh, ...)` - mode 14, the fight camera
+- so mode 13's hold is over the moment the fight begins.
 
-**The pose was settled by LOOKING.** Rendered after a won fight, Kay'l stands
-with his arms up, crossed in front of his face - the combat guard - and walks
-around in it. The same build in plain adventure mode, `--area 0 --stand
-1804,0,-6890,336`, has his arms down at his sides. Two pictures, no metric.
+```c
+if (holdEditCam && fightRun.active) holdEditCam = false;
+```
 
-**The cause.** `PlayerController` memoises decoded tracks on the clip INDEX -
-`clipTracks` into `tracks_`, `rootOf` into `roots_`, and the variant grid in
-`gridTracks_`/`gridClip_` - and an index means something different in every
-bank. **`H1AVNT` and `H1CMBT` both have default clip 0.** `setBank` swapped
-`ctl_` and `data_`, rebuilt the `ActorRuntime` and re-counted the track table,
-and left all three caches, so the teardown moved the channel back to the
-adventure bank while the poser kept reading the combat bank's cached tracks.
-Everything measurable was correct: the bank pointer, the state, the group, the
-frame, the walker, the camera.
+`verify.py: engine: fight letterbox` asserts frame 500 (mid-fight) is
+full-frame AND frame 300 (inside the approach editing) still has its bars, so
+a fix that stopped letterboxing everything fails; the middle row is quoted so
+a black frame cannot pass by having no bars.
 
-Fixed by clearing the three caches in `setBank`. Nothing in the engine has
-this cache to invalidate - `Actor_LoadBankList` swaps the list and clips are
-read through it - so it is a cost the port's memoisation creates and its bank
-swap has to pay.
+**The lesson.** Two different mechanisms paint the same 64 rows black, and the
+first attribution was made from a render alone - the right observation, the
+wrong cause, written into three files before anything tested it. What settled
+it was making each mechanism SAY what it was doing (`OMK_FADELOG`,
+`OMK_LBLOG`), and both logs are kept for that reason.
 
-`verify.py: engine: bank swap` (fast, no render) checksums the tracks HANDED
-TO THE POSER across AVNT -> CMBT -> AVNT. Shown to fail: drop the `clear()`
-lines and `swapped` reads 0.
-
-**The lesson worth keeping.** Every instrument in the port agreed the player
-was fine, because every one of them reported the CHANNEL and the fault was in
-the POSER downstream of it. A reader looking at the screen outranked all of
-them, and the thing that finally localised it was a rendered frame beside a
-reference frame - not another number.
-
-### 15.7 What the same run CONFIRMED
-
-Worth keeping so nobody re-opens them:
-
-* **The win branch runs end to end**, and nothing had ever reached it: the
-  reward fires (`prop 163 SHOWN`, `Anneaux 5`, bytecode 1579), the potion prop
-  follows (474), and the script reaches its tail.
-* **The camera comes back on the win branch too** - `last camera 0`, the
-  follow preset - so 15.4's fix holds on both arms of the `Vie == 0` test.
-* **15.1 did NOT reproduce.** This fight ended correctly, through the
-  `knockdown` branch (`want entry 158 -> ok`). So the stall is INTERMITTENT,
-  not a deterministic `koEntry == -1`, and the `fight LOSER:` line stays in
-  the port until it is caught with an instrument attached.
+**Still true and still unported**: the engine's real letterbox is **per
+camera**, not a mode test. `sub_45FA20` is handed `u16(cam, 408..414)` - the
+camera block's own viewport rectangle - so which shots letterbox is DATA the
+port does not read yet. The rule above is a labelled reconstruction that
+happens to agree with every capture (`play.cpp` ~11090 carries the evidence);
+porting `+408..414` would replace it with the engine's own answer.
 
 ### 15.5 "no UI" — this is step 5, already planned
 
