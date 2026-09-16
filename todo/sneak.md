@@ -140,6 +140,29 @@ than run `Utiliser`'s arm under its name.
 > number from the same enum the rows were read with - the same weakness, and
 > the same fix, as the character line's hard-coded bank name a day earlier.
 >
+> **THE BODY BOX** (2026-09-16, `5bdb50f`): the page's own box `0x004DEA98`
+> (hook `0x00477F60`, its tag `dword_4DEAD4`) shows the SELECTED memo's
+> DESCRIPTION - the row's name is the heading, the record's description is the
+> text - so the memory page is complete without the reader page behind it:
+> `0x004DEFF0` carries the same four lists with the box current, and needs no
+> lift after all. The composer reaches it through the examine-text branch,
+> which now keys on that hook as well as the examine page's `0x004780A0`.
+>
+> **And its log line was the THIRD check in two days to report an INTENTION**
+> (fixed in `1c7b9ea`). `sneak: memo body` was printed beside the FILL, out of
+> the description the page had just been handed, so
+> `comp.setExamineText(nullptr)` - the box cut off from the composer entirely -
+> left `engine: sneak memos` GREEN. The composer already counts what it laid
+> out (`ScreenFrame::textLines`, incremented only in that branch) and the
+> viewer's main `comp.draw(...)` was throwing away the frame that carries it;
+> the line is now printed AFTER the draw with that count in it. Both mutations
+> are red with their own output: the row pinned to 1 (`row 1 id 915 'Panneau
+> Bibliotheque :', 192 chars, 4 lines drawn`) and the text cut off (`row 0 id
+> 913 'Moi :', 308 chars, 0 lines drawn` - the fill's half of the line
+> UNCHANGED, which is exactly what the weak version could not see). The
+> general form is now in CLAUDE.md §1: a line printed where a value is handed
+> over reports the intent, so print it from what the consumer produced.
+>
 > **WHERE MEMOS COME FROM** (2026-09-16, the reader asked whether they are
 > unlocked only by dialogue or also by reading a document - the answer is
 > BOTH). Three routes fill list 2: **76** `inventory.add` sites in the world

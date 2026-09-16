@@ -366,6 +366,22 @@ stopped guarding the moment the name changed, and nothing would have said so.
   did not do was reach the code. **Name every binary the check invokes in its
   `make` line**, and when a mutation does not turn a check red, suspect the
   build before the reading.
+* **A LOG LINE PRINTED WHERE A VALUE IS HANDED OVER REPORTS THE INTENTION,
+  NOT THE OUTPUT**, and a check reading that line is blind to exactly the half
+  that matters. Three checks in two days (2026-09-15/16) were written this way
+  and two of them passed a mutation: the sneak's character line printed the
+  animation bank as a literal string instead of from the variable that chose
+  it, the memo-rows line printed `object list 2` as a literal, and
+  `sneak: memo body` printed the memo the page had just been HANDED - so
+  `comp.setExamineText(nullptr)`, which cuts the body box off from the
+  composer entirely, left `engine: sneak memos` GREEN with the line byte for
+  byte unchanged. The fix each time is the same, and it is not "assert
+  harder": **print the line from the value the CONSUMER produced.** The
+  composer was already counting its own laid-out lines
+  (`ScreenFrame::textLines`) and the viewer was discarding the frame that
+  carries them. So a check is only as strong as the weakest thing its log line
+  is derived from - and when a mutation leaves a check green, ask what the
+  line is computed FROM before doubting the mutation.
 * **A FIELD IN 4096ths IS NOT DEGREES, and it reads plausibly as either.** A
   dialogue camera's roll ships as 2 and 359 for one pair, which looks exactly
   like the wrap trap the docs already warn about - 2 degrees to 359 degrees,
