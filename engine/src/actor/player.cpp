@@ -299,6 +299,22 @@ void PlayerController::setBank(const CtlFile& ctl, std::span<const std::byte> da
     if (g >= 0) rt_.channel().setBankGroup(g);
     frameBefore_ = frameAfter_ = rt_.channel().frame();
     stateBefore_ = rt_.channel().state();
+    // ...AND EVERY CLIP-KEYED CACHE IS NOW WRONG. `clipTracks`, `rootOf` and
+    // the variant grid all memoise on the clip INDEX, and an index means
+    // something different in every bank: clip 0 of `H1AVNT` is Kay'l's idle
+    // and clip 0 of `H1CMBT` is his guard. Leaving them meant that the fight
+    // teardown put the channel back on the adventure bank - the state, the
+    // group and the frame all correct - while the POSE kept coming out of the
+    // combat bank's cached tracks, so a reader who won a fight walked around
+    // Anekbah still holding his fists up (`todo/fight-mode.md` 15.6).
+    //
+    // Nothing in the engine has this cache to invalidate: `Actor_LoadBankList`
+    // swaps the list and the clips are read through it, so this is a cost the
+    // port's memoisation creates and the port's bank swap has to pay.
+    tracks_.clear();
+    roots_.clear();
+    gridTracks_ = NodeTracks{};
+    gridClip_ = gridGen_ = -1;
     // The track table is counted per bank, so it is re-counted here for the
     // same reason the constructor counts it: a bank whose tracks do not name
     // the model's meshes poses nothing, and the number is how that is seen.

@@ -612,42 +612,49 @@ honouring it. Start by logging `blackFade().running()` and both `bandGrey`
 values per frame across 1148 -> 1175 -> 1236; the port logs no fade line at
 all today, which is why the played log could not attribute this.
 
-### 15.6 "the fight animation stays" — the LOSER's body freezes at the teardown
+### 15.6 FIXED — "the fight animation stays": KAY'L, and a stale pose cache
 
-The reader's second played fight, 2026-09-16, and this one is **located
-exactly**. He won: `frame 1006: FIGHT ENDS after 626 frames - the player won,
-Vie 10 vs 0`, KO counter 1 then 2, and `OMK_KOTRACE=1` shows the loser walking
-his knock-out properly —
+**The reader's correction is the whole finding.** This section first blamed
+the OPPONENT, on the strength of one end-of-run summary line that said the
+player was in `H_STAND`. The reader: *"No, it was Kay'l who stay in fight
+animation."* He was right, and two things had to be unpicked before the cause
+showed.
 
-```
-  koTrace 33: entry 127 'GROUND' clipOwner 127 frame 52.0 state 21
-  koTrace 34: entry 110 'GROUND' clipOwner 110 frame  1.0 state 6
-```
+**The log was lying about the state's name.** `play.cpp` ~3053 resolves an
+entry's name through `playerCtl.states[...]` - the ADVENTURE bank - whatever
+bank the channel is actually on. So `state 0` printed as `'H_STAND'` when
+entry 0 of the combat bank is `HGUARD`. CLAUDE.md 1's rule about a log line
+derived from the wrong source, one more time.
 
-— so he ends lying in `GROUND`, role state 6, which is right. **Then the
-teardown takes his body away from him:**
+**The pose was settled by LOOKING.** Rendered after a won fight, Kay'l stands
+with his arms up, crossed in front of his face - the combat guard - and walks
+around in it. The same build in plain adventure mode, `--area 0 --stand
+1804,0,-6890,336`, has his arms down at his sides. Two pictures, no metric.
 
-```
-frame  380: actor 48 BBC_FN - pose source: the fight channel's own clip
-frame 1006: actor 48 BBC_FN - pose source: the bank's default entry, frame 0
-```
+**The cause.** `PlayerController` memoises decoded tracks on the clip INDEX -
+`clipTracks` into `tracks_`, `rootOf` into `roots_`, and the variant grid in
+`gridTracks_`/`gridClip_` - and an index means something different in every
+bank. **`H1AVNT` and `H1CMBT` both have default clip 0.** `setBank` swapped
+`ctl_` and `data_`, rebuilt the `ActorRuntime` and re-counted the track table,
+and left all three caches, so the teardown moved the channel back to the
+adventure bank while the poser kept reading the combat bank's cached tracks.
+Everything measurable was correct: the bank pointer, the state, the group, the
+frame, the walker, the camera.
 
-and there is **no third line** for the remaining 148 frames of the run. At the
-end he is still `actor 48 BBC_FN (bank H1AVNT) ... the bank's default entry,
-frame 0`. `sub_445AC0` restores the adventure bank, the port loses the fight
-channel that was posing him, and falls back to the adventure bank's default
-entry held at **frame 0** for ever - one frozen pose on a body that should be
-lying knocked out where he fell.
+Fixed by clearing the three caches in `setBank`. Nothing in the engine has
+this cache to invalidate - `Actor_LoadBankList` swaps the list and clips are
+read through it - so it is a cost the port's memoisation creates and its bank
+swap has to pay.
 
-The PLAYER is fine, which is what narrows it: `player: HO1_FN/H1AVNT ...
-ACTOR_STATE 1, .CTL state 0 'H_STAND' clip H_STAND frame 28.0, walked 249.1
-over 654 ticks`. So the restore works for the fighter who keeps walking and
-strands the one who does not.
+`verify.py: engine: bank swap` (fast, no render) checksums the tracks HANDED
+TO THE POSER across AVNT -> CMBT -> AVNT. Shown to fail: drop the `clear()`
+lines and `swapped` reads 0.
 
-`sub_445AC0` writes the result to **both actors' `+404`**, the tick-tail
-selector (section 5), and that is the field to read first: a defeated actor
-almost certainly gets a different tail from a standing one, and the port's
-`fightEnd` is where the loser's down-state has to survive the bank swap.
+**The lesson worth keeping.** Every instrument in the port agreed the player
+was fine, because every one of them reported the CHANNEL and the fault was in
+the POSER downstream of it. A reader looking at the screen outranked all of
+them, and the thing that finally localised it was a rendered frame beside a
+reference frame - not another number.
 
 ### 15.7 What the same run CONFIRMED
 

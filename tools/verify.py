@@ -11850,6 +11850,62 @@ def c_engine_hold_release():
             "preset's again")
 
 
+def c_engine_bank_swap():
+    r"""`engine/`: a `.CTL` bank swap invalidates the clip-keyed caches.
+
+    `PlayerController` memoises decoded animation tracks, root tracks and the
+    variant grid on the clip INDEX - `clipTracks`, `rootOf`, `gridTracks` -
+    and an index means something different in every bank. Both `H1AVNT` and
+    `H1CMBT` have **default clip 0**, so the collision is not hypothetical: it
+    is the commonest case there is.
+
+    `setBank` swapped `ctl_` and `data_` and left the caches, so the fight
+    teardown put the channel back on the adventure bank - state, group and
+    frame all correct, and the log even NAMED the state `H_STAND`, because
+    `play.cpp` resolves that name against `playerCtl` whatever bank the
+    channel is on - while the POSE went on coming out of the combat bank. A
+    reader who won the supermarket fight walked around still holding his fists
+    up, and no number anywhere was wrong (`todo/fight-mode.md` 15.6).
+
+    `build/bank_swap` builds the controller on `H1AVNT`, swaps to `H1CMBT` and
+    back, and checksums the tracks HANDED TO THE POSER each time - not the
+    bank pointer, which was right throughout. The middle must DIFFER and the
+    last must EQUAL the first, so the row fails whether the swap fails to
+    reach the poser or leaves a third stale thing behind. `nonzero` is there
+    so a probe that decodes nothing cannot pass by checksumming emptiness.
+
+    Nothing in the engine has this cache to invalidate - `Actor_LoadBankList`
+    swaps the list and clips are read through it - so this is a cost the
+    port's memoisation creates and its bank swap has to pay.
+
+    SHOWN TO FAIL: drop the four `clear()` lines from `PlayerController::
+    setBank` and `swapped` reads 0, the combat bank checksumming identically
+    to the adventure one.
+    """
+    import subprocess
+    eng = os.path.join(ROOT, "engine")
+    fr = omkpaths.data_root()
+    if not (os.path.isdir(eng) and os.path.isdir(os.path.join(fr, "ANIMS"))):
+        return ("skipped",), ("skipped",), "engine/ or gamedata/ absent"
+    b = subprocess.run(["make", "-s", "build/bank_swap"], cwd=eng,
+                       capture_output=True, text=True)
+    binp = os.path.join(eng, "build", "bank_swap")
+    if b.returncode != 0 or not os.path.exists(binp):
+        return ("build failed",), ("built",), "engine/ must build"
+    r = subprocess.run([binp, fr], capture_output=True, text=True)
+    out = r.stdout
+    m = re.search(r"swapped (\d) restored (\d) nonzero (\d)", out)
+    clips = re.findall(r"^(avnt|cmbt|back) clip (\d+) sig (\d+)$", out, re.M)
+    if not m or len(clips) != 3:
+        return (len(clips), bool(m)), (3, True), \
+               "the probe must print its three rows and its verdict"
+    return (len(clips), int(clips[0][1]), int(clips[1][1]),
+            int(m.group(1)), int(m.group(2)), int(m.group(3))), \
+           (3, 0, 0, 1, 1, 1), \
+           ("both banks' default clip is index 0, so a clip-keyed cache "
+            "collides; the swap must reach the poser and the swap back must "
+            "restore exactly what was there")
+
 def c_engine_impasse_fx():
     r"""`engine/`: the Impasse cutscene actually PRODUCES effects.
 
@@ -35817,6 +35873,7 @@ SLOW = [
     ("engine: world data", c_engine_world_data, "engine/README"),
     ("engine: fight AI",   c_engine_fight_ai,   "engine/README"),
     ("engine: melee",      c_engine_melee,      "engine/README"),
+    ("engine: bank swap",  c_engine_bank_swap,  "todo/fight-mode 15.6; actor/player.h"),
     ("engine: programs",   c_engine_programs,   "engine/README"),
     ("engine: scene steps", c_engine_scene_steps, "engine/README"),
     ("engine: scene survive", c_engine_scene_survive, "todo/omk-play"),
