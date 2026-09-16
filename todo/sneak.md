@@ -212,6 +212,11 @@ than run `Utiliser`'s arm under its name.
 > textChars`), not the field's length: memo 915 is 192 bytes and its section 0
 > is 102.
 >
+> Mutation red with its own output (`96a0f48`): with the section index ignored
+> (`const std::string body = *examine_;`) memo 915 goes back to `192 chars,
+> 4 lines drawn` from `102 chars, 2 lines` - the clue returned to the box,
+> which is precisely what the reader saw in the port and not in the original.
+>
 > **STILL OPEN from the same play report**: the original shows the preview as
 > soon as the line is SELECTED, where this port shows it a press later - so the
 > panel hook is the panel's per-frame tick, not an input-only handler - and
