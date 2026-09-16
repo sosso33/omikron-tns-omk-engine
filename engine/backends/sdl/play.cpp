@@ -4479,6 +4479,11 @@ int main(int argc, char** argv) {
         int   foeClip = -1;                              // whose root is cached
         std::vector<std::array<float, 3>> foeRoot;       // per frame, accumulated
         float foeFrame = 1.0f;                           // last frame sampled
+        // ...and his POSE: the same clip's full tracks, so the staged body is
+        // drawn from the fight channel rather than from the one-frame idle
+        // `idleTracksFor` builds. Cached per clip like the root motion,
+        // because `clipTracks` decodes every rotation in the clip.
+        omk::NodeTracks foePose;
         double ms = 0.0;                   // the AI's `Sys_GetTimeMs` clock
         long  startedAt = 0;
     };
@@ -7354,7 +7359,15 @@ int main(int argc, char** argv) {
                         // changed.
                         if (fightRun.foeBank && fightRun.foeChannel) {
                             const auto& ctl = fightRun.foeChannel->ctl();
-                            const int fs = fightRun.foeChannel->state();
+                            // THE CLIP IS THE OWNER'S, not the current entry's.
+                            // A `.CTL` entry carrying 0x8002 is an alias or a
+                            // pass-through: it plays nothing and hands the clip
+                            // on through its GoTo. Reading `states[state()]`
+                            // gives -1 on those frames, and the first version
+                            // of this did - which made the opponent flicker
+                            // between his move and the bank's default stance,
+                            // and contributed no root motion on those frames.
+                            const int fs = fightRun.foeChannel->clipOwner();
                             const int clip =
                                 (fs >= 0 && fs < static_cast<int>(ctl.states.size()))
                                     ? ctl.states[static_cast<std::size_t>(fs)].clip : -1;
@@ -7362,13 +7375,21 @@ int main(int argc, char** argv) {
                                 fightRun.foeClip = clip;
                                 fightRun.foeRoot.clear();
                                 fightRun.foeFrame = fightRun.foeChannel->frame();
+                                fightRun.foePose = omk::NodeTracks{};
                                 if (clip >= 0 && clip < static_cast<int>(ctl.clips.size())) {
                                     const auto& c = ctl.clips[static_cast<std::size_t>(clip)];
                                     const auto& d = fightRun.foeBank->data;
-                                    if (c.offset + c.length <= d.size())
-                                        fightRun.foeRoot = omk::clipRootMotion(
-                                            std::span<const std::byte>(d).subspan(
-                                                c.offset, c.length));
+                                    if (c.offset + c.length <= d.size()) {
+                                        const auto bytes = std::span<const std::byte>(d)
+                                                               .subspan(c.offset, c.length);
+                                        fightRun.foeRoot = omk::clipRootMotion(bytes);
+                                        // ...and the whole clip, for the POSE.
+                                        // Built here rather than per frame:
+                                        // `clipTracks` decodes every rotation
+                                        // of the clip, and a fighter changes
+                                        // entry a few times a second.
+                                        fightRun.foePose = omk::clipTracks(bytes);
+                                    }
                                 }
                             }
                             const float nowF = fightRun.foeChannel->frame();
@@ -13969,6 +13990,23 @@ int main(int argc, char** argv) {
                     pose = s.lastPose;
                     poseHeld = true;
                     src = "the pose the last beat left (the chain is mid-flight)";
+                } else if (fightRun.active && fightRun.body == &s &&
+                           fightRun.foePose.valid() && fightRun.foeChannel) {
+                    // A FIGHTER IS POSED BY HIS OWN CHANNEL. Everything else
+                    // here is driven by a program, a line or the shoot gate;
+                    // a melee opponent is driven by `Cef_TickChannel`, so his
+                    // clip and his frame come from it. Without this branch he
+                    // lands on the idle below and stands in the bank's default
+                    // entry, frame 0, while he walks in and throws punches -
+                    // which is what step 3's first half left him doing.
+                    //
+                    // Key 0 is the rest sentinel, so frame `f` reads key
+                    // `f + 1` and `clipTracks` is indexed from 0 by frame.
+                    int ff = static_cast<int>(fightRun.foeChannel->frame()) - 1;
+                    if (ff < 0) ff = 0;
+                    if (ff >= fightRun.foePose.frames) ff = fightRun.foePose.frames - 1;
+                    pose = omk::composePose(s.mo->meshes, fightRun.foePose, ff, false);
+                    src = "the fight channel's own clip";
                 } else if (s.idle.valid()) {
                     pose = omk::composePose(s.mo->meshes, s.idle, 0, false);
                     src = "the bank's default entry, frame 0";
@@ -13978,7 +14016,9 @@ int main(int argc, char** argv) {
                 } else {
                     pose = omk::composePose(s.mo->meshes, omk::NodeTracks{}, 0, false);
                 }
-                if (useLine || s.sceneTracks.valid() || (shootTracks && shootTracks->valid()) || s.idle.valid())
+                if (useLine || s.sceneTracks.valid() || (shootTracks && shootTracks->valid()) ||
+                    (fightRun.active && fightRun.body == &s && fightRun.foePose.valid()) ||
+                    s.idle.valid())
                     s.lastPose = pose;
                 // THE HEAD LOOK: an actor a script pointed at the player turns
                 // his head toward him every frame (`Actors_TickAll` -> `Actor_
@@ -14325,6 +14365,16 @@ int main(int argc, char** argv) {
                 // until 2026-09-11 (a reader: robbers *"not always turned to the
                 // correct position"* - their brains faced and aimed at him while
                 // the body stayed where the program had parked it)
+                // A FIGHTER is drawn at the heading the fight writes him -
+                // `Fight_FaceOpponent` writes `+420` every frame, and the
+                // frontend copies it onto the staged body - for the same
+                // reason a gunman with a running brain is, just below: the
+                // rest heading his entrance left is stale the moment he turns
+                // to face his opponent.
+                else if (fightRun.active && fightRun.body == &s) {
+                    bodyYaw = s.facing;
+                    aboutPelvis = true;
+                }
                 else if (shootTracks && shootTracks->valid() && shootBrains.count(s.actor)) {
                     bodyYaw = s.facing;
                     aboutPelvis = true;

@@ -282,8 +282,24 @@ With both fixed he fights: `HGUARD` → `H_LGUARD` → `HFWALK` → `B2` → `C1
 save's 10-hit-point Kay'l down through `KOH_FRONT` to `GROUND` with the KO
 replay running (`engine: melee` re-baselined to 6 fights ending in a KO).
 
-**Still labelled, and what is left of step 3:** he is POSED from his idle
-tracks rather than from his fight channel, so he moves without animating; `omk::clipTracks` is public and a root delta is `trans[cur] -
+**And the pose half landed the same day**, so the opponent now animates as
+well as moves: a staged body that is the fight opponent is composed from his
+fight channel's own clip at his channel frame, ahead of the idle fallback he
+used to land on, and his drawn heading comes from `s.facing` about the pelvis
+the way a gunman with a running brain does — `Fight_FaceOpponent` writes that
+every frame.
+
+**It needed one engine rule the frontend did not have.** A first version read
+`states[state()].clip`, which is −1 whenever the channel sits on an entry
+carrying `0x8002` — an alias or pass-through that plays nothing and hands its
+clip on through its GoTo — so the opponent flickered between his move and the
+bank's default stance (frames 21, 69, 77 of the harness run) and those frames
+contributed no root motion either. `CefChannel::clipOwner()` now walks that
+chain for any channel, the way `PlayerController::clipOwner` always has for
+the player. With it the pose source is reported once at the start of the
+fight and never again until it ends.
+
+**What is left, still labelled:** `omk::clipTracks` is public and a root delta is `trans[cur] -
 trans[prev]`, so both are reachable. And the harness PLACES him two metres in
 front of the player, which the engine never does — a script stages the pair
 before op 62 runs, and the log line says so.

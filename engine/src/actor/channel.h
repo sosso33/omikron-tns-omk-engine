@@ -300,6 +300,25 @@ public:
     int findEntryByRole(std::int32_t role) const;
 
     int   state() const { return cur_; }
+    // THE ENTRY THAT OWNS THE CLIP. An entry whose flags carry `0x8002` is an
+    // alias or a pass-through: it plays nothing itself and hands the clip on
+    // through its GoTo, which is why `gotoMove` chases the same chain when it
+    // blends. `PlayerController::clipOwner` has walked it since the player was
+    // drawn; this is the same walk for ANY channel, because a caller that
+    // reads `states[state()].clip` gets -1 on every pass-through frame - and
+    // a frontend that then falls back to an idle pose makes a fighter flicker
+    // between his move and his default stance (`todo/fight-mode.md` step 3).
+    // -1 when the chain does not terminate inside the guard.
+    int clipOwner() const {
+        int s = cur_;
+        const auto& S = ctl_->states;
+        for (int guard = 0; guard < 64; ++guard) {
+            if (s < 0 || s >= static_cast<int>(S.size())) return -1;
+            if (!(S[static_cast<std::size_t>(s)].flags & 0x8002u)) return s;
+            s = S[static_cast<std::size_t>(s)].gotoIdx;
+        }
+        return -1;
+    }
     float frame() const { return frame_; }
 
     // THE SOUNDS THIS TICK STARTED - `Cef_TickEffects` (0x0045ADF0), which is
