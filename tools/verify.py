@@ -12058,6 +12058,71 @@ def c_engine_fight_separation():
             "separation radius, and their two `y` values now mean the same "
             "thing - 1 unit apart, not 41")
 
+def c_engine_fight_library():
+    r"""`omk-play`: a fight loads `fight.scx`, its OWN sound and sprite library.
+
+    `Fight_Begin` (0x004455B0) ends with `Game_Start(aFightScx)` -
+    **"fight.scx"** - a second `Game_Start`, exactly like the one that installs
+    `aventure.scx` at boot. `gamedata/SCPTDATA/fight.SCX` is 1 MB and holds
+    **21 sounds and 16 sprites** that ship nowhere else: ids 402..423 are the
+    punches (`CPOING02`, `PUNCHD`, `PUNCHG`), the kicks (`CPIED03`), the head
+    hit (`COUPTETE03`), the block (`ARRETCOUP01`), the fall (`CHUTEF04`), the
+    cries and `STEPSH1`; the sprites are 8..14, 32..35, 40, 43, 44, 192, 193.
+
+    The port never loaded it, so every `.CTL` effect record of a fight fired
+    with its timing, its attach point, its duration and its scale all computed
+    correctly and then failed a lookup - 68 `ctl-effect` lines in one played
+    fight, every one of them `sound id 408 / 417 / 419 is not in the global
+    library` or `sprite N is not registered`. A reader: *"no sound fx, no
+    visual effect"*. Two faults with one cause (`todo/fight-mode.md` 15.2).
+
+    The sound side consults `fight.scx` first while a fight is running and
+    falls back to the global library; the id spaces do not overlap, so the
+    order is belt and braces. The sprite side goes into the one flat table,
+    loaded AFTER the global library and BEFORE the scene although the engine's
+    `Game_Start` comes last - measured, the fight's sixteen ids collide with
+    none of `aventure.SCX`'s twenty and the fight's own set registers no
+    sprites at all, so the order is unobservable here and the conservative one
+    is taken deliberately rather than by accident.
+
+    Asserted over a real fight the player WINS (the `--keys` cycle presses
+    kicks, so blows actually land): that the library loads, that the sprite
+    table reports the 16, that **no** effect fails its lookup, and that sounds
+    were actually PLAYED - the last so the row cannot pass by a fight in which
+    no effect fired at all.
+
+    SHOWN TO FAIL: drop the `fight.SCX` load and the failures jump while the
+    played count falls to 0.
+    """
+    import subprocess
+    eng = os.path.join(ROOT, "engine")
+    fr = omkpaths.data_root()
+    if not (os.path.isdir(eng) and os.path.isdir(os.path.join(fr, "SCPTDATA"))):
+        return ("skipped",), ("skipped",), "engine/ or gamedata/ absent"
+    mk = subprocess.run(["make", "-s", "play"], cwd=eng, capture_output=True, text=True)
+    play = os.path.join(eng, "build", "omk-play")
+    if mk.returncode != 0 or not os.path.exists(play):
+        return ("no sdl",), ("no sdl",), "needs SDL to render"
+    keys = ",".join(["0x11", "0x1F"] * 200)     # W and S: kicks
+    r = subprocess.run(
+        [play, fr, os.path.join(ROOT, "tables"),
+         "--save", os.path.join(ROOT, "traces", "save-appart.bin"),
+         "--fight-supermarket", "--frames", "900",
+         "--keys", keys, "--keydelay", "3"],
+        capture_output=True, text=True, errors="replace",
+        env=dict(os.environ, SDL_VIDEODRIVER="dummy"))
+    out = r.stdout + r.stderr
+    loaded = "fight library: SCPTDATA/fight.SCX loaded" in out
+    m = re.search(r"sprites: (\d+) global \+ (\d+) fight \+", out)
+    fightSprites = int(m.group(2)) if m else -1
+    failures = len(re.findall(r"is in neither the global|is not registered by the library", out))
+    played = len(re.findall(r"audio: ctl-effect", out))
+    return (loaded, fightSprites, failures, played > 0), \
+           (True, 16, 0, True), \
+           ("`Fight_Begin`'s own `Game_Start(\"fight.scx\")`: its 16 sprites "
+            "reach the table, no effect record fails its lookup, and the "
+            "fight's blows are actually audible")
+
 def c_engine_impasse_fx():
     r"""`engine/`: the Impasse cutscene actually PRODUCES effects.
 
@@ -36028,6 +36093,7 @@ SLOW = [
     ("engine: bank swap",  c_engine_bank_swap,  "todo/fight-mode 15.6; actor/player.h"),
     ("engine: fight letterbox", c_engine_fight_letterbox, "todo/fight-mode 15.4"),
     ("engine: fight separation", c_engine_fight_separation, "todo/fight-mode 15.8d"),
+    ("engine: fight library", c_engine_fight_library, "todo/fight-mode 15.2"),
     ("engine: programs",   c_engine_programs,   "engine/README"),
     ("engine: scene steps", c_engine_scene_steps, "engine/README"),
     ("engine: scene survive", c_engine_scene_survive, "todo/omk-play"),

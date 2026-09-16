@@ -4800,9 +4800,49 @@ int main(int argc, char** argv) {
         globalRt = std::make_unique<omk::ScxRuntime>(omk::DataFs::readPath(*gp));
         if (!globalRt->valid()) globalRt.reset();
     }
+    // ...AND THE FIGHT'S OWN LIBRARY. `Fight_Begin` (0x004455B0) ends with
+    // `Game_Start("fight.scx")` - a second `Game_Start`, exactly like the one
+    // that installs `aventure.scx` at boot - and `gamedata/SCPTDATA/fight.SCX`
+    // holds **21 sounds and 16 sprites** that ship nowhere else: the punches
+    // (`CPOING02`, `PUNCHD`, `PUNCHG`), the kicks (`CPIED03`), the head hit
+    // (`COUPTETE03`), the block (`ARRETCOUP01`), the fall (`CHUTEF04`), the
+    // cries and `STEPSH1`, at ids 402..423.
+    //
+    // Without it every `.CTL` effect record of a fight fired with its timing,
+    // attach point and scale all computed correctly and then failed its
+    // lookup: 68 `ctl-effect` lines in a played fight, every one of them
+    // `sound id 408 / 417 / 419 is not in the global library` (those three are
+    // `ELECMB02`, `MVT02` and `ELECMB03`). A reader: *"no sound fx, no visual
+    // effect"* (`todo/fight-mode.md` 15.2).
+    //
+    // Loaded once and kept, rather than at `fight.begin`: the engine's
+    // `Game_Start` is a load, and doing it here costs one read instead of one
+    // per fight.
+    std::unique_ptr<omk::ScxRuntime> fightRt;
+    if (const auto fp = fs.resolve("SCPTDATA/fight.SCX")) {
+        fightRt = std::make_unique<omk::ScxRuntime>(omk::DataFs::readPath(*fp));
+        if (!fightRt->valid()) fightRt.reset();
+        std::printf("fight library: SCPTDATA/fight.SCX %s\n",
+                    fightRt ? "loaded (Fight_Begin's Game_Start)" : "INVALID");
+    }
     std::string spriteScx;
     {
         const int glob = loadSprites("aventure.SCX");
+        // ...then the FIGHT's, which `Fight_Begin`'s own `Game_Start` installs
+        // (see `fightRt` above). Its 16 sprites are the blow effects the
+        // `.CTL` combat states spawn - ids 8..14, 32..35, 40, 43, 44, 192,
+        // 193 - and without them every one reported `sprite N is not
+        // registered by the library or the scene`.
+        //
+        // Loaded BEFORE the scene rather than after, although the engine's
+        // `Game_Start` comes last, so that no existing scene's ids change
+        // meaning: measured, the fight's sixteen collide with NONE of
+        // `aventure.SCX`'s twenty, and the fight's own set `ASm49res.SCX`
+        // registers no sprites at all, so the order is unobservable here and
+        // the safe one is chosen deliberately. A scene that did register one
+        // of those ids would keep its own, which is the behaviour this tree
+        // already has everywhere else.
+        const int fightSp = loadSprites("fight.SCX");
         // ...then the SCENE's own, which is what `Sfx_TickAmbient` resolves
         // against and which wins where the ids collide.
         const int local = session.scene().file().empty()
@@ -4810,8 +4850,8 @@ int main(int argc, char** argv) {
         int okTex = 0; std::size_t frames = 0;
         for (const auto& kv : spriteTab.tex) if (kv.second.width) ++okTex;
         for (const auto& kv : spriteTab.frames) frames += kv.second.frames.size();
-        std::printf("sprites: %d global + %d from %s, %d decoded over ids "
-                    "0..%zu, %zu frames in all\n", glob, local,
+        std::printf("sprites: %d global + %d fight + %d from %s, %d decoded over ids "
+                    "0..%zu, %zu frames in all\n", glob, fightSp, local,
                     session.scene().file().c_str(), okTex,
                     spriteTab.idCount == 0 ? 0 : spriteTab.idCount - 1, frames);
         spriteScx = session.scene().file();
@@ -4824,11 +4864,14 @@ int main(int argc, char** argv) {
         spriteScx = session.scene().file();
         spriteTab.clear();
         const int glob = loadSprites("aventure.SCX");
+        const int fightSp = loadSprites("fight.SCX");   // as above
         const int local = spriteScx.empty() ? 0 : loadSprites(spriteScx);
         int okTex = 0;
         for (const auto& kv : spriteTab.tex) if (kv.second.width) ++okTex;
-        std::printf("sprites: reloaded for %s - %d global + %d local, %d decoded\n",
-                    spriteScx.empty() ? "<none>" : spriteScx.c_str(), glob, local, okTex);
+        std::printf("sprites: reloaded for %s - %d global + %d fight + %d local, "
+                    "%d decoded\n",
+                    spriteScx.empty() ? "<none>" : spriteScx.c_str(), glob,
+                    fightSp, local, okTex);
         ++poolComposition;          // the sprite section of the pool changed
     };
 
@@ -6033,14 +6076,27 @@ int main(int argc, char** argv) {
             }
         }
         if (player && globalRt) {
-            const auto& rt = *globalRt;         // the library, see its construction
+            // The library, see its construction - and `fight.scx` OVER it
+            // while a fight is running, because that is what `Fight_Begin`'s
+            // own `Game_Start` installs and the two id spaces do not overlap
+            // (the fight's are 402..423).
             for (const auto& es : player->sounds()) {
-                const int i = rt.wavBydId(es.id);
+                const omk::ScxRuntime* rt = nullptr;
+                int i = -1;
+                if (fightRt && fightRun.active) {
+                    i = fightRt->wavBydId(es.id);
+                    if (i >= 0) rt = fightRt.get();
+                }
                 if (i < 0) {
-                    std::printf("ctl-effect: sound id %d is not in the global library\n", es.id);
+                    i = globalRt->wavBydId(es.id);
+                    if (i >= 0) rt = globalRt.get();
+                }
+                if (!rt) {
+                    std::printf("ctl-effect: sound id %d is in neither the global "
+                                "library nor fight.scx\n", es.id);
                     continue;
                 }
-                const auto pcm = wavToDevice(rt.wavData(i), 44100);
+                const auto pcm = wavToDevice(rt->wavData(i), 44100);
                 if (!pcm.empty()) { sfxLog("ctl-effect", pcm.size(), es.id, i, 1.0f, &pcm);
                                     front.playSound(pcm); }
             }

@@ -543,38 +543,55 @@ only moves when the blend lands, which is why the trace matters.
 `koEntry == -1` from a timing-dependent path that a fixed-step run cannot
 produce.
 
-### 15.2 "no sound fx" and "no visual effect" — ONE fault: the ids resolve
-### against the wrong library
+### 15.2 FIXED — one cause: a fight loads `fight.scx` and the port did not
 
-The `.CTL` effect records DO fire. 68 `ctl-effect` lines in the played log,
-and every one of them fails to resolve:
+**Found by the reader asking the right question.** He proposed a max distance
+from the centre of the fight zone; there is no such thing in `Fight_Begin`,
+`Fight_KeepSeparation` (a MINIMUM, not a maximum) or `Fight_TickAI` - but
+reading `Fight_Begin` to answer him showed its last lines:
 
-```
-  20 x  ctl-effect: sound id 419 is not in the global library
-  19 x  ctl-effect: sound id 408 is not in the global library
-  17 x  ctl-effect: sound id 417 is not in the global library
-   2 x  ctl-effect: state 135 'IM_FRONT' spawns sprite 11 on attach 5 ('Bassin')
-          for 10 frames from 0, scale 0.50, flags 0x01
-   2 x  ctl-effect: sprite 11 is not registered by the library or the scene
-   3 x  ctl-effect: sprite 8 is not registered by the library or the scene
+```c
+    Game_Start(aFightScx);   // "fight.scx"
+    ...
+    Input_InstallScheme(3);
 ```
 
-So the timing, the attach point, the duration and the scale are all being
-computed correctly and then thrown away for want of a lookup. Two leads:
+A second `Game_Start`, exactly like the one that installs `aventure.scx` at
+boot, and `gamedata/SCPTDATA/fight.SCX` ships: 1 MB, **21 sounds and 16
+sprites** that are nowhere else. The sounds are ids **402..423** -
 
-* **The sound half is looking in the wrong place, and the port's own comment
-  says so.** `channel.h` ~325: *"the engine resolves it with
-  `Scene_FindSoundIndex` against the RESIDENT scene's chunk-3 records, so the
-  caller does that"* — and the caller (`play.cpp` ~6022) passes only
-  `globalRt`, the GLOBAL library out of `aventure.scx`. `Scene_FindSoundIndex`
-  (0x0048CC80) walks the scene at `+48`, 26-byte records, count `+24`, and
-  returns `+22`. The same id names different sounds in different scenes, so
-  the global-only lookup is not a near miss: it is the wrong table.
-* **The sprite half checks both and still misses**, so it is a different
-  question — and note what record 0 does on its first instruction:
-  `scene.unload 230`. The fight runs with `ASm49res.SCX` resident, which
-  reports **0 effects, 0 set pieces**. Where a combat bank's sprites are
-  registered is the thing to find.
+```
+   402 CPOING02      407 ARRETCOUP01   414 PUNCHD       419 ELECMB03
+   403 CHUTEF04      408 ELECMB02      415 HAMORT01     420 VOICE03
+   405 COUPTETE03    409..413 the cries               421 RECEP01
+   406 CPIED03       417 MVT02         418 MVT09        422 STEPSH1
+                                                        423 PUNCHG
+```
+
+- the punches, the kicks, the head hit, the block, the fall, the cries and the
+footsteps of a fight. The three the port reported as missing, 408, 417 and
+419, are `ELECMB02`, `MVT02` and `ELECMB03`. The sprites are 8..14, 32..35,
+40, 43, 44, 192, 193 - the blow effects the combat states spawn.
+
+So the timing, the attach point, the duration and the scale were all being
+computed correctly and thrown away at a lookup against a library that was
+never loaded. **Both reported faults, one cause.**
+
+The sound side consults `fight.scx` first while a fight runs and falls back to
+the global library. The sprite side goes into the one flat table, loaded after
+the global library and BEFORE the scene although the engine's `Game_Start`
+comes last: measured, the fight's sixteen ids collide with **none** of
+`aventure.SCX`'s twenty and the fight's own set `ASm49res.SCX` registers no
+sprites at all, so the order is unobservable here and the conservative one is
+taken deliberately.
+
+Measured over a won fight: **0** lookup failures (was every one of them) and
+**14** effect sounds played. `verify.py: engine: fight library`.
+
+**Worth keeping**: `Fight_KeepSeparation`'s push also goes through
+`Actor_Move(..., 1, 1, 0)` - the collide-and-slide - where the port's
+`moveBody` simply adds. That is a third place 15.8a's collision belongs, and
+it is not done.
 
 ### 15.3 "characters colliders issue"
 
