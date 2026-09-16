@@ -818,7 +818,15 @@ which is what the code reads).
 
 ## 14. THE SNEAK'S IDENTITY PAGE, and its QUIT tab (committed 2026-09-15/16, `837eca5`..`a3aa792`), 5 minutes
 
-**NOT YET PLAYED.** `todo/sneak.md` §5, next-tasks 10 - the device's first new
+**(a)-(d) CONFIRMED IN PLAY 2026-09-16** - the reader: *"the identity page is
+good"*. **(e) the QUIT tab is still unjudged** - they did not say whether they
+pressed it - and **(f) Options is expected empty** (step 5, blocked: the port
+has never drawn screen 35). The reader also reported *"there is nothing on info
+and option pages"*; the MEMORY page is empty by the code (`todo/sneak.md` §2c)
+and they are being asked whether the original's shows anything. The recipe
+stays here.
+
+`todo/sneak.md` §5, next-tasks 10 - the device's first new
 pages since it was built. From Anekbah's main street:
 
 ```
