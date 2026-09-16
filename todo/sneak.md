@@ -127,6 +127,24 @@ than run `Utiliser`'s arm under its name.
 > page` is rewritten around the arithmetic; the fill is the open work, with
 > the memo READER page `0x004DEFF0` (which the row confirm installs, and which
 > is not lifted into `tables/ui_widgets.json` at all) behind it.
+>
+> **FILLED 2026-09-16** (`7e56033`): the viewer binds the page's rows from
+> object list 2 and names them through the channel, and a render shows the two
+> given memos as *Moi :* and *Panneau Bibliothèque :* under the page's own
+> yellow. `verify.py: engine: sneak memos`, red under both mutations with its
+> own output: the row source switched to the carried list (`object list 0,
+> 1 rows: 171`) and the fill gated back to kind 0 (no line at all).
+> **And the check's first version could not have caught the first of those**:
+> the log line named the list with a LITERAL 2, so a page reading list 0 still
+> printed "object list 2" and only the ids differed. The line now takes the
+> number from the same enum the rows were read with - the same weakness, and
+> the same fix, as the character line's hard-coded bank name a day earlier.
+>
+> Still open: the memo READER page `0x004DEFF0` behind the row confirm
+> (`sub_49BC60`'s kind-2 arm pushes it), which is not lifted at all - so the
+> body of a memo, which is the object record's DESCRIPTION, cannot be shown
+> yet. The empty panel at the bottom right of the page in a render is where
+> that text belongs.
 
 
 

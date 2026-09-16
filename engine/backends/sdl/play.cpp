@@ -16219,9 +16219,9 @@ int main(int argc, char** argv) {
             // whose description is its body.
             if (rowKind == 2 && inv.openedList() != 2) inv.openList(2);
             if ((rowKind == 0 || rowKind == 2) && inv.openedList() >= 0) {
-                const auto carried = omk::objectList(
-                    state, rowKind == 2 ? omk::ObjectList::Memos
-                                        : omk::ObjectList::Carried);
+                const omk::ObjectList rowSource = rowKind == 2
+                    ? omk::ObjectList::Memos : omk::ObjectList::Carried;
+                const auto carried = omk::objectList(state, rowSource);
                 // ---- `sub_42AAE0`, THE ROW BINDER --------------------
                 //
                 // The nine widgets are a WINDOW onto the list, and which of
@@ -16276,12 +16276,18 @@ int main(int argc, char** argv) {
                 // One line per change, so a headless run can be held to the
                 // rows the page bound - and to WHICH list they came from.
                 if (rowKind == 2) {
+                    // The list is named from the SOURCE the rows were read
+                    // from, not from a literal: a mutation that made this page
+                    // read list 0 still printed "object list 2" and only the
+                    // ids gave it away.
                     static std::string memosTold;
-                    std::string said = std::to_string(carried.size()) + " rows:";
+                    const int from = static_cast<int>(rowSource);
+                    std::string said = "object list " + std::to_string(from) + ", " +
+                                       std::to_string(carried.size()) + " rows:";
                     for (int id : carried) said += " " + std::to_string(id);
                     if (said != memosTold) {
                         memosTold = said;
-                        std::printf("sneak: memory page - object list 2, %s\n", said.c_str());
+                        std::printf("sneak: memory page - %s\n", said.c_str());
                     }
                 }
                 // ---- THE ECHO BAR and THE CLOCK ---------------------
