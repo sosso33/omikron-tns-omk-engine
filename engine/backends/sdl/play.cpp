@@ -1473,6 +1473,12 @@ int main(int argc, char** argv) {
 "                   --slot it resumes the game the save holds\n"
 "  --area N         the area to stand in\n"
 "  --address A      the ADDRESSES record to stand on\n"
+"  --fight-supermarket  the SCRIPTED fight after the supermarket shoot phase,\n"
+"                   in one command: AREA 245 with the player standing in the\n"
+"                   zone whose record 0 stages CHARACTERS 48 'Gun Waver 3',\n"
+"                   plays the approach and runs `fight.begin`. Nothing is\n"
+"                   harnessed - the chunk's own script does all of it. Short\n"
+"                   for --area 245 --stand 14855,-32,1914,0\n"
 "  --fight N        HARNESS: begin a MELEE against CHARACTERS id N where the\n"
 "                   player stands, the way `fight.begin` (op 62) would - both\n"
 "                   bodies onto .CTL slot 2, ACTOR_STATE 2, control scheme 3.\n"
@@ -1958,6 +1964,18 @@ int main(int argc, char** argv) {
         else if (a == "--save-name" && i + 1 < argc) saveNameArg = argv[++i];
         else if (a == "--area" && i + 1 < argc) areaArg = std::atoi(argv[++i]);
         else if (a == "--address" && i + 1 < argc) addressArg = std::atoi(argv[++i]);
+        // The SCRIPTED supermarket fight in one command. Not a harness: it
+        // only stands the player in the zone whose record 0 runs the whole
+        // sequence - `scene.unload 230`, `character.show 48`, the approach,
+        // then `fight.begin 48`. The position is where the player crossed
+        // into AREA 245 on a played run (`event 9 - his feet are on AREA
+        // 245's decor`), so the zone scan raises it on the first frames.
+        else if (a == "--fight-supermarket") {
+            areaArg = 245;
+            standAt[0] = 14855.0f; standAt[1] = -32.0f;
+            standAt[2] = 1914.0f;  standAt[3] = 0.0f;   // the yaw is [3]
+            haveStand = true;
+        }
         else if (a == "--fight" && i + 1 < argc) fightArg = std::atoi(argv[++i]);
         else if (a == "--fight-level" && i + 1 < argc) fightLevelArg = std::atoi(argv[++i]);
         else if (a == "--ride") rideArg = true;
@@ -7417,8 +7435,21 @@ int main(int argc, char** argv) {
                                                             b[2] - a[2]};
                                     float world[3] = {0.0f, 0.0f, 0.0f};
                                     omk::rotateYaw(fightRun.foe.yaw, local, world);
+                                    // **THE VERTICAL IS DROPPED, and it is
+                                    // labelled rather than silently kept.**
+                                    // `Actor_ApplyMotion` is what puts a body
+                                    // back on the floor after its clip has
+                                    // moved it, and this tree has that only
+                                    // for the player (his controller). Adding
+                                    // the clip's own `y` with no ground pass
+                                    // let the opponent climb - a reader
+                                    // watched him rise 34 units out of frame
+                                    // and vanish (his y went -29 to -63 while
+                                    // the player stood at +9.8, and Y points
+                                    // DOWN). Until a non-player body has a
+                                    // ground response, he keeps the height
+                                    // his placement gave him.
                                     fightRun.foe.x += world[0];
-                                    fightRun.foe.y += world[1];
                                     fightRun.foe.z += world[2];
                                 }
                             }
@@ -11116,7 +11147,33 @@ int main(int argc, char** argv) {
             view.fogStart = unlimitedClip ? 0.0f : static_cast<float>(clipInches * 0.25);
             view.fogEnd   = unlimitedClip ? 0.0f : static_cast<float>(clipInches);
             for (int k = 0; k < 3; ++k) view.fogColour[k] = fogRGB[k];
-            if (!haveDlgCam && haveEdit) {
+            // CAMERA MODE 14 OUTRANKS THE EDITING, including its HOLD.
+            //
+            // `fight.begin` ends with `Camera_Request(0Eh, …)`, and a mode
+            // request REPLACES the installed mode - so a fight supersedes the
+            // mode-13 editing the scripted approach was using. This arm sat
+            // after the editing arms until 2026-09-16 and a reader watched the
+            // consequence: AREA 245's approach ends with "editing over - the
+            // camera HOLDS its last frame", that hold then won every frame of
+            // the fight, and the view never moved again. The fight camera was
+            // being computed correctly and thrown away.
+            if (!haveDlgCam && fightRun.active && fightRun.fight) {
+                const omk::FightCamera& fc = fightRun.fight->camera();
+                for (int k = 0; k < 3; ++k) {
+                    view.cam.eye[k] = fc.eye[k];
+                    view.cam.at[k]  = fc.at[k];
+                }
+                view.cam.hfovDeg = 75.0f;       // row 14's own fov is 0
+                view.cam.rollDeg = 0.0f;
+                view.cam.w = dispW; view.cam.h = dispH;
+                if (!fightCamTold) {
+                    fightCamTold = true;
+                    std::printf("frame %ld: the FIGHT CAMERA (mode 14) has the view - "
+                                "state %d, options row 18 'Caméra de combat' = %d (%s)\n",
+                                n, fc.state, settings.v.combatCamera,
+                                settings.v.combatCamera ? "Vue de côté" : "Vue de dos");
+                }
+            } else if (!haveDlgCam && haveEdit) {
                 // MODE 13: the editing's camera, at the object's own clock -
                 // so the shot and the animation cannot drift apart, they are
                 // one clock. The travel is the request's +24, `max(field, 0)`
@@ -11291,37 +11348,6 @@ int main(int argc, char** argv) {
                 if (u >= 1.0f) {
                     if (takeCamPhase == 1) takeCamPhase = 2;
                     else if (takeCamPhase == 3) { takeCam = false; takeCamPhase = 0; }
-                }
-            } else if (!haveDlgCam && fightRun.active && fightRun.fight) {
-                // CAMERA MODE 14, the fight camera. `fight.begin` asks for it
-                // (`Camera_Request(0Eh, …)` in op 62's own handler) and the
-                // preset table has nothing to resolve - row 14 is all zeros
-                // with fov 0 and both subjects 8 - because
-                // `Fight_TickCamera` computes the eye and the target itself,
-                // around the MIDPOINT of the two fighters. `actor/fight.cpp`
-                // is the state machine; this only spends its answer.
-                //
-                // Ahead of the follow camera and behind the dialogue and
-                // editing holds, which is the engine's own precedence: a
-                // scripted shot outranks a mode request, and a mode request
-                // outranks the controller's own camera.
-                const omk::FightCamera& fc = fightRun.fight->camera();
-                for (int k = 0; k < 3; ++k) {
-                    view.cam.eye[k] = fc.eye[k];
-                    view.cam.at[k]  = fc.at[k];
-                }
-                // The preset's fov is 0 - it names none - so the port's own
-                // default stands, the same 75 the ride and boarding cameras
-                // take.
-                view.cam.hfovDeg = 75.0f;
-                view.cam.rollDeg = 0.0f;
-                view.cam.w = dispW; view.cam.h = dispH;
-                if (!fightCamTold) {
-                    fightCamTold = true;
-                    std::printf("frame %ld: the FIGHT CAMERA (mode 14) has the view - "
-                                "state %d, options row 18 'Caméra de combat' = %d (%s)\n",
-                                n, fc.state, settings.v.combatCamera,
-                                settings.v.combatCamera ? "Vue de côté" : "Vue de dos");
                 }
             } else if (!haveDlgCam && (adventure || uiPause) && followCam &&
                        player) {

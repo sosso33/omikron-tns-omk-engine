@@ -345,6 +345,38 @@ not modelled and the height clamp runs unconditionally instead of behind the
 solve's "did it return a point" flag. The throw state's swing is spread over a
 second because `sub_45ACF0`, the channel's remaining time, has no port.
 
+## 12. The first PLAY TEST, 2026-09-16 — three faults, two of them mine
+
+The reader played the supermarket fight on the real path (the shoot phase, out
+through AREA 245's zone, the chunk's own `fight.begin 48` — no harness) and
+reported: *"the camera does not follow the fight (doesn't move at all) and the
+enemy disappears"*, plus that the demo had dropped him at the start of the
+shoot phase rather than at the fight.
+
+1. **The camera was computed and thrown away.** The fight arm sat AFTER the
+   editing arms in `omk-play`'s chain, and AREA 245's approach ends with
+   "editing over — the camera HOLDS its last frame (mode 13, no active
+   camera)". That hold then won every frame of the fight. `fight.begin` ends
+   with `Camera_Request(0Eh, …)` and a mode request REPLACES the installed
+   mode, so mode 14 outranks the editing and its hold; the arm is now ahead of
+   both. **Every number in the log looked right while the screen showed a
+   frozen shot** — the camera's own trace moved, and nothing consumed it.
+2. **The opponent climbed out of frame.** His motion pass added the clip root
+   delta's `y` with no ground response: his height went −29 to −63 while the
+   player stood at +9.8, and Y points DOWN, so he rose 73 units above the
+   fight and left the view. `Actor_ApplyMotion` is what seats a body after its
+   clip has moved it, and this tree has that only for the player, so the
+   vertical is now DROPPED and labelled until a non-player body has a ground
+   pass.
+3. **The demo started in the wrong place**, which was mine to get right:
+   `--fight-supermarket` now stands the player in the zone that runs the whole
+   sequence, so the fight is one command away instead of a shoot phase away.
+
+The lesson is the repo's own, and it cost a second bad demo: a subsystem whose
+own numbers are correct can still be invisible, because something upstream owns
+the thing it writes into. The camera trace, the pose source line and the
+channel counters all read healthy throughout.
+
 ## 8. Open questions
 
 * ~~**`dword_6A05E0`**~~ — **closed the same day, and it was never a fight
