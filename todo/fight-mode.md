@@ -745,13 +745,43 @@ not a radius or a centre convention - all three shapes block identically.
 Something in `playerSteep` stands between them that the engine's `Actor_Move`
 evidently does not stop him on.
 
-**The next read, and it is a specific one.** `Actor_Move`'s tail arguments are
-`(..., 1, 1, 0)` and **none of the three has been read**. They are the obvious
-candidate for "which faces this actor is allowed through", and until they are
-read any adjustment here is the tuning CLAUDE.md warns against - which is why
-this was reverted rather than softened. Read `Actor_Move` (and
-`Sweep_ActorMove` 0x004AD360 behind it), then decide whether the port's
-`playerSteep` is even the right blocker set for a non-player body.
+**The tail arguments are now READ, and they are NOT a face filter.** That was
+the obvious hypothesis - "which faces this actor is allowed through" - and it
+is wrong, so it is recorded here rather than left to be found again.
+
+`a8` is a MODE SELECTOR: a `switch (a8)` whose arms install constants into two
+locals, and mode **1** (what `Actor_ApplyMotion` passes) sets both to
+**786444 = 0xC000C**. Those locals reach `Walk_ClampNormal(mask, 0, ...)`
+(0x0046A020), and its first argument IS a bitmask - but of **axis clamps**:
+
+```c
+    if ((a1 & 0x10000) && v6 > 0.0)    *a4    = 0.0;   /* normal.x >= 0 */
+    if ((a1 & 0x20000) && *a4 < 0.0)   *a4    = 0.0;
+    if ((a1 & 0x40000) && v9 > 0.0)    a4[1]  = 0.0;   /* normal.y       */
+    if ((a1 & 0x80000) && a4[1] < 0.0) a4[1]  = 0.0;
+    if ((a1 & 0x100000) && v10 > 0.0)  a4[2]  = 0.0;   /* normal.z       */
+```
+
+`0xC000C` carries `0x40000 | 0x80000`, which clamps the collision NORMAL's y
+in both directions - the slide is kept horizontal - plus `0x4 | 0x8`, tested
+further down. So the constant governs how a hit is RESOLVED, not which
+triangles are tested, and `a10` is stored to `dword_6A52B8` (written once in
+the whole image and never read).
+
+**And a coincidence to disbelieve.** 24 of the fight set's 36 meshes carry
+flag bit `0x4`, and 10 carry none of `0xC000C` - including `SMbox45` at
+(15111, 1554), a metre from where the blocked opponent stopped (15110.5,
+1506.9). That looks like the answer and is not: the mask is an axis clamp and
+the mesh bit is a mesh bit. The numbers are real and the connection is
+invented, which is exactly CLAUDE.md 1's "the data was consistent with the
+wrong answer".
+
+**So what stops him is still open**, and the remaining candidates are the
+SET rather than the resolution: whether the engine's sweep walks the same
+triangles the port's `playerSteep` holds. `playerSteep` is a SLOPE criterion
+(faces steeper than 30 degrees, minus `0x20000000|0x41`) and the engine's own
+set comes out of `o3de_ForEachMeshInBox` feeding `Sweep_ActorMove`
+(0x004AD360), which has no port and is where this goes next.
 
 The attempt is saved as a patch outside the tree; it is 115 lines and all of
 it is in `play.cpp`'s `FightRun`. Nothing of it is committed, so the tree
