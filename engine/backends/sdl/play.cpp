@@ -7507,6 +7507,21 @@ int main(int argc, char** argv) {
                             // expires (the ms clock not advancing the way the
                             // profile's millisecond delays expect) and an
                             // intent no branch re-arms.
+                            // WHERE THE TWO BODIES ACTUALLY ARE. The line
+                            // above carries their separation, which is a
+                            // scalar and hides the fault a reader reported as
+                            // "the enemy disappears": his clip's root motion
+                            // was moving him vertically with no ground pass,
+                            // so he rose out of frame while the separation -
+                            // measured in three dimensions - still read
+                            // plausibly. A height that walks away from its
+                            // placement is the discriminator, so print both.
+                            std::printf("    bodies: player %.0f %.0f %.0f facing %.0f, "
+                                        "opponent %.0f %.0f %.0f facing %.0f\n",
+                                        double(fightRun.player.x), double(fightRun.player.y),
+                                        double(fightRun.player.z), double(fightRun.player.yaw),
+                                        double(fightRun.foe.x), double(fightRun.foe.y),
+                                        double(fightRun.foe.z), double(fightRun.foe.yaw));
                             // THE CAMERA's own state machine, so a run shows
                             // it working rather than merely existing: 1 the
                             // orbit, 2 the throw swing, 4 the ten-frame hand
