@@ -796,7 +796,15 @@ public:
     // (going to the right when on the memo item in the left sidebar): a
     // preview text is displayed below". Selecting the line is enough.
     bool memoBodyShown() const {
-        if (!panel_ || panel_->addr != kPanelSneakMemory) return false;
+        if (!panel_) return false;
+        // The READER page shows it unconditionally: its builder `sub_49D870`
+        // sets the box's flag and its leave `sub_49D890` clears it, and the
+        // page has no hook of its own - the show/hide-by-current-list test
+        // belongs to the MEMORY page's hook alone. Reading the memo IS the
+        // page, so a reader arm that asked "is the current list the rows"
+        // would open it blank: there the current list is the BOX.
+        if (panel_->addr == kPanelSneakReader) return true;
+        if (panel_->addr != kPanelSneakMemory) return false;
         const UiList* l = curList();
         return l != nullptr && l->addr == kListSneakRows;
     }

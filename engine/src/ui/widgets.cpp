@@ -1046,6 +1046,19 @@ void UiWalk::buildPage(const UiPanel& p) {
     // The last line is the one this port had BACKWARDS: the body is not shown
     // when the page opens. The panel hook lights it once the current list is
     // the rows, so the memo text appears when the player moves INTO the list.
+    // THE MEMO READER `0x004DEFF0`. Its record ships `+24 = 2` and NOTHING
+    // writes it - `sub_42A370` installs a panel without touching `+24`, and
+    // the page has no builder instruction for it - so the lift carries
+    // `current: -1` (it records only a callback's write) and the walk would
+    // fall back to the move rule and land on the tab column. The shipped
+    // value is the answer, exactly as it is for the shops' two children and
+    // MULTIPLAN's: index 2 is `0x004DEAE8`, the body box, whose hook is the
+    // scroller - which is the whole purpose of this page.
+    if (p.addr == kPanelSneakReader) {
+        state_->rowKind = 2;
+        curFromBuilder_ = 2;
+        return;
+    }
     if (p.addr == kPanelSneakMemory) {
         state_->rowKind = 2;
         state_->rowWidgets = 5;
@@ -1911,9 +1924,45 @@ bool UiWalk::confirm() {
             panel_ = nullptr;                  // `screen[+8] = 3`
             return true;
         }
+        // ---- THE MEMO READER, `sub_49BC60`'s KIND-2 ARM ------------------
+        //
+        // Two instructions, and the port refused them for want of reading:
+        //
+        //     loc_49BDCC: push offset off_4DEFF0
+        //                 jmp  loc_49BE80      ; sub_42A370(screen, panel)
+        //
+        // ENTER on a memo installs the READER PAGE. Its record ships
+        // `+24 = 2`, so the page comes up STANDING IN list 0x004DEAE8 - the
+        // body box - whose hook is the scroller `0x0042A9A0`, and that is
+        // what a reader found in the original: "pressing entree allows to
+        // use the scroll bar of the text zone". Its `+16` hook is 0, so
+        // nothing moves between its lists and BACK is the way out, through
+        // the leave `sub_49D890`.
+        //
+        // `sub_49D870`, its builder: `dword_6A5090 = 0` - the scroll offset,
+        // zeroed so a memo is read from the top, exactly as the examine
+        // page's own open does - and `sub_428FF0(0x004DEA98, 0x40400080, 1)`,
+        // which the leave clears. Those two bits are NOT modelled: the word
+        // appears at exactly two sites in the image, this builder and that
+        // leave, so nothing tests it by literal and what it gates is unread.
+        if (it->callback == kCbSneakRowConfirm && state_->rowKind == 2) {
+            const auto* kid = w_->at(kPanelSneakReader, screen_);
+            if (!kid) {                       // not lifted: say so, don't guess
+                approx_ = true;
+                log_.push_back("memo reader: 0x004DEFF0 is not in the table");
+                return true;
+            }
+            leavePage(*panel_);
+            panel_ = kid;
+            state_->textScroll = 0;           // `mov dword_6A5090, 0`
+            buildPage(*panel_);
+            settle();
+            log_.push_back("enter memo reader");
+            return true;
+        }
         if (it->callback == kCbSneakRowConfirm && state_->rowKind != 0) {
             approx_ = true;
-            log_.push_back("memory row: its arm is not modelled");
+            log_.push_back("row confirm: this source kind's arm is not modelled");
             return true;
         }
         if (it->callback == kCbSneakRowConfirm ||

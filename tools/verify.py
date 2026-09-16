@@ -19520,10 +19520,23 @@ def c_ui_geometry():
 
     What the shipped data is asked, and could fail:
 
-    * **all 411 items land inside 640x480.** A wrong offset scatters them, and
+    * **all 718 items land inside 640x480.** A wrong offset scatters them, and
       this is the field's own test - the records are not bounded by anything
-      else.
-    * **23 of the 35 panels carry a tile map, every one exactly 80 entries with
+      else. The number counts item ROWS over the lifted panels, so a panel
+      carried by several screens contributes its items once per screen; the
+      distinct item records are far fewer. It said 411 in this prose and 628
+      in the assertion below, which is two stale censuses in one check.
+    * **RE-BASELINED 2026-09-16, and it was RED BEFORE that day's work.**
+      Measured against the committed table rather than argued: `HEAD` already
+      gave 698 items, 57 panels and 40 tile maps against this check's 628 / 51
+      / 34, so **70 items and 6 panels had been stale since 2026-09-15**, when
+      MULTIPLAN's and the shops' CODE_NAMED children entered the lift and
+      nobody re-ran this `--slow` check. The memo reader `0x004DEFF0` adds the
+      remaining +20 items, +1 panel and +1 tile map (its four lists: 8 tab
+      icons, 9 rows, the body box, 2 echo). Same family as `engine: text
+      scroll` the same day: a census over LIFTED ROWS moves whenever the lift
+      grows, while the sentence above it talks about the tree.
+    * **41 of the 58 panels carry a tile map, every one exactly 80 entries with
       every id in 0..79** - the exact range a 10-wide by 8-deep grid of a
       640x480 sheet indexes. Ids are read signed and none is negative.
     * the **start menu has no map at all** (`tilesAt` is 0), which is the
@@ -19571,7 +19584,7 @@ def c_ui_geometry():
     xy = [(it["x"], it["y"]) for l in lift[0]["lists"] for it in l["items"]][:7] if lift else []
     return (len(items), inb, sized, len(r["panels"]), len(maps), lens, clean,
             menuMap, xy), \
-           (628, 628, 627, 51, 34, [80], 34,
+           (718, 718, 717, 58, 41, [80], 41,
             False,
             [(278, 194), (321, 194), (370, 194),
              (284, 241), (325, 242), (371, 242), (325, 288)]), \
@@ -20422,8 +20435,36 @@ def c_engine_sneak_memos():
     it actually laid out: memo 915's description is 192 bytes and its section 0
     is 102.
 
+    **AND ENTER OPENS THE MEMO READER** - the last of the reader's three play
+    notes: *"pressing entree allows to use the scroll bar of the text zone"*.
+    `sub_49BC60`'s kind-2 arm is two instructions, `push offset off_4DEFF0` and
+    a jump into the shared tail `sub_42A370(screen, panel)`, so a memo's
+    confirm INSTALLS the reader page. This port refused that arm outright, and
+    the page was not in `tables/ui_widgets.json` at all: `exetables.py`'s
+    `CODE_NAMED` now names it as the memory panel's child, which is how the
+    verb panel and the examine page are lifted too.
+
+    The page is the same four lists with a different CURRENT: its record ships
+    `+24 = 2`, list `0x004DEAE8`, the body box - whose hook is the scroller
+    `0x0042A9A0`, and that is the scroll bar. Nothing writes that `+24` (the
+    installer does not, and the page's builder has no instruction for it), so
+    the lift carries `current: -1` and the walk supplies the shipped value, as
+    it already does for the shops' two children and MULTIPLAN's. Its builder
+    `sub_49D870` zeroes `dword_6A5090`, the same scroll offset the examine
+    page zeroes; its `+16` hook is 0, so BACK is the way out.
+
+    A third memo is given - **336, seven lines** - because the offset is
+    clamped by the DRAW against the laid-out height, so a memo that fits
+    cannot scroll at all and would prove nothing. Three DOWN presses step
+    `dword_6A5090` by 8 each and the clamp cuts 24 to **3**, the real overflow
+    of seven lines in a 110-tall box: the 3 IS the bound being enforced, not a
+    press that went missing.
+
     NOT covered: the FIVE widgets. Two memos bind the same two rows whether the
-    list is 5 wide or 9, so this route cannot tell them apart.
+    list is 5 wide or 9, so this route cannot tell them apart. Nor the flag
+    `0x40400080` the reader's builder sets on the box and its leave clears -
+    that word appears at exactly two sites in the image, those two, so nothing
+    tests it by literal and what it gates is unread.
     """
     import subprocess
     eng = os.path.join(ROOT, "engine")
@@ -20438,19 +20479,26 @@ def c_engine_sneak_memos():
     r = subprocess.run([play, omkpaths.data_root(), os.path.join(ROOT, "tables"),
                         "--software", "--nofmv", "--no-crowd", "--save", save,
                         "--area", "0", "--stand", "1804,0,-6890,336",
-                        "--give", "2:913,2:915", "--frames", "660",
-                        "--keys", "0x0F,0x0F,0xCD,0xD0,0x1C,0xCD,0xD0",
+                        "--give", "2:913,2:915,2:336", "--frames", "960",
+                        "--keys",
+                        "0x0F,0x0F,0xCD,0xD0,0x1C,0xCD,0xD0,0xD0,0x1C,0xD0,0xD0,0xD0",
                         "--keydelay", "60"],
                        capture_output=True, env=env)
     text = r.stdout.decode("cp1252", "replace")
     got = tuple(ln.strip() for ln in text.splitlines()
-                if ln.startswith("sneak: memory page") or ln.startswith("sneak: memo body"))
+                if ln.startswith("sneak: memory page")
+                or ln.startswith("sneak: memo body")
+                or ln.startswith("sneak: memo reader"))
     return got, \
-           ("sneak: memory page - object list 2, 2 rows: 913 915",
+           ("sneak: memory page - object list 2, 3 rows: 913 915 336",
             "sneak: memo body - row 0 id 913 'Moi :', "
             "185 chars, 4 lines drawn at frame 301",
             "sneak: memo body - row 1 id 915 'Panneau Bibliothèque :', "
-            "102 chars, 2 lines drawn at frame 361"), \
+            "102 chars, 2 lines drawn at frame 361",
+            "sneak: memo body - row 2 id 336 'Kay'l :', "
+            "254 chars, 7 lines drawn at frame 421",
+            "sneak: memo reader - list 2, scroll 0, 254 chars, 7 lines drawn",
+            "sneak: memo reader - list 2, scroll 3, 254 chars, 7 lines drawn"), \
            "the viewer's lines for the sneak's memory page after two memos are " \
            "given into object list 2 and the page is opened: which list the " \
            "rows bound to, how many and their ids - and the BODY the page's own " \
@@ -20468,7 +20516,13 @@ def c_engine_sneak_memos():
            "SELECTS a line, not a press later: the frame stamp is what " \
            "separates that from a body drawn while the page merely sits open, " \
            "since both would say `row 0`. 301 and 361 are this harness's two " \
-           "presses at --keydelay 60, not a fact about the engine"
+           "presses at --keydelay 60, not a fact about the engine. Then ENTER " \
+           "on a memo installs the READER PAGE `0x004DEFF0` - lifted through " \
+           "`CODE_NAMED` for this, since nothing in the tree points at it - " \
+           "which comes up standing in list 2, the body box, whose hook is " \
+           "the scroller: three DOWN presses step the offset 8 each and the " \
+           "draw's clamp cuts 24 to 3, the real overflow of a seven-line memo " \
+           "in a 110-tall box"
 
 
 def c_engine_sneak_quit():

@@ -782,7 +782,22 @@ def t_ui_widgets(e):
                   # MULTIPLAN's two (todo/multiplan.md): the row callback
                   # 0x004B05C0 installs the EXAMINE page 0x004E5998 on
                   # "Examiner" and the DESTROY confirm 0x004E5A00 on "Detruire"
-                  0x004E5930: [0x004E5998, 0x004E5A00]}
+                  0x004E5930: [0x004E5998, 0x004E5A00],
+                  # THE MEMO READER, added 2026-09-16 after a reader pressed
+                  # ENTER on a memo in the original: "pressing entree allows to
+                  # use the scroll bar of the text zone". The row's confirm
+                  # `sub_49BC60` dispatches on `dword_670CB8`, and its kind-2
+                  # arm is two instructions - `loc_49BDCC: push offset
+                  # off_4DEFF0; jmp loc_49BE80`, where the shared tail is
+                  # `sub_42A370(screen, the pushed panel)`. The record ships
+                  # `+24 = 2`, so the page comes up STANDING IN list 2
+                  # (0x004DEAE8, the body box), whose hook is the scroller
+                  # `0x0042A9A0` - which is the whole point of the page and
+                  # the scroll bar that was reported. Its builder
+                  # `sub_49D870` zeroes `dword_6A5090`, the scroll offset the
+                  # examine page zeroes too, and its `+16` hook is 0, so
+                  # nothing moves between its lists and BACK is the way out.
+                  0x004DEF88: [0x004DEFF0]}
     out, skipped, seen = [], [], set()   # `seen` tracks CHILD panels only
     for sid in sorted(u.screens):
         try:
@@ -980,20 +995,32 @@ def c_ui_widgets(rows, e):
             # 23/154/666 -> 26/166/698 on 2026-09-15: MULTIPLAN's two CODE_NAMED
             # children (the examine page 0x004E5998, the destroy confirm
             # 0x004E5A00) and its own panel again as the examine box's `+44`.
-            ("child panels", len(kids), 26),
-            ("lists", len(lists), 166),
-            ("items", len(items), 698),
+            # 26/166/698 -> 27/170/718 on 2026-09-16: the MEMO READER
+            # 0x004DEFF0, the memory page's CODE_NAMED child, with its four
+            # lists - the tab column (8 items), the rows (9), the body box (1)
+            # and the echo bar (2), which is the +20 exactly. It adds no
+            # DISTINCT list or item record, because it carries the very same
+            # ones the memory page does, which is why the two "distinct"
+            # counts below do not move.
+            ("child panels", len(kids), 27),
+            ("lists", len(lists), 170),
+            ("items", len(items), 718),
             ("item records inside the image",
              sum(1 for i in items if mapped(i["addr"])), len(items)),
             # 75 across the whole tree but only 16 distinct item RECORDS
             # (9 before the sneak family, and its tab column adds seven):
             # 0x004DE210 is one list carried by nine of the panels, so each
             # of its child-naming items is counted once per panel.
+            # 96 -> 103 on 2026-09-16: the memo reader carries the tab column
+            # too, and seven of its eight icons name a page.
             ("items naming a child panel",
-             sum(1 for i in items if i["child"]), 96),
+             sum(1 for i in items if i["child"]), 103),
             ("...of which distinct item records",
              len({i["addr"] for i in items if i["child"]}), 23),
-            ("lists with a non-default input hook", len(hooks), 60),
+            # 60 -> 62 on 2026-09-16: the memo reader's copy of the row list
+            # (`0x0049C050`) and of the body box's list (`0x0042A9A0`, the
+            # scroller that makes the page scroll at all).
+            ("lists with a non-default input hook", len(hooks), 62),
             # The two RUNTIME fields, and only where the open callback writes
             # them. Neither was in this table before 2026-09-04, because the
             # scan had no reason to look: `panel+24` is the CURRENT LIST and
@@ -1070,13 +1097,17 @@ def c_ui_widgets(rows, e):
               sum(1 for p in ps if not p["flagsB"] & 0x6000 and p["tilesAt"]),
               sum(1 for p in ps if not p["flagsB"] & 0x6000
                   and not p["tilesAt"])],
-             [21, 1, 27, 8]),
+             # tiles 27 -> 28 on 2026-09-16: the memo reader's `+20` is the
+             # family's own tile array `0x004DDF60`, like every sneak page.
+             [21, 1, 28, 8]),
             ("the one panel that blits its sheet whole",
              [p["screen"] for p in ps
               if not p["flagsB"] & 0x2000 and p["flagsB"] & 0x4000], [36]),
             ("distinct hooks among them", len(set(hooks)), 13),
+            # 106 -> 108 on 2026-09-16: the memo reader's tab column and echo
+            # bar, the two of its four lists that take the default walk.
             ("lists taking Ui_MoveSelection, the default walk",
-             sum(1 for l in lists if not l["hook"]), 106),
+             sum(1 for l in lists if not l["hook"]), 108),
             ("the LIFT grid hook is present", rows["gridHook"] in hooks, True),
             # It is here only because the walk follows `+44`: the name field
             # is in the start menu's confirm dialog, a CHILD panel. A lift

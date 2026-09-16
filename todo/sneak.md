@@ -226,10 +226,25 @@ than run `Utiliser`'s arm under its name.
 > Played headlessly on both saves: RIGHT onto the list draws memo 913 (185
 > chars) / 342 (74), and DOWN follows to 915 (102) / 338 (229).
 >
-> **STILL OPEN from the same play report**: ENTER on a memo enters the text
-> zone and gives it a scroll bar, which is the reader page `0x004DEFF0` - a
-> CHILD of this panel, with builder `sub_49D870` and leave `sub_49D890`, both
-> of which just show and hide `0x004DEA98` with bank `0x40400080`. Not ported.
+> **THE MEMO READER IS PORTED** (done): ENTER on a memo runs `sub_49BC60`'s
+> kind-2 arm - `push offset off_4DEFF0`, then the shared tail
+> `sub_42A370(screen, panel)` - which INSTALLS the reader page. It was not in
+> `tables/ui_widgets.json` at all, so `exetables.py`'s `CODE_NAMED` gained
+> `0x004DEF88: [0x004DEFF0]`, the way the verb panel and examine page are
+> lifted; the lifter's seven counts moved with it (child panels 26->27, lists
+> 166->170, items 698->718, items naming a child 96->103, non-default hooks
+> 60->62, tiled panels 27->28, default-walk lists 106->108) and every delta is
+> the page's own four lists, while the two DISTINCT counts did not move at all
+> because it reuses the same records.
+>
+> The page is those four lists with a different CURRENT: `+24 = 2` is
+> `0x004DEAE8`, the body box, whose hook is the scroller `0x0042A9A0`. Nothing
+> writes that `+24`, so the walk supplies the shipped value as it does for the
+> shops' and MULTIPLAN's children. `sub_49D870` zeroes the scroll offset;
+> `+16` is 0, so BACK is the way out. Played headlessly: ENTER draws
+> `list 2, scroll 0` and three DOWNs give `scroll 3` - the clamp against the
+> laid-out height, not a lost press. **Not modelled**: the `0x40400080` the
+> builder sets and the leave clears, whose two sites in the image are those.
 >
 > Both mutations red with their own output (`9bf0faf`), and each reproduces one
 > of the two faults exactly: with the hook arm dead

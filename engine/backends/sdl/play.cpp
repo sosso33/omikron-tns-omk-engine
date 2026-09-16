@@ -17141,6 +17141,27 @@ int main(int argc, char** argv) {
                     }
                     memoBodyPending.clear();
                 }
+                // ---- THE MEMO READER ---------------------------------
+                //
+                // The page a memo row's confirm installs (`sub_49BC60`'s
+                // kind-2 arm). It ships `+24 = 2`, so it comes up standing in
+                // the body box's own list, whose hook is the scroller - which
+                // is what makes UP and DOWN move the text rather than the
+                // selection. Reported as the list it stands in and the scroll
+                // offset, beside what the box actually drew.
+                if (const omk::UiPanel* rp = walk->panel();
+                    rp && rp->addr == omk::kPanelSneakReader) {
+                    static std::string readerTold;
+                    const std::string said =
+                        "list " + std::to_string(walk->currentList()) +
+                        ", scroll " + std::to_string(walk->textScroll()) +
+                        ", " + std::to_string(sf.textChars) + " chars, " +
+                        std::to_string(sf.textLines) + " lines drawn";
+                    if (said != readerTold) {
+                        readerTold = said;
+                        std::printf("sneak: memo reader - %s\n", said.c_str());
+                    }
+                }
             }
         }
 

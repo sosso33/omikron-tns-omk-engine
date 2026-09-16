@@ -128,6 +128,18 @@ rule intends one.
 > thing it describes (`engine: I2D`'s flag census and `engine: slider door`'s
 > row parse were the others): **a census is only as stable as the enumeration
 > under it**, which is CLAUDE.md 1's rotting-scan rule one level down.
+>
+> **`ui geometry` was the FOURTH, found the same afternoon** - and it had been
+> red since **2026-09-15**, not since today. Attributed the same way, by
+> counting the COMMITTED table instead of arguing: `HEAD` gave 698 items, 57
+> panels, 40 tile maps against its baseline of 628 / 51 / 34, so MULTIPLAN's
+> and the shops' CODE_NAMED children had moved it a day earlier and nothing
+> re-ran it; lifting the memo reader `0x004DEFF0` then added the last +20 / +1
+> / +1. Its PROSE had drifted further than its assertion - "all 411 items",
+> "23 of the 35 panels" - so the check was quoting three different censuses of
+> one table. **When a check's sentence and its numbers disagree, both are
+> suspect**, and the cheap way to split "mine" from "already there" is one
+> count against `git show HEAD:<table>`.
 
 > **`engine: UI` is RED and was already red at `a5b1807`, on a clean tree.**
 > Measured 2026-09-07: `disagree` is 9, not 0 - the shops, screens 21..28 and

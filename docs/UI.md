@@ -1590,6 +1590,20 @@ the wrong page.
 > the box one press late. Derived now (`UiWalk::memoBodyShown()` asks whether
 > the current list is the rows), which is what makes the box follow the
 > selection into the list the way the original does.
+>
+> **AND ENTER OPENS THE MEMO READER** — *"pressing entrée allows to use the
+> scroll bar of the text zone"*. `sub_49BC60`'s kind-2 arm is
+> `push offset off_4DEFF0` into the shared tail `sub_42A370(screen, panel)`,
+> so a memo's confirm installs the reader page. It is the SAME four lists as
+> the memory page with a different current: its record ships `+24 = 2`, list
+> `0x004DEAE8` — the body box — whose hook is the scroller `0x0042A9A0`, which
+> is the scroll bar. Nothing writes that `+24` (the installer does not, and
+> the page has no builder instruction for it), so it is the shipped value that
+> stands, exactly as for the shops' two children and MULTIPLAN's. `sub_49D870`
+> zeroes `dword_6A5090` so a memo is read from the top, and `+16` is 0, so
+> nothing moves between its lists and BACK is the way out through
+> `sub_49D890`. The page was not lifted into `tables/ui_widgets.json` at all
+> until 2026-09-16; `exetables.py`'s `CODE_NAMED` names it now.
 
 `sub_42ADD0` branches on it too. For 0 and 2 it raises the channel's **event
 25** with that number as the list id; for **4** it raises nothing and instead
