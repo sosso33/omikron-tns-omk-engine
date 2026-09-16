@@ -38,6 +38,7 @@
 #include "formats/scx.h"
 #include "formats/tex3dt.h"
 #include "input/bindings.h"
+#include "actor/fight.h"
 #include "actor/shoot.h"
 #include "actor/shootfire.h"
 #include "actor/shoothit.h"
@@ -1472,6 +1473,14 @@ int main(int argc, char** argv) {
 "                   --slot it resumes the game the save holds\n"
 "  --area N         the area to stand in\n"
 "  --address A      the ADDRESSES record to stand on\n"
+"  --fight N        HARNESS: begin a MELEE against CHARACTERS id N where the\n"
+"                   player stands, the way `fight.begin` (op 62) would - both\n"
+"                   bodies onto .CTL slot 2, ACTOR_STATE 2, control scheme 3.\n"
+"                   The opponent must be staged in the resident scene. Without\n"
+"                   it a fight still starts wherever a script runs op 62\n"
+"  --fight-level N  the AI difficulty a --fight harness asks for, 0..2 (the\n"
+"                   scripts' 'Niveau Combat'; default 1). A scripted fight\n"
+"                   carries its own level in the opcode's third field\n"
 "  --ride           mount a slider where he stands and FLY it (step 3's\n"
 "                   harness: no pool, no reservation, no arrival)\n"
 "  --stand x,y,z[,facing]   an explicit spot instead of an address\n"
@@ -1696,6 +1705,12 @@ int main(int argc, char** argv) {
     // pool, the reservation or the arrival - `todo/slider.md` step 3's
     // harness. The flight model is the engine's (`actor/slider.h`); what this
     // skips is how a slider gets to you, which is `sub_452570`'s other arm.
+    // `--fight N` / `--fight-level N`: the MELEE harness. The engine's way in
+    // is a script running op 62, and this stands in for one so a fight can be
+    // reached without walking the story to it - the same shape as `--ride`
+    // for the slider, and it says so in its own log line.
+    int  fightArg = -1;
+    int  fightLevelArg = 1;
     bool rideArg = false;
     // `--board`: HARNESS. When the called slider goes OPEN, put him at its
     // door point and press the action button once, so a check can board
@@ -1943,6 +1958,8 @@ int main(int argc, char** argv) {
         else if (a == "--save-name" && i + 1 < argc) saveNameArg = argv[++i];
         else if (a == "--area" && i + 1 < argc) areaArg = std::atoi(argv[++i]);
         else if (a == "--address" && i + 1 < argc) addressArg = std::atoi(argv[++i]);
+        else if (a == "--fight" && i + 1 < argc) fightArg = std::atoi(argv[++i]);
+        else if (a == "--fight-level" && i + 1 < argc) fightLevelArg = std::atoi(argv[++i]);
         else if (a == "--ride") rideArg = true;
         else if (a == "--board") boardArg = true;
         // A HARNESS FLAG, not a port: put an object into the carried list so
@@ -4433,6 +4450,164 @@ int main(int argc, char** argv) {
         return &charBanks.emplace(name, std::move(b)).first->second;
     };
     // ...and that clip as a pose, at FRAME 0. The recipe is
+    // ---- MELEE, `todo/fight-mode.md` step 2 -----------------------------
+    //
+    // `fight.begin` (op 62) parks its script at status 3 and hands the
+    // opponent and the AI LEVEL here; `Game_HandleEvent` case 2 releases it
+    // when the fight ends. What this does is `Fight_Engage`'s (0x0041A3B0)
+    // own list: both bodies onto `.CTL` slot 2 - the `*CMBT` bank, through
+    // `Actor_LoadBankList` rather than a rebuilt controller - ACTOR_STATE 2
+    // on both, the two combat contexts `Fight_Begin` builds, and control
+    // scheme 3. The runtime itself is `actor/fight.cpp`.
+    //
+    // It is installed HERE rather than beside the move hook because it needs
+    // `charBankFor`, which is defined just above.
+    struct FightRun {
+        bool  active = false;
+        bool  harnessFired = false;    // `--fight` stands in for op 62, once
+        int   opponent = -1;
+        Staged* body = nullptr;            // the opponent's staged body
+        omk::FightBody player, foe;
+        std::unique_ptr<omk::CefChannel> foeChannel;
+        std::unique_ptr<omk::Fight> fight;
+        double ms = 0.0;                   // the AI's `Sys_GetTimeMs` clock
+        long  startedAt = 0;
+    };
+    FightRun fightRun;
+    const auto playerRecordSpan = [&]() {
+        return state.raw().subspan(
+            static_cast<std::size_t>(omk::GameState::kPlayerRecord),
+            static_cast<std::size_t>(omk::GameState::kPlayerRecordSize));
+    };
+    const auto beginMelee = [&](int opponentId, int level) -> bool {
+        if (!player || fightRun.active) return false;
+        Staged* s = nullptr;
+        for (auto& up : staged) if (up->actor == opponentId) { s = up.get(); break; }
+        if (!s || !s->mo || s->mo->meshes.empty()) {
+            std::printf("fight.begin %d: no staged body for that character, "
+                        "the script runs on\n", opponentId);
+            return false;
+        }
+        // Both fighters' `.CTL` slot 2. The opponent's comes off his record;
+        // the player's off the DB player record's own slot 2 (+90), with the
+        // same LABELLED fallback shape his adventure bank has.
+        const std::string foeBankName = session.ctlSlotOfActor(opponentId, 2);
+        std::string myBankName;
+        {
+            const auto raw = state.raw();
+            const std::size_t off =
+                static_cast<std::size_t>(omk::GameState::kPlayerRecord) + 90u;
+            for (std::size_t k = 0; k < 9 && off + k < raw.size(); ++k) {
+                const char c = static_cast<char>(raw[off + k]);
+                if (!c) break;
+                myBankName.push_back(c);
+            }
+            if (myBankName.empty())
+                myBankName = (!playerModel.empty() && playerModel[0] == 'F')
+                                 ? "F1CMBT" : "H1CMBT";   // LABELLED fallback
+        }
+        CharBank* fb = charBankFor(foeBankName);
+        CharBank* pb = charBankFor(myBankName);
+        if (!fb || !fb->ready || !pb || !pb->ready) {
+            std::printf("fight.begin %d: combat bank missing (player '%s' %s, "
+                        "opponent '%s' %s), the script runs on\n", opponentId,
+                        myBankName.c_str(), (pb && pb->ready) ? "ok" : "MISSING",
+                        foeBankName.c_str(), (fb && fb->ready) ? "ok" : "MISSING");
+            return false;
+        }
+        // The stats, `Fight_Begin`'s six event-44 reads. The player's live in
+        // the DB record - `Hooks::getActorProperty` refuses an actor with no
+        // chunk record, and Kay'l has none in a city chunk.
+        omk::FightStats ps{}, os{};
+        {
+            const auto rec = playerRecordSpan();
+            std::int32_t v = 0;
+            if (omk::readActorProperty(rec, 1, v))  ps.vie = v;
+            if (omk::readActorProperty(rec, 16, v)) ps.attack = v;
+            if (omk::readActorProperty(rec, 18, v)) ps.dodge = v;
+            if (omk::readActorProperty(rec, 19, v)) ps.experience = v;
+            std::int32_t w = 0;
+            if (session.actorProperty(opponentId, 1, w))  os.vie = w;
+            if (session.actorProperty(opponentId, 16, w)) os.attack = w;
+            if (session.actorProperty(opponentId, 18, w)) os.dodge = w;
+            if (session.actorProperty(opponentId, 19, w)) os.experience = w;
+        }
+        fightRun.foeChannel = std::make_unique<omk::CefChannel>(fb->ctl);
+        {
+            const int g = fightRun.foeChannel->defaultGroup();
+            if (g >= 0) fightRun.foeChannel->setBankGroup(g);
+        }
+        player->setBank(pb->ctl, pb->data);
+        player->setActorState(omk::ActorState::Melee, "Fight_Engage");
+
+        // THE SEPARATION RADIUS. `Fight_Begin` takes `f32(node, 88)` for each
+        // fighter and keeps the larger - the NODE's own bounding radius, and
+        // this tree has no node, so the model's LARGEST MESH bound stands in
+        // and is labelled as a stand-in. It is not `meshes.front()`: that is
+        // one mesh (7.1 for HO1_FN, 18 cm) and the first version of this used
+        // it, which would have let two fighters stand inside each other. The
+        // whole-body mesh gives 42.5, a little over a metre.
+        const auto bodyRadius = [](const std::vector<omk::Mesh>& ms) {
+            float r = 0.0f;
+            for (const auto& m : ms) r = std::max(r, m.radius);
+            return r;
+        };
+        fightRun.player = omk::FightBody{};
+        fightRun.player.x = player->pos()[0];
+        fightRun.player.y = player->pos()[1];
+        fightRun.player.z = player->pos()[2];
+        fightRun.player.yaw = player->facing();
+        fightRun.player.radius = bodyRadius(playerMeshes);
+        fightRun.player.channel = &player->channel();
+        fightRun.player.isPlayer = true;
+        // His channel is ticked by the CONTROLLER, because melee's row runs
+        // `Actor_ApplyMotion` after `Cef_TickChannel` and the controller is
+        // both halves. Without this the fight ticks the channel alone and he
+        // stands still while his clips play - which is what the first run of
+        // this harness did, 79 units apart for 245 frames.
+        fightRun.player.externallyTicked = true;
+        fightRun.foe = omk::FightBody{};
+        fightRun.foe.x = s->at[0]; fightRun.foe.y = s->at[1]; fightRun.foe.z = s->at[2];
+        fightRun.foe.yaw = s->facing;
+        fightRun.foe.radius = bodyRadius(s->mo->meshes);
+        fightRun.foe.channel = fightRun.foeChannel.get();
+
+        fightRun.ms = 0.0;
+        fightRun.fight = std::make_unique<omk::Fight>(
+            [] { return std::rand(); },
+            [&fightRun] { return static_cast<long>(fightRun.ms); });
+        fightRun.fight->setBodyTick([&](float dt, std::uint32_t word) {
+            if (player) player->tick(dt, word);
+        });
+        fightRun.fight->begin(fightRun.player, ps, fightRun.foe, os, level,
+                              settings.v.fightDifficulty);
+        in.installScheme(3);          // `Input_InstallScheme(3)`, group Combat
+        fightRun.active = true;
+        fightRun.opponent = opponentId;
+        fightRun.body = s;
+        fightRun.startedAt = session.frameNo();
+        std::printf("frame %ld: FIGHT BEGINS against CHARACTERS %d - banks '%s' "
+                    "vs '%s', AI level %d (profile %d), difficulty %d, "
+                    "radius %.1f, scheme 3\n"
+                    "  the player: Vie %d, attack %d, dodge %d, experience %d "
+                    "(the DB player record)\n"
+                    "  the opponent: Vie %d, attack %d, dodge %d, experience %d "
+                    "(his chunk record)\n"
+                    "  they stand %.0f apart, %.2f m\n",
+                    session.frameNo(), opponentId, myBankName.c_str(),
+                    foeBankName.c_str(), level, level + 1,
+                    settings.v.fightDifficulty,
+                    double(fightRun.fight->radius()),
+                    ps.vie, ps.attack, ps.dodge, ps.experience,
+                    os.vie, os.attack, os.dodge, os.experience,
+                    double(fightRun.fight->separation()),
+                    double(fightRun.fight->separation()) * 0.0254);
+        return true;
+    };
+    session.setFightHook([&](int opponentId, int level) {
+        return beginMelee(opponentId, level);
+    });
+
     // `PlayerController::poseTracks`'s, transcribed rather than reinvented: a
     // `.CTL` clip is an `.ani` DESCRIPTOR with no "3.0V" wrapper, its tracks
     // resolve to meshes by name, and KEY 0 IS THE REST SENTINEL so frame `f`
@@ -7090,7 +7265,138 @@ int main(int argc, char** argv) {
                     // `Actor_TickChannelOnly`, the channel and nothing else,
                     // which is what `setChannelOnly` models - so `H_SLDIN`
                     // plays and its root motion carries him in.
-                    if (!ride && !boarded) {
+                    // THE HARNESS, and it is one: the engine reaches a fight
+                    // through a script's op 62, and this fires the same entry
+                    // by hand once the world and the player exist, so a fight
+                    // can be watched without walking the story to it.
+                    if (fightArg >= 0 && player && !fightRun.active &&
+                        !fightRun.harnessFired) {
+                        fightRun.harnessFired = true;
+                        // ...and it PLACES him, which the engine does not:
+                        // `fight.begin` teleports nobody, because the script
+                        // that runs it has already staged the two face to
+                        // face. Two metres ahead of the player, inside the
+                        // AI's own closing distance, facing him. Forward is
+                        // (sin yaw, -cos yaw) - `rotateYaw`'s convention.
+                        for (auto& up : staged) {
+                            if (up->actor != fightArg) continue;
+                            const float rad = player->facing() * 3.14159265f / 180.0f;
+                            up->at[0] = player->pos()[0] + std::sin(rad) * 78.74f;
+                            up->at[1] = player->pos()[1];
+                            up->at[2] = player->pos()[2] - std::cos(rad) * 78.74f;
+                            up->facing = player->facing() + 180.0f;
+                            up->placed = true;
+                            std::printf("frame %ld: harness --fight places CHARACTERS %d "
+                                        "two metres in front of the player, at "
+                                        "%.0f %.0f %.0f facing %.0f (the engine stages "
+                                        "them with a script instead)\n",
+                                        n, fightArg, double(up->at[0]), double(up->at[1]),
+                                        double(up->at[2]), double(up->facing));
+                            break;
+                        }
+                        std::printf("frame %ld: harness --fight %d level %d - "
+                                    "standing in for a script's fight.begin\n",
+                                    n, fightArg, fightLevelArg);
+                        beginMelee(fightArg, fightLevelArg);
+                    }
+                    if (fightRun.active) {
+                        // ACTOR_STATE 2, and **THE WALKER MUST NOT TICK
+                        // BESIDE IT** - the lesson states 7 and 8 taught with
+                        // the slider. `Actor_TickPlayerAndOpponent` ticks each
+                        // fighter's channel itself, inside the combat step,
+                        // and the fight owns both bodies.
+                        fightRun.ms += frameSec * 1000.0;
+                        const float was[3] = {player->pos()[0], player->pos()[1],
+                                              player->pos()[2]};
+                        fightRun.player.x = was[0];
+                        fightRun.player.y = was[1];
+                        fightRun.player.z = was[2];
+                        fightRun.player.yaw = player->facing();
+                        const bool on = fightRun.fight->step(
+                            static_cast<float>(frameSec * 30.0),
+                            bits ? bits : omk::kIdleInput);
+                        // The bodies back: the player through `nudge` so the
+                        // walker keeps its own idea of where he stands, the
+                        // opponent onto his staged placement.
+                        const float d[3] = {fightRun.player.x - was[0],
+                                            fightRun.player.y - was[1],
+                                            fightRun.player.z - was[2]};
+                        if (d[0] != 0.0f || d[1] != 0.0f || d[2] != 0.0f)
+                            player->nudge(d);
+                        player->setFacing(fightRun.player.yaw);
+                        if (fightRun.body) {
+                            fightRun.body->at[0] = fightRun.foe.x;
+                            fightRun.body->at[1] = fightRun.foe.y;
+                            fightRun.body->at[2] = fightRun.foe.z;
+                            fightRun.body->facing = fightRun.foe.yaw;
+                            fightRun.body->placed = true;
+                        }
+                        playerTicked = true;
+                        // Every second of the fight, so a headless run can be
+                        // judged rather than guessed at: the two hit points,
+                        // how far apart they are, which `.CTL` state each is
+                        // in, and what the runtime has scored so far.
+                        if ((n - fightRun.startedAt) % 30 == 0) {
+                            const auto& st = fightRun.fight->stats();
+                            // ...naming the ENTRY each channel sits on, not
+                            // just its state id: "state 0" on its own says
+                            // nothing about which move is playing, and the
+                            // entry's name is what a `.CTL` reader can check.
+                            const auto entryName = [](const omk::CefChannel& ch) {
+                                const int s = ch.state();
+                                const auto& sts = ch.ctl().states;
+                                return (s >= 0 && s < static_cast<int>(sts.size()))
+                                           ? sts[static_cast<std::size_t>(s)].name.c_str()
+                                           : "?";
+                            };
+                            std::printf("  fight +%ld: Vie %d vs %d, %.0f apart "
+                                        "(%.2f m), states %d/%d, entries %d '%s' / "
+                                        "%d '%s', hits %ld, grazes %ld, blocks %ld, "
+                                        "AI moves %ld\n",
+                                        n - fightRun.startedAt,
+                                        fightRun.fight->player().hp,
+                                        fightRun.fight->opponent().hp,
+                                        double(fightRun.fight->separation()),
+                                        double(fightRun.fight->separation()) * 0.0254,
+                                        fightRun.fight->player().state,
+                                        fightRun.fight->opponent().state,
+                                        player->channel().state(),
+                                        entryName(player->channel()),
+                                        fightRun.foeChannel->state(),
+                                        entryName(*fightRun.foeChannel),
+                                        st.hits, st.grazes, st.blocks, st.aiMoves);
+                        }
+                        if (!on) {
+                            // `sub_445AC0`: both channels restored, the
+                            // adventure bank back on the player, scheme 0, and
+                            // event 2 - which releases the FIRST script parked
+                            // at status 3. The life goes back on both records
+                            // first, because that is what the scripts read as
+                            // `'Vie Combat Après'`.
+                            const int myHp = fightRun.fight->player().hp;
+                            const int hisHp = fightRun.fight->opponent().hp;
+                            auto rec = state.rawMutable().subspan(
+                                static_cast<std::size_t>(omk::GameState::kPlayerRecord),
+                                static_cast<std::size_t>(omk::GameState::kPlayerRecordSize));
+                            omk::writeActorProperty(rec, 1, myHp);
+                            session.setActorProperty(fightRun.opponent, 1, hisHp);
+                            player->setBank(playerCtl, playerCtlData);
+                            player->setActorState(omk::ActorState::Normal, "sub_445AC0");
+                            in.installScheme(0);
+                            session.fightEnded();
+                            std::printf("frame %ld: FIGHT ENDS after %ld frames - "
+                                        "%s won, Vie %d vs %d, the script resumes "
+                                        "and the adventure bank is back\n",
+                                        n, n - fightRun.startedAt,
+                                        fightRun.fight->playerWon() ? "the player"
+                                                                    : "the opponent",
+                                        myHp, hisHp);
+                            fightRun.active = false;
+                            fightRun.fight.reset();
+                            fightRun.foeChannel.reset();
+                            fightRun.body = nullptr;
+                        }
+                    } else if (!ride && !boarded) {
                         // `Actor_TickShoot` runs `sub_47D4D0` BEFORE the channel
                         // tick: last frame's intents become this frame's step,
                         // and the step meets the ground in the same try as a

@@ -335,6 +335,24 @@ public:
     // --- what the zone scan and the frontend take ---------------------
     const float* pos() const { return pos_; }
     float facing() const { return euler_[1]; }
+    // `Fight_FaceOpponent` (0x0049A550) writes the actor's +420 OUTRIGHT every
+    // frame of a fight - no walk, no floor seat, just the heading. `placeAt`
+    // is the wrong tool for that (it re-probes the ground under him), so the
+    // yaw has its own setter.
+    void setFacing(float deg) { euler_[1] = deg; }
+    // THE CHANNEL, for a subsystem that drives it directly. Melee is the case
+    // this exists for: `Actor_TickPlayerAndOpponent` ticks each fighter's
+    // channel itself, between the two halves of the combat step, instead of
+    // going through the walker's tick (`actor/fight.cpp`).
+    CefChannel& channel() { return rt_.channel(); }
+    const CefChannel& channel() const { return rt_.channel(); }
+    // `Actor_LoadBankList` (0x00419CB0): swap the bank the channel runs and
+    // put it on the new bank's default entry, leaving the BODY alone - the
+    // position, the euler and the walker are untouched. `fight.begin` does
+    // exactly this to both fighters (to `.CTL` slot 2, the `*CMBT` file) and
+    // `Game_HandleEvent` case 2 does it again to put the player back on slot
+    // 0, which is why this is a bank swap and not a rebuilt controller.
+    void setBank(const CtlFile& ctl, std::span<const std::byte> data);
     // FIRST-PERSON AIM. Shoot mode turns the body with the mouse rather than
     // with the walker's own turn keys, so the frontend needs a way in. It
     // writes the same `euler_[1]` the walker does and wraps it the way

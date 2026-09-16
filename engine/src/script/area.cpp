@@ -814,8 +814,8 @@ bool Session::startPlayerMove(int groupId, int ctx) {
     return moveHook_ && moveHook_(groupId, ctx);
 }
 
-bool Session::beginFight(int opponentId) {
-    return fightHook_ && fightHook_(opponentId);
+bool Session::beginFight(int opponentId, int level) {
+    return fightHook_ && fightHook_(opponentId, level);
 }
 
 void Session::setMoveHook(std::function<bool(int, int)> h) {
@@ -823,7 +823,7 @@ void Session::setMoveHook(std::function<bool(int, int)> h) {
     for (auto& c : ctxs_) if (c) c->vm.setMoveWaitSuspends(static_cast<bool>(moveHook_));
 }
 
-void Session::setFightHook(std::function<bool(int)> h) {
+void Session::setFightHook(std::function<bool(int, int)> h) {
     fightHook_ = std::move(h);
     for (auto& c : ctxs_) if (c) c->vm.setFightWaitSuspends(static_cast<bool>(fightHook_));
 }
@@ -1792,6 +1792,27 @@ std::string Session::bankOfActor(int actor) const {
     return out;
 }
 
+// The same record's three 9-byte `.CTL` name slots, which `Actor_CtlSlotName`
+// indexes: 0 `+72` aventure - what `bankOfActor` returns - 1 `+81` shoot,
+// 2 `+90` combat. A slot is NINE bytes, so a full-length name has no
+// terminator inside it and the walk is bounded by the slot rather than by the
+// NUL `bankOfActor` stops at.
+std::string Session::ctlSlotOfActor(int actor, int slot) const {
+    std::string out;
+    if (slot < 0 || slot > 2) return out;
+    std::vector<std::byte> chunk;
+    std::size_t o = 0;
+    if (!actorRecord(actor, chunk, o)) return out;
+    const std::size_t base = o + 72u + 9u * static_cast<std::size_t>(slot);
+    if (base + 9u > chunk.size()) return out;
+    for (int k = 0; k < 9; ++k) {
+        const char ch = static_cast<char>(chunk[base + static_cast<std::size_t>(k)]);
+        if (!ch) break;
+        out.push_back(ch);
+    }
+    return out;
+}
+
 // The character record's `+176`, `Type Spectre` - property 7, which
 // `Shoot_ActorEnter` raises event 44 for and switches its four AI brains on,
 // and which is ALSO the group index of his clips in the area's `.ani`
@@ -1815,6 +1836,14 @@ bool Session::actorProperty(int actor, int property, std::int32_t& out) const {
     if (!actorRecord(actor, chunk, off)) return false;
     const std::span<const std::byte> rec(chunk.data() + off, 276);
     return readActorProperty(rec, property, out);
+}
+
+// `Actor_SetProperty` (0x0040B8D0) through the same hooks the interpreter
+// writes with, so a fight's per-frame life write lands on the record a script
+// reads back with `var.set.actor_stat` - which is the whole of how
+// `'Vie Combat Perte'` measures what a fight cost the player.
+bool Session::setActorProperty(int actor, int property, std::int32_t value) {
+    return hooks_.setActorProperty(actor, property, value);
 }
 
 bool Session::actorAttack(int actor, int slot, std::int32_t& rangeMetres,
@@ -2837,10 +2866,11 @@ void Session::execute(int i) {
             // frames. **Camera mode 14 is not modelled** - the travel is
             // recorded and the camera left alone rather than pointed somewhere
             // invented. Field 1 is 0 at all 108 shipped sites.
-            if (!beginFight(r.fightOpponent)) break;
+            if (!beginFight(r.fightOpponent, r.fightLevel)) break;
             fightCamTravel_ = r.fightCamTravel;
             c->status = 3;
             c->fightOpponent = r.fightOpponent;
+            c->fightLevel = r.fightLevel;
             return;
         case RunStatus::CameraWait:
             // The 96 handler calls `Camera_FindWorld` FIRST and on 0 skips

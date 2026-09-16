@@ -11070,6 +11070,16 @@ def c_engine_melee():
     which is why `ended` is 5: with no walker in a headless probe neither
     fighter can close or retreat, so a stalemate is a real outcome of the
     fixture rather than of the runtime.
+
+    **Re-baselined 205 -> 203 on 2026-09-16, with the cause named**: step 2 of
+    the fight port added the channel writes `Fight_Begin` makes and the first
+    version had skipped - the queue reseeded on both fighters, and the
+    opponent's input-block flag set, since he is driven by his QUEUE and
+    `Cef_TickChannel` runs its input search only under `!(flags & 0x81)`.
+    That changes the AI fighter's first ticks, so the deterministic run scores
+    two fewer damage figures. Every invariant in the row stayed 0 and no other
+    field moved, which is what says this is a trajectory shift rather than a
+    regression.
     """
     import subprocess, tempfile, shutil
     eng = os.path.join(ROOT, "engine")
@@ -11093,7 +11103,7 @@ def c_engine_melee():
      tooClose, replays) = struct.unpack_from("<18i", raw, 0)
     return (files, profiles, fights, ended, blocks, outside, mismatch,
             unresolved, hpUp, tooClose, checked, hits > 0, aiMoves > 0), \
-           (3, 9, 9, 5, 0, 0, 0, 0, 0, 0, 205, True, True), \
+           (3, 9, 9, 5, 0, 0, 0, 0, 0, 0, 203, True, True), \
            "combat banks, AI profiles exercised, fights, fights ending in a " \
            "KO; then the five invariants that must all be 0 - blocks (the " \
            "defensive arm is not transcribed), AI words outside the 0xCFF " \

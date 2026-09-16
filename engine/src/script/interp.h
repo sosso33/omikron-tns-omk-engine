@@ -146,6 +146,10 @@ struct RunResult {
     // through the shared fetch) and the fight camera's travel, which is
     // `max(field 1, 0)` exactly as the handler's `jge` writes it.
     int fightOpponent = -1, fightCamTravel = 0;
+    // op 62's THIRD field: the AI level, `VARIABLES[175] 'Niveau Combat'`,
+    // which `Fight_SelectAiProfile` turns into the profile whose id is
+    // level + 1 (`todo/fight-mode.md` §2). 0..2 at all 108 shipped sites.
+    int fightLevel = 0;
     // `zone.enable`/`zone.disable` (64/65) RE-REGISTER, and that is not a
     // detail: the handler at 0x004037F0 ends
     //

@@ -132,6 +132,36 @@ bool Fight::begin(FightBody& player, const FightStats& ps,
         }
     }
 
+    // THE CHANNEL WRITES `Fight_Begin` MAKES, which the first version of this
+    // port skipped - and the harness showed it: the AI-driven fighter reached
+    // one entry and stayed there while the AI pressed 674 moves into a queue
+    // nothing consumed.
+    //
+    // `sub_45A870(chan, 1)` clears the channel's bit 0 and reseeds the queue
+    // with the idle word; and the opponent is driven by his QUEUE rather than
+    // by a device, which is flag 0x80 - `Perso_SetInputEnabled(ch, 1)` BLOCKS
+    // the device pass, the sense `tools/renames.json` has backwards and
+    // CLAUDE.md 1 records. `Cef_TickChannel` runs its input search only under
+    // `!(flags & 0x81)`, so without this his injected moves are never the
+    // input the machine looks at.
+    if (player.channel) player.channel->resetInputQueue();
+    if (opponent.channel) {
+        opponent.channel->resetInputQueue();
+        opponent.channel->setInputBlocked(true);
+    }
+    // **THE PRIORITY GATE IS NOT MODELLED, deliberately.** `Fight_Begin` also
+    // calls `sub_45A4C0(playerChan, 1)` and `sub_45A4C0(opponentChan, 0)`,
+    // which set and clear channel flag `0x400` - and that flag makes
+    // `Cef_FindTransition` honour the threshold at `+212` instead of taking
+    // the first match. `sub_45A4C0` writes ONLY the flag; nothing in what has
+    // been read writes `+212`, and this port's `setPriorityGate` cannot set
+    // the flag without also naming a threshold. Passing 0 would silently skip
+    // every priority-1 and -2 candidate, which is a behaviour change invented
+    // out of an unread field rather than transcribed - so the flag is left
+    // off until `+212`'s writer is found. `run_actor_states` already exercises
+    // both paths of the gate, and the corpus cannot tell them apart on the
+    // shipped data (`engine: actor states`), which is why this can wait.
+
     // Both fighters turned to face each other, with flag 0x2 set across the
     // two calls so `Fight_FaceOpponent`'s state guard cannot refuse them.
     a_.flags |= 2u; b_.flags |= 2u;
@@ -664,7 +694,11 @@ void Fight::tickFighter(FightContext& c, float dt, std::uint32_t input, bool isA
     if (!c.body || !c.body->channel) return;
     preStep(c);
     if (isAi) tickAi(c, &c == &a_ ? b_ : a_);
-    c.body->channel->tick(dt, input);
+    // The channel tick, or the caller's own pass in its place - see
+    // `FightBody::externallyTicked`. Either way it sits between the two
+    // per-fighter steps, which is where `Actor_TickPlayerAndOpponent` puts it.
+    if (c.body->externallyTicked && bodyTick_) bodyTick_(dt, input);
+    else                                      c.body->channel->tick(dt, input);
     // The frame pair the window test consumes: the previous tick's value and
     // this one's.
     c.frameBefore = c.frameAfter;

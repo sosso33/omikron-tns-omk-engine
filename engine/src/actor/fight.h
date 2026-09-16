@@ -71,6 +71,18 @@ struct FightBody {
     float radius = 0.0f;
     CefChannel* channel = nullptr;
     bool isPlayer = false;            // the player takes DOUBLE damage
+    // TRUE when the CALLER ticks this body's channel instead of `Fight`.
+    //
+    // `ACTOR_STATE` 2's own row in `actor/state.cpp` has `channelTicks` AND
+    // `walks` true: melee runs `Cef_TickChannel` and then `Actor_ApplyMotion`,
+    // the same pair an ordinary actor runs, so a fighter's clips carry him
+    // about exactly as they do outside a fight. A frontend that already owns
+    // that pair for this body - `PlayerController::tick` is both halves -
+    // must run it rather than have the channel ticked here with no motion
+    // pass, which would leave a fighter rooted to the spot while his clips
+    // played. `Fight` then calls `bodyTick` below in the place the channel
+    // tick occupies, so the order pre / channel / post is still the engine's.
+    bool externallyTicked = false;
 };
 
 // `Fight_Begin`'s stat wiring, read from its six `Game_RaiseEvent(44, …)`
@@ -229,6 +241,12 @@ public:
     // over - `dword_906F40` past `dword_9070AC`, which is `sub_445AC0`.
     bool step(float dt, std::uint32_t playerInput);
 
+    // What to run in place of the channel tick for an `externallyTicked`
+    // body - `PlayerController::tick(dt, word)`, which is `Cef_TickChannel`
+    // followed by `Actor_ApplyMotion`.
+    using BodyTick = std::function<void(float dtFrames, std::uint32_t input)>;
+    void setBodyTick(BodyTick t) { bodyTick_ = std::move(t); }
+
     bool over() const { return over_; }
     // Which side won, once `over()`: true when the OPPONENT was the loser.
     bool playerWon() const { return playerWon_; }
@@ -277,6 +295,7 @@ private:
 
     RandFn rand_;
     TimeFn now_;
+    BodyTick bodyTick_;
     FightAiTables builtin_;
     FightContext a_, b_;          // dword_906F60 / dword_907000
     float radius_ = 0.0f;         // flt_906F2C

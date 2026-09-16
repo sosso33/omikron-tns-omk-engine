@@ -592,10 +592,16 @@ RunResult Interpreter::resume(std::span<const std::byte> code, std::size_t at) {
             std::size_t q = start + 1;
             const auto opponent = fetch16(code, q);
             const auto travel   = static_cast<int>(fetch16(code, q));
+            // The third field, fetched since step 2 of the fight port: the AI
+            // level. The recorded `calls` entry deliberately keeps the two
+            // fields it has always carried, because the golden-trace
+            // comparisons index it.
+            const auto level    = static_cast<int>(fetch16(code, q));
             if (record_ && !recordAll_)
                 r.calls.push_back({op, {static_cast<std::int16_t>(opponent),
                                         static_cast<std::int16_t>(travel)}});
             r.fightOpponent  = opponent;
+            r.fightLevel     = level;
             r.fightCamTravel = travel > 0 ? travel : 0;   // the handler's `jge`
             // `pc` is past the operands the TABLE gives, which is where the
             // resume continues from - see the note above.

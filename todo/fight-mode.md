@@ -198,7 +198,7 @@ Each step ends in a commit and a report, then waits for the reader
 |---|---|---|
 | **0** | this file, the two doc corrections, the corpus facts in `verify.py: fight & become` | **DONE 2026-09-16** |
 | **1** | `engine/src/actor/fight.{h,cpp}`: the contexts, `Fight_Begin`, `Engage`/teardown, `SelectAiProfile`, both per-fighter steps, `ResolveHit`, `FaceOpponent`, `KeepSeparation`, `TickAI`. A probe fights profile against profile on all three `CMBT` files | **DONE 2026-09-16** — `verify.py: engine: melee`, and it found the AI's eight BUILT-IN move tables (`tables/fight_ai_moves.json`) and the per-slot WEIGHT the `.CTL` reader had been skipping. The defensive arm of `Fight_TickAI` (intent 9 inside 1.5 m) is labelled and left for its own commit |
-| **2** | Session and viewer: install the fight hook, slot 2 on both bodies, state 2, scheme 3, the park; the end through event 2, the player's slot-0 reload and his life written back so `Vie Combat Perte` is right. Carry field 2 | |
+| **2** | Session and viewer: install the fight hook, slot 2 on both bodies, state 2, scheme 3, the park; the end through event 2, the player's slot-0 reload and his life written back so `Vie Combat Perte` is right. Carry field 2 | **DONE 2026-09-16** — `--fight N` / `--fight-level N`, and a whole fight runs in `omk-play`. §10 has what it found and what it left |
 | **3** | the KO: the 60-frame ring, the two playbacks, the fade | |
 | **4** | camera mode 14 | |
 | **5** | the HUD: both bars, and mode 2's four-second overlay | |
@@ -210,6 +210,57 @@ damage only ever from a combat block times the two multipliers and floored at
 below the radius after the push; hit points monotone down and clamped at 0; and
 every run ending in a KO with a winner. None of that is a behavioural oracle —
 it is what the shipped data can falsify.
+
+## 10. What step 2 wired, and the three things it found
+
+The hook is installed in `omk-play`, so a script's `fight.begin` now parks and
+a fight runs: both fighters onto `.CTL` slot 2, ACTOR_STATE 2, control scheme
+3, the contexts from the fighters' own properties, and at the end
+`sub_445AC0`'s list — the adventure bank back, scheme 0, both lives written to
+the records the scripts read, and `Game_HandleEvent` case 2 releasing the
+parked script. A first run played the whole arc: `HGUARD` to `IM_FRONT` and
+back, a hit, the player's Vie to 0, state 7, the replay, `FIGHT ENDS after 245
+frames`, the script resumed.
+
+Op 62's third field now travels with the opponent, so the profile is the
+level's (`Session::setFightHook` takes both), and two Session accessors were
+added: `ctlSlotOfActor(actor, slot)` for the `+72/+81/+90` names and
+`setActorProperty`, the write half the life needs.
+
+**Three findings, in the order they cost time:**
+
+1. **The first version rooted both fighters to the spot.** `ACTOR_STATE` 2's
+   own row runs `Cef_TickChannel` AND `Actor_ApplyMotion` — melee moves a body
+   exactly as ordinary play does — and driving the channel directly skipped
+   the motion pass. `FightBody::externallyTicked` plus `Fight::setBodyTick`
+   now put `PlayerController::tick` in the place the channel tick occupies, so
+   the order pre / channel / post is still the engine's. The tell was in the
+   harness log: 79 units apart for 245 frames.
+2. **THE OPPONENT STILL STALLS, and it is a CHANNEL fault rather than a fight
+   one.** He reaches `H1Cmbt` entry **228** — `name ''`, flags `0xE0808000`,
+   **no clip**, no children, `goto 17005331`, whose own parents include 228 —
+   and never leaves, while the AI presses 674 moves into a queue with no
+   candidate to match. A clipless entry reports `clipFrames() == 1`, so
+   `finished` is true at once and the clip-end path takes the GoTo, which
+   walks back into the pair and stops. That is `GoToMove` (0x004A7B80) and its
+   junction chase, shared by every bank, so it wants reading in its own right
+   before anything is changed in `channel.cpp` — and it may be why
+   `run_actor_states` reports 0 aborted chains: it drives with a player's
+   words and may never reach group 22.
+3. **The priority gate is deliberately NOT modelled.** `Fight_Begin` calls
+   `sub_45A4C0(chan, 1/0)`, which sets and clears flag `0x400` — the flag that
+   makes `Cef_FindTransition` honour the `+212` threshold — but it writes only
+   the flag, nothing read so far writes `+212`, and this port's setter demands
+   a threshold. Passing 0 would silently drop every priority-1 and -2
+   candidate, so the flag is left off with the reason in `fight.cpp`.
+
+**Also labelled, and they are what step 3 is for:** the opponent's body has no
+motion pass (his clips' root motion is not applied) and he is still POSED from
+his idle tracks rather than from his fight channel, so he neither moves nor
+animates; `omk::clipTracks` is public and a root delta is `trans[cur] -
+trans[prev]`, so both are reachable. And the harness PLACES him two metres in
+front of the player, which the engine never does — a script stages the pair
+before op 62 runs, and the log line says so.
 
 ## 8. Open questions
 

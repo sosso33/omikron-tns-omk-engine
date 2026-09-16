@@ -551,7 +551,10 @@ public:
     // could ever release the park, and modelling the wait must never invent
     // a deadlock (the `ObjectWait` rule). Installing a hook arms the park.
     void setMoveHook(std::function<bool(int groupId, int ctx)> h);
-    void setFightHook(std::function<bool(int opponentId)> h);
+    // `level` is op 62's third field - the AI difficulty the profile is
+    // chosen by. It travels with the opponent because `Fight_Engage` takes
+    // both in one call.
+    void setFightHook(std::function<bool(int opponentId, int level)> h);
     // 126's SUBJECT: `Address_Find(field 1)` in both subject pointers where 96
     // puts `Actor_Player()` twice. -1 = the player. Read by whoever frames a
     // camera whose points are offsets.
@@ -1079,6 +1082,11 @@ public:
     // The bank a CHARACTERS id resolves to (the actor record's +72, the
     // `.CTL` name `Actor_LoadBankList` opens). Empty when nothing names it.
     std::string bankOfActor(int actor) const;
+    // The SAME record's three 9-byte `.CTL` slots, which `Actor_CtlSlotName`
+    // indexes: 0 `+72` aventure (what `bankOfActor` returns), 1 `+81` shoot,
+    // 2 `+90` combat. `fight.begin` switches both parties to slot 2, so a
+    // fight needs the name by slot rather than the adventure one.
+    std::string ctlSlotOfActor(int actor, int slot) const;
     // The record's `+176`, `Type Spectre` - and the GROUP his clips sit in
     // inside the area's `.ani` library.
     std::uint32_t typeOfActor(int actor) const;
@@ -1092,6 +1100,11 @@ public:
     // One property of an actor's record, `Actor_GetProperty`'s value cases -
     // the hit's reaction threshold (24) and the Body Shield (17).
     bool actorProperty(int actor, int property, std::int32_t& out) const;
+    // The WRITE half, `Actor_SetProperty` (0x0040B8D0) through the same hooks
+    // the interpreter uses. A fight needs it: `sub_4451F0` raises event 45
+    // every frame with the fighter's hit points, which is what makes the
+    // scripts' `'Vie Combat Après'` read what the fight cost him.
+    bool setActorProperty(int actor, int property, std::int32_t value);
     // One of an actor's four attacks by clip slot - properties 21 (range in
     // metres) and 22 (damage), `omk::readActorAttack`. -> false with no record.
     bool actorAttack(int actor, int slot, std::int32_t& rangeMetres,
@@ -1357,6 +1370,7 @@ private:
         // fight runtime is parked for ever, which is the engine's shape and
         // the reason the park is armed only when a fight hook is installed.
         int         fightOpponent = -1;
+        int         fightLevel = 0;      // op 62's third field, carried with it
         // Which chunk's STARTUP script this is, if it is one, and the area
         // the block sits over - how `scene.load`/`unload` find "the SCENE
         // block's context".
@@ -1598,11 +1612,11 @@ private:
     std::map<int, std::vector<std::array<float, 3>>> rootMotion_;
     bool         camWait_ = false;
     std::function<bool(int, int)> moveHook_;
-    std::function<bool(int)>      fightHook_;
+    std::function<bool(int, int)> fightHook_;
     int          fightCamTravel_ = 0;      // `dword_930818` for mode 14, recorded
     int          camSubjectAddress_ = -1;
     bool startPlayerMove(int groupId, int ctx);
-    bool beginFight(int opponentId);
+    bool beginFight(int opponentId, int level);
     bool         objWait_ = false;
     bool         haveCam_ = false;
     WorldCamera  camFrom_, camTo_, camNow_;

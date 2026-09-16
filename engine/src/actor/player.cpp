@@ -283,6 +283,40 @@ bool PlayerController::moveBy(float dx, float dz) {
     return r == StepResult::Moved || r == StepResult::Slid;
 }
 
+// `Actor_LoadBankList` (0x00419CB0) as a fight needs it: the bank list is
+// swapped and the channel lands on the new bank's default entry, and nothing
+// touches the body. The engine does not rebuild an actor to change his bank -
+// `fight.begin` moves both fighters to `.CTL` slot 2 mid-scene and the player
+// keeps standing where he stood - so this mirrors the constructor's channel
+// half (`rt_.loadModel()` then `SetPersoBankGroup(Cef_DefaultGroup)`) and
+// leaves `pos_`, `euler_`, `walker_` and the camera state as they are.
+void PlayerController::setBank(const CtlFile& ctl, std::span<const std::byte> data) {
+    ctl_ = &ctl;
+    data_ = data;
+    rt_ = ActorRuntime(ctl, true);
+    rt_.loadModel();
+    const int g = rt_.channel().defaultGroup();
+    if (g >= 0) rt_.channel().setBankGroup(g);
+    frameBefore_ = frameAfter_ = rt_.channel().frame();
+    stateBefore_ = rt_.channel().state();
+    // The track table is counted per bank, so it is re-counted here for the
+    // same reason the constructor counts it: a bank whose tracks do not name
+    // the model's meshes poses nothing, and the number is how that is seen.
+    total_ = matched_ = 0;
+    if (meshes_) {
+        for (std::size_t c = 0; c < ctl_->clips.size(); ++c) {
+            const auto d = animDescriptor(data_, ctl_->clips[c].offset);
+            if (!d) continue;
+            for (const auto& t : d->tracks) {
+                ++total_;
+                const std::string want = lower(t.name);
+                for (const auto& m : *meshes_)
+                    if (lower(m.name) == want) { ++matched_; break; }
+            }
+        }
+    }
+}
+
 PlayerController::PlayerController(const Setup& s)
     : ctl_(s.ctl), data_(s.ctlData), meshes_(s.meshes),
       rt_(*s.ctl, true),
