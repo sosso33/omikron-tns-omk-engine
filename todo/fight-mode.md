@@ -650,6 +650,62 @@ port does not read yet. The rule above is a labelled reconstruction that
 happens to agree with every capture (`play.cpp` ~11090 carries the evidence);
 porting `+408..414` would replace it with the engine's own answer.
 
+### 15.8 THE THIRD PLAY TEST, 2026-09-16 — collision, and a camera that cuts
+
+The reader, after the letterbox and pose fixes: *"Ok, no animation error. Main
+Issues: colliders missing, leading to the ai being ejected outside the combat
+zone and the camera placed inside objects. Camera switched side quickly at
+some point, making it difficult to understand what happens."*
+
+So the animation faults (15.6) and the stripes (15.4) are closed by play. What
+is left is collision and framing, and the run he played corroborates all three.
+
+**15.8a The opponent has NO collision at all.** Not "the wrong collider" - the
+port never tests one. `fight.begin`'s opponent has no `PlayerController`, so
+his motion pass is the clip's own accumulated root track turned by his facing
+and added to his position (`FightRun::foeRoot` in `play.cpp`), plus
+`Fight_KeepSeparation`. Grepping the viewer for any wall, soup, walker or
+slide term applied to the foe returns **nothing**. The set has 382 wall
+triangles and he is tested against none of them, so a knockback or an approach
+that ends inside a wall simply puts him there - which is the reader's "ejected
+outside the combat zone". In the played fight he ranged x 14891..15195,
+z 1408..1774 (sampled once a second, so excursions between samples are not
+even visible).
+
+The player is not in this position: he has the walker, which sweeps his
+model's spheres against the wall soup. **The question to read first is whether
+the engine gives the opponent the same one** - he is an ordinary actor in
+ACTOR_STATE 2, and `Actors_TickAll`'s case 2 is where his step meets the
+world. If it does, the port's foe wants the walker rather than a bespoke
+collider.
+
+**15.8b The fight camera passes through the set.** Already known and recorded
+in §4 of the handoff as unported: the camera tail's collision solve is
+`sub_413450` / `sub_416570` / `sub_413440`, a **different family** from the
+follow camera's `sub_417070`, and none of them has a port. So the camera has
+no reason not to sit inside a crate, and in a room made of crates it will.
+
+**15.8c The camera cuts across the pair.** Its heading over the played fight,
+sampled once a second:
+
+```
+17 17 23 -37 -40 90 81 81 259 253 251 251 110 103 118 101 85 175 238 235
+```
+
+Between two samples it goes 81 -> 259 and 251 -> 110: swings of ~170 degrees,
+which is the camera changing WHICH SIDE of the pair it films from. State is 1
+throughout (7 only at the KO), so this is not the rig changing; it is the side
+choice inside one rig. A real side flip should be rare and deliberate - the
+reader could not follow the fight. `Fight_TickCamera` (0x00446500) and its
+helpers are transcribed in `actor/fight.cpp`; what has NOT been checked is
+whether the engine gates the flip - a hysteresis band, a minimum dwell, or a
+cut only while nobody is attacking. Read the helpers before adding damping,
+because a damping constant invented here is exactly the approximation
+CLAUDE.md warns about.
+
+**Order.** 15.8a first: it is a gameplay fault, not a framing one, and it is
+the one that can put an opponent somewhere the fight cannot continue.
+
 ### 15.5 "no UI" — this is step 5, already planned
 
 The reader's own note: *"I think this is the next step"*, and it is. Step 5 is
