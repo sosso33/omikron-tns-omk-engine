@@ -20338,9 +20338,34 @@ def c_engine_sneak_memos():
     is not lifted into `tables/ui_widgets.json` and its row confirm is not
     ported, which is the work this leaves.
 
+    **And the page's own NAVIGATION, after a reader played it** (2026-09-16):
+    *"I can't select anything in the memo list (I can just select the page)"*.
+    Three things were wrong, all read out of the two functions the port had
+    not opened:
+
+    * `0x0049D8B0`, the panel's `+16` HOOK, is a wrapper - it shows the body
+      box when the current list is the rows and hides it otherwise, then
+      TAIL-CALLS `sub_42A710`, the generic mover. The port recognised the
+      mover only by its own address, so this page fell to "unmodelled panel
+      hook" and LEFT/RIGHT moved nothing: the rows could never become current.
+    * `0x0049D750`, the builder, writes `word_4DE6F0 = 5` - the shared row
+      list is FIVE widgets on this page, not the inventory page's nine. Three
+      sites in the image write that word and they are the three page builders.
+    * the same builder ENDS with `sub_428FF0(0x004DEA98, 0x40000001, 1)`,
+      hiding the body box. The port drew the body as soon as the page opened,
+      which the engine does not do: the box lights on the first UP or DOWN
+      inside the list, because the panel hook runs on every press and sets the
+      flag from the list that is current BEFORE the mover moves.
+
     Anekbah, two memos given into list 2, TAB, RIGHT onto the tab column, DOWN
-    to the memory tab, ENTER. Asserted: the viewer's line for the page - which
-    LIST the rows came from and the ids bound.
+    to the memory tab, ENTER - then RIGHT into the rows and DOWN. Asserted: the
+    viewer's line for the page (which LIST the rows came from and the ids
+    bound) and the body line, which appears ONLY after the move and names row
+    1. The body line prints on change, so a body drawn at open would show as an
+    earlier `row 0` line: the ordered pair pins both halves.
+
+    NOT covered: the FIVE widgets. Two memos bind the same two rows whether the
+    list is 5 wide or 9, so this route cannot tell them apart.
     """
     import subprocess
     eng = os.path.join(ROOT, "engine")
@@ -20355,15 +20380,17 @@ def c_engine_sneak_memos():
     r = subprocess.run([play, omkpaths.data_root(), os.path.join(ROOT, "tables"),
                         "--software", "--nofmv", "--no-crowd", "--save", save,
                         "--area", "0", "--stand", "1804,0,-6890,336",
-                        "--give", "2:913,2:915", "--frames", "420",
-                        "--keys", "0x0F,0x0F,0xCD,0xD0,0x1C", "--keydelay", "60"],
+                        "--give", "2:913,2:915", "--frames", "660",
+                        "--keys", "0x0F,0x0F,0xCD,0xD0,0x1C,0xCD,0xD0",
+                        "--keydelay", "60"],
                        capture_output=True, env=env)
     text = r.stdout.decode("cp1252", "replace")
     got = tuple(ln.strip() for ln in text.splitlines()
                 if ln.startswith("sneak: memory page") or ln.startswith("sneak: memo body"))
     return got, \
            ("sneak: memory page - object list 2, 2 rows: 913 915",
-            "sneak: memo body - row 0 id 913 'Moi :', 308 chars, 8 lines drawn"), \
+            "sneak: memo body - row 1 id 915 'Panneau Bibliothèque :', "
+            "192 chars, 4 lines drawn"), \
            "the viewer's lines for the sneak's memory page after two memos are " \
            "given into object list 2 and the page is opened: which list the " \
            "rows bound to, how many and their ids - and the BODY the page's own " \

@@ -163,6 +163,37 @@ than run `Utiliser`'s arm under its name.
 > general form is now in CLAUDE.md §1: a line printed where a value is handed
 > over reports the intent, so print it from what the consumer produced.
 >
+> **THE PAGE WAS NOT USABLE, and the rows were the half nobody had read**
+> (2026-09-16, the reader again: *"I can't select anything in the memo list (I
+> can just select the page)"*). Two functions settle it, and the port had
+> opened neither:
+>
+> * the panel's `+16` hook `0x0049D8B0` is a WRAPPER - it shows the body box
+>   when the current list is the rows, hides it otherwise, and tail-calls
+>   `sub_42A710`, the generic mover. `press` matched the mover by ADDRESS
+>   (`panel_->hook == moveListsHook()`), so this page fell to "unmodelled panel
+>   hook" and LEFT/RIGHT did nothing: the rows could never become current. The
+>   identity page worked only because its wrapper was hand-modelled in an
+>   earlier step. **Key on the behaviour, not on the caller.**
+> * the builder `0x0049D750` writes `word_4DE6F0 = 5` (five row widgets here,
+>   nine on the inventory and slider pages - all three writes in the image are
+>   those builders) and ENDS by HIDING the body box, after setting its tag from
+>   the selected row only when the rows are already current. So the body is not
+>   drawn when the page opens; it lights on the first UP or DOWN inside the
+>   list, because the panel hook runs on every press and sets the flag from the
+>   list current BEFORE the move. The port drew it at open - its own invention,
+>   and the opposite error to the one above it.
+>
+> Ported as read: `kHookSneakMemoryPanel` gets its own `press` arm,
+> `state_->rowWidgets` carries the per-page widget count (9 restored in the
+> inventory and slider arms), and `play.cpp` fills the body only while
+> `walk->memoBodyShown()`. Played headlessly: opening the page draws rows and
+> NO body; RIGHT into the rows then DOWN draws memo 915 at 4 lines.
+> `verify.py: engine: sneak memos` walks that route and asserts the ordered
+> pair, so a body drawn at open (which would print an earlier `row 0` line)
+> fails it. **NOT covered**: the five widgets - two memos bind the same two
+> rows at 5 or at 9.
+>
 > **WHERE MEMOS COME FROM** (2026-09-16, the reader asked whether they are
 > unlocked only by dialogue or also by reading a document - the answer is
 > BOTH). Three routes fill list 2: **76** `inventory.add` sites in the world

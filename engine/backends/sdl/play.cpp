@@ -16289,7 +16289,12 @@ int main(int argc, char** argv) {
                 // hands back the object record's description on every arm, so
                 // the box shows the selected memo's text. The composer draws it
                 // through the same path as the examine page's.
-                if (rowKind == 2) {
+                // ...and only while the BOX IS SHOWN. `0x0049D750` hides it
+                // when the page is built and `0x0049D8B0` lights it once the
+                // rows are the current list, so a memo body on an opened page
+                // nobody has moved into is this port's invention, not the
+                // game's.
+                if (rowKind == 2 && walk->memoBodyShown()) {
                     const int sel = walk->selectedRow(omk::kListSneakRows);
                     const int memo = sel >= 0 && sel < static_cast<int>(carried.size())
                         ? carried[static_cast<std::size_t>(sel)] : -1;

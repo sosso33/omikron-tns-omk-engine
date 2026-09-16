@@ -1520,6 +1520,42 @@ the wrong page.
 > `Memo NNN …` objects. Its row CONFIRM installs `0x004DEFF0`, a reader page
 > that is not lifted into `tables/ui_widgets.json` at all. The port's empty
 > page is a GAP, not fidelity. `verify.py: sneak memory page`.
+>
+> **…and the page could not be USED either** (2026-09-16, the same reader, a
+> play later: *"I can't select anything in the memo list (I can just select the
+> page)"*). Its two unopened functions say why, and all three faults are the
+> same shape — a page modelled from the lists it owns rather than from the code
+> that drives them:
+>
+> * `0x0049D8B0`, the panel's `+16` HOOK, is a WRAPPER: it shows the body box
+>   `0x004DEA98` when the current list is the rows and hides it otherwise, then
+>   **tail-calls `sub_42A710`** — the generic mover, `sub_42A5C0(screen, panel,
+>   1, 2)`. The port recognised the mover by its own ADDRESS, so this page took
+>   the "unmodelled panel hook" arm and LEFT/RIGHT moved nothing: the rows could
+>   never become the current list, which is exactly what the reader met. The
+>   identity page escaped only because its own wrapper `0x0049C1D0` was
+>   hand-modelled earlier. Same family as the call-site scans that rot in
+>   CLAUDE.md §1: **key on the behaviour, not on the caller's identity.**
+> * `0x0049D750`, the builder, writes `word_4DE6F0 = 5` — the shared row list
+>   is FIVE widgets on this page against the inventory page's nine. All three
+>   writes of that word in the image are page builders (inventory 9, slider 9,
+>   memory 5), so the widget count is per-page state, not a property of the
+>   list.
+> * and that builder ENDS by HIDING the body box
+>   (`sub_428FF0(0x004DEA98, 0x40000001, 1)`), after setting its tag
+>   `dword_4DEAD4` from the selected row only when the rows are already
+>   current. So the body is **not** shown when the page opens — the port drew it
+>   there, which was its own invention. The box lights on the first UP or DOWN
+>   inside the list: the panel hook runs on EVERY press and sets the flag from
+>   the list current BEFORE the mover runs, and UP/DOWN do not match the
+>   mover's bits 1/2, so the flag is set from the rows and the row hook
+>   `sub_49C050` then moves the selection under it.
+>
+> The builder also leaves `panel+24` alone when `[screen+0x20]` is the reader
+> page `0x004DEFF0` — coming back from a memo keeps the list current — and
+> `off_4DEFF0` is `{parent 0x004DEF88, builder sub_49D870, leave sub_49D890}`,
+> so that page is this one's CHILD. `verify.py: engine: sneak memos` now walks
+> in and moves, and asserts the body appears only after the move.
 
 `sub_42ADD0` branches on it too. For 0 and 2 it raises the channel's **event
 25** with that number as the list id; for **4** it raises nothing and instead

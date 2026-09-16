@@ -569,9 +569,15 @@ void UiWalk::bindRows(std::uint32_t list, int count, int window) {
     for (const auto& l : panel_->lists) {
         if (l.addr != list) continue;
         if (window < 0) window = 0;
+        // ...over the list's WIDGET COUNT, which is `word_4DE6F0` and not the
+        // nine items the static record carries: the memory page's builder
+        // sets it to 5. A widget past the count is not a row at all.
+        const int widgets = (list == kListSneakRows)
+            ? std::min<int>(static_cast<int>(l.items.size()), state_->rowWidgets)
+            : static_cast<int>(l.items.size());
         for (std::size_t k = 0; k < l.items.size(); ++k) {
             const int row = static_cast<int>(k) + window;
-            const bool live = row < count;
+            const bool live = row < count && static_cast<int>(k) < widgets;
             state_->rowTag[l.items[k].addr] = live ? row : -1;
             if (live) state_->itemOff.erase(l.items[k].addr);
             else      state_->itemOff.insert(l.items[k].addr);
@@ -582,8 +588,7 @@ void UiWalk::bindRows(std::uint32_t list, int count, int window) {
         // to the WIDGET count now, not to the row count: with a window the
         // two are different numbers and clamping to the rows walked the
         // selection off the end of a scrolled list.
-        const int live = std::min<int>(static_cast<int>(l.items.size()),
-                                       std::max(0, count - window));
+        const int live = std::min<int>(widgets, std::max(0, count - window));
         auto it = selMap().find(l.addr);
         if (it != selMap().end() && it->second >= live)
             it->second = live > 0 ? live - 1 : 0;
@@ -1008,6 +1013,7 @@ void UiWalk::buildPage(const UiPanel& p) {
     // without it the verbs are reachable with no object chosen.
     if (p.addr == kPanelSneakInventory) {
         state_->rowKind = 0;              // `mov dword_670CB8, 0`
+        state_->rowWidgets = 9;           // `mov word_4DE6F0, 9`
         setListOff(kListSneakRows, false);
         setListOff(kListSneakVerbs, true);
     }
@@ -1023,9 +1029,28 @@ void UiWalk::buildPage(const UiPanel& p) {
     // reached. It also marks the chosen row `0x40000008`, which keeps it lit
     // under the verb bar - not modelled, because that flag's drawing arm is
     // the lit/unlit ladder and this port has no runtime bit to put it in.
-    // The memory page's builder writes `mov dword_670CB8, 2`; its rows come
-    // from the channel with list id 2, which this port does not fill.
-    if (p.addr == kPanelSneakMemory) state_->rowKind = 2;
+    // `0x0049D750`, THE MEMORY PAGE'S BUILDER, transcribed:
+    //
+    //     if ([screen+0x20] != off_4DEFF0) panel+0x18 = 0;  // the TAB COLUMN,
+    //                                                       // unless we came
+    //                                                       // back from the
+    //                                                       // READER page
+    //     word_4DE6F0 = 5;                  // FIVE widgets here, not nine
+    //     dword_670CB8 = 2;                 // rows from object list 2
+    //     sub_42ADD0(0x004DE6F0, 0, 2);
+    //     if (current == rows && dword_4DE708 > 0)
+    //         dword_4DEAD4 = selected(rows)[+0x3C];    // the body box's TAG
+    //     else if (dword_4DE708 == 0) dword_4DEAD4 = -1;
+    //     sub_428FF0(0x004DEA98, 0x40000001, 1);       // ...and HIDE the box
+    //
+    // The last line is the one this port had BACKWARDS: the body is not shown
+    // when the page opens. The panel hook lights it once the current list is
+    // the rows, so the memo text appears when the player moves INTO the list.
+    if (p.addr == kPanelSneakMemory) {
+        state_->rowKind = 2;
+        state_->rowWidgets = 5;
+        state_->memoBodyShown = false;
+    }
     // The IDENTITY page's builder `0x0049C100`:
     //     sub_428FF0(0x004DE810, 0x40000001, 0);   word_4DE902 = 0;
     //     sub_428FF0(0x004DE858, 0x40000001, 1);   the echo bar's colour
@@ -1088,6 +1113,7 @@ void UiWalk::buildPage(const UiPanel& p) {
     // recorded rather than reachable.
     if (p.addr == kPanelSneakSlider) {
         state_->rowKind = 4;              // `mov dword_670CB8, 4`
+        state_->rowWidgets = 9;           // `mov word_4DE6F0, 9`
         // `sub_49D170`'s `cmp [arg0+4], 1`: the live slot's +4, which is the
         // screen's own `param` - 1 from INSIDE the vehicle (screen 7), 0 from
         // the device (screen 9). Arm 1 hides "Appel du slider" and shows
@@ -2091,6 +2117,25 @@ bool UiWalk::press(std::uint32_t bits) {
                     return true;
                 }
             }
+        } else if (panel_->hook == kHookSneakMemoryPanel) {
+            // THE MEMORY PAGE'S panel hook (0x0049D8B0), whole:
+            //
+            //     sub_428FF0(0x004DEA98, 0x40000001,
+            //                sub_428F30(panel) == &word_4DE6F0 ? 0 : 1);
+            //     return sub_42A710(screen, panel);
+            //
+            // - the body box is shown when the CURRENT list is the rows and
+            // hidden otherwise, and then the generic mover runs. Note the
+            // ORDER: the flag is set from the list that is current BEFORE the
+            // move, so it lags one press behind. That is not a bug to tidy
+            // up - the panel hook runs on EVERY press, and UP/DOWN inside the
+            // rows do not match the mover's bits 1/2, so the box lights on
+            // the first UP or DOWN the player makes in the list and the row
+            // hook then moves the selection under it.
+            state_->memoBodyShown =
+                curList() != nullptr && curList()->addr == kListSneakRows;
+            if (bits & kUiLeft)  { if (moveLists(-1)) return true; }
+            if (bits & kUiRight) { if (moveLists(1))  return true; }
         } else if (panel_->hook == w_->moveListsHook()) {
             // `sub_42A710(screen, panel) = sub_42A5C0(screen, panel, 1, 2)` -
             // `Ui_MoveBetweenLists` with LEFT stepping back and RIGHT

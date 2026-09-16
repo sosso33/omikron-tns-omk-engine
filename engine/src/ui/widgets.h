@@ -201,6 +201,20 @@ inline constexpr std::uint32_t kHookSneakSliderLists = 0x0049D4D0u;
 // `list 0x004DE6F0 + 4` - the sneak's row list hook, a wrapper over the
 // WINDOWED selection mover `sub_42AFF0`.
 inline constexpr std::uint32_t kHookSneakRows = 0x0049C050u;
+// `panel 0x004DEF88 + 16` - THE MEMORY PAGE'S OWN PANEL HOOK, and it is a
+// wrapper the way the identity page's is: it shows or hides the body box by
+// whether the CURRENT list is the rows, then tail-calls `sub_42A710`, the
+// generic mover. A port that recognises the mover only by its own address
+// leaves this page with no way to move between its lists at all - which a
+// player reported as "I can't select anything in the memo list, I can just
+// select the page".
+inline constexpr std::uint32_t kHookSneakMemoryPanel = 0x0049D8B0u;
+// The memo BODY box (draw hook 0x00477F60, tag `dword_4DEAD4`) and the READER
+// page, which is this panel's child - `off_4DEFF0` is {parent 0x004DEF88,
+// builder sub_49D870, leave sub_49D890}, and arriving back from it is the one
+// case the builder does NOT reset the current list.
+inline constexpr std::uint32_t kItemSneakMemoBody = 0x004DEA98u;
+inline constexpr std::uint32_t kPanelSneakReader  = 0x004DEFF0u;
 // Two panels `sub_42A370` installs from CODE - no item's `+44` names either.
 inline constexpr std::uint32_t kPanelSneakVerbs   = 0x004DEEB8u;
 inline constexpr std::uint32_t kPanelSneakExamine = 0x004DEF20u;
@@ -599,6 +613,15 @@ struct UiListState {
     // on it - so without it a slider destination confirms as if it were a
     // carried object.
     int rowKind = 0;
+    // `word_4DE6F0` - the shared row list's WIDGET COUNT, which each page's
+    // builder writes: 9 on the inventory and slider pages, 5 on the memory
+    // page. Three sites in the image write it and they are those three
+    // builders, so it is per-page state and not a property of the list.
+    int rowWidgets = 9;
+    // `0x004DEA98`'s `0x40000001` - the memo body box, hidden by the memory
+    // page's builder and shown by its panel hook only while the rows are the
+    // current list.
+    bool memoBodyShown = false;
     // `sub_428FF0(item, flag, 1)` - bank-B bits a builder SET at run time,
     // over and above the record's. `sub_49B950` sets `0x40000002` on
     // "Examiner" itself, which is what makes it flash while its page is up:
@@ -760,6 +783,11 @@ public:
     // object names must too. Filling them only while the walk is on the
     // inventory page loses the name the moment an object is chosen.
     int  rowKind() const { return state_->rowKind; }
+    // How many WIDGETS the shared row list has on the current page, and
+    // whether the memo body box is drawn. A caller filling the body follows
+    // the second: the engine does not show it when the page opens.
+    int  rowWidgets() const { return state_->rowWidgets; }
+    bool memoBodyShown() const { return state_->memoBodyShown; }
     // Which verb was confirmed, if any; reading it CLEARS it.
     int  takeVerb() { const int v = state_->pendingVerb; state_->pendingVerb = -1; return v; }
     // The slider destination a confirm chose, as its ROW TAG among the enabled
