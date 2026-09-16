@@ -69,6 +69,12 @@ struct ScreenFrame {
     int  characteristicBars = 0;
     // Lines the examine page's description wrapped to.
     int  textLines = 0;
+    // ...and how many CHARACTERS were handed to the layout for it, which is
+    // not the length of the description: an item whose `+30` names a section
+    // (`textArg`, the memo body's 0) draws only that bracketed part of the
+    // field. Reported from here rather than from the fill, so a log line
+    // cannot claim text the box never received.
+    int  textChars = 0;
     // How far the examine page's text runs PAST its box, in pixels - the
     // bound `Ui_ItemTextStyle` clamps the scroll offset against. 0 when
     // the description fits, and then the box cannot scroll at all.

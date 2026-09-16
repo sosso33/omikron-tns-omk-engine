@@ -16306,8 +16306,7 @@ int main(int argc, char** argv) {
                         // measured rather than described, so a check can hold
                         // it: the id, its heading, and how long the text is.
                         memoBodyPending = "row " + std::to_string(sel) + " id " +
-                                          std::to_string(memo) + " '" + mr->name + "', " +
-                                          std::to_string(examineText.size()) + " chars";
+                                          std::to_string(memo) + " '" + mr->name + "'";
                     }
                 }
                 if (rowKind == 2) {
@@ -17120,6 +17119,7 @@ int main(int argc, char** argv) {
                 if (!memoBodyPending.empty()) {
                     static std::string memoBodyTold;
                     const std::string said = memoBodyPending + ", " +
+                                             std::to_string(sf.textChars) + " chars, " +
                                              std::to_string(sf.textLines) + " lines drawn";
                     if (said != memoBodyTold) {
                         memoBodyTold = said;

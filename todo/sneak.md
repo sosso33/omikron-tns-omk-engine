@@ -194,6 +194,30 @@ than run `Utiliser`'s arm under its name.
 > fails it. **NOT covered**: the five widgets - two memos bind the same two
 > rows at 5 or at 9.
 >
+> **THE BODY DREW A CLUE THAT IS NOT IN THE ORIGINAL** (2026-09-16, the reader
+> comparing the two side by side: *"you added some texts to the memo ... the
+> added texts kinda look like the clues that can be bought on the save
+> screen"*). They are clues. A memo record's description holds TWO bracketed
+> sections, the memo and a clue, and 37 of 1002 records carry one - 342 and 338
+> share theirs, 336 has its own, which is exactly the "same for two, different
+> for the third" that was reported. The WIDGET picks the section:
+> `sub_477F60`'s `mov ax, [ebx+1Eh]` is the item's `+30` (already lifted as
+> `textArg`), and unless it is -1 the text goes through
+> `sub_43FEA0(index, src, out)`, a depth-aware extractor of the index-th
+> top-level `[...]` group with the two `{TEXT ERROR}` literals for its failure
+> arms. The memo body carries 0; the sneak's examine box `0x004DE710`,
+> MULTIPLAN's `0x004E57E0` and `0x004E2B10` carry -1, which is why a long
+> notice still draws whole. Ported as `omk::extractTextSection`, and the body
+> line now reports the characters the COMPOSER laid out (`ScreenFrame::
+> textChars`), not the field's length: memo 915 is 192 bytes and its section 0
+> is 102.
+>
+> **STILL OPEN from the same play report**: the original shows the preview as
+> soon as the line is SELECTED, where this port shows it a press later - so the
+> panel hook is the panel's per-frame tick, not an input-only handler - and
+> ENTER on a memo enters the text zone and gives it a scroll bar, which is the
+> reader page `0x004DEFF0` and is not ported.
+>
 > Both mutations red with their own output (`9bf0faf`), and each reproduces one
 > of the two faults exactly: with the hook arm dead
 > (`false && panel_->hook == kHookSneakMemoryPanel`) the body line DISAPPEARS -

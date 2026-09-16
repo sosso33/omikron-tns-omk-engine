@@ -7523,9 +7523,23 @@ def c_engine_text_scroll():
     writes the clamped value back. `sub_49B950`, the examine page's own open,
     starts `mov dword_6A5090, 0` - a new object is read from the top.
 
-    **Which items scroll** is the flag, and the tree answers exactly: 10 lists
-    name the hook and they hold all 11 of the items carrying bank C `0x2` -
-    the examine page's 400x260 description box (0x004DE710) among them.
+    **Which items scroll** is the flag, and the tree answers exactly: **4**
+    lists name the hook and they hold all **5** of the items carrying bank C
+    `0x2` - the examine page's 400x260 description box (0x004DE710), the
+    sneak's memo body (0x004DEA98), MULTIPLAN's (0x004E57E0, 0x004E2B10) and
+    the terminals' (0x004E4000).
+
+    Those were 10 and 11 until 2026-09-16, and the check was found RED with
+    11 and 12 - **pre-existing**, reproduced at `5bdb50f` before that day's
+    work, and nothing to do with the memory page. The probe counted LIST ROWS
+    over `w.all()`, which walks a panel once per screen that names it: the
+    terminals' `0x004E4108` is lifted under eight (5, 11, 15..19 and the
+    template), so a regeneration that changed how many screens name a panel
+    moved the number while the tree did not change at all. It now counts
+    DISTINCT addresses, which is what the sentence above actually claims and
+    is stable against re-lifting. It survived unseen because this is a
+    `--slow` check and the fast sweep runs no `engine:` check - the same way
+    `engine: scene steps` did (CLAUDE.md 4), and with the full sweep overdue.
 
     **And the page has to be STANDING in that list.** `sub_49B950`'s other
     instruction is `mov dword_4DEF38, 2` - panel 0x004DEF20 `+24`, the current
@@ -7562,7 +7576,7 @@ def c_engine_text_scroll():
                        errors="replace")
     got = [ln.split() for ln in r.stdout.strip().splitlines()]
     want = [
-        "lists 10 items 11".split(),
+        "lists 4 items 5".split(),
         "page examine list scroller".split(),
         "down 4 offset 32".split(),
         "up 4 offset 0".split(),
@@ -7570,8 +7584,11 @@ def c_engine_text_scroll():
         "reopen offset 0 page examine".split(),
     ]
     return got, want, \
-        "ten lists name hook 0x0042A9A0 and hold all eleven items carrying " \
-        "bank C 0x2; the walk reaches the examine page STANDING IN the " \
+        "four lists name hook 0x0042A9A0 and hold all five items carrying " \
+        "bank C 0x2 - DISTINCT addresses, not the lifted panel rows this " \
+        "counted until 2026-09-16, which said 11 and 12 because the " \
+        "terminals' panel is lifted under eight screens; the walk reaches " \
+        "the examine page STANDING IN the " \
         "scrolling list (`mov dword_4DEF38, 2`, which `settle` used to " \
         "overwrite from the move rule - the fault a player reported as the " \
         "long text not scrolling); four DOWN presses move the offset 8 " \
@@ -20364,6 +20381,28 @@ def c_engine_sneak_memos():
     1. The body line prints on change, so a body drawn at open would show as an
     earlier `row 0` line: the ordered pair pins both halves.
 
+    **And the body is ONE SECTION of the description, not the field**
+    (2026-09-16, the same reader, playing the ORIGINAL side by side: *"you
+    added some texts to the memo ... which are not in the original game ...
+    the added texts kinda look like the clues that can be bought on the save
+    screen"*). They are exactly that. A memo record's description holds two
+    bracketed sections - the memo, and a CLUE - and **37** of the 1002 records
+    carry one (342 and 338 share a clue, 336 has its own, which is what the
+    reader saw). The body box draws only the first because the ITEM carries a
+    section index at `+30`: `sub_477F60` does `mov ax, [ebx+1Eh]`, and unless
+    it is -1 it hands the text to `sub_43FEA0(index, src, out)`, which walks
+    the string tracking `[` / `]` depth and copies out the index-th top-level
+    section (emitting `{TEXT ERROR!}` when there is none, or `{TEXT ERROR !}`
+    for a null source - the two shipped literals differ by that space).
+
+    The field was already lifted as `textArg`, and the four text widgets agree:
+    the memo body `0x004DEA98` carries **0**, while the sneak's examine box
+    `0x004DE710`, MULTIPLAN's `0x004E57E0` and `0x004E2B10` carry -1 - which is
+    why an eleven-line notice like *Notice MK400* still draws whole. Asserted
+    here as the body's CHARACTER COUNT, reported by the composer from the text
+    it actually laid out: memo 915's description is 192 bytes and its section 0
+    is 102.
+
     NOT covered: the FIVE widgets. Two memos bind the same two rows whether the
     list is 5 wide or 9, so this route cannot tell them apart.
     """
@@ -20390,7 +20429,7 @@ def c_engine_sneak_memos():
     return got, \
            ("sneak: memory page - object list 2, 2 rows: 913 915",
             "sneak: memo body - row 1 id 915 'Panneau Bibliothèque :', "
-            "192 chars, 4 lines drawn"), \
+            "102 chars, 2 lines drawn"), \
            "the viewer's lines for the sneak's memory page after two memos are " \
            "given into object list 2 and the page is opened: which list the " \
            "rows bound to, how many and their ids - and the BODY the page's own " \

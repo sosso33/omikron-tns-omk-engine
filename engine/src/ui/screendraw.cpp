@@ -749,9 +749,19 @@ ScreenFrame ScreenComposer::draw(Surface& fb, int screenId,
                 // Measure first, because the clamp needs the height and the
                 // hook that moves the offset has no bound of its own. This is
                 // `Ui_ItemTextStyle`'s own order.
+                // `sub_477F60`: `mov ax, [ebx+1Eh]` - the item's own SECTION
+                // INDEX, and `cmp ax, 0FFFFh` is the "draw it whole" case.
+                // The memo body carries 0, so it shows the memo and not the
+                // CLUE that shares the record's description field; the examine
+                // boxes carry -1, which is why an eleven-line notice draws
+                // entire. Extracted once and used for both the measure and
+                // the draw, since the scroll bound is measured from what is
+                // actually laid out.
+                const std::string body = it.textArg >= 0
+                    ? extractTextSection(examine_, it.textArg) : *examine_;
                 TextBlock probe = blk;
                 probe.measureOnly = true;
-                const int total = lay_->layOutBlock(nullptr, *examine_, probe);
+                const int total = lay_->layOutBlock(nullptr, body, probe);
                 const int overflow = std::max(0, total - (blk.bottom - blk.top));
                 if (scroll_) {
                     if (*scroll_ > overflow) *scroll_ = overflow;
@@ -760,8 +770,9 @@ ScreenFrame ScreenComposer::draw(Surface& fb, int screenId,
                 out.textOverflow = overflow;
                 blk.originY = scroll_ ? *scroll_ : 0;
                 BlockResult res;
-                lay_->layOutBlock(&fb, *examine_, blk, &res);
+                lay_->layOutBlock(&fb, body, blk, &res);
                 out.textLines += res.lines;
+                out.textChars += static_cast<int>(body.size());
             }
 
             // ---- THE EXAMINE PAGE'S CONTENT ---------------------------

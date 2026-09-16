@@ -22,7 +22,9 @@
 #include "ui/widgets.h"
 #include "actor/moves.h"
 
+#include <cstdint>
 #include <cstdio>
+#include <set>
 #include <string>
 
 int main(int argc, char** argv) {
@@ -30,15 +32,25 @@ int main(int argc, char** argv) {
     const auto w = omk::UiWidgets::loadJson(std::string(argv[1]) + "/ui_widgets.json");
     if (!w.valid()) { std::fprintf(stderr, "no ui_widgets.json\n"); return 1; }
 
-    int hooked = 0, bits = 0;
+    // DISTINCT addresses, because `w.all()` walks panel ROWS and a panel is
+    // lifted once per screen that names it: the terminals' `0x004E4108`
+    // appears under eight (5, 11, 15..19 and the template), so counting rows
+    // said "11 lists, 12 items" for a tree that holds four and five. This
+    // check went red the day a regeneration changed how many screens name a
+    // panel, and stayed red unseen because it is `--slow` and the fast sweep
+    // runs no `engine:` check - the same way `engine: scene steps` did
+    // (CLAUDE.md 4). The sentence this asserts is about the TREE, so count
+    // the tree.
+    std::set<std::uint32_t> hooked, bits;
     for (const auto& p : w.all())
         for (const auto& l : p.lists) {
-            if (l.hook == omk::kScrollTextBox) ++hooked;
+            if (l.hook == omk::kScrollTextBox) hooked.insert(l.addr);
             for (const auto& it : l.items)
                 if ((it.flags[2] & 0x80000000u) &&
-                    (it.flags[2] & omk::kItemScrolls)) ++bits;
+                    (it.flags[2] & omk::kItemScrolls)) bits.insert(it.addr);
         }
-    std::printf("lists %d items %d\n", hooked, bits);
+    std::printf("lists %d items %d\n",
+                static_cast<int>(hooked.size()), static_cast<int>(bits.size()));
 
     omk::UiListState st;
     omk::UiWalk walk(w, st);

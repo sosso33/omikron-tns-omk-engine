@@ -108,6 +108,27 @@ rule intends one.
 > checks tells the two apart: the fast list is 207 checks and the whole thing
 > 383 (2026-09-09; both grow).
 
+> **AND IT HAPPENED A THIRD TIME: `engine: text scroll`, found red 2026-09-16.**
+> It came up while running the neighbours of a change to the shared text path -
+> which is the `--only` rule working - and reported `lists 11 items 12` against
+> an expected `10, 11`. **It was not that day's doing**: rebuilt in a throw-away
+> worktree at `5bdb50f`, before the memory-page work, the probe already printed
+> 11 and 12. The cause is the probe counting LIST ROWS over `w.all()`, which
+> walks a panel once per screen that names it - the terminals' `0x004E4108` is
+> lifted under eight - so a regeneration that changed how many screens name a
+> panel moved the number while the tree it claims to measure did not change at
+> all. Fixed by counting DISTINCT addresses (4 lists, 5 items), which is what
+> the check's own sentence asserts and is stable against re-lifting; every
+> behavioural line was correct throughout (32 / 0 / -24 / 0).
+>
+> Two things worth keeping. **A red check reads as a finding**, so the first
+> instinct is to look for what this session broke - the worktree rebuild is
+> what separates "mine" from "already there", and it is cheap. And this is the
+> third check whose baseline was a count over LIFTED ROWS rather than over the
+> thing it describes (`engine: I2D`'s flag census and `engine: slider door`'s
+> row parse were the others): **a census is only as stable as the enumeration
+> under it**, which is CLAUDE.md 1's rotting-scan rule one level down.
+
 > **`engine: UI` is RED and was already red at `a5b1807`, on a clean tree.**
 > Measured 2026-09-07: `disagree` is 9, not 0 - the shops, screens 21..28 and
 > 32, whose current list settles on row 0 in the port and row 1 in

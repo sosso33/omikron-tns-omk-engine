@@ -103,6 +103,12 @@ ParsedText parseMarkup(const std::string& text, char face = 'J',
                        std::uint8_t r = 255, std::uint8_t g = 255,
                        std::uint8_t b = 255);
 
+// `sub_43FEA0(index, src, out)` - ONE BRACKETED SECTION of a text, which is
+// what an item's `+30` (`UiItem::textArg`) asks for. -1 means the whole field
+// and is what the examine boxes carry; the sneak's memo body carries 0. See
+// the definition in `text.cpp` for the transcription and why it matters.
+std::string extractTextSection(const std::string* src, int index);
+
 // ------------------------------------------------- `Text_LayOutBlock`'s box
 //
 // Everything `Text_DrawBlock` (0x0043F180) writes into the renderer's globals

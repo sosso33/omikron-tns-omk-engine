@@ -50,6 +50,54 @@ const FontFace* FontTable::byLetter(char c) const {
     return nullptr;
 }
 
+// `sub_43FEA0(index, src, out)`, transcribed - THE SECTION EXTRACTOR.
+//
+// A memo record's description holds TWO bracketed sections: the memo itself,
+// and a CLUE of the kind the save screen sells (37 records carry one, and two
+// memos can share the same clue). The engine shows only the first, because
+// the body box's `+30` is 0 - and a reader who played the original spotted
+// exactly that: "you added some texts to the memo ... which are not in the
+// original game". The port was drawing the whole field.
+//
+//     if (src == NULL) return "{TEXT ERROR !}";     // its own arm, and the
+//                                                   // SPACE is in the literal
+//     depth = 0; count = 0; start = src; fail = 0;
+//     for each char c:
+//       c == 0   -> fail = 1; done            // `loc_43FF39` falls into done
+//       c == '[' -> if (++depth != 1) fail = 1;
+//                   else if (index == 0) { start = here + 1; count = 0; }
+//       c == ']' -> if (--depth != 0) fail = 1;
+//                   else if (index == 0) done; else index--;
+//       else     -> count++
+//     out = (fail ? "{TEXT ERROR!}" : "") + the counted span
+//
+// Note the two literals differ by one space, and that a NESTED bracket sets
+// the failure flag without stopping the walk.
+std::string extractTextSection(const std::string* src, int index) {
+    if (!src) return "{TEXT ERROR !}";
+    int depth = 0;
+    std::size_t start = 0, count = 0;
+    bool fail = false, done = false;
+    for (std::size_t i = 0; i < src->size() && !done; ++i) {
+        const char c = (*src)[i];
+        if (c == '[') {
+            if (++depth != 1) fail = true;
+            else if (index == 0) { start = i + 1; count = 0; }
+        } else if (c == ']') {
+            if (--depth != 0) fail = true;
+            else if (index == 0) done = true;
+            else --index;
+        } else {
+            ++count;
+        }
+    }
+    if (!done) fail = true;              // ran off the end of the string
+    std::string out = fail ? std::string("{TEXT ERROR!}") : std::string();
+    if (start <= src->size())
+        out.append(*src, start, std::min(count, src->size() - start));
+    return out;
+}
+
 ParsedText parseMarkup(const std::string& text, char face,
                        std::uint8_t r, std::uint8_t g, std::uint8_t b) {
     ParsedText out;

@@ -1555,7 +1555,38 @@ the wrong page.
 > page `0x004DEFF0` — coming back from a memo keeps the list current — and
 > `off_4DEFF0` is `{parent 0x004DEF88, builder sub_49D870, leave sub_49D890}`,
 > so that page is this one's CHILD. `verify.py: engine: sneak memos` now walks
-> in and moves, and asserts the body appears only after the move.
+> in and moves.
+>
+> **THE BODY IS ONE SECTION OF THE DESCRIPTION, NOT THE FIELD** — and this is
+> the reader again, playing the original beside the port: *"you added some
+> texts to the memo, always the same about the rings, which are not in the
+> original game"*, then *"the added texts kinda look like the clues that can be
+> bought on the save screen"*. They are exactly that. A memo record's
+> description holds TWO bracketed sections, the memo and a **clue**, and **37**
+> of the 1002 records carry one — 342 and 338 share a clue, 336 has its own,
+> which is the "same for two, different for the third" they saw. The port drew
+> the whole field, so every memo gained a clue.
+>
+> What picks the section is the WIDGET. `sub_477F60` reads `mov ax, [ebx+1Eh]`
+> — the item's `+30`, already lifted as `textArg` — and unless it is `-1` hands
+> the text to `sub_43FEA0(index, src, out)`, which walks the string tracking
+> `[` / `]` depth and copies out the index-th TOP-LEVEL section. It emits
+> `{TEXT ERROR!}` when the section is missing and `{TEXT ERROR !}` for a null
+> source; the two shipped literals differ by that space. The four text widgets
+> agree with the reading: the memo body `0x004DEA98` carries **0**, while the
+> sneak's examine box `0x004DE710`, MULTIPLAN's `0x004E57E0` and `0x004E2B10`
+> carry `-1` — which is why an eleven-line notice like *Notice MK400* still
+> draws whole. Ported as `omk::extractTextSection` (`ui/text.cpp`), applied in
+> the composer for both the measure and the draw, since the scroll bound must
+> be measured from what is actually laid out.
+>
+> **Still wrong in the port at the time of writing**: the reader also reports
+> that in the original *the preview appears as soon as the line is selected*,
+> where this port shows it one press later. That means the panel hook is the
+> panel's PER-FRAME tick — called with an input word of 0 it simply declines to
+> move — and not an input-only handler, so the box's flag tracks the current
+> list continuously. The paragraph above describing a one-press lag is the
+> port's defect, not the engine's.
 
 `sub_42ADD0` branches on it too. For 0 and 2 it raises the channel's **event
 25** with that number as the list id; for **4** it raises nothing and instead
