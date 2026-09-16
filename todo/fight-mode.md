@@ -792,8 +792,24 @@ and it is 0 - because `run_fight` builds both `FightBody`s itself, on one
 convention, so the phantom offset cannot arise there. It needs a staged
 opponent beside a walking player, which only the viewer has.
 
-**The fix is to put both fighters on one origin** before anything else in
-15.8 is worth attempting - it is upstream of the camera AND of the collision
+**FIXED 2026-09-17.** The opponent's placement is the convention to meet,
+because it is the one the engine's actor record uses, so the PLAYER is lifted
+to his pelvis on the way into the fight step (`player->pos()[1] -
+player->cameraLift()`) and dropped back to his feet on the way out, where the
+frame's delta is fed to `player->nudge`. Measured over a real fight:
+
+| | before | after |
+|---|---|---|
+| `\|dy\|` between the two bodies | 41 to 44 | **1** |
+| minimum horizontal gap | **2.0** | **43.3** (the radius is 43.4) |
+| samples inside the radius | 7 of 15 | 0 |
+
+`verify.py: engine: fight separation` drives `omk-play` rather than
+`run_fight`, because the probe builds both bodies itself on one convention and
+so cannot see this at all.
+
+**The original note, kept because it is still true of what remains:** putting
+both fighters on one origin was upstream of everything else in 15.8 - it is upstream of the camera AND of the collision
 work, since a collide-and-slide that starts from overlapping bodies has
 nothing sensible to do. Note that `fightRun.foe.y` is also published straight
 to the drawn body (`fightRun.body->at[1]`), so the two uses have to be

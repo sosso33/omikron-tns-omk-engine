@@ -11975,6 +11975,84 @@ def c_engine_fight_letterbox():
             "the middle row is quoted so a black frame cannot pass by "
             "having no bars either")
 
+def c_engine_fight_separation():
+    r"""`omk-play`: the two fighters stand apart IN THE PLANE, on one origin.
+
+    `Fight_KeepSeparation` holds the pair outside the larger of their two
+    bounding radii (43.4 for `HO1_FN` against `BBC_FN`), and
+    `measureSeparation` is a **3D** distance - which is only meaningful if both
+    fighters' `y` mean the same thing. In this tree they did not: the player's
+    came from his WALKER, whose origin is the feet, and the opponent's from his
+    staged placement, which names the PELVIS. The constant ~41-unit gap between
+    the two conventions satisfied the whole separation radius on its own, so
+    the push never fired and the two stood inside each other.
+
+    A reader found it by eye - *"some camera issues are when Kay'l and the
+    opponent are at the same place at the same time"* - and his played fight
+    measures it: `|dy|` 41 to 44 throughout, a minimum horizontal gap of
+    **2.0 units**, and **7 of 15** samples closer than the radius. The camera
+    fault was downstream: `camOrbit` takes its heading from
+    `atan2(b.z - a.z, b.x - a.x)`, and with the pair coincident that vector is
+    two units long and its direction is noise, so the eased eye was pulled
+    between antipodal points whose midpoint is the centre of the orbit (31
+    frames of that fight turned more than 90 degrees).
+
+    `engine: melee` cannot see any of this and is not wrong to pass:
+    `run_fight` builds both `FightBody`s itself, on one convention, so the
+    phantom offset cannot arise there. It needs a staged opponent beside a
+    walking player, which only the viewer has - which is why this check drives
+    `omk-play` rather than the probe.
+
+    Asserted over the `bodies:` lines of a real `--fight-supermarket` run: that
+    there are samples at all, that NONE is closer than the radius, that the two
+    origins now agree (`|dy|` of 1, not 41), and the minimum horizontal gap
+    floored to a ten, so the row says what it found without going red for a
+    unit of drift.
+
+    SHOWN TO FAIL: drop the `- player->cameraLift()` from the two places the
+    player's fight body is filled and the overlap count and `|dy|` both jump -
+    the fighters standing inside each other again, held apart on paper by a
+    vertical gap that is only a change of units.
+    """
+    import subprocess
+    eng = os.path.join(ROOT, "engine")
+    fr = omkpaths.data_root()
+    if not (os.path.isdir(eng) and os.path.isdir(os.path.join(fr, "SCPTDATA"))):
+        return ("skipped",), ("skipped",), "engine/ or gamedata/ absent"
+    mk = subprocess.run(["make", "-s", "play"], cwd=eng, capture_output=True, text=True)
+    play = os.path.join(eng, "build", "omk-play")
+    if mk.returncode != 0 or not os.path.exists(play):
+        return ("no sdl",), ("no sdl",), "needs SDL to render"
+    r = subprocess.run(
+        [play, fr, os.path.join(ROOT, "tables"),
+         "--save", os.path.join(ROOT, "traces", "save-appart.bin"),
+         "--fight-supermarket", "--frames", "900"],
+        capture_output=True, text=True, errors="replace",
+        env=dict(os.environ, SDL_VIDEODRIVER="dummy"))
+    rows = []
+    for ln in (r.stdout + r.stderr).splitlines():
+        m = re.search(r"bodies: player (\S+) (\S+) (\S+) facing \S+, "
+                      r"opponent (\S+) (\S+) (\S+)", ln)
+        if m:
+            px, py, pz, ox, oy, oz = (float(x) for x in m.groups())
+            rows.append((math.hypot(ox - px, oz - pz), abs(oy - py)))
+    # the parse first: a pattern that reads nothing must fail AS A PARSE
+    if len(rows) < 5:
+        return (len(rows),), (">= 5",), "the run must print its bodies lines"
+    # The push settles them AT the radius, so a sample can sit a tenth inside
+    # it (43.3 against 43.4) without anything being wrong. What this counts is
+    # OVERLAP - three units of slack under the radius - because the fault it
+    # exists for put them 2.0 apart, not 43.3.
+    kOverlap = 40.0
+    inside = sum(1 for h, _ in rows if h < kOverlap)
+    maxDy = max(v for _, v in rows)
+    minH = min(h for h, _ in rows)
+    return (len(rows) >= 5, inside, int(round(maxDy)), int(minH)), \
+           (True, 0, 1, 43), \
+           ("no sample of a real fight has the two fighters closer than their "
+            "separation radius, and their two `y` values now mean the same "
+            "thing - 1 unit apart, not 41")
+
 def c_engine_impasse_fx():
     r"""`engine/`: the Impasse cutscene actually PRODUCES effects.
 
@@ -35944,6 +36022,7 @@ SLOW = [
     ("engine: melee",      c_engine_melee,      "engine/README"),
     ("engine: bank swap",  c_engine_bank_swap,  "todo/fight-mode 15.6; actor/player.h"),
     ("engine: fight letterbox", c_engine_fight_letterbox, "todo/fight-mode 15.4"),
+    ("engine: fight separation", c_engine_fight_separation, "todo/fight-mode 15.8d"),
     ("engine: programs",   c_engine_programs,   "engine/README"),
     ("engine: scene steps", c_engine_scene_steps, "engine/README"),
     ("engine: scene survive", c_engine_scene_survive, "todo/omk-play"),

@@ -4586,8 +4586,22 @@ int main(int argc, char** argv) {
             return r;
         };
         fightRun.player = omk::FightBody{};
+        // ONE ORIGIN FOR BOTH FIGHTERS. The engine's two actors each store a
+        // single position at `+244/+248/+252`, and `Fight_KeepSeparation` and
+        // the camera both read it; this tree had the player on his WALKER's
+        // origin (the feet) and the opponent on his staged placement (the
+        // PELVIS), about 41 units apart. `measureSeparation` is a 3D distance,
+        // so that constant gap satisfied the 43.4 separation radius on its own
+        // and the two stood inside each other - a reader: *"some camera issues
+        // are when Kay'l and the opponent are at the same place at the same
+        // time"*. The camera then took its heading from a two-unit
+        // `atan2(b - a)`, which is noise (`todo/fight-mode.md` 15.8d).
+        //
+        // The opponent's placement is the convention to meet, because it is
+        // the one the engine's actor record uses, so the player is lifted to
+        // his pelvis on the way in and dropped back to his feet on the way out.
         fightRun.player.x = player->pos()[0];
-        fightRun.player.y = player->pos()[1];
+        fightRun.player.y = player->pos()[1] - player->cameraLift();
         fightRun.player.z = player->pos()[2];
         fightRun.player.yaw = player->facing();
         fightRun.player.radius = bodyRadius(playerMeshes);
@@ -7346,8 +7360,10 @@ int main(int argc, char** argv) {
                         fightRun.ms += frameSec * 1000.0;
                         const float was[3] = {player->pos()[0], player->pos()[1],
                                               player->pos()[2]};
+                        // ...on the PELVIS, the opponent's convention (above).
+                        const float lift = player->cameraLift();
                         fightRun.player.x = was[0];
-                        fightRun.player.y = was[1];
+                        fightRun.player.y = was[1] - lift;
                         fightRun.player.z = was[2];
                         fightRun.player.yaw = player->facing();
                         const bool on = fightRun.fight->step(
@@ -7356,8 +7372,10 @@ int main(int argc, char** argv) {
                         // The bodies back: the player through `nudge` so the
                         // walker keeps its own idea of where he stands, the
                         // opponent onto his staged placement.
+                        // ...and back to the feet, so the walker keeps its own
+                        // idea of where he stands.
                         const float d[3] = {fightRun.player.x - was[0],
-                                            fightRun.player.y - was[1],
+                                            (fightRun.player.y + lift) - was[1],
                                             fightRun.player.z - was[2]};
                         if (d[0] != 0.0f || d[1] != 0.0f || d[2] != 0.0f)
                             player->nudge(d);
