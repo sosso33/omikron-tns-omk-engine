@@ -20362,13 +20362,18 @@ def c_engine_sneak_memos():
     got = tuple(ln.strip() for ln in text.splitlines()
                 if ln.startswith("sneak: memory page") or ln.startswith("sneak: memo body"))
     return got, \
-           ("sneak: memo body - row 0 id 913 'Moi :', 308 chars",
-            "sneak: memory page - object list 2, 2 rows: 913 915"), \
+           ("sneak: memory page - object list 2, 2 rows: 913 915",
+            "sneak: memo body - row 0 id 913 'Moi :', 308 chars, 8 lines drawn"), \
            "the viewer's lines for the sneak's memory page after two memos are " \
            "given into object list 2 and the page is opened: which list the " \
            "rows bound to, how many and their ids - and the BODY the page's own " \
            "box shows, which is the selected memo's description through the " \
-           "tag the row hook writes into that item's `+0x3C`"
+           "tag the row hook writes into that item's `+0x3C`. The body line is " \
+           "printed AFTER the draw and carries `ScreenFrame::textLines`, the " \
+           "count the composer laid out - its first version printed beside the " \
+           "FILL instead and stayed green under a mutation that cut the text " \
+           "off from the composer entirely (`setExamineText(nullptr)`), because " \
+           "a line reporting what it INTENDED cannot see a box that drew nothing"
 
 
 def c_engine_sneak_quit():

@@ -2534,6 +2534,11 @@ int main(int argc, char** argv) {
     bool sliderTold = false;
     std::string examineTold;
     std::string examineText;
+    // The memo the body box was fed this frame, reported AFTER the draw with
+    // the lines the composer actually laid out - a line printed beside the
+    // fill says what was intended, not what was drawn, and a mutation that
+    // cut the text off from the composer passed exactly that way.
+    std::string memoBodyPending;
     if (objectRecords.empty())
         std::printf("no IAM/OBJECT - the sneak's inventory page will be "
                     "empty\n");
@@ -16295,14 +16300,9 @@ int main(int argc, char** argv) {
                         // The body, named from the memo the rows selected and
                         // measured rather than described, so a check can hold
                         // it: the id, its heading, and how long the text is.
-                        static std::string memoBodyTold;
-                        std::string said = "row " + std::to_string(sel) + " id " +
-                                           std::to_string(memo) + " '" + mr->name + "', " +
-                                           std::to_string(examineText.size()) + " chars";
-                        if (said != memoBodyTold) {
-                            memoBodyTold = said;
-                            std::printf("sneak: memo body - %s\n", said.c_str());
-                        }
+                        memoBodyPending = "row " + std::to_string(sel) + " id " +
+                                          std::to_string(memo) + " '" + mr->name + "', " +
+                                          std::to_string(examineText.size()) + " chars";
                     }
                 }
                 if (rowKind == 2) {
@@ -17107,7 +17107,22 @@ int main(int argc, char** argv) {
             // instrument, and the one that found the keyed-tile fault: with
             // the device off, the caller was there all along, so the world
             // was never the problem.
-            if (!std::getenv("OMK_NOUI")) comp.draw(fb, openScreen, *walk);
+            if (!std::getenv("OMK_NOUI")) {
+                const omk::ScreenFrame sf = comp.draw(fb, openScreen, *walk);
+                // ...and the memo body is reported from the DRAW: `textLines`
+                // counts what the body/examine block laid out, so a box fed
+                // nothing says 0 lines instead of repeating what it was handed.
+                if (!memoBodyPending.empty()) {
+                    static std::string memoBodyTold;
+                    const std::string said = memoBodyPending + ", " +
+                                             std::to_string(sf.textLines) + " lines drawn";
+                    if (said != memoBodyTold) {
+                        memoBodyTold = said;
+                        std::printf("sneak: memo body - %s\n", said.c_str());
+                    }
+                    memoBodyPending.clear();
+                }
+            }
         }
 
         // A `media.play` line, while `Subtitle_Show`'s timer runs: inset 16,
