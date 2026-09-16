@@ -11032,6 +11032,77 @@ def c_engine_fight_ai():
            "anim_ctl.py row for row"
 
 
+def c_engine_melee():
+    r"""MELEE RUN - `engine/src/actor/fight.cpp` over the three combat banks.
+
+    Step 1 of `todo/fight-mode.md`. A fight is `Fight_Begin`'s two combat
+    contexts, `Actor_TickPlayerAndOpponent`'s per-fighter pass, `Fight_TickAI`
+    pressing buttons into the opponent's own input queue, `Fight_ResolveHit`
+    both ways, the separation push and the 60-frame KO replay.
+
+    **This slice has no oracle and cannot be given one**, which is a property
+    of the subject: `fight.begin` announces nothing to the tag logger and
+    `traces/fight.log` was captured to prove otherwise and proved the
+    opposite. So the standard is `docs/PORTING.md` B1 data-constrained, like
+    the `.CTL` channel underneath it, and these are the constraints the probe
+    asserts:
+
+    * **the damage is RE-DERIVED**, not reported: `run_fight.cpp` recomputes
+      the engine's formula from the documentation - the block's own damage,
+      doubled against the player, scaled by attack, reduced by dodge, floored
+      at 1, and a flat unscaled point for a block or a graze - and compares it
+      to what the runtime charged. `damage re-derived` is in the tuple for
+      exactly the reason CLAUDE.md 1 gives: if the probe stopped producing
+      events the mismatch count would be 0 and the check would pass
+      VACUOUSLY, so the count of comparisons is asserted too;
+    * every reaction resolves in the low-16 id space (0 unresolved);
+    * hit points never rise and are clamped at 0;
+    * every input word the AI presses is inside the profiles' own 0xCFF union
+      - the same matcher the player's keys go through;
+    * the pair is never left inside the separation radius after the push.
+
+    `blocks` is **0 on purpose**: the guard flag is raised only by the
+    defensive arm of `Fight_TickAI` (intent 9 inside 1.5 m), which is labelled
+    in `fight.cpp` as not yet transcribed. A number that moves off 0 here
+    means that arm landed, and the row should be re-baselined with it.
+
+    Four of the nine fights reach the 4000-frame cap rather than a knock-out,
+    which is why `ended` is 5: with no walker in a headless probe neither
+    fighter can close or retreat, so a stalemate is a real outcome of the
+    fixture rather than of the runtime.
+    """
+    import subprocess, tempfile, shutil
+    eng = os.path.join(ROOT, "engine")
+    anims = omkpaths.data("ANIMS")
+    if not (os.path.isdir(eng) and os.path.isdir(anims)):
+        return ("skipped",), ("skipped",), "engine/ or gamedata/ANIMS absent"
+    b = subprocess.run(["make", "-s", "build/run_fight"], cwd=eng,
+                       capture_output=True, text=True)
+    binp = os.path.join(eng, "build", "run_fight")
+    if b.returncode != 0 or not os.path.exists(binp):
+        return ("build failed",), ("built",), "engine/ must build run_fight"
+    tmp = tempfile.mkdtemp()
+    out = os.path.join(tmp, "a.bin")
+    try:
+        subprocess.run([binp, anims, out], capture_output=True)
+        raw = open(out, "rb").read()
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+    (files, profiles, fights, frames, hits, blocks, grazes, kos, ended,
+     aiMoves, aiWords, outside, checked, mismatch, unresolved, hpUp,
+     tooClose, replays) = struct.unpack_from("<18i", raw, 0)
+    return (files, profiles, fights, ended, blocks, outside, mismatch,
+            unresolved, hpUp, tooClose, checked, hits > 0, aiMoves > 0), \
+           (3, 9, 9, 5, 0, 0, 0, 0, 0, 0, 205, True, True), \
+           "combat banks, AI profiles exercised, fights, fights ending in a " \
+           "KO; then the five invariants that must all be 0 - blocks (the " \
+           "defensive arm is not transcribed), AI words outside the 0xCFF " \
+           "union, damage disagreeing with the independent re-derivation, " \
+           "reactions that do not resolve, hit points rising, and pairs left " \
+           "inside the separation radius; then how many damage figures were " \
+           "actually re-derived, so the row cannot pass by measuring nothing"
+
+
 def c_engine_programs():
     r"""`engine/`'s SCX object interpreter - `Script_PlayScript`, ticked.
 
@@ -27080,6 +27151,16 @@ def c_exe_tables():
     +76/+80 and the combination table is `GLOBAL +12` - all shipped, so a
     replica reads them from the user's data and a copy here would be the
     second copy that drifts.
+
+    **`fight_ai_moves` is not a counter-example to that**, and the distinction
+    is the whole reason it is here. The AI's PROFILES stay in the `.CTL` and
+    are read from the user's data; what this lifts is the eight input
+    sequences `Fight_TickAI` presses when it is not pressing a profile family
+    - `0x004CAD0C`..`0x004CADA0`, in the executable's own `.data` and nowhere
+    in `gamedata/`. Added 2026-09-16 with `todo/fight-mode.md` step 1, which
+    is also when the port discovered it needed them: the first version pressed
+    profile slot 0 for the closing-in branch and the AI moved eight times in
+    thirteen thousand frames.
     """
     s = _need("clean")
     if s: return s
@@ -27087,9 +27168,9 @@ def c_exe_tables():
     import exetables
     return (exetables.check(), sorted(exetables.OUT and
             [n for n, _, _, _ in exetables._TABLES])), \
-           ([], ["adpcm", "camera_presets", "key_bindings", "shoot_ai",
-                 "shoot_weapons", "special_moves", "ui", "ui_widgets",
-                 "vm_announce", "vm_opcodes"]), \
+           ([], ["adpcm", "camera_presets", "fight_ai_moves", "key_bindings",
+                 "shoot_ai", "shoot_weapons", "special_moves", "ui",
+                 "ui_widgets", "vm_announce", "vm_opcodes"]), \
            "complaints from exetables --check (stale, missing or failing a " \
            "table's own check), and the tables that must be present"
 
@@ -33364,6 +33445,15 @@ def c_licence_headers():
     file a contributor has actually written carries the header, and a file
     they have not yet committed is exactly the one to catch. The count is what
     cannot be shared, not the walk.
+
+    **432 -> 443 on 2026-09-16**, and the composition is worth writing down
+    because eleven is more than any one task added: **8** came from the
+    shop / multiplan / sneak work between `4078d16` and here
+    (`ui/interference.{h,cpp}` and six probes), and **3** from `todo/
+    fight-mode.md` step 1 (`actor/fight.{h,cpp}`, `tools/run_fight.cpp`).
+    Counted with `git diff --diff-filter=A 4078d16..HEAD`, so the number is
+    attributed rather than merely accepted - which is what this check's own
+    note about local state asks of anyone moving it.
     """
     import glob as _g
     TAG = "SPDX-License-Identifier: GPL-3.0-or-later"
@@ -33393,7 +33483,7 @@ def c_licence_headers():
                    if TAG in open(p, encoding="utf-8",
                                   errors="replace").read(600)]
     return (authored, sorted(missing), len(vendored), mislabelled), \
-           (432, [], 1, []), \
+           (443, [], 1, []), \
            "authored source files under tools/, engine/src, engine/tools, " \
            "engine/backends and scripts/; those MISSING the SPDX tag; " \
            "vendored files in engine/third_party; and vendored files wrongly " \
@@ -35598,6 +35688,7 @@ SLOW = [
     ("engine: fonts",      c_engine_fonts,      "engine/README"),
     ("engine: world data", c_engine_world_data, "engine/README"),
     ("engine: fight AI",   c_engine_fight_ai,   "engine/README"),
+    ("engine: melee",      c_engine_melee,      "engine/README"),
     ("engine: programs",   c_engine_programs,   "engine/README"),
     ("engine: scene steps", c_engine_scene_steps, "engine/README"),
     ("engine: scene survive", c_engine_scene_survive, "todo/omk-play"),

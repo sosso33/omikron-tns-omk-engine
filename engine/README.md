@@ -3334,6 +3334,37 @@ hands its value in. Checks: `engine: pedestrians`, `engine: city crowd`,
 `engine: street frame`, `engine: crowd push`, `engine: head look`, `opt
 tracks`.
 
+**And 2026-09-16, MELEE** (`todo/fight-mode.md`, `docs/ASSETS.md`) —
+`actor/fight.{h,cpp}`: the two combat contexts `Fight_Begin` builds from the
+fighters' properties (Vie, Carac Attack, Carac Dodge, and the options row-16
+difficulty bonus that lands on the player's defence alone), the six reaction
+entries cached by role code, the separation radius, `Fight_Engage` and the
+teardown, the profile selected by op 62's THIRD field, both per-fighter steps
+(`sub_4451F0` / `sub_4452A0`, with the KO trigger and the two distance-gated
+bank switches at 3 m and 1.5 m), `Fight_ResolveHit` both ways including the
+throw, `Fight_FaceOpponent`, `Fight_KeepSeparation` and the 60-frame KO
+replay that plays twice. The AI presses buttons into the opponent's own input
+queue exactly as the engine does, out of the `.CTL` profile families **and**
+out of the eight built-in sequences this work found compiled into the
+executable (`tables/fight_ai_moves.json`).
+
+**The standard is data-constrained, not engine-verified**, and that is the
+subject's doing rather than the effort's: `fight.begin` announces nothing to
+the tag logger, so `traces/fight.log` can never be an oracle for any of it.
+`engine/tools/run_fight.cpp` runs all three combat banks at all three levels
+and asserts what the data can falsify — damage **re-derived** from the
+attacker's own combat block rather than reported, every reaction resolving in
+the low-16 space, hit points never rising and clamped at 0, every AI word
+inside the profiles' 0xCFF union, and the pair never left inside the
+separation radius. `verify.py: engine: melee`.
+
+**Not ported yet**, and labelled in the code rather than approximated: camera
+mode 14 (`Fight_TickCamera`), `Hud_DrawBar` mode 2, the wiring in `omk-play`
+(no fight hook is installed, so a `fight.begin` still runs on rather than
+parking), and the DEFENSIVE arm of `Fight_TickAI` — intent 9 inside 1.5 m,
+which reads the opponent's combat block to decide whether to guard, and is
+why the check records `blocks` as 0.
+
 **And 2026-09-05, the GRAPHICAL OPTIONS and what they size**
 (`todo/options-config.md`, `docs/ASSETS.md`) — four things that turned out to
 be one piece of plumbing, because a single option sizes all of them:

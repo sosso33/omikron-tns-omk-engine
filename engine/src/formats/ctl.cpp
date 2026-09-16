@@ -118,6 +118,11 @@ CtlFile readCtl(std::span<const std::byte> d) {
             p.moveDelay[k]  = u16(d, rec + 8u + 2u * static_cast<std::size_t>(k));
         }
         for (int k = 0; k < 12; ++k) {
+            // The slot is {weight, count, moves} at +12+12k, so the count sits
+            // at +16+12k. The weight is a percentage in the low byte and is
+            // the whole of how `Fight_TickAI` chooses - see ctl.h.
+            p.slots[k].weight =
+                u32(d, rec + 12u + 12u * static_cast<std::size_t>(k)) & 0xFFu;
             const auto cnt = u32(d, rec + 16u + 12u * static_cast<std::size_t>(k));
             slots.push_back({cnt, pos});
             pos += 16u * cnt;

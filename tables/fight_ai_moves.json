@@ -1,0 +1,102 @@
+{
+ "_": "Lifted from gamedata/Runtime 2.exe by tools/exetables.py - do not hand-edit; run the tool. These tables are compiled into the executable and are NOT in the shipped gamedata/ data, which is why a replica engine needs this file.",
+ "table": "fight_ai_moves",
+ "documented_in": "docs/ASSETS.md",
+ "about": "The fight AI's built-in input sequences, at 0x004CAD0C..0x004CADA0.\n\n`Fight_TickAI` (0x00464830) presses two kinds of move.  The families in\nthe `.CTL` profile (`+76`/`+80`, which ship in the data) are one; the\nother is these eight sequences, which are compiled into the executable and\nare therefore exactly what this file exists for - a replica cannot read\nthem out of `gamedata/`.\n\nEach is a count dword followed by that many input words, and the branch\nthat presses it is what says what it is for: `m4CAD30` is the idle word\nalone, pressed when the AI is closing the distance or re-arming, with the\nDIRECTION supplied by the `dword_53AE14` modifier the handler ORs in;\n`m4CAD0C` is five presses of 0x02 with that modifier at 2 - the walk\nforward; `m4CAD38` and `m4CAD54` are five presses of 0x08 and 0x04; and\nthe four two-word entries are a press and a release, which is how the\nmachine sees a button come up again.\n\nThey keep their address names here and in `engine/src/actor/fight.h`,\nbecause the branch establishes the USE and nothing establishes a name.",
+ "checks": [
+  {
+   "what": "sequences",
+   "got": 8,
+   "want": 8
+  },
+  {
+   "what": "words in all of them",
+   "got": 24,
+   "want": 24
+  },
+  {
+   "what": "the counts, by address",
+   "got": [
+    5,
+    1,
+    5,
+    5,
+    2,
+    2,
+    2,
+    2
+   ],
+   "want": [
+    5,
+    1,
+    5,
+    5,
+    2,
+    2,
+    2,
+    2
+   ]
+  },
+  {
+   "what": "every word is a real binding inside 0xCFF, or the idle sentinel",
+   "got": true,
+   "want": true
+  },
+  {
+   "what": "the four two-word entries end on the idle word - a press and a release",
+   "got": true,
+   "want": true
+  },
+  {
+   "what": "m4CAD30 is the idle word alone",
+   "got": [
+    1073741824
+   ],
+   "want": [
+    1073741824
+   ]
+  }
+ ],
+ "rows": {
+  "m4CAD0C": [
+   2,
+   2,
+   2,
+   2,
+   2
+  ],
+  "m4CAD30": [
+   1073741824
+  ],
+  "m4CAD38": [
+   8,
+   8,
+   8,
+   8,
+   8
+  ],
+  "m4CAD54": [
+   4,
+   4,
+   4,
+   4,
+   4
+  ],
+  "m4CAD6C": [
+   72,
+   1073741824
+  ],
+  "m4CAD78": [
+   136,
+   1073741824
+  ],
+  "m4CAD88": [
+   64,
+   1073741824
+  ],
+  "m4CAD98": [
+   128,
+   1073741824
+  ]
+ }
+}

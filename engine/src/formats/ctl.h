@@ -188,7 +188,19 @@ struct CtlGroup {
 //     +0        int32  the id: difficulty level + 1
 //     +4,+6     uint16 the delay range entering a fight, in ms
 //     +8,+10    uint16 the delay range between moves
-//     +16+12k   {int32 count, ptr, int32}  twelve SITUATION slots
+//     +12+12k   twelve SITUATION slots, each {int32 weight, int32 count,
+//                      ptr moves} - so the COUNT of slot k is at +16+12k,
+//                      which is what this reader walks
+//
+// The slot's first dword is a PERCENTAGE in its low byte, and `Fight_TickAI`
+// (0x00464830) and its two helpers `sub_465160` / `sub_465210` do nothing but
+// roll `rand() % 100` against it: slot 0's weight gates attacking against
+// moving (`u8(profile, 12)`), slots 1..3 and 4..6 are the two move families
+// each helper picks from by cumulative weight, 8..10 choose the AI's next
+// INTENT, and slot 11 is the special, whose weight is `u8(profile, 144)` with
+// its count and pointer at +148/+152. Read here because `actor/fight.cpp`
+// needs it; the walk had skipped it, which is why this comment used to
+// describe the slot as `{int32 count, ptr, int32}`.
 //
 // Slot 7 is the one `Fight_TickAI` reads at `+100`/`+104` in its state-6/21
 // branch, and that is what fixes both the 12-byte slot stride and the order of
@@ -200,6 +212,11 @@ struct CtlGroup {
 // ends `if (a1 == 0x80000000) return a2 <= 0x2000`, so the idle word matches no
 // idle edge.
 struct CtlAiSlot {
+    // The slot's own PERCENTAGE, the low byte of its first dword: every choice
+    // `Fight_TickAI` makes is `rand() % 100` against these, cumulatively
+    // within a family. Read since 2026-09-16 because `actor/fight.cpp` needs
+    // it; the walk used to skip the whole slot header.
+    std::uint32_t weight = 0;
     std::vector<std::vector<std::uint32_t>> moves;  // each move a word sequence
 };
 

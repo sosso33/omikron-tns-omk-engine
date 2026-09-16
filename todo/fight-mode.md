@@ -169,11 +169,21 @@ Ported: the `.CTL` combat block and the fight-AI profiles as data
 `fightingWith` with op 62's park behind it, and `Hud_DrawBar` mode 0
 (`ui/hudbar.h`).
 
-Not ported: the two combat contexts, `Fight_Begin`/`Fight_ResolveHit`/
-`Fight_TickAI`, both per-fighter steps, the separation, the replay, camera mode
-14, `Hud_DrawBar` mode 2, and any wiring in `omk-play` — **no fight hook is
-installed**, so today every `fight.begin` runs on instead of parking (the
-`ObjectWait` rule: a missing subsystem must not deadlock a script).
+**Since step 1 (2026-09-16)** `engine/src/actor/fight.{h,cpp}` adds the two
+combat contexts, `Fight_Begin`, the engage and teardown, the profile
+selection, both per-fighter steps, `Fight_ResolveHit` including the throw,
+`Fight_FaceOpponent`, `Fight_KeepSeparation`, `Fight_TickAI` and the KO
+replay, with `engine/tools/run_fight.cpp` running all three combat banks at
+all three levels (`verify.py: engine: melee`).
+
+Still not ported: camera mode 14, `Hud_DrawBar` mode 2, and any wiring in
+`omk-play` — **no fight hook is installed**, so today every `fight.begin` runs
+on instead of parking (the `ObjectWait` rule: a missing subsystem must not
+deadlock a script). And one arm inside step 1 is deliberately left, labelled
+in the code rather than approximated: the **defensive** branch of
+`Fight_TickAI` (intent 9 inside 1.5 m), which reads the opponent's current
+combat block to decide whether to guard. It is why `engine: melee` records
+`blocks` as 0.
 
 Two stale comments found on the way, both fixed in step 0: `interp.cpp` still
 said op 62's table length was uncorrected and its third field unreachable, and
@@ -187,7 +197,7 @@ Each step ends in a commit and a report, then waits for the reader
 | step | what | state |
 |---|---|---|
 | **0** | this file, the two doc corrections, the corpus facts in `verify.py: fight & become` | **DONE 2026-09-16** |
-| **1** | `engine/src/actor/fight.{h,cpp}`: the contexts, `Fight_Begin`, `Engage`/teardown, `SelectAiProfile`, both per-fighter steps, `ResolveHit`, `FaceOpponent`, `KeepSeparation`, `TickAI`. A probe fights profile against profile on all three `CMBT` files | |
+| **1** | `engine/src/actor/fight.{h,cpp}`: the contexts, `Fight_Begin`, `Engage`/teardown, `SelectAiProfile`, both per-fighter steps, `ResolveHit`, `FaceOpponent`, `KeepSeparation`, `TickAI`. A probe fights profile against profile on all three `CMBT` files | **DONE 2026-09-16** — `verify.py: engine: melee`, and it found the AI's eight BUILT-IN move tables (`tables/fight_ai_moves.json`) and the per-slot WEIGHT the `.CTL` reader had been skipping. The defensive arm of `Fight_TickAI` (intent 9 inside 1.5 m) is labelled and left for its own commit |
 | **2** | Session and viewer: install the fight hook, slot 2 on both bodies, state 2, scheme 3, the park; the end through event 2, the player's slot-0 reload and his life written back so `Vie Combat Perte` is right. Carry field 2 | |
 | **3** | the KO: the 60-frame ring, the two playbacks, the fade | |
 | **4** | camera mode 14 | |

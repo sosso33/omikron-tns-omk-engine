@@ -231,6 +231,68 @@ def c_adpcm(rows, e):
              rows["index"] == adp.INDEX, True)]
 
 
+# The fight AI's BUILT-IN moves: eight count+pointer pairs the handler passes
+# to `Perso_InjectInput` directly. The words are NOT uniformly four bytes past
+# their count - four of the eight have an `align 10h` between - so both
+# addresses are listed, read off the listing and the call sites in
+# `Fight_TickAI` (0x00464830).
+FIGHT_AI_MOVES = {
+    "m4CAD0C": (0x004CAD0C, 0x004CAD10),
+    "m4CAD30": (0x004CAD30, 0x004CAD34),
+    "m4CAD38": (0x004CAD38, 0x004CAD40),
+    "m4CAD54": (0x004CAD54, 0x004CAD58),
+    "m4CAD6C": (0x004CAD6C, 0x004CAD70),
+    "m4CAD78": (0x004CAD78, 0x004CAD80),
+    "m4CAD88": (0x004CAD88, 0x004CAD90),
+    "m4CAD98": (0x004CAD98, 0x004CADA0),
+}
+
+
+def t_fight_ai_moves(e):
+    r"""The fight AI's built-in input sequences, at 0x004CAD0C..0x004CADA0.
+
+    `Fight_TickAI` (0x00464830) presses two kinds of move.  The families in
+    the `.CTL` profile (`+76`/`+80`, which ship in the data) are one; the
+    other is these eight sequences, which are compiled into the executable and
+    are therefore exactly what this file exists for - a replica cannot read
+    them out of `gamedata/`.
+
+    Each is a count dword followed by that many input words, and the branch
+    that presses it is what says what it is for: `m4CAD30` is the idle word
+    alone, pressed when the AI is closing the distance or re-arming, with the
+    DIRECTION supplied by the `dword_53AE14` modifier the handler ORs in;
+    `m4CAD0C` is five presses of 0x02 with that modifier at 2 - the walk
+    forward; `m4CAD38` and `m4CAD54` are five presses of 0x08 and 0x04; and
+    the four two-word entries are a press and a release, which is how the
+    machine sees a button come up again.
+
+    They keep their address names here and in `engine/src/actor/fight.h`,
+    because the branch establishes the USE and nothing establishes a name.
+    """
+    out = {}
+    for k, (cva, wva) in sorted(FIGHT_AI_MOVES.items()):
+        n = struct.unpack_from("<I", e.read(cva, 4))[0]
+        out[k] = list(struct.unpack_from("<%dI" % n, e.read(wva, 4 * n)))
+    return out
+
+
+def c_fight_ai_moves(rows, e):
+    idle = 0x40000000
+    words = [w for v in rows.values() for w in v]
+    combos = ("m4CAD6C", "m4CAD78", "m4CAD88", "m4CAD98")
+    return [("sequences", len(rows), 8),
+            ("words in all of them", len(words), 24),
+            ("the counts, by address",
+             [len(rows[k]) for k in sorted(rows)], [5, 1, 5, 5, 2, 2, 2, 2]),
+            # The same union the profiles' own words satisfy (`verify.py: fight
+            # ai`): ten of the fourteen bindings, never CTRL/SPACE/SHIFT/TAB.
+            ("every word is a real binding inside 0xCFF, or the idle sentinel",
+             all(((w & ~idle) & ~0xCFF) == 0 for w in words), True),
+            ("the four two-word entries end on the idle word - a press and a "
+             "release", all(rows[k][-1] == idle for k in combos), True),
+            ("m4CAD30 is the idle word alone", rows["m4CAD30"], [idle])]
+
+
 def t_key_bindings(e):
     r"""The four default control schemes — 4 context groups x 14 actions.
 
@@ -1369,6 +1431,7 @@ _TABLES = [
     ("vm_announce",    t_vm_announce,    c_vm_announce,    "SCRIPT_VM"),
     ("shoot_ai",       t_shoot_ai,       c_shoot_ai,       "ASSETS"),
     ("shoot_weapons",  t_shoot_weapons,  c_shoot_weapons,  "ASSETS"),
+    ("fight_ai_moves", t_fight_ai_moves, c_fight_ai_moves, "ASSETS"),
 ]
 
 

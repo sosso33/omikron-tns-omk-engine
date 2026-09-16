@@ -3237,6 +3237,31 @@ the 14 bits), and their **union is `0xCFF`**: the AI presses ten of the
 fourteen and never `CTRL`, `SPACE`, `SHIFT` or `TAB` — the four non-combat
 ones. `verify.py: fight ai`.
 
+**Each situation slot carries a PERCENTAGE, and the slot is
+`{weight, count, moves}`** — read 2026-09-16 while porting the AI, and the
+reason this section used to describe the slot as `{count, ptr, int32}`. The
+slot base is profile `+12+12k`, so the count at `+16+12k` was right and the
+walk simply never looked at the dword in front of it. Every choice
+`Fight_TickAI` makes is `rand() % 100` against these bytes: **slot 0** gates
+attacking against moving, **slots 1–3** and **4–6** are two move families
+picked by cumulative weight (`sub_465210` and `sub_465160`), **slots 8–10**
+choose the AI's next intent, **slot 7** is the taunt played while down or
+getting up, and **slot 11** is the special, whose weight, count and pointer
+sit at `+144`/`+148`/`+152` — which is what fixes the stride a second time.
+
+**And the AI presses eight moves that are NOT in the data at all.** Alongside
+the profile families, `Fight_TickAI` hands `Perso_InjectInput` eight
+count+pointer pairs compiled into the executable between `0x004CAD0C` and
+`0x004CADA0`: five presses of `0x02` for walking in (with the direction
+supplied by the `dword_53AE14` modifier the handler ORs into every word), the
+idle word alone for re-arming, five each of `0x08` and `0x04`, and four
+two-word press/release combos (`0x48`, `0x88`, `0x40`, `0x80`). Every word is
+inside the same `0xCFF` union the profiles satisfy. A replica cannot read
+them out of `gamedata/`, so they are lifted to
+**`tables/fight_ai_moves.json`** like every other compiled-in table, and they
+keep their address names because the branch that presses one is all that
+establishes what it is for. `verify.py: exe tables`, `engine: melee`.
+
 > **Which profile the shipped scripts select — ANSWERED 2026-09-16, and it is
 > the game's ADAPTIVE difficulty.** This said "NOT established", because
 > deciding it meant decoding op 62's fields under an operand length the VM

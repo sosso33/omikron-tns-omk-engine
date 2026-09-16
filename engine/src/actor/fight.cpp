@@ -1,0 +1,701 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// MELEE - see fight.h for what this is and the standard it is held to.
+//
+// Every function below names the engine function it transcribes. Where the
+// engine reaches for something this tree does not have, the call is LABELLED
+// rather than approximated silently:
+//
+//   * the channel RATE. `Fight_Begin` scales each fighter's animation rate by
+//     property 19 *Carac Fight Experience* (`sub_45ACD0(chan, exp/41)`), and
+//     `CefChannel` has no rate - it advances by the caller's `dt`. Recorded in
+//     `FightStats` and applied by the CALLER through `dt` if it wants it.
+//   * the separation push. `Fight_KeepSeparation` moves each body with
+//     `Actor_Move`, the walker's own move, so a wall still stops it. Here the
+//     push is applied straight to the two `FightBody`s through `moveBody`,
+//     which `omk-play` replaces with the walker in step 2.
+//   * `sub_49A830`'s transition allow-list. The engine keeps a per-fighter
+//     list (`sub_45B760`/`sub_45B8A0`/`sub_45B8E0`, filled by `Fight_Engage`)
+//     of which cached reaction entries may interrupt the current move, keyed
+//     by the combat block's flag bits. The list is derived here and recorded
+//     on the context, but nothing feeds it back into `CefChannel`'s
+//     transition search - the channel does not model the list at all, and
+//     pretending otherwise would be the "approximation that works in one
+//     case" this repo has a rule about.
+//   * the screen fade, the camera and the gauges: steps 3, 4 and 5.
+#include "actor/fight.h"
+
+#include <algorithm>
+#include <cmath>
+
+namespace omk {
+
+namespace {
+
+constexpr float kDegPerRad = 57.29577951308232f;
+// The two distances `sub_4452A0` switches banks at, in the engine's inches:
+// 118.11024 is three metres and 59.055119 is one and a half.
+constexpr float kFarSwitch  = 118.11024f;
+constexpr float kNearSwitch = 59.055119f;
+// `Fight_TickAI`'s closing distance: 78.740158 inches, which is two metres.
+constexpr float kCloseIn    = 78.740158f;
+
+// The combat block's ten floats, named. `CtlCombat::asInt` reinterprets the
+// three that are integers wearing a float's bytes (ASSETS - the combat block).
+float windowStart(const CtlCombat& b) { return b.raw[3]; }
+float windowEnd(const CtlCombat& b)   { return b.raw[4]; }
+std::int32_t blockFlags(const CtlCombat& b) { return b.asInt(0); }
+
+const CtlState* stateAt(const FightContext& c, int idx) {
+    if (!c.body || !c.body->channel || idx < 0) return nullptr;
+    const auto& states = c.body->channel->ctl().states;
+    if (static_cast<std::size_t>(idx) >= states.size()) return nullptr;
+    return &states[static_cast<std::size_t>(idx)];
+}
+
+// `SetPersoBank` (0x0045A510): reset the input queue and `GoToMove` into the
+// entry, from whatever is playing. The alias chase at its head is `gotoMove`'s
+// own, so this is the queue reset plus the transition.
+bool forceEntry(FightContext& c, int entry) {
+    if (!c.body || !c.body->channel || entry < 0) return false;
+    c.body->channel->resetInputQueue();
+    return c.body->channel->gotoMove(c.body->channel->state(), entry, 1.0f);
+}
+
+void moveBody(FightBody& b, float dx, float dy, float dz) {
+    b.x += dx; b.y += dy; b.z += dz;
+}
+
+}  // namespace
+
+bool Fight::windowOpen(const CtlCombat& blk, float before, float after) {
+    // Fight_ResolveHit's own test, one frame of slack each side, kept static
+    // so the probe can re-derive a decision without this class.
+    if (before > windowEnd(blk) + 1.0f) return false;
+    if (before < windowStart(blk) - 1.0f && after < windowEnd(blk) + 1.0f)
+        return false;
+    return true;
+}
+
+int Fight::entryByRole(const FightContext& c, int role) const {
+    if (!c.body || !c.body->channel) return -1;
+    return c.body->channel->findEntryByRole(role);
+}
+
+int Fight::entryByLow16(const FightContext& c, int id) const {
+    if (!c.body || !c.body->channel || id == -1) return -1;
+    return c.body->channel->findEntryByCode(id);
+}
+
+// ---- Fight_Begin 0x004455B0 + Fight_SelectAiProfile 0x004652B0 -----------
+bool Fight::begin(FightBody& player, const FightStats& ps,
+                  FightBody& opponent, const FightStats& os,
+                  int level, int difficulty) {
+    a_ = FightContext{};
+    b_ = FightContext{};
+    a_.body = &player;
+    b_.body = &opponent;
+    events_.clear();
+    stats_ = FightStatsCounters{};
+    ring_.clear();
+    replayCursor_ = 0;
+    koCounter_ = 0;
+    replayPasses_ = 2;            // dword_9070AC
+    over_ = false; playerWon_ = false; decided_ = false;
+
+    // The stats, through the six `Game_RaiseEvent(44, …)` calls.
+    a_.hp = ps.vie;               // +124, and the gauge's maximum
+    b_.hp = os.vie;
+    a_.attackMul = static_cast<float>(ps.attack) * 0.0049999999f;      // +132
+    b_.attackMul = static_cast<float>(os.attack) * 0.0049999999f;
+    a_.dodgeMul  = static_cast<float>(ps.dodge)  * 0.0049999999f * 0.25f;  // +136
+    b_.dodgeMul  = static_cast<float>(os.dodge)  * 0.0049999999f * 0.25f;
+    // Options row 16 `Difficulté des combats` (`word_90E1A6`), and it touches
+    // the PLAYER's defence only: a flat bonus, nothing else in the fight.
+    if (difficulty == 0)      a_.dodgeMul += 0.5f;
+    else if (difficulty == 1) a_.dodgeMul += 0.25f;
+
+    // flt_906F2C: the larger of the two models' bounding radii (node +88).
+    radius_ = std::max(player.radius, opponent.radius);
+
+    // The six role entries, cached per fighter by `Cef_FindEntryByCodeGlobal`.
+    for (FightContext* c : {&a_, &b_}) {
+        c->hitHigh  = entryByRole(*c, 3);
+        c->hitLow   = entryByRole(*c, 4);
+        c->koEntry  = entryByRole(*c, 5);
+        c->crouched = entryByRole(*c, 9);
+        c->farEntry = entryByRole(*c, 18);
+        c->nearEntry = entryByRole(*c, 20);
+        if (c->body && c->body->channel) {
+            c->entry = c->body->channel->state();
+            c->frameAfter = c->body->channel->frame();
+            c->frameBefore = c->frameAfter;
+        }
+    }
+
+    // Both fighters turned to face each other, with flag 0x2 set across the
+    // two calls so `Fight_FaceOpponent`'s state guard cannot refuse them.
+    a_.flags |= 2u; b_.flags |= 2u;
+    faceOpponent(a_, b_, false);
+    faceOpponent(b_, a_, false);
+    a_.flags &= ~2u; b_.flags &= ~2u;
+    measureSeparation();
+
+    // `Fight_SelectAiProfile`: the OPPONENT gets a profile, by level + 1. The
+    // player never does - op 62's third field is the only thing that selects
+    // one (`todo/fight-mode.md` §2).
+    b_.ai = nullptr;
+    if (opponent.channel) {
+        for (const auto& p : opponent.channel->ctl().ai)
+            if (p.id == static_cast<std::uint32_t>(level + 1)) { b_.ai = &p; break; }
+    }
+    b_.aiIntent = 10;                       // v3[23] = 10
+    b_.aiMoveStart = now_();                // v3[25]
+    const int span = b_.ai ? static_cast<int>(b_.ai->enterDelay[1]) -
+                             static_cast<int>(b_.ai->enterDelay[0]) : 0;
+    const int jitter = span > 0 ? rand_() % span : 0;
+    b_.aiMoveDeadline = b_.aiMoveStart + jitter +
+                        (b_.ai ? b_.ai->enterDelay[0] : 0);
+    return b_.ai != nullptr;
+}
+
+// ---- sub_49A4F0: the separation, into flt_906F44 -------------------------
+void Fight::measureSeparation() {
+    if (!a_.body || !b_.body) return;
+    const float dx = b_.body->x - a_.body->x;
+    const float dy = b_.body->y - a_.body->y;
+    const float dz = b_.body->z - a_.body->z;
+    separation_ = std::sqrt(dx * dx + dy * dy + dz * dz);
+}
+
+// ---- Fight_FaceOpponent 0x0049A550 ---------------------------------------
+void Fight::faceOpponent(FightContext& c, const FightContext& other, bool ease) {
+    if (!c.body || !other.body) return;
+    // The guard: flag 0x2 forces it; otherwise a fighter who is reacting,
+    // grounded, thrown or mid-special is left alone.
+    const bool forced = (c.flags & 2u) != 0;
+    if (!forced) {
+        const int s = c.state;
+        if (s == 1 || s == 2 || s == 21 || s == 6 || s == 7 || s == 9 ||
+            s == 11 || s == 12) return;
+        if (other.state == 9) return;
+        if (c.flags & 0x400u) return;
+        if (c.flags & 0x20u) return;
+        if (static_cast<std::uint32_t>(c.stateD) & 0x20u) return;
+    }
+    float yaw = std::atan2(c.body->x - other.body->x,
+                           other.body->z - c.body->z) * kDegPerRad + 180.0f;
+    if (ease) yaw = c.body->yaw * 0.25f + yaw * 0.75f;
+    c.body->yaw = yaw;
+}
+
+// ---- Fight_KeepSeparation 0x0049A610 -------------------------------------
+void Fight::keepSeparation(FightContext& c, FightContext& other) {
+    if (!c.body || !other.body) return;
+    if (c.state == 11 || c.state == 12) return;
+    if (c.flags & 0x20u) return;
+    measureSeparation();
+    if (separation_ >= radius_ || separation_ <= 0.0f) return;
+
+    // The push is along a MINUS b, scaled by how much of the radius is
+    // missing, and the engine moves the OTHER fighter through `Actor_Move`
+    // and this one by the residue it reports. With no walker here both halves
+    // land on the bodies; see the header's note.
+    const float k = (radius_ - separation_) / separation_;
+    const float dx = (a_.body->x - b_.body->x) * k;
+    const float dy = (a_.body->y - b_.body->y) * k;
+    const float dz = (a_.body->z - b_.body->z) * k;
+    if (&c == &a_) moveBody(*a_.body,  dx,  dy,  dz);
+    else           moveBody(*b_.body, -dx, -dy, -dz);
+    ++stats_.separations;
+    measureSeparation();
+    if (separation_ + 0.001f < radius_ && &c == &b_) ++stats_.tooCloseAfterPush;
+    events_.push_back({FightEvent::Kind::Separate, c.body->isPlayer, 0, -1, -1, -1, 0});
+}
+
+// ---- sub_4451F0: the step BEFORE the channel -----------------------------
+void Fight::preStep(FightContext& c) {
+    // The engine copies the actor's clip frames (+192 the previous, +188 the
+    // current) into the context, so the hit window is tested against the pair
+    // the LAST tick left. The channel keeps its own `prev`, which is private,
+    // so the pair is carried here and shifted after each tick - the same two
+    // numbers, one frame apart, which is what the window test consumes.
+    if (!c.body || !c.body->channel) return;
+    // Life back onto the record, unless the knockdown latch is up: this is
+    // `Game_RaiseEvent(45, …)`, and it is what makes the scripts' 'Vie Combat
+    // Après' read the damage a fight did. The caller owns the record, so the
+    // value is simply left on the context for it to write.
+    (void)c.knockdown;
+}
+
+// ---- sub_4452A0: the step AFTER the channel ------------------------------
+void Fight::postStep(FightContext& c) {
+    if (!c.body || !c.body->channel) return;
+    auto& ch = *c.body->channel;
+
+    const int cur = ch.state();
+    if (cur != c.scoredEntry) c.scoredEntry = -1;   // a new move may score
+    if (cur != c.entry) {
+        c.prevEntry = c.entry;
+        c.entry = cur;
+    }
+
+    const CtlState* st = stateAt(c, cur);
+    if (!st) return;
+
+    // The state word at entry +12: the low byte is the fighter's state id,
+    // then BYTE1, BYTE2 as a float, and HIBYTE.
+    c.prevState = c.state;
+    const std::uint32_t w = st->flags12;
+    c.state  = static_cast<int>(w & 0xFFu);
+    c.stateB = static_cast<int>((w >> 8) & 0xFFu);
+    c.stateF = static_cast<float>((w >> 16) & 0xFFu);
+    c.stateD = static_cast<int>((w >> 24) & 0xFFu);
+
+    // The KO trigger: once a loser is recorded, his own entry into role state
+    // 6 or 7 starts the replay (the engine also fades the screen here).
+    if (decided_ && (&c == loser_) && (c.state == 6 || c.state == 7) &&
+        koCounter_ == 0) {
+        ++koCounter_;
+        ++stats_.kos;
+        events_.push_back({FightEvent::Kind::Ko, c.body->isPlayer, 0, -1, -1, -1, 0});
+    }
+
+    // The two distance-gated bank switches, `sub_49A4F0` then `SetPersoBank`.
+    if (c.state == 13) {
+        measureSeparation();
+        if (separation_ > kFarSwitch) forceEntry(c, c.farEntry);
+    }
+    if (c.state == 19) {
+        measureSeparation();
+        if (separation_ <= kNearSwitch) forceEntry(c, c.nearEntry);
+    }
+
+    // `sub_49A830`: which cached reactions the current move allows to
+    // interrupt it. Derived and recorded, NOT fed to the channel - see the
+    // header.
+    c.allowedMask = (st->flags & 0x2000000u) && st->hasCombat
+                        ? static_cast<std::uint32_t>(blockFlags(st->combat))
+                        : 0u;
+}
+
+// ---- Fight_ResolveHit 0x0049A960 -----------------------------------------
+void Fight::applyDamage(FightContext& def, const FightContext& att,
+                        double base, bool scaled, FightEvent::Kind kind,
+                        int reaction) {
+    double dmg = base;
+    if (def.body && def.body->isPlayer) dmg += dmg;      // the player's double
+    if (scaled) {
+        dmg *= static_cast<double>(att.attackMul) + 1.0;
+        dmg -= static_cast<double>(def.dodgeMul) * dmg;
+        if (dmg <= 0.0) dmg = 1.0;
+    }
+    const int before = def.hp;
+    def.hp -= static_cast<int>(dmg);
+    def.lastDamage = static_cast<int>(dmg);
+    if (def.hp > before) ++stats_.hpWentUp;
+    stats_.damageDealt += static_cast<long>(dmg);
+    events_.push_back({kind, def.body && def.body->isPlayer,
+                       static_cast<int>(dmg), reaction, att.entry, -1, 0});
+    if (def.hp <= 0) {
+        def.hp = 0;
+        decided_ = true;
+        loser_ = &def;
+        playerWon_ = !(def.body && def.body->isPlayer);
+        // Both channels are frozen and their queues reset - the engine's
+        // `sub_45A870(chan, 0)` and `sub_45A8D0(chan, 0)`.
+        if (a_.body && a_.body->channel) a_.body->channel->resetInputQueue();
+        if (b_.body && b_.body->channel) b_.body->channel->resetInputQueue();
+        // Which entry the corpse falls into: the crouched one when he was
+        // already down, the reaction when it knocked him down, else the KO.
+        if (def.state == 6 || def.state == 21) forceEntry(def, def.crouched);
+        else if (def.knockdown)                forceEntry(def, reaction);
+        else                                   forceEntry(def, def.koEntry);
+    } else if (reaction >= 0) {
+        forceEntry(def, reaction);
+    }
+}
+
+void Fight::resolveHit(FightContext& att, FightContext& def) {
+    const CtlState* atkE = stateAt(att, att.entry);
+    const CtlState* defE = stateAt(def, def.entry);
+    if (!atkE || !defE) return;
+
+    if (def.flags & 0x80u) return;                       // untouchable
+    if (att.stateD != 8 && (def.flags & 0x200u)) return;
+    if (decided_) return;                                // already settled
+    if (att.entry == att.scoredEntry) return;            // scored once
+    if (att.state == 11 || att.state == 12) return;      // mid-reaction
+    if (!(atkE->flags & 0x2000000u) || !atkE->hasCombat) return;
+
+    const CtlCombat& blk = atkE->combat;
+    if (blk.reactionA() == 0 && blk.reactionB() == 0) return;
+
+    const int atkHigh = atkE->playBits & 1, atkLow = atkE->playBits & 2;
+    const int defHigh = defE->playBits & 1, defLow = defE->playBits & 2;
+    const int lineA = blockFlags(blk) & 4, lineB = blockFlags(blk) & 2;
+
+    if (lineA && def.state == 3) return;     // the high guard blanks line A
+    if (lineB && def.state == 4) return;     // and the low guard line B
+    if (!windowOpen(blk, att.frameBefore, att.frameAfter)) return;
+
+    att.scoredEntry = att.entry;             // this move has now scored
+
+    const int s = def.state;
+    const bool inState1 = s == 1, inState2 = s == 2, inState8 = s == 8;
+    const bool inState13 = s == 13;
+    const bool inState6 = (s == 6 || s == 21);
+
+    // The THROW: attacker state 10 catching a target who is standing, walking,
+    // crouched or already down. The grab offset is authored in the ATTACKER's
+    // OWN reaction entry - its block's knockback floats - expressed in the
+    // defender's frame, and it is the ATTACKER who is teleported onto it.
+    if (att.state == 10) {
+        if (!(inState8 || inState1 || inState13 || inState6)) return;
+        const int reactIdx = entryByLow16(att, blk.reactionA());
+        const CtlState* reactE = stateAt(att, reactIdx);
+        if (!reactE || !reactE->hasCombat) { ++stats_.reactionUnresolved; return; }
+        const int followIdx = entryByLow16(def, reactE->combat.reactionA());
+
+        // The engine rotates the knockback by the DEFENDER's full Euler
+        // (`Matrix3x3_FromEulerAngles` on actor +416/+420/+424). A `FightBody`
+        // carries only the yaw, which is the component a standing fighter
+        // ever has; the pitch and roll are LABELLED as not carried here and
+        // come with the actor record in step 2.
+        const float rad = def.body->yaw / kDegPerRad;
+        const float kx = reactE->combat.raw[7], ky = reactE->combat.raw[8],
+                    kz = reactE->combat.raw[9];
+        const float rx = kx * std::cos(rad) + kz * std::sin(rad);
+        const float rz = -kx * std::sin(rad) + kz * std::cos(rad);
+        att.body->x = def.body->x + rx;
+        att.body->z = def.body->z + rz;
+        att.body->y += def.body->y + ky - att.body->y;
+
+        def.flags |= 2u;
+        faceOpponent(att, def, false);
+        def.flags &= ~2u;
+
+        forceEntry(att, reactIdx);
+        forceEntry(def, followIdx);
+        att.state = 11;
+        def.state = 12;
+        ++stats_.throws;
+        events_.push_back({FightEvent::Kind::Throw, def.body->isPlayer, 0,
+                           followIdx, att.entry, -1, 0});
+        applyDamage(def, att, static_cast<double>(reactE->combat.damage()), true,
+                    FightEvent::Kind::Hit, followIdx);
+        return;
+    }
+
+    // The BLOCK: the defender's guard eats it for a flat point of chip damage.
+    if (def.flags & 0x40u) {
+        forceEntry(def, lineB ? def.hitLow : def.hitHigh);
+        ++stats_.blocks;
+        applyDamage(def, att, 1.0, false, FightEvent::Kind::Block, -1);
+        return;
+    }
+
+    // Does the attack line reach the defender's stance?
+    bool lands = true;
+    if (lineA) {
+        if (lineB) { if (inState8) lands = false; }
+        else {
+            if (defLow || inState8 || inState1) lands = false;
+            if (inState6) lands = false;
+        }
+    }
+    if (lineB && ((defLow && inState8) || inState2)) lands = false;
+    if (lands) {
+        if (defHigh && blk.reactionA() == -1) lands = false;
+        if (defLow  && blk.reactionB() == -1) lands = false;
+    }
+
+    if ((def.flags & 1u) || lands) {
+        int reaction = -1;
+        if (!inState6) {
+            if (defHigh) reaction = entryByLow16(def, blk.reactionA());
+            if (defLow)  reaction = entryByLow16(def, blk.reactionB());
+        } else {
+            reaction = def.crouched;
+        }
+        if (reaction < 0) ++stats_.reactionUnresolved;
+        const CtlState* rs = stateAt(def, reaction);
+        if (rs && (rs->flags12 & 0x10000000u)) {
+            def.knockdown = 1;
+            ++stats_.knockdowns;
+        }
+        ++stats_.hits;
+        applyDamage(def, att, static_cast<double>(blk.damage()), true,
+                    FightEvent::Kind::Hit, reaction);
+    } else {
+        // A miss by stance still flinches the guard and costs one point.
+        if (atkHigh && (inState1 || (defHigh && inState8)))
+            forceEntry(def, def.hitHigh);
+        else if (atkLow && (inState2 || (defLow && inState8)))
+            forceEntry(def, def.hitLow);
+        ++stats_.grazes;
+        applyDamage(def, att, 1.0, false, FightEvent::Kind::Graze, -1);
+    }
+
+    if (static_cast<std::uint32_t>(att.stateD) & 0x40u) {
+        def.carriedTimer = att.stateF;
+        def.carriedFlag = 0;
+    }
+}
+
+// ---- Fight_TickAI 0x00464830 and its two helpers -------------------------
+// The eight tables at 0x004CAD0C..0x004CADA0, read out of the executable and
+// listed in fight.h. `tables/fight_ai_moves.json` carries the same values and
+// `verify.py: exe tables` re-derives them from the image, so this copy cannot
+// drift without the suite noticing.
+FightAiTables FightAiTables::shipped() {
+    FightAiTables t;
+    t.m4CAD0C = {2, 2, 2, 2, 2};
+    t.m4CAD30 = {kIdleInput};
+    t.m4CAD38 = {8, 8, 8, 8, 8};
+    t.m4CAD54 = {4, 4, 4, 4, 4};
+    t.m4CAD6C = {0x48u, kIdleInput};
+    t.m4CAD78 = {0x88u, kIdleInput};
+    t.m4CAD88 = {0x40u, kIdleInput};
+    t.m4CAD98 = {0x80u, kIdleInput};
+    return t;
+}
+
+void Fight::injectWords(FightContext& c, const std::vector<std::uint32_t>& words) {
+    if (!c.body || !c.body->channel || words.empty()) return;
+    c.body->channel->injectInput(words, aiOr_);
+    ++stats_.aiMoves;
+    stats_.aiWords += static_cast<long>(words.size());
+    for (const auto w : words)
+        if ((w & ~kIdleInput) & ~static_cast<std::uint32_t>(kFightAiBits))
+            ++stats_.aiWordsOutsideUnion;
+    events_.push_back({FightEvent::Kind::AiMove, c.body->isPlayer, 0, -1, -1,
+                       -1, static_cast<int>(words.size())});
+}
+
+void Fight::injectMove(FightContext& c, const CtlAiSlot& slot, int slotIndex) {
+    if (!c.body || !c.body->channel || slot.moves.empty()) return;
+    const auto& move = slot.moves[static_cast<std::size_t>(rand_()) % slot.moves.size()];
+    c.body->channel->injectInput(move, aiOr_);
+    ++stats_.aiMoves;
+    stats_.aiWords += static_cast<long>(move.size());
+    for (const auto w : move)
+        if ((w & ~kIdleInput) & ~static_cast<std::uint32_t>(kFightAiBits))
+            ++stats_.aiWordsOutsideUnion;
+    events_.push_back({FightEvent::Kind::AiMove, c.body->isPlayer, 0, -1, -1,
+                       slotIndex, static_cast<int>(move.size())});
+}
+
+// `sub_465160` (slots 4/5/6) and `sub_465210` (slots 1/2/3): roll once
+// against the three cumulative weights and press from the slot that wins.
+void Fight::pickFromFamily(FightContext& c, int base) {
+    if (!c.ai) return;
+    const auto& sl = c.ai->slots;
+    const int roll = rand_() % 100;
+    const std::uint32_t w0 = sl[static_cast<std::size_t>(base)].weight;
+    const std::uint32_t w1 = sl[static_cast<std::size_t>(base) + 1].weight;
+    const std::uint32_t w2 = sl[static_cast<std::size_t>(base) + 2].weight;
+    int pick = base - 1;                       // the engine's 0 / 3 fallthrough
+    if (static_cast<std::uint32_t>(roll) <= w0 + w1 + w2) pick = base + 2;
+    if (static_cast<std::uint32_t>(roll) <= w0 + w1)      pick = base + 1;
+    if (static_cast<std::uint32_t>(roll) <= w0)           pick = base;
+    if (pick < 0 || pick >= 12) return;
+    injectMove(c, sl[static_cast<std::size_t>(pick)], pick);
+}
+
+void Fight::tickAi(FightContext& c, FightContext& other) {
+    if (decided_ || !c.ai || !c.body || !c.body->channel) return;
+    const auto& sl = c.ai->slots;
+    const long now = now_();
+
+    // States 6 and 21 - down, or getting up - run the slot-7 pair on their own
+    // clock, which is what fixes the slot stride in the format.
+    if (c.state == 6 || c.state == 21) {
+        if (!c.aiTauntStart) {
+            c.aiTauntStart = now;
+            const int span = static_cast<int>(c.ai->moveDelay[1]) -
+                             static_cast<int>(c.ai->moveDelay[0]);
+            c.aiTauntDeadline = now + (span > 0 ? rand_() % span : 0) +
+                                c.ai->moveDelay[0];
+            return;
+        }
+        if (now > c.aiTauntDeadline) {
+            c.aiTauntStart = 0; c.aiTauntDeadline = 0;
+            injectMove(c, sl[7], 7);
+            c.aiIntent = 107;
+        }
+        return;
+    }
+
+    measureSeparation();
+    // Too far: CLOSE THE DISTANCE, and this branch presses the engine's own
+    // built-in tables rather than anything out of the profile - the idle word
+    // (whose direction comes from the modifier), then the five 0x02 presses
+    // with the modifier set to 2. `dword_53AE14` is that modifier.
+    if (separation_ > kCloseIn && c.state != 19) {
+        c.aiIntent = 104;
+        injectWords(c, builtin_.m4CAD30);
+        aiOr_ = 2;
+        injectWords(c, builtin_.m4CAD0C);
+        return;
+    }
+
+    // The opponent is DOWN and this fighter is on his feet: intent 108, the
+    // modifier to 8, then one of two two-word combos, evenly.
+    if ((other.state == 6) && (c.state == 1 || c.state == 2)) {
+        c.aiIntent = 108;
+        aiOr_ = 8;
+        injectWords(c, builtin_.m4CAD30);
+        injectWords(c, rand_() % 100 < 50 ? builtin_.m4CAD6C : builtin_.m4CAD78);
+        return;
+    }
+
+    if (c.aiIntent == 108) {
+        if (c.state == 2) {
+            injectWords(c, builtin_.m4CAD30);
+            c.aiIntent = 105;
+            pickFromFamily(c, 4);          // sub_465160
+        } else {
+            injectWords(c, builtin_.m4CAD38);
+        }
+        return;
+    }
+
+    if (c.aiIntent == 104 ||
+        ((c.aiIntent == 105 || c.aiIntent == 107) &&
+         (c.state == 1 || c.state == 2 || c.state == 15))) {
+        c.aiMoveStart = now;
+        const int span = static_cast<int>(c.ai->enterDelay[1]) -
+                         static_cast<int>(c.ai->enterDelay[0]);
+        c.aiMoveDeadline = now + (span > 0 ? rand_() % span : 0) +
+                           c.ai->enterDelay[0];
+        injectWords(c, builtin_.m4CAD30);
+        // Then roll the three INTENT weights, slots 8/9/10.
+        const int roll = rand_() % 100;
+        const std::uint32_t w8 = sl[8].weight, w9 = sl[9].weight, w10 = sl[10].weight;
+        if (static_cast<std::uint32_t>(roll) <= w8 + w9 + w10) c.aiIntent = 10;
+        if (static_cast<std::uint32_t>(roll) <= w8 + w9)       c.aiIntent = 9;
+        if (static_cast<std::uint32_t>(roll) <= w8)            c.aiIntent = 8;
+        return;
+    }
+
+    if (c.aiIntent != 8 && c.aiIntent != 9 && c.aiIntent != 10) return;
+    if (now <= c.aiMoveDeadline) {
+        // **NOT YET TRANSCRIBED, and labelled rather than approximated**: with
+        // intent 9 and the pair inside 59.055119 (1.5 m), `Fight_TickAI` runs
+        // a defensive block - it sets channel flag 0x100, reads the OPPONENT's
+        // current combat block for its attack line, and either presses the
+        // 0x08 table or raises flag 0x40 to guard. That is the AI's DEFENCE,
+        // it is about sixty lines, and it wants reading in its own right;
+        // until then this fighter simply waits out the delay, which is what
+        // the engine does on every other intent. `todo/fight-mode.md` §7.
+        return;
+    }
+
+    // The wait is over: attack, or move. Slot 0's weight is the gate, slot 11
+    // the special.
+    c.flags &= ~1u;
+    c.aiIntent = 105;
+    c.aiMoveStart = now;
+    const int span = static_cast<int>(c.ai->enterDelay[1]) -
+                     static_cast<int>(c.ai->enterDelay[0]);
+    c.aiMoveDeadline = now + (span > 0 ? rand_() % span : 0) + c.ai->enterDelay[0];
+
+    if (static_cast<std::uint32_t>(rand_() % 100) > sl[0].weight) {
+        if (!aiOr_) c.aiIntent = 108;
+        aiOr_ = 8;
+    } else {
+        aiOr_ = 0;
+    }
+
+    if (separation_ < kNearSwitch && !aiOr_ &&
+        other.state != 6 && other.state != 21) {
+        if (static_cast<std::uint32_t>(rand_() % 100) < sl[11].weight) {
+            injectMove(c, sl[11], 11);
+            return;
+        }
+    }
+    if (aiOr_) pickFromFamily(c, 4);       // sub_465160
+    else       pickFromFamily(c, 1);       // sub_465210
+}
+
+// ---- Fight_RecordFrame 0x0049B220 and sub_49B2E0 -------------------------
+void Fight::recordFrame() {
+    if (!a_.body || !b_.body) return;
+    ReplayFrame f;
+    const FightBody* bodies[2] = {a_.body, b_.body};
+    const FightContext* ctx[2] = {&a_, &b_};
+    for (int i = 0; i < 2; ++i) {
+        f.x[i] = bodies[i]->x; f.y[i] = bodies[i]->y; f.z[i] = bodies[i]->z;
+        f.yaw[i] = bodies[i]->yaw;
+        f.entry[i] = ctx[i]->entry;
+        f.frame[i] = ctx[i]->frameAfter;
+    }
+    if (ring_.size() >= 60) ring_.erase(ring_.begin());   // the qmemcpy slide
+    ring_.push_back(f);
+    ++stats_.replayFrames;
+}
+
+bool Fight::replayStep() {
+    // The engine plays the ring back into both bodies, one frame a tick, and
+    // when it runs out raises the KO counter; past `dword_9070AC` the fight
+    // is over. So a knock-out is shown twice.
+    if (replayCursor_ >= ring_.size()) {
+        replayCursor_ = 0;
+        ++koCounter_;
+        ++stats_.replayPasses;
+        if (koCounter_ > replayPasses_) return false;
+        return true;
+    }
+    const ReplayFrame& f = ring_[replayCursor_++];
+    FightBody* bodies[2] = {a_.body, b_.body};
+    FightContext* ctx[2] = {&a_, &b_};
+    for (int i = 0; i < 2; ++i) {
+        if (!bodies[i]) continue;
+        bodies[i]->x = f.x[i]; bodies[i]->y = f.y[i]; bodies[i]->z = f.z[i];
+        bodies[i]->yaw = f.yaw[i];
+        ctx[i]->entry = f.entry[i];
+        ctx[i]->frameAfter = f.frame[i];
+    }
+    return true;
+}
+
+// ---- Actor_TickPlayerAndOpponent 0x00466710 + Actors_TickAll's tail ------
+void Fight::tickFighter(FightContext& c, float dt, std::uint32_t input, bool isAi) {
+    if (!c.body || !c.body->channel) return;
+    preStep(c);
+    if (isAi) tickAi(c, &c == &a_ ? b_ : a_);
+    c.body->channel->tick(dt, input);
+    // The frame pair the window test consumes: the previous tick's value and
+    // this one's.
+    c.frameBefore = c.frameAfter;
+    c.frameAfter = c.body->channel->frame();
+    postStep(c);
+}
+
+bool Fight::step(float dt, std::uint32_t playerInput) {
+    if (over_) return false;
+    ++stats_.frames;
+
+    if (koCounter_) {
+        // Frozen: the replay owns both bodies until the passes run out.
+        if (!replayStep()) { over_ = true; return false; }
+        return true;
+    }
+
+    tickFighter(a_, dt, playerInput, false);
+    tickFighter(b_, dt, kQueueDrives, true);
+
+    keepSeparation(a_, b_);
+    keepSeparation(b_, a_);
+
+    if (!koCounter_) {
+        resolveHit(a_, b_);          // Fight_ResolveBoth, both ways
+        resolveHit(b_, a_);
+        faceOpponent(a_, b_, false);
+        faceOpponent(b_, a_, false);
+        recordFrame();
+    }
+    return true;
+}
+
+}  // namespace omk
