@@ -706,6 +706,57 @@ CLAUDE.md warns about.
 **Order.** 15.8a first: it is a gameplay fault, not a framing one, and it is
 the one that can put an opponent somewhere the fight cannot continue.
 
+### 15.8a ATTEMPTED 2026-09-16 — the reading is settled, the wiring is NOT
+
+**Settled from the engine, and this part is not in doubt.**
+`Actors_TickAll`'s `case 2` is `Actor_TickPlayerAndOpponent` (0x00466710) and
+it calls `Actor_ApplyMotion` on **both** arms - the player's and
+`g_FightOpponentRec`'s - the opponent additionally refreshing his
+spatial-index slot. `Actor_ApplyMotion` (0x004672D0) is try-then-ask:
+
+```c
+    f32(actor,244) += dx; ...                 /* apply the velocity      */
+    wx = f32(actor,244) - f32(actor,232); ...  /* remember the delta      */
+    f32(actor,244) -= wx; ...                  /* UNDO it                 */
+    Actor_Move(actor, wx, 0, wz, &mout[0], &mout[1], &mout[2], 1, 1, 0);
+```
+
+- collide-and-slide, **horizontal only** (the `0` in the `y` slot), then a
+ground probe and `Walk_GroundResponse`. So the opponent collides in the engine
+with the same machinery the player does, and the port testing him against
+nothing is a real gap, not a stylistic one.
+
+**The wiring was tried and REVERTED, and the failure is worth recording
+because it rules things out.** Giving the foe an `omk::Walker` on the
+player's own `playerSoup`/`playerSteep` leaves him **stuck 9.3 m from the
+player for the entire fight**, in the approach entry 228, his AI still
+choosing moves (1085 of them in 720 frames) and the separation never closing.
+Three configurations, all the same:
+
+| | result |
+|---|---|
+| walker seated on his `y`, no sphere centres | stuck at 9.29 m |
+| walker seated on the FLOOR under him (`floorUnder`), no centres | stuck at 9.30 m |
+| walker seated on his `y`, his model's 4 centres as authored | stuck at 9.25 m |
+| **blocker sweep disabled (`setBlockers(..., 0.0)`), ground half only** | **`FIGHT ENDS` at 663, byte-identical to no collision at all** |
+
+So the GROUND half is safe and the BLOCKER half is what stops him, and it is
+not a radius or a centre convention - all three shapes block identically.
+Something in `playerSteep` stands between them that the engine's `Actor_Move`
+evidently does not stop him on.
+
+**The next read, and it is a specific one.** `Actor_Move`'s tail arguments are
+`(..., 1, 1, 0)` and **none of the three has been read**. They are the obvious
+candidate for "which faces this actor is allowed through", and until they are
+read any adjustment here is the tuning CLAUDE.md warns against - which is why
+this was reverted rather than softened. Read `Actor_Move` (and
+`Sweep_ActorMove` 0x004AD360 behind it), then decide whether the port's
+`playerSteep` is even the right blocker set for a non-player body.
+
+The attempt is saved as a patch outside the tree; it is 115 lines and all of
+it is in `play.cpp`'s `FightRun`. Nothing of it is committed, so the tree
+still has no collision on the opponent and the fight still ends at 663.
+
 ### 15.5 "no UI" — this is step 5, already planned
 
 The reader's own note: *"I think this is the next step"*, and it is. Step 5 is
