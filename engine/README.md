@@ -3008,9 +3008,49 @@ Confirmed against five captures of the original: the inventory page draws
 amber, the slider page green, the identity page blue, each matching the icon
 beside it. Over 15 channel samples from 3 hues, `measured = 0.19 x source +
 11` against a predicted slope of 55/255 = 0.216 (source-over would be 0.784).
-`UiWalk::buildPage`, `verify.py: sneak page colour`. Only the inventory
-page's builder is ported - the one page the port opens, and the one whose
-function boundary is established rather than inferred from the listing order.
+`UiWalk::buildPage`, `verify.py: sneak page colour`. The inventory page's
+builder was for a long time the only one ported - the one page the port
+opened, and the one whose function boundary is established rather than
+inferred from the listing order - but `buildPage` now carries the identity,
+slider, verb, examine, memory and reader arms too, each transcribed from its
+own function.
+
+#### The MEMORY page, and the MEMO READER behind it
+
+Ported 2026-09-16, and every part of it was opened by a reader PLAYING the
+original beside the port. The page was recorded here and in `docs/UI.md` as
+**empty by the code**, because its builder reads a row count from
+`dword_4DE708` that no absolute store ever writes. That was a fact about the
+scan, not about the page: `0x004DE708` is `0x004DE6F0 + 0x18`, the row list's
+own `+24`, and `sub_42ADD0` writes it through the list pointer. The page is
+the **memo journal** - object list 2, which 76 `inventory.add` sites, 7
+dialogue actions and GLOBAL's message-4 handler on documents 89 and 97 fill.
+
+What the port draws and walks now:
+
+* the rows, bound from list 2, and the page's **five** row widgets rather than
+  the inventory page's nine (`word_4DE6F0 = 5`, written by its builder);
+* the body box `0x004DEA98`, showing the selected memo - and showing **one
+  bracketed section** of the description, because the item's `+30`
+  (`textArg`, lifted long ago and never consumed) is 0 and `sub_43FEA0` cuts
+  that section out. The other section is a **clue**, the kind sold at the save
+  screen, which 37 of the 1002 object records carry; drawing the whole field
+  put clue text under every memo;
+* the box appearing **as the line is selected** - a panel hook is the panel's
+  per-frame tick, so its "is the current list the rows" test is re-evaluated
+  every frame rather than on a press;
+* LEFT/RIGHT moving into the list at all. The page's hook `0x0049D8B0` is a
+  WRAPPER that tail-calls the generic mover, and the walk matched that mover
+  by ADDRESS, so this page answered nothing;
+* and ENTER installing the **reader page** `0x004DEFF0`, which was in no
+  table until `exetables.py`'s CODE_NAMED named it. It ships `+24 = 2` - the
+  body box's list, whose hook is the scroller - so the text scrolls there,
+  clamped by the draw against the laid-out height.
+
+`verify.py: engine: sneak memos` walks all of it in one run. **Not covered**:
+the five widgets (two memos bind the same rows at 5 or 9), and the
+`0x40400080` the reader's builder sets and its leave clears - that word has
+exactly two sites in the image, those two, so nothing tests it by literal.
 
 ### The trap, which this port walked into
 
