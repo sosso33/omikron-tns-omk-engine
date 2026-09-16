@@ -138,17 +138,18 @@ bool Fight::begin(FightBody& player, const FightStats& ps,
     // nothing consumed.
     //
     // `sub_45A870(chan, 1)` clears the channel's bit 0 and reseeds the queue
-    // with the idle word; and the opponent is driven by his QUEUE rather than
-    // by a device, which is flag 0x80 - `Perso_SetInputEnabled(ch, 1)` BLOCKS
-    // the device pass, the sense `tools/renames.json` has backwards and
-    // CLAUDE.md 1 records. `Cef_TickChannel` runs its input search only under
-    // `!(flags & 0x81)`, so without this his injected moves are never the
-    // input the machine looks at.
+    // with the idle word. That is all: **neither fighter's input is blocked**.
+    //
+    // A first version of this also set flag 0x80 on the opponent, reasoning
+    // that an AI-driven channel is queue-driven. That was an invention and the
+    // binary refutes it twice over: `Perso_SetInputEnabled` (0x0045A3E0) has
+    // exactly three call sites, all in the dialogue enter/leave family and
+    // none in the fight code; and `Cef_TickChannel` opens by RESETTING THE
+    // QUEUE to a lone idle word whenever `flags & 0x81`, so blocking the
+    // opponent would wipe the move `Fight_TickAI` had just injected - the AI
+    // runs before the channel tick in `Actor_TickPlayerAndOpponent`.
     if (player.channel) player.channel->resetInputQueue();
-    if (opponent.channel) {
-        opponent.channel->resetInputQueue();
-        opponent.channel->setInputBlocked(true);
-    }
+    if (opponent.channel) opponent.channel->resetInputQueue();
     // **THE PRIORITY GATE IS NOT MODELLED, deliberately.** `Fight_Begin` also
     // calls `sub_45A4C0(playerChan, 1)` and `sub_45A4C0(opponentChan, 0)`,
     // which set and clear channel flag `0x400` - and that flag makes
@@ -717,7 +718,20 @@ bool Fight::step(float dt, std::uint32_t playerInput) {
     }
 
     tickFighter(a_, dt, playerInput, false);
-    tickFighter(b_, dt, kQueueDrives, true);
+    // THE AI FIGHTER IS TICKED WITH THE IDLE WORD, not with `kQueueDrives`.
+    //
+    // `Cef_TickChannel` always polls (`sub_4A7A20`), and that function never
+    // yields 0: nothing held is `0x40000000`. The injected queue is a separate
+    // thing - the entry flags pop and reset it, and the `0x8001` clip-end path
+    // is where a queued move opens a transition - so the search word for a
+    // body with no device is the IDLE word.
+    //
+    // Ticking him with 0 instead skips the input pass outright (the port's own
+    // `if (!(flags_ & 0x81u) && word)`), and the harness showed what that
+    // costs: he walked in, reached the separation radius and then stood in
+    // `HFWALK` for ever, because nothing could carry his walk's clip end back
+    // to a guard - his intent stuck at 105 with a state no branch re-arms.
+    tickFighter(b_, dt, kIdleInput, true);
 
     keepSeparation(a_, b_);
     keepSeparation(b_, a_);

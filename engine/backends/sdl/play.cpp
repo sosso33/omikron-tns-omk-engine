@@ -4470,6 +4470,15 @@ int main(int argc, char** argv) {
         omk::FightBody player, foe;
         std::unique_ptr<omk::CefChannel> foeChannel;
         std::unique_ptr<omk::Fight> fight;
+        // The opponent's MOTION PASS. He has no `PlayerController`, so the
+        // half of `Actor_ApplyMotion` that carries a clip's root motion into
+        // the world is applied from here: the clip's own accumulated root
+        // track (`omk::clipRootMotion`), sampled between last tick's frame and
+        // this one's and turned by his facing.
+        CharBank* foeBank = nullptr;
+        int   foeClip = -1;                              // whose root is cached
+        std::vector<std::array<float, 3>> foeRoot;       // per frame, accumulated
+        float foeFrame = 1.0f;                           // last frame sampled
         double ms = 0.0;                   // the AI's `Sys_GetTimeMs` clock
         long  startedAt = 0;
     };
@@ -4571,6 +4580,10 @@ int main(int argc, char** argv) {
         fightRun.foe.yaw = s->facing;
         fightRun.foe.radius = bodyRadius(s->mo->meshes);
         fightRun.foe.channel = fightRun.foeChannel.get();
+        fightRun.foeBank = fb;
+        fightRun.foeClip = -1;
+        fightRun.foeRoot.clear();
+        fightRun.foeFrame = 1.0f;
 
         fightRun.ms = 0.0;
         fightRun.fight = std::make_unique<omk::Fight>(
@@ -7324,6 +7337,70 @@ int main(int argc, char** argv) {
                         if (d[0] != 0.0f || d[1] != 0.0f || d[2] != 0.0f)
                             player->nudge(d);
                         player->setFacing(fightRun.player.yaw);
+                        // THE OPPONENT'S MOTION PASS, which is the half of
+                        // `Actor_ApplyMotion` that matters here.
+                        // `Actor_TickPlayerAndOpponent` ends each fighter with
+                        // it, and a clip's root motion is how a fighter closes,
+                        // steps back or is carried by his own move. The player
+                        // gets it through his controller; the opponent has no
+                        // controller, so it is applied from the clip's own
+                        // accumulated root track.
+                        //
+                        // Without this he can never close, so `Fight_TickAI`
+                        // takes its APPROACH branch every single tick - which
+                        // is exactly what the harness showed: 674 injected
+                        // moves, a channel thrashing between `HGUARD`, `HRUN`
+                        // and a clipless pass-through, and a gap that never
+                        // changed.
+                        if (fightRun.foeBank && fightRun.foeChannel) {
+                            const auto& ctl = fightRun.foeChannel->ctl();
+                            const int fs = fightRun.foeChannel->state();
+                            const int clip =
+                                (fs >= 0 && fs < static_cast<int>(ctl.states.size()))
+                                    ? ctl.states[static_cast<std::size_t>(fs)].clip : -1;
+                            if (clip != fightRun.foeClip) {
+                                fightRun.foeClip = clip;
+                                fightRun.foeRoot.clear();
+                                fightRun.foeFrame = fightRun.foeChannel->frame();
+                                if (clip >= 0 && clip < static_cast<int>(ctl.clips.size())) {
+                                    const auto& c = ctl.clips[static_cast<std::size_t>(clip)];
+                                    const auto& d = fightRun.foeBank->data;
+                                    if (c.offset + c.length <= d.size())
+                                        fightRun.foeRoot = omk::clipRootMotion(
+                                            std::span<const std::byte>(d).subspan(
+                                                c.offset, c.length));
+                                }
+                            }
+                            const float nowF = fightRun.foeChannel->frame();
+                            if (!fightRun.foeRoot.empty()) {
+                                const int last =
+                                    static_cast<int>(fightRun.foeRoot.size()) - 1;
+                                const auto at = [&](float f) {
+                                    // key 0 is the REST SENTINEL: frame f reads
+                                    // key f + 1, and `clipRootMotion` is already
+                                    // indexed by frame, so frame 1 is entry 0.
+                                    int i = static_cast<int>(f) - 1;
+                                    if (i < 0) i = 0;
+                                    if (i > last) i = last;
+                                    return fightRun.foeRoot[static_cast<std::size_t>(i)];
+                                };
+                                // A wrap applies nothing, the way
+                                // `Anim_RootDelta`'s `ceil(prev) <= cur` guard
+                                // drops the frame a loop turns over on.
+                                if (nowF >= fightRun.foeFrame) {
+                                    const auto a = at(fightRun.foeFrame);
+                                    const auto b = at(nowF);
+                                    const float local[3] = {b[0] - a[0], b[1] - a[1],
+                                                            b[2] - a[2]};
+                                    float world[3] = {0.0f, 0.0f, 0.0f};
+                                    omk::rotateYaw(fightRun.foe.yaw, local, world);
+                                    fightRun.foe.x += world[0];
+                                    fightRun.foe.y += world[1];
+                                    fightRun.foe.z += world[2];
+                                }
+                            }
+                            fightRun.foeFrame = nowF;
+                        }
                         if (fightRun.body) {
                             fightRun.body->at[0] = fightRun.foe.x;
                             fightRun.body->at[1] = fightRun.foe.y;
@@ -7365,6 +7442,40 @@ int main(int argc, char** argv) {
                                         fightRun.foeChannel->state(),
                                         entryName(*fightRun.foeChannel),
                                         st.hits, st.grazes, st.blocks, st.aiMoves);
+                            // ...and the OPPONENT's channel counters, so a
+                            // machine that is stuck says WHY: a landing the
+                            // link pass could not resolve, a chain that did
+                            // not terminate, and how many clip ends and
+                            // transitions it has actually made.
+                            // The AI's own clock and decision, because "he
+                            // stopped pressing" has two causes that look
+                            // identical from outside: a wait that never
+                            // expires (the ms clock not advancing the way the
+                            // profile's millisecond delays expect) and an
+                            // intent no branch re-arms.
+                            // The KO counter, because "he is down and nothing
+                            // happens" has two causes that look the same from
+                            // outside: the trigger in `sub_4452A0` never
+                            // firing, and the replay firing but not finishing.
+                            std::printf("    fight state: KO counter %d, over %d, "
+                                        "player won %d\n",
+                                        fightRun.fight->koCounter(),
+                                        fightRun.fight->over() ? 1 : 0,
+                                        fightRun.fight->playerWon() ? 1 : 0);
+                            std::printf("    foe AI: clock %.0f ms, intent %d, "
+                                        "deadline %ld, taunt %ld/%ld\n",
+                                        fightRun.ms,
+                                        fightRun.fight->opponent().aiIntent,
+                                        fightRun.fight->opponent().aiMoveDeadline,
+                                        fightRun.fight->opponent().aiTauntStart,
+                                        fightRun.fight->opponent().aiTauntDeadline);
+                            const auto& cs = fightRun.foeChannel->stats();
+                            std::printf("    foe channel: ticks %ld, transitions %ld, "
+                                        "landings %ld, clipEnds %ld, badLanding %ld, "
+                                        "chainAborted %ld, queue %zu\n",
+                                        cs.ticks, cs.transitions, cs.landings,
+                                        cs.clipEnds, cs.badLanding, cs.chainAborted,
+                                        fightRun.foeChannel->queueSize());
                         }
                         if (!on) {
                             // `sub_445AC0`: both channels restored, the

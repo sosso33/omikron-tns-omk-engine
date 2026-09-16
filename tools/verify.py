@@ -11071,15 +11071,30 @@ def c_engine_melee():
     fighter can close or retreat, so a stalemate is a real outcome of the
     fixture rather than of the runtime.
 
-    **Re-baselined 205 -> 203 on 2026-09-16, with the cause named**: step 2 of
-    the fight port added the channel writes `Fight_Begin` makes and the first
-    version had skipped - the queue reseeded on both fighters, and the
-    opponent's input-block flag set, since he is driven by his QUEUE and
-    `Cef_TickChannel` runs its input search only under `!(flags & 0x81)`.
-    That changes the AI fighter's first ticks, so the deterministic run scores
-    two fewer damage figures. Every invariant in the row stayed 0 and no other
-    field moved, which is what says this is a trajectory shift rather than a
-    regression.
+    **This row went 205 -> 203 and back to 205 on 2026-09-16, and the round
+    trip is worth keeping.** Step 2 of the fight port added two channel writes
+    `Fight_Begin` makes: the queue reseeded on both fighters (right), and the
+    opponent's INPUT-BLOCK flag set (wrong). The second moved the AI fighter's
+    first ticks and the row was re-baselined to 203 for it. It was then
+    withdrawn as an INVENTION rather than a transcription -
+    `Perso_SetInputEnabled` has exactly three call sites, all in the dialogue
+    enter/leave family and none in the fight code, and `Cef_TickChannel` opens
+    by resetting the queue to a lone idle word whenever `flags & 0x81`, so
+    blocking the opponent would wipe the move `Fight_TickAI` had just injected.
+    With it gone the trajectory is the original one again, 205.
+
+    The lesson is the one CLAUDE.md 1 keeps making: a re-baseline is only as
+    good as the change under it, and "the numbers moved, so I moved the
+    expectation" hides a wrong change as easily as it records a right one.
+
+    **Then 205 -> 204 and `ended` 5 -> 6, from a change that IS defensible**:
+    step 3 ticks the AI fighter with the IDLE WORD rather than the replica's
+    `kQueueDrives` sentinel. `Cef_TickChannel` always polls and `sub_4A7A20`
+    never yields 0 - nothing held is `0x40000000` - so a body with no device
+    searches on the idle word, while the injected queue works through the entry
+    flags and the `0x8001` clip-end path. Ticking him with 0 skipped the input
+    pass outright, which left him standing in his walk: one of the nine probe
+    fights could not reach a knock-out that now does.
     """
     import subprocess, tempfile, shutil
     eng = os.path.join(ROOT, "engine")
@@ -11103,7 +11118,7 @@ def c_engine_melee():
      tooClose, replays) = struct.unpack_from("<18i", raw, 0)
     return (files, profiles, fights, ended, blocks, outside, mismatch,
             unresolved, hpUp, tooClose, checked, hits > 0, aiMoves > 0), \
-           (3, 9, 9, 5, 0, 0, 0, 0, 0, 0, 203, True, True), \
+           (3, 9, 9, 6, 0, 0, 0, 0, 0, 0, 204, True, True), \
            "combat banks, AI profiles exercised, fights, fights ending in a " \
            "KO; then the five invariants that must all be 0 - blocks (the " \
            "defensive arm is not transcribed), AI words outside the 0xCFF " \

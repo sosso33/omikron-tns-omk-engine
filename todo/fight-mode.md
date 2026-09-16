@@ -236,8 +236,22 @@ added: `ctlSlotOfActor(actor, slot)` for the `+72/+81/+90` names and
    now put `PlayerController::tick` in the place the channel tick occupies, so
    the order pre / channel / post is still the engine's. The tell was in the
    harness log: 79 units apart for 245 frames.
-2. **THE OPPONENT STILL STALLS, and it is a CHANNEL fault rather than a fight
-   one.** He reaches `H1Cmbt` entry **228** — `name ''`, flags `0xE0808000`,
+2. ~~**THE OPPONENT STILL STALLS, and it is a CHANNEL fault rather than a
+   fight one.**~~ **ANSWERED in step 3, and it was neither a `GoToMove` fault
+   nor a channel one: it was the missing MOTION PASS feeding back.** With no
+   motion the opponent could never close, so `Fight_TickAI` took its APPROACH
+   branch every tick for ever, injecting continuously and thrashing between
+   `HGUARD`, `HRUN` and the clipless pass-through 228. Applying the clip's own
+   root motion to his body (`omk::clipRootMotion`, turned by his facing, the
+   wrap frame dropped the way `Anim_RootDelta`'s `ceil(prev) <= cur` guard
+   drops it) makes him WALK IN: 79 units apart, then 56, then 44 - which is
+   the separation radius, so `Fight_KeepSeparation` holds them chest to chest -
+   with his entry now `HFWALK` and his injected moves down from 674 to 58.
+   The original text is kept below because the wrong diagnosis is the
+   instructive half: every fact in it was true, and the inference from them
+   was not.
+
+   ~~**The stall as it was first read.**~~ He reaches `H1Cmbt` entry **228** — `name ''`, flags `0xE0808000`,
    **no clip**, no children, `goto 17005331`, whose own parents include 228 —
    and never leaves, while the AI presses 674 moves into a queue with no
    candidate to match. A clipless entry reports `clipFrames() == 1`, so
@@ -254,10 +268,22 @@ added: `ctlSlotOfActor(actor, slot)` for the `+72/+81/+90` names and
    a threshold. Passing 0 would silently drop every priority-1 and -2
    candidate, so the flag is left off with the reason in `fight.cpp`.
 
-**Also labelled, and they are what step 3 is for:** the opponent's body has no
-motion pass (his clips' root motion is not applied) and he is still POSED from
-his idle tracks rather than from his fight channel, so he neither moves nor
-animates; `omk::clipTracks` is public and a root delta is `trans[cur] -
+**Step 3 landed the motion half of that** (2026-09-16): the opponent's body now
+gets the half of `Actor_ApplyMotion` that matters, his clip's own accumulated
+root track turned by his facing, and a second fault came with it — **the AI
+fighter must be ticked with the IDLE WORD, not the replica's `kQueueDrives`
+sentinel.** `Cef_TickChannel` always polls and `sub_4A7A20` never yields 0
+(nothing held is `0x40000000`), so a body with no device searches on the idle
+word while its injected queue works through the entry flags and the `0x8001`
+clip-end path. Ticking him with 0 skipped the input pass outright and left him
+standing in `HFWALK` at the separation radius with his intent stuck at 105.
+With both fixed he fights: `HGUARD` → `H_LGUARD` → `HFWALK` → `B2` → `C1` →
+`HGUARD`, 73 moves over 500 frames against 674 thrashing, and he beat the
+save's 10-hit-point Kay'l down through `KOH_FRONT` to `GROUND` with the KO
+replay running (`engine: melee` re-baselined to 6 fights ending in a KO).
+
+**Still labelled, and what is left of step 3:** he is POSED from his idle
+tracks rather than from his fight channel, so he moves without animating; `omk::clipTracks` is public and a root delta is `trans[cur] -
 trans[prev]`, so both are reachable. And the harness PLACES him two metres in
 front of the player, which the engine never does — a script stages the pair
 before op 62 runs, and the log line says so.
