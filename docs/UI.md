@@ -1508,6 +1508,19 @@ destination through `sub_40E630` and calls `sub_452570`, the travel, and kind
 2 is the memory page's — both are refused explicitly rather than falling into
 the wrong page.
 
+> **And kind 2 is NOT an empty page** (corrected 2026-09-16, by a reader
+> playing it: *"info page contains important info you may have heard in
+> dialog"*). `docs/UI.md` and `todo/sneak.md` both recorded the memory page as
+> empty by the code, because its builder reads a row count from
+> `dword_4DE708`, which no absolute store in the image ever writes. That
+> address is `0x004DE6F0 + 0x18` — the row list's own `+24`, where the shops'
+> and MULTIPLAN's counts sit too — and `sub_42ADD0` writes it at `0x0042AF70`
+> through the list pointer, from the channel's event 29. So the page lists the
+> **memos**: 76 `inventory.add` sites in the world scripts fill list 2 with
+> `Memo NNN …` objects. Its row CONFIRM installs `0x004DEFF0`, a reader page
+> that is not lifted into `tables/ui_widgets.json` at all. The port's empty
+> page is a GAP, not fidelity. `verify.py: sneak memory page`.
+
 `sub_42ADD0` branches on it too. For 0 and 2 it raises the channel's **event
 25** with that number as the list id; for **4** it raises nothing and instead
 sets flag `0x1000` on every row widget — and `0x1000` is the flag `sub_42AA00`

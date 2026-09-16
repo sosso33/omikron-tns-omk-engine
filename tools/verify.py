@@ -7173,7 +7173,7 @@ def c_engine_zone_pump():
 
 
 def c_sneak_memory_page():
-    r"""THE MEMORY PAGE IS EMPTY IN THE SHIPPED GAME, and that is the answer.
+    r"""The sneak's MEMORY page - which lists the MEMOS, and this said it could not.
 
     `todo/sneak.md` listed "three of five pages have empty rows - the player's
     bio, his statistics and the memos - and which list each asks has not been
@@ -7186,32 +7186,31 @@ def c_sneak_memory_page():
     never the identity or options page's problem - they show a character view
     and an option tree, neither of which is a row list.
 
-    **And the memory page's rows are empty BY THE CODE.** Its `panel+4`
-    builder (the block at `loc_49D769`) does
+    **AND THE SECOND HALF OF THIS WAS WRONG UNTIL 2026-09-16.** It said the
+    page was "empty BY THE CODE": its builder reads its row count from
+    `dword_4DE708`, and that symbol "is never written anywhere in the image -
+    a static `dd 0` with seven read sites, no store, no `offset`, no `lea`".
+    The scan was right and the conclusion was not. **`0x004DE708` is
+    `0x004DE6F0 + 0x18` - the ROW LIST's own `+24`**, the same place the
+    shops' bound count (`0x004E3640 + 0x18`) and MULTIPLAN's
+    (`0x004E5670 + 0x18`) live, and `sub_42ADD0` writes it at `0x0042AF70` as
+    `mov [esi + 0x18], eax` through the list pointer. A scanner looking for an
+    absolute store to a named symbol cannot see that, and "no absolute store"
+    was read as "nothing ever fills it".
 
-        word_4DE6F0  = 5;              // the row list's +0: FIVE widgets, not 9
-        dword_670CB8 = 2;              // the row kind
-        ...
-        if (dword_4DE708 > 0)  dword_4DEAD4 = selected_widget[+0x3C];
-        else                   dword_4DEAD4 = -1;
-
-    and **`dword_4DE708` is never written anywhere in the image** - it is a
-    static `dd 0` with seven read sites, no store, no `offset`, no `lea`. So
-    the count is permanently 0, the selected memo is permanently -1, and the
-    two other sites that read it (`sub_49B710` at the inventory page's build,
-    and the install at 0x0049BA8E) always take their zero arm.
-
-    This is the same shape as the options menu's **page 12, built and
-    unreachable** - a page the interface constructs and the game never fills.
-    The port leaving those rows empty is therefore CORRECT, and correct for
-    the reason the code gives rather than by accident.
+    What the builder actually does is bind the rows to **object list 2, the
+    MEMO JOURNAL** - `sub_42ADD0(rows, 0, 2)` raises the channel's event 25 on
+    list 2 and takes the count from event 29 - so the page lists the memos the
+    game gives you. **A reader settled it** (2026-09-16): *"info page contains
+    important info you may have heard in dialog"*. 76 `inventory.add` sites in
+    the world scripts name list 2, all of them objects called `Memo NNN ...`
+    in `OBJECTS.TAG`.
 
     Asserted from `tables/ui_widgets.json`: which of the five pages carry the
-    row list and which do not, and that the list ships NINE widgets (the
-    memory builder shrinking it to five at run time is a thing the port does
-    not model, and is invisible while the count is 0). Then, when the
-    disassembly is present, that `dword_4DE708` has ZERO writes - the test the
-    claim could fail.
+    row list and which do not, that the list ships NINE widgets (the memory
+    builder shrinking it to five at run time is not modelled), and the
+    ARITHMETIC the wrong conclusion turned on - that the count global is the
+    row list's own `+0x18`, which is what makes it the binder's to write.
     """
     import json, re
     tw = os.path.join(ROOT, "tables", "ui_widgets.json")
@@ -7236,49 +7235,28 @@ def c_sneak_memory_page():
         else:
             without.append(nm)
 
-    # THE POSITIVE CONTROL, and it is what makes "zero writes" mean anything.
-    # A scanner that cannot see a write would report 0 for every symbol, so
-    # the same pass counts `dword_670CB8` - the row kind, which each page's
-    # builder WRITES - and that count must be nonzero. Without it this check
-    # would pass just as happily with a broken regex.
-    def scan(asm, sym):
-        w = r = 0
-        pat = re.compile(r"\b" + sym + r"\b")
-        wr = re.compile(r"mov\s+" + sym + r"\s*,")
-        le = re.compile(r"lea\b.*" + sym)
-        with open(asm, "r", errors="replace") as f:
-            for ln in f:
-                if not pat.search(ln):
-                    continue
-                t = ln.strip()
-                if wr.match(t) or ("offset " + sym) in t or le.match(t):
-                    w += 1
-                elif " dd " not in t:
-                    r += 1
-        return w, r
+    # THE ARITHMETIC THE WRONG CONCLUSION TURNED ON. `dword_4DE708` is not a
+    # standalone counter: it is the row list's own `+0x18`, which is why
+    # `sub_42ADD0`'s `mov [esi + 0x18], eax` writes it and a scan for an
+    # absolute store finds nothing. The shops' and MULTIPLAN's counts sit at
+    # the same offset of their own lists, so this is a rule and not a
+    # coincidence of one address.
+    ROWS_COUNT = 0x004DE708
+    SHOP_ROWS, SHOP_COUNT = 0x004E3640, 0x004E3658
+    MP_ROWS, MP_COUNT = 0x004E5670, 0x004E5688
+    identity = (ROWS + 0x18 == ROWS_COUNT and SHOP_ROWS + 0x18 == SHOP_COUNT
+                and MP_ROWS + 0x18 == MP_COUNT)
 
-    writes = reads = control = None
-    asm = omkpaths.asm_path()
-    if asm and os.path.exists(asm):
-        writes, reads = scan(asm, "dword_4DE708")
-        control, _ = scan(asm, "dword_670CB8")
-
-    have = bool(asm and os.path.exists(asm))
-    return (withRows, sorted(without), widgets, writes, reads, control), \
-           (["slider", "inventory", "memory"], ["identity", "options"], 9,
-            (0 if have else None), (7 if have else None),
-            (3 if have else None)), \
+    return (withRows, sorted(without), widgets, identity), \
+           (["slider", "inventory", "memory"], ["identity", "options"], 9, True), \
         "which of the sneak's five tab pages carry the shared row list " \
         "(slider, inventory, memory) and which carry none at all (identity, " \
         "options - so their rows were never the gap), the nine widgets the " \
-        "list ships; and then the memory page's count `dword_4DE708`, which " \
-        "has SEVEN reads and ZERO writes in the whole image - a static dd 0 " \
-        "nothing ever fills, so that page is built and permanently empty, " \
-        "the same shape as the options menu's unreachable page 12; and the " \
-        "POSITIVE CONTROL that makes that zero mean anything - the same scan " \
-        "over `dword_670CB8`, the row kind each builder writes, must find " \
-        "THREE, because a scanner that cannot see a write reports zero for " \
-        "everything"
+        "list ships; and that the memory page's row COUNT is the row list's " \
+        "own `+0x18` - as the shops' and MULTIPLAN's are of theirs - which is " \
+        "what `sub_42ADD0` writes through the list pointer, and what this " \
+        "check once read as 'never written' because it scanned for an " \
+        "absolute store to a named symbol"
 
 
 def c_engine_combine():
@@ -20337,6 +20315,57 @@ def c_engine_sneak_character():
            "player's model, the literal bank the sneak's open names, the default " \
            "entry Cef_DefaultClip picks and its clip, the tracks bound by bone, " \
            "and the frame Anim_SetFrame applies"
+
+
+def c_engine_sneak_memos():
+    r"""engine: the sneak's MEMORY page lists the MEMO JOURNAL (object list 2).
+
+    **This one exists because a reader played the port and contradicted it**
+    (2026-09-16): *"info page contains important info you may have heard in
+    dialog"*. `todo/sneak.md` §2c and `docs/UI.md` both had the page recorded
+    as EMPTY BY THE CODE - its builder reads a row count from `dword_4DE708`,
+    and no absolute store in the image ever writes that symbol. The scan was
+    right and the conclusion was wrong: `0x004DE708` is `0x004DE6F0 + 0x18`,
+    the row list's own `+24`, and `sub_42ADD0` writes it at `0x0042AF70`
+    (`mov [esi + 0x18], eax`) from the channel's event 29 - the same place the
+    shops' and MULTIPLAN's counts live.
+
+    What the builder does is `sub_42ADD0(rows, 0, 2)`: event 25 on **object
+    list 2**, the memo journal, which 76 `inventory.add` sites in the world
+    scripts fill with `Memo NNN ...` objects. Their record NAME is the memo's
+    heading (913 is *Moi :*, 915 *Panneau Bibliothèque :*) and the body is the
+    record's description, which the reader page `0x004DEFF0` shows - that page
+    is not lifted into `tables/ui_widgets.json` and its row confirm is not
+    ported, which is the work this leaves.
+
+    Anekbah, two memos given into list 2, TAB, RIGHT onto the tab column, DOWN
+    to the memory tab, ENTER. Asserted: the viewer's line for the page - which
+    LIST the rows came from and the ids bound.
+    """
+    import subprocess
+    eng = os.path.join(ROOT, "engine")
+    save = os.path.join(ROOT, "traces", "save-appart.bin")
+    if not (os.path.isdir(eng) and os.path.exists(save)):
+        return ("skipped",), ("skipped",), "engine/ or the save absent"
+    mk = subprocess.run(["make", "-s", "play"], cwd=eng, capture_output=True, text=True)
+    play = os.path.join(eng, "build", "omk-play")
+    if mk.returncode != 0 or not os.path.exists(play):
+        return ("skipped",), ("skipped",), "omk-play did not build"
+    env = dict(os.environ, SDL_VIDEODRIVER="dummy")
+    r = subprocess.run([play, omkpaths.data_root(), os.path.join(ROOT, "tables"),
+                        "--software", "--nofmv", "--no-crowd", "--save", save,
+                        "--area", "0", "--stand", "1804,0,-6890,336",
+                        "--give", "2:913,2:915", "--frames", "420",
+                        "--keys", "0x0F,0x0F,0xCD,0xD0,0x1C", "--keydelay", "60"],
+                       capture_output=True, env=env)
+    text = r.stdout.decode("cp1252", "replace")
+    got = tuple(ln.strip() for ln in text.splitlines()
+                if ln.startswith("sneak: memory page"))
+    return got, \
+           ("sneak: memory page - object list 2, 2 rows: 913 915",), \
+           "the viewer's line for the sneak's memory page after two memos are " \
+           "given into object list 2 and the page is opened: which list the " \
+           "rows bound to, how many, and their ids"
 
 
 def c_engine_sneak_quit():
@@ -35509,6 +35538,7 @@ SLOW = [
     ("engine: sneak characteristics", c_engine_sneak_characteristics, "UI; todo/sneak.md 5"),
     ("engine: sneak character", c_engine_sneak_character, "UI; todo/sneak.md 5"),
     ("engine: sneak quit", c_engine_sneak_quit, "UI; todo/sneak.md 5"),
+    ("engine: sneak memos", c_engine_sneak_memos, "UI; todo/sneak.md 2c"),
     ("cursor highlight",  c_cursor_highlight,   "UI 3b"),
     ("slider destinations", c_slider_destinations, "UI 3g"),
     ("sneak previews",   c_sneak_previews,     "UI 3g"),

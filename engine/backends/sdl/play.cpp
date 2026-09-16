@@ -2500,9 +2500,11 @@ int main(int argc, char** argv) {
             else { ++refused; std::printf("--give: no free slot for object %d "
                                           "in list %d\n", id, list); }
         }
-        std::printf("--give: %d object%s put in the carried list, %d refused "
+        std::printf("--give: %d object%s put in the named list%s, %d refused "
                     "(a harness write, not `inventory.add`)\n",
-                    placed, placed == 1 ? "" : "s", refused);
+                    placed, placed == 1 ? "" : "s",
+                    giveList.find(':') == std::string::npos ? " (0, carried)" : "",
+                    refused);
     }
     if (!varList.empty()) {
         std::string cur;
@@ -16200,9 +16202,26 @@ int main(int argc, char** argv) {
                     }
                 }
             }
-            if (rowKind == 0 && inv.openedList() >= 0) {
-                const auto carried = omk::objectList(state,
-                                                     omk::ObjectList::Carried);
+            // ---- THE MEMORY PAGE'S ROWS ARE THE MEMO JOURNAL ---------------
+            //
+            // Kind 2 is the memory page, and it binds OBJECT LIST 2:
+            // `sub_42ADD0(rows, 0, 2)` raises the channel's event 25 on that
+            // list and takes the count from event 29. This port drew that page
+            // empty and `todo/sneak.md` §2c called it correct, on the grounds
+            // that the builder's count `dword_4DE708` has no absolute store
+            // anywhere in the image - but `0x004DE708` IS the row list's own
+            // `+0x18` (`0x004DE6F0 + 24`), which `sub_42ADD0` writes through
+            // the list pointer at `0x0042AF70`, exactly as it writes the shops'
+            // and MULTIPLAN's counts. A reader playing it settled which was
+            // right: *"info page contains important info you may have heard in
+            // dialog"*. 76 `inventory.add` sites fill list 2 with `Memo NNN ...`
+            // objects, whose record NAME is the memo's heading ("Moi :") and
+            // whose description is its body.
+            if (rowKind == 2 && inv.openedList() != 2) inv.openList(2);
+            if ((rowKind == 0 || rowKind == 2) && inv.openedList() >= 0) {
+                const auto carried = omk::objectList(
+                    state, rowKind == 2 ? omk::ObjectList::Memos
+                                        : omk::ObjectList::Carried);
                 // ---- `sub_42AAE0`, THE ROW BINDER --------------------
                 //
                 // The nine widgets are a WINDOW onto the list, and which of
@@ -16254,6 +16273,17 @@ int main(int argc, char** argv) {
                 walk->bindRows(omk::kListSneakRows,
                                static_cast<int>(carried.size()),
                                walk->rowWindow(omk::kListSneakRows));
+                // One line per change, so a headless run can be held to the
+                // rows the page bound - and to WHICH list they came from.
+                if (rowKind == 2) {
+                    static std::string memosTold;
+                    std::string said = std::to_string(carried.size()) + " rows:";
+                    for (int id : carried) said += " " + std::to_string(id);
+                    if (said != memosTold) {
+                        memosTold = said;
+                        std::printf("sneak: memory page - object list 2, %s\n", said.c_str());
+                    }
+                }
                 // ---- THE ECHO BAR and THE CLOCK ---------------------
                 //
                 // Two of the device's rows are filled by callbacks of its

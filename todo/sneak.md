@@ -107,7 +107,28 @@ the verb panel.
 Until it is done, the honest behaviour is to REFUSE `Utiliser sur` rather
 than run `Utiliser`'s arm under its name.
 
-### 2c. ~~Three of the five pages have empty rows~~ — CLOSED, and the question was wrong
+### 2c. Three of the five pages have empty rows — HALF CLOSED, and the other half was WRONG
+
+> **CORRECTED 2026-09-16, by a reader playing it.** They reported *"info page
+> contains important info you may have heard in dialog (and maybe read from
+> document but i am not sure for this last point)"* — and they are right. The
+> paragraph below says the memory page is "empty by the code" because
+> `dword_4DE708`, the count its builder reads, "is never written anywhere in
+> the image". **`0x004DE708` is `0x004DE6F0 + 0x18` — the ROW LIST's own
+> `+24`**, exactly where the shops' count (`0x004E3640 + 0x18`) and
+> MULTIPLAN's (`0x004E5670 + 0x18`) live, and `sub_42ADD0` writes it at
+> `0x0042AF70` (`mov [esi + 0x18], eax`) from the channel's event 29. The scan
+> was looking for an absolute store to a named symbol and could not see a
+> write through a pointer, and "no absolute store" was read as "nothing fills
+> it". The page binds **object list 2, the memo journal** (`sub_42ADD0(rows,
+> 0, 2)` → event 25 on list 2), and 76 `inventory.add` sites in the world
+> scripts put `Memo NNN …` objects there. What the PORT does — leave those
+> rows empty — is therefore a GAP, not fidelity. `verify.py: sneak memory
+> page` is rewritten around the arithmetic; the fill is the open work, with
+> the memo READER page `0x004DEFF0` (which the row confirm installs, and which
+> is not lifted into `tables/ui_widgets.json` at all) behind it.
+
+
 
 **Read 2026-09-04, and there is nothing to implement.** This entry said "the
 player's bio, his statistics and the memos each ask a different list and which
