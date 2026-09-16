@@ -140,6 +140,20 @@ than run `Utiliser`'s arm under its name.
 > number from the same enum the rows were read with - the same weakness, and
 > the same fix, as the character line's hard-coded bank name a day earlier.
 >
+> **WHERE MEMOS COME FROM** (2026-09-16, the reader asked whether they are
+> unlocked only by dialogue or also by reading a document - the answer is
+> BOTH). Three routes fill list 2: **76** `inventory.add` sites in the world
+> scripts; **7** in DIALOGUE ACTION scripts (a conversation node's `ptr[4..7]`,
+> across 6 conversations) - the ones "heard in dialog"; and GLOBAL's
+> **message-4** handler, subscription script offset 168, which is what the
+> sneak's EXAMINER posts (`sub_42B420(tag, 4)`, ported 2026-09-15). That
+> handler tests the examined object's id - 89 *Note dossiers archives* (kind
+> 16) and 97 *Note Anissa* (kind 15), both documents - plays
+> `ZVO P315 DATA MEMORIZED` and adds *Memo 004 Aller aux Archives* /
+> *Memo 022 Code Gandhar*. So examining a document in the sneak unlocks memos,
+> and the port already posts that message. `docs/GAME_STATE.md`'s list-2 row
+> carries the same three counts.
+>
 > Still open: the memo READER page `0x004DEFF0` behind the row confirm
 > (`sub_49BC60`'s kind-2 arm pushes it), which is not lifted at all - so the
 > body of a memo, which is the object record's DESCRIPTION, cannot be shown

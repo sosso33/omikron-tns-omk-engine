@@ -195,7 +195,7 @@ count by scanning for that terminator — which is why the count is not stored.
 |---|---|---|---|
 | 0 | 18 | +848 | **carried inventory.** `Game_HandleEvent` case 10 — picking a prop up off the floor — inserts here, and only here |
 | 1 | 256 | +884 | a second list the inventory screen moves items into (case 36 action 7) and back out of (action 8); objects of kind 1, the hand weapons, are refused |
-| 2 | 9 | +1396 | **the memo journal.** All **78** `inventory.add` sites naming it name an object called `Memo NNN …`, and nothing else is ever added |
+| 2 | 9 | +1396 | **the memo journal.** All **78** `inventory.add` sites naming it name an object called `Memo NNN …`, and nothing else is ever added. **THREE ROUTES fill it** (2026-09-16, after a reader asked which): **76** sites in the world scripts (`IAM\AREA` + `IAM\SCENE` + `IAM\GLOBAL`), **7** more in DIALOGUE ACTION scripts - a conversation's `ptr[4..7]`, 6 conversations, which is memos "heard in dialog" - and, through GLOBAL's **message-4** handler at offset 168, EXAMINING a document: the handler tests the examined object against ids (89 *Note dossiers archives*, 97 *Note Anissa* - both document kinds), plays `ZVO P315 DATA MEMORIZED` and adds the memo. So reading a document in the sneak unlocks memos as surely as talking does |
 | 3 | 16 | — | **the shop stock**, rebuilt from the resident area's own object array (`AREA +8`) whenever a shop screen opens. Not stored |
 
 `verify.py: object lists` holds the memo test and the starting inventory.
