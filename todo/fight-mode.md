@@ -742,7 +742,66 @@ baselined around a hole.
 0.01` (against the default 0.5) and its divider of 3 never run, and the port
 is faithful in not reaching them.
 
-**Order.** 15.8a first: it is a gameplay fault, not a framing one, and it is
+### 15.8d THE ROOT CAUSE — a PHANTOM 41-unit gap holds the fighters apart
+
+**The reader's own hypothesis, and it is right**: *"I think some camera issues
+are when Kay'l and the opponent are at the same place at the same time but
+this shouldn't happens when collision will be there."* His played fight shows
+exactly that, and the cause is not the missing wall collision - it is a units
+mismatch between the two fighters.
+
+From the played log, during the camera flips:
+
+```
+bodies: player 15059 13 1709 facing 2, opponent 15059 -31 1707 facing 182
+```
+
+Same x, 2 units apart in z: they are standing **inside each other**. And the
+same line's separation reads `43 apart (1.10 m)`, comfortably outside the
+43.4 separation radius, so `Fight_KeepSeparation` pushes nothing.
+
+Both are true because `measureSeparation` is a **3D** distance:
+
+```cpp
+    const float dy = b_.body->y - a_.body->y;
+    separation_ = std::sqrt(dx * dx + dy * dy + dz * dz);
+```
+
+and the two `y` values are **on different origins**. The player's comes from
+his walker, whose origin is the FEET; the opponent's is his staged placement,
+which names the PELVIS. The gap between them is a constant ~41 units, and
+`sqrt(0^2 + 41^2 + 2^2) = 41` - so the separation is satisfied by a vertical
+distance that does not exist. The engine has no such problem: both actors
+store their position at `+244/+248/+252` in one convention.
+
+**And the camera fault falls out of it.** `camOrbit` takes its heading from
+`atan2(b.z - a.z, b.x - a.x)`. With the pair horizontally coincident that
+vector is a couple of units long and its direction is noise, flipping ~180
+degrees a frame; the eased eye (`eyeK` 0.5) is then pulled between two
+antipodal points on the orbit, and the midpoint of two antipodal points is the
+CENTRE. Measured over the reader's fight: **31 frames turn more than 90
+degrees**, and at each the eye sits **8 to 52 units** from its target where
+the orbit radius should be about 131. The camera is not cutting between two
+framings - it is sitting on top of the fighters and spinning.
+
+So 15.8c is a SYMPTOM of this, not an independent fault, and the throw-swing
+fix (`6af0597`) was real but was never the thing the reader was seeing.
+
+**Why no check caught it.** `engine: melee` asserts `tooCloseAfterPush == 0`
+and it is 0 - because `run_fight` builds both `FightBody`s itself, on one
+convention, so the phantom offset cannot arise there. It needs a staged
+opponent beside a walking player, which only the viewer has.
+
+**The fix is to put both fighters on one origin** before anything else in
+15.8 is worth attempting - it is upstream of the camera AND of the collision
+work, since a collide-and-slide that starts from overlapping bodies has
+nothing sensible to do. Note that `fightRun.foe.y` is also published straight
+to the drawn body (`fightRun.body->at[1]`), so the two uses have to be
+separated rather than the value simply shifted; and the port's existing
+labelled note about the opponent's vertical (`play.cpp`, the root-motion
+block) is the same question seen from the other side.
+
+**Order.** 15.8d first: it is upstream of 15.8a: it is a gameplay fault, not a framing one, and it is
 the one that can put an opponent somewhere the fight cannot continue.
 
 ### 15.8a ATTEMPTED 2026-09-16 — the reading is settled, the wiring is NOT
