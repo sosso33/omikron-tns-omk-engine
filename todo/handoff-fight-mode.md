@@ -172,12 +172,15 @@ drawn, on his bones through `Staged::meshAt`. Not judged by eye yet.
 
 ## 8. What is left, 2026-09-17 evening
 
-Every step of the plan but step 6, the play test, is done. Nothing below is
-confirmed by a person yet:
+Every step of the plan is done, and step 6's play test has begun. **Confirmed
+in play 2026-09-17** (three played fights on the Vulkan window, one lost and two
+won with `--fight-health 200`): the gauges staying up (15.15), the opponent's
+hit glow, his fall to the floor and his body left lying after a win (15.16).
+Played but not reported on either way:
 
 * the fight opening 1.5 m apart, the robber's wall collision, the camera held
-  in front of crates, the HUD and its four-second stat card, the AI's guard,
-  the KO replay between bars, the opponent's hit sprites;
+  in front of crates, the four-second stat card, the AI's guard, the KO replay
+  between bars;
 * 15.3 ("characters colliders issue") needs the reader to say which of three
   faults it was, if it survives the above;
 * the priority gate is ported but has never been SEEN refusing a move;

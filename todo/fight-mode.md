@@ -750,7 +750,7 @@ walk and the combo chains, and several behind two-input words like `CATCH`'s
 `engine: actor states`' older corpus finding that the priority rule is invisible
 on shipped decisions.
 
-### 15.15 FIXED 2026-09-17 — the gauges vanished on the VULKAN window
+### 15.15 FIXED 2026-09-17, CONFIRMED IN PLAY — the gauges vanished on the VULKAN window
 
 The first play test of the HUD, with `--fight-health 200`: *"The health
 disappear after some time (only the stats should disappear)"*. The draw was
@@ -772,7 +772,10 @@ frames differ from frame 439, about 27000 pixels each.
 Also added for that play test: `--fight-health N`, a labelled HARNESS setting the
 player's Vie at `Fight_Begin`, because the save's 10 ends a fight in seconds.
 
-### 15.16 FIXED 2026-09-17 — the second play test's three: no hit effect, a floating fall, a T-pose after the win
+### 15.16 FIXED 2026-09-17, CONFIRMED IN PLAY — the second play test's three: no hit effect, a floating fall, a T-pose after the win
+
+*Confirmed by the reader the same day (*"Good"*), on the Vulkan window, after a
+won fight: the glow on a hit, the fall to the floor, the body left lying.*
 
 The reader won a fight on the Vulkan window (`--fight-health 200`) and reported
 *"no visual effect when I touched the ennemy, the ennemy float in the air when
