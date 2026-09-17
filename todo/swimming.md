@@ -259,8 +259,22 @@ play alone.
 **The street's freezes were not the swim.** A `SLOW FRAME` line (any frame over
 two periods, with his position) attributed all six of one session: two on a
 MUSIC TRACK SWITCH - the new stream opened on the main thread - and one on the
-frame a new character entered, with the texture pool rebuilt and the Vulkan
-depth-tie table built for the posed body. Handed to the performance task.
+frame a SET became resident, with the texture pool rebuilt and the Vulkan depth
+tie walked over the new geometry. Three more, near x 13200 z 14000, were not
+read. Handed to the performance task.
+
+**CORRECTED the same evening, and the commit message of `b018c25` carries the
+wrong version**: this first said the third hitch was "a new character's ...
+depth-tie table built for the posed body". The performance session checked it:
+the log line `depth tie - 168 of 3075 triangles` is gated on more than 1000
+triangles (`corners > 3000`), which no character model passes on its way into
+that line as read here - the largest, AST_FNM, is 1070 and the mean 463 - and
+3075 triangles with 168 drops is exactly one file in the
+tree, the decor set `MESHES/DECORS/SRest02.3DO`. So it was a LOAD cost, once,
+not a per-frame body cost. The instrument was right and the attribution was
+wrong - CLAUDE.md 1's "attribute before you count" - because a triangle count
+was read as a body without asking what the line can ever print. If the line is
+kept, it should print the geometry's NAME.
 
 ## 2. The steps
 
