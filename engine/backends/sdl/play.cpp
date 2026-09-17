@@ -11688,6 +11688,24 @@ int main(int argc, char** argv) {
                                 ca->fov, ca->roll,
                                 haveDlgCam ? (ca->absolute() ? "" : "  [hangs off a speaker]")
                                            : "  [unresolvable subject - not drawn]");
+                    // ...AND WHERE IT ENDED UP. A dialogue camera is resolved
+                    // against the two speakers, so the id says nothing about
+                    // the place: a reader reporting a camera inside the scenery
+                    // had nothing in the log to name it by, while every world
+                    // camera prints its eye and target two blocks below.
+                    // Printed from the view the frame will be drawn with.
+                    std::printf("    ...resolved: eye %.0f %.0f %.0f  at %.0f %.0f %.0f"
+                                "  (%.0f from its target)\n",
+                                double(dlgView.cam.eye[0]), double(dlgView.cam.eye[1]),
+                                double(dlgView.cam.eye[2]), double(dlgView.cam.at[0]),
+                                double(dlgView.cam.at[1]), double(dlgView.cam.at[2]),
+                                std::sqrt(
+                                    (dlgView.cam.eye[0] - dlgView.cam.at[0]) *
+                                        (dlgView.cam.eye[0] - dlgView.cam.at[0]) +
+                                    (dlgView.cam.eye[1] - dlgView.cam.at[1]) *
+                                        (dlgView.cam.eye[1] - dlgView.cam.at[1]) +
+                                    (dlgView.cam.eye[2] - dlgView.cam.at[2]) *
+                                        (dlgView.cam.eye[2] - dlgView.cam.at[2])));
                 }
             }
         }

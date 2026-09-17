@@ -4413,7 +4413,7 @@ def c_dialogue_camera_blend():
     Shown to fail: snapping the fov again puts the mid-travel fov of
     `4572 -> 4574` at one end or the other instead of between them.
     """
-    import subprocess, sys as _sys
+    import subprocess, sys as _sys, re as _re
     eng = os.path.join(ROOT, "engine")
     fr = omkpaths.data_root()
     if not (os.path.isdir(eng) and os.path.isdir(fr)):
@@ -4428,10 +4428,16 @@ def c_dialogue_camera_blend():
         return ("build failed",), ("built",), "engine/ must build"
     r = subprocess.run([probe, fr, "402"], capture_output=True, encoding="latin-1")
     cam = {}
-    for line in r.stdout.splitlines():
-        f = line.split()
-        if len(f) == 6 and f[0] == "cam":
-            cam[int(f[1])] = (float(f[3]), float(f[5]))     # roll, fov
+    # BY KEYWORD, not by field count: `dlgcam` grew eye/at/subjects on
+    # 2026-09-18 and a `len(f) == 6` parse then matched nothing at all, leaving
+    # this check raising KeyError on the first camera it wanted. A scan of
+    # another tool's output has to survive that tool gaining a column
+    # (CLAUDE.md 1), so the count is asserted below rather than assumed.
+    for m in _re.finditer(r"cam\s+(\d+)\s+roll\s+(\S+)\s+fov\s+(\S+)", r.stdout):
+        cam[int(m.group(1))] = (float(m.group(2)), float(m.group(3)))
+    if len(cam) != 38:                       # dialog 402's own count
+        return ("dlgcam read %d cameras" % len(cam),), ("38",), \
+               "the probe's output must parse before anything is derived from it"
     _sys.path.insert(0, os.path.join(ROOT, "tools"))
     import omkdata
     c = omkdata.conversation(402)
@@ -4466,7 +4472,13 @@ def c_dialogue_camera_blend():
             m = _re.search(r"\[dlgcam\].*pair 4554 -> 4555\s+u (\S+).*fov (\S+)", line)
             if m and 0.25 < float(m.group(1)) < 0.75:
                 mid = float(m.group(2))
-    between = mid is not None and 80.5 < mid < 83.0
+    # NO SAVE, NO VERDICT. `omk-saves/GAMES` is a local file and a checkout
+    # without it used to make this check FAIL on its last element rather than
+    # say why - a red that is about the machine, not the port (met 2026-09-18).
+    if mid is None:
+        return ("skipped",), ("skipped",), \
+               "needs omk-saves/GAMES - the mid-move fov is measured from a running conversation"
+    between = 80.5 < mid < 83.0
     return (len(seen), fovMoves, round(biggest, 1), rolled, big10,
             round(cam[4583][0], 2), round(cam[4584][0], 2), between), \
            (19, 6, 14.6, 11, 2, 2.02, -0.61, True), \

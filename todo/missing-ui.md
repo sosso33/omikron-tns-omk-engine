@@ -275,3 +275,59 @@ load), which is what gives its probe the chance.
 `OMK_NO_ZONE_BAND=1` turns the height band off for the same run, which is how
 the band was ruled out (the arrival then picks the wrong camera and is 66%
 dark).
+
+## 7. The dialogue camera in the ceiling — READ, and three attempts REVERTED
+
+A reader, at the Telis lunch (2026-09-17/18): *"a similar issue occurs in the
+telis dialog in the restaurant"*, then the two facts that decide it - *"the
+camera is high at that moment in the original too, but in the original game,
+there is nothing hiding the scene to the camera"*.
+
+**What is established.**
+
+* The camera is authored high. Dialog 387's reply pair **4194 -> 4195** is a
+  CRANE: eye 226 units up (5.7 m) descending to 152, targets 110 down to 37.
+  Both are ABSOLUTE (subject -1), so nothing is being mis-resolved - `dlgcam`
+  now prints eye, target and subjects, which is how this was settled.
+* The port places it exactly there and moves it exactly as the engine does:
+  `Dialog_ApplyLineCameras` cuts to the first id (duration -1) and travels to
+  the second over **160 frames**, which `docs/` already carried.
+* So the difference is that the engine CLEARS the lens and the port does not.
+  `sub_414520` case 12 -> `sub_4141F0` sets camera flags **0xC**, and bit 8 is
+  the obstruction pass `sub_417070` (`player.h` has always recorded it as
+  unported). Its rule, read from `04_sys.c` 3370ff:
+
+      d    = eye - target;  len = |d|
+      ray  = target .. target + d * (+300)          // +300 = 1.2, the swim 1.5
+      hit? -> dist = |hit - target| / +300
+              if (dist > +328 && !(flags & 1))      // eases OUT over +320 = 8
+                  dist = (dist - +328) * dt / +320 + +328
+              +328 = dist;  eye = target + normalise(d) * dist
+
+  with a hit on a 0x20000000 mesh ignored when the camera carries 0x1000 (the
+  "camera sees through" pair; no mesh of `ARESTO14` carries it).
+
+**Three attempts to port it, all reverted the same evening.** Each was measured
+and each was worse in play:
+
+1. the rule on every camera: cleared the ceiling (the reader confirmed *"the
+   issue is not there anymore"*) but *"some other cameras in the dialog are
+   broken now (wrong position or translation, very sudden moves)"*;
+2. `+328` held in ONE variable across cameras - so a CUT to a new pair inherited
+   the previous pull and slid out of it, which is those sudden moves. Keyed per
+   camera afterwards;
+3. scoped to the cameras whose setup sets bit 8 (follow and dialogue): *"not
+   resolved (the camera now is completely wrong)"*.
+
+**So the reading stands and the port does not.** What is missing is not the ray
+- that part is easy and is what the swim camera already uses - but the rest of
+`sub_417070`: it is 271 lines, and the parts NOT read are the ones that decide
+where the lens goes when the pull alone will not clear it (`+312/+316`, the
+0.7 x height push, and the second ray from the PREVIOUS camera position that
+the `+208` state machine runs). A third of that function is what makes the other
+two thirds safe, and porting the ray alone moves every shot it touches.
+
+Next time: read `sub_417070` whole - all 271 lines, `+208`'s three states
+included - before writing any of it, and drive it from a scripted replay of one
+conversation so every shot's eye can be diffed frame by frame against the same
+run without the rule.

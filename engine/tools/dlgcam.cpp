@@ -4,6 +4,7 @@
 #include "formats/iam.h"
 #include "platform/datafs.h"
 #include "script/dialogue.h"
+#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <string>
@@ -15,6 +16,10 @@ int main(int argc, char** argv) {
     const auto conv = omk::parseConversation(id, arch.chunk(static_cast<std::size_t>(id)));
     if (!conv.valid) { std::fprintf(stderr, "no such conversation\n"); return 1; }
     for (const auto& c : conv.cams)
-        std::printf("cam %5d  roll %8.3f  fov %8.3f\n", c.id, c.roll, c.fov);
+        std::printf("cam %5d  roll %8.3f  fov %8.3f  eye %8.1f %8.1f %8.1f  at %8.1f %8.1f %8.1f"
+                    "  subjects %d %d %s\n",
+                    c.id, c.roll, c.fov, c.eye[0], c.eye[1], c.eye[2], c.at[0], c.at[1], c.at[2],
+                    int(std::int16_t(c.subject[0])), int(std::int16_t(c.subject[1])),
+                    c.absolute() ? "ABSOLUTE" : "relative");
     return 0;
 }
