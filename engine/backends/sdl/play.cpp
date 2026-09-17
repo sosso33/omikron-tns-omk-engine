@@ -2851,6 +2851,14 @@ int main(int argc, char** argv) {
     // because their text is the carried object list read through the channel
     // (`Game_HandleEvent` 29 and 33), not a string in `IAM\Sneak`.
     std::map<std::uint32_t, std::string> sneakRows;
+    // THE ADDRESS MAP, watched. A screen whose script OPENS A PLACE is the whole
+    // point of reading it - a reader: *"some scenes can be triggered only if an
+    // entry on a terminal has been read"* - and ops 87/88 write a 791-bit map
+    // that nothing announced. Kay'l's terminal enables ADDRESSES 33, 'Anekbah -
+    // Bar Zone 52', when his fourth dossier has been read, and the memo that
+    // goes with it names the mission. Watched per frame and said once per
+    // change, so a play log shows what a screen actually unlocked.
+    std::vector<std::uint8_t> addrSeen;
     // The row widgets `sub_42AAE0` switches off - past the object count, so
     // tag -1 and `0x40000001` set. Without it every one of the nine rows
     // draws its fill and the page is striped.
@@ -10402,6 +10410,24 @@ int main(int argc, char** argv) {
                         player ? static_cast<int>(player->state()) : -1);
         }
 
+        {
+            if (addrSeen.empty()) {
+                addrSeen.assign(791, 0);
+                for (int k = 0; k < 791; ++k)
+                    addrSeen[static_cast<std::size_t>(k)] =
+                        static_cast<std::uint8_t>(state.bit(omk::StateArray::AddressEnabled, k));
+            } else {
+                for (int k = 0; k < 791; ++k) {
+                    const auto now = static_cast<std::uint8_t>(
+                        state.bit(omk::StateArray::AddressEnabled, k));
+                    if (now == addrSeen[static_cast<std::size_t>(k)]) continue;
+                    addrSeen[static_cast<std::size_t>(k)] = now;
+                    std::printf("frame %ld: ADDRESS %d %s\n", n, k,
+                                now ? "ENABLED - a place the scripts can send him now"
+                                    : "disabled");
+                }
+            }
+        }
         // A script asked for a screen, or the PLAYER did. Which screen is the
         // SESSION's answer or the special move's, never this file's.
         if (!walk && (session.pendingUiScreen() >= 0 || playerScreen >= 0)) {

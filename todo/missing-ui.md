@@ -171,12 +171,47 @@ its subtitle. The simulator names the machine, its first cell answers 1, and
 camera. `verify.py: engine: terminal family`, shown to fail by putting the
 keypad's hook back among the unmodelled ones.
 
+**What a terminal entry UNLOCKS**, which is the reason to read one at all (a
+reader: *"some scenes can be triggered only if an entry on a terminal has been
+read"*). AREA 179's script, after the answer:
+
+| answer | dossier | what it does |
+|---|---|---|
+| 1 | the fifth | `1-A-CS SecretFile`; if `1-A-CS Archives` is still 0, the voice-over *ZVO P251 Terminal Kay'l*, *DATA MEMORIZED* and **memo 003 "Trouver Dossier Kay'l"** |
+| 2 | the fourth | if `Dossier Bar` is still 0: sets it and `Mission Bar 56`, *DATA MEMORIZED*, **memo 056** and `address.enable 33` - **'Anekbah - Bar Zone 52'** |
+| 3 | both | both arms |
+
+So reading a dossier OPENS A PLACE. Ops 87/88 write a 791-bit map that nothing
+announced, so the viewer now watches it and says each change - `ADDRESS 33
+ENABLED` is in the check, and any play log will show what a screen unlocked.
+
 **Still open here**: the header (`textFn` 0x004AF5A0) is
 `table_at_0x004E3FEC[word_4E3FE2]` - a runtime pointer array, so which label it
 shows per selection is unread; and the body does not yet switch to the chosen
 dossier (`IAM\Term` 0..4), which is the same index. The five "Consulter le
 dossier n°N" strings (5..9) and "Quitter le terminal" (10) belong to one of
 those two.
+
+## 5. The special screens — surveyed, not yet built
+
+Asked for by name (*"did you look at the special UI too, like Den's locker,
+Gandhar door"*). Every one is blocked the same two ways the terminal was: a
+list hook the walk does not model (which makes it refuse EVERY press) and/or an
+item callback that writes the answer. None has been opened yet; this is the
+survey, from `tables/ui_widgets.json`:
+
+| screen | panel | list hook | items | item callback | state |
+|---|---|---|---|---|---|
+| 12 `GANDHAR DOOR` | 0x4E4CB8 | **0x004AFE90** unmodelled | 5 | **0x004AFF90** | a 5-cell lock - AREA 81 opens it |
+| 13 `DEN` | 0x4E4990 | **0x004AFBE0** unmodelled | 6 | none | Den's locker, 6 cells, no per-item callback - the hook itself answers |
+| 14 `XACHEN` | 0x4E4620 | 0x0042A930 (`kMoveSelectionLR`, ported) + a 4-item list | 4 | **0x004AF9D0** | the mover is already modelled; only the callback is missing |
+| 0 `VIDEOPHONE` | 0x4DF128 | none | 8 | 0x0049DBF0, `textFn` 0x0049E090 | the SNEAK family's - 0x49E090 is already supplied by the viewer |
+| 36 `HIGH-SCORE` | 0x4E22F0 | none | 1 | 0x0042A990 | one item, the family's generic button |
+
+So the work is four callbacks and two list hooks, all in the 0x004AF9D0..
+0x004AFF90 neighbourhood - the same page of the image the terminal's came from.
+`DEN` is the odd one: with no item callback its hook must both move and answer,
+like the LIFT's grid.
 
 ## 4. The steps
 
@@ -185,5 +220,5 @@ those two.
 | 0 | where every screen is opened from | **done 2026-09-17** - §1 |
 | 1 | the LIFT: why it never arrived | **done 2026-09-17** - §2, `verify.py: engine: lift` |
 | 2 | the terminal FAMILY: the display, the keypad and the answers - 7 screens | **done 2026-09-17** - §3, `verify.py: engine: terminal family` |
-| 3 | the tail: 12 GANDHAR DOOR, 13 DEN, 14 XACHEN, 36 HIGH-SCORE, 0 VIDEOPHONE - and the terminal's own dossier pages | |
+| 3 | the SPECIAL screens - 12 GANDHAR DOOR, 13 DEN, 14 XACHEN, 0 VIDEOPHONE, 36 HIGH-SCORE - and the terminal's own dossier pages | §5 has each one's hooks |
 | 4 | play | |

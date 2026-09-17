@@ -12545,6 +12545,11 @@ def c_engine_terminal_family():
     * the keypad's list hook, `sub_4AF300`, was unmodelled - and an unmodelled
       list hook makes the walk refuse every press, so nothing could be chosen.
 
+    And what the answer is FOR: AREA 179's script hands out a memo and
+    **enables ADDRESSES 33, 'Anekbah - Bar Zone 52'** - the mission a scene
+    later needs - so the run asserts that address turns on. A screen that opens
+    a place is the reason to read it.
+
     Two runs. **The terminal** (AREA 179, standing on zone 3030 in Kay'l's
     office): the body names his dossiers, the keypad walks to row 3, and
     closing answers **2** - `sub_4AF0E0` reports which protected dossier was
@@ -12590,8 +12595,8 @@ def c_engine_terminal_family():
             "Simulateur de combat" in (fsay.group(1) if fsay else ""),
             int(fans.group(1)) if fans else -1,
             "FIGHT BEGINS against CHARACTERS 331" in f,
-            "DATA MEMORIZED" in t), \
-           (True, 2, 19, True, 1, True, True), \
+            "DATA MEMORIZED" in t, "ADDRESS 33 ENABLED" in t), \
+           (True, 2, 19, True, 1, True, True, True), \
            ("the terminal lists Kay'l's dossiers and answers 2 on the way out, and "
             "the simulator's first cell answers 1 and starts the training fight")
 
