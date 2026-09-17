@@ -12549,7 +12549,8 @@ def c_engine_water_entry():
     **And step 2** (the water moves): `H_HFL-IN`'s `MDDIVEND` writes ACTOR_STATE
     14 and posts message 22, which AREA 1 answers - so the run ends in state 14,
     not 11. SHOWN TO FAIL: drop the `MDDIVEND` arm and it ends in 11 with no
-    message.
+    message. (And in `H_SWIMIN`, because the dive key is still down at the end -
+    see step 5 below.)
 
     **And step 3** (the motion, `sub_4A8F30`): underwater he drifts UP off the bed
     while the pitch turns to its 340 cap, holding just under the surface - the
@@ -12564,6 +12565,12 @@ def c_engine_water_entry():
     drawn head stands under 10 units over the pelvis, lying along the water,
     and at the 340 cap over 20. SHOWN TO FAIL: turn the drawn body by the yaw
     alone and the head stands ~24 over the pelvis on every line.
+
+    **And step 5** (swimming): underwater, forward is the DIVE key - group 1
+    slot 5, `Plonger`, keyboard 157 - whose bit 0x20 is what group 302's
+    `H_WAITIN` -> `H_SWIMIN` edge matches on; the arrow does nothing there. Held
+    from frame 600 he swims `H_SWIMIN` and crosses more than 150 units before
+    the canal's far wall stops him.
 
     **And step 4** (the breath gauge): the underwater arm draws
     `Hud_DrawBar(1000 * (start + 40000 - now) / 40000, 1000, 0, 1)` - mode 1,
@@ -12587,8 +12594,12 @@ def c_engine_water_entry():
     out = subprocess.run(
         [play, fr, os.path.join(ROOT, "tables"),
          "--save", os.path.join(ROOT, "traces", "save-appart.bin"),
-         "--area", "1", "--stand", "10524,-40,10284,270", "--frames", "600",
-         "--nofmv", "--nodelay", "--no-crowd", "--hold", "k200*140"],
+         "--area", "1", "--stand", "10524,-40,10284,270", "--frames", "900",
+         "--nofmv", "--nodelay", "--no-crowd",
+         # walk off the ledge, float over the bed while the pitch drifts to its
+         # cap, then hold the DIVE key - group 1 slot 5 `Plonger`, keyboard 157,
+         # whose 0x20 is what `H_WAITIN` -> `H_SWIMIN` matches on (step 5)
+         "--hold", "k200*140,k*420,k157*340"],
         capture_output=True, text=True, errors="replace",
         env=dict(os.environ, SDL_VIDEODRIVER="dummy")).stdout
     land = re.search(r"the player LANDS at y (-?[\d.]+)", out)
@@ -12596,22 +12607,29 @@ def c_engine_water_entry():
                     r"\.CTL state \d+ '(\w*)'", out)
     if not land or not fin:
         return (bool(land), bool(fin)), (True, True), "the run must land and print the player"
-    swim = re.findall(r"swimming - ACTOR_STATE 14, .* at -?\d+ (-?[\d.]+) -?\d+, pitch (\d+), "
-                      r"drawn head (-?\d+) over the pelvis", out)
-    first = swim[0] if swim else ("999", "0", "999")
+    swim = [(int(f), st, int(x), float(y), int(z), int(p), int(hd)) for f, st, x, y, z, p, hd
+            in re.findall(r"frame (\d+): swimming - ACTOR_STATE 14, \.CTL '(\w+)' group \d+, at "
+                          r"(-?\d+) (-?[\d.]+) (-?\d+), pitch (\d+), drawn head (-?\d+) over",
+                          out)]
     bar = re.findall(r"breath gauge \(Hud_DrawBar mode 1\): (\d+)%, \d+ ms left, "
                      r"right edge \d+, (\d+) quads (\d+) blits", out)
-    last = swim[-1] if swim else ("999", "0", "-999")
+    first = swim[0] if swim else (0, "", 0, 999.0, 0, 0, 999)
+    # the FLOAT's end - the last line before the dive key goes down at 600 -
+    # and how far he swims after it, in x and z together
+    drift = ([r for r in swim if r[0] <= 560] or [first])[-1]
+    dist = max((abs(r[2] - drift[2]) + abs(r[4] - drift[4]) for r in swim), default=0)
+    lowest = min((r[3] for r in swim), default=999.0)
     return (round(float(land.group(1))), "INTO THE WATER" in out and "bank group 300" in out,
             "MDDIVEND - ACTOR_STATE 14, message 22 to its handler" in out,
-            int(fin.group(1)), fin.group(2), float(last[0]) < 100.0, int(last[1]),
-            int(first[2]) < 10, int(last[2]) > 20,
+            int(fin.group(1)), fin.group(2), lowest < 100.0, drift[5],
+            first[6] < 10, drift[6] > 20,
+            any(r[1] == "H_SWIMIN" for r in swim) and dist > 150,
             (int(bar[0][0]), int(bar[-1][0]) < int(bar[0][0]),
              bar[0][1], bar[0][2]) if bar else ()), \
-           (125, True, True, 14, "H_WAITIN", True, 340, True, True,
+           (125, True, True, 14, "H_SWIMIN", True, 340, True, True, True,
             (99, True, "5", "2")), \
            ("he lands on the canal bed through the surface, enters the water, MDDIVEND " \
-            "posts message 22, and he ends in ACTOR_STATE 14 on H_WAITIN")
+            "posts message 22, and he ends in ACTOR_STATE 14 SWIMMING on H_SWIMIN")
 
 def c_engine_fight_library():
     r"""`omk-play`: a fight loads `fight.scx`, its OWN sound and sprite library.

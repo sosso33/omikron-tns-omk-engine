@@ -197,6 +197,28 @@ the gap the fight's gauges fell into.
 `verify.py: engine: water entry` carries it, shown to fail by leaving mode 1
 returning without drawing (0 quads), as it did before this step.
 
+## 7. Step 5, done — he SWIMS, and the key is the dive
+
+The first run that pressed forward under water found nothing: he floated in
+`H_WAITIN` for seven hundred frames whatever the arrow did. Group 302's own
+graph says why - `H_WAITIN` -> `H_SWIMIN` matches input **0x20**, and in control
+scheme **1** (`Nager`, which the entry installs) 0x20 is slot 5, **`Plonger`**,
+keyboard 157. Underwater the DIVE key is what swims; `Avancer` (0x4, the up
+arrow) has no edge there at all. At the surface it is the other way round -
+group 301 takes 0x4 into `H_SWIMON` and 0x800 (`Crawl`, keyboard 54) into
+`H_SWIM2`.
+
+Held from frame 600 in the canal, he plays `H_SWIMIN` and crosses ~230 units
+across the bed - 10251,123,10373 to 10072,69,10526 - lying flat, the drawn head
+within 6 of the pelvis, until the canal's far wall stops the sweep. The check's
+one run now carries the whole of it: the float and its drift, then the swim.
+
+**Still not reached by any run**: ACTOR_STATE 13, the surface, and with it
+`MDSW2SD` and `RSTAVNT`. The engine surfaces him when the probe above his head
+finds neither the surface mesh nor the bed - that is, when he swims out from
+under the water polygon's footprint - and the canal's walk-in keeps him under
+`Eau` throughout. Finding that edge is for the play test.
+
 ## 2. The steps
 
 | step | what | state |
@@ -207,5 +229,5 @@ returning without drawing (0 quads), as it did before this step.
 | 3 | the motion, 11..14: no gravity and no ground snap; the surface hold; the pitch | **done 2026-09-17** - §4; the pitch turns the MOTION, the drawn body is 3b |
 | 3b | the pitch on the DRAWN body: the whole Euler, actor+288 | **done 2026-09-17** - §5 |
 | 4 | the breath: the 40 s timer, `Hud_DrawBar` mode 1, message 12 | **done 2026-09-17** - §6 (the timer and message 12 landed with step 3) |
-| 5 | a place to swim headlessly, and the check | |
+| 5 | a place to swim headlessly, and the check | **done 2026-09-17** - §7: the canal walk-in, the DIVE key, and one run carrying float, drift and swim |
 | 6 | play | |
