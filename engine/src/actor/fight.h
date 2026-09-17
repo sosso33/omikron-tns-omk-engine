@@ -323,6 +323,8 @@ public:
     bool over() const { return over_; }
     // Which side won, once `over()`: true when the OPPONENT was the loser.
     bool playerWon() const { return playerWon_; }
+    // The player's priority threshold `Fight_Begin` set from his experience.
+    int gateThreshold() const { return gateThreshold_; }
 
     const FightContext& player()   const { return a_; }
     const FightContext& opponent() const { return b_; }
@@ -382,6 +384,7 @@ private:
     RandFn rand_;
     TimeFn now_;
     BodyTick bodyTick_;
+    int gateThreshold_ = 0;           // the player's `+212`, for the log
     CameraRay cameraRay_;
     FightAiTables builtin_;
     FightContext a_, b_;          // dword_906F60 / dword_907000

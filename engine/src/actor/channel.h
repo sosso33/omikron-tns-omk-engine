@@ -268,6 +268,11 @@ public:
     // the threshold at `+212` instead of taking the first match it finds. Both
     // paths are exercised by the sweep, because they answer differently and
     // only one of them is the one a shipped bank uses.
+    // How many candidates the gate has turned away that would otherwise have
+    // opened - an instrument; `findTransition` is const, so it is mutable.
+    long gateSkips() const { return gateSkips_; }
+    bool priorityGated() const { return (flags_ & 0x400u) != 0; }
+    int  priorityThreshold() const { return priorityThreshold_; }
     void setPriorityGate(bool on, std::uint16_t threshold = 0) {
         if (on) flags_ |= 0x400u; else flags_ &= ~0x400u;
         priorityThreshold_ = threshold;
@@ -387,6 +392,7 @@ private:
     std::vector<std::uint32_t> queue_;            // +24 count, +28.. words
     std::uint32_t latch_[20] = {};                // +92, the 20-slot id set
     std::uint16_t priorityThreshold_ = 0;         // +212
+    mutable long gateSkips_ = 0;         // an instrument, see gateSkips()
     int repeat_ = 0;                              // +220
     // Entry flag 0x800 rewrites the target's GoTo to point back at the state
     // it was entered from - a dynamic return edge. The engine writes that into

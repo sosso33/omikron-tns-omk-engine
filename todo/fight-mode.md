@@ -720,6 +720,36 @@ the next hour measured an AI with no guard. Re-run on rebuilt binaries, every
 figure pushed in that window holds - the supermarket fight never reaches the
 guard arm - and `engine: melee` reads its 24 blocks.
 
+### 15.14 DONE 2026-09-17 — the PRIORITY GATE, and its writer was a wrong base address
+
+Step 1 left the gate off because nothing read had written the channel's
+`+212`, and `setPriorityGate` needs a threshold. The writer was there all
+along, hidden by an address: the channel records begin at **0x8F5920** (the two
+`memset(228 * i + 9394464, 0, 0xE4)` in the channel module say so), not at the
+`dword_8F5928` IDA named, so `+212` is `word_8F59F4[114 * i]` and its setter is
+`sub_45ACD0`. The getter found first, `dword_8F59FC`, is `+220`.
+
+`Fight_Begin` raises flag 0x400 on the player (`sub_45A4C0(chan, 1)`), clears
+it on the opponent, and sets the player's threshold to property 19,
+EXPERIENCE, times `flt_4BC424` - `fild`, `fmul`, `_ftol`. The float is
+0x3CC7CE0C, 0.024390243, just under 1/41, and `_ftol` truncates: **41 -> 0,
+42 -> 1, 83 -> 2** - one point later than the stat card's integer `/ 41`. So a
+`.CTL` move marked priority 1 or 2 is refused to a player who has not the
+experience for it: the combat moves UNLOCK with Kay'l's mastery. The teardown
+clears both thresholds; this viewer's `setBank` builds a fresh channel, which
+has the same effect.
+
+**What is shown and what is not.** The threshold is asserted (experience 50 ->
+1, `engine: fight hud`, read back from the CHANNEL, shown to fail by dropping
+the call). The gate changing a decision is NOT: an instrument counting the
+candidates it turned away reads **0** in the supermarket fights under three key
+patterns and in the nine probe fights, because nothing pressed there reaches a
+priority-2 move - `H1CMBT` has fourteen, reached only from the sidesteps, the
+walk and the combo chains, and several behind two-input words like `CATCH`'s
+0x480, while `--keys` presses one key at a time. That matches
+`engine: actor states`' older corpus finding that the priority rule is invisible
+on shipped decisions.
+
 ### 15.3 "characters colliders issue"
 
 Not yet reproduced, and the handoff already lists two unported pieces that

@@ -53,6 +53,7 @@ struct Lcg {
 struct Totals {
     long files = 0, fights = 0, frames = 0;
     long hits = 0, blocks = 0, grazes = 0, knockdowns = 0, kos = 0;
+    long gateSkips = 0;   // candidates the player's priority gate turned away
     long aiMoves = 0, aiWords = 0, aiWordsOutsideUnion = 0;
     long damageChecked = 0, damageMismatch = 0;
     long reactionUnresolved = 0, hpWentUp = 0, tooCloseAfterPush = 0;
@@ -203,6 +204,7 @@ int main(int argc, char** argv) {
             T.replayPasses        += s.replayPasses;
             T.knockdowns          += 0;      // counted from the events above
             if (fight.over()) ++T.endedInKo;
+            T.gateSkips += pch.gateSkips();      // the player's priority gate
             ++T.fights;
         }
     }
@@ -213,6 +215,7 @@ int main(int argc, char** argv) {
         T.kos, T.endedInKo, T.aiMoves, T.aiWords, T.aiWordsOutsideUnion,
         T.damageChecked, T.damageMismatch, T.reactionUnresolved, T.hpWentUp,
         T.tooCloseAfterPush, T.replayPasses, T.knockdownArmWithoutBit,
+        T.gateSkips,
     };
     for (const long v : vals) {
         const std::int32_t w = static_cast<std::int32_t>(v);
@@ -223,6 +226,7 @@ int main(int argc, char** argv) {
                 T.files, T.profilesUsed, T.fights, T.frames);
     std::printf("  hits %ld, blocks %ld, grazes %ld, KOs %ld, ended %ld\n",
                 T.hits, T.blocks, T.grazes, T.kos, T.endedInKo);
+    std::printf("  the player's priority gate turned away %ld candidates\n", T.gateSkips);
     std::printf("  AI: %ld moves, %ld words, %ld outside the 0xCFF union\n",
                 T.aiMoves, T.aiWords, T.aiWordsOutsideUnion);
     std::printf("  damage re-derived %ld, mismatches %ld; reactions unresolved "

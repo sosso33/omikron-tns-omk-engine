@@ -4742,6 +4742,12 @@ int main(int argc, char** argv) {
         fightRun.opponent = opponentId;
         fightRun.body = s;
         fightRun.startedAt = session.frameNo();
+        // read back from the CHANNEL, not from what `Fight` meant to write
+        std::printf("frame %ld: FIGHT GATE - the player's channel honours priority <= %d "
+                    "(experience %d; flag 0x400 %s), the opponent's %s\n",
+                    session.frameNo(), player->channel().priorityThreshold(), ps.experience,
+                    player->channel().priorityGated() ? "set" : "CLEAR",
+                    (fightRun.foeChannel && fightRun.foeChannel->priorityGated()) ? "SET" : "none");
         std::printf("frame %ld: FIGHT BEGINS against CHARACTERS %d - banks '%s' "
                     "vs '%s', AI level %d (profile %d), difficulty %d, "
                     "radius %.1f, scheme 3\n"
@@ -7883,6 +7889,9 @@ int main(int argc, char** argv) {
                             // states the result rather than relying on that.
                             const bool won = fightRun.fight->playerWon();
                             player->setActorState(omk::ActorState::Normal, "Actor_LoadBankList");
+                            std::printf("frame %ld: FIGHT GATE - the player's channel turned away "
+                                        "%ld candidate moves above priority %d\n", n,
+                                        player->channel().gateSkips(), fightRun.fight->gateThreshold());
                             std::printf("frame %ld: sub_445AC0 - the player %s, ACTOR_STATE %d\n",
                                         n, won ? "WON" : "LOST",
                                         static_cast<int>(player->state()));   // the CONSUMER's, not the bool

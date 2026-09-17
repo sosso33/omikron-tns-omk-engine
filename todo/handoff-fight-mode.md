@@ -98,11 +98,11 @@ requests print at frames 0, 665 and 1031, two frames after the hold begins.
 * ~~**`Fight_TickAI`'s defensive arm**~~ - **done 2026-09-17** (`fight-mode.md`
   15.11): the guard raise, the two built-in presses, and the latch clear that
   brings the guard down; `engine: melee` blocks 0 -> 24.
-* **The priority gate.** `Fight_Begin` calls `sub_45A4C0(chan, 1/0)`, setting
-  channel flag `0x400` on the player and clearing it on the opponent. The flag
-  makes `Cef_FindTransition` honour the `+212` threshold; nothing read so far
-  writes `+212`, and the port's setter demands one, so passing 0 would silently
-  drop every priority-1 and -2 candidate. Left off deliberately.
+* ~~**The priority gate.**~~ - **done 2026-09-17** (`fight-mode.md` 15.14): the
+  `+212` writer is `sub_45ACD0` (the channel base is 0x8F5920, not 0x8F5928),
+  and the threshold is the player's experience truncated through
+  0.024390243 - moves unlock with rank. Not seen changing a decision in any run
+  yet.
 * ~~**Step 5, the HUD**~~ — **done 2026-09-17**: both gauges, hidden through
   the KO replay, and `sub_447000` read and ported - a four-second STAT CARD of
   the player's properties with `IAM\SNEAK`'s initials and rank (`fight-mode.md`

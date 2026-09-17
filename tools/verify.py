@@ -12260,6 +12260,14 @@ def c_engine_fight_hud():
 
     SHOWN TO FAIL: pass mode 0 for the player's gauge and the card samples fall
     to 0.
+
+    **And the priority gate's threshold** (2026-09-17, `todo/fight-mode.md`
+    15.14): `Fight_Begin`'s `sub_45ACD0(playerChan, _ftol(exp * flt_4BC424))`,
+    experience 50 -> 1. SHOWN TO FAIL: drop the gate's `setPriorityGate(true, ...)`
+    and the log reads threshold 0. What this does NOT show is the gate changing
+    a decision: in every run exercised - the supermarket fights under three key
+    patterns and the nine probe fights - it turned away 0 candidates, because
+    nothing pressed reaches a priority-2 move.
     """
     import subprocess
     eng = os.path.join(ROOT, "engine")
@@ -12287,8 +12295,13 @@ def c_engine_fight_hud():
     labels = "".join(kv.split("=")[0] for kv in m.group(1).split())
     withCard = sum(1 for _, rows in samples if rows == "5")
     without = sum(1 for _, rows in samples if rows == "0")
-    return (labels, m.group(2)[:5], withCard > 0, without > 0, int(samples[0][0])), \
-           ("AMRVEM", "Initi", True, True, 50), \
+    # ...and the PRIORITY GATE the same `Fight_Begin` sets (fight-mode 15.14):
+    # the player's threshold from his experience, (int)(50 * flt_4BC424) = 1
+    g = re.search(r"FIGHT GATE - the player's channel honours priority <= (\d+) "
+                  r"\(experience (\d+)", out)
+    gate = (int(g.group(1)), int(g.group(2))) if g else None
+    return (labels, m.group(2)[:5], withCard > 0, without > 0, int(samples[0][0]), gate), \
+           ("AMRVEM", "Initi", True, True, 50, (1, 50)), \
            ("the stat card's labels and rank, drawn for the first four seconds and then "
             "not, beside both gauges")
 

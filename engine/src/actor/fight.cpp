@@ -486,18 +486,26 @@ bool Fight::begin(FightBody& player, const FightStats& ps,
     // runs before the channel tick in `Actor_TickPlayerAndOpponent`.
     if (player.channel) player.channel->resetInputQueue();
     if (opponent.channel) opponent.channel->resetInputQueue();
-    // **THE PRIORITY GATE IS NOT MODELLED, deliberately.** `Fight_Begin` also
-    // calls `sub_45A4C0(playerChan, 1)` and `sub_45A4C0(opponentChan, 0)`,
-    // which set and clear channel flag `0x400` - and that flag makes
-    // `Cef_FindTransition` honour the threshold at `+212` instead of taking
-    // the first match. `sub_45A4C0` writes ONLY the flag; nothing in what has
-    // been read writes `+212`, and this port's `setPriorityGate` cannot set
-    // the flag without also naming a threshold. Passing 0 would silently skip
-    // every priority-1 and -2 candidate, which is a behaviour change invented
-    // out of an unread field rather than transcribed - so the flag is left
-    // off until `+212`'s writer is found. `run_actor_states` already exercises
-    // both paths of the gate, and the corpus cannot tell them apart on the
-    // shipped data (`engine: actor states`), which is why this can wait.
+    // THE PRIORITY GATE (`todo/fight-mode.md` 15.14). `Fight_Begin` calls
+    // `sub_45A4C0(playerChan, 1)` and `sub_45A4C0(opponentChan, 0)` - channel
+    // flag 0x400, which makes `Cef_FindTransition` skip a candidate whose
+    // priority exceeds the channel's `+212` and return one that equals it -
+    // and then `sub_45ACD0(playerChan, v)`, the `+212` WRITER this note once
+    // said nobody had found (`word_8F59F4[114*chan]`: the channel records start
+    // at 0x8F5920, not at the 0x8F5928 array IDA named). `v` is the player's
+    // property 19, experience, `fild` then `fmul flt_4BC424` (0x3CC7CE0C,
+    // 0.024390243) then `_ftol` - a truncation, and the float sits just under
+    // 1/41, so 41 gives 0, 42 gives 1, 83 gives 2. So the moves a `.CTL`
+    // marks priority 1 and 2 UNLOCK with Kay'l's combat experience. The
+    // opponent's gate is off; the teardown clears both thresholds.
+    if (player.channel) {
+        const double v = static_cast<double>(ps.experience) *
+                         static_cast<double>(0.024390243f);   // flt_4BC424
+        const auto threshold = static_cast<std::uint16_t>(static_cast<std::int64_t>(v));
+        player.channel->setPriorityGate(true, threshold);
+        gateThreshold_ = static_cast<int>(threshold);
+    }
+    if (opponent.channel) opponent.channel->setPriorityGate(false, 0);
 
     // Both fighters turned to face each other, with flag 0x2 set across the
     // two calls so `Fight_FaceOpponent`'s state guard cannot refuse them.
