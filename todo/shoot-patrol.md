@@ -298,8 +298,38 @@ has run since to notice.
 **The refusal still stands for the one remaining empty**, and so does the
 reason: baselining it would assert that the player kills nothing through that
 path for ever. But the work is now much smaller than "find a new aim" — three
-of the four empties have filled themselves, and what is left is to find out
-what `('61', '237')` is and why it does not appear.
+of the four empties have filled themselves.
+
+**And `('61', '237')` is now identified — `61` is a FRAME, not opcode 61.**
+The element is a `(frame, actor)` pair, built at `verify.py:29411` by
+
+```python
+    pushes = re.findall(r"^frame (\d+): the player is pushed out of actor (\d+)'s body", o, re.M)
+```
+
+so it reads *"at frame 61 the player was pushed out of actor 237's body"* —
+the collider work of 2026-09-11, from a reader's report that robbers walked
+into his spot *"like I had no collider"*. Worth saying because the number
+invites the wrong answer: read as an opcode, 61 is `dialog.start`, which has
+nothing to do with it. The element's own note, "four of ~11: once, 237 at 61",
+means four of about eleven of the model's spheres and one push in the run.
+
+**The empty is BEHAVIOURAL, not a parse artefact.** The cheap cause was the
+rotting-scan trap — a pattern that silently matches nothing — and it is ruled
+out: `play.cpp:7160` still prints
+`"frame %ld: the player is pushed out of actor %d's ..."`, verbatim and
+matching the regex.
+
+**What is NOT established**, and the distinction is the whole question: that
+printf was shown to EXIST, not to be reachable. The guard around it is unread,
+so nobody yet knows whether the collider regressed or whether the route simply
+stopped putting the player inside a body — and the latter would make this a
+FOURTH element that filled itself, since both gunmen now die and fall where
+237 used to stand. One read of that guard settles it, and until someone does
+it neither reading should be assumed.
+
+(The identification, the ruling-out and the stated limit all come from a peer
+session working in the same tree.)
 
 Notes for whoever does it, from when the gap was larger:
 
