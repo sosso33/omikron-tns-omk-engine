@@ -148,7 +148,32 @@ which AREA 1 answers**: `player.move.wait 162` (`H_ACIDE`, drowning),
   him - the probe over "any other floor" is what does, and the canal's walk-in
   never finds one under his head.
 * The head node's point is the rest pose's, not the posed node.
-* The pitch is not yet applied to the DRAWN body (3b).
+* ~~The pitch is not yet applied to the DRAWN body~~ - **done, 3b** below.
+
+## 5. Step 3b, done — the pitch on the drawn body
+
+The body was turned by the yaw alone, and the engine turns it by **actor+288**
+- `Matrix3x3_FromEulerAngles(+416, +420, +424)`, rebuilt every frame by
+`Actors_TickAll` and written into the node's `+156` by `Actor_LoadModel`. So the
+corners, the head point, every mesh's world position AND its world rotation, and
+the `.CTL`'s bone-attached sprites, now go through `rotateEuler` with the whole
+Euler - the yaw still overridden while he boards a slider, which is that arm's
+own matrix. The swim pitch reaches the drawn body, and so does the shove's lean
+in a shoot phase, which had the same gap.
+
+Measured in the canal walk-in: the drawn head stands **6** units over the pelvis
+at pitch 272 (lying along the water) and **23** at the 340 cap, treading. The
+frame at 540 draws him upright just under the surface. Which way up he lies at
+270 is not settled here - the camera is inside the bed that early - and goes to
+the play test.
+
+`verify.py: engine: water entry` carries both, shown to fail by turning the
+drawn body by the yaw alone (the head stands ~24 over the pelvis on every line).
+
+**`engine: shoot hit` is RED and was red before this task** - at `5e3a471`, the
+merge that opened the session, with the gunmen's roots ~90 units further along
+their walk and a second gunman killed. Not the drawn body: it fails with the
+Euler and with the yaw alone alike. Recorded here, unattributed.
 
 ## 2. The steps
 
@@ -158,6 +183,7 @@ which AREA 1 answers**: `player.move.wait 162` (`H_ACIDE`, drowning),
 | 1 | the entry: the 0x8000000 mesh under his feet in state 1 -> group 300, scheme 1, state 11, camera 21; rename state 11 | **done 2026-09-17** - §3 |
 | 2 | the water moves: `MDDIVEND` (14, message 22), `MDSW2SD` (1, camera 0), `RSTAVNT`, `RSTNAGE`, `MDDIVBEG` | **done 2026-09-17** - in the canal walk-in `MDDIVEND` fires, ACTOR_STATE 14, message 22 answered by AREA 1; the other four are wired and not yet reached by a run |
 | 3 | the motion, 11..14: no gravity and no ground snap; the surface hold; the pitch | **done 2026-09-17** - §4; the pitch turns the MOTION, the drawn body is 3b |
+| 3b | the pitch on the DRAWN body: the whole Euler, actor+288 | **done 2026-09-17** - §5 |
 | 4 | the breath: the 40 s timer, `Hud_DrawBar` mode 1, message 12 | |
 | 5 | a place to swim headlessly, and the check | |
 | 6 | play | |

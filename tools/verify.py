@@ -12558,6 +12558,12 @@ def c_engine_water_entry():
     motion also goes through the whole Euler matrix in the water; mutating THAT
     left this check green - `H_WAITIN`'s root barely moves - so nothing here
     shows the pitch rotation matters, and the docstring says so.)
+
+    **And step 3b** (the pitch on the DRAWN body): the body is turned by the
+    whole Euler - actor+288 - so at the first swimming line (pitch ~272) the
+    drawn head stands under 10 units over the pelvis, lying along the water,
+    and at the 340 cap over 20. SHOWN TO FAIL: turn the drawn body by the yaw
+    alone and the head stands ~24 over the pelvis on every line.
     """
     import subprocess
     eng = os.path.join(ROOT, "engine")
@@ -12582,12 +12588,15 @@ def c_engine_water_entry():
                     r"\.CTL state \d+ '(\w*)'", out)
     if not land or not fin:
         return (bool(land), bool(fin)), (True, True), "the run must land and print the player"
-    swim = re.findall(r"swimming - ACTOR_STATE 14, .* at -?\d+ (-?[\d.]+) -?\d+, pitch (\d+)", out)
-    last = swim[-1] if swim else ("999", "0")
+    swim = re.findall(r"swimming - ACTOR_STATE 14, .* at -?\d+ (-?[\d.]+) -?\d+, pitch (\d+), "
+                      r"drawn head (-?\d+) over the pelvis", out)
+    first = swim[0] if swim else ("999", "0", "999")
+    last = swim[-1] if swim else ("999", "0", "-999")
     return (round(float(land.group(1))), "INTO THE WATER" in out and "bank group 300" in out,
             "MDDIVEND - ACTOR_STATE 14, message 22 to its handler" in out,
-            int(fin.group(1)), fin.group(2), float(last[0]) < 100.0, int(last[1])), \
-           (125, True, True, 14, "H_WAITIN", True, 340), \
+            int(fin.group(1)), fin.group(2), float(last[0]) < 100.0, int(last[1]),
+            int(first[2]) < 10, int(last[2]) > 20), \
+           (125, True, True, 14, "H_WAITIN", True, 340, True, True), \
            ("he lands on the canal bed through the surface, enters the water, MDDIVEND " \
             "posts message 22, and he ends in ACTOR_STATE 14 on H_WAITIN")
 

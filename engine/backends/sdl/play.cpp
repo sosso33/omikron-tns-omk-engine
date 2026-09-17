@@ -3176,6 +3176,7 @@ int main(int argc, char** argv) {
     bool  mirrorLive = false;         // the set's mirror is reflecting, said once
     bool  mirrorSeen = false;         // ...and has actually covered a pixel
     float playerHeadAt[3] = {0, 0, 0};   // the player's `Tete`, for subject kinds 0/1
+    float playerHeadRise = 0.0f;         // the DRAWN head over the pelvis (Y up), the swim log
     bool  playerHeadKnown = false;
     std::vector<float> playerMeshAt;     // ...and every mesh, for the shadow
     std::vector<float> playerMeshRot;    // ...and each one's world rotation, nine
@@ -8111,10 +8112,11 @@ int main(int argc, char** argv) {
                             const int ws = static_cast<int>(player->state());
                             if (ws >= 11 && ws <= 14 && n % 30 == 0)
                                 std::printf("frame %ld: swimming - ACTOR_STATE %d, .CTL '%s' group %d, at "
-                                            "%.0f %.1f %.0f, pitch %.0f, breath %s\n", n, ws,
+                                            "%.0f %.1f %.0f, pitch %.0f, drawn head %.0f over the pelvis, breath %s\n", n, ws,
                                             player->ctlStateName().c_str(), player->ctlGroupId(),
                                             player->pos()[0], player->pos()[1], player->pos()[2],
                                             double(player->eulerPitch()),
+                                            double(playerHeadRise),
                                             player->breathLeftMs() < 0.0 ? "-" :
                                                 (std::to_string(int(player->breathLeftMs())) + " ms").c_str());
                         }
@@ -16021,6 +16023,12 @@ int main(int argc, char** argv) {
                         yaw = static_cast<float>(
                             std::atan2(-bz[0], bz[2]) * 57.29577951308232);
                 }
+                // THE WHOLE EULER, not the yaw: the node's `+156` is actor+288,
+                // `Matrix3x3_FromEulerAngles(+416, +420, +424)` rebuilt each
+                // frame by `Actors_TickAll`, so the pitch `sub_4A8F30` turns a
+                // swimmer by - and the shove's lean - reach the drawn body as
+                // they reach his root motion (`todo/swimming.md` step 3b).
+                const float drawEuler[3] = {player->euler()[0], yaw, player->euler()[2]};
                 // ROTATE ABOUT THE PELVIS, not the model's origin. A `.3DO`'s
                 // meshes carry ABSOLUTE positions and the body is not built
                 // around (0,0,0): `HO1_FN`'s root `UBassin` sits at
@@ -16036,7 +16044,7 @@ int main(int argc, char** argv) {
                     const float in[3] = {c.x - playerRootXZ[0], c.y,
                                          c.z - playerRootXZ[1]};
                     float r[3];
-                    omk::rotateYaw(yaw, in, r);
+                    omk::rotateEuler(drawEuler, in, r);
                     c.x = r[0] + pp[0];
                     c.y = r[1] + pp[1] - playerFeet + rootDrop;
                     c.z = r[2] + pp[2];
@@ -16047,7 +16055,8 @@ int main(int argc, char** argv) {
                                          pose[static_cast<std::size_t>(hd)].pos[1],
                                          pose[static_cast<std::size_t>(hd)].pos[2] - playerRootXZ[1]};
                     float r[3];
-                    omk::rotateYaw(yaw, in, r);
+                    omk::rotateEuler(drawEuler, in, r);
+                    playerHeadRise = -r[1];
                     playerHeadAt[0] = r[0] + pp[0];
                     playerHeadAt[1] = r[1] + pp[1] - playerFeet + rootDrop;
                     playerHeadAt[2] = r[2] + pp[2];
@@ -16060,7 +16069,7 @@ int main(int argc, char** argv) {
                                          pose[mi].pos[1],
                                          pose[mi].pos[2] - playerRootXZ[1]};
                     float r[3];
-                    omk::rotateYaw(yaw, in, r);
+                    omk::rotateEuler(drawEuler, in, r);
                     playerMeshAt[mi * 3 + 0] = r[0] + pp[0];
                     playerMeshAt[mi * 3 + 1] = r[1] + pp[1] - playerFeet + rootDrop;
                     playerMeshAt[mi * 3 + 2] = r[2] + pp[2];
@@ -16071,7 +16080,7 @@ int main(int argc, char** argv) {
                                             ax == 2 ? 1.0f : 0.0f};
                         float qv[3], wv[3];
                         omk::qrot(pose[mi].q, e, qv);
-                        omk::rotateYaw(yaw, qv, wv);
+                        omk::rotateEuler(drawEuler, qv, wv);
                         for (int k = 0; k < 3; ++k)
                             playerMeshRot[mi * 9 + static_cast<std::size_t>(ax * 3 + k)] = wv[k];
                     }
@@ -16113,7 +16122,8 @@ int main(int argc, char** argv) {
                         ? omk::composePose(playerMeshes, *pt, player->poseFrame(), false)
                         : omk::composePose(playerMeshes, omk::NodeTracks{}, 0, false);
                     const float* pp = player->pos();
-                    const float yaw = player->facing();
+                    const float spriteEuler[3] = {player->euler()[0], player->facing(),
+                                                  player->euler()[2]};
                     const float fr = player->channelFrame();
                     ctlField.clear();
                     for (const auto& c : ctlSprites) {
@@ -16126,7 +16136,7 @@ int main(int argc, char** argv) {
                         const float in[3] = {hp.pos[0] - playerRootXZ[0], hp.pos[1],
                                              hp.pos[2] - playerRootXZ[1]};
                         float o[3];
-                        omk::rotateYaw(yaw, in, o);
+                        omk::rotateEuler(spriteEuler, in, o);
                         omk::Particle p;
                         p.pos[0] = o[0] + pp[0];
                         p.pos[1] = o[1] + pp[1] - playerFeet + lastRootDrop;
