@@ -18254,13 +18254,17 @@ def c_engine_ui():
     listed as having no oracle because pixels cannot be diffed. That was too
     quick: `tools/sim/ui.py` is deterministic and reads the same records, so
     the LOGIC has an oracle even though the drawing does not. This is that
-    diff - **28 screens, and the two implementations agree on every one**,
-    over a tree of 35 panels, 93 lists and 411 items.
+    diff - **31 screens, and the two implementations agree on every one**,
+    over a tree of 58 panels, 170 lists and 718 items. Those three counted
+    35 / 93 / 411 when this was written and were left behind by every later
+    lift; the assertion below is the number that moves, and prose beside an
+    assertion has to move with it.
 
     **The tree had to be lifted first.** A panel, its lists and their items are
     `.data` in `Runtime 2.exe`, not in `gamedata/`, so `tables/ui_widgets.json` now
-    carries them (35 panels - 28 screens plus 7 children - 93 lists and 411
-    items) exactly as the VM opcode
+    carries them (58 panels - 31 screens plus their children, 13 of them
+    reached through an item's `+44` and the rest named only from CODE - 170
+    lists and 718 items) exactly as the VM opcode
     table is carried, and `exe tables` re-derives it.
 
     **The tree links downward through the ITEM, which a first version of this
@@ -18328,13 +18332,18 @@ def c_engine_ui():
     which point `bound` empties and the tuple goes to `()`. That is a slice of
     its own and is not pretended to be done here.
 
-    ### RED since 2026-09-06, for a THIRD divergence nobody has resolved
+    ### The THIRD divergence - RESOLVED, and the record of it kept
 
-    Measured 2026-09-07 on a clean tree at `a5b1807`, so this is not a
-    consequence of any later change: `disagree` is **9**, not 0, and the nine
-    are the shops - screens 21..28 and 32 (20 agrees). They differ in one
-    field, the current list's selection right after the open: the PORT says
-    row **0** and `tools/sim/ui.py` says row **1**.
+    **`disagree` is 0 again** as of 2026-09-17, so what follows is history
+    rather than a standing fault; it is kept because the next census drift
+    will look exactly like it did and the difference matters.
+
+    Measured 2026-09-07 on a clean tree at `a5b1807`, so it was not a
+    consequence of any later change: `disagree` was **9**, not 0, and the nine
+    were the shops - screens 21..28 and 32 (20 agreed). They differed in one
+    field, the current list's selection right after the open: the PORT said
+    row **0** and `tools/sim/ui.py` said row **1**. The shop work of
+    2026-09-14/15 closed it from both ends; nothing here had to be relaxed.
 
     What moved is `dedd3da` (2026-09-06), "a remembered selection that is no
     longer pickable moves off it" - a rule added to `UiWalk::settle()` and NOT
@@ -18404,8 +18413,20 @@ def c_engine_ui():
     # comparison and its two named cases did not move.
     # ...and -> 57/166/698/627/60/106/57 on 2026-09-15, MULTIPLAN's two
     # CODE_NAMED children and its panel again as the examine box's `+44`.
+    # ...and -> 58/170/718/645/62/108/58 on 2026-09-17: the MEMO READER
+    # `0x004DEFF0`, lifted at `1093e9c` as the memory page's CODE_NAMED child.
+    # Every delta is that page's own four lists, and they are named here
+    # because moving a census without re-reading what it counts is what this
+    # family of checks keeps getting wrong: +1 panel; +4 lists (the tab
+    # column, the rows, the body box, the echo bar); +20 items (8 + 9 + 1 + 2);
+    # +18 SELECTABLE of those 20, the two unselectable being the box and the
+    # clock; +2 hooked lists (the rows' `0x0049C050`, the box's scroller
+    # `0x0042A9A0`); +2 on the default walk (tab column and echo bar); and +1
+    # settling on a list in range. `disagree` is 0 and `known` is unchanged,
+    # so the WALK agreed throughout - which is why this is a re-baseline and
+    # not a repair.
     return (head, len(ref), disagree, known), \
-           ((57, 166, 698, 627, 60, 106, 57, 0), 31, 0, ((7, 0, 3), (9, 0, 4))), \
+           ((58, 170, 718, 645, 62, 108, 58, 0), 31, 0, ((7, 0, 3), (9, 0, 4))), \
            "panels (31 screens + 15 children - 13 reached through an item +44 and TWO named only from CODE, the verb panel 0x004DEEB8 and the examine page 0x004DEF20, which `sub_42A370` installs from a callback so nothing in the tree points at them), " \
            "lists, items, SELECTABLE items - which FELL by ten once the " \
            "shops' branch was resolved and each of them started hiding the " \
