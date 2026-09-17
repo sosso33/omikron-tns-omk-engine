@@ -12036,6 +12036,20 @@ def c_engine_fight_separation():
     player's fight body is filled and the overlap count and `|dy|` both jump -
     the fighters standing inside each other again, held apart on paper by a
     vertical gap that is only a change of units.
+
+    **And the OPENING gap** (2026-09-17, `todo/fight-mode.md` 15.8e): the first
+    sample's horizontal distance, floored to a ten. `fight.begin` runs in the
+    script pump before the staged pass carries a finished program's `drawAt`
+    into `at`, and `beginMelee` read `at` - the approach program's path START -
+    so the robber began **470** units (11.9 m) away with `SMbox45` between the
+    two, where the approach had left him 59 (1.5 m) from the player. That gap is
+    what every collision attempt of 15.8a ran into. SHOWN TO FAIL: read `s->at`
+    instead of `foeAt` and the first column reads 460.
+
+    RE-BASELINED with it: `|dy|` 1 -> **3** and the minimum gap 43 -> **45**.
+    The robber now keeps the height his approach clip ended on (-29, against
+    the path start's -31), and a fight begun 1.5 m apart takes a different
+    course from one begun 11.9 m apart. Neither is the 41-unit fault above.
     """
     import subprocess
     eng = os.path.join(ROOT, "engine")
@@ -12070,11 +12084,13 @@ def c_engine_fight_separation():
     inside = sum(1 for h, _ in rows if h < kOverlap)
     maxDy = max(v for _, v in rows)
     minH = min(h for h, _ in rows)
-    return (len(rows) >= 5, inside, int(round(maxDy)), int(minH)), \
-           (True, 0, 1, 43), \
-           ("no sample of a real fight has the two fighters closer than their "
+    opening = int(rows[0][0] // 10) * 10
+    return (opening, len(rows) >= 5, inside, int(round(maxDy)), int(minH)), \
+           (50, True, 0, 3, 45), \
+           ("the fight opens where the approach left the robber, 1.5 m away; "
+            "no sample of a real fight has the two fighters closer than their "
             "separation radius, and their two `y` values now mean the same "
-            "thing - 1 unit apart, not 41")
+            "thing - 3 units apart, not 41")
 
 def c_engine_fight_library():
     r"""`omk-play`: a fight loads `fight.scx`, its OWN sound and sprite library.
@@ -12111,6 +12127,12 @@ def c_engine_fight_library():
 
     SHOWN TO FAIL: drop the `fight.SCX` load and the failures jump while the
     played count falls to 0.
+
+    RE-BASELINED 2026-09-17, distinct ids 5 -> **7**: the fight now opens where
+    the approach left the robber, 1.5 m away rather than 11.9 m
+    (`todo/fight-mode.md` 15.8e), so the same key cycle lands blows from the
+    first second instead of spending it on his walk in, and more of both
+    fighters' effects are heard. The player-only figure (3) was NOT re-measured.
     """
     import subprocess
     eng = os.path.join(ROOT, "engine")
@@ -12150,7 +12172,7 @@ def c_engine_fight_library():
     # by `ELECMB02`/`ELECMB03`/`MVT02` and reaches 3.
     ids = {int(m) for m in re.findall(r"audio: ctl-effect\s+\S+\s+s\s+\((\d+),", out)}
     return (loaded, fightSprites, failures, played > 0, len(ids)), \
-           (True, 16, 0, True, 5), \
+           (True, 16, 0, True, 7), \
            ("`Fight_Begin`'s own `Game_Start(\"fight.scx\")`: its 16 sprites "
             "reach the table, no effect record fails its lookup, and BOTH "
             "fighters' channels are drained - the punches landing, the fall "

@@ -4614,7 +4614,17 @@ int main(int argc, char** argv) {
         // this harness did, 79 units apart for 245 frames.
         fightRun.player.externallyTicked = true;
         fightRun.foe = omk::FightBody{};
-        fightRun.foe.x = s->at[0]; fightRun.foe.y = s->at[1]; fightRun.foe.z = s->at[2];
+        // WHERE HIS PROGRAM LEFT HIM, not where it began. `fight.begin` runs
+        // inside the script pump, BEFORE this frame's staged pass notices the
+        // program has ended and carries `drawAt` over into `at` - so `at` is
+        // still the program's placement (the path START) and `drawAt` is the
+        // body the engine's actor record holds: `Anim_RootDelta` has summed
+        // the clip into +244 all along. Reading `at` put the supermarket's
+        // robber at 'D1BassinP2''s start, 11.9 m away with `SMbox45` between
+        // them, where the approach had left him 1.5 m from the player
+        // (`todo/fight-mode.md` 15.8e). The same rule `npcBody` uses.
+        const float* foeAt = s->progRan ? s->drawAt : s->at;
+        fightRun.foe.x = foeAt[0]; fightRun.foe.y = foeAt[1]; fightRun.foe.z = foeAt[2];
         fightRun.foe.yaw = s->facing;
         fightRun.foe.radius = bodyRadius(s->mo->meshes);
         fightRun.foe.channel = fightRun.foeChannel.get();

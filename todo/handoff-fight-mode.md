@@ -110,9 +110,13 @@ requests print at frames 0, 665 and 1031, two frames after the hold begins.
   (`sub_413450`/`sub_416570`/`sub_413440`, a different family from the follow
   camera's `sub_417070`), so the fight camera can pass through walls; and the
   throw swing's length, because `sub_45ACF0` has no port.
-* **The opponent's first second** on the nameless clipless entries 208/228 with
-  intent 104. At 12 m apart the approach branch is legitimate, but it wants
-  checking against `Fight_TickAI` rather than assuming.
+* ~~**The opponent's first second**~~ on the nameless clipless entries 208/228
+  - **gone 2026-09-17**: the 12 m that made it legitimate was the port's own.
+  `beginMelee` read the approach program's path START instead of where the
+  program left him, 1.5 m from the player (`fight-mode.md` 15.8e). The fight
+  now opens on `HGUARD` against `HGUARD`, and the opponent's WALL collision
+  (15.8a) is worth re-trying, since every attempt stalled on the box that gap
+  put between them.
 
 ## 5. Traps that cost time in this session
 

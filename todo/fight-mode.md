@@ -859,6 +859,41 @@ block) is the same question seen from the other side.
 **Order.** 15.8d first: it is upstream of 15.8a: it is a gameplay fault, not a framing one, and it is
 the one that can put an opponent somewhere the fight cannot continue.
 
+### 15.8e FIXED 2026-09-17 — the fight began where the approach STARTED
+
+**This is the "upstream question" 15.8a ends on, and the answer is the port's.**
+The two fighters were never meant to open 11.9 m apart with `SMbox45` between
+them. The played log says so in two lines of the same frame:
+
+```
+frame 379: FIGHT BEGINS against CHARACTERS 48 ...
+    bodies: player 14995 -32 1856 facing 0, opponent 15132 -31 1415 facing 197
+  pose: actor 48 BBC_FN - its program ended; he stays where it left him (14959 -29 1902)
+```
+
+The approach program `3DCombat2` walks the robber along `D1BassinP2` from
+(15134, 1408) to **(14959, 1902) - 1.5 m from the player**. But `fight.begin`
+runs inside the script pump, BEFORE that frame's staged pass notices the program
+has ended and carries `drawAt` into `at`, and `beginMelee` read `at` - which
+while a program runs is re-asserted to the program's PLACEMENT, the path start.
+So the fight began at the start of a walk the player had just watched finish.
+The engine's actor record has no such split: `Anim_RootDelta` sums the clip into
+`+244` every tick, and that is what `Fight_Begin` reads.
+
+Fixed by the rule `npcBody` already uses, `progRan ? drawAt : at`. Over the same
+run the fight now opens **59 apart (1.50 m)**, both on `HGUARD`, with **AI moves
+0** - the clipless approach entries 208/228 with intent 104 that the handoff
+listed as "the opponent's first second" were the AI closing a distance that
+should not have existed, and they are gone with it. `verify.py: engine: fight
+separation` asserts the opening gap (50, floored; 460 with the bug).
+
+**What this does to 15.8a.** Every collision attempt failed the same way,
+stuck 9.2 m out against a box - and the box was only in the way because of this.
+The walker wiring is worth re-trying now, from the patches outside the tree;
+the reader's *"the AI being ejected outside the combat zone"* is still a real
+fault (nothing stops a knockback at a wall), but the reason not to wire it has
+very likely gone.
+
 ### 15.8a ATTEMPTED 2026-09-16 — the reading is settled, the wiring is NOT
 
 **Settled from the engine, and this part is not in doubt.**
