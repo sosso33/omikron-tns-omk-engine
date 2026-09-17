@@ -75,6 +75,67 @@ int findMeshContaining(const std::vector<Mesh>& meshes, const char* wanted,
     return found;
 }
 
+std::vector<std::string> MeshNameIndex::shadowNames() {
+    std::vector<std::string> v;
+    v.reserve(static_cast<std::size_t>(kShadowBoneCount) + 2);
+    for (int i = 0; i < kShadowBoneCount; ++i) v.emplace_back(kShadowBones[i].bone);
+    // `Slider_PlaceShadow`'s two, which are not in the bone table because the
+    // crowd's shadow is one whole node and not a per-bone blob.
+    v.emplace_back("Piedg");
+    v.emplace_back("Piedd");
+    return v;
+}
+
+void MeshNameIndex::build(const std::vector<Mesh>& meshes,
+                          const std::vector<std::string>& names) {
+    const std::size_t n = meshes.size();
+    parent_.assign(n, -1);
+    // Every parent ID resolved to an index ONCE, taking the LOWEST index among
+    // duplicates - which is what `for (j = 0..n) if (id == pid) break;` took.
+    for (std::size_t i = 0; i < n; ++i) {
+        const std::int32_t pid = meshes[i].parent;
+        for (std::size_t j = 0; j < n; ++j)
+            if (meshes[j].id == pid) { parent_[i] = static_cast<int>(j); break; }
+    }
+    names_.clear();
+    names_.reserve(names.size());
+    for (const auto& w : names) {
+        Name e;
+        e.wanted = w;
+        for (std::size_t i = 0; i < n; ++i)
+            if (std::string_view(meshes[i].name).find(w) != std::string_view::npos)
+                e.match.push_back(static_cast<int>(i));   // ascending
+        names_.push_back(std::move(e));
+    }
+    missing_ = 0;
+    built_ = true;
+}
+
+// The walk, on resolved indices. The 64-step guard is the original's, and it
+// decides rather than merely guards: a chain deeper than 64 is cut short and
+// the mesh reads as NOT under the root.
+bool MeshNameIndex::under(int i, int root) const {
+    if (root < 0) return true;
+    for (int guard = 0; guard < 64 && i >= 0; ++guard) {
+        if (i == root) return true;
+        i = parent_[static_cast<std::size_t>(i)];
+    }
+    return false;
+}
+
+int MeshNameIndex::find(std::string_view wanted, int underRoot) const {
+    for (const auto& e : names_) {
+        if (e.wanted != wanted) continue;
+        // BACKWARDS: the first match under the root, walking down from the
+        // highest index, is the LAST match the full scan would have kept.
+        for (std::size_t k = e.match.size(); k-- > 0;)
+            if (under(e.match[k], underRoot)) return e.match[k];
+        return -1;
+    }
+    ++missing_;   // a name nobody built for - a caller fault, not an answer
+    return -1;
+}
+
 namespace {
 
 // Append the five shaded corners as the four-triangle fan `Shadow_EmitBoneBlob`

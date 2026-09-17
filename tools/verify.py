@@ -13575,6 +13575,87 @@ def c_engine_pose_equivalence():
         "geometry differs in any field from the copying version"
 
 
+def c_engine_mesh_name_index():
+    r"""`MeshNameIndex` answers a shadow bone's mesh exactly as the full name
+    scan did, and in a thirtieth of the time (todo/handoff-vita.md §2 item 1).
+
+    `findMeshContaining` (o3de/shadow.cpp) resolves a shadow bone by NAME on the
+    LAST match, scoped to one LOD skeleton by an ancestry walk. It is called for
+    every bone of every drawn body - twice a bone on the fitted path, the ground
+    box then the blob - and every call reads EVERY mesh name in the model, which
+    is the `memchr`/`strlen`/`memcmp` the Vita profile charges 0.09 ms a frame.
+    `MeshNameIndex` is built once per model: each parent id resolved to an index
+    once, and per name the matching indices ascending, walked BACKWARDS so the
+    first hit under the root is the last match the scan would have kept.
+
+    **Read what this check does and does not compare.** `meshidx_equiv` drives
+    three functions: `reference` (the scan, transcribed), `findMeshContaining`
+    (the shipped scan) and the index. The first two are the SAME algorithm, so
+    that pair asserts nothing and is kept only so a future change to the shipped
+    scan shows up here; the real comparison is the index against `reference`.
+
+    The corpus is the real models plus eight synthetic arrays aimed at one rule
+    each - DUPLICATE ids (the lowest index must win the parent lookup), a parent
+    id at no index, a mesh that is its own parent, a two-mesh cycle, a chain 70
+    deep so the 64-step guard decides the answer, four LOD skeletons side by
+    side, the empty array and a single mesh - crossed with every root (-1, -2,
+    each mesh index, and two off the end) and 15 names including the EMPTY
+    string, which `string_view::find` matches at every mesh, and one longer than
+    the 21-byte field. `missing` counts a `find` for a name the index was not
+    built for, which is a caller fault and not an answer.
+
+    Measured 2026-09-17, quiet machine, per call: PSH_FN 924 ns scan -> 31 ns
+    index, FSH_FN 871 -> 32, HO1_FN 106 -> 16, JEN_FNM 125 -> 16. The timings
+    are NOT asserted (machine load moves them; CLAUDE.md §4) - exactness is.
+
+    Also recorded, because it was the plan's stated cause and is refuted: the
+    ancestry walk's per-level array scan is NOT the cost. Replacing it with a
+    sorted id -> index map is exactly equivalent over this same corpus and
+    SLOWER - PSH_FN 852-930 -> 1145-1178 ns, HO1_FN 102 -> 204-213 - because
+    bone chains are shallow, so the sort never earns itself back.
+
+    SHOWN TO FAIL, 2026-09-17, four mutations of `MeshNameIndex`, each restored
+    to 0: walking the match list forwards (the first match, not the last) 201
+    mismatches; the parent lookup keeping the last duplicate id instead of the
+    lowest 201; the guard at 65 instead of 64 **8**, caught only by the 70-deep
+    chain; and `root < -1` for the unscoped case **8**.
+    """
+    import subprocess
+    eng = os.path.join(ROOT, "engine")
+    if not os.path.isdir(eng):
+        return ("skipped",), ("skipped",), "engine/ absent"
+    b = subprocess.run(["make", "-s", "build/meshidx_equiv"], cwd=eng,
+                       capture_output=True, text=True)
+    binp = os.path.join(eng, "build", "meshidx_equiv")
+    if b.returncode != 0 or not os.path.exists(binp):
+        return ("build failed",), ("built",), "engine/ must build"
+    models = []
+    for stem in ("PSH_FN", "FSH_FN", "HO1_FN", "JEN_FNM"):
+        path = omkpaths.data("MESHES/PERSOS/%s.3DO" % stem)
+        if not os.path.exists(path):
+            return ("skipped",), ("skipped",), "%s absent" % stem
+        models.append(path)
+    r = subprocess.run([binp] + models, capture_output=True, text=True)
+    rows = re.findall(r"^(\S+) +(\d+) meshes +(\d+) calls +(\d+) mismatches +(\d+) missing",
+                      r.stdout, re.M)
+    tail = re.findall(r"^(?:calls (\d+)|mismatches (\d+)|missing (\d+))$", r.stdout, re.M)
+    # A parse that reads nothing must fail AS A PARSE, not answer (CLAUDE.md 1)
+    if len(rows) != 12 or len(tail) != 3:
+        return (len(rows), len(tail)), (12, 3), \
+               "meshidx_equiv output parsed - the tool's format changed"
+    got = tuple((n, int(m), int(c), int(bad), int(miss)) for n, m, c, bad, miss in rows)
+    return got + (int(tail[0][0]), int(tail[1][1]), int(tail[2][2])), \
+        (("duplicate-ids", 6, 150, 0, 0), ("absent-parent", 3, 105, 0, 0),
+         ("self-parent", 3, 105, 0, 0), ("two-cycle", 3, 105, 0, 0),
+         ("deep-chain-70", 71, 1125, 0, 0), ("four-lods", 16, 300, 0, 0),
+         ("empty", 0, 60, 0, 0), ("one-mesh", 1, 75, 0, 0),
+         ("PSH_FN.3DO", 76, 1200, 0, 0), ("FSH_FN.3DO", 76, 1200, 0, 0),
+         ("HO1_FN.3DO", 19, 345, 0, 0), ("JEN_FNM.3DO", 20, 360, 0, 0),
+         5130, 0, 0), \
+        "per array: meshes, (name, root) pairs compared, calls where the index " \
+        "disagrees with the full scan, and finds for a name it was not built for"
+
+
 def c_engine_gpu_present():
     r"""An adventure frame nothing is drawn over is dithered and presented on the
     GPU, and gives the bytes the CPU round trip gave (todo/optimization.md 4b).
@@ -36844,6 +36925,7 @@ SLOW = [
     ("engine: ground grid", c_engine_ground_grid, "todo/optimization.md 9; actor/walk.h"),
     ("engine: gpu present", c_engine_gpu_present, "todo/optimization.md 4; backends/vulkan/shaders/present.frag"),
     ("engine: pose equivalence", c_engine_pose_equivalence, "todo/optimization.md 10; actor/pose.h"),
+    ("engine: mesh name index", c_engine_mesh_name_index, "todo/handoff-vita.md 2; o3de/shadow.h"),
     ("engine: sweep grid", c_engine_sweep_grid, "todo/optimization.md 11; o3de/collision.h"),
     ("engine: props", c_engine_props, "todo/omk-play"),
     ("sprite ids scene-local", c_sprite_ids_are_scene_local, "docs/ASSETS"),

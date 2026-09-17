@@ -42,6 +42,7 @@
 
 #include <cstdint>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace omk {
@@ -139,6 +140,70 @@ std::vector<int> shadowBonesFor(int detail);
 // -> the mesh index, or -1.
 int findMeshContaining(const std::vector<Mesh>& meshes, const char* wanted,
                        int underRoot = -1);
+
+// THE SAME ANSWER, WITHOUT RE-READING THE NAMES EVERY FRAME.
+//
+// `findMeshContaining` above is called for every shadow bone of every drawn
+// body, twice a bone on the fitted path (the ground box, then the blob), and
+// each call reads EVERY mesh name in the model: `std::string_view(name)` is a
+// `strlen` and `.find` is a `memchr`/`memcmp`, which is where
+// `todo/handoff-vita.md` §1 finds 0.09 ms a frame. Measured per call on this
+// M1 (`meshidx_equiv`): 852-930 ns on a 76-mesh crowd model, 102 ns on a
+// 19-mesh hero, against **57 ns** answered from a table.
+//
+// Note what is NOT the cost, because the handoff said it was and the
+// measurement refuted it: the ancestry walk turning a parent ID into an index
+// by scanning the array. Replacing that with a sorted map is exactly
+// equivalent and SLOWER - 1145-1178 ns on the crowd model - because bone
+// chains are shallow, so the sort never earns itself back. The name scan is
+// the cost, and only remembering the answer removes it.
+//
+// So this is built ONCE per model, for a fixed set of names (the shadow path
+// has one: `kShadowBones` plus the crowd's two feet), and it holds
+//
+//   * every parent id resolved to an index once, so a walk step is a lookup;
+//   * per name, the matching mesh indices in ASCENDING order.
+//
+// `find` then walks one short list BACKWARDS and returns the first entry
+// under the root, which is the same answer as scanning the whole array and
+// keeping the last match. Every rule of the original is kept: the substring
+// test, the last match, the lowest index among duplicate ids, and the 64-step
+// guard that bounds a cycle and cuts a chain deeper than 64.
+//
+// **It must be REBUILT if the mesh array is replaced** - it stores indices,
+// not pointers, so a stale one answers about a model that is gone. Nothing
+// here can detect that: build it where the array is loaded and destroy it
+// with the array. That is why the index is not a cache hidden inside
+// `findMeshContaining`, which cannot know when a model is evicted.
+class MeshNameIndex {
+  public:
+    // `names` are the substrings that will ever be asked for. A `find` for
+    // anything else returns -1 and sets nothing on fire, but it is a caller
+    // fault and `missing()` counts it.
+    void build(const std::vector<Mesh>& meshes, const std::vector<std::string>& names);
+
+    // The names the shadow path ever asks for: `kShadowBones`' ten, plus the
+    // crowd's two feet. An index built with this serves every `find` the
+    // viewer makes, and `missing()` staying 0 in `meshidx_equiv` is what says
+    // the two lists have not drifted apart.
+    static std::vector<std::string> shadowNames();
+
+    // -> the mesh index, or -1. Same contract as `findMeshContaining`.
+    int find(std::string_view wanted, int underRoot = -1) const;
+
+    bool built() const { return built_; }
+    long missing() const { return missing_; }
+    std::size_t meshCount() const { return parent_.size(); }
+
+  private:
+    bool under(int i, int root) const;
+
+    struct Name { std::string wanted; std::vector<int> match; };
+    std::vector<Name>  names_;
+    std::vector<int>   parent_;     // mesh index -> parent's mesh INDEX, or -1
+    bool               built_ = false;
+    mutable long       missing_ = 0;
+};
 
 // THE STREET CROWD's shadow, and it is a different mechanism -
 // `Slider_PlaceShadow` (0x00467F50). `Sliders_Tick`'s walkers get ONE whole

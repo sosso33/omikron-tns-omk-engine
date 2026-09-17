@@ -962,6 +962,68 @@ little, as the grid's cells hold most of it. A capped A/B in play is owed.
 instead of its Z - 2474 / 1490 / 360 / 558 / 2360 / ... mismatching sweeps in
 the six rows; restored by editing back, green.
 
+### 13. `findMeshContaining` - the cause in the plan was WRONG (2026-09-17)
+
+`todo/handoff-vita.md` §2 item 1 asks for "`findMeshContaining` searching by
+NAME every frame (0.09 ms): an index per model, built once". The index is
+right; the *reason* the file gives for the cost is not, and the first attempt
+was aimed at the wrong half.
+
+**What the function does.** A shadow bone is resolved by NAME, on the LAST
+match, scoped to one LOD skeleton by an ancestry walk - and the walk turned
+each parent ID into an index by scanning the whole mesh array, so one call was
+O(matches x depth x meshes). That quadratic walk is the obvious target and it
+is **not the cost**.
+
+**Attempt 1, exact and REFUTED by measurement.** The walk moved onto a sorted
+id -> first-index map built once per call (kept in
+`scratchpad/shadow.cpp.idindex-rejected`). Exactly equivalent - 0 mismatches
+over 5490 calls including duplicate ids, an absent parent, a self-parent, a
+two-mesh cycle and a 70-deep chain past the 64-step guard - and **slower**,
+three runs each, per call:
+
+| | scan (old) | sorted map |
+|---|---|---|
+| PSH_FN, 76 meshes | 852-930 ns | **1145-1178** |
+| HO1_FN, 19 meshes | 102 ns | **204-213** |
+
+Bone chains are shallow, so `O(N log N)` a call never earns itself back.
+Reverted the same hour.
+
+**What the cost actually is.** The NAME SCAN: every call reads every mesh name
+in the model, and `std::string_view(m.name)` is a `strlen` with `.find` a
+`memchr`/`memcmp` - which is exactly what the Vita profile already said
+(`handoff-vita.md` §1 lists `memchr`/`strlen`/`memcmp` from
+`findMeshContaining`, not self time). Reading the profile properly would have
+skipped attempt 1. Only remembering the answer removes it.
+
+**Attempt 2, kept.** `omk::MeshNameIndex` (`o3de/shadow.{h,cpp}`), built once
+per model for `MeshNameIndex::shadowNames()` - the ten `kShadowBones` plus the
+crowd's two feet. It resolves every parent id to an index once and keeps, per
+name, the matching indices ascending; `find` walks one short list BACKWARDS, so
+the first hit under the root is the last match the full scan kept. Per call,
+quiet machine: PSH_FN 924 -> **31 ns**, FSH_FN 871 -> 32, HO1_FN 106 -> 16,
+JEN_FNM 125 -> 16.
+
+`engine/tools/meshidx_equiv.cpp` drives the index against the scan transcribed
+verbatim, over the four real models and eight synthetic arrays each aimed at
+one rule, crossed with every root (-1, -2, each mesh index, two off the end)
+and 15 names including the EMPTY string, which matches every mesh, and one
+longer than the 21-byte field: **0 mismatches in 5130 calls, 0 missing**.
+`verify.py: engine: mesh name index`. SHOWN TO FAIL four ways, each restored to
+0: the match list walked forwards 201, the parent lookup keeping the last
+duplicate id 201, the guard at 65 **8** (only the 70-deep chain sees it), and
+`root < -1` for the unscoped case **8**.
+
+**IT HAS NO CONSUMER YET, and that is the honest state.** `play.cpp` - which
+holds all three call sites and owns the mesh arrays - belonged to another
+session in the same working tree, so the index ships unused and the frame is
+not faster by a nanosecond. The adoption is written out edit by edit in
+[`pending/vita-meshidx-playcpp.md`](pending/vita-meshidx-playcpp.md), including
+the trap (a stale index after `player.become`) and how to show it failing.
+**Nothing here may be quoted as a frame saving**: the numbers are per call from
+a tool, and no capped A/B has been run.
+
 ### 12. The crowd lighting - looked at, NOT changed (2026-09-14)
 
 `applyLights` was 316 samples of the step-10 standing profile. Measured first:

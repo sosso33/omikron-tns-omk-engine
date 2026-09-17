@@ -20,7 +20,7 @@ adds **one**. Counting commits ran this number to 13 when about nine tasks had
 been finished, which would have called for a half-hour sweep long before the
 rule intends one.
 
-**tasks since the last full sweep: 5** (2026-09-17: SWIMMING - the reader's own
+**tasks since the last full sweep: 6** (2026-09-17: THE VITA PORT, item 1 of `todo/handoff-vita.md` §2 - `omk::MeshNameIndex`, one commit, `optimization.md` step 13. Verified with `--only` over `engine: mesh name index` (new, shown to fail four ways) and the three shadow families, which cannot move because the index has **no consumer**: `play.cpp` was held by another session in the same tree, so the adoption is handed over in `pending/vita-meshidx-playcpp.md` and the frame is not faster yet.) (2026-09-17: SWIMMING - the reader's own
 item, `todo/swimming.md`, steps 0 to 5 in six commits: the entry, the water
 moves, the motion `sub_4A8F30`, the pitch on the drawn body, the breath gauge
 (`Hud_DrawBar` mode 1, the port's last unported arm of it) and the swim itself.

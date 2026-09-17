@@ -90,8 +90,20 @@ the port ADDS is what to remove first.
      bodies never tie**: measured, `PSH_FN` has 3 coincident faces at rest
      (`tie_equiv`'s static losers), `HO1_FN` has 0. The rule has to be derived,
      not guessed;
-   * `findMeshContaining` searching by NAME every frame (0.09 ms): an index
-     per model, built once;
+   * ~~`findMeshContaining` searching by NAME every frame (0.09 ms): an index
+     per model, built once~~ - **the index is BUILT and proven, and it is not
+     wired up** (2026-09-17, `optimization.md` step 13). `omk::MeshNameIndex`
+     answers in 31 ns against the scan's 924 on a crowd model, 0 mismatches in
+     5130 calls against the scan transcribed verbatim, shown to fail four ways;
+     `verify.py: engine: mesh name index`. The three call sites are in
+     `play.cpp`, which another session held, so it has **no consumer** and the
+     frame is unchanged - apply
+     [`pending/vita-meshidx-playcpp.md`](pending/vita-meshidx-playcpp.md) and
+     then measure, because the 0.09 ms is a profile attribution and has never
+     been confirmed saved. Note also what this refutes: the cost is the NAME
+     SCAN, not the ancestry walk this file's wording points at - replacing the
+     walk is exactly equivalent and SLOWER (1145 ns against 852), because bone
+     chains are shallow;
    * the per-frame allocations the tie's tables make (~10 MB across bodies).
 2. **Make the remaining work cheaper without changing a result**:
    * **share poses**: crowd bodies often play the same clip at the same frame
