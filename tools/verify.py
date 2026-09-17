@@ -11964,6 +11964,12 @@ def c_engine_fight_letterbox():
     SHOWN TO FAIL: drop `if (holdEditCam && fightRun.active)` from the
     clear-list and frame 500 reads 0 lit on both edge rows.
 
+    **And the KNOCK-OUT brings the bars back** (2026-09-17, `todo/fight-mode.md`
+    15.13): `Screen_Fade(1)` fires the frame the KO counter rises (504 in this
+    run) and `Screen_Fade(0)` when the replay passes run out (626), so frame 530
+    - inside the replay - has both edge rows dark again. SHOWN TO FAIL: drop the
+    `startBlackFade(true)` and frame 530's edge rows read 640.
+
     RE-BASELINED 2026-09-17, the middle row 640 -> **625**: the fight HUD
     (`todo/fight-mode.md` 15.5) draws the two gauges' black frames down the
     screen edges, and row 240 crosses them at x 17..20 / 27..30 and
@@ -11983,7 +11989,7 @@ def c_engine_fight_letterbox():
     tmp = tempfile.mkdtemp()
     rows = {}
     try:
-        for n in (300, 500):
+        for n in (300, 500, 530):
             out = os.path.join(tmp, "f%d.bin" % n)
             subprocess.run(
                 [play, fr, os.path.join(ROOT, "tables"),
@@ -12000,10 +12006,11 @@ def c_engine_fight_letterbox():
                             for y in (0, 240, H - 1))
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
-    if rows.get(300) is None or rows.get(500) is None:
-        return ("no render",), ("2 frames",), "both frames must render"
-    return (rows[300][0], rows[300][2], rows[500][0], rows[500][1], rows[500][2]), \
-           (0, 0, 640, 625, 640), \
+    if rows.get(300) is None or rows.get(500) is None or rows.get(530) is None:
+        return ("no render",), ("3 frames",), "all three frames must render"
+    return (rows[300][0], rows[300][2], rows[500][0], rows[500][1], rows[500][2],
+            rows[530][0], rows[530][2]), \
+           (0, 0, 640, 625, 640, 0, 0), \
            ("the approach cutscene keeps its bars and the FIGHT does not - "
             "the middle row is quoted so a black frame cannot pass by "
             "having no bars either")
@@ -12065,6 +12072,9 @@ def c_engine_fight_separation():
     reading `Actor_LoadBankList` then showed the engine lands on 1 too.
 
     RE-BASELINED with it: `|dy|` 1 -> **3** and the minimum gap 43 -> **45**.
+    And `|dy|` 3 -> **1** again the same day (`todo/fight-mode.md` 15.13): the
+    robber's height now follows his walker's floor, -33 against the player's -32,
+    instead of the clip's end height of -29.
     The robber now keeps the height his approach clip ended on (-29, against
     the path start's -31), and a fight begun 1.5 m apart takes a different
     course from one begun 11.9 m apart. Neither is the 41-unit fault above.
@@ -12107,11 +12117,11 @@ def c_engine_fight_separation():
     lost = re.search(r"sub_445AC0 - the player (\w+), ACTOR_STATE (\d+)", r.stdout + r.stderr)
     teardown = (lost.group(1), int(lost.group(2))) if lost else None
     return (opening, len(rows) >= 5, inside, int(round(maxDy)), int(minH), teardown), \
-           (50, True, 0, 3, 45, ("LOST", 1)), \
+           (50, True, 0, 1, 45, ("LOST", 1)), \
            ("the fight opens where the approach left the robber, 1.5 m away; "
             "no sample of a real fight has the two fighters closer than their "
             "separation radius, and their two `y` values now mean the same "
-            "thing - 3 units apart, not 41")
+            "thing - 1 unit apart, not 41")
 
 def c_engine_fight_collision():
     r"""`omk-play`: the melee OPPONENT collides with the set (`todo/fight-mode.md` 15.8a).

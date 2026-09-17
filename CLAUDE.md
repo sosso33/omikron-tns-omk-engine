@@ -359,6 +359,18 @@ stopped guarding the moment the name changed, and nothing would have said so.
   differing component is zero either way). **Assert that the file changed, name
   the object files explicitly, and check the mutated run's OUTPUT differs -
   not just that the check went red.**
+
+  **And a restore can be invisible to `make` (2026-09-17).** macOS ships GNU
+  Make **3.81**, which compares modification times to the WHOLE SECOND. A
+  mutation built by a check, then restored by an edit in the same second as
+  that compile, leaves an object file that is "not older" than its source - so
+  every later build keeps the MUTATED code while the source, the diff and the
+  commit are all right. `fight.cpp`'s guard-removal mutation did exactly that:
+  the restore landed 0.38 s after `fight.o`, and every fight check for the next
+  hour measured an AI with no guard. It surfaced only because one later run
+  printed the mutated row's numbers again. **After restoring a mutation, `touch`
+  the file and rebuild before running anything** - and a check re-run that
+  reproduces the mutation's exact figures is the tell.
 * **A CHECK MUST BUILD THE BINARY IT MEASURES.** `verify.py: dialogue camera
   blend` ran `make build/dlgcam` - its probe - and then invoked `omk-play`,
   which it had not built. Mutating the blend and re-running left the check

@@ -156,3 +156,13 @@ channel's tick/transition/landing/clipEnd/badLanding counters.
 fights profile against profile on all three `CMBT` banks and **re-derives every
 damage figure** from the attacker's own combat block rather than believing the
 runtime.
+
+## 7. 2026-09-17, later: the KO bands, the robber's height, and a build trap
+
+The knock-out's `Screen_Fade(1)`/`(0)` are wired - they are the letterbox bands,
+so the replay plays between bars (`fight-mode.md` 15.13). The robber's height
+follows his walker's floor. And one thing to know before mutating anything
+here: GNU Make 3.81 compares whole seconds, so a mutation restored in the same
+second as its compile stays compiled - `touch` and rebuild after every restore
+(CLAUDE.md 1).
+

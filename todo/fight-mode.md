@@ -199,7 +199,7 @@ Each step ends in a commit and a report, then waits for the reader
 | **0** | this file, the two doc corrections, the corpus facts in `verify.py: fight & become` | **DONE 2026-09-16** |
 | **1** | `engine/src/actor/fight.{h,cpp}`: the contexts, `Fight_Begin`, `Engage`/teardown, `SelectAiProfile`, both per-fighter steps, `ResolveHit`, `FaceOpponent`, `KeepSeparation`, `TickAI`. A probe fights profile against profile on all three `CMBT` files | **DONE 2026-09-16** — `verify.py: engine: melee`, and it found the AI's eight BUILT-IN move tables (`tables/fight_ai_moves.json`) and the per-slot WEIGHT the `.CTL` reader had been skipping. The defensive arm of `Fight_TickAI` (intent 9 inside 1.5 m) is labelled and left for its own commit |
 | **2** | Session and viewer: install the fight hook, slot 2 on both bodies, state 2, scheme 3, the park; the end through event 2, the player's slot-0 reload and his life written back so `Vie Combat Perte` is right. Carry field 2 | **DONE 2026-09-16** — `--fight N` / `--fight-level N`, and a whole fight runs in `omk-play`. §10 has what it found and what it left |
-| **3** | the KO: the 60-frame ring, the two playbacks, the fade | **DONE except the FADE** — the ring and both playbacks landed with step 1 (`Fight_RecordFrame` / `sub_49B2E0`) and have been seen running since step 2: the KO counter goes 1 then 2 and the fight ends. `Screen_Fade` is not modelled at all in this tree, so the two calls that bracket a knock-out are labelled rather than faked |
+| **3** | the KO: the 60-frame ring, the two playbacks, the fade | **DONE, the fade too since 2026-09-17 (15.13)**; before that **DONE except the FADE** — the ring and both playbacks landed with step 1 (`Fight_RecordFrame` / `sub_49B2E0`) and have been seen running since step 2: the KO counter goes 1 then 2 and the fight ends. `Screen_Fade` is not modelled at all in this tree, so the two calls that bracket a knock-out are labelled rather than faked |
 | **3b** | **NOT IN THE ORIGINAL PLAN, and worth admitting**: the opponent's BODY — his motion pass and posing him from his fight channel. The commits call this step 3 because it is what the work turned out to need once step 2 ran; this table said nothing about it | **DONE 2026-09-16**, `4eb178b` and `4a9abb3`. §10 |
 | **4** | camera mode 14 | **DONE 2026-09-16** — `FightCamera` in `actor/fight.*`, the arm ahead of the follow camera in `omk-play`, and options row 18 consumed. §11 has the three faults the harness log caught, and what is labelled (the collision solve, the throw's swing length) |
 | **5** | the HUD: both bars, and mode 2's four-second overlay | **DONE 2026-09-17** — §15.5 |
@@ -678,6 +678,34 @@ shown to fail by writing Inert through the `Actor_LoadBankList` row. And
 `engine: fight library`'s fight, documented as one the player wins, is now a
 loss (since 15.8e and 15.11); nothing it asserts depends on the winner, and its
 docstring says so.
+
+### 15.13 DONE 2026-09-17 — the knock-out's BANDS, and the robber's height
+
+**The fade step 3 left out is the letterbox.** `Screen_Fade` (0x0041E1B0) is
+not a fade to black at all in this tree's terms: it is the machine the port
+already runs as `Session::startBlackFade` - 1 sets state 3 over 60 frames, 0
+sets state 4 and only from 3 - and its "dark" frames are the cinema BANDS
+(15.4 established that the black stripes are the letterbox). `sub_4452A0` calls
+`Screen_Fade(1)` the frame the loser reaches state 6 or 7 and the KO counter
+first rises; the replay loop calls `Screen_Fade(0)` when its passes run out,
+just before `Fight_Engage(-1, 1)`. So the knock-out replay plays between bars.
+In the supermarket run: in at frame 504, the 60 frames, out at 626.
+`engine: fight letterbox` gains frame 530 (both edge rows dark), shown to fail
+by dropping the `(true)` call.
+
+**The robber's height** now follows his walker - `Actor_ApplyMotion` ends with
+the ground probe - lifted back to the pelvis: -33 against the player's -32,
+where the clip's end height left him at -29. `engine: fight separation`'s
+`|dy|` 3 -> 1. That is all this set can show: its floor is flat at y 10
+wherever a fighter can stand (the crate tops at -54..-61 are unreachable), so a
+real change of floor under a fight is unobserved and nothing asserts it.
+
+**A trap, found on the way, recorded in CLAUDE.md 1.** Restoring 15.11's
+mutation landed in the same second as the compile it undid, and GNU Make 3.81
+compares whole seconds: `fight.o` stayed MUTATED, and the fight checks run in
+the next hour measured an AI with no guard. Re-run on rebuilt binaries, every
+figure pushed in that window holds - the supermarket fight never reaches the
+guard arm - and `engine: melee` reads its 24 blocks.
 
 ### 15.3 "characters colliders issue"
 

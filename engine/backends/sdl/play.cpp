@@ -4528,6 +4528,7 @@ int main(int argc, char** argv) {
         // draw, where the framebuffer's width is known. The player's six
         // properties it snapshots, in the card's row order.
         bool  hudRefresh = false;
+        int   koSeen = 0;                  // the KO counter as the fade last saw it
         int   cardProps[6] = {0, 0, 0, 0, 0, 0};
         double ms = 0.0;                   // the AI's `Sys_GetTimeMs` clock
         long  startedAt = 0;
@@ -4731,6 +4732,7 @@ int main(int argc, char** argv) {
         fightRun.active = true;
         fightRun.camRaySet = false;
         fightRun.hudRefresh = true;
+        fightRun.koSeen = 0;
         fightRun.opponent = opponentId;
         fightRun.body = s;
         fightRun.startedAt = session.frameNo();
@@ -7549,6 +7551,24 @@ int main(int argc, char** argv) {
                         const bool on = fightRun.fight->step(
                             static_cast<float>(frameSec * 30.0),
                             bits ? bits : omk::kIdleInput);
+                        // THE KNOCK-OUT'S BANDS. `sub_4452A0` calls
+                        // `Screen_Fade(1)` the frame the loser reaches state 6
+                        // or 7 and the KO counter first rises, and
+                        // `sub_4453F0` calls `Screen_Fade(0)` when the replay
+                        // passes run out, just before `Fight_Engage(-1, 1)`.
+                        // `Screen_Fade` is the letterbox bands' machine
+                        // (`Session::startBlackFade`: 1 -> state 3, 0 -> state
+                        // 4 and only from 3), so the replay is shown between
+                        // cinema bars.
+                        if (fightRun.koSeen == 0 && fightRun.fight->koCounter() > 0) {
+                            session.startBlackFade(true);
+                            std::printf("frame %ld: KO - Screen_Fade(1), the bands in\n", n);
+                        }
+                        if (!on && fightRun.fight->koCounter() > 0) {
+                            session.startBlackFade(false);
+                            std::printf("frame %ld: KO replay over - Screen_Fade(0), the bands out\n", n);
+                        }
+                        fightRun.koSeen = fightRun.fight->koCounter();
                         // The bodies back: the player through `nudge` so the
                         // walker keeps its own idea of where he stands, the
                         // opponent onto his staged placement.
@@ -7672,6 +7692,17 @@ int main(int argc, char** argv) {
                             }
                             fightRun.foe.x = static_cast<float>(w.pos()[0]);
                             fightRun.foe.z = static_cast<float>(w.pos()[2]);
+                            // ...AND THE HEIGHT: `Actor_ApplyMotion` ends with
+                            // the ground probe and `Walk_GroundResponse`, so the
+                            // body's +248 follows the floor - the walker's feet,
+                            // lifted back to the pelvis this fight step reads.
+                            // The clip's own vertical is still dropped (the note
+                            // above): the pose, not the node, carries a fall.
+                            // UNOBSERVABLE in the supermarket: its floor is flat
+                            // at y 10 wherever a fighter can stand (the crate tops
+                            // at -54..-61 cannot be reached), so this moves the
+                            // robber 4 units onto it and nothing more there.
+                            fightRun.foe.y = static_cast<float>(w.pos()[1]) - fightRun.foeLift;
                         }
                         if (fightRun.body) {
                             fightRun.body->at[0] = fightRun.foe.x;
