@@ -642,6 +642,43 @@ nine probe fights, re-derived damage figures 204 -> 186, every invariant
 still 0; shown to fail by dropping the guard raise. The supermarket fight is
 not re-judged by eye yet.
 
+### 15.12 READ 2026-09-17 — a LOST fight: the engine does nothing, the script decides
+
+The open question of §8, and the answer is small. `Fight_ResolveHit` stores
+the attacker in `dword_906F34` and the defender in `dword_906F30` when a blow
+takes the defender to 0 - so `dword_906F34` is the **winner**, which a first
+reading here had backwards. `sub_445AC0` then writes the player's `+404` from
+it (1 if he won, **0** if he lost; the opponent 0 either way) and raises event
+2 with a code 1/2 that nobody reads. Event 2's handler releases the parked
+script and calls `Actor_LoadBankList` on the player, which ENDS
+`dword_910834[328*i] = 1` - the `+404` alias `Fight_Engage` writes through. So
+**the player leaves every fight in ACTOR_STATE 1**; a loser's 0 does not survive
+the call that wrote it. Nothing kills him and nothing reincarnates him: the
+lost fight's own script reads the life written back and moves on - in the
+supermarket, the Meditech sequence (`med1`, object 85 `4Meditech`), which the
+port already plays.
+
+**How it was nearly got wrong, which is the finding worth keeping.** The first
+change here wrote Inert for a loser, from `sub_445AC0` alone, and the new log
+line printed the player's state FROM THE CONTROLLER rather than from the bool
+that chose it (CLAUDE.md 1's log-line trap). It read 1. The viewer's `setBank`
+rebuilds the `ActorRuntime`, which lands on 1, and the transition table refused
+2 -> 0 from there - and chasing that refusal into `Actor_LoadBankList` is what
+showed the engine lands on 1 too. The viewer's old unconditional Normal was
+right; `ActorRuntime::fightEnd`, which nothing calls, stopped after the first
+write and now makes both.
+
+Also read: `Fight_Begin`'s third argument would PRESET the outcome (1 the
+player wins, 2 the opponent, the loser forced into his knock-out entry at
+once), but its one caller, op 62's handler, passes 0 - unreachable in the
+shipped game.
+
+`engine: fight separation` asserts the teardown over its lost fight, ('LOST', 1),
+shown to fail by writing Inert through the `Actor_LoadBankList` row. And
+`engine: fight library`'s fight, documented as one the player wins, is now a
+loss (since 15.8e and 15.11); nothing it asserts depends on the winner, and its
+docstring says so.
+
 ### 15.3 "characters colliders issue"
 
 Not yet reproduced, and the handoff already lists two unported pieces that
@@ -1158,13 +1195,10 @@ already have their keys honoured.
   gating `Fight_TickAI` in the melee tick, so that gate is a debug switch and
   not a game rule — and `no_fight_guard` → `byte_910321`. All three default to
   0 and are cleared again at `05_sys.c` 1636.
-* **What happens when the player's life reaches 0.** `Fight_ResolveHit` clamps
-  it at 0, records winner and loser, and freezes both channels; it does not
-  kill anybody, and event 2's result code is dropped by its own handler. Where
-  a lost fight leads is unread — and in this game death is a reincarnation
-  (`memory: playable-characters-not-only-kayl`), so this wants reading before
-  step 2 and not guessing.
-* **`sub_447000`** (306 lines) — what `Hud_DrawBar` mode 2 puts on screen for
+* ~~**What happens when the player's life reaches 0.**~~ — **read 2026-09-17,
+  15.12**: the ENGINE does nothing beyond the teardown; the lost fight's own
+  SCRIPT decides, from the life written back.
+* ~~**`sub_447000`**~~ (read and ported 2026-09-17, 15.5) — what `Hud_DrawBar` mode 2 puts on screen for
   four seconds after `dword_531030` is stamped. It draws text blocks and a
   bitmap; nobody has read it.
 * **AREA 149, the Qalisar arena.** `docs/SCRIPT_VM.md` says the arena "uses

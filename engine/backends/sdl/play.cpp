@@ -7798,7 +7798,24 @@ int main(int argc, char** argv) {
                             omk::writeActorProperty(rec, 1, myHp);
                             session.setActorProperty(fightRun.opponent, 1, hisHp);
                             player->setBank(playerCtl, playerCtlData);
-                            player->setActorState(omk::ActorState::Normal, "sub_445AC0");
+                            // THE STATE THE FIGHT LEAVES HIM IN - 1, win or lose,
+                            // and it takes two writes to see why. `sub_445AC0`
+                            // writes the player's +404 from `dword_906F34`, the
+                            // WINNER (`Fight_ResolveHit` stores `att` there): 1 if
+                            // he won and 0 if he lost. Then it raises event 2,
+                            // whose handler calls `Actor_LoadBankList` on the
+                            // player - and that ends `dword_910834[328*i] = 1`,
+                            // the +404 alias. So a loser's 0 lasts for the rest
+                            // of one call and he leaves the fight in 1 either way
+                            // (`todo/fight-mode.md` 15.12). This viewer's
+                            // `setBank` rebuilds the runtime, which lands on 1
+                            // through the same two rows, and the write below
+                            // states the result rather than relying on that.
+                            const bool won = fightRun.fight->playerWon();
+                            player->setActorState(omk::ActorState::Normal, "Actor_LoadBankList");
+                            std::printf("frame %ld: sub_445AC0 - the player %s, ACTOR_STATE %d\n",
+                                        n, won ? "WON" : "LOST",
+                                        static_cast<int>(player->state()));   // the CONSUMER's, not the bool
                             in.installScheme(0);
                             session.fightEnded();
                             std::printf("frame %ld: FIGHT ENDS after %ld frames - "

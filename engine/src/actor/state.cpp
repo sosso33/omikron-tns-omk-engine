@@ -201,8 +201,15 @@ bool ActorRuntime::fightEngage() {
 }
 
 bool ActorRuntime::fightEnd(bool winner) {
+    // `sub_445AC0` writes 1 for the winner and 0 for the loser - and then
+    // raises event 2, whose handler runs `Actor_LoadBankList` on the player,
+    // which ends `dword_910834[328*i] = 1`. So the PLAYER leaves every fight in
+    // 1: the loser's 0 does not survive the call that wrote it
+    // (`todo/fight-mode.md` 15.12). The opponent gets no bank reload and keeps
+    // his 0. Until 2026-09-17 this stopped after the first write.
     const bool ok = setState(winner ? ActorState::Normal : ActorState::Inert,
                              "sub_445AC0");
+    if (ok && isPlayer_) setState(ActorState::Normal, "Actor_LoadBankList");
     if (ok && winner) installGroup(kGroupLocomotion);
     return ok;
 }

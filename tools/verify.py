@@ -12056,6 +12056,14 @@ def c_engine_fight_separation():
     what every collision attempt of 15.8a ran into. SHOWN TO FAIL: read `s->at`
     instead of `foeAt` and the first column reads 460.
 
+    **And the teardown** (2026-09-17, `todo/fight-mode.md` 15.12): this fight is
+    LOST, and the player still leaves it in ACTOR_STATE **1**. `sub_445AC0`
+    writes 0 for a loser, but event 2's `Actor_LoadBankList` writes the +404
+    alias back to 1 in the same call. The column prints the state from the
+    controller AFTER the write - which is how a first version of this, writing
+    Inert, was caught: the rebuilt runtime refused it and still read 1, and
+    reading `Actor_LoadBankList` then showed the engine lands on 1 too.
+
     RE-BASELINED with it: `|dy|` 1 -> **3** and the minimum gap 43 -> **45**.
     The robber now keeps the height his approach clip ended on (-29, against
     the path start's -31), and a fight begun 1.5 m apart takes a different
@@ -12095,8 +12103,11 @@ def c_engine_fight_separation():
     maxDy = max(v for _, v in rows)
     minH = min(h for h, _ in rows)
     opening = int(rows[0][0] // 10) * 10
-    return (opening, len(rows) >= 5, inside, int(round(maxDy)), int(minH)), \
-           (50, True, 0, 3, 45), \
+    # ...and the teardown's state write for this LOST fight (fight-mode 15.12)
+    lost = re.search(r"sub_445AC0 - the player (\w+), ACTOR_STATE (\d+)", r.stdout + r.stderr)
+    teardown = (lost.group(1), int(lost.group(2))) if lost else None
+    return (opening, len(rows) >= 5, inside, int(round(maxDy)), int(minH), teardown), \
+           (50, True, 0, 3, 45, ("LOST", 1)), \
            ("the fight opens where the approach left the robber, 1.5 m away; "
             "no sample of a real fight has the two fighters closer than their "
             "separation radius, and their two `y` values now mean the same "
@@ -12306,6 +12317,11 @@ def c_engine_fight_library():
 
     SHOWN TO FAIL: drop the `fight.SCX` load and the failures jump while the
     played count falls to 0.
+
+    **The player no longer wins this fight** (measured 2026-09-17): since the
+    fight opens 1.5 m apart (15.8e) and the AI guards (15.11), the same key cycle
+    ends in a loss. Nothing asserted here depends on who wins - the sounds are
+    both fighters' - so the sentence above describes the run as it was.
 
     RE-BASELINED 2026-09-17, distinct ids 5 -> **7**: the fight now opens where
     the approach left the robber, 1.5 m away rather than 11.9 m
