@@ -106,10 +106,10 @@ requests print at frames 0, 665 and 1031, two frames after the hold begins.
 * **Step 5, the HUD** — both gauges (`Hud_DrawBar(player, 200, 0, 2)` and
   `(opponent, 200, 1, 0)`) and mode 2's four-second overlay `sub_447000`
   (306 lines, unread). `ui/hudbar.h` has mode 0 already.
-* **The camera's unmodelled parts**: the tail's collision solve
-  (`sub_413450`/`sub_416570`/`sub_413440`, a different family from the follow
-  camera's `sub_417070`), so the fight camera can pass through walls; and the
-  throw swing's length, because `sub_45ACF0` has no port.
+* **The camera's unmodelled parts**: ~~the tail's collision solve~~ (ported
+  2026-09-17, `fight-mode.md` 15.8b - the bolts' ray from the look-at to the
+  eye, X and Z only, the height clamp behind it); the throw swing's length,
+  because `sub_45ACF0` has no port.
 * ~~**The opponent's first second**~~ on the nameless clipless entries 208/228
   - **gone 2026-09-17**: the 12 m that made it legitimate was the port's own.
   `beginMelee` read the approach program's path START instead of where the

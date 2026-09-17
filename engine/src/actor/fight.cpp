@@ -356,15 +356,33 @@ void Fight::tickCamera(float dt) {
 
     // ---- the shared tail --------------------------------------------------
     //
-    // **The collision solve is NOT modelled and is labelled rather than
-    // approximated**: the engine runs the eye through `sub_413450` /
-    // `sub_416570` / `sub_413440` - a different family from the follow
-    // camera's `sub_417070`, which is the only obstruction rule this tree has
-    // read - so a fight camera here can pass through a wall where the engine's
-    // would be pushed in. What the tail DOES do is transcribed: ease the eye
-    // 0.25 m a frame toward the target, then clamp its height.
+    // THE COLLISION SOLVE. `sub_413450` writes the wanted eye into the local
+    // camera's +52, `sub_413480` the look-at into +64, and `sub_416570` casts
+    // `sub_444810` - the bolts' world ray - from the look-at TO the eye. On a
+    // hit it writes the hit point into +52 and returns 1, and the tail takes
+    // `f32(+52)` and `f32(+60)` from it: the eye's X and Z. **The height is
+    // not taken** - `dword_9070A4` is left as the placement wrote it.
+    //
+    // `sub_416570` also refuses a hit when the camera's +356 carries 0x1000
+    // and the mesh 0x20000000. The camera here is a LOCAL struct `sub_413450`
+    // fills field by field, and nothing in this tail writes its +356; that
+    // guard is not modelled (`PlayerController::cameraCollide` has the same
+    // note for the follow camera, where 0x1000 is provably never set).
+    cam_.rayHit = false;
+    if (cameraRay_) {
+        float hit[3];
+        if (cameraRay_(cam_.at, cam_.eye, hit)) {
+            cam_.eye[0] = hit[0];
+            cam_.eye[2] = hit[2];
+            cam_.rayHit = true;
+            ++cam_.rayHits;
+        }
+    }
     float mid[3]; camMidpoint(mid);
     {
+        // The ease, 0.25 m a frame toward the look-at in the plane, measured
+        // against the distance to the fighters' midpoint - from the eye AS IT
+        // NOW STANDS, after the solve.
         const float dx = mid[0] - cam_.eye[0], dy = mid[1] - cam_.eye[1],
                     dz = mid[2] - cam_.eye[2];
         const float d = std::sqrt(dx * dx + dy * dy + dz * dz);
@@ -373,19 +391,15 @@ void Fight::tickCamera(float dt) {
             cam_.eye[2] += (cam_.at[2] - cam_.eye[2]) / d * 9.8425198f;
         }
     }
-    {
-        // The height clamp, transcribed from the tail: the distance is taken
-        // from the eye AS IT NOW STANDS to the midpoint, the drop applies only
-        // inside 3 m, and the limit is 2.5 m under "Vue de côté" against 1.5 m
-        // under "Vue de dos".
-        //
-        // **The engine runs this only when its collision solve returned a
-        // point** (`v8`), and that solve - `sub_413450`/`sub_416570`/
-        // `sub_413440` - is NOT modelled here, so the clamp is applied
-        // unconditionally and said so rather than skipped. Computing `d`
-        // against a stale midpoint, as the first version did, dropped the eye
-        // 127 units BELOW the fighters, which with Y pointing down is the
-        // clamp pushing the wrong way.
+    if (cam_.rayHit) {
+        // The height clamp, and the engine runs it ONLY when the solve
+        // returned a point (`if (v8)`). Until 2026-09-17 this tree had no
+        // solve and applied it every frame, labelled as such. The distance is
+        // from the eye as it now stands to the midpoint, the drop applies only
+        // inside 3 m, and the limit is 2.5 m under "Vue de côté" against
+        // 1.5 m under "Vue de dos". (Computing `d` against a stale midpoint,
+        // as the first version did, dropped the eye 127 units BELOW the
+        // fighters - with Y down, the clamp pushing the wrong way.)
         const float dx = mid[0] - cam_.eye[0], dy = mid[1] - cam_.eye[1],
                     dz = mid[2] - cam_.eye[2];
         const float d = std::sqrt(dx * dx + dy * dy + dz * dz);

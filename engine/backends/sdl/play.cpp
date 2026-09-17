@@ -1619,6 +1619,7 @@ int main(int argc, char** argv) {
 "  --type <text>    what `T` types - the start menu refuses an empty name\n"
 "  --keydelay N     frames between scripted keys, default 2\n"
 "  --no-foe-collision  the melee opponent collides with nothing (comparison)\n"
+"  --no-fight-camera-collision  the fight camera is never pulled in (comparison)\n"
 "  --fight-foe-at X,Z  HARNESS: start the melee opponent there\n"
 "  --hold <stream>  after the hand-over, DIK codes HELD: `k200*120,k203*30`,\n"
 "                   `+` joins several, `0*n` holds nothing - player_probe's\n"
@@ -1719,6 +1720,7 @@ int main(int argc, char** argv) {
     // for the slider, and it says so in its own log line.
     int  fightArg = -1;
     bool noFoeCollision = false;   // --no-foe-collision: the opponent as before 15.8a, for comparison
+    bool noFightCamRay = false;    // --no-fight-camera-collision: the fight camera as before, for comparison
     bool foeAtSet = false;         // --fight-foe-at x,z: a HARNESS - start him there instead
     float foeAtXZ[2] = {0.0f, 0.0f};
     int  fightLevelArg = 1;
@@ -1983,6 +1985,7 @@ int main(int argc, char** argv) {
         }
         else if (a == "--fight" && i + 1 < argc) fightArg = std::atoi(argv[++i]);
         else if (a == "--no-foe-collision") noFoeCollision = true;
+        else if (a == "--no-fight-camera-collision") noFightCamRay = true;
         else if (a == "--fight-foe-at" && i + 1 < argc)
             foeAtSet = std::sscanf(argv[++i], "%f,%f", &foeAtXZ[0], &foeAtXZ[1]) == 2;
         else if (a == "--fight-level" && i + 1 < argc) fightLevelArg = std::atoi(argv[++i]);
@@ -4520,6 +4523,7 @@ int main(int argc, char** argv) {
         std::unique_ptr<omk::Walker> foeWalker;
         float foeLift = 0.0f;
         long  foeBlocked = 0, foeSlid = 0, foeSteps = 0;
+        bool  camRaySet = false;           // the camera ray, installed on the first tick
         double ms = 0.0;                   // the AI's `Sys_GetTimeMs` clock
         long  startedAt = 0;
     };
@@ -4712,6 +4716,7 @@ int main(int argc, char** argv) {
                               settings.v.combatCamera);
         in.installScheme(3);          // `Input_InstallScheme(3)`, group Combat
         fightRun.active = true;
+        fightRun.camRaySet = false;
         fightRun.opponent = opponentId;
         fightRun.body = s;
         fightRun.startedAt = session.frameNo();
@@ -7500,6 +7505,24 @@ int main(int argc, char** argv) {
                         // the slider. `Actor_TickPlayerAndOpponent` ticks each
                         // fighter's channel itself, inside the combat step,
                         // and the fight owns both bodies.
+                        // THE FIGHT CAMERA'S RAY (`sub_416570` -> `sub_444810`): the bolts'
+                        // world, the shown set's `shotSoup` - CollisionOnly skipped and a mesh
+                        // with either bit of 0x41 untested, the rule `sub_444460` applies.
+                        if (!fightRun.camRaySet && !noFightCamRay)
+                            fightRun.fight->setCameraRay([&](const float a[3], const float b[3], float hit[3]) {
+                                const omk::TriangleSoup* shot = nullptr;
+                                for (const auto& ws : worldSlots)
+                                    if (!ws.stem.empty() && ws.stem == worldSet) shot = &ws.shotSoup;
+                                if (!shot || shot->empty()) return false;
+                                const double p0[3] = {a[0], a[1], a[2]};
+                                const double d[3] = {double(b[0]) - a[0], double(b[1]) - a[1],
+                                                     double(b[2]) - a[2]};
+                                const auto h = omk::sweepSphere(*shot, p0, d, 0.0);
+                                if (!h || h->t > 1.0) return false;
+                                for (int k = 0; k < 3; ++k) hit[k] = static_cast<float>(p0[k] + h->t * d[k]);
+                                return true;
+                            });
+                        fightRun.camRaySet = true;
                         fightRun.ms += frameSec * 1000.0;
                         const float was[3] = {player->pos()[0], player->pos()[1],
                                               player->pos()[2]};
@@ -7710,11 +7733,13 @@ int main(int argc, char** argv) {
                             {
                                 const omk::FightCamera& fc = fightRun.fight->camera();
                                 std::printf("    fight camera: state %d, eye %.0f %.0f %.0f, "
-                                            "at %.0f %.0f %.0f, heading %.0f, radius %.0f\n",
+                                            "at %.0f %.0f %.0f, heading %.0f, radius %.0f, "
+                                            "ray hits %ld%s\n",
                                             fc.state, double(fc.eye[0]), double(fc.eye[1]),
                                             double(fc.eye[2]), double(fc.at[0]),
                                             double(fc.at[1]), double(fc.at[2]),
-                                            double(fc.heading), double(fc.radius));
+                                            double(fc.heading), double(fc.radius),
+                                            fc.rayHits, fc.rayHit ? " (pulled in now)" : "");
                             }
                             // The KO counter, because "he is down and nothing
                             // happens" has two causes that look the same from

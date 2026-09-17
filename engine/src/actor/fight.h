@@ -223,6 +223,10 @@ struct FightCamera {
     float travel = 10.0f, clock = 0.0f;
     long  frames = 0;             // dword_906F24, the divider's counter
     int   divider = 1;            // dword_906F28
+    // the tail's collision solve (`sub_416570`): whether this frame's ray hit,
+    // and how many frames have hit since the fight began - instruments only
+    bool  rayHit = false;
+    long  rayHits = 0;
 };
 
 // One decision, recorded rather than drawn - the same idea as ChannelEvent.
@@ -308,6 +312,12 @@ public:
     // followed by `Actor_ApplyMotion`.
     using BodyTick = std::function<void(float dtFrames, std::uint32_t input)>;
     void setBodyTick(BodyTick t) { bodyTick_ = std::move(t); }
+    // THE CAMERA'S WORLD RAY, `sub_444810` - the segment a..b against the
+    // linked set, true and the hit point when it meets something. The fight
+    // camera's tail casts it from the look-at point to the wanted eye
+    // (`sub_416570`). None installed: the eye is never pulled in.
+    using CameraRay = std::function<bool(const float a[3], const float b[3], float hit[3])>;
+    void setCameraRay(CameraRay r) { cameraRay_ = std::move(r); }
 
     bool over() const { return over_; }
     // Which side won, once `over()`: true when the OPPONENT was the loser.
@@ -368,6 +378,7 @@ private:
     RandFn rand_;
     TimeFn now_;
     BodyTick bodyTick_;
+    CameraRay cameraRay_;
     FightAiTables builtin_;
     FightContext a_, b_;          // dword_906F60 / dword_907000
     float radius_ = 0.0f;         // flt_906F2C

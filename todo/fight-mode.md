@@ -342,7 +342,8 @@ like row 16 the port had been carrying the value and using it nowhere.
 (`sub_413450`/`sub_416570`/`sub_413440`) is a different family from the follow
 camera's `sub_417070`, the only obstruction rule this tree has read, so it is
 not modelled and the height clamp runs unconditionally instead of behind the
-solve's "did it return a point" flag. The throw state's swing is spread over a
+solve's "did it return a point" flag. *(Superseded 2026-09-17: the solve is
+ported and the clamp is behind it - 15.8b.)* The throw state's swing is spread over a
 second because `sub_45ACF0`, the channel's remaining time, has no port.
 
 ## 12. The first PLAY TEST, 2026-09-16 — three faults, two of them mine
@@ -723,6 +724,26 @@ in §4 of the handoff as unported: the camera tail's collision solve is
 `sub_413450` / `sub_416570` / `sub_413440`, a **different family** from the
 follow camera's `sub_417070`, and none of them has a port. So the camera has
 no reason not to sit inside a crate, and in a room made of crates it will.
+
+**FIXED 2026-09-17, and the "family" is three lines.** `sub_413450` copies the
+wanted eye into a local camera's `+52`, `sub_413480` the look-at into `+64`,
+`sub_413440` returns `&cam[+52]`. `sub_416570` is the solve: `sub_444810` -
+the bolts' own world ray - from the look-at TO the eye, and on a hit the hit
+point is written into `+52`. The tail then takes **only X and Z** from it
+(`f32(+0)` and `f32(+8)`; `dword_9070A4`, the eye's height, is not written),
+eases 0.25 m toward the look-at, and runs the height clamp **only when the
+solve hit** (`if (v8)`) - which this tree had been running every frame.
+
+Ported as `Fight::setCameraRay`, wired in `omk-play` to the shown set's
+`shotSoup` (the `sub_444460` mesh rule the bolts already use). The one guard
+not modelled is `sub_416570`'s `(cam+356 & 0x1000) && (mesh & 0x20000000)`:
+the camera is a local struct nothing in this tail gives a `+356`.
+
+Over the real supermarket fight the ray hits on **29 frames**, and at the
+sample where it is pulling in the eye stands at x 15134 against 15145 without
+it. `verify.py: engine: fight camera collision` compares the run against
+`--no-fight-camera-collision` (29 / 0 hits, and the eye samples must differ),
+shown to fail by dropping the eye writes. Not judged by eye yet.
 
 **15.8c PARTLY FIXED — the throw swing was divided by a constant.**
 

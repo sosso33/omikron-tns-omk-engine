@@ -12158,6 +12158,61 @@ def c_engine_fight_collision():
            ("the opponent's approach stops against SMbox45 (z 1554) with the walker "
             "blocking, and walks straight through it with --no-foe-collision")
 
+def c_engine_fight_camera_collision():
+    r"""`omk-play`: the FIGHT CAMERA is pulled in front of the set (`todo/fight-mode.md` 15.8b).
+
+    The mode-14 tail casts `sub_444810` - the bolts' world ray - from the
+    look-at point to the wanted eye (`sub_413450` / `sub_413480` /
+    `sub_416570`), and on a hit takes the hit point's X and Z for the eye and
+    leaves its height; the height clamp then runs ONLY on a hit (`if (v8)`).
+    The port had none of it and applied the clamp every frame, so the fight
+    camera sat inside crates.
+
+    Two runs of the real `--fight-supermarket` fight, the second with
+    `--no-fight-camera-collision`: the frames whose ray hit (29 on the first,
+    and necessarily 0 on the second), and how many of the once-a-second eye
+    samples DIFFER between the two - so a ray that is counted but never moves
+    the eye cannot pass. The same fight, since the camera decides nothing the
+    fighters read.
+
+    SHOWN TO FAIL: drop the two `cam_.eye[...] = hit[...]` writes in
+    `Fight::tickCamera`'s tail - the hits are still counted, and the differing
+    samples fall to 0.
+    """
+    import subprocess
+    eng = os.path.join(ROOT, "engine")
+    fr = omkpaths.data_root()
+    if not (os.path.isdir(eng) and os.path.isdir(os.path.join(fr, "SCPTDATA"))):
+        return ("skipped",), ("skipped",), "engine/ or gamedata/ absent"
+    mk = subprocess.run(["make", "-s", "play"], cwd=eng, capture_output=True, text=True)
+    play = os.path.join(eng, "build", "omk-play")
+    if mk.returncode != 0:
+        return ("build failed",), ("built",), "engine/ must build"
+    if not os.path.exists(play):
+        return ("no sdl",), ("no sdl",), "needs SDL to render"
+
+    def run(extra):
+        r = subprocess.run(
+            [play, fr, os.path.join(ROOT, "tables"),
+             "--save", os.path.join(ROOT, "traces", "save-appart.bin"),
+             "--fight-supermarket", "--frames", "700"] + extra,
+            capture_output=True, text=True, errors="replace",
+            env=dict(os.environ, SDL_VIDEODRIVER="dummy"))
+        rows = re.findall(r"fight camera: state \d+, eye (\S+ \S+ \S+), at .*?ray hits (\d+)",
+                          r.stdout + r.stderr)
+        return [e for e, _ in rows], (int(rows[-1][1]) if rows else -1)
+
+    eyesOn, hitsOn = run([])
+    eyesOff, hitsOff = run(["--no-fight-camera-collision"])
+    # the parse first: a run that printed no camera lines must fail AS A PARSE
+    if len(eyesOn) < 5 or len(eyesOn) != len(eyesOff):
+        return (len(eyesOn), len(eyesOff)), (">= 5", "the same"), \
+               "both runs must print the same number of fight camera lines"
+    differ = sum(1 for a, b in zip(eyesOn, eyesOff) if a != b)
+    return (hitsOn, hitsOff, differ > 0), (29, 0, True), \
+           ("the fight camera's ray hits the set on 29 frames of the supermarket fight "
+            "and moves the eye, and never without the solve")
+
 def c_engine_fight_library():
     r"""`omk-play`: a fight loads `fight.scx`, its OWN sound and sprite library.
 
@@ -36297,6 +36352,7 @@ SLOW = [
     ("engine: fight letterbox", c_engine_fight_letterbox, "todo/fight-mode 15.4"),
     ("engine: fight separation", c_engine_fight_separation, "todo/fight-mode 15.8d"),
     ("engine: fight collision", c_engine_fight_collision, "todo/fight-mode 15.8a"),
+    ("engine: fight camera collision", c_engine_fight_camera_collision, "todo/fight-mode 15.8b"),
     ("engine: fight library", c_engine_fight_library, "todo/fight-mode 15.2"),
     ("engine: fight pause", c_engine_fight_pause, "todo/fight-mode 15.9"),
     ("engine: programs",   c_engine_programs,   "engine/README"),
