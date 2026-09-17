@@ -32,6 +32,7 @@
 #include <cstdint>
 #include <map>
 #include <set>
+#include <utility>
 #include <string>
 #include <vector>
 
@@ -206,6 +207,11 @@ public:
     // all nine. The flag is runtime state like the row text beside it, and
     // arrives the same way. Empty or null means the records stand.
     void setHidden(const std::set<std::uint32_t>* h) { hidden_ = h; }
+    // ITEMS THE CALLER MOVES. `sub_4AFE90` rewrites the Gandhar door's cursor
+    // x/y every time it steps (`col * 63 + 135`, `row * 63 + 61`), and an item
+    // in the widget TREE carries only its authored place - so a screen whose
+    // own hook moves a widget needs the mover to say where it went.
+    void setItemMove(const std::map<std::uint32_t, std::pair<int, int>>* m) { moved_ = m; }
 
     // THE 3D VIEW INSIDE A PANEL. The frontend renders the world through the
     // live camera into a picture the size of the viewport item's rectangle
@@ -264,6 +270,7 @@ private:
     long             deltaMs_ = 33;
     const std::map<std::uint32_t, std::string>* rows_ = nullptr;
     const std::set<std::uint32_t>* hidden_ = nullptr;
+    const std::map<std::uint32_t, std::pair<int, int>>* moved_ = nullptr;
     const Surface*   view3d_ = nullptr;
     long             frame_ = 0;
     long             clockMs_ = 0;

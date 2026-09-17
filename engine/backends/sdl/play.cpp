@@ -18230,6 +18230,29 @@ int main(int argc, char** argv) {
         // The header's hook `0x004B0B60` is the shops' `0x004AEE30` again:
         // the posted message while oscillator 0 runs, else the SELECTED
         // BUTTON's label (`IAM\Multip` 0..3).
+        // ---- THE GANDHAR DOOR's cursor, where its hook put it ------------
+        //
+        // `sub_4AFE90` rewrites the cursor item's x/y on every step - `col * 63
+        // + 135`, `row * 63 + 61` - and the tree only carries the authored
+        // place, so the composer is told where the walk moved it.
+        static std::map<std::uint32_t, std::pair<int, int>> itemMoved;
+        itemMoved.clear();
+        if (walk && openScreen == 12 && walk->panel()) {
+            for (const auto& l : walk->panel()->lists) {
+                if (l.hook != omk::kHookGandharGrid || l.items.empty()) continue;
+                itemMoved[l.items[0].addr] = {walk->gandharCol() * 63 + 135,
+                                              walk->gandharRow() * 63 + 61};
+                static int gandTold = -1;
+                const int key = walk->gandharRow() * 10 + walk->gandharCol();
+                if (key != gandTold) {
+                    gandTold = key;
+                    std::printf("gandhar door: the cursor is on row %d col %d; %d of the four "
+                                "symbols in (%d presses)\n", walk->gandharRow(),
+                                walk->gandharCol(), __builtin_popcount(walk->gandharMask()),
+                                walk->gandharPresses());
+                }
+            }
+        }
         const bool liftHandled = walk && openScreen == 4;
         // ---- THE TERMINAL FAMILY'S DISPLAY (`todo/missing-ui.md` 3) ------
         //
@@ -18804,6 +18827,7 @@ int main(int argc, char** argv) {
             comp.attachModels(&uiModels);
             comp.setRowText(sneakRows.empty() ? nullptr : &sneakRows);
             comp.setHidden(sneakHidden.empty() ? nullptr : &sneakHidden);
+            comp.setItemMove(itemMoved.empty() ? nullptr : &itemMoved);
             // THE CLOUD IS THE MENU'S BACKGROUND, NOT EVERY SCREEN'S.
             //
             // A reader's screenshots of the original settle it from both

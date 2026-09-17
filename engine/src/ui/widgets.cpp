@@ -1300,6 +1300,33 @@ bool UiWalk::move(const UiList& l, std::uint32_t bits,
     return false;
 }
 
+// `sub_4AFE90` - THE GANDHAR DOOR'S CURSOR, transcribed from the image (no
+// `proc` label of its own). The screen is a 6x6 grid of symbols with ONE
+// selectable item walking it; the four items behind it are the MARKERS a press
+// stamps.
+//
+//     UP     row != 0 -> row - 1        LEFT   col != 0 -> col - 1
+//     DOWN   row <  5 -> row + 1        RIGHT  col <  5 -> col + 1
+//
+// then the cursor's x/y are rewritten `col * 63 + 135` and `row * 63 + 61` -
+// which are the item's own authored (135, 61), so the tree places the grid's
+// origin - and its `+3C` becomes `(row << 16) | col`. The hook returns 1 only
+// when the cell moved, so a confirm falls through to the item's callback.
+bool UiWalk::gandhar(const UiList& l, std::uint32_t bits) {
+    (void)l;
+    const int wasCol = gandCol_, wasRow = gandRow_;
+    if (bits & kUiUp)         { if (gandRow_ != 0) --gandRow_; }
+    else if (bits & kUiDown)  { if (gandRow_ < 5)  ++gandRow_; }
+    else if (bits & kUiLeft)  { if (gandCol_ != 0) --gandCol_; }
+    else if (bits & kUiRight) { if (gandCol_ < 5)  ++gandCol_; }
+    const bool moved = gandCol_ != wasCol || gandRow_ != wasRow;
+    if (moved)
+        log_.push_back("gandhar: cell " + std::to_string(gandRow_) + "," +
+                       std::to_string(gandCol_));
+    if (bits & kUiConfirm) return confirm();
+    return moved;
+}
+
 // `sub_4AF300` - THE TERMINAL FAMILY'S KEYPAD, transcribed from the image (it
 // has no `proc` label of its own in the decompilation's index). Eleven items:
 // 0..8 are the 3x3 pad, 9 the `0` cell under it and 10 the big button at
@@ -1433,6 +1460,39 @@ bool UiWalk::confirm() {
         //                   sets when row 3 or 4 is chosen. Left unported and
         //                   labelled rather than guessed, so the terminal shows
         //                   its dossiers and does not yet answer its script.
+        // `sub_4AFF90` - THE GANDHAR DOOR'S PRESS, transcribed from the image.
+        // It counts the press (`byte_68A608`), stamps a marker widget taken
+        // from `off_4E4C80[count]` at the cell, and ORs one bit of
+        // `byte_68A60C` when the cell is one of FOUR:
+        //
+        //     +3C == 5       -> bit 1   (row 0, col 5)
+        //     +3C == 0x10003 -> bit 2   (row 1, col 3)
+        //     +3C == 0x40002 -> bit 4   (row 4, col 2)
+        //     +3C == 0x50004 -> bit 8   (row 5, col 4)
+        //
+        // At four presses it plays interface sound 0x26; when the mask reaches
+        // 0x0F it writes the ANSWER 1 - the door opens - and plays 0x27. The
+        // bits are ORed, so the symbols may be pressed in any order and the
+        // same one twice does not count twice. NOT ported: the marker widgets'
+        // placement (the viewer draws the cursor, not the stamps) and the two
+        // sounds.
+        if (it->callback == kCbGandharCell) {
+            const unsigned cell = (unsigned(gandRow_) << 16) | unsigned(gandCol_);
+            ++gandPresses_;
+            unsigned bit = 0;
+            if (cell == 0x5u)          bit = 1;
+            else if (cell == 0x10003u) bit = 2;
+            else if (cell == 0x40002u) bit = 4;
+            else if (cell == 0x50004u) bit = 8;
+            gandMask_ |= bit;
+            log_.push_back("gandhar: press " + std::to_string(gandPresses_) +
+                           (bit ? " - one of the four" : " - not in the code"));
+            if (gandMask_ == 0x0Fu) {
+                answer_ = 1;
+                log_.push_back("gandhar: the door opens");
+            }
+            return true;
+        }
         if (it->callback == kCbTerminalCell) {
             // the CELL's index in its own list - `Ui_ConfirmSelection` hands
             // the callback the item, and the engine's arms test the list's
@@ -2500,6 +2560,7 @@ bool UiWalk::press(std::uint32_t bits) {
         return false;
     }
     if (l->hook == kHookTerminalPad) return keypad(*l, bits);
+    if (l->hook == kHookGandharGrid) return gandhar(*l, bits);
     if (l->hook) {
         approx_ = true;
         log_.push_back("unmodelled list hook");

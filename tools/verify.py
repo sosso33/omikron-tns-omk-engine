@@ -12542,6 +12542,66 @@ def c_engine_run_over():
            ("on the road the traffic brakes for him and still runs him over - message 17, " \
             "H_IMPACT, Vie 10 -> 5")
 
+def c_engine_gandhar_door():
+    r"""`omk-play`: GANDHAR'S DOOR - a 6x6 grid, four symbols, and it opens.
+
+    `todo/missing-ui.md` 5. Screen 12 is one selectable cursor over a 6x6 grid
+    with four MARKER widgets behind it, and both of its functions were read from
+    the image (neither has a `proc` label):
+
+    * `sub_4AFE90`, the list hook: UP/DOWN/LEFT/RIGHT step the cell within
+      0..5, the cursor's x/y are rewritten `col * 63 + 135` and `row * 63 + 61`
+      (the item's own authored place is the grid's origin), and its `+3C`
+      becomes `(row << 16) | col`. An unmodelled list hook makes the walk refuse
+      every press, so before this the door could be opened and never used.
+    * `sub_4AFF90`, the press: it ORs one bit of `byte_68A60C` for four cells -
+      5, 0x10003, 0x40002, 0x50004, which are (row 0, col 5), (1, 3), (4, 2)
+      and (5, 4) - and when the mask reaches 0x0F it writes the ANSWER 1.
+
+    The run stands at AREA 81's 'Interface' address, opens the door's panel and
+    walks the four symbols in order, confirming on each. The screen answers 1,
+    which is what AREA 81's script wants (`Interface == 1`) before it plays the
+    airlock beat.
+
+    SHOWN TO FAIL: press four cells that are NOT the code (the top row), and the
+    mask stays empty and nothing answers.
+    """
+    import subprocess
+    eng = os.path.join(ROOT, "engine")
+    fr = omkpaths.data_root()
+    if not (os.path.isdir(eng) and os.path.isdir(os.path.join(fr, "SCPTDATA"))):
+        return ("skipped",), ("skipped",), "engine/ or gamedata/ absent"
+    mk = subprocess.run(["make", "-s", "play"], cwd=eng, capture_output=True, text=True)
+    play = os.path.join(eng, "build", "omk-play")
+    if mk.returncode != 0:
+        return ("build failed",), ("built",), "engine/ must build"
+    if not os.path.exists(play):
+        return ("no sdl",), ("no sdl",), "needs SDL to render"
+    # open, then (0,5) (1,3) (4,2) (5,4), confirming on each
+    hold = ("k*50,k28*3,k*40,"
+            "k205*3,k*6,k205*3,k*6,k205*3,k*6,k205*3,k*6,k205*3,k*6,k205*3,k*10,k28*3,k*20,"
+            "k208*3,k*6,k203*3,k*6,k203*3,k*10,k28*3,k*20,"
+            "k208*3,k*6,k208*3,k*6,k208*3,k*6,k203*3,k*10,k28*3,k*20,"
+            "k208*3,k*6,k205*3,k*6,k205*3,k*10,k28*3,k*150")
+    out = subprocess.run(
+        [play, fr, os.path.join(ROOT, "tables"),
+         "--save", os.path.join(ROOT, "traces", "save-appart.bin"),
+         "--area", "81", "--address", "263", "--frames", "900",
+         "--nofmv", "--nodelay", "--no-crowd", "--hold", hold],
+        capture_output=True, text=True, errors="replace",
+        env=dict(os.environ, SDL_VIDEODRIVER="dummy")).stdout
+    rows = re.findall(r"gandhar door: the cursor is on row (\d+) col (\d+); (\d+) of the four "
+                      r"symbols in \((\d+) presses\)", out)
+    ans = re.search(r"screen 12 answered (\d+) -> the script resumes \(variable (\d+) now", out)
+    return ("screen 12 is asking" in out, bool(rows),
+            max((int(r[2]) for r in rows), default=-1),
+            max((int(r[3]) for r in rows), default=-1),
+            int(ans.group(1)) if ans else -1, int(ans.group(2)) if ans else -1), \
+           (True, True, 3, 3, 1, 19), \
+           ("the door's grid walks, the four symbols go in, and it answers 1 - the "
+            "counts are the last the CURSOR printed, so three of four and three presses")
+
+
 def c_engine_terminal_family():
     r"""`omk-play`: Kay'l's TERMINAL and the FIGHT SIMULATOR - the keypad family.
 
@@ -37078,6 +37138,7 @@ SLOW = [
     ("engine: fall reaction", c_engine_fall_reaction, "todo/falls.md 1"),
     ("engine: run over", c_engine_run_over, "todo/falls.md 4"),
     ("engine: lift", c_engine_lift, "todo/next-tasks 13"),
+    ("engine: gandhar door", c_engine_gandhar_door, "todo/missing-ui 5"),
     ("engine: terminal family", c_engine_terminal_family, "todo/missing-ui 3"),
     ("engine: water entry", c_engine_water_entry, "todo/swimming.md 1"),
     ("engine: fight library", c_engine_fight_library, "todo/fight-mode 15.2"),

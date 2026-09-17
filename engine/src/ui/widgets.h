@@ -137,6 +137,10 @@ inline constexpr std::uint32_t kCbTerminalCell       = 0x004AF410u;
 // ...and its KEYPAD's list hook, `sub_4AF300` - the 3x3 pad, the `0` cell
 // below it (9) and the big button (10).
 inline constexpr std::uint32_t kHookTerminalPad      = 0x004AF300u;
+// THE GANDHAR DOOR (screen 12), a 6x6 combination grid: `sub_4AFE90` walks a
+// cursor over it and `sub_4AFF90` stamps the cell it is on.
+inline constexpr std::uint32_t kHookGandharGrid      = 0x004AFE90u;
+inline constexpr std::uint32_t kCbGandharCell        = 0x004AFF90u;
 inline constexpr std::uint32_t kPanelShopSellConfirm = 0x004E3A40u;
 inline constexpr std::uint32_t kPanelShopExamine     = 0x004E39D8u;
 // The confirm's two answers, and both end on the shop panel again.
@@ -952,6 +956,11 @@ public:
     // "has not" is a real outcome, not a failure: confirming with an empty
     // name field leaves the script suspended for ever.
     int   answer() const { return answer_; }
+    // The Gandhar door's cursor, for the viewer that draws it.
+    int   gandharCol() const { return gandCol_; }
+    int   gandharRow() const { return gandRow_; }
+    int   gandharPresses() const { return gandPresses_; }
+    unsigned gandharMask() const { return gandMask_; }
     const std::vector<std::string>& log() const { return log_; }
 
     // THE COLOUR A PAGE PAINTS ITSELF IN - `sub_4296D0` (0x004296D0), and
@@ -1104,6 +1113,8 @@ private:
     bool grid(const UiList& l, std::uint32_t bits);
     // `sub_4AF300`, the terminal family's keypad (see `kHookTerminalPad`).
     bool keypad(const UiList& l, std::uint32_t bits);
+    // `sub_4AFE90`, the Gandhar door's cursor (see `kHookGandharGrid`).
+    bool gandhar(const UiList& l, std::uint32_t bits);
     // `sub_42A5C0` - move the panel's focus between LISTS, which is what the
     // sneak device's pages bind to left and right through `sub_42A710`.
     bool moveLists(int step);
@@ -1165,6 +1176,11 @@ private:
     // `dword_68A5FC` (dossier 5, row 4). Its answer is written on CLOSE by
     // `sub_4AF0E0`, not by the cell - see `keypad`.
     bool        termRow3_ = false, termRow4_ = false;
+    // THE GANDHAR DOOR's cursor and the symbols pressed so far: the cell is
+    // the cursor item's own `+3C` as `(row << 16) | col`, the mask is
+    // `byte_68A60C` and the count `byte_68A608`.
+    int         gandCol_ = 0, gandRow_ = 0, gandPresses_ = 0;
+    unsigned    gandMask_ = 0;
     std::vector<std::string> log_;
     // Item address -> the RGB a page builder wrote into `+8/+9/+10`.
 };

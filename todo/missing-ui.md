@@ -202,7 +202,7 @@ survey, from `tables/ui_widgets.json`:
 
 | screen | panel | list hook | items | item callback | state |
 |---|---|---|---|---|---|
-| 12 `GANDHAR DOOR` | 0x4E4CB8 | **0x004AFE90** unmodelled | 5 | **0x004AFF90** | a 5-cell lock - AREA 81 opens it |
+| 12 `GANDHAR DOOR` | 0x4E4CB8 | 0x004AFE90 **PORTED** | 5 | 0x004AFF90 **PORTED** | done - see below |
 | 13 `DEN` | 0x4E4990 | **0x004AFBE0** unmodelled | 6 | none | Den's locker, 6 cells, no per-item callback - the hook itself answers |
 | 14 `XACHEN` | 0x4E4620 | 0x0042A930 (`kMoveSelectionLR`, ported) + a 4-item list | 4 | **0x004AF9D0** | the mover is already modelled; only the callback is missing |
 | 0 `VIDEOPHONE` | 0x4DF128 | none | 8 | 0x0049DBF0, `textFn` 0x0049E090 | the SNEAK family's - 0x49E090 is already supplied by the viewer |
@@ -213,6 +213,47 @@ So the work is four callbacks and two list hooks, all in the 0x004AF9D0..
 `DEN` is the odd one: with no item callback its hook must both move and answer,
 like the LIFT's grid.
 
+### 5b. GANDHAR'S DOOR — done 2026-09-18
+
+Both of its functions read from the raw image (neither has a `proc` label, and
+`asmfn.py` was checked against the bytes first):
+
+* **`sub_4AFE90`, the list hook.** The screen is a **6x6 grid** and the FIVE
+  items are one selectable cursor plus four markers. UP/DOWN/LEFT/RIGHT step
+  the cell inside 0..5; the cursor's x/y are then rewritten `col * 63 + 135`
+  and `row * 63 + 61` - the item's own authored (135, 61) IS the grid's origin -
+  and its `+3C` becomes `(row << 16) | col`. It returns 1 only when the cell
+  moved, so a confirm falls through to the item's callback.
+* **`sub_4AFF90`, the press.** It counts the press (`byte_68A608`), takes the
+  next marker widget from `off_4E4C80[count]` and places it at the cell, and ORs
+  one bit of `byte_68A60C` for four cells:
+
+  | `+3C` | cell | bit |
+  |---|---|---|
+  | 5 | row 0, col 5 | 1 |
+  | 0x10003 | row 1, col 3 | 2 |
+  | 0x40002 | row 4, col 2 | 4 |
+  | 0x50004 | row 5, col 4 | 8 |
+
+  Four presses play interface sound 0x26; a mask of **0x0F** writes the ANSWER
+  **1** and plays 0x27. The bits are ORed, so the symbols may be pressed in any
+  order and the same one twice does not count twice.
+
+Reached in one command - AREA 81's `Interface` address, zone 1659:
+
+    build/omk-play ../gamedata ../tables --save ../traces/save-appart.bin \
+        --area 81 --address 263
+
+`verify.py: engine: gandhar door` walks the four cells and asserts the answer,
+shown to fail by dropping one symbol from the code (the mask stops at three and
+nothing answers).
+
+**The composer gained `setItemMove`** for this: a widget tree carries an item's
+AUTHORED place, and this hook moves its cursor every step, so the mover has to
+say where it went. NOT ported, labelled: the four marker widgets the press
+stamps (the cursor moves, the stamps do not appear) and the two interface
+sounds.
+
 ## 4. The steps
 
 | step | what | state |
@@ -220,7 +261,7 @@ like the LIFT's grid.
 | 0 | where every screen is opened from | **done 2026-09-17** - §1 |
 | 1 | the LIFT: why it never arrived | **done 2026-09-17** - §2, `verify.py: engine: lift` |
 | 2 | the terminal FAMILY: the display, the keypad and the answers - 7 screens | **done 2026-09-17** - §3, `verify.py: engine: terminal family` |
-| 3 | the SPECIAL screens - 12 GANDHAR DOOR, 13 DEN, 14 XACHEN, 0 VIDEOPHONE, 36 HIGH-SCORE - and the terminal's own dossier pages | §5 has each one's hooks |
+| 3 | the SPECIAL screens: **12 GANDHAR DOOR done** (§5b); 13 DEN, 14 XACHEN, 0 VIDEOPHONE, 36 HIGH-SCORE left, and the terminal's own dossier pages | §5 has each one's hooks |
 | 4 | play | |
 
 ## 6. The lift arrives and the level is not drawn — the mechanism, and a REVERTED patch

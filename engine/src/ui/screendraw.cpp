@@ -533,7 +533,16 @@ ScreenFrame ScreenComposer::draw(Surface& fb, int screenId,
                 ++out.itemsDrawn;
             }
         }
-        for (const auto& it : l.items) {
+        for (const auto& itAuthored : l.items) {
+            // ...AT THE PLACE THE SCREEN'S OWN HOOK PUT IT, when there is one.
+            // A widget tree carries an item's AUTHORED x/y, and a hook like the
+            // Gandhar door's moves its cursor every step (`setItemMove`).
+            UiItem itMoved = itAuthored;
+            if (moved_) {
+                const auto mv = moved_->find(itAuthored.addr);
+                if (mv != moved_->end()) { itMoved.x = mv->second.first; itMoved.y = mv->second.second; }
+            }
+            const UiItem& it = itMoved;
             // THE IDENTITY PAGE'S CHARACTER: `0x004779C0` - `sub_478DE0` at
             // 118.11, the node turned by oscillator 4, `I2D_Submit3DView` into
             // the item's scaled rect at `item+0xB - 1`. Drawn when the walk
