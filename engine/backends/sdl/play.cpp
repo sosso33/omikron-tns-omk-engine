@@ -599,6 +599,16 @@ const std::map<int, int>& keymap() {
         // no binding; and "Pas de cote / Demi-tour" is action 10, bit 0x400,
         // keyboard **157** = DIK_RCONTROL. Both are the engine's own defaults.
         {SDL_SCANCODE_RSHIFT, 0x36}, {SDL_SCANCODE_RCTRL, 0x9D},
+        // ...and the LEFT control sends the same code, which is THE VIEWER'S
+        // and not the game's: DIK_RCONTROL is the engine's binding for
+        // "Plonger" (group 1 slot 5, the key that SWIMS) and for the
+        // adventure sidestep, and a Mac laptop keyboard HAS NO RIGHT CONTROL
+        // AT ALL. A reader could not swim in the canal for that reason alone,
+        // and nothing in the log could say so - the bit simply never arrived.
+        // The engine's own table is untouched; this is the frontend deciding
+        // which physical key produces the code, the same job the WASD rows
+        // above do.
+        {SDL_SCANCODE_LCTRL, 0x9D},
     };
     return m;
 }
@@ -1680,6 +1690,7 @@ int main(int argc, char** argv) {
     // RGB565 every 30 frames from the hand-over on (`snap-<frame>.bin`,
     // 640x480 after the display size), which is how the walk was LOOKED at.
     std::string holdStream, snapsDir, flickerDir;
+    bool waterCamPreset = false;   // `--water-cam preset`: the old fixed-offset reading
     int snapEvery = 30;            // `--snap-every N`: 1 catches a flicker
     // A STREET START (docs/STREET_LIFE.md, step 4): `--save FILE` takes the
     // game DB from a save's slot 0 - the player record lives there, and
@@ -1953,6 +1964,10 @@ int main(int argc, char** argv) {
         // EDGE; a walk that has to wait for a line to play needs more.
         else if (a == "--keydelay" && i + 1 < argc) keyEvery = std::atoi(argv[++i]);
         else if (a == "--hold" && i + 1 < argc) holdStream = argv[++i];
+        // `--water-cam preset`: the FIRST reading of the swim camera - preset 21's
+        // fixed eye turned by all three of the swimmer's angles - kept only to
+        // lay beside the chase camera that replaced it (see the water entry).
+        else if (a == "--water-cam" && i + 1 < argc) waterCamPreset = std::string(argv[++i]) == "preset";
         else if (a == "--snaps" && i + 1 < argc) snapsDir = argv[++i];
         else if (a == "--snap-every" && i + 1 < argc) snapEvery = std::max(1, std::atoi(argv[++i]));
         else if (a == "--flicker" && i + 1 < argc) flickerDir = argv[++i];
@@ -8082,7 +8097,14 @@ int main(int argc, char** argv) {
                         // (`H_FALL`) unless ACTOR_STATE is 2, 3 or 15, and asks
                         // for the overhead camera 18 over 30 frames. Nothing below
                         // him at all reads as the longest band.
-                        if (player->walker().airborne() && !player->walker().jumping() && !fallBanded) {
+                        // ...and NOT in the water. `Actor_ApplyMotion` sends ACTOR_STATEs
+                        // 11..14 to `sub_4A8F30` INSTEAD of gravity and the ground probe,
+                        // so `Walk_GroundResponse` - the whole of this reaction - is never
+                        // reached while he is in the canal.
+                        const int groundSt = static_cast<int>(player->state());
+                        const bool inWaterState = groundSt >= 11 && groundSt <= 14;
+                        if (!inWaterState && player->walker().airborne() &&
+                            !player->walker().jumping() && !fallBanded) {
                             const auto* w = &player->walker();
                             const auto g = omk::floorUnder(w->soup(), w->pos()[0],
                                                            w->pos()[1] - 12.81, w->pos()[2]);
@@ -8110,13 +8132,24 @@ int main(int argc, char** argv) {
                         }
                         {
                             const int ws = static_cast<int>(player->state());
+                            // an instrument: every tick, for a stroke that loses its travel
+                            if (ws >= 11 && ws <= 14 && std::getenv("OMK_SWIMTRACE"))
+                                std::printf("  swimtrace %ld: state %d '%s' frame %.2f -> %.2f, local y %+.2f, "
+                                            "pitch %.1f, y %.2f\n", n, player->ctlState(),
+                                            player->ctlStateName().c_str(),
+                                            double(player->tickFrameBefore()),
+                                            double(player->tickFrameAfter()),
+                                            double(player->last().rootLocal[1]),
+                                            double(player->eulerPitch()), player->pos()[1]);
                             if (ws >= 11 && ws <= 14 && n % 30 == 0)
                                 std::printf("frame %ld: swimming - ACTOR_STATE %d, .CTL '%s' group %d, at "
-                                            "%.0f %.1f %.0f, pitch %.0f, drawn head %.0f over the pelvis, breath %s\n", n, ws,
+                                            "%.0f %.1f %.0f, pitch %.0f, drawn head %.0f over the pelvis, root local %+.2f %+.2f %+.2f -> world %+.2f %+.2f %+.2f, breath %s\n", n, ws,
                                             player->ctlStateName().c_str(), player->ctlGroupId(),
                                             player->pos()[0], player->pos()[1], player->pos()[2],
                                             double(player->eulerPitch()),
                                             double(playerHeadRise),
+                                            double(player->last().rootLocal[0]), double(player->last().rootLocal[1]), double(player->last().rootLocal[2]),
+                                            double(player->last().rootDelta[0]), double(player->last().rootDelta[1]), double(player->last().rootDelta[2]),
                                             player->breathLeftMs() < 0.0 ? "-" :
                                                 (std::to_string(int(player->breathLeftMs())) + " ms").c_str());
                         }
@@ -8126,13 +8159,57 @@ int main(int argc, char** argv) {
                         // (`H_HFL-IN`), installs control scheme 1, writes
                         // ACTOR_STATE 11 and clears the fall accumulators, and asks
                         // for camera 21 on him over 50 frames.
+                        // THE ENGINE TAKES THIS ARM *OR* THE GROUND RESPONSE, NOT BOTH
+                        // (`21_d3d.c` 3830: `if (state == 1 && mesh & 0x8000000) { ...this... }
+                        // else Walk_GroundResponse(...)`). The port ran both, and on the tick
+                        // where the landing and the entry coincide - which is what real-time
+                        // play produces, and what `--nodelay` happened to separate by one
+                        // frame - the landing's group 4 overwrote group 300: he stood in the
+                        // canal on the WALK bank, in ACTOR_STATE 11, laid flat by the swim
+                        // pitch. A reader, 2026-09-17: *"The character is not swimming, he
+                        // just walking at 90 degrees"*.
+                        bool enteredWater = false;
+                        // AND THE MESH IS PROBED, not read off the walker's stand
+                        // flags, which only a STEP writes: after a fall onto the
+                        // canal bed he takes no step at all - the landing reaction
+                        // that would have put him back on a locomotion clip is the
+                        // arm this one replaces - so the cached flags stayed the
+                        // LEDGE's and he stood on the bed in `H_FALL` for ever.
+                        // The engine reads `Walk_ProbeGround`'s own mesh every
+                        // frame and has no such dependency. Grounded only: a body
+                        // still falling has not reached the water.
+                        std::uint32_t standFl = 0;
+                        if (!player->walker().airborne())
+                            player->walker().probeFlags(player->pos()[0],
+                                                        player->pos()[1] - 12.81,
+                                                        player->pos()[2], standFl);
                         if (player->state() == omk::ActorState::Normal &&
-                            (player->walker().floorFlags() & 0x8000000u)) {
+                            (standFl & 0x8000000u)) {
                             const bool grouped = player->enterGroupById(300);
+                            enteredWater = true;
                             player->setActorState(omk::ActorState::WaterIn11, "Actor_ApplyMotion");
                             in.installScheme(1);
                             fallBanded = false;
-                            static constexpr float kWaterEye[3] = {0.0f, 78.7402f, -19.685f};
+                            // THE SWIM CAMERA IS THE CHASE CAMERA, NOT A FIXED OFFSET
+                            // (2026-09-17, after a reader: *"it should be behind him"*).
+                            // `sub_414520` gives mode 21 its own setup, `sub_413EF0`,
+                            // and gives mode 0 - the ordinary follow camera - a SWIM
+                            // VARIANT, `sub_413CD0`, whenever the player is in state 11,
+                            // 13 or 14; both write the same chase tunables (+228 = -39.37,
+                            // one metre; +300 = 1.5, +304 = 1.2, +308 = -1.0, +284 = 5,
+                            // +288 = 8, flags 0x4800) and probe for the water line above
+                            // him (`flt_4E7D0C`). So what films a swimmer is the camera
+                            // that films a walker, retuned - not preset 21's eye
+                            // (0, 78.74, -19.685) turned by his pitch, which is what this
+                            // did and which put the lens in FRONT of a prone body.
+                            // RECONSTRUCTION, labelled: the flagged passes those tunables
+                            // feed are not ported (`player.h` says the same of the land
+                            // camera's), so this is mode 0's own 3 m behind him, the
+                            // tunables' 1 m above, by the YAW alone. `--water-cam preset`
+                            // brings the old reading back to lay beside it.
+                            static constexpr float kWaterPresetEye[3] = {0.0f, 78.7402f, -19.685f};
+                            static constexpr float kWaterChaseEye[3]  = {0.0f, 39.370079f, -118.1102f};
+                            const float* kWaterEye = waterCamPreset ? kWaterPresetEye : kWaterChaseEye;
                             static constexpr float kWaterAt[3]  = {0.0f, 0.0f, 0.0f};
                             playerCamRequest(kWaterEye, kWaterAt, 75.0f, 50.0f);
                             std::printf("frame %ld: INTO THE WATER at %.0f %.0f %.0f - %s, scheme 1, "
@@ -8192,7 +8269,31 @@ int main(int argc, char** argv) {
                                 // fall, skipped in ACTOR_STATEs 2, 3 and 15, and the
                                 // camera. The short band's second test on `+284` is
                                 // not modelled; the fall alone decides.
-                                {
+                                // ...and the floor he has just landed ON, because it is ONE
+                                // probe in the engine: the mesh `Walk_ProbeGround` returns
+                                // decides which arm runs, so a body landing on the canal's
+                                // bed never reaches the landing reaction or its message at
+                                // all. The port sees the landing a tick before the flags,
+                                // which is why all three tests are here.
+                                // ...and the mesh he has just landed ON, PROBED here rather
+                                // than read off the walker, because the port notices the
+                                // landing one tick before the stand's flags follow it: at
+                                // the landing tick `floorFlags()` is still the floor he
+                                // left. The engine has no such gap - `Walk_ProbeGround`
+                                // returns one mesh and the if/else at `21_d3d.c` 3830
+                                // chooses on it - so the probe is what must decide.
+                                std::uint32_t landFlags = 0;
+                                player->walker().probeFlags(player->pos()[0],
+                                                            player->pos()[1] - 12.81,
+                                                            player->pos()[2], landFlags);
+                                const bool waterArm = enteredWater || inWaterState ||
+                                                      (landFlags & 0x8000000u);
+                                if (waterArm)
+                                    std::printf("frame %ld: the landing's reaction SKIPPED - the "
+                                                "water arm took this tick (ACTOR_STATE %d), and the "
+                                                "engine calls one or the other\n", n,
+                                                static_cast<int>(player->state()));
+                                if (!waterArm) {
                                     const auto st = static_cast<int>(player->state());
                                     const bool may = !(st == 2 || st == 3 || st == 15);
                                     int grp = -1;
@@ -8207,7 +8308,8 @@ int main(int argc, char** argv) {
                                     if (lf >= 196.85039) fallCamRequest(19, false, "the landing", st);
                                     else                 fallCamRequest(16, false, "the landing", st);
                                 }
-                                const int msg = lf >= 196.85039 ? 11 : lf >= 118.11024 ? 10 : -1;
+                                const int msg = waterArm ? -1
+                                              : lf >= 196.85039 ? 11 : lf >= 118.11024 ? 10 : -1;
                                 if (msg >= 0) {
                                     const bool ran = session.postMessage(msg, session.playerActor());
                                     std::printf("frame %ld: the landing (Walk_GroundResponse) - fall "
@@ -8874,6 +8976,31 @@ int main(int argc, char** argv) {
                     }
                 }
                 for (const auto& mv : (playerTicked ? player->specialMoves() : kNoMoves)) {
+                    // IN THE WATER `MDACTION` IS THE WAY OUT (`sub_4A9580`, `actor/player.h`):
+                    // groups 301 and 302 both carry it, and its arm looks for a
+                    // platform ahead of him instead of for something to use.
+                    if (mv == "MDACTION") {
+                        const int ws = static_cast<int>(player->state());
+                        if (ws >= 11 && ws <= 14) {
+                            float over = 0.0f;
+                            const int why = player->waterClimbOut(&over);
+                            static const char* kWhy[5] = {"", "not at the surface",
+                                "no platform within 80 cm ahead", "the platform is too high or under water",
+                                "no water edge on the way back"};
+                            if (why == 0) {
+                                in.installScheme(0);
+                                std::printf("frame %ld: OUT OF THE WATER (sub_4A9580) - a platform %.1f over "
+                                            "the water; ACTOR_STATE %d, bank group 303 (H_WO_SD), scheme 0, "
+                                            "at %.0f %.1f %.0f\n", n, double(over),
+                                            static_cast<int>(player->state()), player->pos()[0],
+                                            player->pos()[1], player->pos()[2]);
+                            } else {
+                                std::printf("frame %ld: the climb out refused - %s%s\n", n, kWhy[why],
+                                            why == 3 ? (" (" + std::to_string(over) + " over the water)").c_str() : "");
+                            }
+                            continue;
+                        }
+                    }
                     if (mv == "MDACTION") actionFromMove = true;
                     // `MDSHOOT0` (0x0046B610): the latch, in ACTOR_STATE 3
                     // only - the next frame's channel tick hands it to the gate.
@@ -12033,7 +12160,46 @@ int main(int argc, char** argv) {
                 // same 30 frames back to the follow camera and hands over.
                 // Full-frame, not letterboxed: nothing read ties the strip
                 // to this mode, and the walk it interrupts is full-frame.
-                const omk::FollowCamera tc = player->resolveOffsets(takeCamEye, takeCamAt, takeCamFov);
+                const int wcs = static_cast<int>(player->state());
+                const bool swimCam = !waterCamPreset && wcs >= 11 && wcs <= 14;
+                omk::FollowCamera tc =
+                    swimCam ? player->resolveOffsetsYaw(takeCamEye, takeCamAt, takeCamFov)
+                            : player->resolveOffsets(takeCamEye, takeCamAt, takeCamFov);
+                // THE SWIM CAMERA STAYS INSIDE THE SET: a ray from what it looks
+                // at to where it would stand, through the shown set's `shotSoup`
+                // - the fight camera's own test (`sub_416570` -> `sub_444810`,
+                // CollisionOnly skipped, 0x41 untested) - and the eye is brought
+                // in to nine tenths of the way to the wall. A reader, 2026-09-17:
+                // *"the camera does not respect collision and often goes outside
+                // the environment"*. RECONSTRUCTION, labelled: the engine's swim
+                // variant (`sub_413CD0`) sets camera flags 4 | 0x4800 and NOT the
+                // land camera's flag 8, whose pass is the wall rule `sub_417070`;
+                // what 0x4000 and 0x800 run is unread, so which rule keeps the
+                // original's lens inside is not established - only that a canal
+                // three metres wide cannot hold a camera three metres behind him.
+                if (swimCam) {
+                    const omk::TriangleSoup* shot = nullptr;
+                    for (const auto& ws : worldSlots)
+                        if (!ws.stem.empty() && ws.stem == worldSet) shot = &ws.shotSoup;
+                    if (shot && !shot->empty()) {
+                        const double p0[3] = {tc.at[0], tc.at[1], tc.at[2]};
+                        const double d[3] = {double(tc.eye[0]) - tc.at[0], double(tc.eye[1]) - tc.at[1],
+                                             double(tc.eye[2]) - tc.at[2]};
+                        const auto h = omk::sweepSphere(*shot, p0, d, 0.0);
+                        if (h && h->t < 1.0) {
+                            const double t = h->t * 0.9;
+                            for (int k = 0; k < 3; ++k)
+                                tc.eye[k] = static_cast<float>(p0[k] + t * d[k]);
+                            static long swimCamTold = -1000;
+                            if (n - swimCamTold >= 60) {
+                                swimCamTold = n;
+                                std::printf("frame %ld: the swim camera - a wall at %.0f%% of the way to "
+                                            "the eye; brought in to %.0f %.0f %.0f\n", n, h->t * 100.0,
+                                            double(tc.eye[0]), double(tc.eye[1]), double(tc.eye[2]));
+                            }
+                        }
+                    }
+                }
                 const omk::FollowCamera& fc = player->followCamera();
                 const omk::FollowCamera& to = takeCamPhase == 3 ? fc : tc;
                 float u = 1.0f;
@@ -15939,6 +16105,23 @@ int main(int argc, char** argv) {
                     // construction, which is why the explicit release below it
                     // was able to look correct while the walk was 1.41 out.
                     if (player->variantCount() <= 1) rootDrop = cur - playerRootRef;
+                    // ...AND NOT IN THE WATER, for the slider's reason above. In
+                    // ACTOR_STATEs 11..14 the clip's root y reaches his POSITION
+                    // (`sub_4A9470` moves him by the whole delta, vertical
+                    // included), and for a SWIM clip that y is not a bob at all:
+                    // the clips are authored upright and stroke along the body's
+                    // own axis, which his pitch then lays along the water. Drawn
+                    // as a drop as well, the stroke's travel went onto the body a
+                    // second time, in WORLD y and unturned - so on screen he
+                    // climbed through every loop whatever way he pointed and
+                    // snapped back at the wrap. A reader, 2026-09-17: *"the
+                    // character always goes up, whatever is his actual direction
+                    // ... each time the animation loop restarts, the character's
+                    // position is reset"*.
+                    {
+                        const int ws = static_cast<int>(player->state());
+                        if (ws >= 11 && ws <= 14) { rootDrop = 0.0f; rootAccum = 0.0f; }
+                    }
                     // MEASURING, not fixing: how far does the model's own
                     // lowest point travel across a take? If the rotations
                     // lower the body, a CONSTANT anchor is right and the
@@ -18906,6 +19089,17 @@ int main(int argc, char** argv) {
                 return static_cast<double>(SDL_GetPerformanceCounter()) / perfHz;
             };
             double now = nowSec();
+            // A SLOW FRAME, SAID - an instrument. A reader reported "small freezes
+            // on the streets" (2026-09-17) and the log held nothing to attribute
+            // them with: the work of a frame is the time from the last pacer exit
+            // to this entry, and one over two periods is written down with where
+            // he was, so a hitch can be laid beside what else the log says then.
+            static double paceLeft = 0.0;
+            if (paceLeft > 0.0 && now - paceLeft > 2.0 * kPeriod)
+                std::printf("frame %ld: SLOW FRAME - %.0f ms of work (the budget is 33)%s\n", n,
+                            (now - paceLeft) * 1000.0,
+                            player ? (" at " + std::to_string(int(player->pos()[0])) + " " +
+                                      std::to_string(int(player->pos()[2]))).c_str() : "");
             if (paceNext <= 0.0 || now > paceNext + kPeriod) paceNext = now;
             while (now < paceNext) {
                 const double left = paceNext - now;
@@ -18913,6 +19107,7 @@ int main(int argc, char** argv) {
                 now = nowSec();
             }
             paceNext += kPeriod;
+            paceLeft = nowSec();
         }
     }
     std::printf("%ld frames presented\n", n);

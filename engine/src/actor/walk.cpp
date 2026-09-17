@@ -184,18 +184,31 @@ StepResult Walker::step(double dx, double dz, double dt) {
     const double nz = pos_[2] + dz;
     const double y  = pos_[1];
 
-    const auto g = ground(nx, y, nz);
+    auto g = ground(nx, y, nz);
     // ...and WHICH triangle, for its mesh's flags: the grid probe names it
     std::uint32_t floorTri = 0;
     bool floorKnown = false;
     if (g && floorFlags_ && grid_ && floorFlags_->size() * 9 == soup_.size())
         floorKnown = floorUnder(soup_, *grid_, nx, y - kStepUp - 1.0, nz, floorTri).has_value() &&
                      floorTri < floorFlags_->size();
-    const std::uint32_t floorFl = floorKnown ? (*floorFlags_)[floorTri] : 0u;
-    // THE THIRD STEP ARM: a mesh flagged 0x20000000 refuses the step whatever
-    // its height (`21_d3d.c` 2644, `|| (**mesh & 0x20000000)`) - the engine
-    // pushes him back to where he stood. A water surface is one.
-    if (g && (floorFl & 0x20000000u)) return StepResult::Blocked;
+    std::uint32_t floorFl = floorKnown ? (*floorFlags_)[floorTri] : 0u;
+    // A WATER SURFACE IS NOT A FLOOR, AND NOT A WALL EITHER (corrected
+    // 2026-09-17). This was first ported as "a mesh flagged 0x20000000 refuses
+    // the step whatever its height", from `21_d3d.c` 2644's
+    // `|| (**mesh & 0x20000000)` - but that arm runs only for ground-probe hit
+    // kind 2 and answers with a VELOCITY, an eighth of the offset from the probe
+    // point, not with a refusal. As a hard block it fenced every quay: a reader
+    // could get into the water by JUMPING - airborne, where the fall already
+    // passes through the surface - and in many places not by walking. So the
+    // step now looks THROUGH the water, as the fall does: the floor is whatever
+    // lies under it, and if that is a long way down he steps off the edge and
+    // falls in. LABELLED: the engine's nudge itself is not ported, and the
+    // floor's own flags are not re-read here (the viewer's water entry probes
+    // them itself).
+    if (g && (floorFl & 0x20000000u)) {
+        g = floorThroughWater(nx, y - kStepUp - 1.0, nz);
+        floorFl = 0u;
+    }
     if (!g) {
         // No walkable floor there - but a face past the slope limit is not a
         // hole. `Walk_GroundResponse` puts the actor on it and slides him:

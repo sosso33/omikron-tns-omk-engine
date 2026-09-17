@@ -219,6 +219,49 @@ finds neither the surface mesh nor the bed - that is, when he swims out from
 under the water polygon's footprint - and the canal's walk-in keeps him under
 `Eau` throughout. Finding that edge is for the play test.
 
+## 8. Step 6, PLAYED — nine reports, and what each one was (2026-09-17)
+
+A reader played the canal through some fifteen sessions in one evening, the log
+of each kept whole. **CONFIRMED IN PLAY** at the end of it: the entry, the swim
+under water and at the surface, the dive, coming up, the breath and the
+drowning, the chase camera and its wall test, walking into the water, and the
+climb out. Every one of the faults below was in code the headless check had
+passed.
+
+| the report | what it was |
+|---|---|
+| *"he is not swimming, he just walks at 90 degrees"* | the engine takes the water arm OR `Walk_GroundResponse` (`21_d3d.c` 3830, an if/else); the port ran both, and on the tick they coincide - real time, which `--nodelay` happened to split by a frame - the landing's group 4 overwrote group 300. The landing on water also posted message 10, fall damage the engine never reaches |
+| he would not swim however long CTRL was held | `Plonger` is DIK_RCONTROL and a Mac laptop has no right control. The viewer's keymap sends the same code for the left one - the frontend's choice of key, the engine's table untouched |
+| he stood on the bed in `H_FALL` for ever | with the landing skipped he never steps, and the entry read the walker's CACHED stand flags, which only a step writes. The entry now probes the mesh under him, as `Walk_ProbeGround` does |
+| *"the camera should be behind him"* | the swim camera is not a preset offset at all. `sub_414520` gives mode 21 its own setup (`sub_413EF0`) and gives mode 0 a SWIM VARIANT (`sub_413CD0`) in states 11/13/14, both writing chase tunables (+228 = -39.37, 1.5 / 1.2 / -1.0, flags 0x4800). Now the chase camera - 3 m behind by the yaw, 1 m up. RECONSTRUCTION: the flagged passes are unported, as the land camera's are |
+| *"always goes up ... the position resets each loop"* (the drawing) | for looping clips the draw adds the pelvis track's y as a bob. A swim clip is authored upright and strokes along the body's axis, so that y is the TRAVEL, already on his position: drawn again, in world y and unturned |
+| *"can not go to the surface"* | the probe point is the HEAD - `actor+16` is the `Tete` node (`Actor_LoadModel`) - as posed, not a standing head's height and not the pelvis (both were tried). And the second probe goes DOWN from two metres over it: water first is clear air and he surfaces, a roof first puts him back under. It was transcribed backwards |
+| *"still goes up whatever direction"* (the motion) | `Cef_ApplyRootShift`'s glide - `H_SWIMIN` frames 15..27, along the clip's own up - went through `rotateByFacing`, which turned by the yaw alone. +288 carries the pitch in the water, so that function now IS the whole Euler in states 11..14. Found by a per-tick trace (`OMK_SWIMTRACE`): he rose 1.2 a tick through the strong half of every stroke with his nose fully down |
+| no way out of the water | `MDACTION`'s water arm, `sub_4A9580` - table-called, so invisible to a caller search: a platform within 80 cm ahead, no more than 29.53 over the water; the PELVIS 27.56 under it (the engine's position is the node; the port's is the feet, and putting the FEET there started him 42 too high); ACTOR_STATE 12, group 303, `H_WO_SD` to `MDSW2SD` |
+| *"he falls a little each time he climbs"* | the water's floor limit was "below the nearest floor: put him on it", which SNAPPED UP a body coming up the quay's face the moment it drifted over the edge. It stops a body coming DOWN now. A scripted climb had landed exactly and a played one 11 high, because the crossing depends on the approach |
+| could not walk into the water, only jump | `21_d3d.c` 2644's `|| (mesh & 0x20000000)` had been ported as a refused step. It is one probe case answering with a velocity. A step now looks THROUGH the water, as the fall does |
+| the camera left the set | a ray from the target to the eye through `shotSoup`, the fight camera's own test. RECONSTRUCTION: the swim variant does not set the land camera's wall flag 8, and what its 0x4000 / 0x800 run is unread |
+
+**Two lessons this file should keep.** A function with `@callers 0` is not dead -
+`sub_4A9580` and `sub_465390` are both table-called, and the whole way out of the
+water sat in one. And every one of these survived a green check, because the
+check asserted what the port did: three of its assertions (the drift to pitch
+340, the head over the pelvis at the cap) described the invented head probe and
+were deleted with it.
+
+**Labelled and open**: the head point is the rest offset turned by his Euler,
+without the clip's bend; with nothing under the head the body's own floor
+answers (the engine probes every mesh, this the walkable floor alone); the
+climb's slope test is not ported; the step's 0x20000000 nudge is not ported;
+`engine: water entry` cannot reach the climb out from its ledge, which stands on
+play alone.
+
+**The street's freezes were not the swim.** A `SLOW FRAME` line (any frame over
+two periods, with his position) attributed all six of one session: two on a
+MUSIC TRACK SWITCH - the new stream opened on the main thread - and one on the
+frame a new character entered, with the texture pool rebuilt and the Vulkan
+depth-tie table built for the posed body. Handed to the performance task.
+
 ## 2. The steps
 
 | step | what | state |
@@ -230,4 +273,4 @@ under the water polygon's footprint - and the canal's walk-in keeps him under
 | 3b | the pitch on the DRAWN body: the whole Euler, actor+288 | **done 2026-09-17** - §5 |
 | 4 | the breath: the 40 s timer, `Hud_DrawBar` mode 1, message 12 | **done 2026-09-17** - §6 (the timer and message 12 landed with step 3) |
 | 5 | a place to swim headlessly, and the check | **done 2026-09-17** - §7: the canal walk-in, the DIVE key, and one run carrying float, drift and swim |
-| 6 | play | |
+| 6 | play | **PLAYED AND CONFIRMED 2026-09-17** - §8: nine reports, each a port fault a green check had passed |

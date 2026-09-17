@@ -2,6 +2,7 @@
 #include "actor/player.h"
 
 #include <cmath>
+#include <cstdlib>
 #include <cstdio>
 #include <string>
 #include <set>
@@ -295,15 +296,23 @@ bool PlayerController::goToMove(int groupId) {
 void PlayerController::waterTick(double dx, double dy, double dz, float dt) {
     const int st = static_cast<int>(rt_.state());
     const double crown = static_cast<double>(camLift_ + headLift_);   // feet -> crown
-    const double headNode = static_cast<double>(camLift_) + 0.8 * headLift_;
     const double* w = walker_.pos();
     double push[2] = {0.0, 0.0};
     if (st != 12) walker_.slide(dx, dz, push);
     double nx = w[0] + dx, ny = w[1] + dy, nz = w[2] + dz;
     // the bed is a floor he does not pass (Y grows downward) - probed from where
     // he WAS, since a move that already crossed it would find nothing under him
+    // ...and it stops a body COMING DOWN onto it, nothing else. Written first as
+    // "below the nearest floor: put him on it", it also SNAPPED UP a body that was
+    // legitimately under a floor's level - the climb out, whose feet come up the
+    // quay's face from 70 cm under its top: the moment his drift carried him over
+    // the edge he was lifted ~11 units and `H_WO_SD`'s remaining rise went on top,
+    // so he ended that much over the platform and fell to it (a reader, twice:
+    // *"still a little too high ... he falls a little each time"*). How early he
+    // crossed the edge depended on the approach, which is why a scripted climb
+    // landed exactly and a played one did not.
     if (const auto bed = walker_.floorThroughWater(nx, w[1] - kStepUp - 1.0, nz))
-        if (ny > *bed) ny = *bed;
+        if (w[1] <= *bed + 0.5 && ny > *bed) ny = *bed;
 
     if (st == 13) {
         const double top = ny - crown;
@@ -317,20 +326,85 @@ void PlayerController::waterTick(double dx, double dy, double dz, float dt) {
                 ny = *s - 11.811024 + crown;
         }
     } else if (st == 14) {
-        const double head = ny - headNode;
+        // ---- `sub_4A8F30` case 14 WHOLE, and this is a CORRECTION ---------
+        //
+        // The engine probes from the NODE - `v15 = actor+16` then `v15[11..13]`,
+        // the o3de node's own world position, which for a character is the
+        // PELVIS - and `World_ProbePoint` boxes from there with `+INF` for the
+        // Y maximum, so it is the nearest surface BELOW him and the distance
+        // comes back in the out-param. The first port of this probed from a
+        // HEAD POINT of its own invention (`camLift_ + 0.8 * headLift_`), which
+        // pinned him a head's height too low and is why swimming up did nothing
+        // a reader could see (2026-09-17: *"the animation of going up/down is
+        // playing, but each time the animation loop restarts, the character's
+        // position is reset"*).
+        //
+        // Then the three arms, in the engine's own order:
+        //  * the nearest floor below is the WATER SURFACE (0x20000000), which
+        //    means he has risen above the water line. At a distance of 0 or
+        //    less nothing happens. Otherwise a SECOND probe two metres above
+        //    him (`v34 - 78.740158`, the body sphere's radius, reach 7.874):
+        //      - no water up there: he is out of the water, so he is moved
+        //        DOWN by the distance - pinned at the surface - and the tick
+        //        ends without the clamp or the breath;
+        //      - water up there as well: he SURFACES (below).
+        //  * the nearest floor below is the BED (0x8000000): up 0.15 a frame
+        //    and the pitch turns +0.2, and he stays under.
+        //  * anything else under him - a bank, a step, the quay: he SURFACES.
+        // THE PROBE POINT IS THE HEAD, AS POSED (corrected twice, 2026-09-17).
+        // `actor+16` is what `Actor_LoadModel` fills with
+        // `o3de_FindMeshByName(root, "Tete")`, and the arm reads that node's
+        // WORLD position. The first port used a standing head's height over the
+        // feet, which for a PRONE swimmer is a point in the water far above his
+        // real head; the second, mis-reading `+16` as the root, used the pelvis.
+        // The head is the pelvis plus the rest offset turned by his whole Euler
+        // - level with him and ahead of him when he lies flat. LABELLED: the
+        // clip's own bend of the neck and spine is not in it.
+        const float headRest[3] = {0.0f, -0.8f * headLift_, 0.0f};
+        float headW[3];
+        rotateEuler(euler_, headRest, headW);
+        const double hx = nx + static_cast<double>(headW[0]);
+        const double hz = nz + static_cast<double>(headW[2]);
+        const double node = ny - static_cast<double>(camLift_) + static_cast<double>(headW[1]);
         std::uint32_t fl = 0;
-        const auto h = walker_.probeFlags(nx, head, nz, fl);
-        bool under = true;
+        auto h = walker_.probeFlags(hx, node, hz, fl);
+        // A PORT GUARD, labelled: the engine probes EVERY mesh of the sector and
+        // this probes the walkable floor alone, so a head held against a canal
+        // wall is over nothing at all and every water rule went quiet - he rose
+        // out of the water in ACTOR_STATE 14. With nothing under the head, what
+        // is under the body answers.
+        if (!h) h = walker_.probeFlags(nx, node, nz, fl);
+        bool under = true, done = false;
+        if (std::getenv("OMK_SWIMTRACE"))
+            std::printf("  waterprobe: head at %.1f %.1f %.1f -> %s y %.1f flags %08x\n", hx, node, hz,
+                        h ? "hit" : "NOTHING", h ? *h : 0.0, fl);
         if (h && (fl & 0x20000000u)) {
-            // his head is above the water: pulled back under by the gap
-            const double d = *h - head;
-            if (d > 0.0) ny += d;
+            const double d = *h - node;
+            if (d <= 0.0) { done = true; }
+            else {
+                // THE SECOND PROBE GOES DOWN, from two metres over his head
+                // (`sub_443560` boxes y from `head - 78.74` to FLT_MAX, fat by the
+                // body sphere's radius; its 7.874 is a tolerance between two hits,
+                // not a reach). What it meets FIRST decides: the water means two
+                // metres of clear air over him, and he SURFACES; anything else - a
+                // sewer's roof - or nothing means he cannot come up here, and he is
+                // put back down by the distance. This was transcribed BACKWARDS at
+                // first ("water above him"), which pinned him under open sky for
+                // ever - a reader, 2026-09-17: *"the character can not go to the
+                // surface"*.
+                std::uint32_t fl2 = 0;
+                const auto h2 = walker_.probeFlags(hx, node - 78.740158, hz, fl2);
+                const bool clearAbove = h2 && (fl2 & 0x20000000u);
+                if (clearAbove) under = false;                  // up he comes
+                else { ny += d; done = true; }                  // a roof: back under
+            }
         } else if (h && (fl & 0x8000000u)) {
             ny -= 0.15 * static_cast<double>(dt);
             euler_[0] += 0.2f * dt;
         } else if (h) {
             under = false;
         }
+        if (!done) {
         if (under) {
             if (euler_[0] < 180.0f) euler_[0] = 270.0f;
             else {
@@ -352,9 +426,58 @@ void PlayerController::waterTick(double dx, double dy, double dz, float dt) {
             drowned_ = false;
             waterMsgs_.push_back(21);
         }
+        }
     }
     walker_.moveTo(nx, ny, nz);
     last_.step = StepResult::Moved;
+}
+
+int PlayerController::waterClimbOut(float* platformOverWater) {
+    const double* w = walker_.pos();
+    const double crown = static_cast<double>(camLift_ + headLift_);
+    std::uint32_t fl = 0;
+    const auto surf = walker_.probeFlags(w[0], w[1] - crown, w[2], fl);
+    if (!surf || !(fl & 0x20000000u)) return 1;
+    const double from = *surf - 78.740158;                   // two metres over the water
+    const double yaw = static_cast<double>(euler_[1]) * 0.0174532925199433;
+    const double sx = std::sin(yaw) * 31.496063 * 0.2, sz = std::cos(yaw) * 31.496063 * 0.2;
+    double px = w[0], pz = w[2], platform = 0.0;
+    int k = 0;
+    for (; k < 5; ++k) {
+        px += sx; pz -= sz;
+        std::uint32_t f2 = 0;
+        const auto h = walker_.probeFlags(px, from, pz, f2);
+        if (h && !(f2 & 0x28000000u)) { platform = *h; break; }
+    }
+    if (k == 5) return 2;
+    const double over = *surf - platform;                    // Y grows downward
+    if (platformOverWater) *platformOverWater = static_cast<float>(over);
+    if (over > 29.527559 || over < 0.0) return 3;
+    const double bx = (px - w[0]) * 0.2, bz = (pz - w[2]) * 0.2;
+    int j = 0;
+    for (; j < 5; ++j) {
+        px -= bx; pz -= bz;
+        std::uint32_t f2 = 0;
+        const auto h = walker_.probeFlags(px, from, pz, f2);
+        if (h && (f2 & 0x20000000u)) break;
+    }
+    if (j == 5) return 4;
+    // THE ENGINE'S POSITION IS THE NODE - the PELVIS - and this port's is the
+    // FEET, `camLift_` below it. `sub_4A9580` puts the pelvis 27.56 (70 cm) under
+    // the platform; putting the FEET there started him 42 units too high, and
+    // `H_WO_SD`'s root, which rises 79 to stand him up, then carried him 51 over
+    // the quay to drop 1.2 m when the clip ended (a reader, with a screenshot:
+    // *"placed too high"*). With the pelvis there the same rise ends ~10 over
+    // the platform, which is the engine's own arithmetic.
+    walker_.moveTo(px - bx * 2.5, platform + 27.559055 + static_cast<double>(camLift_),
+                   pz - bz * 2.5);
+    for (int c = 0; c < 3; ++c) pos_[c] = static_cast<float>(walker_.pos()[c]);
+    rt_.setState(ActorState::Scripted12, "sub_4A9580");
+    euler_[0] = 0.0f;
+    waterFlags_ &= ~2u;
+    breathMs_ = -1.0;
+    enterGroupById(303);
+    return 0;
 }
 
 int PlayerController::ctlGroupId() const {
@@ -655,6 +778,20 @@ void PlayerController::rotateByFacing(const float in[3], float out[3]) const {
         out[1] += in[1];
         return;
     }
+    // IN THE WATER +288 CARRIES THE PITCH, and EVERYTHING that goes through it
+    // must be turned by it - not the root delta alone. The first port of the
+    // swim turned the root delta by the whole Euler at its one call site and
+    // left this function on the yaw, so `Cef_ApplyRootShift`'s glide - which
+    // `H_SWIMIN` applies over frames 19..27 of every stroke, along the upright
+    // clip's own "up" - reached the world UNTURNED: he rose 1.2 a tick through
+    // the strong half of each stroke however far down his nose was, and sank
+    // only in the weak half. A reader, 2026-09-17: *"the character still goes
+    // up whatever the direction I try to give him"*. Scoped to the water
+    // states, so no land baseline moves.
+    {
+        const int ws = static_cast<int>(rt_.state());
+        if (ws >= 11 && ws <= 14) { rotateEuler(euler_, in, out); return; }
+    }
     rotateYaw(euler_[1], in, out);
 }
 
@@ -869,15 +1006,9 @@ void PlayerController::tick(float dt, std::uint32_t word) {
     if (adjust_) { local[0] *= stepScale_; local[2] *= stepScale_; }
     float world[3];
     rotateByFacing(local, world);                  // Anim_RootDelta's 3x3 = +288
-    // IN THE WATER the +288 matrix carries the PITCH too (`todo/swimming.md` 3):
-    // the swim clips are authored upright and turned by it - `sub_4A8F30` holds
-    // the underwater pitch in 200..340 with 270 level - so the root delta goes
-    // through `Matrix3x3_FromEulerAngles` whole, not just its yaw.
-    {
-        const int ws = static_cast<int>(rt_.state());
-        if (ws >= 11 && ws <= 14 && !haveRootFrame_) rotateEuler(euler_, local, world);
-    }
+    // (in the water `rotateByFacing` IS the whole Euler - see it)
     for (int k = 0; k < 3; ++k) last_.rootDelta[k] = world[k];
+    for (int k = 0; k < 3; ++k) last_.rootLocal[k] = local[k];
 
     // ---- Actor_ApplyMotion: try the move, let the ground decide ----------
     //
@@ -1419,6 +1550,20 @@ FollowCamera PlayerController::resolveOffsets(const float eyeOff[3], const float
     rotateEuler(euler_, eyeOff, r);
     for (int k = 0; k < 3; ++k) c.eye[k] = sub[k] - r[k];
     rotateEuler(euler_, atOff, r);
+    for (int k = 0; k < 3; ++k) c.at[k] = sub[k] - r[k];
+    c.fov = fov > 1.0f ? fov : kFollowFov;
+    return c;
+}
+
+FollowCamera PlayerController::resolveOffsetsYaw(const float eyeOff[3], const float atOff[3],
+                                                 float fov) const {
+    const float yawOnly[3] = {0.0f, euler_[1], 0.0f};
+    FollowCamera c;
+    float r[3];
+    const float sub[3] = {pos_[0], pos_[1] - camLift_, pos_[2]};
+    rotateEuler(yawOnly, eyeOff, r);
+    for (int k = 0; k < 3; ++k) c.eye[k] = sub[k] - r[k];
+    rotateEuler(yawOnly, atOff, r);
     for (int k = 0; k < 3; ++k) c.at[k] = sub[k] - r[k];
     c.fov = fov > 1.0f ? fov : kFollowFov;
     return c;

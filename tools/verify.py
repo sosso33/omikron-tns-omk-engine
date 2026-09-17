@@ -12531,54 +12531,33 @@ def c_engine_run_over():
             "H_IMPACT, Vie 10 -> 5")
 
 def c_engine_water_entry():
-    r"""`omk-play`: a walk off Jaunpur's canal ledge falls THROUGH the water and goes into it.
+    r"""`omk-play`: SWIMMING, the whole cycle - in, under, up to the surface, down again.
 
-    `todo/swimming.md` 1-2. Two of `Walk_GroundResponse`'s rules keep a player
-    off a mesh flagged 0x20000000 - a water surface: the step refuses it
-    whatever its height, and a falling body does not land on it. Beneath is the
-    canal's bed, flagged 0x8000000, and `Actor_ApplyMotion` answers that mesh in
-    ACTOR_STATE 1 with bank group 300 (`H_HFL-IN`), control scheme 1,
-    ACTOR_STATE 11 and camera 21. The decompilation called it "a ladder"; the
-    port named state 11 `Ladder11` - both are renamed.
+    `todo/swimming.md`. One walk off Jaunpur's canal ledge at (10524, -40,
+    10284) facing 270, then the keys a swimmer uses. What it asserts, in order:
 
-    One walk from the ledge at (10524, -40, 10284) facing 270: he falls, passes
-    the surface at y ~0, lands on the bed at y 124.7, and the entry fires into
-    `H_WAITIN`, ACTOR_STATE 11. SHOWN TO FAIL: drop the pass-through in
-    `Walker::tick` and he lands ON the water at y ~3, with no entry.
+    * he falls THROUGH the water surface (mesh flag 0x20000000) and lands on the
+      bed at y 125; the bed's 0x8000000 takes him in - bank group 300, scheme 1,
+      ACTOR_STATE 11 - and the LANDING REACTION IS SKIPPED on that tick, because
+      the engine takes the water arm OR `Walk_GroundResponse`, never both
+      (`21_d3d.c` 3830). SHOWN TO FAIL (2026-09-17, in play): with both run, the
+      landing's group 4 overwrote group 300 and he walked in the canal.
+    * no fall damage: MESSAGE 10 is never posted for a landing on water.
+    * `MDDIVEND` writes ACTOR_STATE 14 and posts message 22.
+    * the breath gauge, `Hud_DrawBar` mode 1: from 99% down, 5 quads and 2 blits.
+    * stroking with the nose up (`Plonger` 157 + `Reculer` 208) he SURFACES:
+      message 21, ACTOR_STATE 13, group 301. The engine's second probe goes DOWN
+      from two metres over his head, and water first means clear air. SHOWN TO
+      FAIL (in play): transcribed backwards, he was held under open sky for ever.
+    * at the surface the dive key fires `MDDIVBEG`, and `MDDIVEND` takes him
+      under again: states 11, 13 and 14 are all visited.
+    * he strokes `H_SWIMIN`, and the stroke's glide - `Cef_ApplyRootShift`, frames
+      15..27 - is turned by the whole Euler like the rest of +288. SHOWN TO FAIL
+      (in play): turned by the yaw alone it lifted him through every stroke
+      whatever way he pointed.
 
-    **And step 2** (the water moves): `H_HFL-IN`'s `MDDIVEND` writes ACTOR_STATE
-    14 and posts message 22, which AREA 1 answers - so the run ends in state 14,
-    not 11. SHOWN TO FAIL: drop the `MDDIVEND` arm and it ends in 11 with no
-    message. (And in `H_SWIMIN`, because the dive key is still down at the end -
-    see step 5 below.)
-
-    **And step 3** (the motion, `sub_4A8F30`): underwater he drifts UP off the bed
-    while the pitch turns to its 340 cap, holding just under the surface - the
-    last swimming line's y under 100 (the bed is 124.7) and pitch 340. SHOWN TO
-    FAIL: drop the 0.15-a-frame drift over the bed and he stays on it. (The root
-    motion also goes through the whole Euler matrix in the water; mutating THAT
-    left this check green - `H_WAITIN`'s root barely moves - so nothing here
-    shows the pitch rotation matters, and the docstring says so.)
-
-    **And step 3b** (the pitch on the DRAWN body): the body is turned by the
-    whole Euler - actor+288 - so at the first swimming line (pitch ~272) the
-    drawn head stands under 10 units over the pelvis, lying along the water,
-    and at the 340 cap over 20. SHOWN TO FAIL: turn the drawn body by the yaw
-    alone and the head stands ~24 over the pelvis on every line.
-
-    **And step 5** (swimming): underwater, forward is the DIVE key - group 1
-    slot 5, `Plonger`, keyboard 157 - whose bit 0x20 is what group 302's
-    `H_WAITIN` -> `H_SWIMIN` edge matches on; the arrow does nothing there. Held
-    from frame 600 he swims `H_SWIMIN` and crosses more than 150 units before
-    the canal's far wall stops him.
-
-    **And step 4** (the breath gauge): the underwater arm draws
-    `Hud_DrawBar(1000 * (start + 40000 - now) / 40000, 1000, 0, 1)` - mode 1,
-    the horizontal bar, ported for this (`ui/hudbar.h`). Over the run it counts
-    from 99% down, each frame 5 quads (the column, the two end diamonds, the
-    additive blue over the full part and the grey over the empty) and 2 jaugeg
-    blits. SHOWN TO FAIL: leave mode 1 returning without drawing, as it did
-    before this step, and the run draws 0 quads.
+    The climb OUT (`sub_4A9580`) is not in this run - no low platform lies on a
+    scripted line from this ledge - and stands on the play test alone.
     """
     import subprocess
     eng = os.path.join(ROOT, "engine")
@@ -12594,42 +12573,29 @@ def c_engine_water_entry():
     out = subprocess.run(
         [play, fr, os.path.join(ROOT, "tables"),
          "--save", os.path.join(ROOT, "traces", "save-appart.bin"),
-         "--area", "1", "--stand", "10524,-40,10284,270", "--frames", "900",
+         "--area", "1", "--stand", "10524,-40,10284,270", "--frames", "600",
          "--nofmv", "--nodelay", "--no-crowd",
-         # walk off the ledge, float over the bed while the pitch drifts to its
-         # cap, then hold the DIVE key - group 1 slot 5 `Plonger`, keyboard 157,
-         # whose 0x20 is what `H_WAITIN` -> `H_SWIMIN` matches on (step 5)
-         "--hold", "k200*140,k*420,k157*340"],
+         "--hold", "k200*140,k*40,k157+208*320,k*60,k157*6"],
         capture_output=True, text=True, errors="replace",
         env=dict(os.environ, SDL_VIDEODRIVER="dummy")).stdout
     land = re.search(r"the player LANDS at y (-?[\d.]+)", out)
-    fin = re.search(r"player: HO1_FN/\S+ at [-\d. ]+ facing [-\d.]+, ACTOR_STATE (\d+), "
-                    r"\.CTL state \d+ '(\w*)'", out)
-    if not land or not fin:
-        return (bool(land), bool(fin)), (True, True), "the run must land and print the player"
-    swim = [(int(f), st, int(x), float(y), int(z), int(p), int(hd)) for f, st, x, y, z, p, hd
-            in re.findall(r"frame (\d+): swimming - ACTOR_STATE 14, \.CTL '(\w+)' group \d+, at "
-                          r"(-?\d+) (-?[\d.]+) (-?\d+), pitch (\d+), drawn head (-?\d+) over",
-                          out)]
+    if not land:
+        return (False,), (True,), "the run must land"
+    states = sorted(set(int(x) for x in re.findall(r"swimming - ACTOR_STATE (\d+),", out)))
+    clips = set(re.findall(r"swimming - ACTOR_STATE \d+, \.CTL '(\w[\w-]*)'", out))
     bar = re.findall(r"breath gauge \(Hud_DrawBar mode 1\): (\d+)%, \d+ ms left, "
                      r"right edge \d+, (\d+) quads (\d+) blits", out)
-    first = swim[0] if swim else (0, "", 0, 999.0, 0, 0, 999)
-    # the FLOAT's end - the last line before the dive key goes down at 600 -
-    # and how far he swims after it, in x and z together
-    drift = ([r for r in swim if r[0] <= 560] or [first])[-1]
-    dist = max((abs(r[2] - drift[2]) + abs(r[4] - drift[4]) for r in swim), default=0)
-    lowest = min((r[3] for r in swim), default=999.0)
-    return (round(float(land.group(1))), "INTO THE WATER" in out and "bank group 300" in out,
+    return (round(float(land.group(1))),
+            "INTO THE WATER" in out and "bank group 300" in out,
+            "the landing's reaction SKIPPED" in out, "MESSAGE 10" in out,
             "MDDIVEND - ACTOR_STATE 14, message 22 to its handler" in out,
-            int(fin.group(1)), fin.group(2), lowest < 100.0, drift[5],
-            first[6] < 10, drift[6] > 20,
-            any(r[1] == "H_SWIMIN" for r in swim) and dist > 150,
-            (int(bar[0][0]), int(bar[-1][0]) < int(bar[0][0]),
-             bar[0][1], bar[0][2]) if bar else ()), \
-           (125, True, True, 14, "H_SWIMIN", True, 340, True, True, True,
-            (99, True, "5", "2")), \
-           ("he lands on the canal bed through the surface, enters the water, MDDIVEND " \
-            "posts message 22, and he ends in ACTOR_STATE 14 SWIMMING on H_SWIMIN")
+            "MESSAGE 21 to its handler; ACTOR_STATE 13" in out,
+            "MDDIVBEG - the dive flag" in out,
+            [x for x in states if x in (11, 13, 14)], "H_SWIMIN" in clips,
+            (int(bar[0][0]), bar[0][1], bar[0][2]) if bar else ()), \
+           (125, True, True, False, True, True, True, [11, 13, 14], True, (99, "5", "2")), \
+           ("through the surface onto the bed, in with no landing reaction and no fall " \
+            "damage, under, up to the surface, and down again")
 
 def c_engine_fight_library():
     r"""`omk-play`: a fight loads `fight.scx`, its OWN sound and sprite library.

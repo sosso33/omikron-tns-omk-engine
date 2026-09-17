@@ -371,6 +371,31 @@ public:
     // clip's root delta, so the walls that stop a walk stop this too.
     void addShootMotion(float dx, float dz) { shootMotion_[0] += dx; shootMotion_[1] += dz; }
     const float* euler() const { return euler_; }
+    // `MDACTION`'s WATER ARM, `sub_4A9580` (0x004A9580; table-called, so it has
+    // no caller in the listing): the way OUT of the water. With the water line
+    // under the top of his head, it looks up to 80 cm ahead along his facing -
+    // five steps of 6.3, each probed from two metres over the water - for the
+    // first floor that is neither the surface nor the bed; refuses one more
+    // than 29.53 (75 cm, `dword_910344`) above the water or below it; walks back
+    // to where the water begins again; and puts him 2.5 of those steps short of
+    // it, his feet 27.56 (70 cm) under the platform, in ACTOR_STATE 12, pitch 0,
+    // bank group 303 (`H_WO_SD`, whose clip lifts him out and ends on
+    // `MDSW2SD`). The caller installs control scheme 0. NOT ported, labelled:
+    // the platform's slope test (`normal.y > -cos 30`) - the floor soup this
+    // probes holds walkable faces only, which is the same limit.
+    // -> 0 taken, else why not: 1 not at the surface, 2 no platform ahead,
+    //    3 too high or too low, 4 no water edge on the way back.
+    int waterClimbOut(float* platformOverWater = nullptr);
+    // the channel's frame pair of the last tick - an instrument's view
+    float tickFrameBefore() const { return frameBefore_; }
+    float tickFrameAfter() const { return frameAfter_; }
+    // The same resolve with the PITCH AND ROLL DROPPED - the instrument behind
+    // `--water-cam yaw`, for laying the water camera's two readings side by
+    // side (`todo/swimming.md`). Not a second engine behaviour: the engine
+    // turns a subject-relative point by all three angles (`sub_414F30` copies
+    // +416/+420/+424 into the camera block and `sub_415D10` rotates by them).
+    FollowCamera resolveOffsetsYaw(const float eyeOff[3], const float atOff[3],
+                                   float fov) const;
     // +416 and +424, the PITCH and the ROLL. `applyTurn` (`Cef_ApplyTurn`)
     // writes them from a clip's turn, and so does the HURT SHOVE - `sub_47D1F0`
     // arms them and `sub_47D4D0` spends them over four frames
@@ -562,6 +587,7 @@ public:
     // --- diagnostics ---------------------------------------------------
     struct Frame {
         float rootDelta[3] = {0, 0, 0};   // the clip's, already rotated
+        float rootLocal[3] = {0, 0, 0};  // the same delta BEFORE +288 turns it (the clip's own frame)
         float shift[3]     = {0, 0, 0};   // Cef_ApplyRootShift's, this tick
         float turn         = 0.0f;        // Cef_ApplyTurn's yaw, this tick
         StepResult step    = StepResult::Moved;
