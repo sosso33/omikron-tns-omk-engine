@@ -3398,12 +3398,17 @@ the low-16 space, hit points never rising and clamped at 0, every AI word
 inside the profiles' 0xCFF union, and the pair never left inside the
 separation radius. `verify.py: engine: melee`.
 
-**Not ported yet**, and labelled in the code rather than approximated: camera
-mode 14 (`Fight_TickCamera`), `Hud_DrawBar` mode 2, the wiring in `omk-play`
-(no fight hook is installed, so a `fight.begin` still runs on rather than
-parking), and the DEFENSIVE arm of `Fight_TickAI` — intent 9 inside 1.5 m,
-which reads the opponent's combat block to decide whether to guard, and is
-why the check records `blocks` as 0.
+**Since then (2026-09-16/17), all of what this paragraph listed as unported
+has landed**, with its record in `todo/fight-mode.md` 10-15.16: the wiring in
+`omk-play` (a real `fight.begin` parks the script, `--fight-supermarket` reaches
+one from the chunk's own script), camera mode 14 with its collision solve, the
+HUD (`Hud_DrawBar` mode 2 and its stat card, on both renderers), the AI's
+DEFENSIVE arm (`blocks` 0 -> 24), the opponent's walker, pelvis track, effect
+sounds and sprites, the KO replay's bands, the teardown's states and the
+priority gate `Fight_Begin` sets from the player's experience. Played and
+confirmed on the Vulkan window through a lost fight and two won ones. Still
+open: the gate has never been SEEN refusing a move, and a fight's outcome has no
+behavioural oracle.
 
 **And 2026-09-05, the GRAPHICAL OPTIONS and what they size**
 (`todo/options-config.md`, `docs/ASSETS.md`) — four things that turned out to
