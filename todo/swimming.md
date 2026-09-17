@@ -39,7 +39,7 @@ AREA 76, SCENE 1, SCENE 2 and SCENE 62.
 | `MDSW2SD` | 0x0046BF20 | ACTOR_STATE 1; if a camera is up, `Camera_Request(0)` on him over 50 frames |
 | `RSTAVNT` | 0x0046C120 | ACTOR_STATE 1, pitch `+416` = 0, `sub_45BFF0(0)` |
 | `RSTNAGE` | 0x0046C150 | ACTOR_STATE 14, pitch `+416` = 0 |
-| `MDDIVBEG` | 0x0046C180 | `+1288 |= 2` - the DIVE flag (the handler before it sets bit 1) |
+| `MDDIVBEG` | 0x0046C180 | `+1288 |= 2` - the DIVE flag (the handler before it, 0x0046C170, is `MDROT000` - turning on the spot - which sets bit 1: not a water move) |
 
 ### The motion: `sub_4A8F30`, for states 11..14
 
@@ -118,7 +118,7 @@ green, `engine: actor states` among them after the rename of state 11.
 |---|---|---|
 | 0 | this reading | **done 2026-09-17** |
 | 1 | the entry: the 0x8000000 mesh under his feet in state 1 -> group 300, scheme 1, state 11, camera 21; rename state 11 | **done 2026-09-17** - §3 |
-| 2 | the water moves: `MDDIVEND` (14, message 22), `MDSW2SD` (1, camera 0), `RSTAVNT`, `RSTNAGE`, `MDDIVBEG` | |
+| 2 | the water moves: `MDDIVEND` (14, message 22), `MDSW2SD` (1, camera 0), `RSTAVNT`, `RSTNAGE`, `MDDIVBEG` | **done 2026-09-17** - in the canal walk-in `MDDIVEND` fires, ACTOR_STATE 14, message 22 answered by AREA 1; the other four are wired and not yet reached by a run |
 | 3 | the motion, 11..14: no gravity and no ground snap; the surface hold; the pitch | |
 | 4 | the breath: the 40 s timer, `Hud_DrawBar` mode 1, message 12 | |
 | 5 | a place to swim headlessly, and the check | |

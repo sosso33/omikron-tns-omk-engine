@@ -12545,6 +12545,11 @@ def c_engine_water_entry():
     the surface at y ~0, lands on the bed at y 124.7, and the entry fires into
     `H_WAITIN`, ACTOR_STATE 11. SHOWN TO FAIL: drop the pass-through in
     `Walker::tick` and he lands ON the water at y ~3, with no entry.
+
+    **And step 2** (the water moves): `H_HFL-IN`'s `MDDIVEND` writes ACTOR_STATE
+    14 and posts message 22, which AREA 1 answers - so the run ends in state 14,
+    not 11. SHOWN TO FAIL: drop the `MDDIVEND` arm and it ends in 11 with no
+    message.
     """
     import subprocess
     eng = os.path.join(ROOT, "engine")
@@ -12570,10 +12575,11 @@ def c_engine_water_entry():
     if not land or not fin:
         return (bool(land), bool(fin)), (True, True), "the run must land and print the player"
     return (round(float(land.group(1))), "INTO THE WATER" in out and "bank group 300" in out,
+            "MDDIVEND - ACTOR_STATE 14, message 22 to its handler" in out,
             int(fin.group(1)), fin.group(2)), \
-           (125, True, 11, "H_WAITIN"), \
-           ("he lands on the canal bed through the surface, enters the water, and ends " \
-            "in ACTOR_STATE 11 on H_WAITIN")
+           (125, True, True, 14, "H_WAITIN"), \
+           ("he lands on the canal bed through the surface, enters the water, MDDIVEND " \
+            "posts message 22, and he ends in ACTOR_STATE 14 on H_WAITIN")
 
 def c_engine_fight_library():
     r"""`omk-play`: a fight loads `fight.scx`, its OWN sound and sprite library.

@@ -8921,6 +8921,44 @@ int main(int argc, char** argv) {
                     // `MDRAISE0` (0x0046BED0, `H_SOL-SD` - getting up from a
                     // 5 m landing): `sub_414DE0(actor, 0, 0)`, home from 19
                     if (mv == "MDRAISE0") fallCamRequest(0, false, "MDRAISE0", static_cast<int>(player->state()));
+                    // THE WATER MOVES (`todo/swimming.md` 1, read from the raw
+                    // image). `MDDIVEND` 0x0046BEF0: ACTOR_STATE 14 and message 22.
+                    // `MDSW2SD` 0x0046BF20: ACTOR_STATE 1 and, if a camera is
+                    // up, camera 0 on him over 50 frames. `RSTAVNT` 0x0046C120:
+                    // ACTOR_STATE 1, pitch 0, `Input_InstallScheme(0)`.
+                    // `RSTNAGE` 0x0046C150: ACTOR_STATE 14, pitch 0. `MDDIVBEG`
+                    // 0x0046C180: `+1288 |= 2`, the dive.
+                    if (mv == "MDDIVEND") {
+                        player->setActorState(omk::ActorState::Swim, "MDDIVEND");
+                        const bool ran = session.postMessage(22, session.playerActor());
+                        std::printf("water: MDDIVEND - ACTOR_STATE %d, message 22 %s\n",
+                                    static_cast<int>(player->state()),
+                                    ran ? "to its handler" : "- no handler subscribes");
+                    }
+                    if (mv == "MDSW2SD") {
+                        player->setActorState(omk::ActorState::Normal, "MDSW2SD");
+                        if (takeCam) { takeCamRequest(3); takeCamTravel = 50.0f; }
+                        std::printf("water: MDSW2SD - out of the water, ACTOR_STATE %d%s\n",
+                                    static_cast<int>(player->state()),
+                                    takeCam ? ", camera 0 over 50 frames" : "");
+                    }
+                    if (mv == "RSTAVNT") {
+                        player->setActorState(omk::ActorState::Normal, "RSTAVNT");
+                        player->eulerPitch() = 0.0f;
+                        in.installScheme(0);
+                        std::printf("water: RSTAVNT - ACTOR_STATE %d, pitch 0, scheme 0\n",
+                                    static_cast<int>(player->state()));
+                    }
+                    if (mv == "RSTNAGE") {
+                        player->setActorState(omk::ActorState::Swim, "RSTNAGE");
+                        player->eulerPitch() = 0.0f;
+                        std::printf("water: RSTNAGE - ACTOR_STATE %d, pitch 0\n",
+                                    static_cast<int>(player->state()));
+                    }
+                    if (mv == "MDDIVBEG") {
+                        player->waterFlags() |= 2u;
+                        std::printf("water: MDDIVBEG - the dive flag (+1288 |= 2)\n");
+                    }
                     if (mv == "MDJUMP01") {
                         const bool went = player->jumpLaunch();
                         std::printf("jump: %s\n", went

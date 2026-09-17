@@ -377,6 +377,11 @@ public:
     // (`actor/shootmove.h`), which is why the mover takes them by reference:
     // the engine's mover writes the actor's own fields.
     float& eulerPitch() { return euler_[0]; }
+    // `+1288`, the actor's water flags: bit 2 is the DIVE `MDDIVBEG` raises and
+    // `sub_4A8F30` clears on surfacing, which stops the surface hold pulling
+    // him up while he goes under (`todo/swimming.md`). Bit 1 is set by the
+    // handler before `MDDIVBEG`'s and read by `Actor_ApplyMotion`'s steer.
+    std::uint32_t& waterFlags() { return waterFlags_; }
     float& eulerRoll()  { return euler_[2]; }
     ActorState state() const { return rt_.state(); }
     int ctlState() const { return rt_.channel().state(); }
@@ -632,6 +637,7 @@ private:
     float pos_[3];
     float start_[3];
     float euler_[3] = {0, 0, 0};       // +416, +420, +424
+    std::uint32_t waterFlags_ = 0;   // actor +1288
     float shootMotion_[2] = {0, 0};    // `addShootMotion`, spent by the next tick
     float camLift_ = 0.0f;             // pelvis above the feet - see cameraLift()
     float headLift_ = 0.0f;            // 0.7 * the model's extent - see headLift()
