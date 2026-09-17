@@ -555,6 +555,66 @@ Measured over a won fight: **0** lookup failures (was every one of them) and
 `moveBody` simply adds. That is a third place 15.8a's collision belongs, and
 it is not done.
 
+### 15.9 FIXED — the pause menu: *Combat* binds `Action / Utiliser` NOWHERE
+
+The reader: *"the pause menu doesn't work in fight mode (opens, but pressing
+enter does nothing)."* The interface reads slot 4 (`kUiConfirm`, 0x10) as its
+confirm, and what that control IS depends on the installed group:
+
+| group | slot 4 | `Action / Utiliser` |
+|---|---|---|
+| 0 *Aventure* | `Action / Utiliser` (key 28, ENTER) | slot 4 |
+| 2 *Tirer* | `Tir` (key 54) | moved to slot 8 (key 28) |
+| 3 *Combat* | **`Coup de poing 1`** (key 16, Q) | **bound nowhere** |
+
+So during a fight a PUNCH confirms a menu and ENTER reaches no bit whatever -
+*Combat* leaves slots 8, 9, 12 and 13 empty, so unlike *Tirer* there is
+nothing to promote. `play.cpp` already carried the *Tirer* case as a labelled
+reconstruction (`todo/omk-play.md` 97f); this is the same fault one group over
+and a degree worse.
+
+Fixed by taking the confirm from the key *Aventure* binds to
+`Action / Utiliser` - read from the table so a rebind follows it - and
+edge-filtering it locally, since it does not come through `Input::frame`'s own
+mask; slot 4 is cleared so a punch no longer confirms. A RECONSTRUCTION on the
+same footing as the shoot arm, and for the same reason: nothing traced says
+the engine re-maps anything, and the reader's testimony that ENTER validates
+outranks a reading that only shows nobody has found the mechanism.
+
+`verify.py: engine: fight pause` opens the screen with ESC at frame 500 and
+presses ENTER at 600; the screen must open AND close. Shown to fail: gate the
+arm off and the open line appears without the close, which is the report.
+
+### 15.10 PARTLY FIXED — effects fired for ONE fighter
+
+The reader: *"the visual effect happens only when the player is touched."*
+Both the sound half and the sprite half read `player->` alone, so the
+opponent's own hit reactions - his impacts, his fall, his cry - never fired at
+all. `Cef_TickEffects` runs on every channel the engine ticks, and
+`Actor_TickPlayerAndOpponent` ticks two.
+
+**The SOUND half is fixed**: the opponent's channel is drained beside the
+player's. Measured over one won fight, the mix goes from almost pure swing -
+28 `ELECMB02`, 14 `ELECMB03`, 8 `MVT02`, one `PUNCHD`, one cry - to
+
+```
+   x14 ELECMB02     x6 PUNCHD     x6 PUNCHG     x6 CHUTEF04     x6 CRIMAL01
+```
+
+- the punches landing, the fall and the cry. `engine: fight library` now
+asserts the DISTINCT id count, because "some audio happened" is satisfied by
+the player's own whoosh alone.
+
+**The SPRITE half is NOT fixed**, and the reason is worth stating: the draw is
+bound to the player's specifics - `playerMeshes`, `playerRootXZ`,
+`playerFeet`, `lastRootDrop`, his pose and his attach search. No staged actor
+gets `.CTL` effect sprites in this tree, so this is a general gap that the
+fight merely makes obvious, and closing it means giving the sprite spawn a
+BODY rather than assuming the player's. The opponent's own pose is already
+kept (`fightRun.foePose`) and his position and yaw are in `fightRun.foe`; what
+is missing is the feet/root pair, which is the same vertical question 15.8d
+settled for the separation and has not been settled for the draw.
+
 ### 15.3 "characters colliders issue"
 
 Not yet reproduced, and the handoff already lists two unported pieces that

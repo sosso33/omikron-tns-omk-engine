@@ -6080,7 +6080,17 @@ int main(int argc, char** argv) {
             // while a fight is running, because that is what `Fight_Begin`'s
             // own `Game_Start` installs and the two id spaces do not overlap
             // (the fight's are 402..423).
-            for (const auto& es : player->sounds()) {
+            // BOTH FIGHTERS, not just the player. `Cef_TickEffects` runs on
+            // every channel the engine ticks, and
+            // `Actor_TickPlayerAndOpponent` ticks two - so the opponent's hit
+            // reactions carry their own cries and impacts. This drained only
+            // the player's, which is why a reader heard and saw a blow *"only
+            // when the player is touched"* (`todo/fight-mode.md` 15.10).
+            std::vector<omk::CefChannel::EffectSound> chanSounds = player->sounds();
+            if (fightRun.active && fightRun.foeChannel)
+                for (const auto& es : fightRun.foeChannel->sounds())
+                    chanSounds.push_back(es);
+            for (const auto& es : chanSounds) {
                 const omk::ScxRuntime* rt = nullptr;
                 int i = -1;
                 if (fightRt && fightRun.active) {
@@ -9905,6 +9915,37 @@ int main(int argc, char** argv) {
             // not: the click shoots and ENTER validates. Their testimony about
             // the game outranks a reading that only shows nobody has found
             // the mechanism yet.
+            // ---- AND *COMBAT* BINDS NO `Action / Utiliser` AT ALL -------
+            //
+            // The same fault as the shoot one below, one group over and a
+            // degree worse. In *Combat* slot 4 is **`Coup de poing 1`** (key
+            // 16, Q), so a punch confirms a menu; and unlike *Tirer*, which
+            // merely MOVES `Action / Utiliser` to slot 8, *Combat* binds it
+            // nowhere - slots 8, 9, 12 and 13 are all empty. So ENTER reaches
+            // no bit whatever and the interface can never see a confirm. A
+            // reader, with the pause screen up during a fight: *"the pause
+            // menu doesn't work in fight mode (opens, but pressing enter does
+            // nothing)"*.
+            //
+            // There is nothing to promote, so the confirm is taken from the
+            // key *Aventure* binds to `Action / Utiliser` - read from the
+            // table, not hard-coded, so a rebind still follows it - and
+            // edge-filtered here, because it is not coming through
+            // `Input::frame`'s own mask.
+            //
+            // A RECONSTRUCTION and labelled as one, on the same footing as
+            // the shoot arm below: nothing traced says the engine re-maps
+            // anything, and the reader's testimony that ENTER validates
+            // outranks a reading that only shows nobody has found the
+            // mechanism (`todo/fight-mode.md` 15.9).
+            if (fightRun.active) {
+                uiBits &= ~0x10u;                  // slot 4: `Coup de poing 1`
+                const int k = in.schemes().code(0, 4, omk::Device::Keyboard);
+                const bool down = k > 0 && st.holds(omk::Device::Keyboard, k);
+                static bool advConfirmWasDown = false;
+                if (down && !advConfirmWasDown) uiBits |= omk::kUiConfirm;
+                advConfirmWasDown = down;
+            }
             if (shootMode) {
                 // ORDER MATTERS, and the first version of this got it wrong:
                 // it OR-ed the confirm in and then AND-ed the same bit back

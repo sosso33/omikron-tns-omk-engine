@@ -12143,11 +12143,79 @@ def c_engine_fight_library():
     fightSprites = int(m.group(2)) if m else -1
     failures = len(re.findall(r"is in neither the global|is not registered by the library", out))
     played = len(re.findall(r"audio: ctl-effect", out))
-    return (loaded, fightSprites, failures, played > 0), \
-           (True, 16, 0, True), \
+    # ...and WHICH sounds, because "some audio happened" is satisfied by the
+    # player's own swing whoosh alone. Draining both channels brings the
+    # opponent's reactions in - the punches landing, his fall, his cry - and
+    # the distinct count is what tells the two apart: player-only is dominated
+    # by `ELECMB02`/`ELECMB03`/`MVT02` and reaches 3.
+    ids = {int(m) for m in re.findall(r"audio: ctl-effect\s+\S+\s+s\s+\((\d+),", out)}
+    return (loaded, fightSprites, failures, played > 0, len(ids)), \
+           (True, 16, 0, True, 5), \
            ("`Fight_Begin`'s own `Game_Start(\"fight.scx\")`: its 16 sprites "
-            "reach the table, no effect record fails its lookup, and the "
-            "fight's blows are actually audible")
+            "reach the table, no effect record fails its lookup, and BOTH "
+            "fighters' channels are drained - the punches landing, the fall "
+            "and the cry, not just the player's own swing")
+
+def c_engine_fight_pause():
+    r"""`omk-play`: ENTER confirms the pause screen DURING a fight.
+
+    The interface reads slot 4 (`kUiConfirm`, 0x10) as its confirm, and which
+    control that is depends on the group the world has installed. The four are
+    lifted in `tables/key_bindings.json`:
+
+    | group | slot 4 | `Action / Utiliser` |
+    |---|---|---|
+    | 0 *Aventure* | `Action / Utiliser` (key 28, ENTER) | slot 4 |
+    | 2 *Tirer* | `Tir` (key 54) | moved to slot 8 |
+    | 3 *Combat* | **`Coup de poing 1`** (key 16, Q) | **bound NOWHERE** |
+
+    So in a fight a punch confirms a menu, and ENTER reaches no bit at all -
+    *Combat* leaves slots 8, 9, 12 and 13 empty, so unlike *Tirer* there is
+    nothing to promote. A reader: *"the pause menu doesn't work in fight mode
+    (opens, but pressing enter does nothing)"*.
+
+    `play.cpp` takes the confirm from the key *Aventure* binds to
+    `Action / Utiliser`, read from the table so a rebind follows it, and
+    edge-filters it locally because it does not come through `Input::frame`'s
+    mask. A RECONSTRUCTION on the same footing as the shoot arm beside it:
+    nothing traced says the engine re-maps anything, and the reader's
+    testimony outranks a reading that only shows nobody has found the
+    mechanism (`todo/fight-mode.md` 15.9).
+
+    Driven headlessly: five idle presses, then ESC at frame 500 (inside the
+    fight, which begins about 380) and ENTER at 600. The screen must OPEN and
+    then CLOSE - the pause page's confirm resumes the world.
+
+    SHOWN TO FAIL: gate the arm off and the open line still appears while the
+    close line does not, which is the reported fault exactly.
+    """
+    import subprocess
+    eng = os.path.join(ROOT, "engine")
+    fr = omkpaths.data_root()
+    if not (os.path.isdir(eng) and os.path.isdir(os.path.join(fr, "SCPTDATA"))):
+        return ("skipped",), ("skipped",), "engine/ or gamedata/ absent"
+    mk = subprocess.run(["make", "-s", "play"], cwd=eng, capture_output=True, text=True)
+    play = os.path.join(eng, "build", "omk-play")
+    if mk.returncode != 0:
+        return ("build failed",), ("built",), "engine/ must build"
+    if not os.path.exists(play):
+        return ("no sdl",), ("no sdl",), "needs SDL to render"
+    r = subprocess.run(
+        [play, fr, os.path.join(ROOT, "tables"),
+         "--save", os.path.join(ROOT, "traces", "save-appart.bin"),
+         "--fight-supermarket", "--frames", "900",
+         "--keys", "0x39,0x39,0x39,0x39,0x39,0x01,0x1C,0x1C",
+         "--keydelay", "100"],
+        capture_output=True, text=True, errors="replace",
+        env=dict(os.environ, SDL_VIDEODRIVER="dummy"))
+    out = r.stdout + r.stderr
+    began  = "FIGHT BEGINS" in out
+    opened = "screen 31 opened by the player" in out
+    closed = "screen 31 PAUSE GAME closed" in out
+    return (began, opened, closed), (True, True, True), \
+           ("in a fight *Combat* binds `Action / Utiliser` nowhere and slot 4 "
+            "is a punch, so the confirm is taken from *Aventure*'s own key: "
+            "the pause screen opens on ESC and closes on ENTER")
 
 def c_engine_impasse_fx():
     r"""`engine/`: the Impasse cutscene actually PRODUCES effects.
@@ -36120,6 +36188,7 @@ SLOW = [
     ("engine: fight letterbox", c_engine_fight_letterbox, "todo/fight-mode 15.4"),
     ("engine: fight separation", c_engine_fight_separation, "todo/fight-mode 15.8d"),
     ("engine: fight library", c_engine_fight_library, "todo/fight-mode 15.2"),
+    ("engine: fight pause", c_engine_fight_pause, "todo/fight-mode 15.9"),
     ("engine: programs",   c_engine_programs,   "engine/README"),
     ("engine: scene steps", c_engine_scene_steps, "engine/README"),
     ("engine: scene survive", c_engine_scene_survive, "todo/omk-play"),
