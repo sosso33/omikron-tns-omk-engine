@@ -141,6 +141,23 @@ rule intends one.
 > suspect**, and the cheap way to split "mine" from "already there" is one
 > count against `git show HEAD:<table>`.
 
+> **A CHECK ALREADY RED FOR ONE CAUSE MUST STILL BE RUN.** The rule came from
+> a peer session on 2026-09-17 and it cost both of us something the same day.
+> They skipped `engine: UI` from a neighbour run on the strength of this file's
+> note that it was already red for an unrelated reason; the note was accurate
+> and the inference was not, and a second cause - their own regression - sat
+> hidden behind the first.
+>
+> Checked immediately against this tree's own deliberate red, `engine: shoot
+> hit`, and it had moved too - in the FAVOURABLE direction, which is just as
+> invisible. `todo/shoot-patrol.md` records it as killing nobody with four
+> empty elements; it now kills TWO gunmen and has one empty element left. The
+> work left on it is far smaller than its own note claims.
+>
+> So: **a deliberate red is a reason to read the row, not to skip it.** Exclude
+> a check from a run and you learn nothing about it; run it and a changed
+> failure is as informative as a new one.
+
 > **`engine: UI` IS RED AGAIN, and again it was already red — a FIFTH census
 > that drifted.** Found 2026-09-17 while running the neighbours of the fight
 > work, which is the `--only` rule doing its job. It reads

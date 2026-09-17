@@ -272,8 +272,36 @@ the player kills nothing, pass for ever, and never notice if the kill path
 broke. That is exactly the vacuous pass CLAUDE.md 1 warns about, and it is worth
 refusing.
 
-What it needs instead is a new AIM, so the kill exists again. Notes for whoever
-does it:
+**THIS DESCRIPTION IS STALE — re-measured 2026-09-17, and the check has moved
+a long way toward green on its own.** It was found by running it deliberately
+*because* it was on record as red, after a peer session pointed out that a
+check already red for one cause can acquire a second and that skipping it hides
+the second. That is exactly what happened here, in the other direction: the
+run now reads
+
+```
+roots   (237, 4857, -2793, 44.4) (238, 5286, -2509, 44.4) (240, 4612, -2797, 44.4)
+hits    237 237 237 240 240 240        <- was: 237 and 238 once each
+kills   (5, True) (5, True)            <- was: NOBODY
+falls   237 240                        <- both, to the floor
+push    ('237', '7.5') ('240', '6.3')
+last    []                             <- the only element still empty
+```
+
+So **the aim connects again and two gunmen die**, where the paragraph above
+says the run "kills nobody" and four elements come back empty. Only ONE
+element is still empty — the last, which the baseline wants as
+`[('61', '237')]`. Something between 2026-09-12 and now (the nav-edge work,
+the spectres, or the y pinning settling) restored the kill path, and no sweep
+has run since to notice.
+
+**The refusal still stands for the one remaining empty**, and so does the
+reason: baselining it would assert that the player kills nothing through that
+path for ever. But the work is now much smaller than "find a new aim" — three
+of the four empties have filled themselves, and what is left is to find out
+what `('61', '237')` is and why it does not appear.
+
+Notes for whoever does it, from when the gap was larger:
 
 * the check's own docstring already says **yaw 258** where its code passes
   **215**, and 258 is what the port's own convention gives for 240's placement
