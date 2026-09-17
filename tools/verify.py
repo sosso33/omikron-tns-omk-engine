@@ -12564,6 +12564,14 @@ def c_engine_water_entry():
     drawn head stands under 10 units over the pelvis, lying along the water,
     and at the 340 cap over 20. SHOWN TO FAIL: turn the drawn body by the yaw
     alone and the head stands ~24 over the pelvis on every line.
+
+    **And step 4** (the breath gauge): the underwater arm draws
+    `Hud_DrawBar(1000 * (start + 40000 - now) / 40000, 1000, 0, 1)` - mode 1,
+    the horizontal bar, ported for this (`ui/hudbar.h`). Over the run it counts
+    from 99% down, each frame 5 quads (the column, the two end diamonds, the
+    additive blue over the full part and the grey over the empty) and 2 jaugeg
+    blits. SHOWN TO FAIL: leave mode 1 returning without drawing, as it did
+    before this step, and the run draws 0 quads.
     """
     import subprocess
     eng = os.path.join(ROOT, "engine")
@@ -12591,12 +12599,17 @@ def c_engine_water_entry():
     swim = re.findall(r"swimming - ACTOR_STATE 14, .* at -?\d+ (-?[\d.]+) -?\d+, pitch (\d+), "
                       r"drawn head (-?\d+) over the pelvis", out)
     first = swim[0] if swim else ("999", "0", "999")
+    bar = re.findall(r"breath gauge \(Hud_DrawBar mode 1\): (\d+)%, \d+ ms left, "
+                     r"right edge \d+, (\d+) quads (\d+) blits", out)
     last = swim[-1] if swim else ("999", "0", "-999")
     return (round(float(land.group(1))), "INTO THE WATER" in out and "bank group 300" in out,
             "MDDIVEND - ACTOR_STATE 14, message 22 to its handler" in out,
             int(fin.group(1)), fin.group(2), float(last[0]) < 100.0, int(last[1]),
-            int(first[2]) < 10, int(last[2]) > 20), \
-           (125, True, True, 14, "H_WAITIN", True, 340, True, True), \
+            int(first[2]) < 10, int(last[2]) > 20,
+            (int(bar[0][0]), int(bar[-1][0]) < int(bar[0][0]),
+             bar[0][1], bar[0][2]) if bar else ()), \
+           (125, True, True, 14, "H_WAITIN", True, 340, True, True,
+            (99, True, "5", "2")), \
            ("he lands on the canal bed through the surface, enters the water, MDDIVEND " \
             "posts message 22, and he ends in ACTOR_STATE 14 on H_WAITIN")
 

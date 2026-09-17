@@ -175,6 +175,28 @@ merge that opened the session, with the gunmen's roots ~90 units further along
 their walk and a second gunman killed. Not the drawn body: it fails with the
 Euler and with the yaw alone alike. Recorded here, unattributed.
 
+## 6. Step 4, done — the breath gauge, `Hud_DrawBar` mode 1
+
+Mode 1 was the one arm of `Hud_DrawBar` the port had never needed, and the
+water is what asks for it: `sub_4A8F30` calls
+`Hud_DrawBar(1000 * (start + 40000 - now) / 40000, 1000, 0, 1)` every
+underwater tick until the forty seconds are spent, having called `Hud_Refresh`
+on the first. Transcribed whole into `HudBar::breath` (`ui/hudbar.h` carries the
+reading): a HORIZONTAL bar - diamonds of radius 17 at (100, 24) and (540, 24)
+and the column between them in black on layer 2; two `jaugeg.bmp` blits on
+layer 3, the full part reading the SCROLLING column and the empty part source
+row 0..3; then on layer 4 the additive `0x103080` - a water blue - over the full
+part and `0xE0E0E0` darkening the empty one. No sparks, and the vertical centre
+comes from the engine's own `Hud_ScaleX(24)`, not ScaleY - kept.
+
+Drawn in the canal walk-in: 99% down as the breath goes, 5 quads and 2 blits a
+frame, and the rendered frame shows the bar across the top of the picture with
+the blue filling from the left. The gauge is in the viewer's GPU-present list,
+the gap the fight's gauges fell into.
+
+`verify.py: engine: water entry` carries it, shown to fail by leaving mode 1
+returning without drawing (0 quads), as it did before this step.
+
 ## 2. The steps
 
 | step | what | state |
@@ -184,6 +206,6 @@ Euler and with the yaw alone alike. Recorded here, unattributed.
 | 2 | the water moves: `MDDIVEND` (14, message 22), `MDSW2SD` (1, camera 0), `RSTAVNT`, `RSTNAGE`, `MDDIVBEG` | **done 2026-09-17** - in the canal walk-in `MDDIVEND` fires, ACTOR_STATE 14, message 22 answered by AREA 1; the other four are wired and not yet reached by a run |
 | 3 | the motion, 11..14: no gravity and no ground snap; the surface hold; the pitch | **done 2026-09-17** - §4; the pitch turns the MOTION, the drawn body is 3b |
 | 3b | the pitch on the DRAWN body: the whole Euler, actor+288 | **done 2026-09-17** - §5 |
-| 4 | the breath: the 40 s timer, `Hud_DrawBar` mode 1, message 12 | |
+| 4 | the breath: the 40 s timer, `Hud_DrawBar` mode 1, message 12 | **done 2026-09-17** - §6 (the timer and message 12 landed with step 3) |
 | 5 | a place to swim headlessly, and the check | |
 | 6 | play | |

@@ -91,6 +91,27 @@
 // here it draws no rank, labelled. And `_pctype` at a byte >= 0x80 is indexed
 // NEGATIVELY by the engine's `movsx`; no shipped label needs it, and such a byte
 // is simply dropped here.
+//
+// **Mode 1 is the BREATH gauge** (2026-09-17, `todo/swimming.md` step 4), and
+// what asks for it is the water: `sub_4A8F30`'s underwater arm calls
+// `Hud_DrawBar(1000 * (start + 40000 - now) / 40000, 1000, 0, 1)` every tick
+// until the 40 seconds are up, having called `Hud_Refresh` on the first. It is
+// a HORIZONTAL bar and shares nothing with mode 0's code but the counter:
+//
+// * layer 2, flags 4, colour 0 - a DIAMOND of radius 17 at (100, 24) and at
+//   (540, 24), and the 14-high column between them;
+// * layer 3, key source - two blits from `jaugeg.bmp` (`dword_53104C`, the
+//   stat card's bitmap, not jauge1): the FULL part reads source columns
+//   0..W*p/100 at the SCROLLING row, the empty part reads source row 0..3 from
+//   column W*p/100 on. W and the row are jauge1's size, which is what the
+//   engine indexes jaugeg with - transcribed, not corrected;
+// * layer 4 - `0xE0E0E0` with flags 2 over the empty part (darkened to 31/255
+//   of the jauge), then `0x103080` with flags 1 - ADDITIVE, and a water blue -
+//   over the full part. Mode 0 has no such tint.
+//
+// No sparks. And the engine takes the column's vertical centre from
+// `Hud_ScaleX(24)`, not `Hud_ScaleY` - kept, because at 640x480 they agree and
+// at any other display the engine's own bar is what a replica must draw.
 #pragma once
 
 #include "platform/datafs.h"
@@ -141,7 +162,7 @@ public:
     // 18, 2 - the raw values; the 19 is divided by 41 here, as the engine
     // does) and the clock it stamps into `dword_531030`.
     void refreshCard(const int props[6], double nowMs);
-    // `Hud_DrawBar(value, max, side, mode)`; modes 0 and 2. Mode 2's card
+    // `Hud_DrawBar(value, max, side, mode)`; modes 0, 1 and 2. Mode 2's card
     // needs `text` and the current clock; without `text` it is skipped.
     HudBarFrame draw(Surface& fb, int value, int max, int side, int mode,
                      const TextLayout* text = nullptr, double nowMs = 0.0);
@@ -155,9 +176,10 @@ private:
     int gauge(Surface& fb, int percent, int side, HudBarFrame& out);
     int sparks(Surface& fb, int top, int side);
     void card(Surface& fb, const TextLayout& text, HudBarFrame& out);
+    void breath(Surface& fb, int percent, HudBarFrame& out);
 
     Surface jauge_[2];                 // jauge1 / jauge2
-    Surface jaugeG_;                   // mode 1's, loaded as the engine does
+    Surface jaugeG_;                   // jaugeg.bmp - the stat card's and mode 1's
     int bmpW_ = 0, bmpH_ = 0;          // dword_530C98 / dword_530C9C
     int counter_ = 0;                  // dword_531050
     int column_  = 0;                  // dword_530CA8

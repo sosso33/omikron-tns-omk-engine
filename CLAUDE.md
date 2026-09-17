@@ -999,6 +999,22 @@ could plausibly break and nothing else. `todo/sweep-log.md` carries the count
 since the last full sweep — increment it on a commit, reset it when a sweep is
 run and recorded there — so the cadence survives between sessions.
 
+**EVERY CHECK IS EXPENSIVE, AND A RUN OF CHECKS THAT A LATER EDIT INVALIDATES
+IS WASTED OUTRIGHT** (the reader's rule, 2026-09-17, an hour into a task:
+*"tests are very time-costly and always think of an intelligent/optimized way
+of running them, never run more tests than needed"*). Each `engine:` check
+builds the engine and plays it; a section is minutes. Two practical forms:
+
+* **A red check is fixed ALONE.** Change the code, rerun THAT check, and only
+  when it is green rerun the rest of the section. Running the section around a
+  red check measures nothing that survives the next edit - the fix comes, the
+  code changes, and every one of those results is stale.
+* **Before running anything, ask what the run can tell you that you do not
+  already know.** A check that cannot see the change is a check not worth the
+  minutes, and a bisect over old commits to attribute a failure that was
+  already there costs a full build per commit - record it and move on unless
+  the reader asks for the attribution.
+
 A docs-only edit needs no run at all; the exception is a doc that QUOTES a
 number a check asserts, where the two should move in one command so they cannot
 drift apart. Adding a check does not require running the other four hundred.

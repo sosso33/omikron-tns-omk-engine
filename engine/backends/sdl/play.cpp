@@ -16981,6 +16981,10 @@ int main(int argc, char** argv) {
                 // some time (only the stats should disappear)"*.
                 else if (fightRun.active && fightRun.fight && fightRun.fight->koCounter() == 0 &&
                          !std::getenv("OMK_NOUI")) keep = "fight hud";
+                // ...and the BREATH gauge, under the test that draws it - the
+                // same GPU-present gap the fight's gauges fell into
+                else if (player && player->breathLeftMs() >= 0.0 &&
+                         !std::getenv("OMK_NOUI")) keep = "breath gauge";
                 else if (mediaBmp.w > 0 && mediaBmp.h > 0) keep = "media bitmap";
                 else if (mediaTextFrames > 0) keep = "media line";
                 else if (session.dialogOpen()) keep = "conversation";
@@ -18246,6 +18250,22 @@ int main(int argc, char** argv) {
                                 "card rows %d text %d\n", a.percent, a.top, b.percent, b.top,
                                 a.cardRows, a.cardText);
             }
+        }
+        // ---- THE BREATH GAUGE (`todo/swimming.md` step 4) ----------------
+        //
+        // `sub_4A8F30`'s underwater arm, every tick until the 40 seconds are
+        // spent: `Hud_DrawBar(1000 * (start + 40000 - now) / 40000, 1000, 0, 1)`
+        // - mode 1, the horizontal bar (`ui/hudbar.h`). The engine's
+        // `Hud_Refresh` on the first tick seeds the sparks and the stat card's
+        // clock, neither of which mode 1 draws, so nothing is done for it here.
+        if (player && player->breathLeftMs() >= 0.0 && !std::getenv("OMK_NOUI")) {
+            if (!hudBar.loaded()) hudBar.load(fs);
+            const int v = static_cast<int>(1000.0 * player->breathLeftMs() / 40000.0);
+            const omk::HudBarFrame br = hudBar.draw(fb, v, 1000, 0, 1);
+            if (n % 30 == 0)
+                std::printf("    breath gauge (Hud_DrawBar mode 1): %d%%, %d ms left, "
+                            "right edge %d, %d quads %d blits\n", br.percent,
+                            int(player->breathLeftMs()), br.top, br.quads, br.blits);
         }
         // ---- THE SHOOT HUD, screen 34 (`todo/shoot-mode.md` 8.3) --------
         //

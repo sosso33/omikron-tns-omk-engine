@@ -177,6 +177,55 @@ int HudBar::gauge(Surface& fb, int p, int side, HudBarFrame& out) {
     return top;
 }
 
+// `Hud_DrawBar`'s mode-1 arm WHOLE (`ui/hudbar.h`): the horizontal breath
+// gauge the water asks for. Each family is drawn in reverse submission order,
+// the way one I2D layer's HEAD cache draws it.
+void HudBar::breath(Surface& fb, int p, HudBarFrame& out) {
+    const int W = fb.w, H = fb.h;
+    const auto sx = [&](int v) { return scaleX(v, W); };
+    const auto sy = [&](int v) { return scaleY(v, H); };
+
+    // layer 2, flags 4, colour 0: the column, then the two end diamonds
+    const int cx[4] = {sx(100), sx(100), sx(540), sx(540)};
+    // the engine's own `Hud_ScaleX(24)` for the vertical centre - see the header
+    const int cy[4] = {sx(24) - sy(7), sx(24) + sy(7), sx(24) + sy(7), sx(24) - sy(7)};
+    fillQuadD3d(fb, cx, cy, 0u, 4u);
+    ++out.quads;
+    for (const int at : {540, 100}) {
+        const int dx[4] = {sx(at) - sx(17), sx(at), sx(at) + sx(17), sx(at)};
+        const int dy[4] = {sy(24), sy(24) - sy(17), sy(24), sy(24) + sy(17)};
+        fillQuadD3d(fb, dx, dy, 0u, 4u);
+        ++out.quads;
+    }
+
+    const int fill = sx(100) + p * (sx(540) - sx(100)) / 100;
+    out.top = fill;                      // the fill's RIGHT edge, this bar's `top`
+
+    // layer 3: jaugeg's two blits, key source, indexed with jauge1's size
+    if (jaugeG_.valid()) {
+        struct Blit { int sx0, sy0, sx1, sy1, dx0, dy0, dx1, dy1; };
+        const int split = bmpW_ * p / 100;
+        const Blit empty{split, 0, bmpW_, 3, fill, sy(24) - sy(3), sx(540), sy(24) + sy(3)};
+        const Blit full{0, column_, split, column_ + 3,
+                        sx(100), sy(24) - sy(3), fill, sy(24) + sy(3)};
+        for (const Blit* k : {&full, &empty}) {
+            // `I2D_BlitBitmap`'s three refusals - no test on the destination Y
+            if (k->sx0 >= k->sx1 || k->sy0 >= k->sy1 || k->dx0 >= k->dx1) continue;
+            if (blt(fb, Rect{k->dx0, k->dy0, k->dx1, k->dy1}, jaugeG_,
+                    Rect{k->sx0, k->sy0, k->sx1, k->sy1}, kBltWait | kBltKeySrc, 0, 0))
+                ++out.blits;
+        }
+    }
+
+    // layer 4: the additive blue over the full part, then the grey over the empty
+    const int fy[4] = {sy(24) - sy(3), sy(24) + sy(3), sy(24) + sy(3), sy(24) - sy(3)};
+    const int fx[4] = {sx(100), sx(100), fill, fill};
+    fillQuadD3d(fb, fx, fy, 0x103080u, 1u);
+    const int ex[4] = {fill, fill, sx(540), sx(540)};
+    fillQuadD3d(fb, ex, fy, 0xE0E0E0u, 2u);
+    out.quads += 2;
+}
+
 int HudBar::sparks(Surface& fb, int top, int side) {
     if (top == 458) return 0;                    // the literal, unscaled
     const int W = fb.w;
@@ -288,7 +337,7 @@ HudBarFrame HudBar::draw(Surface& fb, int value, int max, int side, int mode,
     ++counter_;
     if (bmpW_ > 3) column_ = counter_ % (bmpW_ - 3);
     out.column = column_;
-    if (mode == 1) return out;                   // the horizontal bar: not ported
+    if (mode == 1) { breath(fb, out.percent, out); return out; }
     if (mode == 2 && text && nowMs < stampMs_ + 4000.0) card(fb, *text, out);
     out.top = gauge(fb, out.percent, side, out);
     out.sparks = sparks(fb, out.top, side);
