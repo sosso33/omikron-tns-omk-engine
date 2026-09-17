@@ -92,6 +92,23 @@ public:
     // the per-geometry cost `OMK_TIE_STATS` ranks.
     long facesWalked = 0;
 
+    // EVERY BYTE THIS INSTANCE HOLDS, by group - `capacity` and not `size`,
+    // because a vector that grew for one revision keeps the memory. There is
+    // one instance per geometry and a street's worth of bodies each have one,
+    // which is why `todo/handoff-vita.md` §1 finds the tie's tables among the
+    // largest heap sites (~9.7 MB) against a 365 MB Vita budget. Nothing in
+    // the render path calls this: it is for `tie_mem` and for a check, so the
+    // number in the docs is measured rather than derived from a struct layout.
+    struct Bytes {
+        std::size_t claimed = 0;   // the untracked walk's keys and its table
+        std::size_t perTri  = 0;   // one entry a triangle: done_, applied_, unitOfTri_
+        std::size_t log     = 0;   // step 8's replay log: units_, unitHash_, calls_
+        std::size_t table   = 0;   // the tracked key -> chain-head table
+        std::size_t scratch = 0;   // the replay's stamps and lists
+        std::size_t total() const { return claimed + perTri + log + table + scratch; }
+    };
+    Bytes bytes() const;
+
 private:
     using P = std::array<std::uint32_t, 3>;
 

@@ -1024,6 +1024,56 @@ the trap (a stale index after `player.become`) and how to show it failing.
 **Nothing here may be quoted as a frame saving**: the numbers are per call from
 a tool, and no capped A/B has been run.
 
+### 14. WHERE the depth tie's memory is - measured, not yet cut (2026-09-17)
+
+`handoff-vita.md` §2 item 1's third bullet asks for "the per-frame allocations
+the tie's tables make (~10 MB across bodies)" to go. Before cutting anything:
+**which** of `DepthTie`'s twenty-odd vectors holds it? A struct layout cannot
+say, because every one is sized from the geometry at run time, so
+`DepthTie::bytes()` now reports `capacity` by group and
+`engine/tools/tie_mem.cpp` drives a real pass to read it.
+
+| geometry | tris | drops | claimed keys | per-triangle | log/table/scratch | total |
+|---|---|---|---|---|---|---|
+| Anekbah (set) | 46415 | 248 | **2560.0 KB** | 91.7 | 0 | 2651.7 KB |
+| PSH_FN (a body) | 790 | 3 | **67.0 KB** | 1.6 | 0 | 68.6 KB |
+| HO1_FN (a body) | 542 | 0 | 41.5 | 1.1 | 0 | 42.6 KB |
+
+**The claimed keys are 97% of it, and everything else is a rounding error.** A
+key is the face's corner POSITIONS copied out - 9 words a triangle, 36 bytes a
+face - so `keys` alone is 1.67 MB of Anekbah's 2.65.
+
+**The pass is the backend's, confirmed three ways.** Anekbah drops **248**, the
+figure `engine: sign tie` pins in the Vulkan render and `tie equivalence` in its
+own; PSH_FN **3** and HO1_FN **0**, which is `handoff-vita.md` §2's own
+measurement. A probe driving the class wrongly would miss all three - and the
+first version of this one did, by reading `DepthTie::dropped`, which is the
+BACKEND's counter that the class only ever zeroes (`vkrender.cpp`:
+`t.dropped += losers.size()`). It read 0 for everything.
+
+**Two limits, declared.** `log`, `table` and `scratch` read 0 because step 8's
+tracked replay never engages without a valid dirty-corner revision, so the
+set's real residency in a frame is HIGHER than the row above; and the ~9.7 MB in
+the handoff is a whole street's heap - two resident sets (hidden is not
+unloaded), the player, four LOD body sizes, the shadow, effect and sky
+geometries - which this does not attempt to reproduce. One geometry at a time,
+exactly, and `tie_mem`'s last row multiplies by a body count as arithmetic.
+
+**THE CUT THIS POINTS AT, not taken yet.** `keys` copies the positions so the
+exact multiset compare has something to read on a fingerprint match. It could
+instead store the face's first CORNER INDEX - 4 bytes, not 36 - and read the
+positions back out of `g.corners` at compare time. Within one revision that is
+the same bytes by construction, because a revision is precisely "the corners
+changed" and `claimed` is reset at every one; the care needed is that the
+tracked replay's `table_`/`units_` persist ACROSS revisions and must not be
+folded into the same argument. Worth ~1.5 MB on the set and ~60% of the tie's
+total, and `tie_equiv` is already the oracle for it. Not attempted here.
+
+`verify.py: engine: tie memory`, which asserts the three drop counts and the
+share `claimed` takes, and deliberately NOT the byte totals - `capacity`
+follows the allocator's growth policy, so a total asserted would be a claim
+about libc++ on an M1.
+
 ### 12. The crowd lighting - looked at, NOT changed (2026-09-14)
 
 `applyLights` was 316 samples of the step-10 standing profile. Measured first:

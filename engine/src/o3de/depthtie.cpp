@@ -3,6 +3,7 @@
 
 #include <algorithm>
 #include <cstring>
+#include <type_traits>
 
 namespace omk {
 
@@ -116,6 +117,23 @@ void DepthTie::Claimed::reset(std::size_t capacityFor) {
 }
 
 // ---- the vertex buffer's degenerated triangles -------------------------------
+
+// Measured, not derived: `capacity` a vector at a time. See the declaration.
+DepthTie::Bytes DepthTie::bytes() const {
+    const auto vec = [](const auto& v) {
+        return v.capacity() * sizeof(typename std::decay_t<decltype(v)>::value_type);
+    };
+    Bytes b;
+    for (const Claimed* c : {&quads_, &tris_}) b.claimed += vec(c->keys) + vec(c->cell);
+    b.perTri = vec(done_) + vec(applied_) + vec(appliedList_) + vec(unitOfTri_);
+    b.log = vec(units_) + vec(unitHash_);
+    for (const auto& c : calls_) b.log += sizeof(c) + vec(c.losers);
+    b.log += (calls_.capacity() - calls_.size()) * sizeof(Call);
+    b.table = vec(table_);
+    b.scratch = vec(stampTri_) + vec(stampUnit_) + vec(stampChg_) + vec(orig_) +
+                vec(affected_) + vec(changed_) + vec(marked_) + vec(prefix_) + vec(scratch_);
+    return b;
+}
 
 void DepthTie::vboReplaced() {
     for (const std::uint32_t t : appliedList_)

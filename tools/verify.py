@@ -13656,6 +13656,83 @@ def c_engine_mesh_name_index():
         "disagrees with the full scan, and finds for a name it was not built for"
 
 
+def c_engine_tie_memory():
+    r"""The depth tie's memory is almost all ONE group - the claimed keys - and
+    the pass that measures it drops what the render drops (handoff-vita §2).
+
+    `todo/handoff-vita.md` §1 ranks "the depth tie's tables ~9.7 MB" among a
+    street run's largest heap sites and §2 item 1 asks for the per-body
+    allocations to go, but neither says which of `DepthTie`'s twenty-odd vectors
+    holds it, and a struct layout cannot say: every one is sized from the
+    geometry at run time. `DepthTie::bytes()` reports `capacity` by group and
+    `engine/tools/tie_mem.cpp` drives a real pass to read it.
+
+    Measured 2026-09-17: Anekbah's set 2651.7 KB, of which **2560.0 is the
+    claimed keys**; one PSH_FN body 68.6 KB, 67.0 of it the same group. So
+    `claimed` is ~97% and the other four groups together are a rounding error -
+    which is where a memory cut has to go. A key is the face's corner POSITIONS
+    copied out, 9 words a triangle, so the keys alone are 36 bytes a face.
+
+    **What this check asserts is the CROSS-CHECK, not the byte counts.** Vector
+    `capacity` follows the allocator's growth policy, so a total asserted here
+    would be a claim about libc++ on an M1. What is portable is that the probe
+    drives the class exactly as the backend does, and three numbers established
+    independently say it does: Anekbah drops **248** (the figure `engine: sign
+    tie` pins in its Vulkan render and `tie equivalence` in its own pass),
+    PSH_FN **3** and HO1_FN **0** (handoff-vita §2's own "do not assume bodies
+    never tie" measurement). A probe that drove the pass wrongly would miss all
+    three. The byte side is asserted only as the SHARE `claimed` takes, which is
+    a property of the design and not of the allocator.
+
+    Note one thing the probe does NOT reach: `log`, `table` and `scratch` read 0
+    because step 8's tracked replay never engages without a valid dirty-corner
+    revision. Those are the set's moving-cargo path, so the set's real
+    residency in a frame is HIGHER than the figure above, and the ~9.7 MB in the
+    handoff (two resident sets, the player, four LOD body sizes, the shadow,
+    effect and sky geometries) is not this number either. This is one geometry
+    at a time, exactly, and the multiplication in `tie_mem`'s last row is
+    arithmetic and labelled as such.
+
+    SHOWN TO FAIL, 2026-09-17: reading `DepthTie::dropped` instead of the
+    returned loser list - which is what the probe did first, and the field is
+    the BACKEND's counter that the class only ever zeroes - gives 0 / 0 / 0 and
+    turns every one of the three cross-checks red.
+    """
+    import subprocess
+    eng = os.path.join(ROOT, "engine")
+    if not os.path.isdir(eng):
+        return ("skipped",), ("skipped",), "engine/ absent"
+    b = subprocess.run(["make", "-s", "build/tie_mem"], cwd=eng, capture_output=True, text=True)
+    binp = os.path.join(eng, "build", "tie_mem")
+    if b.returncode != 0 or not os.path.exists(binp):
+        return ("build failed",), ("built",), "engine/ must build"
+    paths = {}
+    for rel in ("MESHES/DECORS/Anekbah.3DO", "MESHES/PERSOS/PSH_FN.3DO",
+                "MESHES/PERSOS/HO1_FN.3DO"):
+        paths[rel] = omkpaths.data(rel)
+        if not os.path.exists(paths[rel]):
+            return ("skipped",), ("skipped",), "%s absent" % rel
+    out = []
+    for body in ("MESHES/PERSOS/PSH_FN.3DO", "MESHES/PERSOS/HO1_FN.3DO"):
+        r = subprocess.run([binp, paths["MESHES/DECORS/Anekbah.3DO"], paths[body], "1"],
+                           capture_output=True, text=True)
+        rows = re.findall(r"^(\S+\.3DO) +(\d+) tris +(\d+) draws +(\d+) dropped \| "
+                          r"claimed +([\d.]+) .*TOTAL +([\d.]+) KB", r.stdout, re.M)
+        # A parse that reads nothing must fail AS A PARSE (CLAUDE.md 1)
+        if len(rows) < 2:
+            return (len(rows),), (2,), "tie_mem output parsed - the tool's format changed"
+        out.append(rows)
+    setrow, pshrow = out[0][0], out[0][1]
+    ho1row = out[1][1]
+    share = lambda row: float(row[4]) / float(row[5])
+    return (int(setrow[1]), int(setrow[3]), int(pshrow[3]), int(ho1row[3]),
+            round(share(setrow), 2) >= 0.95, round(share(pshrow), 2) >= 0.95), \
+        (46415, 248, 3, 0, True, True), \
+        "Anekbah's triangles, then the faces the tie drops for the set, PSH_FN " \
+        "and HO1_FN - each established elsewhere - and whether the claimed keys " \
+        "are 95% or more of the bytes for the set and for a body"
+
+
 def c_engine_gpu_present():
     r"""An adventure frame nothing is drawn over is dithered and presented on the
     GPU, and gives the bytes the CPU round trip gave (todo/optimization.md 4b).
@@ -36926,6 +37003,7 @@ SLOW = [
     ("engine: gpu present", c_engine_gpu_present, "todo/optimization.md 4; backends/vulkan/shaders/present.frag"),
     ("engine: pose equivalence", c_engine_pose_equivalence, "todo/optimization.md 10; actor/pose.h"),
     ("engine: mesh name index", c_engine_mesh_name_index, "todo/handoff-vita.md 2; o3de/shadow.h"),
+    ("engine: tie memory", c_engine_tie_memory, "todo/handoff-vita.md 2; o3de/depthtie.h"),
     ("engine: sweep grid", c_engine_sweep_grid, "todo/optimization.md 11; o3de/collision.h"),
     ("engine: props", c_engine_props, "todo/omk-play"),
     ("sprite ids scene-local", c_sprite_ids_are_scene_local, "docs/ASSETS"),

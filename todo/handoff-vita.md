@@ -104,7 +104,14 @@ the port ADDS is what to remove first.
      SCAN, not the ancestry walk this file's wording points at - replacing the
      walk is exactly equivalent and SLOWER (1145 ns against 852), because bone
      chains are shallow;
-   * the per-frame allocations the tie's tables make (~10 MB across bodies).
+   * the per-frame allocations the tie's tables make (~10 MB across bodies) -
+     **LOCALISED 2026-09-17** (`optimization.md` step 14): it is one group of
+     the twenty-odd vectors, the CLAIMED KEYS, at 97% of the tie's bytes
+     (Anekbah 2560 KB of 2652, a PSH_FN body 67.0 of 68.6), because a key
+     copies the face's positions out at 36 bytes a face. Storing the face's
+     corner INDEX instead and reading positions from `g.corners` is worth ~1.5
+     MB on the set; `tie_mem` measures it and `tie_equiv` is the oracle. Not
+     cut yet.
 2. **Make the remaining work cheaper without changing a result**:
    * **share poses**: crowd bodies often play the same clip at the same frame
      on the same model - `composePose` once, used by all of them;
