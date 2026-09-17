@@ -2,6 +2,7 @@
 #include "script/zones.h"
 
 #include <algorithm>
+#include <cstdlib>
 
 #include <cmath>
 
@@ -306,7 +307,7 @@ void ZoneRegistry::scanZones(const double pos[3], double facingDegrees,
                 lo = std::min(lo, z.zone.quad[k][1]);
                 hi = std::max(hi, z.zone.quad[k][1]);
             }
-            constexpr double kZoneBand = 39.370079;      // one metre
+            const double kZoneBand = std::getenv("OMK_NO_ZONE_BAND") ? 1e9 : 39.370079;
             if (pos[1] < lo - kZoneBand || pos[1] > hi + kZoneBand) { ++heightSkips_; continue; }
         }
 

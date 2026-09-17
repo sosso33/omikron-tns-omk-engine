@@ -223,52 +223,55 @@ like the LIFT's grid.
 | 3 | the SPECIAL screens - 12 GANDHAR DOOR, 13 DEN, 14 XACHEN, 0 VIDEOPHONE, 36 HIGH-SCORE - and the terminal's own dossier pages | §5 has each one's hooks |
 | 4 | play | |
 
-## 6. The lift ARRIVES and the level is not there — one fault fixed, one open
+## 6. The lift arrives and the level is not drawn — the mechanism, and a REVERTED patch
 
 Reported in play, 2026-09-17: *"there is an issue with the camera inside it,
 which is not placed correctly so a part of the environment is just in front of
-the camera (it is not the only place where this issue occurs)"*, and then
-*"this is a static camera, not the following one"* - camera 2980, one of AREA
-157's own.
+the camera (it is not the only place where this issue occurs)"*, then *"this is
+a static camera, not the following one"*.
 
-**It is not the camera.** Riding to level -2 and photographing the arrival shows
-the frame almost entirely BLACK. The log says why:
+**It is not the camera, and the camera the port picks is right.** Riding to
+level -2 and photographing the arrival gives a frame 98% black. The camera up is
+2986 - AREA 179's own, at level -2's height - and with the zone height band
+REMOVED the port picks 2999 instead, which is level -5's, three storeys away. So
+the band (section 2) is doing its job here.
 
-    [slot] frame 179  SHOW area 179 in slot 1  (active slot 0 = area 157 ...)
+**The mechanism, measured.** The log:
+
+    [slot] frame 179  SHOW area 179 in slot 1   (active slot 0 = area 157 ...)
     [slot] frame 180  HIDE area 179 in slot 1
 
-The port loaded the destination and hid it again one frame later, leaving the
-player standing on a level whose set is not drawn.
+`area.arrive -1` hides the row that is NOT active, which is the engine's own
+line (`if (dword_69BC60) hide(slot0) else hide(slot1)`). The ACTIVE row only
+flips on event 9 - the player's feet on a new decor - and the port raises that
+from a per-frame probe that runs AFTER the script pump. So the destination is
+shown and hidden with no probe in between, the active row never moves, and the
+row that goes is the one just loaded.
 
-**The fault.** `area.arrive -1` hides "the row that is not active", which is
-what the engine's own line reads - `if (dword_69BC60) hide(slot0) else
-hide(slot1)`. But the ACTIVE slot only flips on event 9, the player's FEET
-crossing onto the new decor (`Session::playerOnArea`), and a lift never does
-that before the script arrives: `actor.goto_address` puts him at the SHAFT's own
-address, still AREA 157's set. So "not active" named the destination.
+He IS standing on the destination's floor when it happens: feet at y 342.5 over
+ACSLEV-2's 345. One probe between the show and the hide would flip the row and
+both readings of the engine's line would name AREA 157, the shaft, which is what
+should go.
 
-The engine remembers the outgoing area separately - `a1[3]`, which this port
-already carries as `Transition::outArea` - and hiding THAT is the same row
-wherever the feet have crossed, so no ordinary transition moves. Fixed there.
-`trace agreement`, `engine: area load`, `sim: area load`, `area.goto objects`
-and `engine: walk-in scene` are green with it - the traces are real captures
-with real transitions, which is the evidence that the two rules agree in the
-ordinary case.
+**A patch that hid `Transition::outArea` instead was WRONG and is reverted.** It
+made the arrival draw - but it takes away the shaft the player is standing in,
+floor included, so he arrives somewhere he cannot walk: 400 frames of forward
+input moved him 0.1 units. The reader caught it in one sentence - *"the issue
+doesn't happen when I tested before ... this is a very recent regression"* - and
+the code says so at the line.
 
-**Still open, and NOT guessed at.** After the arrival the level's set draws (the
-corridor and Kay'l are there) but most of the frame is still black and **he
-cannot walk**: 400 frames of forward input move him 0.1 units, and `event 9:
-feet on area 179` never fires at all. The hold is released (82 frames of 646),
-so that is not it. Two candidates, both unread:
+**The fix is the ORDERING**, and it is not attempted here because it moves a
+rule every transition check depends on: the feet probe has to see a set that was
+shown this frame, either by running before the pump or by probing again after a
+`showSet`. The engine's own transition takes frames to reach state 8 (the staged
+load), which is what gives its probe the chance.
 
-* the arrival address is the SHAFT's (AREA 157's own table), so with 157 hidden
-  he stands where there is no floor and every step reverts - which would mean
-  the two sets must both be resident for the length of the arrival, not one;
-* or the feet event needs raising on a TELEPORT, not only on a walked change of
-  decor, and the active slot with it.
-
-The repro is one command and 260 frames:
+**Repro**, one command and 260 frames - the frame is 98% dark:
 
     build/omk-play ../gamedata ../tables --save ../traces/save-appart.bin \
         --area 157 --address 446 --frames 260 --nofmv --nodelay --no-crowd \
         --hold 'k*40,k28*2,k*60,k208*2,k*30,k28*2,k*200' --dump out.bin
+
+`OMK_NO_ZONE_BAND=1` turns the height band off for the same run, which is how
+the band was ruled out (the arrival then picks the wrong camera and is 66%
+dark).

@@ -1000,29 +1000,21 @@ int Session::areaTransition(int mode, int ctxIdx, int slot, int area, int f1, in
             return 0;
         }
         if (tr_.state != 8) return 0;
-        // `area.arrive -1` hides THE AREA THE TRANSITION LEFT, and the engine
-        // names it two ways that agree while the active slot has already
-        // flipped: `if (dword_69BC60) hide(slot0) else hide(slot1)` - the row
-        // that is not active - and `a1[3]`, the outgoing area the transition
-        // block remembers from the moment it started (`Transition::outArea`
-        // here). This took the first, and the two DISAGREE whenever the player
-        // has not walked onto the destination's floor yet: the active slot only
-        // flips on event 9, the feet.
+        // `area.arrive -1` hides the row that is NOT active, which is the
+        // engine's own line: `if (dword_69BC60) hide(slot0) else hide(slot1)`.
         //
-        // A LIFT is exactly that case, and a reader found it - level -2 arrived
-        // black, because `actor.goto_address` had put him at the shaft's own
-        // address (still AREA 157's set, the cabin) and `area.goto 179` showed
-        // the office one frame before this hid it again. The engine cannot mean
-        // that: it would leave every lift in the game looking at nothing, and
-        // `a1[3]` would have no reader.
-        //
-        // So the outgoing area is what goes. Where the feet HAVE crossed, the
-        // two rules name the same row and nothing moves - which is what the
-        // golden traces' transitions assert.
-        if (area == -1) {
-            const int out = tr_.outArea != -1 ? tr_.outArea : slots_[1 - active_].area;
-            hideSet(out);
-        }
+        // **A 2026-09-17 CHANGE HERE WAS A REGRESSION AND IS REVERTED.** It hid
+        // `Transition::outArea` (the engine's `a1[3]`) instead, reasoning that a
+        // lift arrives before the feet ever cross and so "not active" names the
+        // destination. The frame that produced is worse, and a reader caught it
+        // in one sentence - *"the issue doesn't happen when I tested before ...
+        // this is a very recent regression"*: hiding the OUTGOING area takes
+        // away the lift shaft the player is standing in, floor included, so he
+        // arrives somewhere he cannot walk. The engine keeps the set he is on
+        // and shows the destination when his feet reach it, which is what this
+        // line does. The black arrival has another cause - see
+        // `todo/missing-ui.md` 6.
+        if (area == -1) hideSet(slots_[1 - active_].area);
         else hideSet(area);
         clearTransition();
         return 1;
