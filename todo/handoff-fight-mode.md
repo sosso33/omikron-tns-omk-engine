@@ -95,24 +95,31 @@ requests print at frames 0, 665 and 1031, two frames after the hold begins.
   change is unobservable on it: it needs a save with custom keys or a mutation
   to prove. **Shoot mode does not actually need the keypad** — the mouse turns
   the body and pitches the camera (play.cpp ~6856).
-* **`Fight_TickAI`'s defensive arm** — intent 9 inside 1.5 m, which reads the
-  opponent's combat block to decide a guard. Not transcribed, which is why
-  `engine: melee` records `blocks` as 0. About sixty lines.
-* **The priority gate.** `Fight_Begin` calls `sub_45A4C0(chan, 1/0)`, setting
-  channel flag `0x400` on the player and clearing it on the opponent. The flag
-  makes `Cef_FindTransition` honour the `+212` threshold; nothing read so far
-  writes `+212`, and the port's setter demands one, so passing 0 would silently
-  drop every priority-1 and -2 candidate. Left off deliberately.
-* **Step 5, the HUD** — both gauges (`Hud_DrawBar(player, 200, 0, 2)` and
-  `(opponent, 200, 1, 0)`) and mode 2's four-second overlay `sub_447000`
-  (306 lines, unread). `ui/hudbar.h` has mode 0 already.
-* **The camera's unmodelled parts**: the tail's collision solve
-  (`sub_413450`/`sub_416570`/`sub_413440`, a different family from the follow
-  camera's `sub_417070`), so the fight camera can pass through walls; and the
-  throw swing's length, because `sub_45ACF0` has no port.
-* **The opponent's first second** on the nameless clipless entries 208/228 with
-  intent 104. At 12 m apart the approach branch is legitimate, but it wants
-  checking against `Fight_TickAI` rather than assuming.
+* ~~**`Fight_TickAI`'s defensive arm**~~ - **done 2026-09-17** (`fight-mode.md`
+  15.11): the guard raise, the two built-in presses, and the latch clear that
+  brings the guard down; `engine: melee` blocks 0 -> 24.
+* ~~**The priority gate.**~~ - **done 2026-09-17** (`fight-mode.md` 15.14): the
+  `+212` writer is `sub_45ACD0` (the channel base is 0x8F5920, not 0x8F5928),
+  and the threshold is the player's experience truncated through
+  0.024390243 - moves unlock with rank. Not seen changing a decision in any run
+  yet.
+* ~~**Step 5, the HUD**~~ — **done 2026-09-17**: both gauges, hidden through
+  the KO replay, and `sub_447000` read and ported - a four-second STAT CARD of
+  the player's properties with `IAM\SNEAK`'s initials and rank (`fight-mode.md`
+  15.5, `engine: fight hud`).
+* **The camera's unmodelled parts**: ~~the tail's collision solve~~ (ported
+  2026-09-17, `fight-mode.md` 15.8b - the bolts' ray from the look-at to the
+  eye, X and Z only, the height clamp behind it). ~~The throw swing's length~~
+  is ported too (`6af0597`: `sub_45ACF0` is the channel's +8, the clip length),
+  and the orbit's damping cases 3 and 8 are unreachable in the shipped engine.
+* ~~**The opponent's first second**~~ on the nameless clipless entries 208/228
+  - **gone 2026-09-17**: the 12 m that made it legitimate was the port's own.
+  `beginMelee` read the approach program's path START instead of where the
+  program left him, 1.5 m from the player (`fight-mode.md` 15.8e). The fight
+  now opens on `HGUARD` against `HGUARD`, and the opponent's WALL collision
+  (15.8a) is **wired** the same day: his own walker, every move of the frame as
+  one try (`engine: fight collision`, via the `--fight-foe-at` harness, since
+  the real fight never reaches a wall). His VERTICAL is still his placement's.
 
 ## 5. Traps that cost time in this session
 
@@ -150,3 +157,32 @@ channel's tick/transition/landing/clipEnd/badLanding counters.
 fights profile against profile on all three `CMBT` banks and **re-derives every
 damage figure** from the attacker's own combat block rather than believing the
 runtime.
+
+## 7. 2026-09-17, later: the KO bands, the robber's height, and a build trap
+
+The knock-out's `Screen_Fade(1)`/`(0)` are wired - they are the letterbox bands,
+so the replay plays between bars (`fight-mode.md` 15.13). The robber's height
+follows his walker's floor. And one thing to know before mutating anything
+here: GNU Make 3.81 compares whole seconds, so a mutation restored in the same
+second as its compile stays compiled - `touch` and rebuild after every restore
+(CLAUDE.md 1).
+
+Also 2026-09-17: the opponent's `.CTL` effect SPRITES (15.10's second half) are
+drawn, on his bones through `Staged::meshAt`. Not judged by eye yet.
+
+## 8. What is left, 2026-09-17 evening
+
+Every step of the plan is done, and step 6's play test has begun. **Confirmed
+in play 2026-09-17** (three played fights on the Vulkan window, one lost and two
+won with `--fight-health 200`): the gauges staying up (15.15), the opponent's
+hit glow, his fall to the floor and his body left lying after a win (15.16).
+Played but not reported on either way:
+
+* the fight opening 1.5 m apart, the robber's wall collision, the camera held
+  in front of crates, the four-second stat card, the AI's guard, the KO replay
+  between bars;
+* 15.3 ("characters colliders issue") needs the reader to say which of three
+  faults it was, if it survives the above;
+* the priority gate is ported but has never been SEEN refusing a move;
+* §14's keypad bindings belong to shoot mode, not melee.
+

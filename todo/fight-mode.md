@@ -199,10 +199,10 @@ Each step ends in a commit and a report, then waits for the reader
 | **0** | this file, the two doc corrections, the corpus facts in `verify.py: fight & become` | **DONE 2026-09-16** |
 | **1** | `engine/src/actor/fight.{h,cpp}`: the contexts, `Fight_Begin`, `Engage`/teardown, `SelectAiProfile`, both per-fighter steps, `ResolveHit`, `FaceOpponent`, `KeepSeparation`, `TickAI`. A probe fights profile against profile on all three `CMBT` files | **DONE 2026-09-16** — `verify.py: engine: melee`, and it found the AI's eight BUILT-IN move tables (`tables/fight_ai_moves.json`) and the per-slot WEIGHT the `.CTL` reader had been skipping. The defensive arm of `Fight_TickAI` (intent 9 inside 1.5 m) is labelled and left for its own commit |
 | **2** | Session and viewer: install the fight hook, slot 2 on both bodies, state 2, scheme 3, the park; the end through event 2, the player's slot-0 reload and his life written back so `Vie Combat Perte` is right. Carry field 2 | **DONE 2026-09-16** — `--fight N` / `--fight-level N`, and a whole fight runs in `omk-play`. §10 has what it found and what it left |
-| **3** | the KO: the 60-frame ring, the two playbacks, the fade | **DONE except the FADE** — the ring and both playbacks landed with step 1 (`Fight_RecordFrame` / `sub_49B2E0`) and have been seen running since step 2: the KO counter goes 1 then 2 and the fight ends. `Screen_Fade` is not modelled at all in this tree, so the two calls that bracket a knock-out are labelled rather than faked |
+| **3** | the KO: the 60-frame ring, the two playbacks, the fade | **DONE, the fade too since 2026-09-17 (15.13)**; before that **DONE except the FADE** — the ring and both playbacks landed with step 1 (`Fight_RecordFrame` / `sub_49B2E0`) and have been seen running since step 2: the KO counter goes 1 then 2 and the fight ends. `Screen_Fade` is not modelled at all in this tree, so the two calls that bracket a knock-out are labelled rather than faked |
 | **3b** | **NOT IN THE ORIGINAL PLAN, and worth admitting**: the opponent's BODY — his motion pass and posing him from his fight channel. The commits call this step 3 because it is what the work turned out to need once step 2 ran; this table said nothing about it | **DONE 2026-09-16**, `4eb178b` and `4a9abb3`. §10 |
 | **4** | camera mode 14 | **DONE 2026-09-16** — `FightCamera` in `actor/fight.*`, the arm ahead of the follow camera in `omk-play`, and options row 18 consumed. §11 has the three faults the harness log caught, and what is labelled (the collision solve, the throw's swing length) |
-| **5** | the HUD: both bars, and mode 2's four-second overlay | |
+| **5** | the HUD: both bars, and mode 2's four-second overlay | **DONE 2026-09-17** — §15.5 |
 | **6** | play test with the reader | |
 
 **What step 1's check can assert** (it must be SHOWN to fail, PORTING B2):
@@ -342,7 +342,8 @@ like row 16 the port had been carrying the value and using it nowhere.
 (`sub_413450`/`sub_416570`/`sub_413440`) is a different family from the follow
 camera's `sub_417070`, the only obstruction rule this tree has read, so it is
 not modelled and the height clamp runs unconditionally instead of behind the
-solve's "did it return a point" flag. The throw state's swing is spread over a
+solve's "did it return a point" flag. *(Superseded 2026-09-17: the solve is
+ported and the clamp is behind it - 15.8b.)* The throw state's swing is spread over a
 second because `sub_45ACF0`, the channel's remaining time, has no port.
 
 ## 12. The first PLAY TEST, 2026-09-16 — three faults, two of them mine
@@ -585,7 +586,7 @@ outranks a reading that only shows nobody has found the mechanism.
 presses ENTER at 600; the screen must open AND close. Shown to fail: gate the
 arm off and the open line appears without the close, which is the report.
 
-### 15.10 PARTLY FIXED — effects fired for ONE fighter
+### 15.10 FIXED — effects fired for ONE fighter (sounds 2026-09-17, sprites the same day)
 
 The reader: *"the visual effect happens only when the player is touched."*
 Both the sound half and the sprite half read `player->` alone, so the
@@ -605,7 +606,7 @@ player's. Measured over one won fight, the mix goes from almost pure swing -
 asserts the DISTINCT id count, because "some audio happened" is satisfied by
 the player's own whoosh alone.
 
-**The SPRITE half is NOT fixed**, and the reason is worth stating: the draw is
+**The SPRITE half was NOT fixed at first**, and the reason is worth stating: the draw is
 bound to the player's specifics - `playerMeshes`, `playerRootXZ`,
 `playerFeet`, `lastRootDrop`, his pose and his attach search. No staged actor
 gets `.CTL` effect sprites in this tree, so this is a general gap that the
@@ -614,6 +615,208 @@ BODY rather than assuming the player's. The opponent's own pose is already
 kept (`fightRun.foePose`) and his position and yaw are in `fightRun.foe`; what
 is missing is the feet/root pair, which is the same vertical question 15.8d
 settled for the separation and has not been settled for the draw.
+
+**FIXED 2026-09-17** without the feet/root question: the opponent is a STAGED
+body, and a staged body's draw already records every mesh's world position
+(`Staged::meshAt`, the frame the bolts' hit test reads). So his sprite records
+are spawned from his own channel by the player's rule (entering a state or a
+wrap, dying out of the window) and placed on `meshAt` of the bone the attach
+table names. In the kick run: `IH_RIGH` puts sprites 192 and 11 on his head,
+`H_PROTECT` - his guard, which 15.11 made reachable - sprites 13 and 192 on his
+right hand, 69 placements in all, every one textured and inside its window.
+**Not yet judged by eye**: in the one frame looked at, his head was bent away
+behind his torso, so the depth test hides a head spark and a still cannot tell
+that from a missing one. `engine: fight library` asserts the placements
+(floored 60), shown to fail by skipping his spawn.
+
+### 15.11 DONE 2026-09-17 — the AI's DEFENCE, `Fight_TickAI`'s guard arm
+
+The arm step 1 labelled and left. Read from the listing (0x00464D4F..
+0x00464F4A) as well as the decompilation, because the decompiled form has a
+line that looks wrong and is not: right after pressing the idle word the arm
+does `or al, 40h` into the context's flags **unconditionally**, so every later
+`|= 0x40` in it is a no-op. With intent 9, the pair within 1.5 m (`<=`) and the
+`0x100` latch down, the AI raises the latch and flag `0x40` - the GUARD
+`Fight_ResolveHit` reads, a blow into it costing a flat point - and then MAY
+also press a built-in table: `0x4CAD38` (input 8) for a line-A move (the
+attacker's combat block `&4`) from state 16 or 32 with `stateD & 8` when its own
+entry is high (`+76 & 1`) and not low; `0x4CAD54` (input 4) for a line-B move
+from state 32 under the same `stateD & 8` and high test. Both presses pass a
+literal 0 modifier, which `injectWords` could not express before.
+
+**Its other half was missing too.** At the top of the waiting path the engine
+brings the guard DOWN: with `0x100` up and both fighters idle (state 1 or
+intent 2 on each side, as read), `& 0xFFFFFE3F` clears 0x40/0x80/0x100, intent
+105, and a move from family 1 standing or 4 otherwise. Without it a raised
+guard would never drop.
+
+`engine: melee` said this would move and it did: **blocks 0 -> 24** over its
+nine probe fights, re-derived damage figures 204 -> 186, every invariant
+still 0; shown to fail by dropping the guard raise. The supermarket fight is
+not re-judged by eye yet.
+
+### 15.12 READ 2026-09-17 — a LOST fight: the engine does nothing, the script decides
+
+The open question of §8, and the answer is small. `Fight_ResolveHit` stores
+the attacker in `dword_906F34` and the defender in `dword_906F30` when a blow
+takes the defender to 0 - so `dword_906F34` is the **winner**, which a first
+reading here had backwards. `sub_445AC0` then writes the player's `+404` from
+it (1 if he won, **0** if he lost; the opponent 0 either way) and raises event
+2 with a code 1/2 that nobody reads. Event 2's handler releases the parked
+script and calls `Actor_LoadBankList` on the player, which ENDS
+`dword_910834[328*i] = 1` - the `+404` alias `Fight_Engage` writes through. So
+**the player leaves every fight in ACTOR_STATE 1**; a loser's 0 does not survive
+the call that wrote it. Nothing kills him and nothing reincarnates him: the
+lost fight's own script reads the life written back and moves on - in the
+supermarket, the Meditech sequence (`med1`, object 85 `4Meditech`), which the
+port already plays.
+
+**How it was nearly got wrong, which is the finding worth keeping.** The first
+change here wrote Inert for a loser, from `sub_445AC0` alone, and the new log
+line printed the player's state FROM THE CONTROLLER rather than from the bool
+that chose it (CLAUDE.md 1's log-line trap). It read 1. The viewer's `setBank`
+rebuilds the `ActorRuntime`, which lands on 1, and the transition table refused
+2 -> 0 from there - and chasing that refusal into `Actor_LoadBankList` is what
+showed the engine lands on 1 too. The viewer's old unconditional Normal was
+right; `ActorRuntime::fightEnd`, which nothing calls, stopped after the first
+write and now makes both.
+
+Also read: `Fight_Begin`'s third argument would PRESET the outcome (1 the
+player wins, 2 the opponent, the loser forced into his knock-out entry at
+once), but its one caller, op 62's handler, passes 0 - unreachable in the
+shipped game.
+
+`engine: fight separation` asserts the teardown over its lost fight, ('LOST', 1),
+shown to fail by writing Inert through the `Actor_LoadBankList` row. And
+`engine: fight library`'s fight, documented as one the player wins, is now a
+loss (since 15.8e and 15.11); nothing it asserts depends on the winner, and its
+docstring says so.
+
+### 15.13 DONE 2026-09-17 — the knock-out's BANDS, and the robber's height
+
+**The fade step 3 left out is the letterbox.** `Screen_Fade` (0x0041E1B0) is
+not a fade to black at all in this tree's terms: it is the machine the port
+already runs as `Session::startBlackFade` - 1 sets state 3 over 60 frames, 0
+sets state 4 and only from 3 - and its "dark" frames are the cinema BANDS
+(15.4 established that the black stripes are the letterbox). `sub_4452A0` calls
+`Screen_Fade(1)` the frame the loser reaches state 6 or 7 and the KO counter
+first rises; the replay loop calls `Screen_Fade(0)` when its passes run out,
+just before `Fight_Engage(-1, 1)`. So the knock-out replay plays between bars.
+In the supermarket run: in at frame 504, the 60 frames, out at 626.
+`engine: fight letterbox` gains frame 530 (both edge rows dark), shown to fail
+by dropping the `(true)` call.
+
+**The robber's height** now follows his walker - `Actor_ApplyMotion` ends with
+the ground probe - lifted back to the pelvis: -33 against the player's -32,
+where the clip's end height left him at -29. `engine: fight separation`'s
+`|dy|` 3 -> 1. That is all this set can show: its floor is flat at y 10
+wherever a fighter can stand (the crate tops at -54..-61 are unreachable), so a
+real change of floor under a fight is unobserved and nothing asserts it.
+
+**A trap, found on the way, recorded in CLAUDE.md 1.** Restoring 15.11's
+mutation landed in the same second as the compile it undid, and GNU Make 3.81
+compares whole seconds: `fight.o` stayed MUTATED, and the fight checks run in
+the next hour measured an AI with no guard. Re-run on rebuilt binaries, every
+figure pushed in that window holds - the supermarket fight never reaches the
+guard arm - and `engine: melee` reads its 24 blocks.
+
+### 15.14 DONE 2026-09-17 — the PRIORITY GATE, and its writer was a wrong base address
+
+Step 1 left the gate off because nothing read had written the channel's
+`+212`, and `setPriorityGate` needs a threshold. The writer was there all
+along, hidden by an address: the channel records begin at **0x8F5920** (the two
+`memset(228 * i + 9394464, 0, 0xE4)` in the channel module say so), not at the
+`dword_8F5928` IDA named, so `+212` is `word_8F59F4[114 * i]` and its setter is
+`sub_45ACD0`. The getter found first, `dword_8F59FC`, is `+220`.
+
+`Fight_Begin` raises flag 0x400 on the player (`sub_45A4C0(chan, 1)`), clears
+it on the opponent, and sets the player's threshold to property 19,
+EXPERIENCE, times `flt_4BC424` - `fild`, `fmul`, `_ftol`. The float is
+0x3CC7CE0C, 0.024390243, just under 1/41, and `_ftol` truncates: **41 -> 0,
+42 -> 1, 83 -> 2** - one point later than the stat card's integer `/ 41`. So a
+`.CTL` move marked priority 1 or 2 is refused to a player who has not the
+experience for it: the combat moves UNLOCK with Kay'l's mastery. The teardown
+clears both thresholds; this viewer's `setBank` builds a fresh channel, which
+has the same effect.
+
+**What is shown and what is not.** The threshold is asserted (experience 50 ->
+1, `engine: fight hud`, read back from the CHANNEL, shown to fail by dropping
+the call). The gate changing a decision is NOT: an instrument counting the
+candidates it turned away reads **0** in the supermarket fights under three key
+patterns and in the nine probe fights, because nothing pressed there reaches a
+priority-2 move - `H1CMBT` has fourteen, reached only from the sidesteps, the
+walk and the combo chains, and several behind two-input words like `CATCH`'s
+0x480, while `--keys` presses one key at a time. That matches
+`engine: actor states`' older corpus finding that the priority rule is invisible
+on shipped decisions.
+
+### 15.15 FIXED 2026-09-17, CONFIRMED IN PLAY — the gauges vanished on the VULKAN window
+
+The first play test of the HUD, with `--fight-health 200`: *"The health
+disappear after some time (only the stats should disappear)"*. The draw was
+right - the played log carries 49 HUD samples with both gauges falling - and
+every headless check was green, because headless renders take the SOFTWARE
+path. The window takes Vulkan, which presents a frame straight from the GPU
+when nothing is drawn over the 3D, and keeps a frame on the CPU path only
+through a list of gates. The shoot HUD is on it; the fight HUD was not. So the
+gauges and card showed only while another gate - the fight's opening fade -
+held the frame, and from frame 439, when that fade ended, the frames went out
+without them.
+
+Fixed by a `fight hud` gate under the draw's own test (a fight running, KO
+counter 0). `verify.py: engine: fight gpu present` runs the fight on
+`--world-vulkan` with `OMK_VERIFY_GPU_PRESENT=1`: 0 frames differ from their CPU
+composite and the gate holds 126; shown to fail with the gate disabled - 65
+frames differ from frame 439, about 27000 pixels each.
+
+Also added for that play test: `--fight-health N`, a labelled HARNESS setting the
+player's Vie at `Fight_Begin`, because the save's 10 ends a fight in seconds.
+
+### 15.16 FIXED 2026-09-17, CONFIRMED IN PLAY — the second play test's three: no hit effect, a floating fall, a T-pose after the win
+
+*Confirmed by the reader the same day (*"Good"*), on the Vulkan window, after a
+won fight: the glow on a hit, the fall to the floor, the body left lying.*
+
+The reader won a fight on the Vulkan window (`--fight-health 200`) and reported
+*"no visual effect when I touched the ennemy, the ennemy float in the air when
+he's supposed to fall, and the ennemy stay in T-pose in the room after I won the
+fight (look in the game scripts, but I think he's supposed to stay on the
+floor)"*, with a screenshot of the robber lying flat at head height.
+
+**No hit effect: his sprites had no TEXTURE SLOT.** 15.10 spawned and placed
+them - 482 placements in one run - but the texture pool takes only the sprite
+ids somebody asked for, and only the player's `.CTL` sprites were asked for. A
+batch without a slot is skipped at submission, silently. His ids now go into the
+pool beside the player's. The check that had passed 15.10 counted placements,
+which could not see this; it now counts placements whose sprite HAS a slot, and
+shown to fail by leaving his ids out (0 while the placements do not move). A
+pixel diff of the same frame with and without his sprites: 7784 pixels, a
+blue-white glow on his head. (Two earlier diffs read 0 for another reason: the
+camera was looking straight down at a point 85 units from him. A still that
+cannot see the subject says nothing.)
+
+**The float: the pelvis track was dropped.** A `.CTL` clip's pelvis keys are an
+ABSOLUTE height in model space - measured over H1CMBT, the guard at 2.3, the low
+guard 13.5 and held, the knock-downs `KOH_FRONT`/`KOM_FRONT`/`I_DEATH` at 35..39,
+the jumps negative. The engine moves the pelvis BONE with them. The staged body
+was placed at the fight position with them discarded, so he lay flat 36 units
+up. His placement is now the fight position plus the offset from the stance he
+opened in; after a win he is drawn with his pelvis at y 3 and head at 4 on a
+floor at 10, where he was at -33.
+
+**The T-pose: state 0 does not tick.** `sub_445AC0` writes the opponent's +404
+to 0, `nullsub_6`, so his node keeps the fight's last pose. The port lost the
+fight channel and fell back to the bank's default entry, frame 0 - the rest
+sentinel. And the scripts say he STAYS: AREA 245 record 0's loss branch does
+`character.hide 48` before the Meditech sequence, and its WIN branch
+(`camera.set 0`, `object.show 163` 'Anneaux 5', `object.place_at 48, 606` - an
+object id, not the character - the variables and two zones) never touches
+character 48 at all. He lies where the fight left him until the scene goes.
+
+`engine: fight loser pose` (new) over a won fight: the result, his drawn pelvis
+and head within 15 of the floor, and the held pose; shown to fail by dropping
+the offset (pelvis -33) and by dropping the hold (pose source: the bank's
+idle).
 
 ### 15.3 "characters colliders issue"
 
@@ -723,6 +926,26 @@ in §4 of the handoff as unported: the camera tail's collision solve is
 `sub_413450` / `sub_416570` / `sub_413440`, a **different family** from the
 follow camera's `sub_417070`, and none of them has a port. So the camera has
 no reason not to sit inside a crate, and in a room made of crates it will.
+
+**FIXED 2026-09-17, and the "family" is three lines.** `sub_413450` copies the
+wanted eye into a local camera's `+52`, `sub_413480` the look-at into `+64`,
+`sub_413440` returns `&cam[+52]`. `sub_416570` is the solve: `sub_444810` -
+the bolts' own world ray - from the look-at TO the eye, and on a hit the hit
+point is written into `+52`. The tail then takes **only X and Z** from it
+(`f32(+0)` and `f32(+8)`; `dword_9070A4`, the eye's height, is not written),
+eases 0.25 m toward the look-at, and runs the height clamp **only when the
+solve hit** (`if (v8)`) - which this tree had been running every frame.
+
+Ported as `Fight::setCameraRay`, wired in `omk-play` to the shown set's
+`shotSoup` (the `sub_444460` mesh rule the bolts already use). The one guard
+not modelled is `sub_416570`'s `(cam+356 & 0x1000) && (mesh & 0x20000000)`:
+the camera is a local struct nothing in this tail gives a `+356`.
+
+Over the real supermarket fight the ray hits on **29 frames**, and at the
+sample where it is pulling in the eye stands at x 15134 against 15145 without
+it. `verify.py: engine: fight camera collision` compares the run against
+`--no-fight-camera-collision` (29 / 0 hits, and the eye samples must differ),
+shown to fail by dropping the eye writes. Not judged by eye yet.
 
 **15.8c PARTLY FIXED — the throw swing was divided by a constant.**
 
@@ -859,6 +1082,75 @@ block) is the same question seen from the other side.
 **Order.** 15.8d first: it is upstream of 15.8a: it is a gameplay fault, not a framing one, and it is
 the one that can put an opponent somewhere the fight cannot continue.
 
+### 15.8e FIXED 2026-09-17 — the fight began where the approach STARTED
+
+**This is the "upstream question" 15.8a ends on, and the answer is the port's.**
+The two fighters were never meant to open 11.9 m apart with `SMbox45` between
+them. The played log says so in two lines of the same frame:
+
+```
+frame 379: FIGHT BEGINS against CHARACTERS 48 ...
+    bodies: player 14995 -32 1856 facing 0, opponent 15132 -31 1415 facing 197
+  pose: actor 48 BBC_FN - its program ended; he stays where it left him (14959 -29 1902)
+```
+
+The approach program `3DCombat2` walks the robber along `D1BassinP2` from
+(15134, 1408) to **(14959, 1902) - 1.5 m from the player**. But `fight.begin`
+runs inside the script pump, BEFORE that frame's staged pass notices the program
+has ended and carries `drawAt` into `at`, and `beginMelee` read `at` - which
+while a program runs is re-asserted to the program's PLACEMENT, the path start.
+So the fight began at the start of a walk the player had just watched finish.
+The engine's actor record has no such split: `Anim_RootDelta` sums the clip into
+`+244` every tick, and that is what `Fight_Begin` reads.
+
+Fixed by the rule `npcBody` already uses, `progRan ? drawAt : at`. Over the same
+run the fight now opens **59 apart (1.50 m)**, both on `HGUARD`, with **AI moves
+0** - the clipless approach entries 208/228 with intent 104 that the handoff
+listed as "the opponent's first second" were the AI closing a distance that
+should not have existed, and they are gone with it. `verify.py: engine: fight
+separation` asserts the opening gap (50, floored; 460 with the bug).
+
+**What this does to 15.8a.** Every collision attempt failed the same way,
+stuck 9.2 m out against a box - and the box was only in the way because of this.
+The walker wiring is worth re-trying now, from the patches outside the tree;
+the reader's *"the AI being ejected outside the combat zone"* is still a real
+fault (nothing stops a knockback at a wall), but the reason not to wire it has
+very likely gone.
+
+### 15.8a WIRED 2026-09-17 — the opponent collides
+
+After 15.8e removed the gap, the fifth attempt is the one that stays. The
+opponent gets the player's own `omk::Walker` over `playerSoup` /
+`playerSteep` (and their grids), seated on his FEET - his `y` is the pelvis
+and `foeLift` (42.8 for `BBC_FN`, the player's `camLift_` recipe) below it -
+sweeping his own model's four spheres of radius 8.7. **Everything that moved
+him in the frame is one try**: `Fight::step`'s separation push and knockback,
+then the clip's root motion, are summed against the walker's position and
+handed to `step`, which is `Actor_ApplyMotion`'s apply-remember-undo-`Actor_Move`
+shape. The vertical is still NOT his (he keeps his placement height, the
+labelled note in the root-motion block stands); only the horizontal collides.
+
+**The real supermarket fight does not change, and that is measured, not
+assumed**: with and without the walker the bodies lines are identical and the
+fight ends on the same frame, with the default keys, with the kick cycle, and
+with the player walking forward throughout - Kay'l has 10 health and the fight
+never leaves the middle of the room. So the reader's *"ejected outside the
+combat zone"* was, as far as this run can tell, 15.8e: the robber crossing
+11.9 m and `SMbox45` with nothing to stop him.
+
+What proves the sweep engages is a HARNESS, `--fight-foe-at 15111,1440`, which
+starts him behind the box: collision on, he stops against it at z 1510 (74
+frames swept into it, 80 blocked, by +180); `--no-foe-collision`, the same
+approach walks through to the player. Whether the engine's robber would stand
+at that box too is the expected reading (a brawl has no path-finding) and is
+NOT verified. `verify.py: engine: fight collision`, shown to fail with the
+opponent's sweep radius at 0 (he reaches z 1870).
+
+Still open from 15.8: the fight CAMERA's collision (15.8b), and whether
+`Fight_KeepSeparation`'s push goes through `Actor_Move` in the engine - here it
+does, because it is summed into the one try; that is this port's choice and
+is labelled as such.
+
 ### 15.8a ATTEMPTED 2026-09-16 — the reading is settled, the wiring is NOT
 
 **Settled from the engine, and this part is not in doubt.**
@@ -973,12 +1265,38 @@ The attempt is saved as a patch outside the tree; it is 115 lines and all of
 it is in `play.cpp`'s `FightRun`. Nothing of it is committed, so the tree
 still has no collision on the opponent and the fight still ends at 663.
 
-### 15.5 "no UI" — this is step 5, already planned
+### 15.5 "no UI" — step 5, DONE 2026-09-17
 
-The reader's own note: *"I think this is the next step"*, and it is. Step 5 is
-both gauges (`Hud_DrawBar(player, 200, 0, 2)` and `(opponent, 200, 1, 0)`)
-and mode 2's four-second overlay `sub_447000`, 306 lines and unread.
-`ui/hudbar.h` has mode 0 already.
+The reader's own note: *"I think this is the next step"*, and it was. Both
+gauges were already ported as `Hud_DrawBar` mode 0 for shoot mode; what the
+fight adds is the CALL and mode 2's overlay.
+
+**When.** `Fight_UpdateHealthBars` is the last call of `Actors_TickAll`'s melee
+row, which runs only while `dword_906F40` - the KO counter - is 0: the bars
+are HIDDEN through the knock-out replay. Each fighter's property 1, max 200.
+
+**What `sub_447000` is.** A six-row STAT CARD, drawn while
+`Sys_GetTimeMs() < dword_531030 + 4000`, and `dword_531030` is stamped by
+`Hud_Refresh`, which `Fight_Begin` calls - so the four seconds after a fight
+starts. `Hud_Refresh` snapshots the player's properties 16, 19, 17, 3, 18 and 2
+(the 19 divided by 41). `Hud_LoadResources` pulls the labels out of
+`IAM\SNEAK` - strings 26..31, *Attaque, Maîtrise du combat, Résistance
+corporelle, Vitesse, Esquive, Mana* - and keeps only the characters of ctype
+class 1 (`ebp` = 1 at the `isctype` push, read from the listing because the
+decompiler's reading looked wrong): `_UPPER`, so each label is drawn as its
+initial, right-aligned in the 20-pixel box x 46..66 in font 'C'. Row 1 draws no
+bar: its value picks a RANK from strings 36..40 (*Novice, Initié, Disciple
+Taar, Maître de la Voix Intérieure, Grand Maître Taar*). The other five rows are
+a black frame over x 70..170, a `jaugeg.bmp` strip for value/200 of it and an
+additive tint in the row's colour (`dword_4C7A10`). The draw order inside the
+card follows the display list's HEAD cache, which is why row 0's bar is solid
+tint where the others show the strip; the assumption that nothing else is on
+layer 3 before the card is labelled in `ui/hudbar.h`.
+
+On the save we test with the card reads A=70 M=Initié R=30 V=70 E=60 M=10.
+Looked at: both gauges down the edges, the card bottom left, gone after four
+seconds. `verify.py: engine: fight hud`, shown to fail by drawing the player's
+gauge in mode 0.
 
 ## 14. OPEN, same play test: the shoot scheme needs a KEYPAD
 
@@ -1016,13 +1334,10 @@ already have their keys honoured.
   gating `Fight_TickAI` in the melee tick, so that gate is a debug switch and
   not a game rule — and `no_fight_guard` → `byte_910321`. All three default to
   0 and are cleared again at `05_sys.c` 1636.
-* **What happens when the player's life reaches 0.** `Fight_ResolveHit` clamps
-  it at 0, records winner and loser, and freezes both channels; it does not
-  kill anybody, and event 2's result code is dropped by its own handler. Where
-  a lost fight leads is unread — and in this game death is a reincarnation
-  (`memory: playable-characters-not-only-kayl`), so this wants reading before
-  step 2 and not guessing.
-* **`sub_447000`** (306 lines) — what `Hud_DrawBar` mode 2 puts on screen for
+* ~~**What happens when the player's life reaches 0.**~~ — **read 2026-09-17,
+  15.12**: the ENGINE does nothing beyond the teardown; the lost fight's own
+  SCRIPT decides, from the life written back.
+* ~~**`sub_447000`**~~ (read and ported 2026-09-17, 15.5) — what `Hud_DrawBar` mode 2 puts on screen for
   four seconds after `dword_531030` is stamped. It draws text blocks and a
   bitmap; nobody has read it.
 * **AREA 149, the Qalisar arena.** `docs/SCRIPT_VM.md` says the arena "uses

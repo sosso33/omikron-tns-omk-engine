@@ -90,7 +90,12 @@ int CefChannel::findTransition(int from, std::uint32_t code,
         const int idx = f.childIdx[static_cast<std::size_t>(reverse ? n - 1 - i : i)];
         if (idx < 0) continue;                    // an edge the link pass lost
         const CtlState& cand = ctl_->states[static_cast<std::size_t>(idx)];
-        if (gated && cand.priority > priorityThreshold_) continue;
+        if (gated && cand.priority > priorityThreshold_) {
+            // an instrument, not the engine's: a candidate the gate turned away
+            // that would otherwise have opened (`todo/fight-mode.md` 15.14)
+            if (edgeOpens(cand, code, mustHave, mustAlso, useWindow)) ++gateSkips_;
+            continue;
+        }
         if (!edgeOpens(cand, code, mustHave, mustAlso, useWindow)) continue;
         if (!gated) return idx;
         if (cand.priority == priorityThreshold_) return idx;
@@ -109,7 +114,12 @@ int CefChannel::findTransition(int from, std::uint32_t code,
         for (std::size_t i = 0; i < ctl_->states.size(); ++i) {
             const CtlState& cand = ctl_->states[i];
             if (cand.group != cg) continue;
-            if (gated && cand.priority > priorityThreshold_) continue;
+            if (gated && cand.priority > priorityThreshold_) {
+            // an instrument, not the engine's: a candidate the gate turned away
+            // that would otherwise have opened (`todo/fight-mode.md` 15.14)
+            if (edgeOpens(cand, code, mustHave, mustAlso, useWindow)) ++gateSkips_;
+            continue;
+        }
             if (!(cand.flags & 0x4000u)) continue;
             if (!edgeOpens(cand, code, -1, -1, useWindow)) continue;
             if (!gated) return static_cast<int>(i);

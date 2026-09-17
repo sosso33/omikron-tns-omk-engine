@@ -11077,10 +11077,14 @@ def c_engine_melee():
       - the same matcher the player's keys go through;
     * the pair is never left inside the separation radius after the push.
 
-    `blocks` is **0 on purpose**: the guard flag is raised only by the
-    defensive arm of `Fight_TickAI` (intent 9 inside 1.5 m), which is labelled
-    in `fight.cpp` as not yet transcribed. A number that moves off 0 here
-    means that arm landed, and the row should be re-baselined with it.
+    `blocks` was **0 on purpose** until 2026-09-17: the guard flag is raised
+    only by the defensive arm of `Fight_TickAI` (intent 9 inside 1.5 m), which
+    was labelled as not transcribed. It is now (`todo/fight-mode.md` 15.11),
+    and the row moved exactly as this note said it would: **blocks 0 -> 24**,
+    and the re-derived damage figures **204 -> 186**, since a blow into the
+    guard costs a flat point rather than its block's damage. Every invariant
+    stayed 0. SHOWN TO FAIL: drop the arm's `c.flags |= 0x40u` and blocks
+    reads 0 again.
 
     Four of the nine fights reach the 4000-frame cap rather than a knock-out,
     which is why `ended` is 5: with no walker in a headless probe neither
@@ -11134,10 +11138,10 @@ def c_engine_melee():
      tooClose, replays, badArm) = struct.unpack_from("<19i", raw, 0)
     return (files, profiles, fights, ended, blocks, outside, mismatch,
             unresolved, hpUp, tooClose, badArm, checked, hits > 0, aiMoves > 0), \
-           (3, 9, 9, 9, 0, 0, 0, 0, 0, 0, 0, 204, True, True), \
+           (3, 9, 9, 9, 24, 0, 0, 0, 0, 0, 0, 186, True, True), \
            "combat banks, AI profiles exercised, fights, fights ending in a " \
-           "KO; then the SIX invariants that must all be 0 - blocks (the " \
-           "defensive arm is not transcribed), AI words outside the 0xCFF " \
+           "KO; blows into the AI's raised guard; then the invariants that must " \
+           "all be 0 - AI words outside the 0xCFF " \
            "union, damage disagreeing with the independent re-derivation, " \
            "reactions that do not resolve, hit points rising, pairs left " \
            "inside the separation radius, and a killing blow taking the " \
@@ -11959,6 +11963,18 @@ def c_engine_fight_letterbox():
 
     SHOWN TO FAIL: drop `if (holdEditCam && fightRun.active)` from the
     clear-list and frame 500 reads 0 lit on both edge rows.
+
+    **And the KNOCK-OUT brings the bars back** (2026-09-17, `todo/fight-mode.md`
+    15.13): `Screen_Fade(1)` fires the frame the KO counter rises (504 in this
+    run) and `Screen_Fade(0)` when the replay passes run out (626), so frame 530
+    - inside the replay - has both edge rows dark again. SHOWN TO FAIL: drop the
+    `startBlackFade(true)` and frame 530's edge rows read 640.
+
+    RE-BASELINED 2026-09-17, the middle row 640 -> **625**: the fight HUD
+    (`todo/fight-mode.md` 15.5) draws the two gauges' black frames down the
+    screen edges, and row 240 crosses them at x 17..20 / 27..30 and
+    609..612 / 620..622 - fifteen pixels, the 6-wide lit channel between each
+    pair. With `OMK_NOUI=1` the same frame reads 640 again.
     """
     import subprocess, tempfile, shutil
     eng = os.path.join(ROOT, "engine")
@@ -11973,7 +11989,7 @@ def c_engine_fight_letterbox():
     tmp = tempfile.mkdtemp()
     rows = {}
     try:
-        for n in (300, 500):
+        for n in (300, 500, 530):
             out = os.path.join(tmp, "f%d.bin" % n)
             subprocess.run(
                 [play, fr, os.path.join(ROOT, "tables"),
@@ -11990,10 +12006,11 @@ def c_engine_fight_letterbox():
                             for y in (0, 240, H - 1))
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
-    if rows.get(300) is None or rows.get(500) is None:
-        return ("no render",), ("2 frames",), "both frames must render"
-    return (rows[300][0], rows[300][2], rows[500][0], rows[500][1], rows[500][2]), \
-           (0, 0, 640, 640, 640), \
+    if rows.get(300) is None or rows.get(500) is None or rows.get(530) is None:
+        return ("no render",), ("3 frames",), "all three frames must render"
+    return (rows[300][0], rows[300][2], rows[500][0], rows[500][1], rows[500][2],
+            rows[530][0], rows[530][2]), \
+           (0, 0, 640, 625, 640, 0, 0), \
            ("the approach cutscene keeps its bars and the FIGHT does not - "
             "the middle row is quoted so a black frame cannot pass by "
             "having no bars either")
@@ -12036,6 +12053,31 @@ def c_engine_fight_separation():
     player's fight body is filled and the overlap count and `|dy|` both jump -
     the fighters standing inside each other again, held apart on paper by a
     vertical gap that is only a change of units.
+
+    **And the OPENING gap** (2026-09-17, `todo/fight-mode.md` 15.8e): the first
+    sample's horizontal distance, floored to a ten. `fight.begin` runs in the
+    script pump before the staged pass carries a finished program's `drawAt`
+    into `at`, and `beginMelee` read `at` - the approach program's path START -
+    so the robber began **470** units (11.9 m) away with `SMbox45` between the
+    two, where the approach had left him 59 (1.5 m) from the player. That gap is
+    what every collision attempt of 15.8a ran into. SHOWN TO FAIL: read `s->at`
+    instead of `foeAt` and the first column reads 460.
+
+    **And the teardown** (2026-09-17, `todo/fight-mode.md` 15.12): this fight is
+    LOST, and the player still leaves it in ACTOR_STATE **1**. `sub_445AC0`
+    writes 0 for a loser, but event 2's `Actor_LoadBankList` writes the +404
+    alias back to 1 in the same call. The column prints the state from the
+    controller AFTER the write - which is how a first version of this, writing
+    Inert, was caught: the rebuilt runtime refused it and still read 1, and
+    reading `Actor_LoadBankList` then showed the engine lands on 1 too.
+
+    RE-BASELINED with it: `|dy|` 1 -> **3** and the minimum gap 43 -> **45**.
+    And `|dy|` 3 -> **1** again the same day (`todo/fight-mode.md` 15.13): the
+    robber's height now follows his walker's floor, -33 against the player's -32,
+    instead of the clip's end height of -29.
+    The robber now keeps the height his approach clip ended on (-29, against
+    the path start's -31), and a fight begun 1.5 m apart takes a different
+    course from one begun 11.9 m apart. Neither is the 41-unit fault above.
     """
     import subprocess
     eng = os.path.join(ROOT, "engine")
@@ -12070,11 +12112,302 @@ def c_engine_fight_separation():
     inside = sum(1 for h, _ in rows if h < kOverlap)
     maxDy = max(v for _, v in rows)
     minH = min(h for h, _ in rows)
-    return (len(rows) >= 5, inside, int(round(maxDy)), int(minH)), \
-           (True, 0, 1, 43), \
-           ("no sample of a real fight has the two fighters closer than their "
+    opening = int(rows[0][0] // 10) * 10
+    # ...and the teardown's state write for this LOST fight (fight-mode 15.12)
+    lost = re.search(r"sub_445AC0 - the player (\w+), ACTOR_STATE (\d+)", r.stdout + r.stderr)
+    teardown = (lost.group(1), int(lost.group(2))) if lost else None
+    return (opening, len(rows) >= 5, inside, int(round(maxDy)), int(minH), teardown), \
+           (50, True, 0, 1, 45, ("LOST", 1)), \
+           ("the fight opens where the approach left the robber, 1.5 m away; "
+            "no sample of a real fight has the two fighters closer than their "
             "separation radius, and their two `y` values now mean the same "
             "thing - 1 unit apart, not 41")
+
+def c_engine_fight_collision():
+    r"""`omk-play`: the melee OPPONENT collides with the set (`todo/fight-mode.md` 15.8a).
+
+    `Actor_TickPlayerAndOpponent` (0x00466710) ends BOTH fighters with
+    `Actor_ApplyMotion` (0x004672D0) - the frame's move tried, undone, and
+    handed to `Actor_Move`'s horizontal collide-and-slide. The port gave that
+    to the player alone, so the opponent walked through crates and was knocked
+    out of the room. He now has the player's walker over the same soups, seated
+    on his feet, sweeping his own model's spheres, and every move of the frame -
+    the root motion, the separation push, a knockback - goes through it.
+
+    The supermarket's real fight is short and central and never reaches a
+    wall, so this uses a HARNESS, `--fight-foe-at 15111,1440`, which starts him
+    behind `SMbox45` (15111, 1554) with the player on the far side. Two runs:
+
+    * collision ON: his furthest z, floored to a ten, stays short of the box's
+      1554 - he stops against it at 1510 - and the walker reports blocked steps;
+    * `--no-foe-collision`: the same approach passes z 1554, straight through.
+
+    Whether the engine's robber would stand at the box too is NOT asserted and
+    is not known: a brawl has no path-finding, so it is the expected reading,
+    not a verified one. What is asserted is that the sweep engages.
+
+    SHOWN TO FAIL: pass radius 0 to the opponent walker's `setBlockers` (the
+    walker's own "sweep off") and the first run walks through as the second does.
+    """
+    import subprocess
+    eng = os.path.join(ROOT, "engine")
+    fr = omkpaths.data_root()
+    if not (os.path.isdir(eng) and os.path.isdir(os.path.join(fr, "SCPTDATA"))):
+        return ("skipped",), ("skipped",), "engine/ or gamedata/ absent"
+    mk = subprocess.run(["make", "-s", "play"], cwd=eng, capture_output=True, text=True)
+    play = os.path.join(eng, "build", "omk-play")
+    if mk.returncode != 0:
+        return ("build failed",), ("built",), "engine/ must build"
+    if not os.path.exists(play):
+        return ("no sdl",), ("no sdl",), "needs SDL to render"
+
+    def run(extra):
+        r = subprocess.run(
+            [play, fr, os.path.join(ROOT, "tables"),
+             "--save", os.path.join(ROOT, "traces", "save-appart.bin"),
+             "--fight-supermarket", "--frames", "560",
+             "--fight-foe-at", "15111,1440"] + extra,
+            capture_output=True, text=True, errors="replace",
+            env=dict(os.environ, SDL_VIDEODRIVER="dummy"))
+        out = r.stdout + r.stderr
+        zs = [float(m) for m in re.findall(r"bodies: player \S+ \S+ \S+ facing \S+, "
+                                            r"opponent \S+ \S+ (\S+)", out)]
+        blocked = [int(m) for m in re.findall(r"foe walker: \d+ steps, \d+ swept into a "
+                                              r"wall, (\d+) blocked", out)]
+        harness = "harness --fight-foe-at starts the opponent" in out
+        return harness, zs, (max(blocked) if blocked else 0)
+
+    h1, z1, b1 = run([])
+    h2, z2, b2 = run(["--no-foe-collision"])
+    # the parse first: a run that printed no bodies must fail AS A PARSE
+    if not (h1 and h2 and len(z1) >= 5 and len(z2) >= 5):
+        return (h1, h2, len(z1), len(z2)), (True, True, ">= 5", ">= 5"), \
+               "both runs must take the harness and print their bodies lines"
+    kBox = 1554.0
+    return (int(max(z1) // 10) * 10, b1 > 0, max(z2) > kBox, b2), \
+           (1510, True, True, 0), \
+           ("the opponent's approach stops against SMbox45 (z 1554) with the walker "
+            "blocking, and walks straight through it with --no-foe-collision")
+
+def c_engine_fight_camera_collision():
+    r"""`omk-play`: the FIGHT CAMERA is pulled in front of the set (`todo/fight-mode.md` 15.8b).
+
+    The mode-14 tail casts `sub_444810` - the bolts' world ray - from the
+    look-at point to the wanted eye (`sub_413450` / `sub_413480` /
+    `sub_416570`), and on a hit takes the hit point's X and Z for the eye and
+    leaves its height; the height clamp then runs ONLY on a hit (`if (v8)`).
+    The port had none of it and applied the clamp every frame, so the fight
+    camera sat inside crates.
+
+    Two runs of the real `--fight-supermarket` fight, the second with
+    `--no-fight-camera-collision`: the frames whose ray hit (29 on the first,
+    and necessarily 0 on the second), and how many of the once-a-second eye
+    samples DIFFER between the two - so a ray that is counted but never moves
+    the eye cannot pass. The same fight, since the camera decides nothing the
+    fighters read.
+
+    SHOWN TO FAIL: drop the two `cam_.eye[...] = hit[...]` writes in
+    `Fight::tickCamera`'s tail - the hits are still counted, and the differing
+    samples fall to 0.
+    """
+    import subprocess
+    eng = os.path.join(ROOT, "engine")
+    fr = omkpaths.data_root()
+    if not (os.path.isdir(eng) and os.path.isdir(os.path.join(fr, "SCPTDATA"))):
+        return ("skipped",), ("skipped",), "engine/ or gamedata/ absent"
+    mk = subprocess.run(["make", "-s", "play"], cwd=eng, capture_output=True, text=True)
+    play = os.path.join(eng, "build", "omk-play")
+    if mk.returncode != 0:
+        return ("build failed",), ("built",), "engine/ must build"
+    if not os.path.exists(play):
+        return ("no sdl",), ("no sdl",), "needs SDL to render"
+
+    def run(extra):
+        r = subprocess.run(
+            [play, fr, os.path.join(ROOT, "tables"),
+             "--save", os.path.join(ROOT, "traces", "save-appart.bin"),
+             "--fight-supermarket", "--frames", "700"] + extra,
+            capture_output=True, text=True, errors="replace",
+            env=dict(os.environ, SDL_VIDEODRIVER="dummy"))
+        rows = re.findall(r"fight camera: state \d+, eye (\S+ \S+ \S+), at .*?ray hits (\d+)",
+                          r.stdout + r.stderr)
+        return [e for e, _ in rows], (int(rows[-1][1]) if rows else -1)
+
+    eyesOn, hitsOn = run([])
+    eyesOff, hitsOff = run(["--no-fight-camera-collision"])
+    # the parse first: a run that printed no camera lines must fail AS A PARSE
+    if len(eyesOn) < 5 or len(eyesOn) != len(eyesOff):
+        return (len(eyesOn), len(eyesOff)), (">= 5", "the same"), \
+               "both runs must print the same number of fight camera lines"
+    differ = sum(1 for a, b in zip(eyesOn, eyesOff) if a != b)
+    return (hitsOn, hitsOff, differ > 0), (29, 0, True), \
+           ("the fight camera's ray hits the set on 29 frames of the supermarket fight "
+            "and moves the eye, and never without the solve")
+
+def c_engine_fight_hud():
+    r"""`omk-play`: the FIGHT HUD - both gauges, and mode 2's STAT CARD for four seconds.
+
+    `Fight_UpdateHealthBars` (0x00445160) draws `Hud_DrawBar(player, 200, 0, 2)`
+    and `(opponent, 200, 1, 0)` each melee frame while the KO counter is 0;
+    mode 2 first draws `sub_447000` for the 4000 ms after `Fight_Begin`'s
+    `Hud_Refresh` (`ui/hudbar.h`). Over the real supermarket fight:
+
+    * the card's labels, `IAM\SNEAK` 26..31 filtered to `_UPPER` - "AMRVEM";
+    * the rank for the save's property 19 (`/ 41` -> 1, 'Initi...');
+    * the once-a-second HUD samples that drew the card's five bars, and those
+      that drew none - the four-second window, so both must be nonzero;
+    * the opponent's gauge at the fight's start: 100 of 200, 50%.
+
+    SHOWN TO FAIL: pass mode 0 for the player's gauge and the card samples fall
+    to 0.
+
+    **And the priority gate's threshold** (2026-09-17, `todo/fight-mode.md`
+    15.14): `Fight_Begin`'s `sub_45ACD0(playerChan, _ftol(exp * flt_4BC424))`,
+    experience 50 -> 1. SHOWN TO FAIL: drop the gate's `setPriorityGate(true, ...)`
+    and the log reads threshold 0. What this does NOT show is the gate changing
+    a decision: in every run exercised - the supermarket fights under three key
+    patterns and the nine probe fights - it turned away 0 candidates, because
+    nothing pressed reaches a priority-2 move.
+    """
+    import subprocess
+    eng = os.path.join(ROOT, "engine")
+    fr = omkpaths.data_root()
+    if not (os.path.isdir(eng) and os.path.isdir(os.path.join(fr, "SCPTDATA"))):
+        return ("skipped",), ("skipped",), "engine/ or gamedata/ absent"
+    mk = subprocess.run(["make", "-s", "play"], cwd=eng, capture_output=True, text=True)
+    play = os.path.join(eng, "build", "omk-play")
+    if mk.returncode != 0:
+        return ("build failed",), ("built",), "engine/ must build"
+    if not os.path.exists(play):
+        return ("no sdl",), ("no sdl",), "needs SDL to render"
+    r = subprocess.run(
+        [play, fr, os.path.join(ROOT, "tables"),
+         "--save", os.path.join(ROOT, "traces", "save-appart.bin"),
+         "--fight-supermarket", "--frames", "560"],
+        capture_output=True, text=True, errors="replace",
+        env=dict(os.environ, SDL_VIDEODRIVER="dummy"))
+    out = r.stdout + r.stderr
+    m = re.search(r"stat card ((?:\S+=-?\d+ ){5}\S+=-?\d+), rank '([^']*)'", out)
+    samples = re.findall(r"fight HUD: player gauge \d+% \(top -?\d+\), opponent (\d+)% "
+                         r"\(top -?\d+\), card rows (\d+)", out)
+    if not m or len(samples) < 5:
+        return (bool(m), len(samples)), (True, ">= 5"), "the run must print its HUD lines"
+    labels = "".join(kv.split("=")[0] for kv in m.group(1).split())
+    withCard = sum(1 for _, rows in samples if rows == "5")
+    without = sum(1 for _, rows in samples if rows == "0")
+    # ...and the PRIORITY GATE the same `Fight_Begin` sets (fight-mode 15.14):
+    # the player's threshold from his experience, (int)(50 * flt_4BC424) = 1
+    g = re.search(r"FIGHT GATE - the player's channel honours priority <= (\d+) "
+                  r"\(experience (\d+)", out)
+    gate = (int(g.group(1)), int(g.group(2))) if g else None
+    return (labels, m.group(2)[:5], withCard > 0, without > 0, int(samples[0][0]), gate), \
+           ("AMRVEM", "Initi", True, True, 50, (1, 50)), \
+           ("the stat card's labels and rank, drawn for the first four seconds and then "
+            "not, beside both gauges")
+
+def c_engine_fight_gpu_present():
+    r"""`omk-play --world-vulkan`: a fight frame carrying the HUD never goes out GPU-only.
+
+    The Vulkan window presents a frame straight from the GPU when nothing is
+    drawn over the 3D, and a list of gates keeps any frame that IS on the CPU
+    path. The fight HUD was not on that list, so its gauges showed only while
+    another gate - the fight's opening fade - held the frame, and vanished with
+    it. A reader, on the Vulkan window: *"The health disappear after some time
+    (only the stats should disappear)"* (`todo/fight-mode.md` 15.15). Headless
+    renders use the software path and could not see it.
+
+    `OMK_VERIFY_GPU_PRESENT=1` composes the CPU frame beside every GPU-presented
+    one and prints the frames that differ. Over 600 frames of the real fight:
+    the frames that differ (0), and the frames the `fight hud` gate held (> 0).
+    SHOWN TO FAIL: disable the gate and 65 frames differ from frame 439, some
+    27000 pixels each - the gauges and the card.
+    """
+    import subprocess
+    eng = os.path.join(ROOT, "engine")
+    fr = omkpaths.data_root()
+    if not (os.path.isdir(eng) and os.path.isdir(os.path.join(fr, "SCPTDATA"))):
+        return ("skipped",), ("skipped",), "engine/ or gamedata/ absent"
+    mk = subprocess.run(["make", "-s", "play"], cwd=eng, capture_output=True, text=True)
+    play = os.path.join(eng, "build", "omk-play")
+    if mk.returncode != 0:
+        return ("build failed",), ("built",), "engine/ must build"
+    if not os.path.exists(play):
+        return ("no sdl",), ("no sdl",), "needs SDL to render"
+    env = dict(os.environ, SDL_VIDEODRIVER="dummy", OMK_VERIFY_GPU_PRESENT="1",
+               OMK_GPU_PRESENT_STATS="1")
+    r = subprocess.run([play, fr, os.path.join(ROOT, "tables"),
+                        "--save", os.path.join(ROOT, "traces", "save-appart.bin"),
+                        "--fight-supermarket", "--world-vulkan", "--frames", "600"],
+                       cwd=eng, env=env, capture_output=True, text=True, errors="replace")
+    out = r.stdout + r.stderr
+    if "through VULKAN" not in out:
+        return ("skipped",), ("skipped",), "no Vulkan device - the GPU backend is optional"
+    st = re.findall(r"^gpu present: frame 599, \d+ of 600 frames stayed on the GPU; on the CPU:(.*)$",
+                    out, re.M)
+    if len(st) != 1:
+        return (len(st),), (1,), "the viewer's gpu present line - its log changed"
+    held = dict((why.strip(), int(c)) for why, c in re.findall(r" ([a-z ]+?) (\d+),", st[0]))
+    differs = len(re.findall(r"^gpu present verify: frame \d+ DIFFERS", out, re.M))
+    return (differs, held.get("fight hud", 0) > 0), (0, True), \
+           ("no fight frame presented from the GPU differs from its CPU composite, and " \
+            "the fight HUD's own gate is what holds them")
+
+def c_engine_fight_loser_pose():
+    r"""`omk-play`: a knocked-down opponent lies ON the floor, and stays there after a win.
+
+    Two faults a reader reported from one won fight (`todo/fight-mode.md`
+    15.16): *"the ennemy float in the air when he's supposed to fall"* and
+    *"the ennemy stay in T-pose in the room after I won the fight"*.
+
+    * A `.CTL` clip's pelvis keys are an ABSOLUTE height in model space - the
+      guard 2.3, a knock-down 35..39 - which the engine applies to the pelvis
+      BONE. The port placed the staged body at the fight position and dropped
+      them, so he lay flat 36 units up. His placement is now the fight position
+      plus the offset from the stance he opened in.
+    * `sub_445AC0` writes the opponent's +404 to 0, and state 0 does not tick,
+      so his node keeps the fight's last pose. The port fell back to the bank's
+      default entry, frame 0 - the rest sentinel, a T-pose.
+
+    Over a fight the player WINS (`--fight-health 200`, the kick cycle): the
+    result; the opponent's DRAWN pelvis and head height at the teardown, from
+    the draw's own mesh record, against this set's floor at y 10 (both must be
+    within 15 of it - standing, his head is some 60 above); and that after the
+    teardown he is posed from the fight's last pose, not the bank's idle.
+    SHOWN TO FAIL: drop the `+ foeDrop` and the pelvis reads -33; drop the
+    `inertAfterFight` branch and the pose source is the bank's default entry.
+    """
+    import subprocess
+    eng = os.path.join(ROOT, "engine")
+    fr = omkpaths.data_root()
+    if not (os.path.isdir(eng) and os.path.isdir(os.path.join(fr, "SCPTDATA"))):
+        return ("skipped",), ("skipped",), "engine/ or gamedata/ absent"
+    mk = subprocess.run(["make", "-s", "play"], cwd=eng, capture_output=True, text=True)
+    play = os.path.join(eng, "build", "omk-play")
+    if mk.returncode != 0:
+        return ("build failed",), ("built",), "engine/ must build"
+    if not os.path.exists(play):
+        return ("no sdl",), ("no sdl",), "needs SDL to render"
+    keys = ",".join(["0x11", "0x1F"] * 600)
+    r = subprocess.run(
+        [play, fr, os.path.join(ROOT, "tables"),
+         "--save", os.path.join(ROOT, "traces", "save-appart.bin"),
+         "--fight-supermarket", "--fight-health", "200", "--frames", "1760",
+         "--keys", keys, "--keydelay", "3"],
+        capture_output=True, text=True, errors="replace",
+        env=dict(os.environ, SDL_VIDEODRIVER="dummy"))
+    out = r.stdout + r.stderr
+    won = re.search(r"sub_445AC0 - the player (\w+)", out)
+    lies = re.search(r"the fight's OPPONENT actor \d+ is drawn with his pelvis at y (-?\d+) and "
+                     r"his head at y (-?\d+)", out)
+    if not won or not lies:
+        return (bool(won), bool(lies)), (True, True), "the run must reach the teardown"
+    pelvis, head = int(lies.group(1)), int(lies.group(2))
+    kFloor = 10
+    held = "pose source: the fight's last pose" in out
+    return (won.group(1), abs(pelvis - kFloor) <= 15, abs(head - kFloor) <= 15, held), \
+           ("WON", True, True, True), \
+           ("the fight is won, the opponent's drawn pelvis and head lie within 15 of the "
+            "floor, and he keeps the fight's last pose after it")
 
 def c_engine_fight_library():
     r"""`omk-play`: a fight loads `fight.scx`, its OWN sound and sprite library.
@@ -12111,6 +12444,29 @@ def c_engine_fight_library():
 
     SHOWN TO FAIL: drop the `fight.SCX` load and the failures jump while the
     played count falls to 0.
+
+    **And the OPPONENT's sprites** (2026-09-17, 15.10's second half): his own
+    states' effect records - `IH_RIGH`'s two on his head, `H_PROTECT`'s two on
+    his right hand - placed on his bones as drawn, 69 placements over this run,
+    floored to 60. SHOWN TO FAIL: skip his spawn and it reads 0.
+
+    **And that count was blind to the fault a reader then found** (15.16): *"no
+    visual effect when I touched the ennemy"*. The placements were all real and
+    none of them DREW - only the player's sprite ids were given texture slots,
+    and a batch without one is skipped. The column now counts placements whose
+    sprite HAS a slot. SHOWN TO FAIL: leave his ids out of the pool and it reads
+    0 while the placements do not move.
+
+    **The player no longer wins this fight** (measured 2026-09-17): since the
+    fight opens 1.5 m apart (15.8e) and the AI guards (15.11), the same key cycle
+    ends in a loss. Nothing asserted here depends on who wins - the sounds are
+    both fighters' - so the sentence above describes the run as it was.
+
+    RE-BASELINED 2026-09-17, distinct ids 5 -> **7**: the fight now opens where
+    the approach left the robber, 1.5 m away rather than 11.9 m
+    (`todo/fight-mode.md` 15.8e), so the same key cycle lands blows from the
+    first second instead of spending it on his walk in, and more of both
+    fighters' effects are heard. The player-only figure (3) was NOT re-measured.
     """
     import subprocess
     eng = os.path.join(ROOT, "engine")
@@ -12149,8 +12505,14 @@ def c_engine_fight_library():
     # the distinct count is what tells the two apart: player-only is dominated
     # by `ELECMB02`/`ELECMB03`/`MVT02` and reaches 3.
     ids = {int(m) for m in re.findall(r"audio: ctl-effect\s+\S+\s+s\s+\((\d+),", out)}
-    return (loaded, fightSprites, failures, played > 0, len(ids)), \
-           (True, 16, 0, True, 5), \
+    # ...and the OPPONENT's own sprite records, placed on his bones
+    # (`todo/fight-mode.md` 15.10): > 0, floored to a ten
+    fm = re.search(r"opponent's \.CTL sprites placed on his bones (\d+) times, (\d+) with a "
+                   r"texture slot", out)
+    # the POOLED count: a placement whose sprite has no slot never draws
+    foeFx = (int(fm.group(2)) // 10 * 10) if fm else -1
+    return (loaded, fightSprites, failures, played > 0, len(ids), foeFx), \
+           (True, 16, 0, True, 7, 60), \
            ("`Fight_Begin`'s own `Game_Start(\"fight.scx\")`: its 16 sprites "
             "reach the table, no effect record fails its lookup, and BOTH "
             "fighters' channels are drained - the punches landing, the fall "
@@ -36208,6 +36570,11 @@ SLOW = [
     ("engine: bank swap",  c_engine_bank_swap,  "todo/fight-mode 15.6; actor/player.h"),
     ("engine: fight letterbox", c_engine_fight_letterbox, "todo/fight-mode 15.4"),
     ("engine: fight separation", c_engine_fight_separation, "todo/fight-mode 15.8d"),
+    ("engine: fight collision", c_engine_fight_collision, "todo/fight-mode 15.8a"),
+    ("engine: fight camera collision", c_engine_fight_camera_collision, "todo/fight-mode 15.8b"),
+    ("engine: fight hud", c_engine_fight_hud, "todo/fight-mode step 5"),
+    ("engine: fight gpu present", c_engine_fight_gpu_present, "todo/fight-mode 15.15"),
+    ("engine: fight loser pose", c_engine_fight_loser_pose, "todo/fight-mode 15.16"),
     ("engine: fight library", c_engine_fight_library, "todo/fight-mode 15.2"),
     ("engine: fight pause", c_engine_fight_pause, "todo/fight-mode 15.9"),
     ("engine: programs",   c_engine_programs,   "engine/README"),

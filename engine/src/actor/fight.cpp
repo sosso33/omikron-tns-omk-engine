@@ -356,15 +356,33 @@ void Fight::tickCamera(float dt) {
 
     // ---- the shared tail --------------------------------------------------
     //
-    // **The collision solve is NOT modelled and is labelled rather than
-    // approximated**: the engine runs the eye through `sub_413450` /
-    // `sub_416570` / `sub_413440` - a different family from the follow
-    // camera's `sub_417070`, which is the only obstruction rule this tree has
-    // read - so a fight camera here can pass through a wall where the engine's
-    // would be pushed in. What the tail DOES do is transcribed: ease the eye
-    // 0.25 m a frame toward the target, then clamp its height.
+    // THE COLLISION SOLVE. `sub_413450` writes the wanted eye into the local
+    // camera's +52, `sub_413480` the look-at into +64, and `sub_416570` casts
+    // `sub_444810` - the bolts' world ray - from the look-at TO the eye. On a
+    // hit it writes the hit point into +52 and returns 1, and the tail takes
+    // `f32(+52)` and `f32(+60)` from it: the eye's X and Z. **The height is
+    // not taken** - `dword_9070A4` is left as the placement wrote it.
+    //
+    // `sub_416570` also refuses a hit when the camera's +356 carries 0x1000
+    // and the mesh 0x20000000. The camera here is a LOCAL struct `sub_413450`
+    // fills field by field, and nothing in this tail writes its +356; that
+    // guard is not modelled (`PlayerController::cameraCollide` has the same
+    // note for the follow camera, where 0x1000 is provably never set).
+    cam_.rayHit = false;
+    if (cameraRay_) {
+        float hit[3];
+        if (cameraRay_(cam_.at, cam_.eye, hit)) {
+            cam_.eye[0] = hit[0];
+            cam_.eye[2] = hit[2];
+            cam_.rayHit = true;
+            ++cam_.rayHits;
+        }
+    }
     float mid[3]; camMidpoint(mid);
     {
+        // The ease, 0.25 m a frame toward the look-at in the plane, measured
+        // against the distance to the fighters' midpoint - from the eye AS IT
+        // NOW STANDS, after the solve.
         const float dx = mid[0] - cam_.eye[0], dy = mid[1] - cam_.eye[1],
                     dz = mid[2] - cam_.eye[2];
         const float d = std::sqrt(dx * dx + dy * dy + dz * dz);
@@ -373,19 +391,15 @@ void Fight::tickCamera(float dt) {
             cam_.eye[2] += (cam_.at[2] - cam_.eye[2]) / d * 9.8425198f;
         }
     }
-    {
-        // The height clamp, transcribed from the tail: the distance is taken
-        // from the eye AS IT NOW STANDS to the midpoint, the drop applies only
-        // inside 3 m, and the limit is 2.5 m under "Vue de côté" against 1.5 m
-        // under "Vue de dos".
-        //
-        // **The engine runs this only when its collision solve returned a
-        // point** (`v8`), and that solve - `sub_413450`/`sub_416570`/
-        // `sub_413440` - is NOT modelled here, so the clamp is applied
-        // unconditionally and said so rather than skipped. Computing `d`
-        // against a stale midpoint, as the first version did, dropped the eye
-        // 127 units BELOW the fighters, which with Y pointing down is the
-        // clamp pushing the wrong way.
+    if (cam_.rayHit) {
+        // The height clamp, and the engine runs it ONLY when the solve
+        // returned a point (`if (v8)`). Until 2026-09-17 this tree had no
+        // solve and applied it every frame, labelled as such. The distance is
+        // from the eye as it now stands to the midpoint, the drop applies only
+        // inside 3 m, and the limit is 2.5 m under "Vue de côté" against
+        // 1.5 m under "Vue de dos". (Computing `d` against a stale midpoint,
+        // as the first version did, dropped the eye 127 units BELOW the
+        // fighters - with Y down, the clamp pushing the wrong way.)
         const float dx = mid[0] - cam_.eye[0], dy = mid[1] - cam_.eye[1],
                     dz = mid[2] - cam_.eye[2];
         const float d = std::sqrt(dx * dx + dy * dy + dz * dz);
@@ -472,18 +486,26 @@ bool Fight::begin(FightBody& player, const FightStats& ps,
     // runs before the channel tick in `Actor_TickPlayerAndOpponent`.
     if (player.channel) player.channel->resetInputQueue();
     if (opponent.channel) opponent.channel->resetInputQueue();
-    // **THE PRIORITY GATE IS NOT MODELLED, deliberately.** `Fight_Begin` also
-    // calls `sub_45A4C0(playerChan, 1)` and `sub_45A4C0(opponentChan, 0)`,
-    // which set and clear channel flag `0x400` - and that flag makes
-    // `Cef_FindTransition` honour the threshold at `+212` instead of taking
-    // the first match. `sub_45A4C0` writes ONLY the flag; nothing in what has
-    // been read writes `+212`, and this port's `setPriorityGate` cannot set
-    // the flag without also naming a threshold. Passing 0 would silently skip
-    // every priority-1 and -2 candidate, which is a behaviour change invented
-    // out of an unread field rather than transcribed - so the flag is left
-    // off until `+212`'s writer is found. `run_actor_states` already exercises
-    // both paths of the gate, and the corpus cannot tell them apart on the
-    // shipped data (`engine: actor states`), which is why this can wait.
+    // THE PRIORITY GATE (`todo/fight-mode.md` 15.14). `Fight_Begin` calls
+    // `sub_45A4C0(playerChan, 1)` and `sub_45A4C0(opponentChan, 0)` - channel
+    // flag 0x400, which makes `Cef_FindTransition` skip a candidate whose
+    // priority exceeds the channel's `+212` and return one that equals it -
+    // and then `sub_45ACD0(playerChan, v)`, the `+212` WRITER this note once
+    // said nobody had found (`word_8F59F4[114*chan]`: the channel records start
+    // at 0x8F5920, not at the 0x8F5928 array IDA named). `v` is the player's
+    // property 19, experience, `fild` then `fmul flt_4BC424` (0x3CC7CE0C,
+    // 0.024390243) then `_ftol` - a truncation, and the float sits just under
+    // 1/41, so 41 gives 0, 42 gives 1, 83 gives 2. So the moves a `.CTL`
+    // marks priority 1 and 2 UNLOCK with Kay'l's combat experience. The
+    // opponent's gate is off; the teardown clears both thresholds.
+    if (player.channel) {
+        const double v = static_cast<double>(ps.experience) *
+                         static_cast<double>(0.024390243f);   // flt_4BC424
+        const auto threshold = static_cast<std::uint16_t>(static_cast<std::int64_t>(v));
+        player.channel->setPriorityGate(true, threshold);
+        gateThreshold_ = static_cast<int>(threshold);
+    }
+    if (opponent.channel) opponent.channel->setPriorityGate(false, 0);
 
     // Both fighters turned to face each other, with flag 0x2 set across the
     // two calls so `Fight_FaceOpponent`'s state guard cannot refuse them.
@@ -875,9 +897,10 @@ FightAiTables FightAiTables::shipped() {
     return t;
 }
 
-void Fight::injectWords(FightContext& c, const std::vector<std::uint32_t>& words) {
+void Fight::injectWords(FightContext& c, const std::vector<std::uint32_t>& words,
+                        int modifier) {
     if (!c.body || !c.body->channel || words.empty()) return;
-    c.body->channel->injectInput(words, aiOr_);
+    c.body->channel->injectInput(words, modifier < 0 ? aiOr_ : modifier);
     ++stats_.aiMoves;
     stats_.aiWords += static_cast<long>(words.size());
     for (const auto w : words)
@@ -994,15 +1017,57 @@ void Fight::tickAi(FightContext& c, FightContext& other) {
     }
 
     if (c.aiIntent != 8 && c.aiIntent != 9 && c.aiIntent != 10) return;
+    // THE GUARD COMES DOWN (0x00464A9A): with the 0x100 latch up and both
+    // fighters idle - state 1, or intent 2, on each side, as read - the three
+    // latch bits 0x40/0x80/0x100 are cleared (`& 0xFFFFFE3F`), intent 105, and
+    // a move is picked from family 1 when standing, 4 otherwise.
+    if ((c.flags & 0x100u) && (c.state == 1 || c.aiIntent == 2) &&
+        (other.state == 1 || other.aiIntent == 2)) {
+        c.flags &= 0xFFFFFE3Fu;
+        c.aiIntent = 105;
+        if (c.state == 1) pickFromFamily(c, 1);   // sub_465210
+        else              pickFromFamily(c, 4);   // sub_465160
+    }
     if (now <= c.aiMoveDeadline) {
-        // **NOT YET TRANSCRIBED, and labelled rather than approximated**: with
-        // intent 9 and the pair inside 59.055119 (1.5 m), `Fight_TickAI` runs
-        // a defensive block - it sets channel flag 0x100, reads the OPPONENT's
-        // current combat block for its attack line, and either presses the
-        // 0x08 table or raises flag 0x40 to guard. That is the AI's DEFENCE,
-        // it is about sixty lines, and it wants reading in its own right;
-        // until then this fighter simply waits out the delay, which is what
-        // the engine does on every other intent. `todo/fight-mode.md` §7.
+        // THE DEFENCE (0x00464D4F..0x00464F4A, read from the listing: the
+        // decompiled form of it is right, including the part that looks
+        // wrong). Intent 9, the pair within 59.055119 (1.5 m, `<=`), and the
+        // 0x100 latch down: raise the latch, press the idle word, and raise
+        // 0x40 - the GUARD `resolveHit` reads, a blow into it costing one
+        // point. The 0x40 is raised UNCONDITIONALLY (`or al, 40h` right after
+        // the press), so every later `|= 0x40` in the arm is a no-op and is
+        // not repeated here; what the rest decides is whether to ALSO press a
+        // built-in table, from
+        //   the attacker's move: its combat block's line A (&4) / line B (&2),
+        //     when its entry carries 0x2000000;
+        //   the attacker's state 16 or 32 and its `stateD & 8`;
+        //   this fighter's OWN entry `+76`: bit 1 high, bit 2 low.
+        // A line-A move with this fighter's low bit set ends the arm.
+        // Both presses pass a literal 0 modifier.
+        if (c.aiIntent == 9 && separation_ <= kNearSwitch && !(c.flags & 0x100u)) {
+            c.flags |= 0x100u;
+            const CtlState* own = stateAt(c, c.entry);
+            const int ownBits = own ? own->playBits : 0;
+            injectWords(c, builtin_.m4CAD30, 0);
+            c.flags |= 0x40u;
+            ++stats_.aiGuards;
+            const bool s16 = other.state == 16, s32 = other.state == 32;
+            const bool ownLow = (ownBits & 2) != 0, ownHigh = (ownBits & 1) != 0;
+            const bool d8 = (other.stateD & 8) != 0;
+            bool lineA = false, lineB = false;
+            if (const CtlState* oe = stateAt(other, other.entry))
+                if ((oe->flags & 0x2000000u) && oe->hasCombat) {
+                    lineA = (blockFlags(oe->combat) & 4) != 0;
+                    lineB = (blockFlags(oe->combat) & 2) != 0;
+                }
+            if (lineA) {
+                if (ownLow) return;
+                if (s16 && d8 && ownHigh) injectWords(c, builtin_.m4CAD38, 0);
+                if (s32 && d8 && ownHigh) injectWords(c, builtin_.m4CAD38, 0);
+            }
+            if (!lineB || !s32) return;
+            if (d8 && ownHigh) injectWords(c, builtin_.m4CAD54, 0);
+        }
         return;
     }
 

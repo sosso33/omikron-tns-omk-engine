@@ -1618,6 +1618,9 @@ int main(int argc, char** argv) {
 "  --keys D,D,...   DIK scancodes fed in order; `T` types --type there\n"
 "  --type <text>    what `T` types - the start menu refuses an empty name\n"
 "  --keydelay N     frames between scripted keys, default 2\n"
+"  --no-foe-collision  the melee opponent collides with nothing (comparison)\n"
+"  --no-fight-camera-collision  the fight camera is never pulled in (comparison)\n"
+"  --fight-foe-at X,Z  HARNESS: start the melee opponent there\n"
 "  --hold <stream>  after the hand-over, DIK codes HELD: `k200*120,k203*30`,\n"
 "                   `+` joins several, `0*n` holds nothing - player_probe's\n"
 "                   own syntax, so a walk can be replayed\n"
@@ -1716,6 +1719,10 @@ int main(int argc, char** argv) {
     // reached without walking the story to it - the same shape as `--ride`
     // for the slider, and it says so in its own log line.
     int  fightArg = -1;
+    bool noFoeCollision = false;   // --no-foe-collision: the opponent as before 15.8a, for comparison
+    bool noFightCamRay = false;    // --no-fight-camera-collision: the fight camera as before, for comparison
+    bool foeAtSet = false;         // --fight-foe-at x,z: a HARNESS - start him there instead
+    float foeAtXZ[2] = {0.0f, 0.0f};
     int  fightLevelArg = 1;
     bool rideArg = false;
     // `--board`: HARNESS. When the called slider goes OPEN, put him at its
@@ -1866,6 +1873,7 @@ int main(int argc, char** argv) {
     // bolts can outlive the gallery's gunmen (they kill him in ~16 frames, and
     // since the death is ported he then fights no more). -1: the save's value
     int shootHealth = -1;
+    int fightHealth = -1;   // --fight-health N: a HARNESS, the player's Vie at Fight_Begin
     long shootEndAt = -1;      // --shoot-end N: `shoot.end 1` at frame N
     float standAt[4] = {0, 0, 0, 0};
     bool haveStand = false;      // `--stand x,y,z,yaw`: put the player down there after the hand-over
@@ -1977,6 +1985,10 @@ int main(int argc, char** argv) {
             haveStand = true;
         }
         else if (a == "--fight" && i + 1 < argc) fightArg = std::atoi(argv[++i]);
+        else if (a == "--no-foe-collision") noFoeCollision = true;
+        else if (a == "--no-fight-camera-collision") noFightCamRay = true;
+        else if (a == "--fight-foe-at" && i + 1 < argc)
+            foeAtSet = std::sscanf(argv[++i], "%f,%f", &foeAtXZ[0], &foeAtXZ[1]) == 2;
         else if (a == "--fight-level" && i + 1 < argc) fightLevelArg = std::atoi(argv[++i]);
         else if (a == "--ride") rideArg = true;
         else if (a == "--board") boardArg = true;
@@ -2088,6 +2100,7 @@ int main(int argc, char** argv) {
         else if (a == "--shoot") startShoot = true;
         else if (a == "--shoot-end" && i + 1 < argc) shootEndAt = std::atol(argv[++i]);
         else if (a == "--shoot-health" && i + 1 < argc) shootHealth = std::atoi(argv[++i]);
+        else if (a == "--fight-health" && i + 1 < argc) fightHealth = std::atoi(argv[++i]);
         else if (a == "--sneak") openSneak = true;
         else if (a == "--stand" && i + 1 < argc)
             haveStand = std::sscanf(argv[++i], "%f,%f,%f,%f", &standAt[0], &standAt[1], &standAt[2], &standAt[3]) >= 3;
@@ -2935,6 +2948,13 @@ int main(int argc, char** argv) {
                            std::uint8_t flags = 0, attach = 0; int state = -1; };
     std::vector<CtlSpriteInst> ctlSprites;
     int   ctlFxState = -1; float ctlFxFrame = -1.0f;
+    // ...and the MELEE OPPONENT's, from his own channel (`todo/fight-mode.md`
+    // 15.10): `Cef_TickEffects` runs on every channel the engine ticks, and
+    // `Actor_TickPlayerAndOpponent` ticks two.
+    std::vector<CtlSpriteInst> foeSprites;
+    int   foeFxState = -1; float foeFxFrame = -1.0f;
+    long  foeSpritesDrawn = 0;       // particle-frames placed on his bones
+    long  foeSpritesPooled = 0;      // ...of which the sprite had a texture slot
     omk::ParticleField ctlField; omk::Geometry ctlGeo;
     static constexpr const char* kAttachName[18] = {
         "Buste", "Tete", "Buste", "Buste", "Buste", "Bassin", "Brasg", "Brasd",
@@ -3653,6 +3673,11 @@ int main(int argc, char** argv) {
         // window (a reader: *Telis appears normally at the beginning before
         // disappearing*).
         std::vector<omk::MeshPose> lastPose;
+        // A MELEE LOSER the teardown left in ACTOR_STATE 0 (`sub_445AC0` writes
+        // the opponent's +404 to 0, and state 0 is `nullsub_6` - no tick at
+        // all), so his node keeps the last pose the fight gave it: on the
+        // floor in his knock-out loop, not back in the bank's idle.
+        bool inertAfterFight = false;
     };
     // OWNING POINTERS, not a vector of values: the Vulkan backend caches a
     // vertex buffer by (pointer, revision), so a `Staged` may never be moved
@@ -4502,6 +4527,27 @@ int main(int argc, char** argv) {
         // `idleTracksFor` builds. Cached per clip like the root motion,
         // because `clipTracks` decodes every rotation in the clip.
         omk::NodeTracks foePose;
+        // ...and the pelvis height his OPENING stance's pose puts it at - the
+        // reference the clip's pelvis track is read against for the DRAW
+        // (see the body placement in the fight step). -1e30 until known.
+        float foeRootRef = -1e30f;
+        // ...and his COLLISION (`todo/fight-mode.md` 15.8a). The engine's
+        // `Actor_TickPlayerAndOpponent` ends BOTH fighters with
+        // `Actor_ApplyMotion` (0x004672D0): the frame's velocity is applied,
+        // remembered, undone, and handed to `Actor_Move` - a horizontal
+        // collide-and-slide, then the ground probe. This is the player's own
+        // walker over the same soups, seated on the opponent's FEET: his
+        // `y` is the pelvis, `foeLift` above them (Y down: feet = y + lift).
+        std::unique_ptr<omk::Walker> foeWalker;
+        float foeLift = 0.0f;
+        long  foeBlocked = 0, foeSlid = 0, foeSteps = 0;
+        bool  camRaySet = false;           // the camera ray, installed on the first tick
+        // `Hud_Refresh`, which `Fight_Begin` calls: served at the next HUD
+        // draw, where the framebuffer's width is known. The player's six
+        // properties it snapshots, in the card's row order.
+        bool  hudRefresh = false;
+        int   koSeen = 0;                  // the KO counter as the fade last saw it
+        int   cardProps[6] = {0, 0, 0, 0, 0, 0};
         double ms = 0.0;                   // the AI's `Sys_GetTimeMs` clock
         long  startedAt = 0;
     };
@@ -4555,7 +4601,21 @@ int main(int argc, char** argv) {
         {
             const auto rec = playerRecordSpan();
             std::int32_t v = 0;
+            // `Hud_Refresh`'s six reads, in `dword_530CB0`'s order
+            {
+                static const int kCardProps[6] = {16, 19, 17, 3, 18, 2};
+                for (int k = 0; k < 6; ++k) {
+                    std::int32_t c = 0;
+                    fightRun.cardProps[k] = omk::readActorProperty(rec, kCardProps[k], c) ? c : 0;
+                }
+            }
             if (omk::readActorProperty(rec, 1, v))  ps.vie = v;
+            // THE HARNESS, and it is one: the engine reads property 1 as it is.
+            if (fightHealth >= 0) {
+                std::printf("fight.begin: harness --fight-health gives the player Vie %d "
+                            "(his record says %d)\n", fightHealth, ps.vie);
+                ps.vie = fightHealth;
+            }
             if (omk::readActorProperty(rec, 16, v)) ps.attack = v;
             if (omk::readActorProperty(rec, 18, v)) ps.dodge = v;
             if (omk::readActorProperty(rec, 19, v)) ps.experience = v;
@@ -4614,12 +4674,73 @@ int main(int argc, char** argv) {
         // this harness did, 79 units apart for 245 frames.
         fightRun.player.externallyTicked = true;
         fightRun.foe = omk::FightBody{};
-        fightRun.foe.x = s->at[0]; fightRun.foe.y = s->at[1]; fightRun.foe.z = s->at[2];
+        // WHERE HIS PROGRAM LEFT HIM, not where it began. `fight.begin` runs
+        // inside the script pump, BEFORE this frame's staged pass notices the
+        // program has ended and carries `drawAt` over into `at` - so `at` is
+        // still the program's placement (the path START) and `drawAt` is the
+        // body the engine's actor record holds: `Anim_RootDelta` has summed
+        // the clip into +244 all along. Reading `at` put the supermarket's
+        // robber at 'D1BassinP2''s start, 11.9 m away with `SMbox45` between
+        // them, where the approach had left him 1.5 m from the player
+        // (`todo/fight-mode.md` 15.8e). The same rule `npcBody` uses.
+        const float* foeAt = s->progRan ? s->drawAt : s->at;
+        fightRun.foe.x = foeAt[0]; fightRun.foe.y = foeAt[1]; fightRun.foe.z = foeAt[2];
+        // THE HARNESS, and it is one: the engine starts him where the script
+        // left him. This moves him so a check can put a wall in his way - the
+        // supermarket's real fight is short and never reaches one.
+        if (foeAtSet) {
+            fightRun.foe.x = foeAtXZ[0]; fightRun.foe.z = foeAtXZ[1];
+            std::printf("fight: harness --fight-foe-at starts the opponent at %.0f %.0f "
+                        "(the script left him at %.0f %.0f)\n", double(foeAtXZ[0]),
+                        double(foeAtXZ[1]), double(foeAt[0]), double(foeAt[2]));
+        }
         fightRun.foe.yaw = s->facing;
         fightRun.foe.radius = bodyRadius(s->mo->meshes);
         fightRun.foe.channel = fightRun.foeChannel.get();
+        // HIS WALKER. The lift is the player's recipe (`PlayerController`'s
+        // `camLift_`) with the opponent's model: the hierarchy root above the
+        // model's lowest extent. The swept body is his own sphere list
+        // (descriptor +244/+248), centres made relative to the feet.
+        fightRun.foeWalker.reset();
+        fightRun.foeBlocked = fightRun.foeSlid = fightRun.foeSteps = 0;
+        if (!noFoeCollision && !playerSoup.empty() && s->mo->root >= 0) {
+            float feet = -1e30f;
+            for (const auto& m : s->mo->meshes) feet = std::max(feet, m.pos[1] + m.boxMax[1]);
+            const float lift = feet - s->mo->meshes[static_cast<std::size_t>(s->mo->root)].pos[1];
+            fightRun.foeLift = (lift > 0.0f && lift < 200.0f) ? lift : 0.0f;
+            double fy = double(fightRun.foe.y) + fightRun.foeLift;
+            auto w = std::make_unique<omk::Walker>(playerSoup, fightRun.foe.x, fy, fightRun.foe.z);
+            if (const auto g = w->ground(fightRun.foe.x, fy, fightRun.foe.z)) {
+                w->moveTo(fightRun.foe.x, *g, fightRun.foe.z);
+                fy = *g;
+            }
+            w->setGrid(&playerGrid);
+            w->setSteep(&playerSteep);
+            std::vector<omk::CollisionSphere> sph;
+            if (const auto mp = fs.resolve("MESHES/PERSOS/" + s->model + ".3DO")) {
+                const auto md = omk::DataFs::readPath(*mp);
+                sph = omk::modelSweepSpheres(md);
+            }
+            float r = 0.0f;
+            std::vector<std::array<double, 3>> centres;
+            for (const auto& c : sph) {
+                r = std::max(r, c.radius);
+                centres.push_back({double(c.pos[0]),
+                                   double(c.pos[1]) - double(fightRun.foeLift),
+                                   double(c.pos[2])});
+            }
+            w->setBlockers(&playerSteep, r > 0.0f ? r : 12.0f, std::move(centres));
+            w->setBlockerGrid(&playerSteepGrid);
+            std::printf("fight: the opponent's walker - feet %.0f (pelvis %.0f, lift %.1f), "
+                        "%zu sweep spheres of radius %.1f against %zu wall faces\n",
+                        fy, double(fightRun.foe.y), double(fightRun.foeLift), sph.size(),
+                        double(r > 0.0f ? r : 12.0f), playerSteep.size() / 9);
+            fightRun.foeWalker = std::move(w);
+        }
         fightRun.foeBank = fb;
         fightRun.foeClip = -1;
+        fightRun.foeRootRef = -1e30f;
+        s->inertAfterFight = false;
         fightRun.foeRoot.clear();
         fightRun.foeFrame = 1.0f;
 
@@ -4635,9 +4756,18 @@ int main(int argc, char** argv) {
                               settings.v.combatCamera);
         in.installScheme(3);          // `Input_InstallScheme(3)`, group Combat
         fightRun.active = true;
+        fightRun.camRaySet = false;
+        fightRun.hudRefresh = true;
+        fightRun.koSeen = 0;
         fightRun.opponent = opponentId;
         fightRun.body = s;
         fightRun.startedAt = session.frameNo();
+        // read back from the CHANNEL, not from what `Fight` meant to write
+        std::printf("frame %ld: FIGHT GATE - the player's channel honours priority <= %d "
+                    "(experience %d; flag 0x400 %s), the opponent's %s\n",
+                    session.frameNo(), player->channel().priorityThreshold(), ps.experience,
+                    player->channel().priorityGated() ? "set" : "CLEAR",
+                    (fightRun.foeChannel && fightRun.foeChannel->priorityGated()) ? "SET" : "none");
         std::printf("frame %ld: FIGHT BEGINS against CHARACTERS %d - banks '%s' "
                     "vs '%s', AI level %d (profile %d), difficulty %d, "
                     "radius %.1f, scheme 3\n"
@@ -6075,6 +6205,39 @@ int main(int argc, char** argv) {
                 else ++i;
             }
         }
+        // THE OPPONENT'S SPRITE RECORDS, by the player's rule above: spawned on
+        // entering a state (or a wrap), each dying out of its window.
+        if (fightRun.active && fightRun.foeChannel) {
+            const auto& fctl = fightRun.foeChannel->ctl();
+            const int   st = fightRun.foeChannel->state();
+            const float fr = fightRun.foeChannel->frame();
+            if (st != foeFxState || fr < foeFxFrame) {
+                foeSprites.clear();
+                foeFxState = st;
+                if (st >= 0 && st < static_cast<int>(fctl.states.size()))
+                    for (const auto& e : fctl.states[static_cast<std::size_t>(st)].effects) {
+                        if (!e.sprite || (e.flags & 2)) continue;
+                        foeSprites.push_back({e.sprite, e.duration, e.from, e.to, e.scale,
+                                              e.flags, e.attach, st});
+                        std::printf("frame %ld: ctl-effect: OPPONENT state %d '%s' spawns sprite %d on "
+                                    "attach %d ('%s') for %.0f frames from %.0f\n", n, st,
+                                    fctl.states[static_cast<std::size_t>(st)].name.c_str(),
+                                    e.sprite, e.attach,
+                                    e.attach < 18 ? kAttachName[e.attach] : "Buste",
+                                    e.duration, e.from);
+                    }
+            }
+            foeFxFrame = fr;
+            for (std::size_t i = 0; i < foeSprites.size();) {
+                const auto& c = foeSprites[i];
+                const float to = c.to == 0.0f ? 10000.0f : c.to;
+                if (fr > c.from + c.duration || fr > to) foeSprites.erase(foeSprites.begin() + static_cast<long>(i));
+                else ++i;
+            }
+        } else if (!foeSprites.empty()) {
+            foeSprites.clear();
+            foeFxState = -1;
+        }
         if (player && globalRt) {
             // The library, see its construction - and `fight.scx` OVER it
             // while a fight is running, because that is what `Fight_Begin`'s
@@ -7423,6 +7586,24 @@ int main(int argc, char** argv) {
                         // the slider. `Actor_TickPlayerAndOpponent` ticks each
                         // fighter's channel itself, inside the combat step,
                         // and the fight owns both bodies.
+                        // THE FIGHT CAMERA'S RAY (`sub_416570` -> `sub_444810`): the bolts'
+                        // world, the shown set's `shotSoup` - CollisionOnly skipped and a mesh
+                        // with either bit of 0x41 untested, the rule `sub_444460` applies.
+                        if (!fightRun.camRaySet && !noFightCamRay)
+                            fightRun.fight->setCameraRay([&](const float a[3], const float b[3], float hit[3]) {
+                                const omk::TriangleSoup* shot = nullptr;
+                                for (const auto& ws : worldSlots)
+                                    if (!ws.stem.empty() && ws.stem == worldSet) shot = &ws.shotSoup;
+                                if (!shot || shot->empty()) return false;
+                                const double p0[3] = {a[0], a[1], a[2]};
+                                const double d[3] = {double(b[0]) - a[0], double(b[1]) - a[1],
+                                                     double(b[2]) - a[2]};
+                                const auto h = omk::sweepSphere(*shot, p0, d, 0.0);
+                                if (!h || h->t > 1.0) return false;
+                                for (int k = 0; k < 3; ++k) hit[k] = static_cast<float>(p0[k] + h->t * d[k]);
+                                return true;
+                            });
+                        fightRun.camRaySet = true;
                         fightRun.ms += frameSec * 1000.0;
                         const float was[3] = {player->pos()[0], player->pos()[1],
                                               player->pos()[2]};
@@ -7435,6 +7616,24 @@ int main(int argc, char** argv) {
                         const bool on = fightRun.fight->step(
                             static_cast<float>(frameSec * 30.0),
                             bits ? bits : omk::kIdleInput);
+                        // THE KNOCK-OUT'S BANDS. `sub_4452A0` calls
+                        // `Screen_Fade(1)` the frame the loser reaches state 6
+                        // or 7 and the KO counter first rises, and
+                        // `sub_4453F0` calls `Screen_Fade(0)` when the replay
+                        // passes run out, just before `Fight_Engage(-1, 1)`.
+                        // `Screen_Fade` is the letterbox bands' machine
+                        // (`Session::startBlackFade`: 1 -> state 3, 0 -> state
+                        // 4 and only from 3), so the replay is shown between
+                        // cinema bars.
+                        if (fightRun.koSeen == 0 && fightRun.fight->koCounter() > 0) {
+                            session.startBlackFade(true);
+                            std::printf("frame %ld: KO - Screen_Fade(1), the bands in\n", n);
+                        }
+                        if (!on && fightRun.fight->koCounter() > 0) {
+                            session.startBlackFade(false);
+                            std::printf("frame %ld: KO replay over - Screen_Fade(0), the bands out\n", n);
+                        }
+                        fightRun.koSeen = fightRun.fight->koCounter();
                         // The bodies back: the player through `nudge` so the
                         // walker keeps its own idea of where he stands, the
                         // opponent onto his staged placement.
@@ -7539,9 +7738,61 @@ int main(int argc, char** argv) {
                             }
                             fightRun.foeFrame = nowF;
                         }
+                        // `Actor_ApplyMotion`: EVERYTHING that moved him this
+                        // frame - the separation push and a knockback inside
+                        // `step`, and the root motion above - is one try,
+                        // undone and handed to the walker.
+                        if (fightRun.foeWalker) {
+                            auto& w = *fightRun.foeWalker;
+                            const double dx = double(fightRun.foe.x) - w.pos()[0];
+                            const double dz = double(fightRun.foe.z) - w.pos()[2];
+                            const double fdt = frameSec * 30.0;
+                            if (dx != 0.0 || dz != 0.0) {
+                                const auto r = w.step(dx, dz, fdt);
+                                ++fightRun.foeSteps;
+                                if (r == omk::StepResult::Blocked) ++fightRun.foeBlocked;
+                                if (w.lastSlides() > 0) ++fightRun.foeSlid;
+                            } else {
+                                w.tick(fdt);
+                            }
+                            fightRun.foe.x = static_cast<float>(w.pos()[0]);
+                            fightRun.foe.z = static_cast<float>(w.pos()[2]);
+                            // ...AND THE HEIGHT: `Actor_ApplyMotion` ends with
+                            // the ground probe and `Walk_GroundResponse`, so the
+                            // body's +248 follows the floor - the walker's feet,
+                            // lifted back to the pelvis this fight step reads.
+                            // The clip's own vertical is still dropped (the note
+                            // above): the pose, not the node, carries a fall.
+                            // UNOBSERVABLE in the supermarket: its floor is flat
+                            // at y 10 wherever a fighter can stand (the crate tops
+                            // at -54..-61 cannot be reached), so this moves the
+                            // robber 4 units onto it and nothing more there.
+                            fightRun.foe.y = static_cast<float>(w.pos()[1]) - fightRun.foeLift;
+                        }
+                        // THE PELVIS TRACK, for the DRAW. A `.CTL` clip's root
+                        // position keys are an ABSOLUTE pelvis height in model
+                        // space, not a delta - measured over H1CMBT: the guard
+                        // at 2.3, the low guard 13.5 and held there, a
+                        // knock-down (`KOH_FRONT`, `I_DEATH`) falling to 35..39,
+                        // a jump going negative. The engine moves the pelvis
+                        // BONE with them and leaves the actor's +248 alone, so
+                        // the body's placement is his fight position plus the
+                        // track's offset from the stance he opened in. Without
+                        // it a knocked-down robber lay flat 36 units in the air
+                        // - a reader's screenshot (`todo/fight-mode.md` 15.16).
+                        float foeDrop = 0.0f;
+                        if (fightRun.foePose.valid() && !fightRun.foePose.trans.empty() &&
+                            fightRun.foeChannel) {
+                            if (fightRun.foeRootRef < -1e29f) fightRun.foeRootRef = fightRun.foePose.trans[0][1];
+                            int ff = static_cast<int>(fightRun.foeChannel->frame()) - 1;
+                            const int last = static_cast<int>(fightRun.foePose.trans.size()) - 1;
+                            ff = ff < 0 ? 0 : (ff > last ? last : ff);
+                            foeDrop = fightRun.foePose.trans[static_cast<std::size_t>(ff)][1] -
+                                      fightRun.foeRootRef;
+                        }
                         if (fightRun.body) {
                             fightRun.body->at[0] = fightRun.foe.x;
-                            fightRun.body->at[1] = fightRun.foe.y;
+                            fightRun.body->at[1] = fightRun.foe.y + foeDrop;
                             fightRun.body->at[2] = fightRun.foe.z;
                             fightRun.body->facing = fightRun.foe.yaw;
                             fightRun.body->placed = true;
@@ -7613,11 +7864,13 @@ int main(int argc, char** argv) {
                             {
                                 const omk::FightCamera& fc = fightRun.fight->camera();
                                 std::printf("    fight camera: state %d, eye %.0f %.0f %.0f, "
-                                            "at %.0f %.0f %.0f, heading %.0f, radius %.0f\n",
+                                            "at %.0f %.0f %.0f, heading %.0f, radius %.0f, "
+                                            "ray hits %ld%s\n",
                                             fc.state, double(fc.eye[0]), double(fc.eye[1]),
                                             double(fc.eye[2]), double(fc.at[0]),
                                             double(fc.at[1]), double(fc.at[2]),
-                                            double(fc.heading), double(fc.radius));
+                                            double(fc.heading), double(fc.radius),
+                                            fc.rayHits, fc.rayHit ? " (pulled in now)" : "");
                             }
                             // The KO counter, because "he is down and nothing
                             // happens" has two causes that look the same from
@@ -7628,6 +7881,10 @@ int main(int argc, char** argv) {
                                         fightRun.fight->koCounter(),
                                         fightRun.fight->over() ? 1 : 0,
                                         fightRun.fight->playerWon() ? 1 : 0);
+                            if (fightRun.foeWalker)
+                                std::printf("    foe walker: %ld steps, %ld swept into a wall, "
+                                            "%ld blocked outright\n", fightRun.foeSteps,
+                                            fightRun.foeSlid, fightRun.foeBlocked);
                             std::printf("    foe AI: clock %.0f ms, intent %d, "
                                         "deadline %ld, taunt %ld/%ld\n",
                                         fightRun.ms,
@@ -7658,7 +7915,27 @@ int main(int argc, char** argv) {
                             omk::writeActorProperty(rec, 1, myHp);
                             session.setActorProperty(fightRun.opponent, 1, hisHp);
                             player->setBank(playerCtl, playerCtlData);
-                            player->setActorState(omk::ActorState::Normal, "sub_445AC0");
+                            // THE STATE THE FIGHT LEAVES HIM IN - 1, win or lose,
+                            // and it takes two writes to see why. `sub_445AC0`
+                            // writes the player's +404 from `dword_906F34`, the
+                            // WINNER (`Fight_ResolveHit` stores `att` there): 1 if
+                            // he won and 0 if he lost. Then it raises event 2,
+                            // whose handler calls `Actor_LoadBankList` on the
+                            // player - and that ends `dword_910834[328*i] = 1`,
+                            // the +404 alias. So a loser's 0 lasts for the rest
+                            // of one call and he leaves the fight in 1 either way
+                            // (`todo/fight-mode.md` 15.12). This viewer's
+                            // `setBank` rebuilds the runtime, which lands on 1
+                            // through the same two rows, and the write below
+                            // states the result rather than relying on that.
+                            const bool won = fightRun.fight->playerWon();
+                            player->setActorState(omk::ActorState::Normal, "Actor_LoadBankList");
+                            std::printf("frame %ld: FIGHT GATE - the player's channel turned away "
+                                        "%ld candidate moves above priority %d\n", n,
+                                        player->channel().gateSkips(), fightRun.fight->gateThreshold());
+                            std::printf("frame %ld: sub_445AC0 - the player %s, ACTOR_STATE %d\n",
+                                        n, won ? "WON" : "LOST",
+                                        static_cast<int>(player->state()));   // the CONSUMER's, not the bool
                             in.installScheme(0);
                             session.fightEnded();
                             std::printf("frame %ld: FIGHT ENDS after %ld frames - "
@@ -7671,6 +7948,23 @@ int main(int argc, char** argv) {
                             fightRun.active = false;
                             fightRun.fight.reset();
                             fightRun.foeChannel.reset();
+                            if (fightRun.body) {
+                                fightRun.body->inertAfterFight = true;
+                                // where the loser LIES: his placement (the pelvis)
+                                // and his drawn head, both from the draw's own
+                                // record (`meshAt`), not from the fight's intent
+                                const Staged& lb = *fightRun.body;
+                                float headY = 0.0f;
+                                const int hm = lb.mo ? omk::headMeshOf(lb.mo->meshes) : -1;
+                                if (hm >= 0 && lb.meshAt.size() >= (static_cast<std::size_t>(hm) + 1) * 3)
+                                    headY = lb.meshAt[static_cast<std::size_t>(hm) * 3 + 1];
+                                std::printf("frame %ld: the fight's OPPONENT actor %d is drawn with his "
+                                            "pelvis at y %.0f and his head at y %.0f (placement %.0f)\n",
+                                            n, lb.actor,
+                                            (lb.mo && lb.mo->root >= 0 && lb.meshAt.size() >= (static_cast<std::size_t>(lb.mo->root) + 1) * 3)
+                                                ? lb.meshAt[static_cast<std::size_t>(lb.mo->root) * 3 + 1] : 0.0f,
+                                            headY, lb.at[1]);
+                            }
                             fightRun.body = nullptr;
                         }
                     } else if (!ride && !boarded) {
@@ -12103,7 +12397,8 @@ int main(int argc, char** argv) {
             }
             propGeo.revision = ++worldGeoRev;
             refreshSprites();
-            const bool wantSprites = (session.scene().effects().count() || !ctlSprites.empty()) &&
+            const bool wantSprites = (session.scene().effects().count() || !ctlSprites.empty() ||
+                                      !foeSprites.empty()) &&
                                      !spriteTab.empty();
             // Which sprite ids the resident scene can name. Computed BEFORE the
             // rebuild test and compared, because a scene that starts asking for
@@ -12115,6 +12410,13 @@ int main(int argc, char** argv) {
             for (const auto& pa : session.scene().effects().particles())
                 spriteWanted.insert(pa.sprite);
             for (const auto& c : ctlSprites) spriteWanted.insert(c.sprite);
+            // ...AND THE MELEE OPPONENT'S. His records were spawned and placed
+            // on his bones from 15.10 on - 482 placements in one run - and
+            // never drew: a batch whose sprite has no POOL SLOT is skipped
+            // ("a sprite with no texture: not drawn"), and only the player's
+            // ids were pooled. A reader: *"no visual effect when I touched the
+            // ennemy"* (`todo/fight-mode.md` 15.16).
+            for (const auto& c : foeSprites) spriteWanted.insert(c.sprite);
             if (poolBuiltFor != poolComposition || poolHasSprites != wantSprites ||
                 poolHasPlayer != (drawPlayer || drawArm) || spritePooled != spriteWanted) {
                 pool = worldTex;
@@ -14213,6 +14515,7 @@ int main(int argc, char** argv) {
                     if (!speakerMorph.empty()) fv = omk::faceFrame(speakerMorph, frame);
                     src = "the line's .3DM";
                 } else if (s.sceneTracks.valid()) {
+                    s.inertAfterFight = false;     // a program owns him again
                     rootFrame = static_cast<int>(sceneFrame);
                     // A SCENE CLIP keeps its root rotation - it is the
                     // character's real orientation, lying on the floor and
@@ -14261,6 +14564,9 @@ int main(int argc, char** argv) {
                     if (ff >= fightRun.foePose.frames) ff = fightRun.foePose.frames - 1;
                     pose = omk::composePose(s.mo->meshes, fightRun.foePose, ff, false);
                     src = "the fight channel's own clip";
+                } else if (s.inertAfterFight && !s.lastPose.empty()) {
+                    pose = s.lastPose;
+                    src = "the fight's last pose (ACTOR_STATE 0 after sub_445AC0 - no tick)";
                 } else if (s.idle.valid()) {
                     pose = omk::composePose(s.mo->meshes, s.idle, 0, false);
                     src = "the bank's default entry, frame 0";
@@ -15554,7 +15860,8 @@ int main(int argc, char** argv) {
             for (int k = 0; k < 3; ++k) spriteAnchor[k] = view.cam.at[k];
             spriteAnchorSet = true;
             const bool scriptSprites = !noScriptSprites && session.scene().loaded() && !session.scene().sprites().empty();
-            if ((session.scene().effects().count() || !ctlSprites.empty() || scriptSprites) && !spriteTab.empty()) {
+            if ((session.scene().effects().count() || !ctlSprites.empty() || !foeSprites.empty() ||
+                 scriptSprites) && !spriteTab.empty()) {
                 omk::particleGeometry(fxGeo, session.scene().effects(),
                                       view.cam.eye, view.cam.at, spriteLookup);
                 // The `.CTL` sprites, each on its bone THIS frame (flag 1,
@@ -15607,6 +15914,52 @@ int main(int argc, char** argv) {
                     fxGeo.cornerVertex.insert(fxGeo.cornerVertex.end(), ctlGeo.cornerVertex.begin(), ctlGeo.cornerVertex.end());
                     fxGeo.cornerDeclared.insert(fxGeo.cornerDeclared.end(), ctlGeo.cornerDeclared.begin(), ctlGeo.cornerDeclared.end());
                     ++fxGeo.revision;
+                }
+                // THE OPPONENT'S, on his bones as DRAWN last frame (`meshAt`,
+                // the same frame the bolts' hit test reads), found by the
+                // attach table's name - the last match, as the player's.
+                if (!foeSprites.empty() && fightRun.active && fightRun.body &&
+                    fightRun.body->mo && fightRun.foeChannel) {
+                    const Staged& fb2 = *fightRun.body;
+                    const auto& ms = fb2.mo->meshes;
+                    const float fr = fightRun.foeChannel->frame();
+                    ctlField.clear();
+                    long placed = 0;
+                    for (const auto& c : foeSprites) {
+                        const char* want = c.attach < 18 ? kAttachName[c.attach] : "Buste";
+                        int node = -1;
+                        for (std::size_t i = 0; i < ms.size(); ++i)
+                            if (std::strstr(ms[i].name, want)) node = static_cast<int>(i);
+                        if (node < 0 || fb2.meshAt.size() < (static_cast<std::size_t>(node) + 1) * 3) continue;
+                        if (fr < c.from) continue;
+                        omk::Particle p;
+                        for (int k = 0; k < 3; ++k)
+                            p.pos[k] = fb2.meshAt[static_cast<std::size_t>(node) * 3 + static_cast<std::size_t>(k)];
+                        p.life = c.duration > 0.0f ? c.duration : 1.0f;
+                        p.frameAge = std::clamp(fr - c.from, 0.0f, p.life);
+                        p.age = p.frameAge;
+                        p.scale = c.scale > 0.0f ? c.scale : 1.0f;
+                        p.sprite = c.sprite;
+                        p.mode = 4;
+                        ctlField.addParticle(p);
+                        ++placed;
+                        // what can actually DRAW: a batch whose sprite has no
+                        // pool slot is skipped at submission, which is how 482
+                        // placements once drew nothing (15.16)
+                        if (spriteSlot.count(c.sprite)) ++foeSpritesPooled;
+                    }
+                    if (placed) {
+                        foeSpritesDrawn += placed;
+                        omk::particleGeometry(ctlGeo, ctlField, view.cam.eye, view.cam.at, spriteLookup);
+                        const std::size_t base = fxGeo.corners.size();
+                        for (omk::Batch b : ctlGeo.batches) { b.start += base; fxGeo.batches.push_back(b); }
+                        fxGeo.corners.insert(fxGeo.corners.end(), ctlGeo.corners.begin(), ctlGeo.corners.end());
+                        fxGeo.cornerMirror.insert(fxGeo.cornerMirror.end(), ctlGeo.cornerMirror.begin(), ctlGeo.cornerMirror.end());
+                        fxGeo.cornerMesh.insert(fxGeo.cornerMesh.end(), ctlGeo.cornerMesh.begin(), ctlGeo.cornerMesh.end());
+                        fxGeo.cornerVertex.insert(fxGeo.cornerVertex.end(), ctlGeo.cornerVertex.begin(), ctlGeo.cornerVertex.end());
+                        fxGeo.cornerDeclared.insert(fxGeo.cornerDeclared.end(), ctlGeo.cornerDeclared.begin(), ctlGeo.cornerDeclared.end());
+                        ++fxGeo.revision;
+                    }
                 }
                 // THE SCRIPTED SPRITES - `Script_Display3DSprite` and its
                 // family (program.h). An instance the scene has linked is
@@ -16373,6 +16726,14 @@ int main(int argc, char** argv) {
                 else if (!omk::vulkanCanPresentWorld(&world)) keep = "supersampling";
                 else if (mst.active && !mst.native) keep = "cpu mirror";
                 else if (shootMode && hudWalk) keep = "shoot hud";
+                // ...and the FIGHT HUD, under the same test that draws it: the
+                // gauges go into `fb` every melee frame outside a KO replay. It
+                // was missing from this list, so on the Vulkan window the gauges
+                // showed only while another gate (the fight's opening fade) held
+                // the frame on the CPU - a reader: *"The health disappear after
+                // some time (only the stats should disappear)"*.
+                else if (fightRun.active && fightRun.fight && fightRun.fight->koCounter() == 0 &&
+                         !std::getenv("OMK_NOUI")) keep = "fight hud";
                 else if (mediaBmp.w > 0 && mediaBmp.h > 0) keep = "media bitmap";
                 else if (mediaTextFrames > 0) keep = "media line";
                 else if (session.dialogOpen()) keep = "conversation";
@@ -17597,6 +17958,48 @@ int main(int argc, char** argv) {
                         hudAmmo = static_cast<int>(w.value & 0xFFFF);
             }
         }
+        // ---- THE FIGHT HUD (`todo/fight-mode.md` step 5) -----------------
+        //
+        // `Actors_TickAll`'s melee row ends with `Fight_UpdateHealthBars`
+        // (0x00445160) while the KO counter is 0: property 1 of each fighter
+        // through `Hud_DrawBar(player, 200, 0, 2)` and `(opponent, 200, 1, 0)`
+        // - the two gauges down the screen's two edges, and mode 2's STAT CARD
+        // for the four seconds after `Fight_Begin`'s `Hud_Refresh`
+        // (`ui/hudbar.h`). Hidden through the KO replay, as the engine's gate.
+        if (fightRun.active && fightRun.fight && !std::getenv("OMK_NOUI")) {
+            if (!hudBar.loaded()) hudBar.load(fs);
+            if (fightRun.hudRefresh) {
+                fightRun.hudRefresh = false;
+                hudBar.refresh(0, 22, fb.w);           // `sub_446C40(0, 22)`
+                hudBar.refresh(1, 22, fb.w);
+                hudBar.refreshCard(fightRun.cardProps, fightRun.ms);
+                std::printf("frame %ld: FIGHT HUD (Hud_Refresh) - stat card", n);
+                for (int k = 0; k < 6; ++k)
+                    std::printf(" %s=%d", hudBar.cardLabel(k).c_str(), hudBar.cardValue(k));
+                // non-ASCII bytes ESCAPED: the rank is raw Latin-1 ("Initi\xe9"),
+                // and one invalid UTF-8 byte in this log makes `grep` go quiet
+                // and a strict decode throw (`engine: fight letterbox`)
+                std::string rank = "(none)";
+                if (hudBar.cardValue(1) >= 0 && hudBar.cardValue(1) < 5) {
+                    rank.clear();
+                    for (const char ch : hudBar.rankName(hudBar.cardValue(1))) {
+                        const auto u = static_cast<unsigned char>(ch);
+                        if (u < 0x80) rank.push_back(ch);
+                        else { char e[8]; std::snprintf(e, sizeof e, "\\x%02x", u); rank += e; }
+                    }
+                }
+                std::printf(", rank '%s'\n", rank.c_str());
+            }
+            if (fightRun.fight->koCounter() == 0) {
+                const omk::HudBarFrame a = hudBar.draw(fb, fightRun.fight->player().hp, 200, 0, 2,
+                                                       &lay, fightRun.ms);
+                const omk::HudBarFrame b = hudBar.draw(fb, fightRun.fight->opponent().hp, 200, 1, 0);
+                if ((n - fightRun.startedAt) % 30 == 0)
+                    std::printf("    fight HUD: player gauge %d%% (top %d), opponent %d%% (top %d), "
+                                "card rows %d text %d\n", a.percent, a.top, b.percent, b.top,
+                                a.cardRows, a.cardText);
+            }
+        }
         // ---- THE SHOOT HUD, screen 34 (`todo/shoot-mode.md` 8.3) --------
         //
         // `Shoot_Enter` opens it and it runs under the mode as any screen
@@ -18350,6 +18753,8 @@ int main(int argc, char** argv) {
                 session.scene().piecesFired(), session.scene().pieces().shownCount(),
                 session.scene().pieces().registered(),
                 session.scene().effects().count());
+    std::printf("effects: the melee opponent's .CTL sprites placed on his bones %ld times, "
+                "%ld with a texture slot to draw with\n", foeSpritesDrawn, foeSpritesPooled);
     std::printf("world: %ld frames drawn, last set %s (%d shown), last camera %d, "
                 "%ld frames under player.anim.hold\n",
                 worldFrames, worldSet.empty() ? "(none)" : worldSet.c_str(),

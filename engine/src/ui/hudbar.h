@@ -54,15 +54,52 @@
 // module's own - the engine's is shared with everything else, so the SEQUENCE
 // cannot match and only its distribution does. And the swim-state rescale
 // every coordinate carries (actor `+404 == 14`) is left out: the player cannot
-// be in the water state in shoot mode. Mode 1 (the horizontal bar and
-// `jaugeg.bmp`) and mode 2's `sub_447000` are not ported - nothing in shoot
-// mode asks for them.
+// be in the water state in shoot mode. Mode 1 (the horizontal bar) is not
+// ported - nothing asks for it.
+//
+// **Mode 2 is mode 0 plus the STAT CARD** (`sub_447000`, 2026-09-17), which
+// melee asks for: `Fight_UpdateHealthBars` (0x00445160) draws
+// `Hud_DrawBar(player, 200, 0, 2)` and `(opponent, 200, 1, 0)` every fight
+// frame outside a KO replay, and mode 2 calls `sub_447000` first while
+// `Sys_GetTimeMs() < dword_531030 + 4000` - the four seconds after
+// `Hud_Refresh`, which `Fight_Begin` calls. The card is six rows at
+// y = 348 + 20 * row, all in 640x480 units:
+//
+// * the values are `Hud_Refresh`'s snapshot of the PLAYER's properties, in
+//   `dword_530CB0[0..5]`: 16, 19 / 41, 17, 3, 18, 2;
+// * the labels are `IAM\SNEAK` strings 26..31 (`dword_4C79F8`) with every
+//   character removed that is not `_UPPER` - the loader's `isctype(c, 1)`,
+//   `ebp` = 1 in the listing - so "Attaque" is drawn as "A". They go in the
+//   box x 46..66 (70 - 2*12 .. 70 - 4), y - 8 .. y + 24, right-aligned in font
+//   'C' (`params` = {0x24, -1,-1,-1, 'C'}: TEXTP_ALIGN_4 | TEXTP_SLOT2);
+// * row 1 draws no bar: its value is an index into the RANK names, `IAM\SNEAK`
+//   strings 36..40 (`sub_49C9D0`), in the box x 70..510, left-aligned
+//   (`params[0]` = 0x22);
+// * every other row draws a black frame (layer 2, flags 4) over x 70..170,
+//   y +- 4; a `jaugeg.bmp` blit (layer 3, key source) of source rows
+//   `column..column+3` and source columns `H*(200-v)/200 .. H` (H being
+//   jauge1's HEIGHT, `dword_530C9C`) into x 70 .. 70 + v*100/200, y +- 2; and
+//   an ADDITIVE quad over the same rectangle (layer 3, flags 1) in the row's
+//   colour from `dword_4C7A10`.
+//
+// Inside layer 3 the HEAD cache draws the first node first and the rest in
+// REVERSE (docs/UI.md): row 0's blit, then rows 5..2 as tint-then-blit, then
+// row 0's tint last. The gauges' own layer-3 blits fall between, but they do
+// not overlap the card. What is NOT known is what else the frame put on layer 3
+// before the card; this assumes nothing did, and is labelled as that. A rank
+// index outside 0..4 reads past `dword_531038`'s five pointers in the engine;
+// here it draws no rank, labelled. And `_pctype` at a byte >= 0x80 is indexed
+// NEGATIVELY by the engine's `movsx`; no shipped label needs it, and such a byte
+// is simply dropped here.
 #pragma once
 
 #include "platform/datafs.h"
 #include "ui/surface.h"
 
 #include <cstdint>
+#include <string>
+
+namespace omk { class TextLayout; }
 
 namespace omk {
 
@@ -84,7 +121,13 @@ struct HudBarFrame {
     int  quads    = 0;    // gauge quads drawn
     int  blits    = 0;    // jauge blits accepted
     int  sparks   = 0;    // sparks drawn this frame
+    int  cardRows = 0;    // stat-card bars drawn (mode 2's `sub_447000`)
+    int  cardText = 0;    // stat-card text blocks laid out
 };
+
+// The six rows' colours, `dword_4C7A10`
+inline constexpr std::uint32_t kHudCardRgb[6] = {0xFF2ABAu, 0x838EFFu, 0xDFFF87u,
+                                                 0x65CFFFu, 0xFF9547u, 0x83FFD7u};
 
 class HudBar {
 public:
@@ -94,14 +137,24 @@ public:
     bool loaded() const { return jauge_[0].valid(); }
     // `sub_446C40(side, y)`, for the display width `screenW`.
     void refresh(int side, int y, int screenW);
-    // `Hud_DrawBar(value, max, side, mode)`; mode 0 only.
-    HudBarFrame draw(Surface& fb, int value, int max, int side, int mode);
+    // `Hud_Refresh`'s other half: the player's six properties (16, 19, 17, 3,
+    // 18, 2 - the raw values; the 19 is divided by 41 here, as the engine
+    // does) and the clock it stamps into `dword_531030`.
+    void refreshCard(const int props[6], double nowMs);
+    // `Hud_DrawBar(value, max, side, mode)`; modes 0 and 2. Mode 2's card
+    // needs `text` and the current clock; without `text` it is skipped.
+    HudBarFrame draw(Surface& fb, int value, int max, int side, int mode,
+                     const TextLayout* text = nullptr, double nowMs = 0.0);
+    const std::string& cardLabel(int row) const { return labels_[row % 6]; }
+    const std::string& rankName(int i) const { return ranks_[i % 5]; }
+    int cardValue(int row) const { return card_[row % 6]; }
     const HudSpark& spark(int side, int i) const { return sparks_[side & 1][i]; }
 
 private:
     int rand_();
     int gauge(Surface& fb, int percent, int side, HudBarFrame& out);
     int sparks(Surface& fb, int top, int side);
+    void card(Surface& fb, const TextLayout& text, HudBarFrame& out);
 
     Surface jauge_[2];                 // jauge1 / jauge2
     Surface jaugeG_;                   // mode 1's, loaded as the engine does
@@ -110,6 +163,10 @@ private:
     int column_  = 0;                  // dword_530CA8
     HudSpark sparks_[2][kHudSparks];
     std::uint32_t seed_ = 1;
+    std::string labels_[6];            // dword_530CC8, filtered to _UPPER
+    std::string ranks_[5];             // dword_531038
+    int card_[6] = {0, 0, 0, 0, 0, 0}; // dword_530CB0
+    double stampMs_ = -1e18;           // dword_531030
 };
 
 }  // namespace omk

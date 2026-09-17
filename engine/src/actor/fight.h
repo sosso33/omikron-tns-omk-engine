@@ -223,6 +223,10 @@ struct FightCamera {
     float travel = 10.0f, clock = 0.0f;
     long  frames = 0;             // dword_906F24, the divider's counter
     int   divider = 1;            // dword_906F28
+    // the tail's collision solve (`sub_416570`): whether this frame's ray hit,
+    // and how many frames have hit since the fight began - instruments only
+    bool  rayHit = false;
+    long  rayHits = 0;
 };
 
 // One decision, recorded rather than drawn - the same idea as ChannelEvent.
@@ -249,6 +253,7 @@ struct FightEvent {
 struct FightStatsCounters {
     long frames = 0;
     long hits = 0, blocks = 0, grazes = 0, throws = 0;
+    long aiGuards = 0;   // `Fight_TickAI`'s defence raised the 0x40 guard
     // THE KNOCKDOWN ARM TAKEN WITH A REACTION THAT IS NOT ONE. A killing blow
     // chooses between `crouched`, `reaction` and `koEntry` on the `+128`
     // latch, and the latch is set only by a reaction whose `+12` carries
@@ -308,10 +313,18 @@ public:
     // followed by `Actor_ApplyMotion`.
     using BodyTick = std::function<void(float dtFrames, std::uint32_t input)>;
     void setBodyTick(BodyTick t) { bodyTick_ = std::move(t); }
+    // THE CAMERA'S WORLD RAY, `sub_444810` - the segment a..b against the
+    // linked set, true and the hit point when it meets something. The fight
+    // camera's tail casts it from the look-at point to the wanted eye
+    // (`sub_416570`). None installed: the eye is never pulled in.
+    using CameraRay = std::function<bool(const float a[3], const float b[3], float hit[3])>;
+    void setCameraRay(CameraRay r) { cameraRay_ = std::move(r); }
 
     bool over() const { return over_; }
     // Which side won, once `over()`: true when the OPPONENT was the loser.
     bool playerWon() const { return playerWon_; }
+    // The player's priority threshold `Fight_Begin` set from his experience.
+    int gateThreshold() const { return gateThreshold_; }
 
     const FightContext& player()   const { return a_; }
     const FightContext& opponent() const { return b_; }
@@ -338,7 +351,10 @@ private:
     void injectMove(FightContext& c, const CtlAiSlot& slot, int slotIndex);
     // `Perso_InjectInput` with one of the built-in tables above, which is what
     // every branch of `Fight_TickAI` outside the profile families presses.
-    void injectWords(FightContext& c, const std::vector<std::uint32_t>& words);
+    // `modifier` < 0 uses the AI's OR modifier (`dword_53AE14`); a call site that
+    // passes a literal to `Perso_InjectInput` passes it here
+    void injectWords(FightContext& c, const std::vector<std::uint32_t>& words,
+                     int modifier = -1);
     // sub_465160 (slots 4/5/6) and sub_465210 (slots 1/2/3) are one function
     // with a different base: roll once, walk the three cumulative weights.
     void pickFromFamily(FightContext& c, int base);
@@ -368,6 +384,8 @@ private:
     RandFn rand_;
     TimeFn now_;
     BodyTick bodyTick_;
+    int gateThreshold_ = 0;           // the player's `+212`, for the log
+    CameraRay cameraRay_;
     FightAiTables builtin_;
     FightContext a_, b_;          // dword_906F60 / dword_907000
     float radius_ = 0.0f;         // flt_906F2C
