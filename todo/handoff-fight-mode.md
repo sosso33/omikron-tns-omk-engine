@@ -109,8 +109,9 @@ requests print at frames 0, 665 and 1031, two frames after the hold begins.
   15.5, `engine: fight hud`).
 * **The camera's unmodelled parts**: ~~the tail's collision solve~~ (ported
   2026-09-17, `fight-mode.md` 15.8b - the bolts' ray from the look-at to the
-  eye, X and Z only, the height clamp behind it); the throw swing's length,
-  because `sub_45ACF0` has no port.
+  eye, X and Z only, the height clamp behind it). ~~The throw swing's length~~
+  is ported too (`6af0597`: `sub_45ACF0` is the channel's +8, the clip length),
+  and the orbit's damping cases 3 and 8 are unreachable in the shipped engine.
 * ~~**The opponent's first second**~~ on the nameless clipless entries 208/228
   - **gone 2026-09-17**: the 12 m that made it legitimate was the port's own.
   `beginMelee` read the approach program's path START instead of where the
@@ -168,3 +169,17 @@ second as its compile stays compiled - `touch` and rebuild after every restore
 
 Also 2026-09-17: the opponent's `.CTL` effect SPRITES (15.10's second half) are
 drawn, on his bones through `Staged::meshAt`. Not judged by eye yet.
+
+## 8. What is left, 2026-09-17 evening
+
+Every step of the plan but step 6, the play test, is done. Nothing below is
+confirmed by a person yet:
+
+* the fight opening 1.5 m apart, the robber's wall collision, the camera held
+  in front of crates, the HUD and its four-second stat card, the AI's guard,
+  the KO replay between bars, the opponent's hit sprites;
+* 15.3 ("characters colliders issue") needs the reader to say which of three
+  faults it was, if it survives the above;
+* the priority gate is ported but has never been SEEN refusing a move;
+* §14's keypad bindings belong to shoot mode, not melee.
+
