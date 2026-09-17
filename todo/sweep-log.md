@@ -141,6 +141,28 @@ rule intends one.
 > suspect**, and the cheap way to split "mine" from "already there" is one
 > count against `git show HEAD:<table>`.
 
+> **`engine: UI` IS RED AGAIN, and again it was already red — a FIFTH census
+> that drifted.** Found 2026-09-17 while running the neighbours of the fight
+> work, which is the `--only` rule doing its job. It reads
+> `(58, 170, 718, 645, 62, 108, 58, 0)` against a baseline of
+> `(57, 166, 698, 627, 60, 106, 57, 0)`: the widget table GREW.
+>
+> **Not that session's doing**, and the cheap attribution is the one
+> `ui geometry` established - count the committed table.
+> `tables/ui_widgets.json` last moved at **`1093e9c`** (the sneak memo reader),
+> which is before that session's first commit `1518a8f`, and nothing in
+> `tables/`, `engine/src/ui/` or `tools/ui_tables.py` was touched in it. So
+> the memo reader and the MULTIPLAN/shop CODE_NAMED children lifted more
+> widgets and no sweep has run since.
+>
+> **Deliberately NOT re-baselined.** The invariant the check exists for - the
+> two implementations DISAGREEING on a screen - is the last element and it is
+> **0**. What moved is the census, and `ui geometry`'s own note is that its
+> prose had drifted further than its assertion, so moving these six numbers
+> without re-reading what they are meant to count would repeat that. Whoever
+> next owns the UI table should re-derive them from the committed table and
+> fix the sentence at the same time.
+
 > **`engine: UI` is RED and was already red at `a5b1807`, on a clean tree.**
 > Measured 2026-09-07: `disagree` is 9, not 0 - the shops, screens 21..28 and
 > 32, whose current list settles on row 0 in the port and row 1 in
