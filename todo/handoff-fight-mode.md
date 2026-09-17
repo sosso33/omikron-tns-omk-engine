@@ -166,3 +166,5 @@ here: GNU Make 3.81 compares whole seconds, so a mutation restored in the same
 second as its compile stays compiled - `touch` and rebuild after every restore
 (CLAUDE.md 1).
 
+Also 2026-09-17: the opponent's `.CTL` effect SPRITES (15.10's second half) are
+drawn, on his bones through `Staged::meshAt`. Not judged by eye yet.

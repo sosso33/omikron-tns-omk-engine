@@ -2946,6 +2946,12 @@ int main(int argc, char** argv) {
                            std::uint8_t flags = 0, attach = 0; int state = -1; };
     std::vector<CtlSpriteInst> ctlSprites;
     int   ctlFxState = -1; float ctlFxFrame = -1.0f;
+    // ...and the MELEE OPPONENT's, from his own channel (`todo/fight-mode.md`
+    // 15.10): `Cef_TickEffects` runs on every channel the engine ticks, and
+    // `Actor_TickPlayerAndOpponent` ticks two.
+    std::vector<CtlSpriteInst> foeSprites;
+    int   foeFxState = -1; float foeFxFrame = -1.0f;
+    long  foeSpritesDrawn = 0;       // particle-frames placed on his bones
     omk::ParticleField ctlField; omk::Geometry ctlGeo;
     static constexpr const char* kAttachName[18] = {
         "Buste", "Tete", "Buste", "Buste", "Buste", "Bassin", "Brasg", "Brasd",
@@ -6172,6 +6178,39 @@ int main(int argc, char** argv) {
                 if (fr > c.from + c.duration || fr > to) ctlSprites.erase(ctlSprites.begin() + static_cast<long>(i));
                 else ++i;
             }
+        }
+        // THE OPPONENT'S SPRITE RECORDS, by the player's rule above: spawned on
+        // entering a state (or a wrap), each dying out of its window.
+        if (fightRun.active && fightRun.foeChannel) {
+            const auto& fctl = fightRun.foeChannel->ctl();
+            const int   st = fightRun.foeChannel->state();
+            const float fr = fightRun.foeChannel->frame();
+            if (st != foeFxState || fr < foeFxFrame) {
+                foeSprites.clear();
+                foeFxState = st;
+                if (st >= 0 && st < static_cast<int>(fctl.states.size()))
+                    for (const auto& e : fctl.states[static_cast<std::size_t>(st)].effects) {
+                        if (!e.sprite || (e.flags & 2)) continue;
+                        foeSprites.push_back({e.sprite, e.duration, e.from, e.to, e.scale,
+                                              e.flags, e.attach, st});
+                        std::printf("frame %ld: ctl-effect: OPPONENT state %d '%s' spawns sprite %d on "
+                                    "attach %d ('%s') for %.0f frames from %.0f\n", n, st,
+                                    fctl.states[static_cast<std::size_t>(st)].name.c_str(),
+                                    e.sprite, e.attach,
+                                    e.attach < 18 ? kAttachName[e.attach] : "Buste",
+                                    e.duration, e.from);
+                    }
+            }
+            foeFxFrame = fr;
+            for (std::size_t i = 0; i < foeSprites.size();) {
+                const auto& c = foeSprites[i];
+                const float to = c.to == 0.0f ? 10000.0f : c.to;
+                if (fr > c.from + c.duration || fr > to) foeSprites.erase(foeSprites.begin() + static_cast<long>(i));
+                else ++i;
+            }
+        } else if (!foeSprites.empty()) {
+            foeSprites.clear();
+            foeFxState = -1;
         }
         if (player && globalRt) {
             // The library, see its construction - and `fight.scx` OVER it
@@ -15742,7 +15781,8 @@ int main(int argc, char** argv) {
             for (int k = 0; k < 3; ++k) spriteAnchor[k] = view.cam.at[k];
             spriteAnchorSet = true;
             const bool scriptSprites = !noScriptSprites && session.scene().loaded() && !session.scene().sprites().empty();
-            if ((session.scene().effects().count() || !ctlSprites.empty() || scriptSprites) && !spriteTab.empty()) {
+            if ((session.scene().effects().count() || !ctlSprites.empty() || !foeSprites.empty() ||
+                 scriptSprites) && !spriteTab.empty()) {
                 omk::particleGeometry(fxGeo, session.scene().effects(),
                                       view.cam.eye, view.cam.at, spriteLookup);
                 // The `.CTL` sprites, each on its bone THIS frame (flag 1,
@@ -15795,6 +15835,48 @@ int main(int argc, char** argv) {
                     fxGeo.cornerVertex.insert(fxGeo.cornerVertex.end(), ctlGeo.cornerVertex.begin(), ctlGeo.cornerVertex.end());
                     fxGeo.cornerDeclared.insert(fxGeo.cornerDeclared.end(), ctlGeo.cornerDeclared.begin(), ctlGeo.cornerDeclared.end());
                     ++fxGeo.revision;
+                }
+                // THE OPPONENT'S, on his bones as DRAWN last frame (`meshAt`,
+                // the same frame the bolts' hit test reads), found by the
+                // attach table's name - the last match, as the player's.
+                if (!foeSprites.empty() && fightRun.active && fightRun.body &&
+                    fightRun.body->mo && fightRun.foeChannel) {
+                    const Staged& fb2 = *fightRun.body;
+                    const auto& ms = fb2.mo->meshes;
+                    const float fr = fightRun.foeChannel->frame();
+                    ctlField.clear();
+                    long placed = 0;
+                    for (const auto& c : foeSprites) {
+                        const char* want = c.attach < 18 ? kAttachName[c.attach] : "Buste";
+                        int node = -1;
+                        for (std::size_t i = 0; i < ms.size(); ++i)
+                            if (std::strstr(ms[i].name, want)) node = static_cast<int>(i);
+                        if (node < 0 || fb2.meshAt.size() < (static_cast<std::size_t>(node) + 1) * 3) continue;
+                        if (fr < c.from) continue;
+                        omk::Particle p;
+                        for (int k = 0; k < 3; ++k)
+                            p.pos[k] = fb2.meshAt[static_cast<std::size_t>(node) * 3 + static_cast<std::size_t>(k)];
+                        p.life = c.duration > 0.0f ? c.duration : 1.0f;
+                        p.frameAge = std::clamp(fr - c.from, 0.0f, p.life);
+                        p.age = p.frameAge;
+                        p.scale = c.scale > 0.0f ? c.scale : 1.0f;
+                        p.sprite = c.sprite;
+                        p.mode = 4;
+                        ctlField.addParticle(p);
+                        ++placed;
+                    }
+                    if (placed) {
+                        foeSpritesDrawn += placed;
+                        omk::particleGeometry(ctlGeo, ctlField, view.cam.eye, view.cam.at, spriteLookup);
+                        const std::size_t base = fxGeo.corners.size();
+                        for (omk::Batch b : ctlGeo.batches) { b.start += base; fxGeo.batches.push_back(b); }
+                        fxGeo.corners.insert(fxGeo.corners.end(), ctlGeo.corners.begin(), ctlGeo.corners.end());
+                        fxGeo.cornerMirror.insert(fxGeo.cornerMirror.end(), ctlGeo.cornerMirror.begin(), ctlGeo.cornerMirror.end());
+                        fxGeo.cornerMesh.insert(fxGeo.cornerMesh.end(), ctlGeo.cornerMesh.begin(), ctlGeo.cornerMesh.end());
+                        fxGeo.cornerVertex.insert(fxGeo.cornerVertex.end(), ctlGeo.cornerVertex.begin(), ctlGeo.cornerVertex.end());
+                        fxGeo.cornerDeclared.insert(fxGeo.cornerDeclared.end(), ctlGeo.cornerDeclared.begin(), ctlGeo.cornerDeclared.end());
+                        ++fxGeo.revision;
+                    }
                 }
                 // THE SCRIPTED SPRITES - `Script_Display3DSprite` and its
                 // family (program.h). An instance the scene has linked is
@@ -18580,6 +18662,8 @@ int main(int argc, char** argv) {
                 session.scene().piecesFired(), session.scene().pieces().shownCount(),
                 session.scene().pieces().registered(),
                 session.scene().effects().count());
+    std::printf("effects: the melee opponent's .CTL sprites placed on his bones %ld times\n",
+                foeSpritesDrawn);
     std::printf("world: %ld frames drawn, last set %s (%d shown), last camera %d, "
                 "%ld frames under player.anim.hold\n",
                 worldFrames, worldSet.empty() ? "(none)" : worldSet.c_str(),

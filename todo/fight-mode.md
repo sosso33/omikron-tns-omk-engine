@@ -586,7 +586,7 @@ outranks a reading that only shows nobody has found the mechanism.
 presses ENTER at 600; the screen must open AND close. Shown to fail: gate the
 arm off and the open line appears without the close, which is the report.
 
-### 15.10 PARTLY FIXED — effects fired for ONE fighter
+### 15.10 FIXED — effects fired for ONE fighter (sounds 2026-09-17, sprites the same day)
 
 The reader: *"the visual effect happens only when the player is touched."*
 Both the sound half and the sprite half read `player->` alone, so the
@@ -606,7 +606,7 @@ player's. Measured over one won fight, the mix goes from almost pure swing -
 asserts the DISTINCT id count, because "some audio happened" is satisfied by
 the player's own whoosh alone.
 
-**The SPRITE half is NOT fixed**, and the reason is worth stating: the draw is
+**The SPRITE half was NOT fixed at first**, and the reason is worth stating: the draw is
 bound to the player's specifics - `playerMeshes`, `playerRootXZ`,
 `playerFeet`, `lastRootDrop`, his pose and his attach search. No staged actor
 gets `.CTL` effect sprites in this tree, so this is a general gap that the
@@ -615,6 +615,19 @@ BODY rather than assuming the player's. The opponent's own pose is already
 kept (`fightRun.foePose`) and his position and yaw are in `fightRun.foe`; what
 is missing is the feet/root pair, which is the same vertical question 15.8d
 settled for the separation and has not been settled for the draw.
+
+**FIXED 2026-09-17** without the feet/root question: the opponent is a STAGED
+body, and a staged body's draw already records every mesh's world position
+(`Staged::meshAt`, the frame the bolts' hit test reads). So his sprite records
+are spawned from his own channel by the player's rule (entering a state or a
+wrap, dying out of the window) and placed on `meshAt` of the bone the attach
+table names. In the kick run: `IH_RIGH` puts sprites 192 and 11 on his head,
+`H_PROTECT` - his guard, which 15.11 made reachable - sprites 13 and 192 on his
+right hand, 69 placements in all, every one textured and inside its window.
+**Not yet judged by eye**: in the one frame looked at, his head was bent away
+behind his torso, so the depth test hides a head spark and a still cannot tell
+that from a missing one. `engine: fight library` asserts the placements
+(floored 60), shown to fail by skipping his spawn.
 
 ### 15.11 DONE 2026-09-17 — the AI's DEFENCE, `Fight_TickAI`'s guard arm
 

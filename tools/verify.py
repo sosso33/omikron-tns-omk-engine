@@ -12328,6 +12328,11 @@ def c_engine_fight_library():
     SHOWN TO FAIL: drop the `fight.SCX` load and the failures jump while the
     played count falls to 0.
 
+    **And the OPPONENT's sprites** (2026-09-17, 15.10's second half): his own
+    states' effect records - `IH_RIGH`'s two on his head, `H_PROTECT`'s two on
+    his right hand - placed on his bones as drawn, 69 placements over this run,
+    floored to 60. SHOWN TO FAIL: skip his spawn and it reads 0.
+
     **The player no longer wins this fight** (measured 2026-09-17): since the
     fight opens 1.5 m apart (15.8e) and the AI guards (15.11), the same key cycle
     ends in a loss. Nothing asserted here depends on who wins - the sounds are
@@ -12376,8 +12381,12 @@ def c_engine_fight_library():
     # the distinct count is what tells the two apart: player-only is dominated
     # by `ELECMB02`/`ELECMB03`/`MVT02` and reaches 3.
     ids = {int(m) for m in re.findall(r"audio: ctl-effect\s+\S+\s+s\s+\((\d+),", out)}
-    return (loaded, fightSprites, failures, played > 0, len(ids)), \
-           (True, 16, 0, True, 7), \
+    # ...and the OPPONENT's own sprite records, placed on his bones
+    # (`todo/fight-mode.md` 15.10): > 0, floored to a ten
+    fm = re.search(r"opponent's \.CTL sprites placed on his bones (\d+) times", out)
+    foeFx = (int(fm.group(1)) // 10 * 10) if fm else -1
+    return (loaded, fightSprites, failures, played > 0, len(ids), foeFx), \
+           (True, 16, 0, True, 7, 60), \
            ("`Fight_Begin`'s own `Game_Start(\"fight.scx\")`: its 16 sprites "
             "reach the table, no effect record fails its lookup, and BOTH "
             "fighters' channels are drained - the punches landing, the fall "
