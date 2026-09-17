@@ -95,9 +95,9 @@ requests print at frames 0, 665 and 1031, two frames after the hold begins.
   change is unobservable on it: it needs a save with custom keys or a mutation
   to prove. **Shoot mode does not actually need the keypad** — the mouse turns
   the body and pitches the camera (play.cpp ~6856).
-* **`Fight_TickAI`'s defensive arm** — intent 9 inside 1.5 m, which reads the
-  opponent's combat block to decide a guard. Not transcribed, which is why
-  `engine: melee` records `blocks` as 0. About sixty lines.
+* ~~**`Fight_TickAI`'s defensive arm**~~ - **done 2026-09-17** (`fight-mode.md`
+  15.11): the guard raise, the two built-in presses, and the latch clear that
+  brings the guard down; `engine: melee` blocks 0 -> 24.
 * **The priority gate.** `Fight_Begin` calls `sub_45A4C0(chan, 1/0)`, setting
   channel flag `0x400` on the player and clearing it on the opponent. The flag
   makes `Cef_FindTransition` honour the `+212` threshold; nothing read so far

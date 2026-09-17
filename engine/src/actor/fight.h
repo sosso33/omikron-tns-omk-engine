@@ -253,6 +253,7 @@ struct FightEvent {
 struct FightStatsCounters {
     long frames = 0;
     long hits = 0, blocks = 0, grazes = 0, throws = 0;
+    long aiGuards = 0;   // `Fight_TickAI`'s defence raised the 0x40 guard
     // THE KNOCKDOWN ARM TAKEN WITH A REACTION THAT IS NOT ONE. A killing blow
     // chooses between `crouched`, `reaction` and `koEntry` on the `+128`
     // latch, and the latch is set only by a reaction whose `+12` carries
@@ -348,7 +349,10 @@ private:
     void injectMove(FightContext& c, const CtlAiSlot& slot, int slotIndex);
     // `Perso_InjectInput` with one of the built-in tables above, which is what
     // every branch of `Fight_TickAI` outside the profile families presses.
-    void injectWords(FightContext& c, const std::vector<std::uint32_t>& words);
+    // `modifier` < 0 uses the AI's OR modifier (`dword_53AE14`); a call site that
+    // passes a literal to `Perso_InjectInput` passes it here
+    void injectWords(FightContext& c, const std::vector<std::uint32_t>& words,
+                     int modifier = -1);
     // sub_465160 (slots 4/5/6) and sub_465210 (slots 1/2/3) are one function
     // with a different base: roll once, walk the three cumulative weights.
     void pickFromFamily(FightContext& c, int base);

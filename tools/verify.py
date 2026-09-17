@@ -11077,10 +11077,14 @@ def c_engine_melee():
       - the same matcher the player's keys go through;
     * the pair is never left inside the separation radius after the push.
 
-    `blocks` is **0 on purpose**: the guard flag is raised only by the
-    defensive arm of `Fight_TickAI` (intent 9 inside 1.5 m), which is labelled
-    in `fight.cpp` as not yet transcribed. A number that moves off 0 here
-    means that arm landed, and the row should be re-baselined with it.
+    `blocks` was **0 on purpose** until 2026-09-17: the guard flag is raised
+    only by the defensive arm of `Fight_TickAI` (intent 9 inside 1.5 m), which
+    was labelled as not transcribed. It is now (`todo/fight-mode.md` 15.11),
+    and the row moved exactly as this note said it would: **blocks 0 -> 24**,
+    and the re-derived damage figures **204 -> 186**, since a blow into the
+    guard costs a flat point rather than its block's damage. Every invariant
+    stayed 0. SHOWN TO FAIL: drop the arm's `c.flags |= 0x40u` and blocks
+    reads 0 again.
 
     Four of the nine fights reach the 4000-frame cap rather than a knock-out,
     which is why `ended` is 5: with no walker in a headless probe neither
@@ -11134,10 +11138,10 @@ def c_engine_melee():
      tooClose, replays, badArm) = struct.unpack_from("<19i", raw, 0)
     return (files, profiles, fights, ended, blocks, outside, mismatch,
             unresolved, hpUp, tooClose, badArm, checked, hits > 0, aiMoves > 0), \
-           (3, 9, 9, 9, 0, 0, 0, 0, 0, 0, 0, 204, True, True), \
+           (3, 9, 9, 9, 24, 0, 0, 0, 0, 0, 0, 186, True, True), \
            "combat banks, AI profiles exercised, fights, fights ending in a " \
-           "KO; then the SIX invariants that must all be 0 - blocks (the " \
-           "defensive arm is not transcribed), AI words outside the 0xCFF " \
+           "KO; blows into the AI's raised guard; then the invariants that must " \
+           "all be 0 - AI words outside the 0xCFF " \
            "union, damage disagreeing with the independent re-derivation, " \
            "reactions that do not resolve, hit points rising, pairs left " \
            "inside the separation radius, and a killing blow taking the " \

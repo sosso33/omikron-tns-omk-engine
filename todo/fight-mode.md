@@ -616,6 +616,32 @@ kept (`fightRun.foePose`) and his position and yaw are in `fightRun.foe`; what
 is missing is the feet/root pair, which is the same vertical question 15.8d
 settled for the separation and has not been settled for the draw.
 
+### 15.11 DONE 2026-09-17 — the AI's DEFENCE, `Fight_TickAI`'s guard arm
+
+The arm step 1 labelled and left. Read from the listing (0x00464D4F..
+0x00464F4A) as well as the decompilation, because the decompiled form has a
+line that looks wrong and is not: right after pressing the idle word the arm
+does `or al, 40h` into the context's flags **unconditionally**, so every later
+`|= 0x40` in it is a no-op. With intent 9, the pair within 1.5 m (`<=`) and the
+`0x100` latch down, the AI raises the latch and flag `0x40` - the GUARD
+`Fight_ResolveHit` reads, a blow into it costing a flat point - and then MAY
+also press a built-in table: `0x4CAD38` (input 8) for a line-A move (the
+attacker's combat block `&4`) from state 16 or 32 with `stateD & 8` when its own
+entry is high (`+76 & 1`) and not low; `0x4CAD54` (input 4) for a line-B move
+from state 32 under the same `stateD & 8` and high test. Both presses pass a
+literal 0 modifier, which `injectWords` could not express before.
+
+**Its other half was missing too.** At the top of the waiting path the engine
+brings the guard DOWN: with `0x100` up and both fighters idle (state 1 or
+intent 2 on each side, as read), `& 0xFFFFFE3F` clears 0x40/0x80/0x100, intent
+105, and a move from family 1 standing or 4 otherwise. Without it a raised
+guard would never drop.
+
+`engine: melee` said this would move and it did: **blocks 0 -> 24** over its
+nine probe fights, re-derived damage figures 204 -> 186, every invariant
+still 0; shown to fail by dropping the guard raise. The supermarket fight is
+not re-judged by eye yet.
+
 ### 15.3 "characters colliders issue"
 
 Not yet reproduced, and the handoff already lists two unported pieces that

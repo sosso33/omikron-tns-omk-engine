@@ -889,9 +889,10 @@ FightAiTables FightAiTables::shipped() {
     return t;
 }
 
-void Fight::injectWords(FightContext& c, const std::vector<std::uint32_t>& words) {
+void Fight::injectWords(FightContext& c, const std::vector<std::uint32_t>& words,
+                        int modifier) {
     if (!c.body || !c.body->channel || words.empty()) return;
-    c.body->channel->injectInput(words, aiOr_);
+    c.body->channel->injectInput(words, modifier < 0 ? aiOr_ : modifier);
     ++stats_.aiMoves;
     stats_.aiWords += static_cast<long>(words.size());
     for (const auto w : words)
@@ -1008,15 +1009,57 @@ void Fight::tickAi(FightContext& c, FightContext& other) {
     }
 
     if (c.aiIntent != 8 && c.aiIntent != 9 && c.aiIntent != 10) return;
+    // THE GUARD COMES DOWN (0x00464A9A): with the 0x100 latch up and both
+    // fighters idle - state 1, or intent 2, on each side, as read - the three
+    // latch bits 0x40/0x80/0x100 are cleared (`& 0xFFFFFE3F`), intent 105, and
+    // a move is picked from family 1 when standing, 4 otherwise.
+    if ((c.flags & 0x100u) && (c.state == 1 || c.aiIntent == 2) &&
+        (other.state == 1 || other.aiIntent == 2)) {
+        c.flags &= 0xFFFFFE3Fu;
+        c.aiIntent = 105;
+        if (c.state == 1) pickFromFamily(c, 1);   // sub_465210
+        else              pickFromFamily(c, 4);   // sub_465160
+    }
     if (now <= c.aiMoveDeadline) {
-        // **NOT YET TRANSCRIBED, and labelled rather than approximated**: with
-        // intent 9 and the pair inside 59.055119 (1.5 m), `Fight_TickAI` runs
-        // a defensive block - it sets channel flag 0x100, reads the OPPONENT's
-        // current combat block for its attack line, and either presses the
-        // 0x08 table or raises flag 0x40 to guard. That is the AI's DEFENCE,
-        // it is about sixty lines, and it wants reading in its own right;
-        // until then this fighter simply waits out the delay, which is what
-        // the engine does on every other intent. `todo/fight-mode.md` §7.
+        // THE DEFENCE (0x00464D4F..0x00464F4A, read from the listing: the
+        // decompiled form of it is right, including the part that looks
+        // wrong). Intent 9, the pair within 59.055119 (1.5 m, `<=`), and the
+        // 0x100 latch down: raise the latch, press the idle word, and raise
+        // 0x40 - the GUARD `resolveHit` reads, a blow into it costing one
+        // point. The 0x40 is raised UNCONDITIONALLY (`or al, 40h` right after
+        // the press), so every later `|= 0x40` in the arm is a no-op and is
+        // not repeated here; what the rest decides is whether to ALSO press a
+        // built-in table, from
+        //   the attacker's move: its combat block's line A (&4) / line B (&2),
+        //     when its entry carries 0x2000000;
+        //   the attacker's state 16 or 32 and its `stateD & 8`;
+        //   this fighter's OWN entry `+76`: bit 1 high, bit 2 low.
+        // A line-A move with this fighter's low bit set ends the arm.
+        // Both presses pass a literal 0 modifier.
+        if (c.aiIntent == 9 && separation_ <= kNearSwitch && !(c.flags & 0x100u)) {
+            c.flags |= 0x100u;
+            const CtlState* own = stateAt(c, c.entry);
+            const int ownBits = own ? own->playBits : 0;
+            injectWords(c, builtin_.m4CAD30, 0);
+            c.flags |= 0x40u;
+            ++stats_.aiGuards;
+            const bool s16 = other.state == 16, s32 = other.state == 32;
+            const bool ownLow = (ownBits & 2) != 0, ownHigh = (ownBits & 1) != 0;
+            const bool d8 = (other.stateD & 8) != 0;
+            bool lineA = false, lineB = false;
+            if (const CtlState* oe = stateAt(other, other.entry))
+                if ((oe->flags & 0x2000000u) && oe->hasCombat) {
+                    lineA = (blockFlags(oe->combat) & 4) != 0;
+                    lineB = (blockFlags(oe->combat) & 2) != 0;
+                }
+            if (lineA) {
+                if (ownLow) return;
+                if (s16 && d8 && ownHigh) injectWords(c, builtin_.m4CAD38, 0);
+                if (s32 && d8 && ownHigh) injectWords(c, builtin_.m4CAD38, 0);
+            }
+            if (!lineB || !s32) return;
+            if (d8 && ownHigh) injectWords(c, builtin_.m4CAD54, 0);
+        }
         return;
     }
 
