@@ -12092,6 +12092,72 @@ def c_engine_fight_separation():
             "separation radius, and their two `y` values now mean the same "
             "thing - 3 units apart, not 41")
 
+def c_engine_fight_collision():
+    r"""`omk-play`: the melee OPPONENT collides with the set (`todo/fight-mode.md` 15.8a).
+
+    `Actor_TickPlayerAndOpponent` (0x00466710) ends BOTH fighters with
+    `Actor_ApplyMotion` (0x004672D0) - the frame's move tried, undone, and
+    handed to `Actor_Move`'s horizontal collide-and-slide. The port gave that
+    to the player alone, so the opponent walked through crates and was knocked
+    out of the room. He now has the player's walker over the same soups, seated
+    on his feet, sweeping his own model's spheres, and every move of the frame -
+    the root motion, the separation push, a knockback - goes through it.
+
+    The supermarket's real fight is short and central and never reaches a
+    wall, so this uses a HARNESS, `--fight-foe-at 15111,1440`, which starts him
+    behind `SMbox45` (15111, 1554) with the player on the far side. Two runs:
+
+    * collision ON: his furthest z, floored to a ten, stays short of the box's
+      1554 - he stops against it at 1510 - and the walker reports blocked steps;
+    * `--no-foe-collision`: the same approach passes z 1554, straight through.
+
+    Whether the engine's robber would stand at the box too is NOT asserted and
+    is not known: a brawl has no path-finding, so it is the expected reading,
+    not a verified one. What is asserted is that the sweep engages.
+
+    SHOWN TO FAIL: pass radius 0 to the opponent walker's `setBlockers` (the
+    walker's own "sweep off") and the first run walks through as the second does.
+    """
+    import subprocess
+    eng = os.path.join(ROOT, "engine")
+    fr = omkpaths.data_root()
+    if not (os.path.isdir(eng) and os.path.isdir(os.path.join(fr, "SCPTDATA"))):
+        return ("skipped",), ("skipped",), "engine/ or gamedata/ absent"
+    mk = subprocess.run(["make", "-s", "play"], cwd=eng, capture_output=True, text=True)
+    play = os.path.join(eng, "build", "omk-play")
+    if mk.returncode != 0:
+        return ("build failed",), ("built",), "engine/ must build"
+    if not os.path.exists(play):
+        return ("no sdl",), ("no sdl",), "needs SDL to render"
+
+    def run(extra):
+        r = subprocess.run(
+            [play, fr, os.path.join(ROOT, "tables"),
+             "--save", os.path.join(ROOT, "traces", "save-appart.bin"),
+             "--fight-supermarket", "--frames", "560",
+             "--fight-foe-at", "15111,1440"] + extra,
+            capture_output=True, text=True, errors="replace",
+            env=dict(os.environ, SDL_VIDEODRIVER="dummy"))
+        out = r.stdout + r.stderr
+        zs = [float(m) for m in re.findall(r"bodies: player \S+ \S+ \S+ facing \S+, "
+                                            r"opponent \S+ \S+ (\S+)", out)]
+        blocked = [int(m) for m in re.findall(r"foe walker: \d+ steps, \d+ swept into a "
+                                              r"wall, (\d+) blocked", out)]
+        harness = "harness --fight-foe-at starts the opponent" in out
+        return harness, zs, (max(blocked) if blocked else 0)
+
+    h1, z1, b1 = run([])
+    h2, z2, b2 = run(["--no-foe-collision"])
+    # the parse first: a run that printed no bodies must fail AS A PARSE
+    if not (h1 and h2 and len(z1) >= 5 and len(z2) >= 5):
+        return (h1, h2, len(z1), len(z2)), (True, True, ">= 5", ">= 5"), \
+               "both runs must take the harness and print their bodies lines"
+    kBox = 1554.0
+    return (int(max(z1) // 10) * 10, b1 > 0, max(z2) > kBox, b2), \
+           (1510, True, True, 0), \
+           ("the opponent's approach stops against SMbox45 (z 1554) with the walker "
+            "blocking, and walks straight through it with --no-foe-collision")
+
 def c_engine_fight_library():
     r"""`omk-play`: a fight loads `fight.scx`, its OWN sound and sprite library.
 
@@ -36230,6 +36296,7 @@ SLOW = [
     ("engine: bank swap",  c_engine_bank_swap,  "todo/fight-mode 15.6; actor/player.h"),
     ("engine: fight letterbox", c_engine_fight_letterbox, "todo/fight-mode 15.4"),
     ("engine: fight separation", c_engine_fight_separation, "todo/fight-mode 15.8d"),
+    ("engine: fight collision", c_engine_fight_collision, "todo/fight-mode 15.8a"),
     ("engine: fight library", c_engine_fight_library, "todo/fight-mode 15.2"),
     ("engine: fight pause", c_engine_fight_pause, "todo/fight-mode 15.9"),
     ("engine: programs",   c_engine_programs,   "engine/README"),

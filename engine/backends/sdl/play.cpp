@@ -1618,6 +1618,8 @@ int main(int argc, char** argv) {
 "  --keys D,D,...   DIK scancodes fed in order; `T` types --type there\n"
 "  --type <text>    what `T` types - the start menu refuses an empty name\n"
 "  --keydelay N     frames between scripted keys, default 2\n"
+"  --no-foe-collision  the melee opponent collides with nothing (comparison)\n"
+"  --fight-foe-at X,Z  HARNESS: start the melee opponent there\n"
 "  --hold <stream>  after the hand-over, DIK codes HELD: `k200*120,k203*30`,\n"
 "                   `+` joins several, `0*n` holds nothing - player_probe's\n"
 "                   own syntax, so a walk can be replayed\n"
@@ -1716,6 +1718,9 @@ int main(int argc, char** argv) {
     // reached without walking the story to it - the same shape as `--ride`
     // for the slider, and it says so in its own log line.
     int  fightArg = -1;
+    bool noFoeCollision = false;   // --no-foe-collision: the opponent as before 15.8a, for comparison
+    bool foeAtSet = false;         // --fight-foe-at x,z: a HARNESS - start him there instead
+    float foeAtXZ[2] = {0.0f, 0.0f};
     int  fightLevelArg = 1;
     bool rideArg = false;
     // `--board`: HARNESS. When the called slider goes OPEN, put him at its
@@ -1977,6 +1982,9 @@ int main(int argc, char** argv) {
             haveStand = true;
         }
         else if (a == "--fight" && i + 1 < argc) fightArg = std::atoi(argv[++i]);
+        else if (a == "--no-foe-collision") noFoeCollision = true;
+        else if (a == "--fight-foe-at" && i + 1 < argc)
+            foeAtSet = std::sscanf(argv[++i], "%f,%f", &foeAtXZ[0], &foeAtXZ[1]) == 2;
         else if (a == "--fight-level" && i + 1 < argc) fightLevelArg = std::atoi(argv[++i]);
         else if (a == "--ride") rideArg = true;
         else if (a == "--board") boardArg = true;
@@ -4502,6 +4510,16 @@ int main(int argc, char** argv) {
         // `idleTracksFor` builds. Cached per clip like the root motion,
         // because `clipTracks` decodes every rotation in the clip.
         omk::NodeTracks foePose;
+        // ...and his COLLISION (`todo/fight-mode.md` 15.8a). The engine's
+        // `Actor_TickPlayerAndOpponent` ends BOTH fighters with
+        // `Actor_ApplyMotion` (0x004672D0): the frame's velocity is applied,
+        // remembered, undone, and handed to `Actor_Move` - a horizontal
+        // collide-and-slide, then the ground probe. This is the player's own
+        // walker over the same soups, seated on the opponent's FEET: his
+        // `y` is the pelvis, `foeLift` above them (Y down: feet = y + lift).
+        std::unique_ptr<omk::Walker> foeWalker;
+        float foeLift = 0.0f;
+        long  foeBlocked = 0, foeSlid = 0, foeSteps = 0;
         double ms = 0.0;                   // the AI's `Sys_GetTimeMs` clock
         long  startedAt = 0;
     };
@@ -4625,9 +4643,58 @@ int main(int argc, char** argv) {
         // (`todo/fight-mode.md` 15.8e). The same rule `npcBody` uses.
         const float* foeAt = s->progRan ? s->drawAt : s->at;
         fightRun.foe.x = foeAt[0]; fightRun.foe.y = foeAt[1]; fightRun.foe.z = foeAt[2];
+        // THE HARNESS, and it is one: the engine starts him where the script
+        // left him. This moves him so a check can put a wall in his way - the
+        // supermarket's real fight is short and never reaches one.
+        if (foeAtSet) {
+            fightRun.foe.x = foeAtXZ[0]; fightRun.foe.z = foeAtXZ[1];
+            std::printf("fight: harness --fight-foe-at starts the opponent at %.0f %.0f "
+                        "(the script left him at %.0f %.0f)\n", double(foeAtXZ[0]),
+                        double(foeAtXZ[1]), double(foeAt[0]), double(foeAt[2]));
+        }
         fightRun.foe.yaw = s->facing;
         fightRun.foe.radius = bodyRadius(s->mo->meshes);
         fightRun.foe.channel = fightRun.foeChannel.get();
+        // HIS WALKER. The lift is the player's recipe (`PlayerController`'s
+        // `camLift_`) with the opponent's model: the hierarchy root above the
+        // model's lowest extent. The swept body is his own sphere list
+        // (descriptor +244/+248), centres made relative to the feet.
+        fightRun.foeWalker.reset();
+        fightRun.foeBlocked = fightRun.foeSlid = fightRun.foeSteps = 0;
+        if (!noFoeCollision && !playerSoup.empty() && s->mo->root >= 0) {
+            float feet = -1e30f;
+            for (const auto& m : s->mo->meshes) feet = std::max(feet, m.pos[1] + m.boxMax[1]);
+            const float lift = feet - s->mo->meshes[static_cast<std::size_t>(s->mo->root)].pos[1];
+            fightRun.foeLift = (lift > 0.0f && lift < 200.0f) ? lift : 0.0f;
+            double fy = double(fightRun.foe.y) + fightRun.foeLift;
+            auto w = std::make_unique<omk::Walker>(playerSoup, fightRun.foe.x, fy, fightRun.foe.z);
+            if (const auto g = w->ground(fightRun.foe.x, fy, fightRun.foe.z)) {
+                w->moveTo(fightRun.foe.x, *g, fightRun.foe.z);
+                fy = *g;
+            }
+            w->setGrid(&playerGrid);
+            w->setSteep(&playerSteep);
+            std::vector<omk::CollisionSphere> sph;
+            if (const auto mp = fs.resolve("MESHES/PERSOS/" + s->model + ".3DO")) {
+                const auto md = omk::DataFs::readPath(*mp);
+                sph = omk::modelSweepSpheres(md);
+            }
+            float r = 0.0f;
+            std::vector<std::array<double, 3>> centres;
+            for (const auto& c : sph) {
+                r = std::max(r, c.radius);
+                centres.push_back({double(c.pos[0]),
+                                   double(c.pos[1]) - double(fightRun.foeLift),
+                                   double(c.pos[2])});
+            }
+            w->setBlockers(&playerSteep, r > 0.0f ? r : 12.0f, std::move(centres));
+            w->setBlockerGrid(&playerSteepGrid);
+            std::printf("fight: the opponent's walker - feet %.0f (pelvis %.0f, lift %.1f), "
+                        "%zu sweep spheres of radius %.1f against %zu wall faces\n",
+                        fy, double(fightRun.foe.y), double(fightRun.foeLift), sph.size(),
+                        double(r > 0.0f ? r : 12.0f), playerSteep.size() / 9);
+            fightRun.foeWalker = std::move(w);
+        }
         fightRun.foeBank = fb;
         fightRun.foeClip = -1;
         fightRun.foeRoot.clear();
@@ -7549,6 +7616,26 @@ int main(int argc, char** argv) {
                             }
                             fightRun.foeFrame = nowF;
                         }
+                        // `Actor_ApplyMotion`: EVERYTHING that moved him this
+                        // frame - the separation push and a knockback inside
+                        // `step`, and the root motion above - is one try,
+                        // undone and handed to the walker.
+                        if (fightRun.foeWalker) {
+                            auto& w = *fightRun.foeWalker;
+                            const double dx = double(fightRun.foe.x) - w.pos()[0];
+                            const double dz = double(fightRun.foe.z) - w.pos()[2];
+                            const double fdt = frameSec * 30.0;
+                            if (dx != 0.0 || dz != 0.0) {
+                                const auto r = w.step(dx, dz, fdt);
+                                ++fightRun.foeSteps;
+                                if (r == omk::StepResult::Blocked) ++fightRun.foeBlocked;
+                                if (w.lastSlides() > 0) ++fightRun.foeSlid;
+                            } else {
+                                w.tick(fdt);
+                            }
+                            fightRun.foe.x = static_cast<float>(w.pos()[0]);
+                            fightRun.foe.z = static_cast<float>(w.pos()[2]);
+                        }
                         if (fightRun.body) {
                             fightRun.body->at[0] = fightRun.foe.x;
                             fightRun.body->at[1] = fightRun.foe.y;
@@ -7638,6 +7725,10 @@ int main(int argc, char** argv) {
                                         fightRun.fight->koCounter(),
                                         fightRun.fight->over() ? 1 : 0,
                                         fightRun.fight->playerWon() ? 1 : 0);
+                            if (fightRun.foeWalker)
+                                std::printf("    foe walker: %ld steps, %ld swept into a wall, "
+                                            "%ld blocked outright\n", fightRun.foeSteps,
+                                            fightRun.foeSlid, fightRun.foeBlocked);
                             std::printf("    foe AI: clock %.0f ms, intent %d, "
                                         "deadline %ld, taunt %ld/%ld\n",
                                         fightRun.ms,

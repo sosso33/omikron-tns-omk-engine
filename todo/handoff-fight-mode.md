@@ -115,8 +115,9 @@ requests print at frames 0, 665 and 1031, two frames after the hold begins.
   `beginMelee` read the approach program's path START instead of where the
   program left him, 1.5 m from the player (`fight-mode.md` 15.8e). The fight
   now opens on `HGUARD` against `HGUARD`, and the opponent's WALL collision
-  (15.8a) is worth re-trying, since every attempt stalled on the box that gap
-  put between them.
+  (15.8a) is **wired** the same day: his own walker, every move of the frame as
+  one try (`engine: fight collision`, via the `--fight-foe-at` harness, since
+  the real fight never reaches a wall). His VERTICAL is still his placement's.
 
 ## 5. Traps that cost time in this session
 

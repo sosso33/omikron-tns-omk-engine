@@ -894,6 +894,40 @@ the reader's *"the AI being ejected outside the combat zone"* is still a real
 fault (nothing stops a knockback at a wall), but the reason not to wire it has
 very likely gone.
 
+### 15.8a WIRED 2026-09-17 — the opponent collides
+
+After 15.8e removed the gap, the fifth attempt is the one that stays. The
+opponent gets the player's own `omk::Walker` over `playerSoup` /
+`playerSteep` (and their grids), seated on his FEET - his `y` is the pelvis
+and `foeLift` (42.8 for `BBC_FN`, the player's `camLift_` recipe) below it -
+sweeping his own model's four spheres of radius 8.7. **Everything that moved
+him in the frame is one try**: `Fight::step`'s separation push and knockback,
+then the clip's root motion, are summed against the walker's position and
+handed to `step`, which is `Actor_ApplyMotion`'s apply-remember-undo-`Actor_Move`
+shape. The vertical is still NOT his (he keeps his placement height, the
+labelled note in the root-motion block stands); only the horizontal collides.
+
+**The real supermarket fight does not change, and that is measured, not
+assumed**: with and without the walker the bodies lines are identical and the
+fight ends on the same frame, with the default keys, with the kick cycle, and
+with the player walking forward throughout - Kay'l has 10 health and the fight
+never leaves the middle of the room. So the reader's *"ejected outside the
+combat zone"* was, as far as this run can tell, 15.8e: the robber crossing
+11.9 m and `SMbox45` with nothing to stop him.
+
+What proves the sweep engages is a HARNESS, `--fight-foe-at 15111,1440`, which
+starts him behind the box: collision on, he stops against it at z 1510 (74
+frames swept into it, 80 blocked, by +180); `--no-foe-collision`, the same
+approach walks through to the player. Whether the engine's robber would stand
+at that box too is the expected reading (a brawl has no path-finding) and is
+NOT verified. `verify.py: engine: fight collision`, shown to fail with the
+opponent's sweep radius at 0 (he reaches z 1870).
+
+Still open from 15.8: the fight CAMERA's collision (15.8b), and whether
+`Fight_KeepSeparation`'s push goes through `Actor_Move` in the engine - here it
+does, because it is summed into the one try; that is this port's choice and
+is labelled as such.
+
 ### 15.8a ATTEMPTED 2026-09-16 — the reading is settled, the wiring is NOT
 
 **Settled from the engine, and this part is not in doubt.**
