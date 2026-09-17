@@ -1069,6 +1069,29 @@ tracked replay's `table_`/`units_` persist ACROSS revisions and must not be
 folded into the same argument. Worth ~1.5 MB on the set and ~60% of the tie's
 total, and `tie_equiv` is already the oracle for it. Not attempted here.
 
+**How much do BODIES tie, over the whole cast?** `handoff-vita.md` §2 item 1
+says the rule "has to be derived, not guessed", and gives two points: PSH_FN 3
+coincident faces at rest, HO1_FN 0. Over all **181** `MESHES/PERSOS/*.3DO` at
+rest: **44 of them tie at all (24%)**, 438 faces in total, worst `SLI_FN` at 46,
+and the largest model in the cast is `AST_FNM` at 1070 triangles (mean 463). So
+a quarter of the cast has coincident faces standing still and the tie cannot be
+skipped for bodies on a "they never tie" argument. What is still NOT derived is
+what POSING does to that - skinning can create and destroy coincidences, which
+is why step 10b could not prove a walk reusable across poses.
+
+**And a hitch attributed to bodies was a SET** (2026-09-17). A play session on
+Jaunpur's streets logged six frames over 66 ms; one carried
+`vulkan: depth tie - 168 of 3075 triangles coincide` and was read as the tie
+being built for a posed body. It cannot be: the backend's line gates on
+`g->corners.size() > 3000` and prints `corners / 3`, so it can only fire above
+1000 triangles and **no character model in the game reaches that**. The
+geometry is `MESHES/DECORS/SRest02.3DO` - 3075 triangles, 168 drops, both exact
+and unique in the tree (near misses `QResto03` 3031/174, `QResto08` 3047/174,
+`Aresto` 2567/164). So the frame is a SET becoming resident, alongside the
+texture-pool rebuild in the same frame, and the cost is the tie's full walk at
+LOAD - a one-off, and a different fix from the per-frame body work this item is
+about. `tie_mem` is what identified it.
+
 `verify.py: engine: tie memory`, which asserts the three drop counts and the
 share `claimed` takes, and deliberately NOT the byte totals - `capacity`
 follows the allocator's growth policy, so a total asserted would be a claim

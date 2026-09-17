@@ -229,6 +229,18 @@ Written this session at the reader's request, ahead of item 3 above.
   the block's own draw condition would put them on the GPU.
 * **A 600-frame run of `--area 230 --scene-chunk 56`** takes a different path
   from a 240-frame one (no renderer line, no stats) and was not chased.
+* **Six SLOW FRAMES on Jaunpur's streets, 69-78 ms each** (a play session,
+  2026-09-17; the instrument is a `SLOW FRAME` line in the pacer, always on in
+  a windowed run, so `--frames` runs never reach it). Two fall on a MUSIC TRACK
+  SWITCH - the new stream is opened and started on the main thread, which is
+  the obvious next hitch to chase and is nothing to do with the frame's mean
+  cost. One is the depth tie's full walk on a newly resident SET
+  (`SRest02.3DO`, 3075 triangles, 168 drops - see `optimization.md` step 14,
+  and note it was first attributed to a posed body, which the backend's own log
+  gate makes impossible). Three near x 13200 z 14000 are unattributed.
+  **This is the shape §1's mean-cost figures cannot see**: 6.0 ms a frame
+  standing still says nothing about a 78 ms frame when a set loads, and on a
+  Vita a load hitch is likely to be worse than the mean, not better.
 
 ---
 
