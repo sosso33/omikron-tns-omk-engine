@@ -1873,6 +1873,7 @@ int main(int argc, char** argv) {
     // bolts can outlive the gallery's gunmen (they kill him in ~16 frames, and
     // since the death is ported he then fights no more). -1: the save's value
     int shootHealth = -1;
+    int fightHealth = -1;   // --fight-health N: a HARNESS, the player's Vie at Fight_Begin
     long shootEndAt = -1;      // --shoot-end N: `shoot.end 1` at frame N
     float standAt[4] = {0, 0, 0, 0};
     bool haveStand = false;      // `--stand x,y,z,yaw`: put the player down there after the hand-over
@@ -2099,6 +2100,7 @@ int main(int argc, char** argv) {
         else if (a == "--shoot") startShoot = true;
         else if (a == "--shoot-end" && i + 1 < argc) shootEndAt = std::atol(argv[++i]);
         else if (a == "--shoot-health" && i + 1 < argc) shootHealth = std::atoi(argv[++i]);
+        else if (a == "--fight-health" && i + 1 < argc) fightHealth = std::atoi(argv[++i]);
         else if (a == "--sneak") openSneak = true;
         else if (a == "--stand" && i + 1 < argc)
             haveStand = std::sscanf(argv[++i], "%f,%f,%f,%f", &standAt[0], &standAt[1], &standAt[2], &standAt[3]) >= 3;
@@ -4598,6 +4600,12 @@ int main(int argc, char** argv) {
                 }
             }
             if (omk::readActorProperty(rec, 1, v))  ps.vie = v;
+            // THE HARNESS, and it is one: the engine reads property 1 as it is.
+            if (fightHealth >= 0) {
+                std::printf("fight.begin: harness --fight-health gives the player Vie %d "
+                            "(his record says %d)\n", fightHealth, ps.vie);
+                ps.vie = fightHealth;
+            }
             if (omk::readActorProperty(rec, 16, v)) ps.attack = v;
             if (omk::readActorProperty(rec, 18, v)) ps.dodge = v;
             if (omk::readActorProperty(rec, 19, v)) ps.experience = v;
@@ -16652,6 +16660,14 @@ int main(int argc, char** argv) {
                 else if (!omk::vulkanCanPresentWorld(&world)) keep = "supersampling";
                 else if (mst.active && !mst.native) keep = "cpu mirror";
                 else if (shootMode && hudWalk) keep = "shoot hud";
+                // ...and the FIGHT HUD, under the same test that draws it: the
+                // gauges go into `fb` every melee frame outside a KO replay. It
+                // was missing from this list, so on the Vulkan window the gauges
+                // showed only while another gate (the fight's opening fade) held
+                // the frame on the CPU - a reader: *"The health disappear after
+                // some time (only the stats should disappear)"*.
+                else if (fightRun.active && fightRun.fight && fightRun.fight->koCounter() == 0 &&
+                         !std::getenv("OMK_NOUI")) keep = "fight hud";
                 else if (mediaBmp.w > 0 && mediaBmp.h > 0) keep = "media bitmap";
                 else if (mediaTextFrames > 0) keep = "media line";
                 else if (session.dialogOpen()) keep = "conversation";

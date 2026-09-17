@@ -12305,6 +12305,53 @@ def c_engine_fight_hud():
            ("the stat card's labels and rank, drawn for the first four seconds and then "
             "not, beside both gauges")
 
+def c_engine_fight_gpu_present():
+    r"""`omk-play --world-vulkan`: a fight frame carrying the HUD never goes out GPU-only.
+
+    The Vulkan window presents a frame straight from the GPU when nothing is
+    drawn over the 3D, and a list of gates keeps any frame that IS on the CPU
+    path. The fight HUD was not on that list, so its gauges showed only while
+    another gate - the fight's opening fade - held the frame, and vanished with
+    it. A reader, on the Vulkan window: *"The health disappear after some time
+    (only the stats should disappear)"* (`todo/fight-mode.md` 15.15). Headless
+    renders use the software path and could not see it.
+
+    `OMK_VERIFY_GPU_PRESENT=1` composes the CPU frame beside every GPU-presented
+    one and prints the frames that differ. Over 600 frames of the real fight:
+    the frames that differ (0), and the frames the `fight hud` gate held (> 0).
+    SHOWN TO FAIL: disable the gate and 65 frames differ from frame 439, some
+    27000 pixels each - the gauges and the card.
+    """
+    import subprocess
+    eng = os.path.join(ROOT, "engine")
+    fr = omkpaths.data_root()
+    if not (os.path.isdir(eng) and os.path.isdir(os.path.join(fr, "SCPTDATA"))):
+        return ("skipped",), ("skipped",), "engine/ or gamedata/ absent"
+    mk = subprocess.run(["make", "-s", "play"], cwd=eng, capture_output=True, text=True)
+    play = os.path.join(eng, "build", "omk-play")
+    if mk.returncode != 0:
+        return ("build failed",), ("built",), "engine/ must build"
+    if not os.path.exists(play):
+        return ("no sdl",), ("no sdl",), "needs SDL to render"
+    env = dict(os.environ, SDL_VIDEODRIVER="dummy", OMK_VERIFY_GPU_PRESENT="1",
+               OMK_GPU_PRESENT_STATS="1")
+    r = subprocess.run([play, fr, os.path.join(ROOT, "tables"),
+                        "--save", os.path.join(ROOT, "traces", "save-appart.bin"),
+                        "--fight-supermarket", "--world-vulkan", "--frames", "600"],
+                       cwd=eng, env=env, capture_output=True, text=True, errors="replace")
+    out = r.stdout + r.stderr
+    if "through VULKAN" not in out:
+        return ("skipped",), ("skipped",), "no Vulkan device - the GPU backend is optional"
+    st = re.findall(r"^gpu present: frame 599, \d+ of 600 frames stayed on the GPU; on the CPU:(.*)$",
+                    out, re.M)
+    if len(st) != 1:
+        return (len(st),), (1,), "the viewer's gpu present line - its log changed"
+    held = dict((why.strip(), int(c)) for why, c in re.findall(r" ([a-z ]+?) (\d+),", st[0]))
+    differs = len(re.findall(r"^gpu present verify: frame \d+ DIFFERS", out, re.M))
+    return (differs, held.get("fight hud", 0) > 0), (0, True), \
+           ("no fight frame presented from the GPU differs from its CPU composite, and " \
+            "the fight HUD's own gate is what holds them")
+
 def c_engine_fight_library():
     r"""`omk-play`: a fight loads `fight.scx`, its OWN sound and sprite library.
 
@@ -36460,6 +36507,7 @@ SLOW = [
     ("engine: fight collision", c_engine_fight_collision, "todo/fight-mode 15.8a"),
     ("engine: fight camera collision", c_engine_fight_camera_collision, "todo/fight-mode 15.8b"),
     ("engine: fight hud", c_engine_fight_hud, "todo/fight-mode step 5"),
+    ("engine: fight gpu present", c_engine_fight_gpu_present, "todo/fight-mode 15.15"),
     ("engine: fight library", c_engine_fight_library, "todo/fight-mode 15.2"),
     ("engine: fight pause", c_engine_fight_pause, "todo/fight-mode 15.9"),
     ("engine: programs",   c_engine_programs,   "engine/README"),

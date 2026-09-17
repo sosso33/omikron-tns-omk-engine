@@ -750,6 +750,28 @@ walk and the combo chains, and several behind two-input words like `CATCH`'s
 `engine: actor states`' older corpus finding that the priority rule is invisible
 on shipped decisions.
 
+### 15.15 FIXED 2026-09-17 — the gauges vanished on the VULKAN window
+
+The first play test of the HUD, with `--fight-health 200`: *"The health
+disappear after some time (only the stats should disappear)"*. The draw was
+right - the played log carries 49 HUD samples with both gauges falling - and
+every headless check was green, because headless renders take the SOFTWARE
+path. The window takes Vulkan, which presents a frame straight from the GPU
+when nothing is drawn over the 3D, and keeps a frame on the CPU path only
+through a list of gates. The shoot HUD is on it; the fight HUD was not. So the
+gauges and card showed only while another gate - the fight's opening fade -
+held the frame, and from frame 439, when that fade ended, the frames went out
+without them.
+
+Fixed by a `fight hud` gate under the draw's own test (a fight running, KO
+counter 0). `verify.py: engine: fight gpu present` runs the fight on
+`--world-vulkan` with `OMK_VERIFY_GPU_PRESENT=1`: 0 frames differ from their CPU
+composite and the gate holds 126; shown to fail with the gate disabled - 65
+frames differ from frame 439, about 27000 pixels each.
+
+Also added for that play test: `--fight-health N`, a labelled HARNESS setting the
+player's Vie at `Fight_Begin`, because the save's 10 ends a fight in seconds.
+
 ### 15.3 "characters colliders issue"
 
 Not yet reproduced, and the handoff already lists two unported pieces that
