@@ -2954,6 +2954,7 @@ int main(int argc, char** argv) {
     std::vector<CtlSpriteInst> foeSprites;
     int   foeFxState = -1; float foeFxFrame = -1.0f;
     long  foeSpritesDrawn = 0;       // particle-frames placed on his bones
+    long  foeSpritesPooled = 0;      // ...of which the sprite had a texture slot
     omk::ParticleField ctlField; omk::Geometry ctlGeo;
     static constexpr const char* kAttachName[18] = {
         "Buste", "Tete", "Buste", "Buste", "Buste", "Bassin", "Brasg", "Brasd",
@@ -3672,6 +3673,11 @@ int main(int argc, char** argv) {
         // window (a reader: *Telis appears normally at the beginning before
         // disappearing*).
         std::vector<omk::MeshPose> lastPose;
+        // A MELEE LOSER the teardown left in ACTOR_STATE 0 (`sub_445AC0` writes
+        // the opponent's +404 to 0, and state 0 is `nullsub_6` - no tick at
+        // all), so his node keeps the last pose the fight gave it: on the
+        // floor in his knock-out loop, not back in the bank's idle.
+        bool inertAfterFight = false;
     };
     // OWNING POINTERS, not a vector of values: the Vulkan backend caches a
     // vertex buffer by (pointer, revision), so a `Staged` may never be moved
@@ -4521,6 +4527,10 @@ int main(int argc, char** argv) {
         // `idleTracksFor` builds. Cached per clip like the root motion,
         // because `clipTracks` decodes every rotation in the clip.
         omk::NodeTracks foePose;
+        // ...and the pelvis height his OPENING stance's pose puts it at - the
+        // reference the clip's pelvis track is read against for the DRAW
+        // (see the body placement in the fight step). -1e30 until known.
+        float foeRootRef = -1e30f;
         // ...and his COLLISION (`todo/fight-mode.md` 15.8a). The engine's
         // `Actor_TickPlayerAndOpponent` ends BOTH fighters with
         // `Actor_ApplyMotion` (0x004672D0): the frame's velocity is applied,
@@ -4729,6 +4739,8 @@ int main(int argc, char** argv) {
         }
         fightRun.foeBank = fb;
         fightRun.foeClip = -1;
+        fightRun.foeRootRef = -1e30f;
+        s->inertAfterFight = false;
         fightRun.foeRoot.clear();
         fightRun.foeFrame = 1.0f;
 
@@ -7757,9 +7769,30 @@ int main(int argc, char** argv) {
                             // robber 4 units onto it and nothing more there.
                             fightRun.foe.y = static_cast<float>(w.pos()[1]) - fightRun.foeLift;
                         }
+                        // THE PELVIS TRACK, for the DRAW. A `.CTL` clip's root
+                        // position keys are an ABSOLUTE pelvis height in model
+                        // space, not a delta - measured over H1CMBT: the guard
+                        // at 2.3, the low guard 13.5 and held there, a
+                        // knock-down (`KOH_FRONT`, `I_DEATH`) falling to 35..39,
+                        // a jump going negative. The engine moves the pelvis
+                        // BONE with them and leaves the actor's +248 alone, so
+                        // the body's placement is his fight position plus the
+                        // track's offset from the stance he opened in. Without
+                        // it a knocked-down robber lay flat 36 units in the air
+                        // - a reader's screenshot (`todo/fight-mode.md` 15.16).
+                        float foeDrop = 0.0f;
+                        if (fightRun.foePose.valid() && !fightRun.foePose.trans.empty() &&
+                            fightRun.foeChannel) {
+                            if (fightRun.foeRootRef < -1e29f) fightRun.foeRootRef = fightRun.foePose.trans[0][1];
+                            int ff = static_cast<int>(fightRun.foeChannel->frame()) - 1;
+                            const int last = static_cast<int>(fightRun.foePose.trans.size()) - 1;
+                            ff = ff < 0 ? 0 : (ff > last ? last : ff);
+                            foeDrop = fightRun.foePose.trans[static_cast<std::size_t>(ff)][1] -
+                                      fightRun.foeRootRef;
+                        }
                         if (fightRun.body) {
                             fightRun.body->at[0] = fightRun.foe.x;
-                            fightRun.body->at[1] = fightRun.foe.y;
+                            fightRun.body->at[1] = fightRun.foe.y + foeDrop;
                             fightRun.body->at[2] = fightRun.foe.z;
                             fightRun.body->facing = fightRun.foe.yaw;
                             fightRun.body->placed = true;
@@ -7915,6 +7948,23 @@ int main(int argc, char** argv) {
                             fightRun.active = false;
                             fightRun.fight.reset();
                             fightRun.foeChannel.reset();
+                            if (fightRun.body) {
+                                fightRun.body->inertAfterFight = true;
+                                // where the loser LIES: his placement (the pelvis)
+                                // and his drawn head, both from the draw's own
+                                // record (`meshAt`), not from the fight's intent
+                                const Staged& lb = *fightRun.body;
+                                float headY = 0.0f;
+                                const int hm = lb.mo ? omk::headMeshOf(lb.mo->meshes) : -1;
+                                if (hm >= 0 && lb.meshAt.size() >= (static_cast<std::size_t>(hm) + 1) * 3)
+                                    headY = lb.meshAt[static_cast<std::size_t>(hm) * 3 + 1];
+                                std::printf("frame %ld: the fight's OPPONENT actor %d is drawn with his "
+                                            "pelvis at y %.0f and his head at y %.0f (placement %.0f)\n",
+                                            n, lb.actor,
+                                            (lb.mo && lb.mo->root >= 0 && lb.meshAt.size() >= (static_cast<std::size_t>(lb.mo->root) + 1) * 3)
+                                                ? lb.meshAt[static_cast<std::size_t>(lb.mo->root) * 3 + 1] : 0.0f,
+                                            headY, lb.at[1]);
+                            }
                             fightRun.body = nullptr;
                         }
                     } else if (!ride && !boarded) {
@@ -12347,7 +12397,8 @@ int main(int argc, char** argv) {
             }
             propGeo.revision = ++worldGeoRev;
             refreshSprites();
-            const bool wantSprites = (session.scene().effects().count() || !ctlSprites.empty()) &&
+            const bool wantSprites = (session.scene().effects().count() || !ctlSprites.empty() ||
+                                      !foeSprites.empty()) &&
                                      !spriteTab.empty();
             // Which sprite ids the resident scene can name. Computed BEFORE the
             // rebuild test and compared, because a scene that starts asking for
@@ -12359,6 +12410,13 @@ int main(int argc, char** argv) {
             for (const auto& pa : session.scene().effects().particles())
                 spriteWanted.insert(pa.sprite);
             for (const auto& c : ctlSprites) spriteWanted.insert(c.sprite);
+            // ...AND THE MELEE OPPONENT'S. His records were spawned and placed
+            // on his bones from 15.10 on - 482 placements in one run - and
+            // never drew: a batch whose sprite has no POOL SLOT is skipped
+            // ("a sprite with no texture: not drawn"), and only the player's
+            // ids were pooled. A reader: *"no visual effect when I touched the
+            // ennemy"* (`todo/fight-mode.md` 15.16).
+            for (const auto& c : foeSprites) spriteWanted.insert(c.sprite);
             if (poolBuiltFor != poolComposition || poolHasSprites != wantSprites ||
                 poolHasPlayer != (drawPlayer || drawArm) || spritePooled != spriteWanted) {
                 pool = worldTex;
@@ -14457,6 +14515,7 @@ int main(int argc, char** argv) {
                     if (!speakerMorph.empty()) fv = omk::faceFrame(speakerMorph, frame);
                     src = "the line's .3DM";
                 } else if (s.sceneTracks.valid()) {
+                    s.inertAfterFight = false;     // a program owns him again
                     rootFrame = static_cast<int>(sceneFrame);
                     // A SCENE CLIP keeps its root rotation - it is the
                     // character's real orientation, lying on the floor and
@@ -14505,6 +14564,9 @@ int main(int argc, char** argv) {
                     if (ff >= fightRun.foePose.frames) ff = fightRun.foePose.frames - 1;
                     pose = omk::composePose(s.mo->meshes, fightRun.foePose, ff, false);
                     src = "the fight channel's own clip";
+                } else if (s.inertAfterFight && !s.lastPose.empty()) {
+                    pose = s.lastPose;
+                    src = "the fight's last pose (ACTOR_STATE 0 after sub_445AC0 - no tick)";
                 } else if (s.idle.valid()) {
                     pose = omk::composePose(s.mo->meshes, s.idle, 0, false);
                     src = "the bank's default entry, frame 0";
@@ -15881,6 +15943,10 @@ int main(int argc, char** argv) {
                         p.mode = 4;
                         ctlField.addParticle(p);
                         ++placed;
+                        // what can actually DRAW: a batch whose sprite has no
+                        // pool slot is skipped at submission, which is how 482
+                        // placements once drew nothing (15.16)
+                        if (spriteSlot.count(c.sprite)) ++foeSpritesPooled;
                     }
                     if (placed) {
                         foeSpritesDrawn += placed;
@@ -18687,8 +18753,8 @@ int main(int argc, char** argv) {
                 session.scene().piecesFired(), session.scene().pieces().shownCount(),
                 session.scene().pieces().registered(),
                 session.scene().effects().count());
-    std::printf("effects: the melee opponent's .CTL sprites placed on his bones %ld times\n",
-                foeSpritesDrawn);
+    std::printf("effects: the melee opponent's .CTL sprites placed on his bones %ld times, "
+                "%ld with a texture slot to draw with\n", foeSpritesDrawn, foeSpritesPooled);
     std::printf("world: %ld frames drawn, last set %s (%d shown), last camera %d, "
                 "%ld frames under player.anim.hold\n",
                 worldFrames, worldSet.empty() ? "(none)" : worldSet.c_str(),

@@ -772,6 +772,49 @@ frames differ from frame 439, about 27000 pixels each.
 Also added for that play test: `--fight-health N`, a labelled HARNESS setting the
 player's Vie at `Fight_Begin`, because the save's 10 ends a fight in seconds.
 
+### 15.16 FIXED 2026-09-17 — the second play test's three: no hit effect, a floating fall, a T-pose after the win
+
+The reader won a fight on the Vulkan window (`--fight-health 200`) and reported
+*"no visual effect when I touched the ennemy, the ennemy float in the air when
+he's supposed to fall, and the ennemy stay in T-pose in the room after I won the
+fight (look in the game scripts, but I think he's supposed to stay on the
+floor)"*, with a screenshot of the robber lying flat at head height.
+
+**No hit effect: his sprites had no TEXTURE SLOT.** 15.10 spawned and placed
+them - 482 placements in one run - but the texture pool takes only the sprite
+ids somebody asked for, and only the player's `.CTL` sprites were asked for. A
+batch without a slot is skipped at submission, silently. His ids now go into the
+pool beside the player's. The check that had passed 15.10 counted placements,
+which could not see this; it now counts placements whose sprite HAS a slot, and
+shown to fail by leaving his ids out (0 while the placements do not move). A
+pixel diff of the same frame with and without his sprites: 7784 pixels, a
+blue-white glow on his head. (Two earlier diffs read 0 for another reason: the
+camera was looking straight down at a point 85 units from him. A still that
+cannot see the subject says nothing.)
+
+**The float: the pelvis track was dropped.** A `.CTL` clip's pelvis keys are an
+ABSOLUTE height in model space - measured over H1CMBT, the guard at 2.3, the low
+guard 13.5 and held, the knock-downs `KOH_FRONT`/`KOM_FRONT`/`I_DEATH` at 35..39,
+the jumps negative. The engine moves the pelvis BONE with them. The staged body
+was placed at the fight position with them discarded, so he lay flat 36 units
+up. His placement is now the fight position plus the offset from the stance he
+opened in; after a win he is drawn with his pelvis at y 3 and head at 4 on a
+floor at 10, where he was at -33.
+
+**The T-pose: state 0 does not tick.** `sub_445AC0` writes the opponent's +404
+to 0, `nullsub_6`, so his node keeps the fight's last pose. The port lost the
+fight channel and fell back to the bank's default entry, frame 0 - the rest
+sentinel. And the scripts say he STAYS: AREA 245 record 0's loss branch does
+`character.hide 48` before the Meditech sequence, and its WIN branch
+(`camera.set 0`, `object.show 163` 'Anneaux 5', `object.place_at 48, 606` - an
+object id, not the character - the variables and two zones) never touches
+character 48 at all. He lies where the fight left him until the scene goes.
+
+`engine: fight loser pose` (new) over a won fight: the result, his drawn pelvis
+and head within 15 of the floor, and the held pose; shown to fail by dropping
+the offset (pelvis -33) and by dropping the hold (pose source: the bank's
+idle).
+
 ### 15.3 "characters colliders issue"
 
 Not yet reproduced, and the handoff already lists two unported pieces that

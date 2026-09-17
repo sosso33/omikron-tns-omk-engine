@@ -12352,6 +12352,63 @@ def c_engine_fight_gpu_present():
            ("no fight frame presented from the GPU differs from its CPU composite, and " \
             "the fight HUD's own gate is what holds them")
 
+def c_engine_fight_loser_pose():
+    r"""`omk-play`: a knocked-down opponent lies ON the floor, and stays there after a win.
+
+    Two faults a reader reported from one won fight (`todo/fight-mode.md`
+    15.16): *"the ennemy float in the air when he's supposed to fall"* and
+    *"the ennemy stay in T-pose in the room after I won the fight"*.
+
+    * A `.CTL` clip's pelvis keys are an ABSOLUTE height in model space - the
+      guard 2.3, a knock-down 35..39 - which the engine applies to the pelvis
+      BONE. The port placed the staged body at the fight position and dropped
+      them, so he lay flat 36 units up. His placement is now the fight position
+      plus the offset from the stance he opened in.
+    * `sub_445AC0` writes the opponent's +404 to 0, and state 0 does not tick,
+      so his node keeps the fight's last pose. The port fell back to the bank's
+      default entry, frame 0 - the rest sentinel, a T-pose.
+
+    Over a fight the player WINS (`--fight-health 200`, the kick cycle): the
+    result; the opponent's DRAWN pelvis and head height at the teardown, from
+    the draw's own mesh record, against this set's floor at y 10 (both must be
+    within 15 of it - standing, his head is some 60 above); and that after the
+    teardown he is posed from the fight's last pose, not the bank's idle.
+    SHOWN TO FAIL: drop the `+ foeDrop` and the pelvis reads -33; drop the
+    `inertAfterFight` branch and the pose source is the bank's default entry.
+    """
+    import subprocess
+    eng = os.path.join(ROOT, "engine")
+    fr = omkpaths.data_root()
+    if not (os.path.isdir(eng) and os.path.isdir(os.path.join(fr, "SCPTDATA"))):
+        return ("skipped",), ("skipped",), "engine/ or gamedata/ absent"
+    mk = subprocess.run(["make", "-s", "play"], cwd=eng, capture_output=True, text=True)
+    play = os.path.join(eng, "build", "omk-play")
+    if mk.returncode != 0:
+        return ("build failed",), ("built",), "engine/ must build"
+    if not os.path.exists(play):
+        return ("no sdl",), ("no sdl",), "needs SDL to render"
+    keys = ",".join(["0x11", "0x1F"] * 600)
+    r = subprocess.run(
+        [play, fr, os.path.join(ROOT, "tables"),
+         "--save", os.path.join(ROOT, "traces", "save-appart.bin"),
+         "--fight-supermarket", "--fight-health", "200", "--frames", "1760",
+         "--keys", keys, "--keydelay", "3"],
+        capture_output=True, text=True, errors="replace",
+        env=dict(os.environ, SDL_VIDEODRIVER="dummy"))
+    out = r.stdout + r.stderr
+    won = re.search(r"sub_445AC0 - the player (\w+)", out)
+    lies = re.search(r"the fight's OPPONENT actor \d+ is drawn with his pelvis at y (-?\d+) and "
+                     r"his head at y (-?\d+)", out)
+    if not won or not lies:
+        return (bool(won), bool(lies)), (True, True), "the run must reach the teardown"
+    pelvis, head = int(lies.group(1)), int(lies.group(2))
+    kFloor = 10
+    held = "pose source: the fight's last pose" in out
+    return (won.group(1), abs(pelvis - kFloor) <= 15, abs(head - kFloor) <= 15, held), \
+           ("WON", True, True, True), \
+           ("the fight is won, the opponent's drawn pelvis and head lie within 15 of the "
+            "floor, and he keeps the fight's last pose after it")
+
 def c_engine_fight_library():
     r"""`omk-play`: a fight loads `fight.scx`, its OWN sound and sprite library.
 
@@ -12392,6 +12449,13 @@ def c_engine_fight_library():
     states' effect records - `IH_RIGH`'s two on his head, `H_PROTECT`'s two on
     his right hand - placed on his bones as drawn, 69 placements over this run,
     floored to 60. SHOWN TO FAIL: skip his spawn and it reads 0.
+
+    **And that count was blind to the fault a reader then found** (15.16): *"no
+    visual effect when I touched the ennemy"*. The placements were all real and
+    none of them DREW - only the player's sprite ids were given texture slots,
+    and a batch without one is skipped. The column now counts placements whose
+    sprite HAS a slot. SHOWN TO FAIL: leave his ids out of the pool and it reads
+    0 while the placements do not move.
 
     **The player no longer wins this fight** (measured 2026-09-17): since the
     fight opens 1.5 m apart (15.8e) and the AI guards (15.11), the same key cycle
@@ -12443,8 +12507,10 @@ def c_engine_fight_library():
     ids = {int(m) for m in re.findall(r"audio: ctl-effect\s+\S+\s+s\s+\((\d+),", out)}
     # ...and the OPPONENT's own sprite records, placed on his bones
     # (`todo/fight-mode.md` 15.10): > 0, floored to a ten
-    fm = re.search(r"opponent's \.CTL sprites placed on his bones (\d+) times", out)
-    foeFx = (int(fm.group(1)) // 10 * 10) if fm else -1
+    fm = re.search(r"opponent's \.CTL sprites placed on his bones (\d+) times, (\d+) with a "
+                   r"texture slot", out)
+    # the POOLED count: a placement whose sprite has no slot never draws
+    foeFx = (int(fm.group(2)) // 10 * 10) if fm else -1
     return (loaded, fightSprites, failures, played > 0, len(ids), foeFx), \
            (True, 16, 0, True, 7, 60), \
            ("`Fight_Begin`'s own `Game_Start(\"fight.scx\")`: its 16 sprites "
@@ -36508,6 +36574,7 @@ SLOW = [
     ("engine: fight camera collision", c_engine_fight_camera_collision, "todo/fight-mode 15.8b"),
     ("engine: fight hud", c_engine_fight_hud, "todo/fight-mode step 5"),
     ("engine: fight gpu present", c_engine_fight_gpu_present, "todo/fight-mode 15.15"),
+    ("engine: fight loser pose", c_engine_fight_loser_pose, "todo/fight-mode 15.16"),
     ("engine: fight library", c_engine_fight_library, "todo/fight-mode 15.2"),
     ("engine: fight pause", c_engine_fight_pause, "todo/fight-mode 15.9"),
     ("engine: programs",   c_engine_programs,   "engine/README"),
