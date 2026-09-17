@@ -203,15 +203,15 @@ survey, from `tables/ui_widgets.json`:
 | screen | panel | list hook | items | item callback | state |
 |---|---|---|---|---|---|
 | 12 `GANDHAR DOOR` | 0x4E4CB8 | 0x004AFE90 **PORTED** | 5 | 0x004AFF90 **PORTED** | done - see below |
-| 13 `DEN` | 0x4E4990 | **0x004AFBE0** unmodelled | 6 | none | Den's locker, 6 cells, no per-item callback - the hook itself answers |
+| 13 `DEN` | 0x4E4990 | 0x004AFBE0 **PORTED** | 6 | none | done - see 5c; four digit wheels and two lamps, the hook itself answers |
 | 14 `XACHEN` | 0x4E4620 | 0x0042A930 (`kMoveSelectionLR`, ported) + a 4-item list | 4 | **0x004AF9D0** | the mover is already modelled; only the callback is missing |
 | 0 `VIDEOPHONE` | 0x4DF128 | none | 8 | 0x0049DBF0, `textFn` 0x0049E090 | the SNEAK family's - 0x49E090 is already supplied by the viewer |
 | 36 `HIGH-SCORE` | 0x4E22F0 | none | 1 | 0x0042A990 | one item, the family's generic button |
 
-So the work is four callbacks and two list hooks, all in the 0x004AF9D0..
-0x004AFF90 neighbourhood - the same page of the image the terminal's came from.
-`DEN` is the odd one: with no item callback its hook must both move and answer,
-like the LIFT's grid.
+Two of the six are done (12 and 13, below). What is left is three callbacks -
+0x004AF9D0 (XACHEN), 0x0049DBF0 (VIDEOPHONE) and 0x0042A990 (HIGH-SCORE) - all
+in the same page of the image the terminal's came from, and none of them needs
+a new list hook.
 
 ### 5b. GANDHAR'S DOOR — done 2026-09-18
 
@@ -250,9 +250,70 @@ nothing answers).
 
 **The composer gained `setItemMove`** for this: a widget tree carries an item's
 AUTHORED place, and this hook moves its cursor every step, so the mover has to
-say where it went. NOT ported, labelled: the four marker widgets the press
-stamps (the cursor moves, the stamps do not appear) and the two interface
-sounds.
+say where it went. The four MARKER widgets are ported with it - the press
+records the cell, the viewer places the marker there, and `UiWalk::itemShown`
+is what clears the record's not-drawn bit the way `sub_428FF0(marker,
+0x40000001, 0)` does. NOT ported, labelled: the two interface sounds.
+
+### 5c. DEN'S LOCKER — done 2026-09-18
+
+One hook, `sub_4AFBE0`, read from the raw image (no `proc` label). It both
+moves and answers, because screen 13 has no item callback anywhere:
+
+* **UP/DOWN** spin the wheel under the hand, wrapping (`0 -> 9` up, `9 -> 0`
+  down). **LEFT/RIGHT** move the hand within 0..3 - and they move it by
+  `dec`/`inc word ptr [esi+2]`, which is **the LIST'S OWN SELECTION**, not a
+  field of the hook's.
+* A wheel SHOWS its digit through its **unlit source**: the tail writes
+  `digit * 46` into `+0x12` (`lea edx,[edi+edi*2]; shl edx,3; sub edx,edi;
+  shl edx,1`) and the digit itself into `+0x3C`. The strip of ten figures is
+  at **x = 0** in `DEN00.BMP`, 46 apart; the four wheels' authored unlit
+  source is (0, 0), digit zero.
+* Beside the move it sets `sub_428FF0(item, 0x40000084, 0)` on the wheel the
+  hand leaves and `(.., 1)` on the one it lands on. Bank B `0x4` is
+  `Ui_Oscillator(1)`, a 500 ms square wave, so **the wheel under the hand
+  blinks**.
+* **The combination is compiled in**: `dword_4E47E4 == 7 && dword_4E482C == 2
+  && dword_4E4874 == 1 && dword_4E48BC == 3`, which are the `+3C` of the four
+  wheel items (0x4E47A8, 0x4E47F0, 0x4E4838, 0x4E4880, 0x48 apart). So it is
+  **7 2 1 3**, it opens the moment the last wheel lands, and there is no
+  confirm. The success arm sets `0x40000004` and clears `0x40000080` on all
+  four, paints them `+8 = 0`, `+9 = 255`, plays interface sound 0x22 and
+  writes the ANSWER **1**.
+
+**The route**, and it took finding: SCENE 43 over AREA 146 ('Anekbah Appart
+Den'), record 4 = zone **2417 'Cache'**. The chunk's OWN startup script
+disables 2417 unless `VARIABLES[482] 'Cache Trouvee'` is 1 - so `--zone-enable`
+alone does nothing, and the first three attempts armed the neighbouring zone
+2419 'Tableau Coffre', which shares the footprint and is what the story
+disables on the way in:
+
+    build/omk-play ../gamedata ../tables --save ../traces/save-appart.bin \
+        --area 146 --scene-chunk 43 --var 482=1 \
+        --stand 522,-10,343,178 --zone-disable 2419
+
+On the answer the zone's script shows OBJECTS 13 `Cassette Den`, 104
+`Pass Ventilos` and 103 `Plan Ventilos`, sets `Cache Ouverte` and `Blocage K7`
+and swaps the lift zones - which is the whole point of the locker, and is what
+the check asserts beside the answer.
+
+**A fault the counts could not see, found by rendering a frame.** The first
+version kept the hand in a private field, so the list's selection stayed at 0,
+`Ui_DrawItemSprite`'s last rung ("lit = SELECTED") drew the FIRST wheel from
+its own empty place in the artwork for ever, and the display showed three
+figures and a gap while the log said `7 2 1 2`. The log line was derived from
+what the viewer HANDED the composer, which is exactly the trap CLAUDE.md 1
+names. `ScreenFrame::spriteSrc` now reports the source rect each asked-about
+sprite was actually blitted from, and the line is printed from that.
+
+NOT ported, labelled: the two interface sounds and the 2000 ms oscillator 5 the
+success arm starts on the screen - in the engine the four wheels blink green
+for two seconds before it closes, and this port closes at once.
+
+`verify.py: engine: den locker`, shown to fail twice: with the combination
+changed to 7 2 1 4 nothing answers and the cache stays shut, and with the hand
+no longer written to the list's selection six frames draw a blank wheel that is
+not the one under the hand.
 
 ## 4. The steps
 
@@ -261,7 +322,7 @@ sounds.
 | 0 | where every screen is opened from | **done 2026-09-17** - §1 |
 | 1 | the LIFT: why it never arrived | **done 2026-09-17** - §2, `verify.py: engine: lift` |
 | 2 | the terminal FAMILY: the display, the keypad and the answers - 7 screens | **done 2026-09-17** - §3, `verify.py: engine: terminal family` |
-| 3 | the SPECIAL screens: **12 GANDHAR DOOR done** (§5b); 13 DEN, 14 XACHEN, 0 VIDEOPHONE, 36 HIGH-SCORE left, and the terminal's own dossier pages | §5 has each one's hooks |
+| 3 | the SPECIAL screens: **12 GANDHAR DOOR done** (§5b), **13 DEN'S LOCKER done** (§5c); 14 XACHEN, 0 VIDEOPHONE, 36 HIGH-SCORE left, and the terminal's own dossier pages | §5 has each one's hooks |
 | 4 | play | |
 
 ## 6. The lift arrives and the level is not drawn — the mechanism, and a REVERTED patch

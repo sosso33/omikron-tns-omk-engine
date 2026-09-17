@@ -18242,6 +18242,11 @@ int main(int argc, char** argv) {
                 if (l.hook != omk::kHookGandharGrid || l.items.empty()) continue;
                 itemMoved[l.items[0].addr] = {walk->gandharCol() * 63 + 135,
                                               walk->gandharRow() * 63 + 61};
+                // ...and the markers a press stamped, on their own cells
+                const auto& stamps = walk->gandharStamps();
+                for (std::size_t k = 0; k < stamps.size() && k + 1 < l.items.size(); ++k)
+                    itemMoved[l.items[k + 1].addr] = {stamps[k].first * 63 + 135,
+                                                      stamps[k].second * 63 + 61};
                 static int gandTold = -1;
                 const int key = walk->gandharRow() * 10 + walk->gandharCol();
                 if (key != gandTold) {
@@ -18250,6 +18255,25 @@ int main(int argc, char** argv) {
                                 "symbols in (%d presses)\n", walk->gandharRow(),
                                 walk->gandharCol(), __builtin_popcount(walk->gandharMask()),
                                 walk->gandharPresses());
+                }
+            }
+        }
+        // ---- DEN'S LOCKER: the wheels show their digits -----------------
+        //
+        // `sub_4AFBE0` spins a wheel by writing `digit * 46` into its UNLIT
+        // SOURCE's y, which cuts that figure out of the artwork's strip at
+        // x = 0. The tree carries (0, 0) - digit zero - so the mover says which
+        // row of the strip each wheel is on.
+        static std::map<std::uint32_t, std::pair<int, int>> itemSource;
+        static std::vector<std::uint32_t> denWheelItems;
+        itemSource.clear();
+        denWheelItems.clear();
+        if (walk && openScreen == 13 && walk->panel()) {
+            for (const auto& l : walk->panel()->lists) {
+                if (l.hook != omk::kHookDenDial) continue;
+                for (std::size_t k = 0; k < 4 && k < l.items.size(); ++k) {
+                    itemSource[l.items[k].addr] = {0, walk->denDigit(static_cast<int>(k)) * 46};
+                    denWheelItems.push_back(l.items[k].addr);
                 }
             }
         }
@@ -18828,6 +18852,7 @@ int main(int argc, char** argv) {
             comp.setRowText(sneakRows.empty() ? nullptr : &sneakRows);
             comp.setHidden(sneakHidden.empty() ? nullptr : &sneakHidden);
             comp.setItemMove(itemMoved.empty() ? nullptr : &itemMoved);
+            comp.setItemSource(itemSource.empty() ? nullptr : &itemSource);
             // THE CLOUD IS THE MENU'S BACKGROUND, NOT EVERY SCREEN'S.
             //
             // A reader's screenshots of the original settle it from both
@@ -18858,6 +18883,35 @@ int main(int argc, char** argv) {
             // was never the problem.
             if (!std::getenv("OMK_NOUI")) {
                 const omk::ScreenFrame sf = comp.draw(fb, openScreen, *walk);
+                // ---- DEN'S LOCKER, REPORTED FROM THE DRAW ------------
+                //
+                // Not from `denDigit()`: the hook hands the composer a source
+                // row per wheel and the composer decides whether to use it,
+                // because the wheel the hand is on draws its LIT source -
+                // its own empty place in the artwork - while oscillator 1
+                // blinks it. A line printed from what was HANDED OVER said
+                // "7 2 1 2" through a display that showed three figures and a
+                // gap, which is the fault this is written against
+                // (CLAUDE.md 1). `-` is a wheel drawn blank this frame.
+                if (openScreen == 13 && !denWheelItems.empty()) {
+                    std::string read;
+                    for (const std::uint32_t a : denWheelItems) {
+                        const auto sr = sf.spriteSrc.find(a);
+                        const int y = sr == sf.spriteSrc.end() ? -1 : sr->second.second;
+                        // the strip is at x = 0 and 46 to a figure; anything
+                        // else is the item's own lit place, so: blank
+                        const bool digit = sr != sf.spriteSrc.end() &&
+                                           sr->second.first == 0 && y >= 0 && (y % 46) == 0;
+                        read += digit ? std::to_string(y / 46) : std::string("-");
+                        read += ' ';
+                    }
+                    static std::string denTold;
+                    if (read != denTold) {
+                        denTold = read;
+                        std::printf("den locker: the display reads %s(the hand is on %d, "
+                                    "and that wheel blinks)\n", read.c_str(), walk->denWheel());
+                    }
+                }
                 // ...and the memo body is reported from the DRAW: `textLines`
                 // counts what the body/examine block laid out, so a box fed
                 // nothing says 0 lines instead of repeating what it was handed.

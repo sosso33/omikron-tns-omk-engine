@@ -82,6 +82,20 @@ struct ScreenFrame {
     int  textOverflow = 0;
     int  textAdvance = 0;     // summed pen advance of every row drawn
     int  centred = 0;         // rows the alignment ladder centred
+    // THE SOURCE RECT EACH ASKED-ABOUT SPRITE WAS ACTUALLY BLITTED FROM -
+    // one entry per item named in `setItemSource`, and only those, so this
+    // costs nothing on a screen that names none.
+    //
+    // It exists because the counts above cannot see the fault it was written
+    // for: Den's locker spins a wheel by moving its UNLIT source down a strip
+    // of figures, and the wheel the hand is on draws its LIT source instead -
+    // so a line printed from the hook's own digits said "7 2 1 2" while the
+    // display showed three figures and a gap. A log line derived from what the
+    // caller HANDED the composer cannot report what the composer DID with it
+    // (CLAUDE.md 1, the log-line rule); this is that value.
+    //
+    // -1, -1 means the item was not drawn as a sprite at all this frame.
+    std::map<std::uint32_t, std::pair<int, int>> spriteSrc;
     // FNV-1a of the whole framebuffer. The counts above say what was drawn;
     // this says WHERE, and it is the only field that moves when a glyph
     // shifts by a pixel - without it the check reported "4 centred" whether
@@ -212,6 +226,10 @@ public:
     // in the widget TREE carries only its authored place - so a screen whose
     // own hook moves a widget needs the mover to say where it went.
     void setItemMove(const std::map<std::uint32_t, std::pair<int, int>>* m) { moved_ = m; }
+    // ...and items whose SOURCE the screen's hook scrolls. Den's locker spins
+    // its four wheels by writing the unlit source's y (`digit * 46`), which
+    // cuts a different digit out of the artwork's strip.
+    void setItemSource(const std::map<std::uint32_t, std::pair<int, int>>* m) { srcMoved_ = m; }
 
     // THE 3D VIEW INSIDE A PANEL. The frontend renders the world through the
     // live camera into a picture the size of the viewport item's rectangle
@@ -271,6 +289,7 @@ private:
     const std::map<std::uint32_t, std::string>* rows_ = nullptr;
     const std::set<std::uint32_t>* hidden_ = nullptr;
     const std::map<std::uint32_t, std::pair<int, int>>* moved_ = nullptr;
+    const std::map<std::uint32_t, std::pair<int, int>>* srcMoved_ = nullptr;
     const Surface*   view3d_ = nullptr;
     long             frame_ = 0;
     long             clockMs_ = 0;

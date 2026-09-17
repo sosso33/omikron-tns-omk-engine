@@ -1300,6 +1300,79 @@ bool UiWalk::move(const UiList& l, std::uint32_t bits,
     return false;
 }
 
+// `sub_4AFBE0` - DEN'S LOCKER, transcribed from the image. Four digit wheels
+// and two arrow sprites on ONE hook, which both moves and answers: the screen
+// has no item callback anywhere.
+//
+//     UP     digit == 0 -> 9, else digit - 1        (it wraps)
+//     DOWN   digit >= 9 -> 0, else digit + 1
+//     LEFT   the wheel under the hand, if it is not the first
+//     RIGHT  ...if it is not the fourth (`[list+2] < 3`)
+//
+// A wheel shows its digit by its UNLIT SOURCE: the hook writes `digit * 46`
+// into `+0x12`, which cuts a different figure out of the artwork's strip at
+// x = 0 - and the four wheels' authored unlit source is (0, 0), digit zero.
+//
+// THE COMBINATION IS IN THE CODE: `dword_4E47E4 == 7 && dword_4E482C == 2 &&
+// dword_4E4874 == 1 && dword_4E48BC == 3`, and those four addresses are the
+// `+3C` of the four wheel items (0x4E47A8, 0x4E47F0, 0x4E4838, 0x4E4880, 0x48
+// apart). So the locker opens on **7 2 1 3**, and it opens the moment the last
+// wheel lands - there is no confirm. It then lights all four, plays interface
+// sound 0x22 and writes the ANSWER 1.
+//
+// AND THE HAND IS THE LIST'S OWN SELECTION, which is what draws the wheels.
+// `[esi+2]` - the field left/right move - is the list's `+2`, the row
+// `Ui_DrawList` marks UIF_SELECTED, and `Ui_DrawItemSprite`'s last rung is
+// "lit = SELECTED". The four wheels carry bank B `0x40000100` and none of
+// `8/4/2`, so the selected wheel draws its LIT source - the item's own place
+// in the artwork, which is the empty display - and every other wheel draws
+// the UNLIT one, the digit. A hook that kept the hand in a private field
+// left the selection at 0 for ever, and the first wheel never showed a digit
+// at all: three figures where the game shows four. Seen in a rendered frame,
+// not reasoned about.
+//
+// Beside it the hook moves a PULSE: `sub_428FF0(item, 0x40000084, 0)` on the
+// wheel the hand leaves and `(.., 1)` on the one it lands on, so bank B `0x4`
+// - `Ui_Oscillator(1)`, a 500 ms square wave - makes that wheel's digit
+// blink. On the combination it sets `0x4` and clears `0x80` on ALL four, so
+// they all blink together, and paints them `+8 = 0`, `+9 = 255`.
+//
+// NOT ported, labelled: the two sounds (`sub_482D90(0x22)`) and the 2000 ms
+// oscillator 5 the success arm starts on the screen.
+bool UiWalk::denDial(const UiList& l, std::uint32_t bits) {
+    const int wasWheel = denWheel_, wasDigit = denDigit_[denWheel_ & 3];
+    int& d = denDigit_[denWheel_ & 3];
+    if (bits & kUiUp)         d = (d == 0) ? 9 : d - 1;
+    else if (bits & kUiDown)  d = (d >= 9) ? 0 : d + 1;
+    else if (bits & kUiLeft)  { if (denWheel_ != 0) --denWheel_; }
+    else if (bits & kUiRight) { if (denWheel_ < 3)  ++denWheel_; }
+    const bool moved = denWheel_ != wasWheel || denDigit_[denWheel_ & 3] != wasDigit;
+    if (moved)
+        log_.push_back("den locker: wheel " + std::to_string(denWheel_) + " = " +
+                       std::to_string(denDigit_[denWheel_ & 3]));
+    // the hand, expressed where the drawer reads it - and the pulse with it
+    selMap()[l.addr] = denWheel_;
+    for (std::size_t k = 0; k < 4 && k < l.items.size(); ++k) {
+        std::uint32_t& f = state_->flagOn[l.items[k].addr];
+        if (static_cast<int>(k) == denWheel_) f |= 0x40000084u;
+        else                                  f &= ~0x40000084u;
+    }
+    if (denDigit_[0] == 7 && denDigit_[1] == 2 && denDigit_[2] == 1 && denDigit_[3] == 3) {
+        if (answer_ != 1) log_.push_back("den locker: 7 2 1 3 - it opens");
+        // `push esi/40000004h` then `push ebx/40000080h` on each of the four,
+        // and `byte+8 = 0`, `byte+9 = 255` beside them
+        for (std::size_t k = 0; k < 4 && k < l.items.size(); ++k) {
+            std::uint32_t& f = state_->flagOn[l.items[k].addr];
+            f |=  0x40000004u;
+            f &= ~0x40000080u;
+            // only `+8` and `+9` are written; `+10` keeps the record's
+            state_->colour[l.items[k].addr] = {0, 255, l.items[k].rgb[2]};
+        }
+        answer_ = 1;
+    }
+    return moved;
+}
+
 // `sub_4AFE90` - THE GANDHAR DOOR'S CURSOR, transcribed from the image (no
 // `proc` label of its own). The screen is a 6x6 grid of symbols with ONE
 // selectable item walking it; the four items behind it are the MARKERS a press
@@ -1485,6 +1558,20 @@ bool UiWalk::confirm() {
             else if (cell == 0x40002u) bit = 4;
             else if (cell == 0x50004u) bit = 8;
             gandMask_ |= bit;
+            // THE MARKER. `off_4E4C80[count]` is the widget this press stamps:
+            // its x/y are written from the cell the same way the cursor's are,
+            // and `sub_428FF0(marker, 0x40000001, 0)` clears the not-drawn bit
+            // its record ships with. The table is the list's own items after
+            // the cursor - four markers for four presses - and beyond the
+            // fourth the engine walks off the end of it, which this does not
+            // follow: it stamps nothing.
+            if (const UiList* gl = curList()) {
+                const std::size_t mk = static_cast<std::size_t>(gandPresses_);
+                if (mk < gl->items.size() && gandPresses_ <= 4) {
+                    state_->itemShown.insert(gl->items[mk].addr);
+                    gandStamps_.push_back({gandCol_, gandRow_});
+                }
+            }
             log_.push_back("gandhar: press " + std::to_string(gandPresses_) +
                            (bit ? " - one of the four" : " - not in the code"));
             if (gandMask_ == 0x0Fu) {
@@ -2561,6 +2648,7 @@ bool UiWalk::press(std::uint32_t bits) {
     }
     if (l->hook == kHookTerminalPad) return keypad(*l, bits);
     if (l->hook == kHookGandharGrid) return gandhar(*l, bits);
+    if (l->hook == kHookDenDial)     return denDial(*l, bits);
     if (l->hook) {
         approx_ = true;
         log_.push_back("unmodelled list hook");

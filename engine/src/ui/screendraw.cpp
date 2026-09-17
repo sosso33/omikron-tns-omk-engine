@@ -201,6 +201,11 @@ const UiItem* ScreenComposer::viewportItem(const UiPanel* p) {
 ScreenFrame ScreenComposer::draw(Surface& fb, int screenId,
                                  const UiWalk& walk) const {
     ScreenFrame out;
+    // Seeded, so an item the caller asked about that is never drawn reports
+    // (-1, -1) rather than simply being absent - "not drawn" is the answer
+    // that mattered here, and a missing key reads like a missing question.
+    if (srcMoved_)
+        for (const auto& [addr, xy] : *srcMoved_) { (void)xy; out.spriteSrc[addr] = {-1, -1}; }
     const UiPanel* p = w_->screen(screenId);
     if (!p) return out;
     // The cursor's quads, held back to layer 8 (see the collect below).
@@ -568,7 +573,10 @@ ScreenFrame ScreenComposer::draw(Surface& fb, int screenId,
             // The item's own draw gate, the same `0x40000001` the list has -
             // from the record, and from the RUNTIME for the lists whose
             // widgets are a window onto something longer (`sub_42AAE0`).
-            if (eff0[1] & 1) continue;
+            // ...unless a HOOK switched it on: the record's bit is set on the
+            // Gandhar door's four markers, which ship hidden and are revealed
+            // one per press (`sub_428FF0(marker, 0x40000001, 0)`).
+            if ((eff0[1] & 1) && !walk.itemShown(it.addr)) continue;
             if (hidden_ && hidden_->count(it.addr)) continue;
             if (walk.itemOff(it.addr)) continue;   // a builder switched it off
 
@@ -1106,12 +1114,26 @@ ScreenFrame ScreenComposer::draw(Surface& fb, int screenId,
             // this did - printed five labels the game has never shown.
             if ((eff0[1] & 0x100) && sheetOk) {
                 const int* src = lit ? it.lit : it.unlit;
+                int srcOverride[2] = {src[0], src[1]};
+                if (srcMoved_) {
+                    const auto sm = srcMoved_->find(it.addr);
+                    if (sm != srcMoved_->end() && !lit) {
+                        srcOverride[0] = sm->second.first;
+                        srcOverride[1] = sm->second.second;
+                        src = srcOverride;
+                    }
+                }
                 const int x0 = it.x + q->offsetX, y0 = it.y + q->offsetY;
                 blt(fb, {scaleX(x0), scaleY(y0),
                          scaleX(x0 + it.w), scaleY(y0 + it.h)},
                     art, {src[0], src[1], src[0] + it.w, src[1] + it.h},
                     kBltWait | kBltKeySrc, artKey, /*dstKey*/ 0, filter_);
                 ++out.spritesDrawn;
+                // ...and, for an item the caller asked about, WHERE FROM -
+                // the lit source as readily as the moved unlit one, because
+                // the difference between them is the whole fault this is for.
+                if (srcMoved_ && srcMoved_->count(it.addr))
+                    out.spriteSrc[it.addr] = {src[0], src[1]};
             }
 
             // ---- AN ITEM SHOWS TEXT ONLY IF SOMETHING GIVES IT ANY -----

@@ -139,6 +139,9 @@ inline constexpr std::uint32_t kCbTerminalCell       = 0x004AF410u;
 inline constexpr std::uint32_t kHookTerminalPad      = 0x004AF300u;
 // THE GANDHAR DOOR (screen 12), a 6x6 combination grid: `sub_4AFE90` walks a
 // cursor over it and `sub_4AFF90` stamps the cell it is on.
+// DEN'S LOCKER (screen 13): four digit wheels on one hook, which both moves
+// and answers - it has no item callback at all.
+inline constexpr std::uint32_t kHookDenDial          = 0x004AFBE0u;
 inline constexpr std::uint32_t kHookGandharGrid      = 0x004AFE90u;
 inline constexpr std::uint32_t kCbGandharCell        = 0x004AFF90u;
 inline constexpr std::uint32_t kPanelShopSellConfirm = 0x004E3A40u;
@@ -608,6 +611,11 @@ struct UiListState {
     // the (255, 0, 0) records, unwritten.
     std::map<std::uint32_t, std::array<int, 3>> colour;
     std::set<std::uint32_t> itemOff;    // 0x40000001 / 0x20000004 on an item
+    // ...and the other direction: items a hook switched ON, which is
+    // `sub_428FF0(item, 0x40000001, 0)` - the Gandhar door's press does it to
+    // each marker as it stamps one. The record has the bit SET (the markers
+    // ship hidden), so nothing but this can draw them.
+    std::set<std::uint32_t> itemShown;
     std::set<std::uint32_t> listOff;    // ...the same over a whole list
     std::map<std::uint32_t, int> bound; // list -> how many rows it holds
     // `item+0x3C` - THE ROW a widget shows, -1 when it is past the end.
@@ -961,6 +969,12 @@ public:
     int   gandharRow() const { return gandRow_; }
     int   gandharPresses() const { return gandPresses_; }
     unsigned gandharMask() const { return gandMask_; }
+    // The cells the presses stamped, in order - the viewer places the marker
+    // widgets on them (`off_4E4C80[count]` in the engine).
+    const std::vector<std::pair<int, int>>& gandharStamps() const { return gandStamps_; }
+    // Den's locker, for the viewer that draws the wheels.
+    int denWheel() const { return denWheel_; }
+    int denDigit(int i) const { return denDigit_[i & 3]; }
     const std::vector<std::string>& log() const { return log_; }
 
     // THE COLOUR A PAGE PAINTS ITSELF IN - `sub_4296D0` (0x004296D0), and
@@ -1008,6 +1022,8 @@ public:
     // at the SAME coordinate (0x004DE920 "Appel du slider" and 0x004DE968
     // "Automatique", both at 187,30) and shows exactly one of them.
     bool itemOff(std::uint32_t addr) const { return state_->itemOff.count(addr) != 0; }
+    // An item a hook switched ON over its record's own not-drawn bit.
+    bool itemShown(std::uint32_t addr) const { return state_->itemShown.count(addr) != 0; }
     // Extra bank-B bits a builder set on this item at run time.
     std::uint32_t itemFlagsOn(std::uint32_t addr) const {
         const auto it = state_->flagOn.find(addr);
@@ -1115,6 +1131,8 @@ private:
     bool keypad(const UiList& l, std::uint32_t bits);
     // `sub_4AFE90`, the Gandhar door's cursor (see `kHookGandharGrid`).
     bool gandhar(const UiList& l, std::uint32_t bits);
+    // `sub_4AFBE0`, Den's locker (see `kHookDenDial`).
+    bool denDial(const UiList& l, std::uint32_t bits);
     // `sub_42A5C0` - move the panel's focus between LISTS, which is what the
     // sneak device's pages bind to left and right through `sub_42A710`.
     bool moveLists(int step);
@@ -1180,7 +1198,13 @@ private:
     // the cursor item's own `+3C` as `(row << 16) | col`, the mask is
     // `byte_68A60C` and the count `byte_68A608`.
     int         gandCol_ = 0, gandRow_ = 0, gandPresses_ = 0;
+    // where each press stamped its marker, in press order
+    std::vector<std::pair<int, int>> gandStamps_;
     unsigned    gandMask_ = 0;
+    // DEN'S LOCKER: which wheel is under the hand (the list's own `+2`) and
+    // the four digits (each wheel item's `+3C`).
+    int         denWheel_ = 0;
+    int         denDigit_[4] = {0, 0, 0, 0};
     std::vector<std::string> log_;
     // Item address -> the RGB a page builder wrote into `+8/+9/+10`.
 };

@@ -12602,6 +12602,107 @@ def c_engine_gandhar_door():
             "counts are the last the CURSOR printed, so three of four and three presses")
 
 
+def c_engine_den_locker():
+    r"""`omk-play`: DEN'S LOCKER - four wheels, 7 2 1 3, and the cache opens.
+
+    `todo/missing-ui.md` 5b. Screen 13 is one list of six items on one hook,
+    `sub_4AFBE0`, which both moves and answers - the screen has no item
+    callback anywhere - and it was read from the image (no `proc` label).
+
+    * UP/DOWN spin the wheel under the hand, wrapping 0..9; LEFT/RIGHT move the
+      hand over `[list+2]`, the LIST'S OWN SELECTION, within 0..3.
+    * a wheel shows its digit through its UNLIT SOURCE: the hook writes
+      `digit * 46` into `+0x12`, cutting that figure out of the strip of ten at
+      x = 0 in `DEN00.BMP`. The four wheels' authored unlit source is (0, 0).
+    * the combination is compiled in - `dword_4E47E4 == 7 && dword_4E482C == 2
+      && dword_4E4874 == 1 && dword_4E48BC == 3`, which are the `+3C` of the
+      four wheel items - so it is **7 2 1 3**, it opens the moment the last
+      wheel lands, and there is no confirm.
+
+    THE ROUTE: SCENE 43 over AREA 146 ('Anekbah Appart Den'), zone 2417
+    'Cache' - which the chunk's own startup script enables only when
+    VARIABLES[482] 'Cache Trouvee' is 1, so the run sets it. Zone 2419
+    'Tableau Coffre' shares the footprint and is what the story disables on
+    the way, so the harness disables it too. The zone's activate script opens
+    the screen, and on the answer it shows OBJECTS 13 'Cassette Den', 104
+    'Pass Ventilos' and 103 'Plan Ventilos' - which is the whole point of the
+    locker and is what this asserts beside the answer.
+
+    THE DISPLAY LINE IS TAKEN FROM THE DRAW, not from the hook's digits
+    (`ScreenFrame::spriteSrc`). It has to be: the wheel the hand is on draws
+    its LIT source - its own empty place in the artwork - under oscillator 1,
+    so it blinks, and a line printed from what the viewer HANDED the composer
+    reported "7 2 1 2" while the display showed three figures and a gap. That
+    was a real fault (the hand was a private field, so the list's selection
+    stayed at 0 and the FIRST wheel was the blank one for ever), and it was
+    found by rendering a frame, not by any count.
+
+    SHOWN TO FAIL: `denDial`'s combination test changed to 7 2 1 4 - the same
+    presses walk the same wheels and nothing answers.
+    """
+    import subprocess
+    eng = os.path.join(ROOT, "engine")
+    fr = omkpaths.data_root()
+    if not (os.path.isdir(eng) and os.path.isdir(os.path.join(fr, "SCPTDATA"))):
+        return ("skipped",), ("skipped",), "engine/ or gamedata/ absent"
+    mk = subprocess.run(["make", "-s", "play"], cwd=eng, capture_output=True, text=True)
+    play = os.path.join(eng, "build", "omk-play")
+    if mk.returncode != 0:
+        return ("build failed",), ("built",), "engine/ must build"
+    if not os.path.exists(play):
+        return ("no sdl",), ("no sdl",), "needs SDL to render"
+    up, dn, rt = "k200*2,k*6", "k208*2,k*6", "k205*2,k*6"
+    # stand in the zone, press the action button, then dial 7 2 1 3
+    hold = ",".join(["k*60", "k28*8", "k*75",
+                     up, up, up, rt, dn, dn, rt, dn, rt, dn, dn, dn, "k*60"])
+    out = subprocess.run(
+        [play, fr, os.path.join(ROOT, "tables"),
+         "--save", os.path.join(ROOT, "traces", "save-appart.bin"),
+         "--area", "146", "--scene-chunk", "43", "--var", "482=1",
+         "--stand", "522,-10,343,178", "--zone-disable", "2419",
+         "--frames", "400", "--nofmv", "--nodelay", "--no-crowd", "--hold", hold],
+        capture_output=True, text=True, errors="replace",
+        env=dict(os.environ, SDL_VIDEODRIVER="dummy")).stdout
+    rows = re.findall(r"den locker: the display reads ([-0-9 ]+)\(the hand is on (\d+)", out)
+    ans = re.search(r"screen 13 answered (\d+) -> the script resumes \(variable (\d+) now", out)
+    # What the display ever showed, with the blinking wheel's gaps closed: the
+    # union over the frames of each column's figure.
+    cols = ["-", "-", "-", "-"]
+    for r, _h in rows:
+        for i, c in enumerate(r.split()):
+            if c != "-":
+                cols[i] = c
+    # ...and WHICH column is the blank one, which is the half the union cannot
+    # see. The wheel drawn blank must be the wheel the hand is on and no other:
+    # with the hand kept in a private field the list's selection stayed at 0 and
+    # column 0 was the blank one for ever, so the union alone passes a display
+    # that is wrong in exactly the way this was written to catch.
+    #
+    # The blink's PHASE is not asserted and cannot be: `--nodelay` drops the
+    # frame sleep, so the whole four hundred frames can run inside one half of
+    # the oscillator's 500 ms. What is asserted is blink-independent - that a
+    # blank was drawn at all, and that no blank was ever drawn anywhere but
+    # under the hand.
+    blanks, off = 0, 0
+    for r, h in rows:
+        for i, c in enumerate(r.split()):
+            if c != "-":
+                continue
+            blanks += 1
+            if i != int(h):
+                off += 1
+    return ("screen 13 is asking" in out, len(rows) > 0, "".join(cols),
+            max((int(h) for _r, h in rows), default=-1), blanks > 0, off,
+            int(ans.group(1)) if ans else -1, int(ans.group(2)) if ans else -1,
+            "prop 13 SHOWN" in out, "prop 104 SHOWN" in out, "prop 103 SHOWN" in out), \
+           (True, True, "7212", 3, True, 0, 1, 19, True, True, True), \
+           ("the locker's wheels draw their figures, the wheel drawn blank is always "
+            "the one the hand is on (and it is not always the first), the hand walks "
+            "all four, 7 2 1 3 answers 1 and the cache gives up the cassette, the pass "
+            "and the plan - the display's last reading is 7 2 1 2 because the fourth "
+            "wheel's landing on 3 answers in the same frame")
+
+
 def c_engine_terminal_family():
     r"""`omk-play`: Kay'l's TERMINAL and the FIGHT SIMULATOR - the keypad family.
 
@@ -37139,6 +37240,7 @@ SLOW = [
     ("engine: run over", c_engine_run_over, "todo/falls.md 4"),
     ("engine: lift", c_engine_lift, "todo/next-tasks 13"),
     ("engine: gandhar door", c_engine_gandhar_door, "todo/missing-ui 5"),
+    ("engine: den locker", c_engine_den_locker, "todo/missing-ui 5b"),
     ("engine: terminal family", c_engine_terminal_family, "todo/missing-ui 3"),
     ("engine: water entry", c_engine_water_entry, "todo/swimming.md 1"),
     ("engine: fight library", c_engine_fight_library, "todo/fight-mode 15.2"),
