@@ -11959,6 +11959,12 @@ def c_engine_fight_letterbox():
 
     SHOWN TO FAIL: drop `if (holdEditCam && fightRun.active)` from the
     clear-list and frame 500 reads 0 lit on both edge rows.
+
+    RE-BASELINED 2026-09-17, the middle row 640 -> **625**: the fight HUD
+    (`todo/fight-mode.md` 15.5) draws the two gauges' black frames down the
+    screen edges, and row 240 crosses them at x 17..20 / 27..30 and
+    609..612 / 620..622 - fifteen pixels, the 6-wide lit channel between each
+    pair. With `OMK_NOUI=1` the same frame reads 640 again.
     """
     import subprocess, tempfile, shutil
     eng = os.path.join(ROOT, "engine")
@@ -11993,7 +11999,7 @@ def c_engine_fight_letterbox():
     if rows.get(300) is None or rows.get(500) is None:
         return ("no render",), ("2 frames",), "both frames must render"
     return (rows[300][0], rows[300][2], rows[500][0], rows[500][1], rows[500][2]), \
-           (0, 0, 640, 640, 640), \
+           (0, 0, 640, 625, 640), \
            ("the approach cutscene keeps its bars and the FIGHT does not - "
             "the middle row is quoted so a black frame cannot pass by "
             "having no bars either")
@@ -12212,6 +12218,54 @@ def c_engine_fight_camera_collision():
     return (hitsOn, hitsOff, differ > 0), (29, 0, True), \
            ("the fight camera's ray hits the set on 29 frames of the supermarket fight "
             "and moves the eye, and never without the solve")
+
+def c_engine_fight_hud():
+    r"""`omk-play`: the FIGHT HUD - both gauges, and mode 2's STAT CARD for four seconds.
+
+    `Fight_UpdateHealthBars` (0x00445160) draws `Hud_DrawBar(player, 200, 0, 2)`
+    and `(opponent, 200, 1, 0)` each melee frame while the KO counter is 0;
+    mode 2 first draws `sub_447000` for the 4000 ms after `Fight_Begin`'s
+    `Hud_Refresh` (`ui/hudbar.h`). Over the real supermarket fight:
+
+    * the card's labels, `IAM\SNEAK` 26..31 filtered to `_UPPER` - "AMRVEM";
+    * the rank for the save's property 19 (`/ 41` -> 1, 'Initi...');
+    * the once-a-second HUD samples that drew the card's five bars, and those
+      that drew none - the four-second window, so both must be nonzero;
+    * the opponent's gauge at the fight's start: 100 of 200, 50%.
+
+    SHOWN TO FAIL: pass mode 0 for the player's gauge and the card samples fall
+    to 0.
+    """
+    import subprocess
+    eng = os.path.join(ROOT, "engine")
+    fr = omkpaths.data_root()
+    if not (os.path.isdir(eng) and os.path.isdir(os.path.join(fr, "SCPTDATA"))):
+        return ("skipped",), ("skipped",), "engine/ or gamedata/ absent"
+    mk = subprocess.run(["make", "-s", "play"], cwd=eng, capture_output=True, text=True)
+    play = os.path.join(eng, "build", "omk-play")
+    if mk.returncode != 0:
+        return ("build failed",), ("built",), "engine/ must build"
+    if not os.path.exists(play):
+        return ("no sdl",), ("no sdl",), "needs SDL to render"
+    r = subprocess.run(
+        [play, fr, os.path.join(ROOT, "tables"),
+         "--save", os.path.join(ROOT, "traces", "save-appart.bin"),
+         "--fight-supermarket", "--frames", "560"],
+        capture_output=True, text=True, errors="replace",
+        env=dict(os.environ, SDL_VIDEODRIVER="dummy"))
+    out = r.stdout + r.stderr
+    m = re.search(r"stat card ((?:\S+=-?\d+ ){5}\S+=-?\d+), rank '([^']*)'", out)
+    samples = re.findall(r"fight HUD: player gauge \d+% \(top -?\d+\), opponent (\d+)% "
+                         r"\(top -?\d+\), card rows (\d+)", out)
+    if not m or len(samples) < 5:
+        return (bool(m), len(samples)), (True, ">= 5"), "the run must print its HUD lines"
+    labels = "".join(kv.split("=")[0] for kv in m.group(1).split())
+    withCard = sum(1 for _, rows in samples if rows == "5")
+    without = sum(1 for _, rows in samples if rows == "0")
+    return (labels, m.group(2)[:5], withCard > 0, without > 0, int(samples[0][0])), \
+           ("AMRVEM", "Initi", True, True, 50), \
+           ("the stat card's labels and rank, drawn for the first four seconds and then "
+            "not, beside both gauges")
 
 def c_engine_fight_library():
     r"""`omk-play`: a fight loads `fight.scx`, its OWN sound and sprite library.
@@ -36353,6 +36407,7 @@ SLOW = [
     ("engine: fight separation", c_engine_fight_separation, "todo/fight-mode 15.8d"),
     ("engine: fight collision", c_engine_fight_collision, "todo/fight-mode 15.8a"),
     ("engine: fight camera collision", c_engine_fight_camera_collision, "todo/fight-mode 15.8b"),
+    ("engine: fight hud", c_engine_fight_hud, "todo/fight-mode step 5"),
     ("engine: fight library", c_engine_fight_library, "todo/fight-mode 15.2"),
     ("engine: fight pause", c_engine_fight_pause, "todo/fight-mode 15.9"),
     ("engine: programs",   c_engine_programs,   "engine/README"),

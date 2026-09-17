@@ -1,8 +1,11 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "ui/hudbar.h"
 
+#include "ui/text.h"
+
 #include <algorithm>
 #include <cmath>
+#include <vector>
 
 namespace omk {
 
@@ -88,6 +91,22 @@ bool HudBar::load(const DataFs& fs) {
     bmpH_ = jauge_[0].h;
     jauge_[1] = surfaceFromBmp(fs.read("IMAGES/jauge2.bmp"));
     jaugeG_   = surfaceFromBmp(fs.read("IMAGES/jaugeg.bmp"));
+    // `IAM\SNEAK`, the same pass: the NUL-separated strings, labels 26..31
+    // filtered to the `_UPPER` class and ranks 36..40 kept whole.
+    const auto raw = fs.read("IAM/SNEAK");
+    std::vector<std::string> parts(1);
+    for (const auto b : raw) {
+        const char c = static_cast<char>(b);
+        if (c == 0) parts.emplace_back(); else parts.back().push_back(c);
+    }
+    const auto at = [&](std::size_t i) { return i < parts.size() ? parts[i] : std::string(); };
+    for (int i = 0; i < 6; ++i) {
+        std::string f;
+        for (const char c : at(static_cast<std::size_t>(26 + i)))
+            if (c >= 'A' && c <= 'Z') f.push_back(c);   // `isctype(c, _UPPER)`
+        labels_[i] = f;
+    }
+    for (int i = 0; i < 5; ++i) ranks_[i] = at(static_cast<std::size_t>(36 + i));
     return jauge_[0].valid();
 }
 
@@ -190,7 +209,76 @@ int HudBar::sparks(Surface& fb, int top, int side) {
     return n;
 }
 
-HudBarFrame HudBar::draw(Surface& fb, int value, int max, int side, int mode) {
+void HudBar::refreshCard(const int props[6], double nowMs) {
+    for (int i = 0; i < 6; ++i) card_[i] = props[i];
+    card_[1] = props[1] / 41;                    // `dword_530CB4 = v2 / 41`
+    stampMs_ = nowMs;
+}
+
+void HudBar::card(Surface& fb, const TextLayout& text, HudBarFrame& out) {
+    const int W = fb.w, H = fb.h;
+    const auto sx = [&](int v) { return scaleX(v, W); };
+    const auto sy = [&](int v) { return scaleY(v, H); };
+    struct Bar { int y, v; };
+    Bar bars[6];
+    int nb = 0;
+    for (int row = 0; row < 6; ++row) {
+        if (row == 1) continue;
+        const int y = 348 + 20 * row;
+        bars[nb++] = {y, card_[row]};
+        // layer 2, flags 4, colour 0: the frame
+        const int fx[4] = {sx(70), sx(70), sx(170), sx(170)};
+        const int fy[4] = {sy(y) + sy(4), sy(y) - sy(4), sy(y) - sy(4), sy(y) + sy(4)};
+        fillQuadD3d(fb, fx, fy, 0u, 4u);
+    }
+    // layer 3 in the HEAD cache's order: the first row's blit, then the rest
+    // reversed as tint-then-blit, then the first row's tint
+    const auto blit = [&](const Bar& b) {
+        if (!jaugeG_.valid()) return;
+        const int s0 = bmpH_ * (200 - b.v) / 200, s1 = bmpH_;
+        const int d0 = sx(70), d1 = sx(70) + b.v * (sx(170) - sx(70)) / 200;
+        if (s0 >= s1 || column_ >= column_ + 3 || d0 >= d1) return;   // I2D_BlitBitmap's refusals
+        if (blt(fb, Rect{d0, sy(b.y) - sy(2), d1, sy(b.y) + sy(2)}, jaugeG_,
+                Rect{s0, column_, s1, column_ + 3}, kBltWait | kBltKeySrc, 0, 0))
+            ++out.cardRows;
+    };
+    const auto tint = [&](const Bar& b, std::uint32_t rgb) {
+        const int x1 = sx(70) + b.v * (sx(170) - sx(70)) / 200;
+        const int qx[4] = {sx(70), sx(70), x1, x1};
+        const int qy[4] = {sy(b.y) + sy(2), sy(b.y) - sy(2), sy(b.y) - sy(2), sy(b.y) + sy(2)};
+        fillQuadD3d(fb, qx, qy, rgb, 1u);
+    };
+    const int rowOf[5] = {0, 2, 3, 4, 5};
+    if (nb > 0) blit(bars[0]);
+    for (int i = nb - 1; i >= 1; --i) {
+        tint(bars[i], kHudCardRgb[rowOf[i]]);
+        blit(bars[i]);
+    }
+    if (nb > 0) tint(bars[0], kHudCardRgb[0]);
+
+    // the text: the labels, and row 1's rank
+    for (int row = 0; row < 6; ++row) {
+        const int y = 348 + 20 * row;
+        TextBlock tb;
+        tb.font = tb.altFont = 'C';
+        tb.screenW = W; tb.screenH = H;
+        if (row == 1 && card_[1] >= 0 && card_[1] < 5) {
+            tb.left = sx(70); tb.right = sx(510);
+            tb.top = sy(y) - 2 * sy(4); tb.bottom = sy(y) + 6 * sy(4);
+            tb.style = 2;
+            text.layOutBlock(&fb, ranks_[card_[1]], tb);
+            ++out.cardText;
+        }
+        tb.left = sx(70) - 2 * sx(12); tb.right = sx(70) - sx(4);
+        tb.top = sy(y) - 2 * sy(4); tb.bottom = sy(y) + 6 * sy(4);
+        tb.style = 4;
+        text.layOutBlock(&fb, labels_[row], tb);
+        ++out.cardText;
+    }
+}
+
+HudBarFrame HudBar::draw(Surface& fb, int value, int max, int side, int mode,
+                         const TextLayout* text, double nowMs) {
     HudBarFrame out;
     int v = value < 0 ? 0 : value;
     if (v > max) v = max;
@@ -201,6 +289,7 @@ HudBarFrame HudBar::draw(Surface& fb, int value, int max, int side, int mode) {
     if (bmpW_ > 3) column_ = counter_ % (bmpW_ - 3);
     out.column = column_;
     if (mode == 1) return out;                   // the horizontal bar: not ported
+    if (mode == 2 && text && nowMs < stampMs_ + 4000.0) card(fb, *text, out);
     out.top = gauge(fb, out.percent, side, out);
     out.sparks = sparks(fb, out.top, side);
     return out;

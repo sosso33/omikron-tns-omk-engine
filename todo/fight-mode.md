@@ -202,7 +202,7 @@ Each step ends in a commit and a report, then waits for the reader
 | **3** | the KO: the 60-frame ring, the two playbacks, the fade | **DONE except the FADE** — the ring and both playbacks landed with step 1 (`Fight_RecordFrame` / `sub_49B2E0`) and have been seen running since step 2: the KO counter goes 1 then 2 and the fight ends. `Screen_Fade` is not modelled at all in this tree, so the two calls that bracket a knock-out are labelled rather than faked |
 | **3b** | **NOT IN THE ORIGINAL PLAN, and worth admitting**: the opponent's BODY — his motion pass and posing him from his fight channel. The commits call this step 3 because it is what the work turned out to need once step 2 ran; this table said nothing about it | **DONE 2026-09-16**, `4eb178b` and `4a9abb3`. §10 |
 | **4** | camera mode 14 | **DONE 2026-09-16** — `FightCamera` in `actor/fight.*`, the arm ahead of the follow camera in `omk-play`, and options row 18 consumed. §11 has the three faults the harness log caught, and what is labelled (the collision solve, the throw's swing length) |
-| **5** | the HUD: both bars, and mode 2's four-second overlay | |
+| **5** | the HUD: both bars, and mode 2's four-second overlay | **DONE 2026-09-17** — §15.5 |
 | **6** | play test with the reader | |
 
 **What step 1's check can assert** (it must be SHOWN to fail, PORTING B2):
@@ -1063,12 +1063,38 @@ The attempt is saved as a patch outside the tree; it is 115 lines and all of
 it is in `play.cpp`'s `FightRun`. Nothing of it is committed, so the tree
 still has no collision on the opponent and the fight still ends at 663.
 
-### 15.5 "no UI" — this is step 5, already planned
+### 15.5 "no UI" — step 5, DONE 2026-09-17
 
-The reader's own note: *"I think this is the next step"*, and it is. Step 5 is
-both gauges (`Hud_DrawBar(player, 200, 0, 2)` and `(opponent, 200, 1, 0)`)
-and mode 2's four-second overlay `sub_447000`, 306 lines and unread.
-`ui/hudbar.h` has mode 0 already.
+The reader's own note: *"I think this is the next step"*, and it was. Both
+gauges were already ported as `Hud_DrawBar` mode 0 for shoot mode; what the
+fight adds is the CALL and mode 2's overlay.
+
+**When.** `Fight_UpdateHealthBars` is the last call of `Actors_TickAll`'s melee
+row, which runs only while `dword_906F40` - the KO counter - is 0: the bars
+are HIDDEN through the knock-out replay. Each fighter's property 1, max 200.
+
+**What `sub_447000` is.** A six-row STAT CARD, drawn while
+`Sys_GetTimeMs() < dword_531030 + 4000`, and `dword_531030` is stamped by
+`Hud_Refresh`, which `Fight_Begin` calls - so the four seconds after a fight
+starts. `Hud_Refresh` snapshots the player's properties 16, 19, 17, 3, 18 and 2
+(the 19 divided by 41). `Hud_LoadResources` pulls the labels out of
+`IAM\SNEAK` - strings 26..31, *Attaque, Maîtrise du combat, Résistance
+corporelle, Vitesse, Esquive, Mana* - and keeps only the characters of ctype
+class 1 (`ebp` = 1 at the `isctype` push, read from the listing because the
+decompiler's reading looked wrong): `_UPPER`, so each label is drawn as its
+initial, right-aligned in the 20-pixel box x 46..66 in font 'C'. Row 1 draws no
+bar: its value picks a RANK from strings 36..40 (*Novice, Initié, Disciple
+Taar, Maître de la Voix Intérieure, Grand Maître Taar*). The other five rows are
+a black frame over x 70..170, a `jaugeg.bmp` strip for value/200 of it and an
+additive tint in the row's colour (`dword_4C7A10`). The draw order inside the
+card follows the display list's HEAD cache, which is why row 0's bar is solid
+tint where the others show the strip; the assumption that nothing else is on
+layer 3 before the card is labelled in `ui/hudbar.h`.
+
+On the save we test with the card reads A=70 M=Initié R=30 V=70 E=60 M=10.
+Looked at: both gauges down the edges, the card bottom left, gone after four
+seconds. `verify.py: engine: fight hud`, shown to fail by drawing the player's
+gauge in mode 0.
 
 ## 14. OPEN, same play test: the shoot scheme needs a KEYPAD
 

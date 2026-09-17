@@ -103,9 +103,10 @@ requests print at frames 0, 665 and 1031, two frames after the hold begins.
   makes `Cef_FindTransition` honour the `+212` threshold; nothing read so far
   writes `+212`, and the port's setter demands one, so passing 0 would silently
   drop every priority-1 and -2 candidate. Left off deliberately.
-* **Step 5, the HUD** — both gauges (`Hud_DrawBar(player, 200, 0, 2)` and
-  `(opponent, 200, 1, 0)`) and mode 2's four-second overlay `sub_447000`
-  (306 lines, unread). `ui/hudbar.h` has mode 0 already.
+* ~~**Step 5, the HUD**~~ — **done 2026-09-17**: both gauges, hidden through
+  the KO replay, and `sub_447000` read and ported - a four-second STAT CARD of
+  the player's properties with `IAM\SNEAK`'s initials and rank (`fight-mode.md`
+  15.5, `engine: fight hud`).
 * **The camera's unmodelled parts**: ~~the tail's collision solve~~ (ported
   2026-09-17, `fight-mode.md` 15.8b - the bolts' ray from the look-at to the
   eye, X and Z only, the height clamp behind it); the throw swing's length,

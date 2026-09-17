@@ -4524,6 +4524,11 @@ int main(int argc, char** argv) {
         float foeLift = 0.0f;
         long  foeBlocked = 0, foeSlid = 0, foeSteps = 0;
         bool  camRaySet = false;           // the camera ray, installed on the first tick
+        // `Hud_Refresh`, which `Fight_Begin` calls: served at the next HUD
+        // draw, where the framebuffer's width is known. The player's six
+        // properties it snapshots, in the card's row order.
+        bool  hudRefresh = false;
+        int   cardProps[6] = {0, 0, 0, 0, 0, 0};
         double ms = 0.0;                   // the AI's `Sys_GetTimeMs` clock
         long  startedAt = 0;
     };
@@ -4577,6 +4582,14 @@ int main(int argc, char** argv) {
         {
             const auto rec = playerRecordSpan();
             std::int32_t v = 0;
+            // `Hud_Refresh`'s six reads, in `dword_530CB0`'s order
+            {
+                static const int kCardProps[6] = {16, 19, 17, 3, 18, 2};
+                for (int k = 0; k < 6; ++k) {
+                    std::int32_t c = 0;
+                    fightRun.cardProps[k] = omk::readActorProperty(rec, kCardProps[k], c) ? c : 0;
+                }
+            }
             if (omk::readActorProperty(rec, 1, v))  ps.vie = v;
             if (omk::readActorProperty(rec, 16, v)) ps.attack = v;
             if (omk::readActorProperty(rec, 18, v)) ps.dodge = v;
@@ -4717,6 +4730,7 @@ int main(int argc, char** argv) {
         in.installScheme(3);          // `Input_InstallScheme(3)`, group Combat
         fightRun.active = true;
         fightRun.camRaySet = false;
+        fightRun.hudRefresh = true;
         fightRun.opponent = opponentId;
         fightRun.body = s;
         fightRun.startedAt = session.frameNo();
@@ -17721,6 +17735,48 @@ int main(int argc, char** argv) {
                 if (const omk::ShootWeaponRow* row = playerShootRec.weapon)
                     if (row->key >= 2 && row->key >= 6 && row->key == (w.value >> 16) + 2)
                         hudAmmo = static_cast<int>(w.value & 0xFFFF);
+            }
+        }
+        // ---- THE FIGHT HUD (`todo/fight-mode.md` step 5) -----------------
+        //
+        // `Actors_TickAll`'s melee row ends with `Fight_UpdateHealthBars`
+        // (0x00445160) while the KO counter is 0: property 1 of each fighter
+        // through `Hud_DrawBar(player, 200, 0, 2)` and `(opponent, 200, 1, 0)`
+        // - the two gauges down the screen's two edges, and mode 2's STAT CARD
+        // for the four seconds after `Fight_Begin`'s `Hud_Refresh`
+        // (`ui/hudbar.h`). Hidden through the KO replay, as the engine's gate.
+        if (fightRun.active && fightRun.fight && !std::getenv("OMK_NOUI")) {
+            if (!hudBar.loaded()) hudBar.load(fs);
+            if (fightRun.hudRefresh) {
+                fightRun.hudRefresh = false;
+                hudBar.refresh(0, 22, fb.w);           // `sub_446C40(0, 22)`
+                hudBar.refresh(1, 22, fb.w);
+                hudBar.refreshCard(fightRun.cardProps, fightRun.ms);
+                std::printf("frame %ld: FIGHT HUD (Hud_Refresh) - stat card", n);
+                for (int k = 0; k < 6; ++k)
+                    std::printf(" %s=%d", hudBar.cardLabel(k).c_str(), hudBar.cardValue(k));
+                // non-ASCII bytes ESCAPED: the rank is raw Latin-1 ("Initi\xe9"),
+                // and one invalid UTF-8 byte in this log makes `grep` go quiet
+                // and a strict decode throw (`engine: fight letterbox`)
+                std::string rank = "(none)";
+                if (hudBar.cardValue(1) >= 0 && hudBar.cardValue(1) < 5) {
+                    rank.clear();
+                    for (const char ch : hudBar.rankName(hudBar.cardValue(1))) {
+                        const auto u = static_cast<unsigned char>(ch);
+                        if (u < 0x80) rank.push_back(ch);
+                        else { char e[8]; std::snprintf(e, sizeof e, "\\x%02x", u); rank += e; }
+                    }
+                }
+                std::printf(", rank '%s'\n", rank.c_str());
+            }
+            if (fightRun.fight->koCounter() == 0) {
+                const omk::HudBarFrame a = hudBar.draw(fb, fightRun.fight->player().hp, 200, 0, 2,
+                                                       &lay, fightRun.ms);
+                const omk::HudBarFrame b = hudBar.draw(fb, fightRun.fight->opponent().hp, 200, 1, 0);
+                if ((n - fightRun.startedAt) % 30 == 0)
+                    std::printf("    fight HUD: player gauge %d%% (top %d), opponent %d%% (top %d), "
+                                "card rows %d text %d\n", a.percent, a.top, b.percent, b.top,
+                                a.cardRows, a.cardText);
             }
         }
         // ---- THE SHOOT HUD, screen 34 (`todo/shoot-mode.md` 8.3) --------
