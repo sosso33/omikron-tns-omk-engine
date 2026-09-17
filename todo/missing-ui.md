@@ -222,3 +222,53 @@ like the LIFT's grid.
 | 2 | the terminal FAMILY: the display, the keypad and the answers - 7 screens | **done 2026-09-17** - §3, `verify.py: engine: terminal family` |
 | 3 | the SPECIAL screens - 12 GANDHAR DOOR, 13 DEN, 14 XACHEN, 0 VIDEOPHONE, 36 HIGH-SCORE - and the terminal's own dossier pages | §5 has each one's hooks |
 | 4 | play | |
+
+## 6. The lift ARRIVES and the level is not there — one fault fixed, one open
+
+Reported in play, 2026-09-17: *"there is an issue with the camera inside it,
+which is not placed correctly so a part of the environment is just in front of
+the camera (it is not the only place where this issue occurs)"*, and then
+*"this is a static camera, not the following one"* - camera 2980, one of AREA
+157's own.
+
+**It is not the camera.** Riding to level -2 and photographing the arrival shows
+the frame almost entirely BLACK. The log says why:
+
+    [slot] frame 179  SHOW area 179 in slot 1  (active slot 0 = area 157 ...)
+    [slot] frame 180  HIDE area 179 in slot 1
+
+The port loaded the destination and hid it again one frame later, leaving the
+player standing on a level whose set is not drawn.
+
+**The fault.** `area.arrive -1` hides "the row that is not active", which is
+what the engine's own line reads - `if (dword_69BC60) hide(slot0) else
+hide(slot1)`. But the ACTIVE slot only flips on event 9, the player's FEET
+crossing onto the new decor (`Session::playerOnArea`), and a lift never does
+that before the script arrives: `actor.goto_address` puts him at the SHAFT's own
+address, still AREA 157's set. So "not active" named the destination.
+
+The engine remembers the outgoing area separately - `a1[3]`, which this port
+already carries as `Transition::outArea` - and hiding THAT is the same row
+wherever the feet have crossed, so no ordinary transition moves. Fixed there.
+`trace agreement`, `engine: area load`, `sim: area load`, `area.goto objects`
+and `engine: walk-in scene` are green with it - the traces are real captures
+with real transitions, which is the evidence that the two rules agree in the
+ordinary case.
+
+**Still open, and NOT guessed at.** After the arrival the level's set draws (the
+corridor and Kay'l are there) but most of the frame is still black and **he
+cannot walk**: 400 frames of forward input move him 0.1 units, and `event 9:
+feet on area 179` never fires at all. The hold is released (82 frames of 646),
+so that is not it. Two candidates, both unread:
+
+* the arrival address is the SHAFT's (AREA 157's own table), so with 157 hidden
+  he stands where there is no floor and every step reverts - which would mean
+  the two sets must both be resident for the length of the arrival, not one;
+* or the feet event needs raising on a TELEPORT, not only on a walked change of
+  decor, and the active slot with it.
+
+The repro is one command and 260 frames:
+
+    build/omk-play ../gamedata ../tables --save ../traces/save-appart.bin \
+        --area 157 --address 446 --frames 260 --nofmv --nodelay --no-crowd \
+        --hold 'k*40,k28*2,k*60,k208*2,k*30,k28*2,k*200' --dump out.bin
