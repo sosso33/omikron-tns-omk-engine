@@ -71,7 +71,7 @@ enum class ActorState : int {
                           // (the decompiled comment says "ladder" - it is the
                           // canal's steps, todo/swimming.md), and sub_465390
     Scripted12     = 12,
-    Scripted13     = 13,
+    Surface13      = 13,  // AT THE WATER'S SURFACE: sub_4A8F30 writes it on surfacing
     Swim           = 14,  // RSTNAGE - `nage` - and MDDIVEND write it
     Shoot15        = 15,
     Dialogue       = 16,

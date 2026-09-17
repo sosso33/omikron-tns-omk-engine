@@ -12550,6 +12550,14 @@ def c_engine_water_entry():
     14 and posts message 22, which AREA 1 answers - so the run ends in state 14,
     not 11. SHOWN TO FAIL: drop the `MDDIVEND` arm and it ends in 11 with no
     message.
+
+    **And step 3** (the motion, `sub_4A8F30`): underwater he drifts UP off the bed
+    while the pitch turns to its 340 cap, holding just under the surface - the
+    last swimming line's y under 100 (the bed is 124.7) and pitch 340. SHOWN TO
+    FAIL: drop the 0.15-a-frame drift over the bed and he stays on it. (The root
+    motion also goes through the whole Euler matrix in the water; mutating THAT
+    left this check green - `H_WAITIN`'s root barely moves - so nothing here
+    shows the pitch rotation matters, and the docstring says so.)
     """
     import subprocess
     eng = os.path.join(ROOT, "engine")
@@ -12565,7 +12573,7 @@ def c_engine_water_entry():
     out = subprocess.run(
         [play, fr, os.path.join(ROOT, "tables"),
          "--save", os.path.join(ROOT, "traces", "save-appart.bin"),
-         "--area", "1", "--stand", "10524,-40,10284,270", "--frames", "200",
+         "--area", "1", "--stand", "10524,-40,10284,270", "--frames", "600",
          "--nofmv", "--nodelay", "--no-crowd", "--hold", "k200*140"],
         capture_output=True, text=True, errors="replace",
         env=dict(os.environ, SDL_VIDEODRIVER="dummy")).stdout
@@ -12574,10 +12582,12 @@ def c_engine_water_entry():
                     r"\.CTL state \d+ '(\w*)'", out)
     if not land or not fin:
         return (bool(land), bool(fin)), (True, True), "the run must land and print the player"
+    swim = re.findall(r"swimming - ACTOR_STATE 14, .* at -?\d+ (-?[\d.]+) -?\d+, pitch (\d+)", out)
+    last = swim[-1] if swim else ("999", "0")
     return (round(float(land.group(1))), "INTO THE WATER" in out and "bank group 300" in out,
             "MDDIVEND - ACTOR_STATE 14, message 22 to its handler" in out,
-            int(fin.group(1)), fin.group(2)), \
-           (125, True, True, 14, "H_WAITIN"), \
+            int(fin.group(1)), fin.group(2), float(last[0]) < 100.0, int(last[1])), \
+           (125, True, True, 14, "H_WAITIN", True, 340), \
            ("he lands on the canal bed through the surface, enters the water, MDDIVEND " \
             "posts message 22, and he ends in ACTOR_STATE 14 on H_WAITIN")
 

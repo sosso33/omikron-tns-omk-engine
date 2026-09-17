@@ -8100,6 +8100,24 @@ int main(int argc, char** argv) {
                         }
                         if (!player->walker().airborne() && !player->walker().sliding())
                             fallBanded = false;
+                        // ---- THE WATER'S MESSAGES and a line a second while he swims ----
+                        for (const int m : player->takeWaterMessages()) {
+                            const bool ran = session.postMessage(m, session.playerActor());
+                            std::printf("frame %ld: water (sub_4A8F30) - MESSAGE %d %s; ACTOR_STATE %d\n",
+                                        n, m, ran ? "to its handler" : "- no handler subscribes",
+                                        static_cast<int>(player->state()));
+                        }
+                        {
+                            const int ws = static_cast<int>(player->state());
+                            if (ws >= 11 && ws <= 14 && n % 30 == 0)
+                                std::printf("frame %ld: swimming - ACTOR_STATE %d, .CTL '%s' group %d, at "
+                                            "%.0f %.1f %.0f, pitch %.0f, breath %s\n", n, ws,
+                                            player->ctlStateName().c_str(), player->ctlGroupId(),
+                                            player->pos()[0], player->pos()[1], player->pos()[2],
+                                            double(player->eulerPitch()),
+                                            player->breathLeftMs() < 0.0 ? "-" :
+                                                (std::to_string(int(player->breathLeftMs())) + " ms").c_str());
+                        }
                         // ---- INTO THE WATER, `Actor_ApplyMotion` (`todo/swimming.md` 1) ----
                         // In ACTOR_STATE 1, a ground mesh flagged 0x8000000 - the
                         // canal's steps and bed - puts him in bank group 300

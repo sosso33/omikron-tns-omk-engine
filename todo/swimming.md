@@ -112,6 +112,44 @@ an unflagged floor at y 3.4 (triangle 11739, flags 0) - the engine would too.
 (he lands on the water, no entry). Twelve walker, landing and actor checks
 green, `engine: actor states` among them after the rename of state 11.
 
+## 4. Step 3, done — the motion, and the drowning ran on the game's own script
+
+`PlayerController::waterTick` transcribes `sub_4A8F30` for states 11..14: no
+gravity, no ground snap, the clip's move vertical included (the horizontal wall
+sweep and the floor under the water standing in for `Actor_Move`'s 3D collide),
+the surface hold at 11.811 over the crown in state 13, and in state 14 the head
+node's probe - pulled under by the surface, drifting up 0.15 a frame over the
+bed with the pitch turning +0.2, surfacing into group 301 / state 13 / message 21
+over any other floor - the pitch clamp and the 40-second breath with message 12.
+`Walker` gained `probeFlags`, `surfaceAbove` and `floorThroughWater`.
+
+**The root motion goes through the whole Euler matrix** (`rotateEuler`, the
+`Matrix3x3_FromEulerAngles` the shove already used), because +288 carries the
+pitch. **A first reading here was wrong and is corrected**: it blamed the
+missing pitch for a sink through the bed at 58 units a second, but the sink was
+the bed limit probing from the NEW position, already under the bed - fixed in
+the same edit - and a mutation dropping the pitch rotation left the check
+green. `H_WAITIN`'s root barely moves, so nothing measured yet shows the pitch
+rotation matters; it stands on the matrix alone.
+
+**Measured in the canal walk-in, 1500 frames**: in at frame 150, `MDDIVEND`
+and message 22, the drift from y 123 to ~68 by frame 540 with the pitch at 340,
+the breath from 40 000 ms down, and at frame 1371 - 40 s under - **message 12,
+which AREA 1 answers**: `player.move.wait 162` (`H_ACIDE`, drowning),
+`actor.goto_address 65` to the bank at (12202, 3, 5959), `player.move 303`
+(`H_WO_SD`) and the voice-over *ZVO P574 Noyade Comment*. `Vie` ends at 5.
+
+**Open, labelled**:
+* After the rescue he falls back IN: address 65 is at y 3, the surface's
+  height, and back in state 1 the walker's pass-through drops a body placed on
+  the surface to the bed. Whether the engine keeps a PLACED body on a
+  0x20000000 mesh is unread - the pass-through read is the descent's.
+* State 13 (the surface) has not been reached by a run: nothing here surfaces
+  him - the probe over "any other floor" is what does, and the canal's walk-in
+  never finds one under his head.
+* The head node's point is the rest pose's, not the posed node.
+* The pitch is not yet applied to the DRAWN body (3b).
+
 ## 2. The steps
 
 | step | what | state |
@@ -119,7 +157,7 @@ green, `engine: actor states` among them after the rename of state 11.
 | 0 | this reading | **done 2026-09-17** |
 | 1 | the entry: the 0x8000000 mesh under his feet in state 1 -> group 300, scheme 1, state 11, camera 21; rename state 11 | **done 2026-09-17** - §3 |
 | 2 | the water moves: `MDDIVEND` (14, message 22), `MDSW2SD` (1, camera 0), `RSTAVNT`, `RSTNAGE`, `MDDIVBEG` | **done 2026-09-17** - in the canal walk-in `MDDIVEND` fires, ACTOR_STATE 14, message 22 answered by AREA 1; the other four are wired and not yet reached by a run |
-| 3 | the motion, 11..14: no gravity and no ground snap; the surface hold; the pitch | |
+| 3 | the motion, 11..14: no gravity and no ground snap; the surface hold; the pitch | **done 2026-09-17** - §4; the pitch turns the MOTION, the drawn body is 3b |
 | 4 | the breath: the 40 s timer, `Hud_DrawBar` mode 1, message 12 | |
 | 5 | a place to swim headlessly, and the check | |
 | 6 | play | |

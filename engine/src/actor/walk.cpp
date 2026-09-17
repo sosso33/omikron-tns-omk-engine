@@ -81,6 +81,43 @@ int decorUnder(std::span<const DecorSoup> decors, const TriangleSoup& merged,
 // `Walk_GroundResponse`'s landing: the drop decides the tier, the tier decides
 // the bank group and the state, and the accumulators are cleared (LABEL_83
 // zeroes +1304, +280 and +284).
+std::optional<double> Walker::probeFlags(double x, double from, double z,
+                                         std::uint32_t& flags) const {
+    flags = 0;
+    if (!grid_) return floorUnder(soup_, x, from, z);
+    std::uint32_t tri = 0;
+    const auto h = floorUnder(soup_, *grid_, x, from, z, tri);
+    if (h && floorFlags_ && floorFlags_->size() * 9 == soup_.size() && tri < floorFlags_->size())
+        flags = (*floorFlags_)[tri];
+    return h;
+}
+
+std::optional<double> Walker::surfaceAbove(double x, double y, double z) const {
+    // Walk the hits downward from well above him and keep the last water
+    // surface that is still above his y: the ray up, from the other end.
+    std::optional<double> best;
+    double from = y - 2000.0;
+    for (int guard = 0; guard < 32; ++guard) {
+        std::uint32_t fl = 0;
+        const auto h = probeFlags(x, from, z, fl);
+        if (!h || *h >= y) break;
+        if (fl & 0x20000000u) best = h;
+        from = *h + 0.01;
+    }
+    return best;
+}
+
+std::optional<double> Walker::floorThroughWater(double x, double from, double z) const {
+    for (int guard = 0; guard < 8; ++guard) {
+        std::uint32_t fl = 0;
+        const auto h = probeFlags(x, from, z, fl);
+        if (!h) return h;
+        if (!(fl & 0x20000000u)) return h;
+        from = *h + 0.01;
+    }
+    return std::nullopt;
+}
+
 void Walker::land(double y) {
     pos_[1] = y;
     // THE LANDING'S RECORD IS KEPT FROM A LANDING. `step` also calls this for

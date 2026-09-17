@@ -58,7 +58,7 @@ const ActorStateInfo kStates[kActorStateCount] = {
    "group 300 and camera mode 21"},
  {12,"Scripted12",    "Actor_TickNpc",               0x00466580,true ,true ,true ,true ,false,
    "written by sub_4A9580"},
- {13,"Scripted13",    "Actor_TickNpc",               0x00466580,true ,true ,true ,true ,false,
+ {13,"Surface13",    "Actor_TickNpc",               0x00466580,true ,true ,true ,true ,false,
    "written by sub_4A8F30; free-look is allowed in 1 and 13 only"},
  {14,"Swim",           "Actor_TickNpc",               0x00466580,true ,true ,true ,true ,false,
    "the WATER state: the tab_special_move[] handlers RSTNAGE (0x0046C150, "

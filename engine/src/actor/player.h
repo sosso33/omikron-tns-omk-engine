@@ -382,6 +382,11 @@ public:
     // him up while he goes under (`todo/swimming.md`). Bit 1 is set by the
     // handler before `MDDIVBEG`'s and read by `Actor_ApplyMotion`'s steer.
     std::uint32_t& waterFlags() { return waterFlags_; }
+    // The WATER's game messages this tick asked for (`sub_4A8F30`: 21 on
+    // surfacing, 12 when the breath runs out) - the frontend posts them - and
+    // the breath left in ms, or -1 while he is not under (`todo/swimming.md` 3).
+    std::vector<int> takeWaterMessages() { auto v = std::move(waterMsgs_); waterMsgs_.clear(); return v; }
+    double breathLeftMs() const { return breathMs_ < 0.0 ? -1.0 : 40000.0 - breathMs_; }
     float& eulerRoll()  { return euler_[2]; }
     ActorState state() const { return rt_.state(); }
     int ctlState() const { return rt_.channel().state(); }
@@ -638,6 +643,11 @@ private:
     float start_[3];
     float euler_[3] = {0, 0, 0};       // +416, +420, +424
     std::uint32_t waterFlags_ = 0;   // actor +1288
+    std::vector<int> waterMsgs_;       // game messages the water raised this tick
+    double breathMs_ = -1.0;           // dword_68A588's elapsed time, -1 when not under
+    bool   drowned_ = false;           // dword_68A58C: message 12 posted
+    // `sub_4A8F30` for ACTOR_STATEs 11..14 - see player.cpp
+    void waterTick(double dx, double dy, double dz, float dt);
     float shootMotion_[2] = {0, 0};    // `addShootMotion`, spent by the next tick
     float camLift_ = 0.0f;             // pelvis above the feet - see cameraLift()
     float headLift_ = 0.0f;            // 0.7 * the model's extent - see headLift()

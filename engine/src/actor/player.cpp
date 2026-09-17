@@ -260,6 +260,103 @@ bool PlayerController::goToMove(int groupId) {
     return true;
 }
 
+// ---- IN THE WATER, `sub_4A8F30` (0x004A8F30) - `todo/swimming.md` 3 --------
+//
+// `Actor_ApplyMotion` sends ACTOR_STATEs 11..14 here INSTEAD of gravity and the
+// ground probe, and every state ends in `sub_4A9470`: the frame's move -
+// VERTICAL INCLUDED, since +248 takes the delta in these states - through
+// `Actor_Move`, which the port stands in for with the horizontal wall sweep and
+// the floor under the water as a limit.
+//
+//   11, 12  the move alone (12 skips even the collide).
+//   13      AT THE SURFACE. The probe starts at the head node's TOP (`actor+16`,
+//           its y plus its mesh's box min, `sub_437D60`): over the water surface
+//           more than 11.811 below that point, sink him until it is 11.811;
+//           otherwise, not diving (`+1288 & 2`), cast up to the surface and lift
+//           the same point to 11.811 above it. So he floats with the crown of
+//           his head 30 cm out of the water.
+//   14      UNDERWATER. The probe starts at the head node itself:
+//             - the water surface under it: his head is OUT - with clearance he
+//               is pulled back down by it;
+//             - the bed (0x8000000): drift UP 0.15 a frame, pitch +0.2;
+//             - nothing: still under;
+//             - any other floor: he has left the water - bank group 301,
+//               ACTOR_STATE 13, pitch 0, the dive flag cleared, the breath
+//               reset, MESSAGE 21;
+//           while under, the pitch is held in 200..340 (under 180 it is reset
+//           to 270), and THE BREATH runs: 40 000 ms, MESSAGE 12 once when it is
+//           spent. `Hud_DrawBar` mode 1 is the frontend's (step 4).
+//
+// **Reconstruction, labelled.** The head node's point comes from this model's
+// rest pose (`headLift_` over `camLift_`, the crown above the feet) rather than
+// the posed node; the pitch turns the root motion but is not yet applied to the
+// drawn body (step 3b); `Actor_Move`'s 3D collide is the horizontal sweep plus
+// the floor limit.
+void PlayerController::waterTick(double dx, double dy, double dz, float dt) {
+    const int st = static_cast<int>(rt_.state());
+    const double crown = static_cast<double>(camLift_ + headLift_);   // feet -> crown
+    const double headNode = static_cast<double>(camLift_) + 0.8 * headLift_;
+    const double* w = walker_.pos();
+    double push[2] = {0.0, 0.0};
+    if (st != 12) walker_.slide(dx, dz, push);
+    double nx = w[0] + dx, ny = w[1] + dy, nz = w[2] + dz;
+    // the bed is a floor he does not pass (Y grows downward) - probed from where
+    // he WAS, since a move that already crossed it would find nothing under him
+    if (const auto bed = walker_.floorThroughWater(nx, w[1] - kStepUp - 1.0, nz))
+        if (ny > *bed) ny = *bed;
+
+    if (st == 13) {
+        const double top = ny - crown;
+        std::uint32_t fl = 0;
+        const auto h = walker_.probeFlags(nx, top, nz, fl);
+        if (h && (fl & 0x20000000u)) {
+            const double d = *h - top;
+            if (d > 11.811024) ny += d - 11.811024;
+        } else if (!(waterFlags_ & 2u)) {
+            if (const auto s = walker_.surfaceAbove(nx, ny, nz))
+                ny = *s - 11.811024 + crown;
+        }
+    } else if (st == 14) {
+        const double head = ny - headNode;
+        std::uint32_t fl = 0;
+        const auto h = walker_.probeFlags(nx, head, nz, fl);
+        bool under = true;
+        if (h && (fl & 0x20000000u)) {
+            // his head is above the water: pulled back under by the gap
+            const double d = *h - head;
+            if (d > 0.0) ny += d;
+        } else if (h && (fl & 0x8000000u)) {
+            ny -= 0.15 * static_cast<double>(dt);
+            euler_[0] += 0.2f * dt;
+        } else if (h) {
+            under = false;
+        }
+        if (under) {
+            if (euler_[0] < 180.0f) euler_[0] = 270.0f;
+            else {
+                if (euler_[0] < 200.0f) euler_[0] = 200.0f;
+                if (euler_[0] > 340.0f) euler_[0] = 340.0f;
+            }
+            if (breathMs_ < 0.0) breathMs_ = 0.0;               // Hud_Refresh here
+            breathMs_ += static_cast<double>(dt) * 1000.0 / 30.0;
+            if (breathMs_ > 40000.0 && !drowned_) {
+                drowned_ = true;
+                waterMsgs_.push_back(12);
+            }
+        } else {
+            enterGroupById(301);
+            rt_.setState(ActorState::Surface13, "sub_4A8F30");
+            euler_[0] = 0.0f;
+            waterFlags_ &= ~2u;
+            breathMs_ = -1.0;
+            drowned_ = false;
+            waterMsgs_.push_back(21);
+        }
+    }
+    walker_.moveTo(nx, ny, nz);
+    last_.step = StepResult::Moved;
+}
+
 int PlayerController::ctlGroupId() const {
     const int g = ctlGroup();
     if (g < 0 || g >= static_cast<int>(ctl_->groupList.size())) return -1;
@@ -772,6 +869,14 @@ void PlayerController::tick(float dt, std::uint32_t word) {
     if (adjust_) { local[0] *= stepScale_; local[2] *= stepScale_; }
     float world[3];
     rotateByFacing(local, world);                  // Anim_RootDelta's 3x3 = +288
+    // IN THE WATER the +288 matrix carries the PITCH too (`todo/swimming.md` 3):
+    // the swim clips are authored upright and turned by it - `sub_4A8F30` holds
+    // the underwater pitch in 200..340 with 270 level - so the root delta goes
+    // through `Matrix3x3_FromEulerAngles` whole, not just its yaw.
+    {
+        const int ws = static_cast<int>(rt_.state());
+        if (ws >= 11 && ws <= 14 && !haveRootFrame_) rotateEuler(euler_, local, world);
+    }
     for (int k = 0; k < 3; ++k) last_.rootDelta[k] = world[k];
 
     // ---- Actor_ApplyMotion: try the move, let the ground decide ----------
@@ -786,7 +891,10 @@ void PlayerController::tick(float dt, std::uint32_t word) {
     const double dx = static_cast<double>(world[0] + last_.shift[0] + shootMotion_[0]);
     const double dz = static_cast<double>(world[2] + last_.shift[2] + shootMotion_[1]);
     shootMotion_[0] = shootMotion_[1] = 0.0f;
-    if (channelOnly_) {
+    const int waterState = static_cast<int>(rt_.state());
+    if (waterState >= 11 && waterState <= 14) {
+        waterTick(dx, static_cast<double>(world[1] + last_.shift[1]), dz, dt);
+    } else if (channelOnly_) {
         // `Actor_TickChannelOnly` (0x00466B00) is `Cef_TickChannel` and
         // nothing else: the root delta reaches the body through
         // `Actor_MoveBy` - `o3de_MoveNodeBy` plus the outright write of

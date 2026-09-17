@@ -136,6 +136,17 @@ public:
     // default) or a table that does not fit the soup: neither happens.
     void setFloorFlags(const std::vector<std::uint32_t>* flags) { floorFlags_ = flags; }
     std::uint32_t floorFlags() const { return standFlags_; }
+    // THE WATER'S PROBES (`todo/swimming.md` 3), both on the floor soup and its
+    // flags table; nothing without them.
+    // The nearest surface below `(x, from, z)` and its mesh flags.
+    std::optional<double> probeFlags(double x, double from, double z,
+                                     std::uint32_t& flags) const;
+    // The nearest 0x20000000 surface ABOVE `y` (a smaller y) at `(x, z)` - the
+    // ray up `sub_4A8F30` casts to find the water over a swimmer.
+    std::optional<double> surfaceAbove(double x, double y, double z) const;
+    // The floor under the water: the nearest surface below `from` that is not
+    // flagged 0x20000000 (the landing's pass-through, factored).
+    std::optional<double> floorThroughWater(double x, double from, double z) const;
 
     // The horizontal half. `dt` is the engine's own frame delta (30/fps, so
     // 1.0 at 30 Hz) and is only used to carry an ALREADY-FALLING actor down
