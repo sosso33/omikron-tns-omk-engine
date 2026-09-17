@@ -532,6 +532,8 @@ public:
     }
     // The walker's ground probe through a grid over its soup (Walker::setGrid).
     void setGroundGrid(const SplitSoupGrid* g) { walker_.setGrid(g); }
+    // the floor soup's per-triangle mesh flags (`Walker::setFloorFlags`)
+    void setFloorFlags(const std::vector<std::uint32_t>* f) { walker_.setFloorFlags(f); }
     // ...and the sweeps' grids (step 11): the body sweep's over the blockers,
     // and one for each camera solid, in `setCameraSolids`'s order.
     void setBlockerGrid(const SplitSoupGrid* g) { walker_.setBlockerGrid(g); }

@@ -3118,6 +3118,12 @@ int main(int argc, char** argv) {
     std::vector<omk::CollisionSphere> playerSpheres;   // the crowd push tests these
     float playerReach = 0.0f;                           // his model's +88
     omk::TriangleSoup playerSoup;
+    // ...and each of its triangles' MESH FLAGS, through the slots' `soupMesh`
+    // (`todo/swimming.md`): what the step refusal and the water entry read.
+    // Rebuilt whenever the soup it was built for is not the one there now.
+    std::vector<std::uint32_t> playerSoupFlags;
+    const float* soupFlagsFor = nullptr;
+    std::size_t  soupFlagsSize = 0;
     // ...and its probe GRID, rebuilt wherever `playerSoup` is refilled: the
     // shadows and the crowd's feet probe it every frame, and a linear scan of
     // the city per bone was most of the frame (todo/optimization.md step 2)
@@ -6677,6 +6683,7 @@ int main(int argc, char** argv) {
                         static const bool noGroundGrid = std::getenv("OMK_NO_GROUND_GRID") != nullptr;
                         omk::setGroundVerify(std::getenv("OMK_VERIFY_GROUND") != nullptr);
                         player->setGroundGrid(noGroundGrid ? nullptr : &playerGrid);
+                        player->setFloorFlags(&playerSoupFlags);
                         // the body and camera sweeps through the steep and
                         // walkable grids (step 11); `OMK_NO_SWEEP_GRID=1` scans
                         static const bool noSweepGrid = std::getenv("OMK_NO_SWEEP_GRID") != nullptr;
@@ -8093,6 +8100,27 @@ int main(int argc, char** argv) {
                         }
                         if (!player->walker().airborne() && !player->walker().sliding())
                             fallBanded = false;
+                        // ---- INTO THE WATER, `Actor_ApplyMotion` (`todo/swimming.md` 1) ----
+                        // In ACTOR_STATE 1, a ground mesh flagged 0x8000000 - the
+                        // canal's steps and bed - puts him in bank group 300
+                        // (`H_HFL-IN`), installs control scheme 1, writes
+                        // ACTOR_STATE 11 and clears the fall accumulators, and asks
+                        // for camera 21 on him over 50 frames.
+                        if (player->state() == omk::ActorState::Normal &&
+                            (player->walker().floorFlags() & 0x8000000u)) {
+                            const bool grouped = player->enterGroupById(300);
+                            player->setActorState(omk::ActorState::WaterIn11, "Actor_ApplyMotion");
+                            in.installScheme(1);
+                            fallBanded = false;
+                            static constexpr float kWaterEye[3] = {0.0f, 78.7402f, -19.685f};
+                            static constexpr float kWaterAt[3]  = {0.0f, 0.0f, 0.0f};
+                            playerCamRequest(kWaterEye, kWaterAt, 75.0f, 50.0f);
+                            std::printf("frame %ld: INTO THE WATER at %.0f %.0f %.0f - %s, scheme 1, "
+                                        "ACTOR_STATE %d, camera 21 over 50 frames\n", n,
+                                        player->pos()[0], player->pos()[1], player->pos()[2],
+                                        grouped ? "bank group 300 (H_HFL-IN)" : "NO group 300",
+                                        static_cast<int>(player->state()));
+                        }
                         {
                             const bool air = player->walker().airborne();
                             const bool slide = player->walker().sliding();
@@ -8198,6 +8226,24 @@ int main(int argc, char** argv) {
                 {
                     const float me[3] = {session.playerPos()[0], session.playerPos()[1],
                                          session.playerPos()[2]};
+                    // THE FLOOR'S MESH FLAGS, kept in step with the soup
+                    if (soupFlagsFor != playerSoup.data() || soupFlagsSize != playerSoup.size()) {
+                        playerSoupFlags.clear();
+                        for (int sl = 0; sl < 2; ++sl) {
+                            const WorldSlot& ws = worldSlots[static_cast<std::size_t>(sl)];
+                            if (ws.stem.empty()) continue;
+                            const std::size_t cnt = ws.soup.size() / 9;
+                            for (std::size_t t = 0; t < cnt; ++t) {
+                                const int mi = t < ws.soupMesh.size() ? ws.soupMesh[t] : -1;
+                                playerSoupFlags.push_back(
+                                    (mi >= 0 && static_cast<std::size_t>(mi) < ws.meshes.size())
+                                        ? ws.meshes[static_cast<std::size_t>(mi)].flags : 0u);
+                            }
+                        }
+                        if (playerSoupFlags.size() * 9 != playerSoup.size()) playerSoupFlags.clear();
+                        soupFlagsFor = playerSoup.data();
+                        soupFlagsSize = playerSoup.size();
+                    }
                     // THE VEHICLES MUST KNOW WHERE HE IS (`todo/falls.md` 4).
                     // `Sliders_Tick` probes the player's ground every frame and
                     // raises `dword_8F5E38` when the mesh under him is the ROAD -

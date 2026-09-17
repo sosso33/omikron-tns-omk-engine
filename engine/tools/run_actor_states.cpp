@@ -257,7 +257,7 @@ int main(int argc, char** argv) {
             a.setState(omk::ActorState::Normal,      "MDSLIDOU");
             a.setState(omk::ActorState::Swim,        "RSTNAGE");
             a.setState(omk::ActorState::Normal,      "RSTAVNT");
-            a.ladderEnter();
+            a.waterEnter();
             a.setState(omk::ActorState::Scripted12, "sub_4A9580");
             a.setState(omk::ActorState::Scripted13, "sub_4A8F30");
             a.setState(omk::ActorState::Shoot15,    "sub_423FC0");

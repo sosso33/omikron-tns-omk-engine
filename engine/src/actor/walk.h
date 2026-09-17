@@ -128,6 +128,14 @@ public:
     // anyway while the grid does not match the soup, so a stale pointer costs
     // time, not correctness. Null (the default) is the linear scan.
     void setGrid(const SplitSoupGrid* grid) { grid_ = grid; }
+    // THE FLOOR'S MESH FLAGS, one per triangle of `soup()` (`todo/swimming.md`).
+    // With them the step refuses a mesh flagged 0x20000000 - `Walk_GroundResponse`'s
+    // third step arm, "you may not step onto this" (docs/ASSETS.md 4: a water
+    // SURFACE is one) - and `floorFlags()` names what he stands on, which is how
+    // a 0x8000000 mesh (the water's banks and bed) is noticed. Null (the
+    // default) or a table that does not fit the soup: neither happens.
+    void setFloorFlags(const std::vector<std::uint32_t>* flags) { floorFlags_ = flags; }
+    std::uint32_t floorFlags() const { return standFlags_; }
 
     // The horizontal half. `dt` is the engine's own frame delta (30/fps, so
     // 1.0 at 30 Hz) and is only used to carry an ALREADY-FALLING actor down
@@ -259,6 +267,8 @@ private:
 
     const TriangleSoup& soup_;
     const SplitSoupGrid* grid_ = nullptr;
+    const std::vector<std::uint32_t>* floorFlags_ = nullptr;   // per soup triangle
+    std::uint32_t standFlags_ = 0;          // the mesh flags of the floor he stands on
     const TriangleSoup* steep_ = nullptr;
     const TriangleSoup* blockers_ = nullptr;
     const SplitSoupGrid* blockerGrid_ = nullptr;

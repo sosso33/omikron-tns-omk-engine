@@ -68,7 +68,16 @@ probe.
 `sub_4A9470(actor, mode)` is the collide: undo the frame's move and hand the
 3D delta to `Actor_Move` with `mode` (0 underwater, 3 at the surface).
 
-### Where the water is
+### Where the water is, settled by the loader (Jaunpur, 2026-09-17)
+
+`build/mesh_list` on `jaunpur.3DO` reverses the first guess: **0x8000000 is the
+canal's BED and BANKS** (`Fondcanal1..8`, `BergeEsc..`, `bassin03/04`, the buoys
+`BOUI..`, the levers `J_uwlevier..`), and **0x20000000 is the SURFACE**
+(`Eau`, `Eau05`, `eaubass`, `eaubassin2..4`, flags `0x20003004` - additive
+transparent). The quay stands at y ~-120, the surface at ~0..4, the bed at ~120
+(Y down).
+
+### Where the water is (the first guess, kept for the record)
 
 Meshes flagged 0x20000000 in `MESHES/DECORS` include `A_eau` (Anekbah),
 `Eau11`.. (Lahoreh), `lac01..03` (Jangir), `eaubassin2/3` (Jaunpur),
@@ -78,12 +87,37 @@ at record +16), several names came out as garbage, and 0x20000000 also marks
 non-water (`fume07` - smoke, the flag the camera sees through, CLAUDE.md 1).
 The loader decides the offsets before anything is built on them.
 
+## 3. Step 1, done — and why he could walk on water
+
+The entry itself was a few lines. What it needed first were two rules of
+`Walk_GroundResponse` the port had never had, both about 0x20000000:
+
+* **the step refuses it** whatever its height (`21_d3d.c` 2644, the third arm
+  `docs/ASSETS.md` 4 read and deliberately left: porting it faithfully meant
+  carrying mesh flags per TRIANGLE into the step, which is what
+  `Walker::setFloorFlags` now does - the viewer builds the table beside
+  `playerSoup` through each slot's `soupMesh`);
+* **a falling body does not land on it** (`21_d3d.c` 2548, `if (v68 <= 0.0 &&
+  (mesh & 0x20000000) == 0)`): the landing probe skips flagged triangles and
+  probes again from under them.
+
+Before them the port's walker stood on the canal's surface and walked across
+it at y 3.4. After them a walk off the ledge at (10524, -40, 10284) falls 3.6 m
+THROUGH the surface onto the bed, and the bed's 0x8000000 takes him in: group
+300, scheme 1, ACTOR_STATE 11, camera 21 - and the channel plays through
+`H_HFL-IN` and `MDDIVEND` to `H_WAITIN`. Other walks off the same ledge land on
+an unflagged floor at y 3.4 (triangle 11739, flags 0) - the engine would too.
+
+`verify.py: engine: water entry`, shown to fail by dropping the pass-through
+(he lands on the water, no entry). Twelve walker, landing and actor checks
+green, `engine: actor states` among them after the rename of state 11.
+
 ## 2. The steps
 
 | step | what | state |
 |---|---|---|
 | 0 | this reading | **done 2026-09-17** |
-| 1 | the entry: the 0x8000000 mesh under his feet in state 1 -> group 300, scheme 1, state 11, camera 21; rename state 11 | |
+| 1 | the entry: the 0x8000000 mesh under his feet in state 1 -> group 300, scheme 1, state 11, camera 21; rename state 11 | **done 2026-09-17** - §3 |
 | 2 | the water moves: `MDDIVEND` (14, message 22), `MDSW2SD` (1, camera 0), `RSTAVNT`, `RSTNAGE`, `MDDIVBEG` | |
 | 3 | the motion, 11..14: no gravity and no ground snap; the surface hold; the pitch | |
 | 4 | the breath: the 40 s timer, `Hud_DrawBar` mode 1, message 12 | |

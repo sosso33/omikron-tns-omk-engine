@@ -148,6 +148,17 @@ StepResult Walker::step(double dx, double dz, double dt) {
     const double y  = pos_[1];
 
     const auto g = ground(nx, y, nz);
+    // ...and WHICH triangle, for its mesh's flags: the grid probe names it
+    std::uint32_t floorTri = 0;
+    bool floorKnown = false;
+    if (g && floorFlags_ && grid_ && floorFlags_->size() * 9 == soup_.size())
+        floorKnown = floorUnder(soup_, *grid_, nx, y - kStepUp - 1.0, nz, floorTri).has_value() &&
+                     floorTri < floorFlags_->size();
+    const std::uint32_t floorFl = floorKnown ? (*floorFlags_)[floorTri] : 0u;
+    // THE THIRD STEP ARM: a mesh flagged 0x20000000 refuses the step whatever
+    // its height (`21_d3d.c` 2644, `|| (**mesh & 0x20000000)`) - the engine
+    // pushes him back to where he stood. A water surface is one.
+    if (g && (floorFl & 0x20000000u)) return StepResult::Blocked;
     if (!g) {
         // No walkable floor there - but a face past the slope limit is not a
         // hole. `Walk_GroundResponse` puts the actor on it and slides him:
@@ -177,6 +188,7 @@ StepResult Walker::step(double dx, double dz, double dt) {
     if (drop > kMaxUnsweptDrop && !ignoreLedges) return StepResult::Refused;
 
     pos_[0] = nx; pos_[2] = nz;
+    standFlags_ = floorFl;
     if (drop <= kSnapDrop || ignoreLedges) {
         // absorbed in the frame, the way a kerb or a stair nosing is
         land(*g);
@@ -327,7 +339,28 @@ StepResult Walker::tick(double dt) {
     }
 
     const double ny = pos_[1] + dy;              // Y grows downward
-    const auto g = ground(pos_[0], pos_[1], pos_[2]);
+    auto g = ground(pos_[0], pos_[1], pos_[2]);
+    // A FALLING BODY PASSES THROUGH A 0x20000000 MESH. `Walk_GroundResponse`'s
+    // descent lands him only `if (v68 <= 0.0 && (mesh & 0x20000000) == 0)`
+    // (`21_d3d.c` 2548), so a water SURFACE is not somewhere to land: he goes
+    // through it to what is under it - the canal's bed, whose 0x8000000 is what
+    // takes him into the water (`todo/swimming.md`). Without this a jump or a
+    // drop off a quay stood him on the water.
+    if (g && floorFlags_ && grid_ && floorFlags_->size() * 9 == soup_.size()) {
+        double from = pos_[1] - kStepUp - 1.0;
+        g.reset();
+        for (int guard = 0; guard < 8; ++guard) {
+            std::uint32_t tri = 0;
+            const auto h = floorUnder(soup_, *grid_, pos_[0], from, pos_[2], tri);
+            if (!h) break;
+            if (tri < floorFlags_->size() && ((*floorFlags_)[tri] & 0x20000000u)) {
+                from = *h + 0.01;                // under the surface, and again
+                continue;
+            }
+            g = h;
+            break;
+        }
+    }
     // ...AND THE STEEP FACE HE IS ON, because `ground()` reads the WALKABLE
     // soup ALONE. That split is this port's own: the engine casts ONE probe
     // at the whole collision set and `Walk_GroundResponse` then asks

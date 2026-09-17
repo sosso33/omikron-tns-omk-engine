@@ -53,7 +53,7 @@ const ActorStateInfo kStates[kActorStateCount] = {
    "lands in state 1"},
  {10,"ImageScreen",   "sub_466E70",                  0x00466E70,false,false,false,true ,true ,
    "a full-screen bitmap; leaves to [102]"},
- {11,"Ladder11",      "Actor_TickNpc",               0x00466580,true ,true ,true ,true ,false,
+ {11,"WaterIn11",      "Actor_TickNpc",               0x00466580,true ,true ,true ,true ,false,
    "Actor_ApplyMotion writes it when the ground mesh is a ladder, with .CTL "
    "group 300 and camera mode 21"},
  {12,"Scripted12",    "Actor_TickNpc",               0x00466580,true ,true ,true ,true ,false,
@@ -112,7 +112,7 @@ const std::vector<ActorTransition> kTransitions = {
  {   9, 8, "sub_466B60",               0x00466B60, "the same release, other caller"},
  {kAny,10, "sub_468F20",               0x00468F20, "a full-screen image opens; [101] parks in [102]"},
  {  10, kParked,"sub_466E70",          0x00466E70, "the image closes"},
- {kAny,11, "Actor_ApplyMotion",        0x004672D0, "the ground mesh is a ladder"},
+ {kAny,11, "Actor_ApplyMotion",        0x004672D0, "the ground mesh is WATER (flag 0x8000000) - todo/swimming.md"},
  {kAny,11, "sub_465390",               0x00465390, "the scripted variant"},
  {kAny,12, "sub_4A9580",               0x004A9580, ""},
  {kAny,13, "sub_4A8F30",               0x004A8F30, ""},
@@ -308,9 +308,9 @@ bool ActorRuntime::leaveDialogue() {
     return setState(parked_, "Actor_LeaveDialogueMode");
 }
 
-bool ActorRuntime::ladderEnter() {
-    const bool ok = setState(ActorState::Ladder11, "Actor_ApplyMotion");
-    if (ok) installGroup(kGroupLadder);
+bool ActorRuntime::waterEnter() {
+    const bool ok = setState(ActorState::WaterIn11, "Actor_ApplyMotion");
+    if (ok) installGroup(kGroupWaterIn);
     return ok;
 }
 

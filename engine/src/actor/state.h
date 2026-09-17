@@ -67,7 +67,9 @@ enum class ActorState : int {
     SliderRide     = 8,   // and MDSLIDOU dismounts from THIS one, not from 7
     UiHeld         = 9,   // an interface screen holds the body
     ImageScreen    = 10,  // a full-screen bitmap holds it
-    Ladder11       = 11,  // Actor_ApplyMotion's ladder, and a scripted variant
+    WaterIn11      = 11,  // INTO THE WATER: Actor_ApplyMotion on a 0x8000000 mesh
+                          // (the decompiled comment says "ladder" - it is the
+                          // canal's steps, todo/swimming.md), and sub_465390
     Scripted12     = 12,
     Scripted13     = 13,
     Swim           = 14,  // RSTNAGE - `nage` - and MDDIVEND write it
@@ -119,7 +121,7 @@ inline constexpr std::int32_t kGroupFalling   = 2;
 inline constexpr std::int32_t kGroupGetUp     = 45;
 inline constexpr std::int32_t kGroupLocomotion = 100;
 inline constexpr std::int32_t kGroupShoot     = 200;
-inline constexpr std::int32_t kGroupLadder    = 300;
+inline constexpr std::int32_t kGroupWaterIn   = 300;
 inline constexpr std::int32_t kGroupSlider    = 61;   // sub_468FA0's riding pose
 inline constexpr std::int32_t kGroupDialogue  = 400;
 
@@ -158,7 +160,7 @@ public:
     bool imageScreenClose();                // sub_466E70             0x00466E70
     bool enterDialogue();                   // Actor_EnterDialogueMode 0x00468DE0
     bool leaveDialogue();                   // Actor_LeaveDialogueMode 0x00468E80
-    bool ladderEnter();                     // Actor_ApplyMotion      0x004672D0
+    bool waterEnter();                     // Actor_ApplyMotion      0x004672D0
     bool falling();                         // Walk_GroundResponse    0x00465460
 
     // Actors_TickAll's per-actor pass. Returns the name of the tick function

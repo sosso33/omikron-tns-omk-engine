@@ -12530,6 +12530,51 @@ def c_engine_run_over():
            ("on the road the traffic brakes for him and still runs him over - message 17, " \
             "H_IMPACT, Vie 10 -> 5")
 
+def c_engine_water_entry():
+    r"""`omk-play`: a walk off Jaunpur's canal ledge falls THROUGH the water and goes into it.
+
+    `todo/swimming.md` 1-2. Two of `Walk_GroundResponse`'s rules keep a player
+    off a mesh flagged 0x20000000 - a water surface: the step refuses it
+    whatever its height, and a falling body does not land on it. Beneath is the
+    canal's bed, flagged 0x8000000, and `Actor_ApplyMotion` answers that mesh in
+    ACTOR_STATE 1 with bank group 300 (`H_HFL-IN`), control scheme 1,
+    ACTOR_STATE 11 and camera 21. The decompilation called it "a ladder"; the
+    port named state 11 `Ladder11` - both are renamed.
+
+    One walk from the ledge at (10524, -40, 10284) facing 270: he falls, passes
+    the surface at y ~0, lands on the bed at y 124.7, and the entry fires into
+    `H_WAITIN`, ACTOR_STATE 11. SHOWN TO FAIL: drop the pass-through in
+    `Walker::tick` and he lands ON the water at y ~3, with no entry.
+    """
+    import subprocess
+    eng = os.path.join(ROOT, "engine")
+    fr = omkpaths.data_root()
+    if not (os.path.isdir(eng) and os.path.isdir(os.path.join(fr, "SCPTDATA"))):
+        return ("skipped",), ("skipped",), "engine/ or gamedata/ absent"
+    mk = subprocess.run(["make", "-s", "play"], cwd=eng, capture_output=True, text=True)
+    play = os.path.join(eng, "build", "omk-play")
+    if mk.returncode != 0:
+        return ("build failed",), ("built",), "engine/ must build"
+    if not os.path.exists(play):
+        return ("no sdl",), ("no sdl",), "needs SDL to render"
+    out = subprocess.run(
+        [play, fr, os.path.join(ROOT, "tables"),
+         "--save", os.path.join(ROOT, "traces", "save-appart.bin"),
+         "--area", "1", "--stand", "10524,-40,10284,270", "--frames", "200",
+         "--nofmv", "--nodelay", "--no-crowd", "--hold", "k200*140"],
+        capture_output=True, text=True, errors="replace",
+        env=dict(os.environ, SDL_VIDEODRIVER="dummy")).stdout
+    land = re.search(r"the player LANDS at y (-?[\d.]+)", out)
+    fin = re.search(r"player: HO1_FN/\S+ at [-\d. ]+ facing [-\d.]+, ACTOR_STATE (\d+), "
+                    r"\.CTL state \d+ '(\w*)'", out)
+    if not land or not fin:
+        return (bool(land), bool(fin)), (True, True), "the run must land and print the player"
+    return (round(float(land.group(1))), "INTO THE WATER" in out and "bank group 300" in out,
+            int(fin.group(1)), fin.group(2)), \
+           (125, True, 11, "H_WAITIN"), \
+           ("he lands on the canal bed through the surface, enters the water, and ends " \
+            "in ACTOR_STATE 11 on H_WAITIN")
+
 def c_engine_fight_library():
     r"""`omk-play`: a fight loads `fight.scx`, its OWN sound and sprite library.
 
@@ -36698,6 +36743,7 @@ SLOW = [
     ("engine: fight loser pose", c_engine_fight_loser_pose, "todo/fight-mode 15.16"),
     ("engine: fall reaction", c_engine_fall_reaction, "todo/falls.md 1"),
     ("engine: run over", c_engine_run_over, "todo/falls.md 4"),
+    ("engine: water entry", c_engine_water_entry, "todo/swimming.md 1"),
     ("engine: fight library", c_engine_fight_library, "todo/fight-mode 15.2"),
     ("engine: fight pause", c_engine_fight_pause, "todo/fight-mode 15.9"),
     ("engine: programs",   c_engine_programs,   "engine/README"),
