@@ -69,6 +69,38 @@ y -453, 'Asc CS Lev1'. Floors 1 and 2 enter AREAS 178 and 179. `verify.py:
 engine: lift`, shown to fail by dropping the band. The zone family and
 `trace agreement` - the golden captures of real play - are green with it.
 
+### 2b. The description box under the grid — FIXED
+
+A reader, the same evening: *"when a level is hovered, the names of the
+people's office and others section of the level should be displayed"*.
+
+Screen 4's list 1 is ONE text item, 475x105 at (15, 360) in font 67, whose text
+comes from a native callback - `textFn` **0x004B01C0**. The composer draws an
+item's own string or nothing (`screendraw.cpp`: `run_` from the caller's rows,
+else `kTextFnString`), so the box was empty.
+
+What belongs in it is `IAM\Lift`, and the file is exactly the seven slots in
+order, matching the grid's string ids 0..6:
+
+| slot | answer | the box |
+|---|---|---|
+| 0 | 6 | `Niveau 1 : Bureau du commandant Gandhar` |
+| 1 | 0 | `Niveau 0 : Entrée principale` |
+| 2 | 1 | `Niveau -1 : Bureaux des agents-enquêteurs` + Tarek 511, Boog 710, Shamet 337, Vode'm 457.. |
+| 3 | 2 | `Niveau -2 :` + **Kay'l 669**, Den 415, Maar 516, Sork 121.. |
+| 4 | 3 | `Niveau -3 : Cellules de détention / Salles des archives` |
+| 5 | 4 | `Niveau -4 : Salle de surveillance / Bureau du capitaine Léa` |
+| 6 | 5 | `Niveau -5 : Atelier de maintenance / Salle des aérateurs` |
+
+Each carries the game's own markup - `{fC}` for the face and `{I045175045}`
+per agent, which the port's text layer already draws. The viewer supplies the
+selected slot's string for that item and the box follows the grid.
+
+**LABELLED**: 0x004B01C0's body is not transcribed. It builds its string
+through the inventory channel (`sub_4083F0` with event 0x24 on a {slot, 7}
+block, then `sub_4767E0` into a buffer); this takes the file's string directly,
+which is what that produces for all seven shipped slots.
+
 ## 3. The FIGHT SIM — it opens, and answering it is the work left
 
 AREA 237 record 23, reachable in one command:

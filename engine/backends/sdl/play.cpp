@@ -18186,6 +18186,52 @@ int main(int argc, char** argv) {
         // The header's hook `0x004B0B60` is the shops' `0x004AEE30` again:
         // the posted message while oscillator 0 runs, else the SELECTED
         // BUTTON's label (`IAM\Multip` 0..3).
+        // ---- THE LIFT'S DESCRIPTION BOX (`todo/missing-ui.md` 2b) --------
+        //
+        // Screen 4's list 1 is one 475x105 text item at (15, 360) in font 67
+        // whose text comes from a NATIVE callback, 0x004B01C0 - so the composer,
+        // which draws an item's own string or nothing, drew nothing and the box
+        // sat empty. A reader: *"when a level is hovered, the names of the
+        // people's office and other sections of the level should be displayed"*.
+        //
+        // What it says is `IAM\Lift`, whose seven strings are the seven slots
+        // IN ORDER - the grid's items carry string ids 0..6 and the file reads
+        // "Niveau 1 : Bureau du commandant Gandhar", "Niveau 0 : Entree
+        // principale", then -1 to -5 with the agents' names in their own
+        // colours (`{I045175045}Tarek 511` and the rest; Kay'l 669 is on -2).
+        // So the box is the SELECTED slot's string, and the port already has
+        // both halves: the walk knows the selection and `iamStrings` reads the
+        // file the composer itself would have used.
+        //
+        // LABELLED: 0x004B01C0's own body is not transcribed. It builds its
+        // string through the inventory channel (`sub_4083F0` with event 0x24
+        // and a {slot, 7} block, then `sub_4767E0` into a buffer) and this
+        // takes the file's string directly, which is what that produces for
+        // every one of the seven shipped slots.
+        if (walk && openScreen == 4 && walk->panel()) {
+            sneakRows.clear();
+            const auto liftText = omk::iamStrings(fs, "IAM/Lift");
+            const omk::UiPanel* pn = walk->panel();
+            int slot = -1;
+            for (const auto& l : pn->lists)
+                if (l.items.size() == 7) { slot = walk->selectionOf(l); break; }
+            for (const auto& l : pn->lists)
+                for (const auto& e : l.items)
+                    if (e.textFn == 0x004B01C0u && slot >= 0 &&
+                        slot < static_cast<int>(liftText.size()))
+                        sneakRows[e.addr] = liftText[static_cast<std::size_t>(slot)];
+            static int liftTold = -2;
+            if (slot != liftTold) {
+                liftTold = slot;
+                // printed from what the BOX will draw, not from the selection
+                std::string shown;
+                for (const auto& r : sneakRows) shown = r.second;
+                const auto nl = shown.find('\r');
+                std::printf("lift: slot %d - the panel says '%s'\n", slot,
+                            nl == std::string::npos ? shown.c_str()
+                                                    : shown.substr(0, nl).c_str());
+            }
+        }
         if (walk && walk->panel() &&
             (walk->panel()->addr == omk::kPanelMultiplan ||
              walk->panel()->addr == omk::kPanelMultiplanExamine ||

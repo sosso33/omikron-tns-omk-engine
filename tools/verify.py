@@ -12547,14 +12547,21 @@ def c_engine_lift():
     standing in stayed parked - the screen simply reopened and he never moved.
 
     Stand at address 446 (the ground-floor lift, right-hand side), press the
-    action button, take the grid's default and confirm: exactly one screen 4
-    asks, it answers 6 - `Etage` - and the script's case 6 walks him to
-    ADDRESSES 457/458, 'Asc CS Lev1', at y -453 from the -12 he pressed at.
-    Zones ARE turned away by the height band (the shaft's other levels).
+    action button, move the grid down one row and confirm. Exactly ONE screen 4
+    asks; its DESCRIPTION BOX names the hovered level and follows the selection
+    - slot 0 "Niveau 1 :" (the commandant's office), slot 3 "Niveau -2 :" (the
+    investigators', Kay'l's among them) - out of `IAM\Lift`, whose seven
+    strings are the seven slots in order; the answer is 2 in `Etage`; and the
+    script's case 2 puts him in AREA 179, 'Anekbah CS Lev-2'. Zones ARE turned
+    away by the height band (the shaft's other levels).
+
+    The box is drawn from a NATIVE `textFn`, 0x004B01C0, so the composer drew
+    nothing there until the viewer supplied the string: an empty panel under
+    the grid is what a reader saw.
 
     SHOWN TO FAIL: drop the band in `ZoneRegistry::scanZones` and five contexts
     park on the screen, `screen 4 is asking` appears twice over the same run,
-    and the player's y never leaves -12.
+    and no area is ever entered.
     """
     import subprocess
     eng = os.path.join(ROOT, "engine")
@@ -12572,21 +12579,26 @@ def c_engine_lift():
          "--save", os.path.join(ROOT, "traces", "save-appart.bin"),
          "--area", "157", "--address", "446", "--frames", "400",
          "--nofmv", "--nodelay", "--no-crowd",
-         "--hold", "k*40,k28*2,k*60,k28*2,k*250"],
+         # open, move the grid DOWN one row, confirm
+         "--hold", "k*40,k28*2,k*60,k208*2,k*30,k28*2,k*220"],
         capture_output=True, text=True, errors="replace",
         env=dict(os.environ, SDL_VIDEODRIVER="dummy")).stdout
     asks = len(re.findall(r"screen 4 is asking", out))
+    said = re.findall(r"lift: slot (\d+) - the panel says '([^']*)'", out)
     ans = re.search(r"screen 4 answered (\d+) -> the script resumes \(variable (\d+) now (\d+)\)", out)
     fin = re.search(r"player: HO1_FN/\S+ at (-?[\d.]+) (-?[\d.]+) (-?[\d.]+)", out)
     skips = re.search(r"(\d+) zones turned away by the height band", out)
     if not (ans and fin and skips):
         return (asks, bool(ans), bool(fin), bool(skips)), (1, True, True, True), \
                "the run must open the lift, answer it and print the player"
+    areas = re.search(r"session: (\d+) areas entered", out)
     return (asks, int(ans.group(1)), int(ans.group(2)), int(ans.group(3)),
-            round(float(fin.group(2))), int(skips.group(1)) > 0), \
-           (1, 6, 496, 6, -453, True), \
-           ("one press opens ONE lift screen, its answer is `Etage`, and case 6 "
-            "walks him down the shaft to Lev1")
+            int(areas.group(1)) if areas else -1, int(skips.group(1)) > 0,
+            [(int(k), v.split(chr(13))[0]) for k, v in said]), \
+           (1, 2, 496, 2, 1, True,
+            [(0, "{fC}Niveau 1 :"), (3, "{fC}Niveau -2 : ")]), \
+           ("one press opens ONE lift screen, its box names the hovered level, "
+            "and choosing -2 takes him into AREA 179")
 
 
 def c_engine_water_entry():
