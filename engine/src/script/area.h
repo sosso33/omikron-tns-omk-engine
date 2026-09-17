@@ -316,6 +316,9 @@ public:
     // woman) through `Game_RaiseEvent(43)`, one at a time, held 100 frames
     // (`Sliders_Tick`, `dword_538308`/`dword_538318`). Not while a
     // conversation is up (state 16 skips the push).
+    // Message 17 for each vehicle `Sliders_Tick` saw touch the player (`todo/falls.md` 4).
+    void postRunOvers();
+    long runOvers() const { return runOvers_; }
     bool crowdPush(const std::vector<CollisionSphere>& mine, float myReach,
                    const float pos[3], float facing, float out[3]);
     // `sub_452280`, what the `.CTL` action state's move callback runs
@@ -1442,6 +1445,8 @@ private:
     std::vector<ShootStatWrite> shootStatWrites_;   // `sub_423A40`, for the frontend
     bool shootTableRead_ = false;    // GLOBAL +42, read on the first `shoot.begin`
     int   bumpCooldown_ = 0;                 // dword_538318, in frames
+    long  runOvers_ = 0;                     // message-17 posts, an instrument
+    bool  trafficWanted_ = false;            // `loadTraffic` was called - the street is on
     void  refreshCrowdIndex();
     std::string dataRoot_;                   // the gamedata tree, from loadTraffic
     int         trafficSlot_ = -1;           // the slot whose circuit `sliders_` holds

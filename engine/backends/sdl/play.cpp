@@ -2997,6 +2997,36 @@ int main(int argc, char** argv) {
         takeCamFov = fov; takeCamTravel = frames;
         takeCam = true;
     };
+    // THE FALL CAMERAS, `sub_414DE0(actor, mode, flag)` (`todo/falls.md` 1): a
+    // player-subject request gated on the mode already up. 18 and 19 are the
+    // overhead presets (eye 3 m above him, fov 75); 16 and 0 travel back to the
+    // follow camera, the take's own way home. `fallCamMode` is `C+12` for these
+    // four; the `C+140` test on 18 is not modelled (untraced) and reads 0.
+    int fallCamMode = 0;
+    bool fallBanded = false;   // `+1304` set this fall (1, 3 or 4) - once per fall
+    auto fallCamRequest = [&](int mode, bool flag, const char* who, int actorState) {
+        static constexpr float kOverEye[3] = {0.0f, 118.1102f, -3.937f};
+        static constexpr float kOverAt[3]  = {0.0f, 0.0f, 0.0f};
+        // `if (a1 && u32(a1, 404) != 3)` - nothing at all in ACTOR_STATE 3
+        if (actorState == 3) return;
+        float travel = -1.0f;
+        if (mode == 18) {
+            travel = flag ? 60.0f : 30.0f;
+            playerCamRequest(kOverEye, kOverAt, 75.0f, travel);
+        } else if (mode == 19 && fallCamMode == 18) {
+            travel = 60.0f;
+            playerCamRequest(kOverEye, kOverAt, 75.0f, travel);
+        } else if ((mode == 16 && fallCamMode == 18) || (mode == 0 && fallCamMode == 19)) {
+            travel = mode == 16 ? 30.0f : 90.0f;
+            takeCamRequest(3);
+            takeCamTravel = travel;
+            takeCam = true;
+        }
+        if (travel < 0.0f) return;
+        fallCamMode = (mode == 18 || mode == 19) ? mode : 0;
+        std::printf("frame %ld: %s - sub_414DE0 camera %d over %.0f frames\n",
+                    session.frameNo(), who, mode, double(travel));
+    };
     float lastRoll = 0.0f;              // the camera ROLL, blended like the fov
     // THE CAMERA HOLDS WHEN AN EDITING ENDS, and the fall-back this used to do
     // is a PREFERENCE that ships off. `Game_Frame` (05_sys.c 2144) requests
@@ -8034,14 +8064,44 @@ int main(int argc, char** argv) {
                         // which is what a slow unnatural descent reads like.
                         // The two are told apart here so a report does not have
                         // to guess which it saw.
+                        // ---- A LEDGE, `Walk_GroundResponse`'s airborne arm ----
+                        // (`todo/falls.md` 1). EVERY airborne tick until the fall
+                        // is banded (`+1304` 0 or 2), not only the tick he leaves
+                        // the ground: a slide off a ramp becomes a fall frames
+                        // later, and the catacombs' 5 m drop starts exactly so.
+                        // Not in a jump (`dword_6A52CC`); by the CLEARANCE to the
+                        // ground below: 1.5 m or more puts him in bank group 2
+                        // (`H_FALL`) unless ACTOR_STATE is 2, 3 or 15, and asks
+                        // for the overhead camera 18 over 30 frames. Nothing below
+                        // him at all reads as the longest band.
+                        if (player->walker().airborne() && !player->walker().jumping() && !fallBanded) {
+                            const auto* w = &player->walker();
+                            const auto g = omk::floorUnder(w->soup(), w->pos()[0],
+                                                           w->pos()[1] - 12.81, w->pos()[2]);
+                            const double clear = g ? *g - w->pos()[1] : 1e9;
+                            if (clear >= 59.055119) {
+                                fallBanded = true;
+                                const auto st = static_cast<int>(player->state());
+                                const bool grouped = !(st == 2 || st == 3 || st == 15) &&
+                                                     player->enterGroupById(2);
+                                std::printf("frame %ld: a LEDGE - clearance %.1f (%.2f m): "
+                                            "%s\n", n, clear, clear / 39.37,
+                                            grouped ? "bank group 2, H_FALL"
+                                                    : "no group change");
+                                fallCamRequest(18, false, "the ledge", st);
+                            }
+                        }
+                        if (!player->walker().airborne() && !player->walker().sliding())
+                            fallBanded = false;
                         {
                             const bool air = player->walker().airborne();
                             const bool slide = player->walker().sliding();
-                            if ((air || slide) && !(wasAir || wasSlide))
+                            if ((air || slide) && !(wasAir || wasSlide)) {
                                 std::printf("frame %ld: the player %s from y %.1f\n", n,
                                             slide ? "SLIDES (a face past the slope limit - a "
                                                     "CONSTANT 11.8 a frame, not gravity)"
                                                   : "FALLS", player->pos()[1]);
+                            }
                             else if ((air || slide) && n % 5 == 0) {
                                 // ...and what the GROUND PROBE sees under him,
                                 // because "he went through the ground" has two
@@ -8080,6 +8140,25 @@ int main(int argc, char** argv) {
                                 // the short band's second test on `+284`. The catacombs'
                                 // handler for 11 costs 45 health with a red flash.
                                 const double lf = player->walker().lastLandingFall();
+                                // THE REACTION (`todo/falls.md` 1): the group by the
+                                // fall, skipped in ACTOR_STATEs 2, 3 and 15, and the
+                                // camera. The short band's second test on `+284` is
+                                // not modelled; the fall alone decides.
+                                {
+                                    const auto st = static_cast<int>(player->state());
+                                    const bool may = !(st == 2 || st == 3 || st == 15);
+                                    int grp = -1;
+                                    if (lf >= 196.85039)      grp = 5;       // H_HFL -> H_SOL
+                                    else if (lf >= 59.055119) grp = 4;       // H_LFL
+                                    else if (player->ctlGroupId() == 2) grp = 100;
+                                    const bool went = may && grp >= 0 && player->enterGroupById(grp);
+                                    if (grp >= 0)
+                                        std::printf("frame %ld: the landing's reaction - fall %.1f: "
+                                                    "bank group %d%s\n", n, lf, grp,
+                                                    went ? "" : " REFUSED (state or bank)");
+                                    if (lf >= 196.85039) fallCamRequest(19, false, "the landing", st);
+                                    else                 fallCamRequest(16, false, "the landing", st);
+                                }
                                 const int msg = lf >= 196.85039 ? 11 : lf >= 118.11024 ? 10 : -1;
                                 if (msg >= 0) {
                                     const bool ran = session.postMessage(msg, session.playerActor());
@@ -8119,6 +8198,46 @@ int main(int argc, char** argv) {
                 {
                     const float me[3] = {session.playerPos()[0], session.playerPos()[1],
                                          session.playerPos()[2]};
+                    // THE VEHICLES MUST KNOW WHERE HE IS (`todo/falls.md` 4).
+                    // `Sliders_Tick` probes the player's ground every frame and
+                    // raises `dword_8F5E38` when the mesh under him is the ROAD -
+                    // a name at `+16` starting with the byte 'X' or the word "OP",
+                    // exactly and case-sensitively. A vehicle brakes for a player
+                    // on the road and runs over one it touches. `setPlayer` had
+                    // no caller in this tree, so traffic did neither. The ride
+                    // exception (`dword_8F5E44 +8 == 6`) is not modelled.
+                    if (player) {
+                        const float* pp = player->pos();
+                        bool onRoad = false;
+                        std::uint32_t tri = 0;
+                        if (omk::floorUnder(playerSoup, playerGrid, pp[0], pp[1] - 12.81, pp[2], tri)) {
+                            std::size_t off = 0;
+                            for (int sl = 0; sl < 2; ++sl) {
+                                const WorldSlot& ws = worldSlots[static_cast<std::size_t>(sl)];
+                                if (ws.stem.empty()) continue;
+                                const std::size_t cnt = ws.soup.size() / 9;
+                                if (tri < off + cnt) {
+                                    const std::size_t t = tri - off;
+                                    if (t < ws.soupMesh.size()) {
+                                        const int mi = ws.soupMesh[t];
+                                        if (mi >= 0 && static_cast<std::size_t>(mi) < ws.meshes.size()) {
+                                            const char* nm = ws.meshes[static_cast<std::size_t>(mi)].name;
+                                            onRoad = nm[0] == 'X' || (nm[0] == 'O' && nm[1] == 'P');
+                                        }
+                                    }
+                                    break;
+                                }
+                                off += cnt;
+                            }
+                        }
+                        session.sliders().setPlayer(pp, onRoad);
+                        static int roadTold = -1;
+                        if (int(onRoad) != roadTold) {
+                            roadTold = int(onRoad);
+                            std::printf("frame %ld: the player is %s (dword_8F5E38 = %d)\n", n,
+                                        onRoad ? "ON THE ROAD" : "off the road", int(onRoad));
+                        }
+                    }
                     session.sliders().setRider(me, player ? player->facing()
                                                           : session.playerYaw());
                 }
@@ -8750,8 +8869,12 @@ int main(int argc, char** argv) {
                         std::printf("jump: landed, drop %.2f -> band %d%s\n",
                                     d, band,
                                     band == 2 ? " (short, no reaction)"
-                                              : " (ACTOR_STATE 18, bank group 2)");
+                                              : " (bank group 2, camera 18)");
+                        if (band != 2) fallCamRequest(18, true, "MDJUMP03", static_cast<int>(player->state()));
                     }
+                    // `MDRAISE0` (0x0046BED0, `H_SOL-SD` - getting up from a
+                    // 5 m landing): `sub_414DE0(actor, 0, 0)`, home from 19
+                    if (mv == "MDRAISE0") fallCamRequest(0, false, "MDRAISE0", static_cast<int>(player->state()));
                     if (mv == "MDJUMP01") {
                         const bool went = player->jumpLaunch();
                         std::printf("jump: %s\n", went
@@ -15480,8 +15603,20 @@ int main(int argc, char** argv) {
                 }
                 if (vehLive && (vehTold < 0 || n - vehTold >= 300)) {
                     vehTold = n;
+                    int brakes = 0, bumps = 0;
+                    float closest = 1e9f;
+                    const float* ppos = player ? player->pos() : session.playerPos();
+                    for (const auto& vv : session.sliders().vehicles()) {
+                        brakes += vv.brakes; bumps += vv.bumps;
+                        if (!vv.live || vv.mover < 0) continue;
+                        const auto& mm = session.sliders().movers()[static_cast<std::size_t>(vv.mover)];
+                        const float dx = mm.body[0] - ppos[0], dz = mm.body[2] - ppos[2];
+                        closest = std::min(closest, std::sqrt(dx * dx + dz * dz));
+                    }
                     std::printf("frame %ld: traffic - %d live, %d drawn within %.0f of the eye, "
-                                "%d stopped\n", n, vehLive, vehDrawn, vreach, vehStopped);
+                                "%d stopped; braked for the player %d frames, touched him %d times, "
+                                "nearest now %.0f\n", n, vehLive, vehDrawn, vreach, vehStopped,
+                                brakes, bumps, double(closest));
                 }
             }
             if (drawPlayer || drawArm) {
@@ -18788,6 +18923,12 @@ int main(int argc, char** argv) {
                     player->ctlStateName().c_str(), player->clipName().c_str(),
                     player->clipFrame(), player->distanceWalked(), player->ticks(),
                     player->poseTracks() ? "valid" : "NONE (drawn at rest - a T-pose)");
+    {
+        std::int32_t vie = -1;
+        omk::readActorProperty(playerRecordSpan(), 1, vie);
+        std::printf("player: Vie %d (the DB player record's property 1); %ld run-overs posted\n",
+                    vie, session.runOvers());
+    }
     std::printf("session: %d areas entered, %d ui answers\n",
                 session.areasEntered(),
                 static_cast<int>(session.uiAnswers().size()));

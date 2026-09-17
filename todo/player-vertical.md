@@ -355,6 +355,11 @@ understate every leap off a ledge by one apex height, so the drop is now the
 **descent from the apex** and the check asserts the distance, not only the
 band - the band is 2 either way.
 
+**CORRECTED 2026-09-17** (`todo/falls.md` 1): `sub_414DE0(actor, 18, 1)` is a
+CAMERA request - the overhead camera 18 over 60 frames - not "ACTOR_STATE 18",
+which does not exist. The reaction arm below is now wired and exercised, by the
+crate stack and the catacombs.
+
 **A real gap, not a limit of the data**: the reaction arm. Bands 1, 3 and 4
 need a drop of 1.50 m or more and the Anekbah stand is flat, so
 `enterGroupById(2)` and `ACTOR_STATE 18` are transcribed and **never executed

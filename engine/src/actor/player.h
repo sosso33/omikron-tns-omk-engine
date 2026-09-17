@@ -297,6 +297,9 @@ public:
     // `player.move.wait` recorded, to release the script when it changes.
     // -1 with no current entry.
     int  ctlGroup() const;
+    // ...and that group's ID - what `Cef_FindGroupById` and
+    // `Walk_GroundResponse`'s "is he in group 2" compare. -1 with none.
+    int  ctlGroupId() const;
 
     // `Actor_EnterDialogueMode` (0x00468DE0) and `Actor_LeaveDialogueMode`
     // (0x00468E80), which bracket every conversation. The runtime has carried

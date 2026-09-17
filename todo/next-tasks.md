@@ -541,7 +541,13 @@ The panel behaviour is not. Nothing in `engine/` references it yet.
 walked. This is the tail after 9-12, and should be re-scoped once those are
 done because they will have built most of the machinery.
 
-### 14. Health: fall damage and vehicle hits — M/L, **weak evidence**
+### 14. Health: fall damage and vehicle hits — **DONE 2026-09-17**, `todo/falls.md`
+
+**Closed with 15**: the landing's cost was already posted; what was missing was
+the REACTION (fall group, landing group, the overhead cameras) and the VEHICLE
+hit, which the port had recorded and never posted - `Sliders::setPlayer` had no
+caller at all. Every health cost outside a fight or a shoot phase has a floor
+of 5, so there is no adventure death. The paragraphs below are history.
 
 **FALL DAMAGE, mostly answered 2026-09-13** (`todo/released-spectres.md` step 6):
 the engine does not subtract anything itself. `Walk_GroundResponse` posts
@@ -567,7 +573,7 @@ tiers and the vehicle collision actually raise.
 Do the reading as its own step and re-estimate. Do not start by inventing a
 health variable.
 
-### 15. Jump / fall animation and physics — L, fair evidence
+### 15. Jump / fall animation and physics — **DONE 2026-09-17** with 14, `todo/falls.md`
 
 The walker is ported with the 30° slope limit and the 30 cm step, and the
 "fall tiers" are named in `CLAUDE.md` §4 but not ported. Jumping is a

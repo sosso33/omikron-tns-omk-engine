@@ -12409,6 +12409,127 @@ def c_engine_fight_loser_pose():
            ("the fight is won, the opponent's drawn pelvis and head lie within 15 of the "
             "floor, and he keeps the fight's last pose after it")
 
+def c_engine_fall_reaction():
+    r"""`omk-play`: a FALL gets its reaction - the fall group, the landing group, the cameras.
+
+    `Walk_GroundResponse` (0x00465460) and `sub_414DE0`, read in `todo/falls.md`
+    1. While airborne and not jumping, the first tick with 1.5 m of clearance
+    below puts him in bank group 2 (`H_FALL`) and asks for the overhead camera
+    18; the landing picks group 4 (`H_LFL`, 1.5..5 m) or 5 (`H_HFL` -> `H_SOL`,
+    5 m and over), camera 16 back or camera 19 over him, and `MDRAISE0` on the
+    get-up brings the camera home. `sub_414DE0` is a CAMERA request - it was
+    ported as "ACTOR_STATE 18" in `jumpLand`, a state that does not exist.
+
+    Two real drops. The supermarket's two-high crate stack (AREA 245, 3.5 m in
+    two 1.75 m steps): group 2, camera 18, group 4, camera 16. The catacombs'
+    ramp (AREA 141), a slide that becomes a 5.15 m fall: group 2 and camera 18
+    banded MID-AIR, group 5, message 11, camera 19, and - after a key press,
+    because `H_SOL-SD` waits for input the idle word never matches - `MDRAISE0`
+    and camera 0.
+
+    SHOWN TO FAIL: band the fall only on the frame he leaves the ground (as
+    the first version did) and the catacombs' slide-then-fall is never banded:
+    no camera 18, so no camera 19 and no camera 0. (The `Walker::land` fix -
+    a grounded snap no longer rewrites the landing's record - is NOT what this
+    catches: once the fall is banded he is in `H_FALL` on the landing frame and
+    no walking step runs there. Mutated, the check stayed green.)
+    """
+    import subprocess
+    eng = os.path.join(ROOT, "engine")
+    fr = omkpaths.data_root()
+    if not (os.path.isdir(eng) and os.path.isdir(os.path.join(fr, "SCPTDATA"))):
+        return ("skipped",), ("skipped",), "engine/ or gamedata/ absent"
+    mk = subprocess.run(["make", "-s", "play"], cwd=eng, capture_output=True, text=True)
+    play = os.path.join(eng, "build", "omk-play")
+    if mk.returncode != 0:
+        return ("build failed",), ("built",), "engine/ must build"
+    if not os.path.exists(play):
+        return ("no sdl",), ("no sdl",), "needs SDL to render"
+    save = os.path.join(ROOT, "traces", "save-appart.bin")
+    env = dict(os.environ, SDL_VIDEODRIVER="dummy")
+    crate = subprocess.run(
+        [play, fr, os.path.join(ROOT, "tables"), "--save", save, "--area", "245",
+         "--stand", "14885,-128,1467,0", "--frames", "120", "--nodelay",
+         "--hold", "k200*110"],
+        capture_output=True, text=True, errors="replace", env=env).stdout
+    cat = subprocess.run(
+        [play, fr, os.path.join(ROOT, "tables"), "--save", save, "--area", "141",
+         "--stand", "42785,855,-2678,270", "--frames", "900", "--nodelay",
+         "--hold", "k200*260,0*300,k200*200"],
+        capture_output=True, text=True, errors="replace", env=env).stdout
+
+    def events(out):
+        ev = []
+        for m in re.finditer(r"a LEDGE - clearance [^:]*: (bank group 2|no group change)", out):
+            ev.append("fall-group" if m.group(1).startswith("bank") else "fall-nogroup")
+        for m in re.finditer(r"(the ledge|the landing|MDRAISE0|MDJUMP03) - sub_414DE0 camera (\d+)", out):
+            ev.append("cam%s" % m.group(2))
+        for m in re.finditer(r"the landing's reaction - fall [\d.]+: bank group (\d+)", out):
+            ev.append("group%s" % m.group(1))
+        for m in re.finditer(r"MESSAGE (\d+) to its handler", out):
+            ev.append("msg%s" % m.group(1))
+        return ev
+
+    c1, c2 = events(crate), events(cat)
+    if not c1 or not c2:
+        return (len(c1), len(c2)), ("> 0", "> 0"), "both runs must print their fall lines"
+    want1 = all(k in c1 for k in ("fall-group", "cam18", "group4", "cam16"))
+    return (want1, "group5" in c2, "msg11" in c2, "cam19" in c2, "cam0" in c2,
+            "cam18" in c2), \
+           (True, True, True, True, True, True), \
+           ("the crate stack: fall group, camera 18, landing group 4, camera 16; the " \
+            "catacombs' 5 m: group 5, message 11, camera 19, and camera 0 on the get-up")
+
+def c_engine_run_over():
+    r"""`omk-play`: the traffic brakes for a player on the road - and still runs him over.
+
+    `todo/falls.md` 4. `Sliders_Tick` probes the player's ground every frame
+    and raises `dword_8F5E38` on a mesh whose name starts 'X' or "OP" - the
+    road. A vehicle within 195 units closing on him takes 768 a frame off its
+    speed; one still above 1706.67 whose spatial entry touches him raises
+    message 17, the RUN-OVER. A vehicle arriving at 5000 is still well above
+    the limit two frames into its braking, so standing in a lane gets him run
+    over all the same. Anekbah's own handler answers: a red flash, a shake,
+    `Vie` -15 (or 5 below 16) and `player.move.wait 118`, `H_IMPACT`. The port
+    had the vehicle half since the traffic was ported - but `Sliders::setPlayer`
+    had NO caller, so nothing braked for him, and the run-overs it recorded
+    were never posted.
+
+    One run in Anekbah's lane at x 5466: he is on the road, the traffic brakes
+    for him (> 0 frames), a vehicle runs him over, message 17 reaches its
+    handler, `H_IMPACT` plays, and `Vie` goes 10 -> 5.
+    SHOWN TO FAIL: drop `postRunOvers()` from the Session's tick - no message,
+    no `H_IMPACT`, `Vie` stays 10.
+    """
+    import subprocess
+    eng = os.path.join(ROOT, "engine")
+    fr = omkpaths.data_root()
+    if not (os.path.isdir(eng) and os.path.isdir(os.path.join(fr, "SCPTDATA"))):
+        return ("skipped",), ("skipped",), "engine/ or gamedata/ absent"
+    mk = subprocess.run(["make", "-s", "play"], cwd=eng, capture_output=True, text=True)
+    play = os.path.join(eng, "build", "omk-play")
+    if mk.returncode != 0:
+        return ("build failed",), ("built",), "engine/ must build"
+    if not os.path.exists(play):
+        return ("no sdl",), ("no sdl",), "needs SDL to render"
+    out = subprocess.run(
+        [play, fr, os.path.join(ROOT, "tables"),
+         "--save", os.path.join(ROOT, "traces", "save-appart.bin"),
+         "--area", "0", "--stand", "5466,0,-2400,270", "--nofmv", "--nodelay",
+         "--frames", "320"],
+        capture_output=True, text=True, errors="replace",
+        env=dict(os.environ, SDL_VIDEODRIVER="dummy")).stdout
+    br = re.search(r"frame 300: traffic - .*braked for the player (\d+) frames", out)
+    vie = re.search(r"player: Vie (-?\d+)", out)
+    if not br or not vie:
+        return (bool(br), bool(vie)), (True, True), "the run must print its traffic and Vie lines"
+    return ("ON THE ROAD" in out, int(br.group(1)) > 0,
+            "RUNS OVER the player - message 17 to its handler" in out,
+            "'H_IMPACT'" in out, int(vie.group(1))), \
+           (True, True, True, True, 5), \
+           ("on the road the traffic brakes for him and still runs him over - message 17, " \
+            "H_IMPACT, Vie 10 -> 5")
+
 def c_engine_fight_library():
     r"""`omk-play`: a fight loads `fight.scx`, its OWN sound and sprite library.
 
@@ -36575,6 +36696,8 @@ SLOW = [
     ("engine: fight hud", c_engine_fight_hud, "todo/fight-mode step 5"),
     ("engine: fight gpu present", c_engine_fight_gpu_present, "todo/fight-mode 15.15"),
     ("engine: fight loser pose", c_engine_fight_loser_pose, "todo/fight-mode 15.16"),
+    ("engine: fall reaction", c_engine_fall_reaction, "todo/falls.md 1"),
+    ("engine: run over", c_engine_run_over, "todo/falls.md 4"),
     ("engine: fight library", c_engine_fight_library, "todo/fight-mode 15.2"),
     ("engine: fight pause", c_engine_fight_pause, "todo/fight-mode 15.9"),
     ("engine: programs",   c_engine_programs,   "engine/README"),

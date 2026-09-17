@@ -810,6 +810,23 @@ int Session::fightingWith() const {
     return -1;
 }
 
+// THE RUN-OVER (`todo/falls.md` 4). `Sliders_Tick` raises event 43 with game
+// message 17 for a vehicle above 1706.67 whose spatial entry touches the
+// player, latched 90 frames (`Sliders::tickVehicles` records it in `bumped()`,
+// which nothing read until 2026-09-17). The cost is the area's: Anekbah's and
+// Jaunpur's handler flashes red, shakes, takes 15 of `Vie` (or leaves 5 below
+// 16) and `player.move.wait 118` - `H_IMPACT`, knocked flat. IAM\GLOBAL does
+// not subscribe to 17, so where no area does, a run-over costs nothing.
+void Session::postRunOvers() {
+    for (const int vi : sliders_.bumped()) {
+        const bool ran = postMessage(17, playerActor());
+        ++runOvers_;
+        std::printf("session: a vehicle (%d) RUNS OVER the player - message 17 %s\n", vi,
+                    ran ? "to its handler" : "- no handler subscribes");
+        break;
+    }
+}
+
 bool Session::startPlayerMove(int groupId, int ctx) {
     return moveHook_ && moveHook_(groupId, ctx);
 }
@@ -2223,6 +2240,7 @@ void Session::frame() {
         if (sceneOutArea_ >= 0)
             sceneOut_.tick(static_cast<float>(frameSeconds_ * 30.0));
         sliders_.tick(static_cast<float>(frameSeconds_ * 30.0));   // `Sliders_Tick`, no dialogue gate either
+        postRunOvers();
         refreshCrowdIndex();
         if (bumpCooldown_ > 0) --bumpCooldown_;
         trackPlayer();
@@ -2292,6 +2310,7 @@ void Session::frame() {
         sceneOut_.tick(static_cast<float>(frameSeconds_ * 30.0));
     // `Sliders_Tick`: the traffic and the pedestrians, every frame
     sliders_.tick(static_cast<float>(frameSeconds_ * 30.0));
+    postRunOvers();
     refreshCrowdIndex();
     if (bumpCooldown_ > 0) --bumpCooldown_;
 
@@ -3624,6 +3643,7 @@ std::vector<Session::PropInstance> Session::props() const {
 
 void Session::loadTraffic(const std::string& gamedataRoot) {
     dataRoot_ = gamedataRoot;
+    trafficWanted_ = true;
     for (int sl = 0; sl < 2; ++sl)
         if (slots_[sl].loaded && !slots_[sl].opt.empty()) loadTrafficFor(sl);
 }
@@ -3633,7 +3653,12 @@ void Session::loadTrafficFor(int slot) {
     // `Area_LoadSliderTrack`, and `Slider_Init` frees whatever circuit stood
     // before - so the pool holds the LAST such area's, and an area without
     // one leaves the previous standing until its slot is evicted.
-    if (dataRoot_.empty()) return;
+    // ...and only when the frontend ASKED for the street (`loadTraffic`). A set
+    // data root alone is not that: `df32519` (2026-09-15) set it for every run
+    // so IAM\OBJECT is found, and from then `--no-crowd` loaded the crowd and
+    // the traffic anyway - `engine: street frame` and `engine: traffic frame`
+    // red since, found by running them on 2026-09-17.
+    if (dataRoot_.empty() || !trafficWanted_) return;
     const ResidentSlot& s = slots_[slot & 1];
     if (s.opt.empty()) return;
     const DataFs fs(dataRoot_);

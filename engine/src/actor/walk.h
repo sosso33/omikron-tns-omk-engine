@@ -223,6 +223,7 @@ public:
     double fall() const { return fall_; }
     bool   airborne() const { return airborne_; }
     bool   sliding() const { return sliding_; }
+    bool   jumping() const { return jumping_; }   // dword_6A52CC
 
     // The tier the LAST landing arrived in - 0 none, 1 a step, 2 a fall,
     // 3 hurt, 4 killed. The engine reads the same four bands off the drop and

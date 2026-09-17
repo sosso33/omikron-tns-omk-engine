@@ -83,13 +83,22 @@ int decorUnder(std::span<const DecorSoup> decors, const TriangleSoup& merged,
 // zeroes +1304, +280 and +284).
 void Walker::land(double y) {
     pos_[1] = y;
-    tier_ = fall_ < kSnapDrop  ? 1
-          : fall_ < kFallShort ? 2
-          : fall_ < kFallHurt  ? 3
-          : 4;
-    drop_ = y - apex_;           // the descent from the apex, for MDJUMP03
-    if (drop_ < 0.0) drop_ = 0.0;
-    landFall_ = fall_;           // `+280`, read before LABEL_83 clears it
+    // THE LANDING'S RECORD IS KEPT FROM A LANDING. `step` also calls this for
+    // every ordinary snap onto the floor, and until 2026-09-17 each of those
+    // rewrote the record with a fall of 0 - so a landing whose frame also ran
+    // a walking step (a slide off the catacombs' ramp into a 5 m fall) read
+    // back tier 1 and fall 0, and the viewer posted no message and chose no
+    // reaction (`todo/falls.md`). A grounded snap still clears the
+    // accumulators below, as LABEL_83 does.
+    if (airborne_ || sliding_) {
+        tier_ = fall_ < kSnapDrop  ? 1
+              : fall_ < kFallShort ? 2
+              : fall_ < kFallHurt  ? 3
+              : 4;
+        drop_ = y - apex_;       // the descent from the apex, for MDJUMP03
+        if (drop_ < 0.0) drop_ = 0.0;
+        landFall_ = fall_;       // `+280`, read before LABEL_83 clears it
+    }
     fall_ = 0.0;
     vy_ = vx_ = vz_ = 0.0;
     airborne_ = sliding_ = false;

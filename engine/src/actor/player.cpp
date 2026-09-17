@@ -220,7 +220,12 @@ bool PlayerController::jumpLaunch() {
 //     then, for 4 / 3 / 1 only:
 //         sub_465340(actor, 2)                  -- bank group 2 by id, unless
 //                                                  ACTOR_STATE is 2, 3 or 15
-//         sub_414DE0(actor, 18, 1)              -- ACTOR_STATE 18
+//         sub_414DE0(actor, 18, 1)              -- CAMERA 18, travel 60
+//
+// **CORRECTED 2026-09-17** (`todo/falls.md` 1): this line was read as an
+// ACTOR_STATE write, and the port set "ACTOR_STATE 18" - a state that does not
+// exist. `sub_414DE0` is a camera request with the actor as both subjects; the
+// frontend makes it, since the camera is the frontend's.
 //
 // So a short landing is silent and a long one plays the landing reaction. Note
 // the band order is 2, 1, 3, 4 with distance: `+1304` is a CODE, not a
@@ -242,8 +247,7 @@ int PlayerController::jumpLand() {
     const int band = jumpBand(d);
     if (band == 2) return band;                 // short: no reaction
     enterGroupById(2);                          // sub_465340(actor, 2)
-    setActorState(static_cast<ActorState>(18), "MDJUMP03");
-    return band;
+    return band;                                // camera 18 is the caller's
 }
 
 bool PlayerController::goToMove(int groupId) {
@@ -254,6 +258,12 @@ bool PlayerController::goToMove(int groupId) {
     // tick and carries none between frames, so there is nothing to clear.
     // The facing matrix is rebuilt from euler_ wherever it is read.
     return true;
+}
+
+int PlayerController::ctlGroupId() const {
+    const int g = ctlGroup();
+    if (g < 0 || g >= static_cast<int>(ctl_->groupList.size())) return -1;
+    return ctl_->groupList[static_cast<std::size_t>(g)].id;
 }
 
 int PlayerController::ctlGroup() const {
