@@ -101,34 +101,82 @@ through the inventory channel (`sub_4083F0` with event 0x24 on a {slot, 7}
 block, then `sub_4767E0` into a buffer); this takes the file's string directly,
 which is what that produces for all seven shipped slots.
 
-## 3. The FIGHT SIM — it opens, and answering it is the work left
+## 3. The TERMINAL FAMILY — seven screens, one keypad. WORKING
 
-AREA 237 record 23, reachable in one command:
+Screens 5 `TERMINAL`, 11 `FIGHT SIM`, 19 `MORGUE`, 18 `ARCHIVES` and 15/16/17
+`SURV` share panel `0x004E4108`: a 3x3 keypad with a `0` cell and a big button
+(eleven items, list hook `sub_4AF300`), a 430x320 display, a one-line header and
+two buttons. `docs/UI.md` had already read its ANSWER table ("a second
+`Ui_OpenShop`"); what was missing was everything that makes it usable.
 
-    build/omk-play ../gamedata ../tables --save ../traces/save-appart.bin \
-        --area 237 --address 680          # 'Console', facing the machine
+**Two faults, and neither was the screen.** Both were found by opening the
+terminal in Kay'l's office (AREA 179, zone 3030) and photographing it: the
+artwork drew - keypad, screen, the `<<<` / `>>>` buttons - with nothing on the
+display.
 
-Press the action button and `screen 11 is asking` appears, with its own sound
-(slot 4, `FS001`). The script around it is read: it teleports him to ADDRESSES
-680, disables zone 4050, sets camera 4449 over 30 frames, plays `player.move.wait
-58`, opens the screen into VARIABLE 19 `Interface`, snapshots `Vie` three ways
-and then - **on `Interface == 1`** - disables five zones, fades to black, shows
-CHARACTER 145 and plays object 0x016f, which is the training fight.
+1. **The display was blank.** Its text comes from a native `textFn`,
+   `0x004AF5D0`, and the composer draws an item's own string or nothing. Read
+   from the image, that function is two state queries and then a SEVEN-CASE
+   jump table on the screen's fixed parameter, each arm naming one string of
+   the screen's own text file:
 
-What is missing is the panel's own hooks. `tables/ui_widgets.json` screen 11 is
-a **keypad**: list 0 is ten 25x25 cells in a 3x3 grid plus one below (callback
-0x4AF3D0 on each, three of them BOUND to strings 0..2) and a 96x64 button at
-(528, 398) with callback 0x42A1D0; list 1 is the display - a 430x320 text item
-in font 74 with `textFn` 0x4AF4D0 over a `drawFn` 0x477ED0 backdrop; list 2 is
-two more buttons at the bottom. So it is a code to be typed and confirmed, not
-a menu to be walked, and until those callbacks are read the walk has nothing to
-answer with.
+   | case | screen | file | string |
+   |---|---|---|---|
+   | 0 | TERMINAL | `IAM\Term` | 12 - "Dossiers agents Kay'l 669 / Den 415" and the five crimes |
+   | 1 | FIGHT SIM | `IAM\Fsim` | 5 - "Simulateur de combat WX2600, Modèle ELITE" |
+   | 2 | MORGUE | `IAM\Morg` | 6 |
+   | 3 | ARCHIVES | `IAM\Arch` | 5 |
+   | 4 | SURV ERROR | `IAM\Surv` | 1 |
+   | 5 | SURV NO KIT | `IAM\Surv` | 3 |
+   | 6 | SURV KIT | `IAM\Surv` | 2 |
 
-**Next step**, and it is the same shape as the shops and the multiplan: read
-0x4AF3D0 (the cell), 0x42A1D0 (the button) and 0x4AF4D0 (the display's text)
-out of the raw image - they have no `proc` label - and give `UiWalk` the
-answer site. Then the training fight can be played through `fight.begin`,
-which already runs.
+   **Not ported, labelled**: the two query branches (string 11 for the terminal
+   and 4 for the simulator when `sub_42B5E0(6)`/`sub_42B5F0` is true, 6 for the
+   simulator on the same pair over 5) - an object lookup this has not read. The
+   default arm is what a first visit takes.
+
+2. **The keypad refused every press**, because an unmodelled list hook makes
+   the walk refuse input - so the screen opened and nothing could be chosen.
+   `sub_4AF300` transcribed from the image (no `proc` label):
+
+       UP     10 -> 9; 9 -> 7; nothing on the top row (n/3 == 0); else -3
+       DOWN   n/3 == 2 -> 9; 9 -> 10; 10 -> nothing; else +3
+       LEFT   n >= 9 nothing; else row*3 + (n + 2) % 3   (wraps in the row)
+       RIGHT  n >= 9 nothing; else row*3 + (n + 1) % 3
+
+   It returns 1 only when the selection MOVED, so a confirm falls through to
+   `Ui_ConfirmSelection` and the item's callback - `0x004AF410`, whose table is
+   `docs/UI.md`'s: FIGHT SIM `row + 1` (rows 0..2), MORGUE `row + 1` (0..4),
+   ARCHIVES 1 from row 2, SURV KIT 1 from row 0, SURV ERROR falling through
+   into it, SURV NO KIT nothing.
+
+**The TERMINAL answers on the way OUT**, alone of the seven. `sub_4AF0E0`, read
+from the image:
+
+    if (dword_68A600) answer = 2 + (dword_68A5FC != 0);
+    else              answer =     (dword_68A5FC != 0);
+
+so it reports which protected dossier was opened - 0 neither, 1 the fifth, 2
+the fourth, 3 both - and AREA 179's script wants 1 for `1-A-CS SecretFile` (the
+voice-over, `DATA MEMORIZED` and memo 003) with a second branch on 2. Which row
+sets which global rests on `docs/UI.md`'s reading of case 0, not on a fresh
+transcription: `asmfn.py` snaps to the neighbouring function at that address
+(CLAUDE.md 1's trap), and the raw-byte read was spent on `0x004AF0E0` and
+`0x004AF5D0` instead. Labelled as such in the source.
+
+**Measured**: the terminal lists Kay'l's dossiers, the keypad walks, closing
+after dossier 4 answers 2 and the script plays *ZVO P315 DATA MEMORIZED* with
+its subtitle. The simulator names the machine, its first cell answers 1, and
+`fight.begin` runs - CHARACTERS 331, banks H1CMBT, the fight HUD and the fight
+camera. `verify.py: engine: terminal family`, shown to fail by putting the
+keypad's hook back among the unmodelled ones.
+
+**Still open here**: the header (`textFn` 0x004AF5A0) is
+`table_at_0x004E3FEC[word_4E3FE2]` - a runtime pointer array, so which label it
+shows per selection is unread; and the body does not yet switch to the chosen
+dossier (`IAM\Term` 0..4), which is the same index. The five "Consulter le
+dossier n°N" strings (5..9) and "Quitter le terminal" (10) belong to one of
+those two.
 
 ## 4. The steps
 
@@ -136,6 +184,6 @@ which already runs.
 |---|---|---|
 | 0 | where every screen is opened from | **done 2026-09-17** - §1 |
 | 1 | the LIFT: why it never arrived | **done 2026-09-17** - §2, `verify.py: engine: lift` |
-| 2 | the FIGHT SIM's keypad hooks | §3 has the three addresses |
-| 3 | the tail: 5 TERMINAL, 12 GANDHAR DOOR, 13 DEN, 14 XACHEN, 15/16/17 SURV, 18 ARCHIVES, 19 MORGUE, 36 HIGH-SCORE - one site each | |
+| 2 | the terminal FAMILY: the display, the keypad and the answers - 7 screens | **done 2026-09-17** - §3, `verify.py: engine: terminal family` |
+| 3 | the tail: 12 GANDHAR DOOR, 13 DEN, 14 XACHEN, 36 HIGH-SCORE, 0 VIDEOPHONE - and the terminal's own dossier pages | |
 | 4 | play | |

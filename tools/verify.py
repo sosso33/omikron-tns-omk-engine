@@ -12530,6 +12530,72 @@ def c_engine_run_over():
            ("on the road the traffic brakes for him and still runs him over - message 17, " \
             "H_IMPACT, Vie 10 -> 5")
 
+def c_engine_terminal_family():
+    r"""`omk-play`: Kay'l's TERMINAL and the FIGHT SIMULATOR - the keypad family.
+
+    `todo/missing-ui.md` 3. Seven screens share panel 0x004E4108 and one
+    keypad: TERMINAL, FIGHT SIM, MORGUE, ARCHIVES and the three SURV. Two
+    things kept every one of them unusable, and neither was the screen.
+
+    * the body is a 430x320 item whose text comes from a native `textFn`,
+      0x004AF5D0 - a seven-case jump table on the screen's own parameter, each
+      arm naming one string (TERMINAL 12, FIGHT SIM 5, MORGUE 6, ARCHIVES 5,
+      SURV 1/3/2). The composer draws an item's own string or nothing, so the
+      display was BLANK: a reader found Kay'l's terminal an empty screen.
+    * the keypad's list hook, `sub_4AF300`, was unmodelled - and an unmodelled
+      list hook makes the walk refuse every press, so nothing could be chosen.
+
+    Two runs. **The terminal** (AREA 179, standing on zone 3030 in Kay'l's
+    office): the body names his dossiers, the keypad walks to row 3, and
+    closing answers **2** - `sub_4AF0E0` reports which protected dossier was
+    opened - which is the branch of AREA 179's script that plays `ZVO P315 DATA
+    MEMORIZED`. **The fight simulator** (AREA 237, the console at address 680):
+    the body names the machine, and confirming the first cell answers **1**,
+    which is `Interface == 1` - the script shows CHARACTERS 331 and
+    `fight.begin` runs, so the training fight starts.
+
+    SHOWN TO FAIL: put the keypad's hook back among the unmodelled ones and
+    neither screen answers at all (the terminal closes on -1, the simulator
+    never starts a fight).
+    """
+    import subprocess
+    eng = os.path.join(ROOT, "engine")
+    fr = omkpaths.data_root()
+    if not (os.path.isdir(eng) and os.path.isdir(os.path.join(fr, "SCPTDATA"))):
+        return ("skipped",), ("skipped",), "engine/ or gamedata/ absent"
+    mk = subprocess.run(["make", "-s", "play"], cwd=eng, capture_output=True, text=True)
+    play = os.path.join(eng, "build", "omk-play")
+    if mk.returncode != 0:
+        return ("build failed",), ("built",), "engine/ must build"
+    if not os.path.exists(play):
+        return ("no sdl",), ("no sdl",), "needs SDL to render"
+    def run(args, hold, frames):
+        return subprocess.run(
+            [play, fr, os.path.join(ROOT, "tables"),
+             "--save", os.path.join(ROOT, "traces", "save-appart.bin")] + args +
+            ["--frames", str(frames), "--nofmv", "--nodelay", "--no-crowd", "--hold", hold],
+            capture_output=True, text=True, errors="replace",
+            env=dict(os.environ, SDL_VIDEODRIVER="dummy")).stdout
+    # the terminal: open, down one row, confirm the dossier, close with TAB
+    t = run(["--area", "179", "--stand", "5468,336,-12118,120"],
+            "k*40,k28*2,k*40,k208*2,k*20,k28*2,k*20,k15*2,k*150", 400)
+    tsay = re.search(r"terminal family: screen 5 - the display says '(.*)", t)
+    tans = re.search(r"screen 5 answered (\d+) -> the script resumes \(variable (\d+) now", t)
+    # the simulator: open, confirm the first cell
+    f = run(["--area", "237", "--address", "680"], "k*40,k28*2,k*80,k28*2,k*700", 900)
+    fsay = re.search(r"terminal family: screen 11 - the display says '(.*)", f)
+    fans = re.search(r"screen 11 answered (\d+) -> the script resumes \(variable (\d+) now", f)
+    return ("Dossiers agents Kay" in (tsay.group(1) if tsay else ""),
+            int(tans.group(1)) if tans else -1, int(tans.group(2)) if tans else -1,
+            "Simulateur de combat" in (fsay.group(1) if fsay else ""),
+            int(fans.group(1)) if fans else -1,
+            "FIGHT BEGINS against CHARACTERS 331" in f,
+            "DATA MEMORIZED" in t), \
+           (True, 2, 19, True, 1, True, True), \
+           ("the terminal lists Kay'l's dossiers and answers 2 on the way out, and "
+            "the simulator's first cell answers 1 and starts the training fight")
+
+
 def c_engine_lift():
     r"""`omk-play`: the security centre's LIFT - one press, one screen, and he arrives.
 
@@ -36995,6 +37061,7 @@ SLOW = [
     ("engine: fall reaction", c_engine_fall_reaction, "todo/falls.md 1"),
     ("engine: run over", c_engine_run_over, "todo/falls.md 4"),
     ("engine: lift", c_engine_lift, "todo/next-tasks 13"),
+    ("engine: terminal family", c_engine_terminal_family, "todo/missing-ui 3"),
     ("engine: water entry", c_engine_water_entry, "todo/swimming.md 1"),
     ("engine: fight library", c_engine_fight_library, "todo/fight-mode 15.2"),
     ("engine: fight pause", c_engine_fight_pause, "todo/fight-mode 15.9"),

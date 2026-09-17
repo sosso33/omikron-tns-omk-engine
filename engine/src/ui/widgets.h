@@ -129,6 +129,14 @@ inline constexpr std::uint32_t kCbShopExamine = 0x004AED60u;
 //     1 Vente    - `sub_42A370(screen, 0x004E3A40)`, the confirm
 //     2 Examiner - `sub_42A370(screen, 0x004E39D8)`, `dword_4E393C = tag`
 inline constexpr std::uint32_t kCbShopRow            = 0x004AEAA0u;
+// THE TERMINAL FAMILY's one activate callback (`docs/UI.md`, "a second
+// `Ui_OpenShop`"): seven screens share panel 0x004E4108 and this item
+// callback, which switches on the screen's fixed parameter through the jump
+// table at 0x004AF578. The widget tree names it on 80 items.
+inline constexpr std::uint32_t kCbTerminalCell       = 0x004AF410u;
+// ...and its KEYPAD's list hook, `sub_4AF300` - the 3x3 pad, the `0` cell
+// below it (9) and the big button (10).
+inline constexpr std::uint32_t kHookTerminalPad      = 0x004AF300u;
 inline constexpr std::uint32_t kPanelShopSellConfirm = 0x004E3A40u;
 inline constexpr std::uint32_t kPanelShopExamine     = 0x004E39D8u;
 // The confirm's two answers, and both end on the shop panel again.
@@ -1094,6 +1102,8 @@ private:
     // answer is the slot rotated by one: slot 1 ("Niveau 0", the entrance)
     // answers 0. All 18 `ui.open 4` sites store it in variable 496, `Etage`.
     bool grid(const UiList& l, std::uint32_t bits);
+    // `sub_4AF300`, the terminal family's keypad (see `kHookTerminalPad`).
+    bool keypad(const UiList& l, std::uint32_t bits);
     // `sub_42A5C0` - move the panel's focus between LISTS, which is what the
     // sneak device's pages bind to left and right through `sub_42A710`.
     bool moveLists(int step);
@@ -1151,6 +1161,10 @@ private:
     // -1`, so a callback that branches on the screen - and several of the
     // save/load family do - cannot ask the panel it is standing on.
     int         screen_ = -1;
+    // THE TERMINAL'S TWO GLOBALS, `dword_68A600` (dossier 4, row 3) and
+    // `dword_68A5FC` (dossier 5, row 4). Its answer is written on CLOSE by
+    // `sub_4AF0E0`, not by the cell - see `keypad`.
+    bool        termRow3_ = false, termRow4_ = false;
     std::vector<std::string> log_;
     // Item address -> the RGB a page builder wrote into `+8/+9/+10`.
 };

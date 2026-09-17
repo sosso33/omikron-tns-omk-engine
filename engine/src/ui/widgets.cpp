@@ -1300,6 +1300,45 @@ bool UiWalk::move(const UiList& l, std::uint32_t bits,
     return false;
 }
 
+// `sub_4AF300` - THE TERMINAL FAMILY'S KEYPAD, transcribed from the image (it
+// has no `proc` label of its own in the decompilation's index). Eleven items:
+// 0..8 are the 3x3 pad, 9 the `0` cell under it and 10 the big button at
+// (528, 398). The selection is the list's own word and the hook returns 1 only
+// when it MOVED - so a confirm falls through to `Ui_ConfirmSelection` and the
+// item's callback, which is `kCbTerminalCell`.
+//
+//     UP     10 -> 9; 9 -> 7; else nothing on the top row (n/3 == 0), else -3
+//     DOWN   n/3 == 2 -> 9; 9 -> 10; 10 -> nothing; else +3
+//     LEFT   n >= 9 nothing; else wrap inside the row: row*3 + (n + 2) % 3
+//     RIGHT  n >= 9 nothing; else row*3 + (n + 1) % 3
+//
+// Without this the list's hook was unmodelled, the walk refused every press on
+// it, and the terminal and the fight simulator could be opened and never used.
+bool UiWalk::keypad(const UiList& l, std::uint32_t bits) {
+    int n = selMap()[l.addr];
+    if (n < 0) n = 0;
+    const int before = n;
+    const int row = n / 3;
+    if (bits & kUiUp) {
+        if (n == 10)      n = 9;
+        else if (n == 9)  n = 7;
+        else if (row != 0) n -= 3;
+    } else if (bits & kUiDown) {
+        if (n < 9 && row == 2) n = 9;
+        else if (n == 9)       n = 10;
+        else if (n != 10)      n += 3;
+    } else if (bits & kUiLeft) {
+        if (n < 9) n = row * 3 + (n + 2) % 3;
+    } else if (bits & kUiRight) {
+        if (n < 9) n = row * 3 + (n + 1) % 3;
+    }
+    if (n >= static_cast<int>(l.items.size())) n = before;
+    selMap()[l.addr] = n;
+    if (n != before) log_.push_back("keypad move");
+    if (bits & kUiConfirm) return confirm();
+    return n != before;
+}
+
 bool UiWalk::grid(const UiList& l, std::uint32_t bits) {
     int n = selMap()[l.addr];
     const int before = n;
@@ -1370,6 +1409,57 @@ bool UiWalk::confirm() {
         // that body (`verify.py: start cancel`), so it is named by address
         // and not pattern-matched at run time.
         if (it->callback == kCbStartCancel) return toParent();
+        // ---- THE TERMINAL FAMILY (`docs/UI.md` "a second `Ui_OpenShop`") --
+        //
+        // One callback, 0x004AF410, for seven screens - TERMINAL, FIGHT SIM,
+        // MORGUE, ARCHIVES and the three SURV - switching on the screen's own
+        // fixed parameter through the jump table at 0x004AF578. The parameters
+        // are 0..6 with no gap and no repeat over exactly those seven, so the
+        // case index IS the screen; the table is `docs/UI.md`'s, read there and
+        // transcribed here:
+        //
+        //     1 FIGHT SIM   row + 1 for rows 0..2 (and interface sound 26)
+        //     2 MORGUE      row + 1 for rows 0..4
+        //     3 ARCHIVES    1, and only from row 2
+        //     4 SURV ERROR  falls THROUGH into case 6 - `loc_4AF52F` ends in a
+        //                   call with no jump, which a table read as seven
+        //                   independent arms would miss
+        //     6 SURV KIT    1, and only from row 0
+        //     5 SURV NO KIT no answer at all
+        //     0 TERMINAL    nothing here: its answer is written by 0x004AF0E0,
+        //                   which is NOT ported - it answers a pair of booleans
+        //                   (`2 + (dword_68A5FC != 0)` on one branch, the bare
+        //                   test on the other, so 0..3) off a global this case
+        //                   sets when row 3 or 4 is chosen. Left unported and
+        //                   labelled rather than guessed, so the terminal shows
+        //                   its dossiers and does not yet answer its script.
+        if (it->callback == kCbTerminalCell) {
+            // the CELL's index in its own list - `Ui_ConfirmSelection` hands
+            // the callback the item, and the engine's arms test the list's
+            // selection word, not a row tag
+            const int row = selection();
+            int a = -1;
+            // case 0, the TERMINAL: no answer here - it REMEMBERS which
+            // protected dossier was opened and reports it on close (above)
+            if (screen_ == 5) {
+                if (row == 3) termRow3_ = true;
+                if (row == 4) termRow4_ = true;
+                if (row == 3 || row == 4)
+                    log_.push_back("terminal: dossier " + std::to_string(row + 1) + " opened");
+                return row == 3 || row == 4;
+            }
+            switch (screen_) {
+                case 11: if (row >= 0 && row <= 2) a = row + 1; break;
+                case 19: if (row >= 0 && row <= 4) a = row + 1; break;
+                case 18: if (row == 2) a = 1; break;
+                case 15: case 17: if (row == 0) a = 1; break;
+                default: break;
+            }
+            if (a < 0) { log_.push_back("terminal cell: no answer"); return false; }
+            answer_ = a;
+            log_.push_back("terminal cell: answer");
+            return true;
+        }
         // THE SHOP'S THREE BUTTONS - Acheter, Vente, Examiner (0x004AED00,
         // 0x004AED30, 0x004AED60), one body each:
         //
@@ -2044,6 +2134,24 @@ bool UiWalk::press(std::uint32_t bits) {
     // closes on it only with 0x10. This took BACK unconditionally, and TAB
     // not at all, until 2026-09-14, when a shop would not close on TAB.
     if ((bits & kUiClose) && (panel_->flags & 0x20u)) {
+        // THE TERMINAL ANSWERS ON THE WAY OUT, and it is the only screen of
+        // the family that does. `sub_4AF0E0` (read from the image):
+        //
+        //     if (dword_68A600) answer = 2 + (dword_68A5FC != 0);
+        //     else              answer =     (dword_68A5FC != 0);
+        //     dword_930750 = answer; Ui_CloseScreenDefault(screen);
+        //
+        // so it reports WHICH of the two protected dossiers were opened - 0
+        // neither, 1 the fifth, 2 the fourth, 3 both. AREA 179's script wants
+        // 1 for `1-A-CS SecretFile` (the voice-over, `DATA MEMORIZED` and memo
+        // 003) and branches again on 2. Which row sets which global is
+        // `docs/UI.md`'s reading of case 0, not a fresh transcription - its
+        // own `asmfn` snaps to the neighbour here (CLAUDE.md 1's trap) - and
+        // is labelled as resting on it.
+        if (screen_ == 5) {
+            answer_ = (termRow3_ ? 2 : 0) + (termRow4_ ? 1 : 0);
+            log_.push_back("terminal close: answer " + std::to_string(answer_));
+        }
         panel_ = nullptr;
         log_.push_back("close (TAB)");
         return true;
@@ -2391,6 +2499,7 @@ bool UiWalk::press(std::uint32_t bits) {
         }
         return false;
     }
+    if (l->hook == kHookTerminalPad) return keypad(*l, bits);
     if (l->hook) {
         approx_ = true;
         log_.push_back("unmodelled list hook");

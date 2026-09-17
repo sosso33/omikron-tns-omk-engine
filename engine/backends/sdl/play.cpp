@@ -18186,6 +18186,59 @@ int main(int argc, char** argv) {
         // The header's hook `0x004B0B60` is the shops' `0x004AEE30` again:
         // the posted message while oscillator 0 runs, else the SELECTED
         // BUTTON's label (`IAM\Multip` 0..3).
+        const bool liftHandled = walk && openScreen == 4;
+        // ---- THE TERMINAL FAMILY'S DISPLAY (`todo/missing-ui.md` 3) ------
+        //
+        // The same gap as the lift's box, over seven screens: panel 0x004E4108's
+        // body is a 430x320 item at (40, 80) in font 74 whose text comes from a
+        // native `textFn`, 0x004AF5D0, so the composer drew nothing and a reader
+        // found Kay'l's terminal blank - the artwork's keypad and screen with no
+        // dossiers on it.
+        //
+        // `sub_4AF5D0` read from the image: two state queries first
+        // (`sub_42B5E0(6)` then `sub_42B5F0`, and the same pair on 5), and
+        // failing both a SEVEN-CASE jump table on the screen's fixed parameter,
+        // each arm calling `sub_4767E0(panel, out, <string>, -1)`:
+        //
+        //     case 0 TERMINAL   string 12     case 4 SURV ERROR  string 1
+        //     case 1 FIGHT SIM  string 5      case 5 SURV NO KIT string 3
+        //     case 2 MORGUE     string 6      case 6 SURV KIT    string 2
+        //     case 3 ARCHIVES   string 5
+        //
+        // The two query branches - string 11 for the TERMINAL and 4 for the
+        // FIGHT SIM when the first is true, 6 for the FIGHT SIM when the second
+        // is - are NOT ported: `sub_42B5E0`/`sub_42B5F0` are an object lookup
+        // this has not read, so the default arm is what draws. Labelled, and it
+        // is the arm the shipped state takes on a first visit.
+        if (walk && walk->panel() && !liftHandled) {
+            struct Fam { int screen; const char* file; int str; };
+            static constexpr Fam kFam[] = {
+                {5,  "IAM/Term", 12}, {11, "IAM/Fsim", 5}, {19, "IAM/Morg", 6},
+                {18, "IAM/Arch", 5},  {15, "IAM/Surv", 1}, {16, "IAM/Surv", 3},
+                {17, "IAM/Surv", 2},
+            };
+            for (const auto& f : kFam) {
+                if (openScreen != f.screen) continue;
+                sneakRows.clear();
+                const auto txt = omk::iamStrings(fs, f.file);
+                if (f.str >= static_cast<int>(txt.size())) break;
+                for (const auto& l : walk->panel()->lists)
+                    for (const auto& e : l.items)
+                        if (e.textFn == 0x004AF5D0u)
+                            sneakRows[e.addr] = txt[static_cast<std::size_t>(f.str)];
+                static int famTold = -1;
+                if (famTold != openScreen) {
+                    famTold = openScreen;
+                    std::string shown;
+                    for (const auto& r : sneakRows) shown = r.second;
+                    std::string one;
+                    for (char c : shown.substr(0, 80)) one += (c == '\r' || c == '\n') ? ' ' : c;
+                    std::printf("terminal family: screen %d - the display says '%s'\n",
+                                openScreen, one.c_str());
+                }
+                break;
+            }
+        }
         // ---- THE LIFT'S DESCRIPTION BOX (`todo/missing-ui.md` 2b) --------
         //
         // Screen 4's list 1 is one 475x105 text item at (15, 360) in font 67
