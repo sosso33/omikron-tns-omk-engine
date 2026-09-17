@@ -297,6 +297,11 @@ public:
     // 8 overwrites the same request block (`dword_4E6C40`), so within one scan
     // the last touch wins.
     int touches() const { return touches_; }
+    // How many zones the HEIGHT BAND turned away - the stand-in for the engine's
+    // spatial iterator, which yields only zones near the actor in all three axes
+    // (see `scanZones`). A lift shaft stacks one zone per level over one
+    // footprint, so this is never 0 in the security centre and 0 in a street.
+    int heightSkips() const { return heightSkips_; }
     int cameraRequests() const { return cameraRequests_; }
     int touchedCamera() const { return touchCamera_; }
 
@@ -307,6 +312,7 @@ private:
     bool heldObject_ = false;
     std::function<bool(std::span<const std::byte>, std::size_t)> usedObjectProbe_;
     int  touches_ = 0, cameraRequests_ = 0, touchCamera_ = -1;
+    int  heightSkips_ = 0;
     std::vector<std::int16_t> detached_;
 
     void addTable(const ResidentSlot& s, int slotIndex, ChunkKind kind,

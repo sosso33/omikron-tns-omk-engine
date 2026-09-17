@@ -10971,9 +10971,13 @@ int main(int argc, char** argv) {
                 openScreen = -1;
                 screenFromScript = true;
             } else if (walk->answer() >= 0) {
-                std::printf("screen %d answered %d -> the script resumes\n",
-                            openScreen, walk->answer());
+                const int uiVar = session.pendingUiVar();
                 session.answerUi(walk->answer());
+                // printed from what the SESSION stored, not from the answer
+                // handed over: the two differ whenever the write misses
+                std::printf("screen %d answered %d -> the script resumes"
+                            " (variable %d now %d)\n", openScreen, walk->answer(),
+                            uiVar, uiVar >= 0 ? int(state.var(uiVar)) : -1);
                 walk.reset();
                 openScreen = -1;
             } else if (walk->closed()) {
@@ -19256,9 +19260,11 @@ int main(int argc, char** argv) {
         std::printf("player: Vie %d (the DB player record's property 1); %ld run-overs posted\n",
                     vie, session.runOvers());
     }
-    std::printf("session: %d areas entered, %d ui answers\n",
+    std::printf("session: %d areas entered, %d ui answers, %d zones turned away by "
+                "the height band\n",
                 session.areasEntered(),
-                static_cast<int>(session.uiAnswers().size()));
+                static_cast<int>(session.uiAnswers().size()),
+                session.zones().heightSkips());
     front.close();
     return 0;
 }

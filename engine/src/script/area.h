@@ -1309,6 +1309,9 @@ public:
     void harnessStartDialogue(int id) { dialogState_ = 3; openDialog(id); }
     int  pendingUiScreen() const { return pendingUiScreen_; }
     int  pendingUiParam() const { return pendingUiParam_; }
+    // ...and the VARIABLE it will write, so a log line can print what the
+    // script will actually read back rather than what the screen handed over
+    int  pendingUiVar() const { return pendingUiVar_; }
     // Write the named variable and release the parked context. Safe to call
     // with nothing parked; it does nothing.
     void answerUi(int value);

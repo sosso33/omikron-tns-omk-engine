@@ -2714,6 +2714,15 @@ void Session::execute(int i) {
             finishRun(c);
             return;
         }
+        // `OMK_VMTRACE`: every instruction a context executes, with its status.
+        // What it is for: a script that PARKS and never resumes looks exactly
+        // like a script that ran and did nothing, and no other log tells them
+        // apart. It is what showed five lift contexts reaching `ui.open` on one
+        // frame (`verify.py: engine: lift`).
+        if (std::getenv("OMK_VMTRACE"))
+            std::fprintf(stderr, "[ctx] frame %ld  ctx %d  status %d  pc %zu  op %d\n",
+                         frameNo_, i, c->status, c->pc,
+                         c->pc < c->code.size() ? int(std::to_integer<unsigned>(c->code[c->pc])) : -1);
         const std::span<const std::byte> one(c->code.data(),
                                              c->pc + 1 + static_cast<std::size_t>(n));
         const std::size_t before = c->pc;

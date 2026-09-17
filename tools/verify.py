@@ -12530,6 +12530,65 @@ def c_engine_run_over():
            ("on the road the traffic brakes for him and still runs him over - message 17, " \
             "H_IMPACT, Vie 10 -> 5")
 
+def c_engine_lift():
+    r"""`omk-play`: the security centre's LIFT - one press, one screen, and he arrives.
+
+    `todo/next-tasks.md` 13. AREA 157's lift zones STACK over one footprint,
+    one pair per level (ids 2510/2511 at y -18, 2512/2513 at y 207, and so on
+    up the shaft). `Actor_ScanZones` never sees them all: it seeds its iterator
+    (`sub_431D40`) with the actor's (x, y, z) and that builds a box in all
+    THREE axes, so the zones it yields are the ones at his height. The port had
+    no such index and scanned every live zone by the quad alone, which is XZ
+    only in both engine and port (`Zone_ContainsPoint` takes y and ignores it).
+
+    The cost was that ONE press of the action button activated FIVE lift
+    scripts. Each parked on its own `ui.open 4`; the Session holds one pending
+    screen, so the answer went to the LAST of them and the lift the player was
+    standing in stayed parked - the screen simply reopened and he never moved.
+
+    Stand at address 446 (the ground-floor lift, right-hand side), press the
+    action button, take the grid's default and confirm: exactly one screen 4
+    asks, it answers 6 - `Etage` - and the script's case 6 walks him to
+    ADDRESSES 457/458, 'Asc CS Lev1', at y -453 from the -12 he pressed at.
+    Zones ARE turned away by the height band (the shaft's other levels).
+
+    SHOWN TO FAIL: drop the band in `ZoneRegistry::scanZones` and five contexts
+    park on the screen, `screen 4 is asking` appears twice over the same run,
+    and the player's y never leaves -12.
+    """
+    import subprocess
+    eng = os.path.join(ROOT, "engine")
+    fr = omkpaths.data_root()
+    if not (os.path.isdir(eng) and os.path.isdir(os.path.join(fr, "SCPTDATA"))):
+        return ("skipped",), ("skipped",), "engine/ or gamedata/ absent"
+    mk = subprocess.run(["make", "-s", "play"], cwd=eng, capture_output=True, text=True)
+    play = os.path.join(eng, "build", "omk-play")
+    if mk.returncode != 0:
+        return ("build failed",), ("built",), "engine/ must build"
+    if not os.path.exists(play):
+        return ("no sdl",), ("no sdl",), "needs SDL to render"
+    out = subprocess.run(
+        [play, fr, os.path.join(ROOT, "tables"),
+         "--save", os.path.join(ROOT, "traces", "save-appart.bin"),
+         "--area", "157", "--address", "446", "--frames", "400",
+         "--nofmv", "--nodelay", "--no-crowd",
+         "--hold", "k*40,k28*2,k*60,k28*2,k*250"],
+        capture_output=True, text=True, errors="replace",
+        env=dict(os.environ, SDL_VIDEODRIVER="dummy")).stdout
+    asks = len(re.findall(r"screen 4 is asking", out))
+    ans = re.search(r"screen 4 answered (\d+) -> the script resumes \(variable (\d+) now (\d+)\)", out)
+    fin = re.search(r"player: HO1_FN/\S+ at (-?[\d.]+) (-?[\d.]+) (-?[\d.]+)", out)
+    skips = re.search(r"(\d+) zones turned away by the height band", out)
+    if not (ans and fin and skips):
+        return (asks, bool(ans), bool(fin), bool(skips)), (1, True, True, True), \
+               "the run must open the lift, answer it and print the player"
+    return (asks, int(ans.group(1)), int(ans.group(2)), int(ans.group(3)),
+            round(float(fin.group(2))), int(skips.group(1)) > 0), \
+           (1, 6, 496, 6, -453, True), \
+           ("one press opens ONE lift screen, its answer is `Etage`, and case 6 "
+            "walks him down the shaft to Lev1")
+
+
 def c_engine_water_entry():
     r"""`omk-play`: SWIMMING, the whole cycle - in, under, up to the surface, down again.
 
@@ -36923,6 +36982,7 @@ SLOW = [
     ("engine: fight loser pose", c_engine_fight_loser_pose, "todo/fight-mode 15.16"),
     ("engine: fall reaction", c_engine_fall_reaction, "todo/falls.md 1"),
     ("engine: run over", c_engine_run_over, "todo/falls.md 4"),
+    ("engine: lift", c_engine_lift, "todo/next-tasks 13"),
     ("engine: water entry", c_engine_water_entry, "todo/swimming.md 1"),
     ("engine: fight library", c_engine_fight_library, "todo/fight-mode 15.2"),
     ("engine: fight pause", c_engine_fight_pause, "todo/fight-mode 15.9"),

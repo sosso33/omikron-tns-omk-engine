@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "script/zones.h"
 
+#include <algorithm>
+
 #include <cmath>
 
 namespace omk {
@@ -274,6 +276,39 @@ void ZoneRegistry::scanZones(const double pos[3], double facingDegrees,
         // the other axis; they agree away from an edge, which is where every
         // check here stands.
         if (!z.zone.contains(pos[0], pos[2])) continue;
+        // ...BUT THE ZONE MUST BE AT HIS HEIGHT, and that is the ITERATOR's job
+        // in the engine, not the containment's. `Actor_ScanZones` does not walk
+        // every zone: it seeds `sub_431D40` with the actor's (x, y, z) and that
+        // builds a BOX of `+88` in all three axes - `a3 - v15 .. a3 + v15` for y
+        // - so the zones it yields are already the ones near him. This port had
+        // no such index and scanned every live zone by the quad alone.
+        //
+        // What that cost, measured in play 2026-09-17: the security centre's
+        // lift zones STACK - ids 2510/2511 at y -18 and 2512/2513 at y 207 over
+        // the same footprint, one pair per level - so one press of the action
+        // button activated FIVE lift scripts at once. Each parked on its own
+        // `ui.open 4`, the Session holds one pending screen, and the answer went
+        // to the last of them: the lift the player was standing in stayed parked
+        // for ever and the screen simply reopened. The engine activates every
+        // ARMED slot too (`Script_Pump` case 2, all 16) - it is the arming that
+        // differs.
+        //
+        // RECONSTRUCTION, labelled: the box's radius is a float the zone-space
+        // record carries and this has not read it. The band is the quad's OWN y
+        // extent plus one metre, and the corpus says the choice is not delicate:
+        // over all 4558 zones the quad's y spread is 0 at the median and 23.8 at
+        // the 99th, while zones that share a footprint at different heights sit
+        // a median 389.7 apart (130 to 225 in this lift). Anything between a few
+        // units and ~60 separates the levels identically.
+        {
+            double lo = z.zone.quad[0][1], hi = lo;
+            for (int k = 1; k < 4; ++k) {
+                lo = std::min(lo, z.zone.quad[k][1]);
+                hi = std::max(hi, z.zone.quad[k][1]);
+            }
+            constexpr double kZoneBand = 39.370079;      // one metre
+            if (pos[1] < lo - kZoneBand || pos[1] > hi + kZoneBand) { ++heightSkips_; continue; }
+        }
 
         // Event 8, raised BEFORE the facing test - a zone can be touched, and
         // can take the camera, without ever arming.

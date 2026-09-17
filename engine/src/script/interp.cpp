@@ -226,6 +226,13 @@ RunResult Interpreter::resume(std::span<const std::byte> code, std::size_t at) {
             // PEEK, never pop: the switch value stays for the next case, and
             // the jump is taken when they DIFFER
             const auto top = stack_.empty() ? 0 : stack_.back();
+            // ...and which way each `case` went, under the same variable: a
+            // switch that matches nothing is the other half of the park/ran
+            // ambiguity above
+            if (std::getenv("OMK_VMTRACE"))
+                std::fprintf(stderr, "[vm] pc %zu case label %d top %d depth %zu -> %s\n",
+                             start, int(label), int(top), stack_.size(),
+                             top == label ? "TAKEN" : "next");
             pc = (top == label) ? pc
                                 : static_cast<std::size_t>(static_cast<std::ptrdiff_t>(q) + v);
             continue;
