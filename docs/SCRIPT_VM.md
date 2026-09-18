@@ -2343,9 +2343,10 @@ gets `o3de_MoveNodeBy(node, -(this frame's move))` - the step is undone.
 That is the security centre's whole design. Each level's corridor is the
 SHAFT's set (`ACSpuits.3DO`: the landings `CSNivo-N`, the lift cars `CSPont*`,
 the shaft doors - 99 meshes), and `ACSlev-N.3DO` holds only that level's
-furniture and doors, loaded and hidden until a door zone's
-`area.goto 181, 22, 23` brings it in. Its walls hold him in the corridor and
-its floor turns him back. The port had dropped a set from collision when it
+furniture and doors - no floor at all (`todo/missing-ui.md` §6c) - loaded
+and hidden until a door zone's `area.goto 181, 22, 23` brings it in. Its doors
+and furniture stay solid while hidden, and the corridor under him is always
+the shaft's. The port had dropped a set from collision when it
 hid it, and a player went through the barriers; it now keeps every loaded
 set solid, draws only the shown ones, raises event 9 only for a shown one,
 and undoes a step onto a hidden one's floor. The rails themselves also needed
