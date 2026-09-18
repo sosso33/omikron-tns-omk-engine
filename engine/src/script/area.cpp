@@ -11,6 +11,7 @@
 #include "script/objects.h"
 
 #include <cmath>
+#include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <fstream>
@@ -44,7 +45,11 @@ void dbWrite(GameState& s, std::size_t off, const void* src, std::size_t n) {
 
 std::vector<std::byte> readFile(const std::string& p) {
     std::ifstream f(p, std::ios::binary | std::ios::ate);
-    if (!f) return {};
+    // SAID, not silent: an unreadable IAM\AREA leaves every area EMPTY - no
+    // startup script, no set, no scene - and a run that just never starts
+    // (a console, 2026-09-18). One line names the file.
+    if (!f) { std::fprintf(stderr, "session: cannot read %s\n", p.c_str());
+              std::printf("session: cannot read %s\n", p.c_str()); return {}; }
     const auto n = static_cast<std::size_t>(f.tellg());
     std::vector<std::byte> d(n);
     f.seekg(0);

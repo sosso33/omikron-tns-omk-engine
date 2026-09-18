@@ -2794,7 +2794,11 @@ int main(int argc, char** argv) {
     const int startArea = areaArg >= 0 ? areaArg : state.currentArea();
     if (startArea < 0) { std::fprintf(stderr, "IAM/START names no area\n"); return 1; }
     session.loadArea(startArea);
-    std::printf("session: area %d loaded, waiting for its script\n", startArea);
+    // ...with the SET it names, because an area whose chunk did not arrive
+    // (an unreadable IAM\AREA) still "loads" - with no script, no set and no
+    // scene, and a run that never starts (a console, 2026-09-18)
+    std::printf("session: area %d loaded, set '%s', waiting for its script\n",
+                startArea, session.setName().c_str());
     // A HARNESS, and the narrowest one in this viewer: `zone.enable N`, the
     // opcode itself, on a zone the STORY would have enabled. Everything after
     // it is the game's own path - the player walks in, the zone fires its own
