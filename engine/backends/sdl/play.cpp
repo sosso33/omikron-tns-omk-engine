@@ -103,6 +103,12 @@
 #include <set>
 #include <string>
 
+#if defined(__vita__)
+// The Vita's on-screen keyboard (`backends/vita/ime.h`), for the name field.
+namespace omk::vita {
+bool imeEdit(const char* title, const std::string& initial, int maxLen, std::string& out);
+}
+#endif
 #if defined(OMK_GLES)
 // The GLES2 backend (`backends/gles/glesrender.cpp`, `todo/vita-port.md` F1),
 // declared the same way as Vulkan's below: this file includes no GL header.
@@ -10912,6 +10918,31 @@ int main(int argc, char** argv) {
             // both. Without this gate ENTER moved the focus to the buttons
             // and then confirmed one of them in the same press, which starts
             // a game the player never asked for.
+#if defined(__vita__)
+            // THE NAME FIELD ON A VITA, which has no keyboard: the system's
+            // on-screen one opens when the focus lands on the field - once per
+            // arrival, so a cancel does not reopen it every frame; move off the
+            // field and back to type again - and its answer goes in through
+            // the field's own character channel: a BACKSPACE for every
+            // character already there, the new name, and RETURN, which moves
+            // the focus to the buttons exactly as a typed RETURN does. The
+            // field stays the engine's; only the keys are the Vita's.
+            {
+                static bool imeOpenedHere = false;
+                const bool onField = walk->nameFieldFocused();
+                if (onField && !imeOpenedHere) {
+                    imeOpenedHere = true;
+                    std::string typed;
+                    if (omk::vita::imeEdit("Nom", walk->name(), walk->nameMaxLength(), typed)) {
+                        host.text = std::string(walk->name().size(), '\b') + typed + "\r";
+                        std::printf("name field: the Vita keyboard gave \"%s\"\n", typed.c_str());
+                    } else {
+                        std::printf("name field: the Vita keyboard was cancelled\n");
+                    }
+                }
+                if (!onField) imeOpenedHere = false;
+            }
+#endif
             const bool ate = !host.text.empty() && walk->typeName(host.text);
             // A KEY ALREADY DOWN WHEN THE SCREEN OPENED IS NOT A PRESS.
             //

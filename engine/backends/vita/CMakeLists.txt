@@ -122,6 +122,7 @@ vita_create_vpk(omk_smoke.vpk ${OMK_TITLE_SMOKE} omk_smoke.self
 if(OMK_VITA_GAME)
   add_executable(omk_vita ${OMK_VITA_COMMON}
     ${CMAKE_CURRENT_SOURCE_DIR}/vita_main.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/ime.cpp
     ${ENGINE}/backends/sdl/play.cpp
     ${ENGINE}/backends/gles/glesrender.cpp)
   set_source_files_properties(${ENGINE}/backends/sdl/play.cpp

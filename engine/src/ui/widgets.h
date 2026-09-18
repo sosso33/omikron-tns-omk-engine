@@ -795,6 +795,14 @@ public:
     // buttons AND confirms one of them in a single press.
     bool typeName(const std::string& text);
     const std::string& name() const { return name_; }
+    // Is the focus ON the name field - the list whose hook is the field's?
+    // A frontend with no keyboard (the Vita) opens its on-screen one then.
+    bool nameFieldFocused() const {
+        const auto* l = curList();
+        return l && l->hook == w_->nameHook();
+    }
+    // The field's own capacity, `nameMax` out of the widget table.
+    int nameMaxLength() const { return w_->nameMax(); }
     // Where the caret stands in that buffer - `dword_657994`. The field's
     // hook (`sub_47A390`) inserts and deletes AT the caret and moves it on
     // LEFT and RIGHT, and its drawer puts a blinking `_` after exactly this
