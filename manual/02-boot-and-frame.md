@@ -11,14 +11,14 @@ plays three MPEG videos (Eidos, Quantic Dream, and a title sequence), loads a
 scene file called `aventure.scx`, puts up a splash bitmap, and enters a loop
 that runs one frame at a time until you quit.
 
-Two things about that are worth knowing before anything else.
+Three things about that are worth knowing before anything else.
 
 **There is no "menu state".** The start menu is not a special mode the engine
 enters — it is a scene, loaded by the same call that loads a street. What you
 read as the game's front end is the ordinary scene machinery with a screen
 open over it.
 
-**And the game counts in frames, not seconds.** Every clock in the engine —
+**The game counts in frames, not seconds.** Every clock in the engine —
 animations, camera moves, the flicker of a neon sign — is measured in units of
 one-thirtieth of a second, because the frame delta is computed as `30 / fps`.
 At 30 fps that is exactly 1.0. This is not a convention someone chose; it falls
@@ -29,6 +29,11 @@ One consequence is a gameplay fact rather than an implementation detail: the
 delta is **clamped at 3.0**, so below 10 fps the game slows down rather than
 taking bigger steps. A replica that integrates real elapsed time on a slow
 machine is not being more accurate — it is being wrong.
+
+**And Escape is not a key the game binds.** The loop reads it by hand, one
+instruction before the frame, and opens the pause screen directly. Pausing
+also silences every sound and stream, because that screen's open and close
+callbacks do far more than set a flag.
 
 ## In detail
 
@@ -56,6 +61,11 @@ WinMain               parse the command line: WINDOW, NOFMV, CONFIG
 subsystem that longjmps out lands there, shuts down, and puts up
 `"Can't initialize"` in a `MessageBoxA`. The whole boot is one guarded block,
 which is why nothing inside it checks a return value.
+
+`aventure.scx` is the game's **global effect and sound library** — 20 sprites
+and 53 sounds — and not a menu. The menu is opened by the first area's own
+startup script (chapter 5), which is why the port reaches it with nothing
+hand-wired.
 
 ### The three movies, and the two different skips
 
@@ -136,10 +146,39 @@ it is set is to re-baseline all three timers. **The idle gap is discarded, not
 integrated** — otherwise returning from a two-minute alt-tab would hand the
 simulation a 120-second delta.
 
-**Escape is not an input binding.** It is read with `GetAsyncKeyState`
-directly in the loop, one instruction before `Game_Frame`, so the input system
-never sees it; it tests bit 15 — down *now*, not an edge — and opens screen 31,
-the pause menu, gated on the pause flag so the screen cannot reopen itself.
+### Escape, and the pause
+
+Escape is read with `GetAsyncKeyState` directly in the loop, so the input
+system never sees it. It is **level-triggered** — bit 15, down *now*, not an
+edge — and guarded only by `dword_4E9728`, the pause flag, whose two writes in
+the whole image are the pause screen's own open and close.
+
+It calls **`UI_LoadScreen`, not `UI_OpenScreen`**: no answer variable is written
+and no script is parked, which is the difference between a screen the world
+asks a question with and one the player brings up over it. `UI_LoadScreen` also
+refuses the pause while a slot holds a screen carrying `0x20000400` — the start
+menu and the save screen, and nothing else.
+
+Screen 31's open callback does more than set the flag. After it, four suspend
+routines stop every buffer in the sound bank and the streaming handles, and the
+close calls their four partners in the same order — so the pause silences the
+music as well as the world. *Quitter le jeu* on it does **not** quit the
+program: its confirm sets a request that the next script pump serves as a new
+game.
+
+### `Input_Poll`'s own rules
+
+Before any binding is matched, `Input_Poll` (0x0043E0D0) fixes up the keyboard
+state: left and right Shift set each other, left Control sets right Control,
+and TAB is dropped while Alt is held. The adventure scheme binds *run* to scan
+code 54, right Shift — so without the first rule left Shift would reach no
+binding at all.
+
+A joystick binding code is a byte offset into `DIJOYSTATE` — the X axis at 0,
+Y at 4, button *k* at 48 + *k* — and the axes are **hardwired** to the first
+four slots against a threshold nothing ever stores to, over a range of −1000..
+1000, with no dead zone of the engine's own. `engine: input poll` asserts
+sixteen cases of it.
 
 ### `Game_Frame`, and where "one frame" comes from
 
@@ -197,17 +236,23 @@ because the game's own primary buffer is 22 050 and the movies never went
 through it; routing them through the ported audio path would be wrong about
 both the rate and the route.
 
-Escape opens the pause screen in the port too, and by the same route — polled
-next to the frame rather than bound to an action, because that is where the
-engine reads it.
+Escape opens the pause screen by the engine's own route — polled beside the
+frame, not bound to an action — which was confirmed in play; and the pause
+suspends the sound the way screen 31's callbacks do.
+
+The frame is paced to a **deadline**: each frame ends on a 1/30 s grid of the
+performance counter rather than sleeping "33 ms minus what was spent", which
+had held the capped street at a flat 28.8 fps. A late frame shortens the next;
+a stall of more than a frame resynchronises instead of bursting. The
+simulation still steps on the measured delta.
 
 ## Where it lives
 
 | | |
 |---|---|
-| the finding | `docs/BOOT.md` |
-| the checks | `verify.py: boot sequence`, `engine: boot`, `engine movies`, `menu open site` |
-| the port | `engine/src/platform/boot.*`, `movie.*`; the frame delta in `frontend.h` |
+| the finding | `docs/BOOT.md`; the pause in `docs/UI.md` §3h |
+| the checks | `verify.py: boot sequence`, `engine: boot`, `engine: movies`, `menu open site`, `engine: pause`, `engine: input poll` |
+| the port | `engine/src/platform/boot.*`, `movie.*`; the frame delta in `frontend.h`; `src/input/` for the poll's rules |
 | the frame oracle | `traces/intro.log` — the original's own announcements |
 
 ## What is not settled

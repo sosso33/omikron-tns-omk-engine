@@ -15,7 +15,7 @@ in the executable. The directories that matter:
 | `MESHES/` | 1 271 — models, sets and their textures |
 | `SCPTDATA/` | 287 — the scene scripts, their animation clips, paths and sound tables |
 | `MORPH/` | 779 — facial animation with the voice recording inside it |
-| `FONTS/`, `I2D/`, `IMAGES/`, `MAP2D/` | the interface: 21 fonts, 73 sprite sheets, 45 bitmaps, 32 map screens |
+| `FONTS/`, `I2D/`, `IMAGES/`, `MAP2D/` | the interface and the maps: 21 fonts, 73 sprite sheets, 45 bitmaps, 32 map files |
 | `FLIS/` | the three intro movies |
 | `VOICEOFF/`, `SOUNDS/`, `TRACKS/` | speech, effects and music |
 
@@ -27,6 +27,12 @@ The important thing about all of it is that the formats are *plain*. There is
 no compression anywhere in the shipped tree, no encryption, and no versioning
 beyond one field. A record is a struct, an array is an array, and a count is
 usually right there. That is what made the whole project tractable.
+
+And a file is often more than its name says. The `MAP2D` files are the maps
+the player sees — and also the navigation grid the gunmen in shoot mode walk
+by. A mesh flag that makes a skyline shimmer also marks the bed of a canal you
+can swim in. Nothing in the data announces that; each was found by reading the
+code that uses it.
 
 ## In detail
 
@@ -82,17 +88,38 @@ numbers are what the checks assert:
 | `.3DT` | textures | 2 534 of 2 534 byte-identical |
 | `.ani` | animation libraries | 243 362 of 243 362 unit quaternions |
 | `.CTL` | the actor state machines | 7 of 7 walks landing exactly on the file size; 398 clips; all 2 044 graph edges resolving |
-| `.SCX` | scene scripts — objects, programs, camera editings | 220 of 220; 4 511 objects; 6 756 paths |
+| `.SCX` | scene scripts — objects, programs, camera editings, effect sprites | 220 of 220; 4 511 objects; 6 756 paths |
 | `.3DA` / `.3DP` | scene animation clips and authored paths | 1 490 clips; every path's duration field confirmed |
 | `.3DM` | facial animation with its voice audio inside | 777 of 777, sample-identical |
 | `.SFX` | a scene's sounds and ambient effects | 59 of 59, a six-section walk exact |
 | `.OPT` | the city's traffic circuits | 7 blocks, 6 of 6 exact |
+| `.mpt` (`MAP2D/`) | a location's map, and the shoot AI's navigation grid | 16 files, 79 floors; the walk lands exactly |
 | `.FNT` | the interface fonts | 2 899 glyphs, none outside its file, none overlapping |
 | `IAM\AREA`, `SCENE`, `GLOBAL` | the world scripts and trigger zones | 5 785 of 5 785 script slots decoding; 4 558 zones, none malformed |
 
 Two audio formats sit under that: **OTNS ADPCM**, transcribed from
 `sub_483200` and sample-identical across all 777 morph files, and plain
 `.wav` for the 61 interface and effect sounds.
+
+### One file, two jobs
+
+**`MAP2D/*.mpt`** is loaded with an area that names one (16 areas do). Per
+floor it carries a grid of byte cells — the picture of the in-game map and its
+reveal state — and it is also what shoot mode's gunmen think with: the brain
+converts a gunman's world position into a cell of his floor, tests cells by
+walking a line across the grid, and follows routes written into the file's
+third section, point by point, each point naming a cell and a clip. Records
+this repository had first read as wall segments turned out to be
+**inter-floor links**, a staircase written once per direction. See chapter 6.
+
+**Mesh flags** do the same kind of double duty. `0x8000000` makes a mesh's
+vertex colour oscillate on the frame clock — the shimmer of every city's far
+skyline — and it is also what marks the canal's bed and banks, the floor that
+takes the player into the water. `0x20000000` marks the water's *surface*, the
+face a falling body passes through and the camera may see through. And the
+vertex record carried a **normal** at `+12` that nobody had read until the
+crowd's dynamic lighting needed it; twelve bytes skipped since the format was
+first decoded.
 
 ### Case, and why it needed a class
 
@@ -113,9 +140,11 @@ because a tool whose second positional argument was its output once truncated a
 
 Some tables are compiled into the executable, and a replica cannot recover them
 from any file: the VM's 153-entry opcode table, the interface widget tree, the
-four control schemes, the camera-mode presets, the ADPCM coefficients, the
-66 special-move rows. Those are lifted to `tables/*.json` — nine files, each
-self-checking, each regenerable by `tools/exetables.py --check`.
+four control schemes, the camera-mode presets, the ADPCM coefficients, the 66
+special-move rows, the shoot AI's behaviour scripts and its weapons, the fight
+AI's eight built-in sequences, the four city maps' rectangles. Those are lifted
+to `tables/*.json` — twelve files, each self-checking, each regenerable by
+`tools/exetables.py --check`.
 
 This is the one place where the port depends on this repository as well as on
 your copy of the game.
@@ -125,7 +154,7 @@ your copy of the game.
 | | |
 |---|---|
 | the container and the asset formats | `docs/FILE_FORMATS.md`, `docs/ASSETS.md` |
-| the readers | `engine/src/formats/` — one file per format |
+| the readers | `engine/src/formats/` — one file per format, `map2d.*` among them |
 | all data access | `engine/src/platform/datafs.*` |
 | the lifted tables | `tables/*.json`, regenerated by `tools/exetables.py` |
 | the Python readers | `tools/omkdata.py` and one module per format |

@@ -46,9 +46,16 @@ factor is `0.0254` — which is the engine telling us, in its own units, that
 The volume law is an **attenuation**, not a gain: 0 is full and 100 is silent.
 
 Three wrappers around it — set frequency, get frequency, length in
-milliseconds — turn out to be **dead code**: no direct callers and no address
-references anywhere in the image. That is why they appear in no decompilation,
-and it is not the missing prologue it was first read as.
+milliseconds — are **dead code**: no direct callers and no address references
+anywhere in the image. That is why they appear in no decompilation.
+
+### Pausing is a sound decision too
+
+Screen 31, the pause, does not only freeze the frame clock. Its open callback
+calls four suspend routines — one walks the sound bank and stops every buffer,
+the others stop the streaming handles — and its close calls their four
+partners in the same order. A pause that stopped the world and left the music
+playing was a port fault, found by playing.
 
 ### The decoder
 
@@ -72,24 +79,39 @@ twelve per-screen slots are positional: move, confirm, open.
 The cache holds **32 slots**, so 13 of the 45 can never be resident; the loader
 simply returns when it is full.
 
-### A sound in the world is 3D
+A screen's code plays sounds two ways, and they are easy to confuse: through
+its own per-screen slots, and **by id** into the 45-row table
+(`sub_482D90(n)`). The sneak's combine plays id 12 on success and its
+consumable arm id 13; the port had played the sneak's own confirm slot for
+both, a different file.
+
+### A sound in the world is 3D, except when it is not
 
 `Script_PlaySound`, the scene programs' own sound call, positions its sound at a
 node — it is a 3D call in the engine, and playing it flat is audibly wrong in a
 street. Its sibling `Script_PlaySyncSound` looks like the same function and is
 not: **parameter 1 is the frame to fire on** in one and **a loop flag** in the
-other. Decoding both alike invents a cue time for every call of the second, and
-that is exactly what happened once.
+other. Decoding both alike invents a cue time for every call of the second.
+
+Shoot mode's sounds come from the resident effect library the phase loads, and
+a fight loads `fight.scx` the same way — the port's missing fight sounds and
+sprites were one cause, that load. The hurt sound when a bolt hits the player
+is played with the 3D call's positional argument at 0, so it is **not**
+positional. And what the code calls the gunfire *noise* (`sub_4246E0`) is not a
+sound at all: every muzzle flash and every bolt that stops on a wall or a body
+alerts the gunmen on that floor within a set number of map cells — the alarm
+that shoot mode's brains react to.
 
 The scene sound file `.SFX` carries the ambient effects too, and its cin-sfx
 rows are tied to the animation tick that fires them.
 
 ### Music, and the movies
 
-Music is started by its own opcode with an area's own music field behind it.
-The second operand is **not established** as a loop flag, which is a live
-question rather than a settled one — a short track that loops for ever is a
-reported symptom with an unproven cause.
+Music is `music.play`, opcode 103, which builds `TRACKS\<n>.ADP` from its first
+field and streams it; the second is the loop flag, and the handler skips a
+request for the track already playing. 518 of its 521 sites name a file that
+exists, and the other 3 are track 0, which the callee refuses. An area's own
+music field sits behind it.
 
 The three intro movies carry **44 100 Hz** audio and go straight to the device.
 They never went through the game's 22 050 primary buffer — the original played
@@ -100,20 +122,21 @@ through the ported path would be wrong about both the rate and the route.
 
 | | |
 |---|---|
-| the findings | `docs/ASSETS.md` (ADPCM, the `.SFX` chain), `docs/PORTING.md` A5 and B6 |
+| the findings | `docs/ASSETS.md` §3c (the sound path, ADPCM, the `.SFX` chain), `docs/SCRIPT_VM.md` (`music.play`), `docs/PORTING.md` A5 and B6 |
 | the port | `engine/src/audio/` — `mixer.*` (the bank, the voices, the listener), `voiceover.*`, `music.*` |
 | the reference decoder | `adp/pc_adp_otns.c`, `tools/adp.py` |
-| the checks | `engine audio`, `engine voice over`, `adpcm`, `.3DM files`, `cutscene music` |
+| the checks | `engine: audio`, `engine: voice over`, `engine: morph+ADPCM`, `.3DM files`, `music.play`, `cutscene music`, `ui sound slots`, `engine: fight library` |
 
 ## What is not settled
 
 * **The attenuation and pan law is DirectSound's**, is described nowhere in the
   image, and no rig here records sound. It has **no reachable tier**, and the
   port's `render()` says so in its own header.
-* **The music opcode's second operand.** Read as a loop flag it explains a
-  reported symptom; nothing establishes that reading.
 * **551 of the 561 voice-over files are not on the disc.** Explained, not
   missing.
+* **The twelve per-screen sound slots** are recorded in the coverage audit as
+  not fired by the widget walk itself, and several of the special screens'
+  sounds are labelled unported in their sources.
 * The one waveform property that *is* asserted is transparency: a mono voice,
   not 3D, at full volume and at the mix rate comes out of the reference mixer
   unchanged in both channels — with a file at a different rate as the control

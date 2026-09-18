@@ -7,10 +7,10 @@
 ## In short
 
 The world is a set of **places**, and a place is a chunk in an archive: its
-set, its characters, its props, its scripts, and the invisible boxes that make
-things happen when you walk into them.
+set, its characters, its props, its scripts, its shop stock, and the invisible
+boxes that make things happen when you walk into them.
 
-Three ideas carry the whole chapter.
+Four ideas carry the whole chapter.
 
 **A place runs a script the moment it loads.** Nothing has to name it — arriving
 *is* the trigger. That is how a new game starts talking to you.
@@ -19,23 +19,25 @@ Three ideas carry the whole chapter.
 which way you have to be facing, plus up to three scripts: one for entering,
 one for pressing the action button inside it, one for leaving. There are 4 558
 of them, and each has one bit in the saved game, which is how a one-shot stays
-shot.
+shot. A zone has a height too, though not where you would look for it.
 
 **Two places are loaded at once.** When you walk out of a street into a
 building, the street is not thrown away — it stays resident in the other slot,
-its animations still running, and walking back is not a reload. This is the
-detail a replica is most likely to get wrong, and this one did: it rebuilt the
-street from the file, and a city that had 32 animations running came back with
-none of them, its fires and its neon gone with them.
+its animations still running, and walking back is not a reload.
+
+**Hidden is not gone.** A place that is loaded but not shown is still solid:
+its walls still stop you, and a step onto its floor is undone. A whole
+building in the game is laid out around that.
 
 ## In detail
 
 ### Areas and scenes
 
 `IAM\AREA` and `IAM\SCENE` are archives of chunks. An AREA chunk is a location:
-it names its set (`+97`), its 2D map, its animation library, its traffic
-circuit, its characters and props, and its trigger zones. A SCENE chunk is a
-*layer* loaded over an area — a cutscene's cast and its own zones — and
+it names its set (`+97`), its 2D map (`+106`), its animation library, its
+traffic circuit, its characters and props, its shop stock (`+8`, sixteen object
+ids ending at `0xFFFF`), its sky (`+133`) and its trigger zones. A SCENE chunk
+is a *layer* loaded over an area — a cutscene's cast and its own zones — and
 `scene.load` brings one in without disturbing the area under it.
 
 Both carry a **startup script at `+4`**. `Area_TickLoad` hands it to
@@ -69,6 +71,17 @@ one-shot permanently. Every frame, the actor scan tests containment, raises
 event 8 on touch, and raises event 7 — the 16-slot "what can I press the button
 on" table — when the facing matches too.
 
+**The containment test has no height, and the scan does.** `Zone_ContainsPoint`
+(0x0048C880) takes a y and never reads it; the filter is the iterator, which
+builds its search box around the actor in all three axes, so only zones at his
+height are ever yielded. The security centre's lift shows why it matters: one
+pair of lift zones per level, stacked over a single footprint up the shaft.
+Scanning by the quad alone armed every level's lift at once, five scripts
+parked on five copies of the lift screen, and the one answer went to the wrong
+one. The port bands by the quad's own height plus a metre — **a
+reconstruction**, since the record's radius field is unread; over all 4 558
+zones the choice does not decide anything shipped.
+
 54 of the zones carry a world camera, and walking into one forces that camera:
 the game's walk-into-a-room auto-cut.
 
@@ -80,43 +93,65 @@ duplicate ids.
 Scripts also subscribe to **events** — 154 subscriptions across ids 0..32 —
 which is how one script tells another that something happened without either
 knowing about the other. The same dispatcher is what resumes every parked
-script in chapter 4's table.
+script in chapter 4's table. Several new senders turned up with the port's
+later work: examining an object posts message 4, a hard landing 10 or 11, a
+vehicle hitting the player 17, surfacing from the water 21 and running out of
+breath 12 — each answered by some area's or `IAM\GLOBAL`'s handler.
 
-### Two resident slots, and one pool each
+### Two resident slots, one pool each
 
 The engine keeps **two** areas loaded, in a two-row table, with one row active.
 Everything that walks the world walks both rows: the zone registry, the camera
 search, the message handlers. The outgoing area stays live — zones armed,
 scripts running — for as long as it is resident.
 
-And the object pool belongs to the **slot**, not to the game. `Area_LoadScx`
-walks the decor slots for the one holding the area, fills *that slot's*
-container, and binds *that slot's* sound file:
-
-```c
-sub_44B140(slot + 8);                       /* clear the container      */
-Scene_LoadSCX(Buffer, slot + 8);            /* ...and fill it           */
-if ((v6 = File_LoadWhole(Buffer, ...))) {
-    Sfx_LoadFile(v6, slot);
-    Sfx_BindAmbientEffects(slot);
-}
-```
-
-`Game_Frame` then plays **both** pools every frame, which is why the place you
-are not standing in goes on animating.
+The object pool belongs to the **slot**, not to the game. `Area_LoadScx` walks
+the decor slots for the one holding the area, fills *that slot's* container,
+and binds *that slot's* sound file, and `Game_Frame` plays **both** pools every
+frame, which is why the place you are not standing in goes on animating. A
+script plays objects in its own slot's pool, too (chapter 4).
 
 **So walking back out of a building reloads nothing.** `Area_LoadIntoSlot`
 opens by testing whether the slot already holds that area, and if it does it
-refreshes the fog block and returns — no `Area_Load`, so no `.SCX` reload and no
-startup script. The street's container, its sound binding and its running
-programs are exactly as you left them.
+refreshes the fog block and returns — no `.SCX` reload and no startup script.
+The street's container, its sound binding and its running programs are exactly
+as you left them. The port once rebuilt the street from the file on the way
+back, and a city that had 32 programs running and 153 ambient emitters bound
+came back with 0 and 0; coming back is a *swap*, and now is one.
 
-That is the rule this port broke and has now fixed. It kept the outgoing pool
-and ticked it, correctly, but had no way home: the return built a fresh runner
-from the file. Measured over the game's own door pair — Anekbah into Hall 43
-and back — the city went from **32 programs running and 153 ambient emitters
-bound** to **0 and 0**, and stayed there. Its animations and its neon were dead
-for the rest of the session. Coming back is a *swap*, and now is one.
+**Which row is active is decided by the player's feet.** The transition only
+shows and hides sets; what switches the active row is event 9, raised by the
+ground probe when the floor under the actor belongs to a set in the other slot
+that is **shown**. The transition's completion then hides "the non-active
+row's" set — which is the one you left, because your feet already moved the
+row.
+
+The sky is the exception to one-per-slot: the engine keeps **one** sky, and
+whichever area loads last and names one replaces it.
+
+### Hidden is not unloaded
+
+Show and hide (`sub_419AF0` / `sub_419A90`) link a set into and out of the
+**render list**, and that is all they do. The **collision array** is a separate
+list: a set joins it when it finishes loading and leaves it only when it is
+unloaded or evicted. So a hidden set keeps its walls.
+
+And its floor refuses you. The tail of `Walk_ProbeGround` (0x00467030), read
+whole: when the floor under the actor belongs to another scene, a slot in
+state 2 relinks him and raises event 9; a slot in **state 1** — loaded and
+hidden — gets `o3de_MoveNodeBy(node, -(this frame's move))`. The step is
+undone.
+
+The security centre is built on that. Each level's corridor is part of the
+**shaft's** set — the landings, the lift cars, the shaft doors, 99 meshes in
+one model — and each level's own set holds only its offices' furniture and
+doors — no floor at all — loaded and hidden until a door zone's `area.goto`
+brings it in. Its doors and furniture stay solid while it is hidden, and the
+corridor you stand on is always the shaft's. The port had dropped a set from
+collision when it hid it, and
+a player walked through barriers and fell down the shaft; it now keeps every
+loaded set solid and draws only the shown ones. The rails also needed the
+body's sweep to meet a triangle's edges (chapter 6).
 
 ### The transition
 
@@ -125,6 +160,12 @@ the outgoing scene, one on the arriving one. The set streams in at 0x20000
 bytes a frame while the game keeps running; the caller parks at status 10 and
 is handed back through the pump's tail. A second `area.goto` supersedes the
 first and leaves its caller parked for ever (chapter 4's status 5).
+
+A door a program opens **stays open**: `Script_MoveObjectOnPath` ends by
+setting the node's position and restores nothing. Over the corpus, 1 277 of
+the objects that move a node leave it displaced, and 1 239 of those have a
+linked partner state — an *open* and a *closed* — which is the data's own
+argument that nothing puts the node back.
 
 ### The saved game is one block
 
@@ -143,9 +184,24 @@ the file is zero and stays zero, and the save writes all 8 192 back. The walk
 over it lands exactly on the file size, and six independent counts agree with
 six independent sources.
 
+`IAM\GAMES` is a 3 496-byte header and 256 slots of 32 808 bytes. The header is
+the settings block — all 74 option rows, the three binding tables verbatim, and
+the shooting range's high-score table at `+724` (four pages of five, a name and
+a time in milliseconds) — so saving a game saves your options and your best
+times, once for all 256 slots. The directory record's fourth field, once
+recorded as "not a string", is slot `+108`: the character's name, which is
+what the load panel labels a row with. The wrong offset had landed in the
+state's array counts.
+
 Saves are not free and not anywhere: you save at a **save point**, by
-interacting with it, and each save spends one *anneau* — a ring — charged when
-the slot is confirmed. The port does that too, through the game's own panels.
+interacting with it, and each save spends one *anneau* — a ring — refused both
+by the save point's script and by the panel when you have none. A save carries
+a 128 × 96 thumbnail. Loading is a *request*, served between two script pumps.
+
+A dossier read on a terminal can **open a place**: the scripts enable entries
+of a 791-bit address map with `address.enable` — one dossier enables
+'Anekbah - Bar Zone 52' — and the sneak's city map draws a marker for each
+enabled destination.
 
 ### The calendar
 
@@ -161,14 +217,19 @@ A new game begins on **12 Nadim 7216 at 11:10:00**.
 
 | | |
 |---|---|
-| the findings | `docs/GAME_STATE.md`, `docs/FILE_FORMATS.md` §5b2b–5b3, `docs/SCRIPT_VM.md` "The area transition" |
-| the port | `engine/src/script/area.*` (the Session: slots, transitions, the frame), `zones.*`, `gamestate.*`, `savefile.*` |
-| the checks | `zone records`, `startup scripts`, `engine live zones`, `engine: area transition`, `engine: airlock walk`, `engine: city return` |
+| the findings | `docs/GAME_STATE.md`, `docs/FILE_FORMATS.md` §5b2b–5b3, `docs/SCRIPT_VM.md` "The area transition" and "A HIDDEN set is still SOLID" |
+| the port | `engine/src/script/area.*` (the Session: slots, transitions, the frame), `zones.*`, `gamestate.*`, `savefile.*`; `engine/src/o3de/collision.*` |
+| the checks | `zone records`, `startup scripts`, `engine: live zones`, `engine: area transition`, `engine: airlock walk`, `engine: city return`, `engine: lift`, `engine: slot pool`, `engine: node rest`, `engine: security rail` |
 
 ## What is not settled
 
-* **One field of the 72-byte save-directory record** is still unexplained.
+* **The zone scan's height** is a labelled reconstruction: the search box's
+  radius is a field of the zone-space record that has not been read.
 * **Status 5** — a superseded transition caller — is parked with no resumer
   anywhere in the image. Recorded as the engine's shape rather than as a gap.
 * The **fog block** refreshed by a resident return is read as a refresh and its
   contents are not traced.
+* **What the engine does about the lift car around the camera** at a level's
+  arrival is open: the frame is dark because a camera sits inside the car's
+  mesh, and neither the obstruction pass nor the slot bookkeeping is the
+  answer (chapter 8).
