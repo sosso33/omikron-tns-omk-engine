@@ -117,17 +117,47 @@ int Input::live(int slot, Device d) const {
     return liveTable_[static_cast<std::size_t>(slot * kDevices + static_cast<int>(d))];
 }
 
+std::vector<int> keyboardAsPolled(const std::vector<int>& held) {
+    // `Input_Poll`, on the 256-byte keyboard state before the binding loop:
+    //     if (state[42] & 0x80) state[54] |= 0x80;   // LSHIFT -> RSHIFT
+    //     if (state[54] & 0x80) state[42] |= 0x80;   // RSHIFT -> LSHIFT
+    //     if (state[29])        state[157] |= 0x80;  // LCONTROL -> RCONTROL
+    //     alt = state[56] >> 7;  if (state[15] && alt) state[15] = 0;
+    // (the buffered reader `sub_43D920` maps 42 -> 54 and 29 -> 157 but not
+    // 54 -> 42; `Game_Frame` polls through `Input_Poll`, which is this.)
+    const auto has = [&](int c) { return std::find(held.begin(), held.end(), c) != held.end(); };
+    std::vector<int> out = held;
+    const auto add = [&](int c) { if (std::find(out.begin(), out.end(), c) == out.end()) out.push_back(c); };
+    if (has(42)) add(54);
+    if (has(54)) add(42);
+    if (has(29)) add(157);
+    if (has(56)) out.erase(std::remove(out.begin(), out.end(), 15), out.end());
+    return out;
+}
+
 std::uint32_t Input::poll(const DeviceState& st) const {
+    // In `Input_Poll`'s order: the keyboard over all fourteen slots; then the
+    // joystick's two AXES, hardwired to slots 0..3 whatever the table says;
+    // then its buttons over slots 4..13 only - the loop starts at
+    // `&unk_4C6638`, the live joystick table plus 16 bytes, so the table's
+    // slot 0..3 codes (0 and 4, the axes' offsets) are never looked up.
+    // The mouse is not in `Input_Poll`; it is kept here as before.
     std::uint32_t held = 0;
+    const DeviceState kb{keyboardAsPolled(st.keyboard), {}, {}};
     for (int a = 0; a < kSlots; ++a) {
-        for (int d = 0; d < kDevices; ++d) {
-            const int c = live(a, static_cast<Device>(d));
-            if (c != 0 && st.holds(static_cast<Device>(d), c)) {
-                held |= 1u << a;
-                break;
-            }
-        }
+        const int k = live(a, Device::Keyboard);
+        const int m = live(a, Device::Mouse);
+        const int j = live(a, Device::Joystick);
+        if ((k != 0 && kb.holds(Device::Keyboard, k)) ||
+            (m != 0 && st.holds(Device::Mouse, m)) ||
+            (a >= 4 && j != 0 && st.holds(Device::Joystick, j)))
+            held |= 1u << a;
     }
+    constexpr int kAxisThreshold = 0;   // dword_52F498, never stored to
+    if (st.joyX > kAxisThreshold) held |= 2u;   // turn right
+    if (st.joyX < kAxisThreshold) held |= 1u;   // turn left
+    if (st.joyY < kAxisThreshold) held |= 4u;   // forward: DirectInput's Y is DOWN
+    if (st.joyY > kAxisThreshold) held |= 8u;   // back
     return held;
 }
 

@@ -599,16 +599,16 @@ const std::map<int, int>& keymap() {
         // no binding; and "Pas de cote / Demi-tour" is action 10, bit 0x400,
         // keyboard **157** = DIK_RCONTROL. Both are the engine's own defaults.
         {SDL_SCANCODE_RSHIFT, 0x36}, {SDL_SCANCODE_RCTRL, 0x9D},
-        // ...and the LEFT control sends the same code, which is THE VIEWER'S
-        // and not the game's: DIK_RCONTROL is the engine's binding for
-        // "Plonger" (group 1 slot 5, the key that SWIMS) and for the
-        // adventure sidestep, and a Mac laptop keyboard HAS NO RIGHT CONTROL
-        // AT ALL. A reader could not swim in the canal for that reason alone,
-        // and nothing in the log could say so - the bit simply never arrived.
-        // The engine's own table is untouched; this is the frontend deciding
-        // which physical key produces the code, the same job the WASD rows
-        // above do.
-        {SDL_SCANCODE_LCTRL, 0x9D},
+        // ...and the LEFT control sends its OWN code, DIK_LCONTROL, because
+        // the ENGINE maps it: `Input_Poll` sets state[157] whenever state[29]
+        // is down (and mirrors the two shifts), now ported as
+        // `keyboardAsPolled` (input/bindings.h). DIK_RCONTROL is the binding
+        // for "Plonger" (group 1 slot 5, the key that SWIMS) and the adventure
+        // sidestep, and a Mac laptop keyboard HAS NO RIGHT CONTROL - a reader
+        // could not swim for that reason alone. This row used to send 0x9D
+        // and called that the viewer's choice; it was the game's all along
+        // (read 2026-09-18), and left SHIFT, which reached no binding, runs.
+        {SDL_SCANCODE_LCTRL, 0x1D},
     };
     return m;
 }

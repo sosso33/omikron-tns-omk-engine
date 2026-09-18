@@ -14674,6 +14674,57 @@ def c_engine_mesh_name_index():
         "disagrees with the full scan, and finds for a name it was not built for"
 
 
+def c_engine_input_poll():
+    r"""`Input_Poll`'s own rules (0x0043E0D0), read 2026-09-18 for the Vita
+    pad and ported into `Input::poll` (input/bindings.h).
+
+    **The keyboard's three fixes**, applied to the scan-code state before any
+    binding is matched: LEFT and RIGHT SHIFT set each other (42 <-> 54), LEFT
+    CONTROL sets RIGHT CONTROL (29 -> 157), and TAB is dropped while ALT (56) is
+    down. Aventure binds RUN to 54 and the sidestep to 157, Nager binds the
+    DIVE to 157 - so before this, left Shift reached no binding at all, and
+    `play.cpp` mapped left Ctrl to 0x9D itself and called that "the viewer's
+    choice". It was the game's.
+
+    **The joystick's axes are HARDWIRED to slots 0..3**: `lX` > T sets bit 1
+    (turn right), < T bit 0; `lY` < T bit 2 (forward), > T bit 3. T is
+    `dword_52F498`, which no instruction stores to (`dd ?`, so 0); the range
+    is -1000..1000 (`sub_43D0B0`'s DIPROP_RANGE from `dword_4C65AC/B0`); no
+    dead zone is set by the engine. The button loop starts at `&unk_4C6638`,
+    the live joystick table + 16 bytes, so slots 0..3's table codes - 0 and
+    4, which are the BYTE OFFSETS of `lX`/`lY` in `DIJOYSTATE`, as 48 + k is
+    `rgbButtons[k]`'s - are never looked up.
+
+    SHOWN TO FAIL, 2026-09-18, three mutations of `bindings.cpp`, each
+    restored: dropping `if (has(42)) add(54)` turns `lshift` to 0000; swapping
+    the Y signs swaps `joy-forward` and `joy-back`; removing the `a >= 4` guard
+    makes `joycode-4` 000c (slots 2 and 3 both hold code 4).
+    """
+    import subprocess
+    eng = os.path.join(ROOT, "engine")
+    tb = os.path.join(ROOT, "tables", "key_bindings.json")
+    if not (os.path.isdir(eng) and os.path.exists(tb)):
+        return ("skipped",), ("skipped",), "engine/ or tables/ absent"
+    b = subprocess.run(["make", "-s", "build/input_poll"], cwd=eng,
+                       capture_output=True, text=True)
+    binp = os.path.join(eng, "build", "input_poll")
+    if b.returncode != 0 or not os.path.exists(binp):
+        return ("build failed",), ("built",), "engine/ must build"
+    r = subprocess.run([binp, tb], capture_output=True, text=True)
+    rows = re.findall(r"^case (\S+) +group (\d) word ([0-9a-f]{4})$", r.stdout, re.M)
+    if len(rows) != 16:
+        return (len(rows),), (16,), "input_poll output parsed - the tool's format changed"
+    return tuple((n, w) for n, g, w in rows), \
+        (("rshift", "0800"), ("lshift", "0800"), ("rctrl", "0400"),
+         ("lctrl", "0400"), ("lctrl-swim", "0020"), ("tab", "2000"),
+         ("alt-tab", "0000"), ("joy-right", "0002"), ("joy-left", "0001"),
+         ("joy-forward", "0004"), ("joy-back", "0008"), ("joy-rest", "0000"),
+         ("joycode-0", "0000"), ("joycode-4", "0000"),
+         ("joy-button0", "0010"), ("joy-button9", "2000")), \
+        "each case's input word before the edge filter: the keyboard's shift / " \
+        "control / alt-tab fixes, the hardwired axes, and the button codes"
+
+
 def c_engine_vita_bench():
     r"""The Vita bench's per-body work gives the SAME BYTES inline and through
     the thread pool (todo/vita-port.md §0, P1).
@@ -38551,6 +38602,7 @@ SLOW = [
     ("engine: narrow phase", c_engine_narrow_phase, "engine/README; RECONSTRUCTION 6.5"),
     ("engine: airlock walk", c_engine_airlock_walk, "todo/collision-scenes-transitions 3a"),
     ("engine: input",      c_engine_input,      "PORTING B6"),
+    ("engine: input poll", c_engine_input_poll, "todo/vita-port.md F3; input/bindings.h"),
     ("engine: audio",      c_engine_audio,      "PORTING B6"),
     ("engine: shoot AI",   c_engine_shoot_ai,   "engine/README"),
     ("engine: I2D",        c_engine_i2d,        "engine/README"),
