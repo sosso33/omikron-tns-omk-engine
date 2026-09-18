@@ -280,6 +280,48 @@ inline constexpr std::uint32_t kItemSliderCall    = 0x004DE920u;   // string 12
 inline constexpr std::uint32_t kItemSliderAuto    = 0x004DE968u;   // string 13
 inline constexpr std::uint32_t kItemSliderManual  = 0x004DE9B0u;   // string 14
 inline constexpr std::uint32_t kListSneakPreviews = 0x004DE420u;
+// THE CITY MAP - `Lire plan`, the third 50x50 tile of the Inventaire page
+// (item 0x004DE3C8, the one whose echo-bar arm has no count because it is a
+// map reader and not ammunition). Its callback is seven instructions:
+//
+//     mov eax, [esp+4]; push offset off_4DF190; push eax;
+//     call sub_42A370; add esp, 8; mov eax, 1; retn
+//
+// and `off_4DF190` has exactly TWO references in the whole listing - that push
+// and its own definition - so no item's `+44` names the panel and nothing in
+// `ui_widgets.json` reached it until `exetables.py`'s CODE_NAMED was told.
+//
+// The panel's `+4` is `sub_49D9E0`: it takes the RESIDENT DECOR NODE's path
+// (`dword_93076C + 0x30`), keeps the basename after the last `\`, drops the
+// last four characters, and loads `Images\<that>.bmp`. **If the bitmap is not
+// there it re-installs 0x004DEE50 at once**, so in a location with no map the
+// button silently bounces back - which is what happens everywhere but the four
+// cities. It then uppercases the name and looks it up in the compiled 52-byte
+// table `tables/city_maps.json` lifts, storing the row's id in the PIN ITEM'S
+// OWN `+0x3C` tag (`dword_4DECFC` is `0x004DECC0 + 0x3C`). `sub_49DB80`, the
+// `+8` leave, frees the bitmap.
+//
+// Its one list holds three 640x480 items, and each is a whole layer:
+//   0x004DEC78  draw hook 0x00477CA0 - blits the loaded bitmap, whose handle
+//               is ITS own `+0x3C` (`dword_4DECB4`). The only selectable one,
+//               and its `+44` is the Inventaire page: confirming goes back.
+//   0x004DECC0  draw hook 0x0049E6F0 - the player's pin and the destination
+//               markers (`ui/citymap.h` has the projection).
+//   0x004DED08  draw hook 0x00477ED0 - the interference box the port already
+//               draws for every other monitor.
+inline constexpr std::uint32_t kCbSneakMapOpen    = 0x0049BC40u;
+inline constexpr std::uint32_t kPanelSneakMap     = 0x004DF190u;
+inline constexpr std::uint32_t kListSneakMap      = 0x004DED60u;
+inline constexpr std::uint32_t kItemSneakMapSheet = 0x004DEC78u;   // the bitmap
+inline constexpr std::uint32_t kItemSneakMapPins  = 0x004DECC0u;   // pin+markers
+inline constexpr std::uint32_t kDrawSneakMapSheet = 0x00477CA0u;
+inline constexpr std::uint32_t kDrawSneakMapPins  = 0x0049E6F0u;
+// ...and the ANNEAUX tile beside it, `0x004DE380`, whose callback 0x0049BC30
+// is `mov eax, 1; retn` and nothing else - six bytes that exist only so
+// `Ui_ConfirmSelection` sees a callback and does not descend into the item's
+// `+44`. It is INERT IN THE ORIGINAL, so the port must not "implement" it;
+// named here so the next reader does not go looking again.
+inline constexpr std::uint32_t kCbSneakRingsInert = 0x0049BC30u;
 inline constexpr std::uint32_t kItemSneakExamine  = 0x004DE2C0u;
 // `Utiliser sur` itself - `sub_49BF30` lights it with `0x40000002` while its
 // combine is open, the same way `sub_49B950` lights `Examiner`.
@@ -794,6 +836,14 @@ public:
     // costs and what the hints on this screen are bought with.
     void setRings(int n) { rings_ = n; }
     int  rings() const { return rings_; }
+    // WHETHER `Images\<resident set>.bmp` EXISTS. `sub_49D9E0` opens the file
+    // and, failing, re-installs the Inventaire page before the map is ever
+    // drawn - so the map tile's behaviour is decided by a file the walk cannot
+    // reach. A caller that has tested it says so here; one that has not leaves
+    // this unset and the walk installs the page and marks itself approximate
+    // rather than inventing either arm (`ui/citymap.h`).
+    void setCityMap(bool available) { cityMapKnown_ = true;
+                                      cityMapAvailable_ = available; }
 
     // The panel the walk is ON, which is not always the screen's own: an item
     // with a `child` descends into one, and that is how the start menu's
@@ -1229,6 +1279,9 @@ private:
     // never told keeps 0 and refuses, which is the safe way round: it shows
     // the game's own message rather than offering a save it cannot pay for.
     int         rings_ = 0;
+    // `sub_49D9E0`'s `fopen` test, supplied from outside - see `setCityMap`.
+    bool        cityMapKnown_ = false;
+    bool        cityMapAvailable_ = false;
     int         pendingSave_ = -1;
     // The row an overwrite confirm is standing over, so its `Oui` knows
     // which slot it agreed to. -1 when no confirm is up.
