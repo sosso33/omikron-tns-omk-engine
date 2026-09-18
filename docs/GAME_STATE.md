@@ -735,7 +735,7 @@ rows come in the same order the defaults function writes them:
 | +52 | `dword_90E1B4` | rows 29..71 — **keyboard**, 4 groups x 14 x u32 | |
 | +276 | `dword_90E294` | rows 29..71 — **mouse** | |
 | +500 | `dword_90E374` | rows 29..71 — **joystick** | |
-| +724 | | 720 bytes, never written and never non-zero | |
+| +724 | `byte_90E454` | 720 bytes — the SHOOTING RANGE's **high scores** | |
 | +1444 | `LOWORD(dword_90E724)` | the display driver's, cleared on load | |
 | +1446 | `dword_90E724+2` | 6 *Niveau d'activité dans les rues* | |
 | +1447 | `dword_90E724+3` | 7 *Niveau de détail* | |
@@ -747,6 +747,25 @@ shipped saves reproduce all 168 exactly. The offsets are not fitted either —
 they are the globals' own addresses, `0x90E1B4 − 0x90E180 = 52`,
 `0x90E294 − 0x90E180 = 276`, `0x90E374 − 0x90E180 = 500` — three contiguous
 224-byte tables, the same 0xE0 stride the executable has between them.
+
+**The 720 bytes at +724 were "never written and never non-zero" until
+2026-09-18, and they are the shooting range's score table.** Nothing in the
+save says so; the SCREEN does. `sub_4ADAD0`, the draw hook of screen 36
+HIGH-SCORE's one item, bases its five rows at `ds:90E454h + param * 180` and
+steps 36 bytes a row — and `0x90E454` is `byte_90E180 + 724`. So it is **four
+pages of five**, each a 32-byte NAME and the time in MILLISECONDS at `+0x20`,
+`4 x 5 x 36 = 720` landing exactly on +1444, the next field this table already
+had. `sub_42B8E0` splits the milliseconds into minutes, seconds and
+hundredths, which is what `"%d'%02d\"%02d"` prints.
+
+What that means is worth stating plainly: **the range's high scores are saved
+with the OPTIONS**, one copy for all 256 slots, not with any game. Both
+shipped saves carry the table all-zero — a range nobody played into, which is
+why reading the data alone said "never non-zero". Exactly the §1 shape: a
+negative data result was a fact about the two captures, not about the field.
+`verify.py: engine: high score` writes a copy of `save-appart.bin` with five
+names and times on page 1 and reads them back off the drawn screen, so the
+base, the stride and the `+0x20` are each testable.
 
 **The two shipped saves disagree in exactly two of the 3496 bytes**, which is
 what makes them evidence rather than a fixed point. `+20` is 200 in

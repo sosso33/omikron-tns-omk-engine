@@ -145,6 +145,16 @@ inline constexpr std::uint32_t kHookDenDial          = 0x004AFBE0u;
 // XACHEN (screen 14), Dakobah's CARTRIDGES: four buttons on the ordinary
 // left/right mover, each one advancing the symbol above it. `sub_4AF9D0`.
 inline constexpr std::uint32_t kCbXachenCartridge    = 0x004AF9D0u;
+// THE HIGH-SCORE table (screen 36), the shooting range's. Its panel hook is
+// eleven instructions and it does not move a selection at all: LEFT and RIGHT
+// step the SCREEN'S OWN `+4` parameter, which is the PAGE the draw hook reads
+//
+//     left:  if (--param < 0) param = 3
+//     right: if (++param == 4) param = 0
+//
+// and both arms answer 1, so the screen has four pages and nothing else to
+// walk. `sub_4ADA80`.
+inline constexpr std::uint32_t kHookHighScorePage    = 0x004ADA80u;
 // `dword_4E42E8` - the ORDER the button steps the symbols through, which is
 // not 1..14: a press finds the current value in this ring and takes the next,
 // wrapping. A value the ring does not hold gives index -1, so the press lands
@@ -988,6 +998,8 @@ public:
     // XACHEN's four cartridges, for the viewer that draws their symbols, and
     // whether the four are the code (which lights the buttons).
     int  xachen(int i) const { return xachen_[i & 3]; }
+    // The HIGH-SCORE page the panel hook has stepped to, 0..3.
+    int  highScorePage() const { return hsPage_; }
     bool xachenSolved() const {
         for (int i = 0; i < 4; ++i)
             if (xachen_[i] != kXachenCode[i]) return false;
@@ -1239,6 +1251,10 @@ private:
     // `4E4554 = 2`, `4E459C = 3`, `4E45E4 = 4` - so the puzzle always starts
     // at 1, 2, 3, 4 however the widgets were authored.
     int         xachen_[4] = {1, 2, 3, 4};
+    // The high-score screen's page. It is the SCREEN's `+4` in the engine -
+    // the same field the terminal family branches on - but that is a fixed
+    // parameter here and only this one screen writes it, so the walk keeps it.
+    int         hsPage_ = 0;
     std::vector<std::string> log_;
     // Item address -> the RGB a page builder wrote into `+8/+9/+10`.
 };

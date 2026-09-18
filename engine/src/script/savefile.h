@@ -116,7 +116,26 @@ struct SettingsBlock {
     std::array<std::uint32_t, 56> joystick{};
     int  streetActivity = 0;            // +1446, row 6 - the CROWD DENSITY
     int  levelOfDetail = 0;             // +1447, row 7
+    // +724..+1444 - THE SHOOTING RANGE'S HIGH SCORES, and they are in here
+    // because the screen's own draw hook says so: `sub_4ADAD0` bases its five
+    // rows at `ds:90E454h + param * 180` and steps 36 bytes a row, and
+    // 0x90E454 is `byte_90E180 + 724`. Four pages of five, 36 bytes each -
+    // a 32-byte NAME and the time in MILLISECONDS at +0x20 - which lands
+    // exactly on +1444, the next field this struct already knew about.
+    //
+    // So the range's table is saved with the OPTIONS, not with a game: one
+    // copy for all 256 slots, the same as the bindings above. Both shipped
+    // saves carry it all-zero, which is a table nobody has played into and
+    // not a gap in the reading.
+    struct HighScore {
+        std::string  name;
+        std::int32_t ms = 0;
+    };
+    std::array<HighScore, 20> highScores{};   // page * 5 + row
 };
+
+inline constexpr std::size_t kHighScoreTable = 724;
+inline constexpr std::size_t kHighScoreStride = 36;
 
 inline constexpr std::size_t kBindKeyboard = 52;
 inline constexpr std::size_t kBindMouse    = 276;

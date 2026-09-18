@@ -206,12 +206,10 @@ survey, from `tables/ui_widgets.json`:
 | 13 `DEN` | 0x4E4990 | 0x004AFBE0 **PORTED** | 6 | none | done - see 5c; four digit wheels and two lamps, the hook itself answers |
 | 14 `XACHEN` | 0x4E4620 | 0x0042A930 (`kMoveSelectionLR`, ported) + a 4-item list | 4 | 0x004AF9D0 **PORTED** | done - see 5d; Dakobah's four cartridges |
 | 0 `VIDEOPHONE` | 0x4DF128 | none | 8 | 0x0049DBF0, `textFn` 0x0049E090 | the SNEAK family's - 0x49E090 is already supplied by the viewer |
-| 36 `HIGH-SCORE` | 0x4E22F0 | none | 1 | 0x0042A990 | one item, the family's generic button |
+| 36 `HIGH-SCORE` | 0x4E22F0 | 0x004ADA80 **PORTED** | 1 | 0x0042A990 (the family's generic button) | done - see 5e; the one item's DRAW hook 0x004ADAD0 is the screen |
 
-Three of the six are done (12, 13 and 14, below). What is left is the
-VIDEOPHONE (0x0049DBF0, the SNEAK family's) and the HIGH-SCORE, whose own item
-callback 0x0042A990 is the family's generic button - what that screen needs is
-its DRAW HOOK, 0x004ADAD0, and its panel builder 0x004ADA80.
+Four of the six are done (12, 13, 14 and 36, below). What is left is the
+VIDEOPHONE (0x0049DBF0, the SNEAK family's).
 
 ### 5b. GANDHAR'S DOOR — done 2026-09-18
 
@@ -363,6 +361,62 @@ NOT ported, labelled: the sound and the 4000 ms timer.
 `verify.py: engine: xachen`, shown to fail by putting the ring in numerical
 order: the same twenty-five presses walk to 8, 5, 13, 9 and nothing answers.
 
+### 5e. The HIGH-SCORE table — done 2026-09-18, and it found where the scores live
+
+Screen 36 is the shooting gallery's board: ONE 400x480 item at (120, 0) and two
+native hooks, both read from the raw image.
+
+* **`sub_4ADA80`, the panel hook**, moves no selection at all. LEFT and RIGHT
+  step the SCREEN'S OWN `+4` parameter through 0..3, wrapping, and both arms
+  return 1 - so the screen has four pages and nothing else to walk.
+* **`sub_4ADAD0`, the item's draw hook**, is the whole screen. The pen starts
+  at the item's scaled place; every box runs to `pen + I2D_ScaleX(w)` and
+  `+ I2D_ScaleX(h)` (X for the height too, which is what 0x0049C2B0 does as
+  well). Then: `y += ScaleY(50)` twice and the title, `IAM\HScore` string 3
+  ("MEILLEURS SCORES"); `y += ScaleY(30)` and the page heading, string 6 on
+  page 0 ("Tous les niveaux terminés !") and otherwise
+  `sprintf("%s %d", string 5, page)` ("Niveau 1"); `y += ScaleY(50)` and five
+  rows `ScaleY(30)` apart, `"%d.- %s"` LEFT in the left half of the box and
+  `"%d'%02d\"%02d"` RIGHT in the right half.
+
+**And the rows are in the SAVE HEADER.** The hook bases them at
+`ds:90E454h + param * 180`, stride 36, and `0x90E454` is `byte_90E180 + 724` -
+the 3496-byte settings block. Four pages of five, a 32-byte name and the time
+in MILLISECONDS at `+0x20`, `4 x 5 x 36 = 720` landing exactly on +1444, the
+next field `savefile.h` already carried. `sub_42B8E0` splits the milliseconds
+into minutes / seconds / hundredths, the printf's order.
+
+So **the range's scores travel with the OPTIONS**, one copy for all 256 slots,
+not with a game. `docs/GAME_STATE.md` §8a had those 720 bytes down as "never
+written and never non-zero", which was a fact about the two shipped captures
+and not about the field - the §1 shape exactly.
+
+**The route:**
+
+    build/omk-play ../gamedata ../tables --save ../traces/save-appart.bin \
+        --area 59 --stand 5412,15199,-3546,1
+
+AREA 59's zone 1183, in front of the board. `ui.open 36, -1, -1` - the screen
+answers nothing, it is a display.
+
+The world drawn behind it is CORRECT and already explained: the screen record
+says hide, but `Ui_DrawPanelDim` turns it back on for a panel carrying bank B
+`0x800`, and this panel is one of the five that do.
+
+NOT ported, labelled: the engine's `test ecx, ecx` before each row can never
+fail (`ecx` is the record's ADDRESS, a fixed global plus an offset), so all
+five rows always draw and an empty table is five numbered blanks - transcribed
+as written rather than "fixed"; and the last line, behind the
+`sub_42B5E0(0)` / `sub_42B5F0` pair this project has not read (the same pair
+that gates two arms of the terminal's body), whose text is strings 0 and 1,
+*"Félicitations ! Votre score a été homologué."* and its refusal.
+
+`verify.py: engine: high score` WRITES a copy of `traces/save-appart.bin` with
+five names and times on page 1 and reads them back off the drawn screen - so
+the base, the stride and the `+0x20` are each testable rather than asserted.
+Shown to fail by moving the base one record (724 -> 760): the five names shift
+by one row and the fifth goes blank.
+
 ### 3b. The terminal's HEADER BAR — done 2026-09-18
 
 The last of the terminal family's gaps, and eleven bytes of code. `unk_4E3FE0`
@@ -395,7 +449,7 @@ the composer.
 | 0 | where every screen is opened from | **done 2026-09-17** - §1 |
 | 1 | the LIFT: why it never arrived | **done 2026-09-17** - §2, `verify.py: engine: lift` |
 | 2 | the terminal FAMILY: the display, the keypad and the answers - 7 screens | **done 2026-09-17** - §3, `verify.py: engine: terminal family` |
-| 3 | the SPECIAL screens: **12 GANDHAR DOOR** (§5b), **13 DEN'S LOCKER** (§5c), **14 XACHEN** (§5d) and the terminal's **header bar** (§3b) all done; 0 VIDEOPHONE and 36 HIGH-SCORE left | §5 has each one's hooks |
+| 3 | the SPECIAL screens: **12 GANDHAR DOOR** (§5b), **13 DEN'S LOCKER** (§5c), **14 XACHEN** (§5d), **36 HIGH-SCORE** (§5e) and the terminal's **header bar** (§3b) all done; 0 VIDEOPHONE left | §5 has each one's hooks |
 | 4 | play | |
 
 ## 6. The lift arrives and the level is not drawn — the mechanism, and a REVERTED patch

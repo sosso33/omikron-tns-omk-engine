@@ -29,6 +29,7 @@
 #include "ui/text.h"
 #include "ui/widgets.h"
 
+#include <array>
 #include <cstdint>
 #include <map>
 #include <set>
@@ -66,6 +67,13 @@ struct ScreenFrame {
     // (0x0049C2B0 makes 17: ten labels, six values and the two prose lines
     // as one block).
     int  identityBlocks = 0;
+    // Text blocks the HIGH-SCORE hook (0x004ADAD0) drew: the title, the page
+    // heading and two per row - twelve when all five rows have a name, and
+    // fewer when one is blank, because an empty string lays nothing out.
+    int  scoreBlocks = 0;
+    // ...and the strings it laid out, in order, so a check reads the rows the
+    // TABLE produced rather than the ones the caller handed over.
+    std::vector<std::string> scoreRows;
     // Bars the Caracteristiques hook (0x0049CA30 -> `sub_49CE60`) drew: six.
     int  characteristicBars = 0;
     // Lines the examine page's description wrapped to.
@@ -238,6 +246,13 @@ public:
     // serve both without guessing which field a caller meant, so there are
     // two - and `spriteSrc` reports whichever was used either way.
     void setItemLitSource(const std::map<std::uint32_t, std::pair<int, int>>* m) { litMoved_ = m; }
+    // THE HIGH-SCORE ROWS. Twenty (name, milliseconds) pairs - four pages of
+    // five - out of the SAVE HEADER's +724, and which page the panel hook has
+    // stepped to. Null means the screen draws its title and nothing else,
+    // which is what a run with no save behind it should show.
+    void setHighScores(const std::array<std::pair<std::string, int>, 20>* s, int page) {
+        scores_ = s; scorePage_ = page;
+    }
 
     // THE 3D VIEW INSIDE A PANEL. The frontend renders the world through the
     // live camera into a picture the size of the viewport item's rectangle
@@ -299,6 +314,8 @@ private:
     const std::map<std::uint32_t, std::pair<int, int>>* moved_ = nullptr;
     const std::map<std::uint32_t, std::pair<int, int>>* srcMoved_ = nullptr;
     const std::map<std::uint32_t, std::pair<int, int>>* litMoved_ = nullptr;
+    const std::array<std::pair<std::string, int>, 20>* scores_ = nullptr;
+    int scorePage_ = 0;
     const Surface*   view3d_ = nullptr;
     long             frame_ = 0;
     long             clockMs_ = 0;

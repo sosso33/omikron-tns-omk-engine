@@ -12777,6 +12777,97 @@ def c_engine_xachen():
             "the fourth cartridge's landing on 9 answers in the same frame")
 
 
+def c_engine_high_score():
+    r"""`omk-play`: the SHOOTING RANGE's HIGH SCORES - and where they are kept.
+
+    `todo/missing-ui.md` 5e. Screen 36 is ONE 400x480 item at (120, 0) and two
+    native hooks, both read from the raw image:
+
+    * `sub_4ADA80`, the PANEL hook, moves no selection at all - LEFT and RIGHT
+      step the SCREEN'S OWN `+4` parameter through 0..3, wrapping, and both
+      arms answer 1. The screen has four pages and nothing else to walk.
+    * `sub_4ADAD0`, the item's DRAW hook, is the whole of the screen: the
+      title (string 3) two `I2D_ScaleY(50)` steps down, then the page heading
+      (`string 6` on page 0, otherwise `string 5` and the page number), then
+      FIVE rows `ScaleY(30)` apart - `"%d.- %s"` left in the left half of the
+      box and `"%d'%02d\"%02d"` right in the right half.
+
+    **AND THE ROWS ARE IN THE SAVE HEADER.** The hook bases them at
+    `ds:90E454h + param * 180` with a stride of 36, and `0x90E454` is
+    `byte_90E180 + 724` - the 3496-byte SETTINGS block, the one
+    `Game_WriteSave` copies over the head of the file on every save. So four
+    pages of five, a 32-byte name and the time in MILLISECONDS at `+0x20`,
+    landing exactly on +1444, the next field `savefile.h` already knew. The
+    range's table travels with the OPTIONS and not with a game: one copy for
+    all 256 slots. `sub_42B8E0` splits the milliseconds into minutes, seconds
+    and hundredths, which is the printf's order.
+
+    Both shipped saves carry the table all-zero - a range nobody has played
+    into - so this check WRITES ONE: a copy of `traces/save-appart.bin` (never
+    the fixture itself, and never anything under the game tree) with five
+    names and times on page 1. That is what makes it a test of the offsets and
+    not of the drawing alone: get the base, the stride or the `+0x20` wrong
+    and the names and the times move apart.
+
+    The run stands on AREA 59's zone 1183 - the shooting gallery - presses the
+    action button and steps one page right.
+
+    The rows are read back from `ScreenFrame::scoreRows`, the strings the hook
+    handed the layout, not from what the viewer handed the composer.
+
+    SHOWN TO FAIL: the table's base moved by one record (724 -> 760) - page 1
+    then reads page 2's blanks and the five names vanish.
+    """
+    import subprocess, struct, tempfile
+    eng = os.path.join(ROOT, "engine")
+    fr = omkpaths.data_root()
+    if not (os.path.isdir(eng) and os.path.isdir(os.path.join(fr, "SCPTDATA"))):
+        return ("skipped",), ("skipped",), "engine/ or gamedata/ absent"
+    mk = subprocess.run(["make", "-s", "play"], cwd=eng, capture_output=True, text=True)
+    play = os.path.join(eng, "build", "omk-play")
+    if mk.returncode != 0:
+        return ("build failed",), ("built",), "engine/ must build"
+    if not os.path.exists(play):
+        return ("no sdl",), ("no sdl",), "needs SDL to render"
+    fixture = os.path.join(ROOT, "traces", "save-appart.bin")
+    with open(fixture, "rb") as f:
+        d = bytearray(f.read())
+    rows = [("KAYL", 93210), ("DEN", 121500), ("TELIS", 154990),
+            ("BOZ", 200000), ("GANDHAR", 363610)]
+    for i, (nm, ms) in enumerate(rows):          # page 1
+        o = 724 + 180 + i * 36
+        d[o:o + 32] = nm.encode() + b"\0" * (32 - len(nm))
+        struct.pack_into("<i", d, o + 32, ms)
+    with tempfile.TemporaryDirectory() as tmp:
+        scored = os.path.join(tmp, "save-scores.bin")
+        with open(scored, "wb") as f:
+            f.write(bytes(d))
+        out = subprocess.run(
+            [play, fr, os.path.join(ROOT, "tables"), "--save", scored,
+             "--area", "59", "--stand", "5412,15199,-3546,1", "--frames", "320",
+             "--nofmv", "--nodelay", "--no-crowd",
+             "--hold", "k*60,k28*8,k*80,k205*2,k*60"],
+            capture_output=True, text=True, errors="replace").stdout
+    pages = {}
+    for m in re.finditer(r"high score: page (\d+), (\d+) blocks drawn:(.*)", out):
+        pages[int(m.group(1))] = (int(m.group(2)),
+                                  [c.strip() for c in m.group(3).split("|") if c.strip()])
+    p0 = pages.get(0, (0, []))
+    p1 = pages.get(1, (0, []))
+    return ("screen 36 is asking" in out, sorted(pages), p0[0], p1[0],
+            p0[1][0] if p0[1] else "", p1[1][1] if len(p1[1]) > 1 else "",
+            p1[1][2:12] if len(p1[1]) > 11 else [],
+            p0[1][2:4] if len(p0[1]) > 3 else []), \
+           (True, [0, 1], 12, 12, "MEILLEURS SCORES", "Niveau 1",
+            ["1.- KAYL", "1'33\"21", "2.- DEN", "2'01\"50", "3.- TELIS",
+             "2'34\"99", "4.- BOZ", "3'20\"00", "5.- GANDHAR", "6'03\"61"],
+            ["1.-", "0'00\"00"]), \
+           ("the range's table draws its title, its page heading and five rows, the "
+            "panel hook steps the page, and the five names and times written into "
+            "the SAVE HEADER's +724 come back out in order - page 0 is the shipped "
+            "blank, page 1 is the fixture")
+
+
 def c_engine_terminal_family():
     r"""`omk-play`: Kay'l's TERMINAL and the FIGHT SIMULATOR - the keypad family.
 
@@ -37330,6 +37421,7 @@ SLOW = [
     ("engine: gandhar door", c_engine_gandhar_door, "todo/missing-ui 5"),
     ("engine: den locker", c_engine_den_locker, "todo/missing-ui 5b"),
     ("engine: xachen", c_engine_xachen, "todo/missing-ui 5d"),
+    ("engine: high score", c_engine_high_score, "todo/missing-ui 5e"),
     ("engine: terminal family", c_engine_terminal_family, "todo/missing-ui 3"),
     ("engine: water entry", c_engine_water_entry, "todo/swimming.md 1"),
     ("engine: fight library", c_engine_fight_library, "todo/fight-mode 15.2"),

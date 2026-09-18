@@ -2489,6 +2489,12 @@ bool UiWalk::press(std::uint32_t bits) {
             // press late - which is what a reader saw the original not do.
             if (bits & kUiLeft)  { if (moveLists(-1)) return true; }
             if (bits & kUiRight) { if (moveLists(1))  return true; }
+        } else if (panel_->hook == kHookHighScorePage) {
+            // `sub_4ADA80`: LEFT and RIGHT step the SCREEN's `+4`, wrapping
+            // through 0..3, and both arms return 1. Nothing else on the
+            // screen moves - its one item is a draw hook.
+            if (bits & kUiLeft)  { if (--hsPage_ < 0) hsPage_ = 3; return true; }
+            if (bits & kUiRight) { if (++hsPage_ == 4) hsPage_ = 0; return true; }
         } else if (panel_->hook == w_->moveListsHook()) {
             // `sub_42A710(screen, panel) = sub_42A5C0(screen, panel, 1, 2)` -
             // `Ui_MoveBetweenLists` with LEFT stepping back and RIGHT

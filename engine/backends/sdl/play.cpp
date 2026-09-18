@@ -2278,6 +2278,15 @@ int main(int argc, char** argv) {
     if (!configFile.empty() && !ini.loaded)
         std::fprintf(stderr, "%s: no such config file - using defaults\n", configFile.c_str());
     const omk::Settings settings = omk::resolveSettings(ini, saveSettings);
+    // THE SHOOTING RANGE'S HIGH SCORES, out of the save header's +724 - the
+    // screen's own draw hook bases its rows there, so they travel with the
+    // OPTIONS and not with a game. Empty in both shipped saves, which is a
+    // table nobody has played into.
+    static std::array<std::pair<std::string, int>, 20> highScores;
+    if (saveSettings)
+        for (std::size_t k = 0; k < highScores.size(); ++k)
+            highScores[k] = {saveSettings->highScores[k].name,
+                             saveSettings->highScores[k].ms};
     // A flag typed on the command line is the most recent word of all.
     if (!densityFlag) density = settings.v.streetActivity;
     // UNLIMITED DRAW DISTANCE (`todo/enhancements.md` 4). `--clip 0` says it
@@ -18947,6 +18956,8 @@ int main(int argc, char** argv) {
             comp.setItemMove(itemMoved.empty() ? nullptr : &itemMoved);
             comp.setItemSource(itemSource.empty() ? nullptr : &itemSource);
             comp.setItemLitSource(itemLitSource.empty() ? nullptr : &itemLitSource);
+            comp.setHighScores(openScreen == 36 ? &highScores : nullptr,
+                               walk ? walk->highScorePage() : 0);
             // THE CLOUD IS THE MENU'S BACKGROUND, NOT EVERY SCREEN'S.
             //
             // A reader's screenshots of the original settle it from both
@@ -19004,6 +19015,24 @@ int main(int argc, char** argv) {
                         denTold = read;
                         std::printf("den locker: the display reads %s(the hand is on %d, "
                                     "and that wheel blinks)\n", read.c_str(), walk->denWheel());
+                    }
+                }
+                // ---- THE HIGH-SCORE TABLE, reported from the draw --------
+                //
+                // `scoreBlocks` is what the hook actually laid out: the title,
+                // the page heading and two per row - so a page whose rows are
+                // blank says so by its count, and a heading that resolved to
+                // nothing cannot be claimed.
+                if (openScreen == 36) {
+                    static std::string hsTold;
+                    std::string rows;
+                    for (const auto& r : sf.scoreRows) rows += " | " + r;
+                    const std::string said = "page " + std::to_string(walk->highScorePage()) +
+                                             ", " + std::to_string(sf.scoreBlocks) +
+                                             " blocks drawn:" + rows;
+                    if (said != hsTold) {
+                        hsTold = said;
+                        std::printf("high score: %s\n", said.c_str());
                     }
                 }
                 // ---- XACHEN, reported from the draw for the same reason ---

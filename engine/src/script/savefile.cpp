@@ -66,6 +66,17 @@ std::optional<SettingsBlock> readSettingsBlock(std::span<const std::byte> d) {
     // clears it for a 0x10000 file, so only these two bytes persist.
     s.streetActivity = b[1446];
     s.levelOfDetail  = b[1447];
+    // the shooting range's four pages of five - `sub_4ADAD0`'s own base and
+    // stride, read here so the screen has something to draw and a save has
+    // somewhere to keep it
+    for (std::size_t k = 0; k < s.highScores.size(); ++k) {
+        const std::size_t o = kHighScoreTable + k * kHighScoreStride;
+        std::string nm;
+        for (std::size_t c = 0; c < 32 && b[o + c] != 0; ++c)
+            nm.push_back(static_cast<char>(b[o + c]));
+        s.highScores[k].name = nm;
+        s.highScores[k].ms   = static_cast<std::int32_t>(u32(o + 32));
+    }
     return s;
 }
 
@@ -139,6 +150,13 @@ std::vector<std::byte> settingsBytes(const SettingsBlock& s) {
     }
     d[1446] = static_cast<std::byte>(s.streetActivity);
     d[1447] = static_cast<std::byte>(s.levelOfDetail);
+    for (std::size_t k = 0; k < s.highScores.size(); ++k) {
+        const std::size_t o = kHighScoreTable + k * kHighScoreStride;
+        const std::string& nm = s.highScores[k].name;
+        for (std::size_t c = 0; c < 32; ++c)
+            d[o + c] = static_cast<std::byte>(c < nm.size() ? nm[c] : '\0');
+        p32(d, o + 32, static_cast<std::uint32_t>(s.highScores[k].ms));
+    }
     return d;
 }
 

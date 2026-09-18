@@ -945,6 +945,94 @@ ScreenFrame ScreenComposer::draw(Surface& fb, int screenId,
                 block(both, false);
             }
 
+            // ---- THE HIGH-SCORE TABLE: draw hook 0x004ADAD0 ---------------
+            //
+            // Screen 36 is ONE 400x480 item and this hook is the whole of it.
+            // Transcribed call by call. The pen starts at the item's scaled
+            // place, every box runs from the pen to `pen + I2D_ScaleX(w)` and
+            // `+ I2D_ScaleX(h)` (X for the height too, as 0x0049C2B0 does),
+            // and the style block is filled ONCE by `Ui_ItemTextStyle`:
+            //
+            //   y += ScaleY(50) twice        the screen's string 3, font 'C'
+            //   y += ScaleY(30)              param == 0 ? string 6
+            //                                : sprintf("%s %d", string 5, param)
+            //   y += ScaleY(50)              five rows, ScaleY(30) apart:
+            //        "%d.- %s" (row + 1, the name) LEFT in the left half, and
+            //        "%d'%02d\"%02d" RIGHT in the right half
+            //   y += ScaleY(20)              one CENTRED line behind a query
+            //
+            // The rows are `ds:90E454h + param * 180`, stride 36 - the SAVE
+            // HEADER's +724, a 32-byte name and the time in MILLISECONDS at
+            // +0x20. `sub_42B8E0` splits that into minutes / seconds /
+            // hundredths, which is the printf's order.
+            //
+            // The engine's `test ecx, ecx` before each row can never fail -
+            // `ecx` is the record's ADDRESS, a fixed global plus an offset -
+            // so all five rows always draw, an empty table as five numbered
+            // blanks. Transcribed as written rather than "fixed".
+            //
+            // NOT ported, labelled: the last line, which is behind the
+            // `sub_42B5E0(0)` / `sub_42B5F0` pair this project has not read -
+            // the same pair that gates two arms of the terminal's body - and
+            // whose text comes from `sub_478D60`.
+            constexpr std::uint32_t kDrawHighScore = 0x004ADAD0u;
+            if (scores_ && it.drawFn == kDrawHighScore) {
+                const int width = scaleX(it.w);
+                const int height = scaleX(it.h);
+                const int px = scaleX(it.x + q->offsetX);
+                int py = scaleY(it.y + q->offsetY);
+                const int page = scorePage_ & 3;
+                // the SCREEN's own text file (`IAM\HScore`), which is what
+                // `sub_4767E0` resolves - not the player sheet
+                const auto screenText = [&](int id) -> std::string {
+                    return id >= 0 && id < static_cast<int>(text.size())
+                        ? text[static_cast<std::size_t>(id)] : std::string();
+                };
+                const auto block = [&](const std::string& str, int left, int right,
+                                       int style, char face) {
+                    if (str.empty()) return;
+                    TextBlock b;
+                    b.left = left;
+                    b.top = py;
+                    b.right = right;
+                    b.bottom = py + height;
+                    b.font = face;
+                    b.style = style;
+                    b.rgb[0] = static_cast<std::uint8_t>(rgb[0]);
+                    b.rgb[1] = static_cast<std::uint8_t>(rgb[1]);
+                    b.rgb[2] = static_cast<std::uint8_t>(rgb[2]);
+                    b.blinkOn = blink;
+                    b.screenW = fb.w;
+                    b.screenH = fb.h;
+                    lay_->layOutBlock(&fb, str, b);
+                    ++out.scoreBlocks;
+                    out.scoreRows.push_back(str);
+                };
+                const int itemStyle = (eff0[2] & 0x10) ? 8 : (eff0[2] & 0x08) ? 4 : 2;
+                py += scaleY(50) * 2;
+                block(screenText(3), px, px + width, itemStyle, 'C');
+                py += scaleY(30);
+                if (page == 0) {
+                    block(screenText(6), px, px + width, itemStyle, 'C');
+                } else {
+                    block(screenText(5) + " " + std::to_string(page),
+                          px, px + width, itemStyle, 'C');
+                }
+                py += scaleY(50);
+                const int mid = px + width / 2;
+                for (int r = 0; r < 5; ++r) {
+                    const auto& e = (*scores_)[static_cast<std::size_t>(page * 5 + r)];
+                    block(std::to_string(r + 1) + ".- " + e.first, px, mid, 2, 'C');
+                    const int ms = e.second;
+                    char t[32];
+                    std::snprintf(t, sizeof t, "%d'%02d\"%02d",
+                                  (ms / 1000 / 60) % 60, (ms / 1000) % 60,
+                                  (ms % 1000) / 10);
+                    block(t, mid, px + width, 4, 'C');
+                    py += scaleY(30);
+                }
+            }
+
             // ---- THE IDENTITY PAGE'S "CARACTERISTIQUES": draw hook 0x0049CA30
             //
             // Transcribed from the listing. `Ui_ItemTextStyle` fills the style
