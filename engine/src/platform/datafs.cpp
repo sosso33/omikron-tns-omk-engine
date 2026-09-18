@@ -8,6 +8,7 @@
 
 #if defined(__vita__)
 #  include <psp2/io/dirent.h>
+#  include <psp2/io/fcntl.h>
 #  include <psp2/io/stat.h>
 #else
 #  include <filesystem>
@@ -100,15 +101,7 @@ std::vector<std::string> split(std::string_view rel) {
     return parts;
 }
 
-std::vector<std::byte> slurp(const std::string& real) {
-    std::ifstream f(real, std::ios::binary | std::ios::ate);
-    if (!f) return {};
-    const auto n = static_cast<std::size_t>(f.tellg());
-    std::vector<std::byte> d(n);
-    f.seekg(0);
-    f.read(reinterpret_cast<char*>(d.data()), static_cast<std::streamsize>(n));
-    return d;
-}
+std::vector<std::byte> slurp(const std::string& real) { return readWholeFile(real); }
 
 }  // namespace
 
@@ -265,6 +258,40 @@ long long fileSize(const std::string& path) {
     const auto n = fs::file_size(path, ec);
     return ec ? -1 : static_cast<long long>(n);
 #endif
+}
+
+std::vector<std::byte> readWholeFile(const std::string& path) {
+    const long long size = fileSize(path);
+    if (size < 0) return {};
+    std::vector<std::byte> d(static_cast<std::size_t>(size));
+    std::size_t got = 0;
+#if defined(__vita__)
+    const SceUID fd = sceIoOpen(path.c_str(), SCE_O_RDONLY, 0);
+    if (fd < 0) return {};
+    while (got < d.size()) {
+        // at most 1 MiB a call: a kernel read need not deliver all it is asked
+        const std::size_t want = std::min<std::size_t>(d.size() - got, 1u << 20);
+        const int r = sceIoRead(fd, d.data() + got, static_cast<SceSize>(want));
+        if (r <= 0) break;
+        got += static_cast<std::size_t>(r);
+    }
+    sceIoClose(fd);
+#else
+    std::FILE* f = std::fopen(path.c_str(), "rb");
+    if (!f) return {};
+    while (got < d.size()) {
+        const std::size_t r = std::fread(d.data() + got, 1, d.size() - got, f);
+        if (r == 0) break;
+        got += r;
+    }
+    std::fclose(f);
+#endif
+    if (got < d.size()) {
+        std::printf("datafs: SHORT READ %s - %zu of %zu bytes\n", path.c_str(), got,
+                    d.size());
+        d.resize(got);
+    }
+    return d;
 }
 
 }  // namespace omk

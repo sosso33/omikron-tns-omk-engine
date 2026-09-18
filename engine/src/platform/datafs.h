@@ -99,6 +99,14 @@ private:
 bool makeDirectories(const std::string& dir);
 // The size of a file in bytes, or -1 when it cannot be read.
 long long fileSize(const std::string& path);
+// A WHOLE FILE, read to its end or not at all: empty when it cannot be opened,
+// and when fewer bytes arrive than its size says, what did arrive plus one
+// line on stdout naming the shortfall. On the Vita it is `sceIo` in a loop.
+// A console run, 2026-09-18, found IAM\AREA's directory but read chunk 118 as
+// zeros through `std::ifstream` + `tellg`, while the emulator read the same
+// build's file whole; a short read there was silent, and the buffer's tail
+// stayed the zeros it was allocated with.
+std::vector<std::byte> readWholeFile(const std::string& path);
 
 // REFUSE TO WRITE OVER SHIPPED GAME DATA.
 //
