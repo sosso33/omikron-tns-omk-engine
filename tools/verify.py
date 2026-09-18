@@ -21613,8 +21613,18 @@ def c_ui_geometry():
     menuMap = bool(menu and menu[0]["tiles"])
     lift = [p for p in r["panels"] if p["screen"] == 4]
     xy = [(it["x"], it["y"]) for l in lift[0]["lists"] for it in l["items"]][:7] if lift else []
-    # 718/718/717/58 -> 725/725/724/59 on 2026-09-18, and every one of the
-    # four is the HINT SHOP's purchase confirm 0x004E3080 joining
+    # MERGED 2026-09-18, and the fourth number is the lesson. Two branches
+    # each added ONE code-named panel and each re-baselined `len(panels)`
+    # 58 -> 59; merged it is **60**, because both landed. Three of the four
+    # numbers here were summed by hand correctly and this one was not - the
+    # run is what said so, which is the whole point of re-deriving a census
+    # from the regenerated table instead of adding up two branches' deltas.
+    # 718/718/717/58 -> 728/728/727/60: the CITY MAP 0x004DF190 (one list,
+    # three items) and the HINT SHOP's purchase confirm 0x004E3080 (five
+    # lists, seven widgets) joining `exetables.py`'s CODE_NAMED.
+    #
+    # The older note, kept because it is the per-panel accounting:
+    # ...every one of the four is the HINT SHOP's purchase confirm joining
     # `exetables.py`'s CODE_NAMED: one panel, seven widgets (two buttons, the
     # body box, the price line, the footer's two and the backdrop), all seven
     # inside 640x480 and all seven with a positive width and height. The map
@@ -21625,7 +21635,7 @@ def c_ui_geometry():
     # than accepted (`todo/sweep-log.md`'s fifth-census note).
     return (len(items), inb, sized, len(r["panels"]), len(maps), lens, clean,
             menuMap, xy), \
-           (728, 728, 727, 59, 41, [80], 41,
+           (728, 728, 727, 60, 41, [80], 41,
             False,
             [(278, 194), (321, 194), (370, 194),
              (284, 241), (325, 242), (371, 242), (325, 288)]), \
