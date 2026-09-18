@@ -696,7 +696,17 @@ ScreenFrame ScreenComposer::draw(Surface& fb, int screenId,
             // slots is the LIST: 0x004DE420, whose items take the three
             // models in the order the sneak's open callback loads them.
             if (models_ && l.addr == kListSneakPreviews) {
-                const int slot = static_cast<int>(&it - &l.items[0]);
+                // THE SLOT IS THE ITEM'S INDEX IN THE LIST, so it has to be
+                // taken from the item that IS in the list. `it` is a
+                // reference to `itMoved`, a stack COPY made for
+                // `setItemMove` - `&it - &l.items[0]` on that is pointer
+                // arithmetic between unrelated objects, so the slot came out
+                // garbage and `UiModels::draw` refused all three. The three
+                // previews stopped drawing at `1f3e792` and nothing said so:
+                // the C++ is undefined rather than wrong-looking, the frame
+                // simply lost three small pictures, and `sneak previews` is
+                // a `--slow` check that no sweep has run since.
+                const int slot = static_cast<int>(&itAuthored - &l.items[0]);
                 if (models_->draw(fb, slot,
                                   scaleX(it.x + q->offsetX),
                                   scaleY(it.y + q->offsetY),
