@@ -457,6 +457,15 @@ private:
     int              filter_ = 0;   // the scaling enhancement; 0 is the game's
     // `sub_432940`'s three globals, shared by every interference box drawn.
     mutable UiInterference noise_;
+    // THE SCREEN'S SHEET AND STRINGS, loaded once per screen rather than per
+    // frame. `UI_LoadScreen` puts the bitmap in `screen+56` when the screen
+    // OPENS and every draw blits from that surface; the port re-read and
+    // re-decoded the file each frame, which a desktop disk hides and a Vita
+    // memory card does not (the start menu under 1 fps, 2026-09-18). One entry
+    // each, keyed by name: a screen change reloads, nothing else does.
+    mutable std::string artName_, textName_;
+    mutable Surface artCache_;
+    mutable std::vector<std::string> textCache_;
 
     const DataFs*    fs_;
     const UiWidgets* w_;

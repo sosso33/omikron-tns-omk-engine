@@ -373,8 +373,12 @@ ScreenFrame ScreenComposer::draw(Surface& fb, int screenId,
     // `Ui_DrawPanelBack` tiles - so the icons are cut from `sneak.bmp`
     // itself rather than from any separate atlas.
     const std::string& artName = w_->bitmap(screenId);
-    Surface art;
-    if (!artName.empty()) art = surfaceFromBmp(fs_->read("I2D/bitmaps/" + artName));
+    if (artName != artName_) {
+        artName_ = artName;
+        artCache_ = artName.empty() ? Surface{}
+                                    : surfaceFromBmp(fs_->read("I2D/bitmaps/" + artName));
+    }
+    const Surface& art = artCache_;
     const bool sheetOk = art.valid();
     // The I2D colour key is **0**, and it is not read off the sheet.
     // `I2D_CreateSurfaceFromBmp` (0x00428DB0) finishes every bitmap it loads
@@ -400,8 +404,11 @@ ScreenFrame ScreenComposer::draw(Surface& fb, int screenId,
     // getting that wrong returns an empty list and draws a screen with no
     // labels, which looks exactly like the missing-bindings symptom.
     const std::string& tf = w_->textFile(screenId);
-    const std::vector<std::string> text =
-        tf.empty() ? std::vector<std::string>{} : iamStrings(*fs_, "IAM/" + tf);
+    if (tf != textName_) {
+        textName_ = tf;
+        textCache_ = tf.empty() ? std::vector<std::string>{} : iamStrings(*fs_, "IAM/" + tf);
+    }
+    const std::vector<std::string>& text = textCache_;
 
     // The panels to draw, outermost first. The walk may have descended into a
     // child - the confirm dialog, the name field - and the engine draws those

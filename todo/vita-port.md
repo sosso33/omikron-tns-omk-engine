@@ -329,6 +329,76 @@ say so - but both sit on SDK glue the engine does not need. And
 `-DOMK_VITA_ASSERTS=ON` builds with libstdc++'s bounds checks, for the next
 overwrite of this kind (it found nothing here: the write was vitaGL's).
 
+### 2026-09-18, evening: THE FIRST CONSOLE FRAME TIMES - and G6 step 1
+
+`play.cpp` now logs every 60 frames a `frame N phases` line (sim+draw /
+readback / compose / present), a `gles` line (glReadPixels / to-565 / texture
+upload / present draw / swap), a `present` line (how many frames went straight
+from the GPU, and which gate kept the others) and a `spans` line (named calls:
+pump, session, music, screen draw, dialogue text).
+
+**The console's intro cutscene, steady state, ~106 ms a frame:** the game
+itself (sim + draw submission) **9 ms**; `glReadPixels` 36; the 888 -> 565
+dither on the CPU 35; the CPU compose 10; the texture upload 16; the present
+draw and swap <1. So ~90 of the 106 ms were the ROUND TRIP (item 4 of §1), not
+the game - the device factor is not what sinks the port. The conversation adds
+88 ms of CPU compose (its text box, unexplained yet). **The start menu costs
+~775 ms a frame** with no readback at all; the `spans` line is there to say
+where. Re-reading the menu's BMP and IAM text every frame
+(`ScreenComposer::draw`, now cached per screen as `UI_LoadScreen` does) was a
+real waste but NOT the cause: the menu did not change on the console.
+
+**G6 step 1** (not yet seen on a console): the Vulkan window's "nothing drew
+over the 3D" gate now serves the GLES window too, and such a frame is presented
+by `GlesRenderer::presentWorld` (the dither on the GPU) with no readback, no
+CPU dither and no upload. `OMK_VERIFY_GPU_PRESENT=1` on `omk-play-gles` reads
+the window back and compares with the CPU frame IN 565: **0 pixels differ over
+90 frames** of Anekbah's street (compared in 888 it reports ~94000 - the Mac
+driver's own 565 -> 888 expansion, the trap recorded above).
+
+**The films on the console:** all three found and opened, then "0 frames
+shown, sound at 0 Hz": the loop tested `sceAvPlayerIsActive` FIRST, and a
+console's player is not active until it has buffered (Vita3K's is at once). It
+now waits up to 3 s for the start and logs why each film ended.
+
+**Second console log (19:37), and what it changed:**
+
+* **Step 1 presented 0 frames of the intro**: every frame of it carries the
+  conversation or a `media line` subtitle, so it is CPU-composed until step 2
+  (the 2D layer as an overlay) exists. Step 1 is right, and the intro cannot show it.
+* **The menu: `screen draw` 358 ms.** The console's `omk.ini` has
+  `uiscaling = linear`, and the 640x480 interface is scaled to 960x544 by
+  `blt`, which did two `x * sw / dw` divisions and a floor per PIXEL. **The
+  Cortex-A9 has no integer divide instruction**, so each is a library call.
+  The column tables are now built once per blit (the same expressions, so the
+  output is byte-identical: menu frames at 960x544 compared, linear and
+  nearest). The linear path still does three double divisions a pixel.
+  **Division by a CONSTANT is not this trap**: GCC turns `/ 255` into a
+  multiply.
+* **The films started and stopped with nothing decoded** ("the film ended",
+  0 frames). The decoder's frame buffers came from a fresh CDRAM block, and
+  vitaGL takes most of CDRAM at `vglInit`. They now come from vitaGL's pool
+  (`vglMemalign`) first, and every allocation is logged. Not yet confirmed.
+
+**G6 step 2 - the interface as an OVERLAY** (20:00, not yet seen on a console).
+The second log also showed why step 1 could never fire in the intro: the
+BLACK FADE is `running()` for the whole of it (its two bands), and so is a
+subtitle or the conversation. So on the GLES window a frame held only by a
+SOFT gate - either screen fade, a media bitmap, a media line, a conversation -
+is no longer composed over a readback: the world's rows of `fb` hold a KEY
+(`kOverlayKey`), opaque drawing overwrites it, and the passes that READ the
+picture (the two dialogue boxes, the two fades) are all affine in it, so on a
+key pixel they run on two side planes instead (`g_ov`: the law on C from 0, its
+factor on M from 255). `GlesRenderer::presentOverlay` draws `C + world * M` in
+one blend (GL_ONE, GL_SRC_ALPHA), C as 565 and M as an 8-bit texture, and
+uploads either ONLY WHEN IT CHANGED. Measured on the Mac through the intro
+(`OMK_GLES_WINDUMP` against `--dump`, compared in 565): under the black fade's
+bands **0 pixels differ**; with the conversation box up, 20849 differ and
+**none by more than one 565 level** (the box's multiply rounds on 8 bits on the
+GPU and truncates on 565 on the CPU). `OMK_NO_OVERLAY=1` turns it off. The HARD
+gates stay on the CPU: an open screen, the CPU mirror, the shoot / fight HUDs
+and the breath gauge (not yet read for whether they read the picture).
+
 ---
 
 ## 1. The issues, and what is missing

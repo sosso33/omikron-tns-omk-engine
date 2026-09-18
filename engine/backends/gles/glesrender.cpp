@@ -85,6 +85,7 @@
 #include "ui/surface.h"
 
 #include <algorithm>
+#include <chrono>
 #include <initializer_list>
 #include <cstdio>
 #include <cstdlib>
@@ -307,6 +308,22 @@ constexpr GLuint kAttrPos = 0, kAttrUV = 1, kAttrCol = 2, kAttrPhase = 3;
 
 namespace omk {
 
+// THE GL CALLS' OWN TIME, for the frame-phase line (`play.cpp`, 2026-09-18:
+// a Vita menu frame cost ~760 ms and nothing said where). Milliseconds summed
+// since the last `glesTakeTimings`: glReadPixels, the 888 -> 565 conversion,
+// the texture upload of a CPU frame, and the present draw.
+namespace {
+double g_glesMs[4] = {0, 0, 0, 0};
+double glesClockMs() {
+    return std::chrono::duration<double, std::milli>(
+               std::chrono::steady_clock::now().time_since_epoch()).count();
+}
+}  // namespace
+long glesTakeOverlayRows(Renderer* r);
+void glesTakeTimings(double out[4]) {
+    for (int i = 0; i < 4; ++i) { out[i] = g_glesMs[i]; g_glesMs[i] = 0.0; }
+}
+
 class GlesRenderer : public Renderer {
 public:
     ~GlesRenderer() override;
@@ -325,12 +342,26 @@ public:
     // frame's aspect, or stretched, and the rest is black.
     bool presentWorld(int vy, int vh, int frameW, int frameH, int winW, int winH);
     bool presentSurface(const Surface& s, int winW, int winH);
+    bool presentOverlay(const Surface& s, const unsigned char* mask, const unsigned char* maskRows,
+                        const float fade[4], int vy, int vh, int winW, int winH);
     void setStretch(bool on) { stretch_ = on; }
     void setDepthTie(bool on) { tieOn_ = on; }
     // Where "the window" is: 0, the default framebuffer, everywhere but the
     // probe, which has no window and points the present pass at an FBO of its
     // own so it can read back what presenting produced.
     void setWindowTarget(GLuint fbo) { windowFbo_ = fbo; }
+    // the window's back buffer, top row first - `OMK_VERIFY_GPU_PRESENT`
+    void windowPicture(int w, int h, std::vector<unsigned char>& out) {
+        std::vector<unsigned char> raw(static_cast<std::size_t>(w) * h * 4);
+        glBindFramebuffer(GL_FRAMEBUFFER, windowFbo_);
+        glPixelStorei(GL_PACK_ALIGNMENT, 1);
+        glReadPixels(0, 0, w, h, GL_RGBA, GL_UNSIGNED_BYTE, raw.data());
+        out.resize(raw.size());
+        for (int y = 0; y < h; ++y)
+            std::memcpy(out.data() + static_cast<std::size_t>(y) * w * 4,
+                        raw.data() + static_cast<std::size_t>(h - 1 - y) * w * 4,
+                        static_cast<std::size_t>(w) * 4);
+    }
 
 private:
     struct Tex { GLuint id = 0; float w = 1, h = 1; };
@@ -347,6 +378,16 @@ private:
     int w_ = 0, h_ = 0;
     bool ready_ = false;
     GLuint prog_ = 0, present_ = 0;
+    GLuint overlay_ = 0;
+    GLuint maskTex_ = 0;
+    GLint oDst_ = -1, oPic_ = -1, oPicSize_ = -1, oMask_ = -1, oFade_ = -1;
+    std::vector<std::uint32_t> lastMask_;
+    std::vector<std::uint32_t> lastOverlay_;   // a hash a row of what `surfTex_` holds
+    std::vector<unsigned char> maskFlagged_, surfFlagged_;
+    long overlayRows_ = 0;                     // rows re-sent, for the timing line
+public:
+    long takeOverlayRows() { const long r = overlayRows_; overlayRows_ = 0; return r; }
+private:
     // uniform locations, looked up once
     GLint uMvp_ = -1, uTexSize_ = -1, uClock_ = -1, uWave_[8] = {-1, -1, -1, -1, -1, -1, -1, -1},
           uTex_ = -1,
@@ -779,7 +820,10 @@ const Surface& GlesRenderer::readback() {
     dirty_ = false;
     glBindFramebuffer(GL_FRAMEBUFFER, fbo_);
     glPixelStorei(GL_PACK_ALIGNMENT, 1);
+    const double t0 = glesClockMs();
     glReadPixels(0, 0, w_, h_, GL_RGBA, GL_UNSIGNED_BYTE, rgba_.data());
+    const double t1 = glesClockMs();
+    g_glesMs[0] += t1 - t0;
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
     // GL's row 0 is the BOTTOM; the Surface's is the top. The 888 -> 565 rule
     // is `quantise888DitherRow`, the one the Vulkan readback calls, so the
@@ -793,6 +837,7 @@ const Surface& GlesRenderer::readback() {
             for (int x = 0; x < w_; ++x) dst[x] = rgb565(src[4 * x], src[4 * x + 1], src[4 * x + 2]);
         }
     }
+    g_glesMs[1] += glesClockMs() - t1;
     return fb_;
 }
 
@@ -869,6 +914,8 @@ bool GlesRenderer::presentSurface(const Surface& s, int winW, int winH) {
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
     }
+    const double t0 = glesClockMs();
+    lastOverlay_.clear();   // the texture is about to hold something else
     glBindTexture(GL_TEXTURE_2D, surfTex_);
     glPixelStorei(GL_UNPACK_ALIGNMENT, 2);
     if (s.w != surfW_ || s.h != surfH_) {
@@ -880,11 +927,152 @@ bool GlesRenderer::presentSurface(const Surface& s, int winW, int winH) {
                         GL_UNSIGNED_SHORT_5_6_5, s.px.data());
     }
     glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
+    const double t1 = glesClockMs();
+    g_glesMs[2] += t1 - t0;
     // row 0 of the Surface is its TOP and was uploaded as texture row 0, which
     // GL samples at t = 0 - so the present pass reads it with NO flip
     float dst[4];
     destRect(s.w, s.h, winW, winH, dst);
     drawPresent(surfTex_, s.w, s.h, s.w, s.h, false, false, dst, winW, winH);
+    g_glesMs[3] += glesClockMs() - t1;
+    return true;
+}
+
+// ---- THE INTERFACE AS AN OVERLAY (`todo/vita-port.md` G6 step 2) ----------
+//
+// The frame the CPU composed, with the world's rows left as a KEY, blended
+// over the world the GPU already presented - so a frame with a subtitle or a
+// conversation on it needs no readback. Three 565 values mean something
+// `play.cpp` resolves its key into two planes - C, the 565 frame, and M, an
+// 8-bit "how much of the world shows through" - and this draws
+// `C + world * M` in one blend (GL_ONE, GL_SRC_ALPHA).
+constexpr const char* kOverlayFrag = R"(
+uniform sampler2D uPic;
+uniform sampler2D uMask;
+uniform vec4  uFade;       // rgb + weight
+uniform vec2  uPicSize;
+varying vec2  vPic;
+void main() {
+    vec2 uv = (floor(vPic * uPicSize) + 0.5) / uPicSize;
+    vec3 c = texture2D(uPic, uv).rgb;
+    // the KEY (0xF81F) is "the world shows here", untouched by any pass
+    vec3 k = floor(c * vec3(31.0, 63.0, 31.0) + 0.5);
+    vec4 o = vec4(c, texture2D(uMask, uv).r);
+    if (k.r > 30.5 && k.g < 0.5 && k.b > 30.5) o = vec4(0.0, 0.0, 0.0, 1.0);
+    // the colour fade, over everything: new = old * (1 - f) + colour * f
+    gl_FragColor = vec4(o.rgb * (1.0 - uFade.a) + uFade.rgb * uFade.a, o.a * (1.0 - uFade.a));
+}
+)";
+
+bool GlesRenderer::presentOverlay(const Surface& s, const unsigned char* mask, const unsigned char* maskRows,
+                                  const float fade[4], int vy, int vh, int winW, int winH) {
+    if (!overlay_) {
+        overlay_ = link(kPresentVert, kOverlayFrag, {{0, "aPos"}});
+        if (!overlay_) return false;
+        oDst_ = glGetUniformLocation(overlay_, "uDst");
+        oPic_ = glGetUniformLocation(overlay_, "uPic");
+        oPicSize_ = glGetUniformLocation(overlay_, "uPicSize");
+        oMask_ = glGetUniformLocation(overlay_, "uMask");
+        oFade_ = glGetUniformLocation(overlay_, "uFade");
+        glGenTextures(1, &maskTex_);
+        glBindTexture(GL_TEXTURE_2D, maskTex_);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    }
+    if (!presentWorld(vy, vh, s.w, s.h, winW, winH)) return false;
+    const double t0 = glesClockMs();
+    if (!surfTex_) {
+        glGenTextures(1, &surfTex_);
+        glBindTexture(GL_TEXTURE_2D, surfTex_);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    }
+    glBindTexture(GL_TEXTURE_2D, surfTex_);
+    // ONLY THE ROWS THAT CHANGED, and on the Vita not through GL at all.
+    // vitaGL's `glTexSubImage2D` first COPIES THE WHOLE TEXTURE to a new
+    // allocation when the GPU used it in the last frames (textures.c, "Copying
+    // the texture in a new mem location") - 41 ms a frame on a console for the
+    // two planes, whatever the size of the change. `vglGetTexDataPointer` is
+    // the texture's own memory (565 and L8 are stored as they are, rows padded
+    // to 8 pixels), so the changed rows are copied straight into it.
+    // WHICH rows changed is found by reading the new plane ONCE: a hash a row
+    // against the last frame's (comparing against a kept copy read 3 MB a
+    // frame, 18 ms on a console with nothing changed). The mask is looked at
+    // only on the rows `maskRows` flags - it is zero everywhere else.
+    const auto rowHash = [](const unsigned char* p, std::size_t n) {
+        std::uint32_t h = 2166136261u;
+        const std::uint32_t* q = reinterpret_cast<const std::uint32_t*>(p);
+        for (std::size_t i = 0; i < n / 4; ++i) h = (h ^ q[i]) * 16777619u;
+        return h;
+    };
+    const auto sync = [&](GLuint tex, const unsigned char* cur, std::vector<std::uint32_t>& last,
+                          int bpp, GLenum fmt, GLenum type, const unsigned char* rows,
+                          std::vector<unsigned char>& wasFlagged) {
+        glBindTexture(GL_TEXTURE_2D, tex);
+        const std::size_t rowBytes = static_cast<std::size_t>(s.w) * bpp;
+        glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+        if (last.size() != static_cast<std::size_t>(s.h)) {
+            glTexImage2D(GL_TEXTURE_2D, 0, fmt, s.w, s.h, 0, fmt, type, cur);
+            last.resize(static_cast<std::size_t>(s.h));
+            for (int y = 0; y < s.h; ++y) last[y] = rowHash(cur + y * rowBytes, rowBytes);
+            wasFlagged.assign(static_cast<std::size_t>(s.h), 1);
+            overlayRows_ += s.h;
+        } else {
+#if defined(__vita__)
+            unsigned char* texData = static_cast<unsigned char*>(vglGetTexDataPointer(GL_TEXTURE_2D));
+            const std::size_t stride = static_cast<std::size_t>((s.w + 7) & ~7) * bpp;
+#endif
+            for (int y = 0; y < s.h; ++y) {
+                if (rows && !rows[y] && !wasFlagged[y]) continue;
+                wasFlagged[y] = rows ? rows[y] : 1;
+                const std::uint32_t hsh = rowHash(cur + y * rowBytes, rowBytes);
+                if (hsh == last[y]) continue;
+                last[y] = hsh;
+#if defined(__vita__)
+                if (texData) std::memcpy(texData + y * stride, cur + y * rowBytes, rowBytes);
+                else
+#endif
+                glTexSubImage2D(GL_TEXTURE_2D, 0, 0, y, s.w, 1, fmt, type, cur + y * rowBytes);
+                ++overlayRows_;
+            }
+        }
+        glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
+    };
+    sync(maskTex_, mask, lastMask_, 1, GL_LUMINANCE, GL_UNSIGNED_BYTE, maskRows, maskFlagged_);
+    sync(surfTex_, reinterpret_cast<const unsigned char*>(s.px.data()), lastOverlay_, 2, GL_RGB,
+         GL_UNSIGNED_SHORT_5_6_5, nullptr, surfFlagged_);
+    surfW_ = s.w; surfH_ = s.h;
+    const double t1 = glesClockMs();
+    g_glesMs[2] += t1 - t0;
+    float dst[4];
+    destRect(s.w, s.h, winW, winH, dst);
+    glBindFramebuffer(GL_FRAMEBUFFER, windowFbo_);
+    glViewport(0, 0, winW, winH);
+    glDisable(GL_DEPTH_TEST);
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_ONE, GL_SRC_ALPHA);
+    glUseProgram(overlay_);
+    glUniform4fv(oDst_, 1, dst);
+    glUniform2f(oPicSize_, static_cast<float>(s.w), static_cast<float>(s.h));
+    glUniform4fv(oFade_, 1, fade);
+    glActiveTexture(GL_TEXTURE1);
+    glBindTexture(GL_TEXTURE_2D, maskTex_);
+    glUniform1i(oMask_, 1);
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, surfTex_);
+    glUniform1i(oPic_, 0);
+    glBindBuffer(GL_ARRAY_BUFFER, quad_);
+    for (GLuint a = 1; a <= kAttrPhase; ++a) glDisableVertexAttribArray(a);
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 0, nullptr);
+    glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+    glDisable(GL_BLEND);
+    glEnable(GL_DEPTH_TEST);
+    g_glesMs[3] += glesClockMs() - t1;
     return true;
 }
 
@@ -896,8 +1084,16 @@ Renderer* makeGlesRenderer() { return new GlesRenderer(); }
 bool glesPresentWorld(Renderer* r, int vy, int vh, int frameW, int frameH, int winW, int winH) {
     return static_cast<GlesRenderer*>(r)->presentWorld(vy, vh, frameW, frameH, winW, winH);
 }
+bool glesPresentOverlay(Renderer* r, const Surface& s, const unsigned char* mask, const unsigned char* maskRows,
+                        const float fade[4], int vy, int vh, int winW, int winH) {
+    return static_cast<GlesRenderer*>(r)->presentOverlay(s, mask, maskRows, fade, vy, vh, winW, winH);
+}
+long glesTakeOverlayRows(Renderer* r) { return static_cast<GlesRenderer*>(r)->takeOverlayRows(); }
 bool glesPresentSurface(Renderer* r, const Surface& s, int winW, int winH) {
     return static_cast<GlesRenderer*>(r)->presentSurface(s, winW, winH);
+}
+void glesWindowPicture(Renderer* r, int w, int h, std::vector<unsigned char>& out) {
+    static_cast<GlesRenderer*>(r)->windowPicture(w, h, out);
 }
 void glesSetStretch(Renderer* r, bool on) { static_cast<GlesRenderer*>(r)->setStretch(on); }
 void glesSetDepthTie(Renderer* r, bool on) { static_cast<GlesRenderer*>(r)->setDepthTie(on); }

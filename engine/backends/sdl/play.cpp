@@ -137,6 +137,12 @@ bool imeEdit(const char* title, const std::string& initial, int maxLen, std::str
 namespace omk {
 Renderer* makeGlesRenderer();
 bool glesPresentSurface(Renderer*, const Surface&, int winW, int winH);
+bool glesPresentWorld(Renderer*, int vy, int vh, int frameW, int frameH, int winW, int winH);
+void glesTakeTimings(double out[4]);
+long glesTakeOverlayRows(Renderer*);
+bool glesPresentOverlay(Renderer*, const Surface&, const unsigned char* mask, const unsigned char* maskRows,
+                        const float fade[4], int vy, int vh, int winW, int winH);
+void glesWindowPicture(Renderer*, int w, int h, std::vector<unsigned char>& out);
 }
 #endif
 
@@ -275,6 +281,41 @@ std::vector<float> wavToDevice(std::span<const std::byte> file, int deviceRate) 
 // supported here.
 enum class SubBox { None, Line, Replies };
 
+// THE OVERLAY'S SIDE PLANES (`todo/vita-port.md` G6 step 2). On the GLES
+// window a frame with a subtitle or a conversation is not composed over a
+// readback of the world: the world's rows of `fb` hold a KEY, and the GPU
+// blends the finished frame over its own picture as `C + world * M`. Opaque
+// drawing simply overwrites the key (C = the pixel, M = 0). The few passes
+// that READ the picture - the two dialogue boxes, the two screen fades - are
+// all affine in it (`new = A * old + B`), so on a key pixel they run on these
+// planes instead: the law itself on C, which starts at 0, and A on M, which
+// starts at 255. Exact, not a special case per pass.
+// SPARSE: a row of the planes is initialised the first time a pass touches it
+// (`row`), so a frame costs the rows its boxes and bands cover, not the screen.
+struct OverlayPlanes {
+    bool on = false;
+    int w = 0;
+    std::vector<std::uint16_t> c;
+    std::vector<std::uint8_t>  m;
+    std::vector<std::uint8_t>  rowInit;
+    void begin(int width, int height) {
+        on = true;
+        w = width;
+        const std::size_t count = static_cast<std::size_t>(width) * height;
+        if (c.size() != count) { c.assign(count, 0); m.assign(count, 255); }
+        rowInit.assign(static_cast<std::size_t>(height), 0);
+    }
+    void row(std::size_t index) {
+        const std::size_t y = index / static_cast<std::size_t>(w);
+        if (rowInit[y]) return;
+        rowInit[y] = 1;
+        std::fill(c.begin() + y * w, c.begin() + (y + 1) * w, std::uint16_t(0));
+        std::fill(m.begin() + y * w, m.begin() + (y + 1) * w, std::uint8_t(255));
+    }
+};
+OverlayPlanes g_ov;
+constexpr std::uint16_t kOverlayKey = 0xF81F;
+
 void drawSubtitleBox(omk::Surface& fb, SubBox kind, int top, int dispW, int dispH) {
     if (kind == SubBox::None) return;
     // The 18, 8, 4 and 32 are LITERAL pixels in `sub_4400D0` - `v21 = 18`,
@@ -292,9 +333,15 @@ void drawSubtitleBox(omk::Surface& fb, SubBox kind, int top, int dispW, int disp
     if (x1 <= x0 || y1 <= y0) return;
     for (int y = y0 < 0 ? 0 : y0; y < y1 && y < fb.h; ++y) {
         for (int x = x0 < 0 ? 0 : x0; x < x1 && x < fb.w; ++x) {
-            std::uint16_t& px = fb.px[static_cast<std::size_t>(y) *
-                                      static_cast<std::size_t>(fb.w) +
-                                      static_cast<std::size_t>(x)];
+            const std::size_t ovI = static_cast<std::size_t>(y) * static_cast<std::size_t>(fb.w) +
+                                    static_cast<std::size_t>(x);
+            const bool ovKey = g_ov.on && fb.px[ovI] == kOverlayKey;
+            if (ovKey) {
+                g_ov.row(ovI);
+                g_ov.m[ovI] = static_cast<std::uint8_t>(
+                    g_ov.m[ovI] * (kind == SubBox::Line ? 255 - 0x80 : 0x80) / 255);
+            }
+            std::uint16_t& px = ovKey ? g_ov.c[ovI] : fb.px[ovI];
             int r = ((px >> 11) & 31) << 3, g = ((px >> 5) & 63) << 2, b = (px & 31) << 3;
             if (kind == SubBox::Line) {
                 // dst *= (1 - src), src = 0x808080
@@ -3632,6 +3679,8 @@ int main(int argc, char** argv) {
                           : "the software reference has none, --vulkan for it");
     // One place that decides where a finished framebuffer goes, so the movies,
     // the splash and the frame loop cannot drift apart about it.
+    double glSwapMs = 0.0;   // SDL_GL_SwapWindow's share, for the phase line
+    (void)glSwapMs;
     const auto present = [&](const omk::Surface& pic) {
 #if defined(OMK_VULKAN)
         if (vkRen) { omk::vulkanPresentSurface(vkRen, pic); return; }
@@ -3645,7 +3694,10 @@ int main(int argc, char** argv) {
             SDL_GL_GetDrawableSize(glWin, &ww, &wh);
 #endif
             omk::glesPresentSurface(glRen, pic, ww, wh);
+            const auto sw0 = SDL_GetPerformanceCounter();
             SDL_GL_SwapWindow(glWin);
+            glSwapMs += static_cast<double>(SDL_GetPerformanceCounter() - sw0) * 1000.0 /
+                        static_cast<double>(SDL_GetPerformanceFrequency());
             return;
         }
 #endif
@@ -5662,11 +5714,27 @@ int main(int argc, char** argv) {
                     std::vector<float> pcm;
                     int rate = 0;
                     long shownAv = 0;
-                    while (omk::vita::avActive(av)) {
+                    // NOT ACTIVE YET is not FINISHED: on a console the player
+                    // buffers after `sceAvPlayerAddSource` and only then
+                    // reports active, so testing `avActive` first ended every
+                    // film at once - "0 frames shown, sound at 0 Hz" for all
+                    // three (console log 2026-09-18). Vita3K is active at once,
+                    // which is why it played there. Wait up to 3 s for the
+                    // start; after that, inactive means the end.
+                    const Uint32 avStart = SDL_GetTicks();
+                    bool avStarted = false;
+                    const char* avEnd = "the film ended";
+                    for (;;) {
+                        if (omk::vita::avActive(av)) avStarted = true;
+                        else if (avStarted || SDL_GetTicks() - avStart > 3000) {
+                            if (!avStarted) avEnd = "the player never became active (3 s)";
+                            break;
+                        }
                         omk::HostInput h;
-                        if (!front.pump(h)) { skipAll = true; break; }
+                        if (!front.pump(h)) { skipAll = true; avEnd = "the window closed"; break; }
                         if (!h.held.empty() || h.pad.buttons != 0) {
                             if (h.held.count(0x38)) skipAll = true;      // DIK_LMENU
+                            avEnd = h.pad.buttons != 0 ? "skipped by a pad button" : "skipped by a key";
                             break;
                         }
                         pcm.clear();
@@ -5683,7 +5751,7 @@ int main(int argc, char** argv) {
                         if (h.held.empty() && h.pad.buttons == 0) break;
                         SDL_Delay(10);
                     }
-                    std::printf("  %s: %ld frames shown, sound at %d Hz\n", name, shownAv, rate);
+                    std::printf("  %s: %ld frames shown, sound at %d Hz - %s\n", name, shownAv, rate, avEnd);
                     continue;
                 }
                 // SAID: a console log that showed only the software path gave
@@ -5977,8 +6045,34 @@ int main(int argc, char** argv) {
     // The 30 Hz pacer's next deadline, in seconds on the performance counter
     // (see the cap at the bottom of this loop).
     double paceNext = 0.0;
+    // THE FRAME'S PHASES, timed - an instrument for the Vita (2026-09-18: the
+    // city "unplayable", and the SLOW FRAME line below gives only the total).
+    // Four spans on the performance counter: the simulation and the draw
+    // submission up to the readback, the readback itself (on GLES the wait for
+    // the GPU), the CPU compose after it, and the present with its swap.
+    // Averaged over 60 frames and printed as one `frame phases:` line.
+    const double phaseHz = static_cast<double>(SDL_GetPerformanceFrequency());
+    const auto phaseNow = [&] { return static_cast<double>(SDL_GetPerformanceCounter()) / phaseHz; };
+    double phTop = 0.0, phRb0 = -1.0, phRb1 = -1.0;
+    // ...and a few NAMED spans inside them, summed the same way, so a slow
+    // phase says which call it is (the Vita's start menu: ~600 ms of
+    // "sim+draw" with no world drawn).
+    std::map<std::string, double> phSpan;
+    const auto spanned = [&](const char* name, auto&& fn) {
+        const double a = phaseNow();
+        fn();
+        phSpan[name] += phaseNow() - a;
+    };
+    double phSum[4] = {0, 0, 0, 0};
+    long phN = 0;
+    long phGpu = 0;                          // frames presented from the GPU
+    std::map<std::string, long> phKept;      // ...and why the others were not
     for (;;) {
-        if (!front.pump(host)) break;
+        phTop = phaseNow();
+        phRb0 = phRb1 = -1.0;
+        bool pumpOk = true;
+        spanned("pump", [&] { pumpOk = front.pump(host); });
+        if (!pumpOk) break;
         // ---- one line when the mouse first moves in shoot mode -----------
         //
         // Placed HERE, before any gate, so it can tell the three links apart:
@@ -6249,7 +6343,7 @@ int main(int argc, char** argv) {
             session.playerMoveEnded(moveWaitCtx);
             moveWaitCtx = -1; moveWaitGroup = -1;
         }
-        session.frame();
+        spanned("session", [&] { session.frame(); });
 
         // ---- SCRIPTED OBJECT MOTION - the crates, the doors, the lifts ---
         //
@@ -10311,7 +10405,7 @@ int main(int argc, char** argv) {
         // is ask for more and hand it over.
         if (!musicPaused && music.playing() && front.queuedSeconds() < 1.0) {
             std::vector<float> chunk;
-            music.pull(chunk, 44100);
+            spanned("music", [&] { music.pull(chunk, 44100); });
             {
                 static double musicPeakTold = 0.0; static float musicPeak = 0.0f; static std::size_t musicSamples = 0;
                 for (const float v : chunk) musicPeak = std::max(musicPeak, std::fabs(v));
@@ -12500,6 +12594,10 @@ int main(int argc, char** argv) {
         // THE PRESENT PASS (todo/optimization.md step 4b): set where the world
         // is placed into `fb`, read where the frame is presented.
         bool gpuFrame = false;
+        bool overlayFrame = false, softGate = false;   // G6 step 2, the GLES window
+        float ovFade[4] = {0, 0, 0, 0};                // the colour fade, for its shader
+        g_ov.on = false;
+        (void)softGate;
         int gpuVy = 0, gpuVh = 0;
         const char* gpuKeep = "no world";   // the first gate that kept the frame on the CPU path
         static const bool verifyGpuPresent = std::getenv("OMK_VERIFY_GPU_PRESENT") != nullptr;
@@ -17829,19 +17927,33 @@ int main(int argc, char** argv) {
             // off; `OMK_VERIFY_GPU_PRESENT=1` composes the CPU frame as well and
             // compares the two - which is also how a gate missing from this list
             // would show.
-#if defined(OMK_VULKAN)
+#if defined(OMK_VULKAN) || defined(OMK_GLES)
             {
                 static const bool noGpuPresent = std::getenv("OMK_NO_GPU_PRESENT") != nullptr;
                 const bool lastDumped = !dump.empty() && frames && n + 1 >= frames;
-                const bool onVulkan = (vkRen && &world == vkRen) ||
-                                      (verifyGpuPresent && worldVk && &world == worldVk);
+                // THE GLES WINDOW TAKES THE SAME PATH (`todo/vita-port.md` G6
+                // step 1, 2026-09-18). A console log put 90 of a cutscene
+                // frame's 106 ms in exactly the round trip this skips -
+                // glReadPixels 36, the 888 -> 565 dither 35, the upload 16 -
+                // against 9 ms for the game itself. `GlesRenderer::presentWorld`
+                // dithers on the GPU as `present.frag` does on Vulkan.
+                bool onVulkan = false;
+#if defined(OMK_VULKAN)
+                onVulkan = (vkRen && &world == vkRen) ||
+                           (verifyGpuPresent && worldVk && &world == worldVk);
+#endif
+#if defined(OMK_GLES)
+                if (glRen && &world == glRen) onVulkan = true;
+#endif
                 // the gates in order; the first that holds names why the frame
                 // stays on the CPU path (`OMK_GPU_PRESENT_STATS` counts them)
                 const char* keep = nullptr;
                 if (noGpuPresent) keep = "off";
                 else if (!onVulkan) keep = "not vulkan";
                 else if (vpItem || walk) keep = "screen";
-                else if (!omk::vulkanCanPresentWorld(&world)) keep = "supersampling";
+#if defined(OMK_VULKAN)
+                else if (vkRen && &world == vkRen && !omk::vulkanCanPresentWorld(&world)) keep = "supersampling";
+#endif
                 else if (mst.active && !mst.native) keep = "cpu mirror";
                 else if (shootMode && hudWalk) keep = "shoot hud";
                 // ...and the FIGHT HUD, under the same test that draws it: the
@@ -17856,21 +17968,51 @@ int main(int argc, char** argv) {
                 // same GPU-present gap the fight's gauges fell into
                 else if (player && player->breathLeftMs() >= 0.0 &&
                          !std::getenv("OMK_NOUI")) keep = "breath gauge";
-                else if (mediaBmp.w > 0 && mediaBmp.h > 0) keep = "media bitmap";
-                else if (mediaTextFrames > 0) keep = "media line";
-                else if (session.dialogOpen()) keep = "conversation";
-                else if (session.colourFade().running()) keep = "colour fade";
-                else if (session.blackFade().running()) keep = "black fade";
                 else if (!flickerDir.empty() || !snapsDir.empty() || std::getenv("OMK_CLIPLOG")) keep = "instrument";
                 else if (lastDumped) keep = "dump";
+                // THE SOFT GATES, last: what these three draw goes OVER the
+                // picture without reading it (a full-screen bitmap, the text's
+                // opaque ramp) or reads it by one of two fixed laws (the
+                // dialogue boxes). On the GLES window such a frame is composed
+                // over a KEY and blended on the GPU (`presentOverlay`, G6 step
+                // 2) - no readback. `OMK_NO_OVERLAY=1` turns that off.
+                // a fade is a gate only while it would CHANGE a pixel: the black
+                // one is `running()` for whole scenes with both bands at 255,
+                // which held every frame of play off the direct path
+                else if (session.colourFade().running() && session.colourFade().weight() > 0.0f) { keep = "colour fade"; softGate = true; }
+                else if (session.blackFade().running() &&
+                         (session.blackFade().bandGrey(false) < 255 || session.blackFade().bandGrey(true) < 255)) { keep = "black fade"; softGate = true; }
+                else if (mediaBmp.w > 0 && mediaBmp.h > 0) { keep = "media bitmap"; softGate = true; }
+                else if (mediaTextFrames > 0) { keep = "media line"; softGate = true; }
+                else if (session.dialogOpen()) { keep = "conversation"; softGate = true; }
+#if defined(OMK_GLES)
+                {
+                    static const bool noOverlay = std::getenv("OMK_NO_OVERLAY") != nullptr;
+                    overlayFrame = softGate && !noOverlay && !verifyGpuPresent &&
+                                   glRen && &world == glRen;
+                    if (overlayFrame) keep = "overlay";
+                }
+#endif
                 gpuFrame = keep == nullptr;
                 gpuKeep = keep ? keep : "";
                 gpuVy = view.vy;
                 gpuVh = view.vh;
             }
 #endif
-            if (!gpuFrame || verifyGpuPresent) {
+            if (overlayFrame) {
+                // the world's rows are the KEY: "the GPU's picture shows here"
+                g_ov.begin(fb.w, fb.h);
+                for (int y = 0; y < view.vh; ++y) {
+                    const int dy = view.vy + y;
+                    if (dy < 0 || dy >= fb.h) continue;
+                    std::fill(fb.px.begin() + static_cast<long>(dy) * fb.w,
+                              fb.px.begin() + static_cast<long>(dy + 1) * fb.w,
+                              std::uint16_t(0xF81F));
+                }
+            } else if (!gpuFrame || verifyGpuPresent) {
+            phRb0 = phaseNow();
             const omk::Surface& pic = world.readback();
+            phRb1 = phaseNow();
             if (vpItem && pic.w == fb.w) {
                 // The picture is the viewport item's; the composer places it
                 // at the item's layer, not the frame.
@@ -19857,7 +19999,8 @@ int main(int argc, char** argv) {
             // the device off, the caller was there all along, so the world
             // was never the problem.
             if (!std::getenv("OMK_NOUI")) {
-                const omk::ScreenFrame sf = comp.draw(fb, openScreen, *walk);
+                omk::ScreenFrame sf;
+                spanned("screen draw", [&] { sf = comp.draw(fb, openScreen, *walk); });
                 // ---- THE HINT SHOP, REPORTED FROM THE DRAW -----------
                 //
                 // Every field on this line comes out of `ScreenFrame`, and
@@ -20154,11 +20297,13 @@ int main(int argc, char** argv) {
                 if ((heldBits & 0x8u) && lineScroll < lineOverflow) ++lineScroll;   // down
                 if ((heldBits & 0x4u) && lineScroll > 0)            --lineScroll;   // up
             }
+            spanned("dialogue text", [&] {
             drawSubtitle(fb, lay,
                          inMenu ? std::string() : dlg.lineText(),
                          menu, sel, dispW, dispH, 32,
                          inMenu ? SubBox::Replies : SubBox::Line, 'J',
                          lineScroll, &lineOverflow);
+            });
         }
         // ---- THE FPS COUNTER, when asked for --------------------------
         //
@@ -20198,11 +20343,23 @@ int main(int argc, char** argv) {
         {
             const omk::Session::ScreenFade& cf = session.colourFade();
             const float k = cf.weight();
-            if (cf.running() && k > 0.0f) {
+            ovFade[3] = 0.0f;
+            if (cf.running() && k > 0.0f && g_ov.on) {
+                // on an overlay frame the mix is the present shader's: the
+                // same law over every pixel, world and interface alike - the
+                // CPU loop cost 200-300 ms a frame on a console
+                ovFade[0] = static_cast<float>((cf.colour >> 16) & 0xFF) / 255.0f;
+                ovFade[1] = static_cast<float>((cf.colour >> 8) & 0xFF) / 255.0f;
+                ovFade[2] = static_cast<float>(cf.colour & 0xFF) / 255.0f;
+                ovFade[3] = k;
+            } else if (cf.running() && k > 0.0f) {
                 const int cr = static_cast<int>((cf.colour >> 16) & 0xFF);
                 const int cg = static_cast<int>((cf.colour >> 8) & 0xFF);
                 const int cb = static_cast<int>(cf.colour & 0xFF);
-                for (auto& px : fb.px) {
+                for (std::size_t ovI = 0; ovI < fb.px.size(); ++ovI) {
+                    const bool ovKey = g_ov.on && fb.px[ovI] == kOverlayKey;
+                    if (ovKey) { g_ov.row(ovI); g_ov.m[ovI] = static_cast<std::uint8_t>(g_ov.m[ovI] * (1.0f - k)); }
+                    std::uint16_t& px = ovKey ? g_ov.c[ovI] : fb.px[ovI];
                     int r = ((px >> 11) & 31) << 3, g = ((px >> 5) & 63) << 2, b = (px & 31) << 3;
                     r += static_cast<int>((cr - r) * k);
                     g += static_cast<int>((cg - g) * k);
@@ -20258,9 +20415,12 @@ int main(int argc, char** argv) {
                                                  : 1.0f;
                         const int grey = outer + static_cast<int>((inner - outer) * t);
                         for (int x = 0; x < fb.w; ++x) {
-                            std::uint16_t& px = fb.px[static_cast<std::size_t>(y) *
-                                                      static_cast<std::size_t>(fb.w) +
-                                                      static_cast<std::size_t>(x)];
+                            const std::size_t ovI = static_cast<std::size_t>(y) *
+                                                        static_cast<std::size_t>(fb.w) +
+                                                    static_cast<std::size_t>(x);
+                            const bool ovKey = g_ov.on && fb.px[ovI] == kOverlayKey;
+                            if (ovKey) { g_ov.row(ovI); g_ov.m[ovI] = static_cast<std::uint8_t>(g_ov.m[ovI] * grey / 255); }
+                            std::uint16_t& px = ovKey ? g_ov.c[ovI] : fb.px[ovI];
                             int r = ((px >> 11) & 31) << 3, g = ((px >> 5) & 63) << 2,
                                 b = (px & 31) << 3;
                             r = r * grey / 255; g = g * grey / 255; b = b * grey / 255;
@@ -20371,6 +20531,7 @@ int main(int argc, char** argv) {
                 std::printf("gpu present verify: frame %ld, %ld frames compared, %ld differ (%ld pixels)\n",
                             n, compared, differing, badPixels);
         }
+#endif
         {
             static long gpuPresented = 0, framesSeen = 0;
             static std::map<std::string, long> keptBy;
@@ -20383,12 +20544,159 @@ int main(int argc, char** argv) {
                 for (const auto& [why, count] : keptBy) std::printf(" %s %ld,", why.c_str(), count);
                 std::printf("\n");
             }
+            if (gpuFrame) ++phGpu; else ++phKept[gpuKeep];
         }
-        if (gpuFrame && !verifyGpuPresent) {
-            if (!omk::vulkanPresentWorld(vkRen, gpuVy, gpuVh)) present(fb);
-        } else
+        {
+            const double pr0 = phaseNow();
+            // a frame nothing drew over goes straight from the world target
+            // to the window; anything else, or a backend that refuses, is the
+            // composed `fb` as before
+            bool presentedWorld = false;
+#if defined(OMK_GLES)
+            // `OMK_VERIFY_GPU_PRESENT` on the GLES window: present the world
+            // directly, read the window back and compare it byte for byte with
+            // the CPU frame composed beside it - the Vulkan verify's GLES twin.
+            // Only where the window is the frame's own size (1:1).
+            if (gpuFrame && verifyGpuPresent && glRen) {
+                int ww = 0, wh = 0;
+#if defined(OMK_SDL3)
+                SDL_GetWindowSizeInPixels(glWin, &ww, &wh);
+#else
+                SDL_GL_GetDrawableSize(glWin, &ww, &wh);
 #endif
-        present(fb);
+                if (ww == fb.w && wh == fb.h &&
+                    omk::glesPresentWorld(glRen, gpuVy, gpuVh, fb.w, fb.h, ww, wh)) {
+                    static std::vector<unsigned char> winPic;
+                    static long compared = 0, differing = 0;
+                    omk::glesWindowPicture(glRen, ww, wh, winPic);
+                    // compared in 565: the driver's 565 -> 888 expansion is
+                    // its own (rounding on a Mac), so an 888 compare reports
+                    // the driver (todo/vita-port.md, the 113303 differences)
+                    long diff = 0;
+                    for (std::size_t i = 0; i < fb.px.size(); ++i) {
+                        const unsigned char* q = &winPic[4 * i];
+                        const int r5 = (q[0] * 31 + 127) / 255, g6 = (q[1] * 63 + 127) / 255,
+                                  b5 = (q[2] * 31 + 127) / 255;
+                        if (static_cast<std::uint16_t>((r5 << 11) | (g6 << 5) | b5) != fb.px[i]) ++diff;
+                    }
+                    ++compared;
+                    if (diff) ++differing;
+                    if (diff || compared % 30 == 0)
+                        std::printf("gles present verify: frame %ld, %ld pixels differ; %ld of %ld frames differed\n",
+                                    n, diff, differing, compared);
+                    SDL_GL_SwapWindow(glWin);
+                    presentedWorld = true;
+                }
+            }
+#endif
+#if defined(OMK_GLES)
+            if (overlayFrame && glRen) {
+                // the key resolves into the two planes: C in `fb`, M beside it
+                // - only on the rows a pass touched; an untouched key pixel stays
+                // the key, which the shader reads as "the world" by itself, so
+                // M is zero everywhere else and mostly never changes
+                static std::vector<std::uint8_t> ovMask, ovMaskRow;
+                if (ovMask.size() != fb.px.size()) {
+                    ovMask.assign(fb.px.size(), std::uint8_t(0));
+                    ovMaskRow.assign(static_cast<std::size_t>(fb.h), 0);
+                }
+                for (int y = 0; y < fb.h; ++y) {
+                    const std::size_t o = static_cast<std::size_t>(y) * fb.w;
+                    if (!g_ov.rowInit[static_cast<std::size_t>(y)]) {
+                        if (ovMaskRow[static_cast<std::size_t>(y)]) {
+                            std::fill(ovMask.begin() + o, ovMask.begin() + o + fb.w, std::uint8_t(0));
+                            ovMaskRow[static_cast<std::size_t>(y)] = 0;
+                        }
+                        continue;
+                    }
+                    ovMaskRow[static_cast<std::size_t>(y)] = 1;
+                    for (std::size_t i = o; i < o + static_cast<std::size_t>(fb.w); ++i) {
+                        if (fb.px[i] == kOverlayKey) { fb.px[i] = g_ov.c[i]; ovMask[i] = g_ov.m[i]; }
+                        else ovMask[i] = 0;
+                    }
+                }
+                int ww = 0, wh = 0;
+#if defined(OMK_SDL3)
+                SDL_GetWindowSizeInPixels(glWin, &ww, &wh);
+#else
+                SDL_GL_GetDrawableSize(glWin, &ww, &wh);
+#endif
+                presentedWorld = omk::glesPresentOverlay(glRen, fb, ovMask.data(), ovMaskRow.data(), ovFade, gpuVy, gpuVh, ww, wh);
+                if (presentedWorld) {
+                    static const char* winDump = std::getenv("OMK_GLES_WINDUMP");
+                    if (winDump && frames && n + 1 >= frames) {
+                        std::vector<unsigned char> pic;
+                        omk::glesWindowPicture(glRen, ww, wh, pic);
+                        if (omk::safeOutputPath(winDump)) {
+                            std::ofstream o(winDump, std::ios::binary);
+                            o.write(reinterpret_cast<const char*>(pic.data()), static_cast<std::streamsize>(pic.size()));
+                        }
+                    }
+                    SDL_GL_SwapWindow(glWin);
+                }
+            }
+#endif
+            if (gpuFrame && !verifyGpuPresent) {
+#if defined(OMK_VULKAN)
+                if (vkRen) presentedWorld = omk::vulkanPresentWorld(vkRen, gpuVy, gpuVh);
+#endif
+#if defined(OMK_GLES)
+                if (!presentedWorld && glRen) {
+                    int ww = 0, wh = 0;
+#if defined(OMK_SDL3)
+                    SDL_GetWindowSizeInPixels(glWin, &ww, &wh);
+#else
+                    SDL_GL_GetDrawableSize(glWin, &ww, &wh);
+#endif
+                    presentedWorld = omk::glesPresentWorld(glRen, gpuVy, gpuVh, fb.w, fb.h, ww, wh);
+                    if (presentedWorld) {
+                        const auto sw0 = SDL_GetPerformanceCounter();
+                        SDL_GL_SwapWindow(glWin);
+                        glSwapMs += static_cast<double>(SDL_GetPerformanceCounter() - sw0) * 1000.0 /
+                                    static_cast<double>(SDL_GetPerformanceFrequency());
+                    }
+                }
+#endif
+            }
+            if (!presentedWorld) present(fb);
+            const double pr1 = phaseNow();
+            if (phRb0 < 0.0) phRb0 = phRb1 = pr0;   // a frame with no readback
+            phSum[0] += phRb0 - phTop;
+            phSum[1] += phRb1 - phRb0;
+            phSum[2] += pr0 - phRb1;
+            phSum[3] += pr1 - pr0;
+            if (++phN == 60) {
+                std::printf("frame %ld phases (ms, mean of 60): sim+draw %.1f, readback %.1f, "
+                            "compose %.1f, present %.1f\n", n, phSum[0] * 1000.0 / 60.0,
+                            phSum[1] * 1000.0 / 60.0, phSum[2] * 1000.0 / 60.0,
+                            phSum[3] * 1000.0 / 60.0);
+#if defined(OMK_GLES)
+                if (glRen) {
+                    double g[4];
+                    omk::glesTakeTimings(g);
+                    std::printf("frame %ld gles (ms, mean of 60): glReadPixels %.1f, to-565 %.1f, "
+                                "texture upload %.1f, present draw %.1f, swap %.1f\n", n,
+                                g[0] / 60.0, g[1] / 60.0, g[2] / 60.0, g[3] / 60.0, glSwapMs / 60.0);
+                    std::printf("frame %ld overlay: %ld plane rows re-sent in 60 frames\n", n,
+                                omk::glesTakeOverlayRows(glRen));
+                    glSwapMs = 0.0;
+                }
+#endif
+                std::printf("frame %ld present: %ld of 60 straight from the GPU; on the CPU:", n, phGpu);
+                for (const auto& [why, count] : phKept) std::printf(" %s %ld,", why.c_str(), count);
+                std::printf("\n");
+                phGpu = 0;
+                phKept.clear();
+                std::printf("frame %ld spans (ms, mean of 60):", n);
+                for (auto& [name, sec] : phSpan) {
+                    std::printf(" %s %.1f,", name.c_str(), sec * 1000.0 / 60.0);
+                    sec = 0.0;
+                }
+                std::printf("\n");
+                phSum[0] = phSum[1] = phSum[2] = phSum[3] = 0.0;
+                phN = 0;
+            }
+        }
         if (!snapsDir.empty() && handoverFrame >= 0 && ((n - handoverFrame) % snapEvery) == 0) {
             const std::string path = snapsDir + "/snap-" + std::to_string(n) + ".bin";
             if (omk::safeOutputPath(path)) {

@@ -14,6 +14,10 @@
 #include <cstdlib>
 #include <cstring>
 #include <malloc.h>
+#include <map>
+#include <set>
+
+#include <vitaGL.h>
 
 namespace omk::vita {
 
@@ -29,28 +33,70 @@ void* memAlloc(void*, uint32_t alignment, uint32_t size) {
 }
 void memFree(void*, void* p) { std::free(p); }
 
+// THE DECODER'S FRAME BUFFERS. First from vitaGL's own pools, which are
+// already GPU-mapped: vitaGL takes most of CDRAM at `vglInit`, so a fresh
+// CDRAM block - the only path until 2026-09-18 - can fail on a console while
+// the emulator, with room to spare, grants it. The console played all three
+// films as "0 frames shown, sound at 0 Hz", the player starting and stopping
+// with nothing decoded, which is what a refused frame buffer does. Every
+// allocation is logged, so the next log says which path served it.
+std::set<void*> g_blockFrames;   // the ones from sceKernelAllocMemBlock
+std::map<void*, void*> g_poolFrames;   // aligned -> what vglAlloc returned
 void* frameAlloc(void*, uint32_t alignment, uint32_t size) {
-    (void)alignment;
+    // GRAPHICS memory, not just any: `vglMemalign` served the 19:43 build from
+    // vitaGL's RAM pool and the decoder then produced nothing. Over-allocate
+    // from the CDRAM pool (then the physically contiguous one) and align by
+    // hand; the original pointer is kept for the free.
+    const uint32_t al = alignment < 256 ? 256 : alignment;
+    const vglMemType pools[2] = {VGL_MEM_VRAM, VGL_MEM_PHYCONT};
+    for (int k = 0; k < 2; ++k) {
+        void* raw = vglAlloc(size + al, pools[k]);
+        if (!raw) continue;
+        const uintptr_t a = (reinterpret_cast<uintptr_t>(raw) + al - 1) & ~static_cast<uintptr_t>(al - 1);
+        void* p = reinterpret_cast<void*>(a);
+        g_poolFrames[p] = raw;
+        std::printf("film: frame buffer %u bytes (align %u) from vitaGL's %s pool\n",
+                    static_cast<unsigned>(size), static_cast<unsigned>(alignment),
+                    k == 0 ? "CDRAM" : "PHYCONT");
+        return p;
+    }
     const uint32_t a = 256 * 1024;
-    size = (size + a - 1) & ~(a - 1);
+    const uint32_t sz = (size + a - 1) & ~(a - 1);
     const SceUID block = sceKernelAllocMemBlock("omk film frame",
                                                 SCE_KERNEL_MEMBLOCK_TYPE_USER_CDRAM_RW,
-                                                size, nullptr);
-    if (block < 0) return nullptr;
+                                                sz, nullptr);
+    if (block < 0) {
+        std::printf("film: frame buffer %u bytes REFUSED - vitaGL's pool empty, CDRAM block 0x%08X\n",
+                    static_cast<unsigned>(size), static_cast<unsigned>(block));
+        return nullptr;
+    }
     void* base = nullptr;
     sceKernelGetMemBlockBase(block, &base);
-    sceGxmMapMemory(base, size, static_cast<SceGxmMemoryAttribFlags>(
-                                    SCE_GXM_MEMORY_ATTRIB_READ | SCE_GXM_MEMORY_ATTRIB_WRITE));
+    sceGxmMapMemory(base, sz, static_cast<SceGxmMemoryAttribFlags>(
+                                  SCE_GXM_MEMORY_ATTRIB_READ | SCE_GXM_MEMORY_ATTRIB_WRITE));
+    g_blockFrames.insert(base);
+    std::printf("film: frame buffer %u bytes from a CDRAM block\n", static_cast<unsigned>(size));
     return base;
 }
 void frameFree(void*, void* p) {
     if (!p) return;
+    if (const auto it = g_poolFrames.find(p); it != g_poolFrames.end()) {
+        vglFree(it->second);
+        g_poolFrames.erase(it);
+        return;
+    }
+    if (g_blockFrames.erase(p) == 0) return;
     const SceUID block = sceKernelFindMemBlockByAddr(p, 0);
     sceGxmUnmapMemory(p);
     if (block >= 0) sceKernelFreeMemBlock(block);
 }
 
 bool moduleLoaded = false;
+
+// every player event, logged: a film that "ends" with no frame says nothing else
+void onEvent(void*, int32_t id, int32_t source, void*) {
+    std::printf("film: player event 0x%02X (source %d)\n", static_cast<unsigned>(id), static_cast<int>(source));
+}
 
 inline int clamp8(int v) { return v < 0 ? 0 : (v > 255 ? 255 : v); }
 
@@ -97,6 +143,9 @@ struct AvFilm {
 AvFilm* avOpen(const std::string& path) {
     SceIoStat st;
     if (sceIoGetstat(path.c_str(), &st) < 0) return nullptr;
+    // the size, SAID: a copy damaged in transfer (FileZilla's ASCII mode grew
+    // IAM\AREA by 10 bytes) is a film the player stops on at once
+    std::printf("film: %s is %lld bytes\n", path.c_str(), static_cast<long long>(st.st_size));
     if (!moduleLoaded) {
         if (sceSysmoduleLoadModule(SCE_SYSMODULE_AVPLAYER) < 0) {
             std::printf("film: SceAvPlayer module did not load\n");
@@ -110,6 +159,7 @@ AvFilm* avOpen(const std::string& path) {
     init.memoryReplacement.deallocate = memFree;
     init.memoryReplacement.allocateTexture = frameAlloc;
     init.memoryReplacement.deallocateTexture = frameFree;
+    init.eventReplacement.eventCallback = onEvent;
     init.basePriority = 0xA0;
     init.numOutputVideoFrameBuffers = 2;
     init.autoStart = SCE_TRUE;
