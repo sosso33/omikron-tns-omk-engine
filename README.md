@@ -8,29 +8,33 @@ established.
 Open source under [GPL-3.0-or-later](LICENSE); the game itself is not
 included and not ours to give — OMK reads the data files from your own copy.
 
-**Where it is up to:** OMK plays the opening. From a cold start it steps the
-three intro movies, shows the splash, draws the start menu and takes your
-answer, runs the Kay'l intro conversation with its dialogue cameras and
-voice-over, plays the seven camera editings of the Impasse arrival, and then
-**hands you the player**: adventure mode, arrows to walk and turn, a follow
-camera, a walkable floor under you that stops at walls, and area transitions
-that keep two sets resident and play the doors between them. On an M1 that
-is one uninterrupted run of ~3600 frames through three sets. From there you
-can open the **sneak** — Kay'l's handheld device, drawn as the engine draws
-it, with its inventory, its verbs and its examine page — and **take an object
-from the world**: the two-stage take animation, its camera, and the object
-in his hand while you decide. The city's crowd and its traffic walk their
-circuit around you. All seventeen of the scene scripts' functions run.
+**Where it is up to:** OMK plays the opening and then hands you the player.
+From a cold start it steps the three intro movies, shows the splash, draws the
+start menu and takes your answer, runs the Kay'l intro conversation with its
+dialogue cameras and voice-over, plays the camera editings of the Impasse
+arrival, and then gives you **adventure mode**: a follow camera, a floor that
+stops at walls and rails, the jump and the fall, swimming, and area
+transitions that keep two sets resident and play the doors between them.
+From there it runs the **sneak** — Kay'l's device, with its inventory and
+verbs, the memo journal, the identity page and the city map — the **slider**
+you call, board and fly, the **shops**, the **MULTIPLAN** storage kiosk, the
+security centre's **lift** and **terminals**, **saving and loading** through
+the game's own panels, the **pause** screen, and both combat modes:
+**melee**, with the game's own adaptive fight AI, and first-person **shoot
+mode**, whose gunmen patrol and fight over the level's navigation grid. The
+city's crowd and its traffic walk their circuit around you, lit by the set's
+own lights and casting the engine's blob shadows.
 
 It is not a finished game, and no claim is made about anything a reader has
-not confirmed in play. The play reports and what became of each are filed
-in [`todo/omk-play.md`](todo/omk-play.md) (76 entries, 2026-09-05); the
-script-engine items in [`todo/iam-script-engine.md`](todo/iam-script-engine.md)
-under `## Open` — the largest being that `Actors_SpawnFromTables` is not
-ported, so the world's own ambient characters never spawn; only the ones a
-script names with `character.show` appear. [`engine/README.md`](engine/README.md) audits
-what is ported row by row, and it has been wrong twice, so trust it over
-this paragraph.
+not confirmed in play: [`todo/play-test.md`](todo/play-test.md) lists what is
+committed and still waiting for a person, and the play reports and what became
+of each are filed in [`todo/omk-play.md`](todo/omk-play.md).
+[`engine/README.md`](engine/README.md) audits what is ported row by row, and
+it has been wrong twice, so trust it over this paragraph.
+
+A **PS Vita** port has begun as a separate backend (GLES2, the pad as the
+engine's joystick, a VitaSDK build); it has booted to adventure mode in the
+Vita3K emulator and has not run on a console.
 
 The name is not new — it is what the code has always called itself. The C++
 lives in `namespace omk`, the replica builds as `build/omk` and its viewer
@@ -105,8 +109,8 @@ distribute one.** Producing your own is up to you; point at it the same way:
 OMK_ASM=~/ida/Runtime.exe.asm OMK_CLEAN=~/ida/clean python3 tools/verify.py
 ```
 
-Without it, **15 of the suite's 295 checks report `skipped`** — naming the
-variable to set — and the other 280 run normally. `tools/dialog_disasm.py`
+Without it, **the 17 checks that read it report `skipped`** — naming the
+variable to set — and the rest of the suite's 479 run normally. `tools/dialog_disasm.py`
 falls back to the committed `tables/vm_opcodes.json`, which carries the same
 VM table; `verify.py: vm table sources` asserts the two agree, 153/153 operand
 counts and 49/49 `.TAG` domains, so the fallback cannot drift unnoticed.
@@ -126,10 +130,10 @@ cd engine && make && cd ..
 engine/build/omk gamedata --tables tables
 
 # 5. check that everything the docs claim is still true
-python3 tools/verify.py --list                 # all 241, and which doc quotes each
+python3 tools/verify.py --list                 # all 479, and which doc quotes each
 python3 tools/verify.py --only "engine: cull"  # one check, seconds
 python3 tools/verify.py                        # all the fast ones
-python3 tools/verify.py --slow                 # plus the asset sweeps — minutes
+python3 tools/verify.py --slow                 # plus the asset sweeps and engine runs — over an hour
 ```
 
 `verify.py` exits with the number of failures, so it drops into a hook or a
@@ -190,7 +194,7 @@ build/omk-play ../gamedata ../tables       # THE GAME: movies, menu, intro,
                                            # then adventure mode
 ```
 
-Arrows walk and turn, `RSHIFT` runs, `ENTER` advances a conversation and
+Arrows walk and turn, either Shift runs, `ENTER` advances a conversation and
 chooses a reply, any key skips a movie and `ALT` skips all three. Once he is
 on his feet, `TAB` opens the sneak (through the `.CTL`, so not instantly):
 `LEFT`/`RIGHT` move between the device's columns, `UP`/`DOWN` within one,
