@@ -1074,6 +1074,10 @@ void PlayerController::tick(float dt, std::uint32_t word) {
     if (camFresh_) {
         for (int k = 0; k < 3; ++k) camEuler_[k] = euler_[k];
         resolveSteady(cam_, camEuler_);
+        // `sub_413C00` seeds `+340` from the subject's own y at setup, so the
+        // first tick's `+340 - +344` is zero rather than the whole height.
+        camSubjY_ = camPrevSubjY_ = pos_[1] - camLift_;
+        camPrevValid_ = false;
         camFresh_ = false;
         camJustChanged_ = true;        // flag 1, for this tick's collision pass
     } else {
@@ -1096,7 +1100,19 @@ void PlayerController::tick(float dt, std::uint32_t word) {
         }
         cam_.fov = camFov_;
     }
+    // `+344 = +340; +340 = +156` - the tick latches the eye subject's own Y
+    // and the frame before it, in that order and IMMEDIATELY before the
+    // collision pass (04_sys.c 3785). `+156` is the subject's origin, which
+    // for this controller is the pelvis.
+    camPrevSubjY_ = camSubjY_;
+    camSubjY_     = pos_[1] - camLift_;
     cameraCollide(dt);
+    // ...and `sub_4133B0`/`sub_4133E0` close the tick by writing the final
+    // eye and target back into `+20..+28` and `+32..+40`, which is what the
+    // NEXT tick's height ease anchors on.
+    camPrevEyeY_  = cam_.eye[1];
+    camPrevAtY_   = cam_.at[1];
+    camPrevValid_ = true;
     camJustChanged_ = false;      // flag 1: the tick clears it on its way out
 }
 
@@ -1112,15 +1128,33 @@ void PlayerController::tick(float dt, std::uint32_t word) {
 //         if (r > +328 && !(flags & 1))
 //             r = (r - +328) * dt / (+320) + +328       ; ease OUT over 8
 //         +328 = r ;  eye = target + V * r/|V|
+//     } else if (+208 == 1) {                           ; THE SECOND RAY
+//         A = +100.. - R(+112..) * +124.. ; B = +152.. - R(+76..) * +176..
+//         if (cast A -> A + (B-A)*1.2 hits) {           ; still blocked
+//             eye = target + normalise(eye-target) * +328
+//             dy = +340 - +344
+//             eye.y = +24 + dy ; target.y = +36 + dy ; return      ; NO push
+//         }
+//         +208 = 2 ;                                    ; fall through
 //     } else if (+208 == 2) {
 //         if (d <= +328) { +208 = 0; return; }
 //         +328 = (d - +328) * dt / (+320) + +328        ; ease back OUT
 //         eye = target + D * (+328)/d
 //     }
 //     t = (r <= d/2) ? 0 : (r - d/2) / (d - d/2)        ; the LIFT's blend
-//     eye.y    = (+312 + +156)*(1-t) + eye.y   * t
-//     target.y = (+316 + +156)*(1-t) + target.y* t
-//     ...each eased toward +24 / +36 over +324 frames when flag 1 is clear
+//     eye.y    = (+312 + +156)*(1-t) + (+56) * t        ; +56 is the UNPULLED y
+//     target.y = (+316 + +156)*(1-t) + (+68) * t
+//     ...each eased toward +24 / +36 over +324 frames when flag 1 is clear,
+//     and +24 / +36 are LAST FRAME'S FINAL eye and target y (`sub_4133B0` /
+//     `sub_4133E0` write them back at the end of every tick), so the ease
+//     CONVERGES on the push rather than holding a dt/4 fraction of it.
+//
+// The whole function is transcribed line by line in
+// `todo/camera-obstruction.md` 5, with every offset resolved against its
+// writer - and 6 there settles the SCOPE: `sub_414520` arms this pass only
+// for a camera whose EYE SUBJECT is 0 (or 5, which never ships), so an
+// absolute world or dialogue camera never reaches it. That is why the port
+// runs it here, on the follow camera, and nowhere else.
 //
 // `sub_413C00` loads the constants: +300 = 1.2, +320 = 8, +324 = 4, and
 // +312/+316 = -0.7 x the subject's pelvis height, which with Y growing
@@ -1185,7 +1219,11 @@ void PlayerController::cameraCollide(float dt) {
         // lagged ray has swung clear of the wall its unlagged one is still
         // behind does not start recovering yet.
         FollowCamera st;
-        resolveSteady(st, euler_);
+        // `B` is `sub_415E60`'s eye, which resolves against the LAGGED Euler
+        // triple `+76..+84` and not the actor's own - `resolveSteady` already
+        // splits the two, using its argument for the eye and `euler_` for the
+        // target, which is exactly `+76..+84` against `+112..+120`.
+        resolveSteady(st, camEuler_);
         const double at2[3] = {st.at[0], st.at[1], st.at[2]};
         double D2[3] = {st.eye[0] - st.at[0], st.eye[1] - st.at[1], st.eye[2] - st.at[2]};
         const double d2 = std::sqrt(D2[0]*D2[0] + D2[1]*D2[1] + D2[2]*D2[2]);
@@ -1200,12 +1238,24 @@ void PlayerController::cameraCollide(float dt) {
             }
         }
         if (best2 <= 1.0) {
-            // still blocked: hold the distance rather than easing out.
-            // LABELLED - the engine also re-places the eye here, at `+328`
-            // along the CURRENT direction and shifted by the subject's own
-            // vertical movement this frame (`+340 - +344`); this holds the
-            // distance and lets the next frame's first ray place it.
-            r = camDist_;
+            // STILL BLOCKED, and this arm is a RETURN in the engine - it does
+            // not reach the height push at all. The eye goes back to `+328`
+            // along the current direction, and BOTH heights are frozen at
+            // last frame's answer shifted by the subject's own rise this
+            // frame (`+24 + (+340 - +344)`, `+36 + (+340 - +344)`). `+208`
+            // stays 1, so the next frame's first ray decides again.
+            const double kept = camDist_;
+            const double dy   = camPrevValid_
+                                ? static_cast<double>(camSubjY_ - camPrevSubjY_) : 0.0;
+            cam_.eye[0] = static_cast<float>(at[0] + D[0] * kept / d);
+            cam_.eye[2] = static_cast<float>(at[2] + D[2] * kept / d);
+            if (camPrevValid_) {
+                cam_.eye[1] = static_cast<float>(camPrevEyeY_ + dy);
+                cam_.at[1]  = static_cast<float>(camPrevAtY_  + dy);
+            } else {
+                cam_.eye[1] = static_cast<float>(at[1] + D[1] * kept / d);
+            }
+            return;
         } else {
             camBlock_ = 2;
             if (d <= camDist_) { camBlock_ = 0; return; }
@@ -1229,17 +1279,24 @@ void PlayerController::cameraCollide(float dt) {
     // pinched camera rises ABOVE him rather than dropping through the floor.
     const double half = d * 0.5;
     const double t = r <= half ? 0.0 : (r - half) / (d - half);
-    const double subjY = static_cast<double>(pos_[1]) - camLift_;
-    const double lift  = -0.7 * camLift_ + subjY;          // +312 + +156
-    // ...each then eased toward the un-lifted value over `+324` frames, unless
-    // flag 1 says the camera changed this frame, in which case it snaps.
-    const double eyeWas = e[1], atWas = cam_.at[1];
-    e[1]       = static_cast<float>(lift * (1.0 - t) + e[1] * t);
-    cam_.at[1] = static_cast<float>(lift * (1.0 - t) + cam_.at[1] * t);
-    if (!camJustChanged_) {
-        e[1]       = static_cast<float>((e[1] - eyeWas) * dt / kLift + eyeWas);
-        cam_.at[1] = static_cast<float>((cam_.at[1] - atWas) * dt / kLift + atWas);
+    const double subjY = static_cast<double>(camSubjY_);   // +156, latched by the tick
+    const double lift  = -0.7 * camLift_ + subjY;          // +312 + +156, and +316 + +156
+    // THE FAR END OF THE BLEND IS THE UNPULLED Y. The engine holds the pulled
+    // eye in a scratch vector and only stores it at the very end, so `+56`
+    // and `+68` here are still what the resolvers left - `cam_.eye[1]` and
+    // `cam_.at[1]`, not `e[1]`.
+    double ey = lift * (1.0 - t) + static_cast<double>(cam_.eye[1]) * t;
+    double ty = lift * (1.0 - t) + static_cast<double>(cam_.at[1])  * t;
+    // ...each then eased toward `+24` / `+36` - LAST FRAME'S FINAL eye and
+    // target Y, which is what makes this a filter that converges on the push
+    // instead of a fixed `dt/+324` fraction of it. Flag 1 (the camera changed
+    // this frame) skips the ease and snaps.
+    if (!camJustChanged_ && camPrevValid_) {
+        ey = (ey - camPrevEyeY_) * dt / kLift + camPrevEyeY_;
+        ty = (ty - camPrevAtY_)  * dt / kLift + camPrevAtY_;
     }
+    cam_.at[1] = static_cast<float>(ty);
+    e[1]       = static_cast<float>(ey);
     for (int i = 0; i < 3; ++i) cam_.eye[i] = e[i];
 }
 
@@ -1521,6 +1578,14 @@ void PlayerController::setCameraOffsets(const float eyeOff[3], const float atOff
     camFov_ = fov > 1.0f ? fov : kFollowFov;
     camF42_ = f42; camF44_ = f44; camF46_ = f46;
     camFresh_ = true;      // Camera_LoadParams sets flag 1: the next frame snaps
+    // ...and `Camera_Request` does `memset(cam + 208, 0, 0x94)` before it
+    // calls `sub_414520`, which clears `+208` AND `+328`. So a new camera
+    // never inherits the previous one's block state or its kept distance -
+    // which is the fault `todo/camera-obstruction.md` 2 records as attempt
+    // 2's, and it was still latent here because the two live in the
+    // controller rather than in a per-camera block.
+    camBlock_ = 0;
+    camDist_  = 0.0f;
 }
 
 void PlayerController::resolveSteady(FollowCamera& c, const float e[3]) const {
