@@ -243,6 +243,60 @@ first time. **The shader compiler goes at
    a `libshacccg.suprx` is placed in its `ur0/data/`.** This repo does not
    fetch it; it has to come from the user's own console.
 
+### 2026-09-18, with the user's `libshacccg.suprx`: the GPU and THE GAME in Vita3K
+
+With the shader compiler in `fs/ur0/data/`:
+
+* **our GLSL ES 1.00 compiles on the Vita's compiler** - the emulator log
+  lists the scene program's parameters by name (`aPos`, `aUV`, `aCol`,
+  `aPhase`, `uMvp`, `uTexSize`).
+* **Vita3K's Vulkan renderer** (on MoltenVK) faults translating that program
+  ("Mask not implemented" then an access violation in the emulator); its
+  **OpenGL renderer runs it** - `VITA3K_ARGS="-B OpenGL"`.
+* **`omk_smoke` draws Aapkayl**: 3419 triangles, 21 textures, the frame
+  pillarboxed into 960x544 at 60 fps (the emulator's vsync). Geometry, depth
+  and texturing are right by eye. **COLOUR IS NOT SETTLED**: dithered, the
+  picture is GREEN (mean over a region 77/115/45 against 62/53/31 with the
+  dither off - green more than doubles); `smoke.nodither` shows the right
+  colours, and `smoke.bars` (the CPU-surface present) shows exact bars. The
+  cause is not found. **Withdrawn, the same afternoon**: an in-app "present =
+  readback" test reported EXACT at 1:1 and scaled - it was VACUOUS, both sides
+  black, because **Vita3K never writes a render target back to emulated
+  memory, so `glReadPixels` returns zeros**. The test now reports INPUT EMPTY
+  on a black readback instead of a pass. Whether the tint is ours or the
+  emulator's is the CONSOLE's to say: the dithered picture is on the play-test
+  list.
+* **THE GAME RUNS in the emulator** (`scripts/vita3k-run.sh game`, the street
+  start in `fs/ux0/data/omk/args.txt`): the tables from `app0:`, the data from
+  `ux0:`, `renderer: GLES2`, the audio device open at 44100 Hz stereo,
+  `pad: PSVita Controller` (SDL's game controller, as designed), and ADVENTURE
+  MODE on Anekbah's walk mesh with the crowd and the scene sounds - at ~3-4 s
+  a frame (the JIT, not the console). **The picture is BLACK**, for the reason
+  above: the game composes every frame on the CPU from a readback (G6 is still
+  open), and in Vita3K a readback is zeros. **G6 is therefore also what makes
+  the game VISIBLE in the emulator.**
+* **Two faults a console would have had, both fixed:**
+  1. `freopen` on stdout/stderr, which `vita_main.cpp` used for the log,
+     **corrupts newlib's heap on the Vita** - the first game runs died inside
+     `_malloc_r` a second in, on a free-list pointer of 0xbd20a0a1, with the
+     same result at a 192 MB heap as at 300 (so not the heap size); and even
+     where it did not crash, newlib kept writing the standard streams to the
+     TTY, so the log file stayed EMPTY. `printf_c99.cpp` now routes stdout /
+     stderr itself (`omk_vita_redirect`, unbuffered; `puts`/`putchar` wrapped
+     too, since GCC turns `printf("text\n")` into them). After it: 0 invalid
+     reads and a 195-line log.
+  2. `%zu` (above).
+* **Driving it**: `scripts/vita3k-run.sh` now kills with SIGKILL after a grace
+  period - Vita3K ignores SIGTERM while a title runs, and six emulator windows
+  had piled up. The smoke app takes mode files in `ux0:data/omk/`:
+  `smoke.autoexit` (quit after 900 frames, so its log is flushed),
+  `smoke.bars`, `smoke.worldbars`, `smoke.nodither`.
+
+**So, for testing**: the emulator answers "does it boot, load, run the
+scripts, open audio and the pad, and stay up" - which found two crashes the
+console would have had - but not "is the picture right" or "is it fast
+enough". Those stay the console's.
+
 ---
 
 ## 1. The issues, and what is missing

@@ -28,6 +28,10 @@
 # output lands in engine/build/vita3k/fs/ux0/data/omk/. With `seconds` the
 # emulator is closed after that long; without, it stays until you close it.
 #
+# `VITA3K_ARGS` passes flags through, e.g. `VITA3K_ARGS="-B OpenGL"` for the
+# emulator's OpenGL renderer: its Vulkan one (on MoltenVK) faulted translating
+# vitaGL's first program on 2026-09-18.
+#
 # THE TIMINGS ARE THE EMULATOR'S (a JIT on the host), never the console's.
 set -euo pipefail
 
@@ -87,12 +91,16 @@ if [ "$vpk" != omk_bench ] && [ ! -f "$fs/ur0/data/libshacccg.suprx" ]; then
 fi
 log="$v3k/$1.log"
 if [ -n "${2:-}" ]; then
-    "$app" -r "$id" > "$log" 2>&1 &
+    "$app" ${VITA3K_ARGS:-} -r "$id" > "$log" 2>&1 &
     pid=$!
     sleep "$2"
+    # Vita3K ignores SIGTERM while a title runs, so a plain kill left one
+    # emulator window per run behind (six by 2026-09-18's first hour)
     kill "$pid" 2>/dev/null || true
+    sleep 3
+    kill -9 "$pid" 2>/dev/null || true
 else
-    "$app" -r "$id" > "$log" 2>&1 || true
+    "$app" ${VITA3K_ARGS:-} -r "$id" > "$log" 2>&1 || true
 fi
 echo "log: $log"
 echo "output: $fs/ux0/data/omk/"

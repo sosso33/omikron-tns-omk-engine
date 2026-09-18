@@ -70,7 +70,7 @@ set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,--defsym,__sce_headroo
 # and shifts every later argument (found in Vita3K, 2026-09-18; a `%s` after
 # it reads a size as a pointer). Every target links `printf_c99.cpp` and routes
 # the printf family through it (`c99format.h`).
-set(OMK_PRINTF_WRAP printf fprintf snprintf sprintf vprintf vfprintf vsnprintf vsprintf)
+set(OMK_PRINTF_WRAP printf fprintf snprintf sprintf vprintf vfprintf vsnprintf vsprintf puts putchar)
 foreach(fn ${OMK_PRINTF_WRAP})
   set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,--wrap=${fn}")
 endforeach()

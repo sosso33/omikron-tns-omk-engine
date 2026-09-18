@@ -41,6 +41,7 @@ unsigned int sceUserMainThreadStackSize = 8 * 1024 * 1024;
 }
 
 int omk_play_main(int argc, char** argv);
+extern "C" void omk_vita_redirect(std::FILE* out, std::FILE* err);   // printf_c99.cpp
 
 namespace {
 constexpr const char* kRoot   = "ux0:data/omk/gamedata";
@@ -65,9 +66,13 @@ int main(int, char**) {
     sceIoMkdir("ux0:data/omk", 0777);
     sceIoMkdir("ux0:data/omk/saves", 0777);
 
-    // stdout goes nowhere on a device; the log is where a play report starts
-    std::freopen("ux0:data/omk/omk-play.log", "w", stdout);
-    std::freopen("ux0:data/omk/omk-play.err", "w", stderr);
+    // stdout goes nowhere on a device; the log is where a play report starts.
+    // NOT freopen: on the Vita it opens the file and newlib keeps writing the
+    // standard streams to the TTY regardless (`printf_c99.cpp`), so the
+    // redirect is done where every printf already passes. Unbuffered, so a
+    // crash cannot take the last lines with it.
+    omk_vita_redirect(std::fopen("ux0:data/omk/omk-play.log", "w"),
+                      std::fopen("ux0:data/omk/omk-play.err", "w"));
 
     std::vector<std::string> args = {"omk-play", kRoot, kTables,
                                      "--saves", kSaves, "--res", "640x480"};
