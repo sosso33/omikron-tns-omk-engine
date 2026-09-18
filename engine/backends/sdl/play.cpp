@@ -118,6 +118,7 @@ extern "C" void omk_vita_heap_check(const char* where);
 namespace omk::vita {
 struct AvFilm;
 AvFilm* avOpen(const std::string& path);
+std::string avFind(const std::string& stem, const std::string& dataRoot, std::string& report);
 bool avActive(AvFilm* f);
 bool avVideo(AvFilm* f, Surface& out);
 bool avAudio(AvFilm* f, std::vector<float>& pcm, int& rate);
@@ -5652,8 +5653,9 @@ int main(int argc, char** argv) {
                 if (const auto sl = stem.find_last_of('/'); sl != std::string::npos) stem = stem.substr(sl + 1);
                 if (const auto dt = stem.rfind('.'); dt != std::string::npos) stem = stem.substr(0, dt);
                 for (auto& c : stem) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
-                const std::string mp4 = "ux0:data/omk/movies/" + stem + ".mp4";
-                if (omk::vita::AvFilm* av = omk::vita::avOpen(mp4)) {
+                std::string where;
+                const std::string mp4 = omk::vita::avFind(stem, fr, where);
+                if (omk::vita::AvFilm* av = mp4.empty() ? nullptr : omk::vita::avOpen(mp4)) {
                     std::printf("  %s: hardware decoder, %s\n", name, mp4.c_str());
                     front.openAudio(44100, 2);
                     omk::Surface film(320, 240, 0);
@@ -5687,8 +5689,10 @@ int main(int argc, char** argv) {
                 // SAID: a console log that showed only the software path gave
                 // no way to tell a missing copy from a player that refused it
                 // (avOpen names its own failures)
-                std::printf("  %s: no hardware copy at %s - decoding the MPEG-1 in software "
-                            "(scripts/vita-movies.sh makes one)\n", name, mp4.c_str());
+                if (mp4.empty())
+                    std::printf("  %s: no %s.mp4 found - decoding the MPEG-1 in software "
+                                "(scripts/vita-movies.sh makes one). Looked in:%s\n",
+                                name, stem.c_str(), where.c_str());
             }
 #endif
             const auto real = fs.resolve(name);
