@@ -87,6 +87,17 @@ FIRST memo's clue whatever is highlighted. That is read from the code
 
 ---
 
+## 8. The security centre's HANDRAILS
+
+The report: running into the barriers at Kay'l's office level, the player went
+through and fell down the shaft. The body sweep met a triangle's FACE only, so a
+thin rail's EDGE let a sphere straight through. It now meets edges and corners
+too (`sweepOne`, labelled a reconstruction). To test it, run along and INTO the
+rails on level -2 and -4, including where two rails meet in a point, and try to
+fall. Also worth a look: nothing that used to be walkable should now snag, e.g.
+doorframes, stair edges, or table and stool corners in the restaurant.
+`verify.py: engine: security rail`.
+
 ## What is NOT fixed, so do not report it as new
 
 * **The lift arrival is still black** and the camera is inside the lift-car

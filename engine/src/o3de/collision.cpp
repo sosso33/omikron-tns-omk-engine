@@ -634,20 +634,116 @@ inline void sweepOne(const float* a, const float* b, const float* c, const doubl
     double s0 = n[0] * (p0[0] - a[0]) + n[1] * (p0[1] - a[1]) + n[2] * (p0[2] - a[2]);
     if (s0 < 0.0) { n[0] = -n[0]; n[1] = -n[1]; n[2] = -n[2]; s0 = -s0; }   // two-sided
     const double dn = n[0] * d[0] + n[1] * d[1] + n[2] * d[2];
-    if (dn >= -kSweepEps) return;                   // not closing on this face
-    double t = (s0 - radius) / -dn;
-    if (t > 1.0) return;
-    if (t < 0.0) {
-        if (s0 > radius) return;                    // behind, not penetrating
-        t = 0.0;
+    // ---- the FACE ------------------------------------------------------
+    if (dn < -kSweepEps) {
+        double t = (s0 - radius) / -dn;
+        bool ok = t <= 1.0;
+        if (ok && t < 0.0) {
+            if (s0 > radius) ok = false;            // behind, not penetrating
+            else t = 0.0;
+        }
+        if (ok) {
+            const double hit[3] = {p0[0] + t * d[0] - n[0] * radius,
+                                   p0[1] + t * d[1] - n[1] * radius,
+                                   p0[2] + t * d[2] - n[2] * radius};
+            if (insideTri(a, b, c, n, hit)) {
+                if (!best || t < best->t) {
+                    SweepHit h; h.t = t;
+                    for (int k = 0; k < 3; ++k) h.n[k] = n[k];
+                    best = h;
+                }
+                return;     // an interior contact is the first one this face offers
+            }
+        }
     }
-    const double hit[3] = {p0[0] + t * d[0] - n[0] * radius,
-                           p0[1] + t * d[1] - n[1] * radius,
-                           p0[2] + t * d[2] - n[2] * radius};
-    if (!insideTri(a, b, c, n, hit)) return;
-    if (!best || t < best->t) {
-        SweepHit h; h.t = t;
-        for (int k = 0; k < 3; ++k) h.n[k] = n[k];
+    // ---- ...and its EDGES and CORNERS ----------------------------------
+    //
+    // RECONSTRUCTION, labelled: `Sweep_PolygonKernel` (0x004A9D30, 930 lines
+    // of x87) is not transcribed, and this sweep never was the engine's. It
+    // tested the face INTERIOR only - the point where the sphere meets the
+    // triangle's plane had to lie inside the triangle - so a sphere meeting a
+    // triangle's EDGE or CORNER passed straight through it. On a wide wall
+    // that never shows. On a THIN one it is the whole of it: the security
+    // centre's handrails are 8-unit bars at waist height, so only the one
+    // body sphere whose centre is level with the bar could ever register, and
+    // where two rails meet in a point even that one flickered - hit, pushed
+    // back, miss, through - and the player ran through the rail and down the
+    // shaft. A reader: *"many times I went through the security center
+    // barriers and fall (not possible in the original game)"*.
+    //
+    // The standard completion of a swept-sphere test (Ericson, *Real-Time
+    // Collision Detection* 5.5.6): the sphere's centre against each corner as
+    // a point (a quadratic in t), and against each edge as a cylinder of the
+    // sphere's radius, the contact kept only where it falls on the segment.
+    // ONLY A CONTACT MET FROM OUTSIDE COUNTS (t > 0). A body already
+    // overlapping an edge is left to move as the face-only sweep let it: the
+    // first version counted an overlap while the sphere was "closing", and a
+    // player stood among a bar stool's edges (AREA 46, 7100 450) read every
+    // sub-centimetre idle drift as closing on one of them, and the push-out
+    // loop threw him three units a frame - 25 units round the stool in two
+    // seconds, and `engine: camera collision` red. A body that approaches
+    // from outside is stopped a unit short, so the rail case never starts
+    // inside.
+    // A RAY (radius 0 - the camera's, the shots', the lines of sight) has no
+    // thickness to meet an edge with, so it keeps the face test alone and
+    // every ray caller answers exactly as it did.
+    if (radius <= 0.0) return;
+    const double dd = d[0] * d[0] + d[1] * d[1] + d[2] * d[2];
+    if (dd <= 0.0) return;
+    const double r2 = radius * radius;
+    double bestT = best ? best->t : 2.0;
+    double bestN[3] = {0.0, 0.0, 0.0};
+    bool found = false;
+    const auto take = [&](double t, const double q[3]) {
+        // q: the contact point on the triangle; the normal points from it to
+        // the sphere's centre at t
+        const double cx = p0[0] + t * d[0] - q[0];
+        const double cy = p0[1] + t * d[1] - q[1];
+        const double cz = p0[2] + t * d[2] - q[2];
+        const double L = std::sqrt(cx * cx + cy * cy + cz * cz);
+        if (L <= 0.0 || t >= bestT) return;
+        bestT = t; found = true;
+        bestN[0] = cx / L; bestN[1] = cy / L; bestN[2] = cz / L;
+    };
+    const float* v[3] = {a, b, c};
+    for (int k = 0; k < 3; ++k) {                           // the corners
+        const double w[3] = {p0[0] - v[k][0], p0[1] - v[k][1], p0[2] - v[k][2]};
+        const double bq = 2.0 * (d[0] * w[0] + d[1] * w[1] + d[2] * w[2]);
+        const double cq = w[0] * w[0] + w[1] * w[1] + w[2] * w[2] - r2;
+        const double q[3] = {v[k][0], v[k][1], v[k][2]};
+        if (cq <= 0.0) continue;                            // already inside: see above
+        const double disc = bq * bq - 4.0 * dd * cq;
+        if (disc < 0.0) continue;
+        const double t = (-bq - std::sqrt(disc)) / (2.0 * dd);
+        if (t >= 0.0 && t <= 1.0) take(t, q);
+    }
+    for (int k = 0; k < 3; ++k) {                           // the edges
+        const float* u = v[k]; const float* w2 = v[(k + 1) % 3];
+        const double e[3] = {w2[0] - u[0], w2[1] - u[1], w2[2] - u[2]};
+        const double w[3] = {p0[0] - u[0], p0[1] - u[1], p0[2] - u[2]};
+        const double ee = e[0] * e[0] + e[1] * e[1] + e[2] * e[2];
+        if (ee <= 0.0) continue;
+        const double ed = e[0] * d[0] + e[1] * d[1] + e[2] * d[2];
+        const double ew = e[0] * w[0] + e[1] * w[1] + e[2] * w[2];
+        const double dw = d[0] * w[0] + d[1] * w[1] + d[2] * w[2];
+        const double ww = w[0] * w[0] + w[1] * w[1] + w[2] * w[2];
+        const double aq = ee * dd - ed * ed;
+        const double bq = 2.0 * (ee * dw - ed * ew);
+        const double cq = ee * (ww - r2) - ew * ew;
+        if (aq <= 1e-9) continue;                           // parallel: the corners have it
+        if (cq <= 0.0) continue;                            // already within the cylinder
+        const double disc = bq * bq - 4.0 * aq * cq;
+        if (disc < 0.0) continue;
+        const double t = (-bq - std::sqrt(disc)) / (2.0 * aq);
+        if (t < 0.0 || t > 1.0) continue;
+        const double f = (ed * t + ew) / ee;                // where on the segment
+        if (f < 0.0 || f > 1.0) continue;
+        const double q[3] = {u[0] + f * e[0], u[1] + f * e[1], u[2] + f * e[2]};
+        take(t, q);
+    }
+    if (found) {
+        SweepHit h; h.t = bestT;
+        for (int k = 0; k < 3; ++k) h.n[k] = bestN[k];
         best = h;
     }
 }

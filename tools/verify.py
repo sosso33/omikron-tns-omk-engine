@@ -3542,6 +3542,51 @@ def c_engine_slot_pool():
             "the destination's - and at frame 800 it still stands 87 units open")
 
 
+def c_engine_security_rail():
+    r"""`engine/`: the security centre's HANDRAILS hold a running player.
+    A reader: *"many times I went through the security center barriers and
+    fall (not possible in the original game)"*, at Kay'l's office level.
+    Level -2 (AREA 157, address 446) has a V-shaped hole in `CSNivo-2b`
+    bounded by an 8-unit rail at waist height, y 303..311 over a floor at
+    346.5. The body sweep tested a triangle's INTERIOR only, so a sphere that
+    met the bar's EDGE passed through it, and where two rails meet in a point
+    the one level sphere flickered - and he ran down the shaft.
+    `sweepOne` now also meets EDGES and CORNERS from outside (Ericson 5.5.6,
+    a RECONSTRUCTION - `Sweep_PolygonKernel` is not transcribed, see its
+    comment). This runs the route that fell: out of the lift, round, and a
+    run at the rail with the turn held 70 frames.
+    SHOWN TO FAIL: the edge and corner tests skipped (`radius <= 0.0` read
+    as `radius >= 0.0`) - he FALLS from frame 501, as reported.
+    """
+    import subprocess
+    eng = os.path.join(ROOT, "engine")
+    fr = omkpaths.data_root()
+    if not (os.path.isdir(eng) and os.path.isdir(os.path.join(fr, "SCPTDATA"))):
+        return ("skipped",), ("skipped",), "engine/ or gamedata/ absent"
+    mk = subprocess.run(["make", "-s", "play"], cwd=eng, capture_output=True, text=True)
+    play = os.path.join(eng, "build", "omk-play")
+    if mk.returncode != 0:
+        return ("build failed",), ("built",), "engine/ must build"
+    if not os.path.exists(play):
+        return ("no sdl",), ("no sdl",), "needs SDL to render"
+    hold = ("k*40,k28*2,k*60,k208*2,k*30,k28*2,k*150,k200+54*120,k203*70,"
+            "k200+54*250,k205*20,k200+54*150")
+    out = subprocess.run(
+        [play, fr, os.path.join(ROOT, "tables"),
+         "--save", os.path.join(ROOT, "traces", "save-appart.bin"),
+         "--area", "157", "--address", "446", "--frames", "1000",
+         "--res", "160x120", "--nofmv", "--nodelay", "--no-crowd", "--hold", hold],
+        capture_output=True, text=True, errors="replace",
+        env=dict(os.environ, SDL_VIDEODRIVER="dummy")).stdout
+    end = re.search(r"player: ends at (-?[\d.]+) (-?[\d.]+) (-?[\d.]+)", out)
+    if not end:
+        return ("no end line",), ("an end line",), "the run printed no final position"
+    x, y, z = (float(v) for v in end.groups())
+    return (out.count("FALLS from"), "%.1f" % y), (0, "346.5"), \
+        ("level -2's running route at the handrail: falls, and the floor he "
+         "ends on (%.0f %.0f)" % (x, z))
+
+
 def c_engine_sneak_verbs():
     r"""`omk-play`: the sneak's two verbs DO what they say - a medkit heals, a combine combines.
 
@@ -38388,6 +38433,7 @@ SLOW = [
     ("engine: lift doors", c_lift_doors,       "todo/next-tasks 7"),
     ("engine: node rest",  c_engine_node_rest, "todo/missing-ui 6d"),
     ("engine: slot pool",  c_engine_slot_pool, "todo/missing-ui 6f"),
+    ("engine: security rail", c_engine_security_rail, "todo/play-test.md"),
     ("engine: sneak verbs", c_engine_sneak_verbs, "todo/sneak.md"),
     ("object path anchor", c_object_path_anchor, "todo/next-tasks 7"),
     ("camera travel",      c_camera_travel_subjects, "engine/README"),
