@@ -114,6 +114,17 @@ extern "C" void omk_vita_heap_check(const char* where);
 #  define OMK_HEAPCHECK(w) ((void)0)
 #endif
 #if defined(__vita__)
+// The Vita's hardware film player (`backends/vita/avmovie.h`).
+namespace omk::vita {
+struct AvFilm;
+AvFilm* avOpen(const std::string& path);
+bool avActive(AvFilm* f);
+bool avVideo(AvFilm* f, Surface& out);
+bool avAudio(AvFilm* f, std::vector<float>& pcm, int& rate);
+void avClose(AvFilm* f);
+}
+#endif
+#if defined(__vita__)
 // The Vita's on-screen keyboard (`backends/vita/ime.h`), for the name field.
 namespace omk::vita {
 bool imeEdit(const char* title, const std::string& initial, int maxLen, std::string& out);
@@ -5630,6 +5641,51 @@ int main(int argc, char** argv) {
         bool skipAll = false, bounded = false;
         for (const char* name : movies) {
             if (skipAll) break;
+#if defined(__vita__)
+            // THE HARDWARE PATH (`backends/vita/avmovie.h`): the film converted
+            // to H.264 by `scripts/vita-movies.sh` and copied to
+            // ux0:data/omk/movies/<NAME>.mp4 plays on the Vita's decoder -
+            // same skip rules, same audio queue, same present. Without the
+            // file, the software decoder below, as before.
+            {
+                std::string stem = name;
+                if (const auto sl = stem.find_last_of('/'); sl != std::string::npos) stem = stem.substr(sl + 1);
+                if (const auto dt = stem.rfind('.'); dt != std::string::npos) stem = stem.substr(0, dt);
+                for (auto& c : stem) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+                const std::string mp4 = "ux0:data/omk/movies/" + stem + ".mp4";
+                if (omk::vita::AvFilm* av = omk::vita::avOpen(mp4)) {
+                    std::printf("  %s: hardware decoder, %s\n", name, mp4.c_str());
+                    front.openAudio(44100, 2);
+                    omk::Surface film(320, 240, 0);
+                    std::vector<float> pcm;
+                    int rate = 0;
+                    long shownAv = 0;
+                    while (omk::vita::avActive(av)) {
+                        omk::HostInput h;
+                        if (!front.pump(h)) { skipAll = true; break; }
+                        if (!h.held.empty() || h.pad.buttons != 0) {
+                            if (h.held.count(0x38)) skipAll = true;      // DIK_LMENU
+                            break;
+                        }
+                        pcm.clear();
+                        if (omk::vita::avAudio(av, pcm, rate) && !pcm.empty())
+                            front.queueAudio(pcm);
+                        if (omk::vita::avVideo(av, film)) { present(film); ++shownAv; }
+                        else SDL_Delay(2);
+                    }
+                    omk::vita::avClose(av);
+                    front.flushAudio();
+                    for (int guard = 0; guard < 300; ++guard) {
+                        omk::HostInput h;
+                        if (!front.pump(h)) break;
+                        if (h.held.empty() && h.pad.buttons == 0) break;
+                        SDL_Delay(10);
+                    }
+                    std::printf("  %s: %ld frames shown, sound at %d Hz\n", name, shownAv, rate);
+                    continue;
+                }
+            }
+#endif
             const auto real = fs.resolve(name);
             omk::Movie mov;
             if (!real || !mov.open(*real)) {
