@@ -795,6 +795,43 @@ public:
     void setRings(int n) { rings_ = n; }
     int  rings() const { return rings_; }
 
+    // ---- THE HINT SHOP's three inputs and four outputs --------------------
+    //
+    // `dword_6A17C0`, the price - `Game_HandleEvent(42)`, which the caller
+    // resolves because it is a world MESSAGE and then a game variable, and
+    // the walk owns neither. Read once per build in the engine; supplied
+    // here for as long as the screen is up, which is the same value.
+    void setHintPrice(int n) { hintPrice_ = n; }
+    int  hintPrice() const { return hintPrice_; }
+    // `dword_4E2B08` - the row list's `+24`, what `sub_42ADD0` takes from
+    // the channel's event 29. The builders branch on it (no rows: the body
+    // box takes the focus and the footer prints string 5), so the walk needs
+    // it BEFORE `buildPage` runs, not after: a caller sets it every frame
+    // the save screen is open.
+    void setHintRows(int n) { hintRows_ = n; }
+    int  hintRows() const { return hintRows_; }
+    // `word_4E2D0C` - the footer item's string id, 6 or (after a refusal) 8.
+    int  hintFooterString() const { return hintFooter_; }
+    // `word_4E2B2E` - the body box's SECTION index, `sub_477F60`'s
+    // `mov ax, [ebx+1Eh]`: 0 the memo, 1 the CLUE a purchase reveals.
+    int  hintBodySection() const { return hintSection_; }
+    // `word_4E2B12` / `word_4E2CF2` - the Y each builder writes over the two
+    // items the two panels SHARE. -1 when the walk is on neither page.
+    int  hintBodyY() const { return hintBodyY_; }
+    int  hintFooterY() const { return hintFooterY_; }
+    // `dword_4E2B4C` - the body box's own `+0x3C`, the ROW whose description
+    // it shows. Every build writes it from the row list's selection, and
+    // `sub_42ADD0(rows, 0, 2)` has just put that selection back to 0, so it
+    // is row 0 whenever there is a row at all and -1 otherwise. Nothing else
+    // in the image writes it - the row list's hook is the generic
+    // `sub_42AFF0` - so moving the highlight does NOT change what the box
+    // shows or what `Acheter` pays for. Read from the code; not a claim
+    // about what the authors meant.
+    int  hintBodyRow() const { return hintBodyRow_; }
+    // A purchase the caller must carry out: the anneaux `Game_HandleEvent`
+    // case 38's list-2 arm took off the player record. -1 when there is none.
+    int  takeHintPurchase() { const int p = hintPaid_; hintPaid_ = -1; return p; }
+
     // The panel the walk is ON, which is not always the screen's own: an item
     // with a `child` descends into one, and that is how the start menu's
     // confirm dialog and its name field appear. A drawer that only ever draws
@@ -1148,6 +1185,7 @@ private:
     void leavePage(const UiPanel& p);
     // `sub_4290D0(list, 0x20000004, value)` and its item form.
     void setListOff(std::uint32_t list, bool off);
+    void setItemOff(std::uint32_t item, bool off);
     // `sub_42A7E0` - the selection mover, whose two direction bits are
     // parameters: the default dispatch passes UP/DOWN, `sub_42A930`
     // passes LEFT/RIGHT.
@@ -1219,6 +1257,17 @@ private:
     // never told keeps 0 and refuses, which is the safe way round: it shows
     // the game's own message rather than offering a save it cannot pay for.
     int         rings_ = 0;
+    // The hint shop's globals. All five are static records in the engine's
+    // data segment, like the selections and the colours - a builder writes
+    // the ones it means to and the rest keep what the last one left.
+    int         hintPrice_ = 0;      // dword_6A17C0
+    int         hintRows_ = 0;       // dword_4E2B08 (the list's +24)
+    int         hintFooter_ = 6;     // word_4E2D0C
+    int         hintSection_ = 0;    // word_4E2B2E
+    int         hintBodyY_ = -1;     // word_4E2B12
+    int         hintFooterY_ = -1;   // word_4E2CF2
+    int         hintBodyRow_ = -1;   // dword_4E2B4C
+    int         hintPaid_ = -1;      // the anneaux case 38's list-2 arm took
     int         pendingSave_ = -1;
     // The row an overwrite confirm is standing over, so its `Oui` knows
     // which slot it agreed to. -1 when no confirm is up.
@@ -1428,6 +1477,69 @@ inline constexpr std::uint32_t kCbConfirmYes = 0x0047BA30u;
 inline constexpr std::uint32_t kCbDestroyYes   = 0x0047B800u;
 inline constexpr std::uint32_t kPanelLoadSlots   = 0x004CF2E8u;
 inline constexpr std::uint32_t kPanelSaveNoRings = 0x004E2FB0u;
+
+// ---- `Indices`, THE HINT SHOP on screen 30 --------------------------------
+//
+// The save screen is not one page: its root panel 0x004E2ED8 carries three
+// buttons out of `IAM\Save` - 0 `Sauvegarde` (child 0x004CF2E8, the slot
+// panel), 1 `Indices` (child 0x004E3018) and 3 `Annuler`. The middle one had
+// no model at all here, so the port descended into the panel and drew five
+// blank rows, a blank body and a footer reading `Indice achete !` - the one
+// string the shop's own builder HIDES.
+//
+// What it sells: a hint costs THREE ANNEAUX (see `globalHintPriceVar`), and
+// what you get is the second bracketed section of a memo's description - the
+// CLUE this tree already found at `text.cpp: extractTextSection`, 37 of
+// `IAM\OBJECT`'s 1002 records carrying one. The shop's rows ARE the memo
+// journal: `sub_4AE120` binds them with `sub_42ADD0(rows, 0, 2)`, the same
+// call and the same OBJECT LIST 2 the sneak's `Memoire` page makes.
+//
+// The two panels and the five widgets their builders write:
+inline constexpr std::uint32_t kPanelHints    = 0x004E3018u;   // the shop
+inline constexpr std::uint32_t kPanelHintBuy  = 0x004E3080u;   // its confirm
+inline constexpr std::uint32_t kListHintRows  = 0x004E2AF0u;   // five rows
+inline constexpr std::uint32_t kListHintBuy   = 0x004E2C18u;   // Acheter / Annuler
+inline constexpr std::uint32_t kItemHintBody  = 0x004E2B10u;   // 440x120 text box
+inline constexpr std::uint32_t kItemHintPrice = 0x004E2C38u;   // string 2 + the price
+inline constexpr std::uint32_t kItemHintFoot  = 0x004E2CF0u;   // string 6 or 5 or 8
+inline constexpr std::uint32_t kItemHintDone  = 0x004E2CA8u;   // string 9
+// ...and the three callbacks, none of which has a `proc` label because
+// nothing calls them (CLAUDE.md 1): they are dwords in the widget table.
+//
+//   0x004AE220  A ROW. `if (Actor_GetProperty(5) < price) { word_4E2D0C = 8;
+//               return 1; }` - the footer's string id becomes 8, `Je n'ai
+//               pas assez d'Anneaux pour faire ca !`, and the page does not
+//               move. Otherwise `sub_42A370(screen, off_4E3080)`.
+//   0x004AE260  THE BODY BOX. `sub_42A370(screen, off_4E3018)` then
+//               `sub_42ADD0(&word_4E2AF0, 0, 2)` - the page rebuilt. It is
+//               what the focus lands on when there are no hints at all.
+//   0x004AE480  `Acheter`. `Game_RaiseEvent(38, {price})` - and case 38 has
+//               an arm for exactly this list:
+//
+//                   if (dword_4C0B64 == 2) {
+//                       v = u16(player + 174);            // the ANNEAUX
+//                       if (v < i16(block)) return 0;     // refused
+//                       u16(player + 174) = v - u16(block);
+//                       return 1; }
+//
+//               so on list 2 the "buy" is a PAYMENT and nothing else - no
+//               object changes hands. On success it hides the buttons, the
+//               price line and the footer, shows string 9 and switches the
+//               body box to SECTION 1 (`word_4E2B2E = 1`), which is the clue.
+inline constexpr std::uint32_t kCbHintRow  = 0x004AE220u;
+inline constexpr std::uint32_t kCbHintBody = 0x004AE260u;
+inline constexpr std::uint32_t kCbHintBuy  = 0x004AE480u;
+// The two native `textFn`s, which draw nothing without the run-time text a
+// caller supplies (`Composer::setRowText`):
+//
+//   0x004AE290  THE FOOTER. `if (rows <= 0) string 5` ("Aucun indice
+//               disponible"); else if the item's `+28` is 6, `sprintf("{C}%s
+//               %d", string 6, Actor_GetProperty(5))`; else that string id
+//               plainly - which is how the refusal at 8 gets on screen.
+//   0x004AE340  THE PRICE LINE. `if (rows <= 0)` it writes nothing at all;
+//               else `sprintf("{C}%s %d", Ui_ItemStringDefault(item), price)`.
+inline constexpr std::uint32_t kTextFnHintFoot  = 0x004AE290u;
+inline constexpr std::uint32_t kTextFnHintPrice = 0x004AE340u;
 inline constexpr std::uint32_t kCbLoadCharger    = 0x0047AC90u;
 inline constexpr std::uint32_t kCbLoadDetruire   = 0x0047AE90u;
 inline constexpr std::uint32_t kPanelLoadConfirm = 0x004CF350u;

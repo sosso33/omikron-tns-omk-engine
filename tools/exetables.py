@@ -859,7 +859,20 @@ def t_ui_widgets(e):
                   # `sub_49D870` zeroes `dword_6A5090`, the scroll offset the
                   # examine page zeroes too, and its `+16` hook is 0, so
                   # nothing moves between its lists and BACK is the way out.
-                  0x004DEF88: [0x004DEFF0]}
+                  0x004DEF88: [0x004DEFF0],
+                  # THE HINT SHOP'S PURCHASE CONFIRM, added 2026-09-18.
+                  # `Indices` on screen 30 (item 0x004E28B0) descends into
+                  # 0x004E3018 through its `+44`, so the shop itself is in the
+                  # tree - but its confirm is reached only from code: the row
+                  # callback `0x004AE220` ends
+                  # `sub_42A370(screen, off_4E3080)` once the player's anneaux
+                  # cover the price. The record reads cleanly at the family's
+                  # stride - parent 0x004E3018, five lists - and two of those
+                  # five (0x004E2B60 the body box, 0x004E2D40 the footer) are
+                  # the shop's OWN, re-used at a different Y. Its two new ones
+                  # are 0x004E2C18, where `Acheter` and `Annuler` live, and
+                  # 0x004E2C88, the "Cet indice te coutera :" line.
+                  0x004E3018: [0x004E3080]}
     out, skipped, seen = [], [], set()   # `seen` tracks CHILD panels only
     for sid in sorted(u.screens):
         try:
@@ -1064,9 +1077,15 @@ def c_ui_widgets(rows, e):
             # DISTINCT list or item record, because it carries the very same
             # ones the memory page does, which is why the two "distinct"
             # counts below do not move.
-            ("child panels", len(kids), 27),
-            ("lists", len(lists), 170),
-            ("items", len(items), 718),
+            # 27/170/718 -> 28/175/725 on 2026-09-18: the HINT SHOP's purchase
+            # confirm 0x004E3080, CODE_NAMED under 0x004E3018, with its five
+            # lists (2 buttons + 1 body + 1 price line + 2 footer + 1 backdrop
+            # = 7 items). Unlike the memo reader it DOES add distinct records -
+            # 0x004E2C18 and 0x004E2C88 are its own, and the other three lists
+            # are the shop's, counted again for this panel.
+            ("child panels", len(kids), 28),
+            ("lists", len(lists), 175),
+            ("items", len(items), 725),
             ("item records inside the image",
              sum(1 for i in items if mapped(i["addr"])), len(items)),
             # 75 across the whole tree but only 16 distinct item RECORDS
@@ -1075,14 +1094,22 @@ def c_ui_widgets(rows, e):
             # of its child-naming items is counted once per panel.
             # 96 -> 103 on 2026-09-16: the memo reader carries the tab column
             # too, and seven of its eight icons name a page.
+            # 103 -> 104 on 2026-09-18: the hint confirm's `Annuler`
+            # (0x004E2BC8) names 0x004E2ED8, the save screen's root panel - so
+            # cancelling a purchase leaves the shop entirely rather than going
+            # back to its row list.
             ("items naming a child panel",
-             sum(1 for i in items if i["child"]), 103),
+             sum(1 for i in items if i["child"]), 104),
             ("...of which distinct item records",
-             len({i["addr"] for i in items if i["child"]}), 23),
+             len({i["addr"] for i in items if i["child"]}), 24),
             # 60 -> 62 on 2026-09-16: the memo reader's copy of the row list
             # (`0x0049C050`) and of the body box's list (`0x0042A9A0`, the
             # scroller that makes the page scroll at all).
-            ("lists with a non-default input hook", len(hooks), 62),
+            # 62 -> 63 on 2026-09-18: the hint confirm's button list
+            # 0x004E2C18, whose `+4` is `0x0042A930` - `Ui_MoveSelection` with
+            # LEFT and RIGHT in place of UP and DOWN, which is what `Acheter`
+            # and `Annuler` sitting side by side at y=380 need.
+            ("lists with a non-default input hook", len(hooks), 63),
             # The two RUNTIME fields, and only where the open callback writes
             # them. Neither was in this table before 2026-09-04, because the
             # scan had no reason to look: `panel+24` is the CURRENT LIST and
@@ -1137,9 +1164,15 @@ def c_ui_widgets(rows, e):
             # 4 "Options", 5 "Quitter". Without them the confirm dialog comes
             # up with no heading, which is what the port drew.
             ("items with a bound string",
-             sum(1 for i in items if "string" in (i.get("bind") or {})), 45),
+             # 45 -> 46 on 2026-09-18: the hint confirm's builder
+             # `sub_4AE3A0` writes `word_4E2D0C = 6` over the footer item
+             # 0x004E2CF0, the same bind the shop's own builder makes -
+             # counted once per panel that carries the record.
+             sum(1 for i in items if "string" in (i.get("bind") or {})), 46),
             ("items with a bound tag",
-             sum(1 for i in items if "tag" in (i.get("bind") or {})), 25),
+             # 25 -> 26 on 2026-09-18: the hint confirm's copy of the body
+             # box 0x004E2B10, whose `dword_4E2B4C` its builder writes.
+             sum(1 for i in items if "tag" in (i.get("bind") or {})), 26),
             ("TERMINAL's bound strings",
              sorted(i["bind"]["string"] for p in ps if p["screen"] == 5
                     for l in p["lists"] for i in l["items"]
@@ -1161,7 +1194,10 @@ def c_ui_widgets(rows, e):
                   and not p["tilesAt"])],
              # tiles 27 -> 28 on 2026-09-16: the memo reader's `+20` is the
              # family's own tile array `0x004DDF60`, like every sneak page.
-             [21, 1, 28, 8]),
+             # ...and 8 -> 9 on 2026-09-18: the hint confirm ships
+             # `+76 = 0x40001800` with no tile array at all, exactly as the
+             # shop panel it sits on does.
+             [21, 1, 28, 9]),
             ("the one panel that blits its sheet whole",
              [p["screen"] for p in ps
               if not p["flagsB"] & 0x2000 and p["flagsB"] & 0x4000], [36]),
@@ -1169,7 +1205,9 @@ def c_ui_widgets(rows, e):
             # 106 -> 108 on 2026-09-16: the memo reader's tab column and echo
             # bar, the two of its four lists that take the default walk.
             ("lists taking Ui_MoveSelection, the default walk",
-             sum(1 for l in lists if not l["hook"]), 108),
+             # 108 -> 112 on 2026-09-18: four of the hint confirm's five
+             # lists carry no `+4` - only its button list does.
+             sum(1 for l in lists if not l["hook"]), 112),
             ("the LIFT grid hook is present", rows["gridHook"] in hooks, True),
             # It is here only because the walk follows `+44`: the name field
             # is in the start menu's confirm dialog, a CHILD panel. A lift

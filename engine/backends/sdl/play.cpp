@@ -1855,6 +1855,7 @@ int main(int argc, char** argv) {
     // wants a recipe PAIR, and a new game ships exactly two objects.
     std::string giveList;
     int moneyArg = -1;              // --money: a harness write of record +172
+    int ringsArg = -1;              // --rings: the same over record +174
     std::string varList;
     bool newWorld = false; // --newgame-world: START's world, the save's player
     // --scene-chunk N: run a SCENE chunk's startup script over the area, the
@@ -2013,6 +2014,7 @@ int main(int argc, char** argv) {
         // slot and runs none of its bookkeeping.
         else if (a == "--give" && i + 1 < argc) giveList = argv[++i];
         else if (a == "--money" && i + 1 < argc) moneyArg = std::atoi(argv[++i]);
+        else if (a == "--rings" && i + 1 < argc) ringsArg = std::atoi(argv[++i]);
         // A HARNESS FLAG, not a port: `--var 652=1,657=1` writes the game DB
         // directly. A flow can sit behind state no flag can otherwise reach -
         // the flat's lift gate tests `Porte Asc Fermee` and `Rencontre Telis`
@@ -2541,6 +2543,15 @@ int main(int argc, char** argv) {
         state.setMoney(std::min(moneyArg, 0xFFFF));
         std::printf("--money: the player record's +172 set to %d (a harness write)\n",
                     state.money());
+    }
+    // `--rings N`: the ANNEAUX at `+174`, the other half of the same pair.
+    // A save costs one and a hint three, and both shipped fixtures carry
+    // two - so neither purchase can be driven from them without this. A
+    // HARNESS write, like `--money` and `--give`.
+    if (ringsArg >= 0) {
+        state.setRings(std::min(ringsArg, 0xFFFF));
+        std::printf("--rings: the player record's +174 set to %d (a harness write)\n",
+                    state.rings());
     }
     if (!giveList.empty()) {
         int placed = 0, refused = 0;
@@ -10575,6 +10586,38 @@ int main(int argc, char** argv) {
             // which is what a reader met ("when I interact with the save
             // point I have directly this"). The bits are swallowed until they
             // are RELEASED.
+            // ---- THE HINT SHOP'S TWO INPUTS, before anything is pressed ----
+            //
+            // `sub_4AE120` reads both at BUILD time, and a build happens
+            // inside a confirm - so they have to be in the walk's hands
+            // before the press, not beside the drawing below.
+            //
+            // The PRICE is `Game_HandleEvent(42)` and is two steps:
+            // `Message_RunHandlers(25, area, -1)` - which runs inline and
+            // lets the world set the number - and then `Var_Get(GLOBAL+72)`.
+            // Broadcast once per open rather than once per build, which is
+            // the same value either way: the only message-25 handler in the
+            // shipped data is `IAM\GLOBAL`'s `set.var.i8 198, 3`.
+            //
+            // The ROW COUNT is the list's `+24`, `sub_42ADD0`'s event 29 on
+            // OBJECT LIST 2 - the memo journal, the same list the sneak's
+            // `Memoire` page binds. It cannot change while the screen is up,
+            // so it is read straight out of the DB.
+            if (openScreen == 30) {
+                static int hintTold = -1;
+                const int priceVar = omk::globalHintPriceVar(globalFile);
+                session.postMessage(25, -1);
+                walk->setHintPrice(state.var(priceVar));
+                const int rows = static_cast<int>(
+                    omk::objectList(state, omk::ObjectList::Memos).size());
+                walk->setHintRows(rows);
+                if (hintTold != walk->hintPrice() * 1000 + rows) {
+                    hintTold = walk->hintPrice() * 1000 + rows;
+                    std::printf("indices: variable %d = %d anneaux, object list 2 "
+                                "holds %d hint%s\n", priceVar, walk->hintPrice(),
+                                rows, rows == 1 ? "" : "s");
+                }
+            }
             std::uint32_t uiBits = bits;
             // ---- "ACTION / UTILISER" IS NOT THE SAME BIT IN EVERY GROUP ---
             //
@@ -10721,6 +10764,18 @@ int main(int argc, char** argv) {
                 } else {
                     std::fprintf(stderr, "detruire: slot %d not cleared\n", slot);
                 }
+            }
+            // ---- `Acheter`'s PAYMENT, carried out where the channel is ----
+            //
+            // `Game_HandleEvent(38, {price})` with object list 2 open is not
+            // a purchase at all - it is `u16(player + 174) -= price`, with a
+            // refusal when there is not enough. The walk did the test and the
+            // arithmetic on its own copy; the DB is written here, the way
+            // every other channel action in this file is.
+            if (const int paid = walk->takeHintPurchase(); paid > 0) {
+                state.setRings(std::max(0, state.rings() - paid));
+                std::printf("indices: paid %d anneaux, %d left on the player "
+                            "record's +174\n", paid, state.rings());
             }
             // ---- THE SLIDER'S TRAVEL --------------------------------
             //
@@ -18246,6 +18301,100 @@ int main(int argc, char** argv) {
         // place, so the composer is told where the walk moved it.
         static std::map<std::uint32_t, std::pair<int, int>> itemMoved;
         itemMoved.clear();
+        // ---- `Indices`, THE HINT SHOP (screen 30's second page) -----------
+        //
+        // Five ROW widgets bound to OBJECT LIST 2 - the memo journal - a
+        // 440x120 body box showing one section of the selected memo's
+        // description, a footer counting the player's anneaux, and, on the
+        // confirm, `Cet indice te coutera : 3` over `Acheter` / `Annuler`.
+        //
+        // Everything the widget tree cannot carry comes from here: the row
+        // NAMES (the channel's case 33), the body's TEXT (case 40, the
+        // object record's description), the two native `textFn`s, and the
+        // Y each builder writes over the two items the pages SHARE.
+        static std::set<std::uint32_t> hintReport;
+        static std::map<std::uint32_t, int> itemSection;
+        static std::string hintTitleTold;
+        hintReport.clear();
+        itemSection.clear();
+        const std::uint32_t hintPanel =
+            walk && walk->panel() ? walk->panel()->addr : 0u;
+        if (hintPanel == omk::kPanelHints || hintPanel == omk::kPanelHintBuy) {
+            sneakRows.clear();
+            sneakHidden.clear();
+            comp.setExamineText(nullptr);
+            const auto saveText = omk::iamStrings(fs, "IAM/Save");
+            const auto str = [&](int id) {
+                return id >= 0 && id < static_cast<int>(saveText.size())
+                    ? saveText[static_cast<std::size_t>(id)] : std::string();
+            };
+            const auto memos = omk::objectList(state, omk::ObjectList::Memos);
+            // `sub_42ADD0` raises event 25 on list 2 before it asks for the
+            // count, so the channel is opened here too - case 33 refuses
+            // (result 3) while no list is open.
+            if (inv.openedList() != 2) inv.openList(2);
+            // The five widgets, through `sub_42AAE0`'s window rule. The walk
+            // already bound them in `buildPage`; this supplies the NAMES,
+            // which are `sub_42AA00` -> event 33 on the widget's own tag.
+            if (const omk::UiList* rl = w.listAt(omk::kListHintRows))
+                for (std::size_t k = 0; k < rl->items.size(); ++k)
+                    if (k < memos.size())
+                        sneakRows[rl->items[k].addr] =
+                            inv.displayName(memos[k], 0);
+            // THE BODY BOX. `sub_477F60` raises event 40 on the item's own
+            // `+0x3C` and lays out what it answers; `dword_4E2B4C` is that
+            // field, and the builders write it from the row list's selection
+            // - which they have just reset to 0. So it is the FIRST memo
+            // whatever row is highlighted, and `word_4E2B2E` picks which
+            // bracketed section of it: 0 the memo, 1 the clue `Acheter` buys.
+            const int bodyRow = walk->hintBodyRow();
+            const int bodyId = bodyRow >= 0 && bodyRow < static_cast<int>(memos.size())
+                ? memos[static_cast<std::size_t>(bodyRow)] : -1;
+            if (const omk::ObjectRecord* br = bodyId > 0 ? inv.record(bodyId) : nullptr) {
+                examineText = br->description;
+                comp.setExamineText(&examineText);
+                comp.setTextScroll(&walk->textScroll());
+            }
+            itemSection[omk::kItemHintBody] = walk->hintBodySection();
+            // THE FOOTER, `sub_4AE290`. Three arms, and the item's `+28` -
+            // which the row callback rewrites to 8 on a refusal - picks
+            // between the last two.
+            if (walk->hintRows() <= 0)
+                sneakRows[omk::kItemHintFoot] = str(5);
+            else if (walk->hintFooterString() == 6)
+                sneakRows[omk::kItemHintFoot] =
+                    "{C}" + str(6) + " " + std::to_string(walk->rings());
+            else
+                sneakRows[omk::kItemHintFoot] = str(walk->hintFooterString());
+            // THE PRICE LINE, `sub_4AE340`, and it is transcribed WITH ITS
+            // ODDITY. The hook calls `Ui_ItemStringDefault` (0x00476860) on
+            // an item whose bank C carries no `0x200` and whose `+30` is 0,
+            // so the string goes through `sub_43FEA0(0, ...)` - the SECTION
+            // extractor - and `Cet indice te coutera :` has no brackets at
+            // all. The engine's own answer is therefore `{TEXT ERROR!}`
+            // followed by the whole string, and the layout swallows the
+            // brace as an unknown directive, so the line reads correctly on
+            // screen. Reproduced rather than tidied: the `{TEXT ERROR!}` is
+            // what the function returns.
+            if (walk->hintRows() > 0 && saveText.size() > 2)
+                sneakRows[omk::kItemHintPrice] =
+                    "{C}" + omk::extractTextSection(&saveText[2], 0) + " " +
+                    std::to_string(walk->hintPrice());
+            // `word_4E2B12` and `word_4E2CF2`: the two shared items move
+            // between the pages, 250/400 on the shop and 180/290 on the
+            // confirm.
+            for (const auto& l : walk->panel()->lists)
+                for (const auto& e : l.items) {
+                    if (e.addr == omk::kItemHintBody)
+                        itemMoved[e.addr] = {e.x, walk->hintBodyY()};
+                    if (e.addr == omk::kItemHintFoot)
+                        itemMoved[e.addr] = {e.x, walk->hintFooterY()};
+                }
+            hintReport.insert(omk::kItemHintBody);
+            hintReport.insert(omk::kItemHintFoot);
+            hintReport.insert(omk::kItemHintPrice);
+            hintReport.insert(omk::kItemHintDone);
+        }
         if (walk && openScreen == 12 && walk->panel()) {
             for (const auto& l : walk->panel()->lists) {
                 if (l.hook != omk::kHookGandharGrid || l.items.empty()) continue;
@@ -18956,6 +19105,8 @@ int main(int argc, char** argv) {
             comp.setItemMove(itemMoved.empty() ? nullptr : &itemMoved);
             comp.setItemSource(itemSource.empty() ? nullptr : &itemSource);
             comp.setItemLitSource(itemLitSource.empty() ? nullptr : &itemLitSource);
+            comp.setItemSection(itemSection.empty() ? nullptr : &itemSection);
+            comp.setReportText(hintReport.empty() ? nullptr : &hintReport);
             comp.setHighScores(openScreen == 36 ? &highScores : nullptr,
                                walk ? walk->highScorePage() : 0);
             // THE CLOUD IS THE MENU'S BACKGROUND, NOT EVERY SCREEN'S.
@@ -18988,6 +19139,39 @@ int main(int argc, char** argv) {
             // was never the problem.
             if (!std::getenv("OMK_NOUI")) {
                 const omk::ScreenFrame sf = comp.draw(fb, openScreen, *walk);
+                // ---- THE HINT SHOP, REPORTED FROM THE DRAW -----------
+                //
+                // Every field on this line comes out of `ScreenFrame`, and
+                // the four texts are the strings the COMPOSER laid out, not
+                // the map it was handed: an item the builders hid has no
+                // entry at all, which is the half a handed-over map cannot
+                // say (CLAUDE.md 1, the log-line rule). `-` marks one that
+                // drew nothing this frame - and on a correct page three of
+                // the four always do, because the shop hides `Indice achete
+                // !` and the confirm hides the body until you have paid.
+                if (!hintReport.empty()) {
+                    const auto txt = [&](std::uint32_t a) {
+                        const auto t = sf.itemText.find(a);
+                        return t == sf.itemText.end() ? std::string("-")
+                                                      : t->second;
+                    };
+                    char page[512];
+                    std::snprintf(page, sizeof page,
+                                  "indices: %s, %d row%s, list %d, %d items drawn; "
+                                  "body '%s' | price '%s' | foot '%s' | done '%s'",
+                                  hintPanel == omk::kPanelHintBuy ? "the purchase confirm"
+                                                                  : "the shop",
+                                  walk->hintRows(), walk->hintRows() == 1 ? "" : "s",
+                                  walk->currentList(), sf.itemsDrawn,
+                                  txt(omk::kItemHintBody).c_str(),
+                                  txt(omk::kItemHintPrice).c_str(),
+                                  txt(omk::kItemHintFoot).c_str(),
+                                  txt(omk::kItemHintDone).c_str());
+                    if (hintTitleTold != page) {
+                        hintTitleTold = page;
+                        std::printf("%s\n", page);
+                    }
+                }
                 // ---- DEN'S LOCKER, REPORTED FROM THE DRAW ------------
                 //
                 // Not from `denDigit()`: the hook hands the composer a source

@@ -3764,6 +3764,118 @@ afterwards by scripted input alone.
 
 ---
 
+### 3g-bis. `Indices` — the HINT SHOP on the save screen (2026-09-18)
+
+**Screen 30 is not one page.** Its root panel `0x004E2ED8` carries three
+buttons out of `IAM\Save` — 0 `Sauvegarde` (child `0x004CF2E8`, the slot panel
+of §3g), 1 **`Indices`** (child `0x004E3018`) and 3 `Annuler` — and the middle
+one is a shop that sells CLUES for *anneaux*. It was reachable in the port and
+drew nothing: five blank rows, a blank body and a footer reading `Indice
+acheté !`, the one string its own builder hides.
+
+**What a hint costs is settled from two sides that could disagree.**
+`sub_4AE120`, the shop panel's `+4` builder, opens with
+`dword_6A17C0 = Game_HandleEvent(42)`, and case 42's whole body is
+
+```
+Message_RunHandlers(25, dword_69BC60, -1);          // ask the world
+return Var_Get(*(__int16 *)(g_GlobalFile + 72));    // ...then read it
+```
+
+So the price is not a constant in the exe: the event **broadcasts message 25**
+to the resident SCENE, then the AREA, then `IAM\GLOBAL`'s subscription table,
+and whatever answers is free to write the variable first. `GLOBAL + 72` is
+**198**, and the shipped data holds exactly **one** message-25 subscription —
+`IAM\GLOBAL`'s, at offset 5006 — whose whole body is `set.var.i8 198, 3; end`.
+**A hint costs three anneaux**, everywhere in the game.
+
+**The rows are the MEMO JOURNAL.** `sub_4AE120` binds them with
+`word_4E2AF0 = 5; sub_42ADD0(&word_4E2AF0, 0, 2)` — five widgets over **object
+list 2**, the same call and the same list the sneak's `Mémoire` page makes
+(§3g of the device). `dword_4E2B08`, which looks unwritten on a grep, is that
+list's own `+0x18`: `sub_42ADD0` ends `sub_4083F0(0x1D, &count); mov [esi+18h],
+eax`, so the count comes from the channel's event 29 and the page is live data.
+
+**And what a purchase reveals is the record's SECOND bracketed section** — the
+clue `Text_LayOutBlock`'s section extractor already accounted for, 37 of
+`IAM\OBJECT`'s 1002 records carrying one (§5, `extractTextSection`). The body
+box `0x004E2B10` ships `+30 = -1` and both builders write **0**, the memo;
+`Acheter` writes **1**.
+
+The five widgets and the two builders that write them:
+
+| | `sub_4AE120` (the shop) | `sub_4AE3A0` (the confirm) |
+|---|---|---|
+| footer `0x004E2CF0` string id | 6 | 6 |
+| body `0x004E2B10` section / Y | 0 / **250** | 0 / **180** |
+| footer Y | **400** | **290** |
+| body drawn | yes | **no** |
+| price line `0x004E2C38` | drawn | (left as the shop set it) |
+| `Indice acheté !` `0x004E2CA8` | **hidden** | (left) |
+| buttons `0x004E2C18` | (left) | both drawn |
+| `panel+24` | 1 **when there are no rows** | 0, or 1 with no rows |
+
+`panel+24 = 1` is the body box on both panels, so **with no hints the focus
+skips the row list entirely** and the footer's first arm prints string 5,
+`Aucun indice disponible`.
+
+The three callbacks, none of which has a `proc` label because nothing calls
+them — they are dwords in the widget table:
+
+* **`0x004AE220`, a row.** `if (Actor_GetProperty(5) < dword_6A17C0)
+  { word_4E2D0C = 8; return 1; }` — the footer item's string id is rewritten
+  **in place** and the page does not move, which is a different refusal from
+  `Sauvegarde`'s (that one installs panel `0x004E2FB0`). Otherwise
+  `sub_42A370(screen, off_4E3080)`, the purchase confirm.
+* **`0x004AE260`, the body box.** Installs the shop again and re-runs
+  `sub_42ADD0`. It is what ENTER reaches when there is nothing to sell.
+* **`0x004AE480`, `Acheter`.** `Game_HandleEvent(38, {price})` — and case 38
+  has an arm for exactly this list:
+
+  ```
+  if (dword_4C0B64 == 2) {
+      v = u16(player + 174);                       // the ANNEAUX
+      if (v < i16(block)) return 0;                // refused, nothing changes
+      u16(player + 174) = v - u16(block);
+      return 1; }
+  ```
+
+  So on list 2 the "buy" is a **payment** and no object changes hands. On
+  success it hides the buttons, the price line and the footer, shows string 9
+  and switches the body to section 1.
+
+**`0x004E3080` is not in the widget tree** — only a callback installs it — so
+`tools/exetables.py`'s `CODE_NAMED` names it, as it does the sneak's verb and
+examine pages and the save panel's three refusals. Its record reads cleanly:
+parent `0x004E3018`, five lists, of which the body and the footer are the
+shop's own re-used at a different Y.
+
+**Two things read and deliberately NOT ported**, because the code does not
+settle them:
+
+* the interface **sound** a purchase might play — no call is traced;
+* **the row selection has no effect.** `dword_4E2B4C`, the body box's own
+  `+0x3C`, is written only by the two builders, from a selection
+  `sub_42ADD0` has just reset to 0, and the row list's hook is the generic
+  `sub_42AFF0`, which cannot write a page global. So the page shows and sells
+  the **first** memo's clue whatever row is highlighted.
+
+**And one oddity is transcribed rather than tidied.** `sub_4AE340`, the price
+line's `textFn`, calls `Ui_ItemStringDefault` on item `0x004E2C38`, whose bank
+C carries no `0x200` and whose `+30` is **0** — so the string goes through
+`sub_43FEA0(0, …)`, the section extractor, and `Cet indice te coûtera :` has no
+brackets at all. The function's failure arm writes `{TEXT ERROR!}` and then the
+whole string; `Text_LayOutBlock` swallows the brace as an unknown directive, so
+the line reads correctly on screen. The port produces the same string.
+
+Ported and drawn 2026-09-18: `engine/src/ui/widgets.{h,cpp}` (the two builders
+and the three callbacks), `screendraw.{h,cpp}` (the run-time section index and
+`ScreenFrame::itemText`, which reports the string the composer laid out rather
+than the one it was handed), `backends/sdl/play.cpp` (the rows, the body, the
+two native `textFn`s and the payment). `verify.py: engine: hint shop`.
+
+---
+
 ### 3h. The PAUSE screen, and the one key that is not a binding (2026-09-07)
 
 Screen **31, `PAUSE GAME`**. It is the only screen the player opens without a
